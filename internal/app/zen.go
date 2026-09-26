@@ -229,6 +229,10 @@ type zenConfigData struct {
 	FailoverCount   int              `json:"failoverCount"`   // 触发故障转移的连续失败次数,默认 3
 	FailoverMinutes int              `json:"failoverMinutes"` // 故障转移窗口(分钟),默认 5
 	Compaction      zenCompactConfig `json:"compaction"`
+	// 代理别名：标准代理 URL -> 展示别名（来自粘贴链接的 #fragment）。
+	// 绑定下拉、冷却状态等 UI 只显示别名，不暴露完整地址。随代理列表
+	// 联动清理（setZenConfig 与配置更新端点）。
+	ProxyAliases map[string]string `json:"proxyAliases,omitempty"`
 	// 账号/key 代理隔离开关（proxy_binding.go）。nil = 未配置 = 隔离启用（默认）；
 	// 显式 false 仅表示"用户主动关闭"。PROXY_ISOLATION env 设置时 env 优先。
 	// 指针三态是为了旧配置文件缺字段时默认进入隔离模式，而不是静默退回旧规则。
@@ -470,6 +474,17 @@ func setZenConfig(c *zenConfigData) {
 	validProxy := map[string]bool{"": true}
 	for _, p := range c.Proxies {
 		validProxy[p] = true
+	}
+	// 代理别名随列表清理：别名指向的代理已被删除时丢弃，防止单调增长
+	if len(c.ProxyAliases) > 0 {
+		for u := range c.ProxyAliases {
+			if !validProxy[u] {
+				delete(c.ProxyAliases, u)
+			}
+		}
+		if len(c.ProxyAliases) == 0 {
+			c.ProxyAliases = nil
+		}
 	}
 	proxyClientCacheMu.Lock()
 	for u, cl := range proxyClientCache {

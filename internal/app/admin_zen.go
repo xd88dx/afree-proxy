@@ -30,6 +30,7 @@ func handleZenConfig(w http.ResponseWriter, r *http.Request) {
 		"keyStates":       zenKeyStatus(),
 		"baseURL":         cfg.BaseURL,
 		"proxies":         cfg.Proxies,
+		"proxyAliases":    cfg.ProxyAliases,
 		"proxyStrategy":   cfg.ProxyStrategy,
 		"maxConcurrency":  cfg.MaxConcurrency,
 		"retries":         cfg.Retries,
@@ -94,6 +95,7 @@ func handleZenConfigUpdate(w http.ResponseWriter, r *http.Request) {
 		Keys:            cur.Keys,
 		BaseURL:         cur.BaseURL,
 		Proxies:         cur.Proxies,
+		ProxyAliases:    cur.ProxyAliases,
 		ProxyStrategy:   cur.ProxyStrategy,
 		MaxConcurrency:  cur.MaxConcurrency,
 		Retries:         cur.Retries,
@@ -125,11 +127,30 @@ func handleZenConfigUpdate(w http.ResponseWriter, r *http.Request) {
 		next.BaseURL = strings.TrimRight(*patch.BaseURL, "/")
 	}
 	if patch.Proxies != nil {
-		if err := validateProxyList(patch.Proxies); err != nil {
+		// 每行先规范化（支持订阅分享格式 socks://b64(user:pass)@host:port#别名
+		// 等，自动拆出别名），再按标准格式校验入库
+		canonical := make([]string, 0, len(patch.Proxies))
+		aliases := make(map[string]string)
+		for _, line := range patch.Proxies {
+			parsed, alias, err := parseProxyLine(line)
+			if err != nil {
+				writeAPI(w, http.StatusBadRequest, apiResponse{Error: err.Error()})
+				return
+			}
+			if parsed == "" {
+				continue
+			}
+			canonical = append(canonical, parsed)
+			if alias != "" {
+				aliases[parsed] = alias
+			}
+		}
+		if err := validateProxyList(canonical); err != nil {
 			writeAPI(w, http.StatusBadRequest, apiResponse{Error: err.Error()})
 			return
 		}
-		next.Proxies = patch.Proxies
+		next.Proxies = canonical
+		next.ProxyAliases = aliases
 	}
 	if patch.ProxyStrategy != nil && *patch.ProxyStrategy != "" {
 		next.ProxyStrategy = *patch.ProxyStrategy

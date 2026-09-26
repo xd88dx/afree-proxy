@@ -392,7 +392,7 @@ body:not([data-theme="dark"]) .theme-toggle .dark-label{display:none}
     <div class="hint" style="margin-bottom:10px">One proxy list serves every upstream that opts in below. One proxy per line: <code>http://user:pass@host:port</code> or <code>socks5://host:port</code>. Requests rotate across healthy proxies per request; a proxy that hits a rate limit is cooled down and skipped automatically.</div>
     <div class="form-row">
       <div class="field" style="flex:3"><label>Proxy list</label>
-        <textarea id="ppProxies" rows="4" placeholder="one per line: http://user:pass@host:port or socks5://host:port"></textarea>
+        <textarea id="ppProxies" rows="4" placeholder="one per line: socks://b64(user:pass)@host:port#alias, socks5://user:pass@host:port#alias or http://host:port"></textarea>
       </div>
       <div class="field"><label>Rotation strategy</label>
         <select id="ppStrategy"><option value="round_robin">Round-robin (round_robin)</option><option value="random">Random (random)</option><option value="fill">Fill (fill)</option></select>
@@ -845,7 +845,7 @@ const I18N_ZH = {
   'One proxy list serves every upstream that opts in below. One proxy per line': '一份代理列表供下方所有选择启用的上游共用。每行一条：',
   'or': '或',
   '. Requests rotate across healthy proxies per request; a proxy that hits a rate limit is cooled down and skipped automatically.': '。请求按次在健康代理间轮转；触发限流的代理会自动冷却并被跳过。',
-  'one per line: http://user:pass@host:port or socks5://host:port': '每行一条：http://user:pass@host:port 或 socks5://host:port',
+  'one per line: socks://b64(user:pass)@host:port#alias, socks5://user:pass@host:port#alias or http://host:port': '每行一条：socks://b64(账号:密码)@host:port#别名、socks5://账号:密码@host:port#别名 或 http://host:port（#别名自动识别）',
   'Proxy list': '代理列表',
   'Rotation strategy': '轮转策略',
   'Round-robin (round_robin)': '轮询（round_robin）',
@@ -1332,12 +1332,14 @@ async function loadAccounts() {
 
 // ========== Proxy binding (account isolation) ==========
 // 代理池列表缓存：账号表与 zen key 表的绑定下拉共用。value 是完整代理 URL
-//（保存需要），label 打码凭据段。
+//（保存需要），展示名优先用别名（粘贴链接 #fragment），无别名时打码凭据段。
 let proxyListCache = [];
+let proxyAliasCache = {};
 async function loadProxyListCache() {
   try {
     const d = await api('GET', '/opencode/config');
     proxyListCache = (d.data.proxies || []).slice();
+    proxyAliasCache = d.data.proxyAliases || {};
   } catch (e) { /* keep previous cache */ }
 }
 const maskProxyLabel = p => String(p || '').replace(/\/\/[^@/]*@/, '//***@');
@@ -1367,10 +1369,11 @@ async function assignProxiesEvenly() {
 //（中日韩字符按 1.5 计，即 2 个汉字触发）。value 语义：'' = 全局（默认，
 // 隔离模式下沿用全局规则）；'direct' = 强制直连；代理 URL = 绑定出口。
 const EGRESS_DIRECT = 'direct';
+// 代理展示名：优先别名（绑定下拉、冷却状态等只显示别名，不暴露完整地址）
 function egLabel(v) {
   if (!v) return T('Global');
   if (v === EGRESS_DIRECT) return T('Direct');
-  return maskProxyLabel(v);
+  return proxyAliasCache[v] || maskProxyLabel(v);
 }
 function egComboHTML(kind, id, slot, value, title, disabled) {
   const t = disabled ? T('Follows the main slot') : title;
@@ -1425,12 +1428,14 @@ function egRenderItems(input, menu, q) {
   const cjk = [...q].filter(c => c.codePointAt(0) > 0x7f).length;
   const ready = q === '' || (cjk > 0 ? cjk >= 2 : q.length >= 3);
   const ql = q.toLowerCase();
+  const matches = p => {
+    const label = egLabel(p).toLowerCase();
+    return label.includes(ql) || p.toLowerCase().includes(ql);
+  };
   const proxies = q === ''
-    ? proxyListCache.map(p => ({ v: p, label: maskProxyLabel(p), active: cur === p }))
+    ? proxyListCache.map(p => ({ v: p, label: egLabel(p), active: cur === p }))
     : (ready
-        ? proxyListCache
-            .filter(p => p.toLowerCase().includes(ql) || maskProxyLabel(p).toLowerCase().includes(ql))
-            .map(p => ({ v: p, label: maskProxyLabel(p), active: cur === p }))
+        ? proxyListCache.filter(matches).map(p => ({ v: p, label: egLabel(p), active: cur === p }))
         : []);
   let html = items.concat(proxies).map(it =>
     '<div class="eg-item' + (it.active ? ' active' : '') + '" data-value="' + esc(it.v) + '">' + esc(it.label) + '</div>'
@@ -2081,14 +2086,14 @@ async function loadProxyPool() {
     const cd = (c.runtime || {}).proxyCooldowns || {};
     const keys = Object.keys(cd);
     _('ppCooldownInfo').textContent = keys.length
-      ? keys.map(k => k + T(' cooldown until ') + fmtWhen(cd[k])).join('; ')
+      ? keys.map(k => egLabel(k) + T(' cooldown until ') + fmtWhen(cd[k])).join('; ')
       : T('No proxies cooling down');
   } catch (e) { /* ignore */ }
 }
 
 async function saveProxyPool() {
   const proxies = _('ppProxies').value.split('\n').map(s => s.trim()).filter(Boolean);
-  const PROXY_RE = /^(https?|socks5h?):\/\/[^\s]+:\d+/;
+  const PROXY_RE = /^(https?|socks5h?|socks):\/\/[^\s]+:\d+/;
   const bad = proxies.find(p => !PROXY_RE.test(p));
   if (bad) { toast(T('Invalid proxy format: ') + bad + ' (need http(s)://host:port or socks5://host:port)', 'error'); return; }
   try {

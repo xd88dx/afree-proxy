@@ -142,6 +142,81 @@ func maskProxyURL(raw string) string {
 	return u.String()
 }
 
+// proxyAliasOf 返回代理的展示别名；未设置别名时回退到打码 URL。
+func proxyAliasOf(raw string) string {
+	cfg := getZenConfig()
+	if alias, ok := cfg.ProxyAliases[raw]; ok && alias != "" {
+		return alias
+	}
+	return maskProxyURL(raw)
+}
+
+// parseProxyLine 把用户粘贴的代理行规范化为网关标准格式，并提取别名。
+//
+// 支持的输入：
+//   - socks://b64(user:pass)@host:port#别名   （常见订阅分享格式：socks scheme、
+//     base64 编码的账号密码、#号后的别名）→ socks5://user:pass@host:port + 别名
+//   - socks5(h)://[user:pass@]host:port[#别名]
+//   - http(s)://[user:pass@]host:port[#别名]
+//
+// userinfo 的 base64 解码是启发式的：仅当不含冒号、可成功解码、且解码结果
+// 含冒号且全部可打印时才采用，否则按明文用户名处理。
+func parseProxyLine(raw string) (canonical string, alias string, err error) {
+	line := strings.TrimSpace(raw)
+	if line == "" {
+		return "", "", nil
+	}
+	// #fragment 是别名（用户可读标注），不属于代理地址本身
+	u, err := url.Parse(line)
+	if err != nil {
+		return "", "", fmt.Errorf("代理格式无效 %q: %v", line, err)
+	}
+	alias = strings.TrimSpace(u.Fragment)
+
+	switch u.Scheme {
+	case "socks":
+		u.Scheme = "socks5"
+	case "socks5", "socks5h", "http", "https":
+	default:
+		return "", "", fmt.Errorf("代理 %q 协议不受支持（支持 http/https/socks5/socks5h，及订阅分享的 socks://）", line)
+	}
+	if u.Host == "" {
+		return "", "", fmt.Errorf("代理 %q 缺少 host:port", line)
+	}
+	if _, _, err := net.SplitHostPort(u.Host); err != nil {
+		return "", "", fmt.Errorf("代理 %q 缺少端口: %v", line, err)
+	}
+
+	// userinfo：常见订阅分享把 user:pass 整体 base64 后放在 @ 前
+	if u.User != nil {
+		info := u.User.String()
+		if u.User.Username() != "" && !strings.Contains(info, ":") {
+			if decoded, derr := base64.StdEncoding.DecodeString(info); derr == nil && len(decoded) > 0 {
+				s := string(decoded)
+				if i := strings.IndexByte(s, ':'); i > 0 && !strings.ContainsAny(s, " \t\r\n@") && isPrintableASCII(s) {
+					u.User = url.UserPassword(s[:i], s[i+1:])
+				}
+			}
+		}
+	}
+
+	// 重建：丢弃 fragment（已提取为别名）与查询串，统一 scheme
+	u.Fragment = ""
+	u.RawQuery = ""
+	u.Path = ""
+	return u.String(), alias, nil
+}
+
+// isPrintableASCII 判断字符串是否全部为可打印 ASCII（base64 误判兜底）。
+func isPrintableASCII(s string) bool {
+	for i := 0; i < len(s); i++ {
+		if s[i] < 0x20 || s[i] > 0x7e {
+			return false
+		}
+	}
+	return true
+}
+
 // buildTransport 构造 Bun/BoringSSL 指纹(h1,官方 CLI 实测只用 http/1.1)+
 // 可注入拨号的 Transport。注意: Bun 指纹 ALPN 只报 http/1.1,握手协商出 h1,
 // 因此不能再 RegisterProtocol("https"→h2),否则 h2 帧解析器会对 h1 明文

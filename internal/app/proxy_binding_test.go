@@ -619,3 +619,51 @@ func mustParseURL(t *testing.T, raw string) *url.URL {
 	}
 	return u
 }
+
+func TestParseProxyLine(t *testing.T) {
+	// 订阅分享格式：socks:// + base64(user:pass) + #别名。
+	// 测试向量用合成凭据 —— 真实代理链接（含真实凭据）绝不能进仓库。
+	line := "socks://dGVzdHVzZXI6dGVzdHBhc3M=@1.2.3.4:1093#socks5-demo-FR"
+	got, alias, err := parseProxyLine(line)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if got != "socks5://testuser:testpass@1.2.3.4:1093" {
+		t.Fatalf("canonical wrong: %q", got)
+	}
+	if alias != "socks5-demo-FR" {
+		t.Fatalf("alias wrong: %q", alias)
+	}
+	// 明文凭据 + socks5 标准格式 + 别名
+	got, alias, err = parseProxyLine("socks5://user:pass@1.2.3.4:1080#my-node")
+	if err != nil || got != "socks5://user:pass@1.2.3.4:1080" || alias != "my-node" {
+		t.Fatalf("plain creds: %q %q %v", got, alias, err)
+	}
+	// 无凭据、无别名
+	got, alias, err = parseProxyLine("socks5://1.2.3.4:1080")
+	if err != nil || got != "socks5://1.2.3.4:1080" || alias != "" {
+		t.Fatalf("no creds: %q %q %v", got, alias, err)
+	}
+	// http 透传，fragment 剥离
+	got, alias, err = parseProxyLine("http://1.2.3.4:8080#FR-1")
+	if err != nil || got != "http://1.2.3.4:8080" || alias != "FR-1" {
+		t.Fatalf("http: %q %q %v", got, alias, err)
+	}
+	// 非法协议
+	if _, _, err := parseProxyLine("ss://xxx@1.2.3.4:443"); err == nil {
+		t.Fatal("unsupported scheme must error")
+	}
+	// 缺端口
+	if _, _, err := parseProxyLine("socks5://1.2.3.4"); err == nil {
+		t.Fatal("missing port must error")
+	}
+	// 空行
+	if _, _, err := parseProxyLine("   "); err != nil {
+		t.Fatalf("blank line must not error: %v", err)
+	}
+	// base64 解码结果不含冒号时按明文用户名处理
+	got, _, err = parseProxyLine("socks://cGxhaW51c2Vy@1.2.3.4:1080")
+	if err != nil || got != "socks5://cGxhaW51c2Vy@1.2.3.4:1080" {
+		t.Fatalf("non-splitting b64: %q %v", got, err)
+	}
+}
