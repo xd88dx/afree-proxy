@@ -12,7 +12,7 @@ import (
 	"sync"
 	"time"
 
-	"cline-go-proxy/internal/kit"
+	"afree-proxy/internal/kit"
 )
 
 // ============ cline "必须流式" 模型自学习 ============

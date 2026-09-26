@@ -6,7 +6,7 @@ Expose `/v1` as a simple stateless OpenAI-compatible endpoint for coding IDEs
 (Cursor, ZCode) and personal agents (OpenClaw). Run in a container, publicly
 exposed, long-lived and lightweight. Rotate multiple **Cline** accounts and
 multiple **OpenCode Zen** accounts round-robin to maximize free-tier limits.
-**Combos**: dashboard-defined alias model IDs (e.g. `cline-proxy`,
+**Combos**: dashboard-defined alias model IDs (e.g. `afree-proxy`,
 `opencode-proxy`) that upstream to a chosen concrete model — same platform only.
 The admin panel is setup/maintenance only, not part of daily operation.
 
@@ -140,7 +140,7 @@ combo from zen's list — cross-platform selection must be impossible).
 - [ ] Dashboard UI (Models section): create/delete combos — free-text alias field
       (your own name), platform picker, then a model dropdown locked to that
       platform's model list. Show target model + platform per combo in the list.
-- [ ] Seed defaults after first deploy: `cline-proxy` → `deepseek/deepseek-v4-pro`
+- [ ] Seed defaults after first deploy: `afree-proxy` → `deepseek/deepseek-v4-pro`
       (cline), `opencode-proxy` → chosen zen free model.
 
 ## M5 — Import / export all credentials

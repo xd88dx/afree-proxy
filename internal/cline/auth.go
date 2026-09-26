@@ -1,7 +1,7 @@
 package cline
 
 import (
-	"cline-go-proxy/internal/kit"
+	"afree-proxy/internal/kit"
 	"encoding/json"
 	"errors"
 	"fmt"

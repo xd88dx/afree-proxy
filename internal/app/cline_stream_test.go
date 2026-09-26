@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"cline-go-proxy/internal/kit"
+	"afree-proxy/internal/kit"
 )
 
 func fakeUpstream(status int, body string) *http.Response {

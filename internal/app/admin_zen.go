@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"cline-go-proxy/internal/kit"
+	"afree-proxy/internal/kit"
 )
 
 // ============ Zen 免费模型管理 API ============

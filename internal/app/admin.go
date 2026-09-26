@@ -2,8 +2,8 @@ package app
 
 import (
 	"bytes"
-	"cline-go-proxy/internal/cline"
-	"cline-go-proxy/internal/kit"
+	"afree-proxy/internal/cline"
+	"afree-proxy/internal/kit"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"

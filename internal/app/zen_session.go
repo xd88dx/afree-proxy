@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"cline-go-proxy/internal/kit"
+	"afree-proxy/internal/kit"
 )
 
 // ============ zen 会话粘性（sticky session） ============

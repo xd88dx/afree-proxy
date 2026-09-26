@@ -3,7 +3,7 @@ package app
 import (
 	"bufio"
 	"bytes"
-	"cline-go-proxy/internal/kit"
+	"afree-proxy/internal/kit"
 	"context"
 	"encoding/json"
 	"fmt"

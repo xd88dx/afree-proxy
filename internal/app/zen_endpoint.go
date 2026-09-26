@@ -10,7 +10,7 @@ import (
 	"strings"
 	"sync"
 
-	"cline-go-proxy/internal/kit"
+	"afree-proxy/internal/kit"
 )
 
 // ============ zen 端点自适应（endpoint auto-learn） ============

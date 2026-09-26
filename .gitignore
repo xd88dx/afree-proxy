@@ -2,9 +2,9 @@
 dist/
 
 # Compiled binary
-cline-proxy
-cline-proxy.exe
-cline-proxy-*
+afree-proxy
+afree-proxy.exe
+afree-proxy-*
 
 # Go workspace
 *.test
@@ -18,8 +18,8 @@ cline-proxy-*
 .zen-endpoints.json
 .cline-stream-required.json
 zen-stats.jsonl
-cline-proxy.log
-cline-proxy-stream.log
+afree-proxy.log
+afree-proxy-stream.log
 data/
 override.md
 # Local debug tool (kept locally, not uploaded)

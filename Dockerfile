@@ -14,7 +14,7 @@ WORKDIR /build
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -ldflags="-s -w" -o cline-proxy .
+RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -ldflags="-s -w" -o afree-proxy .
 
 # ---- opencode CLI（zen 会话收割机用，见 internal/app/zen_harvest.go）----
 # 官方安装方式：npm i -g opencode-ai —— postinstall 按平台/musl/AVX2 自动选二进制，
@@ -75,7 +75,7 @@ RUN set -eux; \
     && addgroup -S app && adduser -S app -G app
 
 WORKDIR /app
-COPY --from=builder /build/cline-proxy .
+COPY --from=builder /build/afree-proxy .
 # 目录拷贝：无 CLI 的架构上空目录，COPY 依旧成功（缺文件才失败）
 COPY --from=opencode-cli /tmp/oc-bin/ /app/bin/
 
@@ -94,5 +94,5 @@ ENV PORT=3457
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
   CMD wget -q -O /dev/null http://127.0.0.1:${PORT}/health || exit 1
 
-ENTRYPOINT ["/app/cline-proxy"]
+ENTRYPOINT ["/app/afree-proxy"]
 CMD []

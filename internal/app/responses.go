@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"cline-go-proxy/internal/kit"
+	"afree-proxy/internal/kit"
 )
 
 // ============================================================================

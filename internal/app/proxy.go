@@ -3,8 +3,8 @@ package app
 import (
 	"bufio"
 	"bytes"
-	"cline-go-proxy/internal/cline"
-	"cline-go-proxy/internal/kit"
+	"afree-proxy/internal/cline"
+	"afree-proxy/internal/kit"
 	"context"
 	"crypto/subtle"
 	"encoding/json"
@@ -373,7 +373,7 @@ func StartProxy(host string, port int) error {
 
 	fmt.Println("")
 	fmt.Println(strings.Repeat("=", 58))
-	fmt.Println("  Cline Go Proxy v1.0 - No CLI Required")
+	fmt.Println("  AFree Proxy v1.0 - No CLI Required")
 	fmt.Println(strings.Repeat("=", 58))
 	fmt.Printf("  http://%s\n", addr)
 	fmt.Printf("  http://%s/v1\n", addr)
@@ -404,10 +404,10 @@ func StartProxy(host string, port int) error {
 	}
 }
 
-// initLogFile 将日志同时输出到控制台与 cline-proxy.log（追加模式），
+// initLogFile 将日志同时输出到控制台与 afree-proxy.log（追加模式），
 // 控制台窗口滚动内容有限，文件可完整保留所有日志。
 func initLogFile() {
-	path := kit.ResolveDataPath("cline-proxy.log")
+	path := kit.ResolveDataPath("afree-proxy.log")
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 	if err != nil {
 		log.Printf("  open log file failed: %v", err)
@@ -2560,7 +2560,7 @@ func handleAnthropicStreamWithUsage(w http.ResponseWriter, upstream *http.Respon
 	// 公网长跑部署默认关闭，避免磁盘无限增长与对话内容留存
 	var streamLog *os.File
 	if StreamLogEnabled() {
-		if sf, err := os.OpenFile(kit.ResolveDataPath("cline-proxy-stream.log"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644); err == nil {
+		if sf, err := os.OpenFile(kit.ResolveDataPath("afree-proxy-stream.log"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644); err == nil {
 			streamLog = sf
 		}
 	}

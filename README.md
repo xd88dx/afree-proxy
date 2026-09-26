@@ -1,4 +1,4 @@
-# Cline Proxy
+# AFree Proxy
 
 A single Go binary that turns free upstream LLM quotas (Cline accounts + opencode zen free models) into one clean **OpenAI-compatible `/v1` gateway** for coding IDEs — Cursor, ZCode, Cline, Claude Code, OpenClaw — with account pooling, per-request proxy rotation, and an English admin panel.
 
@@ -7,7 +7,7 @@ Fork-in-progress of [YuJunZhiXue/Cline-proxy](https://github.com/YuJunZhiXue/Cli
 ## What it does
 
 ```
-Cursor / ZCode / Cline / Claude Code ──►  cline-proxy  ──►  cline account pool (round-robin)
+Cursor / ZCode / Cline / Claude Code ──►  afree-proxy  ──►  cline account pool (round-robin)
    /v1/chat/completions                        │
    /v1/messages (Anthropic)                    ├─►  opencode zen free models (multi-key, proxy pool)
    /v1/responses (OpenAI Responses)            │
@@ -24,7 +24,7 @@ Cursor / ZCode / Cline / Claude Code ──►  cline-proxy  ──►  cline ac
 ## Quick start (Docker)
 
 ```bash
-docker run -d --name cline-proxy \
+docker run -d --name afree-proxy \
   -p 3457:3457 \
   -v cline-proxy-data:/app/data \
   -e PORT=3457 \
@@ -37,7 +37,7 @@ curl http://127.0.0.1:3457/health
 
 Then open `http://127.0.0.1:3457/admin/`, log in with `ADMIN_PASSWORD`, and add accounts or zen keys. The image is multi-arch (`linux/amd64`, `linux/arm64`); `:latest` tracks `main`, version tags (`vX.Y.Z`) and `:sha-xxxxxx` tags are also published.
 
-> The image name follows the GitHub repository name. If your repo is named differently, replace `cline-proxy` with the repo name (GHCR images are always lowercase).
+> The image name follows the GitHub repository name. If your repo is named differently, replace `afree-proxy` with the repo name (GHCR images are always lowercase).
 
 ## Portainer stack template
 
@@ -45,9 +45,9 @@ Paste into Portainer → **Stacks → Add stack**, fill in the environment varia
 
 ```yaml
 services:
-  cline-proxy:
+  afree-proxy:
     image: ghcr.io/foxy1402/cline-proxy:latest
-    container_name: cline-proxy
+    container_name: afree-proxy
     restart: unless-stopped
     ports:
       - "${PROXY_PORT:-3457}:${PROXY_PORT:-3457}"
@@ -141,7 +141,7 @@ The zen free tier only accepts session IDs the upstream has actually seen, minte
 or on the command line:
 
 ```bash
-docker run -d --name cline-proxy -p 3457:3457\
+docker run -d --name afree-proxy -p 3457:3457\
   -v cline-proxy-data:/app/data\
   -e API_KEY=... -e ADMIN_PASSWORD=... -e ZEN_KEYS=...\
   -e ZEN_HARVEST_INTERVAL_HOURS=2\
@@ -217,7 +217,7 @@ Known upstream quirks (not gateway bugs): zen's `muse-spark-*-free` models only 
 
 ```bash
 go build ./... && go vet ./...
-./cline-proxy -host 127.0.0.1 -port 3457   # or: go run . 
+./afree-proxy -host 127.0.0.1 -port 3457   # or: go run . 
 ./start.sh                                  # build-or-docker wrapper
 docker compose up -d --build                # build from source (PROXY_PORT to change the port)
 ```

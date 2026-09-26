@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Cline Go Proxy 一键启动脚本
+# AFree Proxy 一键启动脚本
 # 用法: ./start.sh [端口号]   (默认 3457)
 # 前台运行，Ctrl+C 停止；日志同时输出到终端和 data/start.log
 
@@ -47,11 +47,11 @@ LOG_FILE="data/start.log"
 
 if command -v go >/dev/null 2>&1; then
   echo "==> 使用本机 Go 构建..."
-  go build -o cline-proxy . || { echo "错误: go build 失败" >&2; exit 1; }
-  echo "==> 启动 cline-proxy (host 0.0.0.0, port $PORT)"
+  go build -o afree-proxy . || { echo "错误: go build 失败" >&2; exit 1; }
+  echo "==> 启动 afree-proxy (host 0.0.0.0, port $PORT)"
   echo "==> 管理后台: http://127.0.0.1:$PORT/admin/"
   echo "==> 停止方式: Ctrl+C；日志文件: $LOG_FILE"
-  exec ./cline-proxy -host 0.0.0.0 -port "$PORT" 2>&1 | tee "$LOG_FILE"
+  exec ./afree-proxy -host 0.0.0.0 -port "$PORT" 2>&1 | tee "$LOG_FILE"
 else
   if ! command -v docker >/dev/null 2>&1; then
     echo "错误: 未找到 Go，也未找到 Docker，无法启动。" >&2
@@ -65,12 +65,12 @@ else
     exit 1
   fi
   echo "==> 本机无 Go，使用 Docker 构建..."
-  docker build -t cline-proxy-local . >/dev/null || { echo "错误: docker build 失败" >&2; exit 1; }
+  docker build -t afree-proxy-local . >/dev/null || { echo "错误: docker build 失败" >&2; exit 1; }
   echo "==> 启动容器 (host 端口 $PORT -> 容器 3457)"
   echo "==> 管理后台: http://127.0.0.1:$PORT/admin/"
   echo "==> 停止方式: Ctrl+C；日志文件: $LOG_FILE"
   DOCKER_ARGS=(
-    --rm -i --name cline-proxy-local
+    --rm -i --name afree-proxy-local
     -p "$PORT:3457"
     -v "$ROOT_DIR/data:/app/data"
   )
@@ -79,5 +79,5 @@ else
     DOCKER_ARGS+=(-v "$ROOT_DIR/override.md:/app/override.md:ro")
   fi
   # 前台跟随容器，sig-proxy 默认转发信号，Ctrl+C 即停止容器，不留后台进程
-  exec docker run "${DOCKER_ARGS[@]}" cline-proxy-local -host 0.0.0.0 -port 3457 2>&1 | tee "$LOG_FILE"
+  exec docker run "${DOCKER_ARGS[@]}" afree-proxy-local -host 0.0.0.0 -port 3457 2>&1 | tee "$LOG_FILE"
 fi

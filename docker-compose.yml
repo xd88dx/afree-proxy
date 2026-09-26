@@ -2,9 +2,9 @@
 # to start otherwise). Provide them in a sibling .env file.
 # PROXY_PORT customizes the listen/mapped port (default 3457).
 services:
-  cline-proxy:
+  afree-proxy:
     build: .
-    container_name: cline-proxy
+    container_name: afree-proxy
     restart: unless-stopped
     ports:
       - "${PROXY_PORT:-3457}:${PROXY_PORT:-3457}"
@@ -52,7 +52,7 @@ services:
   # Uncomment, set DOMAIN in .env, then `docker compose --profile tls up -d`.
   # caddy:
   #   image: caddy:2-alpine
-  #   container_name: cline-proxy-tls
+  #   container_name: afree-proxy-tls
   #   restart: unless-stopped
   #   profile: tls
   #   ports:
@@ -65,7 +65,7 @@ services:
   #     - caddy_data:/data
   #     - caddy_config:/config
   #   depends_on:
-  #     - cline-proxy
+  #     - afree-proxy
 
 # volumes:
 #   caddy_data:

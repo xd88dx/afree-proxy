@@ -1,7 +1,7 @@
 package app
 
 import (
-	"cline-go-proxy/internal/kit"
+	"afree-proxy/internal/kit"
 	"encoding/json"
 	"log"
 	"os"

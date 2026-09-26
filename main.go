@@ -1,7 +1,7 @@
 package main
 
 import (
-	"cline-go-proxy/internal/app"
+	"afree-proxy/internal/app"
 	"flag"
 	"fmt"
 	"log"
@@ -72,9 +72,9 @@ func main() {
 }
 
 func buildAndStart(host string, port int) {
-	exe := "cline-proxy.exe"
+	exe := "afree-proxy.exe"
 	if runtime.GOOS != "windows" {
-		exe = "./cline-proxy"
+		exe = "./afree-proxy"
 	}
 
 	fmt.Println("Building proxy...")
@@ -90,7 +90,7 @@ func buildAndStart(host string, port int) {
 	running := false
 	if runtime.GOOS == "windows" {
 		out, _ := exec.Command("powershell", "-Command",
-			"Get-Process cline-proxy -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Id").Output()
+			"Get-Process afree-proxy -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Id").Output()
 		if len(out) > 0 {
 			running = true
 		}

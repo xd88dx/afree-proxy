@@ -270,7 +270,7 @@ func SystemPromptOverrideEnabled() bool {
 }
 
 // StreamLogEnabled STREAM_LOG=true 时把 Anthropic 流式路径的原始 SSE 事件
-// 落盘到 cline-proxy-stream.log（完整对话内容、无大小上限），默认关闭。
+// 落盘到 afree-proxy-stream.log（完整对话内容、无大小上限），默认关闭。
 func StreamLogEnabled() bool {
 	v, _ := envBool("STREAM_LOG")
 	return v

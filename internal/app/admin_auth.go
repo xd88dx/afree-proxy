@@ -1,7 +1,7 @@
 package app
 
 import (
-	"cline-go-proxy/internal/kit"
+	"afree-proxy/internal/kit"
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"

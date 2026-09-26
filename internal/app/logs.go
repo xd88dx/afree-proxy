@@ -12,7 +12,7 @@ import (
 	"sync"
 	"time"
 
-	"cline-go-proxy/internal/kit"
+	"afree-proxy/internal/kit"
 )
 
 // RequestLog 单条代理请求记录（对话/API 调用历史）

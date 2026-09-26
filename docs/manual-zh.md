@@ -36,14 +36,14 @@ Cursor / ZCode / Cline / Claude Code 等 IDE
 ### 2.1 Docker 运行（推荐）
 
 ```bash
-docker run -d --name cline-proxy --restart unless-stopped \
+docker run -d --name afree-proxy --restart unless-stopped \
   -p 3457:3457 \
   -v cline-proxy-data:/app/data \
   -e PORT=3457 \
   -e API_KEY=换成长随机串 \
   -e ADMIN_PASSWORD=换成管理密码 \
   -e ZEN_KEYS=你的zenkey1,你的zenkey2 \
-  cline-proxy:local
+  afree-proxy:local
 ```
 
 - 监听非回环地址时必须设置 `API_KEY` 和 `ADMIN_PASSWORD`，否则**拒绝启动**（fail-closed）。
@@ -172,14 +172,14 @@ docker compose up -d --build
 ## 5. 日常运维
 
 ```bash
-docker logs -f cline-proxy        # 跟踪日志
-docker restart cline-proxy        # 重启
-docker stats cline-proxy          # 资源占用
-docker cp cline-proxy:/app/data ./backup   # 备份数据
+docker logs -f afree-proxy        # 跟踪日志
+docker restart afree-proxy        # 重启
+docker stats afree-proxy          # 资源占用
+docker cp afree-proxy:/app/data ./backup   # 备份数据
 ```
 
-- **升级**：拉新镜像后 `docker rm -f cline-proxy` 再按原命令重建（数据卷不动即保数据）。
-- **日志文件**：`data/cline-proxy.log`（运行日志）、`requests.jsonl`（请求元数据）、`zen-stats.jsonl`（OpenCode 统计）。
+- **升级**：拉新镜像后 `docker rm -f afree-proxy` 再按原命令重建（数据卷不动即保数据）。
+- **日志文件**：`data/afree-proxy.log`（运行日志）、`requests.jsonl`（请求元数据）、`zen-stats.jsonl`（OpenCode 统计）。
 
 ---
 
