@@ -1824,6 +1824,7 @@ func callZenResponsesAPI(ctx context.Context, params map[string]any, stream bool
 		req.Header.Set("x-opencode-project", "global")
 		log.Printf("  zen upstream: model=%s responses stream=%v via=%s key=#%d attempt=%d session=%s",
 			zm.ID, stream, viaProxy, keyIndex(key), attempt+1, kit.Truncate(sess, 24))
+		setUpstreamInfo(ctx, fmt.Sprintf("key#%d", keyIndex(key)))
 
 		resp, err := proxyClientFor(proxyURL).Do(req)
 		if err != nil {
@@ -2038,6 +2039,7 @@ func callZenAPI(ctx context.Context, params map[string]any, stream bool, opts ..
 
 		log.Printf("  zen upstream: model=%s stream=%v msgs=%d via=%s key=#%d attempt=%d session=%s",
 			body["model"], stream, getMsgCount(params), viaProxy, keyIndex(key), attempt+1, kit.Truncate(sess, 24))
+		setUpstreamInfo(ctx, fmt.Sprintf("key#%d", keyIndex(key)))
 
 		resp, err := proxyClientFor(proxyURL).Do(req)
 		if err != nil {

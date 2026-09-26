@@ -933,6 +933,7 @@ func callClineAPI(ctx context.Context, params map[string]any, stream bool, usePr
 	main, backup, bound := accountProxyBinding(acc)
 	log.Printf("  upstream: account=%s stream=%v tools=%d msgs=%d max_tokens=%v effort=%v useProxies=%v boundExit=%v",
 		truncateEmail(acc.Email), stream, toolCount, getMsgCount(params), body["max_tokens"], body["reasoning_effort"], useProxies, bound)
+	setUpstreamInfo(ctx, fmt.Sprintf("账号#%d", accountNumber(acc)))
 	client := kit.HTTPClient
 	attempts := 1
 	switch {

@@ -460,6 +460,23 @@ func pickAccountAny() *Account {
 	return fallback
 }
 
+// accountNumber 账号在池中的序号（1 基，请求日志展示用）；找不到返回 0。
+// 比较指针身份：池内账号是共享指针，选号返回的就是池里的那个。
+func accountNumber(acc *Account) int {
+	if acc == nil {
+		return 0
+	}
+	p := loadPool()
+	poolMu.Lock()
+	defer poolMu.Unlock()
+	for i, a := range p.Accounts {
+		if a == acc {
+			return i + 1
+		}
+	}
+	return 0
+}
+
 func ensureAccountToken(acc *Account) (string, error) {
 	// 静态 API key 账号：token 即凭证，永不过期、永不刷新
 	if acc.APIToken != "" {

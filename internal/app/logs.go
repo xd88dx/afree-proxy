@@ -2,6 +2,7 @@ package app
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -25,7 +26,32 @@ type RequestLog struct {
 	Route    string    `json:"route"` // zen | cline | admin | other
 	Status   int       `json:"status"`
 	Duration int64     `json:"duration_ms"`
+	Upstream string    `json:"upstream,omitempty"` // 命中的上游：账号#N 或 key#N
 	Note     string    `json:"note,omitempty"`
+}
+
+// upstreamInfo 挂在请求 context 上的可写槽位：处理链深处（选号/选 key 处）
+// 写入命中的账号/key 序号，请求日志中间件在请求收尾时读出。槽位本身随
+// context 传递，不引入全局状态，也不改变任何函数签名。
+type upstreamInfo struct{ label string }
+
+type upstreamCtxKey struct{}
+
+func withUpstreamInfo(ctx context.Context) (context.Context, *upstreamInfo) {
+	ui := &upstreamInfo{}
+	return context.WithValue(ctx, upstreamCtxKey{}, ui), ui
+}
+
+// setUpstreamInfo 记录本次请求命中的上游（cline 账号序号 / zen key 序号）。
+// 同一请求内重试、换号时后写覆盖先写 —— 展示最终实际服务的上游。
+// ctx 里没有槽位（面板 Test、内部压缩等非日志请求路径）时是空操作。
+func setUpstreamInfo(ctx context.Context, label string) {
+	if label == "" || ctx == nil {
+		return
+	}
+	if ui, ok := ctx.Value(upstreamCtxKey{}).(*upstreamInfo); ok {
+		ui.label = label
+	}
 }
 
 const (
@@ -154,6 +180,8 @@ func requestLogMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 		sw := &statusWriter{ResponseWriter: w}
+		upCtx, upstream := withUpstreamInfo(r.Context())
+		r = r.WithContext(upCtx)
 
 		r.Body = http.MaxBytesReader(w, r.Body, MaxRequestBodyBytes())
 
@@ -195,7 +223,7 @@ func requestLogMiddleware(next http.Handler) http.Handler {
 		switch {
 		case strings.HasPrefix(r.URL.Path, "/admin"):
 			route = "admin"
-		case strings.HasPrefix(model, "zen/"):
+		case strings.HasPrefix(model, "zen/") || strings.HasPrefix(model, "opencode/"):
 			route = "zen"
 		case model != "":
 			route = "cline"
@@ -215,6 +243,7 @@ func requestLogMiddleware(next http.Handler) http.Handler {
 			Route:    route,
 			Status:   sw.status,
 			Duration: time.Since(start).Milliseconds(),
+			Upstream: upstream.label,
 		})
 	})
 }
