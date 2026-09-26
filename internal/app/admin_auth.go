@@ -282,7 +282,7 @@ func clientIP(r *http.Request) string {
 // adminLoginPageHTML 未认证时 /admin/ 返回的独立登录页（不暴露完整面板 HTML）。
 const adminLoginPageHTML = `<!DOCTYPE html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Cline Proxy - Login</title>
+<title>AFree Proxy - Login</title>
 <style>
 body{font-family:system-ui,sans-serif;background:#0f1115;color:#e6e6e6;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0}
 .card{background:#1a1d24;padding:32px;border-radius:12px;width:320px;box-shadow:0 8px 32px rgba(0,0,0,.4)}
@@ -291,12 +291,39 @@ input{width:100%;box-sizing:border-box;padding:10px 12px;border-radius:8px;borde
 button{width:100%;padding:10px;border-radius:8px;border:0;background:#4f7cff;color:#fff;font-size:14px;cursor:pointer}
 button:disabled{opacity:.6;cursor:wait}
 #err{color:#ff6b6b;font-size:13px;min-height:18px;margin-bottom:8px;text-align:center}
+#lang{position:fixed;top:12px;right:12px;width:auto;padding:4px 12px;background:#2c3038;font-size:12px}
 </style></head><body>
-<div class="card"><h1>Cline Proxy Admin Login</h1>
+<button id="lang" title="Switch language / 切换语言"></button>
+<div class="card"><h1>AFree Proxy Admin Login</h1>
 <div id="err"></div>
 <input type="password" id="pw" placeholder="Admin password (ADMIN_PASSWORD)" autofocus>
 <button id="go">Log in</button></div>
 <script>
+// 与主面板共享 localStorage 偏好（同源）；切换即刷新，字典以英文原文为键。
+let LANG = localStorage.getItem('lang') === 'zh' ? 'zh' : 'en';
+const ZH = {
+  'AFree Proxy - Login': 'AFree Proxy - 登录',
+  'AFree Proxy Admin Login': 'AFree Proxy 管理登录',
+  'Admin password (ADMIN_PASSWORD)': '管理面板密码（ADMIN_PASSWORD）',
+  'Log in': '登录'
+};
+function applyLang() {
+  document.getElementById('lang').textContent = LANG === 'zh' ? 'EN' : '中';
+  if (LANG !== 'zh') return;
+  document.title = ZH[document.title] || document.title;
+  const h1 = document.querySelector('h1');
+  if (h1 && ZH[h1.textContent.trim()]) h1.textContent = ZH[h1.textContent.trim()];
+  const pw = document.getElementById('pw');
+  if (pw && ZH[pw.placeholder]) pw.placeholder = ZH[pw.placeholder];
+  const go = document.getElementById('go');
+  if (go && ZH[go.textContent.trim()]) go.textContent = ZH[go.textContent.trim()];
+  document.documentElement.lang = 'zh-CN';
+}
+document.getElementById('lang').onclick = function() {
+  localStorage.setItem('lang', LANG === 'zh' ? 'en' : 'zh');
+  location.reload();
+};
+applyLang();
 const b=document.getElementById('go'),e=document.getElementById('err');
 async function login(){b.disabled=true;e.textContent='';
  try{const r=await fetch('/admin/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:document.getElementById('pw').value})});

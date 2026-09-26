@@ -83,6 +83,8 @@ func registerAdminRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/admin/api/accounts/delete-all", adminCORS(auth(handleAdminDeleteAll)))
 	mux.HandleFunc("/admin/api/accounts/reset", adminCORS(auth(handleAdminAccountReset)))
 	mux.HandleFunc("/admin/api/accounts/export", adminCORS(auth(handleAccountsExport)))
+	mux.HandleFunc("/admin/api/accounts/proxy", adminCORS(auth(handleAdminAccountSetProxy)))
+	mux.HandleFunc("/admin/api/accounts/proxy/assign", adminCORS(auth(handleAdminAssignProxies)))
 	mux.HandleFunc("/admin/api/logs", adminCORS(auth(handleRequestLogs)))
 	mux.HandleFunc("/admin/api/keys", adminCORS(auth(handleAdminGetKeys)))
 	mux.HandleFunc("/admin/api/keys/generate", adminCORS(auth(handleAdminGenerateKey)))
@@ -108,6 +110,8 @@ func registerAdminRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/admin/api/zen/models/refresh", adminCORS(auth(handleZenModelsRefresh)))
 	mux.HandleFunc("/admin/api/zen/stats", adminCORS(auth(handleZenStats)))
 	mux.HandleFunc("/admin/api/zen/keys/test", adminCORS(auth(handleZenKeyTest)))
+	mux.HandleFunc("/admin/api/zen/keys/proxy", adminCORS(auth(handleZenKeySetProxy)))
+	mux.HandleFunc("/admin/api/opencode/keys/proxy", adminCORS(auth(handleZenKeySetProxy)))
 	mux.HandleFunc("/admin/api/zen/sessions", adminCORS(auth(handleZenSessions)))
 	mux.HandleFunc("/admin/api/zen/sessions/mint", adminCORS(auth(handleZenSessionsMint)))
 	mux.HandleFunc("/admin/zen/", func(w http.ResponseWriter, r *http.Request) {
@@ -812,7 +816,24 @@ func testAccount(acc *Account) (map[string]any, string) {
 	}
 	req.Header = clineHeaders(token, sessionID)
 
-	resp, err := kit.HTTPClient.Do(req)
+	// 出口：绑定账号（隔离模式）必须从绑定出口探测 —— 探测同样是一次真实
+	// 上游请求，从服务器本机 IP 发出会破坏"一个账号一个 IP"的隔离。绑定
+	// 出口全不可用时按冷却回报，不降级直连（与正常请求的"跳过"语义一致）。
+	probeClient := kit.HTTPClient
+	if main, backup, bound := accountProxyBinding(acc); bound {
+		proxyURL, _, ok := pickBoundProxy(main, backup)
+		if !ok {
+			return map[string]any{
+				"accountId": acc.AccountID,
+				"email":     acc.Email,
+				"status":    "cooldown",
+				"reason":    "bound proxies unavailable (cooling or removed); probe skipped by proxy isolation",
+			}, "cooldown"
+		}
+		probeClient = proxyClientFor(proxyURL)
+	}
+
+	resp, err := probeClient.Do(req)
 	if err != nil {
 		// 网络错误：5 分钟短冷却（恢复时间取返回值，避免锁外读账号字段）
 		reason := "network error: " + err.Error()
@@ -1057,9 +1078,58 @@ func handleAdminDeleteKey(w http.ResponseWriter, r *http.Request) {
 	writeAPI(w, http.StatusOK, apiResponse{Success: true, Message: "Key deleted"})
 }
 
+// POST /admin/api/accounts/proxy  body: { accountId, main, backup }
+// 设置/清除账号的绑定出口（代理隔离，proxy_binding.go）。main/backup 传空串
+// 即清除对应槽位；两者都为空 = 解除绑定，账号回到全局代理规则。
+func handleAdminAccountSetProxy(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		writeAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
+		return
+	}
+	body, err := io.ReadAll(io.LimitReader(r.Body, 4096))
+	if err != nil {
+		writeAPI(w, http.StatusBadRequest, apiResponse{Error: err.Error()})
+		return
+	}
+	defer r.Body.Close()
+	var req struct {
+		AccountID string `json:"accountId"`
+		Main      string `json:"main"`
+		Backup    string `json:"backup"`
+	}
+	if err := json.Unmarshal(body, &req); err != nil {
+		writeAPI(w, http.StatusBadRequest, apiResponse{Error: "invalid JSON"})
+		return
+	}
+	if req.AccountID == "" {
+		writeAPI(w, http.StatusBadRequest, apiResponse{Error: "accountId is required"})
+		return
+	}
+	if err := setAccountProxyBinding(req.AccountID, req.Main, req.Backup); err != nil {
+		writeAPI(w, http.StatusBadRequest, apiResponse{Error: err.Error()})
+		return
+	}
+	writeAPI(w, http.StatusOK, apiResponse{Success: true, Message: "Proxy binding saved"})
+}
+
+// POST /admin/api/accounts/proxy/assign
+// 把代理池按顺序均匀分配给全部账号：主 = 池[i%m]，辅 = 池[(i+1)%m]（池 ≥ 2）。
+// 覆盖式 —— 已有手工绑定会被替换。
+func handleAdminAssignProxies(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		writeAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
+		return
+	}
+	n, err := assignProxiesEvenly()
+	if err != nil {
+		writeAPI(w, http.StatusBadRequest, apiResponse{Error: err.Error()})
+		return
+	}
+	writeAPI(w, http.StatusOK, apiResponse{Success: true, Message: fmt.Sprintf("Assigned proxies to %d accounts (main = pool[i%%m], backup = pool[(i+1)%%m])", n)})
+}
+
 // GET /admin/api/config
-func handleAdminConfig(w http.ResponseWriter, r *http.Request) {
-	if r.Method != "GET" {
+func handleAdminConfig(w http.ResponseWriter, r *http.Request) {	if r.Method != "GET" {
 		writeAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
 		return
 	}

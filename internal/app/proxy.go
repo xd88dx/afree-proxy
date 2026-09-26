@@ -894,7 +894,8 @@ var clineAPIBase = cline.ClineAPIBase
 
 // callClineAPI 调用 cline 上游。
 // ctx 来自客户端请求: IDE abort/取消时立即终止,不冷却账号。
-// useProxies 为 true 时走出口代理池（每次尝试 round-robin 挑选）;
+// 账号有绑定出口（隔离模式）时永远只从绑定出口发出,绑定优先于 useProxies;
+// 未绑定账号在 useProxies 为 true 时走共享出口代理池（每次尝试轮转挑选）;
 // 代理路径上的网络错误只冷却代理本身,绝不冷却账号 —— 代理故障不污染账号池。
 func callClineAPI(ctx context.Context, params map[string]any, stream bool, useProxies bool) (*http.Response, *Account, error) {
 	acc := pickAccount()
@@ -922,21 +923,41 @@ func callClineAPI(ctx context.Context, params map[string]any, stream bool, usePr
 			toolCount = len(t)
 		}
 	}
-	log.Printf("  upstream: account=%s stream=%v tools=%d msgs=%d max_tokens=%v effort=%v proxies=%v",
-		truncateEmail(acc.Email), stream, toolCount, getMsgCount(params), body["max_tokens"], body["reasoning_effort"], useProxies)
-
-	// 代理模式: 网络错误冷却该出口并换下一个代理重试（最多 3 次）,
-	// 不冷却账号; 直连模式: 保持原语义（网络错误 5 分钟短冷却）。
+	// 出口选择（见 proxy_binding.go）：
+	//   - 隔离模式且账号有绑定：只在 {主, 辅} 内尝试（至多 2 次），绑定出口
+	//     全不可用时报错且不冷却账号 —— 绝不退回其他出口或直连（pickAccount
+	//     已过滤掉双不可用的账号，这里 !ok 只剩选号与拨号之间的窄竞态窗口）。
+	//   - 未绑定 + useProxies：旧规则，每次尝试全局轮转挑代理（至多 3 次）。
+	//   - 未绑定 + 直连：1 次，网络错误 5 分钟短冷却（原语义）。
+	// 代理路径上的网络错误只冷却代理本身,绝不冷却账号 —— 代理故障不污染账号池。
+	main, backup, bound := accountProxyBinding(acc)
+	log.Printf("  upstream: account=%s stream=%v tools=%d msgs=%d max_tokens=%v effort=%v useProxies=%v boundExit=%v",
+		truncateEmail(acc.Email), stream, toolCount, getMsgCount(params), body["max_tokens"], body["reasoning_effort"], useProxies, bound)
 	client := kit.HTTPClient
 	attempts := 1
-	if useProxies {
+	switch {
+	case bound:
+		attempts = 2
+	case useProxies:
 		attempts = 3
 	}
 	var resp *http.Response
 	var lastErr error
 	for i := 0; i < attempts; i++ {
 		proxyURL, pidx := "", -1
-		if useProxies {
+		if bound {
+			var ok bool
+			proxyURL, pidx, ok = pickBoundProxy(main, backup)
+			if !ok {
+				return nil, acc, fmt.Errorf("account %s bound proxies unavailable (cooling or removed); account skipped by proxy isolation", truncateEmail(acc.Email))
+			}
+			client = proxyClientFor(proxyURL)
+			if proxyURL == "" {
+				log.Printf("  cline upstream via bound exit direct (no proxy)")
+			} else {
+				log.Printf("  cline upstream via bound exit %s", maskProxyURL(proxyURL))
+			}
+		} else if useProxies {
 			proxyURL, pidx = pickUpstreamProxy()
 			client = proxyClientFor(proxyURL)
 			log.Printf("  cline upstream via %s", maskProxyURL(proxyURL))

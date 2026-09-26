@@ -243,26 +243,46 @@ var harvestRunFn = runHarvestCLI
 
 // runHarvestCLI 跑一条最小 run。只为在服务端 mint session，不关心回答内容
 // （回答可能因 key 配额 429，但 session 在 run 开始即已创建）。
-// 收割 run 不走任何代理：直连公网（容器须能直连 opencode.ai；代理池是给
-// 网关上游用的，收割是 CLI 自己的注册握手）。
-func runHarvestCLI(ctx context.Context, bin, home, model string) harvestRunResult {
+// 出口：默认直连公网（容器须能直连 opencode.ai）；代理隔离模式下绑定了
+// 代理的 key 走绑定出口（proxyURL 非空）—— 同一会话 ID 必须始终来自同一
+// IP，否则该 key 的隔离形同虚设。
+func runHarvestCLI(ctx context.Context, bin, home, model, proxyURL string) harvestRunResult {
 	start := time.Now()
 	cmd := exec.CommandContext(ctx, bin, "run",
 		"--model", model,
 		"Reply with exactly: OK")
 	cmd.Dir = home
-	cmd.Env = append(os.Environ(),
-		"HOME="+home,
-		"XDG_DATA_HOME="+filepath.Join(home, ".local", "share"),
-		"XDG_CONFIG_HOME="+filepath.Join(home, ".config"),
-		"HTTP_PROXY=",
-		"HTTPS_PROXY=",
-		"http_proxy=",
-		"https_proxy=",
-		"ALL_PROXY=",
-		"all_proxy=",
-		"NO_PROXY=*",
-	)
+	if proxyURL == "" {
+		// 直连：清空全部代理变量，防止宿主环境泄漏
+		cmd.Env = append(os.Environ(),
+			"HOME="+home,
+			"XDG_DATA_HOME="+filepath.Join(home, ".local", "share"),
+			"XDG_CONFIG_HOME="+filepath.Join(home, ".config"),
+			"HTTP_PROXY=",
+			"HTTPS_PROXY=",
+			"http_proxy=",
+			"https_proxy=",
+			"ALL_PROXY=",
+			"all_proxy=",
+			"NO_PROXY=*",
+		)
+	} else {
+		// 绑定出口：CLI 自身的 TLS 握手端到端直连上游（CONNECT 隧道），
+		// 指纹比网关侧 uTLS 更真实。Bun 对 socks5 代理环境变量的支持不确定，
+		// 调用方已对 socks5 绑定打过日志警告。
+		cmd.Env = append(os.Environ(),
+			"HOME="+home,
+			"XDG_DATA_HOME="+filepath.Join(home, ".local", "share"),
+			"XDG_CONFIG_HOME="+filepath.Join(home, ".config"),
+			"HTTP_PROXY="+proxyURL,
+			"HTTPS_PROXY="+proxyURL,
+			"http_proxy="+proxyURL,
+			"https_proxy="+proxyURL,
+			"ALL_PROXY="+proxyURL,
+			"all_proxy="+proxyURL,
+			"NO_PROXY=localhost,127.0.0.1,::1",
+		)
+	}
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
@@ -357,6 +377,33 @@ func harvestSession(ctx context.Context, key string) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, harvestKeyBudget())
 	defer cancel()
 
+	// 出口：隔离模式下走该 key 绑定的代理（主→辅）；绑定出口全不可用则
+	// 本轮直接跳过铸造（下轮巡检/下次 403 再试），绝不退回直连 —— mint 出
+	// 的会话若与本 key 的日常出口不同 IP，隔离就白做了。未绑定 key 直连
+	//（与旧规则一致）。socks5 绑定经本地 HTTP CONNECT 桥转发（socks_bridge.go）：
+	// CLI 只认 http 代理环境变量（Bun 对 socks5 无文档背书），socks5 拨号由
+	// 网关自己完成，杜绝"CLI 无视代理静默直连"的可能。
+	harvestProxy := ""
+	if main, backup, bound := zenKeyBindingOf(key); bound {
+		u, _, ok := pickBoundProxy(main, backup)
+		if !ok {
+			return "", fmt.Errorf("harvest: bound proxies for this key are cooling or removed; skipping mint this round")
+		}
+		if isSocksProxy(u) {
+			bridge, err := startSocksBridge(ctx, u)
+			if err != nil {
+				return "", fmt.Errorf("harvest: socks bridge: %w", err)
+			}
+			defer bridge.close()
+			harvestProxy = bridge.httpProxyURL()
+			log.Printf("zen harvest: key#%d minting via socks5 exit %s (local http bridge %s)",
+				keyIndex(key), maskProxyURL(u), harvestProxy)
+		} else {
+			harvestProxy = u
+			log.Printf("zen harvest: key#%d minting via bound exit %s", keyIndex(key), maskProxyURL(u))
+		}
+	}
+
 	bin := harvestBin()
 	home := harvestHomeForKey(key)
 	authPath := harvestAuthPath(home)
@@ -402,7 +449,7 @@ func harvestSession(ctx context.Context, key string) (string, error) {
 				break // 每 key 预算耗尽，再试也是立刻失败
 			}
 			runCtx, cancel := context.WithTimeout(ctx, harvestRunTimeout())
-			res := harvestRunFn(runCtx, bin, home, model)
+			res := harvestRunFn(runCtx, bin, home, model, harvestProxy)
 			cancel()
 			last = res
 			if s := latestHarvestSession(home); s != "" && s != before {

@@ -5,6 +5,11 @@ FROM golang:1.26-alpine AS builder
 ARG TARGETOS
 ARG TARGETARCH
 
+# Optional module-proxy override for restricted networks (CI leaves it unset
+# and keeps the Go default): --build-arg GOPROXY_MIRROR=https://goproxy.cn,direct
+ARG GOPROXY_MIRROR
+RUN if [ -n "${GOPROXY_MIRROR:-}" ]; then go env -w GOPROXY="$GOPROXY_MIRROR"; fi
+
 WORKDIR /build
 COPY go.mod go.sum ./
 RUN go mod download
@@ -29,10 +34,16 @@ FROM node:22-alpine AS opencode-cli
 ARG TARGETARCH
 ARG BUILDARCH
 ARG OPENCODE_VERSION=1.18.31
+# Optional npm registry override (CI unset = official registry):
+# --build-arg NPM_REGISTRY=https://registry.npmmirror.com
+ARG NPM_REGISTRY
 RUN set -eux; \
+    REG=""; \
+    if [ -n "${NPM_REGISTRY:-}" ]; then REG="--registry=$NPM_REGISTRY"; fi; \
+    reg="${NPM_REGISTRY:-https://registry.npmjs.org}"; \
     mkdir -p /tmp/oc-bin; \
     if [ "$TARGETARCH" = "$BUILDARCH" ]; then \
-      npm i -g "opencode-ai@${OPENCODE_VERSION}" --no-audit --no-fund; \
+      npm i -g "opencode-ai@${OPENCODE_VERSION}" --no-audit --no-fund $REG; \
       opencode --version; \
       cp /usr/local/bin/opencode /tmp/oc-bin/opencode; \
     else \
@@ -41,7 +52,7 @@ RUN set -eux; \
         *) pkg=""; elf="" ;; \
       esac; \
       if [ -n "$pkg" ]; then \
-        wget -qO /tmp/oc.tgz "https://registry.npmjs.org/${pkg}/-/${pkg}-${OPENCODE_VERSION}.tgz"; \
+        wget -qO /tmp/oc.tgz "${reg}/${pkg}/-/${pkg}-${OPENCODE_VERSION}.tgz"; \
         tar -xzf /tmp/oc.tgz -C /tmp; \
         cp /tmp/package/bin/opencode /tmp/oc-bin/opencode; \
         test "$(od -An -tx1 -j18 -N2 /tmp/oc-bin/opencode | tr -d ' \n')" = "$elf"; \
@@ -55,7 +66,12 @@ RUN set -eux; \
 
 FROM alpine:3.21
 
-RUN apk add --no-cache ca-certificates tzdata libstdc++ libgcc \
+# Optional apk mirror override (CI unset = official CDN):
+# --build-arg APK_MIRROR=mirrors.tuna.tsinghua.edu.cn
+ARG APK_MIRROR
+RUN set -eux; \
+    if [ -n "${APK_MIRROR:-}" ]; then sed -i "s#dl-cdn.alpinelinux.org#$APK_MIRROR#g" /etc/apk/repositories; fi; \
+    apk add --no-cache ca-certificates tzdata libstdc++ libgcc \
     && addgroup -S app && adduser -S app -G app
 
 WORKDIR /app

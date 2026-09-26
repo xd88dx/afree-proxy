@@ -217,18 +217,33 @@ type zenCompactConfig struct {
 }
 
 type zenConfigData struct {
-	Enabled         bool             `json:"enabled"`
-	Key             string           `json:"key"`            // 兼容字段：始终等于 Keys[0]（旧版单 key 读取用）
-	Keys            []string         `json:"keys,omitempty"` // zen 多 key 池，请求按 round-robin 轮转
-	BaseURL         string           `json:"baseURL"`
-	Proxies         []string         `json:"proxies"`         // http(s)/socks5 代理,轮询出口
-	ProxyStrategy   string           `json:"proxyStrategy"`   // round_robin / random / fill
-	MaxConcurrency  int              `json:"maxConcurrency"`  // zen 上游最大并发,防 worker 瞬时超限,默认 8
-	Retries         int              `json:"retries"`         // 限流/网络错误重试次数,默认 3
-	Failover        bool             `json:"failover"`        // zen 连续失败后故障转移到 cline 账号池,默认 true
+	Enabled         bool    `json:"enabled"`
+	Key             string  `json:"key"`            // 兼容字段：始终等于 Keys[0]（旧版单 key 读取用）
+	Keys            []string `json:"keys,omitempty"` // zen 多 key 池，请求按 round-robin 轮转
+	BaseURL         string  `json:"baseURL"`
+	Proxies         []string `json:"proxies"`        // http(s)/socks5 代理,轮询出口
+	ProxyStrategy   string  `json:"proxyStrategy"`   // round_robin / random / fill
+	MaxConcurrency  int     `json:"maxConcurrency"`  // zen 上游最大并发,防 worker 瞬时超限,默认 8
+	Retries         int     `json:"retries"`         // 限流/网络错误重试次数,默认 3
+	Failover        bool    `json:"failover"`        // zen 连续失败后故障转移到 cline 账号池,默认 true
 	FailoverCount   int              `json:"failoverCount"`   // 触发故障转移的连续失败次数,默认 3
 	FailoverMinutes int              `json:"failoverMinutes"` // 故障转移窗口(分钟),默认 5
 	Compaction      zenCompactConfig `json:"compaction"`
+	// 账号/key 代理隔离开关（proxy_binding.go）。nil = 未配置 = 隔离启用（默认）；
+	// 显式 false 仅表示"用户主动关闭"。PROXY_ISOLATION env 设置时 env 优先。
+	// 指针三态是为了旧配置文件缺字段时默认进入隔离模式，而不是静默退回旧规则。
+	ProxyIsolation *bool `json:"proxyIsolation,omitempty"`
+	// zen key 的代理绑定表：key 明文 -> 主/辅代理。与 Keys 分开存 —— env
+	// ZEN_KEYS 注入的 key 无需改动即获得"未绑定走全局规则"的兜底语义。
+	// 面板永不回传本表（key 明文不出口），绑定随 keyStates 按索引下发。
+	KeyBindings map[string]zenProxyBinding `json:"keyBindings,omitempty"`
+}
+
+// zenProxyBinding 一个 zen key 或 cline 账号的出口绑定：主代理优先，辅代理
+// 兜底；两者都不可用时跳过该身份（隔离优先于可用性）。
+type zenProxyBinding struct {
+	Main   string `json:"main,omitempty"`
+	Backup string `json:"backup,omitempty"`
 }
 
 func defaultZenConfig() *zenConfigData {
@@ -532,11 +547,27 @@ var (
 )
 
 // pickZenKey round-robin 选取一个未冷却的 key；全部冷却时按轮转顺序返回下一个。
-// 返回 "" 表示当前没有配置任何 key。
+// 隔离模式（proxy_binding.go）下，绑定主辅出口都不可用的 key 被排除出所有
+// 候选轮 —— 隔离优先于可用性；全部 key 都被挡住时返回 ""，调用方报
+// "无可用出口"而不是静默直连。返回 "" 也表示未配置任何 key。
 func pickZenKey() string {
 	keys := getZenConfig().Keys
 	if len(keys) == 0 {
 		return ""
+	}
+	isolation := proxyIsolationEnabled()
+	// 绑定可用性只依赖叶子锁，先在循环外批量算好，三轮选择零额外加锁。
+	blocked := map[string]bool{}
+	if isolation {
+		for _, k := range keys {
+			main, backup, bound := zenKeyBindingOf(k)
+			if bound && !boundProxiesRoutable(main, backup) {
+				blocked[k] = true
+			}
+		}
+		if len(blocked) == len(keys) {
+			return ""
+		}
 	}
 	// 先取 live 会话集合（zenSessMu）再进 zenKeyMu：两把锁不嵌套，避免与
 	// 收割路径（持 zenSessMu 时不取 zenKeyMu，反之亦然）形成锁序反转。
@@ -556,6 +587,9 @@ func pickZenKey() string {
 	for i := 0; i < len(keys); i++ {
 		idx := (zenKeyIdx + i) % len(keys)
 		k := keys[idx]
+		if blocked[k] {
+			continue
+		}
 		if _, cooling := zenKeyCool[k]; !cooling && live[k] {
 			zenKeyIdx = (idx + 1) % len(keys)
 			return k
@@ -566,15 +600,25 @@ func pickZenKey() string {
 	for i := 0; i < len(keys); i++ {
 		idx := (zenKeyIdx + i) % len(keys)
 		k := keys[idx]
+		if blocked[k] {
+			continue
+		}
 		if _, cooling := zenKeyCool[k]; !cooling {
 			zenKeyIdx = (idx + 1) % len(keys)
 			return k
 		}
 	}
-	// 全部冷却中：仍按轮转返回（保持请求流动，上游会再次限流）
-	k := keys[zenKeyIdx%len(keys)]
-	zenKeyIdx = (zenKeyIdx + 1) % len(keys)
-	return k
+	// 全部冷却中：仍按轮转返回（保持请求流动，上游会再次限流），
+	// 落在被隔离挡住的 key 上则继续前进到下一个可路由的。
+	for i := 0; i < len(keys); i++ {
+		idx := (zenKeyIdx + i) % len(keys)
+		k := keys[idx]
+		if !blocked[k] {
+			zenKeyIdx = (idx + 1) % len(keys)
+			return k
+		}
+	}
+	return ""
 }
 
 // markZenKeySuccess 在上游 200 后累计 key 的成功调用数（仅内存态，面板展示用）。
@@ -681,6 +725,15 @@ func zenKeyStatus() []map[string]any {
 			"sessionLive":   sess[i].Live,
 			"sessionMinted": sess[i].Minted,
 			"session":       sess[i].Session,
+		}
+		// 代理绑定（隔离模式，面板编辑用）。stale = 绑定的代理已不在当前
+		// 代理池里（被删除/改写），该 key 会被隔离一直跳过，必须提示。
+		// 直连哨兵不参与 stale 判定。
+		if main, backup, bound := zenKeyBindingOf(k); bound {
+			st["proxyMain"] = main
+			st["proxyBackup"] = backup
+			st["proxyStale"] = (main != "" && !isEgressDirect(main) && proxyIdxInPool(main) < 0) ||
+				(backup != "" && !isEgressDirect(backup) && proxyIdxInPool(backup) < 0)
 		}
 		if sess[i].HarvestedAt > 0 {
 			st["harvestedAt"] = time.Unix(sess[i].HarvestedAt, 0).Format(time.RFC3339)
@@ -1590,11 +1643,6 @@ func callZenResponsesAPI(ctx context.Context, params map[string]any, stream bool
 	retryKey := "" // 非空时重试沿用该 key（保持 key sess_ 一致）
 
 	for attempt := 0; ; attempt++ {
-		proxyURL, pidx := pickUpstreamProxy()
-		viaProxy := "direct"
-		if proxyURL != "" {
-			viaProxy = maskProxyURL(proxyURL)
-		}
 		// 先选 key：attempt==0 或尚无粘性 key 时轮转；重试链内沿用
 		// retryKey（会话绑定要求 key 与 sess_ 一致；换 key 由下方
 		// 限流/403 分支显式改写 retryKey 后 continue 实现）。
@@ -1612,14 +1660,29 @@ func callZenResponsesAPI(ctx context.Context, params map[string]any, stream bool
 			retryKey = pickZenKey()
 		}
 		key = retryKey
-		sess, user, ua := "", "", ""
-		if key != "" {
-			// 会话粘性：同一 key 复用稳定的 sess_/UA（服务端会话绑定要求），
-			// msg_ 请求 ID 仍每次随机。
-			sess, user, ua = StickyZenIdentity(key)
-		} else {
-			sess, user, ua = kit.FreshZenIdentity()
+		if key == "" {
+			return nil, rateLimited, fmt.Errorf("no zen key routable: all configured keys' bound proxies are cooling or removed (proxy isolation)")
 		}
+		// 出口由 key 决定：隔离模式下同一 key 永远从绑定 IP 出现（主→辅）；
+		// 绑定出口全不可用时短冷却该 key 并清空 retryKey 换下一个 —— 绝不
+		// 退回其他出口（那会让粘性会话的 IP 漂移）。
+		proxyURL, pidx, exitOK := zenAttemptExit(key)
+		if !exitOK {
+			if o.pinKey != "" || pinnedZenKey() != "" {
+				return nil, rateLimited, fmt.Errorf("key#%d bound proxies unavailable (cooling or removed); probe aborted by proxy isolation", keyIndex(key))
+			}
+			cooldownZenKey(key, 2*time.Minute)
+			retryKey = ""
+			log.Printf("  zen responses key#%d bound proxies unavailable, skipping key for 2m", keyIndex(key))
+			continue
+		}
+		viaProxy := "direct"
+		if proxyURL != "" {
+			viaProxy = maskProxyURL(proxyURL)
+		}
+		// 会话粘性：同一 key 复用稳定的 sess_/UA（服务端会话绑定要求），
+		// msg_ 请求 ID 仍每次随机。（key 为空已在上方报错返回。）
+		sess, user, ua := StickyZenIdentity(key)
 		body := buildZenResponsesBody(params, zm.ID, sess)
 		bodyJSON, err := json.Marshal(body)
 		if err != nil {
@@ -1802,17 +1865,9 @@ func callZenAPI(ctx context.Context, params map[string]any, stream bool, opts ..
 	rateLimited := 0
 
 	for attempt := 0; ; attempt++ {
-		// 代理轮转（round_robin 默认）: 每次上游尝试显式挑选出口,
-		// 冷却中的代理被跳过; 未配置代理时直连。
-		proxyURL, pidx := pickUpstreamProxy()
-		viaProxy := "direct"
-		if proxyURL != "" {
-			viaProxy = maskProxyURL(proxyURL)
-		}
-		req, err := http.NewRequestWithContext(ctx, "POST", endpoint, bytes.NewReader(bodyJSON))
-		if err != nil {
-			return nil, rateLimited, fmt.Errorf("create zen request: %w", err)
-		}
+		// 先选 key 再解析出口：隔离模式要求出口由 key 的绑定决定（同一 key
+		// 永远从同一 IP 出现）；未绑定 key 每次尝试全局轮转挑选出口（旧规则），
+		// 未配置代理时直连。
 		// 客户端身份：会话粘性——同一 key 复用稳定的 sess_/UA（服务端
 		// 会话绑定要求，随机 sess_ 会 403），msg_ 请求 ID 每次随机。
 		// ZEN_PIN_KEY=n 时固定用第 n 个 key（单 key 直测/排障），默认轮转。
@@ -1826,6 +1881,28 @@ func callZenAPI(ctx context.Context, params map[string]any, stream bool, opts ..
 			if pk := pinnedZenKey(); pk != "" {
 				key = pk
 			}
+		}
+		if key == "" {
+			return nil, rateLimited, fmt.Errorf("no zen key routable: all configured keys' bound proxies are cooling or removed (proxy isolation)")
+		}
+		proxyURL, pidx, exitOK := zenAttemptExit(key)
+		if !exitOK {
+			// ZEN_PIN_KEY/pinKey 固定死的 key 没有可换的余地，直接报错；
+			// 正常轮转把该 key 短冷却（pickZenKey 下一轮跳过它）后换 key。
+			if o.pinKey != "" || pinnedZenKey() != "" {
+				return nil, rateLimited, fmt.Errorf("key#%d bound proxies unavailable (cooling or removed); probe aborted by proxy isolation", keyIndex(key))
+			}
+			cooldownZenKey(key, 2*time.Minute)
+			log.Printf("  zen key#%d bound proxies unavailable, skipping key for 2m", keyIndex(key))
+			continue
+		}
+		viaProxy := "direct"
+		if proxyURL != "" {
+			viaProxy = maskProxyURL(proxyURL)
+		}
+		req, err := http.NewRequestWithContext(ctx, "POST", endpoint, bytes.NewReader(bodyJSON))
+		if err != nil {
+			return nil, rateLimited, fmt.Errorf("create zen request: %w", err)
 		}
 		sess, user, ua := StickyZenIdentity(key)
 		req.Header.Set("Authorization", "Bearer "+key)

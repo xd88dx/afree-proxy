@@ -23,6 +23,12 @@ type Account struct {
 	CreatedAt       time.Time `json:"createdAt"`
 	CooldownUntil   time.Time `json:"cooldownUntil,omitempty"` // 预计冷却结束时间
 	LastReason      string    `json:"lastReason,omitempty"`    // 最后一次进入冷却/失效的原因
+	// 代理绑定（账号隔离，见 proxy_binding.go）：主代理优先，辅代理兜底；
+	// 两者都不可用（冷却中/已从池中删除）时该账号在选号阶段被整体跳过 ——
+	// 隔离优先于可用性，绝不退回其他出口。空 = 未绑定，沿用全局代理规则。
+	// 隔离开关关闭（旧版全局轮转）时两个字段被完全忽略。
+	ProxyMain   string `json:"proxyMain,omitempty"`
+	ProxyBackup string `json:"proxyBackup,omitempty"`
 }
 
 type AccountPool struct {

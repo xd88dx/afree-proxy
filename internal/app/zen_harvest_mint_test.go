@@ -20,7 +20,7 @@ func fakeHarvestCLI(t *testing.T, failFor map[string]bool) (calls *int32) {
 	var n int32
 	calls = &n
 	prev := harvestRunFn
-	harvestRunFn = func(ctx context.Context, bin, home, model string) harvestRunResult {
+	harvestRunFn = func(ctx context.Context, bin, home, model, proxyURL string) harvestRunResult {
 		atomic.AddInt32(&n, 1)
 		if failFor[home] {
 			// 不写日志行 = mint 失败；带上 CLI 输出，验证错误信息会转述它
@@ -282,7 +282,7 @@ func TestMintRespectsConcurrencyLimit(t *testing.T) {
 
 	var inFlight, peak int32
 	prev := harvestRunFn
-	harvestRunFn = func(ctx context.Context, bin, home, model string) harvestRunResult {
+	harvestRunFn = func(ctx context.Context, bin, home, model, proxyURL string) harvestRunResult {
 		cur := atomic.AddInt32(&inFlight, 1)
 		for {
 			old := atomic.LoadInt32(&peak)
@@ -769,7 +769,7 @@ func TestHarvestOutputTailRedactsKeys(t *testing.T) {
 func TestMintFailureSurfacesCLIOutput(t *testing.T) {
 	setupHarvestTest(t)
 	prev := harvestRunFn
-	harvestRunFn = func(ctx context.Context, bin, home, model string) harvestRunResult {
+	harvestRunFn = func(ctx context.Context, bin, home, model, proxyURL string) harvestRunResult {
 		return harvestRunResult{ExitCode: 7, Output: "boom: cannot start cli", Err: fmt.Errorf("exit status 7")}
 	}
 	t.Cleanup(func() { harvestRunFn = prev })

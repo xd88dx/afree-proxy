@@ -17,7 +17,7 @@ Cursor / ZCode / Cline / Claude Code ──►  cline-proxy  ──►  cline ac
 - **One endpoint, both upstreams.** The gateway inspects the requested `model` and routes it: zen free models (`mimo-v2.5-free`, `nemotron-3-ultra-free`, …) go to opencode zen, paid zen models are rejected with a clear 400, everything else goes to the Cline account pool. Combos let you define your own alias model IDs on either platform.
 - **Three client dialects, one upstream language.** Both upstreams are OpenAI chat-completions servers. `/v1/chat/completions` is a near-passthrough; `/v1/responses` and `/v1/messages` (Anthropic) are translated in and converted back, including streaming events, tool calls, and usage.
 - **IDE-controlled parameters are respected.** `max_tokens`, `temperature`, `top_p`, `stop`, `tools`, `tool_choice`, `reasoning_effort`, … all pass through from the client. The gateway only fills gaps (128k default output budget when the client sends none) and enforces semantics upstreams get wrong: `tool_choice: "none"` is enforced by stripping tools, unknown model names return a clean 400 (`STRICT_MODEL_MATCH=false` restores the old catch-all), and `stop` sequences are deterministically truncated client-side for non-stream responses.
-- **Pool everything.** Cline accounts round-robin with automatic 429 cooldown ("Try again in 17h 59m" parsing) and auto-recovery. Zen keys rotate the same way. Egress proxies rotate per request so IP-based rate limits don't bottleneck one address; proxy failures never poison account state.
+- **Pool everything.** Cline accounts round-robin with automatic 429 cooldown ("Try again in 17h 59m" parsing) and auto-recovery. Zen keys rotate the same way. Egress proxies rotate per request so IP-based rate limits don't bottleneck one address; proxy failures never poison account state. **Proxy isolation** (on by default) upgrades this to fixed identity↔exit binding: a bound account/key always egresses via its own main/backup proxy and is skipped entirely when both are unavailable — see [Proxy isolation](#proxy-isolation-identity--exit-binding).
 - **Function calling that actually works.** Battle-tested against live upstreams across chat stream/non-stream, parallel tool calls, `/v1/responses` and Anthropic streaming, with repair logic for upstream tool-argument quirks. See the test matrix below.
 - **English admin panel** at `/admin/`: Dashboard, Accounts, Add accounts (OAuth / refreshToken / static `sk_` API key — auto-detected, also batch), Gateway settings (API keys, models, headers), **Proxy pool** (one shared socks5/http egress list with per-upstream toggles for Cline and zen), opencode free models, Combos, request logs, live stats.
 
@@ -107,6 +107,7 @@ All state lives in the `/app/data` volume (`cline-accounts.json`, `zen-config.js
 | `ZEN_KEYS` | empty | opencode zen keys, comma-separated; panel config is not overwritten when it already has keys |
 | `CLINE_ACCOUNTS_SEED_FILE` | empty | Seed JSON imported at boot when the pool is empty |
 | `CLINE_USE_PROXIES` | `false` | Route the Cline upstream through the egress proxy pool |
+| `PROXY_ISOLATION` | `true` | Identity↔exit binding (see [Proxy isolation](#proxy-isolation-identity--exit-binding)); `false` restores legacy per-request rotation. Explicitly set env overrides the panel toggle |
 | `LOG_REQUESTS` | `true` | Request logging (metadata only: IP, path, model, status, duration — never conversation content) |
 | `LOG_FILE_MAX_MB` | `10` | `requests.jsonl` size cap; wiped when exceeded |
 | `MAX_BODY_MB` | `32` | Request body limit; larger bodies get `413` |
@@ -187,6 +188,20 @@ Mount the file anywhere in the container and point `CLINE_ACCOUNTS_SEED_FILE` at
 ### Combos (alias models)
 
 Create user-defined alias IDs in the panel (e.g. `my-cline-flash` → `cline-free/deepseek-v4.1-flash` on the cline platform, or any zen free model). Strictly same-platform targets; aliases show up in `/v1/models` so IDEs can pick them directly.
+
+### Proxy isolation (identity ↔ exit binding)
+
+Without isolation, every upstream attempt rotates across the whole proxy pool: each account's egress IP drifts between exits *and* each exit serves multiple accounts in turn — both are classic risk-control red flags ("same IP, many accounts", "one account, many IPs"). Isolation mode (default on) replaces the rotation with a fixed binding:
+
+- Each Cline account and each zen key can bind one **main** and one **backup** proxy. Requests always egress via the main, fall back to the backup, and are **skipped entirely** while both are cooling or removed from the pool — never routed through another exit or a direct connection. Isolation outranks availability.
+- Unbound identities keep the global rules (cline: `CLINE_USE_PROXIES`/panel toggle; zen: non-empty proxy list), so an empty binding config behaves exactly like before.
+- The zen harvester mints sessions through the key's bound exit too — a session ID must never change IP, or the isolation is void. While a key's bound exits are unavailable, minting for that key is skipped until the next sweep.
+- Assign bindings per account (Accounts page) / per key (opencode page), or use **Assign proxies evenly** (`main = pool[i%N]`, `backup = pool[(i+1)%N]`). A binding whose proxy was removed from the pool is flagged ⚠ and its identity stays skipped until fixed.
+- Toggle it off on the Proxy pool page to restore legacy per-request rotation (bindings are then ignored), or pin it with the `PROXY_ISOLATION` env var, which overrides the panel.
+
+socks5/socks5h proxies are fully supported on both paths: the gateway dials them natively for regular upstream traffic, and for CLI minting it fronts a one-shot local HTTP-CONNECT→SOCKS5 bridge (the CLI only ever sees an http proxy, which its runtime is documented to honor — socks5 semantics are fulfilled by the gateway itself, so a mint can never silently fall back to a direct connection).
+
+One side benefit on the zen side: the free quota (~200 requests / 5h) is accounted **per egress IP**, so binding keys to distinct exits is also what actually unlocks multi-key capacity, not just ban-avoidance.
 
 ## Battle-tested
 

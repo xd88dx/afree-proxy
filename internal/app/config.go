@@ -38,6 +38,11 @@ import (
 //	                           池为空时启动自动导入
 //	CLINE_USE_PROXIES          true 时 cline 上游全部走出口代理池（zen 上游配置
 //	                           proxies 后默认走池；combo 也可按别名单独开启）
+//	PROXY_ISOLATION            账号/key 代理隔离开关（默认 true）：true 时绑定
+//	                           了主/辅代理的账号与 zen key 只从绑定出口发出，
+//	                           双不可用即跳过（收割机同样走绑定出口）；false
+//	                           回到旧版"请求级全局轮转"（忽略绑定）。显式设置
+//	                           时优先于面板开关（proxyIsolationEnvLocked）
 
 // envStr 读取环境变量并去除首尾空白，未设置或为空返回 ""。
 func envStr(key string) string {

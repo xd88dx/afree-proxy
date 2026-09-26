@@ -347,6 +347,7 @@ func pickAccount() *Account {
 	p := loadPool()
 	poolMu.Lock()
 
+	isolation := proxyIsolationEnabled()
 	active := make([]*Account, 0)
 	for _, a := range p.Accounts {
 		// 自动解除已到期的冷却
@@ -355,9 +356,17 @@ func pickAccount() *Account {
 			a.CooldownUntil = time.Time{}
 			a.LastReason = ""
 		}
-		if a.Status == "active" {
-			active = append(active, a)
+		if a.Status != "active" {
+			continue
 		}
+		// 隔离模式：绑定主辅出口都不可用（冷却中/已从池中删除）的账号本轮
+		// 整体跳过 —— 隔离优先于可用性，绝不退回其他出口。检查在 poolMu 内
+		// 完成：读的是绑定字段本身；可用性走 zenProxyCooldownsMu/zenConfigMu，
+		// 都是叶子锁且无反向获取，无锁序风险。
+		if isolation && !boundProxiesRoutable(a.ProxyMain, a.ProxyBackup) {
+			continue
+		}
+		active = append(active, a)
 	}
 
 	if len(active) == 0 {
@@ -475,6 +484,10 @@ func ListAccounts() []*Account {
 			CreatedAt:       a.CreatedAt,
 			CooldownUntil:   a.CooldownUntil,
 			LastReason:      a.LastReason,
+			// 代理绑定随列表下发（面板编辑用）。代理 URL 可能含凭据，但代理
+			// 池页本来就完整展示列表，信任级别相同。
+			ProxyMain:   a.ProxyMain,
+			ProxyBackup: a.ProxyBackup,
 		}
 	}
 	markPoolDirtyLocked()
@@ -571,11 +584,16 @@ func describePoolStatus() string {
 	}
 
 	active, cooldown, expired := 0, 0, 0
+	isolation := proxyIsolationEnabled()
+	boundBlocked := 0
 	var nextRecover *time.Time
 	for _, a := range p.Accounts {
 		switch a.Status {
 		case "active":
 			active++
+			if isolation && !boundProxiesRoutable(a.ProxyMain, a.ProxyBackup) {
+				boundBlocked++
+			}
 		case "cooldown":
 			cooldown++
 			if !a.CooldownUntil.IsZero() {
@@ -590,6 +608,9 @@ func describePoolStatus() string {
 	}
 
 	s := fmt.Sprintf("total=%d active=%d cooldown=%d expired=%d", total, active, cooldown, expired)
+	if boundBlocked > 0 {
+		s += fmt.Sprintf(", boundBlocked=%d (proxy isolation: bound exits cooling/removed)", boundBlocked)
+	}
 	if cooldown > 0 && nextRecover != nil {
 		s += fmt.Sprintf(", earliest recover at %s", nextRecover.Format("2006-01-02 15:04:05"))
 	}

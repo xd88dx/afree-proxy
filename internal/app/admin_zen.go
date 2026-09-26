@@ -37,6 +37,10 @@ func handleZenConfig(w http.ResponseWriter, r *http.Request) {
 		"failoverCount":   cfg.FailoverCount,
 		"failoverMinutes": cfg.FailoverMinutes,
 		"compaction":      cfg.Compaction,
+		// 代理隔离（账号/key 绑定出口）：生效值 + 是否被 env 钉死（面板据此
+		// 禁用开关并提示）。
+		"proxyIsolation":          proxyIsolationEnabled(),
+		"proxyIsolationEnvLocked": proxyIsolationEnvLocked(),
 		"runtime": map[string]any{
 			"failoverActive": zenFailedNow(),
 			"proxyCooldowns": zenProxyCooldownStatus(),
@@ -71,6 +75,7 @@ func handleZenConfigUpdate(w http.ResponseWriter, r *http.Request) {
 		Failover        *bool    `json:"failover"`
 		FailoverCount   *int     `json:"failoverCount"`
 		FailoverMinutes *int     `json:"failoverMinutes"`
+		ProxyIsolation  *bool    `json:"proxyIsolation"`
 		Compaction      *struct {
 			Auto         *bool   `json:"auto"`
 			Buffer       *int    `json:"buffer"`
@@ -95,6 +100,8 @@ func handleZenConfigUpdate(w http.ResponseWriter, r *http.Request) {
 		Failover:        cur.Failover,
 		FailoverCount:   cur.FailoverCount,
 		FailoverMinutes: cur.FailoverMinutes,
+		ProxyIsolation:  cur.ProxyIsolation,
+		KeyBindings:     cur.KeyBindings,
 		Compaction:      cur.Compaction,
 	}
 	if patch.Enabled != nil {
@@ -141,6 +148,15 @@ func handleZenConfigUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 	if patch.FailoverMinutes != nil && *patch.FailoverMinutes > 0 {
 		next.FailoverMinutes = *patch.FailoverMinutes
+	}
+	if patch.ProxyIsolation != nil {
+		// PROXY_ISOLATION env 显式设置时 env 优先：面板改了也不生效，直接
+		// 拒绝并说明，免得用户以为保存成功了。
+		if proxyIsolationEnvLocked() {
+			writeAPI(w, http.StatusBadRequest, apiResponse{Error: "PROXY_ISOLATION env is set; it overrides this toggle — unset the env var to control isolation from the panel"})
+			return
+		}
+		next.ProxyIsolation = patch.ProxyIsolation
 	}
 	if patch.Compaction != nil {
 		base := cur.Compaction
@@ -448,4 +464,35 @@ func handleZenSessionsMint(w http.ResponseWriter, r *http.Request) {
 		msg = "mint job already running"
 	}
 	writeAPI(w, http.StatusOK, apiResponse{Success: true, Message: msg, Data: state})
+}
+
+// POST /admin/api/opencode/keys/proxy  body: { index, main, backup }
+// 设置/清除单个 zen key 的绑定出口（代理隔离）。main/backup 传空串即清除；
+// 两者都为空 = 解除绑定，key 回到全局代理规则。key 按索引定位（与 keys/test
+// 相同的契约），绑定表持久化到 zen 配置。
+func handleZenKeySetProxy(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		writeAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
+		return
+	}
+	body, err := io.ReadAll(io.LimitReader(r.Body, 4096))
+	if err != nil {
+		writeAPI(w, http.StatusBadRequest, apiResponse{Error: err.Error()})
+		return
+	}
+	defer r.Body.Close()
+	var req struct {
+		Index  int    `json:"index"`
+		Main   string `json:"main"`
+		Backup string `json:"backup"`
+	}
+	if err := json.Unmarshal(body, &req); err != nil {
+		writeAPI(w, http.StatusBadRequest, apiResponse{Error: "invalid JSON"})
+		return
+	}
+	if err := setZenKeyProxyBinding(req.Index, req.Main, req.Backup); err != nil {
+		writeAPI(w, http.StatusBadRequest, apiResponse{Error: err.Error()})
+		return
+	}
+	writeAPI(w, http.StatusOK, apiResponse{Success: true, Message: "Key proxy binding saved"})
 }

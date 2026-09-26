@@ -38,6 +38,9 @@ services:
       - CLINE_ACCOUNTS_SEED_FILE=${CLINE_ACCOUNTS_SEED_FILE:-}
       # Route cline upstream through the egress proxy pool (optional)
       - CLINE_USE_PROXIES=${CLINE_USE_PROXIES:-false}
+      # Proxy isolation (identity ↔ exit binding): true/false; unset = panel
+      # toggle decides (default on). See README "Proxy isolation".
+      - PROXY_ISOLATION=${PROXY_ISOLATION:-}
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:${PROXY_PORT:-3457}/health"]
       interval: 30s

@@ -112,6 +112,16 @@ per-key HOME 有两个作用：**(a) 可并行**（不同 key 无共享 auth.jso
 - `ZEN_HARVEST=0` → 行为与收割机不存在完全一致（面板按钮会提示
   harvester unavailable，不会静默失败）。
 - mint 失败**不会覆盖**该 key 既有的 live 会话（旧会话继续可用）。
+- **代理隔离开启**（默认，见 README「Proxy isolation」）且该 key 绑定了
+  主/辅代理 → CLI 铸造走绑定出口（环境变量 `HTTPS_PROXY` 注入），保证同一
+  会话 ID 的出口 IP 恒定；绑定出口全不可用（冷却中/已删除）时**本轮跳过**
+  该 key 的铸造，绝不退回直连。未绑定 key 与旧规则一样直连。
+- **socks5(h) 绑定经本地桥转发**（`socks_bridge.go`）：CLI 的代理来自
+  `HTTPS_PROXY` 环境变量，其运行时（Bun）只对 http 代理有文档承诺，socks5
+  是否生效不受本项目控制——赌错的形态是"CLI 无视代理**静默直连**"，隔离
+  悄悄失效。因此网关在 127.0.0.1 起一个一次性 HTTP CONNECT→SOCKS5 桥，把
+  CONNECT 隧道经网关自己的 socks5 拨号路径（与日常上游流量同一实现）转发
+  出去；CLI 只见到确定支持的 http 代理。桥随本次 mint 生灭，日志打印桥地址。
 
 ## 架构说明
 
