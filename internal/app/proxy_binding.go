@@ -2,7 +2,6 @@ package app
 
 import (
 	"fmt"
-	"log"
 	"net/url"
 	"strings"
 )
@@ -208,33 +207,6 @@ func validateProxyBinding(main, backup string) error {
 		return fmt.Errorf("main and backup proxy must differ (same URL makes the backup meaningless)")
 	}
 	return nil
-}
-
-// assignProxiesEvenly 把代理池按顺序均匀分配给全部账号：账号 i 的主代理 =
-// 池[i % m]，辅代理 = 池[(i+1) % m]（仅当池 ≥ 2 个）。账号数超过代理数时
-// 多个账号共享出口（隔离范围收缩，但对应关系固定且显式）。
-// 只改有账号的绑定，不动状态字段；返回分配到的账号数。
-func assignProxiesEvenly() (int, error) {
-	cfg := getZenConfig()
-	m := len(cfg.Proxies)
-	if m == 0 {
-		return 0, fmt.Errorf("proxy pool is empty; add proxies first")
-	}
-	p := loadPool()
-	poolMu.Lock()
-	defer poolMu.Unlock()
-	for i, a := range p.Accounts {
-		a.ProxyMain = cfg.Proxies[i%m]
-		if m >= 2 {
-			a.ProxyBackup = cfg.Proxies[(i+1)%m]
-		} else {
-			a.ProxyBackup = ""
-		}
-	}
-	markPoolDirtyLocked()
-	log.Printf("proxy isolation: assigned %d proxies across %d accounts (main = pool[i%%m], backup = pool[(i+1)%%m])",
-		m, len(p.Accounts))
-	return len(p.Accounts), nil
 }
 
 // setAccountProxyBinding 设置/清除单个账号的绑定（面板入口）。

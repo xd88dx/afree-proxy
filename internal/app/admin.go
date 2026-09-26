@@ -84,7 +84,6 @@ func registerAdminRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/admin/api/accounts/delete-all", adminCORS(auth(handleAdminDeleteAll)))
 	mux.HandleFunc("/admin/api/accounts/reset", adminCORS(auth(handleAdminAccountReset)))
 	mux.HandleFunc("/admin/api/accounts/proxy", adminCORS(auth(handleAdminAccountSetProxy)))
-	mux.HandleFunc("/admin/api/accounts/proxy/assign", adminCORS(auth(handleAdminAssignProxies)))
 	mux.HandleFunc("/admin/api/accounts/proxy/clear", adminCORS(auth(handleAdminAccountClearProxies)));
 	mux.HandleFunc("/admin/api/logs", adminCORS(auth(handleRequestLogs)))
 	mux.HandleFunc("/admin/api/keys", adminCORS(auth(handleAdminGetKeys)))
@@ -1141,22 +1140,6 @@ func handleAdminAccountSetProxy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeAPI(w, http.StatusOK, apiResponse{Success: true, Message: "Proxy binding saved"})
-}
-
-// POST /admin/api/accounts/proxy/assign
-// 把代理池按顺序均匀分配给全部账号：主 = 池[i%m]，辅 = 池[(i+1)%m]（池 ≥ 2）。
-// 覆盖式 —— 已有手工绑定会被替换。
-func handleAdminAssignProxies(w http.ResponseWriter, r *http.Request) {
-	if r.Method != "POST" {
-		writeAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
-		return
-	}
-	n, err := assignProxiesEvenly()
-	if err != nil {
-		writeAPI(w, http.StatusBadRequest, apiResponse{Error: err.Error()})
-		return
-	}
-	writeAPI(w, http.StatusOK, apiResponse{Success: true, Message: fmt.Sprintf("Assigned proxies to %d accounts (main = pool[i%%m], backup = pool[(i+1)%%m])", n)})
 }
 
 // GET /admin/api/config

@@ -275,45 +275,6 @@ func TestPickBoundProxyDirectSentinel(t *testing.T) {
 	}
 }
 
-func TestAssignProxiesEvenly(t *testing.T) {
-	setupBindingTest(t, &zenConfigData{
-		Keys: []string{"public"},
-		Proxies: []string{"http://a:1", "http://b:2", "http://c:3"},
-	})
-	swapTestPool(t, []*Account{
-		{AccountID: "a", Email: "a@x", Status: "active"},
-		{AccountID: "b", Email: "b@x", Status: "active"},
-	})
-	if _, err := assignProxiesEvenly(); err != nil {
-		t.Fatalf("assign: %v", err)
-	}
-	p := loadPool()
-	if p.Accounts[0].ProxyMain != "http://a:1" || p.Accounts[0].ProxyBackup != "http://b:2" {
-		t.Fatalf("account0 binding wrong: %+v", p.Accounts[0])
-	}
-	if p.Accounts[1].ProxyMain != "http://b:2" || p.Accounts[1].ProxyBackup != "http://c:3" {
-		t.Fatalf("account1 binding wrong: %+v", p.Accounts[1])
-	}
-
-	// 单代理：主有值、辅为空（无"下一个"可指）
-	setupBindingTest(t, &zenConfigData{
-		Keys: []string{"public"},
-		Proxies: []string{"http://a:1"},
-	})
-	if _, err := assignProxiesEvenly(); err != nil {
-		t.Fatalf("assign single: %v", err)
-	}
-	if p := loadPool(); p.Accounts[0].ProxyMain != "http://a:1" || p.Accounts[0].ProxyBackup != "" {
-		t.Fatalf("single-proxy binding wrong: %+v", p.Accounts[0])
-	}
-
-	// 空池：明确报错而不是静默清空绑定
-	setupBindingTest(t, testZenCfg(nil))
-	if _, err := assignProxiesEvenly(); err == nil {
-		t.Fatal("empty proxy pool must error")
-	}
-}
-
 func TestSetAccountProxyBinding(t *testing.T) {
 	setupBindingTest(t, &zenConfigData{
 		Keys: []string{"public"},

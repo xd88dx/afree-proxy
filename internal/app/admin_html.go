@@ -293,7 +293,6 @@ body:not([data-theme="dark"]) .theme-toggle .dark-label{display:none}
   <div class="flex justify-between" style="margin-bottom:16px">
   <h2>Cline</h2>
   <div style="display:flex;gap:8px">
-    <button class="btn btn-sm" onclick="assignProxiesEvenly()" title="Distribute the proxy pool across all accounts: main = pool[i%N], backup = pool[(i+1)%N]">Assign proxies evenly</button>
     <button class="btn btn-sm" onclick="clearAccountProxies()" title="Clear proxy bindings on ALL accounts — every account returns to the Global default">Clear bindings</button>
     <button class="btn btn-primary btn-sm" onclick="switchTab('import')">Add</button>
     <button class="btn btn-sm" onclick="loadAccounts()">Refresh</button>
@@ -458,7 +457,7 @@ body:not([data-theme="dark"]) .theme-toggle .dark-label{display:none}
         </div>
       </div>
     </div>
-    <div class="hint">With isolation on, a Cline account or OpenCode key bound to a main/backup proxy always egresses via the main, falls back to the backup, and is <b>skipped entirely</b> while both are cooling or removed — it never leaks through another exit or a direct connection. The OpenCode harvester also mints sessions through the key's bound exit so a session never changes IP. Bind per account on the Cline page, per key on the OpenCode page, or use "Assign proxies evenly" there. <code>PROXY_ISOLATION</code> env var overrides this switch when set.</div>
+    <div class="hint">With isolation on, a Cline account or OpenCode key bound to a main/backup proxy always egresses via the main, falls back to the backup, and is <b>skipped entirely</b> while both are cooling or removed — it never leaks through another exit or a direct connection. The OpenCode harvester also mints sessions through the key's bound exit so a session never changes IP. Bind per account on the Cline page, per key on the OpenCode page. <code>PROXY_ISOLATION</code> env var overrides this switch when set.</div>
     <div class="hint" id="ppIsolationHint" style="margin-top:4px"></div>
   </div>
 </div>
@@ -794,7 +793,6 @@ const I18N_ZH = {
   'Set the Base URL to': '把 Base URL 设为 ',
   'and pick any model ID from the available models list.': '，并从可用模型列表里任选一个模型 ID。',
   // 账号页
-  'Assign proxies evenly': '均匀分配代理',
   'Add': '添加',
   'Refresh': '刷新',
   'Email': '邮箱',
@@ -911,7 +909,7 @@ const I18N_ZH = {
   'Enabled (default) — bound identities only ever use their bound exits': '启用（默认）—— 绑定的身份只从绑定出口出网',
   'Disabled — ignore bindings; exits rotate per the strategy above (direct when pool off)': '关闭 —— 忽略绑定；出口按上方轮转策略轮换（未启用代理池时直连）',
   'With isolation on, a Cline account or OpenCode key bound to a main/backup proxy always egresses via the main, falls back to the backup, and is': '隔离开启时，绑定了主/辅代理的 Cline 账号或 OpenCode key 永远从主代理出网，主不可用落到辅代理；',
-  "while both are cooling or removed — it never leaks through another exit or a direct connection. The OpenCode harvester also mints sessions through the key's bound exit so a session never changes IP. Bind per account on the Cline page, per key on the OpenCode page, or use \"Assign proxies evenly\" there.": '两者都不可用（冷却中/已删除）时该身份会被整体跳过 —— 绝不从其他出口或直连泄漏。OpenCode 收割机也经该 key 的绑定出口铸造会话，保证会话 IP 恒定。逐账号在 Cline 页绑定、逐 key 在 OpenCode 页绑定，或使用那里的「均匀分配代理」。',
+  "while both are cooling or removed — it never leaks through another exit or a direct connection. The OpenCode harvester also mints sessions through the key's bound exit so a session never changes IP. Bind per account on the Cline page, per key on the OpenCode page.": '两者都不可用（冷却中/已删除）时该身份会被整体跳过 —— 绝不从其他出口或直连泄漏。OpenCode 收割机也经该 key 的绑定出口铸造会话，保证会话 IP 恒定。逐账号在 Cline 页绑定、逐 key 在 OpenCode 页绑定。',
   'env var overrides this switch when set.': ' 环境变量设置时覆盖此开关。',
   'PROXY_ISOLATION env is set — it overrides this switch. Unset the env var to control isolation here.': '已设置 PROXY_ISOLATION 环境变量 —— 它覆盖此开关。删除该环境变量才能在此控制隔离。',
   'Cooldown status': '冷却状态',
@@ -1073,7 +1071,6 @@ const I18N_ZH = {
   'Proxy isolation setting saved': '代理隔离设置已保存',
   'Proxy binding saved': '代理绑定已保存',
   'Save failed: ': '保存失败：',
-  'Assign failed: ': '分配失败：',
   'Key proxy binding saved': 'Key 代理绑定已保存',
   'Test failed: ': '测试失败：',
   'Check failed: ': '检查失败：',
@@ -1132,8 +1129,6 @@ const I18N_ZH = {
   'Delete ALL accounts? This cannot be undone!': '确定删除全部账号？此操作不可撤销！',
   'Delete this key?': '确定删除该 key？',
   'Delete ALL API keys?': '确定删除全部 API key？',
-  'Assign the proxy pool evenly to ALL accounts (main = pool[i%N], backup = pool[(i+1)%N])? Existing bindings are overwritten.': '把代理池均匀分配给全部账号（主 = 池[i%N]，辅 = 池[(i+1)%N]）？现有绑定会被覆盖。',
-  'Proxies assigned': '代理已分配',
   'Connected via ': '经出口 ', // (placeholder, unused fragment guard)
   'OAuth failed': 'OAuth 登录失败',
   'OAuth failed: ': 'OAuth 登录失败：',
@@ -1399,15 +1394,6 @@ async function saveAccountProxy(id, input) {
     loadAccounts();
   }
 }
-async function assignProxiesEvenly() {
-  if (!confirm(T('Assign the proxy pool evenly to ALL accounts (main = pool[i%N], backup = pool[(i+1)%N])? Existing bindings are overwritten.'))) return;
-  try {
-    const d = await api('POST', '/accounts/proxy/assign', {});
-    toast(d.message || T('Proxies assigned'), 'success');
-    loadAccounts();
-  } catch (e) { toast('Assign failed: ' + e.message, 'error'); }
-}
-
 async function clearAccountProxies() {
   if (!confirm(T('Clear proxy bindings on ALL accounts? Every account returns to the Global default.'))) return;
   try {
