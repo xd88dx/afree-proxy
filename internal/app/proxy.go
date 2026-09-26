@@ -377,7 +377,16 @@ func StartProxy(host string, port int) error {
 	fmt.Println(strings.Repeat("=", 58))
 	fmt.Printf("  http://%s\n", addr)
 	fmt.Printf("  http://%s/v1\n", addr)
-	fmt.Println("  API Key: any value")
+	// API key 状态要真实反映配置：硬编码的 "any value" 曾让部署者误判
+	// 环境变量没生效（fail-closed 已通过 ≠ 未配置）
+	switch {
+	case APIKeyEnv() != "":
+		fmt.Println("  API Key: set via API_KEY env")
+	case len(loadPool().Keys) > 0:
+		fmt.Println("  API Key: panel-generated keys in use")
+	default:
+		fmt.Println("  API Key: any value (no key configured — local use only)")
+	}
 	fmt.Printf("  Model:   %s (auto-detected)\n", getDefaultModel())
 	fmt.Printf("  Accounts: %d total, %d active\n", len(loadPool().Accounts), activeCount)
 	fmt.Println(strings.Repeat("=", 58))
