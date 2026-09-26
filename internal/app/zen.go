@@ -229,9 +229,8 @@ type zenConfigData struct {
 	FailoverCount   int              `json:"failoverCount"`   // 触发故障转移的连续失败次数,默认 3
 	FailoverMinutes int              `json:"failoverMinutes"` // 故障转移窗口(分钟),默认 5
 	Compaction      zenCompactConfig `json:"compaction"`
-	// 代理别名：标准代理 URL -> 展示别名（来自粘贴链接的 #fragment）。
-	// 绑定下拉、冷却状态等 UI 只显示别名，不暴露完整地址。随代理列表
-	// 联动清理（setZenConfig 与配置更新端点）。
+	// Deprecated 迁移字段：旧版把代理别名存在独立表里，normalizeZenKeys
+	// 会把别名折叠回代理行（#fragment）并清空本字段。
 	ProxyAliases map[string]string `json:"proxyAliases,omitempty"`
 	// 账号/key 代理隔离开关（proxy_binding.go）。nil = 未配置 = 隔离启用（默认）；
 	// 显式 false 仅表示"用户主动关闭"。PROXY_ISOLATION env 设置时 env 优先。
@@ -241,6 +240,49 @@ type zenConfigData struct {
 	// ZEN_KEYS 注入的 key 无需改动即获得"未绑定走全局规则"的兜底语义。
 	// 面板永不回传本表（key 明文不出口），绑定随 keyStates 按索引下发。
 	KeyBindings map[string]zenProxyBinding `json:"keyBindings,omitempty"`
+	// zen key 的自动铸造启用表：key 明文 -> 是否参与自动铸造（启动补缺 /
+	// 403 触发 / 周期巡检 / 面板 Mint）。新添加的 key 默认**未启用**，需在
+	// 面板勾选"是否启用"后才激活铸造；无显式记录的存量 key 按迁移兼容规则
+	// 回退（见 zenKeyAutoHarvestEnabled）。
+	KeyEnabled map[string]bool `json:"keyEnabled,omitempty"`
+}
+
+// zenKeyAutoHarvestEnabled 判断 key 是否参与自动铸造，与面板"是否启用"列一致。
+// 显式记录优先；无记录时按迁移兼容规则：已有 minted/live 会话的存量 key 视为
+// 已启用（升级前它们一直在被自动铸造），全新 key 视为未启用 —— 添加 key 后
+// 不再自动发起铸造，直到手动启用。
+func zenKeyAutoHarvestEnabled(key string) bool {
+	if key == "" || key == "public" {
+		return false
+	}
+	cfg := getZenConfig()
+	if v, ok := cfg.KeyEnabled[key]; ok {
+		return v
+	}
+	s := zenSessionSnapshotOf(key)
+	return s.Minted || s.Live
+}
+
+// setZenKeyEnabled 写入 key 的显式启用状态（面板"是否启用"勾选）。
+// 写时复制：zenConfig 是被请求路径并发读取的活配置。
+func setZenKeyEnabled(index int, enabled bool) error {
+	cfg := getZenConfig()
+	if index < 0 || index >= len(cfg.Keys) {
+		return fmt.Errorf("key index out of range")
+	}
+	key := cfg.Keys[index]
+	if key == "" || key == "public" {
+		return fmt.Errorf("the anonymous public key has no credential to enable")
+	}
+	next := *cfg
+	en := make(map[string]bool, len(cfg.KeyEnabled)+1)
+	for k, v := range cfg.KeyEnabled {
+		en[k] = v
+	}
+	en[key] = enabled
+	next.KeyEnabled = en
+	setZenConfig(&next)
+	return nil
 }
 
 // zenProxyBinding 一个 zen key 或 cline 账号的出口绑定：主代理优先，辅代理
@@ -377,6 +419,21 @@ func normalizeZenKeys(cfg *zenConfigData) {
 	}
 	cfg.Keys = cleaned
 	cfg.Key = cleaned[0]
+	// 旧版别名表迁移：别名并入代理行（#fragment 随行持久化），随后清空。
+	// 此后别名就是代理行的一部分，随行保存/回显/编辑，无需单独同步。
+	if len(cfg.ProxyAliases) > 0 {
+		for u, alias := range cfg.ProxyAliases {
+			if alias == "" || strings.Contains(u, "#") {
+				continue
+			}
+			for i, p := range cfg.Proxies {
+				if p == u {
+					cfg.Proxies[i] = p + "#" + alias
+				}
+			}
+		}
+		cfg.ProxyAliases = nil
+	}
 }
 
 func loadZenConfig() *zenConfigData {
@@ -475,15 +532,15 @@ func setZenConfig(c *zenConfigData) {
 	for _, p := range c.Proxies {
 		validProxy[p] = true
 	}
-	// 代理别名随列表清理：别名指向的代理已被删除时丢弃，防止单调增长
-	if len(c.ProxyAliases) > 0 {
-		for u := range c.ProxyAliases {
-			if !validProxy[u] {
-				delete(c.ProxyAliases, u)
+	// 自动铸造启用表同样随 key 列表清理
+	if len(c.KeyEnabled) > 0 {
+		for k := range c.KeyEnabled {
+			if !valid[k] {
+				delete(c.KeyEnabled, k)
 			}
 		}
-		if len(c.ProxyAliases) == 0 {
-			c.ProxyAliases = nil
+		if len(c.KeyEnabled) == 0 {
+			c.KeyEnabled = nil
 		}
 	}
 	proxyClientCacheMu.Lock()
@@ -750,6 +807,8 @@ func zenKeyStatus() []map[string]any {
 			st["proxyStale"] = (main != "" && !isEgressDirect(main) && proxyIdxInPool(main) < 0) ||
 				(backup != "" && !isEgressDirect(backup) && proxyIdxInPool(backup) < 0)
 		}
+		// 自动铸造启用状态（面板"是否启用"勾选列）
+		st["enabled"] = zenKeyAutoHarvestEnabled(k)
 		if sess[i].HarvestedAt > 0 {
 			st["harvestedAt"] = time.Unix(sess[i].HarvestedAt, 0).Format(time.RFC3339)
 		}

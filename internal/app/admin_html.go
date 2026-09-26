@@ -599,8 +599,8 @@ body:not([data-theme="dark"]) .theme-toggle .dark-label{display:none}
     </div>
     <div class="table-wrap" style="margin-bottom:10px">
       <table>
-        <thead><tr><th style="width:50px">#</th><th style="width:110px">Key</th><th style="width:70px">Usage</th><th style="width:110px">Session</th><th>Cooldown</th><th title="Main / backup egress — isolation mode picks main first, then backup; both down = key skipped. The harvester also mints through the bound exit.">Proxy binding</th><th style="width:90px"></th></tr></thead>
-        <tbody id="ocKeysBody"><tr><td colspan="7" class="empty">Loading...</td></tr></tbody>
+        <thead><tr><th style="width:50px">#</th><th style="width:110px">Key</th><th style="width:70px">Usage</th><th style="width:110px">Session</th><th>Cooldown</th><th title="Main / backup egress — isolation mode picks main first, then backup; both down = key skipped. The harvester also mints through the bound exit.">Proxy binding</th><th style="width:90px"></th><th title="Auto-mint participation: unchecked keys never trigger session minting (startup / 403 / periodic / manual Mint)">Enabled</th></tr></thead>
+        <tbody id="ocKeysBody"><tr><td colspan="8" class="empty">Loading...</td></tr></tbody>
       </table>
     </div>
     <div class="form-row">
@@ -860,8 +860,12 @@ const I18N_ZH = {
   'Off (direct) by default. The': '默认关闭（直连）。',
   'env var always forces this on.': ' 环境变量设置时恒定强制开启。',
   'OpenCode config saved': 'OpenCode 配置已保存',
+  'State': '状态',
   'Global': '全局',
   'Direct': '直连',
+  'Enabled': '启用',
+  'Participates in auto-minting': '勾选后该 key 参与自动铸造（启动补缺 / 403 触发 / 周期巡检 / 手动 Mint）',
+  'Key enabled state saved': '启用状态已保存',
   'Follows the main slot': '跟随主出口',
   'No matching proxies': '没有匹配的代理',
   'OpenCode upstream': 'OpenCode 上游',
@@ -1332,14 +1336,12 @@ async function loadAccounts() {
 
 // ========== Proxy binding (account isolation) ==========
 // 代理池列表缓存：账号表与 zen key 表的绑定下拉共用。value 是完整代理 URL
-//（保存需要），展示名优先用别名（粘贴链接 #fragment），无别名时打码凭据段。
+//（保存需要，#别名随行持久化），展示名优先用别名，无别名时打码凭据段。
 let proxyListCache = [];
-let proxyAliasCache = {};
 async function loadProxyListCache() {
   try {
     const d = await api('GET', '/opencode/config');
     proxyListCache = (d.data.proxies || []).slice();
-    proxyAliasCache = d.data.proxyAliases || {};
   } catch (e) { /* keep previous cache */ }
 }
 const maskProxyLabel = p => String(p || '').replace(/\/\/[^@/]*@/, '//***@');
@@ -1369,11 +1371,16 @@ async function assignProxiesEvenly() {
 //（中日韩字符按 1.5 计，即 2 个汉字触发）。value 语义：'' = 全局（默认，
 // 隔离模式下沿用全局规则）；'direct' = 强制直连；代理 URL = 绑定出口。
 const EGRESS_DIRECT = 'direct';
-// 代理展示名：优先别名（绑定下拉、冷却状态等只显示别名，不暴露完整地址）
+// 代理展示名：优先别名（URL 的 #fragment 随行持久化），无别名时打码凭据段。
+// 绑定下拉、冷却状态等只显示别名，不暴露完整地址。
 function egLabel(v) {
   if (!v) return T('Global');
   if (v === EGRESS_DIRECT) return T('Direct');
-  return proxyAliasCache[v] || maskProxyLabel(v);
+  try {
+    const h = new URL(v).hash;
+    if (h && h.length > 1) return decodeURIComponent(h.slice(1));
+  } catch (e) { /* 非 URL 形态，回退打码 */ }
+  return maskProxyLabel(v);
 }
 function egComboHTML(kind, id, slot, value, title, disabled) {
   const t = disabled ? T('Follows the main slot') : title;
@@ -2006,19 +2013,39 @@ function renderOcKeyStates(ks) {
           egComboHTML('key', k.index, 'backup', backupVal, T('Backup exit — used when main is cooling/removed'), backupLocked) +
           (k.proxyStale ? ' <span title="' + esc(T('Bound proxy is no longer in the proxy pool — the key is skipped until fixed')) + '" style="color:var(--danger)">⚠</span>' : '') +
           '</td>';
+        // 是否启用：勾选后该 key 才参与自动铸造（启动补缺/403/周期/手动 Mint）。
+        // 新添加的 key 默认未勾选。
+        const en = '<td style="text-align:center">' + (k.keyMask === 'public (no key)'
+          ? '<span style="color:var(--text3)">-</span>'
+          : '<input type="checkbox" data-ze="' + k.index + '"' + (k.enabled ? ' checked' : '') + ' title="' + esc(T('Participates in auto-minting')) + '">') + '</td>';
         return '<tr><td>#' + (k.index + 1) + (k.current ? ' <span style="color:var(--accent)" title="next in rotation">●</span>' : '') + '</td>' +
           '<td style="font-family:monospace;font-size:11px">' + esc(k.keyMask) + '</td>' +
           '<td>' + (k.usage || 0) + '</td>' +
           '<td>' + st + '</td>' +
           '<td>' + cool + '</td>' +
           bind +
-          '<td>' + (k.keyMask === 'public (no key)' ? '' : '<button class="btn btn-sm" data-zk="' + k.index + '">Test</button>') + '</td></tr>';
+          '<td>' + (k.keyMask === 'public (no key)' ? '' : '<button class="btn btn-sm" data-zk="' + k.index + '">Test</button>') + '</td>' +
+          en + '</tr>';
       }).join('')
-    : '<tr><td colspan="7" class="empty">No opencode keys configured</td></tr>';
+    : '<tr><td colspan="8" class="empty">No opencode keys configured</td></tr>';
   tb.onclick = e => {
     const b = e.target.closest('button[data-zk]');
     if (b) testZenKey(parseInt(b.dataset.zk, 10), b);
   };
+  tb.onchange = e => {
+    const c = e.target.closest('input[data-ze]');
+    if (c) toggleZenKeyEnabled(parseInt(c.dataset.ze, 10), c.checked);
+  };
+}
+
+async function toggleZenKeyEnabled(index, enabled) {
+  try {
+    await api('POST', '/opencode/keys/enabled', { index: index, enabled: enabled });
+    toast(T('Key enabled state saved'), 'success');
+  } catch (e) {
+    toast('Save failed: ' + e.message, 'error');
+    loadOcConfig();
+  }
 }
 
 async function saveZenKeyProxy(index, input) {

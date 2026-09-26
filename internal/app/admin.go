@@ -110,6 +110,8 @@ func registerAdminRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/admin/api/zen/models/refresh", adminCORS(auth(handleZenModelsRefresh)))
 	mux.HandleFunc("/admin/api/zen/stats", adminCORS(auth(handleZenStats)))
 	mux.HandleFunc("/admin/api/zen/keys/test", adminCORS(auth(handleZenKeyTest)))
+	mux.HandleFunc("/admin/api/zen/keys/enabled", adminCORS(auth(handleZenKeySetEnabled)))
+	mux.HandleFunc("/admin/api/opencode/keys/enabled", adminCORS(auth(handleZenKeySetEnabled)))
 	mux.HandleFunc("/admin/api/zen/keys/proxy", adminCORS(auth(handleZenKeySetProxy)))
 	mux.HandleFunc("/admin/api/opencode/keys/proxy", adminCORS(auth(handleZenKeySetProxy)))
 	mux.HandleFunc("/admin/api/zen/sessions", adminCORS(auth(handleZenSessions)))
@@ -1037,7 +1039,7 @@ func handleAdminGenerateKey(w http.ResponseWriter, r *http.Request) {
 		writeAPI(w, http.StatusInternalServerError, apiResponse{Error: "keygen failed"})
 		return
 	}
-	key := "cline_" + hex.EncodeToString(b)
+	key := "afree_" + hex.EncodeToString(b)
 	p := loadPool()
 	poolMu.Lock()
 	p.Keys = append(p.Keys, key)

@@ -628,7 +628,7 @@ func TestParseProxyLine(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
-	if got != "socks5://testuser:testpass@1.2.3.4:1093" {
+	if got != "socks5://testuser:testpass@1.2.3.4:1093#socks5-demo-FR" {
 		t.Fatalf("canonical wrong: %q", got)
 	}
 	if alias != "socks5-demo-FR" {
@@ -636,7 +636,7 @@ func TestParseProxyLine(t *testing.T) {
 	}
 	// 明文凭据 + socks5 标准格式 + 别名
 	got, alias, err = parseProxyLine("socks5://user:pass@1.2.3.4:1080#my-node")
-	if err != nil || got != "socks5://user:pass@1.2.3.4:1080" || alias != "my-node" {
+	if err != nil || got != "socks5://user:pass@1.2.3.4:1080#my-node" || alias != "my-node" {
 		t.Fatalf("plain creds: %q %q %v", got, alias, err)
 	}
 	// 无凭据、无别名
@@ -644,9 +644,9 @@ func TestParseProxyLine(t *testing.T) {
 	if err != nil || got != "socks5://1.2.3.4:1080" || alias != "" {
 		t.Fatalf("no creds: %q %q %v", got, alias, err)
 	}
-	// http 透传，fragment 剥离
+	// http 透传，fragment 随行保留
 	got, alias, err = parseProxyLine("http://1.2.3.4:8080#FR-1")
-	if err != nil || got != "http://1.2.3.4:8080" || alias != "FR-1" {
+	if err != nil || got != "http://1.2.3.4:8080#FR-1" || alias != "FR-1" {
 		t.Fatalf("http: %q %q %v", got, alias, err)
 	}
 	// 非法协议
@@ -665,5 +665,69 @@ func TestParseProxyLine(t *testing.T) {
 	got, _, err = parseProxyLine("socks://cGxhaW51c2Vy@1.2.3.4:1080")
 	if err != nil || got != "socks5://cGxhaW51c2Vy@1.2.3.4:1080" {
 		t.Fatalf("non-splitting b64: %q %v", got, err)
+	}
+}
+
+func TestZenKeyAutoHarvestEnabled(t *testing.T) {
+	setupHarvestTest(t)
+	setupBindingTest(t, &zenConfigData{
+		Enabled:    true,
+		Keys:       []string{"sk-new", "sk-legacy", "sk-off", "sk-on", "public"},
+		KeyEnabled: map[string]bool{"sk-off": false, "sk-on": true},
+	})
+	// 存量迁移兼容：有 minted 会话、无显式记录的 key 视为启用
+	zenSessMu.Lock()
+	zenSessions["sk-legacy"] = &zenSessionEntry{Session: "sess_x", Minted: true, UA: zenNativeUA}
+	zenSessMu.Unlock()
+	if !zenKeyAutoHarvestEnabled("sk-legacy") {
+		t.Fatal("legacy minted key must stay enabled (migration fallback)")
+	}
+	// 新 key 无会话、无记录：默认未启用（不再自动铸造）
+	if zenKeyAutoHarvestEnabled("sk-new") {
+		t.Fatal("new key without session must default to disabled")
+	}
+	// 显式记录优先于回退
+	if zenKeyAutoHarvestEnabled("sk-off") {
+		t.Fatal("explicit false must win over migration fallback")
+	}
+	if !zenKeyAutoHarvestEnabled("sk-on") {
+		t.Fatal("explicit true must enable even without a session")
+	}
+	if zenKeyAutoHarvestEnabled("public") {
+		t.Fatal("public key always disabled")
+	}
+}
+
+func TestProxyAliasLivesInPoolLine(t *testing.T) {
+	setupBindingTest(t, &zenConfigData{
+		Enabled: true,
+		Keys:    []string{"public"},
+		Proxies: []string{"socks5://u:p@1.2.3.4:1080#old-alias"},
+	})
+	// 别名随行持久化：面板保存时行回带 #fragment，别名自然保留；
+	// 追加新行（带别名）互不影响
+	body := `{"proxies":["socks5://u:p@1.2.3.4:1080#old-alias","socks://dGVzdHVzZXI6dGVzdHBhc3M=@5.6.7.8:1093#new-alias"]}`
+	req := httptest.NewRequest("POST", "/admin/api/opencode/config/update", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+	handleZenConfigUpdate(rec, req)
+	if rec.Code != 200 {
+		t.Fatalf("update failed: %d %s", rec.Code, rec.Body.String())
+	}
+	cfg := getZenConfig()
+	if len(cfg.Proxies) != 2 ||
+		cfg.Proxies[0] != "socks5://u:p@1.2.3.4:1080#old-alias" ||
+		cfg.Proxies[1] != "socks5://testuser:testpass@5.6.7.8:1093#new-alias" {
+		t.Fatalf("aliases must persist inside pool lines: %v", cfg.Proxies)
+	}
+	// 行去掉 #fragment = 明确清除该代理的别名
+	body = `{"proxies":["socks5://u:p@1.2.3.4:1080","socks5://testuser:testpass@5.6.7.8:1093#new-alias"]}`
+	req = httptest.NewRequest("POST", "/admin/api/opencode/config/update", strings.NewReader(body))
+	rec = httptest.NewRecorder()
+	handleZenConfigUpdate(rec, req)
+	if rec.Code != 200 {
+		t.Fatalf("update failed: %d", rec.Code)
+	}
+	if got := getZenConfig().Proxies[0]; got != "socks5://u:p@1.2.3.4:1080" {
+		t.Fatalf("fragment-less line must clear the alias: %q", got)
 	}
 }

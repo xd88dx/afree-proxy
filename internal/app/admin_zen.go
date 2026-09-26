@@ -30,7 +30,6 @@ func handleZenConfig(w http.ResponseWriter, r *http.Request) {
 		"keyStates":       zenKeyStatus(),
 		"baseURL":         cfg.BaseURL,
 		"proxies":         cfg.Proxies,
-		"proxyAliases":    cfg.ProxyAliases,
 		"proxyStrategy":   cfg.ProxyStrategy,
 		"maxConcurrency":  cfg.MaxConcurrency,
 		"retries":         cfg.Retries,
@@ -95,7 +94,6 @@ func handleZenConfigUpdate(w http.ResponseWriter, r *http.Request) {
 		Keys:            cur.Keys,
 		BaseURL:         cur.BaseURL,
 		Proxies:         cur.Proxies,
-		ProxyAliases:    cur.ProxyAliases,
 		ProxyStrategy:   cur.ProxyStrategy,
 		MaxConcurrency:  cur.MaxConcurrency,
 		Retries:         cur.Retries,
@@ -128,11 +126,11 @@ func handleZenConfigUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 	if patch.Proxies != nil {
 		// 每行先规范化（支持订阅分享格式 socks://b64(user:pass)@host:port#别名
-		// 等，自动拆出别名），再按标准格式校验入库
+		// 等，自动拆出别名），再按标准格式校验入库。别名（#fragment）随行
+		// 保留 —— 别名就是代理行的一部分，随行保存/回显/编辑，无需单独同步。
 		canonical := make([]string, 0, len(patch.Proxies))
-		aliases := make(map[string]string)
 		for _, line := range patch.Proxies {
-			parsed, alias, err := parseProxyLine(line)
+			parsed, _, err := parseProxyLine(line)
 			if err != nil {
 				writeAPI(w, http.StatusBadRequest, apiResponse{Error: err.Error()})
 				return
@@ -141,16 +139,12 @@ func handleZenConfigUpdate(w http.ResponseWriter, r *http.Request) {
 				continue
 			}
 			canonical = append(canonical, parsed)
-			if alias != "" {
-				aliases[parsed] = alias
-			}
 		}
 		if err := validateProxyList(canonical); err != nil {
 			writeAPI(w, http.StatusBadRequest, apiResponse{Error: err.Error()})
 			return
 		}
 		next.Proxies = canonical
-		next.ProxyAliases = aliases
 	}
 	if patch.ProxyStrategy != nil && *patch.ProxyStrategy != "" {
 		next.ProxyStrategy = *patch.ProxyStrategy
@@ -485,6 +479,35 @@ func handleZenSessionsMint(w http.ResponseWriter, r *http.Request) {
 		msg = "mint job already running"
 	}
 	writeAPI(w, http.StatusOK, apiResponse{Success: true, Message: msg, Data: state})
+}
+
+// POST /admin/api/opencode/keys/enabled  body: { index, enabled }
+// 设置单个 zen key 的自动铸造启用状态（面板"是否启用"勾选列）。未启用的
+// key 不参与任何铸造路径（启动补缺 / 403 触发 / 周期巡检 / 手动 Mint）。
+func handleZenKeySetEnabled(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		writeAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
+		return
+	}
+	body, err := io.ReadAll(io.LimitReader(r.Body, 512))
+	if err != nil {
+		writeAPI(w, http.StatusBadRequest, apiResponse{Error: err.Error()})
+		return
+	}
+	defer r.Body.Close()
+	var req struct {
+		Index   int  `json:"index"`
+		Enabled bool `json:"enabled"`
+	}
+	if err := json.Unmarshal(body, &req); err != nil {
+		writeAPI(w, http.StatusBadRequest, apiResponse{Error: "invalid JSON"})
+		return
+	}
+	if err := setZenKeyEnabled(req.Index, req.Enabled); err != nil {
+		writeAPI(w, http.StatusBadRequest, apiResponse{Error: err.Error()})
+		return
+	}
+	writeAPI(w, http.StatusOK, apiResponse{Success: true, Message: fmt.Sprintf("key #%d auto-mint enabled=%v", req.Index+1, req.Enabled)})
 }
 
 // POST /admin/api/opencode/keys/proxy  body: { index, main, backup }

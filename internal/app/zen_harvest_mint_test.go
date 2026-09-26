@@ -363,6 +363,12 @@ func TestMintReportsSkippedProgress(t *testing.T) {
 func TestMintJobSnapshotPrefilled(t *testing.T) {
 	setupHarvestTest(t)
 	fakeHarvestCLI(t, nil)
+	// 新语义：未启用（无显式记录、无会话）的 key 不参与铸造，先启用
+	setZenConfig(&zenConfigData{
+		Enabled:    true,
+		Keys:       []string{"sk-first", "sk-second"},
+		KeyEnabled: map[string]bool{"sk-first": true, "sk-second": true},
+	})
 	keys := []string{"sk-first", "sk-second"}
 	started, snap := startZenMintJob(keys, false)
 	if !started {

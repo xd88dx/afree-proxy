@@ -142,15 +142,6 @@ func maskProxyURL(raw string) string {
 	return u.String()
 }
 
-// proxyAliasOf 返回代理的展示别名；未设置别名时回退到打码 URL。
-func proxyAliasOf(raw string) string {
-	cfg := getZenConfig()
-	if alias, ok := cfg.ProxyAliases[raw]; ok && alias != "" {
-		return alias
-	}
-	return maskProxyURL(raw)
-}
-
 // parseProxyLine 把用户粘贴的代理行规范化为网关标准格式，并提取别名。
 //
 // 支持的输入：
@@ -200,8 +191,7 @@ func parseProxyLine(raw string) (canonical string, alias string, err error) {
 		}
 	}
 
-	// 重建：丢弃 fragment（已提取为别名）与查询串，统一 scheme
-	u.Fragment = ""
+	// 重建：别名（fragment）随行保留，查询串与路径剥离，统一 scheme
 	u.RawQuery = ""
 	u.Path = ""
 	return u.String(), alias, nil

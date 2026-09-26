@@ -722,6 +722,23 @@ var (
 // startZenMintJob 启动一次全池 mint。已有任务在跑时返回 false（单飞），
 // 不排新任务——重复点击只会干扰进度显示。
 func startZenMintJob(keys []string, force bool) (started bool, state map[string]any) {
+	// 未启用的 key 不参与铸造（面板"是否启用"勾选）——手动 Mint 同样跳过，
+	// 保持"未启用 = 完全不发起铸造请求"的一致语义
+	var mint []string
+	for _, k := range keys {
+		if k == "" || k == "public" {
+			continue
+		}
+		if !zenKeyAutoHarvestEnabled(k) {
+			continue
+		}
+		mint = append(mint, k)
+	}
+	if skipped := len(keys) - len(mint); skipped > 0 {
+		log.Printf("zen mint job: skipping %d key(s) not enabled for auto-mint", skipped)
+	}
+	keys = mint
+
 	zenMintJobMu.Lock()
 	if zenMintJobCur != nil && !zenMintJobCur.finished {
 		snap := zenMintJobSnapshotLocked(zenMintJobCur)
@@ -851,6 +868,14 @@ func startZenHarvester() {
 				interval = time.Hour
 			}
 			stale := periodicSweepCandidates(cfg.Keys, interval)
+			// 未启用的 key 不参与自动铸造（面板"是否启用"勾选）
+			enabled := stale[:0]
+			for _, k := range stale {
+				if zenKeyAutoHarvestEnabled(k) {
+					enabled = append(enabled, k)
+				}
+			}
+			stale = enabled
 			if len(stale) == 0 {
 				continue
 			}
@@ -916,6 +941,10 @@ func harvestMissingSessions() {
 		if k == "" || k == "public" {
 			continue
 		}
+		// 未启用的 key 不参与自动铸造（面板"是否启用"勾选）
+		if !zenKeyAutoHarvestEnabled(k) {
+			continue
+		}
 		// 只跳过 CLI mint 过的会话；本地随机占位（启动竞态窗口内
 		// StickyZenIdentity 创建）必须收割，否则该 key 永久 403。
 		if zenSessionLive(k) {
@@ -953,6 +982,11 @@ func harvestOnForbidden(key string) {
 		return
 	}
 	if key == "" || key == "public" {
+		return
+	}
+	// 未启用的 key 不参与自动铸造（面板"是否启用"勾选）；其 403 只按
+	// 限流/key 冷却语义处理
+	if !zenKeyAutoHarvestEnabled(key) {
 		return
 	}
 
