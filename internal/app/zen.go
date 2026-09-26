@@ -265,6 +265,28 @@ func zenKeyAutoHarvestEnabled(key string) bool {
 	return s.Minted || s.Live
 }
 
+// setAllZenKeysEnabled 一键启用/停用全部 key 的自动铸造（面板入口）。
+// public 无凭据跳过。返回实际改写的 key 数。
+func setAllZenKeysEnabled(enabled bool) int {
+	cfg := getZenConfig()
+	en := make(map[string]bool, len(cfg.Keys))
+	for k, v := range cfg.KeyEnabled {
+		en[k] = v
+	}
+	n := 0
+	for _, k := range cfg.Keys {
+		if k == "" || k == "public" {
+			continue
+		}
+		en[k] = enabled
+		n++
+	}
+	next := *cfg
+	next.KeyEnabled = en
+	setZenConfig(&next)
+	return n
+}
+
 // setZenKeyEnabled 写入 key 的显式启用状态（面板"是否启用"勾选）。
 // 写时复制：zenConfig 是被请求路径并发读取的活配置。
 func setZenKeyEnabled(index int, enabled bool) error {

@@ -91,6 +91,8 @@ func registerAdminRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/admin/api/keys", adminCORS(auth(handleAdminGetKeys)))
 	mux.HandleFunc("/admin/api/keys/generate", adminCORS(auth(handleAdminGenerateKey)))
 	mux.HandleFunc("/admin/api/headers/reset", adminCORS(auth(handleAdminHeadersReset)))
+	mux.HandleFunc("/admin/api/config/export", adminCORS(auth(handleAdminConfigExport)))
+	mux.HandleFunc("/admin/api/config/import", adminCORS(auth(handleAdminConfigImport)));
 	mux.HandleFunc("/admin/api/keys/delete", adminCORS(auth(handleAdminDeleteKey)))
 	mux.HandleFunc("/admin/api/models", adminCORS(auth(handleAdminModels)))
 	mux.HandleFunc("/admin/api/models/refresh", adminCORS(auth(handleAdminModelsRefresh)))
@@ -115,7 +117,8 @@ func registerAdminRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/admin/api/zen/keys/test", adminCORS(auth(handleZenKeyTest)))
 	mux.HandleFunc("/admin/api/zen/keys/enabled", adminCORS(auth(handleZenKeySetEnabled)))
 	mux.HandleFunc("/admin/api/opencode/keys/enabled", adminCORS(auth(handleZenKeySetEnabled)))
-	mux.HandleFunc("/admin/api/opencode/keys/proxy/clear", adminCORS(auth(handleZenKeyClearProxies)));
+	mux.HandleFunc("/admin/api/opencode/keys/enabled/all", adminCORS(auth(handleZenKeyEnableAll)))
+	mux.HandleFunc("/admin/api/opencode/keys/proxy/clear", adminCORS(auth(handleZenKeyClearProxies)))
 	mux.HandleFunc("/admin/api/zen/keys/proxy", adminCORS(auth(handleZenKeySetProxy)))
 	mux.HandleFunc("/admin/api/opencode/keys/proxy", adminCORS(auth(handleZenKeySetProxy)))
 	mux.HandleFunc("/admin/api/zen/sessions", adminCORS(auth(handleZenSessions)))

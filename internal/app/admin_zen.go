@@ -102,6 +102,7 @@ func handleZenConfigUpdate(w http.ResponseWriter, r *http.Request) {
 		FailoverMinutes: cur.FailoverMinutes,
 		ProxyIsolation:  cur.ProxyIsolation,
 		KeyBindings:     cur.KeyBindings,
+		KeyEnabled:      cur.KeyEnabled,
 		Compaction:      cur.Compaction,
 	}
 	if patch.ZenUseProxies != nil {
@@ -508,6 +509,30 @@ func handleZenKeySetEnabled(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeAPI(w, http.StatusOK, apiResponse{Success: true, Message: fmt.Sprintf("key #%d auto-mint enabled=%v", req.Index+1, req.Enabled)})
+}
+
+// POST /admin/api/opencode/keys/enabled/all  body: { enabled }
+// 一键启用/停用全部 key 的自动铸造（public 无凭据跳过）。
+func handleZenKeyEnableAll(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		writeAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
+		return
+	}
+	body, err := io.ReadAll(io.LimitReader(r.Body, 512))
+	if err != nil {
+		writeAPI(w, http.StatusBadRequest, apiResponse{Error: err.Error()})
+		return
+	}
+	defer r.Body.Close()
+	var req struct {
+		Enabled bool `json:"enabled"`
+	}
+	if err := json.Unmarshal(body, &req); err != nil {
+		writeAPI(w, http.StatusBadRequest, apiResponse{Error: "invalid JSON"})
+		return
+	}
+	n := setAllZenKeysEnabled(req.Enabled)
+	writeAPI(w, http.StatusOK, apiResponse{Success: true, Message: fmt.Sprintf("auto-mint enabled=%v on %d key(s)", req.Enabled, n)})
 }
 
 // POST /admin/api/opencode/keys/proxy  body: { index, main, backup }

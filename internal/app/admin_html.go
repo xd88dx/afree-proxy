@@ -524,6 +524,20 @@ body:not([data-theme="dark"]) .theme-toggle .dark-label{display:none}
   </div>
 </div>
 
+<div class="section">
+  <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><path d="M12 3v12m0 0 4-4m-4 4-4-4"/><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg></span> Config export / import</div>
+  <div class="section-body">
+    <div class="hint">Exports/imports everything persisted: Cline accounts, client keys, OpenCode keys (with enabled/bindings), the proxy pool (with aliases), request headers, scheduling strategy, custom aliases, zen sessions and learned endpoints. <b>The file contains ALL secrets — keep it safe.</b> Import replaces sections present in the file; sections absent from the file are left untouched.</div>
+    <div class="form-actions">
+      <button class="btn btn-success" onclick="exportConfig()">Export config</button>
+      <button class="btn" onclick="document.getElementById('importFile').click()">Choose backup file</button>
+      <button class="btn btn-primary" id="importBtn" disabled onclick="importConfigFromFile()">Import config</button>
+      <input type="file" id="importFile" accept=".json,application/json" style="display:none" onchange="onImportFileChange(event)">
+    </div>
+    <div id="importResult" style="margin-top:8px"></div>
+  </div>
+</div>
+
 <div class="section danger-zone">
   <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg></span> Danger zone</div>
   <div class="section-body">
@@ -596,6 +610,7 @@ body:not([data-theme="dark"]) .theme-toggle .dark-label{display:none}
       <select id="ocProbeModel" style="max-width:360px"><option value="">auto — big-pickle first, then live models</option></select>
     </div>
     <div style="display:flex;justify-content:flex-end;margin-bottom:8px">
+      <button class="btn btn-sm" onclick="enableAllZenKeys(true)" title="Enable auto-minting on ALL keys">Enable all</button>
       <button class="btn btn-sm" onclick="clearZenKeyProxies()" title="Clear proxy bindings on ALL keys — every key returns to the Global default">Clear bindings</button>
     </div>
     <div class="table-wrap" style="margin-bottom:10px">
@@ -849,6 +864,9 @@ const I18N_ZH = {
   'Reset failed': '恢复失败',
   'OpenCode keys without proxy bindings follow this switch.': 'OpenCode 未绑定代理的 key 遵循此开关。',
   'Clear bindings': '一键清空',
+  'Enable all': '一键启用',
+  'Enable auto-minting on ALL keys?': '启用全部 key 的自动铸造？',
+  'Disable auto-minting on ALL keys?': '停用全部 key 的自动铸造？',
   'Bindings cleared': '绑定已清空',
   'Clear failed': '清空失败：',
   'Clear proxy bindings on ALL accounts? Every account returns to the Global default.': '清空全部账号的代理绑定？所有账号回到默认值「全局」。',
@@ -869,6 +887,17 @@ const I18N_ZH = {
   'API address:': 'API 地址：',
   'OpenCode config saved': 'OpenCode 配置已保存',
   'OpenCode proxy setting saved': 'OpenCode 代理设置已保存',
+  'Config export / import': '配置导入导出',
+  'Export config': '导出配置',
+  'Import config': '导入配置',
+  'Choose backup file': '选择备份文件',
+  'Config exported': '配置已导出',
+  'Config imported': '配置已导入',
+  'Unsupported backup version': '不支持的备份版本',
+  'ready to import': '已就绪，可导入',
+  'Choose a backup JSON file first': '请先选择备份 JSON 文件',
+  'Invalid backup file: ': '备份文件无效：',
+  'Import replaces sections present in the file (accounts / keys / proxies / combos ...). Continue?': '导入将用文件内容替换当前对应的配置段（Cline 账号 / 客户端 key / OpenCode key / 代理池 / 自定义别名等，文件中存在的段都会替换）。继续？',
   'State': '状态',
   'Global': '全局',
   'Direct': '直连',
@@ -1394,6 +1423,15 @@ async function clearZenKeyProxies() {
   } catch (e) { toast('Clear failed: ' + e.message, 'error'); }
 }
 
+async function enableAllZenKeys(enabled) {
+  if (!confirm(enabled ? T('Enable auto-minting on ALL keys?') : T('Disable auto-minting on ALL keys?'))) return;
+  try {
+    const d = await api('POST', '/opencode/keys/enabled/all', { enabled: enabled });
+    toast(d.message || T('Enabled state saved'), 'success');
+    loadOcConfig();
+  } catch (e) { toast('Save failed: ' + e.message, 'error'); }
+}
+
 // ========== 出口绑定联想下拉（combobox） ==========
 // 选项固定为 全局 / 直连，其后是代理池按输入联想。联想阈值：有效字符 ≥3
 //（中日韩字符按 1.5 计，即 2 个汉字触发）。value 语义：'' = 全局（默认，
@@ -1520,8 +1558,11 @@ async function testAccount(id, btn) {
     if (r.prevStatus && r.prevStatus !== r.status) msg += T(' (was: ') + (prevMap[r.prevStatus] || r.prevStatus) + T(')');
     if (r.cooldownUntil) msg += T('\nEstimated recovery: ') + fmtWhen(r.cooldownUntil);
     if (r.remaining) msg += T(' (remaining ') + r.remaining + T(')');
-    if (r.reason) msg += T('\nReason: ') + r.reason;
-    if (r.httpStatus) msg += T('\nHTTP: ') + r.httpStatus;
+    // 成功时不显示"原因 ok / HTTP 200"这类噪音：只有非成功结果才需要原因
+    if (r.status !== 'active') {
+      if (r.reason) msg += T('\nReason: ') + r.reason;
+      if (r.httpStatus) msg += T('\nHTTP: ') + r.httpStatus;
+    }
     const type = r.status === 'active' ? 'success' : (r.status === 'cooldown' ? 'warning' : 'error');
     toast(msg, type, 6000);
     loadAccounts(); loadStats();
@@ -1561,6 +1602,56 @@ async function resetAccount(id, btn) {
   } finally {
     if (btn) { btn.disabled = false; btn.innerHTML = original; }
   }
+}
+
+// ========== Config export / import ==========
+let importPayload = null;
+
+async function exportConfig() {
+  try {
+    const res = await fetch(API + '/config/export');
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = 'afree-proxy-config-' + new Date().toISOString().slice(0, 10) + '.json';
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    toast(T('Config exported'), 'success');
+  } catch (e) { toast(T('Export failed: ') + e.message, 'error'); }
+}
+
+function onImportFileChange(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      const parsed = JSON.parse(reader.result);
+      if (parsed.version !== 1) throw new Error(T('Unsupported backup version'));
+      importPayload = JSON.stringify(parsed);
+      _('importBtn').disabled = false;
+      _('importResult').innerHTML = '<div style="color:var(--accent2);font-size:12px">' + esc(file.name) + ' — ' + esc(T('ready to import')) + '</div>';
+    } catch (e) {
+      importPayload = null;
+      _('importBtn').disabled = true;
+      toast(T('Invalid backup file: ') + e.message, 'error');
+    }
+  };
+  reader.readAsText(file);
+  event.target.value = '';
+}
+
+async function importConfigFromFile() {
+  if (!importPayload) { toast(T('Choose a backup JSON file first'), 'error'); return; }
+  if (!confirm(T('Import replaces sections present in the file (accounts / keys / proxies / combos ...). Continue?'))) return;
+  try {
+    const d = await api('POST', '/config/import', JSON.parse(importPayload));
+    const imp = (d.data && d.data.imported) || {};
+    const parts = Object.keys(imp).map(k => k + '=' + imp[k]);
+    toast(T('Config imported') + ' — ' + parts.join(', '), 'success');
+    setTimeout(() => location.reload(), 1200);
+  } catch (e) { toast(T('Import failed: ') + e.message, 'error'); }
 }
 
 async function deleteAllAccounts() {
