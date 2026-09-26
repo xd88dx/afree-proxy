@@ -44,7 +44,6 @@ func setupZenProbeTest(t *testing.T, handler http.HandlerFunc) {
 
 	savedCfg := getZenConfig()
 	cfgCopy := *savedCfg
-	cfgCopy.Enabled = true
 	cfgCopy.BaseURL = upstream.URL
 	cfgCopy.Keys = []string{"sk-aaa111", "sk-bbb222", "sk-pin333"}
 	// 新语义：未启用的 key 的 403 不触发收割 —— 探测类测试统一把 key 置为启用

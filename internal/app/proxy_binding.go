@@ -107,6 +107,16 @@ func boundProxiesRoutable(main, backup string) bool {
 	return ok
 }
 
+// zenProxiesEnabled OpenCode 上游是否走共享代理池：配置缺省（nil）时按旧
+// 规则（代理列表非空即走池）；面板下拉可显式选择走池/直连。
+func zenProxiesEnabled() bool {
+	zup := getZenConfig().ZenUseProxies
+	if zup == nil {
+		return len(getZenConfig().Proxies) > 0
+	}
+	return *zup
+}
+
 // zenAttemptExit 为一次 zen 上游尝试解析出口。key 有绑定时（隔离模式）主→辅，
 // 双不可用返回 ok=false —— 调用方对 pinned 探测直接报错，正常请求则短冷却
 // 该 key 换下一个（绝不退回其他出口，否则粘性会话的 IP 就漂移了）；未绑定
@@ -114,6 +124,9 @@ func boundProxiesRoutable(main, backup string) bool {
 func zenAttemptExit(key string) (proxyURL string, idx int, ok bool) {
 	main, backup, bound := zenKeyBindingOf(key)
 	if !bound {
+		if !zenProxiesEnabled() {
+			return "", -1, true // 面板选择直连：即使代理列表非空也不走池
+		}
 		proxyURL, idx = pickUpstreamProxy()
 		return proxyURL, idx, true
 	}
@@ -253,4 +266,37 @@ func setZenKeyProxyBinding(index int, main, backup string) error {
 	next.KeyBindings = bindings
 	setZenConfig(&next)
 	return nil
+}
+
+// clearAllAccountProxies 一键清空全部账号的代理绑定（面板入口）：
+// 所有账号回到"全局"默认值。
+func clearAllAccountProxies() int {
+	p := loadPool()
+	poolMu.Lock()
+	n := 0
+	for _, a := range p.Accounts {
+		if a.ProxyMain == "" && a.ProxyBackup == "" {
+			continue
+		}
+		a.ProxyMain = ""
+		a.ProxyBackup = ""
+		n++
+	}
+	markPoolDirtyLocked()
+	poolMu.Unlock()
+	return n
+}
+
+// clearAllZenKeyProxies 一键清空全部 zen key 的代理绑定（面板入口）：
+// 所有 key 回到"全局"默认值。启用状态（KeyEnabled）不受影响。
+func clearAllZenKeyProxies() int {
+	cfg := getZenConfig()
+	if len(cfg.KeyBindings) == 0 {
+		return 0
+	}
+	n := len(cfg.KeyBindings)
+	next := *cfg
+	next.KeyBindings = nil
+	setZenConfig(&next)
+	return n
 }

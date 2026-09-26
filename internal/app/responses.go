@@ -641,13 +641,6 @@ func handleResponses(w http.ResponseWriter, r *http.Request) {
 	}
 	if route == "zen" {
 		// 与管理面板的 zen 开关一致：关掉后 /v1/responses 也不得继续往 zen 打
-		//（chat 与 messages 两个入口都查了，这里漏查会让开关形同虚设）
-		if !getZenConfig().Enabled {
-			writeJSON(w, http.StatusServiceUnavailable, map[string]any{
-				"error": map[string]string{"message": "zen upstream disabled in /admin/ settings", "type": "api_error"},
-			})
-			return
-		}
 		zm, ok := resolveZenFreeModel(chatModel)
 		if !ok {
 			writeJSON(w, http.StatusBadRequest, map[string]any{

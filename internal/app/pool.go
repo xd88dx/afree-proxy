@@ -99,22 +99,60 @@ func loadPool() *AccountPool {
 	if pool.DefaultModel != "" {
 		defaultModel = pool.DefaultModel
 	}
+	// 回放持久化的调度策略与自定义请求头（POOL_STRATEGY env 显式设置时
+	// 策略以 env 为准，跳过回放）
+	proxyConfigMu.Lock()
+	if !poolStrategyFromEnv {
+		switch p.Strategy {
+		case "round_robin", "fill", "random":
+			proxyConfig.Strategy = p.Strategy
+		}
+	}
+	if len(p.Headers) > 0 {
+		h := make(map[string]string, len(p.Headers))
+		for k, v := range p.Headers {
+			h[k] = v
+		}
+		proxyConfig.Headers = h
+	}
+	proxyConfigMu.Unlock()
 	return pool
 }
 
-// setDefaultModel 持久化默认模型：更新内存全局并写入账号池文件
+// setDefaultModel 持久化默认模型：更新内存全局并写入账号池文件。
+// 默认模型可以是 Cline 免费模型，也可以是 OpenCode 免费模型（路由层按
+// 模型名分流，默认值只是"未知模型名的兜底"）。
 func setDefaultModel(modelID string) {
 	initModelsCache()
 	modelsMu.Lock()
 	_, ok := modelsCache[modelID]
 	modelsMu.Unlock()
 	if !ok {
-		return
+		initZenModels()
+		if _, zok := resolveZenFreeModel(modelID); !zok {
+			return
+		}
 	}
 	defaultModel = modelID
 	p := loadPool()
 	poolMu.Lock()
 	p.DefaultModel = modelID
+	poolMu.Unlock()
+	savePool()
+}
+
+// persistProxyConfig 把调度策略与自定义请求头写入账号池文件（重启后由
+// loadPool 回放）。策略受 POOL_STRATEGY env 覆盖，请求头无 env 覆盖。
+func persistProxyConfig(cfg *proxyConfigData) {
+	p := loadPool()
+	poolMu.Lock()
+	p.Strategy = cfg.Strategy
+	h := make(map[string]string, len(cfg.Headers))
+	for k, v := range cfg.Headers {
+		h[k] = v
+	}
+	p.Headers = h
+	markPoolDirtyLocked()
 	poolMu.Unlock()
 	savePool()
 }

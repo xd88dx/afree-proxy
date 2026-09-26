@@ -859,14 +859,11 @@ func startZenHarvester() {
 			if !harvestEnabled() {
 				continue
 			}
-			cfg := getZenConfig()
-			if !cfg.Enabled {
-				continue
-			}
 			interval := harvestInterval()
 			if interval < time.Hour {
 				interval = time.Hour
 			}
+			cfg := getZenConfig()
 			stale := periodicSweepCandidates(cfg.Keys, interval)
 			// 未启用的 key 不参与自动铸造（面板"是否启用"勾选）
 			enabled := stale[:0]
@@ -933,9 +930,6 @@ func harvestMissingSessions() {
 		return
 	}
 	cfg := getZenConfig()
-	if !cfg.Enabled {
-		return
-	}
 	var missing []string
 	for _, k := range cfg.Keys {
 		if k == "" || k == "public" {

@@ -294,6 +294,7 @@ body:not([data-theme="dark"]) .theme-toggle .dark-label{display:none}
   <h2>Cline</h2>
   <div style="display:flex;gap:8px">
     <button class="btn btn-sm" onclick="assignProxiesEvenly()" title="Distribute the proxy pool across all accounts: main = pool[i%N], backup = pool[(i+1)%N]">Assign proxies evenly</button>
+    <button class="btn btn-sm" onclick="clearAccountProxies()" title="Clear proxy bindings on ALL accounts — every account returns to the Global default">Clear bindings</button>
     <button class="btn btn-sm" onclick="exportAccounts()">Export accounts</button>
     <button class="btn btn-primary btn-sm" onclick="switchTab('import')">Add</button>
     <button class="btn btn-sm" onclick="loadAccounts()">Refresh</button>
@@ -315,6 +316,25 @@ body:not([data-theme="dark"]) .theme-toggle .dark-label{display:none}
       </tbody>
     </table>
     </div>
+  </div>
+</div>
+<div class="section">
+  <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h10"/></svg></span> Request headers (mimicking the Cline CLI)<button class="btn btn-sm" onclick="resetHeaders()" style="margin-left:auto" title="Restore the default Cline CLI headers">Restore defaults</button></div>
+  <div class="section-body">
+    <div class="table-wrap">
+    <table>
+      <thead><tr><th style="width:220px">Header</th><th>Value</th><th style="width:40px"></th></tr></thead>
+      <tbody id="headersTableBody">
+        <tr><td colspan="3" class="empty">Loading...</td></tr>
+      </tbody>
+    </table>
+    </div>
+    <div class="form-actions">
+      <button class="btn btn-sm" onclick="addHeaderRow()">Add header</button>
+      <button class="btn btn-sm btn-primary" onclick="saveHeaders()">Save headers</button>
+    </div>
+    <div class="hint">These headers are attached to every request forwarded to the Cline API to mimic the official client.</div>
+    <div id="headerSaveResult" style="margin-top:8px"></div>
   </div>
 </div>
 </div>
@@ -387,14 +407,14 @@ body:not([data-theme="dark"]) .theme-toggle .dark-label{display:none}
 <div id="tab-proxypool" class="tab-panel" style="display:none">
 <h2>Proxy pool</h2>
 <div class="section">
-  <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><circle cx="12" cy="5" r="2.5"/><circle cx="5" cy="19" r="2.5"/><circle cx="19" cy="19" r="2.5"/><path d="M12 7.5v4m0 0-5.5 5m5.5-5 5.5 5"/></svg></span> Shared egress proxies</div>
+  <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><circle cx="12" cy="5" r="2.5"/><circle cx="5" cy="19" r="2.5"/><circle cx="19" cy="19" r="2.5"/><path d="M12 7.5v4m0 0-5.5 5m5.5-5 5.5 5"/></svg></span> Egress proxies</div>
   <div class="section-body">
     <div class="hint" style="margin-bottom:10px">One proxy list serves every upstream that opts in below. One proxy per line: <code>http://user:pass@host:port</code> or <code>socks5://host:port</code>. Requests rotate across healthy proxies per request; a proxy that hits a rate limit is cooled down and skipped automatically.</div>
     <div class="form-row">
       <div class="field" style="flex:3"><label>Proxy list</label>
         <textarea id="ppProxies" rows="4" placeholder="one per line: socks://b64(user:pass)@host:port#alias, socks5://user:pass@host:port#alias or http://host:port"></textarea>
       </div>
-      <div class="field"><label>Rotation strategy</label>
+      <div class="field"><label>Proxy selection strategy</label>
         <select id="ppStrategy"><option value="round_robin">Round-robin (round_robin)</option><option value="random">Random (random)</option><option value="fill">Fill (fill)</option></select>
       </div>
     </div>
@@ -403,20 +423,25 @@ body:not([data-theme="dark"]) .theme-toggle .dark-label{display:none}
   </div>
 </div>
 <div class="section">
-  <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></span> Where this pool is used</div>
+  <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></span> Global policy</div>
   <div class="section-body">
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px 24px;align-items:center">
-      <div class="field" style="margin:0"><label style="margin:0">Cline upstream</label></div>
-      <div class="field" style="margin:0"><label style="margin:0">OpenCode upstream</label></div>
+      <div class="field" style="margin:0"><label style="margin:0">Cline</label></div>
+      <div class="field" style="margin:0"><label style="margin:0">OpenCode</label></div>
       <div class="field" style="margin:0">
         <div style="display:flex;gap:6px;align-items:center">
-          <select id="ppCline" style="flex:1"><option value="true">Use proxy pool</option><option value="false">Direct connection</option></select>
+          <select id="ppCline" style="flex:1"><option value="true">Proxy</option><option value="false">Direct connection</option></select>
           <button class="btn btn-sm btn-primary" onclick="saveClineProxies()">Save</button>
         </div>
       </div>
-      <div class="field" style="margin:0"><div class="hint" style="margin:0" id="ppZenState">-</div></div>
+      <div class="field" style="margin:0">
+        <div style="display:flex;gap:6px;align-items:center">
+          <select id="ppZen" style="flex:1"><option value="true">Proxy</option><option value="false">Direct connection</option></select>
+          <button class="btn btn-sm btn-primary" onclick="saveZenProxies()">Save</button>
+        </div>
+      </div>
       <div class="hint" style="margin:0">Off (direct) by default. The <code>CLINE_USE_PROXIES=true</code> env var always forces this on.</div>
-      <div class="hint" style="margin:0">OpenCode automatically routes through the pool above whenever the list is non-empty — no separate switch needed.</div>
+      <div class="hint" style="margin:0">OpenCode keys without proxy bindings follow this switch.</div>
     </div>
   </div>
 </div>
@@ -466,7 +491,7 @@ body:not([data-theme="dark"]) .theme-toggle .dark-label{display:none}
   <div class="section-body">
     <div class="flex" style="margin-bottom:10px;gap:10px">
       <button class="btn btn-sm btn-primary" onclick="refreshModels()">Refresh models</button>
-      <span class="hint" style="margin:0">Auto-syncs the official upstream free-model feed (60s); only quota-free models are shown</span>
+      <span class="hint" style="margin:0">Auto-syncs official free-model feeds for both upstreams (60s); only zero-cost models are shown</span>
     </div>
     <div id="modelsList">Loading...</div>
   </div>
@@ -487,38 +512,15 @@ body:not([data-theme="dark"]) .theme-toggle .dark-label{display:none}
     </div>
     <div class="form-row">
       <div class="field">
-        <label>Scheduling strategy</label>
+        <label>Account scheduling strategy</label>
         <select id="settingStrategy" onchange="updateConfig()">
           <option value="round_robin">Round-robin (round_robin)</option>
-          <option value="fill">Fill (fill)</option>
           <option value="random">Random (random)</option>
+          <option value="fill">Fill (fill)</option>
         </select>
       </div>
       <div class="field"><label>Engine version</label><input type="text" id="settingVersion" disabled></div>
     </div>
-    <div class="form-row">
-      <div class="field"><label>Accounts file</label><input type="text" id="settingPoolPath" disabled></div>
-    </div>
-  </div>
-</div>
-
-<div class="section">
-  <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h10"/></svg></span> Request headers (mimicking the Cline CLI)</div>
-  <div class="section-body">
-    <div class="table-wrap">
-    <table>
-      <thead><tr><th style="width:220px">Header</th><th>Value</th><th style="width:40px"></th></tr></thead>
-      <tbody id="headersTableBody">
-        <tr><td colspan="3" class="empty">Loading...</td></tr>
-      </tbody>
-    </table>
-    </div>
-    <div class="form-actions">
-      <button class="btn btn-sm" onclick="addHeaderRow()">Add header</button>
-      <button class="btn btn-sm btn-primary" onclick="saveHeaders()">Save headers</button>
-    </div>
-    <div class="hint">These headers are attached to every request forwarded to the Cline API to mimic the official client.</div>
-    <div id="headerSaveResult" style="margin-top:8px"></div>
   </div>
 </div>
 
@@ -585,17 +587,16 @@ body:not([data-theme="dark"]) .theme-toggle .dark-label{display:none}
 <h2>OpenCode</h2>
 
 <div class="section">
-  <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14.5 14.5 0 0 1 0 18 14.5 14.5 0 0 1 0-18z"/></svg></span> Upstream config</div>
   <div class="section-body">
     <div class="form-row">
-      <div class="field"><label>Enable OpenCode upstream</label>
-        <select id="ocEnabled"><option value="true">On</option><option value="false">Off</option></select>
-      </div>
-      <div class="field" style="flex:2"><label>API keys (one per line, round-robin rotation, auto-cooldown on 429)</label><textarea id="ocKeys" rows="3" placeholder="public"></textarea></div>
+      <div class="field" style="flex:1"><label>API keys (one per line, round-robin rotation, auto-cooldown on 429)</label><textarea id="ocKeys" rows="3" placeholder="public"></textarea></div>
     </div>
     <div class="flex" style="gap:10px;margin-bottom:8px;align-items:center;flex-wrap:wrap">
       <label class="hint" style="margin:0">Probe model (used by the Test buttons):</label>
       <select id="ocProbeModel" style="max-width:360px"><option value="">auto — big-pickle first, then live models</option></select>
+    </div>
+    <div style="display:flex;justify-content:flex-end;margin-bottom:8px">
+      <button class="btn btn-sm" onclick="clearZenKeyProxies()" title="Clear proxy bindings on ALL keys — every key returns to the Global default">Clear bindings</button>
     </div>
     <div class="table-wrap" style="margin-bottom:10px">
       <table>
@@ -605,11 +606,6 @@ body:not([data-theme="dark"]) .theme-toggle .dark-label{display:none}
     </div>
     <div class="form-row">
       <div class="field"><label>Base URL</label><input type="text" id="ocBaseURL" placeholder="https://opencode.ai/zen/v1"></div>
-      <div class="field">
-        <label>Egress proxies</label>
-        <div class="hint" style="margin-top:6px" id="ocProxyState">-</div>
-        <div class="hint">Managed on the <a href="#" onclick="switchTab('proxypool');return false" style="color:var(--accent);cursor:pointer">Proxy pool</a> page — shared with the Cline upstream.</div>
-      </div>
     </div>
     <div class="form-actions"><button class="btn btn-primary" onclick="saveOcConfig()">Save config</button></div>
   </div>
@@ -674,15 +670,6 @@ body:not([data-theme="dark"]) .theme-toggle .dark-label{display:none}
       </table>
     </div>
     <div id="ocSessResult" style="margin-top:10px"></div>
-  </div>
-</div>
-
-<div class="section">
-  <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/></svg></span> OpenCode model list
-    <button class="btn btn-sm" onclick="refreshOcModels()" style="margin-left:auto">Sync now</button>
-  </div>
-  <div class="section-body" style="padding:6px">
-    <div id="ocModelsList" style="padding:12px">Loading...</div>
   </div>
 </div>
 
@@ -841,25 +828,47 @@ const I18N_ZH = {
   'Import all': '全部导入',
   'Choose file': '选择文件',
   // 代理池页
-  'Shared egress proxies': '共享出口代理',
-  'One proxy list serves every upstream that opts in below. One proxy per line': '一份代理列表供下方所有选择启用的上游共用。每行一条：',
+  'Egress proxies': '出口代理',
+  'One proxy list serves every upstream that opts in below. One proxy per line:': '一份代理列表供下方所有选择启用的上游共用。每行一条：',
   'or': '或',
   '. Requests rotate across healthy proxies per request; a proxy that hits a rate limit is cooled down and skipped automatically.': '。请求按次在健康代理间轮转；触发限流的代理会自动冷却并被跳过。',
   'one per line: socks://b64(user:pass)@host:port#alias, socks5://user:pass@host:port#alias or http://host:port': '每行一条：socks://b64(账号:密码)@host:port#别名、socks5://账号:密码@host:port#别名 或 http://host:port（#别名自动识别）',
   'Proxy list': '代理列表',
-  'Rotation strategy': '轮转策略',
+  'Proxy selection strategy': '代理选择策略',
   'Round-robin (round_robin)': '轮询（round_robin）',
   'Random (random)': '随机（random）',
   'Fill (fill)': '填满优先（fill）',
   'Save proxy pool': '保存代理池',
-  'Where this pool is used': '代理池的使用范围',
-  'Cline upstream': 'Cline 上游',
+  'Global policy': '全局策略',
+  'Cline': 'Cline',
   'Use proxy pool': '走代理池',
+  'Proxy': '代理',
+  'Restore defaults': '恢复默认',
+  'Restore the default Cline CLI headers': '恢复默认的 Cline CLI 请求头',
+  'Headers restored to defaults': '请求头已恢复默认',
+  'Reset failed': '恢复失败',
+  'OpenCode keys without proxy bindings follow this switch.': 'OpenCode 未绑定代理的 key 遵循此开关。',
+  'Clear bindings': '一键清空',
+  'Bindings cleared': '绑定已清空',
+  'Clear failed': '清空失败：',
+  'Clear proxy bindings on ALL accounts? Every account returns to the Global default.': '清空全部账号的代理绑定？所有账号回到默认值「全局」。',
+  'Clear proxy bindings on ALL keys? Every key returns to the Global default (enabled state is kept).': '清空全部 key 的代理绑定？所有 key 回到默认值「全局」（启用状态保留）。',
+  'Clear proxy bindings on ALL keys — every key returns to the Global default': '清空全部 key 的代理绑定 —— 所有 key 回到默认值「全局」',
+  'Distribute the proxy pool across all accounts: main = pool[i%N], backup = pool[(i+1)%N]': '把代理池均匀分配给全部账号：主 = 池[i%N]，辅 = 池[(i+1)%N]',
   'Direct connection': '直连',
   'Save': '保存',
   'Off (direct) by default. The': '默认关闭（直连）。',
   'env var always forces this on.': ' 环境变量设置时恒定强制开启。',
+  'Delete': '删除',
+  'Test': '测试',
+  'Reset': '重置',
+  'Open': '打开',
+  'and enter the code:': '，并输入代码：',
+  'Tokens': 'Token 用量',
+  'Admin panel:': '管理面板：',
+  'API address:': 'API 地址：',
   'OpenCode config saved': 'OpenCode 配置已保存',
+  'OpenCode proxy setting saved': 'OpenCode 代理设置已保存',
   'State': '状态',
   'Global': '全局',
   'Direct': '直连',
@@ -868,7 +877,7 @@ const I18N_ZH = {
   'Key enabled state saved': '启用状态已保存',
   'Follows the main slot': '跟随主出口',
   'No matching proxies': '没有匹配的代理',
-  'OpenCode upstream': 'OpenCode 上游',
+  'OpenCode': 'OpenCode',
   'OpenCode automatically routes through the pool above whenever the list is non-empty — no separate switch needed.': '代理列表非空时 OpenCode 自动经上方代理池路由 —— 无需单独开关。',
   'Proxy isolation (identity ↔ exit binding)': '代理隔离（身份 ↔ 出口绑定）',
   'Isolation mode': '隔离模式',
@@ -886,14 +895,15 @@ const I18N_ZH = {
   'Generated keys authenticate client access to the proxy API (sent as the x-api-key or Authorization header).': '生成的 key 用于客户端调用代理 API 鉴权（以 x-api-key 或 Authorization 头发送）。',
   'Generate new key': '生成新 key',
   'Available models': '可用模型',
+  'Cline free models': 'Cline 免费模型',
+  'OpenCode free models': 'OpenCode 免费模型',
   'Refresh models': '刷新模型',
-  'Auto-syncs the official upstream free-model feed (60s); only quota-free models are shown': '自动同步官方上游免费模型源（60 秒）；仅显示零配额模型',
+  'Auto-syncs official free-model feeds for both upstreams (60s); only zero-cost models are shown': '自动同步两个上游的官方免费模型源（60 秒）；仅显示零配额模型',
   'General config': '常规配置',
   'Listen address': '监听地址',
   'Default model': '默认模型',
-  'Scheduling strategy': '调度策略',
+  'Account scheduling strategy': '账号调度策略',
   'Engine version': '引擎版本',
-  'Accounts file': '账号文件',
   'Request headers (mimicking the Cline CLI)': '请求头（模拟 Cline CLI）',
   'Header': '请求头',
   'Value': '值',
@@ -957,7 +967,6 @@ const I18N_ZH = {
   ' · until ': ' · 至 ',
   'next in rotation': '轮转中的下一个',
   'Base URL': 'Base URL',
-  'Egress proxies': '出口代理',
   'Managed on the': '管理入口在 ',
   'page — shared with the Cline upstream.': ' 页 —— 与 Cline 上游共用。',
   'none configured': '未配置',
@@ -967,7 +976,8 @@ const I18N_ZH = {
   'Rate-limit retries': '限流重试次数',
   'Failover': '故障转移',
   'On (switch to cline pool)': '开（转移到 cline 池）',
-  'Failover window (s)': '失败阈值',
+  'Failure threshold': '失败阈值',
+  'Failover window (min)': '故障转移窗口（分钟）',
   'Current status': '当前状态',
   'Save rate-limit config': '保存限流配置',
   'Context compaction (OpenCode official mechanism)': '上下文压缩（OpenCode 官方机制）',
@@ -979,7 +989,7 @@ const I18N_ZH = {
   'Summary cap': '摘要上限',
   'Save compaction config': '保存压缩配置',
   'Live session IDs (OpenCode FreeTier gate)': 'Live 会话 ID（OpenCode FreeTier 门槛）',
-  'The free tier only accepts session IDs the upstream has actually seen, minted by the opencode CLI. A key without a live session ': '免费层只接受上游真实见过的会话 ID（由 opencode CLI 铸造）。没有 live 会话的 key ',
+  'The free tier only accepts session IDs the upstream has actually seen, minted by the opencode CLI. A key without a live session': '免费层只接受上游真实见过的会话 ID（由 opencode CLI 铸造）。没有 live 会话的 key ',
   'always': '必定',
   'fails with 403 — normally the harvester mints one on startup, on repeated 403s, and every few hours; use the buttons below to mint immediately (e.g. right after a fresh deploy with many keys).': ' 会以 403 失败 —— 正常情况下收割机会在启动时、反复 403 时和每隔几小时自动补铸；也可用下方按钮立即铸造（例如刚部署、key 很多时）。',
   'Mint missing sessions': '铸造缺失的会话',
@@ -1364,6 +1374,24 @@ async function assignProxiesEvenly() {
     toast(d.message || T('Proxies assigned'), 'success');
     loadAccounts();
   } catch (e) { toast('Assign failed: ' + e.message, 'error'); }
+}
+
+async function clearAccountProxies() {
+  if (!confirm(T('Clear proxy bindings on ALL accounts? Every account returns to the Global default.'))) return;
+  try {
+    const d = await api('POST', '/accounts/proxy/clear', {});
+    toast(d.message || T('Bindings cleared'), 'success');
+    loadAccounts();
+  } catch (e) { toast('Clear failed: ' + e.message, 'error'); }
+}
+
+async function clearZenKeyProxies() {
+  if (!confirm(T('Clear proxy bindings on ALL keys? Every key returns to the Global default (enabled state is kept).'))) return;
+  try {
+    const d = await api('POST', '/opencode/keys/proxy/clear', {});
+    toast(d.message || T('Bindings cleared'), 'success');
+    loadOcConfig();
+  } catch (e) { toast('Clear failed: ' + e.message, 'error'); }
 }
 
 // ========== 出口绑定联想下拉（combobox） ==========
@@ -1808,6 +1836,14 @@ function addHeaderRow() {
   tbody.appendChild(tr);
 }
 
+async function resetHeaders() {
+  try {
+    await api('POST', '/headers/reset', {});
+    toast(T('Headers restored to defaults'), 'success');
+    loadConfig();
+  } catch (e) { toast(T('Reset failed: ') + e.message, 'error'); }
+}
+
 async function saveHeaders() {
   const tbody = _('headersTableBody');
   const rows = tbody.querySelectorAll('tr');
@@ -1851,44 +1887,67 @@ async function loadModels() {
     let info = '';
     if (d.data.lastSync) info += T('· official feed: ') + new Date(d.data.lastSync).toLocaleTimeString('en-US');
     _('modelsProbeInfo').textContent = info;
-    if (!models.length) { _('modelsList').innerHTML = '<div class="empty">No models</div>'; return; }
-    _('modelsList').innerHTML = models.map(m => {
-      const st = MODEL_STYLE[m.status] || MODEL_STYLE.unknown;
-      const cost = COST_LABEL[m.cost] || m.cost || '';
-      const synced = m.syncedAt ? new Date(m.syncedAt).toLocaleTimeString('en-US') : '-';
-      return '<div style="display:flex;align-items:center;gap:10px;padding:8px 12px;margin:5px 0;background:rgba(148,163,184,.06);border:1px solid var(--border);border-radius:10px;transition:.15s">' +
-        '<span style="font-family:\'JetBrains Mono\',monospace;font-size:13px;flex:1">' + esc(m.id) + '</span>' +
-        (m.cost === 'free' ? '<span style="font-size:11px;color:var(--accent2)">no charge</span>' : '') +
-        (cost ? '<span class="model-tag">' + esc(cost) + '</span>' : '') +
-        '<span class="model-tag" style="' + st.css + '">' + st.label + '</span>' +
-        '<span style="font-size:11px;color:var(--text3);min-width:60px;text-align:right">' + synced + '</span>' +
-        '</div>';
-    }).join('');
-  } catch (e) { _('modelsList').textContent = 'Failed to load'; }
+    // OpenCode 免费模型（网关设置页分两块展示：Cline 在上、OpenCode 在下）
+    const zen = await api('GET', '/opencode/models').then(r => r.data.models || []).catch(() => []);
+    const row = (inner) => '<div style="display:flex;align-items:center;gap:10px;padding:8px 12px;margin:5px 0;background:rgba(148,163,184,.06);border:1px solid var(--border);border-radius:10px;transition:.15s">' + inner + '</div>';
+    const clineBlock = models.length
+      ? models.map(m => {
+          const st = MODEL_STYLE[m.status] || MODEL_STYLE.unknown;
+          const cost = COST_LABEL[m.cost] || m.cost || '';
+          const synced = m.syncedAt ? new Date(m.syncedAt).toLocaleTimeString('en-US') : '-';
+          return row(
+            '<span style="font-family:\'JetBrains Mono\',monospace;font-size:13px;flex:1">' + esc(m.id) + '</span>' +
+            (m.cost === 'free' ? '<span style="font-size:11px;color:var(--accent2)">' + T('no charge') + '</span>' : '') +
+            (cost ? '<span class="model-tag">' + esc(cost) + '</span>' : '') +
+            '<span class="model-tag" style="' + st.css + '">' + st.label + '</span>' +
+            '<span style="font-size:11px;color:var(--text3);min-width:60px;text-align:right">' + synced + '</span>');
+        }).join('')
+      : '<div class="empty">' + T('No models') + '</div>';
+    const zenBlock = zen.length
+      ? zen.map(m => row(
+            '<span style="font-family:\'JetBrains Mono\',monospace;font-size:13px;flex:1">' + esc(m.id) + '</span>' +
+            '<span class="model-tag" title="' + esc(T('Context')) + '">' + esc(m.context || '-') + '</span>' +
+            '<span class="model-tag" title="' + esc(T('Output')) + '">' + esc(m.output || '-') + '</span>' +
+            '<span class="model-tag">' + esc(m.source === 'live' ? T('live') : T('(seed)')) + '</span>')).join('')
+      : '<div class="empty">' + T('No models') + '</div>';
+    _('modelsList').innerHTML =
+      '<div style="font-size:12px;font-weight:600;margin:2px 0 8px">' + T('Cline free models') + '</div>' + clineBlock +
+      '<div style="font-size:12px;font-weight:600;margin:14px 0 8px">' + T('OpenCode free models') + '</div>' + zenBlock;
+  } catch (e) { _('modelsList').textContent = T('Failed to load'); }
 }
 
 async function refreshModels() {
   try {
     _('modelsProbeInfo').textContent = '· syncing...';
-    const d = await api('POST', '/models/refresh');
-    toast(d.message || (d.data && d.data.message) || 'Sync started', 'info');
+    // 两个上游的模型源一起刷新（Cline feed + OpenCode 目录）
+    const [d, z] = await Promise.all([
+      api('POST', '/models/refresh').catch(e => ({ message: e.message })),
+      api('POST', '/opencode/models/refresh').catch(e => ({ message: e.message }))
+    ]);
+    const msg = [d.message || (d.data && d.data.message), z.message || (z.data && z.data.message)].filter(Boolean).join(' | ');
+    toast(msg || 'Sync started', 'info');
     setTimeout(loadModels, 3000);
   } catch (e) { toast(T('Refresh failed: ') + e.message, 'error'); _('modelsProbeInfo').textContent = ''; }
 }
 
 async function loadModelOptions() {
   try {
-    const d = await api('GET', '/models');
-    const models = d.data.models || [];
+    // 默认模型下拉：合并 Cline 与 OpenCode 两个上游的全部免费模型
+    const [d, z] = await Promise.all([
+      api('GET', '/models'),
+      api('GET', '/opencode/models').catch(() => ({ data: { models: [] } }))
+    ]);
+    const cline = d.data.models || [];
+    const zen = z.data.models || [];
     const sel = _('settingDefModel');
     if (!sel) return;
-    sel.innerHTML = models.map(m => {
+    sel.innerHTML = cline.map(m => {
       const st = MODEL_STYLE[m.status] || MODEL_STYLE.unknown;
       return '<option value="' + esc(m.id) + '">' + esc(m.id) + ' (' + st.label + ')</option>';
-    }).join('');
+    }).join('') + zen.map(m => '<option value="' + esc(m.id) + '">' + esc(m.id) + ' (OpenCode)</option>').join('');
     const c = await api('GET', '/config');
     if (c.data.defaultModel) sel.value = c.data.defaultModel;
-    if (!sel.value && models.length) sel.value = models[0].id;
+    if (!sel.value && cline.length) sel.value = cline[0].id;
   } catch (e) { /* ignore */ }
 }
 
@@ -1909,7 +1968,7 @@ async function loadConfig() {
     if (c.address) _('settingAddr').value = c.address;
     if (c.strategy) _('settingStrategy').value = c.strategy;
     if (c.version) _('settingVersion').value = c.version;
-    if (c.poolPath) _('settingPoolPath').value = c.poolPath;
+    if (c.poolPath && _('settingPoolPath')) _('settingPoolPath').value = c.poolPath;
     loadModelOptions();
     if (c.headers) {
       const tbody = _('headersTableBody');
@@ -1935,14 +1994,10 @@ async function loadOcConfig() {
     const d = await api('GET', '/opencode/config');
     const c = d.data;
     ocCfgCache = c;
-    _('ocEnabled').value = String(c.enabled);
     _('ocKeys').value = (c.keys && c.keys.length ? c.keys : [c.key || 'public']).join('\n');
     const ks = c.keyStates || [];
     renderOcKeyStates(ks);
     _('ocBaseURL').value = c.baseURL || '';
-    _('ocProxyState').textContent = (c.proxies && c.proxies.length)
-      ? c.proxies.length + T(' proxies configured (') + (c.proxyStrategy || 'round_robin') + T(')')
-      : T('none configured');
     _('ocMaxConc').value = c.maxConcurrency || 8;
     _('ocRetries').value = c.retries || 3;
     _('ocFailover').value = String(c.failover);
@@ -1964,7 +2019,6 @@ async function saveOcConfig() {
   const keys = _('ocKeys').value.split('\n').map(s => s.trim()).filter(Boolean);
   if (!keys.length) { toast('API keys must not be empty (use "public" if you have no key)', 'error'); return; }
   const body = {
-    enabled: _('ocEnabled').value === 'true',
     keys: keys,
     baseURL: _('ocBaseURL').value.trim(),
     proxies: ocCfgCache.proxies || [],
@@ -2105,11 +2159,7 @@ async function loadProxyPool() {
       _('ppIsolation').disabled = false;
       _('ppIsolationHint').textContent = '';
     }
-    _('ppZenState').innerHTML = c.enabled
-      ? ((c.proxies && c.proxies.length)
-          ? '<span style="color:var(--accent2)">routing through the pool</span>'
-          : '<span style="color:var(--text2)">direct (pool list is empty)</span>')
-      : '<span style="color:var(--text2)">upstream disabled</span>';
+    _('ppZen').value = String(c.zenUseProxies !== false);
     const cd = (c.runtime || {}).proxyCooldowns || {};
     const keys = Object.keys(cd);
     _('ppCooldownInfo').textContent = keys.length
@@ -2148,22 +2198,19 @@ async function saveProxyIsolation() {
   } catch (e) { toast(T('Save failed: ') + e.message, 'error'); }
 }
 
+// loadOcModels 只维护探测模型下拉（模型列表本体已并入网关设置的可用模型区）。
 async function loadOcModels() {
   try {
     const d = await api('GET', '/opencode/models');
     const models = d.data.models || [];
-    _('ocModelsList').innerHTML = '<div class="table-wrap"><table><thead><tr><th style="text-align:left">' + T('Model ID') + '</th><th>' + T('Context') + '</th><th>' + T('Output') + '</th><th>' + T('Tools') + '</th><th>' + T('Reason') + '</th><th>' + T('Attach') + '</th><th>' + T('Endpoint') + '</th><th>' + T('Source') + '</th></tr></thead><tbody>' +
-      models.map(m => '<tr><td style="text-align:left;font-family:monospace">' + esc(m.id) + '</td><td>' + esc(m.context) + '</td><td>' + esc(m.output) + '</td><td>' + (m.toolCall ? '✓' : '-') + '</td><td>' + (m.reasoning ? '✓' : '-') + '</td><td>' + (m.attach ? '✓' : '-') + '</td><td style="font-family:monospace;font-size:11px">' + esc(m.upstream === 'responses' ? T('responses') : T('chat')) + '</td><td>' + esc(m.source) + '</td></tr>').join('') +
-      '</tbody></table></div><div class="hint">' + models.length + T(' free models total (auto-synced every 10 minutes from public registry)') + '</div>';
-    // 探测模型下拉：与模型表同一份数据；重渲染时保留用户当前的选择。
     const sel = _('ocProbeModel');
     if (sel) {
       const prev = sel.value;
-      sel.innerHTML = '<option value="">auto — big-pickle first, then live models</option>' +
+      sel.innerHTML = '<option value="">' + T('auto — big-pickle first, then live models') + '</option>' +
         models.map(m => '<option value="' + esc(m.id) + '">' + esc(m.id) + (m.source === 'live' ? '' : T(' (seed)')) + '</option>').join('');
       if (Array.from(sel.options).some(o => o.value === prev)) sel.value = prev;
     }
-  } catch (e) { _('ocModelsList').textContent = 'Failed to load'; }
+  } catch (e) { /* ignore */ }
 }
 
 // ========== Live session IDs (zen FreeTier gate) ==========
@@ -2340,12 +2387,12 @@ async function deleteCombo(id) {
   } catch (e) { toast(T('Delete failed: ') + e.message, 'error'); }
 }
 
-async function refreshOcModels() {
+async function saveZenProxies() {
   try {
-    const d = await api('POST', '/opencode/models/refresh');
-    toast(d.message || 'Sync complete', 'success');
-    loadOcModels();
-  } catch (e) { toast(T('Sync failed: ') + e.message, 'error'); }
+    await api('POST', '/opencode/config/update', { zenUseProxies: _('ppZen').value === 'true' });
+    toast(T('OpenCode proxy setting saved'), 'success');
+    loadProxyPool();
+  } catch (e) { toast(T('Save failed: ') + e.message, 'error'); }
 }
 
 async function loadOcStats() {

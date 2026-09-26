@@ -359,7 +359,7 @@ type compactOutcome struct {
 // 估算超 context - max(output, buffer) 时 -> select -> 摘要 -> 重组 [system]+[摘要]+recent
 func maybeCompact(params map[string]any, m *ZenModel, sessionID string) compactOutcome {
 	cfg := getZenConfig()
-	if !cfg.Enabled || !cfg.Compaction.Auto {
+	if !cfg.Compaction.Auto {
 		return compactOutcome{}
 	}
 	context := m.Context

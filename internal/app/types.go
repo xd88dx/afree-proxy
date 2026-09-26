@@ -37,6 +37,10 @@ type AccountPool struct {
 	Keys            []string   `json:"keys,omitempty"`
 	DefaultModel    string     `json:"defaultModel,omitempty"` // 用户自定义默认模型，持久化
 	ClineUseProxies bool       `json:"clineUseProxies,omitempty"` // cline 上游走共享出口代理池（面板开关；CLINE_USE_PROXIES env 为 true 时强制开启）
+	// 调度策略与自定义请求头的持久化（面板保存，重启回放；POOL_STRATEGY env
+	// 显式设置时策略以 env 为准）。作用于 Cline 账号池与 OpenCode key 池。
+	Strategy string            `json:"strategy,omitempty"`
+	Headers  map[string]string `json:"headers,omitempty"`
 }
 
 type LoginMethod int

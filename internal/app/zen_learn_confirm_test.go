@@ -53,7 +53,6 @@ func TestEndpointLearnOnlyPersistsWhenRetrySucceeds(t *testing.T) {
 	cfg.BaseURL = upstream.URL
 	cfg.Keys = []string{"probe-zen-key"}
 	cfg.Proxies = nil
-	cfg.Enabled = true
 	cfg.Retries = 0
 	setZenConfig(cfg)
 	defer setZenConfig(savedCfg)

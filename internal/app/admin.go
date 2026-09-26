@@ -2,6 +2,7 @@ package app
 
 import (
 	"bytes"
+	"sort"
 	"afree-proxy/internal/cline"
 	"afree-proxy/internal/kit"
 	"crypto/rand"
@@ -85,9 +86,11 @@ func registerAdminRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/admin/api/accounts/export", adminCORS(auth(handleAccountsExport)))
 	mux.HandleFunc("/admin/api/accounts/proxy", adminCORS(auth(handleAdminAccountSetProxy)))
 	mux.HandleFunc("/admin/api/accounts/proxy/assign", adminCORS(auth(handleAdminAssignProxies)))
+	mux.HandleFunc("/admin/api/accounts/proxy/clear", adminCORS(auth(handleAdminAccountClearProxies)));
 	mux.HandleFunc("/admin/api/logs", adminCORS(auth(handleRequestLogs)))
 	mux.HandleFunc("/admin/api/keys", adminCORS(auth(handleAdminGetKeys)))
 	mux.HandleFunc("/admin/api/keys/generate", adminCORS(auth(handleAdminGenerateKey)))
+	mux.HandleFunc("/admin/api/headers/reset", adminCORS(auth(handleAdminHeadersReset)))
 	mux.HandleFunc("/admin/api/keys/delete", adminCORS(auth(handleAdminDeleteKey)))
 	mux.HandleFunc("/admin/api/models", adminCORS(auth(handleAdminModels)))
 	mux.HandleFunc("/admin/api/models/refresh", adminCORS(auth(handleAdminModelsRefresh)))
@@ -112,6 +115,7 @@ func registerAdminRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/admin/api/zen/keys/test", adminCORS(auth(handleZenKeyTest)))
 	mux.HandleFunc("/admin/api/zen/keys/enabled", adminCORS(auth(handleZenKeySetEnabled)))
 	mux.HandleFunc("/admin/api/opencode/keys/enabled", adminCORS(auth(handleZenKeySetEnabled)))
+	mux.HandleFunc("/admin/api/opencode/keys/proxy/clear", adminCORS(auth(handleZenKeyClearProxies)));
 	mux.HandleFunc("/admin/api/zen/keys/proxy", adminCORS(auth(handleZenKeySetProxy)))
 	mux.HandleFunc("/admin/api/opencode/keys/proxy", adminCORS(auth(handleZenKeySetProxy)))
 	mux.HandleFunc("/admin/api/zen/sessions", adminCORS(auth(handleZenSessions)))
@@ -763,6 +767,29 @@ func handleAdminAccountTest(w http.ResponseWriter, r *http.Request) {
 // 测试按钮是"升级版重置"：无论账号当前是 active/cooldown/expired，
 // 都会尝试刷新 Token 并发起一次真实探测；成功则清除所有异常状态。
 // 返回的 status: active / cooldown / expired / error
+// testAccountProbeModel Cline 账号探测用模型。默认模型现在可以是 OpenCode
+// 免费模型（路由到 zen 上游），而探测请求打的是 Cline 上游 —— 此时回退到
+// 字典序最小的 Cline 免费模型，保证 Test 语义正确。
+func testAccountProbeModel() string {
+	m := getDefaultModel()
+	if _, ok := resolveZenModel(m); !ok {
+		return m
+	}
+	initModelsCache()
+	modelsMu.Lock()
+	names := make([]string, 0, len(modelsCache))
+	for id := range modelsCache {
+		names = append(names, id)
+	}
+	modelsMu.Unlock()
+	sort.Strings(names)
+	if len(names) > 0 {
+		return names[0]
+	}
+	return m
+}
+
+// testAccount 执行单账号探测（Test 按钮语义）。
 func testAccount(acc *Account) (map[string]any, string) {
 	// 状态快照必须在池锁内取：探测可能持续数秒，期间刷新协程/其他请求会改写
 	// 同一结构体，锁外读是数据竞争。
@@ -791,7 +818,7 @@ func testAccount(acc *Account) (map[string]any, string) {
 
 	// 构造极小探测请求：max_tokens=1, 单条用户消息。探测请求需与正常代理请求
 	// 使用相同的模型选择、流式策略和任务 ID，否则部分模型会返回空响应。
-	probeModel := getDefaultModel()
+	probeModel := testAccountProbeModel()
 	sessionID := fmt.Sprintf("test_%d", time.Now().UnixMilli())
 	probeBody := map[string]any{
 		"model":            probeModel,
@@ -1210,13 +1237,17 @@ func handleAdminUpdateConfig(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if req.DefaultModel != "" {
+		// 默认模型可以是 Cline 免费模型或 OpenCode 免费模型（路由层分流）
 		initModelsCache()
 		modelsMu.Lock()
 		_, ok := modelsCache[req.DefaultModel]
 		modelsMu.Unlock()
 		if !ok {
-			writeAPI(w, http.StatusBadRequest, apiResponse{Error: "unknown model: " + req.DefaultModel})
-			return
+			initZenModels()
+			if _, zok := resolveZenFreeModel(req.DefaultModel); !zok {
+				writeAPI(w, http.StatusBadRequest, apiResponse{Error: "unknown model: " + req.DefaultModel})
+				return
+			}
 		}
 		setDefaultModel(req.DefaultModel)
 		changed = true
@@ -1235,6 +1266,7 @@ func handleAdminUpdateConfig(w http.ResponseWriter, r *http.Request) {
 
 	if changed {
 		setProxyConfig(newCfg)
+		persistProxyConfig(newCfg)
 		cfg = newCfg
 	}
 
@@ -1352,4 +1384,40 @@ func handleRequestLogs(w http.ResponseWriter, r *http.Request) {
 			"logs": logs,
 		},
 	})
+}
+
+// POST /admin/api/headers/reset 恢复默认请求头（模拟 Cline CLI 的出厂集合），
+// 与保存一致地持久化到账号池文件。调度策略不受影响。
+func handleAdminHeadersReset(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		writeAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
+		return
+	}
+	def := defaultProxyConfig()
+	newCfg := &proxyConfigData{Strategy: getProxyConfig().Strategy, Headers: def.Headers}
+	setProxyConfig(newCfg)
+	persistProxyConfig(newCfg)
+	writeAPI(w, http.StatusOK, apiResponse{Success: true, Data: map[string]any{"headers": newCfg.Headers}})
+}
+
+// POST /admin/api/accounts/proxy/clear 一键清空全部账号的代理绑定，
+// 全部回到"全局"默认值。
+func handleAdminAccountClearProxies(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		writeAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
+		return
+	}
+	n := clearAllAccountProxies()
+	writeAPI(w, http.StatusOK, apiResponse{Success: true, Message: fmt.Sprintf("Cleared bindings on %d account(s)", n)})
+}
+
+// POST /admin/api/keys/proxy/clear 一键清空全部 zen key 的代理绑定，
+// 全部回到"全局"默认值（启用状态不受影响）。
+func handleZenKeyClearProxies(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		writeAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
+		return
+	}
+	n := clearAllZenKeyProxies()
+	writeAPI(w, http.StatusOK, apiResponse{Success: true, Message: fmt.Sprintf("Cleared bindings on %d key(s)", n)})
 }

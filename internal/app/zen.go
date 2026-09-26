@@ -217,8 +217,10 @@ type zenCompactConfig struct {
 }
 
 type zenConfigData struct {
-	Enabled         bool    `json:"enabled"`
-	Key             string  `json:"key"`            // 兼容字段：始终等于 Keys[0]（旧版单 key 读取用）
+	// OpenCode 上游常开（无独立启停开关）。代理池的使用由 ZenUseProxies
+	// 控制（代理池页下拉），缺省 = 代理列表非空即走池。
+	ZenUseProxies *bool `json:"zenUseProxies,omitempty"`
+	Key           string  `json:"key"`            // 兼容字段：始终等于 Keys[0]（旧版单 key 读取用）
 	Keys            []string `json:"keys,omitempty"` // zen 多 key 池，请求按 round-robin 轮转
 	BaseURL         string  `json:"baseURL"`
 	Proxies         []string `json:"proxies"`        // http(s)/socks5 代理,轮询出口
@@ -294,7 +296,6 @@ type zenProxyBinding struct {
 
 func defaultZenConfig() *zenConfigData {
 	return &zenConfigData{
-		Enabled:         true,
 		Key:             "public",
 		Keys:            []string{"public"},
 		BaseURL:         zenAPIBase,
@@ -653,44 +654,70 @@ func pickZenKey() string {
 			delete(zenKeyCool, k)
 		}
 	}
-	// 第一轮：非冷却 + 有 live 会话。未 mint 的 key 必 403（本地随机 sess_
-	// 服务端不认，见 zen_session.go 顶部注释），首启时逐个试过去就是"每个
-	// key 白等一次上游往返"，11 个 key 能把首个请求拖到分钟级。
-	for i := 0; i < len(keys); i++ {
-		idx := (zenKeyIdx + i) % len(keys)
-		k := keys[idx]
-		if blocked[k] {
-			continue
+	// 三轮候选（保持既有优先级）：live 优先（未 mint 的 key 必 403，见
+	// zen_session.go 顶部注释）→ 未冷却 → 全冷却时兜底（保持请求流动）。
+	// 每轮候选按轮转顺序生成，最终由账号调度策略（round_robin/fill/random，
+	// 与 Cline 账号池共用同一配置）挑选。
+	buildCandidates := func(requireLive, ignoreCooling bool) []string {
+		var out []string
+		for i := 0; i < len(keys); i++ {
+			k := keys[(zenKeyIdx+i)%len(keys)]
+			if blocked[k] {
+				continue
+			}
+			if requireLive && !live[k] {
+				continue
+			}
+			if !ignoreCooling {
+				if _, cooling := zenKeyCool[k]; cooling {
+					continue
+				}
+			}
+			out = append(out, k)
 		}
-		if _, cooling := zenKeyCool[k]; !cooling && live[k] {
-			zenKeyIdx = (idx + 1) % len(keys)
-			return k
+		return out
+	}
+	candidates := buildCandidates(true, false)
+	if len(candidates) == 0 {
+		candidates = buildCandidates(false, false)
+	}
+	if len(candidates) == 0 {
+		candidates = buildCandidates(false, true)
+	}
+	if len(candidates) == 0 {
+		return ""
+	}
+
+	var picked string
+	switch getProxyConfig().Strategy {
+	case "fill":
+		// 池序第一个候选（与 Cline 账号池 fill 语义一致：用满一个再换）
+		set := map[string]bool{}
+		for _, k := range candidates {
+			set[k] = true
+		}
+		for _, k := range keys {
+			if set[k] {
+				picked = k
+				break
+			}
+		}
+		if picked == "" {
+			picked = candidates[0]
+		}
+	case "random":
+		picked = candidates[time.Now().UnixNano()%int64(len(candidates))]
+	default:
+		// round_robin：轮转头的候选，游标推进到它之后
+		picked = candidates[0]
+		for i, k := range keys {
+			if k == picked {
+				zenKeyIdx = (i + 1) % len(keys)
+				break
+			}
 		}
 	}
-	// 第二轮：非冷却（池内全是未 mint 的 key 时仍须发请求，否则首启窗口内
-	// 请求根本发不出去——那时收割机正在 mint，上游 403 是唯一可用信号）
-	for i := 0; i < len(keys); i++ {
-		idx := (zenKeyIdx + i) % len(keys)
-		k := keys[idx]
-		if blocked[k] {
-			continue
-		}
-		if _, cooling := zenKeyCool[k]; !cooling {
-			zenKeyIdx = (idx + 1) % len(keys)
-			return k
-		}
-	}
-	// 全部冷却中：仍按轮转返回（保持请求流动，上游会再次限流），
-	// 落在被隔离挡住的 key 上则继续前进到下一个可路由的。
-	for i := 0; i < len(keys); i++ {
-		idx := (zenKeyIdx + i) % len(keys)
-		k := keys[idx]
-		if !blocked[k] {
-			zenKeyIdx = (idx + 1) % len(keys)
-			return k
-		}
-	}
-	return ""
+	return picked
 }
 
 // markZenKeySuccess 在上游 200 后累计 key 的成功调用数（仅内存态，面板展示用）。
@@ -2388,18 +2415,16 @@ func pruneZenModelsTo(desired map[string]bool) int {
 	return pruned
 }
 
-// startZenModelsRefresher 定时同步 zen 模型列表(默认 10 分钟)
+// startZenModelsRefresher 定时同步 zen 模型列表（60 秒，与 Cline feed 的
+// 自动同步节奏一致）。同步走公共注册表 api.json（免认证），不消耗任何
+// key 的配额，符合"仅用 public 身份从上游同步"的语义。
 func startZenModelsRefresher() {
 	go func() {
 		if _, err := syncZenModels(); err != nil {
 			log.Printf("zen model sync: failed (%v), keeping the current list", err)
 		}
-		ticker := time.NewTicker(10 * time.Minute)
+		ticker := time.NewTicker(60 * time.Second)
 		for range ticker.C {
-			cfg := getZenConfig()
-			if !cfg.Enabled {
-				continue
-			}
 			if added, err := syncZenModels(); err != nil {
 				log.Printf("zen model sync: failed (%v)", err)
 			} else if added > 0 {

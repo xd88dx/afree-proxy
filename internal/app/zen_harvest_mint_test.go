@@ -168,7 +168,6 @@ func TestPickZenKeyPrefersLiveSessions(t *testing.T) {
 	setupHarvestTest(t)
 	cfg := getZenConfig()
 	cfg2 := *cfg
-	cfg2.Enabled = true
 	cfg2.Keys = []string{"sk-dead-1", "sk-live-2", "sk-dead-3"}
 	setZenConfig(&cfg2)
 	t.Cleanup(func() { c := *cfg; setZenConfig(&c) })
@@ -195,7 +194,6 @@ func TestPickZenKeyStillReturnsWhenNothingMinted(t *testing.T) {
 	setupHarvestTest(t)
 	cfg := getZenConfig()
 	cfg2 := *cfg
-	cfg2.Enabled = true
 	cfg2.Keys = []string{"sk-a", "sk-b"}
 	setZenConfig(&cfg2)
 	t.Cleanup(func() { c := *cfg; setZenConfig(&c) })
@@ -313,7 +311,6 @@ func TestZenSessionsSnapshot(t *testing.T) {
 	fakeHarvestCLI(t, nil)
 	cfg := getZenConfig()
 	cfg2 := *cfg
-	cfg2.Enabled = true
 	cfg2.Keys = []string{"sk-one", "sk-two"}
 	setZenConfig(&cfg2)
 	t.Cleanup(func() { c := *cfg; setZenConfig(&c) })
@@ -365,7 +362,6 @@ func TestMintJobSnapshotPrefilled(t *testing.T) {
 	fakeHarvestCLI(t, nil)
 	// 新语义：未启用（无显式记录、无会话）的 key 不参与铸造，先启用
 	setZenConfig(&zenConfigData{
-		Enabled:    true,
 		Keys:       []string{"sk-first", "sk-second"},
 		KeyEnabled: map[string]bool{"sk-first": true, "sk-second": true},
 	})

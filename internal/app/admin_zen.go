@@ -24,7 +24,7 @@ func handleZenConfig(w http.ResponseWriter, r *http.Request) {
 	}
 	cfg := getZenConfig()
 	data := map[string]any{
-		"enabled":         cfg.Enabled,
+		"zenUseProxies":   zenProxiesEnabled(),
 		"key":             cfg.Key,
 		"keys":            cfg.Keys,
 		"keyStates":       zenKeyStatus(),
@@ -64,8 +64,8 @@ func handleZenConfigUpdate(w http.ResponseWriter, r *http.Request) {
 
 	cur := getZenConfig()
 	var patch struct {
-		Enabled         *bool    `json:"enabled"`
-		Key             *string  `json:"key"`
+		ZenUseProxies  *bool    `json:"zenUseProxies"`
+		Key            *string  `json:"key"`
 		Keys            []string `json:"keys"`
 		BaseURL         *string  `json:"baseURL"`
 		Proxies         []string `json:"proxies"`
@@ -89,7 +89,7 @@ func handleZenConfigUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	next := &zenConfigData{
-		Enabled:         cur.Enabled,
+		ZenUseProxies:   cur.ZenUseProxies,
 		Key:             cur.Key,
 		Keys:            cur.Keys,
 		BaseURL:         cur.BaseURL,
@@ -104,8 +104,8 @@ func handleZenConfigUpdate(w http.ResponseWriter, r *http.Request) {
 		KeyBindings:     cur.KeyBindings,
 		Compaction:      cur.Compaction,
 	}
-	if patch.Enabled != nil {
-		next.Enabled = *patch.Enabled
+	if patch.ZenUseProxies != nil {
+		next.ZenUseProxies = patch.ZenUseProxies
 	}
 	if patch.Keys != nil {
 		// 多 key 池整体替换；兼容旧单 key 字段（key 非空时视为单元素列表）

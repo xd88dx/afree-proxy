@@ -180,11 +180,17 @@ func AdminPasswordEnv() string {
 
 // ApplyEnvConfig 在包初始化后、启动前应用环境变量到内存配置。
 // 由 StartProxy 在最早期调用。
+// poolStrategyFromEnv POOL_STRATEGY 环境变量是否显式设置（设置时优先于
+// 池文件里持久化的策略，loadPool 回放时据此跳过）。
+var poolStrategyFromEnv bool
+
 func ApplyEnvConfig() {
-	// POOL_STRATEGY 覆盖内存中的账号池策略（该配置本身不落盘，重启即回到默认）
+	// POOL_STRATEGY 覆盖内存中的账号池策略，并阻止 loadPool 回放持久化值
+	//（env 优先；未设置时面板保存的策略从池文件回放，重启不丢）
 	if s := envStr("POOL_STRATEGY"); s != "" {
 		switch s {
 		case "round_robin", "fill", "random":
+			poolStrategyFromEnv = true
 			proxyConfigMu.Lock()
 			proxyConfig.Strategy = s
 			proxyConfigMu.Unlock()

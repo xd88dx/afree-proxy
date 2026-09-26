@@ -87,7 +87,6 @@ func TestProxyIsolationEnabledDefaults(t *testing.T) {
 
 func testZenCfg(isolation *bool) *zenConfigData {
 	return &zenConfigData{
-		Enabled:        true,
 		Keys:           []string{"public"},
 		BaseURL:        zenAPIBase,
 		ProxyStrategy:  "round_robin",
@@ -99,7 +98,7 @@ func testZenCfg(isolation *bool) *zenConfigData {
 
 func TestPickBoundProxyMainThenBackup(t *testing.T) {
 	setupBindingTest(t, &zenConfigData{
-		Enabled: true, Keys: []string{"public"},
+		Keys: []string{"public"},
 		Proxies: []string{"http://a:1", "http://b:2"},
 	})
 	// 主可用 → 主
@@ -121,7 +120,7 @@ func TestPickBoundProxyMainThenBackup(t *testing.T) {
 func TestPickBoundProxyStaleBinding(t *testing.T) {
 	// 主代理已从池中删除：绑定视为不可用（绝不静默回退直连/其他出口）
 	setupBindingTest(t, &zenConfigData{
-		Enabled: true, Keys: []string{"public"},
+		Keys: []string{"public"},
 		Proxies: []string{"http://b:2"},
 	})
 	if u, idx, ok := pickBoundProxy("http://removed:9", "http://b:2"); !ok || u != "http://b:2" || idx != 0 {
@@ -138,7 +137,7 @@ func TestPickBoundProxyStaleBinding(t *testing.T) {
 
 func TestBoundProxiesRoutableUnboundSemantics(t *testing.T) {
 	setupBindingTest(t, &zenConfigData{
-		Enabled: true, Keys: []string{"public"},
+		Keys: []string{"public"},
 		Proxies: []string{"http://a:1"},
 	})
 	if !boundProxiesRoutable("", "") {
@@ -152,10 +151,10 @@ func TestBoundProxiesRoutableUnboundSemantics(t *testing.T) {
 
 func TestPickAccountSkipsBoundBlockedAccounts(t *testing.T) {
 	setupBindingTest(t, &zenConfigData{
-		Enabled: true, Keys: []string{"public"},
+		Keys: []string{"public"},
 		Proxies: []string{"http://a:1", "http://b:2"},
 	})
-	accA := &Account{AccountID: "a", Email: "a@x", Status: "active", ProxyMain: "http://a:1", ProxyBackup: "http://b:2"}
+	accA := &Account{AccountID: "a", Email: "a@x", Status: "active", APIToken: "sk_test", ProxyMain: "http://a:1", ProxyBackup: "http://b:2"}
 	accB := &Account{AccountID: "b", Email: "b@x", Status: "active"}
 	swapTestPool(t, []*Account{accA, accB})
 
@@ -178,7 +177,7 @@ func TestPickAccountSkipsBoundBlockedAccounts(t *testing.T) {
 
 	// 关闭隔离开关：回到旧规则，绑定字段被完全忽略（A 重新可选）
 	setupBindingTest(t, &zenConfigData{
-		Enabled: true, Keys: []string{"public"},
+		Keys: []string{"public"},
 		Proxies:        []string{"http://a:1", "http://b:2"},
 		ProxyIsolation: boolPtr(false),
 	})
@@ -189,7 +188,7 @@ func TestPickAccountSkipsBoundBlockedAccounts(t *testing.T) {
 
 func TestPickZenKeySkipsBoundBlockedKeys(t *testing.T) {
 	setupBindingTest(t, &zenConfigData{
-		Enabled: true, Keys: []string{"sk-1", "sk-2"},
+		Keys: []string{"sk-1", "sk-2"},
 		Proxies:        []string{"http://a:1", "http://b:2"},
 		KeyBindings:    map[string]zenProxyBinding{"sk-1": {Main: "http://a:1", Backup: "http://b:2"}},
 		ProxyIsolation: boolPtr(true),
@@ -206,7 +205,7 @@ func TestPickZenKeySkipsBoundBlockedKeys(t *testing.T) {
 
 	// 全部 key 都被挡住 → 空串（调用方报"无可用出口"，绝不静默直连）
 	setupBindingTest(t, &zenConfigData{
-		Enabled: true, Keys: []string{"sk-1", "sk-2"},
+		Keys: []string{"sk-1", "sk-2"},
 		Proxies: []string{"http://a:1"},
 		KeyBindings: map[string]zenProxyBinding{
 			"sk-1": {Main: "http://a:1"},
@@ -222,7 +221,7 @@ func TestPickZenKeySkipsBoundBlockedKeys(t *testing.T) {
 
 func TestValidateProxyBinding(t *testing.T) {
 	setupBindingTest(t, &zenConfigData{
-		Enabled: true, Keys: []string{"public"},
+		Keys: []string{"public"},
 		Proxies: []string{"http://a:1", "socks5://b:2"},
 	})
 	if err := validateProxyBinding("http://a:1", "socks5://b:2"); err != nil {
@@ -255,7 +254,7 @@ func TestValidateProxyBinding(t *testing.T) {
 
 func TestPickBoundProxyDirectSentinel(t *testing.T) {
 	setupBindingTest(t, &zenConfigData{
-		Enabled: true, Keys: []string{"public"},
+		Keys: []string{"public"},
 		Proxies: []string{"http://a:1"},
 	})
 	// 主 = direct：无论池状态如何都直连
@@ -278,7 +277,7 @@ func TestPickBoundProxyDirectSentinel(t *testing.T) {
 
 func TestAssignProxiesEvenly(t *testing.T) {
 	setupBindingTest(t, &zenConfigData{
-		Enabled: true, Keys: []string{"public"},
+		Keys: []string{"public"},
 		Proxies: []string{"http://a:1", "http://b:2", "http://c:3"},
 	})
 	swapTestPool(t, []*Account{
@@ -298,7 +297,7 @@ func TestAssignProxiesEvenly(t *testing.T) {
 
 	// 单代理：主有值、辅为空（无"下一个"可指）
 	setupBindingTest(t, &zenConfigData{
-		Enabled: true, Keys: []string{"public"},
+		Keys: []string{"public"},
 		Proxies: []string{"http://a:1"},
 	})
 	if _, err := assignProxiesEvenly(); err != nil {
@@ -317,7 +316,7 @@ func TestAssignProxiesEvenly(t *testing.T) {
 
 func TestSetAccountProxyBinding(t *testing.T) {
 	setupBindingTest(t, &zenConfigData{
-		Enabled: true, Keys: []string{"public"},
+		Keys: []string{"public"},
 		Proxies: []string{"http://a:1", "http://b:2"},
 	})
 	swapTestPool(t, []*Account{{AccountID: "a", Email: "a@x", Status: "active"}})
@@ -343,7 +342,7 @@ func TestSetAccountProxyBinding(t *testing.T) {
 
 func TestSetZenKeyProxyBinding(t *testing.T) {
 	setupBindingTest(t, &zenConfigData{
-		Enabled: true, Keys: []string{"sk-1", "sk-2"},
+		Keys: []string{"sk-1", "sk-2"},
 		Proxies: []string{"http://a:1", "http://b:2"},
 	})
 	if err := setZenKeyProxyBinding(0, "http://a:1", "http://b:2"); err != nil {
@@ -365,7 +364,7 @@ func TestSetZenKeyProxyBinding(t *testing.T) {
 		t.Fatal("out-of-range index must error")
 	}
 	setupBindingTest(t, &zenConfigData{
-		Enabled: true, Keys: []string{"public"},
+		Keys: []string{"public"},
 		Proxies: []string{"http://a:1"},
 	})
 	if err := setZenKeyProxyBinding(0, "http://a:1", ""); err == nil {
@@ -376,7 +375,7 @@ func TestSetZenKeyProxyBinding(t *testing.T) {
 func TestHarvestSkipsMintWhenBoundProxiesDown(t *testing.T) {
 	setupHarvestTest(t)
 	setupBindingTest(t, &zenConfigData{
-		Enabled: true, Keys: []string{"sk-diag"},
+		Keys: []string{"sk-diag"},
 		Proxies: []string{"http://a:1"},
 		KeyBindings:    map[string]zenProxyBinding{"sk-diag": {Main: "http://a:1"}},
 		ProxyIsolation: boolPtr(true),
@@ -406,7 +405,7 @@ func TestHarvestSkipsMintWhenBoundProxiesDown(t *testing.T) {
 func TestHarvestPassesBoundProxyToCLI(t *testing.T) {
 	setupHarvestTest(t)
 	setupBindingTest(t, &zenConfigData{
-		Enabled: true, Keys: []string{"sk-diag"},
+		Keys: []string{"sk-diag"},
 		Proxies: []string{"http://a:1", "http://b:2"},
 		KeyBindings:    map[string]zenProxyBinding{"sk-diag": {Main: "http://a:1", Backup: "http://b:2"}},
 		ProxyIsolation: boolPtr(true),
@@ -586,7 +585,7 @@ func TestSocksBridgeRejectsNonConnect(t *testing.T) {
 func TestHarvestSocksBindingUsesBridge(t *testing.T) {
 	setupHarvestTest(t)
 	setupBindingTest(t, &zenConfigData{
-		Enabled: true, Keys: []string{"sk-diag"},
+		Keys: []string{"sk-diag"},
 		Proxies: []string{"socks5://s1:1080"},
 		KeyBindings:    map[string]zenProxyBinding{"sk-diag": {Main: "socks5://s1:1080"}},
 		ProxyIsolation: boolPtr(true),
@@ -671,7 +670,6 @@ func TestParseProxyLine(t *testing.T) {
 func TestZenKeyAutoHarvestEnabled(t *testing.T) {
 	setupHarvestTest(t)
 	setupBindingTest(t, &zenConfigData{
-		Enabled:    true,
 		Keys:       []string{"sk-new", "sk-legacy", "sk-off", "sk-on", "public"},
 		KeyEnabled: map[string]bool{"sk-off": false, "sk-on": true},
 	})
@@ -700,7 +698,6 @@ func TestZenKeyAutoHarvestEnabled(t *testing.T) {
 
 func TestProxyAliasLivesInPoolLine(t *testing.T) {
 	setupBindingTest(t, &zenConfigData{
-		Enabled: true,
 		Keys:    []string{"public"},
 		Proxies: []string{"socks5://u:p@1.2.3.4:1080#old-alias"},
 	})
@@ -729,5 +726,84 @@ func TestProxyAliasLivesInPoolLine(t *testing.T) {
 	}
 	if got := getZenConfig().Proxies[0]; got != "socks5://u:p@1.2.3.4:1080" {
 		t.Fatalf("fragment-less line must clear the alias: %q", got)
+	}
+}
+
+func TestPickZenKeyStrategyUnified(t *testing.T) {
+	setupHarvestTest(t)
+	setupBindingTest(t, &zenConfigData{
+		Keys:    []string{"sk-1", "sk-2", "sk-3"},
+	})
+	saved := getProxyConfig()
+	t.Cleanup(func() { setProxyConfig(saved) })
+	setCfg := func(strategy string) {
+		setProxyConfig(&proxyConfigData{Strategy: strategy, Headers: map[string]string{}})
+	}
+	resetCursor := func() {
+		zenKeyMu.Lock()
+		zenKeyIdx = 0
+		zenKeyMu.Unlock()
+	}
+
+	// fill：永远选池序第一个可用 key（与 Cline 账号池 fill 语义一致）
+	setCfg("fill")
+	for i := 0; i < 5; i++ {
+		if k := pickZenKey(); k != "sk-1" {
+			t.Fatalf("fill must always pick the first pool key, got %q", k)
+		}
+	}
+
+	// random：30 次抽取应覆盖全部 key
+	setCfg("random")
+	seen := map[string]bool{}
+	for i := 0; i < 30; i++ {
+		seen[pickZenKey()] = true
+	}
+	for _, k := range []string{"sk-1", "sk-2", "sk-3"} {
+		if !seen[k] {
+			t.Fatalf("random must be able to pick %q, seen=%v", k, seen)
+		}
+	}
+
+	// round_robin：游标依次轮转
+	setCfg("round_robin")
+	resetCursor()
+	for i, want := range []string{"sk-1", "sk-2", "sk-3", "sk-1"} {
+		if k := pickZenKey(); k != want {
+			t.Fatalf("round_robin pick %d = %q, want %q", i, k, want)
+		}
+	}
+}
+
+func TestBoundProxyNetworkErrorDoesNotPoisonAccount(t *testing.T) {
+	// 回归：隔离开 + 账号绑定代理 + Cline 上游开关为直连（useProxies=false）时，
+	// 绑定代理的网络错误必须只冷却代理、绝不毒化账号（曾错误地走直连分支
+	// 给账号上 5 分钟冷却，导致辅代理重试也不会发生）。
+	setupBindingTest(t, &zenConfigData{
+		Proxies:        []string{"http://127.0.0.1:1"}, // 不可达端口 = 必然网络错误
+		ProxyIsolation: boolPtr(true),
+	})
+	swapTestPool(t, []*Account{{
+		AccountID: "a", Email: "a@x", Status: "active", APIToken: "sk_test",
+		ProxyMain: "http://127.0.0.1:1",
+	}})
+	// 假上游：网络错误发生在代理拨号层，上游不该被碰到
+	clineAPIBaseBak := clineAPIBase
+	clineAPIBase = "http://127.0.0.1:1"
+	t.Cleanup(func() { clineAPIBase = clineAPIBaseBak })
+
+	_, _, err := callClineAPI(context.Background(), map[string]any{
+		"model":    "m",
+		"messages": []any{map[string]any{"role": "user", "content": "hi"}},
+	}, false, false) // useProxies=false：全局开关为直连
+	if err == nil {
+		t.Fatal("expected error from unreachable bound proxy")
+	}
+	poolMu.Lock()
+	st := pool.Accounts[0].Status
+	until := pool.Accounts[0].CooldownUntil
+	poolMu.Unlock()
+	if st != "active" || !until.IsZero() {
+		t.Fatalf("bound proxy network error must not cool the account, got status=%s until=%v", st, until)
 	}
 }

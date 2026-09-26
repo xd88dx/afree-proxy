@@ -168,22 +168,19 @@ func StartProxy(host string, port int) error {
 	modelsHandler := apiKeyHandler(func(w http.ResponseWriter, r *http.Request) {
 		ensureModelsFresh()
 		data := apiModelList()
-		// 合并 zen 免费模型
-		cfg := getZenConfig()
-		if cfg.Enabled {
-			for _, zm := range zenModelList() {
-				data = append(data, map[string]any{
-					"id":       zm["id"],
-					"object":   "model",
-					"created":  time.Now().UnixMilli(),
-					"owned_by": "opencode-zen",
-					"source":   "zen-free",
-					"status":   "active",
-					"cost":     "free",
-					"context":  zm["context"],
-					"output":   zm["output"],
-				})
-			}
+		// 合并 zen 免费模型（OpenCode 上游常开，无独立启停开关）
+		for _, zm := range zenModelList() {
+			data = append(data, map[string]any{
+				"id":       zm["id"],
+				"object":   "model",
+				"created":  time.Now().UnixMilli(),
+				"owned_by": "opencode-zen",
+				"source":   "zen-free",
+				"status":   "active",
+				"cost":     "free",
+				"context":  zm["context"],
+				"output":   zm["output"],
+			})
 		}
 		// combo 别名模型（仪表盘自定义的虚拟模型 ID）
 		for _, c := range listCombos() {
@@ -476,13 +473,6 @@ func applyOverride(params map[string]any) {
 
 // handleZenChat opencode zen 免费模型分支: 压缩 -> 上游 -> 透传,并记录统计
 func handleZenChat(w http.ResponseWriter, r *http.Request, params map[string]any) {
-	cfg := getZenConfig()
-	if !cfg.Enabled {
-		writeJSON(w, http.StatusServiceUnavailable, map[string]any{
-			"error": map[string]string{"message": "zen upstream disabled in /admin/ settings", "type": "api_error"},
-		})
-		return
-	}
 	model, _ := params["model"].(string)
 	zm, ok := resolveZenFreeModel(model)
 	if !ok {
@@ -985,9 +975,11 @@ func callClineAPI(ctx context.Context, params map[string]any, stream bool, usePr
 		if ctx.Err() != nil {
 			return nil, acc, fmt.Errorf("client aborted: %w", lastErr)
 		}
-		if useProxies {
+		if bound || useProxies {
 			// 隧道层失败才冷却,且只冷 2 分钟: 上游过载也会表现为连接重置,
-			// 长冷却会让几次慢请求毒化整个池;2 分钟能跳过真死代理又快速自愈
+			// 长冷却会让几次慢请求毒化整个池;2 分钟能跳过真死代理又快速自愈。
+			// 绑定账号（隔离模式）同样适用：全局开关为直连时，绑定代理的网络
+			// 错误也绝不毒化账号（pidx=-1 的直连兜底冷却为 no-op）。
 			cooldownUpstreamProxy(pidx, 2*time.Minute)
 			log.Printf("  cline proxy failed (%v), cooldown exit 2m, retrying on next", lastErr)
 			continue
@@ -2377,13 +2369,6 @@ func finishZenAnthropicNonStream(w http.ResponseWriter, chat map[string]any, ope
 }
 
 func handleZenAnthropic(w http.ResponseWriter, r *http.Request, req anthropicReq, openAIReq map[string]any, toolSchemas map[string]map[string]bool) {
-	cfg := getZenConfig()
-	if !cfg.Enabled {
-		writeJSON(w, http.StatusServiceUnavailable, map[string]any{
-			"error": map[string]string{"message": "zen upstream disabled in /admin/ settings", "type": "api_error"},
-		})
-		return
-	}
 	zm, ok := resolveZenFreeModel(req.Model)
 	if !ok {
 		writeJSON(w, http.StatusBadRequest, map[string]any{
