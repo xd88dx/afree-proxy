@@ -295,7 +295,6 @@ body:not([data-theme="dark"]) .theme-toggle .dark-label{display:none}
   <div style="display:flex;gap:8px">
     <button class="btn btn-sm" onclick="assignProxiesEvenly()" title="Distribute the proxy pool across all accounts: main = pool[i%N], backup = pool[(i+1)%N]">Assign proxies evenly</button>
     <button class="btn btn-sm" onclick="clearAccountProxies()" title="Clear proxy bindings on ALL accounts — every account returns to the Global default">Clear bindings</button>
-    <button class="btn btn-sm" onclick="exportAccounts()">Export accounts</button>
     <button class="btn btn-primary btn-sm" onclick="switchTab('import')">Add</button>
     <button class="btn btn-sm" onclick="loadAccounts()">Refresh</button>
   </div>
@@ -610,8 +609,8 @@ body:not([data-theme="dark"]) .theme-toggle .dark-label{display:none}
       <select id="ocProbeModel" style="max-width:360px"><option value="">auto — big-pickle first, then live models</option></select>
     </div>
     <div style="display:flex;justify-content:flex-end;margin-bottom:8px">
-      <button class="btn btn-sm" onclick="enableAllZenKeys(true)" title="Enable auto-minting on ALL keys">Enable all</button>
       <button class="btn btn-sm" onclick="clearZenKeyProxies()" title="Clear proxy bindings on ALL keys — every key returns to the Global default">Clear bindings</button>
+      <button class="btn btn-sm" onclick="enableAllZenKeys(true)" title="Enable auto-minting on ALL keys">Enable all</button>
     </div>
     <div class="table-wrap" style="margin-bottom:10px">
       <table>
@@ -796,7 +795,6 @@ const I18N_ZH = {
   'and pick any model ID from the available models list.': '，并从可用模型列表里任选一个模型 ID。',
   // 账号页
   'Assign proxies evenly': '均匀分配代理',
-  'Export accounts': '导出账号',
   'Add': '添加',
   'Refresh': '刷新',
   'Email': '邮箱',
@@ -863,7 +861,7 @@ const I18N_ZH = {
   'Headers restored to defaults': '请求头已恢复默认',
   'Reset failed': '恢复失败',
   'OpenCode keys without proxy bindings follow this switch.': 'OpenCode 未绑定代理的 key 遵循此开关。',
-  'Clear bindings': '一键清空',
+  'Clear bindings': '清空代理',
   'Enable all': '一键启用',
   'Enable auto-minting on ALL keys?': '启用全部 key 的自动铸造？',
   'Disable auto-minting on ALL keys?': '停用全部 key 的自动铸造？',
@@ -1900,21 +1898,6 @@ async function loadLogs() {
       '</tr>';
     }).join('');
   } catch (e) { tbody.innerHTML = '<tr><td colspan="10" class="empty">Failed to load</td></tr>'; }
-}
-
-// ========== Export accounts ==========
-async function exportAccounts() {
-  try {
-    const res = await fetch(API + '/accounts/export');
-    if (!res.ok) throw new Error('HTTP ' + res.status);
-    const blob = await res.blob();
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url; a.download = 'cline-accounts-export.json';
-    document.body.appendChild(a); a.click(); document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-    toast('Accounts exported (JSON)', 'success');
-  } catch (e) { toast(T('Export failed: ') + e.message, 'error'); }
 }
 
 // ========== Config updates ==========

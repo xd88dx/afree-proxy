@@ -83,7 +83,6 @@ func registerAdminRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/admin/api/accounts/refresh-all", adminCORS(auth(handleAdminRefreshAll)))
 	mux.HandleFunc("/admin/api/accounts/delete-all", adminCORS(auth(handleAdminDeleteAll)))
 	mux.HandleFunc("/admin/api/accounts/reset", adminCORS(auth(handleAdminAccountReset)))
-	mux.HandleFunc("/admin/api/accounts/export", adminCORS(auth(handleAccountsExport)))
 	mux.HandleFunc("/admin/api/accounts/proxy", adminCORS(auth(handleAdminAccountSetProxy)))
 	mux.HandleFunc("/admin/api/accounts/proxy/assign", adminCORS(auth(handleAdminAssignProxies)))
 	mux.HandleFunc("/admin/api/accounts/proxy/clear", adminCORS(auth(handleAdminAccountClearProxies)));
@@ -1331,40 +1330,6 @@ func handleAdminStats(w http.ResponseWriter, r *http.Request) {
 			"version":  "go-1.1",
 		},
 	})
-}
-
-// GET /admin/api/accounts/export 导出全部账号 refreshToken（JSON 文件下载）
-func handleAccountsExport(w http.ResponseWriter, r *http.Request) {
-	if r.Method != "GET" {
-		writeAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
-		return
-	}
-	p := loadPool()
-	// 池锁内构建导出项：Accounts 元素字段的并发读写由 poolMu 保护
-	poolMu.Lock()
-	items := make([]map[string]any, 0, len(p.Accounts))
-	for _, a := range p.Accounts {
-		item := map[string]any{
-			"email": a.Email,
-		}
-		// 两类账号都能完整导出：OAuth 账号带 refreshToken（可直接回导入），
-		// 静态 key 账号带 apiToken —— 导入端两者都认
-		if a.APIToken != "" {
-			item["apiToken"] = a.APIToken
-		} else {
-			item["refreshToken"] = a.RefreshToken
-		}
-		items = append(items, item)
-	}
-	poolMu.Unlock()
-	data, _ := json.MarshalIndent(items, "", "  ")
-	// 凭证响应绝不允许被中间层缓存；nosniff 防止 MIME 嗅探误判
-	w.Header().Set("Cache-Control", "no-store")
-	w.Header().Set("X-Content-Type-Options", "nosniff")
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	w.Header().Set("Content-Disposition", `attachment; filename="cline-accounts-export.json"`)
-	w.WriteHeader(http.StatusOK)
-	w.Write(data)
 }
 
 // GET /admin/api/logs 最近请求日志（对话/调用历史）
