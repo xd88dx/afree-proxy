@@ -133,6 +133,28 @@ func zenAttemptExit(key string) (proxyURL string, idx int, ok bool) {
 	return pickBoundProxy(main, backup)
 }
 
+// proxyExitType 请求日志"代理类型"列的取值：绑定主代理返回 "main"，绑定辅
+// 代理返回 "backup"，直连出口（绑定的直连哨兵或未绑定直连）返回 "direct"；
+// 全局代理池轮转或未命中上游返回 ""（面板显示 -）。
+func proxyExitType(proxyURL, main, backup string, bound bool) string {
+	if bound {
+		if proxyURL == "" {
+			return "direct"
+		}
+		if proxyURL == main {
+			return "main"
+		}
+		if proxyURL == backup {
+			return "backup"
+		}
+		return ""
+	}
+	if proxyURL == "" {
+		return "direct"
+	}
+	return ""
+}
+
 // accountProxyBinding 账号的绑定出口；未启用隔离或未绑定时 bound=false，
 // 调用方沿用全局代理规则。绑定字段的写入方（面板）持有 poolMu，读取也
 // 短暂持锁，避免与面板写并发竞态。

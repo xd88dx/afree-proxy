@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -297,6 +298,12 @@ func modelInFreeList(id string) bool {
 // 也不是 zen 模型的名字返回错误提示；空串表示放行。zen 模型必须放行：
 // zen 故障转移时会把 zen 免费模型路由到 cline 池，由 normalizeRequestModel
 // 兜底为默认模型 —— 这是故障转移的既有机制。combo 别名由调用方先改写。
+// gateRefreshMinInterval 门控触发的强制刷新节流：30 秒内多个未命中只真实
+// 刷新一次，客户端循环发未知模型名也不会打爆上游 feed。
+const gateRefreshMinInterval = 30 * time.Second
+
+var gateRefreshLast atomic.Int64 // 上次门控刷新时间（unix 秒）
+
 func strictModelGate(model string) string {
 	if !StrictModelMatchEnv() || modelInFreeList(model) {
 		return ""
@@ -304,6 +311,24 @@ func strictModelGate(model string) string {
 	initZenModels()
 	if _, ok := resolveZenModel(model); ok {
 		return ""
+	}
+	// 未命中不立即拒绝：两份模型缓存按分钟刷新，且上游 zen 目录存在闪断
+	// （实测 2026-09-27 02:01 prune 一个模型、02:02 又加回），客户端请求
+	// 可能恰好落进空窗被误拒。节流地强制同步两份缓存再重查；仍找不到才
+	// 拒绝。真下线的模型该请求随后会在上游得到真实错误（该类错误不冷却
+	// key、不计故障转移），不会把死模型硬塞给上游。
+	if last := gateRefreshLast.Load(); time.Since(time.Unix(last, 0)) >= gateRefreshMinInterval &&
+		gateRefreshLast.CompareAndSwap(last, time.Now().Unix()) {
+		syncModelsOnce()
+		if _, err := syncZenModels(); err != nil {
+			log.Printf("  strict gate: zen catalog refresh failed (%v)", err)
+		}
+		if modelInFreeList(model) {
+			return ""
+		}
+		if _, ok := resolveZenModel(model); ok {
+			return ""
+		}
 	}
 	return fmt.Sprintf("model %q is not available on this gateway (see /v1/models for the model list). "+
 		"Set STRICT_MODEL_MATCH=false to fall back to the default model instead", model)

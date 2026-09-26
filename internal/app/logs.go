@@ -27,13 +27,17 @@ type RequestLog struct {
 	Status   int       `json:"status"`
 	Duration int64     `json:"duration_ms"`
 	Upstream string    `json:"upstream,omitempty"` // 命中的上游：账号#N 或 key#N
+	ProxyType string   `json:"proxyType,omitempty"` // 出口代理类型：main|backup|direct（绑定主/辅/直连），空=全局池轮转/未命中上游
 	Note     string    `json:"note,omitempty"`
 }
 
 // upstreamInfo 挂在请求 context 上的可写槽位：处理链深处（选号/选 key 处）
 // 写入命中的账号/key 序号，请求日志中间件在请求收尾时读出。槽位本身随
 // context 传递，不引入全局状态，也不改变任何函数签名。
-type upstreamInfo struct{ label string }
+type upstreamInfo struct {
+	label string
+	exit  string // 出口代理类型：main | backup | ""（直连/全局池）
+}
 
 type upstreamCtxKey struct{}
 
@@ -51,6 +55,17 @@ func setUpstreamInfo(ctx context.Context, label string) {
 	}
 	if ui, ok := ctx.Value(upstreamCtxKey{}).(*upstreamInfo); ok {
 		ui.label = label
+	}
+}
+
+// setUpstreamExit 记录本次请求实际使用的出口代理类型（绑定主/辅）。
+// 覆盖规则同 setUpstreamInfo：多次尝试时后写覆盖先写。
+func setUpstreamExit(ctx context.Context, exit string) {
+	if exit == "" || ctx == nil {
+		return
+	}
+	if ui, ok := ctx.Value(upstreamCtxKey{}).(*upstreamInfo); ok {
+		ui.exit = exit
 	}
 }
 
@@ -244,6 +259,7 @@ func requestLogMiddleware(next http.Handler) http.Handler {
 			Status:   sw.status,
 			Duration: time.Since(start).Milliseconds(),
 			Upstream: upstream.label,
+			ProxyType: upstream.exit,
 		})
 	})
 }

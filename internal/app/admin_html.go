@@ -563,10 +563,10 @@ body:not([data-theme="dark"]) .theme-toggle .dark-label{display:none}
     <div class="table-wrap">
     <table>
       <thead>
-        <tr><th>Time</th><th>Source</th><th>Method</th><th>Path</th><th>Model</th><th>Route</th><th>Upstream</th><th>Status</th><th>Duration</th></tr>
+        <tr><th>Time</th><th>Source</th><th>Method</th><th>Path</th><th>Model</th><th>Route</th><th>Upstream</th><th>Proxy</th><th>Status</th><th>Duration</th></tr>
       </thead>
       <tbody id="logsTableBody">
-        <tr><td colspan="9" class="empty">Loading...</td></tr>
+        <tr><td colspan="10" class="empty">Loading...</td></tr>
       </tbody>
     </table>
     </div>
@@ -956,6 +956,10 @@ const I18N_ZH = {
   'Model': '模型',
   'Route': '路由',
   'Upstream': '账号/Key',
+  'Proxy': '代理类型',
+  'Main': '主',
+  'Backup': '辅',
+  'Direct': '直连',
   'Status': '状态',
   'Duration': '耗时',
   'No requests logged': '暂无请求记录',
@@ -1858,6 +1862,7 @@ function copyText(t) {
 
 // ========== Request logs ==========
 const ROUTE_LABEL = { zen: 'opencode', cline: 'cline pool', admin: 'admin', meta: 'meta', other: 'other' };
+const PROXY_LABEL = { main: 'Main', backup: 'Backup', direct: 'Direct' };
 const STATUS_CLASS = s => s >= 500 ? 'color:var(--danger)' : (s >= 400 ? 'color:var(--amber)' : 'color:var(--accent2)');
 let logsAuto = true;
 
@@ -1875,11 +1880,12 @@ async function loadLogs() {
   try {
     const d = await api('GET', '/logs');
     const logs = d.data.logs || [];
-    if (!logs.length) { tbody.innerHTML = '<tr><td colspan="9" class="empty">No requests logged</td></tr>'; return; }
+    if (!logs.length) { tbody.innerHTML = '<tr><td colspan="10" class="empty">No requests logged</td></tr>'; return; }
     tbody.innerHTML = logs.map(l => {
       const t = l.time ? new Date(l.time).toLocaleString('en-US') : '-';
       const route = ROUTE_LABEL[l.route] || l.route || '-';
       const st = l.status || 0;
+      const proxy = PROXY_LABEL[l.proxyType] || '-';
       return '<tr>' +
         '<td class="mono" style="font-size:11px">' + t + '</td>' +
         '<td class="mono" style="font-size:11px">' + esc(l.client || '-') + '</td>' +
@@ -1888,11 +1894,12 @@ async function loadLogs() {
         '<td class="mono" style="font-size:12px">' + esc(l.model || '-') + '</td>' +
         '<td><span class="model-tag">' + esc(route) + '</span></td>' +
         '<td class="mono" style="font-size:11px">' + esc(l.upstream || '-') + '</td>' +
+        '<td>' + esc(proxy) + '</td>' +
         '<td style="font-weight:600;color:' + STATUS_CLASS(st) + '">' + st + '</td>' +
         '<td class="mono" style="font-size:11px">' + (l.duration_ms != null ? l.duration_ms + ' ms' : '-') + '</td>' +
       '</tr>';
     }).join('');
-  } catch (e) { tbody.innerHTML = '<tr><td colspan="9" class="empty">Failed to load</td></tr>'; }
+  } catch (e) { tbody.innerHTML = '<tr><td colspan="10" class="empty">Failed to load</td></tr>'; }
 }
 
 // ========== Export accounts ==========

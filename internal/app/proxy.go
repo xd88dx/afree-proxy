@@ -972,6 +972,7 @@ func callClineAPI(ctx context.Context, params map[string]any, stream bool, usePr
 		req.Header = clineHeaders(token, sessionID)
 		resp, lastErr = client.Do(req)
 		if lastErr == nil {
+			setUpstreamExit(ctx, proxyExitType(proxyURL, main, backup, bound))
 			break
 		}
 		if ctx.Err() != nil {

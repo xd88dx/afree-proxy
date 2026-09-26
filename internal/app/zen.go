@@ -69,6 +69,22 @@ var (
 	zenAliases  = make(map[string]*ZenModel) // 别名表
 )
 
+// zenPruneGrace 目录裁剪宽限期。上游 live 目录存在分钟级闪断：实测同一模型
+// 1 分钟内先被 prune（02:01:14）再被加回（02:02:05），立即删除会让客户端
+// 请求恰好落在窗口内被严格门控误拒 400。被裁条目转入宽限表：仍可解析
+// （routeModel/门控继续放行，请求照发上游——真下线由上游返回真实错误，
+// 该类错误不冷却 key、不计故障转移），但不进面板模型列表；重新同步到则
+// 原样回活，超过宽限期历经多轮同步仍未回来，视为真下线彻底清除。
+const zenPruneGrace = 30 * time.Minute
+
+type zenGraceEntry struct {
+	m        *ZenModel
+	aliased  []string // 随模型一起被裁掉的别名（解析时一并兜底）
+	prunedAt time.Time
+}
+
+var zenGraceModels = map[string]zenGraceEntry{} // 读写均走 zenModelsMu
+
 const zenAPIBase = "https://opencode.ai/zen/v1"
 
 func initZenModels() {
@@ -109,6 +125,33 @@ func resolveZenModel(id string) (*ZenModel, bool) {
 	}
 	if m, ok := zenModels[id]; ok {
 		return m, true
+	}
+	if m, ok := resolveZenGrace(id); ok {
+		return m, true
+	}
+	if strings.HasPrefix(id, "opencode/") {
+		if m, ok := resolveZenGrace(strings.TrimPrefix(id, "opencode/")); ok {
+			return m, true
+		}
+	}
+	return nil, false
+}
+
+// resolveZenGrace 宽限表兜底解析：ID、别名都能认。需在 zenModelsMu 读锁内
+// 调用；宽限过期的条目视为不存在（彻底清除由下一轮同步的 prune 顺带做）。
+func resolveZenGrace(id string) (*ZenModel, bool) {
+	for gid, e := range zenGraceModels {
+		if time.Since(e.prunedAt) > zenPruneGrace {
+			continue
+		}
+		if gid == id || e.m.ID == id {
+			return e.m, true
+		}
+		for _, a := range e.aliased {
+			if a == id {
+				return e.m, true
+			}
+		}
 	}
 	return nil, false
 }
@@ -1827,6 +1870,10 @@ func callZenResponsesAPI(ctx context.Context, params map[string]any, stream bool
 		setUpstreamInfo(ctx, fmt.Sprintf("key#%d", keyIndex(key)))
 
 		resp, err := proxyClientFor(proxyURL).Do(req)
+		if err == nil {
+			mainP, backupP, boundP := zenKeyBindingOf(key)
+			setUpstreamExit(ctx, proxyExitType(proxyURL, mainP, backupP, boundP))
+		}
 		if err != nil {
 			if ctx.Err() != nil {
 				return nil, rateLimited, fmt.Errorf("client aborted: %w", err)
@@ -2042,6 +2089,10 @@ func callZenAPI(ctx context.Context, params map[string]any, stream bool, opts ..
 		setUpstreamInfo(ctx, fmt.Sprintf("key#%d", keyIndex(key)))
 
 		resp, err := proxyClientFor(proxyURL).Do(req)
+		if err == nil {
+			mainP, backupP, boundP := zenKeyBindingOf(key)
+			setUpstreamExit(ctx, proxyExitType(proxyURL, mainP, backupP, boundP))
+		}
 		if err != nil {
 			// 客户端取消: 立即返回,不重试不冷却不计故障
 			if ctx.Err() != nil {
@@ -2406,6 +2457,8 @@ func applyZenCatalog(desired map[string]bool, overlay map[string]zenModelOverlay
 			Reasoning: ov.Reasoning,
 			Attach:    ov.Attachment,
 		}
+		// 模型回到 live 列表：若它此前在裁剪宽限表中，原样回活
+		delete(zenGraceModels, id)
 		added++
 	}
 	return added
@@ -2426,15 +2479,29 @@ func pruneZenModelsTo(desired map[string]bool) int {
 		return 0
 	}
 	pruned := 0
+	now := time.Now()
 	for id, m := range zenModels {
 		if desired[id] {
 			continue
+		}
+		// 转入宽限表而非直接删除：上游目录闪断时客户端请求仍可解析、照发
+		// 上游（见 zenPruneGrace 注释）。宽限期内不回 live 列表（面板不挂出）。
+		zenGraceModels[id] = zenGraceEntry{
+			m:        m,
+			aliased:  append([]string(nil), m.Aliases...),
+			prunedAt: now,
 		}
 		delete(zenModels, id)
 		for _, a := range m.Aliases {
 			delete(zenAliases, a)
 		}
 		pruned++
+	}
+	// 宽限到期（历经多轮同步仍未回到 live 列表）：真下线，彻底清除
+	for id, e := range zenGraceModels {
+		if now.Sub(e.prunedAt) > zenPruneGrace {
+			delete(zenGraceModels, id)
+		}
 	}
 	return pruned
 }
