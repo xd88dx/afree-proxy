@@ -1,7 +1,7 @@
 name: Publish Docker image
 
-# Pushes to main publish ghcr.io/<owner>/<repo>:latest (amd64 + arm64).
-# Tag pushes (v*) additionally publish the semver tag and :latest.
+# Every run (push to main or v* tag) publishes ghcr.io/<owner>/<repo>:latest
+# (amd64 + arm64). Tag pushes (v*) additionally publish the semver tag.
 on:
   push:
     branches: [ main ]
@@ -69,9 +69,8 @@ jobs:
         with:
           images: ${{ steps.image.outputs.name }}
           tags: |
-            type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value=latest
             type=semver,pattern={{version}}
-            type=sha
 
       - name: Build and push
         uses: docker/build-push-action@v6

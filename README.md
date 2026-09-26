@@ -35,7 +35,7 @@ docker run -d --name afree-proxy \
 curl http://127.0.0.1:3457/health
 ```
 
-Then open `http://127.0.0.1:3457/admin/`, log in with `ADMIN_PASSWORD`, and add accounts or zen keys. The image is multi-arch (`linux/amd64`, `linux/arm64`); `:latest` tracks `main`, version tags (`vX.Y.Z`) and `:sha-xxxxxx` tags are also published.
+Then open `http://127.0.0.1:3457/admin/`, log in with `ADMIN_PASSWORD`, and add accounts or zen keys. The image is multi-arch (`linux/amd64`, `linux/arm64`); `:latest` is published on every build, and version tags (`vX.Y.Z`) additionally publish `:X.Y.Z`.
 
 > The image name follows the GitHub repository name. If your repo is named differently, replace `afree-proxy` with the repo name (GHCR images are always lowercase).
 
