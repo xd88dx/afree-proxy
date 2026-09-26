@@ -88,7 +88,7 @@ Environment variables to define in the Portainer stack UI:
 
 To seed Cline accounts on first boot, drop a `cline-seed.json` file into the volume (see [Seeding accounts](#seeding-accounts)).
 
-> **Bind-mount note (Portainer/NAS users):** the container runs as a non-root user, so a **named volume** (`-v cline-proxy-data:/app/data`) is preferred. If you bind-mount a host directory (e.g. `-v /opt/cline-proxy-data:/app/data`), pre-create it and chown it to UID 1000 (`chown -R 1000:1000 /opt/cline-proxy-data`) or the gateway cannot write its state files and will fail to persist accounts.
+> **Bind-mount note (Portainer/NAS users):** set `PUID`/`PGID` to your host user and the entrypoint self-heals the data-directory ownership on every start (`chown` is run inside the container before the gateway drops privileges) — no manual `chown` needed, even after recreating the container. Defaults are `100`/`101` (the image's built-in `app` user). A **named volume** (`-v cline-proxy-data:/app/data`) is also fine and needs no ownership setup at all.
 
 ## Configuration
 
@@ -108,6 +108,7 @@ All state lives in the `/app/data` volume (`cline-accounts.json`, `zen-config.js
 | `CLINE_ACCOUNTS_SEED_FILE` | empty | Seed JSON imported at boot when the pool is empty |
 | `CLINE_USE_PROXIES` | `false` | Route the Cline upstream through the egress proxy pool |
 | `PROXY_ISOLATION` | `true` | Identity↔exit binding (see [Proxy isolation](#proxy-isolation-identity--exit-binding)); `false` restores legacy per-request rotation. Explicitly set env overrides the panel toggle |
+| `PUID` / `PGID` | `100` / `101` | UID/GID the gateway runs as. The entrypoint runs as root, re-owns the data directories to `PUID:PGID`, then drops privileges — set these to your host user for bind mounts |
 | `LOG_REQUESTS` | `true` | Request logging (metadata only: IP, path, model, status, duration — never conversation content) |
 | `LOG_FILE_MAX_MB` | `10` | `requests.jsonl` size cap; wiped when exceeded |
 | `MAX_BODY_MB` | `32` | Request body limit; larger bodies get `413` |

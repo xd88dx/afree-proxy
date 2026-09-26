@@ -48,6 +48,7 @@ docker run -d --name afree-proxy --restart unless-stopped \
 
 - 监听非回环地址时必须设置 `API_KEY` 和 `ADMIN_PASSWORD`，否则**拒绝启动**（fail-closed）。
 - 数据卷 `cline-proxy-data` 保存账号、配置、日志，重建容器不丢数据。
+- **NAS bind-mount 权限**：用宿主机目录挂载时加 `-e PUID=1000 -e PGID=1000`（换成你的宿主机用户），入口脚本会在每次启动时自动把数据目录属主改为该用户再降权运行——重建容器无需手动 chown。默认 `100:101`（镜像内置 app 用户）。
 
 ### 2.2 Docker Compose
 

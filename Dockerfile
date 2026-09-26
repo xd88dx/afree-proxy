@@ -71,18 +71,20 @@ FROM alpine:3.21
 ARG APK_MIRROR
 RUN set -eux; \
     if [ -n "${APK_MIRROR:-}" ]; then sed -i "s#dl-cdn.alpinelinux.org#$APK_MIRROR#g" /etc/apk/repositories; fi; \
-    apk add --no-cache ca-certificates tzdata libstdc++ libgcc \
+    apk add --no-cache ca-certificates tzdata libstdc++ libgcc su-exec \
     && addgroup -S app && adduser -S app -G app
 
 WORKDIR /app
 COPY --from=builder /build/afree-proxy .
 # 目录拷贝：无 CLI 的架构上空目录，COPY 依旧成功（缺文件才失败）
 COPY --from=opencode-cli /tmp/oc-bin/ /app/bin/
+COPY entrypoint.sh /entrypoint.sh
 
-RUN mkdir -p /app/data /app/.opencode-home && chown -R app:app /app
+RUN mkdir -p /app/data /app/.opencode-home && chown -R app:app /app \
+    && chmod 755 /entrypoint.sh
 
-USER app
-
+# 不再固定 USER app：entrypoint 以 root 完成数据目录属主自愈（PUID/PGID，
+# 默认 100:101 与 app 用户一致）后降权运行，NAS bind-mount 无需手动 chown
 EXPOSE 3457
 
 VOLUME ["/app/data"]
@@ -94,5 +96,5 @@ ENV PORT=3457
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
   CMD wget -q -O /dev/null http://127.0.0.1:${PORT}/health || exit 1
 
-ENTRYPOINT ["/app/afree-proxy"]
+ENTRYPOINT ["/entrypoint.sh"]
 CMD []
