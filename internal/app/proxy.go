@@ -148,7 +148,8 @@ func StartProxy(host string, port int) error {
 			valid := false
 			for _, k := range keys {
 				if subtle.ConstantTimeCompare([]byte(key), []byte(k)) == 1 {
-							break
+					valid = true
+					break
 				}
 			}
 
