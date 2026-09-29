@@ -75,12 +75,15 @@ RUN set -eux; \
     && addgroup -S app && adduser -S app -G app
 
 WORKDIR /app
-COPY --from=builder /build/afree-proxy .
+# COPY --chown 而非事后 chown -R：在建层时就把属主写对，避免 chown 生成
+# 一整层 195MB opencode 的副本（实测这一层让镜像从 297MB 涨到 575MB）。
+COPY --from=builder --chown=app:app /build/afree-proxy .
 # 目录拷贝：无 CLI 的架构上空目录，COPY 依旧成功（缺文件才失败）
-COPY --from=opencode-cli /tmp/oc-bin/ /app/bin/
-COPY entrypoint.sh /entrypoint.sh
+COPY --from=opencode-cli --chown=app:app /tmp/oc-bin/ /app/bin/
+COPY --chown=app:app entrypoint.sh /entrypoint.sh
 
-RUN mkdir -p /app/data /app/.opencode-home && chown -R app:app /app \
+RUN mkdir -p /app/data /app/.opencode-home \
+    && chown app:app /app/data /app/.opencode-home \
     && chmod 755 /entrypoint.sh
 
 # 不再固定 USER app：entrypoint 以 root 完成数据目录属主自愈（PUID/PGID，

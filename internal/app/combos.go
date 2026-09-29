@@ -15,8 +15,8 @@ import (
 )
 
 // Combo 仪表盘自定义的别名模型：/v1 请求 model 命中 combo ID 时，
-// 上游改写为同平台的 target 模型。严格同平台：cline combo 只能选 cline
-// 模型列表中的模型，zen combo 只能选 zen 免费模型，保存时校验。
+// 上游改写为同平台的 target 模型。严格同平台：cline/zen/workbuddy
+// 只能选各自平台当前模型列表中的模型，保存时校验。
 type Combo struct {
 	ID         string    `json:"id"`
 	Platform   string    `json:"platform"` // cline | zen
@@ -106,14 +106,14 @@ func resolveCombo(id string) *Combo {
 
 // validateCombo 保存前校验：
 //   - ID 格式合法（URL 安全）且不与任何真实模型 ID 冲突
-//   - platform ∈ {cline, zen}
+//   - platform ∈ {cline, zen, workbuddy}
 //   - target 必须存在于对应平台的模型列表（严格同平台，禁止跨平台选择）
 func validateCombo(id, platform, target string) error {
 	if !comboIDRe.MatchString(id) {
 		return fmt.Errorf("invalid combo id %q: use 2-64 chars, letters/digits/._- and start with letter or digit", id)
 	}
-	if platform != "cline" && platform != "zen" {
-		return fmt.Errorf("invalid platform %q: must be cline or zen", platform)
+	if platform != "cline" && platform != "zen" && platform != "workbuddy" {
+		return fmt.Errorf("invalid platform %q: must be cline, zen or workbuddy", platform)
 	}
 	target = strings.TrimSpace(target)
 	if target == "" {
@@ -149,6 +149,20 @@ func validateCombo(id, platform, target string) error {
 	case "zen":
 		if _, ok := resolveZenFreeModel(target); !ok {
 			return fmt.Errorf("target %q is not a free zen model (cross-platform selection is not allowed)", target)
+		}
+	case "workbuddy":
+		if !shouldServeWorkBuddy(target) {
+			return fmt.Errorf("target %q is not a WorkBuddy model", target)
+		}
+		found := false
+		for _, m := range workbuddySub.modelList() {
+			if id, ok := m["id"].(string); ok && id == target {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return fmt.Errorf("target %q is not in the current WorkBuddy model list", target)
 		}
 	}
 	return nil

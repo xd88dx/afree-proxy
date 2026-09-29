@@ -96,6 +96,14 @@ func loadPool() *AccountPool {
 		p.Keys = []string{}
 	}
 	pool = &p
+	// 旧池文件没有 poolEnabled 字段：在内存里立即物化为默认 true，
+	// 下一次落盘即可得到显式布尔值，同时不改写账号的 active/cooldown/expired。
+	for _, a := range pool.Accounts {
+		if a != nil && a.PoolEnabled == nil {
+			enabled := true
+			a.PoolEnabled = &enabled
+		}
+	}
 	if pool.DefaultModel != "" {
 		defaultModel = pool.DefaultModel
 	}
@@ -181,7 +189,9 @@ func poolStatusCounts() (total, active, cooldown, expired int) {
 		total++
 		switch a.Status {
 		case "active":
-			active++
+			if accountPoolEnabled(a) {
+				active++
+			}
 		case "cooldown":
 			cooldown++
 		case "expired":
@@ -189,6 +199,61 @@ func poolStatusCounts() (total, active, cooldown, expired int) {
 		}
 	}
 	return
+}
+
+// accountPoolEnabled 读取显式参与轮换开关；旧数据缺失时按启用处理。
+func accountPoolEnabled(a *Account) bool {
+	return a == nil || a.PoolEnabled == nil || *a.PoolEnabled
+}
+
+// setAccountPoolEnabled 保存账号是否参与轮换；只写独立开关，不改 Status。
+// 找到账号后立即落盘，避免保存请求依赖后台 flusher 才生效。
+func setAccountPoolEnabled(accountID string, enabled bool) error {
+	p := loadPool()
+	poolMu.Lock()
+	found := false
+	for _, a := range p.Accounts {
+		if a != nil && a.AccountID == accountID {
+			a.PoolEnabled = &enabled
+			markPoolDirtyLocked()
+			found = true
+			break
+		}
+	}
+	poolMu.Unlock()
+	if !found {
+		return fmt.Errorf("account not found: %s", accountID)
+	}
+	savePool()
+	return nil
+}
+
+// setAllAccountsPoolEnabled 一键启用/禁用全部账号的参与轮换开关（面板批量
+// 入口），返回实际改写的账号数。语义与 setAccountPoolEnabled 一致：只动
+// PoolEnabled，不改账号 Status。
+func setAllAccountsPoolEnabled(enabled bool) int {
+	p := loadPool()
+	poolMu.Lock()
+	n := 0
+	for _, a := range p.Accounts {
+		if a == nil {
+			continue
+		}
+		if a.PoolEnabled != nil && *a.PoolEnabled == enabled {
+			continue
+		}
+		v := enabled
+		a.PoolEnabled = &v
+		n++
+	}
+	if n > 0 {
+		markPoolDirtyLocked()
+	}
+	poolMu.Unlock()
+	if n > 0 {
+		savePool()
+	}
+	return n
 }
 
 // poolCurrentIdx 线程安全地读取账号轮转游标。
@@ -199,12 +264,22 @@ func poolCurrentIdx() int {
 	return p.CurrentIdx
 }
 
-// poolClineUseProxies 线程安全地读取 cline 走代理池开关。
+// poolClineUseProxies 线程安全地读取 cline 走代理池开关；未设置（nil）默认开启。
 func poolClineUseProxies() bool {
 	p := loadPool()
 	poolMu.Lock()
 	defer poolMu.Unlock()
-	return p.ClineUseProxies
+	return p.ClineUseProxies == nil || *p.ClineUseProxies
+}
+
+// poolAdminLogEnabled 线程安全地读取"记录 /admin 访问日志"开关；未设置（nil）
+// 默认关闭 —— 本地自用部署不关心页面轮询产生的噪声行，只保留经过网关的模型
+// 会话日志。请求日志中间件在每个 /admin 请求上调用一次。
+func poolAdminLogEnabled() bool {
+	p := loadPool()
+	poolMu.Lock()
+	defer poolMu.Unlock()
+	return p.AdminLogEnabled != nil && *p.AdminLogEnabled
 }
 
 // poolKeysSnapshot 线程安全地返回客户端 API key 列表副本。
@@ -243,6 +318,10 @@ func savePoolLocked() {
 }
 
 func addAccount(acc *Account) {
+	if acc != nil && acc.PoolEnabled == nil {
+		enabled := true
+		acc.PoolEnabled = &enabled
+	}
 	p := loadPool()
 	poolMu.Lock()
 	p.Accounts = append(p.Accounts, acc)
@@ -397,6 +476,9 @@ func pickAccount() *Account {
 		if a.Status != "active" {
 			continue
 		}
+		if !accountPoolEnabled(a) {
+			continue
+		}
 		// 隔离模式：绑定主辅出口都不可用（冷却中/已从池中删除）的账号本轮
 		// 整体跳过 —— 隔离优先于可用性，绝不退回其他出口。检查在 poolMu 内
 		// 完成：读的是绑定字段本身；可用性走 zenProxyCooldownsMu/zenConfigMu，
@@ -543,6 +625,9 @@ func ListAccounts() []*Account {
 			// 池页本来就完整展示列表，信任级别相同。
 			ProxyMain:   a.ProxyMain,
 			ProxyBackup: a.ProxyBackup,
+			// 参与轮换开关随列表下发（面板编辑用）；保存走
+			// /admin/api/accounts/pool/enabled。
+			PoolEnabled: a.PoolEnabled,
 		}
 	}
 	markPoolDirtyLocked()
@@ -638,13 +723,17 @@ func describePoolStatus() string {
 		return "pool is empty, use --add-account or admin API to add accounts"
 	}
 
-	active, cooldown, expired := 0, 0, 0
+	active, disabled, cooldown, expired := 0, 0, 0, 0
 	isolation := proxyIsolationEnabled()
 	boundBlocked := 0
 	var nextRecover *time.Time
 	for _, a := range p.Accounts {
 		switch a.Status {
 		case "active":
+			if !accountPoolEnabled(a) {
+				disabled++
+				continue
+			}
 			active++
 			if isolation && !boundProxiesRoutable(a.ProxyMain, a.ProxyBackup) {
 				boundBlocked++
@@ -663,6 +752,9 @@ func describePoolStatus() string {
 	}
 
 	s := fmt.Sprintf("total=%d active=%d cooldown=%d expired=%d", total, active, cooldown, expired)
+	if disabled > 0 {
+		s += fmt.Sprintf(", disabled=%d (not participating in rotation)", disabled)
+	}
 	if boundBlocked > 0 {
 		s += fmt.Sprintf(", boundBlocked=%d (proxy isolation: bound exits cooling/removed)", boundBlocked)
 	}

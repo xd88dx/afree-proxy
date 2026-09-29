@@ -27,7 +27,8 @@ type configBackup struct {
 	Accounts        []*Account                  `json:"accounts,omitempty"`
 	ClientKeys      []string                    `json:"clientKeys,omitempty"`
 	DefaultModel    string                      `json:"defaultModel,omitempty"`
-	ClineUseProxies bool                        `json:"clineUseProxies,omitempty"`
+	ClineUseProxies *bool                       `json:"clineUseProxies,omitempty"`
+	AdminLogEnabled *bool                       `json:"adminLogEnabled,omitempty"`
 	Strategy        string                      `json:"strategy,omitempty"`
 	Headers         map[string]string           `json:"headers,omitempty"`
 	Zen             *zenConfigData              `json:"zen,omitempty"`
@@ -69,13 +70,17 @@ func handleAdminConfigExport(w http.ResponseWriter, r *http.Request) {
 	}
 	zenSessMu.Unlock()
 
+	// cline 走代理池开关：显式落盘（nil = 未设置 = 默认开启），导入按指针还原。
+	clineUse := poolClineUseProxies()
+	adminLog := poolAdminLogEnabled()
 	backup := configBackup{
 		Version:         configBackupVersion,
 		ExportedAt:      time.Now().UTC(),
 		Accounts:        accounts,
 		ClientKeys:      clientKeys,
 		DefaultModel:    getDefaultModel(),
-		ClineUseProxies: poolClineUseProxies(),
+		ClineUseProxies: &clineUse,
+		AdminLogEnabled: &adminLog,
 		Strategy:        getProxyConfig().Strategy,
 		Headers:         headers,
 		Zen:             getZenConfig(),
@@ -158,13 +163,23 @@ func handleAdminConfigImport(w http.ResponseWriter, r *http.Request) {
 		poolMu.Unlock()
 		imported["clientKeys"] = len(backup.ClientKeys)
 	}
-	if backup.ClineUseProxies {
+	if backup.ClineUseProxies != nil {
 		p := loadPool()
 		poolMu.Lock()
-		p.ClineUseProxies = true
+		v := *backup.ClineUseProxies
+		p.ClineUseProxies = &v
 		markPoolDirtyLocked()
 		poolMu.Unlock()
 		imported["clineUseProxies"] = 1
+	}
+	if backup.AdminLogEnabled != nil {
+		p := loadPool()
+		poolMu.Lock()
+		v := *backup.AdminLogEnabled
+		p.AdminLogEnabled = &v
+		markPoolDirtyLocked()
+		poolMu.Unlock()
+		imported["adminLogEnabled"] = 1
 	}
 	if backup.DefaultModel != "" {
 		setDefaultModel(backup.DefaultModel)

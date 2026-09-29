@@ -73,7 +73,7 @@ var (
 // 1 分钟内先被 prune（02:01:14）再被加回（02:02:05），立即删除会让客户端
 // 请求恰好落在窗口内被严格门控误拒 400。被裁条目转入宽限表：仍可解析
 // （routeModel/门控继续放行，请求照发上游——真下线由上游返回真实错误，
-// 该类错误不冷却 key、不计故障转移），但不进面板模型列表；重新同步到则
+// 该类错误不冷却 key），但不进面板模型列表；重新同步到则
 // 原样回活，超过宽限期历经多轮同步仍未回来，视为真下线彻底清除。
 const zenPruneGrace = 30 * time.Minute
 
@@ -218,7 +218,6 @@ func resolveZenFreeModel(id string) (*ZenModel, bool) {
 
 // routeModel 决定请求走哪个上游: "zen" / "cline" / "reject"
 // zen 免费模型 -> zen; zen 付费模型 -> reject(400); 其他 -> cline
-// 故障转移: zen 连续失败期间,zen 免费模型请求临时路由到 cline 账号池
 func routeModel(id string) string {
 	id = strings.TrimSpace(id)
 	// combo 别名兜底：调用方通常已把 model 改写为 target，这里防止 combo ID
@@ -227,7 +226,6 @@ func routeModel(id string) string {
 		return c.Platform
 	}
 	initZenModels()
-	cfg := getZenConfig()
 	if zm, ok := resolveZenModel(id); ok {
 		if isZenFreeModel(zm) {
 			// 与 cline 模型表冲突时(几乎不可能)走 cline
@@ -236,10 +234,6 @@ func routeModel(id string) string {
 			_, inCline := modelsCache[id]
 			modelsMu.Unlock()
 			if !inCline {
-				if cfg.Failover && zenFailedNow() {
-					log.Printf("  failover: zen degraded, %q routed to cline pool", id)
-					return "cline"
-				}
 				return "zen"
 			}
 		} else {
@@ -263,57 +257,91 @@ type zenConfigData struct {
 	// OpenCode 上游常开（无独立启停开关）。代理池的使用由 ZenUseProxies
 	// 控制（代理池页下拉），缺省 = 代理列表非空即走池。
 	ZenUseProxies *bool `json:"zenUseProxies,omitempty"`
+	// WorkBuddy 同理：未绑定代理的账号是否走共享代理池，
+	// 缺省 = 代理列表非空即走池。
+	WorkbuddyUseProxies *bool   `json:"workbuddyUseProxies,omitempty"`
 	Key           string  `json:"key"`            // 兼容字段：始终等于 Keys[0]（旧版单 key 读取用）
 	Keys            []string `json:"keys,omitempty"` // zen 多 key 池，请求按 round-robin 轮转
 	BaseURL         string  `json:"baseURL"`
 	Proxies         []string `json:"proxies"`        // http(s)/socks5 代理,轮询出口
 	ProxyStrategy   string  `json:"proxyStrategy"`   // round_robin / random / fill
-	MaxConcurrency  int     `json:"maxConcurrency"`  // zen 上游最大并发,防 worker 瞬时超限,默认 8
-	Retries         int     `json:"retries"`         // 限流/网络错误重试次数,默认 3
-	Failover        bool    `json:"failover"`        // zen 连续失败后故障转移到 cline 账号池,默认 true
-	FailoverCount   int              `json:"failoverCount"`   // 触发故障转移的连续失败次数,默认 3
-	FailoverMinutes int              `json:"failoverMinutes"` // 故障转移窗口(分钟),默认 5
+	MaxConcurrency  int     `json:"maxConcurrency"` // zen 上游最大并发,防 worker 瞬时超限,默认 8
+	Retries         int     `json:"retries"`        // 限流/网络错误重试次数,默认 3
 	Compaction      zenCompactConfig `json:"compaction"`
 	// Deprecated 迁移字段：旧版把代理别名存在独立表里，normalizeZenKeys
 	// 会把别名折叠回代理行（#fragment）并清空本字段。
 	ProxyAliases map[string]string `json:"proxyAliases,omitempty"`
 	// 账号/key 代理隔离开关（proxy_binding.go）。nil = 未配置 = 隔离启用（默认）；
-	// 显式 false 仅表示"用户主动关闭"。PROXY_ISOLATION env 设置时 env 优先。
+	// 显式 false 仅表示"用户主动关闭"。PROXY_ISOLATION=true 时强制开启（面板
+	// 只读）；env=false 仅把默认值改为关闭，面板仍可修改（见 proxyIsolationEnabled）。
 	// 指针三态是为了旧配置文件缺字段时默认进入隔离模式，而不是静默退回旧规则。
 	ProxyIsolation *bool `json:"proxyIsolation,omitempty"`
+	// 辅代理开关（proxy_binding.go）。nil = 未配置 = 关闭（默认）：主代理不可用
+	// 时不尝试辅代理，该身份本次直接跳过（仍然绝不回退直连）。显式 true 才启用
+	// "主不通走辅"的兜底。默认值与 ProxyIsolation 相反 —— 兜底是有意开启的行为，
+	// 不该因为旧配置文件缺字段而被静默打开。
+	BackupProxyEnabled *bool `json:"backupProxyEnabled,omitempty"`
 	// zen key 的代理绑定表：key 明文 -> 主/辅代理。与 Keys 分开存 —— env
 	// ZEN_KEYS 注入的 key 无需改动即获得"未绑定走全局规则"的兜底语义。
 	// 面板永不回传本表（key 明文不出口），绑定随 keyStates 按索引下发。
 	KeyBindings map[string]zenProxyBinding `json:"keyBindings,omitempty"`
-	// zen key 的自动铸造启用表：key 明文 -> 是否参与自动铸造（启动补缺 /
-	// 403 触发 / 周期巡检 / 面板 Mint）。新添加的 key 默认**未启用**，需在
-	// 面板勾选"是否启用"后才激活铸造；无显式记录的存量 key 按迁移兼容规则
-	// 回退（见 zenKeyAutoHarvestEnabled）。
-	KeyEnabled map[string]bool `json:"keyEnabled,omitempty"`
+	// zen key 的路由参与表：key 明文 -> 是否进入请求轮转（面板"启用"列勾选）。
+	// nil/缺项 = 参与。路由启用是铸造的前提（父集语义）：禁用路由的 key 不参与
+	// 选号，收割机也不再为它铸造会话（zenKeyAutoHarvestEnabled）。
+	KeyRoutingEnabled map[string]bool `json:"keyRoutingEnabled,omitempty"`
 }
 
-// zenKeyAutoHarvestEnabled 判断 key 是否参与自动铸造，与面板"是否启用"列一致。
-// 显式记录优先；无记录时按迁移兼容规则：已有 minted/live 会话的存量 key 视为
-// 已启用（升级前它们一直在被自动铸造），全新 key 视为未启用 —— 添加 key 后
-// 不再自动发起铸造，直到手动启用。
+// zenKeyAutoHarvestEnabled 报告 key 是否参与自动铸造（启动补缺 / 403 触发 /
+// 周期巡检 / 面板 Mint）。铸造跟随路由启用：路由关 = 该 key 不出请求，无需
+// 会话，也不铸造；匿名 public key 无凭据，恒不铸造。
 func zenKeyAutoHarvestEnabled(key string) bool {
 	if key == "" || key == "public" {
 		return false
 	}
-	cfg := getZenConfig()
-	if v, ok := cfg.KeyEnabled[key]; ok {
-		return v
-	}
-	s := zenSessionSnapshotOf(key)
-	return s.Minted || s.Live
+	return zenKeyRoutingEnabled(key)
 }
 
-// setAllZenKeysEnabled 一键启用/停用全部 key 的自动铸造（面板入口）。
-// public 无凭据跳过。返回实际改写的 key 数。
-func setAllZenKeysEnabled(enabled bool) int {
+// zenKeyRoutingEnabled key 是否参与请求路由（"启用"列）。nil/缺项 = 参与；
+// 匿名 public key 恒参与（无凭据可言）。
+func zenKeyRoutingEnabled(key string) bool {
+	if key == "" || key == "public" {
+		return true
+	}
 	cfg := getZenConfig()
-	en := make(map[string]bool, len(cfg.Keys))
-	for k, v := range cfg.KeyEnabled {
+	if v, ok := cfg.KeyRoutingEnabled[key]; ok {
+		return v
+	}
+	return true
+}
+
+// setZenKeyRoutingEnabled 写入 key 的路由参与状态（面板"启用"勾选）。
+// 写时复制：zenConfig 是被请求路径并发读取的活配置。
+func setZenKeyRoutingEnabled(index int, enabled bool) error {
+	cfg := getZenConfig()
+	if index < 0 || index >= len(cfg.Keys) {
+		return fmt.Errorf("key index out of range")
+	}
+	key := cfg.Keys[index]
+	if key == "" || key == "public" {
+		return fmt.Errorf("the anonymous public key always participates in routing")
+	}
+	next := *cfg
+	en := make(map[string]bool, len(cfg.KeyRoutingEnabled)+1)
+	for k, v := range cfg.KeyRoutingEnabled {
+		en[k] = v
+	}
+	en[key] = enabled
+	next.KeyRoutingEnabled = en
+	setZenConfig(&next)
+	return nil
+}
+
+// setAllZenKeysRoutingEnabled 一键启用/禁用全部 key 的路由参与（面板入口）。
+// 匿名 public key 跳过。返回实际改写的 key 数。
+func setAllZenKeysRoutingEnabled(enabled bool) int {
+	cfg := getZenConfig()
+	en := make(map[string]bool, len(cfg.KeyRoutingEnabled)+len(cfg.Keys))
+	for k, v := range cfg.KeyRoutingEnabled {
 		en[k] = v
 	}
 	n := 0
@@ -325,31 +353,9 @@ func setAllZenKeysEnabled(enabled bool) int {
 		n++
 	}
 	next := *cfg
-	next.KeyEnabled = en
+	next.KeyRoutingEnabled = en
 	setZenConfig(&next)
 	return n
-}
-
-// setZenKeyEnabled 写入 key 的显式启用状态（面板"是否启用"勾选）。
-// 写时复制：zenConfig 是被请求路径并发读取的活配置。
-func setZenKeyEnabled(index int, enabled bool) error {
-	cfg := getZenConfig()
-	if index < 0 || index >= len(cfg.Keys) {
-		return fmt.Errorf("key index out of range")
-	}
-	key := cfg.Keys[index]
-	if key == "" || key == "public" {
-		return fmt.Errorf("the anonymous public key has no credential to enable")
-	}
-	next := *cfg
-	en := make(map[string]bool, len(cfg.KeyEnabled)+1)
-	for k, v := range cfg.KeyEnabled {
-		en[k] = v
-	}
-	en[key] = enabled
-	next.KeyEnabled = en
-	setZenConfig(&next)
-	return nil
 }
 
 // zenProxyBinding 一个 zen key 或 cline 账号的出口绑定：主代理优先，辅代理
@@ -367,9 +373,6 @@ func defaultZenConfig() *zenConfigData {
 		ProxyStrategy:   "round_robin",
 		MaxConcurrency:  8,
 		Retries:         3,
-		Failover:        true,
-		FailoverCount:   3,
-		FailoverMinutes: 5,
 		Compaction: zenCompactConfig{
 			Auto:       true,
 			Buffer:     20000,
@@ -384,13 +387,10 @@ var (
 	zenConfigMu sync.Mutex
 )
 
-// ============ 限流防御状态机 ============
-
+// 并发信号量：zen 上游最大并发（maxConcurrency 配置，rebuildZenSem 重建）。
 var (
-	zenSem       chan struct{} // 并发信号量
-	zenFailCount int           // 连续失败计数
-	zenFailUntil time.Time     // 故障转移截止时间
-	zenStateMu   sync.Mutex
+	zenSem     chan struct{}
+	zenStateMu sync.Mutex
 )
 
 func init() {
@@ -406,46 +406,6 @@ func rebuildZenSem() {
 	zenStateMu.Lock()
 	zenSem = make(chan struct{}, n)
 	zenStateMu.Unlock()
-}
-
-func markZenSuccess() {
-	zenStateMu.Lock()
-	zenFailCount = 0
-	zenFailUntil = time.Time{}
-	zenStateMu.Unlock()
-}
-
-func markZenFail() {
-	cfg := getZenConfig()
-	thr := cfg.FailoverCount
-	if thr <= 0 {
-		thr = 3
-	}
-	window := cfg.FailoverMinutes
-	if window <= 0 {
-		window = 5
-	}
-	zenStateMu.Lock()
-	zenFailCount++
-	if zenFailCount >= thr {
-		zenFailUntil = time.Now().Add(time.Duration(window) * time.Minute)
-	}
-	zenStateMu.Unlock()
-}
-
-// zenFailedNow zen 是否处于故障转移状态
-func zenFailedNow() bool {
-	zenStateMu.Lock()
-	defer zenStateMu.Unlock()
-	if zenFailUntil.IsZero() {
-		return false
-	}
-	if time.Now().After(zenFailUntil) {
-		zenFailCount = 0
-		zenFailUntil = time.Time{}
-		return false
-	}
-	return true
 }
 
 // isRateLimited 限流信号识别: 429/503 直接命中; 502/403 按错误体关键词
@@ -466,6 +426,10 @@ func isRateLimited(status int, body string) bool {
 
 // normalizeZenKeys 规范 key 池：迁移旧单 key 字段、去空去重、回退默认 "public"、
 // 同步兼容字段 Key = Keys[0]。
+// public 自动管理：存在任一真实 key 时剔除匿名 public（路由与铸造都走真实
+// key，public 留在池里只会被轮到时白白 403）；一个真实 key 都没有时兜底加
+// 回，保证 key 池永不为空。全程不由用户操作——添加真实 key 即自动顶掉
+// public，删光真实 key 即自动回归匿名。
 func normalizeZenKeys(cfg *zenConfigData) {
 	if len(cfg.Keys) == 0 && cfg.Key != "" {
 		cfg.Keys = []string{cfg.Key}
@@ -480,7 +444,22 @@ func normalizeZenKeys(cfg *zenConfigData) {
 		seen[k] = true
 		cleaned = append(cleaned, k)
 	}
-	if len(cleaned) == 0 {
+	hasReal := false
+	for _, k := range cleaned {
+		if k != "public" {
+			hasReal = true
+			break
+		}
+	}
+	if hasReal {
+		without := make([]string, 0, len(cleaned)-1)
+		for _, k := range cleaned {
+			if k != "public" {
+				without = append(without, k)
+			}
+		}
+		cleaned = without
+	} else if len(cleaned) == 0 {
 		cleaned = []string{"public"}
 	}
 	cfg.Keys = cleaned
@@ -587,6 +566,18 @@ func setZenConfig(c *zenConfigData) {
 	// 上轮换 key 会让 .zen-sessions.json 与两个收割表单调增长，被删掉的旧 key
 	// 的粘性身份还留在盘上。
 	pruneZenKeyState(valid)
+	// 路由参与表随 key 列表清理：移除 key 的记录只剩泄漏价值，不清理会让
+	// 长跑部署上配置文件单调增长。
+	if len(c.KeyRoutingEnabled) > 0 {
+		for k := range c.KeyRoutingEnabled {
+			if !valid[k] {
+				delete(c.KeyRoutingEnabled, k)
+			}
+		}
+		if len(c.KeyRoutingEnabled) == 0 {
+			c.KeyRoutingEnabled = nil
+		}
+	}
 	// 代理列表变化时: 索引会位移,按索引记录的冷却整体失效,直接清空;
 	// 同时驱逐已移除代理的钉定客户端,释放其空闲连接
 	if proxiesChanged(old.Proxies, c.Proxies) {
@@ -597,17 +588,6 @@ func setZenConfig(c *zenConfigData) {
 	validProxy := map[string]bool{"": true}
 	for _, p := range c.Proxies {
 		validProxy[p] = true
-	}
-	// 自动铸造启用表同样随 key 列表清理
-	if len(c.KeyEnabled) > 0 {
-		for k := range c.KeyEnabled {
-			if !valid[k] {
-				delete(c.KeyEnabled, k)
-			}
-		}
-		if len(c.KeyEnabled) == 0 {
-			c.KeyEnabled = nil
-		}
 	}
 	proxyClientCacheMu.Lock()
 	for u, cl := range proxyClientCache {
@@ -703,9 +683,17 @@ func pickZenKey() string {
 				blocked[k] = true
 			}
 		}
-		if len(blocked) == len(keys) {
-			return ""
+	}
+	// 面板"启用"列关掉的 key 不参与任何一轮候选（也不被自动铸造，见
+	// 相互独立：路由禁用的 key 仍可被收割机铸造会话）。
+	routingOff := map[string]bool{}
+	for _, k := range keys {
+		if !zenKeyRoutingEnabled(k) {
+			routingOff[k] = true
 		}
+	}
+	if len(blocked) == len(keys) || len(routingOff) == len(keys) {
+		return ""
 	}
 	// 先取 live 会话集合（zenSessMu）再进 zenKeyMu：两把锁不嵌套，避免与
 	// 收割路径（持 zenSessMu 时不取 zenKeyMu，反之亦然）形成锁序反转。
@@ -727,7 +715,7 @@ func pickZenKey() string {
 		var out []string
 		for i := 0; i < len(keys); i++ {
 			k := keys[(zenKeyIdx+i)%len(keys)]
-			if blocked[k] {
+			if blocked[k] || routingOff[k] {
 				continue
 			}
 			if requireLive && !live[k] {
@@ -884,6 +872,8 @@ func zenKeyStatus() []map[string]any {
 			"keyMask": maskZenKey(k),
 			"usage":   zenKeyUsage[k],
 			"current": i == zenKeyIdx%maxInt(len(keys), 1),
+			// 路由参与状态（面板"启用"列勾选，勾掉 = 不进入请求轮转）。
+			"routingEnabled": zenKeyRoutingEnabled(k),
 			// live 会话状态：未 mint 的 key 必 403，面板必须能看出来，
 			// 否则"首启为什么这么慢"只能靠翻容器日志猜。
 			"sessionLive":   sess[i].Live,
@@ -899,8 +889,6 @@ func zenKeyStatus() []map[string]any {
 			st["proxyStale"] = (main != "" && !isEgressDirect(main) && proxyIdxInPool(main) < 0) ||
 				(backup != "" && !isEgressDirect(backup) && proxyIdxInPool(backup) < 0)
 		}
-		// 自动铸造启用状态（面板"是否启用"勾选列）
-		st["enabled"] = zenKeyAutoHarvestEnabled(k)
 		if sess[i].HarvestedAt > 0 {
 			st["harvestedAt"] = time.Unix(sess[i].HarvestedAt, 0).Format(time.RFC3339)
 		}
@@ -1894,7 +1882,6 @@ func callZenResponsesAPI(ctx context.Context, params map[string]any, stream bool
 		}
 		if resp.StatusCode == http.StatusOK {
 			markZenKeySuccess(key)
-			markZenSuccess()
 			harvestMarkSuccess(key)
 			if stream {
 				return resp, rateLimited, nil
@@ -1964,15 +1951,9 @@ func callZenResponsesAPI(ctx context.Context, params map[string]any, stream bool
 				delay = zenRetryDelay(delay)
 				continue
 			}
-			markZenFail()
 			return nil, rateLimited, apiErr
 		}
 
-		// 5xx 推进故障转移；pinned 探测除外（同 chat 路径：探测结论只属于
-		// 这次点击，不能改写全池的路由状态）。
-		if resp.StatusCode >= 500 && o.pinKey == "" {
-			markZenFail()
-		}
 		// 会话失效（FreeTier 403 且非限流）：该 key 的 sess_ 已被服务端
 		// 遗忘，复用只会持续 403。本地随机 sess_ 必 403，不轮换；后台
 		// 收割机（连续 403 达阈值）mint 真会话补上。本次按轮转换 key 重试。
@@ -2105,7 +2086,7 @@ func callZenAPI(ctx context.Context, params map[string]any, stream bool, opts ..
 				cooldownUpstreamProxy(pidx, 2*time.Minute)
 				log.Printf("  zen proxy failed (%v), cooldown exit %s for 2m", err, viaProxy)
 			}
-			// 网络错误:退避重试(不计入故障转移,瞬时可恢复);ctx 取消时中断等待
+			// 网络错误:退避重试(瞬时可恢复);ctx 取消时中断等待
 			if attempt < retries {
 				log.Printf("  zen network error (%v), retry %d/%d after %v", err, attempt+1, retries, delay)
 				if !sleepCtx(ctx, kit.WithRetryJitter(delay)) {
@@ -2118,7 +2099,6 @@ func callZenAPI(ctx context.Context, params map[string]any, stream bool, opts ..
 		}
 		if resp.StatusCode == http.StatusOK {
 			markZenKeySuccess(key)
-			markZenSuccess()
 			harvestMarkSuccess(key)
 			return resp, rateLimited, nil
 		}
@@ -2166,18 +2146,9 @@ func callZenAPI(ctx context.Context, params map[string]any, stream bool, opts ..
 				delay = zenRetryDelay(delay)
 				continue
 			}
-			markZenFail()
 			return nil, rateLimited, apiErr
 		}
 
-		// 非 2xx：只有限流信号或服务端错误才推进全局故障转移，
-		// 客户端侧 400/401（提示词超限、key 配错）不应污染 failover 状态。
-		// pinned 探测除外：它是管理员对单个 key 的主动探测，其结论（包括上游
-		// 5xx）只属于这次点击——连点几次 Test 撞上上游 500，绝不能把全部正常
-		// 流量切去 cline 池。
-		if resp.StatusCode >= 500 && o.pinKey == "" {
-			markZenFail()
-		}
 		// 会话失效（FreeTier 403 且非限流）：该 key 的 sess_ 已被服务端遗忘，
 		// 复用只会持续 403。后台收割机（连续 403 达阈值）mint 真会话补上；
 		// 本次直接轮转下一 key 重试（循环头每次 pickZenKey，天然换 key）。

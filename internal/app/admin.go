@@ -17,23 +17,6 @@ import (
 	"time"
 )
 
-// In-memory OAuth login state for async browser login
-var (
-	oauthSessions   = make(map[string]*oauthSessionState)
-	oauthSessionsMu sync.Mutex
-)
-
-type oauthSessionState struct {
-	DeviceCode string
-	UserCode   string
-	AuthURL    string
-	CreatedAt  time.Time
-	Done       bool
-	Success    bool
-	Email      string
-	Error      string
-}
-
 type apiResponse struct {
 	Success bool   `json:"success"`
 	Data    any    `json:"data,omitempty"`
@@ -75,16 +58,16 @@ func registerAdminRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/admin/api/accounts/add", adminCORS(auth(handleAdminAccountAdd)))
 	mux.HandleFunc("/admin/api/accounts/delete", adminCORS(auth(handleAdminAccountDelete)))
 	mux.HandleFunc("/admin/api/accounts/test", adminCORS(auth(handleAdminAccountTest)))
-	mux.HandleFunc("/admin/api/oauth/start", adminCORS(auth(handleOAuthStart)))
-	mux.HandleFunc("/admin/api/oauth/status", adminCORS(auth(handleOAuthStatus)))
 	mux.HandleFunc("/admin/api/sso/import", adminCORS(auth(handleSSOImport)))
+	mux.HandleFunc("/admin/api/request-stats", adminCORS(auth(handleRequestStats)))
 	mux.HandleFunc("/admin/api/stats", adminCORS(auth(handleAdminStats)))
-	mux.HandleFunc("/admin/api/batch-import", adminCORS(auth(handleBatchImport)))
-	mux.HandleFunc("/admin/api/accounts/refresh-all", adminCORS(auth(handleAdminRefreshAll)))
 	mux.HandleFunc("/admin/api/accounts/delete-all", adminCORS(auth(handleAdminDeleteAll)))
+	mux.HandleFunc("/admin/api/data/delete-all", adminCORS(auth(handleAdminDeleteAllData)))
 	mux.HandleFunc("/admin/api/accounts/reset", adminCORS(auth(handleAdminAccountReset)))
 	mux.HandleFunc("/admin/api/accounts/proxy", adminCORS(auth(handleAdminAccountSetProxy)))
 	mux.HandleFunc("/admin/api/accounts/proxy/clear", adminCORS(auth(handleAdminAccountClearProxies)));
+	mux.HandleFunc("/admin/api/accounts/pool/enabled", adminCORS(auth(handleAdminAccountSetPoolEnabled)))
+	mux.HandleFunc("/admin/api/accounts/pool/enabled/all", adminCORS(auth(handleAdminAccountSetPoolEnabledAll)))
 	mux.HandleFunc("/admin/api/logs", adminCORS(auth(handleRequestLogs)))
 	mux.HandleFunc("/admin/api/keys", adminCORS(auth(handleAdminGetKeys)))
 	mux.HandleFunc("/admin/api/keys/generate", adminCORS(auth(handleAdminGenerateKey)))
@@ -113,9 +96,9 @@ func registerAdminRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/admin/api/zen/models/refresh", adminCORS(auth(handleZenModelsRefresh)))
 	mux.HandleFunc("/admin/api/zen/stats", adminCORS(auth(handleZenStats)))
 	mux.HandleFunc("/admin/api/zen/keys/test", adminCORS(auth(handleZenKeyTest)))
-	mux.HandleFunc("/admin/api/zen/keys/enabled", adminCORS(auth(handleZenKeySetEnabled)))
-	mux.HandleFunc("/admin/api/opencode/keys/enabled", adminCORS(auth(handleZenKeySetEnabled)))
-	mux.HandleFunc("/admin/api/opencode/keys/enabled/all", adminCORS(auth(handleZenKeyEnableAll)))
+	mux.HandleFunc("/admin/api/opencode/keys/routing", adminCORS(auth(handleZenKeySetRouting)))
+	mux.HandleFunc("/admin/api/opencode/keys/routing/all", adminCORS(auth(handleZenKeySetRoutingAll)))
+	mux.HandleFunc("/admin/api/opencode/keys/delete", adminCORS(auth(handleZenKeyDelete)))
 	mux.HandleFunc("/admin/api/opencode/keys/proxy/clear", adminCORS(auth(handleZenKeyClearProxies)))
 	mux.HandleFunc("/admin/api/zen/keys/proxy", adminCORS(auth(handleZenKeySetProxy)))
 	mux.HandleFunc("/admin/api/opencode/keys/proxy", adminCORS(auth(handleZenKeySetProxy)))
@@ -163,6 +146,94 @@ func handleAdminAccounts(w http.ResponseWriter, r *http.Request) {
 			"total":     len(accounts),
 			"poolIndex": poolCurrentIdx(),
 		},
+	})
+}
+
+// POST /admin/api/accounts/pool/enabled  body: { accountId, poolEnabled }
+// 保存“是否参与池轮换”独立开关；Status 保持 active/cooldown/expired 不变。
+func handleAdminAccountSetPoolEnabled(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		writeAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
+		return
+	}
+	body, err := io.ReadAll(io.LimitReader(r.Body, 4096))
+	if err != nil {
+		writeAPI(w, http.StatusBadRequest, apiResponse{Error: err.Error()})
+		return
+	}
+	defer r.Body.Close()
+
+	var req struct {
+		AccountID   string `json:"accountId"`
+		PoolEnabled *bool  `json:"poolEnabled"`
+		Enabled     *bool  `json:"enabled"` // 兼容客户端用 enabled 表达同一布尔值
+	}
+	if err := json.Unmarshal(body, &req); err != nil {
+		writeAPI(w, http.StatusBadRequest, apiResponse{Error: "invalid JSON"})
+		return
+	}
+	if req.AccountID == "" {
+		writeAPI(w, http.StatusBadRequest, apiResponse{Error: "accountId is required"})
+		return
+	}
+	enabled := req.PoolEnabled
+	if enabled == nil {
+		enabled = req.Enabled
+	}
+	if enabled == nil {
+		writeAPI(w, http.StatusBadRequest, apiResponse{Error: "poolEnabled is required"})
+		return
+	}
+	if err := setAccountPoolEnabled(req.AccountID, *enabled); err != nil {
+		writeAPI(w, http.StatusBadRequest, apiResponse{Error: err.Error()})
+		return
+	}
+	writeAPI(w, http.StatusOK, apiResponse{
+		Success: true,
+		Message: "Pool participation saved",
+		Data: map[string]any{
+			"accountId":   req.AccountID,
+			"poolEnabled": *enabled,
+		},
+	})
+}
+
+// POST /admin/api/accounts/pool/enabled/all  body: { poolEnabled }
+// 一键启用/禁用全部账号的参与轮换开关（与单个设置同语义：只动 PoolEnabled，
+// 不改 Status），返回实际改写的账号数。
+func handleAdminAccountSetPoolEnabledAll(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		writeAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
+		return
+	}
+	body, err := io.ReadAll(io.LimitReader(r.Body, 4096))
+	if err != nil {
+		writeAPI(w, http.StatusBadRequest, apiResponse{Error: err.Error()})
+		return
+	}
+	defer r.Body.Close()
+
+	var req struct {
+		PoolEnabled *bool `json:"poolEnabled"`
+		Enabled     *bool `json:"enabled"` // 兼容客户端用 enabled 表达同一布尔值
+	}
+	if err := json.Unmarshal(body, &req); err != nil {
+		writeAPI(w, http.StatusBadRequest, apiResponse{Error: "invalid JSON"})
+		return
+	}
+	enabled := req.PoolEnabled
+	if enabled == nil {
+		enabled = req.Enabled
+	}
+	if enabled == nil {
+		writeAPI(w, http.StatusBadRequest, apiResponse{Error: "poolEnabled is required"})
+		return
+	}
+	n := setAllAccountsPoolEnabled(*enabled)
+	writeAPI(w, http.StatusOK, apiResponse{
+		Success: true,
+		Message: "Pool participation saved",
+		Data:    map[string]any{"updated": n, "poolEnabled": *enabled},
 	})
 }
 
@@ -293,145 +364,6 @@ func handleAdminAccountDelete(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// POST /admin/api/oauth/start  -- Start OAuth device login, returns URL
-func handleOAuthStart(w http.ResponseWriter, r *http.Request) {
-	if r.Method != "POST" {
-		writeAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
-		return
-	}
-
-	device, err := cline.WorkosDeviceAuth()
-	if err != nil {
-		writeAPI(w, http.StatusInternalServerError, apiResponse{Error: err.Error()})
-		return
-	}
-
-	authURL := device.VerificationURIComplete
-	if authURL == "" {
-		authURL = device.VerificationURI
-	}
-
-	sessionID := fmt.Sprintf("oauth_%d", time.Now().UnixMilli())
-	state := &oauthSessionState{
-		DeviceCode: device.DeviceCode,
-		UserCode:   device.UserCode,
-		AuthURL:    authURL,
-		CreatedAt:  time.Now(),
-	}
-
-	oauthSessionsMu.Lock()
-	// 顺带清扫：被遗弃（从未再轮询状态）的会话 15 分钟后过期，防 map 泄漏
-	now := time.Now()
-	for id, s := range oauthSessions {
-		if now.Sub(s.CreatedAt) > 15*time.Minute {
-			delete(oauthSessions, id)
-		}
-	}
-	oauthSessions[sessionID] = state
-	oauthSessionsMu.Unlock()
-
-	// Start polling in background
-	go func() {
-		interval := device.Interval
-		if interval < 5 {
-			interval = 5
-		}
-		expiresIn := device.ExpiresIn
-		if expiresIn <= 0 {
-			expiresIn = 300
-		}
-
-		workosTok, err := cline.PollWorkosToken(device.DeviceCode, interval, expiresIn)
-		if err != nil {
-			oauthSessionsMu.Lock()
-			state.Error = err.Error()
-			state.Done = true
-			state.Success = false
-			oauthSessionsMu.Unlock()
-			return
-		}
-
-		reg, err := cline.RegisterWithCline(workosTok.AccessToken, workosTok.RefreshToken)
-		if err != nil {
-			oauthSessionsMu.Lock()
-			state.Error = err.Error()
-			state.Done = true
-			state.Success = false
-			oauthSessionsMu.Unlock()
-			return
-		}
-
-		email := "unknown"
-		if reg.Data.UserInfo != nil && reg.Data.UserInfo.Email != "" {
-			email = reg.Data.UserInfo.Email
-		}
-
-		acc := &Account{
-			AccountID:    "acc_" + kit.RandHex(8),
-			Email:        email,
-			RefreshToken: reg.Data.RefreshToken,
-			AccessToken:  "workos:" + reg.Data.AccessToken,
-			ExpiresAt:    clineExpiryMs(reg.Data.ExpiresAt),
-			Status:       "active",
-			CreatedAt:    time.Now(),
-		}
-		addAccount(acc)
-
-		oauthSessionsMu.Lock()
-		state.Done = true
-		state.Success = true
-		state.Email = email
-		oauthSessionsMu.Unlock()
-		log.Printf("OAuth account added: %s", email)
-	}()
-
-	writeAPI(w, http.StatusOK, apiResponse{
-		Success: true,
-		Data: map[string]any{
-			"sessionId":       sessionID,
-			"verificationUri": authURL,
-			"userCode":        device.UserCode,
-		},
-	})
-}
-
-// GET /admin/api/oauth/status?sessionId=xxx
-func handleOAuthStatus(w http.ResponseWriter, r *http.Request) {
-	if r.Method != "GET" {
-		writeAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
-		return
-	}
-	sessionID := r.URL.Query().Get("sessionId")
-	if sessionID == "" {
-		writeAPI(w, http.StatusBadRequest, apiResponse{Error: "sessionId required"})
-		return
-	}
-
-	oauthSessionsMu.Lock()
-	state, ok := oauthSessions[sessionID]
-	if ok {
-		// 加锁读快照（后台轮询 goroutine 在写这些字段）；
-		// 已结束的会话读走即删，map 不会无限增长
-		resp := map[string]any{
-			"done":    state.Done,
-			"success": state.Success,
-		}
-		if state.Done {
-			resp["email"] = state.Email
-			if !state.Success {
-				resp["error"] = state.Error
-			}
-			delete(oauthSessions, sessionID)
-		}
-		oauthSessionsMu.Unlock()
-		writeAPI(w, http.StatusOK, apiResponse{Success: true, Data: resp})
-		return
-	}
-	oauthSessionsMu.Unlock()
-
-	writeAPI(w, http.StatusNotFound, apiResponse{Error: "session not found"})
-}
-
 // POST /admin/api/sso/import  body: { ssoCookies: string, email?: string }
 func handleSSOImport(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "POST" {
@@ -513,135 +445,6 @@ func handleSSOImport(w http.ResponseWriter, r *http.Request) {
 		Success: true,
 		Message: fmt.Sprintf("Imported %d accounts, %d failed", imported, len(errors)),
 		Data:    result,
-	})
-}
-
-// POST /admin/api/batch-import  body: { tokens: [{ refreshToken, email }] }
-func handleBatchImport(w http.ResponseWriter, r *http.Request) {
-	if r.Method != "POST" {
-		writeAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
-		return
-	}
-	body, err := io.ReadAll(r.Body)
-	if err != nil {
-		writeAPI(w, http.StatusBadRequest, apiResponse{Error: err.Error()})
-		return
-	}
-	defer r.Body.Close()
-
-	var req struct {
-		Tokens []struct {
-			RefreshToken string `json:"refreshToken"`
-			APIToken     string `json:"apiToken"`
-			Email        string `json:"email"`
-		} `json:"tokens"`
-	}
-	if err := json.Unmarshal(body, &req); err != nil {
-		writeAPI(w, http.StatusBadRequest, apiResponse{Error: "invalid JSON"})
-		return
-	}
-
-	if len(req.Tokens) == 0 {
-		writeAPI(w, http.StatusBadRequest, apiResponse{Error: "tokens array is empty"})
-		return
-	}
-	// 每个元素都会同步向上游发一次刷新请求 —— 上限防止一次请求放大成
-	// 对 cline 的请求洪流
-	if len(req.Tokens) > 500 {
-		writeAPI(w, http.StatusBadRequest, apiResponse{Error: "too many tokens (max 500 per batch)"})
-		return
-	}
-
-	imported := 0
-	errors := []string{}
-
-	for _, t := range req.Tokens {
-		email := t.Email
-		if email == "" {
-			email = "batch_" + kit.RandHex(4)
-		}
-		// 静态 API key：直接入池，不做校验调用（与单个添加接口语义一致）
-		if t.APIToken != "" {
-			acc := &Account{
-				AccountID: "acc_" + kit.RandHex(8),
-				Email:     email,
-				APIToken:  t.APIToken,
-				Status:    "active",
-				CreatedAt: time.Now(),
-			}
-			addAccount(acc)
-			imported++
-			continue
-		}
-		if t.RefreshToken == "" {
-			continue
-		}
-		resp, err := cline.RefreshClineToken(t.RefreshToken)
-		if err != nil {
-			errors = append(errors, fmt.Sprintf("%s: %v", t.Email, err))
-			continue
-		}
-		acc := &Account{
-			AccountID:    "acc_" + kit.RandHex(8),
-			Email:        email,
-			RefreshToken: t.RefreshToken,
-			AccessToken:  "workos:" + resp.Data.AccessToken,
-			ExpiresAt:    clineExpiryMs(resp.Data.ExpiresAt),
-			Status:       "active",
-			CreatedAt:    time.Now(),
-		}
-		addAccount(acc)
-		imported++
-	}
-
-	writeAPI(w, http.StatusOK, apiResponse{
-		Success: true,
-		Message: fmt.Sprintf("Imported %d accounts, %d failed", imported, len(errors)),
-		Data: map[string]any{
-			"imported": imported,
-			"failed":   len(errors),
-			"errors":   errors,
-		},
-	})
-}
-
-// POST /admin/api/accounts/refresh-all
-func handleAdminRefreshAll(w http.ResponseWriter, r *http.Request) {
-	if r.Method != "POST" {
-		writeAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
-		return
-	}
-	p := loadPool()
-	poolMu.Lock()
-	accounts := append([]*Account(nil), p.Accounts...)
-	poolMu.Unlock()
-	refreshed, skipped, failed := 0, 0, 0
-	for _, a := range accounts {
-		// 静态 key（APIToken）没有刷新能力：doRefreshAccountToken 会直接把账号判为
-		// expired。启动预热早已按这条规则跳过它们（见 proxy.go 的 prewarm），这里是
-		// 同一规则——否则面板上点一次"刷新全部 token"就会作废所有 sk_ 账号。
-		if a.APIToken != "" {
-			skipped++
-			continue
-		}
-		if err := refreshAccountToken(a); err != nil {
-			log.Printf("Refresh failed for %s: %v", a.Email, err)
-			failed++
-			continue
-		}
-		refreshed++
-	}
-	msg := fmt.Sprintf("Refreshed %d token(s)", refreshed)
-	if skipped > 0 {
-		msg += fmt.Sprintf(", skipped %d static api key account(s)", skipped)
-	}
-	if failed > 0 {
-		msg += fmt.Sprintf(", %d failed", failed)
-	}
-	writeAPI(w, http.StatusOK, apiResponse{
-		Success: true,
-		Message: msg,
-		Data:    map[string]any{"refreshed": refreshed, "skipped": skipped, "failed": failed},
 	})
 }
 
@@ -1160,10 +963,11 @@ func handleAdminConfig(w http.ResponseWriter, r *http.Request) {	if r.Method != 
 		"defaultModel":    getDefaultModel(),
 		"headers":         cfg.Headers,
 		"clineUseProxies": poolClineUseProxies(),
+		"adminLogEnabled": poolAdminLogEnabled(),
 	}})
 }
 
-// POST /admin/api/config  body: { strategy?, headers?, defaultModel?, clineUseProxies? }
+// POST /admin/api/config  body: { strategy?, headers?, defaultModel?, clineUseProxies?, adminLogEnabled? }
 func handleAdminUpdateConfig(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "POST" {
 		writeAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
@@ -1181,6 +985,7 @@ func handleAdminUpdateConfig(w http.ResponseWriter, r *http.Request) {
 		Headers         map[string]string `json:"headers"`
 		DefaultModel    string            `json:"defaultModel"`
 		ClineUseProxies *bool             `json:"clineUseProxies"`
+		AdminLogEnabled *bool             `json:"adminLogEnabled"`
 	}
 	if err := json.Unmarshal(body, &req); err != nil {
 		writeAPI(w, http.StatusBadRequest, apiResponse{Error: "invalid JSON"})
@@ -1239,11 +1044,21 @@ func handleAdminUpdateConfig(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// cline 走共享出口代理池的开关：持久化到池文件，重启后保留。
-	// CLINE_USE_PROXIES env 为 true 时 env 优先（见 clineProxiesEnabled）。
+	// 未设置（nil）默认开启，见 poolClineUseProxies。
 	if req.ClineUseProxies != nil {
 		p := loadPool()
 		poolMu.Lock()
-		p.ClineUseProxies = *req.ClineUseProxies
+		p.ClineUseProxies = req.ClineUseProxies
+		poolMu.Unlock()
+		savePool()
+		changed = true
+	}
+
+	// /admin 访问日志开关：同样持久化到池文件，未设置（nil）默认关闭。
+	if req.AdminLogEnabled != nil {
+		p := loadPool()
+		poolMu.Lock()
+		p.AdminLogEnabled = req.AdminLogEnabled
 		poolMu.Unlock()
 		savePool()
 		changed = true

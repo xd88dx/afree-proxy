@@ -622,6 +622,10 @@ func handleResponses(w http.ResponseWriter, r *http.Request) {
 
 	chat := responsesToChat(params)
 	chatModel, _ := chat["model"].(string)
+	if shouldServeWorkBuddy(chatModel) {
+		workbuddySub.serveResponses(w, r, chat, isStream)
+		return
+	}
 	// combo 别名模型：改写为平台上游真实模型
 	useProxies := clineProxiesEnabled()
 	if c := resolveCombo(chatModel); c != nil {
@@ -631,6 +635,10 @@ func handleResponses(w http.ResponseWriter, r *http.Request) {
 		if c.UseProxies {
 			useProxies = true
 		}
+	}
+	if shouldServeWorkBuddy(chatModel) {
+		workbuddySub.serveResponses(w, r, chat, isStream)
+		return
 	}
 	route := routeModel(chatModel)
 	if route == "reject" {

@@ -3,6 +3,7 @@ package app
 import (
 	"fmt"
 	"net/url"
+	"os"
 	"strings"
 )
 
@@ -14,30 +15,56 @@ import (
 //
 // 规则（默认启用）：
 //   - 每个账号 / zen key 可绑定一个主代理和一个辅代理；请求永远从绑定出口
-//     发出，主可用走主，主不可用走辅。
+//     发出，主可用走主，主不可用走辅（辅代理开关打开时）。
 //   - 两者都不可用（冷却中，或已从代理池删除）时，该身份在选号阶段被整体
 //     跳过 —— 隔离优先于可用性，绝不退回其他出口或直连。
-//   - 未绑定任何代理的身份沿用全局规则（cline 看 CLINE_USE_PROXIES/面板开关，
-//     zen 看代理列表是否非空），因此空配置部署的行为与隔离启用前完全一致。
+//   - 未绑定任何代理的身份沿用全局规则（cline/zen/workbuddy 各看面板的全局
+//     走池开关，nil 默认开启），因此空配置部署的行为与隔离启用前完全一致。
 //   - 收割机的 CLI 铸造同样走该 key 的绑定代理（同一个会话 ID 必须始终来自
 //     同一个 IP，否则隔离形同虚设）；绑定出口不可用时本轮跳过该 key 的铸造。
 //
-// 开关：zen 配置持久化 ProxyIsolation（nil = 默认启用），PROXY_ISOLATION env
-// 显式设置时优先。关闭即完全回到旧版"请求级全局轮转"，绑定字段被忽略。
+// 开关：
+//   - ProxyIsolation（nil = 默认启用），PROXY_ISOLATION env 只接受 true/false：
+//     true 强制开启且面板只读；false 仅把默认值改为关闭，面板仍可修改。关闭
+//     即完全回到旧版"请求级全局轮转"，绑定字段被忽略。
+//   - BackupProxyEnabled（nil = 默认关闭）：关闭时辅槽整体失效，主代理不可用
+//     即跳过该身份，不再尝试辅代理 —— 隔离语义不变，依然绝不回退直连。
 
-// proxyIsolationEnvLocked PROXY_ISOLATION env 是否显式设置（面板据此提示
-// "开关被 env 覆盖"）。
-func proxyIsolationEnvLocked() bool {
-	_, ok := envBool("PROXY_ISOLATION")
-	return ok
+// proxyIsolationEnv 解析 PROXY_ISOLATION：只接受 true/false（大小写不敏感），
+// 其他值告警并按未设置处理。返回 (值, 是否有效设置)。
+func proxyIsolationEnv() (bool, bool) {
+	v := strings.ToLower(strings.TrimSpace(os.Getenv("PROXY_ISOLATION")))
+	switch v {
+	case "true":
+		return true, true
+	case "false":
+		return false, true
+	case "":
+		return false, false
+	}
+	fmt.Printf("  WARNING: PROXY_ISOLATION only accepts true/false, got %q; treated as unset\n", v)
+	return false, false
 }
 
-// proxyIsolationEnabled 账号/key 代理隔离当前是否启用（默认 true）。
-// PROXY_ISOLATION env 显式设置时优先（env 覆盖面板，与 POOL_STRATEGY 同规则）；
-// 否则读 zen 配置的持久化开关，缺省（nil）视为启用。
+// proxyIsolationEnvLocked PROXY_ISOLATION=true 时为真：隔离强制开启，面板
+// 下拉只读。false 不锁定 —— 它只是把默认值改为关闭，面板仍可修改。
+func proxyIsolationEnvLocked() bool {
+	v, ok := proxyIsolationEnv()
+	return ok && v
+}
+
+// proxyIsolationEnabled 账号/key 代理隔离当前是否启用：
+//   - PROXY_ISOLATION=true：强制开启（无视面板设置）。
+//   - PROXY_ISOLATION=false：默认关闭；面板显式设置过（ProxyIsolation 非 nil）
+//     则按面板值。
+//   - 未设置：默认开启；面板显式设置过则按面板值（nil 视为开启）。
 func proxyIsolationEnabled() bool {
-	if v, ok := envBool("PROXY_ISOLATION"); ok {
-		return v
+	if v, ok := proxyIsolationEnv(); ok {
+		if v {
+			return true
+		}
+		cfg := getZenConfig()
+		return cfg.ProxyIsolation != nil && *cfg.ProxyIsolation
 	}
 	cfg := getZenConfig()
 	return cfg.ProxyIsolation == nil || *cfg.ProxyIsolation
@@ -76,16 +103,39 @@ const egressDirect = "direct"
 // isEgressDirect 判断槽位值是否为直连哨兵。
 func isEgressDirect(v string) bool { return v == egressDirect }
 
-// pickBoundProxy 为一次上游尝试从绑定对中选可用出口：主优先，辅兜底。
-// 直连哨兵视为"总是可用"的出口（返回 ("", -1, true)，调用方按直连发出）。
-// 两者都不可用返回 ok=false —— 调用方（隔离模式）必须跳过该身份。
-// 主辅相同视为一个出口（面板已阻止这样配置，防御性兜底）。
+// backupProxyEnabled 辅代理开关（zen 配置持久化 BackupProxyEnabled）：
+// nil = 未配置 = 关闭（默认）。关闭时"主不通走辅"的兜底不存在，主出口不可用
+// 就等于该身份本轮不可用（调用方跳过）—— 隔离优先不变，仍然绝不回退直连。
+func backupProxyEnabled() bool {
+	v := getZenConfig().BackupProxyEnabled
+	return v != nil && *v
+}
+
+// normalizeBackupSlot 按辅代理开关收敛写入的绑定：关闭时辅槽一律落空。面板
+// 在关闭态把辅下拉置为只读并强制跟随主槽（值就是主槽值），不收敛会让
+// "主=代理、辅=同一个代理"这组无意义配置撞上 validateProxyBinding 的
+// main==backup 校验；留着旧辅值则会变成重新打开开关后静默生效的隐藏状态。
+func normalizeBackupSlot(backup string) string {
+	if backupProxyEnabled() {
+		return backup
+	}
+	return ""
+}
+
+// pickBoundProxy 为一次上游尝试从绑定对中选可用出口：主优先，辅兜底
+// （辅代理开关关闭时辅槽整体失效，退化为"只看主槽"）。直连哨兵视为"总是
+// 可用"的出口（返回 ("", -1, true)，调用方按直连发出）。两者都不可用返回
+// ok=false —— 调用方（隔离模式）必须跳过该身份。主辅相同视为一个出口
+// （面板已阻止这样配置，防御性兜底）。
 func pickBoundProxy(main, backup string) (proxyURL string, idx int, ok bool) {
 	if isEgressDirect(main) {
 		return "", -1, true
 	}
 	if main != "" && proxyAvailableURL(main) {
 		return main, proxyIdxInPool(main), true
+	}
+	if !backupProxyEnabled() {
+		return "", -1, false
 	}
 	if isEgressDirect(backup) {
 		return "", -1, true
@@ -97,7 +147,9 @@ func pickBoundProxy(main, backup string) (proxyURL string, idx int, ok bool) {
 }
 
 // boundProxiesRoutable 绑定对里是否还有可用出口。双空 = 未绑定 = 可路由
-//（未绑定身份走全局规则，不算被隔离挡住）。
+// （未绑定身份走全局规则，不算被隔离挡住）。辅代理开关关闭时只剩辅槽的绑定
+// （主槽为空）同样不可路由 —— 那种状态面板产不出来，只在手改配置文件时出现，
+// 一律按"该身份没有出口"处理并跳过，不退回全局规则（那可能是直连）。
 func boundProxiesRoutable(main, backup string) bool {
 	if main == "" && backup == "" {
 		return true
@@ -106,14 +158,24 @@ func boundProxiesRoutable(main, backup string) bool {
 	return ok
 }
 
-// zenProxiesEnabled OpenCode 上游是否走共享代理池：配置缺省（nil）时按旧
-// 规则（代理列表非空即走池）；面板下拉可显式选择走池/直连。
+// zenProxiesEnabled OpenCode 上游是否走共享代理池：配置缺省（nil）默认开启
+// （走池）；面板下拉可显式选择走池/直连。
 func zenProxiesEnabled() bool {
 	zup := getZenConfig().ZenUseProxies
 	if zup == nil {
-		return len(getZenConfig().Proxies) > 0
+		return true
 	}
 	return *zup
+}
+
+// workbuddyProxiesEnabled WorkBuddy 未绑定账号是否走共享代理池，语义与
+// zenProxiesEnabled 一致：缺省（nil）默认开启（走池）。
+func workbuddyProxiesEnabled() bool {
+	wup := getZenConfig().WorkbuddyUseProxies
+	if wup == nil {
+		return true
+	}
+	return *wup
 }
 
 // zenAttemptExit 为一次 zen 上游尝试解析出口。key 有绑定时（隔离模式）主→辅，
@@ -213,7 +275,7 @@ func validateProxyBinding(main, backup string) error {
 // main/backup 传空串即清除；全空 = 解除绑定。
 func setAccountProxyBinding(accountID, main, backup string) error {
 	main = strings.TrimSpace(main)
-	backup = strings.TrimSpace(backup)
+	backup = normalizeBackupSlot(strings.TrimSpace(backup))
 	if err := validateProxyBinding(main, backup); err != nil {
 		return err
 	}
@@ -235,7 +297,7 @@ func setAccountProxyBinding(accountID, main, backup string) error {
 // 写时复制：zenConfig 是被请求路径并发读取的活配置，先整体替换再 setZenConfig。
 func setZenKeyProxyBinding(index int, main, backup string) error {
 	main = strings.TrimSpace(main)
-	backup = strings.TrimSpace(backup)
+	backup = normalizeBackupSlot(strings.TrimSpace(backup))
 	if err := validateProxyBinding(main, backup); err != nil {
 		return err
 	}
@@ -282,7 +344,7 @@ func clearAllAccountProxies() int {
 }
 
 // clearAllZenKeyProxies 一键清空全部 zen key 的代理绑定（面板入口）：
-// 所有 key 回到"全局"默认值。启用状态（KeyEnabled）不受影响。
+// 所有 key 回到"全局"默认值。路由参与状态（KeyRoutingEnabled）不受影响。
 func clearAllZenKeyProxies() int {
 	cfg := getZenConfig()
 	if len(cfg.KeyBindings) == 0 {

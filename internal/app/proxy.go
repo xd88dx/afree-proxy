@@ -1,10 +1,10 @@
 package app
 
 import (
-	"bufio"
-	"bytes"
 	"afree-proxy/internal/cline"
 	"afree-proxy/internal/kit"
+	"bufio"
+	"bytes"
 	"context"
 	"crypto/subtle"
 	"encoding/json"
@@ -28,6 +28,10 @@ import (
 var defaultModel = ""
 
 var proxyListenAddress = "0.0.0.0:3457"
+
+// proxyLogFile 由 initLogFile 持有，WorkBuddy 面板镜像日志时复用同一文件句柄，
+// 避免二次打开造成 Windows 文件锁冲突或重复写入。
+var proxyLogFile io.Writer
 
 const (
 	defaultMaxTokens       = 128000
@@ -86,6 +90,15 @@ func StartProxy(host string, port int) error {
 	LoadRequestLogsFromFile()
 	go cleanupCompactStates()
 
+	// WorkBuddy 子系统：独立账号池 + 面板 + OpenAI 兼容 handler。装配失败只
+	// 禁用该子系统，不影响既有 Cline/OpenCode 链路。
+	if wb, err := startWorkBuddy(); err != nil {
+		log.Printf("  WorkBuddy subsystem disabled: %v", err)
+	} else {
+		workbuddySub = wb
+		defer wb.Stop()
+	}
+
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
@@ -113,6 +126,15 @@ func StartProxy(host string, port int) error {
 
 	// Admin API (frontend + REST)
 	registerAdminRoutes(mux)
+	if workbuddySub != nil {
+		// WorkBuddy 面板挂在 /admin/workbuddy/：复用管理会话 Cookie（Path=/admin）
+		// 统一鉴权；面板自身 api_key 置空，避免出现第二套密钥门。
+		mux.Handle("/admin/workbuddy/", adminAuthMiddleware(workbuddySub.adminHandler()))
+		mux.HandleFunc("/admin/api/workbuddy/proxy", adminCORS(adminAuthMiddleware(handleWorkbuddyProxyList)))
+		mux.HandleFunc("/admin/api/workbuddy/proxy/set", adminCORS(adminAuthMiddleware(handleWorkbuddyProxySet)))
+		mux.HandleFunc("/admin/api/workbuddy/proxy/clear", adminCORS(adminAuthMiddleware(handleWorkbuddyProxyClear)))
+		mux.HandleFunc("/admin/api/workbuddy/enabled", adminCORS(adminAuthMiddleware(handleWorkbuddyPoolSetEnabled)))
+	}
 
 	apiKeyHandler := func(next http.HandlerFunc) http.HandlerFunc {
 		return corsHandler(func(w http.ResponseWriter, r *http.Request) {
@@ -183,11 +205,17 @@ func StartProxy(host string, port int) error {
 				"output":   zm["output"],
 			})
 		}
+		// 合并 WorkBuddy 模型（cn:/global: 前缀，源项目路由协议）。
+		if workbuddySub != nil {
+			data = append(data, workbuddySub.modelList()...)
+		}
 		// combo 别名模型（仪表盘自定义的虚拟模型 ID）
 		for _, c := range listCombos() {
 			owned := "cline"
 			if c.Platform == "zen" {
 				owned = "opencode-zen"
+			} else if c.Platform == "workbuddy" {
+				owned = "workbuddy"
 			}
 			data = append(data, map[string]any{
 				"id":       c.ID,
@@ -236,6 +264,13 @@ func StartProxy(host string, port int) error {
 		model, _ := params["model"].(string)
 		log.Printf("  client: stream=%v tools=%d model=%s", isStream, toolCount, model)
 
+		// WorkBuddy 路由：只接管源项目定义的 realm 前缀（cn:/global:），
+		// 裸模型名仍走现有 Cline/OpenCode 目录，避免静默改路由。
+		if shouldServeWorkBuddy(model) {
+			workbuddySub.serveWorkBuddyChat(w, r, body)
+			return
+		}
+
 		// combo 别名模型：改写为平台上游真实模型后按平台路由;
 		// combo 可声明 useProxies 让该别名走出口代理池
 		useProxies := clineProxiesEnabled()
@@ -246,6 +281,15 @@ func StartProxy(host string, port int) error {
 			if c.UseProxies {
 				useProxies = true
 			}
+		}
+		if shouldServeWorkBuddy(model) {
+			rewritten, err := json.Marshal(params)
+			if err != nil {
+				writeJSON(w, http.StatusInternalServerError, map[string]any{"error": map[string]string{"message": err.Error(), "type": "api_error"}})
+				return
+			}
+			workbuddySub.serveWorkBuddyChat(w, r, rewritten)
+			return
 		}
 
 		// Override system prompt from override.md for OpenAI format
@@ -420,6 +464,7 @@ func initLogFile() {
 		log.Printf("  open log file failed: %v", err)
 		return
 	}
+	proxyLogFile = f
 	log.SetOutput(io.MultiWriter(os.Stderr, f))
 	log.Printf("========== proxy started, log file: %s ==========", path)
 }
@@ -2242,6 +2287,11 @@ func handleAnthropicMessages(w http.ResponseWriter, r *http.Request) {
 	openAIReq := anthropicToOpenAI(req)
 
 	log.Printf("  anthropic: model=%s stream=%v msgs=%d", req.Model, req.Stream, len(req.Messages))
+
+	if shouldServeWorkBuddy(req.Model) {
+		workbuddySub.serveAnthropicMessages(w, r, req, openAIReq, toolSchemas)
+		return
+	}
 
 	// zen 免费模型路由
 	if route := routeModel(req.Model); route == "zen" {

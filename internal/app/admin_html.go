@@ -11,7 +11,7 @@ const adminHTML = `<!DOCTYPE html>
   --bg:#0d0f12;--bg2:#131519;--bg3:#1a1d23;--panel:rgba(255,255,255,.028);
   --border:rgba(255,255,255,.08);--border-strong:rgba(255,255,255,.16);
   --text:#d6dae2;--text2:#8b919d;--text3:#5d626c;
-  --accent:#8ab4f8;--accent2:#7ee2a8;--amber:#d9b04a;--danger:#e0705f;
+  --accent:#8ab4f8;--accent2:#7ee2a8;--amber:#d9b04a;--danger:#e0705f;--pink:#f2a0b8;
   --accent-grad:linear-gradient(135deg,#8ab4f8,#a8c7fa);
   --glow:0 0 0 1px rgba(138,180,248,.2);
   --status-active-bg:rgba(126,226,168,.1);--status-cooldown-bg:rgba(217,176,74,.1);
@@ -24,7 +24,7 @@ const adminHTML = `<!DOCTYPE html>
   --bg:#f6f7f8;--bg2:#ffffff;--bg3:#eef0f2;--panel:#ffffff;
   --border:rgba(15,18,22,.1);--border-strong:rgba(15,18,22,.22);
   --text:#1c1f24;--text2:#5c636e;--text3:#9aa0aa;
-  --accent:#33629c;--accent2:#2b7a4b;--amber:#96700f;--danger:#b3442f;
+  --accent:#33629c;--accent2:#2b7a4b;--amber:#96700f;--danger:#b3442f;--pink:#b95c78;
   --accent-grad:linear-gradient(135deg,#33629c,#4a7ab5);
   --glow:0 0 0 1px rgba(51,98,156,.18);
   --status-active-bg:rgba(43,122,75,.1);--status-cooldown-bg:rgba(150,112,15,.1);
@@ -64,22 +64,16 @@ body{font-family:'Inter','Segoe UI','PingFang SC','Microsoft YaHei',system-ui,sa
 .main{flex:1;padding:26px 34px 60px;min-width:0;max-width:1500px;margin:0 auto;width:100%}
 h2{font-size:21px;margin-bottom:18px;font-weight:700;letter-spacing:.01em}
 
-/* ===== Cards ===== */
-.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:14px;margin-bottom:26px}
-.card{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);padding:18px;position:relative;overflow:hidden;transition:.2s}
-.card:hover{border-color:var(--border-strong)}
-.card .num{font-size:30px;font-weight:700;font-variant-numeric:tabular-nums;letter-spacing:-.02em;color:var(--text)}
-.card .label{font-size:12px;color:var(--text2);margin-top:5px;display:flex;align-items:center;gap:6px}
-.card .label::before{content:'';width:7px;height:7px;border-radius:50%;background:var(--lab-c,var(--accent))}
-.card .num.green{color:var(--accent2);--lab-c:var(--accent2)}
-.card .num.red{color:var(--danger);--lab-c:var(--danger)}
-.card .num.yellow{color:var(--amber);--lab-c:var(--amber)}
-.card .num.blue{color:var(--accent);--lab-c:var(--accent)}
-.cards .card{animation:rise .45s ease both}
-.cards .card:nth-child(1){animation-delay:.02s}
-.cards .card:nth-child(2){animation-delay:.08s}
-.cards .card:nth-child(3){animation-delay:.14s}
-.cards .card:nth-child(4){animation-delay:.2s}
+/* ===== Dashboard platform cards ===== */
+.dash-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px}
+.dash-card{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);padding:16px 18px;cursor:pointer;transition:border-color .2s,transform .2s}
+.dash-card:hover{border-color:var(--accent);transform:translateY(-1px)}
+.dash-name{font-size:13px;font-weight:600;color:var(--text2)}
+.dash-stats{font-size:14px;color:var(--text);margin-top:8px;font-variant-numeric:tabular-nums}
+.stat-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px}
+.stat-card{background:rgba(255,255,255,.025);border:1px solid var(--border);border-radius:var(--radius);padding:13px 16px}
+.stat-name{font-size:12px;font-weight:600;color:var(--text2)}
+.stat-line{font-size:13px;color:var(--text);margin-top:6px;font-variant-numeric:tabular-nums}
 @keyframes rise{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
 
 /* ===== Sections ===== */
@@ -136,6 +130,9 @@ input:focus,textarea:focus,select:focus{outline:none;border-color:var(--accent);
 textarea{resize:vertical;min-height:84px;font-family:'JetBrains Mono','Cascadia Code',Consolas,monospace;font-size:12px}
 select{cursor:pointer;appearance:none;background-image:linear-gradient(45deg,transparent 50%,var(--text2) 50%),linear-gradient(135deg,var(--text2) 50%,transparent 50%);background-position:calc(100% - 18px) 55%,calc(100% - 13px) 55%;background-size:5px 5px;background-repeat:no-repeat;padding-right:32px}
 .form-row{display:flex;gap:14px;align-items:flex-end;margin-bottom:14px;flex-wrap:wrap}
+/* textarea 默认 inline 布局的基线空隙会让它在 flex-end 行里比旁边的
+   select 高出几像素 —— 改 block 贴齐字段底边 */
+.field textarea{display:block}
 .form-row .field{flex:1;min-width:180px}
 .form-row .field label{display:block;font-size:12px;color:var(--text2);margin-bottom:6px;font-weight:500}
 .form-actions{display:flex;gap:10px;margin-top:14px;flex-wrap:wrap}
@@ -157,16 +154,7 @@ select{cursor:pointer;appearance:none;background-image:linear-gradient(45deg,tra
 .hint{font-size:12px;color:var(--text2);margin-top:8px;line-height:1.6}
 .hint strong{color:var(--text)}
 
-/* ===== Dashboard: quick start & endpoints ===== */
-.steps{display:flex;flex-direction:column;gap:0}
-.step{display:flex;gap:14px;position:relative;padding-bottom:18px}
-.step:last-child{padding-bottom:0}
-.step::before{content:'';position:absolute;left:13px;top:30px;bottom:2px;width:2px;background:var(--border);border-radius:2px}
-.step:last-child::before{display:none}
-.step-no{width:27px;height:27px;flex-shrink:0;border-radius:50%;border:1px solid var(--border-strong);color:var(--text2);font-weight:600;font-size:12.5px;display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,.03)}
-.step-title{font-weight:600;font-size:13.5px;margin-top:3px}
-.step-desc{font-size:12.5px;color:var(--text2);margin-top:3px;line-height:1.6}
-.step-desc code{background:rgba(255,255,255,.07);padding:1px 7px;border-radius:5px}
+/* ===== Dashboard: endpoints ===== */
 .endpoint-list{display:flex;flex-direction:column;gap:8px}
 .endpoint{display:flex;align-items:center;gap:12px;padding:9px 13px;background:rgba(255,255,255,.025);border:1px solid var(--border);border-radius:8px;flex-wrap:wrap}
 .endpoint code{background:rgba(138,180,248,.08);border:1px solid rgba(138,180,248,.2);color:var(--accent);padding:3px 10px;border-radius:6px;font-size:11.5px;white-space:nowrap}
@@ -177,8 +165,9 @@ select{cursor:pointer;appearance:none;background-image:linear-gradient(45deg,tra
 .auto-pill.paused{color:var(--text3);border-color:var(--border)}
 
 /* ===== Toast ===== */
-.toast{position:fixed;top:22px;right:22px;padding:12px 20px;border-radius:12px;color:#fff;z-index:9999;opacity:0;transform:translateY(-12px) scale(.97);transition:.3s cubic-bezier(.2,.9,.3,1.2);font-size:13px;max-width:420px;backdrop-filter:blur(12px);border:1px solid rgba(255,255,255,.14);box-shadow:0 12px 40px rgba(2,6,23,.5);white-space:pre-line}
-.toast.show{opacity:1;transform:none}
+/* 通知条：顶部居中悬浮，不顶格贴边，与页头留出呼吸空隙 */
+.toast{position:fixed;top:18px;left:50%;padding:12px 22px;border-radius:12px;color:#fff;z-index:9999;opacity:0;transform:translate(-50%,-14px) scale(.97);transition:.3s cubic-bezier(.2,.9,.3,1.2);font-size:13px;max-width:520px;backdrop-filter:blur(12px);border:1px solid rgba(255,255,255,.14);box-shadow:0 12px 40px rgba(2,6,23,.5);white-space:pre-line;text-align:center}
+.toast.show{opacity:1;transform:translate(-50%,0)}
 .toast.success{background:#2b5a44}
 .toast.error{background:#7a3a30}
 .toast.info{background:#31465e}
@@ -197,6 +186,7 @@ select{cursor:pointer;appearance:none;background-image:linear-gradient(45deg,tra
 .model-tag{display:inline-block;padding:2px 9px;border-radius:6px;font-size:11px;background:rgba(255,255,255,.06);color:var(--text2);margin:2px;letter-spacing:.02em}
 .model-tag.free{border:1px solid rgba(126,226,168,.35);color:var(--accent2);background:rgba(126,226,168,.07)}
 .model-tag.pass{border:1px solid rgba(217,176,74,.35);color:var(--amber);background:rgba(217,176,74,.07)}
+.model-tag.context-1m{border:1px solid rgba(242,160,184,.45);color:var(--pink);background:rgba(242,160,184,.12)}
 .theme-toggle{display:inline-flex;align-items:center;gap:5px;padding:4px 9px;border:1px solid var(--border);border-radius:7px;background:rgba(255,255,255,.04);color:var(--text2);cursor:pointer;font-size:12px;transition:.15s;font-family:inherit}
 .theme-toggle:hover{color:var(--text);background:rgba(255,255,255,.09)}
 [data-theme="dark"] .theme-toggle .light-label{display:none}
@@ -204,6 +194,53 @@ body:not([data-theme="dark"]) .theme-toggle .dark-label{display:none}
 .probe-pill{font-size:11px;color:var(--text3)}
 .oauth-card{border:1px solid var(--border);border-radius:10px;padding:16px;background:rgba(255,255,255,.03);margin-top:14px}
 .stat-mini{font-family:'JetBrains Mono',Consolas,monospace;font-size:12px;color:var(--text2)}
+
+/* ===== WorkBuddy integrated console ===== */
+.wb-toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.wb-switch{display:inline-flex;align-items:center;gap:8px;min-height:34px;font-size:13px;color:var(--text);cursor:pointer}
+.wb-switch input{width:auto;padding:0;accent-color:var(--accent)}
+.wb-config-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:22px 28px}
+.wb-config-group{min-width:0}
+.wb-config-group h3{font-size:13px;font-weight:650;color:var(--text);margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid var(--border)}
+.wb-field{display:grid;grid-template-columns:minmax(112px,.8fr) minmax(120px,1.2fr);gap:12px;align-items:center;margin:9px 0}
+.wb-field label{font-size:12px;color:var(--text2)}
+.wb-field input,.wb-field select{min-width:0}
+.wb-account{display:flex;align-items:center;gap:7px;min-width:190px}
+.wb-account-main{min-width:0}
+.wb-account-name{font-weight:600;overflow:hidden;text-overflow:ellipsis}
+.wb-account-id{font-size:11px;color:var(--text3);font-family:'JetBrains Mono',Consolas,monospace;overflow:hidden;text-overflow:ellipsis}
+.wb-usage{font-family:'JetBrains Mono',Consolas,monospace;font-size:11.5px;color:var(--text2)}
+.wb-action-group{display:flex;gap:6px;justify-content:flex-end;flex-wrap:wrap}
+dialog{position:fixed;inset:0;margin:auto;width:min(720px,calc(100vw - 32px));max-height:calc(100vh - 48px);overflow:auto;padding:0;border:1px solid var(--border-strong);border-radius:8px;background:var(--bg2);color:var(--text);box-shadow:0 24px 70px rgba(0,0,0,.48)}
+dialog.wb-wide{width:min(1080px,calc(100vw - 32px))}
+dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
+.toast[popover]{position:fixed;inset:18px auto auto 50%;margin:0;border:1px solid rgba(255,255,255,.14);color:#fff;pointer-events:none}
+.wb-dialog-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 18px;border-bottom:1px solid var(--border);font-weight:650}
+.wb-dialog-body{padding:18px}
+.wb-dialog-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:16px}
+.wb-link-row{display:flex;gap:8px;margin-top:10px}
+.wb-link-row input{min-width:0}
+.wb-task-actions{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+.wb-pk-card{border:1px solid var(--border);border-radius:8px;padding:14px;background:rgba(255,255,255,.025);margin-bottom:16px}
+.wb-pk-head{display:flex;align-items:baseline;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.wb-pk-name{font-weight:650;font-size:15px}
+.wb-pk-big{font-size:26px;font-weight:700;font-variant-numeric:tabular-nums;margin-top:10px}
+.wb-pk-sub{font-size:12px;color:var(--text2);margin-top:2px}
+.wb-pk-mix{display:flex;height:8px;overflow:hidden;border-radius:999px;background:var(--bg3);margin-top:12px}
+.wb-pk-mix i{display:block;min-width:2px}
+.wb-pk-legend{display:flex;gap:8px 14px;flex-wrap:wrap;margin-top:10px;font-size:12px;color:var(--text2)}
+.wb-pk-legend span{display:inline-flex;align-items:center;gap:6px}
+.wb-pk-legend i{width:8px;height:8px;border-radius:2px;flex:none}
+.wb-todo-group{border:1px solid var(--border);border-radius:8px;padding:12px;margin:10px 0;background:rgba(255,255,255,.02)}
+.wb-todo-title{display:flex;align-items:center;gap:8px;font-weight:650;cursor:pointer;list-style:none}
+.wb-todo-title::-webkit-details-marker{display:none}
+.wb-todo-title::before{content:'▶';font-size:10px;color:var(--text3);transition:transform .15s}
+.wb-todo-group[open] .wb-todo-title::before{transform:rotate(90deg)}
+.wb-todo-title .auto-pill{margin-left:auto}
+.wb-todo-row{display:flex;align-items:flex-start;gap:10px;padding:7px 0;border-top:1px solid var(--border)}
+.wb-todo-row:first-of-type{border-top:0}
+.wb-todo-row .nm{flex:1;min-width:0}
+.wb-todo-row .id{font-size:11px;color:var(--text3);font-family:'JetBrains Mono',Consolas,monospace}
 
 /* ===== Responsive ===== */
 @media (max-width:980px){
@@ -224,7 +261,15 @@ body:not([data-theme="dark"]) .theme-toggle .dark-label{display:none}
   .section-title{padding:11px 14px}
   .section-body{padding:14px}
   .form-row .field{min-width:100%}
+  .wb-config-grid{grid-template-columns:1fr}
+  .wb-field{grid-template-columns:1fr;gap:5px}
+  .wb-toolbar{width:100%;justify-content:flex-start}
 }
+/* 账号表暂存编辑：有未保存修改的行高亮，对应平台的"保存"按钮加描边提醒 */
+.tr-dirty > td{background:rgba(234,179,8,.09)}
+.dirty-hint{box-shadow:0 0 0 2px var(--accent)}
+.btn-warn{background:var(--amber);border-color:var(--amber);color:#1a1a1a;font-weight:600}
+.btn-warn:hover{filter:brightness(1.1);background:var(--amber);border-color:var(--amber)}
 </style>
 </head>
 <body>
@@ -235,6 +280,7 @@ body:not([data-theme="dark"]) .theme-toggle .dark-label{display:none}
 <div class="nav-group">Account pool</div>
 <div class="nav-item" data-tab="accounts"><span class="nav-ico"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-6.5 8-6.5s8 2.5 8 6.5"/></svg></span> Cline</div>
 <div class="nav-item" data-tab="opencode"><span class="nav-ico"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14.5 14.5 0 0 1 0 18 14.5 14.5 0 0 1 0-18z"/></svg></span> OpenCode</div>
+<div class="nav-item" data-tab="workbuddy"><span class="nav-ico"><svg viewBox="0 0 24 24"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9L12 3z"/><path d="M12 12l8-4.5M12 12v9M12 12L4 7.5"/></svg></span> WorkBuddy</div>
 <div class="nav-group">Services</div>
 <div class="nav-item" data-tab="proxypool"><span class="nav-ico"><svg viewBox="0 0 24 24"><circle cx="12" cy="5" r="2.5"/><circle cx="5" cy="19" r="2.5"/><circle cx="19" cy="19" r="2.5"/><path d="M12 7.5v4m0 0-5.5 5m5.5-5 5.5 5"/></svg></span> Proxy pool</div>
 <div class="nav-item" data-tab="settings"><span class="nav-ico"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1 1.55V21a2 2 0 1 1-4 0v-.09a1.7 1.7 0 0 0-1-1.55 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.7 1.7 0 0 0 .34-1.87 1.7 1.7 0 0 0-1.55-1H3a2 2 0 1 1 0-4h.09a1.7 1.7 0 0 0 1.55-1 1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.7 1.7 0 0 0 1.87.34h0a1.7 1.7 0 0 0 1-1.55V3a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1 1.55h0a1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87v0a1.7 1.7 0 0 0 1.55 1H21a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.55 1z"/></svg></span> Gateway settings</div>
@@ -250,30 +296,35 @@ body:not([data-theme="dark"]) .theme-toggle .dark-label{display:none}
 
 <div id="tab-dashboard" class="tab-panel">
 <h2>Dashboard</h2>
-<div class="cards">
-  <div class="card"><div class="num blue" id="statTotal">-</div><div class="label">Total accounts</div></div>
-  <div class="card"><div class="num green" id="statActive">-</div><div class="label">Active</div></div>
-  <div class="card"><div class="num yellow" id="statCooldown">-</div><div class="label">Cooldown</div></div>
-  <div class="card"><div class="num red" id="statExpired">-</div><div class="label">Expired</div></div>
-</div>
 <div class="section">
-  <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><path d="M13 2 3 14h7l-1 8 10-12h-7l1-8z"/></svg></span> Quick actions</div>
-  <div class="section-body" style="display:flex;gap:10px;flex-wrap:wrap">
-    <button class="btn btn-primary" onclick="switchTab('import')">Add account</button>
-    <button class="btn" onclick="refreshAllTokens()">Refresh all tokens</button>
-    <button class="btn" onclick="document.getElementById('fileInput').click()">Import from file</button>
-    <input type="file" id="fileInput" accept=".json,.txt" style="display:none" onchange="handleFileImport(event)">
-    <button class="btn" onclick="switchTab('settings');generateKey()">Generate API key</button>
+  <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg></span> Platform overview</div>
+  <div class="section-body">
+    <div class="dash-grid">
+      <div class="dash-card" onclick="switchTab('accounts')">
+        <div class="dash-name">Cline</div>
+        <div class="dash-stats" id="dashCline">-</div>
+      </div>
+      <div class="dash-card" onclick="switchTab('opencode')">
+        <div class="dash-name">OpenCode</div>
+        <div class="dash-stats" id="dashOc">-</div>
+      </div>
+      <div class="dash-card" onclick="switchTab('workbuddy')">
+        <div class="dash-name">WorkBuddy</div>
+        <div class="dash-stats" id="dashWb">-</div>
+      </div>
+    </div>
+    <div class="hint" style="margin:10px 0 0">Click a platform card to open its management page.</div>
   </div>
 </div>
 <div class="section">
-  <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg></span> Quick start</div>
+  <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><path d="M4 20v-8m5 8V8m5 12v-5m5 5V4"/><path d="M3 21h18"/></svg></span> Request statistics</div>
   <div class="section-body">
-    <div class="steps">
-      <div class="step"><div class="step-no">1</div><div class="step-body"><div class="step-title">Add Cline accounts</div><div class="step-desc">On the Add accounts page: browser OAuth, a refreshToken, or a static API key (<code>sk_...</code>) — accounts are the proxy's upstream quota.</div></div></div>
-      <div class="step"><div class="step-no">2</div><div class="step-body"><div class="step-title">Generate an API key</div><div class="step-desc">Generate a key under Proxy settings → API keys to authenticate clients; with no keys configured, unauthenticated access is allowed.</div></div></div>
-      <div class="step"><div class="step-no">3</div><div class="step-body"><div class="step-title">Configure your client</div><div class="step-desc">Set the Base URL to <code id="quickstartApi">http://127.0.0.1:3457/v1</code> and pick any model ID from the available models list.</div></div></div>
+    <div class="stat-grid">
+      <div class="stat-card"><div class="stat-name">Cline</div><div class="stat-line" id="reqCline">-</div></div>
+      <div class="stat-card"><div class="stat-name">OpenCode</div><div class="stat-line" id="reqZen">-</div></div>
+      <div class="stat-card"><div class="stat-name">WorkBuddy</div><div class="stat-line" id="reqWb">-</div></div>
     </div>
+    <div class="hint" style="margin:10px 0 0" id="reqStatsHint">Counted since process start.</div>
   </div>
 </div>
 <div class="section">
@@ -291,11 +342,9 @@ body:not([data-theme="dark"]) .theme-toggle .dark-label{display:none}
 
 <div id="tab-accounts" class="tab-panel" style="display:none">
   <div class="flex justify-between" style="margin-bottom:16px">
-  <h2>Cline</h2>
-  <div style="display:flex;gap:8px">
-    <button class="btn btn-sm" onclick="clearAccountProxies()" title="Clear proxy bindings on ALL accounts — every account returns to the Global default">Clear bindings</button>
-    <button class="btn btn-primary btn-sm" onclick="switchTab('import')">Add</button>
-    <button class="btn btn-sm" onclick="loadAccounts()">Refresh</button>
+  <div>
+    <h2 style="margin-bottom:4px">Cline</h2>
+    <div class="hint" id="accSummary" style="margin:0">Loading...</div>
   </div>
 </div>
 <div class="hint" style="margin:-4px 0 16px;padding:11px 14px;border:1px solid var(--border);border-radius:10px;background:rgba(148,163,184,.05)">
@@ -307,12 +356,25 @@ body:not([data-theme="dark"]) .theme-toggle .dark-label{display:none}
     <div class="table-wrap">
     <table>
       <thead>
-        <tr><th>Email</th><th>Status</th><th title="Counted locally by this proxy — not the official free quota">Today/Total tokens</th><th>Last used</th><th>Created</th><th title="Main / backup egress — isolation mode picks main first, then backup; both down = account skipped">Proxy binding</th><th>Actions</th></tr>
+        <tr><th>Email</th><th>Status</th><th title="Counted locally by this proxy — not the official free quota">Today/Total tokens</th><th>Last used</th><th>Created</th><th title="Main / backup egress — isolation mode picks main first, then backup; both down = account skipped">Proxy binding</th><th>Actions</th><th>Pool</th></tr>
       </thead>
       <tbody id="accountTableBody">
-        <tr><td colspan="7" class="empty">Loading...</td></tr>
+        <tr><td colspan="8" class="empty">Loading...</td></tr>
       </tbody>
     </table>
+    </div>
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin:10px 6px 4px">
+      <button class="btn btn-primary btn-sm" onclick="openAccAddDialog()">Add</button>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-sm" onclick="stageAllAccountsPool(true)">Enable all</button>
+        <button class="btn btn-sm" onclick="stageAllAccountsPool(false)">Disable all</button>
+        <button class="btn btn-sm" onclick="stageClearAccountProxies()" title="Stage: clear proxy bindings on ALL accounts AND disable them — click Save to apply">Clear bindings</button>
+        <button class="btn btn-sm" id="accTestBtn" onclick="batchTestAccounts()" title="Run the Test probe on every account (same as clicking Test on each row)">Test all</button>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-sm btn-warn" id="accResetBtn" onclick="resetAccountEdits()" title="Discard staged changes and reload the last saved state">Discard</button>
+        <button class="btn btn-primary btn-sm" id="accSaveBtn" onclick="saveAccountEdits()">Save</button>
+      </div>
     </div>
   </div>
 </div>
@@ -333,71 +395,6 @@ body:not([data-theme="dark"]) .theme-toggle .dark-label{display:none}
     </div>
     <div class="hint">These headers are attached to every request forwarded to the Cline API to mimic the official client.</div>
     <div id="headerSaveResult" style="margin-top:8px"></div>
-  </div>
-</div>
-</div>
-
-<div id="tab-import" class="tab-panel" style="display:none">
-<h2>Add accounts</h2>
-<div class="section">
-  <div class="tabs" id="importTabs">
-    <div class="tab active" data-tab="oauth">OAuth browser login</div>
-    <div class="tab" data-tab="token">Manual entry</div>
-    <div class="tab" data-tab="batch">Batch import</div>
-  </div>
-
-  <div id="import-oauth" class="tab-content active">
-    <p class="hint">Cline accounts via browser OAuth — Google/GitHub/email sign-in supported; the refreshToken is captured automatically.</p>
-    <div class="form-actions">
-      <button class="btn btn-primary" onclick="startOAuth()" id="oauthBtn">Start OAuth login</button>
-    </div>
-    <div id="oauthProgress" style="display:none;margin-top:14px" class="oauth-card">
-      <div style="display:flex;align-items:center;gap:14px">
-        <div class="loading"></div>
-        <div>
-          <div style="font-weight:600" id="oauthStatus">Waiting for browser authorization...</div>
-          <div class="hint">
-            Open <a href="#" id="oauthUrl" target="_blank" style="color:var(--accent)"></a>
-            and enter the code: <strong style="color:var(--accent);font-size:15px;letter-spacing:2px" id="oauthUserCode"></strong>
-          </div>
-        </div>
-      </div>
-    </div>
-    <div id="oauthResult" style="display:none;margin-top:14px"></div>
-  </div>
-
-  <div id="import-token" class="tab-content">
-    <p class="hint">Paste a Cline OAuth refreshToken or a static Cline API key (<code>sk_...</code>) — the type is detected automatically. API keys are used as-is (no validation call); refresh tokens are verified against the upstream first.</p>
-    <div class="form-row">
-      <div class="field">
-        <label>Token or API key *</label>
-        <input type="text" id="tokenInput" placeholder="workos-... refreshToken or sk_... API key" style="font-family:'JetBrains Mono',Consolas,monospace">
-      </div>
-      <div class="field">
-        <label>Email / label (optional; auto-generated if empty)</label>
-        <input type="text" id="tokenEmail" placeholder="user@example.com">
-      </div>
-    </div>
-    <div class="form-actions">
-      <button class="btn btn-primary" onclick="addByToken()">Add account</button>
-    </div>
-    <div id="tokenResult" style="margin-top:8px"></div>
-  </div>
-
-  <div id="import-batch" class="tab-content">
-    <p class="hint">Import multiple accounts at once. Accepts a JSON array (entries with <code>refreshToken</code> or <code>apiToken</code>) or one credential per line — lines starting with <code>sk_</code> are treated as API keys, everything else as refresh tokens.</p>
-    <div class="form-row">
-      <div class="field">
-        <label>JSON array or one credential per line</label>
-        <textarea id="batchInput" placeholder='[{"refreshToken":"xxx","email":"u1@x.com"},{"apiToken":"sk_yyy","email":"u2@x.com"}]'></textarea>
-      </div>
-    </div>
-    <div class="form-actions">
-      <button class="btn btn-primary" onclick="batchImport()">Import all</button>
-      <button class="btn" onclick="document.getElementById('fileInput2').click()">Choose file</button>
-      <input type="file" id="fileInput2" accept=".json,.txt" style="display:none" onchange="handleFileImport(event)">
-    </div>
-    <div id="batchResult" style="margin-top:8px"></div>
   </div>
 </div>
 </div>
@@ -423,24 +420,24 @@ body:not([data-theme="dark"]) .theme-toggle .dark-label{display:none}
 <div class="section">
   <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></span> Global policy</div>
   <div class="section-body">
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px 24px;align-items:center">
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px 24px;align-items:center">
       <div class="field" style="margin:0"><label style="margin:0">Cline</label></div>
       <div class="field" style="margin:0"><label style="margin:0">OpenCode</label></div>
+      <div class="field" style="margin:0"><label style="margin:0">WorkBuddy</label></div>
       <div class="field" style="margin:0">
-        <div style="display:flex;gap:6px;align-items:center">
-          <select id="ppCline" style="flex:1"><option value="true">Proxy</option><option value="false">Direct connection</option></select>
-          <button class="btn btn-sm btn-primary" onclick="saveClineProxies()">Save</button>
-        </div>
+        <select id="ppCline"><option value="true">Proxy</option><option value="false">Direct connection</option></select>
       </div>
       <div class="field" style="margin:0">
-        <div style="display:flex;gap:6px;align-items:center">
-          <select id="ppZen" style="flex:1"><option value="true">Proxy</option><option value="false">Direct connection</option></select>
-          <button class="btn btn-sm btn-primary" onclick="saveZenProxies()">Save</button>
-        </div>
+        <select id="ppZen"><option value="true">Proxy</option><option value="false">Direct connection</option></select>
       </div>
-      <div class="hint" style="margin:0">Off (direct) by default. The <code>CLINE_USE_PROXIES=true</code> env var always forces this on.</div>
+      <div class="field" style="margin:0">
+        <select id="ppWb"><option value="true">Proxy</option><option value="false">Direct connection</option></select>
+      </div>
+      <div class="hint" style="margin:0">Cline accounts without proxy bindings follow this switch.</div>
       <div class="hint" style="margin:0">OpenCode keys without proxy bindings follow this switch.</div>
+      <div class="hint" style="margin:0">WorkBuddy accounts without proxy bindings follow this switch.</div>
     </div>
+    <div class="form-actions"><button class="btn btn-primary" onclick="saveGlobalPolicy()">Save</button></div>
   </div>
 </div>
 <div class="section">
@@ -453,12 +450,17 @@ body:not([data-theme="dark"]) .theme-toggle .dark-label{display:none}
             <option value="true">Enabled (default) — bound identities only ever use their bound exits</option>
             <option value="false">Disabled — ignore bindings; exits rotate per the strategy above (direct when pool off)</option>
           </select>
-          <button class="btn btn-sm btn-primary" onclick="saveProxyIsolation()">Save</button>
+          <label style="display:flex;gap:6px;align-items:center;white-space:nowrap;margin:0">
+            <input type="checkbox" id="ppBackupEnabled" style="width:auto;padding:0;accent-color:var(--accent)">
+            Enable backup proxies
+          </label>
         </div>
       </div>
     </div>
-    <div class="hint">With isolation on, a Cline account or OpenCode key bound to a main/backup proxy always egresses via the main, falls back to the backup, and is <b>skipped entirely</b> while both are cooling or removed — it never leaks through another exit or a direct connection. The OpenCode harvester also mints sessions through the key's bound exit so a session never changes IP. Bind per account on the Cline page, per key on the OpenCode page. <code>PROXY_ISOLATION</code> env var overrides this switch when set.</div>
+    <div class="hint">With isolation on, every identity (account or key) only ever egresses through its bound exits — main proxy first, backup as fallback; when both are unavailable the identity is skipped, never falling back to another exit or a direct connection. The <code>PROXY_ISOLATION</code> env var only accepts true/false: true forces this on (read-only toggle); false just changes the default to off.</div>
     <div class="hint" id="ppIsolationHint" style="margin-top:4px"></div>
+    <div class="hint" id="ppBackupHint" style="margin-top:4px">Off by default: every identity egresses through its main proxy only — when the main proxy is cooling down or removed, the identity is skipped for that round, never trying the backup and never falling back to a direct connection. When enabled, backups act as the fallback for the main proxy to keep identities available as much as possible.</div>
+    <div class="form-actions"><button class="btn btn-primary" onclick="saveIsolationOptions()">Save</button></div>
   </div>
 </div>
 <div class="section">
@@ -475,7 +477,7 @@ body:not([data-theme="dark"]) .theme-toggle .dark-label{display:none}
 <div class="section">
   <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><path d="M21 2l-2 2m-7.6 7.6a5.5 5.5 0 1 1-7.78 7.78 5.5 5.5 0 0 1 7.78-7.78zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg></span> API keys</div>
   <div class="section-body">
-    <p class="hint">Generated keys authenticate client access to the proxy API (sent as the x-api-key or Authorization header).</p>
+    <p class="hint">Generated keys authenticate client access to the proxy API; they only take effect when the API_KEY environment variable is not set.</p>
     <div class="form-actions" style="margin-bottom:14px">
       <button class="btn btn-success" onclick="generateKey()">Generate new key</button>
     </div>
@@ -489,7 +491,7 @@ body:not([data-theme="dark"]) .theme-toggle .dark-label{display:none}
   <div class="section-body">
     <div class="flex" style="margin-bottom:10px;gap:10px">
       <button class="btn btn-sm btn-primary" onclick="refreshModels()">Refresh models</button>
-      <span class="hint" style="margin:0">Auto-syncs official free-model feeds for both upstreams (60s); only zero-cost models are shown</span>
+      <span class="hint" style="margin:0">Auto-syncs the official model feeds from upstreams (60s)</span>
     </div>
     <div id="modelsList">Loading...</div>
   </div>
@@ -501,15 +503,6 @@ body:not([data-theme="dark"]) .theme-toggle .dark-label{display:none}
     <div class="form-row">
       <div class="field"><label>Listen address</label><input type="text" id="settingAddr" disabled></div>
       <div class="field">
-        <label>Default model</label>
-        <div style="display:flex;gap:6px;align-items:center">
-          <select id="settingDefModel" style="flex:1;font-family:'JetBrains Mono',Consolas,monospace"></select>
-          <button class="btn btn-sm btn-primary" onclick="saveDefaultModel()">Save</button>
-        </div>
-      </div>
-    </div>
-    <div class="form-row">
-      <div class="field">
         <label>Account scheduling strategy</label>
         <select id="settingStrategy" onchange="updateConfig()">
           <option value="round_robin">Round-robin (round_robin)</option>
@@ -517,7 +510,21 @@ body:not([data-theme="dark"]) .theme-toggle .dark-label{display:none}
           <option value="fill">Fill (fill)</option>
         </select>
       </div>
-      <div class="field"><label>Engine version</label><input type="text" id="settingVersion" disabled></div>
+    </div>
+    <div class="form-row" style="align-items:flex-start">
+      <div class="field">
+        <label>Platform</label>
+        <select id="settingModelPlatform" onchange="loadModelOptions()">
+          <option value="cline" selected>Cline</option>
+          <option value="zen">OpenCode</option>
+          <option value="workbuddy">WorkBuddy</option>
+        </select>
+        <div style="margin-top:18px"><button class="btn btn-sm btn-primary" onclick="saveDefaultModel()">Save</button></div>
+      </div>
+      <div class="field">
+        <label>Default model</label>
+        <select id="settingDefModel" style="font-family:'JetBrains Mono',Consolas,monospace"></select>
+      </div>
     </div>
   </div>
 </div>
@@ -525,11 +532,10 @@ body:not([data-theme="dark"]) .theme-toggle .dark-label{display:none}
 <div class="section">
   <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><path d="M12 3v12m0 0 4-4m-4 4-4-4"/><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg></span> Config export / import</div>
   <div class="section-body">
-    <div class="hint">Exports/imports everything persisted: Cline accounts, client keys, OpenCode keys (with enabled/bindings), the proxy pool (with aliases), request headers, scheduling strategy, custom aliases, zen sessions and learned endpoints. <b>The file contains ALL secrets — keep it safe.</b> Import replaces sections present in the file; sections absent from the file are left untouched.</div>
+    <div class="hint">Import/export all persisted configuration. The export file contains private information; keep it safe. Import is an overwrite operation, so proceed with caution.</div>
     <div class="form-actions">
       <button class="btn btn-success" onclick="exportConfig()">Export config</button>
-      <button class="btn" onclick="document.getElementById('importFile').click()">Choose backup file</button>
-      <button class="btn btn-primary" id="importBtn" disabled onclick="importConfigFromFile()">Import config</button>
+      <button class="btn btn-primary" onclick="document.getElementById('importFile').click()">Import config</button>
       <input type="file" id="importFile" accept=".json,application/json" style="display:none" onchange="onImportFileChange(event)">
     </div>
     <div id="importResult" style="margin-top:8px"></div>
@@ -539,9 +545,9 @@ body:not([data-theme="dark"]) .theme-toggle .dark-label{display:none}
 <div class="section danger-zone">
   <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg></span> Danger zone</div>
   <div class="section-body">
-    <div style="display:flex;gap:10px;flex-wrap:wrap">
-      <button class="btn btn-danger" onclick="deleteAllAccounts()">Delete all accounts</button>
-      <button class="btn btn-danger" onclick="deleteAllKeys()">Delete all keys</button>
+    <div class="hint" style="margin-top:0">Deletes all persisted data, including but not limited to accounts and configuration. This cannot be undone; proceed with caution!</div>
+    <div class="form-actions">
+      <button class="btn btn-danger" onclick="deleteAllData()">Delete all data</button>
     </div>
   </div>
 </div>
@@ -551,6 +557,10 @@ body:not([data-theme="dark"]) .theme-toggle .dark-label{display:none}
 <div class="flex justify-between" style="margin-bottom:16px">
   <h2>Request logs <span class="probe-pill" style="font-weight:normal">last 500 entries, persisted to data/requests.jsonl</span></h2>
   <div style="display:flex;gap:8px;align-items:center">
+    <label style="display:flex;gap:6px;align-items:center;white-space:nowrap;margin:0">
+      <input type="checkbox" id="settingAdminLog" onchange="saveAdminLogToggle()" style="width:auto;padding:0;accent-color:var(--accent)">
+      Record admin logs
+    </label>
     <span class="auto-pill" id="logsAutoPill">Auto-refreshing</span>
     <button class="btn btn-sm" onclick="toggleLogsAuto()" id="logsAutoBtn">Pause</button>
     <button class="btn btn-sm" onclick="loadLogs()">Refresh</button>
@@ -581,9 +591,9 @@ body:not([data-theme="dark"]) .theme-toggle .dark-label{display:none}
     <div class="form-row">
       <div class="field"><label>Alias ID</label><input type="text" id="comboId" placeholder="cline-glm-5.3"></div>
       <div class="field"><label>Platform</label>
-        <select id="comboPlatform" onchange="fillComboModels()"><option value="cline">cline</option><option value="zen">opencode</option></select>
+        <select id="comboPlatform" onchange="fillComboModels()"><option value="cline">cline</option><option value="zen">opencode</option><option value="workbuddy">workbuddy</option></select>
       </div>
-      <div class="field" style="flex:2"><label>Target model (same platform only)</label><select id="comboTarget"></select></div>
+      <div class="field" style="flex:2"><label>Target model</label><select id="comboTarget"></select></div>
       <div class="field" style="flex:0 0 auto;display:flex;align-items:flex-end"><label style="display:flex;gap:6px;align-items:center;white-space:nowrap;padding-bottom:8px"><input type="checkbox" id="comboUseProxies"> Use proxy pool</label></div>
     </div>
     <button class="btn btn-primary" onclick="createCombo()">Create custom alias</button>
@@ -596,31 +606,43 @@ body:not([data-theme="dark"]) .theme-toggle .dark-label{display:none}
 </div>
 
 <div id="tab-opencode" class="tab-panel" style="display:none">
-<h2>OpenCode</h2>
+<h2 style="margin-bottom:4px">OpenCode</h2>
+<div class="hint" id="ocSummary" style="margin:0 0 16px">Loading...</div>
 
 <div class="section">
   <div class="section-body">
     <div class="form-row">
-      <div class="field" style="flex:1"><label>API keys (one per line, round-robin rotation, auto-cooldown on 429)</label><textarea id="ocKeys" rows="3" placeholder="public"></textarea></div>
+      <div class="field" style="margin:0">
+        <label>Base URL</label>
+        <div style="display:flex;gap:8px;align-items:center">
+          <input type="text" id="ocBaseURL" placeholder="https://opencode.ai/zen/v1" style="flex:1;min-width:0">
+          <button class="btn btn-primary btn-sm" onclick="saveOcConfig()">Confirm</button>
+        </div>
+      </div>
     </div>
-    <div class="flex" style="gap:10px;margin-bottom:8px;align-items:center;flex-wrap:wrap">
+    <div class="flex" style="gap:10px;margin:0 0 8px;align-items:center;flex-wrap:wrap">
       <label class="hint" style="margin:0">Probe model (used by the Test buttons):</label>
       <select id="ocProbeModel" style="max-width:360px"><option value="">auto — big-pickle first, then live models</option></select>
     </div>
-    <div style="display:flex;justify-content:flex-end;margin-bottom:8px">
-      <button class="btn btn-sm" onclick="clearZenKeyProxies()" title="Clear proxy bindings on ALL keys — every key returns to the Global default">Clear bindings</button>
-      <button class="btn btn-sm" onclick="enableAllZenKeys(true)" title="Enable auto-minting on ALL keys">Enable all</button>
-    </div>
     <div class="table-wrap" style="margin-bottom:10px">
       <table>
-        <thead><tr><th style="width:50px">#</th><th style="width:110px">Key</th><th style="width:70px">Usage</th><th style="width:110px">Session</th><th>Cooldown</th><th title="Main / backup egress — isolation mode picks main first, then backup; both down = key skipped. The harvester also mints through the bound exit.">Proxy binding</th><th style="width:90px"></th><th title="Auto-mint participation: unchecked keys never trigger session minting (startup / 403 / periodic / manual Mint)">Enabled</th></tr></thead>
+        <thead><tr><th style="width:50px">#</th><th style="width:110px">Key</th><th style="width:70px">Usage</th><th style="width:110px">Session</th><th>Cooldown</th><th title="Main / backup egress — isolation mode picks main first, then backup; both down = key skipped. The harvester also mints through the bound exit.">Proxy binding</th><th style="width:130px"></th><th style="text-align:center" title="Routing participation: unchecked keys never enter request rotation, and minting follows routing (a routing-disabled key is no longer auto-minted)">Pool</th></tr></thead>
         <tbody id="ocKeysBody"><tr><td colspan="8" class="empty">Loading...</td></tr></tbody>
       </table>
     </div>
-    <div class="form-row">
-      <div class="field"><label>Base URL</label><input type="text" id="ocBaseURL" placeholder="https://opencode.ai/zen/v1"></div>
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin:10px 6px 4px">
+      <button class="btn btn-primary btn-sm" onclick="openZenKeyAddDialog()">Add credentials</button>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-sm" onclick="stageAllKeysRouting(true)">Enable all</button>
+        <button class="btn btn-sm" onclick="stageAllKeysRouting(false)">Disable all</button>
+        <button class="btn btn-sm" onclick="stageClearZenKeyProxies()" title="Stage: clear proxy bindings on ALL keys and disable routing — click Save to apply">Clear bindings</button>
+        <button class="btn btn-sm" id="ocTestBtn" onclick="batchTestKeys()" title="Run the Test probe on every key (same as clicking Test on each row)">Test all</button>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-sm btn-warn" id="ocResetBtn" onclick="resetKeyEdits()" title="Discard staged changes and reload the last saved state">Discard</button>
+        <button class="btn btn-primary btn-sm" id="ocKeysSaveBtn" onclick="saveKeyEdits()">Save</button>
+      </div>
     </div>
-    <div class="form-actions"><button class="btn btn-primary" onclick="saveOcConfig()">Save config</button></div>
   </div>
 </div>
 
@@ -630,16 +652,6 @@ body:not([data-theme="dark"]) .theme-toggle .dark-label{display:none}
     <div class="form-row">
       <div class="field"><label>Max concurrency</label><input type="text" id="ocMaxConc" placeholder="8"></div>
       <div class="field"><label>Rate-limit retries</label><input type="text" id="ocRetries" placeholder="3"></div>
-    </div>
-    <div class="form-row">
-      <div class="field"><label>Failover</label>
-        <select id="ocFailover"><option value="true">On (switch to cline pool)</option><option value="false">Off</option></select>
-      </div>
-      <div class="field"><label>Failure threshold</label><input type="text" id="ocFailoverCount" placeholder="3"></div>
-    </div>
-    <div class="form-row">
-      <div class="field"><label>Failover window (min)</label><input type="text" id="ocFailoverMinutes" placeholder="5"></div>
-      <div class="field"><label>Current status</label><span id="ocFailoverInfo" class="stat-mini" style="align-self:center">-</span></div>
     </div>
     <div class="form-actions"><button class="btn btn-primary" onclick="saveOcConfig()">Save rate-limit config</button></div>
   </div>
@@ -695,10 +707,244 @@ body:not([data-theme="dark"]) .theme-toggle .dark-label{display:none}
 </div>
 </div>
 
+<div id="tab-workbuddy" class="tab-panel" style="display:none">
+  <div class="flex justify-between" style="margin-bottom:16px">
+  <div>
+    <h2 style="margin-bottom:4px">WorkBuddy</h2>
+    <div class="hint" id="wbSummary" style="margin:0">Loading...</div>
+  </div>
+</div>
+
+<div class="section">
+  <div class="section-body" style="padding:6px">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin:4px 6px 10px">
+      <span class="wb-toolbar">
+        <button class="btn btn-sm" onclick="openWorkbuddyTodoScan()">Task center</button>
+        <button class="btn btn-sm" onclick="refreshWorkbuddyAccounts()" title="Refresh all account balances">Refresh all</button>
+      </span>
+      <span class="wb-toolbar">
+        <button class="btn btn-sm" onclick="runWorkbuddyBatch('checkin_all')">Check in all</button>
+        <button class="btn btn-sm" onclick="runWorkbuddyBatch('travel_all')">Pet patrol</button>
+        <button class="btn btn-sm" onclick="runWorkbuddyBatch('activity_all')">Activity all</button>
+        <button class="btn btn-sm" onclick="runWorkbuddyBatch('keepalive_all')">Refresh login</button>
+      </span>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Account</th>
+            <th>Status</th>
+            <th>Credits</th>
+            <th>Usage</th>
+            <th>Success / errors</th>
+            <th>Last success</th>
+            <th title="Main / backup egress — isolation mode picks main first, then backup; both down = account skipped">Proxy binding</th>
+            <th>Actions</th>
+            <th style="text-align:center" title="Participates in rotation">Pool</th>
+          </tr>
+        </thead>
+        <tbody id="wbAccountsBody">
+          <tr><td colspan="9" class="empty">Loading...</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;margin:10px 6px 4px">
+      <div style="flex:1;display:flex;gap:8px;justify-content:flex-start">
+        <button class="btn btn-primary btn-sm" onclick="openWorkbuddyAdd()">Add account</button>
+      </div>
+      <div style="flex:1;display:flex;gap:8px;justify-content:center">
+        <button class="btn btn-sm" onclick="stageAllWbPool(true)">Enable all</button>
+        <button class="btn btn-sm" onclick="stageAllWbPool(false)">Disable all</button>
+        <button class="btn btn-sm" onclick="stageClearWorkbuddyProxyBindings()" title="Stage: clear proxy bindings on ALL WorkBuddy accounts and disable them — click Save to apply">Clear bindings</button>
+      </div>
+      <div style="flex:1;display:flex;gap:8px;justify-content:flex-end">
+        <button class="btn btn-sm btn-warn" id="wbResetBtn" onclick="resetWorkbuddyEdits()" title="Discard staged changes and reload the last saved state">Discard</button>
+        <button class="btn btn-primary btn-sm" id="wbSaveBtn" onclick="saveWorkbuddyEdits()">Save</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<form id="wbConfigForm">
+  <div class="section">
+    <div class="section-title">
+      <span class="sec-ico"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87.34 1.7 1.7 0 0 0-1 1.55V21a2 2 0 1 1-4 0v-.09a1.7 1.7 0 0 0-1-1.55 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.7 1.7 0 0 0 .34-1.87 1.7 1.7 0 0 0-1.55-1H3a2 2 0 1 1 0-4h.09a1.7 1.7 0 0 0 1.55-1 1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.7 1.7 0 0 0 1.87.34h0a1.7 1.7 0 0 0 1-1.55V3a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1 1.55h0a1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87v0a1.7 1.7 0 0 0 1.55 1H21a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.55 1z"/></svg></span>
+      WorkBuddy 配置
+      <span style="flex:1"></span>
+      <span class="auto-pill" id="wbConfigNote">面板由当前管理员会话管理</span>
+    </div>
+    <div class="section-body">
+      <div class="hint" style="margin-top:0;margin-bottom:16px">监听地址、API 密钥、凭证目录与状态文件路径由当前项目统一管理。</div>
+      <div class="wb-config-grid">
+        <div class="wb-config-group">
+          <h3>定时任务</h3>
+          <div class="wb-switch"><input type="checkbox" id="wbCheckinEnabled" data-wb-path="schedule.checkin_enabled"><label for="wbCheckinEnabled">自动签到</label></div>
+          <div class="wb-field"><label for="wbCheckinHours">签到时点（小时，逗号分隔）</label><input id="wbCheckinHours" data-wb-path="schedule.checkin_hours" data-wb-type="ints" placeholder="9, 21"></div>
+          <div class="wb-switch"><input type="checkbox" id="wbTravelEnabled" data-wb-path="schedule.travel_enabled"><label for="wbTravelEnabled">自动巡检</label></div>
+          <div class="wb-field"><label for="wbTravelHours">旅行时点（小时，逗号分隔）</label><input id="wbTravelHours" data-wb-path="schedule.travel_hours" data-wb-type="ints" placeholder="9, 21"></div>
+          <div class="wb-switch"><input type="checkbox" id="wbActivityEnabled" data-wb-path="schedule.activity_enabled"><label for="wbActivityEnabled">自动连登</label></div>
+          <div class="wb-field"><label for="wbActivityHours">上报时点（小时，逗号分隔）</label><input id="wbActivityHours" data-wb-path="schedule.activity_hours" data-wb-type="ints" placeholder="10"></div>
+          <div class="wb-switch"><input type="checkbox" id="wbKeepaliveEnabled" data-wb-path="schedule.keepalive_enabled"><label for="wbKeepaliveEnabled">自动保活</label></div>
+          <div class="wb-field"><label for="wbKeepaliveHours">保活时点（小时，逗号分隔）</label><input id="wbKeepaliveHours" data-wb-path="schedule.keepalive_hours" data-wb-type="ints" placeholder="22"></div>
+          <div class="wb-switch"><input type="checkbox" id="wbBalanceEnabled" data-wb-path="schedule.balance_refresh_enabled"><label for="wbBalanceEnabled">后台刷新余额</label></div>
+          <div class="wb-field"><label for="wbBalanceMinutes">刷新间隔（分钟）</label><input id="wbBalanceMinutes" data-wb-path="schedule.balance_refresh_minutes" data-wb-type="number" min="1" placeholder="5"></div>
+          <div class="wb-switch"><input type="checkbox" id="wbGrowthEnabled" data-wb-path="schedule.growth_enabled"><label for="wbGrowthEnabled">成长任务自动执行</label></div>
+          <div class="wb-field"><label for="wbGrowthHours">执行时点（小时，逗号分隔）</label><input id="wbGrowthHours" data-wb-path="schedule.growth_hours" data-wb-type="ints" placeholder="1"></div>
+        </div>
+
+        <div class="wb-config-group">
+          <h3>账号池与流量治理</h3>
+          <div class="wb-field"><label for="wbMaxInFlight">单账号最大在途</label><input id="wbMaxInFlight" data-wb-path="pool.max_in_flight" data-wb-type="number" min="0" placeholder="3"></div>
+          <div class="wb-field"><label for="wbMaxGlobal">国际版在途上限</label><input id="wbMaxGlobal" data-wb-path="pool.max_in_flight_global" data-wb-type="number" min="1" placeholder="2"></div>
+          <div class="wb-field"><label for="wbBreakerThreshold">连续失败熔断阈值</label><input id="wbBreakerThreshold" data-wb-path="pool.breaker_threshold" data-wb-type="number" min="1" placeholder="3"></div>
+          <div class="wb-field"><label for="wbSoftRate">软限流冷却基数</label><input id="wbSoftRate" data-wb-path="cooldown.soft_rate" data-wb-type="duration" placeholder="600s"></div>
+          <div class="wb-field"><label for="wbSoftMax">软冷却退避上限</label><input id="wbSoftMax" data-wb-path="cooldown.soft_rate_max" data-wb-type="duration" placeholder="2h"></div>
+          <div class="wb-field"><label for="wbBreakerCooldown">熔断基础时长</label><input id="wbBreakerCooldown" data-wb-path="pool.breaker_cooldown" data-wb-type="duration" placeholder="30m"></div>
+          <div class="wb-field"><label for="wbBreakerMax">熔断退避上限</label><input id="wbBreakerMax" data-wb-path="pool.breaker_cooldown_max" data-wb-type="duration" placeholder="6h"></div>
+          <div class="wb-field"><label for="wbDegradeThreshold">连败降权阈值</label><input id="wbDegradeThreshold" data-wb-path="pool.degrade_threshold" data-wb-type="number" min="1" placeholder="5"></div>
+          <div class="wb-field"><label for="wbDegradeCooldown">连败降权时长</label><input id="wbDegradeCooldown" data-wb-path="pool.degrade_cooldown" data-wb-type="duration" placeholder="10m"></div>
+          <div class="wb-field"><label for="wbDegradeMax">连败降权上限</label><input id="wbDegradeMax" data-wb-path="pool.degrade_cooldown_max" data-wb-type="duration" placeholder="2h"></div>
+          <div class="wb-field"><label for="wbIdleWeight">闲置补偿 / 小时</label><input id="wbIdleWeight" data-wb-path="pool.idle_weight_per_hour" data-wb-type="number" step="0.1" placeholder="0.5"></div>
+          <div class="wb-field"><label for="wbIdleMax">闲置补偿上限</label><input id="wbIdleMax" data-wb-path="pool.idle_weight_max" data-wb-type="number" step="0.1" placeholder="5"></div>
+          <div class="wb-field"><label for="wbCostExplore">成本探索窗口</label><input id="wbCostExplore" data-wb-path="pool.cost_explore_interval" data-wb-type="duration" placeholder="30m"></div>
+          <div class="wb-field"><label for="wbStickyTTL">会话粘性 TTL</label><input id="wbStickyTTL" data-wb-path="session_sticky.ttl" data-wb-type="duration" placeholder="30m"></div>
+        </div>
+
+        <div class="wb-config-group">
+          <h3>上游与高级</h3>
+          <div class="wb-field"><label for="wbTimeout">短请求超时</label><input id="wbTimeout" data-wb-path="upstream.timeout_seconds" data-wb-type="number" min="1" placeholder="120"></div>
+          <div class="wb-field"><label for="wbHeaderTimeout">聊天首字节超时</label><input id="wbHeaderTimeout" data-wb-path="upstream.header_timeout_seconds" data-wb-type="number" min="1" placeholder="120"></div>
+          <div class="wb-field"><label for="wbIdleTimeout">流空闲超时</label><input id="wbIdleTimeout" data-wb-path="upstream.idle_timeout_seconds" data-wb-type="number" min="1" placeholder="300"></div>
+          <div class="wb-field"><label for="wbUserAgent">出站 User-Agent</label><input id="wbUserAgent" data-wb-path="upstream.user_agent" data-wb-send-empty="1" placeholder="留空 = CLI/2.63.2 CodeBuddy/2.63.2"></div>
+          <div class="wb-field">
+            <label for="wbPromptMode">系统提示词模式</label>
+            <select id="wbPromptMode" data-wb-path="prompt.mode">
+              <option value="custom">custom — 网关自有提示词（避免指纹误报）</option>
+              <option value="append">append — 客户端 system 后插网关提示词（并用）</option>
+              <option value="passthrough">passthrough — 透传客户端原始 system</option>
+            </select>
+          </div>
+          <div class="wb-field"><label for="wbPromptFile">提示词文件路径</label><input id="wbPromptFile" data-wb-path="prompt.file" data-wb-send-empty="1" placeholder="留空 = 内置默认提示词"></div>
+          <div class="wb-switch"><input type="checkbox" id="wbSanitize" data-wb-path="features.sanitize_blacklist_fingerprints"><label for="wbSanitize">出站请求指纹脱敏</label></div>
+          <div class="wb-switch"><input type="checkbox" id="wbStickyEnabled" data-wb-path="session_sticky.enabled"><label for="wbStickyEnabled">会话粘性路由</label></div>
+          <div class="hint" style="margin-top:10px">Upstash Redis 镜像、凭证目录与状态文件路径需手工编辑配置文件（判为重启项）。</div>
+        </div>
+      </div>
+      <div class="form-actions" style="justify-content:flex-end">
+        <button type="button" class="btn" onclick="loadWorkbuddyConfig()">放弃修改</button>
+        <button type="submit" class="btn btn-primary" id="wbSaveConfig">保存配置</button>
+      </div>
+    </div>
+  </div>
+</form>
+</div>
+
 </div>
 </div>
 
-<div id="toast" class="toast"></div>
+<div id="toast" class="toast" popover="manual"></div>
+
+<dialog id="wbAddDialog">
+  <div class="wb-dialog-head">
+    <span>Add WorkBuddy account</span>
+    <button class="btn btn-sm" onclick="closeWorkbuddyAdd()">Close</button>
+  </div>
+  <div class="wb-dialog-body">
+    <div class="form-row" style="margin-bottom:8px">
+      <div class="field">
+        <label>Realm</label>
+        <select id="wbRealm"><option value="cn">CN (国内版)</option><option value="global">Global (国际版)</option></select>
+      </div>
+    </div>
+    <div class="hint" id="wbAddStatus">Choose a realm and request an authorization link.</div>
+    <div class="wb-link-row">
+      <input type="text" id="wbOAuthUrl" readonly placeholder="authorization URL">
+      <button class="btn btn-sm" onclick="copyWorkbuddyOAuthUrl()">Copy</button>
+      <button class="btn btn-sm btn-primary" onclick="openWorkbuddyOAuthUrl()">Open</button>
+    </div>
+    <div class="wb-dialog-actions">
+      <button class="btn btn-primary" id="wbStartLogin">Get authorization link</button>
+      <button class="btn" id="wbImportJson" onclick="document.getElementById('wbDialogImportFile').click()">Import JSON</button>
+    </div>
+    <input type="file" id="wbDialogImportFile" accept=".json" hidden onchange="importWorkbuddyAccounts(this)">
+  </div>
+</dialog>
+
+<dialog id="wbDetailsDialog" class="wb-wide">
+  <div class="wb-dialog-head">
+    <span>积分构成 <span class="auto-pill" id="wbDetailsWho"></span></span>
+    <button class="btn btn-sm" onclick="closeWorkbuddyDetails()">关闭</button>
+  </div>
+  <div class="wb-dialog-body">
+    <div class="hint" id="wbDetailsStatus">加载中...</div>
+    <div id="wbDetailsBody"></div>
+  </div>
+</dialog>
+
+<dialog id="accAddDialog">
+  <div class="wb-dialog-head">
+    <span>Add account</span>
+    <button class="btn btn-sm" onclick="closeAccAddDialog()">Close</button>
+  </div>
+  <div class="wb-dialog-body">
+    <p class="hint" style="margin-top:0" id="accAddHint">The type is detected automatically — sk_... is pooled as a static API key, anything else as an OAuth refresh token.</p>
+    <div class="field">
+      <label>Token or API key *</label>
+      <input type="text" id="accAddToken" placeholder="workos-... refreshToken or sk_... API key" style="font-family:'JetBrains Mono',Consolas,monospace">
+    </div>
+    <div class="field">
+      <label>Email (optional)</label>
+      <input type="text" id="accAddEmail" placeholder="user@example.com">
+    </div>
+    <div class="wb-dialog-actions">
+      <button class="btn btn-primary" id="accAddSubmit" onclick="accAddFromDialog()">Add account</button>
+      <button class="btn" onclick="closeAccAddDialog()">Cancel</button>
+    </div>
+  </div>
+</dialog>
+
+<dialog id="zenKeyAddDialog">
+  <div class="wb-dialog-head">
+    <span>Add credentials</span>
+    <button class="btn btn-sm" onclick="closeZenKeyAddDialog()">Close</button>
+  </div>
+  <div class="wb-dialog-body">
+    <p class="hint" style="margin-top:0" id="zenKeyAddHint">One OpenCode API key per line; use "public" for anonymous access.</p>
+    <div class="field">
+      <label>API keys (one per line) *</label>
+      <textarea id="zenKeyAddInput" rows="5" placeholder="public" style="font-family:'JetBrains Mono',Consolas,monospace"></textarea>
+    </div>
+    <div class="wb-dialog-actions">
+      <button class="btn btn-primary" id="zenKeyAddSubmit" onclick="zenKeyAddFromDialog()">Save</button>
+      <button class="btn" onclick="closeZenKeyAddDialog()">Cancel</button>
+    </div>
+  </div>
+</dialog>
+
+<dialog id="wbTodoDialog" class="wb-wide">
+  <div class="wb-dialog-head">
+    <span>任务中心&#x20;</span>
+    <button class="btn btn-sm" onclick="closeWorkbuddyTodoScan()">关闭</button>
+  </div>
+  <div class="wb-dialog-body">
+    <div class="justify-between">
+      <div class="hint" id="wbTodoStatus">选择并发数后点击“扫描任务”</div>
+      <div class="wb-task-actions">
+        <label class="inline-flex" style="font-size:12px;color:var(--text2)">并发
+          <select id="wbTodoConcurrency" style="width:64px">
+            <option value="1" selected>1</option>
+            <option value="2">2</option>
+            <option value="3">3</option>
+          </select>
+        </label>
+        <button class="btn btn-sm" id="wbTodoScan" onclick="scanWorkbuddyTodos()">扫描任务</button>
+        <button class="btn btn-sm btn-primary" id="wbTodoRunAll" onclick="runWorkbuddyAllTodos()">全部执行</button>
+      </div>
+    </div>
+    <div id="wbTodoBody" style="margin-top:12px"></div>
+  </div>
+</dialog>
 
 <script>
 const API = '/admin/api';
@@ -753,12 +999,142 @@ const fmtTokens = n => {
 // 也保证重载后静态文本从首次渲染起就是目标语言）。
 let LANG = localStorage.getItem('lang') === 'zh' ? 'zh' : 'en';
 const I18N_ZH = {
+  // WorkBuddy native admin console
+  'WorkBuddy accounts': 'WorkBuddy 账号',
+  'Task center': '任务中心',
+  'Refresh all': '全部刷新',
+  'Refresh all account balances': '刷新全部账号的余额',
+  'Stage: clear proxy bindings on ALL WorkBuddy accounts and disable them — click Save to apply': '清空全部账号的代理绑定并置为禁用，点击保存后生效',
+  'Check in all': '全部签到',
+  'Pet patrol': '宠物巡检',
+  'Activity all': '连登活跃',
+  'Refresh login': '刷新登录',
+  'Refresh': '刷新',
+  'Account': '账号',
+  'Points': '积分',
+  'Refresh balances': '刷新余额',
+  'Import JSON': '导入 JSON',
+  'No accounts yet': '暂无账号信息,请添加',
+  'Failed to load WorkBuddy accounts: ': '加载 WorkBuddy 账号失败：',
+  'Credits': '额度',
+  'Success / errors': '成功 / 错误',
+  'Last success': '最近成功',
+  'Check-in': '签到',
+  'Travel': '旅行',
+  'Tasks': '任务',
+  'None': '无',
+  'Ready': '就绪',
+  'Authenticated': '已认证',
+  'Cooling': '冷却中',
+  'Suspended': '已暂停',
+  'Disabled': '已停用',
+  'Deleted': '已删除',
+  'Error': '错误',
+  'Unknown': '未知',
+  'accounts': '账号',
+  'active': '可用',
+  'cooling': '冷却中',
+  'tok': 'token',
+  'runs': '运行',
+  'errors': '错误',
+  'Save failed: ': '保存失败：',
+  'Clear proxy bindings on ALL WorkBuddy accounts?': '清空全部 WorkBuddy 账号的代理绑定？',
+  'Clear failed: ': '清空失败：',
+  'Balances refreshed': '余额已刷新',
+  'Refresh failed: ': '刷新失败：',
+  'Get authorization link': '获取授权链接',
+  'Choose a realm and request an authorization link.': '选择区域并请求授权链接。',
+  'Requesting authorization link...': '正在请求授权链接...',
+  'Open the link and complete the browser login.': '打开链接并完成浏览器登录。',
+  'Authorization session created.': '授权会话已创建。',
+  'OAuth failed: ': 'OAuth 失败：',
+  'Account added: ': '账号已添加：',
+  'WorkBuddy account added': 'WorkBuddy 账号已添加',
+  'Authorization link copied': '授权链接已复制',
+  'Copy failed': '复制失败',
+  'No accounts found in JSON': 'JSON 中没有找到账号',
+  'Imported ': '已导入 ',
+  ' account(s)': ' 个账号',
+  'Import failed: ': '导入失败：',
+  'Export failed: ': '导出失败：',
+  'loaded': '已加载',
+  'load failed': '加载失败',
+  'WorkBuddy config load failed: ': 'WorkBuddy 配置加载失败：',
+  'Save configuration': '保存配置',
+  'Saving...': '保存中...',
+  'WorkBuddy config saved': 'WorkBuddy 配置已保存',
+  ' restart items)': ' 个重启项)',
+  'WorkBuddy config save failed: ': 'WorkBuddy 配置保存失败：',
+  'Account tasks': '账号任务',
+  'Run automatic tasks': '运行自动任务',
+  'Reload': '重新加载',
+  'Task': '任务',
+  'Progress': '进度',
+  'Reward': '奖励',
+  'No tasks found': '没有任务',
+  'Claim': '领取',
+  'Run': '运行',
+  'Loading...': '加载中...',
+  'WorkBuddy': 'WorkBuddy',
+  'Add account': '添加账号',
+  'Configuration': '配置',
+  'admin session manages access': '由管理员会话管理访问',
+  'Listening, credentials, and data paths stay under the gateway admin session.': '监听、凭据和数据路径始终由网关管理员会话管理。',
+  'Scheduled jobs': '定时任务',
+  'Automatic check-in': '自动签到',
+  'Check-in hours': '签到小时',
+  'Activity report': '活动报告',
+  'Activity hours': '活动小时',
+  'Travel job': '旅行任务',
+  'Travel hours': '旅行小时',
+  'Token keepalive': 'Token 保活',
+  'Keepalive hours': '保活小时',
+  'Growth tasks': '成长任务',
+  'Growth hours': '成长小时',
+  'Background balance refresh': '后台余额刷新',
+  'Refresh interval (min)': '刷新间隔（分钟）',
+  'Pool and cooldown': '代理池与冷却',
+  'Max in-flight / account': '每账号并发上限',
+  'Global in-flight limit': '全局并发上限',
+  'Breaker threshold': '熔断阈值',
+  'Breaker cooldown': '熔断冷却',
+  'Breaker cooldown max': '熔断冷却上限',
+  'Soft rate cooldown': '软限流冷却',
+  'Soft cooldown max': '软冷却上限',
+  'Degrade threshold': '降级阈值',
+  'Degrade cooldown': '降级冷却',
+  'Degrade cooldown max': '降级冷却上限',
+  'Idle weight / hour': '每小时空闲权重',
+  'Idle weight max': '空闲权重上限',
+  'Cost explore window': '成本探索窗口',
+  'Expiring-soon window': '即将到期窗口',
+  'Session and upstream': '会话与上游',
+  'Sticky session routing': '粘性会话路由',
+  'Sticky TTL': '粘性 TTL',
+  'Short request timeout': '普通请求超时',
+  'First-byte timeout': '首字节超时',
+  'Stream idle timeout': '流空闲超时',
+  'User-Agent': 'User-Agent',
+  'Client name': '客户端名称',
+  'Client version': '客户端版本',
+  'Pass through client IP': '透传客户端 IP',
+  'Sanitize outbound fingerprints': '清理出站指纹',
+  'Prompt and global realm': '提示词与全局区域',
+  'System prompt mode': '系统提示词模式',
+  'Prompt file': '提示词文件',
+  'Enable global realm accounts': '启用全局区域账号',
+  'Global chat base': '全局 Chat 地址',
+  'Global billing base': '全局 Billing 地址',
+  'Add WorkBuddy account': '添加 WorkBuddy 账号',
+  'Close': '关闭',
+  'Realm': '区域',
+  'authorization URL': '授权 URL',
+  'Copy': '复制',
   // 侧边导航 / 分组
   'Account pool': '账号池',
   'Services': '服务',
   'Dashboard': '仪表盘',
   'Accounts': 'Cline',
-  'Add accounts': '添加账号',
   'Gateway settings': '网关设置',
   'Request logs': '请求日志',
   'Proxy pool': '代理池',
@@ -768,33 +1144,59 @@ const I18N_ZH = {
   'Dark': '暗色',
   'Toggle theme': '切换主题',
   // 仪表盘
-  'Total accounts': '账号总数',
+  'Platform overview': '平台概览',
+  'Click a platform card to open its management page.': '点击平台卡片进入对应管理页。',
+  'Request statistics': '请求统计',
+  'Counted since ': '统计自 ',
+  'requests': '请求',
+  'errors': '错误',
+  'Avg ': '平均 ',
   'Active': '活跃',
   'Cooldown': '冷却中',
   'Expired': '已失效',
-  'Quick actions': '快捷操作',
   'Add account': '添加账号',
-  'Refresh all tokens': '刷新全部 token',
-  'Import from file': '从文件导入',
-  'Generate API key': '生成 API key',
-  'Quick start': '快速上手',
-  'Add Cline accounts': '添加 Cline 账号',
-  'Generate an API key': '生成 API key',
-  'Configure your client': '配置客户端',
   'Endpoints': '接口',
   'OpenAI Chat format — works with most tools out of the box': 'OpenAI Chat 格式 —— 大多数工具开箱即用',
   'Anthropic Messages format — for Claude Code / Cline and similar clients': 'Anthropic Messages 格式 —— 供 Claude Code / Cline 等客户端使用',
   'OpenAI Responses format — for Cursor and similar clients': 'OpenAI Responses 格式 —— 供 Cursor 等客户端使用',
   'Model list': '模型列表',
-  // 快速上手（含 <code> 拆分的文本片段）
-  'On the Add accounts page: browser OAuth, a refreshToken, or a static API key (': '在「添加账号」页操作：浏览器 OAuth、refreshToken 或静态 API key（',
-  ") — accounts are the proxy's upstream quota.": '）—— 账号就是代理的上游额度。',
-  'Generate a key under Proxy settings → API keys to authenticate clients; with no keys configured, unauthenticated access is allowed.': '在 网关设置 → API key 下生成 key 供客户端鉴权；未配置任何 key 时允许匿名访问。',
-  'Set the Base URL to': '把 Base URL 设为 ',
-  'and pick any model ID from the available models list.': '，并从可用模型列表里任选一个模型 ID。',
   // 账号页
-  'Add': '添加',
-  'Refresh': '刷新',
+  'Add': '添加帐号',
+  'Test all': '批量测试',
+  'Disable all': '一键禁用',
+  'No changes to save': '没有需要保存的修改',
+  'Save failed for ': '保存失败 ',
+  ' account(s)': ' 个账号',
+  ' account change(s)': ' 处修改',
+  'No accounts to test': '没有可测试的账号',
+  'Batch test done: ': '批量测试完成：',
+  ' tested, ': ' 个已测，',
+  ' ok': ' 可用',
+  ' cooling': ' 冷却',
+  ' error': ' 异常',
+  'Participates in request routing': '参与请求路由',
+  'Discard': '复位',
+  'Discard staged changes and reload the last saved state': '撤销暂存的修改，恢复为上次保存的状态',
+  'Add credentials': '添加凭据',
+  'Confirm': '确认',
+  'keys': '个 key',
+  'API keys (one per line) *': 'API key（每行一个）*',
+  'One OpenCode API key per line; use "public" for anonymous access.': '每行一个 OpenCode API key；匿名访问填 public。',
+  'Enter at least one key': '请至少输入一个 key',
+  'No new keys (all already in the pool)': '没有新 key（均已在池中）',
+  'Added ': '已添加 ',
+  ' key(s)': ' 个 key',
+  'No keys to test': '没有可测试的 key',
+  'Delete this key?': '删除该 key？',
+  ' (deleted)': '（已删除）',
+  'Email (optional)': '邮箱（可选）',
+  'Cancel': '取消',
+  'The type is detected automatically — sk_... is pooled as a static API key, anything else as an OAuth refresh token.': '类型自动识别：sk_... 按静态 API key 入池，其余按 OAuth refreshToken 处理。',
+  ', ': '，',
+  'Clear proxy bindings on ALL keys and disable routing? Click Save to apply.': '清空全部 key 的代理绑定并禁用路由？点击「保存」后生效。',
+  'Stage: clear proxy bindings on ALL accounts and disable them — click Save to apply': '暂存操作：清空全部账号的代理绑定并置为禁用，点击「保存」后生效',
+  'Stage: clear proxy bindings on ALL keys and disable routing — click Save to apply': '暂存操作：清空全部 key 的代理绑定并禁用路由，点击「保存」后生效',
+  'Run the Test probe on every account (same as clicking Test on each row)': '对当前平台所有账号执行真实探测（等价于逐行点一次测试）',
   'Email': '邮箱',
   'Status': '状态',
   'Today/Total tokens': '今日/累计 token',
@@ -820,24 +1222,8 @@ const I18N_ZH = {
   'Bound proxy is no longer in the proxy pool — the key is skipped until fixed': '绑定的代理已不在代理池中 —— 修复前该 key 一直被跳过',
   'Test whether the account works (success clears cooldown/expired state)': '测试账号是否可用（成功即清除冷却/失效状态）',
   'Probe the rate limit and lift it: probes upstream; if still limited, stays in cooldown and shows recovery time': '探测限流并尝试解除：探测上游；仍在限流则保持冷却并显示恢复时间',
-  'No accounts yet — add one on the': '还没有账号 —— 到',
-  // 添加账号页
-  'OAuth browser login': 'OAuth 浏览器登录',
-  'Manual entry': '手动录入',
-  'Batch import': '批量导入',
-  'Cline accounts via browser OAuth — Google/GitHub/email sign-in supported; the refreshToken is captured automatically.': '通过浏览器 OAuth 添加 Cline 账号 —— 支持 Google/GitHub/邮箱登录；refreshToken 自动捕获。',
-  'Start OAuth login': '开始 OAuth 登录',
-  'Waiting for browser authorization...': '等待浏览器授权...',
-  'Paste a Cline OAuth refreshToken or a static Cline API key (': '粘贴 Cline OAuth refreshToken 或静态 Cline API key（',
-  ') — the type is detected automatically. API keys are used as-is (no validation call); refresh tokens are verified against the upstream first.': '）—— 类型自动识别。API key 直接入库（不做校验请求）；refreshToken 会先向上游验证。',
+  // 添加账号弹窗（accAddDialog，Cline 页"添加账号"按钮）
   'Token or API key *': 'Token 或 API key *',
-  'Email / label (optional; auto-generated if empty)': '邮箱 / 标签（可选，留空自动生成）',
-  'Import multiple accounts at once. Accepts a JSON array (entries with': '一次导入多个账号。接受 JSON 数组（条目含 ',
-  ') or one credential per line — lines starting with': '）或每行一条凭据 —— 以 ',
-  'are treated as API keys, everything else as refresh tokens.': ' 开头的行识别为 API key，其余识别为 refreshToken。',
-  'JSON array or one credential per line': 'JSON 数组或每行一条凭据',
-  'Import all': '全部导入',
-  'Choose file': '选择文件',
   // 代理池页
   'Egress proxies': '出口代理',
   'One proxy list serves every upstream that opts in below. One proxy per line:': '一份代理列表供下方所有选择启用的上游共用。每行一条：',
@@ -861,18 +1247,13 @@ const I18N_ZH = {
   'OpenCode keys without proxy bindings follow this switch.': 'OpenCode 未绑定代理的 key 遵循此开关。',
   'Clear bindings': '清空代理',
   'Enable all': '一键启用',
-  'Enable auto-minting on ALL keys?': '启用全部 key 的自动铸造？',
-  'Disable auto-minting on ALL keys?': '停用全部 key 的自动铸造？',
   'Bindings cleared': '绑定已清空',
   'Clear failed': '清空失败：',
-  'Clear proxy bindings on ALL accounts? Every account returns to the Global default.': '清空全部账号的代理绑定？所有账号回到默认值「全局」。',
-  'Clear proxy bindings on ALL keys? Every key returns to the Global default (enabled state is kept).': '清空全部 key 的代理绑定？所有 key 回到默认值「全局」（启用状态保留）。',
   'Clear proxy bindings on ALL keys — every key returns to the Global default': '清空全部 key 的代理绑定 —— 所有 key 回到默认值「全局」',
   'Distribute the proxy pool across all accounts: main = pool[i%N], backup = pool[(i+1)%N]': '把代理池均匀分配给全部账号：主 = 池[i%N]，辅 = 池[(i+1)%N]',
   'Direct connection': '直连',
   'Save': '保存',
-  'Off (direct) by default. The': '默认关闭（直连）。',
-  'env var always forces this on.': ' 环境变量设置时恒定强制开启。',
+  'Cline accounts without proxy bindings follow this switch.': 'Cline 未绑定代理的账号遵循此开关。',
   'Delete': '删除',
   'Test': '测试',
   'Reset': '重置',
@@ -882,11 +1263,11 @@ const I18N_ZH = {
   'Admin panel:': '管理面板：',
   'API address:': 'API 地址：',
   'OpenCode config saved': 'OpenCode 配置已保存',
-  'OpenCode proxy setting saved': 'OpenCode 代理设置已保存',
   'Config export / import': '配置导入导出',
   'Export config': '导出配置',
   'Import config': '导入配置',
   'Choose backup file': '选择备份文件',
+  'Import/export all persisted configuration. The export file contains private information; keep it safe. Import is an overwrite operation, so proceed with caution.': '导入/导出所有持久化配置。导出配置含私密信息，请妥善保管。 导入配置为覆盖操作，请谨慎执行。',
   'Config exported': '配置已导出',
   'Config imported': '配置已导入',
   'Unsupported backup version': '不支持的备份版本',
@@ -898,8 +1279,6 @@ const I18N_ZH = {
   'Global': '全局',
   'Direct': '直连',
   'Enabled': '启用',
-  'Participates in auto-minting': '勾选后该 key 参与自动铸造（启动补缺 / 403 触发 / 周期巡检 / 手动 Mint）',
-  'Key enabled state saved': '启用状态已保存',
   'Follows the main slot': '跟随主出口',
   'No matching proxies': '没有匹配的代理',
   'OpenCode': 'OpenCode',
@@ -908,27 +1287,31 @@ const I18N_ZH = {
   'Isolation mode': '隔离模式',
   'Enabled (default) — bound identities only ever use their bound exits': '启用（默认）—— 绑定的身份只从绑定出口出网',
   'Disabled — ignore bindings; exits rotate per the strategy above (direct when pool off)': '关闭 —— 忽略绑定；出口按上方轮转策略轮换（未启用代理池时直连）',
-  'With isolation on, a Cline account or OpenCode key bound to a main/backup proxy always egresses via the main, falls back to the backup, and is': '隔离开启时，绑定了主/辅代理的 Cline 账号或 OpenCode key 永远从主代理出网，主不可用落到辅代理；',
-  "while both are cooling or removed — it never leaks through another exit or a direct connection. The OpenCode harvester also mints sessions through the key's bound exit so a session never changes IP. Bind per account on the Cline page, per key on the OpenCode page.": '两者都不可用（冷却中/已删除）时该身份会被整体跳过 —— 绝不从其他出口或直连泄漏。OpenCode 收割机也经该 key 的绑定出口铸造会话，保证会话 IP 恒定。逐账号在 Cline 页绑定、逐 key 在 OpenCode 页绑定。',
-  'env var overrides this switch when set.': ' 环境变量设置时覆盖此开关。',
-  'PROXY_ISOLATION env is set — it overrides this switch. Unset the env var to control isolation here.': '已设置 PROXY_ISOLATION 环境变量 —— 它覆盖此开关。删除该环境变量才能在此控制隔离。',
+  'With isolation on, every identity (account or key) only ever egresses through its bound exits — main proxy first, backup as fallback; when both are unavailable the identity is skipped, never falling back to another exit or a direct connection. The': '隔离开启时，每个身份只从自己绑定的出口出网：主代理优先，辅代理兜底；两者都不可用时该身份会被整体跳过 —— 绝不回退到其他出口或直连。',
+  'env var only accepts true/false: true forces this on (read-only toggle); false just changes the default to off.': ' 仅接受 true/false：true 强制开启（开关只读）；false 仅把默认值改为关闭(仍可修改)。',
+  'PROXY_ISOLATION=true is set — isolation is forced on. Unset the env var (or set it to false) to control isolation from the panel.': '已设置 PROXY_ISOLATION=true —— 隔离被强制开启。删除该环境变量（或设为 false）才能在面板控制隔离。',
+  'Enable backup proxies': '启用辅代理',
+  'Off by default: every identity egresses through its main proxy only — when the main proxy is cooling down or removed, the identity is skipped for that round, never trying the backup and never falling back to a direct connection. When enabled, backups act as the fallback for the main proxy to keep identities available as much as possible.': '辅代理功能默认关闭，每个身份只从主代理出网——主代理冷却或被删除时，本轮直接跳过该身份，不会尝试辅代理，也绝不回退直连。辅代理功能开启时，辅代理作为主代理备份，尽可能保证身份可用。',
+  'Backup proxies are disabled — follows the main slot': '辅代理已关闭 —— 跟随主代理',
   'Cooldown status': '冷却状态',
   'No proxies cooling down': '没有代理在冷却中',
   ' cooldown until ': ' 冷却至 ',
   // 网关设置页
   'API keys': 'API key',
-  'Generated keys authenticate client access to the proxy API (sent as the x-api-key or Authorization header).': '生成的 key 用于客户端调用代理 API 鉴权（以 x-api-key 或 Authorization 头发送）。',
+  'Generated keys authenticate client access to the proxy API; they only take effect when the API_KEY environment variable is not set.': '生成的 key 用于客户端调用代理 API 鉴权，该 key 仅在未设置 API_KEY 环境变量时生效。',
   'Generate new key': '生成新 key',
   'Available models': '可用模型',
   'Cline free models': 'Cline 免费模型',
   'OpenCode free models': 'OpenCode 免费模型',
   'Refresh models': '刷新模型',
-  'Auto-syncs official free-model feeds for both upstreams (60s); only zero-cost models are shown': '自动同步两个上游的官方免费模型源（60 秒）；仅显示零配额模型',
+  'Auto-syncs the official model feeds from upstreams (60s)': '自动同步上游的官方模型源（60 秒）',
   'General config': '常规配置',
   'Listen address': '监听地址',
   'Default model': '默认模型',
   'Account scheduling strategy': '账号调度策略',
-  'Engine version': '引擎版本',
+  'Record admin logs': '记录管理日志',
+  'Admin access logging enabled': '已开启管理页访问日志',
+  'Admin access logging disabled': '已关闭管理页访问日志',
   'Request headers (mimicking the Cline CLI)': '请求头（模拟 Cline CLI）',
   'Header': '请求头',
   'Value': '值',
@@ -938,6 +1321,9 @@ const I18N_ZH = {
   'Danger zone': '危险区',
   'Delete all accounts': '删除全部账号',
   'Delete all keys': '删除全部 key',
+  'Delete all data': '删除全部数据',
+  'Deletes all persisted data, including but not limited to accounts and configuration. This cannot be undone; proceed with caution!': '删除全部持久化数据，包含但不限于账号和配置等，操作不可撤销，请谨慎操作！',
+  'Delete ALL persisted data? This will clear Cline accounts and client keys, OpenCode keys, WorkBuddy accounts, the proxy pool, default model, request headers, scheduling strategy, custom aliases, sticky sessions, and request logs. This cannot be undone!': '确定删除全部持久化数据？将清空 Cline 账号与客户端 key、OpenCode key、WorkBuddy 账号、代理池、默认模型、请求头、调度策略、自定义别名、粘性会话和请求日志，且不可撤销！',
   'no charge': '免费',
   // 请求日志页
   'last 500 entries, persisted to data/requests.jsonl': '最近 500 条，持久化到 data/requests.jsonl',
@@ -952,7 +1338,6 @@ const I18N_ZH = {
   'Model': '模型',
   'Route': '路由',
   'Upstream': '账号/Key',
-  'Proxy': '代理类型',
   'Main': '主',
   'Backup': '辅',
   'Direct': '直连',
@@ -970,7 +1355,7 @@ const I18N_ZH = {
   ') and must not collide with real model IDs; the target must belong to the same platform — cross-platform targets are not allowed.': '）且不得与真实模型 ID 冲突；目标必须属于同一平台 —— 不允许跨平台。',
   'Alias ID': '别名 ID',
   'Platform': '平台',
-  'Target model (same platform only)': '目标模型（仅限同平台）',
+  'All platforms': '全部平台',
   'Existing custom aliases': '现有自定义别名',
   'Target model': '目标模型',
   'No combos yet — create one with the form above.': '还没有自定义别名 —— 用上方表单创建一个。',
@@ -983,7 +1368,6 @@ const I18N_ZH = {
   'Enable OpenCode upstream': '启用 OpenCode 上游',
   'On': '开',
   'Off': '关',
-  'API keys (one per line, round-robin rotation, auto-cooldown on 429)': 'API key（每行一个，round-robin 轮转，429 自动冷却）',
   'Probe model (used by the Test buttons):': '探测模型（Test 按钮使用）：',
   'auto — big-pickle first, then live models': '自动 —— big-pickle 优先，其次 live 模型',
   'Key': 'Key',
@@ -1004,11 +1388,6 @@ const I18N_ZH = {
   'Rate-limit defense': '限流防御',
   'Max concurrency': '最大并发',
   'Rate-limit retries': '限流重试次数',
-  'Failover': '故障转移',
-  'On (switch to cline pool)': '开（转移到 cline 池）',
-  'Failure threshold': '失败阈值',
-  'Failover window (min)': '故障转移窗口（分钟）',
-  'Current status': '当前状态',
   'Save rate-limit config': '保存限流配置',
   'Context compaction (OpenCode official mechanism)': '上下文压缩（OpenCode 官方机制）',
   'Auto-compaction': '自动压缩',
@@ -1019,17 +1398,24 @@ const I18N_ZH = {
   'Summary cap': '摘要上限',
   'Save compaction config': '保存压缩配置',
   'Live session IDs (OpenCode FreeTier gate)': 'Live 会话 ID（OpenCode FreeTier 门槛）',
-  'The free tier only accepts session IDs the upstream has actually seen, minted by the opencode CLI. A key without a live session': '免费层只接受上游真实见过的会话 ID（由 opencode CLI 铸造）。没有 live 会话的 key ',
+  'The free tier only accepts session IDs the upstream has actually seen, minted by the opencode CLI. A key without a live session': '免费层只接受上游真实见过的会话 ID（由 OpenCode CLI 铸造）。没有 live 会话的 key ',
   'always': '必定',
+  'The free tier only accepts session IDs the upstream has actually seen, minted by the opencode CLI. A key without a live session <b>always</b> fails with 403.': '免费层只接受上游真实见过的会话 ID（由 OpenCode CLI 铸造）。没有 live 会话的 key <b>必定</b> 403 失败。',
+  'Auto-refresh every {h}h (kept below the 5h quota window), minting {n} key(s) at a time': '每 {h} 小时自动刷新一次（保持在 5 小时配额窗口内），每次并行铸造 {n} 个 key',
+  ' (one after another — safest on small instances, the CLI is CPU/RAM hungry)': '（串行铸造——小实例上最稳妥，CLI 很吃 CPU/内存）',
+  'Harvester unavailable': '收割机不可用',
+  ' — no opencode CLI in this container (ZEN_HARVEST_BIN).': '：容器内没有 opencode CLI（ZEN_HARVEST_BIN）。',
+  '.': '。',
   'fails with 403 — normally the harvester mints one on startup, on repeated 403s, and every few hours; use the buttons below to mint immediately (e.g. right after a fresh deploy with many keys).': ' 会以 403 失败 —— 正常情况下收割机会在启动时、反复 403 时和每隔几小时自动补铸；也可用下方按钮立即铸造（例如刚部署、key 很多时）。',
   'Mint missing sessions': '铸造缺失的会话',
   'Force mint / refresh all': '强制重铸全部',
-  'opencode CLI not available in this container': '本容器内没有 opencode CLI',
+  'opencode CLI not available in this container': '本容器内没有 OpenCode CLI',
   'Last minted': '上次铸造',
   'OpenCode model list': 'OpenCode 模型列表',
   'Sync now': '立即同步',
   'Model ID': '模型 ID',
   'Context': '上下文',
+  'Maximum context length': '最大上下文长度',
   'Output': '输出',
   'Tools': '工具',
   'Reason': '推理',
@@ -1047,8 +1433,6 @@ const I18N_ZH = {
   'Total': '累计',
   'Per-model breakdown (today)': '按模型拆分（今日）',
   'No data': '暂无数据',
-  'Failover active (opencode unavailable, requests go to the cline pool)': '故障转移生效中（opencode 不可用，请求转到 cline 池）',
-  'Normal': '正常',
   // 模型状态标签
   'available': '可用',
   'empty response': '空响应',
@@ -1067,11 +1451,12 @@ const I18N_ZH = {
   'direct (pool list is empty)': '直连（代理列表为空）',
   'upstream disabled': '上游已禁用',
   'Proxy pool saved': '代理池已保存',
-  'Cline proxy setting saved': 'Cline 代理设置已保存',
-  'Proxy isolation setting saved': '代理隔离设置已保存',
-  'Proxy binding saved': '代理绑定已保存',
+  'Global policy saved': '全局策略已保存',
+  'WorkBuddy accounts without proxy bindings follow this switch.': 'WorkBuddy 未绑定代理的账号遵循此开关。',
+  'Proxy isolation settings saved': '代理隔离设置已保存',
+  'Pool': '启用',
+  'Participates in rotation': '参与轮换',
   'Save failed: ': '保存失败：',
-  'Key proxy binding saved': 'Key 代理绑定已保存',
   'Test failed: ': '测试失败：',
   'Check failed: ': '检查失败：',
   'Delete failed: ': '删除失败：',
@@ -1088,7 +1473,7 @@ const I18N_ZH = {
   'Failed to load: ': '加载失败：',
   'Account deleted': '账号已删除',
   'All accounts deleted': '已删除全部账号',
-  'All tokens refreshed': '全部 token 已刷新',
+  'All persisted data deleted': '已删除全部持久化数据',
   'All keys deleted': '已删除全部 key',
   'Key deleted': 'key 已删除',
   'Key generated': 'key 已生成',
@@ -1096,7 +1481,6 @@ const I18N_ZH = {
   'Copied to clipboard': '已复制到剪贴板',
   'Accounts exported (JSON)': '账号已导出（JSON）',
   'Account added: ': '账号已添加：',
-  'Account added!': '账号添加成功！',
   'Account ': '账号 ',
   ' — ': ' —— ',
   '(was: ': '（原状态：',
@@ -1115,10 +1499,6 @@ const I18N_ZH = {
   'Rows with a value but no key were ignored': '有值但没有键名的行已被忽略',
   'Headers saved': '请求头已保存',
   'Enter a token or API key': '请输入 token 或 API key',
-  'Enter account data': '请输入账号数据',
-  'Import complete': '导入完成',
-  'Imported ': '已导入 ',
-  ' accounts': ' 个账号',
   'Enter an alias ID': '请输入别名 ID',
   'Select a target model': '请选择目标模型',
   'Combo created: ': '自定义别名已创建：',
@@ -1130,13 +1510,7 @@ const I18N_ZH = {
   'Delete this key?': '确定删除该 key？',
   'Delete ALL API keys?': '确定删除全部 API key？',
   'Connected via ': '经出口 ', // (placeholder, unused fragment guard)
-  'OAuth failed': 'OAuth 登录失败',
   'OAuth failed: ': 'OAuth 登录失败：',
-  'OAuth polling stopped': 'OAuth 轮询已停止',
-  'Failed: ': '失败：',
-  'Polling failed: ': '轮询失败：',
-  'Error: ': '错误：',
-  'Starting...': '启动中...',
   'Testing': '测试中',
   'Checking': '检查中',
   'Force minting all sessions…': '正在强制重铸全部会话…',
@@ -1154,8 +1528,6 @@ const I18N_ZH = {
   'Recovers ': '恢复于 ',
   'No opencode keys configured': '没有配置任何 opencode key',
   'Failed to load': '加载失败',
-  'Connecting to WorkOS...': '正在连接 WorkOS...',
-  'Open the link in your browser and enter the code': '在浏览器中打开链接并输入代码',
   'Default model saved: ': '默认模型已保存：',
   'Invalid proxy format: ': '代理格式无效：',
   'No models': '没有模型',
@@ -1189,7 +1561,9 @@ function i18nAttrs(el) {
     const v = el.getAttribute(a);
     if (!v) return;
     const t = I18N_ZH[v.trim()];
-    if (t) el.setAttribute(a, t);
+    // Same-value setAttribute still emits an attribute mutation and can loop
+    // forever when a translated placeholder/title maps to itself.
+    if (t && t !== v) el.setAttribute(a, t);
   });
 }
 function i18nSubtree(root) {
@@ -1223,7 +1597,6 @@ if (LANG === 'zh') document.documentElement.lang = 'zh-CN';
 
 if (window.location.host) {
   _('footerApiAddr').textContent = 'http://' + window.location.host;
-  _('quickstartApi').textContent = 'http://' + window.location.host + '/v1';
 }
 
 function toast(msg, t, duration) {
@@ -1231,27 +1604,50 @@ function toast(msg, t, duration) {
   el.textContent = msg;
   el.style.whiteSpace = 'pre-line';
   el.className = 'toast ' + (t || 'info') + ' show';
+  clearTimeout(el._hideTimer);
+  try {
+    if (el.matches(':popover-open')) el.hidePopover();
+    el.showPopover();
+  } catch (e) { /* older browsers fall back to z-index stacking */ }
   clearTimeout(el._timer);
-  el._timer = setTimeout(() => el.classList.remove('show'), duration || 3500);
+  el._timer = setTimeout(() => {
+    el.classList.remove('show');
+    el._hideTimer = setTimeout(() => {
+      try { if (el.matches(':popover-open')) el.hidePopover(); } catch (e) { /* ignore */ }
+    }, 260);
+  }, duration || 3500);
+}
+function showWorkbuddyDialog(dialog) {
+  if (dialog && !dialog.open) dialog.showModal();
+  // 重新打开通知可把它重新推到 top layer 顶部，避免先弹通知、后开弹窗时被遮住。
+  const el = _('toast');
+  try {
+    if (el && el.matches(':popover-open')) {
+      el.hidePopover();
+      el.showPopover();
+    }
+  } catch (e) { /* ignore */ }
 }
 
 // ========== Navigation ==========
+function ensureWorkbuddyConsole() {
+  loadWorkbuddyAccounts();
+  loadWorkbuddyConfig();
+}
 document.querySelectorAll('.nav-item').forEach(el => {
   el.addEventListener('click', () => {
     if (el.classList.contains('active')) return;
-    document.querySelectorAll('.nav-item').forEach(e => e.classList.remove('active'));
-    el.classList.add('active');
-    document.querySelectorAll('.tab-panel').forEach(e => e.style.display = 'none');
-    _('tab-' + el.dataset.tab).style.display = 'block';
-    if (el.dataset.tab === 'dashboard') { loadStats(); loadAccounts(); }
-    if (el.dataset.tab === 'accounts') loadAccounts();
-    if (el.dataset.tab === 'settings') { loadKeys(); loadModels(); loadConfig(); }
-    if (el.dataset.tab === 'logs') loadLogs();
-    if (el.dataset.tab === 'proxypool') loadProxyPool();
-    if (el.dataset.tab === 'opencode') { loadOcConfig(); loadOcModels(); loadOcStats(); loadOcSessions(); }
-    if (el.dataset.tab === 'combos') { loadCombos(); fillComboModels(); }
+    switchTab(el.dataset.tab);
   });
 });
+// restoreTab 刷新/重开后恢复上次浏览的页：switchTab 把当前页写进 location.hash，
+// 这里只在 hash 命中真实存在的 tab 时才恢复（tab-* 元素存在性即白名单）。
+// 注意只能声明不能立即调用：switchTab 会触达各平台的 const（如 WB_API_PREFIX），
+// 在脚本中段执行会撞 TDZ（"Cannot access before initialization"），调用点在末尾 Init 区。
+function restoreTab() {
+  const h = (location.hash || '').replace(/^#/, '');
+  if (h && _('tab-' + h)) switchTab(h);
+}
 
 function switchTab(name) {
   document.querySelectorAll('.nav-item').forEach(e => {
@@ -1261,22 +1657,669 @@ function switchTab(name) {
   _('tab-' + name).style.display = 'block';
   if (name === 'dashboard') { loadStats(); loadAccounts(); }
   if (name === 'accounts') loadAccounts();
-  if (name === 'settings') { loadKeys(); loadModels(); }
+  if (name === 'settings') { loadKeys(); loadModels(); loadConfig(); }
   if (name === 'logs') loadLogs();
   if (name === 'proxypool') loadProxyPool();
   if (name === 'opencode') { loadOcConfig(); loadOcModels(); loadOcStats(); loadOcSessions(); }
+  if (name === 'workbuddy') ensureWorkbuddyConsole();
   if (name === 'combos') { loadCombos(); fillComboModels(); }
+  // 把当前页写进 hash：刷新/重开浏览器后 restoreTab 恢复到离开时的页
+  try { history.replaceState(null, '', '#' + name); } catch (e) { /* ignore */ }
 }
 
-// Import sub-tabs
-document.querySelectorAll('#importTabs .tab').forEach(el => {
-  el.addEventListener('click', () => {
-    document.querySelectorAll('#importTabs .tab').forEach(e => e.classList.remove('active'));
-    el.classList.add('active');
-    document.querySelectorAll('#import-oauth,#import-token,#import-batch').forEach(e => e.classList.remove('active'));
-    _('import-' + el.dataset.tab).classList.add('active');
+// ========== Integrated WorkBuddy console ==========
+const WB_API_PREFIX = '/admin/workbuddy/api';
+let wbAccounts = [];
+let wbProxyCache = { bindings: {} };
+let wbOAuthTimer = null;
+
+async function wbCall(action, params, body) {
+  const query = new URLSearchParams();
+  Object.entries(params || {}).forEach(([k, v]) => {
+    if (v !== undefined && v !== null && v !== '') query.set(k, String(v));
   });
-});
+  const init = { method: body ? 'POST' : 'GET', headers: { 'Accept': 'application/json' } };
+  if (body) {
+    init.headers['Content-Type'] = 'application/json';
+    init.body = JSON.stringify(body);
+  }
+  const qs = query.toString();
+  const encodedAction = action.split('/').map(encodeURIComponent).join('/');
+  const res = await fetch(WB_API_PREFIX + '/' + encodedAction + (qs ? '?' + qs : ''), init);
+  if (res.status === 401) {
+    location.reload();
+    throw new Error('Admin session expired');
+  }
+  let data = {};
+  try { data = await res.json(); } catch (e) { /* preserve HTTP error below */ }
+  if (!res.ok) throw new Error(data.error || data.message || ('HTTP ' + res.status));
+  if (data.ok === false || data.success === false) throw new Error(data.error || data.message || ('HTTP ' + res.status));
+  if (data.error && !data.config && !data.accounts) throw new Error(data.error);
+  return data.data !== undefined ? data.data : data;
+}
+
+function wbDig(obj, path) {
+  return String(path || '').split('.').reduce((v, k) => (v == null ? undefined : v[k]), obj);
+}
+function wbPut(obj, path, value) {
+  const keys = String(path || '').split('.').filter(Boolean);
+  if (!keys.length) return;
+  let cur = obj;
+  keys.slice(0, -1).forEach(k => {
+    if (!cur[k] || typeof cur[k] !== 'object') cur[k] = {};
+    cur = cur[k];
+  });
+  cur[keys[keys.length - 1]] = value;
+}
+function wbRowId(account) {
+  const value = account && (account.uid ?? account.account_id ?? account.id);
+  return value === undefined || value === null ? '' : String(value);
+}
+function wbStatusInfo(account) {
+  const status = String(account.status || (account.disabled ? 'disabled' : (account.cooling ? 'cooling' : 'active'))).toLowerCase();
+  if (status === 'ready' || status === 'authenticated' || status === 'active' || status === 'enabled') {
+    return { cls: 'active', label: status === 'authenticated' ? 'Authenticated' : (status === 'active' ? 'Active' : 'Ready') };
+  }
+  if (status === 'cooling' || status === 'cooldown' || status === 'suspended') {
+    return { cls: 'cooldown', label: status === 'suspended' ? 'Suspended' : 'Cooling' };
+  }
+  if (status === 'disabled' || status === 'deleted' || status === 'error' || status === 'failed') {
+    return { cls: 'expired', label: status === 'deleted' ? 'Deleted' : (status === 'disabled' ? 'Disabled' : 'Error') };
+  }
+  return { cls: 'expired', label: status === 'unknown' ? 'Unknown' : status };
+}
+function wbFmtTime(value) {
+  if (!value || String(value).startsWith('0001-')) return '—';
+  const date = new Date(value);
+  return isNaN(date.getTime()) ? String(value) : date.toLocaleString('en-US');
+}
+function wbFmtTokens(value) {
+  const n = Number(value || 0);
+  if (n >= 1000000) return (n / 1000000).toFixed(2).replace(/\.?0+$/, '') + 'M';
+  if (n >= 1000) return (n / 1000).toFixed(1).replace(/\.0$/, '') + 'K';
+  return String(n);
+}
+function wbBindingCell(account) {
+  const id = wbRowId(account);
+  const binding = (wbProxyCache.bindings || {})[id] || {};
+  const main = String(binding.main ?? binding.main_proxy_id ?? '');
+  const backup = String(binding.backup ?? binding.backup_proxy_id ?? '');
+  // 辅代理开关关闭 → 辅槽只读跟随主槽（同主=全局/直连 时的联动）
+  const backupLocked = !backupProxyOn || main === '' || main === EGRESS_DIRECT;
+  const backupVal = backupLocked ? main : backup;
+  const stale = v => v && v !== EGRESS_DIRECT && !proxyListCache.includes(v);
+  const staleMark = (stale(main) || stale(backup))
+    ? ' <span title="绑定的出口已不在代理池中，该账号会被隔离逻辑跳过" style="color:var(--danger)">⚠</span>'
+    : '';
+  return '<td style="white-space:nowrap">' +
+    egComboHTML('wb', id, 'main', main, '主出口：可用时固定从该出口发出') + ' ' +
+    egComboHTML('wb', id, 'backup', backupVal, '备用出口：主出口冷却或不可用时兜底', backupLocked) +
+    staleMark +
+    '</td>';
+}
+function wbActionButton(action, id, label, extra) {
+  return '<button type="button" class="btn btn-sm ' + (extra || '') + '" data-wb-action="' + esc(action) + '" data-wb-id="' + esc(id) + '" onclick="workbuddyActionFrom(this)">' + esc(label) + '</button>';
+}
+function renderWorkbuddyAccounts() {
+  const tbody = _('wbAccountsBody');
+  if (!tbody) return;
+  if (!wbAccounts.length) {
+    tbody.innerHTML = '<tr><td colspan="9" class="empty">No accounts yet</td></tr>';
+    return;
+  }
+  wbSnapshot = {};
+  tbody.innerHTML = wbAccounts.map(account => {
+    const id = wbRowId(account);
+    const status = wbStatusInfo(account);
+    const realm = String(account.realm || 'cn');
+    const usage = account.token_usage || {};
+    const runs = usage.request_count ?? 0;
+    const errors = account.err_total ?? 0;
+    const success = account.success_count ?? 0;
+    const tokens = usage.total_tokens ?? 0;
+    const credits = account.credits ?? account.remaining_credits ?? '—';
+    const creditsTotal = account.credits_total ?? account.total_credits;
+    const last = account.last_success;
+    const reason = account.disabled_reason || account.reason || '';
+    const statusHtml = '<span class="status ' + status.cls + '"><span class="status-dot ' + status.cls + '"></span>' + esc(status.label) + '</span>' +
+      (reason ? '<div class="hint" style="font-size:11px;margin-top:3px">' + esc(reason) + '</div>' : '');
+    const usageHtml = '<div class="wb-usage">' + esc(wbFmtTokens(tokens)) + ' tok</div>' +
+      '<div class="hint" style="font-size:11px;margin-top:2px">' + esc(runs) + ' requests</div>';
+    // Pool（启用）列：勾选 = 进入账号池参与选号；未设置（pool_enabled 缺失）
+    // 按启用渲染。勾选改动先暂存，由"保存"按钮统一提交。
+    const poolEnabled = account.pool_enabled !== false;
+    wbSnapshot[id] = { enabled: poolEnabled };
+    const poolCell = '<td style="text-align:center"><input type="checkbox" data-wb-pool="' + esc(id) + '"' +
+      (poolEnabled ? ' checked' : '') + ' title="' + esc(T('Participates in rotation')) + '" aria-label="' + esc(T('Participates in rotation')) + '"></td>';
+    // uid 过长会把 Account 列撑宽，昵称下方只留前 10 个字符，完整值走 title 悬浮。
+    const shortId = id.length > 10 ? id.slice(0, 10) + '…' : id;
+    return '<tr data-wb-id="' + esc(id) + '">' +
+      '<td><div class="wb-account"><div class="wb-account-main">' +
+        '<div class="wb-account-name">' + esc(account.name || account.email || account.nickname || ('Account ' + id)) + '</div>' +
+        '<div class="wb-account-id" title="' + esc(realm + ' · ' + id) + '">' + esc(realm) + ' · ' + esc(shortId) + '</div>' +
+      '</div></div></td>' +
+      '<td>' + statusHtml + '</td>' +
+      '<td>' + esc(credits) + (creditsTotal ? '<span style="color:var(--text3)"> / ' + esc(creditsTotal) + '</span>' : '') + '</td>' +
+      '<td>' + usageHtml + '</td>' +
+      '<td class="wb-usage">' + esc(success) + ' / ' + esc(errors) + '</td>' +
+      '<td style="font-size:11px;color:var(--text3)">' + esc(wbFmtTime(last)) + '</td>' +
+      wbBindingCell(account) +
+      '<td><div class="wb-action-group">' +
+        wbActionButton('refresh', id, 'Refresh') +
+        wbActionButton('checkin', id, 'Check-in') +
+        wbActionButton('details', id, 'Points') +
+        wbActionButton('delete', id, 'Delete', 'btn-danger') +
+      '</div></td>' +
+      poolCell +
+      '</tr>';
+  }).join('');
+  tbody.onchange = e => {
+    const c = e.target.closest('input[data-wb-pool]');
+    if (c) markRowDirty(c.closest('tr'), 'wb');
+  };
+}
+async function loadWorkbuddyProxyState() {
+  try {
+    const state = await workbuddyProxyAdminCall('GET', 'proxy');
+    wbProxyCache = { bindings: state.bindings || {} };
+  } catch (e) { /* account list still renders without the optional proxy list */ }
+  return wbProxyCache;
+}
+function updateWorkbuddySummary() {
+  const summary = _('wbSummary');
+  if (!summary) return;
+  const active = wbAccounts.filter(a => wbStatusInfo(a).cls === 'active').length;
+  const cooling = wbAccounts.filter(a => wbStatusInfo(a).cls === 'cooldown').length;
+  summary.textContent = wbAccounts.length + ' ' + T('accounts') + ' · ' + active + ' ' + T('active') + ' · ' + cooling + ' ' + T('cooling');
+}
+async function loadWorkbuddyAccounts() {
+  const tbody = _('wbAccountsBody');
+  if (tbody) tbody.innerHTML = '<tr><td colspan="9" class="empty">Loading...</td></tr>';
+  try {
+    await loadProxyListCache();
+    const [overview] = await Promise.all([wbCall('overview'), loadWorkbuddyProxyState()]);
+    wbAccounts = overview.accounts || [];
+    renderWorkbuddyAccounts();
+    updateWorkbuddySummary();
+  } catch (e) {
+    // WorkBuddy 子系统启动失败被禁用时 overview 路由不存在（404）：
+    // 与"暂无账号"同态展示，不把装配失败透传成硬错误。
+    if (String(e && e.message || '').indexOf('404') >= 0) {
+      wbAccounts = [];
+      renderWorkbuddyAccounts();
+    } else if (tbody) {
+      tbody.innerHTML = '<tr><td colspan="8" class="empty">' + esc('Failed to load WorkBuddy accounts: ' + e.message) + '</td></tr>';
+    }
+    updateWorkbuddySummary();
+  }
+}
+function workbuddyBindingId(value) {
+  return String(value ?? '').trim();
+}
+async function workbuddyProxyAdminCall(method, path, body) {
+  const response = await api(method, '/workbuddy/' + path, body);
+  return response.data !== undefined ? response.data : response;
+}
+// wbSnapshot 记录各账号已保存的启用状态（代理绑定在 wbProxyCache 里），
+// "保存"按钮据此 diff 出真正需要提交的账号。
+let wbSnapshot = {};
+async function saveWorkbuddyEdits() {
+  const rows = [...document.querySelectorAll('#wbAccountsBody tr')].filter(r => r.querySelector('.eg-input'));
+  let changed = 0, failed = 0;
+  for (const row of rows) {
+    const mainInput = row.querySelector('.eg-input[data-eg="wb"][data-slot="main"]');
+    if (!mainInput) continue;
+    const uid = mainInput.dataset.egid;
+    const main = mainInput.dataset.value || '';
+    const backup = row.querySelector('.eg-input[data-eg="wb"][data-slot="backup"]').dataset.value || '';
+    const cb = row.querySelector('input[data-wb-pool]');
+    const binding = (wbProxyCache.bindings || {})[uid] || {};
+    const snapMain = String(binding.main ?? binding.main_proxy_id ?? '');
+    const snapBackup = String(binding.backup ?? binding.backup_proxy_id ?? '');
+    const snapEnabled = wbSnapshot[uid] ? wbSnapshot[uid].enabled : true;
+    try {
+      if (main !== snapMain || backup !== snapBackup) {
+        await workbuddyProxyAdminCall('POST', 'proxy/set', { uid: uid, main: main, backup: backup });
+      }
+      if (cb && cb.checked !== snapEnabled) {
+        await api('POST', '/workbuddy/enabled', { uid: uid, enabled: cb.checked });
+      }
+      if (main !== snapMain || backup !== snapBackup || (cb && cb.checked !== snapEnabled)) changed++;
+      row.classList.remove('tr-dirty');
+    } catch (e) { failed++; }
+  }
+  clearDirtyMarks('wbAccountsBody', 'wbSaveBtn');
+  if (failed) toast('保存失败 ' + failed + ' 个账号', 'error');
+  else if (!changed) toast('没有需要保存的修改', 'info');
+  else toast('已保存 ' + changed + ' 个账号的修改', 'success');
+  await loadWorkbuddyAccounts();
+}
+function stageAllWbPool(enabled) {
+  document.querySelectorAll('#wbAccountsBody input[data-wb-pool]').forEach(cb => {
+    const snap = wbSnapshot[cb.dataset.wbPool];
+    if (snap && snap.enabled === enabled) return;
+    cb.checked = enabled;
+    markRowDirty(cb.closest('tr'), 'wb');
+  });
+}
+function stageClearWorkbuddyProxyBindings() {
+  if (!confirm('清空全部账号的代理绑定并置为禁用？点击"保存"后生效。')) return;
+  document.querySelectorAll('#wbAccountsBody tr').forEach(row => {
+    const main = row.querySelector('.eg-input[data-eg="wb"][data-slot="main"]');
+    if (!main) return;
+    let dirty = stageRowBindingClear(row, 'wb');
+    const cb = row.querySelector('input[data-wb-pool]');
+    if (cb && cb.checked) { cb.checked = false; dirty = true; }
+    if (dirty) markRowDirty(row, 'wb');
+  });
+}
+// 复位：丢弃账号表的全部暂存修改，按上次保存的状态重绘
+function resetWorkbuddyEdits() {
+  clearDirtyMarks('wbAccountsBody', 'wbSaveBtn');
+  loadWorkbuddyAccounts();
+}
+async function runWorkbuddyBatch(action) {
+  const bodies = {
+    checkin_all: {},
+    travel_all: { accept_and_complete: true, force_complete: true, chain_cycles: 1 },
+    activity_all: {},
+    keepalive_all: {},
+    balance_all: {}
+  };
+  try {
+    const result = await wbCall(action, {}, bodies[action] || {});
+    toast(result.message || (action + ' started'), 'success');
+    await loadWorkbuddyAccounts();
+  } catch (e) { toast(action + ' failed: ' + e.message, 'error'); }
+}
+async function workbuddyActionFrom(button) {
+  const action = button.dataset.wbAction;
+  const id = workbuddyBindingId(button.dataset.wbId);
+  if (action === 'details') { openWorkbuddyDetails(id, button.dataset.wbId); return; }
+  if (action === 'delete' && !confirm('Delete this WorkBuddy account and its credentials?')) return;
+  const accountPath = 'accounts/' + encodeURIComponent(id);
+  const actions = {
+    refresh: accountPath + '/balance',
+    checkin: accountPath + '/checkin',
+    delete: accountPath + '/remove'
+  };
+  if (!actions[action]) return;
+  button.disabled = true;
+  try {
+    const result = await wbCall(actions[action], {}, {});
+    toast(result.message || (action + ' completed'), 'success');
+    await Promise.all([loadWorkbuddyAccounts(), loadWorkbuddyConfig()]);
+  } catch (e) { toast(action + ' failed: ' + e.message, 'error'); }
+  finally { button.disabled = false; }
+}
+async function refreshWorkbuddyAccounts() {
+  try {
+    const result = await wbCall('balance_all', {}, {});
+    toast(result.message || 'Balances refreshed', 'success');
+    await loadWorkbuddyAccounts();
+  } catch (e) { toast('Refresh failed: ' + e.message, 'error'); }
+}
+
+const WB_PK_COLORS = ['#4f8cff', '#25b08b', '#e8a33d', '#c96bd6', '#e2607a',
+                      '#5aa9e6', '#8fbf3f', '#b58b5a', '#7d8fa8', '#d4785c'];
+function wbPackageSources(packs) {
+  const out = new Map();
+  (packs || []).forEach(p => {
+    const key = String(p.package_code || '') + '|' + String(p.name || '(未命名)');
+    const item = out.get(key) || {
+      key: key, name: p.name || '(未命名)', count: 0, remain: 0, size: 0, used: 0,
+      minCreated: '', minEnd: ''
+    };
+    item.count += 1;
+    item.remain += Number(p.remain || 0);
+    item.size += Number(p.size || 0);
+    item.used += Number(p.used || 0);
+    const created = String(p.created_at || '').slice(0, 10);
+    if (created && (!item.minCreated || created < item.minCreated)) item.minCreated = created;
+    const end = String(p.end_time || '').slice(0, 10);
+    if (end && (!item.minEnd || end < item.minEnd)) item.minEnd = end;
+    out.set(key, item);
+  });
+  return Array.from(out.values()).sort((a, b) => b.size - a.size);
+}
+function wbPackageLabel(name) {
+  return String(name || '').replace(/^CodeBuddy/, '');
+}
+let wbDetailsAccountId = null;
+function openWorkbuddyDetails(id, label) {
+  wbDetailsAccountId = workbuddyBindingId(id);
+  _('wbDetailsWho').textContent = label || id;
+  _('wbDetailsStatus').textContent = '正在向上游查询积分构成...';
+  _('wbDetailsBody').innerHTML = '';
+  showWorkbuddyDialog(_('wbDetailsDialog'));
+  loadWorkbuddyDetails();
+}
+function closeWorkbuddyDetails() {
+  wbDetailsAccountId = null;
+  const dialog = _('wbDetailsDialog');
+  if (dialog && dialog.open) dialog.close();
+}
+async function loadWorkbuddyDetails() {
+  if (wbDetailsAccountId == null) return;
+  try {
+    const data = await wbCall('packages');
+    const account = (data.accounts || []).find(a => String(a.uid) === String(wbDetailsAccountId));
+    if (!account) throw new Error('未找到该账号的积分数据');
+    renderWorkbuddyDetails(account);
+    _('wbDetailsStatus').textContent = '实时查询上游 · ' + (account.packages || []).length + ' 个积分包';
+  } catch (e) {
+    _('wbDetailsStatus').textContent = '读取失败：' + e.message;
+    _('wbDetailsBody').innerHTML = '';
+  }
+}
+function renderWorkbuddyDetails(a) {
+  const body = _('wbDetailsBody');
+  if (a.error) {
+    body.innerHTML = '<div class="empty">查询失败：' + esc(a.error) + '</div>';
+    return;
+  }
+  const packs = a.packages || [];
+  const sources = wbPackageSources(packs);
+  const total = Math.max(1, Number(a.size || 0));
+  const colorOf = key => WB_PK_COLORS[Math.max(0, sources.findIndex(s => s.key === key)) % WB_PK_COLORS.length];
+  const mix = sources.map(s =>
+    '<i style="width:' + (s.size / total * 100).toFixed(2) + '%;background:' + colorOf(s.key) + '" title="' +
+    esc(wbPackageLabel(s.name)) + ' ' + esc(wbFmtTokens(s.size)) + '"></i>').join('');
+  const legend = sources.map(s =>
+    '<span><i style="background:' + colorOf(s.key) + '"></i>' + esc(wbPackageLabel(s.name)) +
+    ' x' + s.count + ' · ' + esc(wbFmtTokens(s.size)) +
+    (s.minCreated ? ' · 首发 ' + esc(s.minCreated.slice(5)) : '') + '</span>').join('');
+  const rows = packs.map(p => {
+    const key = String(p.package_code || '') + '|' + String(p.name || '(未命名)');
+    const sub = String(p.sub_product_code || '').replace(/^sp_tcaca_codebuddyide_?/, '') ||
+      String(p.package_code || '').replace(/^TCACA_/, '');
+    return '<tr><td><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:' +
+      colorOf(key) + '"></span></td>' +
+      '<td>' + esc(p.name || '(未命名)') + (sub ? '<div class="hint" style="font-size:11px">' + esc(sub) + '</div>' : '') + '</td>' +
+      '<td class="text-right">' + esc(wbFmtTokens(p.size)) + '</td>' +
+      '<td class="text-right">' + esc(wbFmtTokens(p.remain)) + '</td>' +
+      '<td class="text-right">' + esc(wbFmtTokens(p.used)) + '</td>' +
+      '<td class="text-right">' + esc(String(p.created_at || '').slice(0, 16).replace('T', ' ') || '—') + '</td>' +
+      '<td class="text-right">' + esc(String(p.end_time || '').slice(0, 10) || '—') + '</td></tr>';
+  }).join('');
+  body.innerHTML =
+    '<div class="wb-pk-card"><div class="wb-pk-head"><div><div class="wb-pk-name">' +
+      esc(a.nickname || a.uid) + '</div><div class="wb-pk-sub">' + esc(a.realm || '') + ' · ' + esc(a.uid) + '</div></div>' +
+      '<div class="wb-pk-sub">共 ' + esc(wbFmtTokens(a.size)) + ' · ' + packs.length + ' 个包</div></div>' +
+      '<div class="wb-pk-big">' + esc(wbFmtTokens(a.remain)) + '</div>' +
+      '<div class="wb-pk-sub">剩余积分 · 已用 ' + esc(wbFmtTokens(Math.max(0, Number(a.size || 0) - Number(a.remain || 0)))) + '</div>' +
+      '<div class="wb-pk-mix">' + mix + '</div><div class="wb-pk-legend">' + legend + '</div></div>' +
+    '<div class="table-wrap"><table><thead><tr><th></th><th>包名 / 来源</th><th class="text-right">面额</th>' +
+      '<th class="text-right">剩余</th><th class="text-right">已用</th><th class="text-right">发放</th>' +
+      '<th class="text-right">到期</th></tr></thead><tbody>' +
+      (rows || '<tr><td colspan="7" class="empty">没有积分包</td></tr>') + '</tbody></table></div>';
+}
+
+let wbTodoTimer = null;
+let wbTodoSeq = 0;
+function wbTodoConcurrency() {
+  const value = Number(_('wbTodoConcurrency') && _('wbTodoConcurrency').value);
+  return Math.min(3, Math.max(1, Number.isFinite(value) ? value : 1));
+}
+function openWorkbuddyTodoScan() {
+  wbTodoSeq = 0;
+  _('wbTodoStatus').textContent = '选择并发数后点击“扫描任务”';
+  _('wbTodoBody').innerHTML = '';
+  showWorkbuddyDialog(_('wbTodoDialog'));
+}
+function closeWorkbuddyTodoScan() {
+  if (wbTodoTimer) { clearTimeout(wbTodoTimer); wbTodoTimer = null; }
+  wbTodoSeq = 0;
+  const dialog = _('wbTodoDialog');
+  if (dialog && dialog.open) dialog.close();
+}
+function renderWorkbuddyTodoAccounts(data) {
+  const accounts = data.accounts || [];
+  const groups = accounts.filter(a => (a.growth || []).length || a.growth_error);
+  if (!groups.length) {
+    _('wbTodoBody').innerHTML = '<div class="empty">全部账号没有待办任务</div>';
+    return;
+  }
+  _('wbTodoBody').innerHTML = groups.map(a => {
+    const rows = (a.growth || []).map(t => {
+      const progress = t.target ? (t.current || 0) + ' / ' + t.target : '—';
+      const title = t.title || t.task_code || '';
+      const desc = [t.task_desc, t.description].filter(Boolean).join('\n');
+      const reward = [
+        Number(t.credit || 0) > 0 ? '积分 ' + t.credit : '',
+        Number(t.energy || 0) > 0 ? '能量 ' + t.energy : ''
+      ].filter(Boolean).join(' · ');
+      const tip = [
+        '任务：' + title,
+        '说明：' + (desc || '—'),
+        '进度：' + progress,
+        '奖励：' + (reward || '—')
+      ].join('\n');
+      return '<div class="wb-todo-row" title="' + esc(tip) + '"><div class="nm"><div>' + esc(title) +
+        '</div><div class="id">' + esc(t.task_code || '') + '</div></div><span class="model-tag">待执行</span>' +
+        '<span class="wb-usage">' + esc(progress) + '</span></div>';
+    }).join('');
+    const err = a.growth_error ? '<div class="hint" style="color:var(--danger)">扫描失败：' + esc(a.growth_error) + '</div>' : '';
+    return '<details class="wb-todo-group"><summary class="wb-todo-title">' + esc(a.nickname || a.uid) +
+      ' <span class="auto-pill">' + esc(a.uid || '') + ' · ' + (a.growth || []).length + ' 项</span></summary>' + rows + err + '</details>';
+  }).join('');
+}
+async function scanWorkbuddyTodos() {
+  const concurrency = wbTodoConcurrency();
+  const button = _('wbTodoRunAll');
+  const scanButton = _('wbTodoScan');
+  if (button) button.disabled = true;
+  if (scanButton) scanButton.disabled = true;
+  _('wbTodoStatus').textContent = '正在按并发 ' + concurrency + ' 扫描任务...';
+  _('wbTodoBody').innerHTML = '<div class="empty">扫描中...</div>';
+  try {
+    const data = await wbCall('tasks/scan_all', {}, { concurrency: concurrency });
+    renderWorkbuddyTodoAccounts(data);
+    _('wbTodoStatus').textContent = '扫描完成：' + (data.pending_count || 0) + ' 项待办';
+  } catch (e) {
+    _('wbTodoStatus').textContent = '扫描失败：' + e.message;
+    _('wbTodoBody').innerHTML = '';
+  } finally {
+    if (button) button.disabled = false;
+    if (scanButton) scanButton.disabled = false;
+  }
+}
+function renderWorkbuddyQueue(data) {
+  const items = data.items || [];
+  if (!items.length) return;
+  const groups = new Map();
+  items.forEach(it => {
+    const key = String(it.uid || '');
+    if (!groups.has(key)) groups.set(key, { uid: key, nickname: it.nickname || key, items: [] });
+    groups.get(key).items.push(it);
+  });
+  const labels = { pending: '已领取', running: '进行中', done: '完成', skipped: '跳过', error: '失败' };
+  _('wbTodoBody').innerHTML = Array.from(groups.values()).map(g =>
+    '<details class="wb-todo-group"><summary class="wb-todo-title">' + esc(g.nickname) +
+      ' <span class="auto-pill">' + esc(g.uid) + ' · ' + g.items.length + ' 项</span></summary>' +
+      g.items.map(it => {
+        const title = it.title || it.code || '';
+        const tip = [
+          '任务：' + title,
+          '说明：' + (it.desc || '—'),
+          it.progress ? '进度：' + it.progress : '',
+          it.message ? '结果：' + it.message : ''
+        ].filter(Boolean).join('\n');
+        const sub = [it.code, it.progress, it.message].filter(Boolean).join(' · ');
+        return '<div class="wb-todo-row" title="' + esc(tip) + '"><div class="nm"><div>' + esc(title) +
+          '</div><div class="id">' + esc(sub) + '</div></div><span class="model-tag">' +
+          esc(labels[it.status] || it.status || '') + '</span></div>';
+      }).join('') + '</details>').join('');
+}
+async function pollWorkbuddyQueue() {
+  const seq = wbTodoSeq;
+  if (!seq) return;
+  try {
+    const data = await wbCall('tasks/queue');
+    if (seq !== wbTodoSeq) return;
+    renderWorkbuddyQueue(data);
+    const done = (data.items || []).filter(it => ['done', 'skipped', 'error'].includes(it.status)).length;
+    _('wbTodoStatus').textContent = (data.running ? '执行中' : '执行结束') + '：' + done + ' / ' + (data.total || 0);
+    if (data.running) {
+      wbTodoTimer = setTimeout(pollWorkbuddyQueue, 1500);
+    } else {
+      wbTodoTimer = null;
+      await loadWorkbuddyAccounts();
+    }
+  } catch (e) {
+    _('wbTodoStatus').textContent = '读取队列失败：' + e.message;
+  }
+}
+async function runWorkbuddyAllTodos() {
+  const concurrency = wbTodoConcurrency();
+  if (!confirm('按并发 ' + concurrency + ' 执行列表中的全部任务（账号内串行，自动领取任务）。确认继续？')) return;
+  const button = _('wbTodoRunAll');
+  const scanButton = _('wbTodoScan');
+  if (button) button.disabled = true;
+  if (scanButton) scanButton.disabled = true;
+  try {
+    const result = await wbCall('tasks/run_queue', {}, { concurrency: concurrency, growth: true });
+    if (!result.started) {
+      toast(result.message || '没有待办任务', 'info');
+      return;
+    }
+    wbTodoSeq = result.seq || 0;
+    toast('队列已启动：' + result.total + ' 项（并发 ' + concurrency + '）', 'success');
+    _('wbTodoStatus').textContent = '队列已启动，正在执行...';
+    wbTodoTimer = setTimeout(pollWorkbuddyQueue, 800);
+  } catch (e) {
+    toast('执行失败：' + e.message, 'error');
+  } finally {
+    if (button) button.disabled = false;
+    if (scanButton) scanButton.disabled = false;
+  }
+}
+
+function openWorkbuddyAdd() {
+  const dialog = _('wbAddDialog');
+  showWorkbuddyDialog(dialog);
+  _('wbAddStatus').textContent = 'Choose a realm and request an authorization link.';
+  _('wbOAuthUrl').value = '';
+  _('wbStartLogin').disabled = false;
+}
+function closeWorkbuddyAdd() {
+  if (wbOAuthTimer) { clearTimeout(wbOAuthTimer); wbOAuthTimer = null; }
+  const dialog = _('wbAddDialog');
+  if (dialog && dialog.open) dialog.close();
+}
+async function startWorkbuddyOAuth() {
+  const button = _('wbStartLogin');
+  button.disabled = true;
+  button.textContent = 'Requesting...';
+  _('wbAddStatus').textContent = 'Requesting authorization link...';
+  try {
+    const payload = await wbCall('login/start', { realm: _('wbRealm').value }, {});
+    const url = payload.url || '';
+    _('wbOAuthUrl').value = url;
+    _('wbAddStatus').textContent = url ? 'Open the link and complete the browser login.' : 'Authorization session created.';
+    if (url) wbOAuthTimer = setTimeout(() => pollWorkbuddyOAuth(payload.state), 1200);
+  } catch (e) {
+    _('wbAddStatus').textContent = 'OAuth failed: ' + e.message;
+  } finally {
+    button.disabled = false;
+    button.textContent = 'Get authorization link';
+  }
+}
+async function pollWorkbuddyOAuth(oauthId) {
+  if (!oauthId) return;
+  try {
+    const payload = await wbCall('login/poll', { state: oauthId });
+    if (payload.done) {
+      _('wbAddStatus').textContent = 'Account added: ' + (payload.nickname || payload.uid || '');
+      toast('WorkBuddy account added', 'success');
+      await loadWorkbuddyAccounts();
+      return;
+    }
+    if (payload.status === 'failed' || payload.error) throw new Error(payload.error || payload.status || 'failed');
+    wbOAuthTimer = setTimeout(() => pollWorkbuddyOAuth(oauthId), 1500);
+  } catch (e) { _('wbAddStatus').textContent = 'OAuth failed: ' + e.message; }
+}
+function copyWorkbuddyOAuthUrl() {
+  const value = _('wbOAuthUrl').value;
+  if (!value) return;
+  navigator.clipboard.writeText(value).then(() => toast('Authorization link copied', 'success'), () => toast('Copy failed', 'error'));
+}
+function openWorkbuddyOAuthUrl() {
+  const value = _('wbOAuthUrl').value;
+  if (value) window.open(value, '_blank', 'noopener');
+}
+async function importWorkbuddyAccounts(input) {
+  const file = input.files && input.files[0];
+  if (!file) return;
+  try {
+    const form = new FormData();
+    form.append('file', file, file.name);
+    const response = await fetch(API + '/workbuddy/accounts/import', { method: 'POST', body: form });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok || result.ok === false) throw new Error(result.error || response.statusText || 'upload failed');
+    toast('WorkBuddy account imported', 'success');
+    await loadWorkbuddyAccounts();
+  } catch (e) { toast('Import failed: ' + e.message, 'error'); }
+  input.value = '';
+}
+
+async function loadWorkbuddyConfig() {
+  const form = _('wbConfigForm');
+  if (!form) return;
+  try {
+    const result = await wbCall('config');
+    const config = result.config || result;
+    form.querySelectorAll('[data-wb-path]').forEach(el => {
+      const value = wbDig(config, el.dataset.wbPath);
+      if (el.type === 'checkbox') el.checked = !!value;
+      else if (value === undefined || value === null) el.value = '';
+      else if (Array.isArray(value)) el.value = value.join(', ');
+      else el.value = String(value);
+    });
+    _('wbConfigNote').textContent = 'loaded';
+  } catch (e) {
+    _('wbConfigNote').textContent = 'load failed';
+    toast('WorkBuddy config load failed: ' + e.message, 'error');
+  }
+}
+function collectWorkbuddyConfig() {
+  const out = {};
+  _('wbConfigForm').querySelectorAll('[data-wb-path]').forEach(el => {
+    const path = el.dataset.wbPath;
+    const type = el.dataset.wbType || 'string';
+    if (el.type === 'checkbox') { wbPut(out, path, el.checked); return; }
+    const raw = (el.value || '').trim();
+    if (!raw && !el.dataset.wbSendEmpty) return;
+    if (type === 'ints') {
+      const values = raw.split(/[\s,，]+/).map(Number).filter(Number.isFinite);
+      if (values.length) wbPut(out, path, values);
+      return;
+    }
+    if (type === 'number') {
+      if (raw === '') return;
+      const value = Number(raw);
+      if (Number.isFinite(value)) wbPut(out, path, value);
+      return;
+    }
+    wbPut(out, path, raw);
+  });
+  return out;
+}
+async function saveWorkbuddyConfig() {
+  const button = _('wbSaveConfig');
+  button.disabled = true;
+  button.textContent = '保存中...';
+  try {
+    const result = await wbCall('config', {}, collectWorkbuddyConfig());
+    const restart = Array.isArray(result.restart_required) ? result.restart_required.length : 0;
+    toast(restart ? 'WorkBuddy config saved (' + restart + ' restart items)' : 'WorkBuddy config saved', 'success');
+    await loadWorkbuddyConfig();
+  } catch (e) { toast('WorkBuddy config save failed: ' + e.message, 'error'); }
+  finally { button.disabled = false; button.textContent = '保存配置'; }
+}
+
+(_('wbStartLogin') || {}).onclick = startWorkbuddyOAuth;
+(_('wbConfigForm') || {}).addEventListener('submit', ev => { ev.preventDefault(); saveWorkbuddyConfig(); });
 
 // ========== API helper ==========
 async function api(method, path, body) {
@@ -1290,17 +2333,45 @@ async function api(method, path, body) {
 }
 
 // ========== Dashboard ==========
+// setDash 平台概览卡片：统一"N 账号 · N 可用 · N 冷却中"行文（OpenCode 单位为 key）
+function setDash(id, unit, total, active, cooling) {
+  const el = _(id);
+  if (!el) return;
+  el.textContent = total + ' ' + T(unit) + ' · ' + active + ' ' + T('active') + ' · ' + cooling + ' ' + T('cooling');
+}
+// setReq 请求统计块：统一"N 请求 · N 错误 · 平均 N ms"
+function setReq(id, s) {
+  const el = _(id);
+  if (!el) return;
+  s = s || {};
+  el.textContent = (s.requests || 0) + ' ' + T('requests') + ' · ' + (s.errors || 0) + ' ' + T('errors') + ' · ' + T('Avg ') + Math.round(s.avg_ms || 0) + 'ms';
+}
+// loadStats 仪表盘三平台概览：Cline 走 /stats（含 expired 但概览行不展示），
+// OpenCode 取 /opencode/config 的 keyStates（可用=路由启用），WorkBuddy 取
+// 子系统 overview 的池计数（可用=healthy）。子系统被禁用时该卡片保持 "-"。
 async function loadStats() {
   try {
     const d = await api('GET', '/stats');
     const s = d.data;
-    _('statTotal').textContent = s.total;
-    _('statActive').textContent = s.active;
-    _('statCooldown').textContent = s.cooldown;
-    _('statExpired').textContent = s.expired;
-    if (s.version) _('settingVersion').value = s.version;
-    // 策略下拉由 /config 加载填写（loadConfig），统计刷新不回写表单，
-    // 避免把用户正在编辑的选项覆盖掉
+    setDash('dashCline', 'accounts', s.total, s.active, s.cooldown);
+  } catch (e) { /* ignore */ }
+  try {
+    const d = await api('GET', '/opencode/config');
+    const ks = (d.data && d.data.keyStates) || [];
+    setDash('dashOc', 'keys', ks.length, ks.filter(k => k.routingEnabled !== false).length, ks.filter(k => k.cooling).length);
+  } catch (e) { /* ignore */ }
+  try {
+    const ov = await wbCall('overview');
+    setDash('dashWb', 'accounts', ov.total, ov.healthy, ov.cooling);
+  } catch (e) { /* ignore */ }
+  try {
+    const d = await api('GET', '/request-stats');
+    const rs = (d.data && d.data.routes) || {};
+    setReq('reqCline', rs.cline);
+    setReq('reqZen', rs.zen);
+    setReq('reqWb', rs.workbuddy);
+    const hint = _('reqStatsHint');
+    if (hint && d.data && d.data.since) hint.textContent = T('Counted since ') + new Date(d.data.since).toLocaleString();
   } catch (e) { /* ignore */ }
 }
 
@@ -1311,11 +2382,19 @@ async function loadAccounts() {
     const d = await api('GET', '/accounts');
     const list = d.data.accounts;
     const tbody = _('accountTableBody');
+    // 标题下统计：账号 · 可用 · 冷却中（与 WorkBuddy 页摘要同款）
+    const summary = _('accSummary');
+    if (summary) {
+      const active = (list || []).filter(a => a.status === 'active').length;
+      const cooling = (list || []).filter(a => a.status === 'cooldown').length;
+      summary.textContent = (list || []).length + ' ' + T('accounts') + ' · ' + active + ' ' + T('active') + ' · ' + cooling + ' ' + T('cooling');
+    }
     if (!list || list.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="7" class="empty">No accounts yet — add one on the <a href="#" onclick="switchTab(\'import\')" style="color:var(--accent);cursor:pointer">Add accounts</a> page</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="8" class="empty">No accounts yet</td></tr>';
       return;
     }
     const sn = { active: 'Active', cooldown: 'Cooldown', expired: 'Expired' };
+    accSnapshot = {};
     tbody.innerHTML = list.map(a => {
       const lu = a.lastUsed ? new Date(a.lastUsed).toLocaleString('en-US') : '-';
       const cr = a.createdAt ? new Date(a.createdAt).toLocaleString('en-US') : '-';
@@ -1334,13 +2413,22 @@ async function loadAccounts() {
       const pBackup = a.proxyBackup || '';
       const isStale = v => v && v !== EGRESS_DIRECT && !proxyListCache.includes(v);
       const stale = isStale(pMain) || isStale(pBackup);
-      // 主 = 全局/直连 时辅跟随锁定（渲染期同样生效）
-      const backupLocked = pMain === '' || pMain === EGRESS_DIRECT;
+      // 主 = 全局/直连 时辅跟随锁定（渲染期同样生效）；辅代理开关关闭时同理。
+      const backupLocked = !backupProxyOn || pMain === '' || pMain === EGRESS_DIRECT;
       const backupVal = backupLocked ? pMain : pBackup;
       const bindCell = '<td style="white-space:nowrap">' +
         egComboHTML('acc', a.accountId, 'main', pMain, T('Main exit — used whenever available')) + ' ' +
         egComboHTML('acc', a.accountId, 'backup', backupVal, T('Backup exit — used when main is cooling/removed'), backupLocked) +
         (stale ? ' <span title="' + esc(T('Bound proxy is no longer in the proxy pool — the account is skipped until fixed')) + '" style="color:var(--danger)">⚠</span>' : '') +
+        '</td>';
+      // PoolEnabled 与账号状态是两个维度：未设置时按启用渲染，显式 false
+      // 才退出主选号；勾选改动先暂存，由"保存"按钮统一提交。
+      const poolEnabled = a.poolEnabled !== false;
+      accSnapshot[a.accountId] = { main: pMain, backup: backupVal, enabled: poolEnabled };
+      const poolCell = '<td style="text-align:center">' +
+        '<input type="checkbox" data-pool-enabled="' + esc(a.accountId) + '"' +
+        (poolEnabled ? ' checked' : '') +
+        ' title="' + esc(T('Participates in rotation')) + '" aria-label="' + esc(T('Participates in rotation')) + '">' +
         '</td>';
       const st = esc(a.status);
       return '<tr>' +
@@ -1357,9 +2445,16 @@ async function loadAccounts() {
           '<button class="btn btn-sm" data-act="test" data-acc="' + esc(a.accountId) + '" title="Test whether the account works (success clears cooldown/expired state)">Test</button> ' +
           '<button class="btn btn-sm" data-act="reset" data-acc="' + esc(a.accountId) + '" title="Probe the rate limit and lift it: probes upstream; if still limited, stays in cooldown and shows recovery time">Reset</button> ' +
           '<button class="btn btn-sm btn-danger" data-act="delete" data-acc="' + esc(a.accountId) + '" title="Delete">Delete</button>' +
-        '</td></tr>';
+        '</td>' +
+        poolCell +
+        '</tr>';
     }).join('');
-    tbody.onchange = null;
+    tbody.onchange = e => {
+      const input = e.target.closest('input[data-pool-enabled]');
+      if (!input) return;
+      // 暂存模型：勾选改动不直接落盘，行高亮，由"保存"按钮统一提交
+      markRowDirty(input.closest('tr'), 'acc');
+    };
     tbody.onclick = e => {
       const b = e.target.closest('button[data-act]');
       if (!b) return;
@@ -1375,50 +2470,162 @@ async function loadAccounts() {
 // 代理池列表缓存：账号表与 zen key 表的绑定下拉共用。value 是完整代理 URL
 //（保存需要，#别名随行持久化），展示名优先用别名，无别名时打码凭据段。
 let proxyListCache = [];
+// backupProxyOn 辅代理开关（代理池页，持久化在 zen 配置里，默认关闭）。
+// 关闭时辅槽整体失效：下拉只读并强制跟随主槽，保存后该身份只剩主出口。
+// 默认 false 与后端一致 —— 首次渲染就是关闭态，避免开关未拉到就先解锁。
+let backupProxyOn = false;
 async function loadProxyListCache() {
   try {
     const d = await api('GET', '/opencode/config');
     proxyListCache = (d.data.proxies || []).slice();
+    backupProxyOn = d.data.backupProxyEnabled === true;
   } catch (e) { /* keep previous cache */ }
 }
 const maskProxyLabel = p => String(p || '').replace(/\/\/[^@/]*@/, '//***@');
-async function saveAccountProxy(id, input) {
-  const row = input.closest('tr');
-  const main = row.querySelector('.eg-input[data-slot="main"]').dataset.value;
-  const backup = row.querySelector('.eg-input[data-slot="backup"]').dataset.value;
+
+// ========== 账号表暂存编辑（三平台共用） ==========
+// 代理绑定与"启用"勾选的改动只落在 DOM（行高亮 + 保存按钮描边），点击各
+// 平台的"保存"按钮才逐行 diff 快照后提交后端，再刷新表格。清空代理/一键
+// 启用/一键禁用同样只是暂存，保存后才生效。
+const EDIT_SAVE_BTN = { acc: 'accSaveBtn', key: 'ocKeysSaveBtn', wb: 'wbSaveBtn' };
+function markRowDirty(row, kind) {
+  if (row) row.classList.add('tr-dirty');
+  const btn = _(EDIT_SAVE_BTN[kind] || 'accSaveBtn');
+  if (btn) btn.classList.add('dirty-hint');
+}
+function clearDirtyMarks(tbodyId, btnId) {
+  document.querySelectorAll('#' + tbodyId + ' tr.tr-dirty').forEach(tr => tr.classList.remove('tr-dirty'));
+  const btn = _(btnId);
+  if (btn) btn.classList.remove('dirty-hint');
+}
+// 清空单行代理绑定（暂存）：主=全局时辅自动跟随锁定
+function stageRowBindingClear(row, kind) {
+  const main = row.querySelector('.eg-input[data-eg="' + kind + '"][data-slot="main"]');
+  if (!main) return false;
+  if (!main.dataset.value) return false;
+  main.dataset.value = '';
+  main.value = egLabel('');
+  egApplyMainLinkage(row, '');
+  return true;
+}
+
+let accSnapshot = {};
+function stageAllAccountsPool(enabled) {
+  document.querySelectorAll('#accountTableBody input[data-pool-enabled]').forEach(cb => {
+    const snap = accSnapshot[cb.dataset.poolEnabled];
+    if (snap && snap.enabled === enabled) return; // 与已保存状态一致，不产生待保存项
+    cb.checked = enabled;
+    markRowDirty(cb.closest('tr'), 'acc');
+  });
+}
+function stageClearAccountProxies() {
+  document.querySelectorAll('#accountTableBody tr').forEach(row => {
+    const main = row.querySelector('.eg-input[data-eg="acc"][data-slot="main"]');
+    if (!main) return;
+    let dirty = stageRowBindingClear(row, 'acc');
+    const cb = row.querySelector('input[data-pool-enabled]');
+    if (cb && cb.checked) { cb.checked = false; dirty = true; }
+    if (dirty) markRowDirty(row, 'acc');
+  });
+}
+async function saveAccountEdits() {
+  const rows = [...document.querySelectorAll('#accountTableBody tr')].filter(r => r.querySelector('.eg-input'));
+  let changed = 0, failed = 0;
+  for (const row of rows) {
+    const mainInput = row.querySelector('.eg-input[data-eg="acc"][data-slot="main"]');
+    const id = mainInput.dataset.egid;
+    const main = mainInput.dataset.value || '';
+    const backup = row.querySelector('.eg-input[data-eg="acc"][data-slot="backup"]').dataset.value || '';
+    const cb = row.querySelector('input[data-pool-enabled]');
+    const snap = accSnapshot[id] || { main: '', backup: '', enabled: true };
+    try {
+      if (main !== snap.main || backup !== snap.backup) {
+        await api('POST', '/accounts/proxy', { accountId: id, main: main, backup: backup });
+      }
+      if (cb && cb.checked !== snap.enabled) {
+        await api('POST', '/accounts/pool/enabled', { accountId: id, poolEnabled: cb.checked });
+      }
+      if (main !== snap.main || backup !== snap.backup || (cb && cb.checked !== snap.enabled)) changed++;
+      row.classList.remove('tr-dirty');
+    } catch (e) { failed++; }
+  }
+  clearDirtyMarks('accountTableBody', 'accSaveBtn');
+  if (failed) toast(T('Save failed for ') + failed + T(' account(s)'), 'error');
+  else if (!changed) toast(T('No changes to save'), 'info');
+  else toast(T('Saved ') + changed + T(' account change(s)'), 'success');
+  loadAccounts(); loadStats();
+}
+
+// 复位：丢弃全部暂存修改，按上次保存的状态重绘表格
+function resetAccountEdits() {
+  clearDirtyMarks('accountTableBody', 'accSaveBtn');
+  loadAccounts();
+}
+
+// ========== 添加帐号弹窗（复用导入页的类型自动识别与后端接口） ==========
+function openAccAddDialog() {
+  _('accAddToken').value = '';
+  _('accAddEmail').value = '';
+  _('accAddDialog').showModal();
+}
+function closeAccAddDialog() { _('accAddDialog').close(); }
+async function accAddFromDialog() {
+  const token = _('accAddToken').value.trim();
+  if (!token) { toast('Enter a token or API key', 'error'); return; }
+  const email = _('accAddEmail').value.trim();
+  const btn = _('accAddSubmit');
+  btn.disabled = true;
   try {
-    await api('POST', '/accounts/proxy', { accountId: id, main: main, backup: backup });
-    toast(T('Proxy binding saved'), 'success');
+    const d = await api('POST', '/accounts/add', { ...credPayload(token), email: email || undefined });
+    toast(T('Account added: ') + (d.data.email || ''), 'success');
+    closeAccAddDialog();
+    loadAccounts(); loadStats();
   } catch (e) {
-    toast('Save failed: ' + e.message, 'error');
-    loadAccounts();
+    toast(T('Add failed: ') + e.message, 'error');
+  } finally {
+    btn.disabled = false;
   }
 }
-async function clearAccountProxies() {
-  if (!confirm(T('Clear proxy bindings on ALL accounts? Every account returns to the Global default.'))) return;
+
+// 批量测试：等价于对每个账号点一次 Test（真实探测，成功即复位冷却）。
+// 逐个串行执行避免打爆上游；按钮上显示进度，结束后汇总一条 toast。
+async function batchTestAccounts() {
+  const btn = _('accTestBtn');
+  const ids = Object.keys(accSnapshot);
+  if (!ids.length) { toast(T('No accounts to test'), 'info'); return; }
+  const original = btn ? btn.innerHTML : '';
+  if (btn) btn.disabled = true;
+  let ok = 0, cool = 0, err = 0;
   try {
-    const d = await api('POST', '/accounts/proxy/clear', {});
-    toast(d.message || T('Bindings cleared'), 'success');
-    loadAccounts();
-  } catch (e) { toast('Clear failed: ' + e.message, 'error'); }
+    for (let i = 0; i < ids.length; i++) {
+      if (btn) btn.innerHTML = '<span class="loading"></span>' + (i + 1) + '/' + ids.length;
+      try {
+        const d = await api('POST', '/accounts/test', { accountId: ids[i] });
+        const r = d.data || {};
+        if (r.status === 'active') ok++;
+        else if (r.status === 'cooldown') cool++;
+        else err++;
+      } catch (e) { err++; }
+    }
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = original; }
+  }
+  toast(T('Batch test done: ') + ids.length + T(' tested, ') + ok + T(' ok') +
+    (cool ? T(', ') + cool + T(' cooling') : '') + (err ? T(', ') + err + T(' error') : ''),
+    err ? 'warning' : 'success', 6000);
+  loadAccounts(); loadStats();
 }
 
-async function clearZenKeyProxies() {
-  if (!confirm(T('Clear proxy bindings on ALL keys? Every key returns to the Global default (enabled state is kept).'))) return;
-  try {
-    const d = await api('POST', '/opencode/keys/proxy/clear', {});
-    toast(d.message || T('Bindings cleared'), 'success');
-    loadOcConfig();
-  } catch (e) { toast('Clear failed: ' + e.message, 'error'); }
-}
-
-async function enableAllZenKeys(enabled) {
-  if (!confirm(enabled ? T('Enable auto-minting on ALL keys?') : T('Disable auto-minting on ALL keys?'))) return;
-  try {
-    const d = await api('POST', '/opencode/keys/enabled/all', { enabled: enabled });
-    toast(d.message || T('Enabled state saved'), 'success');
-    loadOcConfig();
-  } catch (e) { toast('Save failed: ' + e.message, 'error'); }
+function stageClearZenKeyProxies() {
+  if (!confirm(T('Clear proxy bindings on ALL keys and disable routing? Click Save to apply.'))) return;
+  document.querySelectorAll('#ocKeysBody tr').forEach(row => {
+    const main = row.querySelector('.eg-input[data-eg="key"][data-slot="main"]');
+    if (!main) return;
+    let dirty = stageRowBindingClear(row, 'key');
+    const cb = row.querySelector('input[data-zr]');
+    if (cb && cb.checked) { cb.checked = false; dirty = true; }
+    if (dirty) markRowDirty(row, 'key');
+  });
 }
 
 // ========== 出口绑定联想下拉（combobox） ==========
@@ -1438,19 +2645,24 @@ function egLabel(v) {
   return maskProxyLabel(v);
 }
 function egComboHTML(kind, id, slot, value, title, disabled) {
-  const t = disabled ? T('Follows the main slot') : title;
+  // 只读态的原因决定提示文案：辅代理开关关闭 ≠ 主槽是全局/直连
+  const t = disabled
+    ? T(slot === 'backup' && !backupProxyOn ? 'Backup proxies are disabled — follows the main slot' : 'Follows the main slot')
+    : title;
   return '<input type="text" class="eg-input" data-eg="' + kind + '" data-egid="' + esc(id) + '" data-slot="' + slot + '" data-value="' + esc(value || '') + '" value="' + esc(egLabel(value)) + '" title="' + esc(t) + '"' + (disabled ? ' disabled' : '') + ' autocomplete="off" spellcheck="false">';
 }
 // 主槽位联动：主 = 全局/直连 时辅自动跟随相同值并只读；主 = 代理时辅解锁。
+// 辅代理开关关闭时辅槽无条件只读并跟随主槽 —— 关闭态下辅槽不参与出口选择，
+// 留着可编辑只会让用户以为绑定生效了。
 // 被锁定期间辅的旧值会被跟随值覆盖（解锁后辅回到"全局"，可重新选择）。
 function egApplyMainLinkage(row, mainValue) {
   const backup = row ? row.querySelector('.eg-input[data-slot="backup"]') : null;
   if (!backup) return;
-  if (mainValue === '' || mainValue === EGRESS_DIRECT) {
+  if (!backupProxyOn || mainValue === '' || mainValue === EGRESS_DIRECT) {
     backup.dataset.value = mainValue;
     backup.value = egLabel(mainValue);
     backup.disabled = true;
-    backup.title = T('Follows the main slot');
+    backup.title = T(!backupProxyOn ? 'Backup proxies are disabled — follows the main slot' : 'Follows the main slot');
   } else {
     backup.disabled = false;
     backup.title = T('Backup exit — used when main is cooling/removed');
@@ -1511,8 +2723,8 @@ function egCommit(input, value) {
   egCloseMenu();
   input.blur();
   if (input.dataset.slot === 'main') egApplyMainLinkage(input.closest('tr'), value);
-  if (input.dataset.eg === 'acc') saveAccountProxy(input.dataset.egid, input);
-  else if (input.dataset.eg === 'key') saveZenKeyProxy(parseInt(input.dataset.egid, 10), input);
+  // 暂存模型：绑定改动只落 DOM 并高亮行，由各平台"保存"按钮统一提交
+  markRowDirty(input.closest('tr'), input.dataset.eg);
 }
 document.addEventListener('focusin', e => {
   if (e.target.classList && e.target.classList.contains('eg-input')) egOpenMenu(e.target);
@@ -1619,11 +2831,9 @@ function onImportFileChange(event) {
       const parsed = JSON.parse(reader.result);
       if (parsed.version !== 1) throw new Error(T('Unsupported backup version'));
       importPayload = JSON.stringify(parsed);
-      _('importBtn').disabled = false;
-      _('importResult').innerHTML = '<div style="color:var(--accent2);font-size:12px">' + esc(file.name) + ' — ' + esc(T('ready to import')) + '</div>';
+      importConfigFromFile();
     } catch (e) {
       importPayload = null;
-      _('importBtn').disabled = true;
       toast(T('Invalid backup file: ') + e.message, 'error');
     }
   };
@@ -1652,127 +2862,11 @@ async function deleteAllAccounts() {
   } catch (e) { toast(T('Delete failed: ') + e.message, 'error'); }
 }
 
-async function refreshAllTokens() {
-  try {
-    await api('POST', '/accounts/refresh-all', {});
-    toast('All tokens refreshed', 'success');
-    loadAccounts(); loadStats();
-  } catch (e) { toast(T('Refresh failed: ') + e.message, 'error'); }
-}
-
-// ========== OAuth login ==========
-async function startOAuth() {
-  const btn = _('oauthBtn');
-  btn.disabled = true;
-  btn.innerHTML = '<span class="loading"></span> Starting...';
-  _('oauthProgress').style.display = 'block';
-  _('oauthResult').style.display = 'none';
-  _('oauthStatus').textContent = T('Connecting to WorkOS...');
-  try {
-    const d = await api('POST', '/oauth/start');
-    const s = d.data;
-    _('oauthStatus').textContent = T('Open the link in your browser and enter the code');
-    const u = _('oauthUrl');
-    const vuri = String(s.verificationUri || '');
-    u.textContent = vuri;
-    // 仅对 https 链接设置 href：非 https 的 verificationUri 只展示不可点，
-    // 防止 javascript: 等异常 scheme 成为注入面
-    if (/^https:\/\//i.test(vuri)) { u.href = vuri; } else { u.removeAttribute('href'); }
-    _('oauthUserCode').textContent = s.userCode;
-    let pollFails = 0;
-    const poll = setInterval(async () => {
-      try {
-        const r = await api('GET', '/oauth/status?sessionId=' + s.sessionId);
-        pollFails = 0;
-        if (r.data && r.data.done) {
-          clearInterval(poll);
-          btn.disabled = false;
-          btn.innerHTML = 'Start OAuth login';
-          if (r.data.success) {
-            _('oauthProgress').style.display = 'none';
-            _('oauthResult').innerHTML = '<div style="color:var(--accent2);font-weight:600;font-size:14px">' + T('Account added: ') + esc(r.data.email) + '</div>';
-            _('oauthResult').style.display = 'block';
-            loadAccounts(); loadStats();
-            toast('Account added!', 'success');
-          } else {
-            _('oauthStatus').textContent = T('Failed: ') + (r.data.error || 'unknown error');
-            toast('OAuth failed', 'error');
-          }
-        }
-      } catch(e) {
-        // 连续失败(会话丢失/服务重启)后停止轮询并恢复按钮，避免永久卡死；
-        // 偶发网络抖动在 5 次(约10s)内自愈
-        if (++pollFails >= 5) {
-          clearInterval(poll);
-          btn.disabled = false;
-          btn.innerHTML = 'Start OAuth login';
-          _('oauthStatus').textContent = T('Polling failed: ') + (e && e.message ? e.message : 'session not found');
-          toast('OAuth polling stopped', 'error');
-        }
-      }
-    }, 2000);
-  } catch (e) {
-    btn.disabled = false;
-    btn.innerHTML = 'Start OAuth login';
-    _('oauthStatus').textContent = T('Error: ') + e.message;
-    toast(T('OAuth failed: ') + e.message, 'error');
-  }
-}
-
 // ========== Token import ==========
 // Credential type auto-detection: "sk_..." = static Cline API key, anything
 // else = OAuth refreshToken (the backend validates refresh tokens upstream;
 // API keys are pooled as-is).
 const credPayload = t => t.startsWith('sk_') ? { apiToken: t } : { refreshToken: t };
-
-async function addByToken() {
-  const token = _('tokenInput').value.trim();
-  if (!token) { toast('Enter a token or API key', 'error'); return; }
-  const email = _('tokenEmail').value.trim();
-  try {
-    const d = await api('POST', '/accounts/add', { ...credPayload(token), email: email || undefined });
-    toast(T('Account added: ') + (d.data.email || ''), 'success');
-    _('tokenInput').value = '';
-    _('tokenEmail').value = '';
-    loadAccounts(); loadStats();
-  } catch (e) { toast(T('Add failed: ') + e.message, 'error'); }
-}
-
-// ========== Batch import ==========
-const parseBatchInput = raw => {
-  try {
-    let tokens = JSON.parse(raw);
-    if (!Array.isArray(tokens)) tokens = [tokens];
-    return tokens;
-  } catch {
-    return raw.split('\n').map(t => t.trim()).filter(Boolean).map(credPayload);
-  }
-};
-
-async function batchImport() {
-  const raw = _('batchInput').value.trim();
-  if (!raw) { toast('Enter account data', 'error'); return; }
-  const tokens = parseBatchInput(raw);
-  try {
-    const d = await api('POST', '/batch-import', { tokens });
-    toast(d.message || 'Import complete', 'success');
-    _('batchInput').value = '';
-    loadAccounts(); loadStats();
-  } catch (e) { toast(T('Import failed: ') + e.message, 'error'); }
-}
-
-async function handleFileImport(event) {
-  const file = event.target.files[0];
-  if (!file) return;
-  const text = await file.text();
-  const tokens = parseBatchInput(text);
-  try {
-    const d = await api('POST', '/batch-import', { tokens });
-    toast(d.message || T('Imported ') + tokens.length + T(' accounts'), 'success');
-    loadAccounts(); loadStats();
-  } catch (e) { toast(T('Import failed: ') + e.message, 'error'); }
-  event.target.value = '';
-}
 
 // ========== API keys ==========
 async function loadKeys() {
@@ -1836,6 +2930,15 @@ async function deleteAllKeys() {
   } catch (e) { toast(T('Delete failed: ') + e.message, 'error'); }
 }
 
+async function deleteAllData() {
+  if (!confirm(T('Delete ALL persisted data? This will clear Cline accounts and client keys, OpenCode keys, WorkBuddy accounts, the proxy pool, default model, request headers, scheduling strategy, custom aliases, sticky sessions, and request logs. This cannot be undone!'))) return;
+  try {
+    await api('POST', '/data/delete-all', {});
+    toast(T('All persisted data deleted'), 'success');
+    setTimeout(() => location.reload(), 1000);
+  } catch (e) { toast(T('Delete failed: ') + e.message, 'error'); }
+}
+
 function copyText(t) {
   navigator.clipboard.writeText(t).then(() => toast('Copied to clipboard', 'success')).catch(() => {
     const ta = document.createElement('textarea');
@@ -1895,6 +2998,19 @@ async function updateConfig() {
   } catch (e) { toast(T('Update failed: ') + e.message, 'error'); }
 }
 
+// saveAdminLogToggle 勾选即存：/admin 页面与接口访问是否写入请求日志。
+// 关闭（默认）只影响面板自身产生的行，经过网关的模型会话请求日志不受影响。
+async function saveAdminLogToggle() {
+  const cb = _('settingAdminLog');
+  try {
+    await api('POST', '/config/update', { adminLogEnabled: cb.checked });
+    toast(cb.checked ? 'Admin access logging enabled' : 'Admin access logging disabled', 'success');
+  } catch (e) {
+    cb.checked = !cb.checked;  // 保存失败回滚勾选，避免界面与落盘状态不一致
+    toast(T('Save failed: ') + e.message, 'error');
+  }
+}
+
 function addHeaderRow() {
   const tbody = _('headersTableBody');
   const tr = document.createElement('tr');
@@ -1948,6 +3064,66 @@ const MODEL_STYLE = {
   unknown: { label: 'unprobed', css: 'color:var(--text3);border:1px dashed var(--border-strong)' }
 };
 const COST_LABEL = { free: 'free', pass: 'subscription', quota: 'uses quota' };
+const WB_RATE_OPTIONS = [0, 0.1, 0.2, 0.3, 0.5, 1.0];
+let workbuddyRateFilter = (() => {
+  const stored = localStorage.getItem('workbuddyRateFilter');
+  const saved = stored === null ? NaN : Number(stored);
+  return WB_RATE_OPTIONS.includes(saved) ? saved : 0.2;
+})();
+function wbNumber(value) {
+  const n = Number(String(value ?? '').replace(/[^\d.-]/g, ''));
+  return Number.isFinite(n) ? n : null;
+}
+function wbRate(m) {
+  const promoted = m && m.promo_factor !== undefined && m.promo_factor !== null &&
+    m.promo_credits !== undefined && m.promo_credits !== null && m.promo_credits !== '';
+  return wbNumber(promoted ? m.promo_credits : m && m.credits);
+}
+function wbModelMatchesFilter(m) {
+  const rate = wbRate(m);
+  return rate !== null && rate <= workbuddyRateFilter + 1e-9;
+}
+async function fetchWorkbuddyModels() {
+  try {
+    const data = await wbCall('models');
+    return data.models || [];
+  } catch (e) {
+    return [];
+  }
+}
+function wbContextLabel(value) {
+  const n = Number(value || 0) / 1000;
+  if (!(n > 0)) return '—';
+  const tiers = [[32, '32K'], [64, '64K'], [128, '128K'], [256, '256K'], [512, '512K'], [1024, '1M'], [2048, '2M']];
+  let best = tiers[0];
+  tiers.forEach(t => {
+    if (Math.abs(n - t[0]) <= Math.abs(n - best[0])) best = t;
+  });
+  return best[1];
+}
+function wbContextTagHTML(value, title) {
+  const large = Number(value || 0) >= 1000000;
+  return '<span class="model-tag' + (large ? ' context-1m' : '') + '" title="' + esc(title) + '">' + esc(wbContextLabel(value)) + '</span>';
+}
+function wbRateHTML(m) {
+  const rate = wbRate(m);
+  const base = wbNumber(m.credits);
+  const value = rate === null ? '—' : 'x' + rate;
+  const old = base !== null && rate !== null && base !== rate ? ' <s style="color:var(--text3)">x' + esc(base) + '</s>' : '';
+  const promo = m.promo_label ? ' <span class="model-tag">' + esc(m.promo_label) + '</span>' : '';
+  return '<span title="' + esc(m.promo_note || '') + '">' + value + old + promo + '</span>';
+}
+function setWorkbuddyRateFilter(value) {
+  const next = Number(value);
+  workbuddyRateFilter = WB_RATE_OPTIONS.includes(next) ? next : 0.2;
+  localStorage.setItem('workbuddyRateFilter', String(workbuddyRateFilter));
+  loadModels();
+  loadModelOptions();
+  comboModels.workbuddy = [];
+  if (_('comboPlatform') && _('comboPlatform').value === 'workbuddy') {
+    fillComboModels();
+  }
+}
 
 async function loadModels() {
   try {
@@ -1957,31 +3133,47 @@ async function loadModels() {
     if (d.data.lastSync) info += T('· official feed: ') + new Date(d.data.lastSync).toLocaleTimeString('en-US');
     _('modelsProbeInfo').textContent = info;
     // OpenCode 免费模型（网关设置页分两块展示：Cline 在上、OpenCode 在下）
-    const zen = await api('GET', '/opencode/models').then(r => r.data.models || []).catch(() => []);
+    const [zen, wbAll] = await Promise.all([
+      api('GET', '/opencode/models').then(r => r.data.models || []).catch(() => []),
+      fetchWorkbuddyModels()
+    ]);
     const row = (inner) => '<div style="display:flex;align-items:center;gap:10px;padding:8px 12px;margin:5px 0;background:rgba(148,163,184,.06);border:1px solid var(--border);border-radius:10px;transition:.15s">' + inner + '</div>';
     const clineBlock = models.length
       ? models.map(m => {
-          const st = MODEL_STYLE[m.status] || MODEL_STYLE.unknown;
-          const cost = COST_LABEL[m.cost] || m.cost || '';
-          const synced = m.syncedAt ? new Date(m.syncedAt).toLocaleTimeString('en-US') : '-';
           return row(
             '<span style="font-family:\'JetBrains Mono\',monospace;font-size:13px;flex:1">' + esc(m.id) + '</span>' +
-            (m.cost === 'free' ? '<span style="font-size:11px;color:var(--accent2)">' + T('no charge') + '</span>' : '') +
-            (cost ? '<span class="model-tag">' + esc(cost) + '</span>' : '') +
-            '<span class="model-tag" style="' + st.css + '">' + st.label + '</span>' +
-            '<span style="font-size:11px;color:var(--text3);min-width:60px;text-align:right">' + synced + '</span>');
+            '<span class="model-tag free">' + T('no charge') + '</span>');
         }).join('')
       : '<div class="empty">' + T('No models') + '</div>';
     const zenBlock = zen.length
       ? zen.map(m => row(
             '<span style="font-family:\'JetBrains Mono\',monospace;font-size:13px;flex:1">' + esc(m.id) + '</span>' +
-            '<span class="model-tag" title="' + esc(T('Context')) + '">' + esc(m.context || '-') + '</span>' +
-            '<span class="model-tag" title="' + esc(T('Output')) + '">' + esc(m.output || '-') + '</span>' +
-            '<span class="model-tag">' + esc(m.source === 'live' ? T('live') : T('(seed)')) + '</span>')).join('')
+            '<span class="model-tag free">' + T('no charge') + '</span>' +
+            wbContextTagHTML(m.context, T('Context')))).join('')
       : '<div class="empty">' + T('No models') + '</div>';
+    const wbModels = wbAll.filter(wbModelMatchesFilter).sort((a, b) => wbRate(a) - wbRate(b));
+    const rateOptions = WB_RATE_OPTIONS.map(v =>
+      '<option value="' + v + '"' + (v === workbuddyRateFilter ? ' selected' : '') + '>' + v + '</option>').join('');
+    const wbBlock = wbModels.length
+      ? wbModels.map(m => {
+          const rate = wbRate(m);
+          const free = rate === 0 ? '<span class="model-tag free">免费</span>' : '';
+          return row(
+            '<span style="font-family:\'JetBrains Mono\',monospace;font-size:13px;flex:1" title="' + esc(m.description || '') + '">' + esc(m.id) + '</span>' +
+            free +
+            '<span class="model-tag">' + wbRateHTML(m) + '</span>' +
+            '<span class="model-tag" title="默认档">' + esc(m.default_effort || '—') + '</span>' +
+            wbContextTagHTML(m.context_length, T('Maximum context length')));
+        }).join('')
+      : '<div class="empty">当前筛选下没有 WorkBuddy 模型</div>';
     _('modelsList').innerHTML =
       '<div style="font-size:12px;font-weight:600;margin:2px 0 8px">' + T('Cline free models') + '</div>' + clineBlock +
-      '<div style="font-size:12px;font-weight:600;margin:14px 0 8px">' + T('OpenCode free models') + '</div>' + zenBlock;
+      '<div style="font-size:12px;font-weight:600;margin:14px 0 8px">' + T('OpenCode free models') + '</div>' + zenBlock +
+      '<div style="display:flex;align-items:center;gap:10px;margin:14px 0 8px">' +
+        '<span style="font-size:12px;font-weight:600">WorkBuddy 模型</span><span style="flex:1"></span>' +
+        '<label class="inline-flex" style="font-size:12px;color:var(--text2)">筛选 ' +
+          '<select id="wbRateFilter" onchange="setWorkbuddyRateFilter(this.value)" style="width:auto;padding:4px 26px 4px 9px;font-size:12px">' + rateOptions + '</select></label>' +
+      '</div>' + wbBlock;
   } catch (e) { _('modelsList').textContent = T('Failed to load'); }
 }
 
@@ -2001,22 +3193,33 @@ async function refreshModels() {
 
 async function loadModelOptions() {
   try {
-    // 默认模型下拉：合并 Cline 与 OpenCode 两个上游的全部免费模型
-    const [d, z] = await Promise.all([
+    // 默认模型下拉：合并 Cline、OpenCode 与当前筛选下的 WorkBuddy 模型。
+    const [d, z, wbAll] = await Promise.all([
       api('GET', '/models'),
-      api('GET', '/opencode/models').catch(() => ({ data: { models: [] } }))
+      api('GET', '/opencode/models').catch(() => ({ data: { models: [] } })),
+      fetchWorkbuddyModels()
     ]);
-    const cline = d.data.models || [];
-    const zen = z.data.models || [];
+    const platform = _('settingModelPlatform') ? _('settingModelPlatform').value : 'cline';
+    const cline = platform === 'cline' ? (d.data.models || []) : [];
+    const zen = platform === 'zen' ? (z.data.models || []) : [];
+    const wb = platform === 'workbuddy'
+      ? wbAll.filter(wbModelMatchesFilter).sort((a, b) => wbRate(a) - wbRate(b))
+      : [];
     const sel = _('settingDefModel');
     if (!sel) return;
-    sel.innerHTML = cline.map(m => {
-      const st = MODEL_STYLE[m.status] || MODEL_STYLE.unknown;
-      return '<option value="' + esc(m.id) + '">' + esc(m.id) + ' (' + st.label + ')</option>';
-    }).join('') + zen.map(m => '<option value="' + esc(m.id) + '">' + esc(m.id) + ' (OpenCode)</option>').join('');
+    // 仅原样展示模型 ID，不附加平台/状态/倍率后缀
+    sel.innerHTML = cline.concat(zen, wb).map(m =>
+      '<option value="' + esc(m.id) + '">' + esc(m.id) + '</option>').join('');
+    if (!sel.options.length) {
+      sel.innerHTML = '<option value="">No models on this platform</option>';
+      return;
+    }
     const c = await api('GET', '/config');
-    if (c.data.defaultModel) sel.value = c.data.defaultModel;
-    if (!sel.value && cline.length) sel.value = cline[0].id;
+    if (c.data.defaultModel && Array.from(sel.options).some(o => o.value === c.data.defaultModel)) {
+      sel.value = c.data.defaultModel;
+    } else {
+      sel.selectedIndex = 0;
+    }
   } catch (e) { /* ignore */ }
 }
 
@@ -2036,7 +3239,7 @@ async function loadConfig() {
     const c = d.data;
     if (c.address) _('settingAddr').value = c.address;
     if (c.strategy) _('settingStrategy').value = c.strategy;
-    if (c.version) _('settingVersion').value = c.version;
+    if (_('settingAdminLog')) _('settingAdminLog').checked = !!c.adminLogEnabled;
     if (c.poolPath && _('settingPoolPath')) _('settingPoolPath').value = c.poolPath;
     loadModelOptions();
     if (c.headers) {
@@ -2063,40 +3266,35 @@ async function loadOcConfig() {
     const d = await api('GET', '/opencode/config');
     const c = d.data;
     ocCfgCache = c;
-    _('ocKeys').value = (c.keys && c.keys.length ? c.keys : [c.key || 'public']).join('\n');
     const ks = c.keyStates || [];
+    // 标题下统计：key · 可用（路由启用）· 冷却中（与 Cline 页摘要同款）
+    const sum = _('ocSummary');
+    if (sum) {
+      const routed = ks.filter(k => k.routingEnabled !== false).length;
+      const cooling = ks.filter(k => k.cooling).length;
+      sum.textContent = ks.length + ' ' + T('keys') + ' · ' + routed + ' ' + T('active') + ' · ' + cooling + ' ' + T('cooling');
+    }
     renderOcKeyStates(ks);
     _('ocBaseURL').value = c.baseURL || '';
     _('ocMaxConc').value = c.maxConcurrency || 8;
     _('ocRetries').value = c.retries || 3;
-    _('ocFailover').value = String(c.failover);
-    _('ocFailoverCount').value = c.failoverCount || 3;
-    _('ocFailoverMinutes').value = c.failoverMinutes || 5;
     _('ocCompactAuto').value = String(c.compaction ? c.compaction.auto : true);
     _('ocCompactBuffer').value = c.compaction ? c.compaction.buffer : 20000;
     _('ocKeepTokens').value = c.compaction ? c.compaction.keepTokens : 8000;
     _('ocSummaryModel').value = c.compaction ? (c.compaction.summaryModel || '') : '';
     _('ocMaxSummary').value = c.compaction ? c.compaction.maxSummary : 4096;
-    const rt = c.runtime || {};
-    _('ocFailoverInfo').innerHTML = rt.failoverActive
-      ? '<span style="color:var(--danger)">Failover active (opencode unavailable, requests go to the cline pool)</span>'
-      : '<span style="color:var(--accent2)">Normal</span>';
   } catch (e) { /* ignore */ }
 }
 
 async function saveOcConfig() {
-  const keys = _('ocKeys').value.split('\n').map(s => s.trim()).filter(Boolean);
-  if (!keys.length) { toast('API keys must not be empty (use "public" if you have no key)', 'error'); return; }
+  // key 列表不随本表单提交（增删在 key 表的添加凭据/删除按钮里），避免
+  // 旧 textarea 快照覆盖面板当前的 key 池。
   const body = {
-    keys: keys,
     baseURL: _('ocBaseURL').value.trim(),
     proxies: ocCfgCache.proxies || [],
     proxyStrategy: ocCfgCache.proxyStrategy || 'round_robin',
     maxConcurrency: parseInt(_('ocMaxConc').value) || 8,
     retries: parseInt(_('ocRetries').value) || 3,
-    failover: _('ocFailover').value === 'true',
-    failoverCount: parseInt(_('ocFailoverCount').value) || 3,
-    failoverMinutes: parseInt(_('ocFailoverMinutes').value) || 5,
     compaction: {
       auto: _('ocCompactAuto').value === 'true',
       buffer: parseInt(_('ocCompactBuffer').value) || 20000,
@@ -2112,12 +3310,16 @@ async function saveOcConfig() {
   } catch (e) { toast(T('Save failed: ') + e.message, 'error'); }
 }
 
-// per-key 状态表：key 掩码 / 用量 / 会话 / 冷却（含预计恢复时刻）/ Test 按钮。
+// per-key 状态表：key 掩码 / 用量 / 会话 / 冷却（含预计恢复时刻）/ 测试+删除。
 // Test 与 cline 账号的同语义：真实探测，成功即复位该 key 的冷却。
-// Proxy binding 列：主/辅出口下拉，修改即保存（隔离模式语义见 Proxy pool 页）。
+// Proxy binding 列与 Pool（路由启用）列均为暂存编辑：改动行高亮，由
+// "保存"按钮统一提交（隔离模式语义见 Proxy pool 页）。铸造跟随路由启用，
+// 不再有独立的铸造开关列。
+let keySnapshot = {};
 function renderOcKeyStates(ks) {
   const tb = _('ocKeysBody');
   if (!tb) return;
+  keySnapshot = {};
   tb.innerHTML = ks.length
     ? ks.map(k => {
         const st = k.sessionLive
@@ -2129,58 +3331,163 @@ function renderOcKeyStates(ks) {
         // omitempty 下未绑定 key 没有这两个键，归一化为 ''
         const pMain = k.proxyMain || '';
         const pBackup = k.proxyBackup || '';
-        const backupLocked = pMain === '' || pMain === EGRESS_DIRECT;
+        // 辅代理开关关闭 → 辅槽只读跟随主槽（key 表与账号表同规则）
+        const backupLocked = !backupProxyOn || pMain === '' || pMain === EGRESS_DIRECT;
         const backupVal = backupLocked ? pMain : pBackup;
         const bind = '<td style="white-space:nowrap">' +
           egComboHTML('key', k.index, 'main', pMain, T('Main exit — used whenever available')) + ' ' +
           egComboHTML('key', k.index, 'backup', backupVal, T('Backup exit — used when main is cooling/removed'), backupLocked) +
           (k.proxyStale ? ' <span title="' + esc(T('Bound proxy is no longer in the proxy pool — the key is skipped until fixed')) + '" style="color:var(--danger)">⚠</span>' : '') +
           '</td>';
-        // 是否启用：勾选后该 key 才参与自动铸造（启动补缺/403/周期/手动 Mint）。
-        // 新添加的 key 默认未勾选。
-        const en = '<td style="text-align:center">' + (k.keyMask === 'public (no key)'
+        // Pool（路由启用）列：勾选后该 key 才参与请求轮转；铸造跟随路由，
+        // 路由关闭的 key 也不再被自动铸造。匿名 public key 恒参与路由。
+        const routed = k.routingEnabled !== false;
+        keySnapshot[k.index] = { main: pMain, backup: backupVal, routing: routed, pub: k.keyMask === 'public (no key)' };
+        const routing = '<td style="text-align:center">' + (k.keyMask === 'public (no key)'
           ? '<span style="color:var(--text3)">-</span>'
-          : '<input type="checkbox" data-ze="' + k.index + '"' + (k.enabled ? ' checked' : '') + ' title="' + esc(T('Participates in auto-minting')) + '">') + '</td>';
+          : '<input type="checkbox" data-zr="' + k.index + '"' + (routed ? ' checked' : '') + ' title="' + esc(T('Participates in request routing')) + '">') + '</td>';
+        // 操作列：测试（真实探测）+ 删除（红色，从 key 池移除该 key）
+        const actions = '<td style="white-space:nowrap">' + (k.keyMask === 'public (no key)'
+          ? '<span style="color:var(--text3)">-</span>'
+          : '<button class="btn btn-sm" data-zk="' + k.index + '">Test</button> ' +
+            '<button class="btn btn-sm btn-danger" data-zdel="' + k.index + '" title="Remove this key from the pool">Delete</button>') + '</td>';
         return '<tr><td>#' + (k.index + 1) + (k.current ? ' <span style="color:var(--accent)" title="next in rotation">●</span>' : '') + '</td>' +
           '<td style="font-family:monospace;font-size:11px">' + esc(k.keyMask) + '</td>' +
           '<td>' + (k.usage || 0) + '</td>' +
           '<td>' + st + '</td>' +
           '<td>' + cool + '</td>' +
           bind +
-          '<td>' + (k.keyMask === 'public (no key)' ? '' : '<button class="btn btn-sm" data-zk="' + k.index + '">Test</button>') + '</td>' +
-          en + '</tr>';
+          actions +
+          routing + '</tr>';
       }).join('')
     : '<tr><td colspan="8" class="empty">No opencode keys configured</td></tr>';
   tb.onclick = e => {
     const b = e.target.closest('button[data-zk]');
-    if (b) testZenKey(parseInt(b.dataset.zk, 10), b);
+    if (b) { testZenKey(parseInt(b.dataset.zk, 10), b); return; }
+    const d = e.target.closest('button[data-zdel]');
+    if (d) deleteZenKey(parseInt(d.dataset.zdel, 10), d);
   };
   tb.onchange = e => {
-    const c = e.target.closest('input[data-ze]');
-    if (c) toggleZenKeyEnabled(parseInt(c.dataset.ze, 10), c.checked);
+    const r = e.target.closest('input[data-zr]');
+    if (r) markRowDirty(r.closest('tr'), 'key');
   };
 }
 
-async function toggleZenKeyEnabled(index, enabled) {
+function stageAllKeysRouting(enabled) {
+  document.querySelectorAll('#ocKeysBody input[data-zr]').forEach(cb => {
+    const snap = keySnapshot[parseInt(cb.dataset.zr, 10)];
+    if (snap && snap.routing === enabled) return;
+    cb.checked = enabled;
+    markRowDirty(cb.closest('tr'), 'key');
+  });
+}
+async function saveKeyEdits() {
+  const rows = [...document.querySelectorAll('#ocKeysBody tr')].filter(r => r.querySelector('.eg-input'));
+  let changed = 0, failed = 0;
+  for (const row of rows) {
+    const mainInput = row.querySelector('.eg-input[data-eg="key"][data-slot="main"]');
+    const idx = parseInt(mainInput.dataset.egid, 10);
+    const main = mainInput.dataset.value || '';
+    const backup = row.querySelector('.eg-input[data-eg="key"][data-slot="backup"]').dataset.value || '';
+    const rcb = row.querySelector('input[data-zr]');
+    const snap = keySnapshot[idx] || { main: '', backup: '', routing: true };
+    try {
+      if (main !== snap.main || backup !== snap.backup) {
+        await api('POST', '/opencode/keys/proxy', { index: idx, main: main, backup: backup });
+      }
+      if (rcb && rcb.checked !== snap.routing) {
+        await api('POST', '/opencode/keys/routing', { index: idx, enabled: rcb.checked });
+      }
+      if (main !== snap.main || backup !== snap.backup || (rcb && rcb.checked !== snap.routing)) changed++;
+      row.classList.remove('tr-dirty');
+    } catch (e) { failed++; }
+  }
+  clearDirtyMarks('ocKeysBody', 'ocKeysSaveBtn');
+  if (failed) toast(T('Save failed for ') + failed + T(' account(s)'), 'error');
+  else if (!changed) toast(T('No changes to save'), 'info');
+  else toast(T('Saved ') + changed + T(' account change(s)'), 'success');
+  loadOcConfig();
+}
+
+// 复位：丢弃 key 表的全部暂存修改，按上次保存的状态重绘
+function resetKeyEdits() {
+  clearDirtyMarks('ocKeysBody', 'ocKeysSaveBtn');
+  loadOcConfig();
+}
+
+// 删除单个 key：从 key 池移除并按索引刷新（索引会前移，直接重拉）。
+async function deleteZenKey(index, btn) {
+  if (!confirm(T('Delete this key?'))) return;
+  const original = btn ? btn.innerHTML : '';
+  if (btn) btn.disabled = true;
   try {
-    await api('POST', '/opencode/keys/enabled', { index: index, enabled: enabled });
-    toast(T('Key enabled state saved'), 'success');
+    await api('POST', '/opencode/keys/delete', { index: index });
+    toast(T('Key #') + (index + 1) + T(' (deleted)'), 'success');
   } catch (e) {
-    toast('Save failed: ' + e.message, 'error');
+    toast(T('Delete failed: ') + e.message, 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = original; }
     loadOcConfig();
   }
 }
 
-async function saveZenKeyProxy(index, input) {
-  const row = input.closest('tr');
-  const main = row.querySelector('.eg-input[data-slot="main"]').dataset.value;
-  const backup = row.querySelector('.eg-input[data-slot="backup"]').dataset.value;
+// 批量测试：等价于对每个 key 点一次 Test（真实探测，成功即复位冷却）。
+// 匿名 public key 无凭据可测，跳过。逐个串行避免打爆上游，按钮显示进度。
+async function batchTestKeys() {
+  const btn = _('ocTestBtn');
+  const idxs = Object.keys(keySnapshot).map(Number)
+    .filter(i => !keySnapshot[i].pub)
+    .sort((a, b) => a - b);
+  if (!idxs.length) { toast(T('No keys to test'), 'info'); return; }
+  const original = btn ? btn.innerHTML : '';
+  if (btn) btn.disabled = true;
+  let ok = 0, cool = 0, err = 0;
   try {
-    await api('POST', '/opencode/keys/proxy', { index: index, main: main, backup: backup });
-    toast(T('Key proxy binding saved'), 'success');
-  } catch (e) {
-    toast('Save failed: ' + e.message, 'error');
+    for (let i = 0; i < idxs.length; i++) {
+      if (btn) btn.innerHTML = '<span class="loading"></span>' + (i + 1) + '/' + idxs.length;
+      try {
+        const d = await api('POST', '/zen/keys/test', {
+          index: idxs[i],
+          model: (_('ocProbeModel') ? _('ocProbeModel').value : '')
+        });
+        const r = d.data || {};
+        if (r.status === 'active') ok++;
+        else if (r.status === 'cooldown') cool++;
+        else err++;
+      } catch (e) { err++; }
+    }
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = original; }
+  }
+  toast(T('Batch test done: ') + idxs.length + T(' tested, ') + ok + T(' ok') +
+    (cool ? T(', ') + cool + T(' cooling') : '') + (err ? T(', ') + err + T(' error') : ''),
+    err ? 'warning' : 'success', 6000);
+  loadOcConfig();
+}
+
+// ========== 添加凭据弹窗（key 逐行填入文本域，合并进当前 key 池） ==========
+function openZenKeyAddDialog() {
+  _('zenKeyAddInput').value = '';
+  _('zenKeyAddDialog').showModal();
+}
+function closeZenKeyAddDialog() { _('zenKeyAddDialog').close(); }
+async function zenKeyAddFromDialog() {
+  const lines = _('zenKeyAddInput').value.split('\n').map(s => s.trim()).filter(Boolean);
+  if (!lines.length) { toast(T('Enter at least one key'), 'error'); return; }
+  const cur = (ocCfgCache.keys && ocCfgCache.keys.length) ? ocCfgCache.keys : [ocCfgCache.key || 'public'];
+  const fresh = lines.filter(l => !cur.includes(l));
+  if (!fresh.length) { toast(T('No new keys (all already in the pool)'), 'info'); return; }
+  const btn = _('zenKeyAddSubmit');
+  btn.disabled = true;
+  try {
+    await api('POST', '/opencode/config/update', { keys: cur.concat(fresh) });
+    toast(T('Added ') + fresh.length + T(' key(s)'), 'success');
+    closeZenKeyAddDialog();
     loadOcConfig();
+  } catch (e) {
+    toast(T('Save failed: ') + e.message, 'error');
+  } finally {
+    btn.disabled = false;
   }
 }
 
@@ -2217,18 +3524,21 @@ async function loadProxyPool() {
     const [oc, cfg] = await Promise.all([api('GET', '/opencode/config'), api('GET', '/config')]);
     const c = oc.data;
     proxyListCache = (c.proxies || []).slice();
+    backupProxyOn = c.backupProxyEnabled === true;
     _('ppProxies').value = (c.proxies || []).join('\n');
     _('ppStrategy').value = c.proxyStrategy || 'round_robin';
     _('ppCline').value = String(!!cfg.data.clineUseProxies);
     _('ppIsolation').value = String(c.proxyIsolation !== false);
+    _('ppBackupEnabled').checked = c.backupProxyEnabled === true;
     if (c.proxyIsolationEnvLocked) {
       _('ppIsolation').disabled = true;
-      _('ppIsolationHint').innerHTML = '<span style="color:var(--warning,#eab308)">PROXY_ISOLATION env is set — it overrides this switch. Unset the env var to control isolation here.</span>';
+      _('ppIsolationHint').innerHTML = '<span style="color:var(--warning,#eab308)">PROXY_ISOLATION=true is set — isolation is forced on. Unset the env var (or set it to false) to control isolation from the panel.</span>';
     } else {
       _('ppIsolation').disabled = false;
       _('ppIsolationHint').textContent = '';
     }
     _('ppZen').value = String(c.zenUseProxies !== false);
+    _('ppWb').value = String(c.workbuddyUseProxies !== false);
     const cd = (c.runtime || {}).proxyCooldowns || {};
     const keys = Object.keys(cd);
     _('ppCooldownInfo').textContent = keys.length
@@ -2251,20 +3561,48 @@ async function saveProxyPool() {
   } catch (e) { toast(T('Save failed: ') + e.message, 'error'); }
 }
 
-async function saveClineProxies() {
+// saveGlobalPolicy 统一保存三个平台的全局走池开关：一次点击依次下发
+// Cline（/config/update）与 OpenCode / WorkBuddy（/opencode/config/update）。
+async function saveGlobalPolicy() {
   try {
     await api('POST', '/config/update', { clineUseProxies: _('ppCline').value === 'true' });
-    toast('Cline proxy setting saved', 'success');
+    await api('POST', '/opencode/config/update', { zenUseProxies: _('ppZen').value === 'true', workbuddyUseProxies: _('ppWb').value === 'true' });
+    toast('Global policy saved', 'success');
     loadProxyPool();
   } catch (e) { toast(T('Save failed: ') + e.message, 'error'); }
 }
 
-async function saveProxyIsolation() {
+// saveIsolationOptions 保存代理隔离区的两项：隔离模式 + 辅代理开关。两字段同在
+// zen 配置但分两次请求下发——PROXY_ISOLATION=true 锁定面板时后端会整体拒绝携带
+// proxyIsolation 的请求，分开才能让辅代理开关在锁定态照常保存（锁定态下拉框
+// disabled，跳过第一笔）。辅代理开关联动绑定表重绘，保存失败回滚勾选。
+async function saveIsolationOptions() {
+  const iso = _('ppIsolation');
+  if (!iso.disabled) {
+    try {
+      await api('POST', '/opencode/config/update', { proxyIsolation: iso.value === 'true' });
+    } catch (e) { toast(T('Save failed: ') + e.message, 'error'); return; }
+  }
+  const cb = _('ppBackupEnabled');
   try {
-    await api('POST', '/opencode/config/update', { proxyIsolation: _('ppIsolation').value === 'true' });
-    toast('Proxy isolation setting saved', 'success');
+    await api('POST', '/opencode/config/update', { backupProxyEnabled: cb.checked });
+    backupProxyOn = cb.checked;
+    toast('Proxy isolation settings saved', 'success');
     loadProxyPool();
-  } catch (e) { toast(T('Save failed: ') + e.message, 'error'); }
+    refreshBindingTables();
+  } catch (e) {
+    cb.checked = !cb.checked;  // 保存失败回滚勾选
+    toast(T('Save failed: ') + e.message, 'error');
+  }
+}
+
+// refreshBindingTables 按当前 backupProxyOn 重绘绑定表：只刷新已经渲染过行的
+// 表（标签页是惰性加载的，没打开过的保持未加载）。行内的暂存改动会被丢弃，
+// 与"复位"同语义 —— 开关是全局设置，重绘比就地改 DOM 更不容易出现半更新。
+function refreshBindingTables() {
+  if (_('accountTableBody') && _('accountTableBody').querySelector('.eg-input')) loadAccounts();
+  if (_('ocKeysBody') && _('ocKeysBody').querySelector('.eg-input')) loadOcConfig();
+  if (_('wbAccountsBody') && _('wbAccountsBody').querySelector('.eg-input')) loadWorkbuddyAccounts();
 }
 
 // loadOcModels 只维护探测模型下拉（模型列表本体已并入网关设置的可用模型区）。
@@ -2302,14 +3640,20 @@ function renderOcSessions(s) {
     : '';
   // 刷新节奏与并发写进提示行：用户据此判断"自动维护是否够用"，以及
   // 调 ZEN_HARVEST_INTERVAL_HOURS / ZEN_HARVEST_CONCURRENCY 要不要改。
+  // 本区域是 innerHTML 整段重写，静态词条不生效——每段直接走 T() 字典。
   const h = _('ocSessHint');
   if (h) {
-    const base = 'The free tier only accepts session IDs the upstream has actually seen, minted by the opencode CLI. A key without a live session <b>always</b> fails with 403.';
-    h.innerHTML = base + (s.harvestEnabled
-      ? ' Auto-refresh every <b>' + (s.intervalHours || 4) + 'h</b> (kept below the 5h quota window), minting <b>' +
-        (s.concurrency || 1) + '</b> key(s) at a time' +
-        ((s.concurrency || 1) === 1 ? ' (one after another — safest on small instances, the CLI is CPU/RAM hungry)' : '') + '.'
-      : ' <b>Harvester unavailable</b> — no opencode CLI in this container (ZEN_HARVEST_BIN).');
+    let html = T('The free tier only accepts session IDs the upstream has actually seen, minted by the opencode CLI. A key without a live session <b>always</b> fails with 403.');
+    if (s.harvestEnabled) {
+      html += ' ' + T('Auto-refresh every {h}h (kept below the 5h quota window), minting {n} key(s) at a time')
+          .replace('{h}', s.intervalHours || 4)
+          .replace('{n}', s.concurrency || 1);
+      if ((s.concurrency || 1) === 1) html += T(' (one after another — safest on small instances, the CLI is CPU/RAM hungry)');
+      html += T('.');
+    } else {
+      html += ' <b>' + T('Harvester unavailable') + '</b>' + T(' — no opencode CLI in this container (ZEN_HARVEST_BIN).');
+    }
+    h.innerHTML = html;
   }
   // CLI 不在时后端会以 400 拒绝 mint，按钮先禁用，避免点了才发现。
   const usable = !!s.harvestEnabled;
@@ -2390,7 +3734,7 @@ async function mintZenSessions(force) {
 }
 
 // ========== Combos (alias models) ==========
-const comboModels = { cline: [], zen: [] };
+const comboModels = { cline: [], zen: [], workbuddy: [] };
 
 async function fillComboModels() {
   const platform = _('comboPlatform').value;
@@ -2400,9 +3744,14 @@ async function fillComboModels() {
       if (platform === 'cline') {
         const d = await api('GET', '/models');
         comboModels.cline = (d.data.models || []).map(m => m.id).filter(Boolean);
-      } else {
+      } else if (platform === 'zen') {
         const d = await api('GET', '/opencode/models');
         comboModels.zen = (d.data.models || []).map(m => m.id).filter(Boolean);
+      } else if (platform === 'workbuddy') {
+        const all = await fetchWorkbuddyModels();
+        comboModels.workbuddy = all.filter(wbModelMatchesFilter)
+          .sort((a, b) => wbRate(a) - wbRate(b))
+          .map(m => m.id).filter(Boolean);
       }
     }
     if (!comboModels[platform].length) { sel.innerHTML = '<option value="">No models on this platform</option>'; return; }
@@ -2418,7 +3767,7 @@ async function loadCombos() {
     _('combosList').innerHTML = '<div class="table-wrap"><table><thead><tr><th style="text-align:left">Alias ID</th><th>Platform</th><th style="text-align:left">Target model</th><th>Proxy</th><th>Created</th><th>Actions</th></tr></thead><tbody>' +
       combos.map(c => '<tr>' +
         '<td style="text-align:left;font-family:monospace;font-weight:600">' + esc(c.id) + '</td>' +
-        '<td><span class="model-tag">' + esc(c.platform === 'zen' ? 'opencode' : 'cline') + '</span></td>' +
+        '<td><span class="model-tag">' + esc(c.platform === 'zen' ? 'opencode' : c.platform) + '</span></td>' +
         '<td style="text-align:left;font-family:monospace">' + esc(c.target) + '</td>' +
         '<td>' + (c.useProxies ? '<span class="model-tag" style="color:var(--accent2)">socks5 pool</span>' : '-') + '</td>' +
         '<td style="font-size:11px">' + (c.createdAt ? new Date(c.createdAt).toLocaleString('en-US') : '-') + '</td>' +
@@ -2456,14 +3805,6 @@ async function deleteCombo(id) {
   } catch (e) { toast(T('Delete failed: ') + e.message, 'error'); }
 }
 
-async function saveZenProxies() {
-  try {
-    await api('POST', '/opencode/config/update', { zenUseProxies: _('ppZen').value === 'true' });
-    toast(T('OpenCode proxy setting saved'), 'success');
-    loadProxyPool();
-  } catch (e) { toast(T('Save failed: ') + e.message, 'error'); }
-}
-
 async function loadOcStats() {
   try {
     const d = await api('GET', '/opencode/stats');
@@ -2486,7 +3827,9 @@ loadAccounts();
 loadKeys();
 loadModels();
 loadConfig();
-setInterval(() => { loadStats(); }, 10000);
+restoreTab();
+// 平台概览只在仪表盘可见时轮询（loadStats 现在打三个接口，隐藏页轮询纯浪费）
+setInterval(() => { if (_('tab-dashboard').style.display !== 'none') loadStats(); }, 10000);
 setInterval(() => { loadOcStats(); }, 15000);
 // live 会话状态：只在 opencode 页可见时轮询（与日志页同样的省流约定）。
 // mint 任务进行中由 mintZenSessions 自己的 2s 轮询接管。

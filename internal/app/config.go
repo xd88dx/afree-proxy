@@ -36,13 +36,10 @@ import (
 //	  （须小于 zen 的 5h 额度窗口，否则每轮都有一段时间全池会话已过期）
 //	CLINE_ACCOUNTS_SEED_FILE   cline 账号种子文件（[{refreshToken,email}] JSON 数组），
 //	                           池为空时启动自动导入
-//	CLINE_USE_PROXIES          true 时 cline 上游全部走出口代理池（zen 上游配置
-//	                           proxies 后默认走池；combo 也可按别名单独开启）
-//	PROXY_ISOLATION            账号/key 代理隔离开关（默认 true）：true 时绑定
-//	                           了主/辅代理的账号与 zen key 只从绑定出口发出，
-//	                           双不可用即跳过（收割机同样走绑定出口）；false
-//	                           回到旧版"请求级全局轮转"（忽略绑定）。显式设置
-//	                           时优先于面板开关（proxyIsolationEnvLocked）
+//	PROXY_ISOLATION            代理隔离开关，只接受 true/false（大小写不敏感）：
+//	                           true 强制开启（面板开关只读）；false 默认关闭、
+//	                           面板可改；未设置默认开启、面板可改。其他值告警
+//	                           并按未设置处理
 
 // envStr 读取环境变量并去除首尾空白，未设置或为空返回 ""。
 func envStr(key string) string {
@@ -282,18 +279,11 @@ func StreamLogEnabled() bool {
 	return v
 }
 
-// ClineUseProxiesEnv CLINE_USE_PROXIES=true 时 cline 上游全部走出口代理池
-// （默认 false；cline 上游也可通过 combo 的 useProxies 开关按别名启用）。
-func ClineUseProxiesEnv() bool {
-	v, _ := envBool("CLINE_USE_PROXIES")
-	return v
-}
-
 // clineProxiesEnabled cline 上游是否走共享出口代理池：
-// 管理面板的持久化开关或 CLINE_USE_PROXIES env 任一开启即启用（env 优先）。
+// 仅由管理面板的持久化开关决定（nil 默认开启），无环境变量覆盖。
 // 代理列表本身由 zen 配置的 proxies 提供 —— 两个上游共用同一个池。
 func clineProxiesEnabled() bool {
-	return ClineUseProxiesEnv() || poolClineUseProxies()
+	return poolClineUseProxies()
 }
 
 // StrictModelMatchEnv STRICT_MODEL_MATCH 控制未知模型名的处理（默认 true）：

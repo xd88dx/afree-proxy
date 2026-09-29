@@ -46,8 +46,9 @@ func setupZenProbeTest(t *testing.T, handler http.HandlerFunc) {
 	cfgCopy := *savedCfg
 	cfgCopy.BaseURL = upstream.URL
 	cfgCopy.Keys = []string{"sk-aaa111", "sk-bbb222", "sk-pin333"}
-	// 新语义：未启用的 key 的 403 不触发收割 —— 探测类测试统一把 key 置为启用
-	cfgCopy.KeyEnabled = map[string]bool{"sk-aaa111": true, "sk-bbb222": true, "sk-pin333": true}
+	// 铸造跟随路由启用：探测类测试统一把 key 置为路由启用（缺项本就参与，
+	// 显式写出以自我说明）
+	cfgCopy.KeyRoutingEnabled = map[string]bool{"sk-aaa111": true, "sk-bbb222": true, "sk-pin333": true}
 	cfgCopy.Proxies = nil
 	cfgCopy.Retries = 0
 	setZenConfig(&cfgCopy)
@@ -308,32 +309,17 @@ func TestZenKeyTestResponsesUpstreamPath(t *testing.T) {
 	}
 }
 
-// P2 修复守卫：pinned 探测的上游 5xx 不得推进全局故障转移——否则连点几次
-// Test 撞上上游 500，会把全部正常 free-zen 流量切去 cline 池 5 分钟。
-func TestZenProbeDoesNotPolluteFailover(t *testing.T) {
+// pinned 探测的上游 5xx 只属于这次点击：探测按 error 回报，不触碰全局路由
+// 状态（故障转移机制已删除，此处守卫探测结论不外溢到其他 key/请求）。
+func TestZenProbeUpstream5xxReturnsError(t *testing.T) {
 	setupZenProbeTest(t, func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 		_, _ = w.Write([]byte(`{"error":"Internal server error"}`))
 	})
-	zenStateMu.Lock()
-	savedCount, savedUntil := zenFailCount, zenFailUntil
-	zenFailCount, zenFailUntil = 0, time.Time{}
-	zenStateMu.Unlock()
-	defer func() {
-		zenStateMu.Lock()
-		zenFailCount, zenFailUntil = savedCount, savedUntil
-		zenStateMu.Unlock()
-	}()
 
 	_, status := testZenKey("sk-aaa111", 0, "")
 	if status != "error" {
 		t.Fatalf("status = %q, want error", status)
-	}
-	zenStateMu.Lock()
-	cnt, until := zenFailCount, zenFailUntil
-	zenStateMu.Unlock()
-	if cnt != 0 || !until.IsZero() {
-		t.Fatalf("pinned probe polluted failover state: count=%d until=%v", cnt, until)
 	}
 }
 

@@ -296,8 +296,7 @@ func modelInFreeList(id string) bool {
 
 // strictModelGate STRICT_MODEL_MATCH 开启时，对既不在 cline 免费模型表、
 // 也不是 zen 模型的名字返回错误提示；空串表示放行。zen 模型必须放行：
-// zen 故障转移时会把 zen 免费模型路由到 cline 池，由 normalizeRequestModel
-// 兜底为默认模型 —— 这是故障转移的既有机制。combo 别名由调用方先改写。
+// zen 目录按分钟同步，闪断空窗里的误拒靠这里兜住。combo 别名由调用方先改写。
 // gateRefreshMinInterval 门控触发的强制刷新节流：30 秒内多个未命中只真实
 // 刷新一次，客户端循环发未知模型名也不会打爆上游 feed。
 const gateRefreshMinInterval = 30 * time.Second
@@ -316,7 +315,7 @@ func strictModelGate(model string) string {
 	// （实测 2026-09-27 02:01 prune 一个模型、02:02 又加回），客户端请求
 	// 可能恰好落进空窗被误拒。节流地强制同步两份缓存再重查；仍找不到才
 	// 拒绝。真下线的模型该请求随后会在上游得到真实错误（该类错误不冷却
-	// key、不计故障转移），不会把死模型硬塞给上游。
+	// key），不会把死模型硬塞给上游。
 	if last := gateRefreshLast.Load(); time.Since(time.Unix(last, 0)) >= gateRefreshMinInterval &&
 		gateRefreshLast.CompareAndSwap(last, time.Now().Unix()) {
 		syncModelsOnce()

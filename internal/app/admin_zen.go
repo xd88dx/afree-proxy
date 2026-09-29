@@ -24,7 +24,8 @@ func handleZenConfig(w http.ResponseWriter, r *http.Request) {
 	}
 	cfg := getZenConfig()
 	data := map[string]any{
-		"zenUseProxies":   zenProxiesEnabled(),
+		"zenUseProxies":       zenProxiesEnabled(),
+		"workbuddyUseProxies": workbuddyProxiesEnabled(),
 		"key":             cfg.Key,
 		"keys":            cfg.Keys,
 		"keyStates":       zenKeyStatus(),
@@ -33,16 +34,14 @@ func handleZenConfig(w http.ResponseWriter, r *http.Request) {
 		"proxyStrategy":   cfg.ProxyStrategy,
 		"maxConcurrency":  cfg.MaxConcurrency,
 		"retries":         cfg.Retries,
-		"failover":        cfg.Failover,
-		"failoverCount":   cfg.FailoverCount,
-		"failoverMinutes": cfg.FailoverMinutes,
 		"compaction":      cfg.Compaction,
 		// 代理隔离（账号/key 绑定出口）：生效值 + 是否被 env 钉死（面板据此
 		// 禁用开关并提示）。
 		"proxyIsolation":          proxyIsolationEnabled(),
 		"proxyIsolationEnvLocked": proxyIsolationEnvLocked(),
+		// 辅代理开关：关闭时主代理不通不再尝试辅代理（绑定退化为只看主槽）。
+		"backupProxyEnabled": backupProxyEnabled(),
 		"runtime": map[string]any{
-			"failoverActive": zenFailedNow(),
 			"proxyCooldowns": zenProxyCooldownStatus(),
 		},
 	}
@@ -64,7 +63,8 @@ func handleZenConfigUpdate(w http.ResponseWriter, r *http.Request) {
 
 	cur := getZenConfig()
 	var patch struct {
-		ZenUseProxies  *bool    `json:"zenUseProxies"`
+		ZenUseProxies       *bool    `json:"zenUseProxies"`
+		WorkbuddyUseProxies *bool    `json:"workbuddyUseProxies"`
 		Key            *string  `json:"key"`
 		Keys            []string `json:"keys"`
 		BaseURL         *string  `json:"baseURL"`
@@ -72,10 +72,8 @@ func handleZenConfigUpdate(w http.ResponseWriter, r *http.Request) {
 		ProxyStrategy   *string  `json:"proxyStrategy"`
 		MaxConcurrency  *int     `json:"maxConcurrency"`
 		Retries         *int     `json:"retries"`
-		Failover        *bool    `json:"failover"`
-		FailoverCount   *int     `json:"failoverCount"`
-		FailoverMinutes *int     `json:"failoverMinutes"`
 		ProxyIsolation  *bool    `json:"proxyIsolation"`
+		BackupProxyEnabled *bool `json:"backupProxyEnabled"`
 		Compaction      *struct {
 			Auto         *bool   `json:"auto"`
 			Buffer       *int    `json:"buffer"`
@@ -89,7 +87,8 @@ func handleZenConfigUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	next := &zenConfigData{
-		ZenUseProxies:   cur.ZenUseProxies,
+		ZenUseProxies:       cur.ZenUseProxies,
+		WorkbuddyUseProxies: cur.WorkbuddyUseProxies,
 		Key:             cur.Key,
 		Keys:            cur.Keys,
 		BaseURL:         cur.BaseURL,
@@ -97,16 +96,19 @@ func handleZenConfigUpdate(w http.ResponseWriter, r *http.Request) {
 		ProxyStrategy:   cur.ProxyStrategy,
 		MaxConcurrency:  cur.MaxConcurrency,
 		Retries:         cur.Retries,
-		Failover:        cur.Failover,
-		FailoverCount:   cur.FailoverCount,
-		FailoverMinutes: cur.FailoverMinutes,
 		ProxyIsolation:  cur.ProxyIsolation,
+		BackupProxyEnabled: cur.BackupProxyEnabled,
 		KeyBindings:     cur.KeyBindings,
-		KeyEnabled:      cur.KeyEnabled,
+		// KeyRoutingEnabled 必须随 next 保留：config/update 是全量替换语义，
+		// 漏拷会把面板勾选的路由参与表整体清掉（缺项 = 全部参与）。
+		KeyRoutingEnabled: cur.KeyRoutingEnabled,
 		Compaction:      cur.Compaction,
 	}
 	if patch.ZenUseProxies != nil {
 		next.ZenUseProxies = patch.ZenUseProxies
+	}
+	if patch.WorkbuddyUseProxies != nil {
+		next.WorkbuddyUseProxies = patch.WorkbuddyUseProxies
 	}
 	if patch.Keys != nil {
 		// 多 key 池整体替换；兼容旧单 key 字段（key 非空时视为单元素列表）
@@ -156,23 +158,17 @@ func handleZenConfigUpdate(w http.ResponseWriter, r *http.Request) {
 	if patch.Retries != nil && *patch.Retries >= 0 {
 		next.Retries = *patch.Retries
 	}
-	if patch.Failover != nil {
-		next.Failover = *patch.Failover
-	}
-	if patch.FailoverCount != nil && *patch.FailoverCount > 0 {
-		next.FailoverCount = *patch.FailoverCount
-	}
-	if patch.FailoverMinutes != nil && *patch.FailoverMinutes > 0 {
-		next.FailoverMinutes = *patch.FailoverMinutes
-	}
 	if patch.ProxyIsolation != nil {
-		// PROXY_ISOLATION env 显式设置时 env 优先：面板改了也不生效，直接
-		// 拒绝并说明，免得用户以为保存成功了。
+		// 仅 PROXY_ISOLATION=true 锁定面板（强制开启）；env=false 或未设置时
+		// 面板可正常修改。锁定时直接拒绝并说明，免得用户以为保存成功了。
 		if proxyIsolationEnvLocked() {
-			writeAPI(w, http.StatusBadRequest, apiResponse{Error: "PROXY_ISOLATION env is set; it overrides this toggle — unset the env var to control isolation from the panel"})
+			writeAPI(w, http.StatusBadRequest, apiResponse{Error: "PROXY_ISOLATION=true forces isolation on; unset the env var (or set it to false) to control isolation from the panel"})
 			return
 		}
 		next.ProxyIsolation = patch.ProxyIsolation
+	}
+	if patch.BackupProxyEnabled != nil {
+		next.BackupProxyEnabled = patch.BackupProxyEnabled
 	}
 	if patch.Compaction != nil {
 		base := cur.Compaction
@@ -482,11 +478,11 @@ func handleZenSessionsMint(w http.ResponseWriter, r *http.Request) {
 	writeAPI(w, http.StatusOK, apiResponse{Success: true, Message: msg, Data: state})
 }
 
-// POST /admin/api/opencode/keys/enabled  body: { index, enabled }
-// 设置单个 zen key 的自动铸造启用状态（面板"是否启用"勾选列）。未启用的
-// key 不参与任何铸造路径（启动补缺 / 403 触发 / 周期巡检 / 手动 Mint）。
-func handleZenKeySetEnabled(w http.ResponseWriter, r *http.Request) {
-	if r.Method != "POST" {
+// POST /admin/api/opencode/keys/routing  body: { index, enabled }
+// 设置单个 zen key 的路由参与状态（面板"启用"勾选列）。禁用的 key 不进入
+// 请求轮转（选号时跳过），也不再被收割机铸造会话（铸造跟随路由）。
+func handleZenKeySetRouting(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
 		writeAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
 		return
 	}
@@ -504,17 +500,17 @@ func handleZenKeySetEnabled(w http.ResponseWriter, r *http.Request) {
 		writeAPI(w, http.StatusBadRequest, apiResponse{Error: "invalid JSON"})
 		return
 	}
-	if err := setZenKeyEnabled(req.Index, req.Enabled); err != nil {
+	if err := setZenKeyRoutingEnabled(req.Index, req.Enabled); err != nil {
 		writeAPI(w, http.StatusBadRequest, apiResponse{Error: err.Error()})
 		return
 	}
-	writeAPI(w, http.StatusOK, apiResponse{Success: true, Message: fmt.Sprintf("key #%d auto-mint enabled=%v", req.Index+1, req.Enabled)})
+	writeAPI(w, http.StatusOK, apiResponse{Success: true, Message: fmt.Sprintf("key #%d routing enabled=%v", req.Index+1, req.Enabled)})
 }
 
-// POST /admin/api/opencode/keys/enabled/all  body: { enabled }
-// 一键启用/停用全部 key 的自动铸造（public 无凭据跳过）。
-func handleZenKeyEnableAll(w http.ResponseWriter, r *http.Request) {
-	if r.Method != "POST" {
+// POST /admin/api/opencode/keys/routing/all  body: { enabled }
+// 一键启用/停用全部 key 的路由参与（面板批量入口）。
+func handleZenKeySetRoutingAll(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
 		writeAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
 		return
 	}
@@ -531,8 +527,67 @@ func handleZenKeyEnableAll(w http.ResponseWriter, r *http.Request) {
 		writeAPI(w, http.StatusBadRequest, apiResponse{Error: "invalid JSON"})
 		return
 	}
-	n := setAllZenKeysEnabled(req.Enabled)
-	writeAPI(w, http.StatusOK, apiResponse{Success: true, Message: fmt.Sprintf("auto-mint enabled=%v on %d key(s)", req.Enabled, n)})
+	n := setAllZenKeysRoutingEnabled(req.Enabled)
+	writeAPI(w, http.StatusOK, apiResponse{Success: true, Message: fmt.Sprintf("routing enabled=%v on %d key(s)", req.Enabled, n)})
+}
+
+// POST /admin/api/opencode/keys/delete  body: { index }
+// 从 key 池删除单个 key（按索引定位）：随行清掉代理绑定与路由参与记录；
+// 会话/收割状态由 setZenConfig 的 normalize 按存活 key 列表裁剪。删空后
+// normalize 会回退为匿名 public key。
+func handleZenKeyDelete(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
+		return
+	}
+	body, err := io.ReadAll(io.LimitReader(r.Body, 512))
+	if err != nil {
+		writeAPI(w, http.StatusBadRequest, apiResponse{Error: err.Error()})
+		return
+	}
+	defer r.Body.Close()
+	var req struct {
+		Index int `json:"index"`
+	}
+	if err := json.Unmarshal(body, &req); err != nil {
+		writeAPI(w, http.StatusBadRequest, apiResponse{Error: "invalid JSON"})
+		return
+	}
+	cfg := getZenConfig()
+	if req.Index < 0 || req.Index >= len(cfg.Keys) {
+		writeAPI(w, http.StatusBadRequest, apiResponse{Error: "key index out of range"})
+		return
+	}
+	key := cfg.Keys[req.Index]
+	next := *cfg
+	keys := make([]string, 0, len(cfg.Keys)-1)
+	keys = append(keys, cfg.Keys[:req.Index]...)
+	keys = append(keys, cfg.Keys[req.Index+1:]...)
+	next.Keys = keys
+	// Key 兼容字段必须一起清空：normalizeZenKeys 见到空 Keys 且 Key 非空时会
+	// 把 Key 重新灌回池子（旧单 key 配置的迁移规则），删最后一个 key 就成了
+	// 无声的假成功——key 还在，接口却回 200 deleted。
+	if len(keys) == 0 {
+		next.Key = ""
+	}
+	next.KeyBindings = withoutKey(cfg.KeyBindings, key)
+	next.KeyRoutingEnabled = withoutKey(cfg.KeyRoutingEnabled, key)
+	setZenConfig(&next)
+	writeAPI(w, http.StatusOK, apiResponse{Success: true, Message: fmt.Sprintf("key #%d deleted", req.Index+1)})
+}
+
+// withoutKey 复制删掉指定 key 条目的 map（nil 安全）。
+func withoutKey[V any](m map[string]V, key string) map[string]V {
+	if len(m) == 0 {
+		return m
+	}
+	out := make(map[string]V, len(m))
+	for k, v := range m {
+		if k != key {
+			out[k] = v
+		}
+	}
+	return out
 }
 
 // POST /admin/api/opencode/keys/proxy  body: { index, main, backup }

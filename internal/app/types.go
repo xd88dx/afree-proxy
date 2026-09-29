@@ -29,6 +29,10 @@ type Account struct {
 	// 隔离开关关闭（旧版全局轮转）时两个字段被完全忽略。
 	ProxyMain   string `json:"proxyMain,omitempty"`
 	ProxyBackup string `json:"proxyBackup,omitempty"`
+	// PoolEnabled 是“参与轮换”的显式开关，与 active/cooldown/expired 状态
+	// 分开表达。nil（旧数据或未选择）按启用处理；只有显式 false 才退出主选号，
+	// 只读接口仍按 Status 使用账号。
+	PoolEnabled *bool `json:"poolEnabled,omitempty"`
 }
 
 type AccountPool struct {
@@ -36,7 +40,11 @@ type AccountPool struct {
 	CurrentIdx      int        `json:"currentIdx"`
 	Keys            []string   `json:"keys,omitempty"`
 	DefaultModel    string     `json:"defaultModel,omitempty"` // 用户自定义默认模型，持久化
-	ClineUseProxies bool       `json:"clineUseProxies,omitempty"` // cline 上游走共享出口代理池（面板开关；CLINE_USE_PROXIES env 为 true 时强制开启）
+	ClineUseProxies *bool      `json:"clineUseProxies,omitempty"` // cline 上游走共享出口代理池（面板开关；nil = 默认开启）
+	// AdminLogEnabled /admin 页面与接口访问是否写入请求日志（面板开关；
+	// nil = 默认关闭）。本地自用部署不需要这些噪声行，默认只留经过网关的
+	// 模型会话请求日志。
+	AdminLogEnabled *bool `json:"adminLogEnabled,omitempty"`
 	// 调度策略与自定义请求头的持久化（面板保存，重启回放；POOL_STRATEGY env
 	// 显式设置时策略以 env 为准）。作用于 Cline 账号池与 OpenCode key 池。
 	Strategy string            `json:"strategy,omitempty"`

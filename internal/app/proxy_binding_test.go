@@ -72,16 +72,30 @@ func TestProxyIsolationEnabledDefaults(t *testing.T) {
 	if proxyIsolationEnabled() {
 		t.Fatal("isolation must be disabled when ProxyIsolation=false")
 	}
-	// env 优先于面板配置
+	// env=true：强制开启，覆盖面板的显式关闭
 	t.Setenv("PROXY_ISOLATION", "true")
 	setupBindingTest(t, testZenCfg(boolPtr(false)))
 	if !proxyIsolationEnabled() {
 		t.Fatal("PROXY_ISOLATION=true must override persisted false")
 	}
+	// env=false：默认关闭，但面板显式设置过（非 nil）时面板优先
 	t.Setenv("PROXY_ISOLATION", "false")
-	setupBindingTest(t, testZenCfg(boolPtr(true)))
+	setupBindingTest(t, testZenCfg(nil))
 	if proxyIsolationEnabled() {
-		t.Fatal("PROXY_ISOLATION=false must override persisted true")
+		t.Fatal("PROXY_ISOLATION=false must default to disabled when panel has no explicit value")
+	}
+	setupBindingTest(t, testZenCfg(boolPtr(true)))
+	if !proxyIsolationEnabled() {
+		t.Fatal("PROXY_ISOLATION=false must not override an explicit panel true")
+	}
+	// 非法值（只接受 true/false）：告警并按未设置处理 → 默认启用
+	t.Setenv("PROXY_ISOLATION", "yes")
+	setupBindingTest(t, testZenCfg(nil))
+	if !proxyIsolationEnabled() {
+		t.Fatal("invalid PROXY_ISOLATION value must be treated as unset (default enabled)")
+	}
+	if proxyIsolationEnvLocked() {
+		t.Fatal("invalid PROXY_ISOLATION value must not lock the panel toggle")
 	}
 }
 
@@ -97,9 +111,11 @@ func testZenCfg(isolation *bool) *zenConfigData {
 }
 
 func TestPickBoundProxyMainThenBackup(t *testing.T) {
+	// 辅代理开关显式打开才存在"主不通走辅"的兜底
 	setupBindingTest(t, &zenConfigData{
-		Keys: []string{"public"},
-		Proxies: []string{"http://a:1", "http://b:2"},
+		Keys:               []string{"public"},
+		Proxies:            []string{"http://a:1", "http://b:2"},
+		BackupProxyEnabled: boolPtr(true),
 	})
 	// 主可用 → 主
 	if u, idx, ok := pickBoundProxy("http://a:1", "http://b:2"); !ok || u != "http://a:1" || idx != 0 {
@@ -120,8 +136,9 @@ func TestPickBoundProxyMainThenBackup(t *testing.T) {
 func TestPickBoundProxyStaleBinding(t *testing.T) {
 	// 主代理已从池中删除：绑定视为不可用（绝不静默回退直连/其他出口）
 	setupBindingTest(t, &zenConfigData{
-		Keys: []string{"public"},
-		Proxies: []string{"http://b:2"},
+		Keys:               []string{"public"},
+		Proxies:            []string{"http://b:2"},
+		BackupProxyEnabled: boolPtr(true),
 	})
 	if u, idx, ok := pickBoundProxy("http://removed:9", "http://b:2"); !ok || u != "http://b:2" || idx != 0 {
 		t.Fatalf("stale main should fall to backup, got %q idx=%d ok=%v", u, idx, ok)
@@ -137,7 +154,7 @@ func TestPickBoundProxyStaleBinding(t *testing.T) {
 
 func TestBoundProxiesRoutableUnboundSemantics(t *testing.T) {
 	setupBindingTest(t, &zenConfigData{
-		Keys: []string{"public"},
+		Keys:    []string{"public"},
 		Proxies: []string{"http://a:1"},
 	})
 	if !boundProxiesRoutable("", "") {
@@ -151,7 +168,7 @@ func TestBoundProxiesRoutableUnboundSemantics(t *testing.T) {
 
 func TestPickAccountSkipsBoundBlockedAccounts(t *testing.T) {
 	setupBindingTest(t, &zenConfigData{
-		Keys: []string{"public"},
+		Keys:    []string{"public"},
 		Proxies: []string{"http://a:1", "http://b:2"},
 	})
 	accA := &Account{AccountID: "a", Email: "a@x", Status: "active", APIToken: "sk_test", ProxyMain: "http://a:1", ProxyBackup: "http://b:2"}
@@ -177,7 +194,7 @@ func TestPickAccountSkipsBoundBlockedAccounts(t *testing.T) {
 
 	// 关闭隔离开关：回到旧规则，绑定字段被完全忽略（A 重新可选）
 	setupBindingTest(t, &zenConfigData{
-		Keys: []string{"public"},
+		Keys:           []string{"public"},
 		Proxies:        []string{"http://a:1", "http://b:2"},
 		ProxyIsolation: boolPtr(false),
 	})
@@ -188,7 +205,7 @@ func TestPickAccountSkipsBoundBlockedAccounts(t *testing.T) {
 
 func TestPickZenKeySkipsBoundBlockedKeys(t *testing.T) {
 	setupBindingTest(t, &zenConfigData{
-		Keys: []string{"sk-1", "sk-2"},
+		Keys:           []string{"sk-1", "sk-2"},
 		Proxies:        []string{"http://a:1", "http://b:2"},
 		KeyBindings:    map[string]zenProxyBinding{"sk-1": {Main: "http://a:1", Backup: "http://b:2"}},
 		ProxyIsolation: boolPtr(true),
@@ -205,7 +222,7 @@ func TestPickZenKeySkipsBoundBlockedKeys(t *testing.T) {
 
 	// 全部 key 都被挡住 → 空串（调用方报"无可用出口"，绝不静默直连）
 	setupBindingTest(t, &zenConfigData{
-		Keys: []string{"sk-1", "sk-2"},
+		Keys:    []string{"sk-1", "sk-2"},
 		Proxies: []string{"http://a:1"},
 		KeyBindings: map[string]zenProxyBinding{
 			"sk-1": {Main: "http://a:1"},
@@ -221,7 +238,7 @@ func TestPickZenKeySkipsBoundBlockedKeys(t *testing.T) {
 
 func TestValidateProxyBinding(t *testing.T) {
 	setupBindingTest(t, &zenConfigData{
-		Keys: []string{"public"},
+		Keys:    []string{"public"},
 		Proxies: []string{"http://a:1", "socks5://b:2"},
 	})
 	if err := validateProxyBinding("http://a:1", "socks5://b:2"); err != nil {
@@ -253,9 +270,11 @@ func TestValidateProxyBinding(t *testing.T) {
 }
 
 func TestPickBoundProxyDirectSentinel(t *testing.T) {
+	// 辅槽的直连哨兵属于"兜底"，只有辅代理开关打开时才生效
 	setupBindingTest(t, &zenConfigData{
-		Keys: []string{"public"},
-		Proxies: []string{"http://a:1"},
+		Keys:               []string{"public"},
+		Proxies:            []string{"http://a:1"},
+		BackupProxyEnabled: boolPtr(true),
 	})
 	// 主 = direct：无论池状态如何都直连
 	if u, idx, ok := pickBoundProxy("direct", ""); !ok || u != "" || idx != -1 {
@@ -275,9 +294,49 @@ func TestPickBoundProxyDirectSentinel(t *testing.T) {
 	}
 }
 
+// TestBackupProxyDisabledIgnoresBackupSlot：辅代理开关默认关闭 —— 主代理不可用
+// 时不再尝试辅代理（该身份本轮跳过），也绝不因此退回直连。
+func TestBackupProxyDisabledIgnoresBackupSlot(t *testing.T) {
+	setupBindingTest(t, &zenConfigData{
+		Keys:    []string{"public"},
+		Proxies: []string{"http://a:1", "http://b:2"},
+	})
+	if backupProxyEnabled() {
+		t.Fatal("backup proxy switch must default to off")
+	}
+	// 主可用 → 主（辅槽被完全忽略）
+	if u, idx, ok := pickBoundProxy("http://a:1", "http://b:2"); !ok || u != "http://a:1" || idx != 0 {
+		t.Fatalf("main expected, got %q idx=%d ok=%v", u, idx, ok)
+	}
+	// 主冷却 → 不可用（不尝试辅）
+	setProxyCooldownIdx(t, 0, time.Minute)
+	if u, _, ok := pickBoundProxy("http://a:1", "http://b:2"); ok {
+		t.Fatalf("backup must not be tried while the switch is off, got %q", u)
+	}
+	// 辅槽的直连哨兵同样不生效：关闭辅代理不等于打开直连兜底
+	if _, _, ok := pickBoundProxy("http://a:1", "direct"); ok {
+		t.Fatal("direct backup must not be used while the switch is off")
+	}
+	// 主 = direct 的强制直连语义不受开关影响
+	if u, _, ok := pickBoundProxy("direct", ""); !ok || u != "" {
+		t.Fatalf("main=direct must still egress directly, got %q ok=%v", u, ok)
+	}
+	// 主代理已从池中删除 → 不可用（不回退辅、不回退直连）
+	if _, _, ok := pickBoundProxy("http://removed:9", "http://b:2"); ok {
+		t.Fatal("stale main must report unavailable instead of falling to backup")
+	}
+	// routable 判定同步收敛：主不可用即不可路由
+	if boundProxiesRoutable("http://a:1", "http://b:2") {
+		t.Fatal("pair must not be routable when the main is cooling and the backup switch is off")
+	}
+	if !boundProxiesRoutable("", "") {
+		t.Fatal("unbound identity must still count as routable")
+	}
+}
+
 func TestSetAccountProxyBinding(t *testing.T) {
 	setupBindingTest(t, &zenConfigData{
-		Keys: []string{"public"},
+		Keys:    []string{"public"},
 		Proxies: []string{"http://a:1", "http://b:2"},
 	})
 	swapTestPool(t, []*Account{{AccountID: "a", Email: "a@x", Status: "active"}})
@@ -302,9 +361,11 @@ func TestSetAccountProxyBinding(t *testing.T) {
 }
 
 func TestSetZenKeyProxyBinding(t *testing.T) {
+	// 辅代理开关打开才能写入辅槽（关闭时 normalizeBackupSlot 会把辅槽收敛为空）
 	setupBindingTest(t, &zenConfigData{
-		Keys: []string{"sk-1", "sk-2"},
-		Proxies: []string{"http://a:1", "http://b:2"},
+		Keys:               []string{"sk-1", "sk-2"},
+		Proxies:            []string{"http://a:1", "http://b:2"},
+		BackupProxyEnabled: boolPtr(true),
 	})
 	if err := setZenKeyProxyBinding(0, "http://a:1", "http://b:2"); err != nil {
 		t.Fatalf("set: %v", err)
@@ -325,7 +386,7 @@ func TestSetZenKeyProxyBinding(t *testing.T) {
 		t.Fatal("out-of-range index must error")
 	}
 	setupBindingTest(t, &zenConfigData{
-		Keys: []string{"public"},
+		Keys:    []string{"public"},
 		Proxies: []string{"http://a:1"},
 	})
 	if err := setZenKeyProxyBinding(0, "http://a:1", ""); err == nil {
@@ -336,8 +397,8 @@ func TestSetZenKeyProxyBinding(t *testing.T) {
 func TestHarvestSkipsMintWhenBoundProxiesDown(t *testing.T) {
 	setupHarvestTest(t)
 	setupBindingTest(t, &zenConfigData{
-		Keys: []string{"sk-diag"},
-		Proxies: []string{"http://a:1"},
+		Keys:           []string{"sk-diag"},
+		Proxies:        []string{"http://a:1"},
 		KeyBindings:    map[string]zenProxyBinding{"sk-diag": {Main: "http://a:1"}},
 		ProxyIsolation: boolPtr(true),
 	})
@@ -366,8 +427,8 @@ func TestHarvestSkipsMintWhenBoundProxiesDown(t *testing.T) {
 func TestHarvestPassesBoundProxyToCLI(t *testing.T) {
 	setupHarvestTest(t)
 	setupBindingTest(t, &zenConfigData{
-		Keys: []string{"sk-diag"},
-		Proxies: []string{"http://a:1", "http://b:2"},
+		Keys:           []string{"sk-diag"},
+		Proxies:        []string{"http://a:1", "http://b:2"},
 		KeyBindings:    map[string]zenProxyBinding{"sk-diag": {Main: "http://a:1", Backup: "http://b:2"}},
 		ProxyIsolation: boolPtr(true),
 	})
@@ -546,8 +607,8 @@ func TestSocksBridgeRejectsNonConnect(t *testing.T) {
 func TestHarvestSocksBindingUsesBridge(t *testing.T) {
 	setupHarvestTest(t)
 	setupBindingTest(t, &zenConfigData{
-		Keys: []string{"sk-diag"},
-		Proxies: []string{"socks5://s1:1080"},
+		Keys:           []string{"sk-diag"},
+		Proxies:        []string{"socks5://s1:1080"},
 		KeyBindings:    map[string]zenProxyBinding{"sk-diag": {Main: "socks5://s1:1080"}},
 		ProxyIsolation: boolPtr(true),
 	})
@@ -630,27 +691,16 @@ func TestParseProxyLine(t *testing.T) {
 
 func TestZenKeyAutoHarvestEnabled(t *testing.T) {
 	setupHarvestTest(t)
+	// 铸造跟随路由启用（父集语义）：路由开 = 参与铸造；路由关 = 不铸造
 	setupBindingTest(t, &zenConfigData{
-		Keys:       []string{"sk-new", "sk-legacy", "sk-off", "sk-on", "public"},
-		KeyEnabled: map[string]bool{"sk-off": false, "sk-on": true},
+		Keys:              []string{"sk-off", "sk-on", "public"},
+		KeyRoutingEnabled: map[string]bool{"sk-off": false},
 	})
-	// 存量迁移兼容：有 minted 会话、无显式记录的 key 视为启用
-	zenSessMu.Lock()
-	zenSessions["sk-legacy"] = &zenSessionEntry{Session: "sess_x", Minted: true, UA: zenNativeUA}
-	zenSessMu.Unlock()
-	if !zenKeyAutoHarvestEnabled("sk-legacy") {
-		t.Fatal("legacy minted key must stay enabled (migration fallback)")
-	}
-	// 新 key 无会话、无记录：默认未启用（不再自动铸造）
-	if zenKeyAutoHarvestEnabled("sk-new") {
-		t.Fatal("new key without session must default to disabled")
-	}
-	// 显式记录优先于回退
 	if zenKeyAutoHarvestEnabled("sk-off") {
-		t.Fatal("explicit false must win over migration fallback")
+		t.Fatal("routing-disabled key must not be minted")
 	}
 	if !zenKeyAutoHarvestEnabled("sk-on") {
-		t.Fatal("explicit true must enable even without a session")
+		t.Fatal("routing-enabled key must be minted (no explicit mint switch anymore)")
 	}
 	if zenKeyAutoHarvestEnabled("public") {
 		t.Fatal("public key always disabled")
@@ -693,7 +743,7 @@ func TestProxyAliasLivesInPoolLine(t *testing.T) {
 func TestPickZenKeyStrategyUnified(t *testing.T) {
 	setupHarvestTest(t)
 	setupBindingTest(t, &zenConfigData{
-		Keys:    []string{"sk-1", "sk-2", "sk-3"},
+		Keys: []string{"sk-1", "sk-2", "sk-3"},
 	})
 	saved := getProxyConfig()
 	t.Cleanup(func() { setProxyConfig(saved) })

@@ -7,7 +7,7 @@
 
 ## 1. 系统概述
 
-AI Free Proxy 是一个单二进制 Go 网关，把两类免费上游额度聚合成一个统一的 OpenAI 兼容接口：
+AI Free Proxy 是一个单二进制 Go 网关，把 Cline、OpenCode 与 WorkBuddy 三类上游额度聚合成一个统一的 OpenAI 兼容接口：
 
 ```
 Cursor / ZCode / Cline / Claude Code 等 IDE
@@ -15,19 +15,20 @@ Cursor / ZCode / Cline / Claude Code 等 IDE
         ▼
 ┌──────────────── AI Free Proxy :3457 ────────────────┐
 │  鉴权 → 请求日志 → 自定义别名改写 → 路由              │
-└──────┬──────────────────────────┬────────────────────┘
-       │ model 为 OpenCode 免费模型 │ 其他 model
-       ▼                          ▼
-  OpenCode（多 key 轮转）      Cline 账号池（轮转）
-       │                          │
-       └────► 出口代理池（每请求轮转或按隔离绑定）◄────┘
+└──┬──────────────┬──────────────┬─────────────────────┘
+   │ OpenCode 免费 │ cn:/global:  │ 其他 model
+   ▼              ▼              ▼
+OpenCode      WorkBuddy       Cline 账号池
+多 key 轮转   多账号池/任务    轮转
+   │              │              │
+   └────────────► 出口代理池（每请求轮转或按隔离绑定）◄────┘
 ```
 
-- **路由规则**：请求里的 `model` 决定去向——OpenCode 免费模型走 OpenCode 上游；OpenCode 付费模型直接 400；其余走 Cline 账号池（未知模型名默认 400，可在面板关闭严格匹配）。
-- **三个池**：Cline 账号池、OpenCode key 池、出口代理池，各自独立轮转、独立冷却。
-- **代理隔离**（默认开启）：账号/key 可绑定主/辅代理，固定出口 IP，降低风控风险。
+- **路由规则**：请求里的 `model` 决定去向——`cn:` / `global:` 前缀模型走 WorkBuddy；OpenCode 免费模型走 OpenCode 上游；OpenCode 付费模型直接 400；其余走 Cline 账号池（未知模型名默认 400，可在面板关闭严格匹配）。
+- **四个池**：Cline 账号池、OpenCode key 池、WorkBuddy 账号池、出口代理池，各自独立轮转、独立冷却。
+- **代理隔离**（默认开启）：Cline 账号、OpenCode key 与 WorkBuddy 账号可绑定主/辅代理，固定出口 IP，降低风控风险。
 
-所有状态保存在数据卷 `/app/data`（容器内），备份 = 备份该卷。
+所有状态保存在数据卷 `/app/data`（容器内），WorkBuddy 状态在 `data/workbuddy/`，出口绑定在 `data/.workbuddy-proxies.json`；备份 = 备份整个数据卷。
 
 ---
 
@@ -66,8 +67,7 @@ docker compose up -d --build
 | `ADMIN_PASSWORD` / `ADMIN_PASSWORD_FILE` | 无 | 面板登录密码 |
 | `ZEN_KEYS` | 空 | OpenCode key，逗号分隔；也可面板配置 |
 | `POOL_STRATEGY` | round_robin | Cline 账号池策略：round_robin / fill / random |
-| `PROXY_ISOLATION` | true | 代理隔离开关；显式设置时覆盖面板开关 |
-| `CLINE_USE_PROXIES` | false | Cline 上游走共享代理池 |
+| `PROXY_ISOLATION` | 未设置 | 只接受 true/false：true 强制开启（面板只读）；false 默认关闭、面板可改；未设置默认开启、面板可改。其他值告警并按未设置处理 |
 | `STRICT_MODEL_MATCH` | true | 未知模型名返回 400（false 回退默认模型） |
 | `ZEN_HARVEST` | 1 | 会话收割机开关（0 = 纯网关模式） |
 | `ZEN_HARVEST_INTERVAL_HOURS` | 4 | 会话重铸间隔，须小于 zen 的 5 小时窗口 |
@@ -84,7 +84,7 @@ docker compose up -d --build
 
 ```
 仪表盘
-账号池：  Cline | OpenCode
+账号池：  Cline | OpenCode → WorkBuddy
 服务：    代理池 → 网关设置 → 自定义别名 → 请求日志
 ```
 
@@ -122,20 +122,56 @@ docker compose up -d --build
   - 收割机自动运行：启动 10 秒后补缺、反复 403 时触发、每 10 分钟巡检补铸超过 4 小时的会话。
 - **代理绑定与铸造**：绑定了代理的 key，铸造也走绑定出口（socks5 经本地桥转发），保证会话 IP 恒定；绑定出口全不可用时本轮跳过铸造。
 
-### 3.4 服务 → 代理池
+### 3.4 账号池 → OpenCode → WorkBuddy
+
+WorkBuddy 子系统挂在现有管理面板的 `OpenCode → WorkBuddy` 下，沿用 `/admin/*` 的登录会话，不需要维护第二套面板密码。其账号池、状态、调度器与 Cline / OpenCode 池相互独立；WorkBuddy 初始化失败时只禁用此子系统，不影响原网关启动。
+
+- **OAuth 登录**：面板「添加账号」支持 CN 与 global 两套设备授权流程。完成浏览器登录后凭证自动落盘并热加载进池，无需重启容器。
+- **多账号池**：账号按上游实现参与加权轮转、失败换号、会话粘性、在途限流与积分/状态选择；支持解冻、禁用、刷新余额、单号签到、移除和批量导入等运维操作。
+- **熔断与冷却**：保留 429 软冷却、404 短冷却、硬冷却、连续失败熔断和冷却到期恢复等状态。
+- **定时任务与自动完成**：签到、活跃、旅行、保活、成长任务及余额刷新等排程可在 WorkBuddy 配置页分别启停；任务中心可扫描、排队和自动领奖。
+- **协议能力**：`/v1/chat/completions`、`/v1/messages` 与 `/v1/responses` 都支持 WorkBuddy realm 前缀模型；流式与非流式、推理字段/effort 降级、系统提示词与指纹脱敏开关均由移植后的 WorkBuddy handler 处理。
+
+WorkBuddy 模型必须带 realm 前缀：
+
+```text
+cn:<model>        # CN 账号路由
+global:<model>    # 国际账号路由
+```
+
+`GET /v1/models` 会把可用模型合并为上述完整 ID。三个现有客户端入口都会识别这些前缀；裸模型名不会交给 WorkBuddy，仍按原规则走 Cline 或 OpenCode，避免模型名碰撞后静默改路由。
+
+**数据与出口绑定**：
+
+- `data/workbuddy/auths/`：OAuth 凭证。
+- `data/workbuddy/config.json`、`state.json`、`model.json`：配置、池状态和模型目录。
+- `data/.workbuddy-proxies.json`：WorkBuddy UID 到主/辅出口的持久化绑定。
+
+代理隔离启用时，新账号首次发生已认证上游请求后按代理池顺序分配稳定主/辅出口。账号聊天、余额、签到、任务和上报等已认证请求都走绑定出口；主出口不可用走辅出口，两者都冷却或已从池中删除时直接失败，不回退直连或其他出口。可调用以下管理 API 排障：
+
+```text
+GET  /admin/api/workbuddy/proxy
+POST /admin/api/workbuddy/proxy/set
+POST /admin/api/workbuddy/proxy/clear
+```
+
+设备授权、登录轮询以及模型静态目录刷新发生在 UID 可用之前，不使用账号出口绑定，也不携带既有账号凭证；账号创建完成后的认证流量才按 UID 出口绑定发送。
+
+### 3.5 服务 → 代理池
 
 - **共享出口代理**：每行一条，支持 `http://user:pass@host:port` 与 `socks5://host:port`（网关侧 socks5 原生支持；收割 CLI 走本地桥）。触发限流的代理自动冷却 2 分钟并被跳过。
 - **轮转策略**：round_robin（轮询）/ random（随机）/ fill（填满优先）——这是**未绑定身份**的出口选择方式。
-- **代理池的使用范围**：
-  - Cline 上游：走代理池/直连（默认直连；`CLINE_USE_PROXIES=true` 强制开启）。
-  - OpenCode 上游：代理列表非空即自动走池，无单独开关。
+- **代理池的使用范围**（面板「全局策略」逐平台开关，默认均走代理池）：
+  - Cline 上游：走代理池/直连（默认走代理池）。
+  - OpenCode 上游：走代理池/直连（默认走代理池）。
+  - WorkBuddy：未绑定账号走代理池/直连（默认走代理池）；已绑定账号首次已认证请求时自动分配主/辅出口，后续聊天、定时任务与账号运维均走绑定。
 - **代理隔离**（默认启用）：
-  - 启用：绑定了主/辅代理的 Cline 账号或 OpenCode key 只从绑定出口出网；双不可用即跳过该身份。
+  - 启用：绑定了主/辅代理的 Cline 账号、OpenCode key 或 WorkBuddy 账号只从绑定出口出网；双不可用即跳过该身份。
   - 关闭：忽略绑定，所有出口按上方轮转策略轮换（代理池未启用时直连）。
-  - `PROXY_ISOLATION` 环境变量设置时覆盖此开关（面板会提示并禁用）。
+  - `PROXY_ISOLATION=true` 强制开启（面板只读并提示）；`false` 仅把默认值改为关闭，面板仍可修改。只接受 true/false，其他值告警并按未设置处理。
 - **冷却状态**：显示各代理的冷却截止时刻。
 
-### 3.5 服务 → 网关设置
+### 3.6 服务 → 网关设置
 
 - **API keys**：生成/删除客户端访问 /v1 的 key。未配置任何 key 时 /v1 允许匿名（仅建议本机使用）。
 - **可用模型**：官方免费模型源自动同步（60 秒）；Cline 模型状态标签（可用/空响应/订阅制/已下架）来自真实探测。
@@ -143,14 +179,14 @@ docker compose up -d --build
 - **请求头**：模拟官方 Cline CLI 的请求头，一般不需要动。
 - **危险区**：删除全部账号 / 全部 API key（不可撤销）。
 
-### 3.6 服务 → 自定义别名
+### 3.7 服务 → 自定义别名
 
 - 客户端以别名 ID 作为 model 请求，网关改写为所选平台的真实模型。
 - 目标模型必须与别名同平台（cline 或 opencode）；别名 ID 不得与真实模型冲突。
 - 可勾选「走代理池」让该别名强制走代理池（隔离模式下绑定账号仍按绑定优先）。
 - 别名会出现在 `/v1/models` 列表里，IDE 可直接选择。
 
-### 3.7 服务 → 请求日志
+### 3.8 服务 → 请求日志
 
 最近 500 条请求（IP/方法/路径/模型/路由/状态/耗时），自动刷新可暂停。只记录元数据，**不含对话内容**。落盘 `data/requests.jsonl`（10MB 上限自动清空）。
 
@@ -165,7 +201,7 @@ docker compose up -d --build
 | Cursor 等 | `POST /v1/responses` | 同上 |
 
 - API Key：网关设置里生成的 key（或 `API_KEY` 环境变量值）。
-- 模型名：从 `/v1/models` 里选，例如 `cline-free/deepseek-v4.1-flash`（Cline 池）、`mimo-v2.5-free`（OpenCode）、或你创建的自定义别名。
+- 模型名：从 `/v1/models` 里选，例如 `cline-free/deepseek-v4.1-flash`（Cline 池）、`mimo-v2.5-free`（OpenCode）、`cn:<model>` / `global:<model>`（WorkBuddy）、或你创建的自定义别名。
 - 工具调用、流式、usage 均完整支持；客户端参数（max_tokens/temperature/tools 等）全部透传。
 
 ---
@@ -180,7 +216,7 @@ docker cp afree-proxy:/app/data ./backup   # 备份数据
 ```
 
 - **升级**：拉新镜像后 `docker rm -f afree-proxy` 再按原命令重建（数据卷不动即保数据）。
-- **日志文件**：`data/afree-proxy.log`（运行日志）、`requests.jsonl`（请求元数据）、`zen-stats.jsonl`（OpenCode 统计）。
+- **日志文件**：`data/afree-proxy.log`（运行日志）、`requests.jsonl`（请求元数据）、`zen-stats.jsonl`（OpenCode 统计）；WorkBuddy 面板日志同时镜像到运行日志。
 
 ---
 
@@ -193,9 +229,11 @@ docker cp afree-proxy:/app/data ./backup   # 备份数据
 | 提示 boundBlocked=N | 隔离模式下 N 个账号的绑定出口全部不可用（冷却/被删）。到代理池页检查代理，或重新绑定 |
 | 账号 expired | refreshToken 被上游拒绝，重新添加账号 |
 | OpenCode 页提示 Harvester unavailable | 容器内没有 opencode CLI（罕见架构），收割降级；key 将无法 mint 会话 |
+| WorkBuddy 请求 400 model 不存在 | WorkBuddy 模型必须带 `cn:` 或 `global:` 前缀；先看 `/v1/models` 的完整 ID |
+| WorkBuddy 请求因出口不可用失败 | 代理隔离下绑定主/辅出口都冷却或已被删除会 fail-closed；到代理池页恢复出口，或通过 `/admin/api/workbuddy/proxy` 检查/重绑 |
 | 下拉框弹层颜色异常 | 已通过 color-scheme 修复；若仍出现，确认浏览器为较新版本 |
 | 忘记 ADMIN_PASSWORD | 改容器环境变量重建即可（数据保留） |
-| 想临时回到旧的每请求全局轮转 | 面板关闭「代理隔离」，或设 `PROXY_ISOLATION=false`（绑定被忽略，出口按轮转策略轮换） |
+| 想临时回到旧的每请求全局轮转 | 面板关闭「代理隔离」，或设 `PROXY_ISOLATION=false`（默认关闭、面板可再改；绑定被忽略，出口按轮转策略轮换） |
 
 ---
 
