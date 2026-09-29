@@ -73,7 +73,7 @@ func saveWorkbuddyConfig(
 		SoftCooldown:         newCfg.SoftRateDur,
 		SanitizeFingerprints: newCfg.Features.SanitizeBlacklistFingerprints,
 	})
-	up.SanitizeFingerprints = newCfg.Features.SanitizeBlacklistFingerprints
+	up.SanitizeFingerprints.Store(newCfg.Features.SanitizeBlacklistFingerprints)
 	up.HTTP.Timeout = time.Duration(newCfg.Upstream.TimeoutSeconds) * time.Second
 	up.HeaderTimeout = time.Duration(newCfg.Upstream.HeaderTimeoutSeconds) * time.Second
 	if tr, ok := up.ChatHTTP.Transport.(*http.Transport); ok {
@@ -99,6 +99,7 @@ func saveWorkbuddyConfig(
 	p.SetSoftRateMax(newCfg.SoftRateMaxDur)
 	p.SetCostExploreInterval(newCfg.CostExploreIntervalDur)
 	p.SetWeights(newCfg.Pool.IdleWeightPerHour, newCfg.Pool.IdleWeightMax)
+	p.SetPreferExpiring(newCfg.Pool.PreferExpiring)
 
 	sch.Reconfigure(
 		newCfg.Schedule.CheckinHours, newCfg.Schedule.TravelHours,
@@ -109,6 +110,7 @@ func saveWorkbuddyConfig(
 		!newCfg.Schedule.BlackcatEnabled, !newCfg.Schedule.GrowthEnabled,
 	)
 	sch.SetBalanceInterval(newCfg.BalanceRefreshInterval)
+	sch.SetExpiringSoonWindow(newCfg.ExpiringSoonDur)
 	return restartRequiredWorkbuddyFields(newCfg), nil
 }
 
@@ -119,6 +121,8 @@ func restartRequiredWorkbuddyFields(c *wbconfig.Config) []string {
 		out = append(out, "upstash")
 	}
 	out = append(out, "session_sticky.ttl", "session_sticky.gc_interval")
+	// 请求归档的目录/句柄在启动时装配，改动需重启（与源项目 restartRequiredFields 同口径）。
+	out = append(out, "logging.request_archive_enabled", "logging.request_retention_days", "logging.request_archive_max_mb")
 	return out
 }
 

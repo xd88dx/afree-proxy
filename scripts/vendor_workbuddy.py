@@ -23,6 +23,7 @@ PACKAGES = (
     "httpauth",
     "livecfg",
     "pool",
+    "reqlog",
     "server",
     "upstream",
     "scheduler",
@@ -139,6 +140,11 @@ PRESERVE_RELATIVE = (
     Path("upstream") / "proxy.go",
     Path("upstream") / "proxy_test.go",
     Path("server") / "afree_adapter.go",
+    # afree-local regression tests for afree-local features: the admin
+    # pool_enabled switch (auth.pool_enabled) and the panel models
+    # stale-snapshot replay on probe failure.
+    Path("panel") / "models_stale_test.go",
+    Path("pool") / "pool_enabled_test.go",
 )
 
 
@@ -200,7 +206,8 @@ def main() -> int:
 
     # cmd/server/config.go is a standalone config loader in package main; it is
     # vendored as a library package because panel needs the exact same schema
-    # and validation rules as the upstream project.
+    # and validation rules as the upstream project. Its self-contained test
+    # file rides along (package rename only).
     source_config = SOURCE_ROOT / "cmd" / "server" / "config.go"
     target_config_dir = TARGET_PKG / "config"
     target_config_dir.mkdir(parents=True, exist_ok=True)
@@ -210,6 +217,14 @@ def main() -> int:
     (target_config_dir / "config.go").write_text(text, encoding="utf-8", newline="\n")
     copied += 1
     rewritten += 1
+    source_config_test = SOURCE_ROOT / "cmd" / "server" / "config_test.go"
+    if source_config_test.is_file():
+        text = source_config_test.read_text(encoding="utf-8")
+        text = text.replace("package main", "package config", 1)
+        text = text.replace(SOURCE_PREFIX, TARGET_PREFIX)
+        (target_config_dir / "config_test.go").write_text(text, encoding="utf-8", newline="\n")
+        copied += 1
+        rewritten += 1
 
     print(f"copied {copied} Go files into {TARGET_PKG} ({rewritten} import-rewritten)")
     return 0

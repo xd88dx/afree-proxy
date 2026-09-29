@@ -22,6 +22,7 @@ import (
 	"afree-proxy/internal/workbuddy/panel"
 	wbpool "afree-proxy/internal/workbuddy/pool"
 	"afree-proxy/internal/workbuddy/redisstore"
+	"afree-proxy/internal/workbuddy/reqlog"
 	"afree-proxy/internal/workbuddy/scheduler"
 	"afree-proxy/internal/workbuddy/server"
 	wbsession "afree-proxy/internal/workbuddy/session"
@@ -29,7 +30,7 @@ import (
 	wbusage "afree-proxy/internal/workbuddy/usage"
 )
 
-const workbuddyVersion = "1.11.7-panel+afree"
+const workbuddyVersion = "1.11.10-panel+afree"
 
 // workbuddySubsystem 把源项目的账号池/熔断/调度/面板/兼容接口作为独立子系统
 // 挂在现有 afree-proxy 上。账号凭证与状态落在 data/workbuddy/ 下，不与 Cline
@@ -39,13 +40,14 @@ type workbuddySubsystem struct {
 	dir     string
 	cfg     *wbconfig.Config
 
-	pool      *wbpool.Pool
-	upstream  *upstream.Client
-	scheduler *scheduler.Scheduler
-	panel     *panel.Panel
-	server    workbuddyServer
-	usage     *wbusage.Recorder
-	session   *wbsession.Router
+	pool       *wbpool.Pool
+	upstream   *upstream.Client
+	scheduler  *scheduler.Scheduler
+	panel      *panel.Panel
+	server     workbuddyServer
+	usage      *wbusage.Recorder
+	requestLog *reqlog.Recorder
+	session    *wbsession.Router
 	live      *livecfg.Holder
 	store     redisstore.Store
 
@@ -109,6 +111,7 @@ func startWorkBuddy() (*workbuddySubsystem, error) {
 	p.SetSoftRateMax(cfg.SoftRateMaxDur)
 	p.SetCostExploreInterval(cfg.CostExploreIntervalDur)
 	p.SetWeights(cfg.Pool.IdleWeightPerHour, cfg.Pool.IdleWeightMax)
+	p.SetPreferExpiring(cfg.Pool.PreferExpiring)
 
 	up := upstream.New()
 	up.HTTP.Timeout = time.Duration(cfg.Upstream.TimeoutSeconds) * time.Second
@@ -117,7 +120,7 @@ func startWorkBuddy() (*workbuddySubsystem, error) {
 		tr.ResponseHeaderTimeout = up.HeaderTimeout
 	}
 	up.IdleTimeout = time.Duration(cfg.Upstream.IdleTimeoutSeconds) * time.Second
-	up.SanitizeFingerprints = cfg.Features.SanitizeBlacklistFingerprints
+	up.SanitizeFingerprints.Store(cfg.Features.SanitizeBlacklistFingerprints)
 	up.UserAgent = cfg.Upstream.UserAgent
 	up.ClientVersion = cfg.Upstream.ClientVersion
 	up.CliVersion = cfg.Upstream.CliVersion
@@ -178,6 +181,19 @@ func startWorkBuddy() (*workbuddySubsystem, error) {
 	rec := wbusage.New(filepath.Join(dir, "usage.json"))
 	rec.Start()
 
+	// 请求指标与脱敏 JSONL 归档（落 state.json 同级 request-logs/）。开关关闭时
+	// 仍保留内存指标（面板摘要可用），只是不落盘；归档配置改动需重启生效。
+	requestLog := reqlog.New(reqlog.Config{
+		Dir:           filepath.Join(dir, "request-logs"),
+		Enabled:       cfg.Logging.RequestArchiveEnabled,
+		RetentionDays: cfg.Logging.RequestRetentionDays,
+		MaxBytes:      int64(cfg.Logging.RequestArchiveMaxMB) << 20,
+	})
+	if cfg.Logging.RequestArchiveEnabled {
+		log.Printf("[reqlog] 请求指标已启用;JSONL 归档 %s (保留 %d 天, 上限 %d MiB)",
+			filepath.Join(dir, "request-logs"), cfg.Logging.RequestRetentionDays, cfg.Logging.RequestArchiveMaxMB)
+	}
+
 	redisMode := "noop"
 	if _, ok := store.(redisstore.Noop); !ok {
 		redisMode = "upstash"
@@ -187,6 +203,7 @@ func startWorkBuddy() (*workbuddySubsystem, error) {
 		Usage:       rec,
 		Upstream:    up,
 		Scheduler:   sch,
+		RequestLog:  requestLog,
 		AuthDir:     cfg.AuthDir,
 		APIKey:      "",
 		RedisMode:   redisMode,
@@ -223,6 +240,7 @@ func startWorkBuddy() (*workbuddySubsystem, error) {
 		Panel:         nil,
 		Live:          live,
 		Usage:         rec,
+		RequestLog:    requestLog,
 		PromptMode:    cfg.Prompt.Mode,
 		PromptText:    cfg.PromptText,
 		GlobalEnabled: cfg.Global.Enabled,
@@ -237,13 +255,14 @@ func startWorkBuddy() (*workbuddySubsystem, error) {
 		cfgPath:   cfgPath,
 		dir:       dir,
 		cfg:       cfg,
-		pool:      p,
-		upstream:  up,
-		scheduler: sch,
-		panel:     pn,
-		server:    h,
-		usage:     rec,
-		session:   sess,
+		pool:       p,
+		upstream:   up,
+		scheduler:  sch,
+		panel:      pn,
+		server:     h,
+		usage:      rec,
+		requestLog: requestLog,
+		session:    sess,
 		live:      live,
 		store:     store,
 		cancel:    cancel,
@@ -315,6 +334,9 @@ func (w *workbuddySubsystem) Stop() {
 	}
 	if w.usage != nil {
 		w.usage.Stop()
+	}
+	if w.requestLog != nil {
+		w.requestLog.Close()
 	}
 	if w.store != nil {
 		_ = w.store.Close()
