@@ -83,7 +83,7 @@ EGRESS_REWRITES = {
 }
 
 
-def apply_panel_iframe_rewrites() -> None:
+def apply_panel_iframe_rewrites(pkg: Path) -> None:
     """Allow the WorkBuddy panel in the same-origin afree-proxy admin iframe.
 
     Upstream denies all framing. The panel is mounted below /admin/workbuddy/,
@@ -108,7 +108,7 @@ def apply_panel_iframe_rewrites() -> None:
         ),
     }
     for relative, replacements in rewrites.items():
-        path = TARGET_PKG / relative
+        path = pkg / relative
         text = path.read_text(encoding="utf-8")
         for old, new, expected in replacements:
             actual = text.count(old)
@@ -120,9 +120,9 @@ def apply_panel_iframe_rewrites() -> None:
         path.write_text(text, encoding="utf-8", newline="\n")
 
 
-def apply_egress_rewrites() -> None:
+def apply_egress_rewrites(pkg: Path) -> None:
     for relative, rewrites in EGRESS_REWRITES.items():
-        path = TARGET_PKG / relative
+        path = pkg / relative
         text = path.read_text(encoding="utf-8")
         for old, new, expected in rewrites:
             actual = text.count(old)
@@ -148,27 +148,43 @@ PRESERVE_RELATIVE = (
 )
 
 
-def main() -> int:
-    missing = [p for p in PACKAGES if not (SOURCE_ROOT / "internal" / p).is_dir()]
+def main(source_root=None, target_root=None, preserve_from=None) -> int:
+    """Vendor upstream into target_root. All args default to the module
+    constants; sync_workbuddy.py overrides them to build merge inputs into
+    temp dirs while PRESERVE_RELATIVE bytes still come from the live tree."""
+    src_root = Path(source_root) if source_root else SOURCE_ROOT
+    tgt_root = Path(target_root) if target_root else TARGET_ROOT
+    pkg = tgt_root / "internal" / "workbuddy"
+    preserve_root = Path(preserve_from) if preserve_from else pkg
+
+    missing = [p for p in PACKAGES if not (src_root / "internal" / p).is_dir()]
     if missing:
-        print("missing source packages: " + ", ".join(missing), file=sys.stderr)
-        return 1
+        # Historical baselines legitimately predate newer packages (e.g. reqlog),
+        # so a partial set is fine — building the merge base just copies less.
+        # A wrong source root fails loud instead: no packages at all.
+        if len(missing) == len(PACKAGES):
+            print("missing source packages: " + ", ".join(missing), file=sys.stderr)
+            return 1
+        print(f"note: packages absent in this source snapshot, skipped: {', '.join(missing)}",
+              file=sys.stderr)
 
     preserved: dict[Path, bytes] = {}
     for relative in PRESERVE_RELATIVE:
-        path = TARGET_PKG / relative
+        path = preserve_root / relative
         if path.is_file():
             preserved[relative] = path.read_bytes()
 
-    if TARGET_PKG.exists():
-        shutil.rmtree(TARGET_PKG)
-    TARGET_PKG.mkdir(parents=True)
+    if pkg.exists():
+        shutil.rmtree(pkg)
+    pkg.mkdir(parents=True)
 
     copied = 0
     rewritten = 0
     for package in PACKAGES:
-        source_dir = SOURCE_ROOT / "internal" / package
-        target_dir = TARGET_PKG / package
+        source_dir = src_root / "internal" / package
+        if not source_dir.is_dir():
+            continue  # absent in this source snapshot (historical baseline)
+        target_dir = pkg / package
         target_dir.mkdir(parents=True, exist_ok=True)
         for source_file in sorted(p for p in source_dir.iterdir() if p.is_file() and p.suffix in ASSET_SUFFIXES):
             target_file = target_dir / source_file.name
@@ -183,7 +199,7 @@ def main() -> int:
             target_file.write_text(new_text, encoding="utf-8", newline="\n")
             copied += 1
 
-    client_path = TARGET_PKG / "upstream" / "client.go"
+    client_path = pkg / "upstream" / "client.go"
     client_text = client_path.read_text(encoding="utf-8")
     if PROXY_FIELD_BLOCK not in client_text:
         if PROXY_FIELD_ANCHOR not in client_text:
@@ -193,14 +209,14 @@ def main() -> int:
         client_path.write_text(client_text, encoding="utf-8", newline="\n")
 
     try:
-        apply_panel_iframe_rewrites()
-        apply_egress_rewrites()
+        apply_panel_iframe_rewrites(pkg)
+        apply_egress_rewrites(pkg)
     except RuntimeError as exc:
         print(str(exc), file=sys.stderr)
         return 1
 
     for relative, content in preserved.items():
-        target_file = TARGET_PKG / relative
+        target_file = pkg / relative
         target_file.parent.mkdir(parents=True, exist_ok=True)
         target_file.write_bytes(content)
 
@@ -208,8 +224,8 @@ def main() -> int:
     # vendored as a library package because panel needs the exact same schema
     # and validation rules as the upstream project. Its self-contained test
     # file rides along (package rename only).
-    source_config = SOURCE_ROOT / "cmd" / "server" / "config.go"
-    target_config_dir = TARGET_PKG / "config"
+    source_config = src_root / "cmd" / "server" / "config.go"
+    target_config_dir = pkg / "config"
     target_config_dir.mkdir(parents=True, exist_ok=True)
     text = source_config.read_text(encoding="utf-8")
     text = text.replace("package main", "package config", 1)
@@ -217,7 +233,7 @@ def main() -> int:
     (target_config_dir / "config.go").write_text(text, encoding="utf-8", newline="\n")
     copied += 1
     rewritten += 1
-    source_config_test = SOURCE_ROOT / "cmd" / "server" / "config_test.go"
+    source_config_test = src_root / "cmd" / "server" / "config_test.go"
     if source_config_test.is_file():
         text = source_config_test.read_text(encoding="utf-8")
         text = text.replace("package main", "package config", 1)
@@ -226,7 +242,7 @@ def main() -> int:
         copied += 1
         rewritten += 1
 
-    print(f"copied {copied} Go files into {TARGET_PKG} ({rewritten} import-rewritten)")
+    print(f"copied {copied} Go files into {pkg} ({rewritten} import-rewritten)")
     return 0
 
 
