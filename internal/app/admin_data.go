@@ -211,8 +211,9 @@ func clearRequestLogsForDataDelete() {
 	reqLogsMu.Lock()
 	reqLogs = nil
 	reqLogsMu.Unlock()
-	if err := os.WriteFile(reqLogsFile, nil, 0600); err != nil {
-		log.Printf("data delete: truncate %s failed: %v", reqLogsFile, err)
+	path := reqLogPath()
+	if err := os.WriteFile(path, nil, 0600); err != nil {
+		log.Printf("data delete: truncate %s failed: %v", path, err)
 	}
 	statsFile := kit.ResolveDataPath("zen-stats.jsonl")
 	if err := os.WriteFile(statsFile, nil, 0600); err != nil {

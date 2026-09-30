@@ -234,6 +234,9 @@ func (p *Panel) loginPoll(w http.ResponseWriter, r *http.Request) {
 		// CN 也显式补 realm 键（幂等），让 auth 文件形态统一（与 LoadDir 存量迁移对齐）。
 		_, _ = a.BackfillRealm()
 	}
+	// afree 本地语义（vendor 合并保留项）：新增身份默认不参与路由，管理员在
+	// 面板勾选"启用"后才进入选号（与 Cline/Zen 平台新增默认禁用统一口径）。
+	a.SetPoolEnabled(false)
 	if err := a.SaveAtomic(); err != nil {
 		writeErr(w, http.StatusInternalServerError, "save auth: "+err.Error())
 		return

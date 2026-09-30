@@ -26,15 +26,15 @@ func handleZenConfig(w http.ResponseWriter, r *http.Request) {
 	data := map[string]any{
 		"zenUseProxies":       zenProxiesEnabled(),
 		"workbuddyUseProxies": workbuddyProxiesEnabled(),
-		"key":             cfg.Key,
-		"keys":            cfg.Keys,
-		"keyStates":       zenKeyStatus(),
-		"baseURL":         cfg.BaseURL,
-		"proxies":         cfg.Proxies,
-		"proxyStrategy":   cfg.ProxyStrategy,
-		"maxConcurrency":  cfg.MaxConcurrency,
-		"retries":         cfg.Retries,
-		"compaction":      cfg.Compaction,
+		"key":                 cfg.Key,
+		"keys":                cfg.Keys,
+		"keyStates":           zenKeyStatus(),
+		"baseURL":             cfg.BaseURL,
+		"proxies":             cfg.Proxies,
+		"proxyStrategy":       cfg.ProxyStrategy,
+		"maxConcurrency":      cfg.MaxConcurrency,
+		"retries":             cfg.Retries,
+		"compaction":          cfg.Compaction,
 		// 代理隔离（账号/key 绑定出口）：生效值 + 是否被 env 钉死（面板据此
 		// 禁用开关并提示）。
 		"proxyIsolation":          proxyIsolationEnabled(),
@@ -65,16 +65,16 @@ func handleZenConfigUpdate(w http.ResponseWriter, r *http.Request) {
 	var patch struct {
 		ZenUseProxies       *bool    `json:"zenUseProxies"`
 		WorkbuddyUseProxies *bool    `json:"workbuddyUseProxies"`
-		Key            *string  `json:"key"`
-		Keys            []string `json:"keys"`
-		BaseURL         *string  `json:"baseURL"`
-		Proxies         []string `json:"proxies"`
-		ProxyStrategy   *string  `json:"proxyStrategy"`
-		MaxConcurrency  *int     `json:"maxConcurrency"`
-		Retries         *int     `json:"retries"`
-		ProxyIsolation  *bool    `json:"proxyIsolation"`
-		BackupProxyEnabled *bool `json:"backupProxyEnabled"`
-		Compaction      *struct {
+		Key                 *string  `json:"key"`
+		Keys                []string `json:"keys"`
+		BaseURL             *string  `json:"baseURL"`
+		Proxies             []string `json:"proxies"`
+		ProxyStrategy       *string  `json:"proxyStrategy"`
+		MaxConcurrency      *int     `json:"maxConcurrency"`
+		Retries             *int     `json:"retries"`
+		ProxyIsolation      *bool    `json:"proxyIsolation"`
+		BackupProxyEnabled  *bool    `json:"backupProxyEnabled"`
+		Compaction          *struct {
 			Auto         *bool   `json:"auto"`
 			Buffer       *int    `json:"buffer"`
 			KeepTokens   *int    `json:"keepTokens"`
@@ -89,20 +89,20 @@ func handleZenConfigUpdate(w http.ResponseWriter, r *http.Request) {
 	next := &zenConfigData{
 		ZenUseProxies:       cur.ZenUseProxies,
 		WorkbuddyUseProxies: cur.WorkbuddyUseProxies,
-		Key:             cur.Key,
-		Keys:            cur.Keys,
-		BaseURL:         cur.BaseURL,
-		Proxies:         cur.Proxies,
-		ProxyStrategy:   cur.ProxyStrategy,
-		MaxConcurrency:  cur.MaxConcurrency,
-		Retries:         cur.Retries,
-		ProxyIsolation:  cur.ProxyIsolation,
-		BackupProxyEnabled: cur.BackupProxyEnabled,
-		KeyBindings:     cur.KeyBindings,
+		Key:                 cur.Key,
+		Keys:                cur.Keys,
+		BaseURL:             cur.BaseURL,
+		Proxies:             cur.Proxies,
+		ProxyStrategy:       cur.ProxyStrategy,
+		MaxConcurrency:      cur.MaxConcurrency,
+		Retries:             cur.Retries,
+		ProxyIsolation:      cur.ProxyIsolation,
+		BackupProxyEnabled:  cur.BackupProxyEnabled,
+		KeyBindings:         cur.KeyBindings,
 		// KeyRoutingEnabled 必须随 next 保留：config/update 是全量替换语义，
 		// 漏拷会把面板勾选的路由参与表整体清掉（缺项 = 全部参与）。
 		KeyRoutingEnabled: cur.KeyRoutingEnabled,
-		Compaction:      cur.Compaction,
+		Compaction:        cur.Compaction,
 	}
 	if patch.ZenUseProxies != nil {
 		next.ZenUseProxies = patch.ZenUseProxies
@@ -123,6 +123,11 @@ func handleZenConfigUpdate(w http.ResponseWriter, r *http.Request) {
 	if patch.Key != nil && *patch.Key != "" && patch.Keys == nil {
 		// 旧客户端单 key 提交 → 单元素池
 		next.Keys = []string{*patch.Key}
+	}
+	if patch.Keys != nil || (patch.Key != nil && *patch.Key != "") {
+		// key 池发生变动：新 key 默认禁用路由（面板勾选启用后生效），移除的 key
+		// 清理表项——与 Cline/WorkBuddy 的新增身份默认不启用统一口径。
+		reconcileZenKeyRouting(next, cur)
 	}
 	if patch.BaseURL != nil && *patch.BaseURL != "" {
 		next.BaseURL = strings.TrimRight(*patch.BaseURL, "/")

@@ -319,8 +319,10 @@ func savePoolLocked() {
 
 func addAccount(acc *Account) {
 	if acc != nil && acc.PoolEnabled == nil {
-		enabled := true
-		acc.PoolEnabled = &enabled
+		// 新增账号默认不参与轮换：面板勾选"启用"后才进入选号（三平台统一口径）。
+		// 存量数据兼容不受影响——loadPool 对缺字段的旧账号仍物化为启用。
+		disabled := false
+		acc.PoolEnabled = &disabled
 	}
 	p := loadPool()
 	poolMu.Lock()

@@ -356,7 +356,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
     <div class="table-wrap">
     <table>
       <thead>
-        <tr><th>Email</th><th>Status</th><th title="Counted locally by this proxy — not the official free quota">Today/Total tokens</th><th>Last used</th><th>Created</th><th title="Main / backup egress — isolation mode picks main first, then backup; both down = account skipped">Proxy binding</th><th>Actions</th><th>Pool</th></tr>
+        <tr><th>Email</th><th>Status</th><th title="Counted locally by this proxy — not the official free quota">Today/Total tokens</th><th>Last used</th><th>Created</th><th title="Main / backup egress — isolation mode picks main first, then backup; both down = account skipped">Proxy binding</th><th>Actions</th><th style="text-align:center" title="Routing participation. Newly added accounts start unchecked — tick Pool to join rotation.">Pool</th></tr>
       </thead>
       <tbody id="accountTableBody">
         <tr><td colspan="8" class="empty">Loading...</td></tr>
@@ -626,7 +626,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
     </div>
     <div class="table-wrap" style="margin-bottom:10px">
       <table>
-        <thead><tr><th style="width:50px">#</th><th style="width:110px">Key</th><th style="width:70px">Usage</th><th style="width:110px">Session</th><th>Cooldown</th><th title="Main / backup egress — isolation mode picks main first, then backup; both down = key skipped. The harvester also mints through the bound exit.">Proxy binding</th><th style="width:130px"></th><th style="text-align:center" title="Routing participation: unchecked keys never enter request rotation, and minting follows routing (a routing-disabled key is no longer auto-minted)">Pool</th></tr></thead>
+        <thead><tr><th style="width:50px">#</th><th style="width:110px">Key</th><th style="width:70px">Usage</th><th style="width:110px">Session</th><th>Cooldown</th><th title="Main / backup egress — isolation mode picks main first, then backup; both down = key skipped. The harvester also mints through the bound exit.">Proxy binding</th><th style="width:130px"></th><th style="text-align:center" title="Routing participation: unchecked keys never enter request rotation, and minting follows routing (a routing-disabled key is no longer auto-minted). Newly added keys start disabled — tick Pool to enable.">Pool</th></tr></thead>
         <tbody id="ocKeysBody"><tr><td colspan="8" class="empty">Loading...</td></tr></tbody>
       </table>
     </div>
@@ -741,7 +741,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
             <th>Last success</th>
             <th title="Main / backup egress — isolation mode picks main first, then backup; both down = account skipped">Proxy binding</th>
             <th>Actions</th>
-            <th style="text-align:center" title="Participates in rotation">Pool</th>
+            <th style="text-align:center" title="Participates in rotation. Newly added accounts start disabled — tick Pool to join rotation.">Pool</th>
           </tr>
         </thead>
         <tbody id="wbAccountsBody">
@@ -1456,6 +1456,9 @@ const I18N_ZH = {
   'Proxy isolation settings saved': '代理隔离设置已保存',
   'Pool': '启用',
   'Participates in rotation': '参与轮换',
+  'Routing participation. Newly added accounts start unchecked — tick Pool to join rotation.': '路由参与开关。新增账号默认不勾选，勾选 Pool 后才参与轮换。',
+  'Routing participation: unchecked keys never enter request rotation, and minting follows routing (a routing-disabled key is no longer auto-minted). Newly added keys start disabled — tick Pool to enable.': '路由参与开关：不勾选的 key 不进入请求轮转，铸造跟随路由（路由禁用的 key 不再自动铸造）。新增 key 默认禁用，勾选 Pool 后启用。',
+  'Participates in rotation. Newly added accounts start disabled — tick Pool to join rotation.': '参与轮换。新增账号默认禁用，勾选 Pool 后才参与轮换。',
   'Save failed: ': '保存失败：',
   'Test failed: ': '测试失败：',
   'Check failed: ': '检查失败：',

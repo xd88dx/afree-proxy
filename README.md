@@ -186,6 +186,8 @@ Two account kinds are supported and can be mixed:
 
 Mount the file anywhere in the container and point `CLINE_ACCOUNTS_SEED_FILE` at it; it's imported when the pool is empty. Static `sk_` API keys are used directly as Bearer tokens (no refresh; a 401 marks them expired). OAuth accounts can also be added via the panel's browser login flow, manual token paste, or batch import.
 
+**Newly added identities start disabled on all three platforms.** An account, zen key, or WorkBuddy account added after this version lands in the pool with routing participation off (Cline: `pool_enabled` false; zen: no routing entry; WorkBuddy: `pool_enabled` false) and is skipped by rotation until you tick its **Pool** checkbox in the panel. Identities already in the pool keep their current state — a legacy account without the field stays enabled, so upgrading never stops serving. Zen keys coming from `ZEN_KEYS` follow the same rule.
+
 ### Combos (alias models)
 
 Create user-defined alias IDs in the panel (e.g. `my-cline-flash` → `cline-free/deepseek-v4.1-flash` on the cline platform, or any zen free model). Strictly same-platform targets; aliases show up in `/v1/models` so IDEs can pick them directly.

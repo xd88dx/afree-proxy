@@ -1,9 +1,9 @@
 package app
 
 import (
+	"afree-proxy/internal/kit"
 	"bufio"
 	"bytes"
-	"afree-proxy/internal/kit"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -259,15 +259,15 @@ type zenConfigData struct {
 	ZenUseProxies *bool `json:"zenUseProxies,omitempty"`
 	// WorkBuddy 同理：未绑定代理的账号是否走共享代理池，
 	// 缺省 = 代理列表非空即走池。
-	WorkbuddyUseProxies *bool   `json:"workbuddyUseProxies,omitempty"`
-	Key           string  `json:"key"`            // 兼容字段：始终等于 Keys[0]（旧版单 key 读取用）
-	Keys            []string `json:"keys,omitempty"` // zen 多 key 池，请求按 round-robin 轮转
-	BaseURL         string  `json:"baseURL"`
-	Proxies         []string `json:"proxies"`        // http(s)/socks5 代理,轮询出口
-	ProxyStrategy   string  `json:"proxyStrategy"`   // round_robin / random / fill
-	MaxConcurrency  int     `json:"maxConcurrency"` // zen 上游最大并发,防 worker 瞬时超限,默认 8
-	Retries         int     `json:"retries"`        // 限流/网络错误重试次数,默认 3
-	Compaction      zenCompactConfig `json:"compaction"`
+	WorkbuddyUseProxies *bool            `json:"workbuddyUseProxies,omitempty"`
+	Key                 string           `json:"key"`            // 兼容字段：始终等于 Keys[0]（旧版单 key 读取用）
+	Keys                []string         `json:"keys,omitempty"` // zen 多 key 池，请求按 round-robin 轮转
+	BaseURL             string           `json:"baseURL"`
+	Proxies             []string         `json:"proxies"`        // http(s)/socks5 代理,轮询出口
+	ProxyStrategy       string           `json:"proxyStrategy"`  // round_robin / random / fill
+	MaxConcurrency      int              `json:"maxConcurrency"` // zen 上游最大并发,防 worker 瞬时超限,默认 8
+	Retries             int              `json:"retries"`        // 限流/网络错误重试次数,默认 3
+	Compaction          zenCompactConfig `json:"compaction"`
 	// Deprecated 迁移字段：旧版把代理别名存在独立表里，normalizeZenKeys
 	// 会把别名折叠回代理行（#fragment）并清空本字段。
 	ProxyAliases map[string]string `json:"proxyAliases,omitempty"`
@@ -312,6 +312,37 @@ func zenKeyRoutingEnabled(key string) bool {
 		return v
 	}
 	return true
+}
+
+// reconcileZenKeyRouting 整体替换 key 池后对齐"参与路由"表（面板保存 key 列表
+// 时调用）。统一口径：新引入的 key 默认不参与路由（面板勾选"启用"后才生效，
+// 与 Cline/WorkBuddy 的新增身份默认禁用一致）；已有 key 保持原状态；被移除的
+// key 清理表项，避免陈旧数据。public 哨兵恒参与，不写表。
+func reconcileZenKeyRouting(next, cur *zenConfigData) {
+	oldKeys := map[string]bool{}
+	for _, k := range cur.Keys {
+		oldKeys[k] = true
+	}
+	nextSet := map[string]bool{}
+	for _, k := range next.Keys {
+		nextSet[k] = true
+	}
+	routing := map[string]bool{}
+	for k, v := range next.KeyRoutingEnabled {
+		if nextSet[k] {
+			routing[k] = v
+		}
+	}
+	for _, k := range next.Keys {
+		if !oldKeys[k] && k != "" && k != "public" {
+			routing[k] = false // 新 key 强制默认禁用（覆盖可能的陈旧表项）
+		}
+	}
+	if len(routing) == 0 {
+		next.KeyRoutingEnabled = nil
+		return
+	}
+	next.KeyRoutingEnabled = routing
 }
 
 // setZenKeyRoutingEnabled 写入 key 的路由参与状态（面板"启用"勾选）。
@@ -367,12 +398,12 @@ type zenProxyBinding struct {
 
 func defaultZenConfig() *zenConfigData {
 	return &zenConfigData{
-		Key:             "public",
-		Keys:            []string{"public"},
-		BaseURL:         zenAPIBase,
-		ProxyStrategy:   "round_robin",
-		MaxConcurrency:  8,
-		Retries:         3,
+		Key:            "public",
+		Keys:           []string{"public"},
+		BaseURL:        zenAPIBase,
+		ProxyStrategy:  "round_robin",
+		MaxConcurrency: 8,
+		Retries:        3,
 		Compaction: zenCompactConfig{
 			Auto:       true,
 			Buffer:     20000,
@@ -500,7 +531,16 @@ func loadZenConfig() *zenConfigData {
 	if envKeys := envList("ZEN_KEYS"); len(envKeys) > 0 {
 		if !fileExists || len(cfg.Keys) == 0 || (len(cfg.Keys) == 1 && cfg.Keys[0] == "public") {
 			cfg.Keys = envKeys
-			log.Printf("zen keys seeded from ZEN_KEYS env: %d key(s)", len(envKeys))
+			// 注入同样算"新增身份"：默认不参与路由，需在面板勾选启用（三平台统一口径）。
+			if cfg.KeyRoutingEnabled == nil {
+				cfg.KeyRoutingEnabled = map[string]bool{}
+			}
+			for _, k := range envKeys {
+				if k != "" && k != "public" {
+					cfg.KeyRoutingEnabled[k] = false
+				}
+			}
+			log.Printf("zen keys seeded from ZEN_KEYS env: %d key(s) (routing disabled by default)", len(envKeys))
 		}
 	}
 	normalizeZenKeys(cfg)

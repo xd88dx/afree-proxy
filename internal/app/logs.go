@@ -108,6 +108,15 @@ var (
 
 var reqLogsFile = kit.ResolveDataPath("requests.jsonl")
 
+// reqLogPath 取当前落盘路径。reqLogsFile 是包级变量（测试会整体替换它来
+// 避免污染真实的 data/requests.jsonl），而 AppendReqLog 的落盘 goroutine
+// 与替换方并发，裸读会构成数据竞争。
+func reqLogPath() string {
+	reqLogsMu.Lock()
+	defer reqLogsMu.Unlock()
+	return reqLogsFile
+}
+
 // AppendReqLog 记录一条请求日志：内存环形保留 + 异步追加落盘。
 // LOG_REQUESTS=false 时完全关闭（调用方已跳过，这里兜底）。
 func AppendReqLog(l RequestLog) {
@@ -122,15 +131,16 @@ func AppendReqLog(l RequestLog) {
 	reqLogsMu.Unlock()
 	go func() {
 		data, _ := json.Marshal(l)
-		f, err := os.OpenFile(reqLogsFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
+		path := reqLogPath()
+		f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
 		if err != nil {
 			return
 		}
 		f.Write(append(data, '\n'))
 		f.Close()
 		// 大小上限（LOG_FILE_MAX_MB，默认 10MB）：超出清空落盘文件（内存仍保留最近 500 条）
-		if st, err := os.Stat(reqLogsFile); err == nil && st.Size() > LogFileMaxBytes() {
-			os.WriteFile(reqLogsFile, nil, 0600)
+		if st, err := os.Stat(path); err == nil && st.Size() > LogFileMaxBytes() {
+			os.WriteFile(path, nil, 0600)
 		}
 	}()
 }
@@ -153,12 +163,14 @@ func LoadRequestLogsFromFile() {
 	if !LogRequestsEnabled() {
 		return
 	}
-	raw, err := os.ReadFile(reqLogsFile)
+	raw, err := os.ReadFile(reqLogPath())
 	if err != nil {
 		return
 	}
 	includeAdmin := poolAdminLogEnabled()
 	lines := splitLinesSafe(string(raw))
+	reqLogsMu.Lock()
+	defer reqLogsMu.Unlock()
 	for _, line := range lines {
 		if line == "" {
 			continue

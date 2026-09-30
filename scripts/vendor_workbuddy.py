@@ -145,6 +145,8 @@ PRESERVE_RELATIVE = (
     # stale-snapshot replay on probe failure.
     Path("panel") / "models_stale_test.go",
     Path("pool") / "pool_enabled_test.go",
+    # afree-local: newly added identities default to routing-disabled.
+    Path("panel") / "add_default_test.go",
 )
 
 

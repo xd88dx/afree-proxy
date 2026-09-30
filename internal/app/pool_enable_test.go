@@ -166,3 +166,19 @@ func TestAdminAccountSetPoolEnabledDoesNotChangeStatus(t *testing.T) {
 		t.Fatalf("accounts API status = %q, want active", got.Status)
 	}
 }
+
+// 新增账号默认不参与轮换（三平台统一口径）：addAccount 对未显式携带开关的
+// 账号物化为 false，显式传入的状态保留。存量兼容语义（缺字段=启用）只属于
+// loadPool 的物化，不影响新添加。
+func TestAddAccountDefaultsDisabled(t *testing.T) {
+	resetPoolForEnableTest(t, nil)
+	addAccount(&Account{AccountID: "fresh", Email: "fresh@example.com", Status: "active"})
+	if got := pool.Accounts[0]; got.PoolEnabled == nil || *got.PoolEnabled {
+		t.Fatalf("fresh account must default to routing-disabled, got %v", got.PoolEnabled)
+	}
+	enabled := true
+	addAccount(&Account{AccountID: "explicit", Email: "explicit@example.com", Status: "active", PoolEnabled: &enabled})
+	if got := pool.Accounts[1]; got.PoolEnabled == nil || !*got.PoolEnabled {
+		t.Fatal("explicit PoolEnabled=true must survive addAccount")
+	}
+}
