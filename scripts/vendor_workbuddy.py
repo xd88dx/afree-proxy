@@ -139,6 +139,8 @@ def apply_egress_rewrites(pkg: Path) -> None:
 PRESERVE_RELATIVE = (
     Path("upstream") / "proxy.go",
     Path("upstream") / "proxy_test.go",
+    # afree-local: per-proxy health observation hook + its regression tests.
+    Path("upstream") / "observe_proxy_test.go",
     Path("server") / "afree_adapter.go",
     # afree-local regression tests for afree-local features: the admin
     # pool_enabled switch (auth.pool_enabled) and the panel models

@@ -653,6 +653,7 @@ func testAccount(acc *Account) (map[string]any, string) {
 	// 上游请求，从服务器本机 IP 发出会破坏"一个账号一个 IP"的隔离。绑定
 	// 出口全不可用时按冷却回报，不降级直连（与正常请求的"跳过"语义一致）。
 	probeClient := kit.HTTPClient
+	var probeExit string
 	if main, backup, bound := accountProxyBinding(acc); bound {
 		proxyURL, _, ok := pickBoundProxy(main, backup)
 		if !ok {
@@ -664,11 +665,13 @@ func testAccount(acc *Account) (map[string]any, string) {
 			}, "cooldown"
 		}
 		probeClient = proxyClientFor(proxyURL)
+		probeExit = proxyURL
 	}
 
 	resp, err := probeClient.Do(req)
 	if err != nil {
 		// 网络错误：5 分钟短冷却（恢复时间取返回值，避免锁外读账号字段）
+		recordProxyOutcome(probeExit, false, err)
 		reason := "network error: " + err.Error()
 		until := markAccountCooldown(acc, reason, 5*time.Minute)
 		return map[string]any{
@@ -682,6 +685,7 @@ func testAccount(acc *Account) (map[string]any, string) {
 			"remaining":     formatDuration(time.Until(until)),
 		}, "cooldown"
 	}
+	recordProxyOutcome(probeExit, true, nil)
 	defer resp.Body.Close()
 
 	bodyBytes, _ := io.ReadAll(resp.Body)

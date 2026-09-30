@@ -989,6 +989,7 @@ func callClineAPI(ctx context.Context, params map[string]any, stream bool, usePr
 	}
 	var resp *http.Response
 	var lastErr error
+	var exitURL string // 401 重试仍用最后一个成功出口的 client，成败按它归属
 	for i := 0; i < attempts; i++ {
 		proxyURL, pidx := "", -1
 		if bound {
@@ -1018,6 +1019,8 @@ func callClineAPI(ctx context.Context, params map[string]any, stream bool, usePr
 		resp, lastErr = client.Do(req)
 		if lastErr == nil {
 			setUpstreamExit(ctx, proxyExitType(proxyURL, main, backup, bound))
+			recordProxyOutcome(proxyURL, true, nil)
+			exitURL = proxyURL
 			break
 		}
 		if ctx.Err() != nil {
@@ -1029,6 +1032,7 @@ func callClineAPI(ctx context.Context, params map[string]any, stream bool, usePr
 			// 绑定账号（隔离模式）同样适用：全局开关为直连时，绑定代理的网络
 			// 错误也绝不毒化账号（pidx=-1 的直连兜底冷却为 no-op）。
 			cooldownUpstreamProxy(pidx, 2*time.Minute)
+			recordProxyOutcome(proxyURL, false, lastErr)
 			log.Printf("  cline proxy failed (%v), cooldown exit 2m, retrying on next", lastErr)
 			continue
 		}
@@ -1055,8 +1059,10 @@ func callClineAPI(ctx context.Context, params map[string]any, stream bool, usePr
 			// 响应被丢弃（body 泄漏）而调用方仍拿到旧的 401
 			resp2, derr := client.Do(req2)
 			if derr != nil {
+				recordProxyOutcome(exitURL, false, derr)
 				return nil, acc, fmt.Errorf("upstream retry: %w", derr)
 			}
+			recordProxyOutcome(exitURL, true, nil)
 			if resp2.StatusCode == 401 {
 				resp2.Body.Close()
 				poolMu.Lock()

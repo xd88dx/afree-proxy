@@ -15,9 +15,12 @@ func TestProxyTransportForBuildsAndCachesBoundExit(t *testing.T) {
 		return "http://127.0.0.1:19080", true
 	}
 
-	tr, err := c.proxyTransportFor(&auth.Auth{UID: "uid-1"})
+	tr, raw, err := c.proxyTransportFor(&auth.Auth{UID: "uid-1"})
 	if err != nil {
 		t.Fatalf("proxyTransportFor: %v", err)
+	}
+	if raw != "http://127.0.0.1:19080" {
+		t.Fatalf("proxyTransportFor raw URL = %q", raw)
 	}
 	if tr == nil || tr.Proxy == nil {
 		t.Fatal("bound exit did not produce a proxied transport")
@@ -30,7 +33,7 @@ func TestProxyTransportForBuildsAndCachesBoundExit(t *testing.T) {
 		t.Fatalf("proxy URL = %q", got.String())
 	}
 
-	tr2, err := c.proxyTransportFor(&auth.Auth{UID: "uid-1"})
+	tr2, _, err := c.proxyTransportFor(&auth.Auth{UID: "uid-1"})
 	if err != nil {
 		t.Fatalf("second proxyTransportFor: %v", err)
 	}

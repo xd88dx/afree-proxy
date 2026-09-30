@@ -43,6 +43,8 @@ func handleZenConfig(w http.ResponseWriter, r *http.Request) {
 		"backupProxyEnabled": backupProxyEnabled(),
 		"runtime": map[string]any{
 			"proxyCooldowns": zenProxyCooldownStatus(),
+			// 每代理在线率统计（纯被动：只记真实请求的出口成败）。URL 已打码。
+			"proxyHealth": proxyHealthSnapshot(),
 		},
 	}
 	writeAPI(w, http.StatusOK, apiResponse{Success: true, Data: data})

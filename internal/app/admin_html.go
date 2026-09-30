@@ -464,9 +464,23 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
   </div>
 </div>
 <div class="section">
-  <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8v4m0 4h.01"/></svg></span> Cooldown status</div>
+  <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><path d="M3 17l5-6 4 3 4-7 5 4"/><path d="M3 21h18"/></svg></span> Proxy health (online rate)</div>
   <div class="section-body">
-    <div class="hint" id="ppCooldownInfo" style="margin:0">-</div>
+    <div class="table-wrap">
+    <table>
+      <thead><tr>
+        <th>Proxy</th>
+        <th style="text-align:center" title="Upstream attempts that egressed via this proxy since the pool was last edited">Attempts</th>
+        <th style="text-align:center" title="Transport-layer success rate since the pool was last edited (upstream 4xx/5xx still counts as the proxy being online)">Rate</th>
+        <th style="text-align:center" title="Success rate over the most recent attempts (window: last 50). Below 80% with at least 10 samples is highlighted red — time to replace the proxy.">Recent</th>
+        <th>Last OK</th>
+        <th>Last Fail</th>
+        <th>Cooldown</th>
+      </tr></thead>
+      <tbody id="ppHealthBody"><tr><td colspan="7" class="empty">Loading...</td></tr></tbody>
+    </table>
+    </div>
+    <div class="hint" style="margin-top:8px">Rates are passively sampled from real upstream traffic only — no probing traffic is generated. "No data" means this exit has not been used since the pool was last edited (with the fill strategy only the first proxy gets traffic; global switches and per-identity bindings decide the rest). Editing the proxy list resets all counters.</div>
   </div>
 </div>
 </div>
@@ -1240,6 +1254,17 @@ const I18N_ZH = {
   'Cline': 'Cline',
   'Use proxy pool': '走代理池',
   'Proxy': '代理',
+  'Proxy health (online rate)': '代理健康（在线率）',
+  'Attempts': '尝试数',
+  'Rate': '在线率',
+  'Recent': '最近',
+  'Last OK': '最近成功',
+  'Last Fail': '最近失败',
+  'No proxies configured': '未配置代理',
+  'Upstream attempts that egressed via this proxy since the pool was last edited': '上次编辑代理池以来，经此代理出网的上游尝试次数',
+  'Transport-layer success rate since the pool was last edited (upstream 4xx/5xx still counts as the proxy being online)': '上次编辑代理池以来的传输层成功率（上游 4xx/5xx 不算代理失败）',
+  'Success rate over the most recent attempts (window: last 50). Below 80% with at least 10 samples is highlighted red — time to replace the proxy.': '最近若干次尝试的成功率（窗口：最近 50 次）。样本 ≥10 且低于 80% 标红——该考虑换掉这个代理了。',
+  'Rates are passively sampled from real upstream traffic only — no probing traffic is generated. "No data" means this exit has not been used since the pool was last edited (with the fill strategy only the first proxy gets traffic; global switches and per-identity bindings decide the rest). Editing the proxy list resets all counters.': '在线率只从真实上游流量被动采样，不产生任何探测流量。“无数据”表示该出口自上次编辑代理池以来没被用到（fill 策略只有第一个代理会拿到流量，其余由全局开关与各身份的绑定决定）。编辑代理列表会清空全部统计。',
   'Restore defaults': '恢复默认',
   'Restore the default Cline CLI headers': '恢复默认的 Cline CLI 请求头',
   'Headers restored to defaults': '请求头已恢复默认',
@@ -3542,12 +3567,37 @@ async function loadProxyPool() {
     }
     _('ppZen').value = String(c.zenUseProxies !== false);
     _('ppWb').value = String(c.workbuddyUseProxies !== false);
-    const cd = (c.runtime || {}).proxyCooldowns || {};
-    const keys = Object.keys(cd);
-    _('ppCooldownInfo').textContent = keys.length
-      ? keys.map(k => egLabel(k) + T(' cooldown until ') + fmtWhen(cd[k])).join('; ')
-      : T('No proxies cooling down');
+    renderProxyHealth((c.runtime || {}).proxyHealth || []);
   } catch (e) { /* ignore */ }
+}
+
+// 每代理在线率表：纯被动统计（真实请求的出口成败），编辑代理池即清零。
+// 低在线率标红是展示信号，不改任何路由行为——换不换代理由人决定。
+const PROXY_HEALTH_LOW_RATE = 0.8, PROXY_HEALTH_MIN_SAMPLES = 10;
+function renderProxyHealth(rows) {
+  const tb = _('ppHealthBody');
+  if (!tb) return;
+  tb.innerHTML = rows.length
+    ? rows.map(r => {
+        const pct = rate => (rate === null || rate === undefined) ? null : Math.round(rate * 100) + '%';
+        const rateCell = v => v === null
+          ? '<span style="color:var(--text3)">-</span>'
+          : '<span style="color:' + (v.low ? 'var(--danger)' : 'var(--text)') + ';font-weight:' + (v.low ? '600' : '400') + '">' + v.text + '</span>';
+        const cum = pct(r.rate);
+        const rec = pct(r.recentRate);
+        const low = r.recentTotal >= PROXY_HEALTH_MIN_SAMPLES && r.recentRate !== null && r.recentRate !== undefined && r.recentRate < PROXY_HEALTH_LOW_RATE;
+        const failTitle = r.lastErr ? ' title="' + esc(r.lastErr) + '"' : '';
+        return '<tr>' +
+          '<td class="mono" style="font-size:11px">' + esc(egLabel(r.proxy)) + '</td>' +
+          '<td style="text-align:center">' + (r.attempts || 0) + '</td>' +
+          '<td style="text-align:center">' + rateCell(cum === null ? null : { text: cum, low: false }) + '</td>' +
+          '<td style="text-align:center">' + rateCell(rec === null ? null : { text: rec, low: low }) + '</td>' +
+          '<td class="mono" style="font-size:11px">' + (r.lastOk ? fmtWhen(r.lastOk) : '<span style="color:var(--text3)">-</span>') + '</td>' +
+          '<td class="mono" style="font-size:11px"' + failTitle + '>' + (r.lastFail ? fmtWhen(r.lastFail) : '<span style="color:var(--text3)">-</span>') + '</td>' +
+          '<td>' + (r.cooling ? '<span style="color:var(--warning,#eab308)">' + T('cooldown until ') + fmtWhen(r.coolingUntil) + '</span>' : '<span style="color:var(--text3)">-</span>') + '</td>' +
+        '</tr>';
+      }).join('')
+    : '<tr><td colspan="7" class="empty">No proxies configured</td></tr>';
 }
 
 async function saveProxyPool() {

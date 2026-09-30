@@ -624,6 +624,9 @@ func setZenConfig(c *zenConfigData) {
 		zenProxyCooldownsMu.Lock()
 		zenProxyCooldowns = map[int]time.Time{}
 		zenProxyCooldownsMu.Unlock()
+		// 在线率统计按 URL 记账,但口径以"本次编辑"为界:用户决策是编辑即
+		// 全部清零,不做跨编辑的键对齐。同步落盘空文件,崩溃后旧统计不复活。
+		resetProxyHealthStats()
 	}
 	validProxy := map[string]bool{"": true}
 	for _, p := range c.Proxies {
@@ -1901,6 +1904,7 @@ func callZenResponsesAPI(ctx context.Context, params map[string]any, stream bool
 		if err == nil {
 			mainP, backupP, boundP := zenKeyBindingOf(key)
 			setUpstreamExit(ctx, proxyExitType(proxyURL, mainP, backupP, boundP))
+			recordProxyOutcome(proxyURL, true, nil)
 		}
 		if err != nil {
 			if ctx.Err() != nil {
@@ -1908,6 +1912,7 @@ func callZenResponsesAPI(ctx context.Context, params map[string]any, stream bool
 			}
 			if pidx >= 0 {
 				cooldownUpstreamProxy(pidx, 2*time.Minute)
+				recordProxyOutcome(proxyURL, false, err)
 				log.Printf("  zen proxy failed (%v), cooldown exit %s for 2m", err, viaProxy)
 			}
 			if attempt < retries {
@@ -2113,6 +2118,7 @@ func callZenAPI(ctx context.Context, params map[string]any, stream bool, opts ..
 		if err == nil {
 			mainP, backupP, boundP := zenKeyBindingOf(key)
 			setUpstreamExit(ctx, proxyExitType(proxyURL, mainP, backupP, boundP))
+			recordProxyOutcome(proxyURL, true, nil)
 		}
 		if err != nil {
 			// 客户端取消: 立即返回,不重试不冷却不计故障
@@ -2124,6 +2130,7 @@ func callZenAPI(ctx context.Context, params map[string]any, stream bool, opts ..
 			// 几次慢模型测试就毒化整个池;2 分钟仍能跳过真死代理,又快速自愈。
 			if pidx >= 0 {
 				cooldownUpstreamProxy(pidx, 2*time.Minute)
+				recordProxyOutcome(proxyURL, false, err)
 				log.Printf("  zen proxy failed (%v), cooldown exit %s for 2m", err, viaProxy)
 			}
 			// 网络错误:退避重试(瞬时可恢复);ctx 取消时中断等待
