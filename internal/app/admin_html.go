@@ -769,70 +769,70 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
   <div class="section">
     <div class="section-title">
       <span class="sec-ico"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87.34 1.7 1.7 0 0 0-1 1.55V21a2 2 0 1 1-4 0v-.09a1.7 1.7 0 0 0-1-1.55 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.7 1.7 0 0 0 .34-1.87 1.7 1.7 0 0 0-1.55-1H3a2 2 0 1 1 0-4h.09a1.7 1.7 0 0 0 1.55-1 1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.7 1.7 0 0 0 1.87.34h0a1.7 1.7 0 0 0 1-1.55V3a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1 1.55h0a1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87v0a1.7 1.7 0 0 0 1.55 1H21a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.55 1z"/></svg></span>
-      WorkBuddy 配置
+      WorkBuddy configuration
       <span style="flex:1"></span>
-      <span class="auto-pill" id="wbConfigNote">面板由当前管理员会话管理</span>
+      <span class="auto-pill" id="wbConfigNote">Managed by the admin session</span>
     </div>
     <div class="section-body">
-      <div class="hint" style="margin-top:0;margin-bottom:16px">监听地址、API 密钥、凭证目录与状态文件路径由当前项目统一管理。</div>
+      <div class="hint" style="margin-top:0;margin-bottom:16px">Listening, credentials, and data paths stay under the gateway admin session.</div>
       <div class="wb-config-grid">
         <div class="wb-config-group">
-          <h3>定时任务</h3>
-          <div class="wb-switch"><input type="checkbox" id="wbCheckinEnabled" data-wb-path="schedule.checkin_enabled"><label for="wbCheckinEnabled">自动签到</label></div>
-          <div class="wb-field"><label for="wbCheckinHours">签到时点（小时，逗号分隔）</label><input id="wbCheckinHours" data-wb-path="schedule.checkin_hours" data-wb-type="ints" placeholder="9, 21"></div>
-          <div class="wb-switch"><input type="checkbox" id="wbTravelEnabled" data-wb-path="schedule.travel_enabled"><label for="wbTravelEnabled">自动巡检</label></div>
-          <div class="wb-field"><label for="wbTravelHours">旅行时点（小时，逗号分隔）</label><input id="wbTravelHours" data-wb-path="schedule.travel_hours" data-wb-type="ints" placeholder="9, 21"></div>
-          <div class="wb-switch"><input type="checkbox" id="wbActivityEnabled" data-wb-path="schedule.activity_enabled"><label for="wbActivityEnabled">自动连登</label></div>
-          <div class="wb-field"><label for="wbActivityHours">上报时点（小时，逗号分隔）</label><input id="wbActivityHours" data-wb-path="schedule.activity_hours" data-wb-type="ints" placeholder="10"></div>
-          <div class="wb-switch"><input type="checkbox" id="wbKeepaliveEnabled" data-wb-path="schedule.keepalive_enabled"><label for="wbKeepaliveEnabled">自动保活</label></div>
-          <div class="wb-field"><label for="wbKeepaliveHours">保活时点（小时，逗号分隔）</label><input id="wbKeepaliveHours" data-wb-path="schedule.keepalive_hours" data-wb-type="ints" placeholder="22"></div>
-          <div class="wb-switch"><input type="checkbox" id="wbBalanceEnabled" data-wb-path="schedule.balance_refresh_enabled"><label for="wbBalanceEnabled">后台刷新余额</label></div>
-          <div class="wb-field"><label for="wbBalanceMinutes">刷新间隔（分钟）</label><input id="wbBalanceMinutes" data-wb-path="schedule.balance_refresh_minutes" data-wb-type="number" min="1" placeholder="5"></div>
-          <div class="wb-switch"><input type="checkbox" id="wbGrowthEnabled" data-wb-path="schedule.growth_enabled"><label for="wbGrowthEnabled">成长任务自动执行</label></div>
-          <div class="wb-field"><label for="wbGrowthHours">执行时点（小时，逗号分隔）</label><input id="wbGrowthHours" data-wb-path="schedule.growth_hours" data-wb-type="ints" placeholder="1"></div>
+          <h3>Scheduled jobs</h3>
+          <div class="wb-switch"><input type="checkbox" id="wbCheckinEnabled" data-wb-path="schedule.checkin_enabled"><label for="wbCheckinEnabled">Automatic check-in</label></div>
+          <div class="wb-field"><label for="wbCheckinHours">Check-in hours</label><input id="wbCheckinHours" data-wb-path="schedule.checkin_hours" data-wb-type="ints" placeholder="9, 21"></div>
+          <div class="wb-switch"><input type="checkbox" id="wbTravelEnabled" data-wb-path="schedule.travel_enabled"><label for="wbTravelEnabled">Automatic patrol</label></div>
+          <div class="wb-field"><label for="wbTravelHours">Patrol hours</label><input id="wbTravelHours" data-wb-path="schedule.travel_hours" data-wb-type="ints" placeholder="9, 21"></div>
+          <div class="wb-switch"><input type="checkbox" id="wbActivityEnabled" data-wb-path="schedule.activity_enabled"><label for="wbActivityEnabled">Automatic activity</label></div>
+          <div class="wb-field"><label for="wbActivityHours">Activity hours</label><input id="wbActivityHours" data-wb-path="schedule.activity_hours" data-wb-type="ints" placeholder="10"></div>
+          <div class="wb-switch"><input type="checkbox" id="wbKeepaliveEnabled" data-wb-path="schedule.keepalive_enabled"><label for="wbKeepaliveEnabled">Automatic keepalive</label></div>
+          <div class="wb-field"><label for="wbKeepaliveHours">Keepalive hours</label><input id="wbKeepaliveHours" data-wb-path="schedule.keepalive_hours" data-wb-type="ints" placeholder="22"></div>
+          <div class="wb-switch"><input type="checkbox" id="wbBalanceEnabled" data-wb-path="schedule.balance_refresh_enabled"><label for="wbBalanceEnabled">Background balance refresh</label></div>
+          <div class="wb-field"><label for="wbBalanceMinutes">Refresh interval (min)</label><input id="wbBalanceMinutes" data-wb-path="schedule.balance_refresh_minutes" data-wb-type="number" min="1" placeholder="5"></div>
+          <div class="wb-switch"><input type="checkbox" id="wbGrowthEnabled" data-wb-path="schedule.growth_enabled"><label for="wbGrowthEnabled">Growth tasks</label></div>
+          <div class="wb-field"><label for="wbGrowthHours">Growth hours</label><input id="wbGrowthHours" data-wb-path="schedule.growth_hours" data-wb-type="ints" placeholder="1"></div>
         </div>
 
         <div class="wb-config-group">
-          <h3>账号池与流量治理</h3>
-          <div class="wb-field"><label for="wbMaxInFlight">单账号最大在途</label><input id="wbMaxInFlight" data-wb-path="pool.max_in_flight" data-wb-type="number" min="0" placeholder="3"></div>
-          <div class="wb-field"><label for="wbMaxGlobal">国际版在途上限</label><input id="wbMaxGlobal" data-wb-path="pool.max_in_flight_global" data-wb-type="number" min="1" placeholder="2"></div>
-          <div class="wb-field"><label for="wbBreakerThreshold">连续失败熔断阈值</label><input id="wbBreakerThreshold" data-wb-path="pool.breaker_threshold" data-wb-type="number" min="1" placeholder="3"></div>
-          <div class="wb-field"><label for="wbSoftRate">软限流冷却基数</label><input id="wbSoftRate" data-wb-path="cooldown.soft_rate" data-wb-type="duration" placeholder="600s"></div>
-          <div class="wb-field"><label for="wbSoftMax">软冷却退避上限</label><input id="wbSoftMax" data-wb-path="cooldown.soft_rate_max" data-wb-type="duration" placeholder="2h"></div>
-          <div class="wb-field"><label for="wbBreakerCooldown">熔断基础时长</label><input id="wbBreakerCooldown" data-wb-path="pool.breaker_cooldown" data-wb-type="duration" placeholder="30m"></div>
-          <div class="wb-field"><label for="wbBreakerMax">熔断退避上限</label><input id="wbBreakerMax" data-wb-path="pool.breaker_cooldown_max" data-wb-type="duration" placeholder="6h"></div>
-          <div class="wb-field"><label for="wbDegradeThreshold">连败降权阈值</label><input id="wbDegradeThreshold" data-wb-path="pool.degrade_threshold" data-wb-type="number" min="1" placeholder="5"></div>
-          <div class="wb-field"><label for="wbDegradeCooldown">连败降权时长</label><input id="wbDegradeCooldown" data-wb-path="pool.degrade_cooldown" data-wb-type="duration" placeholder="10m"></div>
-          <div class="wb-field"><label for="wbDegradeMax">连败降权上限</label><input id="wbDegradeMax" data-wb-path="pool.degrade_cooldown_max" data-wb-type="duration" placeholder="2h"></div>
-          <div class="wb-field"><label for="wbIdleWeight">闲置补偿 / 小时</label><input id="wbIdleWeight" data-wb-path="pool.idle_weight_per_hour" data-wb-type="number" step="0.1" placeholder="0.5"></div>
-          <div class="wb-field"><label for="wbIdleMax">闲置补偿上限</label><input id="wbIdleMax" data-wb-path="pool.idle_weight_max" data-wb-type="number" step="0.1" placeholder="5"></div>
-          <div class="wb-field"><label for="wbCostExplore">成本探索窗口</label><input id="wbCostExplore" data-wb-path="pool.cost_explore_interval" data-wb-type="duration" placeholder="30m"></div>
-          <div class="wb-field"><label for="wbStickyTTL">会话粘性 TTL</label><input id="wbStickyTTL" data-wb-path="session_sticky.ttl" data-wb-type="duration" placeholder="30m"></div>
+          <h3>Pool and cooldown</h3>
+          <div class="wb-field"><label for="wbMaxInFlight">Max in-flight / account</label><input id="wbMaxInFlight" data-wb-path="pool.max_in_flight" data-wb-type="number" min="0" placeholder="3"></div>
+          <div class="wb-field"><label for="wbMaxGlobal">Global in-flight limit</label><input id="wbMaxGlobal" data-wb-path="pool.max_in_flight_global" data-wb-type="number" min="1" placeholder="2"></div>
+          <div class="wb-field"><label for="wbBreakerThreshold">Breaker threshold</label><input id="wbBreakerThreshold" data-wb-path="pool.breaker_threshold" data-wb-type="number" min="1" placeholder="3"></div>
+          <div class="wb-field"><label for="wbSoftRate">Soft rate cooldown</label><input id="wbSoftRate" data-wb-path="cooldown.soft_rate" data-wb-type="duration" placeholder="600s"></div>
+          <div class="wb-field"><label for="wbSoftMax">Soft cooldown max</label><input id="wbSoftMax" data-wb-path="cooldown.soft_rate_max" data-wb-type="duration" placeholder="2h"></div>
+          <div class="wb-field"><label for="wbBreakerCooldown">Breaker cooldown</label><input id="wbBreakerCooldown" data-wb-path="pool.breaker_cooldown" data-wb-type="duration" placeholder="30m"></div>
+          <div class="wb-field"><label for="wbBreakerMax">Breaker cooldown max</label><input id="wbBreakerMax" data-wb-path="pool.breaker_cooldown_max" data-wb-type="duration" placeholder="6h"></div>
+          <div class="wb-field"><label for="wbDegradeThreshold">Degrade threshold</label><input id="wbDegradeThreshold" data-wb-path="pool.degrade_threshold" data-wb-type="number" min="1" placeholder="5"></div>
+          <div class="wb-field"><label for="wbDegradeCooldown">Degrade cooldown</label><input id="wbDegradeCooldown" data-wb-path="pool.degrade_cooldown" data-wb-type="duration" placeholder="10m"></div>
+          <div class="wb-field"><label for="wbDegradeMax">Degrade cooldown max</label><input id="wbDegradeMax" data-wb-path="pool.degrade_cooldown_max" data-wb-type="duration" placeholder="2h"></div>
+          <div class="wb-field"><label for="wbIdleWeight">Idle weight / hour</label><input id="wbIdleWeight" data-wb-path="pool.idle_weight_per_hour" data-wb-type="number" step="0.1" placeholder="0.5"></div>
+          <div class="wb-field"><label for="wbIdleMax">Idle weight max</label><input id="wbIdleMax" data-wb-path="pool.idle_weight_max" data-wb-type="number" step="0.1" placeholder="5"></div>
+          <div class="wb-field"><label for="wbCostExplore">Cost explore window</label><input id="wbCostExplore" data-wb-path="pool.cost_explore_interval" data-wb-type="duration" placeholder="30m"></div>
+          <div class="wb-field"><label for="wbStickyTTL">Sticky TTL</label><input id="wbStickyTTL" data-wb-path="session_sticky.ttl" data-wb-type="duration" placeholder="30m"></div>
         </div>
 
         <div class="wb-config-group">
-          <h3>上游与高级</h3>
-          <div class="wb-field"><label for="wbTimeout">短请求超时</label><input id="wbTimeout" data-wb-path="upstream.timeout_seconds" data-wb-type="number" min="1" placeholder="120"></div>
-          <div class="wb-field"><label for="wbHeaderTimeout">聊天首字节超时</label><input id="wbHeaderTimeout" data-wb-path="upstream.header_timeout_seconds" data-wb-type="number" min="1" placeholder="120"></div>
-          <div class="wb-field"><label for="wbIdleTimeout">流空闲超时</label><input id="wbIdleTimeout" data-wb-path="upstream.idle_timeout_seconds" data-wb-type="number" min="1" placeholder="300"></div>
-          <div class="wb-field"><label for="wbUserAgent">出站 User-Agent</label><input id="wbUserAgent" data-wb-path="upstream.user_agent" data-wb-send-empty="1" placeholder="留空 = CLI/2.63.2 CodeBuddy/2.63.2"></div>
+          <h3>Session and upstream</h3>
+          <div class="wb-field"><label for="wbTimeout">Short request timeout</label><input id="wbTimeout" data-wb-path="upstream.timeout_seconds" data-wb-type="number" min="1" placeholder="120"></div>
+          <div class="wb-field"><label for="wbHeaderTimeout">First-byte timeout</label><input id="wbHeaderTimeout" data-wb-path="upstream.header_timeout_seconds" data-wb-type="number" min="1" placeholder="120"></div>
+          <div class="wb-field"><label for="wbIdleTimeout">Stream idle timeout</label><input id="wbIdleTimeout" data-wb-path="upstream.idle_timeout_seconds" data-wb-type="number" min="1" placeholder="300"></div>
+          <div class="wb-field"><label for="wbUserAgent">User-Agent</label><input id="wbUserAgent" data-wb-path="upstream.user_agent" data-wb-send-empty="1" placeholder="Leave empty = CLI / 2.63.2 CodeBuddy / 2.63.2"></div>
           <div class="wb-field">
-            <label for="wbPromptMode">系统提示词模式</label>
+            <label for="wbPromptMode">System prompt mode</label>
             <select id="wbPromptMode" data-wb-path="prompt.mode">
-              <option value="custom">custom — 网关自有提示词（避免指纹误报）</option>
-              <option value="append">append — 客户端 system 后插网关提示词（并用）</option>
-              <option value="passthrough">passthrough — 透传客户端原始 system</option>
+              <option value="custom">custom — gateway-owned prompt (avoids fingerprint false positives)</option>
+              <option value="append">append — insert gateway prompt after client system (both apply)</option>
+              <option value="passthrough">passthrough — pass client system through unchanged</option>
             </select>
           </div>
-          <div class="wb-field"><label for="wbPromptFile">提示词文件路径</label><input id="wbPromptFile" data-wb-path="prompt.file" data-wb-send-empty="1" placeholder="留空 = 内置默认提示词"></div>
-          <div class="wb-switch"><input type="checkbox" id="wbSanitize" data-wb-path="features.sanitize_blacklist_fingerprints"><label for="wbSanitize">出站请求指纹脱敏</label></div>
-          <div class="wb-switch"><input type="checkbox" id="wbStickyEnabled" data-wb-path="session_sticky.enabled"><label for="wbStickyEnabled">会话粘性路由</label></div>
-          <div class="hint" style="margin-top:10px">Upstash Redis 镜像、凭证目录与状态文件路径需手工编辑配置文件（判为重启项）。</div>
+          <div class="wb-field"><label for="wbPromptFile">Prompt file</label><input id="wbPromptFile" data-wb-path="prompt.file" data-wb-send-empty="1" placeholder="Leave empty = built-in default prompt"></div>
+          <div class="wb-switch"><input type="checkbox" id="wbSanitize" data-wb-path="features.sanitize_blacklist_fingerprints"><label for="wbSanitize">Sanitize outbound fingerprints</label></div>
+          <div class="wb-switch"><input type="checkbox" id="wbStickyEnabled" data-wb-path="session_sticky.enabled"><label for="wbStickyEnabled">Sticky session routing</label></div>
+          <div class="hint" style="margin-top:10px">Upstash Redis mirror, auth dir, and state file are edited in the config file manually (restart items).</div>
         </div>
       </div>
       <div class="form-actions" style="justify-content:flex-end">
-        <button type="button" class="btn" onclick="loadWorkbuddyConfig()">放弃修改</button>
-        <button type="submit" class="btn btn-primary" id="wbSaveConfig">保存配置</button>
+        <button type="button" class="btn" onclick="loadWorkbuddyConfig()">Discard changes</button>
+        <button type="submit" class="btn btn-primary" id="wbSaveConfig">Save configuration</button>
       </div>
     </div>
   </div>
@@ -1104,6 +1104,54 @@ const I18N_ZH = {
   ' key(s)': ' 个 key',
   'No keys to test': '没有可测试的 key',
   ' (deleted)': '（已删除）',
+  'WorkBuddy configuration': 'WorkBuddy 配置',
+  'Managed by the admin session': '面板由当前管理员会话管理',
+  'Listening, credentials, and data paths stay under the gateway admin session.': '监听地址、API 密钥、凭证目录与状态文件路径由当前项目统一管理。',
+  'Scheduled jobs': '定时任务',
+  'Automatic check-in': '自动签到',
+  'Check-in hours': '签到时点（小时，逗号分隔）',
+  'Automatic patrol': '自动巡检',
+  'Patrol hours': '旅行时点（小时，逗号分隔）',
+  'Automatic activity': '自动连登',
+  'Activity hours': '上报时点（小时，逗号分隔）',
+  'Automatic keepalive': '自动保活',
+  'Keepalive hours': '保活时点（小时，逗号分隔）',
+  'Background balance refresh': '后台刷新余额',
+  'Refresh interval (min)': '刷新间隔（分钟）',
+  'Growth tasks': '成长任务自动执行',
+  'Growth hours': '执行时点（小时，逗号分隔）',
+  'Pool and cooldown': '账号池与流量治理',
+  'Max in-flight / account': '单账号最大在途',
+  'Global in-flight limit': '国际版在途上限',
+  'Breaker threshold': '连续失败熔断阈值',
+  'Soft rate cooldown': '软限流冷却基数',
+  'Soft cooldown max': '软冷却退避上限',
+  'Breaker cooldown': '熔断基础时长',
+  'Breaker cooldown max': '熔断退避上限',
+  'Degrade threshold': '连败降权阈值',
+  'Degrade cooldown': '连败降权时长',
+  'Degrade cooldown max': '连败降权上限',
+  'Idle weight / hour': '闲置补偿 / 小时',
+  'Idle weight max': '闲置补偿上限',
+  'Cost explore window': '成本探索窗口',
+  'Sticky TTL': '会话粘性 TTL',
+  'Session and upstream': '上游与高级',
+  'Short request timeout': '短请求超时',
+  'First-byte timeout': '聊天首字节超时',
+  'Stream idle timeout': '流空闲超时',
+  'User-Agent': '出站 User-Agent',
+  'Leave empty = CLI / 2.63.2 CodeBuddy / 2.63.2': '留空 = CLI/2.63.2 CodeBuddy/2.63.2',
+  'System prompt mode': '系统提示词模式',
+  'custom — gateway-owned prompt (avoids fingerprint false positives)': 'custom — 网关自有提示词（避免指纹误报）',
+  'append — insert gateway prompt after client system (both apply)': 'append — 客户端 system 后插网关提示词（并用）',
+  'passthrough — pass client system through unchanged': 'passthrough — 透传客户端原始 system',
+  'Prompt file': '提示词文件路径',
+  'Leave empty = built-in default prompt': '留空 = 内置默认提示词',
+  'Sanitize outbound fingerprints': '出站请求指纹脱敏',
+  'Sticky session routing': '会话粘性路由',
+  'Upstash Redis mirror, auth dir, and state file are edited in the config file manually (restart items).': 'Upstash Redis 镜像、凭证目录与状态文件路径需手工编辑配置文件（判为重启项）。',
+  'Discard changes': '放弃修改',
+  'Save configuration': '保存配置',
   ' (was: ': '（原状态：',
   'Reset failed: ': '恢复失败：',
   'Key #': 'key #',
@@ -2155,9 +2203,9 @@ async function loadWorkbuddyConfig() {
       else if (Array.isArray(value)) el.value = value.join(', ');
       else el.value = String(value);
     });
-    _('wbConfigNote').textContent = 'loaded';
+    _('wbConfigNote').textContent = T('loaded');
   } catch (e) {
-    _('wbConfigNote').textContent = 'load failed';
+    _('wbConfigNote').textContent = T('load failed');
     toast(T('WorkBuddy config load failed: ') + e.message, 'error');
   }
 }
