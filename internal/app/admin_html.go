@@ -82,12 +82,6 @@ h2{font-size:21px;margin-bottom:18px;font-weight:700;letter-spacing:.01em}
 .section-title .sec-ico{width:17px;height:17px;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0}
 .section-title .sec-ico svg{width:15px;height:15px;stroke:var(--text2);fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
 .section-body{padding:18px}
-.tabs{display:flex;border-bottom:1px solid var(--border);padding:0 8px;gap:4px;overflow-x:auto}
-.tab{padding:11px 18px;cursor:pointer;color:var(--text2);border-bottom:2px solid transparent;font-size:13px;white-space:nowrap;transition:.15s}
-.tab:hover{color:var(--text);background:rgba(255,255,255,.04)}
-.tab.active{color:var(--text);border-bottom-color:var(--accent);font-weight:600}
-.tab-content{display:none;padding:18px}
-.tab-content.active{display:block;animation:rise .25s ease both}
 
 /* ===== Tables ===== */
 .table-wrap{overflow-x:auto}
@@ -146,9 +140,7 @@ select{cursor:pointer;appearance:none;background-image:linear-gradient(45deg,tra
 .eg-item.eg-hint{cursor:default;color:var(--text3)}
 .eg-item.eg-hint:hover{background:none}
 .flex{display:flex;align-items:center;gap:8px}
-.gap-4{gap:4px}
 .text-right{text-align:right}
-.mt-8{margin-top:8px}
 .inline-flex{display:inline-flex;align-items:center;gap:6px}
 .justify-between{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
 .hint{font-size:12px;color:var(--text2);margin-top:8px;line-height:1.6}
@@ -181,19 +173,14 @@ select{cursor:pointer;appearance:none;background-image:linear-gradient(45deg,tra
 .empty-state .icon{font-size:40px;margin-bottom:10px;display:block;opacity:.8}
 .key-display{background:rgba(0,0,0,.3);padding:9px 13px;border-radius:var(--radius-sm);border:1px solid var(--border);font-family:'JetBrains Mono','Cascadia Code',Consolas,monospace;font-size:12px;word-break:break-all;cursor:pointer;transition:.15s}
 .key-display:hover{border-color:var(--accent)}
-.copy-icon{cursor:pointer;color:var(--text2);padding:2px 6px;border-radius:4px}
-.copy-icon:hover{color:var(--text);background:var(--bg3)}
 .model-tag{display:inline-block;padding:2px 9px;border-radius:6px;font-size:11px;background:rgba(255,255,255,.06);color:var(--text2);margin:2px;letter-spacing:.02em}
 .model-tag.free{border:1px solid rgba(126,226,168,.35);color:var(--accent2);background:rgba(126,226,168,.07)}
-.model-tag.pass{border:1px solid rgba(217,176,74,.35);color:var(--amber);background:rgba(217,176,74,.07)}
 .model-tag.context-1m{border:1px solid rgba(242,160,184,.45);color:var(--pink);background:rgba(242,160,184,.12)}
 .theme-toggle{display:inline-flex;align-items:center;gap:5px;padding:4px 9px;border:1px solid var(--border);border-radius:7px;background:rgba(255,255,255,.04);color:var(--text2);cursor:pointer;font-size:12px;transition:.15s;font-family:inherit}
 .theme-toggle:hover{color:var(--text);background:rgba(255,255,255,.09)}
 [data-theme="dark"] .theme-toggle .light-label{display:none}
 body:not([data-theme="dark"]) .theme-toggle .dark-label{display:none}
 .probe-pill{font-size:11px;color:var(--text3)}
-.oauth-card{border:1px solid var(--border);border-radius:10px;padding:16px;background:rgba(255,255,255,.03);margin-top:14px}
-.stat-mini{font-family:'JetBrains Mono',Consolas,monospace;font-size:12px;color:var(--text2)}
 
 /* ===== WorkBuddy integrated console ===== */
 .wb-toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
@@ -256,7 +243,6 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
   .main{padding:20px 16px 48px}
 }
 @media (max-width:560px){
-  .cards{grid-template-columns:repeat(2,1fr)}
   h2{font-size:18px}
   .section-title{padding:11px 14px}
   .section-body{padding:14px}
@@ -552,7 +538,6 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
       <button class="btn btn-primary" onclick="document.getElementById('importFile').click()">Import config</button>
       <input type="file" id="importFile" accept=".json,application/json" style="display:none" onchange="onImportFileChange(event)">
     </div>
-    <div id="importResult" style="margin-top:8px"></div>
   </div>
 </div>
 
@@ -1014,7 +999,6 @@ const fmtTokens = n => {
 let LANG = localStorage.getItem('lang') === 'zh' ? 'zh' : 'en';
 const I18N_ZH = {
   // WorkBuddy native admin console
-  'WorkBuddy accounts': 'WorkBuddy 账号',
   'Task center': '任务中心',
   'Refresh all': '全部刷新',
   'Refresh all account balances': '刷新全部账号的余额',
@@ -1026,7 +1010,6 @@ const I18N_ZH = {
   'Refresh': '刷新',
   'Account': '账号',
   'Points': '积分',
-  'Refresh balances': '刷新余额',
   'Import JSON': '导入 JSON',
   'No accounts yet': '暂无账号信息,请添加',
   'Failed to load WorkBuddy accounts: ': '加载 WorkBuddy 账号失败：',
@@ -1034,111 +1017,32 @@ const I18N_ZH = {
   'Success / errors': '成功 / 错误',
   'Last success': '最近成功',
   'Check-in': '签到',
-  'Travel': '旅行',
-  'Tasks': '任务',
-  'None': '无',
   'Ready': '就绪',
   'Authenticated': '已认证',
   'Cooling': '冷却中',
   'Suspended': '已暂停',
   'Disabled': '已停用',
   'Deleted': '已删除',
-  'Error': '错误',
   'Unknown': '未知',
   'accounts': '账号',
-  'active': '可用',
-  'cooling': '冷却中',
   'tok': 'token',
-  'runs': '运行',
-  'errors': '错误',
-  'Save failed: ': '保存失败：',
-  'Clear proxy bindings on ALL WorkBuddy accounts?': '清空全部 WorkBuddy 账号的代理绑定？',
-  'Clear failed: ': '清空失败：',
   'Balances refreshed': '余额已刷新',
-  'Refresh failed: ': '刷新失败：',
   'Get authorization link': '获取授权链接',
   'Choose a realm and request an authorization link.': '选择区域并请求授权链接。',
   'Requesting authorization link...': '正在请求授权链接...',
   'Open the link and complete the browser login.': '打开链接并完成浏览器登录。',
   'Authorization session created.': '授权会话已创建。',
-  'OAuth failed: ': 'OAuth 失败：',
-  'Account added: ': '账号已添加：',
   'WorkBuddy account added': 'WorkBuddy 账号已添加',
   'Authorization link copied': '授权链接已复制',
   'Copy failed': '复制失败',
-  'No accounts found in JSON': 'JSON 中没有找到账号',
-  'Imported ': '已导入 ',
-  ' account(s)': ' 个账号',
-  'Import failed: ': '导入失败：',
-  'Export failed: ': '导出失败：',
   'loaded': '已加载',
   'load failed': '加载失败',
   'WorkBuddy config load failed: ': 'WorkBuddy 配置加载失败：',
-  'Save configuration': '保存配置',
-  'Saving...': '保存中...',
   'WorkBuddy config saved': 'WorkBuddy 配置已保存',
+  'WorkBuddy config saved (': 'WorkBuddy 配置已保存 (',
   ' restart items)': ' 个重启项)',
   'WorkBuddy config save failed: ': 'WorkBuddy 配置保存失败：',
-  'Account tasks': '账号任务',
-  'Run automatic tasks': '运行自动任务',
-  'Reload': '重新加载',
-  'Task': '任务',
-  'Progress': '进度',
-  'Reward': '奖励',
-  'No tasks found': '没有任务',
-  'Claim': '领取',
-  'Run': '运行',
-  'Loading...': '加载中...',
   'WorkBuddy': 'WorkBuddy',
-  'Add account': '添加账号',
-  'Configuration': '配置',
-  'admin session manages access': '由管理员会话管理访问',
-  'Listening, credentials, and data paths stay under the gateway admin session.': '监听、凭据和数据路径始终由网关管理员会话管理。',
-  'Scheduled jobs': '定时任务',
-  'Automatic check-in': '自动签到',
-  'Check-in hours': '签到小时',
-  'Activity report': '活动报告',
-  'Activity hours': '活动小时',
-  'Travel job': '旅行任务',
-  'Travel hours': '旅行小时',
-  'Token keepalive': 'Token 保活',
-  'Keepalive hours': '保活小时',
-  'Growth tasks': '成长任务',
-  'Growth hours': '成长小时',
-  'Background balance refresh': '后台余额刷新',
-  'Refresh interval (min)': '刷新间隔（分钟）',
-  'Pool and cooldown': '代理池与冷却',
-  'Max in-flight / account': '每账号并发上限',
-  'Global in-flight limit': '全局并发上限',
-  'Breaker threshold': '熔断阈值',
-  'Breaker cooldown': '熔断冷却',
-  'Breaker cooldown max': '熔断冷却上限',
-  'Soft rate cooldown': '软限流冷却',
-  'Soft cooldown max': '软冷却上限',
-  'Degrade threshold': '降级阈值',
-  'Degrade cooldown': '降级冷却',
-  'Degrade cooldown max': '降级冷却上限',
-  'Idle weight / hour': '每小时空闲权重',
-  'Idle weight max': '空闲权重上限',
-  'Cost explore window': '成本探索窗口',
-  'Expiring-soon window': '即将到期窗口',
-  'Session and upstream': '会话与上游',
-  'Sticky session routing': '粘性会话路由',
-  'Sticky TTL': '粘性 TTL',
-  'Short request timeout': '普通请求超时',
-  'First-byte timeout': '首字节超时',
-  'Stream idle timeout': '流空闲超时',
-  'User-Agent': 'User-Agent',
-  'Client name': '客户端名称',
-  'Client version': '客户端版本',
-  'Pass through client IP': '透传客户端 IP',
-  'Sanitize outbound fingerprints': '清理出站指纹',
-  'Prompt and global realm': '提示词与全局区域',
-  'System prompt mode': '系统提示词模式',
-  'Prompt file': '提示词文件',
-  'Enable global realm accounts': '启用全局区域账号',
-  'Global chat base': '全局 Chat 地址',
-  'Global billing base': '全局 Billing 地址',
   'Add WorkBuddy account': '添加 WorkBuddy 账号',
   'Close': '关闭',
   'Realm': '区域',
@@ -1148,11 +1052,9 @@ const I18N_ZH = {
   'Account pool': '账号池',
   'Services': '服务',
   'Dashboard': '仪表盘',
-  'Accounts': 'Cline',
   'Gateway settings': '网关设置',
   'Request logs': '请求日志',
   'Proxy pool': '代理池',
-  'opencode free models': 'opencode',
   'Custom aliases': '自定义别名',
   'Light': '亮色',
   'Dark': '暗色',
@@ -1201,18 +1103,24 @@ const I18N_ZH = {
   'Added ': '已添加 ',
   ' key(s)': ' 个 key',
   'No keys to test': '没有可测试的 key',
-  'Delete this key?': '删除该 key？',
   ' (deleted)': '（已删除）',
+  ' (was: ': '（原状态：',
+  'Reset failed: ': '恢复失败：',
+  'Key #': 'key #',
+  ' (': '（',
+  ') — ': '）— ',
+  'cooldown until ': '冷却至 ',
+  ' (seed)': '（种子）',
+  ' failed': ' 失败',
+  ' minted': ' 成功',
   'Email (optional)': '邮箱（可选）',
   'Cancel': '取消',
   'The type is detected automatically — sk_... is pooled as a static API key, anything else as an OAuth refresh token.': '类型自动识别：sk_... 按静态 API key 入池，其余按 OAuth refreshToken 处理。',
   ', ': '，',
   'Clear proxy bindings on ALL keys and disable routing? Click Save to apply.': '清空全部 key 的代理绑定并禁用路由？点击「保存」后生效。',
-  'Stage: clear proxy bindings on ALL accounts and disable them — click Save to apply': '暂存操作：清空全部账号的代理绑定并置为禁用，点击「保存」后生效',
   'Stage: clear proxy bindings on ALL keys and disable routing — click Save to apply': '暂存操作：清空全部 key 的代理绑定并禁用路由，点击「保存」后生效',
   'Run the Test probe on every account (same as clicking Test on each row)': '对当前平台所有账号执行真实探测（等价于逐行点一次测试）',
   'Email': '邮箱',
-  'Status': '状态',
   'Today/Total tokens': '今日/累计 token',
   'Last used': '最近使用',
   'Created': '创建时间',
@@ -1226,7 +1134,6 @@ const I18N_ZH = {
   'skipped entirely': '完全跳过',
   'while both are unavailable — never routed through another exit. Configure the list on the': '两者都不可用时整个账号被跳过 —— 绝不路由到其他出口。代理列表在',
   'page.': ' 页配置。',
-  'Distribute the proxy pool across all accounts: main = pool[i%N], backup = pool[(i+1)%N]': '把代理池均匀分配给全部账号：主 = 池[i%N]，辅 = 池[(i+1)%N]',
   'Counted locally by this proxy — not the official free quota': '本代理本地统计 —— 非官方免费额度',
   'Main / backup egress — isolation mode picks main first, then backup; both down = account skipped': '主/辅出口 —— 隔离模式先用主、再用辅；双不可用 = 跳过该账号',
   'Main / backup egress — isolation mode picks main first, then backup; both down = key skipped. The harvester also mints through the bound exit.': '主/辅出口 —— 隔离模式先用主、再用辅；双不可用 = 跳过该 key。收割机铸造也走绑定出口。',
@@ -1234,8 +1141,6 @@ const I18N_ZH = {
   'Backup exit — used when main is cooling/removed': '辅出口 —— 主冷却/被删时使用',
   'Bound proxy is no longer in the proxy pool — the account is skipped until fixed': '绑定的代理已不在代理池中 —— 修复前该账号一直被跳过',
   'Bound proxy is no longer in the proxy pool — the key is skipped until fixed': '绑定的代理已不在代理池中 —— 修复前该 key 一直被跳过',
-  'Test whether the account works (success clears cooldown/expired state)': '测试账号是否可用（成功即清除冷却/失效状态）',
-  'Probe the rate limit and lift it: probes upstream; if still limited, stays in cooldown and shows recovery time': '探测限流并尝试解除：探测上游；仍在限流则保持冷却并显示恢复时间',
   // 添加账号弹窗（accAddDialog，Cline 页"添加账号"按钮）
   'Token or API key *': 'Token 或 API key *',
   // 代理池页
@@ -1268,14 +1173,9 @@ const I18N_ZH = {
   'Restore defaults': '恢复默认',
   'Restore the default Cline CLI headers': '恢复默认的 Cline CLI 请求头',
   'Headers restored to defaults': '请求头已恢复默认',
-  'Reset failed': '恢复失败',
   'OpenCode keys without proxy bindings follow this switch.': 'OpenCode 未绑定代理的 key 遵循此开关。',
   'Clear bindings': '清空代理',
   'Enable all': '一键启用',
-  'Bindings cleared': '绑定已清空',
-  'Clear failed': '清空失败：',
-  'Clear proxy bindings on ALL keys — every key returns to the Global default': '清空全部 key 的代理绑定 —— 所有 key 回到默认值「全局」',
-  'Distribute the proxy pool across all accounts: main = pool[i%N], backup = pool[(i+1)%N]': '把代理池均匀分配给全部账号：主 = 池[i%N]，辅 = 池[(i+1)%N]',
   'Direct connection': '直连',
   'Save': '保存',
   'Cline accounts without proxy bindings follow this switch.': 'Cline 未绑定代理的账号遵循此开关。',
@@ -1283,7 +1183,6 @@ const I18N_ZH = {
   'Test': '测试',
   'Reset': '重置',
   'Open': '打开',
-  'and enter the code:': '，并输入代码：',
   'Tokens': 'Token 用量',
   'Admin panel:': '管理面板：',
   'API address:': 'API 地址：',
@@ -1291,23 +1190,17 @@ const I18N_ZH = {
   'Config export / import': '配置导入导出',
   'Export config': '导出配置',
   'Import config': '导入配置',
-  'Choose backup file': '选择备份文件',
   'Import/export all persisted configuration. The export file contains private information; keep it safe. Import is an overwrite operation, so proceed with caution.': '导入/导出所有持久化配置。导出配置含私密信息，请妥善保管。 导入配置为覆盖操作，请谨慎执行。',
   'Config exported': '配置已导出',
   'Config imported': '配置已导入',
   'Unsupported backup version': '不支持的备份版本',
-  'ready to import': '已就绪，可导入',
   'Choose a backup JSON file first': '请先选择备份 JSON 文件',
   'Invalid backup file: ': '备份文件无效：',
   'Import replaces sections present in the file (accounts / keys / proxies / combos ...). Continue?': '导入将用文件内容替换当前对应的配置段（Cline 账号 / 客户端 key / OpenCode key / 代理池 / 自定义别名等，文件中存在的段都会替换）。继续？',
   'State': '状态',
   'Global': '全局',
-  'Direct': '直连',
-  'Enabled': '启用',
   'Follows the main slot': '跟随主出口',
   'No matching proxies': '没有匹配的代理',
-  'OpenCode': 'OpenCode',
-  'OpenCode automatically routes through the pool above whenever the list is non-empty — no separate switch needed.': '代理列表非空时 OpenCode 自动经上方代理池路由 —— 无需单独开关。',
   'Proxy isolation (identity ↔ exit binding)': '代理隔离（身份 ↔ 出口绑定）',
   'Isolation mode': '隔离模式',
   'Enabled (default) — bound identities only ever use their bound exits': '启用（默认）—— 绑定的身份只从绑定出口出网',
@@ -1318,9 +1211,6 @@ const I18N_ZH = {
   'Enable backup proxies': '启用辅代理',
   'Off by default: every identity egresses through its main proxy only — when the main proxy is cooling down or removed, the identity is skipped for that round, never trying the backup and never falling back to a direct connection. When enabled, backups act as the fallback for the main proxy to keep identities available as much as possible.': '辅代理功能默认关闭，每个身份只从主代理出网——主代理冷却或被删除时，本轮直接跳过该身份，不会尝试辅代理，也绝不回退直连。辅代理功能开启时，辅代理作为主代理备份，尽可能保证身份可用。',
   'Backup proxies are disabled — follows the main slot': '辅代理已关闭 —— 跟随主代理',
-  'Cooldown status': '冷却状态',
-  'No proxies cooling down': '没有代理在冷却中',
-  ' cooldown until ': ' 冷却至 ',
   // 网关设置页
   'API keys': 'API key',
   'Generated keys authenticate client access to the proxy API; they only take effect when the API_KEY environment variable is not set.': '生成的 key 用于客户端调用代理 API 鉴权，该 key 仅在未设置 API_KEY 环境变量时生效。',
@@ -1344,8 +1234,6 @@ const I18N_ZH = {
   'Save headers': '保存请求头',
   'These headers are attached to every request forwarded to the Cline API to mimic the official client.': '这些请求头会附加在每个转发到 Cline API 的请求上，用于模拟官方客户端。',
   'Danger zone': '危险区',
-  'Delete all accounts': '删除全部账号',
-  'Delete all keys': '删除全部 key',
   'Delete all data': '删除全部数据',
   'Deletes all persisted data, including but not limited to accounts and configuration. This cannot be undone; proceed with caution!': '删除全部持久化数据，包含但不限于账号和配置等，操作不可撤销，请谨慎操作！',
   'Delete ALL persisted data? This will clear Cline accounts and client keys, OpenCode keys, WorkBuddy accounts, the proxy pool, default model, request headers, scheduling strategy, custom aliases, sticky sessions, and request logs. This cannot be undone!': '确定删除全部持久化数据？将清空 Cline 账号与客户端 key、OpenCode key、WorkBuddy 账号、代理池、默认模型、请求头、调度策略、自定义别名、粘性会话和请求日志，且不可撤销！',
@@ -1374,13 +1262,11 @@ const I18N_ZH = {
   'meta': '元数据',
   'other': '其他',
   // Combos 页
-  'Custom aliases (alias models)': '自定义别名',
   'Create custom alias': '创建自定义别名',
   'Clients request the alias ID as their model, and the proxy rewrites it to the target model for the chosen platform. Alias IDs are user-defined (e.g.': '客户端以别名 ID 作为 model 请求，代理将其改写为所选平台上的目标模型。别名 ID 自定义（如 ',
   ') and must not collide with real model IDs; the target must belong to the same platform — cross-platform targets are not allowed.': '）且不得与真实模型 ID 冲突；目标必须属于同一平台 —— 不允许跨平台。',
   'Alias ID': '别名 ID',
   'Platform': '平台',
-  'All platforms': '全部平台',
   'Existing custom aliases': '现有自定义别名',
   'Target model': '目标模型',
   'No combos yet — create one with the form above.': '还没有自定义别名 —— 用上方表单创建一个。',
@@ -1389,8 +1275,6 @@ const I18N_ZH = {
   'socks5 pool': 'socks5 池',
   // opencode 页
   'OpenCode': 'OpenCode',
-  'Upstream config': '上游配置',
-  'Enable OpenCode upstream': '启用 OpenCode 上游',
   'On': '开',
   'Off': '关',
   'Probe model (used by the Test buttons):': '探测模型（Test 按钮使用）：',
@@ -1404,12 +1288,7 @@ const I18N_ZH = {
   'no key': '无 key',
   'cooling': '冷却中',
   ' · until ': ' · 至 ',
-  'next in rotation': '轮转中的下一个',
   'Base URL': 'Base URL',
-  'Managed on the': '管理入口在 ',
-  'page — shared with the Cline upstream.': ' 页 —— 与 Cline 上游共用。',
-  'none configured': '未配置',
-  'Save config': '保存配置',
   'Rate-limit defense': '限流防御',
   'Max concurrency': '最大并发',
   'Rate-limit retries': '限流重试次数',
@@ -1436,18 +1315,8 @@ const I18N_ZH = {
   'Force mint / refresh all': '强制重铸全部',
   'opencode CLI not available in this container': '本容器内没有 OpenCode CLI',
   'Last minted': '上次铸造',
-  'OpenCode model list': 'OpenCode 模型列表',
-  'Sync now': '立即同步',
-  'Model ID': '模型 ID',
   'Context': '上下文',
   'Maximum context length': '最大上下文长度',
-  'Output': '输出',
-  'Tools': '工具',
-  'Reason': '推理',
-  'Attach': '附件',
-  'Endpoint': '端点',
-  '(seed)': '（种子）',
-  ' free models total (auto-synced every 10 minutes from public registry)': ' 个免费模型（每 10 分钟自动从公共注册表同步）',
   'OpenCode stats': 'OpenCode 统计',
   'Requests': '请求数',
   'Input tokens': '输入 token',
@@ -1459,22 +1328,11 @@ const I18N_ZH = {
   'Per-model breakdown (today)': '按模型拆分（今日）',
   'No data': '暂无数据',
   // 模型状态标签
-  'available': '可用',
-  'empty response': '空响应',
-  'subscription': '订阅制',
-  'removed': '已下架',
   'error': '错误',
-  'unprobed': '未探测',
-  'free': '免费',
-  'uses quota': '消耗配额',
   // 通用 toast / 确认 / 片段
   'Saved ': '已保存 ',
   ' headers': ' 个请求头',
   ' proxies': ' 个代理',
-  ' proxies configured': ' 个代理已配置',
-  'routing through the pool': '经代理池路由',
-  'direct (pool list is empty)': '直连（代理列表为空）',
-  'upstream disabled': '上游已禁用',
   'Proxy pool saved': '代理池已保存',
   'Global policy saved': '全局策略已保存',
   'WorkBuddy accounts without proxy bindings follow this switch.': 'WorkBuddy 未绑定代理的账号遵循此开关。',
@@ -1495,7 +1353,6 @@ const I18N_ZH = {
   'Add failed: ': '添加失败：',
   'Import failed: ': '导入失败：',
   'Create failed: ': '创建失败：',
-  'Sync failed: ': '同步失败：',
   'Mint failed: ': '铸造失败：',
   'Failed to load accounts: ': '账号加载失败：',
   'Failed to load: ': '加载失败：',
@@ -1507,11 +1364,9 @@ const I18N_ZH = {
   'Key generated': 'key 已生成',
   'New key generated (click to copy)': '新 key 已生成（点击复制）',
   'Copied to clipboard': '已复制到剪贴板',
-  'Accounts exported (JSON)': '账号已导出（JSON）',
   'Account added: ': '账号已添加：',
   'Account ': '账号 ',
   ' — ': ' —— ',
-  '(was: ': '（原状态：',
   'Available': '可用',
   'Error': '错误',
   '\nEstimated recovery: ': '\n预计恢复：',
@@ -1537,13 +1392,11 @@ const I18N_ZH = {
   'Delete ALL accounts? This cannot be undone!': '确定删除全部账号？此操作不可撤销！',
   'Delete this key?': '确定删除该 key？',
   'Delete ALL API keys?': '确定删除全部 API key？',
-  'Connected via ': '经出口 ', // (placeholder, unused fragment guard)
   'OAuth failed: ': 'OAuth 登录失败：',
   'Testing': '测试中',
   'Checking': '检查中',
   'Force minting all sessions…': '正在强制重铸全部会话…',
   'Minting missing sessions…': '正在铸造缺失的会话…',
-  'minting ': '铸造中 ',
   'last mint ': '上次铸造 ',
   ' (force)': '（强制）',
   'Running — ': '进行中 —— ',
@@ -1560,8 +1413,6 @@ const I18N_ZH = {
   'Invalid proxy format: ': '代理格式无效：',
   'No models': '没有模型',
   '· official feed: ': '· 官方源同步于 ',
-  ' Sync complete': '同步完成',
-  'Sync complete': '同步完成',
   'Check complete': '检查完成',
   'cooldown': '冷却中',
   'active': '可用',
@@ -1876,7 +1727,7 @@ async function loadWorkbuddyAccounts() {
       wbAccounts = [];
       renderWorkbuddyAccounts();
     } else if (tbody) {
-      tbody.innerHTML = '<tr><td colspan="8" class="empty">' + esc('Failed to load WorkBuddy accounts: ' + e.message) + '</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="8" class="empty">' + esc(T('Failed to load WorkBuddy accounts: ') + e.message) + '</td></tr>';
     }
     updateWorkbuddySummary();
   }
@@ -2247,7 +2098,7 @@ async function startWorkbuddyOAuth() {
     _('wbAddStatus').textContent = url ? 'Open the link and complete the browser login.' : 'Authorization session created.';
     if (url) wbOAuthTimer = setTimeout(() => pollWorkbuddyOAuth(payload.state), 1200);
   } catch (e) {
-    _('wbAddStatus').textContent = 'OAuth failed: ' + e.message;
+    _('wbAddStatus').textContent = T('OAuth failed: ') + e.message;
   } finally {
     button.disabled = false;
     button.textContent = 'Get authorization link';
@@ -2265,7 +2116,7 @@ async function pollWorkbuddyOAuth(oauthId) {
     }
     if (payload.status === 'failed' || payload.error) throw new Error(payload.error || payload.status || 'failed');
     wbOAuthTimer = setTimeout(() => pollWorkbuddyOAuth(oauthId), 1500);
-  } catch (e) { _('wbAddStatus').textContent = 'OAuth failed: ' + e.message; }
+  } catch (e) { _('wbAddStatus').textContent = T('OAuth failed: ') + e.message; }
 }
 function copyWorkbuddyOAuthUrl() {
   const value = _('wbOAuthUrl').value;
@@ -2307,7 +2158,7 @@ async function loadWorkbuddyConfig() {
     _('wbConfigNote').textContent = 'loaded';
   } catch (e) {
     _('wbConfigNote').textContent = 'load failed';
-    toast('WorkBuddy config load failed: ' + e.message, 'error');
+    toast(T('WorkBuddy config load failed: ') + e.message, 'error');
   }
 }
 function collectWorkbuddyConfig() {
@@ -2340,9 +2191,9 @@ async function saveWorkbuddyConfig() {
   try {
     const result = await wbCall('config', {}, collectWorkbuddyConfig());
     const restart = Array.isArray(result.restart_required) ? result.restart_required.length : 0;
-    toast(restart ? 'WorkBuddy config saved (' + restart + ' restart items)' : 'WorkBuddy config saved', 'success');
+    toast(restart ? T('WorkBuddy config saved (') + restart + T(' restart items)') : 'WorkBuddy config saved', 'success');
     await loadWorkbuddyConfig();
-  } catch (e) { toast('WorkBuddy config save failed: ' + e.message, 'error'); }
+  } catch (e) { toast(T('WorkBuddy config save failed: ') + e.message, 'error'); }
   finally { button.disabled = false; button.textContent = '保存配置'; }
 }
 
@@ -3083,15 +2934,6 @@ async function saveHeaders() {
   } catch (e) { toast(T('Save failed: ') + e.message, 'error'); }
 }
 
-const MODEL_STYLE = {
-  active:  { label: 'available', css: 'color:var(--accent2);border:1px solid rgba(52,211,153,.5);background:rgba(52,211,153,.08)' },
-  empty:   { label: 'empty response', css: 'color:var(--amber);border:1px solid rgba(245,158,11,.5);background:rgba(245,158,11,.08)' },
-  pass:    { label: 'subscription', css: 'color:var(--amber);border:1px solid rgba(245,158,11,.5);background:rgba(245,158,11,.08)' },
-  removed: { label: 'removed', css: 'color:var(--text3);border:1px solid var(--border)' },
-  error:   { label: 'error', css: 'color:var(--danger);border:1px solid rgba(248,113,113,.5);background:rgba(248,113,113,.08)' },
-  unknown: { label: 'unprobed', css: 'color:var(--text3);border:1px dashed var(--border-strong)' }
-};
-const COST_LABEL = { free: 'free', pass: 'subscription', quota: 'uses quota' };
 const WB_RATE_OPTIONS = [0, 0.1, 0.2, 0.3, 0.5, 1.0];
 let workbuddyRateFilter = (() => {
   const stored = localStorage.getItem('workbuddyRateFilter');
