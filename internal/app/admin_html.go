@@ -853,7 +853,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
     <div class="form-row" style="margin-bottom:8px">
       <div class="field">
         <label>Realm</label>
-        <select id="wbRealm"><option value="cn">CN (国内版)</option><option value="global">Global (国际版)</option></select>
+        <select id="wbRealm"><option value="cn">CN (China)</option><option value="global">Global (International)</option></select>
       </div>
     </div>
     <div class="hint" id="wbAddStatus">Choose a realm and request an authorization link.</div>
@@ -872,11 +872,11 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
 
 <dialog id="wbDetailsDialog" class="wb-wide">
   <div class="wb-dialog-head">
-    <span>积分构成 <span class="auto-pill" id="wbDetailsWho"></span></span>
-    <button class="btn btn-sm" onclick="closeWorkbuddyDetails()">关闭</button>
+    <span>Points breakdown <span class="auto-pill" id="wbDetailsWho"></span></span>
+    <button class="btn btn-sm" onclick="closeWorkbuddyDetails()">Close</button>
   </div>
   <div class="wb-dialog-body">
-    <div class="hint" id="wbDetailsStatus">加载中...</div>
+    <div class="hint" id="wbDetailsStatus">Loading...</div>
     <div id="wbDetailsBody"></div>
   </div>
 </dialog>
@@ -923,22 +923,22 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
 
 <dialog id="wbTodoDialog" class="wb-wide">
   <div class="wb-dialog-head">
-    <span>任务中心&#x20;</span>
-    <button class="btn btn-sm" onclick="closeWorkbuddyTodoScan()">关闭</button>
+    <span>Task center&#x20;</span>
+    <button class="btn btn-sm" onclick="closeWorkbuddyTodoScan()">Close</button>
   </div>
   <div class="wb-dialog-body">
     <div class="justify-between">
-      <div class="hint" id="wbTodoStatus">选择并发数后点击“扫描任务”</div>
+      <div class="hint" id="wbTodoStatus">Pick a concurrency, then click "Scan tasks"</div>
       <div class="wb-task-actions">
-        <label class="inline-flex" style="font-size:12px;color:var(--text2)">并发
+        <label class="inline-flex" style="font-size:12px;color:var(--text2)">Concurrency
           <select id="wbTodoConcurrency" style="width:64px">
             <option value="1" selected>1</option>
             <option value="2">2</option>
             <option value="3">3</option>
           </select>
         </label>
-        <button class="btn btn-sm" id="wbTodoScan" onclick="scanWorkbuddyTodos()">扫描任务</button>
-        <button class="btn btn-sm btn-primary" id="wbTodoRunAll" onclick="runWorkbuddyAllTodos()">全部执行</button>
+        <button class="btn btn-sm" id="wbTodoScan" onclick="scanWorkbuddyTodos()">Scan tasks</button>
+        <button class="btn btn-sm btn-primary" id="wbTodoRunAll" onclick="runWorkbuddyAllTodos()">Run all</button>
       </div>
     </div>
     <div id="wbTodoBody" style="margin-top:12px"></div>
@@ -1104,6 +1104,75 @@ const I18N_ZH = {
   ' key(s)': ' 个 key',
   'No keys to test': '没有可测试的 key',
   ' (deleted)': '（已删除）',
+  'Running': '执行中',
+  'Finished': '执行结束',
+  'CN (China)': 'CN (国内版)',
+  'Global (International)': 'Global (国际版)',
+  'Points breakdown': '积分构成',
+  'Pick a concurrency, then click "Scan tasks"': '选择并发数后点击“扫描任务”',
+  'Concurrency': '并发',
+  'Scan tasks': '扫描任务',
+  'Run all': '全部执行',
+  'Bound egress no longer in the proxy pool — isolation logic skips this account': '绑定的出口已不在代理池中，该账号会被隔离逻辑跳过',
+  'Main egress: requests go through this egress whenever available': '主出口：可用时固定从该出口发出',
+  'Backup egress: fallback while the main egress is cooling down or unavailable': '备用出口：主出口冷却或不可用时兜底',
+  'Failed to save ': '保存失败 ',
+  ' account edits': ' 个账号的修改',
+  'Clear proxy bindings on ALL accounts and disable them? Takes effect when you click Save.': '清空全部账号的代理绑定并置为禁用？点击"保存"后生效。',
+  'Delete this WorkBuddy account and its credentials?': '删除该 WorkBuddy 账号及其凭证？',
+  '(unnamed)': '(未命名)',
+  'Querying points breakdown from upstream...': '正在向上游查询积分构成...',
+  'No points data found for this account': '未找到该账号的积分数据',
+  'Live from upstream · ': '实时查询上游 · ',
+  ' points packages': ' 个积分包',
+  'Failed to read: ': '读取失败：',
+  'Query failed: ': '查询失败：',
+  'first issued ': '首发 ',
+  'Total ': '共 ',
+  ' package(s)': ' 个包',
+  'Remaining points · used ': '剩余积分 · 已用 ',
+  'Package / source': '包名 / 来源',
+  'Face value': '面额',
+  'Remaining': '剩余',
+  'Used': '已用',
+  'Granted': '发放',
+  'Expires': '到期',
+  'No points packages': '没有积分包',
+  'No pending tasks for all accounts': '全部账号没有待办任务',
+  'Energy': '能量',
+  'Task: ': '任务：',
+  'Description: ': '说明：',
+  'Progress: ': '进度：',
+  'Reward: ': '奖励：',
+  'Result: ': '结果：',
+  'Pending': '待执行',
+  'Scan failed: ': '扫描失败：',
+  ' item(s)': ' 项',
+  'Scanning with concurrency ': '正在按并发 ',
+  ' scanning tasks...': ' 扫描任务...',
+  'Scanning...': '扫描中...',
+  'Scan complete: ': '扫描完成：',
+  ' pending item(s)': ' 项待办',
+  'Claimed': '已领取',
+  'In progress': '进行中',
+  'Done': '完成',
+  'Skipped': '跳过',
+  'Failed': '失败',
+  ': ': '：',
+  'Failed to read queue: ': '读取队列失败：',
+  'Run all listed tasks with concurrency ': '按并发 ',
+  ' (tasks run serially within each account, auto-claim enabled). Confirm?': ' 执行列表中的全部任务（账号内串行，自动领取任务）。确认继续？',
+  'No pending tasks': '没有待办任务',
+  'Queue started: ': '队列已启动：',
+  ' item(s) (concurrency ': ' 项（并发 ',
+  'Queue started, running...': '队列已启动，正在执行...',
+  'Failed to run: ': '执行失败：',
+  'Saving...': '保存中...',
+  'free': '免费',
+  'Default tier': '默认档',
+  'No WorkBuddy models under the current filter': '当前筛选下没有 WorkBuddy 模型',
+  'WorkBuddy models': 'WorkBuddy 模型',
+  'Filter': '筛选',
   'WorkBuddy configuration': 'WorkBuddy 配置',
   'Managed by the admin session': '面板由当前管理员会话管理',
   'Listening, credentials, and data paths stay under the gateway admin session.': '监听地址、API 密钥、凭证目录与状态文件路径由当前项目统一管理。',
@@ -1676,11 +1745,11 @@ function wbBindingCell(account) {
   const backupVal = backupLocked ? main : backup;
   const stale = v => v && v !== EGRESS_DIRECT && !proxyListCache.includes(v);
   const staleMark = (stale(main) || stale(backup))
-    ? ' <span title="绑定的出口已不在代理池中，该账号会被隔离逻辑跳过" style="color:var(--danger)">⚠</span>'
+    ? ' <span title="' + T('Bound egress no longer in the proxy pool — isolation logic skips this account') + '" style="color:var(--danger)">⚠</span>'
     : '';
   return '<td style="white-space:nowrap">' +
-    egComboHTML('wb', id, 'main', main, '主出口：可用时固定从该出口发出') + ' ' +
-    egComboHTML('wb', id, 'backup', backupVal, '备用出口：主出口冷却或不可用时兜底', backupLocked) +
+    egComboHTML('wb', id, 'main', main, T('Main egress: requests go through this egress whenever available')) + ' ' +
+    egComboHTML('wb', id, 'backup', backupVal, T('Backup egress: fallback while the main egress is cooling down or unavailable'), backupLocked) +
     staleMark +
     '</td>';
 }
@@ -1816,9 +1885,9 @@ async function saveWorkbuddyEdits() {
     } catch (e) { failed++; }
   }
   clearDirtyMarks('wbAccountsBody', 'wbSaveBtn');
-  if (failed) toast('保存失败 ' + failed + ' 个账号', 'error');
-  else if (!changed) toast('没有需要保存的修改', 'info');
-  else toast('已保存 ' + changed + ' 个账号的修改', 'success');
+  if (failed) toast(T('Failed to save ') + failed + T(' account(s)'), 'error');
+  else if (!changed) toast(T('No changes to save'), 'info');
+  else toast(T('Saved ') + changed + T(' account edits'), 'success');
   await loadWorkbuddyAccounts();
 }
 function stageAllWbPool(enabled) {
@@ -1830,7 +1899,7 @@ function stageAllWbPool(enabled) {
   });
 }
 function stageClearWorkbuddyProxyBindings() {
-  if (!confirm('清空全部账号的代理绑定并置为禁用？点击"保存"后生效。')) return;
+  if (!confirm(T('Clear proxy bindings on ALL accounts and disable them? Takes effect when you click Save.'))) return;
   document.querySelectorAll('#wbAccountsBody tr').forEach(row => {
     const main = row.querySelector('.eg-input[data-eg="wb"][data-slot="main"]');
     if (!main) return;
@@ -1863,7 +1932,7 @@ async function workbuddyActionFrom(button) {
   const action = button.dataset.wbAction;
   const id = workbuddyBindingId(button.dataset.wbId);
   if (action === 'details') { openWorkbuddyDetails(id, button.dataset.wbId); return; }
-  if (action === 'delete' && !confirm('Delete this WorkBuddy account and its credentials?')) return;
+  if (action === 'delete' && !confirm(T('Delete this WorkBuddy account and its credentials?'))) return;
   const accountPath = 'accounts/' + encodeURIComponent(id);
   const actions = {
     refresh: accountPath + '/balance',
@@ -1892,9 +1961,9 @@ const WB_PK_COLORS = ['#4f8cff', '#25b08b', '#e8a33d', '#c96bd6', '#e2607a',
 function wbPackageSources(packs) {
   const out = new Map();
   (packs || []).forEach(p => {
-    const key = String(p.package_code || '') + '|' + String(p.name || '(未命名)');
+    const key = String(p.package_code || '') + '|' + String(p.name || T('(unnamed)'));
     const item = out.get(key) || {
-      key: key, name: p.name || '(未命名)', count: 0, remain: 0, size: 0, used: 0,
+      key: key, name: p.name || T('(unnamed)'), count: 0, remain: 0, size: 0, used: 0,
       minCreated: '', minEnd: ''
     };
     item.count += 1;
@@ -1916,7 +1985,7 @@ let wbDetailsAccountId = null;
 function openWorkbuddyDetails(id, label) {
   wbDetailsAccountId = workbuddyBindingId(id);
   _('wbDetailsWho').textContent = label || id;
-  _('wbDetailsStatus').textContent = '正在向上游查询积分构成...';
+  _('wbDetailsStatus').textContent = T('Querying points breakdown from upstream...');
   _('wbDetailsBody').innerHTML = '';
   showWorkbuddyDialog(_('wbDetailsDialog'));
   loadWorkbuddyDetails();
@@ -1931,18 +2000,18 @@ async function loadWorkbuddyDetails() {
   try {
     const data = await wbCall('packages');
     const account = (data.accounts || []).find(a => String(a.uid) === String(wbDetailsAccountId));
-    if (!account) throw new Error('未找到该账号的积分数据');
+    if (!account) throw new Error(T('No points data found for this account'));
     renderWorkbuddyDetails(account);
-    _('wbDetailsStatus').textContent = '实时查询上游 · ' + (account.packages || []).length + ' 个积分包';
+    _('wbDetailsStatus').textContent = T('Live from upstream · ') + (account.packages || []).length + T(' points packages');
   } catch (e) {
-    _('wbDetailsStatus').textContent = '读取失败：' + e.message;
+    _('wbDetailsStatus').textContent = T('Failed to read: ') + e.message;
     _('wbDetailsBody').innerHTML = '';
   }
 }
 function renderWorkbuddyDetails(a) {
   const body = _('wbDetailsBody');
   if (a.error) {
-    body.innerHTML = '<div class="empty">查询失败：' + esc(a.error) + '</div>';
+    body.innerHTML = '<div class="empty">' + T('Query failed: ') + esc(a.error) + '</div>';
     return;
   }
   const packs = a.packages || [];
@@ -1955,14 +2024,14 @@ function renderWorkbuddyDetails(a) {
   const legend = sources.map(s =>
     '<span><i style="background:' + colorOf(s.key) + '"></i>' + esc(wbPackageLabel(s.name)) +
     ' x' + s.count + ' · ' + esc(wbFmtTokens(s.size)) +
-    (s.minCreated ? ' · 首发 ' + esc(s.minCreated.slice(5)) : '') + '</span>').join('');
+    (s.minCreated ? ' · ' + T('first issued ') + esc(s.minCreated.slice(5)) : '') + '</span>').join('');
   const rows = packs.map(p => {
-    const key = String(p.package_code || '') + '|' + String(p.name || '(未命名)');
+    const key = String(p.package_code || '') + '|' + String(p.name || T('(unnamed)'));
     const sub = String(p.sub_product_code || '').replace(/^sp_tcaca_codebuddyide_?/, '') ||
       String(p.package_code || '').replace(/^TCACA_/, '');
     return '<tr><td><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:' +
       colorOf(key) + '"></span></td>' +
-      '<td>' + esc(p.name || '(未命名)') + (sub ? '<div class="hint" style="font-size:11px">' + esc(sub) + '</div>' : '') + '</td>' +
+      '<td>' + esc(p.name || T('(unnamed)')) + (sub ? '<div class="hint" style="font-size:11px">' + esc(sub) + '</div>' : '') + '</td>' +
       '<td class="text-right">' + esc(wbFmtTokens(p.size)) + '</td>' +
       '<td class="text-right">' + esc(wbFmtTokens(p.remain)) + '</td>' +
       '<td class="text-right">' + esc(wbFmtTokens(p.used)) + '</td>' +
@@ -1972,14 +2041,14 @@ function renderWorkbuddyDetails(a) {
   body.innerHTML =
     '<div class="wb-pk-card"><div class="wb-pk-head"><div><div class="wb-pk-name">' +
       esc(a.nickname || a.uid) + '</div><div class="wb-pk-sub">' + esc(a.realm || '') + ' · ' + esc(a.uid) + '</div></div>' +
-      '<div class="wb-pk-sub">共 ' + esc(wbFmtTokens(a.size)) + ' · ' + packs.length + ' 个包</div></div>' +
+      '<div class="wb-pk-sub">' + T('Total ') + esc(wbFmtTokens(a.size)) + ' · ' + packs.length + T(' package(s)') + '</div></div>' +
       '<div class="wb-pk-big">' + esc(wbFmtTokens(a.remain)) + '</div>' +
-      '<div class="wb-pk-sub">剩余积分 · 已用 ' + esc(wbFmtTokens(Math.max(0, Number(a.size || 0) - Number(a.remain || 0)))) + '</div>' +
+      '<div class="wb-pk-sub">' + T('Remaining points · used ') + ' + esc(wbFmtTokens(Math.max(0, Number(a.size || 0) - Number(a.remain || 0)))) + '</div>' +
       '<div class="wb-pk-mix">' + mix + '</div><div class="wb-pk-legend">' + legend + '</div></div>' +
-    '<div class="table-wrap"><table><thead><tr><th></th><th>包名 / 来源</th><th class="text-right">面额</th>' +
-      '<th class="text-right">剩余</th><th class="text-right">已用</th><th class="text-right">发放</th>' +
-      '<th class="text-right">到期</th></tr></thead><tbody>' +
-      (rows || '<tr><td colspan="7" class="empty">没有积分包</td></tr>') + '</tbody></table></div>';
+    '<div class="table-wrap"><table><thead><tr><th></th><th>' + T('Package / source') + '</th><th class="text-right">' + T('Face value') + '</th>' +
+      '<th class="text-right">' + T('Remaining') + '</th><th class="text-right">' + T('Used') + '</th><th class="text-right">' + T('Granted') + '</th>' +
+      '<th class="text-right">' + T('Expires') + '</th></tr></thead><tbody>' +
+      (rows || '<tr><td colspan="7" class="empty">' + T('No points packages') + '</td></tr>') + '</tbody></table></div>';
 }
 
 let wbTodoTimer = null;
@@ -1990,7 +2059,7 @@ function wbTodoConcurrency() {
 }
 function openWorkbuddyTodoScan() {
   wbTodoSeq = 0;
-  _('wbTodoStatus').textContent = '选择并发数后点击“扫描任务”';
+  _('wbTodoStatus').textContent = T('Pick a concurrency, then click "Scan tasks"');
   _('wbTodoBody').innerHTML = '';
   showWorkbuddyDialog(_('wbTodoDialog'));
 }
@@ -2004,7 +2073,7 @@ function renderWorkbuddyTodoAccounts(data) {
   const accounts = data.accounts || [];
   const groups = accounts.filter(a => (a.growth || []).length || a.growth_error);
   if (!groups.length) {
-    _('wbTodoBody').innerHTML = '<div class="empty">全部账号没有待办任务</div>';
+    _('wbTodoBody').innerHTML = '<div class="empty">' + T('No pending tasks for all accounts') + '</div>';
     return;
   }
   _('wbTodoBody').innerHTML = groups.map(a => {
@@ -2013,22 +2082,22 @@ function renderWorkbuddyTodoAccounts(data) {
       const title = t.title || t.task_code || '';
       const desc = [t.task_desc, t.description].filter(Boolean).join('\n');
       const reward = [
-        Number(t.credit || 0) > 0 ? '积分 ' + t.credit : '',
-        Number(t.energy || 0) > 0 ? '能量 ' + t.energy : ''
+        Number(t.credit || 0) > 0 ? T('Points') + ' ' + t.credit : '',
+        Number(t.energy || 0) > 0 ? T('Energy') + ' ' + t.energy : ''
       ].filter(Boolean).join(' · ');
       const tip = [
-        '任务：' + title,
-        '说明：' + (desc || '—'),
-        '进度：' + progress,
-        '奖励：' + (reward || '—')
+        T('Task: ') + title,
+        T('Description: ') + (desc || '—'),
+        T('Progress: ') + progress,
+        T('Reward: ') + (reward || '—')
       ].join('\n');
       return '<div class="wb-todo-row" title="' + esc(tip) + '"><div class="nm"><div>' + esc(title) +
-        '</div><div class="id">' + esc(t.task_code || '') + '</div></div><span class="model-tag">待执行</span>' +
+        '</div><div class="id">' + esc(t.task_code || '') + '</div></div><span class="model-tag">' + T('Pending') + '</span>' +
         '<span class="wb-usage">' + esc(progress) + '</span></div>';
     }).join('');
-    const err = a.growth_error ? '<div class="hint" style="color:var(--danger)">扫描失败：' + esc(a.growth_error) + '</div>' : '';
+    const err = a.growth_error ? '<div class="hint" style="color:var(--danger)">' + T('Scan failed: ') + '' + esc(a.growth_error) + '</div>' : '';
     return '<details class="wb-todo-group"><summary class="wb-todo-title">' + esc(a.nickname || a.uid) +
-      ' <span class="auto-pill">' + esc(a.uid || '') + ' · ' + (a.growth || []).length + ' 项</span></summary>' + rows + err + '</details>';
+      ' <span class="auto-pill">' + esc(a.uid || '') + ' · ' + T(' item(s)') + '</span></summary>' + rows + err + '</details>';
   }).join('');
 }
 async function scanWorkbuddyTodos() {
@@ -2037,14 +2106,14 @@ async function scanWorkbuddyTodos() {
   const scanButton = _('wbTodoScan');
   if (button) button.disabled = true;
   if (scanButton) scanButton.disabled = true;
-  _('wbTodoStatus').textContent = '正在按并发 ' + concurrency + ' 扫描任务...';
-  _('wbTodoBody').innerHTML = '<div class="empty">扫描中...</div>';
+  _('wbTodoStatus').textContent = T('Scanning with concurrency ') + concurrency + T(' scanning tasks...');
+  _('wbTodoBody').innerHTML = '<div class="empty">' + T('Scanning...') + '</div>';
   try {
     const data = await wbCall('tasks/scan_all', {}, { concurrency: concurrency });
     renderWorkbuddyTodoAccounts(data);
-    _('wbTodoStatus').textContent = '扫描完成：' + (data.pending_count || 0) + ' 项待办';
+    _('wbTodoStatus').textContent = T('Scan complete: ') + (data.pending_count || 0) + T(' pending item(s)');
   } catch (e) {
-    _('wbTodoStatus').textContent = '扫描失败：' + e.message;
+    _('wbTodoStatus').textContent = T('Scan failed: ') + e.message;
     _('wbTodoBody').innerHTML = '';
   } finally {
     if (button) button.disabled = false;
@@ -2060,17 +2129,17 @@ function renderWorkbuddyQueue(data) {
     if (!groups.has(key)) groups.set(key, { uid: key, nickname: it.nickname || key, items: [] });
     groups.get(key).items.push(it);
   });
-  const labels = { pending: '已领取', running: '进行中', done: '完成', skipped: '跳过', error: '失败' };
+  const labels = { pending: T('Claimed'), running: T('In progress'), done: T('Done'), skipped: T('Skipped'), error: T('Failed') };
   _('wbTodoBody').innerHTML = Array.from(groups.values()).map(g =>
     '<details class="wb-todo-group"><summary class="wb-todo-title">' + esc(g.nickname) +
-      ' <span class="auto-pill">' + esc(g.uid) + ' · ' + g.items.length + ' 项</span></summary>' +
+      ' <span class="auto-pill">' + esc(g.uid) + ' · ' + T(' item(s)') + '</span></summary>' +
       g.items.map(it => {
         const title = it.title || it.code || '';
         const tip = [
-          '任务：' + title,
-          '说明：' + (it.desc || '—'),
-          it.progress ? '进度：' + it.progress : '',
-          it.message ? '结果：' + it.message : ''
+          T('Task: ') + title,
+          T('Description: ') + (it.desc || '—'),
+          it.progress ? T('Progress: ') + it.progress : '',
+          it.message ? T('Result: ') + it.message : ''
         ].filter(Boolean).join('\n');
         const sub = [it.code, it.progress, it.message].filter(Boolean).join(' · ');
         return '<div class="wb-todo-row" title="' + esc(tip) + '"><div class="nm"><div>' + esc(title) +
@@ -2086,7 +2155,7 @@ async function pollWorkbuddyQueue() {
     if (seq !== wbTodoSeq) return;
     renderWorkbuddyQueue(data);
     const done = (data.items || []).filter(it => ['done', 'skipped', 'error'].includes(it.status)).length;
-    _('wbTodoStatus').textContent = (data.running ? '执行中' : '执行结束') + '：' + done + ' / ' + (data.total || 0);
+    _('wbTodoStatus').textContent = (data.running ? T('Running') : T('Finished')) + T(': ') + done + ' / ' + (data.total || 0);
     if (data.running) {
       wbTodoTimer = setTimeout(pollWorkbuddyQueue, 1500);
     } else {
@@ -2094,12 +2163,12 @@ async function pollWorkbuddyQueue() {
       await loadWorkbuddyAccounts();
     }
   } catch (e) {
-    _('wbTodoStatus').textContent = '读取队列失败：' + e.message;
+    _('wbTodoStatus').textContent = T('Failed to read queue: ') + e.message;
   }
 }
 async function runWorkbuddyAllTodos() {
   const concurrency = wbTodoConcurrency();
-  if (!confirm('按并发 ' + concurrency + ' 执行列表中的全部任务（账号内串行，自动领取任务）。确认继续？')) return;
+  if (!confirm(T('Run all listed tasks with concurrency ') + concurrency + T(' (tasks run serially within each account, auto-claim enabled). Confirm?'))) return;
   const button = _('wbTodoRunAll');
   const scanButton = _('wbTodoScan');
   if (button) button.disabled = true;
@@ -2107,15 +2176,15 @@ async function runWorkbuddyAllTodos() {
   try {
     const result = await wbCall('tasks/run_queue', {}, { concurrency: concurrency, growth: true });
     if (!result.started) {
-      toast(result.message || '没有待办任务', 'info');
+      toast(result.message || T('No pending tasks'), 'info');
       return;
     }
     wbTodoSeq = result.seq || 0;
-    toast('队列已启动：' + result.total + ' 项（并发 ' + concurrency + '）', 'success');
-    _('wbTodoStatus').textContent = '队列已启动，正在执行...';
+    toast(T('Queue started: ') + result.total + T(' item(s) (concurrency ') + concurrency + T(')'), 'success');
+    _('wbTodoStatus').textContent = T('Queue started, running...');
     wbTodoTimer = setTimeout(pollWorkbuddyQueue, 800);
   } catch (e) {
-    toast('执行失败：' + e.message, 'error');
+    toast(T('Failed to run: ') + e.message, 'error');
   } finally {
     if (button) button.disabled = false;
     if (scanButton) scanButton.disabled = false;
@@ -2235,14 +2304,14 @@ function collectWorkbuddyConfig() {
 async function saveWorkbuddyConfig() {
   const button = _('wbSaveConfig');
   button.disabled = true;
-  button.textContent = '保存中...';
+  button.textContent = T('Saving...');
   try {
     const result = await wbCall('config', {}, collectWorkbuddyConfig());
     const restart = Array.isArray(result.restart_required) ? result.restart_required.length : 0;
-    toast(restart ? T('WorkBuddy config saved (') + restart + T(' restart items)') : 'WorkBuddy config saved', 'success');
+    toast(restart ? T('WorkBuddy config saved (') + restart + T(' restart items)') : T('WorkBuddy config saved'), 'success');
     await loadWorkbuddyConfig();
   } catch (e) { toast(T('WorkBuddy config save failed: ') + e.message, 'error'); }
-  finally { button.disabled = false; button.textContent = '保存配置'; }
+  finally { button.disabled = false; button.textContent = T('Save configuration'); }
 }
 
 (_('wbStartLogin') || {}).onclick = startWorkbuddyOAuth;
@@ -3075,21 +3144,21 @@ async function loadModels() {
     const wbBlock = wbModels.length
       ? wbModels.map(m => {
           const rate = wbRate(m);
-          const free = rate === 0 ? '<span class="model-tag free">免费</span>' : '';
+          const free = rate === 0 ? '<span class="model-tag free">' + T('free') + '</span>' : '';
           return row(
             '<span style="font-family:\'JetBrains Mono\',monospace;font-size:13px;flex:1" title="' + esc(m.description || '') + '">' + esc(m.id) + '</span>' +
             free +
             '<span class="model-tag">' + wbRateHTML(m) + '</span>' +
-            '<span class="model-tag" title="默认档">' + esc(m.default_effort || '—') + '</span>' +
+            '<span class="model-tag" title="' + T('Default tier') + '">' + esc(m.default_effort || '—') + '</span>' +
             wbContextTagHTML(m.context_length, T('Maximum context length')));
         }).join('')
-      : '<div class="empty">当前筛选下没有 WorkBuddy 模型</div>';
+      : '<div class="empty">' + T('No WorkBuddy models under the current filter') + '</div>';
     _('modelsList').innerHTML =
       '<div style="font-size:12px;font-weight:600;margin:2px 0 8px">' + T('Cline free models') + '</div>' + clineBlock +
       '<div style="font-size:12px;font-weight:600;margin:14px 0 8px">' + T('OpenCode free models') + '</div>' + zenBlock +
       '<div style="display:flex;align-items:center;gap:10px;margin:14px 0 8px">' +
-        '<span style="font-size:12px;font-weight:600">WorkBuddy 模型</span><span style="flex:1"></span>' +
-        '<label class="inline-flex" style="font-size:12px;color:var(--text2)">筛选 ' +
+        '<span style="font-size:12px;font-weight:600">'+ T('WorkBuddy models') + '</span><span style="flex:1"></span>' +
+        '<label class="inline-flex" style="font-size:12px;color:var(--text2)">' + T('Filter') + ' ' +
           '<select id="wbRateFilter" onchange="setWorkbuddyRateFilter(this.value)" style="width:auto;padding:4px 26px 4px 9px;font-size:12px">' + rateOptions + '</select></label>' +
       '</div>' + wbBlock;
   } catch (e) { _('modelsList').textContent = T('Failed to load'); }
