@@ -30,7 +30,7 @@ import (
 	wbusage "afree-proxy/internal/workbuddy/usage"
 )
 
-const workbuddyVersion = "1.11.10-panel+afree"
+const workbuddyVersion = "1.11.11-panel+afree"
 
 // workbuddySubsystem 把源项目的账号池/熔断/调度/面板/兼容接口作为独立子系统
 // 挂在现有 afree-proxy 上。账号凭证与状态落在 data/workbuddy/ 下，不与 Cline
@@ -110,6 +110,7 @@ func startWorkBuddy() (*workbuddySubsystem, error) {
 	p.SetDegrade(cfg.Pool.DegradeThreshold, cfg.DegradeCooldownDur, cfg.DegradeCooldownMaxD)
 	p.SetSoftRateMax(cfg.SoftRateMaxDur)
 	p.SetCostExploreInterval(cfg.CostExploreIntervalDur)
+	p.SetCreditFloor(cfg.Pool.CreditFloor)
 	p.SetWeights(cfg.Pool.IdleWeightPerHour, cfg.Pool.IdleWeightMax)
 	p.SetPreferExpiring(cfg.Pool.PreferExpiring)
 
@@ -135,6 +136,9 @@ func startWorkBuddy() (*workbuddySubsystem, error) {
 	// 出口成败观测（代理在线率统计）：WB 路径的拨号在 vendor 树内完成，成败
 	// 只能靠这个钩子透出。直连出口与 ctx 取消由钩子/filter 各自忽略。
 	up.ObserveProxy = recordProxyOutcome
+	// 积分保底的「收费」兜底判据：接上游模型目录的积分倍率表。本地实测台账无
+	// 观测时用它判收费；倍率表由探测下发，闭包每次调用读实时快照。
+	p.SetModelRateOf(up.ModelRate)
 
 	var sess *wbsession.Router
 	if cfg.SessionSticky.Enabled {
@@ -145,7 +149,7 @@ func startWorkBuddy() (*workbuddySubsystem, error) {
 			Available:  p.AvailableUIDs,
 			AvailableForModel: func(model string) []string {
 				realm, bare := server.ResolveModel(model)
-				return p.AvailableUIDsForModelRealm(bare, realm)
+				return p.WeightedAvailableUIDsForModelRealm(bare, realm)
 			},
 		})
 		sess.LoadFromStore()
@@ -180,6 +184,7 @@ func startWorkBuddy() (*workbuddySubsystem, error) {
 		APIKey:               "",
 		SoftCooldown:         cfg.SoftRateDur,
 		SanitizeFingerprints: cfg.Features.SanitizeBlacklistFingerprints,
+		RecordClientInfo:     cfg.Logging.RequestClientInfo,
 	})
 	rec := wbusage.New(filepath.Join(dir, "usage.json"))
 	rec.Start()
@@ -246,12 +251,20 @@ func startWorkBuddy() (*workbuddySubsystem, error) {
 		RequestLog:    requestLog,
 		PromptMode:    cfg.Prompt.Mode,
 		PromptText:    cfg.PromptText,
-		GlobalEnabled: cfg.Global.Enabled,
+		// 来源记录开关经 livecfg 热生效；此处同时填静态字段，供 Live 为 nil 的
+		// 裸用/测试路径拿到同一缺省值。
+		RecordClientInfo: cfg.Logging.RequestClientInfo,
+		GlobalEnabled:    cfg.Global.Enabled,
 	})
 
 	ctx, cancel := context.WithCancel(context.Background())
 	go sch.Run(ctx)
 	sch.StartBalanceRefresh(ctx, cfg.BalanceRefreshInterval)
+	// 启动即预热模型积分倍率表（供积分保底的目录兜底判定）：倍率只在
+	// FetchModels/FetchGlobalModelInfos 成功时填充且均为懒触发，重启后的空窗期
+	// 里 ModelRate 恒为空串，触底号会被当成「收费未知」放行并打穿。异步执行，
+	// 失败仅记日志。
+	go warmModelRates(ctx, up, p)
 	attachWorkbuddyLogSink(pn.Logs())
 
 	sub := &workbuddySubsystem{
@@ -401,5 +414,38 @@ func (w *workbuddySubsystem) adminHandler() http.HandlerFunc {
 		r2.URL.Path = "/panel" + rest
 		r2.URL.RawPath = ""
 		h(rw, r2)
+	}
+}
+
+// warmModelRates 启动预热各域模型积分倍率表（供积分保底的目录兜底判定）。
+// 单域失败只记 WARN（不阻塞、不致命——后续懒触发仍会补上）；global 域仅在
+// 路由开关开启时预热。ctx 取消（进程退出）时立刻放弃剩余域。
+func warmModelRates(ctx context.Context, up *upstream.Client, p *wbpool.Pool) {
+	if ctx.Err() != nil {
+		return
+	}
+	// CN：有可用 CN 账号才拉（与面板 models 同口径，避免无谓上游调用）。
+	if uids := p.AvailableUIDsForRealm("cn"); len(uids) > 0 {
+		if a := p.AuthByUID(uids[0]); a != nil {
+			if _, err := up.FetchModels(a); err != nil {
+				log.Printf("WARN: [upstream] warm model rates (cn): %v", err)
+			} else {
+				log.Printf("[upstream] warm model rates: cn ok")
+			}
+		}
+	}
+	// global：独立目录端点，倍率按 "global" 域键存储。
+	if up.GlobalEnabled && ctx.Err() == nil {
+		if uids := p.AvailableUIDsForRealm("global"); len(uids) > 0 {
+			if a := p.AuthByUID(uids[0]); a != nil {
+				// FetchGlobalModelInfos 无错误返回（内部负缓存自行节流），
+				// 仅按结果条数判断是否拿到目录。
+				if infos := up.FetchGlobalModelInfos(a); len(infos) == 0 {
+					log.Printf("WARN: [upstream] warm model rates (global): empty model list")
+				} else {
+					log.Printf("[upstream] warm model rates: global ok (%d models)", len(infos))
+				}
+			}
+		}
 	}
 }
