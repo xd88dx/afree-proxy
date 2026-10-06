@@ -112,7 +112,11 @@ func saveWorkbuddyConfig(
 		!newCfg.Schedule.BlackcatEnabled, !newCfg.Schedule.GrowthEnabled,
 	)
 	sch.SetBalanceInterval(newCfg.BalanceRefreshInterval)
+	sch.SetIncludeDisabledInTasks(newCfg.Schedule.IncludeDisabledInTasks)
 	sch.SetExpiringSoonWindow(newCfg.ExpiringSoonDur)
+	// wbconfig.ServerReadTimeoutDur（server.read_timeout）在本项目无消费方：
+	// WorkBuddy 无独立 http.Server，主网关刻意不设 ReadTimeout（见 proxy.go，
+	// SSE 长连接），源项目 issue #100 的 60s 掐断问题在此天然不存在。
 	return restartRequiredWorkbuddyFields(newCfg), nil
 }
 
