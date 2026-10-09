@@ -2043,7 +2043,7 @@ function renderWorkbuddyDetails(a) {
       esc(a.nickname || a.uid) + '</div><div class="wb-pk-sub">' + esc(a.realm || '') + ' · ' + esc(a.uid) + '</div></div>' +
       '<div class="wb-pk-sub">' + T('Total ') + esc(wbFmtTokens(a.size)) + ' · ' + packs.length + T(' package(s)') + '</div></div>' +
       '<div class="wb-pk-big">' + esc(wbFmtTokens(a.remain)) + '</div>' +
-      '<div class="wb-pk-sub">' + T('Remaining points · used ') + ' + esc(wbFmtTokens(Math.max(0, Number(a.size || 0) - Number(a.remain || 0)))) + '</div>' +
+      '<div class="wb-pk-sub">' + T('Remaining points · used ') + esc(wbFmtTokens(Math.max(0, Number(a.size || 0) - Number(a.remain || 0)))) + '</div>' +
       '<div class="wb-pk-mix">' + mix + '</div><div class="wb-pk-legend">' + legend + '</div></div>' +
     '<div class="table-wrap"><table><thead><tr><th></th><th>' + T('Package / source') + '</th><th class="text-right">' + T('Face value') + '</th>' +
       '<th class="text-right">' + T('Remaining') + '</th><th class="text-right">' + T('Used') + '</th><th class="text-right">' + T('Granted') + '</th>' +
