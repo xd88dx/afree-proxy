@@ -176,6 +176,9 @@ func learnZenEndpoint(modelID, upstream string) {
 	if ok && m != nil && m.Upstream != upstream {
 		next := *m
 		next.Upstream = upstream
+		// Source=learned：显式标记"学习器已定论"，applyZenCatalog 据此永不
+		// 重播种（live 同步会把 Source 抹成 live，因此标记保存在学习文件里）。
+		next.Source = "learned"
 		zenModels[modelID] = &next
 		log.Printf("zen endpoint learned: model=%s upstream=%q (persisted)", modelID, upstream)
 	}
@@ -207,6 +210,10 @@ func applyZenEndpoints(learned map[string]string) int {
 	defer zenModelsMu.Unlock()
 	n := 0
 	for id, up := range learned {
+		// 学习文件里的 chat 定论存为 "chat" 字面量（空串与"缺失"无法区分）。
+		if up == zenLearnedChat {
+			up = ""
+		}
 		if up != "responses" && up != "" {
 			continue
 		}
@@ -216,6 +223,7 @@ func applyZenEndpoints(learned map[string]string) int {
 		}
 		next := *m
 		next.Upstream = up
+		next.Source = "learned"
 		zenModels[id] = &next
 		n++
 	}
@@ -242,12 +250,18 @@ func reapplyLearnedEndpoints() {
 	}
 }
 
-// saveZenEndpoints 持久化当前 Upstream 非空的学习结果。
+// saveZenEndpoints 持久化学习结果。
 //
 // 串行化：learnZenEndpoint 由并发请求路径调用，且它在释放 zenModelsMu 之后才走到
 // 这里。两个 goroutine 同时写同一个 .tmp 再 rename，后一次 rename 会对已不存在的
 // tmp 报错，读到半个文件的 loadZenEndpoints 还会把整个学习表当损坏丢掉。
+//
+// 两种决策都落盘：responses 与 learned-chat（"" 存为 "chat"，避免与
+// "无记录=默认 chat" 混淆）。applyZenCatalog 对文件里出现过的 ID 不再重播种。
 var zenEndpointSaveMu sync.Mutex
+
+// zenLearnedChat 学习文件中 chat 决策的存盘写法（空串在 map 里与"缺失"无法区分）。
+const zenLearnedChat = "chat"
 
 func saveZenEndpoints() {
 	zenEndpointSaveMu.Lock()
@@ -256,8 +270,13 @@ func saveZenEndpoints() {
 	zenModelsMu.RLock()
 	learned := map[string]string{}
 	for id, m := range zenModels {
-		if m != nil && m.Upstream == "responses" && m.Source != "seed" {
-			learned[id] = m.Upstream
+		if m == nil || m.Source != "learned" {
+			continue
+		}
+		if m.Upstream == "responses" {
+			learned[id] = "responses"
+		} else if m.Upstream == "" {
+			learned[id] = zenLearnedChat
 		}
 	}
 	zenModelsMu.RUnlock()

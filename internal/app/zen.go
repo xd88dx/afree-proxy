@@ -2389,6 +2389,10 @@ type zenModelOverlay struct {
 	Context, Output     int
 	ToolCall, Reasoning bool
 	Attachment          bool
+	// NPM 该模型的 SDK 包名（per-model provider.npm；解析规则与官方 CLI
+	// fromModelsDevModel 一致：model.provider?.npm ?? provider.npm ?? 默认）。
+	// 端点路由的种子信号，见 zenNPMToUpstream。
+	NPM string
 }
 
 // fetchZenRegistry 拉取公共目录 api.json，返回（限额 overlay、价格门集合、
@@ -2415,13 +2419,18 @@ func fetchZenRegistry() (map[string]zenModelOverlay, map[string]bool, bool) {
 		return overlay, freeGate, false
 	}
 	var payload map[string]struct {
+		NPM    string `json:"npm"`
 		Models map[string]struct {
 			ID         string `json:"id"`
 			Status     string `json:"status"`
 			ToolCall   bool   `json:"tool_call"`
 			Reasoning  bool   `json:"reasoning"`
 			Attachment bool   `json:"attachment"`
-			Limit      struct {
+			NPM        string `json:"npm"`
+			Provider   struct {
+				NPM string `json:"npm"`
+			} `json:"provider"`
+			Limit struct {
 				Context int `json:"context"`
 				Output  int `json:"output"`
 			} `json:"limit"`
@@ -2442,9 +2451,22 @@ func fetchZenRegistry() (map[string]zenModelOverlay, map[string]bool, bool) {
 		if m.ID != "" {
 			id = m.ID
 		}
+		// npm 解析优先级 = 官方 CLI fromModelsDevModel：
+		// 模型 provider.npm > 模型顶层 npm > 提供方 npm > 默认（openai-compatible）。
+		npm := m.Provider.NPM
+		if npm == "" {
+			npm = m.NPM
+		}
+		if npm == "" {
+			npm = prov.NPM
+		}
+		if npm == "" {
+			npm = "@ai-sdk/openai-compatible"
+		}
 		overlay[id] = zenModelOverlay{
 			Context: m.Limit.Context, Output: m.Limit.Output,
 			ToolCall: m.ToolCall, Reasoning: m.Reasoning, Attachment: m.Attachment,
+			NPM: npm,
 		}
 		if m.Cost.Input == 0 && m.Cost.Output == 0 &&
 			!strings.Contains(strings.ToLower(m.Status), "deprecat") {
@@ -2530,6 +2552,27 @@ func syncZenModels() (int, error) {
 	return added, nil
 }
 
+// zenNPMToUpstream 把 SDK 包名映射到上游路由种子（与官方 CLI 的 resolveSDK
+// 语义一致）。返回 (upstream, known)：
+//   - "@ai-sdk/openai"          → "responses"（原生 POST {base}/responses）
+//   - "@ai-sdk/openai-compatible" → ""（默认 POST {base}/chat/completions）
+//   - "@ai-sdk/anthropic" / "@ai-sdk/google" → ("", false)：免费层目前没有
+//     存活的这类模型；映射记下来但不做原生分发，交端点学习器自行纠正，
+//     日志留 warning（将来出现原生模型再补真分发）。
+//   - 其他未知值 → ("", false)：绝不猜，让学习器用上游拒绝信号决定。
+func zenNPMToUpstream(npm string) (string, bool) {
+	switch npm {
+	case "@ai-sdk/openai":
+		return "responses", true
+	case "@ai-sdk/openai-compatible":
+		return "", true
+	case "@ai-sdk/anthropic", "@ai-sdk/google":
+		return "", false
+	default:
+		return "", false
+	}
+}
+
 // applyZenCatalog 把 live 结果写进模型表：存量条目就地更新（保留别名与
 // Upstream 提示），新条目按 overlay 限额建立。返回新增数量。
 func applyZenCatalog(desired map[string]bool, overlay map[string]zenModelOverlay) int {
@@ -2553,6 +2596,18 @@ func applyZenCatalog(desired map[string]bool, overlay map[string]zenModelOverlay
 			if ov != (zenModelOverlay{}) {
 				next.ToolCall, next.Reasoning, next.Attach = ov.ToolCall, ov.Reasoning, ov.Attachment
 			}
+			// npm 路由重播种：仅当该模型尚无明确端点决策时按目录 npm 刷新。
+			// "决策"= Upstream 非空，或学习器已定论（Source=learned，含 chat
+			// 定论：learning 后 Upstream 归零但不得再被 npm 播回 responses）。
+			// load/reapplyLearnedEndpoints 恢复学习条目，这里不得回翻；
+			// muse-spark 等种子提示同样保留。
+			if next.Upstream != "" || next.Source == "learned" {
+				// 已有决策，保持
+			} else if ov.NPM != "" {
+				if up, known := zenNPMToUpstream(ov.NPM); known && up != "" {
+					next.Upstream = up
+				}
+			}
 			next.Source = "live"
 			zenModels[id] = &next
 			continue
@@ -2568,9 +2623,15 @@ func applyZenCatalog(desired map[string]bool, overlay map[string]zenModelOverlay
 		if outN <= 0 {
 			outN = 32768
 		}
+		// 端点种子：按目录 npm 确定性路由（muse-spark 类 responses 模型不再
+		// 靠名字启发式）。未知/暂不支持的原生 npm 交给端点学习器，绝不猜。
 		upstream := ""
-		if strings.Contains(strings.ToLower(id), "muse-spark") {
-			upstream = "responses" // 实测 chat/completions 500，走原生 responses
+		if npm := ov.NPM; npm != "" {
+			if up, known := zenNPMToUpstream(npm); known {
+				upstream = up
+			} else {
+				log.Printf("zen catalog: model=%s has unsupported provider npm %q; endpoint learner will decide", id, npm)
+			}
 		}
 		zenModels[id] = &ZenModel{
 			ID:        id,
