@@ -1,11 +1,14 @@
 name: Publish Docker image
 
-# Every run (push to main or v* tag) publishes ghcr.io/<owner>/<repo>:latest
-# (amd64 + arm64). Tag pushes (v*) additionally publish the semver tag.
+# Triggers:
+#   push to main            -> ghcr.io/<owner>/<repo>:latest (amd64 + arm64)
+#   push to zen-harvest     -> ghcr.io/<owner>/<repo>:zencli (amd64 + arm64)
+#   push of tag v0.9.0-harvest (or any v* matching the reflist) ->
+#                             ghcr.io/<owner>/<repo>:26.10.10 (amd64 + arm64)
 on:
   push:
-    branches: [ main ]
-    tags: [ 'v*' ]
+    branches: [ main, zen-harvest ]
+    tags: [ 'v0.9.0-harvest' ]
   workflow_dispatch:
 
 concurrency:
@@ -66,8 +69,9 @@ jobs:
         with:
           images: ${{ steps.image.outputs.name }}
           tags: |
-            type=raw,value=latest
-            type=semver,pattern={{version}}
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+            type=raw,value=zencli,enable=${{ github.ref == 'refs/heads/zen-harvest' }}
+            type=raw,value=26.10.10,enable=${{ github.ref == 'refs/tags/v0.9.0-harvest' }}
 
       - name: Build and push
         uses: docker/build-push-action@v6
