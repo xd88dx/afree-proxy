@@ -89,7 +89,6 @@ func registerAdminRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/admin/api/opencode/models/refresh", adminCORS(auth(handleZenModelsRefresh)))
 	mux.HandleFunc("/admin/api/opencode/stats", adminCORS(auth(handleZenStats)))
 	mux.HandleFunc("/admin/api/opencode/sessions", adminCORS(auth(handleZenSessions)))
-	mux.HandleFunc("/admin/api/opencode/sessions/mint", adminCORS(auth(handleZenSessionsMint)))
 	// 旧 zen 路径别名,兼容旧引用
 	mux.HandleFunc("/admin/api/zen/config", adminCORS(auth(handleZenConfig)))
 	mux.HandleFunc("/admin/api/zen/config/update", adminCORS(auth(handleZenConfigUpdate)))
@@ -105,7 +104,6 @@ func registerAdminRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/admin/api/zen/keys/proxy", adminCORS(auth(handleZenKeySetProxy)))
 	mux.HandleFunc("/admin/api/opencode/keys/proxy", adminCORS(auth(handleZenKeySetProxy)))
 	mux.HandleFunc("/admin/api/zen/sessions", adminCORS(auth(handleZenSessions)))
-	mux.HandleFunc("/admin/api/zen/sessions/mint", adminCORS(auth(handleZenSessionsMint)))
 	mux.HandleFunc("/admin/zen/", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/admin/", http.StatusFound)
 	})

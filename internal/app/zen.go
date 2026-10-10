@@ -972,11 +972,9 @@ func zenKeyStatus() []map[string]any {
 			"current": i == zenKeyIdx%maxInt(len(keys), 1),
 			// 路由参与状态（面板"启用"列勾选，勾掉 = 不进入请求轮转）。
 			"routingEnabled": zenKeyRoutingEnabled(k),
-			// live 会话状态：未 mint 的 key 必 403，面板必须能看出来，
-			// 否则"首启为什么这么慢"只能靠翻容器日志猜。
-			"sessionLive":   sess[i].Live,
-			"sessionMinted": sess[i].Minted,
-			"session":       sess[i].Session,
+			// live 会话状态：面板据此看出哪些 key 已有粘性会话。
+			"sessionLive": sess[i].Live,
+			"session":     sess[i].Session,
 		}
 		// 代理绑定（隔离模式，面板编辑用）。stale = 绑定的代理已不在当前
 		// 代理池里（被删除/改写），该 key 会被隔离一直跳过，必须提示。
@@ -987,8 +985,8 @@ func zenKeyStatus() []map[string]any {
 			st["proxyStale"] = (main != "" && !isEgressDirect(main) && proxyIdxInPool(main) < 0) ||
 				(backup != "" && !isEgressDirect(backup) && proxyIdxInPool(backup) < 0)
 		}
-		if sess[i].HarvestedAt > 0 {
-			st["harvestedAt"] = time.Unix(sess[i].HarvestedAt, 0).Format(time.RFC3339)
+		if sess[i].CreatedAt > 0 {
+			st["createdAt"] = time.Unix(sess[i].CreatedAt, 0).Format(time.RFC3339)
 		}
 		if until, cooling := zenKeyCool[k]; cooling && now.Before(until) {
 			st["cooling"] = true
@@ -1983,7 +1981,7 @@ func callZenResponsesAPI(ctx context.Context, params map[string]any, stream bool
 		}
 		if resp.StatusCode == http.StatusOK {
 			markZenKeySuccess(key)
-			harvestMarkSuccess(key)
+			zenSessionMarkSuccess(key)
 			if stream {
 				return resp, rateLimited, nil
 			}
@@ -2059,7 +2057,7 @@ func callZenResponsesAPI(ctx context.Context, params map[string]any, stream bool
 		// 遗忘，复用只会持续 403。本地随机 sess_ 必 403，不轮换；后台
 		// 收割机（连续 403 达阈值）mint 真会话补上。本次按轮转换 key 重试。
 		if resp.StatusCode == http.StatusForbidden {
-			go harvestOnForbidden(key)
+			go refreshZenSession(key)
 			// pinKey（面板 Test）：会话已死的结论立刻上报（收割机已在后台
 			// 触发），同 key 重试只会再 403，换 key 则测的不是它。
 			if o.pinKey != "" {
@@ -2222,7 +2220,7 @@ func callZenAPI(ctx context.Context, params map[string]any, stream bool, opts ..
 		}
 		if resp.StatusCode == http.StatusOK {
 			markZenKeySuccess(key)
-			harvestMarkSuccess(key)
+			zenSessionMarkSuccess(key)
 			return resp, rateLimited, nil
 		}
 
@@ -2280,7 +2278,7 @@ func callZenAPI(ctx context.Context, params map[string]any, stream bool, opts ..
 			// FreeTier，不含原因）。占位会话 403 是预期内的，minted 会话
 			// 403 才是额度窗口/寿命到期的证据。
 			log.Printf("  zen chat session rejected (403) [%s], key#%d", zenSessionDesc(key), keyIndex(key))
-			go harvestOnForbidden(key)
+			go refreshZenSession(key)
 			// pinKey（面板 Test）：立即上报（收割机已触发），见 responses 路径同处。
 			if o.pinKey != "" {
 				return nil, rateLimited, apiErr
@@ -2399,8 +2397,7 @@ type zenModelOverlay struct {
 // 是否可达）。价格门 = cost.input==0 && cost.output==0 且 status 非
 // deprecated。模型 ID 以条目内 id 优先、map key 兜底。目录不可达返回
 // (空, 空, false)，调用方按 fail-open 处理。
-// 唯一实现：syncZenModels 的层 2/3 与收割机 harvestMintModels 共用，
-// 避免两处价格门逻辑漂移。
+// 唯一实现：syncZenModels 的层 2/3 共用，避免两处价格门逻辑漂移。
 func fetchZenRegistry() (map[string]zenModelOverlay, map[string]bool, bool) {
 	overlay := map[string]zenModelOverlay{}
 	freeGate := map[string]bool{}
@@ -2480,7 +2477,7 @@ func fetchZenRegistry() (map[string]zenModelOverlay, map[string]bool, bool) {
 // 目录可达时以价格门为唯一权威（= 官方 CLI `opencode models` 读的同一份
 // 数据的 cost 0/0 子集）；目录不可达时退回 CLI 成员表 + "-free" 启发式
 // （fail-open，离线也能列出免费模型）。两者都拿不到时返回错误，调用方保留旧表。
-func zenDesiredFromLive(registryOK bool, freeGate map[string]bool, cliIDs []string) (map[string]bool, error) {
+func zenDesiredFromLive(registryOK bool, freeGate map[string]bool) (map[string]bool, error) {
 	desired := map[string]bool{}
 	if registryOK && len(freeGate) > 0 {
 		for id := range freeGate {
@@ -2488,19 +2485,10 @@ func zenDesiredFromLive(registryOK bool, freeGate map[string]bool, cliIDs []stri
 		}
 		return desired, nil
 	}
-	for _, id := range cliIDs {
-		id = strings.TrimPrefix(strings.TrimSpace(id), "opencode/")
-		if id == "" {
-			continue
-		}
-		if strings.HasSuffix(strings.ToLower(id), "-free") || id == "big-pickle" {
-			desired[id] = true
-		}
-	}
-	if len(desired) == 0 {
-		return nil, fmt.Errorf("model catalog unavailable: registry unreachable and `opencode models` gave no free-looking ids")
-	}
-	return desired, nil
+	// 收割机时代的 CLI 成员表兜底已随内嵌 CLI 一起移除——离线启动不再有
+	// 第三方成员表来源，目录不可达就返回错误、调用方保留旧表（种子条目
+	// 在首次成功同步前仍可服务）。
+	return nil, fmt.Errorf("model catalog unavailable: registry unreachable")
 }
 
 // syncZenModels 同步免费模型（live 为准，种子只做冷启动兜底）。判定链：
@@ -2524,13 +2512,9 @@ func syncZenModels() (int, error) {
 	initZenModels()
 	overlay, freeGate, registryOK := fetchZenRegistry()
 
-	// 目录可达时它就是真实列表（CLI 读的是同一份数据），不 spawn CLI；
-	// 只有目录不可达才启用 CLI 兜底（见 zenDesiredFromLive）。
-	var cliIDs []string
-	if !(registryOK && len(freeGate) > 0) {
-		cliIDs = cliModelIDs()
-	}
-	desired, derr := zenDesiredFromLive(registryOK, freeGate, cliIDs)
+	// 目录不可达时返回错误并保留旧表（收割机时代的 CLI 成员表兜底已随
+	// 内嵌 CLI 一起移除，见 zenDesiredFromLive）。
+	desired, derr := zenDesiredFromLive(registryOK, freeGate)
 	if derr != nil {
 		return 0, derr
 	}

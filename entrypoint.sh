@@ -14,7 +14,7 @@ set -eu
 if [ "$(id -u)" = "0" ]; then
   PUID="${PUID:-100}"
   PGID="${PGID:-101}"
-  for dir in /app/data /app/.opencode-home; do
+  for dir in /app/data; do
     mkdir -p "$dir"
     chown -R "$PUID:$PGID" "$dir" 2>/dev/null || true
   done

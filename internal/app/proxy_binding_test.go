@@ -13,10 +13,20 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"sync/atomic"
 	"testing"
 	"time"
 )
+
+// setupZenSessionTest 清空会话粘性表（本地铸造时代替代 setupHarvestTest 的
+// 会话表清理职责；DATA_DIR 由 setupBindingTest 负责）。
+func setupZenSessionTest(t *testing.T) {
+	t.Helper()
+	zenSessMu.Lock()
+	zenSessions = map[string]*zenSessionEntry{}
+	zenSessLoaded = true
+	zenSessPath = ""
+	zenSessMu.Unlock()
+}
 
 // setupBindingTest 把 DATA_DIR 重定向到临时目录（setZenConfig 的落盘写进临时
 // 目录而不是仓库根），保存/恢复 zen 配置全局。
@@ -394,62 +404,6 @@ func TestSetZenKeyProxyBinding(t *testing.T) {
 	}
 }
 
-func TestHarvestSkipsMintWhenBoundProxiesDown(t *testing.T) {
-	setupHarvestTest(t)
-	setupBindingTest(t, &zenConfigData{
-		Keys:           []string{"sk-diag"},
-		Proxies:        []string{"http://a:1"},
-		KeyBindings:    map[string]zenProxyBinding{"sk-diag": {Main: "http://a:1"}},
-		ProxyIsolation: boolPtr(true),
-	})
-	setProxyCooldownIdx(t, 0, time.Minute)
-
-	var calls int32
-	prev := harvestRunFn
-	harvestRunFn = func(ctx context.Context, bin, home, model, proxyURL string) harvestRunResult {
-		atomic.AddInt32(&calls, 1)
-		return harvestRunResult{ExitCode: 0, Elapsed: time.Millisecond}
-	}
-	t.Cleanup(func() { harvestRunFn = prev })
-
-	_, err := harvestSession(context.Background(), "sk-diag")
-	if err == nil {
-		t.Fatal("expected error when bound proxies are unavailable")
-	}
-	if !strings.Contains(err.Error(), "skipping mint") {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if atomic.LoadInt32(&calls) != 0 {
-		t.Fatal("CLI must not run when bound proxies are unavailable")
-	}
-}
-
-func TestHarvestPassesBoundProxyToCLI(t *testing.T) {
-	setupHarvestTest(t)
-	setupBindingTest(t, &zenConfigData{
-		Keys:           []string{"sk-diag"},
-		Proxies:        []string{"http://a:1", "http://b:2"},
-		KeyBindings:    map[string]zenProxyBinding{"sk-diag": {Main: "http://a:1", Backup: "http://b:2"}},
-		ProxyIsolation: boolPtr(true),
-	})
-	var gotProxy string
-	var n int32
-	prev := harvestRunFn
-	harvestRunFn = func(ctx context.Context, bin, home, model, proxyURL string) harvestRunResult {
-		gotProxy = proxyURL
-		writeFakeSessionLog(t, home, fmt.Sprintf("ses_fake%d%010d", atomic.AddInt32(&n, 1), time.Now().UnixNano()%1e10))
-		return harvestRunResult{ExitCode: 0, Elapsed: time.Millisecond}
-	}
-	t.Cleanup(func() { harvestRunFn = prev })
-
-	if _, err := harvestSession(context.Background(), "sk-diag"); err != nil {
-		t.Fatalf("harvest: %v", err)
-	}
-	if gotProxy != "http://a:1" {
-		t.Fatalf("CLI must mint via bound main proxy, got %q", gotProxy)
-	}
-}
-
 // fakeSocks5Server 最小 SOCKS5 服务端（无认证，仅 CONNECT），供桥接测试：
 // 握手 05 00 → 请求解析（ATYP 1/3/4）→ dial → 隧道透传。
 func fakeSocks5Server(t *testing.T, dial func(addr string) (net.Conn, error)) net.Listener {
@@ -604,34 +558,6 @@ func TestSocksBridgeRejectsNonConnect(t *testing.T) {
 	}
 }
 
-func TestHarvestSocksBindingUsesBridge(t *testing.T) {
-	setupHarvestTest(t)
-	setupBindingTest(t, &zenConfigData{
-		Keys:           []string{"sk-diag"},
-		Proxies:        []string{"socks5://s1:1080"},
-		KeyBindings:    map[string]zenProxyBinding{"sk-diag": {Main: "socks5://s1:1080"}},
-		ProxyIsolation: boolPtr(true),
-	})
-	var gotProxy string
-	var n int32
-	prev := harvestRunFn
-	harvestRunFn = func(ctx context.Context, bin, home, model, proxyURL string) harvestRunResult {
-		gotProxy = proxyURL
-		writeFakeSessionLog(t, home, fmt.Sprintf("ses_fake%d%010d", atomic.AddInt32(&n, 1), time.Now().UnixNano()%1e10))
-		return harvestRunResult{ExitCode: 0, Elapsed: time.Millisecond}
-	}
-	t.Cleanup(func() { harvestRunFn = prev })
-
-	if _, err := harvestSession(context.Background(), "sk-diag"); err != nil {
-		t.Fatalf("harvest: %v", err)
-	}
-	// CLI 拿到的必须是本地 http 桥地址，而不是 socks5 原始 URL ——
-	// socks5 语义由网关兑现，不赌 CLI 的 socks 支持。
-	if !strings.HasPrefix(gotProxy, "http://127.0.0.1:") {
-		t.Fatalf("socks binding must surface a local http bridge to the CLI, got %q", gotProxy)
-	}
-}
-
 func mustParseURL(t *testing.T, raw string) *url.URL {
 	t.Helper()
 	u, err := url.Parse(raw)
@@ -689,24 +615,6 @@ func TestParseProxyLine(t *testing.T) {
 	}
 }
 
-func TestZenKeyAutoHarvestEnabled(t *testing.T) {
-	setupHarvestTest(t)
-	// 铸造跟随路由启用（父集语义）：路由开 = 参与铸造；路由关 = 不铸造
-	setupBindingTest(t, &zenConfigData{
-		Keys:              []string{"sk-off", "sk-on", "public"},
-		KeyRoutingEnabled: map[string]bool{"sk-off": false},
-	})
-	if zenKeyAutoHarvestEnabled("sk-off") {
-		t.Fatal("routing-disabled key must not be minted")
-	}
-	if !zenKeyAutoHarvestEnabled("sk-on") {
-		t.Fatal("routing-enabled key must be minted (no explicit mint switch anymore)")
-	}
-	if zenKeyAutoHarvestEnabled("public") {
-		t.Fatal("public key always disabled")
-	}
-}
-
 func TestProxyAliasLivesInPoolLine(t *testing.T) {
 	setupBindingTest(t, &zenConfigData{
 		Keys:    []string{"public"},
@@ -741,7 +649,7 @@ func TestProxyAliasLivesInPoolLine(t *testing.T) {
 }
 
 func TestPickZenKeyStrategyUnified(t *testing.T) {
-	setupHarvestTest(t)
+	setupZenSessionTest(t)
 	setupBindingTest(t, &zenConfigData{
 		Keys: []string{"sk-1", "sk-2", "sk-3"},
 	})

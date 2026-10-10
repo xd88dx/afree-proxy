@@ -85,7 +85,6 @@ func StartProxy(host string, port int) error {
 	startPoolFlusher()
 	loadZenEndpoints()
 	loadClineStreamLearned()
-	startZenHarvester()
 	initStats()
 	LoadRequestLogsFromFile()
 	go cleanupCompactStates()
