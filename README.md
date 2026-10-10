@@ -61,6 +61,10 @@ services:
       - ZEN_KEYS=${ZEN_KEYS:-}
       - CLINE_ACCOUNTS_SEED_FILE=/app/data/cline-seed.json
       - STRICT_MODEL_MATCH=true
+      # optional — session-remint interval in hours (default 4; must stay under the 5h quota window)
+      - ZEN_HARVEST_INTERVAL_HOURS=${ZEN_HARVEST_INTERVAL_HOURS:-4}
+      # optional — keep at 1 unless the box has spare cores (the CLI bursts CPU per run)
+      - ZEN_HARVEST_CONCURRENCY=${ZEN_HARVEST_CONCURRENCY:-1}
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:${PROXY_PORT:-3457}/health"]
       interval: 30s
@@ -80,6 +84,8 @@ Environment variables to define in the Portainer stack UI:
 | `ADMIN_PASSWORD` | yes | admin panel login password |
 | `PROXY_PORT` | no | defaults to `3457`; changes both the container listen port and the host mapping |
 | `ZEN_KEYS` | no | comma-separated opencode zen keys; leave empty to use the anonymous `public` key or configure in the admin panel |
+| `ZEN_HARVEST_INTERVAL_HOURS` | no | how often zen sessions are re-minted, in hours; defaults to `4`. Keep it **below 5** (see [session harvester](#opencode-zen-session-harvester)) |
+| `ZEN_HARVEST_CONCURRENCY` | no | how many keys mint at once; defaults to `1` (serial), which is what small instances want |
 
 To seed Cline accounts on first boot, drop a `cline-seed.json` file into the volume (see [Seeding accounts](#seeding-accounts)).
 
@@ -112,31 +118,43 @@ All state lives in the `/app/data` volume (`cline-accounts.json`, `zen-config.js
 
 Fail-closed startup: binding a non-loopback address without `API_KEY` and `ADMIN_PASSWORD` refuses to start.
 
-### opencode zen session IDs
+### opencode zen session harvester
 
-The zen free tier's session gate is a **stateless format check**: any ID matching
-`^ses_[0-9a-f]{12}[0-9A-Za-z]{14}$` is accepted — the upstream neither checks
-"has this ID been seen" nor timestamp freshness. The gateway therefore mints a
-compatible ID locally per zen key at first use (the same structure the official
-CLI produces, descending timestamp bits + random tail), keeps it sticky, and
-persists it in the data volume (`.zen-sessions.json`). There is no embedded CLI,
-no harvester, and no related environment variables. Legacy placeholder IDs
-(`sess_*`) in an existing session file are replaced with minted ones on first
-load.
+The zen free tier only accepts session IDs the upstream has actually seen, minted by the bundled `opencode` CLI. The gateway mints them for you at boot, on repeated `403`s, and on a timer — all of it configurable:
 
-If a session gets rejected (FreeTier `403`), the gateway mints a fresh ID
-locally after two consecutive `403`s (one-minute per-key backoff) — no
-subprocess, no quota cost. Should zen ever tighten the gate (valid-format IDs
-also rejected), the rising refresh frequency in the logs is the early signal.
+| Variable | Default | Description |
+|---|---|---|
+| `ZEN_HARVEST` | `1` | `0` disables the harvester entirely (gateway-only mode). It also self-disables when the CLI binary is absent |
+| `ZEN_HARVEST_INTERVAL_HOURS` | `4` | **How old a session may get before the periodic pass re-mints it.** Integer ≥ 1. The pass runs every 10 minutes and mints any key whose session is older than this |
+| `ZEN_HARVEST_CONCURRENCY` | `1` | How many keys may mint at the same time (1–8). Keep at `1` on small instances: the CLI is a Bun binary that bursts CPU and memory per run, and concurrent runs starve each other past the budget — the symptom is *every* key logging `no session minted`. Raise to `2`–`3` only with spare cores |
+| `ZEN_HARVEST_KEY_TIMEOUT_SECONDS` | `150` | Total budget for one key (minimum 30s). Bounds the failure path, and feeds the batch-timeout calculation |
+| `ZEN_HARVEST_BIN` | `/app/bin/opencode` | CLI binary path (point it at your own install if you don't use the bundled one) |
+| `ZEN_HARVEST_HOME` | `/app/.opencode-home` | CLI `HOME`; each key gets its own hashed subdirectory under it |
+| `ZEN_PIN_KEY` | empty | Troubleshooting: pin all upstream attempts to key number *n* (1-based) instead of rotating, so one key can be tested in isolation |
 
-The admin panel's opencode tab lists every key's session ID, state, and mint
-time, plus a per-key **Test** button with a probe-model picker (default
-**auto**: big-pickle first, then live-synced models; any free zen model can be
-chosen): it sends one real probe request pinned to that key, and on success
-clears the key's cooldown immediately (a rate-limited answer — 429, or a
-403/503 whose body zen words as a limit — reports the upstream's expected
-recovery time instead). Note a successful probe consumes one request of that
-key's quota — the same trade-off as the cline Test button.
+**Setting your own remint interval.** The default is 4 hours, chosen to stay inside zen's ~5-hour quota window. To remint every 2 hours:
+
+```yaml
+    environment:
+      - ZEN_HARVEST_INTERVAL_HOURS=2      # any integer >= 1
+```
+
+or on the command line:
+
+```bash
+docker run -d --name afree-proxy -p 3457:3457\
+  -v cline-proxy-data:/app/data\
+  -e API_KEY=... -e ADMIN_PASSWORD=... -e ZEN_KEYS=...\
+  -e ZEN_HARVEST_INTERVAL_HOURS=2\
+  ghcr.io/foxy1402/cline-proxy:latest
+```
+
+Two things to know before you change it:
+
+- **Keep it under 5 hours.** zen's free quota (~200 requests / 5h) is accounted per **egress IP**, and re-minting does **not** refill it. A longer interval buys no capacity; it only risks a stretch where every session has expired — the refresh interval must stay below the quota window, not above it.
+- **Anything invalid falls back to 4** — empty, non-numeric, `0`, or negative. The effective floor is 1 hour, and the parser is lenient about trailing text: `2h` is read as `2`, not rejected.
+
+The admin panel's opencode tab shows the current interval, per-key session age and liveness, and has *Mint missing sessions* / *Force mint / refresh all* buttons plus a per-key **Test** button with a probe-model picker (default **auto**: big-pickle first, then live-synced models; any free zen model can be chosen): it sends one real probe request pinned to that key, and on success clears the key's cooldown immediately (a rate-limited answer — 429, or a 403/503 whose body zen words as a limit — reports the upstream's expected recovery time instead). Note a successful probe consumes one request of that key's quota — the same trade-off as the cline Test button. Full mechanics — quota model, per-key CLI isolation, batch timeouts — are in [docs/zen-harvester.md](docs/zen-harvester.md).
 
 ## Connecting your IDE
 
@@ -191,7 +209,8 @@ Without isolation, every upstream attempt rotates across the whole proxy pool: e
 
 - Each Cline account, zen key, and WorkBuddy account can bind one **main** and one **backup** proxy. Requests always egress via the main, fall back to the backup, and are **skipped entirely** while both are cooling or removed from the pool — never routed through another exit or a direct connection. Isolation outranks availability. WorkBuddy bindings are allocated round-robin on first use and persisted automatically.
 - Unbound identities follow the panel's per-platform global policy toggles (Cline / OpenCode / WorkBuddy, default: use the proxy pool), so an empty binding config behaves exactly like before.
-- - Assign bindings per account (Accounts page) / per key (opencode page), or use **Assign proxies evenly** (`main = pool[i%N]`, `backup = pool[(i+1)%N]`). A binding whose proxy was removed from the pool is flagged ⚠ and its identity stays skipped until fixed.
+- The zen harvester mints sessions through the key's bound exit too — a session ID must never change IP, or the isolation is void. While a key's bound exits are unavailable, minting for that key is skipped until the next sweep.
+- Assign bindings per account (Accounts page) / per key (opencode page), or use **Assign proxies evenly** (`main = pool[i%N]`, `backup = pool[(i+1)%N]`). A binding whose proxy was removed from the pool is flagged ⚠ and its identity stays skipped until fixed.
 - Toggle it off on the Proxy pool page to restore legacy per-request rotation (bindings are then ignored). `PROXY_ISOLATION=true` forces it on and makes the panel toggle read-only; `false` only changes the default to off (the panel can still change it). Only `true`/`false` are accepted — any other value warns and is treated as unset.
 - **Per-proxy online rate.** The Proxy pool page lists every proxy with its real-traffic transport-layer success rate — cumulative since the pool was last edited, plus a rolling window over the last 50 attempts. Upstream 4xx/5xx never counts against the proxy (the tunnel worked); client aborts count for neither side. Sampling is fully passive — no probing traffic is ever generated — and stats never influence routing: a proxy below 80% recent success (≥10 samples) is highlighted red so you can swap it out yourself. Editing the proxy list resets all counters; stats survive restarts (`.proxy-health.json`). Cline, OpenCode, and WorkBuddy traffic all count; direct exits don't.
 
@@ -207,7 +226,7 @@ Verified against live upstreams with real free-tier credentials (16-probe chat m
 - `stream_options.include_usage`, array content parts, long multi-turn histories, parameter passthrough, clean 4xx errors
 - Client aborts propagate (no account/key cooldown pollution), 8-way parallel load, container healthcheck, seed import, key rotation
 
-Known upstream quirks (not gateway bugs): zen's `muse-spark-*-free` models only work on the native `/v1/responses` endpoint (the gateway routes them there automatically and re-emits chat/Anthropic shapes); `deepseek-v4-flash-free` was removed from the catalog as deprecated; cline's `stop` handling wipes content when the model's reasoning echoes the stop word (gateway truncates non-stream output as compensation); some reasoning-heavy models eat small `max_tokens` budgets before producing visible text. 
+Known upstream quirks (not gateway bugs): zen's `muse-spark-*-free` models only work on the native `/v1/responses` endpoint (the gateway routes them there automatically and re-emits chat/Anthropic shapes); `deepseek-v4-flash-free` was removed from the catalog as deprecated; cline's `stop` handling wipes content when the model's reasoning echoes the stop word (gateway truncates non-stream output as compensation); some reasoning-heavy models eat small `max_tokens` budgets before producing visible text. For zen deployment details (session harvester, env vars) see [docs/zen-harvester.md](docs/zen-harvester.md).
 
 ## Development
 
@@ -231,7 +250,7 @@ Project layout:
 │   ├── responses.go         /v1/responses dialect translation
 │   ├── zen.go               opencode zen upstream, routing, rate-limit defense
 │   ├── zen_session.go       sticky zen sessions (CLI-minted sess_, per-key identity)
-│   ├── zen_session.go        zen sticky session IDs (locally minted)
+│   ├── zen_harvest.go       session harvester (embedded opencode CLI, self-maintaining)
 │   ├── zen_endpoint.go      endpoint auto-learn (chat vs /v1/responses per model)
 │   ├── tls_bun.go           uTLS ClientHello mimicry for the zen upstream
 │   ├── compact.go           opencode-style context compaction for zen free models

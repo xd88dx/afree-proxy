@@ -1981,7 +1981,7 @@ func callZenResponsesAPI(ctx context.Context, params map[string]any, stream bool
 		}
 		if resp.StatusCode == http.StatusOK {
 			markZenKeySuccess(key)
-			zenSessionMarkSuccess(key)
+			harvestMarkSuccess(key)
 			if stream {
 				return resp, rateLimited, nil
 			}
@@ -2057,7 +2057,7 @@ func callZenResponsesAPI(ctx context.Context, params map[string]any, stream bool
 		// 遗忘，复用只会持续 403。本地随机 sess_ 必 403，不轮换；后台
 		// 收割机（连续 403 达阈值）mint 真会话补上。本次按轮转换 key 重试。
 		if resp.StatusCode == http.StatusForbidden {
-			go refreshZenSession(key)
+			go harvestOnForbidden(key)
 			// pinKey（面板 Test）：会话已死的结论立刻上报（收割机已在后台
 			// 触发），同 key 重试只会再 403，换 key 则测的不是它。
 			if o.pinKey != "" {
@@ -2220,7 +2220,7 @@ func callZenAPI(ctx context.Context, params map[string]any, stream bool, opts ..
 		}
 		if resp.StatusCode == http.StatusOK {
 			markZenKeySuccess(key)
-			zenSessionMarkSuccess(key)
+			harvestMarkSuccess(key)
 			return resp, rateLimited, nil
 		}
 
@@ -2278,7 +2278,7 @@ func callZenAPI(ctx context.Context, params map[string]any, stream bool, opts ..
 			// FreeTier，不含原因）。占位会话 403 是预期内的，minted 会话
 			// 403 才是额度窗口/寿命到期的证据。
 			log.Printf("  zen chat session rejected (403) [%s], key#%d", zenSessionDesc(key), keyIndex(key))
-			go refreshZenSession(key)
+			go harvestOnForbidden(key)
 			// pinKey（面板 Test）：立即上报（收割机已触发），见 responses 路径同处。
 			if o.pinKey != "" {
 				return nil, rateLimited, apiErr

@@ -29,10 +29,11 @@ func TestZenDesiredFromLiveRegistryWins(t *testing.T) {
 	}
 }
 
-// 目录不可达：报错（收割机删除后不再有 CLI 成员表兜底，调用方保留旧表）。
+// 目录不可达：报错（CLI 兜底由 syncZenModels 内部调 cliModelIDs 完成，
+// 纯函数这一层只返回错误）。
 func TestZenDesiredFromLiveRegistryUnreachable(t *testing.T) {
 	if _, err := zenDesiredFromLive(false, nil); err == nil {
-		t.Fatal("expected error when the registry is unreachable (no CLI fallback after harvester removal)")
+		t.Fatal("expected error when the registry is unreachable")
 	}
 }
 

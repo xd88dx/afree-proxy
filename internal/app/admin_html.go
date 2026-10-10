@@ -630,7 +630,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
     </div>
     <div class="table-wrap" style="margin-bottom:10px">
       <table>
-        <thead><tr><th style="width:50px">#</th><th style="width:110px">Key</th><th style="width:70px">Usage</th><th style="width:110px">Session</th><th>Cooldown</th><th title="Main / backup egress — isolation mode picks main first, then backup; both down = key skipped.">Proxy binding</th><th style="width:130px"></th><th style="text-align:center" title="Routing participation: unchecked keys never enter request rotation. Newly added keys start disabled — tick Pool to enable.">Pool</th></tr></thead>
+        <thead><tr><th style="width:50px">#</th><th style="width:110px">Key</th><th style="width:70px">Usage</th><th style="width:110px">Session</th><th>Cooldown</th><th title="Main / backup egress — isolation mode picks main first, then backup; both down = key skipped. The harvester also mints through the bound exit.">Proxy binding</th><th style="width:130px"></th><th style="text-align:center" title="Routing participation: unchecked keys never enter request rotation, and minting follows routing (a routing-disabled key is no longer auto-minted). Newly added keys start disabled — tick Pool to enable.">Pool</th></tr></thead>
         <tbody id="ocKeysBody"><tr><td colspan="8" class="empty">Loading...</td></tr></tbody>
       </table>
     </div>
@@ -687,13 +687,19 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
     <span id="ocSessSummary" class="probe-pill" style="font-weight:normal;margin-left:auto"></span>
   </div>
   <div class="section-body">
-    <p class="hint" style="margin-top:0" id="ocSessHint">The free tier accepts locally minted session IDs in the CLI format: the upstream gate is a stateless format check, so the gateway mints a valid ID per key on first use and keeps it sticky. Sessions persist in the data volume; a stuck ID is refreshed locally after repeated 403s.</p>
+    <p class="hint" style="margin-top:0" id="ocSessHint">The free tier only accepts session IDs the upstream has actually seen, minted by the opencode CLI. A key without a live session <b>always</b> fails with 403 — normally the harvester mints one on startup, on repeated 403s, and every few hours; use the buttons below to mint immediately (e.g. right after a fresh deploy with many keys).</p>
+    <div class="form-actions" style="margin-bottom:10px;align-items:center">
+      <button class="btn btn-primary" id="ocSessBtnMissing" onclick="mintZenSessions(false)">Mint missing sessions</button>
+      <button class="btn" id="ocSessBtnForce" onclick="mintZenSessions(true)">Force mint / refresh all</button>
+      <span class="hint" style="margin:0" id="ocSessTimer"></span>
+    </div>
     <div class="table-wrap">
       <table>
-        <thead><tr><th style="width:70px">Key</th><th style="width:130px">Session</th><th style="width:150px">State</th><th>Minted at</th></tr></thead>
+        <thead><tr><th style="width:70px">Key</th><th style="width:130px">Session</th><th style="width:150px">State</th><th>Last minted</th></tr></thead>
         <tbody id="ocSessBody"><tr><td colspan="4" class="empty">Loading...</td></tr></tbody>
       </table>
     </div>
+    <div id="ocSessResult" style="margin-top:10px"></div>
   </div>
 </div>
 
@@ -1249,6 +1255,7 @@ const I18N_ZH = {
   'cooldown until ': '冷却至 ',
   ' (seed)': '（种子）',
   ' failed': ' 失败',
+  ' minted': ' 成功',
   'Email (optional)': '邮箱（可选）',
   'Cancel': '取消',
   'The type is detected automatically — sk_... is pooled as a static API key, anything else as an OAuth refresh token.': '类型自动识别：sk_... 按静态 API key 入池，其余按 OAuth refreshToken 处理。',
@@ -1272,7 +1279,7 @@ const I18N_ZH = {
   'page.': ' 页配置。',
   'Counted locally by this proxy — not the official free quota': '本代理本地统计 —— 非官方免费额度',
   'Main / backup egress — isolation mode picks main first, then backup; both down = account skipped': '主/辅出口 —— 隔离模式先用主、再用辅；双不可用 = 跳过该账号',
-  'Main / backup egress — isolation mode picks main first, then backup; both down = key skipped.': '主/辅出口 —— 隔离模式先用主、再用辅；双不可用 = 跳过该 key。收割机铸造也走绑定出口。',
+  'Main / backup egress — isolation mode picks main first, then backup; both down = key skipped. The harvester also mints through the bound exit.': '主/辅出口 —— 隔离模式先用主、再用辅；双不可用 = 跳过该 key。收割机铸造也走绑定出口。',
   'Main exit — used whenever available': '主出口 —— 可用即优先',
   'Backup exit — used when main is cooling/removed': '辅出口 —— 主冷却/被删时使用',
   'Bound proxy is no longer in the proxy pool — the account is skipped until fixed': '绑定的代理已不在代理池中 —— 修复前该账号一直被跳过',
@@ -1432,7 +1439,7 @@ const I18N_ZH = {
   'Session': '会话',
   'live': 'live',
   'stale': '已失效',
-  'no session': '无会话',
+  'not minted': '未铸造',
   'no key': '无 key',
   'cooling': '冷却中',
   ' · until ': ' · 至 ',
@@ -1450,8 +1457,19 @@ const I18N_ZH = {
   'Summary cap': '摘要上限',
   'Save compaction config': '保存压缩配置',
   'Live session IDs (OpenCode FreeTier gate)': 'Live 会话 ID（OpenCode FreeTier 门槛）',
-  'The free tier accepts locally minted session IDs in the CLI format: the upstream gate is a stateless format check, so the gateway mints a valid ID per key on first use and keeps it sticky. Sessions persist in the data volume; a stuck ID is refreshed locally after repeated 403s.': '免费层接受本地铸造的 CLI 格式会话 ID：上游门槛是无状态格式检查，网关为每个 key 首次使用时铸造合法 ID 并保持粘性。会话持久化在数据卷中；反复 403 时本地换新。',
+  'The free tier only accepts session IDs the upstream has actually seen, minted by the opencode CLI. A key without a live session': '免费层只接受上游真实见过的会话 ID（由 OpenCode CLI 铸造）。没有 live 会话的 key ',
+  'always': '必定',
+  'The free tier only accepts session IDs the upstream has actually seen, minted by the opencode CLI. A key without a live session <b>always</b> fails with 403.': '免费层只接受上游真实见过的会话 ID（由 OpenCode CLI 铸造）。没有 live 会话的 key <b>必定</b> 403 失败。',
+  'Auto-refresh every {h}h (kept below the 5h quota window), minting {n} key(s) at a time': '每 {h} 小时自动刷新一次（保持在 5 小时配额窗口内），每次并行铸造 {n} 个 key',
+  ' (one after another — safest on small instances, the CLI is CPU/RAM hungry)': '（串行铸造——小实例上最稳妥，CLI 很吃 CPU/内存）',
+  'Harvester unavailable': '收割机不可用',
+  ' — no opencode CLI in this container (ZEN_HARVEST_BIN).': '：容器内没有 opencode CLI（ZEN_HARVEST_BIN）。',
   '.': '。',
+  'fails with 403 — normally the harvester mints one on startup, on repeated 403s, and every few hours; use the buttons below to mint immediately (e.g. right after a fresh deploy with many keys).': ' 会以 403 失败 —— 正常情况下收割机会在启动时、反复 403 时和每隔几小时自动补铸；也可用下方按钮立即铸造（例如刚部署、key 很多时）。',
+  'Mint missing sessions': '铸造缺失的会话',
+  'Force mint / refresh all': '强制重铸全部',
+  'opencode CLI not available in this container': '本容器内没有 OpenCode CLI',
+  'Last minted': '上次铸造',
   'Context': '上下文',
   'Maximum context length': '最大上下文长度',
   'OpenCode stats': 'OpenCode 统计',
@@ -1477,7 +1495,7 @@ const I18N_ZH = {
   'Pool': '启用',
   'Participates in rotation': '参与轮换',
   'Routing participation. Newly added accounts start unchecked — tick Pool to join rotation.': '路由参与开关。新增账号默认不勾选，勾选 Pool 后才参与轮换。',
-  'Routing participation: unchecked keys never enter request rotation. Newly added keys start disabled — tick Pool to enable.': '路由参与开关：不勾选的 key 不进入请求轮转，铸造跟随路由（路由禁用的 key 不再自动铸造）。新增 key 默认禁用，勾选 Pool 后启用。',
+  'Routing participation: unchecked keys never enter request rotation, and minting follows routing (a routing-disabled key is no longer auto-minted). Newly added keys start disabled — tick Pool to enable.': '路由参与开关：不勾选的 key 不进入请求轮转，铸造跟随路由（路由禁用的 key 不再自动铸造）。新增 key 默认禁用，勾选 Pool 后启用。',
   'Participates in rotation. Newly added accounts start disabled — tick Pool to join rotation.': '参与轮换。新增账号默认禁用，勾选 Pool 后才参与轮换。',
   'Save failed: ': '保存失败：',
   'Test failed: ': '测试失败：',
@@ -1490,6 +1508,7 @@ const I18N_ZH = {
   'Add failed: ': '添加失败：',
   'Import failed: ': '导入失败：',
   'Create failed: ': '创建失败：',
+  'Mint failed: ': '铸造失败：',
   'Failed to load accounts: ': '账号加载失败：',
   'Failed to load: ': '加载失败：',
   'Account deleted': '账号已删除',
@@ -1531,6 +1550,17 @@ const I18N_ZH = {
   'OAuth failed: ': 'OAuth 登录失败：',
   'Testing': '测试中',
   'Checking': '检查中',
+  'Force minting all sessions…': '正在强制重铸全部会话…',
+  'Minting missing sessions…': '正在铸造缺失的会话…',
+  'last mint ': '上次铸造 ',
+  ' (force)': '（强制）',
+  'Running — ': '进行中 —— ',
+  ' minted, ': ' 成功, ',
+  ' failed, ': ' 失败, ',
+  ' pending': ' 待处理',
+  'Done — ': '完成 —— ',
+  ' already live': ' 已是 live',
+  ' skipped (already live)': ' 跳过（已是 live）',
   'Recovers ': '恢复于 ',
   'No opencode keys configured': '没有配置任何 opencode key',
   'Failed to load': '加载失败',
@@ -3511,7 +3541,7 @@ function renderOcKeyStates(ks) {
     ? ks.map(k => {
         const st = k.sessionLive
           ? '<span style="color:var(--accent2)">live</span>'
-          : '<span style="color:var(--danger)">no session</span>';
+          : (k.sessionMinted ? '<span style="color:var(--danger)">stale</span>' : '<span style="color:var(--danger)">not minted</span>');
         const cool = k.cooling
           ? '<span style="color:var(--danger)">' + T('cooling') + (k.cooldownUntil ? T(' · until ') + esc(fmtWhen(k.cooldownUntil)) : '') + '</span>'
           : '<span style="color:var(--text2)">-</span>';
@@ -3834,7 +3864,8 @@ async function loadOcModels() {
 }
 
 // ========== Live session IDs (zen FreeTier gate) ==========
-// 本地铸造时代：表格只读展示（哪些 key 已有粘性会话），无手动 mint 入口。
+// 未 mint 的 key 必 403；表格让"哪些 key 还是空会话"一眼可见，按钮给手动补收口。
+let ocSessPoll = null;
 
 async function loadOcSessions() {
   try {
@@ -3850,19 +3881,99 @@ function renderOcSessions(s) {
     ? '<span style="color:' + (s.liveCount === s.total ? 'var(--accent2)' : 'var(--danger)') + '">' +
       s.liveCount + '/' + s.total + ' live</span>'
     : '';
+  // 刷新节奏与并发写进提示行：用户据此判断"自动维护是否够用"，以及
+  // 调 ZEN_HARVEST_INTERVAL_HOURS / ZEN_HARVEST_CONCURRENCY 要不要改。
+  // 本区域是 innerHTML 整段重写，静态词条不生效——每段直接走 T() 字典。
+  const h = _('ocSessHint');
+  if (h) {
+    let html = T('The free tier only accepts session IDs the upstream has actually seen, minted by the opencode CLI. A key without a live session <b>always</b> fails with 403.');
+    if (s.harvestEnabled) {
+      html += ' ' + T('Auto-refresh every {h}h (kept below the 5h quota window), minting {n} key(s) at a time')
+          .replace('{h}', s.intervalHours || 4)
+          .replace('{n}', s.concurrency || 1);
+      if ((s.concurrency || 1) === 1) html += T(' (one after another — safest on small instances, the CLI is CPU/RAM hungry)');
+      html += T('.');
+    } else {
+      html += ' <b>' + T('Harvester unavailable') + '</b>' + T(' — no opencode CLI in this container (ZEN_HARVEST_BIN).');
+    }
+    h.innerHTML = html;
+  }
+  // CLI 不在时后端会以 400 拒绝 mint，按钮先禁用，避免点了才发现。
+  const usable = !!s.harvestEnabled;
+  ['ocSessBtnMissing', 'ocSessBtnForce'].forEach(id => {
+    const b = _(id);
+    if (b) { b.disabled = !usable; b.title = usable ? '' : 'opencode CLI not available in this container'; }
+  });
   _('ocSessBody').innerHTML = rows.length
     ? rows.map(k => {
         const state = k.noKey
           ? '<span style="color:var(--text2)">no key</span>'
           : (k.live
               ? '<span style="color:var(--accent2)">live</span>'
-              : '<span style="color:var(--danger)">not minted</span>');
+              : (k.minted ? '<span style="color:var(--danger)">stale</span>' : '<span style="color:var(--danger)">not minted</span>'));
         return '<tr><td>#' + (k.index + 1) + '</td>' +
           '<td style="font-family:monospace;font-size:11px">' + (k.session ? esc(k.session) + '…' : '-') + '</td>' +
           '<td>' + state + '</td>' +
-          '<td style="font-size:12px">' + (k.createdAt ? esc(fmtWhen(k.createdAt)) : '-') + '</td></tr>';
+          '<td style="font-size:12px">' + (k.harvested ? esc(fmtWhen(k.harvested)) : '-') + '</td></tr>';
       }).join('')
     : '<tr><td colspan="4" class="empty">No opencode keys configured</td></tr>';
+
+  const j = s.job;
+  if (!j) { _('ocSessTimer').textContent = ''; return; }
+  if (j.running) {
+    _('ocSessTimer').innerHTML = '<span style="color:var(--accent)">minting ' + (j.done || 0) + '/' + (j.total || 0) + '…</span>';
+    renderOcMintResults(j.results || [], true);
+  } else {
+    _('ocSessTimer').textContent = T('last mint ') + fmtWhen(j.startedAt) + (j.force ? T(' (force)') : '');
+    renderOcMintResults(j.results || [], false);
+  }
+}
+
+function renderOcMintResults(results, running) {
+  if (!results.length) { _('ocSessResult').innerHTML = ''; return; }
+  const ok = results.filter(r => r.ok).length;
+  const skipped = results.filter(r => r.skipped).length;
+  const fail = results.filter(r => r.done && !r.ok && !r.skipped).length;
+  const pending = results.filter(r => !r.done).length;
+  const head = running
+    ? '<span style="color:var(--accent)">' + T('Running — ') + ok + T(' minted, ') + fail + T(' failed, ') + pending + T(' pending') + '</span>'
+    : (fail
+        ? '<span style="color:var(--danger)">' + T('Done — ') + ok + T(' minted, ') + fail + T(' failed') + (skipped ? T(', ') + skipped + T(' skipped (already live)') : '') + '</span>'
+        : '<span style="color:var(--accent2)">' + T('Done — ') + ok + T(' minted') + (skipped ? ', ' + skipped + T(' already live') : '') + '</span>');
+  const details = results.filter(r => r.done && !r.ok && !r.skipped)
+    .map(r => '#' + (r.index + 1) + ': ' + esc(r.error || 'failed')).join(' | ');
+  _('ocSessResult').innerHTML = '<div style="font-size:12px">' + head + '</div>' +
+    (details ? '<div class="hint" style="margin-top:4px">' + details + '</div>' : '');
+}
+
+async function mintZenSessions(force) {
+  try {
+    await api('POST', '/opencode/sessions/mint', { force: force });
+    toast(force ? 'Force minting all sessions…' : 'Minting missing sessions…', 'success');
+    // 任务在后端跑（串行 mint 时一批是 key 数 × 每 key 预算），按 2s 轮询进度。
+    // 上限按后端批次预算推算：并发默认为 1 后 11 个 key 的批次上限可达几十分钟，
+    // 写死 450 次（15 分钟）会让轮询提前停掉、进度条卡住不再更新。
+    if (ocSessPoll) { clearInterval(ocSessPoll); ocSessPoll = null; }
+    let ticks = 0;
+    const s0 = await loadOcSessions();
+    // 提前返回前必须把 ocSessPoll 置空：可见标签页的 20s 轮询用 !ocSessPoll
+    // 判断"是否已有轮询在跑"，留一个已 clear 的非空句柄会让它永久停摆。
+    if (!s0 || !s0.job || !s0.job.running) { ocSessPoll = null; return; }
+    const j0 = s0.job;
+    const workers = Math.max(1, s0.concurrency || 1);
+    const perKey = s0.keyTimeoutSeconds || 150;
+    // 下限 15 分钟与后端 harvestBatchTimeout 的下限对齐：key 少时后端照样跑满
+    // 15 分钟，而 ceil(total/workers)×perKey 只有几分钟，不夹下限轮询会在后端
+    // 放弃之前就停掉（之后只剩 20s 的可见标签页轮询，进度更新变粗）。
+    const batchSeconds = Math.max(900, Math.ceil((j0.total || 1) / workers) * perKey + 120);
+    const maxTicks = Math.min(1800, Math.ceil(batchSeconds / 2) + 30);
+    ocSessPoll = setInterval(async () => {
+      const s = await loadOcSessions();
+      if (!s || !s.job || !s.job.running || ++ticks >= maxTicks) {
+        clearInterval(ocSessPoll); ocSessPoll = null; loadOcConfig();
+      }
+    }, 2000);
+  } catch (e) { toast(T('Mint failed: ') + e.message, 'error'); }
 }
 
 // ========== Combos (alias models) ==========
@@ -3969,8 +4080,9 @@ enableRowDragReorder('wbAccountsBody', ids => api('POST', '/workbuddy/reorder', 
 setInterval(() => { if (_('tab-dashboard').style.display !== 'none') loadStats(); }, 10000);
 setInterval(() => { loadOcStats(); }, 15000);
 // live 会话状态：只在 opencode 页可见时轮询（与日志页同样的省流约定）。
+// mint 任务进行中由 mintZenSessions 自己的 2s 轮询接管。
 setInterval(() => {
-  if (_('tab-opencode').style.display !== 'none') loadOcSessions();
+  if (_('tab-opencode').style.display !== 'none' && !ocSessPoll) loadOcSessions();
 }, 20000);
 setInterval(() => { if (logsAuto && _('tab-logs').style.display !== 'none') loadLogs(); }, 8000);
 </script>
