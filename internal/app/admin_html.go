@@ -718,6 +718,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
     <h2 style="margin-bottom:4px">WorkBuddy</h2>
     <div class="hint" id="wbSummary" style="margin:0">Loading...</div>
   </div>
+  <a class="btn btn-sm" href="/admin/workbuddy/" target="_blank" rel="noopener" style="align-self:flex-start">Original panel</a>
 </div>
 
 <div class="section">
@@ -1016,6 +1017,7 @@ const fmtTokens = n => {
 let LANG = localStorage.getItem('lang') === 'zh' ? 'zh' : 'en';
 const I18N_ZH = {
   // WorkBuddy native admin console
+  'Original panel': '原版入口',
   'Task center': '任务中心',
   'Refresh all': '全部刷新',
   'Refresh all account balances': '刷新全部账号的余额',
