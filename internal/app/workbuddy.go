@@ -30,7 +30,7 @@ import (
 	wbusage "afree-proxy/internal/workbuddy/usage"
 )
 
-const workbuddyVersion = "1.12.0-panel+afree"
+const workbuddyVersion = "1.13.0-panel+afree"
 
 // workbuddySubsystem 把源项目的账号池/熔断/调度/面板/兼容接口作为独立子系统
 // 挂在现有 afree-proxy 上。账号凭证与状态落在 data/workbuddy/ 下，不与 Cline

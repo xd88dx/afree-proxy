@@ -35,7 +35,7 @@ PACKAGES = (
     "redisstore",
 )
 
-ASSET_SUFFIXES = (".go", ".md", ".json", ".html", ".js")
+ASSET_SUFFIXES = (".go", ".md", ".json", ".html", ".js", ".txt")
 
 # Runtime fields consumed by the afree-proxy egress adapter in upstream/proxy.go.
 # Keep them in the vendored Client rather than preserving the whole upstream file,
@@ -190,8 +190,10 @@ def main(source_root=None, target_root=None, preserve_from=None) -> int:
             continue  # absent in this source snapshot (historical baseline)
         target_dir = pkg / package
         target_dir.mkdir(parents=True, exist_ok=True)
-        for source_file in sorted(p for p in source_dir.iterdir() if p.is_file() and p.suffix in ASSET_SUFFIXES):
-            target_file = target_dir / source_file.name
+        for source_file in sorted(p for p in source_dir.rglob("*") if p.is_file() and p.suffix in ASSET_SUFFIXES):
+            rel = source_file.relative_to(source_dir)
+            target_file = target_dir / rel
+            target_file.parent.mkdir(parents=True, exist_ok=True)
             text = source_file.read_text(encoding="utf-8")
             new_text = text
             if source_file.suffix == ".go":
