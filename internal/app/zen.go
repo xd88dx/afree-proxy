@@ -135,6 +135,13 @@ func resolveZenModel(id string) (*ZenModel, bool) {
 			return m, true
 		}
 	}
+	// 弃用别名兜底：原始 ID 从模型表移除后（410 迁移过）落到继任模型。
+	// 真实模型永远优先于别名——前面所有分支都没命中才会走到这里。
+	if repl := zenDeprecatedReplacement(id); repl != "" {
+		if m, ok := zenModels[repl]; ok {
+			return m, true
+		}
+	}
 	return nil, false
 }
 
@@ -227,6 +234,12 @@ func routeModel(id string) string {
 		return c.Platform
 	}
 	initZenModels()
+	// 上游 400 "Model is unavailable" 的死亡标记：直接拒绝，不再每次请求
+	// 都白烧一个上游往返。下次目录同步成功后自动解除。
+	if zenModelDead(id) {
+		log.Printf("  route: %q marked unavailable by upstream, rejecting until next catalog sync", id)
+		return "reject"
+	}
 	if zm, ok := resolveZenModel(id); ok {
 		if isZenFreeModel(zm) {
 			// 与 cline 模型表冲突时(几乎不可能)走 cline
@@ -1880,6 +1893,7 @@ func callZenResponsesAPI(ctx context.Context, params map[string]any, stream bool
 	delay := time.Second
 	rateLimited := 0
 	retryKey := "" // 非空时重试沿用该 key（保持 key sess_ 一致）
+	remapped := false // 410 弃用迁移至多一次，防别名链循环
 
 	for attempt := 0; ; attempt++ {
 		// 先选 key：attempt==0 或尚无粘性 key 时轮转；重试链内沿用
@@ -2060,6 +2074,25 @@ func callZenResponsesAPI(ctx context.Context, params map[string]any, stream bool
 				}
 			}
 		}
+		// 弃用迁移（410 + replacement / 400 unavailable）：非 pin 探测才迁移——
+		// 探测的结论只属于这次点击，不得改写共享状态。
+		if resp.StatusCode == http.StatusGone || resp.StatusCode == http.StatusBadRequest {
+			if migrated := zenHandleDeprecatedModel(resp.StatusCode, bodyBytes, zm.ID, params, o.pinKey != "", remapped); migrated {
+				remapped = true
+				// params["model"] 已改写为继任模型；重建 body 后就地重试。
+				body = buildZenResponsesBody(params, params["model"].(string), sess)
+				bodyJSON, err = json.Marshal(body)
+				if err != nil {
+					return nil, rateLimited, fmt.Errorf("marshal zen responses body: %w", err)
+				}
+				zm, _ = resolveZenModel(params["model"].(string))
+				if zm == nil {
+					// 极窄竞态（继任模型刚被目录修剪）：退回原错误，不裸解引用。
+					return nil, rateLimited, apiErr
+				}
+				continue
+			}
+		}
 		return nil, rateLimited, apiErr
 	}
 }
@@ -2102,6 +2135,7 @@ func callZenAPI(ctx context.Context, params map[string]any, stream bool, opts ..
 	}
 	delay := time.Second
 	rateLimited := 0
+	remapped := false // 410 弃用迁移至多一次，防别名链循环
 
 	for attempt := 0; ; attempt++ {
 		// 先选 key 再解析出口：隔离模式要求出口由 key 的绑定决定（同一 key
@@ -2255,6 +2289,19 @@ func callZenAPI(ctx context.Context, params map[string]any, stream bool, opts ..
 				continue
 			}
 		}
+		// 弃用迁移（410 + replacement / 400 unavailable）：非 pin 探测才迁移；
+		// 迁移成功则重建 body 就地重试（至多一次）。
+		if resp.StatusCode == http.StatusGone || resp.StatusCode == http.StatusBadRequest {
+			if migrated := zenHandleDeprecatedModel(resp.StatusCode, bodyBytes, body["model"].(string), params, o.pinKey != "", remapped); migrated {
+				remapped = true
+				body = buildZenBody(params, stream)
+				bodyJSON, err = json.Marshal(body)
+				if err != nil {
+					return nil, rateLimited, fmt.Errorf("marshal zen body: %w", err)
+				}
+				continue
+			}
+		}
 		return nil, rateLimited, apiErr
 	}
 }
@@ -2297,6 +2344,13 @@ func zenRetryDelay(d time.Duration) time.Duration {
 
 func zenModelList() []map[string]any {
 	initZenModels()
+	// 别名表先快照（zenDepMu 不与 zenModelsMu 嵌套）。
+	depAliases := map[string]string{}
+	zenDepMu.Lock()
+	for dead, e := range zenDepAliases {
+		depAliases[dead] = e.Replacement
+	}
+	zenDepMu.Unlock()
 	zenModelsMu.RLock()
 	out := make([]map[string]any, 0, len(zenModels))
 	for _, m := range zenModels {
@@ -2304,7 +2358,7 @@ func zenModelList() []map[string]any {
 			continue
 		}
 		cp := *m
-		out = append(out, map[string]any{
+		entry := map[string]any{
 			"id":        cp.ID,
 			"context":   cp.Context,
 			"output":    cp.Output,
@@ -2313,7 +2367,11 @@ func zenModelList() []map[string]any {
 			"toolCall":  cp.ToolCall,
 			"reasoning": cp.Reasoning,
 			"attach":    cp.Attach,
-		})
+		}
+		if repl, dep := depAliases[cp.ID]; dep {
+			entry["replacedBy"] = repl
+		}
+		out = append(out, entry)
 	}
 	zenModelsMu.RUnlock()
 	return out
@@ -2322,6 +2380,9 @@ func zenModelList() []map[string]any {
 // opencodeModelsRegistry 公共模型目录（官方 CLI 同源，无需认证；
 // 替代 zen /v1/models，后者用 "public" key 恒失败，只能靠种子兜底）。
 const opencodeModelsRegistry = "https://models.opencode.ai/api.json"
+
+// zenRegistryURL 可测试覆写：默认指向公共目录，测试指向 httptest 服务。
+var zenRegistryURL = opencodeModelsRegistry
 
 // zenModelOverlay 公共目录里比 zen 真源多的限额/旗标字段。
 type zenModelOverlay struct {
@@ -2339,7 +2400,7 @@ type zenModelOverlay struct {
 func fetchZenRegistry() (map[string]zenModelOverlay, map[string]bool, bool) {
 	overlay := map[string]zenModelOverlay{}
 	freeGate := map[string]bool{}
-	oreq, err := http.NewRequest("GET", opencodeModelsRegistry, nil)
+	oreq, err := http.NewRequest("GET", zenRegistryURL, nil)
 	if err != nil {
 		return overlay, freeGate, false
 	}
@@ -2456,6 +2517,10 @@ func syncZenModels() (int, error) {
 	// 重新敷用已学习的端点覆盖：新出现的模型（以及被 prune 后重建的条目）不在
 	// 启动时 loadZenEndpoints 的视野里，不敷用就会每次重启重新探测一遍。
 	reapplyLearnedEndpoints()
+	// 目录刷新成功：解除上游 400 "Model is unavailable" 的死亡标记（此前可能
+	// 只是目录滞后），并清理指向已不存在模型的别名/标记。
+	zenClearDeadModels()
+	pruneZenDeadAndAliases(desired)
 	if added > 0 {
 		log.Printf("zen model sync: %d new free model(s) from live catalog", added)
 	}

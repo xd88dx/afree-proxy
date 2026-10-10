@@ -58,6 +58,50 @@ func (e *zenHTTPError) Error() string {
 	return fmt.Sprintf("zen API %d: %s", e.Status, e.Body)
 }
 
+// zenDeprecationFromError 从上游非 2xx 答复里识别弃用信号：
+//   - 410 + body 带 "replacement":"<id>"（实测 mimo-v2.5-free 形态）→ 返回继任 ID；
+//   - 400 + "model is unavailable" / "modeldeprecated"（实测 qwen3.6-plus-free
+//     形态）→ 返回 ""（死亡标记由调用方带上模型 ID 完成）；
+//   - 其余 → ""。
+//
+// 只有这两个 status 会触发判定：其他状态码即使错误体带 "replacement" 字样
+// （部分通用错误的 suggestion 类字段）也绝不误判。
+func zenDeprecationFromError(status int, body string) (replacement string) {
+	low := strings.ToLower(body)
+	switch status {
+	case http.StatusGone:
+		if repl := zenExtractReplacement(body); repl != "" {
+			return repl
+		}
+	case http.StatusBadRequest:
+		if strings.Contains(low, "model is unavailable") || strings.Contains(low, "modeldeprecated") {
+			// 死亡标记由调用方带上模型 ID 完成（这里没有模型上下文）。
+			return ""
+		}
+	}
+	return ""
+}
+
+// zenExtractReplacement 从 410 响应体提取 "replacement":"<id>"（宽松 JSON 提取，
+// 不依赖完整反序列化成功）。
+func zenExtractReplacement(body string) string {
+	var probe struct {
+		Replacement string `json:"replacement"`
+		Error       struct {
+			Replacement string `json:"replacement"`
+		} `json:"error"`
+	}
+	if json.Unmarshal([]byte(body), &probe) == nil {
+		if probe.Replacement != "" {
+			return probe.Replacement
+		}
+		if probe.Error.Replacement != "" {
+			return probe.Error.Replacement
+		}
+	}
+	return ""
+}
+
 // isWrongEndpoint 上游错误是否呈"走错端点"特征。
 // 判定严格基于状态码：
 //   - 500：实测 spark 在 chat 端点上就是裸 500（body 是通用 Internal server error），
