@@ -14,7 +14,10 @@ import (
 	"sync/atomic"
 	"time"
 
+	"afree-proxy/internal/amd"
 	"afree-proxy/internal/kit"
+	openrouter "afree-proxy/internal/openrouter"
+	"afree-proxy/internal/tokenharbor"
 )
 
 // routeStat 网关请求计数（进程生命周期，仅 /v1/ 路径）：请求数、错误数、
@@ -26,7 +29,7 @@ type routeStat struct {
 }
 
 var (
-	routeStats    = map[string]*routeStat{"cline": {}, "zen": {}, "workbuddy": {}}
+	routeStats    = map[string]*routeStat{"cline": {}, "zen": {}, "workbuddy": {}, "openrouter": {}, "amd": {}, "tokenharbor": {}}
 	reqStatsStart = time.Now()
 )
 
@@ -291,10 +294,16 @@ func requestLogMiddleware(next http.Handler) http.Handler {
 		switch {
 		case strings.HasPrefix(r.URL.Path, "/admin") || strings.Contains(r.URL.Path, "health"):
 			route = "admin"
-		case strings.HasPrefix(model, "zen/") || strings.HasPrefix(model, "opencode/"):
+		case strings.HasPrefix(model, ZenModelPrefix) || strings.HasPrefix(model, "opencode/") || strings.HasPrefix(model, "zen/"):
 			route = "zen"
 		case shouldServeWorkBuddy(model):
 			route = "workbuddy"
+		case openrouter.HasPrefix(model):
+			route = "openrouter"
+		case amd.HasPrefix(model):
+			route = "amd"
+		case tokenharbor.HasPrefix(model):
+			route = "tokenharbor"
 		case model != "":
 			route = "cline"
 		case strings.Contains(r.URL.Path, "models"):

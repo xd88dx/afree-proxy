@@ -59,6 +59,9 @@ func (w *workbuddySubsystem) serveWorkBuddyChatHTTP(ctx context.Context, src *ht
 	if w == nil || w.server == nil {
 		return nil, func() {}, fmt.Errorf("WorkBuddy subsystem unavailable")
 	}
+	// 网关前缀 → vendor realm 前缀（wbcn:/wbgb: → cn:/global:），
+	// vendor 只认自己的模型协议。
+	body = workbuddyRewriteModel(body)
 	reader, writer := io.Pipe()
 	pipeWriter := newWorkbuddyPipeWriter(writer)
 	req := src.Clone(ctx)

@@ -204,6 +204,41 @@ func syncRecommendedModels() (int, error) {
 	return added, nil
 }
 
+// clineModelPrefix Cline 免费模型的命名空间前缀（官方 feed 里 cline-free/*
+// 自带、poolside/*、z-ai/* 等不带）。网关对外统一用这个前缀标识 Cline 平台，
+// 与 zen: / oprt: / wbcn: / wbgb: 保持同一套"前缀即平台"的约定。
+const clineModelPrefix = "cline-free/"
+
+// displayClineModelID 对外展示/调用的 Cline 模型 ID：已带 cline-free/ 前缀的
+// 原样返回（官方 feed 的 cline-free/* 条目），其余（poolside/*、z-ai/* …）
+// 补上前缀，避免与 zen:/oprt: 前缀平台的裸名混淆。
+func displayClineModelID(id string) string {
+	id = strings.TrimSpace(id)
+	if id == "" || strings.HasPrefix(id, clineModelPrefix) {
+		return id
+	}
+	return clineModelPrefix + id
+}
+
+// canonicalClineModelID 请求侧归一化：剥掉 cline-free/ 前缀还原 feed 真实 ID。
+// 两种形态（带/不带前缀）都接受，解析到同一条目。
+func canonicalClineModelID(id string) string {
+	return strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(id), clineModelPrefix))
+}
+
+// modelInClineList 判断（归一化后的）模型 ID 是否在 Cline 免费模型表内。
+func modelInClineList(id string) bool {
+	id = canonicalClineModelID(id)
+	if id == "" {
+		return false
+	}
+	initModelsCache()
+	modelsMu.Lock()
+	_, ok := modelsCache[id]
+	modelsMu.Unlock()
+	return ok
+}
+
 func indexByte(s string, b byte) int {
 	for i := 0; i < len(s); i++ {
 		if s[i] == b {
@@ -271,27 +306,23 @@ func normalizeRequestModel(id string) string {
 	if id == "" {
 		return getDefaultModel()
 	}
-	initModelsCache()
-	modelsMu.Lock()
-	_, ok := modelsCache[id]
-	modelsMu.Unlock()
-	if ok {
-		return id
+	// cline-free/ 前缀是展示层约定：请求侧两种形态都还原成 feed 真实 ID，
+	// 出站请求体与账号池记账一律用真实 ID。
+	if canonical := canonicalClineModelID(id); modelInClineList(canonical) {
+		return canonical
 	}
 	log.Printf("  model %q not in free list, fallback to %q", id, getDefaultModel())
 	return getDefaultModel()
 }
 
+// modelInFreeList 门控放行判定：空串放行（让调用方按默认模型处理），
+// 否则 Cline 表（带/不带 cline-free/ 前缀都认）或 zen 模型命中即放行。
 func modelInFreeList(id string) bool {
 	id = strings.TrimSpace(id)
 	if id == "" {
 		return true
 	}
-	initModelsCache()
-	modelsMu.Lock()
-	_, ok := modelsCache[id]
-	modelsMu.Unlock()
-	return ok
+	return modelInClineList(id)
 }
 
 // strictModelGate STRICT_MODEL_MATCH 开启时，对既不在 cline 免费模型表、
@@ -337,7 +368,9 @@ func apiModelList() []map[string]any {
 	out := make([]map[string]any, 0, len(modelsCache))
 	for _, m := range getFreeModels() {
 		out = append(out, map[string]any{
-			"id":             m.ID,
+			// cline-free/ 前缀：feed 自带前缀的条目（cline-free/*）原样，
+			// 其余（poolside/*、z-ai/* …）补上，对外统一前缀标识平台。
+			"id":             displayClineModelID(m.ID),
 			"object":         "model",
 			"created":        time.Now().UnixMilli(),
 			"owned_by":       m.Provider,

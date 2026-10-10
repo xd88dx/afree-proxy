@@ -88,6 +88,26 @@ var zenGraceModels = map[string]zenGraceEntry{} // 读写均走 zenModelsMu
 
 const zenAPIBase = "https://opencode.ai/zen/v1"
 
+// ZenModelPrefix zen 免费模型的网关前缀（与 workbuddy 的 cn:/global:、
+// openrouter 的 or: 同思路）：平台越来越多，加前缀让客户端在模型列表里
+// 一眼分清归属，也避免与 Cline 免费模型表里的同名条目（如
+// cline-free/laguna 之类）静默冲突。裸模型名（无前缀）仍照旧解析——
+// 存量 IDE 配置与 combo target 不受影响。
+const ZenModelPrefix = "zen:"
+
+// zenCanonicalID 归一化模型 ID：剥掉 zen: 前缀与遗留的 opencode/ 前缀，
+// 返回目录里的真实 ID。所有解析入口（resolveZenModel / 冲突判定 /
+// 出站改写）先过它，保证带不带前缀走同一条路。
+func zenCanonicalID(id string) string {
+	id = strings.TrimSpace(id)
+	id = strings.TrimPrefix(id, ZenModelPrefix)
+	id = strings.TrimPrefix(id, "opencode/")
+	return id
+}
+
+// zenPrefixedID 把目录 ID 加上网关前缀（/v1/models 输出用）。
+func zenPrefixedID(id string) string { return ZenModelPrefix + id }
+
 func initZenModels() {
 	zenModelsMu.Lock()
 	defer zenModelsMu.Unlock()
@@ -103,10 +123,11 @@ func initZenModels() {
 	}
 }
 
-// resolveZenModel 解析模型名到 zen 模型。支持 "opencode/<id>" 前缀与别名。
-// 别名优先: 同步来的付费同名模型(如 deepseek-v4-flash)不会覆盖 free 别名解析。
+// resolveZenModel 解析模型名到 zen 模型。支持 "zen:" 前缀、遗留的
+// "opencode/" 前缀与裸 ID，以及别名。前缀与别名都可解析：面板与
+// /v1/models 输出 zen:<id>，存量配置用裸 id 继续可用。
 func resolveZenModel(id string) (*ZenModel, bool) {
-	id = strings.TrimSpace(id)
+	id = zenCanonicalID(id)
 	if id == "" {
 		return nil, false
 	}
@@ -115,25 +136,11 @@ func resolveZenModel(id string) (*ZenModel, bool) {
 	if m, ok := zenAliases[id]; ok {
 		return m, true
 	}
-	if strings.HasPrefix(id, "opencode/") {
-		short := strings.TrimPrefix(id, "opencode/")
-		if m, ok := zenAliases[short]; ok {
-			return m, true
-		}
-		if m, ok := zenModels[short]; ok {
-			return m, true
-		}
-	}
 	if m, ok := zenModels[id]; ok {
 		return m, true
 	}
 	if m, ok := resolveZenGrace(id); ok {
 		return m, true
-	}
-	if strings.HasPrefix(id, "opencode/") {
-		if m, ok := resolveZenGrace(strings.TrimPrefix(id, "opencode/")); ok {
-			return m, true
-		}
 	}
 	// 弃用别名兜底：原始 ID 从模型表移除后（410 迁移过）落到继任模型。
 	// 真实模型永远优先于别名——前面所有分支都没命中才会走到这里。
@@ -2357,7 +2364,8 @@ func zenModelList() []map[string]any {
 		}
 		cp := *m
 		entry := map[string]any{
-			"id":        cp.ID,
+			// 网关前缀（zen:<id>）：客户端按列表 ID 直接调用；裸 ID 仍兼容。
+			"id":        zenPrefixedID(cp.ID),
 			"context":   cp.Context,
 			"output":    cp.Output,
 			"source":    cp.Source,

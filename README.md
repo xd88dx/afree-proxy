@@ -1,8 +1,8 @@
 # AFree Proxy
 
-A single Go binary that turns free upstream LLM quotas (Cline accounts + opencode zen free models + WorkBuddy accounts) into one clean **OpenAI-compatible `/v1` gateway** for coding IDEs — Cursor, ZCode, Cline, Claude Code, OpenClaw — with account pooling, per-request proxy rotation, and an English admin panel.
+A single Go binary that turns free upstream LLM quotas (Cline accounts + opencode zen free models + WorkBuddy accounts + OpenRouter / AMD / TokenHarbor free models) into one clean **OpenAI-compatible `/v1` gateway** for coding IDEs — Cursor, ZCode, Cline, Claude Code, OpenClaw — with account pooling, per-request proxy rotation, and an English admin panel.
 
-Fork-in-progress of [YuJunZhiXue/Cline-proxy](https://github.com/YuJunZhiXue/Cline-proxy), reworked for solo public deployment. This project is not affiliated with Cline, opencode, Tencent, or WorkBuddy; use their free tiers respectfully.
+Fork-in-progress of [YuJunZhiXue/Cline-proxy](https://github.com/YuJunZhiXue/Cline-proxy), reworked for solo public deployment. This project is not affiliated with Cline, opencode, Tencent, WorkBuddy, OpenRouter, AMD, or TokenHarbor; use their free tiers respectfully.
 
 ## What it does
 
@@ -11,16 +11,19 @@ Cursor / ZCode / Cline / Claude Code ──►  afree-proxy  ──►  cline ac
    /v1/chat/completions                        │
    /v1/messages (Anthropic)                    ├─►  opencode zen free models (multi-key, proxy pool)
    /v1/responses (OpenAI Responses)            ├─►  WorkBuddy accounts (OAuth, pool, scheduler)
-   /v1/models                                  └─►  egress socks5/http proxy pool (rotation or identity binding)
+   /v1/models                                  ├─►  OpenRouter free models (multi-key, oprt: prefix)
+                                                ├─►  AMD Radeon Cloud free APIs (multi-key, amd: prefix)
+                                                └─►  egress socks5/http proxy pool (rotation or identity binding)
 ```
 
-- **One endpoint, all upstreams.** The gateway inspects the requested `model` and routes it: `cn:` / `global:` models go to WorkBuddy, zen free models (`mimo-v2.5-free`, `nemotron-3-ultra-free`, …) go to opencode zen, paid zen models are rejected with a clear 400, and everything else goes to the Cline account pool. Combos let you define your own alias model IDs on the supported platforms.
-- **WorkBuddy inside the same gateway.** The `OpenCode → WorkBuddy` page embeds the upstream panel for OAuth account login, account pooling, breaker/cooldown state, scheduled check-in/activity/travel/keepalive jobs, streaming and non-streaming chat, reasoning-model compatibility, and fingerprint sanitization. WorkBuddy models use explicit `cn:` / `global:` IDs so bare model names keep their existing Cline/OpenCode routes.
+- **One endpoint, all upstreams.** The gateway inspects the requested `model` and routes it: `wbcn:` / `wbgb:` models go to WorkBuddy, `oprt:` models go to OpenRouter, `amd:` models go to AMD Radeon Cloud, `tkhb:` models go to TokenHarbor, `zen:` models go to opencode zen, paid zen models are rejected with a clear 400, and everything else goes to the Cline account pool. Combos let you define your own alias model IDs on the supported platforms.
+- **WorkBuddy inside the same gateway.** The `OpenCode → WorkBuddy` page embeds the upstream panel for OAuth account login, account pooling, breaker/cooldown state, scheduled check-in/activity/travel/keepalive jobs, streaming and non-streaming chat, reasoning-model compatibility, and fingerprint sanitization. WorkBuddy models use explicit `wbcn:` / `wbgb:` IDs so bare model names keep their existing Cline/OpenCode routes.
 - **Three client dialects, one upstream language.** All upstreams are OpenAI chat-completions servers. `/v1/chat/completions` is a near-passthrough; `/v1/responses` and `/v1/messages` (Anthropic) are translated in and converted back, including streaming events, tool calls, and usage.
 - **IDE-controlled parameters are respected.** `max_tokens`, `temperature`, `top_p`, `stop`, `tools`, `tool_choice`, `reasoning_effort`, … all pass through from the client. The gateway only fills gaps (128k default output budget when the client sends none) and enforces semantics upstreams get wrong: `tool_choice: "none"` is enforced by stripping tools, unknown model names return a clean 400 (`STRICT_MODEL_MATCH=false` restores the old catch-all), and `stop` sequences are deterministically truncated client-side for non-stream responses.
-- **Pool everything.** Cline accounts round-robin with automatic 429 cooldown ("Try again in 17h 59m" parsing) and auto-recovery. Zen keys and WorkBuddy accounts use their own independent pools with cooldown/breaker handling. Egress proxies rotate per request so IP-based rate limits don't bottleneck one address; proxy failures never poison account state. **Proxy isolation** (on by default) upgrades this to fixed identity↔exit binding: a bound Cline account, zen key, or WorkBuddy account always egresses via its own main/backup proxy and is skipped entirely when both are unavailable — see [Proxy isolation](#proxy-isolation-identity--exit-binding).
+- **Pool everything.** Cline accounts round-robin with automatic 429 cooldown ("Try again in 17h 59m" parsing) and auto-recovery. Zen keys, WorkBuddy accounts, OpenRouter keys, AMD keys, and TokenHarbor keys use their own independent pools with cooldown/breaker handling. Egress proxies rotate per request so IP-based rate limits don't bottleneck one address; proxy failures never poison account state. **Proxy isolation** (on by default) upgrades this to fixed identity↔exit binding: a bound Cline account, zen key, WorkBuddy account, OpenRouter key, AMD key, or TokenHarbor key always egresses via its own main/backup proxy and is skipped entirely when both are unavailable — see [Proxy isolation](#proxy-isolation-identity--exit-binding).
+- **Prefixed model IDs keep platforms apart.** With six upstreams sharing one `/v1` endpoint, every pooled platform has its own ID prefix: `zen:` (opencode zen free models), `wbcn:` / `wbgb:` (WorkBuddy realms), `oprt:` (OpenRouter free models), `amd:` (AMD Radeon Cloud free APIs), `tkhb:` (TokenHarbor free models), and `cline-free/` (Cline free models). `/v1/models` lists all of them, so IDEs show the origin at a glance; older forms (bare zen IDs, `cn:`/`global:` realms, cline IDs without the prefix) still resolve — the prefixes are additive, not a breaking change.
 - **Function calling that actually works.** Battle-tested against live upstreams across chat stream/non-stream, parallel tool calls, `/v1/responses` and Anthropic streaming, with repair logic for upstream tool-argument quirks. See the test matrix below.
-- **English admin panel** at `/admin/`: Dashboard, Accounts, Add accounts (OAuth / refreshToken / static `sk_` API key — auto-detected, also batch), Gateway settings (API keys, models, headers), **Proxy pool** (one shared socks5/http egress list with per-upstream toggles for Cline and zen), opencode free models, **WorkBuddy**, Combos, request logs, live stats.
+- **English admin panel** at `/admin/`: Dashboard, Accounts, Add accounts (OAuth / refreshToken / static `sk_` API key — auto-detected, also batch), Gateway settings (API keys, models, headers), **Proxy pool** (one shared socks5/http egress list with per-upstream toggles for Cline, zen, WorkBuddy, OpenRouter, RadeonCloud and TokenHarbor), opencode free models, **WorkBuddy**, **OpenRouter**, **RadeonCloud**, **TokenHarbor**, Combos, request logs, live stats.
 
 ## Quick start (Docker)
 
@@ -145,8 +148,12 @@ key's quota — the same trade-off as the cline Test button.
 ```
 Base URL:  http://<host>:3457/v1
 API Key:   <API_KEY>
-Model:     cline-free/deepseek-v4.1-flash   (cline pool)
-           mimo-v2.5-free                    (opencode zen)
+Model:     cline-free/deepseek-v4.1-flash   (cline pool, cline-free/ prefix)
+           zen:big-pickle                    (opencode zen, zen: prefix)
+           oprt:openrouter/free              (OpenRouter, oprt: prefix)
+           amd:DeepSeek-V4-Flash             (AMD Radeon Cloud, amd: prefix)
+           tkhb:deepseek-v4.1-flash:free     (TokenHarbor, tkhb: prefix)
+           wbcn:claude-sonnet-4.5            (WorkBuddy, wbcn:/wbgb: realms)
 ```
 
 **Claude Code / Cline** — Anthropic dialect `POST /v1/messages`, same base URL and key.
@@ -168,11 +175,29 @@ Two account kinds are supported and can be mixed:
 
 Mount the file anywhere in the container and point `CLINE_ACCOUNTS_SEED_FILE` at it; it's imported when the pool is empty. Static `sk_` API keys are used directly as Bearer tokens (no refresh; a 401 marks them expired). OAuth accounts can also be added via the panel's browser login flow, manual token paste, or batch import.
 
-**Newly added identities start disabled on all three platforms.** An account, zen key, or WorkBuddy account added after this version lands in the pool with routing participation off (Cline: `pool_enabled` false; zen: no routing entry; WorkBuddy: `pool_enabled` false) and is skipped by rotation until you tick its **Pool** checkbox in the panel. Identities already in the pool keep their current state — a legacy account without the field stays enabled, so upgrading never stops serving. Zen keys coming from `ZEN_KEYS` follow the same rule.
+**Newly added identities start disabled on all platforms.** An account, zen key, WorkBuddy account, OpenRouter key, AMD key, or TokenHarbor key added after this version lands in the pool with routing participation off (Cline: `pool_enabled` false; zen: no routing entry; WorkBuddy: `pool_enabled` false; OpenRouter/AMD/TokenHarbor: no routing entry) and is skipped by rotation until you tick its **Pool** checkbox in the panel. Identities already in the pool keep their current state — a legacy account without the field stays enabled, so upgrading never stops serving. Zen keys coming from `ZEN_KEYS` follow the same rule.
 
 ### Combos (alias models)
 
 Create user-defined alias IDs in the panel (e.g. `my-cline-flash` → `cline-free/deepseek-v4.1-flash` on the cline platform, or any zen free model). Strictly same-platform targets; aliases show up in `/v1/models` so IDEs can pick them directly.
+
+### OpenRouter (free models)
+
+OpenRouter is an OpenAI-compatible key pool — no account OAuth. Add one `sk-or-v1-…` key per line on the **OpenRouter** page; keys rotate with the same pool strategy as the other platforms.
+
+- **Free model catalog.** The page [openrouter.ai/collections/free-models](https://openrouter.ai/collections/free-models) is the whitelist: only the models listed there are served (15 generation models + the official `openrouter/free` router as fallback; low-usage / underpowered zero-priced models such as embeddings, rerankers, and image models are intentionally excluded). The catalog is synced from `openrouter.ai/api/v1/models` every 5 minutes to cross-check pricing and refresh context limits — a page model that stops being free is dropped, and an off-page free model is never added. Cold start uses the page snapshot, so the list works offline. The page shows the live table and a **Refresh models** button; the probe model for the Test buttons is configurable (defaults to `openrouter/free`).
+- **API compatibility.** Models are called with an `oprt:` prefix (e.g. `oprt:openrouter/free`), so bare model names keep their existing Cline/OpenCode routes. `POST /v1/chat/completions` (streaming and non-streaming) is supported and `GET /v1/models` merges the prefixed IDs. Unknown or paid models are rejected with a clear 400. Base URL is configurable for relays.
+- **Failures.** 401/403 cools the key for an hour and retries with the next key; 429 honors `Retry-After`; a passing Test probe clears the cooldown immediately. New keys start routing-disabled — tick **Pool** to enable.
+- **Proxy binding.** OpenRouter keys follow the same isolation semantics as the other platforms (main/backup egress per key, skip when both are unavailable), and unbound keys follow the OpenRouter toggle on the Proxy pool page.
+
+### AMD Radeon Cloud (free shared model APIs)
+
+AMD's [Token Factory](https://developer.amd.com.cn/radeon/tokenfactory) issues `rc-…` API keys for the free shared model endpoints at `developer.amd.com.cn/radeon/api/v1`. Add one key per line on the **RadeonCloud** page; keys rotate with the same pool strategy as the other platforms.
+
+- **Model catalog.** Synced from the upstream `GET /v1/models` (no key needed) every 5 minutes with a seed snapshot for offline cold start. Chat-usable models only — OCR-only entries (MinerU2.5-Pro) are excluded. The probe model for the Test buttons defaults to `DeepSeek-V4-Flash` (the documented example model).
+- **API compatibility.** Models are called with an `amd:` prefix (e.g. `amd:DeepSeek-V4-Flash`). Streaming and non-streaming `POST /v1/chat/completions` are supported and `GET /v1/models` merges the prefixed IDs; unknown models are rejected with a clear 400. Base URL is configurable.
+- **Rate limits.** The upstream admits 30 requests/min and 8 concurrent per key, then meters 20 requests/min per account with a daily credit cap. A 429 cools the key per `Retry-After` and rotation moves to the next key; 401/403 (key rotated or revoked) cools it for an hour; a passing Test probe clears the cooldown immediately. New keys start routing-disabled — tick **Pool** to enable.
+- **Proxy binding.** AMD keys follow the same isolation semantics as the other platforms (main/backup egress per key), and unbound keys follow the AMD toggle on the Proxy pool page.
 
 ### WorkBuddy
 
@@ -180,20 +205,29 @@ Open `/admin/`, select **OpenCode → WorkBuddy**. The page embeds the WorkBuddy
 
 - **OAuth and account pool.** Add CN or global accounts through the browser login flow. Credentials are stored under `data/workbuddy/auths/`; pool state and configuration live under `data/workbuddy/`. Accounts are hot-loaded after login and retain the upstream pool's breaker, cooldown, sticky-session, retry, and weighted-selection behavior.
 - **Scheduled jobs.** The upstream scheduler is ported as-is, including configurable check-in, activity, travel, keepalive, growth-task, and balance-refresh schedules. Each job has its own enable flag in the WorkBuddy configuration page.
-- **API compatibility.** `POST /v1/chat/completions`, `/v1/messages`, and `/v1/responses` accept WorkBuddy models with a realm prefix: `cn:<model>` or `global:<model>`. The WorkBuddy handler supports streaming and non-streaming requests, reasoning fields/effort downgrade, tool-compatible payload handling, and the upstream fingerprint-sanitization switch. `GET /v1/models` merges the prefixed WorkBuddy IDs into the normal model list.
-- **Routing boundary.** Bare model names are never routed to WorkBuddy, even if the same model ID exists upstream. This preserves the existing Cline/OpenCode routing and strict-model behavior. Remove the `cn:` / `global:` prefix only when calling the standalone WorkBuddy implementation, not this gateway.
+- **API compatibility.** `POST /v1/chat/completions`, `/v1/messages`, and `/v1/responses` accept WorkBuddy models with a realm prefix: `wbcn:<model>` or `wbgb:<model>`. The WorkBuddy handler supports streaming and non-streaming requests, reasoning fields/effort downgrade, tool-compatible payload handling, and the upstream fingerprint-sanitization switch. `GET /v1/models` merges the prefixed WorkBuddy IDs into the normal model list.
+- **Routing boundary.** Bare model names are never routed to WorkBuddy, even if the same model ID exists upstream. This preserves the existing Cline/OpenCode routing and strict-model behavior. Remove the `wbcn:` / `wbgb:` prefix only when calling the standalone WorkBuddy implementation, not this gateway.
 - **Proxy binding.** With proxy isolation enabled, each WorkBuddy UID is assigned a stable main/backup pair from the existing proxy pool on first use. Bindings are persisted in `data/.workbuddy-proxies.json` and can be inspected or changed through `GET /admin/api/workbuddy/proxy`, `POST /admin/api/workbuddy/proxy/set`, and `POST /admin/api/workbuddy/proxy/clear`. Authenticated account actions, scheduled jobs, task automation, and chat requests use the bound exit; if both bound exits are cooling or removed, the request fails rather than falling back to direct egress.
 - **OAuth transport boundary.** Device authorization, login polling, and the model-catalog refresh run before an account UID is known and therefore do not use the account binding. They carry no existing account credential. Once an account is created, all account-authenticated WorkBuddy traffic follows the UID binding.
+
+### TokenHarbor (free models)
+
+TokenHarbor is an OpenAI-compatible aggregator — one universal key (`thk_live_…`, from the [dashboard](https://tokenharbor.ai/dashboard/api-keys)) reaches every model on the platform. Add one key per line on the **TokenHarbor** page; keys rotate with the same pool strategy as the other platforms.
+
+- **Free model catalog.** The [free models page](https://tokenharbor.ai/models?category=free) lists every `:free` model (paid models are never proxied). The catalog syncs from the upstream `GET /v1/models` every 5 minutes (that endpoint needs a key) keeping `:free` entries only; without a key a built-in page snapshot serves. The probe model for the Test buttons defaults to `deepseek-v4.1-flash:free`.
+- **API compatibility.** Models are called with a `tkhb:` prefix (e.g. `tkhb:deepseek-v4.1-flash:free`). Streaming and non-streaming `POST /v1/chat/completions` are supported and `GET /v1/models` merges the prefixed IDs; unknown or paid models are rejected with a clear 400. Base URL is configurable.
+- **Rate limits.** Free accounts get 60 requests/min per account and 100 requests/min per IP, shared across all keys and models; a 429 cools the key per `Retry-After` and rotation moves on. 401/403 (key rotated or revoked) cools it for an hour; a passing Test probe clears the cooldown immediately. New keys start routing-disabled — tick **Pool** to enable.
+- **Proxy binding.** TokenHarbor keys follow the same isolation semantics as the other platforms (main/backup egress per key), and unbound keys follow the TokenHarbor toggle on the Proxy pool page.
 
 ### Proxy isolation (identity ↔ exit binding)
 
 Without isolation, every upstream attempt rotates across the whole proxy pool: each account's egress IP drifts between exits *and* each exit serves multiple accounts in turn — both are classic risk-control red flags ("same IP, many accounts", "one account, many IPs"). Isolation mode (default on) replaces the rotation with a fixed binding:
 
-- Each Cline account, zen key, and WorkBuddy account can bind one **main** and one **backup** proxy. Requests always egress via the main, fall back to the backup, and are **skipped entirely** while both are cooling or removed from the pool — never routed through another exit or a direct connection. Isolation outranks availability. WorkBuddy bindings are allocated round-robin on first use and persisted automatically.
-- Unbound identities follow the panel's per-platform global policy toggles (Cline / OpenCode / WorkBuddy, default: use the proxy pool), so an empty binding config behaves exactly like before.
+- Each Cline account, zen key, WorkBuddy account, and OpenRouter key can bind one **main** and one **backup** proxy. Requests always egress via the main, fall back to the backup, and are **skipped entirely** while both are cooling or removed from the pool — never routed through another exit or a direct connection. Isolation outranks availability. WorkBuddy bindings are allocated round-robin on first use and persisted automatically.
+- Unbound identities follow the panel's per-platform global policy toggles (Cline / OpenCode / WorkBuddy / OpenRouter / RadeonCloud / TokenHarbor, default: use the proxy pool), so an empty binding config behaves exactly like before.
 - - Assign bindings per account (Accounts page) / per key (opencode page), or use **Assign proxies evenly** (`main = pool[i%N]`, `backup = pool[(i+1)%N]`). A binding whose proxy was removed from the pool is flagged ⚠ and its identity stays skipped until fixed.
 - Toggle it off on the Proxy pool page to restore legacy per-request rotation (bindings are then ignored). `PROXY_ISOLATION=true` forces it on and makes the panel toggle read-only; `false` only changes the default to off (the panel can still change it). Only `true`/`false` are accepted — any other value warns and is treated as unset.
-- **Per-proxy online rate.** The Proxy pool page lists every proxy with its real-traffic transport-layer success rate — cumulative since the pool was last edited, plus a rolling window over the last 50 attempts. Upstream 4xx/5xx never counts against the proxy (the tunnel worked); client aborts count for neither side. Sampling is fully passive — no probing traffic is ever generated — and stats never influence routing: a proxy below 80% recent success (≥10 samples) is highlighted red so you can swap it out yourself. Editing the proxy list resets all counters; stats survive restarts (`.proxy-health.json`). Cline, OpenCode, and WorkBuddy traffic all count; direct exits don't.
+- **Per-proxy online rate.** The Proxy pool page lists every proxy with its real-traffic transport-layer success rate — cumulative since the pool was last edited, plus a rolling window over the last 50 attempts. Upstream 4xx/5xx never counts against the proxy (the tunnel worked); client aborts count for neither side. Sampling is fully passive — no probing traffic is ever generated — and stats never influence routing: a proxy below 80% recent success (≥10 samples) is highlighted red so you can swap it out yourself. Editing the proxy list resets all counters; stats survive restarts (`.proxy-health.json`). Cline, OpenCode, WorkBuddy, OpenRouter, RadeonCloud, and TokenHarbor traffic all count; direct exits don't.
 
 socks5/socks5h proxies are fully supported on both paths: the gateway dials them natively for regular upstream traffic, and for CLI minting it fronts a one-shot local HTTP-CONNECT→SOCKS5 bridge (the CLI only ever sees an http proxy, which its runtime is documented to honor — socks5 semantics are fulfilled by the gateway itself, so a mint can never silently fall back to a direct connection).
 

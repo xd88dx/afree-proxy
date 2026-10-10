@@ -1,7 +1,10 @@
 package app
 
 import (
+	"afree-proxy/internal/amd"
 	"afree-proxy/internal/kit"
+	openrouter "afree-proxy/internal/openrouter"
+	"afree-proxy/internal/tokenharbor"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -15,11 +18,11 @@ import (
 )
 
 // Combo 仪表盘自定义的别名模型：/v1 请求 model 命中 combo ID 时，
-// 上游改写为同平台的 target 模型。严格同平台：cline/zen/workbuddy
+// 上游改写为同平台的 target 模型。严格同平台：cline/zen/workbuddy/openrouter/amd/tokenharbor
 // 只能选各自平台当前模型列表中的模型，保存时校验。
 type Combo struct {
 	ID         string    `json:"id"`
-	Platform   string    `json:"platform"` // cline | zen
+	Platform   string    `json:"platform"` // cline | zen | workbuddy | openrouter | amd
 	Target     string    `json:"target"`
 	UseProxies bool      `json:"useProxies,omitempty"` // 该别名的上游调用走出口代理池（round-robin）
 	CreatedAt  time.Time `json:"createdAt"`
@@ -112,26 +115,35 @@ func validateCombo(id, platform, target string) error {
 	if !comboIDRe.MatchString(id) {
 		return fmt.Errorf("invalid combo id %q: use 2-64 chars, letters/digits/._- and start with letter or digit", id)
 	}
-	if platform != "cline" && platform != "zen" && platform != "workbuddy" {
-		return fmt.Errorf("invalid platform %q: must be cline, zen or workbuddy", platform)
+	if platform != "cline" && platform != "zen" && platform != "workbuddy" && platform != "openrouter" && platform != "amd" && platform != "tokenharbor" {
+		return fmt.Errorf("invalid platform %q: must be cline, zen, workbuddy, openrouter, amd or tokenharbor", platform)
 	}
 	target = strings.TrimSpace(target)
 	if target == "" {
 		return fmt.Errorf("target model is required")
 	}
-	// ID 不得与真实模型冲突（含 zen 别名与 opencode/ 前缀形式）
-	initModelsCache()
-	modelsMu.Lock()
-	_, inCline := modelsCache[id]
-	modelsMu.Unlock()
-	if inCline {
+	// ID 不得与真实模型冲突（Cline 表带/不带 cline-free/ 前缀都算、zen 前缀
+	// 形态、OpenRouter 前缀形态）
+	if modelInClineList(id) {
 		return fmt.Errorf("combo id %q conflicts with a real cline model", id)
 	}
 	if _, isZen := resolveZenModel(id); isZen {
 		return fmt.Errorf("combo id %q conflicts with a real zen model", id)
 	}
-	if _, isZen := resolveZenModel(strings.TrimPrefix(id, "opencode/")); isZen && strings.HasPrefix(id, "opencode/") {
-		return fmt.Errorf("combo id %q conflicts with a real zen model", id)
+	if openrouter.HasPrefix(id) {
+		if _, ok := openrouter.Resolve(id); ok {
+			return fmt.Errorf("combo id %q conflicts with a real openrouter model", id)
+		}
+	}
+	if amd.HasPrefix(id) {
+		if _, ok := amd.Resolve(id); ok {
+			return fmt.Errorf("combo id %q conflicts with a real amd model", id)
+		}
+	}
+	if tokenharbor.HasPrefix(id) {
+		if _, ok := tokenharbor.Resolve(id); ok {
+			return fmt.Errorf("combo id %q conflicts with a real tokenharbor model", id)
+		}
 	}
 	if resolveCombo(id) != nil {
 		return fmt.Errorf("combo id %q already exists", id)
@@ -139,11 +151,7 @@ func validateCombo(id, platform, target string) error {
 
 	switch platform {
 	case "cline":
-		initModelsCache()
-		modelsMu.Lock()
-		_, ok := modelsCache[target]
-		modelsMu.Unlock()
-		if !ok {
+		if !modelInClineList(target) {
 			return fmt.Errorf("target %q is not in the cline model list (cross-platform selection is not allowed)", target)
 		}
 	case "zen":
@@ -163,6 +171,18 @@ func validateCombo(id, platform, target string) error {
 		}
 		if !found {
 			return fmt.Errorf("target %q is not in the current WorkBuddy model list", target)
+		}
+	case "openrouter":
+		if _, ok := openrouter.Resolve(target); !ok {
+			return fmt.Errorf("target %q is not a free openrouter model (cross-platform selection is not allowed)", target)
+		}
+	case "amd":
+		if _, ok := amd.Resolve(target); !ok {
+			return fmt.Errorf("target %q is not an AMD Radeon Cloud model (cross-platform selection is not allowed)", target)
+		}
+	case "tokenharbor":
+		if _, ok := tokenharbor.Resolve(target); !ok {
+			return fmt.Errorf("target %q is not a free TokenHarbor model (cross-platform selection is not allowed)", target)
 		}
 	}
 	return nil

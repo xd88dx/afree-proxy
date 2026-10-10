@@ -132,6 +132,11 @@ select{cursor:pointer;appearance:none;background-image:linear-gradient(45deg,tra
 .form-actions{display:flex;gap:10px;margin-top:14px;flex-wrap:wrap}
 /* 出口绑定联想下拉（combobox） */
 .eg-input{width:170px;font-size:12px;padding:5px 8px;border-radius:7px;border:1px solid var(--border-strong);background:var(--bg3);color:var(--text);cursor:pointer}
+.eg-wrap{position:relative;display:inline-block;vertical-align:middle}
+.eg-wrap.has-badge .eg-input{padding-right:52px}
+.eg-wrap .eg-input:focus ~ .eg-badge{display:none}
+.eg-badge{position:absolute;right:6px;top:50%;transform:translateY(-50%);font-size:10px;line-height:1;color:var(--text3);background:var(--bg2);border:1px solid var(--border-strong);border-radius:6px;padding:2px 5px;pointer-events:none;font-variant-numeric:tabular-nums;white-space:nowrap}
+.eg-badge.low{color:var(--danger);font-weight:600}
 .eg-input:focus{outline:none;border-color:var(--accent)}
 .eg-menu{position:absolute;z-index:1200;background:var(--bg2);border:1px solid var(--border-strong);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.35);max-height:260px;overflow-y:auto;min-width:220px}
 .eg-item{padding:6px 10px;font-size:12px;cursor:pointer;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -271,6 +276,9 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
 <div class="nav-item" data-tab="accounts"><span class="nav-ico"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-6.5 8-6.5s8 2.5 8 6.5"/></svg></span> Cline</div>
 <div class="nav-item" data-tab="opencode"><span class="nav-ico"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14.5 14.5 0 0 1 0 18 14.5 14.5 0 0 1 0-18z"/></svg></span> OpenCode</div>
 <div class="nav-item" data-tab="workbuddy"><span class="nav-ico"><svg viewBox="0 0 24 24"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9L12 3z"/><path d="M12 12l8-4.5M12 12v9M12 12L4 7.5"/></svg></span> WorkBuddy</div>
+<div class="nav-item" data-tab="openrouter"><span class="nav-ico"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8 12h8M12 8v8"/><circle cx="12" cy="12" r="2.5"/></svg></span> OpenRouter</div>
+<div class="nav-item" data-tab="tokenharbor"><span class="nav-ico"><svg viewBox="0 0 24 24"><path d="M4 21V9l8-6 8 6v12"/><path d="M4 21h16"/><path d="M9 21v-6h6v6"/></svg></span> TokenHarbor</div>
+<div class="nav-item" data-tab="radeoncloud"><span class="nav-ico"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="13" height="13" rx="2"/><path d="M16 9h3l2 3-2 3h-3"/><circle cx="9.5" cy="11.5" r="2.5"/></svg></span> RadeonCloud</div>
 <div class="nav-group">Services</div>
 <div class="nav-item" data-tab="proxypool"><span class="nav-ico"><svg viewBox="0 0 24 24"><circle cx="12" cy="5" r="2.5"/><circle cx="5" cy="19" r="2.5"/><circle cx="19" cy="19" r="2.5"/><path d="M12 7.5v4m0 0-5.5 5m5.5-5 5.5 5"/></svg></span> Proxy pool</div>
 <div class="nav-item" data-tab="settings"><span class="nav-ico"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1 1.55V21a2 2 0 1 1-4 0v-.09a1.7 1.7 0 0 0-1-1.55 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.7 1.7 0 0 0 .34-1.87 1.7 1.7 0 0 0-1.55-1H3a2 2 0 1 1 0-4h.09a1.7 1.7 0 0 0 1.55-1 1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.7 1.7 0 0 0 1.87.34h0a1.7 1.7 0 0 0 1-1.55V3a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1 1.55h0a1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87v0a1.7 1.7 0 0 0 1.55 1H21a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.55 1z"/></svg></span> Gateway settings</div>
@@ -302,8 +310,19 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
         <div class="dash-name">WorkBuddy</div>
         <div class="dash-stats" id="dashWb">-</div>
       </div>
+      <div class="dash-card" onclick="switchTab('openrouter')">
+        <div class="dash-name">OpenRouter</div>
+        <div class="dash-stats" id="dashOr">-</div>
+      </div>
+      <div class="dash-card" onclick="switchTab('tokenharbor')">
+        <div class="dash-name">TokenHarbor</div>
+        <div class="dash-stats" id="dashTh">-</div>
+      </div>
+      <div class="dash-card" onclick="switchTab('radeoncloud')">
+        <div class="dash-name">RadeonCloud</div>
+        <div class="dash-stats" id="dashAmd">-</div>
+      </div>
     </div>
-    <div class="hint" style="margin:10px 0 0">Click a platform card to open its management page.</div>
   </div>
 </div>
 <div class="section">
@@ -313,6 +332,9 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
       <div class="stat-card"><div class="stat-name">Cline</div><div class="stat-line" id="reqCline">-</div></div>
       <div class="stat-card"><div class="stat-name">OpenCode</div><div class="stat-line" id="reqZen">-</div></div>
       <div class="stat-card"><div class="stat-name">WorkBuddy</div><div class="stat-line" id="reqWb">-</div></div>
+      <div class="stat-card"><div class="stat-name">OpenRouter</div><div class="stat-line" id="reqOr">-</div></div>
+      <div class="stat-card"><div class="stat-name">RadeonCloud</div><div class="stat-line" id="reqAmd">-</div></div>
+      <div class="stat-card"><div class="stat-name">TokenHarbor</div><div class="stat-line" id="reqTh">-</div></div>
     </div>
     <div class="hint" style="margin:10px 0 0" id="reqStatsHint">Counted since process start.</div>
   </div>
@@ -346,7 +368,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
     <div class="table-wrap">
     <table>
       <thead>
-        <tr><th>Email</th><th>Status</th><th title="Counted locally by this proxy — not the official free quota">Today/Total tokens</th><th>Last used</th><th>Created</th><th title="Main / backup egress — isolation mode picks main first, then backup; both down = account skipped">Proxy binding</th><th>Actions</th><th style="text-align:center" title="Routing participation. Newly added accounts start unchecked — tick Pool to join rotation.">Pool</th></tr>
+        <tr><th>Email</th><th>Status</th><th title="Counted locally by this proxy — not the official free quota">Today/Total tokens</th><th>Last used</th><th>Created</th><th title="Main exit first, backup as fallback; both down = row skipped (isolation).">Proxy binding</th><th>Actions</th><th style="text-align:center" title="Routing participation. New rows start disabled — tick Pool to enable.">Pool</th></tr>
       </thead>
       <tbody id="accountTableBody">
         <tr><td colspan="8" class="empty">Loading...</td></tr>
@@ -358,9 +380,9 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
       <div style="display:flex;gap:8px">
         <button class="btn btn-sm" onclick="stageAllAccountsPool(true)">Enable all</button>
         <button class="btn btn-sm" onclick="stageAllAccountsPool(false)">Disable all</button>
-        <button class="btn btn-sm" onclick="stageClearAccountProxies()" title="Stage: clear proxy bindings on ALL accounts AND disable them — click Save to apply">Clear bindings</button>
-        <button class="btn btn-sm" onclick="applyProxiesToOthers('acc')" title="Copy this page's proxy bindings by row order to the other two account pools. Takes effect immediately; only proxy bindings are changed, enable/disable states are untouched.">Apply to others</button>
-        <button class="btn btn-sm" id="accTestBtn" onclick="batchTestAccounts()" title="Run the Test probe on every account (same as clicking Test on each row)">Test all</button>
+        <button class="btn btn-sm" onclick="stageClearAccountProxies()" title="Stage only — click Save to apply. Clears bindings and disables every row.">Clear bindings</button>
+        <button class="btn btn-sm" onclick="applyProxiesToOthers('acc')" title="Apply this page's bindings to all other pool pages by row order (immediate).">Apply to others</button>
+        <button class="btn btn-sm" id="accTestBtn" onclick="batchTestAccounts()" title="Run the Test probe on every row.">Test all</button>
       </div>
       <div style="display:flex;gap:8px">
         <button class="btn btn-sm btn-warn" id="accResetBtn" onclick="resetAccountEdits()" title="Discard staged changes and reload the last saved state">Discard</button>
@@ -384,7 +406,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
       <button class="btn btn-sm" onclick="addHeaderRow()">Add header</button>
       <button class="btn btn-sm btn-primary" onclick="saveHeaders()">Save headers</button>
     </div>
-    <div class="hint">These headers are attached to every request forwarded to the Cline API to mimic the official client.</div>
+    <div class="hint">Attached to every Cline API request to mimic the official client.</div>
     <div id="headerSaveResult" style="margin-top:8px"></div>
   </div>
 </div>
@@ -395,7 +417,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
 <div class="section">
   <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><circle cx="12" cy="5" r="2.5"/><circle cx="5" cy="19" r="2.5"/><circle cx="19" cy="19" r="2.5"/><path d="M12 7.5v4m0 0-5.5 5m5.5-5 5.5 5"/></svg></span> Egress proxies</div>
   <div class="section-body">
-    <div class="hint" style="margin-bottom:10px">One proxy list serves every upstream that opts in below. One proxy per line: <code>http://user:pass@host:port</code> or <code>socks5://host:port</code>. Requests rotate across healthy proxies per request; a proxy that hits a rate limit is cooled down and skipped automatically.</div>
+    <div class="hint" style="margin-bottom:10px">One proxy per line: <code>http://user:pass@host:port</code> or <code>socks5://host:port</code>. All upstreams share this list; unhealthy proxies are skipped automatically.</div>
     <div class="form-row">
       <div class="field" style="flex:3"><label>Proxy list</label>
         <textarea id="ppProxies" rows="4" placeholder="one per line: socks://b64(user:pass)@host:port#alias, socks5://user:pass@host:port#alias or http://host:port"></textarea>
@@ -411,10 +433,13 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
 <div class="section">
   <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></span> Global policy</div>
   <div class="section-body">
-    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px 24px;align-items:center">
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr 1fr 1fr;gap:10px 18px;align-items:center">
       <div class="field" style="margin:0"><label style="margin:0">Cline</label></div>
       <div class="field" style="margin:0"><label style="margin:0">OpenCode</label></div>
       <div class="field" style="margin:0"><label style="margin:0">WorkBuddy</label></div>
+      <div class="field" style="margin:0"><label style="margin:0">OpenRouter</label></div>
+      <div class="field" style="margin:0"><label style="margin:0">AMD</label></div>
+      <div class="field" style="margin:0"><label style="margin:0">TokenHarbor</label></div>
       <div class="field" style="margin:0">
         <select id="ppCline"><option value="true">Proxy</option><option value="false">Direct connection</option></select>
       </div>
@@ -424,9 +449,21 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
       <div class="field" style="margin:0">
         <select id="ppWb"><option value="true">Proxy</option><option value="false">Direct connection</option></select>
       </div>
+      <div class="field" style="margin:0">
+        <select id="ppOr"><option value="true">Proxy</option><option value="false">Direct connection</option></select>
+      </div>
+      <div class="field" style="margin:0">
+        <select id="ppAmd"><option value="true">Proxy</option><option value="false">Direct connection</option></select>
+      </div>
+      <div class="field" style="margin:0">
+        <select id="ppTh"><option value="true">Proxy</option><option value="false">Direct connection</option></select>
+      </div>
       <div class="hint" style="margin:0">Cline accounts without proxy bindings follow this switch.</div>
       <div class="hint" style="margin:0">OpenCode keys without proxy bindings follow this switch.</div>
       <div class="hint" style="margin:0">WorkBuddy accounts without proxy bindings follow this switch.</div>
+      <div class="hint" style="margin:0">OpenRouter keys without proxy bindings follow this switch.</div>
+      <div class="hint" style="margin:0">AMD keys without proxy bindings follow this switch.</div>
+      <div class="hint" style="margin:0">TokenHarbor keys without proxy bindings follow this switch.</div>
     </div>
     <div class="form-actions"><button class="btn btn-primary" onclick="saveGlobalPolicy()">Save</button></div>
   </div>
@@ -448,9 +485,9 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
         </div>
       </div>
     </div>
-    <div class="hint">With isolation on, every identity (account or key) only ever egresses through its bound exits — main proxy first, backup as fallback; when both are unavailable the identity is skipped, never falling back to another exit or a direct connection. The <code>PROXY_ISOLATION</code> env var only accepts true/false: true forces this on (read-only toggle); false just changes the default to off.</div>
+    <div class="hint">Isolation on: identities egress only via their bound exits (main → backup); both down = skipped — never another exit or direct. Forced on when <code>PROXY_ISOLATION</code>=true.</div>
     <div class="hint" id="ppIsolationHint" style="margin-top:4px"></div>
-    <div class="hint" id="ppBackupHint" style="margin-top:4px">Off by default: every identity egresses through its main proxy only — when the main proxy is cooling down or removed, the identity is skipped for that round, never trying the backup and never falling back to a direct connection. When enabled, backups act as the fallback for the main proxy to keep identities available as much as possible.</div>
+    <div class="hint" id="ppBackupHint" style="margin-top:4px">Off by default: main proxy only — cooling/removed = skipped for that round. On: backup acts as fallback.</div>
     <div class="form-actions"><button class="btn btn-primary" onclick="saveIsolationOptions()">Save</button></div>
   </div>
 </div>
@@ -463,7 +500,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
         <th>Proxy</th>
         <th style="text-align:center" title="Upstream attempts that egressed via this proxy since the pool was last edited">Attempts</th>
         <th style="text-align:center" title="Transport-layer success rate since the pool was last edited (upstream 4xx/5xx still counts as the proxy being online)">Rate</th>
-        <th style="text-align:center" title="Success rate over the most recent attempts (window: last 50). Below 80% with at least 10 samples is highlighted red — time to replace the proxy.">Recent</th>
+        <th style="text-align:center" title="Success rate over the last 50 attempts; red below 80% (min 10 samples).">Recent</th>
         <th>Last OK</th>
         <th>Last Fail</th>
         <th>Cooldown</th>
@@ -471,7 +508,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
       <tbody id="ppHealthBody"><tr><td colspan="7" class="empty">Loading...</td></tr></tbody>
     </table>
     </div>
-    <div class="hint" style="margin-top:8px">Rates are passively sampled from real upstream traffic only — no probing traffic is generated. "No data" means this exit has not been used since the pool was last edited (with the fill strategy only the first proxy gets traffic; global switches and per-identity bindings decide the rest). Editing the proxy list resets all counters.</div>
+    <div class="hint" style="margin-top:8px">Rates are sampled passively from real traffic — no probing. "No data" = unused since the last pool edit; editing the proxy list resets counters.</div>
   </div>
 </div>
 </div>
@@ -523,6 +560,9 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
           <option value="cline" selected>Cline</option>
           <option value="zen">OpenCode</option>
           <option value="workbuddy">WorkBuddy</option>
+          <option value="openrouter">OpenRouter</option>
+          <option value="amd">AMD</option>
+          <option value="tokenharbor">TokenHarbor</option>
         </select>
         <div style="margin-top:18px"><button class="btn btn-sm btn-primary" onclick="saveDefaultModel()">Save</button></div>
       </div>
@@ -537,7 +577,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
 <div class="section">
   <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><path d="M12 3v12m0 0 4-4m-4 4-4-4"/><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg></span> Config export / import</div>
   <div class="section-body">
-    <div class="hint">Import/export all persisted configuration. The export file contains private information; keep it safe. Import is an overwrite operation, so proceed with caution.</div>
+    <div class="hint">Export contains credentials — keep the file safe. Import overwrites existing config.</div>
     <div class="form-actions">
       <button class="btn btn-success" onclick="exportConfig()">Export config</button>
       <button class="btn btn-primary" onclick="document.getElementById('importFile').click()">Import config</button>
@@ -549,7 +589,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
 <div class="section danger-zone">
   <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg></span> Danger zone</div>
   <div class="section-body">
-    <div class="hint" style="margin-top:0">Deletes all persisted data, including but not limited to accounts and configuration. This cannot be undone; proceed with caution!</div>
+    <div class="hint" style="margin-top:0">Deletes ALL persisted data (accounts, keys, proxies, config). Cannot be undone.</div>
     <div class="form-actions">
       <button class="btn btn-danger" onclick="deleteAllData()">Delete all data</button>
     </div>
@@ -591,11 +631,11 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
 <div class="section">
   <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></span> Create custom alias</div>
   <div class="section-body">
-    <div class="hint" style="margin-bottom:10px">Clients request the alias ID as their model, and the proxy rewrites it to the target model for the chosen platform. Alias IDs are user-defined (e.g. <code>cline-glm-5.3</code>) and must not collide with real model IDs; the target must belong to the same platform — cross-platform targets are not allowed.</div>
+    <div class="hint" style="margin-bottom:10px">Clients use the alias ID as the model name; the proxy rewrites it to the target. Alias must not collide with real model IDs, and the target must stay on the same platform.</div>
     <div class="form-row">
       <div class="field"><label>Alias ID</label><input type="text" id="comboId" placeholder="cline-glm-5.3"></div>
       <div class="field"><label>Platform</label>
-        <select id="comboPlatform" onchange="fillComboModels()"><option value="cline">cline</option><option value="zen">opencode</option><option value="workbuddy">workbuddy</option></select>
+        <select id="comboPlatform" onchange="fillComboModels()"><option value="cline">cline</option><option value="zen">opencode</option><option value="workbuddy">workbuddy</option><option value="openrouter">openrouter</option><option value="amd">amd</option><option value="tokenharbor">tokenharbor</option></select>
       </div>
       <div class="field" style="flex:2"><label>Target model</label><select id="comboTarget"></select></div>
       <div class="field" style="flex:0 0 auto;display:flex;align-items:flex-end"><label style="display:flex;gap:6px;align-items:center;white-space:nowrap;padding-bottom:8px"><input type="checkbox" id="comboUseProxies"> Use proxy pool</label></div>
@@ -630,7 +670,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
     </div>
     <div class="table-wrap" style="margin-bottom:10px">
       <table>
-        <thead><tr><th style="width:50px">#</th><th style="width:110px">Key</th><th style="width:70px">Usage</th><th style="width:110px">Session</th><th>Cooldown</th><th title="Main / backup egress — isolation mode picks main first, then backup; both down = key skipped.">Proxy binding</th><th style="width:130px"></th><th style="text-align:center" title="Routing participation: unchecked keys never enter request rotation. Newly added keys start disabled — tick Pool to enable.">Pool</th></tr></thead>
+        <thead><tr><th style="width:50px">#</th><th style="width:110px">Key</th><th style="width:70px">Usage</th><th style="width:110px">Session</th><th>Cooldown</th><th title="Main exit first, backup as fallback; both down = row skipped (isolation).">Proxy binding</th><th style="width:130px"></th><th style="text-align:center" title="Routing participation: unchecked keys never enter request rotation. Newly added keys start disabled — tick Pool to enable. Minting follows routing — keys with routing disabled stop auto-minting.">Pool</th></tr></thead>
         <tbody id="ocKeysBody"><tr><td colspan="8" class="empty">Loading...</td></tr></tbody>
       </table>
     </div>
@@ -639,9 +679,9 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
       <div style="display:flex;gap:8px">
         <button class="btn btn-sm" onclick="stageAllKeysRouting(true)">Enable all</button>
         <button class="btn btn-sm" onclick="stageAllKeysRouting(false)">Disable all</button>
-        <button class="btn btn-sm" onclick="stageClearZenKeyProxies()" title="Stage: clear proxy bindings on ALL keys and disable routing — click Save to apply">Clear bindings</button>
-        <button class="btn btn-sm" onclick="applyProxiesToOthers('key')" title="Copy this page's proxy bindings by row order to the other two account pools. Takes effect immediately; only proxy bindings are changed, enable/disable states are untouched.">Apply to others</button>
-        <button class="btn btn-sm" id="ocTestBtn" onclick="batchTestKeys()" title="Run the Test probe on every key (same as clicking Test on each row)">Test all</button>
+        <button class="btn btn-sm" onclick="stageClearZenKeyProxies()" title="Stage only — click Save to apply. Clears bindings and disables every row.">Clear bindings</button>
+        <button class="btn btn-sm" onclick="applyProxiesToOthers('key')" title="Apply this page's bindings to all other pool pages by row order (immediate).">Apply to others</button>
+        <button class="btn btn-sm" id="ocTestBtn" onclick="batchTestKeys()" title="Run the Test probe on every row.">Test all</button>
       </div>
       <div style="display:flex;gap:8px">
         <button class="btn btn-sm btn-warn" id="ocResetBtn" onclick="resetKeyEdits()" title="Discard staged changes and reload the last saved state">Discard</button>
@@ -687,7 +727,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
     <span id="ocSessSummary" class="probe-pill" style="font-weight:normal;margin-left:auto"></span>
   </div>
   <div class="section-body">
-    <p class="hint" style="margin-top:0" id="ocSessHint">The free tier accepts locally minted session IDs in the CLI format: the upstream gate is a stateless format check, so the gateway mints a valid ID per key on first use and keeps it sticky. Sessions persist in the data volume; a stuck ID is refreshed locally after repeated 403s.</p>
+    <p class="hint" style="margin-top:0" id="ocSessHint">The gateway mints a CLI-format session ID per key on first use and keeps it sticky; IDs persist in the data volume and are refreshed locally after repeated 403s.</p>
     <div class="table-wrap">
       <table>
         <thead><tr><th style="width:70px">Key</th><th style="width:130px">Session</th><th style="width:150px">State</th><th>Minted at</th></tr></thead>
@@ -739,9 +779,9 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
             <th>Usage</th>
             <th>Success / errors</th>
             <th>Last success</th>
-            <th title="Main / backup egress — isolation mode picks main first, then backup; both down = account skipped">Proxy binding</th>
+            <th title="Main exit first, backup as fallback; both down = row skipped (isolation).">Proxy binding</th>
             <th>Actions</th>
-            <th style="text-align:center" title="Participates in rotation. Newly added accounts start disabled — tick Pool to join rotation.">Pool</th>
+            <th style="text-align:center" title="Routing participation. New rows start disabled — tick Pool to enable.">Pool</th>
           </tr>
         </thead>
         <tbody id="wbAccountsBody">
@@ -756,8 +796,8 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
       <div style="flex:1;display:flex;gap:8px;justify-content:center">
         <button class="btn btn-sm" onclick="stageAllWbPool(true)">Enable all</button>
         <button class="btn btn-sm" onclick="stageAllWbPool(false)">Disable all</button>
-        <button class="btn btn-sm" onclick="stageClearWorkbuddyProxyBindings()" title="Stage: clear proxy bindings on ALL WorkBuddy accounts and disable them — click Save to apply">Clear bindings</button>
-        <button class="btn btn-sm" onclick="applyProxiesToOthers('wb')" title="Copy this page's proxy bindings by row order to the other two account pools. Takes effect immediately; only proxy bindings are changed, enable/disable states are untouched.">Apply to others</button>
+        <button class="btn btn-sm" onclick="stageClearWorkbuddyProxyBindings()" title="Stage only — click Save to apply. Clears bindings and disables every row.">Clear bindings</button>
+        <button class="btn btn-sm" onclick="applyProxiesToOthers('wb')" title="Apply this page's bindings to all other pool pages by row order (immediate).">Apply to others</button>
       </div>
       <div style="flex:1;display:flex;gap:8px;justify-content:flex-end">
         <button class="btn btn-sm btn-warn" id="wbResetBtn" onclick="resetWorkbuddyEdits()" title="Discard staged changes and reload the last saved state">Discard</button>
@@ -776,7 +816,6 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
       <span class="auto-pill" id="wbConfigNote">Managed by the admin session</span>
     </div>
     <div class="section-body">
-      <div class="hint" style="margin-top:0;margin-bottom:16px">Listening, credentials, and data paths stay under the gateway admin session.</div>
       <div class="wb-config-grid">
         <div class="wb-config-group">
           <h3>Scheduled jobs</h3>
@@ -849,6 +888,206 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
     </div>
   </div>
 </form>
+</div>
+
+<div id="tab-openrouter" class="tab-panel" style="display:none">
+<h2 style="margin-bottom:4px">OpenRouter</h2>
+<div class="hint" id="orSummary" style="margin:0 0 16px">Loading...</div>
+
+
+
+<div class="section">
+  <div class="section-body">
+    <div class="form-row">
+      <div class="field" style="margin:0">
+        <label>Base URL</label>
+        <div style="display:flex;gap:8px;align-items:center">
+          <input type="text" id="orBaseURL" placeholder="https://openrouter.ai/api/v1" style="flex:1;min-width:0">
+          <button class="btn btn-primary btn-sm" onclick="saveOrConfig()">Confirm</button>
+        </div>
+      </div>
+    </div>
+    <div class="flex" style="gap:10px;margin:8px 0;align-items:center;flex-wrap:wrap">
+      <label class="hint" style="margin:0">Probe model (used by the Test buttons):</label>
+      <select id="orProbeModel" style="max-width:420px"><option value="">auto — first free model in the catalog</option></select>
+      <button class="btn btn-sm" onclick="refreshOrModels()" title="Re-sync the free-model catalog from openrouter.ai">Refresh models</button>
+      <span class="hint" style="margin:0" id="orModelsCount"></span>
+    </div>
+    <div class="table-wrap" style="margin-bottom:10px">
+      <table>
+        <thead><tr><th style="width:50px">#</th><th style="width:150px">Key</th><th style="width:70px">Usage</th><th>Cooldown</th><th title="Main exit first, backup as fallback; both down = row skipped (isolation).">Proxy binding</th><th style="width:130px"></th><th style="text-align:center" title="Routing participation. New rows start disabled — tick Pool to enable.">Pool</th></tr></thead>
+        <tbody id="orKeysBody"><tr><td colspan="7" class="empty">Loading...</td></tr></tbody>
+      </table>
+    </div>
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin:10px 6px 4px">
+      <button class="btn btn-primary btn-sm" onclick="openOrKeyAddDialog()">Add credentials</button>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-sm" onclick="stageAllOrKeysRouting(true)">Enable all</button>
+        <button class="btn btn-sm" onclick="stageAllOrKeysRouting(false)">Disable all</button>
+        <button class="btn btn-sm" onclick="stageClearOrKeyProxies()" title="Stage only — click Save to apply. Clears bindings and disables every row.">Clear bindings</button>
+        <button class="btn btn-sm" onclick="applyProxiesToOthers('or')" title="Apply this page's bindings to all other pool pages by row order (immediate).">Apply to others</button>
+        <button class="btn btn-sm" id="orTestBtn" onclick="batchTestOrKeys()" title="Run the Test probe on every row.">Test all</button>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-sm btn-warn" id="orResetBtn" onclick="resetOrKeyEdits()" title="Discard staged changes and reload the last saved state">Discard</button>
+        <button class="btn btn-primary btn-sm" id="orKeysSaveBtn" onclick="saveOrKeyEdits()">Save</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></span> Rate-limit defense</div>
+  <div class="section-body">
+    <div class="form-row">
+      <div class="field"><label>Max concurrency</label><input type="text" id="orMaxConc" placeholder="8"></div>
+      <div class="field"><label>Rate-limit retries</label><input type="text" id="orRetries" placeholder="3"></div>
+    </div>
+    <div class="form-actions"><button class="btn btn-primary" onclick="saveOrConfig()">Save rate-limit config</button></div>
+  </div>
+</div>
+
+<div class="section">
+  <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 5-6"/></svg></span> Free model catalog</div>
+  <div class="section-body">
+    <div class="hint" style="margin-top:0">Automatically synced from the official free-model source upstream (every 5 minutes).</div>
+    <div id="orModelsBody">Loading...</div>
+    </div>
+  </div>
+</div>
+
+<div id="tab-radeoncloud" class="tab-panel" style="display:none">
+<h2 style="margin-bottom:4px">RadeonCloud</h2>
+<div class="hint" id="amdSummary" style="margin:0 0 16px">Loading...</div>
+
+
+
+<div class="section">
+  <div class="section-body">
+    <div class="form-row">
+      <div class="field" style="margin:0">
+        <label>Base URL</label>
+        <div style="display:flex;gap:8px;align-items:center">
+          <input type="text" id="amdBaseURL" placeholder="https://developer.amd.com.cn/radeon/api/v1" style="flex:1;min-width:0">
+          <button class="btn btn-primary btn-sm" onclick="saveAmdConfig()">Confirm</button>
+        </div>
+      </div>
+    </div>
+    <div class="flex" style="gap:10px;margin:8px 0;align-items:center;flex-wrap:wrap">
+      <label class="hint" style="margin:0">Probe model (used by the Test buttons):</label>
+      <select id="amdProbeModel" style="max-width:420px"><option value="">auto — DeepSeek-V4-Flash first</option></select>
+      <button class="btn btn-sm" onclick="refreshAmdModels()" title="Re-sync the model catalog from AMD Radeon Cloud">Refresh models</button>
+      <span class="hint" style="margin:0" id="amdModelsCount"></span>
+    </div>
+    <div class="table-wrap" style="margin-bottom:10px">
+      <table>
+        <thead><tr><th style="width:50px">#</th><th style="width:150px">Key</th><th style="width:70px">Usage</th><th>Cooldown</th><th title="Main exit first, backup as fallback; both down = row skipped (isolation).">Proxy binding</th><th style="width:130px"></th><th style="text-align:center" title="Routing participation. New rows start disabled — tick Pool to enable.">Pool</th></tr></thead>
+        <tbody id="amdKeysBody"><tr><td colspan="7" class="empty">Loading...</td></tr></tbody>
+      </table>
+    </div>
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin:10px 6px 4px">
+      <button class="btn btn-primary btn-sm" onclick="openAmdKeyAddDialog()">Add credentials</button>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-sm" onclick="stageAllAmdKeysRouting(true)">Enable all</button>
+        <button class="btn btn-sm" onclick="stageAllAmdKeysRouting(false)">Disable all</button>
+        <button class="btn btn-sm" onclick="stageClearAmdKeyProxies()" title="Stage only — click Save to apply. Clears bindings and disables every row.">Clear bindings</button>
+        <button class="btn btn-sm" onclick="applyProxiesToOthers('amd')" title="Apply this page's bindings to all other pool pages by row order (immediate).">Apply to others</button>
+        <button class="btn btn-sm" id="amdTestBtn" onclick="batchTestAmdKeys()" title="Run the Test probe on every row.">Test all</button>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-sm btn-warn" id="amdResetBtn" onclick="resetAmdKeyEdits()" title="Discard staged changes and reload the last saved state">Discard</button>
+        <button class="btn btn-primary btn-sm" id="amdKeysSaveBtn" onclick="saveAmdKeyEdits()">Save</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></span> Rate-limit defense</div>
+  <div class="section-body">
+    <div class="hint" style="margin-top:0;margin-bottom:14px">Upstream limits: 30 requests/min per key, 8 concurrent per key, 20 requests/min per account.</div>
+    <div class="form-row">
+      <div class="field"><label>Max concurrency</label><input type="text" id="amdMaxConc" placeholder="8"></div>
+      <div class="field"><label>Rate-limit retries</label><input type="text" id="amdRetries" placeholder="3"></div>
+    </div>
+    <div class="form-actions"><button class="btn btn-primary" onclick="saveAmdConfig()">Save rate-limit config</button></div>
+  </div>
+</div>
+
+<div class="section">
+  <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 5-6"/></svg></span> Model catalog</div>
+  <div class="section-body">
+    <div class="hint" style="margin-top:0">Automatically synced from the official free-model source upstream (every 5 minutes).</div>
+    <div id="amdModelsBody">Loading...</div>
+    </div>
+  </div>
+</div>
+
+<div id="tab-tokenharbor" class="tab-panel" style="display:none">
+<h2 style="margin-bottom:4px">TokenHarbor</h2>
+<div class="hint" id="thSummary" style="margin:0 0 16px">Loading...</div>
+
+
+
+<div class="section">
+  <div class="section-body">
+    <div class="form-row">
+      <div class="field" style="margin:0">
+        <label>Base URL</label>
+        <div style="display:flex;gap:8px;align-items:center">
+          <input type="text" id="thBaseURL" placeholder="https://tokenharbor.ai/v1" style="flex:1;min-width:0">
+          <button class="btn btn-primary btn-sm" onclick="saveTHConfig()">Confirm</button>
+        </div>
+      </div>
+    </div>
+    <div class="flex" style="gap:10px;margin:8px 0;align-items:center;flex-wrap:wrap">
+      <label class="hint" style="margin:0">Probe model (used by the Test buttons):</label>
+      <select id="thProbeModel" style="max-width:420px"><option value="">auto — deepseek-v4.1-flash:free first</option></select>
+      <button class="btn btn-sm" onclick="refreshTHModels()" title="Re-sync the free-model catalog from TokenHarbor (needs a key)">Refresh models</button>
+      <span class="hint" style="margin:0" id="thModelsCount"></span>
+    </div>
+    <div class="table-wrap" style="margin-bottom:10px">
+      <table>
+        <thead><tr><th style="width:50px">#</th><th style="width:150px">Key</th><th style="width:70px">Usage</th><th>Cooldown</th><th title="Main exit first, backup as fallback; both down = row skipped (isolation).">Proxy binding</th><th style="width:130px"></th><th style="text-align:center" title="Routing participation. New rows start disabled — tick Pool to enable.">Pool</th></tr></thead>
+        <tbody id="thKeysBody"><tr><td colspan="7" class="empty">Loading...</td></tr></tbody>
+      </table>
+    </div>
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin:10px 6px 4px">
+      <button class="btn btn-primary btn-sm" onclick="openTHKeyAddDialog()">Add credentials</button>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-sm" onclick="stageAllTHKeysRouting(true)">Enable all</button>
+        <button class="btn btn-sm" onclick="stageAllTHKeysRouting(false)">Disable all</button>
+        <button class="btn btn-sm" onclick="stageClearTHKeyProxies()" title="Stage only — click Save to apply. Clears bindings and disables every row.">Clear bindings</button>
+        <button class="btn btn-sm" onclick="applyProxiesToOthers('th')" title="Apply this page's bindings to all other pool pages by row order (immediate).">Apply to others</button>
+        <button class="btn btn-sm" id="thTestBtn" onclick="batchTestTHKeys()" title="Run the Test probe on every row.">Test all</button>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-sm btn-warn" id="thResetBtn" onclick="resetTHKeyEdits()" title="Discard staged changes and reload the last saved state">Discard</button>
+        <button class="btn btn-primary btn-sm" id="thKeysSaveBtn" onclick="saveTHKeyEdits()">Save</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></span> Rate-limit defense</div>
+  <div class="section-body">
+    <div class="hint" style="margin-top:0;margin-bottom:14px">Upstream limits: 60 requests/min per account, 100 requests/min per IP.</div>
+    <div class="form-row">
+      <div class="field"><label>Max concurrency</label><input type="text" id="thMaxConc" placeholder="8"></div>
+      <div class="field"><label>Rate-limit retries</label><input type="text" id="thRetries" placeholder="3"></div>
+    </div>
+    <div class="form-actions"><button class="btn btn-primary" onclick="saveTHConfig()">Save rate-limit config</button></div>
+  </div>
+</div>
+
+<div class="section">
+  <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 5-6"/></svg></span> Free model catalog</div>
+  <div class="section-body">
+    <div class="hint" style="margin-top:0">Automatically synced from the official free-model source upstream (every 5 minutes).</div>
+    <div id="thModelsBody">Loading...</div>
+    </div>
+  </div>
 </div>
 
 </div>
@@ -929,6 +1168,60 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
     <div class="wb-dialog-actions">
       <button class="btn btn-primary" id="zenKeyAddSubmit" onclick="zenKeyAddFromDialog()">Save</button>
       <button class="btn" onclick="closeZenKeyAddDialog()">Cancel</button>
+    </div>
+  </div>
+</dialog>
+
+<dialog id="orKeyAddDialog">
+  <div class="wb-dialog-head">
+    <span>Add OpenRouter keys</span>
+    <button class="btn btn-sm" onclick="closeOrKeyAddDialog()">Close</button>
+  </div>
+  <div class="wb-dialog-body">
+    <p class="hint" style="margin-top:0" id="orKeyAddHint">One OpenRouter API key per line (sk-or-v1-…). New keys start with routing disabled — tick Pool to enable.</p>
+    <div class="field">
+      <label>API keys (one per line) *</label>
+      <textarea id="orKeyAddInput" rows="5" placeholder="sk-or-v1-…" style="font-family:'JetBrains Mono',Consolas,monospace"></textarea>
+    </div>
+    <div class="wb-dialog-actions">
+      <button class="btn btn-primary" id="orKeyAddSubmit" onclick="orKeyAddFromDialog()">Save</button>
+      <button class="btn" onclick="closeOrKeyAddDialog()">Cancel</button>
+    </div>
+  </div>
+</dialog>
+
+<dialog id="amdKeyAddDialog">
+  <div class="wb-dialog-head">
+    <span>Add AMD keys</span>
+    <button class="btn btn-sm" onclick="closeAmdKeyAddDialog()">Close</button>
+  </div>
+  <div class="wb-dialog-body">
+    <p class="hint" style="margin-top:0" id="amdKeyAddHint">One AMD Radeon Cloud API key per line (rc-…, issued at the <a href="https://developer.amd.com.cn/radeon/tokenfactory" target="_blank" rel="noopener" style="color:var(--accent)">Token Factory</a>). New keys start with routing disabled — tick Pool to enable.</p>
+    <div class="field">
+      <label>API keys (one per line) *</label>
+      <textarea id="amdKeyAddInput" rows="5" placeholder="rc-…" style="font-family:'JetBrains Mono',Consolas,monospace"></textarea>
+    </div>
+    <div class="wb-dialog-actions">
+      <button class="btn btn-primary" id="amdKeyAddSubmit" onclick="amdKeyAddFromDialog()">Save</button>
+      <button class="btn" onclick="closeAmdKeyAddDialog()">Cancel</button>
+    </div>
+  </div>
+</dialog>
+
+<dialog id="thKeyAddDialog">
+  <div class="wb-dialog-head">
+    <span>Add TokenHarbor keys</span>
+    <button class="btn btn-sm" onclick="closeTHKeyAddDialog()">Close</button>
+  </div>
+  <div class="wb-dialog-body">
+    <p class="hint" style="margin-top:0" id="thKeyAddHint">One TokenHarbor universal key per line (thk_live_…, from the <a href="https://tokenharbor.ai/dashboard/api-keys" target="_blank" rel="noopener" style="color:var(--accent)">dashboard</a>). New keys start with routing disabled — tick Pool to enable.</p>
+    <div class="field">
+      <label>API keys (one per line) *</label>
+      <textarea id="thKeyAddInput" rows="5" placeholder="thk_live_…" style="font-family:'JetBrains Mono',Consolas,monospace"></textarea>
+    </div>
+    <div class="wb-dialog-actions">
+      <button class="btn btn-primary" id="thKeyAddSubmit" onclick="thKeyAddFromDialog()">Save</button>
+      <button class="btn" onclick="closeTHKeyAddDialog()">Cancel</button>
     </div>
   </div>
 </dialog>
@@ -1015,7 +1308,6 @@ const I18N_ZH = {
   'Task center': '任务中心',
   'Refresh all': '全部刷新',
   'Refresh all account balances': '刷新全部账号的余额',
-  'Stage: clear proxy bindings on ALL WorkBuddy accounts and disable them — click Save to apply': '清空全部账号的代理绑定并置为禁用，点击保存后生效',
   'Check in all': '全部签到',
   'Pet patrol': '宠物巡检',
   'Activity all': '连登活跃',
@@ -1078,7 +1370,7 @@ const I18N_ZH = {
   'Toggle theme': '切换主题',
   // 仪表盘
   'Platform overview': '平台概览',
-  'Click a platform card to open its management page.': '点击平台卡片进入对应管理页。',
+  'Test whether the account works (success clears cooldown/expired state)': '测试账号是否可用（成功会解除冷却/过期状态）',
   'Request statistics': '请求统计',
   'Counted since ': '统计自 ',
   'requests': '请求',
@@ -1130,7 +1422,6 @@ const I18N_ZH = {
   'Concurrency': '并发',
   'Scan tasks': '扫描任务',
   'Run all': '全部执行',
-  'Bound egress no longer in the proxy pool — isolation logic skips this account': '绑定的出口已不在代理池中，该账号会被隔离逻辑跳过',
   'Main egress: requests go through this egress whenever available': '主出口：可用时固定从该出口发出',
   'Backup egress: fallback while the main egress is cooling down or unavailable': '备用出口：主出口冷却或不可用时兜底',
   'Failed to save ': '保存失败 ',
@@ -1195,7 +1486,6 @@ const I18N_ZH = {
   '0 — free only': '0 — 仅免费',
   'WorkBuddy configuration': 'WorkBuddy 配置',
   'Managed by the admin session': '面板由当前管理员会话管理',
-  'Listening, credentials, and data paths stay under the gateway admin session.': '监听地址、API 密钥、凭证目录与状态文件路径由当前项目统一管理。',
   'Scheduled jobs': '定时任务',
   'Automatic check-in': '自动签到',
   'Check-in hours': '签到时点（小时，逗号分隔）',
@@ -1254,8 +1544,8 @@ const I18N_ZH = {
   'The type is detected automatically — sk_... is pooled as a static API key, anything else as an OAuth refresh token.': '类型自动识别：sk_... 按静态 API key 入池，其余按 OAuth refreshToken 处理。',
   ', ': '，',
   'Clear proxy bindings on ALL keys and disable routing? Click Save to apply.': '清空全部 key 的代理绑定并禁用路由？点击「保存」后生效。',
-  'Stage: clear proxy bindings on ALL keys and disable routing — click Save to apply': '暂存操作：清空全部 key 的代理绑定并禁用路由，点击「保存」后生效',
-  'Run the Test probe on every account (same as clicking Test on each row)': '对当前平台所有账号执行真实探测（等价于逐行点一次测试）',
+  'Stage only — click Save to apply. Clears bindings and disables every row.': '仅暂存——点「保存」后生效。清空所有行的代理绑定并禁用。',
+  'Run the Test probe on every row.': '对本页所有行执行一次测试探测。',
   'Email': '邮箱',
   'Today/Total tokens': '今日/累计 token',
   'Last used': '最近使用',
@@ -1271,19 +1561,17 @@ const I18N_ZH = {
   'while both are unavailable — never routed through another exit. Configure the list on the': '两者都不可用时整个账号被跳过 —— 绝不路由到其他出口。代理列表在',
   'page.': ' 页配置。',
   'Counted locally by this proxy — not the official free quota': '本代理本地统计 —— 非官方免费额度',
-  'Main / backup egress — isolation mode picks main first, then backup; both down = account skipped': '主/辅出口 —— 隔离模式先用主、再用辅；双不可用 = 跳过该账号',
-  'Main / backup egress — isolation mode picks main first, then backup; both down = key skipped.': '主/辅出口 —— 隔离模式先用主、再用辅；双不可用 = 跳过该 key。收割机铸造也走绑定出口。',
+  'Main exit first, backup as fallback; both down = row skipped (isolation).': '主出口优先，备用兜底；都不可用即跳过该行（隔离模式）。',
   'Main exit — used whenever available': '主出口 —— 可用即优先',
   'Backup exit — used when main is cooling/removed': '辅出口 —— 主冷却/被删时使用',
-  'Bound proxy is no longer in the proxy pool — the account is skipped until fixed': '绑定的代理已不在代理池中 —— 修复前该账号一直被跳过',
-  'Bound proxy is no longer in the proxy pool — the key is skipped until fixed': '绑定的代理已不在代理池中 —— 修复前该 key 一直被跳过',
+  'Bound proxy is no longer in the proxy pool — skipped until fixed': '绑定的代理已不在代理池中——修复前跳过该行。',
   // 添加账号弹窗（accAddDialog，Cline 页"添加账号"按钮）
   'Token or API key *': 'Token 或 API key *',
   // 代理池页
   'Egress proxies': '出口代理',
-  'One proxy list serves every upstream that opts in below. One proxy per line:': '一份代理列表供下方所有选择启用的上游共用。每行一条：',
+  'One proxy per line:': '每行一个代理：',
+  '. All upstreams share this list; unhealthy proxies are skipped automatically.': '。所有上游共用此列表；不健康的代理会被自动跳过。',
   'or': '或',
-  '. Requests rotate across healthy proxies per request; a proxy that hits a rate limit is cooled down and skipped automatically.': '。请求按次在健康代理间轮转；触发限流的代理会自动冷却并被跳过。',
   'one per line: socks://b64(user:pass)@host:port#alias, socks5://user:pass@host:port#alias or http://host:port': '每行一条：socks://b64(账号:密码)@host:port#别名、socks5://账号:密码@host:port#别名 或 http://host:port（#别名自动识别）',
   'Proxy list': '代理列表',
   'Proxy selection strategy': '代理选择策略',
@@ -1304,23 +1592,24 @@ const I18N_ZH = {
   'No proxies configured': '未配置代理',
   'Upstream attempts that egressed via this proxy since the pool was last edited': '上次编辑代理池以来，经此代理出网的上游尝试次数',
   'Transport-layer success rate since the pool was last edited (upstream 4xx/5xx still counts as the proxy being online)': '上次编辑代理池以来的传输层成功率（上游 4xx/5xx 不算代理失败）',
-  'Success rate over the most recent attempts (window: last 50). Below 80% with at least 10 samples is highlighted red — time to replace the proxy.': '最近若干次尝试的成功率（窗口：最近 50 次）。样本 ≥10 且低于 80% 标红——该考虑换掉这个代理了。',
-  'Rates are passively sampled from real upstream traffic only — no probing traffic is generated. "No data" means this exit has not been used since the pool was last edited (with the fill strategy only the first proxy gets traffic; global switches and per-identity bindings decide the rest). Editing the proxy list resets all counters.': '在线率只从真实上游流量被动采样，不产生任何探测流量。“无数据”表示该出口自上次编辑代理池以来没被用到（fill 策略只有第一个代理会拿到流量，其余由全局开关与各身份的绑定决定）。编辑代理列表会清空全部统计。',
+  'Success rate over the last 50 attempts; red below 80% (min 10 samples).': '最近 50 次尝试的成功率；样本≥10 且低于 80% 时标红。',
+  'Rates are sampled passively from real traffic — no probing. "No data" = unused since the last pool edit; editing the proxy list resets counters.': '在线率仅被动采样自真实流量——不产生探测流量。“无数据”=自上次编辑代理池后未使用；编辑代理列表会清零计数。',
   'Restore defaults': '恢复默认',
   'Restore the default Cline CLI headers': '恢复默认的 Cline CLI 请求头',
   'Headers restored to defaults': '请求头已恢复默认',
   'OpenCode keys without proxy bindings follow this switch.': 'OpenCode 未绑定代理的 key 遵循此开关。',
   'Clear bindings': '清空代理',
   'Apply to others': '代理套用',
-  'Copy this page\'s proxy bindings by row order to the other two account pools. Takes effect immediately; only proxy bindings are changed, enable/disable states are untouched.': '把本页的代理绑定按行序复制到其余两个账号池（多出的丢弃，不足的保留原样）。即刻生效，只改代理绑定，不影响启用/禁用状态。',
+  'Apply this page\'s bindings to all other pool pages by row order (immediate).': '把本页的代理绑定按行序套用到其余五个页面（即刻生效）。',
   'No accounts to apply from': '当前页没有账号可套用',
+  'No keys to apply from': '当前页没有 key 可套用',
   'Apply ': '把 ',
   ' proxy bindings by row order to ': ' 的代理绑定按行序套用到 ',
   ' and ': ' 和 ',
-  ' accounts? Takes effect immediately; ': ' 账号？即刻生效；',
+  ' lists? Takes effect immediately; ': ' 的所有列表？即刻生效；',
   'only proxy bindings change, enable/disable states are untouched.': '只改代理绑定，不改启用/禁用状态。',
   'Applied ': '已套用 ',
-  ' binding(s) to other pools': ' 条绑定到其他账号池',
+  ' binding(s) to other pools': ' 条绑定到其他池',
   ' binding(s), ': ' 条绑定，成功 ',
   ' failed': ' 条失败',
   'Enable all': '一键启用',
@@ -1338,7 +1627,7 @@ const I18N_ZH = {
   'Config export / import': '配置导入导出',
   'Export config': '导出配置',
   'Import config': '导入配置',
-  'Import/export all persisted configuration. The export file contains private information; keep it safe. Import is an overwrite operation, so proceed with caution.': '导入/导出所有持久化配置。导出配置含私密信息，请妥善保管。 导入配置为覆盖操作，请谨慎执行。',
+  'Export contains credentials — keep the file safe. Import overwrites existing config.': '导出文件包含凭据——请妥善保管。导入会覆盖现有配置。',
   'Config exported': '配置已导出',
   'Config imported': '配置已导入',
   'Unsupported backup version': '不支持的备份版本',
@@ -1353,11 +1642,11 @@ const I18N_ZH = {
   'Isolation mode': '隔离模式',
   'Enabled (default) — bound identities only ever use their bound exits': '启用（默认）—— 绑定的身份只从绑定出口出网',
   'Disabled — ignore bindings; exits rotate per the strategy above (direct when pool off)': '关闭 —— 忽略绑定；出口按上方轮转策略轮换（未启用代理池时直连）',
-  'With isolation on, every identity (account or key) only ever egresses through its bound exits — main proxy first, backup as fallback; when both are unavailable the identity is skipped, never falling back to another exit or a direct connection. The': '隔离开启时，每个身份只从自己绑定的出口出网：主代理优先，辅代理兜底；两者都不可用时该身份会被整体跳过 —— 绝不回退到其他出口或直连。',
-  'env var only accepts true/false: true forces this on (read-only toggle); false just changes the default to off.': ' 仅接受 true/false：true 强制开启（开关只读）；false 仅把默认值改为关闭(仍可修改)。',
+  'Isolation on: identities egress only via their bound exits (main → backup); both down = skipped — never another exit or direct. Forced on when': '开启隔离：每个身份只从绑定的出口出站（主→备）；都不可用即跳过——绝不改走其他出口或直连。设有',
+  '=true.': '=true 时强制开启。',
   'PROXY_ISOLATION=true is set — isolation is forced on. Unset the env var (or set it to false) to control isolation from the panel.': '已设置 PROXY_ISOLATION=true —— 隔离被强制开启。删除该环境变量（或设为 false）才能在面板控制隔离。',
   'Enable backup proxies': '启用辅代理',
-  'Off by default: every identity egresses through its main proxy only — when the main proxy is cooling down or removed, the identity is skipped for that round, never trying the backup and never falling back to a direct connection. When enabled, backups act as the fallback for the main proxy to keep identities available as much as possible.': '辅代理功能默认关闭，每个身份只从主代理出网——主代理冷却或被删除时，本轮直接跳过该身份，不会尝试辅代理，也绝不回退直连。辅代理功能开启时，辅代理作为主代理备份，尽可能保证身份可用。',
+  'Off by default: main proxy only — cooling/removed = skipped for that round. On: backup acts as fallback.': '默认关闭：每个身份只走主代理——主代理冷却或被移除时该轮直接跳过。开启后：备用代理作为主代理的兜底。',
   'Backup proxies are disabled — follows the main slot': '辅代理已关闭 —— 跟随主代理',
   // 网关设置页
   'API keys': 'API key',
@@ -1380,10 +1669,10 @@ const I18N_ZH = {
   'Value': '值',
   'Add header': '添加请求头',
   'Save headers': '保存请求头',
-  'These headers are attached to every request forwarded to the Cline API to mimic the official client.': '这些请求头会附加在每个转发到 Cline API 的请求上，用于模拟官方客户端。',
+  'Attached to every Cline API request to mimic the official client.': '随每个转发到 Cline API 的请求附上，用于模拟官方客户端。',
   'Danger zone': '危险区',
   'Delete all data': '删除全部数据',
-  'Deletes all persisted data, including but not limited to accounts and configuration. This cannot be undone; proceed with caution!': '删除全部持久化数据，包含但不限于账号和配置等，操作不可撤销，请谨慎操作！',
+  'Deletes ALL persisted data (accounts, keys, proxies, config). Cannot be undone.': '删除所有持久化数据（账号、key、代理、配置）。不可恢复。',
   'Delete ALL persisted data? This will clear Cline accounts and client keys, OpenCode keys, WorkBuddy accounts, the proxy pool, default model, request headers, scheduling strategy, custom aliases, sticky sessions, and request logs. This cannot be undone!': '确定删除全部持久化数据？将清空 Cline 账号与客户端 key、OpenCode key、WorkBuddy 账号、代理池、默认模型、请求头、调度策略、自定义别名、粘性会话和请求日志，且不可撤销！',
   'no charge': '免费',
   // 请求日志页
@@ -1411,8 +1700,7 @@ const I18N_ZH = {
   'other': '其他',
   // Combos 页
   'Create custom alias': '创建自定义别名',
-  'Clients request the alias ID as their model, and the proxy rewrites it to the target model for the chosen platform. Alias IDs are user-defined (e.g.': '客户端以别名 ID 作为 model 请求，代理将其改写为所选平台上的目标模型。别名 ID 自定义（如 ',
-  ') and must not collide with real model IDs; the target must belong to the same platform — cross-platform targets are not allowed.': '）且不得与真实模型 ID 冲突；目标必须属于同一平台 —— 不允许跨平台。',
+  'Clients use the alias ID as the model name; the proxy rewrites it to the target. Alias must not collide with real model IDs, and the target must stay on the same platform.': '客户端以别名 ID 作为模型名，代理将其改写为目标模型。别名不得与真实模型 ID 冲突，且目标必须属于同一平台。',
   'Alias ID': '别名 ID',
   'Platform': '平台',
   'Existing custom aliases': '现有自定义别名',
@@ -1430,6 +1718,7 @@ const I18N_ZH = {
   'Key': 'Key',
   'Usage': '用量',
   'Session': '会话',
+  'Minted at': '铸造时间',
   'live': 'live',
   'stale': '已失效',
   'no session': '无会话',
@@ -1450,7 +1739,7 @@ const I18N_ZH = {
   'Summary cap': '摘要上限',
   'Save compaction config': '保存压缩配置',
   'Live session IDs (OpenCode FreeTier gate)': 'Live 会话 ID（OpenCode FreeTier 门槛）',
-  'The free tier accepts locally minted session IDs in the CLI format: the upstream gate is a stateless format check, so the gateway mints a valid ID per key on first use and keeps it sticky. Sessions persist in the data volume; a stuck ID is refreshed locally after repeated 403s.': '免费层接受本地铸造的 CLI 格式会话 ID：上游门槛是无状态格式检查，网关为每个 key 首次使用时铸造合法 ID 并保持粘性。会话持久化在数据卷中；反复 403 时本地换新。',
+  'The gateway mints a CLI-format session ID per key on first use and keeps it sticky; IDs persist in the data volume and are refreshed locally after repeated 403s.': '网关在每个 key 首次使用时铸造一个 CLI 格式的会话 ID 并保持粘性；会话 ID 持久化在数据卷中，多次 403 后自动在本地换新。',
   '.': '。',
   'Context': '上下文',
   'Maximum context length': '最大上下文长度',
@@ -1473,12 +1762,13 @@ const I18N_ZH = {
   'Proxy pool saved': '代理池已保存',
   'Global policy saved': '全局策略已保存',
   'WorkBuddy accounts without proxy bindings follow this switch.': 'WorkBuddy 未绑定代理的账号遵循此开关。',
+  'OpenRouter keys without proxy bindings follow this switch.': 'OpenRouter 未绑定代理的 key 遵循此开关。',
+  'AMD keys without proxy bindings follow this switch.': 'AMD 未绑定代理的 key 遵循此开关。',
+  'TokenHarbor keys without proxy bindings follow this switch.': 'TokenHarbor 未绑定代理的 key 遵循此开关。',
   'Proxy isolation settings saved': '代理隔离设置已保存',
   'Pool': '启用',
-  'Participates in rotation': '参与轮换',
-  'Routing participation. Newly added accounts start unchecked — tick Pool to join rotation.': '路由参与开关。新增账号默认不勾选，勾选 Pool 后才参与轮换。',
-  'Routing participation: unchecked keys never enter request rotation. Newly added keys start disabled — tick Pool to enable.': '路由参与开关：不勾选的 key 不进入请求轮转，铸造跟随路由（路由禁用的 key 不再自动铸造）。新增 key 默认禁用，勾选 Pool 后启用。',
-  'Participates in rotation. Newly added accounts start disabled — tick Pool to join rotation.': '参与轮换。新增账号默认禁用，勾选 Pool 后才参与轮换。',
+  'Routing participation. New rows start disabled — tick Pool to enable.': '路由参与开关：新增行默认禁用，勾选 Pool 后参与轮转。',
+  'Routing participation: unchecked keys never enter request rotation. Newly added keys start disabled — tick Pool to enable. Minting follows routing — keys with routing disabled stop auto-minting.': '路由参与开关：不勾选的 key 不进入请求轮转，铸造跟随路由（路由禁用的 key 不再自动铸造）。新增 key 默认禁用，勾选 Pool 后启用。',
   'Save failed: ': '保存失败：',
   'Test failed: ': '测试失败：',
   'Check failed: ': '检查失败：',
@@ -1533,6 +1823,44 @@ const I18N_ZH = {
   'Checking': '检查中',
   'Recovers ': '恢复于 ',
   'No opencode keys configured': '没有配置任何 opencode key',
+  'No OpenRouter keys configured': '没有配置任何 OpenRouter key',
+  'No RadeonCloud keys configured': '没有配置任何 RadeonCloud key',
+  'No TokenHarbor keys configured': '没有配置任何 TokenHarbor key',
+  // ===== OpenRouter / RadeonCloud / TokenHarbor 页（目录/限流/弹窗） =====
+  'auto — first free model in the catalog': '自动——目录中第一个免费模型',
+  'auto — DeepSeek-V4-Flash first': '自动——优先 DeepSeek-V4-Flash',
+  'auto — deepseek-v4.1-flash:free first': '自动——优先 deepseek-v4.1-flash:free',
+  'Free model catalog': '免费模型目录',
+  'Model catalog': '模型目录',
+  'Automatically synced from the official free-model source upstream (every 5 minutes).': '自动同步上游的官方免费模型源（每 5 分钟）。',
+  'Upstream limits: 30 requests/min per key, 8 concurrent per key, 20 requests/min per account.': '上游限制：每 key 30 次/分钟、8 并发，每账号 20 次/分钟。',
+  'Upstream limits: 60 requests/min per account, 100 requests/min per IP.': '上游限制：每账号 60 次/分钟，每 IP 100 次/分钟。',
+  'Re-sync the free-model catalog from openrouter.ai': '从 openrouter.ai 重新同步免费模型目录',
+  'Re-sync the model catalog from AMD Radeon Cloud': '从 AMD Radeon Cloud 重新同步模型目录',
+  'Re-sync the free-model catalog from TokenHarbor (needs a key)': '从 TokenHarbor 重新同步免费模型目录（需要 key）',
+  'Probe the rate limit; if still limited, stays cooling with a recovery time': '探测限流状态；若仍在限流则保持冷却并显示恢复时间',
+  'Add OpenRouter keys': '添加 OpenRouter key',
+  'One OpenRouter API key per line (sk-or-v1-…). New keys start with routing disabled — tick Pool to enable.': '每行一个 OpenRouter API key（sk-or-v1-…）。新 key 默认不参与路由——勾选"启用"后生效。',
+  'Add AMD keys': '添加 AMD key',
+  'One AMD Radeon Cloud API key per line (rc-…, issued at the': '每行一个 AMD Radeon Cloud API key（rc-…，获取自',
+  '). New keys start with routing disabled — tick Pool to enable.': '）。新 key 默认不参与路由——勾选"启用"后生效。',
+  'Add TokenHarbor keys': '添加 TokenHarbor key',
+  'One TokenHarbor universal key per line (thk_live_…, from the': '每行一个 TokenHarbor 通用 key（thk_live_…，获取自',
+  'dashboard': '控制台',
+  'OpenRouter config saved': 'OpenRouter 配置已保存',
+  'AMD config saved': 'AMD 配置已保存',
+  'TokenHarbor config saved': 'TokenHarbor 配置已保存',
+  'Catalog refreshed': '目录已刷新',
+  'No free models yet — click Refresh models': '暂无免费模型——点"刷新模型"',
+  'No models yet — click Refresh models': '暂无模型——点"刷新模型"',
+  ' free models': ' 个免费模型',
+  'Batch test done: ': '批量测试完成：',
+  ' tested, ': ' 个已测，',
+  ' ok': ' 个正常',
+  ' cooling': ' 个冷却中',
+  ' error': ' 个失败',
+  'no session': '无会话',
+  'live': '存活',
   'Failed to load': '加载失败',
   'Default model saved: ': '默认模型已保存：',
   'Invalid proxy format: ': '代理格式无效：',
@@ -1666,6 +1994,9 @@ function switchTab(name) {
   if (name === 'proxypool') loadProxyPool();
   if (name === 'opencode') { loadOcConfig(); loadOcModels(); loadOcStats(); loadOcSessions(); }
   if (name === 'workbuddy') ensureWorkbuddyConsole();
+  if (name === 'openrouter') loadOrConfig();
+  if (name === 'radeoncloud') loadAmdConfig();
+  if (name === 'tokenharbor') loadTHConfig();
   if (name === 'combos') { loadCombos(); fillComboModels(); }
   // 把当前页写进 hash：刷新/重开浏览器后 restoreTab 恢复到离开时的页
   try { history.replaceState(null, '', '#' + name); } catch (e) { /* ignore */ }
@@ -1753,7 +2084,7 @@ function wbBindingCell(account) {
   const backupVal = backupLocked ? main : backup;
   const stale = v => v && v !== EGRESS_DIRECT && !proxyListCache.includes(v);
   const staleMark = (stale(main) || stale(backup))
-    ? ' <span title="' + T('Bound egress no longer in the proxy pool — isolation logic skips this account') + '" style="color:var(--danger)">⚠</span>'
+    ? ' <span title="' + T('Bound proxy is no longer in the proxy pool — skipped until fixed') + '" style="color:var(--danger)">⚠</span>'
     : '';
   return '<td style="white-space:nowrap">' +
     egComboHTML('wb', id, 'main', main, T('Main egress: requests go through this egress whenever available')) + ' ' +
@@ -1794,7 +2125,7 @@ function renderWorkbuddyAccounts() {
     const poolEnabled = account.pool_enabled !== false;
     wbSnapshot[id] = { enabled: poolEnabled };
     const poolCell = '<td style="text-align:center"><input type="checkbox" data-wb-pool="' + esc(id) + '"' +
-      (poolEnabled ? ' checked' : '') + ' title="' + esc(T('Participates in rotation')) + '" aria-label="' + esc(T('Participates in rotation')) + '"></td>';
+      (poolEnabled ? ' checked' : '') + ' title="' + esc(T('Participates in request routing')) + '" aria-label="' + esc(T('Participates in request routing')) + '"></td>';
     // uid 过长会把 Account 列撑宽，昵称下方只留前 10 个字符，完整值走 title 悬浮。
     const shortId = id.length > 10 ? id.slice(0, 10) + '…' : id;
     return '<tr draggable="true" data-wb-id="' + esc(id) + '" data-drag-id="' + esc(id) + '">' +
@@ -2390,11 +2721,29 @@ async function loadStats() {
     setDash('dashWb', 'accounts', ov.total, ov.healthy, ov.cooling);
   } catch (e) { /* ignore */ }
   try {
+    const d = await api('GET', '/openrouter/config');
+    const ks = (d.data && d.data.keyStates) || [];
+    setDash('dashOr', 'keys', ks.length, ks.filter(k => k.routingEnabled !== false).length, ks.filter(k => k.cooling).length);
+  } catch (e) { /* ignore */ }
+  try {
+    const d = await api('GET', '/amd/config');
+    const ks = (d.data && d.data.keyStates) || [];
+    setDash('dashAmd', 'keys', ks.length, ks.filter(k => k.routingEnabled !== false).length, ks.filter(k => k.cooling).length);
+  } catch (e) { /* ignore */ }
+  try {
+    const d = await api('GET', '/tokenharbor/config');
+    const ks = (d.data && d.data.keyStates) || [];
+    setDash('dashTh', 'keys', ks.length, ks.filter(k => k.routingEnabled !== false).length, ks.filter(k => k.cooling).length);
+  } catch (e) { /* ignore */ }
+  try {
     const d = await api('GET', '/request-stats');
     const rs = (d.data && d.data.routes) || {};
     setReq('reqCline', rs.cline);
     setReq('reqZen', rs.zen);
     setReq('reqWb', rs.workbuddy);
+    setReq('reqOr', rs.openrouter);
+    setReq('reqAmd', rs.amd);
+    setReq('reqTh', rs.tokenharbor);
     const hint = _('reqStatsHint');
     if (hint && d.data && d.data.since) hint.textContent = T('Counted since ') + new Date(d.data.since).toLocaleString();
   } catch (e) { /* ignore */ }
@@ -2495,7 +2844,7 @@ async function loadAccounts() {
       const bindCell = '<td style="white-space:nowrap">' +
         egComboHTML('acc', a.accountId, 'main', pMain, T('Main exit — used whenever available')) + ' ' +
         egComboHTML('acc', a.accountId, 'backup', backupVal, T('Backup exit — used when main is cooling/removed'), backupLocked) +
-        (stale ? ' <span title="' + esc(T('Bound proxy is no longer in the proxy pool — the account is skipped until fixed')) + '" style="color:var(--danger)">⚠</span>' : '') +
+        (stale ? ' <span title="' + esc(T('Bound proxy is no longer in the proxy pool — skipped until fixed')) + '" style="color:var(--danger)">⚠</span>' : '') +
         '</td>';
       // PoolEnabled 与账号状态是两个维度：未设置时按启用渲染，显式 false
       // 才退出主选号；勾选改动先暂存，由"保存"按钮统一提交。
@@ -2504,7 +2853,7 @@ async function loadAccounts() {
       const poolCell = '<td style="text-align:center">' +
         '<input type="checkbox" data-pool-enabled="' + esc(a.accountId) + '"' +
         (poolEnabled ? ' checked' : '') +
-        ' title="' + esc(T('Participates in rotation')) + '" aria-label="' + esc(T('Participates in rotation')) + '">' +
+        ' title="' + esc(T('Participates in request routing')) + '" aria-label="' + esc(T('Participates in request routing')) + '">' +
         '</td>';
       const st = esc(a.status);
       return '<tr draggable="true" data-drag-id="' + esc(a.accountId) + '">' +
@@ -2519,7 +2868,7 @@ async function loadAccounts() {
           // inline onclick string concatenation gets HTML-decoded before JS parsing,
           // so even escaped quotes could be bypassed
           '<button class="btn btn-sm" data-act="test" data-acc="' + esc(a.accountId) + '" title="Test whether the account works (success clears cooldown/expired state)">Test</button> ' +
-          '<button class="btn btn-sm" data-act="reset" data-acc="' + esc(a.accountId) + '" title="Probe the rate limit and lift it: probes upstream; if still limited, stays in cooldown and shows recovery time">Reset</button> ' +
+          '<button class="btn btn-sm" data-act="reset" data-acc="' + esc(a.accountId) + '" title="Probe the rate limit; if still limited, stays cooling with a recovery time">Reset</button> ' +
           '<button class="btn btn-sm btn-danger" data-act="delete" data-acc="' + esc(a.accountId) + '" title="Delete">Delete</button>' +
         '</td>' +
         poolCell +
@@ -2581,7 +2930,7 @@ function proxyRecentRate(p) {
 // 代理绑定与"启用"勾选的改动只落在 DOM（行高亮 + 保存按钮描边），点击各
 // 平台的"保存"按钮才逐行 diff 快照后提交后端，再刷新表格。清空代理/一键
 // 启用/一键禁用同样只是暂存，保存后才生效。
-const EDIT_SAVE_BTN = { acc: 'accSaveBtn', key: 'ocKeysSaveBtn', wb: 'wbSaveBtn' };
+const EDIT_SAVE_BTN = { acc: 'accSaveBtn', key: 'ocKeysSaveBtn', wb: 'wbSaveBtn', or: 'orKeysSaveBtn', amd: 'amdKeysSaveBtn', th: 'thKeysSaveBtn' };
 function markRowDirty(row, kind) {
   if (row) row.classList.add('tr-dirty');
   const btn = _(EDIT_SAVE_BTN[kind] || 'accSaveBtn');
@@ -2599,6 +2948,7 @@ function stageRowBindingClear(row, kind) {
   if (!main.dataset.value) return false;
   main.dataset.value = '';
   main.value = egLabel('');
+  egSyncBadge(main);
   egApplyMainLinkage(row, '');
   return true;
 }
@@ -2722,15 +3072,23 @@ function stageClearZenKeyProxies() {
   });
 }
 
-// ========== 代理套用（把本页绑定按行序复制到其余两个账号池）==========
+// ========== 代理套用（把本页绑定按行序复制到其余五个池页）==========
 // 页名 → 绑定 kind 与表格选择器：owner 页的绑定从 DOM 读（含暂存未保存的），
-// 其余两页按行序覆盖第 0..n-1 行；异页缺号保留原绑定不动，多出来的丢弃。
-// 只写代理绑定，不碰启用/禁用/路由，不走 Save 暂存流程，写入即落盘。
+// 其余五页按行序覆盖第 0..n-1 行；异页缺号保留原绑定不动，多出来的丢弃。
+// 写入协议：acc=accountId，其余（key/wb/or/amd/th）=行 index。keys:true 的页
+// 空态提示用 key 措辞。只写代理绑定，不碰启用/禁用/路由，不走 Save 暂存
+// 流程，写入即落盘。
 const BINDING_PAGES = [
   { kind: 'acc', name: 'Cline',  tbody: '#accountTableBody' },
   { kind: 'key', name: 'OpenCode', tbody: '#ocKeysBody' },
-  { kind: 'wb',  name: 'WorkBuddy', tbody: '#wbAccountsBody' }
+  { kind: 'wb',  name: 'WorkBuddy', tbody: '#wbAccountsBody' },
+  { kind: 'or',  name: 'OpenRouter', tbody: '#orKeysBody', keys: true },
+  { kind: 'amd', name: 'RadeonCloud', tbody: '#amdKeysBody', keys: true },
+  { kind: 'th',  name: 'TokenHarbor', tbody: '#thKeysBody', keys: true }
 ];
+// 各页落盘后的重拉函数：目标页从未打开过（tbody 只有占位行）时先拉一次，
+// 套用结束后再重拉一次确认落盘结果。acc 例外：写入后 DOM 即最终态，不重拉。
+const BINDING_RELOAD = { acc: loadAccounts, key: loadOcConfig, wb: loadWorkbuddyAccounts, or: loadOrConfig, amd: loadAmdConfig, th: loadTHConfig };
 // 读一行的主/辅绑定：辅槽在开关关闭/主为全局或直连时已被 egApplyMainLinkage
 // 锁定跟随主槽，dataset.value 即为最终生效值，照抄即可。
 function readRowBindings(row, kind) {
@@ -2745,11 +3103,13 @@ function setRowBindings(row, kind, main, backup) {
   if (!mainInput) return null;
   mainInput.dataset.value = main;
   mainInput.value = egLabel(main);
+  egSyncBadge(mainInput);
   const backupInput = row.querySelector('.eg-input[data-eg="' + kind + '"][data-slot="backup"]');
   const bVal = (!backupProxyOn || main === '' || main === EGRESS_DIRECT) ? main : backup;
   if (backupInput) {
     backupInput.dataset.value = bVal;
     backupInput.value = egLabel(bVal);
+    egSyncBadge(backupInput);
   }
   egApplyMainLinkage(row, main);
   return mainInput.dataset.egid;
@@ -2760,6 +3120,12 @@ async function writeBinding(kind, id, main, backup) {
     await api('POST', '/accounts/proxy', { accountId: id, main: main, backup: backup });
   } else if (kind === 'key') {
     await api('POST', '/opencode/keys/proxy', { index: parseInt(id, 10), main: main, backup: backup });
+  } else if (kind === 'or') {
+    await api('POST', '/openrouter/keys/proxy', { index: parseInt(id, 10), main: main, backup: backup });
+  } else if (kind === 'amd') {
+    await api('POST', '/amd/keys/proxy', { index: parseInt(id, 10), main: main, backup: backup });
+  } else if (kind === 'th') {
+    await api('POST', '/tokenharbor/keys/proxy', { index: parseInt(id, 10), main: main, backup: backup });
   } else {
     await workbuddyProxyAdminCall('POST', 'proxy/set', { uid: id, main: main, backup: backup });
   }
@@ -2770,14 +3136,23 @@ async function applyProxiesToOthers(ownerKind) {
   const ownerRows = [...document.querySelectorAll(owner.tbody + ' tr')]
     .filter(r => r.querySelector('.eg-input[data-slot="main"]'));
   const bindings = ownerRows.map(r => readRowBindings(r, ownerKind)).filter(Boolean);
-  if (!bindings.length) { toast(T('No accounts to apply from'), 'info'); return; }
+  if (!bindings.length) { toast(T(owner.keys ? 'No keys to apply from' : 'No accounts to apply from'), 'info'); return; }
   const targets = BINDING_PAGES.filter(p => p.kind !== ownerKind);
+  const names = targets.map(p => p.name);
+  const nameList = names.length > 1
+    ? names.slice(0, -1).join(', ') + T(' and ') + names[names.length - 1]
+    : names[0];
   if (!confirm(T('Apply ') + owner.name + T(' proxy bindings by row order to ') +
-    targets.map(p => p.name).join(T(' and ')) + T(' accounts? Takes effect immediately; ') +
+    nameList + T(' lists? Takes effect immediately; ') +
     T('only proxy bindings change, enable/disable states are untouched.'))) return;
   let ok = 0, fail = 0;
-  const refreshPending = { key: false, wb: false };
+  const refreshPending = {};
   for (const t of targets) {
+    // 目标页从未打开过时 tbody 只有占位行 —— 先拉一次它的数据再套用
+    if (!document.querySelector(t.tbody + ' .eg-input')) {
+      const load = BINDING_RELOAD[t.kind];
+      if (load) { try { await load(); } catch (e) { /* 拉取失败按 0 行处理 */ } }
+    }
     const rows = [...document.querySelectorAll(t.tbody + ' tr')]
       .filter(r => r.querySelector('.eg-input[data-slot="main"]'));
     for (let i = 0; i < rows.length && i < bindings.length; i++) {
@@ -2788,13 +3163,15 @@ async function applyProxiesToOthers(ownerKind) {
         ok++;
       } catch (e) { fail++; }
     }
-    if (t.kind === 'key') refreshPending.key = true;
-    if (t.kind === 'wb') refreshPending.wb = true;
+    if (t.kind !== 'acc') refreshPending[t.kind] = true;
   }
   // 目标页表格重拉确认落盘结果；owner 页保持原样（其自身表格未被改动）。
   // 切走页面导致刷新失败时保持简单，不打断套用流程。
-  if (refreshPending.key) { try { await loadOcConfig(); } catch (e) { console.warn('applyProxiesToOthers: reload OpenCode keys failed', e); } }
-  if (refreshPending.wb) { try { await loadWorkbuddyAccounts(); } catch (e) { console.warn('applyProxiesToOthers: reload WorkBuddy accounts failed', e); } }
+  for (const k of Object.keys(refreshPending)) {
+    if (!refreshPending[k]) continue;
+    const load = BINDING_RELOAD[k];
+    if (load) { try { await load(); } catch (e) { console.warn('applyProxiesToOthers: reload ' + k + ' failed', e); } }
+  }
   if (fail) toast(T('Applied ') + ok + T(' binding(s), ') + fail + T(' failed'), 'warning');
   else toast(T('Applied ') + ok + T(' binding(s) to other pools'), 'success');
 }
@@ -2815,12 +3192,37 @@ function egLabel(v) {
   } catch (e) { /* 非 URL 形态，回退打码 */ }
   return maskProxyLabel(v);
 }
+// egBadgeHTML 代理值的"最近在线率"徽标 HTML：与下拉菜单项的 eg-rate 同源
+// （proxyHealthByProxy 缓存、同一低率阈值）。全局/直连或无样本时返回空串
+//（不占位）。低在线率标红。
+function egBadgeHTML(value) {
+  if (!value || value === EGRESS_DIRECT) return '';
+  const rate = proxyRecentRate(value);
+  if (!rate) return '';
+  return '<span class="eg-badge' + (rate.low ? ' low' : '') + '">' + esc(rate.text) + '</span>';
+}
+// egSyncBadge 按当前 dataset.value 重绘右侧在线率徽标（选中/失焦/联动后调用）。
+// 无样本或全局/直连时移除徽标并收回右侧留白。
+function egSyncBadge(input) {
+  const wrap = input.closest ? input.closest('.eg-wrap') : null;
+  if (!wrap) return;
+  const old = wrap.querySelector('.eg-badge');
+  if (old) old.remove();
+  const html = egBadgeHTML(input.dataset.value || '');
+  wrap.classList.toggle('has-badge', !!html);
+  if (html) wrap.insertAdjacentHTML('beforeend', html);
+}
 function egComboHTML(kind, id, slot, value, title, disabled) {
   // 只读态的原因决定提示文案：辅代理开关关闭 ≠ 主槽是全局/直连
   const t = disabled
     ? T(slot === 'backup' && !backupProxyOn ? 'Backup proxies are disabled — follows the main slot' : 'Follows the main slot')
     : title;
-  return '<input type="text" class="eg-input" data-eg="' + kind + '" data-egid="' + esc(id) + '" data-slot="' + slot + '" data-value="' + esc(value || '') + '" value="' + esc(egLabel(value)) + '" title="' + esc(t) + '"' + (disabled ? ' disabled' : '') + ' autocomplete="off" spellcheck="false">';
+  // 在线率徽标：选中后仍显示该节点的最近在线率，聚焦输入时由 CSS 隐藏
+  const badge = egBadgeHTML(value || '');
+  return '<span class="eg-wrap' + (badge ? ' has-badge' : '') + '">' +
+    '<input type="text" class="eg-input" data-eg="' + kind + '" data-egid="' + esc(id) + '" data-slot="' + slot + '" data-value="' + esc(value || '') + '" value="' + esc(egLabel(value)) + '" title="' + esc(t) + '"' + (disabled ? ' disabled' : '') + ' autocomplete="off" spellcheck="false">' +
+    badge +
+    '</span>';
 }
 // 主槽位联动：主 = 全局/直连 时辅自动跟随相同值并只读；主 = 代理时辅解锁。
 // 辅代理开关关闭时辅槽无条件只读并跟随主槽 —— 关闭态下辅槽不参与出口选择，
@@ -2832,6 +3234,7 @@ function egApplyMainLinkage(row, mainValue) {
   if (!backupProxyOn || mainValue === '' || mainValue === EGRESS_DIRECT) {
     backup.dataset.value = mainValue;
     backup.value = egLabel(mainValue);
+    egSyncBadge(backup);
     backup.disabled = true;
     backup.title = T(!backupProxyOn ? 'Backup proxies are disabled — follows the main slot' : 'Follows the main slot');
   } else {
@@ -2894,6 +3297,7 @@ function egRenderItems(input, menu, q) {
 function egCommit(input, value) {
   input.dataset.value = value;
   input.value = egLabel(value);
+  egSyncBadge(input);
   egCloseMenu();
   input.blur();
   if (input.dataset.slot === 'main') egApplyMainLinkage(input.closest('tr'), value);
@@ -2914,6 +3318,7 @@ document.addEventListener('blur', e => {
   if (e.target.classList && e.target.classList.contains('eg-input')) {
     // 未选择直接失焦：显示还原为当前绑定值的标签
     e.target.value = egLabel(e.target.dataset.value);
+    egSyncBadge(e.target);
     setTimeout(egCloseMenu, 150);
   }
 }, true);
@@ -3129,7 +3534,7 @@ function legacyCopy(t) {
 }
 
 // ========== Request logs ==========
-const ROUTE_LABEL = { zen: 'opencode', cline: 'cline pool', admin: 'admin', meta: 'meta', other: 'other' };
+const ROUTE_LABEL = { zen: 'opencode', cline: 'cline pool', admin: 'admin', meta: 'meta', workbuddy: 'workbuddy', openrouter: 'openrouter', amd: 'amd', tokenharbor: 'tokenharbor', other: 'other' };
 const PROXY_LABEL = { main: 'Main', backup: 'Backup', direct: 'Direct' };
 const STATUS_CLASS = s => s >= 500 ? 'color:var(--danger)' : (s >= 400 ? 'color:var(--amber)' : 'color:var(--accent2)');
 let logsAuto = true;
@@ -3380,11 +3785,14 @@ async function refreshModels() {
 
 async function loadModelOptions() {
   try {
-    // 默认模型下拉：合并 Cline、OpenCode 与当前筛选下的 WorkBuddy 模型。
-    const [d, z, wbAll] = await Promise.all([
+    // 默认模型下拉：合并 Cline、OpenCode、WorkBuddy 与 OpenRouter 模型。
+    const [d, z, wbAll, orCfg, amdCfg, thCfg] = await Promise.all([
       api('GET', '/models'),
       api('GET', '/opencode/models').catch(() => ({ data: { models: [] } })),
-      fetchWorkbuddyModels()
+      fetchWorkbuddyModels(),
+      api('GET', '/openrouter/config').catch(() => ({ data: { models: [] } })),
+      api('GET', '/amd/config').catch(() => ({ data: { models: [] } })),
+      api('GET', '/tokenharbor/config').catch(() => ({ data: { models: [] } }))
     ]);
     const platform = _('settingModelPlatform') ? _('settingModelPlatform').value : 'cline';
     const cline = platform === 'cline' ? (d.data.models || []) : [];
@@ -3392,10 +3800,13 @@ async function loadModelOptions() {
     const wb = platform === 'workbuddy'
       ? wbAll.filter(wbModelMatchesFilter).sort((a, b) => wbRate(a) - wbRate(b))
       : [];
+    const orm = platform === 'openrouter' ? (orCfg.data.models || []) : [];
+    const amdm = platform === 'amd' ? (amdCfg.data.models || []) : [];
+    const thm = platform === 'tokenharbor' ? (thCfg.data.models || []) : [];
     const sel = _('settingDefModel');
     if (!sel) return;
     // 仅原样展示模型 ID，不附加平台/状态/倍率后缀
-    sel.innerHTML = cline.concat(zen, wb).map(m =>
+    sel.innerHTML = cline.concat(zen, wb, orm, amdm, thm).map(m =>
       '<option value="' + esc(m.id) + '">' + esc(m.id) + '</option>').join('');
     if (!sel.options.length) {
       sel.innerHTML = '<option value="">No models on this platform</option>';
@@ -3524,7 +3935,7 @@ function renderOcKeyStates(ks) {
         const bind = '<td style="white-space:nowrap">' +
           egComboHTML('key', k.index, 'main', pMain, T('Main exit — used whenever available')) + ' ' +
           egComboHTML('key', k.index, 'backup', backupVal, T('Backup exit — used when main is cooling/removed'), backupLocked) +
-          (k.proxyStale ? ' <span title="' + esc(T('Bound proxy is no longer in the proxy pool — the key is skipped until fixed')) + '" style="color:var(--danger)">⚠</span>' : '') +
+          (k.proxyStale ? ' <span title="' + esc(T('Bound proxy is no longer in the proxy pool — skipped until fixed')) + '" style="color:var(--danger)">⚠</span>' : '') +
           '</td>';
         // Pool（路由启用）列：勾选后该 key 才参与请求轮转；铸造跟随路由，
         // 路由关闭的 key 也不再被自动铸造。匿名 public key 恒参与路由。
@@ -3727,6 +4138,19 @@ async function loadProxyPool() {
     }
     _('ppZen').value = String(c.zenUseProxies !== false);
     _('ppWb').value = String(c.workbuddyUseProxies !== false);
+    // OpenRouter 走池开关在 /openrouter/config（独立配置，不复用 zen 配置）
+    try {
+      const orc = await api('GET', '/openrouter/config');
+      _('ppOr').value = String(orc.data.useProxies !== false);
+    } catch (e) { _('ppOr').value = 'true'; }
+    try {
+      const amdc = await api('GET', '/amd/config');
+      _('ppAmd').value = String(amdc.data.useProxies !== false);
+    } catch (e) { _('ppAmd').value = 'true'; }
+    try {
+      const thc = await api('GET', '/tokenharbor/config');
+      _('ppTh').value = String(thc.data.useProxies !== false);
+    } catch (e) { _('ppTh').value = 'true'; }
     renderProxyHealth((c.runtime || {}).proxyHealth || []);
   } catch (e) { /* ignore */ }
 }
@@ -3774,12 +4198,16 @@ async function saveProxyPool() {
   } catch (e) { toast(T('Save failed: ') + e.message, 'error'); }
 }
 
-// saveGlobalPolicy 统一保存三个平台的全局走池开关：一次点击依次下发
-// Cline（/config/update）与 OpenCode / WorkBuddy（/opencode/config/update）。
+// saveGlobalPolicy 统一保存各平台的全局走池开关：一次点击依次下发
+// Cline（/config/update）与 OpenCode / WorkBuddy / OpenRouter
+// （/opencode/config/update、/openrouter/config/update）。
 async function saveGlobalPolicy() {
   try {
     await api('POST', '/config/update', { clineUseProxies: _('ppCline').value === 'true' });
     await api('POST', '/opencode/config/update', { zenUseProxies: _('ppZen').value === 'true', workbuddyUseProxies: _('ppWb').value === 'true' });
+    await api('POST', '/openrouter/config/update', { useProxies: _('ppOr').value === 'true' });
+    await api('POST', '/amd/config/update', { useProxies: _('ppAmd').value === 'true' });
+    await api('POST', '/tokenharbor/config/update', { useProxies: _('ppTh').value === 'true' });
     toast('Global policy saved', 'success');
     loadProxyPool();
   } catch (e) { toast(T('Save failed: ') + e.message, 'error'); }
@@ -3816,6 +4244,9 @@ function refreshBindingTables() {
   if (_('accountTableBody') && _('accountTableBody').querySelector('.eg-input')) loadAccounts();
   if (_('ocKeysBody') && _('ocKeysBody').querySelector('.eg-input')) loadOcConfig();
   if (_('wbAccountsBody') && _('wbAccountsBody').querySelector('.eg-input')) loadWorkbuddyAccounts();
+  if (_('orKeysBody') && _('orKeysBody').querySelector('.eg-input')) loadOrConfig();
+  if (_('amdKeysBody') && _('amdKeysBody').querySelector('.eg-input')) loadAmdConfig();
+  if (_('thKeysBody') && _('thKeysBody').querySelector('.eg-input')) loadTHConfig();
 }
 
 // loadOcModels 只维护探测模型下拉（模型列表本体已并入网关设置的可用模型区）。
@@ -3833,8 +4264,795 @@ async function loadOcModels() {
   } catch (e) { /* ignore */ }
 }
 
-// ========== Live session IDs (zen FreeTier gate) ==========
-// 本地铸造时代：表格只读展示（哪些 key 已有粘性会话），无手动 mint 入口。
+// ========== OpenRouter page ==========
+// key 池（oprt: 前缀平台）：配置加载/保存、key 表暂存编辑（绑定 + 路由启用）、
+// 批量测试、探测模型下拉、免费模型目录表。协议与 OpenCode 页同构。
+let orCfgCache = {};
+let orKeySnapshot = {};
+
+async function loadOrConfig() {
+  try {
+    await loadProxyListCache();
+    const d = await api('GET', '/openrouter/config');
+    const c = d.data;
+    orCfgCache = c;
+    const ks = c.keyStates || [];
+    const sum = _('orSummary');
+    if (sum) {
+      const routed = ks.filter(k => k.routingEnabled !== false).length;
+      const cooling = ks.filter(k => k.cooling).length;
+      sum.textContent = ks.length + ' ' + T('keys') + ' · ' + routed + ' ' + T('active') + ' · ' + cooling + ' ' + T('cooling');
+    }
+    renderOrKeyStates(ks);
+    _('orBaseURL').value = c.baseURL || '';
+    _('orMaxConc').value = c.maxConcurrency || 8;
+    _('orRetries').value = c.retries || 3;
+    const models = c.models || [];
+    _('orModelsCount').textContent = '(' + models.length + T(' free models') + ')';
+    const sel = _('orProbeModel');
+    if (sel) {
+      const prev = sel.value;
+      sel.innerHTML = '<option value="">auto — first free model in the catalog</option>' +
+        models.map(m => '<option value="' + esc(String(m.id || '').replace(/^oprt:/, '')) + '">' + esc(m.id) + '</option>').join('');
+      if (Array.from(sel.options).some(o => o.value === prev)) sel.value = prev;
+    }
+    const tb = _('orModelsBody');
+    if (tb) {
+      // 展示样式与网关设置页一致：等宽 ID + 免费标签 + 上下文标签（Name 进 title）
+      const row = inner => '<div style="display:flex;align-items:center;gap:10px;padding:8px 12px;margin:5px 0;background:rgba(148,163,184,.06);border:1px solid var(--border);border-radius:10px">' + inner + '</div>';
+      tb.innerHTML = models.length
+        ? models.map(m => row(
+            '<span style="font-family:\'JetBrains Mono\',monospace;font-size:13px;flex:1"' + (m.name ? ' title="' + esc(m.name) + '"' : '') + '>' + esc(m.id) + '</span>' +
+            '<span class="model-tag free">' + T('no charge') + '</span>' +
+            wbContextTagHTML(m.context, T('Context')))).join('')
+        : '<div class="empty">' + T('No free models yet — click Refresh models') + '</div>';
+    }
+  } catch (e) { /* ignore */ }
+}
+
+async function saveOrConfig() {
+  // key 列表不随本表单提交（增删在 key 表的添加凭据/删除按钮里）
+  const body = {
+    baseURL: _('orBaseURL').value.trim(),
+    maxConcurrency: parseInt(_('orMaxConc').value) || 8,
+    retries: parseInt(_('orRetries').value) || 3,
+  };
+  try {
+    await api('POST', '/openrouter/config/update', body);
+    toast(T('OpenRouter config saved'), 'success');
+    loadOrConfig();
+  } catch (e) { toast(T('Save failed: ') + e.message, 'error'); }
+}
+
+async function refreshOrModels() {
+  try {
+    const d = await api('POST', '/openrouter/models/refresh');
+    await loadOrConfig();
+    toast(T('Catalog refreshed') + ' (' + _('orModelsCount').textContent.replace(/[()]/g, '') + ')', 'success');
+    loadOrConfig();
+  } catch (e) { toast(T('Refresh failed: ') + e.message, 'error'); }
+}
+
+// key 状态表：key 掩码 / 用量 / 冷却 / 代理绑定 / 测试 / 删除 / 启用（暂存编辑）。
+function renderOrKeyStates(ks) {
+  const tb = _('orKeysBody');
+  if (!tb) return;
+  orKeySnapshot = {};
+  tb.innerHTML = ks.length
+    ? ks.map(k => {
+        const cool = k.cooling
+          ? '<span style="color:var(--danger)">' + T('cooling') + (k.cooldownUntil ? T(' · until ') + esc(fmtWhen(k.cooldownUntil)) : '') + '</span>'
+          : '<span style="color:var(--text2)">-</span>';
+        const pMain = k.proxyMain || '';
+        const pBackup = k.proxyBackup || '';
+        const backupLocked = !backupProxyOn || pMain === '' || pMain === EGRESS_DIRECT;
+        const backupVal = backupLocked ? pMain : pBackup;
+        const bind = '<td style="white-space:nowrap">' +
+          egComboHTML('or', k.index, 'main', pMain, T('Main exit — used whenever available')) + ' ' +
+          egComboHTML('or', k.index, 'backup', backupVal, T('Backup exit — used when main is cooling/removed'), backupLocked) +
+          (k.proxyStale ? ' <span title="' + esc(T('Bound proxy is no longer in the proxy pool — skipped until fixed')) + '" style="color:var(--danger)">⚠</span>' : '') +
+          '</td>';
+        const routed = k.routingEnabled !== false;
+        orKeySnapshot[k.index] = { main: pMain, backup: backupVal, routing: routed };
+        const routing = '<td style="text-align:center">' +
+          '<input type="checkbox" data-orr="' + k.index + '"' + (routed ? ' checked' : '') + ' title="' + esc(T('Participates in request routing')) + '">' + '</td>';
+        const actions = '<td style="white-space:nowrap">' +
+          '<button class="btn btn-sm" data-ort="' + k.index + '">Test</button> ' +
+          '<button class="btn btn-sm btn-danger" data-ordel="' + k.index + '" title="Remove this key from the pool">Delete</button>' + '</td>';
+        return '<tr draggable="true" data-drag-id="' + k.index + '"><td>#' + (k.index + 1) + '</td>' +
+          '<td style="font-family:monospace;font-size:11px">' + esc(k.keyMask) + '</td>' +
+          '<td>' + (k.usage || 0) + '</td>' +
+          '<td>' + cool + '</td>' +
+          bind +
+          actions +
+          routing + '</tr>';
+      }).join('')
+    : '<tr><td colspan="7" class="empty">No OpenRouter keys configured</td></tr>';
+  tb.onclick = e => {
+    const t = e.target.closest('button[data-ort]');
+    if (t) { testOrKey(parseInt(t.dataset.ort, 10), t); return; }
+    const d = e.target.closest('button[data-ordel]');
+    if (d) deleteOrKey(parseInt(d.dataset.ordel, 10), d);
+  };
+  tb.onchange = e => {
+    const r = e.target.closest('input[data-orr]');
+    if (r) markRowDirty(r.closest('tr'), 'or');
+  };
+}
+
+function stageAllOrKeysRouting(enabled) {
+  document.querySelectorAll('#orKeysBody input[data-orr]').forEach(cb => {
+    const snap = orKeySnapshot[parseInt(cb.dataset.orr, 10)];
+    if (snap && snap.routing === enabled) return;
+    cb.checked = enabled;
+    markRowDirty(cb.closest('tr'), 'or');
+  });
+}
+// 清空代理（暂存）：全部 key 清绑定 + 路由全部禁用，与 zen/账号页同语义
+function stageClearOrKeyProxies() {
+  document.querySelectorAll('#orKeysBody tr').forEach(row => {
+    const main = row.querySelector('.eg-input[data-eg="or"][data-slot="main"]');
+    if (!main) return;
+    let dirty = stageRowBindingClear(row, 'or');
+    const cb = row.querySelector('input[data-orr]');
+    if (cb && cb.checked) { cb.checked = false; dirty = true; }
+    if (dirty) markRowDirty(row, 'or');
+  });
+}
+async function saveOrKeyEdits() {
+  const rows = [...document.querySelectorAll('#orKeysBody tr')].filter(r => r.querySelector('.eg-input'));
+  let changed = 0, failed = 0;
+  for (const row of rows) {
+    const mainInput = row.querySelector('.eg-input[data-eg="or"][data-slot="main"]');
+    const idx = parseInt(mainInput.dataset.egid, 10);
+    const main = mainInput.dataset.value || '';
+    const backup = row.querySelector('.eg-input[data-eg="or"][data-slot="backup"]').dataset.value || '';
+    const rcb = row.querySelector('input[data-orr]');
+    const snap = orKeySnapshot[idx] || { main: '', backup: '', routing: true };
+    try {
+      if (main !== snap.main || backup !== snap.backup) {
+        await api('POST', '/openrouter/keys/proxy', { index: idx, main: main, backup: backup });
+      }
+      if (rcb && rcb.checked !== snap.routing) {
+        await api('POST', '/openrouter/keys/routing', { index: idx, enabled: rcb.checked });
+      }
+      if (main !== snap.main || backup !== snap.backup || (rcb && rcb.checked !== snap.routing)) changed++;
+      row.classList.remove('tr-dirty');
+    } catch (e) { failed++; }
+  }
+  clearDirtyMarks('orKeysBody', 'orKeysSaveBtn');
+  if (failed) toast(T('Save failed for ') + failed + T(' account(s)'), 'error');
+  else if (!changed) toast(T('No changes to save'), 'info');
+  else toast(T('Saved ') + changed + T(' account change(s)'), 'success');
+  loadOrConfig(); loadStats();
+}
+
+function resetOrKeyEdits() {
+  clearDirtyMarks('orKeysBody', 'orKeysSaveBtn');
+  loadOrConfig();
+}
+
+async function deleteOrKey(index, btn) {
+  if (!confirm(T('Delete this key?'))) return;
+  const original = btn ? btn.innerHTML : '';
+  if (btn) btn.disabled = true;
+  try {
+    await api('POST', '/openrouter/keys/delete', { index: index });
+    toast(T('Key #') + (index + 1) + T(' (deleted)'), 'success');
+  } catch (e) {
+    toast(T('Delete failed: ') + e.message, 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = original; }
+    loadOrConfig(); loadStats();
+  }
+}
+
+async function testOrKey(index, btn) {
+  const original = btn ? btn.innerHTML : '';
+  if (btn) { btn.disabled = true; btn.innerHTML = '<span class="loading"></span>Testing'; }
+  try {
+    const d = await api('POST', '/openrouter/keys/test', {
+      index: index,
+      model: (_('orProbeModel') ? _('orProbeModel').value : '')
+    });
+    const r = d.data || {};
+    const label = { active: T('OK'), cooldown: T('Cooldown'), error: T('Error') }[r.status] || r.status;
+    let msg = T('Key #') + (index + 1) + T(' (') + (r.keyMask || '') + T(') — ') + label;
+    if (r.model) msg += T(' via ') + r.model;
+    if (r.latencyMs != null) msg += ' (' + r.latencyMs + 'ms)';
+    if (r.status === 'active') msg += T(' — cooldown cleared');
+    if (r.cooldownUntil) msg += T('\nEstimated recovery: ') + fmtWhen(r.cooldownUntil) + (r.remaining ? T(' (remaining ') + r.remaining + T(')') : '');
+    if (r.reason && r.reason !== 'ok') msg += '\n' + r.reason;
+    const type = r.status === 'active' ? 'success' : (r.status === 'cooldown' ? 'warning' : 'error');
+    toast(msg, type, 6000);
+  } catch (e) {
+    toast(T('Test failed: ') + e.message, 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = original; }
+    loadOrConfig();
+  }
+}
+
+async function batchTestOrKeys() {
+  const btn = _('orTestBtn');
+  const idxs = Object.keys(orKeySnapshot).map(Number).sort((a, b) => a - b);
+  if (!idxs.length) { toast(T('No keys to test'), 'info'); return; }
+  const original = btn ? btn.innerHTML : '';
+  if (btn) btn.disabled = true;
+  let ok = 0, cool = 0, err = 0;
+  try {
+    for (let i = 0; i < idxs.length; i++) {
+      if (btn) btn.innerHTML = '<span class="loading"></span>' + (i + 1) + '/' + idxs.length;
+      try {
+        const d = await api('POST', '/openrouter/keys/test', {
+          index: idxs[i],
+          model: (_('orProbeModel') ? _('orProbeModel').value : '')
+        });
+        const r = d.data || {};
+        if (r.status === 'active') ok++;
+        else if (r.status === 'cooldown') cool++;
+        else err++;
+      } catch (e) { err++; }
+    }
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = original; }
+  }
+  toast(T('Batch test done: ') + idxs.length + T(' tested, ') + ok + T(' ok') +
+    (cool ? T(', ') + cool + T(' cooling') : '') + (err ? T(', ') + err + T(' error') : ''),
+    err ? 'warning' : 'success', 6000);
+  loadOrConfig();
+}
+
+function openOrKeyAddDialog() {
+  _('orKeyAddInput').value = '';
+  _('orKeyAddDialog').showModal();
+}
+function closeOrKeyAddDialog() { _('orKeyAddDialog').close(); }
+async function orKeyAddFromDialog() {
+  const lines = _('orKeyAddInput').value.split('\n').map(s => s.trim()).filter(Boolean);
+  if (!lines.length) { toast(T('Enter at least one key'), 'error'); return; }
+  const cur = (orCfgCache.keys && orCfgCache.keys.length) ? orCfgCache.keys : [];
+  const fresh = lines.filter(l => !cur.includes(l));
+  if (!fresh.length) { toast(T('No new keys (all already in the pool)'), 'info'); return; }
+  const btn = _('orKeyAddSubmit');
+  btn.disabled = true;
+  try {
+    await api('POST', '/openrouter/config/update', { keys: cur.concat(fresh) });
+    toast(T('Added ') + fresh.length + T(' key(s)'), 'success');
+    closeOrKeyAddDialog();
+    loadOrConfig(); loadStats();
+  } catch (e) {
+    toast(T('Save failed: ') + e.message, 'error');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+// ========== AMD page ==========
+// AMD Radeon Cloud key 池（amd: 前缀平台）：协议与 OpenRouter 页同构。
+let amdCfgCache = {};
+let amdKeySnapshot = {};
+
+async function loadAmdConfig() {
+  try {
+    await loadProxyListCache();
+    const d = await api('GET', '/amd/config');
+    const c = d.data;
+    amdCfgCache = c;
+    const ks = c.keyStates || [];
+    const sum = _('amdSummary');
+    if (sum) {
+      const routed = ks.filter(k => k.routingEnabled !== false).length;
+      const cooling = ks.filter(k => k.cooling).length;
+      sum.textContent = ks.length + ' ' + T('keys') + ' · ' + routed + ' ' + T('active') + ' · ' + cooling + ' ' + T('cooling');
+    }
+    renderAmdKeyStates(ks);
+    _('amdBaseURL').value = c.baseURL || '';
+    _('amdMaxConc').value = c.maxConcurrency || 8;
+    _('amdRetries').value = c.retries || 3;
+    const models = c.models || [];
+    _('amdModelsCount').textContent = '(' + models.length + T(' free models') + ')';
+    const sel = _('amdProbeModel');
+    if (sel) {
+      const prev = sel.value;
+      sel.innerHTML = '<option value="">auto — DeepSeek-V4-Flash first</option>' +
+        models.map(m => '<option value="' + esc(String(m.id || '').replace(/^amd:/, '')) + '">' + esc(m.id) + '</option>').join('');
+      if (Array.from(sel.options).some(o => o.value === prev)) sel.value = prev;
+    }
+    const tb = _('amdModelsBody');
+    if (tb) {
+      // 展示样式与网关设置页一致：等宽 ID + 免费标签 + 上下文标签（Name 进 title）
+      const row = inner => '<div style="display:flex;align-items:center;gap:10px;padding:8px 12px;margin:5px 0;background:rgba(148,163,184,.06);border:1px solid var(--border);border-radius:10px">' + inner + '</div>';
+      tb.innerHTML = models.length
+        ? models.map(m => row(
+            '<span style="font-family:\'JetBrains Mono\',monospace;font-size:13px;flex:1"' + (m.name ? ' title="' + esc(m.name) + '"' : '') + '>' + esc(m.id) + '</span>' +
+            '<span class="model-tag free">' + T('no charge') + '</span>' +
+            wbContextTagHTML(m.context, T('Context')))).join('')
+        : '<div class="empty">' + T('No models yet — click Refresh models') + '</div>';
+    }
+  } catch (e) { /* ignore */ }
+}
+
+async function saveAmdConfig() {
+  // key 列表不随本表单提交（增删在 key 表的添加凭据/删除按钮里）
+  const body = {
+    baseURL: _('amdBaseURL').value.trim(),
+    maxConcurrency: parseInt(_('amdMaxConc').value) || 8,
+    retries: parseInt(_('amdRetries').value) || 3
+  };
+  try {
+    await api('POST', '/amd/config/update', body);
+    toast(T('AMD config saved'), 'success');
+    loadAmdConfig();
+  } catch (e) { toast(T('Save failed: ') + e.message, 'error'); }
+}
+
+async function refreshAmdModels() {
+  try {
+    const d = await api('POST', '/amd/models/refresh');
+    await loadAmdConfig();
+    toast(T('Catalog refreshed') + ' (' + _('amdModelsCount').textContent.replace(/[()]/g, '') + ')', 'success');
+    loadAmdConfig();
+  } catch (e) { toast(T('Refresh failed: ') + e.message, 'error'); }
+}
+
+// key 状态表：key 掩码 / 用量 / 冷却 / 代理绑定 / 测试 / 删除 / 启用（暂存编辑）。
+function renderAmdKeyStates(ks) {
+  const tb = _('amdKeysBody');
+  if (!tb) return;
+  amdKeySnapshot = {};
+  tb.innerHTML = ks.length
+    ? ks.map(k => {
+        const cool = k.cooling
+          ? '<span style="color:var(--danger)">' + T('cooling') + (k.cooldownUntil ? T(' · until ') + esc(fmtWhen(k.cooldownUntil)) : '') + '</span>'
+          : '<span style="color:var(--text2)">-</span>';
+        const pMain = k.proxyMain || '';
+        const pBackup = k.proxyBackup || '';
+        const backupLocked = !backupProxyOn || pMain === '' || pMain === EGRESS_DIRECT;
+        const backupVal = backupLocked ? pMain : pBackup;
+        const bind = '<td style="white-space:nowrap">' +
+          egComboHTML('amd', k.index, 'main', pMain, T('Main exit — used whenever available')) + ' ' +
+          egComboHTML('amd', k.index, 'backup', backupVal, T('Backup exit — used when main is cooling/removed'), backupLocked) +
+          (k.proxyStale ? ' <span title="' + esc(T('Bound proxy is no longer in the proxy pool — skipped until fixed')) + '" style="color:var(--danger)">⚠</span>' : '') +
+          '</td>';
+        const routed = k.routingEnabled !== false;
+        amdKeySnapshot[k.index] = { main: pMain, backup: backupVal, routing: routed };
+        const routing = '<td style="text-align:center">' +
+          '<input type="checkbox" data-amdr="' + k.index + '"' + (routed ? ' checked' : '') + ' title="' + esc(T('Participates in request routing')) + '">' + '</td>';
+        const actions = '<td style="white-space:nowrap">' +
+          '<button class="btn btn-sm" data-amdt="' + k.index + '">Test</button> ' +
+          '<button class="btn btn-sm btn-danger" data-amddel="' + k.index + '" title="Remove this key from the pool">Delete</button>' + '</td>';
+        return '<tr draggable="true" data-drag-id="' + k.index + '"><td>#' + (k.index + 1) + '</td>' +
+          '<td style="font-family:monospace;font-size:11px">' + esc(k.keyMask) + '</td>' +
+          '<td>' + (k.usage || 0) + '</td>' +
+          '<td>' + cool + '</td>' +
+          bind +
+          actions +
+          routing + '</tr>';
+      }).join('')
+    : '<tr><td colspan="7" class="empty">No RadeonCloud keys configured</td></tr>';
+  tb.onclick = e => {
+    const t = e.target.closest('button[data-amdt]');
+    if (t) { testAmdKey(parseInt(t.dataset.amdt, 10), t); return; }
+    const d = e.target.closest('button[data-amddel]');
+    if (d) deleteAmdKey(parseInt(d.dataset.amddel, 10), d);
+  };
+  tb.onchange = e => {
+    const r = e.target.closest('input[data-amdr]');
+    if (r) markRowDirty(r.closest('tr'), 'amd');
+  };
+}
+
+function stageAllAmdKeysRouting(enabled) {
+  document.querySelectorAll('#amdKeysBody input[data-amdr]').forEach(cb => {
+    const snap = amdKeySnapshot[parseInt(cb.dataset.amdr, 10)];
+    if (snap && snap.routing === enabled) return;
+    cb.checked = enabled;
+    markRowDirty(cb.closest('tr'), 'amd');
+  });
+}
+// 清空代理（暂存）：全部 key 清绑定 + 路由全部禁用，与 OpenRouter 页同语义
+function stageClearAmdKeyProxies() {
+  document.querySelectorAll('#amdKeysBody tr').forEach(row => {
+    const main = row.querySelector('.eg-input[data-eg="amd"][data-slot="main"]');
+    if (!main) return;
+    let dirty = stageRowBindingClear(row, 'amd');
+    const cb = row.querySelector('input[data-amdr]');
+    if (cb && cb.checked) { cb.checked = false; dirty = true; }
+    if (dirty) markRowDirty(row, 'amd');
+  });
+}
+async function saveAmdKeyEdits() {
+  const rows = [...document.querySelectorAll('#amdKeysBody tr')].filter(r => r.querySelector('.eg-input'));
+  let changed = 0, failed = 0;
+  for (const row of rows) {
+    const mainInput = row.querySelector('.eg-input[data-eg="amd"][data-slot="main"]');
+    const idx = parseInt(mainInput.dataset.egid, 10);
+    const main = mainInput.dataset.value || '';
+    const backup = row.querySelector('.eg-input[data-eg="amd"][data-slot="backup"]').dataset.value || '';
+    const rcb = row.querySelector('input[data-amdr]');
+    const snap = amdKeySnapshot[idx] || { main: '', backup: '', routing: true };
+    try {
+      if (main !== snap.main || backup !== snap.backup) {
+        await api('POST', '/amd/keys/proxy', { index: idx, main: main, backup: backup });
+      }
+      if (rcb && rcb.checked !== snap.routing) {
+        await api('POST', '/amd/keys/routing', { index: idx, enabled: rcb.checked });
+      }
+      if (main !== snap.main || backup !== snap.backup || (rcb && rcb.checked !== snap.routing)) changed++;
+      row.classList.remove('tr-dirty');
+    } catch (e) { failed++; }
+  }
+  clearDirtyMarks('amdKeysBody', 'amdKeysSaveBtn');
+  if (failed) toast(T('Save failed for ') + failed + T(' account(s)'), 'error');
+  else if (!changed) toast(T('No changes to save'), 'info');
+  else toast(T('Saved ') + changed + T(' account change(s)'), 'success');
+  loadAmdConfig(); loadStats();
+}
+
+function resetAmdKeyEdits() {
+  clearDirtyMarks('amdKeysBody', 'amdKeysSaveBtn');
+  loadAmdConfig();
+}
+
+async function deleteAmdKey(index, btn) {
+  if (!confirm(T('Delete this key?'))) return;
+  const original = btn ? btn.innerHTML : '';
+  if (btn) btn.disabled = true;
+  try {
+    await api('POST', '/amd/keys/delete', { index: index });
+    toast(T('Key #') + (index + 1) + T(' (deleted)'), 'success');
+  } catch (e) {
+    toast(T('Delete failed: ') + e.message, 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = original; }
+    loadAmdConfig(); loadStats();
+  }
+}
+
+async function testAmdKey(index, btn) {
+  const original = btn ? btn.innerHTML : '';
+  if (btn) { btn.disabled = true; btn.innerHTML = '<span class="loading"></span>Testing'; }
+  try {
+    const d = await api('POST', '/amd/keys/test', {
+      index: index,
+      model: (_('amdProbeModel') ? _('amdProbeModel').value : '')
+    });
+    const r = d.data || {};
+    const label = { active: T('OK'), cooldown: T('Cooldown'), error: T('Error') }[r.status] || r.status;
+    let msg = T('Key #') + (index + 1) + T(' (') + (r.keyMask || '') + T(') — ') + label;
+    if (r.model) msg += T(' via ') + r.model;
+    if (r.latencyMs != null) msg += ' (' + r.latencyMs + 'ms)';
+    if (r.status === 'active') msg += T(' — cooldown cleared');
+    if (r.cooldownUntil) msg += T('\nEstimated recovery: ') + fmtWhen(r.cooldownUntil) + (r.remaining ? T(' (remaining ') + r.remaining + T(')') : '');
+    if (r.reason && r.reason !== 'ok') msg += '\n' + r.reason;
+    const type = r.status === 'active' ? 'success' : (r.status === 'cooldown' ? 'warning' : 'error');
+    toast(msg, type, 6000);
+  } catch (e) {
+    toast(T('Test failed: ') + e.message, 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = original; }
+    loadAmdConfig();
+  }
+}
+
+async function batchTestAmdKeys() {
+  const btn = _('amdTestBtn');
+  const idxs = Object.keys(amdKeySnapshot).map(Number).sort((a, b) => a - b);
+  if (!idxs.length) { toast(T('No keys to test'), 'info'); return; }
+  const original = btn ? btn.innerHTML : '';
+  if (btn) btn.disabled = true;
+  let ok = 0, cool = 0, err = 0;
+  try {
+    for (let i = 0; i < idxs.length; i++) {
+      if (btn) btn.innerHTML = '<span class="loading"></span>' + (i + 1) + '/' + idxs.length;
+      try {
+        const d = await api('POST', '/amd/keys/test', {
+          index: idxs[i],
+          model: (_('amdProbeModel') ? _('amdProbeModel').value : '')
+        });
+        const r = d.data || {};
+        if (r.status === 'active') ok++;
+        else if (r.status === 'cooldown') cool++;
+        else err++;
+      } catch (e) { err++; }
+    }
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = original; }
+  }
+  toast(T('Batch test done: ') + idxs.length + T(' tested, ') + ok + T(' ok') +
+    (cool ? T(', ') + cool + T(' cooling') : '') + (err ? T(', ') + err + T(' error') : ''),
+    err ? 'warning' : 'success', 6000);
+  loadAmdConfig();
+}
+
+function openAmdKeyAddDialog() {
+  _('amdKeyAddInput').value = '';
+  _('amdKeyAddDialog').showModal();
+}
+function closeAmdKeyAddDialog() { _('amdKeyAddDialog').close(); }
+async function amdKeyAddFromDialog() {
+  const lines = _('amdKeyAddInput').value.split('\n').map(s => s.trim()).filter(Boolean);
+  if (!lines.length) { toast(T('Enter at least one key'), 'error'); return; }
+  const cur = (amdCfgCache.keys && amdCfgCache.keys.length) ? amdCfgCache.keys : [];
+  const fresh = lines.filter(l => !cur.includes(l));
+  if (!fresh.length) { toast(T('No new keys (all already in the pool)'), 'info'); return; }
+  const btn = _('amdKeyAddSubmit');
+  btn.disabled = true;
+  try {
+    await api('POST', '/amd/config/update', { keys: cur.concat(fresh) });
+    toast(T('Added ') + fresh.length + T(' key(s)'), 'success');
+    closeAmdKeyAddDialog();
+    loadAmdConfig(); loadStats();
+  } catch (e) {
+    toast(T('Save failed: ') + e.message, 'error');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+// ========== TokenHarbor page ==========
+// TokenHarbor key 池（tkhb: 前缀平台）：协议与 AMD/OpenRouter 页同构。
+let thCfgCache = {};
+let thKeySnapshot = {};
+
+async function loadTHConfig() {
+  try {
+    await loadProxyListCache();
+    const d = await api('GET', '/tokenharbor/config');
+    const c = d.data;
+    thCfgCache = c;
+    const ks = c.keyStates || [];
+    const sum = _('thSummary');
+    if (sum) {
+      const routed = ks.filter(k => k.routingEnabled !== false).length;
+      const cooling = ks.filter(k => k.cooling).length;
+      sum.textContent = ks.length + ' ' + T('keys') + ' · ' + routed + ' ' + T('active') + ' · ' + cooling + ' ' + T('cooling');
+    }
+    renderTHKeyStates(ks);
+    _('thBaseURL').value = c.baseURL || '';
+    _('thMaxConc').value = c.maxConcurrency || 8;
+    _('thRetries').value = c.retries || 3;
+    const models = c.models || [];
+    _('thModelsCount').textContent = '(' + models.length + T(' free models') + ')';
+    const sel = _('thProbeModel');
+    if (sel) {
+      const prev = sel.value;
+      sel.innerHTML = '<option value="">auto — deepseek-v4.1-flash:free first</option>' +
+        models.map(m => '<option value="' + esc(String(m.id || '').replace(/^tkhb:/, '')) + '">' + esc(m.id) + '</option>').join('');
+      if (Array.from(sel.options).some(o => o.value === prev)) sel.value = prev;
+    }
+    const tb = _('thModelsBody');
+    if (tb) {
+      // 展示样式与网关设置页一致：等宽 ID + 免费标签 + 上下文标签（Name 进 title）
+      const row = inner => '<div style="display:flex;align-items:center;gap:10px;padding:8px 12px;margin:5px 0;background:rgba(148,163,184,.06);border:1px solid var(--border);border-radius:10px">' + inner + '</div>';
+      tb.innerHTML = models.length
+        ? models.map(m => row(
+            '<span style="font-family:\'JetBrains Mono\',monospace;font-size:13px;flex:1"' + (m.name ? ' title="' + esc(m.name) + '"' : '') + '>' + esc(m.id) + '</span>' +
+            '<span class="model-tag free">' + T('no charge') + '</span>' +
+            wbContextTagHTML(m.context, T('Context')))).join('')
+        : '<div class="empty">' + T('No free models yet — click Refresh models') + '</div>';
+    }
+  } catch (e) { /* ignore */ }
+}
+
+async function saveTHConfig() {
+  // key 列表不随本表单提交（增删在 key 表的添加凭据/删除按钮里）
+  const body = {
+    baseURL: _('thBaseURL').value.trim(),
+    maxConcurrency: parseInt(_('thMaxConc').value) || 8,
+    retries: parseInt(_('thRetries').value) || 3
+  };
+  try {
+    await api('POST', '/tokenharbor/config/update', body);
+    toast(T('TokenHarbor config saved'), 'success');
+    loadTHConfig();
+  } catch (e) { toast(T('Save failed: ') + e.message, 'error'); }
+}
+
+async function refreshTHModels() {
+  try {
+    const d = await api('POST', '/tokenharbor/models/refresh');
+    await loadTHConfig();
+    toast(T('Catalog refreshed') + ' (' + _('thModelsCount').textContent.replace(/[()]/g, '') + ')', 'success');
+    loadTHConfig();
+  } catch (e) { toast(T('Refresh failed: ') + e.message, 'error'); }
+}
+
+// key 状态表：key 掩码 / 用量 / 冷却 / 代理绑定 / 测试 / 删除 / 启用（暂存编辑）。
+function renderTHKeyStates(ks) {
+  const tb = _('thKeysBody');
+  if (!tb) return;
+  thKeySnapshot = {};
+  tb.innerHTML = ks.length
+    ? ks.map(k => {
+        const cool = k.cooling
+          ? '<span style="color:var(--danger)">' + T('cooling') + (k.cooldownUntil ? T(' · until ') + esc(fmtWhen(k.cooldownUntil)) : '') + '</span>'
+          : '<span style="color:var(--text2)">-</span>';
+        const pMain = k.proxyMain || '';
+        const pBackup = k.proxyBackup || '';
+        const backupLocked = !backupProxyOn || pMain === '' || pMain === EGRESS_DIRECT;
+        const backupVal = backupLocked ? pMain : pBackup;
+        const bind = '<td style="white-space:nowrap">' +
+          egComboHTML('th', k.index, 'main', pMain, T('Main exit — used whenever available')) + ' ' +
+          egComboHTML('th', k.index, 'backup', backupVal, T('Backup exit — used when main is cooling/removed'), backupLocked) +
+          (k.proxyStale ? ' <span title="' + esc(T('Bound proxy is no longer in the proxy pool — skipped until fixed')) + '" style="color:var(--danger)">⚠</span>' : '') +
+          '</td>';
+        const routed = k.routingEnabled !== false;
+        thKeySnapshot[k.index] = { main: pMain, backup: backupVal, routing: routed };
+        const routing = '<td style="text-align:center">' +
+          '<input type="checkbox" data-thr="' + k.index + '"' + (routed ? ' checked' : '') + ' title="' + esc(T('Participates in request routing')) + '">' + '</td>';
+        const actions = '<td style="white-space:nowrap">' +
+          '<button class="btn btn-sm" data-tht="' + k.index + '">Test</button> ' +
+          '<button class="btn btn-sm btn-danger" data-thdel="' + k.index + '" title="Remove this key from the pool">Delete</button>' + '</td>';
+        return '<tr draggable="true" data-drag-id="' + k.index + '"><td>#' + (k.index + 1) + '</td>' +
+          '<td style="font-family:monospace;font-size:11px">' + esc(k.keyMask) + '</td>' +
+          '<td>' + (k.usage || 0) + '</td>' +
+          '<td>' + cool + '</td>' +
+          bind +
+          actions +
+          routing + '</tr>';
+      }).join('')
+    : '<tr><td colspan="7" class="empty">No TokenHarbor keys configured</td></tr>';
+  tb.onclick = e => {
+    const t = e.target.closest('button[data-tht]');
+    if (t) { testTHKey(parseInt(t.dataset.tht, 10), t); return; }
+    const d = e.target.closest('button[data-thdel]');
+    if (d) deleteTHKey(parseInt(d.dataset.thdel, 10), d);
+  };
+  tb.onchange = e => {
+    const r = e.target.closest('input[data-thr]');
+    if (r) markRowDirty(r.closest('tr'), 'th');
+  };
+}
+
+function stageAllTHKeysRouting(enabled) {
+  document.querySelectorAll('#thKeysBody input[data-thr]').forEach(cb => {
+    const snap = thKeySnapshot[parseInt(cb.dataset.thr, 10)];
+    if (snap && snap.routing === enabled) return;
+    cb.checked = enabled;
+    markRowDirty(cb.closest('tr'), 'th');
+  });
+}
+// 清空代理（暂存）：全部 key 清绑定 + 路由全部禁用，与 AMD/OpenRouter 页同语义
+function stageClearTHKeyProxies() {
+  document.querySelectorAll('#thKeysBody tr').forEach(row => {
+    const main = row.querySelector('.eg-input[data-eg="th"][data-slot="main"]');
+    if (!main) return;
+    let dirty = stageRowBindingClear(row, 'th');
+    const cb = row.querySelector('input[data-thr]');
+    if (cb && cb.checked) { cb.checked = false; dirty = true; }
+    if (dirty) markRowDirty(row, 'th');
+  });
+}
+async function saveTHKeyEdits() {
+  const rows = [...document.querySelectorAll('#thKeysBody tr')].filter(r => r.querySelector('.eg-input'));
+  let changed = 0, failed = 0;
+  for (const row of rows) {
+    const mainInput = row.querySelector('.eg-input[data-eg="th"][data-slot="main"]');
+    const idx = parseInt(mainInput.dataset.egid, 10);
+    const main = mainInput.dataset.value || '';
+    const backup = row.querySelector('.eg-input[data-eg="th"][data-slot="backup"]').dataset.value || '';
+    const rcb = row.querySelector('input[data-thr]');
+    const snap = thKeySnapshot[idx] || { main: '', backup: '', routing: true };
+    try {
+      if (main !== snap.main || backup !== snap.backup) {
+        await api('POST', '/tokenharbor/keys/proxy', { index: idx, main: main, backup: backup });
+      }
+      if (rcb && rcb.checked !== snap.routing) {
+        await api('POST', '/tokenharbor/keys/routing', { index: idx, enabled: rcb.checked });
+      }
+      if (main !== snap.main || backup !== snap.backup || (rcb && rcb.checked !== snap.routing)) changed++;
+      row.classList.remove('tr-dirty');
+    } catch (e) { failed++; }
+  }
+  clearDirtyMarks('thKeysBody', 'thKeysSaveBtn');
+  if (failed) toast(T('Save failed for ') + failed + T(' account(s)'), 'error');
+  else if (!changed) toast(T('No changes to save'), 'info');
+  else toast(T('Saved ') + changed + T(' account change(s)'), 'success');
+  loadTHConfig(); loadStats();
+}
+
+function resetTHKeyEdits() {
+  clearDirtyMarks('thKeysBody', 'thKeysSaveBtn');
+  loadTHConfig();
+}
+
+async function deleteTHKey(index, btn) {
+  if (!confirm(T('Delete this key?'))) return;
+  const original = btn ? btn.innerHTML : '';
+  if (btn) btn.disabled = true;
+  try {
+    await api('POST', '/tokenharbor/keys/delete', { index: index });
+    toast(T('Key #') + (index + 1) + T(' (deleted)'), 'success');
+  } catch (e) {
+    toast(T('Delete failed: ') + e.message, 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = original; }
+    loadTHConfig(); loadStats();
+  }
+}
+
+async function testTHKey(index, btn) {
+  const original = btn ? btn.innerHTML : '';
+  if (btn) { btn.disabled = true; btn.innerHTML = '<span class="loading"></span>Testing'; }
+  try {
+    const d = await api('POST', '/tokenharbor/keys/test', {
+      index: index,
+      model: (_('thProbeModel') ? _('thProbeModel').value : '')
+    });
+    const r = d.data || {};
+    const label = { active: T('OK'), cooldown: T('Cooldown'), error: T('Error') }[r.status] || r.status;
+    let msg = T('Key #') + (index + 1) + T(' (') + (r.keyMask || '') + T(') — ') + label;
+    if (r.model) msg += T(' via ') + r.model;
+    if (r.latencyMs != null) msg += ' (' + r.latencyMs + 'ms)';
+    if (r.status === 'active') msg += T(' — cooldown cleared');
+    if (r.cooldownUntil) msg += T('\nEstimated recovery: ') + fmtWhen(r.cooldownUntil) + (r.remaining ? T(' (remaining ') + r.remaining + T(')') : '');
+    if (r.reason && r.reason !== 'ok') msg += '\n' + r.reason;
+    const type = r.status === 'active' ? 'success' : (r.status === 'cooldown' ? 'warning' : 'error');
+    toast(msg, type, 6000);
+  } catch (e) {
+    toast(T('Test failed: ') + e.message, 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = original; }
+    loadTHConfig();
+  }
+}
+
+async function batchTestTHKeys() {
+  const btn = _('thTestBtn');
+  const idxs = Object.keys(thKeySnapshot).map(Number).sort((a, b) => a - b);
+  if (!idxs.length) { toast(T('No keys to test'), 'info'); return; }
+  const original = btn ? btn.innerHTML : '';
+  if (btn) btn.disabled = true;
+  let ok = 0, cool = 0, err = 0;
+  try {
+    for (let i = 0; i < idxs.length; i++) {
+      if (btn) btn.innerHTML = '<span class="loading"></span>' + (i + 1) + '/' + idxs.length;
+      try {
+        const d = await api('POST', '/tokenharbor/keys/test', {
+          index: idxs[i],
+          model: (_('thProbeModel') ? _('thProbeModel').value : '')
+        });
+        const r = d.data || {};
+        if (r.status === 'active') ok++;
+        else if (r.status === 'cooldown') cool++;
+        else err++;
+      } catch (e) { err++; }
+    }
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = original; }
+  }
+  toast(T('Batch test done: ') + idxs.length + T(' tested, ') + ok + T(' ok') +
+    (cool ? T(', ') + cool + T(' cooling') : '') + (err ? T(', ') + err + T(' error') : ''),
+    err ? 'warning' : 'success', 6000);
+  loadTHConfig();
+}
+
+function openTHKeyAddDialog() {
+  _('thKeyAddInput').value = '';
+  _('thKeyAddDialog').showModal();
+}
+function closeTHKeyAddDialog() { _('thKeyAddDialog').close(); }
+async function thKeyAddFromDialog() {
+  const lines = _('thKeyAddInput').value.split('\n').map(s => s.trim()).filter(Boolean);
+  if (!lines.length) { toast(T('Enter at least one key'), 'error'); return; }
+  const cur = (thCfgCache.keys && thCfgCache.keys.length) ? thCfgCache.keys : [];
+  const fresh = lines.filter(l => !cur.includes(l));
+  if (!fresh.length) { toast(T('No new keys (all already in the pool)'), 'info'); return; }
+  const btn = _('thKeyAddSubmit');
+  btn.disabled = true;
+  try {
+    await api('POST', '/tokenharbor/config/update', { keys: cur.concat(fresh) });
+    toast(T('Added ') + fresh.length + T(' key(s)'), 'success');
+    closeTHKeyAddDialog();
+    loadTHConfig(); loadStats();
+  } catch (e) {
+    toast(T('Save failed: ') + e.message, 'error');
+  } finally {
+    btn.disabled = false;
+  }
+}
 
 async function loadOcSessions() {
   try {
@@ -3866,7 +5084,7 @@ function renderOcSessions(s) {
 }
 
 // ========== Combos (alias models) ==========
-const comboModels = { cline: [], zen: [], workbuddy: [] };
+const comboModels = { cline: [], zen: [], workbuddy: [], openrouter: [], amd: [], tokenharbor: [] };
 
 async function fillComboModels() {
   const platform = _('comboPlatform').value;
@@ -3875,6 +5093,8 @@ async function fillComboModels() {
     if (!comboModels[platform].length) {
       if (platform === 'cline') {
         const d = await api('GET', '/models');
+        // /v1/models 输出即 cline-free/ 前缀形态（apiModelList 已规范化），
+        // 原样采用，面板所见即所调。
         comboModels.cline = (d.data.models || []).map(m => m.id).filter(Boolean);
       } else if (platform === 'zen') {
         const d = await api('GET', '/opencode/models');
@@ -3884,6 +5104,15 @@ async function fillComboModels() {
         comboModels.workbuddy = all.filter(wbModelMatchesFilter)
           .sort((a, b) => wbRate(a) - wbRate(b))
           .map(m => m.id).filter(Boolean);
+      } else if (platform === 'openrouter') {
+        const d = await api('GET', '/openrouter/config');
+        comboModels.openrouter = (d.data.models || []).map(m => String(m.id || '').replace(/^oprt:/, '')).filter(Boolean);
+      } else if (platform === 'amd') {
+        const d = await api('GET', '/amd/config');
+        comboModels.amd = (d.data.models || []).map(m => String(m.id || '').replace(/^amd:/, '')).filter(Boolean);
+      } else if (platform === 'tokenharbor') {
+        const d = await api('GET', '/tokenharbor/config');
+        comboModels.tokenharbor = (d.data.models || []).map(m => String(m.id || '').replace(/^tkhb:/, '')).filter(Boolean);
       }
     }
     if (!comboModels[platform].length) { sel.innerHTML = '<option value="">No models on this platform</option>'; return; }
@@ -3964,6 +5193,9 @@ restoreTab();
 // （ocKeysBody 的 index 暂存协议、Cline 的轮转游标、wb 的 order 持久化）。
 enableRowDragReorder('accountTableBody', ids => api('POST', '/accounts/reorder', { order: ids }), loadAccounts);
 enableRowDragReorder('ocKeysBody', ids => api('POST', '/opencode/keys/reorder', { order: ids.map(Number) }), loadOcConfig);
+enableRowDragReorder('orKeysBody', ids => api('POST', '/openrouter/keys/reorder', { order: ids.map(Number) }), loadOrConfig);
+enableRowDragReorder('amdKeysBody', ids => api('POST', '/amd/keys/reorder', { order: ids.map(Number) }), loadAmdConfig);
+enableRowDragReorder('thKeysBody', ids => api('POST', '/tokenharbor/keys/reorder', { order: ids.map(Number) }), loadTHConfig);
 enableRowDragReorder('wbAccountsBody', ids => api('POST', '/workbuddy/reorder', { uids: ids }), loadWorkbuddyAccounts);
 // 平台概览只在仪表盘可见时轮询（loadStats 现在打三个接口，隐藏页轮询纯浪费）
 setInterval(() => { if (_('tab-dashboard').style.display !== 'none') loadStats(); }, 10000);

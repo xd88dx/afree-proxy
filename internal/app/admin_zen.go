@@ -214,7 +214,9 @@ func handleZenModels(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		models = append(models, map[string]any{
-			"id":        m.ID,
+			// 网关前缀（zen:<id>）：与 /v1/models 输出一致，面板即所见即所调。
+			// 裸 ID 仍可解析（存量 IDE 配置与 combo target 兼容）。
+			"id":        zenPrefixedID(m.ID),
 			"aliases":   m.Aliases,
 			"context":   m.Context,
 			"output":    m.Output,

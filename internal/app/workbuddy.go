@@ -364,12 +364,52 @@ func (w *workbuddySubsystem) Stop() {
 	}
 }
 
-// isWorkBuddyModel 只接受源项目定义的 realm 前缀（cn: / global:）。裸模型名
-// 继续走 Cline/OpenCode，避免与现有上游目录发生静默冲突；/v1/models 会列出
-// 带前缀的 WorkBuddy 模型 ID，客户端按该 ID 调用即可。
+// WorkBuddy 网关前缀（v2）：wbcn: → CN 域、wbgb: → global 域。
+// 对应源项目 vendor 树内部的 cn:/global: realm 前缀 —— vendor 是同步上游的
+// 代码，手改会被 re-vendor 冲掉，因此在 afree 隔离层做双向翻译：
+//   - 出站（/v1/models 列表、日志分类）：vendor 的 cn:/global: → wbcn:/wbgb:；
+//   - 入站（请求路由、combo target 校验）：wbcn:/wbgb: → vendor 的 cn:/global:。
+// 旧的 cn:/global: 前缀同样接受（存量 IDE 配置与 combo target 不破坏）。
+const (
+	wbRealmPrefixCN     = "wbcn:"
+	wbRealmPrefixGlobal = "wbgb:"
+	// vendorRealmPrefixCN / vendorRealmPrefixGlobal 是源项目协议前缀，
+	// 仅在翻译边界出现。
+	vendorRealmPrefixCN     = "cn:"
+	vendorRealmPrefixGlobal = "global:"
+)
+
+// wbRealmToVendor 把网关前缀翻译成 vendor realm 前缀（入站方向）。
+// 无前缀（旧裸名按 vendor 语义 = cn 域）原样返回，由 vendor resolveModel 处理。
+func wbRealmToVendor(model string) string {
+	switch {
+	case strings.HasPrefix(model, wbRealmPrefixCN):
+		return vendorRealmPrefixCN + strings.TrimPrefix(model, wbRealmPrefixCN)
+	case strings.HasPrefix(model, wbRealmPrefixGlobal):
+		return vendorRealmPrefixGlobal + strings.TrimPrefix(model, wbRealmPrefixGlobal)
+	}
+	return model
+}
+
+// wbVendorToRealm 把 vendor realm 前缀翻译成网关前缀（出站方向）。
+func wbVendorToRealm(model string) string {
+	switch {
+	case strings.HasPrefix(model, vendorRealmPrefixCN):
+		return wbRealmPrefixCN + strings.TrimPrefix(model, vendorRealmPrefixCN)
+	case strings.HasPrefix(model, vendorRealmPrefixGlobal):
+		return wbRealmPrefixGlobal + strings.TrimPrefix(model, vendorRealmPrefixGlobal)
+	}
+	return model
+}
+
+// isWorkBuddyModel 判定网关前缀形态：wbcn:/wbgb:（新）或 vendor 的 cn:/global:
+// （旧，兼容）。裸模型名继续走 Cline/OpenCode，避免与上游目录静默冲突。
 func isWorkBuddyModel(model string) bool {
 	model = strings.TrimSpace(model)
-	return strings.HasPrefix(model, "cn:") || strings.HasPrefix(model, "global:")
+	return strings.HasPrefix(model, wbRealmPrefixCN) ||
+		strings.HasPrefix(model, wbRealmPrefixGlobal) ||
+		strings.HasPrefix(model, vendorRealmPrefixCN) ||
+		strings.HasPrefix(model, vendorRealmPrefixGlobal)
 }
 
 // shouldServeWorkBuddy 汇总路由前置条件：子系统已装载且模型带 WorkBuddy realm
@@ -379,6 +419,8 @@ func shouldServeWorkBuddy(model string) bool {
 }
 
 // serveWorkBuddyChat 把已读取的请求体原样交给 WorkBuddy 兼容 handler。
+// 请求体里的模型 ID 先从网关前缀翻译回 vendor realm 前缀（wbcn:/wbgb: →
+// cn:/global:）——vendor 树只认自己的协议。
 func (w *workbuddySubsystem) serveWorkBuddyChat(rw http.ResponseWriter, r *http.Request, body []byte) {
 	if w == nil || w.server == nil {
 		writeJSON(rw, http.StatusServiceUnavailable, map[string]any{
@@ -386,18 +428,63 @@ func (w *workbuddySubsystem) serveWorkBuddyChat(rw http.ResponseWriter, r *http.
 		})
 		return
 	}
+	body = workbuddyRewriteModel(body)
 	r.Body = io.NopCloser(bytes.NewReader(body))
 	r.ContentLength = int64(len(body))
 	w.server.ServeHTTP(rw, r)
 }
 
+// workbuddyRewriteModel 把请求体 JSON 的 model 字段从网关前缀翻译回 vendor
+// realm 前缀。解析失败/无 model 字段时原样返回（由 vendor 自己报错）。
+func workbuddyRewriteModel(body []byte) []byte {
+	var probe struct {
+		Model string `json:"model"`
+	}
+	if err := json.Unmarshal(body, &probe); err != nil || probe.Model == "" {
+		return body
+	}
+	translated := wbRealmToVendor(probe.Model)
+	if translated == probe.Model {
+		return body
+	}
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(body, &raw); err != nil || raw == nil {
+		return body
+	}
+	enc, err := json.Marshal(translated)
+	if err != nil {
+		return body
+	}
+	raw["model"] = enc
+	out, err := json.Marshal(raw)
+	if err != nil {
+		return body
+	}
+	return out
+}
+
 // workbuddyModelList 返回给 /v1/models 合并的 WorkBuddy 模型条目；无账号/拉取
-// 失败时源实现返回空列表。
+// 失败时源实现返回空列表。vendor 输出的 cn:/global: 前缀在这里翻译成网关
+// 前缀（wbcn:/wbgb:），客户端按列表 ID 直接调用。
 func (w *workbuddySubsystem) modelList() []map[string]any {
 	if w == nil || w.server == nil {
 		return nil
 	}
-	return w.server.ModelList()
+	src := w.server.ModelList()
+	out := make([]map[string]any, 0, len(src))
+	for _, e := range src {
+		if id, ok := e["id"].(string); ok {
+			cp := make(map[string]any, len(e))
+			for k, v := range e {
+				cp[k] = v
+			}
+			cp["id"] = wbVendorToRealm(id)
+			out = append(out, cp)
+			continue
+		}
+		out = append(out, e)
+	}
+	return out
 }
 
 // workbuddyAdminHandler 把源面板挂到 /admin/workbuddy/ 下：把外部路径重写到

@@ -104,6 +104,40 @@ func registerAdminRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/admin/api/zen/keys/proxy", adminCORS(auth(handleZenKeySetProxy)))
 	mux.HandleFunc("/admin/api/opencode/keys/proxy", adminCORS(auth(handleZenKeySetProxy)))
 	mux.HandleFunc("/admin/api/zen/sessions", adminCORS(auth(handleZenSessions)))
+	// OpenRouter 平台（key 池，or: 前缀）：配置/模型/key 管理/测试/代理绑定
+	mux.HandleFunc("/admin/api/openrouter/config", adminCORS(auth(handleOrConfig)))
+	mux.HandleFunc("/admin/api/openrouter/config/update", adminCORS(auth(handleOrConfigUpdate)))
+	mux.HandleFunc("/admin/api/openrouter/models", adminCORS(auth(handleOrConfig)))
+	mux.HandleFunc("/admin/api/openrouter/models/refresh", adminCORS(auth(handleOrModelsRefresh)))
+	mux.HandleFunc("/admin/api/openrouter/keys/routing", adminCORS(auth(handleOrKeySetRouting)))
+	mux.HandleFunc("/admin/api/openrouter/keys/routing/all", adminCORS(auth(handleOrKeySetRoutingAll)))
+	mux.HandleFunc("/admin/api/openrouter/keys/reorder", adminCORS(auth(handleOrKeysReorder)))
+	mux.HandleFunc("/admin/api/openrouter/keys/delete", adminCORS(auth(handleOrKeyDelete)))
+	mux.HandleFunc("/admin/api/openrouter/keys/test", adminCORS(auth(handleOrKeyTest)))
+	mux.HandleFunc("/admin/api/openrouter/keys/proxy", adminCORS(auth(handleOrKeySetProxy)))
+	mux.HandleFunc("/admin/api/openrouter/keys/proxy/clear", adminCORS(auth(handleOrKeyClearProxies)))
+	// AMD Radeon Cloud 平台（key 池，amd: 前缀）：配置/模型/key 管理/测试/代理绑定
+	mux.HandleFunc("/admin/api/amd/config", adminCORS(auth(handleAMDConfig)))
+	mux.HandleFunc("/admin/api/amd/config/update", adminCORS(auth(handleAMDConfigUpdate)))
+	mux.HandleFunc("/admin/api/amd/models/refresh", adminCORS(auth(handleAMDModelsRefresh)))
+	mux.HandleFunc("/admin/api/amd/keys/routing", adminCORS(auth(handleAMDKeySetRouting)))
+	mux.HandleFunc("/admin/api/amd/keys/routing/all", adminCORS(auth(handleAMDKeySetRoutingAll)))
+	mux.HandleFunc("/admin/api/amd/keys/reorder", adminCORS(auth(handleAMDKeysReorder)))
+	mux.HandleFunc("/admin/api/amd/keys/delete", adminCORS(auth(handleAMDKeyDelete)))
+	mux.HandleFunc("/admin/api/amd/keys/test", adminCORS(auth(handleAMDKeyTest)))
+	mux.HandleFunc("/admin/api/amd/keys/proxy", adminCORS(auth(handleAMDKeySetProxy)))
+	mux.HandleFunc("/admin/api/amd/keys/proxy/clear", adminCORS(auth(handleAMDKeyClearProxies)))
+	// TokenHarbor 平台（key 池，tkhb: 前缀）：配置/模型/key 管理/测试/代理绑定
+	mux.HandleFunc("/admin/api/tokenharbor/config", adminCORS(auth(handleTHConfig)))
+	mux.HandleFunc("/admin/api/tokenharbor/config/update", adminCORS(auth(handleTHConfigUpdate)))
+	mux.HandleFunc("/admin/api/tokenharbor/models/refresh", adminCORS(auth(handleTHModelsRefresh)))
+	mux.HandleFunc("/admin/api/tokenharbor/keys/routing", adminCORS(auth(handleTHKeySetRouting)))
+	mux.HandleFunc("/admin/api/tokenharbor/keys/routing/all", adminCORS(auth(handleTHKeySetRoutingAll)))
+	mux.HandleFunc("/admin/api/tokenharbor/keys/reorder", adminCORS(auth(handleTHKeysReorder)))
+	mux.HandleFunc("/admin/api/tokenharbor/keys/delete", adminCORS(auth(handleTHKeyDelete)))
+	mux.HandleFunc("/admin/api/tokenharbor/keys/test", adminCORS(auth(handleTHKeyTest)))
+	mux.HandleFunc("/admin/api/tokenharbor/keys/proxy", adminCORS(auth(handleTHKeySetProxy)))
+	mux.HandleFunc("/admin/api/tokenharbor/keys/proxy/clear", adminCORS(auth(handleTHKeyClearProxies)))
 	mux.HandleFunc("/admin/zen/", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/admin/", http.StatusFound)
 	})
@@ -1064,12 +1098,9 @@ func handleAdminUpdateConfig(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if req.DefaultModel != "" {
-		// 默认模型可以是 Cline 免费模型或 OpenCode 免费模型（路由层分流）
-		initModelsCache()
-		modelsMu.Lock()
-		_, ok := modelsCache[req.DefaultModel]
-		modelsMu.Unlock()
-		if !ok {
+		// 默认模型可以是 Cline 免费模型（带/不带 cline-free/ 前缀）或
+		// OpenCode 免费模型（路由层分流）
+		if !modelInClineList(req.DefaultModel) {
 			initZenModels()
 			if _, zok := resolveZenFreeModel(req.DefaultModel); !zok {
 				writeAPI(w, http.StatusBadRequest, apiResponse{Error: "unknown model: " + req.DefaultModel})

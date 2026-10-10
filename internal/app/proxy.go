@@ -1,8 +1,11 @@
 package app
 
 import (
+	"afree-proxy/internal/amd"
 	"afree-proxy/internal/cline"
 	"afree-proxy/internal/kit"
+	openrouter "afree-proxy/internal/openrouter"
+	"afree-proxy/internal/tokenharbor"
 	"bufio"
 	"bytes"
 	"context"
@@ -85,6 +88,9 @@ func StartProxy(host string, port int) error {
 	startPoolFlusher()
 	loadZenEndpoints()
 	loadClineStreamLearned()
+	initOpenRouter()
+	initAMD()
+	initTokenHarbor()
 	initStats()
 	LoadRequestLogsFromFile()
 	go cleanupCompactStates()
@@ -209,6 +215,12 @@ func StartProxy(host string, port int) error {
 		if workbuddySub != nil {
 			data = append(data, workbuddySub.modelList()...)
 		}
+		// 合并 OpenRouter 免费模型（oprt: 前缀）。
+		data = append(data, orModelList()...)
+		// 合并 AMD Radeon Cloud 免费模型（amd: 前缀）。
+		data = append(data, amdModelList()...)
+		// 合并 TokenHarbor 免费模型（tkhb: 前缀）。
+		data = append(data, thModelList()...)
 		// combo 别名模型（仪表盘自定义的虚拟模型 ID）
 		for _, c := range listCombos() {
 			owned := "cline"
@@ -216,6 +228,12 @@ func StartProxy(host string, port int) error {
 				owned = "opencode-zen"
 			} else if c.Platform == "workbuddy" {
 				owned = "workbuddy"
+			} else if c.Platform == "openrouter" {
+				owned = "openrouter"
+			} else if c.Platform == "amd" {
+				owned = "amd-radeon"
+			} else if c.Platform == "tokenharbor" {
+				owned = "tokenharbor"
 			}
 			data = append(data, map[string]any{
 				"id":       c.ID,
@@ -289,6 +307,24 @@ func StartProxy(host string, port int) error {
 				return
 			}
 			workbuddySub.serveWorkBuddyChat(w, r, rewritten)
+			return
+		}
+
+		// OpenRouter 路由：oprt:<model-id> 前缀（纯 key 池平台，无账号 OAuth）
+		if openrouter.HasPrefix(model) {
+			handleOrChat(w, r, params)
+			return
+		}
+
+		// AMD Radeon Cloud 路由：amd:<model-id> 前缀（Public Free Model APIs key 池）
+		if amd.HasPrefix(model) {
+			handleAMDChat(w, r, params)
+			return
+		}
+
+		// TokenHarbor 路由：tkhb:<model-id> 前缀（聚合网关 key 池，:free 模型）
+		if tokenharbor.HasPrefix(model) {
+			handleTHChat(w, r, params)
 			return
 		}
 
