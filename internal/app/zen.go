@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math/rand/v2"
 	"net"
 	"net/http"
 	"net/url"
@@ -840,7 +841,10 @@ func pickZenKey() string {
 			picked = candidates[0]
 		}
 	case "random":
-		picked = candidates[time.Now().UnixNano()%int64(len(candidates))]
+		// rand.IntN：并发安全的真随机源。不能用 time.Now().UnixNano()%n ——
+		// Windows 墙钟是粗粒度中断时钟（0.5~15.6ms 一跳），同一跳内的连续
+		// 请求拿到相同时间戳，random 会退化成固定选一个。
+		picked = candidates[rand.IntN(len(candidates))]
 	default:
 		// round_robin：轮转头的候选，游标推进到它之后
 		picked = candidates[0]
