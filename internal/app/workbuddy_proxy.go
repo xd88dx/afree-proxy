@@ -3,6 +3,7 @@ package app
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -237,4 +238,38 @@ func handleWorkbuddyPoolSetEnabled(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeAPI(w, http.StatusOK, apiResponse{Success: true, Data: map[string]any{"uid": req.UID, "enabled": *req.Enabled}})
+}
+
+// handleWorkbuddyPoolReorder POST /admin/api/workbuddy/reorder  body: { uids: [uid,...] }
+// 管理面板拖拽排序：保存账号显示顺序（池内 order 字段持久化，state.json 落盘）。
+// **仅影响面板/状态列表的展示顺序**——WorkBuddy 选号是加权路由（积分/到期/闲置），
+// 与列表顺序无关（用户确认过的语义）。
+func handleWorkbuddyPoolReorder(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
+		return
+	}
+	if workbuddySub == nil || workbuddySub.pool == nil {
+		writeAPI(w, http.StatusServiceUnavailable, apiResponse{Error: "workbuddy subsystem unavailable"})
+		return
+	}
+	body, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
+	if err != nil {
+		writeAPI(w, http.StatusBadRequest, apiResponse{Error: err.Error()})
+		return
+	}
+	defer r.Body.Close()
+	var req struct {
+		UIDs []string `json:"uids"`
+	}
+	if err := json.Unmarshal(body, &req); err != nil {
+		writeAPI(w, http.StatusBadRequest, apiResponse{Error: "invalid JSON"})
+		return
+	}
+	if len(req.UIDs) == 0 {
+		writeAPI(w, http.StatusBadRequest, apiResponse{Error: "uids is required"})
+		return
+	}
+	n := workbuddySub.pool.SetOrder(req.UIDs)
+	writeAPI(w, http.StatusOK, apiResponse{Success: true, Message: "Order saved", Data: map[string]any{"ordered": n}})
 }

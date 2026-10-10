@@ -855,11 +855,11 @@ func TestModelsEndpoint(t *testing.T) {
 
 	up := newFakeUpstream(t, func(authz string) (int, string, bool) {
 		return 200, `{"code":0,"data":{"models":[` +
-			`{"id":"glm-5.2","maxInputTokens":131072,"maxOutputTokens":32768},` +
-			`{"id":"glm-5.2-flash","maxInputTokens":131072,"maxOutputTokens":16384},` +
-			`{"id":"deepseek-v4","maxInputTokens":163840,"maxOutputTokens":8192},` +
-			`{"id":"kimi-k3","maxInputTokens":262144,"maxOutputTokens":16384},` +
-			`{"id":"qwen4-max","maxInputTokens":131072,"maxOutputTokens":8192}` +
+			`{"id":"glm-5.2","maxInputTokens":131072,"maxOutputTokens":32768,"credits":"x0.05"},` +
+			`{"id":"glm-5.2-flash","maxInputTokens":131072,"maxOutputTokens":16384,"credits":"x0.05"},` +
+			`{"id":"deepseek-v4","maxInputTokens":163840,"maxOutputTokens":8192,"credits":"x0.05"},` +
+			`{"id":"kimi-k3","maxInputTokens":262144,"maxOutputTokens":16384,"credits":"x0.05"},` +
+			`{"id":"qwen4-max","maxInputTokens":131072,"maxOutputTokens":8192,"credits":"x0.05"}` +
 			`]}}`, false
 	})
 	h := NewHandler(Config{Pool: testPoolWith(&auth.Auth{UID: "u1", AccessToken: "at", ExpiresAt: 9999999999}), Upstream: up})
@@ -897,9 +897,10 @@ func TestModelsDynamic(t *testing.T) {
 	dynamicModelsCache.lastFail = time.Time{}
 	dynamicModelsCache.Unlock()
 
-	// 假上游返回动态模型（含 agents + maxInputTokens/maxOutputTokens + reasoning 档位）
+	// 假上游返回动态模型（含 agents + maxInputTokens/maxOutputTokens + reasoning 档位）；
+	// credits 必须给出——倍率筛选（默认 0.2）下缺倍率 = 未知价会被隐藏。
 	up := newFakeUpstream(t, func(authz string) (int, string, bool) {
-		return 200, `{"code":0,"data":{"models":[{"id":"dyn-model-a","maxInputTokens":65536,"maxOutputTokens":8192,"reasoning":{"effort":"medium","supportedEfforts":["low","medium","high"]}},{"id":"dyn-model-b","maxInputTokens":131072,"maxOutputTokens":16384},{"id":"glm-9.9","maxInputTokens":262144,"maxOutputTokens":32768}],"agents":[{"name":"cli","models":["dyn-model-a","dyn-model-b","glm-9.9"]}]}}`, false
+		return 200, `{"code":0,"data":{"models":[{"id":"dyn-model-a","maxInputTokens":65536,"maxOutputTokens":8192,"credits":"x0.05","reasoning":{"effort":"medium","supportedEfforts":["low","medium","high"]}},{"id":"dyn-model-b","maxInputTokens":131072,"maxOutputTokens":16384,"credits":"x0.05"},{"id":"glm-9.9","maxInputTokens":262144,"maxOutputTokens":32768,"credits":"x0.05"}],"agents":[{"name":"cli","models":["dyn-model-a","dyn-model-b","glm-9.9"]}]}}`, false
 	})
 	p := testPoolWith(&auth.Auth{UID: "u1", AccessToken: "at1", ExpiresAt: 9999999999})
 	h := NewHandler(Config{Pool: p, Upstream: up})
@@ -999,6 +1000,9 @@ func TestModelsStaleServeOnRefreshFailure(t *testing.T) {
 	// TTL(10min) 过期后探测失败：回放未超龄（modelsServeStaleMax=1h）的上次真实
 	// 快照而不是空名单（一次拨号抖动不该把 /v1/models 打成 5 分钟空目录，语义
 	// 对齐 Cline 侧 model sync 的 "using cached list"）；快照超龄才恢复空名单。
+	// 前置说明：先成功拉取一次带倍率的目录——生产中「快照存在」必然伴随「倍率表
+	// 已建立」（两者同源于一次成功刷新），否则倍率筛选的「缺失即隐藏」会把回放
+	// 打成空名单，测不到真实的陈旧兜底路径。
 	seed := []upstream.ModelInfo{{ID: "glm-5.2"}, {ID: "kimi-k3"}}
 	backdate := func(d time.Duration) {
 		dynamicModelsCache.Lock()
@@ -1007,12 +1011,26 @@ func TestModelsStaleServeOnRefreshFailure(t *testing.T) {
 		dynamicModelsCache.lastFail = time.Time{}
 		dynamicModelsCache.Unlock()
 	}
+	// 清缓存：全量跑时前面的测试会把目录缓存留成"新鲜"态，不清的话 step 0
+	// 不会真正打上游，倍率表建立不起来。
+	dynamicModelsCache.Lock()
+	dynamicModelsCache.ids = nil
+	dynamicModelsCache.fetched = time.Time{}
+	dynamicModelsCache.lastFail = time.Time{}
+	dynamicModelsCache.Unlock()
 	// 探测计数必须原子：FetchModels 的 v3/enterprise 两腿并发打同一假上游，
 	// 裸 int 自增在 -race 下是数据竞争。
 	var calls atomic.Int64
+	var fail atomic.Bool
 	up := newFakeUpstream(t, func(authz string) (int, string, bool) {
 		calls.Add(1)
-		return 500, `boom`, false
+		if fail.Load() {
+			return 500, `boom`, false
+		}
+		return 200, `{"code":0,"data":{"models":[` +
+			`{"id":"glm-5.2","maxInputTokens":131072,"maxOutputTokens":32768,"credits":"x0.05"},` +
+			`{"id":"kimi-k3","maxInputTokens":262144,"maxOutputTokens":16384,"credits":"x0.05"}` +
+			`]}}`, false
 	})
 	h := NewHandler(Config{Pool: testPoolWith(&auth.Auth{UID: "u1", AccessToken: "at1", ExpiresAt: 9999999999}), Upstream: up})
 	get := func() []any {
@@ -1026,6 +1044,12 @@ func TestModelsStaleServeOnRefreshFailure(t *testing.T) {
 		return resp["data"].([]any)
 	}
 
+	// 0) 成功拉取一次：建立快照与倍率表（2 次上游调用 = 一次 FetchModels 两腿）。
+	if got := get(); len(got) != 2 {
+		t.Fatalf("initial fetch: got %d models, want 2", len(got))
+	}
+	fail.Store(true)
+
 	// 1) TTL 过期(11min)但未超龄：失败 → 回放 2 条快照
 	backdate(11 * time.Minute)
 	if got := get(); len(got) != 2 {
@@ -1037,8 +1061,8 @@ func TestModelsStaleServeOnRefreshFailure(t *testing.T) {
 	if got := get(); len(got) != 2 {
 		t.Fatalf("cooldown serve: got %d models, want 2", len(got))
 	}
-	if calls.Load() != 2 {
-		t.Fatalf("upstream probe hits=%d, want 2 (one FetchModels = v3+enterprise two legs; cooldown must not re-probe)", calls.Load())
+	if calls.Load() != 4 {
+		t.Fatalf("upstream probe hits=%d, want 4 (setup 2 + failed probe 2; cooldown must not re-probe)", calls.Load())
 	}
 
 	// 3) 快照超龄(2h > 1h)：失败 → 空名单（上游长期不可用时的诚实输出）

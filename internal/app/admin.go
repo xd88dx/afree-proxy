@@ -68,6 +68,7 @@ func registerAdminRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/admin/api/accounts/proxy/clear", adminCORS(auth(handleAdminAccountClearProxies)));
 	mux.HandleFunc("/admin/api/accounts/pool/enabled", adminCORS(auth(handleAdminAccountSetPoolEnabled)))
 	mux.HandleFunc("/admin/api/accounts/pool/enabled/all", adminCORS(auth(handleAdminAccountSetPoolEnabledAll)))
+	mux.HandleFunc("/admin/api/accounts/reorder", adminCORS(auth(handleAdminAccountsReorder)))
 	mux.HandleFunc("/admin/api/logs", adminCORS(auth(handleRequestLogs)))
 	mux.HandleFunc("/admin/api/keys", adminCORS(auth(handleAdminGetKeys)))
 	mux.HandleFunc("/admin/api/keys/generate", adminCORS(auth(handleAdminGenerateKey)))
@@ -98,6 +99,7 @@ func registerAdminRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/admin/api/zen/keys/test", adminCORS(auth(handleZenKeyTest)))
 	mux.HandleFunc("/admin/api/opencode/keys/routing", adminCORS(auth(handleZenKeySetRouting)))
 	mux.HandleFunc("/admin/api/opencode/keys/routing/all", adminCORS(auth(handleZenKeySetRoutingAll)))
+	mux.HandleFunc("/admin/api/opencode/keys/reorder", adminCORS(auth(handleZenKeysReorder)))
 	mux.HandleFunc("/admin/api/opencode/keys/delete", adminCORS(auth(handleZenKeyDelete)))
 	mux.HandleFunc("/admin/api/opencode/keys/proxy/clear", adminCORS(auth(handleZenKeyClearProxies)))
 	mux.HandleFunc("/admin/api/zen/keys/proxy", adminCORS(auth(handleZenKeySetProxy)))
@@ -237,7 +239,40 @@ func handleAdminAccountSetPoolEnabledAll(w http.ResponseWriter, r *http.Request)
 	})
 }
 
-// POST /admin/api/accounts/add  body: { refreshToken, email }
+// handleAdminAccountsReorder POST /admin/api/accounts/reorder  body: { order: [accountId,...] }
+// 管理面板拖拽排序：按给定顺序重排 Cline 账号池并立即落盘。顺序即轮转数组
+// 顺序，重排后 round-robin 从原游标指向账号继续（游标语义不变）。
+func handleAdminAccountsReorder(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		writeAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
+		return
+	}
+	body, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
+	if err != nil {
+		writeAPI(w, http.StatusBadRequest, apiResponse{Error: err.Error()})
+		return
+	}
+	defer r.Body.Close()
+	var req struct {
+		Order []string `json:"order"`
+	}
+	if err := json.Unmarshal(body, &req); err != nil {
+		writeAPI(w, http.StatusBadRequest, apiResponse{Error: "invalid JSON"})
+		return
+	}
+	n, err := reorderAccounts(req.Order)
+	if err != nil {
+		writeAPI(w, http.StatusBadRequest, apiResponse{Error: err.Error()})
+		return
+	}
+	writeAPI(w, http.StatusOK, apiResponse{
+		Success: true,
+		Message: "Order saved",
+		Data:    map[string]any{"updated": n},
+	})
+}
+
+// handleAdminAccountAdd POST /admin/api/accounts/add  body: { refreshToken, email }
 func handleAdminAccountAdd(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "POST" {
 		writeAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})

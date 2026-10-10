@@ -538,6 +538,35 @@ func handleZenKeySetRoutingAll(w http.ResponseWriter, r *http.Request) {
 	writeAPI(w, http.StatusOK, apiResponse{Success: true, Message: fmt.Sprintf("routing enabled=%v on %d key(s)", req.Enabled, n)})
 }
 
+// POST /admin/api/opencode/keys/reorder  body: { order: [oldIndex,...] }
+// 管理面板拖拽排序：按旧 index 置换重排 zen key 池（面板只见掩码不见明文，
+// 协议用 index 置换）。持久化、Key=Keys[0] 兼容同步、轮转游标归零由
+// setZenConfig 统一处理；冷却/用量/粘性按 key 明文存储，与顺序无关。
+func handleZenKeysReorder(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
+		return
+	}
+	body, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
+	if err != nil {
+		writeAPI(w, http.StatusBadRequest, apiResponse{Error: err.Error()})
+		return
+	}
+	defer r.Body.Close()
+	var req struct {
+		Order []int `json:"order"`
+	}
+	if err := json.Unmarshal(body, &req); err != nil {
+		writeAPI(w, http.StatusBadRequest, apiResponse{Error: "invalid JSON"})
+		return
+	}
+	if err := reorderZenKeys(req.Order); err != nil {
+		writeAPI(w, http.StatusBadRequest, apiResponse{Error: err.Error()})
+		return
+	}
+	writeAPI(w, http.StatusOK, apiResponse{Success: true, Message: "Order saved", Data: map[string]any{"updated": len(req.Order)}})
+}
+
 // POST /admin/api/opencode/keys/delete  body: { index }
 // 从 key 池删除单个 key（按索引定位）：随行清掉代理绑定与路由参与记录；
 // 会话/收割状态由 setZenConfig 的 normalize 按存活 key 列表裁剪。删空后

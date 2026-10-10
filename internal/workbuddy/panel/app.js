@@ -1138,7 +1138,7 @@ function closeAdd() { stopPoll(); loginState = null; $('addVeil').classList.remo
 $('btnCloseAdd').onclick = closeAdd;
 $('btnStartLogin').onclick = startAddLogin;
 $('btnOpenUrl').onclick = () => open($('addUrl').textContent, '_blank');
-$('btnCopyUrl').onclick = () => navigator.clipboard.writeText($('addUrl').textContent)
+$('btnCopyUrl').onclick = () => copyText($('addUrl').textContent)
   .then(() => toast('链接已复制', 'ok'), () => toast('复制失败，请手动选择复制', 'err'));
 $('importFile').onchange = async () => {
   const file = $('importFile').files[0];

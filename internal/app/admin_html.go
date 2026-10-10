@@ -137,6 +137,7 @@ select{cursor:pointer;appearance:none;background-image:linear-gradient(45deg,tra
 .eg-item{padding:6px 10px;font-size:12px;cursor:pointer;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .eg-item:hover{background:rgba(138,180,248,.15)}
 .eg-item.active{background:rgba(138,180,248,.22)}
+.eg-rate{float:right;margin-left:12px;color:var(--text3);font-variant-numeric:tabular-nums}
 .eg-item.eg-hint{cursor:default;color:var(--text3)}
 .eg-item.eg-hint:hover{background:none}
 .flex{display:flex;align-items:center;gap:8px}
@@ -160,10 +161,13 @@ select{cursor:pointer;appearance:none;background-image:linear-gradient(45deg,tra
 /* 通知条：顶部居中悬浮，不顶格贴边，与页头留出呼吸空隙 */
 .toast{position:fixed;top:18px;left:50%;padding:12px 22px;border-radius:12px;color:#fff;z-index:9999;opacity:0;transform:translate(-50%,-14px) scale(.97);transition:.3s cubic-bezier(.2,.9,.3,1.2);font-size:13px;max-width:520px;backdrop-filter:blur(12px);border:1px solid rgba(255,255,255,.14);box-shadow:0 12px 40px rgba(2,6,23,.5);white-space:pre-line;text-align:center}
 .toast.show{opacity:1;transform:translate(-50%,0)}
-.toast.success{background:#2b5a44}
-.toast.error{background:#7a3a30}
+.toast.success{background:#2b5a44}.toast.error{background:#7a3a30}
 .toast.info{background:#31465e}
 .toast.warning{background:#6e5619}
+/* 拖拽排序：拖拽中的行半透明 + 顶部细高亮，落点感知 */
+tr.row-dragging{opacity:.45;box-shadow:inset 0 2px 0 var(--accent)}
+tr[draggable="true"]{cursor:grab}
+tr[draggable="true"]:active{cursor:grabbing}
 
 /* ===== Misc ===== */
 .loading{display:inline-block;width:14px;height:14px;border:2px solid var(--text3);border-top-color:var(--accent);border-radius:50%;animation:spin .7s linear infinite;vertical-align:-2px}
@@ -355,6 +359,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
         <button class="btn btn-sm" onclick="stageAllAccountsPool(true)">Enable all</button>
         <button class="btn btn-sm" onclick="stageAllAccountsPool(false)">Disable all</button>
         <button class="btn btn-sm" onclick="stageClearAccountProxies()" title="Stage: clear proxy bindings on ALL accounts AND disable them — click Save to apply">Clear bindings</button>
+        <button class="btn btn-sm" onclick="applyProxiesToOthers('acc')" title="Copy this page's proxy bindings by row order to the other two account pools. Takes effect immediately; only proxy bindings are changed, enable/disable states are untouched.">Apply to others</button>
         <button class="btn btn-sm" id="accTestBtn" onclick="batchTestAccounts()" title="Run the Test probe on every account (same as clicking Test on each row)">Test all</button>
       </div>
       <div style="display:flex;gap:8px">
@@ -635,6 +640,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
         <button class="btn btn-sm" onclick="stageAllKeysRouting(true)">Enable all</button>
         <button class="btn btn-sm" onclick="stageAllKeysRouting(false)">Disable all</button>
         <button class="btn btn-sm" onclick="stageClearZenKeyProxies()" title="Stage: clear proxy bindings on ALL keys and disable routing — click Save to apply">Clear bindings</button>
+        <button class="btn btn-sm" onclick="applyProxiesToOthers('key')" title="Copy this page's proxy bindings by row order to the other two account pools. Takes effect immediately; only proxy bindings are changed, enable/disable states are untouched.">Apply to others</button>
         <button class="btn btn-sm" id="ocTestBtn" onclick="batchTestKeys()" title="Run the Test probe on every key (same as clicking Test on each row)">Test all</button>
       </div>
       <div style="display:flex;gap:8px">
@@ -756,6 +762,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
         <button class="btn btn-sm" onclick="stageAllWbPool(true)">Enable all</button>
         <button class="btn btn-sm" onclick="stageAllWbPool(false)">Disable all</button>
         <button class="btn btn-sm" onclick="stageClearWorkbuddyProxyBindings()" title="Stage: clear proxy bindings on ALL WorkBuddy accounts and disable them — click Save to apply">Clear bindings</button>
+        <button class="btn btn-sm" onclick="applyProxiesToOthers('wb')" title="Copy this page's proxy bindings by row order to the other two account pools. Takes effect immediately; only proxy bindings are changed, enable/disable states are untouched.">Apply to others</button>
       </div>
       <div style="flex:1;display:flex;gap:8px;justify-content:flex-end">
         <button class="btn btn-sm btn-warn" id="wbResetBtn" onclick="resetWorkbuddyEdits()" title="Discard staged changes and reload the last saved state">Discard</button>
@@ -795,6 +802,16 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
         <div class="wb-config-group">
           <h3>Pool and cooldown</h3>
           <div class="wb-field"><label for="wbMaxInFlight">Max in-flight / account</label><input id="wbMaxInFlight" data-wb-path="pool.max_in_flight" data-wb-type="number" min="0" placeholder="3"></div>
+          <div class="wb-field"><label for="wbModelRateFilter">Model rate filter</label>
+            <select id="wbModelRateFilter" data-wb-path="pool.model_rate_filter" data-wb-type="number">
+              <option value="0">0 — free only</option>
+              <option value="0.1">0.1</option>
+              <option value="0.2">0.2</option>
+              <option value="0.3">0.3</option>
+              <option value="0.5">0.5</option>
+              <option value="1">1</option>
+            </select>
+          </div>
           <div class="wb-field"><label for="wbMaxGlobal">Global in-flight limit</label><input id="wbMaxGlobal" data-wb-path="pool.max_in_flight_global" data-wb-type="number" min="1" placeholder="2"></div>
           <div class="wb-field"><label for="wbBreakerThreshold">Breaker threshold</label><input id="wbBreakerThreshold" data-wb-path="pool.breaker_threshold" data-wb-type="number" min="1" placeholder="3"></div>
           <div class="wb-field"><label for="wbSoftRate">Soft rate cooldown</label><input id="wbSoftRate" data-wb-path="cooldown.soft_rate" data-wb-type="duration" placeholder="600s"></div>
@@ -1035,6 +1052,10 @@ const I18N_ZH = {
   'WorkBuddy account added': 'WorkBuddy 账号已添加',
   'Authorization link copied': '授权链接已复制',
   'Copy failed': '复制失败',
+  // 拖拽排序
+  'Save or discard staged edits before reordering': '有未保存的暂存修改，请先保存或放弃后再拖拽排序',
+  'Order saved': '顺序已保存',
+  'Reorder failed: ': '排序失败：',
   'loaded': '已加载',
   'load failed': '加载失败',
   'WorkBuddy config load failed: ': 'WorkBuddy 配置加载失败：',
@@ -1173,6 +1194,9 @@ const I18N_ZH = {
   'No WorkBuddy models under the current filter': '当前筛选下没有 WorkBuddy 模型',
   'WorkBuddy models': 'WorkBuddy 模型',
   'Filter': '筛选',
+  'Model rate cap for WorkBuddy models. Applies to the model list and to GET /v1/models responses; saves immediately.': 'WorkBuddy 模型倍率上限。同时作用于模型列表与 GET /v1/models 返回结果，保存后立即生效。',
+  'Model rate filter': '模型倍率筛选',
+  '0 — free only': '0 — 仅免费',
   'WorkBuddy configuration': 'WorkBuddy 配置',
   'Managed by the admin session': '面板由当前管理员会话管理',
   'Listening, credentials, and data paths stay under the gateway admin session.': '监听地址、API 密钥、凭证目录与状态文件路径由当前项目统一管理。',
@@ -1292,6 +1316,18 @@ const I18N_ZH = {
   'Headers restored to defaults': '请求头已恢复默认',
   'OpenCode keys without proxy bindings follow this switch.': 'OpenCode 未绑定代理的 key 遵循此开关。',
   'Clear bindings': '清空代理',
+  'Apply to others': '代理套用',
+  'Copy this page\'s proxy bindings by row order to the other two account pools. Takes effect immediately; only proxy bindings are changed, enable/disable states are untouched.': '把本页的代理绑定按行序复制到其余两个账号池（多出的丢弃，不足的保留原样）。即刻生效，只改代理绑定，不影响启用/禁用状态。',
+  'No accounts to apply from': '当前页没有账号可套用',
+  'Apply ': '把 ',
+  ' proxy bindings by row order to ': ' 的代理绑定按行序套用到 ',
+  ' and ': ' 和 ',
+  ' accounts? Takes effect immediately; ': ' 账号？即刻生效；',
+  'only proxy bindings change, enable/disable states are untouched.': '只改代理绑定，不改启用/禁用状态。',
+  'Applied ': '已套用 ',
+  ' binding(s) to other pools': ' 条绑定到其他账号池',
+  ' binding(s), ': ' 条绑定，成功 ',
+  ' failed': ' 条失败',
   'Enable all': '一键启用',
   'Direct connection': '直连',
   'Save': '保存',
@@ -1789,7 +1825,7 @@ function renderWorkbuddyAccounts() {
       (poolEnabled ? ' checked' : '') + ' title="' + esc(T('Participates in rotation')) + '" aria-label="' + esc(T('Participates in rotation')) + '"></td>';
     // uid 过长会把 Account 列撑宽，昵称下方只留前 10 个字符，完整值走 title 悬浮。
     const shortId = id.length > 10 ? id.slice(0, 10) + '…' : id;
-    return '<tr data-wb-id="' + esc(id) + '">' +
+    return '<tr draggable="true" data-wb-id="' + esc(id) + '" data-drag-id="' + esc(id) + '">' +
       '<td><div class="wb-account"><div class="wb-account-main">' +
         '<div class="wb-account-name">' + esc(account.name || account.email || account.nickname || ('Account ' + id)) + '</div>' +
         '<div class="wb-account-id" title="' + esc(realm + ' · ' + id) + '">' + esc(realm) + ' · ' + esc(shortId) + '</div>' +
@@ -2238,7 +2274,7 @@ async function pollWorkbuddyOAuth(oauthId) {
 function copyWorkbuddyOAuthUrl() {
   const value = _('wbOAuthUrl').value;
   if (!value) return;
-  navigator.clipboard.writeText(value).then(() => toast('Authorization link copied', 'success'), () => toast('Copy failed', 'error'));
+  copyText(value, 'Authorization link copied');
 }
 function openWorkbuddyOAuthUrl() {
   const value = _('wbOAuthUrl').value;
@@ -2272,11 +2308,32 @@ async function loadWorkbuddyConfig() {
       else if (Array.isArray(value)) el.value = value.join(', ');
       else el.value = String(value);
     });
+    // 倍率筛选同样来自同一份配置：网关设置页的下拉与 WB 配置页共用一份真值
+    // （saveWorkbuddyConfig 之后这里把新阈值同步进内存）。
+    syncWorkbuddyRateFilter(config);
     _('wbConfigNote').textContent = T('loaded');
   } catch (e) {
     _('wbConfigNote').textContent = T('load failed');
     toast(T('WorkBuddy config load failed: ') + e.message, 'error');
   }
+}
+// syncWorkbuddyRateFilter 从服务端配置同步倍率筛选阈值；config 省略时自行拉取。
+// 非法/缺失值回落默认 0.2（与 wbconfig.Default()、and 服务端兜底同一数值）。
+async function syncWorkbuddyRateFilter(config) {
+  let cfg = config;
+  if (!cfg) {
+    try {
+      const result = await wbCall('config');
+      cfg = result.config || result;
+    } catch (e) { return; }
+  }
+  const raw = Number(wbDig(cfg, 'pool.model_rate_filter'));
+  const next = WB_RATE_OPTIONS.includes(raw) ? raw : 0.2;
+  if (next !== workbuddyRateFilter) {
+    workbuddyRateFilter = next;
+    if (_('wbRateFilter')) _('wbRateFilter').value = String(next);
+  }
+  return next;
 }
 function collectWorkbuddyConfig() {
   const out = {};
@@ -2372,6 +2429,57 @@ async function loadStats() {
 }
 
 // ========== Accounts ==========
+// ========== 账号列表拖拽排序（Account pool 三菜单共用） ==========
+// enableRowDragReorder 给账号表的 tbody 装上 HTML5 原生行拖拽：
+// - dragover 实时把拖拽行插到目标位置（即时生效的视觉反馈，无需重建 DOM）；
+// - 松手后按 tr[data-drag-id] 收集新顺序提交 submit(ids)，成功 toast 后 reload()
+//   （reload 从后端重拉，保证 index/轮转游标等派生状态与磁盘一致），失败 reload 回滚；
+// - 行内有未保存的暂存修改（.tr-dirty）时禁止起拖：OpenCode key 表的暂存协议
+//   按 index 定位，重排会让未提交的 index 指向错误的 key。
+// 拖拽从单元格空白/文本处起拖；input/select/button/label/a 上不起拖，避免
+// 干扰下拉、勾选与按钮点击。空态行（无 data-drag-id）不参与。
+function enableRowDragReorder(tbodyId, submit, reload) {
+  const tb = _(tbodyId);
+  if (!tb) return;
+  tb.addEventListener('dragstart', e => {
+    const tr = e.target.closest('tr[data-drag-id]');
+    if (!tr || e.target.closest('input,select,textarea,button,a,label')) { e.preventDefault(); return; }
+    if (tb.querySelector('tr.tr-dirty')) {
+      e.preventDefault();
+      toast(T('Save or discard staged edits before reordering'), 'warning');
+      return;
+    }
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', tr.dataset.dragId);
+    tr.classList.add('row-dragging');
+  });
+  tb.addEventListener('dragover', e => {
+    const dragging = tb.querySelector('tr.row-dragging');
+    if (!dragging) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    const over = e.target.closest('tr[data-drag-id]');
+    if (!over || over === dragging) return;
+    const rect = over.getBoundingClientRect();
+    const before = (e.clientY - rect.top) < rect.height / 2;
+    tb.insertBefore(dragging, before ? over : over.nextSibling);
+  });
+  tb.addEventListener('drop', e => e.preventDefault());
+  tb.addEventListener('dragend', async () => {
+    const dragging = tb.querySelector('tr.row-dragging');
+    if (!dragging) return;
+    dragging.classList.remove('row-dragging');
+    const ids = [...tb.querySelectorAll('tr[data-drag-id]')].map(tr => tr.dataset.dragId);
+    try {
+      await submit(ids);
+      toast(T('Order saved'), 'success');
+    } catch (err) {
+      toast(T('Reorder failed: ') + err.message, 'error');
+    }
+    if (reload) reload(); // 成功=对齐派生状态；失败=回滚
+  });
+}
+
 async function loadAccounts() {
   try {
     await loadProxyListCache();
@@ -2427,7 +2535,7 @@ async function loadAccounts() {
         ' title="' + esc(T('Participates in rotation')) + '" aria-label="' + esc(T('Participates in rotation')) + '">' +
         '</td>';
       const st = esc(a.status);
-      return '<tr>' +
+      return '<tr draggable="true" data-drag-id="' + esc(a.accountId) + '">' +
         '<td>' + esc(a.email) + '</td>' +
         '<td><span class="status ' + st + '"><span class="status-dot ' + st + '"></span>' + (sn[a.status] || st) + '</span>' + statusExtra + '</td>' +
           '<td title="Today ' + fmtNum(a.tokensToday) + ' / total ' + fmtNum(a.tokensTotal) + ' tokens (exact when upstream returns usage, otherwise estimated)">' + fmtTokens(a.tokensToday) + ' / ' + fmtTokens(a.tokensTotal) + '</td>' +
@@ -2475,9 +2583,27 @@ async function loadProxyListCache() {
     const d = await api('GET', '/opencode/config');
     proxyListCache = (d.data.proxies || []).slice();
     backupProxyOn = d.data.backupProxyEnabled === true;
+    syncProxyHealthCache((d.data.runtime || {}).proxyHealth);
   } catch (e) { /* keep previous cache */ }
 }
 const maskProxyLabel = p => String(p || '').replace(/\/\/[^@/]*@/, '//***@');
+// 每代理"最近在线率"缓存：与代理池页健康表同源（/opencode/config 的
+// runtime.proxyHealth）。快照里的 proxy 是打码 URL，与 proxyListCache 的
+// 完整 URL 对不上，两侧都剥掉凭据段后再以剩余部分作 key 对齐。
+let proxyHealthByProxy = {};
+const proxyHealthKey = p => String(p || '').replace(/\/\/[^@/]*@/, '//');
+function syncProxyHealthCache(rows) {
+  proxyHealthByProxy = {};
+  (rows || []).forEach(r => { if (r && r.proxy) proxyHealthByProxy[proxyHealthKey(r.proxy)] = r; });
+}
+// 下拉行右侧展示的最近在线率：无样本返回 null（不标注）；低在线率标红，
+// 阈值与代理池页健康表一致（PROXY_HEALTH_* 见 renderProxyHealth 附近）。
+function proxyRecentRate(p) {
+  const r = proxyHealthByProxy[proxyHealthKey(p)];
+  if (!r || r.recentRate === null || r.recentRate === undefined) return null;
+  const low = (r.recentTotal || 0) >= PROXY_HEALTH_MIN_SAMPLES && r.recentRate < PROXY_HEALTH_LOW_RATE;
+  return { text: Math.round(r.recentRate * 100) + '%', low: low };
+}
 
 // ========== 账号表暂存编辑（三平台共用） ==========
 // 代理绑定与"启用"勾选的改动只落在 DOM（行高亮 + 保存按钮描边），点击各
@@ -2624,6 +2750,83 @@ function stageClearZenKeyProxies() {
   });
 }
 
+// ========== 代理套用（把本页绑定按行序复制到其余两个账号池）==========
+// 页名 → 绑定 kind 与表格选择器：owner 页的绑定从 DOM 读（含暂存未保存的），
+// 其余两页按行序覆盖第 0..n-1 行；异页缺号保留原绑定不动，多出来的丢弃。
+// 只写代理绑定，不碰启用/禁用/路由，不走 Save 暂存流程，写入即落盘。
+const BINDING_PAGES = [
+  { kind: 'acc', name: 'Cline',  tbody: '#accountTableBody' },
+  { kind: 'key', name: 'OpenCode', tbody: '#ocKeysBody' },
+  { kind: 'wb',  name: 'WorkBuddy', tbody: '#wbAccountsBody' }
+];
+// 读一行的主/辅绑定：辅槽在开关关闭/主为全局或直连时已被 egApplyMainLinkage
+// 锁定跟随主槽，dataset.value 即为最终生效值，照抄即可。
+function readRowBindings(row, kind) {
+  const main = row.querySelector('.eg-input[data-eg="' + kind + '"][data-slot="main"]');
+  if (!main) return null;
+  const backup = row.querySelector('.eg-input[data-eg="' + kind + '"][data-slot="backup"]');
+  return { id: main.dataset.egid, main: main.dataset.value || '', backup: backup ? (backup.dataset.value || '') : '' };
+}
+// 写一行的绑定（仅代理）：同步 DOM 的 data-value 与显示标签，辅槽联动规则照旧。
+function setRowBindings(row, kind, main, backup) {
+  const mainInput = row.querySelector('.eg-input[data-eg="' + kind + '"][data-slot="main"]');
+  if (!mainInput) return null;
+  mainInput.dataset.value = main;
+  mainInput.value = egLabel(main);
+  const backupInput = row.querySelector('.eg-input[data-eg="' + kind + '"][data-slot="backup"]');
+  const bVal = (!backupProxyOn || main === '' || main === EGRESS_DIRECT) ? main : backup;
+  if (backupInput) {
+    backupInput.dataset.value = bVal;
+    backupInput.value = egLabel(bVal);
+  }
+  egApplyMainLinkage(row, main);
+  return mainInput.dataset.egid;
+}
+// 目标页落盘：与各页 Save 的提交口径一致（绑定与启用分开提交，这里只发绑定）。
+async function writeBinding(kind, id, main, backup) {
+  if (kind === 'acc') {
+    await api('POST', '/accounts/proxy', { accountId: id, main: main, backup: backup });
+  } else if (kind === 'key') {
+    await api('POST', '/opencode/keys/proxy', { index: parseInt(id, 10), main: main, backup: backup });
+  } else {
+    await workbuddyProxyAdminCall('POST', 'proxy/set', { uid: id, main: main, backup: backup });
+  }
+}
+async function applyProxiesToOthers(ownerKind) {
+  const owner = BINDING_PAGES.find(p => p.kind === ownerKind);
+  if (!owner) return;
+  const ownerRows = [...document.querySelectorAll(owner.tbody + ' tr')]
+    .filter(r => r.querySelector('.eg-input[data-slot="main"]'));
+  const bindings = ownerRows.map(r => readRowBindings(r, ownerKind)).filter(Boolean);
+  if (!bindings.length) { toast(T('No accounts to apply from'), 'info'); return; }
+  const targets = BINDING_PAGES.filter(p => p.kind !== ownerKind);
+  if (!confirm(T('Apply ') + owner.name + T(' proxy bindings by row order to ') +
+    targets.map(p => p.name).join(T(' and ')) + T(' accounts? Takes effect immediately; ') +
+    T('only proxy bindings change, enable/disable states are untouched.'))) return;
+  let ok = 0, fail = 0;
+  const refreshPending = { key: false, wb: false };
+  for (const t of targets) {
+    const rows = [...document.querySelectorAll(t.tbody + ' tr')]
+      .filter(r => r.querySelector('.eg-input[data-slot="main"]'));
+    for (let i = 0; i < rows.length && i < bindings.length; i++) {
+      const id = setRowBindings(rows[i], t.kind, bindings[i].main, bindings[i].backup);
+      if (id == null) continue;
+      try {
+        await writeBinding(t.kind, id, bindings[i].main, bindings[i].backup);
+        ok++;
+      } catch (e) { fail++; }
+    }
+    if (t.kind === 'key') refreshPending.key = true;
+    if (t.kind === 'wb') refreshPending.wb = true;
+  }
+  // 目标页表格重拉确认落盘结果；owner 页保持原样（其自身表格未被改动）。
+  // 切走页面导致刷新失败时保持简单，不打断套用流程。
+  if (refreshPending.key) { try { await loadOcConfig(); } catch (e) { console.warn('applyProxiesToOthers: reload OpenCode keys failed', e); } }
+  if (refreshPending.wb) { try { await loadWorkbuddyAccounts(); } catch (e) { console.warn('applyProxiesToOthers: reload WorkBuddy accounts failed', e); } }
+  if (fail) toast(T('Applied ') + ok + T(' binding(s), ') + fail + T(' failed'), 'warning');
+  else toast(T('Applied ') + ok + T(' binding(s) to other pools'), 'success');
+}
+
 // ========== 出口绑定联想下拉（combobox） ==========
 // 选项固定为 全局 / 直连，其后是代理池按输入联想。联想阈值：有效字符 ≥3
 //（中日韩字符按 1.5 计，即 2 个汉字触发）。value 语义：'' = 全局（默认，
@@ -2702,13 +2905,16 @@ function egRenderItems(input, menu, q) {
     const label = egLabel(p).toLowerCase();
     return label.includes(ql) || p.toLowerCase().includes(ql);
   };
+  const proxyItem = p => ({ v: p, label: egLabel(p), active: cur === p, rate: proxyRecentRate(p) });
   const proxies = q === ''
-    ? proxyListCache.map(p => ({ v: p, label: egLabel(p), active: cur === p }))
+    ? proxyListCache.map(proxyItem)
     : (ready
-        ? proxyListCache.filter(matches).map(p => ({ v: p, label: egLabel(p), active: cur === p }))
+        ? proxyListCache.filter(matches).map(proxyItem)
         : []);
   let html = items.concat(proxies).map(it =>
-    '<div class="eg-item' + (it.active ? ' active' : '') + '" data-value="' + esc(it.v) + '">' + esc(it.label) + '</div>'
+    '<div class="eg-item' + (it.active ? ' active' : '') + '" data-value="' + esc(it.v) + '">' + esc(it.label) +
+    (it.rate ? '<span class="eg-rate"' + (it.rate.low ? ' style="color:var(--danger);font-weight:600"' : '') + '>' + it.rate.text + '</span>' : '') +
+    '</div>'
   ).join('');
   if (q !== '' && !proxies.length) html += '<div class="eg-item eg-hint">' + T('No matching proxies') + '</div>';
   menu.innerHTML = html;
@@ -2935,12 +3141,19 @@ async function deleteAllData() {
   } catch (e) { toast(T('Delete failed: ') + e.message, 'error'); }
 }
 
-function copyText(t) {
-  navigator.clipboard.writeText(t).then(() => toast('Copied to clipboard', 'success')).catch(() => {
-    const ta = document.createElement('textarea');
-    ta.value = t; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta);
-    toast('Copied to clipboard', 'success');
-  });
+function copyText(t, okMsg) {
+  const done = () => toast(okMsg || 'Copied to clipboard', 'success');
+  // clipboard API 只在 secure context（https/localhost）可用；navigator.clipboard 为
+  // undefined 时直接调用会同步抛错，.catch 接不住，必须先判空再走 execCommand 降级。
+  if (navigator.clipboard && window.isSecureContext) {
+    navigator.clipboard.writeText(t).then(done, () => { legacyCopy(t); done(); });
+    return;
+  }
+  legacyCopy(t); done();
+}
+function legacyCopy(t) {
+  const ta = document.createElement('textarea');
+  ta.value = t; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove();
 }
 
 // ========== Request logs ==========
@@ -3052,11 +3265,10 @@ async function saveHeaders() {
 }
 
 const WB_RATE_OPTIONS = [0, 0.1, 0.2, 0.3, 0.5, 1.0];
-let workbuddyRateFilter = (() => {
-  const stored = localStorage.getItem('workbuddyRateFilter');
-  const saved = stored === null ? NaN : Number(stored);
-  return WB_RATE_OPTIONS.includes(saved) ? saved : 0.2;
-})();
+// 倍率筛选阈值：服务端配置（wbconfig pool.model_rate_filter）持有，网关
+// /v1/models 与面板同口径过滤。初值 0.2 只是首屏未加载完的占位——loadModels /
+// loadWorkbuddyConfig 拉到真值后立刻覆盖，落盘由 setWorkbuddyRateFilter 负责。
+let workbuddyRateFilter = 0.2;
 function wbNumber(value) {
   const n = Number(String(value ?? '').replace(/[^\d.-]/g, ''));
   return Number.isFinite(n) ? n : null;
@@ -3066,6 +3278,9 @@ function wbRate(m) {
     m.promo_credits !== undefined && m.promo_credits !== null && m.promo_credits !== '';
   return wbNumber(promoted ? m.promo_credits : m && m.credits);
 }
+// 倍率缺失（null）的模型一律隐藏：缺失 ≠ 免费（试用模型显式清空倍率、目录
+// 未刷新时整表缺失、上游没给 credits，都可能是收费模型），无法证明 ≤ 阈值就
+// 不展示，与服务端 matchesModelRateFilter 同口径。
 function wbModelMatchesFilter(m) {
   const rate = wbRate(m);
   return rate !== null && rate <= workbuddyRateFilter + 1e-9;
@@ -3100,10 +3315,20 @@ function wbRateHTML(m) {
   const promo = m.promo_label ? ' <span class="model-tag">' + esc(m.promo_label) + '</span>' : '';
   return '<span title="' + esc(m.promo_note || '') + '">' + value + old + promo + '</span>';
 }
-function setWorkbuddyRateFilter(value) {
+// setWorkbuddyRateFilter 改倍率筛选：先写服务端配置（wbconfig
+// pool.model_rate_filter，经 livecfg 热生效，/v1/models 立刻按新阈值过滤），
+// 落盘成功再刷本地视图。保存失败保持旧值并报错——面板显示必须与服务端一致，
+// 否则用户以为改了、网关还在按旧阈值出名单。
+async function setWorkbuddyRateFilter(value) {
   const next = Number(value);
-  workbuddyRateFilter = WB_RATE_OPTIONS.includes(next) ? next : 0.2;
-  localStorage.setItem('workbuddyRateFilter', String(workbuddyRateFilter));
+  const applied = WB_RATE_OPTIONS.includes(next) ? next : 0.2;
+  try {
+    await wbCall('config', {}, { pool: { model_rate_filter: applied } });
+  } catch (e) {
+    toast(T('Save failed: ') + e.message, 'error');
+    return;
+  }
+  workbuddyRateFilter = applied;
   loadModels();
   loadModelOptions();
   comboModels.workbuddy = [];
@@ -3114,6 +3339,9 @@ function setWorkbuddyRateFilter(value) {
 
 async function loadModels() {
   try {
+    // 倍率阈值先于渲染拉取：它决定 wb 名单与下拉选中项（服务端配置，
+    // wbconfig pool.model_rate_filter）。
+    await syncWorkbuddyRateFilter();
     const d = await api('GET', '/models');
     const models = d.data.models || [];
     let info = '';
@@ -3159,7 +3387,7 @@ async function loadModels() {
       '<div style="display:flex;align-items:center;gap:10px;margin:14px 0 8px">' +
         '<span style="font-size:12px;font-weight:600">'+ T('WorkBuddy models') + '</span><span style="flex:1"></span>' +
         '<label class="inline-flex" style="font-size:12px;color:var(--text2)">' + T('Filter') + ' ' +
-          '<select id="wbRateFilter" onchange="setWorkbuddyRateFilter(this.value)" style="width:auto;padding:4px 26px 4px 9px;font-size:12px">' + rateOptions + '</select></label>' +
+          '<select id="wbRateFilter" onchange="setWorkbuddyRateFilter(this.value)" title="' + esc(T('Model rate cap for WorkBuddy models. Applies to the model list and to GET /v1/models responses; saves immediately.')) + '" style="width:auto;padding:4px 26px 4px 9px;font-size:12px">' + rateOptions + '</select></label>' +
       '</div>' + wbBlock;
   } catch (e) { _('modelsList').textContent = T('Failed to load'); }
 }
@@ -3338,7 +3566,7 @@ function renderOcKeyStates(ks) {
           ? '<span style="color:var(--text3)">-</span>'
           : '<button class="btn btn-sm" data-zk="' + k.index + '">Test</button> ' +
             '<button class="btn btn-sm btn-danger" data-zdel="' + k.index + '" title="Remove this key from the pool">Delete</button>') + '</td>';
-        return '<tr><td>#' + (k.index + 1) + (k.current ? ' <span style="color:var(--accent)" title="next in rotation">●</span>' : '') + '</td>' +
+        return '<tr draggable="true" data-drag-id="' + k.index + '"><td>#' + (k.index + 1) + (k.current ? ' <span style="color:var(--accent)" title="next in rotation">●</span>' : '') + '</td>' +
           '<td style="font-family:monospace;font-size:11px">' + esc(k.keyMask) + '</td>' +
           '<td>' + (k.usage || 0) + '</td>' +
           '<td>' + st + '</td>' +
@@ -3511,6 +3739,7 @@ async function loadProxyPool() {
     const [oc, cfg] = await Promise.all([api('GET', '/opencode/config'), api('GET', '/config')]);
     const c = oc.data;
     proxyListCache = (c.proxies || []).slice();
+    syncProxyHealthCache((c.runtime || {}).proxyHealth);
     backupProxyOn = c.backupProxyEnabled === true;
     _('ppProxies').value = (c.proxies || []).join('\n');
     _('ppStrategy').value = c.proxyStrategy || 'round_robin';
@@ -3840,6 +4069,11 @@ loadKeys();
 loadModels();
 loadConfig();
 restoreTab();
+// 拖拽排序（Account pool 三菜单）：submit 即时落库，reload 重拉对齐派生状态
+// （ocKeysBody 的 index 暂存协议、Cline 的轮转游标、wb 的 order 持久化）。
+enableRowDragReorder('accountTableBody', ids => api('POST', '/accounts/reorder', { order: ids }), loadAccounts);
+enableRowDragReorder('ocKeysBody', ids => api('POST', '/opencode/keys/reorder', { order: ids.map(Number) }), loadOcConfig);
+enableRowDragReorder('wbAccountsBody', ids => api('POST', '/workbuddy/reorder', { uids: ids }), loadWorkbuddyAccounts);
 // 平台概览只在仪表盘可见时轮询（loadStats 现在打三个接口，隐藏页轮询纯浪费）
 setInterval(() => { if (_('tab-dashboard').style.display !== 'none') loadStats(); }, 10000);
 setInterval(() => { loadOcStats(); }, 15000);

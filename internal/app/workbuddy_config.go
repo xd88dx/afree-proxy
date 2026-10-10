@@ -73,6 +73,7 @@ func saveWorkbuddyConfig(
 		SoftCooldown:         newCfg.SoftRateDur,
 		SanitizeFingerprints: newCfg.Features.SanitizeBlacklistFingerprints,
 		RecordClientInfo:     newCfg.Logging.RequestClientInfo,
+		ModelRateFilter:      newCfg.Pool.ModelRateFilter,
 	})
 	up.SanitizeFingerprints.Store(newCfg.Features.SanitizeBlacklistFingerprints)
 	up.HTTP.Timeout = time.Duration(newCfg.Upstream.TimeoutSeconds) * time.Second

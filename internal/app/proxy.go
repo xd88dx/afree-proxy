@@ -134,6 +134,7 @@ func StartProxy(host string, port int) error {
 		mux.HandleFunc("/admin/api/workbuddy/proxy/set", adminCORS(adminAuthMiddleware(handleWorkbuddyProxySet)))
 		mux.HandleFunc("/admin/api/workbuddy/proxy/clear", adminCORS(adminAuthMiddleware(handleWorkbuddyProxyClear)))
 		mux.HandleFunc("/admin/api/workbuddy/enabled", adminCORS(adminAuthMiddleware(handleWorkbuddyPoolSetEnabled)))
+		mux.HandleFunc("/admin/api/workbuddy/reorder", adminCORS(adminAuthMiddleware(handleWorkbuddyPoolReorder)))
 	}
 
 	apiKeyHandler := func(next http.HandlerFunc) http.HandlerFunc {

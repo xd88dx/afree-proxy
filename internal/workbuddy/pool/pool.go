@@ -16,6 +16,10 @@ type Pool struct {
 	byUID   map[string]*entry
 	stateFp string
 	dirty   atomic.Bool // 内存有变更待落盘
+	// order 账号显示顺序（管理面板拖拽排序，state.json order 字段持久化）。
+	// 仅影响 List()/面板列表的展示顺序，**不参与**选号路由——选号仍是加权算法
+	// （积分/到期/闲置，见 pick.go）。未入序的账号排在已入序之后（List 内处理）。
+	order []string
 	// store 池状态快照镜像（redisstore.Store）；nil = 无需镜像（未配置 Redis / Noop 之外也可能 nil）。
 	// SaveState/LoadState 经它接线，与本地 state.json 并存作启动恢复备份。
 	store StoreSnapshotter

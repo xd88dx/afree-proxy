@@ -19,6 +19,11 @@ type Snapshot struct {
 	SoftCooldown         time.Duration // 429 软冷却基数（<=0 时调用方回退内置默认）
 	SanitizeFingerprints bool          // 出站请求体指纹脱敏
 	RecordClientInfo     bool          // 请求日志是否记录调用来源（客户端 IP / UA）
+	// ModelRateFilter 模型积分倍率筛选（config pool.model_rate_filter）。
+	// /v1/models 与面板模型列表按「生效倍率 ≤ 该值」过滤 WorkBuddy 条目；
+	// 0 = 只列免费，缺省 0.2（与 Snapshot 零值不同的键必须由装配层显式填充，
+	// 否则零值 0 会把目录收紧成只剩免费模型——见 workbuddy.go 的 livecfg.New）。
+	ModelRateFilter float64
 }
 
 // Holder 原子持有当前快照。

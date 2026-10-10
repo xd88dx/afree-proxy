@@ -11,6 +11,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 
 	"sync"
@@ -74,6 +75,12 @@ type Config struct {
 	// 来自 logging.request_client_info（缺省 true）；关闭时 reqlog 事件的来源字段
 	// 保持为空，归档与面板都不出现来源信息。
 	RecordClientInfo bool
+
+	// ModelRateFilter 模型积分倍率筛选（config pool.model_rate_filter）。
+	// /v1/models 只透出生效倍率 ≤ 该值的模型条目；缺省 0.2（静态兜底值，
+	// Live 为 nil 时使用——零值 0 会把目录收紧成只剩免费模型，必须显式装配）。
+	// 与 Live 同时给出时 Live 优先（面板在线改完立即生效）。
+	ModelRateFilter float64
 }
 
 // loadLive 返回当前运行期快照；Live 为 nil 时用静态字段合成。
@@ -85,7 +92,50 @@ func (h *Handler) loadLive() livecfg.Snapshot {
 		APIKey:           h.cfg.APIKey,
 		SoftCooldown:     h.cfg.SoftCooldown,
 		RecordClientInfo: h.cfg.RecordClientInfo,
+		ModelRateFilter:  h.cfg.ModelRateFilter,
 	}
+}
+
+// modelRateFilter 返回当前生效的倍率筛选阈值。装配层（app/server.NewHandler）
+// 总会经 livecfg 传入 cfg.Pool.ModelRateFilter，而 Default()=0.2、normalize()
+// 钳负为 0，故快照值即配置真值——显式 0（「只列免费」）必须原样生效，
+// 绝不按未配置回退默认。仅当 Live 完全未装配（裸用/测试）且静态字段 <=0
+// 时回落 0.2，与面板历史默认一致。
+func (h *Handler) modelRateFilter() float64 {
+	if h.cfg.Live != nil {
+		return h.cfg.Live.Load().ModelRateFilter
+	}
+	if h.cfg.ModelRateFilter > 0 {
+		return h.cfg.ModelRateFilter
+	}
+	return 0.2
+}
+
+// modelRateOf 返回模型当前生效倍率（数值，ok=false 表示倍率缺失/不可解析）。
+// 口径与 pool 积分保底判定、面板「生效价」显示一致：有机器可读优惠取折扣价，
+// 否则牌价（有效倍率表由上游目录刷新时随 FetchModels 写入）。
+func (h *Handler) modelRateOf(realm, id string) (float64, bool) {
+	raw := h.cfg.Upstream.ModelRate(realm, id)
+	if raw == "" {
+		return 0, false
+	}
+	v, err := strconv.ParseFloat(raw, 64)
+	if err != nil {
+		return 0, false
+	}
+	return v, true
+}
+
+// matchesModelRateFilter 判定模型条目是否通过倍率筛选：倍率 ≤ 阈值（含等号，
+// 面板前端同款 1e-9 容差）。倍率缺失/不可解析的模型一律隐藏——缺失 ≠ 免费
+//（试用横幅模型显式清空倍率、目录未刷新时整表缺失、上游没给 credits，都可能是
+// 收费模型），无法证明 ≤ 阈值就不透出，宁缺毋滥。
+func (h *Handler) matchesModelRateFilter(realm, id string) bool {
+	rate, ok := h.modelRateOf(realm, id)
+	if !ok {
+		return false
+	}
+	return rate <= h.modelRateFilter()+1e-9
 }
 
 // softCooldown 返回当前生效的软冷却基数（热改优先，<=0 回退默认）。
@@ -364,9 +414,15 @@ func applyModelInfoFields(entry map[string]any, mi upstream.ModelInfo) map[strin
 // modelList 模型列表：CN 模型输出统一加 "cn:" 前缀（gateway 路由协议，与 resolveModel
 // 对称）；global.enabled=true 时追加 global: 前缀的国际版名单。
 // 纯动态：动态拉取失败/无号 → 该域空列表，无静态兜底。
+// 倍率筛选（config pool.model_rate_filter）：两个域的条目都按「生效倍率 ≤ 阈值」
+// 过滤——网关 /v1/models 与面板看到同一份名单；倍率缺失/不可解析的模型视为
+// 未知价，一律不透出（缺失 ≠ 免费，无法证明 ≤ 阈值就隐藏）。
 func (h *Handler) modelList() []map[string]any {
 	out := make([]map[string]any, 0)
 	for _, mi := range h.fetchDynamicModels() {
+		if !h.matchesModelRateFilter("cn", mi.ID) {
+			continue
+		}
 		entry := map[string]any{
 			"id":       "cn:" + mi.ID,
 			"object":   "model",
@@ -410,6 +466,9 @@ func (h *Handler) modelList() []map[string]any {
 		}
 		globalEfforts, globalDefaults := h.cfg.Upstream.GlobalEffortSnapshot()
 		for _, id := range globalIDs {
+			if !h.matchesModelRateFilter("global", id) {
+				continue
+			}
 			entry := map[string]any{
 				"id":       "global:" + id,
 				"object":   "model",

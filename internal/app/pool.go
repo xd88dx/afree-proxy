@@ -264,6 +264,67 @@ func poolCurrentIdx() int {
 	return p.CurrentIdx
 }
 
+// reorderAccounts 按给定 accountId 顺序重排账号池（管理面板拖拽排序）。
+// 顺序即 JSON 数组顺序：round-robin 轮转按 CurrentIdx 起始遍历 Accounts，
+// 重排后新顺序立即对选号轮转生效（"即时生效"）。
+// 约束：order 中的 accountId 必须都存在于池中（未知 id 整体拒绝，防手滑漏号）；
+// 未出现在 order 里的账号按原相对顺序追加在尾部。CurrentIdx 重映射到原游标
+// 指向账号的新位置（游标语义不变，轮转不跳号）；立即落盘。
+// 返回重排后的账号总数。
+func reorderAccounts(order []string) (int, error) {
+	p := loadPool()
+	poolMu.Lock()
+	defer poolMu.Unlock()
+
+	if len(order) == 0 {
+		return 0, fmt.Errorf("order is required")
+	}
+	byID := make(map[string]*Account, len(p.Accounts))
+	for _, a := range p.Accounts {
+		byID[a.AccountID] = a
+	}
+	// 游标重映射基准：重排前 CurrentIdx 指向的账号（越界按无游标处理）。
+	var curID string
+	if p.CurrentIdx >= 0 && p.CurrentIdx < len(p.Accounts) {
+		curID = p.Accounts[p.CurrentIdx].AccountID
+	}
+
+	next := make([]*Account, 0, len(p.Accounts))
+	seen := make(map[string]bool, len(order))
+	for _, id := range order {
+		a, ok := byID[id]
+		if !ok {
+			return 0, fmt.Errorf("unknown accountId: %s", id)
+		}
+		if seen[id] {
+			continue // 重复 id 幂等跳过
+		}
+		seen[id] = true
+		next = append(next, a)
+	}
+	if len(next) != len(p.Accounts) {
+		// 未提及的账号按原相对顺序追加在尾部
+		for _, a := range p.Accounts {
+			if !seen[a.AccountID] {
+				next = append(next, a)
+			}
+		}
+	}
+
+	p.Accounts = next
+	p.CurrentIdx = 0
+	if curID != "" {
+		for i, a := range next {
+			if a.AccountID == curID {
+				p.CurrentIdx = i
+				break
+			}
+		}
+	}
+	savePoolLocked() // 管理操作直接落盘（不走 2s flusher，避免多余写盘）
+	return len(next), nil
+}
+
 // poolClineUseProxies 线程安全地读取 cline 走代理池开关；未设置（nil）默认开启。
 func poolClineUseProxies() bool {
 	p := loadPool()

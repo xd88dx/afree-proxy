@@ -205,6 +205,16 @@ type Config struct {
 		// tier 0（免费）/ tier 1（无观测）不受限；签到回血越过 floor 自动恢复。
 		// 默认 0 = 关闭；负值钳 0。
 		CreditFloor int64 `json:"credit_floor"`
+		// ModelRateFilter 模型积分倍率筛选（单位 x，如 0.2 = 只列出生效倍率
+		// ≤0.2 的模型）。生效范围：网关侧 `/v1/models` 的 WorkBuddy 条目与
+		// 面板模型列表。生效倍率与 WorkBuddy 客户端看到的「当前生效价」同口径：
+		// 有机器可读优惠（promo_credits）取折扣价，否则取牌价（credits）；
+		// 倍率缺失/不可解析的模型视为未知价，一律隐藏（缺失 ≠ 免费，
+		// 无法证明 ≤ 阈值就不透出）。
+		// 默认 0.2；<=0 钳 0（0 = 只列免费）；>1 报错（那等于全量放开，
+		// 「不筛选」客户端自己忽略多余模型即可，不值得一个开关）。
+		// 热生效（经 livecfg 快照）：改完值 /v1/models 立刻按新阈值过滤。
+		ModelRateFilter float64 `json:"model_rate_filter"`
 	} `json:"pool"`
 
 	SessionSticky struct {
@@ -278,6 +288,9 @@ func Default() *Config {
 	// P1-1）；0/负数 normalize 回落默认（与 max_in_flight 的 0=不限语义不同，分档键
 	// 的 0 没有合理语义，回退分档默认最稳）。
 	c.Pool.MaxInFlightGlobal = 2
+	// 倍率筛选默认 0.2（与面板历史默认一致）；显式 0 合法（只列免费模型）。
+	// Load 先取 Default() 再 Unmarshal 覆盖，键缺席时字段保留此值。
+	c.Pool.ModelRateFilter = 0.2
 	c.Pool.BreakerThreshold = 3
 	c.Pool.BreakerCooldown = "30m"
 	c.Pool.BreakerCooldownMax = "6h"
@@ -449,6 +462,11 @@ func applyEnv(c *Config) {
 			c.Pool.PreferExpiring = b
 		}
 	}
+	if v := os.Getenv("WB2A_MODEL_RATE_FILTER"); v != "" {
+		if f, err := strconv.ParseFloat(v, 64); err == nil {
+			c.Pool.ModelRateFilter = f
+		}
+	}
 }
 
 func (c *Config) normalize() error {
@@ -526,6 +544,15 @@ func (c *Config) normalize() error {
 	// 积分保底：负值钳 0（= 关闭）。0 是合法默认（关闭），无需空值回落。
 	if c.Pool.CreditFloor < 0 {
 		c.Pool.CreditFloor = 0
+	}
+	// 倍率筛选：负值钳 0（只列免费，同口吻的「最严」）；>1 报错——大于牌价
+	// 上限的阈值没有语义（所有模型都通过，等于没筛），fail fast 防止配置漂移。
+	if c.Pool.ModelRateFilter < 0 {
+		c.Pool.ModelRateFilter = 0
+	}
+	if c.Pool.ModelRateFilter > 1 {
+		return fmt.Errorf("pool.model_rate_filter: %v 无意义（>1 等于不筛选）——"+
+			"「不筛选」请让客户端忽略多余模型即可", c.Pool.ModelRateFilter)
 	}
 	if c.Pool.BreakerThreshold <= 0 {
 		c.Pool.BreakerThreshold = 3

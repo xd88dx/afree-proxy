@@ -859,3 +859,49 @@ func TestServerReadTimeout(t *testing.T) {
 		t.Error("unparsable read_timeout should fail fast")
 	}
 }
+
+func TestModelRateFilterDefaultsAndValidation(t *testing.T) {
+	// 缺省 0.2（与面板历史默认一致；Load 先 Default 再 Unmarshal 覆盖）。
+	c, err := ParseConfig([]byte(`{}`))
+	if err != nil {
+		t.Fatalf("parse default: %v", err)
+	}
+	if c.Pool.ModelRateFilter != 0.2 {
+		t.Fatalf("default model_rate_filter=%v want 0.2", c.Pool.ModelRateFilter)
+	}
+
+	// 显式 0 合法（只看免费模型）：0 是「最严」档而非未配置态。
+	zero, err := ParseConfig([]byte(`{"pool":{"model_rate_filter":0}}`))
+	if err != nil {
+		t.Fatalf("parse zero: %v", err)
+	}
+	if zero.Pool.ModelRateFilter != 0 {
+		t.Fatalf("zero model_rate_filter=%v want 0", zero.Pool.ModelRateFilter)
+	}
+
+	// 负值钳 0。
+	neg, err := ParseConfig([]byte(`{"pool":{"model_rate_filter":-1}}`))
+	if err != nil {
+		t.Fatalf("parse negative: %v", err)
+	}
+	if neg.Pool.ModelRateFilter != 0 {
+		t.Fatalf("negative clamped=%v want 0", neg.Pool.ModelRateFilter)
+	}
+
+	// >1 报错：该阈值无语义（所有模型都通过 = 没筛），fail fast。
+	if _, err := ParseConfig([]byte(`{"pool":{"model_rate_filter":1.5}}`)); err == nil {
+		t.Error("model_rate_filter >1 should fail fast")
+	}
+}
+
+func TestModelRateFilterEnvOverride(t *testing.T) {
+	// env 覆盖（无面板的容器部署也能定阈值）；非法值忽略回落配置/默认。
+	t.Setenv("WB2A_MODEL_RATE_FILTER", "0.1")
+	c, err := Load("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Pool.ModelRateFilter != 0.1 {
+		t.Fatalf("env override=%v want 0.1", c.Pool.ModelRateFilter)
+	}
+}

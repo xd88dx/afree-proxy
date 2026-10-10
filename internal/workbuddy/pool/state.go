@@ -510,7 +510,8 @@ func (p *Pool) ServableForRealm(realm string) bool {
 	return false
 }
 
-// List 返回所有账号状态（按 UID 排序，稳定输出）。
+// List 返回所有账号状态。有自定义显示顺序（SetOrder，管理面板拖拽）时按其
+// 排序，未入序的账号排尾部再按 UID 稳定输出；无自定义顺序时按 UID 排序（原行为）。
 func (p *Pool) List() []Status {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
@@ -518,12 +519,67 @@ func (p *Pool) List() []Status {
 	for uid := range p.byUID {
 		uids = append(uids, uid)
 	}
-	sort.Strings(uids)
+	if len(p.order) > 0 {
+		idx := make(map[string]int, len(p.order))
+		for i, uid := range p.order {
+			if _, dup := idx[uid]; !dup {
+				idx[uid] = i
+			}
+		}
+		sort.Slice(uids, func(i, j int) bool {
+			oi, oki := idx[uids[i]]
+			oj, okj := idx[uids[j]]
+			switch {
+			case oki && okj:
+				return oi < oj
+			case oki != okj:
+				return oki // 已入序在前
+			default:
+				return uids[i] < uids[j] // 未入序按 UID
+			}
+		})
+	} else {
+		sort.Strings(uids)
+	}
 	out := make([]Status, 0, len(uids))
 	for _, uid := range uids {
 		out = append(out, p.statusOf(uid, p.byUID[uid]))
 	}
 	return out
+}
+
+// SetOrder 设置账号显示顺序（管理面板拖拽排序）。**仅影响 List()/面板列表的
+// 展示顺序，不改变加权选号路由**（积分/到期/闲置优先级不变，见 pick.go）。
+// order 里的未知 uid 忽略；未提及的账号按 UID 排在已入序账号之后（保证全量
+// 入序、输出稳定）。立即落盘；返回实际入序的账号数。
+func (p *Pool) SetOrder(uids []string) int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	used := make(map[string]bool, len(uids))
+	ordered := make([]string, 0, len(p.byUID))
+	for _, uid := range uids {
+		if used[uid] {
+			continue
+		}
+		used[uid] = true
+		if _, ok := p.byUID[uid]; ok {
+			ordered = append(ordered, uid)
+		}
+	}
+	if len(ordered) < len(p.byUID) {
+		rest := make([]string, 0, len(p.byUID)-len(ordered))
+		for uid := range p.byUID {
+			if !used[uid] {
+				rest = append(rest, uid)
+			}
+		}
+		sort.Strings(rest)
+		ordered = append(ordered, rest...)
+	}
+	p.order = ordered
+	p.dirty.Store(true)
+	p.saveLocked()
+	return len(ordered)
 }
 func (p *Pool) statusOf(uid string, e *entry) Status {
 	now := time.Now()

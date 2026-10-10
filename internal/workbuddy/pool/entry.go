@@ -495,6 +495,9 @@ type stateModelCost struct {
 // stateFile 持久化格式。
 type stateFile struct {
 	Accounts map[string]stateAccount `json:"accounts"`
+	// Order 账号显示顺序（管理面板拖拽排序；uid 列表，缺省 = 无自定义顺序，
+	// List 按 UID 排序）。仅展示语义，不参与选号路由。
+	Order []string `json:"order,omitempty"`
 }
 
 // flushInterval 后台落盘周期。

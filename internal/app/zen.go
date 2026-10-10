@@ -389,6 +389,44 @@ func setAllZenKeysRoutingEnabled(enabled bool) int {
 	return n
 }
 
+// reorderZenKeys 按旧 index 置换重排 zen key 池（管理面板拖拽排序）。
+// order[i] = 重排后第 i 个位置上的原 index；面板只见掩码不见 key 明文，
+// 因此协议用 index 置换而非 key 值。order 必须覆盖全部 key（缺失的按原相对
+// 顺序追加在尾部，重复 index 幂等跳过；越界 index 整体拒绝）。
+// 持久化、Key=Keys[0] 兼容字段同步、轮转游标归零都由 setZenConfig 统一处理
+// ——重排后 round-robin 从第一个 key 重新开始，与新顺序的语义一致。
+// 冷却/用量/会话粘性都按 key 明文存储，与顺序无关，重排零影响。
+func reorderZenKeys(order []int) error {
+	cfg := getZenConfig()
+	n := len(cfg.Keys)
+	if len(order) == 0 {
+		return fmt.Errorf("order is required")
+	}
+	next := make([]string, 0, n)
+	seen := make(map[int]bool, n)
+	for _, idx := range order {
+		if idx < 0 || idx >= n {
+			return fmt.Errorf("key index out of range: %d", idx)
+		}
+		if seen[idx] {
+			continue
+		}
+		seen[idx] = true
+		next = append(next, cfg.Keys[idx])
+	}
+	if len(next) != n {
+		for i, k := range cfg.Keys {
+			if !seen[i] {
+				next = append(next, k)
+			}
+		}
+	}
+	nc := *cfg
+	nc.Keys = next
+	setZenConfig(&nc)
+	return nil
+}
+
 // zenProxyBinding 一个 zen key 或 cline 账号的出口绑定：主代理优先，辅代理
 // 兜底；两者都不可用时跳过该身份（隔离优先于可用性）。
 type zenProxyBinding struct {

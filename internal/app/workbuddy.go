@@ -48,8 +48,8 @@ type workbuddySubsystem struct {
 	usage      *wbusage.Recorder
 	requestLog *reqlog.Recorder
 	session    *wbsession.Router
-	live      *livecfg.Holder
-	store     redisstore.Store
+	live       *livecfg.Holder
+	store      redisstore.Store
 
 	cancel context.CancelFunc
 
@@ -187,6 +187,7 @@ func startWorkBuddy() (*workbuddySubsystem, error) {
 		SoftCooldown:         cfg.SoftRateDur,
 		SanitizeFingerprints: cfg.Features.SanitizeBlacklistFingerprints,
 		RecordClientInfo:     cfg.Logging.RequestClientInfo,
+		ModelRateFilter:      cfg.Pool.ModelRateFilter,
 	})
 	rec := wbusage.New(filepath.Join(dir, "usage.json"))
 	rec.Start()
@@ -240,23 +241,25 @@ func startWorkBuddy() (*workbuddySubsystem, error) {
 	sch.SetGrowthHook(pn.RunGrowthQueueOnce)
 
 	h := server.NewHandler(server.Config{
-		Pool:          p,
-		Upstream:      up,
-		APIKey:        "",
-		Session:       sess,
-		StickyCount:   stickyCount,
-		RedisMode:     redisMode,
-		SoftCooldown:  cfg.SoftRateDur,
-		Panel:         nil,
-		Live:          live,
-		Usage:         rec,
-		RequestLog:    requestLog,
-		PromptMode:    cfg.Prompt.Mode,
-		PromptText:    cfg.PromptText,
+		Pool:         p,
+		Upstream:     up,
+		APIKey:       "",
+		Session:      sess,
+		StickyCount:  stickyCount,
+		RedisMode:    redisMode,
+		SoftCooldown: cfg.SoftRateDur,
+		Panel:        nil,
+		Live:         live,
+		Usage:        rec,
+		RequestLog:   requestLog,
+		PromptMode:   cfg.Prompt.Mode,
+		PromptText:   cfg.PromptText,
 		// 来源记录开关经 livecfg 热生效；此处同时填静态字段，供 Live 为 nil 的
 		// 裸用/测试路径拿到同一缺省值。
 		RecordClientInfo: cfg.Logging.RequestClientInfo,
 		GlobalEnabled:    cfg.Global.Enabled,
+		// 倍率筛选同样双填：Live 热改优先，静态字段兜底（同款理由）。
+		ModelRateFilter: cfg.Pool.ModelRateFilter,
 	})
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -270,9 +273,9 @@ func startWorkBuddy() (*workbuddySubsystem, error) {
 	attachWorkbuddyLogSink(pn.Logs())
 
 	sub := &workbuddySubsystem{
-		cfgPath:   cfgPath,
-		dir:       dir,
-		cfg:       cfg,
+		cfgPath:    cfgPath,
+		dir:        dir,
+		cfg:        cfg,
 		pool:       p,
 		upstream:   up,
 		scheduler:  sch,
@@ -281,9 +284,9 @@ func startWorkBuddy() (*workbuddySubsystem, error) {
 		usage:      rec,
 		requestLog: requestLog,
 		session:    sess,
-		live:      live,
-		store:     store,
-		cancel:    cancel,
+		live:       live,
+		store:      store,
+		cancel:     cancel,
 	}
 	log.Printf("WorkBuddy subsystem ready: accounts=%d auth_dir=%s", len(auths), cfg.AuthDir)
 	return sub, nil
