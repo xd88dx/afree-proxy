@@ -45,7 +45,7 @@ description: 在 afree-proxy 中新增一个上游平台的完整迁移配方—
 | 页面账号列表 | tbody（`accountTableBody`/`ocKeysBody`/`wbAccountsBody`/`orKeysBody` 族参照）+ 快照/保存三件套 | frontend §3 |
 | 操作按钮区域 | 页脚三区 flex space-between + 顶部操作行；批量操作串行进度 | frontend §4 |
 | 平台相关设置 | key 池型：`handleOrConfigUpdate` patch 模式；vendor 型：`wbConfigForm` data-path 模式 | frontend §5 / backend §5 |
-| 网关设置与自定义别名 | /v1 分发顺序、/v1/models 合并、combos 平台白名单与 target 校验 | backend §3-4 |
+| 网关设置与自定义别名 | /v1 分发顺序、/v1/models 合并、combos 平台白名单与 target 校验、前缀查表两形态铁律（backend §3 加粗条） | backend §3-4 |
 | 凭据开启禁用 | PoolEnabled/routingEnabled 六平台对照 + 全路径过滤 + 默认禁用 | backend §2 |
 | 代理池相关 | egComboHTML 主/辅双槽绑定、proxy/clear 语义、出口观测 | backend §6 |
 | 克隆一个 key 池平台 | internal/openrouter 四件套改名 + app 桥接接线清单 | backend §9 |
