@@ -41,3 +41,6 @@ requests.jsonl
 
 .workbuddy/
 __pycache__/
+
+# Preview binary for the throwaway UI test container (docker-run entrypoint)
+.afree-preview
