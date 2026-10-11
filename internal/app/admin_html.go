@@ -135,14 +135,23 @@ select{cursor:pointer;appearance:none;background-image:linear-gradient(45deg,tra
 .eg-wrap{position:relative;display:inline-block;vertical-align:middle}
 .eg-wrap.has-badge .eg-input{padding-right:52px}
 .eg-wrap .eg-input:focus ~ .eg-badge{display:none}
-.eg-badge{position:absolute;right:6px;top:50%;transform:translateY(-50%);font-size:10px;line-height:1;color:var(--text3);background:var(--bg2);border:1px solid var(--border-strong);border-radius:6px;padding:2px 5px;pointer-events:none;font-variant-numeric:tabular-nums;white-space:nowrap}
-.eg-badge.low{color:var(--danger);font-weight:600}
+.eg-badge{position:absolute;right:6px;top:50%;transform:translateY(-50%);font-size:10px;line-height:1;color:var(--bg);background:var(--bg2);border:1px solid transparent;border-radius:6px;padding:2px 5px;pointer-events:none;font-variant-numeric:tabular-nums;white-space:nowrap;font-weight:600;width:34px;text-align:center;box-sizing:border-box}
+/* 宽度基准 = 两位数色签的自然宽度（34px）：个位数居中补白，三位数（.w3，
+   如"100%"）收紧左右内边距塞进同一宽度，各档宽度恒定不随位数抖动 */
+.eg-badge.w3,.eg-rate.w3{padding-left:2px;padding-right:2px}
+/* 在线率五档底色：≥80 绿 / ≥60 蓝 / ≥40 粉 / ≥20 黄 / 以下红。深色主题用
+   粉彩底配深字、浅色主题用深底配浅字——文字取 var(--bg) 双主题皆可读 */
+.eg-badge.t-green,.eg-rate.t-green{background:var(--accent2)}
+.eg-badge.t-blue,.eg-rate.t-blue{background:var(--accent)}
+.eg-badge.t-pink,.eg-rate.t-pink{background:var(--pink)}
+.eg-badge.t-yellow,.eg-rate.t-yellow{background:var(--amber)}
+.eg-badge.t-red,.eg-rate.t-red{background:var(--danger)}
 .eg-input:focus{outline:none;border-color:var(--accent)}
 .eg-menu{position:absolute;z-index:1200;background:var(--bg2);border:1px solid var(--border-strong);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.35);max-height:260px;overflow-y:auto;min-width:220px}
 .eg-item{padding:6px 10px;font-size:12px;cursor:pointer;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .eg-item:hover{background:rgba(138,180,248,.15)}
 .eg-item.active{background:rgba(138,180,248,.22)}
-.eg-rate{float:right;margin-left:12px;color:var(--text3);font-variant-numeric:tabular-nums}
+.eg-rate{float:right;margin-left:12px;color:var(--bg);font-variant-numeric:tabular-nums;font-size:11px;font-weight:600;line-height:1;border-radius:6px;padding:2px 6px;width:34px;text-align:center;box-sizing:border-box;white-space:nowrap}
 .eg-item.eg-hint{cursor:default;color:var(--text3)}
 .eg-item.eg-hint:hover{background:none}
 .flex{display:flex;align-items:center;gap:8px}
@@ -492,7 +501,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
   </div>
 </div>
 <div class="section">
-  <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><path d="M3 17l5-6 4 3 4-7 5 4"/><path d="M3 21h18"/></svg></span> Proxy health (online rate)</div>
+  <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><path d="M3 17l5-6 4 3 4-7 5 4"/><path d="M3 21h18"/></svg></span> Proxy health (online rate)<span style="flex:1"></span><button class="btn btn-sm" onclick="clearProxyHealthStore()" title="Wipe this browser's stored online-rate rows (manual edits and proxies no longer in the pool); the table falls back to current backend data.">Clear data</button></div>
   <div class="section-body">
     <div class="table-wrap">
     <table>
@@ -509,6 +518,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
     </table>
     </div>
     <div class="hint" style="margin-top:8px">Rates are sampled passively from real traffic — no probing. "No data" = unused since the last pool edit; editing the proxy list resets counters.</div>
+    <div class="hint" style="margin-top:4px">Rows follow the backend pool; values persist in this browser to survive pool edits (add-only — a returning proxy picks up its stored numbers). Console override: proxyRateSet('香港-01', 0.42).</div>
   </div>
 </div>
 </div>
@@ -1604,6 +1614,11 @@ const I18N_ZH = {
   'Transport-layer success rate since the pool was last edited (upstream 4xx/5xx still counts as the proxy being online)': '上次编辑代理池以来的传输层成功率（上游 4xx/5xx 不算代理失败）',
   'Success rate over the last 50 attempts; red below 80% (min 10 samples).': '最近 50 次尝试的成功率；样本≥10 且低于 80% 时标红。',
   'Rates are sampled passively from real traffic — no probing. "No data" = unused since the last pool edit; editing the proxy list resets counters.': '在线率仅被动采样自真实流量——不产生探测流量。“无数据”=自上次编辑代理池后未使用；编辑代理列表会清零计数。',
+  'Rows follow the backend pool; values persist in this browser to survive pool edits (add-only — a returning proxy picks up its stored numbers). Console override: proxyRateSet(\'香港-01\', 0.42).': '行列表跟随代理池后端；数值在本浏览器留存以扛住池编辑清零（只加不删，代理回归后自动恢复留存值）。控制台改数：proxyRateSet(\'香港-01\', 0.42)。',
+  'Clear data': '清空数据',
+  'Wipe this browser\'s stored online-rate rows (manual edits and proxies no longer in the pool); the table falls back to current backend data.': '清掉本浏览器留存的在线率行（手动改动与已不在池内的代理），表格回退到后端当前数据。',
+  'Clear the browser-stored online-rate data? Backend stats are untouched.': '清空浏览器留存的在线率数据？后端统计不受影响。',
+  'Cleared local online-rate data': '已清空本地在线率数据',
   'Restore defaults': '恢复默认',
   'Restore the default Cline CLI headers': '恢复默认的 Cline CLI 请求头',
   'Headers restored to defaults': '请求头已恢复默认',
@@ -1619,7 +1634,7 @@ const I18N_ZH = {
   ' lists? Takes effect immediately; ': ' 的所有列表？即刻生效；',
   'only proxy bindings change, enable/disable states are untouched.': '只改代理绑定，不改启用/禁用状态。',
   'Applied ': '已套用 ',
-  ' binding(s) to other pools': ' 条绑定到其他池',
+  ' binding(s) to all other lists': ' 条绑定到其他所有列表',
   ' binding(s), ': ' 条绑定，成功 ',
   ' failed': ' 条失败',
   'Enable all': '一键启用',
@@ -2921,19 +2936,88 @@ const maskProxyLabel = p => String(p || '').replace(/\/\/[^@/]*@/, '//***@');
 // 每代理"最近在线率"缓存：与代理池页健康表同源（/opencode/config 的
 // runtime.proxyHealth）。快照里的 proxy 是打码 URL，与 proxyListCache 的
 // 完整 URL 对不上，两侧都剥掉凭据段后再以剩余部分作 key 对齐。
+//
+// 浏览器本地留存层（用户拍板 2026-10-11）：localStorage 持久化一份合并快照。
+// **展示行始终与后端池一致**（健康表只列当前池内代理，暂离代理不显示）；
+// **数值只加不删**——后端新增的代理加入快照；后端编辑清零/代理暂离归来时
+// 后端读数为空，显示留存值兜底；后端有真实数据时正常跟随后端；本地手动
+// 改过的行（m 标记，见 proxyRateSet）不被后端覆盖。纯展示层：不回传后端，
+// 不影响路由与真实统计。
 let proxyHealthByProxy = {};
+let proxyHealthBackendRows = [];
+const PROXY_HEALTH_STORE_KEY = 'afreeProxyHealthStore';
 const proxyHealthKey = p => String(p || '').replace(/\/\/[^@/]*@/, '//');
-function syncProxyHealthCache(rows) {
-  proxyHealthByProxy = {};
-  (rows || []).forEach(r => { if (r && r.proxy) proxyHealthByProxy[proxyHealthKey(r.proxy)] = r; });
+function loadProxyHealthStore() {
+  try { return JSON.parse(localStorage.getItem(PROXY_HEALTH_STORE_KEY) || '{}') || {}; }
+  catch (e) { return {}; }
 }
-// 下拉行右侧展示的最近在线率：无样本返回 null（不标注）；低在线率标红，
-// 阈值与代理池页健康表一致（PROXY_HEALTH_* 见 renderProxyHealth 附近）。
+function saveProxyHealthStore() {
+  try { localStorage.setItem(PROXY_HEALTH_STORE_KEY, JSON.stringify(proxyHealthByProxy)); } catch (e) { /* 隐私模式存不下就算了 */ }
+}
+function syncProxyHealthCache(rows) {
+  proxyHealthBackendRows = (rows || []).filter(r => r && r.proxy);
+  proxyHealthByProxy = loadProxyHealthStore();
+  proxyHealthBackendRows.forEach(r => {
+    const k = proxyHealthKey(r.proxy);
+    const old = proxyHealthByProxy[k];
+    if (old && old.m) return;                 // 手改行不被后端覆盖
+    if (old && !(r.attempts > 0)) return;     // 后端无数据（编辑清零/暂离归来）→ 保留留存值
+    proxyHealthByProxy[k] = Object.assign({}, r);
+  });
+  saveProxyHealthStore();
+}
+// 清空按钮（代理池页健康表右上）：抹掉本浏览器留存的快照（含手动改动与
+// 已下线代理的行），再用最近一次后端快照重新合并——表格回到后端当前状态。
+// 后端统计本身不受任何影响。
+function clearProxyHealthStore() {
+  if (!confirm(T('Clear the browser-stored online-rate data? Backend stats are untouched.'))) return;
+  try { localStorage.removeItem(PROXY_HEALTH_STORE_KEY); } catch (e) { /* ignore */ }
+  syncProxyHealthCache(proxyHealthBackendRows);
+  renderProxyHealth(Object.values(proxyHealthByProxy));
+  document.querySelectorAll('.eg-input').forEach(el => egSyncBadge(el));
+  toast(T('Cleared local online-rate data'), 'success');
+}
+// proxyRateSet 控制台改数入口：proxyRateSet('香港-01', 0.42) 把该行最近在线率
+// 改为 42% 并留存（m 标记 → 不再被后端覆盖）。match 按完整键 / 别名 / URL
+// 片段匹配；无匹配且 match 非 URL 形态时新建一条仅本地展示的行（下拉不会
+// 出现——下拉只列代理池里的 URL，但健康表会显示）。返回是否命中。
+function proxyRateSet(match, rate) {
+  const m = String(match || '').trim();
+  if (!m || !(rate >= 0 && rate <= 1)) { console.warn('usage: proxyRateSet(aliasOrUrl, rate 0~1)'); return false; }
+  const keys = Object.keys(proxyHealthByProxy);
+  const k = keys.find(k => k === m) || keys.find(k => egLabel(k) === m) || keys.find(k => k.indexOf(m) >= 0)
+    || (m.indexOf('://') < 0 ? 'mock://local#' + m : m);
+  const row = Object.assign({}, proxyHealthByProxy[k] || { proxy: proxyHealthKey(k), attempts: 0, successes: 0 });
+  const total = 40;
+  row.recentTotal = total;
+  row.recentOK = Math.round(rate * total);
+  row.recentRate = rate;
+  if (!row.attempts) { row.attempts = 150; row.successes = Math.round(150 * rate); }
+  row.lastOk = new Date().toISOString();
+  if (rate < 1 && !row.lastErr) row.lastErr = 'manual entry';
+  row.m = 1;
+  proxyHealthByProxy[k] = row;
+  saveProxyHealthStore();
+  renderProxyHealth(Object.values(proxyHealthByProxy));
+  document.querySelectorAll('.eg-input').forEach(el => egSyncBadge(el));
+  return true;
+}
+// 下拉行右侧展示的最近在线率：无样本返回 null（不标注）。底色按每 20%
+// 一档共五档（见 proxyRateTier），替代旧"低率标红"的单档口径。
 function proxyRecentRate(p) {
   const r = proxyHealthByProxy[proxyHealthKey(p)];
   if (!r || r.recentRate === null || r.recentRate === undefined) return null;
-  const low = (r.recentTotal || 0) >= PROXY_HEALTH_MIN_SAMPLES && r.recentRate < PROXY_HEALTH_LOW_RATE;
-  return { text: Math.round(r.recentRate * 100) + '%', low: low };
+  return { text: Math.round(r.recentRate * 100) + '%', tier: proxyRateTier(r.recentRate) };
+}
+// 在线率五档：≥80% 绿、≥60% 蓝、≥40% 粉、≥20% 黄、以下红；底色取主题色
+//（双主题各一套）。仅影响展示，不改路由行为；代理池页健康表的 80% 标红
+// 口径独立（renderProxyHealth），互不影响。
+function proxyRateTier(rate) {
+  if (rate >= 0.8) return 'green';
+  if (rate >= 0.6) return 'blue';
+  if (rate >= 0.4) return 'pink';
+  if (rate >= 0.2) return 'yellow';
+  return 'red';
 }
 
 // ========== 账号表暂存编辑（三平台共用） ==========
@@ -3183,7 +3267,7 @@ async function applyProxiesToOthers(ownerKind) {
     if (load) { try { await load(); } catch (e) { console.warn('applyProxiesToOthers: reload ' + k + ' failed', e); } }
   }
   if (fail) toast(T('Applied ') + ok + T(' binding(s), ') + fail + T(' failed'), 'warning');
-  else toast(T('Applied ') + ok + T(' binding(s) to other pools'), 'success');
+  else toast(T('Applied ') + ok + T(' binding(s) to all other lists'), 'success');
 }
 
 // ========== 出口绑定联想下拉（combobox） ==========
@@ -3203,13 +3287,13 @@ function egLabel(v) {
   return maskProxyLabel(v);
 }
 // egBadgeHTML 代理值的"最近在线率"徽标 HTML：与下拉菜单项的 eg-rate 同源
-// （proxyHealthByProxy 缓存、同一低率阈值）。全局/直连或无样本时返回空串
-//（不占位）。低在线率标红。
+//（proxyHealthByProxy 缓存、同一五档配色）。全局/直连或无样本时返回空串
+//（不占位）。底色按在线率五档取主题色。
 function egBadgeHTML(value) {
   if (!value || value === EGRESS_DIRECT) return '';
   const rate = proxyRecentRate(value);
   if (!rate) return '';
-  return '<span class="eg-badge' + (rate.low ? ' low' : '') + '">' + esc(rate.text) + '</span>';
+  return '<span class="eg-badge t-' + rate.tier + (rate.text.length > 3 ? ' w3' : '') + '">' + esc(rate.text) + '</span>';
 }
 // egSyncBadge 按当前 dataset.value 重绘右侧在线率徽标（选中/失焦/联动后调用）。
 // 无样本或全局/直连时移除徽标并收回右侧留白。
@@ -3298,7 +3382,7 @@ function egRenderItems(input, menu, q) {
         : []);
   let html = items.concat(proxies).map(it =>
     '<div class="eg-item' + (it.active ? ' active' : '') + '" data-value="' + esc(it.v) + '">' + esc(it.label) +
-    (it.rate ? '<span class="eg-rate"' + (it.rate.low ? ' style="color:var(--danger);font-weight:600"' : '') + '>' + it.rate.text + '</span>' : '') +
+    (it.rate ? '<span class="eg-rate t-' + it.rate.tier + (it.rate.text.length > 3 ? ' w3' : '') + '">' + it.rate.text + '</span>' : '') +
     '</div>'
   ).join('');
   if (q !== '' && !proxies.length) html += '<div class="eg-item eg-hint">' + T('No matching proxies') + '</div>';
@@ -4185,7 +4269,9 @@ async function loadProxyPool() {
       const thc = await api('GET', '/tokenharbor/config');
       _('ppTh').value = String(thc.data.useProxies !== false);
     } catch (e) { _('ppTh').value = 'true'; }
-    renderProxyHealth((c.runtime || {}).proxyHealth || []);
+    // 展示行与后端池保持一致（只列当前池内代理），数值取本地合并快照——
+    // 池编辑清零/代理暂离期间由留存层兜底，代理回归后旧数据自动恢复显示
+    renderProxyHealth(proxyHealthBackendRows.map(r => proxyHealthByProxy[proxyHealthKey(r.proxy)]).filter(Boolean));
   } catch (e) { /* ignore */ }
 }
 
