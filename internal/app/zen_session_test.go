@@ -1,6 +1,7 @@
 package app
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -9,7 +10,9 @@ import (
 	"afree-proxy/internal/kit"
 )
 
-// 隔离测试环境：独立 DATA_DIR，并清空进程级会话/恢复计数状态。
+// 隔离测试环境：独立 DATA_DIR，并清空进程级会话/失败印记状态。
+// （上游移植的测试统一调用本函数；proxy_binding_test.go 里另有同名无返回值
+// 版本只清会话表，两套测试环境不能混用。）
 func setupZenSessionTestUpstream(t *testing.T) string {
 	t.Helper()
 	dir, err := os.MkdirTemp("", "zen-session-test")
@@ -23,11 +26,11 @@ func setupZenSessionTestUpstream(t *testing.T) string {
 	zenSessions = map[string]*zenSessionEntry{}
 	zenSessLoaded = true
 	zenSessPath = ""
+	zenSessSaveBlocked = false
 	zenSessMu.Unlock()
-	zenRecoverMu.Lock()
-	zenRecoverFails = map[string]int{}
-	zenRecoverLastAt = map[string]int64{}
-	zenRecoverMu.Unlock()
+	zenSessFailedMu.Lock()
+	zenSessFailed = map[string]int{}
+	zenSessFailedMu.Unlock()
 	return dir
 }
 
@@ -142,85 +145,113 @@ func TestZenSessionDescReportsAge(t *testing.T) {
 	}
 }
 
-// refreshZenSession：连续 2 次 403 才换新会话；1 分钟退避内的重复触发不动作。
-func TestRefreshZenSessionThresholdAndBackoff(t *testing.T) {
+// refreshZenSession：每次调用同步换新（幂等、零成本）；空 key / public 不动；
+// 已从配置移除的 key 不重建（防止 prune 后又被复活）。
+func TestRefreshZenSessionMintsFreshSession(t *testing.T) {
 	setupZenSessionTestUpstream(t)
 	key := "sk-refresh"
+	cfg := getZenConfig()
+	cfg2 := *cfg
+	cfg2.Keys = []string{key}
+	setZenConfig(&cfg2)
+	t.Cleanup(func() { c := *cfg; setZenConfig(&c) })
 
-	refreshZenSession(key) // 第 1 次：未达阈值
+	StickyZenIdentity(key)
 	zenSessMu.Lock()
-	if _, ok := zenSessions[key]; ok {
-		t.Fatal("single 403 must not refresh")
-	}
+	before := zenSessions[key].Session
 	zenSessMu.Unlock()
 
-	refreshZenSession(key) // 第 2 次：达阈值，铸造新会话
-	zenSessMu.Lock()
-	e := zenSessions[key]
-	zenSessMu.Unlock()
-	if e == nil || !zenSessionLive(key) {
-		t.Fatal("two consecutive 403s must mint a fresh session")
-	}
-	first := e.Session
-
-	// 退避窗口内再来两次 403：不换新（会话保持不变）
-	refreshZenSession(key)
 	refreshZenSession(key)
 	zenSessMu.Lock()
 	after := zenSessions[key].Session
 	zenSessMu.Unlock()
-	if after != first {
-		t.Fatalf("refresh happened inside the backoff window: %s -> %s", first, after)
+	if after == before {
+		t.Fatal("refreshZenSession must mint a new session id")
 	}
-
-	// 把上次换新时间拨回 2 分钟前：下一轮 403 立即换新
-	zenRecoverMu.Lock()
-	zenRecoverLastAt[key] = time.Now().Add(-2 * time.Minute).Unix()
-	zenRecoverMu.Unlock()
+	if !zenSessionLive(key) {
+		t.Fatal("refreshed session must be format-valid/live")
+	}
+	// 再换一次也必须得到新身份（同步、无退避门槛）
 	refreshZenSession(key)
 	zenSessMu.Lock()
-	after = zenSessions[key].Session
+	third := zenSessions[key].Session
 	zenSessMu.Unlock()
-	if after == first {
-		t.Fatal("refresh due after backoff must mint a new session")
+	if third == after {
+		t.Fatal("second refresh must mint another new session id")
+	}
+	// 哨兵与空 key 不动作
+	refreshZenSession("")
+	refreshZenSession("public")
+}
+
+// refreshZenSession 不重建已移除的 key：prune 之后该 key 的条目必须保持消失，
+// 否则 .zen-sessions.json 会被删掉的旧 key 单调撑大。
+func TestRefreshZenSessionSkipsUnconfiguredKey(t *testing.T) {
+	setupZenSessionTestUpstream(t)
+	key := "sk-removed-refresh"
+	cfg := getZenConfig()
+	cfg2 := *cfg
+	cfg2.Keys = []string{"sk-only-active"}
+	setZenConfig(&cfg2)
+	t.Cleanup(func() { c := *cfg; setZenConfig(&c) })
+
+	refreshZenSession(key)
+	zenSessMu.Lock()
+	_, exists := zenSessions[key]
+	zenSessMu.Unlock()
+	if exists {
+		t.Fatal("refreshZenSession must not re-create an entry for a key absent from the config")
 	}
 }
 
-// zenSessionMarkSuccess 清零连续 403 计数：一次成功就把阈值重新数起。
-func TestZenSessionMarkSuccessResetsFailCounter(t *testing.T) {
+// zenSessionMarkSuccess 清除失败印记：一次成功即该 key 恢复干净。
+func TestZenSessionMarkSuccessClearsFailureMark(t *testing.T) {
 	setupZenSessionTestUpstream(t)
 	key := "sk-success"
-	refreshZenSession(key) // 计数 = 1
+	zenSessionFailed(key)
+	zenSessFailedMu.Lock()
+	n := zenSessFailed[key]
+	zenSessFailedMu.Unlock()
+	if n == 0 {
+		t.Fatal("failure mark must be recorded")
+	}
 	zenSessionMarkSuccess(key)
-	refreshZenSession(key) // 若未清零，这里是第 2 次 → 会触发换新
-	zenSessMu.Lock()
-	_, ok := zenSessions[key]
-	zenSessMu.Unlock()
-	if ok {
-		t.Fatal("success must reset the 403 counter; a refresh was wrongly triggered")
+	zenSessFailedMu.Lock()
+	_, still := zenSessFailed[key]
+	zenSessFailedMu.Unlock()
+	if still {
+		t.Fatal("success must clear the failure mark")
 	}
 }
 
-// 配置移除 key 后 prune 会话与恢复计数。
-func TestPruneRemovesSessionsAndRecoverCounters(t *testing.T) {
+// 配置移除 key 后 prune 会话与失败印记。
+func TestPruneRemovesSessionsAndFailureMarks(t *testing.T) {
 	setupZenSessionTestUpstream(t)
 	k := "sk-removed"
 	StickyZenIdentity(k)
-	zenRecoverMu.Lock()
-	zenRecoverFails[k] = 1
-	zenRecoverMu.Unlock()
+	zenSessionFailed(k)
 
 	pruneZenKeyState(map[string]bool{})
 
 	if zenSessionLive(k) {
 		t.Fatal("session of a removed key must be pruned")
 	}
-	zenRecoverMu.Lock()
-	_, fails := zenRecoverFails[k]
-	_, lastAt := zenRecoverLastAt[k]
-	zenRecoverMu.Unlock()
-	if fails || lastAt {
-		t.Fatalf("recover counters not pruned: fails=%v lastAt=%v", fails, lastAt)
+	zenSessFailedMu.Lock()
+	_, marked := zenSessFailed[k]
+	zenSessFailedMu.Unlock()
+	if marked {
+		t.Fatal("failure mark of a removed key must be pruned")
+	}
+	// 未移除的 key 不受影响
+	k2 := "sk-kept"
+	StickyZenIdentity(k2)
+	sess := zenSessions[k2].Session
+	pruneZenKeyState(map[string]bool{k2: true})
+	zenSessMu.Lock()
+	kept := zenSessions[k2].Session
+	zenSessMu.Unlock()
+	if kept != sess {
+		t.Fatal("session of a still-configured key must survive prune")
 	}
 }
 
@@ -317,6 +348,253 @@ func TestCorruptSessionFileIsBackedUp(t *testing.T) {
 	zenSessMu.Unlock()
 	if n != 0 {
 		t.Fatalf("corrupt file must start with an empty table, got %d entries", n)
+	}
+}
+
+// ============ 会话老化轮换 ============
+
+// setupRotateTest 绑定一个 key 并把轮换周期设为 want 分钟，返回原始配置回滚函数。
+func setupRotateTest(t *testing.T, key string, want int) {
+	t.Helper()
+	cfg := getZenConfig()
+	cfg2 := *cfg
+	cfg2.Keys = []string{key}
+	cfg2.SessionRotateMinutes = want
+	setZenConfig(&cfg2)
+	t.Cleanup(func() { c := *cfg; setZenConfig(&c) })
+}
+
+// 默认轮换周期是 120 分钟：旧配置文件缺该键时必须回落到默认值。
+func TestSessionRotateDefaultIsTwoHours(t *testing.T) {
+	if defaultSessionRotateMinutes != 120 {
+		t.Fatalf("defaultSessionRotateMinutes = %d, want 120", defaultSessionRotateMinutes)
+	}
+	// loadZenConfig 的做法：先取 defaultZenConfig，再用文件 JSON 覆盖它。
+	// 缺 sessionRotateMinutes 键的旧文件因此保留默认 120（而不是被置 0）。
+	cfg := defaultZenConfig()
+	if err := json.Unmarshal([]byte(`{"enabled":true,"keys":["sk-x"]}`), cfg); err != nil {
+		t.Fatalf("unmarshal legacy config: %v", err)
+	}
+	if cfg.SessionRotateMinutes != 120 {
+		t.Fatalf("legacy config without the key must keep the 120-minute default, got %d", cfg.SessionRotateMinutes)
+	}
+}
+
+// 超过轮换周期的会话在下一次请求时被重铸；同 key 复用的会话在周期内保持不变。
+func TestSessionRotatesWhenOlderThanInterval(t *testing.T) {
+	setupZenSessionTestUpstream(t)
+	key := "sk-rotate"
+	setupRotateTest(t, key, 120)
+
+	first, _, _ := StickyZenIdentity(key)
+	// 未超期：立即再取必须复用同一会话
+	again, _, _ := StickyZenIdentity(key)
+	if again != first {
+		t.Fatalf("session must be reused within the interval: %s -> %s", first, again)
+	}
+
+	// 人为把创建时间拨回到 3 小时前 → 超期
+	zenSessMu.Lock()
+	zenSessions[key].CreatedAt = time.Now().Add(-3 * time.Hour).Unix()
+	zenSessMu.Unlock()
+	rotated, _, _ := StickyZenIdentity(key)
+	if rotated == first {
+		t.Fatal("session older than the rotate interval must be re-minted")
+	}
+	if !kit.ValidZenSessionID(rotated) || !zenSessionLive(key) {
+		t.Fatalf("rotated session must be format-valid: %q", rotated)
+	}
+	// 轮换后创建时间被刷新：紧接着的请求不再重复轮换
+	after, _, _ := StickyZenIdentity(key)
+	if after != rotated {
+		t.Fatalf("freshly rotated session must be stable: %s -> %s", rotated, after)
+	}
+}
+
+// 轮换周期为 0：关闭轮换，再老的会话也复用（与旧行为一致）。
+func TestSessionRotationDisabledAtZero(t *testing.T) {
+	setupZenSessionTestUpstream(t)
+	key := "sk-norotate"
+	setupRotateTest(t, key, 0)
+
+	first, _, _ := StickyZenIdentity(key)
+	zenSessMu.Lock()
+	zenSessions[key].CreatedAt = time.Now().Add(-240 * time.Hour).Unix()
+	zenSessMu.Unlock()
+	got, _, _ := StickyZenIdentity(key)
+	if got != first {
+		t.Fatalf("rotation disabled (0) must keep the session forever: %s -> %s", first, got)
+	}
+}
+
+// 老化轮换同时清除该 key 的 403 失败印记（新会话 = 干净状态）。
+func TestSessionRotationClearsFailureMark(t *testing.T) {
+	setupZenSessionTestUpstream(t)
+	key := "sk-rotate-fail"
+	setupRotateTest(t, key, 60)
+
+	StickyZenIdentity(key)
+	zenSessionFailed(key)
+	zenSessMu.Lock()
+	zenSessions[key].CreatedAt = time.Now().Add(-2 * time.Hour).Unix()
+	zenSessMu.Unlock()
+	StickyZenIdentity(key)
+	zenSessFailedMu.Lock()
+	_, marked := zenSessFailed[key]
+	zenSessFailedMu.Unlock()
+	if marked {
+		t.Fatal("rotation must clear the key's 403 failure mark")
+	}
+}
+
+// ============ 后台会话巡检 ============
+
+// 巡检必须为"从未被请求过"的空闲 key 补铸会话。这是 pickZenKey 第一轮只挑
+// live key 所造成的自锁的解药：没有它，key#2/3 永远不被选中、永不铸造。
+func TestRotatorMintsIdleKeys(t *testing.T) {
+	setupZenSessionTestUpstream(t)
+	keys := []string{"sk-idle-1", "sk-idle-2", "sk-idle-3"}
+	cfg := getZenConfig()
+	cfg2 := *cfg
+	cfg2.Keys = keys
+	cfg2.SessionRotateMinutes = 120
+	setZenConfig(&cfg2)
+	t.Cleanup(func() { c := *cfg; setZenConfig(&c) })
+
+	minted, rotated := rotateZenSessionsOnce()
+	if minted != 3 || rotated != 0 {
+		t.Fatalf("rotator = minted %d rotated %d, want minted 3 rotated 0", minted, rotated)
+	}
+	for _, k := range keys {
+		if !zenSessionLive(k) {
+			t.Fatalf("idle key %q must have a live session after the rotator pass", k)
+		}
+	}
+	// 第二轮无事可做：会话都新鲜，不该重复铸造
+	if m2, r2 := rotateZenSessionsOnce(); m2 != 0 || r2 != 0 {
+		t.Fatalf("second pass must be a no-op, got minted %d rotated %d", m2, r2)
+	}
+}
+
+// 巡检必须轮换年龄超期的 key——即便它从未被请求过（用户报的正是这个）。
+func TestRotatorRotatesAgedIdleKeys(t *testing.T) {
+	setupZenSessionTestUpstream(t)
+	key := "sk-aged-idle"
+	cfg := getZenConfig()
+	cfg2 := *cfg
+	cfg2.Keys = []string{key}
+	cfg2.SessionRotateMinutes = 60
+	setZenConfig(&cfg2)
+	t.Cleanup(func() { c := *cfg; setZenConfig(&c) })
+
+	rotateZenSessionsOnce()
+	zenSessMu.Lock()
+	before := zenSessions[key].Session
+	zenSessions[key].CreatedAt = time.Now().Add(-3 * time.Hour).Unix()
+	zenSessMu.Unlock()
+
+	minted, rotated := rotateZenSessionsOnce()
+	if minted != 0 || rotated != 1 {
+		t.Fatalf("rotator = minted %d rotated %d, want minted 0 rotated 1", minted, rotated)
+	}
+	zenSessMu.Lock()
+	after := zenSessions[key].Session
+	age := time.Since(time.Unix(zenSessions[key].CreatedAt, 0))
+	zenSessMu.Unlock()
+	if after == before {
+		t.Fatal("aged idle key's session must be re-minted by the rotator")
+	}
+	if age > time.Minute {
+		t.Fatalf("rotated entry must carry a fresh createdAt, age=%v", age)
+	}
+}
+
+// 轮换周期为 0（关闭老化轮换）时，巡检仍须为缺会话的 key 补铸——
+// 否则空闲 key 依旧被 pickZenKey 的第一轮饿死。
+func TestRotatorMintsButDoesNotRotateWhenDisabled(t *testing.T) {
+	setupZenSessionTestUpstream(t)
+	key := "sk-norotate-idle"
+	cfg := getZenConfig()
+	cfg2 := *cfg
+	cfg2.Keys = []string{key}
+	cfg2.SessionRotateMinutes = 0
+	setZenConfig(&cfg2)
+	t.Cleanup(func() { c := *cfg; setZenConfig(&c) })
+
+	if minted, _ := rotateZenSessionsOnce(); minted != 1 {
+		t.Fatalf("rotator must still mint a missing session when rotation is off, got minted %d", minted)
+	}
+	zenSessMu.Lock()
+	before := zenSessions[key].Session
+	zenSessions[key].CreatedAt = time.Now().Add(-720 * time.Hour).Unix()
+	zenSessMu.Unlock()
+
+	minted, rotated := rotateZenSessionsOnce()
+	if minted != 0 || rotated != 0 {
+		t.Fatalf("rotation disabled: want no work, got minted %d rotated %d", minted, rotated)
+	}
+	zenSessMu.Lock()
+	after := zenSessions[key].Session
+	zenSessMu.Unlock()
+	if after != before {
+		t.Fatal("rotation disabled must keep the existing session")
+	}
+}
+
+// 修复的端到端效果：巡检让整个池都 live 之后，pickZenKey 的第一轮不再塌缩到
+// 第一个 key——轮转能真正在所有 key 之间分发。
+func TestRotatorRestoresKeyRotation(t *testing.T) {
+	setupZenSessionTestUpstream(t)
+	keys := []string{"sk-rot-a", "sk-rot-b", "sk-rot-c"}
+	cfg := getZenConfig()
+	cfg2 := *cfg
+	cfg2.Keys = keys
+	cfg2.SessionRotateMinutes = 120
+	setZenConfig(&cfg2)
+	t.Cleanup(func() { c := *cfg; setZenConfig(&c) })
+	zenKeyMu.Lock()
+	zenKeyCool = map[string]time.Time{}
+	zenKeyIdx = 0
+	zenKeyMu.Unlock()
+
+	rotateZenSessionsOnce() // 让所有 key 都有 live 会话
+
+	seen := map[string]int{}
+	for i := 0; i < 9; i++ {
+		seen[pickZenKey()]++
+	}
+	if len(seen) != len(keys) {
+		t.Fatalf("pickZenKey must round-robin across all live keys, saw %v", seen)
+	}
+	for _, k := range keys {
+		if seen[k] != 3 {
+			t.Fatalf("key %q picked %d times, want 3 (even round-robin): %v", k, seen[k], seen)
+		}
+	}
+}
+
+// 哨兵与空 key 不参与巡检铸造（无凭据，会话只会污染文件）。
+func TestRotatorSkipsPublicSentinel(t *testing.T) {
+	setupZenSessionTestUpstream(t)
+	cfg := getZenConfig()
+	cfg2 := *cfg
+	cfg2.Keys = []string{"public", "sk-real"}
+	cfg2.SessionRotateMinutes = 120
+	setZenConfig(&cfg2)
+	t.Cleanup(func() { c := *cfg; setZenConfig(&c) })
+
+	if minted, _ := rotateZenSessionsOnce(); minted != 1 {
+		t.Fatalf("rotator must mint only the real key, got minted %d", minted)
+	}
+	zenSessMu.Lock()
+	_, hasPublic := zenSessions["public"]
+	_, hasReal := zenSessions["sk-real"]
+	zenSessMu.Unlock()
+	if hasPublic {
+		t.Fatal("rotator must not mint a session for the public sentinel")
+	}
+	if !hasReal {
+		t.Fatal("rotator must mint a session for the real key")
 	}
 }
 

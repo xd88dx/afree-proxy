@@ -34,7 +34,11 @@ func handleZenConfig(w http.ResponseWriter, r *http.Request) {
 		"proxyStrategy":       cfg.ProxyStrategy,
 		"maxConcurrency":      cfg.MaxConcurrency,
 		"retries":             cfg.Retries,
+		"failover":             cfg.Failover,
+		"failoverCount":        cfg.FailoverCount,
+		"failoverMinutes":      cfg.FailoverMinutes,
 		"compaction":          cfg.Compaction,
+		"sessionRotateMinutes": cfg.SessionRotateMinutes,
 		// 代理隔离（账号/key 绑定出口）：生效值 + 是否被 env 钉死（面板据此
 		// 禁用开关并提示）。
 		"proxyIsolation":          proxyIsolationEnabled(),
@@ -74,9 +78,14 @@ func handleZenConfigUpdate(w http.ResponseWriter, r *http.Request) {
 		ProxyStrategy       *string  `json:"proxyStrategy"`
 		MaxConcurrency      *int     `json:"maxConcurrency"`
 		Retries             *int     `json:"retries"`
-		ProxyIsolation      *bool    `json:"proxyIsolation"`
-		BackupProxyEnabled  *bool    `json:"backupProxyEnabled"`
-		Compaction          *struct {
+		Failover            *bool    `json:"failover"`
+		FailoverCount       *int     `json:"failoverCount"`
+		FailoverMinutes     *int     `json:"failoverMinutes"`
+		// 会话轮换周期（分钟）：0 = 关闭轮换，需与"未提交"区分故用指针。
+		SessionRotateMinutes *int `json:"sessionRotateMinutes"`
+		ProxyIsolation       *bool `json:"proxyIsolation"`
+		BackupProxyEnabled   *bool `json:"backupProxyEnabled"`
+		Compaction           *struct {
 			Auto         *bool   `json:"auto"`
 			Buffer       *int    `json:"buffer"`
 			KeepTokens   *int    `json:"keepTokens"`
@@ -98,13 +107,17 @@ func handleZenConfigUpdate(w http.ResponseWriter, r *http.Request) {
 		ProxyStrategy:       cur.ProxyStrategy,
 		MaxConcurrency:      cur.MaxConcurrency,
 		Retries:             cur.Retries,
+		Failover:            cur.Failover,
+		FailoverCount:       cur.FailoverCount,
+		FailoverMinutes:     cur.FailoverMinutes,
 		ProxyIsolation:      cur.ProxyIsolation,
 		BackupProxyEnabled:  cur.BackupProxyEnabled,
 		KeyBindings:         cur.KeyBindings,
 		// KeyRoutingEnabled 必须随 next 保留：config/update 是全量替换语义，
 		// 漏拷会把面板勾选的路由参与表整体清掉（缺项 = 全部参与）。
-		KeyRoutingEnabled: cur.KeyRoutingEnabled,
-		Compaction:        cur.Compaction,
+		KeyRoutingEnabled:    cur.KeyRoutingEnabled,
+		Compaction:           cur.Compaction,
+		SessionRotateMinutes: cur.SessionRotateMinutes,
 	}
 	if patch.ZenUseProxies != nil {
 		next.ZenUseProxies = patch.ZenUseProxies
@@ -176,6 +189,10 @@ func handleZenConfigUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 	if patch.BackupProxyEnabled != nil {
 		next.BackupProxyEnabled = patch.BackupProxyEnabled
+	}
+	// 0 是合法值（关闭轮换），不能用 > 0 过滤；负值视为无效忽略。
+	if patch.SessionRotateMinutes != nil && *patch.SessionRotateMinutes >= 0 {
+		next.SessionRotateMinutes = *patch.SessionRotateMinutes
 	}
 	if patch.Compaction != nil {
 		base := cur.Compaction

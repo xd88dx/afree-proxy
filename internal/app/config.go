@@ -32,6 +32,9 @@ import (
 //	CLIENT_IP_HEADER           反代部署下取真实客户端 IP 的请求头名（登录限流用）
 //	ZEN_KEYS                   opencode zen 多 key，逗号分隔，配置为空时注入
 //	ZEN_PIN_KEY                zen key 池固定用第 n 个 key（1 起），排障/单 key 直测用
+//	ZEN_SESSION_ROTATE_MINUTES zen 粘性会话轮换周期（分钟），默认 120（2 小时）；
+//	                           0 = 关闭轮换。老会话久未更新会让上游首个请求变慢，
+//	                           定期本地重铸可规避（零成本：不触发上游、无子进程）
 //	CLINE_ACCOUNTS_SEED_FILE   cline 账号种子文件（[{refreshToken,email}] JSON 数组），
 //	                           池为空时启动自动导入
 //	PROXY_ISOLATION            代理隔离开关，只接受 true/false（大小写不敏感）：
@@ -63,6 +66,8 @@ func envBool(key string) (bool, bool) {
 }
 
 // envInt 解析整数环境变量，无效或未设置返回 (0, false)。
+// 非空但无效时打印警告，与 envBool 一致——静默回退会让配置拼写错误
+// 无从察觉（如并发数误写成 "8s"）。
 func envInt(key string) (int, bool) {
 	v := envStr(key)
 	if v == "" {
@@ -71,6 +76,7 @@ func envInt(key string) (int, bool) {
 	n := 0
 	for _, c := range v {
 		if c < '0' || c > '9' {
+			fmt.Printf("  WARNING: unrecognized integer %q for %s, using default\n", v, key)
 			return 0, false
 		}
 		n = n*10 + int(c-'0')

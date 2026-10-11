@@ -666,12 +666,15 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
     </div>
     <div class="flex" style="gap:10px;margin:0 0 8px;align-items:center;flex-wrap:wrap">
       <label class="hint" style="margin:0">Probe model (used by the Test buttons):</label>
-      <select id="ocProbeModel" style="max-width:360px"><option value="">auto — big-pickle first, then live models</option></select>
+      <select id="ocProbeModel" style="max-width:300px"><option value="">auto — big-pickle first, then live models</option></select>
+      <label class="hint" style="margin:0 0 0 6px">Session rotation (min):</label>
+      <input type="text" id="ocSessionRotate" placeholder="120" style="max-width:90px" title="Mint a fresh session id for a key once it is this old. 0 = never rotate (a long-lived session makes the first request slow after a few days).">
     </div>
+    <p class="hint" style="margin-top:0">Per-key session state is shown in the table below. Session IDs are minted locally and match the upstream's format gate (<code>^ses_[0-9a-f]{12}[0-9A-Za-z]{14}$</code>) — no CLI or harvester involved. On repeated FreeTier 403s, or once a session is older than the rotation interval, a key's session is refreshed with a freshly minted one automatically.</p>
     <div class="table-wrap" style="margin-bottom:10px">
       <table>
-        <thead><tr><th style="width:50px">#</th><th style="width:110px">Key</th><th style="width:70px">Usage</th><th style="width:110px">Session</th><th>Cooldown</th><th title="Main exit first, backup as fallback; both down = row skipped (isolation).">Proxy binding</th><th style="width:130px"></th><th style="text-align:center" title="Routing participation: unchecked keys never enter request rotation. Newly added keys start disabled — tick Pool to enable. Minting follows routing — keys with routing disabled stop auto-minting.">Pool</th></tr></thead>
-        <tbody id="ocKeysBody"><tr><td colspan="8" class="empty">Loading...</td></tr></tbody>
+        <thead><tr><th style="width:50px">#</th><th style="width:110px">Key</th><th style="width:70px">Usage</th><th style="width:110px">Session</th><th style="width:110px" title="Sticky sessions are re-minted once older than the rotation interval (session rotation, min).">Rotates</th><th>Cooldown</th><th title="Main exit first, backup as fallback; both down = row skipped (isolation).">Proxy binding</th><th style="width:130px"></th><th style="text-align:center" title="Routing participation: unchecked keys never enter request rotation. Newly added keys start disabled — tick Pool to enable. Minting follows routing — keys with routing disabled stop auto-minting.">Pool</th></tr></thead>
+        <tbody id="ocKeysBody"><tr><td colspan="9" class="empty">Loading...</td></tr></tbody>
       </table>
     </div>
     <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin:10px 6px 4px">
@@ -692,11 +695,18 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
 </div>
 
 <div class="section">
-  <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></span> Rate-limit defense</div>
+  <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></span> Rate-limit defense &amp; failover</div>
   <div class="section-body">
     <div class="form-row">
       <div class="field"><label>Max concurrency</label><input type="text" id="ocMaxConc" placeholder="8"></div>
       <div class="field"><label>Rate-limit retries</label><input type="text" id="ocRetries" placeholder="3"></div>
+      <div class="field"><label>Failover to Cline pool</label>
+        <select id="ocFailover"><option value="true">On</option><option value="false">Off</option></select>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="field"><label>Failover trigger (consecutive failures)</label><input type="text" id="ocFailoverCount" placeholder="3"></div>
+      <div class="field"><label>Failover window (min)</label><input type="text" id="ocFailoverMinutes" placeholder="5"></div>
     </div>
     <div class="form-actions"><button class="btn btn-primary" onclick="saveOcConfig()">Save rate-limit config</button></div>
   </div>
@@ -3876,6 +3886,10 @@ async function loadOcConfig() {
     _('ocBaseURL').value = c.baseURL || '';
     _('ocMaxConc').value = c.maxConcurrency || 8;
     _('ocRetries').value = c.retries || 3;
+    if (_('ocFailover')) _('ocFailover').value = String(c.failover !== false);
+    if (_('ocFailoverCount')) _('ocFailoverCount').value = c.failoverCount || 3;
+    if (_('ocFailoverMinutes')) _('ocFailoverMinutes').value = c.failoverMinutes || 5;
+    if (_('ocSessionRotate')) _('ocSessionRotate').value = (c.sessionRotateMinutes != null ? c.sessionRotateMinutes : 120);
     _('ocCompactAuto').value = String(c.compaction ? c.compaction.auto : true);
     _('ocCompactBuffer').value = c.compaction ? c.compaction.buffer : 20000;
     _('ocKeepTokens').value = c.compaction ? c.compaction.keepTokens : 8000;
@@ -3887,12 +3901,19 @@ async function loadOcConfig() {
 async function saveOcConfig() {
   // key 列表不随本表单提交（增删在 key 表的添加凭据/删除按钮里），避免
   // 旧 textarea 快照覆盖面板当前的 key 池。
+  // 会话轮换周期：空 = 默认 120；"0" = 关闭轮换（合法值，不能与空混淆）。
+  const rotRaw = _('ocSessionRotate') ? _('ocSessionRotate').value.trim() : '';
+  const rot = rotRaw === '' ? 120 : Math.max(0, parseInt(rotRaw, 10) || 0);
   const body = {
     baseURL: _('ocBaseURL').value.trim(),
     proxies: ocCfgCache.proxies || [],
     proxyStrategy: ocCfgCache.proxyStrategy || 'round_robin',
     maxConcurrency: parseInt(_('ocMaxConc').value) || 8,
     retries: parseInt(_('ocRetries').value) || 3,
+    failover: _('ocFailover') ? _('ocFailover').value === 'true' : (ocCfgCache.failover !== false),
+    failoverCount: _('ocFailoverCount') ? (parseInt(_('ocFailoverCount').value) || 3) : (ocCfgCache.failoverCount || 3),
+    failoverMinutes: _('ocFailoverMinutes') ? (parseInt(_('ocFailoverMinutes').value) || 5) : (ocCfgCache.failoverMinutes || 5),
+    sessionRotateMinutes: rot,
     compaction: {
       auto: _('ocCompactAuto').value === 'true',
       buffer: parseInt(_('ocCompactBuffer').value) || 20000,
@@ -3908,7 +3929,8 @@ async function saveOcConfig() {
   } catch (e) { toast(T('Save failed: ') + e.message, 'error'); }
 }
 
-// per-key 状态表：key 掩码 / 用量 / 会话 / 冷却（含预计恢复时刻）/ 测试+删除。
+// per-key 状态表：key 掩码 / 用量 / 会话（ID + live 状态 + 下次轮换时刻）/
+// 冷却（含预计恢复时刻）/ 测试+删除。
 // Test 与 cline 账号的同语义：真实探测，成功即复位该 key 的冷却。
 // Proxy binding 列与 Pool（路由启用）列均为暂存编辑：改动行高亮，由
 // "保存"按钮统一提交（隔离模式语义见 Proxy pool 页）。铸造跟随路由启用，
@@ -3918,11 +3940,22 @@ function renderOcKeyStates(ks) {
   const tb = _('ocKeysBody');
   if (!tb) return;
   keySnapshot = {};
+  const rotateMin = ocCfgCache.sessionRotateMinutes || 0;
   tb.innerHTML = ks.length
     ? ks.map(k => {
         const st = k.sessionLive
           ? '<span style="color:var(--accent2)">live</span>'
           : '<span style="color:var(--danger)">no session</span>';
+        const sess = k.session
+          ? '<span style="font-family:monospace;font-size:11px">' + esc(k.session) + '…</span> ' + st
+          : (k.keyMask === 'public (no key)' ? '<span style="color:var(--text2)">n/a</span>' : st);
+        let rot = '<span style="color:var(--text2)">-</span>';
+        if (rotateMin > 0 && k.sessionCreatedAt) {
+          const due = new Date(new Date(k.sessionCreatedAt).getTime() + rotateMin * 60000);
+          rot = '<span style="font-size:11px" title="session minted ' + esc(fmtWhen(k.sessionCreatedAt)) + '">' + esc(fmtWhen(due.toISOString())) + '</span>';
+        } else if (rotateMin === 0) {
+          rot = '<span style="color:var(--text2)" title="rotation disabled">never</span>';
+        }
         const cool = k.cooling
           ? '<span style="color:var(--danger)">' + T('cooling') + (k.cooldownUntil ? T(' · until ') + esc(fmtWhen(k.cooldownUntil)) : '') + '</span>'
           : '<span style="color:var(--text2)">-</span>';
@@ -3952,13 +3985,14 @@ function renderOcKeyStates(ks) {
         return '<tr draggable="true" data-drag-id="' + k.index + '"><td>#' + (k.index + 1) + (k.current ? ' <span style="color:var(--accent)" title="next in rotation">●</span>' : '') + '</td>' +
           '<td style="font-family:monospace;font-size:11px">' + esc(k.keyMask) + '</td>' +
           '<td>' + (k.usage || 0) + '</td>' +
-          '<td>' + st + '</td>' +
+          '<td>' + sess + '</td>' +
+          '<td>' + rot + '</td>' +
           '<td>' + cool + '</td>' +
           bind +
           actions +
           routing + '</tr>';
       }).join('')
-    : '<tr><td colspan="8" class="empty">No opencode keys configured</td></tr>';
+    : '<tr><td colspan="9" class="empty">No opencode keys configured</td></tr>';
   tb.onclick = e => {
     const b = e.target.closest('button[data-zk]');
     if (b) { testZenKey(parseInt(b.dataset.zk, 10), b); return; }

@@ -88,7 +88,6 @@ func registerAdminRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/admin/api/opencode/models", adminCORS(auth(handleZenModels)))
 	mux.HandleFunc("/admin/api/opencode/models/refresh", adminCORS(auth(handleZenModelsRefresh)))
 	mux.HandleFunc("/admin/api/opencode/stats", adminCORS(auth(handleZenStats)))
-	mux.HandleFunc("/admin/api/opencode/sessions", adminCORS(auth(handleZenSessions)))
 	// 旧 zen 路径别名,兼容旧引用
 	mux.HandleFunc("/admin/api/zen/config", adminCORS(auth(handleZenConfig)))
 	mux.HandleFunc("/admin/api/zen/config/update", adminCORS(auth(handleZenConfigUpdate)))
@@ -104,6 +103,7 @@ func registerAdminRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/admin/api/zen/keys/proxy", adminCORS(auth(handleZenKeySetProxy)))
 	mux.HandleFunc("/admin/api/opencode/keys/proxy", adminCORS(auth(handleZenKeySetProxy)))
 	mux.HandleFunc("/admin/api/zen/sessions", adminCORS(auth(handleZenSessions)))
+	mux.HandleFunc("/admin/api/opencode/sessions", adminCORS(auth(handleZenSessions)))
 	// OpenRouter 平台（key 池，or: 前缀）：配置/模型/key 管理/测试/代理绑定
 	mux.HandleFunc("/admin/api/openrouter/config", adminCORS(auth(handleOrConfig)))
 	mux.HandleFunc("/admin/api/openrouter/config/update", adminCORS(auth(handleOrConfigUpdate)))
@@ -868,15 +868,15 @@ func defaultProxyConfig() *proxyConfigData {
 	return &proxyConfigData{
 		Strategy: "round_robin",
 		Headers: map[string]string{
-			"User-Agent":         "Cline/3.0.50",
+			"User-Agent":         "Cline/" + clineClientVersion,
 			"HTTP-Referer":       "https://cline.bot",
 			"X-Title":            "Cline",
 			"X-IS-MULTIROOT":     "false",
 			"X-CLIENT-TYPE":      "cline-cli",
-			"X-CLIENT-VERSION":   "3.0.50",
-			"X-PLATFORM":         "terminal",
-			"X-PLATFORM-VERSION": "3.0.50",
-			"X-CORE-VERSION":     "0.0.70",
+			"X-CLIENT-VERSION":   clineClientVersion,
+			"X-PLATFORM":         "cli",
+			"X-PLATFORM-VERSION": clineClientVersion,
+			"X-CORE-VERSION":     clineCoreVersion,
 		},
 	}
 }

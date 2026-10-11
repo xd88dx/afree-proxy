@@ -86,7 +86,9 @@ Environment variables to define in the Portainer stack UI:
 
 To seed Cline accounts on first boot, drop a `cline-seed.json` file into the volume (see [Seeding accounts](#seeding-accounts)).
 
-> **Bind-mount note (Portainer/NAS users):** set `PUID`/`PGID` to your host user and the entrypoint self-heals the data-directory ownership on every start (`chown` is run inside the container before the gateway drops privileges) — no manual `chown` needed, even after recreating the container. Defaults are `100`/`101` (the image's built-in `app` user). A **named volume** (`-v cline-proxy-data:/app/data`) is also fine and needs no ownership setup at all.
+> **Public HTTPS:** `docker-compose.yml` ships an optional `caddy` service (profile `tls`) with a ready `Caddyfile` for automatic Let's Encrypt certificates. Set `DOMAIN` in `.env`, then `docker compose --profile tls up -d`. On Portainer/NAS, put the proxy behind your existing reverse proxy instead and forward to port `3457`.
+
+> **Bind-mount note (Portainer/NAS users):** set `PUID`/`PGID` to your host user and the entrypoint self-heals the data-directory ownership on every start (`chown` is run inside the container before the gateway drops privileges) — no manual `chown` needed, even after recreating the container. Defaults are `100`/`101` (the image's built-in `app` user). A **named volume** (`-v afree-proxy-data:/app/data`) is also fine and needs no ownership setup at all.
 
 ## Configuration
 
@@ -103,11 +105,12 @@ All state lives in the `/app/data` volume (`cline-accounts.json`, `zen-config.js
 | `STRICT_MODEL_MATCH` | `true` | `400` for unknown model names instead of silently serving the default model |
 | `POOL_STRATEGY` | `round_robin` | Cline account strategy: `round_robin` / `fill` / `random` (env wins over panel config) |
 | `ZEN_KEYS` | empty | opencode zen keys, comma-separated; panel config is not overwritten when it already has keys |
+| `ZEN_SESSION_ROTATE_MINUTES` | `120` | Re-mint a key's sticky zen session once it is this old (minutes); `0` disables rotation |
 | `CLINE_ACCOUNTS_SEED_FILE` | empty | Seed JSON imported at boot when the pool is empty |
 | `PROXY_ISOLATION` | unset | Identity↔exit binding (see [Proxy isolation](#proxy-isolation-identity--exit-binding)). Only `true`/`false` are accepted: `true` forces it on (panel toggle read-only); `false` defaults it off (panel can still change it); unset defaults to on. Any other value warns and is treated as unset |
 | `PUID` / `PGID` | `100` / `101` | UID/GID the gateway runs as. The entrypoint runs as root, re-owns the data directories to `PUID:PGID`, then drops privileges — set these to your host user for bind mounts |
 | `LOG_REQUESTS` | `true` | Request logging (metadata only: IP, path, model, status, duration — never conversation content) |
-| `LOG_FILE_MAX_MB` | `10` | `requests.jsonl` size cap; wiped when exceeded |
+| `LOG_FILE_MAX_MB` | `10` | Size cap for `requests.jsonl` (wiped when exceeded) and for `afree-proxy.log` (rotated when exceeded) |
 | `MAX_BODY_MB` | `32` | Request body limit; larger bodies get `413` |
 | `APPLY_SYSTEM_PROMPT_OVERRIDE` | `false` | `true` enables replacing client system prompts with `override.md` |
 | `STREAM_LOG` | `false` | Dump raw Anthropic-path SSE to disk (full conversations — debugging only) |
@@ -127,19 +130,22 @@ no harvester, and no related environment variables. Legacy placeholder IDs
 (`sess_*`) in an existing session file are replaced with minted ones on first
 load.
 
-If a session gets rejected (FreeTier `403`), the gateway mints a fresh ID
-locally after two consecutive `403`s (one-minute per-key backoff) — no
-subprocess, no quota cost. Should zen ever tighten the gate (valid-format IDs
-also rejected), the rising refresh frequency in the logs is the early signal.
+Sessions also **rotate on age**: a background rotator checks every key once a minute and re-mints any session older than `ZEN_SESSION_ROTATE_MINUTES` (default 120 = 2 h). An upstream session that has gone stale makes its first request noticeably slower even though the gateway still accepts it; a periodic local re-mint keeps that latency off the user's path. Rotation is free — the ID is minted locally, so nothing is sent upstream and no quota is consumed, and the rotator also pre-mints sessions for keys that have not been used yet (which is what keeps round-robin from collapsing onto a single key). Set the value to `0` to disable age-based rotation (missing sessions are still minted). The same interval is editable in the panel's opencode tab ("Session rotation (min)").
 
-The admin panel's opencode tab lists every key's session ID, state, and mint
-time, plus a per-key **Test** button with a probe-model picker (default
-**auto**: big-pickle first, then live-synced models; any free zen model can be
-chosen): it sends one real probe request pinned to that key, and on success
-clears the key's cooldown immediately (a rate-limited answer — 429, or a
-403/503 whose body zen words as a limit — reports the upstream's expected
-recovery time instead). Note a successful probe consumes one request of that
-key's quota — the same trade-off as the cline Test button.
+The zen route table is seeded deterministically from the model catalog's SDK package name (`provider.npm`: `@ai-sdk/openai` → native `/v1/responses`, `@ai-sdk/openai-compatible` → `/chat/completions`) and refined per model by the endpoint learner, whose decisions persist in `.zen-endpoints.json` and are never overwritten by later catalog syncs.
+
+| Variable | Default | Description |
+|---|---|---|
+| `ZEN_PIN_KEY` | empty | Troubleshooting: pin all upstream attempts to key number *n* (1-based) instead of rotating, so one key can be tested in isolation |
+| `ZEN_SESSION_ROTATE_MINUTES` | `120` | Re-mint a key's sticky session once it is this old (minutes); `0` disables rotation (also editable in the panel) |
+
+If a session gets rejected (FreeTier `403`), the gateway mints a fresh ID on the
+same key and retries the request once; a second `403` cools the key down briefly
+instead of fanning the bad state out across the pool — no subprocess, no quota
+cost. Should zen ever tighten the gate (valid-format IDs also rejected), the
+rising refresh frequency in the logs is the early signal.
+
+The admin panel's opencode tab shows per-key session liveness, age and next rotation, plus a per-key **Test** button with a probe-model picker (default **auto**: big-pickle first, then live-synced models; any free zen model can be chosen): it sends one real probe request pinned to that key, and on success clears the key's cooldown immediately (a rate-limited answer — 429, or a 403/503 whose body zen words as a limit — reports the upstream's expected recovery time instead). Note a successful probe consumes one request of that key's quota — the same trade-off as the cline Test button.
 
 ## Connecting your IDE
 
@@ -281,9 +287,10 @@ Project layout:
 │   └── types.go             shared data structures
 ├── internal/cline/          cline upstream auth (WorkOS OAuth refresh)
 ├── internal/workbuddy/      vendored WorkBuddy2API pool, panel, scheduler, upstream
-├── internal/kit/            HTTP client, random IDs, data paths
+├── internal/kit/            HTTP client, random IDs, zen session-ID minting, data paths
 ├── Dockerfile               multi-arch (amd64 native + arm64 cross-compile)
-└── docker-compose.yml       source build, PROXY_PORT-parameterized
+├── docker-compose.yml       source build, PROXY_PORT-parameterized
+└── Caddyfile                optional TLS reverse proxy (compose `tls` profile)
 ```
 
 ## Credits
