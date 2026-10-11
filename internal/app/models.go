@@ -226,16 +226,35 @@ func canonicalClineModelID(id string) string {
 	return strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(id), clineModelPrefix))
 }
 
-// modelInClineList 判断（归一化后的）模型 ID 是否在 Cline 免费模型表内。
+// clineListLookupLocked 把请求侧 ID 解析到 feed 真实缓存键。缓存键就是 feed
+// 原样 ID：cline-free/* 条目自带前缀、poolside/* z-ai/* 等不带，因此剥前缀
+// 之后两种键形态都要查——只查剥前缀形态会漏掉 cline-free/* 原生条目，请求
+// 会被 STRICT 门控误拒（2026-10-12 修复）。调用方须持 modelsMu。
+func clineListLookupLocked(id string) (string, bool) {
+	canonical := canonicalClineModelID(id)
+	if canonical == "" {
+		return "", false
+	}
+	if _, ok := modelsCache[canonical]; ok {
+		return canonical, true
+	}
+	prefixed := clineModelPrefix + canonical
+	if _, ok := modelsCache[prefixed]; ok {
+		return prefixed, true
+	}
+	return "", false
+}
+
+// modelInClineList 判断（带/不带 cline-free/ 前缀两种请求形态都认）模型 ID
+// 是否在 Cline 免费模型表内。
 func modelInClineList(id string) bool {
-	id = canonicalClineModelID(id)
-	if id == "" {
+	if strings.TrimSpace(id) == "" {
 		return false
 	}
 	initModelsCache()
 	modelsMu.Lock()
-	_, ok := modelsCache[id]
-	modelsMu.Unlock()
+	defer modelsMu.Unlock()
+	_, ok := clineListLookupLocked(id)
 	return ok
 }
 
@@ -306,10 +325,14 @@ func normalizeRequestModel(id string) string {
 	if id == "" {
 		return getDefaultModel()
 	}
-	// cline-free/ 前缀是展示层约定：请求侧两种形态都还原成 feed 真实 ID，
-	// 出站请求体与账号池记账一律用真实 ID。
-	if canonical := canonicalClineModelID(id); modelInClineList(canonical) {
-		return canonical
+	// 请求侧两种形态（带/不带 cline-free/ 前缀）都解析到 feed 真实 ID
+	// （缓存键原样），出站请求体与账号池记账一律用真实 ID。
+	initModelsCache()
+	modelsMu.Lock()
+	resolved, ok := clineListLookupLocked(id)
+	modelsMu.Unlock()
+	if ok {
+		return resolved
 	}
 	log.Printf("  model %q not in free list, fallback to %q", id, getDefaultModel())
 	return getDefaultModel()

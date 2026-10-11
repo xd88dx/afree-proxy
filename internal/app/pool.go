@@ -133,6 +133,11 @@ func loadPool() *AccountPool {
 func setDefaultModel(modelID string) {
 	initModelsCache()
 	modelsMu.Lock()
+	// 面板/接口传来的是展示形态（cline-free/ 前缀），先解析到 feed 真实
+	// 缓存键再存，getDefaultModel 的精确查表才能命中。
+	if resolved, ok := clineListLookupLocked(modelID); ok {
+		modelID = resolved
+	}
 	_, ok := modelsCache[modelID]
 	modelsMu.Unlock()
 	if !ok {

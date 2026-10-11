@@ -40,19 +40,34 @@ func TestModelInClineListAcceptsBothForms(t *testing.T) {
 	if !modelInClineList("poolside/laguna-s-2.1:free") {
 		t.Error("seed id without prefix must be in list")
 	}
+	// cline-free/* 原生条目的缓存键自带前缀：展示形态与剥前缀裸名都必须
+	// 命中（只查剥前缀形态会漏掉整类原生条目，STRICT 门控误拒）。
+	if !modelInClineList("cline-free/deepseek-v4.1-flash") {
+		t.Error("seed native cline-free/* id must be in list")
+	}
+	if !modelInClineList("deepseek-v4.1-flash") {
+		t.Error("bare form of a native cline-free/* entry must be in list")
+	}
 	if modelInClineList("no/such-model") {
 		t.Error("unknown model must not be in list")
 	}
 }
 
-// normalizeRequestModel 带前缀请求也要回落到 feed 真实 ID（出站/记账用真实 ID）。
-func TestNormalizeRequestModelStripsClinePrefix(t *testing.T) {
+// normalizeRequestModel 带前缀请求要解析到 feed 真实 ID（出站/记账用真实 ID）：
+// cline-free/* 原生条目的真实 ID 自带前缀，z-ai/* poolside/* 等不带。
+func TestNormalizeRequestModelResolvesFeedID(t *testing.T) {
 	initModelsCache()
 	if got := normalizeRequestModel("cline-free/z-ai/glm-5.3-flash"); got != "z-ai/glm-5.3-flash" {
 		t.Errorf("normalizeRequestModel = %q, want the feed id", got)
 	}
 	if got := normalizeRequestModel("z-ai/glm-5.3-flash"); got != "z-ai/glm-5.3-flash" {
 		t.Errorf("normalizeRequestModel(bare) = %q", got)
+	}
+	if got := normalizeRequestModel("cline-free/deepseek-v4.1-flash"); got != "cline-free/deepseek-v4.1-flash" {
+		t.Errorf("normalizeRequestModel(native) = %q, want the prefixed feed id", got)
+	}
+	if got := normalizeRequestModel("deepseek-v4.1-flash"); got != "cline-free/deepseek-v4.1-flash" {
+		t.Errorf("normalizeRequestModel(native bare) = %q, want the prefixed feed id", got)
 	}
 }
 
