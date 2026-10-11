@@ -107,15 +107,25 @@ func resolveCombo(id string) *Combo {
 	return nil
 }
 
+// comboPlatformValid 自定义别名的平台白名单（六平台）。面板保存与备份导入
+// 共用同一份口径——新平台接入时两处一起改。
+func comboPlatformValid(platform string) bool {
+	switch platform {
+	case "cline", "zen", "workbuddy", "openrouter", "amd", "tokenharbor":
+		return true
+	}
+	return false
+}
+
 // validateCombo 保存前校验：
 //   - ID 格式合法（URL 安全）且不与任何真实模型 ID 冲突
-//   - platform ∈ {cline, zen, workbuddy}
+//   - platform ∈ 六平台白名单（comboPlatformValid）
 //   - target 必须存在于对应平台的模型列表（严格同平台，禁止跨平台选择）
 func validateCombo(id, platform, target string) error {
 	if !comboIDRe.MatchString(id) {
 		return fmt.Errorf("invalid combo id %q: use 2-64 chars, letters/digits/._- and start with letter or digit", id)
 	}
-	if platform != "cline" && platform != "zen" && platform != "workbuddy" && platform != "openrouter" && platform != "amd" && platform != "tokenharbor" {
+	if !comboPlatformValid(platform) {
 		return fmt.Errorf("invalid platform %q: must be cline, zen, workbuddy, openrouter, amd or tokenharbor", platform)
 	}
 	target = strings.TrimSpace(target)

@@ -55,6 +55,8 @@ WB 特例：`/admin/api/workbuddy/enabled` 注册在 proxy.go（workbuddy 路由
 - afree 接管的装配项（listen/api_key/auth_dir/state_file）save 时强制回写部署值，防面板把数据搬出统一目录。
 - 热应用清单：池参数/冷却/权重/开关类；restartRequired：监听、HTTP client 超时、目录句柄、upstash、session ttl、日志归档。
 
+**备份导入导出（admin_backup.go，v2）**：新平台接入必须同步补 config/export 的导出段（平台整配置 `X.Get()`）与导入分支（`X.Set` 前 `KeyRoutingEnabled` 逐 key 置 false）——漏补 = 备份静默丢该平台（2026-10-12 修的正是 or/amd/th 三平台缺段）。**导入护栏：一切上游身份落盘即禁用**（Cline 账号 `PoolEnabled=false`、key 路由表逐 key 显式 false——缺项=参与路由，清表不算禁用；WorkBuddy 凭据文件整体替换 auths 目录后 `SetPoolEnabled(false)+SaveAtomic`+`SyncToDir`），客户端 key 与代理池不在此列；导入版本兼容 v1|v2（缺段保持不动），combos 白名单走 `comboPlatformValid`（与 validateCombo 同源，新平台一起改）。
+
 ## 6. 代理池与出口绑定
 
 - 绑定模型：per-identity 主/辅双槽（前端 `egComboHTML` 渲染 `.eg-input`，`data-eg`/`data-egid`/`data-slot`），提交走 `egCommit`（暂存语义，随平台保存按钮生效）。存储与解析参照 `proxy_binding.go`。
