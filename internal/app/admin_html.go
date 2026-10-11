@@ -447,8 +447,8 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
       <div class="field" style="margin:0"><label style="margin:0">OpenCode</label></div>
       <div class="field" style="margin:0"><label style="margin:0">WorkBuddy</label></div>
       <div class="field" style="margin:0"><label style="margin:0">OpenRouter</label></div>
-      <div class="field" style="margin:0"><label style="margin:0">AMD</label></div>
       <div class="field" style="margin:0"><label style="margin:0">TokenHarbor</label></div>
+      <div class="field" style="margin:0"><label style="margin:0">RadeonCloud</label></div>
       <div class="field" style="margin:0">
         <select id="ppCline"><option value="true">Proxy</option><option value="false">Direct connection</option></select>
       </div>
@@ -462,17 +462,17 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
         <select id="ppOr"><option value="true">Proxy</option><option value="false">Direct connection</option></select>
       </div>
       <div class="field" style="margin:0">
-        <select id="ppAmd"><option value="true">Proxy</option><option value="false">Direct connection</option></select>
+        <select id="ppTh"><option value="true">Proxy</option><option value="false">Direct connection</option></select>
       </div>
       <div class="field" style="margin:0">
-        <select id="ppTh"><option value="true">Proxy</option><option value="false">Direct connection</option></select>
+        <select id="ppAmd"><option value="true">Proxy</option><option value="false">Direct connection</option></select>
       </div>
       <div class="hint" style="margin:0">Cline accounts without proxy bindings follow this switch.</div>
       <div class="hint" style="margin:0">OpenCode keys without proxy bindings follow this switch.</div>
       <div class="hint" style="margin:0">WorkBuddy accounts without proxy bindings follow this switch.</div>
       <div class="hint" style="margin:0">OpenRouter keys without proxy bindings follow this switch.</div>
-      <div class="hint" style="margin:0">AMD keys without proxy bindings follow this switch.</div>
       <div class="hint" style="margin:0">TokenHarbor keys without proxy bindings follow this switch.</div>
+      <div class="hint" style="margin:0">RadeonCloud keys without proxy bindings follow this switch.</div>
     </div>
     <div class="form-actions"><button class="btn btn-primary" onclick="saveGlobalPolicy()">Save</button></div>
   </div>
@@ -571,8 +571,8 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
           <option value="zen">OpenCode</option>
           <option value="workbuddy">WorkBuddy</option>
           <option value="openrouter">OpenRouter</option>
-          <option value="amd">AMD</option>
           <option value="tokenharbor">TokenHarbor</option>
+          <option value="amd">RadeonCloud</option>
         </select>
         <div style="margin-top:18px"><button class="btn btn-sm btn-primary" onclick="saveDefaultModel()">Save</button></div>
       </div>
@@ -645,7 +645,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
     <div class="form-row">
       <div class="field"><label>Alias ID</label><input type="text" id="comboId" placeholder="cline-glm-5.3"></div>
       <div class="field"><label>Platform</label>
-        <select id="comboPlatform" onchange="fillComboModels()"><option value="cline">cline</option><option value="zen">opencode</option><option value="workbuddy">workbuddy</option><option value="openrouter">openrouter</option><option value="amd">amd</option><option value="tokenharbor">tokenharbor</option></select>
+        <select id="comboPlatform" onchange="fillComboModels()"><option value="cline">Cline</option><option value="zen">OpenCode</option><option value="workbuddy">WorkBuddy</option><option value="openrouter">OpenRouter</option><option value="tokenharbor">TokenHarbor</option><option value="amd">RadeonCloud</option></select>
       </div>
       <div class="field" style="flex:2"><label>Target model</label><select id="comboTarget"></select></div>
       <div class="field" style="flex:0 0 auto;display:flex;align-items:flex-end"><label style="display:flex;gap:6px;align-items:center;white-space:nowrap;padding-bottom:8px"><input type="checkbox" id="comboUseProxies"> Use proxy pool</label></div>
@@ -1658,7 +1658,7 @@ const I18N_ZH = {
   'Unsupported backup version': '不支持的备份版本',
   'Choose a backup JSON file first': '请先选择备份 JSON 文件',
   'Invalid backup file: ': '备份文件无效：',
-  'Import replaces sections present in the file (accounts / keys / proxies / combos ...). Continue?': '导入将用文件内容替换当前对应的配置段（Cline 账号 / 客户端 key / OpenCode key / 代理池 / 自定义别名等，文件中存在的段都会替换）。继续？',
+  'Import replaces sections present in the file (accounts / keys / proxies / combos ...). All imported identities start DISABLED. Continue?': '导入将用文件内容替换当前对应的配置段（六平台账号/key/代理池/别名等，文件中存在的段都会替换）。导入的所有身份（账号/key）一律禁用，需在面板逐个启用。继续？',
   'State': '状态',
   'Global': '全局',
   'Follows the main slot': '跟随主出口',
@@ -1788,7 +1788,7 @@ const I18N_ZH = {
   'Global policy saved': '全局策略已保存',
   'WorkBuddy accounts without proxy bindings follow this switch.': 'WorkBuddy 未绑定代理的账号遵循此开关。',
   'OpenRouter keys without proxy bindings follow this switch.': 'OpenRouter 未绑定代理的 key 遵循此开关。',
-  'AMD keys without proxy bindings follow this switch.': 'AMD 未绑定代理的 key 遵循此开关。',
+  'RadeonCloud keys without proxy bindings follow this switch.': 'RadeonCloud 未绑定代理的 key 遵循此开关。',
   'TokenHarbor keys without proxy bindings follow this switch.': 'TokenHarbor 未绑定代理的 key 遵循此开关。',
   'Proxy isolation settings saved': '代理隔离设置已保存',
   'Pool': '启用',
@@ -3502,7 +3502,7 @@ function onImportFileChange(event) {
   reader.onload = () => {
     try {
       const parsed = JSON.parse(reader.result);
-      if (parsed.version !== 1) throw new Error(T('Unsupported backup version'));
+      if (parsed.version !== 1 && parsed.version !== 2) throw new Error(T('Unsupported backup version'));
       importPayload = JSON.stringify(parsed);
       importConfigFromFile();
     } catch (e) {
@@ -3516,7 +3516,7 @@ function onImportFileChange(event) {
 
 async function importConfigFromFile() {
   if (!importPayload) { toast(T('Choose a backup JSON file first'), 'error'); return; }
-  if (!confirm(T('Import replaces sections present in the file (accounts / keys / proxies / combos ...). Continue?'))) return;
+  if (!confirm(T('Import replaces sections present in the file (accounts / keys / proxies / combos ...). All imported identities start DISABLED. Continue?'))) return;
   try {
     const d = await api('POST', '/config/import', JSON.parse(importPayload));
     const imp = (d.data && d.data.imported) || {};
