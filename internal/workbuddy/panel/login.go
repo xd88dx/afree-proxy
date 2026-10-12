@@ -114,10 +114,14 @@ func doJSON(method, fullURL, bearer string, body io.Reader, origin string) (json
 }
 
 // loginStart 发起设备授权：POST auth/state 拿授权 URL。
-// body 可带 {"realm":"global"}（缺省 cn）；state 会话记 realm，poll 同 realm 落盘。
+// body 可带 {"realm":"global"}（缺省 cn）；query 参数 ?realm=global 也支持（前端 wbCall 用 params 传）。
+// state 会话记 realm，poll 同 realm 落盘。
 func (p *Panel) loginStart(w http.ResponseWriter, r *http.Request) {
 	realm := "cn"
-	if r.Body != nil {
+	// 优先读 query（前端 wbCall 用 params 传），其次读 body（兼容旧调用）。
+	if q := r.URL.Query().Get("realm"); q == "global" {
+		realm = "global"
+	} else if r.Body != nil {
 		var reqBody struct {
 			Realm string `json:"realm"`
 		}
