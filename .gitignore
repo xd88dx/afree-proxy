@@ -40,6 +40,7 @@ combos.json
 requests.jsonl
 
 .workbuddy/
+.tmp/
 __pycache__/
 
 # Preview binary for the throwaway UI test container (docker-run entrypoint)
