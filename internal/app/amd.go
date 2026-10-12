@@ -83,7 +83,7 @@ func amdModelList() []map[string]any {
 			"id":       amd.ModelPrefix + m.ID,
 			"object":   "model",
 			"created":  time.Now().UnixMilli(),
-			"owned_by": "amd-radeon",
+			"owned_by": "amd-cloud",
 			"source":   "amd-free",
 			"status":   "active",
 			"cost":     "free-tier",

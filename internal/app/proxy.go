@@ -236,7 +236,7 @@ func StartProxy(host string, port int) error {
 			} else if c.Platform == "openrouter" {
 				owned = "openrouter"
 			} else if c.Platform == "amd" {
-				owned = "amd-radeon"
+				owned = "amd-cloud"
 			} else if c.Platform == "tokenharbor" {
 				owned = "tokenharbor"
 			}

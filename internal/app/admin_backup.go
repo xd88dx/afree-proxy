@@ -68,42 +68,9 @@ type configBackup struct {
 	OpenRouter  *openrouter.Config  `json:"openrouter,omitempty"`
 	TokenHarbor *tokenharbor.Config `json:"tokenharbor,omitempty"`
 	WorkBuddy   *workbuddyBackup    `json:"workbuddy,omitempty"`
-	// AMDCloud v2 段原名 amd；2026-10-12 随平台改名同步为 amdcloud，并保留
-	// amdCloudLegacy 兼容读取历史备份，见 normalizeAMDCloudSection。
+	// AMDCloud v2 段原名 amd；2026-10-12 随平台改名同步为 amdcloud。本项目
+	// 无存量备份文件，不保留旧键兼容——若日后需要，参照"改段名铁律"。
 	AMDCloud *amd.Config `json:"amdcloud,omitempty"`
-	// amdCloudLegacy 只进不出：历史备份里的 "amd" 段（平台改名前的 v2 导出）。
-	// 导出永不产生该键，导入时归一到 AMDCloud。
-	amdCloudLegacy *amd.Config `json:"-"`
-}
-
-// normalizeAMDCloudSection 归一 AMDCloud 段：新键 amdcloud 优先，旧的 amd 段
-// 仅作兼容读取（导出不产生 amd）。两段同时存在时以新键为准。
-func (b *configBackup) normalizeAMDCloudSection() {
-	if b.AMDCloud == nil {
-		b.AMDCloud = b.amdCloudLegacy
-	}
-	b.amdCloudLegacy = nil
-}
-
-// UnmarshalJSON 在标准解码之外额外读一次原文，把历史备份的 "amd" 段收进
-// amdCloudLegacy（json:"-" 不会被标准解码填充）。导出走 MarshalJSON 的默认
-// 行为——amdCloudLegacy 不导出。
-func (b *configBackup) UnmarshalJSON(data []byte) error {
-	type plain configBackup // 避免递归调用本方法
-	var p plain
-	if err := json.Unmarshal(data, &p); err != nil {
-		return err
-	}
-	*b = configBackup(p)
-
-	var raw struct {
-		AMD *amd.Config `json:"amd,omitempty"`
-	}
-	if err := json.Unmarshal(data, &raw); err != nil {
-		return err
-	}
-	b.amdCloudLegacy = raw.AMD
-	return nil
 }
 
 // handleAdminConfigExport GET /admin/api/config/export
@@ -216,8 +183,6 @@ func handleAdminConfigImport(w http.ResponseWriter, r *http.Request) {
 		writeAPI(w, http.StatusBadRequest, apiResponse{Error: fmt.Sprintf("unsupported backup version %d (want 1 or %d)", backup.Version, configBackupVersion)})
 		return
 	}
-	// 平台改名前的备份把 AMDCloud 段写作 "amd"，归一后再按段替换。
-	backup.normalizeAMDCloudSection()
 
 	imported := map[string]int{}
 
