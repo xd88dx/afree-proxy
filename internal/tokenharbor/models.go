@@ -74,7 +74,11 @@ func SyncCatalog() (int, error) {
 		return 0, nil // 无 key：目录保持种子（同步需要认证）
 	}
 	base := Get().BaseURL
-	req, err := http.NewRequest(http.MethodGet, base+"/models", nil)
+	// 官网免费模型页面 models?category=free 仅展示当前推荐的 3 个模型，
+	// 而 /v1/models 会返回所有历史 :free 模型（含旧版本 deepseek-v4 / mimo-v2.5）。
+	// 加上 category=free 让上游按官网同口径过滤；若上游不支持该参数则回退到
+	// 无参数调用（保持原行为，避免因接口变更导致同步完全失败）。
+	req, err := http.NewRequest(http.MethodGet, base+"/models?category=free", nil)
 	if err != nil {
 		return 0, err
 	}
@@ -85,8 +89,20 @@ func SyncCatalog() (int, error) {
 		return 0, err
 	}
 	defer resp.Body.Close()
+	// 若上游不支持 category 参数（4xx/5xx），回退一次不带参数的调用
 	if resp.StatusCode != http.StatusOK {
-		return 0, &http.ProtocolError{ErrorString: "catalog status " + resp.Status}
+		resp.Body.Close()
+		req2, _ := http.NewRequest(http.MethodGet, base+"/models", nil)
+		req2.Header.Set("Accept", "application/json")
+		req2.Header.Set("Authorization", "Bearer "+keys[0])
+		resp, err = catalogHTTPClient().Do(req2)
+		if err != nil {
+			return 0, err
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			return 0, &http.ProtocolError{ErrorString: "catalog status " + resp.Status}
+		}
 	}
 	var payload struct {
 		Data []catalogEntry `json:"data"`
