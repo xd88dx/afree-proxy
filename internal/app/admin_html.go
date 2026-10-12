@@ -3740,8 +3740,21 @@ const WB_RATE_OPTIONS = [0, 0.1, 0.2, 0.3, 0.5, 1.0];
 // /v1/models 与面板同口径过滤。初值 0.2 只是首屏未加载完的占位——loadModels /
 // loadWorkbuddyConfig 拉到真值后立刻覆盖，落盘由 setWorkbuddyRateFilter 负责。
 let workbuddyRateFilter = 0.2;
+// 倍率解析：null / undefined / 空串 / 不可解析 → null（= 缺失），其余为数值。
+// 不能用 String(value ?? '').replace(...) 一把梭：那个式子把 null/'' 洗成
+// Number('') = 0，等于宣称「缺失 = 免费」，与 matchesModelRateFilter 的
+// server 口径（raw == "" 或 ParseFloat 失败即 ok=false → 隐藏）相反——试用
+// 模型显式清空倍率时会把付费模型当成 0 放进池子。
 function wbNumber(value) {
-  const n = Number(String(value ?? '').replace(/[^\d.-]/g, ''));
+  if (value === null || value === undefined) return null;
+  // 空串/纯空白：上游"没给倍率"的常见形态（含显式清空的试用模型）
+  if (typeof value === 'string' && value.trim() === '') return null;
+  // 剥掉 'x0.2' 这类装饰后必须还剩数字：否则 'abc'/'NaN'/'Infinity' 会被清成
+  // '' 再走成 Number('') = 0，等于把"不可解析"谎报成免费（server 侧
+  // ParseFloat 失败即 ok=false）。
+  const cleaned = String(value).replace(/[^\d.-]/g, '');
+  if (!/\d/.test(cleaned)) return null;
+  const n = Number(cleaned);
   return Number.isFinite(n) ? n : null;
 }
 function wbRate(m) {
@@ -3756,10 +3769,27 @@ function wbModelMatchesFilter(m) {
   const rate = wbRate(m);
   return rate !== null && rate <= workbuddyRateFilter + 1e-9;
 }
+// WorkBuddy vendor realm 前缀 → 网关前缀（与后端 wbVendorToRealm 同构）。
+// vendor /models 直接给 cn:/global:，但面板展示的模型 ID 必须与 /v1/models
+// 里发布的（wbcn:/wbgb:）一致，否则默认模型/自定义别名存下的是 vendor 前缀，
+// 而 validateCombo 用网关形态的 modelList 校验 → combo 永远校验不过。
+const WB_REALM_PREFIXES = [['wbcn:', 'cn:'], ['wbgb:', 'global:']];
+function wbRealmToGatewayId(id) {
+  const s = String(id == null ? '' : id);
+  for (const [gw, vendor] of WB_REALM_PREFIXES) {
+    if (s.startsWith(vendor)) return gw + s.slice(vendor.length);
+  }
+  return s;
+}
 async function fetchWorkbuddyModels() {
   try {
     const data = await wbCall('models');
-    return data.models || [];
+    // 副本而非原地改：同一批对象还要供倍率筛选与 context 渲染，且 wbCall
+    // 的返回值可能被其他调用方复用。
+    return (data.models || []).map(m => {
+      if (!m || typeof m.id !== 'string') return m;
+      return Object.assign({}, m, { id: wbRealmToGatewayId(m.id) });
+    });
   } catch (e) {
     return [];
   }
