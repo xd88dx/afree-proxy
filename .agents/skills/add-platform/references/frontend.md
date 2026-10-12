@@ -16,7 +16,7 @@
 
 ## 2. 导航菜单 + 标签页
 
-- 导航项：`<div class="nav-item" data-tab="xxx"><span class="nav-ico"><svg…/></svg></span> 英文名</div>`。现状十一个：dashboard/accounts/opencode/openrouter/radeoncloud/tokenharbor/workbuddy/proxypool/settings/combos/logs（注意：key 池 tab 的 data-tab 用 `radeoncloud` 而非 `amd`）。svg 用 24×24 简笔几何图形，风格与现有一致。
+- 导航项：`<div class="nav-item" data-tab="xxx"><span class="nav-ico"><svg…/></svg></span> 英文名</div>`。现状十一个：dashboard/accounts/opencode/openrouter/amdcloud/tokenharbor/workbuddy/proxypool/settings/combos/logs（注意：key 池 tab 的 data-tab 用 `amdcloud` 而非 `amd`；面板展示名用 AMDCloud，与 `amd` 前缀/包名/`/admin/api/amd/*` 路径不同，改名时三处要一起对齐）。svg 用 24×24 简笔几何图形，风格与现有一致。
 - 页面体：`<div id="tab-xxx" class="tab-panel" style="display:none">`；首个面板 dashboard 不带 display:none。
 - 切换：nav 点击委托 `switchTab`（惰性加载：首次进入时 loadXxx——**新平台的 load 调用要加进 switchTab 的 if 链**，如 `if (name === 'openrouter') loadOrConfig()`）；`restoreTab` 从 location.hash 恢复（`_('tab-'+h)` 元素存在即白名单，非法回落 dashboard）。**hash 恢复必须在所有 const 声明之后执行**（TDZ 坑：`WB_API_PREFIX` 这类平台 const 若未初始化会报错）。
 - 仪表盘六卡：`.dash-grid` + `.dash-card`（可点击跳转平台页，id 形如 `dashCline/dashOc/dashWb/dashOr/dashAmd/dashTh`）+ 请求统计卡（`reqCline/reqZen/reqWb/reqOr/reqAmd/reqTh`，数据来自 `/admin/api/request-stats`——后端 logs.go 的 per-route 计数要为新平台加分类桶）。`loadStats` 10s 轮询仅仪表盘可见时执行。
@@ -55,7 +55,7 @@
 - **默认模型下拉**（Gateway settings / 各平台配置区）：纯模型 ID 不带前缀后缀；`/admin/api/config/update {defaultModel}` 模式。
 - **自定义别名（combos）**：`combos.go` 是唯一事实源——`validateCombo` 的 platform 白名单加 "x"；target 校验 switch 里加 X 分支（**target 必须在 X 自己的模型列表内，跨平台选型直接报错**）；前端 Custom aliases 页平台下拉加选项 + 模型目标随平台联动加载。别名字段：`{id, platform, target, useProxies}`。
 
-## 7. key 池平台页面版式约定（2026-10-11 OpenRouter/AMD/TokenHarbor 实证）
+## 7. key 池平台页面版式约定（2026-10-11 OpenRouter/AMDCloud/TokenHarbor 实证）
 
 - **模型列表用"设置页样式行"**：等宽字体 ID + 标签 + 上下文徽章的 div 行（`.model-tag free` + `wbContextTagHTML`），不是表格；Name 进 title 悬浮。
 - **无描述框**：添加凭据弹窗与 key 表都没有"备注/描述"列——key 本身自解释。

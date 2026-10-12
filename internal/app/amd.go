@@ -14,13 +14,13 @@ import (
 	"time"
 )
 
-// ============ AMD Radeon Cloud 平台装配 ============
+// ============ AMDCloud 平台装配 ============
 //
 // Public Free Model APIs（key 由 developer.amd.com.cn/radeon/tokenfactory
 // 签发，rc- 前缀）：多 key 轮转、or 同款隔离语义、amd: 前缀路由。模型目录
 // 免认证同步（/v1/models 无需 key）。
 
-// amdConfigPath AMD 配置文件路径（DATA_DIR/.amd-config.json）。
+// amdConfigPath AMDCloud 配置文件路径（DATA_DIR/.amd-config.json）。
 func amdConfigPath() string { return kit.ResolveDataPath(".amd-config.json") }
 
 // initAMD 加载配置 + 注入出站解析/HTTP client 工厂。StartProxy 早期调用一次。
@@ -114,13 +114,13 @@ func handleAMDChat(w http.ResponseWriter, r *http.Request, params map[string]any
 	m, ok := amd.Resolve(bare)
 	if !ok {
 		writeJSON(w, http.StatusBadRequest, map[string]any{
-			"error": map[string]string{"message": fmt.Sprintf("model %q is not an AMD Radeon Cloud model", bare), "type": "invalid_request_error"},
+			"error": map[string]string{"message": fmt.Sprintf("model %q is not an AMDCloud model", bare), "type": "invalid_request_error"},
 		})
 		return
 	}
 	if len(amd.Keys()) == 0 {
 		writeJSON(w, http.StatusUnauthorized, map[string]any{
-			"error": map[string]string{"message": "No AMD keys configured. Add keys on the AMD page.", "type": "auth_error"},
+			"error": map[string]string{"message": "No AMDCloud keys configured. Add keys on the AMDCloud page.", "type": "auth_error"},
 		})
 		return
 	}
@@ -164,7 +164,7 @@ func handleAMDChat(w http.ResponseWriter, r *http.Request, params map[string]any
 	finishZenChatNonStream(w, resp, &ZenModel{ID: m.ID}, params, usageFn, tracker)
 }
 
-// ============ AMD 管理 API ============
+// ============ AMDCloud 管理 API ============
 
 // GET /admin/api/amd/config
 func handleAMDConfig(w http.ResponseWriter, r *http.Request) {
@@ -235,7 +235,7 @@ func handleAMDConfigUpdate(w http.ResponseWriter, r *http.Request) {
 		next.ReconcileRouting(next, cur)
 	}
 	amd.Set(next)
-	writeAPI(w, http.StatusOK, apiResponse{Success: true, Message: "AMD config saved"})
+	writeAPI(w, http.StatusOK, apiResponse{Success: true, Message: "AMDCloud config saved"})
 }
 
 // amdCloneConfig 写时复制：拷贝运行时字段（路由表/绑定/用量/冷却）到新配置。
@@ -538,7 +538,7 @@ func amdTestKey(index int, modelID string) (map[string]any, string) {
 	return result, "active"
 }
 
-// clearAMDKeysForDataDelete 清空 AMD key 池与绑定/路由/用量表（保留 baseURL
+// clearAMDKeysForDataDelete 清空 AMDCloud key 池与绑定/路由/用量表（保留 baseURL
 // 与平台设置）。
 func clearAMDKeysForDataDelete() int {
 	cur, next := amdCloneConfig()

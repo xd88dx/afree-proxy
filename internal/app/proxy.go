@@ -222,7 +222,7 @@ func StartProxy(host string, port int) error {
 		}
 		// 合并 OpenRouter 免费模型（oprt: 前缀）。
 		data = append(data, orModelList()...)
-		// 合并 AMD Radeon Cloud 免费模型（amd: 前缀）。
+		// 合并 AMDCloud 免费模型（amd: 前缀）。
 		data = append(data, amdModelList()...)
 		// 合并 TokenHarbor 免费模型（tkhb: 前缀）。
 		data = append(data, thModelList()...)
@@ -323,7 +323,7 @@ func StartProxy(host string, port int) error {
 			return
 		}
 
-		// AMD Radeon Cloud 路由：amd:<model-id> 前缀（Public Free Model APIs key 池）
+		// AMDCloud 路由：amd:<model-id> 前缀（Public Free Model APIs key 池）
 		if amd.HasPrefix(model) {
 			handleAMDChat(w, r, params)
 			return

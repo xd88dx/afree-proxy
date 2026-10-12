@@ -116,7 +116,7 @@ func registerAdminRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/admin/api/openrouter/keys/test", adminCORS(auth(handleOrKeyTest)))
 	mux.HandleFunc("/admin/api/openrouter/keys/proxy", adminCORS(auth(handleOrKeySetProxy)))
 	mux.HandleFunc("/admin/api/openrouter/keys/proxy/clear", adminCORS(auth(handleOrKeyClearProxies)))
-	// AMD Radeon Cloud 平台（key 池，amd: 前缀）：配置/模型/key 管理/测试/代理绑定
+	// AMDCloud 平台（key 池，amd: 前缀）：配置/模型/key 管理/测试/代理绑定
 	mux.HandleFunc("/admin/api/amd/config", adminCORS(auth(handleAMDConfig)))
 	mux.HandleFunc("/admin/api/amd/config/update", adminCORS(auth(handleAMDConfigUpdate)))
 	mux.HandleFunc("/admin/api/amd/models/refresh", adminCORS(auth(handleAMDModelsRefresh)))

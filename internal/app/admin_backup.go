@@ -21,7 +21,7 @@ import (
 // ============ 配置导入导出（全量持久化状态） ============
 //
 // 导出：把所有需要持久化的状态聚合成一个 JSON——六个平台的凭据与配置
-// （Cline 账号、OpenCode key 及启用/绑定、OpenRouter/AMD/TokenHarbor key 池、
+// （Cline 账号、OpenCode key 及启用/绑定、OpenRouter/AMDCloud/TokenHarbor key 池、
 // WorkBuddy config + 凭据文件）、代理池（别名随行）、请求头、调度策略、默认
 // 模型、自定义别名、zen 粘性会话、端点学习结果。文件包含全部凭据，仅经管理
 // 面板鉴权后下载。新平台接入时必须同步补这里的导出/导入段，否则备份丢数据。
@@ -66,9 +66,44 @@ type configBackup struct {
 	Combos          []*Combo                    `json:"combos,omitempty"`
 	// v2 补全的 key 池平台与 WorkBuddy（v1 备份无这些段，导入时保持不动）。
 	OpenRouter  *openrouter.Config  `json:"openrouter,omitempty"`
-	AMD         *amd.Config         `json:"amd,omitempty"`
 	TokenHarbor *tokenharbor.Config `json:"tokenharbor,omitempty"`
 	WorkBuddy   *workbuddyBackup    `json:"workbuddy,omitempty"`
+	// AMDCloud v2 段原名 amd；2026-10-12 随平台改名同步为 amdcloud，并保留
+	// amdCloudLegacy 兼容读取历史备份，见 normalizeAMDCloudSection。
+	AMDCloud *amd.Config `json:"amdcloud,omitempty"`
+	// amdCloudLegacy 只进不出：历史备份里的 "amd" 段（平台改名前的 v2 导出）。
+	// 导出永不产生该键，导入时归一到 AMDCloud。
+	amdCloudLegacy *amd.Config `json:"-"`
+}
+
+// normalizeAMDCloudSection 归一 AMDCloud 段：新键 amdcloud 优先，旧的 amd 段
+// 仅作兼容读取（导出不产生 amd）。两段同时存在时以新键为准。
+func (b *configBackup) normalizeAMDCloudSection() {
+	if b.AMDCloud == nil {
+		b.AMDCloud = b.amdCloudLegacy
+	}
+	b.amdCloudLegacy = nil
+}
+
+// UnmarshalJSON 在标准解码之外额外读一次原文，把历史备份的 "amd" 段收进
+// amdCloudLegacy（json:"-" 不会被标准解码填充）。导出走 MarshalJSON 的默认
+// 行为——amdCloudLegacy 不导出。
+func (b *configBackup) UnmarshalJSON(data []byte) error {
+	type plain configBackup // 避免递归调用本方法
+	var p plain
+	if err := json.Unmarshal(data, &p); err != nil {
+		return err
+	}
+	*b = configBackup(p)
+
+	var raw struct {
+		AMD *amd.Config `json:"amd,omitempty"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	b.amdCloudLegacy = raw.AMD
+	return nil
 }
 
 // handleAdminConfigExport GET /admin/api/config/export
@@ -122,7 +157,7 @@ func handleAdminConfigExport(w http.ResponseWriter, r *http.Request) {
 		Endpoints:       loadZenEndpointsFile(),
 		Combos:          listCombos(),
 		OpenRouter:      openrouter.Get(),
-		AMD:             amd.Get(),
+		AMDCloud:        amd.Get(),
 		TokenHarbor:     tokenharbor.Get(),
 		WorkBuddy:       exportWorkbuddyBackup(),
 	}
@@ -181,6 +216,8 @@ func handleAdminConfigImport(w http.ResponseWriter, r *http.Request) {
 		writeAPI(w, http.StatusBadRequest, apiResponse{Error: fmt.Sprintf("unsupported backup version %d (want 1 or %d)", backup.Version, configBackupVersion)})
 		return
 	}
+	// 平台改名前的备份把 AMDCloud 段写作 "amd"，归一后再按段替换。
+	backup.normalizeAMDCloudSection()
 
 	imported := map[string]int{}
 
@@ -350,8 +387,8 @@ func handleAdminConfigImport(w http.ResponseWriter, r *http.Request) {
 		openrouter.Set(or)
 		imported["openrouterKeys"] = len(or.Keys)
 	}
-	if backup.AMD != nil {
-		amdc := backup.AMD
+	if backup.AMDCloud != nil {
+		amdc := backup.AMDCloud
 		if amdc.KeyRoutingEnabled == nil {
 			amdc.KeyRoutingEnabled = map[string]bool{}
 		}

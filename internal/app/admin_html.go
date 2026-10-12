@@ -285,9 +285,9 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
 <div class="nav-item" data-tab="accounts"><span class="nav-ico"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-6.5 8-6.5s8 2.5 8 6.5"/></svg></span> Cline</div>
 <div class="nav-item" data-tab="opencode"><span class="nav-ico"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14.5 14.5 0 0 1 0 18 14.5 14.5 0 0 1 0-18z"/></svg></span> OpenCode</div>
 <div class="nav-item" data-tab="workbuddy"><span class="nav-ico"><svg viewBox="0 0 24 24"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9L12 3z"/><path d="M12 12l8-4.5M12 12v9M12 12L4 7.5"/></svg></span> WorkBuddy</div>
+<div class="nav-item" data-tab="amdcloud"><span class="nav-ico"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="13" height="13" rx="2"/><path d="M16 9h3l2 3-2 3h-3"/><circle cx="9.5" cy="11.5" r="2.5"/></svg></span> AMDCloud</div>
 <div class="nav-item" data-tab="openrouter"><span class="nav-ico"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8 12h8M12 8v8"/><circle cx="12" cy="12" r="2.5"/></svg></span> OpenRouter</div>
 <div class="nav-item" data-tab="tokenharbor"><span class="nav-ico"><svg viewBox="0 0 24 24"><path d="M4 21V9l8-6 8 6v12"/><path d="M4 21h16"/><path d="M9 21v-6h6v6"/></svg></span> TokenHarbor</div>
-<div class="nav-item" data-tab="radeoncloud"><span class="nav-ico"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="13" height="13" rx="2"/><path d="M16 9h3l2 3-2 3h-3"/><circle cx="9.5" cy="11.5" r="2.5"/></svg></span> RadeonCloud</div>
 <div class="nav-group">Services</div>
 <div class="nav-item" data-tab="proxypool"><span class="nav-ico"><svg viewBox="0 0 24 24"><circle cx="12" cy="5" r="2.5"/><circle cx="5" cy="19" r="2.5"/><circle cx="19" cy="19" r="2.5"/><path d="M12 7.5v4m0 0-5.5 5m5.5-5 5.5 5"/></svg></span> Proxy pool</div>
 <div class="nav-item" data-tab="settings"><span class="nav-ico"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1 1.55V21a2 2 0 1 1-4 0v-.09a1.7 1.7 0 0 0-1-1.55 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.7 1.7 0 0 0 .34-1.87 1.7 1.7 0 0 0-1.55-1H3a2 2 0 1 1 0-4h.09a1.7 1.7 0 0 0 1.55-1 1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.7 1.7 0 0 0 1.87.34h0a1.7 1.7 0 0 0 1-1.55V3a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1 1.55h0a1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87v0a1.7 1.7 0 0 0 1.55 1H21a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.55 1z"/></svg></span> Gateway settings</div>
@@ -319,6 +319,10 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
         <div class="dash-name">WorkBuddy</div>
         <div class="dash-stats" id="dashWb">-</div>
       </div>
+      <div class="dash-card" onclick="switchTab('amdcloud')">
+        <div class="dash-name">AMDCloud</div>
+        <div class="dash-stats" id="dashAmd">-</div>
+      </div>
       <div class="dash-card" onclick="switchTab('openrouter')">
         <div class="dash-name">OpenRouter</div>
         <div class="dash-stats" id="dashOr">-</div>
@@ -326,10 +330,6 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
       <div class="dash-card" onclick="switchTab('tokenharbor')">
         <div class="dash-name">TokenHarbor</div>
         <div class="dash-stats" id="dashTh">-</div>
-      </div>
-      <div class="dash-card" onclick="switchTab('radeoncloud')">
-        <div class="dash-name">RadeonCloud</div>
-        <div class="dash-stats" id="dashAmd">-</div>
       </div>
     </div>
   </div>
@@ -341,8 +341,8 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
       <div class="stat-card"><div class="stat-name">Cline</div><div class="stat-line" id="reqCline">-</div></div>
       <div class="stat-card"><div class="stat-name">OpenCode</div><div class="stat-line" id="reqZen">-</div></div>
       <div class="stat-card"><div class="stat-name">WorkBuddy</div><div class="stat-line" id="reqWb">-</div></div>
+      <div class="stat-card"><div class="stat-name">AMDCloud</div><div class="stat-line" id="reqAmd">-</div></div>
       <div class="stat-card"><div class="stat-name">OpenRouter</div><div class="stat-line" id="reqOr">-</div></div>
-      <div class="stat-card"><div class="stat-name">RadeonCloud</div><div class="stat-line" id="reqAmd">-</div></div>
       <div class="stat-card"><div class="stat-name">TokenHarbor</div><div class="stat-line" id="reqTh">-</div></div>
     </div>
     <div class="hint" style="margin:10px 0 0" id="reqStatsHint">Counted since process start.</div>
@@ -446,9 +446,9 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
       <div class="field" style="margin:0"><label style="margin:0">Cline</label></div>
       <div class="field" style="margin:0"><label style="margin:0">OpenCode</label></div>
       <div class="field" style="margin:0"><label style="margin:0">WorkBuddy</label></div>
+      <div class="field" style="margin:0"><label style="margin:0">AMDCloud</label></div>
       <div class="field" style="margin:0"><label style="margin:0">OpenRouter</label></div>
       <div class="field" style="margin:0"><label style="margin:0">TokenHarbor</label></div>
-      <div class="field" style="margin:0"><label style="margin:0">RadeonCloud</label></div>
       <div class="field" style="margin:0">
         <select id="ppCline"><option value="true">Proxy</option><option value="false">Direct connection</option></select>
       </div>
@@ -459,20 +459,20 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
         <select id="ppWb"><option value="true">Proxy</option><option value="false">Direct connection</option></select>
       </div>
       <div class="field" style="margin:0">
+        <select id="ppAmd"><option value="true">Proxy</option><option value="false">Direct connection</option></select>
+      </div>
+      <div class="field" style="margin:0">
         <select id="ppOr"><option value="true">Proxy</option><option value="false">Direct connection</option></select>
       </div>
       <div class="field" style="margin:0">
         <select id="ppTh"><option value="true">Proxy</option><option value="false">Direct connection</option></select>
       </div>
-      <div class="field" style="margin:0">
-        <select id="ppAmd"><option value="true">Proxy</option><option value="false">Direct connection</option></select>
-      </div>
       <div class="hint" style="margin:0">Cline accounts without proxy bindings follow this switch.</div>
       <div class="hint" style="margin:0">OpenCode keys without proxy bindings follow this switch.</div>
       <div class="hint" style="margin:0">WorkBuddy accounts without proxy bindings follow this switch.</div>
+      <div class="hint" style="margin:0">AMDCloud keys without proxy bindings follow this switch.</div>
       <div class="hint" style="margin:0">OpenRouter keys without proxy bindings follow this switch.</div>
       <div class="hint" style="margin:0">TokenHarbor keys without proxy bindings follow this switch.</div>
-      <div class="hint" style="margin:0">RadeonCloud keys without proxy bindings follow this switch.</div>
     </div>
     <div class="form-actions"><button class="btn btn-primary" onclick="saveGlobalPolicy()">Save</button></div>
   </div>
@@ -570,9 +570,9 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
           <option value="cline" selected>Cline</option>
           <option value="zen">OpenCode</option>
           <option value="workbuddy">WorkBuddy</option>
+          <option value="amd">AMDCloud</option>
           <option value="openrouter">OpenRouter</option>
           <option value="tokenharbor">TokenHarbor</option>
-          <option value="amd">RadeonCloud</option>
         </select>
         <div style="margin-top:18px"><button class="btn btn-sm btn-primary" onclick="saveDefaultModel()">Save</button></div>
       </div>
@@ -645,7 +645,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
     <div class="form-row">
       <div class="field"><label>Alias ID</label><input type="text" id="comboId" placeholder="cline-glm-5.3"></div>
       <div class="field"><label>Platform</label>
-        <select id="comboPlatform" onchange="fillComboModels()"><option value="cline">Cline</option><option value="zen">OpenCode</option><option value="workbuddy">WorkBuddy</option><option value="openrouter">OpenRouter</option><option value="tokenharbor">TokenHarbor</option><option value="amd">RadeonCloud</option></select>
+        <select id="comboPlatform" onchange="fillComboModels()"><option value="cline">Cline</option><option value="zen">OpenCode</option><option value="workbuddy">WorkBuddy</option><option value="amd">AMDCloud</option><option value="openrouter">OpenRouter</option><option value="tokenharbor">TokenHarbor</option></select>
       </div>
       <div class="field" style="flex:2"><label>Target model</label><select id="comboTarget"></select></div>
       <div class="field" style="flex:0 0 auto;display:flex;align-items:flex-end"><label style="display:flex;gap:6px;align-items:center;white-space:nowrap;padding-bottom:8px"><input type="checkbox" id="comboUseProxies"> Use proxy pool</label></div>
@@ -976,8 +976,8 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
   </div>
 </div>
 
-<div id="tab-radeoncloud" class="tab-panel" style="display:none">
-<h2 style="margin-bottom:4px">RadeonCloud</h2>
+<div id="tab-amdcloud" class="tab-panel" style="display:none">
+<h2 style="margin-bottom:4px">AMDCloud</h2>
 <div class="hint" id="amdSummary" style="margin:0 0 16px">Loading...</div>
 
 
@@ -996,7 +996,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
     <div class="flex" style="gap:10px;margin:8px 0;align-items:center;flex-wrap:wrap">
       <label class="hint" style="margin:0">Probe model (used by the Test buttons):</label>
       <select id="amdProbeModel" style="max-width:420px"><option value="">auto — DeepSeek-V4-Flash first</option></select>
-      <button class="btn btn-sm" onclick="refreshAmdModels()" title="Re-sync the model catalog from AMD Radeon Cloud">Refresh models</button>
+      <button class="btn btn-sm" onclick="refreshAmdModels()" title="Re-sync the model catalog from AMDCloud">Refresh models</button>
       <span class="hint" style="margin:0" id="amdModelsCount"></span>
     </div>
     <div class="table-wrap" style="margin-bottom:10px">
@@ -1212,11 +1212,11 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
 
 <dialog id="amdKeyAddDialog">
   <div class="wb-dialog-head">
-    <span>Add AMD keys</span>
+    <span>Add AMDCloud keys</span>
     <button class="btn btn-sm" onclick="closeAmdKeyAddDialog()">Close</button>
   </div>
   <div class="wb-dialog-body">
-    <p class="hint" style="margin-top:0" id="amdKeyAddHint">One AMD Radeon Cloud API key per line (rc-…, issued at the <a href="https://developer.amd.com.cn/radeon/tokenfactory" target="_blank" rel="noopener" style="color:var(--accent)">Token Factory</a>). New keys start with routing disabled — tick Pool to enable.</p>
+    <p class="hint" style="margin-top:0" id="amdKeyAddHint">One AMDCloud API key per line (rc-…, issued at the <a href="https://developer.amd.com.cn/radeon/tokenfactory" target="_blank" rel="noopener" style="color:var(--accent)">Token Factory</a>). New keys start with routing disabled — tick Pool to enable.</p>
     <div class="field">
       <label>API keys (one per line) *</label>
       <textarea id="amdKeyAddInput" rows="5" placeholder="rc-…" style="font-family:'JetBrains Mono',Consolas,monospace"></textarea>
@@ -1788,7 +1788,7 @@ const I18N_ZH = {
   'Global policy saved': '全局策略已保存',
   'WorkBuddy accounts without proxy bindings follow this switch.': 'WorkBuddy 未绑定代理的账号遵循此开关。',
   'OpenRouter keys without proxy bindings follow this switch.': 'OpenRouter 未绑定代理的 key 遵循此开关。',
-  'RadeonCloud keys without proxy bindings follow this switch.': 'RadeonCloud 未绑定代理的 key 遵循此开关。',
+  'AMDCloud keys without proxy bindings follow this switch.': 'AMDCloud 未绑定代理的 key 遵循此开关。',
   'TokenHarbor keys without proxy bindings follow this switch.': 'TokenHarbor 未绑定代理的 key 遵循此开关。',
   'Proxy isolation settings saved': '代理隔离设置已保存',
   'Pool': '启用',
@@ -1849,9 +1849,9 @@ const I18N_ZH = {
   'Recovers ': '恢复于 ',
   'No opencode keys configured': '没有配置任何 opencode key',
   'No OpenRouter keys configured': '没有配置任何 OpenRouter key',
-  'No RadeonCloud keys configured': '没有配置任何 RadeonCloud key',
+  'No AMDCloud keys configured': '没有配置任何 AMDCloud key',
   'No TokenHarbor keys configured': '没有配置任何 TokenHarbor key',
-  // ===== OpenRouter / RadeonCloud / TokenHarbor 页（目录/限流/弹窗） =====
+  // ===== OpenRouter / AMDCloud / TokenHarbor 页（目录/限流/弹窗） =====
   'auto — first free model in the catalog': '自动——目录中第一个免费模型',
   'auto — DeepSeek-V4-Flash first': '自动——优先 DeepSeek-V4-Flash',
   'auto — deepseek-v4.1-flash:free first': '自动——优先 deepseek-v4.1-flash:free',
@@ -1861,19 +1861,19 @@ const I18N_ZH = {
   'Upstream limits: 30 requests/min per key, 8 concurrent per key, 20 requests/min per account.': '上游限制：每 key 30 次/分钟、8 并发，每账号 20 次/分钟。',
   'Upstream limits: 60 requests/min per account, 100 requests/min per IP.': '上游限制：每账号 60 次/分钟，每 IP 100 次/分钟。',
   'Re-sync the free-model catalog from openrouter.ai': '从 openrouter.ai 重新同步免费模型目录',
-  'Re-sync the model catalog from AMD Radeon Cloud': '从 AMD Radeon Cloud 重新同步模型目录',
+  'Re-sync the model catalog from AMDCloud': '从 AMDCloud 重新同步模型目录',
   'Re-sync the free-model catalog from TokenHarbor (needs a key)': '从 TokenHarbor 重新同步免费模型目录（需要 key）',
   'Probe the rate limit; if still limited, stays cooling with a recovery time': '探测限流状态；若仍在限流则保持冷却并显示恢复时间',
   'Add OpenRouter keys': '添加 OpenRouter key',
   'One OpenRouter API key per line (sk-or-v1-…). New keys start with routing disabled — tick Pool to enable.': '每行一个 OpenRouter API key（sk-or-v1-…）。新 key 默认不参与路由——勾选"启用"后生效。',
-  'Add AMD keys': '添加 AMD key',
-  'One AMD Radeon Cloud API key per line (rc-…, issued at the': '每行一个 AMD Radeon Cloud API key（rc-…，获取自',
+  'Add AMDCloud keys': '添加 AMDCloud key',
+  'One AMDCloud API key per line (rc-…, issued at the': '每行一个 AMDCloud API key（rc-…，获取自',
   '). New keys start with routing disabled — tick Pool to enable.': '）。新 key 默认不参与路由——勾选"启用"后生效。',
   'Add TokenHarbor keys': '添加 TokenHarbor key',
   'One TokenHarbor universal key per line (thk_live_…, from the': '每行一个 TokenHarbor 通用 key（thk_live_…，获取自',
   'dashboard': '控制台',
   'OpenRouter config saved': 'OpenRouter 配置已保存',
-  'AMD config saved': 'AMD 配置已保存',
+  'AMDCloud config saved': 'AMDCloud 配置已保存',
   'TokenHarbor config saved': 'TokenHarbor 配置已保存',
   'Catalog refreshed': '目录已刷新',
   'No free models yet — click Refresh models': '暂无免费模型——点"刷新模型"',
@@ -2020,7 +2020,7 @@ function switchTab(name) {
   if (name === 'opencode') { loadOcConfig(); loadOcModels(); loadOcStats(); loadOcSessions(); }
   if (name === 'workbuddy') ensureWorkbuddyConsole();
   if (name === 'openrouter') loadOrConfig();
-  if (name === 'radeoncloud') loadAmdConfig();
+  if (name === 'amdcloud') loadAmdConfig();
   if (name === 'tokenharbor') loadTHConfig();
   if (name === 'combos') { loadCombos(); fillComboModels(); }
   // 把当前页写进 hash：刷新/重开浏览器后 restoreTab 恢复到离开时的页
@@ -3176,8 +3176,8 @@ const BINDING_PAGES = [
   { kind: 'acc', name: 'Cline',  tbody: '#accountTableBody' },
   { kind: 'key', name: 'OpenCode', tbody: '#ocKeysBody' },
   { kind: 'wb',  name: 'WorkBuddy', tbody: '#wbAccountsBody' },
+  { kind: 'amd', name: 'AMDCloud', tbody: '#amdKeysBody', keys: true },
   { kind: 'or',  name: 'OpenRouter', tbody: '#orKeysBody', keys: true },
-  { kind: 'amd', name: 'RadeonCloud', tbody: '#amdKeysBody', keys: true },
   { kind: 'th',  name: 'TokenHarbor', tbody: '#thKeysBody', keys: true }
 ];
 // 各页落盘后的重拉函数：目标页从未打开过（tbody 只有占位行）时先拉一次，
@@ -4648,8 +4648,8 @@ async function orKeyAddFromDialog() {
   }
 }
 
-// ========== AMD page ==========
-// AMD Radeon Cloud key 池（amd: 前缀平台）：协议与 OpenRouter 页同构。
+// ========== AMDCloud page ==========
+// AMDCloud key 池（amd: 前缀平台）：协议与 OpenRouter 页同构。
 let amdCfgCache = {};
 let amdKeySnapshot = {};
 
@@ -4702,7 +4702,7 @@ async function saveAmdConfig() {
   };
   try {
     await api('POST', '/amd/config/update', body);
-    toast(T('AMD config saved'), 'success');
+    toast(T('AMDCloud config saved'), 'success');
     loadAmdConfig();
   } catch (e) { toast(T('Save failed: ') + e.message, 'error'); }
 }
@@ -4750,7 +4750,7 @@ function renderAmdKeyStates(ks) {
           actions +
           routing + '</tr>';
       }).join('')
-    : '<tr><td colspan="7" class="empty">No RadeonCloud keys configured</td></tr>';
+    : '<tr><td colspan="7" class="empty">No AMDCloud keys configured</td></tr>';
   tb.onclick = e => {
     const t = e.target.closest('button[data-amdt]');
     if (t) { testAmdKey(parseInt(t.dataset.amdt, 10), t); return; }
@@ -4912,7 +4912,7 @@ async function amdKeyAddFromDialog() {
 }
 
 // ========== TokenHarbor page ==========
-// TokenHarbor key 池（tkhb: 前缀平台）：协议与 AMD/OpenRouter 页同构。
+// TokenHarbor key 池（tkhb: 前缀平台）：协议与 AMDCloud/OpenRouter 页同构。
 let thCfgCache = {};
 let thKeySnapshot = {};
 
@@ -5034,7 +5034,7 @@ function stageAllTHKeysRouting(enabled) {
     markRowDirty(cb.closest('tr'), 'th');
   });
 }
-// 清空代理（暂存）：全部 key 清绑定 + 路由全部禁用，与 AMD/OpenRouter 页同语义
+// 清空代理（暂存）：全部 key 清绑定 + 路由全部禁用，与 AMDCloud/OpenRouter 页同语义
 function stageClearTHKeyProxies() {
   document.querySelectorAll('#thKeysBody tr').forEach(row => {
     const main = row.querySelector('.eg-input[data-eg="th"][data-slot="main"]');
@@ -5204,7 +5204,7 @@ function renderOcSessions(s) {
 }
 
 // ========== Combos (alias models) ==========
-const comboModels = { cline: [], zen: [], workbuddy: [], openrouter: [], amd: [], tokenharbor: [] };
+const comboModels = { cline: [], zen: [], workbuddy: [], amd: [], openrouter: [], tokenharbor: [] };
 
 async function fillComboModels() {
   const platform = _('comboPlatform').value;

@@ -188,7 +188,7 @@ func validateCombo(id, platform, target string) error {
 		}
 	case "amd":
 		if _, ok := amd.Resolve(target); !ok {
-			return fmt.Errorf("target %q is not an AMD Radeon Cloud model (cross-platform selection is not allowed)", target)
+			return fmt.Errorf("target %q is not an AMDCloud model (cross-platform selection is not allowed)", target)
 		}
 	case "tokenharbor":
 		if _, ok := tokenharbor.Resolve(target); !ok {

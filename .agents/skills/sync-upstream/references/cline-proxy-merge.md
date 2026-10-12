@@ -12,7 +12,7 @@
 
 ## 2. 本地与上游的架构差异（冲突的根源）
 
-- 本仓已重构为**多平台网关**：cline（原生账号池）+ zen（key 池）+ WorkBuddy（vendor）+ OpenRouter/AMD/TokenHarbor（key 池），上游是单网关。
+- 本仓已重构为**多平台网关**：cline（原生账号池）+ zen（key 池）+ WorkBuddy（vendor）+ OpenRouter/AMDCloud/TokenHarbor（key 池），上游是单网关。
 - **面板完全本地化**（i18n 双语、暂存编辑模型、独立 session 面板）；上游是纯英文单文件面板。上游面板的结构性改动**不整体采纳**，只摘数据能力。
 - `zenConfigData` 无 `Enabled` 字段（OpenCode 上游常开语义，本地删除过）。
 - 代理隔离体系（KeyBindings/ProxyIsolation/BackupProxyEnabled/zenProxyBinding）是本地独有。

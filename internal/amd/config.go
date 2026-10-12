@@ -12,18 +12,18 @@ import (
 
 // ============ 配置与数据模型 ============
 //
-// AMD Radeon Cloud（developer.amd.com.cn/radeon/tokenfactory 签发 key 的
+// AMDCloud（developer.amd.com.cn/radeon/tokenfactory 签发 key 的
 // Public Free Model APIs）是纯 key 池平台：rc- 前缀的 API key 按池调度策略
 // 轮转，未绑定 key 走共享代理池（代理池页下拉），隔离模式下每 key 可绑
 // 主/辅出口。结构与 internal/openrouter 同构，自成独立池。
 
-// Config 是 AMD 平台的全部可配置状态，落盘于 DATA_DIR/.amd-config.json。
+// Config 是 AMDCloud 平台的全部可配置状态，落盘于 DATA_DIR/.amd-config.json。
 type Config struct {
 	// UseProxies 未绑定 key 是否走共享代理池（代理池页下拉）。nil=缺省=走池。
 	UseProxies *bool `json:"useProxies,omitempty"`
 	// BaseURL 上游 OpenAI 兼容端点，默认官方 Public Free Model APIs。
 	BaseURL string `json:"baseURL"`
-	// Keys 多 key 池，请求按池调度策略轮转。AMD key 形如 rc-<48 hex>。
+	// Keys 多 key 池，请求按池调度策略轮转。AMDCloud key 形如 rc-<48 hex>。
 	Keys []string `json:"keys,omitempty"`
 	// KeyRoutingEnabled 路由参与表：key 明文 -> 是否进入请求轮转（面板"启用"列）。
 	// nil/缺项 = 参与。新增 key 默认 false（各平台统一口径），需面板勾选启用。
@@ -47,7 +47,7 @@ type Binding struct {
 	Backup string `json:"backup,omitempty"`
 }
 
-// DefaultAPIBase AMD Radeon Cloud Public Free Model APIs 端点
+// DefaultAPIBase AMDCloud Public Free Model APIs 端点
 // （developer.amd.com.cn/radeon/tokenfactory 是控制台页面，API 根在 /radeon/api/v1）。
 const DefaultAPIBase = "https://developer.amd.com.cn/radeon/api/v1"
 
@@ -69,7 +69,7 @@ var SeedModels = []Model{
 	{ID: "MiniCPM5-2B", Name: "MiniCPM5-2B", Context: 131072, ToolCall: true},
 }
 
-// Model AMD 免费模型条目（/v1/models 合并与面板展示用）。
+// Model AMDCloud 免费模型条目（/v1/models 合并与面板展示用）。
 type Model struct {
 	ID       string
 	Name     string
