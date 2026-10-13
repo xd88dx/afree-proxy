@@ -2602,7 +2602,7 @@ async function pollWorkbuddyOAuth(oauthId) {
 function copyWorkbuddyOAuthUrl() {
   const value = _('wbOAuthUrl').value;
   if (!value) return;
-  copyText(value, 'Authorization link copied');
+  copyText(value, 'Authorization link copied', _('wbOAuthUrl'));
 }
 function openWorkbuddyOAuthUrl() {
   const value = _('wbOAuthUrl').value;
@@ -3612,19 +3612,35 @@ async function deleteAllData() {
   } catch (e) { toast(T('Delete failed: ') + e.message, 'error'); }
 }
 
-function copyText(t, okMsg) {
+function copyText(t, okMsg, fallbackEl) {
   const done = () => toast(okMsg || 'Copied to clipboard', 'success');
+  const fail = () => {
+    // 复制被浏览器策略挡下时必须如实报错，不能谎报成功——之前无条件弹
+    // 「已复制」，用户粘贴时才发现剪贴板是空的。选中来源输入框方便手动 Ctrl+C。
+    if (fallbackEl) { fallbackEl.focus(); fallbackEl.select(); }
+    toast(T('Copy failed'), 'error');
+  };
   // clipboard API 只在 secure context（https/localhost）可用；navigator.clipboard 为
   // undefined 时直接调用会同步抛错，.catch 接不住，必须先判空再走 execCommand 降级。
   if (navigator.clipboard && window.isSecureContext) {
-    navigator.clipboard.writeText(t).then(done, () => { legacyCopy(t); done(); });
+    navigator.clipboard.writeText(t).then(done, () => { if (legacyCopy(t)) done(); else fail(); });
     return;
   }
-  legacyCopy(t); done();
+  if (legacyCopy(t)) done(); else fail();
 }
 function legacyCopy(t) {
   const ta = document.createElement('textarea');
-  ta.value = t; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove();
+  ta.value = t;
+  // 模态 <dialog> 打开时其背景元素全部 inert：挂到 body 的 textarea 拿不到焦点，
+  // select() 选区为空，execCommand('copy') 静默失败（实测返回 false）——添加账号
+  // 弹窗里的 Copy 按钮正是这种情况。挂到焦点所在的 dialog 内即可绕开；无弹窗时
+  // 退回 body（key 列表等页面内复制不受影响）。
+  const host = document.activeElement && document.activeElement.closest('dialog');
+  (host || document.body).appendChild(ta);
+  ta.focus(); ta.select();
+  const ok = document.execCommand('copy');
+  ta.remove();
+  return ok;
 }
 
 // ========== Request logs ==========
