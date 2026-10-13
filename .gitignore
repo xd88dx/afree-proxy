@@ -36,6 +36,7 @@ bt-data/
 # State files if DATA_DIR points at the repo root
 cline-seed.json
 combos.json
+.other-config.json
 .session-secret
 requests.jsonl
 

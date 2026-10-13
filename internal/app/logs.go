@@ -19,6 +19,7 @@ import (
 	"afree-proxy/internal/amd"
 	"afree-proxy/internal/kit"
 	openrouter "afree-proxy/internal/openrouter"
+	"afree-proxy/internal/other"
 	"afree-proxy/internal/tokenharbor"
 )
 
@@ -31,7 +32,7 @@ type routeStat struct {
 }
 
 var (
-	routeStats    = map[string]*routeStat{"cline": {}, "zen": {}, "workbuddy": {}, "openrouter": {}, "amd": {}, "tokenharbor": {}}
+	routeStats    = map[string]*routeStat{"cline": {}, "zen": {}, "workbuddy": {}, "openrouter": {}, "amd": {}, "tokenharbor": {}, "other": {}}
 	reqStatsStart = time.Now()
 )
 
@@ -320,7 +321,10 @@ func requestLogMiddleware(next http.Handler) http.Handler {
 		if sw.status == 0 {
 			sw.status = http.StatusOK
 		}
-		route := "other"
+		// 未分类流量的兜底值（不进 routeStats；platform 路由之外的 /v1
+		// 请求理论上不存在，保留兜底只为日志分类不空）。
+		route := "unclassified"
+		_, _, otherHit := other.ResolvePrefix(model)
 		switch {
 		case strings.HasPrefix(r.URL.Path, "/admin") || strings.Contains(r.URL.Path, "health"):
 			route = "admin"
@@ -334,6 +338,8 @@ func requestLogMiddleware(next http.Handler) http.Handler {
 			route = "amd"
 		case tokenharbor.HasPrefix(model):
 			route = "tokenharbor"
+		case otherHit:
+			route = "other"
 		case model != "":
 			route = "cline"
 		case strings.Contains(r.URL.Path, "models"):

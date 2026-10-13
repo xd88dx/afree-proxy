@@ -24,6 +24,7 @@ func handleAdminDeleteAllData(w http.ResponseWriter, r *http.Request) {
 	orKeys := clearOpenrouterKeysForDataDelete()
 	amdKeys := clearAMDKeysForDataDelete()
 	thKeys := clearTokenHarborKeysForDataDelete()
+	otherKeys := clearOtherKeysForDataDelete()
 	sessions := clearZenSessionsForDataDelete()
 	endpoints := clearZenEndpointsForDataDelete()
 	workbuddyAccounts := clearWorkbuddyAccountsForDataDelete()
@@ -36,13 +37,14 @@ func handleAdminDeleteAllData(w http.ResponseWriter, r *http.Request) {
 		Success: true,
 		Message: "All persisted data deleted",
 		Data: map[string]any{
-		"clineAccounts":     clineAccounts,
-		"clientKeys":        clientKeys,
-		"opencodeKeys":      zenKeys,
-		"openrouterKeys":    orKeys,
-		"amdKeys":           amdKeys,
-		"tokenharborKeys":   thKeys,
-		"sessions":          sessions,
+			"clineAccounts":     clineAccounts,
+			"clientKeys":        clientKeys,
+			"opencodeKeys":      zenKeys,
+			"openrouterKeys":    orKeys,
+			"amdKeys":           amdKeys,
+			"tokenharborKeys":   thKeys,
+			"otherKeys":         otherKeys,
+			"sessions":          sessions,
 			"endpoints":         endpoints,
 			"workbuddyAccounts": workbuddyAccounts,
 			"proxies":           proxies,

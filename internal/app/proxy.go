@@ -5,6 +5,7 @@ import (
 	"afree-proxy/internal/cline"
 	"afree-proxy/internal/kit"
 	openrouter "afree-proxy/internal/openrouter"
+	"afree-proxy/internal/other"
 	"afree-proxy/internal/tokenharbor"
 	"bufio"
 	"bytes"
@@ -95,6 +96,7 @@ func StartProxy(host string, port int) error {
 	initOpenRouter()
 	initAMD()
 	initTokenHarbor()
+	initOther()
 	initStats()
 	LoadRequestLogsFromFile()
 	go cleanupCompactStates()
@@ -226,6 +228,8 @@ func StartProxy(host string, port int) error {
 		data = append(data, amdModelList()...)
 		// 合并 TokenHarbor 免费模型（tkhb: 前缀）。
 		data = append(data, thModelList()...)
+		// 合并 Other 子平台勾选模型（各子平台自定义前缀）。
+		data = append(data, otherModelList()...)
 		// combo 别名模型（仪表盘自定义的虚拟模型 ID）
 		for _, c := range listCombos() {
 			owned := "cline"
@@ -332,6 +336,12 @@ func StartProxy(host string, port int) error {
 		// TokenHarbor 路由：tkhb:<model-id> 前缀（聚合网关 key 池，:free 模型）
 		if tokenharbor.HasPrefix(model) {
 			handleTHChat(w, r, params)
+			return
+		}
+
+		// Other 路由：<prefix>:<model-id>（动态子平台 key 池，小企业上游）
+		if p, _, ok := other.ResolvePrefix(model); ok && p != nil {
+			handleOtherChat(w, r, params)
 			return
 		}
 

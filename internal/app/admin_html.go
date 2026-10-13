@@ -189,6 +189,18 @@ tr[draggable="true"]:active{cursor:grabbing}
 .empty{padding:30px;text-align:center;color:var(--text2)}
 .empty-state{padding:44px 20px;text-align:center;color:var(--text2)}
 .empty-state .icon{font-size:40px;margin-bottom:10px;display:block;opacity:.8}
+/* ===== Multi-select (Other models) ===== */
+.multi-select{position:relative;max-width:100%}
+.multi-select .ms-toggle{width:100%;text-align:left;background:var(--card);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:8px 10px;cursor:pointer;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.multi-select .ms-panel{position:absolute;z-index:60;top:calc(100% + 4px);left:0;right:0;background:var(--card);border:1px solid var(--border);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.25);overflow:hidden}
+.multi-select .ms-search{padding:8px 10px;border-bottom:1px solid var(--border)}
+.multi-select .ms-search input{width:100%;background:transparent;border:none;outline:none;color:var(--text);font-size:13px}
+.multi-select .ms-list{max-height:260px;overflow-y:auto;padding:6px 0}
+.multi-select .ms-item{display:flex;gap:8px;align-items:center;padding:6px 12px;cursor:pointer;font-size:13px;white-space:nowrap}
+.multi-select .ms-item:hover{background:var(--bg2)}
+.multi-select .ms-item span{overflow:hidden;text-overflow:ellipsis}
+.multi-select .ms-empty{padding:10px 12px;color:var(--text2);font-size:12px}
+dialog .field label{display:block;font-size:12px;color:var(--text2);margin-bottom:5px}
 .key-display{background:rgba(0,0,0,.3);padding:9px 13px;border-radius:var(--radius-sm);border:1px solid var(--border);font-family:'JetBrains Mono','Cascadia Code',Consolas,monospace;font-size:12px;word-break:break-all;cursor:pointer;transition:.15s}
 .key-display:hover{border-color:var(--accent)}
 .model-tag{display:inline-block;padding:2px 9px;border-radius:6px;font-size:11px;background:rgba(255,255,255,.06);color:var(--text2);margin:2px;letter-spacing:.02em}
@@ -288,6 +300,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
 <div class="nav-item" data-tab="amdcloud"><span class="nav-ico"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="13" height="13" rx="2"/><path d="M16 9h3l2 3-2 3h-3"/><circle cx="9.5" cy="11.5" r="2.5"/></svg></span> AMDCloud</div>
 <div class="nav-item" data-tab="openrouter"><span class="nav-ico"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8 12h8M12 8v8"/><circle cx="12" cy="12" r="2.5"/></svg></span> OpenRouter</div>
 <div class="nav-item" data-tab="tokenharbor"><span class="nav-ico"><svg viewBox="0 0 24 24"><path d="M4 21V9l8-6 8 6v12"/><path d="M4 21h16"/><path d="M9 21v-6h6v6"/></svg></span> TokenHarbor</div>
+<div class="nav-item" data-tab="other"><span class="nav-ico"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><circle cx="17.5" cy="17.5" r="3.5"/></svg></span> Other</div>
 <div class="nav-group">Services</div>
 <div class="nav-item" data-tab="proxypool"><span class="nav-ico"><svg viewBox="0 0 24 24"><circle cx="12" cy="5" r="2.5"/><circle cx="5" cy="19" r="2.5"/><circle cx="19" cy="19" r="2.5"/><path d="M12 7.5v4m0 0-5.5 5m5.5-5 5.5 5"/></svg></span> Proxy pool</div>
 <div class="nav-item" data-tab="settings"><span class="nav-ico"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1 1.55V21a2 2 0 1 1-4 0v-.09a1.7 1.7 0 0 0-1-1.55 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.7 1.7 0 0 0 .34-1.87 1.7 1.7 0 0 0-1.55-1H3a2 2 0 1 1 0-4h.09a1.7 1.7 0 0 0 1.55-1 1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.7 1.7 0 0 0 1.87.34h0a1.7 1.7 0 0 0 1-1.55V3a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1 1.55h0a1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87v0a1.7 1.7 0 0 0 1.55 1H21a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.55 1z"/></svg></span> Gateway settings</div>
@@ -331,6 +344,10 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
         <div class="dash-name">TokenHarbor</div>
         <div class="dash-stats" id="dashTh">-</div>
       </div>
+      <div class="dash-card" onclick="switchTab('other')">
+        <div class="dash-name">Other</div>
+        <div class="dash-stats" id="dashOther">-</div>
+      </div>
     </div>
   </div>
 </div>
@@ -344,6 +361,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
       <div class="stat-card"><div class="stat-name">AMDCloud</div><div class="stat-line" id="reqAmd">-</div></div>
       <div class="stat-card"><div class="stat-name">OpenRouter</div><div class="stat-line" id="reqOr">-</div></div>
       <div class="stat-card"><div class="stat-name">TokenHarbor</div><div class="stat-line" id="reqTh">-</div></div>
+      <div class="stat-card"><div class="stat-name">Other</div><div class="stat-line" id="reqOther">-</div></div>
     </div>
     <div class="hint" style="margin:10px 0 0" id="reqStatsHint">Counted since process start.</div>
   </div>
@@ -442,13 +460,14 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
 <div class="section">
   <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></span> Global policy</div>
   <div class="section-body">
-    <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr 1fr 1fr;gap:10px 18px;align-items:center">
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr 1fr 1fr 1fr;gap:10px 18px;align-items:center">
       <div class="field" style="margin:0"><label style="margin:0">Cline</label></div>
       <div class="field" style="margin:0"><label style="margin:0">OpenCode</label></div>
       <div class="field" style="margin:0"><label style="margin:0">WorkBuddy</label></div>
       <div class="field" style="margin:0"><label style="margin:0">AMDCloud</label></div>
       <div class="field" style="margin:0"><label style="margin:0">OpenRouter</label></div>
       <div class="field" style="margin:0"><label style="margin:0">TokenHarbor</label></div>
+      <div class="field" style="margin:0"><label style="margin:0">Other</label></div>
       <div class="field" style="margin:0">
         <select id="ppCline"><option value="true">Proxy</option><option value="false">Direct connection</option></select>
       </div>
@@ -467,12 +486,16 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
       <div class="field" style="margin:0">
         <select id="ppTh"><option value="true">Proxy</option><option value="false">Direct connection</option></select>
       </div>
+      <div class="field" style="margin:0">
+        <select id="ppOther"><option value="true">Proxy</option><option value="false">Direct connection</option></select>
+      </div>
       <div class="hint" style="margin:0">Cline accounts without proxy bindings follow this switch.</div>
       <div class="hint" style="margin:0">OpenCode keys without proxy bindings follow this switch.</div>
       <div class="hint" style="margin:0">WorkBuddy accounts without proxy bindings follow this switch.</div>
       <div class="hint" style="margin:0">AMDCloud keys without proxy bindings follow this switch.</div>
       <div class="hint" style="margin:0">OpenRouter keys without proxy bindings follow this switch.</div>
       <div class="hint" style="margin:0">TokenHarbor keys without proxy bindings follow this switch.</div>
+      <div class="hint" style="margin:0">Other sub-platform keys without proxy bindings follow this switch.</div>
     </div>
     <div class="form-actions"><button class="btn btn-primary" onclick="saveGlobalPolicy()">Save</button></div>
   </div>
@@ -1110,6 +1133,103 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
   </div>
 </div>
 
+<div id="tab-other" class="tab-panel" style="display:none">
+<h2 style="margin-bottom:4px">Other</h2>
+<div class="hint" id="otherSummary" style="margin:0 0 16px">Loading...</div>
+
+<div class="section">
+  <div class="section-body">
+    <div class="form-row">
+      <div class="field" style="margin:0">
+        <label>Sub-platform</label>
+        <div style="display:flex;gap:8px;align-items:center">
+          <select id="otherPlatformSelect" style="flex:1;min-width:0"><option value="">— no sub-platform yet —</option></select>
+          <button class="btn btn-primary btn-sm" onclick="openOtherPlatformDialog()">New sub-platform</button>
+          <button class="btn btn-sm btn-danger" id="otherPlatformDelBtn" onclick="deleteOtherPlatform()" title="Delete this sub-platform and all its keys">Delete</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="otherPlatformBody" style="display:none">
+
+<div class="section">
+  <div class="section-body">
+    <div class="form-row">
+      <div class="field"><label>Name</label><input type="text" id="otherName" placeholder="Acme Cloud"></div>
+      <div class="field"><label>Model prefix (required)</label><input type="text" id="otherPrefix" placeholder="acme" style="font-family:'JetBrains Mono',Consolas,monospace"></div>
+    </div>
+    <div class="form-row">
+      <div class="field" style="margin:0">
+        <label>Base URL</label>
+        <div style="display:flex;gap:8px;align-items:center">
+          <input type="text" id="otherBaseURL" placeholder="https://api.acme.com/v1" style="flex:1;min-width:0">
+          <button class="btn btn-primary btn-sm" onclick="saveOtherPlatformConfig()">Confirm</button>
+        </div>
+      </div>
+    </div>
+    <div class="hint" style="margin-top:6px">Models are exposed as <code>&lt;prefix&gt;:&lt;model-id&gt;</code>. The prefix must be unique and must not collide with built-in prefixes (zen, wbcn, wbgb, cline-free/, amd, tkhb, oprt) or another sub-platform.</div>
+    <div class="form-row" style="margin-top:10px">
+      <div class="field"><label>Max concurrency</label><input type="text" id="otherMaxConc" placeholder="8"></div>
+      <div class="field"><label>Rate-limit retries</label><input type="text" id="otherRetries" placeholder="3"></div>
+      <div class="field" style="flex:0 0 auto;display:flex;align-items:flex-end"><button class="btn btn-sm" onclick="saveOtherRateLimit()">Save rate-limit config</button></div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 5-6"/></svg></span> Models</div>
+  <div class="section-body">
+    <div class="flex" style="gap:10px;margin:0 0 10px;align-items:center;flex-wrap:wrap">
+      <button class="btn btn-sm" onclick="refreshOtherModels()" title="Re-sync the model catalog from the upstream (needs a key)">Refresh models</button>
+      <input type="text" id="otherManualModel" placeholder="add model id manually" style="max-width:320px;font-family:'JetBrains Mono',Consolas,monospace">
+      <button class="btn btn-sm" onclick="addOtherManualModel()">Add model</button>
+      <span class="hint" style="margin:0" id="otherModelsCount"></span>
+    </div>
+    <label>Available models (tick to expose)</label>
+    <div class="multi-select" id="otherModelSelect">
+      <button type="button" class="ms-toggle" id="otherModelSelectToggle" onclick="toggleOtherModelSelect()">—</button>
+      <div class="ms-panel" id="otherModelSelectPanel" style="display:none">
+        <div class="ms-search"><input type="text" id="otherModelSelectSearch" placeholder="Search models…" oninput="filterOtherModelSelect()"></div>
+        <div class="ms-list" id="otherModelSelectList"></div>
+      </div>
+    </div>
+    <div class="hint" style="margin-top:6px">Only ticked models are listed in /v1/models and accepted by the gateway; unticked models return 400. Changes save automatically. With no key, add models manually.</div>
+    <div class="flex" style="gap:10px;margin:10px 0 0;align-items:center;flex-wrap:wrap">
+      <label class="hint" style="margin:0">Probe model (used by the Test buttons):</label>
+      <select id="otherProbeModel" style="max-width:420px"><option value="">auto — first enabled model</option></select>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <div class="section-body">
+    <div class="table-wrap" style="margin-bottom:10px">
+      <table>
+        <thead><tr><th style="width:50px">#</th><th style="width:150px">Key</th><th style="width:70px">Usage</th><th>Cooldown</th><th title="Main exit first, backup as fallback; both down = row skipped (isolation).">Proxy binding</th><th style="width:130px"></th><th style="text-align:center" title="Routing participation. New rows start disabled — tick Pool to enable.">Pool</th></tr></thead>
+        <tbody id="otherKeysBody"><tr><td colspan="7" class="empty">No keys configured</td></tr></tbody>
+      </table>
+    </div>
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin:10px 6px 4px">
+      <button class="btn btn-primary btn-sm" onclick="openOtherKeyAddDialog()">Add credentials</button>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-sm" onclick="stageAllOtherKeysRouting(true)">Enable all</button>
+        <button class="btn btn-sm" onclick="stageAllOtherKeysRouting(false)">Disable all</button>
+        <button class="btn btn-sm" onclick="stageClearOtherKeyProxies()" title="Stage only — click Save to apply. Clears bindings and disables every row.">Clear bindings</button>
+        <button class="btn btn-sm" id="otherTestBtn" onclick="batchTestOtherKeys()" title="Run the Test probe on every row.">Test all</button>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-sm btn-warn" id="otherResetBtn" onclick="resetOtherKeyEdits()" title="Discard staged changes and reload the last saved state">Discard</button>
+        <button class="btn btn-primary btn-sm" id="otherKeysSaveBtn" onclick="saveOtherKeyEdits()">Save</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+</div>
+</div>
+
 </div>
 </div>
 
@@ -1242,6 +1362,51 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
     <div class="wb-dialog-actions">
       <button class="btn btn-primary" id="thKeyAddSubmit" onclick="thKeyAddFromDialog()">Save</button>
       <button class="btn" onclick="closeTHKeyAddDialog()">Cancel</button>
+    </div>
+  </div>
+</dialog>
+
+<dialog id="otherPlatformDialog">
+  <div class="wb-dialog-head">
+    <span>New sub-platform</span>
+    <button class="btn btn-sm" onclick="closeOtherPlatformDialog()">Close</button>
+  </div>
+  <div class="wb-dialog-body">
+    <p class="hint" style="margin-top:0">Create an entry for an upstream provider: shared Base URL, its API keys, and the model prefix its models are exposed under.</p>
+    <div class="field">
+      <label>Name *</label>
+      <input type="text" id="opName" placeholder="Acme Cloud">
+    </div>
+    <div class="field">
+      <label>Model prefix (required, unique) *</label>
+      <input type="text" id="opPrefix" placeholder="acme" style="font-family:'JetBrains Mono',Consolas,monospace">
+    </div>
+    <div class="field">
+      <label>Base URL</label>
+      <input type="text" id="opBaseURL" placeholder="https://api.acme.com/v1" style="font-family:'JetBrains Mono',Consolas,monospace">
+    </div>
+    <p class="hint" style="margin:0">Models are exposed as <code>&lt;prefix&gt;:&lt;model-id&gt;</code>. Must not collide with built-in prefixes (zen, wbcn, wbgb, cline-free/, amd, tkhb, oprt) or another sub-platform. Base URL can also be filled in later.</p>
+    <div class="wb-dialog-actions">
+      <button class="btn btn-primary" onclick="doOtherPlatformCreate()">Create</button>
+      <button class="btn" onclick="closeOtherPlatformDialog()">Cancel</button>
+    </div>
+  </div>
+</dialog>
+
+<dialog id="otherKeyAddDialog">
+  <div class="wb-dialog-head">
+    <span>Add API keys</span>
+    <button class="btn btn-sm" onclick="closeOtherKeyAddDialog()">Close</button>
+  </div>
+  <div class="wb-dialog-body">
+    <p class="hint" style="margin-top:0" id="otherKeyAddHint">One API key per line for this sub-platform. New keys start with routing disabled — tick Pool to enable.</p>
+    <div class="field">
+      <label>API keys (one per line) *</label>
+      <textarea id="otherKeyAddInput" rows="5" placeholder="sk-…" style="font-family:'JetBrains Mono',Consolas,monospace"></textarea>
+    </div>
+    <div class="wb-dialog-actions">
+      <button class="btn btn-primary" onclick="otherKeyAddFromDialog()">Save</button>
+      <button class="btn" onclick="closeOtherKeyAddDialog()">Cancel</button>
     </div>
   </div>
 </dialog>
@@ -1894,7 +2059,54 @@ const I18N_ZH = {
   'Check complete': '检查完成',
   'cooldown': '冷却中',
   'active': '可用',
-  'expired': '已失效'
+  'expired': '已失效',
+  // Other 页（多子平台）
+  'Other': 'Other',
+  'Sub-platform': '子平台',
+  'New sub-platform': '新建子平台',
+  'Delete sub-platform': '删除子平台',
+  'Delete key': '删除密钥',
+  'Delete this key': '删除此密钥',
+  'This key will be removed from the pool. This cannot be undone.': '该密钥将从池中移除，此操作不可撤销。',
+  'All its keys will be removed. This cannot be undone.': '其下所有密钥将被移除，此操作不可撤销。',
+  'Name': '名称',
+  'Model prefix (required)': '模型前缀（必填）',
+  'Model prefix (required, unique) *': '模型前缀（必填，唯一）*',
+  'Name and prefix are required': '名称和前缀为必填项',
+  '— no sub-platform yet —': '— 暂无子平台 —',
+  'No sub-platform yet. Click "New sub-platform" to add one.': '暂无子平台。点击"新建子平台"添加一个。',
+  'Select a sub-platform on the left.': '在左侧选择一个子平台。',
+  ' sub-platform(s). Models are exposed as <prefix>:<model-id>': ' 个子平台。模型以 <prefix>:<model-id> 形式对外暴露',
+  'Available models (tick to expose)': '可用模型（勾选以启用）',
+  'Only ticked models are listed in /v1/models and accepted by the gateway; unticked models return 400. Changes save automatically. With no key, add models manually.': '仅勾选的模型会出现在 /v1/models 并被网关接受；未勾选的请求返回 400。更改自动保存。无密钥时可手动添加模型。',
+  'Refresh models': '刷新模型',
+  'Re-sync the model catalog from the upstream (needs a key)': '重新从上游同步模型目录（需要密钥）',
+  'Syncing models…': '正在同步模型…',
+  'Model catalog synced': '模型目录已同步',
+  'Add model': '添加模型',
+  'add model id manually': '手动输入模型 id',
+  'Enter a model id': '请输入模型 id',
+  'No models yet — add manually or add a key and click Refresh models': '暂无模型 —— 可手动添加，或添加密钥后点击"刷新模型"',
+  ' enabled': ' 已启用',
+  'none enabled': '未启用',
+  'auto — first enabled model': '自动 —— 第一个已启用模型',
+  'first enabled model': '第一个已启用模型',
+  'Models updated': '模型已更新',
+  'Delete this sub-platform and all its keys': '删除该子平台及其所有密钥',
+  'Create': '创建',
+  'Created': '已创建',
+  'Added': '已添加',
+  ' keys': ' 个密钥',
+  'Deleted': '已删除',
+  'Batch test done': '批量测试完成',
+  'Test passed': '测试通过',
+  'Saved': '已保存',
+  'No keys configured': '未配置密钥',
+  'Send a real probe request': '发送真实探测请求',
+  'Create an entry for an upstream provider: shared Base URL, its API keys, and the model prefix its models are exposed under.': '为上游厂商创建条目：共享的 Base URL、其 API 密钥，以及模型对外暴露的前缀。',
+  'Models are exposed as <prefix>:<model-id>. Must not collide with built-in prefixes (zen, wbcn, wbgb, cline-free/, amd, tkhb, oprt) or another sub-platform.': '模型以 <prefix>:<model-id> 形式暴露。前缀不得与内置前缀（zen、wbcn、wbgb、cline-free/、amd、tkhb、oprt）或其他子平台冲突。',
+  'Models are exposed as <prefix>:<model-id>. The prefix must be unique and must not collide with built-in prefixes (zen, wbcn, wbgb, cline-free/, amd, tkhb, oprt) or another sub-platform.': '模型以 <prefix>:<model-id> 形式对外暴露。前缀必须唯一，且不得与内置前缀（zen、wbcn、wbgb、cline-free/、amd、tkhb、oprt）或其他子平台冲突。',
+  'One API key per line for this sub-platform. New keys start with routing disabled — tick Pool to enable.': '每行一个 API 密钥。新密钥默认不参与路由 —— 勾选 Pool 启用。'
 };
 function T(s) { return LANG === 'zh' ? (I18N_ZH[s] || s) : s; }
 function toggleLang() {
@@ -2022,6 +2234,7 @@ function switchTab(name) {
   if (name === 'openrouter') loadOrConfig();
   if (name === 'amdcloud') loadAmdConfig();
   if (name === 'tokenharbor') loadTHConfig();
+  if (name === 'other') loadOtherConfig();
   if (name === 'combos') { loadCombos(); fillComboModels(); }
   // 把当前页写进 hash：刷新/重开浏览器后 restoreTab 恢复到离开时的页
   try { history.replaceState(null, '', '#' + name); } catch (e) { /* ignore */ }
@@ -2761,6 +2974,18 @@ async function loadStats() {
     setDash('dashTh', 'keys', ks.length, ks.filter(k => k.routingEnabled !== false).length, ks.filter(k => k.cooling).length);
   } catch (e) { /* ignore */ }
   try {
+    const d = await api('GET', '/other/config');
+    const ps = (d.data && d.data.platforms) || [];
+    let n = 0, routed = 0, cooling = 0;
+    ps.forEach(p => {
+      const ks = p.keyStates || [];
+      n += ks.length;
+      routed += ks.filter(k => k.routingEnabled !== false).length;
+      cooling += ks.filter(k => k.cooling).length;
+    });
+    setDash('dashOther', 'keys', n, routed, cooling);
+  } catch (e) { /* ignore */ }
+  try {
     const d = await api('GET', '/request-stats');
     const rs = (d.data && d.data.routes) || {};
     setReq('reqCline', rs.cline);
@@ -2769,6 +2994,7 @@ async function loadStats() {
     setReq('reqOr', rs.openrouter);
     setReq('reqAmd', rs.amd);
     setReq('reqTh', rs.tokenharbor);
+    setReq('reqOther', rs.other);
     const hint = _('reqStatsHint');
     if (hint && d.data && d.data.since) hint.textContent = T('Counted since ') + new Date(d.data.since).toLocaleString();
   } catch (e) { /* ignore */ }
@@ -3024,7 +3250,7 @@ function proxyRateTier(rate) {
 // 代理绑定与"启用"勾选的改动只落在 DOM（行高亮 + 保存按钮描边），点击各
 // 平台的"保存"按钮才逐行 diff 快照后提交后端，再刷新表格。清空代理/一键
 // 启用/一键禁用同样只是暂存，保存后才生效。
-const EDIT_SAVE_BTN = { acc: 'accSaveBtn', key: 'ocKeysSaveBtn', wb: 'wbSaveBtn', or: 'orKeysSaveBtn', amd: 'amdKeysSaveBtn', th: 'thKeysSaveBtn' };
+const EDIT_SAVE_BTN = { acc: 'accSaveBtn', key: 'ocKeysSaveBtn', wb: 'wbSaveBtn', or: 'orKeysSaveBtn', amd: 'amdKeysSaveBtn', th: 'thKeysSaveBtn', other: 'otherKeysSaveBtn' };
 function markRowDirty(row, kind) {
   if (row) row.classList.add('tr-dirty');
   const btn = _(EDIT_SAVE_BTN[kind] || 'accSaveBtn');
@@ -3644,7 +3870,7 @@ function legacyCopy(t) {
 }
 
 // ========== Request logs ==========
-const ROUTE_LABEL = { zen: 'opencode', cline: 'cline pool', admin: 'admin', meta: 'meta', workbuddy: 'workbuddy', openrouter: 'openrouter', amd: 'amd', tokenharbor: 'tokenharbor', other: 'other' };
+const ROUTE_LABEL = { zen: 'opencode', cline: 'cline pool', admin: 'admin', meta: 'meta', workbuddy: 'workbuddy', openrouter: 'openrouter', amd: 'amd', tokenharbor: 'tokenharbor', other: 'other', unclassified: 'unclassified' };
 const PROXY_LABEL = { main: 'Main', backup: 'Backup', direct: 'Direct' };
 const STATUS_CLASS = s => s >= 500 ? 'color:var(--danger)' : (s >= 400 ? 'color:var(--amber)' : 'color:var(--accent2)');
 let logsAuto = true;
@@ -4315,6 +4541,10 @@ async function loadProxyPool() {
       const thc = await api('GET', '/tokenharbor/config');
       _('ppTh').value = String(thc.data.useProxies !== false);
     } catch (e) { _('ppTh').value = 'true'; }
+    try {
+      const oc = await api('GET', '/other/config');
+      _('ppOther').value = String(oc.data.useProxies !== false);
+    } catch (e) { _('ppOther').value = 'true'; }
     // 展示行与后端池保持一致（只列当前池内代理），数值取本地合并快照——
     // 池编辑清零/代理暂离期间由留存层兜底，代理回归后旧数据自动恢复显示
     renderProxyHealth(proxyHealthBackendRows.map(r => proxyHealthByProxy[proxyHealthKey(r.proxy)]).filter(Boolean));
@@ -4374,6 +4604,7 @@ async function saveGlobalPolicy() {
     await api('POST', '/openrouter/config/update', { useProxies: _('ppOr').value === 'true' });
     await api('POST', '/amd/config/update', { useProxies: _('ppAmd').value === 'true' });
     await api('POST', '/tokenharbor/config/update', { useProxies: _('ppTh').value === 'true' });
+    await api('POST', '/other/config/update', { useProxies: _('ppOther').value === 'true' });
     toast('Global policy saved', 'success');
     loadProxyPool();
   } catch (e) { toast(T('Save failed: ') + e.message, 'error'); }
@@ -5220,6 +5451,448 @@ async function thKeyAddFromDialog() {
   }
 }
 
+/* ================= Other (multi sub-platform key pools) ================= */
+let otherConfig = null;
+let currentOtherSlug = '';
+let otherSelectedModels = [];   // 已勾选模型 id（变更即时保存）
+let otherKnownModels = [];      // Known = Fetched ∪ Manual
+let otherKeySnapshot = {};      // 已保存的绑定/路由快照（id → {main, backup, routing}）
+let otherSaveSelectedTimer = null;
+
+function currentOtherPlatform() {
+  if (!otherConfig || !currentOtherSlug) return null;
+  return (otherConfig.platforms || []).find(p => p.slug === currentOtherSlug) || null;
+}
+
+async function loadOtherConfig() {
+  let d;
+  try { d = await api('GET', '/other/config'); }
+  catch (e) { d = { data: { platforms: [], useProxies: null } }; }
+  otherConfig = d.data || { platforms: [], useProxies: null };
+  const ps = otherConfig.platforms || [];
+  const sel = _('otherPlatformSelect');
+  const prev = currentOtherSlug;
+  sel.innerHTML = ps.length
+    ? ps.map(p => '<option value="' + esc(p.slug) + '">' + esc(p.name || p.slug) + ' (' + esc(p.prefix) + ':)</option>').join('')
+    : '<option value="">— no sub-platform yet —</option>';
+  if (ps.length && (!prev || !ps.some(p => p.slug === prev))) currentOtherSlug = ps[0].slug;
+  else if (!ps.length) currentOtherSlug = '';
+  if (currentOtherSlug) sel.value = currentOtherSlug;
+  const p = currentOtherPlatform();
+  _('otherPlatformBody').style.display = p ? 'block' : 'none';
+  _('otherPlatformDelBtn').style.display = p ? '' : 'none';
+  if (!p) {
+    _('otherSummary').textContent = ps.length
+      ? T('Select a sub-platform on the left.')
+      : T('No sub-platform yet. Click "New sub-platform" to add one.');
+    return;
+  }
+  _('otherSummary').textContent = ps.length + T(' sub-platform(s) · models exposed as ') + '<' + T('prefix') + '>:<model-id>';
+  _('otherSummary').textContent = ps.length + T(' sub-platform(s). Models are exposed as <prefix>:<model-id>');
+  _('otherName').value = p.name || '';
+  _('otherPrefix').value = p.prefix || '';
+  _('otherBaseURL').value = p.baseURL || '';
+  _('otherMaxConc').value = p.maxConcurrency || 8;
+  _('otherRetries').value = p.retries || 3;
+  otherKnownModels = p.models || [];
+  otherSelectedModels = p.selectedModels || [];
+  renderOtherModelSelect(otherKnownModels, otherSelectedModels);
+  renderOtherProbeModel(otherKnownModels, otherSelectedModels, p.probeModel || '');
+  renderOtherKeys(p.keyStates || []);
+}
+
+_('otherPlatformSelect').addEventListener('change', function () { currentOtherSlug = this.value; loadOtherConfig(); });
+
+/* ---- 多选下拉：可用模型 ---- */
+function renderOtherModelSelect(models, selected) {
+  const list = _('otherModelSelectList');
+  if (!models || !models.length) {
+    list.innerHTML = '<div class="ms-empty">' + T('No models yet — add manually or add a key and click Refresh models') + '</div>';
+  } else {
+    list.innerHTML = models.map(m =>
+      '<label class="ms-item" data-id="' + esc(m) + '">' +
+      '<input type="checkbox" value="' + esc(m) + '"' + (selected.indexOf(m) >= 0 ? ' checked' : '') +
+      ' onchange="onOtherModelToggle(this)"> <span title="' + esc(m) + '">' + esc(m) + '</span></label>'
+    ).join('');
+  }
+  _('otherModelSelectToggle').textContent = otherModelSelectSummary();
+  _('otherModelSelectSearch').value = '';
+}
+
+function otherModelSelectSummary() {
+  const n = otherSelectedModels.length;
+  if (!otherKnownModels.length) return '—';
+  return n ? n + ' / ' + otherKnownModels.length + T(' enabled') : T('none enabled');
+}
+
+function toggleOtherModelSelect() {
+  const panel = _('otherModelSelectPanel');
+  panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+  if (panel.style.display === 'block') _('otherModelSelectSearch').focus();
+}
+
+function filterOtherModelSelect() {
+  const q = _('otherModelSelectSearch').value.trim().toLowerCase();
+  Array.prototype.forEach.call(_('otherModelSelectList').querySelectorAll('.ms-item'), function (el) {
+    el.style.display = !q || el.dataset.id.toLowerCase().indexOf(q) >= 0 ? '' : 'none';
+  });
+}
+
+function onOtherModelToggle(cb) {
+  const id = cb.value;
+  const i = otherSelectedModels.indexOf(id);
+  if (cb.checked && i < 0) otherSelectedModels.push(id);
+  if (!cb.checked && i >= 0) otherSelectedModels.splice(i, 1);
+  _('otherModelSelectToggle').textContent = otherModelSelectSummary();
+  renderOtherProbeModel(otherKnownModels, otherSelectedModels, _('otherProbeModel').value);
+  queueSaveOtherSelected();
+}
+
+function queueSaveOtherSelected() {
+  if (otherSaveSelectedTimer) clearTimeout(otherSaveSelectedTimer);
+  otherSaveSelectedTimer = setTimeout(saveOtherSelected, 300);
+}
+
+async function saveOtherSelected() {
+  const p = currentOtherPlatform();
+  if (!p) return;
+  try {
+    const r = await api('POST', '/other/models/selected', { slug: p.slug, selected: otherSelectedModels });
+    otherSelectedModels = (r.data && r.data.platform && r.data.platform.selectedModels) || otherSelectedModels;
+    toast(T('Models updated'), 'success');
+  } catch (e) { toast(T('Save failed: ') + e.message, 'error'); }
+}
+
+async function refreshOtherModels() {
+  const p = currentOtherPlatform();
+  if (!p) return;
+  toast(T('Syncing models…'));
+  try {
+    const r = await api('POST', '/other/models/refresh', { slug: p.slug });
+    const np = r.data && r.data.platform;
+    if (np) {
+      otherKnownModels = np.models || [];
+      otherSelectedModels = np.selectedModels || [];
+      renderOtherModelSelect(otherKnownModels, otherSelectedModels);
+      renderOtherProbeModel(otherKnownModels, otherSelectedModels, _('otherProbeModel').value);
+      renderOtherKeys(np.keyStates || []);
+    }
+    toast(T('Model catalog synced'), 'success');
+  } catch (e) { toast(T('Refresh failed: ') + e.message, 'error'); }
+}
+
+async function addOtherManualModel() {
+  const p = currentOtherPlatform();
+  const input = _('otherManualModel');
+  const m = input.value.trim();
+  if (!p || !m) { toast(T('Enter a model id'), 'error'); return; }
+  try {
+    const r = await api('POST', '/other/models/manual', { slug: p.slug, model: m });
+    const np = r.data && r.data.platform;
+    if (np) {
+      otherKnownModels = np.models || [];
+      otherSelectedModels = np.selectedModels || [];
+      renderOtherModelSelect(otherKnownModels, otherSelectedModels);
+      renderOtherProbeModel(otherKnownModels, otherSelectedModels, _('otherProbeModel').value);
+    }
+    input.value = '';
+    toast(T('Added') + ': ' + m, 'success');
+  } catch (e) { toast(T('Add failed: ') + e.message, 'error'); }
+}
+
+async function deleteOtherManualModel(id) {
+  const p = currentOtherPlatform();
+  if (!p) return;
+  try {
+    const r = await api('POST', '/other/models/manual/delete', { slug: p.slug, model: id });
+    const np = r.data && r.data.platform;
+    if (np) {
+      otherKnownModels = np.models || [];
+      otherSelectedModels = np.selectedModels || [];
+      renderOtherModelSelect(otherKnownModels, otherSelectedModels);
+      renderOtherProbeModel(otherKnownModels, otherSelectedModels, _('otherProbeModel').value);
+    }
+    toast(T('Deleted') + ': ' + id, 'success');
+  } catch (e) { toast(T('Delete failed: ') + e.message, 'error'); }
+}
+
+function renderOtherProbeModel(models, selected, current) {
+  const el = _('otherProbeModel');
+  const opts = ['<option value="">auto — ' + T('first enabled model') + '</option>'];
+  (selected && selected.length ? selected : models || []).forEach(m => {
+    opts.push('<option value="' + esc(m) + '"' + (m === current ? ' selected' : '') + '>' + esc(m) + '</option>');
+  });
+  el.innerHTML = opts.join('');
+}
+
+_('otherProbeModel').addEventListener('change', async function () {
+  const p = currentOtherPlatform();
+  if (!p) return;
+  try { await api('POST', '/other/config/update', { slug: p.slug, probeModel: this.value }); } catch (e) { /* ignore */ }
+});
+
+/* ---- 账号（key）表（与 AMDCloud 同构：DOM diff + 事件委托 + 拖拽） ---- */
+function renderOtherKeys(ks) {
+  const tb = _('otherKeysBody');
+  if (!tb) return;
+  otherKeySnapshot = {};
+  if (!ks.length) { tb.innerHTML = '<tr><td colspan="7" class="empty">' + T('No keys configured') + '</td></tr>'; return; }
+  tb.innerHTML = ks.map((k, i) => {
+    const cool = k.cooling
+      ? '<span style="color:var(--danger)">' + T('cooling') + (k.cooldownUntil ? T(' · until ') + esc(fmtWhen(k.cooldownUntil)) : '') + '</span>'
+      : '<span style="color:var(--text2)">-</span>';
+    const pMain = k.proxyMain || '';
+    const pBackup = k.proxyBackup || '';
+    const backupLocked = !backupProxyOn || pMain === '' || pMain === EGRESS_DIRECT;
+    const backupVal = backupLocked ? pMain : pBackup;
+    const stale = v => v && v !== EGRESS_DIRECT && !proxyListCache.includes(v);
+    const bind = '<td style="white-space:nowrap">' +
+      egComboHTML('other', k.index, 'main', pMain, T('Main exit — used whenever available')) + ' ' +
+      egComboHTML('other', k.index, 'backup', backupVal, T('Backup exit — used when main is cooling/removed'), backupLocked) +
+      (stale(pMain) || stale(pBackup) ? ' <span title="' + esc(T('Bound proxy is no longer in the proxy pool — skipped until fixed')) + '" style="color:var(--danger)">⚠</span>' : '') +
+      '</td>';
+    const routed = k.routingEnabled !== false;
+    otherKeySnapshot[k.index] = { main: pMain, backup: backupVal, routing: routed };
+    const routing = '<td style="text-align:center">' +
+      '<input type="checkbox" data-otr="' + k.index + '"' + (routed ? ' checked' : '') + ' title="' + esc(T('Participates in request routing')) + '">' + '</td>';
+    const actions = '<td style="white-space:nowrap">' +
+      '<button class="btn btn-sm" data-ott="' + k.index + '">' + T('Test') + '</button> ' +
+      '<button class="btn btn-sm btn-danger" data-otdel="' + k.index + '" title="' + esc(T('Delete this key')) + '">' + T('Delete') + '</button>' + '</td>';
+    return '<tr draggable="true" data-drag-id="' + k.index + '"><td>' + (i + 1) + '</td>' +
+      '<td style="font-family:monospace;font-size:11px">' + esc(k.keyMask) + '</td>' +
+      '<td>' + (k.usage || 0) + '</td>' +
+      '<td>' + cool + '</td>' +
+      bind + actions + routing + '</tr>';
+  }).join('');
+  tb.onclick = e => {
+    const t = e.target.closest('button[data-ott]');
+    if (t) { testOtherKey(t.dataset.ott, t); return; }
+    const d = e.target.closest('button[data-otdel]');
+    if (d) deleteOtherKey(d.dataset.otdel, d);
+  };
+  tb.onchange = e => {
+    const r = e.target.closest('input[data-otr]');
+    if (r) markRowDirty(r.closest('tr'), 'other');
+  };
+}
+
+function stageAllOtherKeysRouting(enabled) {
+  document.querySelectorAll('#otherKeysBody input[data-otr]').forEach(cb => {
+    const snap = otherKeySnapshot[cb.dataset.otr];
+    if (snap && snap.routing === enabled) return;
+    cb.checked = enabled;
+    markRowDirty(cb.closest('tr'), 'other');
+  });
+}
+// 清空代理（暂存）：全部 key 清绑定 + 路由全部禁用，与 AMDCloud 页同语义
+function stageClearOtherKeyProxies() {
+  document.querySelectorAll('#otherKeysBody tr').forEach(row => {
+    const main = row.querySelector('.eg-input[data-eg="other"][data-slot="main"]');
+    if (!main) return;
+    let dirty = stageRowBindingClear(row, 'other');
+    const cb = row.querySelector('input[data-otr]');
+    if (cb && cb.checked) { cb.checked = false; dirty = true; }
+    if (dirty) markRowDirty(row, 'other');
+  });
+}
+
+async function saveOtherKeyEdits() {
+  const p = currentOtherPlatform();
+  if (!p) return;
+  const rows = [...document.querySelectorAll('#otherKeysBody tr')].filter(r => r.querySelector('.eg-input'));
+  let changed = 0, failed = 0;
+  for (const row of rows) {
+    const mainInput = row.querySelector('.eg-input[data-eg="other"][data-slot="main"]');
+    const index = Number(mainInput.dataset.egid);
+    const main = mainInput.dataset.value || '';
+    const backup = row.querySelector('.eg-input[data-eg="other"][data-slot="backup"]').dataset.value || '';
+    const rcb = row.querySelector('input[data-otr]');
+    const snap = otherKeySnapshot[index] || { main: '', backup: '', routing: true };
+    try {
+      if (main !== snap.main || backup !== snap.backup) {
+        await api('POST', '/other/keys/proxy', { slug: p.slug, index: index, main: main, backup: backup });
+      }
+      if (rcb && rcb.checked !== snap.routing) {
+        await api('POST', '/other/keys/routing', { slug: p.slug, index: Number(rcb.dataset.otr), enabled: rcb.checked });
+      }
+      if (main !== snap.main || backup !== snap.backup || (rcb && rcb.checked !== snap.routing)) changed++;
+      row.classList.remove('tr-dirty');
+    } catch (e) { failed++; }
+  }
+  clearDirtyMarks('otherKeysBody', 'otherKeysSaveBtn');
+  if (failed) toast(T('Save failed for ') + failed + T(' account(s)'), 'error');
+  else if (!changed) toast(T('No changes to save'), 'info');
+  else toast(T('Saved ') + changed + T(' account change(s)'), 'success');
+  loadOtherConfig(); loadStats();
+}
+
+function resetOtherKeyEdits() {
+  clearDirtyMarks('otherKeysBody', 'otherKeysSaveBtn');
+  loadOtherConfig();
+}
+
+async function deleteOtherKey(id, btn) {
+  if (!confirm(T('Delete this key?'))) return;
+  const original = btn ? btn.innerHTML : '';
+  if (btn) btn.disabled = true;
+  try {
+    const p = currentOtherPlatform();
+    await api('POST', '/other/keys/delete', { slug: p.slug, index: Number(id) });
+    toast(T('Deleted'), 'success');
+  } catch (e) {
+    toast(T('Delete failed: ') + e.message, 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = original; }
+    loadOtherConfig(); loadStats();
+  }
+}
+
+/* ---- 测试（与 AMDCloud 同构：按钮内 spinner + 结果 toast） ---- */
+async function testOtherKey(id, btn) {
+  const original = btn ? btn.innerHTML : '';
+  if (btn) { btn.disabled = true; btn.innerHTML = '<span class="loading"></span>Testing'; }
+  try {
+    const p = currentOtherPlatform();
+    const d = await api('POST', '/other/keys/test', {
+      slug: p.slug,
+      index: Number(id),
+      model: (_('otherProbeModel') ? _('otherProbeModel').value : '')
+    });
+    const r = (d.data && d.data.result) || {};
+    const msg = r.ok
+      ? T('Test passed') + (r.latencyMs != null ? ' (' + r.latencyMs + 'ms)' : '')
+      : T('Test failed: ') + (r.error || '');
+    toast(msg, r.ok ? 'success' : 'error', 6000);
+  } catch (e) {
+    toast(T('Test failed: ') + e.message, 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = original; }
+    loadOtherConfig();
+  }
+}
+
+async function batchTestOtherKeys() {
+  const p = currentOtherPlatform();
+  if (!p) return;
+  const btn = _('otherTestBtn');
+  const ids = Object.keys(otherKeySnapshot);
+  if (!ids.length) { toast(T('No keys to test'), 'info'); return; }
+  const original = btn ? btn.innerHTML : '';
+  if (btn) btn.disabled = true;
+  let ok = 0, err = 0;
+  try {
+    for (let i = 0; i < ids.length; i++) {
+      if (btn) btn.innerHTML = '<span class="loading"></span>' + (i + 1) + '/' + ids.length;
+      try {
+        const d = await api('POST', '/other/keys/test', {
+          slug: p.slug,
+          index: Number(ids[i]),
+          model: (_('otherProbeModel') ? _('otherProbeModel').value : '')
+        });
+        const r = (d.data && d.data.result) || {};
+        if (r.ok) ok++; else err++;
+      } catch (e) { err++; }
+    }
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = original; }
+  }
+  toast(T('Batch test done: ') + ids.length + T(' tested, ') + ok + T(' ok') + (err ? T(', ') + err + T(' error') : ''),
+    err ? 'warning' : 'success', 6000);
+  loadOtherConfig();
+}
+
+/* ---- 子平台 CRUD / 配置保存 ---- */
+function openOtherPlatformDialog() {
+  _('opName').value = '';
+  _('opPrefix').value = '';
+  _('opBaseURL').value = '';
+  _('otherPlatformDialog').showModal();
+}
+function closeOtherPlatformDialog() { _('otherPlatformDialog').close(); }
+
+async function doOtherPlatformCreate() {
+  const name = _('opName').value.trim();
+  const prefix = _('opPrefix').value.trim().replace(/^:+/, '');
+  const baseURL = _('opBaseURL').value.trim().replace(/\/+$/, '');
+  if (!name || !prefix) { toast(T('Name and prefix are required'), 'error'); return; }
+  try {
+    const r = await api('POST', '/other/platforms', { name: name, prefix: prefix, baseURL: baseURL });
+    closeOtherPlatformDialog();
+    currentOtherSlug = (r.data && r.data.platform && r.data.platform.slug) || '';
+    toast(T('Created'), 'success');
+    loadOtherConfig();
+  } catch (e) { toast(T('Create failed: ') + e.message, 'error'); }
+}
+
+function deleteOtherPlatform() {
+  const p = currentOtherPlatform();
+  if (!p) return;
+  if (!confirm(T('Delete') + ' "' + (p.name || p.slug) + '" (' + p.prefix + ':)? ' + T('All its keys will be removed. This cannot be undone.'))) return;
+  api('POST', '/other/platforms/delete', { slug: p.slug }).then(() => {
+    currentOtherSlug = '';
+    toast(T('Deleted'), 'success');
+    loadOtherConfig(); loadStats();
+  }).catch(e => toast(T('Delete failed: ') + e.message, 'error'));
+}
+
+async function saveOtherPlatformConfig() {
+  const p = currentOtherPlatform();
+  if (!p) return;
+  const name = _('otherName').value.trim();
+  const prefix = _('otherPrefix').value.trim().replace(/^:+/, '');
+  const baseURL = _('otherBaseURL').value.trim().replace(/\/+$/, '');
+  if (!name || !prefix) { toast(T('Name and prefix are required'), 'error'); return; }
+  try {
+    await api('POST', '/other/config/update', { slug: p.slug, name: name, prefix: prefix, baseURL: baseURL });
+    toast(T('Saved'), 'success');
+    loadOtherConfig();
+  } catch (e) { toast(T('Save failed: ') + e.message, 'error'); }
+}
+
+async function saveOtherRateLimit() {
+  const p = currentOtherPlatform();
+  if (!p) return;
+  try {
+    await api('POST', '/other/config/update', {
+      slug: p.slug,
+      maxConcurrency: parseInt(_('otherMaxConc').value, 10) || 8,
+      retries: parseInt(_('otherRetries').value, 10) || 3,
+    });
+    toast(T('Saved'), 'success');
+    loadOtherConfig();
+  } catch (e) { toast(T('Save failed: ') + e.message, 'error'); }
+}
+
+/* ---- 添加 key 弹窗 ---- */
+function openOtherKeyAddDialog() {
+  _('otherKeyAddInput').value = '';
+  _('otherKeyAddDialog').showModal();
+}
+function closeOtherKeyAddDialog() { _('otherKeyAddDialog').close(); }
+
+async function otherKeyAddFromDialog() {
+  const p = currentOtherPlatform();
+  const text = _('otherKeyAddInput').value.trim();
+  if (!p || !text) { toast(T('Enter at least one key'), 'error'); return; }
+  const keys = text.split('\n').map(s => s.trim()).filter(Boolean);
+  try {
+    const r = await api('POST', '/other/keys/update', { slug: p.slug, add: keys });
+    closeOtherKeyAddDialog();
+    const added = (r.data && r.data.added) != null ? r.data.added : keys.length;
+    toast(T('Added') + ' ' + added + ' ' + T('keys'), 'success');
+    loadOtherConfig();
+  } catch (e) { toast(T('Add failed: ') + e.message, 'error'); }
+}
+
+/* 点击面板外部收起多选下拉 */
+document.addEventListener('click', function (e) {
+  const ms = document.getElementById('otherModelSelect');
+  if (ms && !ms.contains(e.target)) {
+    const panel = _('otherModelSelectPanel');
+    if (panel) panel.style.display = 'none';
+  }
+});
+
 async function loadOcSessions() {
   try {
     const d = await api('GET', '/opencode/sessions');
@@ -5362,6 +6035,10 @@ enableRowDragReorder('ocKeysBody', ids => api('POST', '/opencode/keys/reorder', 
 enableRowDragReorder('orKeysBody', ids => api('POST', '/openrouter/keys/reorder', { order: ids.map(Number) }), loadOrConfig);
 enableRowDragReorder('amdKeysBody', ids => api('POST', '/amd/keys/reorder', { order: ids.map(Number) }), loadAmdConfig);
 enableRowDragReorder('thKeysBody', ids => api('POST', '/tokenharbor/keys/reorder', { order: ids.map(Number) }), loadTHConfig);
+enableRowDragReorder('otherKeysBody', ids => {
+  const p = currentOtherSlug;
+  return api('POST', '/other/keys/reorder', { slug: p, order: ids.map(Number) });
+}, loadOtherConfig);
 enableRowDragReorder('wbAccountsBody', ids => api('POST', '/workbuddy/reorder', { uids: ids }), loadWorkbuddyAccounts);
 // 平台概览只在仪表盘可见时轮询（loadStats 现在打三个接口，隐藏页轮询纯浪费）
 setInterval(() => { if (_('tab-dashboard').style.display !== 'none') loadStats(); }, 10000);
