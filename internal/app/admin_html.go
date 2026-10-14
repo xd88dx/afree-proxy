@@ -203,6 +203,17 @@ tr[draggable="true"]:active{cursor:grabbing}
 .multi-select{position:relative;max-width:100%}
 .multi-select .ms-toggle{width:100%;text-align:left;background:var(--bg2,#131519);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:8px 10px;cursor:pointer;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .multi-select.drop-up .ms-panel{top:auto;bottom:calc(100% + 4px)}
+/* ---- 子平台管理弹窗：可拖动排序的行 ---- */
+.mg-row{display:flex;align-items:center;gap:10px;padding:8px 10px;margin-bottom:6px;
+  background:var(--bg2,#131519);border:1px solid var(--border);border-radius:8px;cursor:grab}
+.mg-row.dragging{opacity:.45;cursor:grabbing}
+.mg-row.dragover{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent) inset}
+.mg-handle{flex:0 0 auto;color:var(--muted-fg,#8b93a1);cursor:grab;font-size:13px;letter-spacing:-2px;user-select:none;padding:0 2px}
+.mg-name{flex:0 0 auto;font-weight:600;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mg-prefix{flex:0 0 auto;font-family:'JetBrains Mono',Consolas,monospace;font-size:12px;color:var(--accent)}
+.mg-meta{flex:1 1 auto;min-width:0;font-size:11px;color:var(--muted-fg,#8b93a1);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mg-row .btn{flex:0 0 auto}
+.mg-empty{padding:14px;text-align:center;color:var(--muted-fg,#8b93a1);font-size:12px}
 .multi-select .ms-panel{position:absolute;z-index:60;top:calc(100% + 4px);left:0;right:0;background:var(--bg2,#131519);border:1px solid var(--border-strong);;border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.25);overflow:hidden}
 .multi-select .ms-search{padding:8px 10px;border-bottom:1px solid var(--border)}
 .multi-select .ms-search input{width:100%;background:transparent;border:none;outline:none;color:var(--text);font-size:13px}
@@ -1160,7 +1171,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
         <div style="display:flex;gap:8px;align-items:center">
           <select id="otherPlatformSelect" style="flex:1;min-width:0"><option value="">— no sub-platform yet —</option></select>
           <button class="btn btn-primary btn-sm" onclick="openOtherPlatformDialog()">New sub-platform</button>
-          <button class="btn btn-sm btn-danger" id="otherPlatformDelBtn" onclick="deleteOtherPlatform()" title="Delete this sub-platform and all its keys">Delete</button>
+          <button class="btn btn-sm" id="otherPlatformManageBtn" onclick="openOtherManageDialog()" title="Reorder or delete sub-platforms">Manage</button>
         </div>
       </div>
     </div>
@@ -1405,6 +1416,21 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
     <div class="wb-dialog-actions">
       <button class="btn btn-primary" onclick="doOtherPlatformCreate()">Create</button>
       <button class="btn" onclick="closeOtherPlatformDialog()">Cancel</button>
+    </div>
+  </div>
+</dialog>
+
+<dialog id="otherManageDialog">
+  <div class="wb-dialog-head">
+    <span>Manage sub-platforms</span>
+    <button class="btn btn-sm" onclick="closeOtherManageDialog()">Close</button>
+  </div>
+  <div class="wb-dialog-body">
+    <p class="hint" style="margin-top:0">Drag a row to change the order; the order decides how sub-platforms appear in the selector.</p>
+    <div id="otherManageList"></div>
+    <div class="wb-dialog-actions">
+      <button class="btn btn-primary" onclick="saveOtherPlatformOrder()">Save order</button>
+      <button class="btn" onclick="closeOtherManageDialog()">Cancel</button>
     </div>
   </div>
 </dialog>
@@ -2017,6 +2043,12 @@ const I18N_ZH = {
   'Other': 'Other',
   'Sub-platform': '子平台',
   'New sub-platform': '新建子平台',
+  'Manage sub-platforms': '管理子平台',
+  'Reorder or delete sub-platforms': '排序或删除子平台',
+  'Manage': '管理',
+  'Drag a row to change the order; the order decides how sub-platforms appear in the selector.': '拖动行可调整顺序；该顺序决定子平台在下拉框中的显示顺序。',
+  'Save order': '保存顺序',
+  'Drag to reorder': '拖动以排序',
   'Delete this key': '删除此密钥',
   'All its keys will be removed. This cannot be undone.': '其下所有密钥将被移除，此操作不可撤销。',
   'Name': '名称',
@@ -5509,14 +5541,13 @@ async function loadOtherConfig() {
   // 初始态：value="" 是纯提示项，不对应任何子平台，因此不自动选中第一个。
   sel.innerHTML = ps.length
     ? '<option value="">' + T('Select a sub-platform to view details') + '</option>' +
-      ps.map(p => '<option value="' + esc(p.slug) + '">' + esc(p.name || p.slug) + ' (' + esc(p.prefix) + ':)</option>').join('')
+      ps.map(p => '<option value="' + esc(p.slug) + '">' + esc(p.name || p.slug) + ' (' + esc(p.prefix) + ')</option>').join('')
     : '<option value="">' + T('No sub-platform yet — click "New sub-platform" to add one') + '</option>';
   if (ps.length && prev && ps.some(p => p.slug === prev)) currentOtherSlug = prev;
   else currentOtherSlug = '';
   sel.value = currentOtherSlug;
   const p = currentOtherPlatform();
   _('otherPlatformBody').style.display = p ? 'block' : 'none';
-  _('otherPlatformDelBtn').style.display = p ? '' : 'none';
   if (!p) {
     _('otherSummary').textContent = ps.length
       ? T('Select a sub-platform on the left.')
@@ -5656,9 +5687,12 @@ async function otherLiveRequest() {
 async function refreshOtherModels() {
   const p = currentOtherPlatform();
   if (!p) return;
-  // 无凭据无法拉上游目录（FetchModels 取 Keys[0] 发请求），先提示再中止。
-  // 判定用 keyStates —— 平台对象只带这个字段，没有 p.keys。
-  if (!(p.keyStates || []).length) { toast(T('Add a credential first'), 'error'); return; }
+  // 无凭据无法拉上游目录，先提示再中止。判定用 keyStates —— 平台对象只带这个
+  // 字段，没有 p.keys；启用口径 routingEnabled !== false，与后端 RoutingEnabled
+  // 缺省 true 一致：全部禁用时同步无意义，后端同样会拒。
+  const ks = p.keyStates || [];
+  if (!ks.length) { toast(T('Add a credential first'), 'error'); return; }
+  if (!ks.some(k => k.routingEnabled !== false)) { toast(T('No available credentials'), 'error'); return; }
   toast(T('Syncing models…'));
   try {
     const r = await api('POST', '/other/models/refresh', { slug: p.slug });
@@ -5920,15 +5954,109 @@ async function doOtherPlatformCreate() {
   } catch (e) { toast(T('Create failed: ') + e.message, 'error'); }
 }
 
-function deleteOtherPlatform() {
+async function deleteOtherPlatform() {
   const p = currentOtherPlatform();
   if (!p) return;
   if (!confirm(T('Delete') + ' "' + (p.name || p.slug) + '" (' + p.prefix + ':)? ' + T('All its keys will be removed. This cannot be undone.'))) return;
-  api('POST', '/other/platforms/delete', { slug: p.slug }).then(() => {
+  try {
+    await api('POST', '/other/platforms/delete', { slug: p.slug });
     currentOtherSlug = '';
     toast(T('Deleted'), 'success');
-    loadOtherConfig(); loadStats();
-  }).catch(e => toast(T('Delete failed: ') + e.message, 'error'));
+    await loadOtherConfig(); loadStats();
+    renderOtherManageList();
+  } catch (e) { toast(T('Delete failed: ') + e.message, 'error'); }
+}
+
+/* ---- 子平台管理弹窗：列表 / 删除 / 拖动排序 ---- */
+var otherManageDragSlug = '';
+
+function openOtherManageDialog() {
+  renderOtherManageList();
+  _('otherManageDialog').showModal();
+}
+function closeOtherManageDialog() { _('otherManageDialog').close(); }
+
+function renderOtherManageList() {
+  const box = _('otherManageList');
+  if (!box) return;
+  const ps = (otherConfig && otherConfig.platforms) || [];
+  if (!ps.length) { box.innerHTML = '<div class="mg-empty">' + esc(T('No sub-platform yet. Click "New sub-platform" to add one.')) + '</div>'; return; }
+  box.innerHTML = ps.map(p =>
+    '<div class="mg-row" draggable="true" data-slug="' + esc(p.slug) + '">' +
+      '<span class="mg-handle" title="' + esc(T('Drag to reorder')) + '">⣿</span>' +
+      '<span class="mg-name">' + esc(p.name || p.slug) + '</span>' +
+      '<span class="mg-prefix">' + esc(p.prefix) + '</span>' +
+      '<span class="mg-meta" title="' + esc(p.slug + (p.baseURL ? ' · ' + p.baseURL : '')) + '">' + esc(p.slug) + ' · ' + esc(p.baseURL || '') + '</span>' +
+      '<button class="btn btn-sm btn-danger" data-del="' + esc(p.slug) + '">' + esc(T('Delete')) + '</button>' +
+    '</div>').join('');
+  // 删除走事件委托：slug 只出现在 HTML 属性里，不拼进 JS 字符串字面量。
+  box.querySelectorAll('.mg-row [data-del]').forEach(btn => {
+    btn.addEventListener('click', ev => { ev.stopPropagation(); deleteOtherPlatformBySlug(btn.dataset.del); });
+  });
+  bindOtherManageDrag();
+}
+
+function bindOtherManageDrag() {
+  const rows = [...document.querySelectorAll('#otherManageList .mg-row')];
+  rows.forEach(row => {
+    row.addEventListener('dragstart', ev => {
+      otherManageDragSlug = row.dataset.slug;
+      row.classList.add('dragging');
+      ev.dataTransfer.effectAllowed = 'move';
+      try { ev.dataTransfer.setData('text/plain', row.dataset.slug); } catch (e) {}
+    });
+    row.addEventListener('dragend', () => {
+      row.classList.remove('dragging');
+      rows.forEach(r => r.classList.remove('dragover'));
+      otherManageDragSlug = '';
+    });
+    row.addEventListener('dragover', ev => {
+      ev.preventDefault();
+      ev.dataTransfer.dropEffect = 'move';
+      if (row.dataset.slug === otherManageDragSlug) return;
+      row.classList.add('dragover');
+    });
+    row.addEventListener('dragleave', () => row.classList.remove('dragover'));
+    row.addEventListener('drop', ev => {
+      ev.preventDefault();
+      row.classList.remove('dragover');
+      const src = otherManageDragSlug || (ev.dataTransfer ? ev.dataTransfer.getData('text/plain') : '');
+      if (!src || src === row.dataset.slug) return;
+      const list = _('otherManageList');
+      const from = list.querySelector('.mg-row[data-slug="' + (window.CSS && CSS.escape ? CSS.escape(src) : src) + '"]');
+      if (!from) return;
+      // 以落点行为准：拖到上方则插到它前面，拖到下方则插到它后面。
+      const r = row.getBoundingClientRect();
+      const after = ev.clientY > r.top + r.height / 2;
+      if (after) row.after(from); else row.before(from);
+      otherManageDragSlug = '';
+    });
+  });
+}
+
+async function deleteOtherPlatformBySlug(slug) {
+  const ps = (otherConfig && otherConfig.platforms) || [];
+  const p = ps.find(x => x.slug === slug);
+  if (!p) return;
+  if (!confirm(T('Delete') + ' "' + (p.name || p.slug) + '" (' + p.prefix + ':)? ' + T('All its keys will be removed. This cannot be undone.'))) return;
+  try {
+    await api('POST', '/other/platforms/delete', { slug: slug });
+    if (currentOtherSlug === slug) currentOtherSlug = '';
+    toast(T('Deleted'), 'success');
+    await loadOtherConfig(); loadStats();
+    renderOtherManageList();
+  } catch (e) { toast(T('Delete failed: ') + e.message, 'error'); }
+}
+
+async function saveOtherPlatformOrder() {
+  const slugs = [...document.querySelectorAll('#otherManageList .mg-row')].map(r => r.dataset.slug);
+  if (!slugs.length) { closeOtherManageDialog(); return; }
+  try {
+    await api('POST', '/other/platforms/reorder', { slugs: slugs });
+    toast(T('Order saved'), 'success');
+    closeOtherManageDialog();
+    await loadOtherConfig();
+  } catch (e) { toast(T('Save failed: ') + e.message, 'error'); }
 }
 
 async function saveOtherPlatformConfig() {

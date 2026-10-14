@@ -40,11 +40,23 @@ type catalogEntry struct {
 // （目录保持现有内容，不清空）。
 func FetchModels(p *Platform) ([]Model, error) {
 	mu.RLock()
-	keys := p.Keys
 	base := strings.TrimRight(p.BaseURL, "/")
+	anyKey := len(p.Keys) > 0
+	// 凭据口径与真实会话一致：取第一个已启用（参与路由）的 key。
+	// 在锁内连同 authKey 一起取出，避免解锁后再读 p.Keys 产生竞态。
+	authKey := ""
+	for _, k := range p.Keys {
+		if p.RoutingEnabled(k) {
+			authKey = k
+			break
+		}
+	}
 	mu.RUnlock()
-	if len(keys) == 0 {
-		return nil, fmt.Errorf("no key configured: catalog sync needs a key")
+	if !anyKey {
+		return nil, fmt.Errorf("no key configured: add a credential first")
+	}
+	if authKey == "" {
+		return nil, fmt.Errorf("no enabled credential: enable a key in the pool, then sync")
 	}
 	if base == "" {
 		return nil, fmt.Errorf("base URL is empty")
@@ -54,7 +66,7 @@ func FetchModels(p *Platform) ([]Model, error) {
 		return nil, err
 	}
 	req.Header.Set("Accept", "application/json")
-	req.Header.Set("Authorization", "Bearer "+p.Keys[0])
+	req.Header.Set("Authorization", "Bearer "+authKey)
 	resp, err := catalogHTTPClient().Do(req)
 	if err != nil {
 		return nil, err

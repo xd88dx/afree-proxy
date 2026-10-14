@@ -143,6 +143,7 @@ func registerAdminRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/admin/api/other/config/update", adminCORS(auth(handleOtherConfigUpdate)))
 	mux.HandleFunc("/admin/api/other/platforms", adminCORS(auth(handleOtherPlatformCreate)))
 	mux.HandleFunc("/admin/api/other/platforms/delete", adminCORS(auth(handleOtherPlatformDelete)))
+	mux.HandleFunc("/admin/api/other/platforms/reorder", adminCORS(auth(handleOtherPlatformReorder)))
 	mux.HandleFunc("/admin/api/other/models/refresh", adminCORS(auth(handleOtherModelsRefresh)))
 	mux.HandleFunc("/admin/api/other/models/manual", adminCORS(auth(handleOtherModelsManualAdd)))
 	mux.HandleFunc("/admin/api/other/models/manual/delete", adminCORS(auth(handleOtherModelsManualDelete)))

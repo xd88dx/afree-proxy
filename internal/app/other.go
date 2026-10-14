@@ -458,6 +458,57 @@ func handleOtherPlatformDelete(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// POST /admin/api/other/platforms/reorder —— 按给定 slug 顺序重排子平台。
+// body: { slugs: ["op_a", "op_b", ...] }
+// slug 集合必须与当前子平台集合完全一致（不新增、不遗漏、不重复），否则 400。
+// 顺序直接落在 Config.Platforms 数组里，落盘即持久，无需额外 order 字段。
+func handleOtherPlatformReorder(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
+		return
+	}
+	var req struct {
+		Slugs []string `json:"slugs"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 8192)).Decode(&req); err != nil {
+		writeAPI(w, http.StatusBadRequest, apiResponse{Error: "invalid JSON"})
+		return
+	}
+	cur, next := otherCloneConfig()
+	if len(req.Slugs) != len(cur.Platforms) {
+		writeAPI(w, http.StatusBadRequest, apiResponse{
+			Error: fmt.Sprintf("slug count mismatch: got %d, want %d", len(req.Slugs), len(cur.Platforms)),
+		})
+		return
+	}
+	bySlug := make(map[string]other.Platform, len(cur.Platforms))
+	for i := range cur.Platforms {
+		bySlug[cur.Platforms[i].Slug] = cur.Platforms[i]
+	}
+	ordered := make([]other.Platform, 0, len(req.Slugs))
+	seen := make(map[string]bool, len(req.Slugs))
+	for _, s := range req.Slugs {
+		p, ok := bySlug[s]
+		if !ok || seen[s] {
+			writeAPI(w, http.StatusBadRequest, apiResponse{Error: "unknown or duplicate slug: " + s})
+			return
+		}
+		seen[s] = true
+		ordered = append(ordered, p)
+	}
+	next.Platforms = ordered
+	other.Set(next)
+	apis := make([]map[string]any, 0, len(ordered))
+	for i := range ordered {
+		apis = append(apis, platformAPI(&next.Platforms[i]))
+	}
+	writeAPI(w, http.StatusOK, apiResponse{
+		Success: true,
+		Message: "Platform order saved",
+		Data:    map[string]any{"platforms": apis},
+	})
+}
+
 // POST /admin/api/other/keys/update —— 追加 API key（面板"添加凭据"弹窗：
 // 每行一个，按明文去重；新 key 默认不参与路由）。body: { slug, add: [key,...] }
 // 也兼容整体替换的旧形态 { slug, keys: [...] }（keys 非空时优先整体替换）。
