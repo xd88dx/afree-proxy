@@ -625,6 +625,14 @@ type Client struct {
 	proxyMu         sync.Mutex
 	proxyTransports map[string]*http.Transport
 
+	// ObserveAccount 账号出口归属观测钩子（afree 本地扩展，vendor 合并保留项）：
+	// 非 nil 时，每次解析出账号出口（成功或 fail-closed）后回报
+	// (ctx, 账号, 实际出口URL)。ctx 取自发起该次请求的 *http.Request，
+	// 网关用它把命中的账号与代理类型写进请求日志的「账号/Key」「代理」两列；
+	// 非网关请求（面板、定时任务）的 ctx 无日志槽位，钩子实现自行判断。
+	// exitRaw 为空串表示直连出口。仅观测，不参与任何路由决策。
+	ObserveAccount func(ctx context.Context, a *auth.Auth, exitRaw string)
+
 	// HeaderTimeout 聊天 SSE 首字节前（响应头）超时；<=0 表示未设置（回落 HTTP.Timeout）。
 	HeaderTimeout time.Duration
 	// IdleTimeout 聊天 SSE 流中空闲超时；<=0 表示禁用空闲监控。
@@ -1050,7 +1058,7 @@ func (c *Client) ChatStreamContext(ctx context.Context, a *auth.Auth, body []byt
 		// 同时 monitorBody.Close 仍能独立 cancel 本分支（空闲掐流）。
 		reqCtx, cancel := context.WithCancel(ctx)
 		req = req.WithContext(reqCtx)
-		chatClient, proxyRaw, err := c.chatClientFor(a)
+		chatClient, proxyRaw, err := c.chatClientFor(req.Context(), a)
 		if err != nil {
 			cancel()
 			return nil, 0, nil, err

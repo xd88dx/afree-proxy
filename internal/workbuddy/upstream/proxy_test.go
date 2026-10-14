@@ -1,6 +1,7 @@
 package upstream
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"net/url"
@@ -15,7 +16,7 @@ func TestProxyTransportForBuildsAndCachesBoundExit(t *testing.T) {
 		return "http://127.0.0.1:19080", true
 	}
 
-	tr, raw, err := c.proxyTransportFor(&auth.Auth{UID: "uid-1"})
+	tr, raw, err := c.proxyTransportFor(context.Background(), &auth.Auth{UID: "uid-1"})
 	if err != nil {
 		t.Fatalf("proxyTransportFor: %v", err)
 	}
@@ -33,7 +34,7 @@ func TestProxyTransportForBuildsAndCachesBoundExit(t *testing.T) {
 		t.Fatalf("proxy URL = %q", got.String())
 	}
 
-	tr2, _, err := c.proxyTransportFor(&auth.Auth{UID: "uid-1"})
+	tr2, _, err := c.proxyTransportFor(context.Background(), &auth.Auth{UID: "uid-1"})
 	if err != nil {
 		t.Fatalf("second proxyTransportFor: %v", err)
 	}

@@ -323,8 +323,13 @@ func requestLogMiddleware(next http.Handler) http.Handler {
 		}
 		// 未分类流量的兜底值（不进 routeStats；platform 路由之外的 /v1
 		// 请求理论上不存在，保留兜底只为日志分类不空）。
+		//
+		// route 是统计桶（日志 Route 列展示 labelRoute）。Other 子平台
+		// 各自带自定义前缀：统计仍归 other 桶（面板 Other 卡片是一张总卡），
+		// 但日志展示用子平台前缀本身，运营一眼能看出流量来自哪个上游。
 		route := "unclassified"
-		_, _, otherHit := other.ResolvePrefix(model)
+		labelRoute := ""
+		otherPlatform, _, otherHit := other.ResolvePrefix(model)
 		switch {
 		case strings.HasPrefix(r.URL.Path, "/admin") || strings.Contains(r.URL.Path, "health"):
 			route = "admin"
@@ -340,10 +345,14 @@ func requestLogMiddleware(next http.Handler) http.Handler {
 			route = "tokenharbor"
 		case otherHit:
 			route = "other"
+			labelRoute = otherPlatform.Prefix
 		case model != "":
 			route = "cline"
 		case strings.Contains(r.URL.Path, "models"):
 			route = "meta"
+		}
+		if labelRoute == "" {
+			labelRoute = route
 		}
 		// 网关请求计数：仅 /v1/ 下已归入三平台的会话流量，模型列表拉取、
 		// 面板与健康检查不计入。与日志同窗口 —— LOG_REQUESTS 关闭时模型名
@@ -369,7 +378,7 @@ func requestLogMiddleware(next http.Handler) http.Handler {
 			Method:    r.Method,
 			Path:      r.URL.Path,
 			Model:     model,
-			Route:     route,
+			Route:     labelRoute,
 			Status:    sw.status,
 			Duration:  time.Since(start).Milliseconds(),
 			Upstream:  upstream.label,

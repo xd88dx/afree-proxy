@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -98,8 +99,60 @@ func workbuddyProxyFor(a *wbauth.Auth) (string, bool) {
 		return workbuddyGlobalExit()
 	}
 	url, _, usable := pickBoundProxy(b.Main, b.Backup)
-	return url, usable
-}
+		return url, usable
+	}
+
+	// workbuddyObserveAccount 是 upstream.ObserveAccount 的实现：vendor 选号
+	// 之后把命中的账号与本次实际出口回报，网关侧据此填请求日志的「账号/Key」
+	// 与「代理」两列（此前只有 Cline 账号与 zen key 有这两列，WorkBuddy 恒空）。
+	// ctx 取自发起请求的 *http.Request：网关 /v1 请求带着日志槽位，面板请求与
+	// 定时任务的 ctx 没有槽位，setUpstreamInfo/setUpstreamExit 内部即 no-op。
+	func workbuddyObserveAccount(ctx context.Context, a *wbauth.Auth, exitRaw string) {
+		if ctx == nil || a == nil {
+			return
+		}
+		uid := strings.TrimSpace(a.UID)
+		if uid == "" {
+			return
+		}
+		setUpstreamInfo(ctx, workbuddyUpstreamLabel(a))
+		setUpstreamExit(ctx, workbuddyExitType(uid, exitRaw))
+	}
+
+	// workbuddyUpstreamLabel 日志「账号/Key」列的账号标识：WorkBuddy 账号没有
+	// 序号，UID 是唯一稳定标识 —— 取 uid#短 UID，有昵称时附在后面（过长截断）。
+	func workbuddyUpstreamLabel(a *wbauth.Auth) string {
+		uid := strings.TrimSpace(a.UID)
+		short := uid
+		if len(short) > 10 {
+			short = short[:10] + "…"
+		}
+		label := "uid#" + short
+		if nick := strings.TrimSpace(a.Nickname); nick != "" && nick != uid {
+			if len(nick) > 24 {
+				nick = nick[:24] + "…"
+			}
+			label += " " + nick
+		}
+		return label
+	}
+
+	// workbuddyExitType 与 workbuddyProxyFor 同口径判定出口类型：隔离开启且
+	// 账号有绑定时按绑定归类 main/backup/direct，否则走全局池轮转（返回空串，
+	// 面板显示 -）。fail-closed（绑定出口全不可用、未出网）按直连记 direct。
+	func workbuddyExitType(uid, exitRaw string) string {
+		if !proxyIsolationEnabled() {
+			return proxyExitType(exitRaw, "", "", false)
+		}
+		wbProxyMu.Lock()
+		loadWorkbuddyProxyBindingsLocked()
+		b, bound := wbProxyBindings[uid]
+		wbProxyMu.Unlock()
+		if !bound || (b.Main == "" && b.Backup == "") {
+			return proxyExitType(exitRaw, "", "", false)
+		}
+		return proxyExitType(exitRaw, b.Main, b.Backup, true)
+	}
 
 // workbuddyGlobalExit 未绑定身份的全局出口：面板开关选直连时即使代理列表
 // 非空也不走池（与 OpenCode 的 zenAttemptExit 同语义）。
@@ -131,13 +184,14 @@ func setWorkbuddyProxyBinding(uid, main, backup string) error {
 		return fmt.Errorf("uid is required")
 	}
 	main = strings.TrimSpace(main)
-	backup = normalizeBackupSlot(strings.TrimSpace(backup))
-	if err := validateProxyBinding(main, backup); err != nil {
-		return err
-	}
+	backup = strings.TrimSpace(backup)
 	wbProxyMu.Lock()
 	defer wbProxyMu.Unlock()
 	loadWorkbuddyProxyBindingsLocked()
+	backup = resolveBackupSlot(backup, wbProxyBindings[uid].Backup)
+	if err := validateProxyBinding(main, backup); err != nil {
+		return err
+	}
 	if main == "" && backup == "" {
 		delete(wbProxyBindings, uid)
 	} else {

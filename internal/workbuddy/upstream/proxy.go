@@ -1,6 +1,7 @@
 package upstream
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/http"
@@ -35,15 +36,18 @@ func (c *Client) baseTransport() *http.Transport {
 // proxyTransportFor 返回账号本次请求使用的 Transport 及其代理 URL。tr 为 nil
 // 表示直连/未启用账号代理（此时 URL 恒为空串）。错误分两类：errNoUsableProxy
 // = 绑定出口全不可用（无单一可归属的 URL，调用方不观测）；其余 = 配置问题。
-func (c *Client) proxyTransportFor(a *auth.Auth) (*http.Transport, string, error) {
+// ctx 仅用于 ObserveAccount 钩子透传，不参与出口决策。
+func (c *Client) proxyTransportFor(ctx context.Context, a *auth.Auth) (*http.Transport, string, error) {
 	if c.ProxyFor == nil {
 		return nil, "", nil
 	}
 	raw, ok := c.ProxyFor(a)
 	if !ok {
+		c.observeAccount(ctx, a, "")
 		return nil, "", errNoUsableProxy
 	}
 	raw = strings.TrimSpace(raw)
+	c.observeAccount(ctx, a, raw)
 	if raw == "" {
 		return nil, "", nil
 	}
@@ -72,8 +76,8 @@ func (c *Client) proxyTransportFor(a *auth.Auth) (*http.Transport, string, error
 
 // httpClientFor 返回短 RPC 使用的 HTTP client（按账号出口钉定）及出口 URL
 //（直连为空串），供出口成败观测归属。
-func (c *Client) httpClientFor(a *auth.Auth) (*http.Client, string, error) {
-	tr, raw, err := c.proxyTransportFor(a)
+func (c *Client) httpClientFor(ctx context.Context, a *auth.Auth) (*http.Client, string, error) {
+	tr, raw, err := c.proxyTransportFor(ctx, a)
 	if err != nil {
 		return nil, "", err
 	}
@@ -93,8 +97,8 @@ func (c *Client) httpClientFor(a *auth.Auth) (*http.Client, string, error) {
 
 // chatClientFor 返回聊天 SSE 使用的 HTTP client（Timeout=0，首字节/空闲由
 // upstream 自身的 HeaderTimeout/IdleTimeout 监控）及出口 URL（直连为空串）。
-func (c *Client) chatClientFor(a *auth.Auth) (*http.Client, string, error) {
-	tr, raw, err := c.proxyTransportFor(a)
+func (c *Client) chatClientFor(ctx context.Context, a *auth.Auth) (*http.Client, string, error) {
+	tr, raw, err := c.proxyTransportFor(ctx, a)
 	if err != nil {
 		return nil, "", err
 	}
@@ -113,6 +117,15 @@ func (c *Client) chatClientFor(a *auth.Auth) (*http.Client, string, error) {
 	return &cp, raw, nil
 }
 
+// observeAccount 账号归属观测（afree 本地扩展）：把 ctx + 账号 + 实际出口
+// 交给宿主（网关）写进请求日志。仅观测，不参与出口选择。
+func (c *Client) observeAccount(ctx context.Context, a *auth.Auth, exitRaw string) {
+	if c.ObserveAccount == nil {
+		return
+	}
+	c.ObserveAccount(ctx, a, exitRaw)
+}
+
 // observeProxy 出口成败回报（afree 本地扩展）：只在真实走了代理（raw 非空）
 // 且挂了钩子时回调。ctx 取消的过滤交给钩子实现方，这里原样上抛错误。
 func (c *Client) observeProxy(raw string, err error) {
@@ -123,7 +136,7 @@ func (c *Client) observeProxy(raw string, err error) {
 }
 
 func (c *Client) doHTTP(req *http.Request, a *auth.Auth) (*http.Response, error) {
-	cl, raw, err := c.httpClientFor(a)
+	cl, raw, err := c.httpClientFor(req.Context(), a)
 	if err != nil {
 		return nil, err
 	}
@@ -133,7 +146,7 @@ func (c *Client) doHTTP(req *http.Request, a *auth.Auth) (*http.Response, error)
 }
 
 func (c *Client) doChatHTTP(req *http.Request, a *auth.Auth) (*http.Response, error) {
-	cl, raw, err := c.chatClientFor(a)
+	cl, raw, err := c.chatClientFor(req.Context(), a)
 	if err != nil {
 		return nil, err
 	}

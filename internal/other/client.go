@@ -9,6 +9,7 @@ import (
 	"math/rand"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -75,9 +76,35 @@ func BuildBody(params map[string]any, modelID string, stream bool) map[string]an
 // proxyClientFor 缓存，含代理冷却/健康统计钩子）。
 var clientProvider func(proxyURL string) *http.Client
 
+// attemptObserver 请求日志观测钩子（主包注入）：仅观测，不参与路由。
+var (
+	attemptObserverMu sync.RWMutex
+	attemptObserver   func(ctx context.Context, scope, key, proxyURL string)
+)
+
 // SetClientProvider 注入 HTTP client 工厂（主包装配期调用）。
 func SetClientProvider(f func(proxyURL string) *http.Client) {
 	clientProvider = f
+}
+
+// SetAttemptObserver 注入「命中 key + 出口」观测钩子（主包装配期调用）。
+// Chat 每次选定 key 并解析出出口后回调一次（scope = 子平台 slug），供网关
+// 填请求日志的「账号/Key」「代理」两列。key 为明文，由注入方自行转序号与
+// 查绑定。仅观测，不参与任何路由决策。
+func SetAttemptObserver(f func(ctx context.Context, scope, key, proxyURL string)) {
+	attemptObserverMu.Lock()
+	attemptObserver = f
+	attemptObserverMu.Unlock()
+}
+
+// observeAttempt 回报一次 key 命中（无钩子时零成本跳过）。
+func observeAttempt(ctx context.Context, p *Platform, key, proxyURL string) {
+	attemptObserverMu.RLock()
+	obs := attemptObserver
+	attemptObserverMu.RUnlock()
+	if obs != nil {
+		obs(ctx, p.Slug, key, proxyURL)
+	}
 }
 
 func httpClientFor(proxyURL string) *http.Client {
@@ -133,6 +160,7 @@ func Chat(ctx context.Context, p *Platform, params map[string]any, modelID strin
 			}
 			proxyURL = url
 		}
+		observeAttempt(ctx, p, key, proxyURL)
 		req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(bodyJSON))
 		if err != nil {
 			return nil, rateLimited, fmt.Errorf("create request: %w", err)
