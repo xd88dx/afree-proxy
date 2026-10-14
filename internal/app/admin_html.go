@@ -71,6 +71,12 @@ h2{font-size:21px;margin-bottom:18px;font-weight:700;letter-spacing:.01em}
 .dash-card:hover{border-color:var(--accent);transform:translateY(-1px)}
 .dash-name{font-size:13px;font-weight:600;color:var(--text2)}
 .dash-stats{font-size:14px;color:var(--text);margin-top:8px;font-variant-numeric:tabular-nums}
+/* 代理池全局策略：每行最多 4 张卡片（7 个上游，超出折行） */
+.pp-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px 16px}
+.pp-card{background:rgba(255,255,255,.025);border:1px solid var(--border);border-radius:var(--radius);padding:12px 14px;display:flex;flex-direction:column;gap:7px;min-width:0}
+.pp-card label{font-size:12px;font-weight:600;color:var(--text2)}
+.pp-card select{width:100%}
+.pp-card .hint{font-size:11.5px;margin:0;line-height:1.45}
 .stat-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}
 .stat-card{background:rgba(255,255,255,.025);border:1px solid var(--border);border-radius:var(--radius);padding:13px 16px}
 .stat-name{font-size:12px;font-weight:600;color:var(--text2)}
@@ -195,14 +201,18 @@ tr[draggable="true"]:active{cursor:grabbing}
 .empty-state .icon{font-size:40px;margin-bottom:10px;display:block;opacity:.8}
 /* ===== Multi-select (Other models) ===== */
 .multi-select{position:relative;max-width:100%}
-.multi-select .ms-toggle{width:100%;text-align:left;background:var(--card);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:8px 10px;cursor:pointer;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.multi-select .ms-panel{position:absolute;z-index:60;top:calc(100% + 4px);left:0;right:0;background:var(--card);border:1px solid var(--border);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.25);overflow:hidden}
+.multi-select .ms-toggle{width:100%;text-align:left;background:var(--bg2,#131519);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:8px 10px;cursor:pointer;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.multi-select.drop-up .ms-panel{top:auto;bottom:calc(100% + 4px)}
+.multi-select .ms-panel{position:absolute;z-index:60;top:calc(100% + 4px);left:0;right:0;background:var(--bg2,#131519);border:1px solid var(--border-strong);;border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.25);overflow:hidden}
 .multi-select .ms-search{padding:8px 10px;border-bottom:1px solid var(--border)}
 .multi-select .ms-search input{width:100%;background:transparent;border:none;outline:none;color:var(--text);font-size:13px}
 .multi-select .ms-list{max-height:260px;overflow-y:auto;padding:6px 0}
 .multi-select .ms-item{display:flex;gap:8px;align-items:center;padding:6px 12px;cursor:pointer;font-size:13px;white-space:nowrap}
 .multi-select .ms-item:hover{background:var(--bg2)}
-.multi-select .ms-item span{overflow:hidden;text-overflow:ellipsis}
+.multi-select .ms-item>input[type=checkbox]{width:auto;flex:0 0 auto;margin:0;padding:0;accent-color:var(--accent)}
+.multi-select .ms-item span{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis}
+.multi-select .ms-del{flex:0 0 auto;margin-left:auto;background:none;border:none;color:var(--text3);font-size:15px;line-height:1;cursor:pointer;padding:2px 6px;border-radius:4px}
+.multi-select .ms-del:hover{color:var(--danger);background:var(--danger-dim,rgba(224,112,95,.12))}
 .multi-select .ms-empty{padding:10px 12px;color:var(--text2);font-size:12px}
 dialog .field label{display:block;font-size:12px;color:var(--text2);margin-bottom:5px}
 .key-display{background:rgba(0,0,0,.3);padding:9px 13px;border-radius:var(--radius-sm);border:1px solid var(--border);font-family:'JetBrains Mono','Cascadia Code',Consolas,monospace;font-size:12px;word-break:break-all;cursor:pointer;transition:.15s}
@@ -275,11 +285,11 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
   .sidebar .theme-toggle{margin-left:4px}
   .sidebar-footer{display:none}
   .main{padding:20px 16px 48px}
-  .dash-grid,.stat-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .dash-grid,.stat-grid,.pp-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
 }
 @media (max-width:560px){
   h2{font-size:18px}
-  .dash-grid,.stat-grid{grid-template-columns:1fr}
+  .dash-grid,.stat-grid,.pp-grid{grid-template-columns:1fr}
   .section-title{padding:11px 14px}
   .section-body{padding:14px}
   .form-row .field{min-width:100%}
@@ -466,42 +476,42 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
 <div class="section">
   <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></span> Global policy</div>
   <div class="section-body">
-    <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr 1fr 1fr 1fr;gap:10px 18px;align-items:center">
-      <div class="field" style="margin:0"><label style="margin:0">Cline</label></div>
-      <div class="field" style="margin:0"><label style="margin:0">OpenCode</label></div>
-      <div class="field" style="margin:0"><label style="margin:0">WorkBuddy</label></div>
-      <div class="field" style="margin:0"><label style="margin:0">AMDCloud</label></div>
-      <div class="field" style="margin:0"><label style="margin:0">OpenRouter</label></div>
-      <div class="field" style="margin:0"><label style="margin:0">TokenHarbor</label></div>
-      <div class="field" style="margin:0"><label style="margin:0">Other</label></div>
-      <div class="field" style="margin:0">
+    <div class="pp-grid">
+      <div class="pp-card">
+        <label>Cline</label>
         <select id="ppCline"><option value="true">Proxy</option><option value="false">Direct connection</option></select>
+        <div class="hint">Cline accounts without proxy bindings follow this switch.</div>
       </div>
-      <div class="field" style="margin:0">
+      <div class="pp-card">
+        <label>OpenCode</label>
         <select id="ppZen"><option value="true">Proxy</option><option value="false">Direct connection</option></select>
+        <div class="hint">OpenCode keys without proxy bindings follow this switch.</div>
       </div>
-      <div class="field" style="margin:0">
+      <div class="pp-card">
+        <label>WorkBuddy</label>
         <select id="ppWb"><option value="true">Proxy</option><option value="false">Direct connection</option></select>
+        <div class="hint">WorkBuddy accounts without proxy bindings follow this switch.</div>
       </div>
-      <div class="field" style="margin:0">
+      <div class="pp-card">
+        <label>AMDCloud</label>
         <select id="ppAmd"><option value="true">Proxy</option><option value="false">Direct connection</option></select>
+        <div class="hint">AMDCloud keys without proxy bindings follow this switch.</div>
       </div>
-      <div class="field" style="margin:0">
+      <div class="pp-card">
+        <label>OpenRouter</label>
         <select id="ppOr"><option value="true">Proxy</option><option value="false">Direct connection</option></select>
+        <div class="hint">OpenRouter keys without proxy bindings follow this switch.</div>
       </div>
-      <div class="field" style="margin:0">
+      <div class="pp-card">
+        <label>TokenHarbor</label>
         <select id="ppTh"><option value="true">Proxy</option><option value="false">Direct connection</option></select>
+        <div class="hint">TokenHarbor keys without proxy bindings follow this switch.</div>
       </div>
-      <div class="field" style="margin:0">
+      <div class="pp-card">
+        <label>Other</label>
         <select id="ppOther"><option value="true">Proxy</option><option value="false">Direct connection</option></select>
+        <div class="hint">Other sub-platform keys without proxy bindings follow this switch.</div>
       </div>
-      <div class="hint" style="margin:0">Cline accounts without proxy bindings follow this switch.</div>
-      <div class="hint" style="margin:0">OpenCode keys without proxy bindings follow this switch.</div>
-      <div class="hint" style="margin:0">WorkBuddy accounts without proxy bindings follow this switch.</div>
-      <div class="hint" style="margin:0">AMDCloud keys without proxy bindings follow this switch.</div>
-      <div class="hint" style="margin:0">OpenRouter keys without proxy bindings follow this switch.</div>
-      <div class="hint" style="margin:0">TokenHarbor keys without proxy bindings follow this switch.</div>
-      <div class="hint" style="margin:0">Other sub-platform keys without proxy bindings follow this switch.</div>
     </div>
     <div class="form-actions"><button class="btn btn-primary" onclick="saveGlobalPolicy()">Save</button></div>
   </div>
@@ -709,7 +719,6 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
       <label class="hint" style="margin:0 0 0 6px">Session rotation (min):</label>
       <input type="text" id="ocSessionRotate" placeholder="120" style="max-width:90px" title="Mint a fresh session id for a key once it is this old. 0 = never rotate (a long-lived session makes the first request slow after a few days).">
     </div>
-    <p class="hint" style="margin-top:0">Per-key session state is shown in the table below. Session IDs are minted locally and match the upstream's format gate (<code>^ses_[0-9a-f]{12}[0-9A-Za-z]{14}$</code>) — no CLI or harvester involved. On repeated FreeTier 403s, or once a session is older than the rotation interval, a key's session is refreshed with a freshly minted one automatically.</p>
     <div class="table-wrap" style="margin-bottom:10px">
       <table>
         <thead><tr><th style="width:50px">#</th><th style="width:110px">Key</th><th style="width:70px">Usage</th><th style="width:110px">Session</th><th style="width:110px" title="Sticky sessions are re-minted once older than the rotation interval (session rotation, min).">Rotates</th><th>Cooldown</th><th title="Main exit first, backup as fallback; both down = row skipped (isolation).">Proxy binding</th><th style="width:130px"></th><th style="text-align:center" title="Routing participation: unchecked keys never enter request rotation. Newly added keys start disabled — tick Pool to enable. Minting follows routing — keys with routing disabled stop auto-minting.">Pool</th></tr></thead>
@@ -1175,36 +1184,10 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
         </div>
       </div>
     </div>
-    <div class="hint" style="margin-top:6px">Models are exposed as <code>&lt;prefix&gt;:&lt;model-id&gt;</code>. The prefix must be unique and must not collide with built-in prefixes (zen, wbcn, wbgb, cline-free/, amd, tkhb, oprt) or another sub-platform.</div>
     <div class="form-row" style="margin-top:10px">
       <div class="field"><label>Max concurrency</label><input type="text" id="otherMaxConc" placeholder="8"></div>
       <div class="field"><label>Rate-limit retries</label><input type="text" id="otherRetries" placeholder="3"></div>
       <div class="field" style="flex:0 0 auto;display:flex;align-items:flex-end"><button class="btn btn-sm" onclick="saveOtherRateLimit()">Save rate-limit config</button></div>
-    </div>
-  </div>
-</div>
-
-<div class="section">
-  <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 5-6"/></svg></span> Models</div>
-  <div class="section-body">
-    <div class="flex" style="gap:10px;margin:0 0 10px;align-items:center;flex-wrap:wrap">
-      <button class="btn btn-sm" onclick="refreshOtherModels()" title="Re-sync the model catalog from the upstream (needs a key)">Refresh models</button>
-      <input type="text" id="otherManualModel" placeholder="add model id manually" style="max-width:320px;font-family:'JetBrains Mono',Consolas,monospace">
-      <button class="btn btn-sm" onclick="addOtherManualModel()">Add model</button>
-      <span class="hint" style="margin:0" id="otherModelsCount"></span>
-    </div>
-    <label>Available models (tick to expose)</label>
-    <div class="multi-select" id="otherModelSelect">
-      <button type="button" class="ms-toggle" id="otherModelSelectToggle" onclick="toggleOtherModelSelect()">—</button>
-      <div class="ms-panel" id="otherModelSelectPanel" style="display:none">
-        <div class="ms-search"><input type="text" id="otherModelSelectSearch" placeholder="Search models…" oninput="filterOtherModelSelect()"></div>
-        <div class="ms-list" id="otherModelSelectList"></div>
-      </div>
-    </div>
-    <div class="hint" style="margin-top:6px">Only ticked models are listed in /v1/models and accepted by the gateway; unticked models return 400. Changes save automatically. With no key, add models manually.</div>
-    <div class="flex" style="gap:10px;margin:10px 0 0;align-items:center;flex-wrap:wrap">
-      <label class="hint" style="margin:0">Probe model (used by the Test buttons):</label>
-      <select id="otherProbeModel" style="max-width:420px"><option value="">auto — first enabled model</option></select>
     </div>
   </div>
 </div>
@@ -1228,6 +1211,34 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
       <div style="display:flex;gap:8px">
         <button class="btn btn-sm btn-warn" id="otherResetBtn" onclick="resetOtherKeyEdits()" title="Discard staged changes and reload the last saved state">Discard</button>
         <button class="btn btn-primary btn-sm" id="otherKeysSaveBtn" onclick="saveOtherKeyEdits()">Save</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section" style="overflow:visible">
+  <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 5-6"/></svg></span> Models</div>
+  <div class="section-body" style="overflow:visible">
+    <!-- 第一行：模型多选下拉（占满剩余宽度） + 刷新按钮 -->
+    <div class="flex" style="gap:10px;margin:0 0 10px;align-items:stretch;flex-wrap:wrap;position:relative">
+      <div class="multi-select" id="otherModelSelect" style="flex:1 1 320px;min-width:240px">
+        <button type="button" class="ms-toggle" id="otherModelSelectToggle" onclick="toggleOtherModelSelect()" style="width:100%">—</button>
+        <div class="ms-panel" id="otherModelSelectPanel" style="display:none">
+          <div class="ms-search"><input type="text" id="otherModelSelectSearch" placeholder="Search models…" oninput="filterOtherModelSelect()"></div>
+          <div class="ms-list" id="otherModelSelectList"></div>
+        </div>
+      </div>
+      <button class="btn btn-sm" onclick="refreshOtherModels()" style="flex:0 0 auto;align-self:center" title="Re-sync the model catalog from the upstream (needs a credential)">Refresh models</button>
+    </div>
+    <!-- 第二行：左半=手动添加模型，右半=真实会话测试，各占一半 -->
+    <div class="flex" style="gap:10px;margin:0;align-items:center">
+      <div class="flex" style="gap:8px;align-items:center;flex:1 1 0;min-width:0">
+        <input type="text" id="otherManualModel" placeholder="add model id manually" style="flex:1 1 auto;min-width:0;font-family:'JetBrains Mono',Consolas,monospace">
+        <button class="btn btn-sm" onclick="addOtherManualModel()" style="flex:0 0 auto">Add model</button>
+      </div>
+      <div class="flex" style="gap:8px;align-items:center;flex:1 1 0;min-width:0">
+        <input type="text" id="otherLivePrompt" style="flex:1 1 auto;min-width:0">
+        <button class="btn btn-sm" id="otherLiveBtn" onclick="otherLiveRequest()" style="flex:0 0 auto" title="Send a real chat request using the first enabled credential">Real request</button>
       </div>
     </div>
   </div>
@@ -1507,29 +1518,17 @@ const I18N_ZH = {
   'Account': '账号',
   'Points': '积分',
   'Import JSON': '导入 JSON',
-  'No accounts yet': '暂无账号信息,请添加',
   'Failed to load WorkBuddy accounts: ': '加载 WorkBuddy 账号失败：',
   'Credits': '额度',
   'Success / errors': '成功 / 错误',
   'Last success': '最近成功',
   'Check-in': '签到',
-  'Ready': '就绪',
-  'Authenticated': '已认证',
-  'Cooling': '冷却中',
-  'Suspended': '已暂停',
   'Disabled': '已停用',
   'Deleted': '已删除',
-  'Unknown': '未知',
   'accounts': '账号',
   'tok': 'token',
-  'Balances refreshed': '余额已刷新',
   'Get authorization link': '获取授权链接',
   'Choose a realm and request an authorization link.': '选择区域并请求授权链接。',
-  'Requesting authorization link...': '正在请求授权链接...',
-  'Open the link and complete the browser login.': '打开链接并完成浏览器登录。',
-  'Authorization session created.': '授权会话已创建。',
-  'WorkBuddy account added': 'WorkBuddy 账号已添加',
-  'Authorization link copied': '授权链接已复制',
   'Copy failed': '复制失败',
   // 拖拽排序
   'Save or discard staged edits before reordering': '有未保存的暂存修改，请先保存或放弃后再拖拽排序',
@@ -1561,15 +1560,12 @@ const I18N_ZH = {
   'Toggle theme': '切换主题',
   // 仪表盘
   'Platform overview': '平台概览',
-  'Test whether the account works (success clears cooldown/expired state)': '测试账号是否可用（成功会解除冷却/过期状态）',
   'Request statistics': '请求统计',
   'Counted since ': '统计自 ',
   'requests': '请求',
   'errors': '错误',
   'Avg ': '平均 ',
-  'Active': '活跃',
   'Cooldown': '冷却中',
-  'Expired': '已失效',
   'Add account': '添加账号',
   'Endpoints': '接口',
   'OpenAI Chat format — works with most tools out of the box': 'OpenAI Chat 格式 —— 大多数工具开箱即用',
@@ -1780,7 +1776,6 @@ const I18N_ZH = {
   'Recent': '最近',
   'Last OK': '最近成功',
   'Last Fail': '最近失败',
-  'No proxies configured': '未配置代理',
   'Upstream attempts that egressed via this proxy since the pool was last edited': '上次编辑代理池以来，经此代理出网的上游尝试次数',
   'Transport-layer success rate since the pool was last edited (upstream 4xx/5xx still counts as the proxy being online)': '上次编辑代理池以来的传输层成功率（上游 4xx/5xx 不算代理失败）',
   'Success rate over the last 50 attempts; red below 80% (min 10 samples).': '最近 50 次尝试的成功率；样本≥10 且低于 80% 时标红。',
@@ -1797,8 +1792,6 @@ const I18N_ZH = {
   'Clear bindings': '清空代理',
   'Apply to others': '代理套用',
   'Apply this page\'s bindings to all other pool pages by row order (immediate).': '把本页的代理绑定按行序套用到其余五个页面（即刻生效）。',
-  'No accounts to apply from': '当前页没有账号可套用',
-  'No keys to apply from': '当前页没有 key 可套用',
   'Apply ': '把 ',
   ' proxy bindings by row order to ': ' 的代理绑定按行序套用到 ',
   ' and ': ' 和 ',
@@ -1807,7 +1800,6 @@ const I18N_ZH = {
   'Applied ': '已套用 ',
   ' binding(s) to all other lists': ' 条绑定到其他所有列表',
   ' binding(s), ': ' 条绑定，成功 ',
-  ' failed': ' 条失败',
   'Enable all': '一键启用',
   'Direct connection': '直连',
   'Save': '保存',
@@ -1819,7 +1811,6 @@ const I18N_ZH = {
   'Tokens': 'Token 用量',
   'Admin panel:': '管理面板：',
   'API address:': 'API 地址：',
-  'OpenCode config saved': 'OpenCode 配置已保存',
   'Config export / import': '配置导入导出',
   'Export config': '导出配置',
   'Import config': '导入配置',
@@ -1829,10 +1820,9 @@ const I18N_ZH = {
   'Unsupported backup version': '不支持的备份版本',
   'Choose a backup JSON file first': '请先选择备份 JSON 文件',
   'Invalid backup file: ': '备份文件无效：',
-  'Import replaces sections present in the file (accounts / keys / proxies / combos ...). All imported identities start DISABLED. Continue?': '导入将用文件内容替换当前对应的配置段（所有凭据账号/key、代理池、别名等，文件中存在的段都会替换）。导入的所有凭据一律禁用，需在面板逐个启用。继续？',
+  'Import replaces sections present in the file (accounts / keys / proxies / combos ...). All imported identities start DISABLED. Continue?': '导入将用文件内容替换当前对应的配置段（所有凭据、代理池、别名等，文件中存在的段都会替换）。导入的所有凭据一律禁用，需在面板逐个启用。继续？',
   'State': '状态',
   'Global': '全局',
-  'Follows the main slot': '跟随主出口',
   'No matching proxies': '没有匹配的代理',
   'Proxy isolation (identity ↔ exit binding)': '代理隔离（身份 ↔ 出口绑定）',
   'Isolation mode': '隔离模式',
@@ -1840,10 +1830,8 @@ const I18N_ZH = {
   'Disabled — ignore bindings; exits rotate per the strategy above (direct when pool off)': '关闭 —— 忽略绑定；出口按上方轮转策略轮换（未启用代理池时直连）',
   'Isolation on: identities egress only via their bound exits (main → backup); both down = skipped — never another exit or direct. Forced on when': '开启隔离：每个身份只从绑定的出口出站（主→备）；都不可用即跳过——绝不改走其他出口或直连。设有',
   '=true.': '=true 时强制开启。',
-  'PROXY_ISOLATION=true is set — isolation is forced on. Unset the env var (or set it to false) to control isolation from the panel.': '已设置 PROXY_ISOLATION=true —— 隔离被强制开启。删除该环境变量（或设为 false）才能在面板控制隔离。',
   'Enable backup proxies': '启用辅代理',
   'Off by default: main proxy only — cooling/removed = skipped for that round. On: backup acts as fallback.': '默认关闭：每个身份只走主代理——主代理冷却或被移除时该轮直接跳过。开启后：备用代理作为主代理的兜底。',
-  'Backup proxies are disabled — follows the main slot': '辅代理已关闭 —— 跟随主代理',
   // 网关设置页
   'API keys': 'API key',
   'Generated keys authenticate client access to the proxy API; they only take effect when the API_KEY environment variable is not set.': '生成的 key 用于客户端调用代理 API 鉴权，该 key 仅在未设置 API_KEY 环境变量时生效。',
@@ -1858,8 +1846,6 @@ const I18N_ZH = {
   'Default model': '默认模型',
   'Account scheduling strategy': '账号调度策略',
   'Record admin logs': '记录管理日志',
-  'Admin access logging enabled': '已开启管理页访问日志',
-  'Admin access logging disabled': '已关闭管理页访问日志',
   'Request headers (mimicking the Cline CLI)': '请求头（模拟 Cline CLI）',
   'Header': '请求头',
   'Value': '值',
@@ -1868,28 +1854,25 @@ const I18N_ZH = {
   'Attached to every Cline API request to mimic the official client.': '随每个转发到 Cline API 的请求附上，用于模拟官方客户端。',
   'Danger zone': '危险区',
   'Delete all data': '删除全部数据',
-  'Deletes ALL persisted data (accounts, keys, proxies, config). Cannot be undone.': '删除所有持久化数据（账号、key、代理、配置）。不可恢复。',
-  'Delete ALL persisted data? This will clear Cline accounts and client keys, OpenCode keys, WorkBuddy accounts, the proxy pool, default model, request headers, scheduling strategy, custom aliases, sticky sessions, and request logs. This cannot be undone!': '确定删除全部持久化数据？将清空 Cline 账号与客户端 key、OpenCode key、WorkBuddy 账号、代理池、默认模型、请求头、调度策略、自定义别名、粘性会话和请求日志，且不可撤销！',
+  'Deletes ALL persisted data (accounts, keys, proxies, config). Cannot be undone.': '删除所有持久化数据（所有凭据、代理、配置）。不可恢复。',
+  'Delete ALL persisted data? This will clear Cline accounts and client keys, OpenCode keys, WorkBuddy accounts, the proxy pool, default model, request headers, scheduling strategy, custom aliases, sticky sessions, and request logs. This cannot be undone!': '确定删除全部持久化数据？将清空所有平台的凭据、代理池、默认模型、请求头、调度策略、自定义别名、粘性会话和请求日志，且不可撤销！',
   'no charge': '免费',
   // 请求日志页
   'last 500 entries, persisted to data/requests.jsonl': '最近 500 条，持久化到 data/requests.jsonl',
   'Auto-refreshing': '自动刷新中',
-  'Paused': '已暂停',
   'Pause': '暂停',
-  'Resume': '继续',
   'Time': '时间',
   'Source': '来源',
   'Method': '方法',
   'Path': '路径',
   'Model': '模型',
   'Route': '路由',
-  'Upstream': '账号/Key',
+  'Upstream': '凭据',
   'Main': '主',
   'Backup': '辅',
   'Direct': '直连',
   'Status': '状态',
   'Duration': '耗时',
-  'No requests logged': '暂无请求记录',
   'cline': 'cline 池',
   'admin': '管理',
   'meta': '元数据',
@@ -1901,10 +1884,6 @@ const I18N_ZH = {
   'Platform': '平台',
   'Existing custom aliases': '现有自定义别名',
   'Target model': '目标模型',
-  'No combos yet — create one with the form above.': '还没有自定义别名 —— 用上方表单创建一个。',
-  'No models on this platform': '该平台上没有可用模型',
-  'Failed to load model list': '模型列表加载失败',
-  'socks5 pool': 'socks5 池',
   // opencode 页
   'OpenCode': 'OpenCode',
   'On': '开',
@@ -1921,18 +1900,9 @@ const I18N_ZH = {
   'Failover window (min)': '故障转移窗口（分钟）',
   'Session rotation (min):': '会话轮换（分钟）：',
   'Rotates': '轮换周期',
-  'stale': '已失效',
-  'no session': '无会话',
-  'no key': '无 key',
   // 提示气泡（title 属性）此前未进翻译表，中文界面下显示英文
-  'Click to copy': '点击复制',
-  'Remove this key from the pool': '将该密钥移出池',
-  'next in rotation': '轮换顺序中的下一个',
-  'rotation disabled': '轮换已禁用',
   'Switch language / 切换语言': '切换语言',
-  'Apply this page\'s bindings to all other pool pages by row order (immediate).': '按行顺序把本页绑定应用到其它池页（立即生效）。',
   'Sticky sessions are re-minted once older than the rotation interval (session rotation, min).': '粘性会话超过轮换间隔后重新铸造（会话轮换，分钟）。',
-  'Transport-layer success rate since the pool was last edited (upstream 4xx/5xx still counts as the proxy being online)': '自上次编辑代理池以来的传输层成功率（上游 4xx/5xx 仍计为代理在线）',
   'cooling': '冷却中',
   ' · until ': ' · 至 ',
   'Base URL': 'Base URL',
@@ -1954,14 +1924,8 @@ const I18N_ZH = {
   'Context': '上下文',
   'Maximum context length': '最大上下文长度',
   'OpenCode stats': 'OpenCode 统计',
-  'Requests': '请求数',
-  'Input tokens': '输入 token',
-  'Output tokens': '输出 token',
-  'Compaction': '压缩',
-  'Rate-limited': '限流次数',
   'Today': '今日',
   'Total': '累计',
-  'Per-model breakdown (today)': '按模型拆分（今日）',
   'No data': '暂无数据',
   // 模型状态标签
   'error': '错误',
@@ -1969,13 +1933,10 @@ const I18N_ZH = {
   'Saved ': '已保存 ',
   ' headers': ' 个请求头',
   ' proxies': ' 个代理',
-  'Proxy pool saved': '代理池已保存',
-  'Global policy saved': '全局策略已保存',
   'WorkBuddy accounts without proxy bindings follow this switch.': 'WorkBuddy 未绑定代理的账号遵循此开关。',
   'OpenRouter keys without proxy bindings follow this switch.': 'OpenRouter 未绑定代理的 key 遵循此开关。',
   'AMDCloud keys without proxy bindings follow this switch.': 'AMDCloud 未绑定代理的 key 遵循此开关。',
   'TokenHarbor keys without proxy bindings follow this switch.': 'TokenHarbor 未绑定代理的 key 遵循此开关。',
-  'Proxy isolation settings saved': '代理隔离设置已保存',
   'Pool': '启用',
   'Routing participation. New rows start disabled — tick Pool to enable.': '路由参与开关：新增行默认禁用，勾选 Pool 后参与轮转。',
   'Routing participation: unchecked keys never enter request rotation. Newly added keys start disabled — tick Pool to enable. Minting follows routing — keys with routing disabled stop auto-minting.': '路由参与开关：不勾选的 key 不进入请求轮转，铸造跟随路由（路由禁用的 key 不再自动铸造）。新增 key 默认禁用，勾选 Pool 后启用。',
@@ -1992,14 +1953,7 @@ const I18N_ZH = {
   'Create failed: ': '创建失败：',
   'Failed to load accounts: ': '账号加载失败：',
   'Failed to load: ': '加载失败：',
-  'Account deleted': '账号已删除',
-  'All accounts deleted': '已删除全部账号',
   'All persisted data deleted': '已删除全部持久化数据',
-  'All keys deleted': '已删除全部 key',
-  'Key deleted': 'key 已删除',
-  'Key generated': 'key 已生成',
-  'New key generated (click to copy)': '新 key 已生成（点击复制）',
-  'Copied to clipboard': '已复制到剪贴板',
   'Account added: ': '账号已添加：',
   'Account ': '账号 ',
   ' — ': ' —— ',
@@ -2015,13 +1969,7 @@ const I18N_ZH = {
   ' — cooldown cleared': ' —— 冷却已清除',
   ' via ': '，模型 ',
   'Strategy updated to: ': '调度策略已更新为：',
-  'Rows with a value but no key were ignored': '有值但没有键名的行已被忽略',
-  'Headers saved': '请求头已保存',
-  'Enter a token or API key': '请输入 token 或 API key',
-  'Enter an alias ID': '请输入别名 ID',
-  'Select a target model': '请选择目标模型',
   'Combo created: ': '自定义别名已创建：',
-  'Combo deleted': '自定义别名已删除',
   'Delete combo ': '删除自定义别名 ',
   '? Clients using this alias will no longer be able to call it.': '？使用该别名的客户端将无法继续调用。',
   'Delete this account?': '确定删除该账号？',
@@ -2029,13 +1977,7 @@ const I18N_ZH = {
   'Delete this key?': '确定删除该 key？',
   'Delete ALL API keys?': '确定删除全部 API key？',
   'OAuth failed: ': 'OAuth 登录失败：',
-  'Testing': '测试中',
-  'Checking': '检查中',
   'Recovers ': '恢复于 ',
-  'No opencode keys configured': '没有配置任何 opencode key',
-  'No OpenRouter keys configured': '没有配置任何 OpenRouter key',
-  'No AMDCloud keys configured': '没有配置任何 AMDCloud key',
-  'No TokenHarbor keys configured': '没有配置任何 TokenHarbor key',
   // ===== OpenRouter / AMDCloud / TokenHarbor 页（目录/限流/弹窗） =====
   'auto — first free model in the catalog': '自动——目录中第一个免费模型',
   'auto — DeepSeek-V4-Flash first': '自动——优先 DeepSeek-V4-Flash',
@@ -2043,12 +1985,11 @@ const I18N_ZH = {
   'Free model catalog': '免费模型目录',
   'Model catalog': '模型目录',
   'Automatically synced from the official free-model source upstream (every 5 minutes).': '自动同步上游的官方免费模型源（每 5 分钟）。',
-  'Upstream limits: 30 requests/min per key, 8 concurrent per key, 20 requests/min per account.': '上游限制：每 key 30 次/分钟、8 并发，每账号 20 次/分钟。',
+  'Upstream limits: 30 requests/min per key, 8 concurrent per key, 20 requests/min per account.': '上游限制：单个密钥 30 次/分钟、8 并发，单个账号 20 次/分钟。',
   'Upstream limits: 60 requests/min per account, 100 requests/min per IP.': '上游限制：每账号 60 次/分钟，每 IP 100 次/分钟。',
   'Re-sync the free-model catalog from openrouter.ai': '从 openrouter.ai 重新同步免费模型目录',
   'Re-sync the model catalog from AMDCloud': '从 AMDCloud 重新同步模型目录',
   'Re-sync the free-model catalog from TokenHarbor (needs a key)': '从 TokenHarbor 重新同步免费模型目录（需要 key）',
-  'Probe the rate limit; if still limited, stays cooling with a recovery time': '探测限流状态；若仍在限流则保持冷却并显示恢复时间',
   'Add OpenRouter keys': '添加 OpenRouter key',
   'One OpenRouter API key per line (sk-or-v1-…). New keys start with routing disabled — tick Pool to enable.': '每行一个 OpenRouter API key（sk-or-v1-…）。新 key 默认不参与路由——勾选"启用"后生效。',
   'Add AMDCloud keys': '添加 AMDCloud key',
@@ -2064,11 +2005,6 @@ const I18N_ZH = {
   'No free models yet — click Refresh models': '暂无免费模型——点"刷新模型"',
   'No models yet — click Refresh models': '暂无模型——点"刷新模型"',
   ' free models': ' 个免费模型',
-  ' tested, ': ' 个已测，',
-  ' ok': ' 个正常',
-  ' cooling': ' 个冷却中',
-  ' error': ' 个失败',
-  'live': '存活',
   'Failed to load': '加载失败',
   'Default model saved: ': '默认模型已保存：',
   'Invalid proxy format: ': '代理格式无效：',
@@ -2082,10 +2018,7 @@ const I18N_ZH = {
   'Other': 'Other',
   'Sub-platform': '子平台',
   'New sub-platform': '新建子平台',
-  'Delete sub-platform': '删除子平台',
-  'Delete key': '删除密钥',
   'Delete this key': '删除此密钥',
-  'This key will be removed from the pool. This cannot be undone.': '该密钥将从池中移除，此操作不可撤销。',
   'All its keys will be removed. This cannot be undone.': '其下所有密钥将被移除，此操作不可撤销。',
   'Name': '名称',
   'Name *': '名称 *',
@@ -2093,38 +2026,116 @@ const I18N_ZH = {
   'Model prefix (required)': '模型前缀（必填）',
   'Model prefix (required, unique) *': '模型前缀（必填，唯一）*',
   'Name and prefix are required': '名称和前缀为必填项',
-  '— no sub-platform yet —': '— 暂无子平台 —',
   'No sub-platform yet. Click "New sub-platform" to add one.': '暂无子平台。点击"新建子平台"添加一个。',
+  'Select a sub-platform to view details': '请选择子平台以查看详情',
+  'No sub-platform yet — click "New sub-platform" to add one': '还没有子平台 —— 点击"新建子平台"添加',
   'Select a sub-platform on the left.': '在左侧选择一个子平台。',
   ' sub-platform(s). Models are exposed as <prefix>:<model-id>': ' 个子平台。模型以 <prefix>:<model-id> 形式对外暴露',
-  'Available models (tick to expose)': '可用模型（勾选以启用）',
-  'Only ticked models are listed in /v1/models and accepted by the gateway; unticked models return 400. Changes save automatically. With no key, add models manually.': '仅勾选的模型会出现在 /v1/models 并被网关接受；未勾选的请求返回 400。更改自动保存。无密钥时可手动添加模型。',
-  'Re-sync the model catalog from the upstream (needs a key)': '重新从上游同步模型目录（需要密钥）',
+  'Add a credential, then refresh models or add one manually': '请添加凭据后刷新模型或手动添加模型',
+  'Add a credential first': '请先添加凭据',
+  'No available models': '暂无可用模型',
+  'No available credentials': '暂无可用凭据',
+  'Real request': '真实请求',
+  'Re-sync the model catalog from the upstream (needs a credential)': '从上游重新同步模型目录（需要凭据）',
+  'Send a real chat request using the first enabled credential': '使用第一个已启用凭据发送真实会话请求',
+  'Sending…': '发送中…',
+  'Request succeeded': '请求成功',
+  'Request failed': '请求失败',
+  'Test message, please reply with hello only': '测试消息，请只回复你好',
   'Syncing models…': '正在同步模型…',
   'Model catalog synced': '模型目录已同步',
   'Add model': '添加模型',
+  'Remove this manually added model': '删除这个手动添加的模型',
+  'Manual model removed': '已删除手动添加的模型',
+  'Remove failed: ': '删除失败：',
   'add model id manually': '手动输入模型 id',
   'Enter a model id': '请输入模型 id',
   'No models yet — add manually or add a key and click Refresh models': '暂无模型 —— 可手动添加，或添加密钥后点击"刷新模型"',
   ' enabled': ' 已启用',
   'none enabled': '未启用',
-  'auto — first enabled model': '自动 —— 第一个已启用模型',
-  'first enabled model': '第一个已启用模型',
   'Models updated': '模型已更新',
   'Delete this sub-platform and all its keys': '删除该子平台及其所有密钥',
   'Create': '创建',
   'Sub-platform created': '子平台已创建',
   'Added': '已添加',
   ' keys': ' 个密钥',
-  'Batch test done': '批量测试完成',
   'Test passed': '测试通过',
   'Saved': '已保存',
   'No keys configured': '未配置密钥',
-  'Send a real probe request': '发送真实探测请求',
   'Create an entry for an upstream provider: shared Base URL, its API keys, and the model prefix its models are exposed under.': '为上游厂商创建条目：共享的 Base URL、其 API 密钥，以及模型对外暴露的前缀。',
-  'Models are exposed as <prefix>:<model-id>. Must not collide with built-in prefixes (zen, wbcn, wbgb, cline-free/, amd, tkhb, oprt) or another sub-platform.': '模型以 <prefix>:<model-id> 形式暴露。前缀不得与内置前缀（zen、wbcn、wbgb、cline-free/、amd、tkhb、oprt）或其他子平台冲突。',
-  'Models are exposed as <prefix>:<model-id>. The prefix must be unique and must not collide with built-in prefixes (zen, wbcn, wbgb, cline-free/, amd, tkhb, oprt) or another sub-platform.': '模型以 <prefix>:<model-id> 形式对外暴露。前缀必须唯一，且不得与内置前缀（zen、wbcn、wbgb、cline-free/、amd、tkhb、oprt）或其他子平台冲突。',
-  'One API key per line for this sub-platform. New keys start with routing disabled — tick Pool to enable.': '每行一个 API 密钥。新密钥默认不参与路由 —— 勾选 Pool 启用。'
+  'One API key per line for this sub-platform. New keys start with routing disabled — tick Pool to enable.': '每行一个 API 密钥。新密钥默认不参与路由 —— 勾选 Pool 启用。',
+  'No accounts yet': '暂无账号信息,请添加',
+  'Ready': '就绪',
+  'Authenticated': '已认证',
+  'Cooling': '冷却中',
+  'Suspended': '已暂停',
+  'Unknown': '未知',
+  'Balances refreshed': '余额已刷新',
+  'Requesting authorization link...': '正在请求授权链接...',
+  'Open the link and complete the browser login.': '打开链接并完成浏览器登录。',
+  'Authorization session created.': '授权会话已创建。',
+  'WorkBuddy account added': 'WorkBuddy 账号已添加',
+  'Authorization link copied': '授权链接已复制',
+  'Test whether the account works (success clears cooldown/expired state)': '测试账号是否可用（成功会解除冷却/过期状态）',
+  'Active': '活跃',
+  'Expired': '已失效',
+  'No proxies configured': '未配置代理',
+  'No accounts to apply from': '当前页没有账号可套用',
+  'No keys to apply from': '当前页没有 key 可套用',
+  'OpenCode config saved': 'OpenCode 配置已保存',
+  'Follows the main slot': '跟随主出口',
+  'PROXY_ISOLATION=true is set — isolation is forced on. Unset the env var (or set it to false) to control isolation from the panel.': '已设置 PROXY_ISOLATION=true —— 隔离被强制开启。删除该环境变量（或设为 false）才能在面板控制隔离。',
+  'Backup proxies are disabled — follows the main slot': '辅代理已关闭 —— 跟随主代理',
+  'Admin access logging enabled': '已开启管理页访问日志',
+  'Admin access logging disabled': '已关闭管理页访问日志',
+  'Paused': '已暂停',
+  'Resume': '继续',
+  'No requests logged': '暂无请求记录',
+  'No combos yet — create one with the form above.': '还没有自定义别名 —— 用上方表单创建一个。',
+  'No models on this platform': '该平台上没有可用模型',
+  'Failed to load model list': '模型列表加载失败',
+  'socks5 pool': 'socks5 池',
+  'stale': '已失效',
+  'no session': '无会话',
+  'no key': '无 key',
+  'Click to copy': '点击复制',
+  'Remove this key from the pool': '将该密钥移出池',
+  'next in rotation': '轮换顺序中的下一个',
+  'rotation disabled': '轮换已禁用',
+  'Requests': '请求数',
+  'Input tokens': '输入 token',
+  'Output tokens': '输出 token',
+  'Compaction': '压缩',
+  'Rate-limited': '限流次数',
+  'Per-model breakdown (today)': '按模型拆分（今日）',
+  'Proxy pool saved': '代理池已保存',
+  'Global policy saved': '全局策略已保存',
+  'Proxy isolation settings saved': '代理隔离设置已保存',
+  'Account deleted': '账号已删除',
+  'All accounts deleted': '已删除全部账号',
+  'All keys deleted': '已删除全部 key',
+  'Key deleted': 'key 已删除',
+  'Key generated': 'key 已生成',
+  'New key generated (click to copy)': '新 key 已生成（点击复制）',
+  'Copied to clipboard': '已复制到剪贴板',
+  'Rows with a value but no key were ignored': '有值但没有键名的行已被忽略',
+  'Headers saved': '请求头已保存',
+  'Enter a token or API key': '请输入 token 或 API key',
+  'Enter an alias ID': '请输入别名 ID',
+  'Select a target model': '请选择目标模型',
+  'Combo deleted': '自定义别名已删除',
+  'Testing': '测试中',
+  'Checking': '检查中',
+  'No opencode keys configured': '没有配置任何 opencode key',
+  'No OpenRouter keys configured': '没有配置任何 OpenRouter key',
+  'No AMDCloud keys configured': '没有配置任何 AMDCloud key',
+  'No TokenHarbor keys configured': '没有配置任何 TokenHarbor key',
+  'Probe the rate limit; if still limited, stays cooling with a recovery time': '探测限流状态；若仍在限流则保持冷却并显示恢复时间',
+  'Delete sub-platform': '删除子平台',
+  'Delete key': '删除密钥',
+  'This key will be removed from the pool. This cannot be undone.': '该密钥将从池中移除，此操作不可撤销。',
+  'Batch test done': '批量测试完成',
+  'Send a real probe request': '发送真实探测请求',
 };
 function T(s) { return LANG === 'zh' ? (I18N_ZH[s] || s) : s; }
 function toggleLang() {
@@ -5496,12 +5507,14 @@ async function loadOtherConfig() {
   const ps = otherConfig.platforms || [];
   const sel = _('otherPlatformSelect');
   const prev = currentOtherSlug;
+  // 初始态：value="" 是纯提示项，不对应任何子平台，因此不自动选中第一个。
   sel.innerHTML = ps.length
-    ? ps.map(p => '<option value="' + esc(p.slug) + '">' + esc(p.name || p.slug) + ' (' + esc(p.prefix) + ':)</option>').join('')
-    : '<option value="">— no sub-platform yet —</option>';
-  if (ps.length && (!prev || !ps.some(p => p.slug === prev))) currentOtherSlug = ps[0].slug;
-  else if (!ps.length) currentOtherSlug = '';
-  if (currentOtherSlug) sel.value = currentOtherSlug;
+    ? '<option value="">' + T('Select a sub-platform to view details') + '</option>' +
+      ps.map(p => '<option value="' + esc(p.slug) + '">' + esc(p.name || p.slug) + ' (' + esc(p.prefix) + ':)</option>').join('')
+    : '<option value="">' + T('No sub-platform yet — click "New sub-platform" to add one') + '</option>';
+  if (ps.length && prev && ps.some(p => p.slug === prev)) currentOtherSlug = prev;
+  else currentOtherSlug = '';
+  sel.value = currentOtherSlug;
   const p = currentOtherPlatform();
   _('otherPlatformBody').style.display = p ? 'block' : 'none';
   _('otherPlatformDelBtn').style.display = p ? '' : 'none';
@@ -5511,7 +5524,6 @@ async function loadOtherConfig() {
       : T('No sub-platform yet. Click "New sub-platform" to add one.');
     return;
   }
-  _('otherSummary').textContent = ps.length + T(' sub-platform(s) · models exposed as ') + '<' + T('prefix') + '>:<model-id>';
   _('otherSummary').textContent = ps.length + T(' sub-platform(s). Models are exposed as <prefix>:<model-id>');
   _('otherName').value = p.name || '';
   _('otherPrefix').value = p.prefix || '';
@@ -5520,24 +5532,31 @@ async function loadOtherConfig() {
   _('otherRetries').value = p.retries || 3;
   otherKnownModels = p.models || [];
   otherSelectedModels = p.selectedModels || [];
-  renderOtherModelSelect(otherKnownModels, otherSelectedModels);
-  renderOtherProbeModel(otherKnownModels, otherSelectedModels, p.probeModel || '');
+  if (_('otherLivePrompt') && !_('otherLivePrompt').value) _('otherLivePrompt').value = T('Test message, please reply with hello only');
+  renderOtherModelSelect(otherKnownModels, otherSelectedModels, p.manualModels || []);
+  
   renderOtherKeys(p.keyStates || []);
 }
 
 _('otherPlatformSelect').addEventListener('change', function () { currentOtherSlug = this.value; loadOtherConfig(); });
 
 /* ---- 多选下拉：可用模型 ---- */
-function renderOtherModelSelect(models, selected) {
+function renderOtherModelSelect(models, selected, manual) {
   const list = _('otherModelSelectList');
+  const manualIds = manual || [];
   if (!models || !models.length) {
     list.innerHTML = '<div class="ms-empty">' + T('No models yet — add manually or add a key and click Refresh models') + '</div>';
   } else {
-    list.innerHTML = models.map(m =>
-      '<label class="ms-item" data-id="' + esc(m) + '">' +
-      '<input type="checkbox" value="' + esc(m) + '"' + (selected.indexOf(m) >= 0 ? ' checked' : '') +
-      ' onchange="onOtherModelToggle(this)"> <span title="' + esc(m) + '">' + esc(m) + '</span></label>'
-    ).join('');
+    list.innerHTML = models.map(m => {
+      // 只有手动添加的模型可删；上游同步来的删了会被下次刷新再拉回来。
+      const del = manualIds.indexOf(m) >= 0
+        ? '<button class="ms-del" title="' + esc(T('Remove this manually added model')) +
+          '" onclick="removeOtherManualModel(\'' + esc(m) + '\', event)">\u00d7</button>'
+        : '';
+      return '<label class="ms-item" data-id="' + esc(m) + '">' +
+        '<input type="checkbox" value="' + esc(m) + '"' + (selected.indexOf(m) >= 0 ? ' checked' : '') +
+        ' onchange="onOtherModelToggle(this)"> <span title="' + esc(m) + '">' + esc(m) + '</span>' + del + '</label>';
+    }).join('');
   }
   _('otherModelSelectToggle').textContent = otherModelSelectSummary();
   _('otherModelSelectSearch').value = '';
@@ -5545,15 +5564,40 @@ function renderOtherModelSelect(models, selected) {
 
 function otherModelSelectSummary() {
   const n = otherSelectedModels.length;
-  if (!otherKnownModels.length) return '—';
+  // 无模型时给出下一步指引，而非一个无解释的破折号。
+  if (!otherKnownModels.length) return T('Add a credential, then refresh models or add one manually');
   return n ? n + ' / ' + otherKnownModels.length + T(' enabled') : T('none enabled');
+}
+
+// otherProbeModelValue 探测模型：探测显示已从面板移除，但 Test 逻辑不变——
+// 未显式指定时一律取第一个已勾选模型（后端 ProbeModel 同口径）。
+function otherProbeModelValue() {
+  const p = currentOtherPlatform();
+  if (p && p.probeModel) return p.probeModel;
+  return otherSelectedModels.length ? otherSelectedModels[0] : '';
 }
 
 function toggleOtherModelSelect() {
   const panel = _('otherModelSelectPanel');
+  const wrap = _('otherModelSelect');
   panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
-  if (panel.style.display === 'block') _('otherModelSelectSearch').focus();
+  if (panel.style.display !== 'block') { wrap.classList.remove('drop-up'); return; }
+  _('otherModelSelectSearch').focus();
+  placeOtherModelSelect();
 }
+
+// placeOtherModelSelect 下方剩余高度装不下浮层时改为向上展开，
+// 否则靠视口底部的列表会被裁掉（面板高度随勾选项数量变化，故每次展开重算）。
+function placeOtherModelSelect() {
+  const panel = _('otherModelSelectPanel');
+  const wrap = _('otherModelSelect');
+  wrap.classList.remove('drop-up');
+  const below = window.innerHeight - wrap.getBoundingClientRect().bottom;
+  if (panel.offsetHeight + 8 > below) wrap.classList.add('drop-up');
+}
+window.addEventListener('resize', function () {
+  if (_('otherModelSelectPanel').style.display === 'block') placeOtherModelSelect();
+});
 
 function filterOtherModelSelect() {
   const q = _('otherModelSelectSearch').value.trim().toLowerCase();
@@ -5568,7 +5612,7 @@ function onOtherModelToggle(cb) {
   if (cb.checked && i < 0) otherSelectedModels.push(id);
   if (!cb.checked && i >= 0) otherSelectedModels.splice(i, 1);
   _('otherModelSelectToggle').textContent = otherModelSelectSummary();
-  renderOtherProbeModel(otherKnownModels, otherSelectedModels, _('otherProbeModel').value);
+  
   queueSaveOtherSelected();
 }
 
@@ -5587,9 +5631,35 @@ async function saveOtherSelected() {
   } catch (e) { toast(T('Save failed: ') + e.message, 'error'); }
 }
 
+// otherLiveRequest 用第一个已启用凭据发起一次真实会话，并把上游回复回显。
+// 三类前置缺失分别提示：无可用模型 / 无已启用凭据 / 成功失败内容。
+async function otherLiveRequest() {
+  const p = currentOtherPlatform();
+  if (!p) return;
+  const prompt = (_('otherLivePrompt') ? _('otherLivePrompt').value : '').trim();
+  if (!otherSelectedModels.length) { toast(T('No available models'), 'error'); return; }
+  const enabled = (p.keyStates || []).filter(k => k.routingEnabled);
+  if (!enabled.length) { toast(T('No available credentials'), 'error'); return; }
+  const btn = _('otherLiveBtn');
+  if (btn) { btn.disabled = true; btn.innerHTML = '<span class="loading"></span>' + T('Sending…'); }
+  try {
+    const r = await api('POST', '/other/chat', { slug: p.slug, model: otherProbeModelValue(), prompt: prompt });
+    const d = r.data || {};
+    toast(T('Request succeeded') + ': ' + (d.reply || '(empty reply)') + '  [' + d.model + ' · ' + d.keyMask + ' · ' + d.latencyMs + 'ms]', 'success', 12000);
+  } catch (e) {
+    const d = (e && e.data) || {};
+    toast(T('Request failed') + ': ' + (d.reason || e.message), 'error', 12000);
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = T('Real request'); }
+  }
+}
+
 async function refreshOtherModels() {
   const p = currentOtherPlatform();
   if (!p) return;
+  // 无凭据无法拉上游目录（FetchModels 取 Keys[0] 发请求），先提示再中止。
+  // 判定用 keyStates —— 平台对象只带这个字段，没有 p.keys。
+  if (!(p.keyStates || []).length) { toast(T('Add a credential first'), 'error'); return; }
   toast(T('Syncing models…'));
   try {
     const r = await api('POST', '/other/models/refresh', { slug: p.slug });
@@ -5597,12 +5667,30 @@ async function refreshOtherModels() {
     if (np) {
       otherKnownModels = np.models || [];
       otherSelectedModels = np.selectedModels || [];
-      renderOtherModelSelect(otherKnownModels, otherSelectedModels);
-      renderOtherProbeModel(otherKnownModels, otherSelectedModels, _('otherProbeModel').value);
+      renderOtherModelSelect(otherKnownModels, otherSelectedModels, np.manualModels || []);
+      
       renderOtherKeys(np.keyStates || []);
     }
     toast(T('Model catalog synced'), 'success');
   } catch (e) { toast(T('Refresh failed: ') + e.message, 'error'); }
+}
+
+// removeOtherManualModel 删掉一个手动添加的模型（后端同时取消其勾选）。
+async function removeOtherManualModel(id, ev) {
+  if (ev) { ev.preventDefault(); ev.stopPropagation(); }   // 否则会连带触发 label 勾选
+  const p = currentOtherPlatform();
+  if (!p || !id) return;
+  // 手动模型删了可原样再加回来，不做二次确认；结果由 toast 反馈。
+  try {
+    const r = await api('POST', '/other/models/manual/delete', { slug: p.slug, model: id });
+    const np = r.data && r.data.platform;
+    if (np) {
+      otherKnownModels = np.models || [];
+      otherSelectedModels = np.selectedModels || [];
+      renderOtherModelSelect(otherKnownModels, otherSelectedModels, np.manualModels || []);
+    }
+    toast(T('Manual model removed'), 'success');
+  } catch (e) { toast(T('Remove failed: ') + e.message, 'error'); }
 }
 
 async function addOtherManualModel() {
@@ -5616,8 +5704,8 @@ async function addOtherManualModel() {
     if (np) {
       otherKnownModels = np.models || [];
       otherSelectedModels = np.selectedModels || [];
-      renderOtherModelSelect(otherKnownModels, otherSelectedModels);
-      renderOtherProbeModel(otherKnownModels, otherSelectedModels, _('otherProbeModel').value);
+      renderOtherModelSelect(otherKnownModels, otherSelectedModels, np.manualModels || []);
+      
     }
     input.value = '';
     toast(T('Added') + ': ' + m, 'success');
@@ -5633,27 +5721,12 @@ async function deleteOtherManualModel(id) {
     if (np) {
       otherKnownModels = np.models || [];
       otherSelectedModels = np.selectedModels || [];
-      renderOtherModelSelect(otherKnownModels, otherSelectedModels);
-      renderOtherProbeModel(otherKnownModels, otherSelectedModels, _('otherProbeModel').value);
+      renderOtherModelSelect(otherKnownModels, otherSelectedModels, np.manualModels || []);
+      
     }
     toast(T('Deleted') + ': ' + id, 'success');
   } catch (e) { toast(T('Delete failed: ') + e.message, 'error'); }
 }
-
-function renderOtherProbeModel(models, selected, current) {
-  const el = _('otherProbeModel');
-  const opts = ['<option value="">auto — ' + T('first enabled model') + '</option>'];
-  (selected && selected.length ? selected : models || []).forEach(m => {
-    opts.push('<option value="' + esc(m) + '"' + (m === current ? ' selected' : '') + '>' + esc(m) + '</option>');
-  });
-  el.innerHTML = opts.join('');
-}
-
-_('otherProbeModel').addEventListener('change', async function () {
-  const p = currentOtherPlatform();
-  if (!p) return;
-  try { await api('POST', '/other/config/update', { slug: p.slug, probeModel: this.value }); } catch (e) { /* ignore */ }
-});
 
 /* ---- 账号（key）表（与 AMDCloud 同构：DOM diff + 事件委托 + 拖拽） ---- */
 function renderOtherKeys(ks) {
@@ -5780,7 +5853,7 @@ async function testOtherKey(id, btn) {
     const d = await api('POST', '/other/keys/test', {
       slug: p.slug,
       index: Number(id),
-      model: (_('otherProbeModel') ? _('otherProbeModel').value : '')
+      model: otherProbeModelValue()
     });
     const r = (d.data && d.data.result) || {};
     const msg = r.ok
@@ -5811,7 +5884,7 @@ async function batchTestOtherKeys() {
         const d = await api('POST', '/other/keys/test', {
           slug: p.slug,
           index: Number(ids[i]),
-          model: (_('otherProbeModel') ? _('otherProbeModel').value : '')
+          model: otherProbeModelValue()
         });
         const r = (d.data && d.data.result) || {};
         if (r.ok) ok++; else err++;
