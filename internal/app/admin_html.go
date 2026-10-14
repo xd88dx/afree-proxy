@@ -65,12 +65,13 @@ body{font-family:'Inter','Segoe UI','PingFang SC','Microsoft YaHei',system-ui,sa
 h2{font-size:21px;margin-bottom:18px;font-weight:700;letter-spacing:.01em}
 
 /* ===== Dashboard platform cards ===== */
-.dash-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px}
+/* 仪表盘卡片：每行最多 4 个（平台已增到 7 个，auto-fit 会在宽屏摊成一行） */
+.dash-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}
 .dash-card{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);padding:16px 18px;cursor:pointer;transition:border-color .2s,transform .2s}
 .dash-card:hover{border-color:var(--accent);transform:translateY(-1px)}
 .dash-name{font-size:13px;font-weight:600;color:var(--text2)}
 .dash-stats{font-size:14px;color:var(--text);margin-top:8px;font-variant-numeric:tabular-nums}
-.stat-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px}
+.stat-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}
 .stat-card{background:rgba(255,255,255,.025);border:1px solid var(--border);border-radius:var(--radius);padding:13px 16px}
 .stat-name{font-size:12px;font-weight:600;color:var(--text2)}
 .stat-line{font-size:13px;color:var(--text);margin-top:6px;font-variant-numeric:tabular-nums}
@@ -141,11 +142,14 @@ select{cursor:pointer;appearance:none;background-image:linear-gradient(45deg,tra
 .eg-badge.w3,.eg-rate.w3{padding-left:2px;padding-right:2px}
 /* 在线率五档底色：≥80 绿 / ≥60 蓝 / ≥40 粉 / ≥20 黄 / 以下红。深色主题用
    粉彩底配深字、浅色主题用深底配浅字——文字取 var(--bg) 双主题皆可读 */
-.eg-badge.t-green,.eg-rate.t-green{background:var(--accent2)}
-.eg-badge.t-blue,.eg-rate.t-blue{background:var(--accent)}
-.eg-badge.t-pink,.eg-rate.t-pink{background:var(--pink)}
-.eg-badge.t-yellow,.eg-rate.t-yellow{background:var(--amber)}
-.eg-badge.t-red,.eg-rate.t-red{background:var(--danger)}
+.eg-badge.t-green,.eg-rate.t-green,.pp-rate.t-green{background:var(--accent2)}
+.eg-badge.t-blue,.eg-rate.t-blue,.pp-rate.t-blue{background:var(--accent)}
+.eg-badge.t-pink,.eg-rate.t-pink,.pp-rate.t-pink{background:var(--pink)}
+.eg-badge.t-yellow,.eg-rate.t-yellow,.pp-rate.t-yellow{background:var(--amber)}
+.eg-badge.t-red,.eg-rate.t-red,.pp-rate.t-red{background:var(--danger)}
+/* 代理健康表在线率：与下拉框同源的档位色，但不 floated/定宽，直接居中内联 */
+.pp-rate{display:inline-block;font-size:11px;font-weight:600;line-height:1;color:var(--bg);border-radius:6px;padding:2px 6px;box-sizing:border-box;font-variant-numeric:tabular-nums;min-width:34px;text-align:center}
+.pp-rate.w3{padding-left:2px;padding-right:2px}
 .eg-input:focus{outline:none;border-color:var(--accent)}
 .eg-menu{position:absolute;z-index:1200;background:var(--bg2);border:1px solid var(--border-strong);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.35);max-height:260px;overflow-y:auto;min-width:220px}
 .eg-item{padding:6px 10px;font-size:12px;cursor:pointer;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -271,9 +275,11 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
   .sidebar .theme-toggle{margin-left:4px}
   .sidebar-footer{display:none}
   .main{padding:20px 16px 48px}
+  .dash-grid,.stat-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
 }
 @media (max-width:560px){
   h2{font-size:18px}
+  .dash-grid,.stat-grid{grid-template-columns:1fr}
   .section-title{padding:11px 14px}
   .section-body{padding:14px}
   .form-row .field{min-width:100%}
@@ -1823,7 +1829,7 @@ const I18N_ZH = {
   'Unsupported backup version': '不支持的备份版本',
   'Choose a backup JSON file first': '请先选择备份 JSON 文件',
   'Invalid backup file: ': '备份文件无效：',
-  'Import replaces sections present in the file (accounts / keys / proxies / combos ...). All imported identities start DISABLED. Continue?': '导入将用文件内容替换当前对应的配置段（六平台账号/key/代理池/别名等，文件中存在的段都会替换）。导入的所有身份（账号/key）一律禁用，需在面板逐个启用。继续？',
+  'Import replaces sections present in the file (accounts / keys / proxies / combos ...). All imported identities start DISABLED. Continue?': '导入将用文件内容替换当前对应的配置段（所有凭据账号/key、代理池、别名等，文件中存在的段都会替换）。导入的所有凭据一律禁用，需在面板逐个启用。继续？',
   'State': '状态',
   'Global': '全局',
   'Follows the main slot': '跟随主出口',
@@ -1884,7 +1890,7 @@ const I18N_ZH = {
   'Status': '状态',
   'Duration': '耗时',
   'No requests logged': '暂无请求记录',
-  'cline pool': 'cline 池',
+  'cline': 'cline 池',
   'admin': '管理',
   'meta': '元数据',
   'other': '其他',
@@ -1909,10 +1915,24 @@ const I18N_ZH = {
   'Usage': '用量',
   'Session': '会话',
   'Minted at': '铸造时间',
-  'live': 'live',
+  'Rate-limit defense &amp; failover': '限流防御与故障转移',
+  'Failover to Cline pool': '故障转移至 Cline 账号池',
+  'Failover trigger (consecutive failures)': '故障转移触发（连续失败次数）',
+  'Failover window (min)': '故障转移窗口（分钟）',
+  'Session rotation (min):': '会话轮换（分钟）：',
+  'Rotates': '轮换周期',
   'stale': '已失效',
   'no session': '无会话',
   'no key': '无 key',
+  // 提示气泡（title 属性）此前未进翻译表，中文界面下显示英文
+  'Click to copy': '点击复制',
+  'Remove this key from the pool': '将该密钥移出池',
+  'next in rotation': '轮换顺序中的下一个',
+  'rotation disabled': '轮换已禁用',
+  'Switch language / 切换语言': '切换语言',
+  'Apply this page\'s bindings to all other pool pages by row order (immediate).': '按行顺序把本页绑定应用到其它池页（立即生效）。',
+  'Sticky sessions are re-minted once older than the rotation interval (session rotation, min).': '粘性会话超过轮换间隔后重新铸造（会话轮换，分钟）。',
+  'Transport-layer success rate since the pool was last edited (upstream 4xx/5xx still counts as the proxy being online)': '自上次编辑代理池以来的传输层成功率（上游 4xx/5xx 仍计为代理在线）',
   'cooling': '冷却中',
   ' · until ': ' · 至 ',
   'Base URL': 'Base URL',
@@ -2044,12 +2064,10 @@ const I18N_ZH = {
   'No free models yet — click Refresh models': '暂无免费模型——点"刷新模型"',
   'No models yet — click Refresh models': '暂无模型——点"刷新模型"',
   ' free models': ' 个免费模型',
-  'Batch test done: ': '批量测试完成：',
   ' tested, ': ' 个已测，',
   ' ok': ' 个正常',
   ' cooling': ' 个冷却中',
   ' error': ' 个失败',
-  'no session': '无会话',
   'live': '存活',
   'Failed to load': '加载失败',
   'Default model saved: ': '默认模型已保存：',
@@ -2070,6 +2088,8 @@ const I18N_ZH = {
   'This key will be removed from the pool. This cannot be undone.': '该密钥将从池中移除，此操作不可撤销。',
   'All its keys will be removed. This cannot be undone.': '其下所有密钥将被移除，此操作不可撤销。',
   'Name': '名称',
+  'Name *': '名称 *',
+  'Models': '模型',
   'Model prefix (required)': '模型前缀（必填）',
   'Model prefix (required, unique) *': '模型前缀（必填，唯一）*',
   'Name and prefix are required': '名称和前缀为必填项',
@@ -2079,7 +2099,6 @@ const I18N_ZH = {
   ' sub-platform(s). Models are exposed as <prefix>:<model-id>': ' 个子平台。模型以 <prefix>:<model-id> 形式对外暴露',
   'Available models (tick to expose)': '可用模型（勾选以启用）',
   'Only ticked models are listed in /v1/models and accepted by the gateway; unticked models return 400. Changes save automatically. With no key, add models manually.': '仅勾选的模型会出现在 /v1/models 并被网关接受；未勾选的请求返回 400。更改自动保存。无密钥时可手动添加模型。',
-  'Refresh models': '刷新模型',
   'Re-sync the model catalog from the upstream (needs a key)': '重新从上游同步模型目录（需要密钥）',
   'Syncing models…': '正在同步模型…',
   'Model catalog synced': '模型目录已同步',
@@ -2094,10 +2113,9 @@ const I18N_ZH = {
   'Models updated': '模型已更新',
   'Delete this sub-platform and all its keys': '删除该子平台及其所有密钥',
   'Create': '创建',
-  'Created': '已创建',
+  'Sub-platform created': '子平台已创建',
   'Added': '已添加',
   ' keys': ' 个密钥',
-  'Deleted': '已删除',
   'Batch test done': '批量测试完成',
   'Test passed': '测试通过',
   'Saved': '已保存',
@@ -3236,8 +3254,8 @@ function proxyRecentRate(p) {
   return { text: Math.round(r.recentRate * 100) + '%', tier: proxyRateTier(r.recentRate) };
 }
 // 在线率五档：≥80% 绿、≥60% 蓝、≥40% 粉、≥20% 黄、以下红；底色取主题色
-//（双主题各一套）。仅影响展示，不改路由行为；代理池页健康表的 80% 标红
-// 口径独立（renderProxyHealth），互不影响。
+//（双主题各一套）。代理下拉框（eg-badge/eg-rate）与代理池页健康表
+//（pp-rate）共用同一口径与同一组颜色类。仅影响展示，不改路由行为。
 function proxyRateTier(rate) {
   if (rate >= 0.8) return 'green';
   if (rate >= 0.6) return 'blue';
@@ -3870,7 +3888,11 @@ function legacyCopy(t) {
 }
 
 // ========== Request logs ==========
-const ROUTE_LABEL = { zen: 'opencode', cline: 'cline pool', admin: 'admin', meta: 'meta', workbuddy: 'workbuddy', openrouter: 'openrouter', amd: 'amd', tokenharbor: 'tokenharbor', other: 'other', unclassified: 'unclassified' };
+// 路由名与左侧菜单同名、全小写（见 nav-item data-tab）：cline / opencode /
+// workbuddy / amdcloud / openrouter / tokenharbor / other。Other 的各子平台
+// 日志展示其自定义前缀（后端 logs.go 直接写入前缀，此表兜底不命中）。
+// admin / meta / unclassified 非平台路由，不在菜单中。
+const ROUTE_LABEL = { zen: 'opencode', cline: 'cline', admin: 'admin', meta: 'meta', workbuddy: 'workbuddy', openrouter: 'openrouter', amd: 'amdcloud', tokenharbor: 'tokenharbor', other: 'other', unclassified: 'unclassified' };
 const PROXY_LABEL = { main: 'Main', backup: 'Backup', direct: 'Direct' };
 const STATUS_CLASS = s => s >= 500 ? 'color:var(--danger)' : (s >= 400 ? 'color:var(--amber)' : 'color:var(--accent2)');
 let logsAuto = true;
@@ -4552,26 +4574,27 @@ async function loadProxyPool() {
 }
 
 // 每代理在线率表：纯被动统计（真实请求的出口成败），编辑代理池即清零。
-// 低在线率标红是展示信号，不改任何路由行为——换不换代理由人决定。
-const PROXY_HEALTH_LOW_RATE = 0.8, PROXY_HEALTH_MIN_SAMPLES = 10;
+// 在线率上色与代理下拉框同源（proxyRateTier 五档），只改展示不改路由
+// 行为——换不换代理由人决定。
 function renderProxyHealth(rows) {
   const tb = _('ppHealthBody');
   if (!tb) return;
   tb.innerHTML = rows.length
     ? rows.map(r => {
         const pct = rate => (rate === null || rate === undefined) ? null : Math.round(rate * 100) + '%';
-        const rateCell = v => v === null
+        // 在线率上色与代理下拉框同源：五档底色（proxyRateTier），累计/最近
+        // 两列口径一致，不再单用"低率标红"。
+        const rateCell = (v, rate) => v === null
           ? '<span style="color:var(--text3)">-</span>'
-          : '<span style="color:' + (v.low ? 'var(--danger)' : 'var(--text)') + ';font-weight:' + (v.low ? '600' : '400') + '">' + v.text + '</span>';
+          : '<span class="pp-rate t-' + proxyRateTier(rate) + (v.length > 3 ? ' w3' : '') + '">' + esc(v) + '</span>';
         const cum = pct(r.rate);
         const rec = pct(r.recentRate);
-        const low = r.recentTotal >= PROXY_HEALTH_MIN_SAMPLES && r.recentRate !== null && r.recentRate !== undefined && r.recentRate < PROXY_HEALTH_LOW_RATE;
         const failTitle = r.lastErr ? ' title="' + esc(r.lastErr) + '"' : '';
         return '<tr>' +
           '<td class="mono" style="font-size:11px">' + esc(egLabel(r.proxy)) + '</td>' +
           '<td style="text-align:center">' + (r.attempts || 0) + '</td>' +
-          '<td style="text-align:center">' + rateCell(cum === null ? null : { text: cum, low: false }) + '</td>' +
-          '<td style="text-align:center">' + rateCell(rec === null ? null : { text: rec, low: low }) + '</td>' +
+          '<td style="text-align:center">' + rateCell(cum, r.rate) + '</td>' +
+          '<td style="text-align:center">' + rateCell(rec, r.recentRate) + '</td>' +
           '<td class="mono" style="font-size:11px">' + (r.lastOk ? fmtWhen(r.lastOk) : '<span style="color:var(--text3)">-</span>') + '</td>' +
           '<td class="mono" style="font-size:11px"' + failTitle + '>' + (r.lastFail ? fmtWhen(r.lastFail) : '<span style="color:var(--text3)">-</span>') + '</td>' +
           '<td>' + (r.cooling ? '<span style="color:var(--warning,#eab308)">' + T('cooldown until ') + fmtWhen(r.coolingUntil) + '</span>' : '<span style="color:var(--text3)">-</span>') + '</td>' +
@@ -4644,6 +4667,7 @@ function refreshBindingTables() {
   if (_('orKeysBody') && _('orKeysBody').querySelector('.eg-input')) loadOrConfig();
   if (_('amdKeysBody') && _('amdKeysBody').querySelector('.eg-input')) loadAmdConfig();
   if (_('thKeysBody') && _('thKeysBody').querySelector('.eg-input')) loadTHConfig();
+  if (_('otherKeysBody') && _('otherKeysBody').querySelector('.eg-input')) loadOtherConfig();
 }
 
 // loadOcModels 只维护探测模型下拉（模型列表本体已并入网关设置的可用模型区）。
@@ -5819,7 +5843,7 @@ async function doOtherPlatformCreate() {
     const r = await api('POST', '/other/platforms', { name: name, prefix: prefix, baseURL: baseURL });
     closeOtherPlatformDialog();
     currentOtherSlug = (r.data && r.data.platform && r.data.platform.slug) || '';
-    toast(T('Created'), 'success');
+    toast(T('Sub-platform created'), 'success');
     loadOtherConfig();
   } catch (e) { toast(T('Create failed: ') + e.message, 'error'); }
 }

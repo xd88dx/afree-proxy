@@ -14,15 +14,17 @@ import (
 	"afree-proxy/internal/amd"
 	"afree-proxy/internal/kit"
 	"afree-proxy/internal/openrouter"
+	"afree-proxy/internal/other"
 	"afree-proxy/internal/tokenharbor"
 	wbauth "afree-proxy/internal/workbuddy/auth"
 )
 
 // ============ 配置导入导出（全量持久化状态） ============
 //
-// 导出：把所有需要持久化的状态聚合成一个 JSON——六个平台的凭据与配置
+// 导出：把所有需要持久化的状态聚合成一个 JSON——各平台凭据与配置
 // （Cline 账号、OpenCode key 及启用/绑定、OpenRouter/AMDCloud/TokenHarbor key 池、
-// WorkBuddy config + 凭据文件）、代理池（别名随行）、请求头、调度策略、默认
+// Other 子平台聚合、WorkBuddy config + 凭据文件 + 出口绑定）、代理池（别名随行）、
+// 请求头、调度策略、默认
 // 模型、自定义别名、zen 粘性会话、端点学习结果。文件包含全部凭据，仅经管理
 // 面板鉴权后下载。新平台接入时必须同步补这里的导出/导入段，否则备份丢数据。
 //
@@ -71,6 +73,13 @@ type configBackup struct {
 	// AMDCloud v2 段原名 amd；2026-10-12 随平台改名同步为 amdcloud。本项目
 	// 无存量备份文件，不保留旧键兼容——若日后需要，参照"改段名铁律"。
 	AMDCloud *amd.Config `json:"amdcloud,omitempty"`
+	// Other 子平台聚合配置（.other-config.json）。2026-10-14 补：Other 页
+	// 上线时只做了网关/面板，未接备份，导致子平台与 key 池无法随配置迁移。
+	Other *other.Config `json:"other,omitempty"`
+	// WorkBuddyProxies WorkBuddy 账号代理绑定（.workbuddy-proxies.json）。
+	// 2026-10-14 补：workbuddyBackup 原只覆盖 vendor config.json 与 auths
+	// 凭据，漏了出口绑定，导入后该文件仍留旧值（而非本机值），跨机迁移出错。
+	WorkBuddyProxies map[string]workbuddyProxyBinding `json:"workBuddyProxies,omitempty"`
 }
 
 // handleAdminConfigExport GET /admin/api/config/export
@@ -110,23 +119,25 @@ func handleAdminConfigExport(w http.ResponseWriter, r *http.Request) {
 	clineUse := poolClineUseProxies()
 	adminLog := poolAdminLogEnabled()
 	backup := configBackup{
-		Version:         configBackupVersion,
-		ExportedAt:      time.Now().UTC(),
-		Accounts:        accounts,
-		ClientKeys:      clientKeys,
-		DefaultModel:    getDefaultModel(),
-		ClineUseProxies: &clineUse,
-		AdminLogEnabled: &adminLog,
-		Strategy:        getProxyConfig().Strategy,
-		Headers:         headers,
-		Zen:             getZenConfig(),
-		Sessions:        sessions,
-		Endpoints:       loadZenEndpointsFile(),
-		Combos:          listCombos(),
-		OpenRouter:      openrouter.Get(),
-		AMDCloud:        amd.Get(),
-		TokenHarbor:     tokenharbor.Get(),
-		WorkBuddy:       exportWorkbuddyBackup(),
+		Version:          configBackupVersion,
+		ExportedAt:       time.Now().UTC(),
+		Accounts:         accounts,
+		ClientKeys:       clientKeys,
+		DefaultModel:     getDefaultModel(),
+		ClineUseProxies:  &clineUse,
+		AdminLogEnabled:  &adminLog,
+		Strategy:         getProxyConfig().Strategy,
+		Headers:          headers,
+		Zen:              getZenConfig(),
+		Sessions:         sessions,
+		Endpoints:        loadZenEndpointsFile(),
+		Combos:           listCombos(),
+		OpenRouter:       openrouter.Get(),
+		AMDCloud:         amd.Get(),
+		TokenHarbor:      tokenharbor.Get(),
+		WorkBuddy:        exportWorkbuddyBackup(),
+		Other:            other.Get(),
+		WorkBuddyProxies: exportWorkbuddyProxyBindings(),
 	}
 	data, err := json.MarshalIndent(backup, "", "  ")
 	if err != nil {
@@ -139,6 +150,38 @@ func handleAdminConfigExport(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Disposition", "attachment; filename=afree-proxy-config-"+time.Now().Format("20060102")+".json")
 	w.WriteHeader(http.StatusOK)
 	w.Write(data)
+}
+
+// exportWorkbuddyProxyBindings 快照 WorkBuddy 账号代理绑定，供导入还原。
+// 返回副本而非内部 map：调用方 json.Marshal 时不得与后台写入竞争。
+func exportWorkbuddyProxyBindings() map[string]workbuddyProxyBinding {
+	wbProxyMu.Lock()
+	defer wbProxyMu.Unlock()
+	loadWorkbuddyProxyBindingsLocked()
+	if len(wbProxyBindings) == 0 {
+		return nil
+	}
+	out := make(map[string]workbuddyProxyBinding, len(wbProxyBindings))
+	for k, v := range wbProxyBindings {
+		out[k] = v
+	}
+	return out
+}
+
+// importWorkbuddyProxyBindings 还原 WorkBuddy 出口绑定，返回写入条数。
+// 与其它段一致采用"整体替换"：备份里出现的 uid 覆盖本机值；本机多出来的
+// uid 一并清掉，避免跨机迁移后残留旧机的绑定。
+func importWorkbuddyProxyBindings(in map[string]workbuddyProxyBinding) int {
+	wbProxyMu.Lock()
+	defer wbProxyMu.Unlock()
+	loadWorkbuddyProxyBindingsLocked()
+	next := make(map[string]workbuddyProxyBinding, len(in))
+	for k, v := range in {
+		next[k] = v
+	}
+	wbProxyBindings = next
+	saveWorkbuddyProxyBindingsLocked()
+	return len(next)
 }
 
 // exportWorkbuddyBackup 读 vendor config.json 原文与 auths 目录全部凭据文件。
@@ -373,6 +416,29 @@ func handleAdminConfigImport(w http.ResponseWriter, r *http.Request) {
 		}
 		tokenharbor.Set(th)
 		imported["tokenharborKeys"] = len(th.Keys)
+	}
+	if backup.Other != nil {
+		// 与其它 key 池平台同口径：导入的 key 一律禁用（启用状态属导出方部署）。
+		ocfg := backup.Other
+		nKeys := 0
+		for i := range ocfg.Platforms {
+			p := &ocfg.Platforms[i]
+			if len(p.Keys) == 0 {
+				continue
+			}
+			if p.KeyRoutingEnabled == nil {
+				p.KeyRoutingEnabled = map[string]bool{}
+			}
+			for _, k := range p.Keys {
+				p.KeyRoutingEnabled[k] = false
+				nKeys++
+			}
+		}
+		other.Set(ocfg)
+		imported["otherKeys"] = nKeys
+	}
+	if len(backup.WorkBuddyProxies) > 0 {
+		imported["workBuddyProxies"] = importWorkbuddyProxyBindings(backup.WorkBuddyProxies)
 	}
 
 	// ---- WorkBuddy（v2 段）：config 经 saveWorkbuddyConfig 回写部署四项，

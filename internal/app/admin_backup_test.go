@@ -9,6 +9,7 @@ import (
 
 	"afree-proxy/internal/amd"
 	"afree-proxy/internal/openrouter"
+	"afree-proxy/internal/other"
 )
 
 // 备份导入的隔离护栏：导入把一切上游身份置为禁用——Cline 账号 poolEnabled
@@ -157,4 +158,117 @@ func TestComboPlatformValid(t *testing.T) {
 			t.Errorf("platform %q must be invalid", p)
 		}
 	}
+}
+
+// TestConfigBackupOtherSection 备份必须覆盖 Other 子平台聚合配置：段名 other，
+// 导入时 key 一律禁用（与其它 key 池平台同口径）。
+func TestConfigBackupOtherSection(t *testing.T) {
+	t.Run("export writes other", func(t *testing.T) {
+		b := configBackup{
+			Version: configBackupVersion,
+			Other: &other.Config{Platforms: []other.Platform{{
+				Slug: "acme", Name: "Acme", Prefix: "acme", Keys: []string{"sk-1"},
+			}}},
+		}
+		raw, err := json.Marshal(b)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var m map[string]json.RawMessage
+		if err := json.Unmarshal(raw, &m); err != nil {
+			t.Fatal(err)
+		}
+		if _, ok := m["other"]; !ok {
+			t.Error(`export must contain the "other" section`)
+		}
+	})
+
+	t.Run("import reads other and disables keys", func(t *testing.T) {
+		tmp := t.TempDir()
+		t.Setenv("DATA_DIR", tmp)
+
+		savedPath, savedPool := poolPath, pool
+		poolPath = filepath.Join(tmp, ".cline-accounts.json")
+		pool = nil
+		defer func() { poolPath, pool = savedPath, savedPool }()
+
+		savedCombos, savedCombosLoaded := combosList, combosLoaded
+		defer func() { combosList, combosLoaded = savedCombos, savedCombosLoaded }()
+
+		other.Load(filepath.Join(tmp, "other.json"))
+
+		body := `{"version":2,"other":{"platforms":[{"slug":"acme","name":"Acme","prefix":"acme",` +
+			`"baseURL":"http://x/v1","keys":["sk-1","sk-2"],` +
+			`"keyRoutingEnabled":{"sk-1":true,"sk-2":true}}]}}`
+		req := httptest.NewRequest("POST", "/admin/api/config/import", strings.NewReader(body))
+		rr := httptest.NewRecorder()
+		handleAdminConfigImport(rr, req)
+		if rr.Code != 200 {
+			t.Fatalf("import status = %d: %s", rr.Code, rr.Body.String())
+		}
+
+		cfg := other.Get()
+		if len(cfg.Platforms) != 1 || cfg.Platforms[0].Slug != "acme" {
+			t.Fatalf("other platforms not restored: %+v", cfg.Platforms)
+		}
+		p := cfg.Platforms[0]
+		if len(p.Keys) != 2 {
+			t.Fatalf("keys = %v, want 2", p.Keys)
+		}
+		for _, k := range p.Keys {
+			if p.KeyRoutingEnabled[k] {
+				t.Errorf("imported key %q must be disabled", k)
+			}
+		}
+	})
+}
+
+// TestConfigBackupWorkBuddyProxies 备份必须覆盖 WorkBuddy 出口绑定
+// （.workbuddy-proxies.json）：往返后主/辅出口原样还原。
+func TestConfigBackupWorkBuddyProxies(t *testing.T) {
+	t.Run("export writes workBuddyProxies", func(t *testing.T) {
+		b := configBackup{
+			Version: configBackupVersion,
+			WorkBuddyProxies: map[string]workbuddyProxyBinding{
+				"uid-1": {Main: "socks5://127.0.0.1:1080", Backup: "socks5://127.0.0.1:1081"},
+			},
+		}
+		raw, err := json.Marshal(b)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var m map[string]json.RawMessage
+		if err := json.Unmarshal(raw, &m); err != nil {
+			t.Fatal(err)
+		}
+		if _, ok := m["workBuddyProxies"]; !ok {
+			t.Error(`export must contain the "workBuddyProxies" section`)
+		}
+	})
+
+	t.Run("import replaces bindings", func(t *testing.T) {
+		t.Setenv("DATA_DIR", t.TempDir())
+
+		wbProxyMu.Lock()
+		wbProxyLoaded = false
+		wbProxyBindings = map[string]workbuddyProxyBinding{
+			"stale": {Main: "socks5://stale:1"},
+		}
+		wbProxyMu.Unlock()
+
+		got := importWorkbuddyProxyBindings(map[string]workbuddyProxyBinding{
+			"uid-1": {Main: "socks5://127.0.0.1:1080", Backup: "socks5://127.0.0.1:1081"},
+		})
+		if got != 1 {
+			t.Fatalf("imported %d bindings, want 1", got)
+		}
+		wbProxyMu.Lock()
+		defer wbProxyMu.Unlock()
+		if _, ok := wbProxyBindings["stale"]; ok {
+			t.Error("import must replace bindings wholesale, stale uid survived")
+		}
+		if b := wbProxyBindings["uid-1"]; b.Main != "socks5://127.0.0.1:1080" || b.Backup != "socks5://127.0.0.1:1081" {
+			t.Errorf("binding not restored: %+v", b)
+		}
+	})
 }
