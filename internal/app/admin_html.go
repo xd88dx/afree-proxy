@@ -1184,10 +1184,10 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
         </div>
       </div>
     </div>
-    <div class="form-row" style="margin-top:10px">
-      <div class="field"><label>Max concurrency</label><input type="text" id="otherMaxConc" placeholder="8"></div>
-      <div class="field"><label>Rate-limit retries</label><input type="text" id="otherRetries" placeholder="3"></div>
-      <div class="field" style="flex:0 0 auto;display:flex;align-items:flex-end"><button class="btn btn-sm" onclick="saveOtherRateLimit()">Save rate-limit config</button></div>
+    <div class="form-row" style="margin-top:10px;flex-wrap:nowrap">
+      <div class="field" style="flex:1 1 0;min-width:0"><label>Max concurrency</label><input type="text" id="otherMaxConc" placeholder="8"></div>
+      <div class="field" style="flex:1 1 0;min-width:0"><label>Rate-limit retries</label><input type="text" id="otherRetries" placeholder="3"></div>
+      <div class="field" style="flex:0 0 auto;display:flex;align-items:flex-end"><button class="btn btn-primary btn-sm" onclick="saveOtherRateLimit()">Save rate-limit config</button></div>
     </div>
   </div>
 </div>
@@ -1402,7 +1402,6 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
       <label>Base URL</label>
       <input type="text" id="opBaseURL" placeholder="https://api.acme.com/v1" style="font-family:'JetBrains Mono',Consolas,monospace">
     </div>
-    <p class="hint" style="margin:0">Models are exposed as <code>&lt;prefix&gt;:&lt;model-id&gt;</code>. Must not collide with built-in prefixes (zen, wbcn, wbgb, cline-free/, amd, tkhb, oprt) or another sub-platform. Base URL can also be filled in later.</p>
     <div class="wb-dialog-actions">
       <button class="btn btn-primary" onclick="doOtherPlatformCreate()">Create</button>
       <button class="btn" onclick="closeOtherPlatformDialog()">Cancel</button>
