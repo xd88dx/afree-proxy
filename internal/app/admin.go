@@ -153,6 +153,7 @@ func registerAdminRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/admin/api/other/keys/reorder", adminCORS(auth(handleOtherKeysReorder)))
 	mux.HandleFunc("/admin/api/other/keys/delete", adminCORS(auth(handleOtherKeyDelete)))
 	mux.HandleFunc("/admin/api/other/keys/test", adminCORS(auth(handleOtherKeyTest)))
+	mux.HandleFunc("/admin/api/other/chat", adminCORS(auth(handleOtherLiveRequest)))
 	mux.HandleFunc("/admin/api/other/keys/proxy", adminCORS(auth(handleOtherKeySetProxy)))
 	mux.HandleFunc("/admin/api/other/keys/proxy/clear", adminCORS(auth(handleOtherKeyClearProxies)))
 	mux.HandleFunc("/admin/zen/", func(w http.ResponseWriter, r *http.Request) {

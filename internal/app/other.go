@@ -1004,3 +1004,136 @@ func clearOtherKeysForDataDelete() int {
 	other.Set(next)
 	return n
 }
+
+// ============ 真实会话（Other 页"真实请求"按钮） ============
+//
+// 与 keys/test 的区别：test 固定 pin 单个 key、只发一句 "Reply with exactly:
+// OK"、只看成功与否；这里用第一个已启用凭据发用户自定义内容，并把上游
+// 回复文本回传给面板，便于人工确认模型行为。
+
+// handleOtherLiveRequest POST /admin/api/other/chat  body: { slug, model?, prompt }
+func handleOtherLiveRequest(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
+		return
+	}
+	var req struct {
+		Slug   string `json:"slug"`
+		Model  string `json:"model"`
+		Prompt string `json:"prompt"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 8192)).Decode(&req); err != nil {
+		writeAPI(w, http.StatusBadRequest, apiResponse{Error: "invalid JSON"})
+		return
+	}
+	otherLiveRequest(w, req.Slug, req.Model, req.Prompt)
+}
+
+// otherLiveRequest 执行一次真实会话并写回 JSON。三类前置条件缺失各自返回
+// 明确 code，供面板给出对应中文提示（而不是笼统的失败）。
+func otherLiveRequest(w http.ResponseWriter, slug, modelID, prompt string) {
+	p := other.PlatformBySlug(slug)
+	if p == nil {
+		writeAPI(w, http.StatusNotFound, apiResponse{Error: "platform not found: " + slug, Data: map[string]any{"code": "no_platform"}})
+		return
+	}
+	// 模型：显式指定则须已勾选，否则取第一个已勾选模型。
+	bare := strings.TrimSpace(modelID)
+	if bare != "" {
+		if _, ok := other.ResolveSelected(p, bare); !ok {
+			writeAPI(w, http.StatusBadRequest, apiResponse{
+				Error: "model not enabled on this platform: " + bare,
+				Data:  map[string]any{"code": "no_model"},
+			})
+			return
+		}
+	} else if pm, ok := other.ProbeModel(p); ok {
+		bare = pm.ID
+	} else {
+		writeAPI(w, http.StatusBadRequest, apiResponse{
+			Error: "no enabled model — tick models in the selector first",
+			Data:  map[string]any{"code": "no_model"},
+		})
+		return
+	}
+	// 凭据：第一个已启用（参与路由）的 key。
+	key := ""
+	for i, k := range p.Keys {
+		if p.RoutingEnabled(k) {
+			key = k
+			_ = i
+			break
+		}
+	}
+	if key == "" {
+		writeAPI(w, http.StatusBadRequest, apiResponse{
+			Error: "no enabled credential — enable a key in the pool first",
+			Data:  map[string]any{"code": "no_key"},
+		})
+		return
+	}
+
+	msg := strings.TrimSpace(prompt)
+	if msg == "" {
+		msg = "Reply with exactly: OK"
+	}
+	params := map[string]any{
+		"model":      p.Prefix + ":" + bare,
+		"messages":   []any{map[string]any{"role": "user", "content": msg}},
+		"max_tokens": 256,
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+	ctx = other.WithPinKey(ctx, key)
+	start := time.Now()
+	resp, _, err := other.Chat(ctx, p, params, bare, false, "fill", otherBoundRoutable(p), otherExitFn(p))
+	latency := time.Since(start).Milliseconds()
+
+	result := map[string]any{
+		"model": bare, "keyMask": other.MaskKey(key), "latencyMs": latency,
+	}
+	if err != nil {
+		var he *other.HTTPError
+		if errors.As(err, &he) {
+			result["httpStatus"] = he.Status
+			result["reason"] = fmt.Sprintf("API %d: %s", he.Status, he.Body)
+		} else {
+			result["reason"] = "upstream call failed: " + err.Error()
+		}
+		log.Printf("Other live request %s model=%s key=%s: failed: %v", p.Slug, bare, other.MaskKey(key), err)
+		writeAPI(w, http.StatusBadGateway, apiResponse{Success: false, Error: "upstream call failed", Data: result})
+		return
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
+		result["httpStatus"] = resp.StatusCode
+		result["reason"] = fmt.Sprintf("API %d: %s", resp.StatusCode, strings.TrimSpace(string(b)))
+		writeAPI(w, http.StatusBadGateway, apiResponse{Success: false, Error: "upstream call failed", Data: result})
+		return
+	}
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	var parsed struct {
+		Choices []struct {
+			Message struct {
+				Content string `json:"content"`
+			} `json:"message"`
+			Delta struct {
+				Content string `json:"content"`
+			} `json:"delta"`
+		} `json:"choices"`
+	}
+	_ = json.Unmarshal(body, &parsed)
+	text := ""
+	if len(parsed.Choices) > 0 {
+		text = parsed.Choices[0].Message.Content
+		if text == "" {
+			text = parsed.Choices[0].Delta.Content
+		}
+	}
+	other.Uncool(p, key)
+	result["reason"] = "ok"
+	result["reply"] = strings.TrimSpace(text)
+	log.Printf("Other live request %s model=%s key=%s: ok in %dms", p.Slug, bare, other.MaskKey(key), latency)
+	writeAPI(w, http.StatusOK, apiResponse{Success: true, Message: "ok", Data: result})
+}
