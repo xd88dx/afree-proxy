@@ -273,7 +273,8 @@ func Load(path string) {
 		return
 	}
 	cfg.normalize()
-	rebuildAllSem()
+	// 已持 mu 写锁：必须走不重入的 rebuildAllSemLocked（见其注释）。
+	rebuildAllSemLocked()
 }
 
 // Get 返回活配置指针（调用方遵循写时复制：先拷贝平台再改再 Set）。
@@ -342,7 +343,8 @@ func Set(next *Config) {
 	cfg = next
 	mu.Unlock()
 	save()
-	rebuildAllSem()
+	// rebuildAllSemLocked 只读包级 cfg 与 semMu，不再取 mu，故无需持 mu。
+	rebuildAllSemLocked()
 }
 
 // save 原子落盘（临时文件 + rename）。Usage/Cool 为运行时字段不落盘。
@@ -437,10 +439,13 @@ var (
 	sems  = map[string]chan struct{}{}
 )
 
-func rebuildAllSem() {
-	c := Get()
+// rebuildAllSemLocked 重建全部子平台并发信号量。调用方必须已持有 mu 写锁
+// 或根本未持锁——Go 的 RWMutex 不可重入，持锁者再调 Get() 会在 RLock
+// 上自死锁（Load 走的就是这条路径）。
+func rebuildAllSemLocked() {
 	semMu.Lock()
 	defer semMu.Unlock()
+	c := cfg
 	sems = make(map[string]chan struct{}, len(c.Platforms))
 	for i := range c.Platforms {
 		p := &c.Platforms[i]
