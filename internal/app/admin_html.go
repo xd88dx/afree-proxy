@@ -434,8 +434,8 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
       <div style="display:flex;gap:8px">
         <button class="btn btn-sm" onclick="stageAllAccountsPool(true)">Enable all</button>
         <button class="btn btn-sm" onclick="stageAllAccountsPool(false)">Disable all</button>
+        <button class="btn btn-sm" onclick="stageProxiesByOrder('acc')" title="Bind main proxy by row order: 1st credential to Direct, then the proxy pool in order (staged - click Save to apply; enable/disable and backup untouched)">Bind proxies in order</button>
         <button class="btn btn-sm" onclick="stageClearAccountProxies()" title="Stage only — click Save to apply. Clears bindings and disables every row.">Clear bindings</button>
-        <button class="btn btn-sm" onclick="applyProxiesToOthers('acc')" title="Apply this page's bindings to all other pool pages by row order (immediate).">Apply to others</button>
         <button class="btn btn-sm" id="accTestBtn" onclick="batchTestAccounts()" title="Run the Test probe on every row.">Test all</button>
       </div>
       <div style="display:flex;gap:8px">
@@ -741,8 +741,8 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
       <div style="display:flex;gap:8px">
         <button class="btn btn-sm" onclick="stageAllKeysRouting(true)">Enable all</button>
         <button class="btn btn-sm" onclick="stageAllKeysRouting(false)">Disable all</button>
+        <button class="btn btn-sm" onclick="stageProxiesByOrder('key')" title="Bind main proxy by row order: 1st credential to Direct, then the proxy pool in order (staged - click Save to apply; enable/disable and backup untouched)">Bind proxies in order</button>
         <button class="btn btn-sm" onclick="stageClearZenKeyProxies()" title="Stage only — click Save to apply. Clears bindings and disables every row.">Clear bindings</button>
-        <button class="btn btn-sm" onclick="applyProxiesToOthers('key')" title="Apply this page's bindings to all other pool pages by row order (immediate).">Apply to others</button>
         <button class="btn btn-sm" id="ocTestBtn" onclick="batchTestKeys()" title="Run the Test probe on every row.">Test all</button>
       </div>
       <div style="display:flex;gap:8px">
@@ -865,8 +865,8 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
       <div style="flex:1;display:flex;gap:8px;justify-content:center">
         <button class="btn btn-sm" onclick="stageAllWbPool(true)">Enable all</button>
         <button class="btn btn-sm" onclick="stageAllWbPool(false)">Disable all</button>
+        <button class="btn btn-sm" onclick="stageProxiesByOrder('wb')" title="Bind main proxy by row order: 1st credential to Direct, then the proxy pool in order (staged - click Save to apply; enable/disable and backup untouched)">Bind proxies in order</button>
         <button class="btn btn-sm" onclick="stageClearWorkbuddyProxyBindings()" title="Stage only — click Save to apply. Clears bindings and disables every row.">Clear bindings</button>
-        <button class="btn btn-sm" onclick="applyProxiesToOthers('wb')" title="Apply this page's bindings to all other pool pages by row order (immediate).">Apply to others</button>
       </div>
       <div style="flex:1;display:flex;gap:8px;justify-content:flex-end">
         <button class="btn btn-sm btn-warn" id="wbResetBtn" onclick="resetWorkbuddyEdits()" title="Discard staged changes and reload the last saved state">Discard</button>
@@ -993,8 +993,8 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
       <div style="display:flex;gap:8px">
         <button class="btn btn-sm" onclick="stageAllOrKeysRouting(true)">Enable all</button>
         <button class="btn btn-sm" onclick="stageAllOrKeysRouting(false)">Disable all</button>
+        <button class="btn btn-sm" onclick="stageProxiesByOrder('or')" title="Bind main proxy by row order: 1st credential to Direct, then the proxy pool in order (staged - click Save to apply; enable/disable and backup untouched)">Bind proxies in order</button>
         <button class="btn btn-sm" onclick="stageClearOrKeyProxies()" title="Stage only — click Save to apply. Clears bindings and disables every row.">Clear bindings</button>
-        <button class="btn btn-sm" onclick="applyProxiesToOthers('or')" title="Apply this page's bindings to all other pool pages by row order (immediate).">Apply to others</button>
         <button class="btn btn-sm" id="orTestBtn" onclick="batchTestOrKeys()" title="Run the Test probe on every row.">Test all</button>
       </div>
       <div style="display:flex;gap:8px">
@@ -1059,8 +1059,8 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
       <div style="display:flex;gap:8px">
         <button class="btn btn-sm" onclick="stageAllAmdKeysRouting(true)">Enable all</button>
         <button class="btn btn-sm" onclick="stageAllAmdKeysRouting(false)">Disable all</button>
+        <button class="btn btn-sm" onclick="stageProxiesByOrder('amd')" title="Bind main proxy by row order: 1st credential to Direct, then the proxy pool in order (staged - click Save to apply; enable/disable and backup untouched)">Bind proxies in order</button>
         <button class="btn btn-sm" onclick="stageClearAmdKeyProxies()" title="Stage only — click Save to apply. Clears bindings and disables every row.">Clear bindings</button>
-        <button class="btn btn-sm" onclick="applyProxiesToOthers('amd')" title="Apply this page's bindings to all other pool pages by row order (immediate).">Apply to others</button>
         <button class="btn btn-sm" id="amdTestBtn" onclick="batchTestAmdKeys()" title="Run the Test probe on every row.">Test all</button>
       </div>
       <div style="display:flex;gap:8px">
@@ -1126,8 +1126,8 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
       <div style="display:flex;gap:8px">
         <button class="btn btn-sm" onclick="stageAllTHKeysRouting(true)">Enable all</button>
         <button class="btn btn-sm" onclick="stageAllTHKeysRouting(false)">Disable all</button>
+        <button class="btn btn-sm" onclick="stageProxiesByOrder('th')" title="Bind main proxy by row order: 1st credential to Direct, then the proxy pool in order (staged - click Save to apply; enable/disable and backup untouched)">Bind proxies in order</button>
         <button class="btn btn-sm" onclick="stageClearTHKeyProxies()" title="Stage only — click Save to apply. Clears bindings and disables every row.">Clear bindings</button>
-        <button class="btn btn-sm" onclick="applyProxiesToOthers('th')" title="Apply this page's bindings to all other pool pages by row order (immediate).">Apply to others</button>
         <button class="btn btn-sm" id="thTestBtn" onclick="batchTestTHKeys()" title="Run the Test probe on every row.">Test all</button>
       </div>
       <div style="display:flex;gap:8px">
@@ -1216,6 +1216,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
       <div style="display:flex;gap:8px">
         <button class="btn btn-sm" onclick="stageAllOtherKeysRouting(true)">Enable all</button>
         <button class="btn btn-sm" onclick="stageAllOtherKeysRouting(false)">Disable all</button>
+        <button class="btn btn-sm" onclick="stageProxiesByOrder('other')" title="Bind main proxy by row order: 1st credential to Direct, then the proxy pool in order (staged - click Save to apply; enable/disable and backup untouched)">Bind proxies in order</button>
         <button class="btn btn-sm" onclick="stageClearOtherKeyProxies()" title="Stage only — click Save to apply. Clears bindings and disables every row.">Clear bindings</button>
         <button class="btn btn-sm" id="otherTestBtn" onclick="batchTestOtherKeys()" title="Run the Test probe on every row.">Test all</button>
       </div>
@@ -1601,6 +1602,15 @@ const I18N_ZH = {
   'Add': '添加帐号',
   'Test all': '批量测试',
   'Disable all': '一键禁用',
+  'Bind proxies in order': '一键代理',
+  'Bind main proxy by row order: 1st credential to Direct, then the proxy pool in order (staged - click Save to apply; enable/disable and backup untouched)': '按行序依次绑定主代理：第1个凭据绑直连，之后依次对应代理池（仅暂存，点保存才生效；不影响启用状态与辅代理）',
+  'No credentials to bind': '当前页没有可绑定的凭据',
+  'Proxy pool is empty': '代理池为空，无法按序绑定',
+  'Already bound in this order': '当前已是该顺序，无需改动',
+  'Staged ': '已暂存 ',
+  ' proxy binding(s) — click Save to apply': ' 条代理绑定，点保存生效',
+  '; ': '；',
+  ' row(s) left unchanged (no proxy left)': ' 行凭据无对应代理，保持原样',
   'No changes to save': '没有需要保存的修改',
   'Save failed for ': '保存失败 ',
   ' account(s)': ' 个账号',
@@ -1815,14 +1825,7 @@ const I18N_ZH = {
   'Headers restored to defaults': '请求头已恢复默认',
   'OpenCode keys without proxy bindings follow this switch.': 'OpenCode 未绑定代理的 key 遵循此开关。',
   'Clear bindings': '清空代理',
-  'Apply to others': '代理套用',
-  'Apply this page\'s bindings to all other pool pages by row order (immediate).': '把本页的代理绑定按行序套用到其余五个页面（即刻生效）。',
-  'Apply ': '把 ',
-  ' proxy bindings by row order to ': ' 的代理绑定按行序套用到 ',
   ' and ': ' 和 ',
-  ' lists? Takes effect immediately; ': ' 的所有列表？即刻生效；',
-  'only proxy bindings change, enable/disable states are untouched.': '只改代理绑定，不改启用/禁用状态。',
-  'Applied ': '已套用 ',
   ' binding(s) to all other lists': ' 条绑定到其他所有列表',
   ' binding(s), ': ' 条绑定，成功 ',
   'Enable all': '一键启用',
@@ -2111,8 +2114,6 @@ const I18N_ZH = {
   'Active': '活跃',
   'Expired': '已失效',
   'No proxies configured': '未配置代理',
-  'No accounts to apply from': '当前页没有账号可套用',
-  'No keys to apply from': '当前页没有 key 可套用',
   'OpenCode config saved': 'OpenCode 配置已保存',
   'Follows the main slot': '跟随主出口',
   'PROXY_ISOLATION=true is set — isolation is forced on. Unset the env var (or set it to false) to control isolation from the panel.': '已设置 PROXY_ISOLATION=true —— 隔离被强制开启。删除该环境变量（或设为 false）才能在面板控制隔离。',
@@ -3333,6 +3334,41 @@ function stageRowBindingClear(row, kind) {
   return true;
 }
 
+// 各凭据页的表格容器（键 -> tbody 选择器），一键代理按页取行。
+const BIND_TBODY = { acc: '#accountTableBody', key: '#ocKeysBody', wb: '#wbAccountsBody',
+                    or: '#orKeysBody', amd: '#amdKeysBody', th: '#thKeysBody', other: '#otherKeysBody' };
+
+// 一键代理：按行序把主代理依次绑定为 [直连, 代理池第1项, 代理池第2项, ...]。
+// 仅暂存——与 Enable/Disable all、Clear bindings 同一口径，必须点 Save 才落盘。
+// 不碰启用/禁用状态，也不主动写辅代理（辅槽只随既有的 egApplyMainLinkage 联动规则
+// 跟随主槽；需要自定义辅代理请在开启辅代理后手动改）。
+// 凭据多于代理时，多余的行保持原绑定不动。
+function stageProxiesByOrder(kind) {
+  const tbody = BIND_TBODY[kind];
+  if (!tbody) return;
+  const rows = [...document.querySelectorAll(tbody + ' tr')]
+    .filter(r => r.querySelector('.eg-input[data-eg="' + kind + '"][data-slot="main"]'));
+  if (!rows.length) { toast(T('No credentials to bind'), 'info'); return; }
+  if (!proxyListCache.length) { toast(T('Proxy pool is empty'), 'info'); return; }
+  const seq = [EGRESS_DIRECT].concat(proxyListCache);
+  let n = 0, left = 0;
+  rows.forEach((row, i) => {
+    if (i >= seq.length) { left++; return; }
+    const main = row.querySelector('.eg-input[data-eg="' + kind + '"][data-slot="main"]');
+    const v = seq[i];
+    if (main.dataset.value === v) return;
+    main.dataset.value = v;
+    main.value = egLabel(v);
+    egSyncBadge(main);
+    egApplyMainLinkage(row, v);
+    markRowDirty(row, kind);
+    n++;
+  });
+  if (!n) { toast(T('Already bound in this order'), 'info'); return; }
+  toast(T('Staged ') + n + T(' proxy binding(s) — click Save to apply') +
+        (left ? T('; ') + left + T(' row(s) left unchanged (no proxy left)') : ''), 'success');
+}
+
 let accSnapshot = {};
 function stageAllAccountsPool(enabled) {
   document.querySelectorAll('#accountTableBody input[data-pool-enabled]').forEach(cb => {
@@ -3452,109 +3488,6 @@ function stageClearZenKeyProxies() {
   });
 }
 
-// ========== 代理套用（把本页绑定按行序复制到其余五个池页）==========
-// 页名 → 绑定 kind 与表格选择器：owner 页的绑定从 DOM 读（含暂存未保存的），
-// 其余五页按行序覆盖第 0..n-1 行；异页缺号保留原绑定不动，多出来的丢弃。
-// 写入协议：acc=accountId，其余（key/wb/or/amd/th）=行 index。keys:true 的页
-// 空态提示用 key 措辞。只写代理绑定，不碰启用/禁用/路由，不走 Save 暂存
-// 流程，写入即落盘。
-const BINDING_PAGES = [
-  { kind: 'acc', name: 'Cline',  tbody: '#accountTableBody' },
-  { kind: 'key', name: 'OpenCode', tbody: '#ocKeysBody' },
-  { kind: 'wb',  name: 'WorkBuddy', tbody: '#wbAccountsBody' },
-  { kind: 'amd', name: 'AMDCloud', tbody: '#amdKeysBody', keys: true },
-  { kind: 'or',  name: 'OpenRouter', tbody: '#orKeysBody', keys: true },
-  { kind: 'th',  name: 'TokenHarbor', tbody: '#thKeysBody', keys: true }
-];
-// 各页落盘后的重拉函数：目标页从未打开过（tbody 只有占位行）时先拉一次，
-// 套用结束后再重拉一次确认落盘结果。acc 例外：写入后 DOM 即最终态，不重拉。
-const BINDING_RELOAD = { acc: loadAccounts, key: loadOcConfig, wb: loadWorkbuddyAccounts, or: loadOrConfig, amd: loadAmdConfig, th: loadTHConfig };
-// 读一行的主/辅绑定：辅槽在开关关闭/主为全局或直连时已被 egApplyMainLinkage
-// 锁定跟随主槽，dataset.value 即为最终生效值，照抄即可。
-function readRowBindings(row, kind) {
-  const main = row.querySelector('.eg-input[data-eg="' + kind + '"][data-slot="main"]');
-  if (!main) return null;
-  const backup = row.querySelector('.eg-input[data-eg="' + kind + '"][data-slot="backup"]');
-  return { id: main.dataset.egid, main: main.dataset.value || '', backup: backup ? (backup.dataset.value || '') : '' };
-}
-// 写一行的绑定（仅代理）：同步 DOM 的 data-value 与显示标签，辅槽联动规则照旧。
-function setRowBindings(row, kind, main, backup) {
-  const mainInput = row.querySelector('.eg-input[data-eg="' + kind + '"][data-slot="main"]');
-  if (!mainInput) return null;
-  mainInput.dataset.value = main;
-  mainInput.value = egLabel(main);
-  egSyncBadge(mainInput);
-  const backupInput = row.querySelector('.eg-input[data-eg="' + kind + '"][data-slot="backup"]');
-  const bVal = (!backupProxyOn || main === '' || main === EGRESS_DIRECT) ? main : backup;
-  if (backupInput) {
-    backupInput.dataset.value = bVal;
-    backupInput.value = egLabel(bVal);
-    egSyncBadge(backupInput);
-  }
-  egApplyMainLinkage(row, main);
-  return mainInput.dataset.egid;
-}
-// 目标页落盘：与各页 Save 的提交口径一致（绑定与启用分开提交，这里只发绑定）。
-async function writeBinding(kind, id, main, backup) {
-  if (kind === 'acc') {
-    await api('POST', '/accounts/proxy', { accountId: id, main: main, backup: backup });
-  } else if (kind === 'key') {
-    await api('POST', '/opencode/keys/proxy', { index: parseInt(id, 10), main: main, backup: backup });
-  } else if (kind === 'or') {
-    await api('POST', '/openrouter/keys/proxy', { index: parseInt(id, 10), main: main, backup: backup });
-  } else if (kind === 'amd') {
-    await api('POST', '/amd/keys/proxy', { index: parseInt(id, 10), main: main, backup: backup });
-  } else if (kind === 'th') {
-    await api('POST', '/tokenharbor/keys/proxy', { index: parseInt(id, 10), main: main, backup: backup });
-  } else {
-    await workbuddyProxyAdminCall('POST', 'proxy/set', { uid: id, main: main, backup: backup });
-  }
-}
-async function applyProxiesToOthers(ownerKind) {
-  const owner = BINDING_PAGES.find(p => p.kind === ownerKind);
-  if (!owner) return;
-  const ownerRows = [...document.querySelectorAll(owner.tbody + ' tr')]
-    .filter(r => r.querySelector('.eg-input[data-slot="main"]'));
-  const bindings = ownerRows.map(r => readRowBindings(r, ownerKind)).filter(Boolean);
-  if (!bindings.length) { toast(T(owner.keys ? 'No keys to apply from' : 'No accounts to apply from'), 'info'); return; }
-  const targets = BINDING_PAGES.filter(p => p.kind !== ownerKind);
-  const names = targets.map(p => p.name);
-  const nameList = names.length > 1
-    ? names.slice(0, -1).join(', ') + T(' and ') + names[names.length - 1]
-    : names[0];
-  if (!confirm(T('Apply ') + owner.name + T(' proxy bindings by row order to ') +
-    nameList + T(' lists? Takes effect immediately; ') +
-    T('only proxy bindings change, enable/disable states are untouched.'))) return;
-  let ok = 0, fail = 0;
-  const refreshPending = {};
-  for (const t of targets) {
-    // 目标页从未打开过时 tbody 只有占位行 —— 先拉一次它的数据再套用
-    if (!document.querySelector(t.tbody + ' .eg-input')) {
-      const load = BINDING_RELOAD[t.kind];
-      if (load) { try { await load(); } catch (e) { /* 拉取失败按 0 行处理 */ } }
-    }
-    const rows = [...document.querySelectorAll(t.tbody + ' tr')]
-      .filter(r => r.querySelector('.eg-input[data-slot="main"]'));
-    for (let i = 0; i < rows.length && i < bindings.length; i++) {
-      const id = setRowBindings(rows[i], t.kind, bindings[i].main, bindings[i].backup);
-      if (id == null) continue;
-      try {
-        await writeBinding(t.kind, id, bindings[i].main, bindings[i].backup);
-        ok++;
-      } catch (e) { fail++; }
-    }
-    if (t.kind !== 'acc') refreshPending[t.kind] = true;
-  }
-  // 目标页表格重拉确认落盘结果；owner 页保持原样（其自身表格未被改动）。
-  // 切走页面导致刷新失败时保持简单，不打断套用流程。
-  for (const k of Object.keys(refreshPending)) {
-    if (!refreshPending[k]) continue;
-    const load = BINDING_RELOAD[k];
-    if (load) { try { await load(); } catch (e) { console.warn('applyProxiesToOthers: reload ' + k + ' failed', e); } }
-  }
-  if (fail) toast(T('Applied ') + ok + T(' binding(s), ') + fail + T(' failed'), 'warning');
-  else toast(T('Applied ') + ok + T(' binding(s) to all other lists'), 'success');
-}
 
 // ========== 出口绑定联想下拉（combobox） ==========
 // 选项固定为 全局 / 直连，其后是代理池按输入联想。联想阈值：有效字符 ≥3
