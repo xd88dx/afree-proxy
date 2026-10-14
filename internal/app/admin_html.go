@@ -1198,7 +1198,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
     <div class="form-row" style="margin-top:10px;flex-wrap:nowrap">
       <div class="field" style="flex:1 1 0;min-width:0"><label>Max concurrency</label><input type="text" id="otherMaxConc" placeholder="8"></div>
       <div class="field" style="flex:1 1 0;min-width:0"><label>Rate-limit retries</label><input type="text" id="otherRetries" placeholder="3"></div>
-      <div class="field" style="flex:0 0 auto;display:flex;align-items:flex-end"><button class="btn btn-primary btn-sm" onclick="saveOtherRateLimit()">Save rate-limit config</button></div>
+      <div class="field" style="flex:0 0 auto;min-width:0;align-self:stretch;display:grid;grid-template-rows:auto 1fr;align-items:center"><label aria-hidden="true" style="visibility:hidden">&nbsp;</label><button class="btn btn-primary btn-sm" onclick="saveOtherRateLimit()">Save rate-limit config</button></div>
     </div>
   </div>
 </div>
