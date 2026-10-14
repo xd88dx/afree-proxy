@@ -28,7 +28,26 @@ func otherConfigPath() string { return kit.ResolveDataPath(".other-config.json")
 func initOther() {
 	other.Load(otherConfigPath())
 	other.SetClientProvider(proxyClientFor)
+	other.SetAttemptObserver(otherAttemptObserver)
 	go startOtherModelsRefresher()
+}
+
+// otherAttemptObserver 是 other 的 SetAttemptObserver 实现。多子平台共用一
+// 个注入点，故按 scope（子平台 slug）现查平台再走 keyPoolAttemptObserver 的
+// 同款逻辑。slug 查不到（请求途中被删）时只记 key 序号，代理列留空。
+func otherAttemptObserver(ctx context.Context, scope, key, proxyURL string) {
+	if ctx == nil || key == "" {
+		return
+	}
+	p := other.PlatformBySlug(scope)
+	if p == nil {
+		setUpstreamInfo(ctx, fmt.Sprintf("key#%d", other.KeyIndex(&other.Platform{}, key)))
+		return
+	}
+	keyPoolAttemptObserver(
+		func(k string) int { return other.KeyIndex(p, k) },
+		func(k string) (string, string, bool) { return other.BindingOf(p, k) },
+	)(ctx, key, proxyURL)
 }
 
 // startOtherModelsRefresher 每 5 分钟同步一次全部有 key 的子平台目录。上游偶发
@@ -222,17 +241,17 @@ func platformAPI(p *other.Platform) map[string]any {
 		models = append(models, m.ID)
 	}
 	return map[string]any{
-		"slug":            p.Slug,
-		"name":            p.Name,
-		"prefix":          p.Prefix,
-		"baseURL":         p.BaseURL,
-		"keyStates":       other.KeyStatus(p),
-		"maxConcurrency":  p.MaxConcurrency,
-		"retries":         p.Retries,
-		"models":          models,
-		"selectedModels":  other.SelectedModelIDs(p),
-		"manualModels":    append([]string(nil), p.Models.Manual...),
-		"probeModel":      p.Models.Probe,
+		"slug":           p.Slug,
+		"name":           p.Name,
+		"prefix":         p.Prefix,
+		"baseURL":        p.BaseURL,
+		"keyStates":      other.KeyStatus(p),
+		"maxConcurrency": p.MaxConcurrency,
+		"retries":        p.Retries,
+		"models":         models,
+		"selectedModels": other.SelectedModelIDs(p),
+		"manualModels":   append([]string(nil), p.Models.Manual...),
+		"probeModel":     p.Models.Probe,
 	}
 }
 
@@ -661,11 +680,7 @@ func handleOtherKeySetProxy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	main := strings.TrimSpace(req.Main)
-	backup := normalizeBackupSlot(strings.TrimSpace(req.Backup))
-	if err := validateProxyBinding(main, backup); err != nil {
-		writeAPI(w, http.StatusBadRequest, apiResponse{Error: err.Error()})
-		return
-	}
+	backup := strings.TrimSpace(req.Backup)
 	cur := other.PlatformBySlug(req.Slug)
 	if cur == nil {
 		writeAPI(w, http.StatusNotFound, apiResponse{Error: "platform not found: " + req.Slug})
@@ -675,8 +690,13 @@ func handleOtherKeySetProxy(w http.ResponseWriter, r *http.Request) {
 		writeAPI(w, http.StatusBadRequest, apiResponse{Error: "key index out of range"})
 		return
 	}
+	key := cur.Keys[req.Index]
+	backup = resolveBackupSlot(backup, cur.KeyBindings[key].Backup)
+	if err := validateProxyBinding(main, backup); err != nil {
+		writeAPI(w, http.StatusBadRequest, apiResponse{Error: err.Error()})
+		return
+	}
 	next := other.ClonePlatform(cur)
-	key := next.Keys[req.Index]
 	if main == "" && backup == "" {
 		delete(next.KeyBindings, key)
 	} else {

@@ -43,6 +43,7 @@ func initAMD() {
 		return url, ok
 	})
 	amd.SetClientProvider(proxyClientFor)
+	amd.SetAttemptObserver(scopedObserver(keyPoolAttemptObserver(amd.KeyIndex, amd.BindingOf)))
 	// 启动即预热模型目录（异步，失败保留种子）
 	amd.InitCatalog()
 	go startAMDModelsRefresher()
@@ -404,17 +405,18 @@ func handleAMDKeySetProxy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	main := strings.TrimSpace(req.Main)
-	backup := normalizeBackupSlot(strings.TrimSpace(req.Backup))
-	if err := validateProxyBinding(main, backup); err != nil {
-		writeAPI(w, http.StatusBadRequest, apiResponse{Error: err.Error()})
-		return
-	}
+	backup := strings.TrimSpace(req.Backup)
 	cur := amd.Get()
 	if req.Index < 0 || req.Index >= len(cur.Keys) {
 		writeAPI(w, http.StatusBadRequest, apiResponse{Error: "key index out of range"})
 		return
 	}
 	key := cur.Keys[req.Index]
+	backup = resolveBackupSlot(backup, cur.KeyBindings[key].Backup)
+	if err := validateProxyBinding(main, backup); err != nil {
+		writeAPI(w, http.StatusBadRequest, apiResponse{Error: err.Error()})
+		return
+	}
 	_, next := amdCloneConfig()
 	if main == "" && backup == "" {
 		delete(next.KeyBindings, key)

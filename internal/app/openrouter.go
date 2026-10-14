@@ -45,6 +45,7 @@ func initOpenRouter() {
 		return url, ok
 	})
 	openrouter.SetClientProvider(proxyClientFor)
+	openrouter.SetAttemptObserver(scopedObserver(keyPoolAttemptObserver(openrouter.KeyIndex, openrouter.BindingOf)))
 	// 启动即预热模型目录（异步，失败保留种子）
 	openrouter.InitCatalog()
 	go startOrModelsRefresher()
@@ -213,11 +214,11 @@ func handleOrConfigUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 	defer r.Body.Close()
 	var patch struct {
-		UseProxies  *bool    `json:"useProxies"`
-		BaseURL     *string  `json:"baseURL"`
-		Keys        []string `json:"keys"`
-		MaxConc     *int     `json:"maxConcurrency"`
-		Retries     *int     `json:"retries"`
+		UseProxies *bool    `json:"useProxies"`
+		BaseURL    *string  `json:"baseURL"`
+		Keys       []string `json:"keys"`
+		MaxConc    *int     `json:"maxConcurrency"`
+		Retries    *int     `json:"retries"`
 	}
 	if err := json.Unmarshal(body, &patch); err != nil {
 		writeAPI(w, http.StatusBadRequest, apiResponse{Error: "invalid JSON: " + err.Error()})
@@ -521,15 +522,16 @@ func orDeleteKey(index int) error {
 
 func orSetKeyProxy(index int, main, backup string) error {
 	main = strings.TrimSpace(main)
-	backup = normalizeBackupSlot(strings.TrimSpace(backup))
-	if err := validateProxyBinding(main, backup); err != nil {
-		return err
-	}
+	backup = strings.TrimSpace(backup)
 	cur := openrouter.Get()
 	if index < 0 || index >= len(cur.Keys) {
 		return fmt.Errorf("key index out of range")
 	}
 	key := cur.Keys[index]
+	backup = resolveBackupSlot(backup, cur.KeyBindings[key].Backup)
+	if err := validateProxyBinding(main, backup); err != nil {
+		return err
+	}
 	_, next := orCloneConfig()
 	if main == "" && backup == "" {
 		delete(next.KeyBindings, key)

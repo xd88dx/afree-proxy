@@ -111,15 +111,20 @@ func backupProxyEnabled() bool {
 	return v != nil && *v
 }
 
-// normalizeBackupSlot 按辅代理开关收敛写入的绑定：关闭时辅槽一律落空。面板
-// 在关闭态把辅下拉置为只读并强制跟随主槽（值就是主槽值），不收敛会让
-// "主=代理、辅=同一个代理"这组无意义配置撞上 validateProxyBinding 的
-// main==backup 校验；留着旧辅值则会变成重新打开开关后静默生效的隐藏状态。
-func normalizeBackupSlot(backup string) string {
+// resolveBackupSlot 按辅代理开关决定落盘的辅槽值。
+//
+// 开关开启：辅槽参与路由，采纳调用方提交的值。
+// 开关关闭：辅槽整体退出路由（pickBoundProxy 在此分支直接返回 ok=false），
+//   面板把辅槽锁成只读并跟随主槽，提交上来的值只是显示值而非用户意图，
+//   此时保留该身份已持久化的旧辅槽原值 —— 重开开关即可复用，无需重选。
+//   保留而非清空是刻意的：清空会让"关一下开关"变成不可逆的数据丢失。
+//
+// 旧值由调用方从当前绑定里取出（storedBackup），空串表示此前没有辅槽。
+func resolveBackupSlot(submitted, storedBackup string) string {
 	if backupProxyEnabled() {
-		return backup
+		return submitted
 	}
-	return ""
+	return storedBackup
 }
 
 // pickBoundProxy 为一次上游尝试从绑定对中选可用出口：主优先，辅兜底
@@ -250,6 +255,11 @@ func zenKeyBindingOf(key string) (main, backup string, bound bool) {
 // 毫无意义，还掩盖配置错误）。主 = 直连时辅只能是空或直连（UI 会自动跟随
 // 锁定）。允许 socks5 —— 网关上游请求支持全部协议；收割机 CLI 的 socks5 由
 // 本地桥兑现（socks_bridge.go），不依赖 CLI 自身。
+//
+// main == backup 这条在辅代理开关关闭时放行：关闭态下辅槽只是被保留、并不
+// 参与路由（pickBoundProxy 会在该分支直接返回 ok=false），面板又把辅槽锁成
+// 跟随主槽，用户完全无法主动制造这个组合 —— 它只可能来自"关闭前 main=a /
+// backup=b，之后把 main 改成 b"这类正常操作。拦住它只会让用户改不动主槽。
 func validateProxyBinding(main, backup string) error {
 	for _, p := range []string{main, backup} {
 		if p == "" || isEgressDirect(p) {
@@ -265,7 +275,7 @@ func validateProxyBinding(main, backup string) error {
 	if isEgressDirect(main) && backup != "" && !isEgressDirect(backup) {
 		return fmt.Errorf("main = direct means no proxy at all; the backup slot must also be direct")
 	}
-	if main != "" && !isEgressDirect(main) && main == backup {
+	if main != "" && !isEgressDirect(main) && main == backup && backupProxyEnabled() {
 		return fmt.Errorf("main and backup proxy must differ (same URL makes the backup meaningless)")
 	}
 	return nil
@@ -275,15 +285,18 @@ func validateProxyBinding(main, backup string) error {
 // main/backup 传空串即清除；全空 = 解除绑定。
 func setAccountProxyBinding(accountID, main, backup string) error {
 	main = strings.TrimSpace(main)
-	backup = normalizeBackupSlot(strings.TrimSpace(backup))
-	if err := validateProxyBinding(main, backup); err != nil {
-		return err
-	}
+	backup = strings.TrimSpace(backup)
 	p := loadPool()
 	poolMu.Lock()
 	defer poolMu.Unlock()
+	var storedBackup string
 	for _, a := range p.Accounts {
 		if a.AccountID == accountID {
+			storedBackup = a.ProxyBackup
+			backup = resolveBackupSlot(backup, storedBackup)
+			if err := validateProxyBinding(main, backup); err != nil {
+				return err
+			}
 			a.ProxyMain = main
 			a.ProxyBackup = backup
 			markPoolDirtyLocked()
@@ -297,10 +310,7 @@ func setAccountProxyBinding(accountID, main, backup string) error {
 // 写时复制：zenConfig 是被请求路径并发读取的活配置，先整体替换再 setZenConfig。
 func setZenKeyProxyBinding(index int, main, backup string) error {
 	main = strings.TrimSpace(main)
-	backup = normalizeBackupSlot(strings.TrimSpace(backup))
-	if err := validateProxyBinding(main, backup); err != nil {
-		return err
-	}
+	backup = strings.TrimSpace(backup)
 	cfg := getZenConfig()
 	if index < 0 || index >= len(cfg.Keys) {
 		return fmt.Errorf("key index out of range")
@@ -308,6 +318,10 @@ func setZenKeyProxyBinding(index int, main, backup string) error {
 	key := cfg.Keys[index]
 	if key == "" || key == "public" {
 		return fmt.Errorf("the anonymous public key has no credential to bind")
+	}
+	backup = resolveBackupSlot(backup, cfg.KeyBindings[key].Backup)
+	if err := validateProxyBinding(main, backup); err != nil {
+		return err
 	}
 	next := *cfg
 	bindings := make(map[string]zenProxyBinding, len(cfg.KeyBindings)+1)
