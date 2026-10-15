@@ -18,7 +18,7 @@ description: 同步 afree-proxy 两条上游线的完整流程与陷阱清单—
 
 ## 1. 公共铁律
 
-1. **验证一律容器**：本机无 Go。build/vet/test 全绿 + `-race ./internal/app/` 才算过（详见 §3）。
+1. **验证环境**（2026-10-15 更新）：本机已有 Go（`C:\AppSelf\Go`，go1.27.2，PATH 已含），宿主机可直接 `go build/vet/test/-race` 作为快速验证；与部署形态对齐的容器验证（linux/amd64）仍可用，见 §3。无论在哪跑：build/vet/test 全绿 + `-race ./internal/app/` 才算过。
 2. **全量测试必须跑**：上游测试有状态渗漏（模型表/failover 状态不恢复），单跑 `-run` 会假通过；前缀类 zen 测试全量挂 = 渗漏复发，修法见 cline-proxy-merge.md §4。
 3. **引用上游提交用显式哈希**，绝不依赖 `FETCH_HEAD`——后台 IDE fetch 会把 `.git/FETCH_HEAD` 覆写成自己 fork 的记录，导致把本地 HEAD 误当上游（真实踩坑）。
 4. **会话回显不可信**：冲突解决结果以 `git diff`、容器构建、真实测试输出为准。
