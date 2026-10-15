@@ -719,7 +719,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
       <div class="field" style="margin:0">
         <label>Base URL</label>
         <div style="display:flex;gap:8px;align-items:center">
-          <input type="text" id="ocBaseURL" placeholder="https://opencode.ai/zen/v1" style="flex:1;min-width:0">
+          <input type="text" id="ocBaseURL" placeholder="https://opencode.ai/inference/v1" style="flex:1;min-width:0">
           <button class="btn btn-primary btn-sm" onclick="saveOcConfig()">Confirm</button>
         </div>
       </div>
