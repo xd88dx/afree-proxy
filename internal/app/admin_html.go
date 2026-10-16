@@ -422,10 +422,10 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
     <div class="table-wrap">
     <table>
       <thead>
-        <tr><th>Email</th><th>Status</th><th title="Counted locally by this proxy — not the official free quota">Today/Total tokens</th><th>Last used</th><th>Created</th><th title="Main exit first, backup as fallback; both down = row skipped (isolation).">Proxy binding</th><th>Actions</th><th style="text-align:center" title="Routing participation. New rows start disabled — tick Pool to enable.">Pool</th></tr>
+        <tr><th style="width:44px">#</th><th>Email</th><th>Status</th><th title="Counted locally by this proxy — not the official free quota">Today/Total tokens</th><th>Last used</th><th>Created</th><th title="Main exit first, backup as fallback; both down = row skipped (isolation).">Proxy binding</th><th>Actions</th><th style="text-align:center" title="Routing participation. New rows start disabled — tick Pool to enable.">Pool</th></tr>
       </thead>
       <tbody id="accountTableBody">
-        <tr><td colspan="8" class="empty">Loading...</td></tr>
+        <tr><td colspan="9" class="empty">Loading...</td></tr>
       </tbody>
     </table>
     </div>
@@ -675,10 +675,10 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
     <div class="table-wrap">
     <table>
       <thead>
-        <tr><th>Time</th><th>Source</th><th>Method</th><th>Path</th><th>Model</th><th>Route</th><th>Upstream</th><th>Proxy</th><th>Status</th><th>Duration</th></tr>
+        <tr><th>Time</th><th>Source</th><th>Method</th><th>Path</th><th>Model</th><th>Route</th><th>Upstream</th><th>Proxy</th><th>Status</th><th>TTFB</th><th>Duration</th></tr>
       </thead>
       <tbody id="logsTableBody">
-        <tr><td colspan="10" class="empty">Loading...</td></tr>
+        <tr><td colspan="11" class="empty">Loading...</td></tr>
       </tbody>
     </table>
     </div>
@@ -834,6 +834,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
       <table>
         <thead>
           <tr>
+            <th style="width:44px">#</th>
             <th>Account</th>
             <th>Status</th>
             <th>Credits</th>
@@ -846,7 +847,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
           </tr>
         </thead>
         <tbody id="wbAccountsBody">
-          <tr><td colspan="9" class="empty">Loading...</td></tr>
+          <tr><td colspan="10" class="empty">Loading...</td></tr>
         </tbody>
       </table>
     </div>
@@ -2398,11 +2399,11 @@ function renderWorkbuddyAccounts() {
   const tbody = _('wbAccountsBody');
   if (!tbody) return;
   if (!wbAccounts.length) {
-    tbody.innerHTML = '<tr><td colspan="9" class="empty">No accounts yet</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="10" class="empty">No accounts yet</td></tr>';
     return;
   }
   wbSnapshot = {};
-  tbody.innerHTML = wbAccounts.map(account => {
+  tbody.innerHTML = wbAccounts.map((account, i) => {
     const id = wbRowId(account);
     const status = wbStatusInfo(account);
     const realm = String(account.realm || 'cn');
@@ -2428,6 +2429,7 @@ function renderWorkbuddyAccounts() {
     // uid 过长会把 Account 列撑宽，昵称下方只留前 10 个字符，完整值走 title 悬浮。
     const shortId = id.length > 10 ? id.slice(0, 10) + '…' : id;
     return '<tr draggable="true" data-wb-id="' + esc(id) + '" data-drag-id="' + esc(id) + '">' +
+      '<td class="mono" style="font-size:11px;color:var(--text3)">#' + (i + 1) + '</td>' +
       '<td><div class="wb-account"><div class="wb-account-main">' +
         '<div class="wb-account-name">' + esc(account.name || account.email || account.nickname || ('Account ' + id)) + '</div>' +
         '<div class="wb-account-id" title="' + esc(realm + ' · ' + id) + '">' + esc(realm) + ' · ' + esc(shortId) + '</div>' +
@@ -2468,7 +2470,7 @@ function updateWorkbuddySummary() {
 }
 async function loadWorkbuddyAccounts() {
   const tbody = _('wbAccountsBody');
-  if (tbody) tbody.innerHTML = '<tr><td colspan="9" class="empty">Loading...</td></tr>';
+  if (tbody) tbody.innerHTML = '<tr><td colspan="10" class="empty">Loading...</td></tr>';
   try {
     await loadProxyListCache();
     const [overview] = await Promise.all([wbCall('overview'), loadWorkbuddyProxyState()]);
@@ -2482,7 +2484,7 @@ async function loadWorkbuddyAccounts() {
       wbAccounts = [];
       renderWorkbuddyAccounts();
     } else if (tbody) {
-      tbody.innerHTML = '<tr><td colspan="8" class="empty">' + esc(T('Failed to load WorkBuddy accounts: ') + e.message) + '</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="10" class="empty">' + esc(T('Failed to load WorkBuddy accounts: ') + e.message) + '</td></tr>';
     }
     updateWorkbuddySummary();
   }
@@ -3128,12 +3130,12 @@ async function loadAccounts() {
       summary.textContent = (list || []).length + ' ' + T('accounts') + ' · ' + active + ' ' + T('active') + ' · ' + cooling + ' ' + T('cooling');
     }
     if (!list || list.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="8" class="empty">No accounts yet</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="9" class="empty">No accounts yet</td></tr>';
       return;
     }
     const sn = { active: 'Active', cooldown: 'Cooldown', expired: 'Expired' };
     accSnapshot = {};
-    tbody.innerHTML = list.map(a => {
+    tbody.innerHTML = list.map((a, i) => {
       const lu = a.lastUsed ? new Date(a.lastUsed).toLocaleString('en-US') : '-';
       const cr = a.createdAt ? new Date(a.createdAt).toLocaleString('en-US') : '-';
       // Cooldown label: show estimated recovery time
@@ -3170,6 +3172,7 @@ async function loadAccounts() {
         '</td>';
       const st = esc(a.status);
       return '<tr draggable="true" data-drag-id="' + esc(a.accountId) + '">' +
+        '<td class="mono" style="font-size:11px;color:var(--text3)">#' + (i + 1) + '</td>' +
         '<td>' + esc(a.email) + '</td>' +
         '<td><span class="status ' + st + '"><span class="status-dot ' + st + '"></span>' + (sn[a.status] || st) + '</span>' + statusExtra + '</td>' +
           '<td title="' + T('Today') + ' ' + fmtNum(a.tokensToday) + ' / ' + T('total') + ' ' + fmtNum(a.tokensTotal) + ' ' + T('tokens (exact when upstream returns usage, otherwise estimated)') + '">' + fmtTokens(a.tokensToday) + ' / ' + fmtTokens(a.tokensTotal) + '</td>' +
@@ -3887,7 +3890,7 @@ async function loadLogs() {
   try {
     const d = await api('GET', '/logs');
     const logs = d.data.logs || [];
-    if (!logs.length) { tbody.innerHTML = '<tr><td colspan="10" class="empty">No requests logged</td></tr>'; return; }
+    if (!logs.length) { tbody.innerHTML = '<tr><td colspan="11" class="empty">No requests logged</td></tr>'; return; }
     tbody.innerHTML = logs.map(l => {
       const t = l.time ? new Date(l.time).toLocaleString('en-US') : '-';
       const route = ROUTE_LABEL[l.route] || l.route || '-';
@@ -3902,11 +3905,12 @@ async function loadLogs() {
         '<td><span class="model-tag">' + esc(route) + '</span></td>' +
         '<td class="mono" style="font-size:11px">' + esc(l.upstream || '-') + '</td>' +
         '<td>' + esc(proxy) + '</td>' +
-        '<td style="font-weight:600;color:' + STATUS_CLASS(st) + '"' + (l.error ? ' title="' + esc(l.error) + '"' : '') + '>' + st + '</td>' +
+        '<td style="font-weight:600;' + STATUS_CLASS(st) + '"' + (l.error ? ' title="' + esc(l.error) + '"' : '') + '>' + st + '</td>' +
+        '<td class="mono" style="font-size:11px" title="首字节耗时：请求开始到首个响应字节（流式=上游首 token 到达；-=无响应体如 413）">' + (l.ttfb_ms == null || l.ttfb_ms < 0 ? '-' : l.ttfb_ms + ' ms') + '</td>' +
         '<td class="mono" style="font-size:11px">' + (l.duration_ms != null ? l.duration_ms + ' ms' : '-') + '</td>' +
       '</tr>';
     }).join('');
-  } catch (e) { tbody.innerHTML = '<tr><td colspan="10" class="empty">Failed to load</td></tr>'; }
+  } catch (e) { tbody.innerHTML = '<tr><td colspan="11" class="empty">Failed to load</td></tr>'; }
 }
 
 // ========== Config updates ==========

@@ -63,3 +63,37 @@ func TestSetOrderPersistRoundTrip(t *testing.T) {
 		t.Fatalf("restored order = %v, want [c a b]", got)
 	}
 }
+
+// TestIndexOf 与 List 同口径的展示序号（1-based）：顺序即拖拽后的面板顺序，
+// 未知 uid 与空池返回 0（日志侧展示 wb#0 兜底）。
+func TestIndexOf(t *testing.T) {
+	p := New("")
+	defer p.Close()
+	for _, uid := range []string{"b", "a", "c"} {
+		p.Add(&auth.Auth{UID: uid})
+	}
+	// 无自定义顺序：UID 排序 → a=1, b=2, c=3
+	for uid, want := range map[string]int{"a": 1, "b": 2, "c": 3} {
+		if got := p.IndexOf(uid); got != want {
+			t.Fatalf("IndexOf(%q) = %d, want %d", uid, got, want)
+		}
+	}
+	// 拖拽 c 到最前 → c=1, a=2, b=3
+	if n := p.SetOrder([]string{"c", "a"}); n != 3 {
+		t.Fatalf("SetOrder n = %d, want 3", n)
+	}
+	for uid, want := range map[string]int{"c": 1, "a": 2, "b": 3} {
+		if got := p.IndexOf(uid); got != want {
+			t.Fatalf("IndexOf(%q) = %d, want %d", uid, got, want)
+		}
+	}
+	// 未知 uid 与空池 → 0
+	if got := p.IndexOf("ghost"); got != 0 {
+		t.Fatalf("IndexOf(ghost) = %d, want 0", got)
+	}
+	empty := New("")
+	defer empty.Close()
+	if got := empty.IndexOf("a"); got != 0 {
+		t.Fatalf("IndexOf on empty pool = %d, want 0", got)
+	}
+}

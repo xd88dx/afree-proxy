@@ -60,6 +60,7 @@ type RequestLog struct {
 	Route     string    `json:"route"` // zen | cline | admin | other
 	Status    int       `json:"status"`
 	Duration  int64     `json:"duration_ms"`
+	TTFB      int64     `json:"ttfb_ms,omitempty"`   // 首字节耗时：请求开始到首个响应字节写出（流式=上游首 token 到达；-1=无响应体如 413/204）
 	Upstream  string    `json:"upstream,omitempty"`  // 命中的上游：账号#N 或 key#N
 	ProxyType string    `json:"proxyType,omitempty"` // 出口代理类型：main|backup|direct（绑定主/辅/直连），空=全局池轮转/未命中上游
 	Error     string    `json:"error,omitempty"`     // status>=400 时的错误原因（从响应体提取），面板悬浮提示展示
@@ -216,6 +217,11 @@ func splitLinesSafe(s string) []string {
 type statusWriter struct {
 	http.ResponseWriter
 	status int
+	// ttfb 首字节耗时（毫秒）：首次 Write/WriteHeader/Flush 落盘时刻减
+	// 请求开始。0=本请求尚未写出任何字节（413 拒收、204 等）；请求日志
+	// 收尾时把 0 记成 -1（"无响应体"），与"首字节极快"区分开。
+	ttfb  int64
+	start time.Time
 	// errBuf 截获错误响应（status>=400）的 body（限 errBodyCap 字节），
 	// 请求日志收尾时从中提取可读的错误原因。成功响应（含 200 的 SSE 流）
 	// 不截获，零内存开销。
@@ -233,8 +239,15 @@ func (w *statusWriter) errorReason() string {
 	return ""
 }
 
+func (w *statusWriter) markFirstByte() {
+	if w.ttfb == 0 && !w.start.IsZero() {
+		w.ttfb = time.Since(w.start).Milliseconds()
+	}
+}
+
 func (w *statusWriter) WriteHeader(code int) {
 	w.status = code
+	w.markFirstByte()
 	w.ResponseWriter.WriteHeader(code)
 }
 
@@ -289,6 +302,7 @@ func (w *statusWriter) Flush() {
 	if w.status == 0 {
 		w.status = http.StatusOK
 	}
+	w.markFirstByte()
 	if f, ok := w.ResponseWriter.(http.Flusher); ok {
 		f.Flush()
 	}
@@ -303,7 +317,9 @@ func recoverMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// 自持一个 statusWriter 跟踪是否已写出响应头，与本中间件在链上的
 		// 位置无关（流式进行中不能再改状态码，只能记录后结束该连接）。
-		sw := &statusWriter{ResponseWriter: w}
+		// start 显式传入：requestLogMiddleware 在内层也会建自己的 statusWriter
+		// 记 TTFB，外层 recover 只用于 panic 兜底，start 供将来扩展用。
+		sw := &statusWriter{ResponseWriter: w, start: time.Now()}
 		defer func() {
 			if rec := recover(); rec != nil {
 				log.Printf("PANIC recovered on %s %s: %v\n%s", r.Method, r.URL.Path, rec, debug.Stack())
@@ -326,7 +342,7 @@ func recoverMiddleware(next http.Handler) http.Handler {
 func requestLogMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
-		sw := &statusWriter{ResponseWriter: w}
+		sw := &statusWriter{ResponseWriter: w, start: start}
 		upCtx, upstream := withUpstreamInfo(r.Context())
 		r = r.WithContext(upCtx)
 
@@ -427,6 +443,12 @@ func requestLogMiddleware(next http.Handler) http.Handler {
 		if host, _, err := net.SplitHostPort(client); err == nil {
 			client = host
 		}
+		// ttfb==0 说明本请求没有任何响应字节落盘（413 拒收、204 等）：
+		// 记 -1，与"首字节极快"区分开。
+		ttfb := sw.ttfb
+		if ttfb == 0 {
+			ttfb = -1
+		}
 		AppendReqLog(RequestLog{
 			Time:      time.Now(),
 			Client:    client,
@@ -436,6 +458,7 @@ func requestLogMiddleware(next http.Handler) http.Handler {
 			Route:     labelRoute,
 			Status:    sw.status,
 			Duration:  time.Since(start).Milliseconds(),
+			TTFB:      ttfb,
 			Upstream:  upstream.label,
 			ProxyType: upstream.exit,
 			Error:     sw.errorReason(),

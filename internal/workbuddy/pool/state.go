@@ -536,6 +536,30 @@ func (p *Pool) ServableForRealm(realm string) bool {
 func (p *Pool) List() []Status {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
+	out := make([]Status, 0, len(p.byUID))
+	for _, uid := range p.orderedUIDsLocked() {
+		out = append(out, p.statusOf(uid, p.byUID[uid]))
+	}
+	return out
+}
+
+// IndexOf 返回 uid 在 List() 展示顺序中的 1 基行号（面板 # 列同值，
+// 日志 wb#N 与面板按同一顺序对齐；拖拽重排后按新顺序重新编号）；
+// 不在池中返回 0。
+func (p *Pool) IndexOf(uid string) int {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	for i, u := range p.orderedUIDsLocked() {
+		if u == uid {
+			return i + 1
+		}
+	}
+	return 0
+}
+
+// orderedUIDsLocked 与 List 同口径的展示顺序：有自定义顺序（管理面板拖拽）
+// 时按其排序，未入序的排尾部再按 UID；无自定义顺序时按 UID 排序。
+func (p *Pool) orderedUIDsLocked() []string {
 	uids := make([]string, 0, len(p.byUID))
 	for uid := range p.byUID {
 		uids = append(uids, uid)
@@ -562,11 +586,7 @@ func (p *Pool) List() []Status {
 	} else {
 		sort.Strings(uids)
 	}
-	out := make([]Status, 0, len(uids))
-	for _, uid := range uids {
-		out = append(out, p.statusOf(uid, p.byUID[uid]))
-	}
-	return out
+	return uids
 }
 
 // SetOrder 设置账号显示顺序（管理面板拖拽排序）。**仅影响 List()/面板列表的

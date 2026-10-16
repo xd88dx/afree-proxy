@@ -115,24 +115,31 @@ func workbuddyProxyFor(a *wbauth.Auth) (string, bool) {
 		if uid == "" {
 			return
 		}
-		setUpstreamInfo(ctx, workbuddyUpstreamLabel(a))
+		setUpstreamInfo(ctx, workbuddyUpstreamLabel(uid, strings.TrimSpace(a.Nickname)))
 		setUpstreamExit(ctx, workbuddyExitType(uid, exitRaw))
 	}
 
-	// workbuddyUpstreamLabel 日志「账号/Key」列的账号标识：WorkBuddy 账号没有
-	// 序号，UID 是唯一稳定标识 —— 取 uid#短 UID，有昵称时附在后面（过长截断）。
-	func workbuddyUpstreamLabel(a *wbauth.Auth) string {
-		uid := strings.TrimSpace(a.UID)
+	// workbuddyUpstreamLabel 日志「账号/Key」列的账号标识：与面板 # 列同口径的
+	// 展示行号 —— wb#N（N = 当前 List 展示顺序中的行号，拖拽重排后按新顺序
+	// 重新编号），无昵称时附 uid#短 UID 区分。
+	func workbuddyUpstreamLabel(uid, nick string) string {
+		uid = strings.TrimSpace(uid)
+		n := 0
+		if workbuddySub != nil && workbuddySub.pool != nil {
+			n = workbuddySub.pool.IndexOf(uid)
+		}
+		label := fmt.Sprintf("wb#%d", n)
 		short := uid
 		if len(short) > 10 {
 			short = short[:10] + "…"
 		}
-		label := "uid#" + short
-		if nick := strings.TrimSpace(a.Nickname); nick != "" && nick != uid {
+		if nick != "" && nick != uid {
 			if len(nick) > 24 {
 				nick = nick[:24] + "…"
 			}
 			label += " " + nick
+		} else {
+			label += " uid#" + short
 		}
 		return label
 	}
