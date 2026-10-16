@@ -46,6 +46,30 @@ func TestRequestLogMiddlewareLogs413(t *testing.T) {
 	if last := logs[len(logs)-1]; last.Status != http.StatusRequestEntityTooLarge {
 		t.Fatalf("logged status = %d, want 413", last.Status)
 	}
+	if last := logs[len(logs)-1]; last.Error == "" {
+		t.Fatal("logged 413 must carry the error reason (from the error response body)")
+	}
+}
+
+// 错误响应体的错误原因提取：OpenAI 风格优先，非 JSON 截断兜底。
+func TestExtractErrReason(t *testing.T) {
+	cases := []struct{ body, want string }{
+		{`{"error":{"message":"upstream 500: boom","type":"api_error"}}`, "upstream 500: boom"},
+		{`{"error":"no healthy account"}`, "no healthy account"},
+		{`{"code":11101,"msg":"Unmarshal chat params failed"}`, "Unmarshal chat params failed"},
+		{"plain gateway error", "plain gateway error"},
+		{"line1\nline2\n\tline3", "line1 line2 line3"}, // 换行压平，tooltip 可读
+	}
+	for _, c := range cases {
+		if got := extractErrReason([]byte(c.body)); got != c.want {
+			t.Errorf("extractErrReason(%q) = %q, want %q", c.body, got, c.want)
+		}
+	}
+	// 超长原文截断到 300 rune
+	long := strings.Repeat("x", 500)
+	if got := extractErrReason([]byte(long)); len([]rune(got)) != 300+1 { // + "…"
+		t.Errorf("long body not truncated: len=%d", len([]rune(got)))
+	}
 }
 
 // envInt 对非空但无效的值必须打印警告（与 envBool 一致），静默回退会让

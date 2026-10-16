@@ -126,43 +126,20 @@ func handleAMDChat(w http.ResponseWriter, r *http.Request, params map[string]any
 		return
 	}
 	isStream, _ := params["stream"].(bool)
-	tracker := newZenStatsTracker(zenStatsRecord{
-		TS:           time.Now().UnixMilli(),
-		Upstream:     "amd",
-		Model:        m.ID,
-		Stream:       isStream,
-		PromptTokens: estimateJSON(params),
-	})
-	usageFn := func(u map[string]any) {
-		if pt, ok := u["prompt_tokens"].(float64); ok {
-			tracker.rec.CompletionTokens += int(pt) - tracker.rec.PromptTokens
-			if tracker.rec.CompletionTokens < 0 {
-				tracker.rec.CompletionTokens = 0
-			}
-		}
-		if ct, ok := u["completion_tokens"].(float64); ok {
-			tracker.rec.CompletionTokens = int(ct)
-		}
-	}
-	resp, rateLimited, err := amd.Chat(r.Context(), params, m.ID, true, getProxyConfig().Strategy, amdBoundRoutable)
+	resp, _, err := amd.Chat(r.Context(), params, m.ID, true, getProxyConfig().Strategy, amdBoundRoutable)
 	if err != nil {
 		log.Printf("  amd api error: %v", err)
-		tracker.rec.RateLimited = rateLimited
-		writeJSON(w, http.StatusBadGateway, map[string]any{
+			writeJSON(w, http.StatusBadGateway, map[string]any{
 			"error": map[string]string{"message": err.Error(), "type": "api_error"},
 		})
-		tracker.finish(false, http.StatusBadGateway)
 		return
 	}
-	tracker.rec.RateLimited = rateLimited
 	defer resp.Body.Close()
-	tracker.rec.Status = resp.StatusCode
 	if isStream {
-		handleStreamResponseWithUsage(w, resp, usageFn)
-		tracker.finish(true, resp.StatusCode)
+		handleStreamResponseWithUsage(w, resp, nil)
 		return
 	}
-	finishZenChatNonStream(w, resp, &ZenModel{ID: m.ID}, params, usageFn, tracker)
+	finishZenChatNonStream(w, resp, &ZenModel{ID: m.ID}, params, nil)
 }
 
 // ============ AMDCloud 管理 API ============

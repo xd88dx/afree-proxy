@@ -172,43 +172,20 @@ func handleOtherChat(w http.ResponseWriter, r *http.Request, params map[string]a
 		return
 	}
 	isStream, _ := params["stream"].(bool)
-	tracker := newZenStatsTracker(zenStatsRecord{
-		TS:           time.Now().UnixMilli(),
-		Upstream:     "other",
-		Model:        p.Prefix + ":" + m.ID,
-		Stream:       isStream,
-		PromptTokens: estimateJSON(params),
-	})
-	usageFn := func(u map[string]any) {
-		if pt, ok := u["prompt_tokens"].(float64); ok {
-			tracker.rec.CompletionTokens += int(pt) - tracker.rec.PromptTokens
-			if tracker.rec.CompletionTokens < 0 {
-				tracker.rec.CompletionTokens = 0
-			}
-		}
-		if ct, ok := u["completion_tokens"].(float64); ok {
-			tracker.rec.CompletionTokens = int(ct)
-		}
-	}
-	resp, rateLimited, err := other.Chat(r.Context(), p, params, m.ID, true, getProxyConfig().Strategy, otherBoundRoutable(p), otherExitFn(p))
+	resp, _, err := other.Chat(r.Context(), p, params, m.ID, true, getProxyConfig().Strategy, otherBoundRoutable(p), otherExitFn(p))
 	if err != nil {
 		log.Printf("  other api error (%s): %v", p.Slug, err)
-		tracker.rec.RateLimited = rateLimited
-		writeJSON(w, http.StatusBadGateway, map[string]any{
+			writeJSON(w, http.StatusBadGateway, map[string]any{
 			"error": map[string]string{"message": err.Error(), "type": "api_error"},
 		})
-		tracker.finish(false, http.StatusBadGateway)
 		return
 	}
-	tracker.rec.RateLimited = rateLimited
 	defer resp.Body.Close()
-	tracker.rec.Status = resp.StatusCode
 	if isStream {
-		handleStreamResponseWithUsage(w, resp, usageFn)
-		tracker.finish(true, resp.StatusCode)
+		handleStreamResponseWithUsage(w, resp, nil)
 		return
 	}
-	finishZenChatNonStream(w, resp, &ZenModel{ID: m.ID}, params, usageFn, tracker)
+	finishZenChatNonStream(w, resp, &ZenModel{ID: m.ID}, params, nil)
 }
 
 // ============ 管理 API ============

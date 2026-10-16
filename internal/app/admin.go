@@ -87,13 +87,11 @@ func registerAdminRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/admin/api/opencode/config/update", adminCORS(auth(handleZenConfigUpdate)))
 	mux.HandleFunc("/admin/api/opencode/models", adminCORS(auth(handleZenModels)))
 	mux.HandleFunc("/admin/api/opencode/models/refresh", adminCORS(auth(handleZenModelsRefresh)))
-	mux.HandleFunc("/admin/api/opencode/stats", adminCORS(auth(handleZenStats)))
 	// 旧 zen 路径别名,兼容旧引用
 	mux.HandleFunc("/admin/api/zen/config", adminCORS(auth(handleZenConfig)))
 	mux.HandleFunc("/admin/api/zen/config/update", adminCORS(auth(handleZenConfigUpdate)))
 	mux.HandleFunc("/admin/api/zen/models", adminCORS(auth(handleZenModels)))
 	mux.HandleFunc("/admin/api/zen/models/refresh", adminCORS(auth(handleZenModelsRefresh)))
-	mux.HandleFunc("/admin/api/zen/stats", adminCORS(auth(handleZenStats)))
 	mux.HandleFunc("/admin/api/zen/keys/test", adminCORS(auth(handleZenKeyTest)))
 	mux.HandleFunc("/admin/api/opencode/keys/routing", adminCORS(auth(handleZenKeySetRouting)))
 	mux.HandleFunc("/admin/api/opencode/keys/routing/all", adminCORS(auth(handleZenKeySetRoutingAll)))

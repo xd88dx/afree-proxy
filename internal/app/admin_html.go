@@ -805,14 +805,6 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
     </div>
   </div>
 </div>
-
-<div class="section">
-  <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 5-6"/></svg></span> OpenCode stats</div>
-  <div class="section-body">
-    <div class="table-wrap"><div id="ocStatsBox"></div></div>
-    <div id="ocModelStatsBox" style="margin-top:14px"></div>
-  </div>
-</div>
 </div>
 
 <div id="tab-workbuddy" class="tab-panel" style="display:none">
@@ -1787,6 +1779,7 @@ const I18N_ZH = {
   'Main exit — used whenever available': '主出口 —— 可用即优先',
   'Backup exit — used when main is cooling/removed': '辅出口 —— 主冷却/被删时使用',
   'Bound proxy is no longer in the proxy pool — skipped until fixed': '绑定的代理已不在代理池中——修复前跳过该行。',
+  'session minted': '会话铸造于',
   // 添加账号弹窗（accAddDialog，Cline 页"添加账号"按钮）
   'Token or API key *': 'Token 或 API key *',
   // 代理池页
@@ -2290,7 +2283,7 @@ function switchTab(name) {
   if (name === 'settings') { loadKeys(); loadModels(); loadConfig(); }
   if (name === 'logs') loadLogs();
   if (name === 'proxypool') loadProxyPool();
-  if (name === 'opencode') { loadOcConfig(); loadOcModels(); loadOcStats(); loadOcSessions(); }
+  if (name === 'opencode') { loadOcConfig(); loadOcModels(); loadOcSessions(); }
   if (name === 'workbuddy') ensureWorkbuddyConsole();
   if (name === 'openrouter') loadOrConfig();
   if (name === 'amdcloud') loadAmdConfig();
@@ -2381,6 +2374,10 @@ function wbBindingCell(account) {
   // 辅代理开关关闭 → 辅槽只读跟随主槽（同主=全局/直连 时的联动）
   const backupLocked = !backupProxyOn || main === '' || main === EGRESS_DIRECT;
   const backupVal = backupLocked ? main : backup;
+  // 快照记渲染后的生效值（辅槽锁定时 = 主槽），保存 diff 与之同口径。
+  // 若拿原始绑定值对比，锁定显示本身就会被误判成用户修改——辅代理开关
+  // 关闭时每行都中（保存提示 N 个账号全改过，实际只改了一项）。
+  if (wbSnapshot[id]) { wbSnapshot[id].main = main; wbSnapshot[id].backup = backupVal; }
   const stale = v => v && v !== EGRESS_DIRECT && !proxyListCache.includes(v);
   const staleMark = (stale(main) || stale(backup))
     ? ' <span title="' + T('Bound proxy is no longer in the proxy pool — skipped until fixed') + '" style="color:var(--danger)">⚠</span>'
@@ -2494,8 +2491,8 @@ async function workbuddyProxyAdminCall(method, path, body) {
   const response = await api(method, '/workbuddy/' + path, body);
   return response.data !== undefined ? response.data : response;
 }
-// wbSnapshot 记录各账号已保存的启用状态（代理绑定在 wbProxyCache 里），
-// "保存"按钮据此 diff 出真正需要提交的账号。
+// wbSnapshot 记录各账号渲染时的生效状态（启用 + 代理绑定显示值，绑定原始
+// 数据在 wbProxyCache 里），"保存"按钮据此 diff 出真正需要提交的账号。
 let wbSnapshot = {};
 async function saveWorkbuddyEdits() {
   const rows = [...document.querySelectorAll('#wbAccountsBody tr')].filter(r => r.querySelector('.eg-input'));
@@ -2507,10 +2504,11 @@ async function saveWorkbuddyEdits() {
     const main = mainInput.dataset.value || '';
     const backup = row.querySelector('.eg-input[data-eg="wb"][data-slot="backup"]').dataset.value || '';
     const cb = row.querySelector('input[data-wb-pool]');
-    const binding = (wbProxyCache.bindings || {})[uid] || {};
-    const snapMain = String(binding.main ?? binding.main_proxy_id ?? '');
-    const snapBackup = String(binding.backup ?? binding.backup_proxy_id ?? '');
-    const snapEnabled = wbSnapshot[uid] ? wbSnapshot[uid].enabled : true;
+    // 快照在渲染时记录（wbBindingCell 写入 main/backup 生效值），diff 与显示同口径。
+    const snap = wbSnapshot[uid] || {};
+    const snapMain = String(snap.main ?? '');
+    const snapBackup = String(snap.backup ?? '');
+    const snapEnabled = snap.enabled !== undefined ? snap.enabled : true;
     try {
       if (main !== snapMain || backup !== snapBackup) {
         await workbuddyProxyAdminCall('POST', 'proxy/set', { uid: uid, main: main, backup: backup });
@@ -3869,7 +3867,7 @@ function legacyCopy(t) {
 // admin / meta / unclassified 非平台路由，不在菜单中。
 const ROUTE_LABEL = { zen: 'opencode', cline: 'cline', admin: 'admin', meta: 'meta', workbuddy: 'workbuddy', openrouter: 'openrouter', amd: 'amdcloud', tokenharbor: 'tokenharbor', other: 'other', unclassified: 'unclassified' };
 const PROXY_LABEL = { main: 'Main', backup: 'Backup', direct: 'Direct' };
-const STATUS_CLASS = s => s >= 500 ? 'color:var(--danger)' : (s >= 400 ? 'color:var(--amber)' : 'color:var(--accent2)');
+const STATUS_CLASS = s => s >= 400 ? 'color:var(--danger)' : 'color:var(--accent2)';
 let logsAuto = true;
 
 function toggleLogsAuto() {
@@ -3901,7 +3899,7 @@ async function loadLogs() {
         '<td><span class="model-tag">' + esc(route) + '</span></td>' +
         '<td class="mono" style="font-size:11px">' + esc(l.upstream || '-') + '</td>' +
         '<td>' + esc(proxy) + '</td>' +
-        '<td style="font-weight:600;color:' + STATUS_CLASS(st) + '">' + st + '</td>' +
+        '<td style="font-weight:600;color:' + STATUS_CLASS(st) + '"' + (l.error ? ' title="' + esc(l.error) + '"' : '') + '>' + st + '</td>' +
         '<td class="mono" style="font-size:11px">' + (l.duration_ms != null ? l.duration_ms + ' ms' : '-') + '</td>' +
       '</tr>';
     }).join('');
@@ -4305,7 +4303,7 @@ function renderOcKeyStates(ks) {
         let rot = '<span style="color:var(--text2)">-</span>';
         if (rotateMin > 0 && k.sessionCreatedAt) {
           const due = new Date(new Date(k.sessionCreatedAt).getTime() + rotateMin * 60000);
-          rot = '<span style="font-size:11px" title="session minted ' + esc(fmtWhen(k.sessionCreatedAt)) + '">' + esc(fmtWhen(due.toISOString())) + '</span>';
+          rot = '<span style="font-size:11px" title="' + esc(T('session minted')) + ' ' + esc(fmtWhen(k.sessionCreatedAt)) + '">' + esc(fmtWhen(due.toISOString())) + '</span>';
         } else if (rotateMin === 0) {
           rot = '<span style="color:var(--text2)" title="rotation disabled">never</span>';
         }
@@ -4318,10 +4316,11 @@ function renderOcKeyStates(ks) {
         // 辅代理开关关闭 → 辅槽只读跟随主槽（key 表与账号表同规则）
         const backupLocked = !backupProxyOn || pMain === '' || pMain === EGRESS_DIRECT;
         const backupVal = backupLocked ? pMain : pBackup;
+        const isStale = v => v && v !== EGRESS_DIRECT && !proxyListCache.includes(v);
         const bind = '<td style="white-space:nowrap">' +
           egComboHTML('key', k.index, 'main', pMain, T('Main exit — used whenever available')) + ' ' +
           egComboHTML('key', k.index, 'backup', backupVal, T('Backup exit — used when main is cooling/removed'), backupLocked) +
-          (k.proxyStale ? ' <span title="' + esc(T('Bound proxy is no longer in the proxy pool — skipped until fixed')) + '" style="color:var(--danger)">⚠</span>' : '') +
+          (isStale(pMain) || isStale(pBackup) ? ' <span title="' + esc(T('Bound proxy is no longer in the proxy pool — skipped until fixed')) + '" style="color:var(--danger)">⚠</span>' : '') +
           '</td>';
         // Pool（路由启用）列：勾选后该 key 才参与请求轮转；铸造跟随路由，
         // 路由关闭的 key 也不再被自动铸造。匿名 public key 恒参与路由。
@@ -4743,10 +4742,11 @@ function renderOrKeyStates(ks) {
         const pBackup = k.proxyBackup || '';
         const backupLocked = !backupProxyOn || pMain === '' || pMain === EGRESS_DIRECT;
         const backupVal = backupLocked ? pMain : pBackup;
+        const isStale = v => v && v !== EGRESS_DIRECT && !proxyListCache.includes(v);
         const bind = '<td style="white-space:nowrap">' +
           egComboHTML('or', k.index, 'main', pMain, T('Main exit — used whenever available')) + ' ' +
           egComboHTML('or', k.index, 'backup', backupVal, T('Backup exit — used when main is cooling/removed'), backupLocked) +
-          (k.proxyStale ? ' <span title="' + esc(T('Bound proxy is no longer in the proxy pool — skipped until fixed')) + '" style="color:var(--danger)">⚠</span>' : '') +
+          (isStale(pMain) || isStale(pBackup) ? ' <span title="' + esc(T('Bound proxy is no longer in the proxy pool — skipped until fixed')) + '" style="color:var(--danger)">⚠</span>' : '') +
           '</td>';
         const routed = k.routingEnabled !== false;
         orKeySnapshot[k.index] = { main: pMain, backup: backupVal, routing: routed };
@@ -5006,10 +5006,11 @@ function renderAmdKeyStates(ks) {
         const pBackup = k.proxyBackup || '';
         const backupLocked = !backupProxyOn || pMain === '' || pMain === EGRESS_DIRECT;
         const backupVal = backupLocked ? pMain : pBackup;
+        const isStale = v => v && v !== EGRESS_DIRECT && !proxyListCache.includes(v);
         const bind = '<td style="white-space:nowrap">' +
           egComboHTML('amd', k.index, 'main', pMain, T('Main exit — used whenever available')) + ' ' +
           egComboHTML('amd', k.index, 'backup', backupVal, T('Backup exit — used when main is cooling/removed'), backupLocked) +
-          (k.proxyStale ? ' <span title="' + esc(T('Bound proxy is no longer in the proxy pool — skipped until fixed')) + '" style="color:var(--danger)">⚠</span>' : '') +
+          (isStale(pMain) || isStale(pBackup) ? ' <span title="' + esc(T('Bound proxy is no longer in the proxy pool — skipped until fixed')) + '" style="color:var(--danger)">⚠</span>' : '') +
           '</td>';
         const routed = k.routingEnabled !== false;
         amdKeySnapshot[k.index] = { main: pMain, backup: backupVal, routing: routed };
@@ -5269,10 +5270,11 @@ function renderTHKeyStates(ks) {
         const pBackup = k.proxyBackup || '';
         const backupLocked = !backupProxyOn || pMain === '' || pMain === EGRESS_DIRECT;
         const backupVal = backupLocked ? pMain : pBackup;
+        const isStale = v => v && v !== EGRESS_DIRECT && !proxyListCache.includes(v);
         const bind = '<td style="white-space:nowrap">' +
           egComboHTML('th', k.index, 'main', pMain, T('Main exit — used whenever available')) + ' ' +
           egComboHTML('th', k.index, 'backup', backupVal, T('Backup exit — used when main is cooling/removed'), backupLocked) +
-          (k.proxyStale ? ' <span title="' + esc(T('Bound proxy is no longer in the proxy pool — skipped until fixed')) + '" style="color:var(--danger)">⚠</span>' : '') +
+          (isStale(pMain) || isStale(pBackup) ? ' <span title="' + esc(T('Bound proxy is no longer in the proxy pool — skipped until fixed')) + '" style="color:var(--danger)">⚠</span>' : '') +
           '</td>';
         const routed = k.routingEnabled !== false;
         thKeySnapshot[k.index] = { main: pMain, backup: backupVal, routing: routed };
@@ -6162,22 +6164,6 @@ async function deleteCombo(id) {
   } catch (e) { toast(T('Delete failed: ') + e.message, 'error'); }
 }
 
-async function loadOcStats() {
-  try {
-    const d = await api('GET', '/opencode/stats');
-    const t = d.data.today || {}, s = d.data.total || {};
-    _('ocStatsBox').innerHTML = '<table><thead><tr><th style="text-align:left"></th><th>Requests</th><th>Input tokens</th><th>Output tokens</th><th>Compaction</th><th>Rate-limited</th></tr></thead><tbody>' +
-      '<tr><td style="text-align:left">Today</td><td>' + (t.requests || 0) + '</td><td>' + (t.promptTokens || 0) + '</td><td>' + (t.completionTokens || 0) + '</td><td>' + (t.compaction || 0) + '</td><td>' + (t.rateLimited || 0) + '</td></tr>' +
-      '<tr><td style="text-align:left">Total</td><td>' + (s.requests || 0) + '</td><td>' + (s.promptTokens || 0) + '</td><td>' + (s.completionTokens || 0) + '</td><td>' + (s.compaction || 0) + '</td><td>' + (s.rateLimited || 0) + '</td></tr>' +
-      '</tbody></table>';
-    const bm = t.byModel || {};
-    const rows = Object.keys(bm).map(k => '<tr><td style="text-align:left;font-family:monospace">' + esc(k) + '</td><td>' + bm[k].requests + '</td><td>' + bm[k].promptTokens + '</td><td>' + bm[k].completionTokens + '</td></tr>').join('');
-    _('ocModelStatsBox').innerHTML = '<div style="font-size:13px;font-weight:600;margin-bottom:6px">Per-model breakdown (today)</div>' +
-      '<div class="table-wrap"><table><thead><tr><th style="text-align:left">Model</th><th>Requests</th><th>Input tokens</th><th>Output tokens</th></tr></thead><tbody>' +
-      (rows || '<tr><td colspan="4" style="text-align:left;color:var(--text2)">No data</td></tr>') + '</tbody></table></div>';
-  } catch (e) { /* ignore */ }
-}
-
 // ========== Init ==========
 loadStats();
 loadAccounts();
@@ -6199,7 +6185,6 @@ enableRowDragReorder('otherKeysBody', ids => {
 enableRowDragReorder('wbAccountsBody', ids => api('POST', '/workbuddy/reorder', { uids: ids }), loadWorkbuddyAccounts);
 // 平台概览只在仪表盘可见时轮询（loadStats 现在打三个接口，隐藏页轮询纯浪费）
 setInterval(() => { if (_('tab-dashboard').style.display !== 'none') loadStats(); }, 10000);
-setInterval(() => { loadOcStats(); }, 15000);
 // live 会话状态：只在 opencode 页可见时轮询（与日志页同样的省流约定）。
 setInterval(() => {
   if (_('tab-opencode').style.display !== 'none') loadOcSessions();

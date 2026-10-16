@@ -262,15 +262,6 @@ func handleZenModelsRefresh(w http.ResponseWriter, r *http.Request) {
 	writeAPI(w, http.StatusOK, apiResponse{Success: true, Message: fmt.Sprintf("synced, %d new models", added)})
 }
 
-// GET /admin/api/zen/stats
-func handleZenStats(w http.ResponseWriter, r *http.Request) {
-	if r.Method != "GET" {
-		writeAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
-		return
-	}
-	writeAPI(w, http.StatusOK, apiResponse{Success: true, Data: zenStatsSnapshot()})
-}
-
 // GET /admin/api/zen/sessions
 // 每个 key 的会话状态（本地铸造，无 mint 任务进度）。
 func handleZenSessions(w http.ResponseWriter, r *http.Request) {

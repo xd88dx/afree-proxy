@@ -62,6 +62,7 @@ type RequestLog struct {
 	Duration  int64     `json:"duration_ms"`
 	Upstream  string    `json:"upstream,omitempty"`  // 命中的上游：账号#N 或 key#N
 	ProxyType string    `json:"proxyType,omitempty"` // 出口代理类型：main|backup|direct（绑定主/辅/直连），空=全局池轮转/未命中上游
+	Error     string    `json:"error,omitempty"`     // status>=400 时的错误原因（从响应体提取），面板悬浮提示展示
 	Note      string    `json:"note,omitempty"`
 }
 
@@ -215,6 +216,21 @@ func splitLinesSafe(s string) []string {
 type statusWriter struct {
 	http.ResponseWriter
 	status int
+	// errBuf 截获错误响应（status>=400）的 body（限 errBodyCap 字节），
+	// 请求日志收尾时从中提取可读的错误原因。成功响应（含 200 的 SSE 流）
+	// 不截获，零内存开销。
+	errBuf []byte
+}
+
+// errBodyCap 错误响应体的截获上限：错误 JSON 都很小，2KB 足够还原原因。
+const errBodyCap = 2048
+
+// errorReason 返回本次请求的错误原因（status>=400 且捕获到响应体时）。
+func (w *statusWriter) errorReason() string {
+	if w.status >= 400 && len(w.errBuf) > 0 {
+		return extractErrReason(w.errBuf)
+	}
+	return ""
 }
 
 func (w *statusWriter) WriteHeader(code int) {
@@ -226,7 +242,46 @@ func (w *statusWriter) Write(b []byte) (int, error) {
 	if w.status == 0 {
 		w.status = http.StatusOK
 	}
+	if w.status >= 400 && len(w.errBuf) < errBodyCap {
+		n := errBodyCap - len(w.errBuf)
+		if n > len(b) {
+			n = len(b)
+		}
+		w.errBuf = append(w.errBuf, b[:n]...)
+	}
 	return w.ResponseWriter.Write(b)
+}
+
+// extractErrReason 从错误响应体提取可读原因：OpenAI 风格
+// {"error":{"message":"..."}} 优先，其次 {"error":"..."} / {"msg":"..."}，
+// 都解析不出就截断原文兜底（保留错误细节比什么都不留强）。
+func extractErrReason(body []byte) string {
+	compact := func(s string) string {
+		s = strings.Join(strings.Fields(s), " ")
+		if r := []rune(s); len(r) > 300 {
+			s = string(r[:300]) + "…"
+		}
+		return s
+	}
+	var m map[string]any
+	if err := json.Unmarshal(body, &m); err == nil {
+		if e, ok := m["error"]; ok {
+			switch v := e.(type) {
+			case map[string]any:
+				if s, ok := v["message"].(string); ok && s != "" {
+					return compact(s)
+				}
+			case string:
+				if v != "" {
+					return compact(v)
+				}
+			}
+		}
+		if s, ok := m["msg"].(string); ok && s != "" {
+			return compact(s)
+		}
+	}
+	return compact(string(body))
 }
 
 // Flush 透传底层 Flusher，保证 SSE 流式响应不被中间件吞掉
@@ -383,6 +438,7 @@ func requestLogMiddleware(next http.Handler) http.Handler {
 			Duration:  time.Since(start).Milliseconds(),
 			Upstream:  upstream.label,
 			ProxyType: upstream.exit,
+			Error:     sw.errorReason(),
 		})
 	})
 }

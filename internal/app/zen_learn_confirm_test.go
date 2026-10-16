@@ -16,8 +16,9 @@ import (
 // 一见 500 就 learnZenEndpoint 并持久化：瞬时故障会把 chat 原生模型永久翻转到
 // responses —— 目录同步不改写既有条目的 Upstream，只能人工删文件恢复。
 func TestEndpointLearnOnlyPersistsWhenRetrySucceeds(t *testing.T) {
-	// 不用 t.TempDir()：统计写入会一直占着 $DATA_DIR/zen-stats.jsonl，Windows 上
-	// TempDir 的自动清理会因句柄未释放而失败（与测试断言无关的假失败）。
+	// 不用 t.TempDir()：历史上统计写入会一直占着 $DATA_DIR/zen-stats.jsonl，
+	// Windows 上 TempDir 的自动清理会因句柄未释放而失败。统计功能已删，
+	// 保留 MkdirTemp+手动清理的写法以防未来再引入长持有句柄的落盘。
 	dir, err := os.MkdirTemp("", "zenlearn")
 	if err != nil {
 		t.Fatal(err)
@@ -86,7 +87,7 @@ func TestEndpointLearnOnlyPersistsWhenRetrySucceeds(t *testing.T) {
 	// 情形 1：responses 也失败 → 绝不能学习（这是瞬时故障，不是端点信号）
 	responsesOK.Store(false)
 	rec := &flushRecorder{header: http.Header{}}
-	if handled := handleZenResponsesNative(rec, httptest.NewRequest("POST", "/v1/chat/completions", nil), params, zm, newZenStatsTracker(zenStatsRecord{})); handled {
+	if handled := handleZenResponsesNative(rec, httptest.NewRequest("POST", "/v1/chat/completions", nil), params, zm); handled {
 		t.Fatal("a failed retry must not be reported as handled")
 	}
 	// 直接验证"chat 500 + responses 500"这一轮的完整路径

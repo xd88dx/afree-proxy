@@ -97,7 +97,6 @@ func StartProxy(host string, port int) error {
 	initAMD()
 	initTokenHarbor()
 	initOther()
-	initStats()
 	LoadRequestLogsFromFile()
 	go cleanupCompactStates()
 
@@ -650,18 +649,9 @@ func handleZenChat(w http.ResponseWriter, r *http.Request, params map[string]any
 		return
 	}
 	isStream, _ := params["stream"].(bool)
-	tracker := newZenStatsTracker(zenStatsRecord{
-		TS:           time.Now().UnixMilli(),
-		Upstream:     "zen",
-		Model:        zm.ID,
-		Stream:       isStream,
-		PromptTokens: estimateJSON(params),
-	})
 
 	sid := requestSessionID(params, r.Header)
 	out := maybeCompact(params, zm, sid)
-	tracker.rec.Compacted = out.changed
-	tracker.rec.CompactionTokens = out.compactTokens
 	if out.changed {
 		log.Printf("  zen: %s", out.note)
 	}
@@ -673,11 +663,11 @@ func handleZenChat(w http.ResponseWriter, r *http.Request, params map[string]any
 	// （trade-off 记录：曾考虑按目录 provider.npm 推断端点，但 29 个免费模型
 	// 中 23 个无 npm 字段、无规律可循——运行时探测是唯一可靠信号。）
 	if zm.Upstream == "responses" {
-		_ = handleZenResponsesNative(w, r, params, zm, tracker)
+		_ = handleZenResponsesNative(w, r, params, zm)
 		return
 	}
 
-	resp, rateLimited, err := callZenAPI(r.Context(), params, true)
+	resp, _, err := callZenAPI(r.Context(), params, true)
 	if err != nil && isWrongEndpoint(err) {
 		// 只在另一个端点真的成功后才持久化"该模型走 responses"。
 		//
@@ -687,7 +677,7 @@ func handleZenChat(w http.ResponseWriter, r *http.Request, params map[string]any
 		// Upstream，只能靠人工删文件恢复。先重试、成功才学。
 		log.Printf("  zen endpoint probe: model=%s chat/completions rejected (%v), retrying responses",
 			zm.ID, kit.Truncate(err.Error(), 120))
-		if handleZenResponsesNative(w, r, params, zm, tracker) {
+		if handleZenResponsesNative(w, r, params, zm) {
 			learnZenEndpoint(zm.ID, "responses")
 		} else {
 			log.Printf("  zen endpoint probe: model=%s responses retry also failed, NOT learning", zm.ID)
@@ -696,67 +686,40 @@ func handleZenChat(w http.ResponseWriter, r *http.Request, params map[string]any
 	}
 	if err != nil {
 		log.Printf("  zen api error: %v", err)
-		tracker.rec.RateLimited = rateLimited
 		writeJSON(w, http.StatusBadGateway, map[string]any{
 			"error": map[string]string{"message": err.Error(), "type": "api_error"},
 		})
-		tracker.finish(false, http.StatusBadGateway)
 		return
 	}
-	tracker.rec.RateLimited = rateLimited
 	defer resp.Body.Close()
-	tracker.rec.Status = resp.StatusCode
-
-	usageFn := func(u map[string]any) {
-		if pt, ok := u["prompt_tokens"].(float64); ok {
-			tracker.rec.CompletionTokens += int(pt) - tracker.rec.PromptTokens
-			if tracker.rec.CompletionTokens < 0 {
-				tracker.rec.CompletionTokens = 0
-			}
-		}
-		if ct, ok := u["completion_tokens"].(float64); ok {
-			tracker.rec.CompletionTokens = int(ct)
-		}
-	}
 
 	if isStream {
-		handleStreamResponseWithUsage(w, resp, usageFn)
-		tracker.finish(true, resp.StatusCode)
+		handleStreamResponseWithUsage(w, resp, nil)
 		return
 	}
 	// FreeTier gate 要求上游恒 stream=true（buildZenBody 恒注入）；非流式
 	// 客户端在此把上游 chat SSE 聚合回 chat JSON，语义与直连非流式一致。
-	finishZenChatNonStream(w, resp, zm, params, usageFn, tracker)
+	finishZenChatNonStream(w, resp, zm, params, nil)
 }
 
 // handleZenChatDirect chat/completions 直调（端点自适应的反向纠错口：
 // responses 路径上报"该用 chat"时，学回 chat 后经此重试，避免递归回主入口）。
-func handleZenChatDirect(w http.ResponseWriter, r *http.Request, params map[string]any, zm *ZenModel, tracker *zenStatsTracker) {
+func handleZenChatDirect(w http.ResponseWriter, r *http.Request, params map[string]any, zm *ZenModel) {
 	isStream, _ := params["stream"].(bool)
-	resp, rateLimited, err := callZenAPI(r.Context(), params, true)
+	resp, _, err := callZenAPI(r.Context(), params, true)
 	if err != nil {
 		log.Printf("  zen api error: %v", err)
-		tracker.rec.RateLimited = rateLimited
 		writeJSON(w, http.StatusBadGateway, map[string]any{
 			"error": map[string]string{"message": err.Error(), "type": "api_error"},
 		})
-		tracker.finish(false, http.StatusBadGateway)
 		return
 	}
-	tracker.rec.RateLimited = rateLimited
 	defer resp.Body.Close()
-	tracker.rec.Status = resp.StatusCode
-	usageFn := func(u map[string]any) {
-		if ct, ok := u["completion_tokens"].(float64); ok {
-			tracker.rec.CompletionTokens = int(ct)
-		}
-	}
 	if isStream {
-		handleStreamResponseWithUsage(w, resp, usageFn)
-		tracker.finish(true, resp.StatusCode)
+		handleStreamResponseWithUsage(w, resp, nil)
 		return
 	}
-	finishZenChatNonStream(w, resp, zm, params, usageFn, tracker)
+	finishZenChatNonStream(w, resp, zm, params, nil)
 }
 
 // handleZenResponsesNative 原生 responses 端点模型（Upstream=="responses"）的
@@ -765,24 +728,13 @@ func handleZenChatDirect(w http.ResponseWriter, r *http.Request, params map[stri
 // handleZenResponsesNative 走 zen 原生 responses 端点。返回 true 表示本次请求
 // 已被成功应答（2xx 已写出）—— 端点学习的调用方据此判断"该模型真的该走 responses"，
 // 避免把上游瞬时 500 当成端点信号持久化。
-func handleZenResponsesNative(w http.ResponseWriter, r *http.Request, params map[string]any, zm *ZenModel, tracker *zenStatsTracker) bool {
-	usageFn := func(u map[string]any) {
-		if pt, ok := u["prompt_tokens"].(float64); ok {
-			tracker.rec.CompletionTokens += int(pt) - tracker.rec.PromptTokens
-			if tracker.rec.CompletionTokens < 0 {
-				tracker.rec.CompletionTokens = 0
-			}
-		}
-		if ct, ok := u["completion_tokens"].(float64); ok {
-			tracker.rec.CompletionTokens = int(ct)
-		}
-	}
+func handleZenResponsesNative(w http.ResponseWriter, r *http.Request, params map[string]any, zm *ZenModel) bool {
 	clientStream, _ := params["stream"].(bool)
 	// spark 等原生 responses 模型只接受 stream=true（官方 CLI 恒发 true；
 	// stream=false（即使显式传）上游按"非 CLI"请求 403）。网关非流式请求
 	// 在上游侧强制 stream=true 再聚合（与 cline 路由 force-stream 聚合约
 	// 定一致），客户端仍按非流式接收。
-	resp, rateLimited, err := callZenResponsesAPI(r.Context(), params, true)
+	resp, _, err := callZenResponsesAPI(r.Context(), params, true)
 	if err != nil {
 		// 反向纠错：若 responses 路径上报"该用 chat"（未来反向模型），
 		// 学回 chat 并改走 chat 路径重试一次。
@@ -790,20 +742,16 @@ func handleZenResponsesNative(w http.ResponseWriter, r *http.Request, params map
 			learnZenEndpoint(zm.ID, "")
 			log.Printf("  zen endpoint auto-learn: model=%s responses rejected (%v), retrying chat",
 				zm.ID, kit.Truncate(err.Error(), 120))
-			handleZenChatDirect(w, r, params, zm, tracker)
+			handleZenChatDirect(w, r, params, zm)
 			return true
 		}
 		log.Printf("  zen responses api error: %v", err)
-		tracker.rec.RateLimited = rateLimited
 		writeJSON(w, http.StatusBadGateway, map[string]any{
 			"error": map[string]string{"message": err.Error(), "type": "api_error"},
 		})
-		tracker.finish(false, http.StatusBadGateway)
 		return false
 	}
-	tracker.rec.RateLimited = rateLimited
 	defer resp.Body.Close()
-	tracker.rec.Status = resp.StatusCode
 
 	if clientStream {
 		// 原生 responses SSE 需要先转成 chat SSE 再下发：
@@ -814,12 +762,10 @@ func handleZenResponsesNative(w http.ResponseWriter, r *http.Request, params map
 			writeJSON(w, http.StatusBadGateway, map[string]any{
 				"error": map[string]string{"message": aerr.Error(), "type": "api_error"},
 			})
-			tracker.finish(false, http.StatusBadGateway)
 			return false
 		}
 		chat["model"] = zm.ID
-		emitChatAsSSE(w, chat, usageFn)
-		tracker.finish(true, resp.StatusCode)
+		emitChatAsSSE(w, chat, nil)
 		return true
 	}
 	// 非流式客户端：上游已强制 stream=true，resp.Body 是原生 responses SSE，
@@ -829,7 +775,6 @@ func handleZenResponsesNative(w http.ResponseWriter, r *http.Request, params map
 		writeJSON(w, http.StatusBadGateway, map[string]any{
 			"error": map[string]string{"message": aerr.Error(), "type": "api_error"},
 		})
-		tracker.finish(false, http.StatusBadGateway)
 		return false
 	}
 	chat["model"] = zm.ID
@@ -838,15 +783,13 @@ func handleZenResponsesNative(w http.ResponseWriter, r *http.Request, params map
 		writeJSON(w, http.StatusBadGateway, map[string]any{
 			"error": map[string]string{"message": merr.Error(), "type": "api_error"},
 		})
-		tracker.finish(false, http.StatusBadGateway)
 		return false
 	}
 	handleNonStreamResponseWithUsage(w, &http.Response{
 		StatusCode: http.StatusOK,
 		Header:     http.Header{"Content-Type": []string{"application/json"}},
 		Body:       io.NopCloser(bytes.NewReader(data)),
-	}, usageFn, nil)
-	tracker.finish(true, http.StatusOK)
+	}, nil, nil)
 	return true
 }
 
@@ -1903,23 +1846,23 @@ func modelNeedsStream(modelID string) bool {
 // finishZenChatNonStream 非流式 zen 应答收尾（chat 形态）：上游已被强制
 // stream=true，此处把 chat SSE 聚合回 chat JSON 再呈现。handleZenChat /
 // handleZenChatDirect 共用同一序列，避免 copy-paste 漂移。
-func finishZenChatNonStream(w http.ResponseWriter, resp *http.Response, zm *ZenModel, params map[string]any, usageFn func(map[string]any), tracker *zenStatsTracker) {
+func finishZenChatNonStream(w http.ResponseWriter, resp *http.Response, zm *ZenModel, params map[string]any, usageFn func(map[string]any)) {
 	chat, aerr := collectStreamResponse(resp)
 	if aerr != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]any{
 			"error": map[string]string{"message": aerr.Error(), "type": "parse_error"},
 		})
-		tracker.finish(false, http.StatusInternalServerError)
 		return
 	}
-	if u, ok := chat["usage"].(map[string]any); ok && len(u) > 0 {
-		usageFn(u)
+	if usageFn != nil {
+		if u, ok := chat["usage"].(map[string]any); ok && len(u) > 0 {
+			usageFn(u)
+		}
 	}
 	chat["model"] = zm.ID
 	chat = normalizeOpenAIResponse(chat)
 	truncateAtStopSequences(chat, stopSequencesFrom(params))
 	writeJSON(w, http.StatusOK, chat)
-	tracker.finish(true, resp.StatusCode)
 }
 
 // Anthropic Messages API support
@@ -2646,13 +2589,7 @@ func handleAnthropicMessages(w http.ResponseWriter, r *http.Request) {
 // usage 提取 → model 回填 → normalize → stop 截断 → openAIToAnthropic →
 // tool_calls 时 stop_reason=tool_use。handleZenAnthropic 的 responses 直达分支
 // 与 auto-learn 重试分支共用，避免 copy-paste 漂移。
-func finishZenAnthropicNonStream(w http.ResponseWriter, chat map[string]any, openAIReq map[string]any, zm *ZenModel, tracker *zenStatsTracker) {
-	tracker.rec.Status = http.StatusOK
-	if u, ok := chat["usage"].(map[string]any); ok && len(u) > 0 {
-		if ct, ok := u["completion_tokens"].(float64); ok {
-			tracker.rec.CompletionTokens = int(ct)
-		}
-	}
+func finishZenAnthropicNonStream(w http.ResponseWriter, chat map[string]any, openAIReq map[string]any, zm *ZenModel) {
 	chat["model"] = zm.ID
 	chat = normalizeOpenAIResponse(chat)
 	truncateAtStopSequences(chat, stopSequencesFrom(openAIReq))
@@ -2660,7 +2597,6 @@ func finishZenAnthropicNonStream(w http.ResponseWriter, chat map[string]any, ope
 	if tc, ok := getNested(chat, "choices", 0, "message", "tool_calls").([]any); ok && len(tc) > 0 {
 		anthropicResp["stop_reason"] = "tool_use"
 	}
-	tracker.finish(true, http.StatusOK)
 	writeJSON(w, http.StatusOK, anthropicResp)
 }
 
@@ -2673,18 +2609,9 @@ func handleZenAnthropic(w http.ResponseWriter, r *http.Request, req anthropicReq
 		return
 	}
 	isStream := req.Stream
-	tracker := newZenStatsTracker(zenStatsRecord{
-		TS:           time.Now().UnixMilli(),
-		Upstream:     "zen",
-		Model:        zm.ID,
-		Stream:       isStream,
-		PromptTokens: estimateJSON(openAIReq),
-	})
 
 	sid := requestSessionID(openAIReq, r.Header)
 	out := maybeCompact(openAIReq, zm, sid)
-	tracker.rec.Compacted = out.changed
-	tracker.rec.CompactionTokens = out.compactTokens
 	if out.changed {
 		log.Printf("  anthropic zen: %s", out.note)
 	}
@@ -2693,14 +2620,12 @@ func handleZenAnthropic(w http.ResponseWriter, r *http.Request, req anthropicReq
 	// 再走与 chat 路径完全相同的 anthropic 转换。上游恒 stream=true
 	//（spark 只接受 stream=true；false 会 403），客户端形态由 isStream 决定。
 	if zm.Upstream == "responses" {
-		resp, rateLimited, rerr := callZenResponsesAPI(r.Context(), openAIReq, true)
+		resp, _, rerr := callZenResponsesAPI(r.Context(), openAIReq, true)
 		if rerr != nil {
 			log.Printf("  anthropic zen responses api error: %v", rerr)
-			tracker.rec.RateLimited = rateLimited
 			writeJSON(w, http.StatusBadGateway, map[string]any{
 				"error": map[string]string{"message": rerr.Error(), "type": "api_error"},
 			})
-			tracker.finish(false, http.StatusBadGateway)
 			return
 		}
 		defer resp.Body.Close()
@@ -2710,7 +2635,6 @@ func handleZenAnthropic(w http.ResponseWriter, r *http.Request, req anthropicReq
 			writeJSON(w, http.StatusInternalServerError, map[string]any{
 				"error": map[string]string{"message": rerr.Error(), "type": "parse_error"},
 			})
-			tracker.finish(false, http.StatusInternalServerError)
 			return
 		}
 		// 聚合结果不含上游 model（responsesSSEToChat 置空），两种客户端
@@ -2720,29 +2644,24 @@ func handleZenAnthropic(w http.ResponseWriter, r *http.Request, req anthropicReq
 			// responses 原生流已聚合为 chat：对 Anthropic 流式客户端按
 			// Anthropic SSE 事件序列重发（message_start → 文本/工具块 →
 			// message_delta → message_stop），不能回非流式 JSON。
-			// 传 usage 回调：此前传 nil，这条路径的 completion_tokens 从不入统计
-			emitAnthropicSSEFromChat(w, normalizeOpenAIResponse(chat), zenUsageFn(tracker))
-			tracker.finish(true, http.StatusOK)
+			emitAnthropicSSEFromChat(w, normalizeOpenAIResponse(chat), nil)
 			return
 		}
-		tracker.rec.RateLimited = rateLimited
-		finishZenAnthropicNonStream(w, chat, openAIReq, zm, tracker)
+		finishZenAnthropicNonStream(w, chat, openAIReq, zm)
 		return
 	}
 
-	resp, rateLimited, err := callZenAPI(r.Context(), openAIReq, true)
+	resp, _, err := callZenAPI(r.Context(), openAIReq, true)
 	if err != nil && isWrongEndpoint(err) {
 		learnZenEndpoint(zm.ID, "responses")
 		log.Printf("  anthropic zen endpoint auto-learn: model=%s chat/completions rejected (%v), retrying responses",
 			zm.ID, kit.Truncate(err.Error(), 120))
-		resp2, rateLimited2, rerr := callZenResponsesAPI(r.Context(), openAIReq, true)
+		resp2, _, rerr := callZenResponsesAPI(r.Context(), openAIReq, true)
 		if rerr != nil {
 			log.Printf("  anthropic zen responses api error: %v", rerr)
-			tracker.rec.RateLimited = rateLimited2
 			writeJSON(w, http.StatusBadGateway, map[string]any{
 				"error": map[string]string{"message": rerr.Error(), "type": "api_error"},
 			})
-			tracker.finish(false, http.StatusBadGateway)
 			return
 		}
 		defer resp2.Body.Close()
@@ -2751,43 +2670,29 @@ func handleZenAnthropic(w http.ResponseWriter, r *http.Request, req anthropicReq
 			writeJSON(w, http.StatusInternalServerError, map[string]any{
 				"error": map[string]string{"message": aerr.Error(), "type": "parse_error"},
 			})
-			tracker.finish(false, http.StatusInternalServerError)
 			return
 		}
 		chat["model"] = zm.ID
-		tracker.rec.RateLimited = rateLimited2
 		if isStream {
 			// 流式客户端：与原生分支一致地重发 Anthropic SSE 事件序列
 			//（回非流式 JSON 会让 SDK 的流解析器直接报错）
-			emitAnthropicSSEFromChat(w, normalizeOpenAIResponse(chat), zenUsageFn(tracker))
-			tracker.finish(true, http.StatusOK)
+			emitAnthropicSSEFromChat(w, normalizeOpenAIResponse(chat), nil)
 			return
 		}
-		finishZenAnthropicNonStream(w, chat, openAIReq, zm, tracker)
+		finishZenAnthropicNonStream(w, chat, openAIReq, zm)
 		return
 	}
 	if err != nil {
 		log.Printf("  anthropic zen api error: %v", err)
-		tracker.rec.RateLimited = rateLimited
 		writeJSON(w, http.StatusBadGateway, map[string]any{
 			"error": map[string]string{"message": err.Error(), "type": "api_error"},
 		})
-		tracker.finish(false, http.StatusBadGateway)
 		return
 	}
-	tracker.rec.RateLimited = rateLimited
 	defer resp.Body.Close()
-	tracker.rec.Status = resp.StatusCode
-
-	usageFn := func(u map[string]any) {
-		if ct, ok := u["completion_tokens"].(float64); ok {
-			tracker.rec.CompletionTokens = int(ct)
-		}
-	}
 
 	if isStream {
-		handleAnthropicStreamWithUsage(w, resp, zm.ID, toolSchemas, stopSequencesFrom(openAIReq), usageFn)
-		tracker.finish(true, resp.StatusCode)
+		handleAnthropicStreamWithUsage(w, resp, zm.ID, toolSchemas, stopSequencesFrom(openAIReq), nil)
 		return
 	}
 
@@ -2798,11 +2703,7 @@ func handleZenAnthropic(w http.ResponseWriter, r *http.Request, req anthropicReq
 		writeJSON(w, http.StatusInternalServerError, map[string]any{
 			"error": map[string]string{"message": aerr.Error(), "type": "parse_error"},
 		})
-		tracker.finish(false, http.StatusInternalServerError)
 		return
-	}
-	if u, ok := chatOut["usage"].(map[string]any); ok && len(u) > 0 {
-		usageFn(u)
 	}
 	chatOut["model"] = zm.ID
 	chatOut = normalizeOpenAIResponse(chatOut)
@@ -2814,7 +2715,6 @@ func handleZenAnthropic(w http.ResponseWriter, r *http.Request, req anthropicReq
 		anthropicResp["stop_reason"] = "tool_use"
 	}
 	writeJSON(w, http.StatusOK, anthropicResp)
-	tracker.finish(true, resp.StatusCode)
 }
 
 func handleAnthropicStreamWithUsage(w http.ResponseWriter, upstream *http.Response, modelName string, toolSchemas map[string]map[string]bool, stops []string, onUsage func(map[string]any)) {
