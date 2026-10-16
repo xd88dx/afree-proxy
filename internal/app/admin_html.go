@@ -1944,10 +1944,13 @@ const I18N_ZH = {
   '.': '。',
   'Context': '上下文',
   'Maximum context length': '最大上下文长度',
-  'OpenCode stats': 'OpenCode 统计',
   'Today': '今日',
   'Total': '累计',
   'No data': '暂无数据',
+  // 会话轮换输入框（ocSessionRotate）与账号池用量列的悬浮说明
+  'Mint a fresh session id for a key once it is this old. 0 = never rotate (a long-lived session makes the first request slow after a few days).': '超过该时长（分钟）就为 key 重新铸造会话 ID。0 = 从不轮换（长期会话会让几天后的首个请求变慢）。',
+  'total': '累计',
+  'tokens (exact when upstream returns usage, otherwise estimated)': 'tokens（上游返回 usage 时精确，否则为估算）',
   // 模型状态标签
   'error': '错误',
   // 通用 toast / 确认 / 片段
@@ -3169,7 +3172,7 @@ async function loadAccounts() {
       return '<tr draggable="true" data-drag-id="' + esc(a.accountId) + '">' +
         '<td>' + esc(a.email) + '</td>' +
         '<td><span class="status ' + st + '"><span class="status-dot ' + st + '"></span>' + (sn[a.status] || st) + '</span>' + statusExtra + '</td>' +
-          '<td title="Today ' + fmtNum(a.tokensToday) + ' / total ' + fmtNum(a.tokensTotal) + ' tokens (exact when upstream returns usage, otherwise estimated)">' + fmtTokens(a.tokensToday) + ' / ' + fmtTokens(a.tokensTotal) + '</td>' +
+          '<td title="' + T('Today') + ' ' + fmtNum(a.tokensToday) + ' / ' + T('total') + ' ' + fmtNum(a.tokensTotal) + ' ' + T('tokens (exact when upstream returns usage, otherwise estimated)') + '">' + fmtTokens(a.tokensToday) + ' / ' + fmtTokens(a.tokensTotal) + '</td>' +
         '<td class="mono" style="font-size:11px">' + lu + '</td>' +
         '<td class="mono" style="font-size:11px">' + cr + '</td>' +
         bindCell +
