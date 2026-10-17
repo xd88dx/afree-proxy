@@ -738,7 +738,6 @@ func ListAccounts() []*Account {
 			TokensTotal:     a.TokensTotal,
 			TokensToday:     a.TokensToday,
 			TokensDate:      a.TokensDate,
-			CreatedAt:       a.CreatedAt,
 			CooldownUntil:   a.CooldownUntil,
 			LastReason:      a.LastReason,
 			// 代理绑定随列表下发（面板编辑用）。代理 URL 可能含凭据，但代理
@@ -942,7 +941,6 @@ func AddAccountFromDeviceAuth() (*Account, error) {
 		AccessToken:  "workos:" + reg.Data.AccessToken,
 		ExpiresAt:    clineExpiryMs(reg.Data.ExpiresAt),
 		Status:       "active",
-		CreatedAt:    time.Now(),
 	}
 
 	addAccount(acc)

@@ -290,6 +290,13 @@ func (p *Pool) RecordTokenUsage(uid string, delta TokenUsageDelta) {
 	}
 	if delta.HasTotalTokens && delta.TotalTokens >= 0 {
 		usage.TotalTokens += delta.TotalTokens
+		// 今日拆分：跨日重置，累计不重置（与 key 池 RecordKeyTokens 同口径）。
+		today := time.Now().Format("2006-01-02")
+		if usage.TodayDate != today {
+			usage.TodayDate = today
+			usage.TodayTokens = 0
+		}
+		usage.TodayTokens += delta.TotalTokens
 		known = true
 	}
 	if known {

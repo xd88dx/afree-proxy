@@ -123,6 +123,30 @@ func MarkSuccess(key string) {
 	mu.Unlock()
 }
 
+// RecordKeyTokens 记录 key 本次请求消耗的 token（prompt+completion），
+// 自动处理跨日重置，累计值不重置；同时刷新最近使用时间。tokens<=0 时忽略。
+func RecordKeyTokens(key string, tokens int64) {
+	if key == "" || tokens <= 0 {
+		return
+	}
+	c := Get()
+	mu.Lock()
+	if c.KeyTokens == nil {
+		c.KeyTokens = map[string]KeyTokenStats{}
+	}
+	today := time.Now().Format("2006-01-02")
+	st := c.KeyTokens[key]
+	if st.Date != today {
+		st.Date = today
+		st.Today = 0
+	}
+	st.Today += tokens
+	st.Total += tokens
+	st.LastUsedAt = time.Now()
+	c.KeyTokens[key] = st
+	mu.Unlock()
+}
+
 // Cooldown 把 key 置为冷却，冷却期内轮转跳过。返回实际生效的时长
 // （0 = 未冷却：空 key）。免费账号上游 60 req/min，429 按 Retry-After 冷却。
 func Cooldown(key string, d time.Duration) time.Duration {

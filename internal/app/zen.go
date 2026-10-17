@@ -279,10 +279,6 @@ func routeModel(id string) string {
 			_, inCline := modelsCache[zenID]
 			modelsMu.Unlock()
 			if !inCline {
-				if getZenConfig().Failover && zenFailedNow() {
-					log.Printf("  failover: zen degraded, %q routed to cline pool", zenID)
-					return "cline"
-				}
 				return "zen"
 			}
 		} else {
@@ -338,11 +334,6 @@ type zenConfigData struct {
 	// nil/缺项 = 参与。路由启用是铸造的前提（父集语义）：禁用路由的 key 不参与
 	// 选号，收割机也不再为它铸造会话（zenKeyAutoHarvestEnabled）。
 	KeyRoutingEnabled map[string]bool `json:"keyRoutingEnabled,omitempty"`
-	// zen 连续失败后的故障转移（上游移植）：连续 FailoverCount 次失败进入
-	// FailoverMinutes 分钟窗口，窗口内 zen 模型路由回 cline 账号池。
-	Failover        bool `json:"failover"`        // zen 连续失败后故障转移到 cline 账号池,默认 true
-	FailoverCount   int  `json:"failoverCount"`   // 触发故障转移的连续失败次数,默认 3
-	FailoverMinutes int  `json:"failoverMinutes"` // 故障转移窗口(分钟),默认 5
 	// SessionRotateMinutes 粘性会话本地轮换周期（分钟），默认 120（2 小时）。
 	// 0 = 永不轮换（沿用旧行为，长跑后首个请求会因会话老化而变慢）。
 	SessionRotateMinutes int `json:"sessionRotateMinutes"`
@@ -499,9 +490,6 @@ func defaultZenConfig() *zenConfigData {
 		ProxyStrategy:   "round_robin",
 		MaxConcurrency:  8,
 		Retries:         3,
-		Failover:        true,
-		FailoverCount:   3,
-		FailoverMinutes: 5,
 		// 会话轮换周期：缺少该键的旧配置文件保持此默认（2 小时）。
 		// 显式写 0 表示关闭轮换（见 SessionRotateMinutes 注释）。
 		SessionRotateMinutes: defaultSessionRotateMinutes,
@@ -520,13 +508,9 @@ var (
 )
 
 // 并发信号量：zen 上游最大并发（maxConcurrency 配置，rebuildZenSem 重建）。
-// zenFailCount/zenFailUntil 是故障转移状态：连续失败达阈值后进入窗口期，
-// 窗口内 zen 模型路由回 cline 池（见 markZenFail / zenFailedNow / routeModel）。
 var (
-	zenSem       chan struct{}
-	zenFailCount int
-	zenFailUntil time.Time
-	zenStateMu   sync.Mutex
+	zenSem chan struct{}
+	zenStateMu sync.Mutex
 )
 
 func init() {
@@ -542,46 +526,6 @@ func rebuildZenSem() {
 	zenStateMu.Lock()
 	zenSem = make(chan struct{}, n)
 	zenStateMu.Unlock()
-}
-
-func markZenSuccess() {
-	zenStateMu.Lock()
-	zenFailCount = 0
-	zenFailUntil = time.Time{}
-	zenStateMu.Unlock()
-}
-
-func markZenFail() {
-	cfg := getZenConfig()
-	thr := cfg.FailoverCount
-	if thr <= 0 {
-		thr = 3
-	}
-	window := cfg.FailoverMinutes
-	if window <= 0 {
-		window = 5
-	}
-	zenStateMu.Lock()
-	zenFailCount++
-	if zenFailCount >= thr {
-		zenFailUntil = time.Now().Add(time.Duration(window) * time.Minute)
-	}
-	zenStateMu.Unlock()
-}
-
-// zenFailedNow zen 是否处于故障转移状态
-func zenFailedNow() bool {
-	zenStateMu.Lock()
-	defer zenStateMu.Unlock()
-	if zenFailUntil.IsZero() {
-		return false
-	}
-	if time.Now().After(zenFailUntil) {
-		zenFailCount = 0
-		zenFailUntil = time.Time{}
-		return false
-	}
-	return true
 }
 
 // isRateLimited 限流信号识别: 429/503 直接命中; 502/403 按错误体关键词。
@@ -866,6 +810,8 @@ var (
 	zenKeyMu    sync.Mutex
 	zenKeyIdx   int
 	zenKeyUsage = map[string]int64{} // 每 key 成功调用计数（内存态）
+	// zenKeyTokens 每 key token 记账（内存态）：今日/累计消耗与最近使用。
+	zenKeyTokens = map[string]zenKeyTokenStats{}
 	zenKeyCool  = map[string]time.Time{}
 )
 
@@ -992,6 +938,35 @@ func markZenKeySuccess(key string) {
 	zenKeyMu.Unlock()
 }
 
+// zenKeyTokenStats 单个 key 的 token 记账：今日/累计消耗（prompt+completion）
+// 与跨日日期、最近成功时间。仅内存态（与 zenKeyUsage 同口径）。
+type zenKeyTokenStats struct {
+	Today      int64
+	Total      int64
+	Date       string
+	LastUsedAt time.Time
+}
+
+// recordZenKeyTokens 记录 key 本次请求消耗的 token，自动处理跨日重置，
+// 累计值不重置；同时刷新最近使用时间。tokens<=0 时忽略。
+func recordZenKeyTokens(key string, tokens int64) {
+	if key == "" || tokens <= 0 {
+		return
+	}
+	zenKeyMu.Lock()
+	today := time.Now().Format("2006-01-02")
+	st := zenKeyTokens[key]
+	if st.Date != today {
+		st.Date = today
+		st.Today = 0
+	}
+	st.Today += tokens
+	st.Total += tokens
+	st.LastUsedAt = time.Now()
+	zenKeyTokens[key] = st
+	zenKeyMu.Unlock()
+}
+
 // cooldownZenKey 将 key 置为冷却，冷却期内 round-robin 跳过它。
 // 默认的 "public" key 仅在它是池中唯一 key 时跳过冷却（无其他 key 可轮转）；
 // 多 key 池中 "public" 也参与冷却轮转。
@@ -1078,13 +1053,19 @@ func zenKeyStatus() []map[string]any {
 		st := map[string]any{
 			"index":   i,
 			"keyMask": maskZenKey(k),
-			"usage":   zenKeyUsage[k],
 			"current": i == zenKeyIdx%maxInt(len(keys), 1),
 			// 路由参与状态（面板"启用"列勾选，勾掉 = 不进入请求轮转）。
 			"routingEnabled": zenKeyRoutingEnabled(k),
 			// live 会话状态：面板据此看出哪些 key 已有粘性会话。
 			"sessionLive": sess[i].Live,
 			"session":     sess[i].Session,
+		}
+		if ts, ok := zenKeyTokens[k]; ok {
+			st["tokensToday"] = ts.Today
+			st["tokensTotal"] = ts.Total
+			if !ts.LastUsedAt.IsZero() {
+				st["lastUsed"] = ts.LastUsedAt.Format(time.RFC3339)
+			}
 		}
 		// 代理绑定（隔离模式，面板编辑用）。stale = 绑定的代理已不在当前
 		// 代理池里（被删除/改写），该 key 会被隔离一直跳过，必须提示。
@@ -2104,7 +2085,7 @@ func callZenResponsesAPI(ctx context.Context, params map[string]any, stream bool
 		if err == nil {
 			mainP, backupP, boundP := zenKeyBindingOf(key)
 			setUpstreamExit(ctx, proxyExitType(proxyURL, mainP, backupP, boundP))
-			recordProxyOutcome(proxyURL, true, nil)
+			recordProxyOutcome(proxyURL, true, nil, 0)
 		}
 		if err != nil {
 			if ctx.Err() != nil {
@@ -2112,7 +2093,7 @@ func callZenResponsesAPI(ctx context.Context, params map[string]any, stream bool
 			}
 			if pidx >= 0 {
 				cooldownUpstreamProxy(pidx, 2*time.Minute)
-				recordProxyOutcome(proxyURL, false, err)
+				recordProxyOutcome(proxyURL, false, err, 0)
 				log.Printf("  zen proxy failed (%v), cooldown exit %s for 2m", err, viaProxy)
 			}
 			if attempt < retries {
@@ -2129,6 +2110,7 @@ func callZenResponsesAPI(ctx context.Context, params map[string]any, stream bool
 			markZenKeySuccess(key)
 			zenSessionMarkSuccess(key)
 			if stream {
+				resp.Header.Set("X-Afree-Used-Key", key)
 				return resp, rateLimited, nil
 			}
 			// 非流式：内部聚合为 chat completions 形态后返回
@@ -2143,8 +2125,11 @@ func callZenResponsesAPI(ctx context.Context, params map[string]any, stream bool
 			}
 			return &http.Response{
 				StatusCode: http.StatusOK,
-				Header:     http.Header{"Content-Type": []string{"application/json"}},
-				Body:       io.NopCloser(bytes.NewReader(data)),
+				Header: http.Header{
+					"Content-Type":    []string{"application/json"},
+					"X-Afree-Used-Key": []string{key},
+				},
+				Body: io.NopCloser(bytes.NewReader(data)),
 			}, rateLimited, nil
 		}
 
@@ -2199,11 +2184,8 @@ func callZenResponsesAPI(ctx context.Context, params map[string]any, stream bool
 			return nil, rateLimited, apiErr
 		}
 
-		// 5xx 推进故障转移；pinned 探测除外（同 chat 路径：探测结论只属于
-		// 这次点击，不能改写全池的路由状态）。
-		if resp.StatusCode >= 500 && o.pinKey == "" {
-			markZenFail()
-		}
+		// 5xx 不再推进任何全局状态：故障转移已删除，上游 500 直接按重试/
+		// 报错路径处理（同 chat 路径注释：pinned 探测结论只属于这次点击）。
 		// 会话失效（FreeTier 403 且非限流）：403 针对 key/会话，换到别的 key 只会
 		// 把同一批坏状态扩散到全池，绕过不了它。正确做法是同一 key 上同步换一次
 		// 会话再重试一次（sessionRetried 保证本请求至多一次）；仍 403 则该 key
@@ -2347,7 +2329,7 @@ func callZenAPI(ctx context.Context, params map[string]any, stream bool, opts ..
 		if err == nil {
 			mainP, backupP, boundP := zenKeyBindingOf(key)
 			setUpstreamExit(ctx, proxyExitType(proxyURL, mainP, backupP, boundP))
-			recordProxyOutcome(proxyURL, true, nil)
+			recordProxyOutcome(proxyURL, true, nil, 0)
 		}
 		if err != nil {
 			// 客户端取消: 立即返回,不重试不冷却不计故障
@@ -2359,7 +2341,7 @@ func callZenAPI(ctx context.Context, params map[string]any, stream bool, opts ..
 			// 几次慢模型测试就毒化整个池;2 分钟仍能跳过真死代理,又快速自愈。
 			if pidx >= 0 {
 				cooldownUpstreamProxy(pidx, 2*time.Minute)
-				recordProxyOutcome(proxyURL, false, err)
+				recordProxyOutcome(proxyURL, false, err, 0)
 				log.Printf("  zen proxy failed (%v), cooldown exit %s for 2m", err, viaProxy)
 			}
 			// 网络错误:退避重试(瞬时可恢复);ctx 取消时中断等待
@@ -2376,6 +2358,7 @@ func callZenAPI(ctx context.Context, params map[string]any, stream bool, opts ..
 		if resp.StatusCode == http.StatusOK {
 			markZenKeySuccess(key)
 			zenSessionMarkSuccess(key)
+			resp.Header.Set("X-Afree-Used-Key", key)
 			return resp, rateLimited, nil
 		}
 
@@ -2425,14 +2408,8 @@ func callZenAPI(ctx context.Context, params map[string]any, stream bool, opts ..
 			return nil, rateLimited, apiErr
 		}
 
-		// 非 2xx：只有限流信号或服务端错误才推进全局故障转移，
-		// 客户端侧 400/401（提示词超限、key 配错）不应污染 failover 状态。
-		// pinned 探测除外：它是管理员对单个 key 的主动探测，其结论（包括上游
-		// 5xx）只属于这次点击——连点几次 Test 撞上上游 500，绝不能把全部正常
-		// 流量切去 cline 池。
-		if resp.StatusCode >= 500 && o.pinKey == "" {
-			markZenFail()
-		}
+		// 非 2xx 直接按重试/报错路径处理（故障转移已删除，无全局状态可污染；
+		// pinned 探测结论只属于这次点击）。
 		// 会话失效（FreeTier 403 且非限流）：403 针对 key/会话，换到别的 key 只会
 		// 把坏状态扩散到全池。同一 key 上同步换一次会话再重试一次（sessionRetried
 		// 保证至多一次）；仍 403 则冷却该 key 并快速失败，不再跨 key 扇出。

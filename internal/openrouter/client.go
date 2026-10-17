@@ -219,6 +219,9 @@ func Chat(ctx context.Context, params map[string]any, modelID string, stream boo
 		}
 		if resp.StatusCode == http.StatusOK {
 			MarkSuccess(key)
+			// usedKey 经 resp 头带回调用方做 key 级 token 记账（调用方读后删头，
+			// 不透传客户端）。上游真实头不会有这个名字，不会撞。
+			resp.Header.Set("X-Afree-Used-Key", key)
 			return resp, rateLimited, nil
 		}
 		bodyBytes := readBody(resp)

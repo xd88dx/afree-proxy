@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	"afree-proxy/internal/workbuddy/auth"
 )
@@ -128,11 +129,12 @@ func (c *Client) observeAccount(ctx context.Context, a *auth.Auth, exitRaw strin
 
 // observeProxy 出口成败回报（afree 本地扩展）：只在真实走了代理（raw 非空）
 // 且挂了钩子时回调。ctx 取消的过滤交给钩子实现方，这里原样上抛错误。
-func (c *Client) observeProxy(raw string, err error) {
+// hsMs 握手耗时（毫秒）：调用方 Do 前后打点传入；拿不到时传 0（不记握手平均）。
+func (c *Client) observeProxy(raw string, err error, hsMs int64) {
 	if raw == "" || c.ObserveProxy == nil {
 		return
 	}
-	c.ObserveProxy(raw, err == nil, err)
+	c.ObserveProxy(raw, err == nil, err, hsMs)
 }
 
 func (c *Client) doHTTP(req *http.Request, a *auth.Auth) (*http.Response, error) {
@@ -140,8 +142,9 @@ func (c *Client) doHTTP(req *http.Request, a *auth.Auth) (*http.Response, error)
 	if err != nil {
 		return nil, err
 	}
+	hsStart := time.Now()
 	resp, err := cl.Do(req)
-	c.observeProxy(raw, err)
+	c.observeProxy(raw, err, time.Since(hsStart).Milliseconds())
 	return resp, err
 }
 
@@ -150,7 +153,8 @@ func (c *Client) doChatHTTP(req *http.Request, a *auth.Auth) (*http.Response, er
 	if err != nil {
 		return nil, err
 	}
+	hsStart := time.Now()
 	resp, err := cl.Do(req)
-	c.observeProxy(raw, err)
+	c.observeProxy(raw, err, time.Since(hsStart).Milliseconds())
 	return resp, err
 }

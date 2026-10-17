@@ -34,9 +34,6 @@ func handleZenConfig(w http.ResponseWriter, r *http.Request) {
 		"proxyStrategy":       cfg.ProxyStrategy,
 		"maxConcurrency":      cfg.MaxConcurrency,
 		"retries":             cfg.Retries,
-		"failover":             cfg.Failover,
-		"failoverCount":        cfg.FailoverCount,
-		"failoverMinutes":      cfg.FailoverMinutes,
 		"compaction":          cfg.Compaction,
 		"sessionRotateMinutes": cfg.SessionRotateMinutes,
 		// 代理隔离（账号/key 绑定出口）：生效值 + 是否被 env 钉死（面板据此
@@ -78,9 +75,6 @@ func handleZenConfigUpdate(w http.ResponseWriter, r *http.Request) {
 		ProxyStrategy       *string  `json:"proxyStrategy"`
 		MaxConcurrency      *int     `json:"maxConcurrency"`
 		Retries             *int     `json:"retries"`
-		Failover            *bool    `json:"failover"`
-		FailoverCount       *int     `json:"failoverCount"`
-		FailoverMinutes     *int     `json:"failoverMinutes"`
 		// 会话轮换周期（分钟）：0 = 关闭轮换，需与"未提交"区分故用指针。
 		SessionRotateMinutes *int `json:"sessionRotateMinutes"`
 		ProxyIsolation       *bool `json:"proxyIsolation"`
@@ -107,9 +101,6 @@ func handleZenConfigUpdate(w http.ResponseWriter, r *http.Request) {
 		ProxyStrategy:       cur.ProxyStrategy,
 		MaxConcurrency:      cur.MaxConcurrency,
 		Retries:             cur.Retries,
-		Failover:            cur.Failover,
-		FailoverCount:       cur.FailoverCount,
-		FailoverMinutes:     cur.FailoverMinutes,
 		ProxyIsolation:      cur.ProxyIsolation,
 		BackupProxyEnabled:  cur.BackupProxyEnabled,
 		KeyBindings:         cur.KeyBindings,
@@ -442,10 +433,9 @@ func testZenKey(key string, index int, modelID string) (map[string]any, string) 
 		return result, "error"
 	}
 
-	// 成功：清除冷却。用量与 403 连败计数**不要**在这里重复复位——上游 200
-	// 路径已经做过（markZenKeySuccess/markZenSuccess/zenSessionMarkSuccess，
-	// zen.go 两条调用路径各一处）；这里再调一次会把面板的 usage 多加 1。
-	// "成功即复位冷却"本身与 cline 的 Test 按钮同语义。
+	// 成功：清除冷却。用量（markZenKeySuccess）与 403 会话状态
+	// （zenSessionMarkSuccess，zen.go 两条调用路径各一处）已在上游 200
+	// 路径里做过，这里只复位冷却（与 cline 的 Test 按钮同语义）。
 	uncoolZenKey(key)
 	result["reason"] = "ok"
 	return result, "active"

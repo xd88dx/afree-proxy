@@ -244,9 +244,6 @@ func handleAdminConfigImport(w http.ResponseWriter, r *http.Request) {
 			if a.Status != "active" && a.Status != "cooldown" && a.Status != "expired" {
 				a.Status = "active"
 			}
-			if a.CreatedAt.IsZero() {
-				a.CreatedAt = time.Now()
-			}
 			// 隔离护栏：导入账号一律禁用参与轮换（poolEnabled 缺项 = 启用，
 			// 必须显式写 false，不能靠清字段）。
 			off := false

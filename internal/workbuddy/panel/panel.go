@@ -11,6 +11,7 @@
 package panel
 
 import (
+	"context"
 	"encoding/json"
 	"log"
 	"net/http"
@@ -164,6 +165,7 @@ func (p *Panel) routes() {
 	p.mux.HandleFunc("POST /panel/api/accounts/{uid}/resume", p.withAuth(p.accountResume))
 	p.mux.HandleFunc("POST /panel/api/accounts/{uid}/checkin", p.withAuth(p.accountCheckin))
 	p.mux.HandleFunc("POST /panel/api/accounts/{uid}/balance", p.withAuth(p.accountBalance))
+	p.mux.HandleFunc("POST /panel/api/accounts/{uid}/test", p.withAuth(p.accountTest))
 	p.mux.HandleFunc("POST /panel/api/accounts/{uid}/remove", p.withAuth(p.accountRemove))
 	p.mux.HandleFunc("GET /panel/api/accounts/{uid}/tasks", p.withAuth(p.accountTasks))
 	p.mux.HandleFunc("POST /panel/api/accounts/{uid}/tasks/accept", p.withAuth(p.accountTaskAccept))
@@ -616,6 +618,98 @@ func (p *Panel) accountBalance(w http.ResponseWriter, r *http.Request) {
 	}
 	p.cfg.Pool.SetCreditsDetailed(uid, remain, total, expiring, earliestAt, earliestRemaining)
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "credits": remain, "credits_total": total})
+}
+
+// accountTest 单号可用性探测：发一条最小真实 chat 请求（"Reply with exactly: OK",
+// max_tokens 16），与正常请求走同一条上游路（含代理出口与冷却副作用）。
+// 成功 → NoteSuccess（附带解冷：清连败/熔断/软限流计数）；限流类失败 → 按分类
+// 记冷却（软限流/余额耗尽）；参数错误类 → 不罚号。网络/超时错误不改状态。
+func (p *Panel) accountTest(w http.ResponseWriter, r *http.Request) {
+	uid := r.PathValue("uid")
+	a := p.cfg.Pool.AuthByUID(uid)
+	if a == nil {
+		writeErr(w, http.StatusNotFound, "account not found")
+		return
+	}
+	if p.cfg.Upstream == nil {
+		writeErr(w, http.StatusServiceUnavailable, "upstream unavailable")
+		return
+	}
+	probeModel := probeTestModel(p, a)
+	body, _ := json.Marshal(map[string]any{
+		"model":      probeModel,
+		"messages":   []any{map[string]any{"role": "user", "content": "Reply with exactly: OK"}},
+		"max_tokens": 16,
+		"stream":     false,
+	})
+	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
+	defer cancel()
+	start := time.Now()
+	rc, status, respBody, uerr := p.cfg.Upstream.ChatStreamContext(ctx, a, body, "", upstream.ChatMeta{})
+	latencyMs := time.Since(start).Milliseconds()
+	out := map[string]any{"ok": true, "model": probeModel, "latencyMs": latencyMs}
+	if uerr != nil {
+		kind := upstream.ErrClient
+		if ue, ok := uerr.(*upstream.Error); ok {
+			kind = ue.Kind
+		}
+		out["status"] = "error"
+		out["error"] = truncateTestErr(respBody, uerr)
+		switch kind {
+		case upstream.ErrSoftRate:
+			out["status"] = "cooldown"
+			p.cfg.Pool.CooldownSoftRate(uid, time.Minute, time.Time{}, "panel test: "+out["error"].(string))
+		case upstream.ErrHardCredit:
+			out["status"] = "cooldown"
+			p.cfg.Pool.Cooldown(uid, pool.CoolHard, 30*time.Minute, "panel test: "+out["error"].(string))
+		case upstream.ErrSessionDead:
+			p.cfg.Pool.NoteError(uid)
+		case upstream.ErrBadParams, upstream.ErrPromptTooLong, upstream.ErrImageInvalid, upstream.ErrContentBlocked:
+			// 请求级错误：不罚号。
+		default:
+			p.cfg.Pool.NoteError(uid)
+		}
+		_ = status
+		writeJSON(w, http.StatusOK, out)
+		return
+	}
+	if rc != nil {
+		rc.Close()
+	}
+	p.cfg.Pool.NoteSuccess(uid)
+	out["status"] = "active"
+	writeJSON(w, http.StatusOK, out)
+}
+
+// probeTestModel 选探测模型：用被测账号拉一次模型目录取首个可用 ID（与真实
+// 请求同一鉴权上下文），失败回退 glm-5.3-flash。
+func probeTestModel(p *Panel, a *auth.Auth) string {
+	if p.cfg.Upstream != nil {
+		if infos, err := p.cfg.Upstream.FetchModels(a); err == nil {
+			for _, mi := range infos {
+				if mi.ID != "" {
+					return mi.ID
+				}
+			}
+		}
+	}
+	return "glm-5.3-flash"
+}
+
+// truncateTestErr 探测错误摘要：优先上游原文，截断防刷屏。
+func truncateTestErr(respBody []byte, uerr error) string {
+	if len(respBody) > 0 {
+		s := strings.TrimSpace(string(respBody))
+		if len(s) > 300 {
+			s = s[:300] + "…"
+		}
+		return s
+	}
+	msg := uerr.Error()
+	if len(msg) > 300 {
+		msg = msg[:300] + "…"
+	}
+	return msg
 }
 
 // accountRemove 移除账号：先出池（立即落盘 state），再删 auth 文件。

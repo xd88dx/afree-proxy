@@ -34,6 +34,9 @@ type Config struct {
 	Retries int `json:"retries"`
 	// 用量统计（内存态 + 落盘聚合，面板展示用）：key 明文 -> 成功调用计数。
 	Usage map[string]int64 `json:"usage,omitempty"`
+	// Token 记账（内存态 + 落盘，面板"今日/累计 token"与"最近使用"列）：
+	// key 明文 -> 今日/累计 prompt+completion 消耗与最近成功时间。
+	KeyTokens map[string]KeyTokenStats `json:"keyTokens,omitempty"`
 	// Cooldown 冷却表：key 明文 -> 冷却截止时刻（内存态，不落盘）。
 	Cool map[string]time.Time `json:"-"`
 }
@@ -43,6 +46,15 @@ type Config struct {
 type Binding struct {
 	Main   string `json:"main,omitempty"`
 	Backup string `json:"backup,omitempty"`
+}
+
+// KeyTokenStats 单个 key 的 token 记账：今日/累计消耗（prompt+completion）
+// 与跨日日期、最近成功时间。内存态 + 落盘（与 Usage 同口径）。
+type KeyTokenStats struct {
+	Today      int64     `json:"today,omitempty"`
+	Total      int64     `json:"total,omitempty"`
+	Date       string    `json:"date,omitempty"`       // 今日计数日期 YYYY-MM-DD
+	LastUsedAt time.Time `json:"lastUsedAt,omitempty"` // 最近成功时间
 }
 
 // DefaultAPIBase OpenRouter 官方 OpenAI 兼容端点。
@@ -310,7 +322,7 @@ func save() {
 
 // pruneRemovedKeys 清理不再存在于 key 池的绑定/路由/用量/冷却条目。
 func pruneRemovedKeys(c *Config) {
-	if len(c.KeyBindings) == 0 && len(c.KeyRoutingEnabled) == 0 && len(c.Usage) == 0 && len(c.Cool) == 0 {
+	if len(c.KeyBindings) == 0 && len(c.KeyRoutingEnabled) == 0 && len(c.KeyTokens) == 0 && len(c.Cool) == 0 {
 		return
 	}
 	valid := map[string]bool{}
@@ -328,9 +340,9 @@ func pruneRemovedKeys(c *Config) {
 			delete(c.KeyRoutingEnabled, k)
 		}
 	}
-	for k := range c.Usage {
+	for k := range c.KeyTokens {
 		if !valid[k] {
-			delete(c.Usage, k)
+			delete(c.KeyTokens, k)
 		}
 	}
 	for k := range c.Cool {
@@ -358,8 +370,14 @@ func KeyStatus() []map[string]any {
 		st := map[string]any{
 			"index":          i,
 			"keyMask":        maskKey(k),
-			"usage":          c.Usage[k],
 			"routingEnabled": c.RoutingEnabled(k),
+		}
+		if ts, ok := c.KeyTokens[k]; ok {
+			st["tokensToday"] = ts.Today
+			st["tokensTotal"] = ts.Total
+			if !ts.LastUsedAt.IsZero() {
+				st["lastUsed"] = ts.LastUsedAt.Format(time.RFC3339)
+			}
 		}
 		if b, ok := c.KeyBindings[k]; ok && (b.Main != "" || b.Backup != "") {
 			st["proxyMain"] = b.Main

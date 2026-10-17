@@ -42,6 +42,11 @@ type proxyHealthEntry struct {
 	LastOK    time.Time `json:"lastOk,omitempty"`
 	LastFail  time.Time `json:"lastFail,omitempty"`
 	LastErr   string    `json:"lastErr,omitempty"`
+	// HSCount/HSSumMs 握手延迟累计（仅成功尝试）：Do 返回时刻减调用时刻，
+	// 口径=TCP+TLS+CONNECT 隧道建立耗时，不含上游首字节/任务时长。
+	// 失败尝试不记——超时熔断的秒级耗时会污染平均值，失败已有在线率覆盖。
+	HSCount int64 `json:"hsCount,omitempty"`
+	HSSumMs int64 `json:"hsSumMs,omitempty"`
 }
 
 func (e *proxyHealthEntry) recentOK() int {
@@ -73,7 +78,9 @@ func proxyHealthPath() string {
 // recordProxyOutcome 记一次出口成败。proxyURL 为空 = 直连出口，不是代理，不记。
 // err 非空且源自 context 取消/截止（客户端放弃）时同样不记 —— 与现有冷却
 // 判据的"ctx 取消不冷却"口径一致。
-func recordProxyOutcome(proxyURL string, ok bool, err error) {
+// hsMs 握手耗时（毫秒）：调用方 Do 前后 time.Since；仅 ok=true 时记入平均，
+// 失败/直连/取消路径传 0 即可。
+func recordProxyOutcome(proxyURL string, ok bool, err error, hsMs int64) {
 	if proxyURL == "" {
 		return
 	}
@@ -92,6 +99,10 @@ func recordProxyOutcome(proxyURL string, ok bool, err error) {
 	if ok {
 		e.Successes++
 		e.LastOK = time.Now()
+		if hsMs > 0 {
+			e.HSCount++
+			e.HSSumMs += hsMs
+		}
 	} else {
 		e.LastFail = time.Now()
 		if err != nil {
@@ -219,6 +230,10 @@ func proxyHealthSnapshot() []map[string]any {
 			row["successes"] = e.Successes
 			if e.Attempts > 0 {
 				row["rate"] = float64(e.Successes) / float64(e.Attempts)
+			}
+			if e.HSCount > 0 {
+				row["avgHsMs"] = float64(e.HSSumMs) / float64(e.HSCount)
+				row["hsCount"] = e.HSCount
 			}
 			row["recentTotal"] = len(e.Recent)
 			row["recentOK"] = e.recentOK()

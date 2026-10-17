@@ -114,6 +114,7 @@ All state lives in the `/app/data` volume (`cline-accounts.json`, `zen-config.js
 | `LOG_REQUESTS` | `true` | Request logging (metadata only: IP, path, model, status, duration — never conversation content) |
 | `LOG_FILE_MAX_MB` | `10` | Size cap for `requests.jsonl` (wiped when exceeded) and for `afree-proxy.log` (rotated when exceeded) |
 | `MAX_BODY_MB` | `32` | Request body limit; larger bodies get `413` |
+| `STREAM_ATTEMPT` | `2` | Total attempts (initial + retries) for buffered streaming when the upstream breaks mid-stream; `1` disables retrying. Each retry re-sends the whole request and re-burns upstream free quota |
 | `APPLY_SYSTEM_PROMPT_OVERRIDE` | `false` | `true` enables replacing client system prompts with `override.md` |
 | `STREAM_LOG` | `false` | Dump raw Anthropic-path SSE to disk (full conversations — debugging only) |
 | `CLIENT_IP_HEADER` | empty | Trust this header for client IP behind a reverse proxy (e.g. `X-Real-IP`); by default only `RemoteAddr` is used |

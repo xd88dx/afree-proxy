@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"log"
 	"os"
-	"time"
 )
 
 // seedAccountsFromFile 池为空时从 CLINE_ACCOUNTS_SEED_FILE 指定的 JSON 文件导入
@@ -50,7 +49,6 @@ func seedAccountsFromFile() {
 			AccountID: "acc_" + kit.RandHex(8),
 			Email:     email,
 			Status:    "active",
-			CreatedAt: time.Now(),
 		}
 		if item.APIToken != "" {
 			// 静态 API key 账号：无 refresh token，token 即凭证

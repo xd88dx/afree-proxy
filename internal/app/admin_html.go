@@ -247,10 +247,10 @@ body:not([data-theme="dark"]) .theme-toggle .dark-label{display:none}
 .wb-field{display:grid;grid-template-columns:minmax(112px,.8fr) minmax(120px,1.2fr);gap:12px;align-items:center;margin:9px 0}
 .wb-field label{font-size:12px;color:var(--text2)}
 .wb-field input,.wb-field select{min-width:0}
-.wb-account{display:flex;align-items:center;gap:7px;min-width:190px}
-.wb-account-main{min-width:0}
-.wb-account-name{font-weight:600;overflow:hidden;text-overflow:ellipsis}
-.wb-account-id{font-size:11px;color:var(--text3);font-family:'JetBrains Mono',Consolas,monospace;overflow:hidden;text-overflow:ellipsis}
+.wb-account{display:flex;align-items:center;gap:7px;min-width:0;max-width:230px}
+.wb-account-main{min-width:0;flex:1}
+.wb-account-name{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.wb-account-id{font-size:11px;color:var(--text3);font-family:'JetBrains Mono',Consolas,monospace;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .wb-usage{font-family:'JetBrains Mono',Consolas,monospace;font-size:11.5px;color:var(--text2)}
 .wb-action-group{display:flex;gap:6px;justify-content:flex-end;flex-wrap:wrap}
 dialog{position:fixed;inset:0;margin:auto;width:min(720px,calc(100vw - 32px));max-height:calc(100vh - 48px);overflow:auto;padding:0;border:1px solid var(--border-strong);border-radius:8px;background:var(--bg2);color:var(--text);box-shadow:0 24px 70px rgba(0,0,0,.48)}
@@ -422,7 +422,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
     <div class="table-wrap">
     <table>
       <thead>
-        <tr><th style="width:44px">#</th><th>Email</th><th>Status</th><th title="Counted locally by this proxy — not the official free quota">Today/Total tokens</th><th>Last used</th><th>Created</th><th title="Main exit first, backup as fallback; both down = row skipped (isolation).">Proxy binding</th><th>Actions</th><th style="text-align:center" title="Routing participation. New rows start disabled — tick Pool to enable.">Pool</th></tr>
+        <tr><th style="width:44px">#</th><th>Email</th><th>Status</th><th title="Counted locally by this proxy — not the official free quota">Today/Total tokens</th><th>Last used</th><th title="Main exit first, backup as fallback; both down = row skipped (isolation).">Proxy binding</th><th style="text-align:center">Actions</th><th style="text-align:center" title="Routing participation. New rows start disabled — tick Pool to enable.">Pool</th></tr>
       </thead>
       <tbody id="accountTableBody">
         <tr><td colspan="9" class="empty">Loading...</td></tr>
@@ -551,20 +551,21 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
   </div>
 </div>
 <div class="section">
-  <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><path d="M3 17l5-6 4 3 4-7 5 4"/><path d="M3 21h18"/></svg></span> Proxy health (online rate)<span style="flex:1"></span><button class="btn btn-sm" onclick="clearProxyHealthStore()" title="Wipe this browser's stored online-rate rows (manual edits and proxies no longer in the pool); the table falls back to current backend data.">Clear data</button></div>
+  <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><path d="M3 17l5-6 4 3 4-7 5 4"/><path d="M3 21h18"/></svg></span> 代理健康<span style="flex:1"></span><button class="btn btn-sm" onclick="clearProxyHealthStore()" title="Wipe this browser's stored online-rate rows (manual edits and proxies no longer in the pool); the table falls back to current backend data.">Clear data</button></div>
   <div class="section-body">
     <div class="table-wrap">
     <table>
       <thead><tr>
         <th>Proxy</th>
         <th style="text-align:center" title="Upstream attempts that egressed via this proxy since the pool was last edited">Attempts</th>
-        <th style="text-align:center" title="Transport-layer success rate since the pool was last edited (upstream 4xx/5xx still counts as the proxy being online)">Rate</th>
-        <th style="text-align:center" title="Success rate over the last 50 attempts; red below 80% (min 10 samples).">Recent</th>
+        <th style="text-align:center" title="Transport-layer success rate since the pool was last edited (upstream 4xx/5xx still counts as the proxy being online)">在线率</th>
+        <th style="text-align:center" title="Success rate over the last 50 attempts; red below 80% (min 10 samples).">最近在线率</th>
+        <th style="text-align:center" title="Average tunnel-setup time over successful attempts (TCP+TLS+CONNECT handshake only — excludes upstream first byte and task duration). Lower is better.">平均握手延迟</th>
         <th>Last OK</th>
         <th>Last Fail</th>
         <th>Cooldown</th>
       </tr></thead>
-      <tbody id="ppHealthBody"><tr><td colspan="7" class="empty">Loading...</td></tr></tbody>
+      <tbody id="ppHealthBody"><tr><td colspan="8" class="empty">Loading...</td></tr></tbody>
     </table>
     </div>
     <div class="hint" style="margin-top:8px">Rates are sampled passively from real traffic — no probing. "No data" = unused since the last pool edit; editing the proxy list resets counters.</div>
@@ -732,8 +733,8 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
     </div>
     <div class="table-wrap" style="margin-bottom:10px">
       <table>
-        <thead><tr><th style="width:50px">#</th><th style="width:110px">Key</th><th style="width:70px">Usage</th><th style="width:110px">Session</th><th style="width:110px" title="Sticky sessions are re-minted once older than the rotation interval (session rotation, min).">Rotates</th><th>Cooldown</th><th title="Main exit first, backup as fallback; both down = row skipped (isolation).">Proxy binding</th><th style="width:130px"></th><th style="text-align:center" title="Routing participation: unchecked keys never enter request rotation. Newly added keys start disabled — tick Pool to enable. Minting follows routing — keys with routing disabled stop auto-minting.">Pool</th></tr></thead>
-        <tbody id="ocKeysBody"><tr><td colspan="9" class="empty">Loading...</td></tr></tbody>
+        <thead><tr><th style="width:50px">#</th><th style="width:110px">Key</th><th title="Counted locally by this proxy — not the official free quota">Today/Total tokens</th><th>Last used</th><th style="width:110px">Session</th><th style="width:110px" title="Sticky sessions are re-minted once older than the rotation interval (session rotation, min).">Rotates</th><th>Cooldown</th><th title="Main exit first, backup as fallback; both down = row skipped (isolation).">Proxy binding</th><th style="width:130px"></th><th style="text-align:center" title="Routing participation: unchecked keys never enter request rotation. Newly added keys start disabled — tick Pool to enable. Minting follows routing — keys with routing disabled stop auto-minting.">Pool</th></tr></thead>
+        <tbody id="ocKeysBody"><tr><td colspan="10" class="empty">Loading...</td></tr></tbody>
       </table>
     </div>
     <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin:10px 6px 4px">
@@ -754,18 +755,11 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
 </div>
 
 <div class="section">
-  <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></span> Rate-limit defense &amp; failover</div>
+  <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></span> Rate-limit defense</div>
   <div class="section-body">
     <div class="form-row">
       <div class="field"><label>Max concurrency</label><input type="text" id="ocMaxConc" placeholder="8"></div>
       <div class="field"><label>Rate-limit retries</label><input type="text" id="ocRetries" placeholder="3"></div>
-      <div class="field"><label>Failover to Cline pool</label>
-        <select id="ocFailover"><option value="true">On</option><option value="false">Off</option></select>
-      </div>
-    </div>
-    <div class="form-row">
-      <div class="field"><label>Failover trigger (consecutive failures)</label><input type="text" id="ocFailoverCount" placeholder="3"></div>
-      <div class="field"><label>Failover window (min)</label><input type="text" id="ocFailoverMinutes" placeholder="5"></div>
     </div>
     <div class="form-actions"><button class="btn btn-primary" onclick="saveOcConfig()">Save rate-limit config</button></div>
   </div>
@@ -838,9 +832,8 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
             <th>Account</th>
             <th>Status</th>
             <th>Credits</th>
-            <th>Usage</th>
-            <th>Success / errors</th>
-            <th>Last success</th>
+            <th title="Counted locally by this proxy — not the official free quota">Today/Total tokens</th>
+            <th>Last used</th>
             <th title="Main exit first, backup as fallback; both down = row skipped (isolation).">Proxy binding</th>
             <th>Actions</th>
             <th style="text-align:center" title="Routing participation. New rows start disabled — tick Pool to enable.">Pool</th>
@@ -977,8 +970,8 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
     </div>
     <div class="table-wrap" style="margin-bottom:10px">
       <table>
-        <thead><tr><th style="width:50px">#</th><th style="width:150px">Key</th><th style="width:70px">Usage</th><th>Cooldown</th><th title="Main exit first, backup as fallback; both down = row skipped (isolation).">Proxy binding</th><th style="width:130px"></th><th style="text-align:center" title="Routing participation. New rows start disabled — tick Pool to enable.">Pool</th></tr></thead>
-        <tbody id="orKeysBody"><tr><td colspan="7" class="empty">Loading...</td></tr></tbody>
+        <thead><tr><th style="width:50px">#</th><th style="width:150px">Key</th><th title="Counted locally by this proxy — not the official free quota">Today/Total tokens</th><th>Last used</th><th>Cooldown</th><th title="Main exit first, backup as fallback; both down = row skipped (isolation).">Proxy binding</th><th style="width:130px"></th><th style="text-align:center" title="Routing participation. New rows start disabled — tick Pool to enable.">Pool</th></tr></thead>
+        <tbody id="orKeysBody"><tr><td colspan="8" class="empty">Loading...</td></tr></tbody>
       </table>
     </div>
     <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin:10px 6px 4px">
@@ -1043,8 +1036,8 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
     </div>
     <div class="table-wrap" style="margin-bottom:10px">
       <table>
-        <thead><tr><th style="width:50px">#</th><th style="width:150px">Key</th><th style="width:70px">Usage</th><th>Cooldown</th><th title="Main exit first, backup as fallback; both down = row skipped (isolation).">Proxy binding</th><th style="width:130px"></th><th style="text-align:center" title="Routing participation. New rows start disabled — tick Pool to enable.">Pool</th></tr></thead>
-        <tbody id="amdKeysBody"><tr><td colspan="7" class="empty">Loading...</td></tr></tbody>
+        <thead><tr><th style="width:50px">#</th><th style="width:150px">Key</th><th title="Counted locally by this proxy — not the official free quota">Today/Total tokens</th><th>Last used</th><th>Cooldown</th><th title="Main exit first, backup as fallback; both down = row skipped (isolation).">Proxy binding</th><th style="width:130px"></th><th style="text-align:center" title="Routing participation. New rows start disabled — tick Pool to enable.">Pool</th></tr></thead>
+        <tbody id="amdKeysBody"><tr><td colspan="8" class="empty">Loading...</td></tr></tbody>
       </table>
     </div>
     <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin:10px 6px 4px">
@@ -1110,8 +1103,8 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
     </div>
     <div class="table-wrap" style="margin-bottom:10px">
       <table>
-        <thead><tr><th style="width:50px">#</th><th style="width:150px">Key</th><th style="width:70px">Usage</th><th>Cooldown</th><th title="Main exit first, backup as fallback; both down = row skipped (isolation).">Proxy binding</th><th style="width:130px"></th><th style="text-align:center" title="Routing participation. New rows start disabled — tick Pool to enable.">Pool</th></tr></thead>
-        <tbody id="thKeysBody"><tr><td colspan="7" class="empty">Loading...</td></tr></tbody>
+        <thead><tr><th style="width:50px">#</th><th style="width:150px">Key</th><th title="Counted locally by this proxy — not the official free quota">Today/Total tokens</th><th>Last used</th><th>Cooldown</th><th title="Main exit first, backup as fallback; both down = row skipped (isolation).">Proxy binding</th><th style="width:130px"></th><th style="text-align:center" title="Routing participation. New rows start disabled — tick Pool to enable.">Pool</th></tr></thead>
+        <tbody id="thKeysBody"><tr><td colspan="8" class="empty">Loading...</td></tr></tbody>
       </table>
     </div>
     <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin:10px 6px 4px">
@@ -1200,8 +1193,8 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
   <div class="section-body">
     <div class="table-wrap" style="margin-bottom:10px">
       <table>
-        <thead><tr><th style="width:50px">#</th><th style="width:150px">Key</th><th style="width:70px">Usage</th><th>Cooldown</th><th title="Main exit first, backup as fallback; both down = row skipped (isolation).">Proxy binding</th><th style="width:130px"></th><th style="text-align:center" title="Routing participation. New rows start disabled — tick Pool to enable.">Pool</th></tr></thead>
-        <tbody id="otherKeysBody"><tr><td colspan="7" class="empty">No keys configured</td></tr></tbody>
+        <thead><tr><th style="width:50px">#</th><th style="width:150px">Key</th><th title="Counted locally by this proxy — not the official free quota">Today/Total tokens</th><th>Last used</th><th>Cooldown</th><th title="Main exit first, backup as fallback; both down = row skipped (isolation).">Proxy binding</th><th style="width:130px"></th><th style="text-align:center" title="Routing participation. New rows start disabled — tick Pool to enable.">Pool</th></tr></thead>
+        <tbody id="otherKeysBody"><tr><td colspan="8" class="empty">No keys configured</td></tr></tbody>
       </table>
     </div>
     <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin:10px 6px 4px">
@@ -1516,6 +1509,13 @@ const fmtTokens = n => {
   if (n >= 1000) return (n / 1000).toFixed(1).replace(/\.0$/, '') + 'K';
   return String(n);
 };
+// keyTokensCell/keyLastUsedCell：key 池 token 记账两列（与 cline 页同格式）。
+// tokensToday/tokensTotal 缺失 = 老数据，未记账显示 -。
+const keyTokensCell = k => {
+  if (k.tokensToday == null && k.tokensTotal == null) return '<td style="text-align:center;color:var(--text3)">-</td>';
+  return '<td title="' + T('Today') + ' ' + fmtNum(k.tokensToday) + ' / ' + T('total') + ' ' + fmtNum(k.tokensTotal) + ' ' + T('tokens (exact when upstream returns usage, otherwise estimated)') + '">' + fmtTokens(k.tokensToday) + ' / ' + fmtTokens(k.tokensTotal) + '</td>';
+};
+const keyLastUsedCell = k => '<td class="mono" style="font-size:11px">' + (k.lastUsed ? esc(fmtWhen(k.lastUsed)) : '-') + '</td>';
 // ========== i18n（English / 简体中文） ==========
 // 机制：字典以英文原文为键。静态 HTML 与 JS 渲染出的纯文本节点由
 // MutationObserver 即时翻译（渲染代码无需逐处包翻译函数）；与变量拼接的
@@ -1799,7 +1799,7 @@ const I18N_ZH = {
   'Cline': 'Cline',
   'Use proxy pool': '走代理池',
   'Proxy': '代理',
-  'Proxy health (online rate)': '代理健康（在线率）',
+  'Proxy health (online rate)': '代理健康',
   'Attempts': '尝试数',
   'Rate': '在线率',
   'Recent': '最近',
@@ -1916,10 +1916,7 @@ const I18N_ZH = {
   'Usage': '用量',
   'Session': '会话',
   'Minted at': '铸造时间',
-  'Rate-limit defense &amp; failover': '限流防御与故障转移',
-  'Failover to Cline pool': '故障转移至 Cline 账号池',
-  'Failover trigger (consecutive failures)': '故障转移触发（连续失败次数）',
-  'Failover window (min)': '故障转移窗口（分钟）',
+  'Rate-limit defense': '限流防御',
   'Session rotation (min):': '会话轮换（分钟）：',
   'Rotates': '轮换周期',
   // 提示气泡（title 属性）此前未进翻译表，中文界面下显示英文
@@ -1967,6 +1964,7 @@ const I18N_ZH = {
   'Routing participation: unchecked keys never enter request rotation. Newly added keys start disabled — tick Pool to enable. Minting follows routing — keys with routing disabled stop auto-minting.': '路由参与开关：不勾选的 key 不进入请求轮转，铸造跟随路由（路由禁用的 key 不再自动铸造）。新增 key 默认禁用，勾选 Pool 后启用。',
   'Save failed: ': '保存失败：',
   'Test failed: ': '测试失败：',
+  ' — cooling': ' —— 冷却中',
   'Check failed: ': '检查失败：',
   'Delete failed: ': '删除失败：',
   'Refresh failed: ': '刷新失败：',
@@ -2408,18 +2406,14 @@ function renderWorkbuddyAccounts() {
     const status = wbStatusInfo(account);
     const realm = String(account.realm || 'cn');
     const usage = account.token_usage || {};
-    const runs = usage.request_count ?? 0;
-    const errors = account.err_total ?? 0;
-    const success = account.success_count ?? 0;
-    const tokens = usage.total_tokens ?? 0;
+    const tokensToday = usage.today_tokens ?? 0;
+    const tokensTotal = usage.total_tokens ?? 0;
+    const lastUsed = usage.last_used_at || account.last_success;
     const credits = account.credits ?? account.remaining_credits ?? '—';
     const creditsTotal = account.credits_total ?? account.total_credits;
-    const last = account.last_success;
     const reason = account.disabled_reason || account.reason || '';
     const statusHtml = '<span class="status ' + status.cls + '"><span class="status-dot ' + status.cls + '"></span>' + esc(status.label) + '</span>' +
       (reason ? '<div class="hint" style="font-size:11px;margin-top:3px">' + esc(reason) + '</div>' : '');
-    const usageHtml = '<div class="wb-usage">' + esc(wbFmtTokens(tokens)) + ' tok</div>' +
-      '<div class="hint" style="font-size:11px;margin-top:2px">' + esc(runs) + ' requests</div>';
     // Pool（启用）列：勾选 = 进入账号池参与选号；未设置（pool_enabled 缺失）
     // 按启用渲染。勾选改动先暂存，由"保存"按钮统一提交。
     const poolEnabled = account.pool_enabled !== false;
@@ -2436,13 +2430,11 @@ function renderWorkbuddyAccounts() {
       '</div></div></td>' +
       '<td>' + statusHtml + '</td>' +
       '<td>' + esc(credits) + (creditsTotal ? '<span style="color:var(--text3)"> / ' + esc(creditsTotal) + '</span>' : '') + '</td>' +
-      '<td>' + usageHtml + '</td>' +
-      '<td class="wb-usage">' + esc(success) + ' / ' + esc(errors) + '</td>' +
-      '<td style="font-size:11px;color:var(--text3)">' + esc(wbFmtTime(last)) + '</td>' +
+      '<td title="' + T('Today') + ' ' + fmtNum(tokensToday) + ' / ' + T('total') + ' ' + fmtNum(tokensTotal) + ' ' + T('tokens (exact when upstream returns usage, otherwise estimated)') + '">' + fmtTokens(tokensToday) + ' / ' + fmtTokens(tokensTotal) + '</td>' +
+      '<td class="mono" style="font-size:11px">' + (lastUsed ? esc(fmtWhen(lastUsed)) : '-') + '</td>' +
       wbBindingCell(account) +
       '<td><div class="wb-action-group">' +
-        wbActionButton('refresh', id, 'Refresh') +
-        wbActionButton('checkin', id, 'Check-in') +
+        wbActionButton('test', id, 'Test') +
         wbActionButton('details', id, 'Points') +
         wbActionButton('delete', id, 'Delete', 'btn-danger') +
       '</div></td>' +
@@ -2576,10 +2568,9 @@ async function workbuddyActionFrom(button) {
   if (action === 'delete' && !confirm(T('Delete this WorkBuddy account and its credentials?'))) return;
   const accountPath = 'accounts/' + encodeURIComponent(id);
   const actions = {
-    refresh: accountPath + '/balance',
-    checkin: accountPath + '/checkin',
     delete: accountPath + '/remove'
   };
+  if (action === 'test') { await workbuddyTestAccount(button, id); return; }
   if (!actions[action]) return;
   button.disabled = true;
   try {
@@ -2588,6 +2579,25 @@ async function workbuddyActionFrom(button) {
     await Promise.all([loadWorkbuddyAccounts(), loadWorkbuddyConfig()]);
   } catch (e) { toast(action + ' failed: ' + e.message, 'error'); }
   finally { button.disabled = false; }
+}
+/* ---- WB 单号可用性探测（与 key 平台 Test 同构：spinner + 结果 toast） ---- */
+async function workbuddyTestAccount(button, id) {
+  const original = button ? button.innerHTML : '';
+  if (button) { button.disabled = true; button.innerHTML = '<span class="loading"></span>Testing'; }
+  try {
+    const d = await wbCall('accounts/' + encodeURIComponent(id) + '/test', {}, {});
+    const ok = d.status === 'active';
+    let msg = ok ? T('Test passed') : T('Test failed: ') + (d.error || d.status || '');
+    if (d.latencyMs != null) msg += ' (' + d.latencyMs + 'ms)';
+    if (ok) msg += T(' — cooldown cleared');
+    else if (d.status === 'cooldown') msg += T(' — cooling');
+    toast(msg, ok ? 'success' : 'error', 6000);
+  } catch (e) {
+    toast(T('Test failed: ') + e.message, 'error');
+  } finally {
+    if (button) { button.disabled = false; button.innerHTML = original; }
+    loadWorkbuddyAccounts();
+  }
 }
 async function refreshWorkbuddyAccounts() {
   try {
@@ -3137,7 +3147,6 @@ async function loadAccounts() {
     accSnapshot = {};
     tbody.innerHTML = list.map((a, i) => {
       const lu = a.lastUsed ? new Date(a.lastUsed).toLocaleString('en-US') : '-';
-      const cr = a.createdAt ? new Date(a.createdAt).toLocaleString('en-US') : '-';
       // Cooldown label: show estimated recovery time
       let statusExtra = '';
       if (a.status === 'cooldown') {
@@ -3177,9 +3186,8 @@ async function loadAccounts() {
         '<td><span class="status ' + st + '"><span class="status-dot ' + st + '"></span>' + (sn[a.status] || st) + '</span>' + statusExtra + '</td>' +
           '<td title="' + T('Today') + ' ' + fmtNum(a.tokensToday) + ' / ' + T('total') + ' ' + fmtNum(a.tokensTotal) + ' ' + T('tokens (exact when upstream returns usage, otherwise estimated)') + '">' + fmtTokens(a.tokensToday) + ' / ' + fmtTokens(a.tokensTotal) + '</td>' +
         '<td class="mono" style="font-size:11px">' + lu + '</td>' +
-        '<td class="mono" style="font-size:11px">' + cr + '</td>' +
         bindCell +
-        '<td style="white-space:nowrap">' +
+        '<td style="white-space:nowrap;text-align:center">' +
           // Action buttons dispatch via data-* attributes + delegated listeners:
           // inline onclick string concatenation gets HTML-decoded before JS parsing,
           // so even escaped quotes could be bypassed
@@ -4244,9 +4252,6 @@ async function loadOcConfig() {
     _('ocBaseURL').value = c.baseURL || '';
     _('ocMaxConc').value = c.maxConcurrency || 8;
     _('ocRetries').value = c.retries || 3;
-    if (_('ocFailover')) _('ocFailover').value = String(c.failover !== false);
-    if (_('ocFailoverCount')) _('ocFailoverCount').value = c.failoverCount || 3;
-    if (_('ocFailoverMinutes')) _('ocFailoverMinutes').value = c.failoverMinutes || 5;
     if (_('ocSessionRotate')) _('ocSessionRotate').value = (c.sessionRotateMinutes != null ? c.sessionRotateMinutes : 120);
     _('ocCompactAuto').value = String(c.compaction ? c.compaction.auto : true);
     _('ocCompactBuffer').value = c.compaction ? c.compaction.buffer : 20000;
@@ -4268,9 +4273,6 @@ async function saveOcConfig() {
     proxyStrategy: ocCfgCache.proxyStrategy || 'round_robin',
     maxConcurrency: parseInt(_('ocMaxConc').value) || 8,
     retries: parseInt(_('ocRetries').value) || 3,
-    failover: _('ocFailover') ? _('ocFailover').value === 'true' : (ocCfgCache.failover !== false),
-    failoverCount: _('ocFailoverCount') ? (parseInt(_('ocFailoverCount').value) || 3) : (ocCfgCache.failoverCount || 3),
-    failoverMinutes: _('ocFailoverMinutes') ? (parseInt(_('ocFailoverMinutes').value) || 5) : (ocCfgCache.failoverMinutes || 5),
     sessionRotateMinutes: rot,
     compaction: {
       auto: _('ocCompactAuto').value === 'true',
@@ -4343,7 +4345,8 @@ function renderOcKeyStates(ks) {
             '<button class="btn btn-sm btn-danger" data-zdel="' + k.index + '" title="Remove this key from the pool">Delete</button>') + '</td>';
         return '<tr draggable="true" data-drag-id="' + k.index + '"><td>#' + (k.index + 1) + (k.current ? ' <span style="color:var(--accent)" title="next in rotation">●</span>' : '') + '</td>' +
           '<td style="font-family:monospace;font-size:11px">' + esc(k.keyMask) + '</td>' +
-          '<td>' + (k.usage || 0) + '</td>' +
+          keyTokensCell(k) +
+          keyLastUsedCell(k) +
           '<td>' + sess + '</td>' +
           '<td>' + rot + '</td>' +
           '<td>' + cool + '</td>' +
@@ -4351,7 +4354,7 @@ function renderOcKeyStates(ks) {
           actions +
           routing + '</tr>';
       }).join('')
-    : '<tr><td colspan="9" class="empty">No opencode keys configured</td></tr>';
+    : '<tr><td colspan="10" class="empty">No opencode keys configured</td></tr>';
   tb.onclick = e => {
     const b = e.target.closest('button[data-zk]');
     if (b) { testZenKey(parseInt(b.dataset.zk, 10), b); return; }
@@ -4570,18 +4573,23 @@ function renderProxyHealth(rows) {
           : '<span class="pp-rate t-' + proxyRateTier(rate) + (v.length > 3 ? ' w3' : '') + '">' + esc(v) + '</span>';
         const cum = pct(r.rate);
         const rec = pct(r.recentRate);
+        // Avg HS：成功尝试的平均握手延迟（ms），无样本显示 -。
+        const hs = (r.avgHsMs === null || r.avgHsMs === undefined)
+          ? '<span style="color:var(--text3)">-</span>'
+          : '<span class="mono" style="font-size:11px">' + Math.round(r.avgHsMs) + ' ms</span>';
         const failTitle = r.lastErr ? ' title="' + esc(r.lastErr) + '"' : '';
         return '<tr>' +
           '<td class="mono" style="font-size:11px">' + esc(egLabel(r.proxy)) + '</td>' +
           '<td style="text-align:center">' + (r.attempts || 0) + '</td>' +
           '<td style="text-align:center">' + rateCell(cum, r.rate) + '</td>' +
           '<td style="text-align:center">' + rateCell(rec, r.recentRate) + '</td>' +
+          '<td style="text-align:center" title="成功尝试的平均隧道建立耗时（TCP+TLS+CONNECT），不含上游响应；样本数 ' + (r.hsCount || 0) + '">' + hs + '</td>' +
           '<td class="mono" style="font-size:11px">' + (r.lastOk ? fmtWhen(r.lastOk) : '<span style="color:var(--text3)">-</span>') + '</td>' +
           '<td class="mono" style="font-size:11px"' + failTitle + '>' + (r.lastFail ? fmtWhen(r.lastFail) : '<span style="color:var(--text3)">-</span>') + '</td>' +
           '<td>' + (r.cooling ? '<span style="color:var(--warning,#eab308)">' + T('cooldown until ') + fmtWhen(r.coolingUntil) + '</span>' : '<span style="color:var(--text3)">-</span>') + '</td>' +
         '</tr>';
       }).join('')
-    : '<tr><td colspan="7" class="empty">No proxies configured</td></tr>';
+    : '<tr><td colspan="8" class="empty">No proxies configured</td></tr>';
 }
 
 async function saveProxyPool() {
@@ -4764,13 +4772,14 @@ function renderOrKeyStates(ks) {
           '<button class="btn btn-sm btn-danger" data-ordel="' + k.index + '" title="Remove this key from the pool">Delete</button>' + '</td>';
         return '<tr draggable="true" data-drag-id="' + k.index + '"><td>#' + (k.index + 1) + '</td>' +
           '<td style="font-family:monospace;font-size:11px">' + esc(k.keyMask) + '</td>' +
-          '<td>' + (k.usage || 0) + '</td>' +
+          keyTokensCell(k) +
+          keyLastUsedCell(k) +
           '<td>' + cool + '</td>' +
           bind +
           actions +
           routing + '</tr>';
       }).join('')
-    : '<tr><td colspan="7" class="empty">No OpenRouter keys configured</td></tr>';
+    : '<tr><td colspan="8" class="empty">No OpenRouter keys configured</td></tr>';
   tb.onclick = e => {
     const t = e.target.closest('button[data-ort]');
     if (t) { testOrKey(parseInt(t.dataset.ort, 10), t); return; }
@@ -5028,13 +5037,14 @@ function renderAmdKeyStates(ks) {
           '<button class="btn btn-sm btn-danger" data-amddel="' + k.index + '" title="Remove this key from the pool">Delete</button>' + '</td>';
         return '<tr draggable="true" data-drag-id="' + k.index + '"><td>#' + (k.index + 1) + '</td>' +
           '<td style="font-family:monospace;font-size:11px">' + esc(k.keyMask) + '</td>' +
-          '<td>' + (k.usage || 0) + '</td>' +
+          keyTokensCell(k) +
+          keyLastUsedCell(k) +
           '<td>' + cool + '</td>' +
           bind +
           actions +
           routing + '</tr>';
       }).join('')
-    : '<tr><td colspan="7" class="empty">No AMDCloud keys configured</td></tr>';
+    : '<tr><td colspan="8" class="empty">No AMDCloud keys configured</td></tr>';
   tb.onclick = e => {
     const t = e.target.closest('button[data-amdt]');
     if (t) { testAmdKey(parseInt(t.dataset.amdt, 10), t); return; }
@@ -5292,13 +5302,14 @@ function renderTHKeyStates(ks) {
           '<button class="btn btn-sm btn-danger" data-thdel="' + k.index + '" title="Remove this key from the pool">Delete</button>' + '</td>';
         return '<tr draggable="true" data-drag-id="' + k.index + '"><td>#' + (k.index + 1) + '</td>' +
           '<td style="font-family:monospace;font-size:11px">' + esc(k.keyMask) + '</td>' +
-          '<td>' + (k.usage || 0) + '</td>' +
+          keyTokensCell(k) +
+          keyLastUsedCell(k) +
           '<td>' + cool + '</td>' +
           bind +
           actions +
           routing + '</tr>';
       }).join('')
-    : '<tr><td colspan="7" class="empty">No TokenHarbor keys configured</td></tr>';
+    : '<tr><td colspan="8" class="empty">No TokenHarbor keys configured</td></tr>';
   tb.onclick = e => {
     const t = e.target.closest('button[data-tht]');
     if (t) { testTHKey(parseInt(t.dataset.tht, 10), t); return; }
@@ -5732,7 +5743,8 @@ function renderOtherKeys(ks) {
       '<button class="btn btn-sm btn-danger" data-otdel="' + k.index + '" title="' + esc(T('Delete this key')) + '">' + T('Delete') + '</button>' + '</td>';
     return '<tr draggable="true" data-drag-id="' + k.index + '"><td>' + (i + 1) + '</td>' +
       '<td style="font-family:monospace;font-size:11px">' + esc(k.keyMask) + '</td>' +
-      '<td>' + (k.usage || 0) + '</td>' +
+      keyTokensCell(k) +
+      keyLastUsedCell(k) +
       '<td>' + cool + '</td>' +
       bind + actions + routing + '</tr>';
   }).join('');
@@ -5830,11 +5842,12 @@ async function testOtherKey(id, btn) {
       index: Number(id),
       model: otherProbeModelValue()
     });
-    const r = (d.data && d.data.result) || {};
-    const msg = r.ok
-      ? T('Test passed') + (r.latencyMs != null ? ' (' + r.latencyMs + 'ms)' : '')
-      : T('Test failed: ') + (r.error || '');
-    toast(msg, r.ok ? 'success' : 'error', 6000);
+    const r = (d.data && d.data) || {};
+    const ok = d.success === true;
+    const msg = ok
+      ? T('Test passed') + (r.latencyMs != null ? ' (' + r.latencyMs + 'ms)' : '') + (r.status === 'active' ? T(' — cooldown cleared') : '')
+      : T('Test failed: ') + (r.reason || r.error || '');
+    toast(msg, ok ? 'success' : 'error', 6000);
   } catch (e) {
     toast(T('Test failed: ') + e.message, 'error');
   } finally {
@@ -5861,8 +5874,7 @@ async function batchTestOtherKeys() {
           index: Number(ids[i]),
           model: otherProbeModelValue()
         });
-        const r = (d.data && d.data.result) || {};
-        if (r.ok) ok++; else err++;
+        if (d.success === true) ok++; else err++;
       } catch (e) { err++; }
     }
   } finally {

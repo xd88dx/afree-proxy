@@ -35,17 +35,20 @@ func TestProxyHealthRecordSkipsDirectAndAborts(t *testing.T) {
 	resetProxyHealthForTest(t)
 
 	px := "socks5://u:p@10.0.0.1:1080#a"
-	recordProxyOutcome(px, true, nil)
-	recordProxyOutcome("", true, nil)                              // 直连：不是代理，不记
-	recordProxyOutcome(px, true, context.Canceled)                 // 客户端取消：不计成功
-	recordProxyOutcome(px, false, context.DeadlineExceeded)        // 客户端截止：不计失败
-	recordProxyOutcome(px, false, errors.New("dial tcp: refused")) // 真失败
+	recordProxyOutcome(px, true, nil, 150)
+	recordProxyOutcome("", true, nil, 0)                              // 直连：不是代理，不记
+	recordProxyOutcome(px, true, context.Canceled, 0)                 // 客户端取消：不计成功
+	recordProxyOutcome(px, false, context.DeadlineExceeded, 0)        // 客户端截止：不计失败
+	recordProxyOutcome(px, false, errors.New("dial tcp: refused"), 0) // 真失败
 
 	proxyHealthMu.Lock()
 	e := proxyHealthStats[px]
 	proxyHealthMu.Unlock()
 	if e == nil || e.Attempts != 2 || e.Successes != 1 {
 		t.Fatalf("attempts/successes = %d/%d, want 2/1", e.Attempts, e.Successes)
+	}
+	if e.HSCount != 1 || e.HSSumMs != 150 {
+		t.Fatalf("hsCount/hsSumMs = %d/%d, want 1/150", e.HSCount, e.HSSumMs)
 	}
 	if !strings.Contains(e.LastErr, "refused") {
 		t.Fatalf("lastErr = %q", e.LastErr)
@@ -62,10 +65,10 @@ func TestProxyHealthRecentWindowTrims(t *testing.T) {
 	px := "socks5://w:1"
 	// 前 proxyHealthRecentN 次全失败，再补 10 次成功：窗口内应只剩这 10 次成功。
 	for i := 0; i < proxyHealthRecentN; i++ {
-		recordProxyOutcome(px, false, errors.New("dead"))
+		recordProxyOutcome(px, false, errors.New("dead"), 0)
 	}
 	for i := 0; i < 10; i++ {
-		recordProxyOutcome(px, true, nil)
+		recordProxyOutcome(px, true, nil, 100)
 	}
 
 	proxyHealthMu.Lock()
@@ -86,8 +89,8 @@ func TestProxyHealthSnapshotMasksAndFilters(t *testing.T) {
 	setupBindingTest(t, &zenConfigData{Proxies: []string{"http://user:secret@10.0.0.9:8080#home"}})
 	resetProxyHealthForTest(t)
 
-	recordProxyOutcome("http://user:secret@10.0.0.9:8080#home", true, nil)
-	recordProxyOutcome("http://ghost:1", true, nil) // 已不在池中的孤儿条目
+	recordProxyOutcome("http://user:secret@10.0.0.9:8080#home", true, nil, 0)
+	recordProxyOutcome("http://ghost:1", true, nil, 0) // 已不在池中的孤儿条目
 
 	rows := proxyHealthSnapshot()
 	if len(rows) != 1 {
@@ -109,7 +112,7 @@ func TestProxyHealthSnapshotMasksAndFilters(t *testing.T) {
 func TestProxyHealthSnapshotListsUnusedProxiesWithoutData(t *testing.T) {
 	setupBindingTest(t, &zenConfigData{Proxies: []string{"socks5://used:1", "socks5://idle:1"}})
 	resetProxyHealthForTest(t)
-	recordProxyOutcome("socks5://used:1", true, nil)
+	recordProxyOutcome("socks5://used:1", true, nil, 0)
 
 	rows := proxyHealthSnapshot()
 	if len(rows) != 2 {
@@ -128,7 +131,7 @@ func TestProxyHealthResetOnPoolEdit(t *testing.T) {
 	setupBindingTest(t, &zenConfigData{Proxies: []string{"socks5://old:1"}})
 	resetProxyHealthForTest(t)
 
-	recordProxyOutcome("socks5://old:1", false, errors.New("boom"))
+	recordProxyOutcome("socks5://old:1", false, errors.New("boom"), 0)
 
 	req := httptest.NewRequest("POST", "/admin/api/opencode/config/update",
 		strings.NewReader(`{"proxies":["socks5://new:1"]}`))
@@ -151,8 +154,8 @@ func TestProxyHealthPersistsAcrossRestart(t *testing.T) {
 	setupBindingTest(t, &zenConfigData{Proxies: []string{"socks5://a:1"}})
 	resetProxyHealthForTest(t)
 
-	recordProxyOutcome("socks5://a:1", true, nil)
-	recordProxyOutcome("socks5://a:1", false, errors.New("reset by peer"))
+	recordProxyOutcome("socks5://a:1", true, nil, 150)
+	recordProxyOutcome("socks5://a:1", false, errors.New("reset by peer"), 0)
 	flushProxyHealth()
 
 	// 模拟进程重启：内存清零 + 重置懒加载，再从落盘文件恢复。

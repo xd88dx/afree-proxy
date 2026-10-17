@@ -269,6 +269,18 @@ func MaxRequestBodyBytes() int64 {
 	return 32 << 20
 }
 
+// StreamMaxAttempts 流式"缓冲+中断重试"路径的单请求总尝试次数（含首次），
+// STREAM_ATTEMPT 可配，默认 2（=1 次首发 + 1 次重试）。全局生效于
+// cline/zen/amd/openrouter/tokenharbor/other 全部流式 chat 路径。重试整单
+// 重发、上游免费额度按次计费——调大前先权衡额度消耗。非法/小于 1 的值
+// 回落默认值。
+func StreamMaxAttempts() int {
+	if n, ok := envInt("STREAM_ATTEMPT"); ok && n >= 1 {
+		return n
+	}
+	return 2
+}
+
 // SystemPromptOverrideEnabled APPLY_SYSTEM_PROMPT_OVERRIDE 是否启用 override.md
 // 系统提示词替换，默认 false（编码 IDE / Agent 保留自己的提示词）。
 func SystemPromptOverrideEnabled() bool {

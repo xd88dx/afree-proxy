@@ -24,6 +24,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 	"unicode/utf8"
@@ -390,6 +391,14 @@ func StartProxy(host string, port int) error {
 			return
 		}
 
+		// 客户端要流式：走"缓冲+中断重试"路径（上游断流对客户端不可见，
+		// 杜绝下游把截断流当正常结束的"伪完成"）。必须放在 callClineAutoStream
+		// 之前——每次重试都要重新调它。非流式路径保持原样。
+		if isStream {
+			handleClineStreamBuffered(w, r, params, useProxies)
+			return
+		}
+
 		resp, acc, streamed, err := callClineAutoStream(r.Context(), params, upstreamStream, useProxies)
 		if err != nil {
 			log.Printf("  api error: %v", err)
@@ -404,11 +413,6 @@ func StartProxy(host string, port int) error {
 		upstreamStream = upstreamStream || streamed
 
 		usageFn := accountUsageFn(acc, params)
-
-		if isStream {
-			handleStreamResponseWithUsage(w, resp, usageFn)
-			return
-		}
 
 		if upstreamStream {
 			out, err := collectStreamResponse(resp)
@@ -693,13 +697,31 @@ func handleZenChat(w http.ResponseWriter, r *http.Request, params map[string]any
 	}
 	defer resp.Body.Close()
 
+	usedKey := takeUsedKey(resp)
+	usageFn := func(u map[string]any) {
+		recordZenKeyTokens(usedKey, usageTokens(u, params))
+	}
 	if isStream {
-		handleStreamResponseWithUsage(w, resp, nil)
+		// 首次尝试用上面已建立的响应（含端点自适应结果）；重试重新 callZenAPI
+		//（端点已由本次调用验证/学习，重试不会走错端点）。
+		firstUsed := false
+		handleStreamBufferedGeneric(w, r, "zen", params, func(ctx context.Context) (*http.Response, func(map[string]any), error) {
+			if !firstUsed {
+				firstUsed = true
+				return resp, usageFn, nil
+			}
+			r2, _, err := callZenAPI(ctx, params, true)
+			if err != nil {
+				return nil, nil, err
+			}
+			uk := takeUsedKey(r2)
+			return r2, func(u map[string]any) { recordZenKeyTokens(uk, usageTokens(u, params)) }, nil
+		})
 		return
 	}
 	// FreeTier gate 要求上游恒 stream=true（buildZenBody 恒注入）；非流式
 	// 客户端在此把上游 chat SSE 聚合回 chat JSON，语义与直连非流式一致。
-	finishZenChatNonStream(w, resp, zm, params, nil)
+	finishZenChatNonStream(w, resp, zm, params, usageFn)
 }
 
 // handleZenChatDirect chat/completions 直调（端点自适应的反向纠错口：
@@ -715,11 +737,27 @@ func handleZenChatDirect(w http.ResponseWriter, r *http.Request, params map[stri
 		return
 	}
 	defer resp.Body.Close()
+	usedKey := takeUsedKey(resp)
+	usageFn := func(u map[string]any) {
+		recordZenKeyTokens(usedKey, usageTokens(u, params))
+	}
 	if isStream {
-		handleStreamResponseWithUsage(w, resp, nil)
+		firstUsed := false
+		handleStreamBufferedGeneric(w, r, "zen", params, func(ctx context.Context) (*http.Response, func(map[string]any), error) {
+			if !firstUsed {
+				firstUsed = true
+				return resp, usageFn, nil
+			}
+			r2, _, err := callZenAPI(ctx, params, true)
+			if err != nil {
+				return nil, nil, err
+			}
+			uk := takeUsedKey(r2)
+			return r2, func(u map[string]any) { recordZenKeyTokens(uk, usageTokens(u, params)) }, nil
+		})
 		return
 	}
-	finishZenChatNonStream(w, resp, zm, params, nil)
+	finishZenChatNonStream(w, resp, zm, params, usageFn)
 }
 
 // handleZenResponsesNative 原生 responses 端点模型（Upstream=="responses"）的
@@ -752,6 +790,10 @@ func handleZenResponsesNative(w http.ResponseWriter, r *http.Request, params map
 		return false
 	}
 	defer resp.Body.Close()
+	usedKey := takeUsedKey(resp)
+	usageFn := func(u map[string]any) {
+		recordZenKeyTokens(usedKey, usageTokens(u, params))
+	}
 
 	if clientStream {
 		// 原生 responses SSE 需要先转成 chat SSE 再下发：
@@ -765,7 +807,7 @@ func handleZenResponsesNative(w http.ResponseWriter, r *http.Request, params map
 			return false
 		}
 		chat["model"] = zm.ID
-		emitChatAsSSE(w, chat, nil)
+		emitChatAsSSE(w, chat, usageFn)
 		return true
 	}
 	// 非流式客户端：上游已强制 stream=true，resp.Body 是原生 responses SSE，
@@ -789,7 +831,7 @@ func handleZenResponsesNative(w http.ResponseWriter, r *http.Request, params map
 		StatusCode: http.StatusOK,
 		Header:     http.Header{"Content-Type": []string{"application/json"}},
 		Body:       io.NopCloser(bytes.NewReader(data)),
-	}, nil, nil)
+	}, usageFn, nil)
 	return true
 }
 
@@ -1165,11 +1207,13 @@ func clineAPIWithAccount(ctx context.Context, params map[string]any, stream bool
 		if rerr != nil {
 			return nil, fmt.Errorf("create request: %w", rerr)
 		}
+	// hsStart 拨号前打点：Do 返回即隧道建立（首字节未回），差值=握手延迟。
 		req.Header = clineHeaders(token, sessionID)
+		hsStart := time.Now()
 		resp, lastErr = client.Do(req)
 		if lastErr == nil {
 			setUpstreamExit(ctx, proxyExitType(proxyURL, main, backup, bound))
-			recordProxyOutcome(proxyURL, true, nil)
+			recordProxyOutcome(proxyURL, true, nil, time.Since(hsStart).Milliseconds())
 			exitURL = proxyURL
 			break
 		}
@@ -1182,7 +1226,7 @@ func clineAPIWithAccount(ctx context.Context, params map[string]any, stream bool
 			// 绑定账号（隔离模式）同样适用：全局开关为直连时，绑定代理的网络
 			// 错误也绝不毒化账号（pidx=-1 的直连兜底冷却为 no-op）。
 			cooldownUpstreamProxy(pidx, 2*time.Minute)
-			recordProxyOutcome(proxyURL, false, lastErr)
+			recordProxyOutcome(proxyURL, false, lastErr, 0)
 			log.Printf("  cline proxy failed (%v), cooldown exit 2m, retrying on next", lastErr)
 			continue
 		}
@@ -1207,12 +1251,13 @@ func clineAPIWithAccount(ctx context.Context, params map[string]any, stream bool
 			req2.Header = clineHeaders(token, sessionID)
 			// 注意: 不能用 := —— 那会在 if 块内遮蔽外层 resp，重试成功的
 			// 响应被丢弃（body 泄漏）而调用方仍拿到旧的 401
+			hsStart2 := time.Now()
 			resp2, derr := client.Do(req2)
 			if derr != nil {
-				recordProxyOutcome(exitURL, false, derr)
+				recordProxyOutcome(exitURL, false, derr, 0)
 				return nil, fmt.Errorf("upstream retry: %w", derr)
 			}
-			recordProxyOutcome(exitURL, true, nil)
+			recordProxyOutcome(exitURL, true, nil, time.Since(hsStart2).Milliseconds())
 			if resp2.StatusCode == 401 {
 				resp2.Body.Close()
 				poolMu.Lock()
@@ -1269,20 +1314,35 @@ func clineAPIWithAccount(ctx context.Context, params map[string]any, stream bool
 // prompt_tokens + completion_tokens，计入该账号今日/累计消耗。
 func accountUsageFn(acc *Account, params map[string]any) func(map[string]any) {
 	return func(u map[string]any) {
-		var pt, ct float64
-		if v, ok := u["prompt_tokens"].(float64); ok {
-			pt = v
-		}
-		if v, ok := u["completion_tokens"].(float64); ok {
-			ct = v
-		}
-		tokens := int64(pt + ct)
-		if tokens <= 0 && params != nil {
-			// 上游未返回 usage 时用入站请求估算兜底（与 zen 统计一致）
-			tokens = int64(estimateJSON(params))
-		}
-		recordAccountTokens(acc, tokens)
+		recordAccountTokens(acc, usageTokens(u, params))
 	}
+}
+
+// usageTokens 从上游 usage 包提取 prompt+completion 消耗；
+// 上游未返回 usage 时用入站请求估算兜底（与 zen 统计一致）。
+func usageTokens(u map[string]any, params map[string]any) int64 {
+	var pt, ct float64
+	if v, ok := u["prompt_tokens"].(float64); ok {
+		pt = v
+	}
+	if v, ok := u["completion_tokens"].(float64); ok {
+		ct = v
+	}
+	tokens := int64(pt + ct)
+	if tokens <= 0 && params != nil {
+		tokens = int64(estimateJSON(params))
+	}
+	return tokens
+}
+
+// takeUsedKey 从上游 resp 取出实际服务的 key 并删头（防透传客户端）。
+func takeUsedKey(resp *http.Response) string {
+	if resp == nil {
+		return ""
+	}
+	k := resp.Header.Get("X-Afree-Used-Key")
+	resp.Header.Del("X-Afree-Used-Key")
+	return k
 }
 
 func truncateEmail(email string) string {
@@ -1315,163 +1375,192 @@ func getMsgCount(params map[string]any) int {
 	return 0
 }
 
-func handleStreamResponseWithUsage(w http.ResponseWriter, upstream *http.Response, onUsage func(map[string]any)) {
-	// Check Flusher support BEFORE writing any headers
-	flusher, ok := w.(http.Flusher)
-	if !ok {
-		// Client connection doesn't support streaming.
-		// Aggregate the upstream stream into a single response, then emit it as SSE events
-		// so downstream SSE parsers (like AxonHub) receive a valid SSE stream.
-		log.Printf("  streaming not supported for client, falling back to SSE-wrapped aggregation")
-		out, err := collectStreamResponse(upstream)
+// ---- cline 流式缓冲转发 + 中断重试 ----
+// 背景：上游 cline 流中断率极高（实测 24h 内 61%），旧直通路径把截断流发
+// 给下游后，error 事件被 newapi→openai SDK 链路吞掉，客户端（hermes 等
+// agent）把半截文本当正常完成 → "伪完成"、任务静默停止。
+// 方案：上游 SSE 先完整缓冲、拿到 finish/[DONE] 才整体回放；中途断流则
+// 换账号重试整个请求（沿用现有 failover 通道，每账号仍走自己的绑定出口，
+// 隔离语义不变）。代价：免费账号 prompt 重复计费 + 每次重试数秒延迟。
+
+// reqIDSeq 配合纳秒时间戳生成短请求 id，贯穿一次请求的全部日志（归因用）。
+var reqIDSeq atomic.Uint64
+
+func newReqID() string {
+	return fmt.Sprintf("%x-%d", time.Now().UnixNano()&0xffffff, reqIDSeq.Add(1))
+}
+
+// sseBufferLimit 单次尝试的上游 SSE 缓冲上限。cline 响应通常 <100KB，
+// 16MB 是极端防御值：超限说明响应异常巨大，重试无意义。
+const sseBufferLimit = 16 << 20
+
+// bufferUpstreamSSE 完整读一份上游 SSE，不向客户端写任何字节。
+// 返回：原始行（保持逐字透传的回放保真度）、usage（成功时记账用）、
+// complete（看到 finish_reason 非空或 [DONE]）、中断错误。
+func bufferUpstreamSSE(body io.Reader) (lines []string, usage map[string]any, complete bool, brk error) {
+	total := 0
+	reader := bufio.NewReader(body)
+	for {
+		line, err := reader.ReadString('\n')
 		if err != nil {
-			w.Header().Set("Content-Type", "text/event-stream")
-			w.WriteHeader(http.StatusOK)
-			w.Write([]byte("data: {\"error\":{\"message\":\"aggregation failed\",\"type\":\"parse_error\"}}\n\n"))
-			w.Write([]byte("data: [DONE]\n\n"))
+			if err == io.EOF {
+				// 干净 EOF：若已看到 finish/[DONE] 即完整；否则视为中断
+				if strings.TrimSpace(line) != "" {
+					lines = append(lines, line)
+					total += len(line)
+				}
+				if !complete {
+					brk = io.ErrUnexpectedEOF
+				}
+				return lines, usage, complete, brk
+			}
+			// 真实读错误（连接重置/取消等）
+			return lines, usage, false, err
+		}
+		total += len(line)
+		if total > sseBufferLimit {
+			return lines, usage, false, fmt.Errorf("sse buffer limit %d exceeded", sseBufferLimit)
+		}
+		lines = append(lines, line)
+
+		trimmed := strings.TrimSpace(line)
+		if !strings.HasPrefix(trimmed, "data:") {
+			continue
+		}
+		payload := strings.TrimSpace(trimmed[5:])
+		switch {
+		case payload == "[DONE]":
+			complete = true
+		case payload != "":
+			var obj map[string]any
+			if json.Unmarshal([]byte(payload), &obj) != nil {
+				continue
+			}
+			// 部分 cline 响应包 {data:{...}}，与直通路径同款解包
+			if d, ok := obj["data"].(map[string]any); ok {
+				if _, has := d["choices"]; has {
+					obj = d
+				}
+			}
+			if u, ok := obj["usage"].(map[string]any); ok && len(u) > 0 {
+				usage = u
+			}
+			if choices, ok := obj["choices"].([]any); ok {
+				for _, c := range choices {
+					cm, ok := c.(map[string]any)
+					if !ok {
+						continue
+					}
+					if fr := cm["finish_reason"]; fr != nil {
+						complete = true
+					}
+				}
+			}
+		}
+	}
+}
+
+// streamAttemptFn 一次上游尝试：返回响应与该次尝试的记账回调（绑定本次
+// 实际服务的账号/key，由各平台 attempt 闭包构造）。
+type streamAttemptFn func(ctx context.Context) (*http.Response, func(map[string]any), error)
+
+// handleStreamBufferedGeneric 全平台通用的流式"缓冲+中断重试"路径：
+// 上游 SSE 先完整缓冲、拿到 finish/[DONE] 才整体回放；中途断流则重新执行
+// attempt（平台内部自选新账号/key，出口绑定语义不变）。ctx 取消（客户端
+// 真断开）不重试。
+func handleStreamBufferedGeneric(w http.ResponseWriter, r *http.Request, plat string, params map[string]any, attempt streamAttemptFn) {
+	rid := newReqID()
+	toolCount := 0
+	if tools, ok := params["tools"].([]any); ok {
+		toolCount = len(tools)
+	}
+	model, _ := params["model"].(string)
+	log.Printf("  [%s] client(%s): stream=true (buffered) tools=%d model=%s", rid, plat, toolCount, model)
+
+	var lastBrk error
+	for n := 1; n <= StreamMaxAttempts(); n++ {
+		if r.Context().Err() != nil {
+			log.Printf("  [%s] client gone before attempt %d, abort", rid, n)
 			return
 		}
-		if u, ok := out["usage"].(map[string]any); ok && len(u) > 0 {
-			onUsage(u)
+		resp, usageFn, err := attempt(r.Context())
+		if err != nil {
+			log.Printf("  [%s] %s attempt %d/%d api error: %v", rid, plat, n, StreamMaxAttempts(), err)
+			writeJSON(w, http.StatusBadGateway, map[string]any{
+				"error": map[string]string{"message": err.Error(), "type": "api_error"},
+			})
+			return
 		}
-		out = normalizeOpenAIResponse(out)
-
-		// Emit the aggregated response as SSE events
-		w.Header().Set("Content-Type", "text/event-stream")
-		w.Header().Set("Cache-Control", "no-cache")
-		w.Header().Set("Connection", "keep-alive")
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.WriteHeader(http.StatusOK)
-
-		// Build a content delta chunk
-		contentVal := getNested(out, "choices", 0, "message", "content")
-		delta := map[string]any{
-			"role":    "assistant",
-			"content": contentVal,
+		lines, usage, complete, brk := bufferUpstreamSSE(resp.Body)
+		resp.Body.Close()
+		if complete {
+			// 只把成功这次的上游消耗记账（中断的尝试不重复记账）
+			if usage != nil && usageFn != nil {
+				usageFn(usage)
+			}
+			if n > 1 {
+				log.Printf("  [%s] %s attempt %d/%d recovered after %d break(s)", rid, plat, n, StreamMaxAttempts(), n-1)
+				setUpstreamNote(r.Context(), fmt.Sprintf("%d次中断已重试", n-1))
+			}
+			replaySSE(w, lines)
+			return
 		}
-		if tc := getNested(out, "choices", 0, "message", "tool_calls"); tc != nil {
-			delta["tool_calls"] = tc
+		// 中断归因：ctx 已取消 = 下游先断开连带取消上游读，非上游故障
+		if r.Context().Err() != nil {
+			log.Printf("  [%s] %s attempt %d/%d stream broken, cause=client_gone (ctx canceled), %d lines buffered, no retry",
+				rid, plat, n, StreamMaxAttempts(), len(lines))
+			setUpstreamNote(r.Context(), "客户端断开")
+			return
 		}
-		chunk := map[string]any{
-			"id":      out["id"],
-			"object":  "chat.completion.chunk",
-			"created": out["created"],
-			"model":   out["model"],
-			"choices": []map[string]any{
-				{
-					"index":         0,
-					"delta":         delta,
-					"finish_reason": nil,
-				},
-			},
-		}
-		if u, ok := out["usage"]; ok {
-			chunk["usage"] = u
-		}
-		chunkJSON, _ := json.Marshal(chunk)
-		w.Write([]byte("data: " + string(chunkJSON) + "\n\n"))
-
-		// Done chunk —— finish_reason 透传上游真实值（tool_calls/length 等），
-		// 硬编码 "stop" 会让依赖 finish_reason 的客户端误判工具调用回合
-		doneFR := getNested(out, "choices", 0, "finish_reason")
-		if s, ok := doneFR.(string); !ok || s == "" {
-			doneFR = "stop"
-		}
-		doneChunk := map[string]any{
-			"id":      out["id"],
-			"object":  "chat.completion.chunk",
-			"created": out["created"],
-			"model":   out["model"],
-			"choices": []map[string]any{
-				{
-					"index":         0,
-					"delta":         map[string]any{},
-					"finish_reason": doneFR,
-				},
-			},
-		}
-		doneJSON, _ := json.Marshal(doneChunk)
-		w.Write([]byte("data: " + string(doneJSON) + "\n\n"))
-		w.Write([]byte("data: [DONE]\n\n"))
-		return
+		log.Printf("  [%s] %s attempt %d/%d stream broken, cause=upstream_break (%v), %d lines buffered, retrying",
+			rid, plat, n, StreamMaxAttempts(), brk, len(lines))
+		lastBrk = brk
 	}
+	// 全部尝试中断：尚未向客户端写过任何字节（缓冲模式），直接 502——
+	// 语义正确（newapi 记为真实错误、openai SDK 抛异常走客户端重试）、
+	// 面板 Error 列可见，不再伪造 200 + SSE error 事件。
+	log.Printf("  [%s] %s all %d attempts broken, returning 502", rid, plat, StreamMaxAttempts())
+	setUpstreamNote(r.Context(), fmt.Sprintf("%d次尝试均中断", StreamMaxAttempts()))
+	msg := "upstream stream interrupted"
+	if lastBrk != nil {
+		msg = kit.Truncate("upstream stream interrupted: "+lastBrk.Error(), 300)
+	}
+	writeJSON(w, http.StatusBadGateway, map[string]any{
+		"error": map[string]any{"message": msg, "type": "upstream_error"},
+	})
+}
 
+// handleClineStreamBuffered cline 路由入口（账号 failover 在 callClineAPI 内，
+// 每次 attempt 由 callClineAPI 自选账号并走其绑定出口）。
+func handleClineStreamBuffered(w http.ResponseWriter, r *http.Request, params map[string]any, useProxies bool) {
+	handleStreamBufferedGeneric(w, r, "cline", params, func(ctx context.Context) (*http.Response, func(map[string]any), error) {
+		resp, acc, _, err := callClineAutoStream(ctx, params, true, useProxies)
+		if err != nil {
+			return nil, nil, err
+		}
+		// 注意：callClineAutoStream 对流式请求恒返回 streamed=false（直通语义），
+		// 不能用它判断响应体形态——stream=true 时上游永远回 SSE，直接缓冲。
+		return resp, accountUsageFn(acc, params), nil
+	})
+}
+
+// replaySSE 逐字回放缓冲的上游 SSE（保真度与旧直通路径一致）。
+func replaySSE(w http.ResponseWriter, lines []string) {
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.WriteHeader(http.StatusOK)
-
-	reader := bufio.NewReader(upstream.Body)
-	for {
-		line, err := reader.ReadString('\n')
-		if err != nil {
-			if err == io.EOF {
-				if line != "" {
-					w.Write([]byte(line + "\n"))
-				}
-				break
-			}
-			// 上游中途断流（非 EOF 的真实读错误，如 connection reset）：不能
-			// 静默 break —— 客户端会把截断的流当成正常结束（缺 finish/[DONE]），
-			// 表现为 IDE 里的"响应中断"。发一个终止性 error 事件再收尾，语义与
-			// Anthropic 路径（proxy.go 的 anthropic stream upstream error）和
-			// Responses 路径（responses.go 的 response.failed）一致。
-			log.Printf("  upstream stream interrupted (mid-stream read error): %v", err)
-			errChunk := map[string]any{
-				"error": map[string]any{
-					"message": kit.Truncate("upstream stream interrupted: "+err.Error(), 300),
-					"type":    "upstream_error",
-				},
-			}
-			if b, mErr := json.Marshal(errChunk); mErr == nil {
-				w.Write([]byte("data: " + string(b) + "\n\n"))
-				w.Write([]byte("data: [DONE]\n\n"))
-				flusher.Flush()
-			}
-			break
+	var sb strings.Builder
+	for _, ln := range lines {
+		sb.WriteString(ln)
+		if !strings.HasSuffix(ln, "\n") {
+			sb.WriteString("\n")
 		}
-
-		line = strings.TrimRight(line, "\r\n")
-
-		if strings.HasPrefix(line, "data:") {
-			payload := strings.TrimSpace(line[5:])
-			if payload == "" || payload == "[DONE]" {
-				w.Write([]byte(line + "\n\n"))
-				flusher.Flush()
-				continue
-			}
-
-			// Try to normalize the response
-			var obj map[string]any
-			if err := json.Unmarshal([]byte(payload), &obj); err == nil {
-				if onUsage != nil {
-					if u, ok := obj["usage"].(map[string]any); ok && len(u) > 0 {
-						onUsage(u)
-					}
-				}
-				// Some Cline responses wrap in {data: {...}}
-				if data, ok := obj["data"]; ok {
-					if d, ok := data.(map[string]any); ok {
-						if _, hasChoices := d["choices"]; hasChoices {
-							obj = d
-						}
-						if _, hasID := d["id"]; hasID {
-							obj = d
-						}
-					}
-				}
-				normalized := normalizeOpenAIResponse(obj)
-				if normBytes, err := json.Marshal(normalized); err == nil {
-					w.Write([]byte("data: " + string(normBytes) + "\n\n"))
-					flusher.Flush()
-					continue
-				}
-			}
-		}
-
-		w.Write([]byte(line + "\n"))
-		flusher.Flush()
+	}
+	w.Write([]byte(sb.String()))
+	if f, ok := w.(http.Flusher); ok {
+		f.Flush()
 	}
 }
 

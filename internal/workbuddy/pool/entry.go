@@ -37,6 +37,8 @@ type TokenUsage struct {
 	PromptTokens        int64     `json:"prompt_tokens,omitempty"`
 	CompletionTokens    int64     `json:"completion_tokens,omitempty"`
 	TotalTokens         int64     `json:"total_tokens,omitempty"`
+	TodayTokens         int64     `json:"today_tokens,omitempty"`
+	TodayDate           string    `json:"today_date,omitempty"`
 	LastLatencyMs       int64     `json:"last_latency_ms,omitempty"`
 	LastTokensPerSecond *float64  `json:"last_tokens_per_second,omitempty"`
 	LastUsedAt          time.Time `json:"last_used_at,omitempty"`

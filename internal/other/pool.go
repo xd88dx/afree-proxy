@@ -129,6 +129,29 @@ func MarkSuccess(p *Platform, key string) {
 	keyMu.Unlock()
 }
 
+// RecordKeyTokens 记录子平台 key 本次请求消耗的 token（prompt+completion），
+// 自动处理跨日重置，累计值不重置；同时刷新最近使用时间。tokens<=0 时忽略。
+func RecordKeyTokens(p *Platform, key string, tokens int64) {
+	if key == "" || tokens <= 0 {
+		return
+	}
+	keyMu.Lock()
+	if p.KeyTokens == nil {
+		p.KeyTokens = map[string]KeyTokenStats{}
+	}
+	today := time.Now().Format("2006-01-02")
+	st := p.KeyTokens[key]
+	if st.Date != today {
+		st.Date = today
+		st.Today = 0
+	}
+	st.Today += tokens
+	st.Total += tokens
+	st.LastUsedAt = time.Now()
+	p.KeyTokens[key] = st
+	keyMu.Unlock()
+}
+
 // Cooldown 把 key 置为冷却，冷却期内轮转跳过。返回实际生效的时长
 // （0 = 未冷却：空 key）。上游 429 时按 Retry-After 冷却。
 func Cooldown(p *Platform, key string, d time.Duration) time.Duration {

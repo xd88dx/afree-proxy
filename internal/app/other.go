@@ -172,6 +172,17 @@ func handleOtherChat(w http.ResponseWriter, r *http.Request, params map[string]a
 		return
 	}
 	isStream, _ := params["stream"].(bool)
+	if isStream {
+		handleStreamBufferedGeneric(w, r, "other:"+p.Slug, params, func(ctx context.Context) (*http.Response, func(map[string]any), error) {
+			resp, _, err := other.Chat(ctx, p, params, m.ID, true, getProxyConfig().Strategy, otherBoundRoutable(p), otherExitFn(p))
+			if err != nil {
+				return nil, nil, err
+			}
+			usedKey := takeUsedKey(resp)
+			return resp, func(u map[string]any) { other.RecordKeyTokens(p, usedKey, usageTokens(u, params)) }, nil
+		})
+		return
+	}
 	resp, _, err := other.Chat(r.Context(), p, params, m.ID, true, getProxyConfig().Strategy, otherBoundRoutable(p), otherExitFn(p))
 	if err != nil {
 		log.Printf("  other api error (%s): %v", p.Slug, err)
@@ -181,11 +192,11 @@ func handleOtherChat(w http.ResponseWriter, r *http.Request, params map[string]a
 		return
 	}
 	defer resp.Body.Close()
-	if isStream {
-		handleStreamResponseWithUsage(w, resp, nil)
-		return
+	usedKey := takeUsedKey(resp)
+	usageFn := func(u map[string]any) {
+		other.RecordKeyTokens(p, usedKey, usageTokens(u, params))
 	}
-	finishZenChatNonStream(w, resp, &ZenModel{ID: m.ID}, params, nil)
+	finishZenChatNonStream(w, resp, &ZenModel{ID: m.ID}, params, usageFn)
 }
 
 // ============ 管理 API ============
@@ -1026,7 +1037,7 @@ func clearOtherKeysForDataDelete() int {
 		next.Platforms[i].Keys = nil
 		next.Platforms[i].KeyBindings = map[string]other.Binding{}
 		next.Platforms[i].KeyRoutingEnabled = map[string]bool{}
-		next.Platforms[i].Usage = map[string]int64{}
+		next.Platforms[i].KeyTokens = map[string]other.KeyTokenStats{}
 		next.Platforms[i].Cool = map[string]time.Time{}
 	}
 	other.Set(next)

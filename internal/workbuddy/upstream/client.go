@@ -618,10 +618,10 @@ type Client struct {
 
 	// ObserveProxy 出口成败观测钩子（afree 本地扩展，vendor 合并保留项）：
 	// 非 nil 时，账号出网实际使用了代理就在传输层结果落定后回报
-	// (代理URL, ok, err)。ok = 传输层成功（拨号 + CONNECT/SOCKS + TLS），
+	// (代理URL, ok, err, 握手耗时ms)。ok = 传输层成功（拨号 + CONNECT/SOCKS + TLS），
 	// 上游 HTTP 4xx/5xx 不算代理失败。直连出口（URL 为空）与 fail-closed
 	//（无单一可归属的 URL）不回报。仅观测，不参与任何路由决策。
-	ObserveProxy    func(proxyURL string, ok bool, err error)
+	ObserveProxy    func(proxyURL string, ok bool, err error, hsMs int64)
 	proxyMu         sync.Mutex
 	proxyTransports map[string]*http.Transport
 
@@ -1064,7 +1064,7 @@ func (c *Client) ChatStreamContext(ctx context.Context, a *auth.Auth, body []byt
 			return nil, 0, nil, err
 		}
 		resp, err := chatClient.Do(req)
-		c.observeProxy(proxyRaw, err)
+		c.observeProxy(proxyRaw, err, 0)
 		if err != nil {
 			cancel()
 			log.Printf("ERR: [upstream] chat_stream acct=%s: transport error: %v", logfmt.Label(a.UID, a.Nickname), err)

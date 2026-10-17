@@ -73,6 +73,7 @@ type RequestLog struct {
 type upstreamInfo struct {
 	label string
 	exit  string // 出口代理类型：main | backup | ""（直连/全局池）
+	note  string // 补充说明：如"1次中断已重试""3次尝试均中断"，面板悬浮展示
 }
 
 type upstreamCtxKey struct{}
@@ -102,6 +103,17 @@ func setUpstreamExit(ctx context.Context, exit string) {
 	}
 	if ui, ok := ctx.Value(upstreamCtxKey{}).(*upstreamInfo); ok {
 		ui.exit = exit
+	}
+}
+
+// setUpstreamNote 记录请求日志的补充说明（中断重试/全断/客户端断开等，
+// 面板悬浮展示）。仅缓冲重试路径写入。
+func setUpstreamNote(ctx context.Context, note string) {
+	if note == "" || ctx == nil {
+		return
+	}
+	if ui, ok := ctx.Value(upstreamCtxKey{}).(*upstreamInfo); ok {
+		ui.note = note
 	}
 }
 
@@ -462,6 +474,7 @@ func requestLogMiddleware(next http.Handler) http.Handler {
 			Upstream:  upstream.label,
 			ProxyType: upstream.exit,
 			Error:     sw.errorReason(),
+			Note:      upstream.note,
 		})
 	})
 }

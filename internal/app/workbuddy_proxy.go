@@ -115,33 +115,20 @@ func workbuddyProxyFor(a *wbauth.Auth) (string, bool) {
 		if uid == "" {
 			return
 		}
-		setUpstreamInfo(ctx, workbuddyUpstreamLabel(uid, strings.TrimSpace(a.Nickname)))
+		setUpstreamInfo(ctx, workbuddyUpstreamLabel(uid))
 		setUpstreamExit(ctx, workbuddyExitType(uid, exitRaw))
 	}
 
 	// workbuddyUpstreamLabel 日志「账号/Key」列的账号标识：与面板 # 列同口径的
-	// 展示行号 —— wb#N（N = 当前 List 展示顺序中的行号，拖拽重排后按新顺序
-	// 重新编号），无昵称时附 uid#短 UID 区分。
-	func workbuddyUpstreamLabel(uid, nick string) string {
+	// 展示行号 —— 账号#N（N = 当前 List 展示顺序中的行号，拖拽重排后按新顺序
+	// 重新编号）。昵称不参与（面板账号列已展示，日志只留序号方便排查）。
+	func workbuddyUpstreamLabel(uid string) string {
 		uid = strings.TrimSpace(uid)
 		n := 0
 		if workbuddySub != nil && workbuddySub.pool != nil {
 			n = workbuddySub.pool.IndexOf(uid)
 		}
-		label := fmt.Sprintf("wb#%d", n)
-		short := uid
-		if len(short) > 10 {
-			short = short[:10] + "…"
-		}
-		if nick != "" && nick != uid {
-			if len(nick) > 24 {
-				nick = nick[:24] + "…"
-			}
-			label += " " + nick
-		} else {
-			label += " uid#" + short
-		}
-		return label
+		return fmt.Sprintf("账号#%d", n)
 	}
 
 	// workbuddyExitType 与 workbuddyProxyFor 同口径判定出口类型：隔离开启且

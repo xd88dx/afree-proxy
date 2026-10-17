@@ -31,6 +31,9 @@ services:
       # Request-log switch, default on (metadata only, 10MB cap auto-wipe)
       - LOG_REQUESTS=${LOG_REQUESTS:-true}
       - LOG_FILE_MAX_MB=${LOG_FILE_MAX_MB:-10}
+      # Buffered-stream retry: total attempts (initial + retries) when the
+      # upstream stream breaks mid-flight; default 2, set 1 to disable retrying
+      - STREAM_ATTEMPT=${STREAM_ATTEMPT:-2}
       # Strict model matching: unknown model names return 400 instead of silently
       # falling back to the default model (set false to restore the old catch-all)
       - STRICT_MODEL_MATCH=${STRICT_MODEL_MATCH:-true}

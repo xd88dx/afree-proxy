@@ -58,10 +58,6 @@ func TestEndpointLearnOnlyPersistsWhenRetrySucceeds(t *testing.T) {
 	cfg.Retries = 0
 	setZenConfig(cfg)
 	defer setZenConfig(savedCfg)
-	// 本测试大量触发 5xx：markZenFail 会累计包级 failover 计数并进入故障
-	// 转移窗口，渗漏到后续 zen 路由测试（被错误地路由去 cline 池）。结束时
-	// 重置。Cfg.Failover 保持 true 时才走该分支，这里直接复位全局状态。
-	defer markZenSuccess()
 
 	model := "audit-probe-chat-native"
 	// 只注册这一个模型，避免污染其他测试的模型表

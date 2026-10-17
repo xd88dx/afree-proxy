@@ -192,6 +192,7 @@ func Chat(ctx context.Context, params map[string]any, modelID string, stream boo
 		}
 		if resp.StatusCode == http.StatusOK {
 			MarkSuccess(key)
+			resp.Header.Set("X-Afree-Used-Key", key)
 			return resp, rateLimited, nil
 		}
 		bodyBytes := readBody(resp)

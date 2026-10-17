@@ -18,15 +18,16 @@ type proxyObservation struct {
 	url string
 	ok  bool
 	err error
+	hsMs int64
 }
 
 func newObserveClient() (*Client, func() []proxyObservation) {
 	c := New()
 	var mu sync.Mutex
 	var got []proxyObservation
-	c.ObserveProxy = func(raw string, ok bool, err error) {
+	c.ObserveProxy = func(raw string, ok bool, err error, hsMs int64) {
 		mu.Lock()
-		got = append(got, proxyObservation{raw, ok, err})
+		got = append(got, proxyObservation{raw, ok, err, hsMs})
 		mu.Unlock()
 	}
 	return c, func() []proxyObservation {

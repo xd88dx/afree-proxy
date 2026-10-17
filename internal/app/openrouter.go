@@ -131,6 +131,17 @@ func handleOrChat(w http.ResponseWriter, r *http.Request, params map[string]any)
 		return
 	}
 	isStream, _ := params["stream"].(bool)
+	if isStream {
+		handleStreamBufferedGeneric(w, r, "openrouter", params, func(ctx context.Context) (*http.Response, func(map[string]any), error) {
+			resp, _, err := openrouter.Chat(ctx, params, m.ID, true, getProxyConfig().Strategy, orBoundRoutable, nil)
+			if err != nil {
+				return nil, nil, err
+			}
+			usedKey := takeUsedKey(resp)
+			return resp, func(u map[string]any) { openrouter.RecordKeyTokens(usedKey, usageTokens(u, params)) }, nil
+		})
+		return
+	}
 	resp, _, err := openrouter.Chat(r.Context(), params, m.ID, true, getProxyConfig().Strategy, orBoundRoutable, nil)
 	if err != nil {
 		log.Printf("  openrouter api error: %v", err)
@@ -140,11 +151,11 @@ func handleOrChat(w http.ResponseWriter, r *http.Request, params map[string]any)
 		return
 	}
 	defer resp.Body.Close()
-	if isStream {
-		handleStreamResponseWithUsage(w, resp, nil)
-		return
+	usedKey := takeUsedKey(resp)
+	usageFn := func(u map[string]any) {
+		openrouter.RecordKeyTokens(usedKey, usageTokens(u, params))
 	}
-	finishZenChatNonStream(w, resp, &ZenModel{ID: m.ID}, params, nil)
+	finishZenChatNonStream(w, resp, &ZenModel{ID: m.ID}, params, usageFn)
 }
 
 func mustString(v any) string {
@@ -210,7 +221,7 @@ func handleOrConfigUpdate(w http.ResponseWriter, r *http.Request) {
 		KeyBindings:       map[string]openrouter.Binding{},
 		MaxConcurrency:    cur.MaxConcurrency,
 		Retries:           cur.Retries,
-		Usage:             map[string]int64{},
+		KeyTokens:         map[string]openrouter.KeyTokenStats{},
 		Cool:              map[string]time.Time{},
 	}
 	for k, v := range cur.KeyRoutingEnabled {
@@ -219,8 +230,8 @@ func handleOrConfigUpdate(w http.ResponseWriter, r *http.Request) {
 	for k, v := range cur.KeyBindings {
 		next.KeyBindings[k] = v
 	}
-	for k, v := range cur.Usage {
-		next.Usage[k] = v
+	for k, v := range cur.KeyTokens {
+		next.KeyTokens[k] = v
 	}
 	for k, v := range cur.Cool {
 		next.Cool[k] = v
@@ -411,7 +422,7 @@ func orCloneConfig() (*openrouter.Config, *openrouter.Config) {
 		KeyBindings:       map[string]openrouter.Binding{},
 		MaxConcurrency:    cur.MaxConcurrency,
 		Retries:           cur.Retries,
-		Usage:             map[string]int64{},
+		KeyTokens:         map[string]openrouter.KeyTokenStats{},
 		Cool:              map[string]time.Time{},
 	}
 	for k, v := range cur.KeyRoutingEnabled {
@@ -420,8 +431,8 @@ func orCloneConfig() (*openrouter.Config, *openrouter.Config) {
 	for k, v := range cur.KeyBindings {
 		next.KeyBindings[k] = v
 	}
-	for k, v := range cur.Usage {
-		next.Usage[k] = v
+	for k, v := range cur.KeyTokens {
+		next.KeyTokens[k] = v
 	}
 	for k, v := range cur.Cool {
 		next.Cool[k] = v

@@ -126,6 +126,17 @@ func handleAMDChat(w http.ResponseWriter, r *http.Request, params map[string]any
 		return
 	}
 	isStream, _ := params["stream"].(bool)
+	if isStream {
+		handleStreamBufferedGeneric(w, r, "amd", params, func(ctx context.Context) (*http.Response, func(map[string]any), error) {
+			resp, _, err := amd.Chat(ctx, params, m.ID, true, getProxyConfig().Strategy, amdBoundRoutable)
+			if err != nil {
+				return nil, nil, err
+			}
+			usedKey := takeUsedKey(resp)
+			return resp, func(u map[string]any) { amd.RecordKeyTokens(usedKey, usageTokens(u, params)) }, nil
+		})
+		return
+	}
 	resp, _, err := amd.Chat(r.Context(), params, m.ID, true, getProxyConfig().Strategy, amdBoundRoutable)
 	if err != nil {
 		log.Printf("  amd api error: %v", err)
@@ -135,11 +146,11 @@ func handleAMDChat(w http.ResponseWriter, r *http.Request, params map[string]any
 		return
 	}
 	defer resp.Body.Close()
-	if isStream {
-		handleStreamResponseWithUsage(w, resp, nil)
-		return
+	usedKey := takeUsedKey(resp)
+	usageFn := func(u map[string]any) {
+		amd.RecordKeyTokens(usedKey, usageTokens(u, params))
 	}
-	finishZenChatNonStream(w, resp, &ZenModel{ID: m.ID}, params, nil)
+	finishZenChatNonStream(w, resp, &ZenModel{ID: m.ID}, params, usageFn)
 }
 
 // ============ AMDCloud 管理 API ============
@@ -227,7 +238,7 @@ func amdCloneConfig() (*amd.Config, *amd.Config) {
 		KeyBindings:       map[string]amd.Binding{},
 		MaxConcurrency:    cur.MaxConcurrency,
 		Retries:           cur.Retries,
-		Usage:             map[string]int64{},
+		KeyTokens:         map[string]amd.KeyTokenStats{},
 		Cool:              map[string]time.Time{},
 	}
 	for k, v := range cur.KeyRoutingEnabled {
@@ -236,8 +247,8 @@ func amdCloneConfig() (*amd.Config, *amd.Config) {
 	for k, v := range cur.KeyBindings {
 		next.KeyBindings[k] = v
 	}
-	for k, v := range cur.Usage {
-		next.Usage[k] = v
+	for k, v := range cur.KeyTokens {
+		next.KeyTokens[k] = v
 	}
 	for k, v := range cur.Cool {
 		next.Cool[k] = v
@@ -525,7 +536,7 @@ func clearAMDKeysForDataDelete() int {
 	next.Keys = nil
 	next.KeyBindings = map[string]amd.Binding{}
 	next.KeyRoutingEnabled = map[string]bool{}
-	next.Usage = map[string]int64{}
+	next.KeyTokens = map[string]amd.KeyTokenStats{}
 	next.Cool = map[string]time.Time{}
 	amd.Set(next)
 	return n

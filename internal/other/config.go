@@ -53,6 +53,8 @@ type Platform struct {
 	Models ModelState `json:"models"`
 	// Usage 用量统计（内存态，不落盘）：key 明文 -> 成功调用计数。
 	Usage map[string]int64 `json:"-"`
+	// KeyTokens token 记账（内存态，不落盘）：key 明文 -> 今日/累计消耗与最近使用。
+	KeyTokens map[string]KeyTokenStats `json:"-"`
 	// Cool 冷却表（内存态，不落盘）：key 明文 -> 冷却截止时刻。
 	Cool map[string]time.Time `json:"-"`
 }
@@ -62,6 +64,15 @@ type Platform struct {
 type Binding struct {
 	Main   string `json:"main,omitempty"`
 	Backup string `json:"backup,omitempty"`
+}
+
+// KeyTokenStats 单个 key 的 token 记账：今日/累计消耗（prompt+completion）
+// 与跨日日期、最近成功时间。内存态（与 Usage 同口径，不落盘）。
+type KeyTokenStats struct {
+	Today      int64     `json:"today,omitempty"`
+	Total      int64     `json:"total,omitempty"`
+	Date       string    `json:"date,omitempty"`
+	LastUsedAt time.Time `json:"lastUsedAt,omitempty"`
 }
 
 // ModelState 模型目录：Fetched 为上游 /models 拉取结果（会随同步整体替换），
@@ -402,8 +413,14 @@ func KeyStatus(p *Platform) []map[string]any {
 		st := map[string]any{
 			"index":          i,
 			"keyMask":        maskKey(k),
-			"usage":          p.Usage[k],
 			"routingEnabled": p.RoutingEnabled(k),
+		}
+		if ts, ok := p.KeyTokens[k]; ok {
+			st["tokensToday"] = ts.Today
+			st["tokensTotal"] = ts.Total
+			if !ts.LastUsedAt.IsZero() {
+				st["lastUsed"] = ts.LastUsedAt.Format(time.RFC3339)
+			}
 		}
 		if b, ok := p.KeyBindings[k]; ok && (b.Main != "" || b.Backup != "") {
 			st["proxyMain"] = b.Main

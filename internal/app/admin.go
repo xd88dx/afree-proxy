@@ -361,7 +361,6 @@ func handleAdminAccountAdd(w http.ResponseWriter, r *http.Request) {
 			Email:     email,
 			APIToken:  req.APIToken,
 			Status:    "active",
-			CreatedAt: time.Now(),
 		}
 		addAccount(acc)
 		log.Printf("API-key account added: %s", email)
@@ -395,7 +394,6 @@ func handleAdminAccountAdd(w http.ResponseWriter, r *http.Request) {
 		AccessToken:  "workos:" + resp.Data.AccessToken,
 		ExpiresAt:    clineExpiryMs(resp.Data.ExpiresAt),
 		Status:       "active",
-		CreatedAt:    time.Now(),
 	}
 	if resp.Data.RefreshToken != "" {
 		acc.RefreshToken = resp.Data.RefreshToken
@@ -510,7 +508,6 @@ func handleSSOImport(w http.ResponseWriter, r *http.Request) {
 				AccessToken:  "workos:" + resp.Data.AccessToken,
 				ExpiresAt:    clineExpiryMs(resp.Data.ExpiresAt),
 				Status:       "active",
-				CreatedAt:    time.Now(),
 			}
 			addAccount(acc)
 			imported++
@@ -755,7 +752,7 @@ func testAccount(acc *Account) (map[string]any, string) {
 	resp, err := probeClient.Do(req)
 	if err != nil {
 		// 网络错误：5 分钟短冷却（恢复时间取返回值，避免锁外读账号字段）
-		recordProxyOutcome(probeExit, false, err)
+		recordProxyOutcome(probeExit, false, err, 0)
 		reason := "network error: " + err.Error()
 		until := markAccountCooldown(acc, reason, 5*time.Minute)
 		return map[string]any{
@@ -769,7 +766,7 @@ func testAccount(acc *Account) (map[string]any, string) {
 			"remaining":     formatDuration(time.Until(until)),
 		}, "cooldown"
 	}
-	recordProxyOutcome(probeExit, true, nil)
+	recordProxyOutcome(probeExit, true, nil, 0)
 	defer resp.Body.Close()
 
 	bodyBytes, _ := io.ReadAll(resp.Body)
