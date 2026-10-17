@@ -433,9 +433,9 @@ func testZenKey(key string, index int, modelID string) (map[string]any, string) 
 		return result, "error"
 	}
 
-	// 成功：清除冷却。用量（markZenKeySuccess）与 403 会话状态
-	// （zenSessionMarkSuccess，zen.go 两条调用路径各一处）已在上游 200
-	// 路径里做过，这里只复位冷却（与 cline 的 Test 按钮同语义）。
+	// 成功：清除冷却。403 会话状态复位（zenSessionMarkSuccess，zen.go 两条
+	// 调用路径各一处）已在上游 200 路径里做过，这里只复位冷却
+	// （与 cline 的 Test 按钮同语义）。
 	uncoolZenKey(key)
 	result["reason"] = "ok"
 	return result, "active"
@@ -497,7 +497,7 @@ func handleZenKeySetRoutingAll(w http.ResponseWriter, r *http.Request) {
 // POST /admin/api/opencode/keys/reorder  body: { order: [oldIndex,...] }
 // 管理面板拖拽排序：按旧 index 置换重排 zen key 池（面板只见掩码不见明文，
 // 协议用 index 置换）。持久化、Key=Keys[0] 兼容同步、轮转游标归零由
-// setZenConfig 统一处理；冷却/用量/粘性按 key 明文存储，与顺序无关。
+// setZenConfig 统一处理；冷却/token/粘性按 key 明文存储，与顺序无关。
 func handleZenKeysReorder(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})

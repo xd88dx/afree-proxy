@@ -182,7 +182,6 @@ func Chat(ctx context.Context, p *Platform, params map[string]any, modelID strin
 			return nil, rateLimited, fmt.Errorf("other request: %w", err)
 		}
 		if resp.StatusCode == http.StatusOK {
-			MarkSuccess(p, key)
 			resp.Header.Set("X-Afree-Used-Key", key)
 			return resp, rateLimited, nil
 		}

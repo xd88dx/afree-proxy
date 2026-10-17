@@ -605,7 +605,7 @@ func orTestKey(index int, modelID string) (map[string]any, string) {
 	return result, "active"
 }
 
-// clearOpenrouterKeysForDataDelete 清空 OpenRouter key 池与绑定/路由/用量表
+// clearOpenrouterKeysForDataDelete 清空 OpenRouter key 池与绑定/路由表
 // （保留 baseURL 与平台设置）。
 func clearOpenrouterKeysForDataDelete() int {
 	cur, next := orCloneConfig()
@@ -613,7 +613,6 @@ func clearOpenrouterKeysForDataDelete() int {
 	next.Keys = nil
 	next.KeyBindings = map[string]openrouter.Binding{}
 	next.KeyRoutingEnabled = map[string]bool{}
-	next.Usage = map[string]int64{}
 	next.Cool = map[string]time.Time{}
 	openrouter.Set(next)
 	return n

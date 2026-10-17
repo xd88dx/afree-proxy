@@ -17,8 +17,8 @@ import (
 var (
 	keyMu  sync.Mutex
 	keyIdx int
-	// usage 放在 Config.Usage（锁外读快照会与 pruneRemovedKeys 并发删键），
-	// 这里只保留轮转游标。
+	// token 记账放在 Config.KeyTokens（锁外读快照会与 pruneRemovedKeys 并发
+	// 删键），这里只保留轮转游标。
 )
 
 // PickKey 选取下一个可用 key。strategy 取自网关账号调度策略；boundRoutable
@@ -116,20 +116,6 @@ func KeyIndex(key string) int {
 	return 0
 }
 
-// MarkSuccess 累计 key 的成功调用计数（内存态 + 落盘聚合，面板展示）。
-func MarkSuccess(key string) {
-	if key == "" {
-		return
-	}
-	c := Get()
-	mu.Lock()
-	if c.Usage == nil {
-		c.Usage = map[string]int64{}
-	}
-	c.Usage[key]++
-	mu.Unlock()
-}
-
 // RecordKeyTokens 记录 key 本次请求消耗的 token（prompt+completion），
 // 自动处理跨日重置，累计值不重置；同时刷新最近使用时间。tokens<=0 时忽略。
 func RecordKeyTokens(key string, tokens int64) {
@@ -182,7 +168,7 @@ func Uncool(key string) {
 		return
 	}
 	mu.Lock()
-	delete(Get().Cool, key)
+	delete(cfg.Cool, key)
 	mu.Unlock()
 }
 

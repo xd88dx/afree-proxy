@@ -104,6 +104,8 @@ tbody tr:last-child td{border-bottom:none}
 .status.active{background:var(--status-active-bg);color:var(--accent2)}
 .status.cooldown{background:var(--status-cooldown-bg);color:var(--amber)}
 .status.expired{background:var(--status-expired-bg);color:var(--danger)}
+.status.pending{background:var(--bg2);color:var(--text2)}
+.status-dot.pending{background:var(--text3)}
 .status-dot{width:7px;height:7px;border-radius:50%;display:inline-block}
 .status-dot.active{background:var(--accent2)}
 .status-dot.cooldown{background:var(--amber)}
@@ -146,6 +148,10 @@ select{cursor:pointer;appearance:none;background-image:linear-gradient(45deg,tra
 /* 宽度基准 = 两位数色签的自然宽度（34px）：个位数居中补白，三位数（.w3，
    如"100%"）收紧左右内边距塞进同一宽度，各档宽度恒定不随位数抖动 */
 .eg-badge.w3,.eg-rate.w3{padding-left:2px;padding-right:2px}
+/* 握手延迟徽标（.hs）：与在线率徽标并排时在线率让位到 right:46px，
+   输入框右侧留白同步加宽（has-hs 规则须在 has-badge 之后，同优先级后者生效） */
+.eg-badge.hs{right:46px}
+.eg-wrap.has-hs .eg-input{padding-right:96px}
 /* 在线率五档底色：≥80 绿 / ≥60 蓝 / ≥40 粉 / ≥20 黄 / 以下红。深色主题用
    粉彩底配深字、浅色主题用深底配浅字——文字取 var(--bg) 双主题皆可读 */
 .eg-badge.t-green,.eg-rate.t-green,.pp-rate.t-green{background:var(--accent2)}
@@ -425,7 +431,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
         <tr><th style="width:44px">#</th><th>Email</th><th>Status</th><th title="Counted locally by this proxy — not the official free quota">Today/Total tokens</th><th>Last used</th><th title="Main exit first, backup as fallback; both down = row skipped (isolation).">Proxy binding</th><th style="text-align:center">Actions</th><th style="text-align:center" title="Routing participation. New rows start disabled — tick Pool to enable.">Pool</th></tr>
       </thead>
       <tbody id="accountTableBody">
-        <tr><td colspan="9" class="empty">Loading...</td></tr>
+        <tr><td colspan="8" class="empty">Loading...</td></tr>
       </tbody>
     </table>
     </div>
@@ -733,8 +739,8 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
     </div>
     <div class="table-wrap" style="margin-bottom:10px">
       <table>
-        <thead><tr><th style="width:50px">#</th><th style="width:110px">Key</th><th title="Counted locally by this proxy — not the official free quota">Today/Total tokens</th><th>Last used</th><th style="width:110px">Session</th><th style="width:110px" title="Sticky sessions are re-minted once older than the rotation interval (session rotation, min).">Rotates</th><th>Cooldown</th><th title="Main exit first, backup as fallback; both down = row skipped (isolation).">Proxy binding</th><th style="width:130px"></th><th style="text-align:center" title="Routing participation: unchecked keys never enter request rotation. Newly added keys start disabled — tick Pool to enable. Minting follows routing — keys with routing disabled stop auto-minting.">Pool</th></tr></thead>
-        <tbody id="ocKeysBody"><tr><td colspan="10" class="empty">Loading...</td></tr></tbody>
+        <thead><tr><th style="width:50px">#</th><th style="width:110px">Key</th><th>Status</th><th style="width:110px" title="Sticky sessions are re-minted once older than the rotation interval (session rotation, min).">Rotates</th><th title="Counted locally by this proxy — not the official free quota">Today/Total tokens</th><th>Last used</th><th title="Main exit first, backup as fallback; both down = row skipped (isolation).">Proxy binding</th><th style="width:130px;text-align:center">Actions</th><th style="text-align:center" title="Routing participation: unchecked keys never enter request rotation. Newly added keys start disabled — tick Pool to enable. Minting follows routing — keys with routing disabled stop auto-minting.">Pool</th></tr></thead>
+        <tbody id="ocKeysBody"><tr><td colspan="9" class="empty">Loading...</td></tr></tbody>
       </table>
     </div>
     <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin:10px 6px 4px">
@@ -835,7 +841,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
             <th title="Counted locally by this proxy — not the official free quota">Today/Total tokens</th>
             <th>Last used</th>
             <th title="Main exit first, backup as fallback; both down = row skipped (isolation).">Proxy binding</th>
-            <th>Actions</th>
+            <th style="text-align:center">Actions</th>
             <th style="text-align:center" title="Routing participation. New rows start disabled — tick Pool to enable.">Pool</th>
           </tr>
         </thead>
@@ -847,6 +853,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
     <div style="display:flex;align-items:center;gap:8px;margin:10px 6px 4px">
       <div style="flex:1;display:flex;gap:8px;justify-content:flex-start">
         <button class="btn btn-primary btn-sm" onclick="openWorkbuddyAdd()">Add account</button>
+        <button class="btn btn-sm" id="wbTestAllBtn" onclick="batchTestWorkbuddyAccounts()" title="Run the Test probe on every row.">Test all</button>
       </div>
       <div style="flex:1;display:flex;gap:8px;justify-content:center">
         <button class="btn btn-sm" onclick="stageAllWbPool(true)">Enable all</button>
@@ -970,7 +977,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
     </div>
     <div class="table-wrap" style="margin-bottom:10px">
       <table>
-        <thead><tr><th style="width:50px">#</th><th style="width:150px">Key</th><th title="Counted locally by this proxy — not the official free quota">Today/Total tokens</th><th>Last used</th><th>Cooldown</th><th title="Main exit first, backup as fallback; both down = row skipped (isolation).">Proxy binding</th><th style="width:130px"></th><th style="text-align:center" title="Routing participation. New rows start disabled — tick Pool to enable.">Pool</th></tr></thead>
+        <thead><tr><th style="width:50px">#</th><th style="width:150px">Key</th><th>Status</th><th title="Counted locally by this proxy — not the official free quota">Today/Total tokens</th><th>Last used</th><th title="Main exit first, backup as fallback; both down = row skipped (isolation).">Proxy binding</th><th style="width:130px;text-align:center">Actions</th><th style="text-align:center" title="Routing participation. New rows start disabled — tick Pool to enable.">Pool</th></tr></thead>
         <tbody id="orKeysBody"><tr><td colspan="8" class="empty">Loading...</td></tr></tbody>
       </table>
     </div>
@@ -1036,7 +1043,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
     </div>
     <div class="table-wrap" style="margin-bottom:10px">
       <table>
-        <thead><tr><th style="width:50px">#</th><th style="width:150px">Key</th><th title="Counted locally by this proxy — not the official free quota">Today/Total tokens</th><th>Last used</th><th>Cooldown</th><th title="Main exit first, backup as fallback; both down = row skipped (isolation).">Proxy binding</th><th style="width:130px"></th><th style="text-align:center" title="Routing participation. New rows start disabled — tick Pool to enable.">Pool</th></tr></thead>
+        <thead><tr><th style="width:50px">#</th><th style="width:150px">Key</th><th>Status</th><th title="Counted locally by this proxy — not the official free quota">Today/Total tokens</th><th>Last used</th><th title="Main exit first, backup as fallback; both down = row skipped (isolation).">Proxy binding</th><th style="width:130px;text-align:center">Actions</th><th style="text-align:center" title="Routing participation. New rows start disabled — tick Pool to enable.">Pool</th></tr></thead>
         <tbody id="amdKeysBody"><tr><td colspan="8" class="empty">Loading...</td></tr></tbody>
       </table>
     </div>
@@ -1103,7 +1110,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
     </div>
     <div class="table-wrap" style="margin-bottom:10px">
       <table>
-        <thead><tr><th style="width:50px">#</th><th style="width:150px">Key</th><th title="Counted locally by this proxy — not the official free quota">Today/Total tokens</th><th>Last used</th><th>Cooldown</th><th title="Main exit first, backup as fallback; both down = row skipped (isolation).">Proxy binding</th><th style="width:130px"></th><th style="text-align:center" title="Routing participation. New rows start disabled — tick Pool to enable.">Pool</th></tr></thead>
+        <thead><tr><th style="width:50px">#</th><th style="width:150px">Key</th><th>Status</th><th title="Counted locally by this proxy — not the official free quota">Today/Total tokens</th><th>Last used</th><th title="Main exit first, backup as fallback; both down = row skipped (isolation).">Proxy binding</th><th style="width:130px;text-align:center">Actions</th><th style="text-align:center" title="Routing participation. New rows start disabled — tick Pool to enable.">Pool</th></tr></thead>
         <tbody id="thKeysBody"><tr><td colspan="8" class="empty">Loading...</td></tr></tbody>
       </table>
     </div>
@@ -1193,7 +1200,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
   <div class="section-body">
     <div class="table-wrap" style="margin-bottom:10px">
       <table>
-        <thead><tr><th style="width:50px">#</th><th style="width:150px">Key</th><th title="Counted locally by this proxy — not the official free quota">Today/Total tokens</th><th>Last used</th><th>Cooldown</th><th title="Main exit first, backup as fallback; both down = row skipped (isolation).">Proxy binding</th><th style="width:130px"></th><th style="text-align:center" title="Routing participation. New rows start disabled — tick Pool to enable.">Pool</th></tr></thead>
+        <thead><tr><th style="width:50px">#</th><th style="width:150px">Key</th><th>Status</th><th title="Counted locally by this proxy — not the official free quota">Today/Total tokens</th><th>Last used</th><th title="Main exit first, backup as fallback; both down = row skipped (isolation).">Proxy binding</th><th style="width:130px;text-align:center">Actions</th><th style="text-align:center" title="Routing participation. New rows start disabled — tick Pool to enable.">Pool</th></tr></thead>
         <tbody id="otherKeysBody"><tr><td colspan="8" class="empty">No keys configured</td></tr></tbody>
       </table>
     </div>
@@ -1503,6 +1510,15 @@ const fmtWhen = s => {
   const d = new Date(s);
   return isNaN(d.getTime()) ? s : d.toLocaleString('en-US');
 };
+// fmtShort 紧凑时刻（MM-DD HH:mm）：表格窄列（冷却中/轮换周期/恢复提示）用，
+// 避免完整 toLocaleString 长串撑宽挤压相邻列；完整读数放 title 悬浮。
+const fmtShort = s => {
+  if (!s || String(s).startsWith('0001-')) return '';
+  const d = new Date(s);
+  if (isNaN(d.getTime())) return String(s);
+  const p = n => String(n).padStart(2, '0');
+  return (d.getMonth() + 1) + '-' + p(d.getDate()) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
+};
 const fmtTokens = n => {
   n = n || 0;
   if (n >= 1000000) return (n / 1000000).toFixed(2).replace(/\.?0+$/, '') + 'M';
@@ -1539,8 +1555,6 @@ const I18N_ZH = {
   'Import JSON': '导入 JSON',
   'Failed to load WorkBuddy accounts: ': '加载 WorkBuddy 账号失败：',
   'Credits': '额度',
-  'Success / errors': '成功 / 错误',
-  'Last success': '最近成功',
   'Check-in': '签到',
   'Disabled': '已停用',
   'Deleted': '已删除',
@@ -1830,7 +1844,6 @@ const I18N_ZH = {
   'Test': '测试',
   'Reset': '重置',
   'Open': '打开',
-  'Tokens': 'Token 用量',
   'Admin panel:': '管理面板：',
   'API address:': 'API 地址：',
   'Config export / import': '配置导入导出',
@@ -1913,8 +1926,8 @@ const I18N_ZH = {
   'Probe model (used by the Test buttons):': '探测模型（Test 按钮使用）：',
   'auto — big-pickle first, then live models': '自动 —— big-pickle 优先，其次 live 模型',
   'Key': 'Key',
-  'Usage': '用量',
   'Session': '会话',
+  'TTFB': '首包耗时',
   'Minted at': '铸造时间',
   'Rate-limit defense': '限流防御',
   'Session rotation (min):': '会话轮换（分钟）：',
@@ -1923,7 +1936,6 @@ const I18N_ZH = {
   'Switch language / 切换语言': '切换语言',
   'Sticky sessions are re-minted once older than the rotation interval (session rotation, min).': '粘性会话超过轮换间隔后重新铸造（会话轮换，分钟）。',
   'cooling': '冷却中',
-  ' · until ': ' · 至 ',
   'Base URL': 'Base URL',
   'Rate-limit defense': '限流防御',
   'Max concurrency': '最大并发',
@@ -1945,7 +1957,7 @@ const I18N_ZH = {
   'Today': '今日',
   'Total': '累计',
   'No data': '暂无数据',
-  // 会话轮换输入框（ocSessionRotate）与账号池用量列的悬浮说明
+  // 会话轮换输入框（ocSessionRotate）与账号池 token 列的悬浮说明
   'Mint a fresh session id for a key once it is this old. 0 = never rotate (a long-lived session makes the first request slow after a few days).': '超过该时长（分钟）就为 key 重新铸造会话 ID。0 = 从不轮换（长期会话会让几天后的首个请求变慢）。',
   'total': '累计',
   'tokens (exact when upstream returns usage, otherwise estimated)': 'tokens（上游返回 usage 时精确，否则为估算）',
@@ -1959,6 +1971,7 @@ const I18N_ZH = {
   'OpenRouter keys without proxy bindings follow this switch.': 'OpenRouter 未绑定代理的 key 遵循此开关。',
   'AMDCloud keys without proxy bindings follow this switch.': 'AMDCloud 未绑定代理的 key 遵循此开关。',
   'TokenHarbor keys without proxy bindings follow this switch.': 'TokenHarbor 未绑定代理的 key 遵循此开关。',
+  'Other sub-platform keys without proxy bindings follow this switch.': 'Other 子平台未绑定代理的 key 遵循此开关。',
   'Pool': '启用',
   'Routing participation. New rows start disabled — tick Pool to enable.': '路由参与开关：新增行默认禁用，勾选 Pool 后参与轮转。',
   'Routing participation: unchecked keys never enter request rotation. Newly added keys start disabled — tick Pool to enable. Minting follows routing — keys with routing disabled stop auto-minting.': '路由参与开关：不勾选的 key 不进入请求轮转，铸造跟随路由（路由禁用的 key 不再自动铸造）。新增 key 默认禁用，勾选 Pool 后启用。',
@@ -1996,9 +2009,7 @@ const I18N_ZH = {
   'Delete combo ': '删除自定义别名 ',
   '? Clients using this alias will no longer be able to call it.': '？使用该别名的客户端将无法继续调用。',
   'Delete this account?': '确定删除该账号？',
-  'Delete ALL accounts? This cannot be undone!': '确定删除全部账号？此操作不可撤销！',
   'Delete this key?': '确定删除该 key？',
-  'Delete ALL API keys?': '确定删除全部 API key？',
   'OAuth failed: ': 'OAuth 登录失败：',
   'Recovers ': '恢复于 ',
   // ===== OpenRouter / AMDCloud / TokenHarbor 页（目录/限流/弹窗） =====
@@ -2048,7 +2059,6 @@ const I18N_ZH = {
   'Save order': '保存顺序',
   'Drag to reorder': '拖动以排序',
   'Delete this key': '删除此密钥',
-  'All its keys will be removed. This cannot be undone.': '其下所有密钥将被移除，此操作不可撤销。',
   'Name': '名称',
   'Name *': '名称 *',
   'Models': '模型',
@@ -2124,6 +2134,7 @@ const I18N_ZH = {
   'socks5 pool': 'socks5 池',
   'stale': '已失效',
   'no session': '无会话',
+  'Pending activation': '待启用',
   'no key': '无 key',
   'Click to copy': '点击复制',
   'Remove this key from the pool': '将该密钥移出池',
@@ -2139,8 +2150,6 @@ const I18N_ZH = {
   'Global policy saved': '全局策略已保存',
   'Proxy isolation settings saved': '代理隔离设置已保存',
   'Account deleted': '账号已删除',
-  'All accounts deleted': '已删除全部账号',
-  'All keys deleted': '已删除全部 key',
   'Key deleted': 'key 已删除',
   'Key generated': 'key 已生成',
   'New key generated (click to copy)': '新 key 已生成（点击复制）',
@@ -2163,6 +2172,19 @@ const I18N_ZH = {
   'This key will be removed from the pool. This cannot be undone.': '该密钥将从池中移除，此操作不可撤销。',
   'Batch test done': '批量测试完成',
   'Send a real probe request': '发送真实探测请求',
+  // 静态 hint 段落与状态标签补漏（TreeWalker 按文本节点整段匹配）
+  'Tokens': 'Token 消耗',
+  'are counted locally by this proxy (input+output; exact when upstream returns usage, otherwise estimated from the request body) to gauge headroom before official rate limits. The Test button sends a real probe request. The Reset button ': '由本代理在本地统计（输入+输出；上游返回 usage 时精确，否则按请求体估算），用于预估官方限额的余量。Test 按钮发送真实探测请求。Reset 按钮 ',
+  ": if still limited it stays in cooldown and shows the estimated recovery time; only a passing probe lifts the cooldown and resets today's stats.": '：若仍在限流则保持冷却并显示预计恢复时间；只有探测通过才会解除冷却并重置今日统计。',
+  'Counted since process start.': '统计自进程启动起。',
+  'No API keys yet': '还没有 API key',
+  '— no sub-platform yet —': '— 还没有子平台 —',
+  'Search models…': '搜索模型…',
+  'Average tunnel-setup time over successful attempts (TCP+TLS+CONNECT handshake only — excludes upstream first byte and task duration). Lower is better.': '成功请求的平均隧道建立耗时（仅统计 TCP+TLS+CONNECT 握手，不含上游首包与任务耗时）。越低越好。',
+  'live': '活跃',
+  'never': '从不',
+  'n/a': '无',
+  'not minted': '未铸造',
 };
 function T(s) { return LANG === 'zh' ? (I18N_ZH[s] || s) : s; }
 function toggleLang() {
@@ -2357,11 +2379,6 @@ function wbStatusInfo(account) {
   }
   return { cls: 'expired', label: status === 'unknown' ? 'Unknown' : status };
 }
-function wbFmtTime(value) {
-  if (!value || String(value).startsWith('0001-')) return '—';
-  const date = new Date(value);
-  return isNaN(date.getTime()) ? String(value) : date.toLocaleString('en-US');
-}
 function wbFmtTokens(value) {
   const n = Number(value || 0);
   if (n >= 1000000) return (n / 1000000).toFixed(2).replace(/\.?0+$/, '') + 'M';
@@ -2397,7 +2414,7 @@ function renderWorkbuddyAccounts() {
   const tbody = _('wbAccountsBody');
   if (!tbody) return;
   if (!wbAccounts.length) {
-    tbody.innerHTML = '<tr><td colspan="10" class="empty">No accounts yet</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="9" class="empty">No accounts yet</td></tr>';
     return;
   }
   wbSnapshot = {};
@@ -2412,8 +2429,13 @@ function renderWorkbuddyAccounts() {
     const credits = account.credits ?? account.remaining_credits ?? '—';
     const creditsTotal = account.credits_total ?? account.total_credits;
     const reason = account.disabled_reason || account.reason || '';
-    const statusHtml = '<span class="status ' + status.cls + '"><span class="status-dot ' + status.cls + '"></span>' + esc(status.label) + '</span>' +
-      (reason ? '<div class="hint" style="font-size:11px;margin-top:3px">' + esc(reason) + '</div>' : '');
+    // 状态单元格结构与 cline 页完全一致：chip + （冷却中的）恢复时刻小字，
+    // 不再常驻渲染 reason 第三行；原因收进 chip 的 title 悬浮（诊断信息不丢）。
+    const statusHtml = '<span class="status ' + status.cls + '"' + (reason ? ' title="' + esc(status.label + ' · ' + reason) + '"' : '') + '><span class="status-dot ' + status.cls + '"></span>' + esc(status.label) + '</span>' +
+      // 冷却中补恢复时刻（与 cline 页同款小字；完整读数走 title）
+      (status.cls === 'cooldown' && account.until && !String(account.until).startsWith('0001-')
+        ? '<div style="font-size:10px;color:var(--text3);margin-top:2px;white-space:nowrap" title="' + esc(fmtWhen(account.until)) + '">' + T('Recovers ') + esc(fmtShort(account.until)) + '</div>'
+        : '');
     // Pool（启用）列：勾选 = 进入账号池参与选号；未设置（pool_enabled 缺失）
     // 按启用渲染。勾选改动先暂存，由"保存"按钮统一提交。
     const poolEnabled = account.pool_enabled !== false;
@@ -2433,7 +2455,7 @@ function renderWorkbuddyAccounts() {
       '<td title="' + T('Today') + ' ' + fmtNum(tokensToday) + ' / ' + T('total') + ' ' + fmtNum(tokensTotal) + ' ' + T('tokens (exact when upstream returns usage, otherwise estimated)') + '">' + fmtTokens(tokensToday) + ' / ' + fmtTokens(tokensTotal) + '</td>' +
       '<td class="mono" style="font-size:11px">' + (lastUsed ? esc(fmtWhen(lastUsed)) : '-') + '</td>' +
       wbBindingCell(account) +
-      '<td><div class="wb-action-group">' +
+      '<td style="white-space:nowrap;text-align:center"><div class="wb-action-group">' +
         wbActionButton('test', id, 'Test') +
         wbActionButton('details', id, 'Points') +
         wbActionButton('delete', id, 'Delete', 'btn-danger') +
@@ -2462,7 +2484,7 @@ function updateWorkbuddySummary() {
 }
 async function loadWorkbuddyAccounts() {
   const tbody = _('wbAccountsBody');
-  if (tbody) tbody.innerHTML = '<tr><td colspan="10" class="empty">Loading...</td></tr>';
+  if (tbody) tbody.innerHTML = '<tr><td colspan="9" class="empty">Loading...</td></tr>';
   try {
     await loadProxyListCache();
     const [overview] = await Promise.all([wbCall('overview'), loadWorkbuddyProxyState()]);
@@ -2476,7 +2498,7 @@ async function loadWorkbuddyAccounts() {
       wbAccounts = [];
       renderWorkbuddyAccounts();
     } else if (tbody) {
-      tbody.innerHTML = '<tr><td colspan="10" class="empty">' + esc(T('Failed to load WorkBuddy accounts: ') + e.message) + '</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="9" class="empty">' + esc(T('Failed to load WorkBuddy accounts: ') + e.message) + '</td></tr>';
     }
     updateWorkbuddySummary();
   }
@@ -2581,8 +2603,34 @@ async function workbuddyActionFrom(button) {
   finally { button.disabled = false; }
 }
 /* ---- WB 单号可用性探测（与 key 平台 Test 同构：spinner + 结果 toast） ---- */
-async function workbuddyTestAccount(button, id) {
-  const original = button ? button.innerHTML : '';
+// wbBatchTestIds 供批量测试与单账号测试共用：逐个账号真实探测，汇总 toast。
+async function batchTestWorkbuddyAccounts() {
+  const btn = _('wbTestAllBtn');
+  const ids = wbAccounts.map(wbRowId).filter(Boolean);
+  if (!ids.length) { toast(T('No accounts to test'), 'info'); return; }
+  const original = btn ? btn.innerHTML : '';
+  if (btn) btn.disabled = true;
+  let ok = 0, cool = 0, err = 0;
+  try {
+    for (let i = 0; i < ids.length; i++) {
+      if (btn) btn.innerHTML = '<span class="loading"></span>' + (i + 1) + '/' + ids.length;
+      try {
+        const d = await wbCall('accounts/' + encodeURIComponent(ids[i]) + '/test', {}, {});
+        if (d.status === 'active') ok++;
+        else if (d.status === 'cooldown') cool++;
+        else err++;
+      } catch (e) { err++; }
+    }
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = original; }
+  }
+  toast(T('Batch test done: ') + ids.length + T(' tested, ') + ok + T(' ok') +
+    (cool ? T(', ') + cool + T(' cooling') : '') + (err ? T(', ') + err + T(' error') : ''),
+    err ? 'warning' : 'success', 6000);
+  loadWorkbuddyAccounts();
+}
+
+async function workbuddyTestAccount(button, id) { const original = button ? button.innerHTML : '';
   if (button) { button.disabled = true; button.innerHTML = '<span class="loading"></span>Testing'; }
   try {
     const d = await wbCall('accounts/' + encodeURIComponent(id) + '/test', {}, {});
@@ -3140,7 +3188,7 @@ async function loadAccounts() {
       summary.textContent = (list || []).length + ' ' + T('accounts') + ' · ' + active + ' ' + T('active') + ' · ' + cooling + ' ' + T('cooling');
     }
     if (!list || list.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="9" class="empty">No accounts yet</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="8" class="empty">No accounts yet</td></tr>';
       return;
     }
     const sn = { active: 'Active', cooldown: 'Cooldown', expired: 'Expired' };
@@ -3150,8 +3198,8 @@ async function loadAccounts() {
       // Cooldown label: show estimated recovery time
       let statusExtra = '';
       if (a.status === 'cooldown') {
-        const until = a.cooldownUntil ? new Date(a.cooldownUntil).toLocaleString('en-US') : '';
-        statusExtra = until ? '<div style="font-size:10px;color:var(--text3);margin-top:2px">' + T('Recovers ') + esc(until) + '</div>' : '';
+        const until = a.cooldownUntil ? fmtShort(a.cooldownUntil) : '';
+        statusExtra = until ? '<div style="font-size:10px;color:var(--text3);margin-top:2px;white-space:nowrap" title="' + esc(fmtWhen(a.cooldownUntil)) + '">' + T('Recovers ') + esc(until) + '</div>' : '';
       }
       // Proxy binding cells: main/backup comboboxes (Global / Direct / proxies
       // with type-ahead) saved on change. A binding that no longer exists in
@@ -3307,6 +3355,19 @@ function proxyRecentRate(p) {
   const r = proxyHealthByProxy[proxyHealthKey(p)];
   if (!r || r.recentRate === null || r.recentRate === undefined) return null;
   return { text: Math.round(r.recentRate * 100) + '%', tier: proxyRateTier(r.recentRate) };
+}
+// proxyRecentHs 代理下拉/徽标用的平均握手延迟：数据与在线率同源
+//（proxyHealthByProxy ← runtime.proxyHealth 的 avgHsMs），无样本或 0 返回
+// null（不标注）。人类可读：1865ms→1.8s、653ms→0.6s（截断不四舍五入，
+// 与在线率标签同款定宽徽标）。五档取在线率镜像（越低越好）：
+// <300ms 绿 / <600ms 蓝 / <1s 粉 / <2s 黄 / ≥2s 红。
+function proxyRecentHs(p) {
+  const r = proxyHealthByProxy[proxyHealthKey(p)];
+  const ms = Math.round(Number(r && r.avgHsMs) || 0);
+  if (ms <= 0) return null;
+  const text = ms < 100 ? '<0.1s' : (Math.floor(ms / 100) / 10) + 's';
+  const tier = ms < 300 ? 'green' : ms < 600 ? 'blue' : ms < 1000 ? 'pink' : ms < 2000 ? 'yellow' : 'red';
+  return { text: text, tier: tier };
 }
 // 在线率五档：≥80% 绿、≥60% 蓝、≥40% 粉、≥20% 黄、以下红；底色取主题色
 //（双主题各一套）。代理下拉框（eg-badge/eg-rate）与代理池页健康表
@@ -3517,24 +3578,28 @@ function egLabel(v) {
   } catch (e) { /* 非 URL 形态，回退打码 */ }
   return maskProxyLabel(v);
 }
-// egBadgeHTML 代理值的"最近在线率"徽标 HTML：与下拉菜单项的 eg-rate 同源
-//（proxyHealthByProxy 缓存、同一五档配色）。全局/直连或无样本时返回空串
-//（不占位）。底色按在线率五档取主题色。
+// egBadgeHTML 代理值的闭合徽标 HTML：在线率 + 平均握手延迟，与下拉菜单项的
+// eg-rate 同源（proxyHealthByProxy 缓存、同一套五档配色）。全局/直连或两个
+// 指标都无样本时返回空串（不占位）。在线率在右（有延迟徽标时让位 46px），
+// 握手延迟（.hs）在其左，两者定宽同 34px。
 function egBadgeHTML(value) {
   if (!value || value === EGRESS_DIRECT) return '';
   const rate = proxyRecentRate(value);
-  if (!rate) return '';
-  return '<span class="eg-badge t-' + rate.tier + (rate.text.length > 3 ? ' w3' : '') + '">' + esc(rate.text) + '</span>';
+  const hs = proxyRecentHs(value);
+  if (!rate && !hs) return '';
+  return (rate ? '<span class="eg-badge t-' + rate.tier + (rate.text.length > 3 ? ' w3' : '') + '"' + (hs ? ' style="right:46px"' : '') + '>' + esc(rate.text) + '</span>' : '') +
+    (hs ? '<span class="eg-badge hs w3 t-' + hs.tier + '">' + esc(hs.text) + '</span>' : '');
 }
-// egSyncBadge 按当前 dataset.value 重绘右侧在线率徽标（选中/失焦/联动后调用）。
-// 无样本或全局/直连时移除徽标并收回右侧留白。
+// egSyncBadge 按当前 dataset.value 重绘右侧在线率/握手延迟徽标（选中/失焦/
+// 联动后调用）。双指标皆无或全局/直连时移除徽标并收回右侧留白。
 function egSyncBadge(input) {
   const wrap = input.closest ? input.closest('.eg-wrap') : null;
   if (!wrap) return;
-  const old = wrap.querySelector('.eg-badge');
-  if (old) old.remove();
+  const old = wrap.querySelectorAll('.eg-badge');
+  old.forEach(el => el.remove());
   const html = egBadgeHTML(input.dataset.value || '');
   wrap.classList.toggle('has-badge', !!html);
+  wrap.classList.toggle('has-hs', html.indexOf('eg-badge hs') >= 0);
   if (html) wrap.insertAdjacentHTML('beforeend', html);
 }
 function egComboHTML(kind, id, slot, value, title, disabled) {
@@ -3542,9 +3607,9 @@ function egComboHTML(kind, id, slot, value, title, disabled) {
   const t = disabled
     ? T(slot === 'backup' && !backupProxyOn ? 'Backup proxies are disabled — follows the main slot' : 'Follows the main slot')
     : title;
-  // 在线率徽标：选中后仍显示该节点的最近在线率，聚焦输入时由 CSS 隐藏
+  // 在线率徽标：选中后仍显示该节点的最近在线率与平均握手延迟，聚焦输入时由 CSS 隐藏
   const badge = egBadgeHTML(value || '');
-  return '<span class="eg-wrap' + (badge ? ' has-badge' : '') + '">' +
+  return '<span class="eg-wrap' + (badge ? ' has-badge' : '') + (badge.indexOf('eg-badge hs') >= 0 ? ' has-hs' : '') + '">' +
     '<input type="text" class="eg-input" data-eg="' + kind + '" data-egid="' + esc(id) + '" data-slot="' + slot + '" data-value="' + esc(value || '') + '" value="' + esc(egLabel(value)) + '" title="' + esc(t) + '"' + (disabled ? ' disabled' : '') + ' autocomplete="off" spellcheck="false">' +
     badge +
     '</span>';
@@ -3605,15 +3670,18 @@ function egRenderItems(input, menu, q) {
     const label = egLabel(p).toLowerCase();
     return label.includes(ql) || p.toLowerCase().includes(ql);
   };
-  const proxyItem = p => ({ v: p, label: egLabel(p), active: cur === p, rate: proxyRecentRate(p) });
+  const proxyItem = p => ({ v: p, label: egLabel(p), active: cur === p, rate: proxyRecentRate(p), hs: proxyRecentHs(p) });
   const proxies = q === ''
     ? proxyListCache.map(proxyItem)
     : (ready
         ? proxyListCache.filter(matches).map(proxyItem)
         : []);
+  // 菜单项右侧双标签：在线率在最右，握手延迟（.eg-rate.hs-tag）在其左；
+  // 两者同 34px 定宽、同五档配色（延迟档位为其镜像）。
   let html = items.concat(proxies).map(it =>
     '<div class="eg-item' + (it.active ? ' active' : '') + '" data-value="' + esc(it.v) + '">' + esc(it.label) +
     (it.rate ? '<span class="eg-rate t-' + it.rate.tier + (it.rate.text.length > 3 ? ' w3' : '') + '">' + it.rate.text + '</span>' : '') +
+    (it.hs ? '<span class="eg-rate hs-tag w3 t-' + it.hs.tier + '">' + it.hs.text + '</span>' : '') +
     '</div>'
   ).join('');
   if (q !== '' && !proxies.length) html += '<div class="eg-item eg-hint">' + T('No matching proxies') + '</div>';
@@ -3757,14 +3825,6 @@ async function importConfigFromFile() {
   } catch (e) { toast(T('Import failed: ') + e.message, 'error'); }
 }
 
-async function deleteAllAccounts() {
-  if (!confirm(T('Delete ALL accounts? This cannot be undone!'))) return;
-  try {
-    await api('POST', '/accounts/delete-all', {});
-    toast('All accounts deleted', 'success');
-    loadAccounts(); loadStats();
-  } catch (e) { toast(T('Delete failed: ') + e.message, 'error'); }
-}
 
 // ========== Token import ==========
 // Credential type auto-detection: "sk_..." = static Cline API key, anything
@@ -3823,16 +3883,6 @@ async function deleteKey(key) {
   } catch (e) { toast(T('Delete failed: ') + e.message, 'error'); }
 }
 
-async function deleteAllKeys() {
-  if (!confirm(T('Delete ALL API keys?'))) return;
-  try {
-    const d = await api('GET', '/keys');
-    const keys = d.data.keys || [];
-    for (const k of keys) await api('POST', '/keys/delete', { key: k });
-    toast('All keys deleted', 'success');
-    loadKeys();
-  } catch (e) { toast(T('Delete failed: ') + e.message, 'error'); }
-}
 
 async function deleteAllData() {
   if (!confirm(T('Delete ALL persisted data? This will clear Cline accounts and client keys, OpenCode keys, WorkBuddy accounts, the proxy pool, default model, request headers, scheduling strategy, custom aliases, sticky sessions, and request logs. This cannot be undone!'))) return;
@@ -4289,8 +4339,8 @@ async function saveOcConfig() {
   } catch (e) { toast(T('Save failed: ') + e.message, 'error'); }
 }
 
-// per-key 状态表：key 掩码 / 用量 / 会话（ID + live 状态 + 下次轮换时刻）/
-// 冷却（含预计恢复时刻）/ 测试+删除。
+// per-key 状态表：key 掩码 / 今日累计 token / 最近使用 / 会话（ID + live 状态 +
+// 下次轮换时刻）/ 冷却（含预计恢复时刻）/ 测试+删除。
 // Test 与 cline 账号的同语义：真实探测，成功即复位该 key 的冷却。
 // Proxy binding 列与 Pool（路由启用）列均为暂存编辑：改动行高亮，由
 // "保存"按钮统一提交（隔离模式语义见 Proxy pool 页）。铸造跟随路由启用，
@@ -4303,22 +4353,30 @@ function renderOcKeyStates(ks) {
   const rotateMin = ocCfgCache.sessionRotateMinutes || 0;
   tb.innerHTML = ks.length
     ? ks.map(k => {
-        const st = k.sessionLive
-          ? '<span style="color:var(--accent2)">live</span>'
-          : '<span style="color:var(--danger)">no session</span>';
-        const sess = k.session
-          ? '<span style="font-family:monospace;font-size:11px">' + esc(k.session) + '…</span> ' + st
-          : (k.keyMask === 'public (no key)' ? '<span style="color:var(--text2)">n/a</span>' : st);
+        // 状态列（合并原 会话+冷却 两列，chip 样式与 cline 状态列一致）：
+        // 冷却中（含预计恢复小字）> public 哨兵 n/a > 会话活跃（会话 ID 与
+        // 铸造时刻进 title）> 会话已失效（下次请求自动重铸）> 无会话（待启用，
+        // 路由启用后自动铸造）。
+        let stCell;
+        if (k.cooling) {
+          stCell = '<span class="status cooldown"><span class="status-dot cooldown"></span>' + T('Cooldown') + '</span>' +
+            (k.cooldownUntil ? '<div style="font-size:10px;color:var(--text3);margin-top:2px;white-space:nowrap" title="' + esc(fmtWhen(k.cooldownUntil)) + '">' + T('Recovers ') + esc(fmtShort(k.cooldownUntil)) + '</div>' : '');
+        } else if (k.keyMask === 'public (no key)') {
+          stCell = '<span style="color:var(--text2)">n/a</span>';
+        } else if (k.session && k.sessionLive) {
+          stCell = '<span class="status active" title="' + esc(T('session minted')) + ' ' + esc(fmtWhen(k.sessionCreatedAt)) + ' · ' + esc(k.session) + '…"><span class="status-dot active"></span>' + T('Active') + '</span>';
+        } else if (k.session) {
+          stCell = '<span class="status pending" title="' + esc(T('session minted')) + ' ' + esc(fmtWhen(k.sessionCreatedAt)) + '"><span class="status-dot pending"></span>' + T('stale') + '</span>';
+        } else {
+          stCell = '<span class="status pending"><span class="status-dot pending"></span>' + T('Pending activation') + '</span>';
+        }
         let rot = '<span style="color:var(--text2)">-</span>';
         if (rotateMin > 0 && k.sessionCreatedAt) {
           const due = new Date(new Date(k.sessionCreatedAt).getTime() + rotateMin * 60000);
-          rot = '<span style="font-size:11px" title="' + esc(T('session minted')) + ' ' + esc(fmtWhen(k.sessionCreatedAt)) + '">' + esc(fmtWhen(due.toISOString())) + '</span>';
+          rot = '<span style="font-size:11px;white-space:nowrap" title="' + esc(T('session minted')) + ' ' + esc(fmtWhen(k.sessionCreatedAt)) + ' · ' + esc(fmtWhen(due.toISOString())) + '">' + esc(fmtShort(due.toISOString())) + '</span>';
         } else if (rotateMin === 0) {
           rot = '<span style="color:var(--text2)" title="rotation disabled">never</span>';
         }
-        const cool = k.cooling
-          ? '<span style="color:var(--danger)">' + T('cooling') + (k.cooldownUntil ? T(' · until ') + esc(fmtWhen(k.cooldownUntil)) : '') + '</span>'
-          : '<span style="color:var(--text2)">-</span>';
         // omitempty 下未绑定 key 没有这两个键，归一化为 ''
         const pMain = k.proxyMain || '';
         const pBackup = k.proxyBackup || '';
@@ -4339,22 +4397,21 @@ function renderOcKeyStates(ks) {
           ? '<span style="color:var(--text3)">-</span>'
           : '<input type="checkbox" data-zr="' + k.index + '"' + (routed ? ' checked' : '') + ' title="' + esc(T('Participates in request routing')) + '">') + '</td>';
         // 操作列：测试（真实探测）+ 删除（红色，从 key 池移除该 key）
-        const actions = '<td style="white-space:nowrap">' + (k.keyMask === 'public (no key)'
+        const actions = '<td style="white-space:nowrap;text-align:center">' + (k.keyMask === 'public (no key)'
           ? '<span style="color:var(--text3)">-</span>'
           : '<button class="btn btn-sm" data-zk="' + k.index + '">Test</button> ' +
             '<button class="btn btn-sm btn-danger" data-zdel="' + k.index + '" title="Remove this key from the pool">Delete</button>') + '</td>';
         return '<tr draggable="true" data-drag-id="' + k.index + '"><td>#' + (k.index + 1) + (k.current ? ' <span style="color:var(--accent)" title="next in rotation">●</span>' : '') + '</td>' +
           '<td style="font-family:monospace;font-size:11px">' + esc(k.keyMask) + '</td>' +
+          '<td>' + stCell + '</td>' +
+          '<td>' + rot + '</td>' +
           keyTokensCell(k) +
           keyLastUsedCell(k) +
-          '<td>' + sess + '</td>' +
-          '<td>' + rot + '</td>' +
-          '<td>' + cool + '</td>' +
           bind +
           actions +
           routing + '</tr>';
       }).join('')
-    : '<tr><td colspan="10" class="empty">No opencode keys configured</td></tr>';
+    : '<tr><td colspan="9" class="empty">No opencode keys configured</td></tr>';
   tb.onclick = e => {
     const b = e.target.closest('button[data-zk]');
     if (b) { testZenKey(parseInt(b.dataset.zk, 10), b); return; }
@@ -4743,7 +4800,8 @@ async function refreshOrModels() {
   } catch (e) { toast(T('Refresh failed: ') + e.message, 'error'); }
 }
 
-// key 状态表：key 掩码 / 用量 / 冷却 / 代理绑定 / 测试 / 删除 / 启用（暂存编辑）。
+// key 状态表：key 掩码 / 今日累计 token / 最近使用 / 冷却 / 代理绑定 / 测试 /
+// 删除 / 启用（暂存编辑）。
 function renderOrKeyStates(ks) {
   const tb = _('orKeysBody');
   if (!tb) return;
@@ -4751,8 +4809,9 @@ function renderOrKeyStates(ks) {
   tb.innerHTML = ks.length
     ? ks.map(k => {
         const cool = k.cooling
-          ? '<span style="color:var(--danger)">' + T('cooling') + (k.cooldownUntil ? T(' · until ') + esc(fmtWhen(k.cooldownUntil)) : '') + '</span>'
-          : '<span style="color:var(--text2)">-</span>';
+          ? '<span class="status cooldown"><span class="status-dot cooldown"></span>' + T('Cooldown') + '</span>' +
+            (k.cooldownUntil ? '<div style="font-size:10px;color:var(--text3);margin-top:2px;white-space:nowrap" title="' + esc(fmtWhen(k.cooldownUntil)) + '">' + T('Recovers ') + esc(fmtShort(k.cooldownUntil)) + '</div>' : '')
+          : '<span class="status active"><span class="status-dot active"></span>' + T('Active') + '</span>';
         const pMain = k.proxyMain || '';
         const pBackup = k.proxyBackup || '';
         const backupLocked = !backupProxyOn || pMain === '' || pMain === EGRESS_DIRECT;
@@ -4767,14 +4826,14 @@ function renderOrKeyStates(ks) {
         orKeySnapshot[k.index] = { main: pMain, backup: backupVal, routing: routed };
         const routing = '<td style="text-align:center">' +
           '<input type="checkbox" data-orr="' + k.index + '"' + (routed ? ' checked' : '') + ' title="' + esc(T('Participates in request routing')) + '">' + '</td>';
-        const actions = '<td style="white-space:nowrap">' +
+        const actions = '<td style="white-space:nowrap;text-align:center">' +
           '<button class="btn btn-sm" data-ort="' + k.index + '">Test</button> ' +
           '<button class="btn btn-sm btn-danger" data-ordel="' + k.index + '" title="Remove this key from the pool">Delete</button>' + '</td>';
         return '<tr draggable="true" data-drag-id="' + k.index + '"><td>#' + (k.index + 1) + '</td>' +
           '<td style="font-family:monospace;font-size:11px">' + esc(k.keyMask) + '</td>' +
+          '<td>' + cool + '</td>' +
           keyTokensCell(k) +
           keyLastUsedCell(k) +
-          '<td>' + cool + '</td>' +
           bind +
           actions +
           routing + '</tr>';
@@ -5008,7 +5067,8 @@ async function refreshAmdModels() {
   } catch (e) { toast(T('Refresh failed: ') + e.message, 'error'); }
 }
 
-// key 状态表：key 掩码 / 用量 / 冷却 / 代理绑定 / 测试 / 删除 / 启用（暂存编辑）。
+// key 状态表：key 掩码 / 今日累计 token / 最近使用 / 冷却 / 代理绑定 / 测试 /
+// 删除 / 启用（暂存编辑）。
 function renderAmdKeyStates(ks) {
   const tb = _('amdKeysBody');
   if (!tb) return;
@@ -5016,8 +5076,9 @@ function renderAmdKeyStates(ks) {
   tb.innerHTML = ks.length
     ? ks.map(k => {
         const cool = k.cooling
-          ? '<span style="color:var(--danger)">' + T('cooling') + (k.cooldownUntil ? T(' · until ') + esc(fmtWhen(k.cooldownUntil)) : '') + '</span>'
-          : '<span style="color:var(--text2)">-</span>';
+          ? '<span class="status cooldown"><span class="status-dot cooldown"></span>' + T('Cooldown') + '</span>' +
+            (k.cooldownUntil ? '<div style="font-size:10px;color:var(--text3);margin-top:2px;white-space:nowrap" title="' + esc(fmtWhen(k.cooldownUntil)) + '">' + T('Recovers ') + esc(fmtShort(k.cooldownUntil)) + '</div>' : '')
+          : '<span class="status active"><span class="status-dot active"></span>' + T('Active') + '</span>';
         const pMain = k.proxyMain || '';
         const pBackup = k.proxyBackup || '';
         const backupLocked = !backupProxyOn || pMain === '' || pMain === EGRESS_DIRECT;
@@ -5032,14 +5093,14 @@ function renderAmdKeyStates(ks) {
         amdKeySnapshot[k.index] = { main: pMain, backup: backupVal, routing: routed };
         const routing = '<td style="text-align:center">' +
           '<input type="checkbox" data-amdr="' + k.index + '"' + (routed ? ' checked' : '') + ' title="' + esc(T('Participates in request routing')) + '">' + '</td>';
-        const actions = '<td style="white-space:nowrap">' +
+        const actions = '<td style="white-space:nowrap;text-align:center">' +
           '<button class="btn btn-sm" data-amdt="' + k.index + '">Test</button> ' +
           '<button class="btn btn-sm btn-danger" data-amddel="' + k.index + '" title="Remove this key from the pool">Delete</button>' + '</td>';
         return '<tr draggable="true" data-drag-id="' + k.index + '"><td>#' + (k.index + 1) + '</td>' +
           '<td style="font-family:monospace;font-size:11px">' + esc(k.keyMask) + '</td>' +
+          '<td>' + cool + '</td>' +
           keyTokensCell(k) +
           keyLastUsedCell(k) +
-          '<td>' + cool + '</td>' +
           bind +
           actions +
           routing + '</tr>';
@@ -5273,7 +5334,8 @@ async function refreshTHModels() {
   } catch (e) { toast(T('Refresh failed: ') + e.message, 'error'); }
 }
 
-// key 状态表：key 掩码 / 用量 / 冷却 / 代理绑定 / 测试 / 删除 / 启用（暂存编辑）。
+// key 状态表：key 掩码 / 今日累计 token / 最近使用 / 冷却 / 代理绑定 / 测试 /
+// 删除 / 启用（暂存编辑）。
 function renderTHKeyStates(ks) {
   const tb = _('thKeysBody');
   if (!tb) return;
@@ -5281,8 +5343,9 @@ function renderTHKeyStates(ks) {
   tb.innerHTML = ks.length
     ? ks.map(k => {
         const cool = k.cooling
-          ? '<span style="color:var(--danger)">' + T('cooling') + (k.cooldownUntil ? T(' · until ') + esc(fmtWhen(k.cooldownUntil)) : '') + '</span>'
-          : '<span style="color:var(--text2)">-</span>';
+          ? '<span class="status cooldown"><span class="status-dot cooldown"></span>' + T('Cooldown') + '</span>' +
+            (k.cooldownUntil ? '<div style="font-size:10px;color:var(--text3);margin-top:2px;white-space:nowrap" title="' + esc(fmtWhen(k.cooldownUntil)) + '">' + T('Recovers ') + esc(fmtShort(k.cooldownUntil)) + '</div>' : '')
+          : '<span class="status active"><span class="status-dot active"></span>' + T('Active') + '</span>';
         const pMain = k.proxyMain || '';
         const pBackup = k.proxyBackup || '';
         const backupLocked = !backupProxyOn || pMain === '' || pMain === EGRESS_DIRECT;
@@ -5297,14 +5360,14 @@ function renderTHKeyStates(ks) {
         thKeySnapshot[k.index] = { main: pMain, backup: backupVal, routing: routed };
         const routing = '<td style="text-align:center">' +
           '<input type="checkbox" data-thr="' + k.index + '"' + (routed ? ' checked' : '') + ' title="' + esc(T('Participates in request routing')) + '">' + '</td>';
-        const actions = '<td style="white-space:nowrap">' +
+        const actions = '<td style="white-space:nowrap;text-align:center">' +
           '<button class="btn btn-sm" data-tht="' + k.index + '">Test</button> ' +
           '<button class="btn btn-sm btn-danger" data-thdel="' + k.index + '" title="Remove this key from the pool">Delete</button>' + '</td>';
         return '<tr draggable="true" data-drag-id="' + k.index + '"><td>#' + (k.index + 1) + '</td>' +
           '<td style="font-family:monospace;font-size:11px">' + esc(k.keyMask) + '</td>' +
+          '<td>' + cool + '</td>' +
           keyTokensCell(k) +
           keyLastUsedCell(k) +
-          '<td>' + cool + '</td>' +
           bind +
           actions +
           routing + '</tr>';
@@ -5698,32 +5761,18 @@ async function addOtherManualModel() {
   } catch (e) { toast(T('Add failed: ') + e.message, 'error'); }
 }
 
-async function deleteOtherManualModel(id) {
-  const p = currentOtherPlatform();
-  if (!p) return;
-  try {
-    const r = await api('POST', '/other/models/manual/delete', { slug: p.slug, model: id });
-    const np = r.data && r.data.platform;
-    if (np) {
-      otherKnownModels = np.models || [];
-      otherSelectedModels = np.selectedModels || [];
-      renderOtherModelSelect(otherKnownModels, otherSelectedModels, np.manualModels || []);
-      
-    }
-    toast(T('Deleted') + ': ' + id, 'success');
-  } catch (e) { toast(T('Delete failed: ') + e.message, 'error'); }
-}
 
 /* ---- 账号（key）表（与 AMDCloud 同构：DOM diff + 事件委托 + 拖拽） ---- */
 function renderOtherKeys(ks) {
   const tb = _('otherKeysBody');
   if (!tb) return;
   otherKeySnapshot = {};
-  if (!ks.length) { tb.innerHTML = '<tr><td colspan="7" class="empty">' + T('No keys configured') + '</td></tr>'; return; }
+  if (!ks.length) { tb.innerHTML = '<tr><td colspan="8" class="empty">' + T('No keys configured') + '</td></tr>'; return; }
   tb.innerHTML = ks.map((k, i) => {
     const cool = k.cooling
-      ? '<span style="color:var(--danger)">' + T('cooling') + (k.cooldownUntil ? T(' · until ') + esc(fmtWhen(k.cooldownUntil)) : '') + '</span>'
-      : '<span style="color:var(--text2)">-</span>';
+      ? '<span class="status cooldown"><span class="status-dot cooldown"></span>' + T('Cooldown') + '</span>' +
+        (k.cooldownUntil ? '<div style="font-size:10px;color:var(--text3);margin-top:2px;white-space:nowrap" title="' + esc(fmtWhen(k.cooldownUntil)) + '">' + T('Recovers ') + esc(fmtShort(k.cooldownUntil)) + '</div>' : '')
+      : '<span class="status active"><span class="status-dot active"></span>' + T('Active') + '</span>';
     const pMain = k.proxyMain || '';
     const pBackup = k.proxyBackup || '';
     const backupLocked = !backupProxyOn || pMain === '' || pMain === EGRESS_DIRECT;
@@ -5738,14 +5787,14 @@ function renderOtherKeys(ks) {
     otherKeySnapshot[k.index] = { main: pMain, backup: backupVal, routing: routed };
     const routing = '<td style="text-align:center">' +
       '<input type="checkbox" data-otr="' + k.index + '"' + (routed ? ' checked' : '') + ' title="' + esc(T('Participates in request routing')) + '">' + '</td>';
-    const actions = '<td style="white-space:nowrap">' +
+    const actions = '<td style="white-space:nowrap;text-align:center">' +
       '<button class="btn btn-sm" data-ott="' + k.index + '">' + T('Test') + '</button> ' +
       '<button class="btn btn-sm btn-danger" data-otdel="' + k.index + '" title="' + esc(T('Delete this key')) + '">' + T('Delete') + '</button>' + '</td>';
     return '<tr draggable="true" data-drag-id="' + k.index + '"><td>' + (i + 1) + '</td>' +
       '<td style="font-family:monospace;font-size:11px">' + esc(k.keyMask) + '</td>' +
+      '<td>' + cool + '</td>' +
       keyTokensCell(k) +
       keyLastUsedCell(k) +
-      '<td>' + cool + '</td>' +
       bind + actions + routing + '</tr>';
   }).join('');
   tb.onclick = e => {
@@ -5908,18 +5957,6 @@ async function doOtherPlatformCreate() {
   } catch (e) { toast(T('Create failed: ') + e.message, 'error'); }
 }
 
-async function deleteOtherPlatform() {
-  const p = currentOtherPlatform();
-  if (!p) return;
-  if (!confirm(T('Delete') + ' "' + (p.name || p.slug) + '" (' + p.prefix + ':)? ' + T('All its keys will be removed. This cannot be undone.'))) return;
-  try {
-    await api('POST', '/other/platforms/delete', { slug: p.slug });
-    currentOtherSlug = '';
-    toast(T('Deleted'), 'success');
-    await loadOtherConfig(); loadStats();
-    renderOtherManageList();
-  } catch (e) { toast(T('Delete failed: ') + e.message, 'error'); }
-}
 
 /* ---- 子平台管理弹窗：列表 / 删除 / 拖动排序 ---- */
 var otherManageDragSlug = '';

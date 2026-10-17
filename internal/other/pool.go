@@ -116,19 +116,6 @@ func PickKey(p *Platform, strategy string, boundRoutable func(key string) bool) 
 	return picked
 }
 
-// MarkSuccess 累计 key 的成功调用计数（内存态，面板展示）。
-func MarkSuccess(p *Platform, key string) {
-	if key == "" {
-		return
-	}
-	keyMu.Lock()
-	if p.Usage == nil {
-		p.Usage = map[string]int64{}
-	}
-	p.Usage[key]++
-	keyMu.Unlock()
-}
-
 // RecordKeyTokens 记录子平台 key 本次请求消耗的 token（prompt+completion），
 // 自动处理跨日重置，累计值不重置；同时刷新最近使用时间。tokens<=0 时忽略。
 func RecordKeyTokens(p *Platform, key string, tokens int64) {

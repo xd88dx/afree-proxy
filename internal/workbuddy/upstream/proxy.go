@@ -148,13 +148,3 @@ func (c *Client) doHTTP(req *http.Request, a *auth.Auth) (*http.Response, error)
 	return resp, err
 }
 
-func (c *Client) doChatHTTP(req *http.Request, a *auth.Auth) (*http.Response, error) {
-	cl, raw, err := c.chatClientFor(req.Context(), a)
-	if err != nil {
-		return nil, err
-	}
-	hsStart := time.Now()
-	resp, err := cl.Do(req)
-	c.observeProxy(raw, err, time.Since(hsStart).Milliseconds())
-	return resp, err
-}

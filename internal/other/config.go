@@ -51,8 +51,6 @@ type Platform struct {
 	Retries int `json:"retries"`
 	// Models 模型目录状态（拉取/手动/勾选/探测模型）。
 	Models ModelState `json:"models"`
-	// Usage 用量统计（内存态，不落盘）：key 明文 -> 成功调用计数。
-	Usage map[string]int64 `json:"-"`
 	// KeyTokens token 记账（内存态，不落盘）：key 明文 -> 今日/累计消耗与最近使用。
 	KeyTokens map[string]KeyTokenStats `json:"-"`
 	// Cool 冷却表（内存态，不落盘）：key 明文 -> 冷却截止时刻。
@@ -67,7 +65,7 @@ type Binding struct {
 }
 
 // KeyTokenStats 单个 key 的 token 记账：今日/累计消耗（prompt+completion）
-// 与跨日日期、最近成功时间。内存态（与 Usage 同口径，不落盘）。
+// 与跨日日期、最近成功时间。内存态（不落盘）。
 type KeyTokenStats struct {
 	Today      int64     `json:"today,omitempty"`
 	Total      int64     `json:"total,omitempty"`
@@ -167,9 +165,6 @@ func (c *Config) normalize() {
 		}
 		if p.Retries < 0 {
 			p.Retries = 0
-		}
-		if p.Usage == nil {
-			p.Usage = map[string]int64{}
 		}
 		if p.Cool == nil {
 			p.Cool = map[string]time.Time{}
@@ -336,10 +331,6 @@ func ClonePlatform(p *Platform) *Platform {
 	for k, v := range p.Models.Selected {
 		cp.Models.Selected[k] = v
 	}
-	cp.Usage = map[string]int64{}
-	for k, v := range p.Usage {
-		cp.Usage[k] = v
-	}
 	cp.Cool = map[string]time.Time{}
 	for k, v := range p.Cool {
 		cp.Cool[k] = v
@@ -358,7 +349,7 @@ func Set(next *Config) {
 	rebuildAllSemLocked()
 }
 
-// save 原子落盘（临时文件 + rename）。Usage/Cool 为运行时字段不落盘。
+// save 原子落盘（临时文件 + rename）。Cool 为运行时字段不落盘。
 func save() {
 	saveMu.Lock()
 	defer saveMu.Unlock()
@@ -370,7 +361,6 @@ func save() {
 	disk.Platforms = make([]Platform, len(cfg.Platforms))
 	for i, p := range cfg.Platforms {
 		cp := p
-		cp.Usage = nil
 		cp.Cool = nil
 		disk.Platforms[i] = cp
 	}

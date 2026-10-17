@@ -443,7 +443,7 @@ func setAllZenKeysRoutingEnabled(enabled bool) int {
 // 顺序追加在尾部，重复 index 幂等跳过；越界 index 整体拒绝）。
 // 持久化、Key=Keys[0] 兼容字段同步、轮转游标归零都由 setZenConfig 统一处理
 // ——重排后 round-robin 从第一个 key 重新开始，与新顺序的语义一致。
-// 冷却/用量/会话粘性都按 key 明文存储，与顺序无关，重排零影响。
+// 冷却/token/会话粘性都按 key 明文存储，与顺序无关，重排零影响。
 func reorderZenKeys(order []int) error {
 	cfg := getZenConfig()
 	n := len(cfg.Keys)
@@ -701,11 +701,6 @@ func setZenConfig(c *zenConfigData) {
 			delete(zenKeyCool, k)
 		}
 	}
-	for k := range zenKeyUsage {
-		if !valid[k] {
-			delete(zenKeyUsage, k)
-		}
-	}
 	zenKeyIdx = 0
 	zenKeyMu.Unlock()
 	// 会话粘性与收割计数同样按 key 存储，移除的 key 必须一并清掉：否则长跑容器
@@ -807,12 +802,11 @@ func maskZenKey(k string) string {
 }
 
 var (
-	zenKeyMu    sync.Mutex
-	zenKeyIdx   int
-	zenKeyUsage = map[string]int64{} // 每 key 成功调用计数（内存态）
+	zenKeyMu  sync.Mutex
+	zenKeyIdx int
 	// zenKeyTokens 每 key token 记账（内存态）：今日/累计消耗与最近使用。
 	zenKeyTokens = map[string]zenKeyTokenStats{}
-	zenKeyCool  = map[string]time.Time{}
+	zenKeyCool   = map[string]time.Time{}
 )
 
 // pickZenKey round-robin 选取一个未冷却的 key；全部冷却时按轮转顺序返回下一个。
@@ -927,19 +921,8 @@ func pickZenKey() string {
 	return picked
 }
 
-// markZenKeySuccess 在上游 200 后累计 key 的成功调用数（仅内存态，面板展示用）。
-// 计数放在成功路径而非选取路径，失败重试才不会虚增用量。
-func markZenKeySuccess(key string) {
-	if key == "" {
-		return
-	}
-	zenKeyMu.Lock()
-	zenKeyUsage[key]++
-	zenKeyMu.Unlock()
-}
-
 // zenKeyTokenStats 单个 key 的 token 记账：今日/累计消耗（prompt+completion）
-// 与跨日日期、最近成功时间。仅内存态（与 zenKeyUsage 同口径）。
+// 与跨日日期、最近成功时间。仅内存态。
 type zenKeyTokenStats struct {
 	Today      int64
 	Total      int64
@@ -2107,7 +2090,6 @@ func callZenResponsesAPI(ctx context.Context, params map[string]any, stream bool
 			return nil, rateLimited, fmt.Errorf("zen responses request: %w", err)
 		}
 		if resp.StatusCode == http.StatusOK {
-			markZenKeySuccess(key)
 			zenSessionMarkSuccess(key)
 			if stream {
 				resp.Header.Set("X-Afree-Used-Key", key)
@@ -2356,7 +2338,6 @@ func callZenAPI(ctx context.Context, params map[string]any, stream bool, opts ..
 			return nil, rateLimited, fmt.Errorf("zen request: %w", err)
 		}
 		if resp.StatusCode == http.StatusOK {
-			markZenKeySuccess(key)
 			zenSessionMarkSuccess(key)
 			resp.Header.Set("X-Afree-Used-Key", key)
 			return resp, rateLimited, nil

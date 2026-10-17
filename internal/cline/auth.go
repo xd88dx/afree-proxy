@@ -5,10 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 	"net/url"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 )
@@ -53,59 +51,6 @@ type clineRefreshResp struct {
 		RefreshToken string `json:"refreshToken"`
 		ExpiresAt    any    `json:"expiresAt"`
 	} `json:"data"`
-}
-
-var (
-	credentialsPath string
-)
-
-func init() {
-	credentialsPath = FindCredentialsFile()
-}
-
-func FindCredentialsFile() string {
-	// First, try next to the executable
-	exe, err := os.Executable()
-	if err == nil {
-		p := filepath.Join(filepath.Dir(exe), ".cline-credentials.json")
-		if kit.FileExists(p) {
-			return p
-		}
-	}
-	// Second, try current working directory
-	pwd, err := os.Getwd()
-	if err == nil {
-		p := filepath.Join(pwd, ".cline-credentials.json")
-		if kit.FileExists(p) {
-			return p
-		}
-	}
-	// Default to executable directory
-	if err == nil {
-		return filepath.Join(filepath.Dir(exe), ".cline-credentials.json")
-	}
-	pwd, _ = os.Getwd()
-	return filepath.Join(pwd, ".cline-credentials.json")
-}
-
-func SaveCredentials(rt string) {
-	c := map[string]string{"refreshToken": rt}
-	data, err := json.MarshalIndent(c, "", "  ")
-	if err != nil {
-		log.Printf("Failed to marshal credentials: %v", err)
-		return
-	}
-	// 原子写: 临时文件 + rename，崩溃中途写入不会截断原文件
-	tmp := credentialsPath + ".tmp"
-	if err := os.WriteFile(tmp, data, 0600); err != nil {
-		log.Printf("Failed to save credentials: %v", err)
-		return
-	}
-	if err := os.Rename(tmp, credentialsPath); err != nil {
-		log.Printf("Failed to save credentials (rename): %v", err)
-		return
-	}
-	log.Printf("Credentials saved to %s", credentialsPath)
 }
 
 func WorkosDeviceAuth() (*deviceAuthResp, error) {
@@ -257,64 +202,6 @@ func ParseExpiry(exp any) int64 {
 		}
 	}
 	return 0
-}
-
-func DoLogin() error {
-	fmt.Println("\nStarting Cline OAuth login...")
-
-	device, err := WorkosDeviceAuth()
-	if err != nil {
-		return err
-	}
-
-	authURL := device.VerificationURIComplete
-	if authURL == "" {
-		authURL = device.VerificationURI
-	}
-
-	fmt.Println("  1. Open this URL in your browser:")
-	fmt.Println("     " + authURL)
-	fmt.Println("  2. Enter code: " + device.UserCode)
-	fmt.Println("  3. Log in with Google, GitHub, or email")
-
-	// Try to open browser automatically
-	_ = OpenBrowser(authURL)
-
-	fmt.Println("  Waiting for authorization...")
-
-	interval := device.Interval
-	if interval < 5 {
-		interval = 5
-	}
-	expiresIn := device.ExpiresIn
-	if expiresIn <= 0 {
-		expiresIn = 300
-	}
-
-	workosTok, err := PollWorkosToken(device.DeviceCode, interval, expiresIn)
-	if err != nil {
-		return err
-	}
-
-	fmt.Println("  WorkOS authorized. Registering with Cline...")
-
-	reg, err := RegisterWithCline(workosTok.AccessToken, workosTok.RefreshToken)
-	if err != nil {
-		return err
-	}
-
-	if reg.Data.RefreshToken == "" {
-		return fmt.Errorf("cline registration missing refresh token")
-	}
-
-	SaveCredentials(reg.Data.RefreshToken)
-
-	email := "unknown"
-	if reg.Data.UserInfo != nil && reg.Data.UserInfo.Email != "" {
-		email = reg.Data.UserInfo.Email
-	}
-	fmt.Printf("  Login successful! Account: %s\n", email)
-	return nil
 }
 
 func OpenBrowser(url string) error {

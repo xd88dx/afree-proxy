@@ -227,7 +227,7 @@ func handleAMDConfigUpdate(w http.ResponseWriter, r *http.Request) {
 	writeAPI(w, http.StatusOK, apiResponse{Success: true, Message: "AMDCloud config saved"})
 }
 
-// amdCloneConfig 写时复制：拷贝运行时字段（路由表/绑定/用量/冷却）到新配置。
+// amdCloneConfig 写时复制：拷贝运行时字段（路由表/绑定/冷却）到新配置。
 func amdCloneConfig() (*amd.Config, *amd.Config) {
 	cur := amd.Get()
 	next := &amd.Config{
@@ -528,7 +528,7 @@ func amdTestKey(index int, modelID string) (map[string]any, string) {
 	return result, "active"
 }
 
-// clearAMDKeysForDataDelete 清空 AMDCloud key 池与绑定/路由/用量表（保留 baseURL
+// clearAMDKeysForDataDelete 清空 AMDCloud key 池与绑定/路由表（保留 baseURL
 // 与平台设置）。
 func clearAMDKeysForDataDelete() int {
 	cur, next := amdCloneConfig()

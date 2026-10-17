@@ -134,6 +134,24 @@ func (p *Pool) Cooldown(uid string, kind CoolKind, d time.Duration, reason strin
 	}
 }
 
+// ClearCooldown 仅解除账号级冷却（until/coolKind/reason），不动 disabled/paused/
+// 熔断与模型级冷却——与 Revive（无条件恢复全部惩罚状态）的口径区别：本方法只
+// 回滚一次冷却事件本身。禁用账号直接跳过：其 reason 是禁用原因，不属于冷却。
+// uid 不存在或账号被禁用返回 false。
+func (p *Pool) ClearCooldown(uid string) bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	e, ok := p.byUID[uid]
+	if !ok || e.disabled {
+		return false
+	}
+	e.until = time.Time{}
+	e.coolKind = 0
+	e.reason = ""
+	p.dirty.Store(true)
+	return true
+}
+
 // CooldownSoftForModel 429 的**模型级**软冷却入口（issue #31）：把该模型的冷却截止
 // 精确对齐到上游重置墙钟（不做指数堆加、不做 softStreak 计数）。
 //

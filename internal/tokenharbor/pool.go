@@ -109,20 +109,6 @@ func KeyIndex(key string) int {
 	return 0
 }
 
-// MarkSuccess 累计 key 的成功调用计数（内存态，面板展示）。
-func MarkSuccess(key string) {
-	if key == "" {
-		return
-	}
-	c := Get()
-	mu.Lock()
-	if c.Usage == nil {
-		c.Usage = map[string]int64{}
-	}
-	c.Usage[key]++
-	mu.Unlock()
-}
-
 // RecordKeyTokens 记录 key 本次请求消耗的 token（prompt+completion），
 // 自动处理跨日重置，累计值不重置；同时刷新最近使用时间。tokens<=0 时忽略。
 func RecordKeyTokens(key string, tokens int64) {
@@ -175,7 +161,7 @@ func Uncool(key string) {
 		return
 	}
 	mu.Lock()
-	delete(Get().Cool, key)
+	delete(cfg.Cool, key)
 	mu.Unlock()
 }
 

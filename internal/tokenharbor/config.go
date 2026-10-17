@@ -33,8 +33,6 @@ type Config struct {
 	MaxConcurrency int `json:"maxConcurrency"`
 	// Retries 限流/网络错误重试次数，默认 3。
 	Retries int `json:"retries"`
-	// 用量统计（内存态，面板展示用）：key 明文 -> 成功调用计数。
-	Usage map[string]int64 `json:"usage,omitempty"`
 	// Token 记账（内存态，面板"今日/累计 token"与"最近使用"列）：
 	// key 明文 -> 今日/累计 prompt+completion 消耗与最近成功时间。
 	KeyTokens map[string]KeyTokenStats `json:"keyTokens,omitempty"`
@@ -50,7 +48,7 @@ type Binding struct {
 }
 
 // KeyTokenStats 单个 key 的 token 记账：今日/累计消耗（prompt+completion）
-// 与跨日日期、最近成功时间。内存态（与 Usage 同口径）。
+// 与跨日日期、最近成功时间。内存态。
 type KeyTokenStats struct {
 	Today      int64     `json:"today,omitempty"`
 	Total      int64     `json:"total,omitempty"`
@@ -267,7 +265,7 @@ func Get() *Config {
 	return cfg
 }
 
-// Set 替换配置：normalize → 落盘 → 裁剪已移除 key 的绑定/路由/用量/冷却。
+// Set 替换配置：normalize → 落盘 → 裁剪已移除 key 的绑定/路由/token/冷却。
 func Set(next *Config) {
 	next.normalize()
 	mu.Lock()
@@ -278,7 +276,7 @@ func Set(next *Config) {
 	pruneRemovedKeys(next)
 }
 
-// save 原子落盘（临时文件 + rename）。Usage/Cool 为运行时字段不落盘。
+// save 原子落盘（临时文件 + rename）。Cool 为运行时字段不落盘。
 func save() {
 	saveMu.Lock()
 	defer saveMu.Unlock()
@@ -288,7 +286,6 @@ func save() {
 	mu.RLock()
 	disk := *cfg
 	mu.RUnlock()
-	disk.Usage = nil
 	disk.Cool = nil
 	data, err := json.MarshalIndent(&disk, "", "  ")
 	if err != nil {
@@ -309,7 +306,7 @@ func save() {
 	}
 }
 
-// pruneRemovedKeys 清理不再存在于 key 池的绑定/路由/用量/冷却条目。
+// pruneRemovedKeys 清理不再存在于 key 池的绑定/路由/token/冷却条目。
 func pruneRemovedKeys(c *Config) {
 	if len(c.KeyBindings) == 0 && len(c.KeyRoutingEnabled) == 0 && len(c.KeyTokens) == 0 && len(c.Cool) == 0 {
 		return

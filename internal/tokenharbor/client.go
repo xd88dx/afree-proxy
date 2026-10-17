@@ -191,7 +191,6 @@ func Chat(ctx context.Context, params map[string]any, modelID string, stream boo
 			return nil, rateLimited, fmt.Errorf("tokenharbor request: %w", err)
 		}
 		if resp.StatusCode == http.StatusOK {
-			MarkSuccess(key)
 			resp.Header.Set("X-Afree-Used-Key", key)
 			return resp, rateLimited, nil
 		}

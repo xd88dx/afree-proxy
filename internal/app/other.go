@@ -1027,7 +1027,7 @@ func otherTestKey(slug string, index int, modelID string) (map[string]any, strin
 	return result, "active"
 }
 
-// clearOtherKeysForDataDelete 清空全部子平台的 key 池与绑定/路由/用量表
+// clearOtherKeysForDataDelete 清空全部子平台的 key 池与绑定/路由表
 // （保留平台本身、baseURL、前缀与模型勾选配置）。
 func clearOtherKeysForDataDelete() int {
 	_, next := otherCloneConfig()

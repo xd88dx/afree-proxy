@@ -67,9 +67,6 @@ func TestSetPersistsAndLoads(t *testing.T) {
 	if len(disk.Keys) != 1 || disk.Keys[0] != "rc-k1" {
 		t.Fatalf("keys not persisted: %v", disk.Keys)
 	}
-	if disk.Usage != nil {
-		t.Error("usage must not be persisted to disk")
-	}
 	loaded = false
 	cfg = DefaultConfig()
 	Load(path)
