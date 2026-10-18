@@ -1063,8 +1063,12 @@ func (c *Client) ChatStreamContext(ctx context.Context, a *auth.Auth, body []byt
 			cancel()
 			return nil, 0, nil, err
 		}
+		// hsStart 拨号前打点（与 cline/zen 路径同口径）：Do 返回即隧道建立
+		//（首字节未回），差值=TCP+TLS+CONNECT 握手耗时。此前恒传 0，导致 wb
+		// 出口的「平均握手延迟」徽标永远无样本（面板显示 -），只有在线率在动。
+		hsStart := time.Now()
 		resp, err := chatClient.Do(req)
-		c.observeProxy(proxyRaw, err, 0)
+		c.observeProxy(proxyRaw, err, time.Since(hsStart).Milliseconds())
 		if err != nil {
 			cancel()
 			log.Printf("ERR: [upstream] chat_stream acct=%s: transport error: %v", logfmt.Label(a.UID, a.Nickname), err)

@@ -43,6 +43,8 @@ func initTokenHarbor() {
 		return url, ok
 	})
 	tokenharbor.SetClientProvider(proxyClientFor)
+	// 出口成败/握手延迟回传（同 AMDCloud：此前无任何观测钩子）。
+	tokenharbor.SetProxyObserver(recordProxyOutcome)
 	tokenharbor.SetAttemptObserver(scopedObserver(keyPoolAttemptObserver(tokenharbor.KeyIndex, tokenharbor.BindingOf)))
 	// 启动即预热模型目录（异步；无 key 时保持种子）
 	tokenharbor.InitCatalog()

@@ -28,6 +28,8 @@ func otherConfigPath() string { return kit.ResolveDataPath(".other-config.json")
 func initOther() {
 	other.Load(otherConfigPath())
 	other.SetClientProvider(proxyClientFor)
+	// 出口成败/握手延迟回传（同 AMDCloud：此前无任何观测钩子）。
+	other.SetProxyObserver(recordProxyOutcome)
 	other.SetAttemptObserver(otherAttemptObserver)
 	go startOtherModelsRefresher()
 }

@@ -2064,11 +2064,15 @@ func callZenResponsesAPI(ctx context.Context, params map[string]any, stream bool
 			zm.ID, stream, viaProxy, keyIndex(key), attempt+1, kit.Truncate(sess, 24))
 		setUpstreamInfo(ctx, fmt.Sprintf("key#%d", keyIndex(key)))
 
+		// hsStart 拨号前打点（与 cline 路径同口径）：Do 返回即隧道建立（首字节未回），
+		// 差值=TCP+TLS+CONNECT 握手耗时。此前恒传 0，导致 zen/opencode 出口的
+		// 「平均握手延迟」徽标永远无样本（面板显示 -），只有在线率在动。
+		hsStart := time.Now()
 		resp, err := proxyClientFor(proxyURL).Do(req)
 		if err == nil {
 			mainP, backupP, boundP := zenKeyBindingOf(key)
 			setUpstreamExit(ctx, proxyExitType(proxyURL, mainP, backupP, boundP))
-			recordProxyOutcome(proxyURL, true, nil, 0)
+			recordProxyOutcome(proxyURL, true, nil, time.Since(hsStart).Milliseconds())
 		}
 		if err != nil {
 			if ctx.Err() != nil {
@@ -2307,11 +2311,15 @@ func callZenAPI(ctx context.Context, params map[string]any, stream bool, opts ..
 			body["model"], stream, getMsgCount(params), viaProxy, keyIndex(key), attempt+1, kit.Truncate(sess, 24))
 		setUpstreamInfo(ctx, fmt.Sprintf("key#%d", keyIndex(key)))
 
+		// hsStart 拨号前打点（与 cline 路径同口径）：Do 返回即隧道建立（首字节未回），
+		// 差值=TCP+TLS+CONNECT 握手耗时。此前恒传 0，导致 zen/opencode 出口的
+		// 「平均握手延迟」徽标永远无样本（面板显示 -），只有在线率在动。
+		hsStart := time.Now()
 		resp, err := proxyClientFor(proxyURL).Do(req)
 		if err == nil {
 			mainP, backupP, boundP := zenKeyBindingOf(key)
 			setUpstreamExit(ctx, proxyExitType(proxyURL, mainP, backupP, boundP))
-			recordProxyOutcome(proxyURL, true, nil, 0)
+			recordProxyOutcome(proxyURL, true, nil, time.Since(hsStart).Milliseconds())
 		}
 		if err != nil {
 			// 客户端取消: 立即返回,不重试不冷却不计故障

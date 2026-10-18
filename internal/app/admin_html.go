@@ -148,9 +148,11 @@ select{cursor:pointer;appearance:none;background-image:linear-gradient(45deg,tra
 /* 宽度基准 = 两位数色签的自然宽度（34px）：个位数居中补白，三位数（.w3，
    如"100%"）收紧左右内边距塞进同一宽度，各档宽度恒定不随位数抖动 */
 .eg-badge.w3,.eg-rate.w3{padding-left:2px;padding-right:2px}
-/* 握手延迟徽标（.hs）：与在线率徽标并排时在线率让位到 right:46px，
-   输入框右侧留白同步加宽（has-hs 规则须在 has-badge 之后，同优先级后者生效） */
-.eg-badge.hs{right:46px}
+/* 握手延迟徽标（.hs）固定在最右（right:6px，与单徽标同位），在线率让位到
+   right:46px（由 egBadgeHTML 内联给出）。此规则此前误写为 right:46px，把
+   延迟徽标也推到 46px —— 两个徽标完全重叠，后渲染的延迟盖住在线率，面板上
+   就只剩延迟、看不到在线率百分比。 */
+.eg-badge.hs{right:6px}
 .eg-wrap.has-hs .eg-input{padding-right:96px}
 /* 在线率五档底色：≥80 绿 / ≥60 蓝 / ≥40 粉 / ≥20 黄 / 以下红。深色主题用
    粉彩底配深字、浅色主题用深底配浅字——文字取 var(--bg) 双主题皆可读 */
@@ -603,6 +605,19 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
       <span class="hint" style="margin:0">Auto-syncs the official model feeds from upstreams (60s)</span>
     </div>
     <div id="modelsList">Loading...</div>
+  </div>
+</div>
+
+<div class="section">
+  <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></span> Paid / blocked models <span id="blacklistCount" class="probe-pill" style="font-weight:normal"></span></div>
+  <div class="section-body">
+    <div class="hint" style="margin-top:0">Models the upstream refused for this account type (e.g. code 11158 "not allowed for user type"). They are hidden from /v1/models so clients stop picking them. Test sends a real request with the platform's first enabled credential — if it succeeds, click Unblock. Unblocking only removes the entry; the same error will block it again.</div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th style="width:140px">Platform</th><th>Model</th><th style="width:180px">Blocked at</th><th style="width:200px;text-align:center">Actions</th></tr></thead>
+        <tbody id="blacklistBody"><tr><td colspan="4" class="empty">Loading...</td></tr></tbody>
+      </table>
+    </div>
   </div>
 </div>
 
@@ -2185,6 +2200,16 @@ const I18N_ZH = {
   'never': '从不',
   'n/a': '无',
   'not minted': '未铸造',
+  // 收费模型区（模型黑名单）
+  'Paid / blocked models': '收费模型',
+  'Blocked at': '加入黑名单时间',
+  'Unblock': '解禁',
+  'No blocked models': '暂无被拉黑的模型',
+  'Testing...': '测试中…',
+  'reachable — you can unblock it': '请求成功——可以解禁',
+  'Unblock this model? It becomes available in /v1/models again; the same upstream error will block it again.': '解禁该模型？它会重新出现在 /v1/models；若上游仍报同样的错误，程序会再次拉黑。',
+  'Unblocked: ': '已解禁：',
+  'Models the upstream refused for this account type (e.g. code 11158 "not allowed for user type"). They are hidden from /v1/models so clients stop picking them. Test sends a real request with the platform\'s first enabled credential — if it succeeds, click Unblock. Unblocking only removes the entry; the same error will block it again.': '上游按账号类型拒掉的模型（如 code 11158「该账号类型不支持该模型」）。它们已从 /v1/models 移除，客户端不会再选到。Test 会用该平台第一个启用的凭据发一次真实请求——若成功，点「解禁」。解禁只移出名单；同样的错误会再次把它拉黑。',
 };
 function T(s) { return LANG === 'zh' ? (I18N_ZH[s] || s) : s; }
 function toggleLang() {
@@ -4192,8 +4217,79 @@ async function loadModels() {
         '<label class="inline-flex" style="font-size:12px;color:var(--text2)">' + T('Filter') + ' ' +
           '<select id="wbRateFilter" onchange="setWorkbuddyRateFilter(this.value)" title="' + esc(T('Model rate cap for WorkBuddy models. Applies to the model list and to GET /v1/models responses; saves immediately.')) + '" style="width:auto;padding:4px 26px 4px 9px;font-size:12px">' + rateOptions + '</select></label>' +
       '</div>' + wbBlock;
+    loadModelBlacklist();
   } catch (e) { _('modelsList').textContent = T('Failed to load'); }
 }
+
+// ========== Paid / blocked models（模型黑名单） ==========
+// 上游按账号类型拒掉的模型（code 11158 等）自动进这张表并从 /v1/models 移除。
+// Test = 用该平台第一个启用凭据发一次真实请求；Unblock = 只移出名单，
+// 后续同样错误会再次拉黑（不是永久豁免）。
+const BLACKLIST_PLATFORM_LABEL = {
+  workbuddy: 'WorkBuddy', zen: 'OpenCode', cline: 'Cline',
+  amd: 'AMDCloud', openrouter: 'OpenRouter', tokenharbor: 'TokenHarbor', other: 'Other'
+};
+async function loadModelBlacklist() {
+  const tb = _('blacklistBody');
+  if (!tb) return;
+  try {
+    const d = await api('GET', '/models/blacklist');
+    const items = (d.data || {}).items || [];
+    if (_('blacklistCount')) _('blacklistCount').textContent = items.length ? '· ' + items.length : '';
+    if (!items.length) {
+      tb.innerHTML = '<tr><td colspan="4" class="empty">' + T('No blocked models') + '</td></tr>';
+      return;
+    }
+    tb.innerHTML = items.map(it => {
+      const plat = BLACKLIST_PLATFORM_LABEL[it.platform] || it.platform;
+      const when = it.createdAt ? new Date(it.createdAt).toLocaleString() : '—';
+      const title = esc([it.code ? 'code ' + it.code : '', it.reason || ''].filter(Boolean).join(' · ')).slice(0, 500);
+      return '<tr>' +
+        '<td>' + esc(plat) + '</td>' +
+        '<td style="font-family:\'JetBrains Mono\',monospace" title="' + title + '">' + esc(it.model) + '</td>' +
+        '<td style="font-size:12px;color:var(--text2)">' + esc(when) + '</td>' +
+        '<td style="text-align:center;white-space:nowrap">' +
+          '<button class="btn btn-sm" data-bl-test="1" data-platform="' + esc(it.platform) + '" data-model="' + esc(it.model) + '">' + T('Test') + '</button> ' +
+          '<button class="btn btn-sm btn-warn" data-bl-unblock="1" data-platform="' + esc(it.platform) + '" data-model="' + esc(it.model) + '">' + T('Unblock') + '</button>' +
+        '</td></tr>';
+    }).join('');
+  } catch (e) {
+    tb.innerHTML = '<tr><td colspan="4" class="empty">' + esc(T('Failed to load') + ': ' + e.message) + '</td></tr>';
+  }
+}
+async function testBlockedModel(btn) {
+  const platform = btn.dataset.platform, model = btn.dataset.model;
+  const old = btn.textContent;
+  btn.disabled = true; btn.textContent = T('Testing...');
+  try {
+    const d = await api('POST', '/models/blacklist/test', { platform: platform, model: model });
+    const ok = d.success === true || (d.data && d.data.status === 'active');
+    const info = (d.data && (d.data.error || d.data.reason)) || d.message || '';
+    toast(model + ' → ' + (ok ? T('reachable — you can unblock it') : info), ok ? 'success' : 'error');
+  } catch (e) {
+    toast(e.message, 'error');
+  } finally {
+    btn.disabled = false; btn.textContent = old;
+  }
+}
+async function unblockBlockedModel(btn) {
+  const platform = btn.dataset.platform, model = btn.dataset.model;
+  if (!confirm(T('Unblock this model? It becomes available in /v1/models again; the same upstream error will block it again.'))) return;
+  btn.disabled = true;
+  try {
+    await api('POST', '/models/blacklist/unblock', { platform: platform, model: model });
+    toast(T('Unblocked: ') + model, 'success');
+    loadModelBlacklist();
+  } catch (e) {
+    toast(e.message, 'error'); btn.disabled = false;
+  }
+}
+document.addEventListener('click', e => {
+  const t = e.target.closest ? e.target.closest('button[data-bl-test]') : null;
+  if (t) { testBlockedModel(t); return; }
+  const u = e.target.closest ? e.target.closest('button[data-bl-unblock]') : null;
+  if (u) unblockBlockedModel(u);
+});
 
 async function refreshModels() {
   try {

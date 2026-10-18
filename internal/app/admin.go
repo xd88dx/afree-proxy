@@ -78,6 +78,10 @@ func registerAdminRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/admin/api/keys/delete", adminCORS(auth(handleAdminDeleteKey)))
 	mux.HandleFunc("/admin/api/models", adminCORS(auth(handleAdminModels)))
 	mux.HandleFunc("/admin/api/models/refresh", adminCORS(auth(handleAdminModelsRefresh)))
+	// 模型黑名单（收费模型区）：列表 / 测试 / 解禁
+	mux.HandleFunc("/admin/api/models/blacklist", adminCORS(auth(handleModelBlacklist)))
+	mux.HandleFunc("/admin/api/models/blacklist/test", adminCORS(auth(handleModelBlacklistTest)))
+	mux.HandleFunc("/admin/api/models/blacklist/unblock", adminCORS(auth(handleModelBlacklistUnblock)))
 	mux.HandleFunc("/admin/api/config", adminCORS(auth(handleAdminConfig)))
 	mux.HandleFunc("/admin/api/config/update", adminCORS(auth(handleAdminUpdateConfig)))
 	mux.HandleFunc("/admin/api/combos", adminCORS(auth(handleCombosList)))

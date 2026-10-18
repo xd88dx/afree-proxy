@@ -45,6 +45,8 @@ func initOpenRouter() {
 		return url, ok
 	})
 	openrouter.SetClientProvider(proxyClientFor)
+	// 出口成败/握手延迟回传（同 AMDCloud：此前无任何观测钩子）。
+	openrouter.SetProxyObserver(recordProxyOutcome)
 	openrouter.SetAttemptObserver(scopedObserver(keyPoolAttemptObserver(openrouter.KeyIndex, openrouter.BindingOf)))
 	// 启动即预热模型目录（异步，失败保留种子）
 	openrouter.InitCatalog()

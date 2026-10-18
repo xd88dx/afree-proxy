@@ -254,6 +254,17 @@ func StartProxy(host string, port int) error {
 				"cost":     "free",
 			})
 		}
+		// 黑名单过滤：已确认「上游不允许该账号类型调用」的模型不再对外提供，
+		// 否则客户端（含 new-api 渠道映射）会反复选中它、每次都吃一轮无谓失败。
+		// 面板「收费模型」区仍可见，可测试/解禁。
+		kept := data[:0]
+		for _, m := range data {
+			if id, _ := m["id"].(string); id != "" && IsModelBlacklisted(id) {
+				continue
+			}
+			kept = append(kept, m)
+		}
+		data = kept
 		writeJSON(w, http.StatusOK, map[string]any{"object": "list", "data": data})
 	})
 	mux.HandleFunc("/v1/models", modelsHandler)
@@ -437,8 +448,10 @@ func StartProxy(host string, port int) error {
 
 		handleNonStreamResponseWithUsage(w, resp, usageFn, stopSequencesFrom(params))
 	})
-	mux.HandleFunc("/v1/chat/completions", chatHandler)
-	mux.HandleFunc("/chat/completions", chatHandler)
+	// 自动拉黑扫描：上游回「账号类型不支持该模型」时把该平台模型加入黑名单，
+	// /v1/models 随即不再对外提供（面板「收费模型」区可见/可测试/可解禁）。
+	mux.HandleFunc("/v1/chat/completions", withModelBlacklistScan(chatHandler))
+	mux.HandleFunc("/chat/completions", withModelBlacklistScan(chatHandler))
 
 	// Anthropic Messages API support
 	anthropicHandler := apiKeyHandler(func(w http.ResponseWriter, r *http.Request) {
@@ -450,13 +463,13 @@ func StartProxy(host string, port int) error {
 		}
 		handleAnthropicMessages(w, r)
 	})
-	mux.HandleFunc("/v1/messages", anthropicHandler)
-	mux.HandleFunc("/messages", anthropicHandler)
+	mux.HandleFunc("/v1/messages", withModelBlacklistScan(anthropicHandler))
+	mux.HandleFunc("/messages", withModelBlacklistScan(anthropicHandler))
 
 	// OpenAI Responses API
 	responsesHandler := apiKeyHandler(handleResponses)
-	mux.HandleFunc("/v1/responses", responsesHandler)
-	mux.HandleFunc("/responses", responsesHandler)
+	mux.HandleFunc("/v1/responses", withModelBlacklistScan(responsesHandler))
+	mux.HandleFunc("/responses", withModelBlacklistScan(responsesHandler))
 
 	addr := fmt.Sprintf("%s:%d", host, port)
 	proxyListenAddress = addr

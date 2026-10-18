@@ -43,6 +43,9 @@ func initAMD() {
 		return url, ok
 	})
 	amd.SetClientProvider(proxyClientFor)
+	// 出口成败/握手延迟回传：此前 AMDCloud 走代理但没有任何观测钩子，代理
+	// 健康面板的在线率与握手延迟对它永远无样本（显示 -）。
+	amd.SetProxyObserver(recordProxyOutcome)
 	amd.SetAttemptObserver(scopedObserver(keyPoolAttemptObserver(amd.KeyIndex, amd.BindingOf)))
 	// 启动即预热模型目录（异步，失败保留种子）
 	amd.InitCatalog()

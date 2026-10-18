@@ -52,6 +52,12 @@ var (
 	// attemptObserver 请求日志观测钩子（主包注入）：仅观测，不参与路由。
 	attemptObserverMu sync.RWMutex
 	attemptObserver   func(ctx context.Context, scope, key, proxyURL string)
+
+	// proxyObserver 出口成败观测钩子（afree 本地扩展，主包注入）：把代理出口
+	// 的成败与握手耗时回传给网关的代理健康统计（在线率 / 平均握手延迟）。
+	// 仅观测，不参与路由。re-vendor 同步上游代码时如被冲掉，需重新加回。
+	proxyObserverMu sync.RWMutex
+	proxyObserver   func(proxyURL string, ok bool, err error, hsMs int64)
 )
 
 // SetExitResolver 注入出站解析（主包装配期调用）。
@@ -84,6 +90,25 @@ func observeAttempt(ctx context.Context, key, proxyURL string) {
 	attemptObserverMu.RUnlock()
 	if obs != nil {
 		obs(ctx, "", key, proxyURL)
+	}
+}
+
+// SetProxyObserver 注入出口成败观测钩子（afree 本地扩展，主包装配期调用）。
+// Chat 每次真实 Do 之后回调一次（成败都回调）；proxyURL 为空表示直连出口，
+// 由实现方自行忽略。hsMs = TCP+TLS+CONNECT 握手耗时（毫秒）。
+func SetProxyObserver(f func(proxyURL string, ok bool, err error, hsMs int64)) {
+	proxyObserverMu.Lock()
+	proxyObserver = f
+	proxyObserverMu.Unlock()
+}
+
+// observeProxy 回报一次出口成败（无钩子时零成本跳过）。
+func observeProxy(proxyURL string, ok bool, err error, hsMs int64) {
+	proxyObserverMu.RLock()
+	obs := proxyObserver
+	proxyObserverMu.RUnlock()
+	if obs != nil {
+		obs(proxyURL, ok, err, hsMs)
 	}
 }
 
@@ -203,7 +228,12 @@ func Chat(ctx context.Context, params map[string]any, modelID string, stream boo
 		for k, v := range headers {
 			req.Header.Set(k, v)
 		}
+		// hsStart 拨号前打点（与 cline/zen/workbuddy 同口径）：Do 返回即隧道
+		// 建立（首字节未回），差值=TCP+TLS+CONNECT 握手耗时。此前本平台没有
+		// 出口观测钩子，代理健康面板的在线率与握手延迟永远无样本。
+		hsStart := time.Now()
 		resp, err := httpClientFor(proxyURL).Do(req)
+		observeProxy(proxyURL, err == nil, err, time.Since(hsStart).Milliseconds())
 		if err != nil {
 			if ctx.Err() != nil {
 				return nil, rateLimited, fmt.Errorf("client aborted: %w", err)

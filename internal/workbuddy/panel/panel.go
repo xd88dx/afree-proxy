@@ -28,6 +28,7 @@ import (
 	"afree-proxy/internal/workbuddy/pool"
 	"afree-proxy/internal/workbuddy/reqlog"
 	"afree-proxy/internal/workbuddy/scheduler"
+	"afree-proxy/internal/workbuddy/session"
 	"afree-proxy/internal/workbuddy/upstream"
 	"afree-proxy/internal/workbuddy/usage"
 )
@@ -620,10 +621,22 @@ func (p *Panel) accountBalance(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "credits": remain, "credits_total": total})
 }
 
+// probeMaxModels 单次 Test 最多尝试的候选模型数。目录首个未必是该号有权调用的
+// 模型（见 probeTestModelCandidates 注释），换模型重试可把「模型无权」从「号坏了」里分离
+// 出来；同时设上限，避免坏号被连打 N 次。
+const probeMaxModels = 3
+
 // accountTest 单号可用性探测：发一条最小真实 chat 请求（"Reply with exactly: OK",
 // max_tokens 16），与正常请求走同一条上游路（含代理出口与冷却副作用）。
 // 成功 → NoteSuccess（附带解冷：清连败/熔断/软限流计数）；限流类失败 → 按分类
 // 记冷却（软限流/余额耗尽）；参数错误类 → 不罚号。网络/超时错误不改状态。
+//
+// 换模型重试：探测模型按「该号有权调用」的优先级取（见 probeTestModelCandidates），
+// 但目录元数据未必反映真实授权（实测首个模型 o4-mini 返回 400 code=11128「请求被
+// 拦截……This call failed channel verification」，而该号真实在跑的模型 200）。这类失败
+// 是「这个模型不能用」而非「这个号不能用」，因此命中可换模型的错误分类时，换
+// 下一个候选再试；只有全部候选都失败，才按原语义施加冷却/罚号（且只施加一次，
+// 副作用以最后一次错误为准，与改造前完全一致）。
 func (p *Panel) accountTest(w http.ResponseWriter, r *http.Request) {
 	uid := r.PathValue("uid")
 	a := p.cfg.Pool.AuthByUID(uid)
@@ -635,65 +648,240 @@ func (p *Panel) accountTest(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusServiceUnavailable, "upstream unavailable")
 		return
 	}
-	probeModel := probeTestModel(p, a)
+
+	models := probeTestModelCandidates(p, a)
+	if len(models) > probeMaxModels {
+		models = models[:probeMaxModels]
+	}
+
+	var last map[string]any
+	var lastKind upstream.ErrKind
+	for i, probeModel := range models {
+		out, kind, uerr := probeOnce(p, a, uid, probeModel)
+		if uerr == nil {
+			p.cfg.Pool.NoteSuccess(uid)
+			out["status"] = "active"
+			writeJSON(w, http.StatusOK, out)
+			return
+		}
+		last, lastKind = out, kind
+		if !probeRetryableKind(kind) || i == len(models)-1 {
+			break
+		}
+		log.Printf("panel test uid=%s: model=%s failed (%s), retrying with next candidate",
+			uid, probeModel, kind)
+	}
+
+	// 全部候选失败：按原语义施加一次副作用。
+	switch lastKind {
+	case upstream.ErrSoftRate:
+		last["status"] = "cooldown"
+		p.cfg.Pool.CooldownSoftRate(uid, time.Minute, time.Time{}, "panel test: "+last["error"].(string))
+	case upstream.ErrHardCredit:
+		last["status"] = "cooldown"
+		p.cfg.Pool.Cooldown(uid, pool.CoolHard, 30*time.Minute, "panel test: "+last["error"].(string))
+	case upstream.ErrSessionDead:
+		p.cfg.Pool.NoteError(uid)
+	case upstream.ErrBadParams, upstream.ErrPromptTooLong, upstream.ErrImageInvalid, upstream.ErrContentBlocked:
+		// 请求级错误：不罚号。
+	default:
+		p.cfg.Pool.NoteError(uid)
+	}
+	writeJSON(w, http.StatusOK, last)
+}
+
+// probeOnce 用单个模型执行一次探测。返回待回写的 out（含 model/latencyMs/
+// status/error）与错误分类；uerr 为 nil 表示成功（此时调用方负责 NoteSuccess）。
+func probeOnce(p *Panel, a *auth.Auth, uid, probeModel string) (map[string]any, upstream.ErrKind, error) {
 	body, _ := json.Marshal(map[string]any{
 		"model":      probeModel,
 		"messages":   []any{map[string]any{"role": "user", "content": "Reply with exactly: OK"}},
 		"max_tokens": 16,
 		"stream":     false,
 	})
-	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
+	// 会话头族必须补全：X-Conversation-Request-ID 是上游「必发」头（ChatMeta 注释），
+	// 正常请求由 server handler 用 sessKey/turnKey 兜底生成（最差也是请求级随机）。
+	// 探测此前传空 ChatMeta{} → 必发头缺失 → 上游判渠道校验不通过（400 code=11128
+	// 「请求被拦截」）。这里按 handler 的兜底口径补齐，让探测与真实请求同形态。
+	meta := upstream.ChatMeta{
+		ConversationID:        session.RequestIDForKey(uid + ":probe"),
+		ConversationRequestID: session.TurnRequestID(""),
+	}
 	start := time.Now()
-	rc, status, respBody, uerr := p.cfg.Upstream.ChatStreamContext(ctx, a, body, "", upstream.ChatMeta{})
+	rc, status, respBody, uerr := p.cfg.Upstream.ChatStreamContext(ctx, a, body, "", meta)
 	latencyMs := time.Since(start).Milliseconds()
 	out := map[string]any{"ok": true, "model": probeModel, "latencyMs": latencyMs}
-	if uerr != nil {
-		kind := upstream.ErrClient
-		if ue, ok := uerr.(*upstream.Error); ok {
-			kind = ue.Kind
+	if uerr == nil {
+		if rc != nil {
+			rc.Close()
 		}
-		out["status"] = "error"
-		out["error"] = truncateTestErr(respBody, uerr)
-		switch kind {
-		case upstream.ErrSoftRate:
-			out["status"] = "cooldown"
-			p.cfg.Pool.CooldownSoftRate(uid, time.Minute, time.Time{}, "panel test: "+out["error"].(string))
-		case upstream.ErrHardCredit:
-			out["status"] = "cooldown"
-			p.cfg.Pool.Cooldown(uid, pool.CoolHard, 30*time.Minute, "panel test: "+out["error"].(string))
-		case upstream.ErrSessionDead:
-			p.cfg.Pool.NoteError(uid)
-		case upstream.ErrBadParams, upstream.ErrPromptTooLong, upstream.ErrImageInvalid, upstream.ErrContentBlocked:
-			// 请求级错误：不罚号。
-		default:
-			p.cfg.Pool.NoteError(uid)
-		}
-		_ = status
-		writeJSON(w, http.StatusOK, out)
-		return
+		return out, upstream.ErrNone, nil
 	}
-	if rc != nil {
-		rc.Close()
+	kind := upstream.ErrClient
+	if ue, ok := uerr.(*upstream.Error); ok {
+		kind = ue.Kind
 	}
-	p.cfg.Pool.NoteSuccess(uid)
-	out["status"] = "active"
-	writeJSON(w, http.StatusOK, out)
+	out["status"] = "error"
+	out["error"] = truncateTestErr(respBody, uerr)
+	_ = status
+	return out, kind, uerr
 }
 
-// probeTestModel 选探测模型：用被测账号拉一次模型目录取首个可用 ID（与真实
-// 请求同一鉴权上下文），失败回退 glm-5.3-flash。
-func probeTestModel(p *Panel, a *auth.Auth) string {
-	if p.cfg.Upstream != nil {
-		if infos, err := p.cfg.Upstream.FetchModels(a); err == nil {
-			for _, mi := range infos {
-				if mi.ID != "" {
-					return mi.ID
-				}
-			}
+// ProbeModel 收费模型区「测试」按钮的后端：用该模型所属 realm 的第一个可用
+// 账号，对指定模型发一次真实请求（不换模型重试——测试语义就是「这个模型现在
+// 能不能用」）。model 为对外 ID：wbcn:/wbgb: 前缀或裸 ID（裸 ID 按 vendor
+// 语义 = CN 域）；发给上游前按既有口径剥成裸 ID（前缀只决定选号 realm）。
+// 返回结构与 accountTest 的 data 同构，status 为 active/error。
+func (p *Panel) ProbeModel(model string) (map[string]any, string) {
+	if p.cfg.Upstream == nil {
+		return map[string]any{"ok": false, "model": model, "error": "upstream unavailable"}, "error"
+	}
+	bare, realm := model, "cn"
+	switch {
+	case strings.HasPrefix(model, "wbgb:"):
+		bare, realm = strings.TrimPrefix(model, "wbgb:"), "global"
+	case strings.HasPrefix(model, "wbcn:"):
+		bare = strings.TrimPrefix(model, "wbcn:")
+	}
+	uids := p.cfg.Pool.AvailableUIDsForRealm(realm)
+	if len(uids) == 0 {
+		return map[string]any{"ok": false, "model": model, "error": "no available " + realm + " account"}, "error"
+	}
+	uid := uids[0]
+	a := p.cfg.Pool.AuthByUID(uid)
+	if a == nil {
+		return map[string]any{"ok": false, "model": model, "error": "account not found"}, "error"
+	}
+	out, _, uerr := probeOnce(p, a, uid, bare)
+	if uerr == nil {
+		p.cfg.Pool.NoteSuccess(uid)
+		out["status"] = "active"
+		out["account"] = uid
+		return out, "active"
+	}
+	out["status"] = "error"
+	out["account"] = uid
+	return out, "error"
+}
+
+// probeRetryableKind 该错误是否值得换一个探测模型重试。
+// 判据：错误指向「这次请求/这个模型」而非「这个账号」——包括上游渠道验证失败
+// （11128 request illegal，分类为 ErrAccountFault：它是模型授权问题，账号本身
+// 换模型仍可用）、请求级参数错误、以及「该后端无此模型」。
+// 账号级终态（余额耗尽/会话失效）与限流不重试：换模型也不会成功，只会白打上游。
+func probeRetryableKind(kind upstream.ErrKind) bool {
+	switch kind {
+	case upstream.ErrAccountFault, upstream.ErrBadParams, upstream.ErrModelBlocked,
+		upstream.ErrPromptTooLong, upstream.ErrImageInvalid, upstream.ErrContentBlocked:
+		return true
+	}
+	return false
+}
+
+// probeTestModelCandidates 探测模型候选序列（按优先级排好、去重），供探测失败
+// 换模型重试；首个即首选探测模型。
+//
+// 两条约束，缺一条都会把好号误报成坏号：
+//
+//  1. 目录必须按账号 realm 取。wbgb:(global) 模型只有 global 账号能调、wbcn:(CN)
+//     模型只有 CN 账号能调——旧代码无条件 FetchModels（CN 目录），等于拿 CN 模型
+//     去打 global 账号的通道，上游判「渠道校验不通过」，回 400 code=11128
+//     （displayMsg.zh「请求被拦截，请重新发送」，displayTips "This call failed
+//     channel verification"）。故 global 账号取 global 目录、CN 账号取 CN 目录。
+//  2. model 必须是裸 ID，不能带 cn:/global: 前缀。前缀只是网关对外形态
+//     （wbcn:/wbgb:）与 /v1/models 展示形态；真实链路在 server handler 里已用
+//     rewriteModel 改回裸 ID——realm 由选号决定，不编进 model。带前缀直发上游会
+//     得到 400 code=11102「model [global:xxx] service info not found」。
+func probeTestModelCandidates(p *Panel, a *auth.Auth) []string {
+	const fallback = "glm-5.3-flash"
+	if p.cfg.Upstream == nil {
+		return []string{fallback}
+	}
+	_, infos := probeRealmModels(p, a)
+	cands := make([]upstream.ModelInfo, 0, len(infos))
+	for _, mi := range infos {
+		if mi.ID != "" {
+			cands = append(cands, mi)
 		}
 	}
-	return "glm-5.3-flash"
+	sort.SliceStable(cands, func(i, j int) bool {
+		return probeModelScore(cands[i]) < probeModelScore(cands[j])
+	})
+	out := make([]string, 0, len(cands)+1)
+	seen := map[string]bool{}
+	for _, mi := range cands {
+		if !seen[mi.ID] {
+			seen[mi.ID] = true
+			out = append(out, mi.ID)
+		}
+	}
+	if !seen[fallback] {
+		out = append(out, fallback)
+	}
+	return out
+}
+
+// probeRealmModels 按账号 realm 取「该号有权调用」的模型目录（返回裸 ID）：
+// global(GB) 账号 → global 目录（FetchGlobalModelInfos）；CN 账号 → CN 目录
+// （FetchModels）。前缀取舍见 probeTestModelCandidates 注释 2。
+// GlobalEnabled 关闭时 global 账号按 CN 路由（与 upstream.globalOn 同口径）。
+func probeRealmModels(p *Panel, a *auth.Auth) (string, []upstream.ModelInfo) {
+	if a.IsGlobal() && p.cfg.Upstream.GlobalEnabled {
+		return "global", p.cfg.Upstream.FetchGlobalModelInfos(a)
+	}
+	infos, err := p.cfg.Upstream.FetchModels(a)
+	if err != nil {
+		log.Printf("panel probe: fetch cn models for uid=%s failed: %v", a.UID, err)
+		return "cn", nil
+	}
+	return "cn", infos
+}
+
+// probeModelScore 探测模型优先级打分，越小越优先：
+// 0=默认模型（IsDefault，渠道已验证）→ 1=免费 → 2=低倍率(<1) → 3=其余。
+func probeModelScore(mi upstream.ModelInfo) int {
+	if mi.IsDefault {
+		return 0
+	}
+	if probeModelIsFree(mi) {
+		return 1
+	}
+	if rate, ok := parseCreditRate(mi.Credits); ok && rate > 0 && rate < 1 {
+		return 2
+	}
+	return 3
+}
+
+// probeModelIsFree 免费判定：命中「免费」标签，或积分倍率为 0。
+func probeModelIsFree(mi upstream.ModelInfo) bool {
+	for _, t := range mi.Tags {
+		if strings.Contains(t, "免费") {
+			return true
+		}
+	}
+	if rate, ok := parseCreditRate(mi.Credits); ok && rate == 0 {
+		return true
+	}
+	return false
+}
+
+// parseCreditRate 解析积分倍率原文（"x0.05" / "0.05"）为浮点；空串或不可解析
+// 视为未知（返回 false，调用方不得当 0 处理——未知≠免费）。
+func parseCreditRate(s string) (float64, bool) {
+	s = strings.TrimSpace(s)
+	s = strings.TrimPrefix(s, "x")
+	s = strings.TrimPrefix(s, "X")
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return 0, false
+	}
+	v, err := strconv.ParseFloat(s, 64)
+	if err != nil {
+		return 0, false
+	}
+	return v, true
 }
 
 // truncateTestErr 探测错误摘要：优先上游原文，截断防刷屏。
