@@ -265,6 +265,21 @@ func StartProxy(host string, port int) error {
 			kept = append(kept, m)
 		}
 		data = kept
+		// 字段归一化（归纳、统一、透传）：业内 OpenAI 官方 /v1/models 只有
+		// id/object/created/owned_by，同类聚合器 OpenRouter 每条带 context_length
+		//（Gemini 叫 inputTokenLimit）。各来源字段名不一，统一到标准形态：
+		//
+		//	context_length   ← WorkBuddy 已用该名，原样透传；
+		//	                   ← zen/oprt/amd/tkhb 的 context，统一补齐；
+		//	max_output_tokens ← WorkBuddy 已用该名，原样透传；
+		//	                   ← zen 的 output（最大输出 tokens），统一补齐。
+		//
+		// 零值不透出（与 WorkBuddy「不透出假 131072」同哲学，误导客户端提前
+		// 截断）；cline/other 上游无数据不编造。原字段保留（向后兼容）；
+		// source/cost/requiresStream/toolCall 等为 afree 自有元数据，原样透传。
+		for _, m := range data {
+			normalizeModelEntryFields(m)
+		}
 		writeJSON(w, http.StatusOK, map[string]any{"object": "list", "data": data})
 	})
 	mux.HandleFunc("/v1/models", modelsHandler)

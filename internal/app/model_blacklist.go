@@ -38,6 +38,13 @@ import (
 // 落盘 DATA_DIR/.model-blacklist.json：拉黑是低频事件，即时落盘（不设周期）。
 // ============================================================================
 
+// 封禁原因统一文案（面板「封禁原因」列直接展示，不再放上游原话——
+// 上游原始报文保留在 Detail 字段，悬停提示可见）。
+const (
+	BanReasonAuto   = "账号权限不足，自动封禁"
+	BanReasonManual = "管理员手动封禁"
+)
+
 // 平台标识（与对外模型前缀对应）。
 const (
 	platWorkBuddy  = "workbuddy"
@@ -55,7 +62,8 @@ type modelBlacklistEntry struct {
 	Platform  string    `json:"platform"`
 	Model     string    `json:"model"`
 	Code      string    `json:"code,omitempty"`   // 上游业务码，如 11158
-	Reason    string    `json:"reason"`           // 上游错误摘要
+	Reason    string    `json:"reason"`           // 统一文案：自动/手动封禁
+	Detail    string    `json:"detail,omitempty"` // 上游原始报文（悬停提示用，不进表格列）
 	CreatedAt time.Time `json:"createdAt"`        // 加入黑名单时间
 	LastAt    time.Time `json:"lastAt"`           // 最近一次命中
 	Hits      int       `json:"hits"`             // 命中次数
@@ -102,6 +110,16 @@ func ensureModelBlacklistLoaded() {
 	if f.Items != nil {
 		modelBlacklistItems = f.Items
 	}
+	// 旧版本落盘的条目 Reason 存的是上游原话；统一改写为标准文案
+	//（判据：code=11158 或原因文案命中权限 marker）。Detail 老条目没有，留空。
+	for _, e := range modelBlacklistItems {
+		if e == nil || e.Reason == "" || e.Reason == BanReasonAuto || e.Reason == BanReasonManual {
+			continue
+		}
+		if e.Code == "11158" || IsModelPermissionDenied(0, e.Reason) {
+			e.Reason = BanReasonAuto
+		}
+	}
 	if n := len(modelBlacklistItems); n > 0 {
 		log.Printf("model blacklist: restored %d entry(ies) from %s", n, modelBlacklistPath())
 	}
@@ -136,9 +154,36 @@ func flushModelBlacklist() {
 	}
 }
 
-// BlacklistModel 把「平台 + 对外模型 ID」加入黑名单。已存在时只累加命中次数
-// 与刷新最近时间（不重置 createdAt——面板展示的是首次被拉黑的时间）。
-func BlacklistModel(platform, model, code, reason string) {
+// BlacklistModel 把「平台 + 对外模型 ID」加入黑名单（自动拉黑路径，reason 传
+// 统一文案 BanReasonAuto，detail 传上游原始报文）。已存在时只累加命中次数与
+// 刷新最近时间（不重置 createdAt——面板展示的是首次被拉黑的时间）。
+func BlacklistModel(platform, model, code, reason, detail string) {
+	blacklistHit(platform, model, code, reason, detail)
+}
+
+// BanModel 管理员手动封禁：原因统一为 BanReasonManual。已存在时覆盖原因
+// （手动封禁表达的是管理员最新意志）并累加命中次数。返回是否为新加入。
+func BanModel(platform, model string) bool {
+	platform = strings.TrimSpace(platform)
+	model = strings.TrimSpace(model)
+	if platform == "" || model == "" {
+		return false
+	}
+	ensureModelBlacklistLoaded()
+	modelBlacklistMu.Lock()
+	k := blacklistKey(platform, model)
+	isNew := modelBlacklistItems[k] == nil
+	blacklistHitLocked(k, platform, model, "", BanReasonManual, "")
+	modelBlacklistMu.Unlock()
+	flushModelBlacklist()
+	if isNew {
+		log.Printf("model blacklist: +%s %s (manual ban)", platform, model)
+	}
+	return isNew
+}
+
+// blacklistHit 加锁包装：写 entry（新增或累加），flush 落盘。
+func blacklistHit(platform, model, code, reason, detail string) {
 	platform = strings.TrimSpace(platform)
 	model = strings.TrimSpace(model)
 	if platform == "" || model == "" {
@@ -146,7 +191,13 @@ func BlacklistModel(platform, model, code, reason string) {
 	}
 	ensureModelBlacklistLoaded()
 	modelBlacklistMu.Lock()
-	k := blacklistKey(platform, model)
+	blacklistHitLocked(blacklistKey(platform, model), platform, model, code, reason, detail)
+	modelBlacklistMu.Unlock()
+	flushModelBlacklist()
+}
+
+// blacklistHitLocked 实际写入（调用方须持有 modelBlacklistMu）。
+func blacklistHitLocked(k, platform, model, code, reason, detail string) {
 	now := time.Now()
 	if e := modelBlacklistItems[k]; e != nil {
 		e.Hits++
@@ -157,20 +208,22 @@ func BlacklistModel(platform, model, code, reason string) {
 		if reason != "" {
 			e.Reason = kit.Truncate(reason, 300)
 		}
-	} else {
-		modelBlacklistItems[k] = &modelBlacklistEntry{
-			Platform:  platform,
-			Model:     model,
-			Code:      code,
-			Reason:    kit.Truncate(reason, 300),
-			CreatedAt: now,
-			LastAt:    now,
-			Hits:      1,
+		if detail != "" {
+			e.Detail = kit.Truncate(detail, 2000)
 		}
-		log.Printf("model blacklist: +%s %s (%s) %s", platform, model, code, kit.Truncate(reason, 120))
+		return
 	}
-	modelBlacklistMu.Unlock()
-	flushModelBlacklist()
+	modelBlacklistItems[k] = &modelBlacklistEntry{
+		Platform:  platform,
+		Model:     model,
+		Code:      code,
+		Reason:    kit.Truncate(reason, 300),
+		Detail:    kit.Truncate(detail, 2000),
+		CreatedAt: now,
+		LastAt:    now,
+		Hits:      1,
+	}
+	log.Printf("model blacklist: +%s %s (%s) %s", platform, model, code, kit.Truncate(reason, 120))
 }
 
 // IsModelBlacklisted 该对外模型 ID 是否已拉黑（按对外 ID 判，跨平台无歧义：
@@ -217,6 +270,7 @@ func modelBlacklistSnapshot() []map[string]any {
 			"model":     e.Model,
 			"code":      e.Code,
 			"reason":    e.Reason,
+			"detail":    e.Detail,
 			"createdAt": e.CreatedAt.UTC().Format(time.RFC3339),
 			"lastAt":    e.LastAt.UTC().Format(time.RFC3339),
 			"hits":      e.Hits,
@@ -340,7 +394,7 @@ func (c *modelErrorCapture) finish() {
 	if platform == "" {
 		return
 	}
-	BlacklistModel(platform, c.model, businessCodeOf(body), body)
+	BlacklistModel(platform, c.model, businessCodeOf(body), BanReasonAuto, body)
 }
 
 // businessCodeOf 从错误体里取业务码（形如 "code":11158），仅用于展示。
@@ -439,6 +493,36 @@ func handleModelBlacklistUnblock(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeAPI(w, http.StatusOK, apiResponse{Success: true, Message: "unblocked"})
+}
+
+// POST /admin/api/models/blacklist/ban  body: { platform, model }
+//
+// 管理员手动封禁：把不想对外提供的模型加入黑名单（原因统一「管理员手动封禁」）。
+// platform 缺省时按模型 ID 前缀推断；裸名推不出平台则拒绝（宁可不动也不误封）。
+func handleModelBlacklistBan(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
+		return
+	}
+	var req struct {
+		Platform string `json:"platform"`
+		Model    string `json:"model"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<16)).Decode(&req); err != nil {
+		writeAPI(w, http.StatusBadRequest, apiResponse{Error: "invalid JSON"})
+		return
+	}
+	platform := strings.TrimSpace(req.Platform)
+	if platform == "" {
+		platform = platformOfModel(req.Model)
+	}
+	if platform == "" || strings.TrimSpace(req.Model) == "" {
+		writeAPI(w, http.StatusBadRequest, apiResponse{Error: "platform unknown and model has no platform prefix"})
+		return
+	}
+	BanModel(platform, req.Model)
+	log.Printf("Ban model %s %s (manual)", platform, req.Model)
+	writeAPI(w, http.StatusOK, apiResponse{Success: true, Message: "banned"})
 }
 
 // POST /admin/api/models/blacklist/test  body: { platform, model }

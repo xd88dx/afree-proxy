@@ -407,6 +407,40 @@ func apiModelList() []map[string]any {
 	return out
 }
 
+// normalizeModelEntryFields 把单条 /v1/models 条目的上下文类字段统一为业界
+// 标准形态（映射规则见 proxy.go 调用处的注释）。已存在的标准字段不覆盖
+// （上游权威优先）。
+func normalizeModelEntryFields(m map[string]any) {
+	if _, ok := m["context_length"]; !ok {
+		if n := modelEntryInt(m["context"]); n > 0 {
+			m["context_length"] = n
+		}
+	}
+	if _, ok := m["max_output_tokens"]; !ok {
+		if n := modelEntryInt(m["output"]); n > 0 {
+			m["max_output_tokens"] = n
+		}
+	}
+}
+
+// modelEntryInt 宽松取整：来源字段可能是 int/int64/float64（JSON 解码产物）。
+func modelEntryInt(v any) int64 {
+	switch n := v.(type) {
+	case int:
+		return int64(n)
+	case int32:
+		return int64(n)
+	case int64:
+		return n
+	case float64:
+		return int64(n)
+	case json.Number:
+		i, _ := n.Int64()
+		return i
+	}
+	return 0
+}
+
 func ensureModelsFresh() {
 	initModelsCache()
 	modelsMu.Lock()

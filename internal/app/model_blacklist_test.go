@@ -75,7 +75,7 @@ func TestModelBlacklistLifecycle(t *testing.T) {
 	if IsModelBlacklisted("wbgb:gpt-6-luna") {
 		t.Fatal("fresh list must not contain the model")
 	}
-	BlacklistModel(platWorkBuddy, "wbgb:gpt-6-luna", "11158", "not allowed for user type")
+	BlacklistModel(platWorkBuddy, "wbgb:gpt-6-luna", "11158", BanReasonAuto, "not allowed for user type")
 	if !IsModelBlacklisted("wbgb:gpt-6-luna") {
 		t.Fatal("model should be blacklisted")
 	}
@@ -83,10 +83,13 @@ func TestModelBlacklistLifecycle(t *testing.T) {
 	if len(rows) != 1 || rows[0]["platform"] != platWorkBuddy || rows[0]["model"] != "wbgb:gpt-6-luna" {
 		t.Fatalf("snapshot = %+v", rows)
 	}
+	if rows[0]["reason"] != BanReasonAuto {
+		t.Fatalf("reason = %v, want %q", rows[0]["reason"], BanReasonAuto)
+	}
 	firstCreated := rows[0]["createdAt"]
 
 	// 重复命中：累加次数，不改首次拉黑时间。
-	BlacklistModel(platWorkBuddy, "wbgb:gpt-6-luna", "11158", "again")
+	BlacklistModel(platWorkBuddy, "wbgb:gpt-6-luna", "11158", BanReasonAuto, "again")
 	rows = modelBlacklistSnapshot()
 	if rows[0]["hits"].(int) != 2 {
 		t.Fatalf("hits = %v, want 2", rows[0]["hits"])
@@ -117,9 +120,41 @@ func TestModelBlacklistLifecycle(t *testing.T) {
 	if UnblockModel(platWorkBuddy, "wbgb:gpt-6-luna") {
 		t.Fatal("second unblock should report nothing removed")
 	}
-	BlacklistModel(platWorkBuddy, "wbgb:gpt-6-luna", "11158", "again after unblock")
+	BlacklistModel(platWorkBuddy, "wbgb:gpt-6-luna", "11158", BanReasonAuto, "again after unblock")
 	if !IsModelBlacklisted("wbgb:gpt-6-luna") {
 		t.Fatal("model should be re-blacklistable after unblock")
+	}
+}
+
+// 手动封禁：原因统一「管理员手动封禁」；对已存在条目覆盖原因。
+func TestBanModelManually(t *testing.T) {
+	t.Setenv("DATA_DIR", t.TempDir())
+	resetModelBlacklistForTest(t)
+
+	if !BanModel(platZen, "zen:big-pickle") {
+		t.Fatal("first manual ban should report a new entry")
+	}
+	if !IsModelBlacklisted("zen:big-pickle") {
+		t.Fatal("manually banned model should be blacklisted")
+	}
+	rows := modelBlacklistSnapshot()
+	if rows[0]["reason"] != BanReasonManual || rows[0]["code"] != "" {
+		t.Fatalf("manual ban entry = %+v", rows[0])
+	}
+
+	// 自动封禁后再手动封禁：原因被覆盖为手动封禁。
+	BlacklistModel(platWorkBuddy, "wbgb:gpt-6-luna", "11158", BanReasonAuto, "not allowed for user type")
+	BanModel(platWorkBuddy, "wbgb:gpt-6-luna")
+	rows = modelBlacklistSnapshot()
+	byModel := map[string]map[string]any{}
+	for _, r := range rows {
+		byModel[r["model"].(string)] = r
+	}
+	if got := byModel["wbgb:gpt-6-luna"]["reason"]; got != BanReasonManual {
+		t.Fatalf("reason after manual ban = %v, want %q", got, BanReasonManual)
+	}
+	if BanModel(platZen, "zen:big-pickle") {
+		t.Fatal("re-ban of existing entry must report not-new")
 	}
 }
 
@@ -145,10 +180,16 @@ func TestWithModelBlacklistScan(t *testing.T) {
 	if !strings.Contains(rec.Body.String(), "11158") {
 		t.Fatalf("body mutated: %s", rec.Body.String())
 	}
-	// 平台/业务码落库正确。
+	// 平台/业务码/统一原因落库正确。
 	rows := modelBlacklistSnapshot()
 	if rows[0]["platform"] != platWorkBuddy || rows[0]["code"] != "11158" {
 		t.Fatalf("entry = %+v", rows[0])
+	}
+	if rows[0]["reason"] != BanReasonAuto {
+		t.Fatalf("reason = %v, want %q", rows[0]["reason"], BanReasonAuto)
+	}
+	if rows[0]["detail"] == "" || !strings.Contains(rows[0]["detail"].(string), "11158") {
+		t.Fatalf("detail should keep the upstream body, got %+v", rows[0]["detail"])
 	}
 
 	// 成功响应（流式）不触发拉黑。

@@ -237,7 +237,7 @@ dialog .field label{display:block;font-size:12px;color:var(--text2);margin-botto
 .key-display:hover{border-color:var(--accent)}
 .model-tag{display:inline-block;padding:2px 9px;border-radius:6px;font-size:11px;background:rgba(255,255,255,.06);color:var(--text2);margin:2px;letter-spacing:.02em}
 .model-tag.free{border:1px solid rgba(126,226,168,.35);color:var(--accent2);background:rgba(126,226,168,.07)}
-.model-tag.context-1m{border:1px solid rgba(242,160,184,.45);color:var(--pink);background:rgba(242,160,184,.12)}
+.model-tag.context-1m{border:1px solid rgba(138,180,248,.45);color:var(--accent);background:rgba(138,180,248,.12)}
 .theme-toggle{display:inline-flex;align-items:center;gap:5px;padding:4px 9px;border:1px solid var(--border);border-radius:7px;background:rgba(255,255,255,.04);color:var(--text2);cursor:pointer;font-size:12px;transition:.15s;font-family:inherit}
 .theme-toggle:hover{color:var(--text);background:rgba(255,255,255,.09)}
 [data-theme="dark"] .theme-toggle .light-label{display:none}
@@ -608,13 +608,13 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
 </div>
 
 <div class="section">
-  <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></span> Paid / blocked models <span id="blacklistCount" class="probe-pill" style="font-weight:normal"></span></div>
+  <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></span> Banned models <span id="blacklistCount" class="probe-pill" style="font-weight:normal"></span></div>
   <div class="section-body">
-    <div class="hint" style="margin-top:0">Models the upstream refused for this account type (e.g. code 11158 "not allowed for user type"). They are hidden from /v1/models so clients stop picking them. Test sends a real request with the platform's first enabled credential — if it succeeds, click Unblock. Unblocking only removes the entry; the same error will block it again.</div>
+    <div class="hint" style="margin-top:0">Models banned automatically (the upstream refused them for this account type, e.g. code 11158 "not allowed for user type") or manually by the admin. They are hidden from /v1/models so clients stop picking them. Test sends a real request with the platform's first enabled credential — if it succeeds, click Unblock. Unblocking only removes the entry; the same upstream error will ban it again.</div>
     <div class="table-wrap">
       <table>
-        <thead><tr><th style="width:140px">Platform</th><th>Model</th><th style="width:180px">Blocked at</th><th style="width:200px;text-align:center">Actions</th></tr></thead>
-        <tbody id="blacklistBody"><tr><td colspan="4" class="empty">Loading...</td></tr></tbody>
+        <thead><tr><th style="width:140px">Platform</th><th>Model</th><th style="width:190px">Ban reason</th><th style="width:180px">Blocked at</th><th style="width:200px;text-align:center">Actions</th></tr></thead>
+        <tbody id="blacklistBody"><tr><td colspan="5" class="empty">Loading...</td></tr></tbody>
       </table>
     </div>
   </div>
@@ -2199,16 +2199,20 @@ const I18N_ZH = {
   'never': '从不',
   'n/a': '无',
   'not minted': '未铸造',
-  // 收费模型区（模型黑名单）
-  'Paid / blocked models': '收费模型',
-  'Blocked at': '加入黑名单时间',
+  // 封禁模型区（模型黑名单）
+  'Banned models': '封禁模型',
+  'Ban reason': '封禁原因',
+  'Ban': '封禁',
+  'Blocked at': '封禁时间',
   'Unblock': '解禁',
-  'No blocked models': '暂无被拉黑的模型',
+  'No blocked models': '暂无被封禁的模型',
   'Testing...': '测试中…',
   'reachable — you can unblock it': '请求成功——可以解禁',
-  'Unblock this model? It becomes available in /v1/models again; the same upstream error will block it again.': '解禁该模型？它会重新出现在 /v1/models；若上游仍报同样的错误，程序会再次拉黑。',
+  'Unblock this model? It becomes available in /v1/models again; the same upstream error will ban it again.': '解禁该模型？它会重新出现在 /v1/models；若上游仍报同样的错误，程序会再次封禁。',
+  'Ban this model? It is removed from /v1/models immediately; you can unblock it in the Banned models table.': '封禁该模型？它会立即从 /v1/models 移除；之后可在封禁模型表中解禁。',
+  'Banned: ': '已封禁：',
   'Unblocked: ': '已解禁：',
-  'Models the upstream refused for this account type (e.g. code 11158 "not allowed for user type"). They are hidden from /v1/models so clients stop picking them. Test sends a real request with the platform\'s first enabled credential — if it succeeds, click Unblock. Unblocking only removes the entry; the same error will block it again.': '上游按账号类型拒掉的模型（如 code 11158「该账号类型不支持该模型」）。它们已从 /v1/models 移除，客户端不会再选到。Test 会用该平台第一个启用的凭据发一次真实请求——若成功，点「解禁」。解禁只移出名单；同样的错误会再次把它拉黑。',
+  'Models banned automatically (the upstream refused them for this account type, e.g. code 11158 "not allowed for user type") or manually by the admin. They are hidden from /v1/models so clients stop picking them. Test sends a real request with the platform\'s first enabled credential — if it succeeds, click Unblock. Unblocking only removes the entry; the same upstream error will ban it again.': '自动封禁（上游按账号类型拒掉的模型，如 code 11158「该账号类型不支持该模型」）或管理员手动封禁的模型。它们已从 /v1/models 移除，客户端不会再选到。Test 会用该平台第一个启用的凭据发一次真实请求——若成功，点「解禁」。解禁只移出名单；同样的上游错误会再次把它封禁。',
 };
 function T(s) { return LANG === 'zh' ? (I18N_ZH[s] || s) : s; }
 function toggleLang() {
@@ -4171,7 +4175,7 @@ async function loadModels() {
     // 倍率阈值先于渲染拉取：它决定 wb 名单与下拉选中项（服务端配置，
     // wbconfig pool.model_rate_filter）。
     await syncWorkbuddyRateFilter();
-    // 黑名单同样先于渲染拉取：三个模型块都要剔除已拉黑模型（收费模型区的
+    // 黑名单同样先于渲染拉取：三个模型块都要剔除已封禁模型（封禁模型区的
     // 语义是「不再对外提供」，设置页列表不能还展示它们）。
     await syncModelBlacklist();
     const d = await api('GET', '/models');
@@ -4188,20 +4192,27 @@ async function loadModels() {
     // 黑名单过滤：cline/zen 目录返回的是裸 ID（对外形态 zen: 前缀由网关拼），
     // 所以两种形态都查；wb 目录返回的已带 wbcn:/wbgb: 前缀。
     const notBlocked = m => m && !modelBlacklistIds.has(m.id) && !modelBlacklistIds.has('zen:' + m.id);
+    // 封禁按钮（手动封禁 = 加入黑名单，原因「管理员手动封禁」）。
+    const banBtn = (platform, model, refresh) =>
+      '<button class="btn btn-sm btn-danger" data-bl-ban="1" data-platform="' + esc(platform) + '" data-model="' + esc(model) + '"' +
+      (refresh ? ' data-refresh="' + esc(refresh) + '"' : '') + ' style="white-space:nowrap">' + T('Ban') + '</button>';
     const clineV = models.filter(notBlocked);
     const zenV = zen.filter(notBlocked);
     const clineBlock = clineV.length
       ? clineV.map(m => {
           return row(
             '<span style="font-family:\'JetBrains Mono\',monospace;font-size:13px;flex:1">' + esc(m.id) + '</span>' +
-            '<span class="model-tag free">' + T('no charge') + '</span>');
+            '<span class="model-tag free">' + T('no charge') + '</span>' +
+            banBtn('cline', m.id));
         }).join('')
       : '<div class="empty">' + T('No models') + '</div>';
     const zenBlock = zenV.length
       ? zenV.map(m => row(
             '<span style="font-family:\'JetBrains Mono\',monospace;font-size:13px;flex:1">' + esc(m.id) + '</span>' +
             '<span class="model-tag free">' + T('no charge') + '</span>' +
-            wbContextTagHTML(m.context, T('Context')))).join('')
+            wbContextTagHTML(m.context, T('Context')) +
+            // 目录是裸 ID，对外形态带 zen: 前缀——封禁按对外 ID 记。
+            banBtn('zen', 'zen:' + m.id))).join('')
       : '<div class="empty">' + T('No models') + '</div>';
     const wbModels = wbAll.filter(notBlocked).filter(wbModelMatchesFilter).sort((a, b) => wbRate(a) - wbRate(b));
     const rateOptions = WB_RATE_OPTIONS.map(v =>
@@ -4215,7 +4226,8 @@ async function loadModels() {
             free +
             '<span class="model-tag">' + wbRateHTML(m) + '</span>' +
             '<span class="model-tag" title="' + T('Default tier') + '">' + esc(m.default_effort || '—') + '</span>' +
-            wbContextTagHTML(m.context_length, T('Maximum context length')));
+            wbContextTagHTML(m.context_length, T('Maximum context length')) +
+            banBtn('workbuddy', m.id));
         }).join('')
       : '<div class="empty">' + T('No WorkBuddy models under the current filter') + '</div>';
     _('modelsList').innerHTML =
@@ -4230,10 +4242,11 @@ async function loadModels() {
   } catch (e) { _('modelsList').textContent = T('Failed to load'); }
 }
 
-// ========== Paid / blocked models（模型黑名单） ==========
-// 上游按账号类型拒掉的模型（code 11158 等）自动进这张表并从 /v1/models 移除。
+// ========== Banned models（封禁模型） ==========
+// 自动封禁：上游按账号类型拒掉的模型（code 11158 等）在网关出口命中判据后进这张表。
+// 手动封禁：各模型展示区的「封禁」按钮。两类均已从 /v1/models 移除。
 // Test = 用该平台第一个启用凭据发一次真实请求；Unblock = 只移出名单，
-// 后续同样错误会再次拉黑（不是永久豁免）。
+// 后续同样的上游错误会再次自动封禁（手动封禁解禁后不会自动恢复）。
 const BLACKLIST_PLATFORM_LABEL = {
   workbuddy: 'WorkBuddy', zen: 'OpenCode', cline: 'Cline',
   amd: 'AMDCloud', openrouter: 'OpenRouter', tokenharbor: 'TokenHarbor', other: 'Other'
@@ -4257,16 +4270,18 @@ async function loadModelBlacklist() {
     const items = await syncModelBlacklist();
     if (_('blacklistCount')) _('blacklistCount').textContent = items.length ? '· ' + items.length : '';
     if (!items.length) {
-      tb.innerHTML = '<tr><td colspan="4" class="empty">' + T('No blocked models') + '</td></tr>';
+      tb.innerHTML = '<tr><td colspan="5" class="empty">' + T('No blocked models') + '</td></tr>';
       return;
     }
     tb.innerHTML = items.map(it => {
       const plat = BLACKLIST_PLATFORM_LABEL[it.platform] || it.platform;
       const when = it.createdAt ? new Date(it.createdAt).toLocaleString() : '—';
-      const title = esc([it.code ? 'code ' + it.code : '', it.reason || ''].filter(Boolean).join(' · ')).slice(0, 500);
+      // 悬停看上游原始报文 + 业务码；表格列只放统一文案（自动/手动封禁）。
+      const title = esc([it.code ? 'code ' + it.code : '', it.detail || ''].filter(Boolean).join(' · ')).slice(0, 800);
       return '<tr>' +
         '<td>' + esc(plat) + '</td>' +
         '<td style="font-family:\'JetBrains Mono\',monospace" title="' + title + '">' + esc(it.model) + '</td>' +
+        '<td style="font-size:12px;color:var(--text2)">' + esc(it.reason || '—') + '</td>' +
         '<td style="font-size:12px;color:var(--text2)">' + esc(when) + '</td>' +
         '<td style="text-align:center;white-space:nowrap">' +
           '<button class="btn btn-sm" data-bl-test="1" data-platform="' + esc(it.platform) + '" data-model="' + esc(it.model) + '">' + T('Test') + '</button> ' +
@@ -4274,7 +4289,7 @@ async function loadModelBlacklist() {
         '</td></tr>';
     }).join('');
   } catch (e) {
-    tb.innerHTML = '<tr><td colspan="4" class="empty">' + esc(T('Failed to load') + ': ' + e.message) + '</td></tr>';
+    tb.innerHTML = '<tr><td colspan="5" class="empty">' + esc(T('Failed to load') + ': ' + e.message) + '</td></tr>';
   }
 }
 async function testBlockedModel(btn) {
@@ -4294,7 +4309,7 @@ async function testBlockedModel(btn) {
 }
 async function unblockBlockedModel(btn) {
   const platform = btn.dataset.platform, model = btn.dataset.model;
-  if (!confirm(T('Unblock this model? It becomes available in /v1/models again; the same upstream error will block it again.'))) return;
+  if (!confirm(T('Unblock this model? It becomes available in /v1/models again; the same upstream error will ban it again.'))) return;
   btn.disabled = true;
   try {
     await api('POST', '/models/blacklist/unblock', { platform: platform, model: model });
@@ -4304,9 +4319,30 @@ async function unblockBlockedModel(btn) {
     toast(e.message, 'error'); btn.disabled = false;
   }
 }
+// banModel 手动封禁：模型展示区「封禁」按钮 → POST /models/blacklist/ban，
+// 后端原因统一记「管理员手动封禁」。成功后刷新封禁表与当前所在页的模型列表。
+async function banModel(btn) {
+  const platform = btn.dataset.platform, model = btn.dataset.model;
+  if (!confirm(T('Ban this model? It is removed from /v1/models immediately; you can unblock it in the Banned models table.'))) return;
+  btn.disabled = true;
+  try {
+    await api('POST', '/models/blacklist/ban', { platform: platform, model: model });
+    toast(T('Banned: ') + model, 'success');
+    loadModelBlacklist();
+    const ref = btn.dataset.refresh;
+    if (ref === 'amd') loadAmdConfig();
+    else if (ref === 'or') loadOrConfig();
+    else if (ref === 'th') loadTHConfig();
+    else loadModels();
+  } catch (e) {
+    toast(e.message, 'error'); btn.disabled = false;
+  }
+}
 document.addEventListener('click', e => {
   const t = e.target.closest ? e.target.closest('button[data-bl-test]') : null;
   if (t) { testBlockedModel(t); return; }
+  const b = e.target.closest ? e.target.closest('button[data-bl-ban]') : null;
+  if (b) { banModel(b); return; }
   const u = e.target.closest ? e.target.closest('button[data-bl-unblock]') : null;
   if (u) unblockBlockedModel(u);
 });
@@ -4870,7 +4906,9 @@ async function loadOrConfig() {
     _('orBaseURL').value = c.baseURL || '';
     _('orMaxConc').value = c.maxConcurrency || 8;
     _('orRetries').value = c.retries || 3;
-    const models = c.models || [];
+    // 封禁过滤：黑名单语义是「不再对外提供」，页面模型列表同步剔除。
+    await syncModelBlacklist();
+    const models = (c.models || []).filter(m => m && !modelBlacklistIds.has(m.id));
     _('orModelsCount').textContent = '(' + models.length + T(' free models') + ')';
     const sel = _('orProbeModel');
     if (sel) {
@@ -4887,7 +4925,8 @@ async function loadOrConfig() {
         ? models.map(m => row(
             '<span style="font-family:\'JetBrains Mono\',monospace;font-size:13px;flex:1"' + (m.name ? ' title="' + esc(m.name) + '"' : '') + '>' + esc(m.id) + '</span>' +
             '<span class="model-tag free">' + T('no charge') + '</span>' +
-            wbContextTagHTML(m.context, T('Context')))).join('')
+            wbContextTagHTML(m.context, T('Context')) +
+            '<button class="btn btn-sm btn-danger" data-bl-ban="1" data-platform="openrouter" data-model="' + esc(m.id) + '" data-refresh="or" style="white-space:nowrap">' + T('Ban') + '</button>')).join('')
         : '<div class="empty">' + T('No free models yet — click Refresh models') + '</div>';
     }
   } catch (e) { /* ignore */ }
@@ -5137,7 +5176,9 @@ async function loadAmdConfig() {
     _('amdBaseURL').value = c.baseURL || '';
     _('amdMaxConc').value = c.maxConcurrency || 8;
     _('amdRetries').value = c.retries || 3;
-    const models = c.models || [];
+    // 封禁过滤：黑名单语义是「不再对外提供」，页面模型列表同步剔除。
+    await syncModelBlacklist();
+    const models = (c.models || []).filter(m => m && !modelBlacklistIds.has(m.id));
     _('amdModelsCount').textContent = '(' + models.length + T(' free models') + ')';
     const sel = _('amdProbeModel');
     if (sel) {
@@ -5154,7 +5195,8 @@ async function loadAmdConfig() {
         ? models.map(m => row(
             '<span style="font-family:\'JetBrains Mono\',monospace;font-size:13px;flex:1"' + (m.name ? ' title="' + esc(m.name) + '"' : '') + '>' + esc(m.id) + '</span>' +
             '<span class="model-tag free">' + T('no charge') + '</span>' +
-            wbContextTagHTML(m.context, T('Context')))).join('')
+            wbContextTagHTML(m.context, T('Context')) +
+            '<button class="btn btn-sm btn-danger" data-bl-ban="1" data-platform="amd" data-model="' + esc(m.id) + '" data-refresh="amd" style="white-space:nowrap">' + T('Ban') + '</button>')).join('')
         : '<div class="empty">' + T('No models yet — click Refresh models') + '</div>';
     }
   } catch (e) { /* ignore */ }
@@ -5404,7 +5446,9 @@ async function loadTHConfig() {
     _('thBaseURL').value = c.baseURL || '';
     _('thMaxConc').value = c.maxConcurrency || 8;
     _('thRetries').value = c.retries || 3;
-    const models = c.models || [];
+    // 封禁过滤：黑名单语义是「不再对外提供」，页面模型列表同步剔除。
+    await syncModelBlacklist();
+    const models = (c.models || []).filter(m => m && !modelBlacklistIds.has(m.id));
     _('thModelsCount').textContent = '(' + models.length + T(' free models') + ')';
     const sel = _('thProbeModel');
     if (sel) {
@@ -5421,7 +5465,8 @@ async function loadTHConfig() {
         ? models.map(m => row(
             '<span style="font-family:\'JetBrains Mono\',monospace;font-size:13px;flex:1"' + (m.name ? ' title="' + esc(m.name) + '"' : '') + '>' + esc(m.id) + '</span>' +
             '<span class="model-tag free">' + T('no charge') + '</span>' +
-            wbContextTagHTML(m.context, T('Context')))).join('')
+            wbContextTagHTML(m.context, T('Context')) +
+            '<button class="btn btn-sm btn-danger" data-bl-ban="1" data-platform="tokenharbor" data-model="' + esc(m.id) + '" data-refresh="th" style="white-space:nowrap">' + T('Ban') + '</button>')).join('')
         : '<div class="empty">' + T('No free models yet — click Refresh models') + '</div>';
     }
   } catch (e) { /* ignore */ }
