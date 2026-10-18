@@ -148,10 +148,9 @@ select{cursor:pointer;appearance:none;background-image:linear-gradient(45deg,tra
 /* 宽度基准 = 两位数色签的自然宽度（34px）：个位数居中补白，三位数（.w3，
    如"100%"）收紧左右内边距塞进同一宽度，各档宽度恒定不随位数抖动 */
 .eg-badge.w3,.eg-rate.w3{padding-left:2px;padding-right:2px}
-/* 握手延迟徽标（.hs）固定在最右（right:6px，与单徽标同位），在线率让位到
-   right:46px（由 egBadgeHTML 内联给出）。此规则此前误写为 right:46px，把
-   延迟徽标也推到 46px —— 两个徽标完全重叠，后渲染的延迟盖住在线率，面板上
-   就只剩延迟、看不到在线率百分比。 */
+/* 握手延迟徽标（.hs）单徽标时在最右（right:6px 与默认同位）；与在线率并排
+   时由 egBadgeHTML 内联让位到 right:46px（延迟在左、在线率在最右）。此规则
+   此前误写为固定 right:46px，与在线率的内联让位重叠，延迟盖住在线率。 */
 .eg-badge.hs{right:6px}
 .eg-wrap.has-hs .eg-input{padding-right:96px}
 /* 在线率五档底色：≥80 绿 / ≥60 蓝 / ≥40 粉 / ≥20 黄 / 以下红。深色主题用
@@ -3612,8 +3611,10 @@ function egBadgeHTML(value) {
   const rate = proxyRecentRate(value);
   const hs = proxyRecentHs(value);
   if (!rate && !hs) return '';
-  return (rate ? '<span class="eg-badge t-' + rate.tier + (rate.text.length > 3 ? ' w3' : '') + '"' + (hs ? ' style="right:46px"' : '') + '>' + esc(rate.text) + '</span>' : '') +
-    (hs ? '<span class="eg-badge hs w3 t-' + hs.tier + '">' + esc(hs.text) + '</span>' : '');
+  // 排版：延迟徽标靠左（right:46px，仅双徽标时内联让位），在线率固定最右
+  //（right:6px，.eg-badge 默认位）。单徽标时二者都在最右。
+  return (rate ? '<span class="eg-badge t-' + rate.tier + (rate.text.length > 3 ? ' w3' : '') + '">' + esc(rate.text) + '</span>' : '') +
+    (hs ? '<span class="eg-badge hs w3 t-' + hs.tier + '"' + (rate ? ' style="right:46px"' : '') + '>' + esc(hs.text) + '</span>' : '');
 }
 // egSyncBadge 按当前 dataset.value 重绘右侧在线率/握手延迟徽标（选中/失焦/
 // 联动后调用）。双指标皆无或全局/直连时移除徽标并收回右侧留白。
@@ -4170,6 +4171,9 @@ async function loadModels() {
     // 倍率阈值先于渲染拉取：它决定 wb 名单与下拉选中项（服务端配置，
     // wbconfig pool.model_rate_filter）。
     await syncWorkbuddyRateFilter();
+    // 黑名单同样先于渲染拉取：三个模型块都要剔除已拉黑模型（收费模型区的
+    // 语义是「不再对外提供」，设置页列表不能还展示它们）。
+    await syncModelBlacklist();
     const d = await api('GET', '/models');
     const models = d.data.models || [];
     let info = '';
@@ -4181,20 +4185,25 @@ async function loadModels() {
       fetchWorkbuddyModels()
     ]);
     const row = (inner) => '<div style="display:flex;align-items:center;gap:10px;padding:8px 12px;margin:5px 0;background:rgba(148,163,184,.06);border:1px solid var(--border);border-radius:10px;transition:.15s">' + inner + '</div>';
-    const clineBlock = models.length
-      ? models.map(m => {
+    // 黑名单过滤：cline/zen 目录返回的是裸 ID（对外形态 zen: 前缀由网关拼），
+    // 所以两种形态都查；wb 目录返回的已带 wbcn:/wbgb: 前缀。
+    const notBlocked = m => m && !modelBlacklistIds.has(m.id) && !modelBlacklistIds.has('zen:' + m.id);
+    const clineV = models.filter(notBlocked);
+    const zenV = zen.filter(notBlocked);
+    const clineBlock = clineV.length
+      ? clineV.map(m => {
           return row(
             '<span style="font-family:\'JetBrains Mono\',monospace;font-size:13px;flex:1">' + esc(m.id) + '</span>' +
             '<span class="model-tag free">' + T('no charge') + '</span>');
         }).join('')
       : '<div class="empty">' + T('No models') + '</div>';
-    const zenBlock = zen.length
-      ? zen.map(m => row(
+    const zenBlock = zenV.length
+      ? zenV.map(m => row(
             '<span style="font-family:\'JetBrains Mono\',monospace;font-size:13px;flex:1">' + esc(m.id) + '</span>' +
             '<span class="model-tag free">' + T('no charge') + '</span>' +
             wbContextTagHTML(m.context, T('Context')))).join('')
       : '<div class="empty">' + T('No models') + '</div>';
-    const wbModels = wbAll.filter(wbModelMatchesFilter).sort((a, b) => wbRate(a) - wbRate(b));
+    const wbModels = wbAll.filter(notBlocked).filter(wbModelMatchesFilter).sort((a, b) => wbRate(a) - wbRate(b));
     const rateOptions = WB_RATE_OPTIONS.map(v =>
       '<option value="' + v + '"' + (v === workbuddyRateFilter ? ' selected' : '') + '>' + v + '</option>').join('');
     const wbBlock = wbModels.length
@@ -4229,12 +4238,23 @@ const BLACKLIST_PLATFORM_LABEL = {
   workbuddy: 'WorkBuddy', zen: 'OpenCode', cline: 'Cline',
   amd: 'AMDCloud', openrouter: 'OpenRouter', tokenharbor: 'TokenHarbor', other: 'Other'
 };
+// 已拉黑模型 ID 集合（对外 ID，如 wbgb:gpt-6-luna）。设置页各模型块渲染前
+// 统一过滤——黑名单的语义是「不再对外提供」，不能只过滤 /v1/models 而把
+// 设置页列表漏掉（此前 wb 块走 /admin/workbuddy/api/models 没过滤）。
+let modelBlacklistIds = new Set();
+async function syncModelBlacklist() {
+  try {
+    const d = await api('GET', '/models/blacklist');
+    const items = (d.data || {}).items || [];
+    modelBlacklistIds = new Set(items.map(i => i.model));
+    return items;
+  } catch (e) { return []; }
+}
 async function loadModelBlacklist() {
   const tb = _('blacklistBody');
   if (!tb) return;
   try {
-    const d = await api('GET', '/models/blacklist');
-    const items = (d.data || {}).items || [];
+    const items = await syncModelBlacklist();
     if (_('blacklistCount')) _('blacklistCount').textContent = items.length ? '· ' + items.length : '';
     if (!items.length) {
       tb.innerHTML = '<tr><td colspan="4" class="empty">' + T('No blocked models') + '</td></tr>';
