@@ -148,10 +148,9 @@ select{cursor:pointer;appearance:none;background-image:linear-gradient(45deg,tra
 /* 宽度基准 = 两位数色签的自然宽度（34px）：个位数居中补白，三位数（.w3，
    如"100%"）收紧左右内边距塞进同一宽度，各档宽度恒定不随位数抖动 */
 .eg-badge.w3,.eg-rate.w3{padding-left:2px;padding-right:2px}
-/* 握手延迟徽标（.hs）单徽标时在最右（right:6px 与默认同位）；与在线率并排
-   时由 egBadgeHTML 内联让位到 right:46px（延迟在左、在线率在最右）。此规则
-   此前误写为固定 right:46px，与在线率的内联让位重叠，延迟盖住在线率。 */
-.eg-badge.hs{right:6px}
+/* 握手延迟徽标（.hs）恒定 right:46px（在线率槽位左侧）——只有延迟没有
+   在线率时在线率位置空着，延迟徽标不右移。 */
+.eg-badge.hs{right:46px}
 .eg-wrap.has-hs .eg-input{padding-right:96px}
 /* 在线率五档底色：≥80 绿 / ≥60 蓝 / ≥40 粉 / ≥20 黄 / 以下红。深色主题用
    粉彩底配深字、浅色主题用深底配浅字——文字取 var(--bg) 双主题皆可读 */
@@ -165,10 +164,16 @@ select{cursor:pointer;appearance:none;background-image:linear-gradient(45deg,tra
 .pp-rate.w3{padding-left:2px;padding-right:2px}
 .eg-input:focus{outline:none;border-color:var(--accent)}
 .eg-menu{position:absolute;z-index:1200;background:var(--bg2);border:1px solid var(--border-strong);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.35);max-height:260px;overflow-y:auto;min-width:220px}
-.eg-item{padding:6px 10px;font-size:12px;cursor:pointer;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.eg-item{position:relative;padding:6px 10px;font-size:12px;cursor:pointer;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .eg-item:hover{background:rgba(138,180,248,.15)}
 .eg-item.active{background:rgba(138,180,248,.22)}
-.eg-rate{float:right;margin-left:12px;color:var(--bg);font-variant-numeric:tabular-nums;font-size:11px;font-weight:600;line-height:1;border-radius:6px;padding:2px 6px;width:34px;text-align:center;box-sizing:border-box;white-space:nowrap}
+/* 菜单项右侧双标签改绝对定位固定槽位：在线率恒定最右（right:6px），握手
+   延迟（.hs-tag）恒定 right:46px——只有延迟时在线率位置空着，延迟不右移。
+   原 float:right 布局下单徽标会贴到最右，槽位不固定。含标签的项由
+   .has-rates 预留右侧空间，避免文字 ellipsis 压到标签下面。 */
+.eg-rate{position:absolute;right:6px;top:50%;transform:translateY(-50%);color:var(--bg);font-variant-numeric:tabular-nums;font-size:11px;font-weight:600;line-height:1;border-radius:6px;padding:2px 6px;width:34px;text-align:center;box-sizing:border-box;white-space:nowrap}
+.eg-rate.hs-tag{right:46px}
+.eg-item.has-rates{padding-right:96px}
 .eg-item.eg-hint{cursor:default;color:var(--text3)}
 .eg-item.eg-hint:hover{background:none}
 .flex{display:flex;align-items:center;gap:8px}
@@ -494,9 +499,13 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
         <input id="ppSubURL" oninput="syncProxyListEditable()" placeholder="http://10.10.10.5:12321/proxy/socks.txt — the pool is then managed by this subscription; leave empty to edit the list manually">
       </div>
       <div class="field" style="flex:1"><label>Update frequency (cron)</label>
-        <input id="ppSubCron" placeholder="*/30 * * * * (min hour day month weekday)">
+        <div style="display:flex;gap:8px;align-items:center">
+          <input id="ppSubCron" placeholder="*/30 * * * * (min hour day month weekday)" style="flex:1;min-width:0">
+          <button class="btn" id="ppSubUpdateBtn" onclick="triggerProxySubUpdate()" style="white-space:nowrap">Update now</button>
+        </div>
       </div>
     </div>
+    <div id="ppSubUpdateResult" style="margin:-6px 0 10px;font-size:12px;min-height:14px"></div>
     <div class="hint" style="margin-bottom:10px">Subscription refresh replaces the whole pool with the fetched list. Fetch failures keep the current pool.</div>
     <div class="form-actions"><button class="btn btn-primary" onclick="saveProxyPool()">Save proxy pool</button></div>
     <div id="ppSaveResult" style="margin-top:8px"></div>
@@ -2165,6 +2174,9 @@ const I18N_ZH = {
   'Managed by the subscription URL — clear it to edit manually': '由订阅链接管理——清空后才能手动编辑',
   'http://10.10.10.5:12321/proxy/socks.txt — the pool is then managed by this subscription; leave empty to edit the list manually': 'http://10.10.10.5:12321/proxy/socks.txt —— 填写后代理池由订阅管理；留空则手动编辑列表',
   'Update frequency (cron)': '更新频率',
+  'Update now': '立即更新',
+  'Updating...': '更新中...',
+  'Update done': '更新完成',
   'Subscription refresh replaces the whole pool with the fetched list. Fetch failures keep the current pool.': '订阅刷新会用拉取到的列表整池替换，拉取失败保留现池不变。',
   '*/30 * * * * (min hour day month weekday)': '*/30 * * * *（分 时 日 月 周）',
   'no key': '无 key',
@@ -3631,17 +3643,15 @@ function egLabel(v) {
 }
 // egBadgeHTML 代理值的闭合徽标 HTML：在线率 + 平均握手延迟，与下拉菜单项的
 // eg-rate 同源（proxyHealthByProxy 缓存、同一套五档配色）。全局/直连或两个
-// 指标都无样本时返回空串（不占位）。在线率在右（有延迟徽标时让位 46px），
-// 握手延迟（.hs）在其左，两者定宽同 34px。
+// 指标都无样本时返回空串（不占位）。槽位恒定：在线率固定最右（right:6px），
+// 握手延迟（.hs）恒定 right:46px——只有延迟时在线率位置空着，延迟不右移。
 function egBadgeHTML(value) {
   if (!value || value === EGRESS_DIRECT) return '';
   const rate = proxyRecentRate(value);
   const hs = proxyRecentHs(value);
   if (!rate && !hs) return '';
-  // 排版：延迟徽标靠左（right:46px，仅双徽标时内联让位），在线率固定最右
-  //（right:6px，.eg-badge 默认位）。单徽标时二者都在最右。
   return (rate ? '<span class="eg-badge t-' + rate.tier + (rate.text.length > 3 ? ' w3' : '') + '">' + esc(rate.text) + '</span>' : '') +
-    (hs ? '<span class="eg-badge hs w3 t-' + hs.tier + '"' + (rate ? ' style="right:46px"' : '') + '>' + esc(hs.text) + '</span>' : '');
+    (hs ? '<span class="eg-badge hs w3 t-' + hs.tier + '">' + esc(hs.text) + '</span>' : '');
 }
 // egSyncBadge 按当前 dataset.value 重绘右侧在线率/握手延迟徽标（选中/失焦/
 // 联动后调用）。双指标皆无或全局/直连时移除徽标并收回右侧留白。
@@ -3729,10 +3739,11 @@ function egRenderItems(input, menu, q) {
     : (ready
         ? proxyListCache.filter(matches).map(proxyItem)
         : []);
-  // 菜单项右侧双标签：在线率在最右，握手延迟（.eg-rate.hs-tag）在其左；
-  // 两者同 34px 定宽、同五档配色（延迟档位为其镜像）。
+  // 菜单项右侧双标签：在线率恒定最右，握手延迟（.eg-rate.hs-tag）恒定在其左
+  //（right:46px）——只有延迟时在线率位置空着，延迟不右移；两者同 34px 定宽、
+  // 同五档配色（延迟档位为其镜像）。
   let html = items.concat(proxies).map(it =>
-    '<div class="eg-item' + (it.active ? ' active' : '') + '" data-value="' + esc(it.v) + '">' + esc(it.label) +
+    '<div class="eg-item' + (it.active ? ' active' : '') + ((it.rate || it.hs) ? ' has-rates' : '') + '" data-value="' + esc(it.v) + '">' + esc(it.label) +
     (it.rate ? '<span class="eg-rate t-' + it.rate.tier + (it.rate.text.length > 3 ? ' w3' : '') + '">' + it.rate.text + '</span>' : '') +
     (it.hs ? '<span class="eg-rate hs-tag w3 t-' + it.hs.tier + '">' + it.hs.text + '</span>' : '') +
     '</div>'
@@ -4855,6 +4866,22 @@ async function saveProxyPool() {
     toast('Proxy pool saved', 'success');
     loadProxyPool();
   } catch (e) { toast(T('Save failed: ') + e.message, 'error'); }
+}
+
+// triggerProxySubUpdate 代理池"立即更新"按钮：立即执行一次订阅刷新任务
+// （与 cron 定时同一条链路），结果显示在按钮下方，5s 后自动清除。
+async function triggerProxySubUpdate() {
+  const btn = _('ppSubUpdateBtn'), el = _('ppSubUpdateResult');
+  btn.disabled = true;
+  el.textContent = T('Updating...');
+  try {
+    const r = await api('POST', '/proxypool/subscription/update');
+    el.innerHTML = '<span style="color:var(--accent2)">' + esc(r.message || T('Update done')) + '</span>';
+  } catch (e) {
+    el.innerHTML = '<span style="color:var(--danger)">' + esc(e.message) + '</span>';
+  }
+  btn.disabled = false;
+  setTimeout(() => { el.textContent = ''; }, 8000);
 }
 
 // saveGlobalPolicy 统一保存各平台的全局走池开关：一次点击依次下发

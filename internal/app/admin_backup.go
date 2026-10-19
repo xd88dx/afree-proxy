@@ -80,6 +80,15 @@ type configBackup struct {
 	// 2026-10-14 补：workbuddyBackup 原只覆盖 vendor config.json 与 auths
 	// 凭据，漏了出口绑定，导入后该文件仍留旧值（而非本机值），跨机迁移出错。
 	WorkBuddyProxies map[string]workbuddyProxyBinding `json:"workBuddyProxies,omitempty"`
+	// ModelBlacklist 模型封禁表（.model-blacklist.json）。2026-10-19 补：
+	// 导出导入一直漏了封禁数据，跨机迁移后 /v1/models 把已确认不可调用的
+	// 模型重新暴露给客户端，每次选中都吃一轮无谓失败。
+	ModelBlacklist map[string]*modelBlacklistEntry `json:"modelBlacklist,omitempty"`
+	// ZenDepAliases zen 死模型别名表（.zen-model-aliases.json）：弃用 ID ->
+	// 继任模型映射，与 sessions/endpoints 同性质的学习结果持久化。
+	ZenDepAliases map[string]*zenDepEntry `json:"zenDepAliases,omitempty"`
+	// ClineStreamRequired cline "必须流式"自学习结果（.cline-stream-required.json）。
+	ClineStreamRequired map[string]string `json:"clineStreamRequired,omitempty"`
 }
 
 // handleAdminConfigExport GET /admin/api/config/export
@@ -119,25 +128,28 @@ func handleAdminConfigExport(w http.ResponseWriter, r *http.Request) {
 	clineUse := poolClineUseProxies()
 	adminLog := poolAdminLogEnabled()
 	backup := configBackup{
-		Version:          configBackupVersion,
-		ExportedAt:       time.Now().UTC(),
-		Accounts:         accounts,
-		ClientKeys:       clientKeys,
-		DefaultModel:     getDefaultModel(),
-		ClineUseProxies:  &clineUse,
-		AdminLogEnabled:  &adminLog,
-		Strategy:         getProxyConfig().Strategy,
-		Headers:          headers,
-		Zen:              getZenConfig(),
-		Sessions:         sessions,
-		Endpoints:        loadZenEndpointsFile(),
-		Combos:           listCombos(),
-		OpenRouter:       openrouter.Get(),
-		AMDCloud:         amd.Get(),
-		TokenHarbor:      tokenharbor.Get(),
-		WorkBuddy:        exportWorkbuddyBackup(),
-		Other:            other.Get(),
-		WorkBuddyProxies: exportWorkbuddyProxyBindings(),
+		Version:             configBackupVersion,
+		ExportedAt:          time.Now().UTC(),
+		Accounts:            accounts,
+		ClientKeys:          clientKeys,
+		DefaultModel:        getDefaultModel(),
+		ClineUseProxies:     &clineUse,
+		AdminLogEnabled:     &adminLog,
+		Strategy:            getProxyConfig().Strategy,
+		Headers:             headers,
+		Zen:                 getZenConfig(),
+		Sessions:            sessions,
+		Endpoints:           loadZenEndpointsFile(),
+		Combos:              listCombos(),
+		OpenRouter:          openrouter.Get(),
+		AMDCloud:            amd.Get(),
+		TokenHarbor:         tokenharbor.Get(),
+		WorkBuddy:           exportWorkbuddyBackup(),
+		Other:               other.Get(),
+		WorkBuddyProxies:    exportWorkbuddyProxyBindings(),
+		ModelBlacklist:      exportModelBlacklist(),
+		ZenDepAliases:       exportZenDepAliases(),
+		ClineStreamRequired: exportClineStreamRequired(),
 	}
 	data, err := json.MarshalIndent(backup, "", "  ")
 	if err != nil {
@@ -438,6 +450,22 @@ func handleAdminConfigImport(w http.ResponseWriter, r *http.Request) {
 		imported["workBuddyProxies"] = importWorkbuddyProxyBindings(backup.WorkBuddyProxies)
 	}
 
+	// ---- 模型封禁表 / zen 死模型别名 / cline 必须流式学习结果（2026-10-19 补：
+	// 此前导出导入一直漏了这三个落盘数据，跨机迁移后分别丢失封禁状态、
+	// 死模型迁移映射与流式自学习结果）----
+	if backup.ModelBlacklist != nil {
+		importModelBlacklist(backup.ModelBlacklist)
+		imported["modelBlacklist"] = len(backup.ModelBlacklist)
+	}
+	if backup.ZenDepAliases != nil {
+		importZenDepAliases(backup.ZenDepAliases)
+		imported["zenDepAliases"] = len(backup.ZenDepAliases)
+	}
+	if backup.ClineStreamRequired != nil {
+		importClineStreamRequired(backup.ClineStreamRequired)
+		imported["clineStreamRequired"] = len(backup.ClineStreamRequired)
+	}
+
 	// ---- WorkBuddy（v2 段）：config 经 saveWorkbuddyConfig 回写部署四项，
 	// 凭据文件整体替换 auths 目录，全部账号禁用 ----
 	if backup.WorkBuddy != nil {
@@ -451,6 +479,110 @@ func handleAdminConfigImport(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeAPI(w, http.StatusOK, apiResponse{Success: true, Data: map[string]any{"imported": imported}})
+}
+
+// exportModelBlacklist 模型封禁表快照（锁内拷贝，Marshal 不得与后台写入竞争）。
+func exportModelBlacklist() map[string]*modelBlacklistEntry {
+	ensureModelBlacklistLoaded()
+	modelBlacklistMu.Lock()
+	defer modelBlacklistMu.Unlock()
+	if len(modelBlacklistItems) == 0 {
+		return nil
+	}
+	out := make(map[string]*modelBlacklistEntry, len(modelBlacklistItems))
+	for k, v := range modelBlacklistItems {
+		if v == nil {
+			continue
+		}
+		cp := *v
+		out[k] = &cp
+	}
+	return out
+}
+
+// importModelBlacklist 整体替换封禁表并即时落盘（与其他段同语义：
+// 备份里没有的段不动；有则连清空也生效）。空 key / nil 条目跳过。
+func importModelBlacklist(in map[string]*modelBlacklistEntry) {
+	ensureModelBlacklistLoaded()
+	next := make(map[string]*modelBlacklistEntry, len(in))
+	for k, v := range in {
+		if k == "" || v == nil || v.Platform == "" || v.Model == "" {
+			continue
+		}
+		next[k] = v
+	}
+	modelBlacklistMu.Lock()
+	modelBlacklistItems = next
+	modelBlacklistMu.Unlock()
+	flushModelBlacklist()
+	log.Printf("  config import: model blacklist replaced (%d entries)", len(next))
+}
+
+// exportZenDepAliases zen 死模型别名表快照（锁内加载 + 拷贝）。
+func exportZenDepAliases() map[string]*zenDepEntry {
+	zenDepMu.Lock()
+	defer zenDepMu.Unlock()
+	loadZenDepsLocked()
+	if len(zenDepAliases) == 0 {
+		return nil
+	}
+	out := make(map[string]*zenDepEntry, len(zenDepAliases))
+	for k, v := range zenDepAliases {
+		if v == nil {
+			continue
+		}
+		cp := *v
+		out[k] = &cp
+	}
+	return out
+}
+
+// importZenDepAliases 整体替换死模型别名表并落盘。Replacement 为空的无效项跳过。
+func importZenDepAliases(in map[string]*zenDepEntry) {
+	zenDepMu.Lock()
+	defer zenDepMu.Unlock()
+	loadZenDepsLocked()
+	next := make(map[string]*zenDepEntry, len(in))
+	for k, v := range in {
+		if k == "" || v == nil || v.Replacement == "" {
+			continue
+		}
+		next[k] = v
+	}
+	zenDepAliases = next
+	zenDepLoaded = true
+	saveZenDepsLocked()
+	log.Printf("  config import: zen model aliases replaced (%d entries)", len(next))
+}
+
+// exportClineStreamRequired cline "必须流式"自学习结果快照。
+func exportClineStreamRequired() map[string]string {
+	clineStreamMu.RLock()
+	defer clineStreamMu.RUnlock()
+	if len(clineStreamLearned) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(clineStreamLearned))
+	for k, v := range clineStreamLearned {
+		out[k] = v
+	}
+	return out
+}
+
+// importClineStreamRequired 整体替换学习表并落盘。
+func importClineStreamRequired(in map[string]string) {
+	next := make(map[string]string, len(in))
+	for k, v := range in {
+		if k == "" {
+			continue
+		}
+		next[k] = v
+	}
+	clineStreamMu.Lock()
+	clineStreamLearned = next
+	clineStreamMu.Unlock()
+	saveClineStream(next)
+	log.Printf("  config import: cline stream-required replaced (%d entries)", len(next))
 }
 
 // importWorkbuddyBackup 落盘 vendor config 与凭据文件并禁用全部账号。

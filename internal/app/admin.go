@@ -75,6 +75,8 @@ func registerAdminRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/admin/api/headers/reset", adminCORS(auth(handleAdminHeadersReset)))
 	mux.HandleFunc("/admin/api/config/export", adminCORS(auth(handleAdminConfigExport)))
 	mux.HandleFunc("/admin/api/config/import", adminCORS(auth(handleAdminConfigImport)));
+	// 代理池订阅：手动触发一次更新（面板"立即更新"按钮）
+	mux.HandleFunc("/admin/api/proxypool/subscription/update", adminCORS(auth(handleProxySubUpdate)))
 	mux.HandleFunc("/admin/api/keys/delete", adminCORS(auth(handleAdminDeleteKey)))
 	mux.HandleFunc("/admin/api/models", adminCORS(auth(handleAdminModels)))
 	mux.HandleFunc("/admin/api/models/refresh", adminCORS(auth(handleAdminModelsRefresh)))

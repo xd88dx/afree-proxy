@@ -188,6 +188,61 @@ var (
 	proxySubLastFired = map[string]int{} // "url\x00cron" -> 已触发的分钟时间戳（Unix 分钟）
 )
 
+// proxySubManualBusy 手动触发的防重入标志（手动与 cron 定时共用
+// refreshProxySubscription；双击按钮或恰逢定时触发时直接拒绝而非排队）。
+var (
+	proxySubManualMu   sync.Mutex
+	proxySubManualBusy bool
+)
+
+// triggerProxySubscription 面板"立即更新"按钮：不等 cron 立即执行一次订阅
+// 刷新。返回 (n, skipped, err)：n>0 = 整池替换为 n 条；skipped = 订阅内容与
+// 现池一致（现池未动）；err = 失败（拉取失败/未配置订阅链接，现池未动）。
+func triggerProxySubscription() (int, bool, error) {
+	proxySubManualMu.Lock()
+	if proxySubManualBusy {
+		proxySubManualMu.Unlock()
+		return 0, false, fmt.Errorf("上一次订阅更新仍在进行中")
+	}
+	proxySubManualBusy = true
+	proxySubManualMu.Unlock()
+	defer func() {
+		proxySubManualMu.Lock()
+		proxySubManualBusy = false
+		proxySubManualMu.Unlock()
+	}()
+	n, err := refreshProxySubscription()
+	if err != nil {
+		log.Printf("WARN: [proxy-sub] 手动更新失败: %v（保留原池兜底）", err)
+		return 0, false, err
+	}
+	if n == 0 {
+		log.Printf("INFO: [proxy-sub] 手动更新：订阅内容与现池一致，跳过替换")
+		return 0, true, nil
+	}
+	log.Printf("INFO: [proxy-sub] 手动更新完成：池内代理 %d 条", n)
+	return n, false, nil
+}
+
+// handleProxySubUpdate POST /admin/api/proxypool/subscription/update
+// 立即执行一次订阅更新任务（与 cron 定时同一条刷新链路）。
+func handleProxySubUpdate(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		writeAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
+		return
+	}
+	n, skipped, err := triggerProxySubscription()
+	if err != nil {
+		writeAPI(w, http.StatusOK, apiResponse{Error: err.Error()})
+		return
+	}
+	msg := fmt.Sprintf("已更新代理池：%d 条", n)
+	if skipped {
+		msg = "订阅内容与现池一致，跳过替换"
+	}
+	writeAPI(w, http.StatusOK, apiResponse{Success: true, Message: msg, Data: map[string]any{"updated": n, "skipped": skipped}})
+}
+
 // StartProxySubscriptionWorker 启动订阅自动更新 worker（进程级单实例）。
 func StartProxySubscriptionWorker() {
 	go func() {
