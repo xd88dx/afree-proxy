@@ -253,6 +253,14 @@ body:not([data-theme="dark"]) .theme-toggle .dark-label{display:none}
 .wb-toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
 .wb-switch{display:inline-flex;align-items:center;gap:8px;min-height:34px;font-size:13px;color:var(--text);cursor:pointer}
 .wb-switch input{width:auto;padding:0;accent-color:var(--accent)}
+/* 导入弹窗沿用启用状态的滑动开关（iOS 样式，选中紫色；与截图参考一致） */
+.imp-keep-row{display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:13px;color:var(--text);cursor:pointer;min-height:26px}
+.imp-tgl{position:relative;display:inline-block;width:40px;height:22px;flex-shrink:0}
+.imp-tgl input{position:absolute;opacity:0;width:0;height:0}
+.imp-tgl i{position:absolute;inset:0;border-radius:999px;background:var(--border-strong);transition:background .15s}
+.imp-tgl i::before{content:'';position:absolute;left:3px;top:3px;width:16px;height:16px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.25);transition:transform .15s}
+.imp-tgl input:checked+i{background:#5b5bd6}
+.imp-tgl input:checked+i::before{transform:translateX(18px)}
 .wb-config-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:22px 28px}
 .wb-config-group{min-width:0}
 .wb-config-group h3{font-size:13px;font-weight:650;color:var(--text);margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid var(--border)}
@@ -507,7 +515,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
     </div>
     <div id="ppSubUpdateResult" style="margin:-6px 0 10px;font-size:12px;min-height:14px"></div>
     <div class="hint" style="margin-bottom:10px">Subscription refresh replaces the whole pool with the fetched list. Fetch failures keep the current pool.</div>
-    <div class="form-actions"><button class="btn btn-primary" onclick="saveProxyPool()">Save proxy pool</button></div>
+    <div class="form-actions"><button class="btn btn-primary" onclick="saveProxyPool()">Save proxy pool</button><button class="btn btn-success" onclick="openReorderDlg()" style="margin-left:10px">Reorder by latency</button></div>
     <div id="ppSaveResult" style="margin-top:8px"></div>
   </div>
 </div>
@@ -587,7 +595,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
         <th style="text-align:center" title="Upstream attempts that egressed via this proxy since the pool was last edited">Attempts</th>
         <th style="text-align:center" title="Transport-layer success rate since the pool was last edited (upstream 4xx/5xx still counts as the proxy being online)">在线率</th>
         <th style="text-align:center" title="Success rate over the last 50 attempts; red below 80% (min 10 samples).">最近在线率</th>
-        <th style="text-align:center" title="Average tunnel-setup time over successful attempts (TCP+TLS+CONNECT handshake only — excludes upstream first byte and task duration). Lower is better.">平均握手延迟</th>
+        <th style="text-align:center;cursor:pointer;user-select:none" onclick="ppHsSortToggle()" title="Average tunnel-setup time over successful attempts (TCP+TLS+CONNECT handshake only — excludes upstream first byte and task duration). Lower is better. Click to sort.">平均握手延迟<span id="ppHsSortMark"></span></th>
         <th>Last OK</th>
         <th>Last Fail</th>
         <th>Cooldown</th>
@@ -1422,17 +1430,39 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
   </div>
 </dialog>
 
-<dialog id="impKeepDialog">
+<dialog id="impKeepDialog" style="width:min(430px,calc(100vw - 32px))">
   <div class="wb-dialog-head">
     <span>Import config</span>
     <button class="btn btn-sm" onclick="closeImpKeep()">Close</button>
   </div>
   <div class="wb-dialog-body">
-    <div class="hint" style="margin-bottom:10px">Import replaces sections present in the file (accounts / keys / proxies / combos ...). Imported identities start DISABLED unless you keep their enabled states below.</div>
-    <div id="impKeepRows" style="display:flex;flex-direction:column;gap:6px;margin-bottom:14px"></div>
+    <div class="hint" style="margin-bottom:10px">Import will replace ALL persisted config with the file contents. Confirm whether to keep each platform's credential enabled states.</div>
+    <div style="display:flex;gap:8px;margin-bottom:12px">
+      <button class="btn btn-sm" onclick="impKeepSetAll('impKeepRows',false)">Select all</button>
+      <button class="btn btn-sm" onclick="impKeepSetAll('impKeepRows',true)">Invert</button>
+    </div>
+    <div id="impKeepRows" style="display:flex;flex-direction:column;gap:10px;margin-bottom:14px"></div>
     <div style="display:flex;gap:8px;justify-content:flex-end">
       <button class="btn" onclick="closeImpKeep()">Cancel</button>
       <button class="btn btn-primary" onclick="confirmImpKeep()">Confirm import</button>
+    </div>
+  </div>
+</dialog>
+<dialog id="impReorderDialog" style="width:min(430px,calc(100vw - 32px))">
+  <div class="wb-dialog-head">
+    <span>Reorder by latency</span>
+    <button class="btn btn-sm" onclick="closeReorderDlg()">Close</button>
+  </div>
+  <div class="wb-dialog-body">
+    <div class="hint" style="margin-bottom:10px">Re-bind proxies of all credentials (except Direct/Global) ordered by measured latency, then auto-save.</div>
+    <div style="display:flex;gap:8px;margin-bottom:12px">
+      <button class="btn btn-sm" onclick="impKeepSetAll('impReorderRows',false)">Select all</button>
+      <button class="btn btn-sm" onclick="impKeepSetAll('impReorderRows',true)">Invert</button>
+    </div>
+    <div id="impReorderRows" style="margin-bottom:14px"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+      <button class="btn" onclick="closeReorderDlg()">Cancel</button>
+      <button class="btn btn-primary" onclick="confirmReorder()">Confirm</button>
     </div>
   </div>
 </dialog>
@@ -1666,6 +1696,12 @@ const I18N_ZH = {
   ' proxy binding(s) — click Save to apply': ' 条代理绑定，点保存生效',
   '; ': '；',
   ' row(s) left unchanged (no proxy left)': ' 行凭据无对应代理，保持原样',
+  'Reorder by latency': '凭据延迟重排',
+  'Re-bind proxies of all credentials (except Direct/Global) ordered by measured latency, then auto-save.': '按实测延迟重排全部凭据（直连/全局除外）的代理绑定并自动保存。',
+  'Latency reorder finished with errors — loads failed: ': '延迟重排完成但有错误——加载失败：',
+  '; saves failed: ': '；保存失败：',
+  'Reordered ': '已按延迟重排 ',
+  ' proxy binding(s) by latency and saved': ' 条代理绑定并已保存',
   'No changes to save': '没有需要保存的修改',
   'Save failed for ': '保存失败 ',
   ' account(s)': ' 个账号',
@@ -1870,6 +1906,7 @@ const I18N_ZH = {
   'Last Fail': '最近失败',
   'Upstream attempts that egressed via this proxy since the pool was last edited': '上次编辑代理池以来，经此代理出网的上游尝试次数',
   'Success rate over the last 50 attempts; red below 80% (min 10 samples).': '最近 50 次尝试的在线率；低于 80% 标红（至少 10 个样本）。',
+  'Average tunnel-setup time over successful attempts (TCP+TLS+CONNECT handshake only — excludes upstream first byte and task duration). Lower is better. Click to sort.': '成功尝试的平均隧道建立耗时（仅 TCP+TLS+CONNECT 握手——不含上游首字节与任务耗时）。越低越好。点击排序。',
   'Average tunnel-setup time over successful attempts (TCP+TLS+CONNECT handshake only — excludes upstream first byte and task duration). Lower is better.': '成功尝试的平均隧道建立耗时（仅 TCP+TLS+CONNECT 握手——不含上游首字节与任务耗时）。越低越好。',
   'Add API keys': '添加 API key',
   'All its keys will be removed. This cannot be undone.': '该子平台的所有密钥都将被移除，此操作不可撤销。',
@@ -1906,7 +1943,10 @@ const I18N_ZH = {
   'Unsupported backup version': '不支持的备份版本',
   'Invalid backup file: ': '备份文件无效：',
   'Import replaces sections present in the file (accounts / keys / proxies / combos ...). All imported identities start DISABLED. Continue?': '导入将用文件内容替换当前对应的配置段（所有凭据、代理池、别名等，文件中存在的段都会替换）。导入的所有凭据一律禁用，需在面板逐个启用。继续？',
-  'Import replaces sections present in the file (accounts / keys / proxies / combos ...). Imported identities start DISABLED unless you keep their enabled states below.': '导入将用文件内容替换当前对应的配置段（凭据、代理池、别名等，文件中存在的段都会替换）。导入的凭据默认全部禁用；勾选下方平台的"沿用启用状态"则保留备份内的启用状态。',
+  'Import will replace ALL persisted config with the file contents. Confirm whether to keep each platform\'s credential enabled states.': '导入将替换所有持久化配置，请确认是否保留各平台凭据启用状态。',
+  'Select all': '全选',
+  'Invert': '反选',
+  'No platform selected': '未选择任何平台',
   'Confirm import': '确认导入',
   'State': '状态',
   'Global': '全局',
@@ -3520,6 +3560,113 @@ function stageProxiesByOrder(kind) {
         (left ? T('; ') + left + T(' row(s) left unchanged (no proxy left)') : ''), 'success');
 }
 
+// ========== 凭据延迟重排（跨平台，弹窗选平台） ==========
+// 点按钮先开确认弹窗（与导入配置同款式：文案 + 平台开关 + 全选/反选），确认后
+// 把选中平台的凭据表中主槽绑定了真实代理的行（全局 ''/直连 direct 不参与），按
+// 实测平均握手延迟重新分配代理：≤6s 快代理延迟升序在前 → 无记录代理（按池
+// 序）→ >6s 慢代理（延迟升序）。重复绑定保留（同一代理出现几次进队列几次），
+// 按各表行序从上到下依次回填。重选后逐平台自动调用既有保存函数落盘。
+// 注意：懒加载 —— 各平台表格仅在访问过对应页后渲染，重排前先逐类加载；
+// 自动保存会连带保存所选平台各表所有未落盘的暂存改动。
+const REORDER_KINDS = ['acc', 'key', 'wb', 'amd', 'or', 'th', 'other']; // 与左侧菜单同序
+// 弹窗平台行（顺序 = REORDER_KINDS = 左侧菜单序）
+const REORDER_PLATFORMS = [
+  { key: 'acc', label: 'Cline' },
+  { key: 'key', label: 'OpenCode' },
+  { key: 'wb', label: 'WorkBuddy' },
+  { key: 'amd', label: 'AMDCloud' },
+  { key: 'or', label: 'OpenRouter' },
+  { key: 'th', label: 'TokenHarbor' },
+  { key: 'other', label: 'Other' }
+];
+const REORDER_LOADERS = { acc: loadAccounts, key: loadOcConfig, wb: ensureWorkbuddyConsole,
+                          or: loadOrConfig, amd: loadAmdConfig, th: loadTHConfig, other: loadOtherConfig };
+const REORDER_SAVERS = { acc: saveAccountEdits, key: saveKeyEdits, wb: saveWorkbuddyEdits,
+                         or: saveOrKeyEdits, amd: saveAmdKeyEdits, th: saveTHKeyEdits, other: saveOtherKeyEdits };
+// 打开重排确认弹窗：平台行固定 7 项（与菜单同序），默认全部勾选
+function openReorderDlg() {
+  const grid = _('impReorderRows');
+  grid.style.display = 'grid';
+  grid.style.gridTemplateColumns = 'repeat(2, minmax(0,1fr))';
+  grid.style.gridTemplateRows = 'repeat(' + Math.ceil(REORDER_PLATFORMS.length / 2) + ', auto)';
+  grid.style.gridAutoFlow = 'column';
+  grid.style.gap = '10px 18px';
+  grid.innerHTML = REORDER_PLATFORMS.map(r =>
+    '<label class="imp-keep-row"><span>' + esc(r.label) + '</span><span class="imp-tgl"><input type="checkbox" data-keep="' + r.key + '" checked><i></i></span></label>'
+  ).join('');
+  _('impReorderDialog').showModal();
+}
+function closeReorderDlg() { _('impReorderDialog').close(); }
+function confirmReorder() {
+  const kinds = [..._('impReorderRows').querySelectorAll('input[type=checkbox][data-keep]')]
+    .filter(cb => cb.checked).map(cb => cb.getAttribute('data-keep'));
+  _('impReorderDialog').close();
+  if (!kinds.length) { toast(T('No platform selected'), 'info'); return; }
+  reorderByLatency(kinds);
+}
+// 延迟排序键：[组, 组内键]。0=≤6s（组内延迟升序）；1=无记录（组内池序，不在
+// 池内的失效绑定排同组末尾）；2=>6s（组内延迟升序）。阈值 6000ms 与延迟徽标
+// 五档的 6s 分界（6~10s 黄）一致。
+function reorderLatencyKey(v) {
+  const r = proxyHealthByProxy[proxyHealthKey(v)];
+  const ms = Math.round(Number(r && r.avgHsMs) || 0);
+  if (ms > 6000) return [2, ms];
+  if (ms > 0) return [0, ms];
+  return [1, proxyPoolIdxForReorder(v)];
+}
+function proxyPoolIdxForReorder(v) {
+  const i = proxyListCache.indexOf(v);
+  return i >= 0 ? i : Number.MAX_SAFE_INTEGER;
+}
+async function reorderByLatency(kinds) {
+  const list = (kinds && kinds.length) ? REORDER_KINDS.filter(k => kinds.indexOf(k) >= 0) : REORDER_KINDS;
+  if (!list.length) return;
+  // 1. 懒加载兜底：逐类加载表格（失败的类跳过，最后汇总提示）
+  const failedLoads = [];
+  for (const k of list) {
+    try { await REORDER_LOADERS[k](); } catch (e) { failedLoads.push(k); }
+  }
+  // 2. 每类表内独立重排：收集参与行 → 代理队列排序 → 按行序回填
+  let total = 0;
+  for (const kind of list) {
+    if (failedLoads.indexOf(kind) >= 0) continue;
+    const tbody = BIND_TBODY[kind];
+    if (!tbody) continue;
+    const rows = [...document.querySelectorAll(tbody + ' tr')]
+      .map(r => r.querySelector('.eg-input[data-eg="' + kind + '"][data-slot="main"]'))
+      .filter(Boolean);
+    const parts = rows.filter(m => m.dataset.value && m.dataset.value !== EGRESS_DIRECT);
+    if (parts.length < 2) continue; // 无绑定或仅一处，无从重排
+    const queue = parts.map(m => m.dataset.value).sort((a, b) => {
+      const ka = reorderLatencyKey(a), kb = reorderLatencyKey(b);
+      return ka[0] !== kb[0] ? ka[0] - kb[0] : ka[1] - kb[1];
+    });
+    parts.forEach((m, i) => {
+      const v = queue[i];
+      if (m.dataset.value === v) return;
+      m.dataset.value = v;
+      m.value = egLabel(v);
+      egSyncBadge(m);
+      egApplyMainLinkage(m.closest('tr'), v);
+      markRowDirty(m.closest('tr'), kind);
+      total++;
+    });
+  }
+  // 3. 逐平台自动保存（各保存函数自带 diff 快照，仅提交真正变动的行）
+  const failedSaves = [];
+  for (const k of list) {
+    if (failedLoads.indexOf(k) >= 0) continue;
+    try { await REORDER_SAVERS[k](); } catch (e) { failedSaves.push(k); }
+  }
+  if (failedLoads.length || failedSaves.length) {
+    toast(T('Latency reorder finished with errors — loads failed: ') + failedLoads.join(',') +
+          T('; saves failed: ') + failedSaves.join(','), 'error');
+    return;
+  }
+  if (!total) { toast(T('Already bound in this order'), 'info'); return; }
+  toast(T('Reordered ') + total + T(' proxy binding(s) by latency and saved'), 'success');
+}
+
 let accSnapshot = {};
 function stageAllAccountsPool(enabled) {
   document.querySelectorAll('#accountTableBody input[data-pool-enabled]').forEach(cb => {
@@ -3890,8 +4037,17 @@ function onImportFileChange(event) {
         return;
       }
       importParsed = parsed;
-      _('impKeepRows').innerHTML = rows.map(r =>
-        '<label class="wb-switch"><input type="checkbox" data-keep="' + esc(r.key) + '"><span>' + esc(r.label) + '</span></label>'
+      // 两列网格、列优先填充（从上到下再从左到右）：行数按 ceil(n/2) 动态生成，
+      // grid-auto-flow:column 先填满第一列再填第二列；高度随内容自适应。
+      const grid = _('impKeepRows');
+      grid.style.display = 'grid';
+      grid.style.gridTemplateColumns = 'repeat(2, minmax(0,1fr))';
+      grid.style.gridTemplateRows = 'repeat(' + Math.ceil(rows.length / 2) + ', auto)';
+      grid.style.gridAutoFlow = 'column';
+      grid.style.gap = '10px 18px';
+      grid.style.marginBottom = '14px';
+      grid.innerHTML = rows.map(r =>
+        '<label class="imp-keep-row"><span>' + esc(r.label) + '</span><span class="imp-tgl"><input type="checkbox" data-keep="' + esc(r.key) + '"><i></i></span></label>'
       ).join('');
       _('impKeepDialog').showModal();
     } catch (e) {
@@ -3904,15 +4060,17 @@ function onImportFileChange(event) {
 }
 
 // impKeepRowsFor 从备份 JSON 提取含上游身份的平台行（Other 子平台逐行，
-// key 用 "other:<slug>" 与后端 KeepEnabled 对齐）。全不勾选 = 原隔离护栏行为。
+// key 用 "other:<slug>" 与后端 KeepEnabled 对齐）。行序与左侧菜单一致：
+// Cline → OpenCode → WorkBuddy → AMDCloud → OpenRouter → TokenHarbor → Other。
+// 全不勾选 = 原隔离护栏行为。
 function impKeepRowsFor(parsed) {
   const rows = [];
   const has = a => Array.isArray(a) && a.length > 0;
   if (has(parsed.accounts)) rows.push({ key: 'cline', label: 'Cline' });
-  if (has(parsed.zen && parsed.zen.keys)) rows.push({ key: 'zen', label: 'OpenCode (zen)' });
+  if (has(parsed.zen && parsed.zen.keys)) rows.push({ key: 'zen', label: 'OpenCode' });
   if (parsed.workbuddy && parsed.workbuddy.authFiles && Object.keys(parsed.workbuddy.authFiles).length > 0) rows.push({ key: 'wb', label: 'WorkBuddy' });
+  if (has(parsed.amdcloud && parsed.amdcloud.keys)) rows.push({ key: 'amd', label: 'AMDCloud' });
   if (has(parsed.openrouter && parsed.openrouter.keys)) rows.push({ key: 'oprt', label: 'OpenRouter' });
-  if (has(parsed.amdcloud && parsed.amdcloud.keys)) rows.push({ key: 'amd', label: 'AMD Cloud' });
   if (has(parsed.tokenharbor && parsed.tokenharbor.keys)) rows.push({ key: 'tkhb', label: 'TokenHarbor' });
   (parsed.other && Array.isArray(parsed.other.platforms) ? parsed.other.platforms : []).forEach(p => {
     if (p && p.slug && has(p.keys)) rows.push({ key: 'other:' + p.slug, label: p.name || p.slug });
@@ -3921,6 +4079,13 @@ function impKeepRowsFor(parsed) {
 }
 
 function closeImpKeep() { _('impKeepDialog').close(); importParsed = null; }
+
+// impKeepSetAll 全选/反选导入/重排弹窗的平台开关：invert=false 全部勾上，true 逐个取反。
+function impKeepSetAll(gridId, invert) {
+  _(gridId).querySelectorAll('input[type=checkbox][data-keep]').forEach(cb => {
+    cb.checked = invert ? !cb.checked : true;
+  });
+}
 
 function confirmImpKeep() {
   if (!importParsed) return;
@@ -4862,9 +5027,29 @@ async function loadProxyPool() {
 // 每代理在线率表：纯被动统计（真实请求的出口成败），编辑代理池即清零。
 // 在线率上色与代理下拉框同源（proxyRateTier 五档），只改展示不改路由
 // 行为——换不换代理由人决定。
-function renderProxyHealth(rows) {
+// ppHsSort 平均握手延迟列排序状态：0=默认(后端顺序) 1=升序 2=降序；点击表头循环切换。
+let ppHsSort = 0;
+function ppHsSortToggle() {
+  ppHsSort = (ppHsSort + 1) % 3;
+  const mark = _('ppHsSortMark');
+  if (mark) mark.textContent = ppHsSort === 1 ? ' ▲' : ppHsSort === 2 ? ' ▼' : '';
+  renderProxyHealth(Object.values(proxyHealthByProxy));
+}
+function renderProxyHealth(rowsIn) {
   const tb = _('ppHealthBody');
   if (!tb) return;
+  // 延迟列排序：无样本（null/undefined）恒排最后，与升降序无关
+  let rows = rowsIn;
+  if (ppHsSort) {
+    rows = rowsIn.slice().sort((a, b) => {
+      const na = a.avgHsMs === null || a.avgHsMs === undefined;
+      const nb = b.avgHsMs === null || b.avgHsMs === undefined;
+      if (na && nb) return 0;
+      if (na) return 1;
+      if (nb) return -1;
+      return ppHsSort === 1 ? a.avgHsMs - b.avgHsMs : b.avgHsMs - a.avgHsMs;
+    });
+  }
   tb.innerHTML = rows.length
     ? rows.map(r => {
         const pct = rate => (rate === null || rate === undefined) ? null : Math.round(rate * 100) + '%';
