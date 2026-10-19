@@ -137,12 +137,16 @@ func (p *Pool) Cooldown(uid string, kind CoolKind, d time.Duration, reason strin
 // ClearCooldown 仅解除账号级冷却（until/coolKind/reason），不动 disabled/paused/
 // 熔断与模型级冷却——与 Revive（无条件恢复全部惩罚状态）的口径区别：本方法只
 // 回滚一次冷却事件本身。禁用账号直接跳过：其 reason 是禁用原因，不属于冷却。
-// uid 不存在或账号被禁用返回 false。
+// 返回 true = 账号此前确处于生效中的冷却（now < until）且已被解除；uid 不存在、
+// 账号被禁用或本就不在冷却期返回 false——面板测试按钮据此决定"冷却已清除"提示。
 func (p *Pool) ClearCooldown(uid string) bool {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	e, ok := p.byUID[uid]
 	if !ok || e.disabled {
+		return false
+	}
+	if e.until.IsZero() || !time.Now().Before(e.until) {
 		return false
 	}
 	e.until = time.Time{}

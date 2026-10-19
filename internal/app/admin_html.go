@@ -1422,6 +1422,20 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
   </div>
 </dialog>
 
+<dialog id="impKeepDialog">
+  <div class="wb-dialog-head">
+    <span>Import config</span>
+    <button class="btn btn-sm" onclick="closeImpKeep()">Close</button>
+  </div>
+  <div class="wb-dialog-body">
+    <div class="hint" style="margin-bottom:10px">Import replaces sections present in the file (accounts / keys / proxies / combos ...). Imported identities start DISABLED unless you keep their enabled states below.</div>
+    <div id="impKeepRows" style="display:flex;flex-direction:column;gap:6px;margin-bottom:14px"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+      <button class="btn" onclick="closeImpKeep()">Cancel</button>
+      <button class="btn btn-primary" onclick="confirmImpKeep()">Confirm import</button>
+    </div>
+  </div>
+</dialog>
 <dialog id="otherPlatformDialog">
   <div class="wb-dialog-head">
     <span>New sub-platform</span>
@@ -1890,9 +1904,10 @@ const I18N_ZH = {
   'Config exported': '配置已导出',
   'Config imported': '配置已导入',
   'Unsupported backup version': '不支持的备份版本',
-  'Choose a backup JSON file first': '请先选择备份 JSON 文件',
   'Invalid backup file: ': '备份文件无效：',
   'Import replaces sections present in the file (accounts / keys / proxies / combos ...). All imported identities start DISABLED. Continue?': '导入将用文件内容替换当前对应的配置段（所有凭据、代理池、别名等，文件中存在的段都会替换）。导入的所有凭据一律禁用，需在面板逐个启用。继续？',
+  'Import replaces sections present in the file (accounts / keys / proxies / combos ...). Imported identities start DISABLED unless you keep their enabled states below.': '导入将用文件内容替换当前对应的配置段（凭据、代理池、别名等，文件中存在的段都会替换）。导入的凭据默认全部禁用；勾选下方平台的"沿用启用状态"则保留备份内的启用状态。',
+  'Confirm import': '确认导入',
   'State': '状态',
   'Global': '全局',
   'No matching proxies': '没有匹配的代理',
@@ -2684,7 +2699,7 @@ async function workbuddyTestAccount(button, id) { const original = button ? butt
     const ok = d.status === 'active';
     let msg = ok ? T('Test passed') : T('Test failed: ') + (d.error || d.status || '');
     if (d.latencyMs != null) msg += ' (' + d.latencyMs + 'ms)';
-    if (ok) msg += T(' — cooldown cleared');
+    if (ok && d.cooldownCleared) msg += T(' — cooldown cleared');
     else if (d.status === 'cooldown') msg += T(' — cooling');
     toast(msg, ok ? 'success' : 'error', 6000);
   } catch (e) {
@@ -3842,7 +3857,6 @@ async function resetAccount(id, btn) {
 }
 
 // ========== Config export / import ==========
-let importPayload = null;
 
 async function exportConfig() {
   try {
@@ -3858,6 +3872,8 @@ async function exportConfig() {
   } catch (e) { toast(T('Export failed: ') + e.message, 'error'); }
 }
 
+let importParsed = null; // 已通过版本校验、待弹窗确认的备份 JSON
+
 function onImportFileChange(event) {
   const file = event.target.files[0];
   if (!file) return;
@@ -3866,10 +3882,20 @@ function onImportFileChange(event) {
     try {
       const parsed = JSON.parse(reader.result);
       if (parsed.version !== 1 && parsed.version !== 2) throw new Error(T('Unsupported backup version'));
-      importPayload = JSON.stringify(parsed);
-      importConfigFromFile();
+      const rows = impKeepRowsFor(parsed);
+      if (rows.length === 0) {
+        // 备份不含任何上游身份：无沿用选项，按原确认流程直接导入
+        if (!confirm(T('Import replaces sections present in the file (accounts / keys / proxies / combos ...). All imported identities start DISABLED. Continue?'))) return;
+        doImportConfig(parsed, {});
+        return;
+      }
+      importParsed = parsed;
+      _('impKeepRows').innerHTML = rows.map(r =>
+        '<label class="wb-switch"><input type="checkbox" data-keep="' + esc(r.key) + '"><span>' + esc(r.label) + '</span></label>'
+      ).join('');
+      _('impKeepDialog').showModal();
     } catch (e) {
-      importPayload = null;
+      importParsed = null;
       toast(T('Invalid backup file: ') + e.message, 'error');
     }
   };
@@ -3877,11 +3903,41 @@ function onImportFileChange(event) {
   event.target.value = '';
 }
 
-async function importConfigFromFile() {
-  if (!importPayload) { toast(T('Choose a backup JSON file first'), 'error'); return; }
-  if (!confirm(T('Import replaces sections present in the file (accounts / keys / proxies / combos ...). All imported identities start DISABLED. Continue?'))) return;
+// impKeepRowsFor 从备份 JSON 提取含上游身份的平台行（Other 子平台逐行，
+// key 用 "other:<slug>" 与后端 KeepEnabled 对齐）。全不勾选 = 原隔离护栏行为。
+function impKeepRowsFor(parsed) {
+  const rows = [];
+  const has = a => Array.isArray(a) && a.length > 0;
+  if (has(parsed.accounts)) rows.push({ key: 'cline', label: 'Cline' });
+  if (has(parsed.zen && parsed.zen.keys)) rows.push({ key: 'zen', label: 'OpenCode (zen)' });
+  if (parsed.workbuddy && parsed.workbuddy.authFiles && Object.keys(parsed.workbuddy.authFiles).length > 0) rows.push({ key: 'wb', label: 'WorkBuddy' });
+  if (has(parsed.openrouter && parsed.openrouter.keys)) rows.push({ key: 'oprt', label: 'OpenRouter' });
+  if (has(parsed.amdcloud && parsed.amdcloud.keys)) rows.push({ key: 'amd', label: 'AMD Cloud' });
+  if (has(parsed.tokenharbor && parsed.tokenharbor.keys)) rows.push({ key: 'tkhb', label: 'TokenHarbor' });
+  (parsed.other && Array.isArray(parsed.other.platforms) ? parsed.other.platforms : []).forEach(p => {
+    if (p && p.slug && has(p.keys)) rows.push({ key: 'other:' + p.slug, label: p.name || p.slug });
+  });
+  return rows;
+}
+
+function closeImpKeep() { _('impKeepDialog').close(); importParsed = null; }
+
+function confirmImpKeep() {
+  if (!importParsed) return;
+  const keep = {};
+  _('impKeepRows').querySelectorAll('input[type=checkbox][data-keep]').forEach(cb => {
+    if (cb.checked) keep[cb.getAttribute('data-keep')] = true;
+  });
+  const parsed = importParsed;
+  importParsed = null;
+  _('impKeepDialog').close();
+  doImportConfig(parsed, keep);
+}
+
+async function doImportConfig(parsed, keep) {
+  const payload = Object.assign({}, parsed, { keepEnabled: keep });
   try {
-    const d = await api('POST', '/config/import', JSON.parse(importPayload));
+    const d = await api('POST', '/config/import', payload);
     const imp = (d.data && d.data.imported) || {};
     const parts = Object.keys(imp).map(k => k + '=' + imp[k]);
     toast(T('Config imported') + ' — ' + parts.join(', '), 'success');

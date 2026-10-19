@@ -83,6 +83,89 @@ func TestConfigImportDisablesAllIdentities(t *testing.T) {
 	}
 }
 
+// TestConfigImportKeepEnabled 导入弹窗"沿用启用状态"（KeepEnabled）：勾选的
+// 平台保留备份内原状态，未勾选的仍走隔离护栏全部禁用。key 口径与前端对齐：
+// cline / zen / oprt / amd / tkhb / wb / "other:<slug>"。
+func TestConfigImportKeepEnabled(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("DATA_DIR", tmp)
+
+	savedPath, savedPool := poolPath, pool
+	poolPath = filepath.Join(tmp, ".cline-accounts.json")
+	pool = nil
+	defer func() { poolPath, pool = savedPath, savedPool }()
+
+	savedCombos, savedCombosLoaded := combosList, combosLoaded
+	defer func() { combosList, combosLoaded = savedCombos, savedCombosLoaded }()
+
+	openrouter.Load(filepath.Join(tmp, "or.json"))
+	other.Load(filepath.Join(tmp, "other.json"))
+
+	body := `{
+	  "version": 2,
+	  "keepEnabled": {"cline": true, "oprt": true, "other:alpha": true},
+	  "accounts": [
+	    {"accountID": "acc_on", "refreshToken": "r1", "status": "active", "poolEnabled": true},
+	    {"accountID": "acc_off", "refreshToken": "r2", "status": "active", "poolEnabled": false}
+	  ],
+	  "zen": {"keys": ["zk1"], "keyRoutingEnabled": {"zk1": true}},
+	  "openrouter": {"keys": ["ork1", "ork2"], "keyRoutingEnabled": {"ork1": true, "ork2": false}},
+	  "other": {"platforms": [
+	    {"slug": "alpha", "name": "A", "prefix": "alpha", "baseURL": "http://a/v1", "keys": ["oak"], "keyRoutingEnabled": {"oak": true}},
+	    {"slug": "beta", "name": "B", "prefix": "beta", "baseURL": "http://b/v1", "keys": ["obk"], "keyRoutingEnabled": {"obk": true}}
+	  ]}
+	}`
+	req := httptest.NewRequest("POST", "/admin/api/config/import", strings.NewReader(body))
+	rr := httptest.NewRecorder()
+	handleAdminConfigImport(rr, req)
+	if rr.Code != 200 {
+		t.Fatalf("import status = %d: %s", rr.Code, rr.Body.String())
+	}
+
+	// cline：沿用（acc_on 启用、acc_off 禁用，与备份一致）
+	p := loadPool()
+	states := map[string]bool{}
+	for _, a := range p.Accounts {
+		if a.PoolEnabled == nil {
+			t.Errorf("account %s poolEnabled nil, want explicit after keep-enabled import", a.AccountID)
+			continue
+		}
+		states[a.AccountID] = *a.PoolEnabled
+	}
+	if !states["acc_on"] || states["acc_off"] {
+		t.Errorf("cline states not preserved: %v", states)
+	}
+
+	// zen：未勾选 → 隔离护栏仍生效（显式 false）
+	zc := getZenConfig()
+	if v, ok := zc.KeyRoutingEnabled["zk1"]; !ok || v {
+		t.Errorf("zen zk1 = (%v,%v), want explicit false (not kept)", v, ok)
+	}
+
+	// oprt：沿用（ork1 启用、ork2 禁用）
+	or := openrouter.Get()
+	if !or.KeyRoutingEnabled["ork1"] || or.KeyRoutingEnabled["ork2"] {
+		t.Errorf("oprt states not preserved: %v", or.KeyRoutingEnabled)
+	}
+
+	// other：仅 alpha 沿用（启用），beta 未勾选（禁用）
+	cfg := other.Get()
+	for _, pl := range cfg.Platforms {
+		for _, k := range pl.Keys {
+			switch pl.Slug {
+			case "alpha":
+				if !pl.KeyRoutingEnabled[k] {
+					t.Errorf("other/alpha key %q must stay enabled (kept)", k)
+				}
+			case "beta":
+				if pl.KeyRoutingEnabled[k] {
+					t.Errorf("other/beta key %q must be disabled (not kept)", k)
+				}
+			}
+		}
+	}
+}
+
 func TestConfigBackupVersionOK(t *testing.T) {
 	for _, v := range []int{1, 2} {
 		if !configBackupVersionOK(v) {

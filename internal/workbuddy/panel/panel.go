@@ -660,6 +660,10 @@ func (p *Panel) accountTest(w http.ResponseWriter, r *http.Request) {
 		out, kind, uerr := probeOnce(p, a, uid, probeModel)
 		if uerr == nil {
 			p.cfg.Pool.NoteSuccess(uid)
+			// 与 cline/zen/or/amd/tkhb/other 的 Test 按钮同语义：探测成功
+			// 即解除账号级冷却。NoteSuccess 只清熔断/降级/连败，不清 until，
+			// 不补这行的话列表会一直显示"冷却中"直到自然到期。
+			out["cooldownCleared"] = p.cfg.Pool.ClearCooldown(uid)
 			out["status"] = "active"
 			writeJSON(w, http.StatusOK, out)
 			return

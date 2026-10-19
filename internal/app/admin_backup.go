@@ -32,9 +32,11 @@ import (
 // 文件中没有的段保持不动；导入后各缓存/持久化文件同步重建。
 //
 // **隔离护栏（v2 起）**：导入的一切上游身份（Cline 账号、zen/or/amd/th key、
-// WorkBuddy 账号）一律置为禁用——备份里的启用状态属于导出方部署，其绑定
+// WorkBuddy 账号）默认一律置为禁用——备份里的启用状态属于导出方部署，其绑定
 // 出口在本地未必存在，原样启用等于把流量引向未经验证的身份。启用哪个由
-// 用户在面板逐个勾选。客户端 key（本地访问凭据）与代理池不在此列。
+// 用户在面板逐个勾选。导入弹窗提供逐平台"沿用启用状态"switch（KeepEnabled，
+// 默认全不沿用 = 原护栏行为），显式勾选的平台保留备份内原状态。客户端 key
+// （本地访问凭据）与代理池不在此列。
 
 const configBackupVersion = 2
 
@@ -89,6 +91,11 @@ type configBackup struct {
 	ZenDepAliases map[string]*zenDepEntry `json:"zenDepAliases,omitempty"`
 	// ClineStreamRequired cline "必须流式"自学习结果（.cline-stream-required.json）。
 	ClineStreamRequired map[string]string `json:"clineStreamRequired,omitempty"`
+	// KeepEnabled 导入方对"沿用启用状态"的逐平台选择（导入弹窗 switch，默认
+	// 全不沿用）。缺项/false = 隔离护栏生效（导入身份一律禁用，原行为）；
+	// true = 保留备份内该平台的启用状态。key：cline / zen / oprt / amd /
+	// tkhb / wb 与 "other:<slug>"（Other 子平台逐个）。
+	KeepEnabled map[string]bool `json:"keepEnabled,omitempty"`
 }
 
 // handleAdminConfigExport GET /admin/api/config/export
@@ -257,9 +264,12 @@ func handleAdminConfigImport(w http.ResponseWriter, r *http.Request) {
 				a.Status = "active"
 			}
 			// 隔离护栏：导入账号一律禁用参与轮换（poolEnabled 缺项 = 启用，
-			// 必须显式写 false，不能靠清字段）。
-			off := false
-			a.PoolEnabled = &off
+			// 必须显式写 false，不能靠清字段）。导入弹窗对该平台勾选"沿用
+			// 启用状态"时保留备份内原状态（nil = 启用同口径）。
+			if !backup.KeepEnabled["cline"] {
+				off := false
+				a.PoolEnabled = &off
+			}
 			accounts = append(accounts, a)
 		}
 		p := loadPool()
@@ -331,13 +341,16 @@ func handleAdminConfigImport(w http.ResponseWriter, r *http.Request) {
 	if backup.Zen != nil {
 		// 隔离护栏：导入的 zen key 一律显式禁用。KeyRoutingEnabled 缺项 =
 		// 参与路由，必须逐 key 写 false 而不是清空表。先 normalize 让 Keys
-		// 定型（setZenConfig 内部还会再 normalize 一次，幂等）。
+		// 定型（setZenConfig 内部还会再 normalize 一次，幂等）。弹窗勾选
+		// "沿用启用状态"时保留备份内原表（缺项 = 启用同口径）。
 		normalizeZenKeys(backup.Zen)
-		off := make(map[string]bool, len(backup.Zen.Keys))
-		for _, k := range backup.Zen.Keys {
-			off[k] = false
+		if !backup.KeepEnabled["zen"] {
+			off := make(map[string]bool, len(backup.Zen.Keys))
+			for _, k := range backup.Zen.Keys {
+				off[k] = false
+			}
+			backup.Zen.KeyRoutingEnabled = off
 		}
-		backup.Zen.KeyRoutingEnabled = off
 		setZenConfig(backup.Zen)
 		imported["zenKeys"] = len(backup.Zen.Keys)
 		if len(backup.Zen.Proxies) > 0 {
@@ -392,14 +405,17 @@ func handleAdminConfigImport(w http.ResponseWriter, r *http.Request) {
 		imported["combos"] = len(valid)
 	}
 
-	// ---- key 池平台（v2 段）：整配置替换 + 全部 key 禁用 ----
+	// ---- key 池平台（v2 段）：整配置替换；默认全部 key 禁用，弹窗勾选
+	// "沿用启用状态"的平台保留备份内原表（KeyRoutingEnabled 缺项 = 启用）----
 	if backup.OpenRouter != nil {
 		or := backup.OpenRouter
 		if or.KeyRoutingEnabled == nil {
 			or.KeyRoutingEnabled = map[string]bool{}
 		}
-		for _, k := range or.Keys {
-			or.KeyRoutingEnabled[k] = false
+		if !backup.KeepEnabled["oprt"] {
+			for _, k := range or.Keys {
+				or.KeyRoutingEnabled[k] = false
+			}
 		}
 		openrouter.Set(or)
 		imported["openrouterKeys"] = len(or.Keys)
@@ -409,8 +425,10 @@ func handleAdminConfigImport(w http.ResponseWriter, r *http.Request) {
 		if amdc.KeyRoutingEnabled == nil {
 			amdc.KeyRoutingEnabled = map[string]bool{}
 		}
-		for _, k := range amdc.Keys {
-			amdc.KeyRoutingEnabled[k] = false
+		if !backup.KeepEnabled["amd"] {
+			for _, k := range amdc.Keys {
+				amdc.KeyRoutingEnabled[k] = false
+			}
 		}
 		amd.Set(amdc)
 		imported["amdKeys"] = len(amdc.Keys)
@@ -420,14 +438,17 @@ func handleAdminConfigImport(w http.ResponseWriter, r *http.Request) {
 		if th.KeyRoutingEnabled == nil {
 			th.KeyRoutingEnabled = map[string]bool{}
 		}
-		for _, k := range th.Keys {
-			th.KeyRoutingEnabled[k] = false
+		if !backup.KeepEnabled["tkhb"] {
+			for _, k := range th.Keys {
+				th.KeyRoutingEnabled[k] = false
+			}
 		}
 		tokenharbor.Set(th)
 		imported["tokenharborKeys"] = len(th.Keys)
 	}
 	if backup.Other != nil {
-		// 与其它 key 池平台同口径：导入的 key 一律禁用（启用状态属导出方部署）。
+		// 与其它 key 池平台同口径：默认导入的 key 一律禁用（启用状态属导出方
+		// 部署）；子平台在弹窗里逐个勾选沿用（key = "other:<slug>"）。
 		ocfg := backup.Other
 		nKeys := 0
 		for i := range ocfg.Platforms {
@@ -438,10 +459,12 @@ func handleAdminConfigImport(w http.ResponseWriter, r *http.Request) {
 			if p.KeyRoutingEnabled == nil {
 				p.KeyRoutingEnabled = map[string]bool{}
 			}
-			for _, k := range p.Keys {
-				p.KeyRoutingEnabled[k] = false
-				nKeys++
+			if !backup.KeepEnabled["other:"+p.Slug] {
+				for _, k := range p.Keys {
+					p.KeyRoutingEnabled[k] = false
+				}
 			}
+			nKeys += len(p.Keys)
 		}
 		other.Set(ocfg)
 		imported["otherKeys"] = nKeys
@@ -467,9 +490,10 @@ func handleAdminConfigImport(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// ---- WorkBuddy（v2 段）：config 经 saveWorkbuddyConfig 回写部署四项，
-	// 凭据文件整体替换 auths 目录，全部账号禁用 ----
+	// 凭据文件整体替换 auths 目录；默认全部账号禁用，弹窗勾选"沿用启用
+	// 状态"时保留凭据文件内的原始 pool_enabled ----
 	if backup.WorkBuddy != nil {
-		wbAuths, wbCfg := importWorkbuddyBackup(backup.WorkBuddy)
+		wbAuths, wbCfg := importWorkbuddyBackup(backup.WorkBuddy, backup.KeepEnabled["wb"])
 		if wbAuths >= 0 {
 			imported["workbuddyAuths"] = wbAuths
 		}
@@ -585,10 +609,11 @@ func importClineStreamRequired(in map[string]string) {
 	log.Printf("  config import: cline stream-required replaced (%d entries)", len(next))
 }
 
-// importWorkbuddyBackup 落盘 vendor config 与凭据文件并禁用全部账号。
+// importWorkbuddyBackup 落盘 vendor config 与凭据文件；keepWbEnabled=false
+// 时禁用全部账号（隔离护栏），true 时保留凭据文件内的原始启用状态。
 // 返回 (导入账号数, config 是否已应用)；子系统未运行时返回 (-1, false)——
 // 此时凭据文件仍写盘（重启后生效），config 因需要热应用句柄而跳过。
-func importWorkbuddyBackup(wb *workbuddyBackup) (int, bool) {
+func importWorkbuddyBackup(wb *workbuddyBackup, keepWbEnabled bool) (int, bool) {
 	sub := workbuddySub
 	if sub == nil || sub.cfg == nil {
 		log.Printf("  config import: workbuddy subsystem not running, config segment skipped")
@@ -625,12 +650,15 @@ func importWorkbuddyBackup(wb *workbuddyBackup) (int, bool) {
 		if err != nil {
 			log.Printf("  config import: workbuddy auth rescan failed: %v", err)
 		} else {
-			// 隔离护栏：导入账号一律禁用（写回凭据文件，重启后仍是禁用态），
-			// 随后让池对齐扫描结果（新号加入、消失的号剔除并落盘）。
-			for _, a := range auths {
-				if a.SetPoolEnabled(false) {
-					if err := a.SaveAtomic(); err != nil {
-						log.Printf("  config import: workbuddy auth %s disable save failed: %v", a.UID, err)
+			// 隔离护栏：导入账号默认一律禁用（写回凭据文件，重启后仍是禁用
+			// 态），随后让池对齐扫描结果（新号加入、消失的号剔除并落盘）。
+			// 弹窗勾选 WorkBuddy"沿用启用状态"时保留原始 pool_enabled。
+			if !keepWbEnabled {
+				for _, a := range auths {
+					if a.SetPoolEnabled(false) {
+						if err := a.SaveAtomic(); err != nil {
+							log.Printf("  config import: workbuddy auth %s disable save failed: %v", a.UID, err)
+						}
 					}
 				}
 			}

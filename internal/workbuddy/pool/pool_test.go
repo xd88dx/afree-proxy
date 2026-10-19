@@ -309,6 +309,41 @@ func TestCooldownPersists(t *testing.T) {
 	}
 }
 
+// TestClearCooldown 面板测试按钮的解除语义：仅当账号确处于生效中的冷却
+// （now < until）时返回 true 并清 until/coolKind/reason；未冷却/禁用账号
+// 返回 false，禁用原因不属于冷却、必须原样保留。
+func TestClearCooldown(t *testing.T) {
+	p := New("")
+	p.Add(&auth.Auth{UID: "u1"})
+	p.Add(&auth.Auth{UID: "u3"})
+	p.Disable("u3", "12153 session dead")
+
+	// 未冷却：返回 false，状态不动
+	if p.ClearCooldown("u1") {
+		t.Fatal("clear on non-cooling account must return false")
+	}
+
+	// 冷却中：返回 true，Cooling/Reason 复位
+	p.Cooldown("u1", CoolHard, time.Hour, "余额不足")
+	if st, _ := p.Status("u1"); !st.Cooling {
+		t.Fatal("account should be cooling before clear")
+	}
+	if !p.ClearCooldown("u1") {
+		t.Fatal("clear on cooling account must return true")
+	}
+	if st, _ := p.Status("u1"); st.Cooling || st.Reason != "" {
+		t.Fatalf("cooldown not cleared: %+v", st)
+	}
+
+	// 禁用账号：跳过，禁用原因保留
+	if p.ClearCooldown("u3") {
+		t.Fatal("clear on disabled account must return false")
+	}
+	if st, _ := p.Status("u3"); st.Reason != "12153 session dead" {
+		t.Fatalf("disabled reason must survive: %+v", st)
+	}
+}
+
 func TestDisablePersists(t *testing.T) {
 	dir := t.TempDir()
 	fp := filepath.Join(dir, "state.json")
