@@ -150,6 +150,10 @@ func (c *Client) fetchGlobalModelsOnce(a *auth.Auth) (names []string, infos []Mo
 		merged = append(merged, id)
 	}
 
+	// 最终恒定排序（id 字典序）：无论哪条探测路成功/降级、缓存周期如何轮换，
+	// 输出顺序都稳定——下游 newapi 等按序消费方不再观察到顺序翻转。
+	merged, infos = sortGlobalCatalog(merged, infos)
+
 	c.globalModels.Lock()
 	c.globalModels.names = merged
 	c.globalModels.infos = infos
@@ -187,16 +191,21 @@ func (c *Client) probeGlobalModels(a *auth.Auth) (names []string, infos []ModelI
 				ch <- probeResult{err: perr}
 				return
 			}
-			ids := make([]string, 0, len(byID))
 			outInfos := make([]ModelInfo, 0, len(byID))
 			for _, mi := range byID {
 				if nonChatModel(mi.ID, mi.MaxTokens, mi.Tags) {
 					continue
 				}
-				ids = append(ids, mi.ID)
 				outInfos = append(outInfos, mi)
 			}
-			sort.Strings(ids) // map 迭代序随机，排序保输出稳定
+			// map 迭代序随机：infos 先按 id 排序，names 再从中同步抽取。
+			// 原实现只排 names 不排 infos（平行数组失联），而最终输出取的是
+			// infos 的顺序（extractEfforts），随机序由此漏进 /v1/models。
+			sort.Slice(outInfos, func(i, j int) bool { return outInfos[i].ID < outInfos[j].ID })
+			ids := make([]string, 0, len(outInfos))
+			for _, mi := range outInfos {
+				ids = append(ids, mi.ID)
+			}
 			ch <- probeResult{names: ids, infos: outInfos}
 		}()
 		return ch
@@ -377,6 +386,21 @@ func mergeGlobalCatalog(primaryNames []string, primaryInfos []ModelInfo, seconda
 		}
 	}
 	return out, outInfos
+}
+
+// sortGlobalCatalog 探测结果的恒定化输出：names 按 id 字典序排序；infos 同步按
+// id 排序（消费方均按 id 查表，两数组各自有序即可）。infos 为 nil（窄表形态）
+// 时保持 nil。入参 assumed 已去重（fetchGlobalModelsOnce 的 merged）。
+//
+// 背景：global 目录由 4 路并发探测合成，各路内部存在 Go map 迭代随机序——
+// 若不在此统一排序，随机序会经 1h 缓存透出到 /v1/models，缓存过期即换一套
+// 顺序，下游 newapi 等按序消费方观察到模型列表无规律翻转。
+func sortGlobalCatalog(names []string, infos []ModelInfo) ([]string, []ModelInfo) {
+	sort.Strings(names)
+	if len(infos) > 1 {
+		sort.Slice(infos, func(i, j int) bool { return infos[i].ID < infos[j].ID })
+	}
+	return names, infos
 }
 
 // mergeEffortBuckets 合并两路 effort 桶：主路（v3）权威，企业端点只补主路缺失的模型档位。

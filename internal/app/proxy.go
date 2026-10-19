@@ -100,6 +100,7 @@ func StartProxy(host string, port int) error {
 	initOther()
 	LoadRequestLogsFromFile()
 	go cleanupCompactStates()
+	StartProxySubscriptionWorker() // 代理订阅自动更新（cron 驱动，配置热生效）
 
 	// WorkBuddy 子系统：独立账号池 + 面板 + OpenAI 兼容 handler。装配失败只
 	// 禁用该子系统，不影响既有 Cline/OpenCode 链路。

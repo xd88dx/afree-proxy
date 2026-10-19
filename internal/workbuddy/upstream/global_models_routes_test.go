@@ -162,6 +162,46 @@ func TestDesktopUAForGlobalAccount(t *testing.T) {
 	}
 }
 
+// TestSortGlobalCatalogDeterministic 探测结果恒定化：无论输入顺序如何（各探测路
+// 内部存在 Go map 迭代随机序），names/infos 排序后输出恒定——同集合同顺序，
+// 下游 /v1/models（newapi 消费）不再观察到顺序翻转。infos 与 names 键一致、
+// 各自按 id 有序；nil infos（窄表）保持 nil；字段值不被排序破坏。
+func TestSortGlobalCatalogDeterministic(t *testing.T) {
+	mk := func(id string, ctx int64) ModelInfo { return ModelInfo{ID: id, ContextWindow: ctx} }
+	// 两种"随机"洗牌（模拟两次 map 迭代序），排序后必须得到同一输出。
+	in1 := []ModelInfo{mk("grok-4.7", 3), mk("default-model", 1), mk("kimi-k3", 2), mk("gpt-6-sol", 4)}
+	in2 := []ModelInfo{mk("kimi-k3", 2), mk("gpt-6-sol", 4), mk("grok-4.7", 3), mk("default-model", 1)}
+	want := []string{"default-model", "gpt-6-sol", "grok-4.7", "kimi-k3"}
+
+	n1, i1 := sortGlobalCatalog([]string{"grok-4.7", "default-model", "kimi-k3", "gpt-6-sol"}, in1)
+	n2, i2 := sortGlobalCatalog([]string{"kimi-k3", "gpt-6-sol", "grok-4.7", "default-model"}, in2)
+	for i, id := range want {
+		if n1[i] != id || n2[i] != id {
+			t.Errorf("names[%d] = (%q, %q), want %q both", i, n1[i], n2[i], id)
+		}
+		if i1[i].ID != id || i2[i].ID != id {
+			t.Errorf("infos[%d] = (%q, %q), want %q both", i, i1[i].ID, i2[i].ID, id)
+		}
+	}
+	// 字段值不被排序破坏：default-model 的窗口必须还是 1。
+	if i1[0].ContextWindow != 1 || i2[0].ContextWindow != 1 {
+		t.Errorf("default-model ctx = (%d, %d), want 1 both", i1[0].ContextWindow, i2[0].ContextWindow)
+	}
+	// 窄表形态：infos nil 保持 nil。
+	n3, i3 := sortGlobalCatalog([]string{"b", "a"}, nil)
+	if n3[0] != "a" || n3[1] != "b" {
+		t.Errorf("narrow names = %v, want [a b]", n3)
+	}
+	if i3 != nil {
+		t.Errorf("narrow infos = %v, want nil", i3)
+	}
+	// 空 infos / 单元素：不 panic、names 仍有序。
+	n4, i4 := sortGlobalCatalog([]string{"z", "y"}, []ModelInfo{})
+	if n4[0] != "y" || len(i4) != 0 {
+		t.Errorf("empty-infos case: names=%v infos=%v", n4, i4)
+	}
+}
+
 func contains(s, sub string) bool {
 	for i := 0; i+len(sub) <= len(s); i++ {
 		if s[i:i+len(sub)] == sub {

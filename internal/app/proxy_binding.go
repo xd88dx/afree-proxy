@@ -71,6 +71,16 @@ func proxyIsolationEnabled() bool {
 }
 
 // proxyIdxInPool 代理在当前池列表中的索引；不在池中（已被删除）返回 -1。
+// proxyAliasOf 取代理行的备注名（#fragment）；无备注返回空串。
+// 备注名是代理的"身份标识"：订阅/服务端更新导致端口、凭据变化时，
+// 备注名相同即视为同一代理（2026-10-18 用户定）。
+func proxyAliasOf(line string) string {
+	if i := strings.LastIndexByte(line, '#'); i >= 0 {
+		return strings.TrimSpace(line[i+1:])
+	}
+	return ""
+}
+
 func proxyIdxInPool(raw string) int {
 	if raw == "" {
 		return -1
@@ -79,6 +89,15 @@ func proxyIdxInPool(raw string) int {
 	for i, p := range cfg.Proxies {
 		if p == raw {
 			return i
+		}
+	}
+	// 备注名 fallback：绑定行与池行备注名相同即命中（先精确后模糊）。
+	// 无备注名的行不参与模糊匹配，仍按精确 URI —— 避免任意无备注 URI 互通。
+	if a := proxyAliasOf(raw); a != "" {
+		for i, p := range cfg.Proxies {
+			if proxyAliasOf(p) == a {
+				return i
+			}
 		}
 	}
 	return -1
@@ -132,12 +151,17 @@ func resolveBackupSlot(submitted, storedBackup string) string {
 // 可用"的出口（返回 ("", -1, true)，调用方按直连发出）。两者都不可用返回
 // ok=false —— 调用方（隔离模式）必须跳过该身份。主辅相同视为一个出口
 // （面板已阻止这样配置，防御性兜底）。
+// pickBoundProxy 为一次上游尝试从绑定对中选可用出口。返回的 proxyURL 是
+// **池内当前地址**：绑定行可能因订阅更新只保留旧端口/凭据（备注名相同即
+// 同一代理），实际拨号必须用池内最新 URI，否则旧地址已死。
 func pickBoundProxy(main, backup string) (proxyURL string, idx int, ok bool) {
 	if isEgressDirect(main) {
 		return "", -1, true
 	}
-	if main != "" && proxyAvailableURL(main) {
-		return main, proxyIdxInPool(main), true
+	if main != "" {
+		if idx := proxyIdxInPool(main); idx >= 0 && zenProxyAvailable(idx) {
+			return getZenConfig().Proxies[idx], idx, true
+		}
 	}
 	if !backupProxyEnabled() {
 		return "", -1, false
@@ -145,8 +169,10 @@ func pickBoundProxy(main, backup string) (proxyURL string, idx int, ok bool) {
 	if isEgressDirect(backup) {
 		return "", -1, true
 	}
-	if backup != "" && backup != main && proxyAvailableURL(backup) {
-		return backup, proxyIdxInPool(backup), true
+	if backup != "" && backup != main {
+		if idx := proxyIdxInPool(backup); idx >= 0 && zenProxyAvailable(idx) {
+			return getZenConfig().Proxies[idx], idx, true
+		}
 	}
 	return "", -1, false
 }
@@ -207,10 +233,12 @@ func proxyExitType(proxyURL, main, backup string, bound bool) string {
 		if proxyURL == "" {
 			return "direct"
 		}
-		if proxyURL == main {
+		// pickBoundProxy 返回的是池内当前地址，与绑定行可能只差端口/凭据
+		//（备注名相同）—— 备注名一致即视为命中该槽位。
+		if proxyURL == main || sameProxyAlias(proxyURL, main) {
 			return "main"
 		}
-		if proxyURL == backup {
+		if proxyURL == backup || sameProxyAlias(proxyURL, backup) {
 			return "backup"
 		}
 		return ""
@@ -219,6 +247,15 @@ func proxyExitType(proxyURL, main, backup string, bound bool) string {
 		return "direct"
 	}
 	return ""
+}
+
+// sameProxyAlias 两个代理行备注名相同（且非空）即视为同一代理。
+func sameProxyAlias(a, b string) bool {
+	if a == "" || b == "" {
+		return false
+	}
+	alias := proxyAliasOf(a)
+	return alias != "" && alias == proxyAliasOf(b)
 }
 
 // accountProxyBinding 账号的绑定出口；未启用隔离或未绑定时 bound=false，

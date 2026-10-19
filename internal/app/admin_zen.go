@@ -32,6 +32,8 @@ func handleZenConfig(w http.ResponseWriter, r *http.Request) {
 		"baseURL":             cfg.BaseURL,
 		"proxies":             cfg.Proxies,
 		"proxyStrategy":       cfg.ProxyStrategy,
+		"proxySubURL":         cfg.ProxySubURL,
+		"proxySubCron":        cfg.ProxySubCron,
 		"maxConcurrency":      cfg.MaxConcurrency,
 		"retries":             cfg.Retries,
 		"compaction":          cfg.Compaction,
@@ -73,6 +75,8 @@ func handleZenConfigUpdate(w http.ResponseWriter, r *http.Request) {
 		BaseURL             *string  `json:"baseURL"`
 		Proxies             []string `json:"proxies"`
 		ProxyStrategy       *string  `json:"proxyStrategy"`
+		ProxySubURL         *string  `json:"proxySubURL"`
+		ProxySubCron        *string  `json:"proxySubCron"`
 		MaxConcurrency      *int     `json:"maxConcurrency"`
 		Retries             *int     `json:"retries"`
 		// 会话轮换周期（分钟）：0 = 关闭轮换，需与"未提交"区分故用指针。
@@ -99,6 +103,8 @@ func handleZenConfigUpdate(w http.ResponseWriter, r *http.Request) {
 		BaseURL:             cur.BaseURL,
 		Proxies:             cur.Proxies,
 		ProxyStrategy:       cur.ProxyStrategy,
+		ProxySubURL:         cur.ProxySubURL,
+		ProxySubCron:        cur.ProxySubCron,
 		MaxConcurrency:      cur.MaxConcurrency,
 		Retries:             cur.Retries,
 		ProxyIsolation:      cur.ProxyIsolation,
@@ -162,6 +168,19 @@ func handleZenConfigUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 	if patch.ProxyStrategy != nil && *patch.ProxyStrategy != "" {
 		next.ProxyStrategy = *patch.ProxyStrategy
+	}
+	if patch.ProxySubURL != nil {
+		next.ProxySubURL = strings.TrimSpace(*patch.ProxySubURL)
+	}
+	if patch.ProxySubCron != nil {
+		expr := strings.TrimSpace(*patch.ProxySubCron)
+		if expr != "" {
+			if err := validateCronExpr(expr); err != nil {
+				writeAPI(w, http.StatusBadRequest, apiResponse{Error: "cron 表达式无效: " + err.Error()})
+				return
+			}
+		}
+		next.ProxySubCron = expr
 	}
 	if patch.MaxConcurrency != nil && *patch.MaxConcurrency > 0 {
 		next.MaxConcurrency = *patch.MaxConcurrency

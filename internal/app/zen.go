@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -310,6 +311,11 @@ type zenConfigData struct {
 	BaseURL             string           `json:"baseURL"`
 	Proxies             []string         `json:"proxies"`        // http(s)/socks5 代理,轮询出口
 	ProxyStrategy       string           `json:"proxyStrategy"`  // round_robin / random / fill
+	// 代理订阅（proxy_subscription.go）：ProxySubURL 非空时按 ProxySubCron
+	// （5 字段分钟级 cron，空 = 不调度）定时拉取订阅并整池替换 Proxies；
+	// 拉取文本与面板"代理列表"走同一处理链（parseProxyLine + validateProxyList）。
+	ProxySubURL  string `json:"proxySubURL,omitempty"`
+	ProxySubCron string `json:"proxySubCron,omitempty"`
 	MaxConcurrency      int              `json:"maxConcurrency"` // zen 上游最大并发,防 worker 瞬时超限,默认 8
 	Retries             int              `json:"retries"`        // 限流/网络错误重试次数,默认 3
 	Compaction          zenCompactConfig `json:"compaction"`
@@ -2509,6 +2515,14 @@ func zenModelList() []map[string]any {
 		out = append(out, entry)
 	}
 	zenModelsMu.RUnlock()
+	// map 迭代序随机：输出前按 id 排序（与 wb global 的 sortGlobalCatalog 同因
+	// 同修）。zen 段无缓存——不排序的话 /v1/models 每次请求都是一套新随机序，
+	// 下游 newapi 等按序消费方每次看到的顺序都不同。
+	sort.Slice(out, func(i, j int) bool {
+		a, _ := out[i]["id"].(string)
+		b, _ := out[j]["id"].(string)
+		return a < b
+	})
 	return out
 }
 

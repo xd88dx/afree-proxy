@@ -478,15 +478,26 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
 <div class="section">
   <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><circle cx="12" cy="5" r="2.5"/><circle cx="5" cy="19" r="2.5"/><circle cx="19" cy="19" r="2.5"/><path d="M12 7.5v4m0 0-5.5 5m5.5-5 5.5 5"/></svg></span> Egress proxies</div>
   <div class="section-body">
-    <div class="hint" style="margin-bottom:10px">One proxy per line: <code>http://user:pass@host:port</code> or <code>socks5://host:port</code>. All upstreams share this list; unhealthy proxies are skipped automatically.</div>
+    <div class="hint" style="margin-bottom:10px">One proxy per line: <code>http://user:pass@host:port</code> or <code>socks5://host:port#alias</code>. All upstreams share this list; unhealthy proxies are skipped automatically.</div>
+    <div class="hint" style="margin-bottom:10px">The alias (#name) is a proxy's identity — re-binding survives alias-preserving URL changes.</div>
+    <div class="hint" style="margin-bottom:10px">When a subscription URL is set, this list is managed by the subscription and read-only; it serves as the fallback pool while a fetch fails.</div>
     <div class="form-row">
       <div class="field" style="flex:3"><label>Proxy list</label>
         <textarea id="ppProxies" rows="4" placeholder="one per line: socks://b64(user:pass)@host:port#alias, socks5://user:pass@host:port#alias or http://host:port"></textarea>
       </div>
-      <div class="field"><label>Proxy selection strategy</label>
+      <div class="field" style="flex:1"><label>Proxy selection strategy</label>
         <select id="ppStrategy"><option value="round_robin">Round-robin (round_robin)</option><option value="random">Random (random)</option><option value="fill">Fill (fill)</option></select>
       </div>
     </div>
+    <div class="form-row">
+      <div class="field" style="flex:3"><label>Subscription URL</label>
+        <input id="ppSubURL" oninput="syncProxyListEditable()" placeholder="http://10.10.10.5:12321/proxy/socks.txt — the pool is then managed by this subscription; leave empty to edit the list manually">
+      </div>
+      <div class="field" style="flex:1"><label>Update frequency (cron)</label>
+        <input id="ppSubCron" placeholder="*/30 * * * * (min hour day month weekday)">
+      </div>
+    </div>
+    <div class="hint" style="margin-bottom:10px">Subscription refresh replaces the whole pool with the fetched list. Fetch failures keep the current pool.</div>
     <div class="form-actions"><button class="btn btn-primary" onclick="saveProxyPool()">Save proxy pool</button></div>
     <div id="ppSaveResult" style="margin-top:8px"></div>
   </div>
@@ -1815,6 +1826,8 @@ const I18N_ZH = {
   'Egress proxies': '出口代理',
   'One proxy per line:': '每行一个代理：',
   '. All upstreams share this list; unhealthy proxies are skipped automatically.': '。所有上游共用此列表；不健康的代理会被自动跳过。',
+  'The alias (#name) is a proxy\'s identity — re-binding survives alias-preserving URL changes.': '别名（#name）是代理的身份标识——URL 变化但别名不变时，绑定关系保持有效。',
+  'When a subscription URL is set, this list is managed by the subscription and read-only; it serves as the fallback pool while a fetch fails.': '设置订阅链接后，此列表由订阅管理、只读不可编辑；拉取失败时作为兜底池使用。',
   'or': '或',
   'one per line: socks://b64(user:pass)@host:port#alias, socks5://user:pass@host:port#alias or http://host:port': '每行一条：socks://b64(账号:密码)@host:port#别名、socks5://账号:密码@host:port#别名 或 http://host:port（#别名自动识别）',
   'Proxy list': '代理列表',
@@ -1827,13 +1840,16 @@ const I18N_ZH = {
   'Cline': 'Cline',
   'Use proxy pool': '走代理池',
   'Proxy': '代理',
-  'Proxy health (online rate)': '代理健康',
   'Attempts': '尝试数',
   'Rate': '在线率',
   'Recent': '最近',
   'Last OK': '最近成功',
   'Last Fail': '最近失败',
   'Upstream attempts that egressed via this proxy since the pool was last edited': '上次编辑代理池以来，经此代理出网的上游尝试次数',
+  'Success rate over the last 50 attempts; red below 80% (min 10 samples).': '最近 50 次尝试的在线率；低于 80% 标红（至少 10 个样本）。',
+  'Average tunnel-setup time over successful attempts (TCP+TLS+CONNECT handshake only — excludes upstream first byte and task duration). Lower is better.': '成功尝试的平均隧道建立耗时（仅 TCP+TLS+CONNECT 握手——不含上游首字节与任务耗时）。越低越好。',
+  'Add API keys': '添加 API key',
+  'All its keys will be removed. This cannot be undone.': '该子平台的所有密钥都将被移除，此操作不可撤销。',
   'Transport-layer success rate since the pool was last edited (upstream 4xx/5xx still counts as the proxy being online)': '上次编辑代理池以来的传输层成功率（上游 4xx/5xx 不算代理失败）',
   'Success rate over the last 50 attempts; red below 80% (min 10 samples).': '最近 50 次尝试的成功率；样本≥10 且低于 80% 时标红。',
   'Rates are sampled passively from real traffic — no probing. "No data" = unused since the last pool edit; editing the proxy list resets counters.': '在线率仅被动采样自真实流量——不产生探测流量。“无数据”=自上次编辑代理池后未使用；编辑代理列表会清零计数。',
@@ -1848,8 +1864,6 @@ const I18N_ZH = {
   'OpenCode keys without proxy bindings follow this switch.': 'OpenCode 未绑定代理的 key 遵循此开关。',
   'Clear bindings': '清空代理',
   ' and ': ' 和 ',
-  ' binding(s) to all other lists': ' 条绑定到其他所有列表',
-  ' binding(s), ': ' 条绑定，成功 ',
   'Enable all': '一键启用',
   'Direct connection': '直连',
   'Save': '保存',
@@ -2107,7 +2121,6 @@ const I18N_ZH = {
   ' enabled': ' 已启用',
   'none enabled': '未启用',
   'Models updated': '模型已更新',
-  'Delete this sub-platform and all its keys': '删除该子平台及其所有密钥',
   'Create': '创建',
   'Sub-platform created': '子平台已创建',
   'Added': '已添加',
@@ -2147,19 +2160,18 @@ const I18N_ZH = {
   'Failed to load model list': '模型列表加载失败',
   'socks5 pool': 'socks5 池',
   'stale': '已失效',
-  'no session': '无会话',
   'Pending activation': '待启用',
+  'Subscription URL': '订阅链接（优先）',
+  'Managed by the subscription URL — clear it to edit manually': '由订阅链接管理——清空后才能手动编辑',
+  'http://10.10.10.5:12321/proxy/socks.txt — the pool is then managed by this subscription; leave empty to edit the list manually': 'http://10.10.10.5:12321/proxy/socks.txt —— 填写后代理池由订阅管理；留空则手动编辑列表',
+  'Update frequency (cron)': '更新频率',
+  'Subscription refresh replaces the whole pool with the fetched list. Fetch failures keep the current pool.': '订阅刷新会用拉取到的列表整池替换，拉取失败保留现池不变。',
+  '*/30 * * * * (min hour day month weekday)': '*/30 * * * *（分 时 日 月 周）',
   'no key': '无 key',
   'Click to copy': '点击复制',
   'Remove this key from the pool': '将该密钥移出池',
   'next in rotation': '轮换顺序中的下一个',
   'rotation disabled': '轮换已禁用',
-  'Requests': '请求数',
-  'Input tokens': '输入 token',
-  'Output tokens': '输出 token',
-  'Compaction': '压缩',
-  'Rate-limited': '限流次数',
-  'Per-model breakdown (today)': '按模型拆分（今日）',
   'Proxy pool saved': '代理池已保存',
   'Global policy saved': '全局策略已保存',
   'Proxy isolation settings saved': '代理隔离设置已保存',
@@ -2181,15 +2193,10 @@ const I18N_ZH = {
   'No AMDCloud keys configured': '没有配置任何 AMDCloud key',
   'No TokenHarbor keys configured': '没有配置任何 TokenHarbor key',
   'Probe the rate limit; if still limited, stays cooling with a recovery time': '探测限流状态；若仍在限流则保持冷却并显示恢复时间',
-  'Delete sub-platform': '删除子平台',
-  'Delete key': '删除密钥',
-  'This key will be removed from the pool. This cannot be undone.': '该密钥将从池中移除，此操作不可撤销。',
   'Batch test done': '批量测试完成',
-  'Send a real probe request': '发送真实探测请求',
   // 静态 hint 段落与状态标签补漏（TreeWalker 按文本节点整段匹配）
   'Tokens': 'Token 消耗',
   'are counted locally by this proxy (input+output; exact when upstream returns usage, otherwise estimated from the request body) to gauge headroom before official rate limits. The Test button sends a real probe request. The Reset button ': '由本代理在本地统计（输入+输出；上游返回 usage 时精确，否则按请求体估算），用于预估官方限额的余量。Test 按钮发送真实探测请求。Reset 按钮 ',
-  ": if still limited it stays in cooldown and shows the estimated recovery time; only a passing probe lifts the cooldown and resets today's stats.": '：若仍在限流则保持冷却并显示预计恢复时间；只有探测通过才会解除冷却并重置今日统计。',
   'Counted since process start.': '统计自进程启动起。',
   'No API keys yet': '还没有 API key',
   '— no sub-platform yet —': '— 还没有子平台 —',
@@ -2425,7 +2432,7 @@ function wbBindingCell(account) {
   // 若拿原始绑定值对比，锁定显示本身就会被误判成用户修改——辅代理开关
   // 关闭时每行都中（保存提示 N 个账号全改过，实际只改了一项）。
   if (wbSnapshot[id]) { wbSnapshot[id].main = main; wbSnapshot[id].backup = backupVal; }
-  const stale = v => v && v !== EGRESS_DIRECT && !proxyListCache.includes(v);
+  const stale = proxyStale;
   const staleMark = (stale(main) || stale(backup))
     ? ' <span title="' + T('Bound proxy is no longer in the proxy pool — skipped until fixed') + '" style="color:var(--danger)">⚠</span>'
     : '';
@@ -3236,7 +3243,7 @@ async function loadAccounts() {
       // omitempty 序列化下未绑定账号没有 proxyMain/proxyBackup 键，归一化为 ''。
       const pMain = a.proxyMain || '';
       const pBackup = a.proxyBackup || '';
-      const isStale = v => v && v !== EGRESS_DIRECT && !proxyListCache.includes(v);
+      const isStale = proxyStale;
       const stale = isStale(pMain) || isStale(pBackup);
       // 主 = 全局/直连 时辅跟随锁定（渲染期同样生效）；辅代理开关关闭时同理。
       const backupLocked = !backupProxyOn || pMain === '' || pMain === EGRESS_DIRECT;
@@ -3295,6 +3302,20 @@ async function loadAccounts() {
 // 代理池列表缓存：账号表与 zen key 表的绑定下拉共用。value 是完整代理 URL
 //（保存需要，#别名随行持久化），展示名优先用别名，无别名时打码凭据段。
 let proxyListCache = [];
+// 备注名（#fragment）是代理的身份标识：绑定与池行的备注名相同即视为同一
+// 代理——端口/凭据变化不触发 stale 警示（2026-10-18 用户定）。无备注的行
+// 仍按精确 URI 匹配，避免任意无备注 URI 互通。
+const proxyAliasOf = v => {
+  if (!v) return '';
+  const i = v.lastIndexOf('#');
+  return i >= 0 ? v.slice(i + 1).trim() : '';
+};
+const proxyStale = v => {
+  if (!v || v === EGRESS_DIRECT) return false;
+  const a = proxyAliasOf(v);
+  if (!a) return !proxyListCache.includes(v);
+  return !proxyListCache.some(p => proxyAliasOf(p) === a);
+};
 // backupProxyOn 辅代理开关（代理池页，持久化在 zen 配置里，默认关闭）。
 // 关闭时辅槽整体失效：下拉只读并强制跟随主槽，保存后该身份只剩主出口。
 // 默认 false 与后端一致 —— 首次渲染就是关闭态，避免开关未拉到就先解锁。
@@ -3388,13 +3409,15 @@ function proxyRecentRate(p) {
 //（proxyHealthByProxy ← runtime.proxyHealth 的 avgHsMs），无样本或 0 返回
 // null（不标注）。人类可读：1865ms→1.8s、653ms→0.6s（截断不四舍五入，
 // 与在线率标签同款定宽徽标）。五档取在线率镜像（越低越好）：
-// <300ms 绿 / <600ms 蓝 / <1s 粉 / <2s 黄 / ≥2s 红。
+// 0~2s 绿 / 2~4s 蓝 / 4~6s 粉 / 6~10s 黄 / ≥10s 红。
 function proxyRecentHs(p) {
   const r = proxyHealthByProxy[proxyHealthKey(p)];
   const ms = Math.round(Number(r && r.avgHsMs) || 0);
   if (ms <= 0) return null;
   const text = ms < 100 ? '<0.1s' : (Math.floor(ms / 100) / 10) + 's';
-  const tier = ms < 300 ? 'green' : ms < 600 ? 'blue' : ms < 1000 ? 'pink' : ms < 2000 ? 'yellow' : 'red';
+  // 握手延迟五档（2026-10-18 用户定）：0~2s 绿 / 2~4s 蓝 / 4~6s 粉 / 6~10s 黄 /
+  // ≥10s 红（红档无上限，覆盖 10~15s 及以上）。
+  const tier = ms < 2000 ? 'green' : ms < 4000 ? 'blue' : ms < 6000 ? 'pink' : ms < 10000 ? 'yellow' : 'red';
   return { text: text, tier: tier };
 }
 // 在线率五档：≥80% 绿、≥60% 蓝、≥40% 粉、≥20% 黄、以下红；底色取主题色
@@ -4535,7 +4558,7 @@ function renderOcKeyStates(ks) {
         // 辅代理开关关闭 → 辅槽只读跟随主槽（key 表与账号表同规则）
         const backupLocked = !backupProxyOn || pMain === '' || pMain === EGRESS_DIRECT;
         const backupVal = backupLocked ? pMain : pBackup;
-        const isStale = v => v && v !== EGRESS_DIRECT && !proxyListCache.includes(v);
+        const isStale = proxyStale;
         const bind = '<td style="white-space:nowrap">' +
           egComboHTML('key', k.index, 'main', pMain, T('Main exit — used whenever available')) + ' ' +
           egComboHTML('key', k.index, 'backup', backupVal, T('Backup exit — used when main is cooling/removed'), backupLocked) +
@@ -4731,6 +4754,9 @@ async function loadProxyPool() {
     backupProxyOn = c.backupProxyEnabled === true;
     _('ppProxies').value = (c.proxies || []).join('\n');
     _('ppStrategy').value = c.proxyStrategy || 'round_robin';
+    _('ppSubURL').value = c.proxySubURL || '';
+    _('ppSubCron').value = c.proxySubCron || '';
+    syncProxyListEditable();
     _('ppCline').value = String(!!cfg.data.clineUseProxies);
     _('ppIsolation').value = String(c.proxyIsolation !== false);
     _('ppBackupEnabled').checked = c.backupProxyEnabled === true;
@@ -4801,13 +4827,29 @@ function renderProxyHealth(rows) {
     : '<tr><td colspan="8" class="empty">No proxies configured</td></tr>';
 }
 
+// syncProxyListEditable 订阅链接有值时代理列表只读（池由订阅管理，
+// 列表现值仅在拉取失败时兜底），清空订阅链接后恢复可编辑。
+function syncProxyListEditable() {
+  const ta = _('ppProxies');
+  if (!ta) return;
+  const locked = !!(_('ppSubURL').value || '').trim();
+  ta.readOnly = locked;
+  ta.style.opacity = locked ? '.55' : '';
+  ta.title = locked ? T('Managed by the subscription URL — clear it to edit manually') : '';
+}
 async function saveProxyPool() {
   const proxies = _('ppProxies').value.split('\n').map(s => s.trim()).filter(Boolean);
-  const PROXY_RE = /^(https?|socks5h?|socks):\/\/[^\s]+:\d+/;
-  const bad = proxies.find(p => !PROXY_RE.test(p));
-  if (bad) { toast(T('Invalid proxy format: ') + bad + ' (need http(s)://host:port or socks5://host:port)', 'error'); return; }
+  const subUrl = _('ppSubURL').value.trim();
+  if (!subUrl) {
+    const PROXY_RE = /^(https?|socks5h?|socks):\/\/[^\s]+:\d+/;
+    const bad = proxies.find(p => !PROXY_RE.test(p));
+    if (bad) { toast(T('Invalid proxy format: ') + bad + ' (need http(s)://host:port or socks5://host:port)', 'error'); return; }
+  }
   try {
-    await api('POST', '/opencode/config/update', { proxies: proxies, proxyStrategy: _('ppStrategy').value });
+    const payload = { proxyStrategy: _('ppStrategy').value, proxySubURL: subUrl, proxySubCron: _('ppSubCron').value.trim() };
+    // 订阅有值时不下发 proxies（后端保留现池，池只由订阅覆盖）
+    if (!subUrl) payload.proxies = proxies;
+    await api('POST', '/opencode/config/update', payload);
     _('ppSaveResult').innerHTML = '<div style="color:var(--accent2);font-size:12px">' + T('Saved ') + proxies.length + T(' proxies') + '</div>';
     setTimeout(() => _('ppSaveResult').innerHTML = '', 5000);
     toast('Proxy pool saved', 'success');
@@ -4971,7 +5013,7 @@ function renderOrKeyStates(ks) {
         const pBackup = k.proxyBackup || '';
         const backupLocked = !backupProxyOn || pMain === '' || pMain === EGRESS_DIRECT;
         const backupVal = backupLocked ? pMain : pBackup;
-        const isStale = v => v && v !== EGRESS_DIRECT && !proxyListCache.includes(v);
+        const isStale = proxyStale;
         const bind = '<td style="white-space:nowrap">' +
           egComboHTML('or', k.index, 'main', pMain, T('Main exit — used whenever available')) + ' ' +
           egComboHTML('or', k.index, 'backup', backupVal, T('Backup exit — used when main is cooling/removed'), backupLocked) +
@@ -5241,7 +5283,7 @@ function renderAmdKeyStates(ks) {
         const pBackup = k.proxyBackup || '';
         const backupLocked = !backupProxyOn || pMain === '' || pMain === EGRESS_DIRECT;
         const backupVal = backupLocked ? pMain : pBackup;
-        const isStale = v => v && v !== EGRESS_DIRECT && !proxyListCache.includes(v);
+        const isStale = proxyStale;
         const bind = '<td style="white-space:nowrap">' +
           egComboHTML('amd', k.index, 'main', pMain, T('Main exit — used whenever available')) + ' ' +
           egComboHTML('amd', k.index, 'backup', backupVal, T('Backup exit — used when main is cooling/removed'), backupLocked) +
@@ -5511,7 +5553,7 @@ function renderTHKeyStates(ks) {
         const pBackup = k.proxyBackup || '';
         const backupLocked = !backupProxyOn || pMain === '' || pMain === EGRESS_DIRECT;
         const backupVal = backupLocked ? pMain : pBackup;
-        const isStale = v => v && v !== EGRESS_DIRECT && !proxyListCache.includes(v);
+        const isStale = proxyStale;
         const bind = '<td style="white-space:nowrap">' +
           egComboHTML('th', k.index, 'main', pMain, T('Main exit — used whenever available')) + ' ' +
           egComboHTML('th', k.index, 'backup', backupVal, T('Backup exit — used when main is cooling/removed'), backupLocked) +
@@ -5938,7 +5980,7 @@ function renderOtherKeys(ks) {
     const pBackup = k.proxyBackup || '';
     const backupLocked = !backupProxyOn || pMain === '' || pMain === EGRESS_DIRECT;
     const backupVal = backupLocked ? pMain : pBackup;
-    const stale = v => v && v !== EGRESS_DIRECT && !proxyListCache.includes(v);
+    const stale = proxyStale;
     const bind = '<td style="white-space:nowrap">' +
       egComboHTML('other', k.index, 'main', pMain, T('Main exit — used whenever available')) + ' ' +
       egComboHTML('other', k.index, 'backup', backupVal, T('Backup exit — used when main is cooling/removed'), backupLocked) +
