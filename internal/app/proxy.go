@@ -1298,7 +1298,12 @@ func clineAPIWithAccount(ctx context.Context, params map[string]any, stream bool
 	// hsStart 拨号前打点：Do 返回即隧道建立（首字节未回），差值=握手延迟。
 		req.Header = clineHeaders(token, sessionID)
 		hsStart := time.Now()
-		resp, lastErr = client.Do(req)
+		wctx, stopWatch := clineHeaderWatchdog(ctx)
+		resp, lastErr = client.Do(req.WithContext(wctx))
+		if stopWatch() {
+			// 黑洞出口（TCP 通、响应头静默丢失）：按网络错误处理，冷却该出口并换下一个
+			log.Printf("  cline upstream: response header watchdog fired after %v (exit unresponsive, failing over)", ClineHeaderTimeout())
+		}
 		if lastErr == nil {
 			setUpstreamExit(ctx, proxyExitType(proxyURL, main, backup, bound))
 			recordProxyOutcome(proxyURL, true, nil, time.Since(hsStart).Milliseconds())
@@ -1340,7 +1345,9 @@ func clineAPIWithAccount(ctx context.Context, params map[string]any, stream bool
 			// 注意: 不能用 := —— 那会在 if 块内遮蔽外层 resp，重试成功的
 			// 响应被丢弃（body 泄漏）而调用方仍拿到旧的 401
 			hsStart2 := time.Now()
-			resp2, derr := client.Do(req2)
+			wctx2, stopWatch2 := clineHeaderWatchdog(ctx)
+			resp2, derr := client.Do(req2.WithContext(wctx2))
+			stopWatch2()
 			if derr != nil {
 				recordProxyOutcome(exitURL, false, derr, 0)
 				return nil, fmt.Errorf("upstream retry: %w", derr)
@@ -2003,6 +2010,34 @@ func collectStreamResponse(upstream *http.Response) (map[string]any, error) {
 		out["usage"] = usage
 	}
 	return out, nil
+}
+
+// clineHeaderWatchdog 给单次上游尝试加“响应头看门狗”：派生一个可取消 ctx + 定时
+// 取消。返回的 stop 必须在 client.Do 返回后立刻调用（成功/失败都要），它停掉定时器
+// 并回报看门狗是否已经触发。
+//
+// 为什么不能直接用 context.WithTimeout：请求 ctx 控制整个请求（含 body 读取），
+// 超时到达会把已建立的长流也掐断。此处的定时器只在“响应头还没到”时取消，头一到
+// 就 Stop，SSE 之后跑多久都不受它影响。
+func clineHeaderWatchdog(ctx context.Context) (context.Context, func() bool) {
+	return clineHeaderWatchdogFor(ctx, ClineHeaderTimeout())
+}
+
+// clineHeaderWatchdogFor 是 clineHeaderWatchdog 的时长显式版本（便于单测）。
+func clineHeaderWatchdogFor(ctx context.Context, d time.Duration) (context.Context, func() bool) {
+	if d <= 0 {
+		return ctx, func() bool { return false }
+	}
+	wctx, cancel := context.WithCancel(ctx)
+	var fired atomic.Bool
+	timer := time.AfterFunc(d, func() {
+		fired.Store(true)
+		cancel()
+	})
+	return wctx, func() bool {
+		timer.Stop()
+		return fired.Load()
+	}
 }
 
 // modelNeedsStream 该模型是否必须让上游走流式：模型元数据（同步层按命名约定

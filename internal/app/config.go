@@ -9,6 +9,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"time"
 )
 
 // 环境变量配置层。优先级：显式命令行 flag > 环境变量 > 内置默认值。
@@ -295,6 +296,22 @@ func SystemPromptOverrideEnabled() bool {
 func ClineForceStream() bool {
 	v, _ := envBool("CLINE_FORCE_STREAM")
 	return v
+}
+
+// ClineHeaderTimeout cline 上游“等响应头”看门狗时长（CLINE_HEADER_TIMEOUT 秒，
+// 默认 60，0 = 关闭）。黑洞出口（TCP 通、响应头被静默丢弃）下 client.Do 会一直
+// 挂到共用 transport 的 ResponseHeaderTimeout(5 分钟)，期间占着并发槽位且故障
+// 转移不触发；看门狗只掐“响应头到达之前”，头一到立即停止，不影响之后的流式
+// body（SSE 可长跑）。注意：该值成立的前提是 cline 上游恒为流式——若将来出现
+// 真正非流式的上游模型（响应头要等整段生成完成），必须调大或关闭。
+func ClineHeaderTimeout() time.Duration {
+	if n, ok := envInt("CLINE_HEADER_TIMEOUT"); ok {
+		if n <= 0 {
+			return 0
+		}
+		return time.Duration(n) * time.Second
+	}
+	return 60 * time.Second
 }
 
 // StreamLogEnabled STREAM_LOG=true 时把 Anthropic 流式路径的原始 SSE 事件
