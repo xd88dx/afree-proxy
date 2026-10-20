@@ -889,7 +889,7 @@ func defaultProxyConfig() *proxyConfigData {
 	return &proxyConfigData{
 		Strategy: "round_robin",
 		Headers: map[string]string{
-			"User-Agent":         "Cline/" + clineClientVersion,
+			"User-Agent":         clineUserAgent(),
 			"HTTP-Referer":       "https://cline.bot",
 			"X-Title":            "Cline",
 			"X-IS-MULTIROOT":     "false",
@@ -901,6 +901,83 @@ func defaultProxyConfig() *proxyConfigData {
 		},
 	}
 }
+
+// normalizeIdentityHeaders 把持久化配置里"仍是历史版本号"的客户端指纹头升级到
+// 当前常量，返回改写条数。
+//
+// 必要性：持久化 headers 会整体覆盖 clineHeaders 的默认值（pool 加载时回放），
+// 所以客户端版本升级后，线上会继续发旧指纹（如 Cline/3.0.70、core 0.0.92），
+// 新常量对已部署实例形同虚设。这里只改写"明确是旧默认形态"的值：
+// UA 形如 "Cline/x.y.z"（可带历史 ai-sdk 后缀，版本段必须是纯 semver），
+// 版本号头形如 "x.y.z"。用户自定义的其它取值一律不动。
+func normalizeIdentityHeaders(h map[string]string) int {
+	n := 0
+	for k, v := range h {
+		var want string
+		switch http.CanonicalHeaderKey(k) {
+		case "User-Agent":
+			if !isClineVersionedUA(v) {
+				continue
+			}
+			want = clineUserAgent()
+		case "X-Client-Version", "X-Platform-Version":
+			if !isSemver(v) {
+				continue
+			}
+			want = clineClientVersion
+		case "X-Core-Version":
+			if !isSemver(v) {
+				continue
+			}
+			want = clineCoreVersion
+		default:
+			continue
+		}
+		if isClineUA(v) && want == v { // UA 已是最新完整形态
+			continue
+		}
+		if v != want {
+			h[k] = want
+			n++
+		}
+	}
+	return n
+}
+
+// isSemver 判断是否为纯三段数字版本号（x.y.z）。
+func isSemver(s string) bool {
+	parts := strings.Split(s, ".")
+	if len(parts) != 3 {
+		return false
+	}
+	for _, p := range parts {
+		if p == "" {
+			return false
+		}
+		for i := 0; i < len(p); i++ {
+			if p[i] < '0' || p[i] > '9' {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// isClineVersionedUA 判断是否为 "Cline/<semver>" 开头的自产 UA 形态
+// （其后可跟任意后缀）。
+func isClineVersionedUA(v string) bool {
+	if !strings.HasPrefix(v, "Cline/") {
+		return false
+	}
+	rest := v[len("Cline/"):]
+	if i := strings.IndexByte(rest, ' '); i >= 0 {
+		rest = rest[:i]
+	}
+	return isSemver(rest)
+}
+
+// isClineUA 判断是否为完整自产 UA（带 ai-sdk 后缀）。
+func isClineUA(v string) bool { return strings.HasPrefix(v, "Cline/") && strings.Contains(v, " ai-sdk/") }
 
 func getProxyConfig() *proxyConfigData {
 	proxyConfigMu.Lock()

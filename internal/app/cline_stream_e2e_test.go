@@ -317,9 +317,9 @@ func TestCallClineAPI429QuotaKeywordLongCooldown(t *testing.T) {
 	}
 }
 // clineHeaders 契约：官方 CLI 身份头必须齐全、大小写精确、取值与最新 CLI
-// 一致（audit 2026-10-10，核对自 sdk request-headers.ts / cline-client-headers.ts：
-// CLI 3.0.70，X-CLIENT-TYPE cline-cli，core 0.0.92，platform cli）。Cline 网关对
-// 受限免费模型校验这些头，缺失/错值可能 403。
+// 一致（2026-10-19 真机抓包核对 npm cline@3.0.73 / @cline/core@0.0.95：
+// X-CLIENT-TYPE cline-cli，platform cli，UA 带 ai-sdk 三段后缀）。
+// Cline 网关对受限免费模型校验这些头，缺失/错值可能 403。
 func TestClineHeadersContract(t *testing.T) {
 	h := clineHeaders("tok-123", "sess_abc")
 
@@ -327,16 +327,16 @@ func TestClineHeadersContract(t *testing.T) {
 	want := map[string]string{
 		"Authorization":      "Bearer tok-123",
 		"Content-Type":       "application/json",
-		"User-Agent":         "Cline/3.0.70",
+		"User-Agent":         "Cline/3.0.73 ai-sdk/openai-compatible/3.0.58 ai-sdk/provider-utils/5.0.50 runtime/bun/1.4.2",
 		"HTTP-Referer":       "https://cline.bot",
 		"X-Title":            "Cline",
 		"X-IS-MULTIROOT":     "false",
 		"X-CLIENT-TYPE":      "cline-cli",
-		"X-CLIENT-VERSION":   "3.0.70",
+		"X-CLIENT-VERSION":   "3.0.73",
 		"X-PLATFORM":         "cli",
-		"X-PLATFORM-VERSION": "3.0.70",
-		"X-CORE-VERSION":     "0.0.92",
-		"X-Task-ID":          "sess_abc",
+		"X-PLATFORM-VERSION": "3.0.73",
+		"X-CORE-VERSION":     "0.0.95",
+		"X-Task-ID":          clineTaskID("sess_abc"),
 	}
 	for k, v := range want {
 		vals, ok := h[k]
@@ -349,7 +349,7 @@ func TestClineHeadersContract(t *testing.T) {
 		}
 	}
 	// 常量与 audit 表格字面一致（防止只改常量不改断言时静默漂移）
-	if clineClientVersion != "3.0.70" || clineCoreVersion != "0.0.92" {
+	if clineClientVersion != "3.0.73" || clineCoreVersion != "0.0.95" {
 		t.Errorf("version constants drifted from the audit spec: client=%q core=%q", clineClientVersion, clineCoreVersion)
 	}
 	// 空 session 不得带 X-Task-ID
@@ -368,13 +368,28 @@ func TestClineHeadersContract(t *testing.T) {
 		}
 		seen[c] = true
 	}
+
+	// X-Task-ID 必须是官方 CLI 形态 <13 位毫秒>_<5 位 base36>（真机抓包：
+	// 1792426668112_96vx7），同一会话稳定、不同会话不同；已是该形态则透传。
+	if !isClineTaskID(clineTaskID("sess_abc")) {
+		t.Errorf("X-Task-ID not in official form: %q", clineTaskID("sess_abc"))
+	}
+	if clineTaskID("sess_abc") != clineTaskID("sess_abc") {
+		t.Error("X-Task-ID must be stable for the same session id")
+	}
+	if clineTaskID("sess_abc") == clineTaskID("sess_xyz") {
+		t.Error("X-Task-ID must differ across sessions")
+	}
+	if got := clineTaskID("1792426668112_96vx7"); got != "1792426668112_96vx7" {
+		t.Errorf("official-form X-Task-ID must pass through unchanged, got %q", got)
+	}
 }
 
-// zen 上游身份头与 UA 必须与 audit 规格一致：UA 为
+// zen 上游身份头与 UA 必须与实测规格一致：UA 为
 // "opencode/<ver> ai-sdk/provider-utils/4.0.40 runtime/bun/1.3.14"（ver 随最新
-// CLI，2026-10-10 为 1.18.35）；gate 头用官方的小写键名。
+// CLI，2026-10-19 实机抓包核对 opencode-ai@1.19.3 为 1.19.3）；gate 头用官方的小写键名。
 func TestZenHeadersMatchAuditSpec(t *testing.T) {
-	if zenNativeUA != "opencode/1.18.35 ai-sdk/provider-utils/4.0.40 runtime/bun/1.3.14" {
+	if zenNativeUA != "opencode/1.19.3 ai-sdk/provider-utils/4.0.40 runtime/bun/1.3.14" {
 		t.Errorf("zenNativeUA drifted from the audit spec: %q", zenNativeUA)
 	}
 	// 轮换列表里的原生 UA 条目也必须是同一版本
@@ -386,6 +401,18 @@ func TestZenHeadersMatchAuditSpec(t *testing.T) {
 	}
 	if !found {
 		t.Errorf("ZenUserAgents must contain the native ai-sdk UA %q (got %v)", zenNativeUA, kit.ZenUserAgents)
+	}
+
+	// provider-utils 段随协议切换：chat 4.0.23 / responses 4.0.40（实机抓包 80:1）。
+	// 会话里存的基准是 responses 形态，发 chat 前必须换成 4.0.23。
+	if got := zenUAForProtocol(zenNativeUA, false); got != "opencode/1.19.3 ai-sdk/provider-utils/4.0.23 runtime/bun/1.3.14" {
+		t.Errorf("chat UA provider-utils segment wrong: %q", got)
+	}
+	if got := zenUAForProtocol(zenNativeUA, true); got != zenNativeUA {
+		t.Errorf("responses UA must keep the stored base value, got %q", got)
+	}
+	if got := zenUAForProtocol("opencode/latest/1.18.14/desktop", false); got != "opencode/latest/1.18.14/desktop" {
+		t.Errorf("non-ai-sdk UA must pass through unchanged, got %q", got)
 	}
 
 	req, err := http.NewRequest("POST", "https://opencode.ai/zen/v1/chat/completions", nil)
@@ -454,9 +481,9 @@ func TestClineHeadersOnTheWire(t *testing.T) {
 
 	h := <-got
 	// net/http canonicalizes the wire header names on receipt, so read via Get.
-	clientVer := "3.0.70"
+	clientVer := "3.0.73"
 	want := map[string]string{
-		"User-Agent":         "Cline/" + clientVer,
+		"User-Agent":         "Cline/" + clientVer + " ai-sdk/openai-compatible/3.0.58 ai-sdk/provider-utils/5.0.50 runtime/bun/1.4.2",
 		"Http-Referer":       "https://cline.bot", // Go stores the canonical form of HTTP-Referer
 		"X-Title":            "Cline",
 		"X-Is-Multiroot":     "false",
@@ -464,7 +491,7 @@ func TestClineHeadersOnTheWire(t *testing.T) {
 		"X-Client-Version":   clientVer,
 		"X-Platform":         "cli",
 		"X-Platform-Version": clientVer,
-		"X-Core-Version":     "0.0.92",
+		"X-Core-Version":     "0.0.95",
 		"Content-Type":       "application/json",
 	}
 	for k, v := range want {
@@ -477,5 +504,7 @@ func TestClineHeadersOnTheWire(t *testing.T) {
 	}
 	if got := h.Get("X-Task-Id"); got == "" {
 		t.Error("X-Task-ID must be present on a chat request")
+	} else if !isClineTaskID(got) {
+		t.Errorf("X-Task-ID %q must use the official <13 digits>_<5 base36> shape", got)
 	}
 }

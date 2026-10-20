@@ -14,6 +14,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"hash/fnv"
 	"io"
 	"log"
 	"net"
@@ -1052,13 +1053,69 @@ func enforceToolChoiceNone(body map[string]any) {
 	}
 }
 
-// Cline 上游客户端指纹版本。官方 CLI 3.0.70（X-CLIENT-TYPE: cline-cli，
-// core 0.0.92），核对自 sdk 的 request-headers.ts / cline-client-headers.ts。
+// Cline 上游客户端指纹版本。官方 CLI 3.0.73（X-CLIENT-TYPE: cline-cli，
+// core 0.0.95）。2026-10-19 真机抓包核对（cline@3.0.73 本地 mock 捕获
+// POST /api/v1/chat/completions），不再依赖 sdk 源码推断。
 // Cline 网关对被限制在 Cline 产品面的免费模型会校验这些身份头，缺失可能 403。
 const (
-	clineClientVersion = "3.0.70"
-	clineCoreVersion   = "0.0.92"
+	clineClientVersion = "3.0.73"
+	clineCoreVersion   = "0.0.95"
+	// clineUASuffix 官方 CLI 的 UA 后缀：ai-sdk provider 层在应用版本号之后
+	// 追加 provider / provider-utils / runtime 三段。真机实测（同上抓包）：
+	//   Cline/3.0.73 ai-sdk/openai-compatible/3.0.58 ai-sdk/provider-utils/5.0.50 runtime/bun/1.4.2
+	// 只发 "Cline/<ver>" 会少掉整段后缀——这是与真实客户端最大的结构性偏差。
+	clineUASuffix = " ai-sdk/openai-compatible/3.0.58 ai-sdk/provider-utils/5.0.50 runtime/bun/1.4.2"
 )
+
+// clineUserAgent 官方 CLI 的完整 User-Agent。
+func clineUserAgent() string { return "Cline/" + clineClientVersion + clineUASuffix }
+
+// clineTaskID 把任意会话标识规范成官方 CLI 的 X-Task-ID 形态
+// <13 位毫秒>_<5 位 base36（真机抓包样本：1792426668112_96vx7）。
+// 真实客户端在任务创建时生成该值、任务内恒定；网关按会话 ID 派生，
+// 保证同一会话（含重试）稳定、不同会话不同。已是官方形态则原样透传。
+func clineTaskID(sessionID string) string {
+	if isClineTaskID(sessionID) {
+		return sessionID
+	}
+	h := fnv.New64a()
+	_, _ = h.Write([]byte(sessionID))
+	sum := h.Sum64()
+	// 毫秒段落在 2025-10-01 起的 90 天窗口内：恒定可复现，且永远是过去时间
+	// （真实客户端的时间戳只会是任务创建时刻，未来时间戳反而可疑）。
+	const base = int64(1759276800000)
+	const window = uint64(90 * 24 * 3600 * 1000)
+	return fmt.Sprintf("%d_%s", base+int64(sum%window), base36Fixed(sum>>17, 5))
+}
+
+// isClineTaskID 判断是否已是官方形态：13 位数字 + '_' + 5 位小写字母数字。
+func isClineTaskID(s string) bool {
+	if len(s) != 19 || s[13] != '_' {
+		return false
+	}
+	for i := 0; i < 13; i++ {
+		if s[i] < '0' || s[i] > '9' {
+			return false
+		}
+	}
+	for i := 14; i < 19; i++ {
+		if c := s[i]; (c < '0' || c > '9') && (c < 'a' || c > 'z') {
+			return false
+		}
+	}
+	return true
+}
+
+// base36Fixed 把 n 编码成固定 width 位的 base36（小写，高位补 0）。
+func base36Fixed(n uint64, width int) string {
+	const digits = "0123456789abcdefghijklmnopqrstuvwxyz"
+	out := make([]byte, width)
+	for i := width - 1; i >= 0; i-- {
+		out[i] = digits[n%36]
+		n /= 36
+	}
+	return string(out)
+}
 
 // clineHeaders 构造上游请求头。用 setRawHeader（而非 Header.Set）保留官方
 // 客户端的精确大小写（Set 会把键规范化成 X-Task-Id / Http-Referer 等），
@@ -1071,7 +1128,7 @@ func clineHeaders(token, sessionID string) http.Header {
 	setRawHeader(h, "Content-Type", "application/json")
 	// Go 默认 UA（Go-http-client/1.1）是指纹异常点，容易被上游风控拦截；
 	// 与管理面板探测请求保持一致的客户端标识。cfg.Headers 里可覆盖。
-	setRawHeader(h, "User-Agent", "Cline/"+clineClientVersion)
+	setRawHeader(h, "User-Agent", clineUserAgent())
 	setRawHeader(h, "HTTP-Referer", "https://cline.bot")
 	setRawHeader(h, "X-Title", "Cline")
 	setRawHeader(h, "X-IS-MULTIROOT", "false")
@@ -1081,7 +1138,7 @@ func clineHeaders(token, sessionID string) http.Header {
 	setRawHeader(h, "X-PLATFORM-VERSION", clineClientVersion)
 	setRawHeader(h, "X-CORE-VERSION", clineCoreVersion)
 	if sessionID != "" {
-		setRawHeader(h, "X-Task-ID", sessionID)
+		setRawHeader(h, "X-Task-ID", clineTaskID(sessionID))
 	}
 
 	cfg := getProxyConfig()

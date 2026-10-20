@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -40,6 +41,11 @@ type zenSessionEntry struct {
 	// HarvestedAt 旧字段名，仅为读入旧文件保留（unmarshal 兜底），
 	// 加载时并入 CreatedAt，不再写回。
 	HarvestedAt int64 `json:"harvestedAt,omitempty"`
+	// RefreshedAt 最近一次"因 403 而被动换新会话"的时间（unix 秒）。
+	// 后台巡检/轮换铸造不写它（那是计划内换新），只有 403 触发的换新才写。
+	// 用途：识别"换新后很快又 403"的持续性故障——这种 403 换会话救不回来，
+	// 继续铸会话只会每次请求白跑一次上游（见 zenForbiddenEscalateWindow）。
+	RefreshedAt int64 `json:"refreshedAt,omitempty"`
 }
 
 var (
@@ -52,10 +58,13 @@ var (
 	// 销毁可能有价值的数据（重启后重试读取）。
 	zenSessSaveBlocked bool
 	// zenNativeUA 官方 CLI 的原生 ai-sdk 形态 UA（会话粘性与轮换列表共用）。
-	// opencode 版本按最新 CLI 核对（audit 2026-10-10：1.18.31 → 1.18.35）；
+	// opencode 版本按最新 CLI 核对（2026-10-19：npm opencode-ai@1.19.3 实机
+	// 抓包，UA 逐字为 "opencode/1.19.3 ai-sdk/provider-utils/4.0.40 runtime/bun/1.3.14"）；
 	// ai-sdk / bun 段保持不变——它们对应 TLS 指纹（tls_bun.go 的 Bun hello），
 	// 与 opencode 应用版本无关，改动这两段才会与指纹失配。
-	zenNativeUA = "opencode/1.18.35 ai-sdk/provider-utils/4.0.40 runtime/bun/1.3.14"
+	// provider-utils 段随协议不同（chat 4.0.23 / responses 4.0.40），发请求前
+	// 由 zenUAForProtocol 校正；这里存 responses 形态作为基准值。
+	zenNativeUA = "opencode/1.19.3 ai-sdk/provider-utils/4.0.40 runtime/bun/1.3.14"
 )
 
 // defaultSessionRotateMinutes 粘性会话的默认轮换周期（分钟）。语义见
@@ -252,6 +261,25 @@ func sessionRotateInterval() time.Duration {
 	return time.Duration(n) * time.Minute
 }
 
+// zenUAForProtocol 按协议校正 UA 里的 ai-sdk provider-utils 段：官方 CLI 在
+// chat/completions 路径发 4.0.23、responses 路径发 4.0.40（2026-10-19 实机抓包
+// opencode 1.19.3：80 个 chat 请求全为 4.0.23，唯一 responses 请求为 4.0.40）。
+// 会话粘性固定的是「应用版本 + bun 版本」这层指纹，provider-utils 段必须随协议走，
+// 否则同一会话跨协议会露出真实客户端不存在的组合。非 ai-sdk 形态的 UA 原样返回。
+func zenUAForProtocol(ua string, responses bool) string {
+	const (
+		puChat = "provider-utils/4.0.23"
+		puResp = "provider-utils/4.0.40"
+	)
+	if !strings.Contains(ua, " ai-sdk/") {
+		return ua
+	}
+	if responses {
+		return strings.Replace(ua, puChat, puResp, 1)
+	}
+	return strings.Replace(ua, puResp, puChat, 1)
+}
+
 // mintZenSessionEntryLocked 就地刷新条目的会话：新 ID + 新创建时间 + 合法标记，
 // 并在 UA 缺失时补上客户端指纹。调用方须持有 zenSessMu。
 // 请求路径与后台巡检共用，避免两处铸造逻辑漂移。
@@ -259,6 +287,9 @@ func mintZenSessionEntryLocked(e *zenSessionEntry, now time.Time) {
 	e.Session = kit.MintZenSessionID()
 	e.CreatedAt = now.Unix()
 	e.Minted = true
+	// 主动铸造＝计划内换新（轮换/首铸），不是对 403 的反应：清掉被动换新
+	// 时间戳，让下一次真正的 403 仍能获得一次换新机会。
+	e.RefreshedAt = 0
 	if e.UA == "" {
 		e.UA = zenNativeUA
 	}
@@ -360,17 +391,27 @@ func zenSessionMarkSuccess(key string) {
 	zenSessFailedMu.Lock()
 	delete(zenSessFailed, key)
 	zenSessFailedMu.Unlock()
+	// 同时清掉"被动换新"时间戳：这一跳 200 说明该 key+出口当前可用，将来
+	// 偶发的一次 403 理应仍能获得一次换新机会（不能被历史失败永久封死）。
+	// zenSessions 未加载时无需处理——条目本来就不存在。
+	zenSessMu.Lock()
+	if e, ok := zenSessions[key]; ok && e.RefreshedAt != 0 {
+		e.RefreshedAt = 0
+		saveZenSessionsLocked()
+	}
+	zenSessMu.Unlock()
 }
 
 // zenSessFailedMu/zenSessFailed 记录"换新后仍 403"的 key（tripwire/面板观测）。
-// 只增不用于限流决策——限流决策在调用点用本请求的 sessionRetried 标志完成。
+// 计数本身不参与决策；跨请求的限流决策看 zenSessionEntry.RefreshedAt
+// （见 zenSessionRefreshedRecently），单请求内的看调用点的 sessionRetried 标志。
 var (
 	zenSessFailedMu sync.Mutex
 	zenSessFailed   = map[string]int{}
 )
 
 // zenSessionFailed 记录该 key 在最近一次请求里"换新后仍 403"的失败印记，
-// 供面板/日志观测（tripwire）。返回是否是新印记。
+// 供面板/日志观测（tripwire）。无返回值——次数累积在 zenSessFailed 里。
 func zenSessionFailed(key string) {
 	if key == "" {
 		return
@@ -405,10 +446,53 @@ func refreshZenSession(key string) {
 		zenSessions[key] = e
 	}
 	mintZenSessionEntryLocked(e, time.Now())
+	// 这是"因 403 被动换新"：记下时间戳，供持续性故障闸门判断
+	// （换新后窗口内再次干净 403 ⇒ 换会话救不回来，见 zenSessionRefreshedRecently）。
+	e.RefreshedAt = time.Now().Unix()
 	saveZenSessionsLocked()
 	sess := e.Session
 	zenSessMu.Unlock()
 	log.Printf("zen session refreshed locally for key#%d: %s", keyIndex(key), kit.Truncate(sess, 24))
+}
+
+// ============ 持续性 403 闸门（跨请求记忆） ============
+//
+// 为什么需要：单请求内的 sessionRetried 只能保证"一次请求最多换一次会话"，
+// 对跨请求的持续性 403 毫无记忆。线上实测（2026-10-20）：key#4 三天 70 次上游
+// 尝试里 38 次 403（54%），被拒会话年龄全部在 2~30 分钟之间——每次请求都新铸
+// 一个会话、每次都 403，日志上一行行"refreshing session locally"看起来像在自愈，
+// 实际每次都是白铸会话 + 白打一次上游（约 1.5s 延迟 + 一次失败重试）。
+//
+// 归因实测（同一会话同一个 key，只换出口）：
+//   key#4 + northflank-NL → 403 ；key#4 + Mikrus → 200
+//   key#3 + Mikrus        → 200 ；key#3 + northflank-NL → 403
+// 即：这类"干净 403"跟着出口走，不跟着 key/会话走——换会话救不回来，冷却才是
+// 正确动作（冷却后 pickZenKey 会跳过该 key，其流量转给健康 key，客户端无感）。
+const (
+	// zenForbiddenEscalateWindow 被动换新后仍算"同一故障"的观察窗口。
+	zenForbiddenEscalateWindow = 10 * time.Minute
+	// zenForbiddenCooldown 持续性干净 403 的冷却时长。比单次 403 的 5 分钟长：
+	// 这类故障是持续型的，冷却太短只会让该 key 每隔几分钟回来白试一次。
+	zenForbiddenCooldown = 15 * time.Minute
+)
+
+// zenSessionRefreshedRecently 该 key 是否在窗口内因 403 被动换过会话。
+// 返回 true 表示"刚换新还会 403"，调用方应冷却而非再铸会话。zenSessions
+// 未加载时返回 false(无从判断，保守放行一次换新)。
+func zenSessionRefreshedRecently(key string, now time.Time) bool {
+	if key == "" {
+		return false
+	}
+	if zenForbiddenEscalateWindow <= 0 {
+		return false
+	}
+	zenSessMu.Lock()
+	defer zenSessMu.Unlock()
+	e, ok := zenSessions[key]
+	if !ok || e.RefreshedAt == 0 {
+		return false
+	}
+	return now.Sub(time.Unix(e.RefreshedAt, 0)) <= zenForbiddenEscalateWindow
 }
 
 // zenKeyConfigured key 是否仍在当前 zen key 池中。

@@ -124,7 +124,9 @@ func syncRecommendedModels() (int, error) {
 		return 0, err
 	}
 	req.Header = clineHeaders(token, "")
-	req.Header.Set("X-Task-ID", fmt.Sprintf("sess_sync_%d", time.Now().UnixMilli()))
+	// 官方 CLI 拉 recommended-models 时是纯 GET，不带 X-Task-ID（真机抓包
+	// 2026-10-19 核对）；此前塞的 sess_sync_<ms> 既非官方形态也不是任务，
+	// 反而不像真实客户端。
 
 	client := &http.Client{Timeout: modelsSyncTimeout}
 	resp, err := client.Do(req)

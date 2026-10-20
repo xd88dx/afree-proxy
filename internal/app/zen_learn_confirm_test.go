@@ -247,7 +247,8 @@ func TestZenHeadersOnTheWire(t *testing.T) {
 	want := map[string]string{
 		"X-Opencode-Client":  "cli",
 		"X-Opencode-Project": "global",
-		"User-Agent":         "opencode/1.18.35 ai-sdk/provider-utils/4.0.40 runtime/bun/1.3.14",
+		// chat 路径的 provider-utils 段是 4.0.23（实机抓包），不是 responses 的 4.0.40
+		"User-Agent":         "opencode/1.19.3 ai-sdk/provider-utils/4.0.23 runtime/bun/1.3.14",
 	}
 	for k, v := range want {
 		if g := h.Get(k); g != v {

@@ -121,6 +121,11 @@ func loadPool() *AccountPool {
 		for k, v := range p.Headers {
 			h[k] = v
 		}
+		// 持久化的旧版本指纹头升级到当前常量（只动明确是旧默认形态的值），
+		// 否则客户端版本升级对已部署实例不生效。
+		if n := normalizeIdentityHeaders(h); n > 0 {
+			log.Printf("pool: upgraded %d persisted identity header(s) to current client version", n)
+		}
 		proxyConfig.Headers = h
 	}
 	proxyConfigMu.Unlock()

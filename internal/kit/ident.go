@@ -37,8 +37,10 @@ var ZenUserAgents = []string{
 	"opencode/latest/1.18.13/desktop",
 	// 原生 responses 路径实测：官方 CLI 发 ai-sdk 形态 UA；网关轮换列表
 	// 加入该条目以匹配官方客户端指纹（AI-SDK/bun 段对应 TLS 指纹见 tls_bun.go；
-	// opencode 版本随最新 CLI，2026-10-10 核对为 1.18.35）
-	"opencode/1.18.35 ai-sdk/provider-utils/4.0.40 runtime/bun/1.3.14",
+	// opencode 版本随最新 CLI，2026-10-19 实机抓包核对 npm opencode-ai@1.19.3：
+	// chat 路径 provider-utils 段为 4.0.23，responses 路径为 4.0.40，两者都列）
+	"opencode/1.19.3 ai-sdk/provider-utils/4.0.23 runtime/bun/1.3.14",
+	"opencode/1.19.3 ai-sdk/provider-utils/4.0.40 runtime/bun/1.3.14",
 }
 
 // mustRand 读满 n 字节加密随机数；crypto/rand 失败说明系统熵源异常，

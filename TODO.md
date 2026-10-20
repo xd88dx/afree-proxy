@@ -1,5 +1,50 @@
 # TODO — Public container deployment: stateless /v1 proxy with multi-account rotation
 
+## Client-fingerprint refresh driven by real-binary captures (2026-10-19)
+
+Previous rounds took the Cline/opencode identity headers from **source** (sdk
+`request-headers.ts`, bundler lockfiles). This round captured what the shipped
+binaries actually send: a local mock on `127.0.0.1` plus the real
+`cline@3.0.73` (7 requests) and `opencode-ai@1.19.3` (82 requests) pointed at it
+via `CLINE_ENVIRONMENT=local` / an `opencode` provider config. npm `latest` at
+capture time matched both (`cline` 3.0.73, `@cline/core` 0.0.95,
+`opencode-ai` 1.19.3), so the versions were current, not stale.
+
+What the wire proved, and what changed:
+
+- **Cline UA carries an ai-sdk suffix**: `Cline/3.0.73 ai-sdk/openai-compatible/
+  3.0.58 ai-sdk/provider-utils/5.0.50 runtime/bun/1.4.2`. We were sending bare
+  `Cline/3.0.70` — a structural gap, not just a version bump.
+  `clineUserAgent()` now builds the full string; `defaultProxyConfig` uses it too.
+- **`X-Task-ID` has a shape**: `<13-digit ms>_<5 base36>` (sample
+  `1792426668112_96vx7`), constant for the whole task. We were sending the raw
+  `sess_<rand>` body session id. `clineTaskID()` maps any session id into that
+  shape (FNV-derived, so retries of the same body keep the same task id) and
+  passes through values already in the official form.
+- **`GET /api/v1/ai/cline/recommended-models` sends no `X-Task-ID`** — it is a
+  plain GET, not a task. The fake `sess_sync_<ms>` header there is gone.
+- **opencode's `provider-utils` segment is per-protocol**: 80/80 chat requests
+  sent `provider-utils/4.0.23`, the single responses request sent `4.0.40`.
+  One UA constant cannot serve both paths, so `zenUAForProtocol()` rewrites that
+  segment at request-build time (chat 4.0.23 / responses 4.0.40); the app +
+  bun versions stay sticky per session.
+- **Versions**: `clineClientVersion` 3.0.70→3.0.73, `clineCoreVersion`
+  0.0.92→0.0.95, zen app version 1.18.35→1.19.3, `kit.ZenUserAgents` gains both
+  ai-sdk variants.
+
+Deployment trap found while wiring this up: the pool file persists the whole
+header map and **replays it over `defaultProxyConfig` on load**, so bumping the
+constants does nothing on an existing install. `normalizeIdentityHeaders()`
+upgrades persisted values that are still recognisably old defaults (`Cline/x.y.z`
+for the UA, bare `x.y.z` for the version headers) and leaves custom values alone.
+Verified by booting a build against a copy of the production pool file: the
+admin config API then reports the migrated values.
+
+Still unverified (do not treat as known): UA on `/auth/register` and
+`/auth/refresh` (those go out through `kit.HTTPPostJSON`, i.e. Go's default UA +
+Go TLS), and the anthropic `/v1/messages` UA (inferred `4.0.46` from the bundled
+provider, never captured).
+
 ## zen gateway upgrade broke FreeTier auth — three rules, all verified live (2026-10-15)
 
 opencode zen changed its gateway; every zen request started returning `403

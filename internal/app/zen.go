@@ -2062,7 +2062,7 @@ func callZenResponsesAPI(ctx context.Context, params map[string]any, stream bool
 		}
 		req.Header.Set("Authorization", "Bearer "+key)
 		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("User-Agent", ua)
+		req.Header.Set("User-Agent", zenUAForProtocol(ua, true))
 		// x-opencode-session-id：真实 CLI 两个头都发（request.ts）；对本仓库的
 		// 格式门结论无害，补上只为字节级对齐官方流量。
 		setZenGateHeaders(req, sess, user)
@@ -2188,6 +2188,14 @@ func callZenResponsesAPI(ctx context.Context, params map[string]any, stream bool
 			if o.pinKey != "" {
 				return nil, rateLimited, apiErr
 			}
+			// 持续性故障闸门（与 chat 路径同款，见 zenSessionRefreshedRecently）。
+			if zenSessionRefreshedRecently(key, time.Now()) {
+				zenSessionFailed(key)
+				applied := cooldownZenKey(key, zenForbiddenCooldown)
+				log.Printf("  zen responses session rejected (403) again within %v of a local refresh [%s] key#%d via=%s: key/exit suspect, cooled %v (no re-mint)",
+					zenForbiddenEscalateWindow, zenSessionDesc(key), keyIndex(key), viaProxy, applied)
+				return nil, rateLimited, apiErr
+			}
 			if !sessionRetried {
 				sessionRetried = true
 				log.Printf("  zen responses session rejected (403) [%s] key#%d: refreshing session locally, retry same key",
@@ -2309,7 +2317,7 @@ func callZenAPI(ctx context.Context, params map[string]any, stream bool, opts ..
 		sess, user, ua := StickyZenIdentity(key)
 		req.Header.Set("Authorization", "Bearer "+key)
 		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("User-Agent", ua)
+		req.Header.Set("User-Agent", zenUAForProtocol(ua, false))
 		// x-opencode-session-id：真实 CLI 两个头都发（request.ts），见 responses 路径。
 		setZenGateHeaders(req, sess, user)
 
@@ -2414,6 +2422,16 @@ func callZenAPI(ctx context.Context, params map[string]any, stream bool, opts ..
 			// pinKey（面板 Test）：探测结论只属于这次点击，不触碰会话状态。
 			if o.pinKey != "" {
 				log.Printf("  zen chat session rejected (403) [%s], key#%d (probe: no state change)", zenSessionDesc(key), keyIndex(key))
+				return nil, rateLimited, apiErr
+			}
+			// 持续性故障闸门：窗口内刚因 403 被动换过会话、又收到干净 403 ——
+			// 实测这类 403 跟着出口走（同 key 同会话只换出口即 200），换新救
+			// 不回来。冷却该 key（退出轮转）而不是再铸一个会话白跑一次上游。
+			if zenSessionRefreshedRecently(key, time.Now()) {
+				zenSessionFailed(key)
+				applied := cooldownZenKey(key, zenForbiddenCooldown)
+				log.Printf("  zen chat session rejected (403) again within %v of a local refresh [%s] key#%d via=%s: key/exit suspect, cooled %v (no re-mint)",
+					zenForbiddenEscalateWindow, zenSessionDesc(key), keyIndex(key), viaProxy, applied)
 				return nil, rateLimited, apiErr
 			}
 			if !sessionRetried {

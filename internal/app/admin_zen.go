@@ -430,7 +430,7 @@ func testZenKey(key string, index int, modelID string) (map[string]any, string) 
 		switch he.Status {
 		case http.StatusForbidden:
 			result["httpStatus"] = he.Status
-			result["reason"] = "session rejected (403) — this key's session is no longer live; a local refresh was just triggered, retry in a moment"
+			result["reason"] = "session rejected (403): upstream refused this key+exit (probe: no state change) — check the exit IP/key, refreshing the session is unlikely to help"
 			return result, "error"
 		default:
 			result["httpStatus"] = he.Status
