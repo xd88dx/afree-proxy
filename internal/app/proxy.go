@@ -401,8 +401,10 @@ func StartProxy(host string, port int) error {
 			if m, ok := params["model"].(string); ok && m != "" {
 				model = normalizeRequestModel(m)
 			}
-			if modelNeedsStream(model) {
+			if upstreamNeedsStream(model) {
 				upstreamStream = true
+				// 我们替客户端开了流式：补 include_usage，否则聚合后 usage 缺失
+				withStreamUsage(params)
 				log.Printf("  model %s requires stream: forcing upstream stream, will aggregate", model)
 			}
 		}
@@ -2003,6 +2005,8 @@ func collectStreamResponse(upstream *http.Response) (map[string]any, error) {
 	return out, nil
 }
 
+// modelNeedsStream 该模型是否必须让上游走流式：模型元数据（同步层按命名约定
+// 推断的 RequiresStream）或上游错误自学习命中即 true。
 func modelNeedsStream(modelID string) bool {
 	initModelsCache()
 	modelsMu.Lock()
@@ -2016,6 +2020,30 @@ func modelNeedsStream(modelID string) bool {
 	}
 	// 命名约定漏判的模型由上游错误自学习得到（见 cline_stream.go）
 	return clineStreamRequired(modelID)
+}
+
+// upstreamNeedsStream 上游是否该走流式：CLINE_FORCE_STREAM 全局开关优先，其次
+// 按模型判定。所有"客户端要非流式"的 cline 入口都必须问这个函数，别再直接调
+// modelNeedsStream —— 否则全局开关会漏掉部分 API 形态（chat/messages/responses）。
+func upstreamNeedsStream(modelID string) bool {
+	if ClineForceStream() {
+		return true
+	}
+	return modelNeedsStream(modelID)
+}
+
+// withStreamUsage 我们（而非客户端）替上游打开流式时补 stream_options
+// .include_usage：不带该参数的上游 SSE 不吐 usage，聚合回 JSON 后 usage 缺失，
+// 账号记账与请求日志的 token 列会整体空掉。客户端自己带了 stream_options 时
+// 原样尊重，不覆盖。
+func withStreamUsage(params map[string]any) {
+	if params == nil {
+		return
+	}
+	if _, ok := params["stream_options"]; ok {
+		return
+	}
+	params["stream_options"] = map[string]any{"include_usage": true}
 }
 
 // finishZenChatNonStream 非流式 zen 应答收尾（chat 形态）：上游已被强制
@@ -2686,8 +2714,9 @@ func handleAnthropicMessages(w http.ResponseWriter, r *http.Request) {
 	}
 
 	upstreamStream := req.Stream
-	if !req.Stream && modelNeedsStream(normalizeRequestModel(req.Model)) {
+	if !req.Stream && upstreamNeedsStream(normalizeRequestModel(req.Model)) {
 		upstreamStream = true
+		withStreamUsage(openAIReq)
 		log.Printf("  anthropic model %s requires stream: forcing upstream stream, will aggregate", req.Model)
 	}
 

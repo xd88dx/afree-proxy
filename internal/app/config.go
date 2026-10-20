@@ -288,6 +288,15 @@ func SystemPromptOverrideEnabled() bool {
 	return v
 }
 
+// ClineForceStream CLINE_FORCE_STREAM=true 时 cline 上游一律走流式：客户端要
+// 非流式时由网关把上游 SSE 聚合回普通 JSON（与 zen 同形态）。默认 false =
+// 仍按模型元数据/命名约定/自学习逐模型判定。开全局开关前必须先确认没有"只支持
+// 非流式"的模型，否则那些模型会直接失败（没有反向学习机制）。
+func ClineForceStream() bool {
+	v, _ := envBool("CLINE_FORCE_STREAM")
+	return v
+}
+
 // StreamLogEnabled STREAM_LOG=true 时把 Anthropic 流式路径的原始 SSE 事件
 // 落盘到 afree-proxy-stream.log（完整对话内容、无大小上限），默认关闭。
 func StreamLogEnabled() bool {

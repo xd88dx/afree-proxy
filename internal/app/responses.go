@@ -775,8 +775,10 @@ func handleResponses(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	stream := isStream
-	if !isStream && modelNeedsStream(normalizeRequestModel(chatModel)) {
+	if !isStream && upstreamNeedsStream(normalizeRequestModel(chatModel)) {
 		stream = true
+		// 我们替客户端开了流式：补 include_usage，否则聚合后 usage 缺失
+		withStreamUsage(chat)
 	}
 	up, acc, streamed, err := callClineAutoStream(r.Context(), chat, stream, useProxies)
 	if err != nil {
