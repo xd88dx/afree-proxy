@@ -608,6 +608,11 @@ func pickAccountExcluding(exclude map[string]bool) *Account {
 		if a.Status != "active" {
 			continue
 		}
+		// poolEnabled=false 等价于“池里没有这个账号”：面板 Pool 列勾掉之后，
+		// 既不被选号，也不作为 429/5xx 的故障转移候选。
+		if !accountPoolEnabled(a) {
+			continue
+		}
 		if exclude[a.AccountID] {
 			continue
 		}
@@ -648,6 +653,7 @@ func pickAccountExcluding(exclude map[string]bool) *Account {
 // 推理额度耗尽（429→cooldown）不影响这类接口：实测 4 个账号全部 429 时
 // 模型列表接口仍 200；只走 pickAccount() 会因 "no active accounts" 整轮
 // 不同步，模型列表于是只剩种子兜底，已下线的模型会一直挂着。
+// 停用（poolEnabled=false）的账号即便在冷却中也不使用：池里没有它。
 func pickAccountAny() *Account {
 	p := loadPool()
 	poolMu.Lock()
@@ -655,6 +661,9 @@ func pickAccountAny() *Account {
 	var fallback *Account
 	for _, a := range p.Accounts {
 		if a.APIToken == "" && a.RefreshToken == "" {
+			continue
+		}
+		if !accountPoolEnabled(a) {
 			continue
 		}
 		if a.Status == "active" {

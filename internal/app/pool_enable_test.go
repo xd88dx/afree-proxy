@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -180,5 +181,70 @@ func TestAddAccountDefaultsDisabled(t *testing.T) {
 	addAccount(&Account{AccountID: "explicit", Email: "explicit@example.com", Status: "active", PoolEnabled: &enabled})
 	if got := pool.Accounts[1]; got.PoolEnabled == nil || !*got.PoolEnabled {
 		t.Fatal("explicit PoolEnabled=true must survive addAccount")
+	}
+}
+
+// useFillStrategy 固定选号策略为 fill，让 pickAccount* 的结果可预测。
+func useFillStrategy(t *testing.T) {
+	t.Helper()
+	proxyConfigMu.Lock()
+	old := proxyConfig.Strategy
+	proxyConfig.Strategy = "fill"
+	proxyConfigMu.Unlock()
+	t.Cleanup(func() {
+		proxyConfigMu.Lock()
+		proxyConfig.Strategy = old
+		proxyConfigMu.Unlock()
+	})
+}
+
+// poolEnabled=false 的账号对 cline 主链路等同于“池里没有这个账号”：
+// 不参与选号，也不作为 429/5xx 的故障转移候选（pickAccountExcluding 是
+// callClineAPI 唯一的选号入口）。
+func TestPickAccountExcludingSkipsPoolDisabled(t *testing.T) {
+	off := &Account{AccountID: "off", Email: "off@example.com", Status: "active", APIToken: "tok-off", PoolEnabled: poolBool(false)}
+	on := &Account{AccountID: "on", Email: "on@example.com", Status: "active", APIToken: "tok-on", PoolEnabled: poolBool(true)}
+	resetPoolForEnableTest(t, []*Account{off, on})
+	useFillStrategy(t)
+
+	for i := 0; i < 3; i++ {
+		if got := pickAccountExcluding(nil); got != on {
+			t.Fatalf("pickAccountExcluding(nil) = %v, want the enabled account", got)
+		}
+	}
+	// 启用账号被 exclude（故障转移已试过）之后不能退而求其次用停用账号
+	if got := pickAccountExcluding(map[string]bool{"on": true}); got != nil {
+		t.Fatalf("pickAccountExcluding(exclude enabled) = %v, want nil", got)
+	}
+}
+
+// 全部停用时 cline 上游调用直接失败，不偷偷拿停用账号顶上去。
+func TestCallClineAPIRejectsAllDisabled(t *testing.T) {
+	off := &Account{AccountID: "off", Email: "off@example.com", Status: "active", APIToken: "tok-off", PoolEnabled: poolBool(false)}
+	resetPoolForEnableTest(t, []*Account{off})
+	useFillStrategy(t)
+
+	_, _, err := callClineAPI(context.Background(), map[string]any{"model": "m"}, true, false)
+	if err == nil {
+		t.Fatal("all accounts disabled: callClineAPI must fail instead of using a disabled account")
+	}
+	if !strings.Contains(err.Error(), "no active accounts") {
+		t.Fatalf("error = %v, want it to mention no active accounts", err)
+	}
+}
+
+// 停用账号对只读调用（模型列表同步走 pickAccountAny 的冷却兜底）同样不存在。
+func TestPickAccountAnySkipsPoolDisabled(t *testing.T) {
+	off := &Account{AccountID: "off", Email: "off@example.com", Status: "cooldown", APIToken: "tok-off", PoolEnabled: poolBool(false)}
+	on := &Account{AccountID: "on", Email: "on@example.com", Status: "cooldown", APIToken: "tok-on", PoolEnabled: poolBool(true)}
+	resetPoolForEnableTest(t, []*Account{off, on})
+	if got := pickAccountAny(); got != on {
+		t.Fatalf("pickAccountAny() = %v, want the enabled account", got)
+	}
+
+	only := &Account{AccountID: "off2", Email: "off2@example.com", Status: "active", APIToken: "tok-off2", PoolEnabled: poolBool(false)}
+	resetPoolForEnableTest(t, []*Account{only})
+	if got := pickAccountAny(); got != nil {
+		t.Fatalf("all accounts disabled: pickAccountAny() = %v, want nil", got)
 	}
 }

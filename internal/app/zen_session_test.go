@@ -476,6 +476,42 @@ func TestRotatorMintsIdleKeys(t *testing.T) {
 	}
 }
 
+// 巡检必须跳过“路由禁用”的 key：面板勾掉 = 该 key 不在池里，不为它铸造/轮换
+// 会话（否则 .zen-sessions.json 会给已不存在的账号留条目）。重新启用后无需
+// 重启即可补铸。
+func TestRotatorSkipsRoutingDisabledKeys(t *testing.T) {
+	setupZenSessionTestUpstream(t)
+	cfg := getZenConfig()
+	cfg2 := *cfg
+	cfg2.Keys = []string{"sk-on", "sk-off"}
+	cfg2.SessionRotateMinutes = 120
+	cfg2.KeyRoutingEnabled = map[string]bool{"sk-off": false}
+	setZenConfig(&cfg2)
+	t.Cleanup(func() { c := *cfg; setZenConfig(&c) })
+
+	minted, rotated := rotateZenSessionsOnce()
+	if minted != 1 || rotated != 0 {
+		t.Fatalf("rotator = minted %d rotated %d, want minted 1 rotated 0 (routing-enabled key only)", minted, rotated)
+	}
+	if !zenSessionLive("sk-on") {
+		t.Fatal("routing-enabled idle key must still get a session from the rotator")
+	}
+	if zenSessionLive("sk-off") {
+		t.Fatal("routing-disabled key must not be minted: it is not in the pool")
+	}
+
+	// 重新启用：巡检立刻补铸，不需要重启容器。
+	if err := setZenKeyRoutingEnabled(1, true); err != nil {
+		t.Fatalf("setZenKeyRoutingEnabled(1, true): %v", err)
+	}
+	if m2, _ := rotateZenSessionsOnce(); m2 != 1 {
+		t.Fatalf("after re-enabling, rotator minted %d, want 1", m2)
+	}
+	if !zenSessionLive("sk-off") {
+		t.Fatal("re-enabled key must get a session on the next rotator pass")
+	}
+}
+
 // 巡检必须轮换年龄超期的 key——即便它从未被请求过（用户报的正是这个）。
 func TestRotatorRotatesAgedIdleKeys(t *testing.T) {
 	setupZenSessionTestUpstream(t)

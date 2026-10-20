@@ -540,8 +540,13 @@ func rotateZenSessionsOnce() (minted, rotated int) {
 	now := time.Now()
 	var rotatedKeys []string
 	for _, k := range keys {
-		if k == "" || k == "public" {
-			continue // 哨兵无凭据，铸造会话只会污染文件
+		// 路由禁用 = 该 key 不在池里：它不会出请求，也就不需要会话，不为它
+		// 铸造/轮换（否则 .zen-sessions.json 会给“已不存在的账号”留条目）。
+		// 含空串/“public” 哨兵（zenKeyAutoHarvestEnabled 一并排除）。重新启用
+		// 后无需重启：pickZenKey 第二轮就能选中它，StickyZenIdentity 惰性补铸；
+		// 巡检最迟一个节拍内也会补上。
+		if !zenKeyAutoHarvestEnabled(k) {
+			continue
 		}
 		e := zenSessions[k]
 		if e == nil {

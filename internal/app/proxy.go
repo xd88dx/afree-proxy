@@ -74,6 +74,12 @@ func StartProxy(host string, port int) error {
 	activeCount := 0
 	for _, a := range p.Accounts {
 		if a.Status == "active" {
+			// 停用（poolEnabled=false）的账号相当于不在池里：不做启动预热，
+			// 也不占 activeCount。重新启用后由请求路径的 ensureAccountToken
+			// 惰性刷新，不会被“没预热过”卡住。
+			if !accountPoolEnabled(a) {
+				continue
+			}
 			// 预热 token：APIToken 账号 token 恒有效（ensureAccountToken 直接返回），
 			// OAuth 账号仅在缺失/过期时刷新
 			if a.APIToken == "" && (a.AccessToken == "" || time.Now().UnixMilli() >= a.ExpiresAt) {

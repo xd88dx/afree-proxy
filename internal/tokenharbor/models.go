@@ -63,7 +63,7 @@ func InitCatalog() {
 	go func() { _, _ = SyncCatalog() }()
 }
 
-// SyncCatalog 用池内第一个可用 key 拉取 live 目录，只保留 :free 条目。
+// SyncCatalog 用池内第一个参与路由的 key 拉取 live 目录，只保留 :free 条目。
 // 返回变更条数；无 key 配置时静默跳过（种子即目录）；网络/解析失败返回
 // 错误且保留当前目录。上游返回空集合同样不清空。
 func SyncCatalog() (int, error) {
@@ -72,6 +72,18 @@ func SyncCatalog() (int, error) {
 	keys := Get().Keys
 	if len(keys) == 0 {
 		return 0, nil // 无 key：目录保持种子（同步需要认证）
+	}
+	// 取第一个参与路由的 key（与 other.FetchModels 同口径）：停用的 key 等于
+	// 不在池里，不能拿它去同步目录；全部停用时跳过同步、保留当前目录。
+	key := ""
+	for _, k := range keys {
+		if Get().RoutingEnabled(k) {
+			key = k
+			break
+		}
+	}
+	if key == "" {
+		return 0, nil
 	}
 	base := Get().BaseURL
 	// 官网免费模型页面 models?category=free 仅展示当前推荐的 3 个模型，
@@ -83,7 +95,7 @@ func SyncCatalog() (int, error) {
 		return 0, err
 	}
 	req.Header.Set("Accept", "application/json")
-	req.Header.Set("Authorization", "Bearer "+keys[0])
+	req.Header.Set("Authorization", "Bearer "+key)
 	resp, err := catalogHTTPClient().Do(req)
 	if err != nil {
 		return 0, err
@@ -94,7 +106,7 @@ func SyncCatalog() (int, error) {
 		resp.Body.Close()
 		req2, _ := http.NewRequest(http.MethodGet, base+"/models", nil)
 		req2.Header.Set("Accept", "application/json")
-		req2.Header.Set("Authorization", "Bearer "+keys[0])
+		req2.Header.Set("Authorization", "Bearer "+key)
 		resp, err = catalogHTTPClient().Do(req2)
 		if err != nil {
 			return 0, err
