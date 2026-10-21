@@ -135,7 +135,12 @@ func startWorkBuddy() (*workbuddySubsystem, error) {
 	up.ChatBaseGlobal = cfg.Global.ChatBase
 	// cn.chat_base 国内版 base 覆盖（上游 7c30d43）：空 = 回落内置默认
 	// copilot.tencent.com。海外出口被该域 TLS 复位时可改 www.workbuddy.cn。
-	up.ChatBaseCN = cfg.CN.ChatBase
+	// 仅在显式非空时覆盖：vendored chatBase() **没有空值回退**（只有 globalChatBase 有），
+	// 内置默认 copilot.tencent.com 由 upstream.New() 写入 Client.ChatBaseCN，空串覆盖会让
+	// CN 模型目录与对话全部报 "unsupported protocol scheme \"\""（2026-10-22 部署实测）。
+	if cfg.CN.ChatBase != "" {
+		up.ChatBaseCN = cfg.CN.ChatBase
+	}
 	// dns_servers / WB2A_DNS（上游 eacee47）：仅作用于 WorkBuddy 出站解析。
 	// 不动 http.DefaultTransport——afree 多平台共进程，改全局会波及其他平台出站。
 	if len(cfg.DNSServers) > 0 {

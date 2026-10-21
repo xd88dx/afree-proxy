@@ -93,7 +93,10 @@ func saveWorkbuddyConfig(
 	up.GlobalEnabled = newCfg.Global.Enabled
 	up.ChatBaseGlobal = newCfg.Global.ChatBase
 	up.BillingBaseGlobal = newCfg.Global.BillingBase
-	up.ChatBaseCN = newCfg.CN.ChatBase
+	// 同 workbuddy.go：空值不覆盖（chatBase() 无空值回退，空串会打断 CN 上游）。
+	if newCfg.CN.ChatBase != "" {
+		up.ChatBaseCN = newCfg.CN.ChatBase
+	}
 	wbauth.SetGlobalEnabled(newCfg.Global.Enabled)
 
 	p.SetBreaker(newCfg.Pool.BreakerThreshold, newCfg.BreakerCooldownDur, newCfg.BreakerCooldownMaxD)
