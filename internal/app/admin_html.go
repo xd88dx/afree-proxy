@@ -93,30 +93,6 @@ h2{font-size:21px;margin-bottom:18px;font-weight:700;letter-spacing:.01em}
 /* ===== Tables ===== */
 .table-wrap{overflow-x:auto}
 
-/* ===== Auto-assign rules（平台级黑名单/上限，网格行）===== */
-.pr-head,.pr-row{display:grid;grid-template-columns:124px 170px 104px minmax(0,1fr);gap:12px;align-items:center}
-.pr-head{padding:0 12px 7px;font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);font-weight:600}
-.pr-row{padding:9px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--panel);margin-bottom:6px;transition:.12s}
-.pr-row:hover{border-color:var(--border-strong)}
-.pr-plat{font-size:13px;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.pr-capbox{display:flex;align-items:center;gap:6px}
-.pr-cap{width:56px;padding:4px 7px;border:1px solid var(--border);border-radius:6px;background:var(--bg2);color:var(--text);font:inherit;font-size:12.5px;text-align:center}
-.pr-cap:focus{outline:none;border-color:var(--accent);box-shadow:var(--glow)}
-.pr-unit{font-size:11px;color:var(--text3);white-space:nowrap}
-.pr-switch{display:inline-flex;align-items:center;cursor:pointer}
-.pr-switch input{appearance:none;-webkit-appearance:none;width:32px;height:18px;border-radius:9px;background:var(--bg3);border:1px solid var(--border-strong);position:relative;cursor:pointer;transition:.15s;margin:0;flex-shrink:0}
-.pr-switch input:checked{background:var(--btn-primary-bg);border-color:var(--btn-primary-bg)}
-.pr-switch input::after{content:'';position:absolute;top:2px;left:2px;width:12px;height:12px;border-radius:50%;background:var(--text2);transition:.15s}
-.pr-switch input:checked::after{left:16px;background:#fff}
-.pr-ex{display:flex;flex-wrap:wrap;align-items:center;gap:6px;min-height:26px}
-.pr-tag{display:inline-flex;align-items:center;gap:2px;padding:2px 3px 2px 9px;border:1px solid var(--border-strong);border-radius:999px;font-size:11.5px;color:var(--text2);background:var(--bg3);white-space:nowrap}
-.pr-tag button{border:0;background:transparent;color:var(--text3);cursor:pointer;font-size:13px;line-height:1;padding:1px 4px;border-radius:50%}
-.pr-tag button:hover{color:var(--danger);background:var(--panel)}
-.pr-add{display:inline-flex;align-items:center;gap:5px}
-.pr-sel{max-width:148px;padding:3px 6px;border:1px solid var(--border);border-radius:6px;background:var(--bg2);color:var(--text);font-size:12px}
-.pr-sel:focus{outline:none;border-color:var(--accent)}
-.pr-none{font-size:12px;color:var(--text3)}
-@media(max-width:860px){.pr-head{display:none}.pr-row{grid-template-columns:1fr 1fr;gap:8px}.pr-ex{grid-column:1/-1}}
 table{width:100%;border-collapse:collapse}
 th,td{text-align:left;padding:10px 14px;border-bottom:1px solid var(--border);font-size:13px;white-space:nowrap}
 th{color:var(--text3);font-weight:600;font-size:11.5px;text-transform:uppercase;letter-spacing:.06em}
@@ -124,6 +100,45 @@ tbody tr{transition:.12s}
 tbody tr:hover{background:rgba(255,255,255,.035)}
 tbody tr:last-child td{border-bottom:none}
 
+/* ===== Auto-assign rules（平台/子平台级黑名单 + 上限，卡片网格）===== */
+.pr-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+@media(max-width:1180px){.pr-grid{grid-template-columns:1fr}}
+.pr-card{position:relative;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--panel);padding:9px 11px 10px;transition:.12s}
+.pr-card:hover{border-color:var(--border-strong)}
+.pr-card-sub{border-left:2px solid var(--border-strong)}
+.pr-card-head{display:flex;align-items:center;gap:10px;justify-content:space-between;flex-wrap:wrap}
+.pr-name{font-size:13px;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:60px}
+.pr-ctl{display:inline-flex;align-items:center;gap:14px;flex-shrink:0}
+.pr-capbox{display:inline-flex;align-items:center;gap:5px}
+.pr-cap{width:46px;padding:3px 6px;border:1px solid var(--border);border-radius:6px;background:var(--bg2);color:var(--text);font:inherit;font-size:12.5px;text-align:center}
+.pr-cap:focus{outline:none;border-color:var(--accent);box-shadow:var(--glow)}
+.pr-unit{font-size:11px;color:var(--text3);white-space:nowrap}
+.pr-switch{display:inline-flex;align-items:center;gap:6px;cursor:pointer;font-size:11.5px;color:var(--text2);white-space:nowrap;margin:0}
+.pr-switch input{appearance:none;-webkit-appearance:none;width:30px;height:17px;border-radius:9px;background:var(--bg3);border:1px solid var(--border-strong);position:relative;cursor:pointer;transition:.15s;margin:0;flex-shrink:0}
+.pr-switch input:checked{background:var(--btn-primary-bg);border-color:var(--btn-primary-bg)}
+.pr-switch input::after{content:'';position:absolute;top:2px;left:2px;width:11px;height:11px;border-radius:50%;background:var(--text2);transition:.15s}
+.pr-switch input:checked::after{left:15px;background:#fff}
+.pr-tagbox{display:flex;flex-wrap:wrap;gap:5px;align-items:center;margin-top:8px;padding:5px 6px;border:1px solid var(--border);border-radius:6px;background:var(--bg2);min-height:33px;cursor:text;transition:.12s}
+.pr-tagbox:hover{border-color:var(--border-strong)}
+.pr-tagbox:focus-within{border-color:var(--accent);box-shadow:var(--glow)}
+.pr-chip{display:inline-flex;align-items:center;gap:2px;padding:1px 2px 1px 9px;border-radius:999px;border:1px solid var(--border-strong);background:var(--bg3);font-size:11.5px;color:var(--text2);max-width:100%}
+.pr-chip button{border:0;background:transparent;color:var(--text3);cursor:pointer;font-size:13px;line-height:1;padding:1px 4px;border-radius:50%}
+.pr-chip button:hover{color:var(--danger);background:var(--panel)}
+.pr-tagin{flex:1;min-width:100px;border:0;background:transparent;color:var(--text);font:inherit;font-size:12.5px;outline:none;padding:2px}
+.pr-menu{position:absolute;z-index:40;left:11px;right:11px;margin-top:5px;max-height:220px;overflow-y:auto;border:1px solid var(--border-strong);border-radius:8px;background:var(--bg2);box-shadow:0 12px 28px rgba(0,0,0,.3)}
+.pr-opt{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:6px 10px;font-size:12.5px;color:var(--text);cursor:pointer}
+.pr-opt:hover{background:var(--bg3)}
+.pr-opt-host{color:var(--text3);font-size:11px;flex-shrink:0}
+.pr-opt-empty{padding:8px 10px;color:var(--text3);font-size:12px}
+.pr-group{margin-top:10px;border:1px dashed var(--border-strong);border-radius:var(--radius-sm);padding:8px 10px 10px}
+.pr-group-head{display:flex;align-items:center;gap:8px;cursor:pointer;user-select:none}
+.pr-chev{width:13px;height:13px;stroke:var(--text2);fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;transition:.15s;flex-shrink:0}
+.pr-group.open .pr-chev{transform:rotate(90deg)}
+.pr-group-name{font-size:13px;font-weight:600;color:var(--text)}
+.pr-group-meta{font-size:11.5px;color:var(--text3)}
+.pr-group-body{margin-top:9px;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+@media(max-width:1180px){.pr-group-body{grid-template-columns:1fr}}
+.pr-none{font-size:12px;color:var(--text3)}
 /* ===== Status badges ===== */
 .status{display:inline-flex;align-items:center;gap:6px;padding:3px 10px;border-radius:999px;font-size:12px;font-weight:600}
 .status.active{background:var(--status-active-bg);color:var(--accent2)}
@@ -540,7 +555,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
     </div>
     <div id="ppSubUpdateResult" style="margin:-6px 0 10px;font-size:12px;min-height:14px"></div>
     <div class="hint" style="margin-bottom:10px">Subscription refresh replaces the whole pool with the fetched list. Fetch failures keep the current pool.</div>
-    <div class="form-actions"><button class="btn btn-primary" onclick="saveProxyPool()">Save proxy pool</button><button class="btn btn-success" onclick="openReorderDlg()" style="margin-left:10px">Reorder by latency</button></div>
+    <div class="form-actions"><button class="btn btn-primary" onclick="saveProxyPool()">Save proxy pool</button></div>
     <div id="ppSaveResult" style="margin-top:8px"></div>
   </div>
 </div>
@@ -548,9 +563,11 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
   <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><path d="M4 5h16M4 12h10M4 19h7"/></svg></span> Auto-assign rules</div>
   <div class="section-body">
     <div class="hint" style="margin-bottom:14px">Platform-level blacklist and per-proxy binding cap for automatic assignment only — one-click bind and reorder-by-latency. Manual bindings and runtime routing are never restricted.</div>
-    <div class="pr-head"><span>Platform</span><span>Per-proxy cap</span><span>Exclude Direct</span><span>Excluded proxies</span></div>
     <div id="ppRulesBody"><div class="pr-none" style="padding:10px 12px">Loading...</div></div>
-    <div class="form-actions" style="margin-top:12px"><button class="btn btn-primary" onclick="saveProxyRules()">Save auto-assign rules</button></div>
+    <div class="form-actions" style="margin-top:12px">
+      <button class="btn btn-primary" onclick="saveProxyRules()">Save auto-assign rules</button>
+      <button class="btn btn-success" onclick="openReorderDlg()" style="margin-left:10px">Reorder credential proxies by latency</button>
+    </div>
     <div id="ppRulesResult" style="margin-top:8px"></div>
   </div>
 </div>
@@ -614,9 +631,9 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
         </div>
       </div>
     </div>
-    <div class="hint">Isolation on: identities egress only via their bound exits (main → backup); both down = skipped — never another exit or direct. Forced on when <code>PROXY_ISOLATION</code>=true.</div>
+    <div class="hint">Proxy isolation: each credential only egresses via its bound exits; when none is available it is skipped — never another exit or direct. Forced on when <code>PROXY_ISOLATION</code>=true.</div>
     <div class="hint" id="ppIsolationHint" style="margin-top:4px"></div>
-    <div class="hint" id="ppBackupHint" style="margin-top:4px">Off by default: main proxy only — cooling/removed = skipped for that round. On: backup acts as fallback.</div>
+    <div class="hint" id="ppBackupHint" style="margin-top:4px">Backup proxy — off by default: every identity uses its main proxy only; a cooling or removed main proxy is skipped for that round. On: the backup proxy serves as the fallback for the main one.</div>
     <div class="form-actions"><button class="btn btn-primary" onclick="saveIsolationOptions()">Save</button></div>
   </div>
 </div>
@@ -1746,6 +1763,15 @@ const I18N_ZH = {
   'Add proxy': '添加',
   'Remove': '移除',
   'Nothing excluded': '未排除',
+  'per proxy': '个/代理',
+  'Search and add a proxy…': '搜索并添加代理…',
+  'No match': '无匹配代理',
+  ' sub-platform(s) · each configured separately': ' 个子平台 · 各自独立配置',
+  'No sub-platform yet': '暂无子平台',
+  'Reorder credential proxies by latency': '凭据代理延迟重排',
+  'Proxy isolation: each credential only egresses via its bound exits; when none is available it is skipped — never another exit or direct. Forced on when': '代理隔离：每个凭据只从绑定的出口出站，都不可用则跳过——绝不改走其他出口或直连。设有',
+  '=true.': '=true 时强制开启。',
+  'Backup proxy — off by default: every identity uses its main proxy only; a cooling or removed main proxy is skipped for that round. On: the backup proxy serves as the fallback for the main one.': '辅代理：默认关闭——每个身份只走主代理，主代理冷却或被移除时直接跳过。开启后：备用代理作为主代理的兜底。',
   'Platform-level blacklist and per-proxy binding cap for automatic assignment only — one-click bind and reorder-by-latency. Manual bindings and runtime routing are never restricted.': '仅作用于自动分配——「一键代理」与「凭据延迟重排」两个批量操作；手动绑定和运行期路由不受限制。例：某代理出口 IP 已耗尽 zen 免费额度，把它排除出 zen，批量操作就不会再把 zen 凭据绑到它上面。',
   'Excluded': '已排除',
   ' · excluded': ' · 已排除',
@@ -3598,9 +3624,11 @@ function stageProxiesByOrder(kind) {
     .filter(r => r.querySelector('.eg-input[data-eg="' + kind + '"][data-slot="main"]'));
   if (!rows.length) { toast(T('No credentials to bind'), 'info'); return; }
   if (!proxyListCache.length) { toast(T('Proxy pool is empty'), 'info'); return; }
-  // 自动分配规则：对该平台拉黑的代理不参与按序绑定（手动绑定不受限）
-  const pool = proxyListCache.filter(p => !proxyExcludedFor(p, kind));
-  const seq = proxyExcludedFor(EGRESS_DIRECT, kind) ? pool : [EGRESS_DIRECT].concat(pool);
+  // 自动分配规则：对该平台拉黑的代理不参与按序绑定（手动绑定不受限）。
+  // Other 的规则按子平台存（other:<slug>），这里用当前选中的子平台取候选。
+  const ruleKind = kind === 'other' && currentOtherSlug ? 'other:' + currentOtherSlug : kind;
+  const pool = proxyListCache.filter(p => !proxyExcludedFor(p, ruleKind));
+  const seq = proxyExcludedFor(EGRESS_DIRECT, ruleKind) ? pool : [EGRESS_DIRECT].concat(pool);
   let n = 0, left = 0;
   rows.forEach((row, i) => {
     if (i >= seq.length) { left++; return; }
@@ -3779,7 +3807,7 @@ async function reorderOtherAll() {
     if (!p) continue;
     renderOtherKeys(p.keyStates || []);
     const parts = collectReorderParts('other');
-    if (parts.length >= 2) total += applyReorderRules('other', parts);
+    if (parts.length >= 2) total += applyReorderRules('other:' + slug, parts);
     try { await saveOtherKeyEdits(); } catch (e) { failed.push(slug); }
   }
   currentOtherSlug = prevSlug;
@@ -5281,73 +5309,179 @@ async function saveProxyPool() {
 // proxyExclusions/proxyBindCaps 反转重建（只保留池内条目——失效规则不展示、
 // 不回存），保存时再反转回 proxy -> [kind...] 整表提交。
 let ppRulesCache = null;
+let prOtherOpen = true;     // Other 分组展开态（默认展开，否则子平台配置不可见）
+let prActiveKind = '';      // 当前聚焦的标签框（重渲染后据此恢复焦点与筛选串）
+let prQuery = '';
+
+// ruleLeaves 真正承载规则的行：6 个基础平台 + Other 各子平台。
+// Other 在面板上只是归类行 —— 它本身不写规则，子平台按 "other:<slug>" 独立配置。
+function ruleLeaves() {
+  const out = REORDER_PLATFORMS.filter(r => r.key !== 'other').map(r => ({ key: r.key, label: r.label }));
+  ((otherConfig && otherConfig.platforms) || []).forEach(p => {
+    out.push({ key: 'other:' + p.slug, label: p.name || p.slug, sub: true, prefix: p.prefix });
+  });
+  return out;
+}
+
 function ppRulesState() {
   if (!ppRulesCache) {
     ppRulesCache = {};
-    REORDER_PLATFORMS.forEach(r => {
+    ruleLeaves().forEach(r => {
+      // 兼容旧的整平台 "other" 规则：子平台未单独配置时继承它，保存后即归一为
+      // 子平台条目（Other 归类行不再写 kind=other）。
+      const legacy = r.sub ? 'other' : null;
       ppRulesCache[r.key] = {
-        cap: proxyCapFor(r.key),
-        ex: proxyListCache.filter(p => proxyExcludedFor(p, r.key)),
-        dx: proxyExcludedFor(EGRESS_DIRECT, r.key)
+        cap: proxyCapFor(r.key) || (legacy ? proxyCapFor(legacy) : 0),
+        ex: proxyListCache.filter(p => proxyExcludedFor(p, r.key) || !!(legacy && proxyExcludedFor(p, legacy))),
+        dx: proxyExcludedFor(EGRESS_DIRECT, r.key) || !!(legacy && proxyExcludedFor(EGRESS_DIRECT, legacy))
       };
     });
   }
   return ppRulesCache;
 }
+
+// prCard 单个平台/子平台卡片：标题行（名称 + 上限 + 排除直连开关）+ 标签输入框。
+function prCard(leaf, s) {
+  const k = leaf.key;
+  const chips = s.ex.map((p, i) =>
+    '<span class="pr-chip" title="' + esc(egLabel(p)) + '">' + esc(egLabel(p)) +
+    '<button type="button" data-kind="' + esc(k) + '" data-idx="' + i + '"' +
+    ' onmousedown="event.preventDefault()" onclick="ppRuleDelEx(this.dataset.kind,+this.dataset.idx)"' +
+    ' title="' + esc(T('Remove')) + '">×</button></span>').join('');
+  const left = proxyListCache.filter(p => p !== EGRESS_DIRECT && s.ex.indexOf(p) < 0);
+  const q = prActiveKind === k ? prQuery : '';
+  const shown = left.filter(p => egLabel(p).toLowerCase().indexOf(q.toLowerCase()) >= 0);
+  const menu = !shown.length
+    ? '<div class="pr-opt-empty">' + T(left.length ? 'No match' : 'No pool proxies left to exclude') + '</div>'
+    : shown.map(p => {
+        const host = maskProxyLabel(p).replace(/^[a-z0-9]+:\/\//i, '').split(/[\/?#]/)[0];
+        return '<div class="pr-opt" data-kind="' + esc(k) + '" data-proxy="' + esc(p) + '"' +
+          ' onmousedown="event.preventDefault()" onclick="ppRulePick(this.dataset.kind,this.dataset.proxy)">' +
+          '<span>' + esc(egLabel(p)) + '</span><span class="pr-opt-host">' + esc(host) + '</span></div>';
+      }).join('');
+  return '<div class="pr-card' + (leaf.sub ? ' pr-card-sub' : '') + '">' +
+    '<div class="pr-card-head">' +
+      '<span class="pr-name" title="' + esc(leaf.prefix ? k + ' · ' + leaf.prefix : k) + '">' + esc(leaf.label) + '</span>' +
+      '<span class="pr-ctl">' +
+        '<span class="pr-capbox"><input class="pr-cap" id="ppCap-' + esc(k) + '" type="number" min="0" step="1" placeholder="0" value="' + (s.cap || '') + '"' +
+        ' oninput="ppRuleCapInput(\'' + esc(k) + '\',this.value)">' +
+        '<span class="pr-unit">' + T('per proxy') + '</span></span>' +
+        '<label class="pr-switch" title="' + esc(T('Exclude Direct')) + '"><input type="checkbox"' + (s.dx ? ' checked' : '') +
+        ' onchange="ppRuleToggleDirect(\'' + esc(k) + '\',this.checked)"><span>' + esc(T('Exclude Direct')) + '</span></label>' +
+      '</span>' +
+    '</div>' +
+    '<div class="pr-tagbox" onclick="ppRuleFocus(\'' + esc(k) + '\')">' + chips +
+      '<input class="pr-tagin" id="prTagIn-' + esc(k) + '" value="' + esc(q) + '"' +
+      ' placeholder="' + esc(chips ? '' : T('Search and add a proxy…')) + '"' +
+      ' onfocus="ppRuleFocus(\'' + esc(k) + '\')" oninput="ppRuleInput(\'' + esc(k) + '\',this.value)"' +
+      ' onkeydown="ppRuleKey(event,\'' + esc(k) + '\')">' +
+    '</div>' +
+    (prActiveKind === k ? '<div class="pr-menu">' + menu + '</div>' : '') +
+    '</div>';
+}
+
 function renderProxyRules() {
-  ppRulesCache = null;
-  const st = ppRulesState();
   const tb = _('ppRulesBody');
   if (!tb) return;
-  tb.innerHTML = REORDER_PLATFORMS.map(r => {
-    const s = st[r.key];
-    const chips = s.ex.map((p, i) =>
-      '<span class="pr-tag">' + esc(egLabel(p)) +
-      '<button type="button" title="' + esc(T('Remove')) + '" onclick="ppRuleDelEx(\'' + r.key + '\',' + i + ')">×</button></span>'
-    ).join('');
-    // 直连不是池条目，绝不能出现在"添加排除代理"下拉里（它的开关是左侧独立 toggle）
-    const left = proxyListCache.filter(p => p !== EGRESS_DIRECT && s.ex.indexOf(p) < 0);
-    const add = left.length
-      ? '<span class="pr-add"><select class="pr-sel" id="ppRuleAdd-' + r.key + '">' +
-        left.map(p => '<option value="' + esc(p) + '">' + esc(egLabel(p)) + '</option>').join('') + '</select>' +
-        '<button type="button" class="btn btn-sm" onclick="ppRuleAddEx(\'' + r.key + '\')">+ ' + T('Add proxy') + '</button></span>'
-      : '<span class="pr-none">' + T('No pool proxies left to exclude') + '</span>';
-    return '<div class="pr-row">' +
-      '<div class="pr-plat" title="' + esc(r.label) + '">' + esc(r.label) + '</div>' +
-      '<div class="pr-capbox"><input class="pr-cap" id="ppCap-' + r.key + '" type="number" min="0" step="1" placeholder="0" value="' + (s.cap || '') + '">' +
-      '<span class="pr-unit">' + T('0 = unlimited') + '</span></div>' +
-      '<div><label class="pr-switch" title="' + esc(T('Exclude Direct')) + '"><input type="checkbox"' + (s.dx ? ' checked' : '') +
-      ' onchange="ppRuleToggleDirect(\'' + r.key + '\', this.checked)"></label></div>' +
-      '<div class="pr-ex">' + (chips || '<span class="pr-none">' + T('Nothing excluded') + '</span>') + add + '</div>' +
-      '</div>';
-  }).join('');
-}
-function ppRuleAddEx(kind) {
-  const sel = _('ppRuleAdd-' + kind);
-  if (!sel || !sel.value) return;
+  // Other 子平台清单来自 /other/config：未加载时先拉一次再渲染（只拉一次，
+  // 失败则退化为只有 6 个基础平台，不阻塞其余模块）。
+  if (!otherConfig) {
+    if (!tb.dataset.loading) {
+      tb.dataset.loading = '1';
+      tb.innerHTML = '<div class="pr-none" style="padding:10px 12px">Loading...</div>';
+      loadOtherConfig().then(() => { ppRulesCache = null; renderProxyRules(); })
+        .catch(() => { otherConfig = { platforms: [] }; ppRulesCache = null; renderProxyRules(); });
+    }
+    return;
+  }
   const st = ppRulesState();
-  if (st[kind].ex.indexOf(sel.value) < 0) st[kind].ex.push(sel.value);
+  const leaves = ruleLeaves();
+  const base = leaves.filter(l => !l.sub);
+  const subs = leaves.filter(l => l.sub);
+  const groupHead = '<div class="pr-group-head" onclick="ppRuleToggleGroup()">' +
+      '<svg class="pr-chev" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>' +
+      '<span class="pr-group-name">Other</span>' +
+      '<span class="pr-group-meta">' + (subs.length
+        ? subs.length + T(' sub-platform(s) · each configured separately')
+        : T('No sub-platform yet')) + '</span>' +
+    '</div>';
+  tb.innerHTML =
+    '<div class="pr-grid">' + base.map(l => prCard(l, st[l.key])).join('') + '</div>' +
+    '<div class="pr-group' + (prOtherOpen ? ' open' : '') + '">' + groupHead +
+      (prOtherOpen && subs.length
+        ? '<div class="pr-group-body">' + subs.map(l => prCard(l, st[l.key])).join('') + '</div>' : '') +
+    '</div>';
+  if (prActiveKind) {
+    const inp = _('prTagIn-' + prActiveKind);
+    if (inp) { inp.focus(); inp.setSelectionRange(inp.value.length, inp.value.length); }
+  }
+}
+
+function ppRuleToggleGroup() { prOtherOpen = !prOtherOpen; renderProxyRules(); }
+function ppRuleFocus(kind) {
+  if (prActiveKind !== kind) { prActiveKind = kind; prQuery = ''; }
   renderProxyRules();
+}
+function ppRuleInput(kind, v) { prActiveKind = kind; prQuery = v; renderProxyRules(); }
+function ppRulePick(kind, proxy) {
+  if (!proxy) return;
+  const st = ppRulesState();
+  if (!st[kind]) return;
+  if (st[kind].ex.indexOf(proxy) < 0) st[kind].ex.push(proxy);
+  prActiveKind = kind; prQuery = '';
+  renderProxyRules();
+}
+function ppRuleKey(ev, kind) {
+  const st = ppRulesState()[kind];
+  if (!st) return;
+  if (ev.key === 'Escape') { prActiveKind = ''; prQuery = ''; renderProxyRules(); return; }
+  if (ev.key === 'Backspace' && !prQuery && st.ex.length) {
+    st.ex.pop(); renderProxyRules(); return;
+  }
+  if (ev.key === 'Enter') {
+    ev.preventDefault();
+    const q = prQuery.toLowerCase();
+    const cand = proxyListCache.filter(p => p !== EGRESS_DIRECT && st.ex.indexOf(p) < 0 &&
+      egLabel(p).toLowerCase().indexOf(q) >= 0);
+    if (cand.length) ppRulePick(kind, cand[0]);
+  }
+}
+function ppRuleCapInput(kind, v) {
+  const st = ppRulesState()[kind];
+  if (st) st.cap = parseInt(v, 10) || 0;
 }
 function ppRuleToggleDirect(kind, on) {
-  ppRulesState()[kind].dx = !!on;
+  const st = ppRulesState()[kind];
+  if (st) st.dx = !!on;
 }
 function ppRuleDelEx(kind, idx) {
-  const st = ppRulesState();
-  st[kind].ex.splice(idx, 1);
+  const st = ppRulesState()[kind];
+  if (!st) return;
+  st.ex.splice(idx, 1);
   renderProxyRules();
 }
+// 点卡片外部收起候选菜单（捕获阶段之外的冒泡即可；选项自身已 preventDefault）
+document.addEventListener('mousedown', ev => {
+  if (!prActiveKind) return;
+  const card = ev.target && ev.target.closest ? ev.target.closest('.pr-card') : null;
+  const inp = _('prTagIn-' + prActiveKind);
+  if (card && inp && card.contains(inp)) return;
+  prActiveKind = ''; prQuery = '';
+  renderProxyRules();
+});
+
 async function saveProxyRules() {
   const st = ppRulesState();
   const exclusions = {}, caps = {};
-  REORDER_PLATFORMS.forEach(r => {
+  ruleLeaves().forEach(r => {
     (st[r.key].ex || []).forEach(p => {
       (exclusions[p] = exclusions[p] || []).push(r.key);
     });
     if (st[r.key].dx) {
       (exclusions[PROXY_RULE_DIRECT_KEY] = exclusions[PROXY_RULE_DIRECT_KEY] || []).push(r.key);
     }
-    const cap = parseInt(_('ppCap-' + r.key).value, 10);
+    const el = _('ppCap-' + r.key);
+    const cap = el && el.value !== '' ? (parseInt(el.value, 10) || 0) : (st[r.key].cap || 0);
     if (cap > 0) caps[r.key] = cap;
   });
   try {

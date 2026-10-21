@@ -220,7 +220,7 @@ func handleZenConfigUpdate(w http.ResponseWriter, r *http.Request) {
 				continue
 			}
 			for _, k := range kinds {
-				if !proxyRuleKinds[k] {
+				if !proxyRuleKindValid(k) {
 					writeAPI(w, http.StatusBadRequest, apiResponse{Error: "invalid platform kind: " + k})
 					return
 				}
@@ -236,7 +236,7 @@ func handleZenConfigUpdate(w http.ResponseWriter, r *http.Request) {
 		// 整表替换语义：只收正值，全空归 nil（缺项/0 = 不限）
 		clean := make(map[string]int, len(patch.ProxyBindCaps))
 		for k, v := range patch.ProxyBindCaps {
-			if !proxyRuleKinds[k] {
+			if !proxyRuleKindValid(k) {
 				writeAPI(w, http.StatusBadRequest, apiResponse{Error: "invalid platform kind: " + k})
 				return
 			}

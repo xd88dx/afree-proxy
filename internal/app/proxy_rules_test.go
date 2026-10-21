@@ -60,14 +60,21 @@ func TestPruneProxyExclusions(t *testing.T) {
 }
 
 // TestProxyRuleKinds 保证前端 kind 与后端白名单同口径，漏一个平台会让该平台
-// 的规则整表保存失败（400 invalid platform kind）。
+// 的规则整表保存失败（400 invalid platform kind）。other:<slug> 是 Other 子
+// 平台粒度（面板上 Other 只是归类行，配置落在子平台上）。
 func TestProxyRuleKinds(t *testing.T) {
-	for _, k := range []string{"acc", "key", "wb", "amd", "or", "th", "other"} {
-		if !proxyRuleKinds[k] {
-			t.Fatalf("kind %q missing from proxyRuleKinds", k)
+	for _, k := range []string{"acc", "key", "wb", "amd", "or", "th", "other",
+		"other:op_94abfc02", "other:op_6b9355d1"} {
+		if !proxyRuleKindValid(k) {
+			t.Fatalf("kind %q rejected", k)
 		}
 	}
-	if proxyRuleKinds["bogus"] {
-		t.Fatal("bogus kind accepted")
+	for _, k := range []string{"bogus", "other:", "other:has space", "other:../../etc", ""} {
+		if proxyRuleKindValid(k) {
+			t.Fatalf("bad kind %q accepted", k)
+		}
+	}
+	if proxyRuleKinds["other"] != true {
+		t.Fatal("base kind other must stay valid (legacy configs)")
 	}
 }

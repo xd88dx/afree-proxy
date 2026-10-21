@@ -361,7 +361,7 @@ func handleAdminConfigImport(w http.ResponseWriter, r *http.Request) {
 			for p, kinds := range backup.Zen.ProxyExclusions {
 				var okKinds []string
 				for _, k := range kinds {
-					if proxyRuleKinds[k] {
+					if proxyRuleKindValid(k) {
 						okKinds = append(okKinds, k)
 					}
 				}
@@ -381,7 +381,7 @@ func handleAdminConfigImport(w http.ResponseWriter, r *http.Request) {
 		if len(backup.Zen.ProxyBindCaps) > 0 {
 			caps := make(map[string]int, len(backup.Zen.ProxyBindCaps))
 			for k, v := range backup.Zen.ProxyBindCaps {
-				if proxyRuleKinds[k] && v > 0 {
+				if proxyRuleKindValid(k) && v > 0 {
 					caps[k] = v
 				}
 			}

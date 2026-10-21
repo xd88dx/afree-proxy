@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -356,11 +357,21 @@ type zenConfigData struct {
 	SessionRotateMinutes int `json:"sessionRotateMinutes"`
 }
 
-// proxyRuleKinds 自动分配规则（ProxyExclusions/ProxyBindCaps）支持的平台，
-// 与前端凭据页 kind / REORDER_KINDS 同一口径。
+// proxyRuleKinds 自动分配规则（ProxyExclusions/ProxyBindCaps）的基础平台
+// kind，与前端凭据页 kind / REORDER_KINDS 同一口径。
 var proxyRuleKinds = map[string]bool{
 	"acc": true, "key": true, "wb": true, "amd": true,
 	"or": true, "th": true, "other": true,
+}
+
+// otherRuleKindRe 匹配 Other 子平台粒度的规则 kind（other:<slug>）。面板把
+// Other 渲染成归类行，其规则按子平台独立配置；slug 由后端生成（op_xxxxxxxx），
+// 这里只校验形态，避免子平台被删/临时加载失败时整表保存失败。
+var otherRuleKindRe = regexp.MustCompile(`^other:[A-Za-z0-9_-]{1,64}$`)
+
+// proxyRuleKindValid 规则 kind 是否合法：基础平台，或 other:<slug>。
+func proxyRuleKindValid(kind string) bool {
+	return proxyRuleKinds[kind] || otherRuleKindRe.MatchString(kind)
 }
 
 // proxyRuleDirectKey 直连在排除表里的哨兵键。池条目一律带 scheme
