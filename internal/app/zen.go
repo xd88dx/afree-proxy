@@ -370,6 +370,29 @@ var proxyRuleKinds = map[string]bool{
 // 与运行时路由不受影响。池变动清理时该键永不删除。
 const proxyRuleDirectKey = "__direct__"
 
+// pruneProxyExclusions 按代理池清理排除表：已不在池内的代理条目丢弃（它们
+// 永远不会被自动分配命中，留着只是垃圾配置），直连哨兵键保留 —— 它不是池
+// 条目，且不随池变动失效。面板保存池与配置导入（跨机迁移）共用此口径。
+func pruneProxyExclusions(ex map[string][]string, pool []string) map[string][]string {
+	if len(ex) == 0 {
+		return ex
+	}
+	inPool := make(map[string]bool, len(pool))
+	for _, p := range pool {
+		inPool[p] = true
+	}
+	out := make(map[string][]string, len(ex))
+	for p, kinds := range ex {
+		if inPool[p] || p == proxyRuleDirectKey {
+			out[p] = kinds
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
 // zenKeyAutoHarvestEnabled 报告 key 是否参与自动铸造（启动补缺 / 403 触发 /
 // 周期巡检 / 面板 Mint）。铸造跟随路由启用：路由关 = 该 key 不出请求，无需
 // 会话，也不铸造；匿名 public key 无凭据，恒不铸造。

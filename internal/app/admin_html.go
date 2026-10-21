@@ -92,6 +92,31 @@ h2{font-size:21px;margin-bottom:18px;font-weight:700;letter-spacing:.01em}
 
 /* ===== Tables ===== */
 .table-wrap{overflow-x:auto}
+
+/* ===== Auto-assign rules（平台级黑名单/上限，网格行）===== */
+.pr-head,.pr-row{display:grid;grid-template-columns:124px 170px 104px minmax(0,1fr);gap:12px;align-items:center}
+.pr-head{padding:0 12px 7px;font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);font-weight:600}
+.pr-row{padding:9px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--panel);margin-bottom:6px;transition:.12s}
+.pr-row:hover{border-color:var(--border-strong)}
+.pr-plat{font-size:13px;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pr-capbox{display:flex;align-items:center;gap:6px}
+.pr-cap{width:56px;padding:4px 7px;border:1px solid var(--border);border-radius:6px;background:var(--bg2);color:var(--text);font:inherit;font-size:12.5px;text-align:center}
+.pr-cap:focus{outline:none;border-color:var(--accent);box-shadow:var(--glow)}
+.pr-unit{font-size:11px;color:var(--text3);white-space:nowrap}
+.pr-switch{display:inline-flex;align-items:center;cursor:pointer}
+.pr-switch input{appearance:none;-webkit-appearance:none;width:32px;height:18px;border-radius:9px;background:var(--bg3);border:1px solid var(--border-strong);position:relative;cursor:pointer;transition:.15s;margin:0;flex-shrink:0}
+.pr-switch input:checked{background:var(--btn-primary-bg);border-color:var(--btn-primary-bg)}
+.pr-switch input::after{content:'';position:absolute;top:2px;left:2px;width:12px;height:12px;border-radius:50%;background:var(--text2);transition:.15s}
+.pr-switch input:checked::after{left:16px;background:#fff}
+.pr-ex{display:flex;flex-wrap:wrap;align-items:center;gap:6px;min-height:26px}
+.pr-tag{display:inline-flex;align-items:center;gap:2px;padding:2px 3px 2px 9px;border:1px solid var(--border-strong);border-radius:999px;font-size:11.5px;color:var(--text2);background:var(--bg3);white-space:nowrap}
+.pr-tag button{border:0;background:transparent;color:var(--text3);cursor:pointer;font-size:13px;line-height:1;padding:1px 4px;border-radius:50%}
+.pr-tag button:hover{color:var(--danger);background:var(--panel)}
+.pr-add{display:inline-flex;align-items:center;gap:5px}
+.pr-sel{max-width:148px;padding:3px 6px;border:1px solid var(--border);border-radius:6px;background:var(--bg2);color:var(--text);font-size:12px}
+.pr-sel:focus{outline:none;border-color:var(--accent)}
+.pr-none{font-size:12px;color:var(--text3)}
+@media(max-width:860px){.pr-head{display:none}.pr-row{grid-template-columns:1fr 1fr;gap:8px}.pr-ex{grid-column:1/-1}}
 table{width:100%;border-collapse:collapse}
 th,td{text-align:left;padding:10px 14px;border-bottom:1px solid var(--border);font-size:13px;white-space:nowrap}
 th{color:var(--text3);font-weight:600;font-size:11.5px;text-transform:uppercase;letter-spacing:.06em}
@@ -522,14 +547,10 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
 <div class="section">
   <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><path d="M4 5h16M4 12h10M4 19h7"/></svg></span> Auto-assign rules</div>
   <div class="section-body">
-    <div class="hint" style="margin-bottom:10px">Per-platform proxy blacklist and binding caps for automatic assignment only (one-click bind &amp; reorder-by-latency). Manual bindings and runtime routing are never restricted. Typical use: a proxy whose exit IP has exhausted zen's free quota can be excluded from zen so batch operations won't re-bind it.</div>
-    <div class="table-wrap">
-    <table>
-      <thead><tr><th style="width:130px">Platform</th><th style="width:130px">Per-proxy cap</th><th>Excluded proxies</th></tr></thead>
-      <tbody id="ppRulesBody"><tr><td colspan="3" class="empty">Loading...</td></tr></tbody>
-    </table>
-    </div>
-    <div class="form-actions"><button class="btn btn-primary" onclick="saveProxyRules()">Save auto-assign rules</button></div>
+    <div class="hint" style="margin-bottom:14px">Platform-level blacklist and per-proxy binding cap for automatic assignment only — one-click bind and reorder-by-latency. Manual bindings and runtime routing are never restricted.</div>
+    <div class="pr-head"><span>Platform</span><span>Per-proxy cap</span><span>Exclude Direct</span><span>Excluded proxies</span></div>
+    <div id="ppRulesBody"><div class="pr-none" style="padding:10px 12px">Loading...</div></div>
+    <div class="form-actions" style="margin-top:12px"><button class="btn btn-primary" onclick="saveProxyRules()">Save auto-assign rules</button></div>
     <div id="ppRulesResult" style="margin-top:8px"></div>
   </div>
 </div>
@@ -1722,6 +1743,10 @@ const I18N_ZH = {
   'No pool proxies left to exclude': '没有可添加的池内代理（都已排除或池为空）',
   'Save auto-assign rules': '保存自动分配规则',
   'Saved auto-assign rules': '自动分配规则已保存',
+  'Add proxy': '添加',
+  'Remove': '移除',
+  'Nothing excluded': '未排除',
+  'Platform-level blacklist and per-proxy binding cap for automatic assignment only — one-click bind and reorder-by-latency. Manual bindings and runtime routing are never restricted.': '仅作用于自动分配——「一键代理」与「凭据延迟重排」两个批量操作；手动绑定和运行期路由不受限制。例：某代理出口 IP 已耗尽 zen 免费额度，把它排除出 zen，批量操作就不会再把 zen 凭据绑到它上面。',
   'Excluded': '已排除',
   ' · excluded': ' · 已排除',
   'Auto-assign rules: ': '自动分配规则：',
@@ -5277,22 +5302,24 @@ function renderProxyRules() {
   tb.innerHTML = REORDER_PLATFORMS.map(r => {
     const s = st[r.key];
     const chips = s.ex.map((p, i) =>
-      '<span style="display:inline-flex;align-items:center;gap:4px;margin:0 6px 4px 0;padding:2px 6px;border:1px solid var(--border,#333);border-radius:4px;font-size:11px" class="mono">' +
-      esc(egLabel(p)) +
-      '<button class="btn btn-sm" style="padding:0 5px;line-height:1.1" title="Remove" onclick="ppRuleDelEx(\'' + r.key + '\',' + i + ')">×</button></span>'
+      '<span class="pr-tag">' + esc(egLabel(p)) +
+      '<button type="button" title="' + esc(T('Remove')) + '" onclick="ppRuleDelEx(\'' + r.key + '\',' + i + ')">×</button></span>'
     ).join('');
-    const left = proxyListCache.filter(p => s.ex.indexOf(p) < 0);
-    const opts = left.length
-      ? '<select id="ppRuleAdd-' + r.key + '" style="max-width:180px;vertical-align:middle">' +
+    // 直连不是池条目，绝不能出现在"添加排除代理"下拉里（它的开关是左侧独立 toggle）
+    const left = proxyListCache.filter(p => p !== EGRESS_DIRECT && s.ex.indexOf(p) < 0);
+    const add = left.length
+      ? '<span class="pr-add"><select class="pr-sel" id="ppRuleAdd-' + r.key + '">' +
         left.map(p => '<option value="' + esc(p) + '">' + esc(egLabel(p)) + '</option>').join('') + '</select>' +
-        '<button class="btn btn-sm" style="margin-left:6px" onclick="ppRuleAddEx(\'' + r.key + '\')">' + T('Add excluded proxy') + '</button>'
-      : '<span style="color:var(--text3);font-size:12px">' + T('No pool proxies left to exclude') + '</span>';
-    return '<tr>' +
-      '<td>' + esc(r.label) + '</td>' +
-      '<td><input id="ppCap-' + r.key + '" type="number" min="0" step="1" style="width:80px" value="' + (s.cap || '') + '" placeholder="' + T('0 = unlimited') + '">' +
-      '<label style="display:block;margin-top:4px;font-size:11px;white-space:nowrap"><input type="checkbox"' + (s.dx ? ' checked' : '') + ' onchange="ppRuleToggleDirect(\'' + r.key + '\', this.checked)"> ' + T('Exclude Direct') + '</label></td>' +
-      '<td>' + (chips || '<span style="color:var(--text3);font-size:12px">-</span>') + '<div style="margin-top:4px">' + opts + '</div></td>' +
-      '</tr>';
+        '<button type="button" class="btn btn-sm" onclick="ppRuleAddEx(\'' + r.key + '\')">+ ' + T('Add proxy') + '</button></span>'
+      : '<span class="pr-none">' + T('No pool proxies left to exclude') + '</span>';
+    return '<div class="pr-row">' +
+      '<div class="pr-plat" title="' + esc(r.label) + '">' + esc(r.label) + '</div>' +
+      '<div class="pr-capbox"><input class="pr-cap" id="ppCap-' + r.key + '" type="number" min="0" step="1" placeholder="0" value="' + (s.cap || '') + '">' +
+      '<span class="pr-unit">' + T('0 = unlimited') + '</span></div>' +
+      '<div><label class="pr-switch" title="' + esc(T('Exclude Direct')) + '"><input type="checkbox"' + (s.dx ? ' checked' : '') +
+      ' onchange="ppRuleToggleDirect(\'' + r.key + '\', this.checked)"></label></div>' +
+      '<div class="pr-ex">' + (chips || '<span class="pr-none">' + T('Nothing excluded') + '</span>') + add + '</div>' +
+      '</div>';
   }).join('');
 }
 function ppRuleAddEx(kind) {

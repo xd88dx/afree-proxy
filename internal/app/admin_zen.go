@@ -176,20 +176,7 @@ func handleZenConfigUpdate(w http.ResponseWriter, r *http.Request) {
 		// 池变动后同步清理排除表：已不在池内的条目永远不会被自动分配命中，
 		// 留着只是垃圾配置（订阅整池替换路径 proxy_subscription.go 复用本
 		// 结构体浅拷贝，无需重复处理）。
-		if len(next.ProxyExclusions) > 0 {
-			inPool := make(map[string]bool, len(canonical))
-			for _, p := range canonical {
-				inPool[p] = true
-			}
-			pruned := make(map[string][]string, len(next.ProxyExclusions))
-			for p, kinds := range next.ProxyExclusions {
-				// 直连哨兵键不随池变动清理（它不是池条目）
-				if inPool[p] || p == proxyRuleDirectKey {
-					pruned[p] = kinds
-				}
-			}
-			next.ProxyExclusions = pruned
-		}
+		next.ProxyExclusions = pruneProxyExclusions(next.ProxyExclusions, canonical)
 	}
 	if patch.ProxyStrategy != nil && *patch.ProxyStrategy != "" {
 		next.ProxyStrategy = *patch.ProxyStrategy

@@ -351,6 +351,45 @@ func handleAdminConfigImport(w http.ResponseWriter, r *http.Request) {
 			}
 			backup.Zen.KeyRoutingEnabled = off
 		}
+		// 自动分配规则的排除表按导入池清理一次：备份来自另一台机器时，池条目
+		// 未必在本机存在，留着就是永不命中的垃圾配置（与面板保存池同口径）。
+		// 备份未带池时不动排除表，避免把"池为空"的意图误升格为"清空规则"。
+		if len(backup.Zen.ProxyExclusions) > 0 {
+			// 先按 kind 白名单过滤：旧备份/手改文件里可能有非法 kind（例如把
+			// 平台名写成 zen 而非 key），它们同样永不命中，与池外条目一并丢弃。
+			clean := make(map[string][]string, len(backup.Zen.ProxyExclusions))
+			for p, kinds := range backup.Zen.ProxyExclusions {
+				var okKinds []string
+				for _, k := range kinds {
+					if proxyRuleKinds[k] {
+						okKinds = append(okKinds, k)
+					}
+				}
+				if len(okKinds) > 0 {
+					clean[p] = okKinds
+				}
+			}
+			if len(clean) == 0 {
+				clean = nil
+			}
+			backup.Zen.ProxyExclusions = clean
+		}
+		if len(backup.Zen.ProxyExclusions) > 0 && len(backup.Zen.Proxies) > 0 {
+			backup.Zen.ProxyExclusions = pruneProxyExclusions(backup.Zen.ProxyExclusions, backup.Zen.Proxies)
+		}
+		// 上限表同样只保留正值（缺项/0/负数 = 不限）。
+		if len(backup.Zen.ProxyBindCaps) > 0 {
+			caps := make(map[string]int, len(backup.Zen.ProxyBindCaps))
+			for k, v := range backup.Zen.ProxyBindCaps {
+				if proxyRuleKinds[k] && v > 0 {
+					caps[k] = v
+				}
+			}
+			if len(caps) == 0 {
+				caps = nil
+			}
+			backup.Zen.ProxyBindCaps = caps
+		}
 		setZenConfig(backup.Zen)
 		imported["zenKeys"] = len(backup.Zen.Keys)
 		if len(backup.Zen.Proxies) > 0 {
