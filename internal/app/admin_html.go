@@ -520,6 +520,20 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
   </div>
 </div>
 <div class="section">
+  <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><path d="M4 5h16M4 12h10M4 19h7"/></svg></span> Auto-assign rules</div>
+  <div class="section-body">
+    <div class="hint" style="margin-bottom:10px">Per-platform proxy blacklist and binding caps for automatic assignment only (one-click bind &amp; reorder-by-latency). Manual bindings and runtime routing are never restricted. Typical use: a proxy whose exit IP has exhausted zen's free quota can be excluded from zen so batch operations won't re-bind it.</div>
+    <div class="table-wrap">
+    <table>
+      <thead><tr><th style="width:130px">Platform</th><th style="width:130px">Per-proxy cap</th><th>Excluded proxies</th></tr></thead>
+      <tbody id="ppRulesBody"><tr><td colspan="3" class="empty">Loading...</td></tr></tbody>
+    </table>
+    </div>
+    <div class="form-actions"><button class="btn btn-primary" onclick="saveProxyRules()">Save auto-assign rules</button></div>
+    <div id="ppRulesResult" style="margin-top:8px"></div>
+  </div>
+</div>
+<div class="section">
   <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></span> Global policy</div>
   <div class="section-body">
     <div class="pp-grid">
@@ -1454,7 +1468,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
     <button class="btn btn-sm" onclick="closeReorderDlg()">Close</button>
   </div>
   <div class="wb-dialog-body">
-    <div class="hint" style="margin-bottom:10px">Re-bind proxies of all credentials (except Direct/Global) ordered by measured latency, then auto-save.</div>
+    <div class="hint" style="margin-bottom:10px">re-bind proxies of the selected platforms: healthy (fast, allowed) bindings stay put; slow/unrecorded/excluded/over-cap ones are re-filled from the remaining pool (better-only for healthy rows), then auto-save.</div>
     <div style="display:flex;gap:8px;margin-bottom:12px">
       <button class="btn btn-sm" onclick="impKeepSetAll('impReorderRows',false)">Select all</button>
       <button class="btn btn-sm" onclick="impKeepSetAll('impReorderRows',true)">Invert</button>
@@ -1697,6 +1711,22 @@ const I18N_ZH = {
   '; ': '；',
   ' row(s) left unchanged (no proxy left)': ' 行凭据无对应代理，保持原样',
   'Reorder by latency': '凭据延迟重排',
+  // 自动分配规则（代理池页：平台级代理黑名单 + 每代理绑定上限）
+  'Auto-assign rules': '自动分配规则',
+  'Platform': '平台',
+  'Per-proxy cap': '单代理上限',
+  '0 = unlimited': '0 = 不限',
+  'Excluded proxies': '排除的代理',
+  'Exclude Direct': '排除直连',
+  'Add excluded proxy': '添加排除代理',
+  'No pool proxies left to exclude': '没有可添加的池内代理（都已排除或池为空）',
+  'Save auto-assign rules': '保存自动分配规则',
+  'Saved auto-assign rules': '自动分配规则已保存',
+  'Excluded': '已排除',
+  ' · excluded': ' · 已排除',
+  'Auto-assign rules: ': '自动分配规则：',
+  ' row(s) left unchanged — every allowed proxy is excluded or at cap': ' 行无法改绑：可用代理都已拉黑或达到上限',
+  're-bind proxies of the selected platforms: healthy (fast, allowed) bindings stay put; slow/unrecorded/excluded/over-cap ones are re-filled from the remaining pool (better-only for healthy rows), then auto-save.': '重排所选平台的代理绑定：健康绑定（快代理且未拉黑/未超限）保持不动；慢/无记录/被拉黑/超限的行从剩余代理池回填（健康行只在更优时才换），并自动保存。',
   'Re-bind proxies of all credentials (except Direct/Global) ordered by measured latency, then auto-save.': '按实测延迟重排全部凭据（直连/全局除外）的代理绑定并自动保存。',
   'Latency reorder finished with errors — loads failed: ': '延迟重排完成但有错误——加载失败：',
   '; saves failed: ': '；保存失败：',
@@ -3392,6 +3422,8 @@ async function loadProxyListCache() {
     const d = await api('GET', '/opencode/config');
     proxyListCache = (d.data.proxies || []).slice();
     backupProxyOn = d.data.backupProxyEnabled === true;
+    proxyExclusions = d.data.proxyExclusions || {};
+    proxyBindCaps = d.data.proxyBindCaps || {};
     syncProxyHealthCache((d.data.runtime || {}).proxyHealth);
   } catch (e) { /* keep previous cache */ }
 }
@@ -3541,7 +3573,9 @@ function stageProxiesByOrder(kind) {
     .filter(r => r.querySelector('.eg-input[data-eg="' + kind + '"][data-slot="main"]'));
   if (!rows.length) { toast(T('No credentials to bind'), 'info'); return; }
   if (!proxyListCache.length) { toast(T('Proxy pool is empty'), 'info'); return; }
-  const seq = [EGRESS_DIRECT].concat(proxyListCache);
+  // 自动分配规则：对该平台拉黑的代理不参与按序绑定（手动绑定不受限）
+  const pool = proxyListCache.filter(p => !proxyExcludedFor(p, kind));
+  const seq = proxyExcludedFor(EGRESS_DIRECT, kind) ? pool : [EGRESS_DIRECT].concat(pool);
   let n = 0, left = 0;
   rows.forEach((row, i) => {
     if (i >= seq.length) { left++; return; }
@@ -3604,19 +3638,129 @@ function confirmReorder() {
   if (!kinds.length) { toast(T('No platform selected'), 'info'); return; }
   reorderByLatency(kinds);
 }
-// 延迟排序键：[组, 组内键]。0=≤6s（组内延迟升序）；1=无记录（组内池序，不在
-// 池内的失效绑定排同组末尾）；2=>6s（组内延迟升序）。阈值 6000ms 与延迟徽标
-// 五档的 6s 分界（6~10s 黄）一致。
-function reorderLatencyKey(v) {
+// 延迟数值（毫秒）：无记录返回 0。阈值 6000ms 与延迟徽标五档的 6s 分界（6~10s 黄）一致。
+function proxyHsMsForReorder(v) {
   const r = proxyHealthByProxy[proxyHealthKey(v)];
-  const ms = Math.round(Number(r && r.avgHsMs) || 0);
-  if (ms > 6000) return [2, ms];
-  if (ms > 0) return [0, ms];
-  return [1, proxyPoolIdxForReorder(v)];
+  return Math.round(Number(r && r.avgHsMs) || 0);
 }
 function proxyPoolIdxForReorder(v) {
   const i = proxyListCache.indexOf(v);
   return i >= 0 ? i : Number.MAX_SAFE_INTEGER;
+}
+// 重排队列（三段式，行序从上到下依次取用）：
+//   ① 已绑定的 ≤6s 快代理（延迟升序，重复绑定保留多份）
+//   ② 无记录代理——已绑定的无记录 + **池内未绑定的无记录代理**（合并后按池序；
+//      不在池内的失效绑定排同段末尾）
+//   ③ 已绑定的 >6s 慢代理（延迟升序，重复绑定保留多份）
+// 无记录段纳入池内未绑定代理，是让"无数据"节点排到慢节点之上、优先被启用的关键
+//（否则从未绑定过的无记录代理永远不进队列，慢节点原位保留）。
+// ===== 自动分配规则（平台级代理黑名单 + 每代理绑定上限）=====
+// 数据源 /opencode/config 的 proxyExclusions（池条目 -> [kind...]）与
+// proxyBindCaps（kind -> 上限，0/缺 = 不限），代理池页编辑。只约束一键代理
+// 与延迟重排两条自动分配路径；手动绑定、配置导入与运行时路由不受影响。
+let proxyExclusions = {};
+let proxyBindCaps = {};
+const PROXY_RULE_DIRECT_KEY = '__direct__';   // 直连在排除表里的哨兵键（与后端 proxyRuleDirectKey 一致）
+// 直连不是池条目，映射到哨兵键后查同一张排除表
+const proxyExcludedFor = (v, kind) => (proxyExclusions[v === EGRESS_DIRECT ? PROXY_RULE_DIRECT_KEY : v] || []).indexOf(kind) >= 0;
+const proxyCapFor = kind => Math.max(0, Number(proxyBindCaps[kind]) || 0);
+// 延迟档位：0=≤6s 快 1=无记录 2=>6s 慢（阈值与延迟徽标五档的 6s 分界一致）。
+const proxyTierFor = v => { const ms = proxyHsMsForReorder(v); return ms > 6000 ? 2 : (ms > 0 ? 0 : 1); };
+
+// 冻结-供给-修复回填（取代旧的三段式全量重排 —— 那会把快代理之间也互相洗牌）：
+//   冻结段：绑定健康（快代理、未拉黑、未超上限）的行原样不动，绑定关系趋稳；
+//   修复段：慢 / 无记录 / 被拉黑 / 超上限的行，从剩余供给按 快→无记录→慢 取最优：
+//     · 被拉黑或超上限的行必须挪（哪怕只能拿到慢代理）；
+//     · 其余行只在候选严格优于现状时才换 —— 慢不动慢、无记录不动无记录，
+//       没有更优供给时保持原绑定，重排 diff 最小。
+// 供给容量 = 上限 − 冻结占用 − 保留占用；被拉黑代理不进供给。每代理占用超过
+// 上限的部分（第 cap+1 处起）按行序判为超限进入修复段。
+// 返回实际改动行数。
+function applyReorderRules(kind, parts) {
+  const cap = proxyCapFor(kind);
+  const inPool = v => proxyListCache.indexOf(v) >= 0;
+  // 供给偏好序：池内未被拉黑的代理，快（延迟升序）→ 无记录（池序）→ 慢（延迟升序）
+  const pref = proxyListCache.filter(p => !proxyExcludedFor(p, kind)).sort((a, b) => {
+    const ta = proxyTierFor(a), tb = proxyTierFor(b);
+    if (ta !== tb) return ta - tb;
+    return ta === 1 ? proxyPoolIdxForReorder(a) - proxyPoolIdxForReorder(b)
+                    : proxyHsMsForReorder(a) - proxyHsMsForReorder(b);
+  });
+  const cnt = {};          // 每代理已占用量（冻结 + 保留）
+  const repair = [];
+  const seen = {};
+  parts.forEach(m => {
+    const v = m.dataset.value;
+    const ms = proxyHsMsForReorder(v);
+    seen[v] = (seen[v] || 0) + 1;
+    const overCap = cap > 0 && seen[v] > cap;
+    const bad = proxyExcludedFor(v, kind) || overCap || ms > 6000 || ms <= 0;
+    if (bad) repair.push({ m: m, v: v, forced: proxyExcludedFor(v, kind) || overCap });
+    else cnt[v] = (cnt[v] || 0) + 1;
+  });
+  const capLeft = p => cap > 0 ? cap - (cnt[p] || 0) : Infinity;
+  // 修复顺序：强制挪的优先（只能拿别人挑剩的），其余按行序
+  repair.sort((a, b) => (b.forced ? 1 : 0) - (a.forced ? 1 : 0));
+  let n = 0, stuck = 0;
+  for (const r of repair) {
+    let best = null;
+    for (const p of pref) {
+      if (p === r.v) continue;            // 候选 = 现状没有意义
+      if (capLeft(p) > 0) { best = p; break; }
+    }
+    // 非强制行：没有候选或候选不严格更优 → 原样保留（保留也占容量）
+    if (!best || (!r.forced && proxyTierFor(best) >= proxyTierFor(r.v))) {
+      if (inPool(r.v)) cnt[r.v] = (cnt[r.v] || 0) + 1;
+      if (!best) stuck++;
+      continue;
+    }
+    cnt[best] = (cnt[best] || 0) + 1;
+    if (best !== r.v) {
+      r.m.dataset.value = best;
+      r.m.value = egLabel(best);
+      egSyncBadge(r.m);
+      egApplyMainLinkage(r.m.closest('tr'), best);
+      markRowDirty(r.m.closest('tr'), kind);
+      n++;
+    }
+  }
+  if (stuck) toast(T('Auto-assign rules: ') + stuck +
+    T(' row(s) left unchanged — every allowed proxy is excluded or at cap'), 'warning', 6000);
+  return n;
+}
+function collectReorderParts(kind) {
+  const tbody = BIND_TBODY[kind];
+  if (!tbody) return [];
+  // 直连被该平台排除时，绑直连的行也进入修复段（强制挪到可用代理）；
+  // 未排除时直连/全局照旧完全不参与重排（保持既有口径）。
+  const directIn = proxyExcludedFor(EGRESS_DIRECT, kind);
+  return [...document.querySelectorAll(tbody + ' tr')]
+    .map(r => r.querySelector('.eg-input[data-eg="' + kind + '"][data-slot="main"]'))
+    .filter(Boolean)
+    .filter(m => m.dataset.value && (m.dataset.value !== EGRESS_DIRECT || directIn));
+}
+// Other 子平台逐个重排：Other 页一屏只渲染一个子平台的 keys（currentOtherSlug
+// 选择器），saveOtherKeyEdits 也只按 slug 保存当前子平台 —— 必须逐个切换、
+// 渲染、重排、保存，最后恢复用户原本选中的子平台。
+async function reorderOtherAll() {
+  const prevSlug = currentOtherSlug;
+  const slugs = (otherConfig.platforms || []).map(p => p.slug);
+  let total = 0;
+  const failed = [];
+  for (const slug of slugs) {
+    currentOtherSlug = slug;
+    _('otherPlatformSelect').value = slug;
+    const p = (otherConfig.platforms || []).find(x => x.slug === slug);
+    if (!p) continue;
+    renderOtherKeys(p.keyStates || []);
+    const parts = collectReorderParts('other');
+    if (parts.length >= 2) total += applyReorderRules('other', parts);
+    try { await saveOtherKeyEdits(); } catch (e) { failed.push(slug); }
+  }
+  currentOtherSlug = prevSlug;
+  _('otherPlatformSelect').value = prevSlug;
+  await loadOtherConfig();
+  return { total: total, failed: failed };
 }
 async function reorderByLatency(kinds) {
   const list = (kinds && kinds.length) ? REORDER_KINDS.filter(k => kinds.indexOf(k) >= 0) : REORDER_KINDS;
@@ -3626,36 +3770,25 @@ async function reorderByLatency(kinds) {
   for (const k of list) {
     try { await REORDER_LOADERS[k](); } catch (e) { failedLoads.push(k); }
   }
-  // 2. 每类表内独立重排：收集参与行 → 代理队列排序 → 按行序回填
+  // 2. 每类表内独立重排；other 例外 —— 逐子平台处理（见 reorderOtherAll）
   let total = 0;
+  const failedSaves = [];
   for (const kind of list) {
     if (failedLoads.indexOf(kind) >= 0) continue;
-    const tbody = BIND_TBODY[kind];
-    if (!tbody) continue;
-    const rows = [...document.querySelectorAll(tbody + ' tr')]
-      .map(r => r.querySelector('.eg-input[data-eg="' + kind + '"][data-slot="main"]'))
-      .filter(Boolean);
-    const parts = rows.filter(m => m.dataset.value && m.dataset.value !== EGRESS_DIRECT);
+    if (kind === 'other') {
+      const r = await reorderOtherAll();
+      total += r.total;
+      if (r.failed.length) failedSaves.push('other(' + r.failed.join('/') + ')');
+      continue;
+    }
+    const parts = collectReorderParts(kind);
     if (parts.length < 2) continue; // 无绑定或仅一处，无从重排
-    const queue = parts.map(m => m.dataset.value).sort((a, b) => {
-      const ka = reorderLatencyKey(a), kb = reorderLatencyKey(b);
-      return ka[0] !== kb[0] ? ka[0] - kb[0] : ka[1] - kb[1];
-    });
-    parts.forEach((m, i) => {
-      const v = queue[i];
-      if (m.dataset.value === v) return;
-      m.dataset.value = v;
-      m.value = egLabel(v);
-      egSyncBadge(m);
-      egApplyMainLinkage(m.closest('tr'), v);
-      markRowDirty(m.closest('tr'), kind);
-      total++;
-    });
+    total += applyReorderRules(kind, parts);
   }
-  // 3. 逐平台自动保存（各保存函数自带 diff 快照，仅提交真正变动的行）
-  const failedSaves = [];
+  // 3. 逐平台自动保存（other 已在步骤 2 内随子平台保存；其余各保存函数自带
+  // diff 快照，仅提交真正变动的行）
   for (const k of list) {
-    if (failedLoads.indexOf(k) >= 0) continue;
+    if (failedLoads.indexOf(k) >= 0 || k === 'other') continue;
     try { await REORDER_SAVERS[k](); } catch (e) { failedSaves.push(k); }
   }
   if (failedLoads.length || failedSaves.length) {
@@ -3883,9 +4016,10 @@ function egPositionMenu(input, menu) {
 }
 function egRenderItems(input, menu, q) {
   const cur = input.dataset.value || '';
+  const kind = input.dataset.eg;
   const items = [
     { v: '', label: T('Global'), active: cur === '' },
-    { v: EGRESS_DIRECT, label: T('Direct'), active: cur === EGRESS_DIRECT }
+    { v: EGRESS_DIRECT, label: T('Direct') + (kind && proxyExcludedFor(EGRESS_DIRECT, kind) ? T(' · excluded') : ''), active: cur === EGRESS_DIRECT }
   ];
   // 联想阈值：输入含中文时中文字符 ≥2 触发，否则长度 ≥3；未达标不展示代理
   const cjk = [...q].filter(c => c.codePointAt(0) > 0x7f).length;
@@ -3895,7 +4029,12 @@ function egRenderItems(input, menu, q) {
     const label = egLabel(p).toLowerCase();
     return label.includes(ql) || p.toLowerCase().includes(ql);
   };
-  const proxyItem = p => ({ v: p, label: egLabel(p), active: cur === p, rate: proxyRecentRate(p), hs: proxyRecentHs(p) });
+  const proxyItem = p => {
+    const kind = input.dataset.eg;
+    const ex = kind ? proxyExcludedFor(p, kind) : false;
+    return { v: p, label: egLabel(p) + (ex ? T(' · excluded') : ''), active: cur === p,
+             rate: proxyRecentRate(p), hs: proxyRecentHs(p) };
+  };
   const proxies = q === ''
     ? proxyListCache.map(proxyItem)
     : (ready
@@ -4984,6 +5123,9 @@ async function loadProxyPool() {
     proxyListCache = (c.proxies || []).slice();
     syncProxyHealthCache((c.runtime || {}).proxyHealth);
     backupProxyOn = c.backupProxyEnabled === true;
+    proxyExclusions = c.proxyExclusions || {};
+    proxyBindCaps = c.proxyBindCaps || {};
+    renderProxyRules();
     _('ppProxies').value = (c.proxies || []).join('\n');
     _('ppStrategy').value = c.proxyStrategy || 'round_robin';
     _('ppSubURL').value = c.proxySubURL || '';
@@ -5105,6 +5247,87 @@ async function saveProxyPool() {
     _('ppSaveResult').innerHTML = '<div style="color:var(--accent2);font-size:12px">' + T('Saved ') + proxies.length + T(' proxies') + '</div>';
     setTimeout(() => _('ppSaveResult').innerHTML = '', 5000);
     toast('Proxy pool saved', 'success');
+    loadProxyPool();
+  } catch (e) { toast(T('Save failed: ') + e.message, 'error'); }
+}
+
+// ===== 代理池页：自动分配规则（平台黑名单 / 每代理上限）=====
+// 本地编辑态：每平台 { cap: 数值, ex: [池条目...] }。renderProxyRules 从
+// proxyExclusions/proxyBindCaps 反转重建（只保留池内条目——失效规则不展示、
+// 不回存），保存时再反转回 proxy -> [kind...] 整表提交。
+let ppRulesCache = null;
+function ppRulesState() {
+  if (!ppRulesCache) {
+    ppRulesCache = {};
+    REORDER_PLATFORMS.forEach(r => {
+      ppRulesCache[r.key] = {
+        cap: proxyCapFor(r.key),
+        ex: proxyListCache.filter(p => proxyExcludedFor(p, r.key)),
+        dx: proxyExcludedFor(EGRESS_DIRECT, r.key)
+      };
+    });
+  }
+  return ppRulesCache;
+}
+function renderProxyRules() {
+  ppRulesCache = null;
+  const st = ppRulesState();
+  const tb = _('ppRulesBody');
+  if (!tb) return;
+  tb.innerHTML = REORDER_PLATFORMS.map(r => {
+    const s = st[r.key];
+    const chips = s.ex.map((p, i) =>
+      '<span style="display:inline-flex;align-items:center;gap:4px;margin:0 6px 4px 0;padding:2px 6px;border:1px solid var(--border,#333);border-radius:4px;font-size:11px" class="mono">' +
+      esc(egLabel(p)) +
+      '<button class="btn btn-sm" style="padding:0 5px;line-height:1.1" title="Remove" onclick="ppRuleDelEx(\'' + r.key + '\',' + i + ')">×</button></span>'
+    ).join('');
+    const left = proxyListCache.filter(p => s.ex.indexOf(p) < 0);
+    const opts = left.length
+      ? '<select id="ppRuleAdd-' + r.key + '" style="max-width:180px;vertical-align:middle">' +
+        left.map(p => '<option value="' + esc(p) + '">' + esc(egLabel(p)) + '</option>').join('') + '</select>' +
+        '<button class="btn btn-sm" style="margin-left:6px" onclick="ppRuleAddEx(\'' + r.key + '\')">' + T('Add excluded proxy') + '</button>'
+      : '<span style="color:var(--text3);font-size:12px">' + T('No pool proxies left to exclude') + '</span>';
+    return '<tr>' +
+      '<td>' + esc(r.label) + '</td>' +
+      '<td><input id="ppCap-' + r.key + '" type="number" min="0" step="1" style="width:80px" value="' + (s.cap || '') + '" placeholder="' + T('0 = unlimited') + '">' +
+      '<label style="display:block;margin-top:4px;font-size:11px;white-space:nowrap"><input type="checkbox"' + (s.dx ? ' checked' : '') + ' onchange="ppRuleToggleDirect(\'' + r.key + '\', this.checked)"> ' + T('Exclude Direct') + '</label></td>' +
+      '<td>' + (chips || '<span style="color:var(--text3);font-size:12px">-</span>') + '<div style="margin-top:4px">' + opts + '</div></td>' +
+      '</tr>';
+  }).join('');
+}
+function ppRuleAddEx(kind) {
+  const sel = _('ppRuleAdd-' + kind);
+  if (!sel || !sel.value) return;
+  const st = ppRulesState();
+  if (st[kind].ex.indexOf(sel.value) < 0) st[kind].ex.push(sel.value);
+  renderProxyRules();
+}
+function ppRuleToggleDirect(kind, on) {
+  ppRulesState()[kind].dx = !!on;
+}
+function ppRuleDelEx(kind, idx) {
+  const st = ppRulesState();
+  st[kind].ex.splice(idx, 1);
+  renderProxyRules();
+}
+async function saveProxyRules() {
+  const st = ppRulesState();
+  const exclusions = {}, caps = {};
+  REORDER_PLATFORMS.forEach(r => {
+    (st[r.key].ex || []).forEach(p => {
+      (exclusions[p] = exclusions[p] || []).push(r.key);
+    });
+    if (st[r.key].dx) {
+      (exclusions[PROXY_RULE_DIRECT_KEY] = exclusions[PROXY_RULE_DIRECT_KEY] || []).push(r.key);
+    }
+    const cap = parseInt(_('ppCap-' + r.key).value, 10);
+    if (cap > 0) caps[r.key] = cap;
+  });
+  try {
+    await api('POST', '/opencode/config/update', { proxyExclusions: exclusions, proxyBindCaps: caps });
+    _('ppRulesResult').innerHTML = '<div style="color:var(--accent2);font-size:12px">' + T('Saved auto-assign rules') + '</div>';
+    setTimeout(() => _('ppRulesResult').innerHTML = '', 5000);
+    toast(T('Saved auto-assign rules'), 'success');
     loadProxyPool();
   } catch (e) { toast(T('Save failed: ') + e.message, 'error'); }
 }

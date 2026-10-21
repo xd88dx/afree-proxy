@@ -333,6 +333,16 @@ type zenConfigData struct {
 	// "主不通走辅"的兜底。默认值与 ProxyIsolation 相反 —— 兜底是有意开启的行为，
 	// 不该因为旧配置文件缺字段而被静默打开。
 	BackupProxyEnabled *bool `json:"backupProxyEnabled,omitempty"`
+	// 自动分配排除表（"平台级代理黑名单"）：代理池条目（与 Proxies 同一字符串
+	// 形态）-> 排除的平台（凭据页 kind，见 proxyRuleKinds）。只约束一键代理与
+	// 延迟重排等"自动分配"路径 —— 手动绑定、配置导入与运行时路由都不受影响。
+	// 典型用途：zen 免费额度按出口 IP 限额，把已打满的代理对 zen 排除后，
+	// 批量分配不会再把它绑给任何 zen 凭据。池变动时自动清理已不在池内的条目。
+	ProxyExclusions map[string][]string `json:"proxyExclusions,omitempty"`
+	// 每代理绑定上限：平台 kind -> 单个代理在该平台最多绑几条凭据（缺项/0 =
+	// 不限）。同样只约束自动分配路径；一键代理每代理至多用一次，实际生效场景
+	// 是延迟重排的供给容量（超限的既有绑定不冻结，由重排逐步消化）。
+	ProxyBindCaps map[string]int `json:"proxyBindCaps,omitempty"`
 	// zen key 的代理绑定表：key 明文 -> 主/辅代理。与 Keys 分开存 —— env
 	// ZEN_KEYS 注入的 key 无需改动即获得"未绑定走全局规则"的兜底语义。
 	// 面板永不回传本表（key 明文不出口），绑定随 keyStates 按索引下发。
@@ -345,6 +355,20 @@ type zenConfigData struct {
 	// 0 = 永不轮换（沿用旧行为，长跑后首个请求会因会话老化而变慢）。
 	SessionRotateMinutes int `json:"sessionRotateMinutes"`
 }
+
+// proxyRuleKinds 自动分配规则（ProxyExclusions/ProxyBindCaps）支持的平台，
+// 与前端凭据页 kind / REORDER_KINDS 同一口径。
+var proxyRuleKinds = map[string]bool{
+	"acc": true, "key": true, "wb": true, "amd": true,
+	"or": true, "th": true, "other": true,
+}
+
+// proxyRuleDirectKey 直连在排除表里的哨兵键。池条目一律带 scheme
+// （http(s)://、socks5:// 等），不会与之冲突。含义 = 不允许该平台的自动分配
+// （一键代理 / 延迟重排）产出"直连"出口 —— 例如 tokenharbor 不对大陆服务，
+// 直连必被上游拒绝，批量分配就不再把直连同给任何 tokenharbor 凭据；手动绑定
+// 与运行时路由不受影响。池变动清理时该键永不删除。
+const proxyRuleDirectKey = "__direct__"
 
 // zenKeyAutoHarvestEnabled 报告 key 是否参与自动铸造（启动补缺 / 403 触发 /
 // 周期巡检 / 面板 Mint）。铸造跟随路由启用：路由关 = 该 key 不出请求，无需

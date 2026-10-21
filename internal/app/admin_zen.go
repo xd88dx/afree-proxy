@@ -44,6 +44,9 @@ func handleZenConfig(w http.ResponseWriter, r *http.Request) {
 		"proxyIsolationEnvLocked": proxyIsolationEnvLocked(),
 		// 辅代理开关：关闭时主代理不通不再尝试辅代理（绑定退化为只看主槽）。
 		"backupProxyEnabled": backupProxyEnabled(),
+		// 自动分配规则（平台级代理黑名单 / 每代理绑定上限），代理池页编辑。
+		"proxyExclusions": cfg.ProxyExclusions,
+		"proxyBindCaps":   cfg.ProxyBindCaps,
 		"runtime": map[string]any{
 			"proxyCooldowns": zenProxyCooldownStatus(),
 			// 每代理在线率统计（纯被动：只记真实请求的出口成败）。URL 已打码。
@@ -83,6 +86,9 @@ func handleZenConfigUpdate(w http.ResponseWriter, r *http.Request) {
 		SessionRotateMinutes *int `json:"sessionRotateMinutes"`
 		ProxyIsolation       *bool `json:"proxyIsolation"`
 		BackupProxyEnabled   *bool `json:"backupProxyEnabled"`
+		// 自动分配规则：nil = 不改动；非 nil = 整表替换（空表 = 全部清除）。
+		ProxyExclusions map[string][]string `json:"proxyExclusions"`
+		ProxyBindCaps   map[string]int      `json:"proxyBindCaps"`
 		Compaction           *struct {
 			Auto         *bool   `json:"auto"`
 			Buffer       *int    `json:"buffer"`
@@ -109,6 +115,8 @@ func handleZenConfigUpdate(w http.ResponseWriter, r *http.Request) {
 		Retries:             cur.Retries,
 		ProxyIsolation:      cur.ProxyIsolation,
 		BackupProxyEnabled:  cur.BackupProxyEnabled,
+		ProxyExclusions:     cur.ProxyExclusions,
+		ProxyBindCaps:       cur.ProxyBindCaps,
 		KeyBindings:         cur.KeyBindings,
 		// KeyRoutingEnabled 必须随 next 保留：config/update 是全量替换语义，
 		// 漏拷会把面板勾选的路由参与表整体清掉（缺项 = 全部参与）。
@@ -165,6 +173,23 @@ func handleZenConfigUpdate(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		next.Proxies = canonical
+		// 池变动后同步清理排除表：已不在池内的条目永远不会被自动分配命中，
+		// 留着只是垃圾配置（订阅整池替换路径 proxy_subscription.go 复用本
+		// 结构体浅拷贝，无需重复处理）。
+		if len(next.ProxyExclusions) > 0 {
+			inPool := make(map[string]bool, len(canonical))
+			for _, p := range canonical {
+				inPool[p] = true
+			}
+			pruned := make(map[string][]string, len(next.ProxyExclusions))
+			for p, kinds := range next.ProxyExclusions {
+				// 直连哨兵键不随池变动清理（它不是池条目）
+				if inPool[p] || p == proxyRuleDirectKey {
+					pruned[p] = kinds
+				}
+			}
+			next.ProxyExclusions = pruned
+		}
 	}
 	if patch.ProxyStrategy != nil && *patch.ProxyStrategy != "" {
 		next.ProxyStrategy = *patch.ProxyStrategy
@@ -199,6 +224,43 @@ func handleZenConfigUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 	if patch.BackupProxyEnabled != nil {
 		next.BackupProxyEnabled = patch.BackupProxyEnabled
+	}
+	if patch.ProxyExclusions != nil {
+		// 整表替换语义：逐条校验平台 kind，空代理行/空平台列表丢弃，全空归 nil
+		clean := make(map[string][]string, len(patch.ProxyExclusions))
+		for p, kinds := range patch.ProxyExclusions {
+			if p == "" || len(kinds) == 0 {
+				continue
+			}
+			for _, k := range kinds {
+				if !proxyRuleKinds[k] {
+					writeAPI(w, http.StatusBadRequest, apiResponse{Error: "invalid platform kind: " + k})
+					return
+				}
+			}
+			clean[p] = kinds
+		}
+		if len(clean) == 0 {
+			clean = nil
+		}
+		next.ProxyExclusions = clean
+	}
+	if patch.ProxyBindCaps != nil {
+		// 整表替换语义：只收正值，全空归 nil（缺项/0 = 不限）
+		clean := make(map[string]int, len(patch.ProxyBindCaps))
+		for k, v := range patch.ProxyBindCaps {
+			if !proxyRuleKinds[k] {
+				writeAPI(w, http.StatusBadRequest, apiResponse{Error: "invalid platform kind: " + k})
+				return
+			}
+			if v > 0 {
+				clean[k] = v
+			}
+		}
+		if len(clean) == 0 {
+			clean = nil
+		}
+		next.ProxyBindCaps = clean
 	}
 	// 0 是合法值（关闭轮换），不能用 > 0 过滤；负值视为无效忽略。
 	if patch.SessionRotateMinutes != nil && *patch.SessionRotateMinutes >= 0 {
