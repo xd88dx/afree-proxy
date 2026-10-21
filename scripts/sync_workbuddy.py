@@ -124,7 +124,7 @@ def merge_file(theirs: bytes, base: bytes, ours: bytes, tmp: Path) -> tuple[byte
     cur.write_bytes(theirs)
     bp.write_bytes(base)
     op.write_bytes(ours)
-    r = subprocess.run(["git", "merge-file", "-L", "OURS", "-L", "BASE", "-L", "THEIRS",
+    r = subprocess.run(["git", "merge-file", "-L", "THEIRS", "-L", "BASE", "-L", "OURS",
                         str(cur), str(bp), str(op)],
                        capture_output=True, text=True)
     if r.returncode < 0:

@@ -18,6 +18,12 @@ theirs = vendor(上游 HEAD)       新上游 + 脚本改写
 
 每文件 `git merge-file` 三方合并：手工改动存活、上游变更流入、真冲突留 `<<<<<<<` 标记且**基线不推进**。上游删除的文件本地保留并警告（人工判断）；本地删除的不复活。
 
+**冲突块标签语义（2026-10-21 修 bug 后）**：脚本向 `git merge-file cur base ours` 传入的 cur=**上游 theirs**、op=**本地 ours**，标签已对齐为 `-L THEIRS -L BASE -L OURS`——即冲突块**第一段标 THEIRS = 上游内容，最后一段标 OURS = 本地内容**（与 git 习惯相反，勿搞反）。历史上标签是反的（OURS 实为上游），凡参照旧冲突块笔记时注意。
+
+**vendor 改写白名单（2026-10-21 扩）**：上游新增**子包**时必须同步 `scripts/vendor_workbuddy.py` 的 `PACKAGES` 清单（漏了会 silently 缺包，编译报 "is not in std"）；上游新增**资产文件**（.css 等）必须扩 `ASSET_SUFFIXES`（漏了报 "pattern: no matching files found"）。
+
+**本地倍率筛选 vs 上游预置缓存的测试（2026-10-21 定）**：上游测试可能直接预置 `dynamicModelsCache.ids` 而不经 fetch 同源路径，此时倍率表为空——`matchesModelRateFilter` 对「倍率表整体为空」放行（`upstream.ModelRatesEmpty()`，生产不可达状态），否则上游此类测试会被本地「缺失即隐藏」口径清空列表而挂。不要为过测试改上游测试文件（sync 会覆盖）。
+
 ## 3. 操作流程
 
 ```bash

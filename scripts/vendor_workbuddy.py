@@ -20,6 +20,7 @@ TARGET_PREFIX = "afree-proxy/internal/workbuddy/"
 
 PACKAGES = (
     "auth",
+    "credithist",
     "httpauth",
     "livecfg",
     "pool",
@@ -35,7 +36,7 @@ PACKAGES = (
     "redisstore",
 )
 
-ASSET_SUFFIXES = (".go", ".md", ".json", ".html", ".js", ".txt")
+ASSET_SUFFIXES = (".go", ".md", ".json", ".html", ".js", ".css", ".txt")
 
 # Runtime fields consumed by the afree-proxy egress adapter in upstream/proxy.go.
 # Keep them in the vendored Client rather than preserving the whole upstream file,

@@ -113,6 +113,8 @@ func startWorkBuddy() (*workbuddySubsystem, error) {
 	p.SetCreditFloor(cfg.Pool.CreditFloor)
 	p.SetWeights(cfg.Pool.IdleWeightPerHour, cfg.Pool.IdleWeightMax)
 	p.SetPreferExpiring(cfg.Pool.PreferExpiring)
+	p.SetCrossDomainFallback(cfg.Pool.CrossDomainFallback) // 裸名跨域回退（issue #135，默认关闭）
+	_ = p.SetScheduling(cfg.Pool.Strategy, cfg.Pool.AccountOrder)
 
 	up := upstream.New()
 	up.HTTP.Timeout = time.Duration(cfg.Upstream.TimeoutSeconds) * time.Second
@@ -131,6 +133,15 @@ func startWorkBuddy() (*workbuddySubsystem, error) {
 	up.PassthroughIP = cfg.Upstream.PassthroughIP
 	up.GlobalEnabled = cfg.Global.Enabled
 	up.ChatBaseGlobal = cfg.Global.ChatBase
+	// cn.chat_base 国内版 base 覆盖（上游 7c30d43）：空 = 回落内置默认
+	// copilot.tencent.com。海外出口被该域 TLS 复位时可改 www.workbuddy.cn。
+	up.ChatBaseCN = cfg.CN.ChatBase
+	// dns_servers / WB2A_DNS（上游 eacee47）：仅作用于 WorkBuddy 出站解析。
+	// 不动 http.DefaultTransport——afree 多平台共进程，改全局会波及其他平台出站。
+	if len(cfg.DNSServers) > 0 {
+		up.SetDNSDialer(upstream.NewDNSDialer(cfg.DNSServers))
+		log.Printf("workbuddy: DNS 出站解析用 %v", cfg.DNSServers)
+	}
 	up.BillingBaseGlobal = cfg.Global.BillingBase
 	up.ProxyFor = workbuddyProxyFor
 	// 请求日志的「账号/Key」「代理」两列：vendor 选号后把命中的账号与
@@ -191,6 +202,7 @@ func startWorkBuddy() (*workbuddySubsystem, error) {
 		SanitizeFingerprints: cfg.Features.SanitizeBlacklistFingerprints,
 		RecordClientInfo:     cfg.Logging.RequestClientInfo,
 		ModelRateFilter:      cfg.Pool.ModelRateFilter,
+		HiddenModels:         livecfg.NormalizeHiddenModels(cfg.Models.Hidden),
 	})
 	rec := wbusage.New(filepath.Join(dir, "usage.json"))
 	rec.Start()
@@ -261,6 +273,9 @@ func startWorkBuddy() (*workbuddySubsystem, error) {
 		// 裸用/测试路径拿到同一缺省值。
 		RecordClientInfo: cfg.Logging.RequestClientInfo,
 		GlobalEnabled:    cfg.Global.Enabled,
+		// 模型黑名单原始条目（config models.hidden）；运行期以 livecfg 快照为准
+		//（热生效），此处供 Live 为 nil 的裸用/测试路径。
+		ModelsHidden: cfg.Models.Hidden,
 		// 倍率筛选同样双填：Live 热改优先，静态字段兜底（同款理由）。
 		ModelRateFilter: cfg.Pool.ModelRateFilter,
 	})

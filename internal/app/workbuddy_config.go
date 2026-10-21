@@ -74,6 +74,7 @@ func saveWorkbuddyConfig(
 		SanitizeFingerprints: newCfg.Features.SanitizeBlacklistFingerprints,
 		RecordClientInfo:     newCfg.Logging.RequestClientInfo,
 		ModelRateFilter:      newCfg.Pool.ModelRateFilter,
+		HiddenModels:         livecfg.NormalizeHiddenModels(newCfg.Models.Hidden),
 	})
 	up.SanitizeFingerprints.Store(newCfg.Features.SanitizeBlacklistFingerprints)
 	up.HTTP.Timeout = time.Duration(newCfg.Upstream.TimeoutSeconds) * time.Second
@@ -92,6 +93,7 @@ func saveWorkbuddyConfig(
 	up.GlobalEnabled = newCfg.Global.Enabled
 	up.ChatBaseGlobal = newCfg.Global.ChatBase
 	up.BillingBaseGlobal = newCfg.Global.BillingBase
+	up.ChatBaseCN = newCfg.CN.ChatBase
 	wbauth.SetGlobalEnabled(newCfg.Global.Enabled)
 
 	p.SetBreaker(newCfg.Pool.BreakerThreshold, newCfg.BreakerCooldownDur, newCfg.BreakerCooldownMaxD)
@@ -103,6 +105,8 @@ func saveWorkbuddyConfig(
 	p.SetCreditFloor(newCfg.Pool.CreditFloor)
 	p.SetWeights(newCfg.Pool.IdleWeightPerHour, newCfg.Pool.IdleWeightMax)
 	p.SetPreferExpiring(newCfg.Pool.PreferExpiring)
+	p.SetCrossDomainFallback(newCfg.Pool.CrossDomainFallback) // 裸名跨域回退热生效（issue #135）
+	_ = p.SetScheduling(newCfg.Pool.Strategy, newCfg.Pool.AccountOrder)
 
 	sch.Reconfigure(
 		newCfg.Schedule.CheckinHours, newCfg.Schedule.TravelHours,
