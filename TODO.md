@@ -1,5 +1,52 @@
 # TODO — Public container deployment: stateless /v1 proxy with multi-account rotation
 
+## 全平台启用凭据实测（2026-10-21，7 平台 / 100 凭据，真实上游请求）
+
+**方法**：三轮真实探测（首轮 100 凭据并发探一遍 → 非 active 项连测 3 次 → 可疑项跨
+时段再测 4 次，间隔 25s），外加 34 条网关 e2e 分支用例。不靠单条结果下结论。
+
+**结论**：凭据总体健康 —— 100 个启用凭据里 **12 个当前不可用**，其余 88 个在三轮里
+表现稳定。故障全部定位到具体原因，无一个是网关逻辑错误：
+
+下表一律用**配置 index（0 起）**，面板显示为 index+1。
+
+| 凭据（index） | 原因（真实响应摘要） | 定性 |
+|---|---|---|
+| zen / or / amd / th / other-agnes 的 **14** | 绑定出口 `10106#DDHK` 节点故障（lastOk 停在 10-20 08:02） | 基础设施，跨 5 平台一致，需换节点 |
+| amd **10 / 11 / 12 / 13** | `API 401 … Invalid LLMGateway API token. The token could not be found.` | 上游 key 已注销，需换 key |
+| amd **8** | 走 `10102#Mikrus` 时上游 60s 无响应（4/4 稳定） | 该出口到 AMD 不通，重绑出口 |
+| zen **12** | `429 FreeUsageLimitError` | 免费额度耗尽，等待自愈 |
+| tokenharbor **12** | `403 … network address (47.84.122.196) are not accepted` | 出口 IP 被封，重绑出口 |
+
+合计 **12 个**：1 个代理节点故障连带 5 个、4 个 AMD key 失效、1 个 AMD 出口不通、
+1 个 zen 额度耗尽、1 个 TokenHarbor 出口被封。
+
+**排除的偶然性（重要）**：首轮有 10 个凭据报「bound proxies unavailable」（五个平台的
+index 11 与 14，分别绑在 `10107#Neohbg` 与 `10106#DDHK` 上），其中 tokenharbor 11、
+other-agnes 11（都在 `10107#Neohbg` 上）与 cline cswbhsa@outlook.com 在后续轮次
+**全部自愈**。原因是出口冷却只有 2 分钟（`cooldownUpstreamProxy`），并发探测把正常
+出口打成了短暂冷却。**单次 Test 失败不能直接判定凭据失效** —— 这是本次实测最有价值的修正。
+
+**修复**：探测失败文案原来只有 "bound proxies unavailable (cooling or removed)"，
+不说是哪个出口、何时恢复，也不说明凭据本身没被验证 —— 实测中足以让人误删健康
+凭据。现在五个平台统一输出打码后的出口 + 冷却解除时刻 + "the credential itself was
+not verified"（走 `kit.ProxyBlockedDetail` 注入，避免子包反向依赖主包）。
+新增 `internal/app/proxy_blocked_detail_test.go` 4 个用例锁住该行为。
+
+**实测确认无问题的分支**：停用单凭据后 8 次请求均不再命中它；某平台全部停用时请求
+明确报错而不挂死；Cline 全停时模型目录保留缓存不清空；`/v1/models` 三次顺序一致；
+错误 API_KEY 401；未知模型/未知前缀 400；zen 并发 8 全部 200；8 个平台非流式与流式
+均通过（首轮 cline 失败是因为探测模型在测试开始前已被上游 prune，换当前有效模型后
+3×200 通过 —— 模型目录是动态的，脚本不能写死模型名）。
+
+**遗留建议（未改，需先确认）**：上游 4xx（客户端参数错误）目前一律映射成 502，会
+诱导客户端重试并重复烧免费额度；建议按上游状态码分流 4xx/5xx。
+
+**同日二轮修复**：① cline 面板 Test「绑定出口不可用」分支从 `cooldown` 改报 `error`
+（该分支未设真实冷却，报冷却会误导排查），与五平台一致；② 修正 `zen.go` `pickZenKey`
+上方两次提交合并残留的矛盾注释（旧后半句与 `zenKeyAutoHarvestEnabled` 的"铸造跟随
+路由启用"语义相反）。`go build` / `go vet` / `internal/app` 测试全绿。
+
 ## Client-fingerprint refresh driven by real-binary captures (2026-10-19)
 
 Previous rounds took the Cline/opencode identity headers from **source** (sdk

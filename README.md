@@ -115,6 +115,8 @@ All state lives in the `/app/data` volume (`cline-accounts.json`, `zen-config.js
 | `LOG_FILE_MAX_MB` | `10` | Size cap for `requests.jsonl` (wiped when exceeded) and for `afree-proxy.log` (rotated when exceeded) |
 | `MAX_BODY_MB` | `32` | Request body limit; larger bodies get `413` |
 | `STREAM_ATTEMPT` | `2` | Total attempts (initial + retries) for buffered streaming when the upstream breaks mid-stream; `1` disables retrying. Each retry re-sends the whole request and re-burns upstream free quota |
+| `CLINE_FORCE_STREAM` | `false` | Force the Cline upstream onto the streaming path for every model. When the client asked for non-streaming, the gateway aggregates the upstream SSE back into plain JSON. Default `false` = decide per model (metadata / naming convention / auto-learned). **Turning it on globally before confirming no model is non-streaming-only will break those models** — there is no reverse learning |
+| `CLINE_HEADER_TIMEOUT` | `60` | Seconds to wait for **response headers** from the Cline upstream; `0` disables the watchdog. It cancels only before the headers arrive, so a long SSE body is never truncated. Guards against black-hole exits (TCP connects, headers silently dropped) that would otherwise pin a concurrency slot for the transport's 5-minute header timeout. Premise: the Cline upstream is always streaming — raise or disable it if a genuinely non-streaming model appears |
 | `APPLY_SYSTEM_PROMPT_OVERRIDE` | `false` | `true` enables replacing client system prompts with `override.md` |
 | `STREAM_LOG` | `false` | Dump raw Anthropic-path SSE to disk (full conversations — debugging only) |
 | `CLIENT_IP_HEADER` | empty | Trust this header for client IP behind a reverse proxy (e.g. `X-Real-IP`); by default only `RemoteAddr` is used |
@@ -249,6 +251,38 @@ socks5/socks5h proxies are fully supported on both paths: the gateway dials them
 
 One side benefit on the zen side: the free quota (~200 requests / 5h) is accounted **per egress IP**, so binding keys to distinct exits is also what actually unlocks multi-key capacity, not just ban-avoidance.
 
+## Credential enable / disable semantics
+
+The panel's **enable** column is "is this credential in the request pool", not "is this credential valid". Turning it off means *the pool does not contain it*, consistently across every platform:
+
+| Platform | What disabling does |
+|---|---|
+| Cline | Not selected by `pickAccountExcluding` / `pickAccountAny`, **not used as a 429/5xx failover candidate**, skipped by boot-time token warm-up, excluded from the `/health` active count |
+| opencode zen | The session patrol no longer mints or rotates a session for that key (including the `public` sentinel); re-enabling needs no restart — the next `pickZenKey` round can select it and the session is minted lazily |
+| OpenRouter / AMDCloud / TokenHarbor / Other | The key is dropped from rotation |
+| TokenHarbor only | Catalog sync uses the first *routing-enabled* key; with all keys disabled the sync cycle is skipped entirely |
+| WorkBuddy | `pool_enabled` is persisted in the per-account auth file, so it survives restarts |
+
+Disabling **every** credential of a platform is handled, not fatal: the request fails with an explicit error (measured: `502 no key routable on platform "…"` for Other, `400 model … is not available on this gateway` for Cline). Cline's model catalog keeps its last good list (`model sync: failed (no accounts), using cached list`) instead of emptying, so re-enabling does not wipe the model list.
+
+### What the Test button does
+
+Test sends a **real** probe request through the same path as a normal request (identity headers, exit binding, session stickiness, free-tier gate). On success it clears that credential's cooldown; on failure it applies the cooldown that matches the failure kind (429 → soft rate-limit cooldown, 401/403 → hard cooldown, network error → backoff). So Test doubles as "reset this credential".
+
+## Troubleshooting
+
+Measured on a live deployment with 7 platforms / 100 enabled credentials (2026-10-21). Symptoms are verbatim from the gateway.
+
+| Symptom | What it actually means | What to do |
+|---|---|---|
+| `bound proxies unavailable (cooling or removed) … main=<proxy> (cooling until <RFC3339>), backup=none — the credential itself was not verified (its egress is down)` | The **exit** is down, not the credential. Isolation is stricter than availability: a bound credential is skipped while both its exits are unusable, never rerouted | Fix or rebind the exit on the Proxy pool page. **Do not delete the key.** Re-probe after the stated time |
+| Same credential fails Test, then passes minutes later with no change | Exit cooldown is **2 minutes** (`cooldownUpstreamProxy`). Anything bound to a flapping exit is unusable for that window and self-heals after | Never conclude "key is dead" from a single Test. Re-probe after ≥2 min, or read the `cooling until` time in the message |
+| `502` with a body quoting upstream text, e.g. `zen API 400: … "messages must not be empty"` | The **client** sent bad parameters; the gateway maps every upstream error to 502, including upstream 4xx | Read the embedded upstream message — it names the offending parameter. Beware: clients retry on 502 and re-burn free quota |
+| `400 model "…" is not available on this gateway` right after it worked | The catalog is live: the upstream feed prunes models no longer offered (observed: 5 Cline models pruned across three sync cycles in 17 minutes). Not a gateway fault | Re-read `/v1/models`; do not hard-code model IDs in scripts or CI |
+| `/v1/models` occasionally takes 10–30 s, otherwise ~1 s | Catalog sync contention (observed: `duration_ms` 10002 / 30007 on sync cycles) | Expected; unrelated to credential health. Don't use `/v1/models` latency as a health signal |
+| `amd model sync failed: catalog status 401` | The credentials used for catalog sync are dead — AMD keys expire silently | Re-probe AMD keys; dead ones show `API 401 … Invalid LLMGateway API token` |
+| `403 Requests from this network address (…) are not accepted` (TokenHarbor) | The **exit IP** is blocked, not the key | Rebind that key to a different exit |
+
 ## Battle-tested
 
 Verified against live upstreams with real free-tier credentials (16-probe chat matrix + 12-probe function-calling matrix, all passing):
@@ -280,8 +314,7 @@ Project layout:
 │   ├── proxy.go             /v1 routing, chat handler, upstream calls, aggregation
 │   ├── responses.go         /v1/responses dialect translation
 │   ├── zen.go               opencode zen upstream, routing, rate-limit defense
-│   ├── zen_session.go       sticky zen sessions (CLI-minted sess_, per-key identity)
-│   ├── zen_session.go        zen sticky session IDs (locally minted)
+│   ├── zen_session.go       sticky zen sessions (locally minted per key, age-rotated, persisted in .zen-sessions.json)
 │   ├── zen_endpoint.go      endpoint auto-learn (chat vs /v1/responses per model)
 │   ├── tls_bun.go           uTLS ClientHello mimicry for the zen upstream
 │   ├── compact.go           opencode-style context compaction for zen free models

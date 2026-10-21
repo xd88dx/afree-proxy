@@ -73,6 +73,8 @@ docker compose up -d --build
 | `ZEN_HARVEST_INTERVAL_HOURS` | 4 | 会话重铸间隔，须小于 zen 的 5 小时窗口 |
 | `LOG_REQUESTS` | true | 请求日志（仅元数据） |
 | `MAX_BODY_MB` | 32 | 请求体上限，超出 413 |
+| `CLINE_FORCE_STREAM` | false | 强制 Cline 上游一律走流式（客户端要非流式时由网关聚合回 JSON）。默认 false = 按模型元数据/命名/自学习逐模型判定。**开全局开关前必须确认没有「只支持非流式」的模型**，否则那些模型会直接失败 |
+| `CLINE_HEADER_TIMEOUT` | 60 | Cline 上游「等响应头」看门狗秒数，0 = 关闭。只掐响应头到达之前（头一到即停），SSE 长跑不受影响；防黑洞出口（TCP 通、头被静默丢弃）占满并发槽 5 分钟 |
 
 ---
 
@@ -195,6 +197,36 @@ POST /admin/api/workbuddy/proxy/clear
 
 ---
 
+### 3.9 凭据「启用」列与 Test 按钮的真实语义
+
+**「启用」= 是否在请求池里**，不是「是否有效」。关掉后各平台一致地把它当不存在：
+
+| 平台 | 停用的实际效果 |
+|---|---|
+| Cline | 不选号、不作 429/5xx 故障转移候选、启动预热跳过、不计入 `/health` 的 activeAccounts |
+| OpenCode (zen) | 会话巡检不再为它铸造/轮换会话；重新启用无需重启，下一轮选 key 即可选中，会话惰性补铸 |
+| OpenRouter / AMDCloud / TokenHarbor / Other | 不参与轮转；TokenHarbor 全停用时跳过目录同步 |
+| WorkBuddy | `pool_enabled` 落在账号凭证文件，重启不丢 |
+
+某平台**全部**停用时请求会明确报错，不会挂死（实测：Other 返回 `502 no key routable on platform "…"`；Cline 返回 `400 model … is not available on this gateway`）。Cline 模型目录此时保留上一份缓存（`model sync: failed (no accounts), using cached list`），重新启用不会丢模型。
+
+**Test 按钮 = 一次真实探测**，走的是与正常请求完全相同的路径（身份头、绑定出口、会话粘性、免费额度闸门）：
+
+- 成功 → 清除该凭据的冷却（相当于「升级版重置」）；
+- 失败 → 按类型施加冷却（429 软限流 / 401·403 硬冷却 / 网络错误退避）。
+
+⚠️ **出口挂掉 ≠ 凭据失效。** 隔离模式下，绑定主辅出口都不可用时该凭据被整体跳过，Test 会失败并在原因里写明出口与冷却解除时刻：
+
+```
+key#15 bound proxies unavailable (cooling or removed); probe aborted by proxy isolation:
+main=socks5://…#DDHK (cooling until 2026-10-20T21:35:45Z), backup=none
+— the credential itself was not verified (its egress is down)
+```
+
+看到 `the credential itself was not verified` 就是**出口问题**：去「服务 → 代理池」修出口或重新绑定，不要删凭据。出口冷却时长为 2 分钟，冷却过期后同一凭据会自动恢复 —— **单次 Test 失败不能判定凭据已废**，至少隔 2 分钟复测一次。
+
+---
+
 ## 4. IDE 接入
 
 | 客户端 | 端点 | Base URL |
@@ -230,9 +262,14 @@ docker cp afree-proxy:/app/data ./backup   # 备份数据
 | 首个请求很慢 / 403 | 首启时收割机正在为各 key 铸造会话（每 key 约 15-20 秒），等铸造完成即可；可到 OpenCode 页手动「铸造缺失的会话」 |
 | 所有请求 429 | 上游限流。看冷却截止时刻；增加账号/key 分摊；多 key 绑定不同代理还能按 IP 扩容 zen 配额 |
 | 提示 boundBlocked=N | 隔离模式下 N 个账号的绑定出口全部不可用（冷却/被删）。到代理池页检查代理，或重新绑定 |
+| Test 报 `bound proxies unavailable … cooling until …` | 是**出口**冷却（默认 2 分钟），不是凭据失效：看原因里的 `cooling until` 时刻，到期后自动恢复；持续不可用则是代理节点本身挂了，到代理池页换出口 |
+| 请求返回 502，但响应体写着上游 `400 … messages must not be empty` | 是**客户端参数错误**，网关把上游 4xx 也映射成 502。注意：客户端遇到 502 通常会重试，会重复消耗免费额度 |
+| 刚才还能用的模型突然 `400 not available on this gateway` | 模型目录是动态同步的，上游 feed 下架会被 prune（实测 17 分钟内 prune 掉 5 个 Cline 模型）。脚本/CI 里不要写死模型名，先读 `/v1/models` |
+| `/v1/models` 偶尔要 10–30 秒 | 目录同步等待（实测 duration_ms 10002 / 30007），正常；不要拿它当健康信号 |
+| TokenHarbor 报 `403 … network address (x.x.x.x) are not accepted` | 是**出口 IP** 被上游封了，不是 key 失效；给该 key 换个出口 |
 | 账号 expired | refreshToken 被上游拒绝，重新添加账号 |
 | OpenCode 页提示 Harvester unavailable | 容器内没有 opencode CLI（罕见架构），收割降级；key 将无法 mint 会话 |
-| WorkBuddy 请求 400 model 不存在 | WorkBuddy 模型必须带 `cn:` 或 `global:` 前缀；先看 `/v1/models` 的完整 ID |
+| WorkBuddy 请求 400 model 不存在 | 网关 `/v1` 用 `wbcn:`（CN 域）/ `wbgb:`（global 域）前缀，先看 `/v1/models` 的完整 ID。旧的 `cn:` / `global:` 前缀仍然接受（为存量 IDE 配置与 combo target 保留），但面板与 `/v1/models` 展示的是 `wbcn:` / `wbgb:` |
 | WorkBuddy 请求因出口不可用失败 | 代理隔离下绑定主/辅出口都冷却或已被删除会 fail-closed；到代理池页恢复出口，或通过 `/admin/api/workbuddy/proxy` 检查/重绑 |
 | 下拉框弹层颜色异常 | 已通过 color-scheme 修复；若仍出现，确认浏览器为较新版本 |
 | 忘记 ADMIN_PASSWORD | 改容器环境变量重建即可（数据保留） |
