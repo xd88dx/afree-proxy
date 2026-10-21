@@ -52,6 +52,11 @@ type workbuddyBackup struct {
 	// AuthFiles WorkBuddy 凭据文件：文件名 -> base64(原文)。导入时整体
 	// 替换 auths 目录（workbuddy*.json），随后全部账号禁用。
 	AuthFiles map[string]string `json:"authFiles,omitempty"`
+	// Order 面板展示顺序（账号 uid 列表）。顺序存在 state.json 的 order 字段，
+	// 既不在 vendor config.json 也不在凭据文件里——不带这一段，跨机迁移后
+	// 表格退回 uid 排序，用户拖好的顺序等于白做（2026-10-21 实测发现）。
+	// 仅影响 List()/面板顺序，不参与选号（加权路由与顺序无关）。
+	Order []string `json:"order,omitempty"`
 }
 
 type configBackup struct {
@@ -213,6 +218,15 @@ func exportWorkbuddyBackup() *workbuddyBackup {
 	wb := &workbuddyBackup{}
 	if raw, err := os.ReadFile(sub.cfgPath); err == nil {
 		wb.Config = json.RawMessage(raw)
+	}
+	// 展示顺序单独带上：state.json 不随备份走（里面还有 credits/cooling
+	// 等运行时状态，属于本机事实）。List() 已按自定义顺序输出，直接取 uid。
+	if sub.pool != nil {
+		for _, st := range sub.pool.List() {
+			if st.UID != "" {
+				wb.Order = append(wb.Order, st.UID)
+			}
+		}
 	}
 	files, _ := filepath.Glob(filepath.Join(sub.cfg.AuthDir, "workbuddy*.json"))
 	if len(files) > 0 {
@@ -710,6 +724,14 @@ func importWorkbuddyBackup(wb *workbuddyBackup, keepWbEnabled bool) (int, bool) 
 			log.Printf("  config import: workbuddy config apply failed: %v", err)
 		} else {
 			cfgApplied = true
+		}
+	}
+	// 展示顺序最后套用：必须排在 SyncToDir（账号集合对齐）之后，否则对齐时
+	// 新号按 uid 落到尾部、顺序被打乱。备份未带 order 时不动本机顺序（按段
+	// 替换语义里"缺字段 = 保持不动"）。未知 uid 由 SetOrder 自行忽略。
+	if len(wb.Order) > 0 && sub.pool != nil {
+		if n := sub.pool.SetOrder(wb.Order); n > 0 {
+			log.Printf("  config import: workbuddy display order applied (%d accounts)", n)
 		}
 	}
 	return importedAuths, cfgApplied

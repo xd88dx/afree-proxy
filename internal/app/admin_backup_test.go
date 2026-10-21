@@ -3,6 +3,7 @@ package app
 import (
 	"encoding/json"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -10,6 +11,9 @@ import (
 	"afree-proxy/internal/amd"
 	"afree-proxy/internal/openrouter"
 	"afree-proxy/internal/other"
+	wbauth "afree-proxy/internal/workbuddy/auth"
+	wbconfig "afree-proxy/internal/workbuddy/config"
+	wbpool "afree-proxy/internal/workbuddy/pool"
 )
 
 // 备份导入的隔离护栏：导入把一切上游身份置为禁用——Cline 账号 poolEnabled
@@ -354,4 +358,95 @@ func TestConfigBackupWorkBuddyProxies(t *testing.T) {
 			t.Errorf("binding not restored: %+v", b)
 		}
 	})
+}
+
+// TestConfigBackupWorkbuddyOrder 备份必须覆盖 WorkBuddy 账号的**展示顺序**：
+// 顺序只存在 state.json 的 order 字段（不在 vendor config.json，也不在凭据
+// 文件里），2026-10-21 实测"拖拽顺序 + 导出导入"时正是这一段丢失——迁移后
+// 表格退回 uid 排序。这里覆盖三件事：导出取池的实际展示顺序、JSON 键名为
+// order、导入按备份顺序套用。
+func TestConfigBackupWorkbuddyOrder(t *testing.T) {
+	tmp := t.TempDir()
+	authDir := filepath.Join(tmp, "auths")
+	if err := os.MkdirAll(authDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	p1 := wbpool.New(filepath.Join(tmp, "state.json"))
+	defer p1.Close()
+	for _, uid := range []string{"b", "a", "c"} {
+		p1.Add(&wbauth.Auth{UID: uid})
+	}
+	if n := p1.SetOrder([]string{"c", "a", "b"}); n != 3 {
+		t.Fatalf("SetOrder n = %d, want 3", n)
+	}
+	p1.Flush()
+
+	savedSub := workbuddySub
+	defer func() { workbuddySub = savedSub }()
+	workbuddySub = &workbuddySubsystem{
+		cfgPath: filepath.Join(tmp, "config.json"),
+		cfg:     &wbconfig.Config{AuthDir: authDir},
+		pool:    p1,
+	}
+
+	exp := exportWorkbuddyBackup()
+	if exp == nil {
+		t.Fatal("export returned nil while the subsystem is running")
+	}
+	if got := strings.Join(exp.Order, ","); got != "c,a,b" {
+		t.Fatalf("exported order = %q, want c,a,b", got)
+	}
+	// 线上必须叫 order，且能原样解回
+	raw, err := json.Marshal(exp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var m map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &m); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := m["order"]; !ok {
+		t.Error(`export must contain the "order" key inside the workbuddy section`)
+	}
+	var back workbuddyBackup
+	if err := json.Unmarshal(raw, &back); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(back.Order, ",") != "c,a,b" {
+		t.Fatalf("order round-trip = %v, want [c a b]", back.Order)
+	}
+
+	// 目标实例：账号集合相同但顺序被打乱（无自定义顺序 = uid 排序）
+	p2 := wbpool.New(filepath.Join(tmp, "state2.json"))
+	defer p2.Close()
+	for _, uid := range []string{"a", "b", "c"} {
+		p2.Add(&wbauth.Auth{UID: uid})
+	}
+	workbuddySub.pool = p2
+	importWorkbuddyBackup(exp, true)
+	uids := make([]string, 0, 3)
+	for _, st := range p2.List() {
+		uids = append(uids, st.UID)
+	}
+	if got := strings.Join(uids, ","); got != "c,a,b" {
+		t.Fatalf("order after import = %q, want c,a,b", got)
+	}
+
+	// 备份没带 order 时不碰本机顺序（缺字段 = 保持不动）
+	p3 := wbpool.New(filepath.Join(tmp, "state3.json"))
+	defer p3.Close()
+	for _, uid := range []string{"b", "a", "c"} {
+		p3.Add(&wbauth.Auth{UID: uid})
+	}
+	p3.SetOrder([]string{"a", "b", "c"})
+	workbuddySub.pool = p3
+	importWorkbuddyBackup(&workbuddyBackup{}, true)
+	uids = uids[:0]
+	for _, st := range p3.List() {
+		uids = append(uids, st.UID)
+	}
+	if got := strings.Join(uids, ","); got != "a,b,c" {
+		t.Fatalf("local order must stay untouched when backup has no order, got %q", got)
+	}
 }
