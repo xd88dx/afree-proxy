@@ -5,6 +5,13 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"time"
+
+	"afree-proxy/internal/amd"
+	"afree-proxy/internal/kit"
+	"afree-proxy/internal/openrouter"
+	"afree-proxy/internal/other"
+	"afree-proxy/internal/tokenharbor"
 )
 
 // ============ 账号/key 代理隔离（绑定出口） ============
@@ -187,6 +194,77 @@ func boundProxiesRoutable(main, backup string) bool {
 	}
 	_, _, ok := pickBoundProxy(main, backup)
 	return ok
+}
+
+// ============ 出口不可用的可读详情 ============
+//
+// 绑定出口全部冷却/被移除时，各平台的探测（面板 Test）会直接失败。旧文案
+// "bound proxies unavailable (cooling or removed)" 只说了结论：既看不出是
+// 哪个出口，也看不出是短暂冷却还是节点已从池里删除 —— 用户据此会误判成
+// "这个 key 废了"并把好凭据删掉。下面把出口（打码）与冷却解除时刻写进文案。
+
+// exitStateLabel 单个出口槽位的可读状态。raw 为空表示未配置该槽。
+func exitStateLabel(raw string) string {
+	if raw == "" {
+		return "none"
+	}
+	label := maskProxyURL(raw)
+	if proxyIdxInPool(raw) < 0 {
+		return label + " (removed from proxy pool)"
+	}
+	if until := zenProxyCooldownUntil(raw); !until.IsZero() {
+		return label + " (cooling until " + until.UTC().Format(time.RFC3339) + ")"
+	}
+	return label + " (unreachable)"
+}
+
+// boundExitDetail 绑定对的可读详情："main=… (…), backup=…"。
+func boundExitDetail(main, backup string) string {
+	return "main=" + exitStateLabel(main) + ", backup=" + exitStateLabel(backup)
+}
+
+// blockedExitMessage 供各平台探测失败时复用：前缀 + 出口详情（有详情才拼）。
+// scope 用于 other 子平台定位（其余平台传空串）。
+func blockedExitMessage(prefix string, main, backup string) string {
+	if main == "" && backup == "" {
+		return prefix
+	}
+	return prefix + ": " + boundExitDetail(main, backup) + " " +
+		"— the credential itself was not verified (its egress is down)"
+}
+
+// proxyBlockedDetailFor 是注入给 kit 的实现：按 scope + key 查出绑定再格式化。
+//
+// scope 取值："amd" / "openrouter" / "tokenharbor"，或 other 子平台的 slug。
+// zen 与 cline 在主包内直接调用 blockedExitMessage，不走这个注入点。
+func proxyBlockedDetailFor(scope, key string) string {
+	if key == "" {
+		return ""
+	}
+	var main, backup string
+	var bound bool
+	switch scope {
+	case "amd":
+		main, backup, bound = amd.BindingOf(key)
+	case "openrouter":
+		main, backup, bound = openrouter.BindingOf(key)
+	case "tokenharbor":
+		main, backup, bound = tokenharbor.BindingOf(key)
+	default:
+		if scope != "" {
+			if p := other.PlatformBySlug(scope); p != nil {
+				main, backup, bound = other.BindingOf(p, key)
+			}
+		}
+	}
+	if !bound {
+		return ""
+	}
+	return boundExitDetail(main, backup)
+}
+
+func init() {
+	kit.ProxyBlockedDetail = proxyBlockedDetailFor
 }
 
 // zenProxiesEnabled OpenCode 上游是否走共享代理池：配置缺省（nil）默认开启

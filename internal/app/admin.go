@@ -739,7 +739,8 @@ func testAccount(acc *Account) (map[string]any, string) {
 
 	// 出口：绑定账号（隔离模式）必须从绑定出口探测 —— 探测同样是一次真实
 	// 上游请求，从服务器本机 IP 发出会破坏"一个账号一个 IP"的隔离。绑定
-	// 出口全不可用时按冷却回报，不降级直连（与正常请求的"跳过"语义一致）。
+	// 出口全不可用时按 error 回报（与五平台一致；此处并未给账号设置冷却，
+	// 报 cooldown 会让面板渲染成"冷却中"误导排查），不降级直连。
 	probeClient := kit.HTTPClient
 	var probeExit string
 	if main, backup, bound := accountProxyBinding(acc); bound {
@@ -748,9 +749,11 @@ func testAccount(acc *Account) (map[string]any, string) {
 			return map[string]any{
 				"accountId": acc.AccountID,
 				"email":     acc.Email,
-				"status":    "cooldown",
-				"reason":    "bound proxies unavailable (cooling or removed); probe skipped by proxy isolation",
-			}, "cooldown"
+				"status":    "error",
+				"reason": blockedExitMessage(
+					"bound proxies unavailable (cooling or removed); probe skipped by proxy isolation",
+					main, backup),
+			}, "error"
 		}
 		probeClient = proxyClientFor(proxyURL)
 		probeExit = proxyURL

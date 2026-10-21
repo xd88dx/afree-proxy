@@ -17,6 +17,8 @@ import (
 
 	utls "github.com/refraction-networking/utls"
 	"golang.org/x/net/proxy"
+
+	"afree-proxy/internal/kit"
 )
 
 var (
@@ -106,6 +108,26 @@ func zenProxyCooldownStatus() map[string]string {
 	return out
 }
 
+// zenProxyCooldownUntil 单个出口的冷却解除时刻。未冷却返回零值。
+// 供"出口不可用"类错误文案把恢复时刻讲清楚（否则用户只看到一句 cooling or
+// removed，无法判断是节点真挂了还是短暂冷却）。
+func zenProxyCooldownUntil(raw string) time.Time {
+	if raw == "" {
+		return time.Time{}
+	}
+	idx := proxyIdxInPool(raw)
+	if idx < 0 {
+		return time.Time{}
+	}
+	zenProxyCooldownsMu.Lock()
+	defer zenProxyCooldownsMu.Unlock()
+	until, ok := zenProxyCooldowns[idx]
+	if !ok || !time.Now().Before(until) {
+		return time.Time{}
+	}
+	return until
+}
+
 // pickUpstreamProxy 按策略为一次上游尝试选择代理,返回 (代理URL, 索引);
 // 无代理配置返回 ("", -1)。跳过冷却中的代理;全部冷却时返回轮转位。
 // 由调用方在每次上游尝试时显式调用 —— 请求级轮转（round_robin 一比一）,
@@ -133,14 +155,7 @@ func pickUpstreamProxy() (string, int) {
 	return cfg.Proxies[idx], idx
 }
 
-func maskProxyURL(raw string) string {
-	u, err := url.Parse(raw)
-	if err != nil || u.User == nil {
-		return raw
-	}
-	u.User = url.User("***")
-	return u.String()
-}
+func maskProxyURL(raw string) string { return kit.MaskProxyURL(raw) }
 
 // parseProxyLine 把用户粘贴的代理行规范化为网关标准格式，并提取别名。
 //

@@ -11,6 +11,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"afree-proxy/internal/kit"
 )
 
 // ============ 上游调用 ============
@@ -180,7 +182,8 @@ func Chat(ctx context.Context, p *Platform, params map[string]any, modelID strin
 			url, ok := exitFn(key)
 			if !ok {
 				if pin != "" {
-					return nil, rateLimited, fmt.Errorf("key#%d bound proxies unavailable (cooling or removed); probe aborted by proxy isolation", KeyIndex(p, key))
+					return nil, rateLimited, fmt.Errorf("%s", kit.BoundProbeBlockedMsg(p.Slug, key,
+						fmt.Sprintf("key#%d bound proxies unavailable (cooling or removed); probe aborted by proxy isolation", KeyIndex(p, key))))
 				}
 				Cooldown(p, key, 2*time.Minute)
 				continue

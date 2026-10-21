@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -835,8 +836,9 @@ func pickZenKey() string {
 			}
 		}
 	}
-	// 面板"启用"列关掉的 key 不参与任何一轮候选（也不被自动铸造，见
-	// 相互独立：路由禁用的 key 仍可被收割机铸造会话）。
+	// 面板"启用"列关掉的 key 不参与任何一轮候选，也不会被自动铸造
+	// （zenKeyAutoHarvestEnabled 跟随路由启用，见 KeyRoutingEnabled 字段注释：
+	// 路由启用是铸造的前提）。
 	routingOff := map[string]bool{}
 	for _, k := range keys {
 		if !zenKeyRoutingEnabled(k) {
@@ -2037,7 +2039,10 @@ func callZenResponsesAPI(ctx context.Context, params map[string]any, stream bool
 		proxyURL, pidx, exitOK := zenAttemptExit(key)
 		if !exitOK {
 			if o.pinKey != "" || pinnedZenKey() != "" {
-				return nil, rateLimited, fmt.Errorf("key#%d bound proxies unavailable (cooling or removed); probe aborted by proxy isolation", keyIndex(key))
+				main, backup, _ := zenKeyBindingOf(key)
+				return nil, rateLimited, errors.New(blockedExitMessage(
+					fmt.Sprintf("key#%d bound proxies unavailable (cooling or removed); probe aborted by proxy isolation", keyIndex(key)),
+					main, backup))
 			}
 			cooldownZenKey(key, 2*time.Minute)
 			retryKey = ""
@@ -2300,7 +2305,10 @@ func callZenAPI(ctx context.Context, params map[string]any, stream bool, opts ..
 			// ZEN_PIN_KEY/pinKey 固定死的 key 没有可换的余地，直接报错；
 			// 正常轮转把该 key 短冷却（pickZenKey 下一轮跳过它）后换 key。
 			if o.pinKey != "" || pinnedZenKey() != "" {
-				return nil, rateLimited, fmt.Errorf("key#%d bound proxies unavailable (cooling or removed); probe aborted by proxy isolation", keyIndex(key))
+				main, backup, _ := zenKeyBindingOf(key)
+				return nil, rateLimited, errors.New(blockedExitMessage(
+					fmt.Sprintf("key#%d bound proxies unavailable (cooling or removed); probe aborted by proxy isolation", keyIndex(key)),
+					main, backup))
 			}
 			cooldownZenKey(key, 2*time.Minute)
 			log.Printf("  zen key#%d bound proxies unavailable, skipping key for 2m", keyIndex(key))

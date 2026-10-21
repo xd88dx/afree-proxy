@@ -10,6 +10,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"afree-proxy/internal/kit"
 )
 
 // ============ 上游调用 ============
@@ -189,7 +191,8 @@ func Chat(ctx context.Context, params map[string]any, modelID string, stream boo
 		proxyURL, ok := resolveExit(key)
 		if !ok {
 			if pin != "" {
-				return nil, rateLimited, fmt.Errorf("key#%d bound proxies unavailable (cooling or removed); probe aborted by proxy isolation", KeyIndex(key))
+				return nil, rateLimited, fmt.Errorf("%s", kit.BoundProbeBlockedMsg("tokenharbor", key,
+					fmt.Sprintf("key#%d bound proxies unavailable (cooling or removed); probe aborted by proxy isolation", KeyIndex(key))))
 			}
 			Cooldown(key, 2*time.Minute)
 			continue
