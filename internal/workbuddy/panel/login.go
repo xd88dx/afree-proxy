@@ -26,7 +26,12 @@ import (
 const (
 	upstreamBaseCN      = "https://copilot.tencent.com"
 	upstreamBaseGlobal  = "https://www.workbuddy.ai"
-	clientUA            = "CLI/2.63.2 CodeBuddy/2.63.2"
+	// clientUA 登录链路模拟的 CLI 身份。取真机 CodeBuddy CLI 2.171.0 的实测值
+	// （见 verified-fingerprints：chat 端点两段式 UA）。升级前实测（2026-10-22）：
+	// 2.63.2 与 2.171.0 在 CN（copilot.tencent.com）与 global（workbuddy.ai）
+	// 两个域的 /v2/plugin/auth/state?platform=CLI 上均返回 200 code=0，
+	// 该端点对 UA 版本不敏感 ⇒ 升版本无回归风险，仅消除"落后 34 个小版本"的暴露面。
+	clientUA            = "CLI/2.171.0 CodeBuddy/2.171.0"
 	originRefererCN     = "https://www.codebuddy.cn"
 	originRefererGlobal = "https://www.workbuddy.ai"
 )

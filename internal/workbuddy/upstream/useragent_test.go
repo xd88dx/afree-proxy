@@ -169,7 +169,10 @@ const (
 )
 
 // TestUserAgentDefaultWorkBuddyShape 默认（无任何配置）聊天/刷新出站 UA =
-// 官方 WorkBuddy 三段式，旧值 `CLI/2.63.2 CodeBuddy/2.63.2` 已被对齐替换。
+// 官方 WorkBuddy 三段式。注意三段式与登录链路的两段式是不同族，勿混：
+//   - 本测试的 CLI/2.137.1 是**桌面端内置 CLI** 版本；
+//   - panel/clientUA 是 **CodeBuddy CLI** 登录身份（2.171.0）；
+//   - codeBuddyCLIUA 是 /v3/config 的**探测旋钮**，故意保留 2.63.2。
 func TestUserAgentDefaultWorkBuddyShape(t *testing.T) {
 	a := &auth.Auth{AccessToken: "at", UID: "u1"}
 	c := &Client{

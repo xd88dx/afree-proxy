@@ -1450,6 +1450,13 @@ const codeBuddyIDEUA = "CodeBuddyIDE/4.12.0 CodeBuddy/4.12.0"
 //     但 **IDE 响应体积更大**（26003B vs 21111B），故「完整能力」应理解为**单条字段更全**，
 //     而非模型更多。两路各有独有模型，缺一不可。
 //  2. 该常量仅用于 global 侧第二路探测；CN 侧仍走 codeBuddyIDEUA 单路。
+//
+// 反例提醒（勿再踩）：这个常量**不跟随真机 CLI 版本升级**，别因为「2.63.2 比
+// 官方 2.171.0 落后」就把它改掉。它不是身份伪装，而是"探出另一套模型集合的
+// 探测旋钮"——上面那 22 条含 deepseek 的集合正是 2.63.2 探到的；换成新版本会
+// 变成未知集合，很可能与 desktop/IDE 两路重叠，反而丢掉 deepseek 独占维度。
+// 且 /v3/config 需要 Bearer 凭据，无凭据无法对拍 ⇒ 改它属于无据变更。
+// 真正需要跟随真机版本的是登录链路的 panel/clientUA（已对齐 2.171.0）。
 const codeBuddyCLIUA = "CLI/2.63.2 CodeBuddy/2.63.2"
 
 // FetchModels 调上游动态模型接口（CN 侧；global 账号见 global_models.go 家族）。

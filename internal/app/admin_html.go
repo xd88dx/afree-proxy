@@ -1022,7 +1022,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
           <div class="wb-field"><label for="wbTimeout">Short request timeout</label><input id="wbTimeout" data-wb-path="upstream.timeout_seconds" data-wb-type="number" min="1" placeholder="120"></div>
           <div class="wb-field"><label for="wbHeaderTimeout">First-byte timeout</label><input id="wbHeaderTimeout" data-wb-path="upstream.header_timeout_seconds" data-wb-type="number" min="1" placeholder="120"></div>
           <div class="wb-field"><label for="wbIdleTimeout">Stream idle timeout</label><input id="wbIdleTimeout" data-wb-path="upstream.idle_timeout_seconds" data-wb-type="number" min="1" placeholder="300"></div>
-          <div class="wb-field"><label for="wbUserAgent">User-Agent</label><input id="wbUserAgent" data-wb-path="upstream.user_agent" data-wb-send-empty="1" placeholder="Leave empty = CLI / 2.63.2 CodeBuddy / 2.63.2"></div>
+          <div class="wb-field"><label for="wbUserAgent">User-Agent</label><input id="wbUserAgent" data-wb-path="upstream.user_agent" data-wb-send-empty="1" placeholder="Leave empty = CLI / 2.171.0 CodeBuddy / 2.171.0"></div>
           <div class="wb-field">
             <label for="wbPromptMode">System prompt mode</label>
             <select id="wbPromptMode" data-wb-path="prompt.mode">
@@ -1913,7 +1913,7 @@ const I18N_ZH = {
   'First-byte timeout': '聊天首字节超时',
   'Stream idle timeout': '流空闲超时',
   'User-Agent': '出站 User-Agent',
-  'Leave empty = CLI / 2.63.2 CodeBuddy / 2.63.2': '留空 = CLI/2.63.2 CodeBuddy/2.63.2',
+  'Leave empty = CLI / 2.171.0 CodeBuddy / 2.171.0': '留空 = CLI/2.171.0 CodeBuddy/2.171.0',
   'System prompt mode': '系统提示词模式',
   'custom — gateway-owned prompt (avoids fingerprint false positives)': 'custom — 网关自有提示词（避免指纹误报）',
   'append — insert gateway prompt after client system (both apply)': 'append — 客户端 system 后插网关提示词（并用）',
