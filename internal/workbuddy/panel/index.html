@@ -4,6 +4,11 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>WorkBuddy2API · 控制台</title>
+<!-- 首屏主题预热：必须留在样式表之前、且是同步外链脚本。
+     html 根节点上的 data-theme="dark" 只是无脚本兜底；真实偏好在 localStorage，
+     只有 body 末尾的 app.js 才读它——那样第一帧已经按深色画完了，刷新就会
+     「先闪一下夜间模式」。theme.js 把判定提到样式表解析之前，见文件头注释。 -->
+<script src="theme.js"></script>
 <style>
 /* ── 设计令牌：明暗两套独立色板 ─────────────────────────────────────────
    冷石墨基调（仪表盘语言，非营销页）：底色分层 + 单一靛蓝强调（仅交互），
@@ -12,6 +17,8 @@
   --bg: #0c0e14; --surface: #14171f; --surface-2: #1a1e28; --raise: #202531;
   --line: #262c3a; --line-soft: #1e232e;
   --ink: #e8ebf2; --ink-2: #a8b0c2; --ink-3: #6b7488;
+  --bh-1: #f0e070; --bh-2: #a7fa70; --bh-3: #70fa93; --bh-4: #70e1fa;
+  --bh-5: #9a8cf5; --bh-6: #ee70fa; --bh-7: #fa7097;
   --accent: #5b7cfa; --accent-ink: #ffffff; --accent-soft: rgba(91,124,250,.13);
   --ok: #3ddc97; --ok-soft: rgba(61,220,151,.12);
   --warn: #f5b544; --warn-soft: rgba(245,181,68,.12);
@@ -24,6 +31,8 @@
   --bg: #f4f5f8; --surface: #ffffff; --surface-2: #f8f9fb; --raise: #ffffff;
   --line: #e2e5ec; --line-soft: #eceef3;
   --ink: #14171f; --ink-2: #545c6e; --ink-3: #8b93a5;
+  --bh-1: #7d7900; --bh-2: #368700; --bh-3: #008a23; --bh-4: #00819e;
+  --bh-5: #1600bf; --bh-6: #af00bf; --bh-7: #bf0036;
   --accent: #3d5fe0; --accent-ink: #ffffff; --accent-soft: rgba(61,95,224,.09);
   --ok: #0f9d63; --ok-soft: rgba(15,157,99,.1);
   --warn: #b47611; --warn-soft: rgba(180,118,17,.11);
@@ -94,16 +103,25 @@ body {
 .qgroup header .nm { font-weight: 600; font-size: 13.5px; }
 .qgroup header .cnt { font-size: 12px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
 .qrow {
-  display: grid; grid-template-columns: 118px 1fr 52px 84px minmax(120px, 240px);
+  display: grid; grid-template-columns: minmax(88px, 118px) minmax(0, 1fr) 72px 96px minmax(100px, 240px);
   gap: 10px; align-items: center; padding: 7.5px 16px; font-size: 13px;
 }
 .qrow:hover { background: var(--surface-2); }
 .qrow .code { font: 11.5px/1.35 var(--mono); color: var(--ink-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .qrow .name { display: flex; align-items: center; gap: 7px; min-width: 0; }
 .qrow .name .t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.qrow .prog { font-variant-numeric: tabular-nums; color: var(--ink-2); text-align: right; }
+.qrow .prog { min-width: 0; font-variant-numeric: tabular-nums; color: var(--ink-2); text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .qrow .st { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
 .qrow .msg { font-size: 12px; color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.qgroup header button { flex: none; margin-left: auto; align-self: center; }
+@media (max-width: 640px) {
+  .qrow { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "name st" "code prog" "msg msg"; gap: 4px 12px; }
+  .qrow .code { grid-area: code; }
+  .qrow .name { grid-area: name; }
+  .qrow .prog { grid-area: prog; }
+  .qrow .st { grid-area: st; }
+  .qrow .msg { grid-area: msg; white-space: normal; overflow-wrap: anywhere; }
+}
 .qdot { width: 7px; height: 7px; border-radius: 50%; flex: none; }
 .qdot.done { background: var(--ok); }
 .qdot.run { background: var(--accent); animation: qpulse 1.2s ease-in-out infinite; }
@@ -112,25 +130,6 @@ body {
 .qdot.skip { background: var(--ink-3); }
 @keyframes qpulse { 50% { opacity: .35; } }
 @media (prefers-reduced-motion: reduce) { .qdot.run { animation: none; } }
-.srow { display: grid; grid-template-columns: minmax(150px, 210px) 1fr auto; gap: 14px; align-items: center; padding: 13px 16px; }
-.srow + .srow { border-top: 1px solid var(--line-soft); }
-.srow .who .nm { font-weight: 600; font-size: 13.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.srow .who .id { font: 10.5px var(--mono); color: var(--ink-3); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.shead {
-  display: grid; grid-template-columns: minmax(150px, 210px) 1fr auto;
-  gap: 14px; align-items: center; padding: 9px 16px 7px;
-  font-size: 11.5px; color: var(--ink-3); border-bottom: 1px solid var(--line-soft);
-}
-.shead .stasks span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.stasks { display: grid; grid-template-columns: repeat(5, minmax(64px, 1fr)); gap: 6px 10px; }
-.stask { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--ink-2); }
-.stask .mark { font-size: 13px; line-height: 1; width: 14px; text-align: center; flex: none; }
-.stask.ok .mark { color: var(--ok); }
-.stask.warn .mark { color: var(--warn); } .stask.warn .fr { color: var(--warn); font-variant-numeric: tabular-nums; }
-.stask.todo { color: var(--ink-3); }
-.srow .luck { display: flex; align-items: center; gap: 5px; font-size: 12.5px; color: var(--ink-2); font-variant-numeric: tabular-nums; white-space: nowrap; }
-.srow .luck svg { width: 14px; height: 14px; opacity: .7; }
-.srow .err { grid-column: 1 / -1; font-size: 12px; color: var(--bad); margin-top: -4px; }
 .pulse { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); flex: none; }
 .pulse.bad { background: var(--bad); }
 .pulse.warn { background: var(--warn); }
@@ -144,7 +143,9 @@ body {
 .topbar .sep { color: var(--ink-3); }
 .topbar .meta { color: var(--ink-3); font-size: 12px; font-family: var(--mono); }
 .topbar .grow { flex: 1; }
-.view { padding: 22px 24px 60px; max-width: 1560px; margin: 0 auto; width: 100%; }
+/* 视图铺满可用宽度：此前 max-width:1180px 在 1920 屏上右侧留 ~530px 空白。
+   .main 是 flex 列，子项默认 stretch，去掉上限即自适应。 */
+.view { padding: 22px 24px 60px; width: 100%; }
 .view[hidden] { display: none; }
 
 /* ── 控件 ─────────────────────────────────────────────────────────── */
@@ -160,11 +161,9 @@ button.primary:hover:not(:disabled) { filter: brightness(1.08); }
 button.ghost { background: transparent; }
 button.danger { color: var(--bad); }
 button.danger:hover:not(:disabled) { border-color: var(--bad); }
-button.xs { padding: 3.5px 9px; font-size: 12.5px; border-radius: 6px; white-space: nowrap; }
-/* select.xs：header 里的紧凑选择框。通用 input/select 规则是 width:100%（表单页用），
-   header 里若不收窄会把同行 note 挤到换行——收成内容宽并压小外观，与 button.xs 同款。 */
-select.xs { width: auto; padding: 3.5px 9px; font-size: 12.5px; border-radius: 6px; }
-button.icon { padding: 7px 9px; }
+button.xs { padding: 3.5px 9px; font-size: 12.5px; border-radius: 6px; }
+/* 图标按钮：flex 居中。默认 inline-block 时 SVG 坐在文字基线上，行盒的下沉空间全落在图标下方（实测上 8 / 下 14.7）。 */
+button.icon { padding: 7px 9px; display: inline-flex; align-items: center; justify-content: center; }
 input, select {
   font: inherit; color: var(--ink); background: var(--surface-2);
   border: 1px solid var(--line); border-radius: 7px; padding: 7px 11px; width: 100%;
@@ -179,6 +178,20 @@ label.fld > .hint { display: block; font-size: 11.5px; color: var(--ink-3); marg
 .inline { display: flex; align-items: center; gap: 9px; }
 
 /* ── 统计条（观测区）──────────────────────────────────────────────── */
+/* 余额趋势的统计卡（bhCard 生成 .st：k 标签在上、v 数值在下）。
+   与 .stat 的区别是 DOM 顺序相反（标签在前），故单独定义而非复用 ——
+   20261021 前缺少这段，导致 4 张卡片既无内边距也无字号层级，
+   表现为「账号5 当前合计18,633」标签与数值黏成一条文本流。 */
+.stats .st { padding: 14px 17px; border-right: 1px solid var(--line-soft); }
+.stats .st:last-child { border-right: none; }
+.stats .st .k { display: block; color: var(--ink-3); font-size: 11.5px; margin-bottom: 5px; }
+.stats .st .v { display: block; font: 600 26px/1.15 var(--mono); font-variant-numeric: tabular-nums; letter-spacing: -.02em; white-space: nowrap; }
+.stats .st .v.ok { color: var(--ok); }
+.stats .st .v.warn { color: var(--warn); }
+.stats .st .v.bad { color: var(--bad); }
+/* 卡数不固定（余额趋势 4 张、别处 7 张）：用 auto-fit 自适应列数，
+   避免固定 repeat(7,1fr) 时 4 张卡片只占前 4 格、右侧大片空白。 */
+.stats.auto { grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); }
 .stats {
   display: grid; grid-template-columns: repeat(7, 1fr);
   border: 1px solid var(--line); border-radius: 11px; background: var(--surface);
@@ -197,16 +210,12 @@ label.fld > .hint { display: block; font-size: 11.5px; color: var(--ink-3); marg
 .box > header h3 { font-size: 13.5px; font-weight: 600; }
 .box > header h3 .hint { font-size: 11.5px; font-weight: 400; color: var(--ink-3); margin-left: 6px; }
 .box > header .grow { flex: 1; }
-.box > header .note { color: var(--ink-3); font-size: 12px; white-space: nowrap; }
+.box > header .note { color: var(--ink-3); font-size: 12px; }
 /* 面板块头部的下拉/输入按内容取宽：全局 input/select 是 width:100%（配置表单要整行），
    在 header 里会把标题挤成两行、把"近 3 天"这类短选项拉成一整条。 */
 .box > header select, .box > header input { width: auto; }
 .box > header h3 { white-space: nowrap; }
 .box .pad { padding: 17px; }
-/* 补偿活动行：昵称 / 状态标 / 截止倒计时 / 额度 / 领取按钮，单行紧凑排布。
-   沿用 .tag 体系染色（ok=已领、warn=待领、bad=临期、mute=中性信息）。 */
-.comp-row { display: flex; align-items: center; gap: 9px; padding: 7px 0; border-bottom: 1px solid var(--line-soft); }
-.comp-row:last-child { border-bottom: none; }
 
 /* ── 账号表（签名元素：健康色条 + 积分量条）───────────────────────── */
 .tbl-wrap { overflow-x: auto; }
@@ -388,10 +397,53 @@ legend { font-size: 12px; color: var(--ink-3); font-weight: 600; padding-bottom:
 }
 .tst.ok { border-left-color: var(--ok); } .tst.err { border-left-color: var(--bad); }
 
+/* 手机版（≤760px）：导航 = 左侧抽屉（桌面隐藏） */
+#btnNav { display: none; }
+.nav-scrim { display: none; }
 @media (max-width: 760px) {
   .shell { grid-template-columns: 1fr; }
-  .nav { position: static; height: auto; flex-direction: row; align-items: center; overflow-x: auto; }
-  .nav ul { display: flex; padding: 8px; } .nav .sig { border: none; }
+  /* 导航：左侧模态抽屉（默认收纳、滑出式） */
+  #btnNav { display: inline-flex; align-items: center; justify-content: center; }
+  .nav-scrim { display: block; position: fixed; inset: 0; background: rgba(6,8,13,.62); opacity: 0; pointer-events: none; transition: opacity .25s; z-index: 65; }
+  .nav-scrim.on { opacity: 1; pointer-events: auto; }
+  .nav {
+    position: fixed; left: 0; top: 0; bottom: 0; height: auto; z-index: 70;
+    width: min(300px, 84vw); min-width: 0; border-right: none;
+    transform: translateX(-105%); visibility: hidden;
+    transition: transform .25s ease-out, visibility .25s;
+    box-shadow: 0 4px 32px rgba(0,0,0,.45);
+  }
+  .nav.open { transform: none; visibility: visible; }
+  .nav ul { overflow-y: auto; min-height: 0; }
+  .nav a { white-space: nowrap; }
+  .nav .sig .row { white-space: nowrap; }
+  body.nav-open { overflow: hidden; }
+  /* 顶栏：允许换行，控件不竖排；右上三钮已图标化，间距收窄 */
+  .topbar { flex-wrap: wrap; gap: 8px 8px; padding: 10px 12px; }
+  .topbar button { padding: 7px 9px; }
+  .topbar h2, .topbar .sep, .topbar .meta { white-space: nowrap; }
+  .topbar .grow { display: none; }
+  .view { padding: 14px 12px 60px; }
+  /* 表格：整表横向滑动（保持桌面列布局，不被压扁） */
+  table.acc { display: block; overflow-x: auto; white-space: nowrap; }
+  /* 分类条 / 选项 chips：横向滑动 */
+  .chips { display: flex; min-width: 0; overflow-x: auto; padding-bottom: 2px; }
+  .chips .chip { flex: none; }
+  /* 触控：按钮放大；输入 16px 防 iOS 聚焦自动放大 */
+  button.xs { padding: 6px 12px; }
+  .chips .chip { padding: 5px 12px; }
+  input, select, textarea { font-size: 16px; }
+  /* 弹窗：底部抽屉式（!important 压过内联 width） */
+  .veil.on { align-items: flex-end; padding: 0; }
+  .dlg { width: 100% !important; max-width: 100% !important; max-height: 92vh; border-radius: 16px 16px 0 0; }
+  /* 详情类弹窗表格：长值折行而不是横向溢出 */
+  .dlg table.acc { white-space: normal; }
+  .dlg table.acc td { word-break: break-word; }
+  /* Toast：全宽 */
+  #toasts { left: 12px; right: 12px; bottom: 14px; align-items: stretch; }
+  .tst { max-width: none; }
+  /* 卡片头允许换行（计数等不被挤成竖排） */
+  .box header { flex-wrap: wrap; row-gap: 6px; }
   .stat { border-right: none; border-bottom: 1px solid var(--line-soft); }
 }
   /* ── 用量视图 ─────────────────────────────────────────────────────
@@ -435,13 +487,22 @@ legend { font-size: 12px; color: var(--ink-3); font-weight: 600; padding-bottom:
     background: var(--surface-2); }
   .uschart-hd { display: flex; align-items: center; gap: 10px; padding: 10px 14px;
     border-bottom: 1px solid var(--line-soft); font-size: 12px; }
-  .uschart-hd .lb { color: var(--ink-2); font-weight: 600; }
+  /* 图例里的账号名：超长名（如「汪羽杰（工作相关内容不要发v）」）会挤压整个卡头，
+   按 12em 截断 + 省略号，完整名放 title 悬浮可见。 */
+.uschart-hd .legend .lg-name { display: inline-block; max-width: 12em; overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom; }
+.uschart-hd .lb { color: var(--ink-2); font-weight: 600; }
   .uschart-hd .legend { color: var(--ink-3); font-size: 11.5px; display: flex; align-items: center; gap: 6px; }
   .uschart-hd .legend .sep { width: 1px; height: 11px; background: var(--line); margin: 0 3px; }
   .uschart-hd .sw { width: 9px; height: 9px; border-radius: 2px; display: inline-block; }
   .uschart-hd .sw-p { background: var(--accent); }
   .uschart-hd .sw-c { background: var(--ok); }
-  .uschart-hd .sw-t { background: var(--warn); }
+  .uschart-hd .sw-hit { background: var(--warn); }
+  /* 均值是虚线参考线：色块用同色虚纹，和实线的「缓存命中率」一眼可分。 */
+  .uschart-hd .sw-t { background: repeating-linear-gradient(90deg, var(--warn) 0 4px, transparent 4px 6px); }
+  /* 缓存命中率曲线（右轴 0-100%）：折线 + 每个数据点一个圆点。 */
+  .uschart-body .hitline { fill: none; stroke: var(--warn); stroke-width: 1.6; }
+  .uschart-body .hitdot { fill: var(--warn); }
   .uschart-body { padding: 8px 10px 4px; }
   .uschart-body svg { display: block; width: 100%; height: auto; }
   .uschart-body .ax { stroke: var(--line); stroke-width: 1; }
@@ -482,12 +543,6 @@ legend { font-size: 12px; color: var(--ink-3); font-weight: 600; padding-bottom:
     font-size: 11px; color: var(--ink-3); }
   .pk-legend span { display: flex; align-items: center; gap: 5px; }
   .pk-legend i { width: 9px; height: 9px; border-radius: 2px; display: inline-block; }
-  .pk-group-summary td { padding: 7px 11px; background: var(--surface-2); }
-  .pk-group-toggle { width: 100%; padding: 4px 0; border: 0; background: transparent;
-    color: var(--ink-2); text-align: left; }
-  .pk-group-toggle:hover:not(:disabled) { border: 0; color: var(--accent); }
-  .pk-hidden-row[hidden] { display: none; }
-  .pk-hidden-row td { color: var(--ink-3); }
   .pk-expiry-chart { max-height: 260px; overflow-y: auto; overflow-x: hidden;
     scrollbar-gutter: stable; scrollbar-width: thin; padding-right: 10px;
     overscroll-behavior: contain; }
@@ -512,9 +567,12 @@ legend { font-size: 12px; color: var(--ink-3); font-weight: 600; padding-bottom:
   .pk-expiry-foot { margin-top: 9px; padding-top: 8px; border-top: 1px solid var(--line-soft);
     color: var(--ink-3); font-size: 11px; }
   .pk-expiry-empty { padding: 22px 0; text-align: center; color: var(--ink-3); font-size: 12px; }
-  .pk-card .expirybar { display: flex; height: 5px; border-radius: 3px; overflow: hidden;
-    margin-top: 6px; background: var(--surface-2); }
-  .pk-card .expirybar i { display: block; height: 100%; min-width: 2px; }
+  .pk-group-summary td { padding: 7px 11px; background: var(--surface-2); }
+  .pk-group-toggle { width: 100%; padding: 4px 0; border: 0; background: transparent;
+    color: var(--ink-2); text-align: left; }
+  .pk-group-toggle:hover:not(:disabled) { border: 0; color: var(--accent); }
+  .pk-hidden-row[hidden] { display: none; }
+  .pk-hidden-row td { color: var(--ink-3); }
 
   /* ── 筛选栏（模型档位 / 运行日志 / 用量共用）─────────────────────────
      面板控件默认 input/select 是 width:100%（配置表单要整行），筛选栏里必须显式
@@ -578,22 +636,15 @@ legend { font-size: 12px; color: var(--ink-3); font-weight: 600; padding-bottom:
   .clip.ip { max-width: 150px; font-family: var(--mono); font-size: 12.5px; }
   .clip.rid { max-width: 150px; font-family: var(--mono); font-size: 11.5px; color: var(--ink-3); }
   .acc.req .muted { color: var(--ink-3); }
+  /* 错误汇总：严重度着色（bad 需处理 / warn 需留意），与日志行同色系 */
+  .acc.req tr.lv-e td { color: var(--bad); }
+  .acc.req tr.lv-w td { color: var(--warn); }
+  .acc.req td.sample { max-width: 380px; overflow: hidden; text-overflow: ellipsis; }
   .src-off { color: var(--warn); }
 
   /* 用量统计条已改用 .kpis（见「用量视图」段），此处不再保留 .stats.compact 变体。 */
 
-  /* 到期提醒卡片（首页）：每账号一行，色点=危险度，正文数字用 mono 对齐。 */
-  .exp-row { display: flex; align-items: flex-start; gap: 10px; padding: 8px 0;
-    font-size: 12.5px; }
-  .exp-row + .exp-row { border-top: 1px solid var(--line-soft); }
-  .exp-dot { width: 9px; height: 9px; border-radius: 50%; margin-top: 4px; flex: none; }
-  .exp-nm { font-weight: 600; flex: none; min-width: 9em; }
-  .exp-main { color: var(--ink-2, inherit); }
-  .exp-main b { font-family: var(--mono); font-variant-numeric: tabular-nums; }
-  .exp-main .note { margin-top: 2px; font-size: 11px; color: var(--ink-3); }
-  .exp-main.err { color: var(--bad); }
-
-  /* ── 账号备注（本机 localStorage，不写服务器）─────────────────────────
+  /* ── 账号备注（本机 localStorage，不写服务器）─────────────────────
      有备注时备注当主标识，原昵称 / uid8 以 .rm-ghost 浅色跟随。账号池、用量明细、
      积分扣除三张表共用同一套渲染，保证同一账号在两个视图里显示一致。 */
   .rm-ghost { color: var(--ink-3); font-weight: 400; margin-left: .35em; }
@@ -603,13 +654,23 @@ legend { font-size: 12px; color: var(--ink-3); font-weight: 600; padding-bottom:
     color: var(--ink-2); font-size: 12.5px; }
   .rm-row input { flex: 1; }
 
+.acc td.fl { line-height: 1.35; }
+.acc td.fl .fl-row { display: block; font-variant-numeric: tabular-nums; }
+.acc td.fl .fl-sub { font-size: 11.5px; color: var(--ink-3); }
+.fl-v { color: var(--ink-2); }
+.fl-dim { opacity: .62; }
+.fl-zero { color: var(--ink-3); }
+.fl-na { color: var(--ink-3); }
+  .bh-daylegend { display: flex; flex-wrap: wrap; gap: 10px; align-items: center;
+  .bh-daylegend .sw { display: inline-block; width: 9px; height: 9px; border-radius: 2px;
+  .bh-daylegend .lg-key { display: inline-flex; align-items: center; }
+  .bh-daylegend .lg-sep { width: 1px; height: 12px; background: var(--line); }
+  .bh-daylegend .lg-order { color: var(--ink-3); }
 </style>
-<!-- 移动端适配：独立文件，必须在主 <style> 之后（@media 覆盖依赖层叠顺序） -->
-<link rel="stylesheet" href="mobile.css">
 </head>
 <body>
 <div class="shell">
-  <nav class="nav" id="navDrawer">
+  <nav class="nav">
     <div class="brand">
       <div class="name">WorkBuddy2API</div>
       <div class="sub" id="navSub">控制台</div>
@@ -624,6 +685,8 @@ legend { font-size: 12px; color: var(--ink-3); font-weight: 600; padding-bottom:
       <li><a href="#packages" data-view="packages">
         <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2.2 5.4 8 2.5l5.8 2.9v5.2L8 13.5l-5.8-2.9z"/><path d="M2.2 5.4 8 8.3l5.8-2.9M8 8.3v5.2"/></svg>
         积分构成</a></li>
+      <li><a href="#balhist" data-view="balhist">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2.2 5.4 8 2.5l5.8 2.9v5.2L8 13.5l-5.8-2.9z"/><path d="M2.2 5.4 8 8.3l5.8-2.9M8 8.3v5.2"/></svg>余额趋势</a></li>
       <li><a href="#taskscenter" data-view="taskscenter">
         <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M3 2.5h10v9H8l-3 3v-3H3z"/><path d="M6 6.5h4M6 9h2.5"/></svg>
         任务中心</a></li>
@@ -642,12 +705,12 @@ legend { font-size: 12px; color: var(--ink-3); font-weight: 600; padding-bottom:
       <div class="row" style="margin-top:5px"><span id="navVer">v-</span> · <span id="navRedis">-</span></div>
     </div>
   </nav>
+  <div class="nav-scrim" id="navScrim"></div>
 
   <div class="main">
     <div class="topbar">
-      <!-- 汉堡按钮：桌面端由 .nav-btn{display:none} 隐藏，手机端才出现 -->
-      <button class="icon ghost nav-btn" id="navBtn" aria-label="打开导航" aria-controls="navDrawer" aria-expanded="false">
-        <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><path d="M2.5 4h11M2.5 8h11M2.5 12h11"/></svg>
+      <button class="icon ghost" id="btnNav" title="导航" aria-label="打开导航" aria-expanded="false">
+        <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2.5 4.5h11M2.5 8h11M2.5 11.5h11"/></svg>
       </button>
       <h2 id="ttl">账号池</h2>
       <span class="sep">/</span>
@@ -656,8 +719,15 @@ legend { font-size: 12px; color: var(--ink-3); font-weight: 600; padding-bottom:
       <button class="icon ghost" id="btnTheme" title="切换明暗（跟随系统 → 浅色 → 深色）" aria-label="切换主题">
         <svg id="icoTheme" viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M13.2 9.6A5.6 5.6 0 0 1 6.4 2.8a5.6 5.6 0 1 0 6.8 6.8z"/></svg>
       </button>
-      <button id="btnRefresh">刷新</button>
-      <button class="primary" id="btnAdd">添加账号</button>
+      <button class="icon ghost" id="btnRefresh" title="刷新" aria-label="刷新">
+        <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9M13.5 1.5v3h-3"/></svg>
+      </button>
+      <button class="icon ghost" id="btnLogout" title="登出（清空本机密钥）" aria-label="登出">
+        <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M6.5 2.5h-3a1 1 0 0 0-1 1v9a1 1 0 0 0 1 1h3M10 5l3 3-3 3M13 8H6"/></svg>
+      </button>
+      <button class="icon primary" id="btnAdd" title="添加账号" aria-label="添加账号">
+        <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M8 3.5v9M3.5 8h9"/></svg>
+      </button>
     </div>
 
     <!-- 账号池 -->
@@ -666,40 +736,30 @@ legend { font-size: 12px; color: var(--ink-3); font-weight: 600; padding-bottom:
         <div class="stat"><div class="v" id="sTotal">-</div><div class="k">账号总数</div></div>
         <div class="stat good"><div class="v" id="sHealthy">-</div><div class="k">可用</div></div>
         <div class="stat warn"><div class="v" id="sCooling">-</div><div class="k">冷却中</div></div>
-        <div class="stat bad"><div class="v" id="sDisabled">-</div><div class="k">已禁用</div></div>
         <div class="stat warn"><div class="v" id="sPaused">-</div><div class="k">已暂停选号</div></div>
+        <div class="stat bad"><div class="v" id="sDisabled">-</div><div class="k">已禁用</div></div>
         <div class="stat"><div class="v" id="sCredits">-</div><div class="k">积分剩余 / 总额</div></div>
         <div class="stat"><div class="v" id="sSticky">-</div><div class="k">粘性会话</div></div>
       </div>
 
-      <!-- 卡片默认可见：此前 hidden + 「仅点检查才渲染」形成死锁（按钮藏在隐藏卡片里，
-           用户看不到也就点不到，issue #137）。现在进页面即用 /overview 的到期快照渲染
-           （数据来自 state.json，不经上游），「检查」按钮改为拉取逐包明细的增强入口。 -->
-      <div class="box" id="expBox">
+      <!-- 到期提醒：数据取 /overview 的 credits_expiry_buckets（签到与余额后台刷新
+           按自然日聚合后写入 state.json），打开页面零上游请求。同日多个包合并为一行，
+           后续批次在日期下方列出；完整逐包明细在「积分构成」页。 -->
+      <div class="box">
         <header>
-          <h3>积分到期提醒<span class="hint">按最近到期批次估算 · 日均需耗 = 批次剩余 ÷ 距到期天数 · 上游按失效时刻先后自动优先扣减（FEFO）</span></h3>
+          <h3>积分到期提醒 <span class="hint">按自然日聚合 · 日均需耗 = 该日到期积分 ÷ 距到期天数 · 上游按失效时刻先后自动优先扣减（FEFO）</span></h3>
           <span class="grow"></span>
           <span class="note" id="expNote"></span>
-          <button class="xs" id="btnExpFold" aria-expanded="true">收起</button>
-          <button class="xs" id="btnExp">检查</button>
         </header>
-        <div class="pad" id="expPad"><div id="expList"></div></div>
-      </div>
-
-      <!-- 官方补偿活动（issue #189）：「模型服务异常额外补偿 N 积分」这类限时补偿在账号侧
-           可见，但网关原先只在每日签到后盲领一次，「没有 / 已领过 / 领取真失败」三态在
-           日志里同构，补偿带截止日时签到一停就静默过期。这里把它显式摆出来：截止倒计时 +
-           逐号领取 + 全部领取。无生效活动时整卡隐藏——隐藏的是卡片本身、且渲染不依赖用户
-           点它，故不构成 issue #137 那种「入口藏在自己隐藏卡片里」的死锁。 -->
-      <div class="box" id="compBox" hidden>
-        <header>
-          <h3>官方补偿<span class="hint">服务异常等限时补偿 · 查状态后按需领取 · 不占用每日签到</span></h3>
-          <span class="grow"></span>
-          <span class="note" id="compNote"></span>
-          <button class="xs" id="btnCompRefresh">检查</button>
-          <button class="xs" id="btnCompClaimAll">全部领取</button>
-        </header>
-        <div class="pad"><div id="compList"></div></div>
+        <div class="tbl-wrap">
+        <table class="acc">
+          <thead><tr>
+            <th>账号</th><th>最近到期</th><th class="num">距到期</th>
+            <th class="num">该日到期</th><th class="num">日均需耗</th>
+          </tr></thead>
+          <tbody id="expBody"></tbody>
+        </table>
+        </div>
       </div>
 
       <div class="box">
@@ -725,6 +785,8 @@ legend { font-size: 12px; color: var(--ink-3); font-weight: 600; padding-bottom:
         </div>
       </div>
 
+      <!-- 模型锁池：账号池回答「哪些号不能用」，这张表回答「哪些模型不能用、还要锁多久」。
+           数据来自 /panel/api/overview 的 model_locks（与 /status 同源，无锁时为 null）。 -->
       <div class="box">
         <header>
           <h3>模型锁池 <span class="hint">哪些模型不能用、还要锁多久</span></h3>
@@ -743,19 +805,22 @@ legend { font-size: 12px; color: var(--ink-3); font-weight: 600; padding-bottom:
       </div>
     </section>
 
-    <!-- 任务中心 -->
+    <!-- 任务中心：后台自动任务的进展与待办扫描/队列共用一张卡、一个列表
+         （两者都是"某账号的任务进展"，只是来源不同：常驻 jobs vs 一次性队列） -->
     <section class="view" id="view-taskscenter" hidden>
       <div class="box">
         <header>
-          <h3>成长任务队列 <span class="hint" id="qcSummary"></span></h3>
+          <h3>成长任务 <span class="hint" id="tcSummary"></span></h3>
           <span class="grow"></span>
-          <button class="xs" id="btnSchoolVouchers" title="开学季抽奖抽中的第三方券码（活动已结束，历史券码仍可查）">查询券码</button>
           <label class="sel-note">并发
             <select id="qcConc"><option value="1" selected>1</option><option value="2">2</option><option value="3">3</option></select>
           </label>
+          <button class="xs" id="btnSchoolVouchers" title="开学季抽奖抽中的第三方券码（活动已结束，历史券码仍可查）">查询券码</button>
           <button class="xs" id="btnScanAll">扫描待办</button>
+          <button class="xs" id="btnTaskJobsReload">刷新进度</button>
           <button class="xs primary" id="btnRunQueue">执行全部待办</button>
         </header>
+        <div class="state" id="taskJobsNote">新增国区账号后自动执行，每日按成长任务排程继续推进；可在账号任务中手动启动。</div>
         <div class="qprog" id="qProg" hidden>
           <div class="qbar"><i id="qBarFill"></i></div>
           <span class="note" id="qProgText"></span>
@@ -767,9 +832,31 @@ legend { font-size: 12px; color: var(--ink-3); font-weight: 600; padding-bottom:
             <circle cx="35" cy="33" r="8"/><path d="m40 38 5 5"/>
           </svg>
           <div class="t">还没有扫描过</div>
-          <div class="d">扫描所有账号的成长任务与开学季待办，把没做的排成一列，一键执行。</div>
+          <div class="d">扫描所有账号没做完的成长任务，排成一列，一键执行。</div>
         </div>
         <div id="qcList"></div>
+      </div>
+
+      <!-- 官方补偿：带截止日的限时活动，与成长任务同属「今天要不要动手」的事，故放任务中心。
+           取数只在进入本视图 / 点「检查」 / 点领取时发生（补偿状态没有 overview 快照可吃，
+           挂进 5s 刷新就是每 5 秒打上游），倒计时走动由前端对缓存做本地重渲染。 -->
+      <div class="box">
+        <header>
+          <h3>官方补偿 <span class="hint">先查状态再领 · 无待领不发领取请求</span></h3>
+          <span class="grow"></span>
+          <span class="note" id="compNote"></span>
+          <button class="xs" id="btnCompRefresh">检查</button>
+          <button class="xs primary" id="btnCompAll">全部领取</button>
+        </header>
+        <div class="tbl-wrap">
+        <table class="acc">
+          <thead><tr>
+            <th>账号</th><th>状态</th><th class="num">可领</th>
+            <th class="num">距截止</th><th class="c-acts"></th>
+          </tr></thead>
+          <tbody id="compBody"></tbody>
+        </table>
+        </div>
       </div>
     </section>
 
@@ -832,6 +919,60 @@ legend { font-size: 12px; color: var(--ink-3); font-weight: 600; padding-bottom:
       </div>
     </section>
 
+<section class="view" id="view-balhist" hidden>
+      <div class="box">
+        <header>
+          <h3>余额趋势</h3>
+          <span class="grow"></span>
+          <span class="seg" id="bhRealmSeg"></span>
+          <span class="note" id="bhNote">—</span>
+          <select id="bhWindow" class="xs">
+            <option value="1">近 24 小时</option>
+            <option value="7">近 7 天</option>
+            <option value="30" selected>近 30 天</option>
+          </select>
+          <button class="xs" id="btnBalHist">刷新</button>
+        </header>
+        <div class="stats auto" id="bhStats"></div>
+        <div class="pad">
+          <div class="uschart">
+            <div class="uschart-hd">
+              <span class="lb">积分水位（每 30 分钟一点）</span>
+              <span class="grow"></span>
+              <span class="legend" id="bhLegend"></span>
+            </div>
+            <div id="bhChart" class="uschart-body"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="box">
+        <header><h3>每日变化</h3><span class="grow"></span>
+          <span class="note" id="bhDailyNote">每账号每天一根：绿=当日净增，红=当日净减；浅色/斜纹 = 该日采样不完整</span>
+        </header>
+        <div class="pad">
+          <div id="bhDaily" class="uschart-body"></div>
+          <div class="bh-daylegend" id="bhDailyLegend"></div>
+        </div>
+      </div>
+
+      <div class="box">
+        <header><h3>按账号</h3><span class="grow"></span>
+          <span class="note">净变化 = 窗口末值 − 窗口首值</span></header>
+        <div class="tbl-wrap">
+          <table class="acc">
+            <thead><tr>
+              <th class="mark" aria-hidden="true"></th><th>账号</th>
+              <th class="num">当前</th><th class="num">最低</th><th class="num">最高</th>
+              <th class="num">净变化</th><th class="num">今日</th><th class="num">昨日</th><th class="num" title="上行=今日、下行=本月。均为按 30 分钟采样估算的消耗（相邻采样下降量之和）；采样间隔远粗于真实事件密度，同一窗口内的消耗与到账会被合并为净差，故为下界估计，实际可能更高。本月值受窗口限制，若窗口未覆盖整月会以淡化+提示标注。">消耗*</th><th class="num" title="上行=今日、下行=本月。均为按 30 分钟采样估算的到账（相邻采样上升量之和），口径与「消耗*」相同。">到账*</th><th class="num">采样点</th>
+            </tr></thead>
+            <tbody id="bhAccBody"></tbody>
+            <tfoot id="bhAccFoot"></tfoot>
+          </table>
+        </div>
+      </div>
+    </section>
+
     <!-- 积分构成 -->
     <section class="view" id="view-packages" hidden>
       <div class="box">
@@ -848,10 +989,6 @@ legend { font-size: 12px; color: var(--ink-3); font-weight: 600; padding-bottom:
           <h3>账号对比</h3>
           <span class="grow"></span>
           <span class="note" id="pkNote">—</span>
-          <select id="pkSort" class="xs" title="逐包明细的排序规则">
-            <option value="end_asc" selected>按到期时间</option>
-            <option value="size_desc">按面额大小</option>
-          </select>
           <button class="xs" id="btnPk">刷新</button>
         </header>
         <div class="pad"><div class="pk-grid" id="pkSummary"></div></div>
@@ -876,13 +1013,25 @@ legend { font-size: 12px; color: var(--ink-3); font-weight: 600; padding-bottom:
               <span class="lb">Token 时序</span>
               <span class="note" id="usChartNote">—</span>
               <span class="grow"></span>
-              <span class="legend">
-                <i class="sw sw-p"></i>prompt<i class="sw sw-c"></i>completion
-                <span class="sep"></span><i class="sw sw-t"></i>均值
-              </span>
+              <span class="legend"><i class="sw sw-p"></i>prompt<i class="sw sw-c"></i>completion<span class="sep"></span><i class="sw sw-hit"></i>缓存命中率<i class="sw sw-t"></i>均值</span>
             </div>
             <div id="usChart" class="uschart-body"></div>
           </div>
+        </div>
+      </div>
+
+      <div class="box">
+        <header><h3>积分与 token 按小时</h3><span class="grow"></span>
+          <span class="note">积分取上游 usage.credit（没观测到的请求不计）；兑换率 = token ÷ 积分</span></header>
+        <div class="tbl-wrap">
+          <table class="acc">
+            <thead><tr>
+              <th class="mark" aria-hidden="true"></th><th>时段</th>
+              <th class="num">请求</th><th class="num">Prompt</th><th class="num">Completion</th>
+              <th class="num">合计</th><th class="num">积分</th><th class="num">token/积分</th>
+            </tr></thead>
+            <tbody id="usHourBody"></tbody>
+          </table>
         </div>
       </div>
 
@@ -990,6 +1139,26 @@ legend { font-size: 12px; color: var(--ink-3); font-weight: 600; padding-bottom:
             </div>
             <div class="hr"></div>
             <div class="grid2">
+              <div>
+                <div class="switch"><span class="lb">成长任务队列</span>
+                  <input type="checkbox" name="growth_enabled"></div>
+                <label class="fld"><span class="lb">执行时点（小时，逗号分隔）</span>
+                  <input name="growth_hours" placeholder="11">
+                  <span class="hint">开关同时控制新增国区账号和每日后台执行。每日到点推进未完成项，建议设在零点后。</span></label>
+                <label class="fld"><span class="lb">账号间并发</span>
+                  <input name="growth_concurrency" type="number" min="1" max="4" placeholder="1">
+                  <span class="hint">1-4；调高更快，上游风控暴露面更大</span></label>
+              </div>
+              <div>
+                <div class="switch"><span class="lb">夜猫子</span>
+                  <input type="checkbox" name="blackcat_enabled"></div>
+                <label class="fld"><span class="lb">补足时点（小时，逗号分隔）</span>
+                  <input name="blackcat_hours" placeholder="23">
+                  <span class="hint">只在 23:00–08:00 计数窗口内生效，窗口外自动跳过</span></label>
+              </div>
+            </div>
+            <div class="hr"></div>
+            <div class="grid2">
               <div class="switch"><span class="lb">后台刷新余额</span>
                 <input type="checkbox" name="balance_refresh_enabled"></div>
               <label class="fld"><span class="lb">刷新间隔（分钟）</span>
@@ -997,20 +1166,20 @@ legend { font-size: 12px; color: var(--ink-3); font-weight: 600; padding-bottom:
             </div>
             <div class="hr"></div>
             <div class="grid2">
-              <div class="switch"><span class="lb">成长任务自动执行</span>
-                <input type="checkbox" name="growth_enabled" checked></div>
-              <label class="fld"><span class="lb">执行时点（小时，逗号分隔）</span>
-                <input name="growth_hours" placeholder="1">
-                <span class="hint">每日到点自动「扫描 + 执行全部待办」（Sequential 任务链零点解锁后自动推进，建议零点后）</span></label>
-            </div>
-            <div class="hr"></div>
-            <div class="grid2">
-              <div class="switch"><span class="lb">任务补领清扫</span>
-                <input type="checkbox" name="task_sweep_enabled" checked></div>
+              <div class="switch"><span class="lb">补领清扫（达标未领自动补领）</span>
+                <input type="checkbox" name="task_sweep_enabled"></div>
               <label class="fld"><span class="lb">清扫间隔（分钟）</span>
                 <input name="task_sweep_minutes" type="number" min="1" placeholder="15"></label>
             </div>
-            <div class="hint">周期扫描全部账号，把「进度已达标但尚未领奖」的成长任务补领掉（不含自动动作的口令任务也能领），并顺带接受未接受的任务。只发 accept / claim 两条<b>幂等</b>请求，不跑任何对话或上报行为，开销可忽略。<br>用途：真实对话点亮的任务不在自动动作白名单里，成长队列与「一键完成」都不会去领它——积分因此卡在半路上不去（#174）。</div>
+            <div class="hr"></div>
+            <div class="grid2">
+              <label class="fld"><span class="lb">账号摊开窗口（分钟）</span>
+                <input name="account_spread_minutes" type="number" min="0" max="1440" placeholder="0">
+                <span class="hint">0 = 关闭（同一秒打全池）。&gt;0 时签到 / 旅行 / 活跃上报 / 保活 / 夜猫子把账号错开在窗口内各自的时刻。手动触发不受影响。窗口应小于相邻时点间隔。</span></label>
+              <label class="fld"><span class="lb">账号最小间隔（秒）</span>
+                <input name="account_spread_min_gap_seconds" type="number" min="0" max="3600" placeholder="0">
+                <span class="hint">0 = 只做随机。两个账号撞在同一时段时把后者推开；账号数 × 该值接近窗口时末尾会挤在一起。</span></label>
+            </div>
             <div class="hr"></div>
             <div class="switch"><span class="lb">保号任务覆盖已禁用账号</span>
               <input type="checkbox" name="include_disabled_in_tasks"></div>
@@ -1021,27 +1190,6 @@ legend { font-size: 12px; color: var(--ink-3); font-weight: 600; padding-bottom:
         <div class="box">
           <header><h3>账号池与流量治理</h3></header>
           <div class="pad">
-            <div class="grid3">
-              <label class="fld"><span class="lb">国内版调度策略</span>
-                <select name="strategy_domestic">
-                  <option value="weighted_random">加权随机（默认）</option>
-                  <option value="round_robin">轮询</option>
-                  <option value="sequential_exhaust">顺序耗尽</option>
-                </select></label>
-              <label class="fld"><span class="lb">国际版调度策略</span>
-                <select name="strategy_international">
-                  <option value="weighted_random">加权随机（默认）</option>
-                  <option value="round_robin">轮询</option>
-                  <option value="sequential_exhaust">顺序耗尽</option>
-                </select></label>
-            </div>
-            <div class="grid3">
-              <label class="fld"><span class="lb">国内版账号顺序（UID）</span>
-                <input name="domestic_account_order" placeholder="uid1, uid2, uid3"></label>
-              <label class="fld"><span class="lb">国际版账号顺序（UID）</span>
-                <input name="international_account_order" placeholder="uid1, uid2, uid3"></label>
-            </div>
-            <div class="hint">按地区独立热生效；未列出的账号按 UID 排序追加。指针按地区和模型分别保存。会话粘性、模型成本分层优先；有序策略等待冷却恢复，不提前试探。临时重试或在途占满不推进顺序耗尽的主账号。闲置与快过期积分权重仅用于加权随机。</div>
             <div class="grid3">
               <label class="fld"><span class="lb">单账号最大在途</span>
                 <input name="max_in_flight" type="number" min="0" placeholder="3">
@@ -1084,12 +1232,18 @@ legend { font-size: 12px; color: var(--ink-3); font-weight: 600; padding-bottom:
               <label class="fld"><span class="lb">积分保底</span>
                 <input name="credit_floor" type="number" min="0" placeholder="100">
                 <span class="hint">余额低于此值不再接实测收费模型（保住免费模型可用）；0 关闭</span></label>
+              <label class="fld"><span class="lb">保底倍率上限</span>
+                <input name="credit_floor_max_rate" type="number" min="0" step="0.01" placeholder="0">
+                <span class="hint">无实测账本时，目录倍率 ≤ 此值才放行（让便宜新模型跑出第一笔账本）；0 = 任何已知收费倍率都拦</span></label>
               <label class="fld"><span class="lb">快过期路由窗口</span>
                 <input name="expiring_soon" placeholder="168h">
                 <span class="hint">窗口内有快过期批次的账号选号权重 ×3（不排序、与金额无关）；0 关闭</span></label>
               <label class="fld"><span class="lb">会话粘性 TTL</span>
                 <input name="ttl" placeholder="30m">
                 <span class="hint">改动需重启进程</span></label>
+              <label class="fld"><span class="lb">保留积分</span>
+                <input name="reserve_credits" type="number" min="0" placeholder="10">
+                <span class="hint">余额低于该值的账号停止接单（0 = 关闭，缺省 10）</span></label>
             </div>
             <div class="switch"><span class="lb">快过期积分优先</span>
               <input type="checkbox" name="prefer_expiring"></div>
@@ -1118,6 +1272,16 @@ legend { font-size: 12px; color: var(--ink-3); font-weight: 600; padding-bottom:
             </div>
             <div class="hr"></div>
             <div class="grid2">
+              <label class="fld"><span class="lb">模型黑名单</span>
+                <input name="models_hidden" placeholder="deepseek-pro, cn:legacy-model">
+                <span class="hint">逗号分隔；裸名隐藏两域，cn: / global: 只隐藏该域；/v1/models 不列且点名调用直接拒绝，保存即热生效</span></label>
+              <label class="fld"><span class="lb">模型映射</span>
+                <input name="models_aliases" placeholder="claude-opus-4=glm-5.2, gpt-5=global:gpt-5.4">
+                <span class="hint">逗号分隔的「客户端名=真实模型名」；真实名可带 cn:/global: 前缀跨域指向；响应回显客户端原发名；目标仍受黑名单约束，保存即热生效</span></label>
+            </div>
+
+            <div class="hr"></div>
+            <div class="grid2">
               <label class="fld"><span class="lb">系统提示词模式</span>
                 <select name="prompt_mode">
                   <option value="custom">custom — 网关自有提示词（避免指纹误报）</option>
@@ -1132,6 +1296,12 @@ legend { font-size: 12px; color: var(--ink-3); font-weight: 600; padding-bottom:
             <div class="hr"></div>
             <div class="switch"><span class="lb">出站请求指纹脱敏</span>
               <input type="checkbox" name="sanitize_blacklist_fingerprints"></div>
+            <label class="fld"><span class="lb">品牌词规则作用域</span>
+              <select name="sanitize_brand_scope">
+                <option value="all">all — 所有消息角色（默认，与上游一致）</option>
+                <option value="identity">identity — 仅 system / developer</option>
+              </select>
+              <span class="hint">指纹脱敏总开关打开时生效。all 会改写 user / assistant / tool 历史里的同名文本；identity 只改身份消息，用户数据原样透传。</span></label>
             <div class="switch"><span class="lb">会话粘性路由</span>
               <input type="checkbox" name="session_sticky_enabled"></div>
             <div class="hint" style="margin-top:10px">Upstash Redis 镜像、凭证目录与状态文件路径需手工编辑配置文件（判为重启项）。</div>
@@ -1164,9 +1334,12 @@ legend { font-size: 12px; color: var(--ink-3); font-weight: 600; padding-bottom:
         <header>
           <h3>请求记录 <span class="hint">调用来源：IP 取 X-Forwarded-For 首段，无代理头时回落 TCP 对端</span></h3>
           <span class="grow"></span>
-          <span class="note" id="reqSummary">—</span>
           <span class="note" id="reqNote">—</span>
         </header>
+        <!-- reqStats：指标行容器（renderRequestMetrics 写入）。合并 #87 时新排版丢了它，
+             而 loadLogs 里的 renderRequestMetrics 仍写这个 id —— 元素缺失时抛错被
+             loadLogs 的 try/catch 吞掉，整块运行日志渲染不出来（只有它这一个 id 悬空）。 -->
+        <div class="stats" id="reqStats"></div>
         <div class="fbar" id="reqFilter">
           <input id="reqQ" type="search" placeholder="搜索 IP / UA / 模型 / 账号 / 请求 ID" aria-label="搜索请求记录">
           <select id="reqOutcome" aria-label="按结果筛选">
@@ -1198,6 +1371,25 @@ legend { font-size: 12px; color: var(--ink-3); font-weight: 600; padding-bottom:
         </div>
       </div>
 
+      <!-- 错误汇总：日志环里的 WARN/ERR 按「账号 × 类型」聚合（见 errors.go）。
+           原始日志几十行同质 WARN 时，「谁报错 44 次、谁只 1 次」这个差异只能靠聚合才看得见。 -->
+      <div class="box">
+        <header>
+          <h3>错误汇总 <span class="hint">按账号 × 类型聚合，最该看的排最前</span></h3>
+          <span class="grow"></span>
+          <span class="note" id="errNote">—</span>
+        </header>
+        <div class="tbl-wrap req-wrap">
+          <table class="acc req">
+            <thead><tr>
+              <th>账号</th><th>类型</th><th>上游码</th><th>模型</th>
+              <th class="num">次数</th><th>最近</th><th>解除时刻</th><th>样本</th>
+            </tr></thead>
+            <tbody id="errBody"></tbody>
+          </table>
+        </div>
+      </div>
+
       <div class="box">
         <header>
           <h3>运行日志</h3>
@@ -1208,7 +1400,7 @@ legend { font-size: 12px; color: var(--ink-3); font-weight: 600; padding-bottom:
             <button class="xs chip" data-ch="chat">对话</button>
             <button class="xs chip" data-ch="sys">系统</button>
           </span>
-          <span class="note" id="logNote">最近 500 行</span>
+          <span class="note" id="logNote">每频道最近 500 行；任务日志可跨重启查询</span>
           <button class="xs" id="btnLogPin">自动滚动：开</button>
         </header>
         <pre id="logBox"></pre>
@@ -1242,18 +1434,20 @@ legend { font-size: 12px; color: var(--ink-3); font-weight: 600; padding-bottom:
   </div>
 </div>
 
-<!-- 抽屉遮罩：仅 ≤760px 由 app.js 切 .on；桌面端 display:none，不参与布局 -->
-<div class="nav-veil" id="navVeil"></div>
-
 <!-- 积分任务 -->
 <div class="veil" id="taskVeil">
   <div class="dlg" style="width:940px">
     <header>
-      <h3>积分任务 <span class="hint" id="taskWho"></span></h3>
-      <div class="hint">查询上游任务进度；「接受」为报名（幂等），「领取」在进度达标后可用。所有操作走网关，无需外部脚本。</div>
+      <h3>账号任务 <span class="hint" id="taskWho"></span></h3>
+      <div class="hint">操作随账号能力开放；「领取」仅在进度达标后可用。</div>
     </header>
     <div class="body">
       <div class="state" id="taskState"><span class="dots">加载中</span></div>
+      <div class="hint" id="taskNote" hidden style="margin-bottom:12px"></div>
+      <div id="taskJobView" hidden style="margin-bottom:12px">
+        <div class="state" id="taskJobState" aria-live="polite"></div>
+        <details><summary class="hint">查看本次执行结果</summary><div id="taskJobResults"></div></details>
+      </div>
       <div class="tbl-wrap">
         <table class="acc md" id="taskTable" hidden>
           <thead><tr><th class="mark" aria-hidden="true"></th><th>任务</th><th>进度</th><th>奖励</th><th>状态</th><th class="c-acts"></th></tr></thead>
@@ -1264,26 +1458,9 @@ legend { font-size: 12px; color: var(--ink-3); font-weight: 600; padding-bottom:
     <footer>
       <span class="grow"></span>
       <button id="btnTaskAcceptAll">全部接受</button>
-      <button id="btnTaskAutoAll" class="primary">一键完成可自动任务</button>
+      <button id="btnTaskAutoAll" class="primary">后台完成可自动任务</button>
       <button id="btnTaskReload">重新查询</button>
       <button id="btnCloseTask">关闭</button>
-    </footer>
-  </div>
-</div>
-
-<!-- 开学季券码 -->
-<div class="veil" id="vcVeil">
-  <div class="dlg">
-    <header>
-      <h3>开学季 · 我的券码</h3>
-      <div class="hint">抽奖抽中的第三方券（KFC / 瑞幸 / 酷狗等），券码到店到对应app/小程序兑换。</div>
-    </header>
-    <div class="body" id="vcBody"></div>
-    <footer>
-      <span class="hint" id="vcNote"></span>
-      <span class="grow"></span>
-      <button class="xs" id="btnVcRefresh">刷新</button>
-      <button class="xs primary" id="btnVcClose">关闭</button>
     </footer>
   </div>
 </div>
@@ -1296,6 +1473,7 @@ legend { font-size: 12px; color: var(--ink-3); font-weight: 600; padding-bottom:
       <div class="tabs" id="addTabs">
         <button class="tab on" data-tab="login">浏览器登录</button>
         <button class="tab" data-tab="import">导入 JSON</button>
+        <button class="tab" data-tab="apikey">API Key</button>
       </div>
     </header>
     <div class="body">
@@ -1318,6 +1496,15 @@ legend { font-size: 12px; color: var(--ink-3); font-weight: 600; padding-bottom:
         <div id="addDone" class="state ok" hidden></div>
         <div id="addErr" class="state err" hidden></div>
       </div>
+      <!-- 静态 API Key -->
+      <div id="addTabApiKey" class="tab-panel" hidden>
+        <div class="hint" style="margin-bottom:8px">粘贴 CodeBuddy 平台签发的静态 API Key（ck_/pt_ 前缀）。添加后直接可用、无需浏览器登录；该账号无签到 / 成长任务体系，额度走企业口径。</div>
+        <input type="password" id="apiKeyInput" placeholder="ck_..." autocomplete="off" style="width:100%;margin-bottom:8px">
+        <input type="text" id="apiKeyNickname" placeholder="昵称（可选）" autocomplete="off" style="width:100%;margin-bottom:8px">
+        <input type="text" id="apiKeyUid" placeholder="uid（可选，缺省由 key 派生）" autocomplete="off" style="width:100%;margin-bottom:8px">
+        <div id="apiKeyDone" class="state ok" hidden></div>
+        <div id="apiKeyErr" class="state err" hidden></div>
+      </div>
       <!-- 导入 JSON -->
       <div id="addTabImport" class="tab-panel" hidden>
         <div class="hint" style="margin-bottom:8px">选择 cockpit tools 导出的 JSON 文件，批量导入账号。文件需为账号数组格式。</div>
@@ -1329,6 +1516,7 @@ legend { font-size: 12px; color: var(--ink-3); font-weight: 600; padding-bottom:
     <footer>
       <span class="grow"></span>
       <button id="btnStartLogin" class="primary">获取授权链接</button>
+      <button id="btnAddApiKey" hidden class="primary">添加 API Key</button>
       <button id="btnCopyUrl" hidden>复制链接</button>
       <button id="btnOpenUrl" class="primary" hidden>在浏览器打开</button>
       <button id="btnCloseAdd">关闭</button>
@@ -1354,6 +1542,8 @@ legend { font-size: 12px; color: var(--ink-3); font-weight: 600; padding-bottom:
   </div>
 </div>
 
+<div id="toasts"></div>
+
 <!-- 账号备注：只写本机 localStorage，不写回服务器；账号池与用量两个视图同步显示 -->
 <div class="veil" id="remarkVeil">
   <div class="dlg" style="width:560px">
@@ -1373,9 +1563,23 @@ legend { font-size: 12px; color: var(--ink-3); font-weight: 600; padding-bottom:
   </div>
 </div>
 
-<div id="toasts"></div>
+<!-- 开学季券码 -->
+<div class="veil" id="vcVeil">
+  <div class="dlg">
+    <header>
+      <h3>开学季 · 我的券码</h3>
+      <div class="hint">抽奖抽中的第三方券（KFC / 瑞幸 / 酷狗等），券码到店到对应app/小程序兑换。</div>
+    </header>
+    <div class="body" id="vcBody"></div>
+    <footer>
+      <span class="hint" id="vcNote"></span>
+      <span class="grow"></span>
+      <button class="xs" id="btnVcRefresh">刷新</button>
+      <button class="xs primary" id="btnVcClose">关闭</button>
+    </footer>
+  </div>
+</div>
 
 <script src="app.js"></script>
-<script src="mobile.js"></script>
 </body>
 </html>

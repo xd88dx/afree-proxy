@@ -15,9 +15,9 @@ import (
 //（响应头都拿到了）算传输层成功 ok=true。
 
 type proxyObservation struct {
-	url string
-	ok  bool
-	err error
+	url  string
+	ok   bool
+	err  error
 	hsMs int64
 }
 

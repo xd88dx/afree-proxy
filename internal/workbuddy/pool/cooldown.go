@@ -8,6 +8,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"afree-proxy/internal/workbuddy/cst"
 )
 
 func (p *Pool) SetCredits(uid string, credits, total int64) {
@@ -15,12 +17,13 @@ func (p *Pool) SetCredits(uid string, credits, total int64) {
 	defer p.mu.Unlock()
 	if e, ok := p.byUID[uid]; ok {
 		e.credits = credits
+		e.creditsRemainder = 0 // 权威余额整写：亚积分余量作废（同 SetCreditsDetailed）
 		e.creditsTotal = total
 		p.dirty.Store(true)
 	}
 }
 
-// SetNickname 更新账号昵称并回写 auths 凭证文件（issue #94：上游改名后同步）。
+// SetNickname 更新账号昵称并回写 auths 凭证文件（issue #94 同步：上游改名后同步）。
 // 昵称未变化时不写盘；uid 不存在 / 昵称为空返回 false。与 token 刷新共用
 // auth 自身的锁与 SaveAtomic 原子写，无半更新窗口。
 func (p *Pool) SetNickname(uid, nickname string) bool {
@@ -56,7 +59,7 @@ func (p *Pool) NoteCheckinDone(uid string) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if e, ok := p.byUID[uid]; ok {
-		day := time.Now().Format("2006-01-02")
+		day := cst.Day(time.Now())
 		if e.lastCheckinDay != day {
 			e.lastCheckinDay = day
 			p.dirty.Store(true)
@@ -115,6 +118,7 @@ func (p *Pool) SetCreditsSnapshot(uid string, s CreditsSnapshot) {
 		earliestRemaining = 0
 	}
 	e.credits = credits
+	e.creditsRemainder = 0 // 权威余额整写：亚积分余量作废
 	e.creditsTotal = s.Total
 	e.creditsExpiring = expiring
 	e.creditsEarliestExpiry = earliestAt
@@ -136,19 +140,19 @@ func (p *Pool) SetCreditsDetailed(uid string, credits, total, expiring int64, ea
 }
 
 // sanitizeExpiryBuckets 深拷贝并清洗：只保留有日期、未过期、正剩余的桶，按日期升序。
-// ExpireAt 缺失时按日期补当天 00:00（本地时区），保证排序与最早批次仍可用。
+// ExpireAt 缺失时按日期补当天 00:00（CST：上游按自然日切批次），保证排序与最早批次仍可用。
 func sanitizeExpiryBuckets(in []ExpiryBucket, now time.Time) []ExpiryBucket {
 	if len(in) == 0 {
 		return nil
 	}
-	today := now.Format("2006-01-02")
+	today := cst.Day(now)
 	out := make([]ExpiryBucket, 0, len(in))
 	for _, b := range in {
 		if b.Remain <= 0 || b.Date == "" || b.Date < today {
 			continue
 		}
 		if b.ExpireAt.IsZero() {
-			if t, err := time.ParseInLocation("2006-01-02", b.Date, time.Local); err == nil {
+			if t, err := time.ParseInLocation("2006-01-02", b.Date, cst.Loc); err == nil {
 				b.ExpireAt = t
 			}
 		}
@@ -250,9 +254,9 @@ func (p *Pool) CooldownSoftForModel(uid string, base time.Duration, resetAt time
 				ResetAt: resetAt,
 				Reason:  reason,
 			}
-		} else {
-			// 无解析时间（普通软冷却）：有界退避（base 起按 softStreak 翻倍、封顶
-			// softRateMax）。注意：**在软冷却中**（until 未到期）时不推进/不延长。
+		} else if model == "" {
+			// 无模型名 → 无从「只停该模型」，退回账号级有界退避（现状语义）。
+			// 注意：**在软冷却中**（until 未到期）时不推进/不延长。
 			if e.coolKind != CoolSoft || !now.Before(e.until) {
 				d := p.softDurationLocked(base, e.softStreak+1)
 				e.softStreak++
@@ -261,15 +265,50 @@ func (p *Pool) CooldownSoftForModel(uid string, base time.Duration, resetAt time
 			e.coolKind = CoolSoft
 			e.reason = reason
 			clearRoutingModelCooldownsLocked(e)
+		} else {
+			// 无解析时间：把 **(号, 模型)** 停车，而不是整号冷却。
+			//
+			// 为什么必须模型级：6004/14003 的语义都是「这个模型忙/额度紧」，上游文案就是让
+			// 客户端换模型，实测同号换模型立刻可用。按账号冷却是把「一个模型抖动」放大成
+			// 「整池停摆」（线上事故：几个并发请求几十秒内冷掉十几个号 → 全站 503）。
+			// TTL 沿用 soft_rate 家族（base 起按 hits 翻倍、封顶 soft_rate_max），
+			// 与「带解析时间」分支同表（modelCooldowns），面板台账自动可见。
+			// ponytail: 成功调用不提前清这条（只按 TTL 到期）；实测同一 (号,模型) 被反复
+			// 停车再加重试期间清除逻辑。
+			if e.modelCooldowns == nil {
+				e.modelCooldowns = map[string]modelCooldown{}
+			}
+			hits := e.modelCooldowns[model].Hits + 1
+			e.modelCooldowns[model] = modelCooldown{
+				Until:  now.Add(p.softDurationLocked(base, hits)),
+				Reason: reason,
+				Hits:   hits,
+			}
 		}
 		p.dirty.Store(true)
 	}
 }
 
-// RecordModelRateLimitAudit 记录无法参与模型路由的 6004 展示项。
-// 典型场景是 6004 没有可解析重置时间：账号仍按原有有界退避冷却，
-// 本方法只把模型名挂到 e.until 上供账号页展示，不影响 healthyForModel。
-func (p *Pool) RecordModelRateLimitAudit(uid, model, reason string) {
+// modelBusyBase/modelBusyMax 14003「模型繁忙」的独立停车窗口。
+//
+// 不复用 soft_rate 家族：那套阶梯（默认 600s 起、按命中翻倍、封顶 2h）是给
+// 「这个账号/模型被持续限流」准备的，惩罚一次瞬时抖动代价过高。14003 的
+// displayMsg 就是「模型繁忙，请换模型或稍后重试」——它是**间歇**的：生产日志里
+// 同一分钟内既有 14003 也有成功（issue #46），所以首档取 10s 而不是分钟级：
+// 三个号的冷却叠在一起时，60s 首档会把 10 秒的抖动放大成一整段客户端可见的断流。
+// 同一 (号, 模型) 反复命中再翻倍，封顶 1 分钟——宁可多交一次 429，也不要把
+// 一个间歇繁忙的模型停成整分钟不可用。
+const (
+	modelBusyBase = 10 * time.Second
+	modelBusyMax  = time.Minute
+)
+
+// CooldownModelBusy 把 (账号, 模型) 停一个短窗口（14003 模型繁忙专用）。
+//
+//   - 只写 modelCooldowns[model]，不碰账号级 until：同号换模型立即可用。
+//   - 同一窗口内重复命中不延长（并发请求/兜底探测不得把 60s 堆成分钟级）。
+//   - 已有更晚的冷却（6004 墙钟 / 11102 负缓存）时保留原截止，不缩短。
+func (p *Pool) CooldownModelBusy(uid, model, reason string) {
 	if uid == "" || model == "" {
 		return
 	}
@@ -280,20 +319,24 @@ func (p *Pool) RecordModelRateLimitAudit(uid, model, reason string) {
 		return
 	}
 	now := time.Now()
-	if old, exists := e.modelCooldowns[model]; exists && !old.AuditOnly && old.Until.After(now) {
-		return // 已有真实模型冷却，审计记录不得覆盖路由截止
-	}
-	until := e.until
-	if until.IsZero() || !until.After(now) {
-		until = now.Add(p.softRateMaxOr())
+	if old, exists := e.modelCooldowns[model]; exists && old.Until.After(now) {
+		return
 	}
 	if e.modelCooldowns == nil {
-		e.modelCooldowns = make(map[string]modelCooldown)
+		e.modelCooldowns = map[string]modelCooldown{}
+	}
+	hits := e.modelCooldowns[model].Hits + 1
+	d := modelBusyBase
+	for i := 1; i < hits && d < modelBusyMax; i++ {
+		d *= 2
+	}
+	if d > modelBusyMax {
+		d = modelBusyMax
 	}
 	e.modelCooldowns[model] = modelCooldown{
-		Until:     until,
-		Reason:    reason,
-		AuditOnly: true,
+		Until:  now.Add(d),
+		Reason: reason,
+		Hits:   hits,
 	}
 	p.dirty.Store(true)
 }
@@ -394,13 +437,13 @@ type ModelBlockStatus struct {
 	Count   int       // 因此被挡的账号数
 }
 
-// ModelBlocked 报告该模型是否在全池范围内被模型级冷却挡住。
+// ModelBlocked 报告该模型是否在全池范围内被模型级冷却挡住。（吸收上游 44d6e04）
 //
 // 为什么需要它：选号失败时客户端只会拿到 no_healthy_account（"没有可用账号"），
 // 但真实原因常常是「号都在、只是都对这个模型关闭」。两者对调用方的处置完全不同
 // ——前者该等，后者换个模型才有用——此前却无法区分：首次请求还能看到上游原文
-// （lastErr 非空），一旦负缓存写入，后续请求 lastErr 为空，就只剩"池子没号"
-// （issue #102 附带发现 1）。上游原文与解封时间在那里被丢掉。
+// （lastErr 非空），一旦负缓存写入，后续请求 lastErr 为空，就只剩"池子没号"。
+// 上游原文与解封时间在那里被丢掉。
 //
 // 跨 realm 判定：调用方失败前已依次尝试过各域，所以只要有**任意**账号还能服务该
 // 模型，就不能算全池阻塞 —— 此时返回 Blocked=false，让上层继续用原有的
@@ -425,6 +468,8 @@ func (p *Pool) ModelBlockedForRealm(model, realm string) ModelBlockStatus {
 
 	var st ModelBlockStatus
 	for _, e := range p.byUID {
+		// 命中 realm 之外的账号、以及禁用/暂停号，都不构成「还能服务」的证明：
+		// realm 分池后另一域的健康号掩盖不了本域全锁。
 		if realm != "" && e.a.Realm() != realm {
 			continue
 		}
@@ -557,7 +602,7 @@ func (p *Pool) recordBreakerFailureLocked(e *entry) {
 	e.breakerUntil = time.Now().Add(d)
 }
 
-// CooldownUntilTomorrow4AM 冷却到下一个 04:00（本地时区）。
+// CooldownUntilTomorrow4AM 冷却到下一个 04:00（CST：签到按上游自然日恢复）。
 // 用于 ErrHardCredit 场景：积分耗尽账号等签到任务（09:00/21:00）恢复。
 func (p *Pool) CooldownUntilTomorrow4AM(uid string, reason string) {
 	now := time.Now()
@@ -570,10 +615,12 @@ func (p *Pool) CooldownUntilTomorrow4AM(uid string, reason string) {
 // 04:00 整及之后返回次日 04:00。
 // time.Date 对日溢出自动进位（月末→下月 1 号、年末→下年 1 号），天然覆盖跨日/跨月/跨年。
 func nextDay4AM(now time.Time) time.Time {
-	if now.Hour() < 4 {
-		return time.Date(now.Year(), now.Month(), now.Day(), 4, 0, 0, 0, now.Location())
+	// 按 CST 的钟点算，不按宿主时区：UTC 机器上「本地 04:00」是 CST 12:00，签到早已结束（见 internal/cst）。
+	local := now.In(cst.Loc)
+	if local.Hour() < 4 {
+		return time.Date(local.Year(), local.Month(), local.Day(), 4, 0, 0, 0, cst.Loc)
 	}
-	return time.Date(now.Year(), now.Month(), now.Day()+1, 4, 0, 0, 0, now.Location())
+	return time.Date(local.Year(), local.Month(), local.Day()+1, 4, 0, 0, 0, cst.Loc)
 }
 
 // ReenableIfCredits 签到/余额刷新后解冻：仅当 remain > 0 且账号非禁用时，解冻

@@ -5,13 +5,16 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"reflect"
 	"time"
 
 	wbauth "afree-proxy/internal/workbuddy/auth"
 	wbconfig "afree-proxy/internal/workbuddy/config"
 	"afree-proxy/internal/workbuddy/livecfg"
+	wbpanel "afree-proxy/internal/workbuddy/panel"
 	wbpool "afree-proxy/internal/workbuddy/pool"
 	"afree-proxy/internal/workbuddy/scheduler"
+	wbserver "afree-proxy/internal/workbuddy/server"
 	"afree-proxy/internal/workbuddy/upstream"
 )
 
@@ -26,12 +29,19 @@ func saveWorkbuddyConfig(
 	p *wbpool.Pool,
 	up *upstream.Client,
 	sch *scheduler.Scheduler,
+	gw *wbserver.Handler,
+	pn *wbpanel.Panel,
 	authDir string,
 	stateFile string,
 ) ([]string, error) {
 	cur := map[string]any{}
+	var curCfg *wbconfig.Config
 	if oldRaw, err := os.ReadFile(path); err == nil {
 		_ = json.Unmarshal(oldRaw, &cur)
+		// 磁盘旧值即上次生效配置（afree 固定回写部署四项后再落盘），作为
+		// restartRequired 的比较基线（上游 PR #104 口径：只报真实变化）。
+		// 解析失败退化 curCfg=nil，按保守清单全报。
+		curCfg, _ = wbconfig.ParseConfig(oldRaw)
 	}
 	var incoming map[string]any
 	if err := json.Unmarshal(raw, &incoming); err != nil {
@@ -75,8 +85,12 @@ func saveWorkbuddyConfig(
 		RecordClientInfo:     newCfg.Logging.RequestClientInfo,
 		ModelRateFilter:      newCfg.Pool.ModelRateFilter,
 		HiddenModels:         livecfg.NormalizeHiddenModels(newCfg.Models.Hidden),
+		// misakano 线新增热字段：模型名映射与 6004 降级路由表。
+		ModelAliases:  livecfg.NormalizeModelAliases(newCfg.Models.Aliases),
+		ModelFallback: newCfg.Pool.ModelFallback,
 	})
 	up.SanitizeFingerprints.Store(newCfg.Features.SanitizeBlacklistFingerprints)
+	up.SanitizeBrandScope.Store(newCfg.Features.SanitizeBrandScope)
 	up.HTTP.Timeout = time.Duration(newCfg.Upstream.TimeoutSeconds) * time.Second
 	up.HeaderTimeout = time.Duration(newCfg.Upstream.HeaderTimeoutSeconds) * time.Second
 	if tr, ok := up.ChatHTTP.Transport.(*http.Transport); ok {
@@ -107,36 +121,93 @@ func saveWorkbuddyConfig(
 	p.SetCostExploreInterval(newCfg.CostExploreIntervalDur)
 	p.SetCreditFloor(newCfg.Pool.CreditFloor)
 	p.SetWeights(newCfg.Pool.IdleWeightPerHour, newCfg.Pool.IdleWeightMax)
-	p.SetPreferExpiring(newCfg.Pool.PreferExpiring)
-	p.SetCrossDomainFallback(newCfg.Pool.CrossDomainFallback) // 裸名跨域回退热生效（issue #135）
+	p.SetPreferExpiring(newCfg.Pool.PreferExpiring, newCfg.ExpiringSoonDur)
 	_ = p.SetScheduling(newCfg.Pool.Strategy, newCfg.Pool.AccountOrder)
+	// misakano 线新增热键：保留积分（normalize 保证非 nil 且 >=0）、账号优先级/
+	// 占比（issue #62）、保底倍率上限、补领清扫间隔。
+	p.SetReserveCredits(*newCfg.Pool.ReserveCredits)
+	p.SetAccountPriority(newCfg.Pool.AccountPriority)
+	p.SetAccountShare(newCfg.Pool.AccountShare)
+	p.SetCreditFloorMaxRate(newCfg.Pool.CreditFloorMaxRate)
+	sch.SetTaskSweepInterval(newCfg.TaskSweepInterval)
+	if pn != nil {
+		pn.SetGrowthConcurrency(newCfg.Schedule.GrowthConcurrency) // 排程轮次并发热生效
+	}
+	if gw != nil {
+		// 预算三闸（issue #229）：日上限/突发上限/缓存低命中率。<=0 均为关闭。
+		gw.SetBudgetLimit(newCfg.Budget.DailyCreditLimit)
+		gw.SetBudgetGuards(newCfg.Budget.BurstCreditLimit, newCfg.Budget.CacheLowRate)
+	}
 
-	sch.Reconfigure(
-		newCfg.Schedule.CheckinHours, newCfg.Schedule.TravelHours,
-		newCfg.Schedule.ActivityHours, newCfg.Schedule.KeepaliveHours,
-		newCfg.Schedule.BlackcatHours, newCfg.Schedule.GrowthHours,
-		!newCfg.Schedule.CheckinEnabled, !newCfg.Schedule.TravelEnabled,
-		!newCfg.Schedule.ActivityEnabled, !newCfg.Schedule.KeepaliveEnabled,
-		!newCfg.Schedule.BlackcatEnabled, !newCfg.Schedule.GrowthEnabled,
-	)
+	sch.Reconfigure(scheduler.ScheduleParams{
+		CheckinHours:   newCfg.Schedule.CheckinHours,
+		TravelHours:    newCfg.Schedule.TravelHours,
+		ActivityHours:  newCfg.Schedule.ActivityHours,
+		KeepaliveHours: newCfg.Schedule.KeepaliveHours,
+		BlackcatHours:  newCfg.Schedule.BlackcatHours,
+		GrowthHours:    newCfg.Schedule.GrowthHours,
+
+		CheckinDisabled:        !newCfg.Schedule.CheckinEnabled,
+		TravelDisabled:         !newCfg.Schedule.TravelEnabled,
+		ActivityDisabled:       !newCfg.Schedule.ActivityEnabled,
+		KeepaliveDisabled:      !newCfg.Schedule.KeepaliveEnabled,
+		BlackcatDisabled:       !newCfg.Schedule.BlackcatEnabled,
+		GrowthDisabled:         !newCfg.Schedule.GrowthEnabled,
+		IncludeDisabledInTasks: newCfg.Schedule.IncludeDisabledInTasks,
+
+		JitterMinutes:              newCfg.Schedule.JitterMinutes,
+		AccountSpreadMinutes:       newCfg.Schedule.AccountSpreadMinutes,
+		AccountSpreadMinGapSeconds: newCfg.Schedule.AccountSpreadMinGapSeconds,
+	})
 	sch.SetBalanceInterval(newCfg.BalanceRefreshInterval)
-	sch.SetIncludeDisabledInTasks(newCfg.Schedule.IncludeDisabledInTasks)
 	sch.SetExpiringSoonWindow(newCfg.ExpiringSoonDur)
 	// wbconfig.ServerReadTimeoutDur（server.read_timeout）在本项目无消费方：
 	// WorkBuddy 无独立 http.Server，主网关刻意不设 ReadTimeout（见 proxy.go，
 	// SSE 长连接），源项目 issue #100 的 60s 掐断问题在此天然不存在。
-	return restartRequiredWorkbuddyFields(newCfg), nil
+	return restartRequiredWorkbuddyFields(curCfg, newCfg), nil
 }
 
-func restartRequiredWorkbuddyFields(c *wbconfig.Config) []string {
-	out := []string{"listen", "auth_dir", "state_file"}
-	out = append(out, "upstream.timeout_seconds", "upstream.header_timeout_seconds", "upstream.idle_timeout_seconds")
-	if c.Upstash.URL != "" || c.Upstash.Token != "" {
-		out = append(out, "upstash")
+// restartRequiredWorkbuddyFields 上游 PR #104 口径：比较「上次生效配置 vs 新配置」，
+// 只报告确实变化且无法热生效的字段——未变化不重复提示，改回原值自动清除。
+// afree 与上游字段集差异（均为有意）：
+//   - listen/auth_dir/state_file/api_key 被 afree 固定回写部署值，永不变化，不列；
+//   - upstream.*（UA/版本/超时等）、global.*、cn.chat_base、models.hidden 在
+//     saveWorkbuddyConfig 中热应用，不列；
+//   - admin/alerting 在 afree 部署中无消费方（未接线，重启也不生效），不列，
+//     避免诱导用户无效重启。
+func restartRequiredWorkbuddyFields(cur, next *wbconfig.Config) []string {
+	if cur == nil {
+		// 读盘/解析失败时保守全报（等同旧行为的可重启面）。
+		return []string{
+			"upstash.url", "upstash.token",
+			"session_sticky.enabled", "session_sticky.ttl", "session_sticky.gc_interval",
+			"prompt.mode", "prompt.text",
+			"metrics",
+			"logging.request_archive_enabled", "logging.request_retention_days", "logging.request_archive_max_mb",
+		}
 	}
-	out = append(out, "session_sticky.ttl", "session_sticky.gc_interval")
-	// 请求归档的目录/句柄在启动时装配，改动需重启（与源项目 restartRequiredFields 同口径）。
-	out = append(out, "logging.request_archive_enabled", "logging.request_retention_days", "logging.request_archive_max_mb")
+	var out []string
+	changed := func(name string, before, after any) {
+		if !reflect.DeepEqual(before, after) {
+			out = append(out, name)
+		}
+	}
+	// upstash：store 启动时创建（workbuddy.go redisstore.New）。
+	changed("upstash.url", cur.Upstash.URL, next.Upstash.URL)
+	changed("upstash.token", cur.Upstash.Token, next.Upstash.Token)
+	// 会话粘性：Router 启动时创建（enabled=false 时 sess 为 nil）。
+	changed("session_sticky.enabled", cur.SessionSticky.Enabled, next.SessionSticky.Enabled)
+	changed("session_sticky.ttl", cur.SessionTTL, next.SessionTTL)
+	changed("session_sticky.gc_interval", cur.SessionGCInterval, next.SessionGCInterval)
+	// 提示词：server.Handler 启动时装配，无热应用路径。
+	changed("prompt.mode", cur.Prompt.Mode, next.Prompt.Mode)
+	changed("prompt.text", cur.PromptText, next.PromptText)
+	// metrics：/metrics 端点在 NewHandler 时按开关注册，无热摘除。
+	changed("metrics", cur.Metrics, next.Metrics)
+	// 请求归档：reqlog 目录/句柄启动时装配。
+	changed("logging.request_archive_enabled", cur.Logging.RequestArchiveEnabled, next.Logging.RequestArchiveEnabled)
+	changed("logging.request_retention_days", cur.Logging.RequestRetentionDays, next.Logging.RequestRetentionDays)
+	changed("logging.request_archive_max_mb", cur.Logging.RequestArchiveMaxMB, next.Logging.RequestArchiveMaxMB)
 	return out
 }
 

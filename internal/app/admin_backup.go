@@ -17,6 +17,7 @@ import (
 	"afree-proxy/internal/other"
 	"afree-proxy/internal/tokenharbor"
 	wbauth "afree-proxy/internal/workbuddy/auth"
+	wbserver "afree-proxy/internal/workbuddy/server"
 )
 
 // ============ 配置导入导出（全量持久化状态） ============
@@ -720,7 +721,10 @@ func importWorkbuddyBackup(wb *workbuddyBackup, keepWbEnabled bool) (int, bool) 
 	}
 	cfgApplied := false
 	if len(wb.Config) > 0 {
-		if _, err := saveWorkbuddyConfig(sub.cfgPath, wb.Config, sub.live, sub.pool, sub.upstream, sub.scheduler, sub.cfg.AuthDir, sub.cfg.StateFile); err != nil {
+		// sub.server 是解耦接口；预算闸热应用需要具体 Handler，断言失败（测试
+		// fake）时传 nil，saveWorkbuddyConfig 内部跳过 gw 段。
+		gw, _ := sub.server.(*wbserver.Handler)
+		if _, err := saveWorkbuddyConfig(sub.cfgPath, wb.Config, sub.live, sub.pool, sub.upstream, sub.scheduler, gw, sub.panel, sub.cfg.AuthDir, sub.cfg.StateFile); err != nil {
 			log.Printf("  config import: workbuddy config apply failed: %v", err)
 		} else {
 			cfgApplied = true

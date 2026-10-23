@@ -1,9 +1,9 @@
 package pool
 
 import (
+	"afree-proxy/internal/workbuddy/auth"
 	"encoding/json"
 	"fmt"
-	"afree-proxy/internal/workbuddy/auth"
 	"path/filepath"
 	"sync"
 	"testing"

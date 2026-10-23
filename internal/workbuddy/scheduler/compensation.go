@@ -1,277 +1,219 @@
-// compensation.go 补偿活动的可观测化执行器（issue #189）。
+// compensation.go 补偿活动的执行侧（上游 PR #196 / issue #189）。
 //
-// 承接 internal/upstream/compensation.go 补上的状态查询，把签到排程里那次「盲领」
-// 改成「先查状态 → 待领才领」。解决三个原本无法区分的情形：
-//
-//	① 没有补偿        ② 已经领过        ③ 真的领取失败
-//
-// 旧写法 `if credit, err := ...; err == nil { log }` 让三者同构，补偿带截止日
-// （实测 2026-10-16 那次是 10/22），签到停摆就会静默过期。本文件让「可领未领」
-// 在日志和面板上都能显式看见。
+// 把签到排程里那次「盲领」改成「先查状态 → 待领才领」：旧写法
+// `if credit, err := ClaimCompensation(...); err == nil { log }` 让三种情形同构——
+// ① 没有补偿 ② 已经领过 ③ 真的失败（401/5xx/网络）；实测更糟：#1/#2 时上游返回
+// code 0 且无 credit 字段，于是每天打一行**假的**「🎊 补偿领取 +0c」（线上一个月
+// 20 行全是 +0c），而 global 号在 CN billing 端的 401 反倒零痕迹。补偿带截止日，
+// 签到一停摆就静默过期。本文件的纪律：要么成功、要么显形——排程与面板共用这里的
+// 同一份实现，两条路径的分支与判据不会漂移。
 package scheduler
 
 import (
-	"errors"
 	"log"
 	"sync"
 
 	"afree-proxy/internal/workbuddy/auth"
 	"afree-proxy/internal/workbuddy/logfmt"
-	"afree-proxy/internal/workbuddy/upstream"
+	"afree-proxy/internal/workbuddy/pool"
 )
 
-// 补偿任务的跳过原因（面板据此渲染，勿随意改字面量）。
-//
-// 注意没有「paused」：暂停选号**不**跳过补偿——补偿是纯领奖 RPC，与「让位防风控」
-// 的选号语义无关，旅行/成长任务亦然。这里显式不设该枚举，免得后人手滑补一个
-// 把暂停号错误地排除掉。
-const (
-	compSkipDisabled   = "disabled"    // 账号已禁用，等人工 revive
-	compSkipNoAuth     = "no_auth"     // 无凭证
-	compSkipGlobal     = "global"      // D4 门控：global 无 CN 任务体系
-	compSkipEnterprise = "enterprise"  // 企业版门控：claim-compensation 返回 10001
-	compSkipInactive   = "no_active"   // 当前无生效中的补偿活动
-	compSkipClaimed    = "claimed"     // 本次活动已领过
-	compSkipZeroCredit = "zero_credit" // 活动在，但额度为 0
-)
-
-// CompensationRow 单账号的补偿状态行（面板 GET /panel/api/compensation）。
+// CompensationRow 单账号补偿状态（面板 GET /panel/api/compensation 的行，
+// 也用作逐号领取的结果：领取后 Credit/Claimed 为领取后事实）。
 type CompensationRow struct {
-	UID      string                      `json:"uid"`
-	Nickname string                      `json:"nickname,omitempty"`
-	Status   upstream.CompensationStatus `json:"status"`
-	Skip     string                      `json:"skip,omitempty"`     // 非空 = 本次未发起上游查询/领取
-	SkipMsg  string                      `json:"skip_msg,omitempty"` // 跳过的中文说明
-	Error    string                      `json:"error,omitempty"`
+	UID        string `json:"uid"`
+	Nickname   string `json:"nickname,omitempty"`
+	Realm      string `json:"realm,omitempty"`
+	Active     bool   `json:"active"`
+	Claimed    bool   `json:"claimed"`
+	Credit     int64  `json:"credit"`             // 可领额度（领取成功后为实际到账）
+	EndTime    string `json:"end_time,omitempty"` // 领取截止（上游原文，无时区）
+	Skip       bool   `json:"skip,omitempty"`
+	SkipReason string `json:"skip_reason,omitempty"`
+	Error      string `json:"error,omitempty"`
 }
 
-// CompensationResult 单账号的领取结果（面板 POST /panel/api/compensation_all）。
-type CompensationResult struct {
-	UID      string                      `json:"uid"`
-	Nickname string                      `json:"nickname,omitempty"`
-	Status   upstream.CompensationStatus `json:"status"`
-	Claimed  bool                        `json:"claimed"`
-	Credit   int64                       `json:"credit,omitempty"`
-	Skip     string                      `json:"skip,omitempty"`
-	SkipMsg  string                      `json:"skip_msg,omitempty"`
-	Error    string                      `json:"error,omitempty"`
-}
-
-// compTarget 一次遍历里某个账号的处理目标。
+// compSkipReason 补偿门控（返回空串 = 可执行）：
+//   - 企业版：上游对 claim-compensation 一律 400「企业账号不支持该操作」（与 claim-gift 同批实测）；
+//   - disabled：凭证可能已失效，发起无意义。
 //
-// 参与账号与被门控跳过的账号合成**同一个有序切片**（而不是 jobs + skips 两个
-// 容器）——后者会让跳过行只能从 map 取出，既丢掉昵称，又让面板行序随机漂移
-// （池顺序是按 UID 稳定排序的，面板逐行对齐依赖它）。
-type compTarget struct {
-	uid  string
-	nick string
-	a    *auth.Auth // nil = 被门控跳过
-	skip string
-	msg  string
-}
-
-// compTargets 按池顺序枚举全部账号并完成门控判定。
+// **global 不跳过**：补偿/礼包是 billing 域，按 realm 走 base（billingBase → workbuddy.ai）。
+// 2026-10-16 实测两个国际号在 workbuddy.ai 上 status 查询均 200
+// （{claimed:false,active:false,credit_num:1000,end_time:"2026-04-30 23:59:59"}）——此前
+// 「国际号恒 401」是把国际 token 打到 CN base 的探针假象；照那个假象跳过会在国际区活动
+// 真的开启时静默漏领。签到仍按 D4 跳过：实测 workbuddy.ai 的 daily-checkin 回
+// 400「签到活动未开启或已过期」，那是另一回事（没有活动，不是没有接口）。
 //
-// 门控与 streakBonusAccount 同口径：D4 global 跳过；企业版跳过（上游对
-// claim-compensation 一律 400「企业账号不支持该操作」，与 claim-gift 同批实测）；
-// disabled 跳过（凭证可能已失效，发起无意义）。paused **不跳过**（见上方枚举说明）。
-func (s *Scheduler) compTargets() []compTarget {
-	list := s.cfg.Pool.List()
-	out := make([]compTarget, 0, len(list))
-	for _, st := range list {
-		t := compTarget{uid: st.UID, nick: st.Nickname}
-		if st.Disabled {
-			t.skip, t.msg = compSkipDisabled, "账号已禁用"
-			out = append(out, t)
-			continue
-		}
-		a := s.cfg.Pool.AuthByUID(st.UID)
-		if a == nil || a.AccessTokenValue() == "" {
-			t.skip, t.msg = compSkipNoAuth, "无凭证"
-			out = append(out, t)
-			continue
-		}
-		if a.IsGlobal() {
-			t.skip, t.msg = compSkipGlobal, "国际版无 CN 补偿体系"
-			out = append(out, t)
-			continue
-		}
-		if a.IsEnterprise() {
-			t.skip, t.msg = compSkipEnterprise, "企业版无补偿体系"
-			out = append(out, t)
-			continue
-		}
-		t.a = a
-		out = append(out, t)
+// paused **不跳过**：补偿是纯领奖 RPC，与「让位防风控」的选号语义无关（旅行/成长任务亦然）。
+func compSkipReason(st pool.Status) string {
+	switch {
+	case st.Disabled:
+		return "账号已禁用"
+	case st.Enterprise:
+		return "企业版账号无个人补偿"
 	}
-	return out
+	return ""
 }
 
-// CompensationStatusAll 并发查全部账号的补偿状态（只读，不领取）。
-//
-// 输出与池顺序一致：先按 compTargets 预分配等长切片，每个 goroutine 只写自己那
-// 一个下标——不同下标是互不重叠的内存，无需互斥锁即可避免竞态（也避免了
-// 「goroutine 完成顺序 = 返回顺序」导致的行序漂移）。并发上限 3 与既有
-// /panel/api/packages 的账号遍历一致。
-func (s *Scheduler) CompensationStatusAll() []CompensationRow {
-	targets := s.compTargets()
-	rows := make([]CompensationRow, len(targets))
-
+// CompensationRows 并发查全部账号的补偿状态（只读，不领取），**保池顺序**：
+// 预分配等长切片、每个 goroutine 只写自己那个下标——完成顺序不影响行序（面板逐行
+// 对齐靠它；按完成顺序 append 会让行序随机漂移）。并发 3 与 /panel/api/packages 同口径。
+// 门控跳过的账号也出行（带 SkipReason），面板据此显形「为什么没查」。
+func (s *Scheduler) CompensationRows() []CompensationRow {
+	stats := s.cfg.Pool.List()
+	out := make([]CompensationRow, len(stats))
 	sem := make(chan struct{}, 3)
 	var wg sync.WaitGroup
-	for i, t := range targets {
-		if t.a == nil {
-			rows[i] = CompensationRow{UID: t.uid, Nickname: t.nick, Skip: t.skip, SkipMsg: t.msg}
-			continue
-		}
+	for i, st := range stats {
 		wg.Add(1)
-		go func(i int, t compTarget) {
+		go func(i int, st pool.Status) {
 			defer wg.Done()
 			sem <- struct{}{}
 			defer func() { <-sem }()
-			row := CompensationRow{UID: t.uid, Nickname: t.nick}
-			st, err := s.cfg.Upstream.GetCompensationStatus(t.a)
-			if err != nil {
-				row.Error = err.Error()
-			} else {
-				row.Status = st
-			}
-			rows[i] = row
-		}(i, t)
+			out[i] = s.compensationRowOf(st, false, false)
+		}(i, st)
 	}
 	wg.Wait()
-	return rows
-}
-
-// ClaimCompensationNow 逐号「查状态 → 待领则领」，返回逐号结果。
-//
-// 供面板手动按钮与签到排程共用；单号失败不影响其余账号。
-//
-// 这里刻意**串行**而非并发：ClaimCompensation 对同一活动每号仅一次（重复领会拿到
-// 业务错误），串行让「前一个号失败」不影响后一个号的判定，且账号量是个位数。
-func (s *Scheduler) ClaimCompensationNow() []CompensationResult {
-	targets := s.compTargets()
-	out := make([]CompensationResult, 0, len(targets))
-	for _, t := range targets {
-		if t.a == nil {
-			out = append(out, CompensationResult{UID: t.uid, Nickname: t.nick, Skip: t.skip, SkipMsg: t.msg})
-			continue
-		}
-		out = append(out, s.claimOne(t.a))
-	}
 	return out
 }
 
-// ClaimCompensationFor 单号领取补偿（面板单号按钮）；账号不在池中返回 error。
-//
-// 门控与 compTargets 同一套判据，但直接查 Pool.Status/AuthByUID（均为 O(1) 的
-// 加锁查询，无副作用），不扫全表——pool 本来就提供单号查询，没必要造 O(n)。
-func (s *Scheduler) ClaimCompensationFor(uid string) (CompensationResult, error) {
+// CompensateOne 单账号「门控 → 查状态 → 待领才领」，返回结果行。
+// 面板逐号按钮与全量按钮共用；排程侧经 claimCompensationQuiet 调用同一实现。
+func (s *Scheduler) CompensateOne(uid string) CompensationRow {
 	st, ok := s.cfg.Pool.Status(uid)
 	if !ok {
-		return CompensationResult{UID: uid}, errors.New("account not found")
+		return CompensationRow{UID: uid, Skip: true, SkipReason: "账号不存在", Error: "account not found"}
 	}
-	skip := func(reason, msg string) (CompensationResult, error) {
-		return CompensationResult{UID: uid, Nickname: st.Nickname, Skip: reason, SkipMsg: msg}, nil
-	}
-	if st.Disabled {
-		return skip(compSkipDisabled, "账号已禁用")
-	}
-	a := s.cfg.Pool.AuthByUID(uid)
-	if a == nil || a.AccessTokenValue() == "" {
-		return skip(compSkipNoAuth, "无凭证")
-	}
-	if a.IsGlobal() {
-		return skip(compSkipGlobal, "国际版无 CN 补偿体系")
-	}
-	if a.IsEnterprise() {
-		return skip(compSkipEnterprise, "企业版无补偿体系")
-	}
-	return s.claimOne(a), nil
+	return s.compensationRowOf(st, true, false)
 }
 
-// claimOne 单账号「查状态 → 待领才领」的全部分支与日志。
-func (s *Scheduler) claimOne(a *auth.Auth) CompensationResult {
-	r := CompensationResult{UID: a.UID, Nickname: a.Nickname}
-
-	st, err := s.cfg.Upstream.GetCompensationStatus(a)
+// compensationRowOf 单账号处理：claim=false 只查状态，claim=true 待领则领。
+//
+// respectGuard=true 时按 (uid, end_time) 跳过「本进程已试过」的期次——排程专用，
+// 避免上游 claimed 恒 false 导致的每轮重复 claim。面板手动领取传 false（允许重试）。
+func (s *Scheduler) compensationRowOf(st pool.Status, claim, respectGuard bool) CompensationRow {
+	row := CompensationRow{UID: st.UID, Nickname: st.Nickname, Realm: st.Realm}
+	if reason := compSkipReason(st); reason != "" {
+		row.Skip, row.SkipReason = true, reason
+		return row
+	}
+	a := s.cfg.Pool.AuthByUID(st.UID)
+	if a == nil {
+		row.Skip, row.SkipReason, row.Error = true, "账号未加载", "account not loaded"
+		return row
+	}
+	src, err := s.cfg.Upstream.GetCompensationStatus(a)
 	if err != nil {
-		// 查状态失败是真问题（传输/鉴权/上游），必须显式记日志——
-		// 旧盲领写法会把这类失败静默吞成「无事发生」。
-		r.Error = err.Error()
-		log.Printf("compensation %s: 查状态失败: %v", logfmt.Label(a.UID, a.Nickname), err)
-		return r
+		row.Error = err.Error() // 查询失败必须显形（旧盲领正是在这里静默）
+		return row
 	}
-	r.Status = st
-
-	// 判据用 upstream 的 Pending()（唯一权威实现），不要再在本文件复刻一份
-	// active/claimed/credit 的与门——此前三处拷贝（这里 / Pending() / 前端
-	// compPending）已经开始漂移。下方 switch 只为「不领」的三种形态给出不同文案，
-	// 不参与判定。
-	if !st.Pending() {
-		switch {
-		case !st.Active:
-			r.Skip, r.SkipMsg = compSkipInactive, "当前无生效补偿"
-		case st.Claimed:
-			r.Skip, r.SkipMsg = compSkipClaimed, "本次活动已领取"
-		default:
-			r.Skip, r.SkipMsg = compSkipZeroCredit, "活动在但额度为 0"
-		}
-		return r
+	row.Active, row.Claimed, row.Credit, row.EndTime = src.Active, src.Claimed, src.CreditNum, src.EndTime
+	if !claim || !src.Pending() {
+		return row
 	}
-
+	// 本期已试过（同 uid + 同 end_time）→ 不再重复 claim。
+	// 上游 claimed 字段恒 false，只能本地记；end_time 变了就是上游新开一期，会重新试。
+	guardKey := st.UID + "|" + src.EndTime
+	if respectGuard && s.compGuarded(guardKey) {
+		return row
+	}
 	credit, err := s.cfg.Upstream.ClaimCompensation(a)
+	s.markCompGuarded(guardKey) // 无论成败都记：失败重试交给下一期/手动按钮
 	if err != nil {
-		r.Error = err.Error()
-		log.Printf("compensation %s: 待领 %dc 但领取失败: %v",
-			logfmt.Label(a.UID, a.Nickname), st.CreditNum, err)
-		return r
+		row.Error = err.Error()
+		return row
 	}
-	r.Claimed, r.Credit = true, credit
-	log.Printf("compensation %s: 🎊 补偿领取 +%dc（截止 %s）",
-		logfmt.Label(a.UID, a.Nickname), credit, st.EndTime)
-	return r
+	// ★ 上游对「已领过 / 本次无发放」回 code=0 且**不带 credit 字段**（解析成 0）。
+	//
+	// 旧代码在这里用 src.CreditNum 兜底，把「没发」写成了「🎊 +500c 已到账」——
+	// 2026-10-20 用 credit-history 证伪：18 点后 340 条 +500c 日志，
+	// 而全量 2000 条余额流水里 delta=+500 出现 **0 次**（同期只有签到 +10/+60）。
+	// 现在如实记录：Credit=0 表示本次实际到账 0；Claimed 仍置 true 表示已处理过。
+	if credit <= 0 {
+		row.Credit, row.Claimed = 0, true
+		return row
+	}
+	row.Credit, row.Claimed = credit, true
+	return row
 }
 
-// CompensationSummary 批量领取的汇总计数。
-//
-// 单独统计 Errored 是为了让调用方能区分「没有可领」与「一个都没查成」：上游故障
-// 或 token 全过期时，每个账号都会走 claimOne 的 error 分支。若只按 Claimed 计数，
-// 面板会把「全部查询失败」渲染成「当前没有待领补偿」——正是本 PR 要消灭的那类
-// 静默失败，只是换了个位置。调用方必须先看 Errored 再看 Claimed。
-type CompensationSummary struct {
-	Total   int   `json:"total"`
-	Claimed int   `json:"claimed"`
-	Skipped int   `json:"skipped"`
-	Errored int   `json:"errored"`
-	Credit  int64 `json:"credit"`
+// claimCompensationQuiet 排程侧单账号补偿：调同一份实现，只把结果落成日志。
+// 无待领（无活动 / 已领 / 无额度）静默——这是正确形态，不是失败；查询失败与领取失败
+// 一律 WARN（含可领额度与截止，便于判断是否还剩时间）。
+func (s *Scheduler) claimCompensationQuiet(a *auth.Auth) int64 {
+	// 排程路径走 respectGuard=true：上游 claimed 恒 false，不设本地闸门就会每次签到
+	// 都把全池号重复 claim 一遍（350 次/轮，永远拿不到新发放）。
+	st, ok := s.cfg.Pool.Status(a.UID)
+	if !ok {
+		return 0
+	}
+	row := s.compensationRowOf(st, true, true)
+	label := logfmt.Label(a.UID, a.Nickname)
+	switch {
+	case row.Error != "" && !row.Claimed:
+		log.Printf("WARN: streak-bonus %s: 补偿处理失败（可领 %dc，截止 %s）: %s", label, row.Credit, row.EndTime, row.Error)
+	case row.Claimed && row.Credit > 0:
+		// 只有**真拿到 credit** 才打这条。credit<=0（上游回执无 credit 字段 =
+		// 已领过/本次无发放）静默——旧代码用可领额度兜底，把「没发」写成「+500c 已到账」。
+		log.Printf("streak-bonus %s: 🎊 补偿领取 +%dc（截止 %s）", label, row.Credit, row.EndTime)
+	}
+	return row.Credit
 }
 
-// OK 是否全部账号都拿到了确定结论（无错误）。
-func (s CompensationSummary) OK() bool { return s.Errored == 0 }
+// compGuarded 报告本期补偿是否已在本进程内尝试过。
+func (s *Scheduler) compGuarded(key string) bool {
+	s.compGuardMu.Lock()
+	defer s.compGuardMu.Unlock()
+	return s.compGuard[key]
+}
 
-// SummarizeCompensation 汇总逐号结果。
-func SummarizeCompensation(results []CompensationResult) CompensationSummary {
-	var s CompensationSummary
-	s.Total = len(results)
-	for _, r := range results {
-		switch {
-		case r.Error != "":
-			s.Errored++
-		case r.Claimed:
-			s.Claimed++
-			s.Credit += r.Credit
-		default:
-			s.Skipped++
+// markCompGuarded 记下「本期已尝试」。懒初始化 map（零值 Scheduler 也可用）。
+func (s *Scheduler) markCompGuarded(key string) {
+	s.compGuardMu.Lock()
+	defer s.compGuardMu.Unlock()
+	if s.compGuard == nil {
+		s.compGuard = make(map[string]bool)
+	}
+	s.compGuard[key] = true
+}
+
+// claimGiftQuiet 排程侧单账号新手礼包：与补偿同一纪律——先查状态，待领才领。
+// 旧写法 `if credit, err := ClaimGift(a); err == nil { log }` 对「已领过」也返回 (0, nil)
+// （上游 200 + 无 credit 字段），于是每个已领号每天打一行假的「🎊 新手礼包 +0c」。
+// 待领才领：无活动/已领/无额度静默，查询与领取失败 WARN（含截止，礼包也带有效期）。
+func (s *Scheduler) claimGiftQuiet(a *auth.Auth) int64 {
+	label := logfmt.Label(a.UID, a.Nickname)
+	src, err := s.cfg.Upstream.GetGiftStatus(a)
+	if err != nil {
+		// 已知没有个人礼包体系的账号（企业 / 已禁用）查询失败属预期，静默——否则每天固定
+		// 刷出几行噪声；其余号的查询失败必须 WARN（旧盲领正是在这里无痕）。国际号不在此列：
+		// 它的礼包查询在 workbuddy.ai 上是正常 200（见 compSkipReason 注释）。
+		if st, ok := s.cfg.Pool.Status(a.UID); ok && (st.Enterprise || st.Disabled) {
+			return 0
 		}
+		log.Printf("WARN: streak-bonus %s: 礼包状态查询失败: %v", label, err)
+		return 0
 	}
-	return s
-}
-
-// claimCompensationQuiet 签到排程用：待领才领，无待领不记日志（避免每日刷屏），
-// 但**真实失败一律记日志**——这正是旧盲领实现丢掉的信息。
-//
-// 与面板手动按钮共用 claimOne，避免两条路径的分支/日志漂移。
-func (s *Scheduler) claimCompensationQuiet(a *auth.Auth) {
-	_ = s.claimOne(a)
+	if !src.Pending() {
+		return 0
+	}
+	// 与补偿同一把闸：本期（同 uid + 同 end_time）已试过就不再重复 claim。
+	guardKey := "gift|" + a.UID + "|" + src.EndTime
+	if s.compGuarded(guardKey) {
+		return 0
+	}
+	credit, err := s.cfg.Upstream.ClaimGift(a)
+	s.markCompGuarded(guardKey) // 无论成败都记：重试交给下一期或面板手动
+	if err != nil {
+		log.Printf("WARN: streak-bonus %s: 礼包领取失败（可领 %dc，截止 %s）: %v", label, src.CreditNum, src.EndTime, err)
+		return 0
+	}
+	// ★ 与补偿同源的问题（2026-10-20 一并修）：上游对「已领过」回 200 + 无 credit 字段，
+	// 旧代码用 src.CreditNum 兜底，把「没发」写成「🎊 +1000c 已到账」。
+	// 现在只认真实回执：credit<=0 就是本次到账 0，静默返回。
+	if credit <= 0 {
+		return 0
+	}
+	log.Printf("streak-bonus %s: 🎊 新手礼包 +%dc（截止 %s）", label, credit, src.EndTime)
+	return credit
 }

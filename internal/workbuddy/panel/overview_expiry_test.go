@@ -9,56 +9,47 @@ import (
 
 	"afree-proxy/internal/workbuddy/auth"
 	"afree-proxy/internal/workbuddy/pool"
-	"afree-proxy/internal/workbuddy/scheduler"
 )
 
-// TestOverviewIncludesExpiryBuckets 钉住面板接线：池内写入的按日到期批次必须原样
-// 出现在 /overview 响应里，否则前端快照只能退回旧的「最早一批」字段（口径错误）。
-// 同时钉住余额刷新节奏/时刻两个字段——前端据此标注「每 5 分钟刷新，x 分钟前更新」。
+// TestOverviewIncludesExpiryBuckets 首页快照的数据源接线：overview 必须把池内按日
+// 到期批次原样透出，并给出余额后台刷新的节奏/年龄（没有调度器时为 0）。
+// 前端 renderExpirySnapshot 只吃这两个字段，缺一个就会退回「只列最早一批」的旧口径。
 func TestOverviewIncludesExpiryBuckets(t *testing.T) {
-	pl := pool.New("")
-	sch := scheduler.New(scheduler.Config{Pool: pl})
-	sch.SetBalanceInterval(5 * time.Minute)
-	sch.RunBalanceRefreshNow() // 空池 → 不打上游，只落完成时刻
-
-	p := New(Config{Version: "test", Pool: pl, Scheduler: sch})
-	pl.Add(&auth.Auth{UID: "u1", Nickname: "n1"})
-	now := time.Now()
-	at1 := now.Add(24 * time.Hour)
-	at2 := now.Add(48 * time.Hour)
-	pl.SetCreditsSnapshot("u1", pool.CreditsSnapshot{
-		Remain: 300, Total: 300, Expiring: 100,
+	p := pool.New("")
+	p.Add(&auth.Auth{UID: "u1", Nickname: "A", AccessToken: "at"})
+	at := time.Now().Add(72 * time.Hour)
+	p.SetCreditsSnapshot("u1", pool.CreditsSnapshot{
+		Remain: 100, Total: 100,
 		ExpiryBuckets: []pool.ExpiryBucket{
-			{Date: at1.Format("2006-01-02"), ExpireAt: at1, Remain: 100},
-			{Date: at2.Format("2006-01-02"), ExpireAt: at2, Remain: 200},
+			{Date: at.Format("2006-01-02"), ExpireAt: at, Remain: 40},
 		},
 	})
+	pn := New(Config{Version: "test", Pool: p})
 
 	rec := httptest.NewRecorder()
-	p.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/panel/api/overview", nil))
+	pn.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/panel/api/overview", nil))
 	if rec.Code != http.StatusOK {
-		t.Fatalf("overview status=%d body=%s", rec.Code, rec.Body.String())
+		t.Fatalf("overview code=%d body=%s", rec.Code, rec.Body)
 	}
-	var resp struct {
-		BalanceRefreshSec   int       `json:"balance_refresh_sec"`
-		BalanceRefreshedAt  time.Time `json:"balance_refreshed_at"`
-		Accounts            []struct {
+	var d struct {
+		BalanceRefreshSec  int       `json:"balance_refresh_sec"`
+		BalanceRefreshedAt time.Time `json:"balance_refreshed_at"`
+		Accounts           []struct {
+			UID                  string              `json:"uid"`
 			CreditsExpiryBuckets []pool.ExpiryBucket `json:"credits_expiry_buckets"`
 		} `json:"accounts"`
 	}
-	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
-		t.Fatalf("decode overview: %v", err)
+	if err := json.Unmarshal(rec.Body.Bytes(), &d); err != nil {
+		t.Fatal(err)
 	}
-	if len(resp.Accounts) != 1 || len(resp.Accounts[0].CreditsExpiryBuckets) != 2 {
-		t.Fatalf("overview accounts=%+v want 2 expiry buckets", resp.Accounts)
+	if len(d.Accounts) != 1 || len(d.Accounts[0].CreditsExpiryBuckets) != 1 {
+		t.Fatalf("overview 未透出 buckets: %s", rec.Body)
 	}
-	if got := resp.Accounts[0].CreditsExpiryBuckets[0]; got.Remain != 100 || got.Date != at1.Format("2006-01-02") {
-		t.Fatalf("first bucket=%+v", got)
+	b := d.Accounts[0].CreditsExpiryBuckets[0]
+	if b.Date != at.Format("2006-01-02") || b.Remain != 40 {
+		t.Fatalf("bucket=%+v want %s/40", b, at.Format("2006-01-02"))
 	}
-	if resp.BalanceRefreshSec != 300 {
-		t.Fatalf("balance_refresh_sec=%d want 300", resp.BalanceRefreshSec)
-	}
-	if resp.BalanceRefreshedAt.IsZero() {
-		t.Fatal("balance_refreshed_at 为零值：前端无法标注数据年龄")
+	if d.BalanceRefreshSec != 0 {
+		t.Fatalf("无调度器时 balance_refresh_sec=%d want 0", d.BalanceRefreshSec)
 	}
 }

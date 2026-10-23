@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
-	"sync/atomic"
+	"sync"
 	"testing"
 
 	"afree-proxy/internal/workbuddy/auth"
@@ -13,262 +13,249 @@ import (
 	"afree-proxy/internal/workbuddy/upstream"
 )
 
-// sweepTask 构造假上游的一个任务条目。
-func sweepTask(code string, target, current int64, acceptStatus string, extra map[string]any) map[string]any {
-	t := map[string]any{
-		"task_code": code, "title": code, "target": target,
-		"current": current, "accept_status": acceptStatus,
-		"reward_credit": 100, "reward_energy": 5,
+// sweepTask 假上游里的任务状态。accept/claim 会真实改状态——第二轮清扫因此能验证幂等
+// （真实上游同款：重复领返回 already_claimed、已接受的任务 accept_status 变 accepted）。
+type sweepTask struct {
+	Code      string
+	Current   int64
+	Target    int64
+	MPOnly    bool // 只在 mp 口径下发（默认列表不含）
+	NotAcc    bool // accept_status=not_accepted（待接受）
+	Locked    bool // 上游标记未解锁（达标也不该领）
+	Accepted  bool
+	Claimed   bool
+	FailClaim bool // 领奖返回 500，验证单条失败不中断本轮
+}
+
+// sweepFake 假上游：记录每个端点被怎么调（口径 + 平台头），供断言「分流是否正确」。
+type sweepFake struct {
+	mu      sync.Mutex
+	tasks   []*sweepTask
+	accepts []string // "default" / "mp"
+	claims  []string // "<code>|<x-client-platform>"
+	reqs    int
+}
+
+func (f *sweepFake) taskJSON(t *sweepTask) map[string]any {
+	status := "available"
+	switch {
+	case t.Claimed:
+		status = "claimed"
+	case t.Accepted:
+		status = "accepted"
+	case t.NotAcc:
+		status = "not_accepted"
 	}
-	for k, v := range extra {
-		t[k] = v
+	accept := ""
+	switch {
+	case t.Claimed:
+		accept = "claimed"
+	case t.Accepted:
+		accept = "accepted"
+	case t.NotAcc:
+		accept = "not_accepted"
 	}
-	return t
+	return map[string]any{
+		"task_code": t.Code, "task_id": 1, "title": t.Code,
+		"target": t.Target, "current": t.Current, "locked": t.Locked,
+		"accept_status": accept, "status": status,
+		"reward_credit": 100,
+	}
 }
 
-// sweepBackend 假上游：默认任务列表 + mp 列表 + accept + claim，带请求计数。
-type sweepBackend struct {
-	listFn   func(isMP bool) []map[string]any
-	acceptFn func(codes []string, isMP bool) (int, string) // (status, body)
-	claimFn  func(code string) (int, map[string]any)       // (status, data)
-
-	reqs    atomic.Int32
-	accepts atomic.Int32
-	claims  atomic.Int32
+func (f *sweepFake) writeList(w http.ResponseWriter, mp bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	list := []any{}
+	for _, t := range f.tasks {
+		if t.MPOnly && !mp {
+			continue // mp 专属任务默认口径不下发
+		}
+		list = append(list, f.taskJSON(t))
+	}
+	body, _ := json.Marshal(map[string]any{"code": 0, "msg": "OK", "data": map[string]any{"tasks": list}})
+	_, _ = w.Write(body)
 }
 
-func sweepTasksBody(tasks []map[string]any) string {
-	b, _ := json.Marshal(map[string]any{"code": 0, "msg": "OK", "data": map[string]any{"tasks": tasks}})
-	return string(b)
-}
-
-func (b *sweepBackend) handler() http.HandlerFunc {
+func (f *sweepFake) handler(t *testing.T) http.HandlerFunc {
+	t.Helper()
 	return func(w http.ResponseWriter, r *http.Request) {
-		b.reqs.Add(1)
-		isMP := r.Header.Get("X-Client-Platform") == "miniprogram"
+		f.mu.Lock()
+		f.reqs++
+		f.mu.Unlock()
+		mp := r.Header.Get("X-Client-Platform") == "miniprogram"
 		switch {
-		case r.URL.Path == "/v2/activity/growth/tasks":
-			if b.listFn != nil {
-				w.Write([]byte(sweepTasksBody(b.listFn(isMP))))
-				return
+		case r.Method == http.MethodGet && r.URL.Path == "/v2/activity/growth/tasks":
+			f.writeList(w, mp)
+		case r.Method == http.MethodPost && r.URL.Path == "/v2/activity/growth/tasks/accept":
+			f.mu.Lock()
+			kind := "default"
+			if mp {
+				kind = "mp"
 			}
-			w.Write([]byte(sweepTasksBody(nil)))
-		case strings.HasSuffix(r.URL.Path, "/accept"):
+			f.accepts = append(f.accepts, kind)
 			var body struct {
 				TaskCodes []string `json:"task_codes"`
 			}
 			_ = json.NewDecoder(r.Body).Decode(&body)
-			for range body.TaskCodes {
-				b.accepts.Add(1)
+			for _, c := range body.TaskCodes {
+				for _, x := range f.tasks {
+					if x.Code == c {
+						x.Accepted = true
+					}
+				}
 			}
-			deferFN := func() {
-				w.Write([]byte(`{"code":0,"msg":"OK","data":{}}`))
-			}
-			if b.acceptFn == nil {
-				deferFN()
-				return
-			}
-			if status, msg := b.acceptFn(body.TaskCodes, isMP); status != 0 {
-				w.WriteHeader(status)
-				w.Write([]byte(msg))
-				return
-			}
-			deferFN()
-		case strings.HasSuffix(r.URL.Path, "/claim"):
+			f.mu.Unlock()
+			_, _ = w.Write([]byte(`{"code":0,"msg":"OK","data":{}}`))
+		case r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/activity/growth/tasks/") &&
+			strings.HasSuffix(r.URL.Path, "/claim"):
 			code := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/activity/growth/tasks/"), "/claim")
-			b.claims.Add(1)
-			if b.claimFn == nil {
-				w.Write([]byte(`{"code":0,"msg":"OK","data":{"already_claimed":true}}`))
+			platform := r.Header.Get("x-client-platform")
+			f.mu.Lock()
+			f.claims = append(f.claims, code+"|"+platform)
+			fail := false
+			for _, x := range f.tasks {
+				if x.Code == code {
+					if x.FailClaim {
+						fail = true
+					} else {
+						x.Claimed = true
+					}
+				}
+			}
+			f.mu.Unlock()
+			if fail {
+				w.WriteHeader(http.StatusInternalServerError)
+				_, _ = w.Write([]byte(`{"code":500,"msg":"boom"}`))
 				return
 			}
-			status, data := b.claimFn(code)
-			if status != 0 {
-				w.WriteHeader(status)
-			}
-			if data == nil {
-				data = map[string]any{"already_claimed": true}
-			}
-			out, _ := json.Marshal(map[string]any{"code": 0, "msg": "OK", "data": data})
-			w.Write(out)
+			_, _ = w.Write([]byte(`{"code":0,"msg":"OK","data":{"already_claimed":false,"credit":100,"energy":0}}`))
 		default:
-			w.Write([]byte(`{"code":0,"msg":"OK","data":{}}`))
+			t.Errorf("未预期的上游请求: %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
 		}
 	}
 }
 
-// newSweepPanel 用给定假后端与账号搭一个可被 RunTaskSweepOnce 直接调用的 Panel。
-func newSweepPanel(t *testing.T, b *sweepBackend, accounts ...*auth.Auth) *Panel {
+func sweepPanel(t *testing.T, f *sweepFake, accounts ...*auth.Auth) *Panel {
 	t.Helper()
-	srv := httptest.NewServer(b.handler())
+	srv := httptest.NewServer(f.handler(t))
 	t.Cleanup(srv.Close)
+	up := &upstream.Client{HTTP: srv.Client(), ChatBaseCN: srv.URL, BillingBaseCN: srv.URL, WebBaseCN: srv.URL}
 	p := pool.New("")
 	for _, a := range accounts {
 		p.Add(a)
 	}
-	return &Panel{cfg: Config{
-		Pool: p,
-		Upstream: &upstream.Client{
-			HTTP: srv.Client(), ChatBaseCN: srv.URL, BillingBaseCN: srv.URL, WebBaseCN: srv.URL,
-		},
+	return New(Config{Pool: p, Upstream: up})
+}
+
+// 待接受的任务被接受、达标未领的被领（默认口径与 mp 口径分开提交；mp 专属码走 mp 头）。
+// 第二轮必须空转：假上游已改状态，重复领上游返回 already_claimed。
+func TestTaskSweepAcceptsAndClaims(t *testing.T) {
+	f := &sweepFake{tasks: []*sweepTask{
+		{Code: "chat_5", Current: 5, Target: 5},                           // 达标未领（非 mp）
+		{Code: "Sequential_Tasks_1", Current: 1, Target: 1, MPOnly: true}, // mp 专属达标未领
+		{Code: "Buddy_App", Current: 0, Target: 1, NotAcc: true},          // 待接受
+		{Code: "Sequential_Tasks_2", Current: 1, Target: 1, Locked: true}, // 达标但未解锁：不领
 	}}
-}
+	p := sweepPanel(t, f, &auth.Auth{UID: "cn-1", Nickname: "cn", AccessToken: "at"})
 
-func claimOK(data map[string]any) (int, map[string]any) { return 0, data }
+	swept, msg := p.RunTaskSweepNow()
+	if swept != 1 {
+		t.Fatalf("swept=%d want 1；msg=%s", swept, msg)
+	}
+	if len(f.accepts) != 2 || f.accepts[0] != "default" || f.accepts[1] != "mp" {
+		t.Errorf("accept 分流=%v want [default mp]（端标记不同，必须分开提交）", f.accepts)
+	}
+	if got := strings.Join(f.claims, ","); got != "chat_5|web,Sequential_Tasks_1|miniprogram" {
+		t.Errorf("claim 分流=%q want chat_5|web,Sequential_Tasks_1|miniprogram", got)
+	}
 
-// TestTaskSweepAcceptAndClaim 单轮清扫：未接受的任务走 accept（默认/mp 分开提交）、
-// 已达标的走 claim，其余（已领取 / locked / 未达标）不产生任何请求。
-func TestTaskSweepAcceptAndClaim(t *testing.T) {
-	b := &sweepBackend{
-		listFn: func(isMP bool) []map[string]any {
-			if isMP {
-				return []map[string]any{
-					sweepTask("school_season", 1, 1, "accepted", nil), // mp 口径达标任务
-				}
-			}
-			return []map[string]any{
-				sweepTask("chat_5", 5, 5, "accepted", nil),       // 达标未领 → claim
-				sweepTask("invite_1", 1, 0, "not_accepted", nil), // 未接受 → accept
-				sweepTask("locked_1", 3, 0, "not_accepted", map[string]any{"locked": true}),
-				sweepTask("halfway", 10, 3, "accepted", nil), // 未达标 → 不动
-				sweepTask("done_1", 5, 5, "claimed", nil),    // 已领取 → 不动
-			}
-		},
-		claimFn: func(code string) (int, map[string]any) {
-			return claimOK(map[string]any{"already_claimed": false, "credit": 100, "energy": 5})
-		},
+	// 第二轮：状态已被上游改过 → 零动作。
+	f.claims = nil
+	f.accepts = nil
+	p.RunTaskSweepNow()
+	if len(f.accepts) != 0 {
+		t.Errorf("第二轮不应再接受，实际=%v", f.accepts)
 	}
-	p := newSweepPanel(t, b, &auth.Auth{UID: "u1", AccessToken: "at"})
-	st := p.RunTaskSweepOnce()
-
-	if st.Accounts != 1 || st.Skipped != 0 {
-		t.Fatalf("accounts=%d skipped=%d, want 1/0", st.Accounts, st.Skipped)
-	}
-	// invite_1 需要 accept（mp 列表里的 school_season 已 accepted，不再接受）。
-	if st.Accepted != 1 {
-		t.Errorf("accepted = %d, want 1（只有 invite_1 未接受）", st.Accepted)
-	}
-	// chat_5 与 school_season 均达标未领 → 各领一次。
-	if st.Claimed != 2 || st.Credits != 200 || st.Energy != 10 {
-		t.Errorf("claimed=%d credits=%d energy=%d, want 2/200/10", st.Claimed, st.Credits, st.Energy)
-	}
-	if st.Errors != 0 {
-		t.Errorf("errors = %d, want 0", st.Errors)
-	}
-	if got := b.claims.Load(); got != 2 {
-		t.Errorf("claim 请求数 = %d, want 2", got)
+	if len(f.claims) != 0 {
+		t.Errorf("第二轮不应再领奖，实际=%v", f.claims)
 	}
 }
 
-// TestTaskSweepIdempotent 两轮幂等：第二轮任务已被标记为 claimed（不再 Claimable），
-// 不应重复打领奖端点；即便上游返回 already_claimed 也不计错误。
-func TestTaskSweepIdempotent(t *testing.T) {
-	claimed := map[string]bool{}
-	b := &sweepBackend{
-		listFn: func(isMP bool) []map[string]any {
-			if isMP {
-				return nil
-			}
-			status := "accepted"
-			if claimed["chat_5"] {
-				status = "claimed"
-			}
-			return []map[string]any{sweepTask("chat_5", 5, 5, status, nil)}
-		},
-		claimFn: func(code string) (int, map[string]any) {
-			claimed[code] = true
-			return claimOK(map[string]any{"already_claimed": false, "credit": 100, "energy": 5})
-		},
-	}
-	p := newSweepPanel(t, b, &auth.Auth{UID: "u1", AccessToken: "at"})
-
-	first := p.RunTaskSweepOnce()
-	if first.Claimed != 1 || first.Credits != 100 {
-		t.Fatalf("first round: claimed=%d credits=%d, want 1/100", first.Claimed, first.Credits)
-	}
-	// 第二轮：状态已 claimed → 不再 Claimable → 领奖端点 0 次调用。
-	b.claims.Store(0)
-	second := p.RunTaskSweepOnce()
-	if second.Claimed != 0 || second.Errors != 0 {
-		t.Errorf("second round: claimed=%d errors=%d, want 0/0", second.Claimed, second.Errors)
-	}
-	if got := b.claims.Load(); got != 0 {
-		t.Errorf("第二轮不应再打领奖端点，got %d", got)
+// 同一任务在两种口径都下发时只能领一次（mp 列表是默认口径的超集，不去重会双领）。
+func TestTaskSweepDedupesClaimAcrossReconciliations(t *testing.T) {
+	f := &sweepFake{tasks: []*sweepTask{{Code: "Library_read", Current: 1, Target: 1}}}
+	p := sweepPanel(t, f, &auth.Auth{UID: "cn-1", Nickname: "cn", AccessToken: "at"})
+	p.RunTaskSweepNow()
+	if len(f.claims) != 1 {
+		t.Fatalf("claim 次数=%v want 恰好 1 次（两口径同码去重）", f.claims)
 	}
 }
 
-// TestTaskSweepSkipsGlobalAndEnterprise global / 企业版账号无个人成长体系：
-// 零上游请求（与任务中心扫描同一门控）。
-func TestTaskSweepSkipsGlobalAndEnterprise(t *testing.T) {
-	b := &sweepBackend{}
-	p := newSweepPanel(t, b,
-		&auth.Auth{UID: "g1", AccessToken: "at", Domain: "www.workbuddy.ai"},
-		&auth.Auth{UID: "e1", AccessToken: "at", EnterpriseID: "ent-1"},
-	)
-	st := p.RunTaskSweepOnce()
-	if st.Accounts != 0 || st.Errors != 0 || st.Claimed != 0 {
-		t.Errorf("stats = %+v, want 全零", st)
+// 单条领奖失败不中断本轮：其余达标任务照常领到。
+func TestTaskSweepClaimFailureKeepsGoing(t *testing.T) {
+	f := &sweepFake{tasks: []*sweepTask{
+		{Code: "chat_5", Current: 5, Target: 5, FailClaim: true},
+		{Code: "skill_1", Current: 1, Target: 1},
+	}}
+	p := sweepPanel(t, f, &auth.Auth{UID: "cn-1", Nickname: "cn", AccessToken: "at"})
+	p.RunTaskSweepNow()
+	var ok int
+	for _, c := range f.claims {
+		if strings.HasPrefix(c, "skill_1|") {
+			ok++
+		}
 	}
-	if got := b.reqs.Load(); got != 0 {
-		t.Fatalf("global/企业版账号不应产生任何上游请求，got %d", got)
-	}
-}
-
-// TestTaskSweepClaimErrorDoesNotBlock 单个领奖失败只计 errors，不中断后续任务，
-// 也不掩盖其他任务的成功。
-func TestTaskSweepClaimErrorDoesNotBlock(t *testing.T) {
-	b := &sweepBackend{
-		listFn: func(isMP bool) []map[string]any {
-			if isMP {
-				return nil
-			}
-			return []map[string]any{
-				sweepTask("bad_1", 5, 5, "accepted", nil),
-				sweepTask("good_1", 5, 5, "accepted", nil),
-			}
-		},
-		claimFn: func(code string) (int, map[string]any) {
-			if code == "bad_1" {
-				return 400, map[string]any{"code": 400, "msg": "task not completed"}
-			}
-			return claimOK(map[string]any{"already_claimed": false, "credit": 100, "energy": 5})
-		},
-	}
-	p := newSweepPanel(t, b, &auth.Auth{UID: "u1", AccessToken: "at"})
-	st := p.RunTaskSweepOnce()
-	if st.Errors != 1 {
-		t.Errorf("errors = %d, want 1", st.Errors)
-	}
-	if st.Claimed != 1 || st.Credits != 100 {
-		t.Errorf("claimed=%d credits=%d, want 1/100（失败项不阻挡成功项）", st.Claimed, st.Credits)
+	if ok != 1 {
+		t.Errorf("失败码之后的达标任务仍应领到，claims=%v", f.claims)
 	}
 }
 
-// TestTaskSweepSkipsBusyAccount 账号正在跑任务动作（持有 per-account 锁）时整账号
-// 跳过：不打断进行中的链路，下一轮自然补。
+// 禁用 / 国际区 / 企业版账号一个上游请求都不发（门控与任务中心扫描一致）。
+func TestTaskSweepSkipsGatedAccounts(t *testing.T) {
+	f := &sweepFake{tasks: []*sweepTask{{Code: "chat_5", Current: 5, Target: 5}}}
+	useRealmForTest(t)
+	global := testRealmAuth(t, "global-1", "global")
+	ent := &auth.Auth{UID: "ent-1", Nickname: "ent", AccessToken: "at", EnterpriseID: "e1"}
+	dis := &auth.Auth{UID: "dis-1", Nickname: "dis", AccessToken: "at"}
+
+	p := pool.New("")
+	for _, a := range []*auth.Auth{global, ent, dis} {
+		p.Add(a)
+	}
+	p.Disable("dis-1", "test")
+	srv := httptest.NewServer(f.handler(t))
+	defer srv.Close()
+	up := &upstream.Client{HTTP: srv.Client(), ChatBaseCN: srv.URL, BillingBaseCN: srv.URL, WebBaseCN: srv.URL}
+	pn := New(Config{Pool: p, Upstream: up})
+
+	swept, _ := pn.RunTaskSweepNow()
+	if swept != 0 {
+		t.Errorf("清扫账号数=%d want 0", swept)
+	}
+	if f.reqs != 0 {
+		t.Errorf("门控账号不应发起任何上游请求，实际 %d 次", f.reqs)
+	}
+}
+
+// 持锁账号（正在跑任务行为链路）整轮跳过：一个上游请求都不能发——清扫是「补漏」，
+// 不能去抢正在执行的动作，否则同一任务的 accept/claim 会和动作链交叠。解锁后下一轮
+// 自然补上（上游 PR #205 的同款用例）。
 func TestTaskSweepSkipsBusyAccount(t *testing.T) {
-	b := &sweepBackend{
-		listFn: func(isMP bool) []map[string]any {
-			if isMP {
-				return nil
-			}
-			return []map[string]any{sweepTask("chat_5", 5, 5, "accepted", nil)}
-		},
+	f := &sweepFake{tasks: []*sweepTask{{Code: "chat_5", Current: 5, Target: 5}}}
+	p := sweepPanel(t, f, &auth.Auth{UID: "cn-1", Nickname: "cn", AccessToken: "at"})
+
+	if !p.tryLockAccount("cn-1") {
+		t.Fatal("测试前置：应能拿到账号锁")
 	}
-	p := newSweepPanel(t, b, &auth.Auth{UID: "u1", AccessToken: "at"})
-	if !p.tryLockAccount("u1") {
-		t.Fatal("模拟占用失败")
+	swept, msg := p.RunTaskSweepNow()
+	if swept != 0 || f.reqs != 0 || len(f.claims) != 0 {
+		t.Fatalf("持锁期间应整轮跳过：swept=%d reqs=%d claims=%v msg=%s", swept, f.reqs, f.claims, msg)
 	}
-	st := p.RunTaskSweepOnce()
-	if st.Skipped != 1 || st.Claimed != 0 {
-		t.Errorf("stats = %+v, want skipped=1 claimed=0", st)
-	}
-	if got := b.reqs.Load(); got != 0 {
-		t.Fatalf("忙账号不应产生上游请求，got %d", got)
-	}
-	p.unlockAccount("u1")
-	// 解锁后同一轮即可正常清扫（下一周期自动补）。
-	st = p.RunTaskSweepOnce()
-	if st.Skipped != 0 || st.Claimed != 1 {
-		t.Errorf("解锁后 stats = %+v, want skipped=0 claimed=1", st)
+
+	p.unlockAccount("cn-1")
+	if swept, msg = p.RunTaskSweepNow(); swept != 1 || len(f.claims) != 1 {
+		t.Fatalf("解锁后应补上：swept=%d claims=%v msg=%s", swept, f.claims, msg)
 	}
 }

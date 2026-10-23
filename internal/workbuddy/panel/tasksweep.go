@@ -1,182 +1,128 @@
-// tasksweep.go 周期幂等「补领清扫」。
+// tasksweep.go 补领清扫：只 accept 待接受的、只 claim 已达标未领的，不跑任何行为链路。
 //
-// 职责单一——只 accept 尚未接受的任务、只 claim 已达标未领的任务，**不跑任何
-// 行为链路**（不真实对话、不上报事件）。来源见 issue #174：
-//
-//   - growthPending 要求任务必须有自动动作（25 个 autoActions 白名单），不在
-//     白名单的任务即使达标也永远扫不进队列、永远不领奖；
-//   - 队列路径要先重跑一遍行为动作（可能失败/前置条件已变），且一天只跑一次；
-//   - 「一键完成」对已达标任务直接跳过不领。
-//
-// 三条链路都不负责「把已达标的奖励领掉」，于是积分卡在 2000/2100/2300 上不去 4000。
-// 本文件补的就是这条缺失链路：分钟级周期、幂等、可开关。
-//
-// 设计要点（与 issue 一致）：
-//   - 判据只用 progress 口径 Task.Claimable（!claimed && target>0 && current>=target），
-//     **不用 accept_status == "completed"**：它在回读时会短暂转 completed 后整体回滚，
-//     据此领奖会误领。
-//   - claim 幂等（重复领返回 already_claimed → 0 分 0 能），宁可多试一轮也不漏领。
-//   - 与单任务 / 一键完成 / 成长队列共用 per-account 锁：正在跑动作的账号本轮跳过，
-//     不打断正在进行的动作链路。
-//   - global（无 CN 成长体系）与企业版（上游 403 growth system is only available
-//     for personal users）账号都不发起任何上游请求。
+// 动机（issue #174）：达标未领的任务此前没有补领兜底——新号自动跑时它们还没达标
+// （awaiting_progress），成长队列一天只跑一次，白名单（autoActions）外的码更是永远
+// 进不了队列。本清扫与 autoActions 无关，判据只有 progress，故周期跑即可兜住全部漏领。
 package panel
 
 import (
+	"fmt"
 	"log"
-	"sync"
 
 	"afree-proxy/internal/workbuddy/auth"
+	"afree-proxy/internal/workbuddy/logfmt"
+	"afree-proxy/internal/workbuddy/upstream"
 )
 
-// TaskSweepStats 一轮补领清扫的汇总（供日志与潜在的未来 HTTP 回执）。
-type TaskSweepStats struct {
-	Accounts int   `json:"accounts"` // 参与清扫的账号数
-	Skipped  int   `json:"skipped"`  // 因正在执行任务动作而跳过的账号数
-	Accepted int   `json:"accepted"` // 本轮接受成功的任务数
-	Claimed  int   `json:"claimed"`  // 本轮领奖成功的任务数
-	Credits  int64 `json:"credits"`  // 本轮到账积分
-	Energy   int64 `json:"energy"`   // 本轮到账能量
-	Errors   int   `json:"errors"`   // 本轮出错（不中断）的次数
-}
-
-// RunTaskSweepOnce 对所有账号做一轮幂等补领清扫（账号间并发、账号内串行）。
-// 由 scheduler 的 ticker 调用（详见 scheduler.StartTaskSweep）。
-func (p *Panel) RunTaskSweepOnce() TaskSweepStats {
-	var st TaskSweepStats
-	var mu sync.Mutex
-	var wg sync.WaitGroup
-
-	for _, ps := range p.cfg.Pool.List() {
-		if ps.Disabled {
-			continue // 禁用账号不参与（与任务中心扫描同口径）
+// RunTaskSweepNow 一轮清扫（scheduler 周期调用）。返回 (清扫账号数, 摘要)。
+// 已禁用 / 国际区 / 企业版账号一个上游请求都不发（门控与任务中心扫描一致）；
+// 正在跑任务动作的账号本轮让位（与单任务 / 一键完成 / 成长队列共用 per-account 锁）。
+func (p *Panel) RunTaskSweepNow() (int, string) {
+	if p.cfg.Pool == nil || p.cfg.Upstream == nil {
+		return 0, "账号池未接线"
+	}
+	var swept, busy, accepted, claimed, failed int
+	for _, st := range p.cfg.Pool.List() {
+		if st.Disabled || st.Realm == "global" {
+			continue
 		}
-		a := p.cfg.Pool.AuthByUID(ps.UID)
-		if a == nil || a.IsGlobal() || a.IsEnterprise() {
-			continue // 无个人成长体系：零上游请求
+		a := p.cfg.Pool.AuthByUID(st.UID)
+		if a == nil || !a.SupportsPersonalGrowth() {
+			continue // a==nil 无凭证；企业版 / 静态 API Key 无个人成长体系
 		}
-		wg.Add(1)
-		go func(a *auth.Auth, uid string) {
-			defer wg.Done()
-			r := p.sweepAccount(a, uid)
-			mu.Lock()
-			defer mu.Unlock()
-			st.Accounts += r.accounts
-			st.Skipped += r.skipped
-			st.Accepted += r.accepted
-			st.Claimed += r.claimed
-			st.Credits += r.credit
-			st.Energy += r.energy
-			st.Errors += r.errors
-		}(a, ps.UID)
+		if !p.tryLockAccount(st.UID) {
+			busy++
+			continue
+		}
+		acc, cl, err := p.sweepAccount(a)
+		p.unlockAccount(st.UID)
+		swept++
+		accepted += acc
+		claimed += cl
+		if err != nil {
+			failed++
+			log.Printf("WARN: 补领清扫 %s: %v", logfmt.Label(a.UID, a.Nickname), err)
+		}
 	}
-	wg.Wait()
-
-	if st.Claims() > 0 || st.Errors > 0 || st.Accepted > 0 {
-		log.Printf("panel: 任务补领清扫：%d 个账号（跳过 %d）· 接受 %d · 领奖 %d · +%d 分 +%d 能 · 出错 %d",
-			st.Accounts, st.Skipped, st.Accepted, st.Claimed, st.Credits, st.Energy, st.Errors)
-	}
-	return st
+	return swept, fmt.Sprintf("清扫 %d 个账号（跳过 %d）· 接受 %d · 领奖 %d · 出错 %d",
+		swept, busy, accepted, claimed, failed)
 }
 
-// Claims 本轮实际到账奖励的任务数（与 Claimed 一致，语义化别名）。
-func (s TaskSweepStats) Claims() int { return s.Claimed }
-
-// sweepResult 单账号清扫结果（RunTaskSweepOnce 汇总用，非导出）。
-type sweepResult struct {
-	accounts, skipped, accepted, claimed, errors int
-	credit, energy                               int64
-}
-
-// sweepAccount 单账号一轮清扫。命中账号锁（正在跑任务动作）时整账号跳过：
-// 不打断进行中的链路，下一轮自然补上。
-func (p *Panel) sweepAccount(a *auth.Auth, uid string) (res sweepResult) {
-	res.accounts = 1
-	if !p.tryLockAccount(uid) {
-		res.skipped = 1
-		return res
-	}
-	defer p.unlockAccount(uid)
-
+// sweepAccount 单账号清扫，返回 (接受数, 领奖数, 列表失败错误)。
+//
+// 领奖判据只用 progress（Task.Claimable）而不是 accept_status：后者会在回读时短暂转
+// completed 随后被整体回滚（见 autotask.go），据此领奖会误领。领奖本身幂等（重复领
+// 上游返回 already_claimed → 0 分 0 能），所以逐条失败只记 WARN 不中断，宁可多试一轮。
+func (p *Panel) sweepAccount(a *auth.Auth) (accepted, claimed int, err error) {
+	label := logfmt.Label(a.UID, a.Nickname)
 	tasks, err := p.cfg.Upstream.ListTasks(a)
 	if err != nil {
-		res.errors++
-		return res
+		return 0, 0, err
 	}
-	// 小程序口径列表（school_season / Sequential_Tasks_1 等仅在 mp 头下发）：
-	// 与默认口径按 task_code 去重合并；mp 列表失败静默（活动结束 / 无 mp 任务）。
-	mpOnly := map[string]bool{}
-	if mpTasks, mErr := p.cfg.Upstream.ListTasksMP(a); mErr == nil {
-		seen := map[string]bool{}
-		for _, t := range tasks {
-			seen[t.TaskCode] = true
+	mp, mpErr := p.cfg.Upstream.ListTasksMP(a)
+	if mpErr != nil {
+		log.Printf("WARN: 补领清扫 %s mp 列表: %v", label, mpErr)
+	}
+
+	// 端标记不同，两种口径分开提交（缺 mp 头 accept 返回 task not found）。
+	if codes := acceptPendingCodes(tasks); len(codes) > 0 {
+		if err := p.cfg.Upstream.AcceptTasks(a, codes); err != nil {
+			log.Printf("WARN: 补领清扫 %s 接受: %v", label, err)
+		} else {
+			accepted += len(codes)
 		}
-		for _, t := range mpTasks {
-			if seen[t.TaskCode] {
-				continue
-			}
-			mpOnly[t.TaskCode] = true
-			tasks = append(tasks, t)
+	}
+	if codes := acceptPendingCodes(mp); len(codes) > 0 {
+		if err := p.cfg.Upstream.AcceptTasksMP(a, codes); err != nil {
+			log.Printf("WARN: 补领清扫 %s 接受(mp): %v", label, err)
+		} else {
+			accepted += len(codes)
 		}
 	}
 
-	// 阶段一：接受未接受的任务。默认口径与 mp 口径必须**分开提交**（端标记不同，
-	// 混提交会让 mp 任务报 task not found）。
-	var codes, mpCodes []string
+	// mp 列表是默认口径的超集，按 task_code 去重（否则同一任务领两次）。
+	seen := make(map[string]bool, len(tasks)+len(mp))
+	onlyMP := make(map[string]bool, len(mp))
+	for _, t := range mp {
+		onlyMP[t.TaskCode] = true
+	}
 	for _, t := range tasks {
-		if t.Claimed || t.Locked {
+		onlyMP[t.TaskCode] = false
+	}
+	for _, t := range append(append([]upstream.Task{}, tasks...), mp...) {
+		if t.TaskCode == "" || seen[t.TaskCode] {
 			continue
 		}
-		if t.AcceptStatus == "accepted" || t.AcceptStatus == "completed" {
-			continue
+		seen[t.TaskCode] = true
+		if !t.Claimable || t.Locked {
+			continue // 锁定 = 上游未解锁（Sequential 族每日解锁一环），领也领不到
 		}
-		if isMPTaskCode(t.TaskCode) || mpOnly[t.TaskCode] {
-			mpCodes = append(mpCodes, t.TaskCode)
+		// mp 专属码走 mp 领奖（自带 Web 域 400 降级）；只在 mp 列表出现的码同办，
+		// 否则 Web 域对 mp 任务 400 会变成每轮一条 WARN。
+		var cerr error
+		if isMPTaskCode(t.TaskCode) || onlyMP[t.TaskCode] {
+			_, _, cerr = p.cfg.Upstream.ClaimRewardMP(a, t.TaskCode)
 		} else {
+			_, _, cerr = p.cfg.Upstream.ClaimReward(a, t.TaskCode)
+		}
+		if cerr != nil {
+			log.Printf("WARN: 补领 %s %s: %v", label, t.TaskCode, cerr)
+			continue
+		}
+		claimed++
+	}
+	return accepted, claimed, nil
+}
+
+// acceptPendingCodes 待接受的任务码：未领、未达标、未锁定、状态还不是 accepted/completed。
+func acceptPendingCodes(tasks []upstream.Task) []string {
+	var codes []string
+	for i := range tasks {
+		t := &tasks[i]
+		if !t.Claimed && !t.Locked && !taskProgressReached(t) &&
+			t.AcceptStatus != "accepted" && t.AcceptStatus != "completed" {
 			codes = append(codes, t.TaskCode)
 		}
 	}
-	acceptCodes := func(cs []string, isMP bool) {
-		if len(cs) == 0 {
-			return
-		}
-		var aErr error
-		if isMP {
-			aErr = p.cfg.Upstream.AcceptTasksMP(a, cs)
-		} else {
-			aErr = p.cfg.Upstream.AcceptTasks(a, cs)
-		}
-		if aErr != nil {
-			res.errors++
-			return
-		}
-		res.accepted += len(cs)
-	}
-	acceptCodes(codes, false)
-	acceptCodes(mpCodes, true)
-
-	// 阶段二：领取已达标的奖励。claim 幂等（重复领 already_claimed → 0 分 0 能），
-	// 单项出错只记录、不中断后续任务。
-	for _, t := range tasks {
-		if !t.Claimable {
-			continue
-		}
-		// mp 口径任务必须走 mp 变体领奖端点（缺 mp 头上游返回 task not found）；
-		// 其余走 Web 域端点——与 taskcenter / autotask 的领奖口径一致。
-		var c, e int64
-		var cErr error
-		if isMPTaskCode(t.TaskCode) || mpOnly[t.TaskCode] {
-			c, e, cErr = p.cfg.Upstream.ClaimRewardMP(a, t.TaskCode)
-		} else {
-			c, e, cErr = p.cfg.Upstream.ClaimReward(a, t.TaskCode)
-		}
-		if cErr != nil {
-			res.errors++
-			continue
-		}
-		res.credit += c
-		res.energy += e
-		res.claimed++
-	}
-	return res
+	return codes
 }

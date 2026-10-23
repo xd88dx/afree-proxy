@@ -14,15 +14,18 @@ import (
 	"context"
 	"encoding/json"
 	"log"
+	"math"
 	"net/http"
 	"os"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"afree-proxy/internal/workbuddy/auth"
+	"afree-proxy/internal/workbuddy/balance"
 	"afree-proxy/internal/workbuddy/credithist"
 	"afree-proxy/internal/workbuddy/httpauth"
 	"afree-proxy/internal/workbuddy/livecfg"
@@ -39,10 +42,12 @@ type Config struct {
 	Pool      *pool.Pool
 	Upstream  *upstream.Client
 	Scheduler *scheduler.Scheduler // 手动触发签到/保活；nil 时对应接口返回 501
-	AuthDir   string               // OAuth 登录完成后凭证落盘目录
-	APIKey    string               // 空 = 不鉴权（与主服务同语义）；与 Live 同时给出时 Live 优先
-	RedisMode string               // "upstash" / "noop"，仅观测透出
-	Version   string               // 面板版本号（展示用）
+	// AutoTasksEnabled 与成长任务开关共用热配置；nil 时只允许手动启动后台任务。
+	AutoTasksEnabled func() bool
+	AuthDir          string // OAuth 登录完成后凭证落盘目录
+	APIKey           string // 空 = 不鉴权（与主服务同语义）；与 Live 同时给出时 Live 优先
+	RedisMode        string // "upstash" / "noop"，仅观测透出
+	Version          string // 面板版本号（展示用）
 
 	// Live 运行期可变配置（在线改配置立即生效）。
 	Live *livecfg.Holder
@@ -71,6 +76,12 @@ type Config struct {
 	// 写入；空或文件不存在 = model_probes 端点返回空集，面板不显示任何实测标注）。
 	// 只读展示：网关不解析、不依赖其内容做任何路由/出站决策。
 	ProbeFile string
+	// Balance 余额趋势采样记录器（nil = 该视图返回 501）
+	Balance *balance.Recorder
+	// ModelFallback 模型降级路由表（读 live 快照，支持热更）。nil = 未配置。
+	// 面板据它在限流提示里标注「已路由至 X」—— 否则用户看到「v4.1 限流」
+	// 会以为服务断了，实际请求已被自动改道到等价模型继续服务。
+	ModelFallback func() map[string]string
 }
 
 // Panel 管理面板 handler。挂载方式：外层 mux Handle("/panel/", panel)，
@@ -96,7 +107,25 @@ type Panel struct {
 	// 任务中心执行队列（taskcenter.go）。
 	queueOnce sync.Once
 	q         *queueState
+
+	// 持久化的账号后台任务（taskjobs.go），由 main 管理生命周期。
+	taskJobs *taskJobManager
+
+	// growthConc 排程轮次的账号间并发（config schedule.growth_concurrency，热生效）。
+	// 0 = 未配置 → 1。
+	growthConc atomic.Int64
+	// notifier 排程轮次结束后的汇总通知出口（main 装配期注入 alerting webhook；
+	// nil = 只落面板日志）。装配期设定、运行期只读，不需要锁。
+	notifier func(string)
 }
+
+// SetGrowthConcurrency 设置排程轮次的账号间并发（1-4；<=0 视为默认 1）。面板保存配置时热改。
+func (p *Panel) SetGrowthConcurrency(n int) {
+	p.growthConc.Store(int64(n))
+}
+
+// SetNotifier 注入汇总通知出口（nil = 关闭推送，只写日志）。装配期调用。
+func (p *Panel) SetNotifier(fn func(string)) { p.notifier = fn }
 
 // tryLockAccount 尝试锁定账号的任务执行；已在执行返回 false。
 func (p *Panel) tryLockAccount(uid string) bool {
@@ -131,6 +160,9 @@ const loginTTL = 15 * time.Minute
 type loginSession struct {
 	created time.Time
 	realm   string // "cn" / "global"，缺省 cn
+	// processing 该 state 正在落盘（含签到/余额校验等副作用）。前端每 3s 轮询，而成功
+	// 分支的副作用可能耗时数秒：没有这个闸门，第二个并发 poll 会把整段流程再跑一遍。
+	processing bool
 }
 
 // New 构建面板。
@@ -154,19 +186,23 @@ func (p *Panel) Logs() *Ring { return p.logs }
 
 func (p *Panel) routes() {
 	p.mux.HandleFunc("GET /panel/{$}", p.index)
+	p.mux.HandleFunc("GET /panel/theme.js", p.themeScript)
 	p.mux.HandleFunc("GET /panel/app.js", p.appScript)
-	p.mux.HandleFunc("GET /panel/mobile.css", p.mobileStyle)
-	p.mux.HandleFunc("GET /panel/mobile.js", p.mobileScript)
 	p.mux.HandleFunc("GET /panel/api/overview", p.withAuth(p.overview))
 	p.mux.HandleFunc("GET /panel/api/logs", p.withAuth(p.logsHandler))
+	p.mux.HandleFunc("GET /panel/api/error_summary", p.withAuth(p.errorSummary))
 	p.mux.HandleFunc("GET /panel/api/request_metrics", p.withAuth(p.requestMetrics))
 	p.mux.HandleFunc("GET /panel/api/request_logs", p.withAuth(p.requestLogs))
 	p.mux.HandleFunc("GET /panel/api/credit_history", p.withAuth(p.creditHistory))
 	p.mux.HandleFunc("GET /panel/api/models", p.withAuth(p.models))
+	// (账号 × 模型) 手动开关：运维显式禁用某账号的某模型（永久语义，仅手动解）。
+	// 与上游触发的临时冷却（6004/11102）正交，且手动优先。
+	p.mux.HandleFunc("POST /panel/api/accounts/{uid}/model_toggle", p.withAuth(p.modelToggle))
 	p.mux.HandleFunc("POST /panel/api/login/start", p.withAuth(p.loginStart))
 	p.mux.HandleFunc("GET /panel/api/login/poll", p.withAuth(p.loginPoll))
 	p.mux.HandleFunc("GET /panel/api/login/regions", p.withAuth(p.loginRegions))
 	p.mux.HandleFunc("POST /panel/api/import/cockpit", p.withAuth(p.importCockpit))
+	p.mux.HandleFunc("POST /panel/api/accounts/add_apikey", p.withAuth(p.addAPIKey))
 	p.mux.HandleFunc("POST /panel/api/accounts/{uid}/revive", p.withAuth(p.accountRevive))
 	p.mux.HandleFunc("POST /panel/api/accounts/{uid}/disable", p.withAuth(p.accountDisable))
 	p.mux.HandleFunc("POST /panel/api/accounts/{uid}/pause", p.withAuth(p.accountPause))
@@ -184,21 +220,25 @@ func (p *Panel) routes() {
 	p.mux.HandleFunc("POST /panel/api/tasks/scan_all", p.withAuth(p.tasksScanAll))
 	p.mux.HandleFunc("POST /panel/api/tasks/run_queue", p.withAuth(p.tasksRunQueue))
 	p.mux.HandleFunc("GET /panel/api/tasks/queue", p.withAuth(p.tasksQueueStatus))
-	p.mux.HandleFunc("GET /panel/api/school/vouchers", p.withAuth(p.schoolVouchers))
+	p.mux.HandleFunc("GET /panel/api/tasks/jobs", p.withAuth(p.taskJobsHandler))
+	p.mux.HandleFunc("GET /panel/api/accounts/{uid}/tasks/job", p.withAuth(p.taskJobStatus))
 	p.mux.HandleFunc("POST /panel/api/checkin_all", p.withAuth(p.checkinAll))
+	p.mux.HandleFunc("GET /panel/api/compensation", p.withAuth(p.compensation))
+	p.mux.HandleFunc("POST /panel/api/accounts/{uid}/compensation", p.withAuth(p.accountCompensation))
+	p.mux.HandleFunc("POST /panel/api/compensation_all", p.withAuth(p.compensationAll))
 	p.mux.HandleFunc("POST /panel/api/travel_all", p.withAuth(p.travelAll))
+	p.mux.HandleFunc("POST /panel/api/accounts/{uid}/travel", p.withAuth(p.accountTravel))
 	p.mux.HandleFunc("POST /panel/api/activity_all", p.withAuth(p.activityAll))
 	p.mux.HandleFunc("POST /panel/api/keepalive_all", p.withAuth(p.keepaliveAll))
 	p.mux.HandleFunc("POST /panel/api/balance_all", p.withAuth(p.balanceAll))
 	p.mux.HandleFunc("GET /panel/api/packages", p.withAuth(p.packages))
+	p.mux.HandleFunc("GET /panel/api/balance_history", p.withAuth(p.balanceHistory))
+	p.mux.HandleFunc("GET /panel/api/school/vouchers", p.withAuth(p.schoolVouchers))
 	p.mux.HandleFunc("GET /panel/api/usage", p.withAuth(p.usage))
 	p.mux.HandleFunc("POST /panel/api/usage/save", p.withAuth(p.usageSave))
 	p.mux.HandleFunc("GET /panel/api/model_probes", p.withAuth(p.modelProbes))
 	p.mux.HandleFunc("GET /panel/api/config", p.withAuth(p.getConfig))
 	p.mux.HandleFunc("POST /panel/api/config", p.withAuth(p.saveConfig))
-	p.mux.HandleFunc("GET /panel/api/compensation", p.withAuth(p.compensation))
-	p.mux.HandleFunc("POST /panel/api/accounts/{uid}/compensation", p.withAuth(p.accountCompensationClaim))
-	p.mux.HandleFunc("POST /panel/api/compensation_all", p.withAuth(p.compensationAll))
 }
 
 // ServeHTTP 统一入口：先写安全响应头再分发，保证页面、静态资源、API
@@ -256,8 +296,8 @@ func poolExpiryBuckets(in []upstream.ExpiryBucket) []pool.ExpiryBucket {
 
 // overview 总览：池计数 + 每账号状态 + 面板元信息。
 func (p *Panel) overview(w http.ResponseWriter, r *http.Request) {
-	// 用 WithPaused 而不是 CountsDetailed：后者把暂停号并进 disabled（/status 的
-	// 「不可用」口径），而概况卡片要分开展示（issue #125）。
+	// 用 WithPaused 而不是 CountsDetailed：后者把暂停号并进 disabled（/status 的「不可用」
+	// 口径），而面板概况卡片要分开展示（吸收上游 PR #130，issue #125）。
 	total, healthy, cooling, disabled, paused, inFlightFull := p.cfg.Pool.CountsDetailedWithPaused()
 	sticky := 0
 	if p.cfg.StickyCount != nil {
@@ -275,14 +315,16 @@ func (p *Panel) overview(w http.ResponseWriter, r *http.Request) {
 		"disabled":        disabled,
 		"paused":          paused,
 		"in_flight_full":  inFlightFull,
-		"accounts":        p.cfg.Pool.List(),
-		// model_locks 模型级限流全清单（哪些模型不能用、锁了几个号、还要锁多久）：
-		// 与 accounts 的账号池视图互补，前端「模型锁池」表直接渲染。无锁时为 null。
+		// 模型降级路由表：前端据它标注「⤳ 已路由至 X」（限流的模型若配了等价模型）。
+		"model_fallback": p.modelFallbackSnapshot(),
+		"accounts":       p.cfg.Pool.List(),
+		// model_locks 模型级限流全清单（哪些模型不能用、锁了几个号、还要锁多久，移植上游
+		// PR #120）：与 accounts 的账号池视图互补，前端「模型锁池」表直接渲染。无锁时为 null。
 		"model_locks": p.cfg.Pool.ModelLockView(),
 		// 到期提醒快照的节奏与年龄：界面轮询是 5 秒级，但卡片数据只随余额后台刷新
 		// 更新（默认每 5 分钟）——把这两个数透出，前端才能如实标注「x 分钟前更新」。
-		"balance_refresh_sec":    p.balanceRefreshSec(),
-		"balance_refreshed_at":   p.balanceRefreshedAt(),
+		"balance_refresh_sec":  p.balanceRefreshSec(),
+		"balance_refreshed_at": p.balanceRefreshedAt(),
 	})
 }
 
@@ -303,8 +345,24 @@ func (p *Panel) balanceRefreshedAt() time.Time {
 }
 
 // logsHandler 返回日志环形缓冲快照（时间升序，含频道标记 chat/task/sys）。
+// archive_error：任务日志落盘故障（写失败不影响请求；前端可提示）。
 func (p *Panel) logsHandler(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]any{"entries": p.logs.Snapshot()})
+	writeJSON(w, http.StatusOK, map[string]any{"entries": p.logs.Snapshot(), "archive_error": p.logs.ArchiveError()})
+}
+
+// errorSummary 把日志环里的 WARN/ERR 按「账号 × 类型」聚合（见 errors.go）。
+// 与日志同源、零新增存储：环里有几行就聚合几行。
+func (p *Panel) errorSummary(w http.ResponseWriter, r *http.Request) {
+	entries := p.logs.Snapshot()
+	lines := make([]LogLine, 0, len(entries))
+	for _, e := range entries {
+		lines = append(lines, LogLine{Text: e.Text, TS: e.TS})
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"rows":       AggregateErrors(lines),
+		"scanned":    len(entries),
+		"updated_at": time.Now().Format("15:04:05"),
+	})
 }
 
 // requestMetrics 返回进程内请求指标、最近 100 条与归档状态。
@@ -429,10 +487,18 @@ func (p *Panel) models(w http.ResponseWriter, r *http.Request) {
 	out := make([]map[string]any, 0)
 	var fetchErrs []string
 
+	// refresh=1：强制重探 global 目录（issue #216 现象 3）。此前按钮只是重读 1h 缓存，
+	// 上游目录变了也纹丝不动。CN 侧本来就是每请求直连上游（无缓存），无需处理。
+	if r.URL.Query().Get("refresh") == "1" {
+		p.cfg.Upstream.InvalidateGlobalModelsCache()
+	}
+
 	// CN 域：有可用 CN 账号才查（此前无条件 Pool.Pick()+FetchModels——选中 global
 	// 账号时打 CN 端点必然失败，混合池表现为偶发 502，纯 global 池必炸）。
+	var cnAcct, globalAcct *auth.Auth // 供下方模型繁忙度复用同一批账号
 	if uids := p.cfg.Pool.AvailableUIDsForRealm("cn"); len(uids) > 0 {
 		if acct := p.cfg.Pool.AuthByUID(uids[0]); acct != nil {
+			cnAcct = acct
 			infos, err := p.cfg.Upstream.FetchModels(acct)
 			if err != nil {
 				fetchErrs = append(fetchErrs, "cn: "+err.Error())
@@ -449,6 +515,7 @@ func (p *Panel) models(w http.ResponseWriter, r *http.Request) {
 	if p.cfg.Upstream.GlobalEnabled {
 		if uids := p.cfg.Pool.AvailableUIDsForRealm("global"); len(uids) > 0 {
 			if acct := p.cfg.Pool.AuthByUID(uids[0]); acct != nil {
+				globalAcct = acct
 				infos := p.cfg.Upstream.FetchGlobalModelInfos(acct)
 				if len(infos) == 0 {
 					fetchErrs = append(fetchErrs, "global: 上游未返回可用模型")
@@ -462,6 +529,109 @@ func (p *Panel) models(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// 出图模型：目录按 tag 把它们从**对话**列表剔掉了（/v1/models 同样单列），面板
+	// 「模型与档位」也必须看得到——否则用户不知道有哪些能调。字段与对话模型同口径，
+	// 另加 image_generation 标记（前端据此标「出图」）。视频不列：没有网关端点。
+	//
+	// 倍率口径（2026-10-22 复测，两个个人号直连上游）：
+	//   - 目录**不再给出图模型报 credits**：CN hunyuan-image-alpha 的条目只有
+	//     id/name/tags（2026-10-18 曾报 x5.00，现已无该键），所以「倍率」只能来自
+	//     出图回执里的 usage.credit——牌价这列现在对出图模型基本恒空；
+	//   - CN hunyuan-image-alpha 实扣每张固定 5.71，回执带 output_image_coefficient:1；
+	//   - global hy-image-3.5 实扣每张固定 0.27，回执恒 output_image_tokens:15000，
+	//     不带 coefficient；旧 global 模型 gpt-image-2.5-sunburst 已下架（14401）。
+	// 故这里三个字段并列输出，前端各按语义展示，绝不用均值覆盖牌价：
+	//   credits         上游目录牌价（可能没有）
+	//   measured_credit 账本里该模型的平均实扣（落盘口径，跨重启）
+	//   charge_variants 本次运行按「尺寸×画质」分档的实扣（含最近一次与图像 token），
+	//                   无样本时省略——它是判断「这价是哪一档」的唯一依据。
+	measured := map[string]string{}
+	if p.cfg.Usage != nil {
+		for _, c := range p.cfg.Usage.Snapshot(0, nil).CreditByModel {
+			if c.CreditSamples > 0 && c.Credits > 0 {
+				measured[c.Key] = strconv.FormatFloat(c.Credits/float64(c.CreditSamples), 'f', 2, 64)
+			}
+		}
+	}
+	for _, realm := range []string{"cn", "global"} {
+		if realm == "global" && !p.cfg.Upstream.GlobalEnabled {
+			continue
+		}
+		for _, mi := range p.cfg.Upstream.GenerationModels(realm) {
+			if mi.GenerationKind != "image" {
+				continue
+			}
+			e := panelModelEntry(realm, mi, nil, "", p.cfg.Upstream.HTTP)
+			e["image_generation"] = true
+			// 有牌价也照样带实测（此前只在 credits 为空时才带，导致 CN 的 5.71 被
+			// x5.00 盖住、用户看到的价格比实付低）。
+			if v, ok := measured[realm+":"+mi.ID]; ok {
+				e["measured_credit"] = v
+			}
+			if variants := p.cfg.Upstream.ImageCharges(realm, mi.ID); len(variants) > 0 {
+				e["charge_variants"] = variants
+				last := variants[0]
+				for _, v := range variants {
+					if v.LastAt > last.LastAt {
+						last = v
+					}
+				}
+				e["charge_last"] = map[string]any{
+					"credit":              math.Round(last.Last*100) / 100,
+					"size":                last.Size,
+					"quality":             last.Quality,
+					"output_image_tokens": last.LastTokens,
+					"at":                  last.LastAt,
+				}
+				// 上游回执里的「倍率」原值（CN 恒 1；global 不回该字段则省略）——
+				// 只透传不重算：它是上游口径，拿它乘单价得出的数会跟 credit 对不上。
+				if last.LastCoefficient > 0 {
+					e["charge_last"].(map[string]any)["output_image_coefficient"] = last.LastCoefficient
+				}
+			}
+			if _, hasCatalog := e["credits"]; hasCatalog && e["credits"] != "" {
+				e["credit_source"] = "catalog+usage_receipt"
+			} else {
+				e["credit_source"] = "usage_receipt"
+			}
+			out = append(out, e)
+		}
+	}
+
+	// 模型繁忙度（官方 /v2/chat/busy，只读观测，见 upstream/modelbusy.go）：与目录同一批
+	// 账号查，附到对应域的行上。查不到就不填字段（不编造）；失败只并入 fetchErrs（目录本身
+	// 已经拿到了，不该因为繁忙度查询失败把整个视图打成 502）。
+	for realm, acct := range map[string]*auth.Auth{"cn": cnAcct, "global": globalAcct} {
+		if acct == nil {
+			continue
+		}
+		prefix := realm + ":"
+		var ids []string
+		for _, e := range out {
+			if id, _ := e["id"].(string); strings.HasPrefix(id, prefix) {
+				ids = append(ids, strings.TrimPrefix(id, prefix))
+			}
+		}
+		if len(ids) == 0 {
+			continue
+		}
+		levels, err := p.cfg.Upstream.ModelBusy(acct, ids)
+		if err != nil {
+			// 繁忙度是只读观测（misakano 语义：out 非空时失败不影响响应），只记日志
+			// 不进 fetchErrs——afree 的陈旧快照回放按 fetchErrs 判「目录探测失败」，
+			// 观测失败混进去会把全新目录误标 stale。
+			log.Printf("WARN: [panel] %s busy: %v", realm, err)
+			continue
+		}
+		for _, e := range out {
+			if id, _ := e["id"].(string); strings.HasPrefix(id, prefix) {
+				if lv := levels[strings.TrimPrefix(id, prefix)]; lv != "" {
+					e["busy"] = lv
+				}
+			}
+		}
+	}
+
 	if len(out) == 0 && len(fetchErrs) == 0 {
 		writeErr(w, http.StatusServiceUnavailable, "没有可用账号：请先在面板添加账号再查询")
 		return
@@ -469,13 +639,15 @@ func (p *Panel) models(w http.ResponseWriter, r *http.Request) {
 	if len(fetchErrs) == 0 {
 		// 全量成功：刷新「最后完整快照」，供下次探测失败时回放。
 		storePanelModelsSnapshot(out)
-		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "models": out})
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "models": out,
+			"global_source": p.cfg.Upstream.GlobalCatalogSource()})
 		return
 	}
 	if ent, age, ok := stalePanelModelsSnapshot(); ok {
 		log.Printf("WARN: [panel] models probe failed (%s); serving last good catalog (%d entries, age %s)",
 			strings.Join(fetchErrs, "; "), len(ent), age.Round(time.Second))
-		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "models": ent, "stale": true})
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "models": ent, "stale": true,
+			"global_source": p.cfg.Upstream.GlobalCatalogSource()})
 		return
 	}
 	if len(out) > 0 {
@@ -534,6 +706,7 @@ func panelModelEntry(realm string, mi upstream.ModelInfo, remoteEfforts []string
 		"description":          mi.Description,
 		"tags":                 mi.Tags,
 		"vendor":               mi.Vendor,
+		"tier":                 mi.Tier,
 		"is_default":           mi.IsDefault,
 		"supports_tool_call":   mi.SupportsToolCall,
 		"only_reasoning":       mi.OnlyReasoning,
@@ -639,6 +812,7 @@ func (p *Panel) accountDisable(w http.ResponseWriter, r *http.Request) {
 // accountPause 暂停选号：账号退出选号候选，但**照常参与**签到 / 活跃上报 / 保活 /
 // 余额刷新。与 disable 的区别：不写 reason、不清冷却域、不重置计数——账号是「临时
 // 让位」而非「判死」，点「恢复选号」即可立刻回到池子（无需重登或解冻）。
+// （吸收上游 fd835df）
 func (p *Panel) accountPause(w http.ResponseWriter, r *http.Request) {
 	uid := r.PathValue("uid")
 	if !p.cfg.Pool.Pause(uid) {
@@ -669,13 +843,28 @@ func (p *Panel) accountCheckin(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusNotFound, "account not found")
 		return
 	}
+	if a.IsGlobal() {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"ok":           true,
+			"realm":        "global",
+			"skipped":      true,
+			"skip_reason":  "国际区账号不适用国内区签到",
+			"checkin_done": false,
+		})
+		return
+	}
 	checkinMsg := ""
 	checkinDone := false
 	// 企业版无签到体系（上游 400 code 10001「企业账号不支持该操作」）：不发起该调用，
 	// 端点退化为「刷新额度」——企业额度走 get-enterprise-user-usage 口径（见 upstream）。
 	// 前端对企业号不渲染「签到」按钮；此处是 API 侧防御（外部脚本/旧缓存前端仍可能调用）。
-	if a.IsEnterprise() {
-		checkinMsg = "企业账号无签到体系（已跳过签到，仅刷新额度）"
+	if !a.SupportsPersonalGrowth() {
+		// 静态 API Key 与企业版同列：都没有签到端点可调，但余额照旧刷新（企业口径）。
+		if a.IsAPIKey() {
+			checkinMsg = "API Key 账号无签到体系（已跳过签到，仅刷新额度）"
+		} else {
+			checkinMsg = "企业账号无签到体系（已跳过签到，仅刷新额度）"
+		}
 	} else if err := p.cfg.Upstream.DailyCheckin(a); err != nil {
 		checkinMsg = err.Error() // "今天已签到"等业务错误照常查余额
 		// 幂等拒绝同样是「今日已签」，标记后按钮显示「已签」。
@@ -687,12 +876,18 @@ func (p *Panel) accountCheckin(w http.ResponseWriter, r *http.Request) {
 		p.cfg.Pool.NoteCheckinDone(uid)
 		checkinDone = true
 	}
-	resp := map[string]any{"ok": true, "checkin_done": checkinDone}
+	resp := map[string]any{"ok": checkinDone, "realm": "cn", "checkin_done": checkinDone}
 	if a.IsEnterprise() {
 		resp["enterprise"] = true
 	}
+	if a.IsAPIKey() {
+		resp["api_key"] = true
+	}
 	if checkinMsg != "" {
 		resp["checkin_message"] = checkinMsg
+		if !checkinDone {
+			resp["checkin_error"] = checkinMsg
+		}
 	}
 	remain, total, expiring, earliestAt, earliestRemaining, buckets, err := p.cfg.Upstream.UserResourceSnapshot(a, p.expiringSoonWindow())
 	if err != nil {
@@ -832,7 +1027,7 @@ func probeOnce(p *Panel, a *auth.Auth, uid, probeModel string) (map[string]any, 
 		ConversationRequestID: session.TurnRequestID(""),
 	}
 	start := time.Now()
-	rc, status, respBody, uerr := p.cfg.Upstream.ChatStreamContext(ctx, a, body, "", meta)
+	rc, status, respBody, uerr := p.cfg.Upstream.ChatStreamContext(ctx, a, body, "", meta, nil)
 	latencyMs := time.Since(start).Milliseconds()
 	out := map[string]any{"ok": true, "model": probeModel, "latencyMs": latencyMs}
 	if uerr == nil {
@@ -1071,6 +1266,31 @@ func (p *Panel) travelAll(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "started": true})
 }
 
+// accountTravel POST /panel/api/accounts/{uid}/travel：单号推进一趟猫猫旅行（issue #227）。
+// 与 checkin 同构——同步返回，外部调度器据此知道这一号本轮有没有动。门控在
+// Scheduler.RunTravelNowFor 里（禁用/暂停/无 refresh token/global/企业一律跳过）。
+func (p *Panel) accountTravel(w http.ResponseWriter, r *http.Request) {
+	if p.cfg.Scheduler == nil {
+		writeErr(w, http.StatusNotImplemented, "scheduler not available")
+		return
+	}
+	uid := r.PathValue("uid")
+	if p.cfg.Pool.AuthByUID(uid) == nil {
+		writeErr(w, http.StatusNotFound, "account not found")
+		return
+	}
+	ran := p.cfg.Scheduler.RunTravelNowFor(uid)
+	if !ran {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"ok": true, "ran": false, "skipped": true,
+			"skip_reason": "禁用/暂停/无 refresh token/国际区/企业版账号不参与旅行",
+		})
+		return
+	}
+	log.Printf("panel: 按号旅行巡检 uid=%s 完成", uid)
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "ran": true})
+}
+
 // activityAll 手动触发全量活跃上报（异步执行；点亮连登 + 解锁领养前置）。
 func (p *Panel) activityAll(w http.ResponseWriter, r *http.Request) {
 	if p.cfg.Scheduler == nil {
@@ -1107,93 +1327,7 @@ func (p *Panel) balanceAll(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "accounts": p.cfg.Pool.List()})
 }
 
-// compensation 查询全部账号的补偿活动状态（**只读**，不发起任何领取）。
-//
-// 与 balanceAll 同构：同步等待而非「触发后盲刷」——账号量小（个位数），
-// 面板拿到响应即可直接渲染横幅，不用再轮询。
-func (p *Panel) compensation(w http.ResponseWriter, r *http.Request) {
-	if p.cfg.Scheduler == nil {
-		writeErr(w, http.StatusNotImplemented, "scheduler not available")
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]any{
-		"ok":       true,
-		"accounts": p.cfg.Scheduler.CompensationStatusAll(),
-	})
-}
-
-// accountCompensationClaim 单号领取补偿：查状态 → 待领才领（幂等）。
-// 领完顺带刷一次余额，面板上的积分数字立即反映到账。
-func (p *Panel) accountCompensationClaim(w http.ResponseWriter, r *http.Request) {
-	if p.cfg.Scheduler == nil {
-		writeErr(w, http.StatusNotImplemented, "scheduler not available")
-		return
-	}
-	uid := r.PathValue("uid")
-	res, err := p.cfg.Scheduler.ClaimCompensationFor(uid)
-	if err != nil {
-		writeErr(w, http.StatusNotFound, err.Error())
-		return
-	}
-	if res.Claimed {
-		p.refreshCreditsQuiet(uid)
-	}
-	// ok 反映「是否拿到确定结论」：error 非空即 false。注意前端 api() 只看
-	// HTTP 状态码，这个字段是给日志/调用方看的，真正的分流依据是 result.error。
-	writeJSON(w, http.StatusOK, map[string]any{"ok": res.Error == "", "result": res})
-}
-
-// compensationAll 手动全量领取补偿（逐号查状态后领取；无待领的号静默跳过）。
-func (p *Panel) compensationAll(w http.ResponseWriter, r *http.Request) {
-	if p.cfg.Scheduler == nil {
-		writeErr(w, http.StatusNotImplemented, "scheduler not available")
-		return
-	}
-	results := p.cfg.Scheduler.ClaimCompensationNow()
-	for _, res := range results {
-		if res.Claimed {
-			p.refreshCreditsQuiet(res.UID)
-		}
-	}
-	summary := scheduler.SummarizeCompensation(results)
-	log.Printf("panel: 手动全量补偿领取完成 合计=%d 领取=%d(+%dc) 跳过=%d 失败=%d",
-		summary.Total, summary.Claimed, summary.Credit, summary.Skipped, summary.Errored)
-	// ok=false 表示有账号没拿到确定结论；前端据此提示「查询失败」而不是
-	// 「没有待领补偿」——两者语义完全相反，不能混。
-	writeJSON(w, http.StatusOK, map[string]any{
-		"ok":      summary.OK(),
-		"summary": summary,
-		"results": results,
-	})
-}
-
-// b2i bool → int（汇总计数用）。
-func b2i(b bool) int {
-	if b {
-		return 1
-	}
-	return 0
-}
-
-// refreshCreditsQuiet 领取成功后刷新该号余额，失败不影响领取结果回传。
-//
-// 失败只记日志不返回：领取本身已经成功并落到上游，余额刷新失败只是展示滞后，
-// 前端紧接着还会拉一次 overview。静默吞掉会让「积分没变」看起来像没领到。
-func (p *Panel) refreshCreditsQuiet(uid string) {
-	a := p.cfg.Pool.AuthByUID(uid)
-	if a == nil {
-		return
-	}
-	remain, total, expiring, earliestAt, earliestRemaining, err :=
-		p.cfg.Upstream.UserResourceDetailedWithExpiry(a, p.expiringSoonWindow())
-	if err != nil {
-		log.Printf("panel: compensation 后刷新余额失败 uid=%s: %v", uid, err)
-		return
-	}
-	p.cfg.Pool.SetCreditsDetailed(uid, remain, total, expiring, earliestAt, earliestRemaining)
-}
-
-// syncNicknames 手动刷新时的昵称同步（issue #94：上游改名免重登）。
+// syncNicknames 手动刷新时的昵称同步（issue #94 同步：上游改名免重登）。
 // 只在面板手动「刷新」路径调用——后台余额定时器不触发（用户明确要求资料接口
 // 仅手动触达）。逐号拉 /console/account，只取 nickname（手机号等敏感字段在
 // upstream.FetchAccountProfile 内即被丢弃）；单号失败静默跳过，不打断余额刷新
@@ -1337,7 +1471,10 @@ func (p *Panel) packages(w http.ResponseWriter, r *http.Request) {
 		Remain   int64                    `json:"remain"`
 		Size     int64                    `json:"size"`
 		Packages []upstream.CreditPackage `json:"packages"`
-		Error    string                   `json:"error,omitempty"`
+		// Plan/PlanEvidence 账号套餐分类（见 pool.ClassifyPlan）：包名派生，无包时 unknown。
+		Plan         pool.PlanKind `json:"plan"`
+		PlanEvidence string        `json:"plan_evidence,omitempty"`
+		Error        string        `json:"error,omitempty"`
 	}
 	out := make([]row, len(accts))
 
@@ -1366,6 +1503,11 @@ func (p *Panel) packages(w http.ResponseWriter, r *http.Request) {
 			it.Packages = packs
 			it.Remain = remain
 			it.Size = size
+			names := make([]string, 0, len(packs))
+			for _, pk := range packs {
+				names = append(names, pk.Name)
+			}
+			it.Plan, it.PlanEvidence = pool.ClassifyPlan(names)
 			out[i] = it
 		}(i, s)
 	}
@@ -1385,4 +1527,97 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 
 func writeErr(w http.ResponseWriter, status int, msg string) {
 	writeJSON(w, status, map[string]any{"ok": false, "error": msg})
+}
+
+// balanceHistory 返回余额采样序列，供「余额趋势」视图画折线。
+// days 查询参数控制窗口（默认 30，上限 30 = detailedKeep；更早的数据已折叠为日粒度，
+// 传更大值也只能拿到日粒度点）。
+func (p *Panel) balanceHistory(w http.ResponseWriter, r *http.Request) {
+	if p.cfg.Balance == nil {
+		writeErr(w, http.StatusNotImplemented, "balance recorder not available")
+		return
+	}
+	days := 30
+	if v := r.URL.Query().Get("days"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			days = n
+		}
+	}
+	if days > 30 {
+		days = 30
+	}
+	since := time.Now().AddDate(0, 0, -days)
+	// 昵称仅用于展示，取自池快照（不含任何凭证）；实时值优先，历史值兜底。
+	// 昵称与域仅用于展示，取自池快照（不含任何凭证）；实时值优先，历史值兜底。
+	// realm 必须在 Snapshot 前注入：cn 与 global 的积分不同源、不可互换，
+	// 跨域求和语义不成立，前端需按域分组渲染。
+	for _, st := range p.cfg.Pool.List() {
+		if st.Nickname != "" {
+			p.cfg.Balance.SetName(st.UID, st.Nickname)
+		}
+		if st.Realm != "" {
+			p.cfg.Balance.SetRealm(st.UID, st.Realm)
+		}
+	}
+	series, now := p.cfg.Balance.Snapshot(since)
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ok":     true,
+		"now":    now.Format(time.RFC3339),
+		"days":   days,
+		"series": series,
+	})
+}
+
+// modelToggle 手动开关某 (账号, 模型) 组合。
+//
+// 语义：这是**人工意图**（永久），与 modelCooldowns（上游触发、临时、过期自动删）
+// 正交。手动关掉的组合自动机制不能恢复 —— 见 internal/pool/toggle.go 的说明。
+//
+// model 接受带前缀形式（cn:gpt-4）也接受裸名；入库前统一剥前缀，与出站口径一致
+// （上游只认裸名，且带前缀存会在模型改名/换域时对不上）。
+func (p *Panel) modelToggle(w http.ResponseWriter, r *http.Request) {
+	uid := r.PathValue("uid")
+	if _, ok := p.cfg.Pool.Status(uid); !ok {
+		writeErr(w, http.StatusNotFound, "account not found")
+		return
+	}
+	var req struct {
+		Model string `json:"model"`
+		Off   bool   `json:"off"`
+		Note  string `json:"note"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeErr(w, http.StatusBadRequest, "bad json: "+err.Error())
+		return
+	}
+	model := strings.TrimSpace(req.Model)
+	if model == "" {
+		writeErr(w, http.StatusBadRequest, "model is required")
+		return
+	}
+	// 剥 realm 前缀（与出站口径一致：上游只认裸名）
+	if i := strings.Index(model, ":"); i >= 0 {
+		model = model[i+1:]
+	}
+	if req.Off {
+		if !p.cfg.Pool.SetModelOff(uid, model, req.Note) {
+			writeErr(w, http.StatusBadRequest, "set model off failed")
+			return
+		}
+	} else {
+		p.cfg.Pool.SetModelOn(uid, model)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ok": true, "uid": uid, "model": model, "off": req.Off,
+		"list": p.cfg.Pool.ModelOffOf(uid),
+	})
+}
+
+// modelFallbackSnapshot 返回当前降级路由表（nil 安全）。
+// 走回调而非持有 map：live 快照会随面板保存配置替换，持有旧 map 会读到过期表。
+func (p *Panel) modelFallbackSnapshot() map[string]string {
+	if p.cfg.ModelFallback == nil {
+		return nil
+	}
+	return p.cfg.ModelFallback()
 }

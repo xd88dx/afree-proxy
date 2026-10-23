@@ -7,15 +7,16 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
 )
 
-// TestAppJSSyntax app.js / mobile.js 必须能通过 JS 解析器语法校验。
+// TestAppJSSyntax app.js 必须能通过 JS 解析器语法校验。
 //
-// 为什么需要：两者都是 go:embed 进二进制的静态资源，Go 编译器不检查其内容——
+// 为什么需要：app.js 是 go:embed 进二进制的静态资源，Go 编译器不检查其内容——
 // 一次对象字面量键名未加引号（Model_chat_GLM5.2 被解析成属性访问 + 数字字面量）
 // 就让整个面板白屏，而所有 Go 测试依然全绿。此测试把语法校验前移到 CI。
 // 无 node 环境时跳过（不阻塞无 Node 的构建机）。
@@ -24,15 +25,13 @@ func TestAppJSSyntax(t *testing.T) {
 	if err != nil {
 		t.Skip("node not available; skipping JS syntax check")
 	}
-	for _, name := range []string{"app.js", "mobile.js"} {
-		path, err := filepath.Abs(name)
-		if err != nil {
-			t.Fatal(err)
-		}
-		out, err := exec.Command(node, "--check", path).CombinedOutput()
-		if err != nil {
-			t.Fatalf("%s syntax error:\n%s", name, out)
-		}
+	path, err := filepath.Abs("app.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := exec.Command(node, "--check", path).CombinedOutput()
+	if err != nil {
+		t.Fatalf("app.js syntax error:\n%s", out)
 	}
 }
 
@@ -93,16 +92,13 @@ const sandbox = new Proxy({
   fetch: () => new Promise(() => {}),
   addEventListener() {}, removeEventListener() {},
   matchMedia: () => ({ matches: false, addEventListener() {} }),
-  // mobile.js 顶层直接 new MutationObserver(...)（移动端表格字段名补标签）：
-  // 该文件不在本沙箱内执行，但保留此桩，将来把 mobile.js 纳入冒烟时可直接复用。
-  MutationObserver: class { constructor() {} observe() {} disconnect() {} takeRecords() { return []; } },
   setInterval, clearInterval, setTimeout, clearTimeout,
   console, JSON, Math, Date, Number, String, Boolean, Object, Array, Promise, Map, Set, RegExp, Error, TypeError, isNaN, parseInt, parseFloat, encodeURIComponent, decodeURIComponent, URL, Symbol, Proxy, Reflect,
 }, { get(t, k) { return t[k]; }, has() { return true; } });
 sandbox.window = sandbox; sandbox.globalThis = sandbox;
 vm.createContext(sandbox);
 try {
-  vm.runInContext(src, sandbox, { filename: 'app.js' });
+  vm.runInContext("'use strict';\n" + src, sandbox, { filename: 'app.js' });
   console.log('SMOKE OK');
   process.exit(0);
 } catch (e) {
@@ -146,7 +142,7 @@ const end = src.indexOf('function usStat');
 if (start < 0 || end < 0) throw new Error('credit helpers not found');
 const ctx = { Number, String, RegExp };
 vm.createContext(ctx);
-vm.runInContext(
+vm.runInContext("'use strict';\n" + 
   src.slice(start, end) +
   '\nthis.fmtCredit=fmtCredit; this.fmtCreditRatio=fmtCreditRatio; this.fmtModelRate=fmtModelRate;',
   ctx
@@ -179,6 +175,181 @@ process.stdout.write(JSON.stringify({
 	}
 }
 
+// 日志行分级不得把「空赋值字段」当失败：`claim_error=""`（值为空 = 该项没有错误）
+// 里带 error 字样，裸匹配会让成功的任务行（status=done claimed=true）整行标红。
+func TestAppJSLogLevelNoFalsePositive(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("node not installed; log level test skipped")
+	}
+	script := `const fs = require('fs');
+const vm = require('vm');
+const src = fs.readFileSync(process.argv[2], 'utf8');
+const start = src.indexOf('function logLevel');
+const end = src.indexOf('async function loadLogs');
+if (start < 0 || end < 0) throw new Error('logLevel not found');
+const ctx = { String, RegExp };
+vm.createContext(ctx);
+vm.runInContext("'use strict';\n" + src.slice(start, end) + '\nthis.logLevel=logLevel;', ctx);
+process.stdout.write(JSON.stringify({
+  okTask: ctx.logLevel('panel: task auto uid=df6b07f7 code=Sequential_Tasks_6 status=done progress=10/10->10/10 claimed=true claim_error=""'),
+  twoEmpty: ctx.logLevel('panel: task auto uid=x status=done claim_error="" balance_error=""'),
+  realFail: ctx.logLevel('panel: task auto uid=x status=awaiting_progress claimed=false claim_error="task not completed"'),
+  realBalanceErr: ctx.logLevel('panel: task auto uid=x status=done claim_error="" balance_error="timeout"'),
+  chineseFail: ctx.logLevel('panel: disable uid=x（人工禁用）失败'),
+  warn: ctx.logLevel('pool: uid=x 冷却中'),
+  plain: ctx.logLevel('panel: task auto uid=x status=done'),
+}));`
+	f, err := os.CreateTemp(t.TempDir(), "log-level-*.cjs")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.WriteString(script); err != nil {
+		t.Fatal(err)
+	}
+	f.Close()
+	out, err := exec.Command(node, f.Name(), "app.js").CombinedOutput()
+	if err != nil {
+		t.Fatalf("log level node test failed: %v\n%s", err, out)
+	}
+	const want = `{"okTask":"","twoEmpty":"","realFail":" e","realBalanceErr":" e","chineseFail":" e","warn":" w","plain":""}`
+	if strings.TrimSpace(string(out)) != want {
+		t.Fatalf("log level=%s want %s", out, want)
+	}
+}
+
+// 任务中心合并后的两条易回归点：①后台任务 → 与队列同形的分组（空结果不占位）；
+// ②归属标志：队列/扫描结果占着列表时，后台任务的刷新不得把它冲掉。
+func TestAppJSTaskCenterMerge(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("node not installed; task center merge test skipped")
+	}
+	script := `const fs = require('fs');
+const vm = require('vm');
+const src = fs.readFileSync(process.argv[2], 'utf8');
+const start = src.indexOf('function taskOutcomeStatus');
+const end = src.indexOf("$('btnTaskJobsReload')");
+if (start < 0 || end < 0) throw new Error('task center helpers not found');
+const calls = [];
+const store = { jobs: [
+  { uid: 'u1', nickname: 'A', trigger: 'daily', status: 'finished', completed: 2, total: 2, results: [
+    { task_code: 'T1', title: 't1', status: 'done', progress_after: '1/1' },
+    { task_code: 'T2', title: 't2', claim_error: 'task not completed' },
+  ]},
+  { uid: 'u2', nickname: 'B', trigger: 'new_account', status: 'running', results: [] },
+] };
+const ctx = {
+  String, Number, RegExp, Object, Array, Map, JSON, Promise, console,
+  api: async () => ({ jobs: store.jobs, auto_enabled: true }),
+  renderQueue: (groups, progress, title, desc) => calls.push({ groups, title, desc }),
+  $: () => ({ textContent: '', hidden: false, style: {}, querySelector: () => ({ textContent: '' }), addEventListener() {} }),
+  esc: s => String(s == null ? '' : s),
+  ago: () => '刚刚',
+  qrowHTML: () => '',
+};
+vm.createContext(ctx);
+vm.runInContext("'use strict';\n" + 'let taskJobsLoading = false;\n' + src.slice(start, end) +
+  '\nthis.loadTaskJobs = loadTaskJobs; this.groupsFromJobs = groupsFromJobs; this.setOwner = v => { taskCenterOwner = v; };', ctx);
+ctx.setJobs = v => { store.jobs = v; };
+(async () => {
+  // ① 分组 join：空结果的账号不占位，行形态与队列一致（code/status/prog）
+  const groups = ctx.groupsFromJobs([
+    { uid: 'u1', nickname: 'A', trigger: 'daily', status: 'finished', completed: 2, total: 2, results: [
+      { task_code: 'T1', title: 't1', status: 'done', progress_after: '1/1' },
+      { task_code: 'T2', title: 't2', claim_error: 'task not completed' },
+    ]},
+    { uid: 'u2', nickname: 'B', trigger: 'new_account', status: 'running', results: [] },
+  ]);
+  // ② 归属：队列占着列表时后台刷新只更新提示、不渲染
+  ctx.setOwner('queue');
+  await ctx.loadTaskJobs();
+  const queueSkip = calls.length === 0;
+  ctx.setOwner('jobs');
+  await ctx.loadTaskJobs();
+  const withJobs = calls[0].groups.length;
+  // ③ 没有后台任务时给空态（不是留一张空列表）
+  ctx.setJobs([]);
+  await ctx.loadTaskJobs();
+  process.stdout.write(JSON.stringify({
+    groups: groups.length,
+    rows: groups[0] ? groups[0].rows.map(r => [r.code, r.status, r.prog]) : null,
+    cnt: groups[0] ? groups[0].cnt : '',
+    queueSkip,
+    withJobs,
+    emptyGroups: calls[1].groups.length,
+    emptyTitle: calls[1].title,
+  }));
+})();`
+	f, err := os.CreateTemp(t.TempDir(), "task-center-*.cjs")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.WriteString(script); err != nil {
+		t.Fatal(err)
+	}
+	f.Close()
+	out, err := exec.Command(node, f.Name(), "app.js").CombinedOutput()
+	if err != nil {
+		t.Fatalf("task center node test failed: %v\n%s", err, out)
+	}
+	const want = `{"groups":1,"rows":[["T1","done","1/1"],["T2","claim_pending",""]],` +
+		`"cnt":"每日定时 · 已结束 · 处理 2 / 2 项","queueSkip":true,"withJobs":1,` +
+		`"emptyGroups":0,"emptyTitle":"还没有后台任务记录"}`
+	if strings.TrimSpace(string(out)) != want {
+		t.Fatalf("task center merge=%s\nwant %s", out, want)
+	}
+}
+
+// 成长任务行第二列必须是中文名，不能退回左边那列代号。
+//
+// 为什么需要：后台任务结果行只存 task_code + desc（线上实测 24 个任务码全无 title），
+// 而 title 兜底链原本是 title → GROWTH_TITLES → code，扫描没跑过就退成代号，
+// 出现「Model_chat_GLM5.2  Model_chat_GLM5.2」两列同名。
+func TestAppJSTaskRowNameFallback(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("node not installed; task row name test skipped")
+	}
+	script := `const fs = require('fs');
+const vm = require('vm');
+const assert = require('assert');
+const src = fs.readFileSync(process.argv[2], 'utf8');
+const jobsStart = src.indexOf('function taskOutcomeStatus'), jobsEnd = src.indexOf("$('btnTaskJobsReload')");
+const nameStart = src.indexOf('function groupItems(d)'), nameEnd = src.indexOf('function renderQueue');
+const titlesStart = src.indexOf('const GROWTH_TITLES'), titlesLine = src.slice(titlesStart, src.indexOf('\n', titlesStart));
+assert.ok(jobsStart >= 0 && jobsEnd > jobsStart && nameStart >= 0 && nameEnd > nameStart && titlesStart >= 0);
+const ctx = { String, Number, RegExp, Object, Array, Map, JSON, console, esc: s => String(s == null ? '' : s) };
+const dom = new Proxy(function () {}, { get: (t, k) => (k === Symbol.toPrimitive ? () => '' : dom), set: () => true, apply: () => dom });
+Object.assign(ctx, { $: () => dom, document: dom, window: dom, localStorage: dom, location: dom });
+vm.createContext(ctx);
+vm.runInContext("'use strict';\n" + titlesLine + '\n' + src.slice(nameStart, nameEnd) + '\n' + src.slice(jobsStart, jobsEnd) +
+  '\nthis.GROWTH_TITLES = GROWTH_TITLES;', ctx);
+// ① 只有 desc（后台任务行的真实形状）：第二列出中文说明，代号只出现一次
+const desc = '接受任务 → glm-5.2 真实对话一次 → 对齐模型上报';
+const html = ctx.qrowHTML({ kind: 'job', code: 'Model_chat_GLM5.2', desc, status: 'done', prog: '1/1' });
+assert.ok(html.includes(desc), 'name column should show desc: ' + html);
+assert.equal(html.split('Model_chat_GLM5.2').length - 1, 1, 'code must appear once only: ' + html);
+// ② 扫描缓存里的上游短名优先于 desc
+ctx.GROWTH_TITLES['RichMeow_Chat'] = '桌面端对话1次';
+assert.ok(ctx.qrowHTML({ code: 'RichMeow_Chat', desc: 'x', status: 'done' }).includes('桌面端对话1次'));
+// ③ 两者都没有才退回代号（上游未知码的兜底不变）
+assert.ok(ctx.qrowHTML({ code: 'unknown_code', status: 'done' }).includes('>unknown_code<'));
+// ④ groupsFromJobs 必须把 desc 透传给行
+const groups = ctx.groupsFromJobs([{ uid: 'u1', nickname: 'A', trigger: 'daily', status: 'finished',
+  completed: 1, total: 1, results: [{ task_code: 'Model_chat_GLM5.2', desc, status: 'done' }] }]);
+assert.equal(groups[0].rows[0].desc, desc);
+assert.ok(ctx.qrowHTML(groups[0].rows[0]).includes(desc));
+console.log('task row name fallback passed');`
+	path := filepath.Join(t.TempDir(), "task-row-name.cjs")
+	if err := os.WriteFile(path, []byte(script), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if out, err := exec.Command(node, path, "app.js").CombinedOutput(); err != nil {
+		t.Fatalf("node: %v\n%s", err, out)
+	}
+}
+
 // 模型限流时间必须同时支持上游 reset_at、网关 until 和无重置时间三种形态。
 func TestAppJSRateLimitMeta(t *testing.T) {
 	node, err := exec.LookPath("node")
@@ -193,15 +364,22 @@ const end = src.indexOf('function rateLimitRowsHtml');
 if (start < 0 || end < 0) throw new Error('rate limit helpers not found');
 const ctx = { Date, Number, String, Math };
 vm.createContext(ctx);
-vm.runInContext(src.slice(start, end) + '\nthis.rateLimitMeta=rateLimitMeta;', ctx);
+vm.runInContext("'use strict';\n" + src.slice(start, end) + '\nthis.rateLimitMeta=rateLimitMeta;', ctx);
 const now = new Date(2026, 8, 28, 14, 0, 0).getTime();
 const reset = new Date(2026, 8, 28, 16, 0, 0).getTime();
 const until = new Date(2026, 8, 28, 15, 0, 0).getTime();
-const rate = ctx.rateLimitMeta({ model: 'glm-5.3', kind: 'rate_limit', reset_at: new Date(reset).toISOString(), until: new Date(until).toISOString() }, now);
+// capped：上游文案（16:00）晚于网关封顶解锁（15:00）——两个时刻都要写，剩余跟 until。
+const capped = ctx.rateLimitMeta({ model: 'glm-5.3', kind: 'rate_limit', reset_at: new Date(reset).toISOString(), until: new Date(until).toISOString() }, now);
+// onlyUntil：上游没给重置文案，只有网关解锁时刻。
+const onlyUntil = ctx.rateLimitMeta({ model: 'glm-5.3', kind: 'rate_limit', until: new Date(until).toISOString() }, now);
+// equal：上游文案与网关解锁同一时刻（服务端会省略 reset_at，这里也须只显示一个时间）。
+const equal = ctx.rateLimitMeta({ model: 'glm-5.3', kind: 'rate_limit', reset_at: new Date(until).toISOString(), until: new Date(until).toISOString() }, now);
 const unavailable = ctx.rateLimitMeta({ model: 'missing', kind: 'model_unavailable', until: new Date(until).toISOString() }, now);
 const unknown = ctx.rateLimitMeta({ model: 'glm-5.3', kind: 'rate_limit' }, now);
 process.stdout.write(JSON.stringify({
-  rate: rate.detail,
+  capped: capped.detail,
+  onlyUntil: onlyUntil.detail,
+  equal: equal.detail,
   unavailable: unavailable.detail,
   unknown: unknown.detail,
 }));`
@@ -217,10 +395,59 @@ process.stdout.write(JSON.stringify({
 	if err != nil {
 		t.Fatalf("rate-limit formatting node test failed: %v\n%s", err, out)
 	}
-	// issue #171 问题二：until < resetAt 时主文字双时刻明示、倒计时跟随 until。
-	const want = `{"rate":"网关 2026-09-28 15:00 起重试（剩余 1时00分） · 上游称 2026-09-28 16:00 恢复","unavailable":"预计 1时00分 后重试","unknown":"预计解封时间未知"}`
+	const want = `{"capped":"上游称 2026-09-28 16:00 恢复 · 网关 2026-09-28 15:00 起重试（剩余 1时00分）","onlyUntil":"预计 2026-09-28 15:00 恢复（剩余 1时00分）","equal":"预计 2026-09-28 15:00 解封（剩余 1时00分）","unavailable":"预计 1时00分 后重试","unknown":"预计解封时间未知"}`
 	if strings.TrimSpace(string(out)) != want {
 		t.Fatalf("rate-limit formatting=%s want %s", out, want)
+	}
+}
+
+// 错误汇总样本列：正文用截断的 sample，title 必须用未截断的 sample_full。
+// 两者曾是同一个字段，悬停看到的就是同一段残句（issue #61）。
+func TestAppJSErrorSummaryTitleUsesFullSample(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("node not installed; error summary title test skipped")
+	}
+	script := `const fs = require('fs');
+const vm = require('vm');
+const src = fs.readFileSync(process.argv[2], 'utf8');
+const escStart = src.indexOf('function esc(');
+const escEnd = src.indexOf('function ago(');
+const start = src.indexOf('function renderErrorSummary');
+const end = src.indexOf('function renderRequestMetrics');
+if ([escStart, escEnd, start, end].some(v => v < 0)) throw new Error('error summary region not found');
+const els = {};
+const ctx = { String, Math, $: id => (els[id] = els[id] || { innerHTML: '', textContent: '' }) };
+vm.createContext(ctx);
+vm.runInContext("'use strict';\n" + src.slice(escStart, escEnd) + src.slice(start, end) +
+  '\nthis.renderErrorSummary=renderErrorSummary; this.esc=esc;', ctx);
+const full = 'WARN: [upstream] chat_stream acct=a(1): upstream 400 model_blocked body={"code":11102,"msg":"model [x] not found","requestId":"req-1"}';
+const short = 'WARN: keepalive a(1): boom';
+ctx.renderErrorSummary({ scanned: 2, updated_at: '12:00:00', rows: [
+  { sev: 'warn', kind: 'k1', count: 1, sample: full.slice(0, 30), sample_full: full },
+  { sev: 'warn', kind: 'k2', count: 1, sample: short },
+]});
+const body = els.errBody.innerHTML;
+process.stdout.write(JSON.stringify({
+  fullInTitle: body.includes('title="' + ctx.esc(full) + '"'),
+  cellTruncated: body.includes('">' + ctx.esc(full.slice(0, 30)) + '</td>'),
+  fallbackTitle: body.includes('title="' + ctx.esc(short) + '"'),
+}));`
+	f, err := os.CreateTemp(t.TempDir(), "errsum-*.cjs")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.WriteString(script); err != nil {
+		t.Fatal(err)
+	}
+	f.Close()
+	out, err := exec.Command(node, f.Name(), "app.js").CombinedOutput()
+	if err != nil {
+		t.Fatalf("error summary title node test failed: %v\n%s", err, out)
+	}
+	const want = `{"fullInTitle":true,"cellTruncated":true,"fallbackTitle":true}`
+	if strings.TrimSpace(string(out)) != want {
+		t.Fatalf("error summary title=%s want %s", out, want)
 	}
 }
 
@@ -242,7 +469,7 @@ const reqEnd = src.indexOf('function fmtBytes');
 if ([escStart, escEnd, fmtStart, fmtEnd, reqStart, reqEnd].some(v => v < 0)) throw new Error('request log helpers not found');
 const ctx = { Date, Number, String, Math, RegExp, isNaN };
 vm.createContext(ctx);
-vm.runInContext(
+vm.runInContext("'use strict';\n" + 
   src.slice(escStart, escEnd) + src.slice(fmtStart, fmtEnd) + src.slice(reqStart, reqEnd) +
   '\nthis.requestLogText=requestLogText;',
   ctx
@@ -291,7 +518,7 @@ const end = src.indexOf('function renderCreditHistory');
 if (start < 0 || end < 0) throw new Error('credit history helpers not found');
 const ctx = { Date, Number, String, Math, RegExp, isNaN };
 vm.createContext(ctx);
-vm.runInContext(
+vm.runInContext("'use strict';\n" + 
   src.slice(start, end) +
   '\nthis.creditEntryText=creditEntryText;this.creditHistoryNote=creditHistoryNote;',
   ctx
@@ -338,7 +565,7 @@ const end = src.indexOf('function reqOutcomeTag');
 if (start < 0 || end < 0) throw new Error('reqMatch not found');
 const ctx = {};
 vm.createContext(ctx);
-vm.runInContext(src.slice(start, end) + '\nthis.reqMatch=reqMatch;', ctx);
+vm.runInContext("'use strict';\n" + src.slice(start, end) + '\nthis.reqMatch=reqMatch;', ctx);
 const base = { outcome: 'success', client_ip: '203.0.113.7', user_agent: 'python-requests/2.31.0', model: 'cn:glm-5.3', account: '示例(uid8)', request_id: 'req-1' };
 const other = { outcome: 'http_error', client_ip: '198.51.100.4', user_agent: 'Mozilla/5.0 Chrome/120', model: 'global:hy3', account: '甲(uid9)', request_id: 'req-2' };
 const rows = [base, other];
@@ -382,16 +609,19 @@ func TestAppJSModelFilter(t *testing.T) {
 const vm = require('vm');
 const src = fs.readFileSync(process.argv[2], 'utf8');
 const start = src.indexOf('function mdRateValue');
-const end = src.indexOf('function mdRowHtml');
+const end = src.indexOf('function renderModels');
 if (start < 0 || end < 0) throw new Error('model filter helpers not found');
-const ctx = { Number, String, Array, Object, isFinite, parseFloat };
+// rateCell/outCell 定义在切片之外（各管一个单元格），本测试只关心行内徽标/档位列，桩掉。
+const ctx = { Number, String, Array, Object, isFinite, parseFloat, esc: v => String(v == null ? '' : v), rateCell: () => '', outCell: () => '' };
 vm.createContext(ctx);
-vm.runInContext(src.slice(start, end) + '\nthis.mdMatch=mdMatch; this.mdSortList=mdSortList; this.mdRateValue=mdRateValue;', ctx);
+vm.runInContext("'use strict';\n" + src.slice(start, end) + '\nthis.mdMatch=mdMatch; this.mdSortList=mdSortList; this.mdRateValue=mdRateValue; this.mdRowHtml=mdRowHtml;', ctx);
 const models = [
   { id: 'cn:glm-5.2', name: 'GLM-5.2', vendor: 'Zhipu', tags: ['视觉'], supports_tool_call: true, supports_images: true, supports_reasoning: true, can_disable_thinking: true, supported_efforts: ['high', 'xhigh'], default_effort: 'high', is_default: false, credits: '0.79', promo_factor: 0.5, promo_credits: '0.40', promo_label: '夜间折扣', context_length: 1000000, max_output_tokens: 131000 },
   { id: 'cn:hy3', name: 'Hy3', supports_tool_call: true, supports_images: true, supports_reasoning: true, can_disable_thinking: false, supported_efforts: ['low', 'high'], default_effort: 'high', is_default: false, credits: '0', promo_factor: 0, promo_credits: '0', promo_label: '限时免费', context_length: 192000, max_output_tokens: 64000 },
   { id: 'global:hy3', name: 'Hy3 Global', supports_tool_call: false, supports_images: false, supports_reasoning: false, supported_efforts: [], is_default: false, credits: '0.11', context_length: 1000000, max_output_tokens: 393000 },
   { id: 'cn:auto', name: 'Auto', supports_tool_call: true, supports_images: true, supports_reasoning: true, is_default: true, credits: null, context_length: 256000, max_output_tokens: 32000 },
+  // 出图模型：目录里没有思考档位与上下文，行内要标「出图」而不是「不支持思考」。
+  { id: 'cn:hunyuan-image-alpha', name: 'Hunyuan Image Alpha', tags: ['text-to-image'], image_generation: true, credits: '5.00' },
 ];
 const ids = list => list.map(m => m.id);
 const filter = f => ids(ctx.mdSortList(models.filter(m => ctx.mdMatch(m, f)), f));
@@ -413,6 +643,8 @@ process.stdout.write(JSON.stringify({
   sortContext: filter({ sort: 'context' }),
   sortOutput: filter({ sort: 'output' }),
   sortName: filter({ sort: 'name' }),
+  imgBadge: /出图/.test(ctx.mdRowHtml(models[4], null)),
+  imgById: filter({ q: 'hunyuan-image-alpha' }),
   rateFree: ctx.mdRateValue(models[1]),
   rateMissing: ctx.mdRateValue(models[3]),
 }));`
@@ -428,24 +660,17 @@ process.stdout.write(JSON.stringify({
 	if err != nil {
 		t.Fatalf("model filter node test failed: %v\n%s", err, out)
 	}
-	const want = `{"all":["cn:glm-5.2","cn:hy3","global:hy3","cn:auto"],` +
-		`"realm":["cn:glm-5.2","cn:hy3","cn:auto"],` +
-		`"tool":["cn:glm-5.2","cn:hy3","cn:auto"],` +
-		`"vision":["cn:glm-5.2","cn:hy3","cn:auto"],` +
-		`"reasoning":["cn:glm-5.2","cn:hy3","cn:auto"],` +
-		`"isDefault":["cn:auto"],` +
-		`"effortOff":["cn:glm-5.2"],` +
-		`"effortLow":["cn:hy3"],` +
-		`"free":["cn:hy3"],` +
-		`"promo":["cn:glm-5.2","cn:hy3"],` +
-		`"discount":["cn:glm-5.2"],` +
-		`"q":["cn:glm-5.2"],` +
-		`"qMiss":[],` +
-		`"sortRate":["cn:hy3","global:hy3","cn:glm-5.2","cn:auto"],` +
-		`"sortContext":["cn:glm-5.2","global:hy3","cn:auto","cn:hy3"],` +
-		`"sortOutput":["global:hy3","cn:glm-5.2","cn:hy3","cn:auto"],` +
-		`"sortName":["cn:auto","cn:glm-5.2","cn:hy3","global:hy3"],` +
-		`"rateFree":0,"rateMissing":null}`
+	const want = `{"all":["cn:glm-5.2","cn:hy3","global:hy3","cn:auto","cn:hunyuan-image-alpha"],` +
+		`"realm":["cn:glm-5.2","cn:hy3","cn:auto","cn:hunyuan-image-alpha"],` +
+		`"tool":["cn:glm-5.2","cn:hy3","cn:auto"],"vision":["cn:glm-5.2","cn:hy3","cn:auto"],` +
+		`"reasoning":["cn:glm-5.2","cn:hy3","cn:auto"],"isDefault":["cn:auto"],` +
+		`"effortOff":["cn:glm-5.2"],"effortLow":["cn:hy3"],"free":["cn:hy3"],` +
+		`"promo":["cn:glm-5.2","cn:hy3"],"discount":["cn:glm-5.2"],"q":["cn:glm-5.2"],"qMiss":[],` +
+		`"sortRate":["cn:hy3","global:hy3","cn:glm-5.2","cn:hunyuan-image-alpha","cn:auto"],` +
+		`"sortContext":["cn:glm-5.2","global:hy3","cn:auto","cn:hy3","cn:hunyuan-image-alpha"],` +
+		`"sortOutput":["global:hy3","cn:glm-5.2","cn:hy3","cn:auto","cn:hunyuan-image-alpha"],` +
+		`"sortName":["cn:auto","cn:glm-5.2","cn:hunyuan-image-alpha","cn:hy3","global:hy3"],` +
+		`"imgBadge":true,"imgById":["cn:hunyuan-image-alpha"],"rateFree":0,"rateMissing":null}`
 	if strings.TrimSpace(string(out)) != want {
 		t.Fatalf("model filter=%s\nwant %s", out, want)
 	}
@@ -466,7 +691,7 @@ const end = src.indexOf('function mdRowHtml');
 if (start < 0 || end < 0) throw new Error('model availability helpers not found');
 const ctx = { esc: s => String(s) };
 vm.createContext(ctx);
-vm.runInContext(src.slice(start, end) + '\nthis.mdAvailabilityOf=mdAvailabilityOf; this.mdAvailabilityTag=mdAvailabilityTag;', ctx);
+vm.runInContext("'use strict';\n" + src.slice(start, end) + '\nthis.mdAvailabilityOf=mdAvailabilityOf; this.mdAvailabilityTag=mdAvailabilityTag;', ctx);
 const model = id => ({ id });
 const state = (m, locks, recent) => ctx.mdAvailabilityOf(m, locks, recent).key;
 const success = [{ model: 'global:ok', status: 200, outcome: 'success', time: '2026-10-18T12:00:00Z' }];
@@ -528,7 +753,7 @@ const ctx = {
   $: () => host,
 };
 vm.createContext(ctx);
-vm.runInContext(src.slice(escStart, escEnd) + src.slice(fmtStart, fmtEnd) + src.slice(start, end) +
+vm.runInContext("'use strict';\n" + src.slice(escStart, escEnd) + src.slice(fmtStart, fmtEnd) + src.slice(start, end) +
   '\nthis.renderUsageChart=renderUsageChart;', ctx);
 const series = [
   { t: '2026-09-30T09', scope: 'hour', prompt_tokens: 35, completion_tokens: 16, total_tokens: 51, requests: 1 },
@@ -544,6 +769,13 @@ process.stdout.write(JSON.stringify({
   barCount: (svg.match(/class="usbar"/g) || []).length,
   hasPeak: svg.includes('峰值'),
   hasAvg: svg.includes('均值'),
+  // 每根柱子一条自己的 <title>，且每条都是该点的数据（悬停不再全部显示最后一条）。
+  barTitles: (svg.match(/<g><title>/g) || []).length,
+  bareTitles: (svg.match(/<title>/g) || []).length - (svg.match(/<g><title>/g) || []).length,
+  titleHasOwnReq: (function () {
+    const ts = [...svg.matchAll(/<g><title>([^<]*)<\/title>/g)].map(m => m[1]);
+    return ts.length === 3 && ts.some(x => x.includes('1 次')) && ts.some(x => x.includes('39 次')) && ts.some(x => x.includes('200 次'));
+  })(),
   emptyState: (function () { ctx.renderUsageChart([]); return host.innerHTML.includes('us-empty'); })(),
 }));`
 	f, err := os.CreateTemp(t.TempDir(), "usage-chart-*.cjs")
@@ -558,7 +790,8 @@ process.stdout.write(JSON.stringify({
 	if err != nil {
 		t.Fatalf("usage chart node test failed: %v\n%s", err, out)
 	}
-	const want = `{"hasUsbar":true,"hasBareBar":false,"hasGradient":true,"barCount":6,"hasPeak":true,"hasAvg":true,"emptyState":true}`
+	const want = `{"hasUsbar":true,"hasBareBar":false,"hasGradient":true,"barCount":6,"hasPeak":true,"hasAvg":true,` +
+		`"barTitles":3,"bareTitles":0,"titleHasOwnReq":true,"emptyState":true}`
 	if strings.TrimSpace(string(out)) != want {
 		t.Fatalf("usage chart=%s\nwant %s", out, want)
 	}
@@ -587,7 +820,7 @@ const ctx = {
   esc: s => String(s == null ? '' : s),
 };
 vm.createContext(ctx);
-vm.runInContext(src.slice(start, end) +
+vm.runInContext("'use strict';\n" + src.slice(start, end) +
   '\nthis.trangeState=trangeState; this.trangeQuery=trangeQuery; this.trangeLabel=trangeLabel; this.trangeMidnight=trangeMidnight;', ctx);
 const q = (preset, rolling) => {
   ctx.trangeState('t').preset = preset;
@@ -606,7 +839,6 @@ process.stdout.write(JSON.stringify({
   rolling24: q('24', true),
   rolling72: q('72', true),
   rolling0: q('0', true),
-  log0: q('0', false),
   log24From: approx(q('24', false), Math.floor((now - 24 * 3600e3) / 1000)),
   log24HasHours: /hours=/.test(q('24', false)),
   log7dFrom: approx(q('168', false), Math.floor((now - 168 * 3600e3) / 1000)),
@@ -635,77 +867,15 @@ process.stdout.write(JSON.stringify({
 	local := func(h, m int) string {
 		return strconv.FormatInt(time.Date(2026, 9, 30, h, m, 0, 0, time.Local).Unix(), 10)
 	}
+	// rolling0 曾期望空串——那正是 issue #121：服务端「不给参数」默认 72 小时，空查询让
+	// 「全部历史」退化成「近 3 天」。用量侧必须显式发 hours=0（归档侧仍空查询，见下条）。
 	want := `{"todayIsMidnight":true,"todayNoTo":true,` +
-		// rolling0 必须是 "hours=0"（显式全部历史）。此前期望值是空串——那恰好把
-		// issue #121 的错误行为固化成了断言：空 query 会被后端的 72 小时缺省接管，
-		// 于是「全部历史」显示成「近 3 天」。
-		// log0 仍为空：请求记录端点没有缺省窗口，不传 from/to 就是全部历史。
-		`"rolling24":"hours=24","rolling72":"hours=72","rolling0":"hours=0","log0":"",` +
+		`"rolling24":"hours=24","rolling72":"hours=72","rolling0":"hours=0",` +
 		`"log24From":true,"log24HasHours":false,"log7dFrom":true,` +
 		`"custom":"from=` + local(9, 0) + `&to=` + local(18, 30) + `",` +
 		`"labelCustom":"9-30 09:00 → 9-30 18:30","labelToday":"今天"}`
 	if strings.TrimSpace(string(out)) != want {
 		t.Fatalf("time range=%s\nwant %s", out, want)
-	}
-}
-
-// 配置表单与 CFG_MAP 必须一一对应，且面板声称"可在线改"的热生效键必须真的
-// 出现在表单里。
-//
-// 为什么需要：`logging.request_client_info` 曾经在表单里存在过，后来在某次改动中
-// 被连带删掉，而 Go 侧的配置键、livecfg 热生效通路、README 的描述都还在——面板
-// 少了一个开关而 Go 测试全绿，只有人肉点开配置页才会发现。这里把"表单字段 ↔
-// CFG_MAP"与"关键热改键必须在表单里"两条都钉住。
-func TestConfigFormMatchesCFGMap(t *testing.T) {
-	src, err := os.ReadFile("app.js")
-	if err != nil {
-		t.Fatal(err)
-	}
-	js := string(src)
-	htmlBytes, err := os.ReadFile("index.html")
-	if err != nil {
-		t.Fatal(err)
-	}
-	html := string(htmlBytes)
-
-	// CFG_MAP 块（下面两条检查共用）。
-	mapBlock := js[strings.Index(js, "const CFG_MAP = {"):]
-	mapBlock = mapBlock[:strings.Index(mapBlock, "\n};")]
-	// 不能按行首匹配：CFG_MAP 里多个键写在同一行（`a: [...], b: [...]`），只有行首
-	// 那个带换行缩进。按「前面是行首或分隔符」判定才不漏。
-	inMap := func(name string) bool {
-		return regexp.MustCompile(`(?:^|[\s,{])` + regexp.QuoteMeta(name) + `:\s*\[`).MatchString(mapBlock)
-	}
-
-	// 1) 表单里的每个 name 都要有 CFG_MAP 条目（否则收集/回填都拿不到它）。
-	form := html[strings.Index(html, `<form id="cfgForm">`):]
-	form = form[:strings.Index(form, "</form>")]
-	names := map[string]bool{}
-	for _, m := range regexp.MustCompile(`name="([a-z_0-9]+)"`).FindAllStringSubmatch(form, -1) {
-		names[m[1]] = true
-	}
-	if len(names) == 0 {
-		t.Fatal("未从配置表单解析出任何 name 字段")
-	}
-	for n := range names {
-		if !inMap(n) {
-			t.Errorf("表单字段 %q 在 CFG_MAP 里没有条目（保存时会被静默丢弃）", n)
-		}
-	}
-
-	// 2) CFG_MAP 里的每个键都要在表单里有控件（否则回填/保存是空转）。
-	for _, m := range regexp.MustCompile(`(?:^|[\s,{])([a-z_0-9]+):\s*\[`).FindAllStringSubmatch(mapBlock, -1) {
-		if !names[m[1]] {
-			t.Errorf("CFG_MAP 键 %q 在配置表单里没有对应控件", m[1])
-		}
-	}
-
-	// 3) 明确断言这一个键：后端有配置项、README 说面板可改，UI 不能少。
-	if !strings.Contains(js, "request_client_info: ['logging', 'request_client_info']") {
-		t.Error("CFG_MAP 缺 request_client_info 条目")
-	}
-	if !names["request_client_info"] {
-		t.Error("配置表单缺「记录调用来源」开关（logging.request_client_info）")
 	}
 }
 
@@ -723,7 +893,7 @@ const end = src.indexOf('function renderPackages');
 if (start < 0 || end < 0) throw new Error('detail group functions not found');
 const ctx = { Date, Math, Number, String, Map, Array, Object, isFinite };
 vm.createContext(ctx);
-vm.runInContext(src.slice(start, end) + '\nthis.pkDetailGroups = pkDetailGroups; this.pkDetailLimit = pkDetailLimit;', ctx);
+vm.runInContext("'use strict';\n" + src.slice(start, end) + '\nthis.pkDetailGroups = pkDetailGroups; this.pkDetailLimit = pkDetailLimit;', ctx);
 const input = [
   { id: 'small-late', size: 100, remain: 1, expires_at: 400 },
   { id: 'zero-early-b', size: 200, remain: 0, expires_at: 200 },
@@ -779,7 +949,7 @@ const end = src.indexOf('function renderExpiryDistribution');
 if (start < 0 || end < 0) throw new Error('expiry summary functions not found');
 const ctx = { Date, Math, Number, String, Map, Array, Object, isFinite };
 vm.createContext(ctx);
-vm.runInContext(src.slice(start, end) + '\nthis.summarizeCreditDays = summarizeCreditDays; this.pkAccountColorMap = pkAccountColorMap;', ctx);
+vm.runInContext("'use strict';\n" + src.slice(start, end) + '\nthis.summarizeCreditDays = summarizeCreditDays; this.pkAccountColorMap = pkAccountColorMap;', ctx);
 const day = 86400000, now = 100000;
 const out = ctx.summarizeCreditDays([
   { uid: 'a', remain: 100, packages: [
@@ -817,7 +987,197 @@ process.stdout.write(JSON.stringify({
 	}
 }
 
-// TestAppJSCollectConfigClearable 钉住 collectConfig 的空串语义。
+func TestLogoutWired(t *testing.T) {
+	p := newTestPanel()
+	rec := httptest.NewRecorder()
+	p.ServeHTTP(rec, httptest.NewRequest("GET", "/panel/", nil))
+	if !strings.Contains(rec.Body.String(), `id="btnLogout"`) {
+		t.Error(`index.html 缺少登出按钮 id="btnLogout"`)
+	}
+	js, err := os.ReadFile("app.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	src := string(js)
+	if !strings.Contains(src, "$('btnLogout')") {
+		t.Error("app.js 未绑定 $('btnLogout')：按钮点了不会有反应")
+	}
+	if !strings.Contains(src, "localStorage.removeItem(LS_KEY)") {
+		t.Error("登出必须清掉本地密钥（LS_KEY），否则刷新后仍免密进入面板")
+	}
+}
+
+// 积分扣除维度的格式必须稳定，且缺样本/缺匹配 Token 时不能伪造比例。
+
+func TestQrowShowsCodeAndTitle(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("node not available")
+	}
+	harness := `const fs = require('fs');
+const src = fs.readFileSync(process.argv[2], 'utf8');
+function extractFn(name) {
+  const sig = 'function ' + name + '(';
+  const start = src.indexOf(sig);
+  if (start < 0) throw new Error('missing ' + name);
+  let i = src.indexOf('{', start);
+  let depth = 0, inStr = '';
+  for (; i < src.length; i++) {
+    const c = src[i];
+    if (inStr) {
+      if (c === '\\') { i++; continue; }
+      if (c === inStr) inStr = '';
+      continue;
+    }
+    if (c === '"' || c === "'" || c === String.fromCharCode(96)) { inStr = c; continue; }
+    if (c === '{') depth++;
+    else if (c === '}') { depth--; if (depth === 0) return src.slice(start, i + 1); }
+  }
+  throw new Error('unclosed ' + name);
+}
+const GROWTH_TITLES = {};
+const ST_WORDS = { done: '完成', scan: '待执行' };
+function esc(s) { return String(s == null ? '' : s); }
+eval(extractFn('taskProgressLabel'));
+eval(extractFn('qrowHTML'));
+eval(extractFn('groupsFromQueue'));
+const groups = groupsFromQueue([{ uid: 'u', nickname: 'n', kind: 'growth', code: 'Sequential_Tasks_4', title: '创建 1 个定时任务', status: 'done', message: 'm' }]);
+const html = qrowHTML(groups[0].rows[0]);
+const name = html.split('class="t">')[1].split('<')[0];
+if (!html.includes('>Sequential_Tasks_4<') || name !== '创建 1 个定时任务') {
+  console.log('FAIL', name, html);
+  process.exit(1);
+}
+const bare = qrowHTML({ code: 'black_cat', status: 'done' });
+const bareName = bare.split('class="t">')[1].split('<')[0];
+if (bareName !== 'black_cat') {
+  console.log('FAIL fallback', bareName);
+  process.exit(1);
+}
+console.log('OK');
+`
+	hf, err := os.CreateTemp(t.TempDir(), "qrow-*.cjs")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := hf.WriteString(harness); err != nil {
+		t.Fatal(err)
+	}
+	hf.Close()
+	cmd := exec.Command(node, hf.Name(), "app.js")
+	cmd.Dir = "."
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("qrow title check: %v\n%s", err, out)
+	}
+}
+
+// TestIndexHTMLConfigInputsUnique 表单里每个 name 只能出现一次。
+//
+// 为什么需要：配置表单是「按 name 取值」的（collectConfig 遍历 CFG_MAP → elements[name]），
+// 同名输入框会静默互相覆盖（DOM 里靠后的赢），页面上看着像两个独立选项、实际只生效一个——
+// 本仓库已经犯过两次（成长任务队列整行被重复插入）。这里把它挡在 CI。
+
+func TestIndexHTMLConfigInputsUnique(t *testing.T) {
+	p := newTestPanel()
+	rec := httptest.NewRecorder()
+	p.ServeHTTP(rec, httptest.NewRequest("GET", "/panel/", nil))
+	body := rec.Body.String()
+
+	re := regexp.MustCompile(`<input[^>]*>`)
+	nameRe := regexp.MustCompile(`\sname="([^"]+)"`)
+	typeRe := regexp.MustCompile(`\stype="([^"]+)"`)
+	seen := map[string]int{}
+	for _, tag := range re.FindAllString(body, -1) {
+		nm, ty := nameRe.FindStringSubmatch(tag), typeRe.FindStringSubmatch(tag)
+		// radio 组靠同名互斥，重复是正确写法；其余同名会互相覆盖。
+		if nm == nil || (ty != nil && ty[1] == "radio") {
+			continue
+		}
+		seen[nm[1]]++
+	}
+	if len(seen) == 0 {
+		t.Fatal("no named inputs found in index.html")
+	}
+	for name, n := range seen {
+		if n > 1 {
+			t.Errorf("input name=%q 出现 %d 次（同名会互相覆盖，只保留一个）", name, n)
+		}
+	}
+}
+
+// TestAppJSIdsExistInHTML 钉住「app.js 里 $('id') 引用的字面 id 必须在 index.html 里存在」。
+// 为什么需要：元素缺失时 $('x').innerHTML = ... 抛 TypeError，而 loadLogs 这类函数把它吞在
+// try/catch 里 —— 症状是整块视图静默空白（运行日志在合并 PR #87 时就丢过一次），
+// 而所有 Go 测试与 JS 语法检查全绿。
+func TestAppJSIdsExistInHTML(t *testing.T) {
+	app, err := os.ReadFile("app.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	html, err := os.ReadFile("index.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := 0
+	for _, m := range regexp.MustCompile(`\$\('([A-Za-z0-9_-]+)'\)`).FindAllStringSubmatch(string(app), -1) {
+		n++
+		if !strings.Contains(string(html), `id="`+m[1]+`"`) {
+			t.Errorf("app.js 引用的 id 在 index.html 里不存在: %s", m[1])
+		}
+	}
+	if n == 0 {
+		t.Fatal("没有从 app.js 里扫到任何 id 引用，正则可能失效")
+	}
+}
+
+// TestUsageChartSingleLegend 钉住「Token 时序」卡头只有一条图例、四个项目各出现一次。
+//
+// 为什么需要：合并上游 PR #87 时，排版重构版的图例（prompt/completion·均值）与 fork
+// 的图例（prompt/completion/缓存命中率）两条被同时留下 —— 同一张图上并排两套重复条目，
+// 用户读到「prompt completion 缓存命中率」和「prompt completion 均值」两种口径，无从
+// 判断该信哪个。图例是纯静态 HTML：Go 测试与 JS 语法检查全绿，浏览器也不报错，回归
+// 只能靠这条断言拦。
+func TestUsageChartSingleLegend(t *testing.T) {
+	html, err := os.ReadFile("index.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(html)
+	// 定位「Token 时序」那张图的卡头：页面上有多个 .uschart-hd（余额趋势也用同一套样式），
+	// 只按 class 找会命中第一个（余额水位），导致图例断言永远看到 0 项 ——
+	// 20261021 把「余额趋势」视图插到它前面时即踩到。改用「Token 时序」这个标签文本锚定。
+	start := strings.Index(body, `class="uschart-hd">`)
+	if start < 0 {
+		t.Fatal("index.html 里没有 uschart-hd 卡头")
+	}
+	// 从每个 uschart-hd 开始找，选取其片段里含「Token 时序」的那个
+	for {
+		end := strings.Index(body[start:], "</div>")
+		if end < 0 {
+			t.Fatal("uschart-hd 卡头没有闭合的 </div>")
+		}
+		if strings.Contains(body[start:start+end], "Token 时序") {
+			hd := body[start : start+end]
+			if n := strings.Count(hd, `class="legend"`); n != 1 {
+				t.Errorf("Token 时序卡头应只有 1 条图例，实际 %d 条（重复图例=同一张图两种口径）", n)
+			}
+			for _, item := range []string{"prompt", "completion", "缓存命中率", "均值"} {
+				if n := strings.Count(hd, item); n != 1 {
+					t.Errorf("图例项 %q 在卡头出现 %d 次，应为 1 次", item, n)
+				}
+			}
+			return
+		}
+		next := strings.Index(body[start+1:], `class="uschart-hd">`)
+		if next < 0 {
+			t.Fatal("未找到「Token 时序」卡头")
+		}
+		start = start + 1 + next
+	}
+}
+
+// TestAppJSCollectConfigClearable 钉住 collectConfig 的空串语义（吸收上游 10e17ef）。
 //
 // 覆盖型字段（user_agent / prompt_file）空串必须照发：漏发会让面板显示"已保存"
 // 而 config.json 里的值没变（issue #102 附带发现 2）。
@@ -849,7 +1209,7 @@ const ctx = {
   $: id => (id === 'cfgForm' ? cfgForm : null),
 };
 vm.createContext(ctx);
-vm.runInContext(src.slice(start, end) + '\nthis.collectConfig = collectConfig;', ctx);
+vm.runInContext("'use strict';\n" + src.slice(start, end) + '\nthis.collectConfig = collectConfig;', ctx);
 const out = ctx.collectConfig();
 const has = (o, k) => Object.prototype.hasOwnProperty.call(o || {}, k);
 process.stdout.write(JSON.stringify([
@@ -878,52 +1238,182 @@ process.stdout.write(JSON.stringify([
 	}
 }
 
-// TestAppJSExpirySortedByExpiry 到期提醒按「最近到期」升序，且不分域（issue #125）。
-//
-// 后端 /panel/api/packages 是按**余额降序**返回的，恰好把 CN 账号都排在前面、
-// global 排在末尾，看上去像"按域分组"，实际只是余额顺序。本用例刻意按这个形态构造
-// 输入（余额高的到期最晚、global 余额最低），若前端不重排就会保持该顺序而失败。
-//
-// 日期按「今天 +N 天」生成而不是写死：写死的话过了那天用例就会自己失效。
-func TestAppJSExpirySortedByExpiry(t *testing.T) {
+// 图片模型的倍率格：上游不报倍率时用「实测 X/张」兜底（来源是本网关的实扣记录），
+// 有牌价时仍旧显示牌价——牌价与实测必须分列，不能互相顶替。
+func TestAppJSRateCellMeasuredFallback(t *testing.T) {
 	node, err := exec.LookPath("node")
 	if err != nil {
-		t.Skip("node not installed; expiry sort test skipped")
+		t.Skip("node not installed; rateCell test skipped")
 	}
 	script := `const fs = require('fs');
 const vm = require('vm');
+const assert = require('assert');
 const src = fs.readFileSync(process.argv[2], 'utf8');
-const start = src.indexOf('function expBatches');
-const end = src.indexOf('async function loadExpiry');
-if (start < 0 || end < 0 || end < start) throw new Error('expiry region not found');
-const sink = { innerHTML: '', textContent: '', hidden: true };
+const start = src.indexOf('function rateCell(');
+assert.ok(start >= 0, 'rateCell not found');
+const ctx = { String, Object, esc: v => String(v == null ? '' : v) };
+vm.createContext(ctx);
+vm.runInContext("'use strict';\n" + src.slice(start, src.indexOf('async function loadModels(')) + '\nthis.rateCell = rateCell;', ctx);
+// ① 无牌价 + 有实测 → 实测 0.55/张
+const a = ctx.rateCell({ credits: '', measured_credit: '0.55' });
+assert.ok(a.includes('实测 0.55/张'), 'want 实测 0.55/张, got: ' + a);
+// ② 有牌价 → 显示牌价，实测不顶替
+const b = ctx.rateCell({ credits: 'x5.00', measured_credit: '5.71' });
+assert.ok(b.includes('x5.00') && !b.includes('实测'), '牌价优先, got: ' + b);
+// ③ 两者都无 → 仍是破折号（不编数字）
+const c = ctx.rateCell({ credits: '' });
+assert.equal(c, '—');
+console.log('rateCell measured fallback passed');`
+	path := filepath.Join(t.TempDir(), "ratecell.cjs")
+	if err := os.WriteFile(path, []byte(script), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if out, err := exec.Command(node, path, "app.js").CombinedOutput(); err != nil {
+		t.Fatalf("node: %v\n%s", err, out)
+	}
+}
+
+// TestAppJSTrangeAllHistory 「全部历史」必须给用量接口发 hours=0。
+//
+// 为什么：服务端 /panel/api/usage 的契约是「不给参数 = 默认 72 小时、显式 0 = 全部历史」。
+// 空查询因此让「全部历史」静默退化成「近 3 天」——线上实测同一时刻 全部历史 8903 次请求
+// 与 近 3 天 完全一致，而真全部历史是 24817 次（issue #121 的形态）。
+func TestAppJSTrangeAllHistory(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("node not installed; trangeQuery test skipped")
+	}
+	script := `const fs = require('fs');
+const vm = require('vm');
+const assert = require('assert');
+const src = fs.readFileSync(process.argv[2], 'utf8');
+const start = src.indexOf('function trangeQuery(');
+assert.ok(start >= 0, 'trangeQuery not found');
+const st = { preset: '0', from: null, to: null };
+const ctx = { URLSearchParams, Date, Number, String, Object,
+  trangeState: () => st, trangeMidnight: () => new Date('2026-10-06T00:00:00') };
+vm.createContext(ctx);
+vm.runInContext("'use strict';\n" + src.slice(start, src.indexOf('function trangeLabel(')) + '\nthis.trangeQuery = trangeQuery;', ctx);
+// ① 用量（rolling）：「全部历史」→ hours=0
+st.preset = '0';
+assert.equal(ctx.trangeQuery('usRange', true).toString(), 'hours=0', '全部历史应发 hours=0');
+// ② 归档（非 rolling）：不认 hours，保持空查询
+assert.equal(ctx.trangeQuery('reqRange', false).toString(), '');
+// ③ 滚动预设照旧发 hours（回归：别把其它档也改了）
+st.preset = '72';
+assert.equal(ctx.trangeQuery('usRange', true).toString(), 'hours=72');
+// ④ 今天 / 自定义走 from/to，不受影响
+st.preset = 'today';
+assert.ok(ctx.trangeQuery('usRange', true).get('from'));
+st.preset = 'custom';
+st.from = new Date('2026-10-01T00:00:00');
+assert.ok(ctx.trangeQuery('usRange', true).get('from'));
+console.log('trange all-history passed');`
+	path := filepath.Join(t.TempDir(), "trange.cjs")
+	if err := os.WriteFile(path, []byte(script), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if out, err := exec.Command(node, path, "app.js").CombinedOutput(); err != nil {
+		t.Fatalf("node: %v\n%s", err, out)
+	}
+}
+
+// TestConfigFormMatchesCFGMap 配置表单字段与 CFG_MAP 必须一一对应（吸收上游 7339a3c / PR #122）。
+//
+// 为什么需要：这套映射断掉时没有任何编译期或运行期报错——表单多一个字段，保存时被静默
+// 丢弃；CFG_MAP 多一个键，回填/保存空转。两者都只能靠人点开配置页才发现。上游当时的
+// 现场是 `logging.request_client_info` 在表单里被连带删掉，而 Go 侧配置键、热生效通路、
+// README 描述都还在。
+func TestConfigFormMatchesCFGMap(t *testing.T) {
+	src, err := os.ReadFile("app.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	js := string(src)
+	htmlBytes, err := os.ReadFile("index.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	html := string(htmlBytes)
+
+	// CFG_MAP 块（下面两条检查共用）。
+	mb := js[strings.Index(js, "const CFG_MAP = {"):]
+	mb = mb[:strings.Index(mb, "\n};")]
+	// 不能按行首匹配：CFG_MAP 里多个键写在同一行（`a: [...], b: [...]`），只有行首
+	// 那个带换行缩进。按「前面是行首或分隔符」判定才不漏。
+	inMap := func(name string) bool {
+		return regexp.MustCompile(`(?:^|[\s,{])` + regexp.QuoteMeta(name) + `:\s*\[`).MatchString(mb)
+	}
+
+	// 1) 表单里的每个 name 都要有 CFG_MAP 条目（否则收集/回填都拿不到它）。
+	f := html[strings.Index(html, `<form id="cfgForm">`):]
+	f = f[:strings.Index(f, "</form>")]
+	names := map[string]bool{}
+	for _, m := range regexp.MustCompile(`name="([a-z_0-9]+)"`).FindAllStringSubmatch(f, -1) {
+		names[m[1]] = true
+	}
+	if len(names) == 0 {
+		t.Fatal("未从配置表单解析出任何 name 字段")
+	}
+	for n := range names {
+		if !inMap(n) {
+			t.Errorf("表单字段 %q 在 CFG_MAP 里没有条目（保存时会被静默丢弃）", n)
+		}
+	}
+
+	// 2) CFG_MAP 里的每个键都要在表单里有控件（否则回填/保存是空转）。
+	for _, m := range regexp.MustCompile(`(?:^|[\s,{])([a-z_0-9]+):\s*\[`).FindAllStringSubmatch(mb, -1) {
+		if !names[m[1]] {
+			t.Errorf("CFG_MAP 键 %q 在配置表单里没有对应控件", m[1])
+		}
+	}
+}
+
+// TestAppJSTaskCenterScanNotOverwritten 任务中心：切到「扫描/队列」结果后，5 秒定时
+// 刷新不能把列表抢回后台任务视图。
+//
+// 为什么需要：refreshVisible()（每 5s）在 taskscenter 视图下调 reattachQueueView()，
+// 而它无条件 taskCenterOwner='jobs' + loadTaskJobs() —— 用户刚点「扫描待办」查出来的
+// 结果会在下一个 tick 被 renderQueue(空) 冲成空白，表现为「查完就自己消失，按好几次
+// 才又有」。闸门只挡抢视图那一步，尾部「本页队列仍在跑就恢复轮询」不受影响。
+func TestAppJSTaskCenterScanNotOverwritten(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("node not installed; task center reattach test skipped")
+	}
+	script := `const fs = require('fs');
+const vm = require('vm');
+const assert = require('assert');
+const src = fs.readFileSync(process.argv[2], 'utf8');
+const s = src.indexOf('function reattachQueueView');
+const e = src.indexOf('/* ── 用量');
+assert.ok(s >= 0 && e > s, 'reattachQueueView not found');
+const calls = [];
 const ctx = {
-  esc: s => String(s == null ? '' : s),
-  fmtTok: v => String(v == null ? 0 : v),
-  $: () => sink,
-  Date, Math, Number, String, Map, Array, Object, isNaN,
-  lastPackages: null, lastPackagesAt: 0,
+  String, Number, Object, Array, Promise, JSON, console, setTimeout,
+  api: async () => ({ started: false }),
+  $: () => ({ hidden: false, textContent: '', style: {} }),
+  loadTaskJobs: () => calls.push('jobs'),
+  startQueuePolling: () => calls.push('polling'),
 };
 vm.createContext(ctx);
-vm.runInContext(src.slice(start, end) + '\nthis.renderExpiry = renderExpiry;', ctx);
-const iso = n => {
-  const d = new Date(); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() + n);
-  const p = x => String(x).padStart(2, '0');
-  return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate());
-};
-const pack = (days, amount) => ({ end_time: iso(days) + ' 00:00:00', remain: amount });
-// 模拟后端顺序：余额降序 → CN 高余额在前且到期最晚，global 最少且最快到期。
-const d = { accounts: [
-  { uid: 'a', nickname: 'cn-late',  realm: 'cn',     packages: [pack(16, 900)] },
-  { uid: 'b', nickname: 'cn-mid',   realm: 'cn',     packages: [pack(12, 700)] },
-  { uid: 'c', nickname: 'gl-soon',  realm: 'global', packages: [pack(2, 500)] },
-  { uid: 'd', nickname: 'no-expiry', realm: 'cn',    packages: [pack(-3, 100)] },
-  { uid: 'e', nickname: 'broken',   realm: 'cn',     error: 'offline' },
-] };
-ctx.renderExpiry(d);
-const names = [...sink.innerHTML.matchAll(/<span class="exp-nm">([^<]*)<\/span>/g)].map(m => m[1]);
-process.stdout.write(JSON.stringify(names));`
-	f, err := os.CreateTemp(t.TempDir(), "expsort-*.cjs")
+vm.runInContext("'use strict';\n" + 'let queueTimer = null, lastQueueSeq = 0; let taskCenterOwner = "jobs";\n' +
+  src.slice(s, e) +
+  '\nthis.setOwner = v => { taskCenterOwner = v; }; this.owner = () => taskCenterOwner;' +
+  '\nthis.reattach = reattachQueueView;', ctx);
+(async () => {
+  // ① 扫描结果占着列表：定时刷新不得抢视图、不得渲染后台任务
+  ctx.setOwner('queue');
+  ctx.reattach();
+  await new Promise(r => setTimeout(r, 30));
+  const held = { owner: ctx.owner(), calls: calls.slice() };
+  // ② 明确回到后台任务视图（点「刷新进度」那条路）时照旧渲染
+  ctx.setOwner('jobs');
+  ctx.reattach();
+  await new Promise(r => setTimeout(r, 30));
+  process.stdout.write(JSON.stringify({ held: held, afterJobs: calls.slice() }));
+})();`
+	f, err := os.CreateTemp(t.TempDir(), "task-center-reattach-*.cjs")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -933,27 +1423,97 @@ process.stdout.write(JSON.stringify(names));`
 	f.Close()
 	out, err := exec.Command(node, f.Name(), "app.js").CombinedOutput()
 	if err != nil {
-		t.Fatalf("expiry sort node test failed: %v\n%s", err, out)
+		t.Fatalf("task center reattach node test failed: %v\n%s", err, out)
 	}
-	// 最快到期的排最前（跨域）；无 7 天内到期的与查询失败的排最后。
-	const want = `["gl-soon","cn-mid","cn-late","no-expiry","broken"]`
+	want := `{"held":{"owner":"queue","calls":[]},"afterJobs":["jobs"]}`
 	if strings.TrimSpace(string(out)) != want {
-		t.Fatalf("expiry order=%s\nwant %s", strings.TrimSpace(string(out)), want)
+		t.Fatalf("scan results not protected from periodic refresh: got=%s want=%s", out, want)
 	}
 }
 
-// TestAppJSExpirySnapshotRenders 到期卡片用 overview 快照即可渲染（issue #137）。
-//
-// 此前的死锁：卡片在 index.html 上写死 hidden，而唯一解除隐藏的语句在
-// renderExpiry() 末尾——该函数只有点「检查」才被调用。按钮本身就在隐藏卡片里，
-// 用户看不见也点不到，于是"积分到期提醒"这个功能等于不存在。
-//
-// 修复引入 renderExpirySnapshot()：吃 /overview 响应里的 credits_earliest_expiry /
-// credits_earliest_remaining（state.json 现成数据，零上游请求），并显式设
-// expBox.hidden = false。本用例钉住两件事：
-//  1. 只给 overview 形态的输入（没有 packages 字段）也能出内容；
-//  2. 渲染后 expBox.hidden 必须为 false——把这句删掉（还原 bug）测试就必须 FAIL。
-func TestAppJSExpirySnapshotRenders(t *testing.T) {
+// 积分构成「按需拉取」（移植上游 8391a05）：packages 是逐账号实时查上游，切进视图就打一次
+// 会在账号多时既慢又压上游。断言四件事：冷缓存才打上游、热缓存直接渲染并标注数据年龄、
+// 「刷新」按钮始终实时查（且不依赖事件对象真值）、失败不污染缓存（下次仍会重试）。
+func TestAppJSPackagesCacheFirst(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("node not installed; packages cache test skipped")
+	}
+	script := `const fs = require('fs');
+const vm = require('vm');
+const src = fs.readFileSync(process.argv[2], 'utf8');
+const start = src.indexOf('let lastPackages');
+if (start < 0) throw new Error('packages cache not found in app.js');
+let fakeNow = 1700000000000;
+class FakeDate extends Date { static now() { return fakeNow; } }
+const els = {}, calls = [], rendered = [];
+const el = (id) => (els[id] = els[id] || { textContent: '', innerHTML: '' });
+let failNext = false;
+const ctx = {
+  Date: FakeDate, Math, JSON, Promise, Number, String,
+  $: el,
+  api: async (p) => {
+    calls.push(p);
+    if (p === 'packages' && failNext) { failNext = false; throw new Error('boom'); }
+    return p === 'packages' ? { accounts: [{ uid: 'u1' }], stamp: calls.length } : { config: {} };
+  },
+  renderPackages: (d, limit) => rendered.push([d.stamp, limit]),
+  pkDetailLimit: () => 7,
+  esc: (s) => String(s),
+};
+vm.createContext(ctx);
+vm.runInContext("'use strict';\n" + src.slice(start) + '\nthis.loadPackages = loadPackages;', ctx);
+(async () => {
+  await ctx.loadPackages();                       // 冷：首次进入 → 打上游
+  const cold = { calls: calls.length, rendered: rendered.slice() };
+  fakeNow += 3 * 60000;                           // 过 3 分钟
+  el('pkNote').textContent = 'sentinel';
+  await ctx.loadPackages();                       // 热：切回视图 → 不打上游，渲染缓存
+  const warm = { calls: calls.length, rendered: rendered.slice(), note: el('pkNote').textContent };
+  await ctx.loadPackages(true);                   // 显式强刷
+  const forced = { calls: calls.length, rendered: rendered.slice() };
+  el('pkNote').textContent = 'sentinel';
+  await el('btnPk').onclick();                      // 按钮：无事件参数也必须强刷
+  const viaBtn = { calls: calls.length, rendered: rendered.slice(), note: el('pkNote').textContent };
+  failNext = true;                                // 上游失败：不得写进缓存
+  await ctx.loadPackages(true);
+  const failed = { calls: calls.length, rendered: rendered.length };
+  await ctx.loadPackages();                       // 失败后仍吃旧缓存（即失败响应没被存进去）
+  const retry = { calls: calls.length, last: rendered[rendered.length - 1] };
+  process.stdout.write(JSON.stringify({
+    cold: cold, warm: warm, forced: forced, viaBtn: viaBtn, failed: failed, retry: retry,
+  }));
+})();`
+	f, err := os.CreateTemp(t.TempDir(), "packages-cache-*.cjs")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.WriteString(script); err != nil {
+		t.Fatal(err)
+	}
+	f.Close()
+	out, err := exec.Command(node, f.Name(), "app.js").CombinedOutput()
+	if err != nil {
+		t.Fatalf("packages cache node test failed: %v\n%s", err, out)
+	}
+	// calls 每轮 +2（packages + config）；渲染里的 stamp = 取自第几次调用，用来判「渲染的是哪一份数据」。
+	// 末段：强刷失败后**再进入视图仍吃上一次成功的缓存**（stamp 仍是 5，不是失败那轮的 7）——
+	// 失败响应若被写进缓存，这里就会渲染 7。
+	want := `{"cold":{"calls":2,"rendered":[[1,7]]},` +
+		`"warm":{"calls":2,"rendered":[[1,7],[1,7]],"note":` + strconv.Quote("1 个账号 · 3 分钟前的数据，点「刷新」更新") + `},` +
+		`"forced":{"calls":4,"rendered":[[1,7],[1,7],[3,7]]},` +
+		`"viaBtn":{"calls":6,"rendered":[[1,7],[1,7],[3,7],[5,7]],"note":"sentinel"},` +
+		`"failed":{"calls":8,"rendered":4},` +
+		`"retry":{"calls":8,"last":[5,7]}}`
+	if strings.TrimSpace(string(out)) != want {
+		t.Fatalf("packages 按需拉取行为不符:\n got=%s\nwant=%s", out, want)
+	}
+}
+
+// 账号池页的到期提醒快照：只吃 /overview 已有的最早到期字段，不发任何上游请求。
+// 钉三件事：按到期升序（最近的排最前）、无未来批次的账号不进表、剩余天数口径与
+// pkExpiryText 一致（ceil 到天）——否则同一条批次在「积分构成」页与账号池页会各说一个数。
+func TestAppJSExpirySnapshot(t *testing.T) {
 	node, err := exec.LookPath("node")
 	if err != nil {
 		t.Skip("node not installed; expiry snapshot test skipped")
@@ -961,44 +1521,49 @@ func TestAppJSExpirySnapshotRenders(t *testing.T) {
 	script := `const fs = require('fs');
 const vm = require('vm');
 const src = fs.readFileSync(process.argv[2], 'utf8');
-const start = src.indexOf('function renderExpirySnapshot');
-const end = src.indexOf('async function loadExpiry');
+const start = src.indexOf('function expCSTDate');
+const end = src.indexOf('let lastPackages');
 if (start < 0 || end < 0 || end < start) throw new Error('expiry snapshot region not found');
-const sinks = {};
-const mk = id => (sinks[id] = { innerHTML: '', textContent: '', hidden: true });
+const els = {};
 const ctx = {
+  Date, Math, Number, String, isFinite,
+  PK_DAY_MS: 86400000,
+  $: id => (els[id] = els[id] || {
+    innerHTML: '', textContent: '', addEventListener: () => {},
+    querySelector: () => null,   // 无按钮桩 → applyRestToggle 取不到按钮直接返回
+  }),
   esc: s => String(s == null ? '' : s),
   fmtTok: v => String(v == null ? 0 : v),
-  $: id => (sinks[id] || mk(id)),
-  Date, Math, Number, String, Map, Array, Object, isNaN,
+  pkExpiryDateTime: ms => new Date(ms).toISOString(),   // 只取前 10 位，时区口径由真函数负责
 };
 vm.createContext(ctx);
-vm.runInContext(src.slice(start, end) + '\nthis.renderExpirySnapshot = renderExpirySnapshot;', ctx);
-const day = n => {
-  const d = new Date(); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() + n);
-  return d.toISOString();
-};
-// overview 形态：没有 packages 数组，只有到期快照字段。
-const d = { accounts: [
-  { uid: 'aaaaaaaa-1', nickname: '秋',     credits: 4099,
-    credits_earliest_expiry: day(2),  credits_earliest_remaining: 499 },
-  { uid: 'bbbbbbbb-2', nickname: '秋千易', credits: 3243,
-    credits_earliest_expiry: day(30), credits_earliest_remaining: 43 },
-  { uid: 'cccccccc-3', nickname: '长期包', credits: 900,
-    credits_earliest_expiry: null,    credits_earliest_remaining: 0 },
-] };
-ctx.renderExpirySnapshot(d);
-const html = sinks['expList'] ? sinks['expList'].innerHTML : '';
-const names = [...html.matchAll(/<span class="exp-nm">([^<]*)<\/span>/g)].map(m => m[1]);
-// 2 天到期的应排最前（红），30 天其次，无到期信息的排最后。
-const wantNames = JSON.stringify(['秋', '秋千易', '长期包']);
-const gotNames = JSON.stringify(names);
+// 展开态恢复由 TestAppJSExpiryRestToggleSurvivesRerender 专测；本用例的 tbody 桩没有按钮，
+// applyRestToggle 用 querySelector 取不到按钮会直接返回，不影响渲染断言。
+vm.runInContext("'use strict';\n" + 'const restOpen = Object.create(null);\n' +
+  src.slice(start, end) + '\nthis.renderExpirySnapshot = renderExpirySnapshot;', ctx);
+const day = n => new Date(Date.now() + n * 86400000).toISOString();
+ctx.renderExpirySnapshot({ accounts: [
+  { uid: 'aaaaaaaa-1', nickname: '秋',     credits_earliest_expiry: day(20), credits_earliest_remaining: 499 },
+  { uid: 'bbbbbbbb-2', nickname: '秋千易', credits_earliest_expiry: day(2),  credits_earliest_remaining: 41 },
+  { uid: 'cccccccc-3', nickname: '长期包', credits_earliest_expiry: null,   credits_earliest_remaining: 0 },
+  { uid: 'dddddddd-4', nickname: '零批次', credits_earliest_expiry: day(5), credits_earliest_remaining: 0 },
+]});
+const html = els['expBody'].innerHTML;
+const cells = h => h.split('<tr>').slice(1).map(r =>
+  [...r.matchAll(/<td[^>]*>([^<]*)<\/td>/g)].map(m => m[1]));
+const rows = cells(html);
+const note = els['expNote'].textContent;   // 两次渲染前先取，下同
+
+// 5 个将到期账号 → 只展开最近 3 个，其余 2 个收纳成一行且默认收起。
+ctx.renderExpirySnapshot({ accounts: [1,2,3,4,5].map(n => ({ uid: 'u' + n, nickname: 'A' + n,
+  credits_earliest_expiry: day(n), credits_earliest_remaining: 10 * n })) });
+const html2 = els['expBody'].innerHTML;
 process.stdout.write(JSON.stringify({
-  visible: sinks['expBox'] ? sinks['expBox'].hidden === false : false,
-  rows: names.length,
-  order: gotNames === wantNames,
-  got: gotNames,
-  want: wantNames,
+  rows: rows.map(c => [c[0], c[2], c[3], c[4]]),
+  note: note,
+  head: cells(html2.split('<tr class="pk-group-summary"')[0]).map(c => [c[0], c[2]]),
+  restHidden: (html2.match(/<tr data-exp-row="rest" hidden>/g) || []).length,
+  label: (html2.match(/data-exp-rest="\d+"[^>]*>([^<]+)</) || ['', ''])[1],
 }));`
 	f, err := os.CreateTemp(t.TempDir(), "expsnap-*.cjs")
 	if err != nil {
@@ -1012,254 +1577,14 @@ process.stdout.write(JSON.stringify({
 	if err != nil {
 		t.Fatalf("expiry snapshot node test failed: %v\n%s", err, out)
 	}
-	const want = `{"visible":true,"rows":3,"order":true,"got":"[\"秋\",\"秋千易\",\"长期包\"]","want":"[\"秋\",\"秋千易\",\"长期包\"]"}`
+	// 41 分 2 天后到期 → 日均需耗 21（ceil 20.5）；499 分 20 天 → 25（ceil 24.95）。
+	// 若把 ceil 改成 floor，这里必须变成 20 / 24。
+	want := `{"rows":[["秋千易","2 天","41","21"],["秋","20 天","499","25"]],` +
+		`"note":` + strconv.Quote("2 个账号有未到期批次 · 未开启后台刷新 · 明细见「积分构成」") + `,` +
+		// 收纳：只展开最近到期的 3 个（A1/A2/A3 按到期升序），其余 2 个 hidden。
+		`"head":[["A1","明天"],["A2","2 天"],["A3","3 天"]],"restHidden":2,"label":"其余 2 个账号，展开"}`
 	if strings.TrimSpace(string(out)) != want {
-		t.Fatalf("expiry snapshot=%s\nwant %s（visible 必须为 true，否则卡片仍隐藏）",
-			strings.TrimSpace(string(out)), want)
-	}
-}
-
-// TestAppJSExpirySnapshotMatchesLive 钉住「打开面板看到的」与「点检查后看到的」逐字节
-// 一致（issue：首页快照与检查用了两套到期口径）。
-//
-// 做法：给同一逻辑数据的两条形态——packages（检查）与 credits_expiry_buckets（overview
-// 快照）——分别渲染，比较 expList.innerHTML。相等意味着排序、日期、该批合计、日均
-// 需耗、7 天内合计、随后批次全部一致，而不是只对齐了某一个字段。
-func TestAppJSExpirySnapshotMatchesLive(t *testing.T) {
-	node, err := exec.LookPath("node")
-	if err != nil {
-		t.Skip("node not installed; expiry parity test skipped")
-	}
-	script := `const fs = require('fs');
-const vm = require('vm');
-const src = fs.readFileSync(process.argv[2], 'utf8');
-const start = src.indexOf('function expBatches');
-const end = src.indexOf('async function loadExpiry');
-if (start < 0 || end < 0 || end < start) throw new Error('expiry region not found');
-const sinks = {};
-const mk = id => (sinks[id] = { innerHTML: '', children: [], textContent: '', hidden: true });
-const ctx = {
-  esc: s => String(s == null ? '' : s),
-  fmtTok: v => String(v == null ? 0 : v),
-  $: id => (sinks[id] || mk(id)),
-  Date, Math, Number, String, Map, Array, Object, isNaN,
-  lastPackages: null, lastPackagesAt: 0,
-};
-vm.createContext(ctx);
-vm.runInContext(src.slice(start, end) + '\nthis.renderExpiry = renderExpiry; this.renderExpirySnapshot = renderExpirySnapshot;', ctx);
-const iso = n => {
-  const d = new Date(); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() + n);
-  const p = x => String(x).padStart(2, '0');
-  return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate());
-};
-// 同一天多个包：检查侧是 3 + 100 + 80，快照侧已聚合成 180。
-const live = { accounts: [
-  { uid: 'a', nickname: '同日多批', packages: [
-    { end_time: iso(0) + 'T09:00:00', remain: 3 },
-    { end_time: iso(1) + 'T09:00:00', remain: 100 },
-    { end_time: iso(1) + 'T12:00:00', remain: 80 },
-    { end_time: iso(2) + 'T09:00:00', remain: 50 },
-  ] },
-  { uid: 'b', nickname: '远期', packages: [
-    { end_time: iso(16) + 'T22:25:00', remain: 1600 },
-    { end_time: iso(17) + 'T09:00:00', remain: 400 },
-  ] },
-  { uid: 'c', nickname: '无到期', packages: [] },
-  { uid: 'd', nickname: '明天', packages: [{ end_time: iso(1) + 'T10:00:00', remain: 77 }] },
-] };
-const snap = { accounts: [
-  { uid: 'b', nickname: '远期', credits_expiry_buckets: [
-    { date: iso(16), remain: 1600 },
-    { date: iso(17), remain: 400 },
-  ] },
-  { uid: 'a', nickname: '同日多批', credits_expiry_buckets: [
-    { date: iso(2), remain: 50 },
-    { date: iso(1), remain: 180 },
-    { date: iso(0), remain: 3 },
-  ] },
-  { uid: 'c', nickname: '无到期', credits_expiry_buckets: [] },
-  { uid: 'd', nickname: '明天', credits_expiry_buckets: [{ date: iso(1), remain: 77 }] },
-] };
-ctx.renderExpiry(live);
-const liveHTML = sinks['expList'].innerHTML;
-sinks['expList'].innerHTML = '';
-ctx.renderExpirySnapshot(snap);
-const snapHTML = sinks['expList'].innerHTML;
-process.stdout.write(JSON.stringify({
-  equal: liveHTML === snapHTML,
-  today: liveHTML.includes('今天到期'),
-  tomorrow: liveHTML.includes('明天到期'),
-  weekSum: liveHTML.includes('7 天内合计'),
-  len: liveHTML.length,
-}));`
-	f, err := os.CreateTemp(t.TempDir(), "expparity-*.cjs")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := f.WriteString(script); err != nil {
-		t.Fatal(err)
-	}
-	f.Close()
-	out, err := exec.Command(node, f.Name(), "app.js").CombinedOutput()
-	if err != nil {
-		t.Fatalf("expiry parity node test failed: %v\n%s", err, out)
-	}
-	const want = `{"equal":true,"today":true,"tomorrow":true,"weekSum":true,"len":`
-	got := strings.TrimSpace(string(out))
-	if !strings.HasPrefix(got, want) {
-		t.Fatalf("expiry parity=%s\nwant prefix %s（快照与检查必须逐字节一致）", got, want)
-	}
-}
-
-// TestAppJSExpirySnapshotNoteCadence 到期卡片必须如实标注数据节奏与年龄。
-// 界面本身 5 秒轮询一次 overview，但卡片数据只随余额后台刷新更新（默认每 5 分钟）；
-// 不标注的话，5 秒级的界面刷新会让人误以为数据也是 5 秒级新鲜。
-func TestAppJSExpirySnapshotNoteCadence(t *testing.T) {
-	node, err := exec.LookPath("node")
-	if err != nil {
-		t.Skip("node not installed; expiry note test skipped")
-	}
-	script := `const fs = require('fs');
-const vm = require('vm');
-const src = fs.readFileSync(process.argv[2], 'utf8');
-// 从 expBatches 切起：renderExpirySnapshot 的按日批次分支要调 renderExpiry，
-// 只切它自己会 ReferenceError。
-const start = src.indexOf('function expBatches');
-const end = src.indexOf('async function loadExpiry');
-if (start < 0 || end < 0 || end < start) throw new Error('expiry region not found');
-const sinks = {};
-const mk = id => (sinks[id] = { innerHTML: '', children: [], textContent: '', hidden: true });
-const ctx = {
-  esc: s => String(s == null ? '' : s),
-  fmtTok: v => String(v == null ? 0 : v),
-  $: id => (sinks[id] || mk(id)),
-  Date, Math, Number, String, Map, Array, Object, isNaN,
-  lastPackages: null, lastPackagesAt: 0,
-};
-vm.createContext(ctx);
-vm.runInContext(src.slice(start, end) + '\nthis.renderExpirySnapshot = renderExpirySnapshot;', ctx);
-const refreshedAt = new Date(Date.now() - 3 * 60000).toISOString();
-ctx.renderExpirySnapshot({ accounts: [
-  { uid: 'a', nickname: 'n', credits_expiry_buckets: [{ date: '2099-01-01', remain: 1 }] },
-], balance_refresh_sec: 300, balance_refreshed_at: refreshedAt });
-const withCadence = sinks['expNote'].textContent;
-ctx.renderExpirySnapshot({ accounts: [
-  { uid: 'a', nickname: 'n', credits_expiry_buckets: [{ date: '2099-01-01', remain: 1 }] },
-] });
-const withoutCadence = sinks['expNote'].textContent;
-process.stdout.write(JSON.stringify({
-  cadence: withCadence.includes('每 5 分钟后台刷新') && withCadence.includes('3 分钟前更新'),
-  noCadence: withoutCadence.includes('未开启后台刷新'),
-  note: withCadence,
-}));`
-	f, err := os.CreateTemp(t.TempDir(), "expnote-*.cjs")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := f.WriteString(script); err != nil {
-		t.Fatal(err)
-	}
-	f.Close()
-	out, err := exec.Command(node, f.Name(), "app.js").CombinedOutput()
-	if err != nil {
-		t.Fatalf("expiry note node test failed: %v\n%s", err, out)
-	}
-	const want = `{"cadence":true,"noCadence":true,"note":`
-	if !strings.HasPrefix(strings.TrimSpace(string(out)), want) {
-		t.Fatalf("expiry note=%s\nwant prefix %s", strings.TrimSpace(string(out)), want)
-	}
-}
-
-// TestPanelIndexExpiryBoxNotHidden 到期卡片在 HTML 骨架里不得带 hidden 属性（issue #137）。
-//
-// 与上一个用例互补：app.js 侧有 renderExpirySnapshot 兜底，HTML 侧若仍写死 hidden，
-// 用户在首次 overview 返回前（以及 JS 加载失败时）看到的依然是空白。这个断言就是
-// 那个曾经卡住整个功能的属性——把它加回去测试必须 FAIL。
-func TestPanelIndexExpiryBoxNotHidden(t *testing.T) {
-	b, err := os.ReadFile("index.html")
-	if err != nil {
-		t.Fatal(err)
-	}
-	// 定位到期卡片那一行，只检查它自己，避免误伤其他合法的 hidden 元素。
-	idx := strings.Index(string(b), `id="expBox"`)
-	if idx < 0 {
-		t.Fatal(`index.html missing id="expBox"`)
-	}
-	lineStart := strings.LastIndex(string(b[:idx]), "\n") + 1
-	lineEnd := strings.Index(string(b[idx:]), "\n")
-	if lineEnd < 0 {
-		lineEnd = len(b) - idx
-	}
-	line := string(b[lineStart : idx+lineEnd])
-	if strings.Contains(line, "hidden") {
-		t.Fatalf(`expBox 元素不得带 hidden（issue #137 死锁根因），实际行：%s`, strings.TrimSpace(line))
-	}
-}
-
-// TestAppJSChartTooltipInsideBar 图表 tooltip 必须挂在每根柱子内部（issue #128）。
-//
-// <title> 在 SVG 里描述的是**父元素**。此前它被平铺在 <svg> 根下（<rect> 是自闭合的，
-// 无法包含子节点），于是整张图共用一个 tooltip —— 浏览器取第一个 —— 悬停任何柱子都
-// 显示同一份数据。这类问题不报错、不影响渲染，只靠肉眼看很容易漏。
-//
-// 断言结构：<g> 数量 == 数据点数，且每个 <g> 紧跟一个 <title>；同时确认没有
-// 游离在 <g> 之外的 <title>。
-func TestAppJSChartTooltipInsideBar(t *testing.T) {
-	node, err := exec.LookPath("node")
-	if err != nil {
-		t.Skip("node not installed; chart tooltip test skipped")
-	}
-	script := `const fs = require('fs');
-const vm = require('vm');
-const src = fs.readFileSync(process.argv[2], 'utf8');
-const start = src.indexOf('function parsePointTime');
-const chartStart = src.indexOf('function renderUsageChart');
-if (start < 0 || chartStart < 0) throw new Error('chart functions not found');
-let end = src.indexOf('\nfunction ', chartStart + 10);
-if (end < 0) end = src.length;
-const sinks = {};
-const mk = id => (sinks[id] = { innerHTML: '', textContent: '' });
-const ctx = {
-  esc: s => String(s == null ? '' : s),
-  fmtTok: v => String(v == null ? 0 : v),
-  $: id => (sinks[id] || mk(id)),
-  Date, Math, Number, String, Map, Array, Object, isNaN, Infinity, isFinite, Set,
-};
-vm.createContext(ctx);
-vm.runInContext(src.slice(start, end) + '\nthis.renderUsageChart = renderUsageChart;', ctx);
-const series = [];
-for (let h = 0; h < 5; h++) {
-  const d = new Date(); d.setHours(d.getHours() - (4 - h), 0, 0, 0);
-  const iso = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' +
-              String(d.getDate()).padStart(2, '0') + 'T' + String(d.getHours()).padStart(2, '0');
-  series.push({ t: iso, scope: 'hour', prompt_tokens: (h + 1) * 100,
-                completion_tokens: (h + 1) * 10, total_tokens: (h + 1) * 110, requests: h + 1 });
-}
-ctx.renderUsageChart(series);
-const svg = sinks['usChart'] ? sinks['usChart'].innerHTML : '';
-const groups = svg.match(/<g><title>/g) || [];
-const titles = svg.match(/<title>[^<]*<\/title>/g) || [];
-// 游离的 <title>：前面不是 <g>（即仍平铺在根下）
-const loose = (svg.match(/(?:<rect[^>]*\/>|<\/g>)<title>/g) || []).length;
-process.stdout.write(JSON.stringify({
-  points: series.length, groups: groups.length, titles: titles.length, loose: loose,
-}));`
-	f, err := os.CreateTemp(t.TempDir(), "charttip-*.cjs")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := f.WriteString(script); err != nil {
-		t.Fatal(err)
-	}
-	f.Close()
-	out, err := exec.Command(node, f.Name(), "app.js").CombinedOutput()
-	if err != nil {
-		t.Fatalf("chart tooltip node test failed: %v\n%s", err, out)
-	}
-	const want = `{"points":5,"groups":5,"titles":5,"loose":0}`
-	if strings.TrimSpace(string(out)) != want {
-		t.Fatalf("chart tooltip structure=%s\nwant %s（groups 应等于数据点数，loose 应为 0）",
-			strings.TrimSpace(string(out)), want)
+		t.Fatalf("到期快照渲染不符:\n got=%s\nwant=%s", out, want)
 	}
 }
 
@@ -1282,7 +1607,7 @@ if (escStart < 0 || escEnd < 0) throw new Error('esc helpers not found');
 if (start < 0 || end < 0) throw new Error('remark helpers not found');
 const ctx = { String, RegExp, Number };
 vm.createContext(ctx);
-vm.runInContext(
+vm.runInContext("'use strict';\n" + 
   src.slice(escStart, escEnd) + src.slice(start, end) +
   '\nconst REM = {abcdef12: "JTOL", deadbeef: "<b>x</b>"};' +
   '\nfunction remarksAll() { return REM; }' +
@@ -1315,47 +1640,144 @@ process.stdout.write(JSON.stringify({
 	}
 }
 
-// 「积分到期提醒」折叠：默认展开（点「检查」就得能看到结果），用户收起一次后由
-// localStorage 记住、重载时恢复；折叠只切列表容器的 hidden，不影响卡片与「检查」。
-func TestAppJSExpiryFold(t *testing.T) {
+// 备注与折叠的接线齐备性：少一个 id 或漏一个 localStorage 键，表现为「按钮点了没反应」，
+// 而 Go 编译、JS 语法检查、顶层冒烟都发现不了（脚本能正常跑，只是挂不上）。
+// 本仓只取了 PR #178 的备注部分（积分到期折叠未移植：到期提醒已重做为图表式），
+// 故这里只查备注相关 id / 键 / 函数。
+func TestPanelRemarkWiring(t *testing.T) {
+	html, err := os.ReadFile("index.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		`id="btnRemarks"`, `id="remarkVeil"`, `id="remarkBody"`,
+		`id="btnRemarkSave"`, `id="btnRemarkClear"`, `id="btnRemarkClose"`,
+	} {
+		if !bytes.Contains(html, []byte(want)) {
+			t.Fatalf("index.html 缺少 %s", want)
+		}
+	}
+	js, err := os.ReadFile("app.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"LS_REMARKS = 'wb2api.remarks.v1'",
+		"function remarkKey(",
+		"function remarkName(",
+		"function storeRemarks(",
+	} {
+		if !bytes.Contains(js, []byte(want)) {
+			t.Fatalf("app.js 缺少 %s", want)
+		}
+	}
+}
+
+// TestAppJSCompensationCard 官方补偿卡片（上游 PR #196）：待领显形 + 跳过带原因 +
+// 失败红行 + ≤48h 标红 + 领取按钮只出现在待领行。
+//
+// 为什么值得一测：这张卡的全部价值就是「看不见的状态变成看得见」——渲染层若把
+// 跳过/失败行吞掉，就把「查不到」显示成「没有补偿」，正是本改动要消灭的界面谎言。
+func TestAppJSCompensationCard(t *testing.T) {
 	node, err := exec.LookPath("node")
 	if err != nil {
-		t.Skip("node not installed; expiry fold test skipped")
+		t.Skip("node not installed; compensation card test skipped")
 	}
 	script := `const fs = require('fs');
 const vm = require('vm');
 const src = fs.readFileSync(process.argv[2], 'utf8');
-const start = src.indexOf('function expFolded(');
-const endMarker = 'applyExpFold();';
-const end = src.lastIndexOf(endMarker);
-if (start < 0 || end < 0) throw new Error('expiry fold helpers not found');
-const slice = src.slice(start, end + endMarker.length);
-function boot(stored) {
-  const ctx = {};
-  vm.createContext(ctx);
-  vm.runInContext(
-    "const LS_EXP_FOLD='wb2api.expfold.v1';" +
-    "const store=" + JSON.stringify(stored) + ";" +
-    "const pad={hidden:false};" +
-    "const btn={textContent:'',attrs:{},setAttribute:function(k,v){this.attrs[k]=v;}};" +
-    "function $(id){return id==='expPad'?pad:(id==='btnExpFold'?btn:null);}" +
-    "const localStorage={getItem:function(k){return (k in store)?store[k]:null;},setItem:function(k,v){store[k]=v;}};" +
-    slice +
-    "\nthis.state=function(){return {hidden:pad.hidden,text:btn.textContent,aria:btn.attrs['aria-expanded'],raw:store['wb2api.expfold.v1']||null};};" +
-    "\nthis.click=function(){btn.onclick();};",
-    ctx
-  );
-  return ctx;
+const start = src.indexOf('/* ══ 官方补偿（上游 PR #196）');
+const end = src.indexOf('let lastPackages');
+if (start < 0 || end < start) throw new Error('compensation block not found');
+// 收纳行的点击处理在到期提醒那段（两个卡片共用），单独切过来一起跑。
+// restOpen 是模块级状态（渲染重建 tbody 后靠它恢复展开态），这里按真实作用域声明。
+const tStart = src.indexOf('// 按 restOpen 把指定 tbody 的收纳行');
+const tEnd = src.indexOf("bindRestToggle('compBody');") + "bindRestToggle('compBody');".length;
+if (tStart < 0 || tEnd < tStart) throw new Error('bindRestToggle not found');
+const toggleSrc = 'const restOpen = Object.create(null);\n' + src.slice(tStart, tEnd);
+const els = {};
+function el(id) {
+  if (!els[id]) els[id] = {
+    textContent: '', innerHTML: '', hidden: false, rows: [], btn: null, handlers: {},
+    addEventListener(ev, fn) { this.handlers[ev] = fn; },
+    querySelector(sel) { return sel === 'button[data-exp-rest]' ? this.btn : null; },
+    querySelectorAll() { return this.rows; },
+  };
+  return els[id];
 }
-const a = boot({});
-const fresh = a.state();
-a.click();
-const folded = a.state();
-a.click();
-const unfolded = a.state();
-const restored = boot({'wb2api.expfold.v1': '1'}).state();
-process.stdout.write(JSON.stringify({fresh: fresh, folded: folded, unfolded: unfolded, restored: restored}));`
-	f, err := os.CreateTemp(t.TempDir(), "expiry-fold-*.cjs")
+const now = Date.parse('2026-10-20T00:00:00+08:00');
+class FakeDate extends Date { static now() { return now; } }
+const ctx = {
+  Date: FakeDate, Math, Number, String, JSON, encodeURIComponent,
+  PK_DAY_MS: 86400000,
+  $: el,
+  esc: (s) => String(s == null ? '' : s),
+  fmtTok: (n) => String(n),
+  toast: () => {},
+  api: async () => ({}),
+};
+vm.createContext(ctx);
+vm.runInContext("'use strict';\n" + src.slice(start, end) + '\n' + toggleSrc +
+  '\nthis.renderCompensation = renderCompensation; this.setData = (d) => { compData = d; };' +
+  ' this.applyRestToggle = applyRestToggle; this.restOpen = restOpen;', ctx);
+
+ctx.setData({ errored: 1, accounts: [
+  { uid: 'bbbbbbbb-2', nickname: '已领号', active: true, claimed: true, credit: 500, end_time: '2026-10-22 23:59:59' },
+  { uid: 'cccccccc-3', nickname: '跳过号', skip: true, skip_reason: '国际区账号不适用国内区补偿' },
+  { uid: 'dddddddd-4', nickname: '失败号', error: 'boom' },
+  { uid: 'eeeeeeee-5', nickname: '无活动号' },
+  { uid: 'aaaaaaaa-1', nickname: '待领号', active: true, claimed: false, credit: 500, end_time: '2026-10-21 23:59:59' },
+] });
+ctx.renderCompensation();
+const body = els['compBody'].innerHTML;
+const note = els['compNote'].innerHTML;
+process.stdout.write(JSON.stringify({
+  hasPending: body.includes('待领'),
+  pendingBtn: body.includes('data-comp="aaaaaaaa-1"'),
+  claimedNoBtn: !body.includes('data-comp="bbbbbbbb-2"'),
+  skipLine: body.includes('跳过') && body.includes('国际区账号不适用国内区补偿'),
+  failLine: body.includes('查询/领取失败'),
+  noActivity: body.includes('无活动'),
+  soonRed: body.includes('var(--bad)'),
+  notePending: note.includes('待领 1 个'),
+  noteErrored: note.includes('1 个查询失败'),
+  // 收纳：待领排最前、只展开前 3 行、其余 2 行收在 hidden 里、收纳按钮带计数
+  pendingFirst: body.indexOf('待领号') < body.indexOf('已领号'),
+  hiddenRows: (body.match(/data-exp-row="rest" hidden/g) || []).length,
+  toggle: body.includes('data-exp-rest="2"') && body.includes('其余 2 个账号，展开'),
+  // 点一次收纳按钮：2 行必须真展开（展开逻辑与到期提醒共用 bindRestToggle）；
+  // 再模拟一次 5s 轮询重渲染，展开态必须由 restOpen 恢复，而不是被收回。
+  expandWorks: (() => {
+    const tbody = els['compBody'];
+    tbody.rows = [{ hidden: true }, { hidden: true }];
+    tbody.btn = {
+      dataset: { expRest: '2' }, textContent: '其余 2 个账号，展开', attrs: { 'aria-expanded': 'false' },
+      getAttribute(k) { return this.attrs[k]; },
+      setAttribute(k, v) { this.attrs[k] = v; },
+    };
+    const click = () => tbody.handlers.click({
+      target: { closest: (sel) => (sel === 'button[data-exp-rest]' ? tbody.btn : null) },
+    });
+    click();
+    const opened = tbody.rows.every(r => r.hidden === false) &&
+      tbody.btn.textContent === '收起其余 2 个账号' &&
+      tbody.btn.attrs['aria-expanded'] === 'true';
+    // 重渲染：新行/新按钮回到折叠默认态，再由 applyRestToggle 恢复。
+    tbody.rows = [{ hidden: true }, { hidden: true }];
+    tbody.btn = {
+      dataset: { expRest: '2' }, textContent: '其余 2 个账号，展开', attrs: { 'aria-expanded': 'false' },
+      getAttribute(k) { return this.attrs[k]; },
+      setAttribute(k, v) { this.attrs[k] = v; },
+    };
+    ctx.applyRestToggle(tbody, ctx.restOpen.compBody);
+    const survived = tbody.rows.every(r => r.hidden === false) &&
+      tbody.btn.textContent === '收起其余 2 个账号';
+    click();
+    return opened && survived && tbody.rows.every(r => r.hidden === true) &&
+      tbody.btn.textContent === '其余 2 个账号，展开';
+  })(),
+}));`
+	f, err := os.CreateTemp(t.TempDir(), "comp-card-*.cjs")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1365,30 +1787,41 @@ process.stdout.write(JSON.stringify({fresh: fresh, folded: folded, unfolded: unf
 	f.Close()
 	out, err := exec.Command(node, f.Name(), "app.js").CombinedOutput()
 	if err != nil {
-		t.Fatalf("expiry fold node test failed: %v\n%s", err, out)
+		t.Fatalf("compensation card node test failed: %v\n%s", err, out)
 	}
-	const want = `{"fresh":{"hidden":false,"text":"收起","aria":"true","raw":null},"folded":{"hidden":true,"text":"展开","aria":"false","raw":"1"},"unfolded":{"hidden":false,"text":"收起","aria":"true","raw":"0"},"restored":{"hidden":true,"text":"展开","aria":"false","raw":"1"}}`
+	const want = `{"hasPending":true,"pendingBtn":true,"claimedNoBtn":true,"skipLine":true,` +
+		`"failLine":true,"noActivity":true,"soonRed":true,"notePending":true,"noteErrored":true,` +
+		`"pendingFirst":true,"hiddenRows":2,"toggle":true,"expandWorks":true}`
 	if strings.TrimSpace(string(out)) != want {
-		t.Fatalf("expiry fold=%s\nwant %s", strings.TrimSpace(string(out)), want)
+		t.Fatalf("补偿卡片渲染不符:\n got=%s\nwant=%s", strings.TrimSpace(string(out)), want)
 	}
 }
 
-// 备注与折叠的接线齐备性：少一个 id 或漏一个 localStorage 键，表现为「按钮点了没反应」，
-// 而 Go 编译、JS 语法检查、顶层冒烟都发现不了（脚本能正常跑，只是挂不上）。
-func TestPanelRemarkAndFoldWiring(t *testing.T) {
+// TestPanelCompensationWiring 接线齐备性：少一个 id 或漏一个绑定，表现为「按钮点了没反应」，
+// 而 Go 编译、JS 语法检查、顶层冒烟都发现不了。
+func TestPanelCompensationWiring(t *testing.T) {
 	html, err := os.ReadFile("index.html")
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{`id="btnRemarks"`, `id="remarkVeil"`, `id="remarkBody"`, `id="btnRemarkSave"`, `id="btnRemarkClear"`, `id="expPad"`, `id="btnExpFold"`} {
+	for _, want := range []string{
+		`id="compNote"`, `id="compBody"`, `id="btnCompRefresh"`, `id="btnCompAll"`,
+	} {
 		if !bytes.Contains(html, []byte(want)) {
 			t.Fatalf("index.html 缺少 %s", want)
 		}
 	}
-	// 折叠容器默认必须可见：列表一旦带上 hidden，点「检查」就看不到结果了。
-	for _, line := range strings.Split(string(html), "\n") {
-		if strings.Contains(line, `id="expPad"`) && strings.Contains(line, "hidden") {
-			t.Fatalf("index.html 的过期列表容器默认带 hidden：%s", strings.TrimSpace(line))
+	// 卡片必须落在「任务中心」视图内（它讲的是「今天要不要动手」，与成长任务同处）——
+	// 只查 id 存在的话，放回账号池视图也照样通过。
+	tc := bytes.Index(html, []byte(`id="view-taskscenter"`))
+	next := bytes.Index(html[tc+1:], []byte(`<section class="view"`))
+	if tc < 0 || next < 0 {
+		t.Fatal("定位不到任务中心视图边界")
+	}
+	for _, id := range []string{`id="compNote"`, `id="compBody"`, `id="btnCompAll"`} {
+		at := bytes.Index(html, []byte(id))
+		if at < tc || at > tc+1+next {
+			t.Fatalf("%s 不在任务中心视图内（视图区间 %d..%d，实际 %d）", id, tc, tc+1+next, at)
 		}
 	}
 	js, err := os.ReadFile("app.js")
@@ -1396,111 +1829,92 @@ func TestPanelRemarkAndFoldWiring(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, want := range []string{
-		"LS_REMARKS = 'wb2api.remarks.v1'",
-		"LS_EXP_FOLD = 'wb2api.expfold.v1'",
-		"function remarkKey(",
-		"function remarkName(",
-		"function applyExpFold(",
+		"function renderCompensation(",
+		"function loadCompensation(",
+		"function claimCompensation(",
+		"function claimCompensationAll(",
+		"$('btnCompRefresh').onclick",
+		"$('btnCompAll').onclick",
 	} {
 		if !bytes.Contains(js, []byte(want)) {
 			t.Fatalf("app.js 缺少 %s", want)
 		}
 	}
-}
-
-// 用实际表单函数验证地区策略回填、独立提交以及清空账号顺序。
-func TestRegionSchedulingFormRoundTrip(t *testing.T) {
-	node, err := exec.LookPath("node")
-	if err != nil {
-		t.Skip("node not available")
+	// 取数时机随卡片一起搬：进任务中心按需拉（compData 空才打上游），start() 不再拉。
+	if !bytes.Contains(js, []byte("if (v === 'taskscenter') { reattachQueueView(); if (!compData) loadCompensation(); }")) {
+		t.Error("app.js 未在进入任务中心时按需拉取补偿状态")
 	}
-	script := `const fs=require('fs'), vm=require('vm'), assert=require('assert');
- const src=fs.readFileSync(process.argv[2],'utf8');
- const html=fs.readFileSync('index.html','utf8');
- const elements={};
- for(const name of ['strategy_domestic','strategy_international','domestic_account_order','international_account_order']) {
-   assert(html.includes('name="'+name+'"'), 'missing form field '+name);
-   elements[name]={type:name.startsWith('strategy_')?'select-one':'text',value:''};
- }
- const cfg={pool:{strategy:{domestic:'round_robin',international:'sequential_exhaust'},account_order:{domestic:['c','a'],international:['y','x']}}};
- const nodes={cfgForm:{elements},cfgPath:{},cfgNote:{}};
- const ctx={cfgLoaded:null,api:async()=>({config:cfg}),$:id=>nodes[id],markDurationFields(){},toast(message){throw Error(message)}};
- vm.createContext(ctx);
- vm.runInContext(src.slice(src.indexOf('const CFG_MAP ='),src.indexOf('/* Go 时长字段即时校验')),ctx);
- (async()=>{
-   await ctx.loadConfig();
-   assert.equal(elements.strategy_domestic.value,'round_robin');
-   assert.equal(elements.strategy_international.value,'sequential_exhaust');
-   assert.equal(elements.domestic_account_order.value,'c, a');
-   elements.strategy_domestic.value='weighted_random';
-   elements.international_account_order.value='';
-   const result=ctx.collectConfig();
-   assert.equal(result.pool.strategy.domestic,'weighted_random');
-   assert.equal(result.pool.strategy.international,'sequential_exhaust');
-   assert.equal(JSON.stringify(result.pool.account_order.domestic),'["c","a"]');
-   assert.equal(JSON.stringify(result.pool.account_order.international),'[]');
-   delete cfg.pool.strategy; await ctx.loadConfig();
-   assert.equal(elements.strategy_domestic.value,'weighted_random');
-   assert.equal(elements.strategy_international.value,'weighted_random');
- })().catch(e=>{console.error(e);process.exitCode=1});`
-	fp := filepath.Join(t.TempDir(), "region-form.cjs")
-	if err = os.WriteFile(fp, []byte(script), 0600); err != nil {
-		t.Fatal(err)
+	start := bytes.Index(js, []byte("function start() {"))
+	if start < 0 {
+		t.Fatal("找不到 start()")
 	}
-	if out, err := exec.Command(node, fp, "app.js").CombinedOutput(); err != nil {
-		t.Fatalf("form round trip: %v\n%s", err, out)
+	if bytes.Contains(js[start:start+200], []byte("loadCompensation()")) {
+		t.Error("start() 仍在首屏拉补偿状态（已随卡片搬走）")
 	}
 }
 
-// TestMobileJSChartTooltipInsideBar 手机端自绘图表的 tooltip 同样要挂在柱子内部（issue #128）。
+// TestAppJSExpiryRestToggleSurvivesRerender 钉住「其余 N 个账号」的展开态不会被 5s 轮询自动收起。
 //
-// mobile.js 在窄屏另画一张图（440×230），不走 app.js 的 renderUsageChart：上游修好
-// 桌面实现不会覆盖它。断言与 TestAppJSChartTooltipInsideBar 同构，只取文件里
-// 「接管 renderUsageChart」之后的部分，DOM/全局用桩喂进去。
-func TestMobileJSChartTooltipInsideBar(t *testing.T) {
+// 根因：账号池每 5s 调 loadOverview → renderExpirySnapshot 重建 #expBody.innerHTML；展开状态
+// 原先只写在 DOM（aria-expanded / hidden）上，重建即丢（用户看到「点展开后什么都不点又收起」）。
+// 现在状态存在模块级 restOpen，渲染后由 applyRestToggle 恢复；本测试同时钉住两个渲染函数的
+// 调用接线（只存状态不恢复，行为仍会回退）。
+func TestAppJSExpiryRestToggleSurvivesRerender(t *testing.T) {
 	node, err := exec.LookPath("node")
 	if err != nil {
-		t.Skip("node not installed; mobile chart tooltip test skipped")
+		t.Skip("node not installed; rest toggle test skipped")
 	}
 	script := `const fs = require('fs');
 const vm = require('vm');
 const src = fs.readFileSync(process.argv[2], 'utf8');
-const start = src.indexOf('const deskUsageChart');
-if (start < 0) throw new Error('mobile chart override not found');
-const sinks = {};
-const mk = id => (sinks[id] = { innerHTML: '', textContent: '' });
-const ctx = {
-  MOBILE_MQ: { matches: true },
-  renderUsageChart: () => {},
-  esc: s => String(s == null ? '' : s),
-  fmtTok: v => String(v == null ? 0 : v),
-  fmtTokTimeLabel: p => { const d = new Date(p.t.length === 13 ? p.t + ':00:00' : p.t + 'T00:00:00');
-                          return p.scope === 'day' ? (d.getMonth() + 1) + '-' + String(d.getDate()).padStart(2, '0')
-                                                   : String(d.getHours()).padStart(2, '0') + ':00'; },
-  parsePointTime: p => { const d = new Date(p.t.length === 13 ? p.t + ':00:00' : p.t + 'T00:00:00');
-                         return isNaN(d.getTime()) ? null : d.getTime(); },
-  $: id => (sinks[id] || mk(id)),
-  Date, Math, Number, String, Map, Array, Object, isNaN, Infinity, isFinite, Set,
-};
-vm.createContext(ctx);
-vm.runInContext(src.slice(start) + '\nthis.renderUsageChart = renderUsageChart;', ctx);
-const series = [];
-for (let h = 0; h < 5; h++) {
-  const d = new Date(); d.setHours(d.getHours() - (4 - h), 0, 0, 0);
-  const iso = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' +
-              String(d.getDate()).padStart(2, '0') + 'T' + String(d.getHours()).padStart(2, '0');
-  series.push({ t: iso, scope: 'hour', prompt_tokens: (h + 1) * 100,
-                completion_tokens: (h + 1) * 10, total_tokens: (h + 1) * 110, requests: h + 1 });
+const start = src.indexOf('// 按 restOpen 把指定 tbody 的收纳行');
+const end = src.indexOf("bindRestToggle('compBody');") + "bindRestToggle('compBody');".length;
+if (start < 0 || end < 0) throw new Error('rest toggle block not found');
+
+// 极简 tbody 桩：只实现 applyRestToggle / bindRestToggle 用到的 querySelector(All) 与事件。
+function makeBody(n) {
+  const o = {
+    rows: [], btn: null, handlers: {},
+    addEventListener(ev, fn) { this.handlers[ev] = fn; },
+    querySelector(sel) { return sel === 'button[data-exp-rest]' ? this.btn : null; },
+    querySelectorAll(sel) { return sel === 'tr[data-exp-row="rest"]' ? this.rows : []; },
+  };
+  reset(o, n);
+  return o;
 }
-ctx.renderUsageChart(series);
-const svg = sinks['usChart'] ? sinks['usChart'].innerHTML : '';
-const groups = svg.match(/<g><title>/g) || [];
-const titles = svg.match(/<title>[^<]*<\/title>/g) || [];
-const loose = (svg.match(/(?:<rect[^>]*\/>|<\/g>)<title>/g) || []).length;
-process.stdout.write(JSON.stringify({
-  points: series.length, groups: groups.length, titles: titles.length, loose: loose,
-}));`
-	f, err := os.CreateTemp(t.TempDir(), "mobilecharttip-*.cjs")
+function reset(o, n) {
+  o.rows = Array.from({ length: n }, () => ({ hidden: true }));
+  o.btn = {
+    dataset: { expRest: String(n) },
+    textContent: '其余 ' + n + ' 个账号，展开',
+    attrs: { 'aria-expanded': 'false' },
+    getAttribute(k) { return this.attrs[k]; },
+    setAttribute(k, v) { this.attrs[k] = v; },
+  };
+}
+const bodies = { expBody: makeBody(7), compBody: makeBody(2) };
+const $ = id => bodies[id] || null;
+const ctx = { $ };
+vm.createContext(ctx);
+vm.runInContext("'use strict';\n" + 'const restOpen = Object.create(null);\n' + src.slice(start, end) +
+  '\nthis.restOpen = restOpen; this.applyRestToggle = applyRestToggle;', ctx);
+
+function click(body) {
+  body.handlers.click({ target: { closest: sel => (sel === 'button[data-exp-rest]' ? body.btn : null) } });
+}
+const exp = bodies.expBody;
+click(exp);
+const opened = { hidden: exp.rows.map(r => r.hidden), aria: exp.btn.attrs['aria-expanded'], text: exp.btn.textContent };
+// 模拟 5s 轮询重建 tbody：行/按钮回到折叠默认态，渲染函数随后按 restOpen 恢复。
+reset(exp, 7);
+ctx.applyRestToggle(exp, ctx.restOpen.expBody);
+const survived = { hidden: exp.rows.map(r => r.hidden), aria: exp.btn.attrs['aria-expanded'], text: exp.btn.textContent };
+// 两张卡片的状态必须独立：展开到期提醒不能顺带展开官方补偿。
+const independent = bodies.compBody.rows.every(r => r.hidden === true);
+click(exp);
+const collapsed = { hidden: exp.rows.map(r => r.hidden), aria: exp.btn.attrs['aria-expanded'], text: exp.btn.textContent };
+process.stdout.write(JSON.stringify({ opened, survived, independent, collapsed }));`
+	f, err := os.CreateTemp(t.TempDir(), "rest-toggle-*.cjs")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1508,14 +1922,332 @@ process.stdout.write(JSON.stringify({
 		t.Fatal(err)
 	}
 	f.Close()
-	out, err := exec.Command(node, f.Name(), "mobile.js").CombinedOutput()
+	out, err := exec.Command(node, f.Name(), "app.js").CombinedOutput()
 	if err != nil {
-		t.Fatalf("mobile chart tooltip node test failed: %v\n%s", err, out)
+		t.Fatalf("rest toggle node test failed: %v\n%s", err, out)
 	}
-	const want = `{"points":5,"groups":5,"titles":5,"loose":0}`
+	const all = "[false,false,false,false,false,false,false]"
+	const none = "[true,true,true,true,true,true,true]"
+	want := `{"opened":{"hidden":` + all + `,"aria":"true","text":"收起其余 7 个账号"},` +
+		`"survived":{"hidden":` + all + `,"aria":"true","text":"收起其余 7 个账号"},` +
+		`"independent":true,"collapsed":{"hidden":` + none + `,"aria":"false","text":"其余 7 个账号，展开"}}`
 	if strings.TrimSpace(string(out)) != want {
-		t.Fatalf("mobile chart tooltip structure=%s\nwant %s（groups 应等于数据点数，loose 应为 0）",
-			strings.TrimSpace(string(out)), want)
+		t.Fatalf("收纳行展开/恢复不符:\n got=%s\nwant=%s", strings.TrimSpace(string(out)), want)
+	}
+
+	// 接线：两个渲染函数都必须在重建 innerHTML 之后恢复状态（先恢复会被随后的重建覆盖）。
+	raw, err := os.ReadFile("app.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	jsStr := string(raw)
+	for _, fn := range []struct{ name, call string }{
+		{"renderExpirySnapshot", "applyRestToggle($('expBody'), restOpen.expBody);"},
+		{"renderCompensation", "applyRestToggle(body, restOpen.compBody);"},
+	} {
+		at := strings.Index(jsStr, "function "+fn.name+"(")
+		if at < 0 {
+			t.Fatalf("app.js 找不到 %s", fn.name)
+		}
+		body := jsStr[at:]
+		if end := strings.Index(body, "\n}\n"); end > 0 {
+			body = body[:end]
+		}
+		rebuild := strings.Index(body, ".innerHTML")
+		restore := strings.Index(body, fn.call)
+		if rebuild < 0 || restore < 0 || restore < rebuild {
+			t.Errorf("%s 未在重建 innerHTML 后恢复收纳展开态（innerHTML@%d restore@%d）",
+				fn.name, rebuild, restore)
+		}
 	}
 }
 
+// TestAppJSModelBusyTag 模型行渲染行为：busy/congested 必须出标签（bad 色），
+// idle/normal 与缺字段必须安静——「模型与档位」是唯一能看到 congested/unavailable 的地方。
+// 行为断言而非字符串断言：后者在 `if (false)` 这种「代码在但永远不跑」下仍会通过。
+func TestAppJSModelBusyTag(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("node not installed; model busy tag test skipped")
+	}
+	script := `const fs = require('fs');
+const vm = require('vm');
+const src = fs.readFileSync(process.argv[2], 'utf8');
+// 起点前移到模型行渲染这一整段（含 mdAvailabilityOf/mdAvailabilityTag），
+// 否则上游新增的可用性标签会在截取区间外、被当成未定义。
+const start = src.indexOf('function mdAvailabilityOf');
+const end = src.indexOf('function renderModels()');
+if (start < 0 || end < start) throw new Error('busy block not found');
+const ctx = {
+  esc: (s) => String(s == null ? '' : s),
+  rateCell: () => '<td></td>',
+  outCell: () => '<td></td>',
+};
+vm.createContext(ctx);
+vm.runInContext("'use strict';\n" + src.slice(start, end) + '\nthis.rowHtml = mdRowHtml;', ctx);
+const base = { id: 'cn:glm-5.2', supported_efforts: [], image_generation: false };
+const out = {
+  congested: ctx.rowHtml({ ...base, busy: 'congested' }, null),
+  busy: ctx.rowHtml({ ...base, busy: 'busy' }, null),
+  idle: ctx.rowHtml({ ...base, busy: 'idle' }, null),
+  normal: ctx.rowHtml({ ...base, busy: 'normal' }, null),
+  none: ctx.rowHtml(base, null),
+};
+process.stdout.write(JSON.stringify({
+  congestedBad: out.congested.includes('拥堵') && out.congested.includes('tag bad'),
+  busyWarn: out.busy.includes('繁忙') && out.busy.includes('tag warn'),
+  idleQuiet: !out.idle.includes('拥堵') && !out.idle.includes('繁忙'),
+  normalQuiet: !out.normal.includes('拥堵') && !out.normal.includes('繁忙'),
+  noneQuiet: !out.none.includes('拥堵') && !out.none.includes('繁忙'),
+}));`
+	f, err := os.CreateTemp(t.TempDir(), "busy-tag-*.cjs")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.WriteString(script); err != nil {
+		t.Fatal(err)
+	}
+	f.Close()
+	out, err := exec.Command(node, f.Name(), "app.js").CombinedOutput()
+	if err != nil {
+		t.Fatalf("model busy tag node test failed: %v\n%s", err, out)
+	}
+	const want = `{"congestedBad":true,"busyWarn":true,"idleQuiet":true,"normalQuiet":true,"noneQuiet":true}`
+	if strings.TrimSpace(string(out)) != want {
+		t.Fatalf("繁忙度标签渲染不符:\n got=%s\nwant=%s", strings.TrimSpace(string(out)), want)
+	}
+}
+
+// TestAppJSExpirySnapshotBuckets 到期提醒快照必须消费 credits_expiry_buckets：
+// 同日多包取聚合后的该日合计、后续批次列在日期下方、7 天内合计可读、排序稳定，
+// 并在旧 state 无 buckets 时退回最早一批兜底。节奏标注必须来自 overview 的
+// balance_refresh_sec/balance_refreshed_at，而不是界面轮询间隔。
+func TestAppJSExpirySnapshotBuckets(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("node not installed; expiry snapshot test skipped")
+	}
+	script := `const fs = require('fs');
+const vm = require('vm');
+const src = fs.readFileSync(process.argv[2], 'utf8');
+const start = src.indexOf('function expCSTDate');
+const end = src.indexOf('// 收纳行展开/收起');
+if (start < 0 || end < 0) throw new Error('expiry snapshot helpers not found');
+const ctx = {
+  Number, String, Array, Date, Math, JSON, PK_DAY_MS: 86400000,
+  expBody: { innerHTML: '', querySelector: () => null }, expNote: { textContent: '' },
+  esc: s => String(s), fmtTok: n => String(n),
+  pkExpiryDateTime: ms => new Date(ms).toISOString(),
+};
+ctx.$ = id => ctx[id];
+vm.createContext(ctx);
+// 展开态恢复另有专测；这里只断言快照/排序/兜底渲染（桩无按钮 → applyRestToggle 直接返回）。
+vm.runInContext("'use strict';\n" + 'const restOpen = Object.create(null);\n' +
+  src.slice(start, end) + '\nthis.renderExpirySnapshot=renderExpirySnapshot;', ctx);
+const day = n => {
+  const d = new Date(Date.now() + n * 86400000);
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit',
+  }).formatToParts(d);
+  const p = t => (parts.find(x => x.type === t) || {}).value;
+  return p('year') + '-' + p('month') + '-' + p('day');
+};
+ctx.renderExpirySnapshot({
+  balance_refresh_sec: 300,
+  balance_refreshed_at: new Date().toISOString(),
+  accounts: [
+    { uid: 'b', nickname: 'B', credits_expiry_buckets: [
+      { date: day(5), remain: 300 }, { date: day(3), remain: 120 }] },
+    { uid: 'a', nickname: 'A', credits_expiry_buckets: [{ date: day(3), remain: 150 }] },
+  ],
+});
+const buckets = { html: ctx.expBody.innerHTML, note: ctx.expNote.textContent };
+ctx.renderExpirySnapshot({
+  accounts: [{ uid: 'c', nickname: 'C',
+    credits_earliest_expiry: new Date(Date.now() + 3 * 86400000).toISOString(),
+    credits_earliest_remaining: 77 }],
+});
+process.stdout.write(JSON.stringify({
+  order: buckets.html.indexOf('>A<') >= 0 && buckets.html.indexOf('>A<') < buckets.html.indexOf('>B<'),
+  hasRest: buckets.html.includes('随后'),
+  weekSum: buckets.html.includes('7 天内合计 420'),
+  dayLabel: buckets.html.includes('3 天'),
+  note: buckets.note,
+  fallback: ctx.expBody.innerHTML.includes('77'),
+}));`
+	f, err := os.CreateTemp(t.TempDir(), "expiry-snapshot-*.cjs")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.WriteString(script); err != nil {
+		t.Fatal(err)
+	}
+	f.Close()
+	out, err := exec.Command(node, f.Name(), "app.js").CombinedOutput()
+	if err != nil {
+		t.Fatalf("expiry snapshot node test failed: %v\n%s", err, out)
+	}
+	got := strings.TrimSpace(string(out))
+	for _, want := range []string{
+		`"order":true`, `"hasRest":true`, `"weekSum":true`, `"dayLabel":true`, `"fallback":true`,
+		`每 5 分钟后台刷新`, `2 个账号有未到期批次`,
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("expiry snapshot 输出缺少 %q: %s", want, got)
+		}
+	}
+}
+
+// TestAppJSUsageDimColumnCounts 用量明细三个维度必须「表头格数 = 数据行格数 = 空态 colspan」。
+// issue #32：usRow 一直输出缓存命中率单元格，但 usDimHead 的表头漏了「缓存命中率」，
+// 导致 Completion 及其后所有列整体左移一格。此测试把三方计数钉死，防再次漂移。
+func TestAppJSUsageDimColumnCounts(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("node not installed; usage dim column test skipped")
+	}
+	script := `const fs = require('fs');
+const vm = require('vm');
+const src = fs.readFileSync(process.argv[2], 'utf8');
+const hs = src.indexOf('function usRow');
+const he = src.indexOf('/* usTabsHtml');
+if (hs < 0 || he < 0) throw new Error('usRow/usDimHead not found');
+const ctx = { Number, String, RegExp, Math, Array, Object };
+vm.createContext(ctx);
+vm.runInContext("'use strict';\n" + 
+  src.slice(hs, he) +
+  '\nconst esc = s => String(s);' +
+  '\nconst fmtTok = n => String(n);' +
+  '\nconst fmtMs = n => String(n);' +
+  '\nconst fmtRate = n => String(n);' +
+  '\nconst fmtHit = () => "50%";' +
+  '\nconst usMixBar = () => "";' +
+  '\nthis.usRow = usRow; this.usDimHead = usDimHead; this.US_DIMS = US_DIMS;',
+  ctx
+);
+const count = html => (html.match(/<(td|th)\b/g) || []).length;
+const a = { requests: 1, errors: 0, prompt_tokens: 1, completion_tokens: 1, total_tokens: 2, avg_latency_ms: 1, avg_tokens_per_second: 1 };
+const out = {};
+for (const dim of ['account', 'model', 'realm']) {
+  const m = ctx.US_DIMS[dim];
+  const row = ctx.usRow('x', '', a, dim === 'account' ? '<td class=\"num\">cn</td>' : '', m.withPerf, '');
+  out[dim] = { head: count(ctx.usDimHead(dim)), row: count(row), span: m.span };
+}
+process.stdout.write(JSON.stringify(out));`
+	f, err := os.CreateTemp(t.TempDir(), "usdim-*.cjs")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.WriteString(script); err != nil {
+		t.Fatal(err)
+	}
+	f.Close()
+	out, err := exec.Command(node, f.Name(), "app.js").CombinedOutput()
+	if err != nil {
+		t.Fatalf("usage dim column test failed: %v\n%s", err, out)
+	}
+	got := strings.TrimSpace(string(out))
+	const want = `{"account":{"head":11,"row":11,"span":11},"model":{"head":8,"row":8,"span":8},"realm":{"head":8,"row":8,"span":8}}`
+	if got != want {
+		t.Fatalf("usage dim counts=%s want %s", got, want)
+	}
+}
+
+// TestAppJSAllCalledFunctionsDefined 钉住「app.js 里被调用的函数都必须在同一文件里有定义」。
+//
+// 为什么需要（20261021 实证）：迁移到 miskano7545 分支时，balance 模块的 JS 是按
+// 「函数名白名单」手工挑出来搬的，结果漏掉了被调用的底层工具 —— measureWidth /
+// lineWidthFor / smoothPath / realmLabel / CHK_FALLBACK_W / fmtNum / fmtTokens。
+// 现象：切到「余额趋势」页，视图能显示、标题正确、浏览器控制台**没有任何报错**，
+// 只是表格 0 行、图表空白（loadBalance 内部的 try/catch 把异常吞了）。
+// 现有守卫全都抓不到：TestAppJSSyntax 只查语法（未定义标识符是合法语法），
+// TestAppJSTopLevelSmoke 只求值顶层（漏掉的函数只在点击后才调用）。
+//
+// 判据说明：只查「函数调用形态」—`name(` —— 并要求 name 满足以下之一：
+//
+//	a) 本文件里有定义：function name / const|let|var name
+//	b) 是浏览器内置或关键字（白名单）
+//
+// 不做数据流分析（那是重新实现一个 JS 解析器），但足以拦住「搬代码漏函数」这类事故。
+func TestAppJSAllCalledFunctionsDefined(t *testing.T) {
+	src, err := os.ReadFile("app.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	js := string(src)
+
+	// 去掉注释与字符串字面量，避免把注释里的 `foo(` 或字符串里的 `'a(b'` 当调用。
+	// 顺序敏感：先块注释、再行注释、最后字符串（与真实词法顺序一致）。
+	js = regexp.MustCompile(`(?s)/\*.*?\*/`).ReplaceAllString(js, "")
+	js = regexp.MustCompile(`//[^\n]*`).ReplaceAllString(js, "")
+	js = regexp.MustCompile(`(?s)'[^'\\\n]*(?:\\.[^'\\\n]*)*'`).ReplaceAllString(js, "''")
+	js = regexp.MustCompile("(?s)`[^`]*`").ReplaceAllString(js, "``")
+
+	// JS 关键字 / 运算符形态，不是函数调用。
+	keywords := map[string]bool{
+		"if": true, "for": true, "while": true, "switch": true, "catch": true,
+		"function": true, "return": true, "typeof": true, "new": true, "await": true,
+		"async": true, "delete": true, "void": true, "in": true, "of": true,
+	}
+
+	// 浏览器内置 / 语言内置：不在本文件定义，但必然可用。
+	builtins := map[string]bool{
+		"Number": true, "String": true, "Boolean": true, "Array": true, "Object": true,
+		"Math": true, "JSON": true, "Date": true, "Promise": true, "Map": true, "Set": true,
+		"RegExp": true, "Error": true, "TypeError": true, "RangeError": true,
+		"isNaN": true, "isFinite": true, "parseInt": true, "parseFloat": true,
+		"encodeURIComponent": true, "decodeURIComponent": true, "setTimeout": true,
+		"clearTimeout": true, "setInterval": true, "clearInterval": true,
+		"fetch": true, "requestAnimationFrame": true, "getComputedStyle": true,
+		"alert": true, "confirm": true, "prompt": true, "structuredClone": true,
+		// 标准 Web API / 常见回调参数（不是本文件定义的函数）
+		"FormData": true, "TextEncoder": true, "TextDecoder": true, "Blob": true,
+		"URLSearchParams": true, "URL": true, "matchMedia": true, "open": true,
+		"addEventListener": true, "removeEventListener": true,
+		// Promise 构造参数 / 回调形参：在定义处以参数形式出现，不在顶层定义
+		"resolve": true, "reject": true, "callback": true,
+	}
+
+	defined := map[string]bool{}
+	// 定义形态：function name，以及 const|let|var 声明里的**每一个**标识符
+	// （`let a = 1, b = 2` 可能一行声明多个；`let mdProbeOf = () => undefined` 是箭头函数形态，
+	// 旧正则只取声明列表里的第一个名字，把 mdProbeOf 误判成未定义）。
+	declRe := regexp.MustCompile(`(?:const|let|var)\s+([^;\n]+)`)
+	identRe := regexp.MustCompile(`([A-Za-z_$][\w$]*)\s*=`)
+	funcRe := regexp.MustCompile(`function\s+([A-Za-z_$][\w$]*)`)
+	for _, m := range funcRe.FindAllStringSubmatch(js, -1) {
+		defined[m[1]] = true
+	}
+	for _, m := range declRe.FindAllStringSubmatch(js, -1) {
+		for _, id := range identRe.FindAllStringSubmatch(m[1], -1) {
+			defined[id[1]] = true
+		}
+	}
+
+	// 收集所有调用：name( —— 排除方法调用 .name( 与属性访问
+	callRe := regexp.MustCompile(`(?:^|[^.\w$])([A-Za-z_$][\w$]*)\s*\(`)
+	missing := map[string]int{}
+	n := 0
+	for _, m := range callRe.FindAllStringSubmatch(js, -1) {
+		name := m[1]
+		n++
+		if keywords[name] || builtins[name] || defined[name] {
+			continue
+		}
+		missing[name]++
+	}
+	if n == 0 {
+		t.Fatal("没有从 app.js 里扫到任何函数调用，正则可能失效（去注释/字符串的逻辑误伤了）")
+	}
+	if len(missing) > 0 {
+		names := make([]string, 0, len(missing))
+		for k := range missing {
+			names = append(names, k)
+		}
+		sort.Strings(names)
+		for _, name := range names {
+			t.Errorf("app.js 调用了 %s() 但本文件里没有定义（调用 %d 次）—— 典型成因：搬代码时漏搬底层工具函数；"+
+				"运行时会在调用点抛 ReferenceError，若被 try/catch 吞掉则表现为「页面空白但无报错」", name, missing[name])
+		}
+	}
+}

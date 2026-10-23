@@ -11,20 +11,32 @@ import shutil
 import sys
 
 
-SOURCE_ROOT = Path(r"D:\下载\Github\workbuddy2api-panel")
+# 上游工作树（misakano/main 检出，git worktree of D:\下载\Github\workbuddy2api-panel）。
+# 2026-10-23 起平台功能取自 misakano7545/workbuddy2api-panel（接续上游）。
+SOURCE_ROOT = Path(r"D:\下载\Github\workbuddy2api-panel-misakano")
 TARGET_ROOT = Path(r"D:\下载\Github\afree-proxy")
 TARGET_PKG = TARGET_ROOT / "internal" / "workbuddy"
 
-SOURCE_PREFIX = "github.com/linguo2625469/workbuddy2api-panel/internal/"
+SOURCE_PREFIXES = (
+    # 旧上游（linguo2625469，2026-10-21 停维）：基线 73a7560 及之前的提交用此模块路径。
+    "github.com/linguo2625469/workbuddy2api-panel/internal/",
+    # 接续上游（misakano7545，2026-10-23 f611bed 改名）：新基线起用此模块路径。
+    # 双前缀并存：base 快照（旧基线归档）与 theirs（新上游工作树）经同一重写
+    # 归一到 TARGET_PREFIX，import 路径差异不会污染三方合并。
+    "github.com/misakano7545/workbuddy2api-panel/internal/",
+)
 TARGET_PREFIX = "afree-proxy/internal/workbuddy/"
 
 PACKAGES = (
     "auth",
+    "balance",
     "credithist",
+    "cst",
     "httpauth",
     "livecfg",
     "pool",
     "reqlog",
+    "safefile",
     "server",
     "upstream",
     "scheduler",
@@ -78,9 +90,14 @@ EGRESS_REWRITES = {
         ("c.globalRegisterJSON(req)", "c.globalRegisterJSON(a, req)", 3),
     ),
     "upstream/report.go": (("c.doJSON(req)", "c.doJSON(a, req)", 1),),
-    "upstream/school.go": (("c.doJSON(req)", "c.doJSON(a, req)", 2),),
+    # misakano 线 school.go 只剩 1 处调用（data, err := 形式）；通配
+    # "c.doJSON(req)" 规则会误伤该行，故按字面量整行匹配。
+    "upstream/school.go": (("data, err := c.doJSON(req)", "data, err := c.doJSON(a, req)", 1),),
     "upstream/tasks.go": (("c.doJSON(req)", "c.doJSON(a, req)", 3),),
     "upstream/travel.go": (("c.doJSON(req)", "c.doJSON(a, req)", 1),),
+    # misakano 新增文件；doJSON 调用各 1 处，按字面量整行匹配防误伤。
+    "upstream/modelbusy.go": (("data, err := c.doJSON(req)", "data, err := c.doJSON(a, req)", 1),),
+    "upstream/mp_events.go": ((("_, err = c.doJSON(req)"), "_, err = c.doJSON(a, req)", 1),),
 }
 
 
@@ -198,7 +215,8 @@ def main(source_root=None, target_root=None, preserve_from=None) -> int:
             text = source_file.read_text(encoding="utf-8")
             new_text = text
             if source_file.suffix == ".go":
-                new_text = text.replace(SOURCE_PREFIX, TARGET_PREFIX)
+                for prefix in SOURCE_PREFIXES:
+                    new_text = new_text.replace(prefix, TARGET_PREFIX)
             if package == "panel" and source_file.name == "app.js":
                 new_text = new_text.replace("fetch('/panel/api/", "fetch('api/")
             if new_text != text:
@@ -236,7 +254,8 @@ def main(source_root=None, target_root=None, preserve_from=None) -> int:
     target_config_dir.mkdir(parents=True, exist_ok=True)
     text = source_config.read_text(encoding="utf-8")
     text = text.replace("package main", "package config", 1)
-    text = text.replace(SOURCE_PREFIX, TARGET_PREFIX)
+    for prefix in SOURCE_PREFIXES:
+        text = text.replace(prefix, TARGET_PREFIX)
     (target_config_dir / "config.go").write_text(text, encoding="utf-8", newline="\n")
     copied += 1
     rewritten += 1
@@ -244,7 +263,8 @@ def main(source_root=None, target_root=None, preserve_from=None) -> int:
     if source_config_test.is_file():
         text = source_config_test.read_text(encoding="utf-8")
         text = text.replace("package main", "package config", 1)
-        text = text.replace(SOURCE_PREFIX, TARGET_PREFIX)
+        for prefix in SOURCE_PREFIXES:
+            text = text.replace(prefix, TARGET_PREFIX)
         (target_config_dir / "config_test.go").write_text(text, encoding="utf-8", newline="\n")
         copied += 1
         rewritten += 1

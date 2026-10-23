@@ -3,12 +3,14 @@
 package scheduler
 
 import (
-	"fmt"
+	"context"
 	"log"
 	"time"
 
 	"afree-proxy/internal/workbuddy/auth"
+	"afree-proxy/internal/workbuddy/cst"
 	"afree-proxy/internal/workbuddy/logfmt"
+	"afree-proxy/internal/workbuddy/session"
 	"afree-proxy/internal/workbuddy/upstream"
 )
 
@@ -32,23 +34,26 @@ var activityAccountDelay = 800 * time.Millisecond
 // 对齐 scripts/task_first_buddy.py 实测的 1.05s 间隔口径。测试可置 0。
 var adoptReportGap = 1050 * time.Millisecond
 
-// cstZone 上游每日重置按自然日 00:00 CST（Asia/Shanghai）。中国无夏令时，固定 +8 即可，
-// 不依赖容器 tzdata。
-var cstZone = time.FixedZone("CST", 8*60*60)
-
 // travelDay 返回 t 所属的上游自然日（CST），格式 2006-01-02。
 func travelDay(t time.Time) string {
-	return t.In(cstZone).Format("2006-01-02")
+	return cst.Day(t)
 }
 
 // RunTravelNow 立即对池内所有可用账号执行一趟旅行巡检。
-// 禁用账号跳过；暂停选号（paused）账号照常参与——旅行是纯 RPC（状态/派出/
-// 领奖 + 领养前置上报），不发模型对话，与「让位防风控」不冲突；
+// 禁用账号跳过；**暂停选号（paused）账号照常参与**——旅行是纯 RPC（状态 / 派出 /
+// 领奖 + 领养前置上报），不发模型对话，与「让位防风控」不冲突（吸收上游 b1a2284；
+// 别顺手把 paused 加进来，那是被上游撤回过的一揽子跳过）；
 // 401/查询失败只跳过该账号本轮（不强刷 token，交 22:00 keepalive）；
 // 账号间限速 travelAccountDelay。
 func (s *Scheduler) RunTravelNow() {
+	s.runTravel(context.Background(), false)
+}
+
+// runTravel 旅行巡检遍历。spread=true（排程路径）时按账号级偏移错开，见 spread.go。
+func (s *Scheduler) runTravel(ctx context.Context, spread bool) {
+	plan := s.spreadPlan(taskTravel, spread, cst.Now())
 	first := true
-	for _, st := range s.cfg.Pool.List() {
+	for _, st := range plan.order(s.cfg.Pool.List()) {
 		if st.Disabled {
 			continue
 		}
@@ -59,8 +64,11 @@ func (s *Scheduler) RunTravelNow() {
 		if a.IsGlobal() {
 			continue // D4 门控：global 无 CN 任务体系，不发起任何上游调用
 		}
-		if a.IsEnterpriseSession() {
-			continue // 企业版 / 企业切换会话门控：无成长体系（growth 端点企业号 403；切换会话不计分），不发起任何上游调用
+		if !a.SupportsPersonalGrowth() {
+			continue // 企业版 / 静态 API Key 门控：无个人成长体系，不发起任何上游调用
+		}
+		if !plan.wait(ctx, st.UID) {
+			return // ctx 取消：剩余账号下轮再巡
 		}
 		if !first {
 			time.Sleep(travelAccountDelay)
@@ -70,11 +78,32 @@ func (s *Scheduler) RunTravelNow() {
 	}
 }
 
+// RunTravelNowFor 只对指定账号执行一趟旅行巡检（按号端点用），门控与全池版本一致。
+// 返回是否真的推进了：false = 该号被门控跳过（禁用/暂停/无 refresh token/global/企业）。
+//
+// shortcut: 不加账号间限速，调用方自己控节奏——按号端点存在的意义就是让外部
+// 调度器做到每号独立随机时点，再叠加固定节拍等于把指纹加回去。
+func (s *Scheduler) RunTravelNowFor(uid string) bool {
+	st, ok := s.cfg.Pool.Status(uid)
+	if !ok || st.Disabled {
+		return false
+	}
+	a := s.cfg.Pool.AuthByUID(uid)
+	if a == nil || a.RefreshTokenValue() == "" {
+		return false
+	}
+	if a.IsGlobal() || a.IsEnterprise() {
+		return false
+	}
+	s.travelOne(a)
+	return true
+}
+
 // travelOne 单账号单趟状态机：查有无猫 + 查状态 + 最多一个动作，不轮询不等待。
 func (s *Scheduler) travelOne(a *auth.Auth) {
 	buddy, err := s.cfg.Upstream.BuddyInfo(a)
 	if err != nil {
-		log.Printf("travel %s: buddy-info: %v", logfmt.Label(a.UID, a.Nickname), err)
+		log.Printf("WARN: travel %s: buddy-info: %v", logfmt.Label(a.UID, a.Nickname), err)
 		return
 	}
 	if buddy == nil {
@@ -83,7 +112,7 @@ func (s *Scheduler) travelOne(a *auth.Auth) {
 	}
 	ts, err := s.cfg.Upstream.TravelStatus(a)
 	if err != nil {
-		log.Printf("travel %s: status: %v", logfmt.Label(a.UID, a.Nickname), err)
+		log.Printf("WARN: travel %s: status: %v", logfmt.Label(a.UID, a.Nickname), err)
 		return
 	}
 	switch ts.State {
@@ -105,7 +134,7 @@ func (s *Scheduler) travelDepart(a *auth.Auth, ts *upstream.TravelState) {
 		return
 	}
 	if err := s.cfg.Upstream.TravelDepart(a, travelLocationID); err != nil {
-		log.Printf("travel %s: depart: %v", logfmt.Label(a.UID, a.Nickname), err)
+		log.Printf("WARN: travel %s: depart: %v", logfmt.Label(a.UID, a.Nickname), err)
 		return
 	}
 	log.Printf("travel %s: depart ok location=%d", logfmt.Label(a.UID, a.Nickname), travelLocationID)
@@ -119,7 +148,7 @@ func (s *Scheduler) travelClaim(a *auth.Auth, ts *upstream.TravelState) {
 	}
 	reward, err := s.cfg.Upstream.TravelClaim(a, ts.RecordID)
 	if err != nil {
-		log.Printf("travel %s: claim record=%d: %v", logfmt.Label(a.UID, a.Nickname), ts.RecordID, err)
+		log.Printf("WARN: travel %s: claim record=%d: %v", logfmt.Label(a.UID, a.Nickname), ts.RecordID, err)
 		return
 	}
 	log.Printf("travel %s: claim ok record=%d reward=%d", logfmt.Label(a.UID, a.Nickname), ts.RecordID, reward)
@@ -137,13 +166,15 @@ func (s *Scheduler) travelAdopt(a *auth.Auth) {
 		return
 	}
 	// 前置：解锁 first_buddy 任务（幂等；失败不阻塞，让 buddy/first 按既有错误路径暴露）。
-	if err := s.cfg.Upstream.ReportChatActivity(a, fmt.Sprintf("wb2api-adopt-%d", time.Now().UnixMilli()), ""); err != nil {
-		log.Printf("travel %s: adopt preflight report: %v", logfmt.Label(a.UID, a.Nickname), err)
+	// 会话 ID 用官方形态（v4 UUID）。旧值是 `wb2api-adopt-<毫秒>`——项目缩写 +
+	// 时间戳直接进上报体（issue #51）。
+	if err := s.cfg.Upstream.ReportChatActivity(a, session.NewConversationID(), ""); err != nil {
+		log.Printf("WARN: travel %s: adopt preflight report: %v", logfmt.Label(a.UID, a.Nickname), err)
 	} else {
 		time.Sleep(adoptReportGap) // 给上游事件处理留时间（对齐脚本实测的 1.05s 间隔口径）
 	}
 	if err := s.cfg.Upstream.BuddyAgreement(a); err != nil {
-		log.Printf("travel %s: agreement: %v", logfmt.Label(a.UID, a.Nickname), err)
+		log.Printf("WARN: travel %s: agreement: %v", logfmt.Label(a.UID, a.Nickname), err)
 		return
 	}
 	err := s.cfg.Upstream.BuddyFirst(a)
@@ -154,7 +185,7 @@ func (s *Scheduler) travelAdopt(a *auth.Auth) {
 		s.markAdoptTried(a.UID)
 		log.Printf("travel %s: adopt skipped (conversation threshold not reached, retry tomorrow)", logfmt.Label(a.UID, a.Nickname))
 	default:
-		log.Printf("travel %s: adopt: %v", logfmt.Label(a.UID, a.Nickname), err)
+		log.Printf("WARN: travel %s: adopt: %v", logfmt.Label(a.UID, a.Nickname), err)
 	}
 }
 

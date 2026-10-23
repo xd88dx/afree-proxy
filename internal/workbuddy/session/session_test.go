@@ -1,6 +1,7 @@
 package session
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 	"sync"
@@ -378,29 +379,40 @@ func TestExtractKeyMultimodalContent(t *testing.T) {
 	}
 }
 
-func TestLookupForModelOnlyReusesValidBinding(t *testing.T) {
-	available := []string{"a", "b"}
-	store := newCountingStore()
-	r := New(Config{TTL: time.Minute, Store: store, AvailableForModel: func(model string) []string { return available }})
-	if _, ok := r.LookupForModel("new", "m"); ok || r.Count() != 0 {
-		t.Fatal("lookup allocated a new binding")
+// TestDeriveCacheKeyGivesUserIDClientsPerConversationSlots 带 user_id 的请求不参与粘性
+// （ExtractKey 返回空串，anti-monopoly 契约），但缓存槽必须按对话隔离：否则
+// prompt_cache_key = buildCacheKey(uid, "") 是每账号一个常量槽，同账号上交错的多段
+// 对话互相覆盖前缀缓存（issue #5）。
+func TestDeriveCacheKeyGivesUserIDClientsPerConversationSlots(t *testing.T) {
+	mk := func(sys, first, last string) []byte {
+		b, _ := json.Marshal(map[string]any{
+			"metadata": map[string]any{"user_id": "u-1"},
+			"messages": []any{
+				map[string]any{"role": "system", "content": sys},
+				map[string]any{"role": "user", "content": first},
+				map[string]any{"role": "assistant", "content": "ok"},
+				map[string]any{"role": "user", "content": last},
+			},
+		})
+		return b
 	}
-	r.Bind("key", "a")
-	if uid, ok := r.LookupForModel("key", "m"); !ok || uid != "a" {
-		t.Fatalf("valid lookup=%s %v", uid, ok)
+	b1 := mk("你是助手。", "第一问", "第二问")
+	// 契约不变：user_id 请求仍不产生粘性键。
+	if got := ExtractKey(b1); got != "" {
+		t.Fatalf("ExtractKey 对 user_id 请求应返回空串（不粘性），得到 %q", got)
 	}
-	available = []string{"b"}
-	if _, ok := r.LookupForModel("key", "m"); ok {
-		t.Fatal("unavailable binding reused")
+	k1 := DeriveCacheKey(b1)
+	if k1 == "" {
+		t.Fatal("DeriveCacheKey 不应为空：否则缓存槽退化成每账号一个常量槽")
 	}
-	available = []string{"a", "b"}
-	r.mu.Lock()
-	r.entries["key"] = entry{uid: "a", lastActive: time.Now().Add(-2 * time.Minute)}
-	r.mu.Unlock()
-	if _, ok := r.LookupForModel("key", "m"); ok {
-		t.Fatal("expired binding reused")
+	// 同一会话下一轮（历史变长、首条 user 不变）→ 同键（否则每轮都是新槽）。
+	b2 := mk("你是助手。", "第一问", "第三问")
+	if DeriveCacheKey(b2) != k1 {
+		t.Fatal("同一会话轮次变化后缓存键必须稳定（首条 user + system 派生）")
 	}
-	if r.Count() != 1 {
-		t.Fatal("lookup allocated a replacement")
+	// 另一段对话（首条 user 不同）→ 不同槽。
+	b3 := mk("你是助手。", "另一个话题", "第二问")
+	if DeriveCacheKey(b3) == k1 {
+		t.Fatal("不同对话必须落在不同缓存槽")
 	}
 }

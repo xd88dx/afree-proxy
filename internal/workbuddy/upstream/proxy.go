@@ -76,7 +76,7 @@ func (c *Client) proxyTransportFor(ctx context.Context, a *auth.Auth) (*http.Tra
 }
 
 // httpClientFor 返回短 RPC 使用的 HTTP client（按账号出口钉定）及出口 URL
-//（直连为空串），供出口成败观测归属。
+// （直连为空串），供出口成败观测归属。
 func (c *Client) httpClientFor(ctx context.Context, a *auth.Auth) (*http.Client, string, error) {
 	tr, raw, err := c.proxyTransportFor(ctx, a)
 	if err != nil {
@@ -147,4 +147,3 @@ func (c *Client) doHTTP(req *http.Request, a *auth.Auth) (*http.Response, error)
 	c.observeProxy(raw, err, time.Since(hsStart).Milliseconds())
 	return resp, err
 }
-

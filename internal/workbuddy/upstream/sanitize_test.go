@@ -78,6 +78,27 @@ func TestUpstreamErrorCodeRewritten(t *testing.T) {
 	}
 }
 
+// reasoning 字段：thinking.go 的回填把客户端送来的 reasoning_content 镜像进
+// reasoning（且回填就排在 sanitizeMessages 之前），此前只洗 content /
+// reasoning_content / tool_calls → 镜像出来的那一份指纹原样出站。
+// 注意指纹字面量必须与 sanitizeFeatures 里的形态逐字一致。
+func TestSanitizeMessagesScrubsReasoningField(t *testing.T) {
+	// 用 ccIdentity（测试文件里已有的纯 ASCII 指纹常量）当脏内容：它走同一条
+	// sanitizeText 改写路径，且不用硬编码数字串（本仓工具链会改写数字字面量）。
+	ms := []any{map[string]any{
+		"role":      "assistant",
+		"content":   "hi",
+		"reasoning": ccIdentity,
+	}}
+	if !sanitizeMessages(ms, true) {
+		t.Fatal("reasoning 字段里的指纹未被净化")
+	}
+	got, _ := ms[0].(map[string]any)["reasoning"].(string)
+	if got == ccIdentity {
+		t.Fatalf("reasoning 未被净化: %q", got)
+	}
+}
+
 // 回归：工具调用消息的 content 常为 null，而旧版 sanitizeMessages 在 content 缺失时
 // 直接 continue，整条消息连 tool_calls 一起被跳过 → arguments 里的被拦字符串原样漏出。
 func TestToolCallArgumentsSanitized(t *testing.T) {
@@ -90,7 +111,7 @@ func TestToolCallArgumentsSanitized(t *testing.T) {
 			}},
 		}},
 	}
-	if !sanitizeMessages(msgs) {
+	if !sanitizeMessages(msgs, true) {
 		t.Fatal("sanitizeMessages 未报告任何改动，tool_calls 被跳过")
 	}
 	fn := msgs[1].(map[string]any)["tool_calls"].([]any)[0].(map[string]any)["function"].(map[string]any)
@@ -190,7 +211,7 @@ func TestMultimodalTextPartOnly(t *testing.T) {
 		map[string]any{"type": "text", "text": ccIdentity},
 		imgPart,
 	}
-	out, changed := sanitizeContent(content)
+	out, changed := sanitizeContent(content, true)
 	if !changed {
 		t.Fatal("expected change")
 	}
@@ -367,22 +388,45 @@ func TestChatStreamWireBodySanitizeDisabled(t *testing.T) {
 	}
 }
 
-// TestSanitizeMessagesScrubsReasoningField thinking.go 的回填会把客户端送来的
-// reasoning_content 镜像进 reasoning 字段；此前只洗 content / reasoning_content /
-// tool_calls → 镜像进 reasoning 的指纹（裸 "11128" 这类反探测串）原样出站，
-// 而请求体里出现裸 11128 本身就是上游整单拦截条件。
-func TestSanitizeMessagesScrubsReasoningField(t *testing.T) {
-	ms := []any{map[string]any{
-		"role":      "assistant",
-		"content":   "hi",
-		"reasoning": "upstream said 11128",
-	}}
-	if !sanitizeMessages(ms) {
-		t.Fatal("reasoning 字段里的指纹未被净化")
+// DSH 的身份句是短语级指纹：上游按逐字匹配拦（400 11-128 unapproved channel），
+// 换一个词即绕过。钉住三条：命中改写、只含品牌词也走净化（特征预检不得漏）、
+// 改写结果不再含原始短语（可重复处理）。
+func TestDeepSeekHarnessBrandRewritten(t *testing.T) {
+	in := "You are an AI agent powered by DeepSeek Harness.\n\nCheck the exit code."
+	out := sanitizeTextIdentity(in)
+	if strings.Contains(out, "DeepSeek Harness") || !strings.Contains(out, "DeepSeekRuntime") {
+		t.Fatalf("brand word not rewritten: %q", out)
 	}
-	got, _ := ms[0].(map[string]any)["reasoning"].(string)
-	if strings.Contains(got, "11128") {
-		t.Fatalf("reasoning 仍含裸指纹: %q", got)
+	if !strings.HasPrefix(out, "You are an AI agent powered by DeepSeekRuntime.") {
+		t.Errorf("surrounding text changed: %q", out)
+	}
+	if again := sanitizeTextIdentity(out); again != out {
+		t.Errorf("not idempotent: %q -> %q", out, again)
+	}
+}
+
+// 预检快路径：文本只含品牌词、不含任何其它指纹，也必须进入净化。
+func TestDeepSeekHarnessDetected(t *testing.T) {
+	in := "You are interacting through the DeepSeek Harness Web GUI."
+	if hasFingerprint(in) {
+		t.Error("brand word should NOT hit the global fast path（否则非身份消息会被 TrimSpace/改写）")
+	}
+	if !hasIdentityFingerprint(in) {
+		t.Error("brand word should hit the identity fast path")
+	}
+}
+
+// 走完 prepareBody 全链路：system 与 user 里的品牌词都出站前改掉。
+func TestPrepareBodyRewritesDeepSeekHarness(t *testing.T) {
+	body := []byte(`{"model":"deepseek-v4.1-flash","messages":[` +
+		`{"role":"system","content":"You are an AI agent powered by DeepSeek Harness."},` +
+		`{"role":"user","content":"the DeepSeek Harness checkout is here"}]}`)
+	out, _, _ := prepareBodyOpt(body, true, true, nil, nil, nil, "", "", false)
+	if strings.Contains(string(out), "DeepSeek Harness") {
+		t.Fatalf("brand word survived: %s", out)
+	}
+	if strings.Count(string(out), "DeepSeekRuntime") != 2 {
+		t.Errorf("expected both messages rewritten: %s", out)
 	}
 }
 
@@ -390,4 +434,65 @@ func TestSanitizeMessagesScrubsReasoningField(t *testing.T) {
 func newTestUpstream(t *testing.T, h http.HandlerFunc) *httptest.Server {
 	t.Helper()
 	return httptest.NewServer(h)
+}
+
+// TestBrandScopeAllRewritesUserMessages 默认作用域（all）：与上游既有行为一致，
+// 所有消息角色的品牌词都改写（包括用户输入）。
+func TestBrandScopeAllRewritesUserMessages(t *testing.T) {
+	msgs := []any{
+		map[string]any{"role": "system", "content": "You are DeepSeek Harness."},
+		map[string]any{"role": "user", "content": "read DeepSeek Harness docs"},
+	}
+	if !sanitizeMessages(msgs, true) {
+		t.Fatal("sanitizeMessages all: 未报告改动")
+	}
+	for i, m := range msgs {
+		if got := m.(map[string]any)["content"].(string); strings.Contains(got, "DeepSeek Harness") {
+			t.Errorf("msg[%d] 品牌词未改写: %q", i, got)
+		}
+	}
+}
+
+// TestBrandScopeIdentityLeavesUserMessages identity 作用域：只改 system/developer，
+// 用户/工具/assistant 内容（含 tool_calls 参数与 reasoning）原样透传。
+func TestBrandScopeIdentityLeavesUserMessages(t *testing.T) {
+	msgs := []any{
+		map[string]any{"role": "system", "content": "You are DeepSeek Harness."},
+		map[string]any{"role": "user", "content": "  DeepSeek Harness  "},
+		map[string]any{"role": "assistant", "content": nil,
+			"tool_calls": []any{map[string]any{"id": "c1", "function": map[string]any{
+				"name": "Read", "arguments": `{"path":"DeepSeek Harness.md"}`,
+			}}},
+		},
+	}
+	if !sanitizeMessages(msgs, false) {
+		t.Fatal("sanitizeMessages identity: system 未改写")
+	}
+	if got := msgs[0].(map[string]any)["content"].(string); !strings.Contains(got, "DeepSeekRuntime") {
+		t.Errorf("system 品牌词未改写: %q", got)
+	}
+	if got := msgs[1].(map[string]any)["content"].(string); got != "  DeepSeek Harness  " {
+		t.Errorf("user 内容被改动（应原样含首尾空白）: %q", got)
+	}
+	args := msgs[2].(map[string]any)["tool_calls"].([]any)[0].(map[string]any)["function"].(map[string]any)["arguments"].(string)
+	if !strings.Contains(args, "DeepSeek Harness") {
+		t.Errorf("tool_calls 参数被改动: %q", args)
+	}
+}
+
+// TestBrandScopeDefaultGlobal 默认值：Client 未配置作用域时按 all 处理。
+func TestBrandScopeDefaultGlobal(t *testing.T) {
+	var c Client
+	c.SanitizeFingerprints.Store(true)
+	if !c.brandScopeGlobal() {
+		t.Error("默认应为 all（brandScopeGlobal=true）")
+	}
+	c.SanitizeBrandScope.Store("identity")
+	if c.brandScopeGlobal() {
+		t.Error("identity 应返回 false")
+	}
+	c.SanitizeBrandScope.Store("")
+	if !c.brandScopeGlobal() {
+		t.Error("空值应回落 all")
+	}
 }

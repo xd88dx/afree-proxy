@@ -30,7 +30,9 @@ import (
 	wbusage "afree-proxy/internal/workbuddy/usage"
 )
 
-const workbuddyVersion = "1.13.0-panel+afree"
+// 版本口径：misakano 线不跟语义化版本（CI 用日期版本注入），此处记录上游来源
+// 与同步日期；基线 misakano/main b51ce6d（2026-10-23 同步）。
+const workbuddyVersion = "2026.10.23-misakano+afree"
 
 // workbuddySubsystem 把源项目的账号池/熔断/调度/面板/兼容接口作为独立子系统
 // 挂在现有 afree-proxy 上。账号凭证与状态落在 data/workbuddy/ 下，不与 Cline
@@ -112,9 +114,14 @@ func startWorkBuddy() (*workbuddySubsystem, error) {
 	p.SetCostExploreInterval(cfg.CostExploreIntervalDur)
 	p.SetCreditFloor(cfg.Pool.CreditFloor)
 	p.SetWeights(cfg.Pool.IdleWeightPerHour, cfg.Pool.IdleWeightMax)
-	p.SetPreferExpiring(cfg.Pool.PreferExpiring)
-	p.SetCrossDomainFallback(cfg.Pool.CrossDomainFallback) // 裸名跨域回退（issue #135，默认关闭）
+	p.SetPreferExpiring(cfg.Pool.PreferExpiring, cfg.ExpiringSoonDur)
 	_ = p.SetScheduling(cfg.Pool.Strategy, cfg.Pool.AccountOrder)
+	// misakano 线新增：保留积分（normalize 保证非 nil 且 >=0）、账号优先级/占比
+	//（issue #62）、保底倍率上限——与 saveWorkbuddyConfig 热应用同键。
+	p.SetReserveCredits(*cfg.Pool.ReserveCredits)
+	p.SetAccountPriority(cfg.Pool.AccountPriority)
+	p.SetAccountShare(cfg.Pool.AccountShare)
+	p.SetCreditFloorMaxRate(cfg.Pool.CreditFloorMaxRate)
 
 	up := upstream.New()
 	up.HTTP.Timeout = time.Duration(cfg.Upstream.TimeoutSeconds) * time.Second
@@ -124,6 +131,7 @@ func startWorkBuddy() (*workbuddySubsystem, error) {
 	}
 	up.IdleTimeout = time.Duration(cfg.Upstream.IdleTimeoutSeconds) * time.Second
 	up.SanitizeFingerprints.Store(cfg.Features.SanitizeBlacklistFingerprints)
+	up.SanitizeBrandScope.Store(cfg.Features.SanitizeBrandScope)
 	up.UserAgent = cfg.Upstream.UserAgent
 	up.ClientVersion = cfg.Upstream.ClientVersion
 	up.CliVersion = cfg.Upstream.CliVersion
@@ -208,6 +216,9 @@ func startWorkBuddy() (*workbuddySubsystem, error) {
 		RecordClientInfo:     cfg.Logging.RequestClientInfo,
 		ModelRateFilter:      cfg.Pool.ModelRateFilter,
 		HiddenModels:         livecfg.NormalizeHiddenModels(cfg.Models.Hidden),
+		// misakano 线新增热字段：模型名映射与 6004 降级路由表（见 livecfg.Snapshot）。
+		ModelAliases:  livecfg.NormalizeModelAliases(cfg.Models.Aliases),
+		ModelFallback: cfg.Pool.ModelFallback,
 	})
 	rec := wbusage.New(filepath.Join(dir, "usage.json"))
 	rec.Start()
@@ -229,6 +240,10 @@ func startWorkBuddy() (*workbuddySubsystem, error) {
 	if _, ok := store.(redisstore.Noop); !ok {
 		redisMode = "upstash"
 	}
+	// gwRef/pnRef 在创建后回填（SaveConfig 闭包定义早于 h/pn 声明完成，Go 闭包
+	// 要求变量先声明）；saveWorkbuddyConfig 里 gw/pn 为 nil 时跳过对应热应用段。
+	var gwRef *server.Handler
+	var pnRef *panel.Panel
 	pn := panel.New(panel.Config{
 		Pool:        p,
 		Usage:       rec,
@@ -255,10 +270,15 @@ func startWorkBuddy() (*workbuddySubsystem, error) {
 			return c, nil
 		},
 		SaveConfig: func(raw []byte) ([]string, error) {
-			return saveWorkbuddyConfig(cfgPath, raw, live, p, up, sch, authDir, stateFile)
+			return saveWorkbuddyConfig(cfgPath, raw, live, p, up, sch, gwRef, pnRef, authDir, stateFile)
 		},
 	})
-	sch.SetGrowthHook(pn.RunGrowthQueueOnce)
+	pnRef = pn
+	sch.SetGrowthRunner(pn.RunGrowthQueueNow)
+	// 补领清扫（misakano 新增）：分钟级周期，只 accept 待接受的、只 claim 已
+	// 达标未领的；执行体在面板，间隔由 config schedule.task_sweep_* 控制。
+	sch.SetSweepRunner(pn.RunTaskSweepNow)
+	pn.SetGrowthConcurrency(cfg.Schedule.GrowthConcurrency)
 
 	h := server.NewHandler(server.Config{
 		Pool:         p,
@@ -281,13 +301,23 @@ func startWorkBuddy() (*workbuddySubsystem, error) {
 		// 模型黑名单原始条目（config models.hidden）；运行期以 livecfg 快照为准
 		//（热生效），此处供 Live 为 nil 的裸用/测试路径。
 		ModelsHidden: cfg.Models.Hidden,
+		ModelsAliases: cfg.Models.Aliases,
 		// 倍率筛选同样双填：Live 热改优先，静态字段兜底（同款理由）。
 		ModelRateFilter: cfg.Pool.ModelRateFilter,
+		// /metrics 端点开关（缺省关）：注册在装配期，改动需重启。
+		MetricsEnabled: cfg.Metrics.Enabled,
+		// 预算三闸（issue #229）初始值：saveWorkbuddyConfig 后续热改。
+		BudgetLimit:      cfg.Budget.DailyCreditLimit,
+		BurstCreditLimit: cfg.Budget.BurstCreditLimit,
+		CacheLowRate:     cfg.Budget.CacheLowRate,
 	})
+	gwRef = h
 
 	ctx, cancel := context.WithCancel(context.Background())
 	go sch.Run(ctx)
 	sch.StartBalanceRefresh(ctx, cfg.BalanceRefreshInterval)
+	// 补领清扫周期启动（task_sweep_enabled=false 时 interval<=0，函数内部不启动）。
+	sch.StartTaskSweep(ctx, cfg.TaskSweepInterval)
 	// 启动即预热模型积分倍率表（供积分保底的目录兜底判定）：倍率只在
 	// FetchModels/FetchGlobalModelInfos 成功时填充且均为懒触发，重启后的空窗期
 	// 里 ModelRate 恒为空串，触底号会被当成「收费未知」放行并打穿。异步执行，

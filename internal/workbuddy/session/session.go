@@ -138,7 +138,9 @@ func (r *Router) Resolve(key string) (string, bool) {
 }
 
 // LookupForModel 只复用已有有效绑定，不通过哈希为新会话分配账号。
-// 有序账号池策略用它保留粘性，未绑定会话由 Pool 选号并在成功后 Bind。
+// 有序账号池策略（地区调度）用它保留粘性；未绑定会话由 Pool 选号并在成功后 Bind。
+// （misakano 线只有 ResolveForModel——会话层主动预分配；afree 保留旧线的
+// 「有序策略下只查不建」语义，否则轮询/顺序耗尽会被会话层哈希分配绕过。）
 func (r *Router) LookupForModel(key, model string) (string, bool) {
 	now := time.Now()
 	available := r.availableSet(model)
@@ -396,6 +398,25 @@ func hasUserIDKey(obj map[string]any) bool {
 // derivedKeyPrefix 派生键前缀，与显式会话 id 的命名空间隔离：
 // 即便客户端恰好传了形如 "d-<hex>" 的显式 id 也不至于与派生键混淆（显式 id 优先返回）。
 const derivedKeyPrefix = "d-"
+
+// DeriveCacheKey 仅供 prompt_cache_key / X-Conversation-ID 的会话段使用：与
+// ExtractKey 的第 6 项同源（system + 首条 user 的哈希），但**不设 user_id 闸**。
+//
+// 为什么需要它：ExtractKey 对带 user_id 的请求返回空串，那是「不把 user 钉到某个账号」
+// 的契约（user 维度太粗）；但空串会让 prompt_cache_key 退化成**每账号一个常量槽**
+// （buildCacheKey(uid, "")），同一账号上所有对话互相覆盖前缀缓存——交错对话时每个
+// 切换点都是一次大前缀全 miss（实测上报：glm-5.3 120k 上下文周期性命中 0.2%）。
+// 缓存槽按对话隔离与账号绑定是两件事：本函数只影响前者，粘性绑定仍看 ExtractKey。
+func DeriveCacheKey(body []byte) string {
+	if len(body) == 0 {
+		return ""
+	}
+	var obj map[string]any
+	if err := json.Unmarshal(body, &obj); err != nil {
+		return ""
+	}
+	return deriveKey(obj)
+}
 
 // deriveKey 从消息内容派生稳定会话键：SHA-256(system 文本 + 首条 user 文本) 前 16 字节。
 //

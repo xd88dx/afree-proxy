@@ -11,8 +11,8 @@ import (
 	"encoding/hex"
 	"encoding/json"
 
-	"fmt"
 	"afree-proxy/internal/workbuddy/auth"
+	"fmt"
 	"net/http"
 )
 
