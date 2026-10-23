@@ -1255,7 +1255,7 @@ func clineAPIWithAccount(ctx context.Context, params map[string]any, stream bool
 		}
 	}
 	// 出口选择（见 proxy_binding.go）：
-	//   - 隔离模式且账号有绑定：只在 {主, 辅} 内尝试（至多 2 次），绑定出口
+	//   - 隔离模式且账号有绑定：只在 {主, 备} 内尝试（至多 2 次），绑定出口
 	//     全不可用时报错且不冷却账号 —— 绝不退回其他出口或直连（pickAccount
 	//     已过滤掉双不可用的账号，这里 !ok 只剩选号与拨号之间的窄竞态窗口）。
 	//   - 未绑定 + useProxies：旧规则，每次尝试全局轮转挑代理（至多 3 次）。

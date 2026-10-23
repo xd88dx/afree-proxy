@@ -121,7 +121,7 @@ func testZenCfg(isolation *bool) *zenConfigData {
 }
 
 func TestPickBoundProxyMainThenBackup(t *testing.T) {
-	// 辅代理开关显式打开才存在"主不通走辅"的兜底
+	// 备用代理开关显式打开才存在"主不通走备"的兜底
 	setupBindingTest(t, &zenConfigData{
 		Keys:               []string{"public"},
 		Proxies:            []string{"http://a:1", "http://b:2"},
@@ -131,7 +131,7 @@ func TestPickBoundProxyMainThenBackup(t *testing.T) {
 	if u, idx, ok := pickBoundProxy("http://a:1", "http://b:2"); !ok || u != "http://a:1" || idx != 0 {
 		t.Fatalf("main expected, got %q idx=%d ok=%v", u, idx, ok)
 	}
-	// 主冷却 → 辅
+	// 主冷却 → 备
 	setProxyCooldownIdx(t, 0, time.Minute)
 	if u, idx, ok := pickBoundProxy("http://a:1", "http://b:2"); !ok || u != "http://b:2" || idx != 1 {
 		t.Fatalf("backup expected, got %q idx=%d ok=%v", u, idx, ok)
@@ -260,8 +260,8 @@ func TestValidateProxyBinding(t *testing.T) {
 	if err := validateProxyBinding("http://not-in-pool:1", ""); err == nil {
 		t.Fatal("proxy outside pool must be rejected")
 	}
-	// main == backup：仅在辅代理开关开启（辅槽真正参与路由）时拒绝。关闭态
-	// 辅槽被保留但不参与路由，且面板锁成跟随主槽，用户无法主动造出该组合，
+	// main == backup：仅在备用代理开关开启（备用槽真正参与路由）时拒绝。关闭态
+	// 备用槽被保留但不参与路由，且面板锁成跟随主槽，用户无法主动造出该组合，
 	// 放行以免"关闭前 main=a/backup=b，之后把 main 改成 b"这类操作被拒。
 	setupBindingTest(t, &zenConfigData{
 		Keys:               []string{"sk-1"},
@@ -279,12 +279,12 @@ func TestValidateProxyBinding(t *testing.T) {
 	if err := validateProxyBinding("http://a:1", "http://a:1"); err != nil {
 		t.Fatalf("main == backup must be allowed when backup proxies are disabled: %v", err)
 	}
-	// 池外代理在任何开关状态下都要拒绝（与辅开关无关）
+	// 池外代理在任何开关状态下都要拒绝（与备开关无关）
 	if err := validateProxyBinding("http://a:1", "http://not-in-pool:1"); err == nil {
 		t.Fatal("backup outside pool must be rejected even when backup proxies are disabled")
 	}
-	// 直连哨兵：主直连合法；主直连 + 直连辅合法（UI 联动锁定）；
-	// 主直连 + 代理辅非法；代理 + 直连兜底合法
+	// 直连哨兵：主直连合法；主直连 + 直连备合法（UI 联动锁定）；
+	// 主直连 + 代理备非法；代理 + 直连兜底合法
 	if err := validateProxyBinding("direct", ""); err != nil {
 		t.Fatalf("main=direct rejected: %v", err)
 	}
@@ -300,7 +300,7 @@ func TestValidateProxyBinding(t *testing.T) {
 }
 
 func TestPickBoundProxyDirectSentinel(t *testing.T) {
-	// 辅槽的直连哨兵属于"兜底"，只有辅代理开关打开时才生效
+	// 备用槽的直连哨兵属于"兜底"，只有备用代理开关打开时才生效
 	setupBindingTest(t, &zenConfigData{
 		Keys:               []string{"public"},
 		Proxies:            []string{"http://a:1"},
@@ -310,7 +310,7 @@ func TestPickBoundProxyDirectSentinel(t *testing.T) {
 	if u, idx, ok := pickBoundProxy("direct", ""); !ok || u != "" || idx != -1 {
 		t.Fatalf("main=direct must yield direct egress, got %q idx=%d ok=%v", u, idx, ok)
 	}
-	// 主代理冷却 + 辅 = direct：直连兜底
+	// 主代理冷却 + 备 = direct：直连兜底
 	setProxyCooldownIdx(t, 0, time.Minute)
 	if u, idx, ok := pickBoundProxy("http://a:1", "direct"); !ok || u != "" || idx != -1 {
 		t.Fatalf("direct backup must yield direct egress, got %q idx=%d ok=%v", u, idx, ok)
@@ -324,8 +324,8 @@ func TestPickBoundProxyDirectSentinel(t *testing.T) {
 	}
 }
 
-// TestBackupProxyDisabledIgnoresBackupSlot：辅代理开关默认关闭 —— 主代理不可用
-// 时不再尝试辅代理（该身份本轮跳过），也绝不因此退回直连。
+// TestBackupProxyDisabledIgnoresBackupSlot：备用代理开关默认关闭 —— 主代理不可用
+// 时不再尝试备用代理（该身份本轮跳过），也绝不因此退回直连。
 func TestBackupProxyDisabledIgnoresBackupSlot(t *testing.T) {
 	setupBindingTest(t, &zenConfigData{
 		Keys:    []string{"public"},
@@ -334,16 +334,16 @@ func TestBackupProxyDisabledIgnoresBackupSlot(t *testing.T) {
 	if backupProxyEnabled() {
 		t.Fatal("backup proxy switch must default to off")
 	}
-	// 主可用 → 主（辅槽被完全忽略）
+	// 主可用 → 主（备用槽被完全忽略）
 	if u, idx, ok := pickBoundProxy("http://a:1", "http://b:2"); !ok || u != "http://a:1" || idx != 0 {
 		t.Fatalf("main expected, got %q idx=%d ok=%v", u, idx, ok)
 	}
-	// 主冷却 → 不可用（不尝试辅）
+	// 主冷却 → 不可用（不尝试备）
 	setProxyCooldownIdx(t, 0, time.Minute)
 	if u, _, ok := pickBoundProxy("http://a:1", "http://b:2"); ok {
 		t.Fatalf("backup must not be tried while the switch is off, got %q", u)
 	}
-	// 辅槽的直连哨兵同样不生效：关闭辅代理不等于打开直连兜底
+	// 备用槽的直连哨兵同样不生效：关闭备用代理不等于打开直连兜底
 	if _, _, ok := pickBoundProxy("http://a:1", "direct"); ok {
 		t.Fatal("direct backup must not be used while the switch is off")
 	}
@@ -351,7 +351,7 @@ func TestBackupProxyDisabledIgnoresBackupSlot(t *testing.T) {
 	if u, _, ok := pickBoundProxy("direct", ""); !ok || u != "" {
 		t.Fatalf("main=direct must still egress directly, got %q ok=%v", u, ok)
 	}
-	// 主代理已从池中删除 → 不可用（不回退辅、不回退直连）
+	// 主代理已从池中删除 → 不可用（不回退备、不回退直连）
 	if _, _, ok := pickBoundProxy("http://removed:9", "http://b:2"); ok {
 		t.Fatal("stale main must report unavailable instead of falling to backup")
 	}
@@ -391,7 +391,7 @@ func TestSetAccountProxyBinding(t *testing.T) {
 }
 
 func TestSetZenKeyProxyBinding(t *testing.T) {
-	// 辅代理开关打开才能写入辅槽（关闭时 normalizeBackupSlot 会把辅槽收敛为空）
+	// 备用代理开关打开才能写入备用槽（关闭时 normalizeBackupSlot 会把备用槽收敛为空）
 	setupBindingTest(t, &zenConfigData{
 		Keys:               []string{"sk-1", "sk-2"},
 		Proxies:            []string{"http://a:1", "http://b:2"},
@@ -717,7 +717,7 @@ func TestPickZenKeyStrategyUnified(t *testing.T) {
 func TestBoundProxyNetworkErrorDoesNotPoisonAccount(t *testing.T) {
 	// 回归：隔离开 + 账号绑定代理 + Cline 上游开关为直连（useProxies=false）时，
 	// 绑定代理的网络错误必须只冷却代理、绝不毒化账号（曾错误地走直连分支
-	// 给账号上 5 分钟冷却，导致辅代理重试也不会发生）。
+	// 给账号上 5 分钟冷却，导致备用代理重试也不会发生）。
 	setupBindingTest(t, &zenConfigData{
 		Proxies:        []string{"http://127.0.0.1:1"}, // 不可达端口 = 必然网络错误
 		ProxyIsolation: boolPtr(true),
@@ -747,8 +747,8 @@ func TestBoundProxyNetworkErrorDoesNotPoisonAccount(t *testing.T) {
 	}
 }
 
-// TestResolveBackupSlotPreservesStored 辅代理开关关闭时保留已持久化的辅槽
-// （而不是清空）：面板把辅槽锁成只读并跟随主槽，提交上来的值只是显示值，
+// TestResolveBackupSlotPreservesStored 备用代理开关关闭时保留已持久化的备用槽
+// （而不是清空）：面板把备用槽锁成只读并跟随主槽，提交上来的值只是显示值，
 // 清空会让"关一下开关"变成不可逆的数据丢失，重开开关也无法复用。
 func TestResolveBackupSlotPreservesStored(t *testing.T) {
 	// 开关开启：采纳提交值
@@ -759,7 +759,7 @@ func TestResolveBackupSlotPreservesStored(t *testing.T) {
 	if got := resolveBackupSlot("http://b:2", "http://c:3"); got != "http://b:2" {
 		t.Fatalf("enabled: got %q, want submitted value", got)
 	}
-	// 开关关闭：忽略提交值，保留旧辅槽
+	// 开关关闭：忽略提交值，保留旧备用槽
 	setupBindingTest(t, &zenConfigData{
 		Keys: []string{"sk-1"}, Proxies: []string{"http://a:1", "http://b:2"},
 		BackupProxyEnabled: boolPtr(false),
@@ -767,11 +767,11 @@ func TestResolveBackupSlotPreservesStored(t *testing.T) {
 	if got := resolveBackupSlot("http://a:1", "http://b:2"); got != "http://b:2" {
 		t.Fatalf("disabled: got %q, want stored backup preserved", got)
 	}
-	// 关闭态清空提交也不能抹掉旧辅槽
+	// 关闭态清空提交也不能抹掉旧备用槽
 	if got := resolveBackupSlot("", "http://b:2"); got != "http://b:2" {
 		t.Fatalf("disabled + empty submitted: got %q, want stored backup preserved", got)
 	}
-	// 此前没有辅槽：保持空（不会凭空造出绑定）
+	// 此前没有备用槽：保持空（不会凭空造出绑定）
 	if got := resolveBackupSlot("http://a:1", ""); got != "" {
 		t.Fatalf("no stored backup: got %q, want empty", got)
 	}
@@ -793,7 +793,7 @@ func TestSetZenKeyProxyBindingBackupToggleRoundTrip(t *testing.T) {
 		BackupProxyEnabled: boolPtr(true),
 	})
 
-	// 1. 开关开启：主辅正常持久化
+	// 1. 开关开启：主备正常持久化
 	if err := setZenKeyProxyBinding(0, "http://a:1", "http://b:2"); err != nil {
 		t.Fatalf("set with backup on: %v", err)
 	}
@@ -801,7 +801,7 @@ func TestSetZenKeyProxyBindingBackupToggleRoundTrip(t *testing.T) {
 		t.Fatalf("binding wrong: %+v", b)
 	}
 
-	// 2. 关开关后只改主槽：面板提交 backup = 跟随显示的主值，辅槽应维持 b
+	// 2. 关开关后只改主槽：面板提交 backup = 跟随显示的主值，备用槽应维持 b
 	setBackupSwitch(false)
 	if err := setZenKeyProxyBinding(0, "http://c:3", "http://c:3"); err != nil {
 		t.Fatalf("set main while backup disabled: %v", err)
@@ -814,7 +814,7 @@ func TestSetZenKeyProxyBindingBackupToggleRoundTrip(t *testing.T) {
 		t.Fatalf("backup must be preserved while disabled, got %+v", b)
 	}
 
-	// 3. 关闭态下把 main 改成 == 旧辅值，必须放行（方案 A）
+	// 3. 关闭态下把 main 改成 == 旧备值，必须放行（方案 A）
 	if err := setZenKeyProxyBinding(0, "http://b:2", "http://b:2"); err != nil {
 		t.Fatalf("main == stored backup must be allowed while disabled: %v", err)
 	}
@@ -822,7 +822,7 @@ func TestSetZenKeyProxyBindingBackupToggleRoundTrip(t *testing.T) {
 		t.Fatalf("main not updated to http://b:2, got %q", got)
 	}
 
-	// 4. 关闭态：辅槽不参与路由 —— 主不可用时无兜底（ok=false）
+	// 4. 关闭态：备用槽不参与路由 —— 主不可用时无兜底（ok=false）
 	if _, _, ok := pickBoundProxy("http://gone:1", getZenConfig().KeyBindings["sk-1"].Backup); ok {
 		t.Fatal("backup must not act as fallback while backup proxies are disabled")
 	}
@@ -831,13 +831,13 @@ func TestSetZenKeyProxyBindingBackupToggleRoundTrip(t *testing.T) {
 		t.Fatalf("main must be used while enabled: url=%q ok=%v", url, ok)
 	}
 
-	// 5. 重开开关：保留的辅值立刻重新生效
+	// 5. 重开开关：保留的备值立刻重新生效
 	setBackupSwitch(true)
 	if _, _, ok := pickBoundProxy("http://gone:1", getZenConfig().KeyBindings["sk-1"].Backup); !ok {
 		t.Fatal("re-enabled backup must be usable again")
 	}
 
-	// 6. 关闭态清空主槽：旧辅值被保留，绑定不被误删（用户要求辅值维持）
+	// 6. 关闭态清空主槽：旧备值被保留，绑定不被误删（用户要求备值维持）
 	setBackupSwitch(false)
 	if err := setZenKeyProxyBinding(0, "", ""); err != nil {
 		t.Fatalf("clear main while disabled: %v", err)

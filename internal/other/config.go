@@ -15,7 +15,7 @@ import (
 // Other 平台（自定义小企业上游的聚合）：一个 Other 页下挂多个子平台，每个
 // 子平台是独立的 key 池（BaseURL + 多 key + 前缀 + 模型勾选），请求按
 // "<prefix>:<model-id>" 路由。结构与 internal/amd / internal/tokenharbor
-// 同构（key 轮转 / 401·429 冷却 / 主辅代理绑定 / 面板暂存编辑），区别是
+// 同构（key 轮转 / 401·429 冷却 / 主备代理绑定 / 面板暂存编辑），区别是
 // 平台数量动态，全部状态落盘于 DATA_DIR/.other-config.json。
 
 // Config 是 Other 平台的全部可配置状态。
@@ -43,7 +43,7 @@ type Platform struct {
 	// KeyRoutingEnabled 路由参与表：key 明文 -> 是否进入请求轮转。
 	// nil/缺项 = 参与。新增 key 默认 false（各平台统一口径）。
 	KeyRoutingEnabled map[string]bool `json:"keyRoutingEnabled,omitempty"`
-	// KeyBindings 出口绑定表：key 明文 -> 主/辅代理。
+	// KeyBindings 出口绑定表：key 明文 -> 主/备用代理。
 	KeyBindings map[string]Binding `json:"keyBindings,omitempty"`
 	// MaxConcurrency 上游最大并发，默认 8。
 	MaxConcurrency int `json:"maxConcurrency"`
@@ -57,7 +57,7 @@ type Platform struct {
 	Cool map[string]time.Time `json:"-"`
 }
 
-// Binding 一个 key 的出口绑定：主代理优先、辅代理兜底；双不可用 = 该 key
+// Binding 一个 key 的出口绑定：主代理优先、备用代理兜底；双不可用 = 该 key
 // 本轮跳过（隔离优先于可用性，绝不回退直连）。空值 = 未绑定 = 走全局规则。
 type Binding struct {
 	Main   string `json:"main,omitempty"`

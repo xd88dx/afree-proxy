@@ -27,7 +27,7 @@ type Config struct {
 	// KeyRoutingEnabled 路由参与表：key 明文 -> 是否进入请求轮转（面板"启用"列）。
 	// nil/缺项 = 参与。新增 key 默认 false（各平台统一口径），需面板勾选启用。
 	KeyRoutingEnabled map[string]bool `json:"keyRoutingEnabled,omitempty"`
-	// KeyBindings 出口绑定表：key 明文 -> 主/辅代理。隔离模式下绑定决定出口。
+	// KeyBindings 出口绑定表：key 明文 -> 主/备用代理。隔离模式下绑定决定出口。
 	KeyBindings map[string]Binding `json:"keyBindings,omitempty"`
 	// MaxConcurrency 上游最大并发（上游不限并发，默认 8 与其他平台一致）。
 	MaxConcurrency int `json:"maxConcurrency"`
@@ -40,7 +40,7 @@ type Config struct {
 	Cool map[string]time.Time `json:"-"`
 }
 
-// Binding 一个 key 的出口绑定：主代理优先、辅代理兜底；双不可用 = 该 key
+// Binding 一个 key 的出口绑定：主代理优先、备用代理兜底；双不可用 = 该 key
 // 本轮跳过（隔离优先于可用性，绝不回退直连）。空值 = 未绑定 = 走全局规则。
 type Binding struct {
 	Main   string `json:"main,omitempty"`

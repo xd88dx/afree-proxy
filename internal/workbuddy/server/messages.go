@@ -32,7 +32,7 @@ import (
 // messagesBodyLimit Messages 请求体上限：只含 query 与工具声明，1MB 富余。
 const messagesBodyLimit = 1 << 20
 
-// messagesQueryPrefix 辅助搜索模型收到的固定指令前缀（DSH/官方 CLI 的约定）。
+// messagesQueryPrefix 备助搜索模型收到的固定指令前缀（DSH/官方 CLI 的约定）。
 // 它是给模型看的指令，不是搜索词的一部分，必须剥掉后再送去搜索。
 const messagesQueryPrefix = "Perform a web search for the query:"
 

@@ -26,7 +26,7 @@ OpenCode      WorkBuddy       Cline 账号池
 
 - **路由规则**：请求里的 `model` 决定去向——`cn:` / `global:` 前缀模型走 WorkBuddy；OpenCode 免费模型走 OpenCode 上游；OpenCode 付费模型直接 400；其余走 Cline 账号池（未知模型名默认 400，可在面板关闭严格匹配）。
 - **四个池**：Cline 账号池、OpenCode key 池、WorkBuddy 账号池、出口代理池，各自独立轮转、独立冷却。
-- **代理隔离**（默认开启）：Cline 账号、OpenCode key 与 WorkBuddy 账号可绑定主/辅代理，固定出口 IP，降低风控风险。
+- **代理隔离**（默认开启）：Cline 账号、OpenCode key 与 WorkBuddy 账号可绑定主/备用代理，固定出口 IP，降低风控风险。
 
 所有状态保存在数据卷 `/app/data`（容器内），WorkBuddy 状态在 `data/workbuddy/`，出口绑定在 `data/.workbuddy-proxies.json`；备份 = 备份整个数据卷。
 
@@ -107,8 +107,8 @@ docker compose up -d --build
 - **Test**：发一次真实探测（max_tokens=1），成功即清除冷却/失效状态；消耗一次配额。
 - **Reset**：探测上游限流状态；仍在限流则保持冷却并显示预计恢复时间。
 - **启用（Pool 列）**：勾选才参与轮换。**新增账号默认不勾选**——新号先入库、不进轮换，确认可用后在表格里勾上启用。已有账号保持原状态（旧数据缺该字段按启用处理），升级不会让在用的号停摆。
-- **代理绑定**：每行两个下拉（主出口/辅出口），选择后立即保存。绑定后该账号**永远**从主代理出网，主冷却落到辅代理；两者都不可用时该账号被整体跳过（绝不走其他出口）。
-- **均匀分配代理**：一键把代理池按 `主 = 池[i%N]、辅 = 池[(i+1)%N]` 分给全部账号（覆盖已有绑定）。
+- **代理绑定**：每行两个下拉（主出口/备用出口），选择后立即保存。绑定后该账号**永远**从主代理出网，主冷却落到备用代理；两者都不可用时该账号被整体跳过（绝不走其他出口）。
+- **均匀分配代理**：一键把代理池按 `主 = 池[i%N]、备 = 池[(i+1)%N]` 分给全部账号（覆盖已有绑定）。
 - 绑定的代理若已从池中删除，行尾显示 ⚠，修复前该账号一直被跳过。
 
 **状态说明**：active 可用；cooldown 冷却中（429 触发，显示预计恢复时间，到期自动恢复）；expired 已失效（refresh token 被上游拒绝，需重新添加）。
@@ -149,9 +149,9 @@ global:<model>    # 国际账号路由
 
 - `data/workbuddy/auths/`：OAuth 凭证。
 - `data/workbuddy/config.json`、`state.json`、`model.json`：配置、池状态和模型目录。
-- `data/.workbuddy-proxies.json`：WorkBuddy UID 到主/辅出口的持久化绑定。
+- `data/.workbuddy-proxies.json`：WorkBuddy UID 到主/备用出口的持久化绑定。
 
-代理隔离启用时，新账号首次发生已认证上游请求后按代理池顺序分配稳定主/辅出口。账号聊天、余额、签到、任务和上报等已认证请求都走绑定出口；主出口不可用走辅出口，两者都冷却或已从池中删除时直接失败，不回退直连或其他出口。可调用以下管理 API 排障：
+代理隔离启用时，新账号首次发生已认证上游请求后按代理池顺序分配稳定主/备用出口。账号聊天、余额、签到、任务和上报等已认证请求都走绑定出口；主出口不可用走备用出口，两者都冷却或已从池中删除时直接失败，不回退直连或其他出口。可调用以下管理 API 排障：
 
 ```text
 GET  /admin/api/workbuddy/proxy
@@ -168,9 +168,9 @@ POST /admin/api/workbuddy/proxy/clear
 - **代理池的使用范围**（面板「全局策略」逐平台开关，默认均走代理池）：
   - Cline 上游：走代理池/直连（默认走代理池）。
   - OpenCode 上游：走代理池/直连（默认走代理池）。
-  - WorkBuddy：未绑定账号走代理池/直连（默认走代理池）；已绑定账号首次已认证请求时自动分配主/辅出口，后续聊天、定时任务与账号运维均走绑定。
+  - WorkBuddy：未绑定账号走代理池/直连（默认走代理池）；已绑定账号首次已认证请求时自动分配主/备用出口，后续聊天、定时任务与账号运维均走绑定。
 - **代理隔离**（默认启用）：
-  - 启用：绑定了主/辅代理的 Cline 账号、OpenCode key 或 WorkBuddy 账号只从绑定出口出网；双不可用即跳过该身份。
+  - 启用：绑定了主/备用代理的 Cline 账号、OpenCode key 或 WorkBuddy 账号只从绑定出口出网；双不可用即跳过该身份。
   - 关闭：忽略绑定，所有出口按上方轮转策略轮换（代理池未启用时直连）。
   - `PROXY_ISOLATION=true` 强制开启（面板只读并提示）；`false` 仅把默认值改为关闭，面板仍可修改。只接受 true/false，其他值告警并按未设置处理。
 - **冷却状态**：显示各代理的冷却截止时刻。
@@ -215,7 +215,7 @@ POST /admin/api/workbuddy/proxy/clear
 - 成功 → 清除该凭据的冷却（相当于「升级版重置」）；
 - 失败 → 按类型施加冷却（429 软限流 / 401·403 硬冷却 / 网络错误退避）。
 
-⚠️ **出口挂掉 ≠ 凭据失效。** 隔离模式下，绑定主辅出口都不可用时该凭据被整体跳过，Test 会失败并在原因里写明出口与冷却解除时刻：
+⚠️ **出口挂掉 ≠ 凭据失效。** 隔离模式下，绑定主备用出口都不可用时该凭据被整体跳过，Test 会失败并在原因里写明出口与冷却解除时刻：
 
 ```
 key#15 bound proxies unavailable (cooling or removed); probe aborted by proxy isolation:
@@ -270,7 +270,7 @@ docker cp afree-proxy:/app/data ./backup   # 备份数据
 | 账号 expired | refreshToken 被上游拒绝，重新添加账号 |
 | OpenCode 页提示 Harvester unavailable | 容器内没有 opencode CLI（罕见架构），收割降级；key 将无法 mint 会话 |
 | WorkBuddy 请求 400 model 不存在 | 网关 `/v1` 用 `wbcn:`（CN 域）/ `wbgb:`（global 域）前缀，先看 `/v1/models` 的完整 ID。旧的 `cn:` / `global:` 前缀仍然接受（为存量 IDE 配置与 combo target 保留），但面板与 `/v1/models` 展示的是 `wbcn:` / `wbgb:` |
-| WorkBuddy 请求因出口不可用失败 | 代理隔离下绑定主/辅出口都冷却或已被删除会 fail-closed；到代理池页恢复出口，或通过 `/admin/api/workbuddy/proxy` 检查/重绑 |
+| WorkBuddy 请求因出口不可用失败 | 代理隔离下绑定主/备用出口都冷却或已被删除会 fail-closed；到代理池页恢复出口，或通过 `/admin/api/workbuddy/proxy` 检查/重绑 |
 | 下拉框弹层颜色异常 | 已通过 color-scheme 修复；若仍出现，确认浏览器为较新版本 |
 | 忘记 ADMIN_PASSWORD | 改容器环境变量重建即可（数据保留） |
 | 想临时回到旧的每请求全局轮转 | 面板关闭「代理隔离」，或设 `PROXY_ISOLATION=false`（默认关闭、面板可再改；绑定被忽略，出口按轮转策略轮换） |

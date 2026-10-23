@@ -120,7 +120,7 @@ func setZenModelForTest(id, upstream string) {
 	zenModelsMu.Unlock()
 }
 
-// currentZenUpstream 测试辅助：读模型当前生效的端点。
+// currentZenUpstream 测试备助：读模型当前生效的端点。
 func currentZenUpstream(id string) string {
 	zenModelsMu.RLock()
 	defer zenModelsMu.RUnlock()

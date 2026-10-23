@@ -311,7 +311,7 @@ func TestConfigBackupOtherSection(t *testing.T) {
 }
 
 // TestConfigBackupWorkBuddyProxies 备份必须覆盖 WorkBuddy 出口绑定
-// （.workbuddy-proxies.json）：往返后主/辅出口原样还原。
+// （.workbuddy-proxies.json）：往返后主/备用出口原样还原。
 func TestConfigBackupWorkBuddyProxies(t *testing.T) {
 	t.Run("export writes workBuddyProxies", func(t *testing.T) {
 		b := configBackup{

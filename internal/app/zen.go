@@ -329,9 +329,9 @@ type zenConfigData struct {
 	// 只读）；env=false 仅把默认值改为关闭，面板仍可修改（见 proxyIsolationEnabled）。
 	// 指针三态是为了旧配置文件缺字段时默认进入隔离模式，而不是静默退回旧规则。
 	ProxyIsolation *bool `json:"proxyIsolation,omitempty"`
-	// 辅代理开关（proxy_binding.go）。nil = 未配置 = 关闭（默认）：主代理不可用
-	// 时不尝试辅代理，该身份本次直接跳过（仍然绝不回退直连）。显式 true 才启用
-	// "主不通走辅"的兜底。默认值与 ProxyIsolation 相反 —— 兜底是有意开启的行为，
+	// 备用代理开关（proxy_binding.go）。nil = 未配置 = 关闭（默认）：主代理不可用
+	// 时不尝试备用代理，该身份本次直接跳过（仍然绝不回退直连）。显式 true 才启用
+	// "主不通走备"的兜底。默认值与 ProxyIsolation 相反 —— 兜底是有意开启的行为，
 	// 不该因为旧配置文件缺字段而被静默打开。
 	BackupProxyEnabled *bool `json:"backupProxyEnabled,omitempty"`
 	// 自动分配排除表（"平台级代理黑名单"）：代理池条目（与 Proxies 同一字符串
@@ -344,7 +344,7 @@ type zenConfigData struct {
 	// 不限）。同样只约束自动分配路径；一键代理每代理至多用一次，实际生效场景
 	// 是延迟重排的供给容量（超限的既有绑定不冻结，由重排逐步消化）。
 	ProxyBindCaps map[string]int `json:"proxyBindCaps,omitempty"`
-	// zen key 的代理绑定表：key 明文 -> 主/辅代理。与 Keys 分开存 —— env
+	// zen key 的代理绑定表：key 明文 -> 主/备用代理。与 Keys 分开存 —— env
 	// ZEN_KEYS 注入的 key 无需改动即获得"未绑定走全局规则"的兜底语义。
 	// 面板永不回传本表（key 明文不出口），绑定随 keyStates 按索引下发。
 	KeyBindings map[string]zenProxyBinding `json:"keyBindings,omitempty"`
@@ -540,7 +540,7 @@ func reorderZenKeys(order []int) error {
 	return nil
 }
 
-// zenProxyBinding 一个 zen key 或 cline 账号的出口绑定：主代理优先，辅代理
+// zenProxyBinding 一个 zen key 或 cline 账号的出口绑定：主代理优先，备用代理
 // 兜底；两者都不可用时跳过该身份（隔离优先于可用性）。
 type zenProxyBinding struct {
 	Main   string `json:"main,omitempty"`
@@ -875,7 +875,7 @@ var (
 )
 
 // pickZenKey round-robin 选取一个未冷却的 key；全部冷却时按轮转顺序返回下一个。
-// 隔离模式（proxy_binding.go）下，绑定主辅出口都不可用的 key 被排除出所有
+// 隔离模式（proxy_binding.go）下，绑定主备用出口都不可用的 key 被排除出所有
 // 候选轮 —— 隔离优先于可用性；全部 key 都被挡住时返回 ""，调用方报
 // "无可用出口"而不是静默直连。返回 "" 也表示未配置任何 key。
 func pickZenKey() string {
@@ -2091,7 +2091,7 @@ func callZenResponsesAPI(ctx context.Context, params map[string]any, stream bool
 		if key == "" {
 			return nil, rateLimited, fmt.Errorf("no zen key routable: all configured keys' bound proxies are cooling or removed (proxy isolation)")
 		}
-		// 出口由 key 决定：隔离模式下同一 key 永远从绑定 IP 出现（主→辅）；
+		// 出口由 key 决定：隔离模式下同一 key 永远从绑定 IP 出现（主→备）；
 		// 绑定出口全不可用时短冷却该 key 并清空 retryKey 换下一个 —— 绝不
 		// 退回其他出口（那会让粘性会话的 IP 漂移）。
 		proxyURL, pidx, exitOK := zenAttemptExit(key)

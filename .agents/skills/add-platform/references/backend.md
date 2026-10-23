@@ -59,9 +59,9 @@ WB 特例：`/admin/api/workbuddy/enabled` 注册在 proxy.go（workbuddy 路由
 
 ## 6. 代理池与出口绑定
 
-- 绑定模型：per-identity 主/辅双槽（前端 `egComboHTML` 渲染 `.eg-input`，`data-eg`/`data-egid`/`data-slot`），提交走 `egCommit`（暂存语义，随平台保存按钮生效）。存储与解析参照 `proxy_binding.go`。
+- 绑定模型：per-identity 主/备双槽（前端 `egComboHTML` 渲染 `.eg-input`，`data-eg`/`data-egid`/`data-slot`），提交走 `egCommit`（暂存语义，随平台保存按钮生效）。存储与解析参照 `proxy_binding.go`。
 - 出站消费：平台出站 client 按 identity 取绑定出口（参照 `workbuddyProxyFor` / zen 对应物），无绑定 → 平台默认（走池下拉决定代理/直连）。
-- 隔离语义：主出口冷却/失效 → 该 identity 本轮跳过，**辅不接、直连不回退**；辅代理开关关闭时辅槽只读并跟随主槽（`egApplyMainLinkage`）。绑定引用了已不存在的池出口 → 前端 ⚠ 告警标记（隔离逻辑会跳过）。
+- 隔离语义：主出口冷却/失效 → 该 identity 本轮跳过，**备不接、直连不回退**；备用代理开关关闭时备用槽只读并跟随主槽（`egApplyMainLinkage`）。绑定引用了已不存在的池出口 → 前端 ⚠ 告警标记（隔离逻辑会跳过）。
 - "清空代理"端点（`proxy/clear`）：清绑定 + **全部置禁用**（一个事务语义，前后端都要绑 together）。
 - 出口观测：upstream client 的 `ObserveProxy` 钩子（出口成败 → 在线率统计，纯被动展示）；X 的出站若走自建 client，记得接 `recordProxyOutcome`。
 - 代理池页健康统计为纯展示，不联动路由。
@@ -96,7 +96,7 @@ WB 特例：`/admin/api/workbuddy/enabled` 注册在 proxy.go（workbuddy 路由
 
 **app 桥接**（`internal/app/<x>.go`，照 openrouter.go 的函数族）：
 - `init<X>()` 装配（Load 配置 + 目录同步）+ `start<X>ModelsRefresher()` 周期刷新（init() 或 StartProxy 里启动）。
-- `handle<X>Chat`：前缀剥离 → key 轮转/绑定出口解析（`egress` 语义与 zen 同：绑定的主→辅，全不可用则短冷却跳过，绝不直连回退）→ 出站 → 错误分类（429 短冷却/403/配额耗尽长冷却）。
+- `handle<X>Chat`：前缀剥离 → key 轮转/绑定出口解析（`egress` 语义与 zen 同：绑定的主→备，全不可用则短冷却跳过，绝不直连回退）→ 出站 → 错误分类（429 短冷却/403/配额耗尽长冷却）。
 - handler 族：`handle<X>Config{,Update}`、`handle<X>Key{SetRouting,SetRoutingAll,Reorder,Delete,SetProxy,ClearProxies,Test}`、`handle<X>ModelsRefresh`、`orCloneConfig` 式深拷贝助手（**每张 map 都拷**）。
 - 接线清单：admin.go 路由段、proxy.go 分发链 `HasPrefix` 分支、logs.go 统计桶、combos.go 白名单+target 分支、admin_html.go 全套（见 frontend.md）、admin_data.go delete-all 清单、/v1/models 合并。
 

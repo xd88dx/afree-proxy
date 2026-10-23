@@ -16,7 +16,7 @@ import (
 )
 
 // workbuddyProxyBinding 是 WorkBuddy 账号的出口绑定。值语义与现有 Cline/zen
-// 绑定一致：主优先、辅兜底；两者都不可用 = 该账号本次请求直接失败（隔离优先），
+// 绑定一致：主优先、备兜底；两者都不可用 = 该账号本次请求直接失败（隔离优先），
 // 绝不退回直连或其他出口。空绑定 = 尚未分配；代理池为空时等价于直连。
 type workbuddyProxyBinding struct {
 	Main   string `json:"main,omitempty"`
@@ -75,7 +75,7 @@ func saveWorkbuddyProxyBindingsLocked() {
 
 // workbuddyProxyFor 是 upstream.ProxyFor 的实现。语义与 Cline/OpenCode 一致：
 //   - 隔离关闭：忽略绑定，未绑定出口按全局走池开关轮转（开关关 = 直连）。
-//   - 隔离开启且账号有绑定：主代理优先、辅代理兜底，双不可用 fail-closed。
+//   - 隔离开启且账号有绑定：主代理优先、备用代理兜底，双不可用 fail-closed。
 //   - 隔离开启且账号未绑定：沿用全局走池开关；显式绑定 "direct" 才强制直连。
 func workbuddyProxyFor(a *wbauth.Auth) (string, bool) {
 	if a == nil {

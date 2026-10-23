@@ -21,8 +21,8 @@ import (
 // 出口 IP 上轮流出现多个账号"——两者都是典型风控红旗。
 //
 // 规则（默认启用）：
-//   - 每个账号 / zen key 可绑定一个主代理和一个辅代理；请求永远从绑定出口
-//     发出，主可用走主，主不可用走辅（辅代理开关打开时）。
+//   - 每个账号 / zen key 可绑定一个主代理和一个备用代理；请求永远从绑定出口
+//     发出，主可用走主，主不可用走备（备用代理开关打开时）。
 //   - 两者都不可用（冷却中，或已从代理池删除）时，该身份在选号阶段被整体
 //     跳过 —— 隔离优先于可用性，绝不退回其他出口或直连。
 //   - 未绑定任何代理的身份沿用全局规则（cline/zen/workbuddy 各看面板的全局
@@ -34,8 +34,8 @@ import (
 //   - ProxyIsolation（nil = 默认启用），PROXY_ISOLATION env 只接受 true/false：
 //     true 强制开启且面板只读；false 仅把默认值改为关闭，面板仍可修改。关闭
 //     即完全回到旧版"请求级全局轮转"，绑定字段被忽略。
-//   - BackupProxyEnabled（nil = 默认关闭）：关闭时辅槽整体失效，主代理不可用
-//     即跳过该身份，不再尝试辅代理 —— 隔离语义不变，依然绝不回退直连。
+//   - BackupProxyEnabled（nil = 默认关闭）：关闭时备用槽整体失效，主代理不可用
+//     即跳过该身份，不再尝试备用代理 —— 隔离语义不变，依然绝不回退直连。
 
 // proxyIsolationEnv 解析 PROXY_ISOLATION：只接受 true/false（大小写不敏感），
 // 其他值告警并按未设置处理。返回 (值, 是否有效设置)。
@@ -121,31 +121,31 @@ func proxyAvailableURL(raw string) bool {
 	return zenProxyAvailable(idx)
 }
 
-// egressDirect 直连哨兵：绑定主/辅槽位存 "direct" 表示该槽位选择直连出口。
-// 主 = direct → 该身份强制直连（辅无意义）；主 = 代理、辅 = direct → 主不可用
+// egressDirect 直连哨兵：绑定主/备用槽位存 "direct" 表示该槽位选择直连出口。
+// 主 = direct → 该身份强制直连（备无意义）；主 = 代理、备 = direct → 主不可用
 // 时直连兜底。哨兵不会与真实代理 URL 冲突（代理必须带 scheme://host:port）。
 const egressDirect = "direct"
 
 // isEgressDirect 判断槽位值是否为直连哨兵。
 func isEgressDirect(v string) bool { return v == egressDirect }
 
-// backupProxyEnabled 辅代理开关（zen 配置持久化 BackupProxyEnabled）：
-// nil = 未配置 = 关闭（默认）。关闭时"主不通走辅"的兜底不存在，主出口不可用
+// backupProxyEnabled 备用代理开关（zen 配置持久化 BackupProxyEnabled）：
+// nil = 未配置 = 关闭（默认）。关闭时"主不通走备"的兜底不存在，主出口不可用
 // 就等于该身份本轮不可用（调用方跳过）—— 隔离优先不变，仍然绝不回退直连。
 func backupProxyEnabled() bool {
 	v := getZenConfig().BackupProxyEnabled
 	return v != nil && *v
 }
 
-// resolveBackupSlot 按辅代理开关决定落盘的辅槽值。
+// resolveBackupSlot 按备用代理开关决定落盘的备用槽值。
 //
-// 开关开启：辅槽参与路由，采纳调用方提交的值。
-// 开关关闭：辅槽整体退出路由（pickBoundProxy 在此分支直接返回 ok=false），
-//   面板把辅槽锁成只读并跟随主槽，提交上来的值只是显示值而非用户意图，
-//   此时保留该身份已持久化的旧辅槽原值 —— 重开开关即可复用，无需重选。
+// 开关开启：备用槽参与路由，采纳调用方提交的值。
+// 开关关闭：备用槽整体退出路由（pickBoundProxy 在此分支直接返回 ok=false），
+//   面板把备用槽锁成只读并跟随主槽，提交上来的值只是显示值而非用户意图，
+//   此时保留该身份已持久化的旧备用槽原值 —— 重开开关即可复用，无需重选。
 //   保留而非清空是刻意的：清空会让"关一下开关"变成不可逆的数据丢失。
 //
-// 旧值由调用方从当前绑定里取出（storedBackup），空串表示此前没有辅槽。
+// 旧值由调用方从当前绑定里取出（storedBackup），空串表示此前没有备用槽。
 func resolveBackupSlot(submitted, storedBackup string) string {
 	if backupProxyEnabled() {
 		return submitted
@@ -153,10 +153,10 @@ func resolveBackupSlot(submitted, storedBackup string) string {
 	return storedBackup
 }
 
-// pickBoundProxy 为一次上游尝试从绑定对中选可用出口：主优先，辅兜底
-// （辅代理开关关闭时辅槽整体失效，退化为"只看主槽"）。直连哨兵视为"总是
+// pickBoundProxy 为一次上游尝试从绑定对中选可用出口：主优先，备兜底
+// （备用代理开关关闭时备用槽整体失效，退化为"只看主槽"）。直连哨兵视为"总是
 // 可用"的出口（返回 ("", -1, true)，调用方按直连发出）。两者都不可用返回
-// ok=false —— 调用方（隔离模式）必须跳过该身份。主辅相同视为一个出口
+// ok=false —— 调用方（隔离模式）必须跳过该身份。主备相同视为一个出口
 // （面板已阻止这样配置，防御性兜底）。
 // pickBoundProxy 为一次上游尝试从绑定对中选可用出口。返回的 proxyURL 是
 // **池内当前地址**：绑定行可能因订阅更新只保留旧端口/凭据（备注名相同即
@@ -185,7 +185,7 @@ func pickBoundProxy(main, backup string) (proxyURL string, idx int, ok bool) {
 }
 
 // boundProxiesRoutable 绑定对里是否还有可用出口。双空 = 未绑定 = 可路由
-// （未绑定身份走全局规则，不算被隔离挡住）。辅代理开关关闭时只剩辅槽的绑定
+// （未绑定身份走全局规则，不算被隔离挡住）。备用代理开关关闭时只剩备用槽的绑定
 // （主槽为空）同样不可路由 —— 那种状态面板产不出来，只在手改配置文件时出现，
 // 一律按"该身份没有出口"处理并跳过，不退回全局规则（那可能是直连）。
 func boundProxiesRoutable(main, backup string) bool {
@@ -287,7 +287,7 @@ func workbuddyProxiesEnabled() bool {
 	return *wup
 }
 
-// zenAttemptExit 为一次 zen 上游尝试解析出口。key 有绑定时（隔离模式）主→辅，
+// zenAttemptExit 为一次 zen 上游尝试解析出口。key 有绑定时（隔离模式）主→备，
 // 双不可用返回 ok=false —— 调用方对 pinned 探测直接报错，正常请求则短冷却
 // 该 key 换下一个（绝不退回其他出口，否则粘性会话的 IP 就漂移了）；未绑定
 // key 沿用全局轮转（未配置代理则直连）。
@@ -303,7 +303,7 @@ func zenAttemptExit(key string) (proxyURL string, idx int, ok bool) {
 	return pickBoundProxy(main, backup)
 }
 
-// proxyExitType 请求日志"代理类型"列的取值：绑定主代理返回 "main"，绑定辅
+// proxyExitType 请求日志"代理类型"列的取值：绑定主代理返回 "main"，绑定备
 // 代理返回 "backup"，直连出口（绑定的直连哨兵或未绑定直连）返回 "direct"；
 // 全局代理池轮转或未命中上游返回 ""（面板显示 -）。
 func proxyExitType(proxyURL, main, backup string, bound bool) string {
@@ -366,13 +366,13 @@ func zenKeyBindingOf(key string) (main, backup string, bound bool) {
 }
 
 // validateProxyBinding 校验一对绑定：代理槽位要么为空（全局）、要么是当前
-// 代理池里真实存在的代理、要么是直连哨兵；主辅不能是同一个代理（否则"辅"
-// 毫无意义，还掩盖配置错误）。主 = 直连时辅只能是空或直连（UI 会自动跟随
+// 代理池里真实存在的代理、要么是直连哨兵；主备不能是同一个代理（否则"备"
+// 毫无意义，还掩盖配置错误）。主 = 直连时备只能是空或直连（UI 会自动跟随
 // 锁定）。允许 socks5 —— 网关上游请求支持全部协议；收割机 CLI 的 socks5 由
 // 本地桥兑现（socks_bridge.go），不依赖 CLI 自身。
 //
-// main == backup 这条在辅代理开关关闭时放行：关闭态下辅槽只是被保留、并不
-// 参与路由（pickBoundProxy 会在该分支直接返回 ok=false），面板又把辅槽锁成
+// main == backup 这条在备用代理开关关闭时放行：关闭态下备用槽只是被保留、并不
+// 参与路由（pickBoundProxy 会在该分支直接返回 ok=false），面板又把备用槽锁成
 // 跟随主槽，用户完全无法主动制造这个组合 —— 它只可能来自"关闭前 main=a /
 // backup=b，之后把 main 改成 b"这类正常操作。拦住它只会让用户改不动主槽。
 func validateProxyBinding(main, backup string) error {

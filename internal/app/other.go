@@ -18,7 +18,7 @@ import (
 //
 // Other 页下挂多个子平台（小企业上游，自定义前缀）：每子平台独立 key 池 +
 // 模型勾选目录，请求按 "<prefix>:<model-id>" 路由到对应 BaseURL。与 amd /
-// tokenharbor 同构（key 轮转 / 401·429 冷却 / 主辅代理绑定 / 面板暂存编辑），
+// tokenharbor 同构（key 轮转 / 401·429 冷却 / 主备代理绑定 / 面板暂存编辑），
 // 区别是平台数量动态，管理 API 全部带 slug。
 
 // otherConfigPath Other 配置文件路径（DATA_DIR/.other-config.json）。
@@ -111,7 +111,7 @@ func otherModelList() []map[string]any {
 
 // otherExitFn 平台未绑定 key 的出口解析（与 amd/tokenharbor 同语义）：
 // 未绑定 = 全局规则（Other 全局开关关则直连，否则共享代理池轮转）；
-// 绑定 = 主/辅出口，双不可用 = 本轮跳过（隔离优先于可用性）。
+// 绑定 = 主/备用出口，双不可用 = 本轮跳过（隔离优先于可用性）。
 func otherExitFn(p *other.Platform) func(key string) (string, bool) {
 	return func(key string) (string, bool) {
 		if key == "" {
@@ -935,7 +935,7 @@ func handleOtherModelsSelected(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// ============ 辅助 ============
+// ============ 备助 ============
 
 // otherCloneConfig 写时复制：深拷贝全部子平台（含运行时表）。
 func otherCloneConfig() (*other.Config, *other.Config) {

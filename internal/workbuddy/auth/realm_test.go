@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-// withGlobalEnabled 临时打开 global realm 开关（生产缺省即开，此辅助仅显式确保），
+// withGlobalEnabled 临时打开 global realm 开关（生产缺省即开，此备助仅显式确保），
 // 测试结束复位为开启态（缺省）。
 func withGlobalEnabled(t *testing.T) {
 	t.Helper()

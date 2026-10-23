@@ -13,7 +13,7 @@ import (
 // ============ 配置与数据模型 ============
 
 // Config 是 OpenRouter 平台的全部可配置状态，落盘于 DATA_DIR/.or-config.json。
-// 与 zen 的 zenConfigData 同构（多 key 池 + 主/辅代理绑定 + 路由参与表），
+// 与 zen 的 zenConfigData 同构（多 key 池 + 主/备用代理绑定 + 路由参与表），
 // 复用 afree-proxy 主包已有的代理池与隔离语义，但**自成独立池**：
 // 模型目录、凭据、token 记账、绑定都不与 zen/cline/workbuddy 混用。
 type Config struct {
@@ -26,7 +26,7 @@ type Config struct {
 	// KeyRoutingEnabled 路由参与表：key 明文 -> 是否进入请求轮转（面板"启用"列）。
 	// nil/缺项 = 参与。新增 key 默认 false（三平台统一口径），需面板勾选启用。
 	KeyRoutingEnabled map[string]bool `json:"keyRoutingEnabled,omitempty"`
-	// KeyBindings 出口绑定表：key 明文 -> 主/辅代理。隔离模式下绑定决定出口。
+	// KeyBindings 出口绑定表：key 明文 -> 主/备用代理。隔离模式下绑定决定出口。
 	KeyBindings map[string]Binding `json:"keyBindings,omitempty"`
 	// MaxConcurrency 上游最大并发（防 worker 瞬时超限），默认 8。
 	MaxConcurrency int `json:"maxConcurrency"`
@@ -39,7 +39,7 @@ type Config struct {
 	Cool map[string]time.Time `json:"-"`
 }
 
-// Binding 一个 key 的出口绑定：主代理优先、辅代理兜底；双不可用 = 该 key
+// Binding 一个 key 的出口绑定：主代理优先、备用代理兜底；双不可用 = 该 key
 // 本轮跳过（隔离优先于可用性，绝不回退直连）。空值 = 未绑定 = 走全局规则。
 type Binding struct {
 	Main   string `json:"main,omitempty"`

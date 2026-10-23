@@ -1740,7 +1740,7 @@ const I18N_ZH = {
   'Test all': '批量测试',
   'Disable all': '一键禁用',
   'Bind proxies in order': '一键代理',
-  'Bind main proxy by row order: 1st credential to Direct, then the proxy pool in order (staged - click Save to apply; enable/disable and backup untouched)': '按行序依次绑定主代理：第1个凭据绑直连，之后依次对应代理池（仅暂存，点保存才生效；不影响启用状态与辅代理）',
+  'Bind main proxy by row order: 1st credential to Direct, then the proxy pool in order (staged - click Save to apply; enable/disable and backup untouched)': '按行序依次绑定主代理：第1个凭据绑直连，之后依次对应代理池（仅暂存，点保存才生效；不影响启用状态与备用代理）',
   'No credentials to bind': '当前页没有可绑定的凭据',
   'Proxy pool is empty': '代理池为空，无法按序绑定',
   'Already bound in this order': '当前已是该顺序，无需改动',
@@ -1752,8 +1752,6 @@ const I18N_ZH = {
   // 自动分配规则（代理池页：平台级代理黑名单 + 每代理绑定上限）
   'Auto-assign rules': '自动分配规则',
   'Platform': '平台',
-  'Per-proxy cap': '单代理上限',
-  '0 = unlimited': '0 = 不限',
   'Excluded proxies': '排除的代理',
   'Exclude Direct': '排除直连',
   'Add excluded proxy': '添加排除代理',
@@ -1763,7 +1761,8 @@ const I18N_ZH = {
   'Add proxy': '添加',
   'Remove': '移除',
   'Nothing excluded': '未排除',
-  'per proxy': '个/代理',
+  'Max reuse per proxy': '代理最多复用',
+  'times': '次',
   'Search and add a proxy…': '搜索并添加代理…',
   'No match': '无匹配代理',
   ' sub-platform(s) · each configured separately': ' 个子平台 · 各自独立配置',
@@ -1771,8 +1770,8 @@ const I18N_ZH = {
   'Reorder credential proxies by latency': '凭据代理延迟重排',
   'Proxy isolation: each credential only egresses via its bound exits; when none is available it is skipped — never another exit or direct. Forced on when': '代理隔离：每个凭据只从绑定的出口出站，都不可用则跳过——绝不改走其他出口或直连。设有',
   '=true.': '=true 时强制开启。',
-  'Backup proxy — off by default: every identity uses its main proxy only; a cooling or removed main proxy is skipped for that round. On: the backup proxy serves as the fallback for the main one.': '辅代理：默认关闭——每个身份只走主代理，主代理冷却或被移除时直接跳过。开启后：备用代理作为主代理的兜底。',
-  'Platform-level blacklist and per-proxy binding cap for automatic assignment only — one-click bind and reorder-by-latency. Manual bindings and runtime routing are never restricted.': '仅作用于自动分配——「一键代理」与「凭据延迟重排」两个批量操作；手动绑定和运行期路由不受限制。例：某代理出口 IP 已耗尽 zen 免费额度，把它排除出 zen，批量操作就不会再把 zen 凭据绑到它上面。',
+  'Backup proxy — off by default: every identity uses its main proxy only; a cooling or removed main proxy is skipped for that round. On: the backup proxy serves as the fallback for the main one.': '备用代理：默认关闭——每个身份只走主代理，主代理冷却或被移除时直接跳过。开启后：备用代理作为主代理的兜底。',
+  'Platform-level blacklist and per-proxy binding cap for automatic assignment only — one-click bind and reorder-by-latency. Manual bindings and runtime routing are never restricted.': '仅作用于自动分配——「一键代理」与「凭据延迟重排」两个批量操作；手动绑定和运行期路由不受限制。',
   'Excluded': '已排除',
   ' · excluded': ' · 已排除',
   'Auto-assign rules: ': '自动分配规则：',
@@ -1950,14 +1949,14 @@ const I18N_ZH = {
   'are counted locally by this proxy (input+output; exact when upstream returns usage, otherwise estimated from the request body) to gauge headroom before official rate limits. The Test button sends a real probe request. The Reset button': '由本代理本地统计（输入+输出；上游返回 usage 时精确，否则按请求体估算），用于判断距离官方限流还有多少余量。Test 按钮发送一次真实探测请求。Reset 按钮 ',
   'probes upstream rate-limit status': '探测上游限流状态',
   ": if still limited it stays in cooldown and shows the estimated recovery time; only a passing probe lifts the cooldown and resets today's stats.": '：若仍在限流则保持冷却并显示预计恢复时间；只有探测通过才会解除冷却并重置今日统计。',
-  '(isolation mode, on by default): a bound account always egresses via its main proxy, falls back to the backup, and is': '（隔离模式，默认开启）：绑定的账号永远从主代理出网，主不可用落到辅代理；',
+  '(isolation mode, on by default): a bound account always egresses via its main proxy, falls back to the backup, and is': '（隔离模式，默认开启）：绑定的账号永远从主代理出网，主不可用落到备用代理；',
   'skipped entirely': '完全跳过',
   'while both are unavailable — never routed through another exit. Configure the list on the': '两者都不可用时整个账号被跳过 —— 绝不路由到其他出口。代理列表在',
   'page.': ' 页配置。',
   'Counted locally by this proxy — not the official free quota': '本代理本地统计 —— 非官方免费额度',
   'Main exit first, backup as fallback; both down = row skipped (isolation).': '主出口优先，备用兜底；都不可用即跳过该行（隔离模式）。',
   'Main exit — used whenever available': '主出口 —— 可用即优先',
-  'Backup exit — used when main is cooling/removed': '辅出口 —— 主冷却/被删时使用',
+  'Backup exit — used when main is cooling/removed': '备用出口 —— 主冷却/被删时使用',
   'Bound proxy is no longer in the proxy pool — skipped until fixed': '绑定的代理已不在代理池中——修复前跳过该行。',
   'session minted': '会话铸造于',
   // 添加账号弹窗（accAddDialog，Cline 页"添加账号"按钮）
@@ -2038,7 +2037,7 @@ const I18N_ZH = {
   'Disabled — ignore bindings; exits rotate per the strategy above (direct when pool off)': '关闭 —— 忽略绑定；出口按上方轮转策略轮换（未启用代理池时直连）',
   'Isolation on: identities egress only via their bound exits (main → backup); both down = skipped — never another exit or direct. Forced on when': '开启隔离：每个身份只从绑定的出口出站（主→备）；都不可用即跳过——绝不改走其他出口或直连。设有',
   '=true.': '=true 时强制开启。',
-  'Enable backup proxies': '启用辅代理',
+  'Enable backup proxies': '启用备用代理',
   'Off by default: main proxy only — cooling/removed = skipped for that round. On: backup acts as fallback.': '默认关闭：每个身份只走主代理——主代理冷却或被移除时该轮直接跳过。开启后：备用代理作为主代理的兜底。',
   // 网关设置页
   'API keys': 'API key',
@@ -2077,7 +2076,7 @@ const I18N_ZH = {
   'Route': '路由',
   'Upstream': '凭据',
   'Main': '主',
-  'Backup': '辅',
+  'Backup': '备',
   'Direct': '直连',
   'Status': '状态',
   'Duration': '耗时',
@@ -2294,7 +2293,7 @@ const I18N_ZH = {
   'OpenCode config saved': 'OpenCode 配置已保存',
   'Follows the main slot': '跟随主出口',
   'PROXY_ISOLATION=true is set — isolation is forced on. Unset the env var (or set it to false) to control isolation from the panel.': '已设置 PROXY_ISOLATION=true —— 隔离被强制开启。删除该环境变量（或设为 false）才能在面板控制隔离。',
-  'Backup proxies are disabled — follows the main slot': '辅代理已关闭 —— 跟随主代理',
+  'Backup proxies are disabled — follows the main slot': '备用代理已关闭 —— 跟随主代理',
   'Admin access logging enabled': '已开启管理页访问日志',
   'Admin access logging disabled': '已关闭管理页访问日志',
   'Paused': '已暂停',
@@ -2573,11 +2572,11 @@ function wbBindingCell(account) {
   const binding = (wbProxyCache.bindings || {})[id] || {};
   const main = String(binding.main ?? binding.main_proxy_id ?? '');
   const backup = String(binding.backup ?? binding.backup_proxy_id ?? '');
-  // 辅代理开关关闭 → 辅槽只读跟随主槽（同主=全局/直连 时的联动）
+  // 备用代理开关关闭 → 备用槽只读跟随主槽（同主=全局/直连 时的联动）
   const backupLocked = !backupProxyOn || main === '' || main === EGRESS_DIRECT;
   const backupVal = backupLocked ? main : backup;
-  // 快照记渲染后的生效值（辅槽锁定时 = 主槽），保存 diff 与之同口径。
-  // 若拿原始绑定值对比，锁定显示本身就会被误判成用户修改——辅代理开关
+  // 快照记渲染后的生效值（备用槽锁定时 = 主槽），保存 diff 与之同口径。
+  // 若拿原始绑定值对比，锁定显示本身就会被误判成用户修改——备用代理开关
   // 关闭时每行都中（保存提示 N 个账号全改过，实际只改了一项）。
   if (wbSnapshot[id]) { wbSnapshot[id].main = main; wbSnapshot[id].backup = backupVal; }
   const stale = proxyStale;
@@ -3393,7 +3392,7 @@ async function loadAccounts() {
       const pBackup = a.proxyBackup || '';
       const isStale = proxyStale;
       const stale = isStale(pMain) || isStale(pBackup);
-      // 主 = 全局/直连 时辅跟随锁定（渲染期同样生效）；辅代理开关关闭时同理。
+      // 主 = 全局/直连 时备跟随锁定（渲染期同样生效）；备用代理开关关闭时同理。
       const backupLocked = !backupProxyOn || pMain === '' || pMain === EGRESS_DIRECT;
       const backupVal = backupLocked ? pMain : pBackup;
       const bindCell = '<td style="white-space:nowrap">' +
@@ -3464,8 +3463,8 @@ const proxyStale = v => {
   if (!a) return !proxyListCache.includes(v);
   return !proxyListCache.some(p => proxyAliasOf(p) === a);
 };
-// backupProxyOn 辅代理开关（代理池页，持久化在 zen 配置里，默认关闭）。
-// 关闭时辅槽整体失效：下拉只读并强制跟随主槽，保存后该身份只剩主出口。
+// backupProxyOn 备用代理开关（代理池页，持久化在 zen 配置里，默认关闭）。
+// 关闭时备用槽整体失效：下拉只读并强制跟随主槽，保存后该身份只剩主出口。
 // 默认 false 与后端一致 —— 首次渲染就是关闭态，避免开关未拉到就先解锁。
 let backupProxyOn = false;
 async function loadProxyListCache() {
@@ -3596,7 +3595,7 @@ function clearDirtyMarks(tbodyId, btnId) {
   const btn = _(btnId);
   if (btn) btn.classList.remove('dirty-hint');
 }
-// 清空单行代理绑定（暂存）：主=全局时辅自动跟随锁定
+// 清空单行代理绑定（暂存）：主=全局时备自动跟随锁定
 function stageRowBindingClear(row, kind) {
   const main = row.querySelector('.eg-input[data-eg="' + kind + '"][data-slot="main"]');
   if (!main) return false;
@@ -3614,8 +3613,8 @@ const BIND_TBODY = { acc: '#accountTableBody', key: '#ocKeysBody', wb: '#wbAccou
 
 // 一键代理：按行序把主代理依次绑定为 [直连, 代理池第1项, 代理池第2项, ...]。
 // 仅暂存——与 Enable/Disable all、Clear bindings 同一口径，必须点 Save 才落盘。
-// 不碰启用/禁用状态，也不主动写辅代理（辅槽只随既有的 egApplyMainLinkage 联动规则
-// 跟随主槽；需要自定义辅代理请在开启辅代理后手动改）。
+// 不碰启用/禁用状态，也不主动写备用代理（备用槽只随既有的 egApplyMainLinkage 联动规则
+// 跟随主槽；需要自定义备用代理请在开启备用代理后手动改）。
 // 凭据多于代理时，多余的行保持原绑定不动。
 function stageProxiesByOrder(kind) {
   const tbody = BIND_TBODY[kind];
@@ -4014,7 +4013,7 @@ function egSyncBadge(input) {
   if (html) wrap.insertAdjacentHTML('beforeend', html);
 }
 function egComboHTML(kind, id, slot, value, title, disabled) {
-  // 只读态的原因决定提示文案：辅代理开关关闭 ≠ 主槽是全局/直连
+  // 只读态的原因决定提示文案：备用代理开关关闭 ≠ 主槽是全局/直连
   const t = disabled
     ? T(slot === 'backup' && !backupProxyOn ? 'Backup proxies are disabled — follows the main slot' : 'Follows the main slot')
     : title;
@@ -4025,10 +4024,10 @@ function egComboHTML(kind, id, slot, value, title, disabled) {
     badge +
     '</span>';
 }
-// 主槽位联动：主 = 全局/直连 时辅自动跟随相同值并只读；主 = 代理时辅解锁。
-// 辅代理开关关闭时辅槽无条件只读并跟随主槽 —— 关闭态下辅槽不参与出口选择，
+// 主槽位联动：主 = 全局/直连 时备自动跟随相同值并只读；主 = 代理时备解锁。
+// 备用代理开关关闭时备用槽无条件只读并跟随主槽 —— 关闭态下备用槽不参与出口选择，
 // 留着可编辑只会让用户以为绑定生效了。
-// 被锁定期间辅的旧值会被跟随值覆盖（解锁后辅回到"全局"，可重新选择）。
+// 被锁定期间备的旧值会被跟随值覆盖（解锁后备回到"全局"，可重新选择）。
 function egApplyMainLinkage(row, mainValue) {
   const backup = row ? row.querySelector('.eg-input[data-slot="backup"]') : null;
   if (!backup) return;
@@ -4979,7 +4978,7 @@ function renderOcKeyStates(ks) {
         // omitempty 下未绑定 key 没有这两个键，归一化为 ''
         const pMain = k.proxyMain || '';
         const pBackup = k.proxyBackup || '';
-        // 辅代理开关关闭 → 辅槽只读跟随主槽（key 表与账号表同规则）
+        // 备用代理开关关闭 → 备用槽只读跟随主槽（key 表与账号表同规则）
         const backupLocked = !backupProxyOn || pMain === '' || pMain === EGRESS_DIRECT;
         const backupVal = backupLocked ? pMain : pBackup;
         const isStale = proxyStale;
@@ -5363,9 +5362,10 @@ function prCard(leaf, s) {
     '<div class="pr-card-head">' +
       '<span class="pr-name" title="' + esc(leaf.prefix ? k + ' · ' + leaf.prefix : k) + '">' + esc(leaf.label) + '</span>' +
       '<span class="pr-ctl">' +
-        '<span class="pr-capbox"><input class="pr-cap" id="ppCap-' + esc(k) + '" type="number" min="0" step="1" placeholder="0" value="' + (s.cap || '') + '"' +
+        '<span class="pr-capbox"><span class="pr-unit">' + T('Max reuse per proxy') + '</span>' +
+        '<input class="pr-cap" id="ppCap-' + esc(k) + '" type="number" min="0" step="1" placeholder="1" value="' + (s.cap || 1) + '"' +
         ' oninput="ppRuleCapInput(\'' + esc(k) + '\',this.value)">' +
-        '<span class="pr-unit">' + T('per proxy') + '</span></span>' +
+        '<span class="pr-unit">' + T('times') + '</span></span>' +
         '<label class="pr-switch" title="' + esc(T('Exclude Direct')) + '"><input type="checkbox"' + (s.dx ? ' checked' : '') +
         ' onchange="ppRuleToggleDirect(\'' + esc(k) + '\',this.checked)"><span>' + esc(T('Exclude Direct')) + '</span></label>' +
       '</span>' +
@@ -5525,10 +5525,10 @@ async function saveGlobalPolicy() {
   } catch (e) { toast(T('Save failed: ') + e.message, 'error'); }
 }
 
-// saveIsolationOptions 保存代理隔离区的两项：隔离模式 + 辅代理开关。两字段同在
+// saveIsolationOptions 保存代理隔离区的两项：隔离模式 + 备用代理开关。两字段同在
 // zen 配置但分两次请求下发——PROXY_ISOLATION=true 锁定面板时后端会整体拒绝携带
-// proxyIsolation 的请求，分开才能让辅代理开关在锁定态照常保存（锁定态下拉框
-// disabled，跳过第一笔）。辅代理开关联动绑定表重绘，保存失败回滚勾选。
+// proxyIsolation 的请求，分开才能让备用代理开关在锁定态照常保存（锁定态下拉框
+// disabled，跳过第一笔）。备用代理开关联动绑定表重绘，保存失败回滚勾选。
 async function saveIsolationOptions() {
   const iso = _('ppIsolation');
   if (!iso.disabled) {

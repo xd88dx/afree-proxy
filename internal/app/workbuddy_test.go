@@ -171,7 +171,7 @@ func TestAdminHTMLUsesNativeWorkBuddyConsole(t *testing.T) {
 }
 
 func TestWorkbuddyProxyBindingStableAndFailClosed(t *testing.T) {
-	// 辅代理开关打开：本用例验证"主冷却 → 辅兜底"这条路径
+	// 备用代理开关打开：本用例验证"主冷却 → 备兜底"这条路径
 	setupBindingTest(t, &zenConfigData{
 		Keys:               []string{"public"},
 		Proxies:            []string{"http://a:1", "http://b:2"},
@@ -223,7 +223,7 @@ func TestWorkbuddyProxyBindingStableAndFailClosed(t *testing.T) {
 }
 
 func TestWorkbuddyProxyBindingPersistence(t *testing.T) {
-	// 辅槽要落盘就得先打开辅代理开关（关闭时写入即被收敛为空）
+	// 备用槽要落盘就得先打开备用代理开关（关闭时写入即被收敛为空）
 	setupBindingTest(t, &zenConfigData{
 		Keys:               []string{"public"},
 		Proxies:            []string{"http://a:1", "http://b:2"},

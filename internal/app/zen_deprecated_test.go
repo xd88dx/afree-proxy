@@ -192,7 +192,7 @@ func TestAliasWinsOverDeadMark(t *testing.T) {
 	}
 }
 
-// ===== 测试辅助 =====
+// ===== 测试备助 =====
 
 func setupZenDepTest(t *testing.T, upstream *httptest.Server) {
 	t.Helper()

@@ -42,7 +42,7 @@ func handleZenConfig(w http.ResponseWriter, r *http.Request) {
 		// 禁用开关并提示）。
 		"proxyIsolation":          proxyIsolationEnabled(),
 		"proxyIsolationEnvLocked": proxyIsolationEnvLocked(),
-		// 辅代理开关：关闭时主代理不通不再尝试辅代理（绑定退化为只看主槽）。
+		// 备用代理开关：关闭时主代理不通不再尝试备用代理（绑定退化为只看主槽）。
 		"backupProxyEnabled": backupProxyEnabled(),
 		// 自动分配规则（平台级代理黑名单 / 每代理绑定上限），代理池页编辑。
 		"proxyExclusions": cfg.ProxyExclusions,

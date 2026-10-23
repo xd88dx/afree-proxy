@@ -552,7 +552,7 @@ func pickAccount() *Account {
 		if !accountPoolEnabled(a) {
 			continue
 		}
-		// 隔离模式：绑定主辅出口都不可用（冷却中/已从池中删除）的账号本轮
+		// 隔离模式：绑定主备用出口都不可用（冷却中/已从池中删除）的账号本轮
 		// 整体跳过 —— 隔离优先于可用性，绝不退回其他出口。检查在 poolMu 内
 		// 完成：读的是绑定字段本身；可用性走 zenProxyCooldownsMu/zenConfigMu，
 		// 都是叶子锁且无反向获取，无锁序风险。

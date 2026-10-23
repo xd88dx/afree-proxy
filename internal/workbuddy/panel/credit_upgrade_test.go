@@ -294,7 +294,7 @@ func (e *upgEnv) importCockpit(accounts []map[string]any) (int, string) {
 }
 
 // ---------------------------------------------------------------------------
-// 通用断言辅助
+// 通用断言备助
 // ---------------------------------------------------------------------------
 
 func upgGet(t *testing.T, p *Panel, path string) (int, string) {

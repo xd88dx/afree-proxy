@@ -62,7 +62,7 @@ type RequestLog struct {
 	Duration  int64     `json:"duration_ms"`
 	TTFB      int64     `json:"ttfb_ms,omitempty"`   // 首字节耗时：请求开始到首个响应字节写出（流式=上游首 token 到达；-1=无响应体如 413/204）
 	Upstream  string    `json:"upstream,omitempty"`  // 命中的上游：账号#N 或 key#N
-	ProxyType string    `json:"proxyType,omitempty"` // 出口代理类型：main|backup|direct（绑定主/辅/直连），空=全局池轮转/未命中上游
+	ProxyType string    `json:"proxyType,omitempty"` // 出口代理类型：main|backup|direct（绑定主/备/直连），空=全局池轮转/未命中上游
 	Error     string    `json:"error,omitempty"`     // status>=400 时的错误原因（从响应体提取），面板悬浮提示展示
 	Note      string    `json:"note,omitempty"`
 }
@@ -95,7 +95,7 @@ func setUpstreamInfo(ctx context.Context, label string) {
 	}
 }
 
-// setUpstreamExit 记录本次请求实际使用的出口代理类型（绑定主/辅）。
+// setUpstreamExit 记录本次请求实际使用的出口代理类型（绑定主/备）。
 // 覆盖规则同 setUpstreamInfo：多次尝试时后写覆盖先写。
 func setUpstreamExit(ctx context.Context, exit string) {
 	if exit == "" || ctx == nil {

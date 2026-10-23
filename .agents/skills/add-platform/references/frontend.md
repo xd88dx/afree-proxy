@@ -25,7 +25,7 @@
 
 - 表结构：手写 `<thead>`（列含 title 说明）+ `<tbody id="xxxBody">`；行由 `loadXxx()` 以 innerHTML 模板渲染，**所有插值过 `esc()`**；uid 展示 `id.slice(0,10)+'…'`，完整值进 title。
 - 暂存编辑三件套（新列/新交互必须接线）：
-  1. 快照变量：`accSnapshot` / `keySnapshot` / `wbSnapshot` / `orKeySnapshot` / `amdKeySnapshot` / `thKeySnapshot`（key 池平台另配 `<x>CfgCache` 缓存上次 GET 的 config，save 时回填不在表单里的字段）——loadXxx 时记录已保存态（代理绑定主/辅 + 启用布尔）。
+  1. 快照变量：`accSnapshot` / `keySnapshot` / `wbSnapshot` / `orKeySnapshot` / `amdKeySnapshot` / `thKeySnapshot`（key 池平台另配 `<x>CfgCache` 缓存上次 GET 的 config，save 时回填不在表单里的字段）——loadXxx 时记录已保存态（代理绑定主/备 + 启用布尔）。
   2. 脏标记：`markRowDirty(row, kind)` 加 `.tr-dirty` 黄底 + 保存按钮 `.dirty-hint`；`clearDirtyMarks(tbodyId, btnId)` 复位。
   3. 保存：`saveAccountEdits` / `saveKeyEdits` / `saveWorkbuddyEdits`（key 池族复用 saveKeyEdits 模式，逐平台一份）——逐行与快照 diff，只提交有变化的行，逐行 POST，汇总一条 toast（失败计数 + `T('Saved ')` 等词条），收尾 loadXxx + 清脏标记。
 - 启用（Pool/路由）列放表格**最后一列**（横向滚动区内；自动化测试对离屏元素要用 evaluate dispatchEvent）。

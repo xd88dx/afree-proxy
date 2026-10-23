@@ -35,7 +35,7 @@ func (e *HTTPError) Error() string { return fmt.Sprintf("openrouter api %d: %s",
 type CallOpts struct {
 	// PinKey 固定本次调用只用一个 key（面板 Test 探测）；空 = 正常轮转。
 	PinKey string
-	// Exit 出站代理 URL：非空表示该 key 绑定的主/辅代理；空 = 调用方已决策
+	// Exit 出站代理 URL：非空表示该 key 绑定的主/备用代理；空 = 调用方已决策
 	// （未绑定 key 的全局轮转由调用方通过 ExitProvider 给出）。
 	Exit string
 	// Client 出口对应的 HTTP client（调用方按 Exit 构造/缓存）。

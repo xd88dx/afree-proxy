@@ -431,7 +431,7 @@ func TestRunDispatchesActivityAndTravel(t *testing.T) {
 // 国际版活跃上报：global 账号不再被跳过（上游 a190252 同口径）
 // ---------------------------------------------------------------------------
 
-// withGlobalSwitch 临时打开 global realm 开关并复位（生产缺省即开，此辅助确保测试隔离）。
+// withGlobalSwitch 临时打开 global realm 开关并复位（生产缺省即开，此备助确保测试隔离）。
 func withGlobalSwitch(t *testing.T) {
 	t.Helper()
 	old := auth.GlobalEnabled()

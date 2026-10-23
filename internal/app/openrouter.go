@@ -18,7 +18,7 @@ import (
 //
 // OpenRouter 是纯 key 池平台（与 zen 同形态，无账号 OAuth）：多个 sk-or-v1-…
 // key 按池调度策略轮转，未绑定 key 走共享代理池（代理池页下拉），隔离模式下
-// 每 key 可绑主/辅出口。模型目录同步 openrouter.ai/api/v1/models 的免费
+// 每 key 可绑主/备用出口。模型目录同步 openrouter.ai/api/v1/models 的免费
 // 子集，客户端以 or:<model-id> 形式调用。
 
 // orConfigPath OpenRouter 配置文件路径（DATA_DIR/.or-config.json）。
