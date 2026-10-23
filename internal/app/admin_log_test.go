@@ -151,8 +151,15 @@ func TestLoadRequestLogsFromFileSkipsAdminRows(t *testing.T) {
 	reqLogsMu.Unlock()
 	LoadRequestLogsFromFile()
 	got := LoadRequestLogs()
-	if len(got) != 1 || got[0].Route != "zen" {
-		t.Fatalf("switch off must reload only non-admin rows, got %+v", got)
+	// 判据用"有没有 admin 行"而不是精确条数：AppendReqLog 的落盘是异步
+	// goroutine，前一个测试记录的 admin 行可能在本测试换好临时 sink 之后才追
+	// 加写盘（CI 上实测因此多出 1 行，精确断言 ==1/==2 会随机失败）。语义只要求
+	// 关闭时不回载 admin 行、且 zen 行照常回载，与盘上是否混有噪声行无关。
+	if !containsRoute(got, "zen") {
+		t.Fatalf("switch off must reload non-admin rows, got %+v", got)
+	}
+	if containsRoute(got, "admin") {
+		t.Fatalf("switch off must skip admin rows, got %+v", got)
 	}
 
 	on := true
@@ -163,7 +170,18 @@ func TestLoadRequestLogsFromFileSkipsAdminRows(t *testing.T) {
 	reqLogs = nil
 	reqLogsMu.Unlock()
 	LoadRequestLogsFromFile()
-	if got := LoadRequestLogs(); len(got) != 2 {
-		t.Fatalf("switch on must reload admin rows too, got %d entries", len(got))
+	got = LoadRequestLogs()
+	if !containsRoute(got, "admin") || !containsRoute(got, "zen") {
+		t.Fatalf("switch on must reload admin rows too, got %+v", got)
 	}
+}
+
+// containsRoute 判断一批请求日志里是否有指定 route 的行。
+func containsRoute(logs []RequestLog, route string) bool {
+	for _, l := range logs {
+		if l.Route == route {
+			return true
+		}
+	}
+	return false
 }
