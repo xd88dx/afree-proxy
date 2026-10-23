@@ -5507,6 +5507,11 @@ async function triggerProxySubUpdate() {
   }
   btn.disabled = false;
   setTimeout(() => { el.textContent = ''; }, 8000);
+  // 上面的提示只是一行文字，代理列表仍是点击前的旧快照——后端即便已整池替换，
+  // 列表不重绘用户就看不到新池（观感像"点了没生效"，只能手动 F5）。这里必须
+  // 重绘一次。只重绘代理池区：refreshBindingTables 会丢弃其他标签页的暂存编辑，
+  // 而订阅刷新本身不改变绑定，没必要牵连。
+  try { await loadProxyPool(); } catch (e) { /* 重绘失败不影响上面的结果提示 */ }
 }
 
 // saveGlobalPolicy 统一保存各平台的全局走池开关：一次点击依次下发
