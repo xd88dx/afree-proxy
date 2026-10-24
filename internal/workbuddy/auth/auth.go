@@ -45,11 +45,19 @@ type Auth struct {
 	// 顶层 device_token 也会被解析（与桌面端共用状态文件的部署方式）。
 	DeviceToken string
 
-	// poolEnabled 账号参与路由的显式开关（面板"启用"列）。nil = 未记录 = 启用
+	// poolEnabled 账号参与路由的显式开关（面板"反代"列）。nil = 未记录 = 启用
 	//（旧 auth 文件无该键，缺省参与）。与 pool 的运行态 disabled（12153 判死）
 	// 正交：本开关只表达"管理员是否让该账号进入账号池参与选号"，不改冷却/
 	// 熔断状态机，也不影响签到/保活等账号维护任务。
 	poolEnabled *bool
+
+	// accountEnabled 账号总开关（afree 本地补丁，面板"账号"列）：false = 该账号
+	// 视为不存在——不参与选号路由，签到/旅行/活跃/保活/夜猫子/连登/余额刷新等
+	// 全部维护任务也跳过（与 pool_enabled 正交：pool_enabled=false 只停会话，
+	// 保号任务照常）。nil = 未记录 = 启用（旧 auth 文件无该键，存量账号不受影响）。
+	// 落盘于 auth 文件 account_enabled 键（嵌套形/扁平形同键），非空才写回。
+	// 约束：pool_enabled=true 要求 account_enabled=true（面板互锁 + afree API 校验）。
+	accountEnabled *bool
 
 	// nicknameLocked 本地昵称锁（afree 本地补丁，非上游代码）：true = 管理员
 	// 在面板手改过昵称，上游昵称同步（panel syncNicknames）跳过该号防覆盖；
@@ -266,6 +274,29 @@ func (a *Auth) SetPoolEnabled(enabled bool) bool {
 	return true
 }
 
+// AccountEnabled 报告账号总开关（afree 本地补丁）：false = 该账号视为不存在，
+// 不参与选号路由，签到/保活/余额刷新等全部维护任务也跳过。nil/缺项 = 启用
+//（旧文件零迁移，存量账号不受影响）。
+func (a *Auth) AccountEnabled() bool {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.accountEnabled == nil || *a.accountEnabled
+}
+
+// SetAccountEnabled 写入账号总开关，返回是否发生变更（调用方据此决定是否
+// SaveAtomic 落盘）。置 false 时调用方应同时考虑 pool_enabled 的呈现（afree
+// 面板互锁：反代开关只有在账号开关启用时可勾）——本方法不改写 pool_enabled，
+// 两个开关的持久化值保持独立。
+func (a *Auth) SetAccountEnabled(enabled bool) bool {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.accountEnabled != nil && *a.accountEnabled == enabled {
+		return false
+	}
+	a.accountEnabled = &enabled
+	return true
+}
+
 // apiTokenPrefixes 静态 API Key 的前缀集合：ck_（CodeBuddy 控制台签发）与
 // pt_（官方 CLI @tencent-ai/codebuddy-code 另有该前缀）。
 //
@@ -406,8 +437,10 @@ func Parse(raw []byte) (*Auth, error) {
 				ExpiresAt    int64  `json:"expiresAt"`
 				Domain       string `json:"domain"`
 				Realm        string `json:"realm"`
-				PoolEnabled  *bool  `json:"pool_enabled"`
-			} `json:"auth"`
+			PoolEnabled  *bool  `json:"pool_enabled"`
+			// afree 本地补丁：账号总开关（缺项 = 启用，旧文件零迁移）。
+			AccountEnabled *bool `json:"account_enabled"`
+		} `json:"auth"`
 			Account struct {
 				UID            string `json:"uid"`
 				EnterpriseID   string `json:"enterpriseId"`
@@ -431,6 +464,7 @@ func Parse(raw []byte) (*Auth, error) {
 			Nickname:       n.Account.Nickname,
 			DeviceToken:    n.DeviceToken,
 			poolEnabled:    n.Auth.PoolEnabled,
+			accountEnabled: n.Auth.AccountEnabled,
 			nicknameLocked: n.Account.NicknameLocked,
 		}
 	} else {
@@ -446,6 +480,8 @@ func Parse(raw []byte) (*Auth, error) {
 			NicknameLocked bool   `json:"nickname_locked"`
 			DeviceToken    string `json:"device_token"`
 			PoolEnabled    *bool  `json:"pool_enabled"`
+			// afree 本地补丁：账号总开关（缺项 = 启用，旧文件零迁移）。
+			AccountEnabled *bool `json:"account_enabled"`
 		}
 		if err := json.Unmarshal(raw, &f); err != nil {
 			return nil, fmt.Errorf("storage_parse_error: %w", err)
@@ -461,6 +497,7 @@ func Parse(raw []byte) (*Auth, error) {
 			Nickname:       f.Nickname,
 			DeviceToken:    f.DeviceToken,
 			poolEnabled:    f.PoolEnabled,
+			accountEnabled: f.AccountEnabled,
 			nicknameLocked: f.NicknameLocked,
 		}
 	}
@@ -500,6 +537,10 @@ func (a *Auth) SaveAtomic() error {
 	// OAuth 输出形状一致，插件读取忽略未知键）。
 	if a.poolEnabled != nil {
 		doc["auth"].(map[string]any)["pool_enabled"] = *a.poolEnabled
+	}
+	// account_enabled 非空才写回（afree 本地补丁）：未显式关过的账号不引入新键。
+	if a.accountEnabled != nil {
+		doc["auth"].(map[string]any)["account_enabled"] = *a.accountEnabled
 	}
 	// nickname_locked 仅 true 才写回（afree 本地补丁）：未手改过昵称的账号
 	// 不引入新键，保持与插件 OAuth 输出形状一致。

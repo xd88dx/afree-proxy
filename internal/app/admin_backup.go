@@ -92,6 +92,9 @@ type configBackup struct {
 	// 导出导入一直漏了封禁数据，跨机迁移后 /v1/models 把已确认不可调用的
 	// 模型重新暴露给客户端，每次选中都吃一轮无谓失败。
 	ModelBlacklist map[string]*modelBlacklistEntry `json:"modelBlacklist,omitempty"`
+	// PlatformBlacklist 平台封禁表（.platform-blacklist.json，afree 本地功能）：
+	// 整平台退出会话路由的管理操作，与模型封禁同性质，随配置迁移。
+	PlatformBlacklist map[string]*platformBanEntry `json:"platformBlacklist,omitempty"`
 	// ZenDepAliases zen 死模型别名表（.zen-model-aliases.json）：弃用 ID ->
 	// 继任模型映射，与 sessions/endpoints 同性质的学习结果持久化。
 	ZenDepAliases map[string]*zenDepEntry `json:"zenDepAliases,omitempty"`
@@ -161,6 +164,7 @@ func handleAdminConfigExport(w http.ResponseWriter, r *http.Request) {
 		Other:               other.Get(),
 		WorkBuddyProxies:    exportWorkbuddyProxyBindings(),
 		ModelBlacklist:      exportModelBlacklist(),
+		PlatformBlacklist:   exportPlatformBlacklist(),
 		ZenDepAliases:       exportZenDepAliases(),
 		ClineStreamRequired: exportClineStreamRequired(),
 	}
@@ -527,12 +531,16 @@ func handleAdminConfigImport(w http.ResponseWriter, r *http.Request) {
 		imported["workBuddyProxies"] = importWorkbuddyProxyBindings(backup.WorkBuddyProxies)
 	}
 
-	// ---- 模型封禁表 / zen 死模型别名 / cline 必须流式学习结果（2026-10-19 补：
-	// 此前导出导入一直漏了这三个落盘数据，跨机迁移后分别丢失封禁状态、
-	// 死模型迁移映射与流式自学习结果）----
+	// ---- 模型封禁表 / 平台封禁表 / zen 死模型别名 / cline 必须流式学习结果
+	//（2026-10-19 补：此前导出导入一直漏了这三个落盘数据，跨机迁移后分别丢失
+	// 封禁状态、死模型迁移映射与流式自学习结果；平台封禁随 2026-10-24 功能补齐）----
 	if backup.ModelBlacklist != nil {
 		importModelBlacklist(backup.ModelBlacklist)
 		imported["modelBlacklist"] = len(backup.ModelBlacklist)
+	}
+	if backup.PlatformBlacklist != nil {
+		importPlatformBlacklist(backup.PlatformBlacklist)
+		imported["platformBlacklist"] = len(backup.PlatformBlacklist)
 	}
 	if backup.ZenDepAliases != nil {
 		importZenDepAliases(backup.ZenDepAliases)

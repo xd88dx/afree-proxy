@@ -153,6 +153,7 @@ func StartProxy(host string, port int) error {
 		mux.HandleFunc("/admin/api/workbuddy/proxy/set", adminCORS(adminAuthMiddleware(handleWorkbuddyProxySet)))
 		mux.HandleFunc("/admin/api/workbuddy/proxy/clear", adminCORS(adminAuthMiddleware(handleWorkbuddyProxyClear)))
 		mux.HandleFunc("/admin/api/workbuddy/enabled", adminCORS(adminAuthMiddleware(handleWorkbuddyPoolSetEnabled)))
+		mux.HandleFunc("/admin/api/workbuddy/account-enabled", adminCORS(adminAuthMiddleware(handleWorkbuddyAccountSetEnabled)))
 		mux.HandleFunc("/admin/api/workbuddy/reorder", adminCORS(adminAuthMiddleware(handleWorkbuddyPoolReorder)))
 		mux.HandleFunc("/admin/api/workbuddy/nickname", adminCORS(adminAuthMiddleware(handleWorkbuddyNickname)))
 	}
@@ -265,11 +266,17 @@ func StartProxy(host string, port int) error {
 		}
 		// 黑名单过滤：已确认「上游不允许该账号类型调用」的模型不再对外提供，
 		// 否则客户端（含 new-api 渠道映射）会反复选中它、每次都吃一轮无谓失败。
-		// 面板「收费模型」区仍可见，可测试/解禁。
+		// 面板「收费模型」区仍可见，可测试/解禁。平台封禁同理（整平台摘除，
+		// combo 别名按声明平台判），面板各平台页的模型目录仍可见。
 		kept := data[:0]
 		for _, m := range data {
-			if id, _ := m["id"].(string); id != "" && IsModelBlacklisted(id) {
-				continue
+			if id, _ := m["id"].(string); id != "" {
+				if IsModelBlacklisted(id) {
+					continue
+				}
+				if bannedPlatformOf(id) != "" {
+					continue
+				}
 			}
 			kept = append(kept, m)
 		}

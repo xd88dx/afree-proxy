@@ -813,6 +813,7 @@ func TestBlackcatEligibility(t *testing.T) {
 		{"暂停选号跳过", pool.Status{Paused: true}, false},
 		{"禁用跳过", pool.Status{Disabled: true}, false},
 		{"两者兼有", pool.Status{Disabled: true, Paused: true}, false},
+		{"账号开关关闭跳过（afree 本地补丁）", pool.Status{AccountEnabled: new(bool)}, false},
 	}
 	for _, c := range cases {
 		if got := blackcatEligible(c.st); got != c.want {

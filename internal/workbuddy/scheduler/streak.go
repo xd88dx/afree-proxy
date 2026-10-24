@@ -18,6 +18,9 @@ import (
 // 由签到排程（RunCheckinNow）末尾调用；也可面板手动触发。
 func (s *Scheduler) RunStreakBonusNow() {
 	for _, st := range s.cfg.Pool.List() {
+		if !st.AccountOn() {
+			continue // 账号总开关关闭：连登管家跳过（afree 本地补丁）
+		}
 		if st.Disabled {
 			continue
 		}

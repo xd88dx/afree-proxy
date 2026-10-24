@@ -631,6 +631,11 @@ func (s *Scheduler) runCheckin(ctx context.Context, spread bool) {
 	expiringSoon := s.ExpiringSoonWindow()
 	includeDisabled := s.includeDisabledInTasks()
 	for _, st := range plan.order(s.cfg.Pool.List()) {
+		// 账号总开关关闭（afree 本地补丁）= 账号不存在：签到与余额查询都跳过，
+		// 不受 include_disabled_in_tasks 影响（该开关只针对运行态 Disabled）。
+		if !st.AccountOn() {
+			continue
+		}
 		if st.Disabled && !includeDisabled {
 			continue
 		}
@@ -724,6 +729,9 @@ func (s *Scheduler) runActivity(ctx context.Context, spread bool) {
 	first := true
 	includeDisabled := s.includeDisabledInTasks()
 	for _, st := range plan.order(s.cfg.Pool.List()) {
+		if !st.AccountOn() {
+			continue // 账号总开关关闭：活跃上报跳过（afree 本地补丁）
+		}
 		if st.Disabled && !includeDisabled {
 			continue
 		}
@@ -801,6 +809,9 @@ func (s *Scheduler) runKeepalive(ctx context.Context, spread bool) {
 	plan := s.spreadPlan(taskKeepalive, spread, cst.Now())
 	includeDisabled := s.includeDisabledInTasks()
 	for _, st := range plan.order(s.cfg.Pool.List()) {
+		if !st.AccountOn() {
+			continue // 账号总开关关闭：token 保活跳过（afree 本地补丁）
+		}
 		if st.Disabled && !includeDisabled {
 			continue
 		}
@@ -853,6 +864,9 @@ func (s *Scheduler) RunBalanceRefreshNow() {
 	expiringSoon := s.ExpiringSoonWindow()
 	includeDisabled := s.includeDisabledInTasks()
 	for _, st := range s.cfg.Pool.List() {
+		if !st.AccountOn() {
+			continue // 账号总开关关闭：余额刷新跳过（afree 本地补丁）
+		}
 		if st.Disabled && !includeDisabled {
 			continue
 		}

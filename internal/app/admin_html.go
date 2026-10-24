@@ -113,7 +113,7 @@ tr:hover .nick-pen{opacity:.85}
 .nick-ok:hover{color:var(--success,#4ade80)}
 .nick-no:hover{color:var(--danger,#f87171)}
 
-/* ===== Auto-assign rules（平台/子平台级黑名单 + 上限，卡片网格）===== */
+/* ===== Proxy exclusion rules（平台/子平台级黑名单 + 上限，卡片网格）===== */
 .pr-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
 @media(max-width:1180px){.pr-grid{grid-template-columns:1fr}}
 .pr-card{position:relative;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--panel);padding:9px 11px 10px;transition:.12s}
@@ -138,6 +138,8 @@ tr:hover .nick-pen{opacity:.85}
 .pr-chip button{border:0;background:transparent;color:var(--text3);cursor:pointer;font-size:13px;line-height:1;padding:1px 4px;border-radius:50%}
 .pr-chip button:hover{color:var(--danger);background:var(--panel)}
 .pr-tagin{flex:1;min-width:100px;border:0;background:transparent;color:var(--text);font:inherit;font-size:12.5px;outline:none;padding:2px}
+/* 只读点选框内的输入框不吃全局 input:focus 蓝圈（与 pr-tagbox:focus-within 辉光叠加成双圈） */
+.pr-tagin:focus{box-shadow:none;border:0;outline:none}
 .pr-menu{position:absolute;z-index:40;left:11px;right:11px;margin-top:5px;max-height:220px;overflow-y:auto;border:1px solid var(--border-strong);border-radius:8px;background:var(--bg2);box-shadow:0 12px 28px rgba(0,0,0,.3)}
 .pr-opt{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:6px 10px;font-size:12.5px;color:var(--text);cursor:pointer}
 .pr-opt:hover{background:var(--bg3)}
@@ -152,6 +154,21 @@ tr:hover .nick-pen{opacity:.85}
 .pr-group-body{margin-top:9px;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
 @media(max-width:1180px){.pr-group-body{grid-template-columns:1fr}}
 .pr-none{font-size:12px;color:var(--text3)}
+/* pb-menu 点选式多选下拉（封禁平台/批量追加排除共用）。打开时由 JS 挂到
+   body 用 fixed 定位（pbMenuToggle）——.section 有 overflow:hidden + rise 动画
+   层叠上下文，菜单留在 section 内会被裁剪/盖住（跨 section 下拉的两次踩坑）。
+   背景必须不透明（--bg2），透明会把下方内容透出来（--card 在主题里不存在）。*/
+.pb-menu{position:fixed;z-index:900;max-height:300px;overflow-y:auto;border:1px solid var(--border-strong);border-radius:8px;background:var(--bg2);box-shadow:0 12px 28px rgba(0,0,0,.3)}
+.pb-row{display:flex;gap:9px;align-items:center;padding:7px 11px;font-size:12.5px;color:var(--text);cursor:pointer}
+.pb-row:hover{background:var(--bg3)}
+.pb-row input{width:auto;flex-shrink:0}
+.pb-row-sub{padding-left:26px;color:var(--text2)}
+.pb-foot{display:flex;gap:8px;padding:8px 10px;border-top:1px solid var(--border);position:sticky;bottom:0;background:var(--bg2)}
+/* pb-box 点选开启器（只点击不开菜单，不做文本输入）：不要 :focus-within 辉光，
+   hover 提示即可——辉光+蓝圈是「输入异常」观感的来源 */
+.pb-box{cursor:pointer}
+.pb-box:focus-within{border-color:var(--border-strong);box-shadow:none}
+.pb-box .pr-tagin{cursor:pointer}
 /* ===== Status badges ===== */
 .status{display:inline-flex;align-items:center;gap:6px;padding:3px 10px;border-radius:999px;font-size:12px;font-weight:600}
 .status.active{background:var(--status-active-bg);color:var(--accent2)}
@@ -537,6 +554,17 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
     <div id="headerSaveResult" style="margin-top:8px"></div>
   </div>
 </div>
+
+<div class="section">
+  <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 5-6"/></svg></span> Model catalog <span class="probe-pill" data-models-info style="font-weight:normal"></span></div>
+  <div class="section-body">
+    <div class="flex" style="margin-bottom:10px;gap:10px">
+      <button class="btn btn-sm btn-primary" onclick="refreshModels()">Refresh models</button>
+      <span class="hint" style="margin:0">Auto-syncs the official model feeds from upstreams (60s)</span>
+    </div>
+    <div id="accModelsBody">Loading...</div>
+  </div>
+</div>
 </div>
 
 <div id="tab-proxypool" class="tab-panel" style="display:none">
@@ -573,12 +601,24 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
   </div>
 </div>
 <div class="section">
-  <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><path d="M4 5h16M4 12h10M4 19h7"/></svg></span> Auto-assign rules</div>
+  <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><path d="M4 5h16M4 12h10M4 19h7"/></svg></span> Proxy exclusion rules</div>
   <div class="section-body">
     <div class="hint" style="margin-bottom:14px">Platform-level blacklist and per-proxy binding cap for automatic assignment only — one-click bind and reorder-by-latency. Manual bindings and runtime routing are never restricted.</div>
+    <div style="margin-bottom:12px">
+      <div style="display:flex;gap:10px;align-items:flex-start">
+        <div style="flex:1;position:relative">
+          <div class="pr-tagbox" id="ppBulkBox" style="margin-top:0;min-height:38px" onclick="ppBulkBoxClick(event)">
+            <span id="ppBulkChips" style="display:contents"></span>
+            <input class="pr-tagin" id="ppBulkIn" placeholder="Search and add a proxy…" onfocus="ppBulkFocus()" oninput="ppBulkInput(this.value)" onkeydown="ppBulkKey(event)">
+          </div>
+          <div id="ppBulkMenu" class="pb-menu" style="display:none"></div>
+        </div>
+        <button class="btn btn-sm btn-primary" style="margin-top:4px;white-space:nowrap" onclick="ppBulkApply()">Batch-append</button>
+      </div>
+    </div>
     <div id="ppRulesBody"><div class="pr-none" style="padding:10px 12px">Loading...</div></div>
     <div class="form-actions" style="margin-top:12px">
-      <button class="btn btn-primary" onclick="saveProxyRules()">Save auto-assign rules</button>
+      <button class="btn btn-primary" onclick="saveProxyRules()">Save proxy exclusion rules</button>
       <button class="btn btn-success" onclick="openReorderDlg()" style="margin-left:10px">Reorder credential proxies by latency</button>
     </div>
     <div id="ppRulesResult" style="margin-top:8px"></div>
@@ -690,20 +730,23 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
 </div>
 
 <div class="section">
-  <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/><path d="M12 12v3M8.5 13.5v0M15.5 13.5v0"/></svg></span> Available models <span id="modelsProbeInfo" class="probe-pill" style="font-weight:normal"></span></div>
+  <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M5.6 5.6l12.8 12.8"/></svg></span> Banned platforms <span id="platformBanCount" class="probe-pill" style="font-weight:normal"></span></div>
   <div class="section-body">
-    <div class="flex" style="margin-bottom:10px;gap:10px">
-      <button class="btn btn-sm btn-primary" onclick="refreshModels()">Refresh models</button>
-      <span class="hint" style="margin:0">Auto-syncs the official model feeds from upstreams (60s)</span>
+    <div class="hint" style="margin-top:0">Banned platforms stop participating in session routing — models leave /v1/models and requests fail immediately; maintenance tasks (check-in etc.) are unaffected. Other sub-platforms can be banned individually.</div>
+    <div style="position:relative;margin-top:10px">
+      <div class="pr-tagbox pb-box" id="platformBanBox" style="margin-top:0;min-height:38px" onclick="togglePlatformBanMenu(event)">
+        <span id="platformBanChips" style="display:contents"></span>
+        <input class="pr-tagin" readonly placeholder="Click to pick platforms to ban…">
+      </div>
+      <div id="platformBanMenu" class="pb-menu" style="display:none"></div>
     </div>
-    <div id="modelsList">Loading...</div>
   </div>
 </div>
 
 <div class="section">
   <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></span> Banned models <span id="blacklistCount" class="probe-pill" style="font-weight:normal"></span></div>
   <div class="section-body">
-    <div class="hint" style="margin-top:0">Models banned automatically (the upstream refused them for this account type, e.g. code 11158 "not allowed for user type") or manually by the admin. They are hidden from /v1/models so clients stop picking them. Test sends a real request with the platform's first enabled credential — if it succeeds, click Unblock. Unblocking only removes the entry; the same upstream error will ban it again.</div>
+    <div class="hint" style="margin-top:0">Banned automatically (upstream refuses them for this account type, e.g. code 11158) or manually — hidden from /v1/models. Test sends a real request with the first enabled credential; Unblock only removes the entry, the same upstream error bans it again.</div>
     <div class="table-wrap">
       <table>
         <thead><tr><th style="width:140px">Platform</th><th>Model</th><th style="width:190px">Ban reason</th><th style="width:180px">Blocked at</th><th style="width:200px;text-align:center">Actions</th></tr></thead>
@@ -912,6 +955,17 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
     </div>
   </div>
 </div>
+
+<div class="section">
+  <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 5-6"/></svg></span> Model catalog <span class="probe-pill" data-models-info style="font-weight:normal"></span></div>
+  <div class="section-body">
+    <div class="flex" style="margin-bottom:10px;gap:10px">
+      <button class="btn btn-sm btn-primary" onclick="refreshModels()">Refresh models</button>
+      <span class="hint" style="margin:0">Auto-syncs the official model feeds from upstreams (60s)</span>
+    </div>
+    <div id="ocModelsBody">Loading...</div>
+  </div>
+</div>
 </div>
 
 <div id="tab-workbuddy" class="tab-panel" style="display:none">
@@ -949,7 +1003,8 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
             <th>Last used</th>
             <th title="Main exit first, backup as fallback; both down = row skipped (isolation).">Proxy binding</th>
             <th style="text-align:center">Actions</th>
-            <th style="text-align:center" title="Routing participation. New rows start disabled — tick Pool to enable.">Pool</th>
+            <th style="text-align:center" title="Gateway (reverse proxy) switch: unchecked = model sessions never route to this account; check-in and all other maintenance tasks are unaffected. Can only be ticked while the account switch is on.">Gateway switch</th>
+            <th style="text-align:center" title="Account master switch. Off = the account does not exist: check-in, patrol, activity, keepalive, night chats, growth and balance refresh all skip it, and it never routes.">Account switch</th>
           </tr>
         </thead>
         <tbody id="wbAccountsBody">
@@ -1057,6 +1112,17 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
     </div>
   </div>
 </form>
+
+<div class="section">
+  <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 5-6"/></svg></span> Model catalog <span class="probe-pill" data-models-info style="font-weight:normal"></span></div>
+  <div class="section-body">
+    <div class="flex" style="margin-bottom:10px;gap:10px">
+      <button class="btn btn-sm btn-primary" onclick="refreshModels()">Refresh models</button>
+      <span class="hint" style="margin:0">Auto-syncs the official model feeds from upstreams (60s)</span>
+    </div>
+    <div id="wbModelsBody">Loading...</div>
+  </div>
+</div>
 </div>
 
 <div id="tab-openrouter" class="tab-panel" style="display:none">
@@ -1117,7 +1183,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
 </div>
 
 <div class="section">
-  <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 5-6"/></svg></span> Free model catalog</div>
+  <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 5-6"/></svg></span> Model catalog</div>
   <div class="section-body">
     <div class="hint" style="margin-top:0">Automatically synced from the official free-model source upstream (every 5 minutes).</div>
     <div id="orModelsBody">Loading...</div>
@@ -1251,7 +1317,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
 </div>
 
 <div class="section">
-  <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 5-6"/></svg></span> Free model catalog</div>
+  <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 5-6"/></svg></span> Model catalog</div>
   <div class="section-body">
     <div class="hint" style="margin-top:0">Automatically synced from the official free-model source upstream (every 5 minutes).</div>
     <div id="thModelsBody">Loading...</div>
@@ -1762,15 +1828,21 @@ const I18N_ZH = {
   '; ': '；',
   ' row(s) left unchanged (no proxy left)': ' 行凭据无对应代理，保持原样',
   'Reorder by latency': '凭据延迟重排',
-  // 自动分配规则（代理池页：平台级代理黑名单 + 每代理绑定上限）
-  'Auto-assign rules': '自动分配规则',
+  // 代理排除规则（代理池页：平台级代理黑名单 + 每代理绑定上限；原「自动分配规则」）
+  'Proxy exclusion rules': '代理排除规则',
+  'Save proxy exclusion rules': '保存代理排除规则',
+  'Saved proxy exclusion rules': '代理排除规则已保存',
+  'Proxy exclusion rules: ': '代理排除规则：',
+  'Batch-append': '批量追加',
+  'Clear selection': '清空选择',
+  'Nothing to append': '没有需要追加的代理',
+  'Appended to every platform\'s exclusion list (staged) — click Save to apply': '已追加进所有平台的排除列表（暂存）——点「保存」后生效',
+  'Click to pick platforms to ban…': '点击选择要封禁的平台…',
   'Platform': '平台',
   'Excluded proxies': '排除的代理',
   'Exclude Direct': '排除直连',
   'Add excluded proxy': '添加排除代理',
   'No pool proxies left to exclude': '没有可添加的池内代理（都已排除或池为空）',
-  'Save auto-assign rules': '保存自动分配规则',
-  'Saved auto-assign rules': '自动分配规则已保存',
   'Add proxy': '添加',
   'Remove': '移除',
   'Nothing excluded': '未排除',
@@ -1787,7 +1859,6 @@ const I18N_ZH = {
   'Platform-level blacklist and per-proxy binding cap for automatic assignment only — one-click bind and reorder-by-latency. Manual bindings and runtime routing are never restricted.': '仅作用于自动分配——「一键代理」与「凭据延迟重排」两个批量操作；手动绑定和运行期路由不受限制。',
   'Excluded': '已排除',
   ' · excluded': ' · 已排除',
-  'Auto-assign rules: ': '自动分配规则：',
   ' row(s) left unchanged — every allowed proxy is excluded or at cap': ' 行无法改绑：可用代理都已拉黑或达到上限',
   're-bind proxies of the selected platforms: healthy (fast, allowed) bindings stay put; slow/unrecorded/excluded/over-cap ones are re-filled from the remaining pool (better-only for healthy rows), then auto-save.': '重排所选平台的代理绑定：健康绑定（快代理且未拉黑/未超限）保持不动；慢/无记录/被拉黑/超限的行从剩余代理池回填（健康行只在更优时才换），并自动保存。',
   'Re-bind proxies of all credentials (except Direct/Global) ordered by measured latency, then auto-save.': '按实测延迟重排全部凭据（直连/全局除外）的代理绑定并自动保存。',
@@ -1885,9 +1956,6 @@ const I18N_ZH = {
   'free': '免费',
   'Default tier': '默认档',
   'No WorkBuddy models under the current filter': '当前筛选下没有 WorkBuddy 模型',
-  'WorkBuddy models': 'WorkBuddy 模型',
-  'Filter': '筛选',
-  'Model rate cap for WorkBuddy models. Applies to the model list and to GET /v1/models responses; saves immediately.': 'WorkBuddy 模型倍率上限。同时作用于模型列表与 GET /v1/models 返回结果，保存后立即生效。',
   'Model rate filter': '模型倍率筛选',
   '0 — free only': '0 — 仅免费',
   'WorkBuddy configuration': 'WorkBuddy 配置',
@@ -1963,6 +2031,19 @@ const I18N_ZH = {
   'Created': '创建时间',
   'Proxy binding': '代理绑定',
   'Actions': '操作',
+  // WorkBuddy 账号表双开关列（账号/反代，afree）
+  'Account switch': '账号开关',
+  'Gateway switch': '反代开关',
+  'Account master switch. Off = the account does not exist: check-in, patrol, activity, keepalive, night chats, growth and balance refresh all skip it, and it never routes.': '账号总开关。关闭 = 该账号不存在：签到、旅行、活跃、保活、夜猫子、成长任务与余额刷新全部跳过，也不再参与路由。',
+  'Gateway (reverse proxy) switch: unchecked = model sessions never route to this account; check-in and all other maintenance tasks are unaffected. Can only be ticked while the account switch is on.': '反代开关：不勾选 = 模型会话不路由到该账号；签到等其余维护任务不受影响。只有账号开关开启时才能勾选。',
+  'Account master switch: off = the account does not exist — check-in, tasks and balance refresh all stop, and it never routes': '账号总开关：关闭 = 该账号不存在——签到、任务与余额刷新全部停止，也不再路由',
+  'Gateway switch: unchecked = model sessions never route to this account; check-in and all other maintenance tasks are unaffected': '反代开关：不勾选 = 模型会话不路由到该账号；签到等其余维护任务不受影响',
+  // 封禁平台（网关设置页，封禁模型区上方；整平台退出会话路由）
+  'Banned platforms': '封禁平台',
+  'Banned platforms stop participating in session routing — models leave /v1/models and requests fail immediately; maintenance tasks (check-in etc.) are unaffected. Other sub-platforms can be banned individually.': '封禁后整平台退出会话路由——模型从 /v1/models 移除、调用立即失败；签到等维护任务不受影响。Other 的子平台可单独封禁。',
+  'Banned automatically (upstream refuses them for this account type, e.g. code 11158) or manually — hidden from /v1/models. Test sends a real request with the first enabled credential; Unblock only removes the entry, the same upstream error bans it again.': '自动封禁（上游按账号类型拒绝，如 code 11158）或手动封禁；已从 /v1/models 移除。Test 用该平台第一个启用的凭据发真实请求验证；「解禁」只移出名单，同样的上游错误会再次封禁。',
+  'Platform banned: ': '已封禁平台：',
+  'Platform unbanned: ': '已解封平台：',
   'Loading...': '加载中...',
   'are counted locally by this proxy (input+output; exact when upstream returns usage, otherwise estimated from the request body) to gauge headroom before official rate limits. The Test button sends a real probe request. The Reset button': '由本代理本地统计（输入+输出；上游返回 usage 时精确，否则按请求体估算），用于判断距离官方限流还有多少余量。Test 按钮发送一次真实探测请求。Reset 按钮 ',
   'probes upstream rate-limit status': '探测上游限流状态',
@@ -2061,9 +2142,6 @@ const I18N_ZH = {
   'API keys': 'API key',
   'Generated keys authenticate client access to the proxy API; they only take effect when the API_KEY environment variable is not set.': '生成的 key 用于客户端调用代理 API 鉴权，该 key 仅在未设置 API_KEY 环境变量时生效。',
   'Generate new key': '生成新 key',
-  'Available models': '可用模型',
-  'Cline free models': 'Cline 免费模型',
-  'OpenCode free models': 'OpenCode 免费模型',
   'Refresh models': '刷新模型',
   'Auto-syncs the official model feeds from upstreams (60s)': '自动同步上游的官方模型源（60 秒）',
   'General config': '常规配置',
@@ -2206,7 +2284,6 @@ const I18N_ZH = {
   'auto — first free model in the catalog': '自动——目录中第一个免费模型',
   'auto — DeepSeek-V4-Flash first': '自动——优先 DeepSeek-V4-Flash',
   'auto — deepseek-v4.1-flash:free first': '自动——优先 deepseek-v4.1-flash:free',
-  'Free model catalog': '免费模型目录',
   'Model catalog': '模型目录',
   'Automatically synced from the official free-model source upstream (every 5 minutes).': '自动同步上游的官方免费模型源（每 5 分钟）。',
   'Upstream limits: 30 requests/min per key, 8 concurrent per key, 20 requests/min per account.': '上游限制：单个密钥 30 次/分钟、8 并发，单个账号 20 次/分钟。',
@@ -2384,7 +2461,6 @@ const I18N_ZH = {
   'Ban this model? It is removed from /v1/models immediately; you can unblock it in the Banned models table.': '封禁该模型？它会立即从 /v1/models 移除；之后可在封禁模型表中解禁。',
   'Banned: ': '已封禁：',
   'Unblocked: ': '已解禁：',
-  'Models banned automatically (the upstream refused them for this account type, e.g. code 11158 "not allowed for user type") or manually by the admin. They are hidden from /v1/models so clients stop picking them. Test sends a real request with the platform\'s first enabled credential — if it succeeds, click Unblock. Unblocking only removes the entry; the same upstream error will ban it again.': '自动封禁（上游按账号类型拒掉的模型，如 code 11158「该账号类型不支持该模型」）或管理员手动封禁的模型。它们已从 /v1/models 移除，客户端不会再选到。Test 会用该平台第一个启用的凭据发一次真实请求——若成功，点「解禁」。解禁只移出名单；同样的上游错误会再次把它封禁。',
 };
 function T(s) { return LANG === 'zh' ? (I18N_ZH[s] || s) : s; }
 function toggleLang() {
@@ -2503,12 +2579,12 @@ function switchTab(name) {
   document.querySelectorAll('.tab-panel').forEach(e => e.style.display = 'none');
   _('tab-' + name).style.display = 'block';
   if (name === 'dashboard') { loadStats(); loadAccounts(); }
-  if (name === 'accounts') loadAccounts();
-  if (name === 'settings') { loadKeys(); loadModels(); loadConfig(); }
+  if (name === 'accounts') { loadAccounts(); loadModels(); }
+  if (name === 'settings') { loadKeys(); loadConfig(); loadPlatformBans(); }
   if (name === 'logs') loadLogs();
   if (name === 'proxypool') loadProxyPool();
-  if (name === 'opencode') { loadOcConfig(); loadOcModels(); loadOcSessions(); }
-  if (name === 'workbuddy') ensureWorkbuddyConsole();
+  if (name === 'opencode') { loadOcConfig(); loadOcModels(); loadOcSessions(); loadModels(); }
+  if (name === 'workbuddy') { ensureWorkbuddyConsole(); loadModels(); }
   if (name === 'openrouter') loadOrConfig();
   if (name === 'amdcloud') loadAmdConfig();
   if (name === 'tokenharbor') loadTHConfig();
@@ -2614,7 +2690,7 @@ function renderWorkbuddyAccounts() {
   const tbody = _('wbAccountsBody');
   if (!tbody) return;
   if (!wbAccounts.length) {
-    tbody.innerHTML = '<tr><td colspan="9" class="empty">No accounts yet</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="10" class="empty">No accounts yet</td></tr>';
     return;
   }
   wbSnapshot = {};
@@ -2636,12 +2712,18 @@ function renderWorkbuddyAccounts() {
       (status.cls === 'cooldown' && account.until && !String(account.until).startsWith('0001-')
         ? '<div style="font-size:10px;color:var(--text3);margin-top:2px;white-space:nowrap" title="' + esc(fmtWhen(account.until)) + '">' + T('Recovers ') + esc(fmtShort(account.until)) + '</div>'
         : '');
-    // Pool（启用）列：勾选 = 进入账号池参与选号；未设置（pool_enabled 缺失）
-    // 按启用渲染。勾选改动先暂存，由"保存"按钮统一提交。
-    const poolEnabled = account.pool_enabled !== false;
-    wbSnapshot[id] = { enabled: poolEnabled };
+    // 账号/反代双开关列（afree）：账号开关=总开关（关 = 账号不存在——签到/任务/
+    // 余额刷新全停，且不再路由）；反代开关=只管会话路由（关 = 只是不接会话，
+    // 签到/保活等任务照常）。互锁：反代开关只有账号开关开启时可勾（后端 API
+    // 同样校验）。勾选改动先暂存，由"保存"按钮统一提交。
+    const accEnabled = account.account_enabled !== false;
+    const poolOn = account.pool_enabled !== false;
+    wbSnapshot[id] = { account: accEnabled, enabled: poolOn };
+    const accCell = '<td style="text-align:center"><input type="checkbox" data-wb-account="' + esc(id) + '"' +
+      (accEnabled ? ' checked' : '') + ' title="' + esc(T('Account master switch: off = the account does not exist — check-in, tasks and balance refresh all stop, and it never routes')) + '" aria-label="' + esc(T('Account switch')) + '"></td>';
     const poolCell = '<td style="text-align:center"><input type="checkbox" data-wb-pool="' + esc(id) + '"' +
-      (poolEnabled ? ' checked' : '') + ' title="' + esc(T('Participates in request routing')) + '" aria-label="' + esc(T('Participates in request routing')) + '"></td>';
+      (accEnabled && poolOn ? ' checked' : '') + (!accEnabled ? ' disabled' : '') +
+      ' title="' + esc(T('Gateway switch: unchecked = model sessions never route to this account; check-in and all other maintenance tasks are unaffected')) + '" aria-label="' + esc(T('Gateway switch')) + '"></td>';
     // uid 过长会把 Account 列撑宽，昵称下方只留前 10 个字符，完整值走 title 悬浮。
     const shortId = id.length > 10 ? id.slice(0, 10) + '…' : id;
     // 账号列：昵称旁铅笔行内改名。手改后加本地锁（上游昵称同步跳过，不被
@@ -2669,9 +2751,27 @@ function renderWorkbuddyAccounts() {
         wbActionButton('delete', id, 'Delete', 'btn-danger') +
       '</div></td>' +
       poolCell +
+      accCell +
       '</tr>';
   }).join('');
   tbody.onchange = e => {
+    // 账号开关切换：联动反代开关的可用态——关闭账号时反代勾选框禁用并显示
+    // 未勾选；重新开启时恢复其持久化值（存储未动，重开即恢复路由意愿）。
+    const acc = e.target.closest('input[data-wb-account]');
+    if (acc) {
+      const row = acc.closest('tr');
+      const poolCb = row.querySelector('input[data-wb-pool]');
+      if (poolCb) {
+        poolCb.disabled = !acc.checked;
+        if (!acc.checked) poolCb.checked = false;
+        else {
+          const snap = wbSnapshot[poolCb.dataset.wbPool];
+          poolCb.checked = snap ? snap.enabled !== false : true;
+        }
+      }
+      markRowDirty(row, 'wb');
+      return;
+    }
     const c = e.target.closest('input[data-wb-pool]');
     if (c) markRowDirty(c.closest('tr'), 'wb');
   };
@@ -2698,7 +2798,7 @@ function updateWorkbuddySummary() {
 }
 async function loadWorkbuddyAccounts() {
   const tbody = _('wbAccountsBody');
-  if (tbody) tbody.innerHTML = '<tr><td colspan="9" class="empty">Loading...</td></tr>';
+  if (tbody) tbody.innerHTML = '<tr><td colspan="10" class="empty">Loading...</td></tr>';
   try {
     await loadProxyListCache();
     const [overview] = await Promise.all([wbCall('overview'), loadWorkbuddyProxyState()]);
@@ -2737,19 +2837,28 @@ async function saveWorkbuddyEdits() {
     const main = mainInput.dataset.value || '';
     const backup = row.querySelector('.eg-input[data-eg="wb"][data-slot="backup"]').dataset.value || '';
     const cb = row.querySelector('input[data-wb-pool]');
+    const accCb = row.querySelector('input[data-wb-account]');
     // 快照在渲染时记录（wbBindingCell 写入 main/backup 生效值），diff 与显示同口径。
     const snap = wbSnapshot[uid] || {};
     const snapMain = String(snap.main ?? '');
     const snapBackup = String(snap.backup ?? '');
+    const snapAccount = snap.account !== undefined ? snap.account : true;
     const snapEnabled = snap.enabled !== undefined ? snap.enabled : true;
+    // 目标态：账号开关以勾选框为准；反代开关只在账号开关最终开启时才可能变化
+    //（账号关闭时勾选框禁用，持久值保持原样不提交——重开账号自动恢复）。
+    const nextAccount = accCb ? accCb.checked : true;
+    const nextPool = (nextAccount && cb) ? cb.checked : snapEnabled;
     try {
       if (main !== snapMain || backup !== snapBackup) {
         await workbuddyProxyAdminCall('POST', 'proxy/set', { uid: uid, main: main, backup: backup });
       }
-      if (cb && cb.checked !== snapEnabled) {
-        await api('POST', '/workbuddy/enabled', { uid: uid, enabled: cb.checked });
+      if (nextAccount !== snapAccount) {
+        await api('POST', '/workbuddy/account-enabled', { uid: uid, enabled: nextAccount });
       }
-      if (main !== snapMain || backup !== snapBackup || (cb && cb.checked !== snapEnabled)) changed++;
+      if (nextPool !== snapEnabled) {
+        await api('POST', '/workbuddy/enabled', { uid: uid, enabled: nextPool });
+      }
+      if (main !== snapMain || backup !== snapBackup || nextAccount !== snapAccount || nextPool !== snapEnabled) changed++;
       row.classList.remove('tr-dirty');
     } catch (e) { failed++; }
   }
@@ -2763,6 +2872,9 @@ function stageAllWbPool(enabled) {
   document.querySelectorAll('#wbAccountsBody input[data-wb-pool]').forEach(cb => {
     const snap = wbSnapshot[cb.dataset.wbPool];
     if (snap && snap.enabled === enabled) return;
+    // 互锁：账号开关关闭的行不参与反代批量操作（勾选框本身禁用，后端也会拒绝）
+    const acc = cb.closest('tr').querySelector('input[data-wb-account]');
+    if (cb.disabled || (acc && !acc.checked)) return;
     cb.checked = enabled;
     markRowDirty(cb.closest('tr'), 'wb');
   });
@@ -3206,10 +3318,7 @@ async function syncWorkbuddyRateFilter(config) {
   }
   const raw = Number(wbDig(cfg, 'pool.model_rate_filter'));
   const next = WB_RATE_OPTIONS.includes(raw) ? raw : 0.2;
-  if (next !== workbuddyRateFilter) {
-    workbuddyRateFilter = next;
-    if (_('wbRateFilter')) _('wbRateFilter').value = String(next);
-  }
+  if (next !== workbuddyRateFilter) workbuddyRateFilter = next;
   return next;
 }
 function collectWorkbuddyConfig() {
@@ -3244,6 +3353,8 @@ async function saveWorkbuddyConfig() {
     const restart = Array.isArray(result.restart_required) ? result.restart_required.length : 0;
     toast(restart ? T('WorkBuddy config saved (') + restart + T(' restart items)') : T('WorkBuddy config saved'), 'success');
     await loadWorkbuddyConfig();
+    // 倍率阈值等影响目录的配置随保存热刷新（目录区不再内嵌独立筛选下拉）
+    loadModels();
   } catch (e) { toast(T('WorkBuddy config save failed: ') + e.message, 'error'); }
   finally { button.disabled = false; button.textContent = T('Save configuration'); }
 }
@@ -3817,7 +3928,7 @@ function proxyPoolIdxForReorder(v) {
 //   ③ 已绑定的 >6s 慢代理（延迟升序，重复绑定保留多份）
 // 无记录段纳入池内未绑定代理，是让"无数据"节点排到慢节点之上、优先被启用的关键
 //（否则从未绑定过的无记录代理永远不进队列，慢节点原位保留）。
-// ===== 自动分配规则（平台级代理黑名单 + 每代理绑定上限）=====
+// ===== 代理排除规则（原「自动分配规则」；平台级代理黑名单 + 每代理绑定上限）=====
 // 数据源 /opencode/config 的 proxyExclusions（池条目 -> [kind...]）与
 // proxyBindCaps（kind -> 上限，0/缺 = 不限），代理池页编辑。只约束一键代理
 // 与延迟重排两条自动分配路径；手动绑定、配置导入与运行时路由不受影响。
@@ -3887,7 +3998,7 @@ function applyReorderRules(kind, parts) {
       n++;
     }
   }
-  if (stuck) toast(T('Auto-assign rules: ') + stuck +
+  if (stuck) toast(T('Proxy exclusion rules: ') + stuck +
     T(' row(s) left unchanged — every allowed proxy is excluded or at cap'), 'warning', 6000);
   return n;
 }
@@ -4099,6 +4210,12 @@ function egLabel(v) {
   } catch (e) { /* 非 URL 形态，回退打码 */ }
   return maskProxyLabel(v);
 }
+// egSearchText 代理的搜索匹配域(小写):别名 + 去协议前缀的原始串(host:port#alias)。
+// 协议前缀(socks5:// 等)不含检索信息,纳进来会让 "e" 这类单字符命中全池——
+// 四个搜索点(绑定联想框/排除卡片/卡片 Enter/批量追加)统一走本函数。
+function egSearchText(p) {
+  return (egLabel(p) + ' ' + p.replace(/^[a-z0-9]+:\/\//i, '')).toLowerCase();
+}
 // egBadgeHTML 代理值的闭合徽标 HTML：在线率 + 平均握手延迟，与下拉菜单项的
 // eg-rate 同源（proxyHealthByProxy 缓存、同一套五档配色）。全局/直连或两个
 // 指标都无样本时返回空串（不占位）。槽位恒定：在线率固定最右（right:6px），
@@ -4184,13 +4301,11 @@ function egRenderItems(input, menu, q) {
     { v: '', label: T('Global'), active: cur === '' },
     { v: EGRESS_DIRECT, label: T('Direct') + (kind && proxyExcludedFor(EGRESS_DIRECT, kind) ? T(' · excluded') : ''), active: cur === EGRESS_DIRECT }
   ];
-  // 联想阈值：输入含中文时中文字符 ≥2 触发，否则长度 ≥3；未达标不展示代理
-  const cjk = [...q].filter(c => c.codePointAt(0) > 0x7f).length;
-  const ready = q === '' || (cjk > 0 ? cjk >= 2 : q.length >= 3);
+  // 候选过滤:从第一个字符起即时过滤(与代理排除卡片输入框同一口径),
+  // 空查询展示全部;别名或代理原始串任一包含即命中。无字符数门槛。
   const ql = q.toLowerCase();
   const matches = p => {
-    const label = egLabel(p).toLowerCase();
-    return label.includes(ql) || p.toLowerCase().includes(ql);
+    return egSearchText(p).includes(ql);
   };
   const proxyItem = p => {
     const kind = input.dataset.eg;
@@ -4200,9 +4315,7 @@ function egRenderItems(input, menu, q) {
   };
   const proxies = q === ''
     ? proxyListCache.map(proxyItem)
-    : (ready
-        ? proxyListCache.filter(matches).map(proxyItem)
-        : []);
+    : proxyListCache.filter(matches).map(proxyItem);
   // 菜单项右侧双标签：在线率恒定最右，握手延迟（.eg-rate.hs-tag）恒定在其左
   //（right:46px）——只有延迟时在线率位置空着，延迟不右移；两者同 34px 定宽、
   // 同五档配色（延迟档位为其镜像）。
@@ -4705,46 +4818,24 @@ function wbRateHTML(m) {
   const promo = m.promo_label ? ' <span class="model-tag">' + esc(m.promo_label) + '</span>' : '';
   return '<span title="' + esc(m.promo_note || '') + '">' + value + old + promo + '</span>';
 }
-// setWorkbuddyRateFilter 改倍率筛选：先写服务端配置（wbconfig
-// pool.model_rate_filter，经 livecfg 热生效，/v1/models 立刻按新阈值过滤），
-// 落盘成功再刷本地视图。保存失败保持旧值并报错——面板显示必须与服务端一致，
-// 否则用户以为改了、网关还在按旧阈值出名单。
-async function setWorkbuddyRateFilter(value) {
-  const next = Number(value);
-  const applied = WB_RATE_OPTIONS.includes(next) ? next : 0.2;
-  try {
-    await wbCall('config', {}, { pool: { model_rate_filter: applied } });
-  } catch (e) {
-    toast(T('Save failed: ') + e.message, 'error');
-    return;
-  }
-  workbuddyRateFilter = applied;
-  loadModels();
-  loadModelOptions();
-  comboModels.workbuddy = [];
-  if (_('comboPlatform') && _('comboPlatform').value === 'workbuddy') {
-    fillComboModels();
-  }
-}
+// setWorkbuddyRateFilter 已随目录区内嵌的倍率筛选下拉移除（2026-10-24 UI 统一）：
+// 倍率改在 WorkBuddy configuration 表单的 Model rate filter 调整，保存后经
+// saveWorkbuddyConfig → loadModels 热刷新目录，无需独立入口。
 
 async function loadModels() {
   try {
     // 倍率阈值先于渲染拉取：它决定 wb 名单与下拉选中项（服务端配置，
     // wbconfig pool.model_rate_filter）。
     await syncWorkbuddyRateFilter();
-    // 黑名单同样先于渲染拉取：三个模型块都要剔除已封禁模型（封禁模型区的
+    // 黑名单同样先于渲染拉取：各页模型块都要剔除已封禁模型（封禁模型区的
     // 语义是「不再对外提供」，设置页列表不能还展示它们）。
     await syncModelBlacklist();
     const d = await api('GET', '/models');
     const models = d.data.models || [];
     let info = '';
     if (d.data.lastSync) info += T('· official feed: ') + new Date(d.data.lastSync).toLocaleTimeString('en-US');
-    _('modelsProbeInfo').textContent = info;
-    // OpenCode 免费模型（网关设置页分两块展示：Cline 在上、OpenCode 在下）
-    const [zen, wbAll] = await Promise.all([
-      api('GET', '/opencode/models').then(r => r.data.models || []).catch(() => []),
-      fetchWorkbuddyModels()
-    ]);
+    // 目录区已分平台迁回各自页面：同名 pill（data-models-info）每页一个，统一回填。
+    document.querySelectorAll('[data-models-info]').forEach(el => { el.textContent = info; });
     const row = (inner) => '<div style="display:flex;align-items:center;gap:10px;padding:8px 12px;margin:5px 0;background:rgba(148,163,184,.06);border:1px solid var(--border);border-radius:10px;transition:.15s">' + inner + '</div>';
     // 黑名单过滤：cline/zen 目录返回的是裸 ID（对外形态 zen: 前缀由网关拼），
     // 所以两种形态都查；wb 目录返回的已带 wbcn:/wbgb: 前缀。
@@ -4753,50 +4844,60 @@ async function loadModels() {
     const banBtn = (platform, model, refresh) =>
       '<button class="btn btn-sm btn-danger" data-bl-ban="1" data-platform="' + esc(platform) + '" data-model="' + esc(model) + '"' +
       (refresh ? ' data-refresh="' + esc(refresh) + '"' : '') + ' style="white-space:nowrap">' + T('Ban') + '</button>';
-    const clineV = models.filter(notBlocked);
-    const zenV = zen.filter(notBlocked);
-    const clineBlock = clineV.length
-      ? clineV.map(m => {
-          return row(
+    // Cline 免费模型（账号页底部目录区）
+    const accBox = _('accModelsBody');
+    if (accBox) {
+      const clineV = models.filter(notBlocked);
+      accBox.innerHTML = clineV.length
+        ? clineV.map(m => row(
             '<span style="font-family:\'JetBrains Mono\',monospace;font-size:13px;flex:1">' + esc(m.id) + '</span>' +
             '<span class="model-tag free">' + T('no charge') + '</span>' +
-            banBtn('cline', m.id));
-        }).join('')
-      : '<div class="empty">' + T('No models') + '</div>';
-    const zenBlock = zenV.length
-      ? zenV.map(m => row(
-            '<span style="font-family:\'JetBrains Mono\',monospace;font-size:13px;flex:1">' + esc(m.id) + '</span>' +
-            '<span class="model-tag free">' + T('no charge') + '</span>' +
-            wbContextTagHTML(m.context, T('Context')) +
-            // 目录是裸 ID，对外形态带 zen: 前缀——封禁按对外 ID 记。
-            banBtn('zen', 'zen:' + m.id))).join('')
-      : '<div class="empty">' + T('No models') + '</div>';
-    const wbModels = wbAll.filter(notBlocked).filter(wbModelMatchesFilter).sort((a, b) => wbRate(a) - wbRate(b));
-    const rateOptions = WB_RATE_OPTIONS.map(v =>
-      '<option value="' + v + '"' + (v === workbuddyRateFilter ? ' selected' : '') + '>' + v + '</option>').join('');
-    const wbBlock = wbModels.length
-      ? wbModels.map(m => {
-          const rate = wbRate(m);
-          const free = rate === 0 ? '<span class="model-tag free">' + T('free') + '</span>' : '';
-          return row(
-            '<span style="font-family:\'JetBrains Mono\',monospace;font-size:13px;flex:1" title="' + esc(m.description || '') + '">' + esc(m.id) + '</span>' +
-            free +
-            '<span class="model-tag">' + wbRateHTML(m) + '</span>' +
-            '<span class="model-tag" title="' + T('Default tier') + '">' + esc(m.default_effort || '—') + '</span>' +
-            wbContextTagHTML(m.context_length, T('Maximum context length')) +
-            banBtn('workbuddy', m.id));
-        }).join('')
-      : '<div class="empty">' + T('No WorkBuddy models under the current filter') + '</div>';
-    _('modelsList').innerHTML =
-      '<div style="font-size:12px;font-weight:600;margin:2px 0 8px">' + T('Cline free models') + '</div>' + clineBlock +
-      '<div style="font-size:12px;font-weight:600;margin:14px 0 8px">' + T('OpenCode free models') + '</div>' + zenBlock +
-      '<div style="display:flex;align-items:center;gap:10px;margin:14px 0 8px">' +
-        '<span style="font-size:12px;font-weight:600">'+ T('WorkBuddy models') + '</span><span style="flex:1"></span>' +
-        '<label class="inline-flex" style="font-size:12px;color:var(--text2)">' + T('Filter') + ' ' +
-          '<select id="wbRateFilter" onchange="setWorkbuddyRateFilter(this.value)" title="' + esc(T('Model rate cap for WorkBuddy models. Applies to the model list and to GET /v1/models responses; saves immediately.')) + '" style="width:auto;padding:4px 26px 4px 9px;font-size:12px">' + rateOptions + '</select></label>' +
-      '</div>' + wbBlock;
+            banBtn('cline', m.id))).join('')
+        : '<div class="empty">' + T('No models') + '</div>';
+    }
+    // OpenCode 免费模型（OpenCode 页底部目录区）
+    const ocBox = _('ocModelsBody');
+    if (ocBox) {
+      const zen = await api('GET', '/opencode/models').then(r => r.data.models || []).catch(() => []);
+      const zenV = zen.filter(notBlocked);
+      ocBox.innerHTML = zenV.length
+        ? zenV.map(m => row(
+              '<span style="font-family:\'JetBrains Mono\',monospace;font-size:13px;flex:1">' + esc(m.id) + '</span>' +
+              '<span class="model-tag free">' + T('no charge') + '</span>' +
+              wbContextTagHTML(m.context, T('Context')) +
+              // 目录是裸 ID，对外形态带 zen: 前缀——封禁按对外 ID 记。
+              banBtn('zen', 'zen:' + m.id))).join('')
+        : '<div class="empty">' + T('No models') + '</div>';
+    }
+    // WorkBuddy 模型（WorkBuddy 页底部目录区；行样式与 cline/OpenCode 目录
+    // 完全一致，不再内嵌倍率筛选行——倍率走上方配置表单的 Model rate filter，
+    // 保存后经 saveWorkbuddyConfig → loadModels 热刷新目录）
+    const wbBox = _('wbModelsBody');
+    if (wbBox) {
+      const wbAll = await fetchWorkbuddyModels();
+      const wbModels = wbAll.filter(notBlocked).filter(wbModelMatchesFilter).sort((a, b) => wbRate(a) - wbRate(b));
+      const wbBlock = wbModels.length
+        ? wbModels.map(m => {
+            const rate = wbRate(m);
+            const free = rate === 0 ? '<span class="model-tag free">' + T('free') + '</span>' : '';
+            return row(
+              '<span style="font-family:\'JetBrains Mono\',monospace;font-size:13px;flex:1" title="' + esc(m.description || '') + '">' + esc(m.id) + '</span>' +
+              free +
+              '<span class="model-tag">' + wbRateHTML(m) + '</span>' +
+              '<span class="model-tag" title="' + T('Default tier') + '">' + esc(m.default_effort || '—') + '</span>' +
+              wbContextTagHTML(m.context_length, T('Maximum context length')) +
+              banBtn('workbuddy', m.id));
+          }).join('')
+        : '<div class="empty">' + T('No WorkBuddy models under the current filter') + '</div>';
+      wbBox.innerHTML = wbBlock;
+    }
     loadModelBlacklist();
-  } catch (e) { _('modelsList').textContent = T('Failed to load'); }
+  } catch (e) {
+    ['accModelsBody', 'ocModelsBody', 'wbModelsBody'].forEach(id => {
+      const el = _(id);
+      if (el) el.textContent = T('Failed to load');
+    });
+  }
 }
 
 // ========== Banned models（封禁模型） ==========
@@ -4906,7 +5007,7 @@ document.addEventListener('click', e => {
 
 async function refreshModels() {
   try {
-    _('modelsProbeInfo').textContent = '· syncing...';
+    document.querySelectorAll('[data-models-info]').forEach(el => { el.textContent = '· syncing...'; });
     // 两个上游的模型源一起刷新（Cline feed + OpenCode 目录）
     const [d, z] = await Promise.all([
       api('POST', '/models/refresh').catch(e => ({ message: e.message })),
@@ -4915,7 +5016,120 @@ async function refreshModels() {
     const msg = [d.message || (d.data && d.data.message), z.message || (z.data && z.data.message)].filter(Boolean).join(' | ');
     toast(msg || 'Sync started', 'info');
     setTimeout(loadModels, 3000);
-  } catch (e) { toast(T('Refresh failed: ') + e.message, 'error'); _('modelsProbeInfo').textContent = ''; }
+  } catch (e) { toast(T('Refresh failed: ') + e.message, 'error'); document.querySelectorAll('[data-models-info]').forEach(el => { el.textContent = ''; }); }
+}
+
+// ========== Banned platforms（封禁平台） ==========
+// 整平台退出会话路由（platform_blacklist.go）：/v1/models 同步摘除、请求直接
+// 503；签到/保活等维护任务不受影响。Other 的子平台可单独封禁（other:<slug>）。
+// 长输入框 + chips（与代理排除规则卡片同款 tagbox 样式）：点框开选择菜单，
+// 勾选即封禁（confirm 防误点）、去勾即解封；chip 的 × 解封。
+const PLATFORM_BAN_BASE = [
+  { key: 'cline', label: 'Cline' },
+  { key: 'zen', label: 'OpenCode' },
+  { key: 'workbuddy', label: 'WorkBuddy' },
+  { key: 'amd', label: 'AMDCloud' },
+  { key: 'openrouter', label: 'OpenRouter' },
+  { key: 'tokenharbor', label: 'TokenHarbor' }
+];
+let platformBans = new Set();
+async function loadPlatformBans() {
+  const box = _('platformBanBox');
+  if (!box) return;
+  try {
+    const d = await api('GET', '/platforms/blacklist');
+    platformBans = new Set((d.items || []).map(i => i.platform));
+  } catch (e) { platformBans = new Set(); }
+  if (!otherConfig) {
+    try { await loadOtherConfig(); } catch (e) { otherConfig = { platforms: [] }; }
+  }
+  renderPlatformBan();
+}
+function platformBanOptions() {
+  const out = PLATFORM_BAN_BASE.slice();
+  ((otherConfig && otherConfig.platforms) || []).forEach(p => {
+    out.push({ key: 'other:' + p.slug, label: p.name || p.slug, sub: true });
+  });
+  return out;
+}
+function renderPlatformBan() {
+  const chips = _('platformBanChips'), menu = _('platformBanMenu');
+  if (!chips || !menu) return;
+  const opts = platformBanOptions();
+  // chips：按选项序展示已封禁平台，× 解封（点击不冒泡，避免开菜单）
+  chips.innerHTML = opts.filter(o => platformBans.has(o.key)).map(o =>
+    '<span class="pr-chip"><span title="' + esc(o.key) + '">' + esc(o.label) + '</span>' +
+    '<button type="button" onclick="event.stopPropagation();togglePlatformBan(\'' + esc(o.key) + '\',\'' + esc(o.label) + '\',false)" title="' + esc(T('Remove')) + '">×</button></span>'
+  ).join('');
+  const cnt = _('platformBanCount');
+  if (cnt) cnt.textContent = platformBans.size ? '· ' + platformBans.size : '';
+  menu.innerHTML = opts.map(o =>
+    '<label class="pb-row' + (o.sub ? ' pb-row-sub' : '') + '">' +
+      '<input type="checkbox"' + (platformBans.has(o.key) ? ' checked' : '') +
+      ' data-pb="' + esc(o.key) + '" data-pb-label="' + esc(o.label) + '" onchange="togglePlatformBan(this.dataset.pb, this.dataset.pbLabel, this.checked)">' +
+      '<span>' + esc(o.label) + '</span>' +
+    '</label>').join('');
+}
+function togglePlatformBanMenu(ev) {
+  ev.stopPropagation();
+  pbMenuToggle(_('platformBanMenu'), _('platformBanBox'), renderPlatformBan);
+}
+// 点击外部收起（选项区在菜单内不收起；菜单此时挂在 body 下）
+document.addEventListener('click', ev => {
+  const menu = _('platformBanMenu');
+  if (!pbMenuIsOpen(menu)) return;
+  if (menu.contains(ev.target)) return;
+  const box = _('platformBanBox');
+  if (box && box.contains(ev.target)) return;
+  pbMenuHide(menu);
+});
+// pbMenuToggle/pbMenuHide 点选式下拉的开关：打开时把菜单挂到 body、fixed
+// 定位到 anchor 正下方（同宽）。section 的 overflow:hidden 与 rise 动画层叠
+// 上下文都会裁剪/盖住 section 内的绝对定位下拉（两次踩坑），body + fixed 是
+// 唯一稳妥出路（同 .toast 机制）。滚动/缩放时收起（菜单自身滚动除外）。
+// pbMenuOpenedAt 刚打开的宽限戳：scrollIntoView/锚点滚动产生的 scroll 事件
+// 是异步派发的，会在开菜单后一帧内到达——没有宽限期菜单会被立刻关掉。
+let pbMenuOpenedAt = 0;
+function pbMenuHide(menu) { if (menu) menu.style.display = 'none'; }
+function pbMenuIsOpen(menu) { return !!menu && menu.style.display === 'block'; }
+function pbMenuToggle(menu, anchor, render) {
+  if (!menu || !anchor) return;
+  if (pbMenuIsOpen(menu)) { pbMenuHide(menu); return; }
+  render();
+  document.body.appendChild(menu);
+  const r = anchor.getBoundingClientRect();
+  menu.style.left = Math.round(r.left) + 'px';
+  menu.style.top = Math.round(r.bottom + 4) + 'px';
+  menu.style.width = Math.round(r.width) + 'px';
+  menu.style.display = 'block';
+  pbMenuOpenedAt = Date.now();
+}
+window.addEventListener('scroll', ev => {
+  if (Date.now() - pbMenuOpenedAt < 200) return;
+  const t = ev.target;
+  if (t instanceof Element && t.closest('.pb-menu')) return; // 菜单自身滚动不关
+  pbMenuHide(_('platformBanMenu'));
+  pbMenuHide(_('ppBulkMenu'));
+}, true);
+window.addEventListener('resize', () => {
+  pbMenuHide(_('platformBanMenu'));
+  pbMenuHide(_('ppBulkMenu'));
+});
+async function togglePlatformBan(key, label, on) {
+  try {
+    if (on) {
+      await api('POST', '/platforms/blacklist/ban', { platform: key });
+      platformBans.add(key);
+      toast(T('Platform banned: ') + label, 'success');
+    } else {
+      await api('POST', '/platforms/blacklist/unban', { platform: key });
+      platformBans.delete(key);
+      toast(T('Platform unbanned: ') + label, 'success');
+    }
+  } catch (e) {
+    toast(T('Save failed: ') + e.message, 'error');
+  }
+  renderPlatformBan();
 }
 
 async function loadModelOptions() {
@@ -5414,7 +5628,7 @@ async function saveProxyPool() {
   } catch (e) { toast(T('Save failed: ') + e.message, 'error'); }
 }
 
-// ===== 代理池页：自动分配规则（平台黑名单 / 每代理上限）=====
+// ===== 代理排除规则（平台黑名单 / 每代理上限）=====
 // 本地编辑态：每平台 { cap: 数值, ex: [池条目...] }。renderProxyRules 从
 // proxyExclusions/proxyBindCaps 反转重建（只保留池内条目——失效规则不展示、
 // 不回存），保存时再反转回 proxy -> [kind...] 整表提交。
@@ -5450,6 +5664,24 @@ function ppRulesState() {
   return ppRulesCache;
 }
 
+// prMenuRows 卡片候选菜单行：搜索口径与批量追加框一致（别名或代理原始串任一
+// 包含即命中）。抽成独立函数供 prCard 渲染与 ppRuleInput 输入时就地刷新共用——
+// 输入路径绝不重建输入框节点（见 ppRuleInput）。
+function prMenuRows(kind, st) {
+  const left = proxyListCache.filter(p => p !== EGRESS_DIRECT && st.ex.indexOf(p) < 0);
+  const q = prQuery.toLowerCase();
+  const shown = left.filter(p => !q || egSearchText(p).includes(q));
+  if (!shown.length) {
+    return '<div class="pr-opt-empty">' + T(left.length ? 'No match' : 'No pool proxies left to exclude') + '</div>';
+  }
+  return shown.map(p => {
+    const host = maskProxyLabel(p).replace(/^[a-z0-9]+:\/\//i, '').split(/[\/?#]/)[0];
+    return '<div class="pr-opt" data-kind="' + esc(kind) + '" data-proxy="' + esc(p) + '"' +
+      ' onmousedown="event.preventDefault()" onclick="ppRulePick(this.dataset.kind,this.dataset.proxy)">' +
+      '<span>' + esc(egLabel(p)) + '</span><span class="pr-opt-host">' + esc(host) + '</span></div>';
+  }).join('');
+}
+
 // prCard 单个平台/子平台卡片：标题行（名称 + 上限 + 排除直连开关）+ 标签输入框。
 function prCard(leaf, s) {
   const k = leaf.key;
@@ -5458,17 +5690,8 @@ function prCard(leaf, s) {
     '<button type="button" data-kind="' + esc(k) + '" data-idx="' + i + '"' +
     ' onmousedown="event.preventDefault()" onclick="ppRuleDelEx(this.dataset.kind,+this.dataset.idx)"' +
     ' title="' + esc(T('Remove')) + '">×</button></span>').join('');
-  const left = proxyListCache.filter(p => p !== EGRESS_DIRECT && s.ex.indexOf(p) < 0);
   const q = prActiveKind === k ? prQuery : '';
-  const shown = left.filter(p => egLabel(p).toLowerCase().indexOf(q.toLowerCase()) >= 0);
-  const menu = !shown.length
-    ? '<div class="pr-opt-empty">' + T(left.length ? 'No match' : 'No pool proxies left to exclude') + '</div>'
-    : shown.map(p => {
-        const host = maskProxyLabel(p).replace(/^[a-z0-9]+:\/\//i, '').split(/[\/?#]/)[0];
-        return '<div class="pr-opt" data-kind="' + esc(k) + '" data-proxy="' + esc(p) + '"' +
-          ' onmousedown="event.preventDefault()" onclick="ppRulePick(this.dataset.kind,this.dataset.proxy)">' +
-          '<span>' + esc(egLabel(p)) + '</span><span class="pr-opt-host">' + esc(host) + '</span></div>';
-      }).join('');
+  const menu = prMenuRows(k, s);
   return '<div class="pr-card' + (leaf.sub ? ' pr-card-sub' : '') + '">' +
     '<div class="pr-card-head">' +
       '<span class="pr-name" title="' + esc(leaf.prefix ? k + ' · ' + leaf.prefix : k) + '">' + esc(leaf.label) + '</span>' +
@@ -5533,7 +5756,18 @@ function ppRuleFocus(kind) {
   if (prActiveKind !== kind) { prActiveKind = kind; prQuery = ''; }
   renderProxyRules();
 }
-function ppRuleInput(kind, v) { prActiveKind = kind; prQuery = v; renderProxyRules(); }
+// ppRuleInput 输入时只刷新候选菜单（prMenuRows），绝不重建输入框节点——
+// 旧实现每个键都 renderProxyRules 重建整个网格：快速输入丢键、中文输入法
+// 组合被打断，体感即「打好几个字符搜索才生效」。焦点在别的卡片时才走全量
+// 渲染收口（正常输入路径焦点必然已在本卡片）。
+function ppRuleInput(kind, v) {
+  prQuery = v;
+  if (prActiveKind !== kind) { prActiveKind = kind; renderProxyRules(); return; }
+  const inp = _('prTagIn-' + kind);
+  const menu = inp ? inp.closest('.pr-card').querySelector('.pr-menu') : null;
+  if (!menu) { renderProxyRules(); return; }
+  menu.innerHTML = prMenuRows(kind, ppRulesState()[kind]);
+}
 function ppRulePick(kind, proxy) {
   if (!proxy) return;
   const st = ppRulesState();
@@ -5553,7 +5787,7 @@ function ppRuleKey(ev, kind) {
     ev.preventDefault();
     const q = prQuery.toLowerCase();
     const cand = proxyListCache.filter(p => p !== EGRESS_DIRECT && st.ex.indexOf(p) < 0 &&
-      egLabel(p).toLowerCase().indexOf(q) >= 0);
+      egSearchText(p).includes(q));
     if (cand.length) ppRulePick(kind, cand[0]);
   }
 }
@@ -5597,12 +5831,147 @@ async function saveProxyRules() {
   });
   try {
     await api('POST', '/opencode/config/update', { proxyExclusions: exclusions, proxyBindCaps: caps });
-    _('ppRulesResult').innerHTML = '<div style="color:var(--accent2);font-size:12px">' + T('Saved auto-assign rules') + '</div>';
+    _('ppRulesResult').innerHTML = '<div style="color:var(--accent2);font-size:12px">' + T('Saved proxy exclusion rules') + '</div>';
     setTimeout(() => _('ppRulesResult').innerHTML = '', 5000);
-    toast(T('Saved auto-assign rules'), 'success');
+    toast(T('Saved proxy exclusion rules'), 'success');
     loadProxyPool();
   } catch (e) { toast(T('Save failed: ') + e.message, 'error'); }
 }
+
+// ===== 批量追加排除（可搜索多选输入框 + 右侧按钮）=====
+// 交互与下方各平台卡片的排除代理输入框同款：输入即时过滤候选、Enter 选第一个
+// 匹配、Backspace（空查询时）删最后一个 chip、Esc 关闭；选中项以 chips 回显，
+// 点右侧「批量追加」一键进入所有平台（含 Other 子平台）卡片的排除列表。与逐
+// 卡片点选同一条暂存链路：只改本地 ppRulesCache，点「保存代理排除规则」才落
+// 盘；已在所有平台排除的代理置灰禁选。直连不在此列（各卡片的「排除直连」开关单独管）。
+const ppBulkSel = new Set();
+let ppBulkQuery = '';
+// ppBulkBoxClick 点框任意处 = 聚焦输入框并开菜单（已开则只聚焦，不反复开关）
+function ppBulkBoxClick(ev) {
+  ev.stopPropagation();
+  if (!pbMenuIsOpen(_('ppBulkMenu'))) ppBulkOpenMenu(true);
+  else { const i = _('ppBulkIn'); if (i) i.focus(); }
+}
+function ppBulkFocus() {
+  if (!pbMenuIsOpen(_('ppBulkMenu'))) ppBulkOpenMenu(false);
+}
+// ppBulkOpenMenu 开菜单（重置查询串）并按需聚焦输入框；菜单挂 body（pbMenuToggle）
+function ppBulkOpenMenu(focusInput) {
+  ppBulkQuery = '';
+  const inp = _('ppBulkIn');
+  if (inp) inp.value = '';
+  pbMenuToggle(_('ppBulkMenu'), _('ppBulkBox'), ppBulkRenderMenu);
+  if (focusInput && pbMenuIsOpen(_('ppBulkMenu'))) {
+    const i = _('ppBulkIn');
+    if (i) i.focus();
+  }
+}
+function ppBulkInput(v) {
+  ppBulkQuery = v;
+  const menu = _('ppBulkMenu');
+  if (!pbMenuIsOpen(menu)) {
+    pbMenuToggle(menu, _('ppBulkBox'), ppBulkRenderMenu);
+    if (pbMenuIsOpen(menu)) { const i = _('ppBulkIn'); if (i) i.focus(); }
+  } else {
+    ppBulkRenderMenu();
+  }
+}
+// 键盘：Enter 选第一个匹配候选；空查询 Backspace 删最后一个 chip；Esc 关闭
+function ppBulkKey(ev) {
+  if (ev.key === 'Escape') {
+    pbMenuHide(_('ppBulkMenu'));
+    ppBulkQuery = '';
+    const i = _('ppBulkIn');
+    if (i) i.value = '';
+    return;
+  }
+  if (ev.key === 'Backspace' && !ppBulkQuery && ppBulkSel.size) {
+    const last = [...ppBulkSel].pop();
+    ppBulkSel.delete(last);
+    ppBulkSyncChips();
+    ppBulkRenderMenu();
+    return;
+  }
+  if (ev.key === 'Enter') {
+    ev.preventDefault();
+    const q = ppBulkQuery.toLowerCase();
+    const st = ppRulesState();
+    const leaves = ruleLeaves();
+    const cand = proxyListCache.find(p => p !== EGRESS_DIRECT && !ppBulkSel.has(p) &&
+      !leaves.every(l => (st[l.key].ex || []).indexOf(p) >= 0) &&
+      egLabel(p).toLowerCase().indexOf(q) >= 0);
+    if (cand) {
+      ppBulkPick(cand, true);
+      ppBulkQuery = '';
+      const i = _('ppBulkIn');
+      if (i) i.value = '';
+      ppBulkRenderMenu();
+    }
+  }
+}
+function ppBulkSyncChips() {
+  const chips = _('ppBulkChips');
+  if (!chips) return;
+  chips.innerHTML = [...ppBulkSel].map(p =>
+    '<span class="pr-chip" title="' + esc(egLabel(p)) + '"><span>' + esc(egLabel(p)) + '</span>' +
+    '<button type="button" onclick="event.stopPropagation();ppBulkPick(decodeURIComponent(this.dataset.pp),false)" data-pp="' + esc(encodeURIComponent(p)) + '" title="' + esc(T('Remove')) + '">×</button></span>'
+  ).join('');
+}
+// ppBulkRenderMenu 候选 = 池内未选中代理（选中项已是 chip，不再进菜单），
+// 按 egLabel/原始串包含查询串过滤；已被所有平台排除的代理无可追加，不再展示。
+// 行为对齐各平台卡片菜单：无勾选框，整行点击即选中，右侧标注 host。
+function ppBulkRenderMenu() {
+  const menu = _('ppBulkMenu');
+  if (!menu) return;
+  const st = ppRulesState();
+  const leaves = ruleLeaves();
+  const q = ppBulkQuery.toLowerCase();
+  const rows = proxyListCache
+    .filter(p => p !== EGRESS_DIRECT && !ppBulkSel.has(p))
+    .filter(p => !q || egSearchText(p).includes(q))
+    .filter(p => !leaves.every(l => (st[l.key].ex || []).indexOf(p) >= 0))
+    .map(p => {
+      const host = maskProxyLabel(p).replace(/^[a-z0-9]+:\/\//i, '').split(/[\/?#]/)[0];
+      return '<div class="pb-row" style="justify-content:space-between" data-bulk="' + esc(p) + '" onclick="ppBulkPick(this.dataset.bulk, true)">' +
+        '<span>' + esc(egLabel(p)) + '</span><span class="pr-opt-host">' + esc(host) + '</span></div>';
+    }).join('');
+  menu.innerHTML = (rows || '<div class="pr-opt-empty">' + T(q ? 'No match' : 'No pool proxies left to exclude') + '</div>') +
+    '<div class="pb-foot"><button class="btn btn-sm" style="flex:1" onclick="ppBulkClear()">' + T('Clear selection') + '</button></div>';
+}
+function ppBulkPick(p, on) {
+  if (on) ppBulkSel.add(p); else ppBulkSel.delete(p);
+  ppBulkSyncChips();
+  ppBulkRenderMenu();
+}
+function ppBulkClear() {
+  ppBulkSel.clear();
+  ppBulkSyncChips();
+  ppBulkRenderMenu();
+}
+function ppBulkApply() {
+  if (!ppBulkSel.size) { toast(T('Nothing to append'), 'info'); return; }
+  const st = ppRulesState();
+  let n = 0;
+  ppBulkSel.forEach(p => {
+    ruleLeaves().forEach(l => {
+      if (st[l.key] && st[l.key].ex.indexOf(p) < 0) { st[l.key].ex.push(p); n++; }
+    });
+  });
+  ppBulkSel.clear();
+  ppBulkSyncChips();
+  pbMenuHide(_('ppBulkMenu'));
+  renderProxyRules();
+  toast(T('Appended to every platform\'s exclusion list (staged) — click Save to apply'), 'success');
+}
+// 点击外部收起（菜单挂在 body 下，box 判断用框元素）
+document.addEventListener('click', ev => {
+  const menu = _('ppBulkMenu');
+  if (!pbMenuIsOpen(menu)) return;
+  if (menu.contains(ev.target)) return;
+  const box = _('ppBulkBox');
+  if (box && box.contains(ev.target)) return;
+  pbMenuHide(menu);
+});
 
 // triggerProxySubUpdate 代理池"立即更新"按钮：立即执行一次订阅刷新任务
 // （与 cron 定时同一条链路），结果显示在按钮下方，5s 后自动清除。

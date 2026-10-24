@@ -1339,8 +1339,8 @@ func (p *Panel) syncNicknames() {
 	}
 	var jobs []job
 	for _, st := range p.cfg.Pool.List() {
-		if st.Disabled {
-			continue
+		if st.Disabled || !st.AccountOn() {
+			continue // 账号总开关关闭：不向上游发起资料查询（afree 本地补丁）
 		}
 		if a := p.cfg.Pool.AuthByUID(st.UID); a != nil && a.AccessTokenValue() != "" {
 			// afree 本地补丁：面板手改过昵称（本地锁，SetLocalNickname locked=true）

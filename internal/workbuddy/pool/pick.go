@@ -44,7 +44,9 @@ func (p *Pool) PickExcludingForRealm(tried map[string]bool, reqModel, realm stri
 // reqModel 非空时把健康口径换成 healthyForModel（6004 模型豁免生效）。
 // realm 非空时候选过滤叠加 Realm()==realm 谓词（分池选号域）。
 // 所有候选路径统一叠加 PoolEnabled 谓词：管理员禁用的账号不参与选号
-// （含全冷却兜底），但保留在池内继续接受签到/保活等维护。
+// （含全冷却兜底），但保留在池内继续接受签到/保活等维护。账号总开关
+//（AccountEnabled=false，afree 本地补丁）同样退出选号——账号被总开关关闭
+// 等于不存在，比 PoolEnabled 更强。
 func (p *Pool) pick(tried map[string]bool, reqModel, realm string) *auth.Auth {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -53,8 +55,9 @@ func (p *Pool) pick(tried map[string]bool, reqModel, realm string) *auth.Auth {
 	// 不健康 / 在途占满 / 保留积分停牌：都不接单（判据统一在 Pool.selectable；
 	// reqModel 非空时用 healthyForModel 口径）。PoolEnabled：管理员禁用的账号
 	// 不参与正常候选（afree 本地开关；全冷却兜底路径另有同一门控）。
+	// AccountEnabled：账号总开关关闭的账号同理（afree 本地补丁）。
 	selectableOf := func(e *entry) bool {
-		return e.a.PoolEnabled() && realmOK(e) && p.selectable(e, now, reqModel)
+		return e.a.AccountEnabled() && e.a.PoolEnabled() && realmOK(e) && p.selectable(e, now, reqModel)
 	}
 	// floorBlocked 积分保底拦截判定（实现在 floorBlockedForRealmModel，与粘性路径共用）：
 	// 触底 + 收费（本地实测台账 或 上游目录倍率）即拦；免费/未知倍率不受限。
@@ -341,8 +344,8 @@ func (p *Pool) pickEarliestExpiryLocked(tried map[string]bool, now time.Time, re
 		if tried != nil && tried[uid] {
 			continue
 		}
-		if !e.a.PoolEnabled() {
-			continue // 管理员禁用的账号不参与兜底
+		if !e.a.AccountEnabled() || !e.a.PoolEnabled() {
+			continue // 账号总开关关闭 / 管理员禁用的账号不参与兜底
 		}
 		if realm != "" && e.a.Realm() != realm {
 			continue // 域过滤：池内跨 realm 的冷却账号不参与本 realm 兜底

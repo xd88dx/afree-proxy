@@ -54,6 +54,9 @@ func (s *Scheduler) runTravel(ctx context.Context, spread bool) {
 	plan := s.spreadPlan(taskTravel, spread, cst.Now())
 	first := true
 	for _, st := range plan.order(s.cfg.Pool.List()) {
+		if !st.AccountOn() {
+			continue // 账号总开关关闭：旅行巡检跳过（afree 本地补丁）
+		}
 		if st.Disabled {
 			continue
 		}
@@ -85,8 +88,8 @@ func (s *Scheduler) runTravel(ctx context.Context, spread bool) {
 // 调度器做到每号独立随机时点，再叠加固定节拍等于把指纹加回去。
 func (s *Scheduler) RunTravelNowFor(uid string) bool {
 	st, ok := s.cfg.Pool.Status(uid)
-	if !ok || st.Disabled {
-		return false
+	if !ok || st.Disabled || !st.AccountOn() {
+		return false // 禁用 / 账号总开关关闭：按号旅行直接不推进
 	}
 	a := s.cfg.Pool.AuthByUID(uid)
 	if a == nil || a.RefreshTokenValue() == "" {

@@ -86,6 +86,10 @@ func registerAdminRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/admin/api/models/blacklist/ban", adminCORS(auth(handleModelBlacklistBan)))
 	mux.HandleFunc("/admin/api/models/blacklist/test", adminCORS(auth(handleModelBlacklistTest)))
 	mux.HandleFunc("/admin/api/models/blacklist/unblock", adminCORS(auth(handleModelBlacklistUnblock)))
+	// 平台封禁（封禁平台区，封禁模型区上方）：整平台退出会话路由
+	mux.HandleFunc("/admin/api/platforms/blacklist", adminCORS(auth(handlePlatformBlacklist)))
+	mux.HandleFunc("/admin/api/platforms/blacklist/ban", adminCORS(auth(handlePlatformBlacklistBan)))
+	mux.HandleFunc("/admin/api/platforms/blacklist/unban", adminCORS(auth(handlePlatformBlacklistUnban)))
 	mux.HandleFunc("/admin/api/config", adminCORS(auth(handleAdminConfig)))
 	mux.HandleFunc("/admin/api/config/update", adminCORS(auth(handleAdminUpdateConfig)))
 	mux.HandleFunc("/admin/api/combos", adminCORS(auth(handleCombosList)))

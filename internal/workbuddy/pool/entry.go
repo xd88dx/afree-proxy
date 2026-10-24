@@ -127,9 +127,16 @@ type Status struct {
 	APIKey         bool   `json:"api_key,omitempty"`
 	Disabled       bool   `json:"disabled"`
 	DisabledReason string `json:"disabled_reason,omitempty"` // 仅 disabled 账号：禁用原因（运维可见）
-	// PoolEnabled 管理员的"启用"开关（auth.pool_enabled，面板勾选）：false =
+	// PoolEnabled 管理员的"反代"开关（auth.pool_enabled，面板勾选）：false =
 	// 不进入账号池参与选号（与运行态 Disabled 正交，签到/保活照常）。
 	PoolEnabled bool `json:"pool_enabled"`
+	// AccountEnabled 账号总开关（auth.account_enabled，afree 本地补丁，面板"账号"
+	// 列）：false = 该账号视为不存在——不参与选号路由，签到/保活/余额刷新等
+	// 全部维护任务也跳过（与 PoolEnabled 正交）。指针语义与 auth 侧对齐：
+	// nil = 未记录 = 启用——存量账号与零值 Status（测试/调用方构造）都不受影响。
+	// 判定统一走 AccountOn()，调用方不解引用。选号侧谓词与 PoolEnabled 并列入闸，
+	// 任务侧由 scheduler 按 AccountOn() 跳过。
+	AccountEnabled *bool `json:"account_enabled,omitempty"`
 	// Paused 暂停选号：退出选号候选（与 disabled 一样不参与选号），但**照常参与**
 	// 签到 / 活跃上报 / 保活 / 余额刷新四类保号任务。与 disabled 正交——disabled 是
 	// 「授权/session 终态，需人工 revive」，paused 是「运维临时让位」（多号轮换场景），
@@ -158,6 +165,11 @@ type Status struct {
 	BreakerFails int       `json:"breaker_fails"`
 	BreakerUntil time.Time `json:"breaker_until,omitempty"`
 }
+
+// AccountOn 报告账号总开关是否开启（afree 本地补丁）：nil/缺项 = 启用。
+// 与 PoolEnabled 正交——PoolEnabled=false 只停会话，保号任务照常；
+// AccountOn=false 连保号任务也停（账号视为不存在）。
+func (s Status) AccountOn() bool { return s.AccountEnabled == nil || *s.AccountEnabled }
 
 // ModelCostStatus 单个 (账号, 模型) 的成本台账行（P1-anti-monopoly 可观测性）。
 // tier 不单独落字段：cost_per_1k ≤ 0 即 tier 0（免费），> 0 即 tier 2（收费），

@@ -47,8 +47,8 @@ func (p *Pool) AvailableUIDsForRealm(realm string) []string {
 		if realm != "" && e.a.Realm() != realm {
 			continue
 		}
-		if !e.a.PoolEnabled() {
-			continue // 管理员禁用的账号不参与路由
+		if !e.a.AccountEnabled() || !e.a.PoolEnabled() {
+			continue // 账号总开关关闭 / 管理员禁用的账号不参与路由
 		}
 		if !e.healthy(now) {
 			continue
@@ -115,8 +115,8 @@ func (p *Pool) AvailableUIDsForModelRealm(model, realm string) []string {
 		if realm != "" && e.a.Realm() != realm {
 			continue
 		}
-		if !e.a.PoolEnabled() {
-			continue // 管理员禁用的账号不参与路由
+		if !e.a.AccountEnabled() || !e.a.PoolEnabled() {
+			continue // 账号总开关关闭 / 管理员禁用的账号不参与路由
 		}
 		if !e.healthyForModel(now, model) {
 			continue

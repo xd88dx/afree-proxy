@@ -409,8 +409,8 @@ func (p *Pool) AvailableUIDs() []string {
 	now := time.Now()
 	uids := make([]string, 0, len(p.byUID))
 	for uid, e := range p.byUID {
-		if !e.a.PoolEnabled() {
-			continue // 管理员禁用的账号不参与粘性命中校验与双段分配
+		if !e.a.AccountEnabled() || !e.a.PoolEnabled() {
+			continue // 账号总开关关闭 / 管理员禁用的账号不参与粘性命中校验与双段分配
 		}
 		if !e.healthy(now) {
 			continue
@@ -433,8 +433,8 @@ func (p *Pool) AvailableUIDsForModel(model string) []string {
 	now := time.Now()
 	uids := make([]string, 0, len(p.byUID))
 	for uid, e := range p.byUID {
-		if !e.a.PoolEnabled() {
-			continue // 管理员禁用的账号不参与粘性命中校验与双段分配
+		if !e.a.AccountEnabled() || !e.a.PoolEnabled() {
+			continue // 账号总开关关闭 / 管理员禁用的账号不参与粘性命中校验与双段分配
 		}
 		if !e.healthyForModel(now, model) {
 			continue
@@ -460,7 +460,7 @@ func (p *Pool) PickByUIDForModel(uid, model string) *auth.Auth {
 		return nil
 	}
 	now := time.Now()
-	if !e.a.PoolEnabled() || !p.selectable(e, now, model) {
+	if !e.a.AccountEnabled() || !e.a.PoolEnabled() || !p.selectable(e, now, model) {
 		return nil
 	}
 	// 积分保底（粘性路径）：与 pick 的 floorBlocked 同判据——触底 + 收费即拦
@@ -490,7 +490,7 @@ func (p *Pool) PickByUID(uid string) *auth.Auth {
 		return nil
 	}
 	now := time.Now()
-	if !e.a.PoolEnabled() || !p.selectable(e, now, "") {
+	if !e.a.AccountEnabled() || !e.a.PoolEnabled() || !p.selectable(e, now, "") {
 		return nil
 	}
 	e.lastUsed = now
@@ -720,8 +720,8 @@ func (p *Pool) ServableForRealm(realm string) bool {
 		if realm != "" && e.a.Realm() != realm {
 			continue
 		}
-		if !e.a.PoolEnabled() {
-			continue // 管理员禁用的账号不代表可服务
+		if !e.a.AccountEnabled() || !e.a.PoolEnabled() {
+			continue // 账号总开关关闭 / 管理员禁用的账号不代表可服务
 		}
 		if p.inFlightFull(e) {
 			continue
@@ -830,6 +830,16 @@ func (p *Pool) SetOrder(uids []string) int {
 	p.saveLocked()
 	return len(ordered)
 }
+// statusAccountEnabledPtr 把 auth 的账号总开关折算成 Status 的指针形态：
+// 启用 = nil（不输出该键），关闭 = &false。
+func statusAccountEnabledPtr(a *auth.Auth) *bool {
+	if a.AccountEnabled() {
+		return nil
+	}
+	off := false
+	return &off
+}
+
 func (p *Pool) statusOf(uid string, e *entry) Status {
 	now := time.Now()
 	st := Status{
@@ -859,6 +869,8 @@ func (p *Pool) statusOf(uid string, e *entry) Status {
 		Disabled:             e.disabled,
 		Paused:               e.paused,
 		PoolEnabled:          e.a.PoolEnabled(),
+		// 账号总开关：nil = 启用（指针语义与 auth 侧对齐；未显式关闭不输出该键）
+		AccountEnabled:       statusAccountEnabledPtr(e.a),
 		SuccessCount:         e.successCount,
 		ErrTotal:             e.errTotal,
 		CheckinDone:          e.lastCheckinDay == cst.Day(now),

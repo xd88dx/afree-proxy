@@ -251,9 +251,10 @@ func handleWorkbuddyProxyClear(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleWorkbuddyPoolSetEnabled POST /admin/api/workbuddy/enabled  body: { uid, enabled }
-// 保存账号的"启用"开关（是否进入账号池参与选号）。开关落在 auth 凭证文件
+// 保存账号的"反代"开关（是否进入账号池参与会话选号）。开关落在 auth 凭证文件
 // （pool_enabled 键）并原子写回，重启不丢；不改冷却/熔断状态机，也不影响
-// 签到/保活等账号维护任务。
+// 签到/保活等账号维护任务。互锁：账号总开关关闭时禁止单独开启反代——
+// 不存在的账号没有"参与路由"可言。
 func handleWorkbuddyPoolSetEnabled(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
@@ -280,7 +281,52 @@ func handleWorkbuddyPoolSetEnabled(w http.ResponseWriter, r *http.Request) {
 		writeAPI(w, http.StatusBadRequest, apiResponse{Error: "unknown uid: " + req.UID})
 		return
 	}
+	if *req.Enabled && !a.AccountEnabled() {
+		writeAPI(w, http.StatusBadRequest, apiResponse{Error: "account switch is off: enable the account first, then the gateway switch"})
+		return
+	}
 	a.SetPoolEnabled(*req.Enabled)
+	if err := a.SaveAtomic(); err != nil {
+		writeAPI(w, http.StatusInternalServerError, apiResponse{Error: err.Error()})
+		return
+	}
+	writeAPI(w, http.StatusOK, apiResponse{Success: true, Data: map[string]any{"uid": req.UID, "enabled": *req.Enabled}})
+}
+
+// handleWorkbuddyAccountSetEnabled POST /admin/api/workbuddy/account-enabled
+// body: { uid, enabled }
+// 保存账号的"账号"总开关（afree 本地功能）：false = 该账号视为不存在——不参与
+// 会话选号，签到/旅行/活跃/保活/夜猫子/连登/余额刷新等全部维护任务也跳过
+// （vendor scheduler/pool 按 Status.AccountEnabled 统一跳过）。开关落在 auth
+// 凭证文件（account_enabled 键）并原子写回，重启不丢；缺键 = 启用（存量账号
+// 不受影响）。反代开关（pool_enabled）不在此联动改写，两开关持久化值独立。
+func handleWorkbuddyAccountSetEnabled(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
+		return
+	}
+	if workbuddySub == nil || workbuddySub.pool == nil {
+		writeAPI(w, http.StatusServiceUnavailable, apiResponse{Error: "workbuddy subsystem unavailable"})
+		return
+	}
+	var req struct {
+		UID     string `json:"uid"`
+		Enabled *bool  `json:"enabled"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeAPI(w, http.StatusBadRequest, apiResponse{Error: "invalid json: " + err.Error()})
+		return
+	}
+	if strings.TrimSpace(req.UID) == "" || req.Enabled == nil {
+		writeAPI(w, http.StatusBadRequest, apiResponse{Error: "uid and enabled are required"})
+		return
+	}
+	a := workbuddySub.pool.AuthByUID(strings.TrimSpace(req.UID))
+	if a == nil {
+		writeAPI(w, http.StatusBadRequest, apiResponse{Error: "unknown uid: " + req.UID})
+		return
+	}
+	a.SetAccountEnabled(*req.Enabled)
 	if err := a.SaveAtomic(); err != nil {
 		writeAPI(w, http.StatusInternalServerError, apiResponse{Error: err.Error()})
 		return

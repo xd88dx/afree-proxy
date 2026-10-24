@@ -13,12 +13,14 @@ import (
 	"afree-proxy/internal/workbuddy/upstream"
 )
 
-// blackcatEligible 夜猫子候选资格：禁用与暂停选号的账号都不跑。
+// blackcatEligible 夜猫子候选资格：禁用与暂停选号的账号都不跑；账号总开关关闭
+//（AccountEnabled=false，afree 本地补丁）同样不跑——账号不存在，夜猫子对话也是
+// 真实模型调用，更不能发。
 //
 // 抽成纯函数只为一件事：RunBlackcatNow 有 23:00–08:00 窗口前置判断，窗口外的单测
 // 走不到循环体，这条口径就没有可跑的检查。**取整个 Status 而不是两个布尔**——调用点
 // 写不出参数反序（那是这类两布尔判据最现实的错法）。
-func blackcatEligible(st pool.Status) bool { return !st.Disabled && !st.Paused }
+func blackcatEligible(st pool.Status) bool { return !st.Disabled && !st.Paused && st.AccountOn() }
 
 // nowForNightWindow 夜猫子窗口判定所用时钟（生产恒为 time.Now）。
 //

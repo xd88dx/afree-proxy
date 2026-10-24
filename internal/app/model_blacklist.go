@@ -437,6 +437,11 @@ func businessCodeIn(body string) string {
 
 // withModelBlacklistScan 在网关入口统一挂自动拉黑：先读出请求体取 model
 //（用于判平台与记录），再把可捕获错误体的 writer 交给下游 handler。
+// 同一入口顺带挂**封禁平台闸**（platform_blacklist.go）：平台被管理员封禁后
+// 不参与任何会话路由，命中直接 503——放在读出 model 之后、分发之前，三个
+// /chat/completions、/messages、/responses 入口一处收口。判定口径：combo 别名
+// 按声明平台、带前缀按前缀平台、裸名按 Cline（routePlatformKeyOf；裸名 zen 兼容
+// 解析是旧形态遗留，封 Cline 时一并被闸属 fail-closed 的可接受代价）。
 func withModelBlacklistScan(h http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost || r.Body == nil {
@@ -453,6 +458,19 @@ func withModelBlacklistScan(h http.HandlerFunc) http.HandlerFunc {
 			Model string `json:"model"`
 		}
 		_ = json.Unmarshal(raw, &probe)
+		// 封禁平台闸：模型封禁逐个摘、平台封禁整平台拒（错误信封与网关其余
+		// 错误同形；type=api_error 便于客户端与 402/429 等业务错误区分）。
+		if plat := bannedPlatformOf(probe.Model); plat != "" {
+			log.Printf("  platform banned: %q routed to %s (out of routing)", probe.Model, plat)
+			writeJSON(w, http.StatusServiceUnavailable, map[string]any{
+				"error": map[string]string{
+					"message": "model " + probe.Model + " belongs to platform " + plat +
+						" which is banned by the admin; unban it in the admin panel (Gateway settings → Banned platforms)",
+					"type": "api_error",
+				},
+			})
+			return
+		}
 		cw := &modelErrorCapture{ResponseWriter: w, model: probe.Model}
 		h(cw, r)
 		cw.finish()
