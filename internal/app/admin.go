@@ -69,6 +69,7 @@ func registerAdminRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/admin/api/accounts/pool/enabled", adminCORS(auth(handleAdminAccountSetPoolEnabled)))
 	mux.HandleFunc("/admin/api/accounts/pool/enabled/all", adminCORS(auth(handleAdminAccountSetPoolEnabledAll)))
 	mux.HandleFunc("/admin/api/accounts/reorder", adminCORS(auth(handleAdminAccountsReorder)))
+	mux.HandleFunc("/admin/api/accounts/nickname", adminCORS(auth(handleAdminAccountNickname)))
 	mux.HandleFunc("/admin/api/logs", adminCORS(auth(handleRequestLogs)))
 	mux.HandleFunc("/admin/api/keys", adminCORS(auth(handleAdminGetKeys)))
 	mux.HandleFunc("/admin/api/keys/generate", adminCORS(auth(handleAdminGenerateKey)))
@@ -325,6 +326,64 @@ func handleAdminAccountsReorder(w http.ResponseWriter, r *http.Request) {
 		Success: true,
 		Message: "Order saved",
 		Data:    map[string]any{"updated": n},
+	})
+}
+
+// handleAdminAccountNickname POST /admin/api/accounts/nickname
+// body: { accountId, nickname }
+// 设置 Cline 账号的显示昵称（面板账号列）。昵称 trim 后 ≤64 字符；空串 =
+// 清除昵称（账号列恢复显示邮箱）。仅影响展示，不参与选号路由。
+func handleAdminAccountNickname(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		writeAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
+		return
+	}
+	body, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
+	if err != nil {
+		writeAPI(w, http.StatusBadRequest, apiResponse{Error: err.Error()})
+		return
+	}
+	defer r.Body.Close()
+	var req struct {
+		AccountID string `json:"accountId"`
+		Nickname  string `json:"nickname"`
+	}
+	if err := json.Unmarshal(body, &req); err != nil {
+		writeAPI(w, http.StatusBadRequest, apiResponse{Error: "invalid JSON"})
+		return
+	}
+	if req.AccountID == "" {
+		writeAPI(w, http.StatusBadRequest, apiResponse{Error: "accountId is required"})
+		return
+	}
+	nick := strings.TrimSpace(req.Nickname)
+	if len(nick) > 64 {
+		writeAPI(w, http.StatusBadRequest, apiResponse{Error: "nickname too long (max 64)"})
+		return
+	}
+
+	p := loadPool()
+	poolMu.Lock()
+	var target *Account
+	for _, a := range p.Accounts {
+		if a != nil && a.AccountID == req.AccountID {
+			target = a
+			break
+		}
+	}
+	if target == nil {
+		poolMu.Unlock()
+		writeAPI(w, http.StatusBadRequest, apiResponse{Error: "unknown accountId: " + req.AccountID})
+		return
+	}
+	target.Nickname = nick
+	markPoolDirtyLocked()
+	poolMu.Unlock()
+	savePool()
+	writeAPI(w, http.StatusOK, apiResponse{
+		Success: true,
+		Message: "Nickname saved",
+		Data:    map[string]any{"accountId": req.AccountID, "nickname": nick},
 	})
 }
 

@@ -3,9 +3,13 @@ package app
 import "time"
 
 type Account struct {
-	AccountID    string `json:"accountId"`
-	Email        string `json:"email"`
-	RefreshToken string `json:"refreshToken"`
+	AccountID string `json:"accountId"`
+	Email     string `json:"email"`
+	// Nickname 可选显示名（面板账号列）：设置后账号列优先显示昵称、小字
+	// 保留邮箱；空 = 未设置（显示邮箱）。仅影响面板展示与日志标签，不参与
+	// 选号路由。随 .cline-accounts.json 与配置备份一起持久化。
+	Nickname     string    `json:"nickname,omitempty"`
+	RefreshToken string    `json:"refreshToken"`
 	// APIToken 静态 API key（sk_...）账号：设置后直接作为 Bearer 使用，
 	// 不刷新（无 refresh token）；json 序列化持久化，重启后仍生效。
 	// 优先级高于 RefreshToken/AccessToken。

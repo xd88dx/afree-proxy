@@ -100,6 +100,19 @@ tbody tr{transition:.12s}
 tbody tr:hover{background:rgba(255,255,255,.035)}
 tbody tr:last-child td{border-bottom:none}
 
+/* ===== 账号列昵称（cline 账号表 + WorkBuddy 账号表共用）===== */
+.nick-cell{min-width:0;max-width:260px}
+.nick-wrap{display:flex;align-items:center;gap:6px;min-width:0}
+.nick-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.nick-sub{font-size:10px;color:var(--text3);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.nick-pen{flex:none;display:inline-flex;cursor:pointer;color:var(--text3);opacity:0;transition:.12s;border:none;background:none;padding:2px;line-height:0}
+tr:hover .nick-pen{opacity:.85}
+.nick-pen:hover{opacity:1;color:var(--text1)}
+.nick-input{width:150px;font-size:12.5px;padding:3px 8px;border:1px solid var(--border);border-radius:6px;background:var(--bg,#14161a);color:var(--text1)}
+.nick-ok,.nick-no{flex:none;cursor:pointer;border:none;background:none;color:var(--text3);font-size:13px;line-height:1;padding:2px}
+.nick-ok:hover{color:var(--success,#4ade80)}
+.nick-no:hover{color:var(--danger,#f87171)}
+
 /* ===== Auto-assign rules（平台/子平台级黑名单 + 上限，卡片网格）===== */
 .pr-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
 @media(max-width:1180px){.pr-grid{grid-template-columns:1fr}}
@@ -1934,6 +1947,11 @@ const I18N_ZH = {
   ' failed': ' 失败',
   'Email (optional)': '邮箱（可选）',
   'Cancel': '取消',
+  'Edit nickname': '修改昵称',
+  'Nickname': '昵称',
+  'Nickname saved': '昵称已保存',
+  'Failed to save nickname: ': '昵称保存失败：',
+  'Nickname cannot be empty': '昵称不能为空',
   'The type is detected automatically — sk_... is pooled as a static API key, anything else as an OAuth refresh token.': '类型自动识别：sk_... 按静态 API key 入池，其余按 OAuth refreshToken 处理。',
   ', ': '，',
   'Clear proxy bindings on ALL keys and disable routing? Click Save to apply.': '清空全部 key 的代理绑定并禁用路由？点击「保存」后生效。',
@@ -2626,10 +2644,18 @@ function renderWorkbuddyAccounts() {
       (poolEnabled ? ' checked' : '') + ' title="' + esc(T('Participates in request routing')) + '" aria-label="' + esc(T('Participates in request routing')) + '"></td>';
     // uid 过长会把 Account 列撑宽，昵称下方只留前 10 个字符，完整值走 title 悬浮。
     const shortId = id.length > 10 ? id.slice(0, 10) + '…' : id;
+    // 账号列：昵称旁铅笔行内改名。手改后加本地锁（上游昵称同步跳过，不被
+    // 手动全量刷新覆盖）；清空 = 解锁并从上游拉当前昵称恢复。铅笔回显当前
+    // **显示值**；可编辑值提交后由后端落 nickname 字段。
+    const wbNick = account.nickname || '';
+    const wbDisplayName = account.name || account.email || wbNick || ('Account ' + id);
     return '<tr draggable="true" data-wb-id="' + esc(id) + '" data-drag-id="' + esc(id) + '">' +
       '<td class="mono" style="font-size:11px;color:var(--text3)">#' + (i + 1) + '</td>' +
       '<td><div class="wb-account"><div class="wb-account-main">' +
-        '<div class="wb-account-name">' + esc(account.name || account.email || account.nickname || ('Account ' + id)) + '</div>' +
+        '<div class="nick-wrap">' +
+          '<span class="wb-account-name nick-name" title="' + esc(wbDisplayName) + '">' + esc(wbDisplayName) + '</span>' +
+          nickPen(id, wbDisplayName, T('Edit nickname')) +
+        '</div>' +
         '<div class="wb-account-id" title="' + esc(realm + ' · ' + id) + '">' + esc(realm) + ' · ' + esc(shortId) + '</div>' +
       '</div></div></td>' +
       '<td>' + statusHtml + '</td>' +
@@ -2648,6 +2674,12 @@ function renderWorkbuddyAccounts() {
   tbody.onchange = e => {
     const c = e.target.closest('input[data-wb-pool]');
     if (c) markRowDirty(c.closest('tr'), 'wb');
+  };
+  // 账号列铅笔改名：手改后加本地锁（上游同步跳过，不被手动全量刷新覆盖）；
+  // 清空 = 解锁并从上游拉当前昵称恢复，所以 allowEmpty。
+  tbody.onclick = e => {
+    const pen = e.target.closest('.nick-pen');
+    if (pen) startNickEdit(pen, { save: saveWbNickname, reload: loadWorkbuddyAccounts, allowEmpty: true });
   };
 }
 async function loadWorkbuddyProxyState() {
@@ -3356,6 +3388,73 @@ function enableRowDragReorder(tbodyId, submit, reload) {
   });
 }
 
+// ========== 账号列昵称（cline 账号表 + WorkBuddy 账号表共用）==========
+// 昵称仅是显示名：面板账号列与日志标签用，不改任何路由/选号行为。
+// 铅笔行内改名：点击铅笔 → 名称变输入框，Enter/✓ 保存，Esc/✕ 取消；
+// 保存成功后由 opts.reload() 重拉列表对齐。
+const NICK_PEN_SVG = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>';
+// nickPen 生成铅笔按钮；current 是可编辑值（data-nick-current），id 走 data-nick-id。
+const nickPen = (id, current, title) =>
+  '<button type="button" class="nick-pen" data-nick-id="' + esc(id) + '" data-nick-current="' + esc(current) + '" title="' + esc(title) + '" aria-label="' + esc(title) + '">' + NICK_PEN_SVG + '</button>';
+
+// startNickEdit 在铅笔所在的 .nick-wrap 内展开行内编辑。opts:
+//   save(id, value) -> Promise  保存 API（失败抛错）
+//   reload()                    成功后重拉列表
+//   allowEmpty                  空值语义：cline true = 清除昵称恢复显示邮箱；
+//                               wb false = 上游昵称兜底下不允许清空
+function startNickEdit(pen, opts) {
+  const wrap = pen.closest('.nick-wrap');
+  if (!wrap || wrap.querySelector('.nick-input')) return;
+  const id = pen.dataset.nickId;
+  const current = pen.dataset.nickCurrent || '';
+  const nameEl = wrap.querySelector('.nick-name');
+  nameEl.style.display = 'none';
+  pen.style.display = 'none';
+  const input = document.createElement('input');
+  input.className = 'nick-input';
+  input.maxLength = 64;
+  input.value = current;
+  input.placeholder = T('Nickname');
+  const okBtn = document.createElement('button');
+  okBtn.type = 'button'; okBtn.className = 'nick-ok'; okBtn.textContent = '✓'; okBtn.title = T('Save');
+  const noBtn = document.createElement('button');
+  noBtn.type = 'button'; noBtn.className = 'nick-no'; noBtn.textContent = '✕'; noBtn.title = T('Cancel');
+  wrap.append(input, okBtn, noBtn);
+  input.focus();
+  if (current) input.select();
+  const cleanup = () => {
+    input.remove(); okBtn.remove(); noBtn.remove();
+    nameEl.style.display = ''; pen.style.display = '';
+  };
+  let busy = false;
+  const doSave = async () => {
+    if (busy) return;
+    const v = input.value.trim();
+    if (!v && !opts.allowEmpty) { toast(T('Nickname cannot be empty'), 'warning'); input.focus(); return; }
+    if (v === current) { cleanup(); return; } // 未变 = 视为取消，不打 API
+    busy = true;
+    try {
+      await opts.save(id, v);
+      toast(T('Nickname saved'), 'success');
+      cleanup();
+      busy = false;
+      opts.reload();
+    } catch (err) {
+      busy = false;
+      toast(T('Failed to save nickname: ') + err.message, 'error');
+    }
+  };
+  const doCancel = () => { if (!busy) cleanup(); };
+  okBtn.onclick = doSave;
+  noBtn.onclick = doCancel;
+  input.onkeydown = e => {
+    if (e.key === 'Enter') doSave();
+    else if (e.key === 'Escape') doCancel();
+  };
+}
+const saveClineNickname = (accountId, nickname) => api('POST', '/accounts/nickname', { accountId, nickname });
+const saveWbNickname = (uid, nickname) => api('POST', '/workbuddy/nickname', { uid, nickname });
+
 async function loadAccounts() {
   try {
     await loadProxyListCache();
@@ -3410,9 +3509,19 @@ async function loadAccounts() {
         ' title="' + esc(T('Participates in request routing')) + '" aria-label="' + esc(T('Participates in request routing')) + '">' +
         '</td>';
       const st = esc(a.status);
+      // 账号列：昵称优先（设了昵称时主行显示昵称、小字保留邮箱），铅笔行内改名。
+      // 空昵称 = 清除（恢复显示邮箱），所以 allowEmpty。铅笔回显当前**显示值**
+      // （昵称或邮箱），在原值基础上改而不是从空白开始。
+      const nick = a.nickname || '';
+      const displayName = nick || a.email || '(no email)';
       return '<tr draggable="true" data-drag-id="' + esc(a.accountId) + '">' +
         '<td class="mono" style="font-size:11px;color:var(--text3)">#' + (i + 1) + '</td>' +
-        '<td>' + esc(a.email) + '</td>' +
+        '<td><div class="nick-cell"><div class="nick-wrap">' +
+          '<span class="nick-name" title="' + esc(displayName) + '">' + esc(displayName) + '</span>' +
+          nickPen(a.accountId, displayName, T('Edit nickname')) +
+        '</div>' +
+        (nick ? '<div class="nick-sub" title="' + esc(a.email) + '">' + esc(a.email) + '</div>' : '') +
+        '</div></td>' +
         '<td><span class="status ' + st + '"><span class="status-dot ' + st + '"></span>' + (sn[a.status] || st) + '</span>' + statusExtra + '</td>' +
           '<td title="' + T('Today') + ' ' + fmtNum(a.tokensToday) + ' / ' + T('total') + ' ' + fmtNum(a.tokensTotal) + ' ' + T('tokens (exact when upstream returns usage, otherwise estimated)') + '">' + fmtTokens(a.tokensToday) + ' / ' + fmtTokens(a.tokensTotal) + '</td>' +
         '<td class="mono" style="font-size:11px">' + lu + '</td>' +
@@ -3435,6 +3544,8 @@ async function loadAccounts() {
       markRowDirty(input.closest('tr'), 'acc');
     };
     tbody.onclick = e => {
+      const pen = e.target.closest('.nick-pen');
+      if (pen) { startNickEdit(pen, { save: saveClineNickname, reload: loadAccounts, allowEmpty: true }); return; }
       const b = e.target.closest('button[data-act]');
       if (!b) return;
       const id = b.dataset.acc;

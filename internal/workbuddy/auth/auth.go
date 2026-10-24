@@ -50,6 +50,13 @@ type Auth struct {
 	// 正交：本开关只表达"管理员是否让该账号进入账号池参与选号"，不改冷却/
 	// 熔断状态机，也不影响签到/保活等账号维护任务。
 	poolEnabled *bool
+
+	// nicknameLocked 本地昵称锁（afree 本地补丁，非上游代码）：true = 管理员
+	// 在面板手改过昵称，上游昵称同步（panel syncNicknames）跳过该号防覆盖；
+	// false = 跟随上游（每次手动全量刷新余额时同步）。落盘于 auth 文件
+	// account.nickname_locked（嵌套形）/ 顶层 nickname_locked（扁平形），
+	// 缺省 false = 未锁定，旧文件无该键不受影响。
+	nicknameLocked bool
 }
 
 // Lock 供同进程内其他包（upstream.RefreshToken）在改写 Auth 字段期间加锁。
@@ -57,6 +64,29 @@ func (a *Auth) Lock() { a.mu.Lock() }
 
 // Unlock 释放 a.Lock 获取的锁。
 func (a *Auth) Unlock() { a.mu.Unlock() }
+
+// NicknameLocked 本地昵称锁（afree 本地补丁）：true = 面板手改过昵称，
+// panel syncNicknames 跳过该号，手动全量刷新余额不再覆盖。
+func (a *Auth) NicknameLocked() bool {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.nicknameLocked
+}
+
+// SetLocalNickname 一次性设置昵称与本地锁并原子落盘（afree 本地补丁）。
+// locked=true = 管理员手改（防上游同步覆盖）；locked=false = 恢复跟随上游，
+// 此时 nick 由调用方先从上游拉好（本方法不接受空昵称——空值会把展示打回 uid）。
+// 改字段持 a.mu、落盘走 SaveAtomic（内部自取锁），与 pool.SetNickname 同模式。
+func (a *Auth) SetLocalNickname(nick string, locked bool) error {
+	if strings.TrimSpace(nick) == "" {
+		return fmt.Errorf("empty nickname")
+	}
+	a.mu.Lock()
+	a.Nickname = nick
+	a.nicknameLocked = locked
+	a.mu.Unlock()
+	return a.SaveAtomic()
+}
 
 // AccessTokenValue 加锁读取 AccessToken（出站请求头一律经此取值，勿直读字段）。
 //
@@ -379,9 +409,10 @@ func Parse(raw []byte) (*Auth, error) {
 				PoolEnabled  *bool  `json:"pool_enabled"`
 			} `json:"auth"`
 			Account struct {
-				UID          string `json:"uid"`
-				EnterpriseID string `json:"enterpriseId"`
-				Nickname     string `json:"nickname"`
+				UID            string `json:"uid"`
+				EnterpriseID   string `json:"enterpriseId"`
+				Nickname       string `json:"nickname"`
+				NicknameLocked bool   `json:"nickname_locked"`
 			} `json:"account"`
 			// DeviceToken 顶层 device_token（嵌套形与扁平形共用；手写时无需嵌进 auth 对象）。
 			DeviceToken string `json:"device_token"`
@@ -390,44 +421,47 @@ func Parse(raw []byte) (*Auth, error) {
 			return nil, fmt.Errorf("storage_parse_error: %w", err)
 		}
 		a = Auth{
-			AccessToken:  n.Auth.AccessToken,
-			RefreshToken: n.Auth.RefreshToken,
-			ExpiresAt:    n.Auth.ExpiresAt,
-			Domain:       n.Auth.Domain,
-			realm:        n.Auth.Realm,
-			UID:          n.Account.UID,
-			EnterpriseID: n.Account.EnterpriseID,
-			Nickname:     n.Account.Nickname,
-			DeviceToken:  n.DeviceToken,
-			poolEnabled:  n.Auth.PoolEnabled,
+			AccessToken:    n.Auth.AccessToken,
+			RefreshToken:   n.Auth.RefreshToken,
+			ExpiresAt:      n.Auth.ExpiresAt,
+			Domain:         n.Auth.Domain,
+			realm:          n.Auth.Realm,
+			UID:            n.Account.UID,
+			EnterpriseID:   n.Account.EnterpriseID,
+			Nickname:       n.Account.Nickname,
+			DeviceToken:    n.DeviceToken,
+			poolEnabled:    n.Auth.PoolEnabled,
+			nicknameLocked: n.Account.NicknameLocked,
 		}
 	} else {
 		var f struct {
-			AccessToken  string `json:"accessToken"`
-			RefreshToken string `json:"refreshToken"`
-			ExpiresAt    int64  `json:"expiresAt"`
-			Domain       string `json:"domain"`
-			Realm        string `json:"realm"`
-			UID          string `json:"uid"`
-			EnterpriseID string `json:"enterpriseId"`
-			Nickname     string `json:"nickname"`
-			DeviceToken  string `json:"device_token"`
-			PoolEnabled  *bool  `json:"pool_enabled"`
+			AccessToken    string `json:"accessToken"`
+			RefreshToken   string `json:"refreshToken"`
+			ExpiresAt      int64  `json:"expiresAt"`
+			Domain         string `json:"domain"`
+			Realm          string `json:"realm"`
+			UID            string `json:"uid"`
+			EnterpriseID   string `json:"enterpriseId"`
+			Nickname       string `json:"nickname"`
+			NicknameLocked bool   `json:"nickname_locked"`
+			DeviceToken    string `json:"device_token"`
+			PoolEnabled    *bool  `json:"pool_enabled"`
 		}
 		if err := json.Unmarshal(raw, &f); err != nil {
 			return nil, fmt.Errorf("storage_parse_error: %w", err)
 		}
 		a = Auth{
-			AccessToken:  f.AccessToken,
-			RefreshToken: f.RefreshToken,
-			ExpiresAt:    f.ExpiresAt,
-			Domain:       f.Domain,
-			realm:        f.Realm,
-			UID:          f.UID,
-			EnterpriseID: f.EnterpriseID,
-			Nickname:     f.Nickname,
-			DeviceToken:  f.DeviceToken,
-			poolEnabled:  f.PoolEnabled,
+			AccessToken:    f.AccessToken,
+			RefreshToken:   f.RefreshToken,
+			ExpiresAt:      f.ExpiresAt,
+			Domain:         f.Domain,
+			realm:          f.Realm,
+			UID:            f.UID,
+			EnterpriseID:   f.EnterpriseID,
+			Nickname:       f.Nickname,
+			DeviceToken:    f.DeviceToken,
+			poolEnabled:    f.PoolEnabled,
+			nicknameLocked: f.NicknameLocked,
 		}
 	}
 	if strings.TrimSpace(a.AccessToken) == "" {
@@ -466,6 +500,11 @@ func (a *Auth) SaveAtomic() error {
 	// OAuth 输出形状一致，插件读取忽略未知键）。
 	if a.poolEnabled != nil {
 		doc["auth"].(map[string]any)["pool_enabled"] = *a.poolEnabled
+	}
+	// nickname_locked 仅 true 才写回（afree 本地补丁）：未手改过昵称的账号
+	// 不引入新键，保持与插件 OAuth 输出形状一致。
+	if a.nicknameLocked {
+		doc["account"].(map[string]any)["nickname_locked"] = true
 	}
 	// DeviceToken 非空才写回顶层 device_token：避免在无该字段的旧文件里引入空键
 	// （保持与插件 OAuth 输出形状一致，插件读取忽略未知键）。

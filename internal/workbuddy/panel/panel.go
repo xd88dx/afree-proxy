@@ -1343,6 +1343,12 @@ func (p *Panel) syncNicknames() {
 			continue
 		}
 		if a := p.cfg.Pool.AuthByUID(st.UID); a != nil && a.AccessTokenValue() != "" {
+			// afree 本地补丁：面板手改过昵称（本地锁，SetLocalNickname locked=true）
+			// 的账号跳过上游同步——手动全量刷新余额不得覆盖管理员改名。解锁恢复
+			// 上游昵称走 /admin/api/workbuddy/nickname 的清空语义。
+			if a.NicknameLocked() {
+				continue
+			}
 			jobs = append(jobs, job{uid: st.UID, a: a})
 		}
 	}

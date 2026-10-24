@@ -744,6 +744,7 @@ func ListAccounts() []*Account {
 		result[i] = &Account{
 			AccountID:       a.AccountID,
 			Email:           a.Email,
+			Nickname:        a.Nickname,
 			Status:          a.Status,
 			LastUsed:        a.LastUsed,
 			UsageCount:      a.UsageCount,

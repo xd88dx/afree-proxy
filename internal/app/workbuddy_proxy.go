@@ -321,3 +321,88 @@ func handleWorkbuddyPoolReorder(w http.ResponseWriter, r *http.Request) {
 	n := workbuddySub.pool.SetOrder(req.UIDs)
 	writeAPI(w, http.StatusOK, apiResponse{Success: true, Message: "Order saved", Data: map[string]any{"ordered": n}})
 }
+
+// handleWorkbuddyNickname POST /admin/api/workbuddy/nickname  body: { uid, nickname }
+// 设置 WorkBuddy 账号的显示昵称（面板账号列）。仅影响展示与日志标签，不参与
+// 选号路由。语义（2026-10-24 用户定）：
+//   - nickname 非空：设为本地昵称并加锁（auth 文件 nickname_locked=true），
+//     之后面板手动「全量刷新余额」的上游昵称同步（panel syncNicknames）跳过
+//     该号——手改值不被覆盖。
+//   - nickname 空：解锁并从上游拉当前昵称恢复（FetchAccountProfile），回到
+//     "跟随上游"状态；上游拉取失败则整个请求失败，不做半更新。
+func handleWorkbuddyNickname(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
+		return
+	}
+	if workbuddySub == nil || workbuddySub.pool == nil {
+		writeAPI(w, http.StatusServiceUnavailable, apiResponse{Error: "workbuddy subsystem unavailable"})
+		return
+	}
+	body, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
+	if err != nil {
+		writeAPI(w, http.StatusBadRequest, apiResponse{Error: err.Error()})
+		return
+	}
+	defer r.Body.Close()
+	var req struct {
+		UID      string `json:"uid"`
+		Nickname string `json:"nickname"`
+	}
+	if err := json.Unmarshal(body, &req); err != nil {
+		writeAPI(w, http.StatusBadRequest, apiResponse{Error: "invalid JSON"})
+		return
+	}
+	if req.UID == "" {
+		writeAPI(w, http.StatusBadRequest, apiResponse{Error: "uid is required"})
+		return
+	}
+	a := workbuddySub.pool.AuthByUID(req.UID)
+	if a == nil {
+		writeAPI(w, http.StatusBadRequest, apiResponse{Error: "unknown uid: " + req.UID})
+		return
+	}
+	nick := strings.TrimSpace(req.Nickname)
+	if nick != "" && len(nick) > 64 {
+		writeAPI(w, http.StatusBadRequest, apiResponse{Error: "nickname too long (max 64)"})
+		return
+	}
+	if nick == "" {
+		// 清空 = 解锁 + 恢复上游昵称。拉取失败整体失败：宁可让用户重试，
+		// 也不留下"锁没了、昵称却是旧手改值"的中间态。
+		if workbuddySub.upstream == nil {
+			writeAPI(w, http.StatusServiceUnavailable, apiResponse{Error: "workbuddy upstream unavailable"})
+			return
+		}
+		upstreamNick, ferr := workbuddySub.upstream.FetchAccountProfile(a)
+		if ferr != nil {
+			writeAPI(w, http.StatusBadGateway, apiResponse{Error: "fetch upstream nickname failed: " + ferr.Error()})
+			return
+		}
+		if strings.TrimSpace(upstreamNick) == "" {
+			writeAPI(w, http.StatusBadGateway, apiResponse{Error: "upstream returned empty nickname; keep your local name or retry later"})
+			return
+		}
+		if serr := a.SetLocalNickname(upstreamNick, false); serr != nil {
+			writeAPI(w, http.StatusInternalServerError, apiResponse{Error: "nickname save failed: " + serr.Error()})
+			return
+		}
+		writeAPI(w, http.StatusOK, apiResponse{
+			Success: true,
+			Message: "Nickname restored from upstream",
+			Data:    map[string]any{"uid": req.UID, "nickname": upstreamNick, "synced": true},
+		})
+		return
+	}
+	// 手改：设昵称 + 加锁，一次落盘。同值重复提交幂等（SetLocalNickname 无变化
+	// 也会重写文件，但内容一致无害；锁状态反正要落盘）。
+	if serr := a.SetLocalNickname(nick, true); serr != nil {
+		writeAPI(w, http.StatusInternalServerError, apiResponse{Error: "nickname save failed: " + serr.Error()})
+		return
+	}
+	writeAPI(w, http.StatusOK, apiResponse{
+		Success: true,
+		Message: "Nickname saved",
+		Data:    map[string]any{"uid": req.UID, "nickname": nick, "locked": true},
+	})
+}
