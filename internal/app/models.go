@@ -296,17 +296,13 @@ func syncModelsOnce() {
 	}
 }
 
-// getDefaultModel 默认模型：面板里设置的偏好（pool.DefaultModel）优先，
-// 其次取 live 列表里排序最小的可用模型（确定性 —— 之前是 map 随机序，
-// 修剪掉偏好模型后会随机漂移到别的模型，客户端看到的行为不可预期）。
-func getDefaultModel() string {
+// firstActiveModel 确定性取 live 免费列表里排序最小的可用模型（探测用：
+// 面板 Test 未指定模型时需要打一个真实存在的模型）。
+func firstActiveModel() string {
 	initModelsCache()
 	modelsMu.Lock()
 	defer modelsMu.Unlock()
 
-	if m, ok := modelsCache[defaultModel]; ok && m.Status == ModelActive {
-		return defaultModel
-	}
 	best := ""
 	for id, m := range modelsCache {
 		if m.Status != ModelActive {
@@ -316,19 +312,18 @@ func getDefaultModel() string {
 			best = id
 		}
 	}
-	if best != "" {
-		return best
-	}
-	return defaultModel
+	return best
 }
 
+// normalizeRequestModel 把请求侧两种形态（带/不带 cline-free/ 前缀）解析到
+// feed 真实 ID（缓存键原样），出站请求体与账号池记账一律用真实 ID。
+// 不在免费表的名字原样返回——未知模型由入口 STRICT 门控显式拒绝，这里
+// 绝不静默改写成别的模型。
 func normalizeRequestModel(id string) string {
 	id = strings.TrimSpace(id)
 	if id == "" {
-		return getDefaultModel()
+		return ""
 	}
-	// 请求侧两种形态（带/不带 cline-free/ 前缀）都解析到 feed 真实 ID
-	// （缓存键原样），出站请求体与账号池记账一律用真实 ID。
 	initModelsCache()
 	modelsMu.Lock()
 	resolved, ok := clineListLookupLocked(id)
@@ -336,11 +331,11 @@ func normalizeRequestModel(id string) string {
 	if ok {
 		return resolved
 	}
-	log.Printf("  model %q not in free list, fallback to %q", id, getDefaultModel())
-	return getDefaultModel()
+	log.Printf("  model %q not in free list, passing through as-is", id)
+	return id
 }
 
-// modelInFreeList 门控放行判定：空串放行（让调用方按默认模型处理），
+// modelInFreeList 门控放行判定：空串放行（入口校验负责拒绝无 model 请求），
 // 否则 Cline 表（带/不带 cline-free/ 前缀都认）或 zen 模型命中即放行。
 func modelInFreeList(id string) bool {
 	id = strings.TrimSpace(id)

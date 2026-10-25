@@ -42,7 +42,6 @@ type AccountPool struct {
 	Accounts        []*Account `json:"accounts"`
 	CurrentIdx      int        `json:"currentIdx"`
 	Keys            []string   `json:"keys,omitempty"`
-	DefaultModel    string     `json:"defaultModel,omitempty"` // 用户自定义默认模型，持久化
 	ClineUseProxies *bool      `json:"clineUseProxies,omitempty"` // cline 上游走共享出口代理池（面板开关；nil = 默认开启）
 	// AdminLogEnabled /admin 页面与接口访问是否写入请求日志（面板开关；
 	// nil = 默认关闭）。本地自用部署不需要这些噪声行，默认只留经过网关的

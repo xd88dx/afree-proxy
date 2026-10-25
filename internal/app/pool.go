@@ -104,9 +104,6 @@ func loadPool() *AccountPool {
 			a.PoolEnabled = &enabled
 		}
 	}
-	if pool.DefaultModel != "" {
-		defaultModel = pool.DefaultModel
-	}
 	// 回放持久化的调度策略与自定义请求头（POOL_STRATEGY env 显式设置时
 	// 策略以 env 为准，跳过回放）
 	proxyConfigMu.Lock()
@@ -128,35 +125,8 @@ func loadPool() *AccountPool {
 		}
 		proxyConfig.Headers = h
 	}
-	proxyConfigMu.Unlock()
+		proxyConfigMu.Unlock()
 	return pool
-}
-
-// setDefaultModel 持久化默认模型：更新内存全局并写入账号池文件。
-// 默认模型可以是 Cline 免费模型，也可以是 OpenCode 免费模型（路由层按
-// 模型名分流，默认值只是"未知模型名的兜底"）。
-func setDefaultModel(modelID string) {
-	initModelsCache()
-	modelsMu.Lock()
-	// 面板/接口传来的是展示形态（cline-free/ 前缀），先解析到 feed 真实
-	// 缓存键再存，getDefaultModel 的精确查表才能命中。
-	if resolved, ok := clineListLookupLocked(modelID); ok {
-		modelID = resolved
-	}
-	_, ok := modelsCache[modelID]
-	modelsMu.Unlock()
-	if !ok {
-		initZenModels()
-		if _, zok := resolveZenFreeModel(modelID); !zok {
-			return
-		}
-	}
-	defaultModel = modelID
-	p := loadPool()
-	poolMu.Lock()
-	p.DefaultModel = modelID
-	poolMu.Unlock()
-	savePool()
 }
 
 // persistProxyConfig 把调度策略与自定义请求头写入账号池文件（重启后由

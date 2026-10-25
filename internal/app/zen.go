@@ -360,7 +360,7 @@ type zenConfigData struct {
 // proxyRuleKinds 自动分配规则（ProxyExclusions/ProxyBindCaps）的基础平台
 // kind，与前端凭据页 kind / REORDER_KINDS 同一口径。
 var proxyRuleKinds = map[string]bool{
-	"acc": true, "key": true, "wb": true, "amd": true,
+	"acc": true, "trae": true, "key": true, "wb": true, "amd": true,
 	"or": true, "th": true, "other": true,
 }
 
@@ -1169,18 +1169,22 @@ func pinnedZenKey() string {
 // 均不参与校验。注入的定义（描述+schema）统一取 zen_gate_tools.go 的官方
 // CLI 1.19.0 原文，本表只保留名字与精简描述作兜底/名录用途。
 // 单一来源：改名/增删必须同时满足两个端点的校验，只改这里。
+// 2.x 官方工具集（2026-10-25 对齐 opencode2api 上游 opencode_tools.json，
+// 顺序同上游 v2OfficialToolOrder）。JSON 加载失败时的兜底简表。
 var zenGateToolSpecs = []struct{ name, desc string }{
-	{"bash", "Execute a bash command"},
 	{"edit", "Edit a file"},
+	{"execute", "Execute a command"},
 	{"glob", "Find files by glob pattern"},
 	{"grep", "Search file contents"},
+	{"question", "Ask the user a question"},
 	{"read", "Read a file"},
+	{"shell", "Run a shell command"},
 	{"skill", "Load a skill"},
-	{"task", "Run a background task"},
-	{"todowrite", "Write a todo list"},
+	{"subagent", "Run a subagent"},
 	{"webfetch", "Fetch a web page"},
 	{"websearch", "Search the web"},
 	{"write", "Write a file"},
+	{"patch", "Apply a patch"},
 }
 
 // zenGateTools chat 端点形态：tools[].{type,function:{name,description,parameters}}。
@@ -1241,7 +1245,7 @@ func buildZenBody(params map[string]any, stream bool) map[string]any {
 	delete(body, "reasoningEffort")
 	// FreeTier gate（2026-09-18 实测解码）：zen 免费层 chat 端点校验请求体
 	// 是否携带 opencode 工具集，缺失则 403（"can only be used from within
-	// OpenCode"）。恒注入 11 个规范工具名保证过闸。tool_choice 按客户端
+	// OpenCode"）。恒注入 2.x 官方 13 工具集保证过闸（2026-10-25 自 11 个 1.x 名单对齐上游 2.x）。tool_choice 按客户端
 	// 是否带工具分流（实测对比）：
 	//  - 客户端无工具（纯文本问答）：tool_choice=none。auto 会让部分模型
 	//    （ling 多轮实测）在有工具但无需调用时返回空文本；none 保证回复。

@@ -16,9 +16,12 @@ import (
 // 真实 schema 实测通过），但这里仍存官方原文，保持与 CLI 字节级一致，
 // 避免上游日后加严描述校验时再次全灭。
 //
-// 数据来源：opencode CLI 1.19.0 本地抓包（chat 形态与 responses 形态的
-// parameters 不同：responses 的 @ai-sdk/openai 会剥 $schema 与 min/max
-// 约束，故两套都存）。zen_gate_tools.json 由抓包生成，勿手改。
+// 数据来源：2026-10-25 起改为 opencode2api 上游（jasonxu114514）内嵌的
+// 官方 2.x 工具集 opencode_tools.json（13 工具，byte-for-byte 官方定义）；
+// parameters_chat 用上游原样 schema（无 $schema，2.x 端点实测形态），
+// parameters_responses 按官方 @ai-sdk 行为程序化剥 min/max 类约束。
+// 旧版为 CLI 1.19.0 抓包的 1.x 名单（bash/task/todowrite），已随
+// /inference/v1 的 2.x 校验整体替换。生成脚本：上游 json → strip 约束。
 // ============================================================================
 
 //go:embed zen_gate_tools.json
