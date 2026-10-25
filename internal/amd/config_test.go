@@ -145,6 +145,8 @@ func TestSyncCatalogFiltersAndUpdates(t *testing.T) {
 	Load(filepath.Join(dir, ".amd-config.json"))
 	cfg := DefaultConfig()
 	cfg.BaseURL = srv.URL
+	cfg.Keys = []string{"sk-test"}
+	cfg.KeyRoutingEnabled = map[string]bool{"sk-test": true}
 	Set(cfg)
 	if _, err := SyncCatalog(); err != nil {
 		t.Fatalf("sync failed: %v", err)
@@ -178,6 +180,8 @@ func TestSyncCatalogUnreachableKeepsSeed(t *testing.T) {
 	Load(filepath.Join(dir, ".amd-config.json"))
 	cfg := DefaultConfig()
 	cfg.BaseURL = srv.URL
+	cfg.Keys = []string{"sk-test"}
+	cfg.KeyRoutingEnabled = map[string]bool{"sk-test": true}
 	Set(cfg)
 	if _, err := SyncCatalog(); err == nil {
 		t.Error("expected error on unreachable catalog")
@@ -188,6 +192,13 @@ func TestSyncCatalogUnreachableKeepsSeed(t *testing.T) {
 }
 
 func TestSeedCatalogShape(t *testing.T) {
+	// 无启用 key 时目录对外为空（展示门控）；种下启用 key 再验证种子快照。
+	cfg := Get()
+	next := *cfg
+	next.Keys = []string{"sk-test"}
+	next.KeyRoutingEnabled = map[string]bool{"sk-test": true}
+	Set(&next)
+	defer Set(cfg)
 	catalogMu.Lock()
 	catalogModels = map[string]Model{}
 	catalogLoaded = false
@@ -208,6 +219,12 @@ func TestSeedCatalogShape(t *testing.T) {
 }
 
 func TestProbeModelPrefersDocumentedModel(t *testing.T) {
+	cfg := Get()
+	next := *cfg
+	next.Keys = []string{"sk-test"}
+	next.KeyRoutingEnabled = map[string]bool{"sk-test": true}
+	Set(&next)
+	defer Set(cfg)
 	catalogMu.Lock()
 	catalogModels = map[string]Model{"A/first": {ID: "A/first"}, "DeepSeek-V4-Flash": {ID: "DeepSeek-V4-Flash"}}
 	catalogLoaded = true

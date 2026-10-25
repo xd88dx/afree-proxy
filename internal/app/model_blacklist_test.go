@@ -4,8 +4,12 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+
+	wbauth "afree-proxy/internal/workbuddy/auth"
+	wbpool "afree-proxy/internal/workbuddy/pool"
 )
 
 // 模型黑名单行为回归：
@@ -162,6 +166,15 @@ func TestBanModelManually(t *testing.T) {
 func TestWithModelBlacklistScan(t *testing.T) {
 	t.Setenv("DATA_DIR", t.TempDir())
 	resetModelBlacklistForTest(t)
+	// 平台可路由性闸要求 workbuddy 有可用账号，种一个默认启用的空账号。
+	tmp := t.TempDir()
+	savedSub := workbuddySub
+	workbuddySub = &workbuddySubsystem{pool: wbpool.New(filepath.Join(tmp, "state.json"))}
+	workbuddySub.pool.Add(&wbauth.Auth{UID: "scan-test"})
+	t.Cleanup(func() {
+		workbuddySub.pool.Close()
+		workbuddySub = savedSub
+	})
 
 	errBody := `{"error":{"message":"{\"code\":11158,\"msg\":\"model [gpt-6-luna] is not allowed for user type [personal_free_user]\"}"}}`
 	h := withModelBlacklistScan(func(w http.ResponseWriter, r *http.Request) {

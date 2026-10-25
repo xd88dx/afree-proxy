@@ -62,6 +62,11 @@ func startTHModelsRefresher() {
 
 // syncTHCatalog 同步目录；attempts 为额外重试次数（不含首次）。
 func syncTHCatalog(attempts int) {
+	// 无启用 key：官方目录需认证，同步注定 403——静默跳过（面板提示走
+	// 手动刷新端点的明确文案），与 amd/traeWork 的同步门控同款。
+	if !tokenharbor.HasEnabledKey() {
+		return
+	}
 	for i := 0; i <= attempts; i++ {
 		changed, err := tokenharbor.SyncCatalog()
 		if err == nil {
@@ -458,6 +463,13 @@ func handleTHKeyTest(w http.ResponseWriter, r *http.Request) {
 func handleTHModelsRefresh(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
+		return
+	}
+	if !tokenharbor.HasEnabledKey() {
+		writeAPI(w, http.StatusOK, apiResponse{
+			Success: false,
+			Message: "no enabled TokenHarbor key — enable a key first, then refresh",
+		})
 		return
 	}
 	syncTHCatalog(2)

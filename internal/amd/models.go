@@ -92,9 +92,13 @@ func SyncCatalog() (int, error) {
 	}
 	req.Header.Set("Accept", "application/json")
 	// 2026-10-26 实测：官方 /v1/models 已从免认证改为 401 Login required，
-	// 必须带 key 的 Bearer 头；无 key 时无法同步（保留现有目录）。
-	if len(Keys()) > 0 {
-		req.Header.Set("Authorization", "Bearer "+Keys()[0])
+	// 必须带 key 的 Bearer 头；目录同步是维护动作，用首个启用 key（无启用
+	// key 时同步无意义，由 app 层静默跳过/明确提示）。
+	for _, k := range Keys() {
+		if RoutingEnabled(k) {
+			req.Header.Set("Authorization", "Bearer "+k)
+			break
+		}
 	}
 	resp, err := catalogHTTPClient().Do(req)
 	if err != nil {
@@ -148,6 +152,11 @@ func SyncCatalog() (int, error) {
 // ModelList 排序后的免费模型列表（面板与 /v1/models 共用）。
 func ModelList() []Model {
 	InitCatalog()
+	// 展示门控（与 traeWork/workbuddy 同款）：没有启用 key 时目录不对外
+	// 提供——种子快照只留作请求侧解析兜底，不当"可服务目录"展示。
+	if !HasEnabledKey() {
+		return []Model{}
+	}
 	catalogMu.RLock()
 	out := make([]Model, 0, len(catalogModels))
 	for _, m := range catalogModels {
@@ -156,6 +165,18 @@ func ModelList() []Model {
 	catalogMu.RUnlock()
 	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
 	return out
+}
+
+// HasEnabledKey 是否存在参与路由的启用 key。模型目录的展示与同步门控：
+// 官方 /v1/models 需认证（2026-10-26 实测 401），无启用 key 既拉不到目录
+// 也不应展示（与 traeWork 无启用账号不显示模型同款语义）。
+func HasEnabledKey() bool {
+	for _, k := range Keys() {
+		if RoutingEnabled(k) {
+			return true
+		}
+	}
+	return false
 }
 
 // Resolve 解析裸模型 ID（去前缀由调用方处理）。不在目录中即拒绝 —— 未知模型

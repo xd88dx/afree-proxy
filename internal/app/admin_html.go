@@ -138,9 +138,10 @@ tr:hover .nick-pen{opacity:.85}
 .pr-chip button{border:0;background:transparent;color:var(--text3);cursor:pointer;font-size:13px;line-height:1;padding:1px 4px;border-radius:50%}
 .pr-chip button:hover{color:var(--danger);background:var(--panel)}
 #platformBanChips .pr-chip{background:rgba(224,112,95,.14);border-color:rgba(224,112,95,.45);color:var(--danger)}
-/* pr-chip-allex 批量追加框里「已在所有平台排除」的回显 chip：置灰+虚线边与
-   待追加选择区分开，× = 从所有平台批量取消（暂存，点保存才落盘） */
-.pr-chip-allex{opacity:.62;border-style:dashed}
+/* pr-chip-allex 批量追加框里「已在所有平台排除」的回显 chip：红色警示底
+   （与网关设置封禁平台 chip 同款）+ 虚线边置灰与待追加选择区分开，
+   × = 从所有平台批量取消（暂存，点保存才落盘） */
+.pr-chip-allex{opacity:.62;border-style:dashed;background:rgba(224,112,95,.14);border-color:rgba(224,112,95,.45);color:var(--danger)}
 .pr-tagin{flex:1;min-width:100px;border:0;background:transparent;color:var(--text);font:inherit;font-size:12.5px;outline:none;padding:2px}
 /* 只读点选框内的输入框不吃全局 input:focus 蓝圈（与 pr-tagbox:focus-within 辉光叠加成双圈） */
 .pr-tagin:focus{box-shadow:none;border:0;outline:none}
@@ -2572,6 +2573,10 @@ const I18N_ZH = {
   'Counted locally by this proxy from upstream usage events': '由本网关按上游用量事件本地计数',
   'Re-sync the model catalog from the TraeWork upstream using an enabled account': '用一个已启用的账号从 TraeWork 上游重新同步模型目录',
   'Models appear here once an account is enabled — the catalog syncs from upstream': '启用账号后此处才会显示并同步模型目录',
+  'Models appear here once a credential is enabled — the catalog syncs from upstream': '启用账号或 key 后此处才会显示并同步模型目录',
+  'no enabled AMDCloud key — enable a key first, then refresh': '没有启用的 AMDCloud key —— 请先启用 key 再刷新',
+  'no enabled Trae account — enable an account first, then refresh': '没有启用的 TraeWork 账号 —— 请先启用账号再刷新',
+  'no enabled TokenHarbor key — enable a key first, then refresh': '没有启用的 TokenHarbor key —— 请先启用 key 再刷新',
   'The model catalog syncs from the upstream live catalog every 10 minutes; with no enabled account, no models are shown here or in /v1/models.': '模型目录每 10 分钟从上游 live 目录同步；未启用任何账号时，此处与 /v1/models 都不显示模型。',
   'Add accounts': '添加账号',
   'No TraeWork accounts yet — click Add accounts': '暂无 TraeWork 账号——点"添加账号"',
@@ -5036,7 +5041,12 @@ async function loadModels() {
     // 保存后经 saveWorkbuddyConfig → loadModels 热刷新目录）
     const wbBox = _('wbModelsBody');
     if (wbBox) {
-      const wbAll = await fetchWorkbuddyModels();
+      // 空态分情境（与 TraeWork/AMDCloud 统一口径）：上游目录空（无启用账号
+      // 时后端 503，fetch 返回 []）→ 引导启用账号；目录有但被筛选/封禁光 →
+      // 保留筛选提示。
+      let wbAll = [];
+      let wbUnavailable = false;
+      try { wbAll = await fetchWorkbuddyModels(); } catch (e) { wbUnavailable = true; }
       const wbModels = wbAll.filter(notBlocked).filter(wbModelMatchesFilter).sort((a, b) => wbRate(a) - wbRate(b));
       const wbBlock = wbModels.length
         ? wbModels.map(m => {
@@ -5050,7 +5060,9 @@ async function loadModels() {
               wbContextTagHTML(m.context_length, T('Maximum context length')) +
               banBtn('workbuddy', m.id));
           }).join('')
-        : '<div class="empty">' + T('No WorkBuddy models under the current filter') + '</div>';
+        : '<div class="empty">' + T((wbUnavailable || wbAll.length === 0)
+            ? 'Models appear here once an account is enabled — the catalog syncs from upstream'
+            : 'No WorkBuddy models under the current filter') + '</div>';
       wbBox.innerHTML = wbBlock;
     }
     loadModelBlacklist();
@@ -6290,6 +6302,7 @@ async function saveOrConfig() {
 async function refreshOrModels() {
   try {
     const d = await api('POST', '/openrouter/models/refresh');
+    if (d && d.success === false) { toast(T(d.message || 'Refresh failed: '), 'error'); return; }
     await loadOrConfig();
     toast(T('Catalog refreshed') + ' (' + _('orModelsCount').textContent.replace(/[()]/g, '') + ')', 'success');
     loadOrConfig();
@@ -6565,7 +6578,9 @@ async function saveTraeConfig() {
 
 async function refreshTraeModels() {
   try {
-    await api('POST', '/trae/models/refresh');
+    const d = await api('POST', '/trae/models/refresh');
+    // 后端对无启用账号返回 success:false + Message（api() 不抛异常），按统一口径提示
+    if (d && d.success === false) { toast(T(d.message || 'Refresh failed: '), 'error'); return; }
     await loadTraeConfig();
     toast(T('Catalog refreshed') + ' (' + _('traeModelsCount').textContent.replace(/[()]/g, '') + ')', 'success');
   } catch (e) { toast(T('Refresh failed: ') + e.message, 'error'); }
@@ -6681,7 +6696,8 @@ function renderTraeAccounts(accs) {
 }
 
 async function saveTraeLabel(index, label) {
-  await api('POST', '/trae/accounts/label', { index: index, label: label });
+  // data-nick-id 走 dataset 是字符串，端点 index 字段要 int
+  await api('POST', '/trae/accounts/label', { index: parseInt(index, 10), label: label });
 }
 
 function stageAllTraeRouting(enabled) {
@@ -6952,7 +6968,9 @@ async function loadAmdConfig() {
             '<span class="model-tag free">' + T('no charge') + '</span>' +
             wbContextTagHTML(m.context, T('Context')) +
             '<button class="btn btn-sm btn-danger" data-bl-ban="1" data-platform="amd" data-model="' + esc(m.id) + '" data-refresh="amd" style="white-space:nowrap">' + T('Ban') + '</button>')).join('')
-        : '<div class="empty">' + T('No models yet — click Refresh models') + '</div>';
+        : '<div class="empty">' + T((ks || []).some(k => k.routingEnabled !== false)
+            ? 'No models yet — click Refresh models'
+            : 'Models appear here once a credential is enabled — the catalog syncs from upstream') + '</div>';
     }
   } catch (e) { /* ignore */ }
 }
@@ -6974,6 +6992,8 @@ async function saveAmdConfig() {
 async function refreshAmdModels() {
   try {
     const d = await api('POST', '/amd/models/refresh');
+    // 后端对无启用 key 返回 success:false + Message（api() 不抛异常），按统一口径提示
+    if (d && d.success === false) { toast(T(d.message || 'Refresh failed: '), 'error'); return; }
     await loadAmdConfig();
     toast(T('Catalog refreshed') + ' (' + _('amdModelsCount').textContent.replace(/[()]/g, '') + ')', 'success');
     loadAmdConfig();
@@ -7222,7 +7242,9 @@ async function loadTHConfig() {
             '<span class="model-tag free">' + T('no charge') + '</span>' +
             wbContextTagHTML(m.context, T('Context')) +
             '<button class="btn btn-sm btn-danger" data-bl-ban="1" data-platform="tokenharbor" data-model="' + esc(m.id) + '" data-refresh="th" style="white-space:nowrap">' + T('Ban') + '</button>')).join('')
-        : '<div class="empty">' + T('No free models yet — click Refresh models') + '</div>';
+        : '<div class="empty">' + T((thCfgCache.keyStates || []).some(k => k.routingEnabled !== false)
+            ? 'No free models yet — click Refresh models'
+            : 'Models appear here once a credential is enabled — the catalog syncs from upstream') + '</div>';
     }
   } catch (e) { /* ignore */ }
 }
@@ -7244,6 +7266,7 @@ async function saveTHConfig() {
 async function refreshTHModels() {
   try {
     const d = await api('POST', '/tokenharbor/models/refresh');
+    if (d && d.success === false) { toast(T(d.message || 'Refresh failed: '), 'error'); return; }
     await loadTHConfig();
     toast(T('Catalog refreshed') + ' (' + _('thModelsCount').textContent.replace(/[()]/g, '') + ')', 'success');
     loadTHConfig();

@@ -63,6 +63,11 @@ func startAMDModelsRefresher() {
 
 // syncAMDCatalog 同步目录；attempts 为额外重试次数（不含首次）。
 func syncAMDCatalog(attempts int) {
+	// 无启用 key：官方目录需认证，同步注定 401——静默跳过（面板提示走
+	// 手动刷新端点的明确文案），与 traeWork 的 catalogProbeCredential 同款。
+	if !amd.HasEnabledKey() {
+		return
+	}
 	for i := 0; i <= attempts; i++ {
 		changed, err := amd.SyncCatalog()
 		if err == nil {
@@ -459,6 +464,13 @@ func handleAMDKeyTest(w http.ResponseWriter, r *http.Request) {
 func handleAMDModelsRefresh(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
+		return
+	}
+	if !amd.HasEnabledKey() {
+		writeAPI(w, http.StatusOK, apiResponse{
+			Success: false,
+			Message: "no enabled AMDCloud key — enable a key first, then refresh",
+		})
 		return
 	}
 	syncAMDCatalog(2)

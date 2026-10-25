@@ -176,8 +176,21 @@ func TestSyncCatalogWithoutKeyKeepsSeed(t *testing.T) {
 	if err != nil || changed != 0 {
 		t.Fatalf("no-key sync must be a silent no-op: %v %d", err, changed)
 	}
+	// 展示门控：无启用 key 时 ModelList 对外为空（种子仍留在目录里供
+	// Resolve 请求侧兜底）——用带启用 key 的配置验证种子还在。
+	cfg := DefaultConfig()
+	cfg.Keys = []string{"tk-test"}
+	cfg.KeyRoutingEnabled = map[string]bool{"tk-test": true}
+	Set(cfg)
 	if len(ModelList()) != len(SeedModels) {
-		t.Errorf("seed must stand without keys: got %d, want %d", len(ModelList()), len(SeedModels))
+		t.Errorf("seed must stand with an enabled key: got %d, want %d", len(ModelList()), len(SeedModels))
+	}
+	if l := ModelList(); len(l) != 0 {
+		// 反向确认门控本身：切回无 key 配置应为空
+		Set(DefaultConfig())
+		if len(ModelList()) != 0 {
+			t.Errorf("no enabled key must hide catalog: got %d", len(ModelList()))
+		}
 	}
 }
 
