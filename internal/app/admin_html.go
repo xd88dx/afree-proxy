@@ -425,7 +425,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
 <div class="nav-item active" data-tab="dashboard"><span class="nav-ico"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg></span> Dashboard</div>
 <div class="nav-group">Account pool</div>
 <div class="nav-item" data-tab="accounts"><span class="nav-ico"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-6.5 8-6.5s8 2.5 8 6.5"/></svg></span> Cline</div>
-<div class="nav-item" data-tab="trae"><span class="nav-ico"><svg viewBox="0 0 24 24"><path d="M5 5h14M12 5v14"/><path d="M8.5 12H12"/></svg></span> TraeCode</div>
+<div class="nav-item" data-tab="trae"><span class="nav-ico"><svg viewBox="0 0 24 24"><path d="M5 5h14M12 5v14"/><path d="M8.5 12H12"/></svg></span> TraeWork</div>
 <div class="nav-item" data-tab="workbuddy"><span class="nav-ico"><svg viewBox="0 0 24 24"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9L12 3z"/><path d="M12 12l8-4.5M12 12v9M12 12L4 7.5"/></svg></span> WorkBuddy</div>
 <div class="nav-item" data-tab="opencode"><span class="nav-ico"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14.5 14.5 0 0 1 0 18 14.5 14.5 0 0 1 0-18z"/></svg></span> OpenCode</div>
 <div class="nav-item" data-tab="amdcloud"><span class="nav-ico"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="13" height="13" rx="2"/><path d="M16 9h3l2 3-2 3h-3"/><circle cx="9.5" cy="11.5" r="2.5"/></svg></span> AMDCloud</div>
@@ -456,7 +456,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
         <div class="dash-stats" id="dashCline">-</div>
       </div>
       <div class="dash-card" onclick="switchTab('trae')">
-        <div class="dash-name">TraeCode</div>
+        <div class="dash-name">TraeWork</div>
         <div class="dash-stats" id="dashTrae">-</div>
       </div>
       <div class="dash-card" onclick="switchTab('workbuddy')">
@@ -491,7 +491,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
   <div class="section-body">
     <div class="stat-grid">
       <div class="stat-card"><div class="stat-name">Cline</div><div class="stat-line" id="reqCline">-</div></div>
-      <div class="stat-card"><div class="stat-name">TraeCode</div><div class="stat-line" id="reqTrae">-</div></div>
+      <div class="stat-card"><div class="stat-name">TraeWork</div><div class="stat-line" id="reqTrae">-</div></div>
       <div class="stat-card"><div class="stat-name">WorkBuddy</div><div class="stat-line" id="reqWb">-</div></div>
       <div class="stat-card"><div class="stat-name">OpenCode</div><div class="stat-line" id="reqZen">-</div></div>
       <div class="stat-card"><div class="stat-name">AMDCloud</div><div class="stat-line" id="reqAmd">-</div></div>
@@ -582,7 +582,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
 </div>
 
 <div id="tab-trae" class="tab-panel" style="display:none">
-<h2 style="margin-bottom:4px">TraeCode</h2>
+<h2 style="margin-bottom:4px">TraeWork</h2>
 <div class="hint" id="traeSummary" style="margin:0 0 16px">Loading...</div>
 
 <div class="section">
@@ -740,9 +740,9 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
         <div class="hint">Cline accounts without proxy bindings follow this switch.</div>
       </div>
       <div class="pp-card">
-        <label>TraeCode</label>
+        <label>TraeWork</label>
         <select id="ppTrae"><option value="true">Proxy</option><option value="false">Direct connection</option></select>
-        <div class="hint">Trae accounts without proxy bindings follow this switch.</div>
+        <div class="hint">TraeWork accounts without proxy bindings follow this switch.</div>
       </div>
       <div class="pp-card">
         <label>WorkBuddy</label>
@@ -934,7 +934,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
     <div class="form-row">
       <div class="field"><label>Alias ID</label><input type="text" id="comboId" placeholder="cline-glm-5.3"></div>
       <div class="field"><label>Platform</label>
-        <select id="comboPlatform" onchange="fillComboModels()"><option value="cline">Cline</option><option value="trae">TraeCode</option><option value="workbuddy">WorkBuddy</option><option value="zen">OpenCode</option><option value="amd">AMDCloud</option><option value="openrouter">OpenRouter</option><option value="tokenharbor">TokenHarbor</option></select>
+        <select id="comboPlatform" onchange="fillComboModels()"><option value="cline">Cline</option><option value="trae">TraeWork</option><option value="workbuddy">WorkBuddy</option><option value="zen">OpenCode</option><option value="amd">AMDCloud</option><option value="openrouter">OpenRouter</option><option value="tokenharbor">TokenHarbor</option></select>
       </div>
       <div class="field" style="flex:2"><label>Target model</label><select id="comboTarget"></select></div>
       <div class="field" style="flex:0 0 auto;display:flex;align-items:flex-end"><label style="display:flex;gap:6px;align-items:center;white-space:nowrap;padding-bottom:8px"><input type="checkbox" id="comboUseProxies"> Use proxy pool</label></div>
@@ -1645,7 +1645,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
 
 <dialog id="traeAddDialog" style="width:min(560px,calc(100vw - 32px))">
   <div class="wb-dialog-head">
-    <span>Add Trae accounts</span>
+    <span>Add TraeWork accounts</span>
     <button class="btn btn-sm" onclick="closeTraeAddDialog()">Close</button>
   </div>
   <div class="wb-dialog-body">
@@ -2227,7 +2227,7 @@ const I18N_ZH = {
   'Direct connection': '直连',
   'Save': '保存',
   'Cline accounts without proxy bindings follow this switch.': 'Cline 未绑定代理的账号遵循此开关。',
-  'Trae accounts without proxy bindings follow this switch.': 'Trae 未绑定代理的账号遵循此开关。',
+  'TraeWork accounts without proxy bindings follow this switch.': 'TraeWork 未绑定代理的账号遵循此开关。',
   'Delete': '删除',
   'Test': '测试',
   'Reset': '重置',
@@ -2570,12 +2570,12 @@ const I18N_ZH = {
   // Trae 平台页
   'Gateway': '网关',
   'Counted locally by this proxy from upstream usage events': '由本网关按上游用量事件本地计数',
-  'Re-sync the model catalog from the Trae upstream using an enabled account': '用一个已启用的账号从 Trae 上游重新同步模型目录',
+  'Re-sync the model catalog from the TraeWork upstream using an enabled account': '用一个已启用的账号从 TraeWork 上游重新同步模型目录',
   'Models appear here once an account is enabled — the catalog syncs from upstream': '启用账号后此处才会显示并同步模型目录',
   'The model catalog syncs from the upstream live catalog every 10 minutes; with no enabled account, no models are shown here or in /v1/models.': '模型目录每 10 分钟从上游 live 目录同步；未启用任何账号时，此处与 /v1/models 都不显示模型。',
   'Add accounts': '添加账号',
-  'No Trae accounts yet — click Add accounts': '暂无 Trae 账号——点"添加账号"',
-  'Add Trae accounts': '添加 Trae 账号',
+  'No TraeWork accounts yet — click Add accounts': '暂无 TraeWork 账号——点"添加账号"',
+  'Add TraeWork accounts': '添加 TraeWork 账号',
   'Tokens (one per line)': 'Token（每行一个）',
   'Automation': '自动化',
   'Token valid': 'token 有效',
@@ -2591,7 +2591,7 @@ const I18N_ZH = {
   'Enter at least one token': '请至少输入一个 token',
   ', skipped ': '，跳过 ',
   'Remove this account from the pool': '把该账号移出账号池',
-  'Trae config saved': 'Trae 配置已保存',
+  'TraeWork config saved': 'TraeWork 配置已保存',
   ' — re-download it from THIS panel and restart it (python web_login.py)': ' ——请从本面板重新下载助手并重启（python web_login.py）',
   'Helper detected, but it writes credentials to ANOTHER deployment: ': '检测到助手，但它会把凭据写入另一个部署：',
   'Local helper detected (writes to this gateway) — click Open helper page, then use the authorization button there': '已检测到本机授权助手（凭据写入本网关）——点"打开授权助手页面"，在弹出的页面里点授权按钮',
@@ -4052,7 +4052,7 @@ const REORDER_KINDS = ['acc', 'trae', 'wb', 'key', 'amd', 'or', 'th', 'other']; 
 // 弹窗平台行（顺序 = REORDER_KINDS = 左侧菜单序）
 const REORDER_PLATFORMS = [
   { key: 'acc', label: 'Cline' },
-  { key: 'trae', label: 'TraeCode' },
+  { key: 'trae', label: 'TraeWork' },
   { key: 'wb', label: 'WorkBuddy' },
   { key: 'key', label: 'OpenCode' },
   { key: 'amd', label: 'AMDCloud' },
@@ -5189,7 +5189,7 @@ async function refreshModels() {
 // （新增 → ban，取消 → unban）后统一落盘；chip 的 × 也只是取消暂存。
 const PLATFORM_BAN_BASE = [
   { key: 'cline', label: 'Cline' },
-  { key: 'trae', label: 'TraeCode' },
+  { key: 'trae', label: 'TraeWork' },
   { key: 'workbuddy', label: 'WorkBuddy' },
   { key: 'zen', label: 'OpenCode' },
   { key: 'amd', label: 'AMDCloud' },
@@ -6558,7 +6558,7 @@ async function saveTraeConfig() {
   };
   try {
     await api('POST', '/trae/config/update', body);
-    toast(T('Trae config saved'), 'success');
+    toast(T('TraeWork config saved'), 'success');
     loadTraeConfig();
   } catch (e) { toast(T('Save failed: ') + e.message, 'error'); }
 }
@@ -6650,7 +6650,7 @@ function renderTraeAccounts(accs) {
           poolCell +
           accCell + '</tr>';
       }).join('')
-    : '<tr><td colspan="9" class="empty">' + T('No Trae accounts yet — click Add accounts') + '</td></tr>';
+    : '<tr><td colspan="9" class="empty">' + T('No TraeWork accounts yet — click Add accounts') + '</td></tr>';
   tb.onclick = e => {
     const pen = e.target.closest('.nick-pen');
     if (pen) { startNickEdit(pen, { save: saveTraeLabel, reload: loadTraeConfig, allowEmpty: true }); return; }
