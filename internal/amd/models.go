@@ -91,6 +91,11 @@ func SyncCatalog() (int, error) {
 		return 0, err
 	}
 	req.Header.Set("Accept", "application/json")
+	// 2026-10-26 实测：官方 /v1/models 已从免认证改为 401 Login required，
+	// 必须带 key 的 Bearer 头；无 key 时无法同步（保留现有目录）。
+	if len(Keys()) > 0 {
+		req.Header.Set("Authorization", "Bearer "+Keys()[0])
+	}
 	resp, err := catalogHTTPClient().Do(req)
 	if err != nil {
 		return 0, err
