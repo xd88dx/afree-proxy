@@ -58,6 +58,19 @@ func (p *Pool) NoteSessionDeadWith(uid, reason string) bool {
 	return true
 }
 
+// NoteSessionAlive 清零 session dead 计数（refresh 验证成功 → session 仍有效）。
+//
+// 为什么需要（20261024）：网关 401 有两种成因且响应体一样，只能靠 refresh 区分。
+// 判定为「瞬时拦截」时必须清零——否则多次瞬时拦截会累积到阈值（3 次）把健康账号
+// 禁用掉，这正是本次误杀两号的机制。
+func (p *Pool) NoteSessionAlive(uid string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if e, ok := p.byUID[uid]; ok && e.sessionDeadFails != 0 {
+		e.sessionDeadFails = 0
+	}
+}
+
 // ClearSessionDead 清连续 12153 计数——账号被证明未死的任何时刻调用：
 // refresh 成功（RunKeepaliveNow）、chat 成功（NoteSuccess）、手工复活（ReviveDisabled）。
 func (p *Pool) ClearSessionDead(uid string) {
@@ -78,6 +91,7 @@ func (p *Pool) ReviveDisabled(uid string) {
 	if e, ok := p.byUID[uid]; ok && e.disabled {
 		e.disabled = false
 		e.reason = ""
+		e.disabledAt = time.Time{}
 		e.sessionDeadFails = 0
 		p.dirty.Store(true)
 	}
@@ -446,6 +460,26 @@ func (p *Pool) AvailableUIDsForModel(model string) []string {
 	}
 	sort.Strings(uids)
 	return uids
+}
+
+// CapacityForModel reports healthy accounts for model and across the pool.
+// In-flight requests are intentionally ignored because request admission is
+// handled independently by the caller.
+func (p *Pool) CapacityForModel(model, realm string) (modelAvailable, poolAvailable int) {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+
+	now := time.Now()
+	for _, e := range p.byUID {
+		if e.healthy(now) {
+			poolAvailable++
+		}
+		if (realm == "" || e.a.Realm() == realm) && e.healthyForModel(now, model) &&
+			!p.floorBlockedForRealmModel(e, model, realm, now) {
+			modelAvailable++
+		}
+	}
+	return modelAvailable, poolAvailable
 }
 
 // PickByUIDForModel 同 PickByUID，但用 healthyForModel 校验：绑定号在当前模型被
@@ -867,6 +901,7 @@ func (p *Pool) statusOf(uid string, e *entry) Status {
 		Cooling:              now.Before(e.until) || now.Before(e.breakerUntil),
 		SessionDeadFails:     e.sessionDeadFails,
 		Disabled:             e.disabled,
+		DisabledAt:           disabledAtRFC3339(e),
 		Paused:               e.paused,
 		PoolEnabled:          e.a.PoolEnabled(),
 		// 账号总开关：nil = 启用（指针语义与 auth 侧对齐；未显式关闭不输出该键）
@@ -918,6 +953,15 @@ func (p *Pool) statusOf(uid string, e *entry) Status {
 		}
 	}
 	return st
+}
+
+// disabledAtRFC3339 把 entry.disabledAt 转成对外字符串（零值返回空，JSON 里省略）。
+// 单独抽出来是为了两处一致：实时 statusOf 与持久化恢复后都要同一口径。
+func disabledAtRFC3339(e *entry) string {
+	if e.disabledAt.IsZero() {
+		return ""
+	}
+	return e.disabledAt.Format(time.RFC3339)
 }
 
 // modelCostsStatusLocked 收集账号的有效成本台账行（P1-anti-monopoly 可观测性）。

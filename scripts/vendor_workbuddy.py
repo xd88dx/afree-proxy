@@ -34,6 +34,8 @@ PACKAGES = (
     "cst",
     "httpauth",
     "livecfg",
+    "loginsite",   # 2026-10-25 上游新增：官方域表/登录码语义（CLI 2.174.0）
+    "updater",     # 2026-10-25 上游新增：面板一键更新（引用方 panel/update.go）
     "pool",
     "reqlog",
     "safefile",

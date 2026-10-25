@@ -35,6 +35,13 @@ type Config struct {
 		PackageDetailLimit int `json:"package_detail_limit"`
 	} `json:"panel"`
 
+	Update struct {
+		// AutoEnabled 每日按上海时间自动检查并安装原生 Release。
+		AutoEnabled bool `json:"auto_enabled"`
+		// AutoTime 自动更新时间，格式 HH:MM（Asia/Shanghai）。
+		AutoTime string `json:"auto_time"`
+	} `json:"update"`
+
 	Logging struct {
 		// RequestArchiveEnabled 请求元数据 JSONL 归档开关，缺省 true。
 		RequestArchiveEnabled bool `json:"request_archive_enabled"`
@@ -76,8 +83,12 @@ type Config struct {
 		TravelHours    []int `json:"travel_hours"`    // [9,21]
 		ActivityHours  []int `json:"activity_hours"`  // [10]
 		KeepaliveHours []int `json:"keepalive_hours"` // [22]
-		BlackcatHours  []int `json:"blackcat_hours"`  // [23] 夜猫子窗口（23:00–08:00 计数）
-		GrowthHours    []int `json:"growth_hours"`    // [11] 成长任务队列（任务中心待办）自动执行
+		// KeepaliveRefreshWindow 周期 token 保活的临期窗口（如 "168h"=7 天）：排程到点
+		// 的保活只刷新剩余有效期 <= 窗口（或已过期/无 expiry）的凭证；面板手动
+		// 「全部保活」始终全量，不受影响。空 = 默认 "168h"；非法或 <=0 的值 fail fast。
+		KeepaliveRefreshWindow string `json:"keepalive_refresh_window"`
+		BlackcatHours          []int  `json:"blackcat_hours"` // [23] 夜猫子窗口（23:00–08:00 计数）
+		GrowthHours            []int  `json:"growth_hours"`   // [11] 成长任务队列（任务中心待办）自动执行
 		// CheckinEnabled/TravelEnabled/ActivityEnabled/KeepaliveEnabled/BlackcatEnabled/GrowthEnabled 显式禁用开关（缺省 true）。
 		//
 		// 为什么用独立 bool 而不是空数组/哨兵值表意"禁用"：
@@ -132,6 +143,21 @@ type Config struct {
 		// autoActions 白名单外的任务——它们此前除了手动一键完成没有任何补领路径。
 		TaskSweepEnabled bool `json:"task_sweep_enabled"` // 缺省 true；false = 关闭
 		TaskSweepMinutes int  `json:"task_sweep_minutes"` // 缺省 15；<=0 回落 15
+
+		// 周期抖动（人味化，anti-fingerprint）：>0 时余额刷新/补领清扫的每轮间隔
+		// 在 ±（值/1000）×基准间隔内随机偏移，不再精确固定间隔打卡；余额刷新
+		// 另把账号遍历摊开到同量级窗口内（见 internal/scheduler/humanize.go）。
+		// 0 = 关闭（旧行为：精确 interval ticker + 全账号并发齐射）。上限 500 = 50%。
+		// 例：balance_refresh_minutes=5 + 200 → 实际间隔在 3–7 分钟之间抖。
+		BalanceRefreshJitterPermill int `json:"balance_refresh_jitter_permill"` // 缺省 0；0–500
+		TaskSweepJitterPermill      int `json:"task_sweep_jitter_permill"`      // 缺省 0；0–500
+
+		// 夜间参与上限（人味化）：夜猫子（23:00–08:00 真实模型对话）等夜间任务的
+		// 参与账号收窄为积分最高的前 N 个，0 = 不限（旧行为全池参加）。背景：
+		// 深夜全池 12 个号在同一出口 IP 齐做真实对话，是最好认的机器人形状；真人
+		// 不会全部账号都在夜里有活动。夜猫子是唯一「整任务都是真实模型对话」的
+		// 任务，指纹最重，故只收窄它；白天任务（签到/旅行/成长）仍全池保号。
+		NightAccountCap int `json:"night_account_cap"` // 缺省 0（不限）；>0 = Top-N 按积分
 	} `json:"schedule"`
 
 	Global struct {
@@ -141,8 +167,13 @@ type Config struct {
 		// 也不路由，auth.Realm() 双保险的第一道闸）。纯 CN 部署行为不变：CN 账号
 		// 恒判 cn，global base 只在 realm=global 的账号上被使用。
 		Enabled bool `json:"enabled"`
-		// ChatBase / BillingBase 国际版上游 base 覆盖；空 = 回落内置默认
-		// https://www.workbuddy.ai（internal/upstream.defaultGlobalBase）。
+		// ChatBase / BillingBase 国际版上游 base 覆盖；空 = 按账号 auth 文件的
+		// domain 选官方主机（internal/loginsite.BaseForDomain）：
+		//   *.codebuddy.ai → https://www.codebuddy.ai（官方 CLI 国际站，缺省）
+		//   *.workbuddy.ai → https://www.workbuddy.ai（旧桌面端）
+		// domain 缺失时回落 https://www.codebuddy.ai。
+		// 两个国际域实测同一后端，差别只在主机名与 WAF 口径——所以不要为了
+		// 「统一」把 base 写死成一个域，老账号的 token 只在签发域可用。
 		ChatBase    string `json:"chat_base"`
 		BillingBase string `json:"billing_base"`
 	} `json:"global"`
@@ -362,6 +393,8 @@ type Config struct {
 	BalanceRefreshInterval time.Duration `json:"-"` // 0 = 不启动（enabled=false）
 	TaskSweepInterval      time.Duration `json:"-"` // 0 = 不启动（task_sweep_enabled=false）
 	ExpiringSoonDur        time.Duration `json:"-"`
+	// KeepaliveRefreshWindowDur 解析后的周期保活临期窗口；空回落 168h，<=0 报错。
+	KeepaliveRefreshWindowDur time.Duration `json:"-"`
 	// CostExploreIntervalDur 解析后的 costTier 探索窗口（issue #136）；0 = 关停。
 	CostExploreIntervalDur time.Duration `json:"-"`
 	// ServerReadTimeoutDur 解析后的入站请求读取上限（issue #100）；0 = 不限制。
@@ -380,6 +413,7 @@ func Default() *Config {
 	c.Cooldown.SoftRateMax = "2h"
 	c.Server.ReadTimeout = "300s"
 	c.Panel.PackageDetailLimit = 5
+	c.Update.AutoTime = "04:00"
 	c.Logging.RequestArchiveEnabled = true
 	c.Logging.RequestRetentionDays = 7
 	c.Logging.RequestArchiveMaxMB = 100
@@ -390,6 +424,8 @@ func Default() *Config {
 	c.Schedule.TravelHours = []int{9, 21}
 	c.Schedule.ActivityHours = []int{10}
 	c.Schedule.KeepaliveHours = []int{22}
+	// 周期保活临期窗口默认 7 天：排程保活只刷新一周内到期的凭证，其余账号不动。
+	c.Schedule.KeepaliveRefreshWindow = "168h"
 	c.Schedule.BlackcatHours = []int{23}
 	c.Schedule.GrowthHours = []int{11}
 	// 开关「缺省 true」靠这几行实现：Load 先取 Default() 再 json.Unmarshal 覆盖，
@@ -624,6 +660,21 @@ func applyEnv(c *Config) {
 			c.Schedule.AccountSpreadMinGapSeconds = n
 		}
 	}
+	if v := os.Getenv("WB2A_SCHEDULE_BALANCE_REFRESH_JITTER_PERMILL"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			c.Schedule.BalanceRefreshJitterPermill = n
+		}
+	}
+	if v := os.Getenv("WB2A_SCHEDULE_TASK_SWEEP_JITTER_PERMILL"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			c.Schedule.TaskSweepJitterPermill = n
+		}
+	}
+	if v := os.Getenv("WB2A_SCHEDULE_NIGHT_ACCOUNT_CAP"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			c.Schedule.NightAccountCap = n
+		}
+	}
 	if v := os.Getenv("WB2A_ADMIN_ENABLED"); v != "" {
 		if b, err := strconv.ParseBool(v); err == nil {
 			c.Admin.Enabled = b
@@ -740,6 +791,12 @@ func (c *Config) normalize() error {
 	}
 	if c.Panel.PackageDetailLimit <= 0 {
 		c.Panel.PackageDetailLimit = 5
+	}
+	if c.Update.AutoTime == "" {
+		c.Update.AutoTime = "04:00"
+	}
+	if !isClockTime(c.Update.AutoTime) {
+		return fmt.Errorf("update.auto_time: %q 不是合法时间（HH:MM，按上海时间）", c.Update.AutoTime)
 	}
 	if c.Logging.RequestRetentionDays <= 0 {
 		c.Logging.RequestRetentionDays = 7
@@ -899,6 +956,18 @@ func (c *Config) normalize() error {
 	if len(c.Schedule.KeepaliveHours) == 0 {
 		c.Schedule.KeepaliveHours = []int{22}
 	}
+	// 周期保活临期窗口：空回落默认 168h（Default 已置，兜底显式 ""）；非法值
+	// fail fast（拼写错误静默吞掉等于窗口变 0 → 全量刷新，违背本字段意图）；
+	// <=0 无合理语义（0/负值想全量应直接删键），报错。
+	if c.Schedule.KeepaliveRefreshWindow == "" {
+		c.Schedule.KeepaliveRefreshWindow = "168h"
+	}
+	if c.KeepaliveRefreshWindowDur, err = time.ParseDuration(c.Schedule.KeepaliveRefreshWindow); err != nil {
+		return fmt.Errorf("schedule.keepalive_refresh_window: %w", err)
+	}
+	if c.KeepaliveRefreshWindowDur <= 0 {
+		return fmt.Errorf("schedule.keepalive_refresh_window: %q 必须为正时长（如 168h）", c.Schedule.KeepaliveRefreshWindow)
+	}
 	if len(c.Schedule.BlackcatHours) == 0 {
 		c.Schedule.BlackcatHours = []int{23}
 	}
@@ -966,6 +1035,16 @@ func (c *Config) normalize() error {
 		}
 		c.TaskSweepInterval = time.Duration(c.Schedule.TaskSweepMinutes) * time.Minute
 	}
+	// 抖动合法性（上限 50%）：非法值直接报错而非静默钳位——配置错误该在启动时暴露。
+	if c.Schedule.BalanceRefreshJitterPermill < 0 || c.Schedule.BalanceRefreshJitterPermill > 500 {
+		return fmt.Errorf("schedule.balance_refresh_jitter_permill: %d 非法（0 = 关闭，上限 500）", c.Schedule.BalanceRefreshJitterPermill)
+	}
+	if c.Schedule.TaskSweepJitterPermill < 0 || c.Schedule.TaskSweepJitterPermill > 500 {
+		return fmt.Errorf("schedule.task_sweep_jitter_permill: %d 非法（0 = 关闭，上限 500）", c.Schedule.TaskSweepJitterPermill)
+	}
+	if c.Schedule.NightAccountCap < 0 {
+		return fmt.Errorf("schedule.night_account_cap: %d 非法（0 = 不限，>0 = Top-N）", c.Schedule.NightAccountCap)
+	}
 	if err := c.validateScheduleHours(); err != nil {
 		return err
 	}
@@ -1030,6 +1109,20 @@ func checkHourRange(field, switchKey string, hours []int) error {
 		}
 	}
 	return nil
+}
+
+func isClockTime(value string) bool {
+	if len(value) != 5 || value[2] != ':' {
+		return false
+	}
+	for _, i := range []int{0, 1, 3, 4} {
+		if value[i] < '0' || value[i] > '9' {
+			return false
+		}
+	}
+	hour, errH := strconv.Atoi(value[:2])
+	minute, errM := strconv.Atoi(value[3:])
+	return errH == nil && errM == nil && hour >= 0 && hour <= 23 && minute >= 0 && minute <= 59
 }
 
 func (c *Config) normalizeAlerting() error {
