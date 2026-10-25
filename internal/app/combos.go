@@ -4,6 +4,7 @@ import (
 	"afree-proxy/internal/amd"
 	"afree-proxy/internal/kit"
 	openrouter "afree-proxy/internal/openrouter"
+	"afree-proxy/internal/trae"
 	"afree-proxy/internal/tokenharbor"
 	"encoding/json"
 	"fmt"
@@ -111,7 +112,7 @@ func resolveCombo(id string) *Combo {
 // 共用同一份口径——新平台接入时两处一起改。
 func comboPlatformValid(platform string) bool {
 	switch platform {
-	case "cline", "zen", "workbuddy", "openrouter", "amd", "tokenharbor":
+	case "cline", "zen", "workbuddy", "openrouter", "amd", "tokenharbor", "trae":
 		return true
 	}
 	return false
@@ -126,7 +127,7 @@ func validateCombo(id, platform, target string) error {
 		return fmt.Errorf("invalid combo id %q: use 2-64 chars, letters/digits/._- and start with letter or digit", id)
 	}
 	if !comboPlatformValid(platform) {
-		return fmt.Errorf("invalid platform %q: must be cline, zen, workbuddy, openrouter, amd or tokenharbor", platform)
+		return fmt.Errorf("invalid platform %q: must be cline, zen, workbuddy, openrouter, amd, tokenharbor or trae", platform)
 	}
 	target = strings.TrimSpace(target)
 	if target == "" {
@@ -153,6 +154,11 @@ func validateCombo(id, platform, target string) error {
 	if tokenharbor.HasPrefix(id) {
 		if _, ok := tokenharbor.Resolve(id); ok {
 			return fmt.Errorf("combo id %q conflicts with a real tokenharbor model", id)
+		}
+	}
+	if trae.HasPrefix(id) {
+		if _, ok := trae.Resolve(id); ok {
+			return fmt.Errorf("combo id %q conflicts with a real trae model", id)
 		}
 	}
 	if resolveCombo(id) != nil {
@@ -193,6 +199,10 @@ func validateCombo(id, platform, target string) error {
 	case "tokenharbor":
 		if _, ok := tokenharbor.Resolve(target); !ok {
 			return fmt.Errorf("target %q is not a free TokenHarbor model (cross-platform selection is not allowed)", target)
+		}
+	case "trae":
+		if _, ok := trae.Resolve(target); !ok {
+			return fmt.Errorf("target %q is not a known Trae model (cross-platform selection is not allowed)", target)
 		}
 	}
 	return nil

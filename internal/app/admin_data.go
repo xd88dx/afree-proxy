@@ -25,6 +25,7 @@ func handleAdminDeleteAllData(w http.ResponseWriter, r *http.Request) {
 	amdKeys := clearAMDKeysForDataDelete()
 	thKeys := clearTokenHarborKeysForDataDelete()
 	otherKeys := clearOtherKeysForDataDelete()
+	traeAccounts := clearTraeAccountsForDataDelete()
 	sessions := clearZenSessionsForDataDelete()
 	endpoints := clearZenEndpointsForDataDelete()
 	workbuddyAccounts := clearWorkbuddyAccountsForDataDelete()
@@ -44,6 +45,7 @@ func handleAdminDeleteAllData(w http.ResponseWriter, r *http.Request) {
 			"amdKeys":           amdKeys,
 			"tokenharborKeys":   thKeys,
 			"otherKeys":         otherKeys,
+			"traeAccounts":      traeAccounts,
 			"sessions":          sessions,
 			"endpoints":         endpoints,
 			"workbuddyAccounts": workbuddyAccounts,
@@ -66,7 +68,6 @@ func clearPoolForDataDelete() (accounts, clientKeys int) {
 		Accounts:        []*Account{},
 		CurrentIdx:      0,
 		Keys:            []string{},
-		DefaultModel:    "",
 		ClineUseProxies: nil, // 重置为默认（开启）
 		AdminLogEnabled: nil, // 重置为默认（不记录 /admin 访问日志）
 		Strategy:        "round_robin",
@@ -77,7 +78,6 @@ func clearPoolForDataDelete() (accounts, clientKeys int) {
 	savePool()
 
 	setProxyConfig(defaultProxyConfig())
-	defaultModel = ""
 	// 旧账号的刷新单飞句柄一并作废
 	refreshFlightMu.Lock()
 	refreshFlight = map[*Account]*refreshFlightCall{}

@@ -47,13 +47,14 @@ const (
 
 // 平台标识（与对外模型前缀对应）。
 const (
-	platWorkBuddy  = "workbuddy"
-	platZen        = "zen"
-	platCline      = "cline"
-	platAMD        = "amd"
-	platOpenRouter = "openrouter"
+	platWorkBuddy   = "workbuddy"
+	platZen         = "zen"
+	platCline       = "cline"
+	platAMD         = "amd"
+	platOpenRouter  = "openrouter"
 	platTokenHarbor = "tokenharbor"
-	platOther      = "other"
+	platTrae        = "trae"
+	platOther       = "other"
 )
 
 // modelBlacklistEntry 一条拉黑记录。Model 存**对外模型 ID**（含前缀，
@@ -615,6 +616,8 @@ func testBlacklistModel(platform, model string) (map[string]any, string) {
 			return thTestKey(i, bare)
 		}
 		return map[string]any{"ok": false, "model": model, "error": "no enabled tokenharbor key"}, "error"
+	case platTrae:
+		return traeProbeBlacklistedModel(bare)
 	case platOther:
 		// 子平台按前缀定位：模型 ID 形如 <prefix>:<model>。
 		pfx := model

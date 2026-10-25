@@ -15,6 +15,7 @@ import (
 	"afree-proxy/internal/kit"
 	"afree-proxy/internal/openrouter"
 	"afree-proxy/internal/other"
+	"afree-proxy/internal/trae"
 	"afree-proxy/internal/tokenharbor"
 	wbauth "afree-proxy/internal/workbuddy/auth"
 	wbserver "afree-proxy/internal/workbuddy/server"
@@ -65,7 +66,6 @@ type configBackup struct {
 	ExportedAt      time.Time                   `json:"exportedAt"`
 	Accounts        []*Account                  `json:"accounts,omitempty"`
 	ClientKeys      []string                    `json:"clientKeys,omitempty"`
-	DefaultModel    string                      `json:"defaultModel,omitempty"`
 	ClineUseProxies *bool                       `json:"clineUseProxies,omitempty"`
 	AdminLogEnabled *bool                       `json:"adminLogEnabled,omitempty"`
 	Strategy        string                      `json:"strategy,omitempty"`
@@ -84,6 +84,8 @@ type configBackup struct {
 	// Other 子平台聚合配置（.other-config.json）。2026-10-14 补：Other 页
 	// 上线时只做了网关/面板，未接备份，导致子平台与 key 池无法随配置迁移。
 	Other *other.Config `json:"other,omitempty"`
+	// Trae 账号池平台（.trae-config.json，trae: 前缀）。
+	Trae *trae.Config `json:"trae,omitempty"`
 	// WorkBuddyProxies WorkBuddy 账号代理绑定（.workbuddy-proxies.json）。
 	// 2026-10-14 补：workbuddyBackup 原只覆盖 vendor config.json 与 auths
 	// 凭据，漏了出口绑定，导入后该文件仍留旧值（而非本机值），跨机迁移出错。
@@ -148,7 +150,6 @@ func handleAdminConfigExport(w http.ResponseWriter, r *http.Request) {
 		ExportedAt:          time.Now().UTC(),
 		Accounts:            accounts,
 		ClientKeys:          clientKeys,
-		DefaultModel:        getDefaultModel(),
 		ClineUseProxies:     &clineUse,
 		AdminLogEnabled:     &adminLog,
 		Strategy:            getProxyConfig().Strategy,
@@ -162,6 +163,7 @@ func handleAdminConfigExport(w http.ResponseWriter, r *http.Request) {
 		TokenHarbor:         tokenharbor.Get(),
 		WorkBuddy:           exportWorkbuddyBackup(),
 		Other:               other.Get(),
+		Trae:                trae.Get(),
 		WorkBuddyProxies:    exportWorkbuddyProxyBindings(),
 		ModelBlacklist:      exportModelBlacklist(),
 		PlatformBlacklist:   exportPlatformBlacklist(),
@@ -331,10 +333,6 @@ func handleAdminConfigImport(w http.ResponseWriter, r *http.Request) {
 		markPoolDirtyLocked()
 		poolMu.Unlock()
 		imported["adminLogEnabled"] = 1
-	}
-	if backup.DefaultModel != "" {
-		setDefaultModel(backup.DefaultModel)
-		imported["defaultModel"] = 1
 	}
 
 	// ---- 调度策略 + 请求头 ----
@@ -526,6 +524,23 @@ func handleAdminConfigImport(w http.ResponseWriter, r *http.Request) {
 		}
 		other.Set(ocfg)
 		imported["otherKeys"] = nKeys
+	}
+	if backup.Trae != nil {
+		// Trae 账号池同口径：导入账号默认全部禁用（PoolEnabled 显式 false；
+		// nil = 参与路由，清表不算禁用），弹窗勾选"沿用启用状态"才保留原表。
+		tc := backup.Trae
+		for _, a := range tc.Accounts {
+			if a == nil {
+				continue
+			}
+			if !backup.KeepEnabled["trae"] {
+				f := false
+				a.PoolEnabled = &f
+			}
+		}
+		trae.Set(tc)
+		trae.SetMaxConcurrency()
+		imported["traeAccounts"] = len(tc.Accounts)
 	}
 	if len(backup.WorkBuddyProxies) > 0 {
 		imported["workBuddyProxies"] = importWorkbuddyProxyBindings(backup.WorkBuddyProxies)

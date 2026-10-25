@@ -6,6 +6,7 @@ import (
 	"afree-proxy/internal/kit"
 	openrouter "afree-proxy/internal/openrouter"
 	"afree-proxy/internal/other"
+	"afree-proxy/internal/trae"
 	"afree-proxy/internal/tokenharbor"
 	"bufio"
 	"bytes"
@@ -30,11 +31,6 @@ import (
 	"time"
 	"unicode/utf8"
 )
-
-// defaultModel 默认模型偏好：空 = 未设置，由 getDefaultModel 从 live 免费列表
-// 里取排序最小的可用项（不再硬编码某个可能下线的模型 id）。面板设置的
-// DefaultModel 会覆盖它。
-var defaultModel = ""
 
 var proxyListenAddress = "0.0.0.0:3457"
 
@@ -105,6 +101,7 @@ func StartProxy(host string, port int) error {
 	initAMD()
 	initTokenHarbor()
 	initOther()
+	initTrae()
 	LoadRequestLogsFromFile()
 	go cleanupCompactStates()
 	StartProxySubscriptionWorker() // 代理订阅自动更新（cron 驱动，配置热生效）
@@ -238,6 +235,8 @@ func StartProxy(host string, port int) error {
 		data = append(data, amdModelList()...)
 		// 合并 TokenHarbor 免费模型（tkhb: 前缀）。
 		data = append(data, thModelList()...)
+		// 合并 Trae 模型（trae: 前缀，TraeCode raw 协议账号池）。
+		data = append(data, traeModelList()...)
 		// 合并 Other 子平台勾选模型（各子平台自定义前缀）。
 		data = append(data, otherModelList()...)
 		// combo 别名模型（仪表盘自定义的虚拟模型 ID）
@@ -334,6 +333,14 @@ func StartProxy(host string, port int) error {
 		}
 		model, _ := params["model"].(string)
 		log.Printf("  client: stream=%v tools=%d model=%s", isStream, toolCount, model)
+		// 无 model 请求一律 400：现代客户端 model 必填，静默兜底只会掩盖
+		// 调用方配置错误（fail-closed）
+		if strings.TrimSpace(model) == "" {
+			writeJSON(w, http.StatusBadRequest, map[string]any{
+				"error": map[string]string{"message": "model is required", "type": "invalid_request_error"},
+			})
+			return
+		}
 
 		// WorkBuddy 路由：只接管源项目定义的 realm 前缀（cn:/global:），
 		// 裸模型名仍走现有 Cline/OpenCode 目录，避免静默改路由。
@@ -381,6 +388,12 @@ func StartProxy(host string, port int) error {
 			return
 		}
 
+		// Trae 路由：trae:<model-id> 前缀（账号池平台，TraeCode raw 协议）
+		if trae.HasPrefix(model) {
+			handleTraeChat(w, r, params)
+			return
+		}
+
 		// Other 路由：<prefix>:<model-id>（动态子平台 key 池，小企业上游）
 		if p, _, ok := other.ResolvePrefix(model); ok && p != nil {
 			handleOtherChat(w, r, params)
@@ -411,10 +424,7 @@ func StartProxy(host string, port int) error {
 
 		upstreamStream := isStream
 		if !isStream {
-			model := getDefaultModel()
-			if m, ok := params["model"].(string); ok && m != "" {
-				model = normalizeRequestModel(m)
-			}
+			model := normalizeRequestModel(model)
 			if upstreamNeedsStream(model) {
 				upstreamStream = true
 				// 我们替客户端开了流式：补 include_usage，否则聚合后 usage 缺失
@@ -504,6 +514,10 @@ func StartProxy(host string, port int) error {
 	mux.HandleFunc("/v1/responses", withModelBlacklistScan(responsesHandler))
 	mux.HandleFunc("/responses", withModelBlacklistScan(responsesHandler))
 
+	// Trae 本机授权助手对接：凭据入库（原版 helper 转发路径）+ 助手脚本下载
+	mux.HandleFunc("/api/web-auth", handleTraeWebAuth)
+	mux.HandleFunc("/trae/oauth/helper", handleTraeHelperDownload)
+
 	addr := fmt.Sprintf("%s:%d", host, port)
 	proxyListenAddress = addr
 	server := &http.Server{
@@ -533,7 +547,6 @@ func StartProxy(host string, port int) error {
 	default:
 		fmt.Println("  API Key: any value (no key configured — local use only)")
 	}
-	fmt.Printf("  Model:   %s (auto-detected)\n", getDefaultModel())
 	fmt.Printf("  Accounts: %d total, %d active\n", len(loadPool().Accounts), activeCount)
 	fmt.Println(strings.Repeat("=", 58))
 
@@ -1021,10 +1034,7 @@ func buildUpstreamBody(params map[string]any, stream bool) map[string]any {
 		maxTokens = mt
 	}
 
-	model := getDefaultModel()
-	if m, ok := params["model"].(string); ok && m != "" {
-		model = normalizeRequestModel(m)
-	}
+	model := normalizeRequestModel(mustString(params["model"]))
 
 	body := map[string]any{
 		"model":            model,
@@ -2708,6 +2718,14 @@ func handleAnthropicMessages(w http.ResponseWriter, r *http.Request) {
 		log.Printf("  anthropic tools: %d schemas", len(toolSchemas))
 	}
 
+	// model 必填（Anthropic 协议本身必填；缺失时显式 400 而非静默兜底）
+	if strings.TrimSpace(req.Model) == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]any{
+			"error": map[string]string{"message": "model is required", "type": "invalid_request_error"},
+		})
+		return
+	}
+
 	if req.MaxTokens == 0 {
 		req.MaxTokens = defaultMaxTokens
 	}
@@ -2728,6 +2746,13 @@ func handleAnthropicMessages(w http.ResponseWriter, r *http.Request) {
 
 	if shouldServeWorkBuddy(req.Model) {
 		workbuddySub.serveAnthropicMessages(w, r, req, openAIReq, toolSchemas)
+		return
+	}
+
+	// 前缀平台（oprt:/amd:/tkhb:/trae:/Other 子平台）：归口到平台 chat 调用器，
+	// 经既有 chat→anthropic 转换件输出（与 zen 路径同一套协议转换）。
+	if caller, ok := resolvePlatformChatCaller(req.Model); ok {
+		handleAnthropicViaChat(w, r, req, openAIReq, toolSchemas, caller)
 		return
 	}
 

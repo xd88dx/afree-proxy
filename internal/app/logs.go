@@ -20,6 +20,7 @@ import (
 	"afree-proxy/internal/kit"
 	openrouter "afree-proxy/internal/openrouter"
 	"afree-proxy/internal/other"
+	"afree-proxy/internal/trae"
 	"afree-proxy/internal/tokenharbor"
 )
 
@@ -32,7 +33,7 @@ type routeStat struct {
 }
 
 var (
-	routeStats    = map[string]*routeStat{"cline": {}, "zen": {}, "workbuddy": {}, "openrouter": {}, "amd": {}, "tokenharbor": {}, "other": {}}
+	routeStats    = map[string]*routeStat{"cline": {}, "zen": {}, "workbuddy": {}, "openrouter": {}, "amd": {}, "tokenharbor": {}, "trae": {}, "other": {}}
 	reqStatsStart = time.Now()
 )
 
@@ -426,6 +427,8 @@ func requestLogMiddleware(next http.Handler) http.Handler {
 			route = "amd"
 		case tokenharbor.HasPrefix(model):
 			route = "tokenharbor"
+		case trae.HasPrefix(model):
+			route = "trae"
 		case otherHit:
 			route = "other"
 			labelRoute = otherPlatform.Prefix

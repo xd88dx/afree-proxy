@@ -652,6 +652,12 @@ func handleResponses(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	model, _ := params["model"].(string)
+	if strings.TrimSpace(model) == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]any{
+			"error": map[string]string{"message": "model is required", "type": "invalid_request_error"},
+		})
+		return
+	}
 	isStream, _ := params["stream"].(bool)
 	log.Printf("  responses: model=%s stream=%v", model, isStream)
 
@@ -673,6 +679,12 @@ func handleResponses(w http.ResponseWriter, r *http.Request) {
 	}
 	if shouldServeWorkBuddy(chatModel) {
 		workbuddySub.serveResponses(w, r, chat, isStream)
+		return
+	}
+	// 前缀平台（oprt:/amd:/tkhb:/trae:/Other 子平台）：归口到平台 chat 调用器，
+	// 经既有 chat→responses 转换件输出（与 zen 路径同一套协议转换）。
+	if caller, ok := resolvePlatformChatCaller(chatModel); ok {
+		handleResponsesViaChat(w, r, chat, chatModel, isStream, caller)
 		return
 	}
 	route := routeModel(chatModel)

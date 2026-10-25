@@ -137,6 +137,10 @@ tr:hover .nick-pen{opacity:.85}
 .pr-chip{display:inline-flex;align-items:center;gap:2px;padding:1px 2px 1px 9px;border-radius:999px;border:1px solid var(--border-strong);background:var(--bg3);font-size:11.5px;color:var(--text2);max-width:100%}
 .pr-chip button{border:0;background:transparent;color:var(--text3);cursor:pointer;font-size:13px;line-height:1;padding:1px 4px;border-radius:50%}
 .pr-chip button:hover{color:var(--danger);background:var(--panel)}
+#platformBanChips .pr-chip{background:rgba(224,112,95,.14);border-color:rgba(224,112,95,.45);color:var(--danger)}
+/* pr-chip-allex 批量追加框里「已在所有平台排除」的回显 chip：置灰+虚线边与
+   待追加选择区分开，× = 从所有平台批量取消（暂存，点保存才落盘） */
+.pr-chip-allex{opacity:.62;border-style:dashed}
 .pr-tagin{flex:1;min-width:100px;border:0;background:transparent;color:var(--text);font:inherit;font-size:12.5px;outline:none;padding:2px}
 /* 只读点选框内的输入框不吃全局 input:focus 蓝圈（与 pr-tagbox:focus-within 辉光叠加成双圈） */
 .pr-tagin:focus{box-shadow:none;border:0;outline:none}
@@ -193,6 +197,9 @@ tr:hover .nick-pen{opacity:.85}
 .btn-danger{border-color:rgba(224,112,95,.4);color:var(--danger);background:transparent}
 .btn-danger:hover{background:rgba(224,112,95,.1);border-color:var(--danger)}
 .btn-sm{padding:3px 10px;font-size:12px;border-radius:6px}
+.btn-static:hover,.btn-static:focus{background:rgba(255,255,255,.04);border-color:var(--border)}
+.btn-static.btn-primary:hover,.btn-static.btn-primary:focus{background:var(--btn-primary-bg);border-color:transparent}
+.btn-static.btn-warn:hover,.btn-static.btn-warn:focus{background:var(--amber);border-color:var(--amber)}
 .btn-sm svg{width:13px;height:13px}
 
 /* ===== Forms ===== */
@@ -402,6 +409,12 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
 .tr-dirty > td{background:rgba(234,179,8,.09)}
 .dirty-hint{box-shadow:0 0 0 2px var(--accent)}
 .btn-warn{background:var(--amber);border-color:var(--amber);color:#1a1a1a;font-weight:600}
+.trae-acc{border:1px solid var(--border);border-radius:10px;margin-bottom:10px;background:rgba(148,163,184,.04)}
+.trae-acc summary{cursor:pointer;padding:10px 14px;font-weight:600;user-select:none;list-style:none;display:flex;align-items:center;gap:8px}
+.trae-acc summary::-webkit-details-marker{display:none}
+.trae-acc summary::before{content:'B8';color:var(--text3);transition:transform .15s;display:inline-block}
+.trae-acc[open] summary::before{transform:rotate(90deg)}
+.trae-acc-body{padding:0 14px 12px}
 .btn-warn:hover{filter:brightness(1.1);background:var(--amber);border-color:var(--amber)}
 </style>
 </head>
@@ -412,8 +425,9 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
 <div class="nav-item active" data-tab="dashboard"><span class="nav-ico"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg></span> Dashboard</div>
 <div class="nav-group">Account pool</div>
 <div class="nav-item" data-tab="accounts"><span class="nav-ico"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-6.5 8-6.5s8 2.5 8 6.5"/></svg></span> Cline</div>
-<div class="nav-item" data-tab="opencode"><span class="nav-ico"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14.5 14.5 0 0 1 0 18 14.5 14.5 0 0 1 0-18z"/></svg></span> OpenCode</div>
+<div class="nav-item" data-tab="trae"><span class="nav-ico"><svg viewBox="0 0 24 24"><path d="M5 5h14M12 5v14"/><path d="M8.5 12H12"/></svg></span> TraeCode</div>
 <div class="nav-item" data-tab="workbuddy"><span class="nav-ico"><svg viewBox="0 0 24 24"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9L12 3z"/><path d="M12 12l8-4.5M12 12v9M12 12L4 7.5"/></svg></span> WorkBuddy</div>
+<div class="nav-item" data-tab="opencode"><span class="nav-ico"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14.5 14.5 0 0 1 0 18 14.5 14.5 0 0 1 0-18z"/></svg></span> OpenCode</div>
 <div class="nav-item" data-tab="amdcloud"><span class="nav-ico"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="13" height="13" rx="2"/><path d="M16 9h3l2 3-2 3h-3"/><circle cx="9.5" cy="11.5" r="2.5"/></svg></span> AMDCloud</div>
 <div class="nav-item" data-tab="openrouter"><span class="nav-ico"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8 12h8M12 8v8"/><circle cx="12" cy="12" r="2.5"/></svg></span> OpenRouter</div>
 <div class="nav-item" data-tab="tokenharbor"><span class="nav-ico"><svg viewBox="0 0 24 24"><path d="M4 21V9l8-6 8 6v12"/><path d="M4 21h16"/><path d="M9 21v-6h6v6"/></svg></span> TokenHarbor</div>
@@ -441,13 +455,17 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
         <div class="dash-name">Cline</div>
         <div class="dash-stats" id="dashCline">-</div>
       </div>
-      <div class="dash-card" onclick="switchTab('opencode')">
-        <div class="dash-name">OpenCode</div>
-        <div class="dash-stats" id="dashOc">-</div>
+      <div class="dash-card" onclick="switchTab('trae')">
+        <div class="dash-name">TraeCode</div>
+        <div class="dash-stats" id="dashTrae">-</div>
       </div>
       <div class="dash-card" onclick="switchTab('workbuddy')">
         <div class="dash-name">WorkBuddy</div>
         <div class="dash-stats" id="dashWb">-</div>
+      </div>
+      <div class="dash-card" onclick="switchTab('opencode')">
+        <div class="dash-name">OpenCode</div>
+        <div class="dash-stats" id="dashOc">-</div>
       </div>
       <div class="dash-card" onclick="switchTab('amdcloud')">
         <div class="dash-name">AMDCloud</div>
@@ -473,8 +491,9 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
   <div class="section-body">
     <div class="stat-grid">
       <div class="stat-card"><div class="stat-name">Cline</div><div class="stat-line" id="reqCline">-</div></div>
-      <div class="stat-card"><div class="stat-name">OpenCode</div><div class="stat-line" id="reqZen">-</div></div>
+      <div class="stat-card"><div class="stat-name">TraeCode</div><div class="stat-line" id="reqTrae">-</div></div>
       <div class="stat-card"><div class="stat-name">WorkBuddy</div><div class="stat-line" id="reqWb">-</div></div>
+      <div class="stat-card"><div class="stat-name">OpenCode</div><div class="stat-line" id="reqZen">-</div></div>
       <div class="stat-card"><div class="stat-name">AMDCloud</div><div class="stat-line" id="reqAmd">-</div></div>
       <div class="stat-card"><div class="stat-name">OpenRouter</div><div class="stat-line" id="reqOr">-</div></div>
       <div class="stat-card"><div class="stat-name">TokenHarbor</div><div class="stat-line" id="reqTh">-</div></div>
@@ -502,10 +521,6 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
     <h2 style="margin-bottom:4px">Cline</h2>
     <div class="hint" id="accSummary" style="margin:0">Loading...</div>
   </div>
-</div>
-<div class="hint" style="margin:-4px 0 16px;padding:11px 14px;border:1px solid var(--border);border-radius:10px;background:rgba(148,163,184,.05)">
-  <strong style="color:var(--text)">Tokens</strong> are counted locally by this proxy (input+output; exact when upstream returns usage, otherwise estimated from the request body) to gauge headroom before official rate limits. The Test button sends a real probe request. The Reset button <strong style="color:var(--text)">probes upstream rate-limit status</strong>: if still limited it stays in cooldown and shows the estimated recovery time; only a passing probe lifts the cooldown and resets today's stats.
-  <strong style="color:var(--text)">Proxy binding</strong> (isolation mode, on by default): a bound account always egresses via its main proxy, falls back to the backup, and is <em>skipped entirely</em> while both are unavailable — never routed through another exit. Configure the list on the <a href="#" onclick="switchTab('proxypool');return false" style="color:var(--accent);cursor:pointer">Proxy pool</a> page.
 </div>
 <div class="section">
   <div class="section-body" style="padding:6px">
@@ -551,7 +566,6 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
       <button class="btn btn-sm btn-primary" onclick="saveHeaders()">Save headers</button>
     </div>
     <div class="hint">Attached to every Cline API request to mimic the official client.</div>
-    <div id="headerSaveResult" style="margin-top:8px"></div>
   </div>
 </div>
 
@@ -565,6 +579,100 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
     <div id="accModelsBody">Loading...</div>
   </div>
 </div>
+</div>
+
+<div id="tab-trae" class="tab-panel" style="display:none">
+<h2 style="margin-bottom:4px">TraeCode</h2>
+<div class="hint" id="traeSummary" style="margin:0 0 16px">Loading...</div>
+
+<div class="section">
+  <div class="section-body">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin:0 6px 12px">
+      <span class="wb-toolbar">
+        <button class="btn btn-sm" onclick="refreshTraeCredits()" title="Refresh every enabled account's credit snapshot (feeds the Credits column and credit-priority selection)">Refresh balances</button>
+      </span>
+      <span class="wb-toolbar">
+        <button class="btn btn-sm" onclick="runTraeCheckin()" title="Daily check-in for every enabled account that has not checked in today">Check in all</button>
+      </span>
+    </div>
+    <div class="form-row">
+      <div class="field" style="margin:0">
+        <label>Gateway</label>
+        <div style="display:flex;gap:8px;align-items:center">
+          <input type="text" id="traeGateway" placeholder="https://trae-api-cn.mchost.guru" style="flex:1;min-width:0">
+          <button class="btn btn-primary btn-sm" onclick="saveTraeConfig()">Confirm</button>
+        </div>
+      </div>
+    </div>
+    <div class="flex" style="gap:10px;margin:8px 0;align-items:center;flex-wrap:wrap">
+      <label class="hint" style="margin:0">Probe model (used by the Test buttons):</label>
+      <select id="traeProbeModel" style="max-width:420px"><option value="">auto</option></select>
+      <button class="btn btn-sm" onclick="refreshTraeModels()" title="Re-sync the model catalog from the Trae upstream using an enabled account">Refresh models</button>
+      <span class="hint" style="margin:0" id="traeModelsCount"></span>
+    </div>
+    <div class="table-wrap" style="margin-bottom:10px">
+      <table>
+        <thead><tr><th style="width:44px">#</th><th style="width:150px">Account</th><th>Status</th><th title="Remaining credits from the latest snapshot (auto-refreshed in the background; Test refreshes on demand)">Credits</th><th title="Counted locally by this proxy from upstream usage events">Today/Total tokens</th><th>Last used</th><th title="Main exit first, backup as fallback; both down = row skipped (isolation).">Proxy binding</th><th style="width:130px;text-align:center">Actions</th><th style="text-align:center" title="Gateway (reverse proxy) switch: unchecked = model sessions never route to this account; check-in and all other maintenance tasks are unaffected. Can only be ticked while the account switch is on.">Gateway switch</th><th style="text-align:center" title="Account master switch. Off = the account does not exist: check-in, balance refresh and Test all skip it, and it never routes.">Account switch</th></tr></thead>
+        <tbody id="traeAccountsBody"><tr><td colspan="10" class="empty">Loading...</td></tr></tbody>
+      </table>
+    </div>
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin:10px 6px 4px">
+      <button class="btn btn-primary btn-sm" onclick="openTraeAddDialog()">Add accounts</button>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-sm" onclick="stageAllTraeRouting(true)">Enable all</button>
+        <button class="btn btn-sm" onclick="stageAllTraeRouting(false)">Disable all</button>
+        <button class="btn btn-sm" onclick="stageProxiesByOrder('trae')" title="Bind main proxy by row order: 1st account to Direct, then the proxy pool in order (staged - click Save to apply; enable/disable and backup untouched)">Bind proxies in order</button>
+        <button class="btn btn-sm" onclick="stageClearTraeProxies()" title="Stage only — click Save to apply. Clears bindings and disables every row.">Clear bindings</button>
+        <button class="btn btn-sm" id="traeTestBtn" onclick="batchTestTraeAccounts()" title="Run the Test probe on every row.">Test all</button>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-sm btn-warn" id="traeResetBtn" onclick="resetTraeEdits()" title="Discard staged changes and reload the last saved state">Discard</button>
+        <button class="btn btn-primary btn-sm" id="traeSaveBtn" onclick="saveTraeEdits()">Save</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></span> Rate-limit defense</div>
+  <div class="section-body">
+    <div class="form-row">
+      <div class="field"><label>Max concurrency</label><input type="text" id="traeMaxConc" placeholder="8"></div>
+      <div class="field"><label>Rate-limit retries</label><input type="text" id="traeRetries" placeholder="3"></div>
+    </div>
+    <div class="form-actions"><button class="btn btn-primary" onclick="saveTraeConfig()">Save rate-limit config</button></div>
+  </div>
+</div>
+
+<div class="section">
+  <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><path d="M12 6v6l4 2"/><circle cx="12" cy="12" r="9"/></svg></span> Automation</div>
+  <div class="section-body">
+    <div class="form-row">
+      <div class="field">
+        <label>Selection strategy</label>
+        <select id="traeSelection">
+          <option value="">Round-robin</option>
+          <option value="credit-priority">Credit priority (richest first)</option>
+        </select>
+      </div>
+      <div class="field" style="display:flex;align-items:flex-end">
+        <label class="hint" style="display:flex;gap:6px;align-items:center;margin:0 0 8px;cursor:pointer;white-space:nowrap">
+          <input type="checkbox" id="traeAutoCheckin"> Daily check-in
+        </label>
+      </div>
+    </div>
+    <div class="hint" style="margin-top:0">Credit priority picks the account with the most remaining credits first (unlimited accounts always first; needs the background balance refresh). Daily check-in claims every enabled account once per day.</div>
+    <div class="form-actions"><button class="btn btn-primary" onclick="saveTraeConfig()">Save automation config</button></div>
+  </div>
+</div>
+
+<div class="section">
+  <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 5-6"/></svg></span> Model catalog</div>
+  <div class="section-body">
+    <div class="hint" style="margin-top:0">The model catalog syncs from the upstream live catalog every 10 minutes; with no enabled account, no models are shown here or in /v1/models.</div>
+    <div id="traeModelsBody">Loading...</div>
+    </div>
+  </div>
 </div>
 
 <div id="tab-proxypool" class="tab-panel" style="display:none">
@@ -597,7 +705,6 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
     <div id="ppSubUpdateResult" style="margin:-6px 0 10px;font-size:12px;min-height:14px"></div>
     <div class="hint" style="margin-bottom:10px">Subscription refresh replaces the whole pool with the fetched list. Fetch failures keep the current pool.</div>
     <div class="form-actions"><button class="btn btn-primary" onclick="saveProxyPool()">Save proxy pool</button></div>
-    <div id="ppSaveResult" style="margin-top:8px"></div>
   </div>
 </div>
 <div class="section">
@@ -621,7 +728,6 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
       <button class="btn btn-primary" onclick="saveProxyRules()">Save proxy exclusion rules</button>
       <button class="btn btn-success" onclick="openReorderDlg()" style="margin-left:10px">Reorder credential proxies by latency</button>
     </div>
-    <div id="ppRulesResult" style="margin-top:8px"></div>
   </div>
 </div>
 <div class="section">
@@ -634,14 +740,19 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
         <div class="hint">Cline accounts without proxy bindings follow this switch.</div>
       </div>
       <div class="pp-card">
-        <label>OpenCode</label>
-        <select id="ppZen"><option value="true">Proxy</option><option value="false">Direct connection</option></select>
-        <div class="hint">OpenCode keys without proxy bindings follow this switch.</div>
+        <label>TraeCode</label>
+        <select id="ppTrae"><option value="true">Proxy</option><option value="false">Direct connection</option></select>
+        <div class="hint">Trae accounts without proxy bindings follow this switch.</div>
       </div>
       <div class="pp-card">
         <label>WorkBuddy</label>
         <select id="ppWb"><option value="true">Proxy</option><option value="false">Direct connection</option></select>
         <div class="hint">WorkBuddy accounts without proxy bindings follow this switch.</div>
+      </div>
+      <div class="pp-card">
+        <label>OpenCode</label>
+        <select id="ppZen"><option value="true">Proxy</option><option value="false">Direct connection</option></select>
+        <div class="hint">OpenCode keys without proxy bindings follow this switch.</div>
       </div>
       <div class="pp-card">
         <label>AMDCloud</label>
@@ -732,13 +843,19 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
 <div class="section">
   <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M5.6 5.6l12.8 12.8"/></svg></span> Banned platforms <span id="platformBanCount" class="probe-pill" style="font-weight:normal"></span></div>
   <div class="section-body">
-    <div class="hint" style="margin-top:0">Banned platforms stop participating in session routing — models leave /v1/models and requests fail immediately; maintenance tasks (check-in etc.) are unaffected. Other sub-platforms can be banned individually.</div>
-    <div style="position:relative;margin-top:10px">
-      <div class="pr-tagbox pb-box" id="platformBanBox" style="margin-top:0;min-height:38px" onclick="togglePlatformBanMenu(event)">
-        <span id="platformBanChips" style="display:contents"></span>
-        <input class="pr-tagin" readonly placeholder="Click to pick platforms to ban…">
+    <div class="hint" style="margin-top:0">Banned platforms stop participating in session routing — models leave /v1/models and requests fail immediately; maintenance tasks (check-in etc.) are unaffected. Other sub-platforms can be banned individually. Changes are staged — click Save to save.</div>
+    <div style="display:flex;gap:10px;align-items:flex-start;margin-top:10px">
+      <div style="flex:1;position:relative">
+        <div class="pr-tagbox pb-box" id="platformBanBox" style="margin-top:0;min-height:38px" onclick="togglePlatformBanMenu(event)">
+          <span id="platformBanChips" style="display:contents"></span>
+          <input class="pr-tagin" readonly placeholder="Click to pick platforms to ban…">
+        </div>
+        <div id="platformBanMenu" class="pb-menu" style="display:none"></div>
       </div>
-      <div id="platformBanMenu" class="pb-menu" style="display:none"></div>
+      <div style="display:flex;gap:8px;margin-top:4px">
+        <button class="btn btn-sm btn-warn btn-static" id="platformBanResetBtn" style="white-space:nowrap" onclick="resetPlatformBans()" title="Discard staged selections and reload the saved ban state">Discard</button>
+        <button class="btn btn-sm btn-primary btn-static" id="platformBanApplyBtn" style="white-space:nowrap" onclick="applyPlatformBans()">Save</button>
+      </div>
     </div>
   </div>
 </div>
@@ -752,41 +869,6 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
         <thead><tr><th style="width:140px">Platform</th><th>Model</th><th style="width:190px">Ban reason</th><th style="width:180px">Blocked at</th><th style="width:200px;text-align:center">Actions</th></tr></thead>
         <tbody id="blacklistBody"><tr><td colspan="5" class="empty">Loading...</td></tr></tbody>
       </table>
-    </div>
-  </div>
-</div>
-
-<div class="section">
-  <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v4m0 12v4M2 12h4m12 0h4M4.9 4.9l2.8 2.8m8.6 8.6 2.8 2.8m0-14.2-2.8 2.8M7.7 16.3l-2.8 2.8"/></svg></span> General config</div>
-  <div class="section-body">
-    <div class="form-row">
-      <div class="field"><label>Listen address</label><input type="text" id="settingAddr" disabled></div>
-      <div class="field">
-        <label>Account scheduling strategy</label>
-        <select id="settingStrategy" onchange="updateConfig()">
-          <option value="round_robin">Round-robin (round_robin)</option>
-          <option value="random">Random (random)</option>
-          <option value="fill">Fill (fill)</option>
-        </select>
-      </div>
-    </div>
-    <div class="form-row" style="align-items:flex-start">
-      <div class="field">
-        <label>Platform</label>
-        <select id="settingModelPlatform" onchange="loadModelOptions()">
-          <option value="cline" selected>Cline</option>
-          <option value="zen">OpenCode</option>
-          <option value="workbuddy">WorkBuddy</option>
-          <option value="amd">AMDCloud</option>
-          <option value="openrouter">OpenRouter</option>
-          <option value="tokenharbor">TokenHarbor</option>
-        </select>
-        <div style="margin-top:18px"><button class="btn btn-sm btn-primary" onclick="saveDefaultModel()">Save</button></div>
-      </div>
-      <div class="field">
-        <label>Default model</label>
-        <select id="settingDefModel" style="font-family:'JetBrains Mono',Consolas,monospace"></select>
-      </div>
     </div>
   </div>
 </div>
@@ -852,7 +934,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
     <div class="form-row">
       <div class="field"><label>Alias ID</label><input type="text" id="comboId" placeholder="cline-glm-5.3"></div>
       <div class="field"><label>Platform</label>
-        <select id="comboPlatform" onchange="fillComboModels()"><option value="cline">Cline</option><option value="zen">OpenCode</option><option value="workbuddy">WorkBuddy</option><option value="amd">AMDCloud</option><option value="openrouter">OpenRouter</option><option value="tokenharbor">TokenHarbor</option></select>
+        <select id="comboPlatform" onchange="fillComboModels()"><option value="cline">Cline</option><option value="trae">TraeCode</option><option value="workbuddy">WorkBuddy</option><option value="zen">OpenCode</option><option value="amd">AMDCloud</option><option value="openrouter">OpenRouter</option><option value="tokenharbor">TokenHarbor</option></select>
       </div>
       <div class="field" style="flex:2"><label>Target model</label><select id="comboTarget"></select></div>
       <div class="field" style="flex:0 0 auto;display:flex;align-items:flex-end"><label style="display:flex;gap:6px;align-items:center;white-space:nowrap;padding-bottom:8px"><input type="checkbox" id="comboUseProxies"> Use proxy pool</label></div>
@@ -883,7 +965,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
     </div>
     <div class="flex" style="gap:10px;margin:0 0 8px;align-items:center;flex-wrap:wrap">
       <label class="hint" style="margin:0">Probe model (used by the Test buttons):</label>
-      <select id="ocProbeModel" style="max-width:300px"><option value="">auto — big-pickle first, then live models</option></select>
+      <select id="ocProbeModel" style="max-width:300px"><option value="">auto</option></select>
       <label class="hint" style="margin:0 0 0 6px">Session rotation (min):</label>
       <input type="text" id="ocSessionRotate" placeholder="120" style="max-width:90px" title="Mint a fresh session id for a key once it is this old. 0 = never rotate (a long-lived session makes the first request slow after a few days).">
     </div>
@@ -1144,7 +1226,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
     </div>
     <div class="flex" style="gap:10px;margin:8px 0;align-items:center;flex-wrap:wrap">
       <label class="hint" style="margin:0">Probe model (used by the Test buttons):</label>
-      <select id="orProbeModel" style="max-width:420px"><option value="">auto — first free model in the catalog</option></select>
+      <select id="orProbeModel" style="max-width:420px"><option value="">auto</option></select>
       <button class="btn btn-sm" onclick="refreshOrModels()" title="Re-sync the free-model catalog from openrouter.ai">Refresh models</button>
       <span class="hint" style="margin:0" id="orModelsCount"></span>
     </div>
@@ -1210,7 +1292,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
     </div>
     <div class="flex" style="gap:10px;margin:8px 0;align-items:center;flex-wrap:wrap">
       <label class="hint" style="margin:0">Probe model (used by the Test buttons):</label>
-      <select id="amdProbeModel" style="max-width:420px"><option value="">auto — DeepSeek-V4-Flash first</option></select>
+      <select id="amdProbeModel" style="max-width:420px"><option value="">auto</option></select>
       <button class="btn btn-sm" onclick="refreshAmdModels()" title="Re-sync the model catalog from AMDCloud">Refresh models</button>
       <span class="hint" style="margin:0" id="amdModelsCount"></span>
     </div>
@@ -1277,7 +1359,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
     </div>
     <div class="flex" style="gap:10px;margin:8px 0;align-items:center;flex-wrap:wrap">
       <label class="hint" style="margin:0">Probe model (used by the Test buttons):</label>
-      <select id="thProbeModel" style="max-width:420px"><option value="">auto — deepseek-v4.1-flash:free first</option></select>
+      <select id="thProbeModel" style="max-width:420px"><option value="">auto</option></select>
       <button class="btn btn-sm" onclick="refreshTHModels()" title="Re-sync the free-model catalog from TokenHarbor (needs a key)">Refresh models</button>
       <span class="hint" style="margin:0" id="thModelsCount"></span>
     </div>
@@ -1439,7 +1521,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
     <div class="form-row" style="margin-bottom:8px">
       <div class="field">
         <label>Realm</label>
-        <select id="wbRealm"><option value="cn">CN (China)</option><option value="global">Global (International)</option></select>
+        <select id="wbRealm"><option value="cn">CN (China)</option><option value="intl">International (codebuddy.ai)</option><option value="workbuddy">WorkBuddy (workbuddy.ai)</option></select>
       </div>
     </div>
     <div class="hint" id="wbAddStatus">Choose a realm and request an authorization link.</div>
@@ -1557,6 +1639,40 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
     <div class="wb-dialog-actions">
       <button class="btn btn-primary" id="thKeyAddSubmit" onclick="thKeyAddFromDialog()">Save</button>
       <button class="btn" onclick="closeTHKeyAddDialog()">Cancel</button>
+    </div>
+  </div>
+</dialog>
+
+<dialog id="traeAddDialog" style="width:min(560px,calc(100vw - 32px))">
+  <div class="wb-dialog-head">
+    <span>Add Trae accounts</span>
+    <button class="btn btn-sm" onclick="closeTraeAddDialog()">Close</button>
+  </div>
+  <div class="wb-dialog-body">
+    <details class="trae-acc" id="traeAccWeb" open>
+      <summary>Web authorization</summary>
+      <div class="trae-acc-body">
+        <p class="hint" style="margin:0 0 8px" id="traeOAuthHint">Download the helper from this panel, run "python web_login.py" locally, then authorize on the opened page (sign in to trae.cn in the browser first). The account lands here automatically with routing off. The helper writes to the panel it was downloaded from.</p>
+        <div style="display:flex;gap:8px;margin-bottom:6px;align-items:center">
+          <a class="btn btn-sm btn-static" href="/trae/oauth/helper" download="web_login.py">Download helper</a>
+          <button class="btn btn-sm btn-static" onclick="openTraeHelperPage()" title="Open the helper page (127.0.0.1:8765) and click the authorize button there">Open helper page</button>
+        </div>
+        <div class="hint" id="traeHelperStatus" style="margin:0">Checking local helper…</div>
+      </div>
+    </details>
+    <details class="trae-acc" id="traeAccManual">
+      <summary>Manual paste</summary>
+      <div class="trae-acc-body">
+        <p class="hint" style="margin:0 0 8px" id="traeAddHint">One Cloud-IDE-JWT (a 3-part JWT) per line. New accounts start with routing off — tick the Gateway switch to enable.</p>
+        <div class="field">
+          <label>Tokens (one per line)</label>
+          <textarea id="traeAddInput" rows="5" placeholder="eyJhbGciOi…" style="font-family:'JetBrains Mono',Consolas,monospace"></textarea>
+        </div>
+      </div>
+    </details>
+    <div class="wb-dialog-actions">
+      <button class="btn btn-primary" id="traeAddSubmit" onclick="traeAddFromDialog()">Save</button>
+      <button class="btn" onclick="closeTraeAddDialog()">Cancel</button>
     </div>
   </div>
 </dialog>
@@ -1877,6 +1993,12 @@ const I18N_ZH = {
   ' cooling': ' 冷却',
   ' error': ' 异常',
   'Participates in request routing': '参与请求路由',
+  'auto': '自动',
+  'The alias (#name) is a proxy\'s identity — re-binding survives alias-preserving URL changes.': '别名（#name）是代理的身份标识——URL 变化但别名不变时，绑定关系保持有效。',
+  'Rows follow the backend pool; values persist in this browser to survive pool edits (add-only — a returning proxy picks up its stored numbers). Console override: proxyRateSet(\'香港-01\', 0.42).': '行列表跟随代理池后端；数值在本浏览器留存以扛住池编辑清零（只加不删，代理回归后自动恢复留存值）。控制台改数：proxyRateSet(\'香港-01\', 0.42)。',
+  'Import will replace ALL persisted config with the file contents. Confirm whether to keep each platform\'s credential enabled states.': '导入将替换所有持久化配置，请确认是否保留各平台凭据启用状态。',
+  'International (codebuddy.ai)': '国际版（codebuddy.ai）',
+  'WorkBuddy (workbuddy.ai)': 'WorkBuddy 桌面版（workbuddy.ai）',
   'Discard': '复位',
   'Discard staged changes and reload the last saved state': '撤销暂存的修改，恢复为上次保存的状态',
   'Add credentials': '添加凭据',
@@ -2040,18 +2162,16 @@ const I18N_ZH = {
   'Gateway switch: unchecked = model sessions never route to this account; check-in and all other maintenance tasks are unaffected': '反代开关：不勾选 = 模型会话不路由到该账号；签到等其余维护任务不受影响',
   // 封禁平台（网关设置页，封禁模型区上方；整平台退出会话路由）
   'Banned platforms': '封禁平台',
-  'Banned platforms stop participating in session routing — models leave /v1/models and requests fail immediately; maintenance tasks (check-in etc.) are unaffected. Other sub-platforms can be banned individually.': '封禁后整平台退出会话路由——模型从 /v1/models 移除、调用立即失败；签到等维护任务不受影响。Other 的子平台可单独封禁。',
+  'Banned platforms stop participating in session routing — models leave /v1/models and requests fail immediately; maintenance tasks (check-in etc.) are unaffected. Other sub-platforms can be banned individually. Changes are staged — click Save to save.': '封禁后整平台退出会话路由——模型从 /v1/models 移除、调用立即失败；签到等维护任务不受影响。Other 的子平台可单独封禁。改动先暂存，点「保存」后统一落盘。',
   'Banned automatically (upstream refuses them for this account type, e.g. code 11158) or manually — hidden from /v1/models. Test sends a real request with the first enabled credential; Unblock only removes the entry, the same upstream error bans it again.': '自动封禁（上游按账号类型拒绝，如 code 11158）或手动封禁；已从 /v1/models 移除。Test 用该平台第一个启用的凭据发真实请求验证；「解禁」只移出名单，同样的上游错误会再次封禁。',
-  'Platform banned: ': '已封禁平台：',
-  'Platform unbanned: ': '已解封平台：',
+  // 封禁平台暂存 + 确认按钮（勾选/去选只改暂存，「确认」差集统一下发落盘）
+  'Staged — click Save to save': '已暂存，点「保存」后落盘',
+  'No changes to apply': '没有需要应用的改动',
+  'Platform bans saved': '封禁平台已保存',
+  // 批量追加框「已在所有平台排除」回显 chip 与批量取消
+  'Excluded on every platform — × removes it from all (staged)': '已在所有平台排除——点 × 从所有平台批量取消（暂存）',
+  'Removed from every platform\'s exclusion list (staged) — click Save to apply': '已从所有平台的排除列表移除（暂存）——点「保存」后生效',
   'Loading...': '加载中...',
-  'are counted locally by this proxy (input+output; exact when upstream returns usage, otherwise estimated from the request body) to gauge headroom before official rate limits. The Test button sends a real probe request. The Reset button': '由本代理本地统计（输入+输出；上游返回 usage 时精确，否则按请求体估算），用于判断距离官方限流还有多少余量。Test 按钮发送一次真实探测请求。Reset 按钮 ',
-  'probes upstream rate-limit status': '探测上游限流状态',
-  ": if still limited it stays in cooldown and shows the estimated recovery time; only a passing probe lifts the cooldown and resets today's stats.": '：若仍在限流则保持冷却并显示预计恢复时间；只有探测通过才会解除冷却并重置今日统计。',
-  '(isolation mode, on by default): a bound account always egresses via its main proxy, falls back to the backup, and is': '（隔离模式，默认开启）：绑定的账号永远从主代理出网，主不可用落到备用代理；',
-  'skipped entirely': '完全跳过',
-  'while both are unavailable — never routed through another exit. Configure the list on the': '两者都不可用时整个账号被跳过 —— 绝不路由到其他出口。代理列表在',
-  'page.': ' 页配置。',
   'Counted locally by this proxy — not the official free quota': '本代理本地统计 —— 非官方免费额度',
   'Main exit first, backup as fallback; both down = row skipped (isolation).': '主出口优先，备用兜底；都不可用即跳过该行（隔离模式）。',
   'Main exit — used whenever available': '主出口 —— 可用即优先',
@@ -2107,6 +2227,7 @@ const I18N_ZH = {
   'Direct connection': '直连',
   'Save': '保存',
   'Cline accounts without proxy bindings follow this switch.': 'Cline 未绑定代理的账号遵循此开关。',
+  'Trae accounts without proxy bindings follow this switch.': 'Trae 未绑定代理的账号遵循此开关。',
   'Delete': '删除',
   'Test': '测试',
   'Reset': '重置',
@@ -2144,10 +2265,6 @@ const I18N_ZH = {
   'Generate new key': '生成新 key',
   'Refresh models': '刷新模型',
   'Auto-syncs the official model feeds from upstreams (60s)': '自动同步上游的官方模型源（60 秒）',
-  'General config': '常规配置',
-  'Listen address': '监听地址',
-  'Default model': '默认模型',
-  'Account scheduling strategy': '账号调度策略',
   'Record admin logs': '记录管理日志',
   'Request headers (mimicking the Cline CLI)': '请求头（模拟 Cline CLI）',
   'Header': '请求头',
@@ -2192,7 +2309,6 @@ const I18N_ZH = {
   'On': '开',
   'Off': '关',
   'Probe model (used by the Test buttons):': '探测模型（Test 按钮使用）：',
-  'auto — big-pickle first, then live models': '自动 —— big-pickle 优先，其次 live 模型',
   'Key': 'Key',
   'Session': '会话',
   'TTFB': '首包耗时',
@@ -2233,8 +2349,6 @@ const I18N_ZH = {
   'error': '错误',
   // 通用 toast / 确认 / 片段
   'Saved ': '已保存 ',
-  ' headers': ' 个请求头',
-  ' proxies': ' 个代理',
   'WorkBuddy accounts without proxy bindings follow this switch.': 'WorkBuddy 未绑定代理的账号遵循此开关。',
   'OpenRouter keys without proxy bindings follow this switch.': 'OpenRouter 未绑定代理的 key 遵循此开关。',
   'AMDCloud keys without proxy bindings follow this switch.': 'AMDCloud 未绑定代理的 key 遵循此开关。',
@@ -2272,7 +2386,6 @@ const I18N_ZH = {
   'OK': '成功',
   ' — cooldown cleared': ' —— 冷却已清除',
   ' via ': '，模型 ',
-  'Strategy updated to: ': '调度策略已更新为：',
   'Combo created: ': '自定义别名已创建：',
   'Delete combo ': '删除自定义别名 ',
   '? Clients using this alias will no longer be able to call it.': '？使用该别名的客户端将无法继续调用。',
@@ -2281,9 +2394,6 @@ const I18N_ZH = {
   'OAuth failed: ': 'OAuth 登录失败：',
   'Recovers ': '恢复于 ',
   // ===== OpenRouter / AMDCloud / TokenHarbor 页（目录/限流/弹窗） =====
-  'auto — first free model in the catalog': '自动——目录中第一个免费模型',
-  'auto — DeepSeek-V4-Flash first': '自动——优先 DeepSeek-V4-Flash',
-  'auto — deepseek-v4.1-flash:free first': '自动——优先 deepseek-v4.1-flash:free',
   'Model catalog': '模型目录',
   'Automatically synced from the official free-model source upstream (every 5 minutes).': '自动同步上游的官方免费模型源（每 5 分钟）。',
   'Upstream limits: 30 requests/min per key, 8 concurrent per key, 20 requests/min per account.': '上游限制：单个密钥 30 次/分钟、8 并发，单个账号 20 次/分钟。',
@@ -2307,7 +2417,6 @@ const I18N_ZH = {
   'No models yet — click Refresh models': '暂无模型——点"刷新模型"',
   ' free models': ' 个免费模型',
   'Failed to load': '加载失败',
-  'Default model saved: ': '默认模型已保存：',
   'Invalid proxy format: ': '代理格式无效：',
   'No models': '没有模型',
   '· official feed: ': '· 官方源同步于 ',
@@ -2395,7 +2504,6 @@ const I18N_ZH = {
   'Resume': '继续',
   'No requests logged': '暂无请求记录',
   'No combos yet — create one with the form above.': '还没有自定义别名 —— 用上方表单创建一个。',
-  'No models on this platform': '该平台上没有可用模型',
   'Failed to load model list': '模型列表加载失败',
   'socks5 pool': 'socks5 池',
   'stale': '已失效',
@@ -2437,8 +2545,6 @@ const I18N_ZH = {
   'Probe the rate limit; if still limited, stays cooling with a recovery time': '探测限流状态；若仍在限流则保持冷却并显示恢复时间',
   'Batch test done': '批量测试完成',
   // 静态 hint 段落与状态标签补漏（TreeWalker 按文本节点整段匹配）
-  'Tokens': 'Token 消耗',
-  'are counted locally by this proxy (input+output; exact when upstream returns usage, otherwise estimated from the request body) to gauge headroom before official rate limits. The Test button sends a real probe request. The Reset button ': '由本代理在本地统计（输入+输出；上游返回 usage 时精确，否则按请求体估算），用于预估官方限额的余量。Test 按钮发送真实探测请求。Reset 按钮 ',
   'Counted since process start.': '统计自进程启动起。',
   'No API keys yet': '还没有 API key',
   '— no sub-platform yet —': '— 还没有子平台 —',
@@ -2461,6 +2567,65 @@ const I18N_ZH = {
   'Ban this model? It is removed from /v1/models immediately; you can unblock it in the Banned models table.': '封禁该模型？它会立即从 /v1/models 移除；之后可在封禁模型表中解禁。',
   'Banned: ': '已封禁：',
   'Unblocked: ': '已解禁：',
+  // Trae 平台页
+  'Gateway': '网关',
+  'Counted locally by this proxy from upstream usage events': '由本网关按上游用量事件本地计数',
+  'Re-sync the model catalog from the Trae upstream using an enabled account': '用一个已启用的账号从 Trae 上游重新同步模型目录',
+  'Models appear here once an account is enabled — the catalog syncs from upstream': '启用账号后此处才会显示并同步模型目录',
+  'The model catalog syncs from the upstream live catalog every 10 minutes; with no enabled account, no models are shown here or in /v1/models.': '模型目录每 10 分钟从上游 live 目录同步；未启用任何账号时，此处与 /v1/models 都不显示模型。',
+  'Add accounts': '添加账号',
+  'No Trae accounts yet — click Add accounts': '暂无 Trae 账号——点"添加账号"',
+  'Add Trae accounts': '添加 Trae 账号',
+  'Tokens (one per line)': 'Token（每行一个）',
+  'Automation': '自动化',
+  'Token valid': 'token 有效',
+  'Token expired': 'token 已过期',
+  'No refresh token': '无刷新令牌',
+  'Unlimited': '不限量',
+  ' models': ' 个模型',
+  'Account #': '账号 #',
+  ' — ': ' — ',
+  ' — unlimited credits': ' — 不限量额度',
+  ' — credits: ': ' — 额度：',
+  'No accounts to test': '没有可测试的账号',
+  'Enter at least one token': '请至少输入一个 token',
+  ', skipped ': '，跳过 ',
+  'Remove this account from the pool': '把该账号移出账号池',
+  'Trae config saved': 'Trae 配置已保存',
+  ' — re-download it from THIS panel and restart it (python web_login.py)': ' ——请从本面板重新下载助手并重启（python web_login.py）',
+  'Helper detected, but it writes credentials to ANOTHER deployment: ': '检测到助手，但它会把凭据写入另一个部署：',
+  'Local helper detected (writes to this gateway) — click Open helper page, then use the authorization button there': '已检测到本机授权助手（凭据写入本网关）——点"打开授权助手页面"，在弹出的页面里点授权按钮',
+  'Download helper': '下载授权助手',
+  'Download the helper from this panel, run "python web_login.py" locally, then authorize on the opened page (sign in to trae.cn in the browser first). The account lands here automatically with routing off. The helper writes to the panel it was downloaded from.': '从本面板下载助手并在本机运行 python web_login.py，在打开的页面点授权即可（浏览器需已登录 trae.cn）。账号自动入库，默认不参与路由；助手写入下载它的那个网关。',
+  'One Cloud-IDE-JWT (a 3-part JWT) per line. New accounts start with routing off — tick the Gateway switch to enable.': '每行一个 Cloud-IDE-JWT（三段式）。新账号默认不参与路由，勾选反代开关启用。',
+  'Open the helper page (127.0.0.1:8765) and click the authorize button there': '打开助手页面（127.0.0.1:8765），在页面里点授权按钮',
+  'Web authorization': '网页授权',
+  'Manual paste': '手动填写',
+  'Discard staged selections and reload the saved ban state': '放弃暂存的勾选，恢复为已保存的封禁状态',
+  'Staged selections reset': '已复位暂存的勾选',
+  'Open helper page': '打开授权助手页面',
+  'Checking local helper…': '正在检测本机授权助手…',
+  'Local helper NOT detected — download it, run "python web_login.py", then retry': '未检测到本机授权助手——先下载并在本机运行 web_login.py 后重试',
+  // Trae 双开关 / 网页授权 / 签到 / 自动化
+  'Refresh balances': '刷新余额',
+  'Refresh every enabled account\'s credit snapshot (feeds the Credits column and credit-priority selection)': '刷新所有已启用账号的额度快照（额度列与额度优先选号的数据源）',
+  'Daily check-in for every enabled account that has not checked in today': '给今天还没签到的已启用账号执行每日签到',
+  'Daily check-in': '每日自动签到',
+  'Checked in': '已签到',
+  'Check-in failed': '签到失败',
+  'Check-in done: ': '签到完成：',
+  ' already': ' 个已签过',
+  ' failed': ' 个失败',
+  'Account ready: ': '账号就绪：',
+  'Account already in the pool: ': '账号已在池中：',
+  'Authorization failed: ': '授权失败：',
+  'Selection strategy': '选号策略',
+  'Round-robin': '轮转',
+  'Credit priority (richest first)': '额度优先（余量多者优先）',
+  'Credit priority picks the account with the most remaining credits first (unlimited accounts always first; needs the background balance refresh). Daily check-in claims every enabled account once per day.': '额度优先：余量最多的账号优先（不限量账号恒最优先；依赖后台余额刷新的数据）。每日签到会给每个已启用账号每天签一次。',
+  'Save automation config': '保存自动化配置',
+  'Remaining credits from the latest snapshot (auto-refreshed in the background; Test refreshes on demand)': '最新快照的剩余额度（后台自动刷新；Test 按钮即时刷新）',
+  'Account master switch. Off = the account does not exist: check-in, balance refresh and Test all skip it, and it never routes.': '账号总开关。关闭 = 账号视为不存在：签到、余额刷新与 Test 全部跳过，也绝不参与路由。',
 };
 function T(s) { return LANG === 'zh' ? (I18N_ZH[s] || s) : s; }
 function toggleLang() {
@@ -2580,6 +2745,7 @@ function switchTab(name) {
   _('tab-' + name).style.display = 'block';
   if (name === 'dashboard') { loadStats(); loadAccounts(); }
   if (name === 'accounts') { loadAccounts(); loadModels(); }
+  if (name === 'trae') loadTraeConfig();
   if (name === 'settings') { loadKeys(); loadConfig(); loadPlatformBans(); }
   if (name === 'logs') loadLogs();
   if (name === 'proxypool') loadProxyPool();
@@ -3234,7 +3400,7 @@ async function startWorkbuddyOAuth() {
   button.textContent = 'Requesting...';
   _('wbAddStatus').textContent = 'Requesting authorization link...';
   try {
-    const payload = await wbCall('login/start', { realm: _('wbRealm').value }, {});
+    const payload = await wbCall('login/start', {}, { site: _('wbRealm').value });
     const url = payload.url || '';
     _('wbOAuthUrl').value = url;
     _('wbAddStatus').textContent = url ? 'Open the link and complete the browser login.' : 'Authorization session created.';
@@ -3411,6 +3577,11 @@ async function loadStats() {
     setDash('dashOr', 'keys', ks.length, ks.filter(k => k.routingEnabled !== false).length, ks.filter(k => k.cooling).length);
   } catch (e) { /* ignore */ }
   try {
+    const d = await api('GET', '/trae/config');
+    const accs = (d.data && d.data.accounts) || [];
+    setDash('dashTrae', 'accounts', accs.length, accs.filter(a => a.routingEnabled !== false).length, accs.filter(a => a.cooling).length);
+  } catch (e) { /* ignore */ }
+  try {
     const d = await api('GET', '/amd/config');
     const ks = (d.data && d.data.keyStates) || [];
     setDash('dashAmd', 'keys', ks.length, ks.filter(k => k.routingEnabled !== false).length, ks.filter(k => k.cooling).length);
@@ -3436,6 +3607,7 @@ async function loadStats() {
     const d = await api('GET', '/request-stats');
     const rs = (d.data && d.data.routes) || {};
     setReq('reqCline', rs.cline);
+    setReq('reqTrae', rs.trae);
     setReq('reqZen', rs.zen);
     setReq('reqWb', rs.workbuddy);
     setReq('reqOr', rs.openrouter);
@@ -3830,7 +4002,7 @@ function stageRowBindingClear(row, kind) {
 }
 
 // 各凭据页的表格容器（键 -> tbody 选择器），一键代理按页取行。
-const BIND_TBODY = { acc: '#accountTableBody', key: '#ocKeysBody', wb: '#wbAccountsBody',
+const BIND_TBODY = { acc: '#accountTableBody', trae: '#traeAccountsBody', key: '#ocKeysBody', wb: '#wbAccountsBody',
                     or: '#orKeysBody', amd: '#amdKeysBody', th: '#thKeysBody', other: '#otherKeysBody' };
 
 // 一键代理：按行序把主代理依次绑定为 [直连, 代理池第1项, 代理池第2项, ...]。
@@ -3876,20 +4048,21 @@ function stageProxiesByOrder(kind) {
 // 按各表行序从上到下依次回填。重选后逐平台自动调用既有保存函数落盘。
 // 注意：懒加载 —— 各平台表格仅在访问过对应页后渲染，重排前先逐类加载；
 // 自动保存会连带保存所选平台各表所有未落盘的暂存改动。
-const REORDER_KINDS = ['acc', 'key', 'wb', 'amd', 'or', 'th', 'other']; // 与左侧菜单同序
+const REORDER_KINDS = ['acc', 'trae', 'wb', 'key', 'amd', 'or', 'th', 'other']; // 与左侧菜单同序
 // 弹窗平台行（顺序 = REORDER_KINDS = 左侧菜单序）
 const REORDER_PLATFORMS = [
   { key: 'acc', label: 'Cline' },
-  { key: 'key', label: 'OpenCode' },
+  { key: 'trae', label: 'TraeCode' },
   { key: 'wb', label: 'WorkBuddy' },
+  { key: 'key', label: 'OpenCode' },
   { key: 'amd', label: 'AMDCloud' },
   { key: 'or', label: 'OpenRouter' },
   { key: 'th', label: 'TokenHarbor' },
   { key: 'other', label: 'Other' }
 ];
-const REORDER_LOADERS = { acc: loadAccounts, key: loadOcConfig, wb: ensureWorkbuddyConsole,
+const REORDER_LOADERS = { acc: loadAccounts, trae: loadTraeConfig, key: loadOcConfig, wb: ensureWorkbuddyConsole,
                           or: loadOrConfig, amd: loadAmdConfig, th: loadTHConfig, other: loadOtherConfig };
-const REORDER_SAVERS = { acc: saveAccountEdits, key: saveKeyEdits, wb: saveWorkbuddyEdits,
+const REORDER_SAVERS = { acc: saveAccountEdits, trae: saveTraeEdits, key: saveKeyEdits, wb: saveWorkbuddyEdits,
                          or: saveOrKeyEdits, amd: saveAmdKeyEdits, th: saveTHKeyEdits, other: saveOtherKeyEdits };
 // 打开重排确认弹窗：平台行固定 7 项（与菜单同序），默认全部勾选
 function openReorderDlg() {
@@ -4672,14 +4845,6 @@ async function loadLogs() {
 }
 
 // ========== Config updates ==========
-async function updateConfig() {
-  const strategy = _('settingStrategy').value;
-  try {
-    await api('POST', '/config/update', { strategy });
-    toast(T('Strategy updated to: ') + strategy, 'success');
-  } catch (e) { toast(T('Update failed: ') + e.message, 'error'); }
-}
-
 // saveAdminLogToggle 勾选即存：/admin 页面与接口访问是否写入请求日志。
 // 关闭（默认）只影响面板自身产生的行，经过网关的模型会话请求日志不受影响。
 async function saveAdminLogToggle() {
@@ -4730,9 +4895,6 @@ async function saveHeaders() {
   try {
     const d = await api('POST', '/config/update', { headers });
     toast('Headers saved', 'success');
-    _('headerSaveResult').innerHTML =
-      '<div style="color:var(--accent2);font-size:12px">' + T('Saved ') + Object.keys(d.data.headers).length + T(' headers') + '</div>';
-    setTimeout(() => _('headerSaveResult').innerHTML = '', 5000);
     loadConfig();
   } catch (e) { toast(T('Save failed: ') + e.message, 'error'); }
 }
@@ -4906,7 +5068,7 @@ async function loadModels() {
 // Test = 用该平台第一个启用凭据发一次真实请求；Unblock = 只移出名单，
 // 后续同样的上游错误会再次自动封禁（手动封禁解禁后不会自动恢复）。
 const BLACKLIST_PLATFORM_LABEL = {
-  workbuddy: 'WorkBuddy', zen: 'OpenCode', cline: 'Cline',
+  workbuddy: 'WorkBuddy', zen: 'OpenCode', cline: 'Cline', trae: 'Trae',
   amd: 'AMDCloud', openrouter: 'OpenRouter', tokenharbor: 'TokenHarbor', other: 'Other'
 };
 // 已拉黑模型 ID 集合（对外 ID，如 wbgb:gpt-6-luna）。设置页各模型块渲染前
@@ -5022,24 +5184,28 @@ async function refreshModels() {
 // ========== Banned platforms（封禁平台） ==========
 // 整平台退出会话路由（platform_blacklist.go）：/v1/models 同步摘除、请求直接
 // 503；签到/保活等维护任务不受影响。Other 的子平台可单独封禁（other:<slug>）。
-// 长输入框 + chips（与代理排除规则卡片同款 tagbox 样式）：点框开选择菜单，
-// 勾选即封禁（confirm 防误点）、去勾即解封；chip 的 × 解封。
+// 长输入框 + chips（与代理排除规则卡片同款 tagbox 样式）+ 右侧「确认」按钮：
+// 点选/去选只改暂存集（platformBansStaged），点「确认」一次性算差集批量下发
+// （新增 → ban，取消 → unban）后统一落盘；chip 的 × 也只是取消暂存。
 const PLATFORM_BAN_BASE = [
   { key: 'cline', label: 'Cline' },
-  { key: 'zen', label: 'OpenCode' },
+  { key: 'trae', label: 'TraeCode' },
   { key: 'workbuddy', label: 'WorkBuddy' },
+  { key: 'zen', label: 'OpenCode' },
   { key: 'amd', label: 'AMDCloud' },
   { key: 'openrouter', label: 'OpenRouter' },
   { key: 'tokenharbor', label: 'TokenHarbor' }
 ];
-let platformBans = new Set();
+let platformBans = new Set();       // 服务器已落盘的封禁集
+let platformBansStaged = new Set(); // 面板暂存集（点「确认」才下发）
 async function loadPlatformBans() {
   const box = _('platformBanBox');
   if (!box) return;
   try {
     const d = await api('GET', '/platforms/blacklist');
-    platformBans = new Set((d.items || []).map(i => i.platform));
+    platformBans = new Set(((d.data || {}).items || []).map(i => i.platform));
   } catch (e) { platformBans = new Set(); }
+  platformBansStaged = new Set(platformBans);
   if (!otherConfig) {
     try { await loadOtherConfig(); } catch (e) { otherConfig = { platforms: [] }; }
   }
@@ -5056,17 +5222,17 @@ function renderPlatformBan() {
   const chips = _('platformBanChips'), menu = _('platformBanMenu');
   if (!chips || !menu) return;
   const opts = platformBanOptions();
-  // chips：按选项序展示已封禁平台，× 解封（点击不冒泡，避免开菜单）
-  chips.innerHTML = opts.filter(o => platformBans.has(o.key)).map(o =>
-    '<span class="pr-chip"><span title="' + esc(o.key) + '">' + esc(o.label) + '</span>' +
-    '<button type="button" onclick="event.stopPropagation();togglePlatformBan(\'' + esc(o.key) + '\',\'' + esc(o.label) + '\',false)" title="' + esc(T('Remove')) + '">×</button></span>'
+  // chips：按选项序展示暂存集，× 取消暂存（点击不冒泡，避免开菜单）
+  chips.innerHTML = opts.filter(o => platformBansStaged.has(o.key)).map(o =>
+    '<span class="pr-chip" title="' + esc(T('Staged — click Save to save')) + '"><span title="' + esc(o.key) + '">' + esc(o.label) + '</span>' +
+    '<button type="button" onclick="event.stopPropagation();stagePlatformBan(\'' + esc(o.key) + '\',false)" title="' + esc(T('Remove')) + '">×</button></span>'
   ).join('');
   const cnt = _('platformBanCount');
-  if (cnt) cnt.textContent = platformBans.size ? '· ' + platformBans.size : '';
+  if (cnt) cnt.textContent = platformBansStaged.size ? '· ' + platformBansStaged.size : '';
   menu.innerHTML = opts.map(o =>
     '<label class="pb-row' + (o.sub ? ' pb-row-sub' : '') + '">' +
-      '<input type="checkbox"' + (platformBans.has(o.key) ? ' checked' : '') +
-      ' data-pb="' + esc(o.key) + '" data-pb-label="' + esc(o.label) + '" onchange="togglePlatformBan(this.dataset.pb, this.dataset.pbLabel, this.checked)">' +
+      '<input type="checkbox"' + (platformBansStaged.has(o.key) ? ' checked' : '') +
+      ' data-pb="' + esc(o.key) + '" data-pb-label="' + esc(o.label) + '" onchange="stagePlatformBan(this.dataset.pb, this.checked)">' +
       '<span>' + esc(o.label) + '</span>' +
     '</label>').join('');
 }
@@ -5115,68 +5281,35 @@ window.addEventListener('resize', () => {
   pbMenuHide(_('platformBanMenu'));
   pbMenuHide(_('ppBulkMenu'));
 });
-async function togglePlatformBan(key, label, on) {
-  try {
-    if (on) {
-      await api('POST', '/platforms/blacklist/ban', { platform: key });
-      platformBans.add(key);
-      toast(T('Platform banned: ') + label, 'success');
-    } else {
-      await api('POST', '/platforms/blacklist/unban', { platform: key });
-      platformBans.delete(key);
-      toast(T('Platform unbanned: ') + label, 'success');
-    }
-  } catch (e) {
-    toast(T('Save failed: ') + e.message, 'error');
-  }
+// stagePlatformBan 暂存/取消暂存一个平台（不触 API，点「确认」才统一下发）
+function stagePlatformBan(key, on) {
+  if (on) platformBansStaged.add(key); else platformBansStaged.delete(key);
   renderPlatformBan();
 }
-
-async function loadModelOptions() {
-  try {
-    // 默认模型下拉：合并 Cline、OpenCode、WorkBuddy 与 OpenRouter 模型。
-    const [d, z, wbAll, orCfg, amdCfg, thCfg] = await Promise.all([
-      api('GET', '/models'),
-      api('GET', '/opencode/models').catch(() => ({ data: { models: [] } })),
-      fetchWorkbuddyModels(),
-      api('GET', '/openrouter/config').catch(() => ({ data: { models: [] } })),
-      api('GET', '/amd/config').catch(() => ({ data: { models: [] } })),
-      api('GET', '/tokenharbor/config').catch(() => ({ data: { models: [] } }))
-    ]);
-    const platform = _('settingModelPlatform') ? _('settingModelPlatform').value : 'cline';
-    const cline = platform === 'cline' ? (d.data.models || []) : [];
-    const zen = platform === 'zen' ? (z.data.models || []) : [];
-    const wb = platform === 'workbuddy'
-      ? wbAll.filter(wbModelMatchesFilter).sort((a, b) => wbRate(a) - wbRate(b))
-      : [];
-    const orm = platform === 'openrouter' ? (orCfg.data.models || []) : [];
-    const amdm = platform === 'amd' ? (amdCfg.data.models || []) : [];
-    const thm = platform === 'tokenharbor' ? (thCfg.data.models || []) : [];
-    const sel = _('settingDefModel');
-    if (!sel) return;
-    // 仅原样展示模型 ID，不附加平台/状态/倍率后缀
-    sel.innerHTML = cline.concat(zen, wb, orm, amdm, thm).map(m =>
-      '<option value="' + esc(m.id) + '">' + esc(m.id) + '</option>').join('');
-    if (!sel.options.length) {
-      sel.innerHTML = '<option value="">No models on this platform</option>';
-      return;
-    }
-    const c = await api('GET', '/config');
-    if (c.data.defaultModel && Array.from(sel.options).some(o => o.value === c.data.defaultModel)) {
-      sel.value = c.data.defaultModel;
-    } else {
-      sel.selectedIndex = 0;
-    }
-  } catch (e) { /* ignore */ }
+// resetPlatformBans 复位按钮：放弃暂存改动，暂存集对齐已落盘集后重绘。
+function resetPlatformBans() {
+  platformBansStaged = new Set(platformBans);
+  renderPlatformBan();
+  toast(T('Staged selections reset'), 'info');
 }
-
-async function saveDefaultModel() {
-  const v = _('settingDefModel').value;
-  if (!v) { toast('Select a model', 'error'); return; }
+// applyPlatformBans 确认按钮：暂存集 vs 已落盘集算差集，新增 → ban、取消 →
+// unban，全部成功后才把落盘集对齐暂存并重绘；中途失败则重拉服务器状态回滚
+// 面板显示（部分成功的服务器状态以 GET 结果为准）。
+async function applyPlatformBans() {
+  const add = [...platformBansStaged].filter(k => !platformBans.has(k));
+  const del = [...platformBans].filter(k => !platformBansStaged.has(k));
+  if (!add.length && !del.length) { toast(T('No changes to apply'), 'info'); return; }
   try {
-    const d = await api('POST', '/config/update', { defaultModel: v });
-    toast(T('Default model saved: ') + d.data.defaultModel, 'success');
-  } catch (e) { toast(T('Save failed: ') + e.message, 'error'); }
+    for (const k of add) await api('POST', '/platforms/blacklist/ban', { platform: k });
+    for (const k of del) await api('POST', '/platforms/blacklist/unban', { platform: k });
+  } catch (e) {
+    toast(T('Save failed: ') + e.message, 'error');
+    try { await loadPlatformBans(); } catch (e2) { /* 重绘失败不影响错误提示 */ }
+    return;
+  }
+  platformBans = new Set(platformBansStaged);
+  renderPlatformBan();
+  toast(T('Platform bans saved') + ' (+' + add.length + ' / -' + del.length + ')', 'success');
 }
 
 // ========== Config load ==========
@@ -5184,11 +5317,8 @@ async function loadConfig() {
   try {
     const d = await api('GET', '/config');
     const c = d.data;
-    if (c.address) _('settingAddr').value = c.address;
-    if (c.strategy) _('settingStrategy').value = c.strategy;
     if (_('settingAdminLog')) _('settingAdminLog').checked = !!c.adminLogEnabled;
     if (c.poolPath && _('settingPoolPath')) _('settingPoolPath').value = c.poolPath;
-    loadModelOptions();
     if (c.headers) {
       const tbody = _('headersTableBody');
       tbody.innerHTML = Object.entries(c.headers).map(([k, v]) =>
@@ -5520,6 +5650,11 @@ async function loadProxyPool() {
     }
     _('ppZen').value = String(c.zenUseProxies !== false);
     _('ppWb').value = String(c.workbuddyUseProxies !== false);
+    // Trae 走池开关在 /trae/config（独立配置）
+    try {
+      const trc = await api('GET', '/trae/config');
+      _('ppTrae').value = String(trc.data.useProxies !== false);
+    } catch (e) { _('ppTrae').value = 'true'; }
     // OpenRouter 走池开关在 /openrouter/config（独立配置，不复用 zen 配置）
     try {
       const orc = await api('GET', '/openrouter/config');
@@ -5621,8 +5756,6 @@ async function saveProxyPool() {
     // 订阅有值时不下发 proxies（后端保留现池，池只由订阅覆盖）
     if (!subUrl) payload.proxies = proxies;
     await api('POST', '/opencode/config/update', payload);
-    _('ppSaveResult').innerHTML = '<div style="color:var(--accent2);font-size:12px">' + T('Saved ') + proxies.length + T(' proxies') + '</div>';
-    setTimeout(() => _('ppSaveResult').innerHTML = '', 5000);
     toast('Proxy pool saved', 'success');
     loadProxyPool();
   } catch (e) { toast(T('Save failed: ') + e.message, 'error'); }
@@ -5749,6 +5882,8 @@ function renderProxyRules() {
     const inp = _('prTagIn-' + prActiveKind);
     if (inp) { inp.focus(); inp.setSelectionRange(inp.value.length, inp.value.length); }
   }
+  // 卡片增删会改变「已在所有平台排除」的集合，批量追加框的回显 chips 随之同步
+  ppBulkSyncChips();
 }
 
 function ppRuleToggleGroup() { prOtherOpen = !prOtherOpen; renderProxyRules(); }
@@ -5831,8 +5966,6 @@ async function saveProxyRules() {
   });
   try {
     await api('POST', '/opencode/config/update', { proxyExclusions: exclusions, proxyBindCaps: caps });
-    _('ppRulesResult').innerHTML = '<div style="color:var(--accent2);font-size:12px">' + T('Saved proxy exclusion rules') + '</div>';
-    setTimeout(() => _('ppRulesResult').innerHTML = '', 5000);
     toast(T('Saved proxy exclusion rules'), 'success');
     loadProxyPool();
   } catch (e) { toast(T('Save failed: ') + e.message, 'error'); }
@@ -5843,7 +5976,8 @@ async function saveProxyRules() {
 // 匹配、Backspace（空查询时）删最后一个 chip、Esc 关闭；选中项以 chips 回显，
 // 点右侧「批量追加」一键进入所有平台（含 Other 子平台）卡片的排除列表。与逐
 // 卡片点选同一条暂存链路：只改本地 ppRulesCache，点「保存代理排除规则」才落
-// 盘；已在所有平台排除的代理置灰禁选。直连不在此列（各卡片的「排除直连」开关单独管）。
+// 盘；已在所有平台排除的代理无可追加、不进菜单，但以置灰 chip 回显在本框中
+// （× = 从所有平台批量取消，同为暂存）。直连不在此列（各卡片的「排除直连」开关单独管）。
 const ppBulkSel = new Set();
 let ppBulkQuery = '';
 // ppBulkBoxClick 点框任意处 = 聚焦输入框并开菜单（已开则只聚焦，不反复开关）
@@ -5909,13 +6043,40 @@ function ppBulkKey(ev) {
     }
   }
 }
+// ppBulkEverywhere 已在所有平台（含 Other 子平台）排除列表里的池内代理
+// （直连不参与——它由各卡片的「排除直连」开关单独管）。
+function ppBulkEverywhere() {
+  const st = ppRulesState();
+  const leaves = ruleLeaves();
+  return proxyListCache.filter(p => p !== EGRESS_DIRECT &&
+    leaves.every(l => (st[l.key].ex || []).indexOf(p) >= 0));
+}
 function ppBulkSyncChips() {
   const chips = _('ppBulkChips');
   if (!chips) return;
-  chips.innerHTML = [...ppBulkSel].map(p =>
+  const sel = [...ppBulkSel].map(p =>
     '<span class="pr-chip" title="' + esc(egLabel(p)) + '"><span>' + esc(egLabel(p)) + '</span>' +
-    '<button type="button" onclick="event.stopPropagation();ppBulkPick(decodeURIComponent(this.dataset.pp),false)" data-pp="' + esc(encodeURIComponent(p)) + '" title="' + esc(T('Remove')) + '">×</button></span>'
-  ).join('');
+    '<button type="button" onclick="event.stopPropagation();ppBulkPick(decodeURIComponent(this.dataset.pp),false)" data-pp="' + esc(encodeURIComponent(p)) + '" title="' + esc(T('Remove')) + '">×</button></span>');
+  // 已全平台排除的代理回显为置灰 chip（pr-chip-allex）：× = 从所有平台批量取消
+  const everywhere = ppBulkEverywhere().map(p =>
+    '<span class="pr-chip pr-chip-allex" title="' + esc(T('Excluded on every platform — × removes it from all (staged)')) + '"><span>' + esc(egLabel(p)) + '</span>' +
+    '<button type="button" onclick="event.stopPropagation();ppBulkRemoveEverywhere(decodeURIComponent(this.dataset.pp))" data-pp="' + esc(encodeURIComponent(p)) + '" title="' + esc(T('Remove')) + '">×</button></span>');
+  chips.innerHTML = sel.concat(everywhere).join('');
+}
+// ppBulkRemoveEverywhere 批量取消：把该代理从所有平台的排除列表移除（暂存），
+// 随后重绘各卡片——该代理重新出现在候选菜单与各卡片可选项里，点保存才落盘。
+function ppBulkRemoveEverywhere(p) {
+  if (!p) return;
+  const st = ppRulesState();
+  ruleLeaves().forEach(l => {
+    const ex = st[l.key] ? st[l.key].ex : null;
+    if (!ex) return;
+    const i = ex.indexOf(p);
+    if (i >= 0) ex.splice(i, 1);
+  });
+  ppBulkSyncChips();
+  renderProxyRules();
+  toast(T('Removed from every platform\'s exclusion list (staged) — click Save to apply'), 'success');
 }
 // ppBulkRenderMenu 候选 = 池内未选中代理（选中项已是 chip，不再进菜单），
 // 按 egLabel/原始串包含查询串过滤；已被所有平台排除的代理无可追加，不再展示。
@@ -6001,6 +6162,7 @@ async function saveGlobalPolicy() {
   try {
     await api('POST', '/config/update', { clineUseProxies: _('ppCline').value === 'true' });
     await api('POST', '/opencode/config/update', { zenUseProxies: _('ppZen').value === 'true', workbuddyUseProxies: _('ppWb').value === 'true' });
+    await api('POST', '/trae/config/update', { useProxies: _('ppTrae').value === 'true' });
     await api('POST', '/openrouter/config/update', { useProxies: _('ppOr').value === 'true' });
     await api('POST', '/amd/config/update', { useProxies: _('ppAmd').value === 'true' });
     await api('POST', '/tokenharbor/config/update', { useProxies: _('ppTh').value === 'true' });
@@ -6055,7 +6217,7 @@ async function loadOcModels() {
     const sel = _('ocProbeModel');
     if (sel) {
       const prev = sel.value;
-      sel.innerHTML = '<option value="">' + T('auto — big-pickle first, then live models') + '</option>' +
+      sel.innerHTML = '<option value="">' + T('auto') + '</option>' +
         models.map(m => '<option value="' + esc(m.id) + '">' + esc(m.id) + (m.source === 'live' ? '' : T(' (seed)')) + '</option>').join('');
       if (Array.from(sel.options).some(o => o.value === prev)) sel.value = prev;
     }
@@ -6092,7 +6254,7 @@ async function loadOrConfig() {
     const sel = _('orProbeModel');
     if (sel) {
       const prev = sel.value;
-      sel.innerHTML = '<option value="">auto — first free model in the catalog</option>' +
+      sel.innerHTML = '<option value="">' + T('auto') + '</option>' +
         models.map(m => '<option value="' + esc(String(m.id || '').replace(/^oprt:/, '')) + '">' + esc(m.id) + '</option>').join('');
       if (Array.from(sel.options).some(o => o.value === prev)) sel.value = prev;
     }
@@ -6333,6 +6495,420 @@ async function orKeyAddFromDialog() {
   }
 }
 
+// ========== Trae page ==========
+// Trae 账号池（trae: 前缀平台，Cloud-IDE-JWT 凭据）：配置加载/保存、账号表
+// 暂存编辑（绑定 + 路由启用 + 昵称改名）、批量测试、模型目录。协议与
+// OpenRouter 页同构，凭据列展示 JWT 掩码 + 昵称（铅笔改名）。
+let traeCfgCache = {};
+let traeAccSnapshot = {};
+
+async function loadTraeConfig() {
+  try {
+    await loadProxyListCache();
+    const d = await api('GET', '/trae/config');
+    const c = d.data;
+    traeCfgCache = c;
+    const accs = c.accounts || [];
+    const sum = _('traeSummary');
+    if (sum) {
+      const routed = accs.filter(a => a.routingEnabled !== false).length;
+      const cooling = accs.filter(a => a.cooling).length;
+      sum.textContent = accs.length + ' ' + T('accounts') + ' · ' + routed + ' ' + T('active') + ' · ' + cooling + ' ' + T('cooling');
+    }
+    renderTraeAccounts(accs);
+    _('traeGateway').value = c.gateway || '';
+    _('traeMaxConc').value = c.maxConcurrency || 8;
+    _('traeRetries').value = c.retries || 3;
+    if (_('traeSelection')) _('traeSelection').value = c.selection || '';
+    if (_('traeAutoCheckin')) _('traeAutoCheckin').checked = c.autoCheckin === true;
+    // 封禁过滤：黑名单语义是「不再对外提供」，页面模型列表同步剔除。
+    await syncModelBlacklist();
+    const models = (c.models || []).filter(m => m && !modelBlacklistIds.has(m.id));
+    _('traeModelsCount').textContent = '(' + models.length + T(' models') + ')';
+    const sel = _('traeProbeModel');
+    if (sel) {
+      const prev = sel.value;
+      sel.innerHTML = '<option value="">' + T('auto') + '</option>' +
+        models.map(m => '<option value="' + esc(String(m.id || '').replace(/^trae:/, '')) + '">' + esc(m.id) + '</option>').join('');
+      if (Array.from(sel.options).some(o => o.value === prev)) sel.value = prev;
+    }
+    const tb = _('traeModelsBody');
+    if (tb) {
+      const row = inner => '<div style="display:flex;align-items:center;gap:10px;padding:8px 12px;margin:5px 0;background:rgba(148,163,184,.06);border:1px solid var(--border);border-radius:10px">' + inner + '</div>';
+      tb.innerHTML = models.length
+        ? models.map(m => row(
+            '<span style="font-family:\'JetBrains Mono\',monospace;font-size:13px;flex:1"' + (m.name ? ' title="' + esc(m.name) + '"' : '') + '>' + esc(m.id) + '</span>' +
+            '<span class="model-tag free">' + T('no charge') + '</span>' +
+            wbContextTagHTML(m.context, T('Context')) +
+            '<button class="btn btn-sm btn-danger" data-bl-ban="1" data-platform="trae" data-model="' + esc(m.id) + '" data-refresh="trae" style="white-space:nowrap">' + T('Ban') + '</button>')).join('')
+        : '<div class="empty">' + T((c.accounts || []).some(x => x.accountEnabled !== false)
+            ? 'No models yet — click Refresh models'
+            : 'Models appear here once an account is enabled — the catalog syncs from upstream') + '</div>';
+    }
+  } catch (e) { /* ignore */ }
+}
+
+async function saveTraeConfig() {
+  const body = {
+    gateway: _('traeGateway').value.trim(),
+    maxConcurrency: parseInt(_('traeMaxConc').value) || 8,
+    retries: parseInt(_('traeRetries').value) || 3,
+    selection: _('traeSelection') ? _('traeSelection').value : '',
+    autoCheckin: !(!_('traeAutoCheckin') || !_('traeAutoCheckin').checked),
+  };
+  try {
+    await api('POST', '/trae/config/update', body);
+    toast(T('Trae config saved'), 'success');
+    loadTraeConfig();
+  } catch (e) { toast(T('Save failed: ') + e.message, 'error'); }
+}
+
+async function refreshTraeModels() {
+  try {
+    await api('POST', '/trae/models/refresh');
+    await loadTraeConfig();
+    toast(T('Catalog refreshed') + ' (' + _('traeModelsCount').textContent.replace(/[()]/g, '') + ')', 'success');
+  } catch (e) { toast(T('Refresh failed: ') + e.message, 'error'); }
+}
+
+// 账号状态表：昵称 + JWT 掩码 / token 到期 / 今日累计 token / 额度 / 签到 /
+// 冷却 / 代理绑定 / 测试 / 删除 / 双开关（反代 = 路由参与，账号 = 总闸，
+// 对齐 WorkBuddy：总闸关 = 签到/额度刷新等维护任务一并停）。
+function renderTraeAccounts(accs) {
+  const tb = _('traeAccountsBody');
+  if (!tb) return;
+  traeAccSnapshot = {};
+  tb.innerHTML = accs.length
+    ? accs.map(a => {
+        const cool = a.cooling
+          ? '<span class="status cooldown"><span class="status-dot cooldown"></span>' + T('Cooldown') + '</span>' +
+            (a.cooldownUntil ? '<div style="font-size:10px;color:var(--text3);margin-top:2px;white-space:nowrap" title="' + esc(fmtWhen(a.cooldownUntil)) + '">' + T('Recovers ') + esc(fmtShort(a.cooldownUntil)) + '</div>' : '')
+          : '<span class="status active"><span class="status-dot active"></span>' + T('Active') + '</span>';
+        // token 有效期：状态列内另起一行（绿色正常 / 红色过期 / 灰色无刷新令牌）
+        let tokenState = '';
+        if (a.expiredAt) {
+          const cls = a.tokenUsable === false ? 'var(--danger)' : 'var(--accent2)';
+          const txt = a.tokenUsable === false ? T('Token expired') + ' ' : '';
+          tokenState = '<div style="font-size:11px;margin-top:2px;color:' + cls + '">' + txt + esc(fmtShort(a.expiredAt)) + '</div>';
+        } else if (!a.hasRefresh) {
+          tokenState = '<div style="font-size:11px;margin-top:2px;color:var(--text3)">' + T('No refresh token') + '</div>';
+        }
+        let checkinBadge = '';
+        if (a.checkin && a.checkin.date === new Date().toLocaleDateString('sv')) {
+          checkinBadge = a.checkin.checkedIn
+            ? '<div class="status active" style="font-size:10px;margin-top:2px">' + T('Checked in') + '</div>'
+            : (a.checkin.lastError
+                ? '<div class="status cooldown" style="font-size:10px;margin-top:2px" title="' + esc(a.checkin.lastError) + '">' + T('Check-in failed') + '</div>'
+                : '');
+        }
+        const label = a.label || ('Account ' + (a.index + 1));
+        const shortId = a.id.length > 15 ? a.id.slice(0, 15) + '…' : a.id;
+        const pMain = a.proxyMain || '';
+        const pBackup = a.proxyBackup || '';
+        const backupLocked = !backupProxyOn || pMain === '' || pMain === EGRESS_DIRECT;
+        const backupVal = backupLocked ? pMain : pBackup;
+        const isStale = proxyStale;
+        const bind = '<td style="white-space:nowrap">' +
+          egComboHTML('trae', a.index, 'main', pMain, T('Main exit — used whenever available')) + ' ' +
+          egComboHTML('trae', a.index, 'backup', backupVal, T('Backup exit — used when main is cooling/removed'), backupLocked) +
+          (isStale(pMain) || isStale(pBackup) ? ' <span title="' + esc(T('Bound proxy is no longer in the proxy pool — skipped until fixed')) + '" style="color:var(--danger)">⚠</span>' : '') +
+          '</td>';
+        let credits = '-';
+        if (a.credits) {
+          if (a.credits.unlimited) credits = T('Unlimited');
+          else if (a.credits.limit > 0) credits = fmtTokens(Math.max(0, Math.round(a.credits.remaining))) + ' / ' + fmtTokens(Math.round(a.credits.limit));
+          else if (a.credits.remaining > 0) credits = fmtTokens(Math.round(a.credits.remaining));
+        }
+        // 双开关快照：routing = 原始路由意愿（不含总闸与运算），account = 总闸
+        const accOn = a.accountEnabled !== false;
+        const routedIntent = a.routingEnabled !== false;
+        traeAccSnapshot[a.index] = { main: pMain, backup: backupVal, routing: routedIntent, account: accOn };
+        // 反代开关显示态 = 总闸开 && 路由意愿开；总闸关时反代禁用（wb 同款互锁）
+        const poolCell = '<td style="text-align:center">' +
+          '<input type="checkbox" data-trr="' + a.index + '"' + (accOn && routedIntent ? ' checked' : '') + (!accOn ? ' disabled' : '') +
+          ' title="' + esc(T('Gateway (reverse proxy) switch: unchecked = model sessions never route to this account; check-in and all other maintenance tasks are unaffected. Can only be ticked while the account switch is on.')) + '"></td>';
+        const accCell = '<td style="text-align:center">' +
+          '<input type="checkbox" data-tracc="' + a.index + '"' + (accOn ? ' checked' : '') +
+          ' title="' + esc(T('Account master switch. Off = the account does not exist: check-in, balance refresh and Test all skip it, and it never routes.')) + '"></td>';
+        const actions = '<td style="white-space:nowrap;text-align:center">' +
+          '<button class="btn btn-sm" data-trt="' + a.index + '">Test</button> ' +
+          '<button class="btn btn-sm btn-danger" data-trdel="' + a.index + '" title="Remove this account from the pool">Delete</button>' + '</td>';
+        return '<tr draggable="true" data-drag-id="' + a.index + '"><td>#' + (a.index + 1) + '</td>' +
+          '<td style="min-width:0"><div title="' + esc(label + '\n' + a.id + '\n' + (a.tokenMask || '') + (a.hasRefresh ? '' : '\n' + T('No refresh token'))) + '">' +
+            '<div class="nick-wrap">' +
+              '<span class="nick-name" style="font-weight:600">' + esc(label) + '</span>' +
+              nickPen(a.index, label, T('Edit nickname')) +
+            '</div>' +
+            '<div class="wb-account-id">' + esc(shortId) + '</div>' +
+          '</div></td>' +
+          '<td>' + cool + checkinBadge + (tokenState ? tokenState : '') + '</td>' +
+          '<td>' + credits + '</td>' +
+          keyTokensCell(a) +
+          keyLastUsedCell(a) +
+          bind +
+          actions +
+          poolCell +
+          accCell + '</tr>';
+      }).join('')
+    : '<tr><td colspan="9" class="empty">' + T('No Trae accounts yet — click Add accounts') + '</td></tr>';
+  tb.onclick = e => {
+    const pen = e.target.closest('.nick-pen');
+    if (pen) { startNickEdit(pen, { save: saveTraeLabel, reload: loadTraeConfig, allowEmpty: true }); return; }
+    const t = e.target.closest('button[data-trt]');
+    if (t) { testTraeAccount(parseInt(t.dataset.trt, 10), t); return; }
+    const d = e.target.closest('button[data-trdel]');
+    if (d) deleteTraeAccount(parseInt(d.dataset.trdel, 10), d);
+  };
+  tb.onchange = e => {
+    const r = e.target.closest('input[data-trr]');
+    if (r) { markRowDirty(r.closest('tr'), 'trae'); return; }
+    const acc = e.target.closest('input[data-tracc]');
+    if (acc) {
+      // 总闸联动：关闭 → 同行反代开关禁用并取消勾选；重开 → 恢复快照里的
+      // 路由意愿（持久值未动，重开即恢复路由意愿）。两者都进暂存。
+      const row = acc.closest('tr');
+      const poolCb = row.querySelector('input[data-trr]');
+      const snap = traeAccSnapshot[parseInt(acc.dataset.tracc, 10)] || {};
+      if (!acc.checked) {
+        if (poolCb) { poolCb.disabled = true; poolCb.checked = false; }
+      } else if (poolCb) {
+        poolCb.disabled = false;
+        poolCb.checked = snap.routing !== false;
+      }
+      markRowDirty(row, 'trae');
+    }
+  };
+}
+
+async function saveTraeLabel(index, label) {
+  await api('POST', '/trae/accounts/label', { index: index, label: label });
+}
+
+function stageAllTraeRouting(enabled) {
+  document.querySelectorAll('#traeAccountsBody input[data-trr]').forEach(cb => {
+    // wb 同款互锁：总闸关闭（禁用态）的行不参与批量启停
+    if (cb.disabled) return;
+    const snap = traeAccSnapshot[parseInt(cb.dataset.trr, 10)];
+    if (snap && snap.routing === enabled) return;
+    cb.checked = enabled;
+    markRowDirty(cb.closest('tr'), 'trae');
+  });
+}
+// 清空代理（暂存）：全部账号清绑定 + 路由全部禁用，与 zen/账号页同语义
+function stageClearTraeProxies() {
+  document.querySelectorAll('#traeAccountsBody tr').forEach(row => {
+    const main = row.querySelector('.eg-input[data-eg="trae"][data-slot="main"]');
+    if (!main) return;
+    let dirty = stageRowBindingClear(row, 'trae');
+    const cb = row.querySelector('input[data-trr]');
+    if (cb && cb.checked) { cb.checked = false; dirty = true; }
+    if (dirty) markRowDirty(row, 'trae');
+  });
+}
+async function saveTraeEdits() {
+  const rows = [...document.querySelectorAll('#traeAccountsBody tr')].filter(r => r.querySelector('.eg-input'));
+  let changed = 0, failed = 0;
+  for (const row of rows) {
+    const mainInput = row.querySelector('.eg-input[data-eg="trae"][data-slot="main"]');
+    const idx = parseInt(mainInput.dataset.egid, 10);
+    const main = mainInput.dataset.value || '';
+    const backup = row.querySelector('.eg-input[data-eg="trae"][data-slot="backup"]').dataset.value || '';
+    const rcb = row.querySelector('input[data-trr]');
+    const accCb = row.querySelector('input[data-tracc]');
+    const snap = traeAccSnapshot[idx] || { main: '', backup: '', routing: true, account: true };
+    // wb 同款目标态：总闸关闭时不提交路由变更（重开自动恢复路由意愿）
+    const nextAccount = accCb ? accCb.checked : snap.account;
+    const nextRouting = (nextAccount && rcb) ? rcb.checked : snap.routing;
+    try {
+      if (main !== snap.main || backup !== snap.backup) {
+        await api('POST', '/trae/accounts/proxy', { index: idx, main: main, backup: backup });
+      }
+      if (nextAccount !== snap.account) {
+        await api('POST', '/trae/accounts/enabled', { index: idx, enabled: nextAccount });
+      }
+      if (nextRouting !== snap.routing) {
+        await api('POST', '/trae/accounts/routing', { index: idx, enabled: nextRouting });
+      }
+      if (main !== snap.main || backup !== snap.backup || nextAccount !== snap.account || nextRouting !== snap.routing) changed++;
+      row.classList.remove('tr-dirty');
+    } catch (e) { failed++; }
+  }
+  clearDirtyMarks('traeAccountsBody', 'traeSaveBtn');
+  if (failed) toast(T('Save failed for ') + failed + T(' account(s)'), 'error');
+  else if (!changed) toast(T('No changes to save'), 'info');
+  else toast(T('Saved ') + changed + T(' account change(s)'), 'success');
+  loadTraeConfig(); loadStats();
+}
+
+function resetTraeEdits() {
+  clearDirtyMarks('traeAccountsBody', 'traeSaveBtn');
+  loadTraeConfig();
+}
+
+async function deleteTraeAccount(index, btn) {
+  if (!confirm(T('Delete this account?'))) return;
+  const original = btn ? btn.innerHTML : '';
+  if (btn) btn.disabled = true;
+  try {
+    await api('POST', '/trae/accounts/delete', { index: index });
+    toast(T('Account #') + (index + 1) + T(' (deleted)'), 'success');
+  } catch (e) {
+    toast(T('Delete failed: ') + e.message, 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = original; }
+    loadTraeConfig(); loadStats();
+  }
+}
+
+async function testTraeAccount(index, btn) {
+  const original = btn ? btn.innerHTML : '';
+  if (btn) { btn.disabled = true; btn.innerHTML = '<span class="loading"></span>Testing'; }
+  try {
+    const d = await api('POST', '/trae/accounts/test', { index: index });
+    const r = d.data || {};
+    const label = { active: T('OK'), cooldown: T('Cooldown'), error: T('Error') }[r.status] || r.status;
+    let msg = T('Account #') + (index + 1) + (r.screenName ? ' (' + r.screenName + ')' : '') + T(' — ') + label;
+    if (r.latencyMs != null) msg += ' (' + r.latencyMs + 'ms)';
+    if (r.credits) {
+      msg += r.credits.unlimited ? T(' — unlimited credits') : T(' — credits: ') + (r.credits.remaining != null ? Math.round(r.credits.remaining) : '?');
+      if (r.credits.identity) msg += ' (' + r.credits.identity + ')';
+    }
+    if (r.status === 'active') msg += T(' — cooldown cleared');
+    if (r.cooldownUntil) msg += T('\nEstimated recovery: ') + fmtWhen(r.cooldownUntil) + (r.remaining ? T(' (remaining ') + r.remaining + T(')') : '');
+    if (r.reason && r.reason !== 'ok') msg += '\n' + r.reason;
+    const type = r.status === 'active' ? 'success' : (r.status === 'cooldown' ? 'warning' : 'error');
+    toast(msg, type, 6000);
+  } catch (e) {
+    toast(T('Test failed: ') + e.message, 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = original; }
+    loadTraeConfig();
+  }
+}
+
+async function batchTestTraeAccounts() {
+  const btn = _('traeTestBtn');
+  const idxs = Object.keys(traeAccSnapshot).map(Number).sort((a, b) => a - b);
+  if (!idxs.length) { toast(T('No accounts to test'), 'info'); return; }
+  const original = btn ? btn.innerHTML : '';
+  if (btn) btn.disabled = true;
+  let ok = 0, cool = 0, err = 0;
+  try {
+    for (let i = 0; i < idxs.length; i++) {
+      if (btn) btn.innerHTML = '<span class="loading"></span>' + (i + 1) + '/' + idxs.length;
+      try {
+        const d = await api('POST', '/trae/accounts/test', { index: idxs[i] });
+        const r = d.data || {};
+        if (r.status === 'active') ok++;
+        else if (r.status === 'cooldown') cool++;
+        else err++;
+      } catch (e) { err++; }
+    }
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = original; }
+  }
+  toast(T('Batch test done: ') + idxs.length + T(' tested, ') + ok + T(' ok') +
+    (cool ? T(', ') + cool + T(' cooling') : '') + (err ? T(', ') + err + T(' error') : ''),
+    err ? 'warning' : 'success', 6000);
+  loadTraeConfig();
+}
+
+['traeAccWeb', 'traeAccManual'].forEach(id => {
+  const d = _(id);
+  if (d) d.addEventListener('toggle', () => {
+    if (d.open) ['traeAccWeb', 'traeAccManual'].forEach(o => { if (o !== id && _(o)) _(o).open = false; });
+  });
+});
+function openTraeAddDialog() {
+  _('traeAddInput').value = '';
+  _('traeHelperStatus').textContent = T('Checking local helper…');
+  // 手风琴回到默认态（details 状态跨弹窗开合保留，需显式复位）
+  if (_('traeAccWeb')) _('traeAccWeb').open = true;
+  if (_('traeAccManual')) _('traeAccManual').open = false;
+  _('traeAddDialog').showModal();
+  traeHelperSince = new Date().toISOString();
+  if (traeHelperTimer) clearInterval(traeHelperTimer);
+  probeTraeHelper();
+  traeHelperTimer = setInterval(probeTraeHelper, 2500);
+  pollTraeHelperStatus();
+}
+function closeTraeAddDialog() {
+  if (traeHelperTimer) { clearInterval(traeHelperTimer); traeHelperTimer = null; }
+  _('traeAddDialog').close();
+}
+
+// ========== Trae 本机授权助手（对齐上游原版 web_login.py 架构）==========
+// 授权页强依赖本机 helper（127.0.0.1:8765）：面板探测 /healthz 判定助手
+// 在跑；授权完成后 helper 把凭据 POST 到网关 /api/web-auth 入库，面板轮询
+// 最近入库状态展示结果。浏览器需已登录 trae.cn。
+let traeHelperTimer = null;
+let traeHelperSince = '';
+
+function probeTraeHelper() {
+  fetch('http://127.0.0.1:8765/healthz', { cache: 'no-store' }).then(r => r.json()).then(h => {
+    const relay = (h && h.relay || '').replace(/\/$/, '');
+    if (relay && relay !== location.origin) {
+      _('traeHelperStatus').innerHTML = esc(T('Helper detected, but it writes credentials to ANOTHER deployment: ')) +
+        '<b>' + esc(relay) + '</b>' + esc(T(' — re-download it from THIS panel and restart it (python web_login.py)'));
+      return;
+    }
+    _('traeHelperStatus').textContent = T('Local helper detected (writes to this gateway) — click Open helper page, then use the authorization button there');
+  }).catch(() => {
+    _('traeHelperStatus').textContent = T('Local helper NOT detected — download it, run "python web_login.py", then retry');
+  });
+}
+function openTraeHelperPage() {
+  window.open('http://127.0.0.1:8765/', 'trae-oauth-helper', 'width=560,height=760');
+}
+function pollTraeHelperStatus() {
+  api('GET', '/trae/helper/status').then(d => {
+    const r = d.data || {};
+    if (!r.seen || !r.at || r.at < traeHelperSince) return;
+    _('traeHelperStatus').textContent = (r.success ? T('Account ready: ') : T('Authorization failed: ')) + (r.message || '');
+    if (r.success) {
+      toast(r.added ? T('Account added: ') + (r.label || '') : T('Account already in the pool: ') + (r.label || ''), 'success');
+      traeHelperSince = r.at;
+      loadTraeConfig(); loadStats();
+    }
+  }).catch(() => { /* 轮询失败静默（网关短暂不可达时下轮再试） */ });
+}
+
+// ========== Trae 签到与余额 ==========
+
+async function refreshTraeCredits() {
+  await api('POST', '/trae/credits/refresh');
+  toast(T('Balances refreshed'), 'success');
+  loadTraeConfig();
+}
+async function runTraeCheckin() {
+  const d = await api('POST', '/trae/checkin');
+  const r = d.data || {};
+  let msg = T('Check-in done: ') + (r.ok || 0) + '/' + (r.total || 0);
+  if (r.already) msg += T(', ') + r.already + T(' already');
+  if (r.failed) msg += T(', ') + r.failed + T(' failed');
+  toast(msg, r.failed ? 'warning' : 'success', 6000);
+  loadTraeConfig();
+}
+async function traeAddFromDialog() {
+  const lines = _('traeAddInput').value.split('\n').map(s => s.trim()).filter(Boolean);
+  if (!lines.length) { toast(T('Enter at least one token'), 'error'); return; }
+  const btn = _('traeAddSubmit');
+  btn.disabled = true;
+  try {
+    const d = await api('POST', '/trae/accounts/add', { tokens: lines });
+    const r = d.data || {};
+    let msg = T('Added ') + (r.added || 0) + T(' account(s)');
+    if (r.skipped) msg += T(', skipped ') + r.skipped;
+    toast(msg, r.added ? 'success' : 'warning');
+    closeTraeAddDialog();
+    loadTraeConfig(); loadStats();
+  } catch (e) {
+    toast(T('Save failed: ') + e.message, 'error');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
 // ========== AMDCloud page ==========
 // AMDCloud key 池（amd: 前缀平台）：协议与 OpenRouter 页同构。
 let amdCfgCache = {};
@@ -6362,7 +6938,7 @@ async function loadAmdConfig() {
     const sel = _('amdProbeModel');
     if (sel) {
       const prev = sel.value;
-      sel.innerHTML = '<option value="">auto — DeepSeek-V4-Flash first</option>' +
+      sel.innerHTML = '<option value="">' + T('auto') + '</option>' +
         models.map(m => '<option value="' + esc(String(m.id || '').replace(/^amd:/, '')) + '">' + esc(m.id) + '</option>').join('');
       if (Array.from(sel.options).some(o => o.value === prev)) sel.value = prev;
     }
@@ -6632,7 +7208,7 @@ async function loadTHConfig() {
     const sel = _('thProbeModel');
     if (sel) {
       const prev = sel.value;
-      sel.innerHTML = '<option value="">auto — deepseek-v4.1-flash:free first</option>' +
+      sel.innerHTML = '<option value="">' + T('auto') + '</option>' +
         models.map(m => '<option value="' + esc(String(m.id || '').replace(/^tkhb:/, '')) + '">' + esc(m.id) + '</option>').join('');
       if (Array.from(sel.options).some(o => o.value === prev)) sel.value = prev;
     }
@@ -7478,7 +8054,7 @@ function renderOcSessions(s) {
 }
 
 // ========== Combos (alias models) ==========
-const comboModels = { cline: [], zen: [], workbuddy: [], amd: [], openrouter: [], tokenharbor: [] };
+const comboModels = { cline: [], trae: [], zen: [], workbuddy: [], amd: [], openrouter: [], tokenharbor: [] };
 
 async function fillComboModels() {
   const platform = _('comboPlatform').value;
@@ -7490,6 +8066,9 @@ async function fillComboModels() {
         // /v1/models 输出即 cline-free/ 前缀形态（apiModelList 已规范化），
         // 原样采用，面板所见即所调。
         comboModels.cline = (d.data.models || []).map(m => m.id).filter(Boolean);
+      } else if (platform === 'trae') {
+        const d = await api('GET', '/trae/config');
+        comboModels.trae = (d.data.models || []).map(m => String(m.id || '').replace(/^trae:/, '')).filter(Boolean);
       } else if (platform === 'zen') {
         const d = await api('GET', '/opencode/models');
         comboModels.zen = (d.data.models || []).map(m => m.id).filter(Boolean);

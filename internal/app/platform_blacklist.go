@@ -14,6 +14,7 @@ import (
 	"afree-proxy/internal/kit"
 	"afree-proxy/internal/openrouter"
 	"afree-proxy/internal/other"
+	"afree-proxy/internal/trae"
 	"afree-proxy/internal/tokenharbor"
 )
 
@@ -115,7 +116,7 @@ func flushPlatformBan() {
 // （other:<slug>）。未知键拒绝——拼写错误静默入库等于封了个寂寞。
 func platformBanKeyValid(key string) bool {
 	switch key {
-	case platCline, platZen, platWorkBuddy, platAMD, platOpenRouter, platTokenHarbor:
+	case platCline, platZen, platWorkBuddy, platAMD, platOpenRouter, platTokenHarbor, platTrae:
 		return true
 	}
 	if slug, ok := strings.CutPrefix(key, "other:"); ok && slug != "" {
@@ -252,6 +253,8 @@ func routePlatformKeyOf(model string) string {
 		return platOpenRouter
 	case strings.HasPrefix(model, tokenharbor.ModelPrefix):
 		return platTokenHarbor
+	case strings.HasPrefix(model, trae.ModelPrefix):
+		return platTrae
 	}
 	if i := strings.IndexByte(model, ':'); i > 0 {
 		if p := other.PlatformByPrefix(model[:i]); p != nil {

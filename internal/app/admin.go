@@ -2,7 +2,6 @@ package app
 
 import (
 	"bytes"
-	"sort"
 	"afree-proxy/internal/cline"
 	"afree-proxy/internal/kit"
 	"crypto/rand"
@@ -126,6 +125,23 @@ func registerAdminRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/admin/api/openrouter/keys/test", adminCORS(auth(handleOrKeyTest)))
 	mux.HandleFunc("/admin/api/openrouter/keys/proxy", adminCORS(auth(handleOrKeySetProxy)))
 	mux.HandleFunc("/admin/api/openrouter/keys/proxy/clear", adminCORS(auth(handleOrKeyClearProxies)))
+	// Trae 平台（账号池，trae: 前缀，TraeCode raw 协议）：配置/模型/账号管理/测试/代理绑定
+	mux.HandleFunc("/admin/api/trae/config", adminCORS(auth(handleTraeConfig)))
+	mux.HandleFunc("/admin/api/trae/config/update", adminCORS(auth(handleTraeConfigUpdate)))
+	mux.HandleFunc("/admin/api/trae/models/refresh", adminCORS(auth(handleTraeModelsRefresh)))
+	mux.HandleFunc("/admin/api/trae/accounts/add", adminCORS(auth(handleTraeAccountAdd)))
+	mux.HandleFunc("/admin/api/trae/accounts/routing", adminCORS(auth(handleTraeAccountSetRouting)))
+	mux.HandleFunc("/admin/api/trae/accounts/routing/all", adminCORS(auth(handleTraeAccountSetRoutingAll)))
+	mux.HandleFunc("/admin/api/trae/accounts/reorder", adminCORS(auth(handleTraeAccountsReorder)))
+	mux.HandleFunc("/admin/api/trae/accounts/delete", adminCORS(auth(handleTraeAccountDelete)))
+	mux.HandleFunc("/admin/api/trae/accounts/label", adminCORS(auth(handleTraeAccountLabel)))
+	mux.HandleFunc("/admin/api/trae/accounts/enabled", adminCORS(auth(handleTraeAccountSetEnabled)))
+	mux.HandleFunc("/admin/api/trae/accounts/test", adminCORS(auth(handleTraeAccountTest)))
+	mux.HandleFunc("/admin/api/trae/accounts/proxy", adminCORS(auth(handleTraeAccountSetProxy)))
+	mux.HandleFunc("/admin/api/trae/accounts/proxy/clear", adminCORS(auth(handleTraeAccountClearProxies)))
+	mux.HandleFunc("/admin/api/trae/helper/status", adminCORS(auth(handleTraeHelperStatus)))
+	mux.HandleFunc("/admin/api/trae/checkin", adminCORS(auth(handleTraeCheckin)))
+	mux.HandleFunc("/admin/api/trae/credits/refresh", adminCORS(auth(handleTraeCreditsRefresh)))
 	// AMDCloud 平台（key 池，amd: 前缀）：配置/模型/key 管理/测试/代理绑定
 	mux.HandleFunc("/admin/api/amd/config", adminCORS(auth(handleAMDConfig)))
 	mux.HandleFunc("/admin/api/amd/config/update", adminCORS(auth(handleAMDConfigUpdate)))
@@ -605,11 +621,11 @@ func handleAdminDeleteAll(w http.ResponseWriter, r *http.Request) {
 		writeAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
 		return
 	}
-	// 只清空账号：Keys（/v1 的 API key）与 DefaultModel 必须保留，
+	// 只清空账号：Keys（/v1 的 API key）必须保留，
 	// 否则"删除全部账号"会顺手作废所有已分发的客户端 key
 	old := loadPool()
 	poolMu.Lock()
-	pool = &AccountPool{Accounts: []*Account{}, Keys: old.Keys, DefaultModel: old.DefaultModel, CurrentIdx: 0}
+	pool = &AccountPool{Accounts: []*Account{}, Keys: old.Keys, CurrentIdx: 0}
 	poolMu.Unlock()
 	savePool()
 	writeAPI(w, http.StatusOK, apiResponse{Success: true, Message: "All accounts deleted"})
@@ -725,23 +741,10 @@ func handleAdminAccountTest(w http.ResponseWriter, r *http.Request) {
 // testAccountProbeModel Cline 账号探测用模型。默认模型现在可以是 OpenCode
 // 免费模型（路由到 zen 上游），而探测请求打的是 Cline 上游 —— 此时回退到
 // 字典序最小的 Cline 免费模型，保证 Test 语义正确。
+// testAccountProbeModel Cline 探测模型：live 免费表里字典序最小的可用模型
+// （确定性）。Cline 与 zen 目录互不相关，不做任何 zen 检查。
 func testAccountProbeModel() string {
-	m := getDefaultModel()
-	if _, ok := resolveZenModel(m); !ok {
-		return m
-	}
-	initModelsCache()
-	modelsMu.Lock()
-	names := make([]string, 0, len(modelsCache))
-	for id := range modelsCache {
-		names = append(names, id)
-	}
-	modelsMu.Unlock()
-	sort.Strings(names)
-	if len(names) > 0 {
-		return names[0]
-	}
-	return m
+	return firstActiveModel()
 }
 
 // testAccount 执行单账号探测（Test 按钮语义）。
@@ -1195,14 +1198,13 @@ func handleAdminConfig(w http.ResponseWriter, r *http.Request) {	if r.Method != 
 		"strategy":        cfg.Strategy,
 		"version":         "go-1.1",
 		"poolPath":        poolPath,
-		"defaultModel":    getDefaultModel(),
 		"headers":         cfg.Headers,
 		"clineUseProxies": poolClineUseProxies(),
 		"adminLogEnabled": poolAdminLogEnabled(),
 	}})
 }
 
-// POST /admin/api/config  body: { strategy?, headers?, defaultModel?, clineUseProxies?, adminLogEnabled? }
+// POST /admin/api/config  body: { strategy?, headers?, clineUseProxies?, adminLogEnabled? }
 func handleAdminUpdateConfig(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "POST" {
 		writeAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
@@ -1218,7 +1220,6 @@ func handleAdminUpdateConfig(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Strategy        string            `json:"strategy"`
 		Headers         map[string]string `json:"headers"`
-		DefaultModel    string            `json:"defaultModel"`
 		ClineUseProxies *bool             `json:"clineUseProxies"`
 		AdminLogEnabled *bool             `json:"adminLogEnabled"`
 	}
@@ -1261,20 +1262,6 @@ func handleAdminUpdateConfig(w http.ResponseWriter, r *http.Request) {
 		changed = true
 	}
 
-	if req.DefaultModel != "" {
-		// 默认模型可以是 Cline 免费模型（带/不带 cline-free/ 前缀）或
-		// OpenCode 免费模型（路由层分流）
-		if !modelInClineList(req.DefaultModel) {
-			initZenModels()
-			if _, zok := resolveZenFreeModel(req.DefaultModel); !zok {
-				writeAPI(w, http.StatusBadRequest, apiResponse{Error: "unknown model: " + req.DefaultModel})
-				return
-			}
-		}
-		setDefaultModel(req.DefaultModel)
-		changed = true
-	}
-
 	// cline 走共享出口代理池的开关：持久化到池文件，重启后保留。
 	// 未设置（nil）默认开启，见 poolClineUseProxies。
 	if req.ClineUseProxies != nil {
@@ -1303,9 +1290,8 @@ func handleAdminUpdateConfig(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeAPI(w, http.StatusOK, apiResponse{Success: true, Data: map[string]any{
-		"strategy":     cfg.Strategy,
-		"headers":      cfg.Headers,
-		"defaultModel": defaultModel,
+		"strategy": cfg.Strategy,
+		"headers":  cfg.Headers,
 	}})
 }
 
