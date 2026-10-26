@@ -26,9 +26,9 @@ import (
 //	REQUIRE_ADMIN_AUTH         "false" 时允许公网无密码运行（如反代已做认证），默认强制
 //	POOL_STRATEGY              全部平台凭据调度策略 round_robin(默认) / fill / random，覆盖持久化配置
 //	                           （WorkBuddy 用 vendor 自己的分区策略；Trae 有 TRAE_STRATEGY 独立覆盖）
-//	TRAE_STRATEGY              Trae 独立凭据调度策略 round_robin(默认) / fill / random /
+//	TRAE_STRATEGY              Trae 独立凭据调度策略 round_robin / fill / random /
 //	                           credit-priority（额度多者优先）；优先于面板 Selection，
-//	                           未设置时回落 POOL_STRATEGY
+//	                           未设置时回落 POOL_STRATEGY（其默认 round_robin）
 //	LOG_REQUESTS               请求日志开关，默认 true；"false" 完全关闭（含 body 探测）
 //	LOG_FILE_MAX_MB            requests.jsonl 大写上限 MB，默认 10，超出清空
 //	APPLY_SYSTEM_PROMPT_OVERRIDE  "true" 才启用 override.md 系统提示词替换，默认关闭
