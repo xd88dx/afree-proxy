@@ -31,8 +31,8 @@ import (
 )
 
 // 版本口径：misakano 线不跟语义化版本（CI 用日期版本注入），此处记录上游来源
-// 与同步日期；基线 misakano/main 16fc348（2026-10-26 同步）。
-const workbuddyVersion = "2026.10.26-misakano+afree"
+// 与同步日期；基线 misakano/main 37b3f4c（2026-10-27 同步）。
+const workbuddyVersion = "2026.10.27-misakano+afree"
 
 // workbuddySubsystem 把源项目的账号池/熔断/调度/面板/兼容接口作为独立子系统
 // 挂在现有 afree-proxy 上。账号凭证与状态落在 data/workbuddy/ 下，不与 Cline
@@ -209,6 +209,7 @@ func startWorkBuddy() (*workbuddySubsystem, error) {
 		IncludeDisabledInTasks: cfg.Schedule.IncludeDisabledInTasks,
 	})
 
+	allowedModels, allowlistEnabled := livecfg.NormalizeAllowedModels(cfg.Models.Allowed)
 	live := livecfg.New(livecfg.Snapshot{
 		APIKey:               "",
 		SoftCooldown:         cfg.SoftRateDur,
@@ -216,6 +217,10 @@ func startWorkBuddy() (*workbuddySubsystem, error) {
 		RecordClientInfo:     cfg.Logging.RequestClientInfo,
 		ModelRateFilter:      cfg.Pool.ModelRateFilter,
 		HiddenModels:         livecfg.NormalizeHiddenModels(cfg.Models.Hidden),
+		// models.allowed 白名单（上游 issue #68，37b3f4c）：与 Hidden 对称的热字段。
+		// models.allowed 白名单（上游 issue #68，37b3f4c）：与 Hidden 对称的热字段。
+		AllowedModels:        allowedModels,
+		AllowlistEnabled:     allowlistEnabled,
 		// misakano 线新增热字段：模型名映射与 6004 降级路由表（见 livecfg.Snapshot）。
 		ModelAliases:  livecfg.NormalizeModelAliases(cfg.Models.Aliases),
 		ModelFallback: cfg.Pool.ModelFallback,

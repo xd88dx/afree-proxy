@@ -78,6 +78,7 @@ func saveWorkbuddyConfig(
 		_ = os.Remove(tmp)
 	}
 
+	newAllowedModels, newAllowlistEnabled := livecfg.NormalizeAllowedModels(newCfg.Models.Allowed)
 	live.Store(livecfg.Snapshot{
 		APIKey:               "",
 		SoftCooldown:         newCfg.SoftRateDur,
@@ -85,6 +86,9 @@ func saveWorkbuddyConfig(
 		RecordClientInfo:     newCfg.Logging.RequestClientInfo,
 		ModelRateFilter:      newCfg.Pool.ModelRateFilter,
 		HiddenModels:         livecfg.NormalizeHiddenModels(newCfg.Models.Hidden),
+		// models.allowed 白名单（上游 issue #68，37b3f4c）：与 Hidden 对称的热字段。
+		AllowedModels:        newAllowedModels,
+		AllowlistEnabled:     newAllowlistEnabled,
 		// misakano 线新增热字段：模型名映射与 6004 降级路由表。
 		ModelAliases:  livecfg.NormalizeModelAliases(newCfg.Models.Aliases),
 		ModelFallback: newCfg.Pool.ModelFallback,
