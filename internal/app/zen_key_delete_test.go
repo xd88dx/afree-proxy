@@ -9,7 +9,8 @@ import (
 )
 
 // 面板 OpenCode 页每行的"删除"按钮契约（POST /opencode/keys/delete {index}）：
-// 按索引移除 key，随行清掉代理绑定与路由参与记录；删空后自动回归匿名 public。
+// 按索引移除 key，随行清掉代理绑定与路由参与记录；删空后 key 池为空（不再回退
+// 到匿名 public 哨兵）。
 
 func deleteZenKeyAt(t *testing.T, index int) *httptest.ResponseRecorder {
 	t.Helper()
@@ -47,10 +48,10 @@ func TestZenKeyDeleteRemovesKeyAndItsState(t *testing.T) {
 	}
 }
 
-// 删除最后一个真实 key 必须真的删掉：normalizeZenKeys 见到"空 Keys + 非空 Key"
-// 会把 Key 灌回池子（旧单 key 迁移规则），若 handler 不一起清 Key，接口回 200
-// 但 key 仍在，属于无声的假成功。
-func TestZenKeyDeleteLastRealKeyFallsBackToPublic(t *testing.T) {
+// 删除最后一个 key 必须真的删空：normalizeZenKeys 见到"空 Keys + 非空 Key"
+// 会把 Key 灌回池子（旧单 key 迁移规则），所以 handler 必须一起清 Key，否则
+// 接口回 200 但 key 仍在，属于无声的假成功；清空后也不再回退 public 哨兵。
+func TestZenKeyDeleteLastKeyLeavesEmptyPool(t *testing.T) {
 	setupZenProbeTest(t, func(w http.ResponseWriter, r *http.Request) {})
 
 	cfg := *getZenConfig()
@@ -62,11 +63,11 @@ func TestZenKeyDeleteLastRealKeyFallsBackToPublic(t *testing.T) {
 		t.Fatalf("delete -> %d, want 200 (body=%s)", rec.Code, rec.Body.String())
 	}
 	got := getZenConfig()
-	if strings.Join(got.Keys, ",") != "public" {
-		t.Fatalf("keys = %v, want [public] (anonymous fallback)", got.Keys)
+	if len(got.Keys) != 0 {
+		t.Fatalf("keys = %v, want empty pool", got.Keys)
 	}
-	if got.Key != "public" {
-		t.Fatalf("compat key = %q, want public", got.Key)
+	if got.Key != "" {
+		t.Fatalf("compat key = %q, want empty", got.Key)
 	}
 }
 

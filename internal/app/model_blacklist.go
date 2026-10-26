@@ -577,7 +577,7 @@ func testBlacklistModel(platform, model string) (map[string]any, string) {
 	case platZen:
 		cfg := getZenConfig()
 		for i, k := range cfg.Keys {
-			if k == "" || k == "public" || !zenKeyRoutingEnabled(k) {
+			if k == "" || !zenKeyRoutingEnabled(k) {
 				continue
 			}
 			return testZenKey(k, i, bare)

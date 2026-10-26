@@ -379,19 +379,19 @@ func pruneProxyExclusions(ex map[string][]string, pool []string) map[string][]st
 
 // zenKeyAutoHarvestEnabled 报告 key 是否参与自动铸造（启动补缺 / 403 触发 /
 // 周期巡检 / 面板 Mint）。铸造跟随路由启用：路由关 = 该 key 不出请求，无需
-// 会话，也不铸造；匿名 public key 无凭据，恒不铸造。
+// 会话，也不铸造；空 key 不铸造。
 func zenKeyAutoHarvestEnabled(key string) bool {
-	if key == "" || key == "public" {
+	if key == "" {
 		return false
 	}
 	return zenKeyRoutingEnabled(key)
 }
 
 // zenKeyRoutingEnabled key 是否参与请求路由（"启用"列）。nil/缺项 = 参与；
-// 匿名 public key 恒参与（无凭据可言）。
+// 空 key 不参与（配置池里不会有空项，这里只做防御）。
 func zenKeyRoutingEnabled(key string) bool {
-	if key == "" || key == "public" {
-		return true
+	if key == "" {
+		return false
 	}
 	cfg := getZenConfig()
 	if v, ok := cfg.KeyRoutingEnabled[key]; ok {
@@ -403,7 +403,7 @@ func zenKeyRoutingEnabled(key string) bool {
 // reconcileZenKeyRouting 整体替换 key 池后对齐"参与路由"表（面板保存 key 列表
 // 时调用）。统一口径：新引入的 key 默认不参与路由（面板勾选"启用"后才生效，
 // 与 Cline/WorkBuddy 的新增身份默认禁用一致）；已有 key 保持原状态；被移除的
-// key 清理表项，避免陈旧数据。public 哨兵恒参与，不写表。
+// key 清理表项，避免陈旧数据。
 func reconcileZenKeyRouting(next, cur *zenConfigData) {
 	oldKeys := map[string]bool{}
 	for _, k := range cur.Keys {
@@ -420,7 +420,7 @@ func reconcileZenKeyRouting(next, cur *zenConfigData) {
 		}
 	}
 	for _, k := range next.Keys {
-		if !oldKeys[k] && k != "" && k != "public" {
+		if !oldKeys[k] && k != "" {
 			routing[k] = false // 新 key 强制默认禁用（覆盖可能的陈旧表项）
 		}
 	}
@@ -439,8 +439,8 @@ func setZenKeyRoutingEnabled(index int, enabled bool) error {
 		return fmt.Errorf("key index out of range")
 	}
 	key := cfg.Keys[index]
-	if key == "" || key == "public" {
-		return fmt.Errorf("the anonymous public key always participates in routing")
+	if key == "" {
+		return fmt.Errorf("empty key cannot participate in routing")
 	}
 	next := *cfg
 	en := make(map[string]bool, len(cfg.KeyRoutingEnabled)+1)
@@ -454,7 +454,7 @@ func setZenKeyRoutingEnabled(index int, enabled bool) error {
 }
 
 // setAllZenKeysRoutingEnabled 一键启用/禁用全部 key 的路由参与（面板入口）。
-// 匿名 public key 跳过。返回实际改写的 key 数。
+// 空 key 跳过。返回实际改写的 key 数。
 func setAllZenKeysRoutingEnabled(enabled bool) int {
 	cfg := getZenConfig()
 	en := make(map[string]bool, len(cfg.KeyRoutingEnabled)+len(cfg.Keys))
@@ -463,7 +463,7 @@ func setAllZenKeysRoutingEnabled(enabled bool) int {
 	}
 	n := 0
 	for _, k := range cfg.Keys {
-		if k == "" || k == "public" {
+		if k == "" {
 			continue
 		}
 		en[k] = enabled
@@ -515,8 +515,9 @@ func reorderZenKeys(order []int) error {
 
 func defaultZenConfig() *zenConfigData {
 	return &zenConfigData{
-		Key:            "public",
-		Keys:           []string{"public"},
+		// 不再有匿名 "public" 兜底：没有 key 就是空池，平台不可路由。
+		Keys:           nil,
+		Key:            "",
 		BaseURL:        zenAPIBase,
 		MaxConcurrency: 8,
 		Retries:        3,
@@ -579,12 +580,10 @@ func isRateLimited(status int, body string) bool {
 	return false
 }
 
-// normalizeZenKeys 规范 key 池：迁移旧单 key 字段、去空去重、回退默认 "public"、
-// 同步兼容字段 Key = Keys[0]。
-// public 自动管理：存在任一真实 key 时剔除匿名 public（路由与铸造都走真实
-// key，public 留在池里只会被轮到时白白 403）；一个真实 key 都没有时兜底加
-// 回，保证 key 池永不为空。全程不由用户操作——添加真实 key 即自动顶掉
-// public，删光真实 key 即自动回归匿名。
+// normalizeZenKeys 规范 key 池：迁移旧单 key 字段、去空去重、剔除遗留的匿名
+// 哨兵 "public"（2026-10-26 起不再支持匿名访问）、同步兼容字段 Key = Keys[0]。
+// 允许空池：没有 key 时 zen 平台不可路由（目录隐藏、请求明确报错），不再回退
+// 到无凭据的 "public"。
 func normalizeZenKeys(cfg *zenConfigData) {
 	if len(cfg.Keys) == 0 && cfg.Key != "" {
 		cfg.Keys = []string{cfg.Key}
@@ -593,32 +592,18 @@ func normalizeZenKeys(cfg *zenConfigData) {
 	seen := map[string]bool{}
 	for _, k := range cfg.Keys {
 		k = strings.TrimSpace(k)
-		if k == "" || seen[k] {
+		if k == "" || k == "public" || seen[k] {
 			continue
 		}
 		seen[k] = true
 		cleaned = append(cleaned, k)
 	}
-	hasReal := false
-	for _, k := range cleaned {
-		if k != "public" {
-			hasReal = true
-			break
-		}
-	}
-	if hasReal {
-		without := make([]string, 0, len(cleaned)-1)
-		for _, k := range cleaned {
-			if k != "public" {
-				without = append(without, k)
-			}
-		}
-		cleaned = without
-	} else if len(cleaned) == 0 {
-		cleaned = []string{"public"}
-	}
 	cfg.Keys = cleaned
-	cfg.Key = cleaned[0]
+	if len(cleaned) == 0 {
+		cfg.Key = ""
+	} else {
+		cfg.Key = cleaned[0]
+	}
 	// 旧版别名表（ProxyAliases）的折叠已随代理池拆出，见
 	// proxy_pool_config.go 的 foldLegacyProxyAliases：代理行不再属于 zen 配置，
 	// 这里不能再去改它。本字段保留只为读取旧配置文件。
@@ -750,8 +735,6 @@ func maskZenKey(k string) string {
 	switch {
 	case k == "":
 		return "-"
-	case k == "public":
-		return "public (no key)"
 	case len(k) <= 6:
 		return "…" // 太短，连前缀都不给
 	default:
@@ -771,6 +754,15 @@ var (
 // 隔离模式（proxy_binding.go）下，绑定主备用出口都不可用的 key 被排除出所有
 // 候选轮 —— 隔离优先于可用性；全部 key 都被挡住时返回 ""，调用方报
 // "无可用出口"而不是静默直连。返回 "" 也表示未配置任何 key。
+// zenNoKeyError 轮转取不到 key 时的错误：区分"没有配置任何 key"与"全部
+// 被代理隔离挡住"，避免运维按空池排查代理池。
+func zenNoKeyError() error {
+	if len(getZenConfig().Keys) == 0 {
+		return fmt.Errorf("no zen key configured: add an enabled key in the admin panel")
+	}
+	return fmt.Errorf("no zen key routable: all configured keys' bound proxies are cooling or removed (proxy isolation)")
+}
+
 func pickZenKey() string {
 	keys := getZenConfig().Keys
 	if len(keys) == 0 {
@@ -910,16 +902,11 @@ func recordZenKeyTokens(key string, tokens int64) {
 }
 
 // cooldownZenKey 将 key 置为冷却，冷却期内 round-robin 跳过它。
-// 默认的 "public" key 仅在它是池中唯一 key 时跳过冷却（无其他 key 可轮转）；
-// 多 key 池中 "public" 也参与冷却轮转。
-// 返回实际生效的冷却时长（0 = 未冷却：空 key，或单 key 池的 public 哨兵）——
+// 返回实际生效的冷却时长（0 = 空 key 未冷却）——
 // 调用点的日志必须打印这个值而不是原始解析值，否则"缺头默认 1 分钟 / 24h 上限"
 // 的换算不会体现在日志里。
 func cooldownZenKey(key string, d time.Duration) time.Duration {
 	if key == "" {
-		return 0
-	}
-	if key == "public" && len(getZenConfig().Keys) <= 1 {
 		return 0
 	}
 	if d <= 0 {
@@ -1986,7 +1973,7 @@ func callZenResponsesAPI(ctx context.Context, params map[string]any, stream bool
 		}
 		key = retryKey
 		if key == "" {
-			return nil, rateLimited, fmt.Errorf("no zen key routable: all configured keys' bound proxies are cooling or removed (proxy isolation)")
+			return nil, rateLimited, zenNoKeyError()
 		}
 		// 出口由 key 决定：隔离模式下同一 key 永远从绑定 IP 出现（主→备）；
 		// 绑定出口全不可用时短冷却该 key 并清空 retryKey 换下一个 —— 绝不
@@ -2253,7 +2240,7 @@ func callZenAPI(ctx context.Context, params map[string]any, stream bool, opts ..
 			}
 		}
 		if key == "" {
-			return nil, rateLimited, fmt.Errorf("no zen key routable: all configured keys' bound proxies are cooling or removed (proxy isolation)")
+			return nil, rateLimited, zenNoKeyError()
 		}
 		proxyURL, pidx, exitOK := boundExitFor(key)
 		if !exitOK {
@@ -2465,9 +2452,8 @@ func zenRetryDelay(d time.Duration) time.Duration {
 
 func zenModelList() []map[string]any {
 	initZenModels()
-	// 展示门控：与请求入口的可路由性闸同判定。zen 的匿名 "public" 哨兵不算
-	// 启用的凭据（平台闸按具名 key 判，public-only 部署直接 503），目录继续
-	// 展示只会让用户选中必失败的模型。
+	// 展示门控：与请求入口的可路由性闸同判定——没有启用的具名 key 时
+	// 平台不可路由，目录继续展示只会让用户选中必失败的模型。
 	if !platformHasRoutableCredential(platZen) {
 		return nil
 	}
@@ -2514,7 +2500,7 @@ func zenModelList() []map[string]any {
 }
 
 // opencodeModelsRegistry 公共模型目录（官方 CLI 同源，无需认证；
-// 替代 zen /v1/models，后者用 "public" key 恒失败，只能靠种子兜底）。
+// 替代需要有效 key 才能访问的 zen /v1/models）。
 const opencodeModelsRegistry = "https://models.opencode.ai/api.json"
 
 // maxRegistryBytes 目录响应体积上限（8 MiB）。正常目录约几百 KB，设置上限
@@ -2832,7 +2818,7 @@ func pruneZenModelsTo(desired map[string]bool) int {
 
 // startZenModelsRefresher 定时同步 zen 模型列表（60 秒，与 Cline feed 的
 // 自动同步节奏一致）。同步走公共注册表 api.json（免认证），不消耗任何
-// key 的配额，符合"仅用 public 身份从上游同步"的语义。
+// key 的配额。
 func startZenModelsRefresher() {
 	go func() {
 		if _, err := syncZenModels(); err != nil {

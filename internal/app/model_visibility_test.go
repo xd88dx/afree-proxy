@@ -50,7 +50,7 @@ func TestOtherModelListRequiresEnabledKey(t *testing.T) {
 	}
 }
 
-// zen 使用具名启用 key 才展示：匿名 public 哨兵在请求入口按不可路由处理，
+// zen 需要至少一个参与路由的 key 才展示：空池在请求入口按不可路由处理，
 // 目录继续展示只会让用户选中必 503 的模型。
 func TestZenModelListRequiresEnabledKey(t *testing.T) {
 	t.Setenv("DATA_DIR", t.TempDir())
@@ -60,14 +60,14 @@ func TestZenModelListRequiresEnabledKey(t *testing.T) {
 		setZenConfig(&c)
 	})
 
-	publicOnly := *getZenConfig()
-	publicOnly.Keys = []string{"public"}
-	publicOnly.Key = "public"
-	publicOnly.KeyRoutingEnabled = nil
-	setZenConfig(&publicOnly)
+	empty := *getZenConfig()
+	empty.Keys = nil
+	empty.Key = ""
+	empty.KeyRoutingEnabled = nil
+	setZenConfig(&empty)
 	initZenModels()
 	if got := zenModelList(); len(got) != 0 {
-		t.Fatalf("public-only zen must not list models: %d", len(got))
+		t.Fatalf("empty zen pool must not list models: %d", len(got))
 	}
 
 	named := *getZenConfig()

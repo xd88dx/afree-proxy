@@ -22,9 +22,8 @@ import (
 //   - trae：trae.HasEnabledAccount()（账号总闸开、反代开关开且持有 token）
 //   - workbuddy：vendor 池存在可用账号（AvailableUIDs 非空，含总闸+反代
 //     开关+健康判定）
-//   - zen（OpenCode）：存在 KeyRoutingEnabled 的 key（匿名 public key 不算
-//     —— 无凭据，恒不铸造，但 zen 免费层无凭据也可用；此处按"有启用的
-//     具名 key"判，纯 public 部署视为不可路由是 fail-closed 的可接受代价）
+//   - zen（OpenCode）：存在参与路由的 key（空池 = 不可路由；匿名 "public"
+//     哨兵已于 2026-10-26 移除，上游匿名层也已不可用）
 //   - amd / openrouter / tokenharbor / other 子平台：存在 RoutingEnabled
 //     的 key
 // ============================================================================
@@ -53,7 +52,7 @@ func platformHasRoutableCredential(platform string) bool {
 	case platZen:
 		cfg := getZenConfig()
 		for _, k := range cfg.Keys {
-			if k != "" && k != "public" && zenKeyRoutingEnabled(k) {
+			if k != "" && zenKeyRoutingEnabled(k) {
 				return true
 			}
 		}

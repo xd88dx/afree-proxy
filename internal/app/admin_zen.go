@@ -361,7 +361,7 @@ func handleZenSessions(w http.ResponseWriter, r *http.Request) {
 		entry := map[string]any{
 			"index":     i,
 			"keyMask":   maskZenKey(k),
-			"noKey":     k == "" || k == "public",
+			"noKey":     k == "",
 			"live":      s.Live,
 			"minted":    s.Minted,
 			"session":   s.Session,
@@ -412,8 +412,8 @@ func handleZenKeyTest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	key := cfg.Keys[req.Index]
-	if key == "" || key == "public" {
-		writeAPI(w, http.StatusBadRequest, apiResponse{Error: "nothing to test: the anonymous public key has no credential"})
+	if key == "" {
+		writeAPI(w, http.StatusBadRequest, apiResponse{Error: "nothing to test: empty key"})
 		return
 	}
 
@@ -616,7 +616,7 @@ func handleZenKeysReorder(w http.ResponseWriter, r *http.Request) {
 // POST /admin/api/opencode/keys/delete  body: { index }
 // 从 key 池删除单个 key（按索引定位）：随行清掉代理绑定与路由参与记录；
 // 会话/收割状态由 setZenConfig 的 normalize 按存活 key 列表裁剪。删空后
-// normalize 会回退为匿名 public key。
+// key 池为空，平台转为不可路由（不再回退匿名 key）。
 func handleZenKeyDelete(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})

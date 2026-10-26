@@ -145,7 +145,7 @@ func TestZenSessionDescReportsAge(t *testing.T) {
 	}
 }
 
-// refreshZenSession：每次调用同步换新（幂等、零成本）；空 key / public 不动；
+// refreshZenSession：每次调用同步换新（幂等、零成本）；空 key / 池外 key 不动；
 // 已从配置移除的 key 不重建（防止 prune 后又被复活）。
 func TestRefreshZenSessionMintsFreshSession(t *testing.T) {
 	setupZenSessionTestUpstream(t)
@@ -179,9 +179,9 @@ func TestRefreshZenSessionMintsFreshSession(t *testing.T) {
 	if third == after {
 		t.Fatal("second refresh must mint another new session id")
 	}
-	// 哨兵与空 key 不动作
+	// 空 key 与池外 key 不动作（不铸造、不重建条目）
 	refreshZenSession("")
-	refreshZenSession("public")
+	refreshZenSession("sk-not-in-pool")
 }
 
 // refreshZenSession 不重建已移除的 key：prune 之后该 key 的条目必须保持消失，
@@ -614,28 +614,29 @@ func TestRotatorRestoresKeyRotation(t *testing.T) {
 	}
 }
 
-// 哨兵与空 key 不参与巡检铸造（无凭据，会话只会污染文件）。
-func TestRotatorSkipsPublicSentinel(t *testing.T) {
+// 路由关闭的 key 不参与巡检铸造（不出请求就无需会话，会话只会污染文件）。
+func TestRotatorSkipsRoutingDisabledKey(t *testing.T) {
 	setupZenSessionTestUpstream(t)
 	cfg := getZenConfig()
 	cfg2 := *cfg
-	cfg2.Keys = []string{"public", "sk-real"}
+	cfg2.Keys = []string{"sk-off", "sk-real"}
+	cfg2.KeyRoutingEnabled = map[string]bool{"sk-off": false}
 	cfg2.SessionRotateMinutes = 120
 	setZenConfig(&cfg2)
 	t.Cleanup(func() { c := *cfg; setZenConfig(&c) })
 
 	if minted, _ := rotateZenSessionsOnce(); minted != 1 {
-		t.Fatalf("rotator must mint only the real key, got minted %d", minted)
+		t.Fatalf("rotator must mint only the routed key, got minted %d", minted)
 	}
 	zenSessMu.Lock()
-	_, hasPublic := zenSessions["public"]
+	_, hasOff := zenSessions["sk-off"]
 	_, hasReal := zenSessions["sk-real"]
 	zenSessMu.Unlock()
-	if hasPublic {
-		t.Fatal("rotator must not mint a session for the public sentinel")
+	if hasOff {
+		t.Fatal("rotator must not mint a session for a routing-disabled key")
 	}
 	if !hasReal {
-		t.Fatal("rotator must mint a session for the real key")
+		t.Fatal("rotator must mint a session for the routed key")
 	}
 }
 
@@ -649,9 +650,6 @@ func TestMaskZenKeyNeverLeaksShortKey(t *testing.T) {
 	}
 	if m := maskZenKey(""); m != "-" {
 		t.Fatalf("empty key mask: got %q", m)
-	}
-	if m := maskZenKey("public"); !contains(m, "public") {
-		t.Fatalf("public sentinel mask: got %q", m)
 	}
 }
 

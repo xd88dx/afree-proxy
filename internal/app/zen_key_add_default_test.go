@@ -63,7 +63,7 @@ func TestZenConfigUpdateNewKeyDefaultsDisabled(t *testing.T) {
 	}
 
 	// 单 key 兼容提交（key 字段）同样按"新增默认禁用"处理
-	setupBindingTest(t, &zenTestConfig{Keys: []string{"public"}})
+	setupBindingTest(t, &zenTestConfig{Keys: []string{"sk-test"}})
 	req = httptest.NewRequest("POST", "/admin/api/opencode/config/update",
 		strings.NewReader(`{"key":"sk-single"}`))
 	rec = httptest.NewRecorder()

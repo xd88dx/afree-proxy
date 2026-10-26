@@ -1578,10 +1578,10 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
     <button class="btn btn-sm" onclick="closeZenKeyAddDialog()">Close</button>
   </div>
   <div class="wb-dialog-body">
-    <p class="hint" style="margin-top:0" id="zenKeyAddHint">One OpenCode API key per line; use "public" for anonymous access.</p>
+    <p class="hint" style="margin-top:0" id="zenKeyAddHint">One OpenCode API key per line (oc_sk_...).</p>
     <div class="field">
       <label>API keys (one per line) *</label>
-      <textarea id="zenKeyAddInput" rows="5" placeholder="public" style="font-family:'JetBrains Mono',Consolas,monospace"></textarea>
+      <textarea id="zenKeyAddInput" rows="5" placeholder="oc_sk_..." style="font-family:'JetBrains Mono',Consolas,monospace"></textarea>
     </div>
     <div class="wb-dialog-actions">
       <button class="btn btn-primary" id="zenKeyAddSubmit" onclick="zenKeyAddFromDialog()">Save</button>
@@ -2006,7 +2006,7 @@ const I18N_ZH = {
   'Confirm': '确认',
   'keys': '个 key',
   'API keys (one per line) *': 'API key（每行一个）*',
-  'One OpenCode API key per line; use "public" for anonymous access.': '每行一个 OpenCode API key；匿名访问填 public。',
+  'One OpenCode API key per line (oc_sk_...).': '每行一个 OpenCode API key（oc_sk_...）。',
   'Enter at least one key': '请至少输入一个 key',
   'No new keys (all already in the pool)': '没有新 key（均已在池中）',
   'Added ': '已添加 ',
@@ -5443,15 +5443,13 @@ function renderOcKeyStates(ks) {
   tb.innerHTML = ks.length
     ? ks.map(k => {
         // 状态列（合并原 会话+冷却 两列，chip 样式与 cline 状态列一致）：
-        // 冷却中（含预计恢复小字）> public 哨兵 n/a > 会话活跃（会话 ID 与
+        // 冷却中（含预计恢复小字）> 会话活跃（会话 ID 与
         // 铸造时刻进 title）> 会话已失效（下次请求自动重铸）> 无会话（待启用，
         // 路由启用后自动铸造）。
         let stCell;
         if (k.cooling) {
           stCell = '<span class="status cooldown"><span class="status-dot cooldown"></span>' + T('Cooldown') + '</span>' +
             (k.cooldownUntil ? '<div style="font-size:10px;color:var(--text3);margin-top:2px;white-space:nowrap" title="' + esc(fmtWhen(k.cooldownUntil)) + '">' + T('Recovers ') + esc(fmtShort(k.cooldownUntil)) + '</div>' : '');
-        } else if (k.keyMask === 'public (no key)') {
-          stCell = '<span style="color:var(--text2)">n/a</span>';
         } else if (k.session && k.sessionLive) {
           stCell = '<span class="status active" title="' + esc(T('session minted')) + ' ' + esc(fmtWhen(k.sessionCreatedAt)) + ' · ' + esc(k.session) + '…"><span class="status-dot active"></span>' + T('Active') + '</span>';
         } else if (k.session) {
@@ -5479,17 +5477,15 @@ function renderOcKeyStates(ks) {
           (isStale(pMain) || isStale(pBackup) ? ' <span title="' + esc(T('Bound proxy is no longer in the proxy pool — skipped until fixed')) + '" style="color:var(--danger)">⚠</span>' : '') +
           '</td>';
         // Pool（路由启用）列：勾选后该 key 才参与请求轮转；铸造跟随路由，
-        // 路由关闭的 key 也不再被自动铸造。匿名 public key 恒参与路由。
+        // 路由关闭的 key 也不再被自动铸造。
         const routed = k.routingEnabled !== false;
-        keySnapshot[k.index] = { main: pMain, backup: backupVal, routing: routed, pub: k.keyMask === 'public (no key)' };
-        const routing = '<td style="text-align:center">' + (k.keyMask === 'public (no key)'
-          ? '<span style="color:var(--text3)">-</span>'
-          : '<input type="checkbox" data-zr="' + k.index + '"' + (routed ? ' checked' : '') + ' title="' + esc(T('Participates in request routing')) + '">') + '</td>';
+        keySnapshot[k.index] = { main: pMain, backup: backupVal, routing: routed };
+        const routing = '<td style="text-align:center">' +
+          '<input type="checkbox" data-zr="' + k.index + '"' + (routed ? ' checked' : '') + ' title="' + esc(T('Participates in request routing')) + '"></td>';
         // 操作列：测试（真实探测）+ 删除（红色，从 key 池移除该 key）
-        const actions = '<td style="white-space:nowrap;text-align:center">' + (k.keyMask === 'public (no key)'
-          ? '<span style="color:var(--text3)">-</span>'
-          : '<button class="btn btn-sm" data-zk="' + k.index + '">Test</button> ' +
-            '<button class="btn btn-sm btn-danger" data-zdel="' + k.index + '" title="Remove this key from the pool">Delete</button>') + '</td>';
+        const actions = '<td style="white-space:nowrap;text-align:center">' +
+          '<button class="btn btn-sm" data-zk="' + k.index + '">Test</button> ' +
+          '<button class="btn btn-sm btn-danger" data-zdel="' + k.index + '" title="Remove this key from the pool">Delete</button></td>';
         return '<tr draggable="true" data-drag-id="' + k.index + '"><td>#' + (k.index + 1) + (k.current ? ' <span style="color:var(--accent)" title="next in rotation">●</span>' : '') + '</td>' +
           '<td style="font-family:monospace;font-size:11px">' + esc(k.keyMask) + '</td>' +
           '<td>' + stCell + '</td>' +
@@ -5572,12 +5568,10 @@ async function deleteZenKey(index, btn) {
 }
 
 // 批量测试：等价于对每个 key 点一次 Test（真实探测，成功即复位冷却）。
-// 匿名 public key 无凭据可测，跳过。逐个串行避免打爆上游，按钮显示进度。
+// 逐个串行避免打爆上游，按钮显示进度。
 async function batchTestKeys() {
   const btn = _('ocTestBtn');
-  const idxs = Object.keys(keySnapshot).map(Number)
-    .filter(i => !keySnapshot[i].pub)
-    .sort((a, b) => a - b);
+  const idxs = Object.keys(keySnapshot).map(Number).sort((a, b) => a - b);
   if (!idxs.length) { toast(T('No keys to test'), 'info'); return; }
   const original = btn ? btn.innerHTML : '';
   if (btn) btn.disabled = true;
@@ -5614,7 +5608,7 @@ function closeZenKeyAddDialog() { _('zenKeyAddDialog').close(); }
 async function zenKeyAddFromDialog() {
   const lines = _('zenKeyAddInput').value.split('\n').map(s => s.trim()).filter(Boolean);
   if (!lines.length) { toast(T('Enter at least one key'), 'error'); return; }
-  const cur = (ocCfgCache.keys && ocCfgCache.keys.length) ? ocCfgCache.keys : [ocCfgCache.key || 'public'];
+  const cur = (ocCfgCache.keys && ocCfgCache.keys.length) ? ocCfgCache.keys : (ocCfgCache.key ? [ocCfgCache.key] : []);
   const fresh = lines.filter(l => !cur.includes(l));
   if (!fresh.length) { toast(T('No new keys (all already in the pool)'), 'info'); return; }
   const btn = _('zenKeyAddSubmit');

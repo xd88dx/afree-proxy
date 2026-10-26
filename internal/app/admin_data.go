@@ -86,8 +86,8 @@ func clearOpenCodeKeysForDataDelete() int {
 	cfg := getZenConfig()
 	n := len(cfg.Keys)
 	next := *cfg
-	// normalizeZenKeys 会把空列表规范回匿名 public key，保留其余 OpenCode
-	// 配置（baseURL、压缩和代理策略）。
+	// 清空 key 池即清空 zen 凭据：保留其余 OpenCode 配置（baseURL、压缩和
+	// 代理策略），平台转为不可路由（目录隐藏、请求明确报错）。
 	next.Key = ""
 	next.Keys = nil
 	// key 池已清空，绑定表随之失效（绑定按 key 明文存，留着就是垃圾配置）。

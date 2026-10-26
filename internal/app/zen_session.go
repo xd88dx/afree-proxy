@@ -159,7 +159,7 @@ func saveZenSessions() {
 // zenSessionLive 该 key 是否有一个格式合法的粘性会话。本地铸造后所有条目
 // 生而合法；保留批量/单点两个入口是为了 pickZenKey 的两段轮转语义不变。
 func zenSessionLive(key string) bool {
-	if key == "" || key == "public" {
+	if key == "" {
 		return false
 	}
 	loadZenSessions()
@@ -399,11 +399,7 @@ func zenSessionFailed(key string) {
 // 幂等且零成本（无子进程、无额度消耗）：FreeTier 403 的调用点在本请求内至多调用
 // 一次，然后同 key 重试。key 为空或无 key 配置时不动；已从配置移除的 key
 // 也不重建——否则 pruneZenKeyState 刚清掉的条目会被这里复活，让
-// .zen-sessions.json 单调增长。
-//
-// "public" 不再豁免：2026-10-15 审计发现旧豁免让 keyless 池的 403 恢复成为
-// 空转——重试带着同一会话原样重发、必然再 403，且单 key 时 cooldown 返回 0
-// 不生效，故障对外完全静默。现在 public 与真实 key 同样换新会话再重试。
+// .zen-sessions.json 单调增长。空池在取 key 阶段就会明确报错，不会走到这里。
 func refreshZenSession(key string) {
 	if key == "" {
 		return
@@ -518,7 +514,7 @@ func rotateZenSessionsOnce() (minted, rotated int) {
 	for _, k := range keys {
 		// 路由禁用 = 该 key 不在池里：它不会出请求，也就不需要会话，不为它
 		// 铸造/轮换（否则 .zen-sessions.json 会给“已不存在的账号”留条目）。
-		// 含空串/“public” 哨兵（zenKeyAutoHarvestEnabled 一并排除）。重新启用
+		// zenKeyAutoHarvestEnabled 一并排除空 key。重新启用
 		// 后无需重启：pickZenKey 第二轮就能选中它，StickyZenIdentity 惰性补铸；
 		// 巡检最迟一个节拍内也会补上。
 		if !zenKeyAutoHarvestEnabled(k) {

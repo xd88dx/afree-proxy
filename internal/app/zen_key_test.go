@@ -326,22 +326,47 @@ func TestZenProbeUpstream5xxReturnsError(t *testing.T) {
 	}
 }
 
-// public 哨兵没有可探测的凭据。
-func TestZenKeyTestHandlerRejectsPublicKey(t *testing.T) {
+// 空 key 池没有可探测的凭据：索引直接越界，且不得触达上游。
+func TestZenKeyTestHandlerRejectsEmptyPool(t *testing.T) {
 	setupZenProbeTest(t, func(w http.ResponseWriter, r *http.Request) {
-		t.Error("upstream must not be called for the public sentinel")
+		t.Error("upstream must not be called with an empty key pool")
 	})
 	saved := getZenConfig()
 	cfg := *saved
-	cfg.Keys = []string{"public"}
+	cfg.Keys = nil
+	cfg.Key = ""
 	setZenConfig(&cfg)
 	t.Cleanup(func() { setZenConfig(saved) })
 
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest("POST", "/admin/api/zen/keys/test", strings.NewReader(`{"index":0}`))
 	handleZenKeyTest(rec, req)
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("public key probe -> %d, want 400", rec.Code)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("empty pool probe -> %d, want 404", rec.Code)
+	}
+}
+
+// 空池不 panic、不轮转出 key，并给出可操作的明确错误；遗留的 public 哨兵
+// 在 normalize 时被剔除。
+func TestZenEmptyPoolIsSafeAndExplicit(t *testing.T) {
+	saved := getZenConfig()
+	cfg := *saved
+	cfg.Keys = nil
+	cfg.Key = ""
+	setZenConfig(&cfg)
+	t.Cleanup(func() { setZenConfig(saved) })
+
+	if k := pickZenKey(); k != "" {
+		t.Fatalf("empty pool must yield no key, got %q", k)
+	}
+	if err := zenNoKeyError(); err == nil || !strings.Contains(err.Error(), "no zen key configured") {
+		t.Fatalf("empty pool error = %v, want 'no zen key configured'", err)
+	}
+
+	legacy := &zenConfigData{Key: "public", Keys: []string{"public"}}
+	normalizeZenKeys(legacy)
+	if len(legacy.Keys) != 0 || legacy.Key != "" {
+		t.Fatalf("legacy public sentinel must be stripped, got keys=%v key=%q", legacy.Keys, legacy.Key)
 	}
 }
 

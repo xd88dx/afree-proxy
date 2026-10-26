@@ -432,8 +432,8 @@ func setKeyProxyBinding(index int, main, backup string) error {
 		return fmt.Errorf("key index out of range")
 	}
 	key := keys[index]
-	if key == "" || key == "public" {
-		return fmt.Errorf("the anonymous public key has no credential to bind")
+	if key == "" {
+		return fmt.Errorf("empty key cannot be bound to a proxy")
 	}
 	cfg := getZenConfig()
 	backup = resolveBackupSlot(backup, cfg.KeyBindings[key].Backup)
