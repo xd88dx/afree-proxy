@@ -201,9 +201,14 @@ func SyncCatalog() (int, error) {
 	return changed, nil
 }
 
-// ModelList 排序后的免费模型列表（面板与 /v1/models 共用）。
+// ModelList 排序后的免费模型列表（面板与 /v1/models 共用）。展示门控：
+// 没有参与路由的启用 key 时返回空列表——模型目录只列可服务条目，否则
+// 客户端选中后必然 401/403（与 amd/tokenharbor/trae 同口径）。
 func ModelList() []Model {
 	InitCatalog()
+	if !HasEnabledKey() {
+		return []Model{}
+	}
 	catalogMu.RLock()
 	out := make([]Model, 0, len(catalogModels))
 	for _, m := range catalogModels {
@@ -212,6 +217,17 @@ func ModelList() []Model {
 	catalogMu.RUnlock()
 	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
 	return out
+}
+
+// HasEnabledKey 是否存在参与路由的启用 key。模型目录的展示门控：无启用
+// key 既发不出请求也不该展示（面板与 /v1/models 同一判定）。
+func HasEnabledKey() bool {
+	for _, k := range Keys() {
+		if RoutingEnabled(k) {
+			return true
+		}
+	}
+	return false
 }
 
 // Resolve 解析裸模型 ID（去前缀由调用方处理）。不在目录中即拒绝 —— 未知模型

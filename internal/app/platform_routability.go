@@ -13,8 +13,9 @@ import (
 //
 // 用户定（2026-10-26）：任何平台——哪怕没有封禁——只要没有任何启用凭据或
 // 开了反代开关的凭据，会话就不该路由过去。与封禁平台同处一个闸
-// （withModelBlacklistScan），挂在三端点入口；/v1/models 的展示门控由
-// 各平台 ModelList 自己负责（trae/amd/wb 已各自实现）。
+// （withModelBlacklistScan），挂在三端点入口；/v1/models 的展示门控与
+// 会话闸同判定（trae/amd/tokenharbor 在各自 ModelList，cline/zen/
+// openrouter/other 在 app 层段生成处），保证"列出来的模型都调得通"。
 //
 // 判定口径按平台各自的"凭据启用"语义：
 //   - cline：账号池存在 Status=active 且 PoolEnabled 的账号
@@ -75,15 +76,24 @@ func platformHasRoutableCredential(platform string) bool {
 		return false
 	default:
 		if p := other.PlatformBySlug(trimOtherPrefix(platform)); p != nil {
-			for _, k := range p.Keys {
-				if p.RoutingEnabled(k) {
-					return true
-				}
-			}
-			return false
+			return otherPlatformHasRoutableKey(p)
 		}
 		return true
 	}
+}
+
+// otherPlatformHasRoutableKey 子平台是否存在参与路由的启用 key。展示门控与
+// 请求入口闸共用，避免"列出来却调不通"（与 amd/tokenharbor/trae 同口径）。
+func otherPlatformHasRoutableKey(p *other.Platform) bool {
+	if p == nil {
+		return false
+	}
+	for _, k := range p.Keys {
+		if p.RoutingEnabled(k) {
+			return true
+		}
+	}
+	return false
 }
 
 // trimOtherPrefix "other:<slug>" → "<slug>"；非 other 前缀原样返回。

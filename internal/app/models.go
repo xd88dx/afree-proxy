@@ -385,6 +385,12 @@ func strictModelGate(model string) string {
 }
 
 func apiModelList() []map[string]any {
+	// 展示门控：没有可路由的 Cline 账号时不出目录——裸模型名按 Cline 路由，
+	// 账号总闸/反代开关全关时请求入口直接 503，继续展示只会让客户端选中
+	// 必失败的模型（与 amd/tokenharbor/trae 同口径）。
+	if !platformHasRoutableCredential(platCline) {
+		return nil
+	}
 	out := make([]map[string]any, 0, len(modelsCache))
 	for _, m := range getFreeModels() {
 		out = append(out, map[string]any{

@@ -232,7 +232,73 @@ func TestSyncCatalogKeepsOnlyPageModels(t *testing.T) {
 	}
 }
 
+// enableTestKey 给当前配置装一个参与路由的启用 key：模型目录的展示门控
+// 要求"至少一个可路由凭据"，目录类断言必须先满足这个前置。
+func enableTestKey(t *testing.T) {
+	t.Helper()
+	prevCfg := Get()
+	prevPath := ConfigPath
+	ConfigPath = filepath.Join(t.TempDir(), ".or-config.json")
+	t.Cleanup(func() {
+		ConfigPath = prevPath
+		mu.Lock()
+		cfg = prevCfg
+		mu.Unlock()
+	})
+	c := DefaultConfig()
+	c.Keys = []string{"test-key"}
+	c.KeyRoutingEnabled = map[string]bool{"test-key": true}
+	Set(c)
+}
+
+// 展示门控：没有参与路由的启用 key 时目录为空（与请求入口的可路由性闸
+// 同口径），但条目仍可被显式解析。
+func TestModelListRequiresEnabledKey(t *testing.T) {
+	catalogMu.Lock()
+	catalogModels = map[string]Model{}
+	for _, m := range PageModels {
+		catalogModels[m.ID] = m
+	}
+	catalogLoaded = true
+	catalogMu.Unlock()
+
+	prevCfg := Get()
+	prevPath := ConfigPath
+	ConfigPath = filepath.Join(t.TempDir(), ".or-config.json")
+	t.Cleanup(func() {
+		ConfigPath = prevPath
+		mu.Lock()
+		cfg = prevCfg
+		mu.Unlock()
+	})
+
+	Set(DefaultConfig()) // 无 key
+	if l := ModelList(); len(l) != 0 {
+		t.Fatalf("no key must hide catalog: got %d", len(l))
+	}
+
+	c := DefaultConfig()
+	c.Keys = []string{"k1"}
+	c.KeyRoutingEnabled = map[string]bool{"k1": false}
+	Set(c) // key 路由关闭
+	if l := ModelList(); len(l) != 0 {
+		t.Fatalf("disabled key must hide catalog: got %d", len(l))
+	}
+
+	c2 := DefaultConfig()
+	c2.Keys = []string{"k1"}
+	c2.KeyRoutingEnabled = map[string]bool{"k1": true}
+	Set(c2) // 启用
+	if l := ModelList(); len(l) != len(PageModels) {
+		t.Fatalf("enabled key must list page snapshot: got %d, want %d", len(l), len(PageModels))
+	}
+	if _, ok := Resolve("openrouter/free"); !ok {
+		t.Fatal("hidden catalog must stay resolvable")
+	}
+}
+
 func TestSyncCatalogUnreachableKeepsPageSnapshot(t *testing.T) {
+	enableTestKey(t)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 	}))
@@ -255,6 +321,7 @@ func TestSyncCatalogUnreachableKeepsPageSnapshot(t *testing.T) {
 }
 
 func TestSeedCatalogIsPageSnapshot(t *testing.T) {
+	enableTestKey(t)
 	catalogMu.Lock()
 	catalogModels = map[string]Model{}
 	catalogLoaded = false
@@ -275,6 +342,7 @@ func TestSeedCatalogIsPageSnapshot(t *testing.T) {
 }
 
 func TestProbeModelPrefersOfficialRouter(t *testing.T) {
+	enableTestKey(t)
 	catalogMu.Lock()
 	catalogModels = map[string]Model{"a/first:free": {ID: "a/first:free"}, "openrouter/free": {ID: "openrouter/free"}}
 	catalogLoaded = true

@@ -44,6 +44,19 @@ func TestRouteModelWithZenPrefix(t *testing.T) {
 
 // /v1/models 与面板列表输出的 ID 必须带前缀；裸 ID 写请求照常可用。
 func TestZenModelListIDsArePrefixed(t *testing.T) {
+	// 展示门控要求具名启用 key（匿名 public 不算可路由凭据）。
+	t.Setenv("DATA_DIR", t.TempDir())
+	prev := getZenConfig()
+	t.Cleanup(func() {
+		c := *prev
+		setZenConfig(&c)
+	})
+	cfg := *getZenConfig()
+	cfg.Keys = []string{"sk-test"}
+	cfg.Key = "sk-test"
+	cfg.KeyRoutingEnabled = nil
+	setZenConfig(&cfg)
+
 	initZenModels()
 	list := zenModelList()
 	if len(list) == 0 {

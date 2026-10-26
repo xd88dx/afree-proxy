@@ -95,6 +95,11 @@ func syncOtherPlatform(slug string, attempts int) {
 func otherModelList() []map[string]any {
 	out := make([]map[string]any, 0)
 	for _, p := range other.Get().Platforms {
+		// 展示门控：没有参与路由的启用 key 的子平台不出目录（与请求入口
+		// 的可路由性闸同判定），否则客户端选中后必然 401/403。
+		if !otherPlatformHasRoutableKey(&p) {
+			continue
+		}
 		for _, m := range other.SelectedModels(&p) {
 			out = append(out, map[string]any{
 				"id":       p.Prefix + ":" + m.ID,

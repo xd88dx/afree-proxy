@@ -73,8 +73,22 @@ func TestNormalizeRequestModelResolvesFeedID(t *testing.T) {
 
 // /v1/models 输出的 Cline 条目必须都带 cline-free/ 前缀。
 func TestAPIModelListClineIDsArePrefixed(t *testing.T) {
+	savedPool := pool
+	on := true
+	poolMu.Lock()
+	pool = &AccountPool{Accounts: []*Account{{AccountID: "a", Status: "active", PoolEnabled: &on}}}
+	poolMu.Unlock()
+	defer func() {
+		poolMu.Lock()
+		pool = savedPool
+		poolMu.Unlock()
+	}()
 	initModelsCache()
-	for _, m := range apiModelList() {
+	list := apiModelList()
+	if len(list) == 0 {
+		t.Fatal("routable account must yield a non-empty cline catalog")
+	}
+	for _, m := range list {
 		id, _ := m["id"].(string)
 		if len(id) < 11 || id[:11] != "cline-free/" {
 			t.Errorf("cline model id %q must carry the cline-free/ prefix", id)

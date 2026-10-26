@@ -2465,6 +2465,12 @@ func zenRetryDelay(d time.Duration) time.Duration {
 
 func zenModelList() []map[string]any {
 	initZenModels()
+	// 展示门控：与请求入口的可路由性闸同判定。zen 的匿名 "public" 哨兵不算
+	// 启用的凭据（平台闸按具名 key 判，public-only 部署直接 503），目录继续
+	// 展示只会让用户选中必失败的模型。
+	if !platformHasRoutableCredential(platZen) {
+		return nil
+	}
 	// 别名表先快照（zenDepMu 不与 zenModelsMu 嵌套）。
 	depAliases := map[string]string{}
 	zenDepMu.Lock()
