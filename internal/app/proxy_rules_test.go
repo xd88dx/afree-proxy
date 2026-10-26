@@ -17,7 +17,7 @@ func TestPruneProxyExclusions(t *testing.T) {
 		{
 			name: "keeps in-pool and direct sentinel, drops off-pool",
 			in: map[string][]string{
-				"socks5://h1:1#A": {"key"},
+				"socks5://h1:1#A":   {"key"},
 				"socks5://gone:9#Z": {"key", "th"},
 				proxyRuleDirectKey:  {"th"},
 			},

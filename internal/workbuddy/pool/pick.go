@@ -45,7 +45,7 @@ func (p *Pool) PickExcludingForRealm(tried map[string]bool, reqModel, realm stri
 // realm 非空时候选过滤叠加 Realm()==realm 谓词（分池选号域）。
 // 所有候选路径统一叠加 PoolEnabled 谓词：管理员禁用的账号不参与选号
 // （含全冷却兜底），但保留在池内继续接受签到/保活等维护。账号总开关
-//（AccountEnabled=false，afree 本地补丁）同样退出选号——账号被总开关关闭
+// （AccountEnabled=false，afree 本地补丁）同样退出选号——账号被总开关关闭
 // 等于不存在，比 PoolEnabled 更强。
 func (p *Pool) pick(tried map[string]bool, reqModel, realm string) *auth.Auth {
 	p.mu.Lock()

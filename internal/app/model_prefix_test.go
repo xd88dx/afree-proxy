@@ -87,7 +87,7 @@ func TestWorkbuddyPrefixTranslation(t *testing.T) {
 	cases := []struct{ in, want string }{
 		{"wbcn:claude-sonnet-4.5", "cn:claude-sonnet-4.5"},
 		{"wbgb:claude-sonnet-4.5", "global:claude-sonnet-4.5"},
-		{"cn:legacy-model", "cn:legacy-model"},   // 旧前缀原样（vendor 自解析）
+		{"cn:legacy-model", "cn:legacy-model"}, // 旧前缀原样（vendor 自解析）
 		{"global:legacy-model", "global:legacy-model"},
 		{"bare-model", "bare-model"},
 	}

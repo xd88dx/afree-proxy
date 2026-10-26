@@ -185,8 +185,8 @@ func TestZenCallPinKeepsSingleKey(t *testing.T) {
 	})
 
 	params := map[string]any{
-		"model":    "aaa-probe-model",
-		"messages": []any{map[string]any{"role": "user", "content": "Reply with exactly: OK"}},
+		"model":      "aaa-probe-model",
+		"messages":   []any{map[string]any{"role": "user", "content": "Reply with exactly: OK"}},
 		"max_tokens": 64,
 	}
 

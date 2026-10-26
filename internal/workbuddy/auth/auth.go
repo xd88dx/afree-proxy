@@ -276,7 +276,7 @@ func (a *Auth) SetPoolEnabled(enabled bool) bool {
 
 // AccountEnabled 报告账号总开关（afree 本地补丁）：false = 该账号视为不存在，
 // 不参与选号路由，签到/保活/余额刷新等全部维护任务也跳过。nil/缺项 = 启用
-//（旧文件零迁移，存量账号不受影响）。
+// （旧文件零迁移，存量账号不受影响）。
 func (a *Auth) AccountEnabled() bool {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -443,10 +443,10 @@ func Parse(raw []byte) (*Auth, error) {
 				ExpiresAt    int64  `json:"expiresAt"`
 				Domain       string `json:"domain"`
 				Realm        string `json:"realm"`
-			PoolEnabled  *bool  `json:"pool_enabled"`
-			// afree 本地补丁：账号总开关（缺项 = 启用，旧文件零迁移）。
-			AccountEnabled *bool `json:"account_enabled"`
-		} `json:"auth"`
+				PoolEnabled  *bool  `json:"pool_enabled"`
+				// afree 本地补丁：账号总开关（缺项 = 启用，旧文件零迁移）。
+				AccountEnabled *bool `json:"account_enabled"`
+			} `json:"auth"`
 			Account struct {
 				UID            string `json:"uid"`
 				EnterpriseID   string `json:"enterpriseId"`

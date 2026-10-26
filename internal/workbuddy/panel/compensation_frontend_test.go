@@ -162,9 +162,9 @@ process.stdout.write(JSON.stringify({
 	got := runNodeScript(t, node, script, "app.js")
 	for _, must := range []string{
 		`"six":"6 小时"`,  // ≤48h 小时粒度
-		`"three":"3 天"`,  // 超 48h 天粒度
-		`"past":"已截止"`, // 已过截止
-		`"none":"—"`,      // 无截止信息
+		`"three":"3 天"`, // 超 48h 天粒度
+		`"past":"已截止"`,  // 已过截止
+		`"none":"—"`,    // 无截止信息
 	} {
 		if !strings.Contains(got, must) {
 			t.Fatalf("compRemainText 缺少 %s\n实际输出: %s", must, got)

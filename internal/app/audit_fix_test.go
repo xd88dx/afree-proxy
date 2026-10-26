@@ -239,7 +239,7 @@ type flushRecorder struct {
 	status int
 }
 
-func (f *flushRecorder) Header() http.Header       { return f.header }
-func (f *flushRecorder) WriteHeader(status int)    { f.status = status }
+func (f *flushRecorder) Header() http.Header         { return f.header }
+func (f *flushRecorder) WriteHeader(status int)      { f.status = status }
 func (f *flushRecorder) Write(b []byte) (int, error) { return f.body.Write(b) }
-func (f *flushRecorder) Flush()                    {}
+func (f *flushRecorder) Flush()                      {}

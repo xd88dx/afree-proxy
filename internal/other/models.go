@@ -269,7 +269,7 @@ func SetSelected(p *Platform, ids []string) {
 
 // syncMu 串行化每平台的目录同步（面板 Refresh 与周期刷新共用）。
 var (
-	syncMu sync.Mutex
+	syncMu  sync.Mutex
 	syncing = map[string]bool{}
 )
 

@@ -70,7 +70,7 @@ func TestNormalizeRejectsOAuthOnlyGateway(t *testing.T) {
 	c := &Config{Gateway: "https://api.trae.cn", MaxConcurrency: 0, Retries: -1, Accounts: []*Account{
 		{Token: fakeJWT(`{"data":{"id":"a1"}}`)},
 		{Token: fakeJWT(`{"data":{"id":"a1"}}`)}, // 重复主键去重
-		{Token: "   "}, // 空 token 剔除
+		{Token: "   "},                           // 空 token 剔除
 	}}
 	c.normalize()
 	if c.Gateway != DefaultGateway {

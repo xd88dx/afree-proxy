@@ -35,8 +35,8 @@ type zenGateToolDef struct {
 }
 
 var (
-	zenGateDefsOnce sync.Once
-	zenGateDefs     []zenGateToolDef
+	zenGateDefsOnce  sync.Once
+	zenGateDefs      []zenGateToolDef
 	zenGateDefByName map[string]*zenGateToolDef
 )
 

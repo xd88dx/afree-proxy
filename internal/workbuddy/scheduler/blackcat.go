@@ -14,7 +14,7 @@ import (
 )
 
 // blackcatEligible 夜猫子候选资格：禁用与暂停选号的账号都不跑；账号总开关关闭
-//（AccountEnabled=false，afree 本地补丁）同样不跑——账号不存在，夜猫子对话也是
+// （AccountEnabled=false，afree 本地补丁）同样不跑——账号不存在，夜猫子对话也是
 // 真实模型调用，更不能发。
 //
 // 抽成纯函数只为一件事：RunBlackcatNow 有 23:00–08:00 窗口前置判断，窗口外的单测
