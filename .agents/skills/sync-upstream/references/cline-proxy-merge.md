@@ -21,6 +21,8 @@
 
 **zen.go / admin_zen.go 的配置结构体与 patch**：合并 = 本地字段组全保留 + 上游新字段并入 + 上游的 `Enabled` 丢弃。三处要同步改：`zenConfigData` 结构体、`handleZenConfigUpdate` 的 patch struct（指针三态）、`next := &zenConfigData{...}` 初始化（漏拷字段 = 全量替换语义下数据丢失，尤其 `KeyRoutingEnabled`）。
 
+**代理池字段不在 zenConfigData 里了**（2026-10 剥离）：`proxies`/`proxyStrategy`/`proxySubURL`/`proxySubCron`/`zenUseProxies`/`workbuddyUseProxies` 归 `proxy_pool_config.go` 的 `proxyPoolConfigData`（落 `data/.proxy-pool.json`）。上游若在这些字段上打了 patch，**不要加回 `zenConfigData`**：值要落到 `proxyPoolConfigData`，`handleZenConfigUpdate` 里走 `poolNext`/`poolChanged`（只有 patch 真带代理池键时才回写），GET 响应由 `zenConfigPayload()` 合并两路。`ProxyAliases` 只留在 zen 结构体里读旧配置（`foldLegacyProxyAliases` 折叠后不再写）。
+
 **admin.go 路由**：保留本地全部（三平台路由 + `/admin/api/opencode/*` 与 `/admin/api/zen/*` 双前缀别名 + sessions 端点）。上游删除某端点时先 grep 面板 JS 是否还在调（如 `loadOcSessions` 调 `/opencode/sessions`），在用就恢复路由。
 
 **admin_html.go 面板**：保持本地 i18n 架构。可摘的数据能力（如 key 表 Rotates 列、failover 输入框）移植时：表头列数/`colspan`/渲染行的列序要一起改；JS 读写加 `_('id')` null 保护（上游直接 `_('x').value` 在本地 HTML 缺元素时整个 load 函数会崩）；`keySnapshot`/`rotateMin` 这类函数级变量在冲突两侧都可能是声明所在，别只留一边。

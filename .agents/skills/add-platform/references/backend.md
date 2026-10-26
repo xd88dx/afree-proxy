@@ -59,6 +59,7 @@ WB 特例：`/admin/api/workbuddy/enabled` 注册在 proxy.go（workbuddy 路由
 
 ## 6. 代理池与出口绑定
 
+- **配置归属**：代理池（`proxies` / `proxyStrategy` / `proxySubURL` / `proxySubCron` / `zenUseProxies` / `workbuddyUseProxies`）存在 `data/.proxy-pool.json`，入口 `getProxyPool()` / `setProxyPool()`（`proxy_pool_config.go`）。它是全局能力（7 平台共用 `pickUpstreamProxy`），**不再寄居 `zenConfigData`**；面板 JSON 键名沿用旧契约，`admin_zen.go` 的 `zenConfigPayload()` 把两路数据合并成一个响应。代理隔离规则（`proxyExclusions` / `proxyBindCaps`）仍属 zen 配置，别一起搬。
 - 绑定模型：per-identity 主/备双槽（前端 `egComboHTML` 渲染 `.eg-input`，`data-eg`/`data-egid`/`data-slot`），提交走 `egCommit`（暂存语义，随平台保存按钮生效）。存储与解析参照 `proxy_binding.go`。
 - 出站消费：平台出站 client 按 identity 取绑定出口（参照 `workbuddyProxyFor` / zen 对应物），无绑定 → 平台默认（走池下拉决定代理/直连）。
 - 隔离语义：主出口冷却/失效 → 该 identity 本轮跳过，**备不接、直连不回退**；备用代理开关关闭时备用槽只读并跟随主槽（`egApplyMainLinkage`）。绑定引用了已不存在的池出口 → 前端 ⚠ 告警标记（隔离逻辑会跳过）。
