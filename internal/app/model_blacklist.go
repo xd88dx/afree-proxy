@@ -452,7 +452,7 @@ func withModelBlacklistScan(h http.HandlerFunc) http.HandlerFunc {
 		}
 		// 平台可路由性闸：没有启用凭据（账号总闸/反代开关/key 启用列全关）
 		// 的平台与封禁同等对待 —— 宁拒不路由（2026-10-26 用户定）。
-		if plat := routePlatformKeyOf(probe.Model); !platformHasRoutableCredential(plat) {
+		if plat := modelRoutePlatformKey(probe.Model); !platformHasRoutableCredential(plat) {
 			log.Printf("  platform unroutable: %q routed to %s (no enabled credential)", probe.Model, plat)
 			writeJSON(w, http.StatusServiceUnavailable, map[string]any{
 				"error": map[string]string{

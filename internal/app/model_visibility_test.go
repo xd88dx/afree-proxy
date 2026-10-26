@@ -105,3 +105,29 @@ func TestAPIModelListRequiresRoutableAccount(t *testing.T) {
 		t.Fatal("routable account must list cline catalog")
 	}
 }
+
+// combo 别名不带平台前缀：请求入口的可路由性闸必须按声明平台判，不能把
+// 别名当裸名（Cline）——否则声明 zen 的别名会去看 Cline 的凭据。
+func TestModelRoutePlatformKeyResolvesCombo(t *testing.T) {
+	t.Setenv("DATA_DIR", t.TempDir())
+	combosMu.Lock()
+	prevLoaded, prevList := combosLoaded, combosList
+	combosLoaded = true
+	combosList = []*Combo{{ID: "my-alias", Platform: "zen", Target: "big-pickle"}}
+	combosMu.Unlock()
+	t.Cleanup(func() {
+		combosMu.Lock()
+		combosLoaded, combosList = prevLoaded, prevList
+		combosMu.Unlock()
+	})
+
+	if got := modelRoutePlatformKey("my-alias"); got != platZen {
+		t.Fatalf("combo alias must route to its declared platform: got %q", got)
+	}
+	if got := modelRoutePlatformKey("zen:big-pickle"); got != platZen {
+		t.Fatalf("prefixed id must route to zen: got %q", got)
+	}
+	if got := modelRoutePlatformKey("plain-model"); got != platCline {
+		t.Fatalf("bare name must route to cline: got %q", got)
+	}
+}

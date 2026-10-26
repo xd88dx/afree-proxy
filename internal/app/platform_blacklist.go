@@ -238,6 +238,16 @@ func routePlatformKeyOf(model string) string {
 	return platCline
 }
 
+// modelRoutePlatformKey 模型将被路由到的平台键：combo 别名按声明平台，
+// 其余按对外 ID 前缀（裸名 = Cline）。网关入口的可路由性闸用它判定；
+// 不用 routePlatformKeyOf 直接判 combo（别名不带前缀，会被误判成 Cline）。
+func modelRoutePlatformKey(model string) string {
+	if c := resolveCombo(model); c != nil {
+		return c.Platform
+	}
+	return routePlatformKeyOf(model)
+}
+
 // bannedPlatformOf 返回模型将被路由到的平台封禁键（combo 别名按其声明平台、
 // 其余按模型 ID 前缀判，裸名 = Cline）；该平台未封禁或无法判定时返回 ""。
 // /v1/models 过滤与网关入口闸共用本判定。

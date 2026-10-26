@@ -234,8 +234,12 @@ func StartProxy(host string, port int) error {
 		data = append(data, traeModelList()...)
 		// 合并 Other 子平台勾选模型（各子平台自定义前缀）。
 		data = append(data, otherModelList()...)
-		// combo 别名模型（仪表盘自定义的虚拟模型 ID）
+		// combo 别名模型（仪表盘自定义的虚拟模型 ID）。展示门控同平台段：
+		// 声明平台没有可路由凭据时别名也不出目录（否则用户选中后必然失败）。
 		for _, c := range listCombos() {
+			if !platformHasRoutableCredential(c.Platform) {
+				continue
+			}
 			owned := "cline"
 			if c.Platform == "zen" {
 				owned = "opencode-zen"
