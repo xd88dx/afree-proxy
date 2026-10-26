@@ -33,15 +33,15 @@ Cursor / ZCode / Cline / Claude Code ──►  afree-proxy  ──►  Cline �
 | 平台 | 前缀 | 凭据类型 | 模型目录 | 探测默认模型 |
 |---|---|---|---|---|
 | Cline | `cline-free/` | OAuth refreshToken / 静态 `sk_` key | 官方免费源 60s 自动同步 | 排序最小 |
-| TraeWork | `trae:` | OAuth（本机 8765 helper 网页授权） | 上游目录同步（需可路由账号） | `glm-5.2` |
+| TraeWork | `trae:` | OAuth（本机 8765 helper 网页授权） | 上游目录 10min 同步（需可路由账号） | `glm-5.2` |
 | WorkBuddy | `wbcn:` / `wbgb:` | OAuth（内嵌面板登录） | CN/Global 双域实时探测 | 官方稳定模型优先 |
-| OpenCode | `zen:` | zen key（本地铸造会话 ID） | 上游免费目录 10min 同步 | `big-pickle` 优先 |
+| OpenCode | `zen:` | zen key（本地铸造会话 ID） | 上游免费目录 60s 同步 | `big-pickle` 优先 |
 | OpenRouter | `oprt:` | `sk-or-v1-…` key | [free-models 页白名单](https://openrouter.ai/collections/free-models) 5min 同步 | `openrouter/free` |
 | AMDCloud | `amd:` | `rc-…` key（[Token Factory](https://developer.amd.com.cn/radeon/tokenfactory)） | 上游 `/v1/models` 5min 同步（需 Bearer key；仅 chat 模型） | `DeepSeek-V4-Flash` |
 | TokenHarbor | `tkhb:` | `thk_live_…` key（[dashboard](https://tokenharbor.ai/dashboard/api-keys)） | 上游 `/v1/models` 5min 同步（需 key；仅 `:free`） | `deepseek-v4.1-flash:free` |
 | Other | 自定 `acme:` | 各上游 key | `{BaseURL}/models` 拉取 + 手动添加 + 多选暴露 | 设置页配置 |
 
-各平台共用同一套池语义：轮转策略、429 按 `Retry-After` 冷却、401/403 冷却 1 小时、Test 按钮发真实探测请求并在成功后立即解除冷却、主/备代理绑定、新增 key 默认不参与路由。
+各平台共用同一套池语义：轮转策略、429 按 `Retry-After` 冷却、Test 按钮发真实探测请求并在成功后立即解除冷却、主/备代理绑定、新增身份默认不参与路由。**key 池平台**（OpenRouter/AMDCloud/TokenHarbor/Other）401/403 冷却 1 小时；Cline 账号池 401/403 直接标记账号过期（等刷新恢复）。
 
 ## 快速开始（Docker）
 
@@ -79,8 +79,12 @@ docker run -d --name afree-proxy \
 | `LOG_REQUESTS` | `true` | 请求日志（仅元数据：IP/路径/模型/状态/耗时，绝无对话内容） |
 | `MAX_BODY_MB` | `32` | 请求体上限，超出 413 |
 | `STREAM_ATTEMPT` | `2` | 流式中断缓冲重试总次数；每次重试会重耗上游免费额度 |
+| `REQUIRE_ADMIN_AUTH` | `true` | 设 `false` 仅当反代已处理认证——同时豁免 fail-closed 启动检查里的 ADMIN_PASSWORD 要求 |
+| `CLIENT_IP_HEADER` | 空 | 反代环境下信任该头作为客户端 IP（如 `X-Real-IP`），用于登录限流；默认只用 RemoteAddr |
+| `LOG_FILE_MAX_MB` | `10` | `requests.jsonl` 与 `afree-proxy.log` 大小上限（MB），超限清空/轮转 |
+| `STREAM_LOG` | `false` | `true` 把 Anthropic 路径原始 SSE 落盘（**完整对话内容**，仅排障用） |
 
-Fail-closed 启动：绑定非环回地址且未设 `API_KEY` 时拒绝启动。
+Fail-closed 启动：绑定非环回地址时，未设 `API_KEY` **或**未设 `ADMIN_PASSWORD`（且未设 `REQUIRE_ADMIN_AUTH=false` 豁免）都拒绝启动。
 
 ### OpenCode zen 会话 ID
 
@@ -106,7 +110,7 @@ Model:     cline-free/deepseek-v4.1-flash   （Cline 池）
 **Claude Code / Cline** — Anthropic 方言 `POST /v1/messages`，同 Base URL 同 key。
 **OpenAI Responses 方言** — `POST /v1/responses`（工具调用、流式事件、usage 全翻译）。
 
-`GET /v1/models` 列出全部可服务模型（含 Combos）。免费目录自动同步（cline 60s、zen 10min、or/amd/th 5min、wb 实时探测）；线上列表是权威，内置种子只覆盖冷启动/离线启动，下架/新免费模型自动增删。
+`GET /v1/models` 列出全部可服务模型（含 Combos）。免费目录自动同步（cline 60s、zen 60s、trae 10min、or/amd/th 5min、wb 实时探测）；线上列表是权威，内置种子只覆盖冷启动/离线启动，下架/新免费模型自动增删。
 
 ### 账号种子
 
@@ -139,8 +143,8 @@ Model:     cline-free/deepseek-v4.1-flash   （Cline 池）
 
 - 每个身份（Cline 账号 / zen key / WorkBuddy 账号 / TraeWork 账号 / 各 key 池 key）绑定一主一备代理。请求永远走主，主不可用走备，两者都冷却/被删时该身份整体跳过——**绝不回退其他出口或直连，隔离优先于可用性**。
 - 未绑定身份沿用面板每平台的走池开关（缺省 = 走池），空绑定配置行为与旧版完全一致。
-- 面板支持单行绑定、一键均匀分配（主 = `pool[i%N]`、备 = `pool[(i+1)%N]`）、一键清空；绑定代理被删时行标 ⚠ 并保持跳过直到修复。备用代理开关关闭时备用槽整体退出路由（保留旧值，重开即恢复）。
-- **代理在线率**：代理池页显示每个代理真实流量的传输层成功率（累计 + 最近 50 次滚动窗口），纯被动采样不产生探活流量、不影响路由；最近成功率 <80%（≥10 样本）标红。统计落盘 `.proxy-health.json`，编辑池清零。
+- 面板支持单行绑定、一键按行序分配（第 1 行绑直连哨兵、其余按代理池顺序依次绑主槽，多余行保持原绑定）、一键清空；绑定代理被删时行标 ⚠ 并保持跳过直到修复。备用代理开关关闭时备用槽整体退出路由（保留旧值，重开即恢复）。
+- **代理在线率**：代理池页显示每个代理真实流量的传输层成功率（累计 + 最近 50 次滚动窗口），纯被动采样不产生探活流量、不影响路由。五档配色：≥80% 绿、60–80% 蓝、40–60% 粉、20–40% 黄、<20% 红，便于一眼挑出该换的节点。统计落盘 `.proxy-health.json`，编辑池清零。
 
 socks5/socks5h 全支持；直连哨兵（主 = direct）可显式声明直连出口。zen 免费额度按出口 IP 计（约 200 请求/5h），把 key 绑到不同出口才是真正解锁多 key 容量的方式。
 

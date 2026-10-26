@@ -2364,6 +2364,13 @@ const I18N_ZH = {
   'Check failed: ': '检查失败：',
   'Delete failed: ': '删除失败：',
   'Refresh failed: ': '刷新失败：',
+  ' started': ' 已开始',
+  ' failed: ': ' 失败：',
+  ' completed': ' 已完成',
+  'Requesting...': '请求中...',
+  'Admin session expired': '管理员会话已过期',
+  'Bind main proxy by row order: 1st account to Direct, then the proxy pool in order (staged - click Save to apply; enable/disable and backup untouched)': '按行序绑定主代理：第 1 个账号绑 Direct，其余依代理池顺序（暂存，点「保存」生效；不影响启用/禁用与备用绑定）',
+  'Re-sync the model catalog from the Trae upstream using an enabled account': '使用已启用账号从 Trae 上游重新同步模型目录',
   'Export failed: ': '导出失败：',
   'Update failed: ': '更新失败：',
   'Generation failed: ': '生成失败：',
@@ -2790,7 +2797,7 @@ async function wbCall(action, params, body) {
   const res = await fetch(WB_API_PREFIX + '/' + encodedAction + (qs ? '?' + qs : ''), init);
   if (res.status === 401) {
     location.reload();
-    throw new Error('Admin session expired');
+    throw new Error(T('Admin session expired'));
   }
   let data = {};
   try { data = await res.json(); } catch (e) { /* preserve HTTP error below */ }
@@ -3070,6 +3077,8 @@ function resetWorkbuddyEdits() {
   clearDirtyMarks('wbAccountsBody', 'wbSaveBtn');
   loadWorkbuddyAccounts();
 }
+// WB 批量动作的展示名（zh 下走 T() 翻译，键复用按钮文案词条）
+const WB_BATCH_LABEL = { checkin_all: 'Check in all', travel_all: 'Pet patrol', activity_all: 'Activity all', keepalive_all: 'Refresh login', balance_all: 'Refresh balances' };
 async function runWorkbuddyBatch(action) {
   const bodies = {
     checkin_all: {},
@@ -3078,11 +3087,12 @@ async function runWorkbuddyBatch(action) {
     keepalive_all: {},
     balance_all: {}
   };
+  const label = T(WB_BATCH_LABEL[action] || action);
   try {
     const result = await wbCall(action, {}, bodies[action] || {});
-    toast(result.message || (action + ' started'), 'success');
+    toast(result.message || (label + T(' started')), 'success');
     await loadWorkbuddyAccounts();
-  } catch (e) { toast(action + ' failed: ' + e.message, 'error'); }
+  } catch (e) { toast(label + T(' failed: ') + e.message, 'error'); }
 }
 async function workbuddyActionFrom(button) {
   const action = button.dataset.wbAction;
@@ -3098,9 +3108,9 @@ async function workbuddyActionFrom(button) {
   button.disabled = true;
   try {
     const result = await wbCall(actions[action], {}, {});
-    toast(result.message || (action + ' completed'), 'success');
+    toast(result.message || (T(action) + T(' completed')), 'success');
     await Promise.all([loadWorkbuddyAccounts(), loadWorkbuddyConfig()]);
-  } catch (e) { toast(action + ' failed: ' + e.message, 'error'); }
+  } catch (e) { toast(T(action) + T(' failed: ') + e.message, 'error'); }
   finally { button.disabled = false; }
 }
 /* ---- WB 单号可用性探测（与 key 平台 Test 同构：spinner + 结果 toast） ---- */
@@ -3151,9 +3161,9 @@ async function workbuddyTestAccount(button, id) { const original = button ? butt
 async function refreshWorkbuddyAccounts() {
   try {
     const result = await wbCall('balance_all', {}, {});
-    toast(result.message || 'Balances refreshed', 'success');
+    toast(result.message || T('Balances refreshed'), 'success');
     await loadWorkbuddyAccounts();
-  } catch (e) { toast('Refresh failed: ' + e.message, 'error'); }
+  } catch (e) { toast(T('Refresh failed: ') + e.message, 'error'); }
 }
 
 const WB_PK_COLORS = ['#4f8cff', '#25b08b', '#e8a33d', '#c96bd6', '#e2607a',
@@ -3406,7 +3416,7 @@ function closeWorkbuddyAdd() {
 async function startWorkbuddyOAuth() {
   const button = _('wbStartLogin');
   button.disabled = true;
-  button.textContent = 'Requesting...';
+  button.textContent = T('Requesting...');
   _('wbAddStatus').textContent = 'Requesting authorization link...';
   try {
     const payload = await wbCall('login/start', {}, { site: _('wbRealm').value });
@@ -3426,7 +3436,7 @@ async function pollWorkbuddyOAuth(oauthId) {
   try {
     const payload = await wbCall('login/poll', { state: oauthId });
     if (payload.done) {
-      _('wbAddStatus').textContent = 'Account added: ' + (payload.nickname || payload.uid || '');
+      _('wbAddStatus').textContent = T('Account added: ') + (payload.nickname || payload.uid || '');
       toast('WorkBuddy account added', 'success');
       await loadWorkbuddyAccounts();
       return;
@@ -3455,7 +3465,7 @@ async function importWorkbuddyAccounts(input) {
     if (!response.ok || result.ok === false) throw new Error(result.error || response.statusText || 'upload failed');
     toast('WorkBuddy account imported', 'success');
     await loadWorkbuddyAccounts();
-  } catch (e) { toast('Import failed: ' + e.message, 'error'); }
+  } catch (e) { toast(T('Import failed: ') + e.message, 'error'); }
   input.value = '';
 }
 
