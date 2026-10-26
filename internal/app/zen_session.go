@@ -20,7 +20,7 @@ import (
 //
 // 因此每个 zen key 绑定一个稳定的本地铸造 ses_ ID（kit.MintZenSessionID，
 // 结构与 CLI 铸造字节兼容）+ 固定的 ai-sdk 形态 UA；msg_ 请求 ID 仍每次
-// 随机。会话文件持久化到 DATA_DIR/.zen-sessions.json，重启后沿用同一身份。
+// 随机。会话表持久化到 zen-config.json 的 sessions 段，重启后沿用同一身份。
 //
 // 会话失效（FreeTier 403）时本地直接换新：refreshZenSession（连续 2 次
 // 403 触发，1 分钟 key 级退避防热循环）。若 zen 未来收紧门禁（合法格式

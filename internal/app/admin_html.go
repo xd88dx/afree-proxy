@@ -2208,6 +2208,8 @@ const I18N_ZH = {
   'Success rate over the last 50 attempts; red below 80% (min 10 samples).': '最近 50 次尝试的在线率；低于 80% 标红（至少 10 个样本）。',
   'Average tunnel-setup time over successful attempts (TCP+TLS+CONNECT handshake only — excludes upstream first byte and task duration). Lower is better. Click to sort.': '成功尝试的平均隧道建立耗时（仅 TCP+TLS+CONNECT 握手——不含上游首字节与任务耗时）。越低越好。点击排序。',
   'Average tunnel-setup time over successful attempts (TCP+TLS+CONNECT handshake only — excludes upstream first byte and task duration). Lower is better.': '成功尝试的平均隧道建立耗时（仅 TCP+TLS+CONNECT 握手——不含上游首字节与任务耗时）。越低越好。',
+  'Time to first byte: from request start to the first response byte (streaming = first upstream token; - = no response body, e.g. 413)': '首字节耗时：请求开始到首个响应字节（流式=上游首 token 到达；-=无响应体如 413）',
+  'Avg tunnel-setup time of successful attempts (TCP+TLS+CONNECT), excluding upstream response; samples: ': '成功尝试的平均隧道建立耗时（TCP+TLS+CONNECT），不含上游响应；样本数 ',
   'Add API keys': '添加 API key',
   'All its keys will be removed. This cannot be undone.': '该子平台的所有密钥都将被移除，此操作不可撤销。',
   'Transport-layer success rate since the pool was last edited (upstream 4xx/5xx still counts as the proxy being online)': '上次编辑代理池以来的传输层成功率（上游 4xx/5xx 不算代理失败）',
@@ -4856,7 +4858,7 @@ async function loadLogs() {
         '<td class="mono" style="font-size:11px">' + esc(l.upstream || '-') + '</td>' +
         '<td>' + esc(proxy) + '</td>' +
         '<td style="font-weight:600;' + STATUS_CLASS(st) + '"' + (l.error ? ' title="' + esc(l.error) + '"' : '') + '>' + st + '</td>' +
-        '<td class="mono" style="font-size:11px" title="首字节耗时：请求开始到首个响应字节（流式=上游首 token 到达；-=无响应体如 413）">' + (l.ttfb_ms == null || l.ttfb_ms < 0 ? '-' : l.ttfb_ms + ' ms') + '</td>' +
+        '<td class="mono" style="font-size:11px" title="' + esc(T('Time to first byte: from request start to the first response byte (streaming = first upstream token; - = no response body, e.g. 413)')) + '">' + (l.ttfb_ms == null || l.ttfb_ms < 0 ? '-' : l.ttfb_ms + ' ms') + '</td>' +
         '<td class="mono" style="font-size:11px">' + (l.duration_ms != null ? l.duration_ms + ' ms' : '-') + '</td>' +
       '</tr>';
     }).join('');
@@ -5485,8 +5487,8 @@ function renderOcKeyStates(ks) {
         // 操作列：测试（真实探测）+ 删除（红色，从 key 池移除该 key）
         const actions = '<td style="white-space:nowrap;text-align:center">' +
           '<button class="btn btn-sm" data-zk="' + k.index + '">Test</button> ' +
-          '<button class="btn btn-sm btn-danger" data-zdel="' + k.index + '" title="Remove this key from the pool">Delete</button></td>';
-        return '<tr draggable="true" data-drag-id="' + k.index + '"><td>#' + (k.index + 1) + (k.current ? ' <span style="color:var(--accent)" title="next in rotation">●</span>' : '') + '</td>' +
+          '<button class="btn btn-sm btn-danger" data-zdel="' + k.index + '" title="' + esc(T('Remove this key from the pool')) + '">Delete</button></td>';
+        return '<tr draggable="true" data-drag-id="' + k.index + '"><td>#' + (k.index + 1) + (k.current ? ' <span style="color:var(--accent)" title="' + esc(T('next in rotation')) + '">●</span>' : '') + '</td>' +
           '<td style="font-family:monospace;font-size:11px">' + esc(k.keyMask) + '</td>' +
           '<td>' + stCell + '</td>' +
           '<td>' + rot + '</td>' +
@@ -5754,7 +5756,7 @@ function renderProxyHealth(rowsIn) {
           '<td style="text-align:center">' + (r.attempts || 0) + '</td>' +
           '<td style="text-align:center">' + rateCell(cum, r.rate) + '</td>' +
           '<td style="text-align:center">' + rateCell(rec, r.recentRate) + '</td>' +
-          '<td style="text-align:center" title="成功尝试的平均隧道建立耗时（TCP+TLS+CONNECT），不含上游响应；样本数 ' + (r.hsCount || 0) + '">' + hs + '</td>' +
+          '<td style="text-align:center" title="' + esc(T('Avg tunnel-setup time of successful attempts (TCP+TLS+CONNECT), excluding upstream response; samples: ')) + (r.hsCount || 0) + '">' + hs + '</td>' +
           '<td class="mono" style="font-size:11px">' + (r.lastOk ? fmtWhen(r.lastOk) : '<span style="color:var(--text3)">-</span>') + '</td>' +
           '<td class="mono" style="font-size:11px"' + failTitle + '>' + (r.lastFail ? fmtWhen(r.lastFail) : '<span style="color:var(--text3)">-</span>') + '</td>' +
           '<td>' + (r.cooling ? '<span style="color:var(--warning,#eab308)">' + T('cooldown until ') + fmtWhen(r.coolingUntil) + '</span>' : '<span style="color:var(--text3)">-</span>') + '</td>' +
@@ -6355,7 +6357,7 @@ function renderOrKeyStates(ks) {
           '<input type="checkbox" data-orr="' + k.index + '"' + (routed ? ' checked' : '') + ' title="' + esc(T('Participates in request routing')) + '">' + '</td>';
         const actions = '<td style="white-space:nowrap;text-align:center">' +
           '<button class="btn btn-sm" data-ort="' + k.index + '">Test</button> ' +
-          '<button class="btn btn-sm btn-danger" data-ordel="' + k.index + '" title="Remove this key from the pool">Delete</button>' + '</td>';
+          '<button class="btn btn-sm btn-danger" data-ordel="' + k.index + '" title="' + esc(T('Remove this key from the pool')) + '">Delete</button>' + '</td>';
         return '<tr draggable="true" data-drag-id="' + k.index + '"><td>#' + (k.index + 1) + '</td>' +
           '<td style="font-family:monospace;font-size:11px">' + esc(k.keyMask) + '</td>' +
           '<td>' + cool + '</td>' +
@@ -7046,7 +7048,7 @@ function renderAmdKeyStates(ks) {
           '<input type="checkbox" data-amdr="' + k.index + '"' + (routed ? ' checked' : '') + ' title="' + esc(T('Participates in request routing')) + '">' + '</td>';
         const actions = '<td style="white-space:nowrap;text-align:center">' +
           '<button class="btn btn-sm" data-amdt="' + k.index + '">Test</button> ' +
-          '<button class="btn btn-sm btn-danger" data-amddel="' + k.index + '" title="Remove this key from the pool">Delete</button>' + '</td>';
+          '<button class="btn btn-sm btn-danger" data-amddel="' + k.index + '" title="' + esc(T('Remove this key from the pool')) + '">Delete</button>' + '</td>';
         return '<tr draggable="true" data-drag-id="' + k.index + '"><td>#' + (k.index + 1) + '</td>' +
           '<td style="font-family:monospace;font-size:11px">' + esc(k.keyMask) + '</td>' +
           '<td>' + cool + '</td>' +
@@ -7319,7 +7321,7 @@ function renderTHKeyStates(ks) {
           '<input type="checkbox" data-thr="' + k.index + '"' + (routed ? ' checked' : '') + ' title="' + esc(T('Participates in request routing')) + '">' + '</td>';
         const actions = '<td style="white-space:nowrap;text-align:center">' +
           '<button class="btn btn-sm" data-tht="' + k.index + '">Test</button> ' +
-          '<button class="btn btn-sm btn-danger" data-thdel="' + k.index + '" title="Remove this key from the pool">Delete</button>' + '</td>';
+          '<button class="btn btn-sm btn-danger" data-thdel="' + k.index + '" title="' + esc(T('Remove this key from the pool')) + '">Delete</button>' + '</td>';
         return '<tr draggable="true" data-drag-id="' + k.index + '"><td>#' + (k.index + 1) + '</td>' +
           '<td style="font-family:monospace;font-size:11px">' + esc(k.keyMask) + '</td>' +
           '<td>' + cool + '</td>' +

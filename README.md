@@ -208,7 +208,8 @@ CI：push 到 `main` 跑 `go build` + `go vet`，Buildx 发布多架构镜像到
 │   ├── workbuddy.go/_config/_proxy/_dialects  WorkBuddy 子系统、出口绑定、方言
 │   ├── platform_routability.go  无启用凭据整平台拒路由闸
 │   ├── platform_blacklist.go / model_blacklist.go  封禁平台/封禁模型
-│   ├── pool.go / seed.go    Cline 账号池、启动种子
+│   ├── global_config.go / proxy_config.go / proxy_pool_config.go / zen_config_file.go   配置落盘（全局/代理域/zen，含旧文件迁移）
+│   ├── pool.go               Cline 账号池
 │   ├── combos.go            别名模型
 │   ├── admin*.go            管理面板：API、会话认证、UI、各平台页
 │   └── config.go            env 配置（fail-closed 校验）
