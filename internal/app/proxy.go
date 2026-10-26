@@ -223,9 +223,7 @@ func StartProxy(host string, port int) error {
 			})
 		}
 		// 合并 WorkBuddy 模型（cn:/global: 前缀，源项目路由协议）。
-		if workbuddySub != nil {
-			data = append(data, workbuddySub.modelList()...)
-		}
+		data = append(data, workbuddyModelEntries()...)
 		// 合并 OpenRouter 免费模型（oprt: 前缀）。
 		data = append(data, orModelList()...)
 		// 合并 AMDCloud 免费模型（amd: 前缀）。
@@ -3723,4 +3721,53 @@ func parseIntSafe(s string) (int, error) {
 		n = n*10 + int(s[i]-'0')
 	}
 	return n, nil
+}
+
+// sortModelEntriesByID 按 id 字典序稳定排序模型条目(就地)。
+//
+// /v1/models 的「段内恒序」统一口径:各平台段内部一律确定有序(cline 按裸
+// feed ID 升序、其余按输出 id 升序)。凡是段内顺序来自上游返回序(WorkBuddy
+// cn/global/图像)、map 迭代序(zen)或文件存储序之外任何不确定来源的地方,
+// 输出前都要过一遍——否则下游 new-api 等按序消费方每次看到的顺序都可能不同。
+// 稳定排序保证同 id 条目相对次序不变。
+func sortModelEntriesByID(list []map[string]any) {
+	sort.SliceStable(list, func(i, j int) bool {
+		a, _ := list[i]["id"].(string)
+		b, _ := list[j]["id"].(string)
+		return a < b
+	})
+}
+
+// workbuddyModelEntries 返回 /v1/models 的 WorkBuddy 段条目，段内按 id 恒序。
+//
+// 段内原始顺序来自上游：cn 对话取 /v3/config 返回序（mergeModelInfos 纯拼接），
+// 图像取上游目录序，本地均无排序保证——上游改序或 v3 探测降级到
+// enterprise-only 都会让输出漂移。
+//
+// vendor 的段内结构是「对话模型 → 出图模型」两段（generationModelEntries 追加
+// 在后），这里保留该分组语义，两组各自按 id 稳定排序：既让输出恒序，又不把
+// image_generation 条目混进对话名单。前缀 wbcn:/wbgb: 的字典序天然让 cn 在
+// global 前，与 vendor 原有域序一致。
+//
+// 排序放在 afree 侧而非 vendor 目录（internal/workbuddy/），避免下次
+// sync_workbuddy 三方合并冲突。
+func workbuddyModelEntries() []map[string]any {
+	if workbuddySub == nil {
+		return nil
+	}
+	list := workbuddySub.modelList()
+	chat := make([]map[string]any, 0, len(list))
+	image := make([]map[string]any, 0)
+	for _, m := range list {
+		if isImage, _ := m["image_generation"].(bool); isImage {
+			image = append(image, m)
+			continue
+		}
+		chat = append(chat, m)
+	}
+	sortModelEntriesByID(chat)
+	sortModelEntriesByID(image)
+	out := make([]map[string]any, 0, len(list))
+	out = append(out, chat...)
+	return append(out, image...)
 }

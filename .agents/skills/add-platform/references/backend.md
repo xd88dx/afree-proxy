@@ -36,7 +36,7 @@ WB 特例：`/admin/api/workbuddy/enabled` 注册在 proxy.go（workbuddy 路由
   7. cline 模型前缀 `cline-free/`（models.go `clineModelPrefix`，/v1/models 输出即带前缀）
 - 新平台加自己的 `HasPrefix(model)`（放 X 包内，`ModelPrefix` 常量 + `HasPrefix` 函数，见 openrouter 包）并按上述位置插入分发链。
 - **前缀平台查表铁律（2026-10-12 回归教训）**：模型缓存键 = feed 原样 ID，`cline-free/*` 条目**自带前缀**、poolside/* z-ai/* 等不带。展示层 `displayClineModelID` 统一补前缀、请求侧 `canonicalClineModelID` 剥前缀——**剥前缀之后必须裸名和 `前缀+裸名` 两种键形态都查**（`models.go clineListLookupLocked`），只查剥前缀形态会把整类自带前缀的原生条目挡在 STRICT 门控外（症状：模型在 /v1/models 里可见，请求却 400 "not available on this gateway"）。出站/记账用解析到的缓存键原样。测试必须覆盖"列表里自带前缀的条目"两种请求形态（model_prefix_test.go）。
-- `/v1/models` 合并：各平台 `ModelList()` 汇入（带前缀的 ID），客户端按列表 ID 调用。
+- `/v1/models` 合并：各平台 `ModelList()` 汇入（带前缀的 ID），客户端按列表 ID 调用。**段内恒序铁律（2026-10-26）**：每个平台段内部必须确定有序——cline 按**裸 feed ID** 升序（输出统一补 `cline-free/` 前缀，故输出 id 观感上非升序但顺序确定）；zen/oprt/amd/tkhb/trae/other 各 `ModelList()` 内 `sort.Slice`；WorkBuddy 段由 `workbuddyModelEntries` 按 id 稳定排序，并保留「对话模型 → 出图模型」分组（`image_generation` 条目不混进对话名单）。新增平台段若顺序来自上游返回序/map 迭代序，**必须在合并处排序**——否则下游 new-api 等按序消费方每次看到的顺序都不同。`internal/app/models_order_test.go` 锁死该契约。
 - 请求日志分类：logs.go 的 per-route 原子计数与新平台桶（reqOr/reqAmd/reqTh 已存在；注意计数在 logEnabled 分支内——LOG_REQUESTS=false 时停摆是刻意行为）。
 
 ## 4. 自定义别名（combos.go）
