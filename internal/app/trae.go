@@ -302,6 +302,7 @@ func aggregateTraeSSE(ctx context.Context, params map[string]any, m trae.Model) 
 			if stream.Err != nil && stream.Err.RateLimited {
 				return agg.buf.Bytes(), agg.usage, acc.ID, nil
 			}
+			traeAutoBanModel(m, acc, ev.Code, traeEventErrorText(ev))
 			return nil, agg.usage, acc.ID, fmt.Errorf("trae upstream error: %s", traeEventErrorText(ev))
 		}
 	}
@@ -317,6 +318,105 @@ func traeEventErrorText(ev *trae.StreamEvent) string {
 		return msg + " (code " + ev.Code + ")"
 	}
 	return msg
+}
+
+// ============ 模型级失败自动封禁 ============
+//
+// 上游这几类答复换账号、重试都不会变，却只有真调一次才知道：
+//   - 1005 套餐/权益不足（实测 extra 带 {"plan":3}）
+//   - 4023 模型名未知（目录里的 web-only/旧名）
+//   - 4001 参数/权益错误（实测 glm-5.3 最小请求也 4001）
+//
+// 处理：命中后加入「平台+模型」黑名单（与面板「封禁模型」同表、同解禁
+// 入口），/v1/models 立刻不再列出，客户端不会反复选中它吃 502。
+//
+// 4001 的文案与"客户端传了上游不接受的东西"同形，直接封会误伤，故先复核：
+// 用**同一个账号**发一个纯文本最小请求，能出字说明是本次请求形状问题，不封；
+// 照样 4001 才封。复核异步执行，不拖慢客户端响应。
+
+// traeAutoBanDecision 错误码 → (是否封禁, 是否需复核)。
+func traeAutoBanDecision(code string) (ban, verify bool) {
+	switch strings.TrimSpace(code) {
+	case "1005", "4023":
+		return true, false
+	case "4001":
+		return true, true
+	}
+	return false, false
+}
+
+// traeAutoBanInflight 同一模型的复核去重（并发 502 不叠加探测请求）。
+var traeAutoBanInflight sync.Map
+
+// traeAutoBanModel 命中判据后封禁；4001 走异步复核。
+func traeAutoBanModel(m trae.Model, acc *trae.Account, code, detail string) {
+	ban, verify := traeAutoBanDecision(code)
+	if !ban {
+		return
+	}
+	id := trae.ModelPrefix + m.ID
+	if IsModelBlacklisted(id) {
+		return
+	}
+	reason := BanReasonAuto
+	if strings.TrimSpace(code) == "4023" {
+		reason = BanReasonModelGone
+	}
+	if !verify {
+		BlacklistModel(platTrae, id, code, reason, detail)
+		return
+	}
+	if _, loaded := traeAutoBanInflight.LoadOrStore(id, struct{}{}); loaded {
+		return
+	}
+	go func() {
+		defer traeAutoBanInflight.Delete(id)
+		if !traeProbeFailsModel(m, acc) {
+			return
+		}
+		BlacklistModel(platTrae, id, code, reason, detail)
+	}()
+}
+
+// traeProbeFailsModel 同账号纯文本复核：仍然得到模型级失败返回 true；
+// 能出字 / 限流 / 读不出结论一律 false（宁可漏封，不误封）。
+func traeProbeFailsModel(m trae.Model, acc *trae.Account) bool {
+	if acc == nil {
+		return false
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	defer cancel()
+	params := map[string]any{
+		"model":      trae.ModelPrefix + m.ID,
+		"messages":   []any{map[string]any{"role": "user", "content": "Reply with exactly: OK"}},
+		"max_tokens": 16,
+	}
+	stream, _, err := trae.Chat(ctx, trae.ChatOpts{Model: m, Params: params, PinAccount: acc})
+	if err != nil {
+		var he *trae.HTTPError
+		if errors.As(err, &he) && !he.RateLimited {
+			ban, _ := traeAutoBanDecision(he.Code)
+			return ban
+		}
+		return false
+	}
+	defer stream.Close()
+	for {
+		ev, rerr := stream.Next()
+		if rerr != nil || ev == nil {
+			return false // 断流/EOF 读不出结论
+		}
+		switch ev.Type {
+		case "text", "reasoning", "done":
+			return false // 能产出内容 = 模型本身可用
+		case "error":
+			if stream.Err != nil && stream.Err.RateLimited {
+				return false
+			}
+			ban, _ := traeAutoBanDecision(ev.Code)
+			return ban
+		}
+	}
 }
 
 // aggregateTraeCompletion 非流式：聚合事件流为一份 chat.completion JSON。
@@ -350,6 +450,7 @@ func aggregateTraeCompletion(ctx context.Context, params map[string]any, m trae.
 		case "usage":
 			usage = ev.Usage
 		case "error":
+			traeAutoBanModel(m, acc, ev.Code, traeEventErrorText(ev))
 			return nil, acc.ID, fmt.Errorf("trae upstream error: %s", traeEventErrorText(ev))
 		case "done":
 			if usage == nil {

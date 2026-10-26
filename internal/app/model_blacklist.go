@@ -16,6 +16,7 @@ import (
 	"afree-proxy/internal/openrouter"
 	"afree-proxy/internal/other"
 	"afree-proxy/internal/tokenharbor"
+	"afree-proxy/internal/trae"
 )
 
 // ============================================================================
@@ -42,6 +43,9 @@ import (
 const (
 	BanReasonAuto   = "账号权限不足，自动封禁"
 	BanReasonManual = "管理员手动封禁"
+	// BanReasonModelGone 模型名在 TraeCode 网关上不存在（4023）：不是权限问题，
+	// 而是目录给的名字发不出请求（web-only/旧名），换任何账号同样报错。
+	BanReasonModelGone = "模型名不可用，自动封禁"
 )
 
 // 平台标识（与对外模型前缀对应）。
@@ -311,6 +315,8 @@ func platformOfModel(model string) string {
 		return platOpenRouter
 	case strings.HasPrefix(model, tokenharbor.ModelPrefix):
 		return platTokenHarbor
+	case strings.HasPrefix(model, trae.ModelPrefix):
+		return platTrae
 	}
 	if i := strings.IndexByte(model, ':'); i > 0 {
 		if p := other.PlatformByPrefix(model[:i]); p != nil {

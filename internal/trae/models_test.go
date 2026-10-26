@@ -271,3 +271,118 @@ func TestModelListHidesUnconfirmedEntries(t *testing.T) {
 		t.Fatalf("ProbeModel fallback = %+v, %v", m, ok)
 	}
 }
+
+// 目录自动跟随上游：本轮原生档全部成功、某个旧原生条目已不在清单里 →
+// 降级为未确认（展示层摘除），但仍可解析（显式请求给上游真实错误）。
+func TestSyncCatalogPrunesNativeWhenCatalogComplete(t *testing.T) {
+	resetCatalog(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/remote/v1/models":
+			io.WriteString(w, `{"data":{"list":[{"function":"solo_work_remote","models":[
+				{"name":"keep"},{"name":"gone"}]}]}}`)
+		case "/api/ide/v1/get_detail_param":
+			io.WriteString(w, `{"config_info_list":[{"config_name":"keep","model_detail_list":[{"model_name":"keep__dev"}]}]}`)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	prev := Get()
+	t.Cleanup(func() { Set(prev) })
+	Set(&Config{Gateway: srv.URL, Accounts: []*Account{{ID: "u1", Token: "tok"}}})
+	CatalogClient = srv.Client()
+	CatalogURLOverride = srv.URL + "/api/remote/v1/models"
+
+	// 上一轮同步把 gone 确认成原生条目
+	applyCatalog(map[string]Model{
+		"gone": {ID: "gone", RawName: "gone__dev", Function: "solo_agent", Native: true},
+	})
+
+	if _, err := SyncCatalog(); err != nil {
+		t.Fatalf("SyncCatalog: %v", err)
+	}
+	got := catalogSnapshot()
+	if !got["keep"].Native {
+		t.Fatalf("keep not native: %+v", got["keep"])
+	}
+	if got["gone"].Native {
+		t.Fatalf("offline model still native: %+v", got["gone"])
+	}
+	for _, m := range ModelList() {
+		if m.ID == "gone" {
+			t.Fatal("offline model must not be listed")
+		}
+	}
+	if _, ok := Resolve("gone"); !ok {
+		t.Fatal("offline model must stay resolvable")
+	}
+}
+
+// 单档故障不做下线回收：原生档没全拉成功时无法区分"模型下线"与"拉取失败"。
+func TestSyncCatalogKeepsNativeWhenScopeFails(t *testing.T) {
+	resetCatalog(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/remote/v1/models":
+			io.WriteString(w, `{"data":{"list":[{"function":"solo_work_remote","models":[{"name":"keep"}]}]}}`)
+		case "/api/ide/v1/get_detail_param":
+			var body struct {
+				Function string `json:"function"`
+			}
+			_ = json.NewDecoder(r.Body).Decode(&body)
+			if body.Function == "solo_agent" {
+				http.Error(w, "boom", http.StatusInternalServerError)
+				return
+			}
+			io.WriteString(w, `{"config_info_list":[{"config_name":"keep","model_detail_list":[{"model_name":"keep__dev"}]}]}`)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	prev := Get()
+	t.Cleanup(func() { Set(prev) })
+	Set(&Config{Gateway: srv.URL, Accounts: []*Account{{ID: "u1", Token: "tok"}}})
+	CatalogClient = srv.Client()
+	CatalogURLOverride = srv.URL + "/api/remote/v1/models"
+
+	applyCatalog(map[string]Model{
+		"gone": {ID: "gone", RawName: "gone__dev", Function: "solo_agent", Native: true},
+	})
+
+	if _, err := SyncCatalog(); err != nil {
+		t.Fatalf("SyncCatalog: %v", err)
+	}
+	if !catalogSnapshot()["gone"].Native {
+		t.Fatal("single-scope failure must not prune native entries")
+	}
+}
+
+// 没有可路由凭据（总闸/反代开关至少一个关）时不得发起目录请求：同步是给
+// 可服务清单取数，关停平台不该产生上游流量。
+func TestSyncCatalogRequiresRoutableAccount(t *testing.T) {
+	resetCatalog(t)
+	prev := Get()
+	t.Cleanup(func() { Set(prev) })
+	off := false
+	Set(&Config{Accounts: []*Account{{ID: "u1", Token: "tok", PoolEnabled: &off}}})
+
+	hits := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits++
+		http.NotFound(w, r)
+	}))
+	defer srv.Close()
+	CatalogClient = srv.Client()
+	CatalogURLOverride = srv.URL
+
+	if _, err := SyncCatalog(); err == nil {
+		t.Fatal("SyncCatalog must fail without a routable account")
+	}
+	if hits != 0 {
+		t.Fatalf("catalog fetched %d time(s) without routable credential", hits)
+	}
+}

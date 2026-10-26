@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	trae "afree-proxy/internal/trae"
 	wbauth "afree-proxy/internal/workbuddy/auth"
 	wbpool "afree-proxy/internal/workbuddy/pool"
 )
@@ -63,6 +64,7 @@ func TestPlatformOfModel(t *testing.T) {
 		"amd:Qwen3.8":            platAMD,
 		"oprt:vendor/model":      platOpenRouter,
 		"tkhb:deepseek:free":     platTokenHarbor,
+		"trae:glm-5.2":           platTrae,
 		"deepseek-v4.1-flash":    "", // 裸名无平台信息：不猜，避免误拉黑
 	}
 	for in, want := range cases {
@@ -215,5 +217,56 @@ func TestWithModelBlacklistScan(t *testing.T) {
 		strings.NewReader(`{"model":"wbgb:gpt-5.3-codex","messages":[]}`)))
 	if IsModelBlacklisted("wbgb:gpt-5.3-codex") {
 		t.Fatal("successful response must not blacklist")
+	}
+}
+
+// Trae 模型级失败判据：1005/4023 直接封，4001 先复核，限流不封。
+func TestTraeAutoBanDecision(t *testing.T) {
+	cases := []struct {
+		code        string
+		ban, verify bool
+	}{
+		{"1005", true, false},
+		{"4023", true, false},
+		{"4001", true, true},
+		{"4011", false, false},
+		{"429", false, false},
+		{"", false, false},
+	}
+	for _, c := range cases {
+		ban, verify := traeAutoBanDecision(c.code)
+		if ban != c.ban || verify != c.verify {
+			t.Errorf("traeAutoBanDecision(%q) = (%v,%v), want (%v,%v)", c.code, ban, verify, c.ban, c.verify)
+		}
+	}
+}
+
+// 自动封禁落地：1005 立即可见（封禁表 + /v1/models 过滤口径），重复命中不重复写；
+// 4001 拿不到复核结论时不封；限流永不封。
+func TestTraeAutoBanModel(t *testing.T) {
+	t.Setenv("DATA_DIR", t.TempDir())
+	resetModelBlacklistForTest(t)
+
+	m := trae.Model{ID: "glm-5.3", RawName: "glm-5.3__dev", Function: "solo_agent", Native: true}
+	traeAutoBanModel(m, nil, "1005", "plan required")
+	if !IsModelBlacklisted("trae:glm-5.3") {
+		t.Fatal("1005 must ban immediately")
+	}
+	before := modelBlacklistSnapshot()[0]["hits"].(int)
+	traeAutoBanModel(m, nil, "1005", "plan required")
+	if after := modelBlacklistSnapshot()[0]["hits"].(int); after != before {
+		t.Fatalf("already-banned model hit count changed: %d -> %d", before, after)
+	}
+
+	// 4001 需同账号复核；没有账号可复核 → 不封（宁可漏封）。
+	traeAutoBanModel(trae.Model{ID: "glm-5.1", RawName: "glm-5.1__dev", Function: "solo_agent"}, nil, "4001", "param is invalid")
+	if IsModelBlacklisted("trae:glm-5.1") {
+		t.Fatal("4001 without verification must not ban")
+	}
+
+	// 限流是换号可解的临时故障，不封。
+	traeAutoBanModel(trae.Model{ID: "glm-5.2", RawName: "glm-5.2__dev", Function: "solo_agent"}, nil, "4011", "rate limit")
+	if IsModelBlacklisted("trae:glm-5.2") {
+		t.Fatal("rate limit must not ban")
 	}
 }

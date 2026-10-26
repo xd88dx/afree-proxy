@@ -109,16 +109,44 @@ func SyncCatalog() (int, error) {
 	// 覆盖种子映射）；失败不阻断 Remote 合并。
 	base := GatewayFor(&Account{Token: token, Edition: edition})
 	userID := TokenAccountID(token)
+	seen := make(map[string]bool, 64)
+	complete := true
 	for _, function := range nativeCatalogFunctions {
 		entries, ferr := fetchSoloModelConfigs(base, token, userID, function)
 		if ferr != nil {
+			complete = false
 			continue
 		}
 		for id, m := range entries {
 			live[id] = m
+			seen[id] = true
 		}
 	}
-	return applyCatalog(live), nil
+	changed := applyCatalog(live)
+	// 本轮原生档全部成功时才回收"上游已下架"的条目：模型列表是动态的，
+	// 只增不删会让下线模型永远挂在面板上。单档故障不代表模型下线，跳过。
+	if complete && len(seen) > 0 {
+		changed += reconcileNative(seen)
+	}
+	return changed, nil
+}
+
+// reconcileNative 把本轮原生目录已不再出现的条目降级为未确认（Native=false）：
+// 展示层随之摘除，Resolve 仍保留（显式请求给上游真实错误）。上游重新上架时
+// applyCatalog 会把它升回 Native=true。
+func reconcileNative(seen map[string]bool) int {
+	catalogMu.Lock()
+	defer catalogMu.Unlock()
+	changed := 0
+	for id, m := range catalogModels {
+		if !m.Native || seen[id] {
+			continue
+		}
+		m.Native = false
+		catalogModels[id] = m
+		changed++
+	}
+	return changed
 }
 
 // nativeCatalogFunctions 原生目录拉取的函数档（顺序即优先级，后者覆盖前者）。
@@ -337,12 +365,12 @@ func soloHeaders(token, userID string) map[string]string {
 	}
 }
 
-// catalogProbeCredential 取首个启用账号的凭据与版本（live 目录请求用）。
-// 判定用账号总闸（EnabledOrDefault）而非反代开关——目录同步是维护动作，
-// 反代关着的账号也应提供模型清单。
+// catalogProbeCredential 取首个**可路由**账号的凭据与版本（live 目录请求用）。
+// 与展示/同步门控同口径（Routable）：目录同步是"给可服务清单取数"，没有参与
+// 路由的凭据就不同步——账号总闸/反代开关全关时不该产生任何上游请求。
 func catalogProbeCredential() (token, edition string) {
 	for _, a := range Get().Accounts {
-		if a.EnabledOrDefault() && a.Token != "" {
+		if a.Routable() && a.Token != "" {
 			return a.Token, a.Edition
 		}
 	}
