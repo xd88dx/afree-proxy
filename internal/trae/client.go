@@ -473,14 +473,20 @@ type Stream struct {
 }
 
 // Next 返回下一个归一化事件；EOF 且已终止返回 nil, nil。
+//
+// 上游是标准 SSE：`event:` 名与紧随其后的 `data:` 是一帧，空行结束一帧。
+// 事件名必须跨行保留（曾经的 bug：pending 声明在循环体内，event 名每行都被
+// 重置，导致 event: error / done / token_usage 全部退化成按 payload 猜名字，
+// 上游错误被当成无内容断流、用量丢失、done 识别失败）。
 func (s *Stream) Next() (*StreamEvent, error) {
+	pending := ""
 	for s.sc.Scan() {
 		line := strings.TrimSpace(s.sc.Text())
 		if line == "" {
+			pending = "" // 空行 = 事件边界
 			continue
 		}
 		low := strings.ToLower(line)
-		var pending string
 		if strings.HasPrefix(low, "event:") {
 			pending = normalizeEventName(strings.TrimSpace(line[6:]))
 			continue
@@ -489,6 +495,8 @@ func (s *Stream) Next() (*StreamEvent, error) {
 			continue // 心跳注释行（: keepalive）等
 		}
 		payload := strings.TrimSpace(line[5:])
+		evName := pending
+		pending = "" // 一帧 data 消费后事件名失效
 		if payload == "" {
 			continue
 		}
@@ -498,9 +506,14 @@ func (s *Stream) Next() (*StreamEvent, error) {
 		}
 		var obj map[string]any
 		if err := json.Unmarshal([]byte(payload), &obj); err != nil {
-			continue // 非 JSON data 行（部分代理会注入纯文本）
+			// 非 JSON data 行：代理注入的纯文本忽略；但 error 事件必须上抛，
+			// 否则又是一次"错误被吞成空流"。
+			if evName == "error" {
+				s.Err = &HTTPError{Body: payload}
+				return &StreamEvent{Type: "error", Message: payload}, nil
+			}
+			continue
 		}
-		evName := pending
 		if evName == "" {
 			evName = normalizeEventName(payloadEventName(obj))
 		}
@@ -565,7 +578,7 @@ func (s *Stream) consume(obj map[string]any, evName string) (*StreamEvent, bool)
 	if len(calls) > 0 {
 		s.mergeToolCalls(calls)
 	}
-	if txt := payloadText(obj); txt != "" {
+	if txt := payloadTextFor(evName, obj); txt != "" {
 		delta, textChanged := s.addText(txt)
 		if textChanged && delta != "" {
 			return &StreamEvent{Type: "text", Text: delta}, true
@@ -735,6 +748,24 @@ func payloadEventName(obj map[string]any) string {
 	return ""
 }
 
+// textBearingEvents 允许产出可见文本的事件名（"" = 仅 data: 行的旧协议）。
+// extra_info / timing_cost / metadata 一类事件即便带 content 也不能渲染：
+// 实测 extra_info.content 是整段 reasoning 的 JSON 序列化，误当正文会把它
+// 原样拼进回答（2026-10-26 solo_agent 实测）。
+var textBearingEvents = map[string]bool{
+	"": true, "output": true, "response": true, "message": true,
+	"assistant_message": true, "text_delta": true, "translated_text": true,
+	"accumulated": true,
+}
+
+// payloadTextFor 按事件名决定是否提取文本；非文本事件返回空。
+func payloadTextFor(evName string, obj map[string]any) string {
+	if !textBearingEvents[evName] {
+		return ""
+	}
+	return payloadText(obj)
+}
+
 // payloadText 文本增量/快照：事件名族 × 字段族双兜底。
 func payloadText(obj map[string]any) string {
 	return firstString(obj,
@@ -828,6 +859,7 @@ func firstNum(obj map[string]any, keys ...string) float64 {
 }
 
 // extractError 错误业务码与文案：code|error_code|errorCode（顶层或 error.* 嵌套）。
+// 文案为空时退回 extra（上游部分错误只带 {"code":1005,"extra":"{\"plan\":3}"}）。
 func extractError(obj map[string]any) (code, msg string) {
 	code = errCodeOf(obj)
 	if e, ok := obj["error"].(map[string]any); ok {
@@ -839,7 +871,7 @@ func extractError(obj map[string]any) (code, msg string) {
 		}
 	}
 	if msg == "" {
-		msg = firstString(obj, "message", "msg")
+		msg = firstString(obj, "message", "msg", "extra")
 	}
 	return code, msg
 }

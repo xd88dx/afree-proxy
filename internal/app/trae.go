@@ -63,9 +63,13 @@ func initTrae() {
 		}
 		setUpstreamExit(ctx, proxyExitType(proxyURL, main, backup, bound))
 	})
-	// 启动即预热模型目录（种子兜底，异步 live 同步）
+	// 启动即预热模型目录：先同步一次，再进 10 分钟轮询。展示层只列原生档
+	// 确认过的条目，首次同步完成前列表为空，不能等轮询第一跳（10 分钟）。
 	trae.InitCatalog()
-	go startTraeModelsRefresher()
+	go func() {
+		syncTraeCatalog(1)
+		startTraeModelsRefresher()
+	}()
 	// 额度定期刷新 + 自动签到巡检
 	startTraeJobs()
 }
@@ -292,10 +296,27 @@ func aggregateTraeSSE(ctx context.Context, params map[string]any, m trae.Model) 
 			agg.buf.WriteString("data: [DONE]\n\n")
 			return agg.buf.Bytes(), agg.usage, acc.ID, nil
 		case "error":
-			// 上游业务错误：按断流处理（缓冲层换账号重试，直到尝试上限）
-			return agg.buf.Bytes(), agg.usage, acc.ID, nil
+			// 上游业务错误：限流/配额换账号可能修复，保留断流语义让缓冲层
+			// 重试；其余（模型不存在 4023、参数/权益 4001/1005 等）换号无用，
+			// 直接上抛真实原因——不要再退化成"空流"。
+			if stream.Err != nil && stream.Err.RateLimited {
+				return agg.buf.Bytes(), agg.usage, acc.ID, nil
+			}
+			return nil, agg.usage, acc.ID, fmt.Errorf("trae upstream error: %s", traeEventErrorText(ev))
 		}
 	}
+}
+
+// traeEventErrorText 上游 error 事件的可读文案（带业务码，便于面板排障）。
+func traeEventErrorText(ev *trae.StreamEvent) string {
+	msg := strings.TrimSpace(ev.Message)
+	if msg == "" {
+		msg = "upstream error event"
+	}
+	if ev.Code != "" {
+		return msg + " (code " + ev.Code + ")"
+	}
+	return msg
 }
 
 // aggregateTraeCompletion 非流式：聚合事件流为一份 chat.completion JSON。
@@ -329,7 +350,7 @@ func aggregateTraeCompletion(ctx context.Context, params map[string]any, m trae.
 		case "usage":
 			usage = ev.Usage
 		case "error":
-			return nil, acc.ID, fmt.Errorf("trae upstream error: %s", ev.Message)
+			return nil, acc.ID, fmt.Errorf("trae upstream error: %s", traeEventErrorText(ev))
 		case "done":
 			if usage == nil {
 				usage = stream.Usage
@@ -799,7 +820,7 @@ func handleTraeModelsRefresh(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	syncTraeCatalog(1)
-	writeAPI(w, http.StatusOK, apiResponse{Success: true, Message: fmt.Sprintf("synced, %d models", trae.Count())})
+	writeAPI(w, http.StatusOK, apiResponse{Success: true, Message: fmt.Sprintf("synced, %d models", len(trae.ModelList()))})
 }
 
 // ============ Trae 账号池操作（写时复制，与 openrouter 同口径） ============

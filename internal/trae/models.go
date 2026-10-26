@@ -29,6 +29,12 @@ type Model struct {
 	RawName  string `json:"rawName,omitempty"`
 	Function string `json:"function,omitempty"`
 	Context  int    `json:"context,omitempty"`
+	// Native 该 ID 在本账号的原生目录（chat_v3 / solo_agent）中出现过。
+	// 只有原生档确认过的条目才对外展示：web Remote 目录的独有条目与种子
+	// 里的 __v2 映射没有可用的 raw_chat_function，发裸 config_name 必报
+	// 4023 model unknown（2026-10-26 实测 kimi-k2.6 / deepseek-v4-pro）。
+	// 不落盘、不外发（-），仅用于展示过滤。
+	Native bool `json:"-"`
 }
 
 // seedModels TraeCode 客户端已知模型（raw_client.py _KNOWN_MODELS 实测表）。
@@ -79,67 +85,102 @@ func InitCatalog() {
 }
 
 // SyncCatalog 用池内首个启用账号的 JWT 拉 live 目录，并入现有表：
-//   - live 条目补全 raw 名（种子已验证的映射优先）与上下文限制；
+//   - web Remote 目录给可服务清单与上下文限制（raw 名不全）；
+//   - 原生 get_detail_param 目录按函数档拉两遍（chat_v3 = IDE 默认、
+//     solo_agent = Solo 代理档）：同一账号两档准入不同，solo_agent 覆盖更广
+//     （实测 DeepSeek-V4-Flash-Official 在 chat_v3 下 1005 plan 限制、
+//     solo_agent 正常；多数 __max 型号同理），故 solo_agent 后合并覆盖；
+//   - live 条目补全 raw 名（上一轮目录/种子里已验证的映射优先）与上下文限制；
 //   - 种子条目 live 没列的保留（上游临时裁剪不该立刻掐断可用模型）；
-//   - 网络/解析失败返回错误，目录原地不动。
+//   - 网络/解析失败返回错误，目录原地不动（单档失败不阻断其余档）。
 func SyncCatalog() (int, error) {
 	catalogSyncMu.Lock()
 	defer catalogSyncMu.Unlock()
-	token, fn := catalogProbeCredential()
+	token, edition := catalogProbeCredential()
 	if token == "" {
 		return 0, fmt.Errorf("no enabled trae account to fetch the live catalog")
 	}
-	live, err := fetchWebModelConfigs(token, fn)
+	live, err := fetchWebModelConfigs(token, edition)
 	if err != nil {
 		return 0, err
 	}
 	// TraeCode 原生档目录（get_detail_param）：与 Remote 目录不是同一集合——
 	// Solo 档会先于 Remote 上新模型，model_name 是上游真实 raw id（权威，
 	// 覆盖种子映射）；失败不阻断 Remote 合并。
-	// Solo 目录失败不阻断 Remote 合并（失败时只剩 Remote + 种子兜底）
-	solo, _ := fetchSoloModelConfigs(token, fn)
-	merged := map[string]Model{}
-	for id, m := range live {
-		merged[id] = m
+	base := GatewayFor(&Account{Token: token, Edition: edition})
+	userID := TokenAccountID(token)
+	for _, function := range nativeCatalogFunctions {
+		entries, ferr := fetchSoloModelConfigs(base, token, userID, function)
+		if ferr != nil {
+			continue
+		}
+		for id, m := range entries {
+			live[id] = m
+		}
 	}
-	for id, m := range solo {
-		merged[id] = m
-	}
+	return applyCatalog(live), nil
+}
+
+// nativeCatalogFunctions 原生目录拉取的函数档（顺序即优先级，后者覆盖前者）。
+// chat_v3 是 IDE 默认；solo_agent 是 Solo 主档，实测准入最宽。
+var nativeCatalogFunctions = []string{"chat_v3", "solo_agent"}
+
+// applyCatalog 把一批 live 条目并入现行目录，返回变更条目数。
+//
+// 两条保真规则（都来自实测）：
+//   - 原生档确认过的条目不被 web 清单覆盖：web 条目的 Function 恒为
+//     chat_v3、raw 名恒为空，直接合并会把 solo_agent 档降级回 chat_v3
+//     （多数模型在 chat_v3 下 4001），只在 web 目录某次拉取成功、原生档
+//     失败时触发，故以已有原生条目为准，仅补显示名与上下文。
+//   - raw 名缺失时沿用上一轮目录（含种子）的映射：这些名字是历史实测的
+//     wire 事实，直接退化成裸 ID 会丢信息（裸 ID 对 TraeCode 常报 4023）。
+func applyCatalog(in map[string]Model) int {
 	catalogMu.Lock()
 	defer catalogMu.Unlock()
 	changed := 0
-	for id, m := range merged {
+	for id, m := range in {
+		cur, exists := catalogModels[id]
+		if exists && cur.Native && !m.Native {
+			if cur.Name == "" {
+				cur.Name = m.Name
+			}
+			cur.Context = maxInt(cur.Context, m.Context)
+			m = cur
+		}
 		if m.RawName == "" {
-			m.RawName = m.ID
+			if exists && cur.RawName != "" {
+				m.RawName = cur.RawName
+			} else {
+				m.RawName = id
+			}
 		}
 		if m.Function == "" {
 			m.Function = "chat_v3"
 		}
-		if cur, ok := catalogModels[id]; ok {
-			if cur.Context == m.Context && cur.RawName == m.RawName && cur.Function == m.Function {
-				continue
-			}
+		if exists && cur == m {
+			continue
 		}
 		changed++
 		catalogModels[id] = m
 	}
-	return changed, nil
+	return changed
 }
 
-// fetchSoloModelConfigs 拉取 TraeCode 原生 Solo 目录：
+// fetchSoloModelConfigs 拉取 TraeCode 原生目录（按函数档）：
 //
-//	POST {gateway}/api/ide/v1/get_detail_param
-//	body {"function":"solo_work_lite","config_names":null,"need_prompt":false,
+//	POST {base}/api/ide/v1/get_detail_param
+//	body {"function":"<function>","config_names":null,"need_prompt":false,
 //	      "current_config_info":null,"poly_prompt":true,"mode_type":null,"agent_type":null}
 //
 // 请求头带 Solo 客户端指纹（Trae/0.1.52 / 83DG / stable_cn 等，上游实测值）。
 // 响应 config_info_list（或 data.config_info_list）；usage 非 chat_completion 的
 // 路由配置（如 custom_model_1M_text）与 custom_models 条目跳过；model_name 取
-// model_detail_list 里 __dev 后缀项优先（上游真实 raw id）。
-func fetchSoloModelConfigs(token, edition string) (map[string]Model, error) {
-	base := GatewayFor(&Account{Token: token, Edition: edition})
+// model_detail_list 里 __dev 后缀项优先（上游真实 raw id；__max 在 chat_v3 下
+// 实测大量 4001/4023）。条目的 Function 记为查询用的函数档——上游目录不回显
+// raw_chat_function，请求必须与目录档一致才不会 4001。
+func fetchSoloModelConfigs(base, token, userID, function string) (map[string]Model, error) {
 	body, _ := json.Marshal(map[string]any{
-		"function":            "solo_work_lite",
+		"function":            function,
 		"config_names":        nil,
 		"need_prompt":         false,
 		"current_config_info": nil,
@@ -151,7 +192,6 @@ func fetchSoloModelConfigs(token, edition string) (map[string]Model, error) {
 	if err != nil {
 		return nil, err
 	}
-	userID := TokenAccountID(token)
 	for k, v := range soloHeaders(token, userID) {
 		req.Header.Set(k, v)
 	}
@@ -248,8 +288,9 @@ func fetchSoloModelConfigs(token, edition string) (map[string]Model, error) {
 			ID:       id,
 			Name:     firstNonEmpty(e.DisplayName, e.Name),
 			RawName:  raw,
-			Function: firstNonEmpty(e.RawFunction, "solo_work_lite"),
+			Function: firstNonEmpty(e.RawFunction, function),
 			Context:  maxInt(e.DisplayCfg.ContextWindow, e.DisplayCfg.ContextTokens, e.DisplayCfg.MaxTokens),
+			Native:   true,
 		}
 		if out[id].ID == "" || m.RawName != "" {
 			out[id] = m
@@ -458,9 +499,15 @@ func HasEnabledAccount() bool {
 	return false
 }
 
-// ModelList 排序后的模型列表（面板与 /v1/models 共用）。没有启用账号时返回
-// 空列表——种子目录不对外展示，只服务请求侧解析。
-func ModelList() []Model {
+// ModelList 排序后的模型列表（面板与 /v1/models 共用）。两个门控：
+//   - 没有可路由账号时返回空列表（种子目录不对外展示，只服务请求侧解析）；
+//   - 只列原生档（chat_v3 / solo_agent）确认过的条目：web Remote 独有条目
+//     与种子里的 __v2 映射没有可用 raw_chat_function，必然 4023/4001，
+//     列出来只会让用户选了吃 502。这些 ID 仍留在目录里供 Resolve 解析，
+//     显式指定时返回上游真实错误而不是 400 unknown model。
+func ModelList() []Model { return modelList(true) }
+
+func modelList(nativeOnly bool) []Model {
 	InitCatalog()
 	if !HasEnabledAccount() {
 		return []Model{}
@@ -468,6 +515,9 @@ func ModelList() []Model {
 	catalogMu.RLock()
 	out := make([]Model, 0, len(catalogModels))
 	for _, m := range catalogModels {
+		if nativeOnly && !m.Native {
+			continue
+		}
 		out = append(out, m)
 	}
 	catalogMu.RUnlock()
@@ -476,6 +526,7 @@ func ModelList() []Model {
 }
 
 // Resolve 解析裸模型 ID。未知模型显式拒绝（400），不静默改写。
+// 不按 Native 过滤：展示层隐藏的条目仍可被显式请求（失败时给上游真实原因）。
 func Resolve(id string) (Model, bool) {
 	InitCatalog()
 	catalogMu.RLock()
@@ -485,9 +536,13 @@ func Resolve(id string) (Model, bool) {
 }
 
 // ProbeModel 探测用模型：优先 GLM-5.2（TraeCode 的 auto 默认，最稳），
-// 其次排序最小条目。
+// 其次排序最小条目。展示列表为空时退回完整目录（刚启动、原生档尚未同步
+// 完成时账号健康检查仍需一个模型可用）。
 func ProbeModel() (Model, bool) {
 	list := ModelList()
+	if len(list) == 0 {
+		list = modelList(false)
+	}
 	if len(list) == 0 {
 		return Model{}, false
 	}
