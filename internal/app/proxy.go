@@ -251,6 +251,8 @@ func StartProxy(host string, port int) error {
 				owned = "amd-cloud"
 			} else if c.Platform == "tokenharbor" {
 				owned = "tokenharbor"
+			} else if c.Platform == "trae" {
+				owned = "trae"
 			}
 			data = append(data, map[string]any{
 				"id":       c.ID,
@@ -3756,7 +3758,11 @@ func sortModelEntriesByID(list []map[string]any) {
 // 排序放在 afree 侧而非 vendor 目录（internal/workbuddy/），避免下次
 // sync_workbuddy 三方合并冲突。
 func workbuddyModelEntries() []map[string]any {
-	if workbuddySub == nil {
+	// 展示门控与请求入口闸同口径（platform_routability.go）：没有可用账号时
+	// 整段不出目录。vendor 对话段由 AvailableUIDs 自然门控，但出图段读的是
+	// 目录解析时旁路填充的内存缓存、全程不看账号——在 app 层统一闸一次，
+	// 顺带盖住对话缓存短暂 stale 的回放窗口。
+	if workbuddySub == nil || !platformHasRoutableCredential(platWorkBuddy) {
 		return nil
 	}
 	list := workbuddySub.modelList()

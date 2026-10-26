@@ -627,11 +627,20 @@ func testBlacklistModel(platform, model string) (map[string]any, string) {
 		}
 		return map[string]any{"ok": false, "model": model, "error": "no enabled key on " + p.Slug}, "error"
 	case platCline:
-		for _, a := range pool.Accounts {
-			if !accountPoolEnabled(a) {
-				continue
+		// 与可路由性闸同口径（Status=active 且 PoolEnabled），且按池锁读取快照：
+		// 裸读 pool.Accounts 会与面板的写时复制替换竞态。
+		p := loadPool()
+		poolMu.Lock()
+		var acc *Account
+		for _, a := range p.Accounts {
+			if a != nil && a.Status == "active" && accountPoolEnabled(a) {
+				acc = a
+				break
 			}
-			return testAccount(a)
+		}
+		poolMu.Unlock()
+		if acc != nil {
+			return testAccount(acc)
 		}
 		return map[string]any{"ok": false, "model": model, "error": "no enabled cline account"}, "error"
 	}

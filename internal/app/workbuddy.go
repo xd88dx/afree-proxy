@@ -255,9 +255,13 @@ func startWorkBuddy() (*workbuddySubsystem, error) {
 		RedisMode:   redisMode,
 		StickyCount: stickyCount,
 		Version:     workbuddyVersion,
-		Live:        live,
-		ProbeFile:   filepath.Join(dir, "output_probes.json"),
-		ConfigPath:  cfgPath,
+		// 上游新增的 panel.poll_interval_sec（前端自动刷新间隔；0 = 缺省 5s，
+		// 负值 = 关闭自动刷新）。panel.Config 是构造期静态值，与上游独立部署
+		// 同语义：改动在重启后生效。
+		PollIntervalSec: cfg.Panel.PollIntervalSec,
+		Live:            live,
+		ProbeFile:       filepath.Join(dir, "output_probes.json"),
+		ConfigPath:      cfgPath,
 		LoadConfig: func() (any, error) {
 			c, err := ensureWorkbuddyConfig(cfgPath, authDir, stateFile)
 			if err != nil {
