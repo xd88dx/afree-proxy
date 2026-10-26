@@ -20,11 +20,12 @@ import (
 // 轮转、同款隔离语义、tkhb: 前缀路由。模型目录同步需要 key（/v1/models 认证），
 // 未配置 key 时以页面快照种子服务。
 
-// thConfigPath TokenHarbor 配置文件路径（DATA_DIR/.th-config.json）。
-func thConfigPath() string { return kit.ResolveDataPath(".th-config.json") }
+// thConfigPath TokenHarbor 配置文件路径（DATA_DIR/tkhb-config.json）。
+func thConfigPath() string { return kit.ResolveDataPath("tkhb-config.json") }
 
 // initTokenHarbor 加载配置 + 注入出站解析/HTTP client 工厂。StartProxy 早期调用一次。
 func initTokenHarbor() {
+	migrateLegacyDataFile("tkhb-config.json", ".th-config.json")
 	tokenharbor.Load(thConfigPath())
 	tokenharbor.SetExitResolver(func(key string) (string, bool) {
 		if key == "" {
@@ -135,7 +136,7 @@ func handleTHChat(w http.ResponseWriter, r *http.Request, params map[string]any)
 	isStream, _ := params["stream"].(bool)
 	if isStream {
 		handleStreamBufferedGeneric(w, r, "tokenharbor", params, func(ctx context.Context) (*http.Response, func(map[string]any), error) {
-			resp, _, err := tokenharbor.Chat(ctx, params, m.ID, true, getProxyConfig().Strategy, thBoundRoutable)
+			resp, _, err := tokenharbor.Chat(ctx, params, m.ID, true, globalStrategy(), thBoundRoutable)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -144,10 +145,10 @@ func handleTHChat(w http.ResponseWriter, r *http.Request, params map[string]any)
 		})
 		return
 	}
-	resp, _, err := tokenharbor.Chat(r.Context(), params, m.ID, true, getProxyConfig().Strategy, thBoundRoutable)
+	resp, _, err := tokenharbor.Chat(r.Context(), params, m.ID, true, globalStrategy(), thBoundRoutable)
 	if err != nil {
 		log.Printf("  tokenharbor api error: %v", err)
-			writeJSON(w, http.StatusBadGateway, map[string]any{
+		writeJSON(w, http.StatusBadGateway, map[string]any{
 			"error": map[string]string{"message": err.Error(), "type": "api_error"},
 		})
 		return
@@ -188,7 +189,6 @@ func handleTHConfig(w http.ResponseWriter, r *http.Request) {
 func thCloneConfig() (*tokenharbor.Config, *tokenharbor.Config) {
 	cur := tokenharbor.Get()
 	next := &tokenharbor.Config{
-		UseProxies:        cur.UseProxies,
 		BaseURL:           cur.BaseURL,
 		Keys:              append([]string(nil), cur.Keys...),
 		KeyRoutingEnabled: map[string]bool{},
@@ -237,8 +237,9 @@ func handleTHConfigUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	cur, next := thCloneConfig()
+	// 走池开关存在 proxy-config.json 的代理池段，不写进平台文件。
 	if patch.UseProxies != nil {
-		next.UseProxies = patch.UseProxies
+		setPlatformUseProxies("tkhb", patch.UseProxies)
 	}
 	if patch.BaseURL != nil {
 		next.BaseURL = strings.TrimRight(strings.TrimSpace(*patch.BaseURL), "/")

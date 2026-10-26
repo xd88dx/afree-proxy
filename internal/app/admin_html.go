@@ -3876,7 +3876,7 @@ const proxyStale = v => {
   if (!a) return !proxyListCache.includes(v);
   return !proxyListCache.some(p => proxyAliasOf(p) === a);
 };
-// backupProxyOn 备用代理开关（代理池页，持久化在 zen 配置里，默认关闭）。
+// backupProxyOn 备用代理开关（代理池页，持久化在 proxy-config.json 里，默认关闭）。
 // 关闭时备用槽整体失效：下拉只读并强制跟随主槽，保存后该身份只剩主出口。
 // 默认 false 与后端一致 —— 首次渲染就是关闭态，避免开关未拉到就先解锁。
 let backupProxyOn = false;

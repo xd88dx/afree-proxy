@@ -70,10 +70,10 @@ func proxyIsolationEnabled() bool {
 		if v {
 			return true
 		}
-		cfg := getZenConfig()
+		cfg := getProxyBindingConfig()
 		return cfg.ProxyIsolation != nil && *cfg.ProxyIsolation
 	}
-	cfg := getZenConfig()
+	cfg := getProxyBindingConfig()
 	return cfg.ProxyIsolation == nil || *cfg.ProxyIsolation
 }
 
@@ -118,7 +118,7 @@ func proxyAvailableURL(raw string) bool {
 	if idx < 0 {
 		return false
 	}
-	return zenProxyAvailable(idx)
+	return proxyAvailable(idx)
 }
 
 // egressDirect 直连哨兵：绑定主/备用槽位存 "direct" 表示该槽位选择直连出口。
@@ -129,11 +129,11 @@ const egressDirect = "direct"
 // isEgressDirect 判断槽位值是否为直连哨兵。
 func isEgressDirect(v string) bool { return v == egressDirect }
 
-// backupProxyEnabled 备用代理开关（zen 配置持久化 BackupProxyEnabled）：
+// backupProxyEnabled 备用代理开关（proxy-config.json 的 backupProxyEnabled）：
 // nil = 未配置 = 关闭（默认）。关闭时"主不通走备"的兜底不存在，主出口不可用
 // 就等于该身份本轮不可用（调用方跳过）—— 隔离优先不变，仍然绝不回退直连。
 func backupProxyEnabled() bool {
-	v := getZenConfig().BackupProxyEnabled
+	v := getProxyBindingConfig().BackupProxyEnabled
 	return v != nil && *v
 }
 
@@ -141,9 +141,10 @@ func backupProxyEnabled() bool {
 //
 // 开关开启：备用槽参与路由，采纳调用方提交的值。
 // 开关关闭：备用槽整体退出路由（pickBoundProxy 在此分支直接返回 ok=false），
-//   面板把备用槽锁成只读并跟随主槽，提交上来的值只是显示值而非用户意图，
-//   此时保留该身份已持久化的旧备用槽原值 —— 重开开关即可复用，无需重选。
-//   保留而非清空是刻意的：清空会让"关一下开关"变成不可逆的数据丢失。
+//
+//	面板把备用槽锁成只读并跟随主槽，提交上来的值只是显示值而非用户意图，
+//	此时保留该身份已持久化的旧备用槽原值 —— 重开开关即可复用，无需重选。
+//	保留而非清空是刻意的：清空会让"关一下开关"变成不可逆的数据丢失。
 //
 // 旧值由调用方从当前绑定里取出（storedBackup），空串表示此前没有备用槽。
 func resolveBackupSlot(submitted, storedBackup string) string {
@@ -166,7 +167,7 @@ func pickBoundProxy(main, backup string) (proxyURL string, idx int, ok bool) {
 		return "", -1, true
 	}
 	if main != "" {
-		if idx := proxyIdxInPool(main); idx >= 0 && zenProxyAvailable(idx) {
+		if idx := proxyIdxInPool(main); idx >= 0 && proxyAvailable(idx) {
 			return getProxyPool().Proxies[idx], idx, true
 		}
 	}
@@ -177,7 +178,7 @@ func pickBoundProxy(main, backup string) (proxyURL string, idx int, ok bool) {
 		return "", -1, true
 	}
 	if backup != "" && backup != main {
-		if idx := proxyIdxInPool(backup); idx >= 0 && zenProxyAvailable(idx) {
+		if idx := proxyIdxInPool(backup); idx >= 0 && proxyAvailable(idx) {
 			return getProxyPool().Proxies[idx], idx, true
 		}
 	}
@@ -212,7 +213,7 @@ func exitStateLabel(raw string) string {
 	if proxyIdxInPool(raw) < 0 {
 		return label + " (removed from proxy pool)"
 	}
-	if until := zenProxyCooldownUntil(raw); !until.IsZero() {
+	if until := proxyCooldownUntil(raw); !until.IsZero() {
 		return label + " (cooling until " + until.UTC().Format(time.RFC3339) + ")"
 	}
 	return label + " (unreachable)"
@@ -287,12 +288,12 @@ func workbuddyProxiesEnabled() bool {
 	return *wup
 }
 
-// zenAttemptExit 为一次 zen 上游尝试解析出口。key 有绑定时（隔离模式）主→备，
+// boundExitFor 为一次 zen 上游尝试解析出口。key 有绑定时（隔离模式）主→备，
 // 双不可用返回 ok=false —— 调用方对 pinned 探测直接报错，正常请求则短冷却
 // 该 key 换下一个（绝不退回其他出口，否则粘性会话的 IP 就漂移了）；未绑定
 // key 沿用全局轮转（未配置代理则直连）。
-func zenAttemptExit(key string) (proxyURL string, idx int, ok bool) {
-	main, backup, bound := zenKeyBindingOf(key)
+func boundExitFor(key string) (proxyURL string, idx int, ok bool) {
+	main, backup, bound := keyBindingOf(key)
 	if !bound {
 		if !zenProxiesEnabled() {
 			return "", -1, true // 面板选择直连：即使代理列表非空也不走池
@@ -352,8 +353,8 @@ func accountProxyBinding(acc *Account) (main, backup string, bound bool) {
 	return main, backup, true
 }
 
-// zenKeyBindingOf zen key 的绑定出口；未启用隔离或未绑定时 bound=false。
-func zenKeyBindingOf(key string) (main, backup string, bound bool) {
+// keyBindingOf zen key 的绑定出口；未启用隔离或未绑定时 bound=false。
+func keyBindingOf(key string) (main, backup string, bound bool) {
 	if key == "" || !proxyIsolationEnabled() {
 		return "", "", false
 	}
@@ -421,35 +422,34 @@ func setAccountProxyBinding(accountID, main, backup string) error {
 	return fmt.Errorf("account not found: %s", accountID)
 }
 
-// setZenKeyProxyBinding 设置/清除单个 zen key 的绑定（面板入口，按索引定位）。
-// 写时复制：zenConfig 是被请求路径并发读取的活配置，先整体替换再 setZenConfig。
-func setZenKeyProxyBinding(index int, main, backup string) error {
+// setKeyProxyBinding 设置/清除单个 zen key 的绑定（面板入口，按索引定位）。
+// 绑定表住在 proxy-config.json 的隔离段，写时复制后整体替换（setProxyBindingConfig）。
+func setKeyProxyBinding(index int, main, backup string) error {
 	main = strings.TrimSpace(main)
 	backup = strings.TrimSpace(backup)
-	cfg := getZenConfig()
-	if index < 0 || index >= len(cfg.Keys) {
+	keys := getZenConfig().Keys
+	if index < 0 || index >= len(keys) {
 		return fmt.Errorf("key index out of range")
 	}
-	key := cfg.Keys[index]
+	key := keys[index]
 	if key == "" || key == "public" {
 		return fmt.Errorf("the anonymous public key has no credential to bind")
 	}
+	cfg := getZenConfig()
 	backup = resolveBackupSlot(backup, cfg.KeyBindings[key].Backup)
 	if err := validateProxyBinding(main, backup); err != nil {
 		return err
 	}
-	next := *cfg
-	bindings := make(map[string]zenProxyBinding, len(cfg.KeyBindings)+1)
+	bindings := make(map[string]proxyBinding, len(cfg.KeyBindings)+1)
 	for k, v := range cfg.KeyBindings {
 		bindings[k] = v
 	}
 	if main == "" && backup == "" {
 		delete(bindings, key)
 	} else {
-		bindings[key] = zenProxyBinding{Main: main, Backup: backup}
+		bindings[key] = proxyBinding{Main: main, Backup: backup}
 	}
-	next.KeyBindings = bindings
-	setZenConfig(&next)
+	setZenKeyBindings(bindings)
 	return nil
 }
 
@@ -472,16 +472,22 @@ func clearAllAccountProxies() int {
 	return n
 }
 
-// clearAllZenKeyProxies 一键清空全部 zen key 的代理绑定（面板入口）：
+// clearAllKeyProxies 一键清空全部 zen key 的代理绑定（面板入口）：
 // 所有 key 回到"全局"默认值。路由参与状态（KeyRoutingEnabled）不受影响。
-func clearAllZenKeyProxies() int {
+func clearAllKeyProxies() int {
 	cfg := getZenConfig()
 	if len(cfg.KeyBindings) == 0 {
 		return 0
 	}
-	n := len(cfg.KeyBindings)
-	next := *cfg
-	next.KeyBindings = nil
-	setZenConfig(&next)
-	return n
+	setZenKeyBindings(nil)
+	return len(cfg.KeyBindings)
+}
+
+// proxyBinding 一个身份的出口绑定：主代理优先，备用代理兜底；两者都不可用时
+// 跳过该身份（隔离优先于可用性）。值语义对全部平台一致 —— zen key、cline 账号、
+// amd/or/tkhb key、other 子平台 key、trae 账号都用它。原先定义在 zen.go 里，
+// 是"代理寄居在 zen 配置"时代的遗留位置。
+type proxyBinding struct {
+	Main   string `json:"main,omitempty"`
+	Backup string `json:"backup,omitempty"`
 }

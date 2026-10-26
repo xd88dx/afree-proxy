@@ -15,7 +15,7 @@ func poolBool(v bool) *bool { return &v }
 func resetPoolForEnableTest(t *testing.T, accounts []*Account) {
 	t.Helper()
 	oldPool, oldPath, oldDirty := pool, poolPath, poolDirty
-	pool = &AccountPool{Accounts: accounts, Keys: []string{}}
+	pool = &AccountPool{Accounts: accounts}
 	poolPath = t.TempDir() + "/pool.json"
 	poolDirty = false
 	t.Cleanup(func() {
@@ -36,15 +36,7 @@ func TestPoolEnabledDefaultsEnabledAndFiltersRotation(t *testing.T) {
 		t.Fatal("poolEnabled=false must disable rotation")
 	}
 
-	proxyConfigMu.Lock()
-	oldStrategy := proxyConfig.Strategy
-	proxyConfig.Strategy = "fill"
-	proxyConfigMu.Unlock()
-	t.Cleanup(func() {
-		proxyConfigMu.Lock()
-		proxyConfig.Strategy = oldStrategy
-		proxyConfigMu.Unlock()
-	})
+	useFillStrategy(t)
 
 	if got := pickAccount(); got != legacy {
 		t.Fatalf("pickAccount() = %v, want legacy account", got)
@@ -66,7 +58,7 @@ func TestPoolEnabledCanBePersistedExplicitly(t *testing.T) {
 	t.Cleanup(func() { poolPath = oldPath })
 
 	a := &Account{AccountID: "off", Email: "off@example.com", Status: "active", PoolEnabled: poolBool(false)}
-	pool = &AccountPool{Accounts: []*Account{a}, Keys: []string{}}
+	pool = &AccountPool{Accounts: []*Account{a}}
 	savePool()
 
 	data, err := os.ReadFile(path)
@@ -187,15 +179,8 @@ func TestAddAccountDefaultsDisabled(t *testing.T) {
 // useFillStrategy 固定选号策略为 fill，让 pickAccount* 的结果可预测。
 func useFillStrategy(t *testing.T) {
 	t.Helper()
-	proxyConfigMu.Lock()
-	old := proxyConfig.Strategy
-	proxyConfig.Strategy = "fill"
-	proxyConfigMu.Unlock()
-	t.Cleanup(func() {
-		proxyConfigMu.Lock()
-		proxyConfig.Strategy = old
-		proxyConfigMu.Unlock()
-	})
+	resetGlobalConfigForTest(t)
+	setGlobalStrategy("fill")
 }
 
 // poolEnabled=false 的账号对 cline 主链路等同于“池里没有这个账号”：

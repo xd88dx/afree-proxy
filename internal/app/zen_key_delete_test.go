@@ -23,9 +23,11 @@ func TestZenKeyDeleteRemovesKeyAndItsState(t *testing.T) {
 	setupZenProbeTest(t, func(w http.ResponseWriter, r *http.Request) {})
 
 	cfg := *getZenConfig()
-	cfg.KeyBindings = map[string]zenProxyBinding{"sk-bbb222": {Main: "http://p1:1"}}
 	cfg.KeyRoutingEnabled = map[string]bool{"sk-bbb222": false}
 	setZenConfig(&cfg)
+	zenCfg := *getZenConfig()
+	zenCfg.KeyBindings = map[string]proxyBinding{"sk-bbb222": {Main: "http://p1:1"}}
+	setZenConfig(&zenCfg)
 
 	if rec := deleteZenKeyAt(t, 1); rec.Code != http.StatusOK {
 		t.Fatalf("delete -> %d, want 200 (body=%s)", rec.Code, rec.Body.String())
@@ -37,7 +39,7 @@ func TestZenKeyDeleteRemovesKeyAndItsState(t *testing.T) {
 	if got.Key != got.Keys[0] {
 		t.Fatalf("compat key = %q, want Keys[0] = %q", got.Key, got.Keys[0])
 	}
-	if _, ok := got.KeyBindings["sk-bbb222"]; ok {
+	if _, ok := getZenConfig().KeyBindings["sk-bbb222"]; ok {
 		t.Fatal("deleted key left a proxy binding behind")
 	}
 	if _, ok := got.KeyRoutingEnabled["sk-bbb222"]; ok {

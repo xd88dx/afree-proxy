@@ -5,13 +5,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
-	"os"
 	"strings"
 	"sync"
 
-	"afree-proxy/internal/kit"
 	wbauth "afree-proxy/internal/workbuddy/auth"
 )
 
@@ -29,48 +26,32 @@ var (
 	wbProxyBindings = map[string]workbuddyProxyBinding{}
 )
 
-func workbuddyProxyPath() string {
-	return kit.ResolveDataPath(".workbuddy-proxies.json")
-}
-
+// loadWorkbuddyProxyBindingsLocked 从 proxy-config.json 的 workbuddyBindings
+// 段载入绑定。调用方必须持有 wbProxyMu。
 func loadWorkbuddyProxyBindingsLocked() {
 	if wbProxyLoaded {
 		return
 	}
 	wbProxyLoaded = true
-	raw, err := os.ReadFile(workbuddyProxyPath())
-	if err != nil {
-		if !os.IsNotExist(err) {
-			log.Printf("workbuddy proxy bindings: read %s: %v", workbuddyProxyPath(), err)
-		}
-		return
-	}
-	var bindings map[string]workbuddyProxyBinding
-	if err := json.Unmarshal(raw, &bindings); err != nil {
-		log.Printf("workbuddy proxy bindings: corrupt JSON at %s: %v (keeping empty bindings; file not overwritten until next assignment)", workbuddyProxyPath(), err)
-		return
-	}
+	proxyFileMu.Lock()
+	f := loadProxyConfigFileLocked()
+	bindings := f.WorkbuddyBindings
+	proxyFileMu.Unlock()
 	if bindings != nil {
 		wbProxyBindings = bindings
 	}
 }
 
+// saveWorkbuddyProxyBindingsLocked 只覆盖 proxy-config.json 的
+// workbuddyBindings 段。调用方必须持有 wbProxyMu。
 func saveWorkbuddyProxyBindingsLocked() {
-	raw, err := json.MarshalIndent(wbProxyBindings, "", "  ")
-	if err != nil {
-		log.Printf("workbuddy proxy bindings: marshal: %v", err)
-		return
+	cp := make(map[string]workbuddyProxyBinding, len(wbProxyBindings))
+	for uid, b := range wbProxyBindings {
+		cp[uid] = b
 	}
-	path := workbuddyProxyPath()
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, raw, 0o600); err != nil {
-		log.Printf("workbuddy proxy bindings: write %s: %v", tmp, err)
-		return
-	}
-	if err := os.Rename(tmp, path); err != nil {
-		log.Printf("workbuddy proxy bindings: replace %s: %v", path, err)
-		_ = os.Remove(tmp)
-	}
+	mutateProxyConfigFile(func(f *proxyConfigFileData) {
+		f.WorkbuddyBindings = cp
+	})
 }
 
 // workbuddyProxyFor 是 upstream.ProxyFor 的实现。语义与 Cline/OpenCode 一致：
@@ -99,57 +80,57 @@ func workbuddyProxyFor(a *wbauth.Auth) (string, bool) {
 		return workbuddyGlobalExit()
 	}
 	url, _, usable := pickBoundProxy(b.Main, b.Backup)
-		return url, usable
-	}
+	return url, usable
+}
 
-	// workbuddyObserveAccount 是 upstream.ObserveAccount 的实现：vendor 选号
-	// 之后把命中的账号与本次实际出口回报，网关侧据此填请求日志的「账号/Key」
-	// 与「代理」两列（此前只有 Cline 账号与 zen key 有这两列，WorkBuddy 恒空）。
-	// ctx 取自发起请求的 *http.Request：网关 /v1 请求带着日志槽位，面板请求与
-	// 定时任务的 ctx 没有槽位，setUpstreamInfo/setUpstreamExit 内部即 no-op。
-	func workbuddyObserveAccount(ctx context.Context, a *wbauth.Auth, exitRaw string) {
-		if ctx == nil || a == nil {
-			return
-		}
-		uid := strings.TrimSpace(a.UID)
-		if uid == "" {
-			return
-		}
-		setUpstreamInfo(ctx, workbuddyUpstreamLabel(uid))
-		setUpstreamExit(ctx, workbuddyExitType(uid, exitRaw))
+// workbuddyObserveAccount 是 upstream.ObserveAccount 的实现：vendor 选号
+// 之后把命中的账号与本次实际出口回报，网关侧据此填请求日志的「账号/Key」
+// 与「代理」两列（此前只有 Cline 账号与 zen key 有这两列，WorkBuddy 恒空）。
+// ctx 取自发起请求的 *http.Request：网关 /v1 请求带着日志槽位，面板请求与
+// 定时任务的 ctx 没有槽位，setUpstreamInfo/setUpstreamExit 内部即 no-op。
+func workbuddyObserveAccount(ctx context.Context, a *wbauth.Auth, exitRaw string) {
+	if ctx == nil || a == nil {
+		return
 	}
+	uid := strings.TrimSpace(a.UID)
+	if uid == "" {
+		return
+	}
+	setUpstreamInfo(ctx, workbuddyUpstreamLabel(uid))
+	setUpstreamExit(ctx, workbuddyExitType(uid, exitRaw))
+}
 
-	// workbuddyUpstreamLabel 日志「账号/Key」列的账号标识：与面板 # 列同口径的
-	// 展示行号 —— 账号#N（N = 当前 List 展示顺序中的行号，拖拽重排后按新顺序
-	// 重新编号）。昵称不参与（面板账号列已展示，日志只留序号方便排查）。
-	func workbuddyUpstreamLabel(uid string) string {
-		uid = strings.TrimSpace(uid)
-		n := 0
-		if workbuddySub != nil && workbuddySub.pool != nil {
-			n = workbuddySub.pool.IndexOf(uid)
-		}
-		return fmt.Sprintf("账号#%d", n)
+// workbuddyUpstreamLabel 日志「账号/Key」列的账号标识：与面板 # 列同口径的
+// 展示行号 —— 账号#N（N = 当前 List 展示顺序中的行号，拖拽重排后按新顺序
+// 重新编号）。昵称不参与（面板账号列已展示，日志只留序号方便排查）。
+func workbuddyUpstreamLabel(uid string) string {
+	uid = strings.TrimSpace(uid)
+	n := 0
+	if workbuddySub != nil && workbuddySub.pool != nil {
+		n = workbuddySub.pool.IndexOf(uid)
 	}
+	return fmt.Sprintf("账号#%d", n)
+}
 
-	// workbuddyExitType 与 workbuddyProxyFor 同口径判定出口类型：隔离开启且
-	// 账号有绑定时按绑定归类 main/backup/direct，否则走全局池轮转（返回空串，
-	// 面板显示 -）。fail-closed（绑定出口全不可用、未出网）按直连记 direct。
-	func workbuddyExitType(uid, exitRaw string) string {
-		if !proxyIsolationEnabled() {
-			return proxyExitType(exitRaw, "", "", false)
-		}
-		wbProxyMu.Lock()
-		loadWorkbuddyProxyBindingsLocked()
-		b, bound := wbProxyBindings[uid]
-		wbProxyMu.Unlock()
-		if !bound || (b.Main == "" && b.Backup == "") {
-			return proxyExitType(exitRaw, "", "", false)
-		}
-		return proxyExitType(exitRaw, b.Main, b.Backup, true)
+// workbuddyExitType 与 workbuddyProxyFor 同口径判定出口类型：隔离开启且
+// 账号有绑定时按绑定归类 main/backup/direct，否则走全局池轮转（返回空串，
+// 面板显示 -）。fail-closed（绑定出口全不可用、未出网）按直连记 direct。
+func workbuddyExitType(uid, exitRaw string) string {
+	if !proxyIsolationEnabled() {
+		return proxyExitType(exitRaw, "", "", false)
 	}
+	wbProxyMu.Lock()
+	loadWorkbuddyProxyBindingsLocked()
+	b, bound := wbProxyBindings[uid]
+	wbProxyMu.Unlock()
+	if !bound || (b.Main == "" && b.Backup == "") {
+		return proxyExitType(exitRaw, "", "", false)
+	}
+	return proxyExitType(exitRaw, b.Main, b.Backup, true)
+}
 
 // workbuddyGlobalExit 未绑定身份的全局出口：面板开关选直连时即使代理列表
-// 非空也不走池（与 OpenCode 的 zenAttemptExit 同语义）。
+// 非空也不走池（与 OpenCode 的 boundExitFor 同语义）。
 func workbuddyGlobalExit() (string, bool) {
 	if !workbuddyProxiesEnabled() {
 		return "", true

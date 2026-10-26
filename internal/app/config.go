@@ -168,20 +168,21 @@ func AdminPasswordEnv() string {
 
 // ApplyEnvConfig 在包初始化后、启动前应用环境变量到内存配置。
 // 由 StartProxy 在最早期调用。
-// poolStrategyFromEnv POOL_STRATEGY 环境变量是否显式设置（设置时优先于
-// 池文件里持久化的策略，loadPool 回放时据此跳过）。
-var poolStrategyFromEnv bool
+// poolStrategyFromEnv / envStrategy POOL_STRATEGY 环境变量是否显式设置及其值
+// （设置时优先于 afree-config.json 里持久化的策略，globalStrategy 据此返回）。
+var (
+	poolStrategyFromEnv bool
+	envStrategy         string
+)
 
 func ApplyEnvConfig() {
-	// POOL_STRATEGY 覆盖内存中的账号池策略，并阻止 loadPool 回放持久化值
-	//（env 优先；未设置时面板保存的策略从池文件回放，重启不丢）
+	// POOL_STRATEGY 覆盖账号调度策略（env 优先；未设置时用面板保存的值，
+	// 存在 afree-config.json，重启不丢）
 	if s := envStr("POOL_STRATEGY"); s != "" {
 		switch s {
 		case "round_robin", "fill", "random":
 			poolStrategyFromEnv = true
-			proxyConfigMu.Lock()
-			proxyConfig.Strategy = s
-			proxyConfigMu.Unlock()
+			envStrategy = s
 		default:
 			fmt.Printf("  WARNING: invalid POOL_STRATEGY %q, using round_robin\n", s)
 		}

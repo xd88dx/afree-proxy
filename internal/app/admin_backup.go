@@ -15,8 +15,8 @@ import (
 	"afree-proxy/internal/kit"
 	"afree-proxy/internal/openrouter"
 	"afree-proxy/internal/other"
-	"afree-proxy/internal/trae"
 	"afree-proxy/internal/tokenharbor"
+	"afree-proxy/internal/trae"
 	wbauth "afree-proxy/internal/workbuddy/auth"
 	wbserver "afree-proxy/internal/workbuddy/server"
 )
@@ -72,6 +72,14 @@ type legacyZenBackup struct {
 	ProxySubCron        string   `json:"proxySubCron,omitempty"`
 	ZenUseProxies       *bool    `json:"zenUseProxies,omitempty"`
 	WorkbuddyUseProxies *bool    `json:"workbuddyUseProxies,omitempty"`
+	// 以下四字段只用于读旧备份：隔离段已迁到 proxy-config.json，
+	// 新备份由 configBackup.Proxy 承载。
+	ProxyIsolation     *bool               `json:"proxyIsolation,omitempty"`
+	BackupProxyEnabled *bool               `json:"backupProxyEnabled,omitempty"`
+	ProxyExclusions    map[string][]string `json:"proxyExclusions,omitempty"`
+	ProxyBindCaps      map[string]int      `json:"proxyBindCaps,omitempty"`
+	// keyBindings 由内嵌的 zenConfigData 承载：绑定表的键是 key 明文，跟着
+	// key 池留在 zen 段里。
 }
 
 // zenBackupSnapshot 取一份 zen 配置的拷贝用于备份。代理池字段不再随 zen 段
@@ -81,21 +89,24 @@ func zenBackupSnapshot() *legacyZenBackup {
 }
 
 type configBackup struct {
-	Version         int                         `json:"version"`
-	ExportedAt      time.Time                   `json:"exportedAt"`
-	Accounts        []*Account                  `json:"accounts,omitempty"`
-	ClientKeys      []string                    `json:"clientKeys,omitempty"`
-	ClineUseProxies *bool                       `json:"clineUseProxies,omitempty"`
-	AdminLogEnabled *bool                       `json:"adminLogEnabled,omitempty"`
-	Strategy        string                      `json:"strategy,omitempty"`
-	Headers         map[string]string           `json:"headers,omitempty"`
-	Zen             *legacyZenBackup            `json:"zen,omitempty"`
-	// ProxyPool 全局出口代理池(.proxy-pool.json)。2026-10-26 从 zen 段拆出：
-	// 代理池是全局能力，历史上寄居在 zen 配置里只是命名包袱。
+	Version         int               `json:"version"`
+	ExportedAt      time.Time         `json:"exportedAt"`
+	Accounts        []*Account        `json:"accounts,omitempty"`
+	ClientKeys      []string          `json:"clientKeys,omitempty"`
+	ClineUseProxies *bool             `json:"clineUseProxies,omitempty"`
+	AdminLogEnabled *bool             `json:"adminLogEnabled,omitempty"`
+	Strategy        string            `json:"strategy,omitempty"`
+	Headers         map[string]string `json:"headers,omitempty"`
+	Zen             *legacyZenBackup  `json:"zen,omitempty"`
+	// ProxyPool 全局出口代理池(proxy-config.json 的出口池段)。2026-10-26 从
+	// zen 段拆出：代理池是全局能力，历史上寄居在 zen 配置里只是命名包袱。
 	ProxyPool *proxyPoolConfigData `json:"proxyPool,omitempty"`
-	Sessions        map[string]*zenSessionEntry `json:"sessions,omitempty"`
-	Endpoints       map[string]string           `json:"endpoints,omitempty"`
-	Combos          []*Combo                    `json:"combos,omitempty"`
+	// Proxy 代理隔离/绑定段(proxy-config.json 的隔离与绑定部分)。与 ProxyPool
+	// 分开：一个管出口池本身，一个管凭据怎么绑到出口上。
+	Proxy     *proxyBindingConfigData     `json:"proxy,omitempty"`
+	Sessions  map[string]*zenSessionEntry `json:"sessions,omitempty"`
+	Endpoints map[string]string           `json:"endpoints,omitempty"`
+	Combos    []*Combo                    `json:"combos,omitempty"`
 	// v2 补全的 key 池平台与 WorkBuddy（v1 备份无这些段，导入时保持不动）。
 	OpenRouter  *openrouter.Config  `json:"openrouter,omitempty"`
 	TokenHarbor *tokenharbor.Config `json:"tokenharbor,omitempty"`
@@ -103,26 +114,26 @@ type configBackup struct {
 	// AMDCloud v2 段原名 amd；2026-10-12 随平台改名同步为 amdcloud。本项目
 	// 无存量备份文件，不保留旧键兼容——若日后需要，参照"改段名铁律"。
 	AMDCloud *amd.Config `json:"amdcloud,omitempty"`
-	// Other 子平台聚合配置（.other-config.json）。2026-10-14 补：Other 页
+	// Other 子平台聚合配置（other-config.json）。2026-10-14 补：Other 页
 	// 上线时只做了网关/面板，未接备份，导致子平台与 key 池无法随配置迁移。
 	Other *other.Config `json:"other,omitempty"`
-	// Trae 账号池平台（.trae-config.json，trae: 前缀）。
+	// Trae 账号池平台（trae-config.json，trae: 前缀）。
 	Trae *trae.Config `json:"trae,omitempty"`
-	// WorkBuddyProxies WorkBuddy 账号代理绑定（.workbuddy-proxies.json）。
+	// WorkBuddyProxies WorkBuddy 账号代理绑定（proxy-config.json 的 WorkBuddy 段）。
 	// 2026-10-14 补：workbuddyBackup 原只覆盖 vendor config.json 与 auths
 	// 凭据，漏了出口绑定，导入后该文件仍留旧值（而非本机值），跨机迁移出错。
 	WorkBuddyProxies map[string]workbuddyProxyBinding `json:"workBuddyProxies,omitempty"`
-	// ModelBlacklist 模型封禁表（.model-blacklist.json）。2026-10-19 补：
+	// ModelBlacklist 模型封禁表（afree-config.json 的 modelBlacklist 段）。2026-10-19 补：
 	// 导出导入一直漏了封禁数据，跨机迁移后 /v1/models 把已确认不可调用的
 	// 模型重新暴露给客户端，每次选中都吃一轮无谓失败。
 	ModelBlacklist map[string]*modelBlacklistEntry `json:"modelBlacklist,omitempty"`
-	// PlatformBlacklist 平台封禁表（.platform-blacklist.json，afree 本地功能）：
+	// PlatformBlacklist 平台封禁表（afree-config.json 的 platformBlacklist 段）：
 	// 整平台退出会话路由的管理操作，与模型封禁同性质，随配置迁移。
 	PlatformBlacklist map[string]*platformBanEntry `json:"platformBlacklist,omitempty"`
-	// ZenDepAliases zen 死模型别名表（.zen-model-aliases.json）：弃用 ID ->
+	// ZenDepAliases zen 死模型别名表（zen-config.json 的 modelAliases 段）：弃用 ID ->
 	// 继任模型映射，与 sessions/endpoints 同性质的学习结果持久化。
 	ZenDepAliases map[string]*zenDepEntry `json:"zenDepAliases,omitempty"`
-	// ClineStreamRequired cline "必须流式"自学习结果（.cline-stream-required.json）。
+	// ClineStreamRequired cline "必须流式"自学习结果（afree-config.json 的 clineStreamRequired 段）。
 	ClineStreamRequired map[string]string `json:"clineStreamRequired,omitempty"`
 	// KeepEnabled 导入方对"沿用启用状态"的逐平台选择（导入弹窗 switch，默认
 	// 全不沿用）。缺项/false = 隔离护栏生效（导入身份一律禁用，原行为）；
@@ -144,8 +155,8 @@ func handleAdminConfigExport(w http.ResponseWriter, r *http.Request) {
 		cp := *a
 		accounts[i] = &cp
 	}
-	clientKeys := append([]string(nil), p.Keys...)
 	poolMu.Unlock()
+	clientKeys := globalClientKeys()
 
 	pc := getProxyConfig()
 	headers := make(map[string]string, len(pc.Headers))
@@ -174,10 +185,11 @@ func handleAdminConfigExport(w http.ResponseWriter, r *http.Request) {
 		ClientKeys:          clientKeys,
 		ClineUseProxies:     &clineUse,
 		AdminLogEnabled:     &adminLog,
-		Strategy:            getProxyConfig().Strategy,
+		Strategy:            globalStrategy(),
 		Headers:             headers,
 		Zen:                 zenBackupSnapshot(),
 		ProxyPool:           getProxyPool(),
+		Proxy:               getProxyBindingConfig(),
 		Sessions:            sessions,
 		Endpoints:           loadZenEndpointsFile(),
 		Combos:              listCombos(),
@@ -332,42 +344,28 @@ func handleAdminConfigImport(w http.ResponseWriter, r *http.Request) {
 
 	// ---- 客户端 key / 默认模型 / cline 走代理池 ----
 	if backup.ClientKeys != nil {
-		p := loadPool()
-		poolMu.Lock()
-		p.Keys = append([]string(nil), backup.ClientKeys...)
-		markPoolDirtyLocked()
-		poolMu.Unlock()
+		setGlobalClientKeys(backup.ClientKeys)
 		imported["clientKeys"] = len(backup.ClientKeys)
 	}
 	if backup.ClineUseProxies != nil {
-		p := loadPool()
-		poolMu.Lock()
-		v := *backup.ClineUseProxies
-		p.ClineUseProxies = &v
-		markPoolDirtyLocked()
-		poolMu.Unlock()
+		setPlatformUseProxies("cline", backup.ClineUseProxies)
 		imported["clineUseProxies"] = 1
 	}
 	if backup.AdminLogEnabled != nil {
-		p := loadPool()
-		poolMu.Lock()
-		v := *backup.AdminLogEnabled
-		p.AdminLogEnabled = &v
-		markPoolDirtyLocked()
-		poolMu.Unlock()
+		setGlobalAdminLogEnabled(*backup.AdminLogEnabled)
 		imported["adminLogEnabled"] = 1
 	}
 
 	// ---- 调度策略 + 请求头 ----
 	if backup.Strategy != "" || backup.Headers != nil {
 		cur := getProxyConfig()
-		merged := &proxyConfigData{Strategy: cur.Strategy, Headers: map[string]string{}}
+		merged := &proxyConfigData{Headers: map[string]string{}}
 		for k, v := range cur.Headers {
 			merged.Headers[k] = v
 		}
 		switch backup.Strategy {
 		case "round_robin", "fill", "random":
-			merged.Strategy = backup.Strategy
+			setGlobalStrategy(backup.Strategy)
 		}
 		for k, v := range backup.Headers {
 			merged.Headers[k] = v
@@ -405,14 +403,41 @@ func handleAdminConfigImport(w http.ResponseWriter, r *http.Request) {
 			}
 			backup.Zen.KeyRoutingEnabled = off
 		}
+		setZenConfig(&backup.Zen.zenConfigData)
+		imported["zenKeys"] = len(backup.Zen.Keys)
+	}
+	// ---- 全局代理池(独立于 zen)----
+	if backup.ProxyPool != nil {
+		setProxyPool(backup.ProxyPool)
+		if len(backup.ProxyPool.Proxies) > 0 {
+			imported["proxies"] = len(backup.ProxyPool.Proxies)
+		}
+	}
+	// ---- 代理隔离/绑定段（独立于出口池与 zen）----
+	// 新备份由 backup.Proxy 承载；旧备份把这段寄居在 zen 段里，回落兼容读取。
+	binding := backup.Proxy
+	if binding == nil && backup.Zen != nil {
+		z := backup.Zen
+		if z.ProxyIsolation != nil || z.BackupProxyEnabled != nil ||
+			len(z.ProxyExclusions) > 0 || len(z.ProxyBindCaps) > 0 {
+			binding = &proxyBindingConfigData{
+				ProxyIsolation:     z.ProxyIsolation,
+				BackupProxyEnabled: z.BackupProxyEnabled,
+				ProxyExclusions:    z.ProxyExclusions,
+				ProxyBindCaps:      z.ProxyBindCaps,
+			}
+		}
+	}
+	if binding != nil {
+		next := *binding
 		// 自动分配规则的排除表按导入池清理一次：备份来自另一台机器时，池条目
 		// 未必在本机存在，留着就是永不命中的垃圾配置（与面板保存池同口径）。
 		// 备份未带池时不动排除表，避免把"池为空"的意图误升格为"清空规则"。
-		if len(backup.Zen.ProxyExclusions) > 0 {
+		if len(next.ProxyExclusions) > 0 {
 			// 先按 kind 白名单过滤：旧备份/手改文件里可能有非法 kind（例如把
 			// 平台名写成 zen 而非 key），它们同样永不命中，与池外条目一并丢弃。
-			clean := make(map[string][]string, len(backup.Zen.ProxyExclusions))
-			for p, kinds := range backup.Zen.ProxyExclusions {
+			clean := make(map[string][]string, len(next.ProxyExclusions))
+			for p, kinds := range next.ProxyExclusions {
 				var okKinds []string
 				for _, k := range kinds {
 					if proxyRuleKindValid(k) {
@@ -426,15 +451,15 @@ func handleAdminConfigImport(w http.ResponseWriter, r *http.Request) {
 			if len(clean) == 0 {
 				clean = nil
 			}
-			backup.Zen.ProxyExclusions = clean
+			next.ProxyExclusions = clean
 		}
-		if len(backup.Zen.ProxyExclusions) > 0 && backup.ProxyPool != nil && len(backup.ProxyPool.Proxies) > 0 {
-			backup.Zen.ProxyExclusions = pruneProxyExclusions(backup.Zen.ProxyExclusions, backup.ProxyPool.Proxies)
+		if len(next.ProxyExclusions) > 0 && backup.ProxyPool != nil && len(backup.ProxyPool.Proxies) > 0 {
+			next.ProxyExclusions = pruneProxyExclusions(next.ProxyExclusions, backup.ProxyPool.Proxies)
 		}
 		// 上限表同样只保留正值（缺项/0/负数 = 不限）。
-		if len(backup.Zen.ProxyBindCaps) > 0 {
-			caps := make(map[string]int, len(backup.Zen.ProxyBindCaps))
-			for k, v := range backup.Zen.ProxyBindCaps {
+		if len(next.ProxyBindCaps) > 0 {
+			caps := make(map[string]int, len(next.ProxyBindCaps))
+			for k, v := range next.ProxyBindCaps {
 				if proxyRuleKindValid(k) && v > 0 {
 					caps[k] = v
 				}
@@ -442,18 +467,12 @@ func handleAdminConfigImport(w http.ResponseWriter, r *http.Request) {
 			if len(caps) == 0 {
 				caps = nil
 			}
-			backup.Zen.ProxyBindCaps = caps
+			next.ProxyBindCaps = caps
 		}
-		setZenConfig(&backup.Zen.zenConfigData)
-		imported["zenKeys"] = len(backup.Zen.Keys)
+		setProxyBindingConfig(&next)
+		imported["proxyBinding"] = 1
 	}
-	// ---- 全局代理池(独立于 zen)----
-	if backup.ProxyPool != nil {
-		setProxyPool(backup.ProxyPool)
-		if len(backup.ProxyPool.Proxies) > 0 {
-			imported["proxies"] = len(backup.ProxyPool.Proxies)
-		}
-	}
+
 	// ---- zen 粘性会话（在 setZenConfig 之后写入，避免被按 key 清理）----
 	if backup.Sessions != nil {
 		zenSessMu.Lock()

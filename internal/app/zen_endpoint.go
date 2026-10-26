@@ -6,12 +6,9 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"os"
 	"regexp"
 	"strings"
 	"sync"
-
-	"afree-proxy/internal/kit"
 )
 
 // ============ zen 端点自适应（endpoint auto-learn） ============
@@ -35,14 +32,9 @@ import (
 // 会把一次瞬时断网固化成"该模型该走 responses"并持久化（目录同步不会改写既有
 // 条目的 Upstream，不自愈）。纠错口：responses 路径若报反向特征，learn 回 chat。
 
-// zenEndpointFile 端点学习结果持久化路径。
-func zenEndpointFile() string {
-	return kit.ResolveDataPath(".zen-endpoints.json")
-}
-
 // zenHTTPError zen 上游返回的非 2xx 答复（携带状态码）。
 // 端点学习必须只依据"上游真的按 HTTP 拒绝了"，而不是错误文本——网络层错误
-//（DNS 解析失败、拨号超时）的错误串里天然含 "no such host" 之类的词，靠子串
+// （DNS 解析失败、拨号超时）的错误串里天然含 "no such host" 之类的词，靠子串
 // 匹配会把一次瞬时断网永久固化成"该模型该走 responses"，且写进持久化文件后
 // 目录同步不会自愈。类型化错误让判定只看状态码。
 type zenHTTPError struct {
@@ -95,7 +87,7 @@ func zenExtractReplacement(body string) string {
 	var probe struct {
 		Replacement string `json:"replacement"`
 		Error       struct {
-			Replacement string `json:"replacement"`
+			Replacement string     `json:"replacement"`
 			Details     replHolder `json:"details"`
 			Data        replHolder `json:"data"`
 		} `json:"error"`
@@ -210,16 +202,9 @@ func learnZenEndpoint(modelID, upstream string) {
 
 // loadZenEndpointsFile 读取学习结果文件（空/损坏 → nil）。
 func loadZenEndpointsFile() map[string]string {
-	data, err := os.ReadFile(zenEndpointFile())
-	if err != nil || len(data) == 0 {
-		return nil
-	}
-	var learned map[string]string
-	if err := json.Unmarshal(data, &learned); err != nil {
-		log.Printf("zen endpoints parse failed, ignoring: %v", err)
-		return nil
-	}
-	return learned
+	zenFileMu.Lock()
+	defer zenFileMu.Unlock()
+	return loadZenConfigFileLocked().Endpoints
 }
 
 // applyZenEndpoints 把学习结果敷用到模型表上（调用方不持锁）。返回生效条数。
@@ -263,7 +248,7 @@ func loadZenEndpoints() {
 // reapplyLearnedEndpoints 目录同步后重新敷用学习结果。
 //
 // 启动时 loadZenEndpoints 只覆盖当时已存在的条目：模型目录是首次同步才填进来的
-//（启动顺序上刷新协程与 loadZenEndpoints 并行），同步新增/重建的条目不在视野里。
+// （启动顺序上刷新协程与 loadZenEndpoints 并行），同步新增/重建的条目不在视野里。
 // 不同步后补敷用，这些模型每次重启都要重新探测一遍端点。
 func reapplyLearnedEndpoints() {
 	learned := loadZenEndpointsFile()
@@ -302,16 +287,8 @@ func saveZenEndpoints() {
 		}
 	}
 	zenModelsMu.RUnlock()
-	data, err := json.MarshalIndent(learned, "", "  ")
-	if err != nil {
-		return
-	}
-	tmp := zenEndpointFile() + ".tmp"
-	if err := os.WriteFile(tmp, data, 0600); err != nil {
-		log.Printf("zen endpoints save failed: %v", err)
-		return
-	}
-	if err := os.Rename(tmp, zenEndpointFile()); err != nil {
-		log.Printf("zen endpoints save failed (rename): %v", err)
-	}
+	// 只覆盖 endpoints 段，zen 配置与另外两张表原样保留。
+	mutateZenConfigFile(func(f *zenConfigFileData) {
+		f.Endpoints = learned
+	})
 }

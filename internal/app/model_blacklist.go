@@ -6,7 +6,6 @@ import (
 	"io"
 	"log"
 	"net/http"
-	"os"
 	"sort"
 	"strings"
 	"sync"
@@ -71,7 +70,7 @@ type modelBlacklistEntry struct {
 }
 
 type modelBlacklistFile struct {
-	SavedAt time.Time                        `json:"savedAt"`
+	SavedAt time.Time                       `json:"savedAt"`
 	Items   map[string]*modelBlacklistEntry `json:"items"`
 }
 
@@ -80,10 +79,6 @@ var (
 	modelBlacklistItems  = map[string]*modelBlacklistEntry{}
 	modelBlacklistLoaded bool
 )
-
-func modelBlacklistPath() string {
-	return kit.ResolveDataPath(".model-blacklist.json")
-}
 
 func blacklistKey(platform, model string) string {
 	return platform + "|" + model
@@ -96,21 +91,15 @@ func ensureModelBlacklistLoaded() {
 		return
 	}
 	modelBlacklistLoaded = true
-	raw, err := os.ReadFile(modelBlacklistPath())
-	if err != nil {
-		if !os.IsNotExist(err) {
-			log.Printf("model blacklist: read %s: %v", modelBlacklistPath(), err)
+	globalCfgMu.Lock()
+	g := loadGlobalConfigLocked()
+	if len(g.ModelBlacklist) > 0 {
+		modelBlacklistItems = make(map[string]*modelBlacklistEntry, len(g.ModelBlacklist))
+		for k, e := range g.ModelBlacklist {
+			modelBlacklistItems[k] = e
 		}
-		return
 	}
-	var f modelBlacklistFile
-	if json.Unmarshal(raw, &f) != nil {
-		log.Printf("model blacklist: corrupt JSON at %s (starting clean)", modelBlacklistPath())
-		return
-	}
-	if f.Items != nil {
-		modelBlacklistItems = f.Items
-	}
+	globalCfgMu.Unlock()
 	// 旧版本落盘的条目 Reason 存的是上游原话；统一改写为标准文案
 	//（判据：code=11158 或原因文案命中权限 marker）。Detail 老条目没有，留空。
 	for _, e := range modelBlacklistItems {
@@ -122,37 +111,20 @@ func ensureModelBlacklistLoaded() {
 		}
 	}
 	if n := len(modelBlacklistItems); n > 0 {
-		log.Printf("model blacklist: restored %d entry(ies) from %s", n, modelBlacklistPath())
+		log.Printf("model blacklist: restored %d entry(ies) from %s", n, globalConfigPath())
 	}
 }
 
 func flushModelBlacklist() {
 	modelBlacklistMu.Lock()
-	out := modelBlacklistFile{
-		SavedAt: time.Now(),
-		Items:   make(map[string]*modelBlacklistEntry, len(modelBlacklistItems)),
-	}
+	out := make(map[string]*modelBlacklistEntry, len(modelBlacklistItems))
 	for k, e := range modelBlacklistItems {
 		cp := *e
-		out.Items[k] = &cp
+		out[k] = &cp
 	}
 	modelBlacklistMu.Unlock()
 
-	raw, err := json.MarshalIndent(out, "", "  ")
-	if err != nil {
-		log.Printf("model blacklist: marshal: %v", err)
-		return
-	}
-	path := modelBlacklistPath()
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, raw, 0o600); err != nil {
-		log.Printf("model blacklist: write %s: %v", tmp, err)
-		return
-	}
-	if err := os.Rename(tmp, path); err != nil {
-		log.Printf("model blacklist: replace %s: %v", path, err)
-		_ = os.Remove(tmp)
-	}
+	mutateGlobalConfig(func(g *globalConfigData) { g.ModelBlacklist = out })
 }
 
 // BlacklistModel 把「平台 + 对外模型 ID」加入黑名单（自动拉黑路径，reason 传
@@ -437,7 +409,7 @@ func businessCodeIn(body string) string {
 }
 
 // withModelBlacklistScan 在网关入口统一挂自动拉黑：先读出请求体取 model
-//（用于判平台与记录），再把可捕获错误体的 writer 交给下游 handler。
+// （用于判平台与记录），再把可捕获错误体的 writer 交给下游 handler。
 // 同一入口顺带挂**封禁平台闸**（platform_blacklist.go）：平台被管理员封禁后
 // 不参与任何会话路由，命中直接 503——放在读出 model 之后、分发之前，三个
 // /chat/completions、/messages、/responses 入口一处收口。判定口径：combo 别名

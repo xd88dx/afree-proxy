@@ -31,6 +31,7 @@ func swapReqLogSink(t *testing.T) {
 
 // TestPoolAdminLogEnabledDefaultOff：未设置（nil）默认关闭。
 func TestPoolAdminLogEnabledDefaultOff(t *testing.T) {
+	resetGlobalConfigForTest(t)
 	poolMu.Lock()
 	saved := pool
 	pool = &AccountPool{Accounts: []*Account{}}
@@ -44,17 +45,11 @@ func TestPoolAdminLogEnabledDefaultOff(t *testing.T) {
 	if poolAdminLogEnabled() {
 		t.Fatal("admin access logging must default to off when the field is nil")
 	}
-	on := true
-	poolMu.Lock()
-	pool.AdminLogEnabled = &on
-	poolMu.Unlock()
+	setGlobalAdminLogEnabled(true)
 	if !poolAdminLogEnabled() {
 		t.Fatal("admin access logging must report on when the field is true")
 	}
-	off := false
-	poolMu.Lock()
-	pool.AdminLogEnabled = &off
-	poolMu.Unlock()
+	setGlobalAdminLogEnabled(false)
 	if poolAdminLogEnabled() {
 		t.Fatal("admin access logging must report off when the field is false")
 	}
@@ -103,10 +98,11 @@ func TestMiddlewareSkipsAdminLogsByDefault(t *testing.T) {
 // 且带上了 admin 路由标记。
 func TestMiddlewareLogsAdminWhenEnabled(t *testing.T) {
 	swapReqLogSink(t)
-	on := true
+	resetGlobalConfigForTest(t)
+	setGlobalAdminLogEnabled(true)
 	poolMu.Lock()
 	saved := pool
-	pool = &AccountPool{Accounts: []*Account{}, AdminLogEnabled: &on}
+	pool = &AccountPool{Accounts: []*Account{}}
 	poolMu.Unlock()
 	t.Cleanup(func() {
 		poolMu.Lock()
@@ -162,10 +158,7 @@ func TestLoadRequestLogsFromFileSkipsAdminRows(t *testing.T) {
 		t.Fatalf("switch off must skip admin rows, got %+v", got)
 	}
 
-	on := true
-	poolMu.Lock()
-	pool.AdminLogEnabled = &on
-	poolMu.Unlock()
+	setGlobalAdminLogEnabled(true)
 	reqLogsMu.Lock()
 	reqLogs = nil
 	reqLogsMu.Unlock()

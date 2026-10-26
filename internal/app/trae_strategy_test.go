@@ -15,10 +15,8 @@ func TestTraeStrategyPriority(t *testing.T) {
 
 	savedTrae := trae.Get()
 	t.Cleanup(func() { trae.Set(savedTrae) })
-	savedCfg := getProxyConfig()
-	t.Cleanup(func() { setProxyConfig(savedCfg) })
-
-	setProxyConfig(&proxyConfigData{Strategy: "random", Headers: map[string]string{}})
+	resetGlobalConfigForTest(t)
+	setGlobalStrategy("random")
 	trae.Set(&trae.Config{Selection: ""})
 	if got := traeStrategy(); got != "random" {
 		t.Fatalf("未设置面板策略时应回落全局策略: got %q", got)

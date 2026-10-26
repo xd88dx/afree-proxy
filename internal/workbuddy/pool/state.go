@@ -867,6 +867,7 @@ func (p *Pool) SetOrder(uids []string) int {
 	p.saveLocked()
 	return len(ordered)
 }
+
 // statusAccountEnabledPtr 把 auth 的账号总开关折算成 Status 的指针形态：
 // 启用 = nil（不输出该键），关闭 = &false。
 func statusAccountEnabledPtr(a *auth.Auth) *bool {
@@ -908,21 +909,21 @@ func (p *Pool) statusOf(uid string, e *entry) Status {
 		Paused:               e.paused,
 		PoolEnabled:          e.a.PoolEnabled(),
 		// 账号总开关：nil = 启用（指针语义与 auth 侧对齐；未显式关闭不输出该键）
-		AccountEnabled:       statusAccountEnabledPtr(e.a),
-		SuccessCount:         e.successCount,
-		ErrTotal:             e.errTotal,
-		CheckinDone:          e.lastCheckinDay == cst.Day(now),
-		TokenUsage:           e.tokenUsage,
-		LastSuccessTime:      e.lastSuccess,
-		LastErrTime:          e.lastErr,
-		Until:                e.until,
-		SoftStreak:           e.softStreak,
-		ModelCosts:           p.modelCostsStatusLocked(e, now),
-		ConsecutiveFails:     e.consecutiveFails,
-		DegradeUntil:         e.degradeUntil,
-		InFlight:             int(e.inFlight.Load()),
-		BreakerFails:         e.fails,
-		BreakerUntil:         e.breakerUntil,
+		AccountEnabled:   statusAccountEnabledPtr(e.a),
+		SuccessCount:     e.successCount,
+		ErrTotal:         e.errTotal,
+		CheckinDone:      e.lastCheckinDay == cst.Day(now),
+		TokenUsage:       e.tokenUsage,
+		LastSuccessTime:  e.lastSuccess,
+		LastErrTime:      e.lastErr,
+		Until:            e.until,
+		SoftStreak:       e.softStreak,
+		ModelCosts:       p.modelCostsStatusLocked(e, now),
+		ConsecutiveFails: e.consecutiveFails,
+		DegradeUntil:     e.degradeUntil,
+		InFlight:         int(e.inFlight.Load()),
+		BreakerFails:     e.fails,
+		BreakerUntil:     e.breakerUntil,
 	}
 	// Reason 只在冷却/禁用时透出（issue #171-1）：软冷却按墙钟恢复、到期不会清理字段
 	// （Cooldown/CooldownSoftRate 写、NoteSuccess 不碰），无条件透出会让面板把「可用」

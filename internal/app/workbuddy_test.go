@@ -205,7 +205,8 @@ func TestWorkbuddyProxyBindingStableAndFailClosed(t *testing.T) {
 	}
 
 	// 绑定出口都不在当前池中时必须失败，不能静默退回直连或新出口。
-	setZenConfig(&zenConfigData{Keys: []string{"public"}, ProxyIsolation: boolPtr(true)})
+	setZenConfig(&zenConfigData{Keys: []string{"public"}})
+	setProxyBindingConfig(&proxyBindingConfigData{ProxyIsolation: boolPtr(true)})
 	setProxyPool(&proxyPoolConfigData{Proxies: []string{"http://new:3"}, Strategy: "round_robin"})
 	if proxy, ok := workbuddyProxyFor(first); ok {
 		t.Fatalf("stale bound exits must fail closed, got proxy=%q", proxy)
@@ -232,15 +233,15 @@ func TestWorkbuddyProxyBindingPersistence(t *testing.T) {
 	if err := setWorkbuddyProxyBinding("uid-persist", "http://a:1", "http://b:2"); err != nil {
 		t.Fatalf("set binding: %v", err)
 	}
-	raw, err := os.ReadFile(workbuddyProxyPath())
+	raw, err := os.ReadFile(proxyConfigPath())
 	if err != nil {
-		t.Fatalf("read binding file: %v", err)
+		t.Fatalf("read proxy config file: %v", err)
 	}
-	var onDisk map[string]workbuddyProxyBinding
+	var onDisk proxyConfigFileData
 	if err := json.Unmarshal(raw, &onDisk); err != nil {
-		t.Fatalf("decode binding file: %v", err)
+		t.Fatalf("decode proxy config file: %v", err)
 	}
-	if got := onDisk["uid-persist"]; got.Main != "http://a:1" || got.Backup != "http://b:2" {
+	if got := onDisk.WorkbuddyBindings["uid-persist"]; got.Main != "http://a:1" || got.Backup != "http://b:2" {
 		t.Fatalf("binding was not persisted correctly: %+v", got)
 	}
 
@@ -257,9 +258,9 @@ func TestWorkbuddyProxyBindingPersistence(t *testing.T) {
 	if n := clearAllWorkbuddyProxyBindings(); n != 1 {
 		t.Fatalf("clear bindings: got %d, want 1", n)
 	}
-	raw, err = os.ReadFile(workbuddyProxyPath())
+	raw, err = os.ReadFile(proxyConfigPath())
 	if err != nil {
-		t.Fatalf("read cleared binding file: %v", err)
+		t.Fatalf("read cleared proxy config file: %v", err)
 	}
 	if strings.Contains(string(raw), "uid-persist") {
 		t.Fatal("cleared binding remains in persistent file")
@@ -278,7 +279,8 @@ func TestWorkbuddyUnboundAccountUsesGlobalPoolWithoutPersisting(t *testing.T) {
 		t.Fatalf("empty pool must not persist an empty binding: %+v", bindings)
 	}
 
-	setZenConfig(&zenConfigData{Keys: []string{"public"}, ProxyIsolation: boolPtr(true)})
+	setZenConfig(&zenConfigData{Keys: []string{"public"}})
+	setProxyBindingConfig(&proxyBindingConfigData{ProxyIsolation: boolPtr(true)})
 	setProxyPool(&proxyPoolConfigData{Proxies: []string{"http://a:1", "http://b:2"}, Strategy: "round_robin"})
 	proxy, ok := workbuddyProxyFor(a)
 	if !ok || proxy == "" {

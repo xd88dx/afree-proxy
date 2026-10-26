@@ -391,8 +391,29 @@ func BindingOf(key string) (main, backup string, bound bool) {
 }
 
 // ProxiesEnabled 未绑定 key 是否走共享代理池：缺省（nil）默认走池。
+
+// useProxiesResolver 由 app 层注入：走池开关存在 proxy-config.json 的代理池段
+// （与池本体同处一个文件），平台配置文件不再保存它。返回 nil = 该平台未配置，
+// 即缺省走池。
+var useProxiesResolver func() *bool
+
+// SetUseProxiesResolver 由 app 层在启动时注入读取器（见 app/platform_proxies.go）。
+func SetUseProxiesResolver(f func() *bool) { useProxiesResolver = f }
+
+// CurrentUseProxies 当前走池开关：优先全局代理配置，回落到本文件的历史字段。
+// 面板回显与请求路径共用同一口径。
+func CurrentUseProxies() *bool {
+	if useProxiesResolver != nil {
+		if v := useProxiesResolver(); v != nil {
+			return v
+		}
+	}
+	return Get().UseProxies
+}
+
+// ProxiesEnabled 未绑定凭据是否走共享代理池：缺省（nil）默认走池。
 func ProxiesEnabled() bool {
-	up := Get().UseProxies
+	up := CurrentUseProxies()
 	if up == nil {
 		return true
 	}

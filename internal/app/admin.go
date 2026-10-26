@@ -1,9 +1,9 @@
 package app
 
 import (
-	"bytes"
 	"afree-proxy/internal/cline"
 	"afree-proxy/internal/kit"
+	"bytes"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
@@ -64,7 +64,7 @@ func registerAdminRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/admin/api/data/delete-all", adminCORS(auth(handleAdminDeleteAllData)))
 	mux.HandleFunc("/admin/api/accounts/reset", adminCORS(auth(handleAdminAccountReset)))
 	mux.HandleFunc("/admin/api/accounts/proxy", adminCORS(auth(handleAdminAccountSetProxy)))
-	mux.HandleFunc("/admin/api/accounts/proxy/clear", adminCORS(auth(handleAdminAccountClearProxies)));
+	mux.HandleFunc("/admin/api/accounts/proxy/clear", adminCORS(auth(handleAdminAccountClearProxies)))
 	mux.HandleFunc("/admin/api/accounts/pool/enabled", adminCORS(auth(handleAdminAccountSetPoolEnabled)))
 	mux.HandleFunc("/admin/api/accounts/pool/enabled/all", adminCORS(auth(handleAdminAccountSetPoolEnabledAll)))
 	mux.HandleFunc("/admin/api/accounts/reorder", adminCORS(auth(handleAdminAccountsReorder)))
@@ -74,7 +74,7 @@ func registerAdminRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/admin/api/keys/generate", adminCORS(auth(handleAdminGenerateKey)))
 	mux.HandleFunc("/admin/api/headers/reset", adminCORS(auth(handleAdminHeadersReset)))
 	mux.HandleFunc("/admin/api/config/export", adminCORS(auth(handleAdminConfigExport)))
-	mux.HandleFunc("/admin/api/config/import", adminCORS(auth(handleAdminConfigImport)));
+	mux.HandleFunc("/admin/api/config/import", adminCORS(auth(handleAdminConfigImport)))
 	// 代理池订阅：手动触发一次更新（面板"立即更新"按钮）
 	mux.HandleFunc("/admin/api/proxypool/subscription/update", adminCORS(auth(handleProxySubUpdate)))
 	mux.HandleFunc("/admin/api/keys/delete", adminCORS(auth(handleAdminDeleteKey)))
@@ -623,9 +623,9 @@ func handleAdminDeleteAll(w http.ResponseWriter, r *http.Request) {
 	}
 	// 只清空账号：Keys（/v1 的 API key）必须保留，
 	// 否则"删除全部账号"会顺手作废所有已分发的客户端 key
-	old := loadPool()
+	loadPool()
 	poolMu.Lock()
-	pool = &AccountPool{Accounts: []*Account{}, Keys: old.Keys, CurrentIdx: 0}
+	pool = &AccountPool{Accounts: []*Account{}, CurrentIdx: 0}
 	poolMu.Unlock()
 	savePool()
 	writeAPI(w, http.StatusOK, apiResponse{Success: true, Message: "All accounts deleted"})
@@ -950,13 +950,11 @@ var (
 )
 
 type proxyConfigData struct {
-	Strategy string            `json:"strategy"`
-	Headers  map[string]string `json:"headers"`
+	Headers map[string]string `json:"headers"`
 }
 
 func defaultProxyConfig() *proxyConfigData {
 	return &proxyConfigData{
-		Strategy: "round_robin",
 		Headers: map[string]string{
 			"User-Agent":         clineUserAgent(),
 			"HTTP-Referer":       "https://cline.bot",
@@ -1046,7 +1044,9 @@ func isClineVersionedUA(v string) bool {
 }
 
 // isClineUA 判断是否为完整自产 UA（带 ai-sdk 后缀）。
-func isClineUA(v string) bool { return strings.HasPrefix(v, "Cline/") && strings.Contains(v, " ai-sdk/") }
+func isClineUA(v string) bool {
+	return strings.HasPrefix(v, "Cline/") && strings.Contains(v, " ai-sdk/")
+}
 
 func getProxyConfig() *proxyConfigData {
 	proxyConfigMu.Lock()
@@ -1109,11 +1109,7 @@ func handleAdminGenerateKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	key := "afree_" + hex.EncodeToString(b)
-	p := loadPool()
-	poolMu.Lock()
-	p.Keys = append(p.Keys, key)
-	poolMu.Unlock()
-	savePool()
+	setGlobalClientKeys(append(globalClientKeys(), key))
 	writeAPI(w, http.StatusOK, apiResponse{Success: true, Data: map[string]any{"key": key}})
 }
 
@@ -1136,16 +1132,14 @@ func handleAdminDeleteKey(w http.ResponseWriter, r *http.Request) {
 		writeAPI(w, http.StatusBadRequest, apiResponse{Error: "invalid JSON"})
 		return
 	}
-	p := loadPool()
-	poolMu.Lock()
-	for i, k := range p.Keys {
+	keys := globalClientKeys()
+	for i, k := range keys {
 		if k == req.Key {
-			p.Keys = append(p.Keys[:i], p.Keys[i+1:]...)
+			keys = append(keys[:i], keys[i+1:]...)
 			break
 		}
 	}
-	poolMu.Unlock()
-	savePool()
+	setGlobalClientKeys(keys)
 	writeAPI(w, http.StatusOK, apiResponse{Success: true, Message: "Key deleted"})
 }
 
@@ -1184,7 +1178,8 @@ func handleAdminAccountSetProxy(w http.ResponseWriter, r *http.Request) {
 }
 
 // GET /admin/api/config
-func handleAdminConfig(w http.ResponseWriter, r *http.Request) {	if r.Method != "GET" {
+func handleAdminConfig(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "GET" {
 		writeAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
 		return
 	}
@@ -1195,7 +1190,7 @@ func handleAdminConfig(w http.ResponseWriter, r *http.Request) {	if r.Method != 
 	}
 	writeAPI(w, http.StatusOK, apiResponse{Success: true, Data: map[string]any{
 		"address":         address,
-		"strategy":        cfg.Strategy,
+		"strategy":        globalStrategy(),
 		"version":         "go-1.1",
 		"poolPath":        poolPath,
 		"headers":         cfg.Headers,
@@ -1229,10 +1224,11 @@ func handleAdminUpdateConfig(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 写时复制：getProxyConfig 返回的是被请求路径并发读取的活配置，
-	// 直接原地改 Strategy/Headers 会与读方竞态（concurrent map read/write
-	// 直接 panic 进程）；先验证全部字段，再整体替换
+	// 直接原地改 Headers 会与读方竞态（concurrent map read/write
+	// 直接 panic 进程）；先验证全部字段，再整体替换。
+	// 调度策略存 afree-config.json（setGlobalStrategy 自行落盘），不在此复制。
 	cfg := getProxyConfig()
-	newCfg := &proxyConfigData{Strategy: cfg.Strategy, Headers: map[string]string{}}
+	newCfg := &proxyConfigData{Headers: map[string]string{}}
 	for k, v := range cfg.Headers {
 		newCfg.Headers[k] = v
 	}
@@ -1241,7 +1237,7 @@ func handleAdminUpdateConfig(w http.ResponseWriter, r *http.Request) {
 	if req.Strategy != "" {
 		switch req.Strategy {
 		case "round_robin", "fill", "random":
-			newCfg.Strategy = req.Strategy
+			setGlobalStrategy(req.Strategy)
 			changed = true
 		default:
 			writeAPI(w, http.StatusBadRequest, apiResponse{Error: "invalid strategy, must be: round_robin, fill, random"})
@@ -1262,24 +1258,16 @@ func handleAdminUpdateConfig(w http.ResponseWriter, r *http.Request) {
 		changed = true
 	}
 
-	// cline 走共享出口代理池的开关：持久化到池文件，重启后保留。
+	// cline 走共享出口代理池的开关：存在 proxy-config.json 的代理池段。
 	// 未设置（nil）默认开启，见 poolClineUseProxies。
 	if req.ClineUseProxies != nil {
-		p := loadPool()
-		poolMu.Lock()
-		p.ClineUseProxies = req.ClineUseProxies
-		poolMu.Unlock()
-		savePool()
+		setPlatformUseProxies("cline", req.ClineUseProxies)
 		changed = true
 	}
 
-	// /admin 访问日志开关：同样持久化到池文件，未设置（nil）默认关闭。
+	// /admin 访问日志开关：存 afree-config.json，未设置（nil）默认关闭。
 	if req.AdminLogEnabled != nil {
-		p := loadPool()
-		poolMu.Lock()
-		p.AdminLogEnabled = req.AdminLogEnabled
-		poolMu.Unlock()
-		savePool()
+		setGlobalAdminLogEnabled(*req.AdminLogEnabled)
 		changed = true
 	}
 
@@ -1290,7 +1278,7 @@ func handleAdminUpdateConfig(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeAPI(w, http.StatusOK, apiResponse{Success: true, Data: map[string]any{
-		"strategy": cfg.Strategy,
+		"strategy": globalStrategy(),
 		"headers":  cfg.Headers,
 	}})
 }
@@ -1342,7 +1330,7 @@ func handleAdminStats(w http.ResponseWriter, r *http.Request) {
 			"active":   active,
 			"cooldown": cooldown,
 			"expired":  expired,
-			"strategy": getProxyConfig().Strategy,
+			"strategy": globalStrategy(),
 			"version":  "go-1.1",
 		},
 	})
@@ -1378,7 +1366,7 @@ func handleAdminHeadersReset(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	def := defaultProxyConfig()
-	newCfg := &proxyConfigData{Strategy: getProxyConfig().Strategy, Headers: def.Headers}
+	newCfg := &proxyConfigData{Headers: def.Headers}
 	setProxyConfig(newCfg)
 	persistProxyConfig(newCfg)
 	writeAPI(w, http.StatusOK, apiResponse{Success: true, Data: map[string]any{"headers": newCfg.Headers}})
@@ -1402,6 +1390,6 @@ func handleZenKeyClearProxies(w http.ResponseWriter, r *http.Request) {
 		writeAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
 		return
 	}
-	n := clearAllZenKeyProxies()
+	n := clearAllKeyProxies()
 	writeAPI(w, http.StatusOK, apiResponse{Success: true, Message: fmt.Sprintf("Cleared bindings on %d key(s)", n)})
 }

@@ -20,8 +20,8 @@ import (
 	"afree-proxy/internal/kit"
 	openrouter "afree-proxy/internal/openrouter"
 	"afree-proxy/internal/other"
-	"afree-proxy/internal/trae"
 	"afree-proxy/internal/tokenharbor"
+	"afree-proxy/internal/trae"
 )
 
 // routeStat 网关请求计数（进程生命周期，仅 /v1/ 路径）：请求数、错误数、

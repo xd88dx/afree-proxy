@@ -20,11 +20,12 @@ import (
 // 签发，rc- 前缀）：多 key 轮转、or 同款隔离语义、amd: 前缀路由。模型目录
 // 免认证同步（/v1/models 无需 key）。
 
-// amdConfigPath AMDCloud 配置文件路径（DATA_DIR/.amd-config.json）。
-func amdConfigPath() string { return kit.ResolveDataPath(".amd-config.json") }
+// amdConfigPath AMDCloud 配置文件路径（DATA_DIR/amd-config.json）。
+func amdConfigPath() string { return kit.ResolveDataPath("amd-config.json") }
 
 // initAMD 加载配置 + 注入出站解析/HTTP client 工厂。StartProxy 早期调用一次。
 func initAMD() {
+	migrateLegacyDataFile("amd-config.json", ".amd-config.json")
 	amd.Load(amdConfigPath())
 	amd.SetExitResolver(func(key string) (string, bool) {
 		if key == "" {
@@ -136,7 +137,7 @@ func handleAMDChat(w http.ResponseWriter, r *http.Request, params map[string]any
 	isStream, _ := params["stream"].(bool)
 	if isStream {
 		handleStreamBufferedGeneric(w, r, "amd", params, func(ctx context.Context) (*http.Response, func(map[string]any), error) {
-			resp, _, err := amd.Chat(ctx, params, m.ID, true, getProxyConfig().Strategy, amdBoundRoutable)
+			resp, _, err := amd.Chat(ctx, params, m.ID, true, globalStrategy(), amdBoundRoutable)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -145,10 +146,10 @@ func handleAMDChat(w http.ResponseWriter, r *http.Request, params map[string]any
 		})
 		return
 	}
-	resp, _, err := amd.Chat(r.Context(), params, m.ID, true, getProxyConfig().Strategy, amdBoundRoutable)
+	resp, _, err := amd.Chat(r.Context(), params, m.ID, true, globalStrategy(), amdBoundRoutable)
 	if err != nil {
 		log.Printf("  amd api error: %v", err)
-			writeJSON(w, http.StatusBadGateway, map[string]any{
+		writeJSON(w, http.StatusBadGateway, map[string]any{
 			"error": map[string]string{"message": err.Error(), "type": "api_error"},
 		})
 		return
@@ -209,8 +210,9 @@ func handleAMDConfigUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	cur, next := amdCloneConfig()
+	// 走池开关存在 proxy-config.json 的代理池段，不写进平台文件。
 	if patch.UseProxies != nil {
-		next.UseProxies = patch.UseProxies
+		setPlatformUseProxies("amd", patch.UseProxies)
 	}
 	if patch.BaseURL != nil {
 		next.BaseURL = strings.TrimRight(strings.TrimSpace(*patch.BaseURL), "/")
@@ -239,7 +241,6 @@ func handleAMDConfigUpdate(w http.ResponseWriter, r *http.Request) {
 func amdCloneConfig() (*amd.Config, *amd.Config) {
 	cur := amd.Get()
 	next := &amd.Config{
-		UseProxies:        cur.UseProxies,
 		BaseURL:           cur.BaseURL,
 		Keys:              append([]string(nil), cur.Keys...),
 		KeyRoutingEnabled: map[string]bool{},

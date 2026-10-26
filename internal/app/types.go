@@ -7,9 +7,9 @@ type Account struct {
 	Email     string `json:"email"`
 	// Nickname 可选显示名（面板账号列）：设置后账号列优先显示昵称、小字
 	// 保留邮箱；空 = 未设置（显示邮箱）。仅影响面板展示与日志标签，不参与
-	// 选号路由。随 .cline-accounts.json 与配置备份一起持久化。
-	Nickname     string    `json:"nickname,omitempty"`
-	RefreshToken string    `json:"refreshToken"`
+	// 选号路由。随 cline-config.json 与配置备份一起持久化。
+	Nickname     string `json:"nickname,omitempty"`
+	RefreshToken string `json:"refreshToken"`
 	// APIToken 静态 API key（sk_...）账号：设置后直接作为 Bearer 使用，
 	// 不刷新（无 refresh token）；json 序列化持久化，重启后仍生效。
 	// 优先级高于 RefreshToken/AccessToken。
@@ -18,12 +18,12 @@ type Account struct {
 	ExpiresAt       int64     `json:"-"`
 	Status          string    `json:"status"` // active, cooldown, expired
 	LastUsed        time.Time `json:"lastUsed"`
-	UsageCount      int64     `json:"usageCount"`      // 本地累计成功调用次数
-	UsageCountToday int64     `json:"usageCountToday"` // 本地今日成功调用次数
-	UsageDate       string    `json:"usageDate"`       // 本地计数日期 YYYY-MM-DD，跨日自动重置
-	TokensTotal     int64     `json:"tokensTotal"`     // 本地累计 token 消耗（prompt+completion）
-	TokensToday     int64     `json:"tokensToday"`     // 本地今日 token 消耗
-	TokensDate      string    `json:"tokensDate"`      // 今日 token 计数日期 YYYY-MM-DD，跨日自动重置
+	UsageCount      int64     `json:"usageCount"`              // 本地累计成功调用次数
+	UsageCountToday int64     `json:"usageCountToday"`         // 本地今日成功调用次数
+	UsageDate       string    `json:"usageDate"`               // 本地计数日期 YYYY-MM-DD，跨日自动重置
+	TokensTotal     int64     `json:"tokensTotal"`             // 本地累计 token 消耗（prompt+completion）
+	TokensToday     int64     `json:"tokensToday"`             // 本地今日 token 消耗
+	TokensDate      string    `json:"tokensDate"`              // 今日 token 计数日期 YYYY-MM-DD，跨日自动重置
 	CooldownUntil   time.Time `json:"cooldownUntil,omitempty"` // 预计冷却结束时间
 	LastReason      string    `json:"lastReason,omitempty"`    // 最后一次进入冷却/失效的原因
 	// 代理绑定（账号隔离，见 proxy_binding.go）：主代理优先，备用代理兜底；
@@ -39,18 +39,15 @@ type Account struct {
 }
 
 type AccountPool struct {
-	Accounts        []*Account `json:"accounts"`
-	CurrentIdx      int        `json:"currentIdx"`
-	Keys            []string   `json:"keys,omitempty"`
-	ClineUseProxies *bool      `json:"clineUseProxies,omitempty"` // cline 上游走共享出口代理池（面板开关；nil = 默认开启）
-	// AdminLogEnabled /admin 页面与接口访问是否写入请求日志（面板开关；
-	// nil = 默认关闭）。本地自用部署不需要这些噪声行，默认只留经过网关的
-	// 模型会话请求日志。
-	AdminLogEnabled *bool `json:"adminLogEnabled,omitempty"`
-	// 调度策略与自定义请求头的持久化（面板保存，重启回放；POOL_STRATEGY env
-	// 显式设置时策略以 env 为准）。作用于 Cline 账号池与 OpenCode key 池。
-	Strategy string            `json:"strategy,omitempty"`
-	Headers  map[string]string `json:"headers,omitempty"`
+	Accounts   []*Account `json:"accounts"`
+	CurrentIdx int        `json:"currentIdx"`
+	// ClineUseProxies 只用于读旧 .cline-accounts.json 做一次性迁移；
+	// 开关本体存在 proxy-config.json 的代理池段（见 platform_proxies.go），
+	// 本字段永远以 nil 落盘，omitempty 下不会出现在 cline-config.json 里。
+	ClineUseProxies *bool `json:"clineUseProxies,omitempty"`
+	// Headers 是模拟 Cline CLI 的自定义请求头（面板保存，重启回放）。
+	// 客户端 key、账号调度策略、/admin 日志开关都在 afree-config.json。
+	Headers map[string]string `json:"headers,omitempty"`
 }
 
 type LoginMethod int

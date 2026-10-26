@@ -22,10 +22,10 @@ import (
 )
 
 var (
-	zenProxyCount atomic.Uint64
+	proxyRRCounter atomic.Uint64
 
-	zenProxyCooldowns   = map[int]time.Time{} // 代理索引 -> 冷却截止
-	zenProxyCooldownsMu sync.Mutex
+	proxyCooldowns   = map[int]time.Time{} // 代理索引 -> 冷却截止
+	proxyCooldownsMu sync.Mutex
 )
 
 // proxyClientCache 按代理 URL 缓存钉定代理的 HTTP 客户端（uTLS Chrome 指纹 + h2）。
@@ -71,34 +71,34 @@ func cooldownUpstreamProxy(idx int, d time.Duration) {
 	if d > maxCooldown {
 		d = maxCooldown
 	}
-	zenProxyCooldownsMu.Lock()
-	zenProxyCooldowns[idx] = time.Now().Add(d)
-	zenProxyCooldownsMu.Unlock()
+	proxyCooldownsMu.Lock()
+	proxyCooldowns[idx] = time.Now().Add(d)
+	proxyCooldownsMu.Unlock()
 }
 
-func zenProxyAvailable(idx int) bool {
-	zenProxyCooldownsMu.Lock()
-	defer zenProxyCooldownsMu.Unlock()
-	until, ok := zenProxyCooldowns[idx]
+func proxyAvailable(idx int) bool {
+	proxyCooldownsMu.Lock()
+	defer proxyCooldownsMu.Unlock()
+	until, ok := proxyCooldowns[idx]
 	if !ok {
 		return true
 	}
 	if time.Now().After(until) {
-		delete(zenProxyCooldowns, idx)
+		delete(proxyCooldowns, idx)
 		return true
 	}
 	return false
 }
 
-// zenProxyCooldownStatus 返回仍处于冷却的出口及其解除时刻。
+// proxyCooldownStatus 返回仍处于冷却的出口及其解除时刻。
 // 时刻用 RFC3339（带时区）而不是服务器格式化的 "15:04:05"：面板按浏览器本地
 // 时区渲染，服务器格式化只会给出容器时区（UTC）的读数，用户看到的是错的钟点。
-func zenProxyCooldownStatus() map[string]string {
+func proxyCooldownStatus() map[string]string {
 	cfg := getProxyPool()
-	zenProxyCooldownsMu.Lock()
-	defer zenProxyCooldownsMu.Unlock()
+	proxyCooldownsMu.Lock()
+	defer proxyCooldownsMu.Unlock()
 	out := map[string]string{}
-	for idx, until := range zenProxyCooldowns {
+	for idx, until := range proxyCooldowns {
 		if idx >= 0 && idx < len(cfg.Proxies) {
 			if time.Now().Before(until) {
 				out[cfg.Proxies[idx]] = until.UTC().Format(time.RFC3339)
@@ -108,10 +108,10 @@ func zenProxyCooldownStatus() map[string]string {
 	return out
 }
 
-// zenProxyCooldownUntil 单个出口的冷却解除时刻。未冷却返回零值。
+// proxyCooldownUntil 单个出口的冷却解除时刻。未冷却返回零值。
 // 供"出口不可用"类错误文案把恢复时刻讲清楚（否则用户只看到一句 cooling or
 // removed，无法判断是节点真挂了还是短暂冷却）。
-func zenProxyCooldownUntil(raw string) time.Time {
+func proxyCooldownUntil(raw string) time.Time {
 	if raw == "" {
 		return time.Time{}
 	}
@@ -119,9 +119,9 @@ func zenProxyCooldownUntil(raw string) time.Time {
 	if idx < 0 {
 		return time.Time{}
 	}
-	zenProxyCooldownsMu.Lock()
-	defer zenProxyCooldownsMu.Unlock()
-	until, ok := zenProxyCooldowns[idx]
+	proxyCooldownsMu.Lock()
+	defer proxyCooldownsMu.Unlock()
+	until, ok := proxyCooldowns[idx]
 	if !ok || !time.Now().Before(until) {
 		return time.Time{}
 	}
@@ -138,7 +138,7 @@ func pickUpstreamProxy() (string, int) {
 	if n == 0 {
 		return "", -1
 	}
-	idx := int(zenProxyCount.Add(1)-1) % n
+	idx := int(proxyRRCounter.Add(1)-1) % n
 	switch cfg.Strategy {
 	case "random":
 		idx = int(time.Now().UnixNano() % int64(n))
@@ -147,7 +147,7 @@ func pickUpstreamProxy() (string, int) {
 	}
 	// 冷却跳过:线性探测下一个可用代理
 	for i := 0; i < n; i++ {
-		if zenProxyAvailable(idx) {
+		if proxyAvailable(idx) {
 			break
 		}
 		idx = (idx + 1) % n

@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"strconv"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -127,9 +127,11 @@ func SyncCatalog() (int, error) {
 }
 
 // fetchSoloModelConfigs 拉取 TraeCode 原生 Solo 目录：
-//   POST {gateway}/api/ide/v1/get_detail_param
-//   body {"function":"solo_work_lite","config_names":null,"need_prompt":false,
-//         "current_config_info":null,"poly_prompt":true,"mode_type":null,"agent_type":null}
+//
+//	POST {gateway}/api/ide/v1/get_detail_param
+//	body {"function":"solo_work_lite","config_names":null,"need_prompt":false,
+//	      "current_config_info":null,"poly_prompt":true,"mode_type":null,"agent_type":null}
+//
 // 请求头带 Solo 客户端指纹（Trae/0.1.52 / 83DG / stable_cn 等，上游实测值）。
 // 响应 config_info_list（或 data.config_info_list）；usage 非 chat_completion 的
 // 路由配置（如 custom_model_1M_text）与 custom_models 条目跳过；model_name 取
@@ -179,7 +181,7 @@ func fetchSoloModelConfigs(token, edition string) (map[string]Model, error) {
 				ContextTokens int `json:"context_window_tokens"`
 				MaxTokens     int `json:"prompt_max_tokens"`
 			} `json:"display_config"`
-			CustomModels  any `json:"custom_models"`
+			CustomModels   any `json:"custom_models"`
 			ModelDetailLst []struct {
 				ModelName string `json:"model_name"`
 			} `json:"model_detail_list"`
@@ -197,7 +199,7 @@ func fetchSoloModelConfigs(token, edition string) (map[string]Model, error) {
 					ContextTokens int `json:"context_window_tokens"`
 					MaxTokens     int `json:"prompt_max_tokens"`
 				} `json:"display_config"`
-				CustomModels  any `json:"custom_models"`
+				CustomModels   any `json:"custom_models"`
 				ModelDetailLst []struct {
 					ModelName string `json:"model_name"`
 				} `json:"model_detail_list"`
@@ -260,37 +262,37 @@ func fetchSoloModelConfigs(token, edition string) (map[string]Model, error) {
 func soloHeaders(token, userID string) map[string]string {
 	fp := fingerprintFor(userID)
 	return map[string]string{
-		"Content-Type":        "application/json",
-		"Accept":              "application/json",
-		"Authorization":       "Cloud-IDE-JWT " + token,
-		"X-Cloudide-Token":    token,
-		"X-Ide-Token":         token,
-		"X-App-Id":            traeAppID,
-		"X-App-Version":       "default",
-		"X-App-Version-Code":  "20260811",
-		"X-Ide-Version":       "0.1.52",
-		"X-Ide-Version-Code":  "20260811",
-		"X-Ide-Version-Type":  "stable",
-		"X-Plugin-Channel":    "icube-ai",
-		"X-Uid":               userID,
-		"x-device-id":         fp.DeviceID,
-		"x-machine-id":        fp.MachineID,
-		"x-device-cpu":        "AMD",
-		"x-device-brand":      "83DG",
-		"x-device-type":       "windows",
-		"x-device-platform":   "windows",
-		"x-os-version":        "Windows 11 Pro",
-		"x-version-code":      "20260811",
-		"x-ide-token":         token,
-		"package-type":        "stable_cn",
-		"x-lscbd-aid":         "787976",
-		"x-lscbd-platform":    "windows",
-		"x-ss-dp":             "787976",
-		"app-version":         "0.1.52",
+		"Content-Type":         "application/json",
+		"Accept":               "application/json",
+		"Authorization":        "Cloud-IDE-JWT " + token,
+		"X-Cloudide-Token":     token,
+		"X-Ide-Token":          token,
+		"X-App-Id":             traeAppID,
+		"X-App-Version":        "default",
+		"X-App-Version-Code":   "20260811",
+		"X-Ide-Version":        "0.1.52",
+		"X-Ide-Version-Code":   "20260811",
+		"X-Ide-Version-Type":   "stable",
+		"X-Plugin-Channel":     "icube-ai",
+		"X-Uid":                userID,
+		"x-device-id":          fp.DeviceID,
+		"x-machine-id":         fp.MachineID,
+		"x-device-cpu":         "AMD",
+		"x-device-brand":       "83DG",
+		"x-device-type":        "windows",
+		"x-device-platform":    "windows",
+		"x-os-version":         "Windows 11 Pro",
+		"x-version-code":       "20260811",
+		"x-ide-token":          token,
+		"package-type":         "stable_cn",
+		"x-lscbd-aid":          "787976",
+		"x-lscbd-platform":     "windows",
+		"x-ss-dp":              "787976",
+		"app-version":          "0.1.52",
 		"request-traffic-type": "prod",
-		"User-Agent":          "Trae/0.1.52",
-		"Origin":              "https://solo.trae.cn",
-		"Referer":             "https://solo.trae.cn/",
+		"User-Agent":           "Trae/0.1.52",
+		"Origin":               "https://solo.trae.cn",
+		"Referer":              "https://solo.trae.cn/",
 	}
 }
 
@@ -363,9 +365,9 @@ func fetchWebModelConfigs(token, edition string) (map[string]Model, error) {
 					RawFunctionCam  string `json:"rawChatFunction"`
 					// 上下文字段上游形态不稳定（int / 字符串 / 对象都出现过），
 					// 宽松存 any 再转数
-					ContextWindow   any `json:"context_window_size"`
-					ContextWindowC  any `json:"contextWindow"`
-					ContextTokens   any `json:"context_window_tokens"`
+					ContextWindow  any `json:"context_window_size"`
+					ContextWindowC any `json:"contextWindow"`
+					ContextTokens  any `json:"context_window_tokens"`
 				} `json:"models"`
 			} `json:"list"`
 		} `json:"data"`

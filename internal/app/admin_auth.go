@@ -1,7 +1,6 @@
 package app
 
 import (
-	"afree-proxy/internal/kit"
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
@@ -11,10 +10,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"net"
 	"net/http"
-	"os"
 	"strings"
 	"sync"
 	"time"
@@ -50,9 +47,8 @@ type loginFailState struct {
 
 func loadSessionSecret() []byte {
 	sessionSecretOnce.Do(func() {
-		path := kit.ResolveDataPath(".session-secret")
-		if data, err := os.ReadFile(path); err == nil && len(strings.TrimSpace(string(data))) >= 64 {
-			if s, err := hex.DecodeString(strings.TrimSpace(string(data))); err == nil {
+		if hexStr, ok := globalSessionSecretHex(); ok {
+			if s, err := hex.DecodeString(hexStr); err == nil && len(s) >= 32 {
 				sessionSecret = s
 				return
 			}
@@ -61,10 +57,7 @@ func loadSessionSecret() []byte {
 		if _, err := rand.Read(s); err != nil {
 			panic("generate session secret: " + err.Error())
 		}
-		if err := os.WriteFile(path, []byte(hex.EncodeToString(s)), 0600); err != nil {
-			// 写失败只影响"重启后会话仍有效"，不阻断启动，但必须可感知
-			log.Printf("  WARNING: persist session secret failed (%v); sessions will not survive restart", err)
-		}
+		setGlobalSessionSecret(hex.EncodeToString(s))
 		sessionSecret = s
 	})
 	return sessionSecret

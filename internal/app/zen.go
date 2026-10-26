@@ -302,39 +302,25 @@ type zenCompactConfig struct {
 }
 
 type zenConfigData struct {
-	Key                 string           `json:"key"`            // 兼容字段：始终等于 Keys[0]（旧版单 key 读取用）
-	Keys                []string         `json:"keys,omitempty"` // zen 多 key 池，请求按 round-robin 轮转
-	BaseURL             string           `json:"baseURL"`
-	MaxConcurrency      int              `json:"maxConcurrency"` // zen 上游最大并发,防 worker 瞬时超限,默认 8
-	Retries             int              `json:"retries"`        // 限流/网络错误重试次数,默认 3
-	Compaction          zenCompactConfig `json:"compaction"`
+	Key            string           `json:"key"`            // 兼容字段：始终等于 Keys[0]（旧版单 key 读取用）
+	Keys           []string         `json:"keys,omitempty"` // zen 多 key 池，请求按 round-robin 轮转
+	BaseURL        string           `json:"baseURL"`
+	MaxConcurrency int              `json:"maxConcurrency"` // zen 上游最大并发,防 worker 瞬时超限,默认 8
+	Retries        int              `json:"retries"`        // 限流/网络错误重试次数,默认 3
+	Compaction     zenCompactConfig `json:"compaction"`
 	// Deprecated 迁移字段：旧版把代理别名存在独立表里，normalizeZenKeys
 	// 会把别名折叠回代理行（#fragment）并清空本字段。
 	ProxyAliases map[string]string `json:"proxyAliases,omitempty"`
-	// 账号/key 代理隔离开关（proxy_binding.go）。nil = 未配置 = 隔离启用（默认）；
-	// 显式 false 仅表示"用户主动关闭"。PROXY_ISOLATION=true 时强制开启（面板
-	// 只读）；env=false 仅把默认值改为关闭，面板仍可修改（见 proxyIsolationEnabled）。
-	// 指针三态是为了旧配置文件缺字段时默认进入隔离模式，而不是静默退回旧规则。
-	ProxyIsolation *bool `json:"proxyIsolation,omitempty"`
-	// 备用代理开关（proxy_binding.go）。nil = 未配置 = 关闭（默认）：主代理不可用
-	// 时不尝试备用代理，该身份本次直接跳过（仍然绝不回退直连）。显式 true 才启用
-	// "主不通走备"的兜底。默认值与 ProxyIsolation 相反 —— 兜底是有意开启的行为，
-	// 不该因为旧配置文件缺字段而被静默打开。
-	BackupProxyEnabled *bool `json:"backupProxyEnabled,omitempty"`
-	// 自动分配排除表（"平台级代理黑名单"）：代理池条目（与 Proxies 同一字符串
-	// 形态）-> 排除的平台（凭据页 kind，见 proxyRuleKinds）。只约束一键代理与
-	// 延迟重排等"自动分配"路径 —— 手动绑定、配置导入与运行时路由都不受影响。
-	// 典型用途：zen 免费额度按出口 IP 限额，把已打满的代理对 zen 排除后，
-	// 批量分配不会再把它绑给任何 zen 凭据。池变动时自动清理已不在池内的条目。
-	ProxyExclusions map[string][]string `json:"proxyExclusions,omitempty"`
-	// 每代理绑定上限：平台 kind -> 单个代理在该平台最多绑几条凭据（缺项/0 =
-	// 不限）。同样只约束自动分配路径；一键代理每代理至多用一次，实际生效场景
-	// 是延迟重排的供给容量（超限的既有绑定不冻结，由重排逐步消化）。
-	ProxyBindCaps map[string]int `json:"proxyBindCaps,omitempty"`
-	// zen key 的代理绑定表：key 明文 -> 主/备用代理。与 Keys 分开存 —— 未登记
-	// 绑定的 key 天然获得"未绑定走全局规则"的兜底语义。
-	// 面板永不回传本表（key 明文不出口），绑定随 keyStates 按索引下发。
-	KeyBindings map[string]zenProxyBinding `json:"keyBindings,omitempty"`
+	// 代理隔离/备用/排除表/绑定上限已迁出到 proxy-config.json 的隔离与绑定段
+	// (见 proxy_binding_config.go)—— 代理池与隔离规则是全局能力,不该由某个
+	// 平台的配置文件托管。
+	//
+	// KeyBindings 反过来留在这里:它的键是 key 明文,属于 key 自己的数据。放进
+	// proxy-config.json 会让同一批明文 key 在 zen-config.json 的 keys 数组和
+	// 代理文件里各存一份,冗余且容易写不一致。其他平台(amd/or/th/other)的绑定
+	// 表同理留在各自配置文件里。
+	KeyBindings map[string]proxyBinding `json:"keyBindings,omitempty"`
+	//
 	// zen key 的路由参与表：key 明文 -> 是否进入请求轮转（面板"启用"列勾选）。
 	// nil/缺项 = 参与。路由启用是铸造的前提（父集语义）：禁用路由的 key 不参与
 	// 选号，收割机也不再为它铸造会话（zenKeyAutoHarvestEnabled）。
@@ -527,20 +513,13 @@ func reorderZenKeys(order []int) error {
 	return nil
 }
 
-// zenProxyBinding 一个 zen key 或 cline 账号的出口绑定：主代理优先，备用代理
-// 兜底；两者都不可用时跳过该身份（隔离优先于可用性）。
-type zenProxyBinding struct {
-	Main   string `json:"main,omitempty"`
-	Backup string `json:"backup,omitempty"`
-}
-
 func defaultZenConfig() *zenConfigData {
 	return &zenConfigData{
-		Key:             "public",
-		Keys:            []string{"public"},
-		BaseURL:         zenAPIBase,
-		MaxConcurrency:  8,
-		Retries:         3,
+		Key:            "public",
+		Keys:           []string{"public"},
+		BaseURL:        zenAPIBase,
+		MaxConcurrency: 8,
+		Retries:        3,
 		// 会话轮换周期：缺少该键的旧配置文件保持此默认（2 小时）。
 		// 显式写 0 表示关闭轮换（见 SessionRotateMinutes 注释）。
 		SessionRotateMinutes: defaultSessionRotateMinutes,
@@ -560,7 +539,7 @@ var (
 
 // 并发信号量：zen 上游最大并发（maxConcurrency 配置，rebuildZenSem 重建）。
 var (
-	zenSem chan struct{}
+	zenSem     chan struct{}
 	zenStateMu sync.Mutex
 )
 
@@ -646,18 +625,12 @@ func normalizeZenKeys(cfg *zenConfigData) {
 }
 
 func loadZenConfig() *zenConfigData {
-	path := kit.ResolveDataPath(".zen-config.json")
-	cfg := defaultZenConfig()
-	if data, err := os.ReadFile(path); err == nil {
-		if err := json.Unmarshal(data, cfg); err != nil {
-			// 损坏配置改名留档，避免下次保存把可手工恢复的原文覆盖掉
-			stamp := time.Now().Format("20060102-150405")
-			if renErr := os.Rename(path, path+".corrupt-"+stamp); renErr == nil {
-				log.Printf("zen config is corrupt JSON; moved to %s.corrupt-%s", path, stamp)
-			}
-			log.Printf("zen config parse failed: %v", err)
-		}
-	}
+	// 配置本体与 sessions/modelAliases/endpoints 同住 zen-config.json，
+	// 这里只取 zen 段（损坏留档与迁移逻辑都在 loadZenConfigFileLocked 里）。
+	zenFileMu.Lock()
+	file := loadZenConfigFileLocked()
+	zenFileMu.Unlock()
+	cfg := &file.zenConfigData
 	// ZEN_SESSION_ROTATE_MINUTES 覆盖会话轮换周期（分钟，0=关闭）。
 	// 与 POOL_STRATEGY 同语义：env 显式设置时总是覆盖持久化配置。
 	if n, ok := envInt("ZEN_SESSION_ROTATE_MINUTES"); ok {
@@ -679,28 +652,30 @@ func loadZenConfig() *zenConfigData {
 
 func saveZenConfig() {
 	zenConfigMu.Lock()
-	defer zenConfigMu.Unlock()
-	data, err := json.MarshalIndent(zenConfig, "", "  ")
-	if err != nil {
-		log.Printf("zen config marshal failed: %v", err)
-		return
-	}
-	// 原子写: 临时文件 + rename，崩溃中途写入不会截断原文件
-	path := kit.ResolveDataPath(".zen-config.json")
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0600); err != nil {
-		log.Printf("zen config save failed: %v", err)
-		return
-	}
-	if err := os.Rename(tmp, path); err != nil {
-		log.Printf("zen config save failed (rename): %v", err)
-	}
+	next := *zenConfig
+	zenConfigMu.Unlock()
+	// 只覆盖 zen 段，sessions/modelAliases/endpoints 原样保留。
+	mutateZenConfigFile(func(f *zenConfigFileData) {
+		f.zenConfigData = next
+	})
 }
 
 func getZenConfig() *zenConfigData {
 	zenConfigMu.Lock()
 	defer zenConfigMu.Unlock()
 	return zenConfig
+}
+
+// setZenKeyBindings 只替换 zen key 的代理绑定段并落盘。不走 setZenConfig ——
+// 那条路会重建信号量、重置轮转游标、按 key 列表清理各种状态,对"只改绑定"
+// 是过度副作用。
+func setZenKeyBindings(m map[string]proxyBinding) {
+	zenConfigMu.Lock()
+	next := *zenConfig
+	next.KeyBindings = m
+	zenConfig = &next
+	zenConfigMu.Unlock()
+	saveZenConfig()
 }
 
 func setZenConfig(c *zenConfigData) {
@@ -806,7 +781,7 @@ func pickZenKey() string {
 	blocked := map[string]bool{}
 	if isolation {
 		for _, k := range keys {
-			main, backup, bound := zenKeyBindingOf(k)
+			main, backup, bound := keyBindingOf(k)
 			if bound && !boundProxiesRoutable(main, backup) {
 				blocked[k] = true
 			}
@@ -871,7 +846,7 @@ func pickZenKey() string {
 	}
 
 	var picked string
-	switch getProxyConfig().Strategy {
+	switch globalStrategy() {
 	case "fill":
 		// 池序第一个候选（与 Cline 账号池 fill 语义一致：用满一个再换）
 		set := map[string]bool{}
@@ -1037,7 +1012,7 @@ func zenKeyStatus() []map[string]any {
 		// 代理绑定（隔离模式，面板编辑用）。stale = 绑定的代理已不在当前
 		// 代理池里（被删除/改写），该 key 会被隔离一直跳过，必须提示。
 		// 直连哨兵不参与 stale 判定。
-		if main, backup, bound := zenKeyBindingOf(k); bound {
+		if main, backup, bound := keyBindingOf(k); bound {
 			st["proxyMain"] = main
 			st["proxyBackup"] = backup
 			st["proxyStale"] = (main != "" && !isEgressDirect(main) && proxyIdxInPool(main) < 0) ||
@@ -2016,10 +1991,10 @@ func callZenResponsesAPI(ctx context.Context, params map[string]any, stream bool
 		// 出口由 key 决定：隔离模式下同一 key 永远从绑定 IP 出现（主→备）；
 		// 绑定出口全不可用时短冷却该 key 并清空 retryKey 换下一个 —— 绝不
 		// 退回其他出口（那会让粘性会话的 IP 漂移）。
-		proxyURL, pidx, exitOK := zenAttemptExit(key)
+		proxyURL, pidx, exitOK := boundExitFor(key)
 		if !exitOK {
 			if o.pinKey != "" || pinnedZenKey() != "" {
-				main, backup, _ := zenKeyBindingOf(key)
+				main, backup, _ := keyBindingOf(key)
 				return nil, rateLimited, errors.New(blockedExitMessage(
 					fmt.Sprintf("key#%d bound proxies unavailable (cooling or removed); probe aborted by proxy isolation", keyIndex(key)),
 					main, backup))
@@ -2061,7 +2036,7 @@ func callZenResponsesAPI(ctx context.Context, params map[string]any, stream bool
 		hsStart := time.Now()
 		resp, err := proxyClientFor(proxyURL).Do(req)
 		if err == nil {
-			mainP, backupP, boundP := zenKeyBindingOf(key)
+			mainP, backupP, boundP := keyBindingOf(key)
 			setUpstreamExit(ctx, proxyExitType(proxyURL, mainP, backupP, boundP))
 			recordProxyOutcome(proxyURL, true, nil, time.Since(hsStart).Milliseconds())
 		}
@@ -2103,7 +2078,7 @@ func callZenResponsesAPI(ctx context.Context, params map[string]any, stream bool
 			return &http.Response{
 				StatusCode: http.StatusOK,
 				Header: http.Header{
-					"Content-Type":    []string{"application/json"},
+					"Content-Type":     []string{"application/json"},
 					"X-Afree-Used-Key": []string{key},
 				},
 				Body: io.NopCloser(bytes.NewReader(data)),
@@ -2280,12 +2255,12 @@ func callZenAPI(ctx context.Context, params map[string]any, stream bool, opts ..
 		if key == "" {
 			return nil, rateLimited, fmt.Errorf("no zen key routable: all configured keys' bound proxies are cooling or removed (proxy isolation)")
 		}
-		proxyURL, pidx, exitOK := zenAttemptExit(key)
+		proxyURL, pidx, exitOK := boundExitFor(key)
 		if !exitOK {
 			// ZEN_PIN_KEY/pinKey 固定死的 key 没有可换的余地，直接报错；
 			// 正常轮转把该 key 短冷却（pickZenKey 下一轮跳过它）后换 key。
 			if o.pinKey != "" || pinnedZenKey() != "" {
-				main, backup, _ := zenKeyBindingOf(key)
+				main, backup, _ := keyBindingOf(key)
 				return nil, rateLimited, errors.New(blockedExitMessage(
 					fmt.Sprintf("key#%d bound proxies unavailable (cooling or removed); probe aborted by proxy isolation", keyIndex(key)),
 					main, backup))
@@ -2319,7 +2294,7 @@ func callZenAPI(ctx context.Context, params map[string]any, stream bool, opts ..
 		hsStart := time.Now()
 		resp, err := proxyClientFor(proxyURL).Do(req)
 		if err == nil {
-			mainP, backupP, boundP := zenKeyBindingOf(key)
+			mainP, backupP, boundP := keyBindingOf(key)
 			setUpstreamExit(ctx, proxyExitType(proxyURL, mainP, backupP, boundP))
 			recordProxyOutcome(proxyURL, true, nil, time.Since(hsStart).Milliseconds())
 		}
@@ -2672,7 +2647,7 @@ func zenDesiredFromLive(registryOK bool, freeGate map[string]bool) (map[string]b
 //     attachment 旗标 + per-model provider.npm（端点种子，见 applyZenCatalog）。
 //
 // 增删一律以本次 live 结果为准：表中的种子条目若不再通过价格门会被移除
-//（种子只在首次成功同步之前的冷启动/离线状态提供兜底，不参与日常增删）。
+// （种子只在首次成功同步之前的冷启动/离线状态提供兜底，不参与日常增删）。
 // 返回新增模型数。无任何 live 来源可达时返回错误并保留旧表。
 func syncZenModels() (int, error) {
 	initZenModels()

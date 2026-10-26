@@ -300,7 +300,7 @@ func startWorkBuddy() (*workbuddySubsystem, error) {
 		GlobalEnabled:    cfg.Global.Enabled,
 		// 模型黑名单原始条目（config models.hidden）；运行期以 livecfg 快照为准
 		//（热生效），此处供 Live 为 nil 的裸用/测试路径。
-		ModelsHidden: cfg.Models.Hidden,
+		ModelsHidden:  cfg.Models.Hidden,
 		ModelsAliases: cfg.Models.Aliases,
 		// 倍率筛选同样双填：Live 热改优先，静态字段兜底（同款理由）。
 		ModelRateFilter: cfg.Pool.ModelRateFilter,
@@ -422,6 +422,7 @@ func (w *workbuddySubsystem) Stop() {
 // 代码，手改会被 re-vendor 冲掉，因此在 afree 隔离层做双向翻译：
 //   - 出站（/v1/models 列表、日志分类）：vendor 的 cn:/global: → wbcn:/wbgb:；
 //   - 入站（请求路由、combo target 校验）：wbcn:/wbgb: → vendor 的 cn:/global:。
+//
 // 旧的 cn:/global: 前缀同样接受（存量 IDE 配置与 combo target 不破坏）。
 const (
 	wbRealmPrefixCN     = "wbcn:"

@@ -118,6 +118,23 @@ def read_lf(p: Path) -> bytes:
     return p.read_bytes().replace(b"\r\n", b"\n")
 
 
+def gofmt_tree(root: Path) -> None:
+    """把 vendor 产物对齐到 gofmt。
+
+    本地 internal/workbuddy 已统一 gofmt，而 vendor 脚本吐出的上游代码不保证
+    格式一致；不预处理的话，三方合并会把纯格式差异当成真实改动，退化成整文件
+    冲突。base 与 theirs 都要过一遍，才能和 ours 比得起来。
+    """
+    files = [str(p) for p in root.rglob("*.go")]
+    if not files:
+        return
+    if shutil.which("gofmt") is None:
+        print("警告: 未找到 gofmt，跳过格式对齐（本次同步可能产生格式冲突）", file=sys.stderr)
+        return
+    for i in range(0, len(files), 40):  # 分批，避开 Windows 命令行长度上限
+        subprocess.run(["gofmt", "-w", *files[i:i + 40]], check=False)
+
+
 def merge_file(theirs: bytes, base: bytes, ours: bytes, tmp: Path) -> tuple[bytes, int]:
     """Three-way merge of LF-normalized inputs; returns (merged bytes, conflicts)."""
     cur, bp, op = tmp / "mf-cur", tmp / "mf-base", tmp / "mf-ours"
@@ -198,6 +215,7 @@ def main() -> int:
                 print("vendor 构建失败（原因见上方 stderr：可能是改写锚点随上游结构失效），"
                       "修 scripts/vendor_workbuddy.py 后重试。", file=sys.stderr)
                 return 1
+            gofmt_tree(target / "internal" / "workbuddy")
 
         ours = rel_files(WB_PKG)
         base = rel_files(base_out / "internal" / "workbuddy")

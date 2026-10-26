@@ -79,10 +79,10 @@ type TokenStats struct {
 
 // Credits 账号额度快照（ide_user_ent_usage 解析结果）。
 type Credits struct {
-	Remaining  float64   `json:"remaining,omitempty"`
-	Limit      float64   `json:"limit,omitempty"` // -1 = unlimited
-	Unlimited  bool      `json:"unlimited,omitempty"`
-	UpdatedAt  time.Time `json:"updatedAt,omitempty"`
+	Remaining float64   `json:"remaining,omitempty"`
+	Limit     float64   `json:"limit,omitempty"` // -1 = unlimited
+	Unlimited bool      `json:"unlimited,omitempty"`
+	UpdatedAt time.Time `json:"updatedAt,omitempty"`
 	// Identity 套餐身份（user_pay_identity_str，如 ProPlus）；空 = 未知。
 	Identity string `json:"identity,omitempty"`
 }
@@ -119,7 +119,7 @@ const DefaultGateway = "https://trae-api-cn.mchost.guru"
 const sgGateway = "https://a0ai-api-sg.byteintlapi.com"
 
 // oauthOnlyHostFragments 只承载 OAuth/账号路由、不能作模型网关的域名片段
-//（对这类 host 发 raw_chat 必失败，直接拒绝保存，免得整池静默 5xx）。
+// （对这类 host 发 raw_chat 必失败，直接拒绝保存，免得整池静默 5xx）。
 var oauthOnlyHostFragments = []string{"api.trae.cn", "api.trae.com.cn", "trae-api.com.cn", "oauth"}
 
 // ModelPrefix 网关分发前缀：客户端以 "trae:<model-id>" 形式调用本平台模型。
@@ -423,8 +423,29 @@ func FindAccount(id string) *Account {
 }
 
 // ProxiesEnabled 未绑定账号是否走共享代理池：缺省（nil）默认走池。
+
+// useProxiesResolver 由 app 层注入：走池开关存在 proxy-config.json 的代理池段
+// （与池本体同处一个文件），平台配置文件不再保存它。返回 nil = 该平台未配置，
+// 即缺省走池。
+var useProxiesResolver func() *bool
+
+// SetUseProxiesResolver 由 app 层在启动时注入读取器（见 app/platform_proxies.go）。
+func SetUseProxiesResolver(f func() *bool) { useProxiesResolver = f }
+
+// CurrentUseProxies 当前走池开关：优先全局代理配置，回落到本文件的历史字段。
+// 面板回显与请求路径共用同一口径。
+func CurrentUseProxies() *bool {
+	if useProxiesResolver != nil {
+		if v := useProxiesResolver(); v != nil {
+			return v
+		}
+	}
+	return Get().UseProxies
+}
+
+// ProxiesEnabled 未绑定凭据是否走共享代理池：缺省（nil）默认走池。
 func ProxiesEnabled() bool {
-	up := Get().UseProxies
+	up := CurrentUseProxies()
 	if up == nil {
 		return true
 	}

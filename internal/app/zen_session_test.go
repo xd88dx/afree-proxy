@@ -327,9 +327,10 @@ func TestLegacySessionFileMigration(t *testing.T) {
 }
 
 // 坏文件先备份再空跑：否则紧随其后的 save 会直接覆盖，出问题时无从追查。
+// 会话表与 zen 配置同住 zen-config.json，损坏留档针对整文件。
 func TestCorruptSessionFileIsBackedUp(t *testing.T) {
 	dir := setupZenSessionTestUpstream(t)
-	path := filepath.Join(dir, ".zen-sessions.json")
+	path := filepath.Join(dir, "zen-config.json")
 	if err := os.WriteFile(path, []byte("{not json"), 0600); err != nil {
 		t.Fatalf("write corrupt file: %v", err)
 	}
@@ -340,8 +341,12 @@ func TestCorruptSessionFileIsBackedUp(t *testing.T) {
 	zenSessMu.Unlock()
 	loadZenSessions()
 
-	if _, err := os.Stat(path + ".corrupt"); err != nil {
-		t.Fatalf("corrupt session file must be kept as .corrupt: %v", err)
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("corrupt zen config must be moved aside, still at %s (err=%v)", path, err)
+	}
+	backups, _ := filepath.Glob(path + ".corrupt-*")
+	if len(backups) == 0 {
+		t.Fatalf("corrupt zen config must be kept as .corrupt-<stamp>")
 	}
 	zenSessMu.Lock()
 	n := len(zenSessions)

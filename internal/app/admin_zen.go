@@ -30,6 +30,7 @@ func handleZenConfig(w http.ResponseWriter, r *http.Request) {
 // 前端无需改动。
 func zenConfigPayload() map[string]any {
 	cfg := getZenConfig()
+	binding := getProxyBindingConfig()
 	pool := getProxyPool()
 	return map[string]any{
 		"zenUseProxies":        zenProxiesEnabled(),
@@ -53,10 +54,10 @@ func zenConfigPayload() map[string]any {
 		// 备用代理开关：关闭时主代理不通不再尝试备用代理（绑定退化为只看主槽）。
 		"backupProxyEnabled": backupProxyEnabled(),
 		// 自动分配规则（平台级代理黑名单 / 每代理绑定上限），代理池页编辑。
-		"proxyExclusions": cfg.ProxyExclusions,
-		"proxyBindCaps":   cfg.ProxyBindCaps,
+		"proxyExclusions": binding.ProxyExclusions,
+		"proxyBindCaps":   binding.ProxyBindCaps,
 		"runtime": map[string]any{
-			"proxyCooldowns": zenProxyCooldownStatus(),
+			"proxyCooldowns": proxyCooldownStatus(),
 			// 每代理在线率统计（纯被动：只记真实请求的出口成败）。URL 已打码。
 			"proxyHealth": proxyHealthSnapshot(),
 		},
@@ -81,6 +82,10 @@ func handleZenConfigUpdate(w http.ResponseWriter, r *http.Request) {
 	// 字段才回写，避免每次保存 zen 配置都无谓重写代理池文件。
 	poolNext := *getProxyPool()
 	poolChanged := false
+	// 隔离/绑定段同样独立落盘（proxy-config.json），只在本次真的带了相关字段
+	// 或代理池变动需要清理排除表时才回写。
+	bindingNext := *getProxyBindingConfig()
+	bindingChanged := false
 	var patch struct {
 		ZenUseProxies       *bool    `json:"zenUseProxies"`
 		WorkbuddyUseProxies *bool    `json:"workbuddyUseProxies"`
@@ -113,16 +118,11 @@ func handleZenConfigUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	next := &zenConfigData{
-		Key:                cur.Key,
-		Keys:               cur.Keys,
-		BaseURL:            cur.BaseURL,
-		MaxConcurrency:     cur.MaxConcurrency,
-		Retries:            cur.Retries,
-		ProxyIsolation:     cur.ProxyIsolation,
-		BackupProxyEnabled: cur.BackupProxyEnabled,
-		ProxyExclusions:    cur.ProxyExclusions,
-		ProxyBindCaps:      cur.ProxyBindCaps,
-		KeyBindings:        cur.KeyBindings,
+		Key:            cur.Key,
+		Keys:           cur.Keys,
+		BaseURL:        cur.BaseURL,
+		MaxConcurrency: cur.MaxConcurrency,
+		Retries:        cur.Retries,
 		// KeyRoutingEnabled 必须随 next 保留：config/update 是全量替换语义，
 		// 漏拷会把面板勾选的路由参与表整体清掉（缺项 = 全部参与）。
 		KeyRoutingEnabled:    cur.KeyRoutingEnabled,
@@ -184,7 +184,8 @@ func handleZenConfigUpdate(w http.ResponseWriter, r *http.Request) {
 		// 池变动后同步清理排除表：已不在池内的条目永远不会被自动分配命中，
 		// 留着只是垃圾配置（订阅整池替换路径 proxy_subscription.go 复用本
 		// 结构体浅拷贝，无需重复处理）。
-		next.ProxyExclusions = pruneProxyExclusions(next.ProxyExclusions, canonical)
+		bindingNext.ProxyExclusions = pruneProxyExclusions(bindingNext.ProxyExclusions, canonical)
+		bindingChanged = true
 	}
 	if patch.ProxyStrategy != nil && *patch.ProxyStrategy != "" {
 		poolNext.Strategy = *patch.ProxyStrategy
@@ -218,10 +219,12 @@ func handleZenConfigUpdate(w http.ResponseWriter, r *http.Request) {
 			writeAPI(w, http.StatusBadRequest, apiResponse{Error: "PROXY_ISOLATION=true forces isolation on; unset the env var (or set it to false) to control isolation from the panel"})
 			return
 		}
-		next.ProxyIsolation = patch.ProxyIsolation
+		bindingNext.ProxyIsolation = patch.ProxyIsolation
+		bindingChanged = true
 	}
 	if patch.BackupProxyEnabled != nil {
-		next.BackupProxyEnabled = patch.BackupProxyEnabled
+		bindingNext.BackupProxyEnabled = patch.BackupProxyEnabled
+		bindingChanged = true
 	}
 	if patch.ProxyExclusions != nil {
 		// 整表替换语义：逐条校验平台 kind，空代理行/空平台列表丢弃，全空归 nil
@@ -241,7 +244,8 @@ func handleZenConfigUpdate(w http.ResponseWriter, r *http.Request) {
 		if len(clean) == 0 {
 			clean = nil
 		}
-		next.ProxyExclusions = clean
+		bindingNext.ProxyExclusions = clean
+		bindingChanged = true
 	}
 	if patch.ProxyBindCaps != nil {
 		// 整表替换语义：只收正值，全空归 nil（缺项/0 = 不限）
@@ -258,7 +262,8 @@ func handleZenConfigUpdate(w http.ResponseWriter, r *http.Request) {
 		if len(clean) == 0 {
 			clean = nil
 		}
-		next.ProxyBindCaps = clean
+		bindingNext.ProxyBindCaps = clean
+		bindingChanged = true
 	}
 	// 0 是合法值（关闭轮换），不能用 > 0 过滤；负值视为无效忽略。
 	if patch.SessionRotateMinutes != nil && *patch.SessionRotateMinutes >= 0 {
@@ -284,6 +289,9 @@ func handleZenConfigUpdate(w http.ResponseWriter, r *http.Request) {
 		next.Compaction = base
 	}
 	setZenConfig(next)
+	if bindingChanged {
+		setProxyBindingConfig(&bindingNext)
+	}
 	if poolChanged {
 		setProxyPool(&poolNext)
 	}
@@ -644,8 +652,9 @@ func handleZenKeyDelete(w http.ResponseWriter, r *http.Request) {
 	if len(keys) == 0 {
 		next.Key = ""
 	}
-	next.KeyBindings = withoutKey(cfg.KeyBindings, key)
 	next.KeyRoutingEnabled = withoutKey(cfg.KeyRoutingEnabled, key)
+	// 该 key 的代理绑定一并删除（绑定按 key 明文存，key 不在了绑定就是垃圾）。
+	next.KeyBindings = withoutKey(cfg.KeyBindings, key)
 	setZenConfig(&next)
 	writeAPI(w, http.StatusOK, apiResponse{Success: true, Message: fmt.Sprintf("key #%d deleted", req.Index+1)})
 }
@@ -688,7 +697,7 @@ func handleZenKeySetProxy(w http.ResponseWriter, r *http.Request) {
 		writeAPI(w, http.StatusBadRequest, apiResponse{Error: "invalid JSON"})
 		return
 	}
-	if err := setZenKeyProxyBinding(req.Index, req.Main, req.Backup); err != nil {
+	if err := setKeyProxyBinding(req.Index, req.Main, req.Backup); err != nil {
 		writeAPI(w, http.StatusBadRequest, apiResponse{Error: err.Error()})
 		return
 	}

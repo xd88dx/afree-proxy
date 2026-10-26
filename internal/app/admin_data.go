@@ -4,8 +4,6 @@ import (
 	"log"
 	"net/http"
 	"os"
-
-	"afree-proxy/internal/kit"
 )
 
 // POST /admin/api/data/delete-all
@@ -63,21 +61,20 @@ func clearPoolForDataDelete() (accounts, clientKeys int) {
 	old := loadPool()
 	poolMu.Lock()
 	accounts = len(old.Accounts)
-	clientKeys = len(old.Keys)
+	clientKeys = len(globalClientKeys())
 	pool = &AccountPool{
-		Accounts:        []*Account{},
-		CurrentIdx:      0,
-		Keys:            []string{},
-		ClineUseProxies: nil, // 重置为默认（开启）
-		AdminLogEnabled: nil, // 重置为默认（不记录 /admin 访问日志）
-		Strategy:        "round_robin",
-		Headers:         defaultProxyConfig().Headers,
+		Accounts:   []*Account{},
+		CurrentIdx: 0,
+		Headers:    defaultProxyConfig().Headers,
 	}
 	poolDirty = false
 	poolMu.Unlock()
 	savePool()
 
 	setProxyConfig(defaultProxyConfig())
+	setGlobalClientKeys(nil)
+	setGlobalAdminLogEnabled(false)
+	setGlobalStrategy("round_robin")
 	// 旧账号的刷新单飞句柄一并作废
 	refreshFlightMu.Lock()
 	refreshFlight = map[*Account]*refreshFlightCall{}
@@ -93,6 +90,7 @@ func clearOpenCodeKeysForDataDelete() int {
 	// 配置（baseURL、压缩和代理策略）。
 	next.Key = ""
 	next.Keys = nil
+	// key 池已清空，绑定表随之失效（绑定按 key 明文存，留着就是垃圾配置）。
 	next.KeyBindings = nil
 	setZenConfig(&next)
 	return n
@@ -115,9 +113,11 @@ func clearZenSessionsForDataDelete() int {
 // 模型不受影响）。
 func clearZenEndpointsForDataDelete() int {
 	learned := loadZenEndpointsFile()
-	if err := os.Remove(zenEndpointFile()); err != nil && !os.IsNotExist(err) {
-		log.Printf("data delete: remove endpoints file failed: %v", err)
-	}
+	// 学习结果住在 zen-config.json 的 endpoints 段，清空该段即可（不删整文件，
+	// 否则会连 key 池与粘性会话一起清掉）。
+	mutateZenConfigFile(func(f *zenConfigFileData) {
+		f.Endpoints = nil
+	})
 	if len(learned) == 0 {
 		return 0
 	}
@@ -183,7 +183,7 @@ func clearProxyPoolForDataDelete() int {
 	setProxyPool(defaultProxyPoolConfig())
 	setZenConfig(defaultZenConfig())
 	clearAllAccountProxies()
-	clearAllZenKeyProxies()
+	clearAllKeyProxies()
 	return n
 }
 
@@ -200,16 +200,15 @@ func clearCombosForDataDelete() int {
 }
 
 // clearClineStreamLearnedForDataDelete 清空 cline "必须流式"自学习结果
-// （内存表 + data/.cline-stream-required.json）。
+// （内存表 + afree-config.json 的 clineStreamRequired 段）。
 func clearClineStreamLearnedForDataDelete() int {
 	clineStreamMu.Lock()
 	n := len(clineStreamLearned)
 	clineStreamLearned = nil
 	clineStreamMu.Unlock()
-	path := kit.ResolveDataPath(".cline-stream-required.json")
-	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
-		log.Printf("data delete: remove %s failed: %v", path, err)
-	}
+	mutateGlobalConfig(func(g *globalConfigData) {
+		g.ClineStreamRequired = nil
+	})
 	return n
 }
 

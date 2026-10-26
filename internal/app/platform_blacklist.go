@@ -4,18 +4,16 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
-	"os"
 	"sort"
 	"strings"
 	"sync"
 	"time"
 
 	"afree-proxy/internal/amd"
-	"afree-proxy/internal/kit"
 	"afree-proxy/internal/openrouter"
 	"afree-proxy/internal/other"
-	"afree-proxy/internal/trae"
 	"afree-proxy/internal/tokenharbor"
+	"afree-proxy/internal/trae"
 )
 
 // ============================================================================
@@ -52,10 +50,6 @@ var (
 	platformBanLoaded bool
 )
 
-func platformBanPath() string {
-	return kit.ResolveDataPath(".platform-blacklist.json")
-}
-
 func ensurePlatformBanLoaded() {
 	platformBanMu.Lock()
 	defer platformBanMu.Unlock()
@@ -63,53 +57,30 @@ func ensurePlatformBanLoaded() {
 		return
 	}
 	platformBanLoaded = true
-	raw, err := os.ReadFile(platformBanPath())
-	if err != nil {
-		if !os.IsNotExist(err) {
-			log.Printf("platform blacklist: read %s: %v", platformBanPath(), err)
+	globalCfgMu.Lock()
+	g := loadGlobalConfigLocked()
+	if len(g.PlatformBlacklist) > 0 {
+		platformBanItems = make(map[string]*platformBanEntry, len(g.PlatformBlacklist))
+		for k, e := range g.PlatformBlacklist {
+			platformBanItems[k] = e
 		}
-		return
 	}
-	var f platformBanFile
-	if json.Unmarshal(raw, &f) != nil {
-		log.Printf("platform blacklist: corrupt JSON at %s (starting clean)", platformBanPath())
-		return
-	}
-	if f.Platforms != nil {
-		platformBanItems = f.Platforms
-	}
+	globalCfgMu.Unlock()
 	if n := len(platformBanItems); n > 0 {
-		log.Printf("platform blacklist: restored %d platform(s) from %s", n, platformBanPath())
+		log.Printf("platform blacklist: restored %d platform(s) from %s", n, globalConfigPath())
 	}
 }
 
 func flushPlatformBan() {
 	platformBanMu.Lock()
-	out := platformBanFile{
-		SavedAt:   time.Now(),
-		Platforms: make(map[string]*platformBanEntry, len(platformBanItems)),
-	}
+	out := make(map[string]*platformBanEntry, len(platformBanItems))
 	for k, e := range platformBanItems {
 		cp := *e
-		out.Platforms[k] = &cp
+		out[k] = &cp
 	}
 	platformBanMu.Unlock()
 
-	raw, err := json.MarshalIndent(out, "", "  ")
-	if err != nil {
-		log.Printf("platform blacklist: marshal: %v", err)
-		return
-	}
-	path := platformBanPath()
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, raw, 0o600); err != nil {
-		log.Printf("platform blacklist: write %s: %v", tmp, err)
-		return
-	}
-	if err := os.Rename(tmp, path); err != nil {
-		log.Printf("platform blacklist: replace %s: %v", path, err)
-		_ = os.Remove(tmp)
-	}
+	mutateGlobalConfig(func(g *globalConfigData) { g.PlatformBlacklist = out })
 }
 
 // platformBanKeyValid 校验封禁键：六个基础平台或存在的 Other 子平台

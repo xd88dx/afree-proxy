@@ -20,7 +20,42 @@ var (
 )
 
 func init() {
-	poolPath = kit.ResolveDataPath(".cline-accounts.json")
+	poolPath = kit.ResolveDataPath("cline-config.json")
+}
+
+// migrateLegacyClinePool 一次性迁移:cline-config.json 不存在时,把旧的
+// .cline-accounts.json 搬到新文件名。旧文件里的 keys / strategy /
+// adminLogEnabled 已迁往 afree-config.json,反序列化时被忽略即自然丢弃。
+// 旧文件保留不删,便于回滚。
+func migrateLegacyClinePool() {
+	if poolPath != kit.ResolveDataPath("cline-config.json") {
+		return // 测试或自定义路径,不碰真实数据目录
+	}
+	if _, err := os.Stat(poolPath); err == nil {
+		return
+	}
+	legacy := kit.ResolveDataPath(".cline-accounts.json")
+	data, err := os.ReadFile(legacy)
+	if err != nil {
+		return
+	}
+	var p AccountPool
+	if json.Unmarshal(data, &p) != nil {
+		return
+	}
+	if p.Accounts == nil {
+		p.Accounts = []*Account{}
+	}
+	// 走池开关迁到 proxy-config.json（见 proxy_config.go 的迁移段），这里清掉，
+	// 免得新文件里留一个不再被读取的字段。
+	p.ClineUseProxies = nil
+	out, err := json.MarshalIndent(&p, "", "  ")
+	if err != nil {
+		return
+	}
+	if err := os.WriteFile(poolPath, out, 0o600); err == nil {
+		log.Printf("cline config: migrated %s -> %s (%d account(s))", legacy, poolPath, len(p.Accounts))
+	}
 }
 
 // markPoolDirtyLocked 标记池有待落盘变更（调用方必须持有 poolMu）。
@@ -69,9 +104,10 @@ func loadPool() *AccountPool {
 		return pool
 	}
 
+	migrateLegacyClinePool()
 	data, err := os.ReadFile(poolPath)
 	if err != nil {
-		pool = &AccountPool{Accounts: []*Account{}, Keys: []string{}}
+		pool = &AccountPool{Accounts: []*Account{}}
 		return pool
 	}
 
@@ -85,15 +121,12 @@ func loadPool() *AccountPool {
 		} else {
 			log.Printf("SEVERE: account pool file is corrupt JSON (quarantine rename failed: %v); starting with an EMPTY pool", renErr)
 		}
-		pool = &AccountPool{Accounts: []*Account{}, Keys: []string{}}
+		pool = &AccountPool{Accounts: []*Account{}}
 		return pool
 	}
 
 	if p.Accounts == nil {
 		p.Accounts = []*Account{}
-	}
-	if p.Keys == nil {
-		p.Keys = []string{}
 	}
 	pool = &p
 	// 旧池文件没有 poolEnabled 字段：在内存里立即物化为默认 true，
@@ -104,15 +137,9 @@ func loadPool() *AccountPool {
 			a.PoolEnabled = &enabled
 		}
 	}
-	// 回放持久化的调度策略与自定义请求头（POOL_STRATEGY env 显式设置时
-	// 策略以 env 为准，跳过回放）
+	// 回放自定义请求头。调度策略存在 afree-config.json（globalStrategy 直接读，
+	// POOL_STRATEGY env 显式设置时以 env 为准，见 ApplyEnvConfig）。
 	proxyConfigMu.Lock()
-	if !poolStrategyFromEnv {
-		switch p.Strategy {
-		case "round_robin", "fill", "random":
-			proxyConfig.Strategy = p.Strategy
-		}
-	}
 	if len(p.Headers) > 0 {
 		h := make(map[string]string, len(p.Headers))
 		for k, v := range p.Headers {
@@ -125,7 +152,7 @@ func loadPool() *AccountPool {
 		}
 		proxyConfig.Headers = h
 	}
-		proxyConfigMu.Unlock()
+	proxyConfigMu.Unlock()
 	return pool
 }
 
@@ -134,7 +161,6 @@ func loadPool() *AccountPool {
 func persistProxyConfig(cfg *proxyConfigData) {
 	p := loadPool()
 	poolMu.Lock()
-	p.Strategy = cfg.Strategy
 	h := make(map[string]string, len(cfg.Headers))
 	for k, v := range cfg.Headers {
 		h[k] = v
@@ -307,29 +333,19 @@ func reorderAccounts(order []string) (int, error) {
 
 // poolClineUseProxies 线程安全地读取 cline 走代理池开关；未设置（nil）默认开启。
 func poolClineUseProxies() bool {
-	p := loadPool()
-	poolMu.Lock()
-	defer poolMu.Unlock()
-	return p.ClineUseProxies == nil || *p.ClineUseProxies
+	if v := platformUseProxies("cline"); v != nil {
+		return *v
+	}
+	return true
 }
 
 // poolAdminLogEnabled 线程安全地读取"记录 /admin 访问日志"开关；未设置（nil）
 // 默认关闭 —— 本地自用部署不关心页面轮询产生的噪声行，只保留经过网关的模型
 // 会话日志。请求日志中间件在每个 /admin 请求上调用一次。
-func poolAdminLogEnabled() bool {
-	p := loadPool()
-	poolMu.Lock()
-	defer poolMu.Unlock()
-	return p.AdminLogEnabled != nil && *p.AdminLogEnabled
-}
+func poolAdminLogEnabled() bool { return globalAdminLogEnabled() }
 
 // poolKeysSnapshot 线程安全地返回客户端 API key 列表副本。
-func poolKeysSnapshot() []string {
-	p := loadPool()
-	poolMu.Lock()
-	defer poolMu.Unlock()
-	return append([]string(nil), p.Keys...)
-}
+func poolKeysSnapshot() []string { return globalClientKeys() }
 
 func savePool() {
 	poolMu.Lock()
@@ -524,7 +540,7 @@ func pickAccount() *Account {
 		}
 		// 隔离模式：绑定主备用出口都不可用（冷却中/已从池中删除）的账号本轮
 		// 整体跳过 —— 隔离优先于可用性，绝不退回其他出口。检查在 poolMu 内
-		// 完成：读的是绑定字段本身；可用性走 zenProxyCooldownsMu/zenConfigMu，
+		// 完成：读的是绑定字段本身；可用性走 proxyCooldownsMu/zenConfigMu，
 		// 都是叶子锁且无反向获取，无锁序风险。
 		if isolation && !boundProxiesRoutable(a.ProxyMain, a.ProxyBackup) {
 			continue
@@ -537,10 +553,8 @@ func pickAccount() *Account {
 		return nil
 	}
 
-	cfg := getProxyConfig()
-
 	var acc *Account
-	switch cfg.Strategy {
+	switch globalStrategy() {
 	case "fill":
 		// Always pick the first available (fill)
 		acc = active[0]
@@ -597,9 +611,8 @@ func pickAccountExcluding(exclude map[string]bool) *Account {
 		return nil
 	}
 
-	cfg := getProxyConfig()
 	var acc *Account
-	switch cfg.Strategy {
+	switch globalStrategy() {
 	case "fill":
 		acc = active[0]
 	case "random":

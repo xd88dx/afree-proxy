@@ -24,6 +24,8 @@ theirs = vendor(上游 HEAD)       新上游 + 脚本改写
 
 **vendor 改写白名单（2026-10-21 扩）**：上游新增**子包**时必须同步 `scripts/vendor_workbuddy.py` 的 `PACKAGES` 清单（漏了会 silently 缺包，编译报 "is not in std"）；上游新增**资产文件**（.css 等）必须扩 `ASSET_SUFFIXES`（漏了报 "pattern: no matching files found"）。
 
+**gofmt 对齐（2026-10-26 加）**：本地 `internal/workbuddy` 全树已 gofmt 干净，而 vendor 脚本吐出的上游代码不保证格式一致。脚本在生成 base/theirs 后各自 `gofmt -w` 一遍（`gofmt_tree`），否则纯格式差异会被三方合并当成真实改动，退化成整文件冲突。手工改完 vendor 树也要跑 `gofmt -w`，别把格式债留给下次同步。
+
 **本地倍率筛选 vs 上游预置缓存的测试（2026-10-21 定）**：上游测试可能直接预置 `dynamicModelsCache.ids` 而不经 fetch 同源路径，此时倍率表为空——`matchesModelRateFilter` 对「倍率表整体为空」放行（`upstream.ModelRatesEmpty()`，生产不可达状态），否则上游此类测试会被本地「缺失即隐藏」口径清空列表而挂。不要为过测试改上游测试文件（sync 会覆盖）。
 
 ## 3. 操作流程
@@ -65,4 +67,4 @@ python scripts/sync_workbuddy.py --seal
 ## 6. Windows 执行注意
 
 - 用 `py` 启动器跑（`py scripts/sync_workbuddy.py`）；直接 `python` 可能命中 WindowsApps 存根。
-- 脚本已做 LF 归一（`read_lf`），CRLF 工作区不会导致整文件冲突；若仍见整文件级冲突，先检查 `.gitattributes` 是否还在钉 LF。
+- 脚本已做 LF 归一（`read_lf`）+ 对 base/theirs 做 `gofmt -w` 对齐（见 §2），CRLF 工作区与格式差异都不会导致整文件冲突；若仍见整文件级冲突，先检查 `.gitattributes` 是否还在钉 LF。

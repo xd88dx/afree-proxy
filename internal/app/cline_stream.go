@@ -3,16 +3,12 @@ package app
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
 	"net/http"
-	"os"
 	"sync"
 	"time"
-
-	"afree-proxy/internal/kit"
 )
 
 // ============ cline "必须流式" 模型自学习 ============
@@ -31,11 +27,6 @@ import (
 //
 // 单向学习：命名约定唯一会出错的方向是"漏判"（该流式却没强制），反向
 //（多判）只是让网关多做一次流式聚合，对客户端透明、无副作用，不值得学。
-
-// clineStreamFile 学习结果持久化路径。
-func clineStreamFile() string {
-	return kit.ResolveDataPath(".cline-stream-required.json")
-}
 
 var (
 	clineStreamMu      sync.RWMutex
@@ -98,15 +89,16 @@ func learnClineStreamRequired(modelID string) {
 	saveClineStream(snapshot)
 }
 
-// loadClineStreamLearned 启动时恢复学习结果。
+// loadClineStreamLearned 启动时从全局配置(afree-config.json)恢复学习结果。
 func loadClineStreamLearned() {
-	data, err := os.ReadFile(clineStreamFile())
-	if err != nil || len(data) == 0 {
-		return
+	globalCfgMu.Lock()
+	g := loadGlobalConfigLocked()
+	learned := make(map[string]string, len(g.ClineStreamRequired))
+	for k, v := range g.ClineStreamRequired {
+		learned[k] = v
 	}
-	var learned map[string]string
-	if err := json.Unmarshal(data, &learned); err != nil {
-		log.Printf("cline stream learn parse failed, ignoring: %v", err)
+	globalCfgMu.Unlock()
+	if len(learned) == 0 {
 		return
 	}
 	clineStreamMu.Lock()
@@ -118,21 +110,14 @@ func loadClineStreamLearned() {
 	}
 }
 
-// saveClineStream 原子写盘（入参是不持锁的快照）。写失败只记日志不阻断请求——
+// saveClineStream 写入全局配置(入参是不持锁的快照)。写失败只记日志不阻断请求——
 // 学习结果是优化项，丢失只会让下一次非流式请求再付一次重试代价。
 func saveClineStream(learned map[string]string) {
-	data, err := json.MarshalIndent(learned, "", "  ")
-	if err != nil {
-		return
+	cp := make(map[string]string, len(learned))
+	for k, v := range learned {
+		cp[k] = v
 	}
-	tmp := clineStreamFile() + ".tmp"
-	if err := os.WriteFile(tmp, data, 0600); err != nil {
-		log.Printf("cline stream learn save failed: %v", err)
-		return
-	}
-	if err := os.Rename(tmp, clineStreamFile()); err != nil {
-		log.Printf("cline stream learn save failed (rename): %v", err)
-	}
+	mutateGlobalConfig(func(g *globalConfigData) { g.ClineStreamRequired = cp })
 }
 
 // clineCallFn 上游调用入口：包级变量便于测试注入假上游，生产恒为 callClineAPI。

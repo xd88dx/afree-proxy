@@ -27,7 +27,7 @@ func TestConfigImportDisablesAllIdentities(t *testing.T) {
 
 	// poolPath 在 init() 时按当时的 DATA_DIR 解析，测试里改指临时目录
 	savedPath, savedPool := poolPath, pool
-	poolPath = filepath.Join(tmp, ".cline-accounts.json")
+	poolPath = filepath.Join(tmp, "cline-config.json")
 	pool = nil
 	defer func() { poolPath, pool = savedPath, savedPool }()
 
@@ -95,7 +95,7 @@ func TestConfigImportKeepEnabled(t *testing.T) {
 	t.Setenv("DATA_DIR", tmp)
 
 	savedPath, savedPool := poolPath, pool
-	poolPath = filepath.Join(tmp, ".cline-accounts.json")
+	poolPath = filepath.Join(tmp, "cline-config.json")
 	pool = nil
 	defer func() { poolPath, pool = savedPath, savedPool }()
 
@@ -206,7 +206,7 @@ func TestConfigBackupAMDCloudSectionName(t *testing.T) {
 		t.Setenv("DATA_DIR", tmp)
 
 		savedPath, savedPool := poolPath, pool
-		poolPath = filepath.Join(tmp, ".cline-accounts.json")
+		poolPath = filepath.Join(tmp, "cline-config.json")
 		pool = nil
 		defer func() { poolPath, pool = savedPath, savedPool }()
 
@@ -275,7 +275,7 @@ func TestConfigBackupOtherSection(t *testing.T) {
 		t.Setenv("DATA_DIR", tmp)
 
 		savedPath, savedPool := poolPath, pool
-		poolPath = filepath.Join(tmp, ".cline-accounts.json")
+		poolPath = filepath.Join(tmp, "cline-config.json")
 		pool = nil
 		defer func() { poolPath, pool = savedPath, savedPool }()
 

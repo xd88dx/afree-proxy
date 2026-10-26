@@ -316,6 +316,7 @@ func TestCallClineAPI429QuotaKeywordLongCooldown(t *testing.T) {
 		t.Fatalf("quota-exhausted 429 must get a long cooldown, got %v", d)
 	}
 }
+
 // clineHeaders 契约：官方 CLI 身份头必须齐全、大小写精确、取值与最新 CLI
 // 一致（2026-10-19 真机抓包核对 npm cline@3.0.73 / @cline/core@0.0.95：
 // X-CLIENT-TYPE cline-cli，platform cli，UA 带 ai-sdk 三段后缀）。

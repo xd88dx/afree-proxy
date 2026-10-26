@@ -5,22 +5,16 @@ package app
 // 历史上代理池寄居在 .zen-config.json 的 zenConfigData 里，只因为最早只有
 // zen 平台走代理池；后来 amd / openrouter / tokenharbor / other / trae /
 // workbuddy 全部复用同一个出口池，"zen" 前缀就变成了纯误导——代理池是全局
-// 能力，不属于任何一个平台。这里把它拆到 .proxy-pool.json。
+// 能力，不属于任何一个平台。
 //
-// 迁移：首次启动（新文件不存在）时从 .zen-config.json 读取旧的
-// proxies / proxyStrategy / proxySubURL / proxySubCron / zenUseProxies /
-// workbuddyUseProxies 写入新文件。旧键不主动删除（zenConfigData 已无这些
-// 字段，下次保存 zen 配置时自然消失），这样回滚到旧版本仍能读到代理列表。
+// 落盘位置是 proxy-config.json 的出口池段（见 proxy_config.go），与出口健康
+// 统计、WorkBuddy 账号绑定同文件；本文件只管出口池这一段的内存态与语义。
 
 import (
-	"encoding/json"
 	"log"
-	"os"
 	"strings"
 	"sync"
 	"time"
-
-	"afree-proxy/internal/kit"
 )
 
 // proxyPoolConfigData 是全局出口代理池配置：列表、调度策略、订阅，以及两个
@@ -35,6 +29,13 @@ type proxyPoolConfigData struct {
 	SubURL  string `json:"proxySubURL,omitempty"`
 	SubCron string `json:"proxySubCron,omitempty"`
 	// 未绑定代理的身份是否走共享池：nil = 缺省（池非空即走）。
+	// 每个平台一份，语义相同，都属于代理域（见 platform_proxies.go）。
+	ClineUseProxies     *bool `json:"clineUseProxies,omitempty"`
+	AmdUseProxies       *bool `json:"amdUseProxies,omitempty"`
+	OprtUseProxies      *bool `json:"oprtUseProxies,omitempty"`
+	TkhbUseProxies      *bool `json:"tkhbUseProxies,omitempty"`
+	TraeUseProxies      *bool `json:"traeUseProxies,omitempty"`
+	OtherUseProxies     *bool `json:"otherUseProxies,omitempty"`
 	ZenUseProxies       *bool `json:"zenUseProxies,omitempty"`
 	WorkbuddyUseProxies *bool `json:"workbuddyUseProxies,omitempty"`
 }
@@ -48,76 +49,28 @@ var (
 	proxyPoolMu sync.Mutex
 )
 
-func proxyPoolPath() string { return kit.ResolveDataPath(".proxy-pool.json") }
-
-// loadProxyPoolConfig 读 .proxy-pool.json；文件不存在时执行一次从 zen 配置的
-// 迁移。读失败（非 NotExist）退回默认值，绝不让网关因配置损坏起不来。
+// loadProxyPoolConfig 从 proxy-config.json 取出口池段。文件不存在时由
+// loadProxyConfigFileLocked 完成一次性迁移。读失败退回默认值，绝不让网关
+// 因配置损坏起不来。
 func loadProxyPoolConfig() *proxyPoolConfigData {
-	path := proxyPoolPath()
-	data, err := os.ReadFile(path)
-	if err == nil {
-		cfg := defaultProxyPoolConfig()
-		if err := json.Unmarshal(data, cfg); err != nil {
-			log.Printf("proxy pool config parse failed (%s): %v; using defaults", path, err)
-			return defaultProxyPoolConfig()
-		}
-		normalizeProxyPoolConfig(cfg)
-		// 旧版把代理别名单独存在 zen 配置的 proxyAliases 表里；折叠幂等，
-		// 代理行已带 #fragment 时直接跳过。
-		if foldLegacyProxyAliases(cfg) {
-			if err := saveProxyPoolConfig(cfg); err != nil {
-				log.Printf("proxy pool config save failed after alias fold: %v", err)
-			}
-		}
-		return cfg
+	proxyFileMu.Lock()
+	f := loadProxyConfigFileLocked()
+	cfg := &proxyPoolConfigData{
+		Proxies:             append([]string(nil), f.Proxies...),
+		Strategy:            f.Strategy,
+		SubURL:              f.SubURL,
+		SubCron:             f.SubCron,
+		ClineUseProxies:     f.ClineUseProxies,
+		AmdUseProxies:       f.AmdUseProxies,
+		OprtUseProxies:      f.OprtUseProxies,
+		TkhbUseProxies:      f.TkhbUseProxies,
+		TraeUseProxies:      f.TraeUseProxies,
+		OtherUseProxies:     f.OtherUseProxies,
+		ZenUseProxies:       f.ZenUseProxies,
+		WorkbuddyUseProxies: f.WorkbuddyUseProxies,
 	}
-	if !os.IsNotExist(err) {
-		log.Printf("proxy pool config read failed (%s): %v; using defaults", path, err)
-		return defaultProxyPoolConfig()
-	}
-	cfg := migrateProxyPoolFromZen()
-	if err := saveProxyPoolConfig(cfg); err != nil {
-		log.Printf("proxy pool config migrate-write failed: %v", err)
-	}
-	return cfg
-}
-
-// migrateProxyPoolFromZen 从 .zen-config.json 提取历史遗留的代理池字段。
-// 直接读原始 JSON 而不是 getZenConfig()：包级变量初始化顺序不保证 zen 配置
-// 已就绪，读文件才是稳定的。
-func migrateProxyPoolFromZen() *proxyPoolConfigData {
-	cfg := defaultProxyPoolConfig()
-	data, err := os.ReadFile(kit.ResolveDataPath(".zen-config.json"))
-	if err != nil {
-		return cfg
-	}
-	var legacy struct {
-		Proxies             []string          `json:"proxies"`
-		ProxyStrategy       string            `json:"proxyStrategy"`
-		ProxySubURL         string            `json:"proxySubURL"`
-		ProxySubCron        string            `json:"proxySubCron"`
-		ZenUseProxies       *bool             `json:"zenUseProxies"`
-		WorkbuddyUseProxies *bool             `json:"workbuddyUseProxies"`
-		ProxyAliases        map[string]string `json:"proxyAliases"`
-	}
-	if err := json.Unmarshal(data, &legacy); err != nil {
-		log.Printf("proxy pool migration skipped: .zen-config.json unreadable: %v", err)
-		return cfg
-	}
-	cfg.Proxies = legacy.Proxies
-	if s := strings.TrimSpace(legacy.ProxyStrategy); s != "" {
-		cfg.Strategy = s
-	}
-	cfg.SubURL = strings.TrimSpace(legacy.ProxySubURL)
-	cfg.SubCron = strings.TrimSpace(legacy.ProxySubCron)
-	cfg.ZenUseProxies = legacy.ZenUseProxies
-	cfg.WorkbuddyUseProxies = legacy.WorkbuddyUseProxies
-	foldProxyAliases(cfg, legacy.ProxyAliases)
+	proxyFileMu.Unlock()
 	normalizeProxyPoolConfig(cfg)
-	if len(cfg.Proxies) > 0 || cfg.SubURL != "" || cfg.ZenUseProxies != nil || cfg.WorkbuddyUseProxies != nil {
-		log.Printf("proxy pool config migrated from .zen-config.json: %d proxies, strategy=%s, subURL=%t",
-			len(cfg.Proxies), cfg.Strategy, cfg.SubURL != "")
-	}
 	return cfg
 }
 
@@ -147,22 +100,6 @@ func normalizeProxyPoolConfig(c *proxyPoolConfigData) {
 	}
 }
 
-// foldLegacyProxyAliases 从 .zen-config.json 读取旧版 proxyAliases 表并折叠。
-// 返回是否发生改动。
-func foldLegacyProxyAliases(cfg *proxyPoolConfigData) bool {
-	data, err := os.ReadFile(kit.ResolveDataPath(".zen-config.json"))
-	if err != nil {
-		return false
-	}
-	var legacy struct {
-		ProxyAliases map[string]string `json:"proxyAliases"`
-	}
-	if err := json.Unmarshal(data, &legacy); err != nil || len(legacy.ProxyAliases) == 0 {
-		return false
-	}
-	return foldProxyAliases(cfg, legacy.ProxyAliases)
-}
-
 // foldProxyAliases 把"代理地址 -> 别名"折叠成代理行的 #fragment（面板与拨号
 // 都按整行处理，别名随行保存）。已带 # 的行不重复折叠，因此可反复调用。
 func foldProxyAliases(cfg *proxyPoolConfigData, aliases map[string]string) bool {
@@ -185,17 +122,24 @@ func foldProxyAliases(cfg *proxyPoolConfigData, aliases map[string]string) bool 
 	return changed
 }
 
+// saveProxyPoolConfig 只覆盖 proxy-config.json 的出口池段，不动健康统计与
+// WorkBuddy 绑定。
 func saveProxyPoolConfig(c *proxyPoolConfigData) error {
-	data, err := json.MarshalIndent(c, "", "  ")
-	if err != nil {
-		return err
-	}
-	path := proxyPoolPath()
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0600); err != nil {
-		return err
-	}
-	return os.Rename(tmp, path)
+	mutateProxyConfigFile(func(f *proxyConfigFileData) {
+		f.Proxies = append([]string(nil), c.Proxies...)
+		f.Strategy = c.Strategy
+		f.SubURL = c.SubURL
+		f.SubCron = c.SubCron
+		f.ClineUseProxies = c.ClineUseProxies
+		f.AmdUseProxies = c.AmdUseProxies
+		f.OprtUseProxies = c.OprtUseProxies
+		f.TkhbUseProxies = c.TkhbUseProxies
+		f.TraeUseProxies = c.TraeUseProxies
+		f.OtherUseProxies = c.OtherUseProxies
+		f.ZenUseProxies = c.ZenUseProxies
+		f.WorkbuddyUseProxies = c.WorkbuddyUseProxies
+	})
+	return nil
 }
 
 func getProxyPool() *proxyPoolConfigData {
@@ -217,9 +161,9 @@ func setProxyPool(c *proxyPoolConfigData) {
 		log.Printf("proxy pool config save failed: %v", err)
 	}
 	if proxiesChanged(old.Proxies, c.Proxies) {
-		zenProxyCooldownsMu.Lock()
-		zenProxyCooldowns = map[int]time.Time{}
-		zenProxyCooldownsMu.Unlock()
+		proxyCooldownsMu.Lock()
+		proxyCooldowns = map[int]time.Time{}
+		proxyCooldownsMu.Unlock()
 		resetProxyHealthStats()
 	}
 	validProxy := map[string]bool{"": true}

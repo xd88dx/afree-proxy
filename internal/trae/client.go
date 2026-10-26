@@ -43,7 +43,7 @@ const (
 	uaEmpty          = ""
 	uaWeb            = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36"
 	refreshBeforeSec = 30 * 60 // 距过期 <30min 提前刷新
-	validBufferSec   = 5 * 60 // 距过期 <5min 视为不可用（先刷新再发）
+	validBufferSec   = 5 * 60  // 距过期 <5min 视为不可用（先刷新再发）
 )
 
 // deviceBrands 设备品牌池（trae_client.py _DEVICE_BRANDS）。
@@ -199,37 +199,37 @@ func functionOf(m Model) string {
 func chatHeaders(acc *Account, m Model, requestID string) map[string]string {
 	fp := fingerprintFor(acc.ID)
 	h := map[string]string{
-		"Content-Type":            "application/json",
-		"Accept":                  "text/event-stream",
-		"Connection":              "keep-alive",
-		"Authorization":           "Cloud-IDE-JWT " + acc.Token,
-		"X-Cloudide-Token":        acc.Token,
-		"X-Ide-Token":             acc.Token,
-		"X-App-Id":                traeAppID,
-		"X-App-Version":           "default",
-		"X-App-Version-Code":      traeVersionCode,
-		"X-Ide-Version":           traeIDEVersion,
-		"X-Ide-Version-Code":      traeVersionCode,
-		"X-Ide-Version-Type":      "stable",
-		"X-Plugin-Channel":        "desktop",
-		"X-App-Function":          functionOf(m),
-		"X-Ide-Function":          functionOf(m),
-		"X-Request-Id":            requestID,
-		"X-Custom-Trace-Id":       randHex(16),
-		"X-Flow-Traceparent":      "04-" + randHex(16) + "-" + randHex(8) + "-01",
-		"request-traffic-type":    "prod",
-		"X-Uid":                   acc.ID,
-		"x-device-id":             fp.DeviceID,
-		"x-machine-id":            fp.MachineID,
-		"x-device-cpu":            "AMD",
-		"x-device-brand":          fp.Brand,
-		"x-device-type":           "windows",
-		"x-os-version":            "Windows 10",
-		"x-system-type":           "Windows",
-		"x-ide-version":           traeIDEVersion,
-		"x-ide-version-code":      traeVersionCode,
-		"x-request-id":            requestID,
-		"User-Agent":              uaEmpty,
+		"Content-Type":         "application/json",
+		"Accept":               "text/event-stream",
+		"Connection":           "keep-alive",
+		"Authorization":        "Cloud-IDE-JWT " + acc.Token,
+		"X-Cloudide-Token":     acc.Token,
+		"X-Ide-Token":          acc.Token,
+		"X-App-Id":             traeAppID,
+		"X-App-Version":        "default",
+		"X-App-Version-Code":   traeVersionCode,
+		"X-Ide-Version":        traeIDEVersion,
+		"X-Ide-Version-Code":   traeVersionCode,
+		"X-Ide-Version-Type":   "stable",
+		"X-Plugin-Channel":     "desktop",
+		"X-App-Function":       functionOf(m),
+		"X-Ide-Function":       functionOf(m),
+		"X-Request-Id":         requestID,
+		"X-Custom-Trace-Id":    randHex(16),
+		"X-Flow-Traceparent":   "04-" + randHex(16) + "-" + randHex(8) + "-01",
+		"request-traffic-type": "prod",
+		"X-Uid":                acc.ID,
+		"x-device-id":          fp.DeviceID,
+		"x-machine-id":         fp.MachineID,
+		"x-device-cpu":         "AMD",
+		"x-device-brand":       fp.Brand,
+		"x-device-type":        "windows",
+		"x-os-version":         "Windows 10",
+		"x-system-type":        "Windows",
+		"x-ide-version":        traeIDEVersion,
+		"x-ide-version-code":   traeVersionCode,
+		"x-request-id":         requestID,
+		"User-Agent":           uaEmpty,
 	}
 	return h
 }
@@ -261,14 +261,14 @@ func webHeaders(token, edition string) map[string]string {
 // 所以两个头都带上。
 func oauthHeaders(token string, deviceID16 string) map[string]string {
 	return map[string]string{
-		"Content-Type":  "application/json",
-		"Authorization": "Cloud-IDE-JWT " + token,
+		"Content-Type":     "application/json",
+		"Authorization":    "Cloud-IDE-JWT " + token,
 		"X-Cloudide-Token": token,
-		"x-device-id":   deviceID16,
-		"x-device-brand": "ASUS TUF Gaming A15 FA507RM_FA507RM",
-		"x-device-type":  "windows",
-		"x-os-version":   "Windows 10 Pro",
-		"x-app-version":  "3.3.65",
+		"x-device-id":      deviceID16,
+		"x-device-brand":   "ASUS TUF Gaming A15 FA507RM_FA507RM",
+		"x-device-type":    "windows",
+		"x-os-version":     "Windows 10 Pro",
+		"x-app-version":    "3.3.65",
 	}
 }
 
@@ -293,6 +293,7 @@ func deviceID16(accountID string) string {
 //   - 文本 → {"type":"text","text":...}
 //   - 图片 data URL → {"type":"image_url","value":{"mimeType":...,"data":<裸base64>}}
 //   - assistant.tool_calls / tool 消息原样保留（原生工具协议）
+//
 // tools/tool_choice/parallel_tool_calls 客户端提供时直接透传。
 func BuildChatBody(params map[string]any, m Model, accountID string) map[string]any {
 	body := map[string]any{
@@ -662,7 +663,7 @@ func (s *Stream) collectedToolCalls() []ToolCall {
 }
 
 // mergeToolCalls 合并一帧工具调用分片：name/id 空值不覆盖、args 拼接
-//（test_sse.py 的原生分片形态：先 name 后 arguments 分帧到达）。
+// （test_sse.py 的原生分片形态：先 name 后 arguments 分帧到达）。
 func (s *Stream) mergeToolCalls(calls []ToolCall) {
 	if s.tools == nil {
 		s.tools = map[int]*ToolCall{}
@@ -1139,8 +1140,8 @@ func newStream(resp *http.Response) *Stream {
 // ============ 并发信号量（与 openrouter 同构） ============
 
 var (
-	semMu sync.Mutex
-	sem   chan struct{}
+	semMu   sync.Mutex
+	sem     chan struct{}
 	semOnce sync.Once
 )
 
@@ -1440,8 +1441,10 @@ func FetchCredits(a *Account) (*Credits, error) {
 
 // parseCreditsBody 解析 ide_user_ent_usage 响应。
 // 真实响应（2026-10-25 真账号实测）**顶层无 data 包裹**：
-//   {"usage_summary":{"consumed_amount":0.03,"total_amount":4700},
-//    "user_entitlement_pack_list":[{entitlement_base_info.quota.credits_limit, usage...}]}
+//
+//	{"usage_summary":{"consumed_amount":0.03,"total_amount":4700},
+//	 "user_entitlement_pack_list":[{entitlement_base_info.quota.credits_limit, usage...}]}
+//
 // 额度口径优先 usage_summary（剩余=total-consumed）；无 summary 时兜底取首个
 // credits_limit != 0 的 pack（product_type=0 的功能开关 pack 无额度自然跳过）。
 // 兼容带 data 包裹的形态（若上游改版）。

@@ -21,12 +21,13 @@ import (
 // 每 key 可绑主/备用出口。模型目录同步 openrouter.ai/api/v1/models 的免费
 // 子集，客户端以 or:<model-id> 形式调用。
 
-// orConfigPath OpenRouter 配置文件路径（DATA_DIR/.or-config.json）。
-func orConfigPath() string { return kit.ResolveDataPath(".or-config.json") }
+// orConfigPath OpenRouter 配置文件路径（DATA_DIR/oprt-config.json）。
+func orConfigPath() string { return kit.ResolveDataPath("oprt-config.json") }
 
 // initOpenRouter 加载配置 + 注入出站解析/HTTP client 工厂。StartProxy 早期
 // 调用一次；失败只记日志不影响既有平台（与 WorkBuddy 子系统同口径）。
 func initOpenRouter() {
+	migrateLegacyDataFile("oprt-config.json", ".or-config.json")
 	openrouter.Load(orConfigPath())
 	openrouter.SetExitResolver(func(key string) (string, bool) {
 		if key == "" {
@@ -135,7 +136,7 @@ func handleOrChat(w http.ResponseWriter, r *http.Request, params map[string]any)
 	isStream, _ := params["stream"].(bool)
 	if isStream {
 		handleStreamBufferedGeneric(w, r, "openrouter", params, func(ctx context.Context) (*http.Response, func(map[string]any), error) {
-			resp, _, err := openrouter.Chat(ctx, params, m.ID, true, getProxyConfig().Strategy, orBoundRoutable, nil)
+			resp, _, err := openrouter.Chat(ctx, params, m.ID, true, globalStrategy(), orBoundRoutable, nil)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -144,10 +145,10 @@ func handleOrChat(w http.ResponseWriter, r *http.Request, params map[string]any)
 		})
 		return
 	}
-	resp, _, err := openrouter.Chat(r.Context(), params, m.ID, true, getProxyConfig().Strategy, orBoundRoutable, nil)
+	resp, _, err := openrouter.Chat(r.Context(), params, m.ID, true, globalStrategy(), orBoundRoutable, nil)
 	if err != nil {
 		log.Printf("  openrouter api error: %v", err)
-			writeJSON(w, http.StatusBadGateway, map[string]any{
+		writeJSON(w, http.StatusBadGateway, map[string]any{
 			"error": map[string]string{"message": err.Error(), "type": "api_error"},
 		})
 		return
@@ -216,7 +217,6 @@ func handleOrConfigUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 	cur := openrouter.Get()
 	next := &openrouter.Config{
-		UseProxies:        cur.UseProxies,
 		BaseURL:           cur.BaseURL,
 		Keys:              append([]string(nil), cur.Keys...),
 		KeyRoutingEnabled: map[string]bool{},
@@ -238,8 +238,9 @@ func handleOrConfigUpdate(w http.ResponseWriter, r *http.Request) {
 	for k, v := range cur.Cool {
 		next.Cool[k] = v
 	}
+	// 走池开关存在 proxy-config.json 的代理池段，不写进平台文件。
 	if patch.UseProxies != nil {
-		next.UseProxies = patch.UseProxies
+		setPlatformUseProxies("oprt", patch.UseProxies)
 	}
 	if patch.BaseURL != nil {
 		next.BaseURL = strings.TrimRight(strings.TrimSpace(*patch.BaseURL), "/")
@@ -417,7 +418,6 @@ func handleOrModelsRefresh(w http.ResponseWriter, r *http.Request) {
 func orCloneConfig() (*openrouter.Config, *openrouter.Config) {
 	cur := openrouter.Get()
 	next := &openrouter.Config{
-		UseProxies:        cur.UseProxies,
 		BaseURL:           cur.BaseURL,
 		Keys:              append([]string(nil), cur.Keys...),
 		KeyRoutingEnabled: map[string]bool{},

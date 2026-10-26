@@ -59,7 +59,10 @@ WB 特例：`/admin/api/workbuddy/enabled` 注册在 proxy.go（workbuddy 路由
 
 ## 6. 代理池与出口绑定
 
-- **配置归属**：代理池（`proxies` / `proxyStrategy` / `proxySubURL` / `proxySubCron` / `zenUseProxies` / `workbuddyUseProxies`）存在 `data/.proxy-pool.json`，入口 `getProxyPool()` / `setProxyPool()`（`proxy_pool_config.go`）。它是全局能力（7 平台共用 `pickUpstreamProxy`），**不再寄居 `zenConfigData`**；面板 JSON 键名沿用旧契约，`admin_zen.go` 的 `zenConfigPayload()` 把两路数据合并成一个响应。代理隔离规则（`proxyExclusions` / `proxyBindCaps`）仍属 zen 配置，别一起搬。
+- **配置归属**：代理池（`proxies` / `proxyStrategy` / `proxySubURL` / `proxySubCron` / 各平台 `*UseProxies` 走池开关）存在 `data/proxy-config.json`，入口 `getProxyPool()` / `setProxyPool()`（`proxy_pool_config.go`），平台开关走 `platformUseProxies(kind)` / `setPlatformUseProxies(kind, v)`（`platform_proxies.go`）。它是全局能力（7 平台共用 `pickUpstreamProxy`），**不寄居任何平台配置**；面板 JSON 键名沿用旧契约，`admin_zen.go` 的 `zenConfigPayload()` 把平台配置与代理数据合并成一个响应。代理隔离段（`proxyIsolation` / `backupProxyEnabled` / `proxyExclusions` / `proxyBindCaps`）同样在 `proxy-config.json`，走 `getProxyBindingConfig()` / `setProxyBindingConfig()`（`proxy_binding_config.go`）。
+- **绑定表（`keyBindings`）不搬**：它的键是凭据明文，跟凭据池留在各自的 `<平台>-config.json`（zen 见 `zenConfigData.KeyBindings`）。搬进代理文件会让同一批明文在两处各存一份，容易写不一致。走池开关（bool）不敏感，所以归代理域。
+- **新增平台的走池开关**：在 `platform_proxies.go` 的 `platformUseProxies` / `setPlatformUseProxies` 加分支，平台包注入 `SetUseProxiesResolver`（读 `CurrentUseProxies()`，不要直接读 `Get().UseProxies`），update handler 写开关时调 `setPlatformUseProxies` 并把平台结构体里的字段置 nil（落盘后旧值消失）。
+- **持久化文件命名**：每个平台一个 `<平台>-config.json`（`cline` / `zen` / `trae` / `amd` / `oprt` / `tkhb` / `other`），全局 `afree-config.json`（`global_config.go`），代理 `proxy-config.json`（`proxy_config.go`）。新平台照此加一个文件，**不要再引入点前缀文件名或把平台数据塞进别人的文件**。
 - 绑定模型：per-identity 主/备双槽（前端 `egComboHTML` 渲染 `.eg-input`，`data-eg`/`data-egid`/`data-slot`），提交走 `egCommit`（暂存语义，随平台保存按钮生效）。存储与解析参照 `proxy_binding.go`。
 - 出站消费：平台出站 client 按 identity 取绑定出口（参照 `workbuddyProxyFor` / zen 对应物），无绑定 → 平台默认（走池下拉决定代理/直连）。
 - 隔离语义：主出口冷却/失效 → 该 identity 本轮跳过，**备不接、直连不回退**；备用代理开关关闭时备用槽只读并跟随主槽（`egApplyMainLinkage`）。绑定引用了已不存在的池出口 → 前端 ⚠ 告警标记（隔离逻辑会跳过）。
@@ -76,7 +79,7 @@ WB 特例：`/admin/api/workbuddy/enabled` 注册在 proxy.go（workbuddy 路由
 - `Stop()`：cancel ctx → pool Flush/Close → 停 GC/usage/requestLog → store Close。
 
 **两者共用**：
-- `admin_data.go` delete-all：新平台的持久化数据（账号/状态/学习数据/日志）必须纳入清理清单；`.session-secret` 与运行日志保留。
+- `admin_data.go` delete-all：新平台的持久化数据（账号/状态/学习数据/日志）必须纳入清理清单；全局配置里的 `sessionSecret` 与运行日志保留。清理某段数据时改内存态 + `mutate*Config`，**不要 `os.Remove` 整份共享配置文件**。
 - 数据落点：`kit.ResolveDataPath("x/…")`，绝不写仓库目录或原项目目录。
 
 ## 8. 出站 client 约定

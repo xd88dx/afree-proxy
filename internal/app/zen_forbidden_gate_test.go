@@ -3,6 +3,7 @@ package app
 import (
 	"encoding/json"
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 )
@@ -92,16 +93,18 @@ func TestZenForbiddenGateStampsAndClears(t *testing.T) {
 	if !zenSessionRefreshedRecently(key, time.Now()) {
 		t.Fatal("gate must be open right after a passive refresh")
 	}
-	raw, err := os.ReadFile(dir + string(os.PathSeparator) + ".zen-sessions.json")
+	raw, err := os.ReadFile(filepath.Join(dir, "zen-config.json"))
 	if err != nil {
-		t.Fatalf("read persisted sessions: %v", err)
+		t.Fatalf("read persisted zen config: %v", err)
 	}
-	var persisted map[string]map[string]any
-	if err := json.Unmarshal(raw, &persisted); err != nil {
-		t.Fatalf("parse persisted sessions: %v", err)
+	var file struct {
+		Sessions map[string]map[string]any `json:"sessions"`
 	}
-	if _, ok := persisted[key]["refreshedAt"]; !ok {
-		t.Fatalf("refreshedAt must be persisted, got keys %v", persisted[key])
+	if err := json.Unmarshal(raw, &file); err != nil {
+		t.Fatalf("parse persisted zen config: %v", err)
+	}
+	if _, ok := file.Sessions[key]["refreshedAt"]; !ok {
+		t.Fatalf("refreshedAt must be persisted, got keys %v", file.Sessions[key])
 	}
 
 	// 成功一跳：清戳（该 key+出口当前可用，将来偶发 403 仍能换新一次）。
@@ -143,6 +146,6 @@ func TestZenForbiddenGateSurvivesReload(t *testing.T) {
 	loadZenSessions()
 
 	if !zenSessionRefreshedRecently(key, time.Now()) {
-		t.Fatal("gate must stay open after reload from .zen-sessions.json")
+		t.Fatal("gate must stay open after reload from zen-config.json")
 	}
 }

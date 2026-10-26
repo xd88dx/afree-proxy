@@ -25,12 +25,13 @@ import (
 // chunk 流）。代理隔离语义与 key 池平台同构：每账号主/备出口绑定，双
 // 不可用整体跳过，绝不直连回退。
 
-// traeConfigPath Trae 配置文件路径（DATA_DIR/.trae-config.json）。
-func traeConfigPath() string { return kit.ResolveDataPath(".trae-config.json") }
+// traeConfigPath Trae 配置文件路径（DATA_DIR/trae-config.json）。
+func traeConfigPath() string { return kit.ResolveDataPath("trae-config.json") }
 
 // initTrae 加载配置 + 注入出站解析/HTTP client 工厂。StartProxy 早期调用
 // 一次；失败只记日志不影响既有平台（与 WorkBuddy 子系统同口径）。
 func initTrae() {
+	migrateLegacyDataFile("trae-config.json", ".trae-config.json")
 	trae.Load(traeConfigPath())
 	trae.SetExitResolver(func(acc *trae.Account) (string, bool) {
 		if acc == nil {
@@ -225,7 +226,7 @@ func traeStrategy() string {
 	if s := strings.TrimSpace(trae.Get().Selection); s != "" {
 		return s
 	}
-	return getProxyConfig().Strategy
+	return globalStrategy()
 }
 
 // aggregateTraeSSE 运行一次 trae.Chat 并把事件流翻译成完整 OpenAI SSE 字节。
@@ -561,8 +562,9 @@ func handleTraeConfigUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	_, next := traeCloneConfig()
+	// 走池开关存在 proxy-config.json 的代理池段，不写进平台文件。
 	if patch.UseProxies != nil {
-		next.UseProxies = patch.UseProxies
+		setPlatformUseProxies("trae", patch.UseProxies)
 	}
 	if patch.Gateway != nil {
 		next.Gateway = strings.TrimRight(strings.TrimSpace(*patch.Gateway), "/")
@@ -805,7 +807,6 @@ func handleTraeModelsRefresh(w http.ResponseWriter, r *http.Request) {
 func traeCloneConfig() (*trae.Config, *trae.Config) {
 	cur := trae.Get()
 	next := &trae.Config{
-		UseProxies:     cur.UseProxies,
 		Gateway:        cur.Gateway,
 		Selection:      cur.Selection,
 		AutoCheckin:    cur.AutoCheckin,
@@ -1030,7 +1031,7 @@ func traeTestAccount(index int) (map[string]any, string) {
 }
 
 // aggregateTraeCompletionResponse 非流式聚合并包成 JSON 伪响应
-//（cross_endpoint 的 trae 非流式调用器用）。
+// （cross_endpoint 的 trae 非流式调用器用）。
 func aggregateTraeCompletionResponse(ctx context.Context, params map[string]any, m trae.Model) (*http.Response, error) {
 	completion, _, err := aggregateTraeCompletion(ctx, params, m)
 	if err != nil {
@@ -1242,7 +1243,7 @@ func handleTraeHelperStatus(w http.ResponseWriter, r *http.Request) {
 // ============ 签到与额度后台任务 ============
 
 // startTraeJobs 后台任务：额度定期刷新（30 分钟一轮）+ 自动签到巡检
-//（每 30 分钟检查，AutoCheckin 开启时才真正执行）。首轮错开启动高峰。
+// （每 30 分钟检查，AutoCheckin 开启时才真正执行）。首轮错开启动高峰。
 func startTraeJobs() {
 	go func() {
 		time.Sleep(2 * time.Minute)
@@ -1282,10 +1283,10 @@ func refreshAllTraeCredits() int {
 }
 
 type traeCheckinResult struct {
-	total  int
-	ok     int
+	total   int
+	ok      int
 	already int
-	failed int
+	failed  int
 }
 
 // runTraeCheckinAll 对账号总闸开启且今天未签的账号执行签到（串行）。

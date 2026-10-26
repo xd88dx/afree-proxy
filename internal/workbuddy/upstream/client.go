@@ -22,8 +22,8 @@ import (
 
 	"afree-proxy/internal/workbuddy/auth"
 	"afree-proxy/internal/workbuddy/cst"
-	"afree-proxy/internal/workbuddy/loginsite"
 	"afree-proxy/internal/workbuddy/logfmt"
+	"afree-proxy/internal/workbuddy/loginsite"
 )
 
 // ErrKind 错误分类，pool 据此决定冷却时长。

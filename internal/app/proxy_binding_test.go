@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -45,7 +46,7 @@ type zenTestConfig struct {
 	BackupProxyEnabled   *bool
 	ProxyExclusions      map[string][]string
 	ProxyBindCaps        map[string]int
-	KeyBindings          map[string]zenProxyBinding
+	KeyBindings          map[string]proxyBinding
 	KeyRoutingEnabled    map[string]bool
 	SessionRotateMinutes int
 
@@ -66,13 +67,19 @@ func (c *zenTestConfig) zen() *zenConfigData {
 		Retries:              c.Retries,
 		Compaction:           c.Compaction,
 		ProxyAliases:         c.ProxyAliases,
-		ProxyIsolation:       c.ProxyIsolation,
-		BackupProxyEnabled:   c.BackupProxyEnabled,
-		ProxyExclusions:      c.ProxyExclusions,
-		ProxyBindCaps:        c.ProxyBindCaps,
 		KeyBindings:          c.KeyBindings,
 		KeyRoutingEnabled:    c.KeyRoutingEnabled,
 		SessionRotateMinutes: c.SessionRotateMinutes,
+	}
+}
+
+// binding 隔离/绑定段（proxy-config.json）的测试构造。
+func (c *zenTestConfig) binding() *proxyBindingConfigData {
+	return &proxyBindingConfigData{
+		ProxyIsolation:     c.ProxyIsolation,
+		BackupProxyEnabled: c.BackupProxyEnabled,
+		ProxyExclusions:    c.ProxyExclusions,
+		ProxyBindCaps:      c.ProxyBindCaps,
 	}
 }
 
@@ -99,15 +106,21 @@ func setupBindingTest(t *testing.T, cfg *zenTestConfig) {
 	}
 	t.Cleanup(func() { os.RemoveAll(dir) })
 	t.Setenv("DATA_DIR", dir)
+	savedProxyPath := proxyConfigPathOverride
+	proxyConfigPathOverride = filepath.Join(dir, "proxy-config.json")
+	t.Cleanup(func() { proxyConfigPathOverride = savedProxyPath })
 	savedZen := getZenConfig()
 	savedPool := *getProxyPool()
+	savedBinding := *getProxyBindingConfig()
 	if cfg != nil {
 		setZenConfig(cfg.zen())
 		setProxyPool(cfg.pool(*getProxyPool()))
+		setProxyBindingConfig(cfg.binding())
 	}
 	t.Cleanup(func() {
 		setZenConfig(savedZen)
 		setProxyPool(&savedPool)
+		setProxyBindingConfig(&savedBinding)
 	})
 }
 
@@ -139,9 +152,9 @@ func setProxyCooldownIdx(t *testing.T, idx int, d time.Duration) {
 	t.Helper()
 	cooldownUpstreamProxy(idx, d)
 	t.Cleanup(func() {
-		zenProxyCooldownsMu.Lock()
-		delete(zenProxyCooldowns, idx)
-		zenProxyCooldownsMu.Unlock()
+		proxyCooldownsMu.Lock()
+		delete(proxyCooldowns, idx)
+		proxyCooldownsMu.Unlock()
 	})
 }
 
@@ -293,7 +306,7 @@ func TestPickZenKeySkipsBoundBlockedKeys(t *testing.T) {
 	setupBindingTest(t, &zenTestConfig{
 		Keys:           []string{"sk-1", "sk-2"},
 		Proxies:        []string{"http://a:1", "http://b:2"},
-		KeyBindings:    map[string]zenProxyBinding{"sk-1": {Main: "http://a:1", Backup: "http://b:2"}},
+		KeyBindings:    map[string]proxyBinding{"sk-1": {Main: "http://a:1", Backup: "http://b:2"}},
 		ProxyIsolation: boolPtr(true),
 	})
 	zenKeyMu.Lock()
@@ -310,7 +323,7 @@ func TestPickZenKeySkipsBoundBlockedKeys(t *testing.T) {
 	setupBindingTest(t, &zenTestConfig{
 		Keys:    []string{"sk-1", "sk-2"},
 		Proxies: []string{"http://a:1"},
-		KeyBindings: map[string]zenProxyBinding{
+		KeyBindings: map[string]proxyBinding{
 			"sk-1": {Main: "http://a:1"},
 			"sk-2": {Main: "http://a:1"},
 		},
@@ -392,9 +405,9 @@ func TestPickBoundProxyDirectSentinel(t *testing.T) {
 		t.Fatalf("direct backup must yield direct egress, got %q idx=%d ok=%v", u, idx, ok)
 	}
 	// 主代理恢复可用时不走直连兜底（直接清除冷却，避免 1ms 计时竞态）
-	zenProxyCooldownsMu.Lock()
-	delete(zenProxyCooldowns, 0)
-	zenProxyCooldownsMu.Unlock()
+	proxyCooldownsMu.Lock()
+	delete(proxyCooldowns, 0)
+	proxyCooldownsMu.Unlock()
 	if u, _, ok := pickBoundProxy("http://a:1", "direct"); !ok || u != "http://a:1" {
 		t.Fatalf("available main must win over direct backup, got %q ok=%v", u, ok)
 	}
@@ -473,29 +486,28 @@ func TestSetZenKeyProxyBinding(t *testing.T) {
 		Proxies:            []string{"http://a:1", "http://b:2"},
 		BackupProxyEnabled: boolPtr(true),
 	})
-	if err := setZenKeyProxyBinding(0, "http://a:1", "http://b:2"); err != nil {
+	if err := setKeyProxyBinding(0, "http://a:1", "http://b:2"); err != nil {
 		t.Fatalf("set: %v", err)
 	}
-	cfg := getZenConfig()
-	if b := cfg.KeyBindings["sk-1"]; b.Main != "http://a:1" || b.Backup != "http://b:2" {
+	if b := getZenConfig().KeyBindings["sk-1"]; b.Main != "http://a:1" || b.Backup != "http://b:2" {
 		t.Fatalf("binding wrong: %+v", b)
 	}
 	// 解除
-	if err := setZenKeyProxyBinding(0, "", ""); err != nil {
+	if err := setKeyProxyBinding(0, "", ""); err != nil {
 		t.Fatalf("clear: %v", err)
 	}
 	if _, ok := getZenConfig().KeyBindings["sk-1"]; ok {
 		t.Fatal("binding not removed")
 	}
 	// 越界 / public key / 校验失败
-	if err := setZenKeyProxyBinding(9, "http://a:1", ""); err == nil {
+	if err := setKeyProxyBinding(9, "http://a:1", ""); err == nil {
 		t.Fatal("out-of-range index must error")
 	}
 	setupBindingTest(t, &zenTestConfig{
 		Keys:    []string{"public"},
 		Proxies: []string{"http://a:1"},
 	})
-	if err := setZenKeyProxyBinding(0, "http://a:1", ""); err == nil {
+	if err := setKeyProxyBinding(0, "http://a:1", ""); err == nil {
 		t.Fatal("public key must not be bindable")
 	}
 }
@@ -749,11 +761,8 @@ func TestPickZenKeyStrategyUnified(t *testing.T) {
 	setupBindingTest(t, &zenTestConfig{
 		Keys: []string{"sk-1", "sk-2", "sk-3"},
 	})
-	saved := getProxyConfig()
-	t.Cleanup(func() { setProxyConfig(saved) })
-	setCfg := func(strategy string) {
-		setProxyConfig(&proxyConfigData{Strategy: strategy, Headers: map[string]string{}})
-	}
+	resetGlobalConfigForTest(t)
+	setCfg := func(strategy string) { setGlobalStrategy(strategy) }
 	resetCursor := func() {
 		zenKeyMu.Lock()
 		zenKeyIdx = 0
@@ -859,10 +868,9 @@ func TestResolveBackupSlotPreservesStored(t *testing.T) {
 // 模拟真实的"面板保存开关"而不是重建配置。
 func TestSetZenKeyProxyBindingBackupToggleRoundTrip(t *testing.T) {
 	setBackupSwitch := func(on bool) {
-		cfg := getZenConfig()
-		next := *cfg
+		next := *getProxyBindingConfig()
 		next.BackupProxyEnabled = boolPtr(on)
-		setZenConfig(&next)
+		setProxyBindingConfig(&next)
 	}
 	setupBindingTest(t, &zenTestConfig{
 		Keys: []string{"sk-1"}, Proxies: []string{"http://a:1", "http://b:2", "http://c:3"},
@@ -870,7 +878,7 @@ func TestSetZenKeyProxyBindingBackupToggleRoundTrip(t *testing.T) {
 	})
 
 	// 1. 开关开启：主备正常持久化
-	if err := setZenKeyProxyBinding(0, "http://a:1", "http://b:2"); err != nil {
+	if err := setKeyProxyBinding(0, "http://a:1", "http://b:2"); err != nil {
 		t.Fatalf("set with backup on: %v", err)
 	}
 	if b := getZenConfig().KeyBindings["sk-1"]; b.Main != "http://a:1" || b.Backup != "http://b:2" {
@@ -879,7 +887,7 @@ func TestSetZenKeyProxyBindingBackupToggleRoundTrip(t *testing.T) {
 
 	// 2. 关开关后只改主槽：面板提交 backup = 跟随显示的主值，备用槽应维持 b
 	setBackupSwitch(false)
-	if err := setZenKeyProxyBinding(0, "http://c:3", "http://c:3"); err != nil {
+	if err := setKeyProxyBinding(0, "http://c:3", "http://c:3"); err != nil {
 		t.Fatalf("set main while backup disabled: %v", err)
 	}
 	b := getZenConfig().KeyBindings["sk-1"]
@@ -891,7 +899,7 @@ func TestSetZenKeyProxyBindingBackupToggleRoundTrip(t *testing.T) {
 	}
 
 	// 3. 关闭态下把 main 改成 == 旧备值，必须放行（方案 A）
-	if err := setZenKeyProxyBinding(0, "http://b:2", "http://b:2"); err != nil {
+	if err := setKeyProxyBinding(0, "http://b:2", "http://b:2"); err != nil {
 		t.Fatalf("main == stored backup must be allowed while disabled: %v", err)
 	}
 	if got := getZenConfig().KeyBindings["sk-1"].Main; got != "http://b:2" {
@@ -915,7 +923,7 @@ func TestSetZenKeyProxyBindingBackupToggleRoundTrip(t *testing.T) {
 
 	// 6. 关闭态清空主槽：旧备值被保留，绑定不被误删（用户要求备值维持）
 	setBackupSwitch(false)
-	if err := setZenKeyProxyBinding(0, "", ""); err != nil {
+	if err := setKeyProxyBinding(0, "", ""); err != nil {
 		t.Fatalf("clear main while disabled: %v", err)
 	}
 	if got := getZenConfig().KeyBindings["sk-1"]; got.Backup != "http://b:2" {

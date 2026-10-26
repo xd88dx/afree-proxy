@@ -7,8 +7,6 @@ import (
 	"os"
 	"strings"
 	"testing"
-
-	"afree-proxy/internal/kit"
 )
 
 func fakeUpstream(status int, body string) *http.Response {
@@ -20,7 +18,7 @@ func fakeUpstream(status int, body string) *http.Response {
 }
 
 // 假上游必须复刻 callClineAPI 的真实契约：非 200 时返回 nil 响应 + *clineAPIError
-//（响应体在 callee 里已读尽并关闭）。早期版本返回 (500 响应, nil error) —— 那是
+// （响应体在 callee 里已读尽并关闭）。早期版本返回 (500 响应, nil error) —— 那是
 // 生产里不存在的形态，导致学习逻辑在真实上游面前永远不会触发。
 func fakeUpstreamErr(status int, body string) (*http.Response, *Account, error) {
 	return nil, &Account{Email: "err@x"}, &clineAPIError{Status: status, Body: body}
@@ -167,6 +165,7 @@ func TestClineEmptyStreamErrDetection(t *testing.T) {
 func TestClineStreamLearnRoundTrip(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("DATA_DIR", dir)
+	resetGlobalConfigForTest(t)
 
 	loadClineStreamLearned() // 空文件：不 panic、不写入
 	if clineStreamRequired("poolside/laguna-s-2.1:free") {
@@ -184,8 +183,8 @@ func TestClineStreamLearnRoundTrip(t *testing.T) {
 	if modelNeedsStream("line-free/solar-pro4") {
 		t.Fatal("unrelated model must not be affected")
 	}
-	if _, err := os.Stat(kit.ResolveDataPath(".cline-stream-required.json")); err != nil {
-		t.Fatalf("learned set not persisted: %v", err)
+	if raw, err := os.ReadFile(globalConfigPath()); err != nil || !strings.Contains(string(raw), "poolside/laguna-s-2.1:free") {
+		t.Fatalf("learned set not persisted to afree-config.json: %v", err)
 	}
 
 	// 重复学习幂等
@@ -213,10 +212,11 @@ func TestClineStreamLearnRoundTrip(t *testing.T) {
 // 空 model id 不写盘（调用方在拿不到 model 字段时不应污染学习结果）。
 func TestClineStreamLearnEmptyIDIgnored(t *testing.T) {
 	t.Setenv("DATA_DIR", t.TempDir())
+	resetGlobalConfigForTest(t)
 	loadClineStreamLearned()
 	learnClineStreamRequired("")
-	if _, err := os.Stat(kit.ResolveDataPath(".cline-stream-required.json")); err == nil {
-		t.Fatal("empty id must not create a learn file")
+	if _, err := os.Stat(globalConfigPath()); err == nil {
+		t.Fatal("empty id must not create the global config file")
 	}
 	if clineStreamRequired("") {
 		t.Fatal("empty id must not be learned")

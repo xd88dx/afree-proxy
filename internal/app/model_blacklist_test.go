@@ -56,14 +56,14 @@ func TestIsModelPermissionDenied(t *testing.T) {
 
 func TestPlatformOfModel(t *testing.T) {
 	cases := map[string]string{
-		"wbgb:gpt-6-luna":   platWorkBuddy,
-		"wbcn:step-5":       platWorkBuddy,
-		"global:default-model": platWorkBuddy,
+		"wbgb:gpt-6-luna":        platWorkBuddy,
+		"wbcn:step-5":            platWorkBuddy,
+		"global:default-model":   platWorkBuddy,
 		"zen:glm-5.3-flash-free": platZen,
-		"amd:Qwen3.8":       platAMD,
-		"oprt:vendor/model": platOpenRouter,
-		"tkhb:deepseek:free": platTokenHarbor,
-		"deepseek-v4.1-flash": "", // 裸名无平台信息：不猜，避免误拉黑
+		"amd:Qwen3.8":            platAMD,
+		"oprt:vendor/model":      platOpenRouter,
+		"tkhb:deepseek:free":     platTokenHarbor,
+		"deepseek-v4.1-flash":    "", // 裸名无平台信息：不猜，避免误拉黑
 	}
 	for in, want := range cases {
 		if got := platformOfModel(in); got != want {
@@ -103,7 +103,7 @@ func TestModelBlacklistLifecycle(t *testing.T) {
 	}
 
 	// 落盘可续读。
-	if _, err := os.Stat(modelBlacklistPath()); err != nil {
+	if _, err := os.Stat(globalConfigPath()); err != nil {
 		t.Fatalf("blacklist file not written: %v", err)
 	}
 	modelBlacklistMu.Lock()

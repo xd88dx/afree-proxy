@@ -87,7 +87,7 @@ Fail-closed 启动：绑定非环回地址时，未设 `API_KEY` **或**未设 `
 
 ### OpenCode zen 会话 ID
 
-zen 会话 ID 在**本地铸造**——上游免费层格式门是无状态检查（`^ses_[0-9a-f]{12}[0-9A-Za-z]{14}$`），网关为每个 key 首次使用时铸造兼容 ID 并持久化到数据卷（`.zen-sessions.json`），无内嵌 CLI、无收割机。请求级 ID（`x-opencode-request`）与注入的 gate 工具参数 schema 同样对齐官方 CLI 形态。连续 2 次 FreeTier 403 自动重铸重试；会话按 `ZEN_SESSION_ROTATE_MINUTES`（默认 120 分钟）后台轮换重铸——铸造纯本地零配额消耗，轮换器还会为未用过的 key 预铸（避免轮转坍缩到单 key）。
+zen 会话 ID 在**本地铸造**——上游免费层格式门是无状态检查（`^ses_[0-9a-f]{12}[0-9A-Za-z]{14}$`），网关为每个 key 首次使用时铸造兼容 ID 并持久化到数据卷（`zen-config.json` 的 `sessions` 段），无内嵌 CLI、无收割机。请求级 ID（`x-opencode-request`）与注入的 gate 工具参数 schema 同样对齐官方 CLI 形态。连续 2 次 FreeTier 403 自动重铸重试；会话按 `ZEN_SESSION_ROTATE_MINUTES`（默认 120 分钟）后台轮换重铸——铸造纯本地零配额消耗，轮换器还会为未用过的 key 预铸（避免轮转坍缩到单 key）。
 
 ## 连接 IDE
 
@@ -123,16 +123,35 @@ Model:     cline-free/deepseek-v4.1-flash   （Cline 池）
 
 添加账号走「网页授权」手风琴弹窗：网关生成本机授权助手（Python，监听 127.0.0.1:8765），浏览器打开授权页登录后凭据回传网关。助手脚本从网关下载，面板会比对 relay 源防止凭据写错实例；也支持手动粘贴凭据。授权只认本机 helper——上游实测拒绝网关直连回调。
 
+## 数据目录（持久化结构）
+
+`DATA_DIR`（容器内 `/app/data`）下每个平台一份配置文件，跨平台能力单独成文件：
+
+| 文件 | 内容 |
+|---|---|
+| `afree-config.json` | 全局：会话密钥、网关客户端 key、面板请求日志开关、账号选号策略、Combos、模型/平台封禁表、cline「必须流式」学习表 |
+| `proxy-config.json` | 出口代理池 + 出口策略 + 订阅、各平台走池开关、代理隔离段（开关/排除表/绑定上限，含 WorkBuddy 账号绑定）、代理在线率统计 |
+| `cline-config.json` | Cline 账号池（账号、游标、请求头） |
+| `zen-config.json` | OpenCode zen：key 池与配置 + 粘性会话 + 死模型别名 + 端点学习结果 |
+| `trae-config.json` / `amd-config.json` / `oprt-config.json` / `tkhb-config.json` / `other-config.json` | 各平台全量（账号/key 池、启用状态、平台专属开关） |
+| `workbuddy/config.json` + `workbuddy/auths/` + `workbuddy/request-logs/` | WorkBuddy 部署配置、授权凭据、请求日志（沿用 vendor 目录结构） |
+
+凭据的代理绑定表（`keyBindings`）跟着凭据池留在各自的平台文件里，不并入 `proxy-config.json`：它的键是凭据明文，搬过去会让同一批明文在两处各存一份。走池开关是布尔值，不敏感，所以归代理域。
+
+日志类保持独立：`afree-proxy.log`、`afree-proxy-stream.log`、`requests.jsonl`。旧的 `zen-stats.jsonl`（zen 学习统计）已无任何写入方，属历史遗留，可直接删除。
+
+旧文件名（`.cline-accounts.json`、`.zen-sessions.json`、`.proxy-pool.json`、`.or-config.json` 等）在首次启动时自动复制到新文件名一次；旧文件保留但不再写入，确认新版运行正常后可自行删除。
+
 ## 代理池与选号策略
 
 两个互不相干的调度维度，容易混：
 
 | 维度 | 决定什么 | 策略入口 | 存放 |
 |---|---|---|---|
-| 账号选号 | 这次请求用哪个账号 / key | `POOL_STRATEGY`（默认 `round_robin`）；Trae 另有 `TRAE_STRATEGY` | `data/.cline-accounts.json` 的 `proxyConfig.Strategy` |
-| 出口选路 | 这次请求从哪条线路 / IP 出去 | 面板「代理池」页的调度策略 | `data/.proxy-pool.json` 的 `proxyStrategy` |
+| 账号选号 | 这次请求用哪个账号 / key | `POOL_STRATEGY`（默认 `round_robin`）；Trae 另有 `TRAE_STRATEGY` | `data/afree-config.json` 的 `strategy` |
+| 出口选路 | 这次请求从哪条线路 / IP 出去 | 面板「代理池」页的调度策略 | `data/proxy-config.json` 的 `proxyStrategy` |
 
-代理池配置（代理列表、出口策略、订阅、zen / WorkBuddy 两个走池开关）自 2026-10 起独立存放在 `data/.proxy-pool.json`，不再寄居在 `.zen-config.json`——代理池是全局能力（7 个平台共用），不属于 OpenCode zen。首次启动若新文件不存在，会从 `.zen-config.json` 自动迁移一次，旧键保留以便回滚到旧版本。出口策略：`round_robin`（默认）/ `random` / `fill`。
+代理池配置（代理列表、出口策略、订阅、各平台走池开关）存在 `data/proxy-config.json`，不寄居在任何平台配置里——代理池是全局能力（7 个平台共用），不属于 OpenCode zen。出口策略：`round_robin`（默认）/ `random` / `fill`。
 
 WorkBuddy 的账号调度用 vendor 自己的国内/国际分区策略，与 `POOL_STRATEGY` 无关。
 
@@ -143,7 +162,7 @@ WorkBuddy 的账号调度用 vendor 自己的国内/国际分区策略，与 `PO
 - 每个身份（Cline 账号 / zen key / WorkBuddy 账号 / TraeWork 账号 / 各 key 池 key）绑定一主一备代理。请求永远走主，主不可用走备，两者都冷却/被删时该身份整体跳过——**绝不回退其他出口或直连，隔离优先于可用性**。
 - 未绑定身份沿用面板每平台的走池开关（缺省 = 走池），空绑定配置行为与旧版完全一致。
 - 面板支持单行绑定、一键按行序分配（第 1 行绑直连哨兵、其余按代理池顺序依次绑主槽，多余行保持原绑定）、一键清空；绑定代理被删时行标 ⚠ 并保持跳过直到修复。备用代理开关关闭时备用槽整体退出路由（保留旧值，重开即恢复）。
-- **代理在线率**：代理池页显示每个代理真实流量的传输层成功率（累计 + 最近 50 次滚动窗口），纯被动采样不产生探活流量、不影响路由。五档配色：≥80% 绿、60–80% 蓝、40–60% 粉、20–40% 黄、<20% 红，便于一眼挑出该换的节点。统计落盘 `.proxy-health.json`，编辑池清零。
+- **代理在线率**：代理池页显示每个代理真实流量的传输层成功率（累计 + 最近 50 次滚动窗口），纯被动采样不产生探活流量、不影响路由。五档配色：≥80% 绿、60–80% 蓝、40–60% 粉、20–40% 黄、<20% 红，便于一眼挑出该换的节点。统计落盘在 `proxy-config.json` 的 health 段，编辑池清零。
 
 socks5/socks5h 全支持；直连哨兵（主 = direct）可显式声明直连出口。zen 免费额度按出口 IP 计（约 200 请求/5h），把 key 绑到不同出口才是真正解锁多 key 容量的方式。
 

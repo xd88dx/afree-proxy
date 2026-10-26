@@ -1,10 +1,8 @@
 package app
 
 import (
-	"encoding/json"
 	"fmt"
 	"log"
-	"os"
 	"strings"
 	"sync"
 	"time"
@@ -72,15 +70,9 @@ var (
 // 定期重铸可避免这个延迟；本地铸造零成本（无子进程、无额度消耗）。
 const defaultSessionRotateMinutes = 120
 
-// zenSessionFile 会话持久化路径（DATA_DIR 优先，容器 volume 挂载点）。
-func zenSessionFile() string {
-	if zenSessPath == "" {
-		zenSessPath = kit.ResolveDataPath(".zen-sessions.json")
-	}
-	return zenSessPath
-}
-
 // loadZenSessions 启动时/首次使用时加载持久化会话（只读一次，失败则空跑）。
+// 会话表住在 zen-config.json 的 sessions 段；整文件损坏时的改名留档由
+// loadZenConfigFileLocked 统一处理（不会再出现"只有会话段坏了"的情况）。
 func loadZenSessions() {
 	zenSessMu.Lock()
 	defer zenSessMu.Unlock()
@@ -88,24 +80,11 @@ func loadZenSessions() {
 		return
 	}
 	zenSessLoaded = true
-	data, err := os.ReadFile(zenSessionFile())
-	if err != nil {
-		// ENOENT 是首启正常路径（还没有会话文件）；其他错误要让运维看见，
-		// 否则会静默以空表运行，并在下次 save 时把原文件覆盖掉。
-		if !os.IsNotExist(err) {
-			log.Printf("zen sessions read failed (%s): %v — refusing to persist this run to avoid clobbering it", zenSessionFile(), err)
-			zenSessSaveBlocked = true
-		}
-		return
-	}
-	var m map[string]*zenSessionEntry
-	if err := json.Unmarshal(data, &m); err != nil {
-		// 解析失败先把坏文件改名留证，再以空表启动——与 loadZenConfig 同做法。
-		// 不备份的话，紧随其后的 save 会直接覆盖，出问题时无从追查。
-		_ = os.Rename(zenSessionFile(), zenSessionFile()+".corrupt")
-		log.Printf("zen sessions parse failed, starting fresh (backup: %s.corrupt): %v", zenSessionFile(), err)
-		return
-	}
+	m := func() map[string]*zenSessionEntry {
+		zenFileMu.Lock()
+		defer zenFileMu.Unlock()
+		return loadZenConfigFileLocked().Sessions
+	}()
 	replaced, migrated, stamped := 0, 0, 0
 	now := time.Now().Unix()
 	for k, e := range m {
@@ -156,23 +135,18 @@ func loadZenSessions() {
 }
 
 // saveZenSessionsLocked 持久化当前会话表（调用方持有 zenSessMu）。
+// 只覆盖 sessions 段，zen 配置与另外两张学习表原样保留。
 func saveZenSessionsLocked() {
-	// 读取阶段失败（非 ENOENT）时内存表不可信，落盘会覆盖磁盘上读不到的文件。
 	if zenSessSaveBlocked {
 		return
 	}
-	data, err := json.MarshalIndent(zenSessions, "", "  ")
-	if err != nil {
-		return
+	next := make(map[string]*zenSessionEntry, len(zenSessions))
+	for k, v := range zenSessions {
+		next[k] = v
 	}
-	tmp := zenSessionFile() + ".tmp"
-	if err := os.WriteFile(tmp, data, 0600); err != nil {
-		log.Printf("zen sessions save failed: %v", err)
-		return
-	}
-	if err := os.Rename(tmp, zenSessionFile()); err != nil {
-		log.Printf("zen sessions save failed (rename): %v", err)
-	}
+	mutateZenConfigFile(func(f *zenConfigFileData) {
+		f.Sessions = next
+	})
 }
 
 // saveZenSessions 对外持久化入口（内部写已在锁外调用）。
@@ -464,8 +438,10 @@ func refreshZenSession(key string) {
 // 实际每次都是白铸会话 + 白打一次上游（约 1.5s 延迟 + 一次失败重试）。
 //
 // 归因实测（同一会话同一个 key，只换出口）：
-//   key#4 + northflank-NL → 403 ；key#4 + Mikrus → 200
-//   key#3 + Mikrus        → 200 ；key#3 + northflank-NL → 403
+//
+//	key#4 + northflank-NL → 403 ；key#4 + Mikrus → 200
+//	key#3 + Mikrus        → 200 ；key#3 + northflank-NL → 403
+//
 // 即：这类"干净 403"跟着出口走，不跟着 key/会话走——换会话救不回来，冷却才是
 // 正确动作（冷却后 pickZenKey 会跳过该 key，其流量转给健康 key，客户端无感）。
 const (

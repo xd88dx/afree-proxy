@@ -24,9 +24,11 @@ func TestZenKeysReorderPermutationAndCompat(t *testing.T) {
 	cfg := *getZenConfig()
 	cfg.Keys = []string{"sk-aaa111", "sk-bbb222", "sk-pin333"}
 	cfg.Key = "sk-aaa111"
-	cfg.KeyBindings = map[string]zenProxyBinding{"sk-bbb222": {Main: "http://p1:1"}}
 	cfg.KeyRoutingEnabled = map[string]bool{"sk-bbb222": false}
 	setZenConfig(&cfg)
+	zenCfg := *getZenConfig()
+	zenCfg.KeyBindings = map[string]proxyBinding{"sk-bbb222": {Main: "http://p1:1"}}
+	setZenConfig(&zenCfg)
 
 	// 置换 [2,0,1]：原 index2 (pin) 提到最前
 	if rec := reorderZenKeysAt(t, `2,0,1`); rec.Code != http.StatusOK {
@@ -41,7 +43,7 @@ func TestZenKeysReorderPermutationAndCompat(t *testing.T) {
 		t.Fatalf("compat key = %q, want sk-pin333 (new Keys[0])", got.Key)
 	}
 	// 绑定/路由表按 key 明文存储，重排不得丢
-	if b, ok := got.KeyBindings["sk-bbb222"]; !ok || b.Main != "http://p1:1" {
+	if b, ok := getZenConfig().KeyBindings["sk-bbb222"]; !ok || b.Main != "http://p1:1" {
 		t.Fatal("proxy binding lost or corrupted after reorder")
 	}
 	if routed, ok := got.KeyRoutingEnabled["sk-bbb222"]; !ok || routed {

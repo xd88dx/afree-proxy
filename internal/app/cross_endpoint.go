@@ -14,8 +14,8 @@ import (
 	"afree-proxy/internal/amd"
 	openrouter "afree-proxy/internal/openrouter"
 	"afree-proxy/internal/other"
-	"afree-proxy/internal/trae"
 	"afree-proxy/internal/tokenharbor"
+	"afree-proxy/internal/trae"
 )
 
 // ============ /v1/responses 与 /v1/messages 的全平台接入 ============
@@ -57,7 +57,7 @@ func resolvePlatformChatCallerRaw(model string) (platformChatCall, bool) {
 			return rejectCaller(fmt.Sprintf("model %q is not a free openrouter model", id), false), true
 		}
 		return func(ctx context.Context, params map[string]any, stream bool) (*http.Response, error) {
-			resp, _, err := openrouter.Chat(ctx, params, m.ID, stream, getProxyConfig().Strategy, orBoundRoutable, nil)
+			resp, _, err := openrouter.Chat(ctx, params, m.ID, stream, globalStrategy(), orBoundRoutable, nil)
 			return resp, err
 		}, true
 	}
@@ -67,7 +67,7 @@ func resolvePlatformChatCallerRaw(model string) (platformChatCall, bool) {
 			return rejectCaller(fmt.Sprintf("model %q is not an AMDCloud model", id), false), true
 		}
 		return func(ctx context.Context, params map[string]any, stream bool) (*http.Response, error) {
-			resp, _, err := amd.Chat(ctx, params, m.ID, stream, getProxyConfig().Strategy, amdBoundRoutable)
+			resp, _, err := amd.Chat(ctx, params, m.ID, stream, globalStrategy(), amdBoundRoutable)
 			return resp, err
 		}, true
 	}
@@ -77,7 +77,7 @@ func resolvePlatformChatCallerRaw(model string) (platformChatCall, bool) {
 			return rejectCaller(fmt.Sprintf("model %q is not a free TokenHarbor model", id), false), true
 		}
 		return func(ctx context.Context, params map[string]any, stream bool) (*http.Response, error) {
-			resp, _, err := tokenharbor.Chat(ctx, params, m.ID, stream, getProxyConfig().Strategy, thBoundRoutable)
+			resp, _, err := tokenharbor.Chat(ctx, params, m.ID, stream, globalStrategy(), thBoundRoutable)
 			return resp, err
 		}, true
 	}
@@ -111,7 +111,7 @@ func resolvePlatformChatCallerRaw(model string) (platformChatCall, bool) {
 			return rejectCaller(fmt.Sprintf("No keys configured for platform %q. Add keys on the Other page.", p.Name), true), true
 		}
 		return func(ctx context.Context, params map[string]any, stream bool) (*http.Response, error) {
-			resp, _, err := other.Chat(ctx, p, params, m.ID, stream, getProxyConfig().Strategy, otherBoundRoutable(p), otherExitFn(p))
+			resp, _, err := other.Chat(ctx, p, params, m.ID, stream, globalStrategy(), otherBoundRoutable(p), otherExitFn(p))
 			return resp, err
 		}, true
 	}

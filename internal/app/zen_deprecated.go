@@ -1,15 +1,11 @@
 package app
 
 import (
-	"encoding/json"
 	"log"
 	"net/http"
-	"os"
 	"strings"
 	"sync"
 	"time"
-
-	"afree-proxy/internal/kit"
 )
 
 // ============ 已弃用模型的自动迁移（410 replacement + 400 unavailable） ============
@@ -36,39 +32,16 @@ var (
 	zenDepPath    string
 )
 
-// zenDepFile 别名持久化路径（与 .zen-sessions.json / .zen-endpoints.json 同目录）。
-func zenDepFile() string {
-	zenDepMu.Lock()
-	defer zenDepMu.Unlock()
-	return zenDepPathLocked()
-}
-
-// zenDepPathLocked 路径解析（调用方须持有 zenDepMu）。load/save 都在锁内
-// 走这里，避免 zenDepFile 的重入死锁。
-func zenDepPathLocked() string {
-	if zenDepPath == "" {
-		zenDepPath = kit.ResolveDataPath(".zen-model-aliases.json")
-	}
-	return zenDepPath
-}
-
 func loadZenDepsLocked() {
 	if zenDepLoaded {
 		return
 	}
 	zenDepLoaded = true
-	data, err := os.ReadFile(zenDepPathLocked())
-	if err != nil || len(data) == 0 {
-		return
-	}
-	var m map[string]*zenDepEntry
-	if err := json.Unmarshal(data, &m); err != nil {
-		// 坏文件不夸大其词：别名只是优化层，丢弃后走原有 410 重学路径。
-		p := zenDepPathLocked()
-		_ = os.Rename(p, p+".corrupt")
-		log.Printf("zen model aliases parse failed, ignoring (backup: %s.corrupt): %v", p, err)
-		return
-	}
+	m := func() map[string]*zenDepEntry {
+		zenFileMu.Lock()
+		defer zenFileMu.Unlock()
+		return loadZenConfigFileLocked().ModelAliases
+	}()
 	for k, e := range m {
 		if e != nil && e.Replacement != "" {
 			zenDepAliases[k] = e
@@ -79,21 +52,15 @@ func loadZenDepsLocked() {
 	}
 }
 
-// saveZenDepsLocked 持久化别名表（调用方持有 zenDepMu）。tmp+rename 原子写，
-// 与 sessions/endpoints 同一手法。
+// saveZenDepsLocked 持久化别名表（调用方持有 zenDepMu）。只覆盖 modelAliases 段。
 func saveZenDepsLocked() {
-	data, err := json.MarshalIndent(zenDepAliases, "", "  ")
-	if err != nil {
-		return
+	next := make(map[string]*zenDepEntry, len(zenDepAliases))
+	for k, v := range zenDepAliases {
+		next[k] = v
 	}
-	tmp := zenDepPathLocked() + ".tmp"
-	if err := os.WriteFile(tmp, data, 0600); err != nil {
-		log.Printf("zen model aliases save failed: %v", err)
-		return
-	}
-	if err := os.Rename(tmp, zenDepPathLocked()); err != nil {
-		log.Printf("zen model aliases save failed (rename): %v", err)
-	}
+	mutateZenConfigFile(func(f *zenConfigFileData) {
+		f.ModelAliases = next
+	})
 }
 
 // zenDeprecatedReplacement 返回已弃用模型的继任者（无映射时返回 ""）。

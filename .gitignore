@@ -10,13 +10,35 @@ afree-proxy-*
 *.test
 *.out
 
-# Local data
+# Local data: DATA_DIR pointed at the repo root (per-platform config + logs).
+# Current names (one file per platform, see README "数据目录").
+afree-config.json
+proxy-config.json
+cline-config.json
+zen-config.json
+trae-config.json
+amd-config.json
+oprt-config.json
+tkhb-config.json
+other-config.json
+workbuddy-config.json
+# Legacy pre-refactor names: kept so a stale copy can never be committed either.
 .cline-accounts.json
 .cline-credentials.json
+.cline-stream-required.json
 .zen-config.json
 .zen-sessions.json
+.zen-model-aliases.json
 .zen-endpoints.json
-.cline-stream-required.json
+.amd-config.json
+.or-config.json
+.th-config.json
+.trae-config.json
+.model-blacklist.json
+.platform-blacklist.json
+.proxy-pool.json
+.proxy-health.json
+.workbuddy-proxies.json
 zen-stats.jsonl
 afree-proxy.log
 afree-proxy-stream.log

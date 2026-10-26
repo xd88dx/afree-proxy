@@ -2,10 +2,8 @@ package app
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"log"
-	"os"
 	"sync"
 	"time"
 
@@ -24,7 +22,8 @@ import (
 // 代理列表一有变动就整体清空统计（resetProxyHealthStats），所以键的稳定性
 // 只需覆盖"两次编辑之间"的窗口。
 //
-// 落盘 .proxy-health.json：内存记账 + 脏标记 + 60s 周期原子落盘，重启续算。
+// 落盘 proxy-config.json 的 health 段：内存记账 + 脏标记 + 60s 周期原子落盘，
+// 重启续算。
 // ============================================================================
 
 const (
@@ -69,10 +68,6 @@ var (
 type proxyHealthFile struct {
 	SavedAt time.Time                    `json:"savedAt"`
 	Proxies map[string]*proxyHealthEntry `json:"proxies"`
-}
-
-func proxyHealthPath() string {
-	return kit.ResolveDataPath(".proxy-health.json")
 }
 
 // recordProxyOutcome 记一次出口成败。proxyURL 为空 = 直连出口，不是代理，不记。
@@ -136,30 +131,23 @@ func ensureProxyHealthLoaded() {
 }
 
 func loadProxyHealth() {
-	raw, err := os.ReadFile(proxyHealthPath())
-	if err != nil {
-		if !os.IsNotExist(err) {
-			log.Printf("proxy health: read %s: %v", proxyHealthPath(), err)
-		}
+	proxyFileMu.Lock()
+	f := loadProxyConfigFileLocked()
+	stats := f.Health
+	proxyFileMu.Unlock()
+	if stats == nil {
 		return
 	}
-	var f proxyHealthFile
-	if json.Unmarshal(raw, &f) != nil {
-		log.Printf("proxy health: corrupt JSON at %s (starting clean)", proxyHealthPath())
-		return
-	}
-	if f.Proxies != nil {
-		for _, e := range f.Proxies {
-			if e == nil {
-				continue
-			}
-			if len(e.Recent) > proxyHealthRecentN {
-				e.Recent = e.Recent[len(e.Recent)-proxyHealthRecentN:]
-			}
+	for _, e := range stats {
+		if e == nil {
+			continue
 		}
-		proxyHealthStats = f.Proxies
+		if len(e.Recent) > proxyHealthRecentN {
+			e.Recent = e.Recent[len(e.Recent)-proxyHealthRecentN:]
+		}
 	}
-	log.Printf("proxy health: restored %d proxy stat(s) from %s", len(proxyHealthStats), proxyHealthPath())
+	proxyHealthStats = stats
+	log.Printf("proxy health: restored %d proxy stat(s) from %s", len(proxyHealthStats), proxyConfigPath())
 }
 
 func proxyHealthFlushLoop() {
@@ -187,21 +175,11 @@ func flushProxyHealth() {
 	proxyHealthDirty = false
 	proxyHealthMu.Unlock()
 
-	raw, err := json.Marshal(out)
-	if err != nil {
-		log.Printf("proxy health: marshal: %v", err)
-		return
-	}
-	path := proxyHealthPath()
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, raw, 0o600); err != nil {
-		log.Printf("proxy health: write %s: %v", tmp, err)
-		return
-	}
-	if err := os.Rename(tmp, path); err != nil {
-		log.Printf("proxy health: replace %s: %v", path, err)
-		_ = os.Remove(tmp)
-	}
+	// 只覆盖 proxy-config.json 的 health 段，出口池与绑定段原样保留。
+	mutateProxyConfigFile(func(f *proxyConfigFileData) {
+		f.HealthSavedAt = out.SavedAt
+		f.Health = out.Proxies
+	})
 }
 
 // proxyHealthSnapshot 面板用的每代理统计表。以当前代理池为基准逐行输出
@@ -210,7 +188,7 @@ func flushProxyHealth() {
 func proxyHealthSnapshot() []map[string]any {
 	ensureProxyHealthLoaded()
 	cfg := getProxyPool()
-	cooldowns := zenProxyCooldownStatus()
+	cooldowns := proxyCooldownStatus()
 
 	proxyHealthMu.Lock()
 	defer proxyHealthMu.Unlock()

@@ -21,11 +21,12 @@ import (
 // tokenharbor 同构（key 轮转 / 401·429 冷却 / 主备代理绑定 / 面板暂存编辑），
 // 区别是平台数量动态，管理 API 全部带 slug。
 
-// otherConfigPath Other 配置文件路径（DATA_DIR/.other-config.json）。
-func otherConfigPath() string { return kit.ResolveDataPath(".other-config.json") }
+// otherConfigPath Other 配置文件路径（DATA_DIR/other-config.json）。
+func otherConfigPath() string { return kit.ResolveDataPath("other-config.json") }
 
 // initOther 加载配置 + 注入 HTTP client 工厂 + 启动周期同步。StartProxy 早期调用一次。
 func initOther() {
+	migrateLegacyDataFile("other-config.json", ".other-config.json")
 	other.Load(otherConfigPath())
 	other.SetClientProvider(proxyClientFor)
 	// 出口成败/握手延迟回传（同 AMDCloud：此前无任何观测钩子）。
@@ -176,7 +177,7 @@ func handleOtherChat(w http.ResponseWriter, r *http.Request, params map[string]a
 	isStream, _ := params["stream"].(bool)
 	if isStream {
 		handleStreamBufferedGeneric(w, r, "other:"+p.Slug, params, func(ctx context.Context) (*http.Response, func(map[string]any), error) {
-			resp, _, err := other.Chat(ctx, p, params, m.ID, true, getProxyConfig().Strategy, otherBoundRoutable(p), otherExitFn(p))
+			resp, _, err := other.Chat(ctx, p, params, m.ID, true, globalStrategy(), otherBoundRoutable(p), otherExitFn(p))
 			if err != nil {
 				return nil, nil, err
 			}
@@ -185,10 +186,10 @@ func handleOtherChat(w http.ResponseWriter, r *http.Request, params map[string]a
 		})
 		return
 	}
-	resp, _, err := other.Chat(r.Context(), p, params, m.ID, true, getProxyConfig().Strategy, otherBoundRoutable(p), otherExitFn(p))
+	resp, _, err := other.Chat(r.Context(), p, params, m.ID, true, globalStrategy(), otherBoundRoutable(p), otherExitFn(p))
 	if err != nil {
 		log.Printf("  other api error (%s): %v", p.Slug, err)
-			writeJSON(w, http.StatusBadGateway, map[string]any{
+		writeJSON(w, http.StatusBadGateway, map[string]any{
 			"error": map[string]string{"message": err.Error(), "type": "api_error"},
 		})
 		return
@@ -279,9 +280,8 @@ func handleOtherConfigUpdate(w http.ResponseWriter, r *http.Request) {
 			writeAPI(w, http.StatusBadRequest, apiResponse{Error: "slug or useProxies is required"})
 			return
 		}
-		_, next := otherCloneConfig()
-		next.UseProxies = patch.UseProxies
-		other.Set(next)
+		// 走池开关存在 proxy-config.json 的代理池段，不写进平台文件。
+		setPlatformUseProxies("other", patch.UseProxies)
 		writeAPI(w, http.StatusOK, apiResponse{Success: true, Message: "Other config saved"})
 		return
 	}
@@ -940,7 +940,7 @@ func handleOtherModelsSelected(w http.ResponseWriter, r *http.Request) {
 // otherCloneConfig 写时复制：深拷贝全部子平台（含运行时表）。
 func otherCloneConfig() (*other.Config, *other.Config) {
 	cur := other.Get()
-	next := &other.Config{UseProxies: cur.UseProxies}
+	next := &other.Config{}
 	for i := range cur.Platforms {
 		next.Platforms = append(next.Platforms, *other.ClonePlatform(&cur.Platforms[i]))
 	}

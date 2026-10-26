@@ -6,8 +6,8 @@ import (
 	"afree-proxy/internal/kit"
 	openrouter "afree-proxy/internal/openrouter"
 	"afree-proxy/internal/other"
-	"afree-proxy/internal/trae"
 	"afree-proxy/internal/tokenharbor"
+	"afree-proxy/internal/trae"
 	"bufio"
 	"bytes"
 	"context"
@@ -539,7 +539,7 @@ func StartProxy(host string, port int) error {
 	switch {
 	case APIKeyEnv() != "":
 		fmt.Println("  API Key: set via API_KEY env")
-	case len(loadPool().Keys) > 0:
+	case len(globalClientKeys()) > 0:
 		fmt.Println("  API Key: panel-generated keys in use")
 	default:
 		fmt.Println("  API Key: any value (no key configured — local use only)")
@@ -574,7 +574,7 @@ func StartProxy(host string, port int) error {
 // 设置一次，因此轮转必须发生在 Writer 内部，不能靠外部定期检查。
 //
 // 与 requests.jsonl 的"超限即清空"不同，日志文件用轮转保留上一份历史
-//（.1），排查"崩溃前发生了什么"时不至于丢失全部上下文。
+// （.1），排查"崩溃前发生了什么"时不至于丢失全部上下文。
 type rotatingLogWriter struct {
 	mu       sync.Mutex
 	path     string
@@ -630,7 +630,7 @@ func (w *rotatingLogWriter) rotateLocked() {
 }
 
 // logFileMaxBytes 日志文件轮转阈值：LOG_FILE_MAX_MB 同样适用于 afree-proxy.log
-//（默认 10MB）。轮转保留一份 .1 历史。
+// （默认 10MB）。轮转保留一份 .1 历史。
 func logFileMaxBytes() int64 {
 	return LogFileMaxBytes()
 }
@@ -1316,7 +1316,7 @@ func clineAPIWithAccount(ctx context.Context, params map[string]any, stream bool
 		if rerr != nil {
 			return nil, fmt.Errorf("create request: %w", rerr)
 		}
-	// hsStart 拨号前打点：Do 返回即隧道建立（首字节未回），差值=握手延迟。
+		// hsStart 拨号前打点：Do 返回即隧道建立（首字节未回），差值=握手延迟。
 		req.Header = clineHeaders(token, sessionID)
 		hsStart := time.Now()
 		wctx, stopWatch := clineHeaderWatchdog(ctx)

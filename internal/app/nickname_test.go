@@ -34,7 +34,7 @@ func TestAdminAccountNickname(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv("DATA_DIR", tmp)
 	savedPath, savedPool := poolPath, pool
-	poolPath = filepath.Join(tmp, ".cline-accounts.json")
+	poolPath = filepath.Join(tmp, "cline-config.json")
 	pool = &AccountPool{Accounts: []*Account{
 		{AccountID: "acc_t1", Email: "a@b.c"},
 		{AccountID: "acc_t2", Email: "d@e.f"},
