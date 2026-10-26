@@ -117,14 +117,22 @@ func SyncCatalog() (int, error) {
 			complete = false
 			continue
 		}
+		if len(entries) == 0 {
+			// 档返回 200 但列表为空：上游抖动或过滤口径变化的形态，与"拉取
+			// 失败"同样不能当作下架依据——否则另一档独有确认的模型会被误判
+			// 下线（目录从展示层消失，最长一个同步周期后自愈）。
+			complete = false
+			continue
+		}
 		for id, m := range entries {
 			live[id] = m
 			seen[id] = true
 		}
 	}
 	changed := applyCatalog(live)
-	// 本轮原生档全部成功时才回收"上游已下架"的条目：模型列表是动态的，
-	// 只增不删会让下线模型永远挂在面板上。单档故障不代表模型下线，跳过。
+	// 本轮原生档全部成功且都有货时才回收"上游已下架"的条目：模型列表是
+	// 动态的，只增不删会让下线模型永远挂在面板上。单档故障/空档不代表
+	// 模型下线，跳过回收。
 	if complete && len(seen) > 0 {
 		changed += reconcileNative(seen)
 	}

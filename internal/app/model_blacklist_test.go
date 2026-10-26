@@ -1,6 +1,7 @@
 package app
 
 import (
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -268,5 +269,36 @@ func TestTraeAutoBanModel(t *testing.T) {
 	traeAutoBanModel(trae.Model{ID: "glm-5.2", RawName: "glm-5.2__dev", Function: "solo_agent"}, nil, "4011", "rate limit")
 	if IsModelBlacklisted("trae:glm-5.2") {
 		t.Fatal("rate limit must not ban")
+	}
+}
+
+// HTTP 级上游错误（非 200 带业务码）与流内 error 事件同判据：4023/1005 立即
+// 封禁；4001 仍走复核（无账号不封）；限流/网络错误不封。
+func TestTraeAutoBanOnHTTPError(t *testing.T) {
+	t.Setenv("DATA_DIR", t.TempDir())
+	resetModelBlacklistForTest(t)
+
+	m := trae.Model{ID: "glm-5.4", RawName: "glm-5.4__dev", Function: "solo_agent", Native: true}
+	traeAutoBanOnHTTPError(m, nil, &trae.HTTPError{Status: http.StatusBadRequest, Code: "4023", Body: "model not found"})
+	if !IsModelBlacklisted("trae:glm-5.4") {
+		t.Fatal("HTTP-level 4023 must ban immediately")
+	}
+
+	traeAutoBanOnHTTPError(trae.Model{ID: "glm-5.5", RawName: "glm-5.5__dev"}, nil,
+		&trae.HTTPError{Status: http.StatusBadRequest, Code: "4001", Body: "param is invalid"})
+	if IsModelBlacklisted("trae:glm-5.5") {
+		t.Fatal("HTTP-level 4001 must not ban without verification")
+	}
+
+	traeAutoBanOnHTTPError(trae.Model{ID: "glm-5.6", RawName: "glm-5.6__dev"}, nil,
+		&trae.HTTPError{Status: http.StatusTooManyRequests, Code: "429", Body: "rate limited", RateLimited: true})
+	if IsModelBlacklisted("trae:glm-5.6") {
+		t.Fatal("HTTP-level rate limit must not ban")
+	}
+
+	// 非 HTTPError（网络错误等）不封。
+	traeAutoBanOnHTTPError(trae.Model{ID: "glm-5.7", RawName: "glm-5.7__dev"}, nil, errors.New("dial tcp: timeout"))
+	if IsModelBlacklisted("trae:glm-5.7") {
+		t.Fatal("network error must not ban")
 	}
 }

@@ -361,6 +361,49 @@ func TestSyncCatalogKeepsNativeWhenScopeFails(t *testing.T) {
 	}
 }
 
+// 档返回 200 但列表为空同样不做下线回收：空档是上游抖动/过滤口径变化的
+// 形态，不是"另一档的模型都下线了"的证据。
+func TestSyncCatalogKeepsNativeWhenScopeEmpty(t *testing.T) {
+	resetCatalog(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/remote/v1/models":
+			io.WriteString(w, `{"data":{"list":[{"function":"solo_work_remote","models":[{"name":"keep"}]}]}}`)
+		case "/api/ide/v1/get_detail_param":
+			var body struct {
+				Function string `json:"function"`
+			}
+			_ = json.NewDecoder(r.Body).Decode(&body)
+			if body.Function == "solo_agent" {
+				// solo_agent 档：200 + 空 config_info_list
+				io.WriteString(w, `{"config_info_list":[]}`)
+				return
+			}
+			io.WriteString(w, `{"config_info_list":[{"config_name":"keep","model_detail_list":[{"model_name":"keep__dev"}]}]}`)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	prev := Get()
+	t.Cleanup(func() { Set(prev) })
+	Set(&Config{Gateway: srv.URL, Accounts: []*Account{{ID: "u1", Token: "tok"}}})
+	CatalogClient = srv.Client()
+	CatalogURLOverride = srv.URL + "/api/remote/v1/models"
+
+	applyCatalog(map[string]Model{
+		"gone": {ID: "gone", RawName: "gone__dev", Function: "solo_agent", Native: true},
+	})
+
+	if _, err := SyncCatalog(); err != nil {
+		t.Fatalf("SyncCatalog: %v", err)
+	}
+	if !catalogSnapshot()["gone"].Native {
+		t.Fatal("empty scope must not prune native entries")
+	}
+}
+
 // 没有可路由凭据（总闸/反代开关至少一个关）时不得发起目录请求：同步是给
 // 可服务清单取数，关停平台不该产生上游流量。
 func TestSyncCatalogRequiresRoutableAccount(t *testing.T) {

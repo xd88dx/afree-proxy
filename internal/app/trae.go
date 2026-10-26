@@ -244,6 +244,7 @@ func aggregateTraeSSE(ctx context.Context, params map[string]any, m trae.Model) 
 		BoundRoutable: traeBoundRoutable,
 	})
 	if err != nil {
+		traeAutoBanOnHTTPError(m, acc, err)
 		return nil, nil, "", err
 	}
 	defer stream.Close()
@@ -348,6 +349,18 @@ func traeAutoBanDecision(code string) (ban, verify bool) {
 // traeAutoBanInflight 同一模型的复核去重（并发 502 不叠加探测请求）。
 var traeAutoBanInflight sync.Map
 
+// traeAutoBanOnHTTPError HTTP 级上游错误与流内 error 事件同判据自动封禁：
+// 上游以非 200 返回业务码时错误走 trae.Chat 的返回值（而非流内 error 事件），
+// Chat 已对 1005/4023/4001 不再换号重试，封禁入口也要对齐——否则同样的
+// 模型级失败每次都只报错不进黑名单，/v1/models 继续列出。
+func traeAutoBanOnHTTPError(m trae.Model, acc *trae.Account, err error) {
+	var he *trae.HTTPError
+	if !errors.As(err, &he) {
+		return
+	}
+	traeAutoBanModel(m, acc, he.Code, fmt.Sprintf("HTTP %d: %s", he.Status, kit.Truncate(he.Body, 300)))
+}
+
 // traeAutoBanModel 命中判据后封禁；4001 走异步复核。
 func traeAutoBanModel(m trae.Model, acc *trae.Account, code, detail string) {
 	ban, verify := traeAutoBanDecision(code)
@@ -429,6 +442,7 @@ func aggregateTraeCompletion(ctx context.Context, params map[string]any, m trae.
 		BoundRoutable: traeBoundRoutable,
 	})
 	if err != nil {
+		traeAutoBanOnHTTPError(m, acc, err)
 		return nil, "", err
 	}
 	defer stream.Close()

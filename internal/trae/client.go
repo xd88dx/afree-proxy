@@ -1088,6 +1088,12 @@ func Chat(ctx context.Context, opts ChatOpts) (*Stream, *Account, error) {
 			if he.ParamError {
 				return nil, acc, he // 参数错误换账号无法修复，立即上抛
 			}
+			if he.Code == "1005" || he.Code == "4023" {
+				// 模型级永久错误（套餐/权益 1005、模型名未知 4023）：与流内
+				// error 事件同判据（app 层自动封禁决策表），换账号、换网关候选
+				// 都不会变——立即上抛，别打满 (retries+1)×候选 的重试轮次。
+				return nil, acc, he
+			}
 		}
 		if ctx.Err() != nil {
 			return nil, acc, fmt.Errorf("client aborted: %w", ctx.Err())
