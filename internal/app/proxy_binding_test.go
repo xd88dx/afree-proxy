@@ -158,8 +158,6 @@ func setProxyCooldownIdx(t *testing.T, idx int, d time.Duration) {
 	})
 }
 
-func boolPtr(b bool) *bool { return &b }
-
 func TestProxyIsolationEnabledDefaults(t *testing.T) {
 	// 缺省（nil 字段）= 启用
 	setupBindingTest(t, testZenCfg(nil))

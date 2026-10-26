@@ -386,11 +386,11 @@ func TestClineHeadersContract(t *testing.T) {
 	}
 }
 
-// zen 上游身份头与 UA 必须与实测规格一致：UA 为
-// "opencode/<ver> ai-sdk/provider-utils/4.0.40 runtime/bun/1.3.14"（ver 随最新
-// CLI，2026-10-19 实机抓包核对 opencode-ai@1.19.3 为 1.19.3）；gate 头用官方的小写键名。
+// zen 上游身份头与 UA 必须与实测规格一致：UA 为 CLI v2 的
+// "opencode/latest/2.1.4/cli"（2026-10-26 实测，3758eb7；v2 chat/responses
+// 同一 UA，本地旧 ai-sdk 形态轮换表已废弃）；gate 头用官方的小写键名。
 func TestZenHeadersMatchAuditSpec(t *testing.T) {
-	if zenNativeUA != "opencode/1.19.3 ai-sdk/provider-utils/4.0.40 runtime/bun/1.3.14" {
+	if zenNativeUA != "opencode/latest/2.1.4/cli" {
 		t.Errorf("zenNativeUA drifted from the audit spec: %q", zenNativeUA)
 	}
 	// 轮换列表里的原生 UA 条目也必须是同一版本
@@ -401,19 +401,12 @@ func TestZenHeadersMatchAuditSpec(t *testing.T) {
 		}
 	}
 	if !found {
-		t.Errorf("ZenUserAgents must contain the native ai-sdk UA %q (got %v)", zenNativeUA, kit.ZenUserAgents)
+		t.Errorf("ZenUserAgents must contain the native v2 UA %q (got %v)", zenNativeUA, kit.ZenUserAgents)
 	}
 
-	// provider-utils 段随协议切换：chat 4.0.23 / responses 4.0.40（实机抓包 80:1）。
-	// 会话里存的基准是 responses 形态，发 chat 前必须换成 4.0.23。
-	if got := zenUAForProtocol(zenNativeUA, false); got != "opencode/1.19.3 ai-sdk/provider-utils/4.0.23 runtime/bun/1.3.14" {
-		t.Errorf("chat UA provider-utils segment wrong: %q", got)
-	}
-	if got := zenUAForProtocol(zenNativeUA, true); got != zenNativeUA {
-		t.Errorf("responses UA must keep the stored base value, got %q", got)
-	}
-	if got := zenUAForProtocol("opencode/latest/1.18.14/desktop", false); got != "opencode/latest/1.18.14/desktop" {
-		t.Errorf("non-ai-sdk UA must pass through unchanged, got %q", got)
+	// v2 CLI（3758eb7）：chat 与 responses 同一 UA，无 provider-utils 段切换。
+	if zenNativeUA != "opencode/latest/2.1.4/cli" {
+		t.Errorf("zenNativeUA must be the CLI v2 UA, got %q", zenNativeUA)
 	}
 
 	req, err := http.NewRequest("POST", "https://opencode.ai/zen/v1/chat/completions", nil)
@@ -425,7 +418,8 @@ func TestZenHeadersMatchAuditSpec(t *testing.T) {
 	for k, v := range map[string]string{
 		"x-opencode-session-id": "ses_abcdef012345ABCDef012345",
 		"x-opencode-session":    "ses_abcdef012345ABCDef012345",
-		"x-opencode-request":    "msg_abcdefghijklmnopqrstuvwxyz12",
+		"x-session-affinity":    "ses_abcdef012345ABCDef012345",
+		"x-session-id":          "ses_abcdef012345ABCDef012345",
 		"x-opencode-client":     "cli",
 		"x-opencode-project":    "global",
 	} {

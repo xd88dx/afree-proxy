@@ -36,6 +36,11 @@ type Account struct {
 	// 分开表达。nil（旧数据或未选择）按启用处理；只有显式 false 才退出主选号，
 	// 只读接口仍按 Status 使用账号。
 	PoolEnabled *bool `json:"poolEnabled,omitempty"`
+	// EgressProxy / NoEgress 仅供管理面板展示：该账号绑定的出口（已打码），
+	// 或"代理池已用尽、本账号在代理模式下被跳过"。绑定本身持久化在
+	// .egress-bindings.json，不进账号池文件。
+	EgressProxy string `json:"egressProxy,omitempty"`
+	NoEgress    bool   `json:"noEgress,omitempty"`
 }
 
 type AccountPool struct {

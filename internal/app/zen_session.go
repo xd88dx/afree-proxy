@@ -3,7 +3,6 @@ package app
 import (
 	"fmt"
 	"log"
-	"strings"
 	"sync"
 	"time"
 
@@ -55,14 +54,11 @@ var (
 	// 任何 save 都会把磁盘上读不到的原文件覆盖掉。宁可本次运行不落盘，也不能
 	// 销毁可能有价值的数据（重启后重试读取）。
 	zenSessSaveBlocked bool
-	// zenNativeUA 官方 CLI 的原生 ai-sdk 形态 UA（会话粘性与轮换列表共用）。
-	// opencode 版本按最新 CLI 核对（2026-10-19：npm opencode-ai@1.19.3 实机
-	// 抓包，UA 逐字为 "opencode/1.19.3 ai-sdk/provider-utils/4.0.40 runtime/bun/1.3.14"）；
-	// ai-sdk / bun 段保持不变——它们对应 TLS 指纹（tls_bun.go 的 Bun hello），
-	// 与 opencode 应用版本无关，改动这两段才会与指纹失配。
-	// provider-utils 段随协议不同（chat 4.0.23 / responses 4.0.40），发请求前
-	// 由 zenUAForProtocol 校正；这里存 responses 形态作为基准值。
-	zenNativeUA = "opencode/1.19.3 ai-sdk/provider-utils/4.0.40 runtime/bun/1.3.14"
+	// zenNativeUA 官方 CLI v2 的 UA（会话粘性与轮换列表共用）。
+	// 2026-10-26 上游实测（3758eb7）：CLI v2.1.4 在 chat 与 responses 两条路径
+	// 都发 opencode/latest/2.1.4/cli；旧 ai-sdk 形态 UA（1.18.35/1.19.3）已不是
+	// 官方客户端的 UA，与 v2 TLS 指纹（tls_bun.go）组合会被识别为旧客户端。
+	zenNativeUA = "opencode/latest/2.1.4/cli"
 )
 
 // defaultSessionRotateMinutes 粘性会话的默认轮换周期（分钟）。语义见
@@ -233,25 +229,6 @@ func sessionRotateInterval() time.Duration {
 		return 0
 	}
 	return time.Duration(n) * time.Minute
-}
-
-// zenUAForProtocol 按协议校正 UA 里的 ai-sdk provider-utils 段：官方 CLI 在
-// chat/completions 路径发 4.0.23、responses 路径发 4.0.40（2026-10-19 实机抓包
-// opencode 1.19.3：80 个 chat 请求全为 4.0.23，唯一 responses 请求为 4.0.40）。
-// 会话粘性固定的是「应用版本 + bun 版本」这层指纹，provider-utils 段必须随协议走，
-// 否则同一会话跨协议会露出真实客户端不存在的组合。非 ai-sdk 形态的 UA 原样返回。
-func zenUAForProtocol(ua string, responses bool) string {
-	const (
-		puChat = "provider-utils/4.0.23"
-		puResp = "provider-utils/4.0.40"
-	)
-	if !strings.Contains(ua, " ai-sdk/") {
-		return ua
-	}
-	if responses {
-		return strings.Replace(ua, puChat, puResp, 1)
-	}
-	return strings.Replace(ua, puResp, puChat, 1)
 }
 
 // mintZenSessionEntryLocked 就地刷新条目的会话：新 ID + 新创建时间 + 合法标记，

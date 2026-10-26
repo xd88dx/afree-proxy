@@ -198,7 +198,7 @@ func TestResponsesEntryUsesNativeEndpointForResponsesModel(t *testing.T) {
 }
 
 // 线级验证：真实 callZenAPI 打到假上游时，gate 头必须是官方的小写键名
-// （x-opencode-*），UA 为最新 CLI 的 ai-sdk 形态。证明 zen 指纹真的上了线。
+// （x-opencode-*），UA 为 CLI v2。证明 zen 指纹真的上了线。
 func TestZenHeadersOnTheWire(t *testing.T) {
 	dir, err := os.MkdirTemp("", "zenhdr")
 	if err != nil {
@@ -247,19 +247,19 @@ func TestZenHeadersOnTheWire(t *testing.T) {
 	want := map[string]string{
 		"X-Opencode-Client":  "cli",
 		"X-Opencode-Project": "global",
-		// chat 路径的 provider-utils 段是 4.0.23（实机抓包），不是 responses 的 4.0.40
-		"User-Agent": "opencode/1.19.3 ai-sdk/provider-utils/4.0.23 runtime/bun/1.3.14",
+		// v2 CLI：chat 与 responses 同一个 UA（opencode/latest/2.1.4/cli，3758eb7）
+		"User-Agent": "opencode/latest/2.1.4/cli",
 	}
 	for k, v := range want {
 		if g := h.Get(k); g != v {
 			t.Errorf("wire header %s = %q, want %q", k, g, v)
 		}
 	}
-	if h.Get("X-Opencode-Session-Id") == "" || h.Get("X-Opencode-Session") == "" {
-		t.Error("both x-opencode-session-id and x-opencode-session must be sent")
+	if h.Get("X-Opencode-Session-Id") == "" || h.Get("X-Opencode-Session") == "" || h.Get("X-Session-Affinity") == "" || h.Get("X-Session-Id") == "" {
+		t.Error("all four session headers must be sent")
 	}
-	if h.Get("X-Opencode-Request") == "" {
-		t.Error("x-opencode-request must be sent")
+	if h.Get("X-Opencode-Request") != "" {
+		t.Error("x-opencode-request must NOT be sent (CLI v2 sends none)")
 	}
 	if got := h.Get("Authorization"); got != "Bearer wire-zen-key" {
 		t.Errorf("Authorization = %q", got)

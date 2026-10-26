@@ -27,20 +27,11 @@ func WithRetryJitter(delay time.Duration) time.Duration {
 // ============================================================================
 
 var ZenUserAgents = []string{
-	"opencode/latest/1.18.14/cli",
-	"opencode/latest/1.18.13/cli",
-	"opencode/1.18.14/cli",
-	"opencode/1.18.13/cli",
-	"opencode/1.18.12/cli",
-	"opencode/1.18.11/cli",
-	"opencode/latest/1.18.14/desktop",
-	"opencode/latest/1.18.13/desktop",
-	// 原生 responses 路径实测：官方 CLI 发 ai-sdk 形态 UA；网关轮换列表
-	// 加入该条目以匹配官方客户端指纹（AI-SDK/bun 段对应 TLS 指纹见 tls_bun.go；
-	// opencode 版本随最新 CLI，2026-10-19 实机抓包核对 npm opencode-ai@1.19.3：
-	// chat 路径 provider-utils 段为 4.0.23，responses 路径为 4.0.40，两者都列）
-	"opencode/1.19.3 ai-sdk/provider-utils/4.0.23 runtime/bun/1.3.14",
-	"opencode/1.19.3 ai-sdk/provider-utils/4.0.40 runtime/bun/1.3.14",
+	// 2026-10-26 上游实测（3758eb7）：CLI v2.1.4 只发这一个 UA。旧版本轮换会让
+	// 同一 key/会话在不同请求间换 UA 版本，正是上游识别非官方客户端的信号之一；
+	// 因此不再轮换旧 UA，只保留 v2 UA。（本地 1.x 时代的多 UA 轮换表随之作废，
+	// ai-sdk/bun 段的说明见 tls_bun.go 的 v2 ClientHello。）
+	"opencode/latest/2.1.4/cli",
 }
 
 // mustRand 读满 n 字节加密随机数；crypto/rand 失败说明系统熵源异常，

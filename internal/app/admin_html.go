@@ -5394,6 +5394,19 @@ async function loadOcConfig() {
     _('ocMaxConc').value = c.maxConcurrency || 8;
     _('ocRetries').value = c.retries || 3;
     if (_('ocSessionRotate')) _('ocSessionRotate').value = (c.sessionRotateMinutes != null ? c.sessionRotateMinutes : 120);
+    if (_('ocPinProxy')) _('ocPinProxy').value = String(c.pinProxyPerKey !== false);
+    const eg = c.egress || {};
+    if (_('ocEgressInfo')) {
+      const un = eg.unassigned || 0;
+      _('ocEgressInfo').innerHTML = !eg.enabled
+        ? '<span style="color:var(--text2)">disabled — per-request rotation</span>'
+        : (!eg.active
+            ? '<span style="color:var(--text2)">no proxies — direct</span>'
+            : '<span style="color:' + (un > 0 ? 'var(--danger)' : 'var(--accent2)') + '">' +
+              (eg.proxies || 0) + ' prox' + ((eg.proxies || 0) === 1 ? 'y' : 'ies') + ' · ' +
+              (eg.assigned || 0) + '/' + (eg.identities || 0) + ' keys bound' +
+              (un > 0 ? ' · ' + un + ' key' + (un === 1 ? '' : 's') + ' skipped' : '') + '</span>');
+    }
     _('ocCompactAuto').value = String(c.compaction ? c.compaction.auto : true);
     _('ocCompactBuffer').value = c.compaction ? c.compaction.buffer : 20000;
     _('ocKeepTokens').value = c.compaction ? c.compaction.keepTokens : 8000;
@@ -5415,6 +5428,7 @@ async function saveOcConfig() {
     maxConcurrency: parseInt(_('ocMaxConc').value) || 8,
     retries: parseInt(_('ocRetries').value) || 3,
     sessionRotateMinutes: rot,
+    pinProxyPerKey: _('ocPinProxy') ? _('ocPinProxy').value === 'true' : true,
     compaction: {
       auto: _('ocCompactAuto').value === 'true',
       buffer: parseInt(_('ocCompactBuffer').value) || 20000,

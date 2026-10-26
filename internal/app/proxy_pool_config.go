@@ -180,4 +180,8 @@ func setProxyPool(c *proxyPoolConfigData) {
 		}
 	}
 	proxyClientCacheMu.Unlock()
+	// 池列表变化重算 egress 自动绑定：新代理分给空闲 key、被移除代理的绑定
+	// 作废（key 变回"无出口"从而被 pickZenKey 过滤）。key 列表变化侧的挂钩
+	// 在 setZenConfig。幂等：分配没变时不写盘。
+	reconcileEgressBindings()
 }

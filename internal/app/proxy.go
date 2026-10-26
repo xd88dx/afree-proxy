@@ -93,6 +93,10 @@ func StartProxy(host string, port int) error {
 	startZenSessionRotator()
 	startPoolFlusher()
 	loadZenEndpoints()
+	// 出口绑定必须在首次请求之前就位：否则第一批请求会用轮转出来的
+	// 出口发出，恰好是上游记录 IP 的那一刻。
+	loadEgressBindings()
+	reconcileEgressBindings()
 	loadClineStreamLearned()
 	initOpenRouter()
 	initAMD()
@@ -1196,7 +1200,9 @@ var clineAPIBase = cline.ClineAPIBase
 // callClineAPI 调用 cline 上游，带跨账号 failover。
 // ctx 来自客户端请求: IDE abort/取消时立即终止,不冷却账号。
 // 账号有绑定出口（隔离模式）时永远只从绑定出口发出,绑定优先于 useProxies;
-// 未绑定账号在 useProxies 为 true 时走共享出口代理池（每次尝试轮转挑选）;
+// 未绑定账号在 useProxies 为 true 时走共享出口代理池（每次尝试轮转挑选;
+// cline 不接上游的 egress 自动钉定——账号级绑定走本地 ProxyMain/ProxyBackup
+// 体系与面板自动分配,见 egress.go 整合注释）
 // 代理路径上的网络错误只冷却代理本身,绝不冷却账号 —— 代理故障不污染账号池。
 //
 // failover（P2 修复）：429/5xx 时换下一个账号重试（至多 clineFailoverAttempts
@@ -1214,6 +1220,12 @@ func callClineAPI(ctx context.Context, params map[string]any, stream bool, usePr
 			if lastErr != nil {
 				// 所有可用账号都试过了：返回最后一次的真实错误（比"无账号"更有信息量）
 				return nil, lastAcc, lastErr
+			}
+			// 绑定策略下"没有可用账号"通常是代理不够：明确说出来，
+			// 否则用户只看到 "no active accounts" 而池子里其实有 11 个。
+			if useProxies && egressBindingActive() {
+				return nil, nil, fmt.Errorf("no account has an egress proxy assigned: %w",
+					egressShortfallError("cline", egressNSCline, poolAccountIDs()))
 			}
 			return nil, nil, fmt.Errorf("no active accounts available: %s", describePoolStatus())
 		}

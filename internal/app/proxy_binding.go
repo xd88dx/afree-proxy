@@ -294,14 +294,28 @@ func workbuddyProxiesEnabled() bool {
 // key 沿用全局轮转（未配置代理则直连）。
 func boundExitFor(key string) (proxyURL string, idx int, ok bool) {
 	main, backup, bound := keyBindingOf(key)
-	if !bound {
-		if !zenProxiesEnabled() {
-			return "", -1, true // 面板选择直连：即使代理列表非空也不走池
-		}
-		proxyURL, idx = pickUpstreamProxy()
-		return proxyURL, idx, true
+	if bound {
+		return pickBoundProxy(main, backup)
 	}
-	return pickBoundProxy(main, backup)
+	// egress 自动钉定层（上游 3758eb7 整合）：钉定生效（开关开 + 池非空）时，
+	// 未绑定 key 使用自动分配的固定出口（重启不变，分配幂等）——zen 免费层按
+	// key 记录出口 IP，轮转让整池 key 都见过 N 个 IP，即使代理干净也会被判
+	// 可疑。没分到出口（代理比 key 少）返回 ok=false：直连或借用别人的出口
+	// 都会重新打上"一 key 多 IP"指纹。pickZenKey 已把这类 key 过滤出轮转，
+	// 这里挡住的是 pinKey（面板 Test）与 ZEN_PIN_KEY 这两条绕过轮转的路径。
+	// 显式 KeyBindings 恒优先于本层；钉定关闭或池为空时维持旧规则
+	// （useProxies 开关决定走池轮转或直连）。
+	if egressBindingActive() {
+		if p, found := egressProxyForZen(key); found {
+			return p, proxyIndex(p), true
+		}
+		return "", -1, false
+	}
+	if !zenProxiesEnabled() {
+		return "", -1, true // 面板选择直连：即使代理列表非空也不走池
+	}
+	proxyURL, idx = pickUpstreamProxy()
+	return proxyURL, idx, true
 }
 
 // proxyExitType 请求日志"代理类型"列的取值：绑定主代理返回 "main"，绑定备

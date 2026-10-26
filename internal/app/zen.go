@@ -304,6 +304,12 @@ type zenCompactConfig struct {
 type zenConfigData struct {
 	Key            string           `json:"key"`            // 兼容字段：始终等于 Keys[0]（旧版单 key 读取用）
 	Keys           []string         `json:"keys,omitempty"` // zen 多 key 池，请求按 round-robin 轮转
+	// OrgID：OAuth 账户的组织 ID（x-opencode-org-id）。CLI v2 在 OAuth
+	// 账户流量中发该头，原始 API key 流量中没有。网关无法从 key 字符串
+	// 推导它，空值即省略（正确）；使用 OAuth token 作 key 时，应从
+	// 账户元数据填入，否则上游看到 OAuth token 却无 org 头，与官方
+	// 客户端形态不一致。绝不编造。
+	OrgID          string           `json:"orgID,omitempty"`
 	BaseURL        string           `json:"baseURL"`
 	MaxConcurrency int              `json:"maxConcurrency"` // zen 上游最大并发,防 worker 瞬时超限,默认 8
 	Retries        int              `json:"retries"`        // 限流/网络错误重试次数,默认 3
@@ -328,6 +334,10 @@ type zenConfigData struct {
 	// SessionRotateMinutes 粘性会话本地轮换周期（分钟），默认 120（2 小时）。
 	// 0 = 永不轮换（沿用旧行为，长跑后首个请求会因会话老化而变慢）。
 	SessionRotateMinutes int `json:"sessionRotateMinutes"`
+	// PinProxyPerKey 每个 key/账号固定一个出口代理（默认 true）。指针类型：
+	// nil = 旧配置文件没有该键 → 按默认开启处理（见 pinProxyPerKeyEnabled）。
+	// 关闭后恢复按请求轮转（zen 按 key 的 IP 指纹会重新出现，仅排障用）。
+	PinProxyPerKey *bool `json:"pinProxyPerKey,omitempty"`
 }
 
 // proxyRuleKinds 自动分配规则（ProxyExclusions/ProxyBindCaps）的基础平台
@@ -524,6 +534,9 @@ func defaultZenConfig() *zenConfigData {
 		// 会话轮换周期：缺少该键的旧配置文件保持此默认（2 小时）。
 		// 显式写 0 表示关闭轮换（见 SessionRotateMinutes 注释）。
 		SessionRotateMinutes: defaultSessionRotateMinutes,
+		// 每 key 固定出口：2026-10-21 起 zen 按 key 记录出口 IP，轮转会
+		// 让整池 key 被判可疑，故默认开启（无代理时自动退回直连）。
+		PinProxyPerKey: boolPtr(true),
 		Compaction: zenCompactConfig{
 			Auto:       true,
 			Buffer:     20000,
@@ -632,6 +645,12 @@ func loadZenConfig() *zenConfigData {
 		cfg.BaseURL = zenAPIBase
 		log.Printf("zen baseURL migrated: %s -> %s (legacy zen endpoint rejects anonymous free-tier traffic)", zenLegacyBase, zenAPIBase)
 	}
+	// PinProxyPerKey 缺省物化（上游 3758eb7）：旧配置文件没有该键时按"开启"
+	// 落定为显式值。使用侧 pinProxyPerKeyEnabled 本就把 nil 解释为开启，这里
+	// 物化让缺省语义在读取后即可见、下次保存即写回配置文件。
+	if cfg.PinProxyPerKey == nil {
+		cfg.PinProxyPerKey = boolPtr(true)
+	}
 	return cfg
 }
 
@@ -699,6 +718,9 @@ func setZenConfig(c *zenConfigData) {
 			c.KeyRoutingEnabled = nil
 		}
 	}
+	// key 列表变化都要重算 egress 绑定：新 key 分配空闲代理、被移除的 key
+	// 释放代理（代理池变化侧的挂钩在 setProxyPool，本地代理池不在 zen 配置里）。
+	reconcileEgressBindings()
 }
 
 // validateProxyList 校验代理列表格式: 支持 http/https/socks5/socks5h, 必须包含 host:port。
@@ -754,13 +776,35 @@ var (
 // 隔离模式（proxy_binding.go）下，绑定主备用出口都不可用的 key 被排除出所有
 // 候选轮 —— 隔离优先于可用性；全部 key 都被挡住时返回 ""，调用方报
 // "无可用出口"而不是静默直连。返回 "" 也表示未配置任何 key。
+//
+// egress 钉定层（3758eb7，egress.go）：显式 KeyBindings 之下，未绑定 key 在
+// pinProxyPerKey 开启且代理池非空时自动分配一个稳定出口（重启不变），代理比
+// key 少时多出来的 key 被过滤——它们的流量若继续发出（直连或借用别人的出口），
+// 上游就会把"一个 key 多个 IP"的指纹重新打上，这正是要消除的。
 // zenNoKeyError 轮转取不到 key 时的错误：区分"没有配置任何 key"与"全部
 // 被代理隔离挡住"，避免运维按空池排查代理池。
 func zenNoKeyError() error {
 	if len(getZenConfig().Keys) == 0 {
 		return fmt.Errorf("no zen key configured: add an enabled key in the admin panel")
 	}
+	// egress 钉定生效时，"全被挡"最常见的原因是代理比 key 少（一代理一 key），
+	// 用容量口径报错并给出可操作建议，别让人按"绑定出口冷却"去排查。
+	if egressBindingActive() {
+		return egressShortfallError("zen", egressNSZen, getZenConfig().Keys)
+	}
 	return fmt.Errorf("no zen key routable: all configured keys' bound proxies are cooling or removed (proxy isolation)")
+}
+
+// zenBlockedExitErr 固定 key（pinKey 面板 Test / ZEN_PIN_KEY）出口不可用时
+// 的错误：显式绑定 = 主备都冷却/被删（隔离口径文案）；无显式绑定 = egress
+// 自动钉定没分到出口（池容量不足，容量口径文案）。
+func zenBlockedExitErr(key string) error {
+	if main, backup, bound := keyBindingOf(key); bound {
+		return errors.New(blockedExitMessage(
+			fmt.Sprintf("key#%d bound proxies unavailable (cooling or removed); probe aborted by proxy isolation", keyIndex(key)),
+			main, backup))
+	}
+	return egressShortfallError("zen", egressNSZen, getZenConfig().Keys)
 }
 
 func pickZenKey() string {
@@ -788,7 +832,25 @@ func pickZenKey() string {
 			routingOff[k] = true
 		}
 	}
-	if len(blocked) == len(keys) || len(routingOff) == len(keys) {
+	// egress 钉定（3758eb7）：显式 KeyBindings 之下的自动层——钉定生效
+	// （开关开 + 池非空）却没分到自动出口的 key 整体过滤，直连或借用别人的
+	// 出口都会重新打上"一 key 多 IP"指纹。快照在 zenSessMu 之外取（egressMu
+	// 自带锁、不嵌套）。
+	noEgress := map[string]bool{}
+	if egressBindingActive() {
+		for _, k := range keys {
+			if _, ok := egressProxyForZen(k); !ok {
+				noEgress[k] = true
+			}
+		}
+	}
+	alive := 0
+	for _, k := range keys {
+		if !blocked[k] && !routingOff[k] && !noEgress[k] {
+			alive++
+		}
+	}
+	if alive == 0 {
 		return ""
 	}
 	// 先取 live 会话集合（zenSessMu）再进 zenKeyMu：两把锁不嵌套，避免与
@@ -806,12 +868,13 @@ func pickZenKey() string {
 	// 三轮候选（保持既有优先级）：live 优先（未 mint 的 key 必 403，见
 	// zen_session.go 顶部注释）→ 未冷却 → 全冷却时兜底（保持请求流动）。
 	// 每轮候选按轮转顺序生成，最终由账号调度策略（round_robin/fill/random，
-	// 与 Cline 账号池共用同一配置）挑选。
+	// 与 Cline 账号池共用同一配置）挑选。三轮都带着 blocked/routingOff/
+	// noEgress 过滤——没出口的 key 连"冷却重试"都不该发出去。
 	buildCandidates := func(requireLive, ignoreCooling bool) []string {
 		var out []string
 		for i := 0; i < len(keys); i++ {
 			k := keys[(zenKeyIdx+i)%len(keys)]
-			if blocked[k] || routingOff[k] {
+			if blocked[k] || routingOff[k] || noEgress[k] {
 				continue
 			}
 			if requireLive && !live[k] {
@@ -974,6 +1037,8 @@ func zenKeyStatus() []map[string]any {
 	for i, k := range keys {
 		sess[i] = zenSessionSnapshotOf(k)
 	}
+	// 出口绑定同样先快照：egress 路径取 zenConfigMu/egressMu，不能与 zenKeyMu 嵌套。
+	egress := zenEgressSnapshotOf(keys)
 	zenKeyMu.Lock()
 	defer zenKeyMu.Unlock()
 	now := time.Now()
@@ -1007,6 +1072,18 @@ func zenKeyStatus() []map[string]any {
 		}
 		if sess[i].CreatedAt > 0 {
 			st["createdAt"] = time.Unix(sess[i].CreatedAt, 0).Format(time.RFC3339)
+		}
+		// 出口绑定：面板必须能看出"这个 key 为什么不在轮转里"。
+		// 没有绑定的 key 在绑定策略下等于停用（见 pickZenKey）。
+		// 快照已在进 zenKeyMu 之前算好（egress.go 的锁不与 zenKeyMu 嵌套）。
+		if e := egress[i]; e.proxy != "" {
+			st["proxy"] = maskProxyURL(e.proxy)
+			st["proxyIndex"] = e.index
+		} else if k == "public" {
+			st["proxy"] = "rotating (no key)"
+		} else if e.bound {
+			st["proxy"] = ""
+			st["noEgress"] = true
 		}
 		if until, cooling := zenKeyCool[k]; cooling && now.Before(until) {
 			st["cooling"] = true
@@ -1047,24 +1124,23 @@ func pinnedZenKey() string {
 // CLI 一致）。校验规则 2026-10-15 在新 inference 后端重新实测：缺工具 →
 // 403；工具在但 parameters 为空 schema → 403；描述文本、tool_choice、UA
 // 均不参与校验。注入的定义（描述+schema）统一取 zen_gate_tools.go 的官方
-// CLI 1.19.0 原文，本表只保留名字与精简描述作兜底/名录用途。
-// 单一来源：改名/增删必须同时满足两个端点的校验，只改这里。
-// 2.x 官方工具集（2026-10-25 对齐 opencode2api 上游 opencode_tools.json，
-// 顺序同上游 v2OfficialToolOrder）。JSON 加载失败时的兜底简表。
+// CLI 2.1.4 原文（2026-10-26 认证抓包），本表只保留名字与精简描述作兜底/名录用途。
+// v2 与 v1 的区别：bash/task/todowrite 被移除，新增 question/subagent/
+// execute，顺序为 CLI 发送顺序。单一来源：改名/增删必须同时满足两个
+// 端点的校验，只改这里。
 var zenGateToolSpecs = []struct{ name, desc string }{
 	{"edit", "Edit a file"},
-	{"execute", "Execute a command"},
 	{"glob", "Find files by glob pattern"},
 	{"grep", "Search file contents"},
 	{"question", "Ask the user a question"},
 	{"read", "Read a file"},
-	{"shell", "Run a shell command"},
+	{"shell", "Execute a shell command"},
 	{"skill", "Load a skill"},
 	{"subagent", "Run a subagent"},
 	{"webfetch", "Fetch a web page"},
 	{"websearch", "Search the web"},
 	{"write", "Write a file"},
-	{"patch", "Apply a patch"},
+	{"execute", "Run JavaScript in a confined Code Mode runtime"},
 }
 
 // zenGateTools chat 端点形态：tools[].{type,function:{name,description,parameters}}。
@@ -1125,28 +1201,105 @@ func buildZenBody(params map[string]any, stream bool) map[string]any {
 	delete(body, "reasoningEffort")
 	// FreeTier gate（2026-09-18 实测解码）：zen 免费层 chat 端点校验请求体
 	// 是否携带 opencode 工具集，缺失则 403（"can only be used from within
-	// OpenCode"）。恒注入 2.x 官方 13 工具集保证过闸（2026-10-25 自 11 个 1.x 名单对齐上游 2.x）。tool_choice 按客户端
-	// 是否带工具分流（实测对比）：
-	//  - 客户端无工具（纯文本问答）：tool_choice=none。auto 会让部分模型
-	//    （ling 多轮实测）在有工具但无需调用时返回空文本；none 保证回复。
-	//  - 客户端带工具（IDE agent 模式，Cursor 等）：客户端定义优先（同名时
-	//    覆盖 gate 占位 stub，模型才能拿到真实参数 schema）+ tool_choice=auto，
-	//    模型可发起调用、IDE 执行后回传结果（实测 ling 调用客户端自定义
-	//    get_weather 成功）。客户端显式 none 时尊重（实测 chat 端点接受 none）。
+	// OpenCode"）。恒注入 12 个 v2 规范工具名保证过闸。
+	// tool_choice：CLI v2 在 chat 路径完全不发该字段（2026-10-26 认证
+	// 抓包，body keys 无 tool_choice），上游缺省即 auto，简单问答仍
+	// 回文本（CLI hi 实测）。旧网关的 none/auto 强制值是 v1 遗留指纹，
+	// 2026-10-26 实验：TLS/UA/头/工具全部对齐后仍 429，tool_choice 是
+	// 剩余差异之一，故改为：客户端显式指定时原样透传，否则省略。
 	delete(body, "functions")
 	delete(body, "function_call")
 	clientTools := zenClientTools(params)
 	if len(clientTools) == 0 {
 		body["tools"] = zenGateTools()
-		body["tool_choice"] = "none"
 	} else {
 		body["tools"] = zenMergeTools(clientTools, zenGateTools())
-		body["tool_choice"] = "auto"
-		if tc, _ := params["tool_choice"].(string); tc == "none" {
-			body["tool_choice"] = "none"
+	}
+	if tc, ok := params["tool_choice"]; ok {
+		body["tool_choice"] = tc
+	} else {
+		delete(body, "tool_choice")
+	}
+	ensureZenEnvMarkerChat(body)
+	return body
+}
+
+// zenEnvBlock returns the CLI's <env> marker block. 2026-10-26 ablation
+// (raw uTLS call, same IP/account/TLS/headers/tools, body varied one
+// element at a time): removing the system prompt -> 429; truncating it
+// to 8000 chars -> 429; last 1000 chars alone -> 200; env block alone
+// -> 200; env block without "Working directory:" -> 429; "Working
+// directory:" outside <env> -> 429; fake directory value -> 200.
+// Upstream therefore checks, in a system message, for a line
+// "Working directory:" inside <env>...</env> — the CLI always injects
+// this block (working directory, platform, git status, date) at the
+// end of its system prompt, and a generic OpenAI client does not.
+// The value itself is not validated, so the gateway uses its own
+// working directory (truthful for the gateway process) rather than
+// fabricating a client's directory.
+func zenEnvBlock() string {
+	wd, err := os.Getwd()
+	if err != nil || wd == "" {
+		wd = "/tmp/opencode"
+	}
+	return "<env>\n  Working directory: " + wd + "\n</env>"
+}
+
+func zenTextHasEnvMarker(s string) bool {
+	return strings.Contains(s, "<env>") && strings.Contains(s, "Working directory:")
+}
+
+// ensureZenEnvMarkerChat appends the env block to the first system
+// message (or prepends a system message with just the block) when no
+// system/developer message already carries the marker. It never
+// removes or rewrites client content; it only appends the marker the
+// free tier checks for, at the end, mirroring CLI's layout.
+func ensureZenEnvMarkerChat(body map[string]any) {
+	msgs, ok := body["messages"].([]any)
+	if !ok {
+		return
+	}
+	for _, m := range msgs {
+		mm, ok := m.(map[string]any)
+		if !ok {
+			continue
+		}
+		role, _ := mm["role"].(string)
+		if role != "system" && role != "developer" {
+			continue
+		}
+		if s, ok := mm["content"].(string); ok && zenTextHasEnvMarker(s) {
+			return
 		}
 	}
-	return body
+	// No marker yet: append to the first string system message if one
+	// exists, otherwise prepend a system message with just the block.
+	for _, m := range msgs {
+		mm, ok := m.(map[string]any)
+		if !ok {
+			continue
+		}
+		role, _ := mm["role"].(string)
+		if role != "system" && role != "developer" {
+			continue
+		}
+		if s, ok := mm["content"].(string); ok {
+			mm["content"] = s + "\n\n" + zenEnvBlock()
+			return
+		}
+	}
+	body["messages"] = append([]any{map[string]any{"role": "system", "content": zenEnvBlock()}}, msgs...)
+}
+
+func ensureZenEnvMarkerResponses(body map[string]any) {
+	if s, ok := body["instructions"].(string); ok && zenTextHasEnvMarker(s) {
+		return
+	}
+	if s, ok := body["instructions"].(string); ok && s != "" {
+		body["instructions"] = s + "\n\n" + zenEnvBlock()
+		return
+	}
+	body["instructions"] = zenEnvBlock()
 }
 
 // zenClientTools 提取客户端工具（chat 嵌套形态 tools[]，兼容已废弃的
@@ -1389,6 +1542,7 @@ func buildZenResponsesBody(params map[string]any, modelID string, promptKey stri
 	// 客户端工具（chat 嵌套或已是 flat）优先于同名 gate stub，schema 才不丢。
 	body["tools"] = zenMergeResponsesTools(zenClientFlatTools(params))
 	body["tool_choice"] = "auto"
+	ensureZenEnvMarkerResponses(body)
 	return body
 }
 
@@ -1397,12 +1551,41 @@ func buildZenResponsesBody(params map[string]any, modelID string, promptKey stri
 // 直接写 map（而非 Header.Set）以保留小写头名：官方 CLI 发的就是小写，
 // Set 会规范化为 X-Opencode-...；HTTP 头大小写不敏感，但字节级对齐更安全。
 // Authorization/Content-Type/User-Agent 因需承载变量，由调用方先行设置。
+// 2026-10-26 实测（CLI v2.1.4 认证抓包）：
+//   - CLI v2 在两条路径都发 x-opencode-session-id, x-opencode-session,
+//     x-session-affinity, x-session-id，四个头同值（新鲜会话时四者
+//     相等；父会话/分支会话时 q 规则见静态 RE 报告，网关粘性会话
+//     属于新鲜会话情形，故四者同值正确）。
+//   - CLI v2 完全不发 x-opencode-request（静态计数 0，抓包亦无）。
+//     旧网关仍发该头是 v1 遗留指纹，必须去掉；requestID 参数保留
+//     仅为调用点兼容，不再写入任何头。
+//   - x-opencode-org-id 只在 OAuth 账户元数据有 orgID 时出现，网关
+//     的原始 key 字符串中没有该信息，绝不编造，缺省即正确。
+//   - x-opencode-project：网关没有客户端项目目录，global 是唯一诚实值。
 func setZenGateHeaders(req *http.Request, sess, requestID string) {
+	_ = requestID // v2 CLI does not send x-opencode-request; do not emit it
 	req.Header["x-opencode-session-id"] = []string{sess}
 	req.Header["x-opencode-session"] = []string{sess}
-	req.Header["x-opencode-request"] = []string{requestID}
+	req.Header["x-session-affinity"] = []string{sess}
+	req.Header["x-session-id"] = []string{sess}
 	req.Header["x-opencode-client"] = []string{"cli"}
 	req.Header["x-opencode-project"] = []string{"global"}
+	if org := getZenConfig().OrgID; org != "" {
+		req.Header["x-opencode-org-id"] = []string{org}
+	}
+	// CLI v2 wire headers (2026-10-26 capture): Accept */*, and the
+	// full Accept-Encoding list. Go's default is only "gzip" and no
+	// Accept header, which is another non-CLI fingerprint marker.
+	// Setting Accept-Encoding explicitly disables Go's automatic gzip
+	// decompression; upstream SSE for stream=true is uncompressed in
+	// practice, and the gateway parses SSE as raw bytes, so this is safe.
+	req.Header.Set("Accept", "*/*")
+	req.Header.Set("Accept-Encoding", "gzip, deflate, br, zstd")
+	// CLI v2 tracing headers, same trace/span across b3 and traceparent.
+	traceID := kit.RandHex(16)
+	spanID := kit.RandHex(8)
+	req.Header.Set("b3", traceID+"-"+spanID+"-1")
+	req.Header.Set("traceparent", "00-"+traceID+"-"+spanID+"-01")
 }
 
 // zenClientFlatTools 提取客户端工具并转成 responses 端点要求的 flat 形态。
@@ -1981,10 +2164,7 @@ func callZenResponsesAPI(ctx context.Context, params map[string]any, stream bool
 		proxyURL, pidx, exitOK := boundExitFor(key)
 		if !exitOK {
 			if o.pinKey != "" || pinnedZenKey() != "" {
-				main, backup, _ := keyBindingOf(key)
-				return nil, rateLimited, errors.New(blockedExitMessage(
-					fmt.Sprintf("key#%d bound proxies unavailable (cooling or removed); probe aborted by proxy isolation", keyIndex(key)),
-					main, backup))
+				return nil, rateLimited, zenBlockedExitErr(key)
 			}
 			cooldownZenKey(key, 2*time.Minute)
 			retryKey = ""
@@ -2009,7 +2189,7 @@ func callZenResponsesAPI(ctx context.Context, params map[string]any, stream bool
 		}
 		req.Header.Set("Authorization", "Bearer "+key)
 		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("User-Agent", zenUAForProtocol(ua, true))
+		req.Header.Set("User-Agent", ua)
 		// x-opencode-session-id：真实 CLI 两个头都发（request.ts）；对本仓库的
 		// 格式门结论无害，补上只为字节级对齐官方流量。
 		setZenGateHeaders(req, sess, user)
@@ -2247,10 +2427,7 @@ func callZenAPI(ctx context.Context, params map[string]any, stream bool, opts ..
 			// ZEN_PIN_KEY/pinKey 固定死的 key 没有可换的余地，直接报错；
 			// 正常轮转把该 key 短冷却（pickZenKey 下一轮跳过它）后换 key。
 			if o.pinKey != "" || pinnedZenKey() != "" {
-				main, backup, _ := keyBindingOf(key)
-				return nil, rateLimited, errors.New(blockedExitMessage(
-					fmt.Sprintf("key#%d bound proxies unavailable (cooling or removed); probe aborted by proxy isolation", keyIndex(key)),
-					main, backup))
+				return nil, rateLimited, zenBlockedExitErr(key)
 			}
 			cooldownZenKey(key, 2*time.Minute)
 			log.Printf("  zen key#%d bound proxies unavailable, skipping key for 2m", keyIndex(key))
@@ -2267,7 +2444,7 @@ func callZenAPI(ctx context.Context, params map[string]any, stream bool, opts ..
 		sess, user, ua := StickyZenIdentity(key)
 		req.Header.Set("Authorization", "Bearer "+key)
 		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("User-Agent", zenUAForProtocol(ua, false))
+		req.Header.Set("User-Agent", ua)
 		// x-opencode-session-id：真实 CLI 两个头都发（request.ts），见 responses 路径。
 		setZenGateHeaders(req, sess, user)
 

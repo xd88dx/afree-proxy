@@ -56,6 +56,9 @@ func zenConfigPayload() map[string]any {
 		// 自动分配规则（平台级代理黑名单 / 每代理绑定上限），代理池页编辑。
 		"proxyExclusions": binding.ProxyExclusions,
 		"proxyBindCaps":   binding.ProxyBindCaps,
+		// egress 自动钉定层（3758eb7）：开关状态与容量快照（代理够不够分）。
+		"pinProxyPerKey": pinProxyPerKeyEnabled(),
+		"egress":         zenEgressSnapshot(),
 		"runtime": map[string]any{
 			"proxyCooldowns": proxyCooldownStatus(),
 			// 每代理在线率统计（纯被动：只记真实请求的出口成败）。URL 已打码。
@@ -106,7 +109,9 @@ func handleZenConfigUpdate(w http.ResponseWriter, r *http.Request) {
 		// 自动分配规则：nil = 不改动；非 nil = 整表替换（空表 = 全部清除）。
 		ProxyExclusions map[string][]string `json:"proxyExclusions"`
 		ProxyBindCaps   map[string]int      `json:"proxyBindCaps"`
-		Compaction      *struct {
+		// 每 key 固定出口代理（egress 层，3758eb7）：指针区分"未提交"与显式 false。
+		PinProxyPerKey *bool `json:"pinProxyPerKey"`
+		Compaction     *struct {
 			Auto         *bool   `json:"auto"`
 			Buffer       *int    `json:"buffer"`
 			KeepTokens   *int    `json:"keepTokens"`
@@ -133,6 +138,7 @@ func handleZenConfigUpdate(w http.ResponseWriter, r *http.Request) {
 		KeyRoutingEnabled:    cur.KeyRoutingEnabled,
 		Compaction:           cur.Compaction,
 		SessionRotateMinutes: cur.SessionRotateMinutes,
+		PinProxyPerKey:       cur.PinProxyPerKey,
 	}
 	if patch.ZenUseProxies != nil {
 		poolNext.ZenUseProxies = patch.ZenUseProxies
@@ -273,6 +279,12 @@ func handleZenConfigUpdate(w http.ResponseWriter, r *http.Request) {
 	// 0 是合法值（关闭轮换），不能用 > 0 过滤；负值视为无效忽略。
 	if patch.SessionRotateMinutes != nil && *patch.SessionRotateMinutes >= 0 {
 		next.SessionRotateMinutes = *patch.SessionRotateMinutes
+	}
+	if patch.PinProxyPerKey != nil {
+		next.PinProxyPerKey = patch.PinProxyPerKey
+	}
+	if patch.PinProxyPerKey != nil {
+		next.PinProxyPerKey = patch.PinProxyPerKey
 	}
 	if patch.Compaction != nil {
 		base := cur.Compaction

@@ -39,6 +39,7 @@ workbuddy-config.json
 .proxy-pool.json
 .proxy-health.json
 .workbuddy-proxies.json
+.egress-bindings.json
 zen-stats.jsonl
 afree-proxy.log
 afree-proxy-stream.log
