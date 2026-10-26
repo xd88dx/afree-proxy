@@ -1,33 +1,49 @@
 # AFree Proxy
 
-A single Go binary that turns free upstream LLM quotas (Cline accounts + opencode zen free models + WorkBuddy accounts + OpenRouter / AMDCloud / TokenHarbor free models + arbitrary small-provider APIs) into one clean **OpenAI-compatible `/v1` gateway** for coding IDEs — Cursor, ZCode, Cline, Claude Code, OpenClaw — with account pooling, per-request proxy rotation, and an English admin panel.
+一个单二进制 Go 网关：把多个免费上游额度（Cline 账号、opencode zen 免费模型、WorkBuddy 账号、TraeWork 账号、OpenRouter / AMDCloud / TokenHarbor 免费 API、任意小上游的自定义子平台）聚合为一个干净的 **OpenAI 兼容 `/v1` 网关**，供 Cursor、ZCode、Cline、Claude Code 等 IDE 使用——带账号池轮转、身份↔出口代理绑定、中文管理面板。
 
-Fork-in-progress of [YuJunZhiXue/Cline-proxy](https://github.com/YuJunZhiXue/Cline-proxy), reworked for solo public deployment. This project is not affiliated with Cline, opencode, Tencent, WorkBuddy, OpenRouter, AMD, or TokenHarbor; use their free tiers respectfully.
+基于 [YuJunZhiXue/Cline-proxy](https://github.com/YuJunZhiXue/Cline-proxy) 深度改写，面向个人公开部署。与 Cline、opencode、WorkBuddy、OpenRouter、AMD、TokenHarbor 等上游无隶属关系；请礼貌使用它们的免费额度。
 
-## What it does
+## 架构总览
 
 ```
-Cursor / ZCode / Cline / Claude Code ──►  afree-proxy  ──►  cline account pool (round-robin)
+Cursor / ZCode / Cline / Claude Code ──►  afree-proxy  ──►  Cline 账号池（轮转）
    /v1/chat/completions                        │
-   /v1/messages (Anthropic)                    ├─►  opencode zen free models (multi-key, proxy pool)
-   /v1/responses (OpenAI Responses)            ├─►  WorkBuddy accounts (OAuth, pool, scheduler)
-   /v1/models                                  ├─►  OpenRouter free models (multi-key, oprt: prefix)
-                                                ├─►  AMDCloud free APIs (multi-key, amd: prefix)
-                                                ├─►  TokenHarbor free models (multi-key, tkhb: prefix)
-                                                ├─►  Other sub-platforms (your prefixes, multi-key)
-                                                └─►  egress socks5/http proxy pool (rotation or identity binding)
+   /v1/messages (Anthropic)                    ├─►  OpenCode zen 免费模型（多 key，zen: 前缀）
+   /v1/responses (OpenAI Responses)            ├─►  WorkBuddy 账号（OAuth，wbcn:/wbgb: 前缀）
+   /v1/models                                  ├─►  TraeWork 账号（trae: 前缀）
+                                               ├─►  OpenRouter 免费模型（多 key，oprt: 前缀）
+                                               ├─►  AMDCloud 免费 API（多 key，amd: 前缀）
+                                               ├─►  TokenHarbor 免费模型（多 key，tkhb: 前缀）
+                                               ├─►  Other 自定义子平台（自定前缀，多 key）
+                                               └─►  出口 socks5/http 代理池（轮转或身份绑定）
 ```
 
-- **One endpoint, all upstreams.** The gateway inspects the requested `model` and routes it: `wbcn:` / `wbgb:` models go to WorkBuddy, `oprt:` models go to OpenRouter, `amd:` models go to AMDCloud, `tkhb:` models go to TokenHarbor, `zen:` models go to opencode zen, any Other sub-platform's custom prefix (e.g. `acme:`) goes to that sub-platform, paid zen models are rejected with a clear 400, and everything else goes to the Cline account pool. Combos let you define your own alias model IDs on the supported platforms.
-- **WorkBuddy inside the same gateway.** The `OpenCode → WorkBuddy` page embeds the upstream panel for OAuth account login, account pooling, breaker/cooldown state, scheduled check-in/activity/travel/keepalive jobs, streaming and non-streaming chat, reasoning-model compatibility, and fingerprint sanitization. WorkBuddy models use explicit `wbcn:` / `wbgb:` IDs so bare model names keep their existing Cline/OpenCode routes.
-- **Three client dialects, one upstream language.** All upstreams are OpenAI chat-completions servers. `/v1/chat/completions` is a near-passthrough; `/v1/responses` and `/v1/messages` (Anthropic) are translated in and converted back, including streaming events, tool calls, and usage.
-- **IDE-controlled parameters are respected.** `max_tokens`, `temperature`, `top_p`, `stop`, `tools`, `tool_choice`, `reasoning_effort`, … all pass through from the client. The gateway only fills gaps (128k default output budget when the client sends none) and enforces semantics upstreams get wrong: `tool_choice: "none"` is enforced by stripping tools, unknown model names return a clean 400 (`STRICT_MODEL_MATCH=false` restores the old catch-all), and `stop` sequences are deterministically truncated client-side for non-stream responses.
-- **Pool everything.** Cline accounts round-robin with automatic 429 cooldown ("Try again in 17h 59m" parsing) and auto-recovery. Zen keys, WorkBuddy accounts, OpenRouter keys, AMDCloud keys, TokenHarbor keys, and Other sub-platform keys use their own independent pools with cooldown/breaker handling. Egress proxies rotate per request so IP-based rate limits don't bottleneck one address; proxy failures never poison account state. **Proxy isolation** (on by default) upgrades this to fixed identity↔exit binding: a bound Cline account, zen key, WorkBuddy account, OpenRouter key, AMDCloud key, TokenHarbor key, or Other key always egresses via its own main/backup proxy and is skipped entirely when both are unavailable — see [Proxy isolation](#proxy-isolation-identity--exit-binding).
-- **Prefixed model IDs keep platforms apart.** With seven upstreams sharing one `/v1` endpoint, every pooled platform has its own ID prefix: `zen:` (opencode zen free models), `wbcn:` / `wbgb:` (WorkBuddy realms), `oprt:` (OpenRouter free models), `amd:` (AMDCloud free APIs), `tkhb:` (TokenHarbor free models), your own prefixes on **Other** sub-platforms (e.g. `acme:`), and `cline-free/` (Cline free models). `/v1/models` lists all of them, so IDEs show the origin at a glance; older forms (bare zen IDs, `cn:`/`global:` realms, cline IDs without the prefix) still resolve — the prefixes are additive, not a breaking change.
-- **Function calling that actually works.** Battle-tested against live upstreams across chat stream/non-stream, parallel tool calls, `/v1/responses` and Anthropic streaming, with repair logic for upstream tool-argument quirks. See the test matrix below.
-- **English admin panel** at `/admin/`: Dashboard, Accounts, Add accounts (OAuth / refreshToken / static `sk_` API key — auto-detected, also batch), Gateway settings (API keys, models, headers), **Proxy pool** (one shared socks5/http egress list with per-upstream toggles for Cline, zen, WorkBuddy, OpenRouter, AMDCloud, TokenHarbor and Other), opencode free models, **WorkBuddy**, **OpenRouter**, **AMDCloud**, **TokenHarbor**, **Other**, Combos, request logs, live stats.
+## 核心特性
 
-## Quick start (Docker)
+- **一个端点，全部上游。** 网关按请求的 `model` 前缀路由：`wbcn:`/`wbgb:` → WorkBuddy，`trae:` → TraeWork，`oprt:` → OpenRouter，`amd:` → AMDCloud，`tkhb:` → TokenHarbor，`zen:` → opencode zen，Other 子平台自定前缀 → 对应子平台，zen 付费模型明确 400，其余走 Cline 账号池。旧形态（裸 zen ID、`cn:`/`global:`、无前缀 cline ID）仍兼容解析。Combos 可自定义别名模型 ID。
+- **三种客户端方言，一种上游语言。** `/v1/chat/completions` 近直通；`/v1/responses` 与 `/v1/messages`（Anthropic）双向翻译，含流式事件、工具调用与 usage。
+- **代理隔离第一优先。** 每个账号/key 可绑定主/备出口代理，请求永远从绑定出口发出；两个出口都不可用时该身份整体跳过——**绝不回退其他出口或直连**。未绑定身份沿用面板的每平台走池开关。
+- **凭据启用/禁用语义全平台一致。** 「启用」列 = 是否参与请求轮转。新增身份默认禁用（存量缺字段仍按启用，升级不停服）。**任何平台没有任何启用凭据（含反代开关全关）时整平台 503 拒路由**，与封禁平台同闸；模型目录只对可服务配置展示——无启用凭据时面板目录显示引导空态、`/v1/models` 摘除该平台模型。
+- **函数调用真实可用。** 对真实上游全量实测：流式/非流式、并行工具调用、`/v1/responses` 与 Anthropic 流式，含上游工具参数怪癖修复。
+- **中文管理面板** `/admin/`：仪表盘、Cline 账号池、TraeWork、WorkBuddy（内嵌原面板）、OpenCode、AMDCloud、OpenRouter、TokenHarbor、Other、代理池、网关设置（自定义别名/封禁平台/封禁模型）、请求日志、实时统计。
+
+## 平台速览
+
+| 平台 | 前缀 | 凭据类型 | 模型目录 | 探测默认模型 |
+|---|---|---|---|---|
+| Cline | `cline-free/` | OAuth refreshToken / 静态 `sk_` key | 官方免费源 60s 自动同步 | 排序最小 |
+| TraeWork | `trae:` | OAuth（本机 8765 helper 网页授权） | 上游目录同步（需可路由账号） | `glm-5.2` |
+| WorkBuddy | `wbcn:` / `wbgb:` | OAuth（内嵌面板登录） | CN/Global 双域实时探测 | 官方稳定模型优先 |
+| OpenCode | `zen:` | zen key（本地铸造会话 ID） | 上游免费目录 10min 同步 | `big-pickle` 优先 |
+| OpenRouter | `oprt:` | `sk-or-v1-…` key | [free-models 页白名单](https://openrouter.ai/collections/free-models) 5min 同步 | `openrouter/free` |
+| AMDCloud | `amd:` | `rc-…` key（[Token Factory](https://developer.amd.com.cn/radeon/tokenfactory)） | 上游 `/v1/models` 5min 同步（需 Bearer key；仅 chat 模型） | `DeepSeek-V4-Flash` |
+| TokenHarbor | `tkhb:` | `thk_live_…` key（[dashboard](https://tokenharbor.ai/dashboard/api-keys)） | 上游 `/v1/models` 5min 同步（需 key；仅 `:free`） | `deepseek-v4.1-flash:free` |
+| Other | 自定 `acme:` | 各上游 key | `{BaseURL}/models` 拉取 + 手动添加 + 多选暴露 | 设置页配置 |
+
+各平台共用同一套池语义：轮转策略、429 按 `Retry-After` 冷却、401/403 冷却 1 小时、Test 按钮发真实探测请求并在成功后立即解除冷却、主/备代理绑定、新增 key 默认不参与路由。
+
+## 快速开始（Docker）
 
 ```bash
 docker run -d --name afree-proxy \
@@ -37,143 +53,64 @@ docker run -d --name afree-proxy \
   -e API_KEY=change-me \
   -e ADMIN_PASSWORD=change-me-too \
   ghcr.io/foxy1402/cline-proxy:latest
-
-curl http://127.0.0.1:3457/health
 ```
 
-Then open `http://127.0.0.1:3457/admin/`, log in with `ADMIN_PASSWORD`, and add accounts or zen keys. The image is multi-arch (`linux/amd64`, `linux/arm64`); `:latest` is published on every build, and version tags (`vX.Y.Z`) additionally publish `:X.Y.Z`.
+打开 `http://127.0.0.1:3457/admin/`，用 `ADMIN_PASSWORD` 登录，添加账号或 key。镜像多架构（`linux/amd64` 原生 + `linux/arm64` 交叉编译）；`:latest` 随每次构建发布，`vX.Y.Z` tag 额外发布 `:X.Y.Z`。
 
-> The image name follows the GitHub repository name. If your repo is named differently, replace `afree-proxy` with the repo name (GHCR images are always lowercase).
+> 镜像名跟随 GitHub 仓库名；仓库名不同请替换。
 
-## Portainer stack template
+所有状态都在 `/app/data` 卷里，备份 = 复制该卷。
 
-Paste into Portainer → **Stacks → Add stack**, fill in the environment variables in the UI (Portainer interpolates them), then deploy:
+## 关键环境变量
 
-```yaml
-services:
-  afree-proxy:
-    image: ghcr.io/foxy1402/cline-proxy:latest
-    container_name: afree-proxy
-    restart: unless-stopped
-    ports:
-      - "${PROXY_PORT:-3457}:${PROXY_PORT:-3457}"
-    volumes:
-      - cline-proxy-data:/app/data
-    environment:
-      - PORT=${PROXY_PORT:-3457}
-      - API_KEY=${API_KEY:?set API_KEY in the stack environment}
-      - ADMIN_PASSWORD=${ADMIN_PASSWORD:?set ADMIN_PASSWORD in the stack environment}
-      - ZEN_KEYS=${ZEN_KEYS:-}
-      - CLINE_ACCOUNTS_SEED_FILE=/app/data/cline-seed.json
-      - STRICT_MODEL_MATCH=true
-    healthcheck:
-      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:${PROXY_PORT:-3457}/health"]
-      interval: 30s
-      timeout: 5s
-      start_period: 10s
-      retries: 3
-
-volumes:
-  cline-proxy-data:
-```
-
-Environment variables to define in the Portainer stack UI:
-
-| Variable | Required | Example |
+| 变量 | 默认 | 说明 |
 |---|---|---|
-| `API_KEY` | yes | any long random string — the only key accepted on `/v1/*` |
-| `ADMIN_PASSWORD` | yes | admin panel login password |
-| `PROXY_PORT` | no | defaults to `3457`; changes both the container listen port and the host mapping |
-| `ZEN_KEYS` | no | comma-separated opencode zen keys; leave empty to use the anonymous `public` key or configure in the admin panel |
+| `PORT` | `3457` | 监听端口（`-port` flag 优先） |
+| `DATA_DIR` | `/app/data` | 容器内状态目录 |
+| `API_KEY` / `API_KEY_FILE` | 空 | `/v1` 唯一有效 key（`Authorization: Bearer` 或 `x-api-key`） |
+| `ADMIN_PASSWORD` / `ADMIN_PASSWORD_FILE` | 空 | 管理面板密码；设置后所有 `/admin/*` 需登录 |
+| `PROXY_ISOLATION` | 未设置 | 身份↔出口绑定：`true` 强制开启（面板只读）；`false` 默认改为关（面板可改）；未设置默认开启。只接受 true/false |
+| `ZEN_KEYS` | 空 | 逗号分隔的 zen key 启动种子；面板已有 key 时不覆盖 |
+| `ZEN_SESSION_ROTATE_MINUTES` | `120` | zen 会话到期重铸间隔（分钟），`0` 关闭 |
+| `STRICT_MODEL_MATCH` | `true` | 未知模型名 400 而非静默兜底 |
+| `POOL_STRATEGY` | `round_robin` | Cline 选号策略：`round_robin` / `fill` / `random` |
+| `CLINE_ACCOUNTS_SEED_FILE` | 空 | 启动时账号池为空则导入的种子 JSON |
+| `PUID` / `PGID` | `100` / `101` | 容器运行身份（entrypoint 自愈属主后降权；bind mount 时设为宿主机用户） |
+| `LOG_REQUESTS` | `true` | 请求日志（仅元数据：IP/路径/模型/状态/耗时，绝无对话内容） |
+| `MAX_BODY_MB` | `32` | 请求体上限，超出 413 |
+| `STREAM_ATTEMPT` | `2` | 流式中断缓冲重试总次数；每次重试会重耗上游免费额度 |
 
-To seed Cline accounts on first boot, drop a `cline-seed.json` file into the volume (see [Seeding accounts](#seeding-accounts)).
+Fail-closed 启动：绑定非环回地址且未设 `API_KEY` 时拒绝启动。
 
-> **Public HTTPS:** `docker-compose.yml` ships an optional `caddy` service (profile `tls`) with a ready `Caddyfile` for automatic Let's Encrypt certificates. Set `DOMAIN` in `.env`, then `docker compose --profile tls up -d`. On Portainer/NAS, put the proxy behind your existing reverse proxy instead and forward to port `3457`.
+### OpenCode zen 会话 ID
 
-> **Bind-mount note (Portainer/NAS users):** set `PUID`/`PGID` to your host user and the entrypoint self-heals the data-directory ownership on every start (`chown` is run inside the container before the gateway drops privileges) — no manual `chown` needed, even after recreating the container. Defaults are `100`/`101` (the image's built-in `app` user). A **named volume** (`-v afree-proxy-data:/app/data`) is also fine and needs no ownership setup at all.
+zen 会话 ID 在**本地铸造**——上游免费层格式门是无状态检查（`^ses_[0-9a-f]{12}[0-9A-Za-z]{14}$`），网关为每个 key 首次使用时铸造兼容 ID 并持久化到数据卷（`.zen-sessions.json`），无内嵌 CLI、无收割机。请求级 ID（`x-opencode-request`）与注入的 gate 工具参数 schema 同样对齐官方 CLI 形态。连续 2 次 FreeTier 403 自动重铸重试；会话按 `ZEN_SESSION_ROTATE_MINUTES`（默认 120 分钟）后台轮换重铸——铸造纯本地零配额消耗，轮换器还会为未用过的 key 预铸（避免轮转坍缩到单 key）。
 
-## Configuration
+## 连接 IDE
 
-All state lives in the `/app/data` volume (`cline-accounts.json`, `zen-config.json`, `combos.json`, `requests.jsonl`, plus `workbuddy/` and `.workbuddy-proxies.json`). Backup = copy the volume.
-
-| Variable | Default | Description |
-|---|---|---|
-| `PORT` | `3457` | Listen port (`-port` flag wins over the env var) |
-| `DATA_DIR` | `/app/data` | State directory inside the container |
-| `API_KEY` / `API_KEY_FILE` | empty | The single valid `/v1` key (via `Authorization: Bearer` or `x-api-key`). When set, admin-panel-generated keys are ignored for `/v1` |
-| `ADMIN_PASSWORD` / `ADMIN_PASSWORD_FILE` | empty | Admin panel password; when set, every `/admin/*` route requires login |
-| `REQUIRE_ADMIN_AUTH` | `true` | Set `false` only when a reverse proxy already handles auth |
-| `PROXY_PORT` | — | Compose/Portainer convenience: sets host mapping + `PORT` together |
-| `STRICT_MODEL_MATCH` | `true` | `400` for unknown model names instead of silently serving the default model |
-| `POOL_STRATEGY` | `round_robin` | Cline account strategy: `round_robin` / `fill` / `random` (env wins over panel config) |
-| `ZEN_KEYS` | empty | opencode zen keys, comma-separated; panel config is not overwritten when it already has keys |
-| `ZEN_SESSION_ROTATE_MINUTES` | `120` | Re-mint a key's sticky zen session once it is this old (minutes); `0` disables rotation |
-| `CLINE_ACCOUNTS_SEED_FILE` | empty | Seed JSON imported at boot when the pool is empty |
-| `PROXY_ISOLATION` | unset | Identity↔exit binding (see [Proxy isolation](#proxy-isolation-identity--exit-binding)). Only `true`/`false` are accepted: `true` forces it on (panel toggle read-only); `false` defaults it off (panel can still change it); unset defaults to on. Any other value warns and is treated as unset |
-| `PUID` / `PGID` | `100` / `101` | UID/GID the gateway runs as. The entrypoint runs as root, re-owns the data directories to `PUID:PGID`, then drops privileges — set these to your host user for bind mounts |
-| `LOG_REQUESTS` | `true` | Request logging (metadata only: IP, path, model, status, duration — never conversation content) |
-| `LOG_FILE_MAX_MB` | `10` | Size cap for `requests.jsonl` (wiped when exceeded) and for `afree-proxy.log` (rotated when exceeded) |
-| `MAX_BODY_MB` | `32` | Request body limit; larger bodies get `413` |
-| `STREAM_ATTEMPT` | `2` | Total attempts (initial + retries) for buffered streaming when the upstream breaks mid-stream; `1` disables retrying. Each retry re-sends the whole request and re-burns upstream free quota |
-| `CLINE_FORCE_STREAM` | `false` | Force the Cline upstream onto the streaming path for every model. When the client asked for non-streaming, the gateway aggregates the upstream SSE back into plain JSON. Default `false` = decide per model (metadata / naming convention / auto-learned). **Turning it on globally before confirming no model is non-streaming-only will break those models** — there is no reverse learning |
-| `CLINE_HEADER_TIMEOUT` | `60` | Seconds to wait for **response headers** from the Cline upstream; `0` disables the watchdog. It cancels only before the headers arrive, so a long SSE body is never truncated. Guards against black-hole exits (TCP connects, headers silently dropped) that would otherwise pin a concurrency slot for the transport's 5-minute header timeout. Premise: the Cline upstream is always streaming — raise or disable it if a genuinely non-streaming model appears |
-| `APPLY_SYSTEM_PROMPT_OVERRIDE` | `false` | `true` enables replacing client system prompts with `override.md` |
-| `STREAM_LOG` | `false` | Dump raw Anthropic-path SSE to disk (full conversations — debugging only) |
-| `CLIENT_IP_HEADER` | empty | Trust this header for client IP behind a reverse proxy (e.g. `X-Real-IP`); by default only `RemoteAddr` is used |
-
-Fail-closed startup: binding a non-loopback address without `API_KEY` and `ADMIN_PASSWORD` refuses to start.
-
-### opencode zen session IDs
-
-Zen session IDs are **minted locally** — the upstream's free-tier gate is a stateless format check (`^ses_[0-9a-f]{12}[0-9A-Za-z]{14}$`), so the gateway generates a compatible, stable ID per zen key at first use and persists it in the data volume (`.zen-sessions.json`). There is no embedded CLI, no harvester, and no related environment variables. Legacy placeholder IDs (`sess_*`) in an existing session file are replaced with minted ones on first load.
-
-The same format check now also applies to the per-request id (`x-opencode-request`, `^msg_[0-9a-f]{12}[0-9A-Za-z]{14}$`) and to the injected gate tools — so the request id is minted with the same descending construction as the session id, and the eleven gate tools carry the real opencode CLI parameter schemas (an empty `{"type":"object","properties":{}}` schema is rejected with `403 FreeTierError`; the tool descriptions are not checked). This is what the upstream's 2026-10 gateway change tightened.
-
-On repeated FreeTier `403`s the key's session is refreshed with a freshly minted one automatically (2 consecutive 403s trigger it, 1-minute per-key backoff); a sustained rise in the refresh rate in the logs is the tripwire that zen has tightened its gate.
-
-Sessions also **rotate on age**: a background rotator checks every key once a minute and re-mints any session older than `ZEN_SESSION_ROTATE_MINUTES` (default 120 = 2 h). An upstream session that has gone stale makes its first request noticeably slower even though the gateway still accepts it; a periodic local re-mint keeps that latency off the user's path. Rotation is free — the ID is minted locally, so nothing is sent upstream and no quota is consumed, and the rotator also pre-mints sessions for keys that have not been used yet (which is what keeps round-robin from collapsing onto a single key). Set the value to `0` to disable age-based rotation (missing sessions are still minted). The same interval is editable in the panel's opencode tab ("Session rotation (min)").
-
-The zen route table is seeded deterministically from the model catalog's SDK package name (`provider.npm`: `@ai-sdk/openai` → native `/v1/responses`, `@ai-sdk/openai-compatible` → `/chat/completions`) and refined per model by the endpoint learner, whose decisions persist in `.zen-endpoints.json` and are never overwritten by later catalog syncs.
-
-The upstream base URL is `https://opencode.ai/inference/v1` (the URL the current catalog gives the real CLI). The old `https://opencode.ai/zen/v1` still works for keyed traffic but rejects anonymous free-tier requests via a console shim that strips the validated headers, so a saved config pointing exactly at the legacy URL is migrated to the new one on load (custom URLs are left alone); the migration is logged as `zen baseURL migrated: …`.
-
-| Variable | Default | Description |
-|---|---|---|
-| `ZEN_PIN_KEY` | empty | Troubleshooting: pin all upstream attempts to key number *n* (1-based) instead of rotating, so one key can be tested in isolation |
-| `ZEN_SESSION_ROTATE_MINUTES` | `120` | Re-mint a key's sticky session once it is this old (minutes); `0` disables rotation (also editable in the panel) |
-
-If a session gets rejected (FreeTier `403`), the gateway mints a fresh ID on the
-same key and retries the request once; a second `403` cools the key down briefly
-instead of fanning the bad state out across the pool — no subprocess, no quota
-cost. Should zen ever tighten the gate (valid-format IDs also rejected), the
-rising refresh frequency in the logs is the early signal.
-
-The admin panel's opencode tab shows per-key session liveness, age and next rotation, plus a per-key **Test** button with a probe-model picker (default **auto**: big-pickle first, then live-synced models; any free zen model can be chosen): it sends one real probe request pinned to that key, and on success clears the key's cooldown immediately (a rate-limited answer — 429, or a 403/503 whose body zen words as a limit — reports the upstream's expected recovery time instead). Note a successful probe consumes one request of that key's quota — the same trade-off as the cline Test button.
-
-## Connecting your IDE
-
-**Cursor / ZCode / anything OpenAI-flavored** — `POST /v1/chat/completions`:
+**Cursor / ZCode / OpenAI 系** — `POST /v1/chat/completions`：
 
 ```
 Base URL:  http://<host>:3457/v1
 API Key:   <API_KEY>
-Model:     cline-free/deepseek-v4.1-flash   (cline pool, cline-free/ prefix)
-           zen:big-pickle                    (opencode zen, zen: prefix)
-           oprt:openrouter/free              (OpenRouter, oprt: prefix)
-           amd:DeepSeek-V4-Flash             (AMDCloud, amd: prefix)
-           tkhb:deepseek-v4.1-flash:free     (TokenHarbor, tkhb: prefix)
-           wbcn:claude-sonnet-4.5            (WorkBuddy, wbcn:/wbgb: realms)
+Model:     cline-free/deepseek-v4.1-flash   （Cline 池）
+           zen:big-pickle                    （OpenCode zen）
+           trae:glm-5.2                      （TraeWork）
+           wbcn:claude-sonnet-4.5            （WorkBuddy CN 域）
+           oprt:openrouter/free              （OpenRouter）
+           amd:DeepSeek-V4-Flash             （AMDCloud）
+           tkhb:deepseek-v4.1-flash:free     （TokenHarbor）
+           acme:zai/glm                      （Other 自定子平台）
 ```
 
-**Claude Code / Cline** — Anthropic dialect `POST /v1/messages`, same base URL and key.
+**Claude Code / Cline** — Anthropic 方言 `POST /v1/messages`，同 Base URL 同 key。
+**OpenAI Responses 方言** — `POST /v1/responses`（工具调用、流式事件、usage 全翻译）。
 
-**OpenAI Responses dialect** — `POST /v1/responses` (tool calls, streaming events, and usage are fully translated).
+`GET /v1/models` 列出全部可服务模型（含 Combos）。免费目录自动同步（cline 60s、zen 10min、or/amd/th 5min、wb 实时探测）；线上列表是权威，内置种子只覆盖冷启动/离线启动，下架/新免费模型自动增删。
 
-`GET /v1/models` lists every model the gateway can serve, including your Combos. Free-model feeds sync automatically (cline official feed every 60s, zen catalog every 10min): the live list is authoritative and the built-in seeds only cover a cold start / offline boot, so delisted or newly-freed models appear or disappear on their own.
+### 账号种子
 
-### Seeding accounts
-
-Two account kinds are supported and can be mixed:
+支持两种账号并可混用（`CLINE_ACCOUNTS_SEED_FILE`，池空时导入）：
 
 ```json
 [
@@ -182,160 +119,87 @@ Two account kinds are supported and can be mixed:
 ]
 ```
 
-Mount the file anywhere in the container and point `CLINE_ACCOUNTS_SEED_FILE` at it; it's imported when the pool is empty. Static `sk_` API keys are used directly as Bearer tokens (no refresh; a 401 marks them expired). OAuth accounts can also be added via the panel's browser login flow, manual token paste, or batch import.
+**各平台新增身份默认禁用**：新加入的账号/key 落盘时路由参与即关闭（Cline `pool_enabled=false`；zen/or/amd/th/other 无路由表项），轮转自动跳过，直到在面板勾选「启用」。存量缺字段的身份保持原状态——升级不停服。`ZEN_KEYS` 来的 key 同规则。
 
-**Newly added identities start disabled on all platforms.** An account, zen key, WorkBuddy account, OpenRouter key, AMDCloud key, TokenHarbor key, or Other key added after this version lands in the pool with routing participation off (Cline: `pool_enabled` false; zen: no routing entry; WorkBuddy: `pool_enabled` false; OpenRouter/AMDCloud/TokenHarbor/Other: no routing entry) and is skipped by rotation until you tick its **Pool** checkbox in the panel. Identities already in the pool keep their current state — a legacy account without the field stays enabled, so upgrading never stops serving. Zen keys coming from `ZEN_KEYS` follow the same rule.
+### Combos（别名模型）
 
-### Combos (alias models)
+面板创建自定义别名 ID（如 `my-flash` → `cline-free/deepseek-v4.1-flash`）。严格同平台指向；别名出现在 `/v1/models` 供 IDE 直接选择。
 
-Create user-defined alias IDs in the panel (e.g. `my-cline-flash` → `cline-free/deepseek-v4.1-flash` on the cline platform, or any zen free model). Strictly same-platform targets; aliases show up in `/v1/models` so IDEs can pick them directly.
+### Other（小上游子平台）
 
-### OpenRouter (free models)
+不值得独立页面的上游。Other 页可建任意多个子平台：名称、唯一模型前缀（不得与内置前缀冲突）、Base URL。有 key 后从 `{BaseURL}/models` 拉目录（也可手动添加，手动项跨刷新保留），多选下拉控制哪些模型对外暴露；未勾选的模型调用时明确 400。
 
-OpenRouter is an OpenAI-compatible key pool — no account OAuth. Add one `sk-or-v1-…` key per line on the **OpenRouter** page; keys rotate with the same pool strategy as the other platforms.
+## TraeWork 网页授权
 
-- **Free model catalog.** The page [openrouter.ai/collections/free-models](https://openrouter.ai/collections/free-models) is the whitelist: only the models listed there are served (15 generation models + the official `openrouter/free` router as fallback; low-usage / underpowered zero-priced models such as embeddings, rerankers, and image models are intentionally excluded). The catalog is synced from `openrouter.ai/api/v1/models` every 5 minutes to cross-check pricing and refresh context limits — a page model that stops being free is dropped, and an off-page free model is never added. Cold start uses the page snapshot, so the list works offline. The page shows the live table and a **Refresh models** button; the probe model for the Test buttons is configurable (defaults to `openrouter/free`).
-- **API compatibility.** Models are called with an `oprt:` prefix (e.g. `oprt:openrouter/free`), so bare model names keep their existing Cline/OpenCode routes. `POST /v1/chat/completions` (streaming and non-streaming) is supported and `GET /v1/models` merges the prefixed IDs. Unknown or paid models are rejected with a clear 400. Base URL is configurable for relays.
-- **Failures.** 401/403 cools the key for an hour and retries with the next key; 429 honors `Retry-After`; a passing Test probe clears the cooldown immediately. New keys start routing-disabled — tick **Pool** to enable.
-- **Proxy binding.** OpenRouter keys follow the same isolation semantics as the other platforms (main/backup egress per key, skip when both are unavailable), and unbound keys follow the OpenRouter toggle on the Proxy pool page.
+添加账号走「网页授权」手风琴弹窗：网关生成本机授权助手（Python，监听 127.0.0.1:8765），浏览器打开授权页登录后凭据回传网关。助手脚本从网关下载，面板会比对 relay 源防止凭据写错实例；也支持手动粘贴凭据。授权只认本机 helper——上游实测拒绝网关直连回调。
 
-### AMDCloud (free shared model APIs)
+## 代理隔离（身份 ↔ 出口绑定）
 
-AMD's [Token Factory](https://developer.amd.com.cn/radeon/tokenfactory) issues `rc-…` API keys for the free shared model endpoints at `developer.amd.com.cn/radeon/api/v1`. Add one key per line on the **AMDCloud** page; keys rotate with the same pool strategy as the other platforms.
+不开隔离时，每次上游尝试都在整个代理池轮转：同一账号出口 IP 漂移、同一出口轮流出现多个账号——两者都是典型风控红旗。隔离模式（默认开启）改为固定绑定：
 
-- **Model catalog.** Synced from the upstream `GET /v1/models` (no key needed) every 5 minutes with a seed snapshot for offline cold start. Chat-usable models only — OCR-only entries (MinerU2.5-Pro) are excluded. The probe model for the Test buttons defaults to `DeepSeek-V4-Flash` (the documented example model).
-- **API compatibility.** Models are called with an `amd:` prefix (e.g. `amd:DeepSeek-V4-Flash`). Streaming and non-streaming `POST /v1/chat/completions` are supported and `GET /v1/models` merges the prefixed IDs; unknown models are rejected with a clear 400. Base URL is configurable.
-- **Rate limits.** The upstream admits 30 requests/min and 8 concurrent per key, then meters 20 requests/min per account with a daily credit cap. A 429 cools the key per `Retry-After` and rotation moves to the next key; 401/403 (key rotated or revoked) cools it for an hour; a passing Test probe clears the cooldown immediately. New keys start routing-disabled — tick **Pool** to enable.
-- **Proxy binding.** AMDCloud keys follow the same isolation semantics as the other platforms (main/backup egress per key), and unbound keys follow the AMDCloud toggle on the Proxy pool page.
+- 每个身份（Cline 账号 / zen key / WorkBuddy 账号 / TraeWork 账号 / 各 key 池 key）绑定一主一备代理。请求永远走主，主不可用走备，两者都冷却/被删时该身份整体跳过——**绝不回退其他出口或直连，隔离优先于可用性**。
+- 未绑定身份沿用面板每平台的走池开关（缺省 = 走池），空绑定配置行为与旧版完全一致。
+- 面板支持单行绑定、一键均匀分配（主 = `pool[i%N]`、备 = `pool[(i+1)%N]`）、一键清空；绑定代理被删时行标 ⚠ 并保持跳过直到修复。备用代理开关关闭时备用槽整体退出路由（保留旧值，重开即恢复）。
+- **代理在线率**：代理池页显示每个代理真实流量的传输层成功率（累计 + 最近 50 次滚动窗口），纯被动采样不产生探活流量、不影响路由；最近成功率 <80%（≥10 样本）标红。统计落盘 `.proxy-health.json`，编辑池清零。
 
-### Other (small-provider sub-platforms)
+socks5/socks5h 全支持；直连哨兵（主 = direct）可显式声明直连出口。zen 免费额度按出口 IP 计（约 200 请求/5h），把 key 绑到不同出口才是真正解锁多 key 容量的方式。
 
-For upstreams that don't deserve a dedicated page. The **Other** page holds any number of sub-platforms; each one is an AMDCloud-style key pool with a public Base URL, one model prefix, and its own API keys.
+## 封禁与黑名单
 
-- **Sub-platform setup.** Create a sub-platform on the **Other** page with a name, a unique model prefix (your own alias — e.g. `acme`), and a Base URL (may be filled in later). The prefix must not collide with the built-in prefixes (`zen`, `wbcn`, `wbgb`, `cline-free/`, `amd`, `tkhb`, `oprt`) or another sub-platform. Config lives in `data/.other-config.json`.
-- **Model catalog.** Once a key exists, `GET {BaseURL}/models` is fetched with the first key (25s timeout, retried, refreshed every 5 minutes; **Refresh models** forces it). Models can also be added manually when there is no key yet or the fetch fails — manual entries persist across refreshes. A multi-select dropdown marks which models are exposed; only ticked models appear in `GET /v1/models` and calling an unticked one returns a clear 400.
-- **API compatibility.** Models are called as `<prefix>:<model-id>` (e.g. `acme:zai/glm`). Streaming and non-streaming `POST /v1/chat/completions` are supported; the payload is passed through as-is. Unknown or unticked models are rejected with a clear 400.
-- **Keys.** The account table below the settings is identical to the AMDCloud one: one key per line, round-robin with 429 cooldown (`Retry-After` honored) and 401/403 hour-long cooldown, per-key Test button (probe model configurable), routing checkbox (new keys start disabled), drag to reorder, and main/backup proxy binding. Unbound keys follow the **Other** toggle on the Proxy pool page.
+- **封禁平台**（网关设置页）：整平台退出会话路由，三端点 503、`/v1/models` 同步摘除；签到等维护任务不受影响。确认（蓝）+ 复位（黄）双按钮，chip 红色警示。
+- **封禁模型**：手动封禁 + 自动封禁（上游按账号类型拒绝的模型在出口命中判据后自动入表），均从 `/v1/models` 移除。
+- **无启用凭据闸**：与封禁同闸——任何平台没有任何可路由凭据（含反代开关全关）时请求 503 明确报错，宁拒不路由。
 
-### WorkBuddy
+## Troubleshooting（实测经验）
 
-Open `/admin/`, select **OpenCode → WorkBuddy**. The page embeds the WorkBuddy2API panel behind the existing admin session; there is no second panel password to manage. The subsystem is independent from the Cline and zen pools and can fail to initialize without preventing the rest of the gateway from starting.
-
-- **OAuth and account pool.** Add CN or global accounts through the browser login flow. Credentials are stored under `data/workbuddy/auths/`; pool state and configuration live under `data/workbuddy/`. Accounts are hot-loaded after login and retain the upstream pool's breaker, cooldown, sticky-session, retry, and weighted-selection behavior.
-- **Scheduled jobs.** The upstream scheduler is ported as-is, including configurable check-in, activity, travel, keepalive, growth-task, and balance-refresh schedules. Each job has its own enable flag in the WorkBuddy configuration page.
-- **API compatibility.** `POST /v1/chat/completions`, `/v1/messages`, and `/v1/responses` accept WorkBuddy models with a realm prefix: `wbcn:<model>` or `wbgb:<model>`. The WorkBuddy handler supports streaming and non-streaming requests, reasoning fields/effort downgrade, tool-compatible payload handling, and the upstream fingerprint-sanitization switch. `GET /v1/models` merges the prefixed WorkBuddy IDs into the normal model list.
-- **Routing boundary.** Bare model names are never routed to WorkBuddy, even if the same model ID exists upstream. This preserves the existing Cline/OpenCode routing and strict-model behavior. Remove the `wbcn:` / `wbgb:` prefix only when calling the standalone WorkBuddy implementation, not this gateway.
-- **Proxy binding.** With proxy isolation enabled, each WorkBuddy UID is assigned a stable main/backup pair from the existing proxy pool on first use. Bindings are persisted in `data/.workbuddy-proxies.json` and can be inspected or changed through `GET /admin/api/workbuddy/proxy`, `POST /admin/api/workbuddy/proxy/set`, and `POST /admin/api/workbuddy/proxy/clear`. Authenticated account actions, scheduled jobs, task automation, and chat requests use the bound exit; if both bound exits are cooling or removed, the request fails rather than falling back to direct egress.
-- **OAuth transport boundary.** Device authorization, login polling, and the model-catalog refresh run before an account UID is known and therefore do not use the account binding. They carry no existing account credential. Once an account is created, all account-authenticated WorkBuddy traffic follows the UID binding.
-
-### TokenHarbor (free models)
-
-TokenHarbor is an OpenAI-compatible aggregator — one universal key (`thk_live_…`, from the [dashboard](https://tokenharbor.ai/dashboard/api-keys)) reaches every model on the platform. Add one key per line on the **TokenHarbor** page; keys rotate with the same pool strategy as the other platforms.
-
-- **Free model catalog.** The [free models page](https://tokenharbor.ai/models?category=free) lists every `:free` model (paid models are never proxied). The catalog syncs from the upstream `GET /v1/models` every 5 minutes (that endpoint needs a key) keeping `:free` entries only; without a key a built-in page snapshot serves. The probe model for the Test buttons defaults to `deepseek-v4.1-flash:free`.
-- **API compatibility.** Models are called with a `tkhb:` prefix (e.g. `tkhb:deepseek-v4.1-flash:free`). Streaming and non-streaming `POST /v1/chat/completions` are supported and `GET /v1/models` merges the prefixed IDs; unknown or paid models are rejected with a clear 400. Base URL is configurable.
-- **Rate limits.** Free accounts get 60 requests/min per account and 100 requests/min per IP, shared across all keys and models; a 429 cools the key per `Retry-After` and rotation moves on. 401/403 (key rotated or revoked) cools it for an hour; a passing Test probe clears the cooldown immediately. New keys start routing-disabled — tick **Pool** to enable.
-- **Proxy binding.** TokenHarbor keys follow the same isolation semantics as the other platforms (main/backup egress per key), and unbound keys follow the TokenHarbor toggle on the Proxy pool page.
-
-### Proxy isolation (identity ↔ exit binding)
-
-Without isolation, every upstream attempt rotates across the whole proxy pool: each account's egress IP drifts between exits *and* each exit serves multiple accounts in turn — both are classic risk-control red flags ("same IP, many accounts", "one account, many IPs"). Isolation mode (default on) replaces the rotation with a fixed binding:
-
-- Each Cline account, zen key, WorkBuddy account, and OpenRouter key can bind one **main** and one **backup** proxy. Requests always egress via the main, fall back to the backup, and are **skipped entirely** while both are cooling or removed from the pool — never routed through another exit or a direct connection. Isolation outranks availability. WorkBuddy bindings are allocated round-robin on first use and persisted automatically.
-- Unbound identities follow the panel's per-platform global policy toggles (Cline / OpenCode / WorkBuddy / OpenRouter / AMDCloud / TokenHarbor, default: use the proxy pool), so an empty binding config behaves exactly like before.
-- - Assign bindings per account (Accounts page) / per key (opencode page), or use **Assign proxies evenly** (`main = pool[i%N]`, `backup = pool[(i+1)%N]`). A binding whose proxy was removed from the pool is flagged ⚠ and its identity stays skipped until fixed.
-- Toggle it off on the Proxy pool page to restore legacy per-request rotation (bindings are then ignored). `PROXY_ISOLATION=true` forces it on and makes the panel toggle read-only; `false` only changes the default to off (the panel can still change it). Only `true`/`false` are accepted — any other value warns and is treated as unset.
-- **Per-proxy online rate.** The Proxy pool page lists every proxy with its real-traffic transport-layer success rate — cumulative since the pool was last edited, plus a rolling window over the last 50 attempts. Upstream 4xx/5xx never counts against the proxy (the tunnel worked); client aborts count for neither side. Sampling is fully passive — no probing traffic is ever generated — and stats never influence routing: a proxy below 80% recent success (≥10 samples) is highlighted red so you can swap it out yourself. Editing the proxy list resets all counters; stats survive restarts (`.proxy-health.json`). Cline, OpenCode, WorkBuddy, OpenRouter, AMDCloud, and TokenHarbor traffic all count; direct exits don't.
-
-socks5/socks5h proxies are fully supported on both paths: the gateway dials them natively for regular upstream traffic, and for CLI minting it fronts a one-shot local HTTP-CONNECT→SOCKS5 bridge (the CLI only ever sees an http proxy, which its runtime is documented to honor — socks5 semantics are fulfilled by the gateway itself, so a mint can never silently fall back to a direct connection).
-
-One side benefit on the zen side: the free quota (~200 requests / 5h) is accounted **per egress IP**, so binding keys to distinct exits is also what actually unlocks multi-key capacity, not just ban-avoidance.
-
-## Credential enable / disable semantics
-
-The panel's **enable** column is "is this credential in the request pool", not "is this credential valid". Turning it off means *the pool does not contain it*, consistently across every platform:
-
-| Platform | What disabling does |
-|---|---|
-| Cline | Not selected by `pickAccountExcluding` / `pickAccountAny`, **not used as a 429/5xx failover candidate**, skipped by boot-time token warm-up, excluded from the `/health` active count |
-| opencode zen | The session patrol no longer mints or rotates a session for that key (including the `public` sentinel); re-enabling needs no restart — the next `pickZenKey` round can select it and the session is minted lazily |
-| OpenRouter / AMDCloud / TokenHarbor / Other | The key is dropped from rotation |
-| TokenHarbor only | Catalog sync uses the first *routing-enabled* key; with all keys disabled the sync cycle is skipped entirely |
-| WorkBuddy | `pool_enabled` is persisted in the per-account auth file, so it survives restarts |
-
-Disabling **every** credential of a platform is handled, not fatal: the request fails with an explicit error (measured: `502 no key routable on platform "…"` for Other, `400 model … is not available on this gateway` for Cline). Cline's model catalog keeps its last good list (`model sync: failed (no accounts), using cached list`) instead of emptying, so re-enabling does not wipe the model list.
-
-### What the Test button does
-
-Test sends a **real** probe request through the same path as a normal request (identity headers, exit binding, session stickiness, free-tier gate). On success it clears that credential's cooldown; on failure it applies the cooldown that matches the failure kind (429 → soft rate-limit cooldown, 401/403 → hard cooldown, network error → backoff). So Test doubles as "reset this credential".
-
-## Troubleshooting
-
-Measured on a live deployment with 7 platforms / 100 enabled credentials (2026-10-21). Symptoms are verbatim from the gateway.
-
-| Symptom | What it actually means | What to do |
+| 症状 | 实际含义 | 处理 |
 |---|---|---|
-| `bound proxies unavailable (cooling or removed) … main=<proxy> (cooling until <RFC3339>), backup=none — the credential itself was not verified (its egress is down)` | The **exit** is down, not the credential. Isolation is stricter than availability: a bound credential is skipped while both its exits are unusable, never rerouted | Fix or rebind the exit on the Proxy pool page. **Do not delete the key.** Re-probe after the stated time |
-| Same credential fails Test, then passes minutes later with no change | Exit cooldown is **2 minutes** (`cooldownUpstreamProxy`). Anything bound to a flapping exit is unusable for that window and self-heals after | Never conclude "key is dead" from a single Test. Re-probe after ≥2 min, or read the `cooling until` time in the message |
-| `502` with a body quoting upstream text, e.g. `zen API 400: … "messages must not be empty"` | The **client** sent bad parameters; the gateway maps every upstream error to 502, including upstream 4xx | Read the embedded upstream message — it names the offending parameter. Beware: clients retry on 502 and re-burn free quota |
-| `400 model "…" is not available on this gateway` right after it worked | The catalog is live: the upstream feed prunes models no longer offered (observed: 5 Cline models pruned across three sync cycles in 17 minutes). Not a gateway fault | Re-read `/v1/models`; do not hard-code model IDs in scripts or CI |
-| `/v1/models` occasionally takes 10–30 s, otherwise ~1 s | Catalog sync contention (observed: `duration_ms` 10002 / 30007 on sync cycles) | Expected; unrelated to credential health. Don't use `/v1/models` latency as a health signal |
-| `amd model sync failed: catalog status 401` | The credentials used for catalog sync are dead — AMD keys expire silently | Re-probe AMD keys; dead ones show `API 401 … Invalid LLMGateway API token` |
-| `403 Requests from this network address (…) are not accepted` (TokenHarbor) | The **exit IP** is blocked, not the key | Rebind that key to a different exit |
+| `bound proxies unavailable … the credential itself was not verified` | **出口**挂了，不是凭据坏。隔离语义下绑定身份被跳过，绝不改道 | 修/换绑定出口；**别删 key**；到提示的冷却时刻后重测 |
+| 单次 Test 失败，几分钟后无任何改动又通过 | 出口冷却只有 2 分钟，并发探测会把正常出口打成短暂冷却 | 单次失败不下结论，≥2 分钟后重测 |
+| `502` 内嵌上游 4xx 文本 | 客户端参数错；网关把所有上游错误映射为 502 | 读内嵌的上游 message；注意客户端重试 502 会重耗免费额度 |
+| `400 model … is not available on this gateway`（刚还好好的） | 目录是活的：上游 feed 会修剪下架模型 | 重读 `/v1/models`；脚本/CI 别写死模型 ID |
+| `amd model sync failed: catalog status 401` | 同步凭据失效（AMD key 会静默过期；同步需启用 key 的 Bearer 头） | 重测 AMD key |
+| TokenHarbor `403 … network address not accepted` | **出口 IP** 被封，不是 key | 给该 key 换绑定出口 |
+| zen 免费层 `403 FreeTierError` 突增 | 上游收紧了格式门（会话/请求 ID/gate 工具） | 看日志刷新频率趋势；网关会自动重铸重试 |
 
-## Battle-tested
-
-Verified against live upstreams with real free-tier credentials (16-probe chat matrix + 12-probe function-calling matrix, all passing):
-
-- Streaming shape (role chunk, `[DONE]`, `finish_reason` `tool_calls` vs `stop`), full tool round-trips, parallel tool calls with distinct indices/ids
-- `stream_options.include_usage`, array content parts, long multi-turn histories, parameter passthrough, clean 4xx errors
-- Client aborts propagate (no account/key cooldown pollution), 8-way parallel load, container healthcheck, seed import, key rotation
-
-Known upstream quirks (not gateway bugs): zen's `muse-spark-*-free` models only work on the native `/v1/responses` endpoint (the gateway routes them there automatically and re-emits chat/Anthropic shapes); `deepseek-v4-flash-free` was removed from the catalog as deprecated; cline's `stop` handling wipes content when the model's reasoning echoes the stop word (gateway truncates non-stream output as compensation); some reasoning-heavy models eat small `max_tokens` budgets before producing visible text. 
-
-## Development
+## 开发
 
 ```bash
 go build ./... && go vet ./...
-./afree-proxy -host 127.0.0.1 -port 3457   # or: go run . 
-./start.sh                                  # build-or-docker wrapper
-docker compose up -d --build                # build from source (PROXY_PORT to change the port)
+./afree-proxy -host 127.0.0.1 -port 3457   # 或: go run .
+docker compose up -d --build               # 源码构建（PROXY_PORT 换端口）
 ```
 
-One more env var is dev-only and deliberately off by default: `KILL_PORT_ON_START=true` makes the gateway force-kill whatever holds the listen port before binding (a Windows convenience, implemented with `Stop-Process`). Leave it unset in production — it kills a process it did not start, and that may be a legitimate service.
+CI：push 到 `main` 跑 `go build` + `go vet`，Buildx 发布多架构镜像到 GHCR（amd64 原生编译，arm64 交叉编译；仅内嵌 opencode CLI 阶段在构建期跑 QEMU）。打 `v*` tag 额外发布版本 tag。
 
-CI: every push to `main` runs `go build` + `go vet`, then publishes the multi-arch image to GHCR via Buildx (amd64 compiled natively, arm64 cross-compiled via `TARGETARCH`; only the embedded opencode CLI stage runs under QEMU for arm64, at build time — the images themselves are native on both arches). Tag a release with `v*` to publish `:vX.Y.Z` alongside `:latest`.
-
-Project layout:
+代码结构：
 
 ```
-├── main.go                  entry point, CLI flags, running detection
+├── main.go                  入口、CLI flags、运行检测
 ├── internal/app/
-│   ├── proxy.go             /v1 routing, chat handler, upstream calls, aggregation
-│   ├── responses.go         /v1/responses dialect translation
-│   ├── zen.go               opencode zen upstream, routing, rate-limit defense
-│   ├── zen_session.go       sticky zen sessions (locally minted per key, age-rotated, persisted in .zen-sessions.json)
-│   ├── zen_endpoint.go      endpoint auto-learn (chat vs /v1/responses per model)
-│   ├── tls_bun.go           uTLS ClientHello mimicry for the zen upstream
-│   ├── compact.go           opencode-style context compaction for zen free models
-│   ├── proxy_pool.go        egress proxy pool (uTLS/h1 client cache, per-request rotation)
-│   ├── models.go            cline free-model feed sync + default model
-│   ├── pool.go              cline account pool (OAuth refresh, static API keys, cooldowns)
-│   ├── seed.go              boot-time account seeding
-│   ├── combos.go            alias model IDs
-│   ├── admin.go/_auth/_html/_zen  admin panel: API, session auth, UI, zen page
-│   ├── workbuddy.go/_config/_proxy/_dialects  WorkBuddy subsystem, exit binding, client dialects
-│   ├── config.go            env-driven configuration (fail-closed checks)
-│   ├── logs.go / stats.go   request logging + token statistics
-│   └── types.go             shared data structures
-├── internal/cline/          cline upstream auth (WorkOS OAuth refresh)
-├── internal/workbuddy/      vendored WorkBuddy2API pool, panel, scheduler, upstream
-├── internal/kit/            HTTP client, random IDs, zen session-ID minting, data paths
-├── Dockerfile               multi-arch (amd64 native + arm64 cross-compile)
-├── docker-compose.yml       source build, PROXY_PORT-parameterized
-└── Caddyfile                optional TLS reverse proxy (compose `tls` profile)
+│   ├── proxy.go             /v1 路由、chat handler、上游调用、聚合
+│   ├── responses.go         /v1/responses 方言翻译
+│   ├── cross_endpoint.go    /v1/responses 与 /v1/messages 的多平台归口 + 缓冲重试
+│   ├── zen.go / zen_session.go / zen_endpoint.go   zen 上游、会话铸造/轮转、端点自学习
+│   ├── trae.go              TraeWork：raw 协议、SSE 聚合、签到调度、OAuth helper
+│   ├── amd.go / openrouter.go / tokenharbor.go / other.go   key 池平台四件套
+│   ├── workbuddy.go/_config/_proxy/_dialects  WorkBuddy 子系统、出口绑定、方言
+│   ├── platform_routability.go  无启用凭据整平台拒路由闸
+│   ├── platform_blacklist.go / model_blacklist.go  封禁平台/封禁模型
+│   ├── pool.go / seed.go    Cline 账号池、启动种子
+│   ├── combos.go            别名模型
+│   ├── admin*.go            管理面板：API、会话认证、UI、各平台页
+│   └── config.go            env 配置（fail-closed 校验）
+├── internal/trae/           TraeWork 协议栈（config/client/models/pool/checkin/helper）
+├── internal/cline/          Cline 上游认证（WorkOS OAuth 刷新）
+├── internal/workbuddy/      vendor 的 WorkBuddy2API 池/面板/调度器/上游
+├── internal/amd|openrouter|tokenharbor|other/   各 key 池协议栈
+├── internal/kit/            HTTP 客户端、随机 ID、zen 会话 ID 铸造、数据路径
+├── .agents/skills/          仓库开发技能（新增平台配方、上游同步流程）
+├── Dockerfile               多架构（amd64 原生 + arm64 交叉编译）
+└── docker-compose.yml       源码构建，PROXY_PORT 参数化
 ```
 
-## Credits
+## 致谢
 
-Built on [YuJunZhiXue/Cline-proxy](https://github.com/YuJunZhiXue/Cline-proxy). Thanks to the [LINUX DO](https://linux.do) community.
+基于 [YuJunZhiXue/Cline-proxy](https://github.com/YuJunZhiXue/Cline-proxy)。感谢 [LINUX DO](https://linux.do) 社区。

@@ -2207,7 +2207,7 @@ func callZenResponsesAPI(ctx context.Context, params map[string]any, stream bool
 			// 原样记录上游的 Retry-After（HTTP 日期还是秒数、值是多少）：
 			// 冷却时长完全由它决定，而面板只能看到换算后的截止时刻。没有这行，
 			// "这个 key 为什么冷却这么久"只能靠猜（实测 FreeUsageLimitError
-			// 的 Retry-After 落在每日窗口复位点，见 TODO.md）。
+			// 的 Retry-After 落在每日窗口复位点，见 README.md Troubleshooting 一节）。
 			rawRetry := resp.Header.Get("Retry-After")
 			applied := cooldownZenKey(key, parseRetryAfter(rawRetry))
 			log.Printf("  zen rate limited (%d) key#%d: Retry-After=%q -> cooldown %v",
