@@ -440,12 +440,16 @@ func maxInt(vals ...int) int {
 	return m
 }
 
-// HasEnabledAccount 是否有可用账号（账号总闸开且有 token）。模型目录的展示
-// 门控：没有启用账号就不对外提供模型（对齐 WorkBuddy 行为），种子表只留作
-// 请求侧 raw 名解析，不再当作"可服务目录"展示。
+// HasEnabledAccount 是否有可用账号（账号总闸开、反代开关开且有 token）。
+// 模型目录的展示门控：没有**可路由**账号就不对外提供模型——与 WorkBuddy
+// 同口径（AvailableUIDs 判 AccountEnabled && PoolEnabled）：反代开关全关 =
+// 没有凭据可参与请求路由，目录照展示只会让用户选了模型吃 502。种子表只留
+// 作请求侧 raw 名解析，不再当作"可服务目录"展示。
+// （2026-10-26 用户澄清：此前只判总闸不看反代开关，导致"总闸开/反代关"
+// 时目录照出而请求全拒，两平台口径不一。）
 func HasEnabledAccount() bool {
 	for _, a := range Get().Accounts {
-		if a.EnabledOrDefault() && a.Token != "" {
+		if a.Routable() && a.Token != "" {
 			return true
 		}
 	}

@@ -18,7 +18,7 @@ import (
 //
 // 判定口径按平台各自的"凭据启用"语义：
 //   - cline：账号池存在 Status=active 且 PoolEnabled 的账号
-//   - trae：trae.HasEnabledAccount()（账号总闸开且持有 token）
+//   - trae：trae.HasEnabledAccount()（账号总闸开、反代开关开且持有 token）
 //   - workbuddy：vendor 池存在可用账号（AvailableUIDs 非空，含总闸+反代
 //     开关+健康判定）
 //   - zen（OpenCode）：存在 KeyRoutingEnabled 的 key（匿名 public key 不算

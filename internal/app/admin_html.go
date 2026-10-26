@@ -141,7 +141,7 @@ tr:hover .nick-pen{opacity:.85}
 /* pr-chip-allex 批量追加框里「已在所有平台排除」的回显 chip：红色警示底
    （与网关设置封禁平台 chip 同款）+ 虚线边置灰与待追加选择区分开，
    × = 从所有平台批量取消（暂存，点保存才落盘） */
-.pr-chip-allex{opacity:.62;border-style:dashed;background:rgba(224,112,95,.14);border-color:rgba(224,112,95,.45);color:var(--danger)}
+.pr-chip-sel,.pr-chip-allex{background:rgba(224,112,95,.14);border-color:rgba(224,112,95,.45);color:var(--danger)}
 .pr-tagin{flex:1;min-width:100px;border:0;background:transparent;color:var(--text);font:inherit;font-size:12.5px;outline:none;padding:2px}
 /* 只读点选框内的输入框不吃全局 input:focus 蓝圈（与 pr-tagbox:focus-within 辉光叠加成双圈） */
 .pr-tagin:focus{box-shadow:none;border:0;outline:none}
@@ -2577,6 +2577,10 @@ const I18N_ZH = {
   'no enabled AMDCloud key — enable a key first, then refresh': '没有启用的 AMDCloud key —— 请先启用 key 再刷新',
   'no enabled Trae account — enable an account first, then refresh': '没有启用的 TraeWork 账号 —— 请先启用账号再刷新',
   'no enabled TokenHarbor key — enable a key first, then refresh': '没有启用的 TokenHarbor key —— 请先启用 key 再刷新',
+  'model sync started': '模型同步已启动',
+  'synced, ': '已同步 ',
+  ' new models': ' 个新模型',
+  'Sync started': '同步已启动',
   'The model catalog syncs from the upstream live catalog every 10 minutes; with no enabled account, no models are shown here or in /v1/models.': '模型目录每 10 分钟从上游 live 目录同步；未启用任何账号时，此处与 /v1/models 都不显示模型。',
   'Add accounts': '添加账号',
   'No TraeWork accounts yet — click Add accounts': '暂无 TraeWork 账号——点"添加账号"',
@@ -5187,8 +5191,18 @@ async function refreshModels() {
       api('POST', '/models/refresh').catch(e => ({ message: e.message })),
       api('POST', '/opencode/models/refresh').catch(e => ({ message: e.message }))
     ]);
-    const msg = [d.message || (d.data && d.data.message), z.message || (z.data && z.data.message)].filter(Boolean).join(' | ');
-    toast(msg || 'Sync started', 'info');
+    // 后端 Message 是固定短语（model sync started / synced, N new models），
+    // 走 T() 翻译；N 为动态数字，拆前后半截分别翻。
+    const tr = m => {
+      if (!m) return m;
+      let t = T(m);
+      if (t !== m) return t;
+      const mm = m.match(/^(synced, )(\d+)( new models)$/);
+      if (mm) return T('synced, ') + mm[2] + T(' new models');
+      return m;
+    };
+    const msg = [tr(d.message || (d.data && d.data.message)), tr(z.message || (z.data && z.data.message))].filter(Boolean).join(' | ');
+    toast(msg || T('Sync started'), 'info');
     setTimeout(loadModels, 3000);
   } catch (e) { toast(T('Refresh failed: ') + e.message, 'error'); document.querySelectorAll('[data-models-info]').forEach(el => { el.textContent = ''; }); }
 }
@@ -6067,7 +6081,7 @@ function ppBulkSyncChips() {
   const chips = _('ppBulkChips');
   if (!chips) return;
   const sel = [...ppBulkSel].map(p =>
-    '<span class="pr-chip" title="' + esc(egLabel(p)) + '"><span>' + esc(egLabel(p)) + '</span>' +
+    '<span class="pr-chip pr-chip-sel" title="' + esc(egLabel(p)) + '"><span>' + esc(egLabel(p)) + '</span>' +
     '<button type="button" onclick="event.stopPropagation();ppBulkPick(decodeURIComponent(this.dataset.pp),false)" data-pp="' + esc(encodeURIComponent(p)) + '" title="' + esc(T('Remove')) + '">×</button></span>');
   // 已全平台排除的代理回显为置灰 chip（pr-chip-allex）：× = 从所有平台批量取消
   const everywhere = ppBulkEverywhere().map(p =>
