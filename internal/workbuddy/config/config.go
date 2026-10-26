@@ -33,6 +33,10 @@ type Config struct {
 	Panel struct {
 		// PackageDetailLimit 积分构成页单账号默认展示的最近到期包数；<=0 回落 5。
 		PackageDetailLimit int `json:"package_detail_limit"`
+		// PollIntervalSec 面板自动刷新间隔（秒）。0 = 用前端缺省（5s）；
+		// 负值 = 关闭自动刷新（只在手动操作时更新）。账号多、或只是开着面板
+		// 当监控用时，调大间隔能显著降低浏览器与服务端负担。
+		PollIntervalSec int `json:"poll_interval_sec"`
 	} `json:"panel"`
 
 	Update struct {
@@ -66,6 +70,10 @@ type Config struct {
 		// 400 "read body: ... i/o timeout"。缺省 "300s"；"0" = 不限制
 		//（慢速 body 可无限占用连接，自担风险）；改动需重启进程。
 		ReadTimeout string `json:"read_timeout"` // "300s"；"0" = 不限制
+		// ShutdownTimeout 优雅关停窗口（SIGTERM / 更新重启时，等在途请求排干的
+		// 时限）。长流式 SSE 合法时长可达分钟级，固定 5s 必然把在途请求掐成
+		// 连接重置。缺省 "30s"；"0" = 不等待直接退。改动需重启进程。
+		ShutdownTimeout string `json:"shutdown_timeout"`
 	} `json:"server"`
 
 	Cooldown struct {
@@ -399,6 +407,8 @@ type Config struct {
 	CostExploreIntervalDur time.Duration `json:"-"`
 	// ServerReadTimeoutDur 解析后的入站请求读取上限（issue #100）；0 = 不限制。
 	ServerReadTimeoutDur time.Duration `json:"-"`
+	// ShutdownTimeoutDur 解析后的优雅关停窗口；0 = 不等待在途请求直接退。
+	ShutdownTimeoutDur time.Duration `json:"-"`
 }
 
 // Default 默认配置。
@@ -412,6 +422,7 @@ func Default() *Config {
 	c.Cooldown.SoftRate = "600s"
 	c.Cooldown.SoftRateMax = "2h"
 	c.Server.ReadTimeout = "300s"
+	c.Server.ShutdownTimeout = "30s"
 	c.Panel.PackageDetailLimit = 5
 	c.Update.AutoTime = "04:00"
 	c.Logging.RequestArchiveEnabled = true
@@ -798,6 +809,8 @@ func (c *Config) normalize() error {
 	if !isClockTime(c.Update.AutoTime) {
 		return fmt.Errorf("update.auto_time: %q 不是合法时间（HH:MM，按上海时间）", c.Update.AutoTime)
 	}
+	// PollIntervalSec 不做回落：0 = 缺省（前端 5s），负数 = 关闭自动刷新。
+	// 两者都是合法取值，normalize 必须原样保留（回落会把「关闭」变成「5 秒」）。
 	if c.Logging.RequestRetentionDays <= 0 {
 		c.Logging.RequestRetentionDays = 7
 	}
@@ -814,6 +827,17 @@ func (c *Config) normalize() error {
 	}
 	if c.ServerReadTimeoutDur < 0 {
 		return fmt.Errorf("server.read_timeout: 负时长 %q 无意义", c.Server.ReadTimeout)
+	}
+	// 优雅关停窗口：空回落 30s（分钟级在途 SSE 远比旧固定 5s 常见）；"0" 合法
+	//（立即退）；负值 fail fast。
+	if c.Server.ShutdownTimeout == "" {
+		c.Server.ShutdownTimeout = "30s"
+	}
+	if c.ShutdownTimeoutDur, err = time.ParseDuration(c.Server.ShutdownTimeout); err != nil {
+		return fmt.Errorf("server.shutdown_timeout: %q %w", c.Server.ShutdownTimeout, err)
+	}
+	if c.ShutdownTimeoutDur < 0 {
+		return fmt.Errorf("server.shutdown_timeout: 负时长 %q 无意义", c.Server.ShutdownTimeout)
 	}
 	if c.SoftRateDur, err = time.ParseDuration(c.Cooldown.SoftRate); err != nil {
 		return fmt.Errorf("cooldown.soft_rate: %w", err)

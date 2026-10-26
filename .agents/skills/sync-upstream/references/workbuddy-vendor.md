@@ -4,7 +4,9 @@
 
 ## 1. 环境事实
 
-- 本地克隆：`D:\下载\Github\workbuddy2api-panel`。remote `origin` = xd88dx fork（用户自己的，**main 跟踪它**），`upstream` = linguo2625469（真上游，push 已 DISABLED）。真上游 → 用户 fork（GitHub 上手动 sync）→ 本地克隆，fork 是中转站。
+- 本地克隆：`D:\下载\Github\workbuddy2api-panel`。remote `origin` = xd88dx fork（用户自己的，**main 跟踪它**），`upstream` = misakano7545（真上游，push 已 DISABLED）。真上游 → 用户 fork（GitHub 上手动 sync）→ 本地克隆，fork 是中转站。
+- **血统坑（2026-10-26 查证）**：本文件曾记真上游为 `linguo2625469`，那是**同名但平行血统**的另一个仓库（repo id 不同，与 misakano 在 `dbd7c68` 分叉）。判真源的办法：基线提交 `9a002057` 在 `misakano7545` 返回 200、在 `linguo2625469` 返回 422。本地克隆的 `main` 也属 linguo 血统（179 独有提交 vs misakano 423），**不可作同步源**。
+- **本仓与上游无共同祖先**：`git fetch upstream` 报 `fatal: fetch-pack: invalid index-pack output` + `warning: no common commits`，禁用 `git merge`/`git pull`。取源二选一：`git -C <克隆> worktree add --detach <目标> misakano/main`（推荐，克隆里有 misakano remote），或 codeload tarball。
 - **原项目只读**：脚本会拒绝上游工作区不干净的运行；永远不在上游克隆里提交/修改内容。
 - 基线：`scripts/workbuddy-vendor-baseline.json`（commit + synced_at + upstream_version），`--seal` 登记后推进。
 

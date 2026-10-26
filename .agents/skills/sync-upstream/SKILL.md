@@ -9,7 +9,7 @@ description: 同步 afree-proxy 两条上游线的完整流程与陷阱清单—
 
 | | fork 上游线 | vendor 参考项目线 |
 |---|---|---|
-| 上游 | `foxy1402/cline-proxy`（GitHub，本仓 main 的 fork 来源） | `linguo2625469/workbuddy2api-panel`（本地克隆 `D:\下载\Github\workbuddy2api-panel`） |
+| 上游 | `foxy1402/cline-proxy`（GitHub，本仓 main 的 fork 来源） | `misakano7545/workbuddy2api-panel`（本地克隆 `D:\下载\Github\workbuddy2api-panel`；曾误记为 `linguo2625469`，那是平行血统，勿用） |
 | 同步对象 | 整个仓库（网关/zen/cline 核心） | 仅 `internal/workbuddy/` vendor 树 |
 | 方式 | `git merge` 上游提交（历史相连） | `scripts/sync_workbuddy.py` 三方合并（vendor 产物） |
 | 细节 | references/cline-proxy-merge.md | references/workbuddy-vendor.md |
