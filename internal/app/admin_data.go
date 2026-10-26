@@ -179,8 +179,8 @@ func clearWorkbuddyAccountsForDataDelete() int {
 // clearProxyPoolForDataDelete 把 OpenCode 配置整体重置为出厂值（key、绑定、
 // 代理池与别名全部清空），并清掉 cline 账号侧可能残留的代理绑定引用。
 func clearProxyPoolForDataDelete() int {
-	cfg := getZenConfig()
-	n := len(cfg.Proxies)
+	n := len(getProxyPool().Proxies)
+	setProxyPool(defaultProxyPoolConfig())
 	setZenConfig(defaultZenConfig())
 	clearAllAccountProxies()
 	clearAllZenKeyProxies()

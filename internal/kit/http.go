@@ -64,7 +64,7 @@ func BoundProbeBlockedMsg(scope, key, prefix string) string {
 }
 
 // JSONHTTPClient 短 JSON 请求（认证/设备登录/管理探测）专用：整体 60s 超时，
-// 防止上游吞连接后调用方永久挂起（启动预热的 seedAccountsFromFile 就会被卡住）。
+// 防止上游吞连接后调用方永久挂起（启动预热的模型拉取就会被卡住）。
 // 不要用于流式转发 —— 那些请求生命周期由 ctx 控制，可能远超 60s。
 var JSONHTTPClient = &http.Client{
 	Transport: HTTPTransport,

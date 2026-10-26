@@ -92,7 +92,7 @@ func proxyIdxInPool(raw string) int {
 	if raw == "" {
 		return -1
 	}
-	cfg := getZenConfig()
+	cfg := getProxyPool()
 	for i, p := range cfg.Proxies {
 		if p == raw {
 			return i
@@ -167,7 +167,7 @@ func pickBoundProxy(main, backup string) (proxyURL string, idx int, ok bool) {
 	}
 	if main != "" {
 		if idx := proxyIdxInPool(main); idx >= 0 && zenProxyAvailable(idx) {
-			return getZenConfig().Proxies[idx], idx, true
+			return getProxyPool().Proxies[idx], idx, true
 		}
 	}
 	if !backupProxyEnabled() {
@@ -178,7 +178,7 @@ func pickBoundProxy(main, backup string) (proxyURL string, idx int, ok bool) {
 	}
 	if backup != "" && backup != main {
 		if idx := proxyIdxInPool(backup); idx >= 0 && zenProxyAvailable(idx) {
-			return getZenConfig().Proxies[idx], idx, true
+			return getProxyPool().Proxies[idx], idx, true
 		}
 	}
 	return "", -1, false
@@ -270,7 +270,7 @@ func init() {
 // zenProxiesEnabled OpenCode 上游是否走共享代理池：配置缺省（nil）默认开启
 // （走池）；面板下拉可显式选择走池/直连。
 func zenProxiesEnabled() bool {
-	zup := getZenConfig().ZenUseProxies
+	zup := getProxyPool().ZenUseProxies
 	if zup == nil {
 		return true
 	}
@@ -280,7 +280,7 @@ func zenProxiesEnabled() bool {
 // workbuddyProxiesEnabled WorkBuddy 未绑定账号是否走共享代理池，语义与
 // zenProxiesEnabled 一致：缺省（nil）默认开启（走池）。
 func workbuddyProxiesEnabled() bool {
-	wup := getZenConfig().WorkbuddyUseProxies
+	wup := getProxyPool().WorkbuddyUseProxies
 	if wup == nil {
 		return true
 	}

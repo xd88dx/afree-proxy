@@ -100,8 +100,10 @@ type Config struct {
 	MaxConcurrency int `json:"maxConcurrency"`
 	// Retries 限流/网络错误重试次数（含账号轮换），默认 3。
 	Retries int `json:"retries"`
-	// Selection 选号策略：round_robin（默认）| credit-priority（额度多者优先，
-	// unlimited 恒最优先；依赖后台额度刷新的数据）。空 = round_robin。
+	// Selection 选号策略：round_robin | credit-priority（额度多者优先，
+	// unlimited 恒最优先；依赖后台额度刷新的数据）| fill | random。
+	// 空 = 跟随全局账号池策略（POOL_STRATEGY，默认 round_robin）；TRAE_STRATEGY
+	// 环境变量优先级更高（见 app.traeStrategy）。
 	Selection string `json:"selection,omitempty"`
 	// AutoCheckin 每日自动签到开关。nil = 关闭（与上游原版默认一致）。
 	AutoCheckin *bool `json:"autoCheckin,omitempty"`
@@ -154,7 +156,7 @@ func (c *Config) normalize() {
 		c.Retries = 0
 	}
 	switch c.Selection {
-	case "credit-priority", "fill", "random":
+	case "round_robin", "credit-priority", "fill", "random":
 	default:
 		c.Selection = ""
 	}

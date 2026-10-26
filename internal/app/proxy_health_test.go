@@ -31,7 +31,7 @@ func resetProxyHealthForTest(t *testing.T) {
 }
 
 func TestProxyHealthRecordSkipsDirectAndAborts(t *testing.T) {
-	setupBindingTest(t, &zenConfigData{Proxies: []string{"socks5://u:p@10.0.0.1:1080#a"}})
+	setupBindingTest(t, &zenTestConfig{Proxies: []string{"socks5://u:p@10.0.0.1:1080#a"}})
 	resetProxyHealthForTest(t)
 
 	px := "socks5://u:p@10.0.0.1:1080#a"
@@ -59,7 +59,7 @@ func TestProxyHealthRecordSkipsDirectAndAborts(t *testing.T) {
 }
 
 func TestProxyHealthRecentWindowTrims(t *testing.T) {
-	setupBindingTest(t, &zenConfigData{Proxies: []string{"socks5://w:1"}})
+	setupBindingTest(t, &zenTestConfig{Proxies: []string{"socks5://w:1"}})
 	resetProxyHealthForTest(t)
 
 	px := "socks5://w:1"
@@ -86,7 +86,7 @@ func TestProxyHealthRecentWindowTrims(t *testing.T) {
 }
 
 func TestProxyHealthSnapshotMasksAndFilters(t *testing.T) {
-	setupBindingTest(t, &zenConfigData{Proxies: []string{"http://user:secret@10.0.0.9:8080#home"}})
+	setupBindingTest(t, &zenTestConfig{Proxies: []string{"http://user:secret@10.0.0.9:8080#home"}})
 	resetProxyHealthForTest(t)
 
 	recordProxyOutcome("http://user:secret@10.0.0.9:8080#home", true, nil, 0)
@@ -110,7 +110,7 @@ func TestProxyHealthSnapshotMasksAndFilters(t *testing.T) {
 }
 
 func TestProxyHealthSnapshotListsUnusedProxiesWithoutData(t *testing.T) {
-	setupBindingTest(t, &zenConfigData{Proxies: []string{"socks5://used:1", "socks5://idle:1"}})
+	setupBindingTest(t, &zenTestConfig{Proxies: []string{"socks5://used:1", "socks5://idle:1"}})
 	resetProxyHealthForTest(t)
 	recordProxyOutcome("socks5://used:1", true, nil, 0)
 
@@ -128,7 +128,7 @@ func TestProxyHealthSnapshotListsUnusedProxiesWithoutData(t *testing.T) {
 }
 
 func TestProxyHealthResetOnPoolEdit(t *testing.T) {
-	setupBindingTest(t, &zenConfigData{Proxies: []string{"socks5://old:1"}})
+	setupBindingTest(t, &zenTestConfig{Proxies: []string{"socks5://old:1"}})
 	resetProxyHealthForTest(t)
 
 	recordProxyOutcome("socks5://old:1", false, errors.New("boom"), 0)
@@ -151,7 +151,7 @@ func TestProxyHealthResetOnPoolEdit(t *testing.T) {
 }
 
 func TestProxyHealthPersistsAcrossRestart(t *testing.T) {
-	setupBindingTest(t, &zenConfigData{Proxies: []string{"socks5://a:1"}})
+	setupBindingTest(t, &zenTestConfig{Proxies: []string{"socks5://a:1"}})
 	resetProxyHealthForTest(t)
 
 	recordProxyOutcome("socks5://a:1", true, nil, 150)

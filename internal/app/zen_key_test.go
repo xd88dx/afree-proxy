@@ -48,7 +48,7 @@ func setupZenProbeTest(t *testing.T, handler http.HandlerFunc) {
 	// 铸造跟随路由启用：探测类测试统一把 key 置为路由启用（缺项本就参与，
 	// 显式写出以自我说明）
 	cfgCopy.KeyRoutingEnabled = map[string]bool{"sk-aaa111": true, "sk-bbb222": true, "sk-pin333": true}
-	cfgCopy.Proxies = nil
+	clearTestProxyPool(t)
 	cfgCopy.Retries = 0
 	setZenConfig(&cfgCopy)
 	t.Cleanup(func() { setZenConfig(savedCfg) })
@@ -462,7 +462,7 @@ func TestZenCall403RefreshesSameKeyOnceThenCoolsAndFails(t *testing.T) {
 	cfgCopy := *savedCfg
 	cfgCopy.BaseURL = upstream.URL
 	cfgCopy.Keys = []string{"sk-one", "sk-two", "sk-three"}
-	cfgCopy.Proxies = nil
+	clearTestProxyPool(t)
 	cfgCopy.Retries = 3
 	setZenConfig(&cfgCopy)
 	t.Cleanup(func() { setZenConfig(savedCfg) })
@@ -531,7 +531,7 @@ func TestZenResponses403RefreshesSameKeyOnceThenCoolsAndFails(t *testing.T) {
 	cfgCopy := *savedCfg
 	cfgCopy.BaseURL = upstream.URL
 	cfgCopy.Keys = []string{"sk-one", "sk-two", "sk-three"}
-	cfgCopy.Proxies = nil
+	clearTestProxyPool(t)
 	cfgCopy.Retries = 3
 	setZenConfig(&cfgCopy)
 	t.Cleanup(func() { setZenConfig(savedCfg) })

@@ -160,7 +160,7 @@ func workbuddyGlobalExit() (string, bool) {
 
 // workbuddyProxyBindingsSnapshot 返回代理池与当前绑定，供管理 API 排障。
 func workbuddyProxyBindingsSnapshot() ([]string, map[string]workbuddyProxyBinding) {
-	cfg := getZenConfig()
+	cfg := getProxyPool()
 	proxies := append([]string(nil), cfg.Proxies...)
 	wbProxyMu.Lock()
 	defer wbProxyMu.Unlock()

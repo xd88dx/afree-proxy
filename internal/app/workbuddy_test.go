@@ -172,7 +172,7 @@ func TestAdminHTMLUsesNativeWorkBuddyConsole(t *testing.T) {
 
 func TestWorkbuddyProxyBindingStableAndFailClosed(t *testing.T) {
 	// 备用代理开关打开：本用例验证"主冷却 → 备兜底"这条路径
-	setupBindingTest(t, &zenConfigData{
+	setupBindingTest(t, &zenTestConfig{
 		Keys:               []string{"public"},
 		Proxies:            []string{"http://a:1", "http://b:2"},
 		ProxyIsolation:     boolPtr(true),
@@ -205,11 +205,8 @@ func TestWorkbuddyProxyBindingStableAndFailClosed(t *testing.T) {
 	}
 
 	// 绑定出口都不在当前池中时必须失败，不能静默退回直连或新出口。
-	setZenConfig(&zenConfigData{
-		Keys:           []string{"public"},
-		Proxies:        []string{"http://new:3"},
-		ProxyIsolation: boolPtr(true),
-	})
+	setZenConfig(&zenConfigData{Keys: []string{"public"}, ProxyIsolation: boolPtr(true)})
+	setProxyPool(&proxyPoolConfigData{Proxies: []string{"http://new:3"}, Strategy: "round_robin"})
 	if proxy, ok := workbuddyProxyFor(first); ok {
 		t.Fatalf("stale bound exits must fail closed, got proxy=%q", proxy)
 	}
@@ -224,7 +221,7 @@ func TestWorkbuddyProxyBindingStableAndFailClosed(t *testing.T) {
 
 func TestWorkbuddyProxyBindingPersistence(t *testing.T) {
 	// 备用槽要落盘就得先打开备用代理开关（关闭时写入即被收敛为空）
-	setupBindingTest(t, &zenConfigData{
+	setupBindingTest(t, &zenTestConfig{
 		Keys:               []string{"public"},
 		Proxies:            []string{"http://a:1", "http://b:2"},
 		ProxyIsolation:     boolPtr(true),
@@ -270,7 +267,7 @@ func TestWorkbuddyProxyBindingPersistence(t *testing.T) {
 }
 
 func TestWorkbuddyUnboundAccountUsesGlobalPoolWithoutPersisting(t *testing.T) {
-	setupBindingTest(t, &zenConfigData{Keys: []string{"public"}, ProxyIsolation: boolPtr(true)})
+	setupBindingTest(t, &zenTestConfig{Keys: []string{"public"}, ProxyIsolation: boolPtr(true)})
 	resetWorkbuddyProxyState(t)
 
 	a := &wbauth.Auth{UID: "uid-late-pool"}
@@ -281,11 +278,8 @@ func TestWorkbuddyUnboundAccountUsesGlobalPoolWithoutPersisting(t *testing.T) {
 		t.Fatalf("empty pool must not persist an empty binding: %+v", bindings)
 	}
 
-	setZenConfig(&zenConfigData{
-		Keys:           []string{"public"},
-		Proxies:        []string{"http://a:1", "http://b:2"},
-		ProxyIsolation: boolPtr(true),
-	})
+	setZenConfig(&zenConfigData{Keys: []string{"public"}, ProxyIsolation: boolPtr(true)})
+	setProxyPool(&proxyPoolConfigData{Proxies: []string{"http://a:1", "http://b:2"}, Strategy: "round_robin"})
 	proxy, ok := workbuddyProxyFor(a)
 	if !ok || proxy == "" {
 		t.Fatalf("unbound account should use the global pool once available: proxy=%q ok=%v", proxy, ok)
@@ -296,7 +290,7 @@ func TestWorkbuddyUnboundAccountUsesGlobalPoolWithoutPersisting(t *testing.T) {
 }
 
 func TestWorkbuddyIsolationDisabledIgnoresDirectBinding(t *testing.T) {
-	setupBindingTest(t, &zenConfigData{
+	setupBindingTest(t, &zenTestConfig{
 		Keys:           []string{"public"},
 		Proxies:        []string{"http://a:1", "http://b:2"},
 		ProxyIsolation: boolPtr(false),

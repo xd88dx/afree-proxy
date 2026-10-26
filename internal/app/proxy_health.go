@@ -209,7 +209,7 @@ func flushProxyHealth() {
 // URL 一律打码（凭据 → ***），别名保留在 fragment 里由前端 egLabel 提取。
 func proxyHealthSnapshot() []map[string]any {
 	ensureProxyHealthLoaded()
-	cfg := getZenConfig()
+	cfg := getProxyPool()
 	cooldowns := zenProxyCooldownStatus()
 
 	proxyHealthMu.Lock()

@@ -28,9 +28,70 @@ func setupZenSessionTest(t *testing.T) {
 	zenSessMu.Unlock()
 }
 
+// zenTestConfig 是测试专用的配置字面量：zen 段字段 + 2026-10-26 拆出去的
+// 代理池字段，让测试可以在一处描述整个环境。setupBindingTest 会分别落到
+// .zen-config.json 与 .proxy-pool.json。生产代码请用 zenConfigData /
+// proxyPoolConfigData。（Go 1.27 之前不允许在复合字面量里写内嵌结构的提升
+// 字段，所以这里显式复制 zenConfigData 的字段，而不是内嵌。）
+type zenTestConfig struct {
+	Key                  string
+	Keys                 []string
+	BaseURL              string
+	MaxConcurrency       int
+	Retries              int
+	Compaction           zenCompactConfig
+	ProxyAliases         map[string]string
+	ProxyIsolation       *bool
+	BackupProxyEnabled   *bool
+	ProxyExclusions      map[string][]string
+	ProxyBindCaps        map[string]int
+	KeyBindings          map[string]zenProxyBinding
+	KeyRoutingEnabled    map[string]bool
+	SessionRotateMinutes int
+
+	Proxies             []string
+	ProxyStrategy       string
+	ProxySubURL         string
+	ProxySubCron        string
+	ZenUseProxies       *bool
+	WorkbuddyUseProxies *bool
+}
+
+func (c *zenTestConfig) zen() *zenConfigData {
+	return &zenConfigData{
+		Key:                  c.Key,
+		Keys:                 c.Keys,
+		BaseURL:              c.BaseURL,
+		MaxConcurrency:       c.MaxConcurrency,
+		Retries:              c.Retries,
+		Compaction:           c.Compaction,
+		ProxyAliases:         c.ProxyAliases,
+		ProxyIsolation:       c.ProxyIsolation,
+		BackupProxyEnabled:   c.BackupProxyEnabled,
+		ProxyExclusions:      c.ProxyExclusions,
+		ProxyBindCaps:        c.ProxyBindCaps,
+		KeyBindings:          c.KeyBindings,
+		KeyRoutingEnabled:    c.KeyRoutingEnabled,
+		SessionRotateMinutes: c.SessionRotateMinutes,
+	}
+}
+
+func (c *zenTestConfig) pool(base proxyPoolConfigData) *proxyPoolConfigData {
+	base.Proxies = c.Proxies
+	base.Strategy = c.ProxyStrategy
+	base.SubURL = c.ProxySubURL
+	base.SubCron = c.ProxySubCron
+	base.ZenUseProxies = c.ZenUseProxies
+	base.WorkbuddyUseProxies = c.WorkbuddyUseProxies
+	if base.Strategy == "" {
+		base.Strategy = "round_robin"
+	}
+	return &base
+}
+
 // setupBindingTest 把 DATA_DIR 重定向到临时目录（setZenConfig 的落盘写进临时
-// 目录而不是仓库根），保存/恢复 zen 配置全局。
-func setupBindingTest(t *testing.T, cfg *zenConfigData) {
+// 目录而不是仓库根），保存/恢复 zen 配置与出口代理池全局。
+func setupBindingTest(t *testing.T, cfg *zenTestConfig) {
 	t.Helper()
 	dir, err := os.MkdirTemp("", "binding-test")
 	if err != nil {
@@ -38,11 +99,26 @@ func setupBindingTest(t *testing.T, cfg *zenConfigData) {
 	}
 	t.Cleanup(func() { os.RemoveAll(dir) })
 	t.Setenv("DATA_DIR", dir)
-	saved := getZenConfig()
+	savedZen := getZenConfig()
+	savedPool := *getProxyPool()
 	if cfg != nil {
-		setZenConfig(cfg)
+		setZenConfig(cfg.zen())
+		setProxyPool(cfg.pool(*getProxyPool()))
 	}
-	t.Cleanup(func() { setZenConfig(saved) })
+	t.Cleanup(func() {
+		setZenConfig(savedZen)
+		setProxyPool(&savedPool)
+	})
+}
+
+// clearTestProxyPool 清空出口代理池（让测试请求走直连），测试结束恢复。
+func clearTestProxyPool(t *testing.T) {
+	t.Helper()
+	saved := *getProxyPool()
+	empty := saved
+	empty.Proxies = nil
+	setProxyPool(&empty)
+	t.Cleanup(func() { setProxyPool(&saved) })
 }
 
 // swapTestPool 临时替换账号池全局，测试结束恢复。
@@ -109,8 +185,8 @@ func TestProxyIsolationEnabledDefaults(t *testing.T) {
 	}
 }
 
-func testZenCfg(isolation *bool) *zenConfigData {
-	return &zenConfigData{
+func testZenCfg(isolation *bool) *zenTestConfig {
+	return &zenTestConfig{
 		Keys:           []string{"public"},
 		BaseURL:        zenAPIBase,
 		ProxyStrategy:  "round_robin",
@@ -122,7 +198,7 @@ func testZenCfg(isolation *bool) *zenConfigData {
 
 func TestPickBoundProxyMainThenBackup(t *testing.T) {
 	// 备用代理开关显式打开才存在"主不通走备"的兜底
-	setupBindingTest(t, &zenConfigData{
+	setupBindingTest(t, &zenTestConfig{
 		Keys:               []string{"public"},
 		Proxies:            []string{"http://a:1", "http://b:2"},
 		BackupProxyEnabled: boolPtr(true),
@@ -145,7 +221,7 @@ func TestPickBoundProxyMainThenBackup(t *testing.T) {
 
 func TestPickBoundProxyStaleBinding(t *testing.T) {
 	// 主代理已从池中删除：绑定视为不可用（绝不静默回退直连/其他出口）
-	setupBindingTest(t, &zenConfigData{
+	setupBindingTest(t, &zenTestConfig{
 		Keys:               []string{"public"},
 		Proxies:            []string{"http://b:2"},
 		BackupProxyEnabled: boolPtr(true),
@@ -163,7 +239,7 @@ func TestPickBoundProxyStaleBinding(t *testing.T) {
 }
 
 func TestBoundProxiesRoutableUnboundSemantics(t *testing.T) {
-	setupBindingTest(t, &zenConfigData{
+	setupBindingTest(t, &zenTestConfig{
 		Keys:    []string{"public"},
 		Proxies: []string{"http://a:1"},
 	})
@@ -177,7 +253,7 @@ func TestBoundProxiesRoutableUnboundSemantics(t *testing.T) {
 }
 
 func TestPickAccountSkipsBoundBlockedAccounts(t *testing.T) {
-	setupBindingTest(t, &zenConfigData{
+	setupBindingTest(t, &zenTestConfig{
 		Keys:    []string{"public"},
 		Proxies: []string{"http://a:1", "http://b:2"},
 	})
@@ -203,7 +279,7 @@ func TestPickAccountSkipsBoundBlockedAccounts(t *testing.T) {
 	}
 
 	// 关闭隔离开关：回到旧规则，绑定字段被完全忽略（A 重新可选）
-	setupBindingTest(t, &zenConfigData{
+	setupBindingTest(t, &zenTestConfig{
 		Keys:           []string{"public"},
 		Proxies:        []string{"http://a:1", "http://b:2"},
 		ProxyIsolation: boolPtr(false),
@@ -214,7 +290,7 @@ func TestPickAccountSkipsBoundBlockedAccounts(t *testing.T) {
 }
 
 func TestPickZenKeySkipsBoundBlockedKeys(t *testing.T) {
-	setupBindingTest(t, &zenConfigData{
+	setupBindingTest(t, &zenTestConfig{
 		Keys:           []string{"sk-1", "sk-2"},
 		Proxies:        []string{"http://a:1", "http://b:2"},
 		KeyBindings:    map[string]zenProxyBinding{"sk-1": {Main: "http://a:1", Backup: "http://b:2"}},
@@ -231,7 +307,7 @@ func TestPickZenKeySkipsBoundBlockedKeys(t *testing.T) {
 	}
 
 	// 全部 key 都被挡住 → 空串（调用方报"无可用出口"，绝不静默直连）
-	setupBindingTest(t, &zenConfigData{
+	setupBindingTest(t, &zenTestConfig{
 		Keys:    []string{"sk-1", "sk-2"},
 		Proxies: []string{"http://a:1"},
 		KeyBindings: map[string]zenProxyBinding{
@@ -247,7 +323,7 @@ func TestPickZenKeySkipsBoundBlockedKeys(t *testing.T) {
 }
 
 func TestValidateProxyBinding(t *testing.T) {
-	setupBindingTest(t, &zenConfigData{
+	setupBindingTest(t, &zenTestConfig{
 		Keys:    []string{"public"},
 		Proxies: []string{"http://a:1", "socks5://b:2"},
 	})
@@ -263,7 +339,7 @@ func TestValidateProxyBinding(t *testing.T) {
 	// main == backup：仅在备用代理开关开启（备用槽真正参与路由）时拒绝。关闭态
 	// 备用槽被保留但不参与路由，且面板锁成跟随主槽，用户无法主动造出该组合，
 	// 放行以免"关闭前 main=a/backup=b，之后把 main 改成 b"这类操作被拒。
-	setupBindingTest(t, &zenConfigData{
+	setupBindingTest(t, &zenTestConfig{
 		Keys:               []string{"sk-1"},
 		Proxies:            []string{"http://a:1"},
 		BackupProxyEnabled: boolPtr(true),
@@ -271,7 +347,7 @@ func TestValidateProxyBinding(t *testing.T) {
 	if err := validateProxyBinding("http://a:1", "http://a:1"); err == nil {
 		t.Fatal("main == backup must be rejected when backup proxies are enabled")
 	}
-	setupBindingTest(t, &zenConfigData{
+	setupBindingTest(t, &zenTestConfig{
 		Keys:               []string{"sk-1"},
 		Proxies:            []string{"http://a:1"},
 		BackupProxyEnabled: boolPtr(false),
@@ -301,7 +377,7 @@ func TestValidateProxyBinding(t *testing.T) {
 
 func TestPickBoundProxyDirectSentinel(t *testing.T) {
 	// 备用槽的直连哨兵属于"兜底"，只有备用代理开关打开时才生效
-	setupBindingTest(t, &zenConfigData{
+	setupBindingTest(t, &zenTestConfig{
 		Keys:               []string{"public"},
 		Proxies:            []string{"http://a:1"},
 		BackupProxyEnabled: boolPtr(true),
@@ -327,7 +403,7 @@ func TestPickBoundProxyDirectSentinel(t *testing.T) {
 // TestBackupProxyDisabledIgnoresBackupSlot：备用代理开关默认关闭 —— 主代理不可用
 // 时不再尝试备用代理（该身份本轮跳过），也绝不因此退回直连。
 func TestBackupProxyDisabledIgnoresBackupSlot(t *testing.T) {
-	setupBindingTest(t, &zenConfigData{
+	setupBindingTest(t, &zenTestConfig{
 		Keys:    []string{"public"},
 		Proxies: []string{"http://a:1", "http://b:2"},
 	})
@@ -365,7 +441,7 @@ func TestBackupProxyDisabledIgnoresBackupSlot(t *testing.T) {
 }
 
 func TestSetAccountProxyBinding(t *testing.T) {
-	setupBindingTest(t, &zenConfigData{
+	setupBindingTest(t, &zenTestConfig{
 		Keys:    []string{"public"},
 		Proxies: []string{"http://a:1", "http://b:2"},
 	})
@@ -392,7 +468,7 @@ func TestSetAccountProxyBinding(t *testing.T) {
 
 func TestSetZenKeyProxyBinding(t *testing.T) {
 	// 备用代理开关打开才能写入备用槽（关闭时 normalizeBackupSlot 会把备用槽收敛为空）
-	setupBindingTest(t, &zenConfigData{
+	setupBindingTest(t, &zenTestConfig{
 		Keys:               []string{"sk-1", "sk-2"},
 		Proxies:            []string{"http://a:1", "http://b:2"},
 		BackupProxyEnabled: boolPtr(true),
@@ -415,7 +491,7 @@ func TestSetZenKeyProxyBinding(t *testing.T) {
 	if err := setZenKeyProxyBinding(9, "http://a:1", ""); err == nil {
 		t.Fatal("out-of-range index must error")
 	}
-	setupBindingTest(t, &zenConfigData{
+	setupBindingTest(t, &zenTestConfig{
 		Keys:    []string{"public"},
 		Proxies: []string{"http://a:1"},
 	})
@@ -636,7 +712,7 @@ func TestParseProxyLine(t *testing.T) {
 }
 
 func TestProxyAliasLivesInPoolLine(t *testing.T) {
-	setupBindingTest(t, &zenConfigData{
+	setupBindingTest(t, &zenTestConfig{
 		Keys:    []string{"public"},
 		Proxies: []string{"socks5://u:p@1.2.3.4:1080#old-alias"},
 	})
@@ -649,7 +725,7 @@ func TestProxyAliasLivesInPoolLine(t *testing.T) {
 	if rec.Code != 200 {
 		t.Fatalf("update failed: %d %s", rec.Code, rec.Body.String())
 	}
-	cfg := getZenConfig()
+	cfg := getProxyPool()
 	if len(cfg.Proxies) != 2 ||
 		cfg.Proxies[0] != "socks5://u:p@1.2.3.4:1080#old-alias" ||
 		cfg.Proxies[1] != "socks5://testuser:testpass@5.6.7.8:1093#new-alias" {
@@ -663,14 +739,14 @@ func TestProxyAliasLivesInPoolLine(t *testing.T) {
 	if rec.Code != 200 {
 		t.Fatalf("update failed: %d", rec.Code)
 	}
-	if got := getZenConfig().Proxies[0]; got != "socks5://u:p@1.2.3.4:1080" {
+	if got := getProxyPool().Proxies[0]; got != "socks5://u:p@1.2.3.4:1080" {
 		t.Fatalf("fragment-less line must clear the alias: %q", got)
 	}
 }
 
 func TestPickZenKeyStrategyUnified(t *testing.T) {
 	setupZenSessionTest(t)
-	setupBindingTest(t, &zenConfigData{
+	setupBindingTest(t, &zenTestConfig{
 		Keys: []string{"sk-1", "sk-2", "sk-3"},
 	})
 	saved := getProxyConfig()
@@ -718,7 +794,7 @@ func TestBoundProxyNetworkErrorDoesNotPoisonAccount(t *testing.T) {
 	// 回归：隔离开 + 账号绑定代理 + Cline 上游开关为直连（useProxies=false）时，
 	// 绑定代理的网络错误必须只冷却代理、绝不毒化账号（曾错误地走直连分支
 	// 给账号上 5 分钟冷却，导致备用代理重试也不会发生）。
-	setupBindingTest(t, &zenConfigData{
+	setupBindingTest(t, &zenTestConfig{
 		Proxies:        []string{"http://127.0.0.1:1"}, // 不可达端口 = 必然网络错误
 		ProxyIsolation: boolPtr(true),
 	})
@@ -752,7 +828,7 @@ func TestBoundProxyNetworkErrorDoesNotPoisonAccount(t *testing.T) {
 // 清空会让"关一下开关"变成不可逆的数据丢失，重开开关也无法复用。
 func TestResolveBackupSlotPreservesStored(t *testing.T) {
 	// 开关开启：采纳提交值
-	setupBindingTest(t, &zenConfigData{
+	setupBindingTest(t, &zenTestConfig{
 		Keys: []string{"sk-1"}, Proxies: []string{"http://a:1", "http://b:2"},
 		BackupProxyEnabled: boolPtr(true),
 	})
@@ -760,7 +836,7 @@ func TestResolveBackupSlotPreservesStored(t *testing.T) {
 		t.Fatalf("enabled: got %q, want submitted value", got)
 	}
 	// 开关关闭：忽略提交值，保留旧备用槽
-	setupBindingTest(t, &zenConfigData{
+	setupBindingTest(t, &zenTestConfig{
 		Keys: []string{"sk-1"}, Proxies: []string{"http://a:1", "http://b:2"},
 		BackupProxyEnabled: boolPtr(false),
 	})
@@ -788,7 +864,7 @@ func TestSetZenKeyProxyBindingBackupToggleRoundTrip(t *testing.T) {
 		next.BackupProxyEnabled = boolPtr(on)
 		setZenConfig(&next)
 	}
-	setupBindingTest(t, &zenConfigData{
+	setupBindingTest(t, &zenTestConfig{
 		Keys: []string{"sk-1"}, Proxies: []string{"http://a:1", "http://b:2", "http://c:3"},
 		BackupProxyEnabled: boolPtr(true),
 	})

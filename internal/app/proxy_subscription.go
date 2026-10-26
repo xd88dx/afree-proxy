@@ -11,8 +11,8 @@ package app
 //     —— cron 变更热生效（每次 tick 重读配置），无需重启。
 //   - 拉取走直连（订阅多为局域网内 socks.txt；容器内无出网代理环境变量），
 //     拉取失败或全部行无效时保留原池不动。
-//   - 替换经 setZenConfig 完成，复用 config/update 的清理链（proxiesChanged
-//     触发冷却清空、健康统计重置、失效客户端驱逐）。
+//   - 替换经 setProxyPool 完成（代理池已独立于 zen 配置），复用同一套清理链
+//     （proxiesChanged 触发冷却清空、健康统计重置、失效客户端驱逐）。
 
 import (
 	"context"
@@ -124,8 +124,8 @@ func cronMatches(expr string, t time.Time) bool {
 // refreshProxySubscription 拉取订阅并整池替换 Proxies，返回替换条数。
 // 拉取失败、逐行全部无效或校验不通过时返回错误且不动现池。
 func refreshProxySubscription() (int, error) {
-	cfg := getZenConfig()
-	url := strings.TrimSpace(cfg.ProxySubURL)
+	cfg := getProxyPool()
+	url := strings.TrimSpace(cfg.SubURL)
 	if url == "" {
 		return 0, fmt.Errorf("未配置订阅链接")
 	}
@@ -179,7 +179,7 @@ func refreshProxySubscription() (int, error) {
 	}
 	next := *cfg
 	next.Proxies = canonical
-	setZenConfig(&next)
+	setProxyPool(&next)
 	return len(canonical), nil
 }
 
@@ -249,9 +249,9 @@ func StartProxySubscriptionWorker() {
 		ticker := time.NewTicker(30 * time.Second)
 		defer ticker.Stop()
 		for now := range ticker.C {
-			cfg := getZenConfig()
-			url := strings.TrimSpace(cfg.ProxySubURL)
-			expr := strings.TrimSpace(cfg.ProxySubCron)
+			cfg := getProxyPool()
+			url := strings.TrimSpace(cfg.SubURL)
+			expr := strings.TrimSpace(cfg.SubCron)
 			if url == "" || expr == "" {
 				continue
 			}

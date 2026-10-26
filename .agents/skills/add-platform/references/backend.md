@@ -18,7 +18,7 @@ WB 特例：`/admin/api/workbuddy/enabled` 注册在 proxy.go（workbuddy 路由
 - 字段：`*bool`（三态：nil=启用、true/false=显式）或 key 池的 `KeyRoutingEnabled map[string]bool`（缺项=参与）。**读侧兼容**：`accountPoolEnabled(a)`（pool.go）/ 各包 `RoutingEnabled(key)`——缺字段视为启用，存量旧数据不受影响；**写侧默认禁**：新增路径落盘前置 false。
 - 六平台新增默认禁用的代码点（新增平台 X 照抄位置）：
   - Cline：`pool.go addAccount`
-  - OpenCode：`zen.go` ZEN_KEYS 注入 + `reconcileZenKeyRouting`（新 key routingEnabled=false）
+  - OpenCode：`zen.go` `reconcileZenKeyRouting`（新 key routingEnabled=false）
   - WorkBuddy：vendor `panel/login.go` + `panel/import.go` 落盘前 `a.SetPoolEnabled(false)`
   - key 池四件套（or/amd/th 同构）：包内 `config.go ReconcileRouting(next, cur)`——整体替换 key 池时新 key 置 false、已有保持、移除清理；app 层保存链必须调用它
 - 选号全路径过滤：X 的每一个可用凭据枚举函数都要过滤禁用项（参照 wbpool 的 `selOK`/`AvailableUIDs` 家族/`ServableForRealm`，key 池参照各包 pool.go 的 `RoutingEnabled` 过滤）。**定时任务（签到/保活/统计）不过滤**——禁用只指"不参与请求路由"。

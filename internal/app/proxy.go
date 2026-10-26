@@ -63,9 +63,6 @@ func StartProxy(host string, port int) error {
 
 	initLogFile()
 
-	// 池为空时从种子文件导入cline账号（容器无状态重建场景）
-	seedAccountsFromFile()
-
 	p := loadPool()
 	activeCount := 0
 	for _, a := range p.Accounts {
@@ -433,7 +430,7 @@ func StartProxy(host string, port int) error {
 			}
 		}
 
-		// cline 路由需要账号池；zen 免费模型不需要（纯 ZEN_KEYS 部署也能用），
+		// cline 路由需要账号池；zen 免费模型不需要账号池，
 		// 因此该检查放在路由之后而不是函数开头
 		if poolAccountCount() == 0 {
 			writeJSON(w, http.StatusUnauthorized, map[string]any{

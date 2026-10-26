@@ -69,7 +69,7 @@ func TestProxyAliasOf(t *testing.T) {
 }
 
 func TestProxyIdxInPoolAliasFallback(t *testing.T) {
-	setupBindingTest(t, &zenConfigData{
+	setupBindingTest(t, &zenTestConfig{
 		Proxies: []string{"socks5://10.10.10.5:20101#EUserv", "socks5://10.10.10.6:30001"},
 	})
 	// 端口/凭据变了但备注名相同 → 命中池内新地址

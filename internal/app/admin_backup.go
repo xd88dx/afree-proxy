@@ -61,6 +61,25 @@ type workbuddyBackup struct {
 	Order []string `json:"order,omitempty"`
 }
 
+// legacyZenBackup 是备份文件里的 zen 段。代理池字段（proxies/proxyStrategy/
+// proxySubURL/proxySubCron/zenUseProxies/workbuddyUseProxies）在 2026-10-26
+// 拆到独立 ProxyPool 段之前一直存在这里；保留这些键让旧备份仍可导入。
+type legacyZenBackup struct {
+	zenConfigData
+	Proxies             []string `json:"proxies,omitempty"`
+	ProxyStrategy       string   `json:"proxyStrategy,omitempty"`
+	ProxySubURL         string   `json:"proxySubURL,omitempty"`
+	ProxySubCron        string   `json:"proxySubCron,omitempty"`
+	ZenUseProxies       *bool    `json:"zenUseProxies,omitempty"`
+	WorkbuddyUseProxies *bool    `json:"workbuddyUseProxies,omitempty"`
+}
+
+// zenBackupSnapshot 取一份 zen 配置的拷贝用于备份。代理池字段不再随 zen 段
+// 导出（它们由 ProxyPool 段承载），legacyZenBackup 里的同名字段只用于读旧备份。
+func zenBackupSnapshot() *legacyZenBackup {
+	return &legacyZenBackup{zenConfigData: *getZenConfig()}
+}
+
 type configBackup struct {
 	Version         int                         `json:"version"`
 	ExportedAt      time.Time                   `json:"exportedAt"`
@@ -70,7 +89,10 @@ type configBackup struct {
 	AdminLogEnabled *bool                       `json:"adminLogEnabled,omitempty"`
 	Strategy        string                      `json:"strategy,omitempty"`
 	Headers         map[string]string           `json:"headers,omitempty"`
-	Zen             *zenConfigData              `json:"zen,omitempty"`
+	Zen             *legacyZenBackup            `json:"zen,omitempty"`
+	// ProxyPool 全局出口代理池(.proxy-pool.json)。2026-10-26 从 zen 段拆出：
+	// 代理池是全局能力，历史上寄居在 zen 配置里只是命名包袱。
+	ProxyPool *proxyPoolConfigData `json:"proxyPool,omitempty"`
 	Sessions        map[string]*zenSessionEntry `json:"sessions,omitempty"`
 	Endpoints       map[string]string           `json:"endpoints,omitempty"`
 	Combos          []*Combo                    `json:"combos,omitempty"`
@@ -154,7 +176,8 @@ func handleAdminConfigExport(w http.ResponseWriter, r *http.Request) {
 		AdminLogEnabled:     &adminLog,
 		Strategy:            getProxyConfig().Strategy,
 		Headers:             headers,
-		Zen:                 getZenConfig(),
+		Zen:                 zenBackupSnapshot(),
+		ProxyPool:           getProxyPool(),
 		Sessions:            sessions,
 		Endpoints:           loadZenEndpointsFile(),
 		Combos:              listCombos(),
@@ -360,7 +383,21 @@ func handleAdminConfigImport(w http.ResponseWriter, r *http.Request) {
 		// 参与路由，必须逐 key 写 false 而不是清空表。先 normalize 让 Keys
 		// 定型（setZenConfig 内部还会再 normalize 一次，幂等）。弹窗勾选
 		// "沿用启用状态"时保留备份内原表（缺项 = 启用同口径）。
-		normalizeZenKeys(backup.Zen)
+		normalizeZenKeys(&backup.Zen.zenConfigData)
+		// 旧备份把代理池存在 zen 段里：迁移到 ProxyPool 段，供下方统一恢复。
+		if backup.ProxyPool == nil {
+			if len(backup.Zen.Proxies) > 0 || backup.Zen.ProxySubURL != "" ||
+				backup.Zen.ZenUseProxies != nil || backup.Zen.WorkbuddyUseProxies != nil {
+				backup.ProxyPool = &proxyPoolConfigData{
+					Proxies:             backup.Zen.Proxies,
+					Strategy:            backup.Zen.ProxyStrategy,
+					SubURL:              backup.Zen.ProxySubURL,
+					SubCron:             backup.Zen.ProxySubCron,
+					ZenUseProxies:       backup.Zen.ZenUseProxies,
+					WorkbuddyUseProxies: backup.Zen.WorkbuddyUseProxies,
+				}
+			}
+		}
 		if !backup.KeepEnabled["zen"] {
 			off := make(map[string]bool, len(backup.Zen.Keys))
 			for _, k := range backup.Zen.Keys {
@@ -391,8 +428,8 @@ func handleAdminConfigImport(w http.ResponseWriter, r *http.Request) {
 			}
 			backup.Zen.ProxyExclusions = clean
 		}
-		if len(backup.Zen.ProxyExclusions) > 0 && len(backup.Zen.Proxies) > 0 {
-			backup.Zen.ProxyExclusions = pruneProxyExclusions(backup.Zen.ProxyExclusions, backup.Zen.Proxies)
+		if len(backup.Zen.ProxyExclusions) > 0 && backup.ProxyPool != nil && len(backup.ProxyPool.Proxies) > 0 {
+			backup.Zen.ProxyExclusions = pruneProxyExclusions(backup.Zen.ProxyExclusions, backup.ProxyPool.Proxies)
 		}
 		// 上限表同样只保留正值（缺项/0/负数 = 不限）。
 		if len(backup.Zen.ProxyBindCaps) > 0 {
@@ -407,10 +444,14 @@ func handleAdminConfigImport(w http.ResponseWriter, r *http.Request) {
 			}
 			backup.Zen.ProxyBindCaps = caps
 		}
-		setZenConfig(backup.Zen)
+		setZenConfig(&backup.Zen.zenConfigData)
 		imported["zenKeys"] = len(backup.Zen.Keys)
-		if len(backup.Zen.Proxies) > 0 {
-			imported["proxies"] = len(backup.Zen.Proxies)
+	}
+	// ---- 全局代理池(独立于 zen)----
+	if backup.ProxyPool != nil {
+		setProxyPool(backup.ProxyPool)
+		if len(backup.ProxyPool.Proxies) > 0 {
+			imported["proxies"] = len(backup.ProxyPool.Proxies)
 		}
 	}
 	// ---- zen 粘性会话（在 setZenConfig 之后写入，避免被按 key 清理）----

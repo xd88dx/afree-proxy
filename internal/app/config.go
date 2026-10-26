@@ -24,20 +24,21 @@ import (
 //	ADMIN_PASSWORD             管理面板登录密码；设置后所有 /admin/* 需登录
 //	ADMIN_PASSWORD_FILE        密码文件路径（docker secrets），优先于 ADMIN_PASSWORD
 //	REQUIRE_ADMIN_AUTH         "false" 时允许公网无密码运行（如反代已做认证），默认强制
-//	POOL_STRATEGY              账号池策略 round_robin(默认) / fill / random，覆盖持久化配置
+//	POOL_STRATEGY              全部平台凭据调度策略 round_robin(默认) / fill / random，覆盖持久化配置
+//	                           （WorkBuddy 用 vendor 自己的分区策略；Trae 有 TRAE_STRATEGY 独立覆盖）
+//	TRAE_STRATEGY              Trae 独立凭据调度策略 round_robin(默认) / fill / random /
+//	                           credit-priority（额度多者优先）；优先于面板 Selection，
+//	                           未设置时回落 POOL_STRATEGY
 //	LOG_REQUESTS               请求日志开关，默认 true；"false" 完全关闭（含 body 探测）
 //	LOG_FILE_MAX_MB            requests.jsonl 大写上限 MB，默认 10，超出清空
 //	APPLY_SYSTEM_PROMPT_OVERRIDE  "true" 才启用 override.md 系统提示词替换，默认关闭
 //	STREAM_LOG                 "true" 把 Anthropic 流式原始 SSE 落盘（完整对话，慎用）
 //	STRICT_MODEL_MATCH         "false" 时未知模型静默回退默认模型（默认显式 400）
 //	CLIENT_IP_HEADER           反代部署下取真实客户端 IP 的请求头名（登录限流用）
-//	ZEN_KEYS                   opencode zen 多 key，逗号分隔，配置为空时注入
 //	ZEN_PIN_KEY                zen key 池固定用第 n 个 key（1 起），排障/单 key 直测用
 //	ZEN_SESSION_ROTATE_MINUTES zen 粘性会话轮换周期（分钟），默认 120（2 小时）；
 //	                           0 = 关闭轮换。老会话久未更新会让上游首个请求变慢，
 //	                           定期本地重铸可规避（零成本：不触发上游、无子进程）
-//	CLINE_ACCOUNTS_SEED_FILE   cline 账号种子文件（[{refreshToken,email}] JSON 数组），
-//	                           池为空时启动自动导入
 //	PROXY_ISOLATION            代理隔离开关，只接受 true/false（大小写不敏感）：
 //	                           true 强制开启（面板开关只读）；false 默认关闭、
 //	                           面板可改；未设置默认开启、面板可改。其他值告警
@@ -83,21 +84,6 @@ func envInt(key string) (int, bool) {
 		n = n*10 + int(c-'0')
 	}
 	return n, true
-}
-
-// envList 解析逗号分隔的环境变量为去空白、去空项的列表。
-func envList(key string) []string {
-	raw := envStr(key)
-	if raw == "" {
-		return nil
-	}
-	out := make([]string, 0, 4)
-	for _, part := range strings.Split(raw, ",") {
-		if p := strings.TrimSpace(part); p != "" {
-			out = append(out, p)
-		}
-	}
-	return out
 }
 
 // APIKeyEnv 返回 /v1 接口的固定 API key：API_KEY_FILE（docker secrets，

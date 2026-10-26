@@ -10,7 +10,7 @@ import (
 // 新引入的 key 默认不参与路由（覆盖陈旧表项），已有 key 保持显式状态，
 // 缺表项的旧 key（兼容语义=启用）不受影响，被移除的 key 清理表项。
 func TestZenConfigUpdateNewKeyDefaultsDisabled(t *testing.T) {
-	setupBindingTest(t, &zenConfigData{
+	setupBindingTest(t, &zenTestConfig{
 		Keys:              []string{"sk-off", "sk-legacy"},
 		KeyRoutingEnabled: map[string]bool{"sk-off": false},
 	})
@@ -63,7 +63,7 @@ func TestZenConfigUpdateNewKeyDefaultsDisabled(t *testing.T) {
 	}
 
 	// 单 key 兼容提交（key 字段）同样按"新增默认禁用"处理
-	setupBindingTest(t, &zenConfigData{Keys: []string{"public"}})
+	setupBindingTest(t, &zenTestConfig{Keys: []string{"public"}})
 	req = httptest.NewRequest("POST", "/admin/api/opencode/config/update",
 		strings.NewReader(`{"key":"sk-single"}`))
 	rec = httptest.NewRecorder()

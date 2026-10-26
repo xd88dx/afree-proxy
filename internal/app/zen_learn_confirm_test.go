@@ -54,7 +54,7 @@ func TestEndpointLearnOnlyPersistsWhenRetrySucceeds(t *testing.T) {
 	cfg := savedCfg
 	cfg.BaseURL = upstream.URL
 	cfg.Keys = []string{"probe-zen-key"}
-	cfg.Proxies = nil
+	clearTestProxyPool(t)
 	cfg.Retries = 0
 	setZenConfig(cfg)
 	defer setZenConfig(savedCfg)
@@ -165,7 +165,7 @@ func TestResponsesEntryUsesNativeEndpointForResponsesModel(t *testing.T) {
 	cfg := savedCfg
 	cfg.BaseURL = upstream.URL
 	cfg.Keys = []string{"probe-zen-key"}
-	cfg.Proxies = nil
+	clearTestProxyPool(t)
 	cfg.Retries = 0
 	setZenConfig(cfg)
 	defer setZenConfig(savedCfg)
@@ -221,7 +221,7 @@ func TestZenHeadersOnTheWire(t *testing.T) {
 	cfg := savedCfg
 	cfg.BaseURL = upstream.URL
 	cfg.Keys = []string{"wire-zen-key"}
-	cfg.Proxies = nil
+	clearTestProxyPool(t)
 	cfg.Retries = 0
 	setZenConfig(cfg)
 	defer setZenConfig(savedCfg)

@@ -70,11 +70,10 @@ docker run -d --name afree-proxy \
 | `API_KEY` / `API_KEY_FILE` | 空 | `/v1` 唯一有效 key（`Authorization: Bearer` 或 `x-api-key`） |
 | `ADMIN_PASSWORD` / `ADMIN_PASSWORD_FILE` | 空 | 管理面板密码；设置后所有 `/admin/*` 需登录 |
 | `PROXY_ISOLATION` | 未设置 | 身份↔出口绑定：`true` 强制开启（面板只读）；`false` 默认改为关（面板可改）；未设置默认开启。只接受 true/false |
-| `ZEN_KEYS` | 空 | 逗号分隔的 zen key 启动种子；面板已有 key 时不覆盖 |
 | `ZEN_SESSION_ROTATE_MINUTES` | `120` | zen 会话到期重铸间隔（分钟），`0` 关闭 |
 | `STRICT_MODEL_MATCH` | `true` | 未知模型名 400 而非静默兜底 |
-| `POOL_STRATEGY` | `round_robin` | Cline 选号策略：`round_robin` / `fill` / `random` |
-| `CLINE_ACCOUNTS_SEED_FILE` | 空 | 启动时账号池为空则导入的种子 JSON |
+| `POOL_STRATEGY` | `round_robin` | 全部平台的凭据调度策略（Cline/zen/or/amd/th/other 共用）：`round_robin` / `fill` / `random`。WorkBuddy 用 vendor 自己的国内/国际分区策略；Trae 未设 `TRAE_STRATEGY` 时回落此值 |
+| `TRAE_STRATEGY` | 未设置 | Trae 独立凭据调度策略：`round_robin` / `fill` / `random` / `credit-priority`（额度多者优先）。优先于面板 Selection，未设置时回落 `POOL_STRATEGY` |
 | `PUID` / `PGID` | `100` / `101` | 容器运行身份（entrypoint 自愈属主后降权；bind mount 时设为宿主机用户） |
 | `LOG_REQUESTS` | `true` | 请求日志（仅元数据：IP/路径/模型/状态/耗时，绝无对话内容） |
 | `MAX_BODY_MB` | `32` | 请求体上限，超出 413 |
@@ -112,19 +111,6 @@ Model:     cline-free/deepseek-v4.1-flash   （Cline 池）
 
 `GET /v1/models` 列出全部可服务模型（含 Combos）。免费目录自动同步（cline 60s、zen 60s、trae 10min、or/amd/th 5min、wb 实时探测）；线上列表是权威，内置种子只覆盖冷启动/离线启动，下架/新免费模型自动增删。
 
-### 账号种子
-
-支持两种账号并可混用（`CLINE_ACCOUNTS_SEED_FILE`，池空时导入）：
-
-```json
-[
-  {"refreshToken": "workos-oauth-refresh-token", "email": "acc1@example.com"},
-  {"apiToken": "sk_...", "email": "acc2@example.com"}
-]
-```
-
-**各平台新增身份默认禁用**：新加入的账号/key 落盘时路由参与即关闭（Cline `pool_enabled=false`；zen/or/amd/th/other 无路由表项），轮转自动跳过，直到在面板勾选「启用」。存量缺字段的身份保持原状态——升级不停服。`ZEN_KEYS` 来的 key 同规则。
-
 ### Combos（别名模型）
 
 面板创建自定义别名 ID（如 `my-flash` → `cline-free/deepseek-v4.1-flash`）。严格同平台指向；别名出现在 `/v1/models` 供 IDE 直接选择。
@@ -136,6 +122,19 @@ Model:     cline-free/deepseek-v4.1-flash   （Cline 池）
 ## TraeWork 网页授权
 
 添加账号走「网页授权」手风琴弹窗：网关生成本机授权助手（Python，监听 127.0.0.1:8765），浏览器打开授权页登录后凭据回传网关。助手脚本从网关下载，面板会比对 relay 源防止凭据写错实例；也支持手动粘贴凭据。授权只认本机 helper——上游实测拒绝网关直连回调。
+
+## 代理池与选号策略
+
+两个互不相干的调度维度，容易混：
+
+| 维度 | 决定什么 | 策略入口 | 存放 |
+|---|---|---|---|
+| 账号选号 | 这次请求用哪个账号 / key | `POOL_STRATEGY`（默认 `round_robin`）；Trae 另有 `TRAE_STRATEGY` | `data/.cline-accounts.json` 的 `proxyConfig.Strategy` |
+| 出口选路 | 这次请求从哪条线路 / IP 出去 | 面板「代理池」页的调度策略 | `data/.proxy-pool.json` 的 `proxyStrategy` |
+
+代理池配置（代理列表、出口策略、订阅、zen / WorkBuddy 两个走池开关）自 2026-10 起独立存放在 `data/.proxy-pool.json`，不再寄居在 `.zen-config.json`——代理池是全局能力（7 个平台共用），不属于 OpenCode zen。首次启动若新文件不存在，会从 `.zen-config.json` 自动迁移一次，旧键保留以便回滚到旧版本。出口策略：`round_robin`（默认）/ `random` / `fill`。
+
+WorkBuddy 的账号调度用 vendor 自己的国内/国际分区策略，与 `POOL_STRATEGY` 无关。
 
 ## 代理隔离（身份 ↔ 出口绑定）
 

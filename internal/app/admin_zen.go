@@ -22,21 +22,29 @@ func handleZenConfig(w http.ResponseWriter, r *http.Request) {
 		writeAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
 		return
 	}
+	writeAPI(w, http.StatusOK, apiResponse{Success: true, Data: zenConfigPayload()})
+}
+
+// zenConfigPayload 是面板「OpenCode + 代理池」页的合并视图。代理池配置已拆到
+// .proxy-pool.json（proxy_pool_config.go），但面板契约的 JSON 键名保持不变，
+// 前端无需改动。
+func zenConfigPayload() map[string]any {
 	cfg := getZenConfig()
-	data := map[string]any{
-		"zenUseProxies":       zenProxiesEnabled(),
-		"workbuddyUseProxies": workbuddyProxiesEnabled(),
-		"key":                 cfg.Key,
-		"keys":                cfg.Keys,
-		"keyStates":           zenKeyStatus(),
-		"baseURL":             cfg.BaseURL,
-		"proxies":             cfg.Proxies,
-		"proxyStrategy":       cfg.ProxyStrategy,
-		"proxySubURL":         cfg.ProxySubURL,
-		"proxySubCron":        cfg.ProxySubCron,
-		"maxConcurrency":      cfg.MaxConcurrency,
-		"retries":             cfg.Retries,
-		"compaction":          cfg.Compaction,
+	pool := getProxyPool()
+	return map[string]any{
+		"zenUseProxies":        zenProxiesEnabled(),
+		"workbuddyUseProxies":  workbuddyProxiesEnabled(),
+		"key":                  cfg.Key,
+		"keys":                 cfg.Keys,
+		"keyStates":            zenKeyStatus(),
+		"baseURL":              cfg.BaseURL,
+		"proxies":              pool.Proxies,
+		"proxyStrategy":        pool.Strategy,
+		"proxySubURL":          pool.SubURL,
+		"proxySubCron":         pool.SubCron,
+		"maxConcurrency":       cfg.MaxConcurrency,
+		"retries":              cfg.Retries,
+		"compaction":           cfg.Compaction,
 		"sessionRotateMinutes": cfg.SessionRotateMinutes,
 		// 代理隔离（账号/key 绑定出口）：生效值 + 是否被 env 钉死（面板据此
 		// 禁用开关并提示）。
@@ -53,7 +61,6 @@ func handleZenConfig(w http.ResponseWriter, r *http.Request) {
 			"proxyHealth": proxyHealthSnapshot(),
 		},
 	}
-	writeAPI(w, http.StatusOK, apiResponse{Success: true, Data: data})
 }
 
 // POST /admin/api/zen/config/update
@@ -70,6 +77,10 @@ func handleZenConfigUpdate(w http.ResponseWriter, r *http.Request) {
 	defer r.Body.Close()
 
 	cur := getZenConfig()
+	// 代理池字段走独立配置（.proxy-pool.json）；只有本次提交真的带了代理池
+	// 字段才回写，避免每次保存 zen 配置都无谓重写代理池文件。
+	poolNext := *getProxyPool()
+	poolChanged := false
 	var patch struct {
 		ZenUseProxies       *bool    `json:"zenUseProxies"`
 		WorkbuddyUseProxies *bool    `json:"workbuddyUseProxies"`
@@ -83,13 +94,13 @@ func handleZenConfigUpdate(w http.ResponseWriter, r *http.Request) {
 		MaxConcurrency      *int     `json:"maxConcurrency"`
 		Retries             *int     `json:"retries"`
 		// 会话轮换周期（分钟）：0 = 关闭轮换，需与"未提交"区分故用指针。
-		SessionRotateMinutes *int `json:"sessionRotateMinutes"`
+		SessionRotateMinutes *int  `json:"sessionRotateMinutes"`
 		ProxyIsolation       *bool `json:"proxyIsolation"`
 		BackupProxyEnabled   *bool `json:"backupProxyEnabled"`
 		// 自动分配规则：nil = 不改动；非 nil = 整表替换（空表 = 全部清除）。
 		ProxyExclusions map[string][]string `json:"proxyExclusions"`
 		ProxyBindCaps   map[string]int      `json:"proxyBindCaps"`
-		Compaction           *struct {
+		Compaction      *struct {
 			Auto         *bool   `json:"auto"`
 			Buffer       *int    `json:"buffer"`
 			KeepTokens   *int    `json:"keepTokens"`
@@ -102,22 +113,16 @@ func handleZenConfigUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	next := &zenConfigData{
-		ZenUseProxies:       cur.ZenUseProxies,
-		WorkbuddyUseProxies: cur.WorkbuddyUseProxies,
-		Key:                 cur.Key,
-		Keys:                cur.Keys,
-		BaseURL:             cur.BaseURL,
-		Proxies:             cur.Proxies,
-		ProxyStrategy:       cur.ProxyStrategy,
-		ProxySubURL:         cur.ProxySubURL,
-		ProxySubCron:        cur.ProxySubCron,
-		MaxConcurrency:      cur.MaxConcurrency,
-		Retries:             cur.Retries,
-		ProxyIsolation:      cur.ProxyIsolation,
-		BackupProxyEnabled:  cur.BackupProxyEnabled,
-		ProxyExclusions:     cur.ProxyExclusions,
-		ProxyBindCaps:       cur.ProxyBindCaps,
-		KeyBindings:         cur.KeyBindings,
+		Key:                cur.Key,
+		Keys:               cur.Keys,
+		BaseURL:            cur.BaseURL,
+		MaxConcurrency:     cur.MaxConcurrency,
+		Retries:            cur.Retries,
+		ProxyIsolation:     cur.ProxyIsolation,
+		BackupProxyEnabled: cur.BackupProxyEnabled,
+		ProxyExclusions:    cur.ProxyExclusions,
+		ProxyBindCaps:      cur.ProxyBindCaps,
+		KeyBindings:        cur.KeyBindings,
 		// KeyRoutingEnabled 必须随 next 保留：config/update 是全量替换语义，
 		// 漏拷会把面板勾选的路由参与表整体清掉（缺项 = 全部参与）。
 		KeyRoutingEnabled:    cur.KeyRoutingEnabled,
@@ -125,10 +130,12 @@ func handleZenConfigUpdate(w http.ResponseWriter, r *http.Request) {
 		SessionRotateMinutes: cur.SessionRotateMinutes,
 	}
 	if patch.ZenUseProxies != nil {
-		next.ZenUseProxies = patch.ZenUseProxies
+		poolNext.ZenUseProxies = patch.ZenUseProxies
+		poolChanged = true
 	}
 	if patch.WorkbuddyUseProxies != nil {
-		next.WorkbuddyUseProxies = patch.WorkbuddyUseProxies
+		poolNext.WorkbuddyUseProxies = patch.WorkbuddyUseProxies
+		poolChanged = true
 	}
 	if patch.Keys != nil {
 		// 多 key 池整体替换；兼容旧单 key 字段（key 非空时视为单元素列表）
@@ -172,17 +179,20 @@ func handleZenConfigUpdate(w http.ResponseWriter, r *http.Request) {
 			writeAPI(w, http.StatusBadRequest, apiResponse{Error: err.Error()})
 			return
 		}
-		next.Proxies = canonical
+		poolNext.Proxies = canonical
+		poolChanged = true
 		// 池变动后同步清理排除表：已不在池内的条目永远不会被自动分配命中，
 		// 留着只是垃圾配置（订阅整池替换路径 proxy_subscription.go 复用本
 		// 结构体浅拷贝，无需重复处理）。
 		next.ProxyExclusions = pruneProxyExclusions(next.ProxyExclusions, canonical)
 	}
 	if patch.ProxyStrategy != nil && *patch.ProxyStrategy != "" {
-		next.ProxyStrategy = *patch.ProxyStrategy
+		poolNext.Strategy = *patch.ProxyStrategy
+		poolChanged = true
 	}
 	if patch.ProxySubURL != nil {
-		next.ProxySubURL = strings.TrimSpace(*patch.ProxySubURL)
+		poolNext.SubURL = strings.TrimSpace(*patch.ProxySubURL)
+		poolChanged = true
 	}
 	if patch.ProxySubCron != nil {
 		expr := strings.TrimSpace(*patch.ProxySubCron)
@@ -192,7 +202,8 @@ func handleZenConfigUpdate(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
-		next.ProxySubCron = expr
+		poolNext.SubCron = expr
+		poolChanged = true
 	}
 	if patch.MaxConcurrency != nil && *patch.MaxConcurrency > 0 {
 		next.MaxConcurrency = *patch.MaxConcurrency
@@ -273,7 +284,10 @@ func handleZenConfigUpdate(w http.ResponseWriter, r *http.Request) {
 		next.Compaction = base
 	}
 	setZenConfig(next)
-	writeAPI(w, http.StatusOK, apiResponse{Success: true, Data: getZenConfig()})
+	if poolChanged {
+		setProxyPool(&poolNext)
+	}
+	writeAPI(w, http.StatusOK, apiResponse{Success: true, Data: zenConfigPayload()})
 }
 
 // GET /admin/api/opencode/models — 只返回免费模型

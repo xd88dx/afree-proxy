@@ -206,6 +206,28 @@ func (a *traeAgg) chunk(delta map[string]any, finish any) {
 	a.buf.WriteString("\n\n")
 }
 
+// traeStrategy 返回 Trae 的选号策略。优先级（高 → 低）：
+//  1. TRAE_STRATEGY 环境变量（Trae 独立策略，显式设置即覆盖）
+//  2. 面板「Selection strategy」（trae.Config.Selection）
+//  3. 全局账号池策略 proxyConfig.Strategy（POOL_STRATEGY，默认 round_robin）
+//
+// 取值 round_robin / fill / random / credit-priority。credit-priority 是
+// Trae 独有能力（额度余量多者优先），其它平台没有对应语义。
+func traeStrategy() string {
+	if s := strings.TrimSpace(envStr("TRAE_STRATEGY")); s != "" {
+		switch s {
+		case "round_robin", "fill", "random", "credit-priority":
+			return s
+		default:
+			log.Printf("invalid TRAE_STRATEGY %q, ignored (round_robin / fill / random / credit-priority)", s)
+		}
+	}
+	if s := strings.TrimSpace(trae.Get().Selection); s != "" {
+		return s
+	}
+	return getProxyConfig().Strategy
+}
+
 // aggregateTraeSSE 运行一次 trae.Chat 并把事件流翻译成完整 OpenAI SSE 字节。
 // 流中途断开/收到 error 事件：返回已生成部分（无 [DONE]，缓冲层据此重试）；
 // 上游在首字节前失败：返回 err。usage 随返回值带回（记账用）。
@@ -213,7 +235,7 @@ func aggregateTraeSSE(ctx context.Context, params map[string]any, m trae.Model) 
 	stream, acc, err := trae.Chat(ctx, trae.ChatOpts{
 		Model:         m,
 		Params:        params,
-		Strategy:      getProxyConfig().Strategy,
+		Strategy:      traeStrategy(),
 		BoundRoutable: traeBoundRoutable,
 	})
 	if err != nil {
@@ -281,7 +303,7 @@ func aggregateTraeCompletion(ctx context.Context, params map[string]any, m trae.
 	stream, acc, err := trae.Chat(ctx, trae.ChatOpts{
 		Model:         m,
 		Params:        params,
-		Strategy:      getProxyConfig().Strategy,
+		Strategy:      traeStrategy(),
 		BoundRoutable: traeBoundRoutable,
 	})
 	if err != nil {

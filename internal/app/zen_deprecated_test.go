@@ -201,7 +201,7 @@ func setupZenDepTest(t *testing.T, upstream *httptest.Server) {
 	cfgCopy := *savedCfg
 	cfgCopy.BaseURL = upstream.URL
 	cfgCopy.Keys = []string{"sk-dep-test"}
-	cfgCopy.Proxies = nil
+	clearTestProxyPool(t)
 	cfgCopy.Retries = 0
 	setZenConfig(&cfgCopy)
 	t.Cleanup(func() { setZenConfig(savedCfg) })

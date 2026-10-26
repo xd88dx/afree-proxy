@@ -302,22 +302,9 @@ type zenCompactConfig struct {
 }
 
 type zenConfigData struct {
-	// OpenCode 上游常开（无独立启停开关）。代理池的使用由 ZenUseProxies
-	// 控制（代理池页下拉），缺省 = 代理列表非空即走池。
-	ZenUseProxies *bool `json:"zenUseProxies,omitempty"`
-	// WorkBuddy 同理：未绑定代理的账号是否走共享代理池，
-	// 缺省 = 代理列表非空即走池。
-	WorkbuddyUseProxies *bool            `json:"workbuddyUseProxies,omitempty"`
 	Key                 string           `json:"key"`            // 兼容字段：始终等于 Keys[0]（旧版单 key 读取用）
 	Keys                []string         `json:"keys,omitempty"` // zen 多 key 池，请求按 round-robin 轮转
 	BaseURL             string           `json:"baseURL"`
-	Proxies             []string         `json:"proxies"`        // http(s)/socks5 代理,轮询出口
-	ProxyStrategy       string           `json:"proxyStrategy"`  // round_robin / random / fill
-	// 代理订阅（proxy_subscription.go）：ProxySubURL 非空时按 ProxySubCron
-	// （5 字段分钟级 cron，空 = 不调度）定时拉取订阅并整池替换 Proxies；
-	// 拉取文本与面板"代理列表"走同一处理链（parseProxyLine + validateProxyList）。
-	ProxySubURL  string `json:"proxySubURL,omitempty"`
-	ProxySubCron string `json:"proxySubCron,omitempty"`
 	MaxConcurrency      int              `json:"maxConcurrency"` // zen 上游最大并发,防 worker 瞬时超限,默认 8
 	Retries             int              `json:"retries"`        // 限流/网络错误重试次数,默认 3
 	Compaction          zenCompactConfig `json:"compaction"`
@@ -344,8 +331,8 @@ type zenConfigData struct {
 	// 不限）。同样只约束自动分配路径；一键代理每代理至多用一次，实际生效场景
 	// 是延迟重排的供给容量（超限的既有绑定不冻结，由重排逐步消化）。
 	ProxyBindCaps map[string]int `json:"proxyBindCaps,omitempty"`
-	// zen key 的代理绑定表：key 明文 -> 主/备用代理。与 Keys 分开存 —— env
-	// ZEN_KEYS 注入的 key 无需改动即获得"未绑定走全局规则"的兜底语义。
+	// zen key 的代理绑定表：key 明文 -> 主/备用代理。与 Keys 分开存 —— 未登记
+	// 绑定的 key 天然获得"未绑定走全局规则"的兜底语义。
 	// 面板永不回传本表（key 明文不出口），绑定随 keyStates 按索引下发。
 	KeyBindings map[string]zenProxyBinding `json:"keyBindings,omitempty"`
 	// zen key 的路由参与表：key 明文 -> 是否进入请求轮转（面板"启用"列勾选）。
@@ -552,7 +539,6 @@ func defaultZenConfig() *zenConfigData {
 		Key:             "public",
 		Keys:            []string{"public"},
 		BaseURL:         zenAPIBase,
-		ProxyStrategy:   "round_robin",
 		MaxConcurrency:  8,
 		Retries:         3,
 		// 会话轮换周期：缺少该键的旧配置文件保持此默认（2 小时）。
@@ -654,29 +640,15 @@ func normalizeZenKeys(cfg *zenConfigData) {
 	}
 	cfg.Keys = cleaned
 	cfg.Key = cleaned[0]
-	// 旧版别名表迁移：别名并入代理行（#fragment 随行持久化），随后清空。
-	// 此后别名就是代理行的一部分，随行保存/回显/编辑，无需单独同步。
-	if len(cfg.ProxyAliases) > 0 {
-		for u, alias := range cfg.ProxyAliases {
-			if alias == "" || strings.Contains(u, "#") {
-				continue
-			}
-			for i, p := range cfg.Proxies {
-				if p == u {
-					cfg.Proxies[i] = p + "#" + alias
-				}
-			}
-		}
-		cfg.ProxyAliases = nil
-	}
+	// 旧版别名表（ProxyAliases）的折叠已随代理池拆出，见
+	// proxy_pool_config.go 的 foldLegacyProxyAliases：代理行不再属于 zen 配置，
+	// 这里不能再去改它。本字段保留只为读取旧配置文件。
 }
 
 func loadZenConfig() *zenConfigData {
 	path := kit.ResolveDataPath(".zen-config.json")
 	cfg := defaultZenConfig()
-	fileExists := false
 	if data, err := os.ReadFile(path); err == nil {
-		fileExists = true
 		if err := json.Unmarshal(data, cfg); err != nil {
 			// 损坏配置改名留档，避免下次保存把可手工恢复的原文覆盖掉
 			stamp := time.Now().Format("20060102-150405")
@@ -684,22 +656,6 @@ func loadZenConfig() *zenConfigData {
 				log.Printf("zen config is corrupt JSON; moved to %s.corrupt-%s", path, stamp)
 			}
 			log.Printf("zen config parse failed: %v", err)
-		}
-	}
-	// ZEN_KEYS 环境变量：配置为空（无文件或只有默认 public key）时注入多 key 池
-	if envKeys := envList("ZEN_KEYS"); len(envKeys) > 0 {
-		if !fileExists || len(cfg.Keys) == 0 || (len(cfg.Keys) == 1 && cfg.Keys[0] == "public") {
-			cfg.Keys = envKeys
-			// 注入同样算"新增身份"：默认不参与路由，需在面板勾选启用（三平台统一口径）。
-			if cfg.KeyRoutingEnabled == nil {
-				cfg.KeyRoutingEnabled = map[string]bool{}
-			}
-			for _, k := range envKeys {
-				if k != "" && k != "public" {
-					cfg.KeyRoutingEnabled[k] = false
-				}
-			}
-			log.Printf("zen keys seeded from ZEN_KEYS env: %d key(s) (routing disabled by default)", len(envKeys))
 		}
 	}
 	// ZEN_SESSION_ROTATE_MINUTES 覆盖会话轮换周期（分钟，0=关闭）。
@@ -750,7 +706,6 @@ func getZenConfig() *zenConfigData {
 func setZenConfig(c *zenConfigData) {
 	normalizeZenKeys(c)
 	zenConfigMu.Lock()
-	old := zenConfig
 	zenConfig = c
 	zenConfigMu.Unlock()
 	saveZenConfig()
@@ -784,43 +739,6 @@ func setZenConfig(c *zenConfigData) {
 			c.KeyRoutingEnabled = nil
 		}
 	}
-	// 代理列表变化时: 索引会位移,按索引记录的冷却整体失效,直接清空;
-	// 同时驱逐已移除代理的钉定客户端,释放其空闲连接
-	if proxiesChanged(old.Proxies, c.Proxies) {
-		zenProxyCooldownsMu.Lock()
-		zenProxyCooldowns = map[int]time.Time{}
-		zenProxyCooldownsMu.Unlock()
-		// 在线率统计按 URL 记账,但口径以"本次编辑"为界:用户决策是编辑即
-		// 全部清零,不做跨编辑的键对齐。同步落盘空文件,崩溃后旧统计不复活。
-		resetProxyHealthStats()
-	}
-	validProxy := map[string]bool{"": true}
-	for _, p := range c.Proxies {
-		validProxy[p] = true
-	}
-	proxyClientCacheMu.Lock()
-	for u, cl := range proxyClientCache {
-		if !validProxy[u] {
-			delete(proxyClientCache, u)
-			if cl != nil {
-				cl.CloseIdleConnections()
-			}
-		}
-	}
-	proxyClientCacheMu.Unlock()
-}
-
-// proxiesChanged 按顺序比较两个代理列表是否不同（数量或任一位置变化都算）。
-func proxiesChanged(a, b []string) bool {
-	if len(a) != len(b) {
-		return true
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return true
-		}
-	}
-	return false
 }
 
 // validateProxyList 校验代理列表格式: 支持 http/https/socks5/socks5h, 必须包含 host:port。

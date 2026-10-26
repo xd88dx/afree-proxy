@@ -94,7 +94,7 @@ func zenProxyAvailable(idx int) bool {
 // 时刻用 RFC3339（带时区）而不是服务器格式化的 "15:04:05"：面板按浏览器本地
 // 时区渲染，服务器格式化只会给出容器时区（UTC）的读数，用户看到的是错的钟点。
 func zenProxyCooldownStatus() map[string]string {
-	cfg := getZenConfig()
+	cfg := getProxyPool()
 	zenProxyCooldownsMu.Lock()
 	defer zenProxyCooldownsMu.Unlock()
 	out := map[string]string{}
@@ -133,13 +133,13 @@ func zenProxyCooldownUntil(raw string) time.Time {
 // 由调用方在每次上游尝试时显式调用 —— 请求级轮转（round_robin 一比一）,
 // 不依赖连接复用时机。
 func pickUpstreamProxy() (string, int) {
-	cfg := getZenConfig()
+	cfg := getProxyPool()
 	n := len(cfg.Proxies)
 	if n == 0 {
 		return "", -1
 	}
 	idx := int(zenProxyCount.Add(1)-1) % n
-	switch cfg.ProxyStrategy {
+	switch cfg.Strategy {
 	case "random":
 		idx = int(time.Now().UnixNano() % int64(n))
 	case "fill":
