@@ -760,6 +760,33 @@ func TestProxyAliasLivesInPoolLine(t *testing.T) {
 	}
 }
 
+// config/update 是全量替换语义：重建 next 时按 key 明文存的代理绑定表必须
+// 随 cur 保留——漏拷 = 任意一次面板保存都会把 zen key 的主/备出口绑定整体
+// 抹掉，隔离退化成走共享池（2026-10-26 审查发现的回归，本测试锁死）。
+func TestZenConfigUpdatePreservesKeyBindings(t *testing.T) {
+	setupBindingTest(t, &zenTestConfig{
+		Keys: []string{"sk-1", "sk-2"},
+		KeyBindings: map[string]proxyBinding{
+			"sk-1": {Main: "socks5://u:p@1.2.3.4:1080", Backup: "socks5://u:p@5.6.7.8:1093"},
+		},
+		MaxConcurrency: 8,
+	})
+	req := httptest.NewRequest("POST", "/admin/api/opencode/config/update", strings.NewReader(`{"maxConcurrency":4}`))
+	rec := httptest.NewRecorder()
+	handleZenConfigUpdate(rec, req)
+	if rec.Code != 200 {
+		t.Fatalf("update failed: %d %s", rec.Code, rec.Body.String())
+	}
+	cfg := getZenConfig()
+	if cfg.MaxConcurrency != 4 {
+		t.Fatalf("maxConcurrency = %d, want 4", cfg.MaxConcurrency)
+	}
+	b, ok := cfg.KeyBindings["sk-1"]
+	if !ok || b.Main != "socks5://u:p@1.2.3.4:1080" || b.Backup != "socks5://u:p@5.6.7.8:1093" {
+		t.Fatalf("keyBindings must survive config/update, got %+v", cfg.KeyBindings)
+	}
+}
+
 func TestPickZenKeyStrategyUnified(t *testing.T) {
 	setupZenSessionTest(t)
 	setupBindingTest(t, &zenTestConfig{

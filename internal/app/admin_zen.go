@@ -26,8 +26,8 @@ func handleZenConfig(w http.ResponseWriter, r *http.Request) {
 }
 
 // zenConfigPayload 是面板「OpenCode + 代理池」页的合并视图。代理池配置已拆到
-// .proxy-pool.json（proxy_pool_config.go），但面板契约的 JSON 键名保持不变，
-// 前端无需改动。
+// proxy-config.json 的出口池段（proxy_pool_config.go），但面板契约的 JSON 键名
+// 保持不变，前端无需改动。
 func zenConfigPayload() map[string]any {
 	cfg := getZenConfig()
 	binding := getProxyBindingConfig()
@@ -78,8 +78,9 @@ func handleZenConfigUpdate(w http.ResponseWriter, r *http.Request) {
 	defer r.Body.Close()
 
 	cur := getZenConfig()
-	// 代理池字段走独立配置（.proxy-pool.json）；只有本次提交真的带了代理池
-	// 字段才回写，避免每次保存 zen 配置都无谓重写代理池文件。
+	// 代理池字段走独立配置（proxy-config.json 的出口池段，proxy_pool_config.go）；
+	// 只有本次提交真的带了代理池字段才回写，避免每次保存 zen 配置都无谓重写
+	// 代理文件。
 	poolNext := *getProxyPool()
 	poolChanged := false
 	// 隔离/绑定段同样独立落盘（proxy-config.json），只在本次真的带了相关字段
@@ -123,6 +124,10 @@ func handleZenConfigUpdate(w http.ResponseWriter, r *http.Request) {
 		BaseURL:        cur.BaseURL,
 		MaxConcurrency: cur.MaxConcurrency,
 		Retries:        cur.Retries,
+		// KeyBindings 必须随 next 保留：config/update 是全量替换语义，漏拷会把
+		// 每个 key 的主/备出口绑定整体清掉——绑定按 key 明文存，是代理隔离的
+		// 载体，丢了隔离就退化成走共享池。
+		KeyBindings: cur.KeyBindings,
 		// KeyRoutingEnabled 必须随 next 保留：config/update 是全量替换语义，
 		// 漏拷会把面板勾选的路由参与表整体清掉（缺项 = 全部参与）。
 		KeyRoutingEnabled:    cur.KeyRoutingEnabled,
