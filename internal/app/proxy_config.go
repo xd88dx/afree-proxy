@@ -64,6 +64,13 @@ type proxyConfigFileData struct {
 
 	// ---- WorkBuddy 账号出口绑定 ----
 	WorkbuddyBindings map[string]workbuddyProxyBinding `json:"workbuddyBindings,omitempty"`
+
+	// ---- zen key 出口自动钉定（egress.go，上游 400736b）----
+	// 键是 namespace+身份哈希（zen key 只存 sha256 前 8 字节 hex，不含明文）。
+	// 原上游独立落 .egress-bindings.json；本仓并入 proxy-config.json 的
+	// egress 段——它就是代理域的数据，与隔离/绑定段同文件同锁管理，旧文件
+	// 首启一次性迁入（见 migrateProxyConfigFileLocked）。
+	EgressBindings map[string]egressBinding `json:"egressBindings,omitempty"`
 }
 
 var (
@@ -210,6 +217,15 @@ func migrateProxyConfigFileLocked() *proxyConfigFileData {
 			if moved {
 				sections++
 			}
+		}
+	}
+
+	// zen key 出口自动钉定（旧版独立 .egress-bindings.json，2026-10-27 并入）
+	if raw, err := os.ReadFile(kit.ResolveDataPath(".egress-bindings.json")); err == nil {
+		var old map[string]egressBinding
+		if json.Unmarshal(raw, &old) == nil && len(old) > 0 {
+			f.EgressBindings = old
+			sections++
 		}
 	}
 

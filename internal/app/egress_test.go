@@ -1,6 +1,7 @@
 package app
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -28,8 +29,6 @@ func setupEgressTest(t *testing.T, proxies []string) {
 	egressMu.Lock()
 	egressBindings = map[string]egressBinding{}
 	egressLoaded = true
-	egressPath = ""
-	egressSaveBlocked = false
 	egressMu.Unlock()
 	zenKeyMu.Lock()
 	zenKeyCool = map[string]time.Time{}
@@ -220,13 +219,19 @@ func TestEgressBindingsPersistWithoutPlaintextKeys(t *testing.T) {
 	setEgressKeys(t, []string{secret, "sk-b"})
 	want, _ := egressProxyForZen(secret)
 
-	path := egressBindingFile()
-	data, err := os.ReadFile(path)
+	// 绑定表现落在 proxy-config.json 的 egressBindings 段
+	proxyFileMu.Lock()
+	sec := loadProxyConfigFileLocked().EgressBindings
+	proxyFileMu.Unlock()
+	if len(sec) == 0 {
+		t.Fatal("egress bindings section not written to proxy-config.json")
+	}
+	data, err := json.Marshal(sec)
 	if err != nil {
-		t.Fatalf("binding file not written: %v", err)
+		t.Fatal(err)
 	}
 	if containsBytes(data, []byte(secret)) {
-		t.Fatalf("binding file leaks the key in plaintext: %s", data)
+		t.Fatalf("binding table leaks the key in plaintext: %s", data)
 	}
 
 	// 模拟重启：清空内存，从磁盘重新加载

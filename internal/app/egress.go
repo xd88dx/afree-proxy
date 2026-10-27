@@ -3,15 +3,10 @@ package app
 import (
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
-	"log"
-	"os"
 	"strings"
 	"sync"
 	"time"
-
-	"afree-proxy/internal/kit"
 )
 
 // ============ egress binding: one proxy per upstream identity ============
@@ -28,10 +23,12 @@ import (
 // zen 与 cline 是两个独立 namespace：同一个代理同时服务一个 zen key 和一个
 // cline 账号是安全的，两个上游各自只看到属于自己那一个身份。
 //
-// 持久化：DATA_DIR/.egress-bindings.json（0600，tmp+rename）。绑定必须跨
-// 重启保留——每次启动重新分配等于让 key 换 IP，正好重新触发上游告警。
-// zen key 在文件里只以 sha256 前 8 字节的 hex 出现，所以绑定表不含明文凭据，
-// 可以安全地贴进 issue。cline 账号 ID 是 UUID 而非凭据，保持可读以便排查。
+// 持久化：proxy-config.json 的 egressBindings 段（2026-10-27 从独立的
+// .egress-bindings.json 并入——它就是代理域的数据；旧文件首启一次性迁入，
+// 见 proxy_config.go 的迁移逻辑）。绑定必须跨重启保留——每次启动重新分配
+// 等于让 key 换 IP，正好重新触发上游告警。zen key 在表里只以 sha256 前
+// 8 字节的 hex 出现，所以不含明文凭据，可以安全地贴进 issue。cline 账号
+// ID 是 UUID 而非凭据，保持可读以便排查。
 
 const (
 	egressNSZen   = "zen:"
@@ -48,19 +45,10 @@ type egressBinding struct {
 func boolPtr(b bool) *bool { return &b }
 
 var (
-	egressMu          sync.Mutex
-	egressBindings    = map[string]egressBinding{}
-	egressLoaded      bool
-	egressSaveBlocked bool
-	egressPath        string
+	egressMu       sync.Mutex
+	egressBindings = map[string]egressBinding{}
+	egressLoaded   bool
 )
-
-func egressBindingFile() string {
-	if egressPath == "" {
-		egressPath = kit.ResolveDataPath(".egress-bindings.json")
-	}
-	return egressPath
-}
 
 // egressID 绑定表的键：namespace + 身份。zen key 是凭据，只写入 sha256
 // 前 8 字节的 hex（16 字符），绑定表因此不含明文密钥。cline 账号 ID 不是
@@ -80,44 +68,24 @@ func loadEgressBindings() {
 		return
 	}
 	egressLoaded = true
-	data, err := os.ReadFile(egressBindingFile())
-	if err != nil {
-		// ENOENT 是首启正常路径。其它错误要让运维看见，但不能落盘覆盖——
-		// 与 .zen-sessions.json 同一条纪律。
-		if !os.IsNotExist(err) {
-			log.Printf("egress bindings read failed (%s): %v — refusing to persist this run", egressBindingFile(), err)
-			egressSaveBlocked = true
-		}
-		return
-	}
-	var m map[string]egressBinding
-	if err := json.Unmarshal(data, &m); err != nil {
-		_ = os.Rename(egressBindingFile(), egressBindingFile()+".corrupt")
-		log.Printf("egress bindings parse failed, starting fresh (backup: %s.corrupt): %v", egressBindingFile(), err)
-		return
-	}
-	if m != nil {
+	proxyFileMu.Lock()
+	m := loadProxyConfigFileLocked().EgressBindings
+	proxyFileMu.Unlock()
+	if len(m) > 0 {
 		egressBindings = m
 	}
 }
 
-// saveEgressLocked 持久化绑定表（调用方持有 egressMu）。
+// saveEgressLocked 持久化绑定表（调用方持有 egressMu；锁序 egressMu 在外、
+// proxyFileMu 在内，与代理域其它段一致）。
 func saveEgressLocked() {
-	if egressSaveBlocked {
-		return
+	next := make(map[string]egressBinding, len(egressBindings))
+	for k, v := range egressBindings {
+		next[k] = v
 	}
-	data, err := json.MarshalIndent(egressBindings, "", "  ")
-	if err != nil {
-		return
-	}
-	tmp := egressBindingFile() + ".tmp"
-	if err := os.WriteFile(tmp, data, 0600); err != nil {
-		log.Printf("egress bindings save failed: %v", err)
-		return
-	}
-	if err := os.Rename(tmp, egressBindingFile()); err != nil {
-		log.Printf("egress bindings save failed (rename): %v", err)
-	}
+	mutateProxyConfigFile(func(f *proxyConfigFileData) {
+		f.EgressBindings = next
+	})
 }
 
 // reconcileEgressBindings 按当前 key/账号/代理列表重算绑定并落盘。
