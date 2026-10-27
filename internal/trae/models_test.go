@@ -85,6 +85,10 @@ func TestFetchSoloModelConfigsFunctionScope(t *testing.T) {
 			{"config_name":"glm-5.2","display_name":"GLM-5.2",
 			 "model_detail_list":[{"model_name":"glm-5.2__max"},{"model_name":"glm-5.2__dev"}],
 			 "display_config":{"context_window_tokens":200000}},
+			{"config_name":"obj-tokens","display_name":"ObjTokens",
+			 "context_window_tokens":{"dev":256000,"max":1000000}},
+			{"config_name":"obj-dev-only","display_name":"ObjDevOnly",
+			 "context_window_tokens":{"dev":131072}},
 			{"config_name":"x","model_name":"x__dev","display_name":"X"},
 			{"config_name":"custom_model_1M_text","usage":"custom_model_1M_text"},
 			{"config_name":"computer_use_subagent"},
@@ -104,7 +108,7 @@ func TestFetchSoloModelConfigsFunctionScope(t *testing.T) {
 	if gotUID != "uid-1" {
 		t.Fatalf("X-Uid = %q", gotUID)
 	}
-	if len(got) != 2 {
+	if len(got) != 4 {
 		t.Fatalf("entries = %d (%v)", len(got), got)
 	}
 	glm := got["glm-5.2"]
@@ -116,6 +120,14 @@ func TestFetchSoloModelConfigsFunctionScope(t *testing.T) {
 	}
 	if glm.Context != 200000 {
 		t.Fatalf("context = %d", glm.Context)
+	}
+	// 2026-10-27 上游新形态：context_window_tokens 为 {"dev":N,"max":M} 对象、
+	// 挪到条目顶层——取各档最大值；只有 dev 时即 dev。
+	if got["obj-tokens"].Context != 1000000 {
+		t.Fatalf("object-shaped context = %d, want 1000000", got["obj-tokens"].Context)
+	}
+	if got["obj-dev-only"].Context != 131072 {
+		t.Fatalf("dev-only object context = %d, want 131072", got["obj-dev-only"].Context)
 	}
 	if got["x"].Function != "solo_agent" || got["x"].RawName != "x__dev" {
 		t.Fatalf("model_name entry = %+v", got["x"])

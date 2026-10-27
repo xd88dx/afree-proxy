@@ -252,7 +252,10 @@ func fetchSoloModelConfigs(base, token, userID, function string) (map[string]Mod
 			ModelName   string `json:"model_name"`
 			DisplayName string `json:"display_name"`
 			RawFunction string `json:"raw_chat_function"`
-			DisplayCfg  struct {
+			// context_window_tokens 在条目顶层（2026-10-27 实测：{"dev":N,"max":M}
+			// 对象形态；旧形态是 display_config 内的整数，两处都读、取大者）。
+			ContextTokensObj any `json:"context_window_tokens"`
+			DisplayCfg       struct {
 				ContextWindow int `json:"context_window_size"`
 				ContextTokens int `json:"context_window_tokens"`
 				MaxTokens     int `json:"prompt_max_tokens"`
@@ -264,13 +267,14 @@ func fetchSoloModelConfigs(base, token, userID, function string) (map[string]Mod
 		} `json:"config_info_list"`
 		Data struct {
 			ConfigInfoList []struct {
-				Usage       string `json:"usage"`
-				ConfigName  string `json:"config_name"`
-				Name        string `json:"name"`
-				ModelName   string `json:"model_name"`
-				DisplayName string `json:"display_name"`
-				RawFunction string `json:"raw_chat_function"`
-				DisplayCfg  struct {
+				Usage            string `json:"usage"`
+				ConfigName       string `json:"config_name"`
+				Name             string `json:"name"`
+				ModelName        string `json:"model_name"`
+				DisplayName      string `json:"display_name"`
+				RawFunction      string `json:"raw_chat_function"`
+				ContextTokensObj any    `json:"context_window_tokens"`
+				DisplayCfg       struct {
 					ContextWindow int `json:"context_window_size"`
 					ContextTokens int `json:"context_window_tokens"`
 					MaxTokens     int `json:"prompt_max_tokens"`
@@ -325,7 +329,7 @@ func fetchSoloModelConfigs(base, token, userID, function string) (map[string]Mod
 			Name:     firstNonEmpty(e.DisplayName, e.Name),
 			RawName:  raw,
 			Function: firstNonEmpty(e.RawFunction, function),
-			Context:  maxInt(e.DisplayCfg.ContextWindow, e.DisplayCfg.ContextTokens, e.DisplayCfg.MaxTokens),
+			Context:  maxInt(e.DisplayCfg.ContextWindow, e.DisplayCfg.ContextTokens, e.DisplayCfg.MaxTokens, anyToInt(e.ContextTokensObj)),
 			Native:   true,
 		}
 		if out[id].ID == "" || m.RawName != "" {
@@ -505,6 +509,17 @@ func anyToInt(v any) int {
 	case string:
 		i, _ := strconv.Atoi(strings.TrimSpace(n))
 		return i
+	case map[string]any:
+		// 2026-10-27 实测（原始报文核对）：context_window_tokens 已从数字改为
+		// {"dev":256000,"max":256000} 形态——取各档最大值。缺 max/max=0 时
+		// 即 dev 值；两者都没有则 0（上游没给，交给别处兜底）。
+		best := 0
+		for _, val := range n {
+			if x := anyToInt(val); x > best {
+				best = x
+			}
+		}
+		return best
 	}
 	return 0
 }
