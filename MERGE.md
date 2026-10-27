@@ -17,7 +17,21 @@ WorkBuddy 一栏的基线同时登记在 `scripts/workbuddy-vendor-baseline.json
 
 ## TreaWork
 
-本次未涉及上游同步。
+上游:`autumnsentiment/Trae2api-cn`(Trae CN / Trae Solo CN 模型反代,Python,MIT)。**这条线不是 vendor/merge 关系**:上游是 Python 全栈,本地 `internal/trae/` + `internal/app/trae.go` 是 Go 重写,行为跟随上游协议;唯一逐行移植的产物是内嵌的本机授权助手 `web_login.py`(`internal/trae/helper_script.go`),只有它需要跟上游比对。2026-10-27 的 cline-proxy 合并未涉及本线。
+
+### 2026-10-27 — v1.0.9 (db189e2) → v1.0.10 (bb7b659)
+
+- 基线:上游最新 tag `v1.0.10` = `bb7b659`(2026-10-23,`fix: align account entitlement concurrency and model capabilities`),登记于 `scripts/trae-helper-baseline.json`
+- 比对范围:`internal/trae/helper_script.go` 内嵌 `web_login.py` vs 上游 `web_login.py`
+- 比对前差异(2 处,均为注释/文档字符串,功能代码无差异):用法行 `[--relay http://<relay>]` 落后于上游 `[--relay http://<relay-host>:<port>]`;缺 `# ---- 部署默认值` 一行注释
+- 处理:以上游 `web_login.py` 重建内嵌模板,仅把 `DEFAULT_RELAY_URL = "http://127.0.0.1:8000"` 换成 `__RELAY_URL__` 占位符、按 Go raw string 规则转义反引号;结果为 line-identical(482 行)
+- 判据(可复现):`python scripts/check_trae_helper.py --upstream-dir <上游解包目录>` → exit 0;负向测试(向上游追加一行注释)会 exit 1 并打印 unified diff
+- 上游取包:`curl -sSL -x socks5h://127.0.0.1:10808 -o /tmp/trae-up.tar.gz https://codeload.github.com/autumnsentiment/Trae2api-cn/tar.gz/refs/heads/main`(该代理链上 `git clone` 常被 TLS 中断,tar 包稳)
+- Go 侧行为核对(无机械基线,按上游 release notes 抽查 v1.0.9 / v1.0.10 要点):
+  - 已具备:空响应不伪装成功(`internal/app/trae.go:508-512`,对应上游"空流/仅结束帧/纯空白返回明确错误");9074 设备维度换 ID + 代际递增(`internal/trae/checkin.go:20-27`);容量/限流码族 3004 / 4008 / 4011 / 429(`internal/trae/client.go:1177`)
+  - **已知架构差异(非缺陷,未跟进)**:上游 v1.0.10 把并发槽做成账号级 entitlement 池(`quota.solo_agent_parallel_limit` + reservation 幂等回收、按账号积分优先调度);本地是全局信号量 `MaxConcurrency`(默认 8,`client.go:1528-1577`)+ 账号 pick 策略(`credit_priority` / `round_robin`,`pool.go:24`)。目标相同(不超上游容量)、粒度不同;要对齐需重写调度层,当前未列计划
+  - 未逐条核对项:上游 v1.0.9 的长历史增量前缀哈希、图片压缩跳过、Remote 首错误事件保留等性能与边界优化——本地 Go 实现路径不同,无法机械比对,仅在出现对应症状时回看
+- 验证:`go build ./...` OK、`go test ./internal/trae/ -count=1` ok
 
 ## WorkBuddy
 

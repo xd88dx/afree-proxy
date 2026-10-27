@@ -1,0 +1,9 @@
+{
+  "repo": "https://github.com/autumnsentiment/Trae2api-cn",
+  "version": "v1.0.10",
+  "commit": "bb7b659bdad50ecec9f5eb7686a265d98984b387",
+  "short": "bb7b659",
+  "date": "2026-10-23",
+  "note": "上游最新 tag/HEAD(截至 2026-10-27)。比对对象只有 internal/trae/helper_script.go 内嵌的 web_login.py;Trae 线其余代码是本地 Go 实现,不随上游同步。",
+  "compare_cmd": "python scripts/check_trae_helper.py --upstream-dir <上游解包目录>"
+}

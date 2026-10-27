@@ -14,7 +14,7 @@ const helperScriptTpl = `#!/usr/bin/env python3
 """web_login.py - Trae CN Relay 本地授权回调监听器
 
 使用方式:
-  python web_login.py [--relay http://<relay>] [--port 8765]
+  python web_login.py [--relay http://<relay-host>:<port>] [--port 8765]
 
 --relay 的取值优先级（一般不需要手动填写）:
   1. 命令行 --relay
@@ -38,6 +38,7 @@ import uuid
 import webbrowser
 from pathlib import Path
 
+# ---- 部署默认值（由中转站下载接口按当前部署自动生成，手动运行也可用 --relay 覆盖）
 DEFAULT_RELAY_URL = "__RELAY_URL__"
 DEFAULT_LISTENER_PORT = 8765
 DEFAULT_CLIENT_ID = "ono9krqynydwx5"

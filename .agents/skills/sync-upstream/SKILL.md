@@ -1,20 +1,20 @@
 ---
 name: sync-upstream
-description: 同步 afree-proxy 两条上游线的完整流程与陷阱清单——fork 上游 foxy1402/cline-proxy 的 git merge 线、参考项目 workbuddy2api-panel 的 vendor 三方合并线。凡是要"同步上游/sync upstream/合并上游更新/GitHub 提示 behind/上游有新提交/更新 workbuddy vendor"时使用，即使用户只说了"更新一下"。
+description: 同步 afree-proxy 三条上游线的完整流程与陷阱清单——fork 上游 foxy1402/cline-proxy 的 git merge 线（含 Cline 与 OpenCode 两个平台）、参考项目 workbuddy2api-panel 的 vendor 三方合并线、Trae 上游 Trae2api-cn 的内嵌授权助手比对线。凡是要"同步上游/sync upstream/合并上游更新/GitHub 提示 behind/上游有新提交/更新 workbuddy vendor/核对 Trae 上游"时使用，即使用户只说了"更新一下"。
 ---
 
 # 上游同步配方
 
-本仓有**两条独立的同步线**，先分清用户说的是哪条：
+本仓有**三条独立的同步线**，先分清用户说的是哪条：
 
-| | fork 上游线 | vendor 参考项目线 |
-|---|---|---|
-| 上游 | `foxy1402/cline-proxy`（GitHub，本仓 main 的 fork 来源） | `misakano7545/workbuddy2api-panel`（本地克隆 `D:\下载\Github\workbuddy2api-panel`；曾误记为 `linguo2625469`，那是平行血统，勿用） |
-| 同步对象 | 整个仓库（网关/zen/cline 核心） | 仅 `internal/workbuddy/` vendor 树 |
-| 方式 | `git merge` 上游提交（历史相连） | `scripts/sync_workbuddy.py` 三方合并（vendor 产物） |
-| 细节 | references/cline-proxy-merge.md | references/workbuddy-vendor.md |
+| | fork 上游线 | vendor 参考项目线 | Trae 比对线 |
+|---|---|---|---|
+| 上游 | `foxy1402/cline-proxy`（GitHub，本仓 main 的 fork 来源） | `misakano7545/workbuddy2api-panel`（本地克隆 `D:\下载\Github\workbuddy2api-panel`；曾误记为 `linguo2625469`，那是平行血统，勿用） | `autumnsentiment/Trae2api-cn`（Python，本地为 Go 重写，无代码可 merge） |
+| 同步对象 | 整个仓库（网关/zen/cline 核心） | 仅 `internal/workbuddy/` vendor 树 | 仅 `internal/trae/helper_script.go` 内嵌的 `web_login.py` |
+| 方式 | `git merge` 上游提交（历史相连） | `scripts/sync_workbuddy.py` 三方合并（vendor 产物） | `scripts/check_trae_helper.py` 逐行比对（不合并） |
+| 细节 | references/cline-proxy-merge.md | references/workbuddy-vendor.md | 见 §2 Trae 小节 |
 
-判别口诀：提到 cline/zen/behind/GitHub 提示 → fork 上游线；提到 WorkBuddy 面板/wb → vendor 线。两边都要更新时先做 fork 线（改动大、冲突多），再做 vendor 线。
+判别口诀：提到 cline/zen/behind/GitHub 提示 → fork 上游线；提到 WorkBuddy 面板/wb → vendor 线；提到 Trae/TraeWork/签到/9074/web_login → Trae 比对线。多条线都要更新时先做 fork 线（改动大、冲突多），再做 vendor 线，最后做 Trae 比对。
 
 ## 1. 公共铁律
 
@@ -25,8 +25,9 @@ description: 同步 afree-proxy 两条上游线的完整流程与陷阱清单—
 5. 提交信息用中文、说明上游哈希与本地适配点；fork 线结束必须 `git push origin main`（不推 GitHub 的 behind 提示不会消除，同步就没生效）。
 6. **收尾必写 `MERGE.md` 台账**（用户 2026-10-27 要求）：仓库根 `MERGE.md` 按 Cline / TreaWork / WorkBuddy / OpenCode 四条线记录同步历史。每次同步在对应线追加一节 `### YYYY-MM-DD — <基线短哈希> → <目标短哈希>`，写明上游仓库与合并方式、基线与目标、吸收项（带原因）、丢弃项（带原因）、本地定制保留清单、验证结果；未涉及的线保留原文并写"本次未涉及上游同步"。历史记录只追加不删改。
    **分节前先判平台归属，写错节等于台账失效**：`foxy1402/cline-proxy` 是**一个上游承载两条平台线**——`zen*.go` / `admin_zen.go` / 面板 `oc*` 字段 / `ZEN_*` 配置 / `internal/kit/http.go`（`DecodeResponse` 只被 `zen.go` 调用）属于 **OpenCode**；Cline 账号池与 `/v1` 通用转发/方言转换属于 **Cline**。判据命令：`git diff --name-only <本地旧HEAD> <merge提交> | grep -iE 'zen|opencode'` 与 `| grep -i cline`，两者只应付出一条线；不要因为上游叫 cline-proxy 就把 zen 改动记在 Cline 下。
+7. **根 `AGENTS.md` 是其他 agent 的唯一自动入口**：`MERGE.md` 和本 skill 都不会被其他 agent 自动加载，所以平台归属表、台账铁律、三条线入口、flaky 不修、本地定制清单、git 纪律这些"必须无条件知道"的规则同时写在根 `AGENTS.md`。改动这些规则时同步更新 `AGENTS.md`，否则下一个 agent 会重犯。
 
-## 2. 两条线各自的入口
+## 2. 三条线各自的入口
 
 **fork 上游线**（merge 冲突多，是体力活）：
 
@@ -50,7 +51,22 @@ python scripts/sync_workbuddy.py --seal     # 冲突清零后登记新基线
 
 脚本前置条件与失败处理见 workbuddy-vendor.md。
 
-## 3. 验证命令（两条线通用）
+**Trae 比对线**（不合并，只核对内嵌脚本）：
+
+```bash
+# 上游是 Python 项目,tar 包比 git clone 稳(该代理链上 clone 常被 TLS 中断)
+curl -sSL -x socks5h://127.0.0.1:10808 -o /tmp/trae-up.tar.gz \
+  https://codeload.github.com/autumnsentiment/Trae2api-cn/tar.gz/refs/heads/main
+mkdir -p /tmp/trae-up && tar xzf /tmp/trae-up.tar.gz -C /tmp/trae-up --strip-components=1
+# 注意:python 是原生程序,不认 /tmp,要传 Windows 路径
+python scripts/check_trae_helper.py --upstream-dir "$(cygpath -w /tmp/trae-up)"
+```
+
+exit 0 = `internal/trae/helper_script.go` 内嵌的 `web_login.py` 与上游逐行一致（仅 `__RELAY_URL__` 占位符差异）；exit 1 打印 unified diff，处理方式是**以上游文件重建内嵌模板**（只替换 `DEFAULT_RELAY_URL` 为 `__RELAY_URL__`、按 Go raw string 规则把反引号转义成 `` ` + "`" + ` ``），不要手工逐行改。升级后同步更新 `scripts/trae-helper-baseline.json` 的 version / commit / date。
+
+Go 侧（`internal/trae/*.go`、`internal/app/trae.go`）**没有可比对基线**——上游全 Python，本地是重写，只能按上游 `docs/release-v*.md` 人工核对协议面，并把"已具备 / 已知架构差异 / 未逐条核对"三类结论写进 `MERGE.md` 的 TreaWork 节。已知差异见台账（本地全局信号量 vs 上游账号级 entitlement 并发池）。
+
+## 3. 验证命令（三条线通用）
 
 ```bash
 MSYS_NO_PATHCONV=1 docker run --rm -v "D:/下载/Github/afree-proxy:/build" -w /build \
@@ -68,3 +84,4 @@ MSYS_NO_PATHCONV=1 docker run --rm -v "D:/下载/Github/afree-proxy:/build" -w /
 
 - fork 线：merge commit 双父（本地 HEAD + 上游哈希）已推送 origin；GitHub 仓库页不再显示 behind；`MERGE.md` 的**对应平台节**（Cline 或 OpenCode，按改动文件归属判定）已追加本次记录。
 - vendor 线：`workbuddy-vendor-baseline.json` 的 commit = 上游 HEAD；脚本手工步骤清单（装配/版本号）已完成；容器验证全绿；`MERGE.md` 的 WorkBuddy 节已追加本次记录。
+- Trae 线：`scripts/trae-helper-baseline.json` 已登记上游最新 tag / commit；`check_trae_helper.py` exit 0；Go 侧按上游 release notes 的核对结论（已具备 / 已知差异 / 未逐条核对）已写入 `MERGE.md` 的 TreaWork 节。
