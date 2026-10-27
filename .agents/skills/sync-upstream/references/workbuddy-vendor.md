@@ -68,3 +68,15 @@ python scripts/sync_workbuddy.py --seal
 
 - 用 `py` 启动器跑（`py scripts/sync_workbuddy.py`）；直接 `python` 可能命中 WindowsApps 存根。
 - 脚本已做 LF 归一（`read_lf`）+ 对 base/theirs 做 `gofmt -w` 对齐（见 §2），CRLF 工作区与格式差异都不会导致整文件冲突；若仍见整文件级冲突，先检查 `.gitattributes` 是否还在钉 LF。
+
+## 7. 判据：上游新增的 HTTP 端点在本仓**大多没有路由入口**
+
+afree 不是把 workbuddy 当独立 HTTP 服务挂载，而是内嵌子系统：`internal/app/proxy.go` 只在主 mux 注册 `/v1/chat/completions`、`/v1/messages`、`/v1/responses`、`/v1/models`、`/v1/health`，并按模型前缀调用 `workbuddySub.serveWorkBuddyChat(...)` 等方法。workbuddy 自己的 `h.mux`（`internal/workbuddy/server/handler.go` 里的 `POST /v1/embeddings`、`POST /v1/search`、`POST /v1/fetch`、`POST /v1/images/*` 等）**没有挂到主 mux**，生产实测一律 `404 page not found`。
+
+因此上游新增端点时的处理原则：
+
+1. 端点代码随 vendor 同步进来（`embeddings.go` 及其测试保留，不删不裁）。
+2. **不要**把开关接到面板/装配层——那会造出一个永远无效的死配置（`features.embeddings_enabled` 就是这种情形，2026-10-27 撤回）。
+3. `MERGE.md` 里写明"未接入本仓路由"及原因；接入属于功能开发（需要 `wbcn:`/`wbgb:` ↔ `cn:`/`global:` 前缀翻译、认证桥接、mux 注册三件事），不是同步任务的一部分。
+4. 判据代码：`grep -rn '"/v1' internal/app/*.go | grep -v _test` 看主 mux 到底注册了什么。
+
