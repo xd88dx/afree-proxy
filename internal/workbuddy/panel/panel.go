@@ -235,6 +235,7 @@ func (p *Panel) routes() {
 	p.mux.HandleFunc("GET /panel/api/request_logs", p.withAuth(p.requestLogs))
 	p.mux.HandleFunc("GET /panel/api/credit_history", p.withAuth(p.creditHistory))
 	p.mux.HandleFunc("GET /panel/api/models", p.withAuth(p.models))
+	p.mux.HandleFunc("POST /panel/api/models/refresh", p.withAuth(p.modelsRefresh))
 	// (账号 × 模型) 手动开关：运维显式禁用某账号的某模型（永久语义，仅手动解）。
 	// 与上游触发的临时冷却（6004/11102）正交，且手动优先。
 	p.mux.HandleFunc("POST /panel/api/accounts/{uid}/model_toggle", p.withAuth(p.modelToggle))
@@ -591,6 +592,25 @@ func (p *Panel) nicknames() map[string]string {
 // 探测出现失败时优先回放 panelModelsSnapshot（上次完整成功结果，panelModelsStaleMax
 // 内）而不是报错/交出残缺名单——一次 10s 拨号抖动不该清空面板模型列表（响应体
 // 带 "stale": true 标记）；无快照时维持既有行为（部分结果 200 / 全失败 502）。
+// modelsRefresh 模型目录「刷新模型」按钮的后端：先失效 global 1h 缓存与
+// 面板兜底快照，再走一次 models() 全量重探（CN 侧本就无缓存）。快照失效让
+// 上游真变了目录时前端不会拿到一小时前的旧数据。
+func (p *Panel) modelsRefresh(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeErr(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	if p.cfg.Upstream == nil {
+		writeErr(w, http.StatusServiceUnavailable, "upstream unavailable")
+		return
+	}
+	p.cfg.Upstream.InvalidateGlobalModelsCache()
+	panelModelsSnapshot.mu.Lock()
+	panelModelsSnapshot.fetched = time.Time{}
+	panelModelsSnapshot.mu.Unlock()
+	p.models(w, r)
+}
+
 func (p *Panel) models(w http.ResponseWriter, r *http.Request) {
 	out := make([]map[string]any, 0)
 	var fetchErrs []string

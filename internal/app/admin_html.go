@@ -1198,7 +1198,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
   <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 5-6"/></svg></span> Model catalog <span class="probe-pill" data-models-info style="font-weight:normal"></span></div>
   <div class="section-body">
     <div class="flex" style="margin-bottom:10px;gap:10px">
-      <button class="btn btn-sm btn-primary" onclick="refreshModels()">Refresh models</button>
+      <button class="btn btn-sm btn-primary" onclick="refreshWbModels()">Refresh models</button>
       <span class="hint" style="margin:0">Auto-syncs the official model feeds from upstreams (60s)</span>
     </div>
     <div id="wbModelsBody">Loading...</div>
@@ -1267,6 +1267,9 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
   <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 5-6"/></svg></span> Model catalog</div>
   <div class="section-body">
     <div class="hint" style="margin-top:0">Automatically synced from the official free-model source upstream (every 5 minutes).</div>
+    <div class="flex" style="margin-bottom:10px;gap:10px">
+      <button class="btn btn-sm btn-primary" onclick="refreshOrModels()">Refresh models</button>
+    </div>
     <div id="orModelsBody">Loading...</div>
     </div>
   </div>
@@ -1334,6 +1337,9 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
   <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 5-6"/></svg></span> Model catalog</div>
   <div class="section-body">
     <div class="hint" style="margin-top:0">Automatically synced from the official free-model source upstream (every 5 minutes).</div>
+    <div class="flex" style="margin-bottom:10px;gap:10px">
+      <button class="btn btn-sm btn-primary" onclick="refreshAmdModels()">Refresh models</button>
+    </div>
     <div id="amdModelsBody">Loading...</div>
     </div>
   </div>
@@ -1401,6 +1407,9 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
   <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 5-6"/></svg></span> Model catalog</div>
   <div class="section-body">
     <div class="hint" style="margin-top:0">Automatically synced from the official free-model source upstream (every 5 minutes).</div>
+    <div class="flex" style="margin-bottom:10px;gap:10px">
+      <button class="btn btn-sm btn-primary" onclick="refreshTHModels()">Refresh models</button>
+    </div>
     <div id="thModelsBody">Loading...</div>
     </div>
   </div>
@@ -6321,6 +6330,16 @@ async function saveOrConfig() {
     toast(T('OpenRouter config saved'), 'success');
     loadOrConfig();
   } catch (e) { toast(T('Save failed: ') + e.message, 'error'); }
+}
+
+// refreshWbModels WorkBuddy 目录强制重探：失效 vendor 的 global 缓存与兜底
+// 快照（POST models/refresh 即重探一次），随后重拉主目录刷新各页模型块。
+async function refreshWbModels() {
+  try {
+    await api('POST', WB_API_PREFIX + '/models/refresh');
+    await loadModels();
+    toast(T('Catalog refreshed'), 'success');
+  } catch (e) { toast(T('Refresh failed: ') + e.message, 'error'); }
 }
 
 async function refreshOrModels() {
