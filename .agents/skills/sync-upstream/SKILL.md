@@ -62,7 +62,7 @@ MSYS_NO_PATHCONV=1 docker run --rm -v "D:/下载/Github/afree-proxy:/build" -w /
 
 注意：`-v "D:/..."` 路径在 Git Bash 下必须 `MSYS_NO_PATHCONV=1`，否则路径被改写挂载失败。
 
-**既有 flaky（勿误判为回归）**：`internal/workbuddy/server` 的 `TestChatStreamPassthrough` 在全量 `go test ./...` 时偶发失败，报 `LastTokensPerSecond=nil` 而 `LastLatencyMs=1`——该断言要求 TTFB ≥1ms，1ms 精度在机器负载下会翻转。判定方法：`git worktree add --detach <scratch>/afree-head HEAD` 后在该工作树跑 `go test ./internal/workbuddy/server/ -count=1` 数次，若同样偶发失败即为既有问题。
+**既有 flaky（勿误判为回归，用户 2026-10-27 拍板不修）**：`internal/workbuddy/server` 的 `TestChatStreamPassthrough` 在全量 `go test ./...` 时失败，报 `LastTokensPerSecond=nil` 而 `LastLatencyMs=1`。根因已定位：`tokensPerSecond()`（`handler.go:2011`）在 `ttfb <= 0` 时返回 `ok=false`，`RecordTokenUsage`（`pool/state.go:395`）据此把 `LastTokensPerSecond` 置 nil，而断言（`handler_test.go:462`）要求非 nil——httptest 即时响应下 `ttfb` 常被测成 0，故整包跑必挂、单独 `-run` 跑则过。属上游测试的既有缺陷，**不要修**（改上游测试会与后续同步持续冲突），也不要据此判定同步回归；判定既有性可用 `git worktree add --detach <scratch>/afree-head f9a0e13` 对照跑同包。
 
 ## 4. 完成判据
 

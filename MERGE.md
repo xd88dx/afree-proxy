@@ -34,7 +34,10 @@ WorkBuddy 一栏的基线同时登记在 `scripts/workbuddy-vendor-baseline.json
   - `/v1/embeddings` **未接入本仓路由**（核查后决定，非疏漏）：afree 的 workbuddy 子系统是方法直调内嵌（`serveWorkBuddyChat` 等在 `internal/app/proxy.go` 的 `/v1/chat/completions` 内按模型前缀分流），workbuddy 自身的 `h.mux` 路由表并不挂到主 mux 上——既有的 `/v1/search`、`/v1/fetch`、`/v1/images/*` 同样从未暴露。实测生产 `POST /v1/embeddings` → `404 page not found`。要接入需新增前缀翻译（`wbcn:`/`wbgb:` → `cn:`/`global:`）、认证桥接与 mux 注册，属功能开发而非上游同步，本次不做。
   - 因此：面板**不**暴露 `wbEmbeddings` 开关（避免留一个永远无效的死配置），装配层也不填 `EmbeddingsEnabled`；vendor 树内的 `embeddings.go` 与 `livecfg.Snapshot.EmbeddingsEnabled` 字段随上游保留，将来若接上路由即可直接生效。
   - 未接线：`scheduler.makeup_cards_per_round`（与既有 `night_account_cap` 同策略，不在本地面板暴露，默认 0 = 不限）
-- 验证：`go build ./...` 通过；`go vet ./...` 通过；`go test ./... -count=1` 唯一失败 `TestChatStreamPassthrough` 为既有 flaky——HEAD 对照工作树同包同样偶发失败（断言要求 TTFB ≥1ms，`LastTokensPerSecond` 在机器负载下翻转成 nil），与本次合并无关。单独 `-run TestChatStreamPassthrough -count=1` 连跑 3 次全过，进一步确认是整包并发下的负载敏感断言。
+- 验证：`go build ./...` 通过；`go vet ./...` 通过；`go test ./... -count=1` 26/27 包 ok，唯一失败 `TestChatStreamPassthrough` 为既有 flaky，与本次合并无关。
+  - 根因（已定位，非猜测）：`tokensPerSecond()`（`internal/workbuddy/server/handler.go:2011`）在 `ttfb <= 0` 时返回 `ok=false`，`RecordTokenUsage`（`pool/state.go:395`）据此把 `LastTokensPerSecond` 置 nil；而测试断言（`handler_test.go:462`）要求该值非 nil 且 > 0。测试用 httptest 即时响应，`ttfb` 常被测成 0，于是整包跑必挂、单独跑则过——属测试与环境速度耦合的既有缺陷。
+  - 决策（用户 2026-10-27 拍板）：**不修**。该文件是上游测试，改动会与后续上游同步持续产生冲突，收益不抵成本；保留 flaky 并在本台账与 skill 中记录判定方法。
+
 - 生产：与 OpenCode 线同一镜像 `afree-proxy:prod-20261027-35`（一次构建覆盖两条线），部署验证见 OpenCode 节。
 
 ## OpenCode
@@ -44,7 +47,7 @@ WorkBuddy 一栏的基线同时登记在 `scripts/workbuddy-vendor-baseline.json
 - 上游：foxy1402/cline-proxy（与 Cline 同一上游仓库），合并方式 `git merge --no-ff`
 - 上次同步 merge：`ff56cef`（第二父 = 基线 `a99d94b`）
 - 本次目标：`571f9b9` — zen: decode compressed upstream bodies, fix env-marker edge cases（区间内唯一上游提交）
-- 平台归属：**本次改动全部落在 zen/OpenCode 侧，未触碰 Cline 侧任何文件**（`git diff --name-only f9a0e13 3d73dd1 | grep -i cline` 为空）
+- 平台归属：**本次改动全部落在 zen/OpenCode 侧，未触碰 Cline 侧任何文件**（`git diff --name-only f9a0e13 3d73dd1 | grep -i cline` 为空）。唯一共享路径核过：`kit.ReadBody` 被 `internal/cline/auth.go:65,134` 调用，本次给它加了防御性解码；但 `cline/auth.go` 不设 `Accept-Encoding`，`net/http` 已自动解压并删除编码头，`DecodeResponse` 见无编码头直接放行 → Cline 侧实际行为不变。
 - 涉及文件（13）：`internal/app/{zen.go, zen_session.go, admin_zen.go, admin_html.go, config.go, toolmerge_test.go, zen_decode_test.go, zen_env_marker_array_test.go, zen_key_test.go}`、`internal/kit/http.go`、`go.mod`、`docker-compose.yml`、`README.md`
 - 吸收：
   - `kit.DecodeResponse`：gzip/deflate/br/zstd 解码并清掉 `Content-Encoding`/`Content-Length`，未知编码 fail-open；zen 两条路径（普通 `zen.go:2320` + 流式 `zen.go:2603`）响应到达后立即调用。原因：Accept-Encoding 显式对齐 CLI 指纹后 net/http 不再自动解压，大响应体会以压缩字节直送 JSON/SSE 解析器。
