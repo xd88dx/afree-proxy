@@ -85,9 +85,7 @@ func saveWorkbuddyConfig(
 		SanitizeFingerprints: newCfg.Features.SanitizeBlacklistFingerprints,
 		RecordClientInfo:     newCfg.Logging.RequestClientInfo,
 		ModelRateFilter:      newCfg.Pool.ModelRateFilter,
-		// 上游 5367e78：嵌入端点开关随面板保存热生效。
-		EmbeddingsEnabled: newCfg.Features.EmbeddingsEnabled,
-		HiddenModels:      livecfg.NormalizeHiddenModels(newCfg.Models.Hidden),
+		HiddenModels:         livecfg.NormalizeHiddenModels(newCfg.Models.Hidden),
 		// models.allowed 白名单（上游 issue #68，37b3f4c）：与 Hidden 对称的热字段。
 		AllowedModels:    newAllowedModels,
 		AllowlistEnabled: newAllowlistEnabled,

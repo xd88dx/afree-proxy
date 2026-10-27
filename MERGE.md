@@ -23,6 +23,7 @@ WorkBuddy 一栏的基线同时登记在 `scripts/workbuddy-vendor-baseline.json
 - 本地定制（逐项确认保留）：`PROXY_ISOLATION`/`proxyIsolationEnvLocked`、`backupProxyEnabled`、`proxyExclusions`、`proxyBindCaps`、`pinProxyPerKey`、`zenEgressSnapshot`、持续性 403 闸门（`zenSessionRefreshedRecently`）、Workbuddy / Trae 分区。
 - 顺手修正：`zen_decode_test.go` 的 import 由 `cline-go-proxy/internal/kit` 改为 `afree-proxy/internal/kit`（上游 module 名残留，会让 `go vet ./...` 失败）。
 - 验证：`go build ./...` 通过；`go vet ./...` 通过；`go test ./internal/app/ -run 'Zen|Session|OrgID|Egress|Decode|Gate' -count=1` → ok。
+- 生产：镜像 `afree-proxy:prod-20261027-35` 重建 `afree` 容器（`--restart always`、`D:/DockerApp/afree:/app/data`、`-p 3457:3457`），env 全量哈希与旧容器一致（`9eb6f4999012f044`，未丢凭据），状态 healthy；`GET /`→302 登录页、`GET /v1/models`→200。
 
 ## TreaWork
 
@@ -40,11 +41,11 @@ WorkBuddy 一栏的基线同时登记在 `scripts/workbuddy-vendor-baseline.json
   - `livecfg.Snapshot` 构造：同上，两个字段都填
 - 跟随上游删除 7 个 compensation 文件：`upstream/compensation{,_test}.go`、`panel/compensation{,_test}.go`、`panel/compensation_frontend_test.go`（本地独有）、`scheduler/compensation{,_test}.go`
 - 装配接线（脚本不代劳）：
-  - `internal/app/workbuddy.go`：启动快照 + `server.Config` 双填 `EmbeddingsEnabled`（Live 热改优先，静态兜底）
-  - `internal/app/workbuddy_config.go`：面板保存热更新快照同样补该字段
-  - `internal/app/admin_html.go`：新增 `wbEmbeddings` 开关（`features.embeddings_enabled`，默认关）
+  - `/v1/embeddings` **未接入本仓路由**（核查后决定，非疏漏）：afree 的 workbuddy 子系统是方法直调内嵌（`serveWorkBuddyChat` 等在 `internal/app/proxy.go` 的 `/v1/chat/completions` 内按模型前缀分流），workbuddy 自身的 `h.mux` 路由表并不挂到主 mux 上——既有的 `/v1/search`、`/v1/fetch`、`/v1/images/*` 同样从未暴露。实测生产 `POST /v1/embeddings` → `404 page not found`。要接入需新增前缀翻译（`wbcn:`/`wbgb:` → `cn:`/`global:`）、认证桥接与 mux 注册，属功能开发而非上游同步，本次不做。
+  - 因此：面板**不**暴露 `wbEmbeddings` 开关（避免留一个永远无效的死配置），装配层也不填 `EmbeddingsEnabled`；vendor 树内的 `embeddings.go` 与 `livecfg.Snapshot.EmbeddingsEnabled` 字段随上游保留，将来若接上路由即可直接生效。
   - 未接线：`scheduler.makeup_cards_per_round`（与既有 `night_account_cap` 同策略，不在本地面板暴露，默认 0 = 不限）
-- 验证：`go build ./...` 通过；`go vet ./...` 通过；`go test ./... -count=1` 唯一失败 `TestChatStreamPassthrough` 为既有 flaky——HEAD 对照工作树同包同样偶发失败（断言要求 TTFB ≥1ms，`LastTokensPerSecond` 在机器负载下翻转成 nil），与本次合并无关。
+- 验证：`go build ./...` 通过；`go vet ./...` 通过；`go test ./... -count=1` 唯一失败 `TestChatStreamPassthrough` 为既有 flaky——HEAD 对照工作树同包同样偶发失败（断言要求 TTFB ≥1ms，`LastTokensPerSecond` 在机器负载下翻转成 nil），与本次合并无关。单独 `-run TestChatStreamPassthrough -count=1` 连跑 3 次全过，进一步确认是整包并发下的负载敏感断言。
+- 生产：与 Cline 线同一镜像 `afree-proxy:prod-20261027-35`（一次构建覆盖两条线），部署验证见上。
 
 ## OpenCode
 

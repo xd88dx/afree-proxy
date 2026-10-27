@@ -216,9 +216,7 @@ func startWorkBuddy() (*workbuddySubsystem, error) {
 		SanitizeFingerprints: cfg.Features.SanitizeBlacklistFingerprints,
 		RecordClientInfo:     cfg.Logging.RequestClientInfo,
 		ModelRateFilter:      cfg.Pool.ModelRateFilter,
-		// 上游 5367e78：/v1/embeddings 实验端点开关（默认关；面板保存后热生效）。
-		EmbeddingsEnabled: cfg.Features.EmbeddingsEnabled,
-		HiddenModels:      livecfg.NormalizeHiddenModels(cfg.Models.Hidden),
+		HiddenModels:         livecfg.NormalizeHiddenModels(cfg.Models.Hidden),
 		// models.allowed 白名单（上游 issue #68，37b3f4c）：与 Hidden 对称的热字段。
 		AllowedModels:    allowedModels,
 		AllowlistEnabled: allowlistEnabled,
@@ -314,8 +312,6 @@ func startWorkBuddy() (*workbuddySubsystem, error) {
 		ModelsAliases: cfg.Models.Aliases,
 		// 倍率筛选同样双填：Live 热改优先，静态字段兜底（同款理由）。
 		ModelRateFilter: cfg.Pool.ModelRateFilter,
-		// 嵌入端点开关（上游 5367e78）同样双填：Live 热改优先，静态兜底。
-		EmbeddingsEnabled: cfg.Features.EmbeddingsEnabled,
 		// /metrics 端点开关（缺省关）：注册在装配期，改动需重启。
 		MetricsEnabled: cfg.Metrics.Enabled,
 		// 预算三闸（issue #229）初始值：saveWorkbuddyConfig 后续热改。
