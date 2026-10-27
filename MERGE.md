@@ -32,6 +32,7 @@ WorkBuddy 一栏的基线同时登记在 `scripts/workbuddy-vendor-baseline.json
   - **已知架构差异(非缺陷,未跟进)**:上游 v1.0.10 把并发槽做成账号级 entitlement 池(`quota.solo_agent_parallel_limit` + reservation 幂等回收、按账号积分优先调度);本地是全局信号量 `MaxConcurrency`(默认 8,`client.go:1528-1577`)+ 账号 pick 策略(`credit_priority` / `round_robin`,`pool.go:24`)。目标相同(不超上游容量)、粒度不同;要对齐需重写调度层,当前未列计划
   - 未逐条核对项:上游 v1.0.9 的长历史增量前缀哈希、图片压缩跳过、Remote 首错误事件保留等性能与边界优化——本地 Go 实现路径不同,无法机械比对,仅在出现对应症状时回看
 - 验证:`go build ./...` OK、`go test ./internal/trae/ -count=1` ok
+- 生产部署:镜像 `afree-proxy:prod-20261027-36` 重建容器 `afree`(`--restart always`、`-p 3457:3457`、`-v D:/DockerApp/afree:/app/data`);env 从旧容器继承,哈希 `b54013375c12…` 与旧容器一致;`Up (healthy)`;`GET /`→302、`GET /v1/models`→200;容器内二进制 `grep -ac "部署默认值"` / `"relay-host"` 均命中 1 处,确认 v1.0.10 脚本已编入
 
 ## WorkBuddy
 
