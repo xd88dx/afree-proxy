@@ -49,33 +49,46 @@ go test ./... -count=1             # 除下述既有失败外应全绿
 
 已废弃、不要从上游恢复：`SessionRotateMinutes` 与后台 key rotator、`ZEN_KEYS`（Go 源码从不读取）、上游 README 的 compose 配置段。
 
-## 6. 生产部署
+## 6. 部署:本机测试,iStore 生产
 
-**生产跑在 iStore 上**,不在本机:`root@istore`,compose 文件 `/docker/app/docker-compose.yml`(`AFREE_IMAGE=ghcr.io/xd88dx/afree-proxy:latest`),数据卷 `/docker/app/afree`,端口 3457。
+**两台机器各有一个叫 `afree` 的容器,职责不同**:本机是测试容器,iStore 是生产。判断生产看**流量**而不是容器名——只有 iStore 的 `docker logs afree` 里有实时请求行(`| #NNN | hh:mm:ss | ... | 200 | ... tok=...`),本机的只有启动初始化日志。
 
-判断依据是**流量**,不是容器名——两台机器都有叫 `afree` 的容器,只有 iStore 的 `docker logs afree` 里有实时请求行(`| #NNN | hh:mm:ss | ... | 200 | ... tok=...`);本机的只有启动初始化日志。
+### 本机:测试容器(改完代码在这里验证)
 
-同步流程:
+compose project `tokenapp`,文件 `D:/DockerApp/docker-compose.yml`(同一文件还管 `newapi`、`mihomo`),数据卷 `D:/DockerApp/afree`,端口 3457。
 
-1. 提交并推送 `main`。
-2. 等 GitHub Actions 构建完成:`.github/workflows/docker-publish.yml`。查状态 `curl -s "https://api.github.com/repos/xd88dx/afree-proxy/actions/runs?per_page=3"`,确认 `head_sha` 是本次提交且 `conclusion=success`。
-3. iStore 上:`cd /docker/app && docker compose pull afree && docker compose up -d afree`。
-4. 验证:`docker inspect afree --format '{{.Image}}'` 的 digest 变了、`docker ps` 为 `Up`、`curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:3457/health` → 200、日志出现实时请求行。
+```bash
+docker build -t afree-proxy:test-$(date +%Y%m%d-%H%M) .    # 本地构建,约 20 秒
+# 把 docker-compose.yml 里 afree 服务的 image: 换成新 tag
+cd /d/DockerApp && docker compose up -d afree
+curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:3457/health    # 期望 200
+docker logs afree --tail 10
+```
+
+本机构建几十秒就完事,**不要为了验证去等 GitHub Actions**(一次 10 分钟,纯浪费);CI 只服务生产镜像。
+
+### iStore:生产
+
+`root@istore`,compose 文件 `/docker/app/docker-compose.yml`(`AFREE_IMAGE=ghcr.io/xd88dx/afree-proxy:latest`),数据卷 `/docker/app/afree`,端口 3457。
+
+**生产由用户手动同步**:本机测稳后推 `main`,CI 构建 GHCR,用户自己在 iStore 上 `cd /docker/app && docker compose pull afree && docker compose up -d afree`。agent 不要主动去 `pull` / `up -d` 生产容器。
+
+生产验证口径:`docker inspect afree --format '{{.Image}}'` 的 digest 变了、`docker ps` 为 `Up`、`GET /health` → 200、日志出现实时请求行。
 
 iStore 的面板密码是 `233@.afree`(与本机 compose 里的值不同);登录走 `POST /admin/api/login`,未登录时 `/admin/` 只返回约 3KB 的登录页,登录后才是完整面板。
 
 **不要用 `docker run` 重建**:会丢掉 compose 标签与 project 归属。`docker-compose.yml` 里凭据是明文,而终端输出会对凭据脱敏——不要拿脱敏后的占位符去改文件。
 
-### 本机 `D:\DockerApp` 的角色
+### 本机配置同步脚本
 
-本机的 `afree`(compose project `tokenapp`,同一文件还管 `newapi`、`mihomo`,数据卷 `D:/DockerApp/afree`)**当前没有流量,是空转副本**,配置靠 `C:\AppSelf\!Apps\AutoTool\rsync\task\sync-istore-docker.ps1` 从 iStore 拉(定时任务 `sync-istore-docker`,每 10 分钟):
+`D:/DockerApp/afree/` 下的 `*.json` 由 `C:/AppSelf/!Apps/AutoTool/rsync/task/sync-istore-docker.ps1` 从 iStore 拉(定时任务 `sync-istore-docker`,每 10 分钟):
 
-- 默认、也就是定时任务实际执行的方式:只把 iStore 的 `/docker/app/*` rsync 到 `D:\dockerapp\iStore\` 做备份,**不部署、不重启**。
-- 加 `-Deploy` 才把 `afree\*.json` 变换内网 IP 后写进 `D:\DockerApp\afree\` 并 `docker restart afree`。
+- 默认、也就是定时任务实际执行的方式:只把 iStore 的 `/docker/app/*` rsync 到 `D:/dockerapp/iStore/` 做备份,**不部署、不重启**。
+- 加 `-Deploy` 才把 `afree/*.json` 变换内网 IP 后写进 `D:/DockerApp/afree/` 并 `docker restart afree`。
 
 早先的 v2 默认就部署,导致本机容器每 10 分钟重启一次:因为 **iStore 上正在服务流量的实例会持续改写 `currentIdx`、`accounts` 状态、`egressBindings` 这类运行时字段**,「iStore 侧文件 sha256 变了」的防抖判据于是每次命中。该判据在 v3 已移除,不要再加回来。
 
-本机自建的 `prod-*` 镜像只保留最近 3 个。
+本机自建镜像 tag 只保留最近 3 个。
 
 ## 7. 死配置判据（本仓）
 
