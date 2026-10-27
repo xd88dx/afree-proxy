@@ -332,3 +332,51 @@ func TestTraeScopedBanIsolation(t *testing.T) {
 		t.Fatal("auto ban must land on the failing transport's scope")
 	}
 }
+
+// 面板「解禁」按钮不表达档位，语义是「这个模型别封了」：空 scope 解禁必须
+// 把按档位落的条目一起清掉。只删全档键会留下 traecode/remote/traework 条目，
+// 表现是点了「解禁」弹成功、刷新后条目原地不动（2026-10-28 修复）。
+func TestUnblockModelWithoutScopeClearsScopedEntries(t *testing.T) {
+	t.Setenv("DATA_DIR", t.TempDir())
+	resetModelBlacklistForTest(t)
+
+	// 自动封禁按传输落档位（4023 + raw → traecode），与生产数据同形。
+	BlacklistModel(platTrae, "trae:deepseek-v4.1-flash", "4023", BanReasonModelGone, "model not found", "traecode")
+	if !TraeModelBannedIn("traecode", "deepseek-v4.1-flash") {
+		t.Fatal("scoped auto ban must land on the traecode scope")
+	}
+	if !UnblockModel(platTrae, "trae:deepseek-v4.1-flash") {
+		t.Fatal("unblock without scope must remove the scoped entry")
+	}
+	if IsModelBlacklisted("trae:deepseek-v4.1-flash") || TraeModelBannedIn("traecode", "deepseek-v4.1-flash") {
+		t.Fatal("model must be gone from every scope after an unscoped unblock")
+	}
+	if UnblockModel(platTrae, "trae:deepseek-v4.1-flash") {
+		t.Fatal("second unblock must report nothing removed")
+	}
+
+	// 同模型多档位 + 全档条目并存：一次解禁全部清空。
+	BanModel(platTrae, "trae:glm-5.3", "remote")
+	BanModel(platTrae, "trae:glm-5.3", "traework")
+	BanModel(platTrae, "trae:glm-5.3")
+	if !UnblockModel(platTrae, "trae:glm-5.3") {
+		t.Fatal("unblock must report removal")
+	}
+	if TraeModelBannedIn("remote", "glm-5.3") || TraeModelBannedIn("traework", "glm-5.3") ||
+		TraeModelBannedIn("traecode", "glm-5.3") {
+		t.Fatal("unscoped unblock must clear every scoped entry")
+	}
+
+	// 带档位解禁仍只拆该档位（档位隔离语义不变）。
+	BanModel(platTrae, "trae:kimi-k3", "remote")
+	BanModel(platTrae, "trae:kimi-k3", "traework")
+	if !UnblockModel(platTrae, "trae:kimi-k3", "remote") {
+		t.Fatal("scoped unblock must report removal")
+	}
+	if TraeModelBannedIn("remote", "kimi-k3") {
+		t.Fatal("scoped unblock must clear only its own scope")
+	}
+	if !TraeModelBannedIn("traework", "kimi-k3") {
+		t.Fatal("other scopes must survive a scoped unblock")
+	}
+}

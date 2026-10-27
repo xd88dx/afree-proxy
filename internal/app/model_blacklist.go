@@ -235,20 +235,37 @@ func IsModelBlacklisted(model string) bool {
 }
 
 // UnblockModel 解禁：移出名单。仅此而已——后续若再次命中同样原因，会重新
-// 被拉黑（不是永久豁免）。可选 scope（trae 平台按端点解禁；空 = 全档旧键）。
+// 被拉黑（不是永久豁免）。可选 scope（trae 平台按端点解禁）。
+//
+// scope 为空 = **全档解禁**：连该模型的各端点档位条目一起删。只删全档键会
+// 留下按档位落的自动封禁条目（键形如 trae|trae:x@traecode），面板点了「解禁」
+// 却纹丝不动（2026-10-28 修复：面板该按钮不表达档位，语义就是「这个模型别封了」）。
+// scope 非空 = 只拆该档位，其余档位保留（档位隔离的既有语义）。
 func UnblockModel(platform, model string, scope ...string) bool {
 	sc := firstScope(scope)
 	ensureModelBlacklistLoaded()
 	modelBlacklistMu.Lock()
-	k := blacklistKeyScoped(platform, model, sc)
-	_, existed := modelBlacklistItems[k]
-	delete(modelBlacklistItems, k)
+	removed := false
+	if sc == "" {
+		prefix := blacklistKey(platform, model)
+		for k := range modelBlacklistItems {
+			if k == prefix || strings.HasPrefix(k, prefix+"@") {
+				delete(modelBlacklistItems, k)
+				removed = true
+			}
+		}
+	} else {
+		k := blacklistKeyScoped(platform, model, sc)
+		_, existed := modelBlacklistItems[k]
+		delete(modelBlacklistItems, k)
+		removed = existed
+	}
 	modelBlacklistMu.Unlock()
-	if existed {
+	if removed {
 		log.Printf("model blacklist: -%s %s (scope=%s) (manual unblock)", platform, model, sc)
 		flushModelBlacklist()
 	}
-	return existed
+	return removed
 }
 
 // TraeModelBannedIn trae 平台模型在指定端点档位是否被封禁（展示过滤用）：
@@ -534,7 +551,9 @@ func handleModelBlacklistUnblock(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !UnblockModel(req.Platform, req.Model, normalizeTraeScope(req.Platform, req.Scope)) {
-		writeAPI(w, http.StatusOK, apiResponse{Success: true, Message: "not in blacklist"})
+		// 无条目可删时如实告知（success=false + message）：此前一律回 success，
+		// 前端无条件弹「已解禁」，用户以为解禁成功、刷新后条目还在（2026-10-28）。
+		writeAPI(w, http.StatusOK, apiResponse{Success: false, Message: "not in blacklist"})
 		return
 	}
 	writeAPI(w, http.StatusOK, apiResponse{Success: true, Message: "unblocked"})
