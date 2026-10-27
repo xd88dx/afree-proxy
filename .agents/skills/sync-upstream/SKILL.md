@@ -25,7 +25,7 @@ description: 同步 afree-proxy 三条上游线的完整流程与陷阱清单—
 5. 提交信息用中文、说明上游哈希与本地适配点；fork 线结束必须 `git push origin main`（不推 GitHub 的 behind 提示不会消除，同步就没生效）。
 6. **收尾必写 `MERGE.md` 台账**（用户 2026-10-27 要求）：仓库根 `MERGE.md` 按 Cline / TreaWork / WorkBuddy / OpenCode 四条线记录同步历史。每次同步在对应线追加一节 `### YYYY-MM-DD — <基线短哈希> → <目标短哈希>`，写明上游仓库与合并方式、基线与目标、吸收项（带原因）、丢弃项（带原因）、本地定制保留清单、验证结果；未涉及的线保留原文并写"本次未涉及上游同步"。历史记录只追加不删改。
    **分节前先判平台归属，写错节等于台账失效**：`foxy1402/cline-proxy` 是**一个上游承载两条平台线**——`zen*.go` / `admin_zen.go` / 面板 `oc*` 字段 / `ZEN_*` 配置 / `internal/kit/http.go`（`DecodeResponse` 只被 `zen.go` 调用）属于 **OpenCode**；Cline 账号池与 `/v1` 通用转发/方言转换属于 **Cline**。判据命令：`git diff --name-only <本地旧HEAD> <merge提交> | grep -iE 'zen|opencode'` 与 `| grep -i cline`，两者只应付出一条线；不要因为上游叫 cline-proxy 就把 zen 改动记在 Cline 下。
-7. **根 `AGENTS.md` 是其他 agent 的唯一自动入口**：`MERGE.md` 和本 skill 都不会被其他 agent 自动加载，所以平台归属表、台账铁律、三条线入口、flaky 不修、本地定制清单、git 纪律这些"必须无条件知道"的规则同时写在根 `AGENTS.md`。改动这些规则时同步更新 `AGENTS.md`，否则下一个 agent 会重犯。
+7. **根 `AGENTS.md` 是其他 agent 的唯一自动入口**:`MERGE.md` 和本 skill 都不会被其他 agent 自动加载。根目录按「通用 / 专属」拆两份——`AGENTS.md` 放**跨项目通用规则**(git 纪律、验证要求、删除判据、上游台账格式),`PROJECT.md` 放**本项目专属事实**(平台归属表、三条线入口、flaky 不修、本地定制清单、部署流程);`AGENTS.md` 顶部强指向 `PROJECT.md` 并要求动手前必读。改动这些规则时同步更新对应文件,否则下一个 agent 会重犯。
 
 ## 2. 三条线各自的入口
 

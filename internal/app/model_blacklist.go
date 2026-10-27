@@ -103,16 +103,6 @@ func ensureModelBlacklistLoaded() {
 		}
 	}
 	globalCfgMu.Unlock()
-	// 旧版本落盘的条目 Reason 存的是上游原话；统一改写为标准文案
-	//（判据：code=11158 或原因文案命中权限 marker）。Detail 老条目没有，留空。
-	for _, e := range modelBlacklistItems {
-		if e == nil || e.Reason == "" || e.Reason == BanReasonAuto || e.Reason == BanReasonManual {
-			continue
-		}
-		if e.Code == "11158" || IsModelPermissionDenied(0, e.Reason) {
-			e.Reason = BanReasonAuto
-		}
-	}
 	if n := len(modelBlacklistItems); n > 0 {
 		log.Printf("model blacklist: restored %d entry(ies) from %s", n, globalConfigPath())
 	}

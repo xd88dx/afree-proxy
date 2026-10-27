@@ -106,4 +106,25 @@ WorkBuddy 一栏的基线同时登记在 `scripts/workbuddy-vendor-baseline.json
 - 镜像清理：`afree-proxy` 的 `prod-*` 按创建时间倒序保留最近 3 个（`prod-20261027-36/35/34`），删除其余 33 个；`prod-20261026-12` 因与 `local` 共用同一 image ID，仅 untag 不删层。非 `prod-*` 标签（`local`、`sync-test-20261027`、`refactor3`、`workbuddy-local`、`workbuddy-builder`）未动。
 - 生产：镜像 `afree-proxy:prod-20261027-37`（`b48f1f3ab562`，37.4MB）重建 `afree` 容器（`--restart always`、`-p 3457:3457`、`-v D:/DockerApp/afree:/app/data`），env 全量哈希 `9eb6f4999012` 与旧容器逐字节一致（未丢凭据），`Up (healthy)`；`GET /`→302、`GET /v1/models`→200；容器内二进制 `部署默认值` 命中 1 处（Trae v1.0.10 内嵌脚本仍在）。旧容器先 `stop`+`rename afree-bak` 保留回滚窗口，验证通过后删除。
 
+### 2026-10-27 — 清理旧备份导入兼容（`legacyZenBackup`）与 Reason 自愈
+
+上一节把 `legacyZenBackup` 与「旧 Reason 文案自愈」列为保留项。经用户当日确认「导入 2026-10-26 之前导出的旧备份不再需要」，二者转为可删，本节记录删除（不改写上一节原文，保留决策轨迹）。
+
+- 删除：
+  - `legacyZenBackup` 类型（`admin_backup.go`）：含 6 个旧代理池字段（`proxies`/`proxyStrategy`/`proxySubURL`/`proxySubCron`/`zenUseProxies`/`workbuddyUseProxies`）与 4 个旧隔离字段（`proxyIsolation`/`backupProxyEnabled`/`proxyExclusions`/`proxyBindCaps`）。`configBackup.Zen` 改用 `*zenConfigData`，`zenBackupSnapshot()` 返回深拷贝。
+    **导出的备份 JSON 完全不变**：这些旧字段在 `legacyZenBackup` 里都带 `omitempty`，新备份从不写它们，删掉只影响读取路径。
+  - 导入侧旧代理池回落（`backup.Zen.Proxies` 等 → `ProxyPool` 段）。
+  - 导入侧旧隔离/绑定回落（`backup.Zen.ProxyIsolation` 等 → `Proxy` 段），`binding := backup.Proxy` 直接取值。
+  - `loadModelBlacklist` 里的旧 Reason 文案自愈（把「上游原话」改写为 `BanReasonAuto`）。判据：生产 `afree-config.json` 的 `modelBlacklist` 5 条 reason 已全是标准文案（4 手动 + 1 自动）、`detail` 全空 → 该循环恒不命中，且唯一用途是修旧备份导入后的数据。
+- 保留（仍为活代码，勿误删）：
+  - `zenConfigData.Key`（单 key 兼容）：生产 `key` 非空、`keys` 15 条，`normalizeZenKeys` 每次加载回写。
+  - `/admin/api/zen/*` 路径别名：可访问路由。
+  - `proxy.go` 的 `/v1/models` 字段归一化里的「原字段保留」：`normalizeModelEntryFields` 每次请求都执行，语义是**归一化后仍保留上游原生字段名**（如 zen 的 `context`/`output`），让老客户端继续可读，不是兼容旧配置。
+- 验证：`go build ./...`、`go vet ./...` 全绿；`gofmt` 干净；`go test ./internal/app/ -count=1` → ok。
+- 镜像清理：删除非 `prod-*` 标签 `local`、`sync-test-20261027`、`refactor3`、`workbuddy-local`、`workbuddy-builder`（927MB 构建镜像），各自独立 image ID 均实际删层。删除后 `afree-proxy` 剩 `prod-20261027-37/36/35`（随后部署 prod-38，`-35` 再删，见下条）。
+- 文档重构：根 `AGENTS.md` 拆为两份——`AGENTS.md` 只留**跨项目通用规则**（git 纪律、验证要求、换行与工具路径、临时文件、删除判据、工具安装、上游台账格式、禁止死配置、技能同步），新增 `PROJECT.md` 承载**本项目专属事实**（这是什么、平台归属表、三条上游线与 `MERGE.md` 格式、构建与两个已知失败、本地定制清单、生产部署、本仓死配置判据）。`AGENTS.md` 顶部强指向 `PROJECT.md`。`.agents/skills/sync-upstream/SKILL.md` 第 7 条同步改写。
+- 生产：镜像 `afree-proxy:prod-20261027-38`（`9c51a324ce9e`，37.4MB）重建 `afree` 容器，env 全量哈希 `9eb6f4999012` 与旧容器一致（未丢凭据），`Up (healthy)`；`GET /`→302、`GET /v1/models`→200；启动日志正常——`Loaded 19 active accounts`、`WorkBuddy subsystem ready: accounts=7`、`model blacklist: restored 5 entry(ies)`（删自愈后读取仍正常）、zen 目录同步 6 新增 / 4 剔除。旧容器 `afree-bak` 验证通过后删除。`prod-*` 保留最近 3 个（`38/37/36`），`-35` 已删。
+
+
+
 
