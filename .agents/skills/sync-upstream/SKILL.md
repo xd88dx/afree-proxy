@@ -24,6 +24,7 @@ description: 同步 afree-proxy 两条上游线的完整流程与陷阱清单—
 4. **会话回显不可信**：冲突解决结果以 `git diff`、容器构建、真实测试输出为准。
 5. 提交信息用中文、说明上游哈希与本地适配点；fork 线结束必须 `git push origin main`（不推 GitHub 的 behind 提示不会消除，同步就没生效）。
 6. **收尾必写 `MERGE.md` 台账**（用户 2026-10-27 要求）：仓库根 `MERGE.md` 按 Cline / TreaWork / WorkBuddy / OpenCode 四条线记录同步历史。每次同步在对应线追加一节 `### YYYY-MM-DD — <基线短哈希> → <目标短哈希>`，写明上游仓库与合并方式、基线与目标、吸收项（带原因）、丢弃项（带原因）、本地定制保留清单、验证结果；未涉及的线保留原文并写"本次未涉及上游同步"。历史记录只追加不删改。
+   **分节前先判平台归属，写错节等于台账失效**：`foxy1402/cline-proxy` 是**一个上游承载两条平台线**——`zen*.go` / `admin_zen.go` / 面板 `oc*` 字段 / `ZEN_*` 配置 / `internal/kit/http.go`（`DecodeResponse` 只被 `zen.go` 调用）属于 **OpenCode**；Cline 账号池与 `/v1` 通用转发/方言转换属于 **Cline**。判据命令：`git diff --name-only <本地旧HEAD> <merge提交> | grep -iE 'zen|opencode'` 与 `| grep -i cline`，两者只应付出一条线；不要因为上游叫 cline-proxy 就把 zen 改动记在 Cline 下。
 
 ## 2. 两条线各自的入口
 
@@ -65,5 +66,5 @@ MSYS_NO_PATHCONV=1 docker run --rm -v "D:/下载/Github/afree-proxy:/build" -w /
 
 ## 4. 完成判据
 
-- fork 线：merge commit 双父（本地 HEAD + 上游哈希）已推送 origin；GitHub 仓库页不再显示 behind；`MERGE.md` 的 Cline 节已追加本次记录。
+- fork 线：merge commit 双父（本地 HEAD + 上游哈希）已推送 origin；GitHub 仓库页不再显示 behind；`MERGE.md` 的**对应平台节**（Cline 或 OpenCode，按改动文件归属判定）已追加本次记录。
 - vendor 线：`workbuddy-vendor-baseline.json` 的 commit = 上游 HEAD；脚本手工步骤清单（装配/版本号）已完成；容器验证全绿；`MERGE.md` 的 WorkBuddy 节已追加本次记录。
