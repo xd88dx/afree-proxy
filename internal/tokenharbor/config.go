@@ -67,10 +67,11 @@ const ModelPrefix = "tkhb:"
 const FreeSuffix = ":free"
 
 // SeedModels 冷启动兜底模型目录（tokenharbor.ai/models?category=free 页面
-// 实测快照，2026-10-11：3 个 :free 模型，价格 in/out 全零）。/v1/models 需要
-// key 才能拉取，未配置 key 时以此种子服务。
+// 实测快照，2026-10-27：2 个 :free 模型，价格全零）。/v1/models 需要 key 才能
+// 拉取，未配置 key 时以此种子服务。只收官方免费页当前列出的模型——限时活动
+// 模型（如已结束的 Claude Haiku 5.5 free）不收：活动结束上游即 404
+// campaign_ended，留在种子里只会让客户端选中必失败（2026-10-27 教训）。
 var SeedModels = []Model{
-	{ID: "claude-haiku-5.5:free", Name: "Claude Haiku 5.5 (free)"},
 	{ID: "deepseek-v4.1-flash:free", Name: "DeepSeek V4.1 Flash (free)"},
 	{ID: "mimo-v2.6-flash:free", Name: "MiMo V2.6 Flash (free)"},
 }
