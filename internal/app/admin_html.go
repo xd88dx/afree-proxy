@@ -2593,6 +2593,10 @@ const I18N_ZH = {
   'Ban this model? It is removed from /v1/models immediately; you can unblock it in the Banned models table.': '封禁该模型？它会立即从 /v1/models 移除；之后可在封禁模型表中解禁。',
   'Banned: ': '已封禁：',
   'Unblocked: ': '已解禁：',
+  // 封禁档位标签（trae 按端点档位封禁：remote/traecode/traework）
+  'Endpoint tier': '端点档位',
+  'banned on this endpoint tier only': '仅该端点档位被封，同 ID 其他档位不受影响',
+  'No matching ban entry — it may have been unblocked already.': '未找到对应的封禁条目——可能已经解禁过了。',
   // Trae 平台页
   'Gateway': '网关',
   'Endpoint': '端点',
@@ -5026,8 +5030,13 @@ function wbContextLabel(value) {
   return best[1];
 }
 function wbContextTagHTML(value, title) {
-  const large = Number(value || 0) >= 1000000;
-  return '<span class="model-tag' + (large ? ' context-1m' : '') + '" title="' + esc(title) + '">' + esc(wbContextLabel(value)) + '</span>';
+  // 蓝色高亮与标签同口径：标签按就近档位取整（960K/981504 也显示「1M」），
+  // 高亮就必须跟着标签走——此前按 >=1000000 严格判定，同一个「1M」标签
+  // 时蓝时不蓝（hy4-preview 960000、mimo-v2.6-flash 981504 灰，
+  // deepseek-v4.1-flash 1000000 蓝），看上去像随机（2026-10-28 修复）。
+  const label = wbContextLabel(value);
+  const large = label === '1M' || label === '2M';
+  return '<span class="model-tag' + (large ? ' context-1m' : '') + '" title="' + esc(title) + '">' + esc(label) + '</span>';
 }
 function wbRateHTML(m) {
   const rate = wbRate(m);
@@ -5165,14 +5174,20 @@ async function loadModelBlacklist() {
       const when = it.createdAt ? new Date(it.createdAt).toLocaleString() : '—';
       // 悬停看上游原始报文 + 业务码；表格列只放统一文案（自动/手动封禁）。
       const title = esc([it.code ? 'code ' + it.code : '', it.detail || ''].filter(Boolean).join(' · ')).slice(0, 800);
+      // trae 按端点档位封禁：模型 ID 后挂档位标签，解禁按钮带上档位——
+      // 否则「解禁」只会去删不带档位的全档键，带档位的条目原地不动
+      //（点了没反应，2026-10-28 修复）。
+      const scopeTag = it.scope
+        ? ' <span class="model-tag" title="' + esc(T('banned on this endpoint tier only')) + '">' + esc(it.scope) + '</span>'
+        : '';
       return '<tr>' +
         '<td>' + esc(plat) + '</td>' +
-        '<td style="font-family:\'JetBrains Mono\',monospace" title="' + title + '">' + esc(it.model) + '</td>' +
+        '<td style="font-family:\'JetBrains Mono\',monospace" title="' + title + '">' + esc(it.model) + scopeTag + '</td>' +
         '<td style="font-size:12px;color:var(--text2)">' + esc(it.reason || '—') + '</td>' +
         '<td style="font-size:12px;color:var(--text2)">' + esc(when) + '</td>' +
         '<td style="text-align:center;white-space:nowrap">' +
           '<button class="btn btn-sm" data-bl-test="1" data-platform="' + esc(it.platform) + '" data-model="' + esc(it.model) + '">' + T('Test') + '</button> ' +
-          '<button class="btn btn-sm btn-warn" data-bl-unblock="1" data-platform="' + esc(it.platform) + '" data-model="' + esc(it.model) + '">' + T('Unblock') + '</button>' +
+          '<button class="btn btn-sm btn-warn" data-bl-unblock="1" data-platform="' + esc(it.platform) + '" data-model="' + esc(it.model) + '" data-scope="' + esc(it.scope || '') + '">' + T('Unblock') + '</button>' +
         '</td></tr>';
     }).join('');
   } catch (e) {
@@ -5199,7 +5214,15 @@ async function unblockBlockedModel(btn) {
   if (!confirm(T('Unblock this model? It becomes available in /v1/models again; the same upstream error will ban it again.'))) return;
   btn.disabled = true;
   try {
-    await api('POST', '/models/blacklist/unblock', { platform: platform, model: model, scope: scope });
+    const d = await api('POST', '/models/blacklist/unblock', { platform: platform, model: model, scope: scope });
+    // 后端删不到条目时返回 success=false：如实提示，不能无条件弹「已解禁」
+    //（此前点了没反应却报成功，误导排查方向，2026-10-28 修复）。
+    if (d.success === false) {
+      toast(T('No matching ban entry — it may have been unblocked already.'), 'error');
+      btn.disabled = false;
+      loadModelBlacklist();
+      return;
+    }
     toast(T('Unblocked: ') + model, 'success');
     loadModelBlacklist();
   } catch (e) {
