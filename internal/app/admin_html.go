@@ -608,8 +608,6 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
     <div class="flex" style="gap:10px;margin:8px 0;align-items:center;flex-wrap:wrap">
       <label class="hint" style="margin:0">Probe model (used by the Test buttons):</label>
       <select id="traeProbeModel" style="max-width:420px"><option value="">auto</option></select>
-      <button class="btn btn-sm" onclick="refreshTraeModels()" title="Re-sync the model catalog from the Trae upstream using an enabled account">Refresh models</button>
-      <span class="hint" style="margin:0" id="traeModelsCount"></span>
     </div>
     <div class="table-wrap" style="margin-bottom:10px">
       <table>
@@ -1238,8 +1236,6 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
     <div class="flex" style="gap:10px;margin:8px 0;align-items:center;flex-wrap:wrap">
       <label class="hint" style="margin:0">Probe model (used by the Test buttons):</label>
       <select id="orProbeModel" style="max-width:420px"><option value="">auto</option></select>
-      <button class="btn btn-sm" onclick="refreshOrModels()" title="Re-sync the free-model catalog from openrouter.ai">Refresh models</button>
-      <span class="hint" style="margin:0" id="orModelsCount"></span>
     </div>
     <div class="table-wrap" style="margin-bottom:10px">
       <table>
@@ -1307,8 +1303,6 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
     <div class="flex" style="gap:10px;margin:8px 0;align-items:center;flex-wrap:wrap">
       <label class="hint" style="margin:0">Probe model (used by the Test buttons):</label>
       <select id="amdProbeModel" style="max-width:420px"><option value="">auto</option></select>
-      <button class="btn btn-sm" onclick="refreshAmdModels()" title="Re-sync the model catalog from AMDCloud">Refresh models</button>
-      <span class="hint" style="margin:0" id="amdModelsCount"></span>
     </div>
     <div class="table-wrap" style="margin-bottom:10px">
       <table>
@@ -1377,8 +1371,6 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
     <div class="flex" style="gap:10px;margin:8px 0;align-items:center;flex-wrap:wrap">
       <label class="hint" style="margin:0">Probe model (used by the Test buttons):</label>
       <select id="thProbeModel" style="max-width:420px"><option value="">auto</option></select>
-      <button class="btn btn-sm" onclick="refreshTHModels()" title="Re-sync the free-model catalog from TokenHarbor (needs a key)">Refresh models</button>
-      <span class="hint" style="margin:0" id="thModelsCount"></span>
     </div>
     <div class="table-wrap" style="margin-bottom:10px">
       <table>
@@ -2342,6 +2334,9 @@ const I18N_ZH = {
   'On': '开',
   'Off': '关',
   'Probe model (used by the Test buttons):': '探测模型（Test 按钮使用）：',
+  'Org ID:': '组织 ID：',
+  'wrk_… (optional)': 'wrk_…（可选）',
+  'OAuth account org id, sent as x-opencode-org-id. Only needed when the key is an OAuth token rather than a raw API key; leave empty to omit the header.': 'OAuth 账号的组织 ID，以 x-opencode-org-id 请求头发送。仅当该 key 是 OAuth token（而非原始 API key）时才需要；留空则不发送该头。',
   'Key': 'Key',
   'Session': '会话',
   'TTFB': '首包耗时',
@@ -2449,7 +2444,6 @@ const I18N_ZH = {
   'Catalog refreshed': '目录已刷新',
   'No free models yet — click Refresh models': '暂无免费模型——点"刷新模型"',
   'No models yet — click Refresh models': '暂无模型——点"刷新模型"',
-  ' free models': ' 个免费模型',
   'Failed to load': '加载失败',
   'Invalid proxy format: ': '代理格式无效：',
   'No models': '没有模型',
@@ -2629,7 +2623,6 @@ const I18N_ZH = {
   'Token expired': 'token 已过期',
   'No refresh token': '无刷新令牌',
   'Unlimited': '不限量',
-  ' models': ' 个模型',
   'Account #': '账号 #',
   ' — ': ' — ',
   ' — unlimited credits': ' — 不限量额度',
@@ -6343,7 +6336,6 @@ async function loadOrConfig() {
     // 封禁过滤：黑名单语义是「不再对外提供」，页面模型列表同步剔除。
     await syncModelBlacklist();
     const models = (c.models || []).filter(m => m && !modelBlacklistIds.has(m.id));
-    _('orModelsCount').textContent = '(' + models.length + T(' free models') + ')';
     const sel = _('orProbeModel');
     if (sel) {
       const prev = sel.value;
@@ -6395,7 +6387,7 @@ async function refreshOrModels() {
     const d = await api('POST', '/openrouter/models/refresh');
     if (d && d.success === false) { toast(T(d.message || 'Refresh failed: '), 'error'); return; }
     await loadOrConfig();
-    toast(T('Catalog refreshed') + ' (' + _('orModelsCount').textContent.replace(/[()]/g, '') + ')', 'success');
+    toast(T('Catalog refreshed'), 'success');
     loadOrConfig();
   } catch (e) { toast(T('Refresh failed: ') + e.message, 'error'); }
 }
@@ -6629,7 +6621,6 @@ async function loadTraeConfig() {
     // 封禁过滤：黑名单语义是「不再对外提供」，页面模型列表同步剔除。
     await syncModelBlacklist();
     const models = (c.models || []).filter(m => m && !modelBlacklistIds.has(m.id));
-    _('traeModelsCount').textContent = '(' + models.length + T(' models') + ')';
     const sel = _('traeProbeModel');
     if (sel) {
       const prev = sel.value;
@@ -6685,7 +6676,7 @@ async function refreshTraeModels() {
     // 后端对无启用账号返回 success:false + Message（api() 不抛异常），按统一口径提示
     if (d && d.success === false) { toast(T(d.message || 'Refresh failed: '), 'error'); return; }
     await loadTraeConfig();
-    toast(T('Catalog refreshed') + ' (' + _('traeModelsCount').textContent.replace(/[()]/g, '') + ')', 'success');
+    toast(T('Catalog refreshed'), 'success');
   } catch (e) { toast(T('Refresh failed: ') + e.message, 'error'); }
 }
 
@@ -7055,7 +7046,6 @@ async function loadAmdConfig() {
     // 封禁过滤：黑名单语义是「不再对外提供」，页面模型列表同步剔除。
     await syncModelBlacklist();
     const models = (c.models || []).filter(m => m && !modelBlacklistIds.has(m.id));
-    _('amdModelsCount').textContent = '(' + models.length + T(' free models') + ')';
     const sel = _('amdProbeModel');
     if (sel) {
       const prev = sel.value;
@@ -7100,7 +7090,7 @@ async function refreshAmdModels() {
     // 后端对无启用 key 返回 success:false + Message（api() 不抛异常），按统一口径提示
     if (d && d.success === false) { toast(T(d.message || 'Refresh failed: '), 'error'); return; }
     await loadAmdConfig();
-    toast(T('Catalog refreshed') + ' (' + _('amdModelsCount').textContent.replace(/[()]/g, '') + ')', 'success');
+    toast(T('Catalog refreshed'), 'success');
     loadAmdConfig();
   } catch (e) { toast(T('Refresh failed: ') + e.message, 'error'); }
 }
@@ -7329,7 +7319,6 @@ async function loadTHConfig() {
     // 封禁过滤：黑名单语义是「不再对外提供」，页面模型列表同步剔除。
     await syncModelBlacklist();
     const models = (c.models || []).filter(m => m && !modelBlacklistIds.has(m.id));
-    _('thModelsCount').textContent = '(' + models.length + T(' free models') + ')';
     const sel = _('thProbeModel');
     if (sel) {
       const prev = sel.value;
@@ -7373,7 +7362,7 @@ async function refreshTHModels() {
     const d = await api('POST', '/tokenharbor/models/refresh');
     if (d && d.success === false) { toast(T(d.message || 'Refresh failed: '), 'error'); return; }
     await loadTHConfig();
-    toast(T('Catalog refreshed') + ' (' + _('thModelsCount').textContent.replace(/[()]/g, '') + ')', 'success');
+    toast(T('Catalog refreshed'), 'success');
     loadTHConfig();
   } catch (e) { toast(T('Refresh failed: ') + e.message, 'error'); }
 }
