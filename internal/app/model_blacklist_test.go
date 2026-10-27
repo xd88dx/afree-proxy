@@ -249,24 +249,24 @@ func TestTraeAutoBanModel(t *testing.T) {
 	resetModelBlacklistForTest(t)
 
 	m := trae.Model{ID: "glm-5.3", RawName: "glm-5.3__dev", Function: "solo_agent", Native: true}
-	traeAutoBanModel(m, nil, "1005", "plan required")
+	traeAutoBanModel(m, nil, "1005", "plan required", "raw")
 	if !IsModelBlacklisted("trae:glm-5.3") {
 		t.Fatal("1005 must ban immediately")
 	}
 	before := modelBlacklistSnapshot()[0]["hits"].(int)
-	traeAutoBanModel(m, nil, "1005", "plan required")
+	traeAutoBanModel(m, nil, "1005", "plan required", "raw")
 	if after := modelBlacklistSnapshot()[0]["hits"].(int); after != before {
 		t.Fatalf("already-banned model hit count changed: %d -> %d", before, after)
 	}
 
 	// 4001 需同账号复核；没有账号可复核 → 不封（宁可漏封）。
-	traeAutoBanModel(trae.Model{ID: "glm-5.1", RawName: "glm-5.1__dev", Function: "solo_agent"}, nil, "4001", "param is invalid")
+	traeAutoBanModel(trae.Model{ID: "glm-5.1", RawName: "glm-5.1__dev", Function: "solo_agent"}, nil, "4001", "param is invalid", "raw")
 	if IsModelBlacklisted("trae:glm-5.1") {
 		t.Fatal("4001 without verification must not ban")
 	}
 
 	// 限流是换号可解的临时故障，不封。
-	traeAutoBanModel(trae.Model{ID: "glm-5.2", RawName: "glm-5.2__dev", Function: "solo_agent"}, nil, "4011", "rate limit")
+	traeAutoBanModel(trae.Model{ID: "glm-5.2", RawName: "glm-5.2__dev", Function: "solo_agent"}, nil, "4011", "rate limit", "raw")
 	if IsModelBlacklisted("trae:glm-5.2") {
 		t.Fatal("rate limit must not ban")
 	}
@@ -300,5 +300,35 @@ func TestTraeAutoBanOnHTTPError(t *testing.T) {
 	traeAutoBanOnHTTPError(trae.Model{ID: "glm-5.7", RawName: "glm-5.7__dev"}, nil, errors.New("dial tcp: timeout"))
 	if IsModelBlacklisted("trae:glm-5.7") {
 		t.Fatal("network error must not ban")
+	}
+}
+
+// trae 按端点封禁：scope 隔离 + 全档条目语义 + 解禁。
+func TestTraeScopedBanIsolation(t *testing.T) {
+	t.Setenv("DATA_DIR", t.TempDir())
+	resetModelBlacklistForTest(t)
+
+	// raw(traecode) 档封禁：不影响 remote 档
+	BanModel("trae", "trae:glm-5.3-flash", "traecode")
+	if !TraeModelBannedIn("traecode", "glm-5.3-flash") {
+		t.Fatal("traecode scope must be banned")
+	}
+	if TraeModelBannedIn("remote", "glm-5.3-flash") || TraeModelBannedIn("traework", "glm-5.3-flash") {
+		t.Fatal("traecode ban must not leak into remote/traework scopes")
+	}
+	// 全档条目（scope 空）：所有档位命中
+	BanModel("trae", "trae:glm-5.2")
+	if !TraeModelBannedIn("traecode", "glm-5.2") || !TraeModelBannedIn("remote", "glm-5.2") {
+		t.Fatal("unscoped ban must apply to every scope")
+	}
+	// 按档位解禁只拆该档位
+	UnblockModel("trae", "trae:glm-5.3-flash", "traecode")
+	if TraeModelBannedIn("traecode", "glm-5.3-flash") {
+		t.Fatal("scoped unblock must clear the scoped entry")
+	}
+	// 自动封禁按传输落档位：1005 + raw → 只封 traecode
+	BlacklistModel("trae", "trae:kimi-k2.6", "1005", BanReasonAuto, "test", "traecode")
+	if !TraeModelBannedIn("traecode", "kimi-k2.6") || TraeModelBannedIn("remote", "kimi-k2.6") {
+		t.Fatal("auto ban must land on the failing transport's scope")
 	}
 }

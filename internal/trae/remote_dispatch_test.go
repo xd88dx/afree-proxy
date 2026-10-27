@@ -24,6 +24,9 @@ func TestTransportSelector(t *testing.T) {
 	}}}
 	remoteModel := Model{ID: "glm-5.2", Tiers: []string{"traecode", "remote"}}
 	nativeModel := Model{ID: "glm-5.2", Native: true, Function: "solo_agent"}
+	workOnlyModel := Model{ID: "m1", Tiers: []string{"traework"}}
+	remoteOnlyModel := Model{ID: "m2", Tiers: []string{"remote"}}
+	remoteWorkModel := Model{ID: "m3", Tiers: []string{"remote", "traework"}}
 
 	cases := []struct {
 		name         string
@@ -37,8 +40,12 @@ func TestTransportSelector(t *testing.T) {
 		{"auto tools keep raw", "", remoteModel, toolParams, rawChatOnce, remoteChatOnce},
 		{"auto image keeps raw", "", remoteModel, imageParams, rawChatOnce, remoteChatOnce},
 		{"auto plain native-only model", "", nativeModel, plainParams, rawChatOnce, nil},
+		{"auto plain work-only model", "", workOnlyModel, plainParams, remoteWorkChatOnce, nil},
+		{"auto tools work-only model", "", workOnlyModel, toolParams, rawChatOnce, remoteWorkChatOnce},
+		{"auto plain remote-only model", "", remoteOnlyModel, plainParams, remoteChatOnce, nil},
+		{"auto plain remote+work model", "", remoteWorkModel, plainParams, remoteChatOnce, remoteWorkChatOnce},
 		{"remote endpoint pinned", "remote", nativeModel, toolParams, remoteChatOnce, nil},
-		{"traework endpoint pinned", "traework", nativeModel, plainParams, remoteChatOnce, nil},
+		{"traework endpoint pinned", "traework", nativeModel, plainParams, remoteWorkChatOnce, nil},
 		{"traecode endpoint pinned", "traecode", remoteModel, plainParams, rawChatOnce, nil},
 	}
 	for _, tc := range cases {

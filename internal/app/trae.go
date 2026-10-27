@@ -51,6 +51,11 @@ func initTrae() {
 	})
 	trae.SetClientProvider(proxyClientFor)
 	trae.SetProxyObserver(recordProxyOutcome)
+	// 按端点档位的封禁查询（2026-10-27）：trae.ModelList 展示过滤时回查
+	// app 层黑名单（scope 隔离：raw/remote/work 互不影响）。
+	trae.SetBanChecker(func(scope, bareID string) bool {
+		return TraeModelBannedIn(scope, bareID)
+	})
 	trae.SetAttemptObserver(func(ctx context.Context, acc *trae.Account, proxyURL string) {
 		if ctx == nil || acc == nil {
 			return
@@ -303,7 +308,7 @@ func aggregateTraeSSE(ctx context.Context, params map[string]any, m trae.Model) 
 			if stream.Err != nil && stream.Err.RateLimited {
 				return agg.buf.Bytes(), agg.usage, acc.ID, nil
 			}
-			traeAutoBanModel(m, acc, ev.Code, traeEventErrorText(ev))
+			traeAutoBanModel(m, acc, ev.Code, traeEventErrorText(ev), stream.Transport)
 			return nil, agg.usage, acc.ID, fmt.Errorf("trae upstream error: %s", traeEventErrorText(ev))
 		}
 	}
@@ -353,22 +358,49 @@ var traeAutoBanInflight sync.Map
 // 上游以非 200 返回业务码时错误走 trae.Chat 的返回值（而非流内 error 事件），
 // Chat 已对 1005/4023/4001 不再换号重试，封禁入口也要对齐——否则同样的
 // 模型级失败每次都只报错不进黑名单，/v1/models 继续列出。
-func traeAutoBanOnHTTPError(m trae.Model, acc *trae.Account, err error) {
+func traeAutoBanOnHTTPError(m trae.Model, acc *trae.Account, err error, transport ...string) {
 	var he *trae.HTTPError
 	if !errors.As(err, &he) {
 		return
 	}
-	traeAutoBanModel(m, acc, he.Code, fmt.Sprintf("HTTP %d: %s", he.Status, kit.Truncate(he.Body, 300)))
+	t := ""
+	if len(transport) > 0 && transport[0] != "" {
+		t = transport[0]
+	} else if he.Transport != "" {
+		t = he.Transport
+	}
+	traeAutoBanModel(m, acc, he.Code, fmt.Sprintf("HTTP %d: %s", he.Status, kit.Truncate(he.Body, 300)), t)
 }
 
-// traeAutoBanModel 命中判据后封禁；4001 走异步复核。
-func traeAutoBanModel(m trae.Model, acc *trae.Account, code, detail string) {
+// traeTransportScope 传输名 → 封禁档位（remote/traecode/traework）。
+// 空/未知 → 空串（全档封禁，保守兜底）。
+func traeTransportScope(transport string) string {
+	switch strings.ToLower(strings.TrimSpace(transport)) {
+	case "remote":
+		return "remote"
+	case "work":
+		return "traework"
+	case "raw":
+		return "traecode"
+	}
+	return ""
+}
+
+// traeAutoBanModel 命中判据后封禁；4001 走异步复核。封禁按失败发生的
+// 传输落端点档位（2026-10-27 用户定）：raw(trae-b) 的失败不影响
+// remote(trae-a) / work(trae-c) 的同 ID 模型。transport 空 = 未知传输，
+// 全档封禁（保守兜底）。
+func traeAutoBanModel(m trae.Model, acc *trae.Account, code, detail, transport string) {
 	ban, verify := traeAutoBanDecision(code)
 	if !ban {
 		return
 	}
 	id := trae.ModelPrefix + m.ID
-	if IsModelBlacklisted(id) {
+	scope := traeTransportScope(transport)
+	if scope != "" && TraeModelBannedIn(scope, m.ID) {
+		return
+	}
+	if scope == "" && IsModelBlacklisted(id) {
 		return
 	}
 	reason := BanReasonAuto
@@ -376,18 +408,18 @@ func traeAutoBanModel(m trae.Model, acc *trae.Account, code, detail string) {
 		reason = BanReasonModelGone
 	}
 	if !verify {
-		BlacklistModel(platTrae, id, code, reason, detail)
+		BlacklistModel(platTrae, id, code, reason, detail, scope)
 		return
 	}
-	if _, loaded := traeAutoBanInflight.LoadOrStore(id, struct{}{}); loaded {
+	if _, loaded := traeAutoBanInflight.LoadOrStore(id+"@"+scope, struct{}{}); loaded {
 		return
 	}
 	go func() {
-		defer traeAutoBanInflight.Delete(id)
+		defer traeAutoBanInflight.Delete(id + "@" + scope)
 		if !traeProbeFailsModel(m, acc) {
 			return
 		}
-		BlacklistModel(platTrae, id, code, reason, detail)
+		BlacklistModel(platTrae, id, code, reason, detail, scope)
 	}()
 }
 
@@ -464,7 +496,7 @@ func aggregateTraeCompletion(ctx context.Context, params map[string]any, m trae.
 		case "usage":
 			usage = ev.Usage
 		case "error":
-			traeAutoBanModel(m, acc, ev.Code, traeEventErrorText(ev))
+			traeAutoBanModel(m, acc, ev.Code, traeEventErrorText(ev), stream.Transport)
 			return nil, acc.ID, fmt.Errorf("trae upstream error: %s", traeEventErrorText(ev))
 		case "done":
 			if usage == nil {
@@ -1520,15 +1552,21 @@ func runTraeCheckinAll() traeCheckinResult {
 // traeDoCheckin 单账号签到：先 status 探测（上游 enable=false 说明活动未开），
 // 再 claim。错误上抛给调用方计数。
 func traeDoCheckin(a *trae.Account) error {
-	enable, checkedIn, _, err := trae.CheckinStatus(a)
+	enable, checkedIn, credits, err := trae.CheckinStatus(a)
 	if err != nil {
 		return err
 	}
 	if !enable {
-		// 活动未开启：记状态但不算失败
+		// 活动未开启：记状态（不算失败，但要清掉历史失败徽章，否则面板
+		// 永远挂着上一次的"签到失败"）
+		trae.RecordCheckinResult(a, false, 0, "check-in campaign not enabled for this account")
 		return nil
 	}
 	if checkedIn {
+		// 账号维度今天已签（status 口径）：落成功状态，清掉历史失败徽章。
+		// 此前不落记录，导致上午已签成功、下午手动 claim 撞 9074 后徽章
+		// 永远显示"签到失败"（2026-10-27 实测）。
+		trae.RecordCheckinResult(a, true, credits, "")
 		return nil
 	}
 	_, _, err = trae.CheckinClaim(a)

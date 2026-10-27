@@ -73,7 +73,33 @@ var (
 	// CatalogURLOverride / CatalogClient 测试注入点。
 	CatalogURLOverride string
 	CatalogClient      *http.Client
+
+	// banChecker 模型封禁查询回调（app 层注入，避免包循环）：
+	// scope ∈ remote/traecode/traework；nil = 无封禁体系（测试）。
+	banChecker func(scope, bareID string) bool
 )
+
+// SetBanChecker 注入按端点档位的封禁查询（app 层装配期调用一次）。
+func SetBanChecker(fn func(scope, bareID string) bool) { banChecker = fn }
+
+// modelBannedEverywhere 模型在其**所有可用档位**上都被封禁时才视为完全
+// 不可服务（仍有任一可用传输就保留展示——请求会路由到那条传输）。
+// 无档位信息（种子/旧条目）按 traecode 档判定。
+func modelBannedEverywhere(m Model) bool {
+	if banChecker == nil {
+		return false
+	}
+	tiers := m.Tiers
+	if len(tiers) == 0 {
+		tiers = []string{"traecode"}
+	}
+	for _, t := range tiers {
+		if !banChecker(t, m.ID) {
+			return false
+		}
+	}
+	return true
+}
 
 // InitCatalog 初始化目录：种子兜底 + 异步 live 同步（失败保留种子，离线可用）。
 func InitCatalog() {
@@ -659,19 +685,31 @@ func modelList(nativeOnly bool) []Model {
 	// 端点过滤（面板下拉框）：remote / traework 只列对应档位确认过的条目
 	//（这些条目经由 chat_sessions 传输可服务）；auto（默认）与 traecode
 	// 维持原生档口径不变。
-	endpointFilter := ""
+	endpointFilter, explicitNativeView := "", false
 	switch strings.ToLower(strings.TrimSpace(Get().Endpoint)) {
-	case "remote", "traework":
-		endpointFilter = strings.ToLower(strings.TrimSpace(Get().Endpoint))
+	case "remote":
+		endpointFilter = "remote"
+	case "traework":
+		endpointFilter = "traework"
+	case "traecode":
+		explicitNativeView = true
 	}
 	catalogMu.RLock()
 	out := make([]Model, 0, len(catalogModels))
 	for _, m := range catalogModels {
 		if endpointFilter != "" {
-			if !modelHasTier(m, endpointFilter) {
+			// 指定端点：只列该档位确认过的模型，且该档位未被封禁
+			//（2026-10-27 封禁按端点隔离：trae-b 的封禁不影响 trae-a）。
+			if !modelHasTier(m, endpointFilter) || modelBannedIn(endpointFilter, m.ID) {
 				continue
 			}
 		} else if nativeOnly && !m.Native {
+			continue
+		} else if explicitNativeView && modelBannedIn("traecode", m.ID) {
+			// TraeCode 视图（钉 traecode 档）：该档封禁即隐藏。
+			continue
+		} else if modelBannedEverywhere(m) {
+			// 所有可用档位都被封禁：不再对外展示（请求也必然失败）。
 			continue
 		}
 		out = append(out, m)
@@ -679,6 +717,11 @@ func modelList(nativeOnly bool) []Model {
 	catalogMu.RUnlock()
 	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
 	return out
+}
+
+// modelBannedIn 指定档位是否被封禁（nil 回调 = 未接入封禁体系）。
+func modelBannedIn(scope, bareID string) bool {
+	return banChecker != nil && banChecker(scope, bareID)
 }
 
 // Resolve 解析裸模型 ID。未知模型显式拒绝（400），不静默改写。

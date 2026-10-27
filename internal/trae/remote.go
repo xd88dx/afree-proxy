@@ -357,6 +357,13 @@ func remoteToolFailed(m map[string]any) bool {
 // 供现场排障；默认关闭）。
 var remoteDebugEvents = strings.EqualFold(strings.TrimSpace(os.Getenv("TRAE_REMOTE_DEBUG")), "1")
 
+// remoteWorkChatOnce TraeWork 档传输（端点钉 traework，或 auto 模式下模型
+// 仅有 traework 档时由 transportSelector 选用）。
+func remoteWorkChatOnce(ctx context.Context, acc *Account, opts ChatOpts, proxyURL string) (*Stream, error) {
+	opts.PreferWorkTier = true
+	return remoteChatOnce(ctx, acc, opts, proxyURL)
+}
+
 // remoteChatOnce remote/traework 端点单次请求：创建会话 → 打开事件流。
 // 返回的 Stream 与 raw_chat 同构（Next/Close/Usage/Err/ToolCallsSnapshot），
 // 事件翻译在 Stream.consumeRemote。
@@ -364,7 +371,7 @@ func remoteChatOnce(ctx context.Context, acc *Account, opts ChatOpts, proxyURL s
 	endpoint := strings.ToLower(strings.TrimSpace(Get().Endpoint))
 	agentType := remoteAgentType
 	mode := "code"
-	if endpoint == "traework" {
+	if endpoint == "traework" || opts.PreferWorkTier {
 		agentType = workAgentType
 		mode = "work"
 	}
@@ -449,6 +456,7 @@ func remoteChatOnce(ctx context.Context, acc *Account, opts ChatOpts, proxyURL s
 		b, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<16))
 		resp.Body.Close()
 		he := parseUpstreamError(resp.StatusCode, b)
+		he.Transport = agentType
 		log.Printf("trae remote create_session failed status=%d code=%s body=%s model=%s agent=%s",
 			resp.StatusCode, he.Code, kit.Truncate(string(b), 600), opts.Model.ID, agentType)
 		return nil, he
@@ -487,10 +495,13 @@ func remoteChatOnce(ctx context.Context, acc *Account, opts ChatOpts, proxyURL s
 	if eresp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(io.LimitReader(eresp.Body, 1<<16))
 		eresp.Body.Close()
-		return nil, parseUpstreamError(eresp.StatusCode, b)
+		he := parseUpstreamError(eresp.StatusCode, b)
+		he.Transport = agentType
+		return nil, he
 	}
 	stream := newStream(eresp)
 	stream.remote = true
+	stream.Transport = agentType // remote / work（档位名与封禁 scope 对齐）
 	stream.remoteStop = &remoteStopInfo{
 		base: base, sessionID: payload.Data.ChatSessionID,
 		messageID: payload.Data.MessageID, token: acc.Token,

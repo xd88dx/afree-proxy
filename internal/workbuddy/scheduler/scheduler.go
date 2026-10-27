@@ -717,6 +717,9 @@ func (s *Scheduler) runCheckin(ctx context.Context, spread bool) {
 					log.Printf("checkin %s: 今天已签到（幂等）", label)
 				} else {
 					log.Printf("WARN: checkin %s: %v", label, err)
+					// 签到尝试失败记录（2026-10-27 竖排徽章：面板状态列显示
+					// 签到成功/签到失败；跨零点自然过期，重试成功即清除）。
+					s.cfg.Pool.NoteCheckinFailure(st.UID, err.Error())
 				}
 				// 其余业务错误也继续走余额查询
 			} else {

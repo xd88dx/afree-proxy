@@ -53,6 +53,9 @@ type Account struct {
 	Credits *Credits `json:"credits,omitempty"`
 	// Checkin 最近一次签到状态（status/claim 结果投影，面板"状态"列展示）。
 	Checkin *CheckinState `json:"checkin,omitempty"`
+	// CheckinDeviceGen 签到设备 ID 代际（9074 换设备后 +1，持久化）：
+	// 设备 ID = deviceID16Gen(账号ID, 代际)，代际 0 为初始派生。
+	CheckinDeviceGen int `json:"checkinDeviceGen,omitempty"`
 }
 
 // CheckinState 每日签到状态（checkin_credits/status + claim 的投影）。
@@ -67,6 +70,8 @@ type CheckinState struct {
 	Credits float64 `json:"credits,omitempty"`
 	// LastError 最近一次失败的文案（空 = 正常）。
 	LastError string `json:"lastError,omitempty"`
+	// Rotations 当日 9074 换设备次数（跨日清零；上限 checkin9074MaxRotations）。
+	Rotations int `json:"rotations,omitempty"`
 }
 
 // TokenStats 单账号 token 记账。

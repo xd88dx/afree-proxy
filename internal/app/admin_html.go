@@ -345,7 +345,7 @@ body:not([data-theme="dark"]) .theme-toggle .dark-label{display:none}
 .wb-field{display:grid;grid-template-columns:minmax(112px,.8fr) minmax(120px,1.2fr);gap:12px;align-items:center;margin:9px 0}
 .wb-field label{font-size:12px;color:var(--text2)}
 .wb-field input,.wb-field select{min-width:0}
-.wb-account{display:flex;align-items:center;gap:7px;min-width:0;max-width:230px}
+.wb-account{display:flex;align-items:center;gap:7px;min-width:0;max-width:150px}
 .wb-account-main{min-width:0;flex:1}
 .wb-account-name{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .wb-account-id{font-size:11px;color:var(--text3);font-family:'JetBrains Mono',Consolas,monospace;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -1862,6 +1862,17 @@ const fmtShort = s => {
   const p = n => String(n).padStart(2, '0');
   return (d.getMonth() + 1) + '-' + p(d.getDate()) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
 };
+// fmtLastUsed 凭据表「最近使用」列的紧凑时刻：去年份（en-US 完整串
+// 10/27/2026, 4:29:53 PM → 10/27 4:29:53 PM），避免年份撑宽窄列；
+// 解析失败/零值行为与 fmtWhen 一致（2026-10-27 用户定）。
+const fmtLastUsed = s => {
+  if (!s || String(s).startsWith('0001-')) return '';
+  const d = new Date(s);
+  if (isNaN(d.getTime())) return String(s);
+  const p = n => String(n).padStart(2, '0');
+  // 24 小时制（2026-10-27 用户定）：10/27 18:29:53
+  return (d.getMonth() + 1) + '/' + d.getDate() + ' ' + p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds());
+};
 const fmtTokens = n => {
   n = n || 0;
   if (n >= 1000000) return (n / 1000000).toFixed(2).replace(/\.?0+$/, '') + 'M';
@@ -1874,7 +1885,7 @@ const keyTokensCell = k => {
   if (k.tokensToday == null && k.tokensTotal == null) return '<td style="text-align:center;color:var(--text3)">-</td>';
   return '<td title="' + T('Today') + ' ' + fmtNum(k.tokensToday) + ' / ' + T('total') + ' ' + fmtNum(k.tokensTotal) + ' ' + T('tokens (exact when upstream returns usage, otherwise estimated)') + '">' + fmtTokens(k.tokensToday) + ' / ' + fmtTokens(k.tokensTotal) + '</td>';
 };
-const keyLastUsedCell = k => '<td class="mono" style="font-size:11px">' + (k.lastUsed ? esc(fmtWhen(k.lastUsed)) : '-') + '</td>';
+const keyLastUsedCell = k => '<td class="mono" style="font-size:11px">' + (k.lastUsed ? esc(fmtLastUsed(k.lastUsed)) : '-') + '</td>';
 // ========== i18n（English / 简体中文） ==========
 // 机制：字典以英文原文为键。静态 HTML 与 JS 渲染出的纯文本节点由
 // MutationObserver 即时翻译（渲染代码无需逐处包翻译函数）；与变量拼接的
@@ -2645,7 +2656,7 @@ const I18N_ZH = {
   'Refresh every enabled account\'s credit snapshot (feeds the Credits column and credit-priority selection)': '刷新所有已启用账号的额度快照（额度列与额度优先选号的数据源）',
   'Daily check-in for every enabled account that has not checked in today': '给今天还没签到的已启用账号执行每日签到',
   'Daily check-in': '每日自动签到',
-  'Checked in': '已签到',
+  'Checked in': '签到成功',
   'Check-in failed': '签到失败',
   'Check-in done: ': '签到完成：',
   ' already': ' 个已签过',
@@ -2912,6 +2923,18 @@ function renderWorkbuddyAccounts() {
       (status.cls === 'cooldown' && account.until && !String(account.until).startsWith('0001-')
         ? '<div style="font-size:10px;color:var(--text3);margin-top:2px;white-space:nowrap" title="' + esc(fmtWhen(account.until)) + '">' + T('Recovers ') + esc(fmtShort(account.until)) + '</div>'
         : '');
+    // 竖排签到徽章（2026-10-27，与 TraeWork 页统一）：尝试日=今天且未成功 →
+    // 签到失败（title=原因）；今天已签 → 签到成功。global 域无签到体系不显示。
+    const wbToday = new Date().toLocaleDateString('sv');
+    const wbAttemptDay = account.last_checkin_attempt_day || '';
+    const wbCheckinOk = account.checkin_done === true;
+    let checkinV = '';
+    if (realm !== 'global' && (wbCheckinOk || wbAttemptDay === wbToday)) {
+      const ok = wbCheckinOk;
+      const txt = ok ? T('Checked in') : T('Check-in failed');
+      const cls = ok ? 'status active' : 'status cooldown';
+      checkinV = '<div class="' + cls + '" style="writing-mode:vertical-rl;text-orientation:upright;letter-spacing:2px;font-size:10px;padding:5px 2px;border-radius:8px;align-self:stretch;display:flex;align-items:center;justify-content:center" title="' + esc(account.last_checkin_error || txt) + '">' + esc(txt) + '</div>';
+    }
     // 账号/反代双开关列（afree）：账号开关=总开关（关 = 账号不存在——签到/任务/
     // 余额刷新全停，且不再路由）；反代开关=只管会话路由（关 = 只是不接会话，
     // 签到/保活等任务照常）。互锁：反代开关只有账号开关开启时可勾（后端 API
@@ -2940,10 +2963,12 @@ function renderWorkbuddyAccounts() {
         '</div>' +
         '<div class="wb-account-id" title="' + esc(realm + ' · ' + id) + '">' + esc(realm) + ' · ' + esc(shortId) + '</div>' +
       '</div></div></td>' +
-      '<td>' + statusHtml + '</td>' +
+      '<td><div style="display:flex;gap:6px;align-items:center">' +
+        '<div style="display:flex;flex-direction:column;gap:2px;min-width:0">' + statusHtml + '</div>' + checkinV +
+      '</div></td>' +
       '<td>' + esc(credits) + (creditsTotal ? '<span style="color:var(--text3)"> / ' + esc(creditsTotal) + '</span>' : '') + '</td>' +
       '<td title="' + T('Today') + ' ' + fmtNum(tokensToday) + ' / ' + T('total') + ' ' + fmtNum(tokensTotal) + ' ' + T('tokens (exact when upstream returns usage, otherwise estimated)') + '">' + fmtTokens(tokensToday) + ' / ' + fmtTokens(tokensTotal) + '</td>' +
-      '<td class="mono" style="font-size:11px">' + (lastUsed ? esc(fmtWhen(lastUsed)) : '-') + '</td>' +
+      '<td class="mono" style="font-size:11px">' + (lastUsed ? esc(fmtLastUsed(lastUsed)) : '-') + '</td>' +
       wbBindingCell(account) +
       '<td style="white-space:nowrap;text-align:center"><div class="wb-action-group">' +
         wbActionButton('test', id, 'Test') +
@@ -3795,7 +3820,7 @@ async function loadAccounts() {
     const sn = { active: 'Active', cooldown: 'Cooldown', expired: 'Expired' };
     accSnapshot = {};
     tbody.innerHTML = list.map((a, i) => {
-      const lu = a.lastUsed ? new Date(a.lastUsed).toLocaleString('en-US') : '-';
+      const lu = a.lastUsed ? esc(fmtLastUsed(a.lastUsed)) : '-';
       // Cooldown label: show estimated recovery time
       let statusExtra = '';
       if (a.status === 'cooldown') {
@@ -5175,11 +5200,11 @@ async function testBlockedModel(btn) {
   }
 }
 async function unblockBlockedModel(btn) {
-  const platform = btn.dataset.platform, model = btn.dataset.model;
+  const platform = btn.dataset.platform, model = btn.dataset.model, scope = btn.dataset.scope || '';
   if (!confirm(T('Unblock this model? It becomes available in /v1/models again; the same upstream error will ban it again.'))) return;
   btn.disabled = true;
   try {
-    await api('POST', '/models/blacklist/unblock', { platform: platform, model: model });
+    await api('POST', '/models/blacklist/unblock', { platform: platform, model: model, scope: scope });
     toast(T('Unblocked: ') + model, 'success');
     loadModelBlacklist();
   } catch (e) {
@@ -5189,11 +5214,11 @@ async function unblockBlockedModel(btn) {
 // banModel 手动封禁：模型展示区「封禁」按钮 → POST /models/blacklist/ban，
 // 后端原因统一记「管理员手动封禁」。成功后刷新封禁表与当前所在页的模型列表。
 async function banModel(btn) {
-  const platform = btn.dataset.platform, model = btn.dataset.model;
+  const platform = btn.dataset.platform, model = btn.dataset.model, scope = btn.dataset.scope || '';
   if (!confirm(T('Ban this model? It is removed from /v1/models immediately; you can unblock it in the Banned models table.'))) return;
   btn.disabled = true;
   try {
-    await api('POST', '/models/blacklist/ban', { platform: platform, model: model });
+    await api('POST', '/models/blacklist/ban', { platform: platform, model: model, scope: scope });
     toast(T('Banned: ') + model, 'success');
     loadModelBlacklist();
     const ref = btn.dataset.refresh;
@@ -6616,7 +6641,7 @@ async function loadTraeConfig() {
             '<span style="font-family:\'JetBrains Mono\',monospace;font-size:13px;flex:1"' + (m.name ? ' title="' + esc(m.name) + '"' : '') + '>' + esc(m.id) + '</span>' +
             '<span class="model-tag free">' + T('no charge') + '</span>' +
             wbContextTagHTML(m.context, T('Context')) +
-            '<button class="btn btn-sm btn-danger" data-bl-ban="1" data-platform="trae" data-model="' + esc(m.id) + '" data-refresh="trae" style="white-space:nowrap">' + T('Ban') + '</button>')).join('')
+            '<button class="btn btn-sm btn-danger" data-bl-ban="1" data-platform="trae" data-model="' + esc(m.id) + '" data-scope="' + esc(traeCfgCache.endpoint || 'auto') + '" data-refresh="trae" style="white-space:nowrap">' + T('Ban') + '</button>')).join('')
         : '<div class="empty">' + T((c.accounts || []).some(x => x.accountEnabled !== false)
             ? 'No models yet — click Refresh models'
             : 'Models appear here once an account is enabled — the catalog syncs from upstream') + '</div>';
@@ -6682,16 +6707,15 @@ function renderTraeAccounts(accs) {
         } else if (!a.hasRefresh) {
           tokenState = '<div style="font-size:11px;margin-top:2px;color:var(--text3)">' + T('No refresh token') + '</div>';
         }
-        let checkinBadge = '';
+        let checkinV = '';
         if (a.checkin && a.checkin.date === new Date().toLocaleDateString('sv')) {
-          checkinBadge = a.checkin.checkedIn
-            ? '<div class="status active" style="font-size:10px;margin-top:2px">' + T('Checked in') + '</div>'
-            : (a.checkin.lastError
-                ? '<div class="status cooldown" style="font-size:10px;margin-top:2px" title="' + esc(a.checkin.lastError) + '">' + T('Check-in failed') + '</div>'
-                : '');
+          const ok = a.checkin.checkedIn;
+          const txt = ok ? T('Checked in') : T('Check-in failed');
+          const cls = ok ? 'status active' : 'status cooldown';
+          checkinV = '<div class="' + cls + '" style="writing-mode:vertical-rl;text-orientation:upright;letter-spacing:2px;font-size:10px;padding:5px 2px;border-radius:8px;align-self:stretch;display:flex;align-items:center;justify-content:center" title="' + esc(a.checkin.lastError || txt) + '">' + esc(txt) + '</div>';
         }
         const label = a.label || ('Account ' + (a.index + 1));
-        const shortId = a.id.length > 15 ? a.id.slice(0, 15) + '…' : a.id;
+        const shortId = a.id.length > 10 ? a.id.slice(0, 10) + '…' : a.id;
         const pMain = a.proxyMain || '';
         const pBackup = a.proxyBackup || '';
         const backupLocked = !backupProxyOn || pMain === '' || pMain === EGRESS_DIRECT;
@@ -6723,14 +6747,17 @@ function renderTraeAccounts(accs) {
           '<button class="btn btn-sm" data-trt="' + a.index + '">Test</button> ' +
           '<button class="btn btn-sm btn-danger" data-trdel="' + a.index + '" title="Remove this account from the pool">Delete</button>' + '</td>';
         return '<tr draggable="true" data-drag-id="' + a.index + '"><td>#' + (a.index + 1) + '</td>' +
-          '<td style="min-width:0"><div title="' + esc(label + '\n' + a.id + '\n' + (a.tokenMask || '') + (a.hasRefresh ? '' : '\n' + T('No refresh token'))) + '">' +
+          '<td style="min-width:0"><div style="max-width:150px" title="' + esc(label + '\n' + a.id + '\n' + (a.tokenMask || '') + (a.hasRefresh ? '' : '\n' + T('No refresh token'))) + '">' +
             '<div class="nick-wrap">' +
               '<span class="nick-name" style="font-weight:600">' + esc(label) + '</span>' +
               nickPen(a.index, label, T('Edit nickname')) +
             '</div>' +
             '<div class="wb-account-id">' + esc(shortId) + '</div>' +
           '</div></td>' +
-          '<td>' + cool + checkinBadge + (tokenState ? tokenState : '') + '</td>' +
+          '<td><div style="display:flex;gap:6px;align-items:center">' +
+            '<div style="display:flex;flex-direction:column;gap:2px;min-width:0">' + cool + (tokenState ? tokenState : '') + '</div>' +
+            checkinV +
+          '</div></td>' +
           '<td>' + credits + '</td>' +
           keyTokensCell(a) +
           keyLastUsedCell(a) +

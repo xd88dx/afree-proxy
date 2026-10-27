@@ -65,6 +65,27 @@ func (p *Pool) NoteCheckinDone(uid string) {
 			e.lastCheckinDay = day
 			p.dirty.Store(true)
 		}
+		// 成功即清失败徽章（2026-10-27 竖排签到徽章）
+		if e.lastCheckinErr != "" || e.lastCheckinAttemptDay != day {
+			e.lastCheckinAttemptDay = day
+			e.lastCheckinErr = ""
+			p.dirty.Store(true)
+		}
+	}
+}
+
+// NoteCheckinFailure 记录今日签到尝试失败（原因落面板徽章 title；
+// 跨零点自然过期，重试成功由 NoteCheckinDone 清除）。
+func (p *Pool) NoteCheckinFailure(uid, errText string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if e, ok := p.byUID[uid]; ok {
+		day := cst.Day(time.Now())
+		if e.lastCheckinAttemptDay != day || e.lastCheckinErr != errText {
+			e.lastCheckinAttemptDay = day
+			e.lastCheckinErr = errText
+			p.dirty.Store(true)
+		}
 	}
 }
 

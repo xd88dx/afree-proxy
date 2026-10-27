@@ -274,10 +274,17 @@ func StartProxy(host string, port int) error {
 		kept := data[:0]
 		for _, m := range data {
 			if id, _ := m["id"].(string); id != "" {
-				if IsModelBlacklisted(id) {
+				if bannedPlatformOf(id) != "" {
 					continue
 				}
-				if bannedPlatformOf(id) != "" {
+				// trae 平台模型不走这里的平台级黑名单过滤：封禁按端点档位
+				// 隔离（remote/traecode/traework 各自独立），由 trae.ModelList
+				// 内部按当前端点过滤（2026-10-27）。
+				if strings.HasPrefix(id, "trae:") {
+					kept = append(kept, m)
+					continue
+				}
+				if IsModelBlacklisted(id) {
 					continue
 				}
 			}

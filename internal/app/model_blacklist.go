@@ -62,9 +62,13 @@ const (
 
 // modelBlacklistEntry 一条拉黑记录。Model 存**对外模型 ID**（含前缀，
 // 如 wbgb:gpt-6-luna），与 /v1/models 的 id 同口径，过滤时直接比对。
+// Scope 端点档位（2026-10-27 用户定，仅 trae 平台使用）：remote/traecode/
+// traework——封禁按「失败发生的传输」落档位，trac-b(raw) 封禁不影响
+// trae-a(remote) 的同ID模型；空 = 全档（无档位信息的历史条目/手动全档封禁）。
 type modelBlacklistEntry struct {
 	Platform  string    `json:"platform"`
 	Model     string    `json:"model"`
+	Scope     string    `json:"scope,omitempty"`
 	Code      string    `json:"code,omitempty"`   // 上游业务码，如 11158
 	Reason    string    `json:"reason"`           // 统一文案：自动/手动封禁
 	Detail    string    `json:"detail,omitempty"` // 上游原始报文（悬停提示用，不进表格列）
@@ -134,33 +138,57 @@ func flushModelBlacklist() {
 // BlacklistModel 把「平台 + 对外模型 ID」加入黑名单（自动拉黑路径，reason 传
 // 统一文案 BanReasonAuto，detail 传上游原始报文）。已存在时只累加命中次数与
 // 刷新最近时间（不重置 createdAt——面板展示的是首次被拉黑的时间）。
-func BlacklistModel(platform, model, code, reason, detail string) {
-	blacklistHit(platform, model, code, reason, detail)
+func BlacklistModel(platform, model, code, reason, detail string, scope ...string) {
+	blacklistHitScoped(platform, model, firstScope(scope), code, reason, detail)
+}
+
+// firstScope 可选 scope 参数（trae 平台按端点封禁用；其余平台不传）。
+func firstScope(scope []string) string {
+	if len(scope) > 0 {
+		return strings.TrimSpace(scope[0])
+	}
+	return ""
 }
 
 // BanModel 管理员手动封禁：原因统一为 BanReasonManual。已存在时覆盖原因
 // （手动封禁表达的是管理员最新意志）并累加命中次数。返回是否为新加入。
-func BanModel(platform, model string) bool {
+// 可选 scope（trae 平台按端点封禁；空/不传 = 全档）。
+func BanModel(platform, model string, scope ...string) bool {
 	platform = strings.TrimSpace(platform)
 	model = strings.TrimSpace(model)
 	if platform == "" || model == "" {
 		return false
 	}
+	sc := firstScope(scope)
 	ensureModelBlacklistLoaded()
 	modelBlacklistMu.Lock()
-	k := blacklistKey(platform, model)
+	k := blacklistKeyScoped(platform, model, sc)
 	isNew := modelBlacklistItems[k] == nil
-	blacklistHitLocked(k, platform, model, "", BanReasonManual, "")
+	blacklistHitLocked(k, platform, model, sc, "", BanReasonManual, "")
 	modelBlacklistMu.Unlock()
 	flushModelBlacklist()
 	if isNew {
-		log.Printf("model blacklist: +%s %s (manual ban)", platform, model)
+		log.Printf("model blacklist: +%s %s (scope=%s) (manual ban)", platform, model, sc)
 	}
 	return isNew
 }
 
 // blacklistHit 加锁包装：写 entry（新增或累加），flush 落盘。
+// blacklistKeyScoped 带档位的键（scope 空 = 全档，退回旧键形态兼容存量数据）。
+func blacklistKeyScoped(platform, model, scope string) string {
+	if scope == "" {
+		return blacklistKey(platform, model)
+	}
+	return platform + "|" + model + "@" + scope
+}
+
 func blacklistHit(platform, model, code, reason, detail string) {
+	blacklistHitScoped(platform, model, "", code, reason, detail)
+}
+
+// blacklistHitScoped 带档位命中：scope 非空写入「模型@档位」独立键，
+// 实现按端点隔离封禁（trae 平台：raw/remote/work 各自独立）。
+func blacklistHitScoped(platform, model, scope, code, reason, detail string) {
 	platform = strings.TrimSpace(platform)
 	model = strings.TrimSpace(model)
 	if platform == "" || model == "" {
@@ -168,13 +196,13 @@ func blacklistHit(platform, model, code, reason, detail string) {
 	}
 	ensureModelBlacklistLoaded()
 	modelBlacklistMu.Lock()
-	blacklistHitLocked(blacklistKey(platform, model), platform, model, code, reason, detail)
+	blacklistHitLocked(blacklistKeyScoped(platform, model, scope), platform, model, scope, code, reason, detail)
 	modelBlacklistMu.Unlock()
 	flushModelBlacklist()
 }
 
 // blacklistHitLocked 实际写入（调用方须持有 modelBlacklistMu）。
-func blacklistHitLocked(k, platform, model, code, reason, detail string) {
+func blacklistHitLocked(k, platform, model, scope, code, reason, detail string) {
 	now := time.Now()
 	if e := modelBlacklistItems[k]; e != nil {
 		e.Hits++
@@ -193,6 +221,7 @@ func blacklistHitLocked(k, platform, model, code, reason, detail string) {
 	modelBlacklistItems[k] = &modelBlacklistEntry{
 		Platform:  platform,
 		Model:     model,
+		Scope:     scope,
 		Code:      code,
 		Reason:    kit.Truncate(reason, 300),
 		Detail:    kit.Truncate(detail, 2000),
@@ -200,7 +229,7 @@ func blacklistHitLocked(k, platform, model, code, reason, detail string) {
 		LastAt:    now,
 		Hits:      1,
 	}
-	log.Printf("model blacklist: +%s %s (%s) %s", platform, model, code, kit.Truncate(reason, 120))
+	log.Printf("model blacklist: +%s %s (scope=%s) (%s) %s", platform, model, scope, code, kit.Truncate(reason, 120))
 }
 
 // IsModelBlacklisted 该对外模型 ID 是否已拉黑（按对外 ID 判，跨平台无歧义：
@@ -221,19 +250,38 @@ func IsModelBlacklisted(model string) bool {
 }
 
 // UnblockModel 解禁：移出名单。仅此而已——后续若再次命中同样原因，会重新
-// 被拉黑（不是永久豁免）。
-func UnblockModel(platform, model string) bool {
+// 被拉黑（不是永久豁免）。可选 scope（trae 平台按端点解禁；空 = 全档旧键）。
+func UnblockModel(platform, model string, scope ...string) bool {
+	sc := firstScope(scope)
 	ensureModelBlacklistLoaded()
 	modelBlacklistMu.Lock()
-	k := blacklistKey(platform, model)
+	k := blacklistKeyScoped(platform, model, sc)
 	_, existed := modelBlacklistItems[k]
 	delete(modelBlacklistItems, k)
 	modelBlacklistMu.Unlock()
 	if existed {
-		log.Printf("model blacklist: -%s %s (manual unblock)", platform, model)
+		log.Printf("model blacklist: -%s %s (scope=%s) (manual unblock)", platform, model, sc)
 		flushModelBlacklist()
 	}
 	return existed
+}
+
+// TraeModelBannedIn trae 平台模型在指定端点档位是否被封禁（展示过滤用）：
+// 命中同档位条目或全档条目（scope 空）即为封禁。
+func TraeModelBannedIn(scope, bareID string) bool {
+	full := platTrae + ":" + bareID
+	ensureModelBlacklistLoaded()
+	modelBlacklistMu.Lock()
+	defer modelBlacklistMu.Unlock()
+	for _, e := range modelBlacklistItems {
+		if e == nil || e.Platform != platTrae || e.Model != full {
+			continue
+		}
+		if e.Scope == "" || e.Scope == scope {
+			return true
+		}
+	}
+	return false
 }
 
 // modelBlacklistSnapshot 面板表格数据（按加入时间倒序）。
@@ -245,6 +293,7 @@ func modelBlacklistSnapshot() []map[string]any {
 		rows = append(rows, map[string]any{
 			"platform":  e.Platform,
 			"model":     e.Model,
+			"scope":     e.Scope,
 			"code":      e.Code,
 			"reason":    e.Reason,
 			"detail":    e.Detail,
@@ -493,12 +542,13 @@ func handleModelBlacklistUnblock(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Platform string `json:"platform"`
 		Model    string `json:"model"`
+		Scope    string `json:"scope"`
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<16)).Decode(&req); err != nil {
 		writeAPI(w, http.StatusBadRequest, apiResponse{Error: "invalid JSON"})
 		return
 	}
-	if !UnblockModel(req.Platform, req.Model) {
+	if !UnblockModel(req.Platform, req.Model, normalizeTraeScope(req.Platform, req.Scope)) {
 		writeAPI(w, http.StatusOK, apiResponse{Success: true, Message: "not in blacklist"})
 		return
 	}
@@ -517,6 +567,7 @@ func handleModelBlacklistBan(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Platform string `json:"platform"`
 		Model    string `json:"model"`
+		Scope    string `json:"scope"`
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<16)).Decode(&req); err != nil {
 		writeAPI(w, http.StatusBadRequest, apiResponse{Error: "invalid JSON"})
@@ -530,9 +581,22 @@ func handleModelBlacklistBan(w http.ResponseWriter, r *http.Request) {
 		writeAPI(w, http.StatusBadRequest, apiResponse{Error: "platform unknown and model has no platform prefix"})
 		return
 	}
-	BanModel(platform, req.Model)
-	log.Printf("Ban model %s %s (manual)", platform, req.Model)
+	BanModel(platform, req.Model, normalizeTraeScope(platform, req.Scope))
+	log.Printf("Ban model %s %s (scope=%s) (manual)", platform, req.Model, normalizeTraeScope(platform, req.Scope))
 	writeAPI(w, http.StatusOK, apiResponse{Success: true, Message: "banned"})
+}
+
+// normalizeTraeScope trae 平台的端点档位归一：仅接受 remote/traecode/
+// traework；其余（含 auto 视图/非 trae 平台）返回空 = 全档封禁。
+func normalizeTraeScope(platform, scope string) string {
+	if platform != platTrae {
+		return ""
+	}
+	switch strings.ToLower(strings.TrimSpace(scope)) {
+	case "remote", "traecode", "traework":
+		return strings.ToLower(strings.TrimSpace(scope))
+	}
+	return ""
 }
 
 // POST /admin/api/models/blacklist/test  body: { platform, model }

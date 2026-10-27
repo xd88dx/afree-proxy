@@ -60,6 +60,9 @@ type HTTPError struct {
 	RateLimited bool
 	ParamError  bool
 	AuthFailure bool
+	// Transport 失败发生的传输（raw/remote/work；空 = 未知，如网络错误）。
+	// 按端点封禁（2026-10-27）据此把封禁落到对应档位。
+	Transport string
 }
 
 func (e *HTTPError) Error() string {
@@ -276,7 +279,17 @@ func oauthHeaders(token string, deviceID16 string) map[string]string {
 // deviceID16 账号维度的 16 位数字设备号（OAuth/签到/额度域用）：
 // sha256(accountID) 十进制取模 10^16 补零，跨 token 刷新稳定。
 func deviceID16(accountID string) string {
-	sum := sha256.Sum256([]byte(accountID))
+	return deviceID16Gen(accountID, 0)
+}
+
+// deviceID16Gen 按代际派生 16 位设备 ID：材料 = 账号ID（gen 0）或
+// 账号ID#gen{N}（9074 轮换后）。同代际跨 token 刷新/重启稳定。
+func deviceID16Gen(accountID string, generation int) string {
+	material := accountID
+	if generation > 0 {
+		material = fmt.Sprintf("%s#gen%d", accountID, generation)
+	}
+	sum := sha256.Sum256([]byte(material))
 	n := uint64(0)
 	for _, b := range sum[:8] {
 		n = n<<8 | uint64(b)
@@ -460,8 +473,10 @@ type Stream struct {
 	sc   *bufio.Scanner
 
 	// transport 形态：remote=true 走 chat_sessions 事件翻译（remote.go），
-	// false = raw_chat 原生协议。两条链路共用 Next/事件聚合。
+	// false = raw_chat 原生协议。Transport 是对外档位名（raw/remote/work），
+	// 按端点封禁（2026-10-27）据此把封禁落到对应档位。
 	remote     bool
+	Transport  string
 	remoteStop *remoteStopInfo
 	// pending 消化单帧产出多个事件（如 plan_item 的思考+正文）。
 	pending []*StreamEvent
@@ -1217,6 +1232,10 @@ type ChatOpts struct {
 	BoundRoutable func(*Account) bool
 	// PinAccount 固定账号（面板 Test 探测）。
 	PinAccount *Account
+	// PreferWorkTier chat_sessions 传输使用 TraeWork 执行器
+	//（solo_work_remote）；false = Agent 执行器（solo_agent_remote）。
+	// 由 transportSelector / remoteWorkChatOnce 设置，端点钉 traework 时等效 true。
+	PreferWorkTier bool
 }
 
 // Chat 执行一次上游 chat：选号（含 token 预刷新）→ 出口解析 → 网关/端点
@@ -1331,28 +1350,56 @@ func chatCandidates() [][2]string {
 	return [][2]string{{gw, rawChatV2Endpoint}}
 }
 
-// transportSelector 端点 → (主传输, 回落传输)。原项目端点语义：
+// transportSelector 端点 → (主传输, 回落传输)。原项目端点语义 + 档位路由：
 //   - remote / traework：固定 chat_sessions 传输，不回落；
 //   - traecode：固定 raw_chat，不回落；
-//   - auto（默认，原项目 TRAE_AUTO_ROUTE）：工具/图片/工具历史请求走
-//     raw_chat（IDE Agent），纯文字走 Remote（chat_sessions）；
-//     主传输失败（可重试类错误）回落另一条一次。
-//     模型目录未确认 remote 档（种子/原生条目）时不分流，维持 raw_chat。
+//   - auto（默认，原项目 TRAE_AUTO_ROUTE + 档位路由 2026-10-27 用户定）：
+//     工具/图片请求走 raw_chat（IDE Agent，工具协议完整）；纯文字按模型
+//     档位选传输——有 remote 档走 Remote，仅有 traework 档走 TraeWork，
+//     仅有原生档走 raw_chat；主传输失败（可重试类错误）回落一次（Remote
+//     ↔ raw，或 Remote → TraeWork，对齐原项目 work fallback）。
+//     模型无任何 chat_sessions 档时不分流，维持 raw_chat。
 func transportSelector(opts ChatOpts) (primary, fallback func(context.Context, *Account, ChatOpts, string) (*Stream, error)) {
 	ep := strings.ToLower(strings.TrimSpace(Get().Endpoint))
 	switch ep {
-	case "remote", "traework":
+	case "remote":
 		return remoteChatOnce, nil
+	case "traework":
+		return remoteWorkChatOnce, nil
 	case "traecode":
 		return rawChatOnce, nil
 	}
+	// auto：先看请求特征（工具/图片永远 raw 优先——工具协议只有 raw 完整）
 	if requestHasToolsOrImages(opts.Params) {
-		return rawChatOnce, remoteChatOnce
+		switch {
+		case modelHasTier(opts.Model, "remote"):
+			return rawChatOnce, remoteChatOnce
+		case modelHasTier(opts.Model, "traework"):
+			return rawChatOnce, remoteWorkChatOnce
+		default:
+			return rawChatOnce, nil
+		}
 	}
-	if !modelHasTier(opts.Model, "remote") {
+	// 纯文字：按模型档位选主传输
+	hasNative := modelHasTier(opts.Model, "traecode")
+	switch {
+	case modelHasTier(opts.Model, "remote"):
+		switch {
+		case hasNative:
+			return remoteChatOnce, rawChatOnce
+		case modelHasTier(opts.Model, "traework"):
+			return remoteChatOnce, remoteWorkChatOnce // Remote 失败回落 Work（原项目 work fallback）
+		default:
+			return remoteChatOnce, nil
+		}
+	case modelHasTier(opts.Model, "traework"):
+		if hasNative {
+			return remoteWorkChatOnce, rawChatOnce
+		}
+		return remoteWorkChatOnce, nil
+	default:
 		return rawChatOnce, nil
 	}
-	return remoteChatOnce, rawChatOnce
 }
 
 // remoteFallbackEligible 回落只对"可重试"类失败生效：网络错误 / 5xx 等。
@@ -1451,11 +1498,14 @@ func rawChatOnce(ctx context.Context, acc *Account, opts ChatOpts, proxyURL stri
 			continue
 		}
 		if resp.StatusCode == http.StatusOK {
-			return newStream(resp), nil
+			s := newStream(resp)
+			s.Transport = "raw"
+			return s, nil
 		}
 		b, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<16))
 		resp.Body.Close()
 		he := parseUpstreamError(resp.StatusCode, b)
+		he.Transport = "raw"
 		// 限流（同凭据处处限流）与参数错误：不做候选回退，立即上抛
 		if he.RateLimited || he.ParamError {
 			return nil, he
