@@ -38,6 +38,8 @@ import (
 //	ZEN_PIN_KEY                zen key 池固定用第 n 个 key（1 起），排障/单 key 直测用
 //	                           （ZEN_SESSION_ROTATE_MINUTES 已废弃：2026-10-27 起会话
 //	                           每次 API 调用新铸，无轮换概念；env 不再被读取）
+//	ZEN_ORG_ID                 OAuth 账户组织 ID，写入 x-opencode-org-id 头；原始
+//	                           API key 流量不需要（官方 CLI 也只对 OAuth 账户发该头）
 //	PROXY_ISOLATION            代理隔离开关，只接受 true/false（大小写不敏感）：
 //	                           true 强制开启（面板开关只读）；false 默认关闭、
 //	                           面板可改；未设置默认开启、面板可改。其他值告警

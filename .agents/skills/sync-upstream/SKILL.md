@@ -23,6 +23,7 @@ description: 同步 afree-proxy 两条上游线的完整流程与陷阱清单—
 3. **引用上游提交用显式哈希**，绝不依赖 `FETCH_HEAD`——后台 IDE fetch 会把 `.git/FETCH_HEAD` 覆写成自己 fork 的记录，导致把本地 HEAD 误当上游（真实踩坑）。
 4. **会话回显不可信**：冲突解决结果以 `git diff`、容器构建、真实测试输出为准。
 5. 提交信息用中文、说明上游哈希与本地适配点；fork 线结束必须 `git push origin main`（不推 GitHub 的 behind 提示不会消除，同步就没生效）。
+6. **收尾必写 `MERGE.md` 台账**（用户 2026-10-27 要求）：仓库根 `MERGE.md` 按 Cline / TreaWork / WorkBuddy / OpenCode 四条线记录同步历史。每次同步在对应线追加一节 `### YYYY-MM-DD — <基线短哈希> → <目标短哈希>`，写明上游仓库与合并方式、基线与目标、吸收项（带原因）、丢弃项（带原因）、本地定制保留清单、验证结果；未涉及的线保留原文并写"本次未涉及上游同步"。历史记录只追加不删改。
 
 ## 2. 两条线各自的入口
 
@@ -60,7 +61,9 @@ MSYS_NO_PATHCONV=1 docker run --rm -v "D:/下载/Github/afree-proxy:/build" -w /
 
 注意：`-v "D:/..."` 路径在 Git Bash 下必须 `MSYS_NO_PATHCONV=1`，否则路径被改写挂载失败。
 
+**既有 flaky（勿误判为回归）**：`internal/workbuddy/server` 的 `TestChatStreamPassthrough` 在全量 `go test ./...` 时偶发失败，报 `LastTokensPerSecond=nil` 而 `LastLatencyMs=1`——该断言要求 TTFB ≥1ms，1ms 精度在机器负载下会翻转。判定方法：`git worktree add --detach <scratch>/afree-head HEAD` 后在该工作树跑 `go test ./internal/workbuddy/server/ -count=1` 数次，若同样偶发失败即为既有问题。
+
 ## 4. 完成判据
 
-- fork 线：merge commit 双父（本地 HEAD + 上游哈希）已推送 origin；GitHub 仓库页不再显示 behind。
-- vendor 线：`workbuddy-vendor-baseline.json` 的 commit = 上游 HEAD；脚本手工步骤清单（装配/版本号）已完成；容器验证全绿。
+- fork 线：merge commit 双父（本地 HEAD + 上游哈希）已推送 origin；GitHub 仓库页不再显示 behind；`MERGE.md` 的 Cline 节已追加本次记录。
+- vendor 线：`workbuddy-vendor-baseline.json` 的 commit = 上游 HEAD；脚本手工步骤清单（装配/版本号）已完成；容器验证全绿；`MERGE.md` 的 WorkBuddy 节已追加本次记录。

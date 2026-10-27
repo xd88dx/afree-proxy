@@ -71,7 +71,6 @@ var (
 	zenNativeUA = "opencode/latest/2.1.4/cli"
 )
 
-
 // loadZenSessions 启动时/首次使用时加载持久化会话（只读一次，失败则空跑）。
 // 会话表住在 zen-config.json 的 sessions 段；整文件损坏时的改名留档由
 // loadZenConfigFileLocked 统一处理（不会再出现"只有会话段坏了"的情况）。
@@ -489,4 +488,3 @@ func zenKeyConfigured(key string) bool {
 	}
 	return false
 }
-

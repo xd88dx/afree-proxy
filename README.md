@@ -71,6 +71,8 @@ docker run -d --name afree-proxy \
 | `ADMIN_PASSWORD` / `ADMIN_PASSWORD_FILE` | 空 | 管理面板密码；设置后所有 `/admin/*` 需登录 |
 | `PROXY_ISOLATION` | 未设置 | 身份↔出口绑定：`true` 强制开启（面板只读）；`false` 默认改为关（面板可改）；未设置默认开启。只接受 true/false |
 | `STRICT_MODEL_MATCH` | `true` | 未知模型名 400 而非静默兜底 |
+| `ZEN_ORG_ID` | 空 | OAuth 账户组织 ID,写入 `x-opencode-org-id` 头;原始 API key 流量不需要(官方 CLI 也只对 OAuth 账户发该头)。面板可改,env 设置时以 env 为准 |
+| `ZEN_PIN_KEY` | 空 | 排障:所有 zen 上游请求固定用第 n 个 key(1 起)而非轮转 |
 | `POOL_STRATEGY` | `round_robin` | 全部平台的凭据调度策略（Cline/zen/or/amd/th/other 共用）：`round_robin` / `fill` / `random`。WorkBuddy 用 vendor 自己的国内/国际分区策略；Trae 未设 `TRAE_STRATEGY` 时回落此值 |
 | `TRAE_STRATEGY` | 未设置 | Trae 独立凭据调度策略：`round_robin` / `fill` / `random` / `credit-priority`（额度多者优先）。优先于面板 Selection，未设置时回落 `POOL_STRATEGY` |
 | `PUID` / `PGID` | `100` / `101` | 容器运行身份（entrypoint 自愈属主后降权；bind mount 时设为宿主机用户） |

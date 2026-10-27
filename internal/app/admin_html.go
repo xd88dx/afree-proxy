@@ -977,6 +977,8 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
     <div class="flex" style="gap:10px;margin:0 0 8px;align-items:center;flex-wrap:wrap">
       <label class="hint" style="margin:0">Probe model (used by the Test buttons):</label>
       <select id="ocProbeModel" style="max-width:300px"><option value="">auto</option></select>
+      <label class="hint" style="margin:0 0 0 6px">Org ID:</label>
+      <input type="text" id="ocOrgID" placeholder="wrk_… (optional)" style="max-width:220px" title="OAuth account org id, sent as x-opencode-org-id. Only needed when the key is an OAuth token rather than a raw API key; leave empty to omit the header.">
     </div>
     <div class="table-wrap" style="margin-bottom:10px">
       <table>
@@ -1192,6 +1194,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
           </div>
           <div class="wb-field"><label for="wbPromptFile">Prompt file</label><input id="wbPromptFile" data-wb-path="prompt.file" data-wb-send-empty="1" placeholder="Leave empty = built-in default prompt"></div>
           <div class="wb-switch"><input type="checkbox" id="wbSanitize" data-wb-path="features.sanitize_blacklist_fingerprints"><label for="wbSanitize">Sanitize outbound fingerprints</label></div>
+          <div class="wb-switch"><input type="checkbox" id="wbEmbeddings" data-wb-path="features.embeddings_enabled"><label for="wbEmbeddings">Embeddings endpoint (/v1/embeddings, experimental)</label></div>
           <div class="wb-switch"><input type="checkbox" id="wbStickyEnabled" data-wb-path="session_sticky.enabled"><label for="wbStickyEnabled">Sticky session routing</label></div>
           <div class="hint" style="margin-top:10px">Upstash Redis mirror, auth dir, and state file are edited in the config file manually (restart items).</div>
         </div>
@@ -5437,6 +5440,7 @@ async function loadOcConfig() {
     _('ocBaseURL').value = c.baseURL || '';
     _('ocMaxConc').value = c.maxConcurrency || 8;
     _('ocRetries').value = c.retries || 3;
+    if (_('ocOrgID')) _('ocOrgID').value = c.orgID || '';
     if (_('ocPinProxy')) _('ocPinProxy').value = String(c.pinProxyPerKey !== false);
     const eg = c.egress || {};
     if (_('ocEgressInfo')) {
@@ -5467,6 +5471,7 @@ async function saveOcConfig() {
     proxyStrategy: ocCfgCache.proxyStrategy || 'round_robin',
     maxConcurrency: parseInt(_('ocMaxConc').value) || 8,
     retries: parseInt(_('ocRetries').value) || 3,
+    orgID: _('ocOrgID') ? _('ocOrgID').value.trim() : '',
     pinProxyPerKey: _('ocPinProxy') ? _('ocPinProxy').value === 'true' : true,
     compaction: {
       auto: _('ocCompactAuto').value === 'true',

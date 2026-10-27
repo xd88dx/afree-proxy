@@ -33,19 +33,19 @@ func zenConfigPayload() map[string]any {
 	binding := getProxyBindingConfig()
 	pool := getProxyPool()
 	return map[string]any{
-		"zenUseProxies":        zenProxiesEnabled(),
-		"workbuddyUseProxies":  workbuddyProxiesEnabled(),
-		"key":                  cfg.Key,
-		"keys":                 cfg.Keys,
-		"keyStates":            zenKeyStatus(),
-		"baseURL":              cfg.BaseURL,
-		"proxies":              pool.Proxies,
-		"proxyStrategy":        pool.Strategy,
-		"proxySubURL":          pool.SubURL,
-		"proxySubCron":         pool.SubCron,
-		"maxConcurrency":       cfg.MaxConcurrency,
-		"retries":              cfg.Retries,
-		"compaction":           cfg.Compaction,
+		"zenUseProxies":       zenProxiesEnabled(),
+		"workbuddyUseProxies": workbuddyProxiesEnabled(),
+		"key":                 cfg.Key,
+		"keys":                cfg.Keys,
+		"keyStates":           zenKeyStatus(),
+		"baseURL":             cfg.BaseURL,
+		"proxies":             pool.Proxies,
+		"proxyStrategy":       pool.Strategy,
+		"proxySubURL":         pool.SubURL,
+		"proxySubCron":        pool.SubCron,
+		"maxConcurrency":      cfg.MaxConcurrency,
+		"retries":             cfg.Retries,
+		"compaction":          cfg.Compaction,
 		// 代理隔离（账号/key 绑定出口）：生效值 + 是否被 env 钉死（面板据此
 		// 禁用开关并提示）。
 		"proxyIsolation":          proxyIsolationEnabled(),
@@ -58,6 +58,8 @@ func zenConfigPayload() map[string]any {
 		// egress 自动钉定层（3758eb7）：开关状态与容量快照（代理够不够分）。
 		"pinProxyPerKey": pinProxyPerKeyEnabled(),
 		"egress":         zenEgressSnapshot(),
+		// OAuth 账户组织 ID（上游 571f9b9）：面板可编辑，空 = 不发该头。
+		"orgID": cfg.OrgID,
 		"runtime": map[string]any{
 			"proxyCooldowns": proxyCooldownStatus(),
 			// 每代理在线率统计（纯被动：只记真实请求的出口成败）。URL 已打码。
@@ -101,11 +103,13 @@ func handleZenConfigUpdate(w http.ResponseWriter, r *http.Request) {
 		ProxySubCron        *string  `json:"proxySubCron"`
 		MaxConcurrency      *int     `json:"maxConcurrency"`
 		Retries             *int     `json:"retries"`
-		ProxyIsolation       *bool `json:"proxyIsolation"`
-		BackupProxyEnabled   *bool `json:"backupProxyEnabled"`
+		ProxyIsolation      *bool    `json:"proxyIsolation"`
+		BackupProxyEnabled  *bool    `json:"backupProxyEnabled"`
 		// 自动分配规则：nil = 不改动；非 nil = 整表替换（空表 = 全部清除）。
 		ProxyExclusions map[string][]string `json:"proxyExclusions"`
 		ProxyBindCaps   map[string]int      `json:"proxyBindCaps"`
+		// OAuth 账户组织 ID（x-opencode-org-id，上游 571f9b9）：空串 = 清除该头。
+		OrgID *string `json:"orgID"`
 		// 每 key 固定出口代理（egress 层，3758eb7）：指针区分"未提交"与显式 false。
 		PinProxyPerKey *bool `json:"pinProxyPerKey"`
 		Compaction     *struct {
@@ -132,9 +136,11 @@ func handleZenConfigUpdate(w http.ResponseWriter, r *http.Request) {
 		KeyBindings: cur.KeyBindings,
 		// KeyRoutingEnabled 必须随 next 保留：config/update 是全量替换语义，
 		// 漏拷会把面板勾选的路由参与表整体清掉（缺项 = 全部参与）。
-		KeyRoutingEnabled:    cur.KeyRoutingEnabled,
-		Compaction:           cur.Compaction,
-		PinProxyPerKey:       cur.PinProxyPerKey,
+		KeyRoutingEnabled: cur.KeyRoutingEnabled,
+		Compaction:        cur.Compaction,
+		// OrgID 必须随 next 保留（全量替换语义，漏拷 = 保存面板即清掉 org 头）。
+		OrgID:          cur.OrgID,
+		PinProxyPerKey: cur.PinProxyPerKey,
 	}
 	if patch.ZenUseProxies != nil {
 		poolNext.ZenUseProxies = patch.ZenUseProxies
@@ -275,8 +281,9 @@ func handleZenConfigUpdate(w http.ResponseWriter, r *http.Request) {
 	if patch.PinProxyPerKey != nil {
 		next.PinProxyPerKey = patch.PinProxyPerKey
 	}
-	if patch.PinProxyPerKey != nil {
-		next.PinProxyPerKey = patch.PinProxyPerKey
+	if patch.OrgID != nil {
+		// 空串即清除（不编造 org id：原始 API key 流量本来就没有）。
+		next.OrgID = strings.TrimSpace(*patch.OrgID)
 	}
 	if patch.Compaction != nil {
 		base := cur.Compaction
