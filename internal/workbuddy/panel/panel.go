@@ -14,6 +14,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"log"
 	"math"
 	"net/http"
@@ -1159,6 +1160,61 @@ func (p *Panel) accountTest(w http.ResponseWriter, r *http.Request) {
 
 // probeOnce 用单个模型执行一次探测。返回待回写的 out（含 model/latencyMs/
 // status/error）与错误分类；uerr 为 nil 表示成功（此时调用方负责 NoteSuccess）。
+// recordProbeUsage Test 探测的记账口：与 server 正常请求同两本账——账号 token
+// 快照（面板「今日/累计」列）与用量时序（usage.json 的 Req 列）。失败静默：
+// 探测的主职责是测连通，记账只是顺带。
+func recordProbeUsage(p *Panel, uid, model string, u map[string]any, latencyMs int64) {
+	num := func(k string) (int64, bool) {
+		v, ok := u[k]
+		if !ok {
+			return 0, false
+		}
+		switch n := v.(type) {
+		case float64:
+			return int64(n), true
+		case int:
+			return int64(n), true
+		case int64:
+			return n, true
+		case json.Number:
+			i, err := n.Int64()
+			return i, err == nil
+		}
+		return 0, false
+	}
+	delta := pool.TokenUsageDelta{Model: model}
+	if n, ok := num("prompt_tokens"); ok {
+		delta.HasPromptTokens, delta.PromptTokens = true, n
+	}
+	if n, ok := num("completion_tokens"); ok {
+		delta.HasCompletionTokens, delta.CompletionTokens = true, n
+	}
+	if n, ok := num("total_tokens"); ok {
+		delta.HasTotalTokens, delta.TotalTokens = true, n
+	}
+	if !delta.HasPromptTokens && !delta.HasCompletionTokens && !delta.HasTotalTokens {
+		return
+	}
+	delta.HasLatencyMs, delta.LatencyMs = true, latencyMs
+	p.cfg.Pool.RecordTokenUsage(uid, delta)
+	if p.cfg.Usage != nil {
+		realm := "cn"
+		if a, ok := p.cfg.Pool.Status(uid); ok && a.Realm != "" {
+			realm = a.Realm
+		}
+		p.cfg.Usage.Add(time.Now(), realm, uid, model, usage.Delta{
+			PromptTokens:     delta.PromptTokens,
+			HasPromptTokens:  delta.HasPromptTokens,
+			CompletionTokens: delta.CompletionTokens,
+			HasCompletion:    delta.HasCompletionTokens,
+			TotalTokens:      delta.TotalTokens,
+			HasTotal:         delta.HasTotalTokens,
+			LatencyMs:        delta.LatencyMs,
+			HasLatency:       true,
+		}, true)
+	}
+}
+
 func probeOnce(p *Panel, a *auth.Auth, uid, probeModel string) (map[string]any, upstream.ErrKind, error) {
 	body, _ := json.Marshal(map[string]any{
 		"model":      probeModel,
@@ -1182,7 +1238,22 @@ func probeOnce(p *Panel, a *auth.Auth, uid, probeModel string) (map[string]any, 
 	out := map[string]any{"ok": true, "model": probeModel, "latencyMs": latencyMs}
 	if uerr == nil {
 		if rc != nil {
+			// Test 也是真实上游消耗：读出响应体（非流式聚合 JSON）提取 usage
+			// 记账，与 server 正常请求口径统一（2026-10-27 afree 用户定）。
+			// 读失败不影响探测结论——rc 读走后必须 Close（读全即 EOF）。
+			raw, rerr := io.ReadAll(rc)
 			rc.Close()
+			if rerr == nil {
+				var obj map[string]any
+				if json.Unmarshal(raw, &obj) == nil {
+					if d, ok := obj["data"].(map[string]any); ok && d["usage"] != nil {
+						obj = d
+					}
+					if u, ok := obj["usage"].(map[string]any); ok && len(u) > 0 {
+						recordProbeUsage(p, uid, probeModel, u, latencyMs)
+					}
+				}
+			}
 		}
 		return out, upstream.ErrNone, nil
 	}

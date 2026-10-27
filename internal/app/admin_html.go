@@ -5861,13 +5861,24 @@ function prMenuRows(kind, st) {
   }).join('');
 }
 
+// prExSorted 卡片已排除条目按代理池顺序输出：暂存态是"代理 -> 数组"的追加
+// 语义（新 pick 的 push 到尾部），直接渲染会按加入次序排；以 proxyListCache
+// （池序）为骨架过滤一遍，chips 与候选菜单/绑定下拉同一顺序可对照。
+function prExSorted(ex) {
+  const inSt = p => ex.indexOf(p) >= 0;
+  const sorted = proxyListCache.filter(inSt);
+  // 池外残留（后端还有、池里已删的条目）不展示也不回存，与旧口径一致
+  return sorted;
+}
+
 // prCard 单个平台/子平台卡片：标题行（名称 + 上限 + 排除直连开关）+ 标签输入框。
 function prCard(leaf, s) {
   const k = leaf.key;
-  const chips = s.ex.map((p, i) =>
+  const exSorted = prExSorted(s.ex);
+  const chips = exSorted.map((p, i) =>
     '<span class="pr-chip" title="' + esc(egLabel(p)) + '">' + esc(egLabel(p)) +
-    '<button type="button" data-kind="' + esc(k) + '" data-idx="' + i + '"' +
-    ' onmousedown="event.preventDefault()" onclick="ppRuleDelEx(this.dataset.kind,+this.dataset.idx)"' +
+    '<button type="button" data-kind="' + esc(k) + '" data-proxy="' + esc(encodeURIComponent(p)) + '"' +
+    ' onmousedown="event.preventDefault()" onclick="ppRuleDelEx(this.dataset.kind,decodeURIComponent(this.dataset.proxy))"' +
     ' title="' + esc(T('Remove')) + '">×</button></span>').join('');
   const q = prActiveKind === k ? prQuery : '';
   const menu = prMenuRows(k, s);
@@ -5980,10 +5991,12 @@ function ppRuleToggleDirect(kind, on) {
   const st = ppRulesState()[kind];
   if (st) st.dx = !!on;
 }
-function ppRuleDelEx(kind, idx) {
+function ppRuleDelEx(kind, proxy) {
   const st = ppRulesState()[kind];
-  if (!st) return;
-  st.ex.splice(idx, 1);
+  if (!st || !proxy) return;
+  const i = st.ex.indexOf(proxy);
+  if (i < 0) return;
+  st.ex.splice(i, 1);
   renderProxyRules();
 }
 // 点卡片外部收起候选菜单（捕获阶段之外的冒泡即可；选项自身已 preventDefault）

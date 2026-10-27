@@ -1147,7 +1147,6 @@ func traeTestAccount(index int) (map[string]any, string) {
 		return result, "error"
 	}
 	trae.Uncool(acc.ID)
-	result["reason"] = "ok"
 	if screen != "" {
 		result["screenName"] = screen
 		// 首测且无备注：用上游 ScreenName 自动补显示名（与 cline 昵称同思路）
@@ -1156,6 +1155,35 @@ func traeTestAccount(index int) (map[string]any, string) {
 			result["label"] = screen
 		}
 	}
+	// GetUserInfo 只证明凭据活着，不证明模型可调——部分模型对低套餐账号
+	// 返回 200 目录但请求必败（用户实测）。补发一条真实最小模型请求：
+	// 能出字才算 active；模型级失败（1005/4023/4001）原样回报并走自动封禁判据。
+	m, ok := trae.ProbeModel()
+	if !ok {
+		result["reason"] = "ok (userinfo) but no model available to probe; catalog empty"
+		return result, "active"
+	}
+	pstart := time.Now()
+	perr := traeProbeModelOnAccount(acc, m)
+	result["probeModel"] = m.ID
+	result["probeLatencyMs"] = time.Since(pstart).Milliseconds()
+	if perr != nil {
+		var he *trae.HTTPError
+		if errors.As(perr, &he) {
+			if he.RateLimited {
+				result["reason"] = "userinfo ok, model probe rate limited (HTTP %d): %s"
+				result["reason"] = fmt.Sprintf("userinfo ok, model probe rate limited (HTTP %d): %s", he.Status, kit.Truncate(he.Body, 200))
+				return result, "cooldown"
+			}
+			traeAutoBanOnHTTPError(m, acc, perr)
+			result["reason"] = fmt.Sprintf("userinfo ok but model probe failed (HTTP %d, code %s): %s", he.Status, he.Code, kit.Truncate(he.Body, 200))
+			return result, "error"
+		}
+		// 网络错误：凭据本身没问题，仍算 active 但注明
+		result["reason"] = "ok (userinfo); model probe network error: " + kit.Truncate(perr.Error(), 160)
+		return result, "active"
+	}
+	result["reason"] = "ok"
 	// 额度快照（best-effort，失败不影响探测结论）
 	if cr, err := trae.FetchCredits(acc); err == nil && cr != nil {
 		result["credits"] = map[string]any{
@@ -1164,6 +1192,43 @@ func traeTestAccount(index int) (map[string]any, string) {
 		}
 	}
 	return result, "active"
+}
+
+// traeProbeModelOnAccount 用固定账号发一条 "Reply with exactly: OK" 最小模型
+// 请求（Test 探测的第二段）：与自动封禁复核同一路径。返回上游错误原样上抛；
+// 能读到任何文本事件即视为可用。这也让 Test 的消耗进入 per-账号 token 记账
+// （traeProbeFailsModel 内部走 trae.Chat 的记账通道之外，这里显式记录）。
+func traeProbeModelOnAccount(acc *trae.Account, m trae.Model) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	params := map[string]any{
+		"model":      trae.ModelPrefix + m.ID,
+		"messages":   []any{map[string]any{"role": "user", "content": "Reply with exactly: OK"}},
+		"max_tokens": 16,
+	}
+	stream, _, err := trae.Chat(ctx, trae.ChatOpts{Model: m, Params: params, PinAccount: acc})
+	if err != nil {
+		return err
+	}
+	defer stream.Close()
+	for {
+		ev, rerr := stream.Next()
+		if ev != nil && ev.Type == "usage" && ev.Usage != nil && acc.ID != "" {
+			trae.RecordAccountTokens(acc.ID, ev.Usage.Prompt+ev.Usage.Completion)
+		}
+		if rerr != nil || ev == nil {
+			return nil // EOF/断流：请求本身通了（HTTP 200），按可用处理
+		}
+		switch ev.Type {
+		case "text", "reasoning", "done":
+			return nil
+		case "error":
+			if stream.Err != nil {
+				return stream.Err
+			}
+			return fmt.Errorf("trae probe error event: %s", traeEventErrorText(ev))
+		}
+	}
 }
 
 // aggregateTraeCompletionResponse 非流式聚合并包成 JSON 伪响应

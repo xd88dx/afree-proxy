@@ -539,6 +539,8 @@ func thTestKey(index int, modelID string) (map[string]any, string) {
 		return result, "error"
 	}
 	tokenharbor.Uncool(key)
+	// Test 也是真实上游消耗：记账口径与 /v1 业务流量统一（2026-10-27 用户定）。
+	probeRespTokens(resp, func(n int64) { tokenharbor.RecordKeyTokens(key, n) })
 	result["reason"] = "ok"
 	return result, "active"
 }

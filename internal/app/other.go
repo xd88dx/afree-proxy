@@ -1030,6 +1030,8 @@ func otherTestKey(slug string, index int, modelID string) (map[string]any, strin
 		return result, "error"
 	}
 	other.Uncool(p, key)
+	// Test 也是真实上游消耗：记账口径与 /v1 业务流量统一（2026-10-27 用户定）。
+	probeRespTokens(resp, func(n int64) { other.RecordKeyTokens(p, key, n) })
 	result["reason"] = "ok"
 	return result, "active"
 }

@@ -540,6 +540,14 @@ func testZenKey(key string, index int, modelID string) (map[string]any, string) 
 		return result, "error"
 	}
 
+	// Test 也是真实上游消耗：从响应体（zen 恒 SSE，usage 在收尾帧）提取 usage
+	// 记账，与 /v1 业务流量统一口径（2026-10-27 用户定）。解析失败不影响结论。
+	if u := usageFromChatPayload(string(bodyBytes)); len(u) > 0 {
+		if n := usageTokens(u, nil); n > 0 {
+			recordZenKeyTokens(key, n)
+		}
+	}
+
 	// 成功：清除冷却。403 会话状态复位（zenSessionMarkSuccess，zen.go 两条
 	// 调用路径各一处）已在上游 200 路径里做过，这里只复位冷却
 	// （与 cline 的 Test 按钮同语义）。

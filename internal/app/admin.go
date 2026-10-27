@@ -915,6 +915,13 @@ func testAccount(acc *Account) (map[string]any, string) {
 	acc.CooldownUntil = time.Time{}
 	poolMu.Unlock()
 	bumpUsage(acc)
+	// Test 也是真实上游消耗：记账口径与 /v1 业务流量统一（2026-10-27 用户定）。
+	// 响应可能被 {data:{...}} 包裹（与直通路径同款），usage 从 bodyStr 提取。
+	if u := usageFromChatPayload(bodyStr); len(u) > 0 {
+		if n := usageTokens(u, nil); n > 0 {
+			recordAccountTokens(acc, n)
+		}
+	}
 	return map[string]any{
 		"accountId":  acc.AccountID,
 		"email":      acc.Email,

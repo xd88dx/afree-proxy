@@ -1467,6 +1467,74 @@ func usageTokens(u map[string]any, params map[string]any) int64 {
 	return tokens
 }
 
+// usageFromChatPayload 从已读入内存的上游响应体提取 usage（chat SSE 流或普通
+// JSON 双形态，与 collectStreamResponse 同判据但不做内容聚合——调用方只要
+// usage，如 Test 探测的记账口）。无 usage 返回 nil。
+func usageFromChatPayload(body string) map[string]any {
+	first := ""
+	for _, l := range strings.Split(body, "\n") {
+		if t := strings.TrimSpace(l); t != "" {
+			first = t
+			break
+		}
+	}
+	if first != "" && !isSSELine(first) {
+		var obj map[string]any
+		if json.Unmarshal([]byte(body), &obj) == nil {
+			if d, ok := obj["data"].(map[string]any); ok {
+				if _, has := d["usage"]; has {
+					obj = d
+				}
+			}
+			if u, ok := obj["usage"].(map[string]any); ok {
+				return u
+			}
+		}
+		return nil
+	}
+	var usage map[string]any
+	for _, l := range strings.Split(body, "\n") {
+		if !strings.HasPrefix(l, "data:") {
+			continue
+		}
+		payload := strings.TrimSpace(l[5:])
+		if payload == "" || payload == "[DONE]" {
+			continue
+		}
+		var obj map[string]any
+		if json.Unmarshal([]byte(payload), &obj) != nil {
+			continue
+		}
+		if d, ok := obj["data"].(map[string]any); ok {
+			obj = d
+		}
+		if u, ok := obj["usage"].(map[string]any); ok && len(u) > 0 {
+			usage = u
+		}
+	}
+	return usage
+}
+
+// probeRespTokens Test 探测的统一记账口：读一次上游响应（SSE 流或 JSON 均可，
+// collectStreamResponse 双形态兼容），取 usage 记到 record。探测是真实上游
+// 消耗（用户定：Test 也计入业务消耗），返回的响应体由此函数消费关闭。
+// 读取失败只告警不改变探测结论（成功已由状态码判定）。
+func probeRespTokens(resp *http.Response, record func(tokens int64)) {
+	if resp == nil || record == nil {
+		return
+	}
+	out, err := collectStreamResponse(resp)
+	if err != nil {
+		log.Printf("  probe usage read failed (tokens not recorded): %v", err)
+		return
+	}
+	if u, ok := out["usage"].(map[string]any); ok && len(u) > 0 {
+		if n := usageTokens(u, nil); n > 0 {
+			record(n)
+		}
+	}
+}
+
 // takeUsedKey 从上游 resp 取出实际服务的 key 并删头（防透传客户端）。
 func takeUsedKey(resp *http.Response) string {
 	if resp == nil {
