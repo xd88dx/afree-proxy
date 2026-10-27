@@ -23,7 +23,6 @@ services:
       # Zen session IDs are minted locally (no harvester, no CLI). A key's session
       # is re-minted once older than this many minutes (0 = never rotate); avoids
       # the slow first request a stale upstream session causes. Default 120.
-      - ZEN_SESSION_ROTATE_MINUTES=${ZEN_SESSION_ROTATE_MINUTES:-120}
       # Credential scheduling strategy, all platforms, default round_robin (fill / random)
       # WorkBuddy keeps its own vendor partition strategy; Trae has TRAE_STRATEGY below.
       - POOL_STRATEGY=${POOL_STRATEGY:-round_robin}

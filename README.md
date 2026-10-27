@@ -70,7 +70,6 @@ docker run -d --name afree-proxy \
 | `API_KEY` / `API_KEY_FILE` | 空 | `/v1` 唯一有效 key（`Authorization: Bearer` 或 `x-api-key`） |
 | `ADMIN_PASSWORD` / `ADMIN_PASSWORD_FILE` | 空 | 管理面板密码；设置后所有 `/admin/*` 需登录 |
 | `PROXY_ISOLATION` | 未设置 | 身份↔出口绑定：`true` 强制开启（面板只读）；`false` 默认改为关（面板可改）；未设置默认开启。只接受 true/false |
-| `ZEN_SESSION_ROTATE_MINUTES` | `120` | zen 会话到期重铸间隔（分钟），`0` 关闭 |
 | `STRICT_MODEL_MATCH` | `true` | 未知模型名 400 而非静默兜底 |
 | `POOL_STRATEGY` | `round_robin` | 全部平台的凭据调度策略（Cline/zen/or/amd/th/other 共用）：`round_robin` / `fill` / `random`。WorkBuddy 用 vendor 自己的国内/国际分区策略；Trae 未设 `TRAE_STRATEGY` 时回落此值 |
 | `TRAE_STRATEGY` | 未设置 | Trae 独立凭据调度策略：`round_robin` / `fill` / `random` / `credit-priority`（额度多者优先）。优先于面板 Selection，未设置时回落 `POOL_STRATEGY` |
@@ -87,7 +86,7 @@ Fail-closed 启动：绑定非环回地址时，未设 `API_KEY` **或**未设 `
 
 ### OpenCode zen 会话 ID
 
-zen 会话 ID 在**本地铸造**——上游免费层格式门是无状态检查（`^ses_[0-9a-f]{12}[0-9A-Za-z]{14}$`），网关为每个 key 首次使用时铸造兼容 ID 并持久化到数据卷（`zen-config.json` 的 `sessions` 段），无内嵌 CLI、无收割机。请求级 ID（`x-opencode-request`）与注入的 gate 工具参数 schema 同样对齐官方 CLI 形态。连续 2 次 FreeTier 403 自动重铸重试；会话按 `ZEN_SESSION_ROTATE_MINUTES`（默认 120 分钟）后台轮换重铸——铸造纯本地零配额消耗，轮换器还会为未用过的 key 预铸（避免轮转坍缩到单 key）。
+zen 会话 ID 在**本地铸造**——上游免费层格式门是无状态检查（`^ses_[0-9a-f]{12}[0-9A-Za-z]{14}$`），网关为每个 key 首次使用时铸造兼容 ID 并持久化到数据卷（`zen-config.json` 的 `sessions` 段），无内嵌 CLI、无收割机。请求级 ID（`x-opencode-request`）与注入的 gate 工具参数 schema 同样对齐官方 CLI 形态。连续 2 次 FreeTier 403 自动重铸重试；**会话每次 API 调用新铸**（2026-10-27 对齐 CLI v2.1.4 行为——旧版粘性会话的复用形态会被上游影子封禁到 UTC 午夜），同一调用的重试沿用同一会话。旧的 `ZEN_SESSION_ROTATE_MINUTES` 轮换机制随之作废，env 不再被读取。
 
 ## 连接 IDE
 

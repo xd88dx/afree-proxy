@@ -967,13 +967,11 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
     <div class="flex" style="gap:10px;margin:0 0 8px;align-items:center;flex-wrap:wrap">
       <label class="hint" style="margin:0">Probe model (used by the Test buttons):</label>
       <select id="ocProbeModel" style="max-width:300px"><option value="">auto</option></select>
-      <label class="hint" style="margin:0 0 0 6px">Session rotation (min):</label>
-      <input type="text" id="ocSessionRotate" placeholder="120" style="max-width:90px" title="Mint a fresh session id for a key once it is this old. 0 = never rotate (a long-lived session makes the first request slow after a few days).">
     </div>
     <div class="table-wrap" style="margin-bottom:10px">
       <table>
-        <thead><tr><th style="width:50px">#</th><th style="width:110px">Key</th><th>Status</th><th style="width:110px" title="Sticky sessions are re-minted once older than the rotation interval (session rotation, min).">Rotates</th><th title="Counted locally by this proxy — not the official free quota">Today/Total tokens</th><th>Last used</th><th title="Main exit first, backup as fallback; both down = row skipped (isolation).">Proxy binding</th><th style="width:130px;text-align:center">Actions</th><th style="text-align:center" title="Routing participation: unchecked keys never enter request rotation. Newly added keys start disabled — tick Pool to enable. Minting follows routing — keys with routing disabled stop auto-minting.">Pool</th></tr></thead>
-        <tbody id="ocKeysBody"><tr><td colspan="9" class="empty">Loading...</td></tr></tbody>
+        <thead><tr><th style="width:50px">#</th><th style="width:110px">Key</th><th>Status</th><th title="Counted locally by this proxy — not the official free quota">Today/Total tokens</th><th>Last used</th><th title="Main exit first, backup as fallback; both down = row skipped (isolation).">Proxy binding</th><th style="width:130px;text-align:center">Actions</th><th style="text-align:center" title="Routing participation: unchecked keys never enter request rotation. Newly added keys start disabled — tick Pool to enable. Minting follows routing — keys with routing disabled stop auto-minting.">Pool</th></tr></thead>
+        <tbody id="ocKeysBody"><tr><td colspan="8" class="empty">Loading...</td></tr></tbody>
       </table>
     </div>
     <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin:10px 6px 4px">
@@ -2317,11 +2315,8 @@ const I18N_ZH = {
   'TTFB': '首包耗时',
   'Minted at': '铸造时间',
   'Rate-limit defense': '限流防御',
-  'Session rotation (min):': '会话轮换（分钟）：',
-  'Rotates': '轮换周期',
   // 提示气泡（title 属性）此前未进翻译表，中文界面下显示英文
   'Switch language / 切换语言': '切换语言',
-  'Sticky sessions are re-minted once older than the rotation interval (session rotation, min).': '粘性会话超过轮换间隔后重新铸造（会话轮换，分钟）。',
   'cooling': '冷却中',
   'Base URL': 'Base URL',
   'Rate-limit defense': '限流防御',
@@ -2344,8 +2339,6 @@ const I18N_ZH = {
   'Today': '今日',
   'Total': '累计',
   'No data': '暂无数据',
-  // 会话轮换输入框（ocSessionRotate）与账号池 token 列的悬浮说明
-  'Mint a fresh session id for a key once it is this old. 0 = never rotate (a long-lived session makes the first request slow after a few days).': '超过该时长（分钟）就为 key 重新铸造会话 ID。0 = 从不轮换（长期会话会让几天后的首个请求变慢）。',
   'total': '累计',
   'tokens (exact when upstream returns usage, otherwise estimated)': 'tokens（上游返回 usage 时精确，否则为估算）',
   // 模型状态标签
@@ -2531,7 +2524,6 @@ const I18N_ZH = {
   'Click to copy': '点击复制',
   'Remove this key from the pool': '将该密钥移出池',
   'next in rotation': '轮换顺序中的下一个',
-  'rotation disabled': '轮换已禁用',
   'Proxy pool saved': '代理池已保存',
   'Global policy saved': '全局策略已保存',
   'Proxy isolation settings saved': '代理隔离设置已保存',
@@ -2561,7 +2553,6 @@ const I18N_ZH = {
   'Search models…': '搜索模型…',
   'Average tunnel-setup time over successful attempts (TCP+TLS+CONNECT handshake only — excludes upstream first byte and task duration). Lower is better.': '成功请求的平均隧道建立耗时（仅统计 TCP+TLS+CONNECT 握手，不含上游首包与任务耗时）。越低越好。',
   'live': '活跃',
-  'never': '从不',
   'n/a': '无',
   'not minted': '未铸造',
   // 封禁模型区（模型黑名单）
@@ -5393,7 +5384,6 @@ async function loadOcConfig() {
     _('ocBaseURL').value = c.baseURL || '';
     _('ocMaxConc').value = c.maxConcurrency || 8;
     _('ocRetries').value = c.retries || 3;
-    if (_('ocSessionRotate')) _('ocSessionRotate').value = (c.sessionRotateMinutes != null ? c.sessionRotateMinutes : 120);
     if (_('ocPinProxy')) _('ocPinProxy').value = String(c.pinProxyPerKey !== false);
     const eg = c.egress || {};
     if (_('ocEgressInfo')) {
@@ -5418,16 +5408,12 @@ async function loadOcConfig() {
 async function saveOcConfig() {
   // key 列表不随本表单提交（增删在 key 表的添加凭据/删除按钮里），避免
   // 旧 textarea 快照覆盖面板当前的 key 池。
-  // 会话轮换周期：空 = 默认 120；"0" = 关闭轮换（合法值，不能与空混淆）。
-  const rotRaw = _('ocSessionRotate') ? _('ocSessionRotate').value.trim() : '';
-  const rot = rotRaw === '' ? 120 : Math.max(0, parseInt(rotRaw, 10) || 0);
   const body = {
     baseURL: _('ocBaseURL').value.trim(),
     proxies: ocCfgCache.proxies || [],
     proxyStrategy: ocCfgCache.proxyStrategy || 'round_robin',
     maxConcurrency: parseInt(_('ocMaxConc').value) || 8,
     retries: parseInt(_('ocRetries').value) || 3,
-    sessionRotateMinutes: rot,
     pinProxyPerKey: _('ocPinProxy') ? _('ocPinProxy').value === 'true' : true,
     compaction: {
       auto: _('ocCompactAuto').value === 'true',
@@ -5455,7 +5441,6 @@ function renderOcKeyStates(ks) {
   const tb = _('ocKeysBody');
   if (!tb) return;
   keySnapshot = {};
-  const rotateMin = ocCfgCache.sessionRotateMinutes || 0;
   tb.innerHTML = ks.length
     ? ks.map(k => {
         // 状态列（合并原 会话+冷却 两列，chip 样式与 cline 状态列一致）：
@@ -5472,13 +5457,6 @@ function renderOcKeyStates(ks) {
           stCell = '<span class="status pending" title="' + esc(T('session minted')) + ' ' + esc(fmtWhen(k.sessionCreatedAt)) + '"><span class="status-dot pending"></span>' + T('stale') + '</span>';
         } else {
           stCell = '<span class="status pending"><span class="status-dot pending"></span>' + T('Pending activation') + '</span>';
-        }
-        let rot = '<span style="color:var(--text2)">-</span>';
-        if (rotateMin > 0 && k.sessionCreatedAt) {
-          const due = new Date(new Date(k.sessionCreatedAt).getTime() + rotateMin * 60000);
-          rot = '<span style="font-size:11px;white-space:nowrap" title="' + esc(T('session minted')) + ' ' + esc(fmtWhen(k.sessionCreatedAt)) + ' · ' + esc(fmtWhen(due.toISOString())) + '">' + esc(fmtShort(due.toISOString())) + '</span>';
-        } else if (rotateMin === 0) {
-          rot = '<span style="color:var(--text2)" title="rotation disabled">never</span>';
         }
         // omitempty 下未绑定 key 没有这两个键，归一化为 ''
         const pMain = k.proxyMain || '';
@@ -5505,14 +5483,13 @@ function renderOcKeyStates(ks) {
         return '<tr draggable="true" data-drag-id="' + k.index + '"><td>#' + (k.index + 1) + (k.current ? ' <span style="color:var(--accent)" title="' + esc(T('next in rotation')) + '">●</span>' : '') + '</td>' +
           '<td style="font-family:monospace;font-size:11px">' + esc(k.keyMask) + '</td>' +
           '<td>' + stCell + '</td>' +
-          '<td>' + rot + '</td>' +
           keyTokensCell(k) +
           keyLastUsedCell(k) +
           bind +
           actions +
           routing + '</tr>';
       }).join('')
-    : '<tr><td colspan="9" class="empty">No opencode keys configured</td></tr>';
+    : '<tr><td colspan="8" class="empty">No opencode keys configured</td></tr>';
   tb.onclick = e => {
     const b = e.target.closest('button[data-zk]');
     if (b) { testZenKey(parseInt(b.dataset.zk, 10), b); return; }

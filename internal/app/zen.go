@@ -331,8 +331,9 @@ type zenConfigData struct {
 	// nil/缺项 = 参与。路由启用是铸造的前提（父集语义）：禁用路由的 key 不参与
 	// 选号，收割机也不再为它铸造会话（zenKeyAutoHarvestEnabled）。
 	KeyRoutingEnabled map[string]bool `json:"keyRoutingEnabled,omitempty"`
-	// SessionRotateMinutes 粘性会话本地轮换周期（分钟），默认 120（2 小时）。
-	// 0 = 永不轮换（沿用旧行为，长跑后首个请求会因会话老化而变慢）。
+	// SessionRotateMinutes 已废弃（2026-10-27，上游 a99d94b：会话改为每次
+	// API 调用新铸，轮换无意义）。字段保留只为读取旧配置文件不报错，
+	// 装载后零作用；新落盘恒写 0。
 	SessionRotateMinutes int `json:"sessionRotateMinutes"`
 	// PinProxyPerKey 每个 key/账号固定一个出口代理（默认 true）。指针类型：
 	// nil = 旧配置文件没有该键 → 按默认开启处理（见 pinProxyPerKeyEnabled）。
@@ -531,9 +532,9 @@ func defaultZenConfig() *zenConfigData {
 		BaseURL:        zenAPIBase,
 		MaxConcurrency: 8,
 		Retries:        3,
-		// 会话轮换周期：缺少该键的旧配置文件保持此默认（2 小时）。
-		// 显式写 0 表示关闭轮换（见 SessionRotateMinutes 注释）。
-		SessionRotateMinutes: defaultSessionRotateMinutes,
+		// SessionRotateMinutes 不再赋默认值：会话轮换已随 2026-10-27
+		// fresh-per-call 语义下线（上游见 a99d94b）。字段保留只为兼容读旧
+		// 配置文件（装载后零作用），新落盘写 0。
 		// 每 key 固定出口：2026-10-21 起 zen 按 key 记录出口 IP，轮转会
 		// 让整池 key 被判可疑，故默认开启（无代理时自动退回直连）。
 		PinProxyPerKey: boolPtr(true),
@@ -629,12 +630,6 @@ func loadZenConfig() *zenConfigData {
 	file := loadZenConfigFileLocked()
 	zenFileMu.Unlock()
 	cfg := &file.zenConfigData
-	// ZEN_SESSION_ROTATE_MINUTES 覆盖会话轮换周期（分钟，0=关闭）。
-	// 与 POOL_STRATEGY 同语义：env 显式设置时总是覆盖持久化配置。
-	if n, ok := envInt("ZEN_SESSION_ROTATE_MINUTES"); ok {
-		cfg.SessionRotateMinutes = n
-		log.Printf("zen session rotation interval set from env: %d min", n)
-	}
 	normalizeZenKeys(cfg)
 	if cfg.BaseURL == "" {
 		cfg.BaseURL = zenAPIBase

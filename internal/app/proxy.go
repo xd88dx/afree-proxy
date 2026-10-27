@@ -90,7 +90,6 @@ func StartProxy(host string, port int) error {
 
 	startModelsRefresher()
 	startZenModelsRefresher()
-	startZenSessionRotator()
 	startPoolFlusher()
 	loadZenEndpoints()
 	// 出口绑定必须在首次请求之前就位：否则第一批请求会用轮转出来的

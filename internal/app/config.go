@@ -36,9 +36,8 @@ import (
 //	STRICT_MODEL_MATCH         "false" 时未知模型静默回退默认模型（默认显式 400）
 //	CLIENT_IP_HEADER           反代部署下取真实客户端 IP 的请求头名（登录限流用）
 //	ZEN_PIN_KEY                zen key 池固定用第 n 个 key（1 起），排障/单 key 直测用
-//	ZEN_SESSION_ROTATE_MINUTES zen 粘性会话轮换周期（分钟），默认 120（2 小时）；
-//	                           0 = 关闭轮换。老会话久未更新会让上游首个请求变慢，
-//	                           定期本地重铸可规避（零成本：不触发上游、无子进程）
+//	                           （ZEN_SESSION_ROTATE_MINUTES 已废弃：2026-10-27 起会话
+//	                           每次 API 调用新铸，无轮换概念；env 不再被读取）
 //	PROXY_ISOLATION            代理隔离开关，只接受 true/false（大小写不敏感）：
 //	                           true 强制开启（面板开关只读）；false 默认关闭、
 //	                           面板可改；未设置默认开启、面板可改。其他值告警

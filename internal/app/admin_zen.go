@@ -46,7 +46,6 @@ func zenConfigPayload() map[string]any {
 		"maxConcurrency":       cfg.MaxConcurrency,
 		"retries":              cfg.Retries,
 		"compaction":           cfg.Compaction,
-		"sessionRotateMinutes": cfg.SessionRotateMinutes,
 		// 代理隔离（账号/key 绑定出口）：生效值 + 是否被 env 钉死（面板据此
 		// 禁用开关并提示）。
 		"proxyIsolation":          proxyIsolationEnabled(),
@@ -102,8 +101,6 @@ func handleZenConfigUpdate(w http.ResponseWriter, r *http.Request) {
 		ProxySubCron        *string  `json:"proxySubCron"`
 		MaxConcurrency      *int     `json:"maxConcurrency"`
 		Retries             *int     `json:"retries"`
-		// 会话轮换周期（分钟）：0 = 关闭轮换，需与"未提交"区分故用指针。
-		SessionRotateMinutes *int  `json:"sessionRotateMinutes"`
 		ProxyIsolation       *bool `json:"proxyIsolation"`
 		BackupProxyEnabled   *bool `json:"backupProxyEnabled"`
 		// 自动分配规则：nil = 不改动；非 nil = 整表替换（空表 = 全部清除）。
@@ -137,7 +134,6 @@ func handleZenConfigUpdate(w http.ResponseWriter, r *http.Request) {
 		// 漏拷会把面板勾选的路由参与表整体清掉（缺项 = 全部参与）。
 		KeyRoutingEnabled:    cur.KeyRoutingEnabled,
 		Compaction:           cur.Compaction,
-		SessionRotateMinutes: cur.SessionRotateMinutes,
 		PinProxyPerKey:       cur.PinProxyPerKey,
 	}
 	if patch.ZenUseProxies != nil {
@@ -275,10 +271,6 @@ func handleZenConfigUpdate(w http.ResponseWriter, r *http.Request) {
 		}
 		bindingNext.ProxyBindCaps = clean
 		bindingChanged = true
-	}
-	// 0 是合法值（关闭轮换），不能用 > 0 过滤；负值视为无效忽略。
-	if patch.SessionRotateMinutes != nil && *patch.SessionRotateMinutes >= 0 {
-		next.SessionRotateMinutes = *patch.SessionRotateMinutes
 	}
 	if patch.PinProxyPerKey != nil {
 		next.PinProxyPerKey = patch.PinProxyPerKey

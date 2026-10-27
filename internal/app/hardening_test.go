@@ -5,7 +5,6 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
-	"time"
 )
 
 // 被 413 拒绝的超大请求也必须进请求日志：滥用诊断的盲区正是这些被拒请求。
@@ -112,50 +111,3 @@ func TestZenExtractReplacementRobust(t *testing.T) {
 	}
 }
 
-// 会话轮换周期经管理配置往返：显式 0（关闭）必须存得下，缺省（未提交该字段）
-// 不得被改写成 0——两者在 JSON 里都是 0，只有指针能区分。
-func TestZenConfigSessionRotateRoundTrip(t *testing.T) {
-	dir := t.TempDir()
-	t.Setenv("DATA_DIR", dir)
-
-	cur := getZenConfig()
-	base := *cur
-	base.Keys = []string{"sk-roundtrip"}
-	base.SessionRotateMinutes = 120
-	setZenConfig(&base)
-	t.Cleanup(func() { c := *cur; setZenConfig(&c) })
-
-	post := func(body string) {
-		t.Helper()
-		rec := httptest.NewRecorder()
-		req := httptest.NewRequest("POST", "/admin/api/opencode/config/update", strings.NewReader(body))
-		handleZenConfigUpdate(rec, req)
-		if rec.Code != http.StatusOK {
-			t.Fatalf("update status = %d body=%s", rec.Code, rec.Body.String())
-		}
-	}
-
-	// 显式 0：关闭轮换，必须真的存进配置
-	post(`{"sessionRotateMinutes":0}`)
-	if got := getZenConfig().SessionRotateMinutes; got != 0 {
-		t.Fatalf("explicit 0 must persist (rotation disabled), got %d", got)
-	}
-	if iv := sessionRotateInterval(); iv != 0 {
-		t.Fatalf("interval with rotation disabled = %v, want 0", iv)
-	}
-
-	// 显式 30：更新为 30 分钟
-	post(`{"sessionRotateMinutes":30}`)
-	if got := getZenConfig().SessionRotateMinutes; got != 30 {
-		t.Fatalf("rotate minutes = %d, want 30", got)
-	}
-	if iv := sessionRotateInterval(); iv != 30*time.Minute {
-		t.Fatalf("interval = %v, want 30m", iv)
-	}
-
-	// 不提交该字段：保留现值（不是回落默认，也不是 0）
-	post(`{}`)
-	if got := getZenConfig().SessionRotateMinutes; got != 30 {
-		t.Fatalf("omitted field must keep the current value, got %d", got)
-	}
-}
