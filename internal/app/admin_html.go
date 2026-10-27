@@ -575,7 +575,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
   <div class="section-body">
     <div class="flex" style="margin-bottom:10px;gap:10px">
       <button class="btn btn-sm btn-primary" onclick="refreshModels()">Refresh models</button>
-      <span class="hint" style="margin:0">Auto-syncs the official model feeds from upstreams (60s)</span>
+      <span class="hint" style="margin:0">Auto-syncs the official model feeds from upstreams (every 5 minutes)</span>
     </div>
     <div id="accModelsBody">Loading...</div>
   </div>
@@ -670,7 +670,10 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
 <div class="section">
   <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 5-6"/></svg></span> Model catalog</div>
   <div class="section-body">
-    <div class="hint" style="margin-top:0">The model catalog syncs from the upstream live catalog every 10 minutes; with no enabled account, no models are shown here or in /v1/models.</div>
+    <div class="flex" style="margin-bottom:10px;gap:10px">
+      <button class="btn btn-sm btn-primary" onclick="refreshTraeModels()">Refresh models</button>
+          <span class="hint" style="margin:0">The model catalog syncs from the upstream live catalog every 5 minutes; with no enabled account, no models are shown here or in /v1/models.</span>
+    </div>
     <div id="traeModelsBody">Loading...</div>
     </div>
   </div>
@@ -1042,7 +1045,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
   <div class="section-body">
     <div class="flex" style="margin-bottom:10px;gap:10px">
       <button class="btn btn-sm btn-primary" onclick="refreshModels()">Refresh models</button>
-      <span class="hint" style="margin:0">Auto-syncs the official model feeds from upstreams (60s)</span>
+      <span class="hint" style="margin:0">Auto-syncs the official model feeds from upstreams (every 5 minutes)</span>
     </div>
     <div id="ocModelsBody">Loading...</div>
   </div>
@@ -1199,7 +1202,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
   <div class="section-body">
     <div class="flex" style="margin-bottom:10px;gap:10px">
       <button class="btn btn-sm btn-primary" onclick="refreshWbModels()">Refresh models</button>
-      <span class="hint" style="margin:0">Auto-syncs the official model feeds from upstreams (60s)</span>
+      <span class="hint" style="margin:0">Auto-syncs the official model feeds from upstreams (every 5 minutes)</span>
     </div>
     <div id="wbModelsBody">Loading...</div>
   </div>
@@ -1266,9 +1269,9 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
 <div class="section">
   <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 5-6"/></svg></span> Model catalog</div>
   <div class="section-body">
-    <div class="hint" style="margin-top:0">Automatically synced from the official free-model source upstream (every 5 minutes).</div>
-    <div class="flex" style="margin-bottom:10px;gap:10px">
+        <div class="flex" style="margin-bottom:10px;gap:10px">
       <button class="btn btn-sm btn-primary" onclick="refreshOrModels()">Refresh models</button>
+      <span class="hint" style="margin:0">Automatically synced from the official free-model source upstream (every 5 minutes).</span>
     </div>
     <div id="orModelsBody">Loading...</div>
     </div>
@@ -1336,9 +1339,9 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
 <div class="section">
   <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 5-6"/></svg></span> Model catalog</div>
   <div class="section-body">
-    <div class="hint" style="margin-top:0">Automatically synced from the official free-model source upstream (every 5 minutes).</div>
-    <div class="flex" style="margin-bottom:10px;gap:10px">
+        <div class="flex" style="margin-bottom:10px;gap:10px">
       <button class="btn btn-sm btn-primary" onclick="refreshAmdModels()">Refresh models</button>
+      <span class="hint" style="margin:0">Automatically synced from the official free-model source upstream (every 5 minutes).</span>
     </div>
     <div id="amdModelsBody">Loading...</div>
     </div>
@@ -1406,9 +1409,9 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
 <div class="section">
   <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 5-6"/></svg></span> Model catalog</div>
   <div class="section-body">
-    <div class="hint" style="margin-top:0">Automatically synced from the official free-model source upstream (every 5 minutes).</div>
-    <div class="flex" style="margin-bottom:10px;gap:10px">
+        <div class="flex" style="margin-bottom:10px;gap:10px">
       <button class="btn btn-sm btn-primary" onclick="refreshTHModels()">Refresh models</button>
+      <span class="hint" style="margin:0">Automatically synced from the official free-model source upstream (every 5 minutes).</span>
     </div>
     <div id="thModelsBody">Loading...</div>
     </div>
@@ -2274,7 +2277,7 @@ const I18N_ZH = {
   'Generated keys authenticate client access to the proxy API; they only take effect when the API_KEY environment variable is not set.': '生成的 key 用于客户端调用代理 API 鉴权，该 key 仅在未设置 API_KEY 环境变量时生效。',
   'Generate new key': '生成新 key',
   'Refresh models': '刷新模型',
-  'Auto-syncs the official model feeds from upstreams (60s)': '自动同步上游的官方模型源（60 秒）',
+  'Auto-syncs the official model feeds from upstreams (every 5 minutes)': '自动同步上游的官方模型源（每 5 分钟）',
   'Record admin logs': '记录管理日志',
   'Request headers (mimicking the Cline CLI)': '请求头（模拟 Cline CLI）',
   'Header': '请求头',
@@ -2590,7 +2593,7 @@ const I18N_ZH = {
   'synced, ': '已同步 ',
   ' new models': ' 个新模型',
   'Sync started': '同步已启动',
-  'The model catalog syncs from the upstream live catalog every 10 minutes; with no enabled account, no models are shown here or in /v1/models.': '模型目录每 10 分钟从上游 live 目录同步；未启用任何账号时，此处与 /v1/models 都不显示模型。',
+  'The model catalog syncs from the upstream live catalog every 5 minutes; with no enabled account, no models are shown here or in /v1/models.': '模型目录每 5 分钟从上游 live 目录同步；未启用任何账号时，此处与 /v1/models 都不显示模型。',
   'Add accounts': '添加账号',
   'No TraeWork accounts yet — click Add accounts': '暂无 TraeWork 账号——点"添加账号"',
   'Add TraeWork accounts': '添加 TraeWork 账号',

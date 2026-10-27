@@ -77,7 +77,7 @@ func initTrae() {
 // startTraeModelsRefresher 每 10 分钟同步一次 live 模型目录（需要至少一个
 // 启用账号的 JWT；失败下一轮自然重试）。
 func startTraeModelsRefresher() {
-	ticker := time.NewTicker(10 * time.Minute)
+	ticker := time.NewTicker(5 * time.Minute)
 	for range ticker.C {
 		syncTraeCatalog(1)
 	}

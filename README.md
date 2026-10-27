@@ -108,7 +108,7 @@ Model:     cline-free/deepseek-v4.1-flash   （Cline 池）
 **Claude Code / Cline** — Anthropic 方言 `POST /v1/messages`，同 Base URL 同 key。
 **OpenAI Responses 方言** — `POST /v1/responses`（工具调用、流式事件、usage 全翻译）。
 
-`GET /v1/models` 列出全部可服务模型（含 Combos）。免费目录自动同步（cline 60s、zen 60s、trae 10min、or/amd/th 5min、wb 实时探测）；线上列表是权威，内置种子只覆盖冷启动/离线启动，下架/新免费模型自动增删。
+`GET /v1/models` 列出全部可服务模型（含 Combos）。免费目录自动同步（cline/zen/trae/or/amd/th 全部 5min，wb 实时探测）；线上列表是权威，内置种子只覆盖冷启动/离线启动，下架/新免费模型自动增删。
 
 ### Combos（别名模型）
 

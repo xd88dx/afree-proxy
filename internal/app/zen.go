@@ -3013,15 +3013,15 @@ func pruneZenModelsTo(desired map[string]bool) int {
 	return pruned
 }
 
-// startZenModelsRefresher 定时同步 zen 模型列表（60 秒，与 Cline feed 的
-// 自动同步节奏一致）。同步走公共注册表 api.json（免认证），不消耗任何
+// startZenModelsRefresher 定时同步 zen 模型列表（5 分钟，与各平台模型
+// 目录的自动同步节奏一致）。同步走公共注册表 api.json（免认证），不消耗任何
 // key 的配额。
 func startZenModelsRefresher() {
 	go func() {
 		if _, err := syncZenModels(); err != nil {
 			log.Printf("zen model sync: failed (%v), keeping the current list", err)
 		}
-		ticker := time.NewTicker(60 * time.Second)
+		ticker := time.NewTicker(5 * time.Minute)
 		for range ticker.C {
 			if added, err := syncZenModels(); err != nil {
 				log.Printf("zen model sync: failed (%v)", err)
