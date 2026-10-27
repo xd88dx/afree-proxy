@@ -25,7 +25,6 @@ func amdConfigPath() string { return kit.ResolveDataPath("amd-config.json") }
 
 // initAMD 加载配置 + 注入出站解析/HTTP client 工厂。StartProxy 早期调用一次。
 func initAMD() {
-	migrateLegacyDataFile("amd-config.json", ".amd-config.json")
 	amd.Load(amdConfigPath())
 	amd.SetExitResolver(func(key string) (string, bool) {
 		if key == "" {

@@ -77,11 +77,6 @@ type modelBlacklistEntry struct {
 	Hits      int       `json:"hits"`             // 命中次数
 }
 
-type modelBlacklistFile struct {
-	SavedAt time.Time                       `json:"savedAt"`
-	Items   map[string]*modelBlacklistEntry `json:"items"`
-}
-
 var (
 	modelBlacklistMu     sync.Mutex
 	modelBlacklistItems  = map[string]*modelBlacklistEntry{}

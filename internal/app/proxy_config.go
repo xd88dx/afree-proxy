@@ -68,8 +68,7 @@ type proxyConfigFileData struct {
 	// ---- zen key 出口自动钉定（egress.go，上游 400736b）----
 	// 键是 namespace+身份哈希（zen key 只存 sha256 前 8 字节 hex，不含明文）。
 	// 原上游独立落 .egress-bindings.json；本仓并入 proxy-config.json 的
-	// egress 段——它就是代理域的数据，与隔离/绑定段同文件同锁管理，旧文件
-	// 首启一次性迁入（见 migrateProxyConfigFileLocked）。
+	// egress 段——它就是代理域的数据，与隔离/绑定段同文件同锁管理。
 	EgressBindings map[string]egressBinding `json:"egressBindings,omitempty"`
 }
 
@@ -90,7 +89,7 @@ func defaultProxyConfigFile() *proxyConfigFileData {
 	return &proxyConfigFileData{Strategy: "round_robin"}
 }
 
-// loadProxyConfigFileLocked 读取(必要时迁移)代理配置。调用方必须持有 proxyFileMu。
+// loadProxyConfigFileLocked 读取代理配置。调用方必须持有 proxyFileMu。
 func loadProxyConfigFileLocked() *proxyConfigFileData {
 	path := proxyConfigPath()
 	raw, err := os.ReadFile(path)
@@ -109,7 +108,7 @@ func loadProxyConfigFileLocked() *proxyConfigFileData {
 		log.Printf("proxy config: read %s: %v (using defaults)", path, err)
 		return defaultProxyConfigFile()
 	}
-	f := migrateProxyConfigFileLocked()
+	f := defaultProxyConfigFile()
 	saveProxyConfigFileLocked(f)
 	return f
 }
@@ -130,156 +129,4 @@ func mutateProxyConfigFile(fn func(*proxyConfigFileData)) {
 	f := loadProxyConfigFileLocked()
 	fn(f)
 	saveProxyConfigFileLocked(f)
-}
-
-// migrateProxyConfigFileLocked 一次性迁移:把三份旧文件的内容合并进
-// proxy-config.json。旧文件保留不删,便于回滚。调用方必须持有 proxyFileMu。
-func migrateProxyConfigFileLocked() *proxyConfigFileData {
-	f := defaultProxyConfigFile()
-	sections := 0
-
-	// 出口池:优先 .proxy-pool.json(上一版已从 zen 拆出);
-	// 没有则退回更早的 .zen-config.json 内嵌字段。
-	if raw, err := os.ReadFile(kit.ResolveDataPath(".proxy-pool.json")); err == nil {
-		var old proxyPoolConfigData
-		if json.Unmarshal(raw, &old) == nil {
-			f.Proxies = old.Proxies
-			if old.Strategy != "" {
-				f.Strategy = old.Strategy
-			}
-			f.SubURL = old.SubURL
-			f.SubCron = old.SubCron
-			f.ZenUseProxies = old.ZenUseProxies
-			f.WorkbuddyUseProxies = old.WorkbuddyUseProxies
-			sections++
-		}
-	} else if raw, err := os.ReadFile(kit.ResolveDataPath(".zen-config.json")); err == nil {
-		var legacy struct {
-			Proxies             []string          `json:"proxies"`
-			ProxyStrategy       string            `json:"proxyStrategy"`
-			ProxySubURL         string            `json:"proxySubURL"`
-			ProxySubCron        string            `json:"proxySubCron"`
-			ZenUseProxies       *bool             `json:"zenUseProxies"`
-			WorkbuddyUseProxies *bool             `json:"workbuddyUseProxies"`
-			ProxyAliases        map[string]string `json:"proxyAliases"`
-		}
-		if json.Unmarshal(raw, &legacy) == nil {
-			f.Proxies = legacy.Proxies
-			if legacy.ProxyStrategy != "" {
-				f.Strategy = legacy.ProxyStrategy
-			}
-			f.SubURL = legacy.ProxySubURL
-			f.SubCron = legacy.ProxySubCron
-			f.ZenUseProxies = legacy.ZenUseProxies
-			f.WorkbuddyUseProxies = legacy.WorkbuddyUseProxies
-			foldProxyAliases(&proxyPoolConfigData{Proxies: f.Proxies}, legacy.ProxyAliases)
-			sections++
-		}
-	}
-
-	// 出口健康统计
-	if raw, err := os.ReadFile(kit.ResolveDataPath(".proxy-health.json")); err == nil {
-		var old proxyHealthFile
-		if json.Unmarshal(raw, &old) == nil && len(old.Proxies) > 0 {
-			f.HealthSavedAt = old.SavedAt
-			f.Health = old.Proxies
-			sections++
-		}
-	}
-
-	// 隔离/绑定段:旧版寄居在 .zen-config.json(代理是全局能力,却由 zen 配置托管)。
-	// 与出口池分支独立读取 —— 两段可能同时存在于同一个旧文件里。
-	if raw, err := os.ReadFile(kit.ResolveDataPath(".zen-config.json")); err == nil {
-		var old struct {
-			ProxyIsolation     *bool               `json:"proxyIsolation"`
-			BackupProxyEnabled *bool               `json:"backupProxyEnabled"`
-			ProxyExclusions    map[string][]string `json:"proxyExclusions"`
-			ProxyBindCaps      map[string]int      `json:"proxyBindCaps"`
-		}
-		if json.Unmarshal(raw, &old) == nil {
-			moved := false
-			if old.ProxyIsolation != nil {
-				f.ProxyIsolation = old.ProxyIsolation
-				moved = true
-			}
-			if old.BackupProxyEnabled != nil {
-				f.BackupProxyEnabled = old.BackupProxyEnabled
-				moved = true
-			}
-			if len(old.ProxyExclusions) > 0 {
-				f.ProxyExclusions = old.ProxyExclusions
-				moved = true
-			}
-			if len(old.ProxyBindCaps) > 0 {
-				f.ProxyBindCaps = old.ProxyBindCaps
-				moved = true
-			}
-			if moved {
-				sections++
-			}
-		}
-	}
-
-	// zen key 出口自动钉定（旧版独立 .egress-bindings.json，2026-10-27 并入）
-	if raw, err := os.ReadFile(kit.ResolveDataPath(".egress-bindings.json")); err == nil {
-		var old map[string]egressBinding
-		if json.Unmarshal(raw, &old) == nil && len(old) > 0 {
-			f.EgressBindings = old
-			sections++
-		}
-	}
-
-	// WorkBuddy 账号出口绑定
-	if raw, err := os.ReadFile(kit.ResolveDataPath(".workbuddy-proxies.json")); err == nil {
-		var old map[string]workbuddyProxyBinding
-		if json.Unmarshal(raw, &old) == nil && len(old) > 0 {
-			f.WorkbuddyBindings = old
-			sections++
-		}
-	}
-
-	// 各平台走池开关:旧版分散在各平台配置文件里(cline 的叫 clineUseProxies,
-	// 其余平台都叫 useProxies)。zen/workbuddy 的开关本来就在池文件里,无需搬。
-	legacyUseProxies := []struct {
-		file string
-		dst  **bool
-	}{
-		{".cline-accounts.json", &f.ClineUseProxies},
-		{".amd-config.json", &f.AmdUseProxies},
-		{".or-config.json", &f.OprtUseProxies},
-		{".th-config.json", &f.TkhbUseProxies},
-		{".trae-config.json", &f.TraeUseProxies},
-		{".other-config.json", &f.OtherUseProxies},
-	}
-	movedUseProxies := false
-	for _, item := range legacyUseProxies {
-		raw, err := os.ReadFile(kit.ResolveDataPath(item.file))
-		if err != nil {
-			continue
-		}
-		var old struct {
-			UseProxies      *bool `json:"useProxies"`
-			ClineUseProxies *bool `json:"clineUseProxies"`
-		}
-		if json.Unmarshal(raw, &old) != nil {
-			continue
-		}
-		v := old.UseProxies
-		if v == nil {
-			v = old.ClineUseProxies
-		}
-		if v != nil {
-			*item.dst = v
-			movedUseProxies = true
-		}
-	}
-	if movedUseProxies {
-		sections++
-	}
-
-	if sections > 0 {
-		log.Printf("proxy config: migrated %d section(s) from legacy files into %s (%d proxies)",
-			sections, proxyConfigPath(), len(f.Proxies))
-	}
-	return f
 }

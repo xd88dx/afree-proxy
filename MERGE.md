@@ -79,3 +79,31 @@ WorkBuddy 一栏的基线同时登记在 `scripts/workbuddy-vendor-baseline.json
 - 验证：`go build ./...` 通过；`go vet ./...` 通过；`go test ./internal/app/ -run 'Zen|Session|OrgID|Egress|Decode|Gate' -count=1` → ok。
 - 生产：镜像 `afree-proxy:prod-20261027-35` 重建 `afree` 容器（`--restart always`、`D:/DockerApp/afree:/app/data`、`-p 3457:3457`），env 全量哈希与旧容器一致（`9eb6f4999012f044`，未丢凭据），状态 healthy；`GET /`→302 登录页、`GET /v1/models`→200；镜像内验证 `ocOrgID` 3 处、`ocSessionRotate` 0 处。
 
+## 本地死代码清理
+
+### 2026-10-27 — 删除"兼容旧配置文件"的一次性迁移与死字段
+
+本节不属于任何上游同步（四条线本次均未拉新上游），记录本地清理，避免日后误判为回归。
+
+- 判据（必须可复核）：迁移代码只在"新文件不存在"时触发，因此**部署目录里 16 个旧文件名全部不存在**即证明其永不再触发。实测 `D:/DockerApp/afree` 下 `.amd-config.json` / `.or-config.json` / `.other-config.json` / `.th-config.json` / `.trae-config.json` / `.cline-accounts.json` / `.proxy-pool.json` / `.zen-config.json` / `.proxy-health.json` / `.egress-bindings.json` / `.workbuddy-proxies.json` / `.session-secret` / `combos.json` / `.model-blacklist.json` / `.platform-blacklist.json` / `.cline-stream-required.json` 全部 `absent`，对应新文件（`amd-config.json`、`oprt-config.json`、`other-config.json`、`tkhb-config.json`、`trae-config.json`、`cline-config.json`、`proxy-config.json`、`afree-config.json`）全部 `EXISTS`。
+- 删除：
+  - `internal/app/data_migrate.go` 整文件（`migrateLegacyDataFile`）+ 5 处调用：`initAMD` / `initOpenRouter` / `initOther` / `initTokenHarbor` / `initTrae`。旧文件名 → 新文件名的首启复制已无对象。
+  - `migrateGlobalConfigLocked`（`global_config.go`）+ 调用点 + 因此失去唯一使用者的 `strings` import。该函数只在 `afree-config.json` 不存在时执行，且运行在 `globalCfg = defaultGlobalConfig()` 之后，删后首启行为等价（默认配置直接返回）。
+  - `migrateLegacyClinePool`（`pool.go`）+ 调用点。`cline-config.json` 已存在。
+  - `migrateProxyConfigFileLocked`（`proxy_config.go`，149 行）+ 调用点；`proxy-config.json` 不存在时改为与其它错误分支一致：`f := defaultProxyConfigFile(); saveProxyConfigFileLocked(f); return f`。同步修正两处"见 migrateProxyConfigFileLocked"的注释。
+  - `foldProxyAliases`（`proxy_pool_config.go`）：唯一调用者是被删的迁移函数；别名折叠能力本身随代理池拆分早已不再需要。
+  - 因此失去唯一使用者的类型：`modelBlacklistFile`（`model_blacklist.go`）、`platformBanFile`（`platform_blacklist.go`）。落盘早已走 `globalConfigData.ModelBlacklist` / `.PlatformBlacklist`。
+  - `zenConfigData.SessionRotateMinutes`：字段自 a99d94b 起"装载后零作用，新落盘恒写 0"，属**自证死字段**。Go 的 `encoding/json` 对结构体不存在的键直接忽略，因此旧的 `sessionRotateMinutes` 键不会导致读取报错——"保留字段以免旧配置报错"这一前提本身不成立。
+  - `zenConfigData.ProxyAliases`：字段注释引用的清理方 `foldLegacyProxyAliases` 在仓库中根本不存在（`normalizeZenKeys` 也早已没有折叠逻辑），是纯残留。
+  - 测试构造 `zenTestConfig`（`proxy_binding_test.go`）中对应的两个字段同步删除。
+- 保留（经核实**不是**无用代码，勿在后续清理中误删）：
+  - `zenConfigData.Key`（单 key 兼容字段）：生产 `zen-config.json` 里 `key` 非空、`keys` 15 条并存，`normalizeZenKeys`（`zen.go:602-625`）每次加载都用它并回写 `Key = Keys[0]`，面板 GET 也返回该字段——**活代码**。
+  - `legacyZenBackup`（`admin_backup.go`）：服务于"导入 2026-10-26 之前导出的旧备份"，旧备份是用户浏览器里的存量文件，不会因部署目录干净而消失。
+  - `/admin/api/zen/*` 路径别名（`admin.go:101`）：仍是可访问路由（旧书签/外部脚本），不是配置兼容。
+  - 旧 Reason 文案自愈（`model_blacklist.go`）：当前数据已全是统一文案、逻辑空转，但导入旧备份后仍需修，成本 6 行。
+  - `proxy.go` 响应里"原字段保留（向后兼容）"：客户端契约字段。
+- 验证：`go build ./...`、`go vet ./...` 全绿；`go test ./internal/app/ -count=1` → ok；全量 `go test ./... -count=1` 26 包 ok，`TestChatStreamPassthrough`（既有 flaky，用户已定不修）与 `internal/workbuddy/updater` 的 `TestInstallReplacesRestartsAndRecovers` 失败——后者是测试固件在 Windows 上 `fork/exec wb2api.exe` 报 "This version of %1 is not compatible"，该包不 import 任何 `afree-proxy/internal/*`，与本次改动无因果关系。
+- 镜像清理：`afree-proxy` 的 `prod-*` 按创建时间倒序保留最近 3 个（`prod-20261027-36/35/34`），删除其余 33 个；`prod-20261026-12` 因与 `local` 共用同一 image ID，仅 untag 不删层。非 `prod-*` 标签（`local`、`sync-test-20261027`、`refactor3`、`workbuddy-local`、`workbuddy-builder`）未动。
+- 生产：镜像 `afree-proxy:prod-20261027-37`（`b48f1f3ab562`，37.4MB）重建 `afree` 容器（`--restart always`、`-p 3457:3457`、`-v D:/DockerApp/afree:/app/data`），env 全量哈希 `9eb6f4999012` 与旧容器逐字节一致（未丢凭据），`Up (healthy)`；`GET /`→302、`GET /v1/models`→200；容器内二进制 `部署默认值` 命中 1 处（Trae v1.0.10 内嵌脚本仍在）。旧容器先 `stop`+`rename afree-bak` 保留回滚窗口，验证通过后删除。
+
+

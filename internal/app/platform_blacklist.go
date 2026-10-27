@@ -39,11 +39,6 @@ type platformBanEntry struct {
 	CreatedAt time.Time `json:"createdAt"`
 }
 
-type platformBanFile struct {
-	SavedAt   time.Time                    `json:"savedAt"`
-	Platforms map[string]*platformBanEntry `json:"platforms"`
-}
-
 var (
 	platformBanMu     sync.Mutex
 	platformBanItems  = map[string]*platformBanEntry{}

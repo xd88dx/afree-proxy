@@ -23,41 +23,6 @@ func init() {
 	poolPath = kit.ResolveDataPath("cline-config.json")
 }
 
-// migrateLegacyClinePool 一次性迁移:cline-config.json 不存在时,把旧的
-// .cline-accounts.json 搬到新文件名。旧文件里的 keys / strategy /
-// adminLogEnabled 已迁往 afree-config.json,反序列化时被忽略即自然丢弃。
-// 旧文件保留不删,便于回滚。
-func migrateLegacyClinePool() {
-	if poolPath != kit.ResolveDataPath("cline-config.json") {
-		return // 测试或自定义路径,不碰真实数据目录
-	}
-	if _, err := os.Stat(poolPath); err == nil {
-		return
-	}
-	legacy := kit.ResolveDataPath(".cline-accounts.json")
-	data, err := os.ReadFile(legacy)
-	if err != nil {
-		return
-	}
-	var p AccountPool
-	if json.Unmarshal(data, &p) != nil {
-		return
-	}
-	if p.Accounts == nil {
-		p.Accounts = []*Account{}
-	}
-	// 走池开关迁到 proxy-config.json（见 proxy_config.go 的迁移段），这里清掉，
-	// 免得新文件里留一个不再被读取的字段。
-	p.ClineUseProxies = nil
-	out, err := json.MarshalIndent(&p, "", "  ")
-	if err != nil {
-		return
-	}
-	if err := os.WriteFile(poolPath, out, 0o600); err == nil {
-		log.Printf("cline config: migrated %s -> %s (%d account(s))", legacy, poolPath, len(p.Accounts))
-	}
-}
-
 // markPoolDirtyLocked 标记池有待落盘变更（调用方必须持有 poolMu）。
 // 热路径（选号/计数）不再每次全量写盘 —— poolMu 是全局锁，磁盘 I/O
 // 会把所有在途请求串行化；后台 flusher 每 2s 补一次写。
@@ -104,7 +69,6 @@ func loadPool() *AccountPool {
 		return pool
 	}
 
-	migrateLegacyClinePool()
 	data, err := os.ReadFile(poolPath)
 	if err != nil {
 		pool = &AccountPool{Accounts: []*Account{}}

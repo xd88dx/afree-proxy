@@ -314,9 +314,6 @@ type zenConfigData struct {
 	MaxConcurrency int              `json:"maxConcurrency"` // zen 上游最大并发,防 worker 瞬时超限,默认 8
 	Retries        int              `json:"retries"`        // 限流/网络错误重试次数,默认 3
 	Compaction     zenCompactConfig `json:"compaction"`
-	// Deprecated 迁移字段：旧版把代理别名存在独立表里，normalizeZenKeys
-	// 会把别名折叠回代理行（#fragment）并清空本字段。
-	ProxyAliases map[string]string `json:"proxyAliases,omitempty"`
 	// 代理隔离/备用/排除表/绑定上限已迁出到 proxy-config.json 的隔离与绑定段
 	// (见 proxy_binding_config.go)—— 代理池与隔离规则是全局能力,不该由某个
 	// 平台的配置文件托管。
@@ -331,10 +328,6 @@ type zenConfigData struct {
 	// nil/缺项 = 参与。路由启用是铸造的前提（父集语义）：禁用路由的 key 不参与
 	// 选号，收割机也不再为它铸造会话（zenKeyAutoHarvestEnabled）。
 	KeyRoutingEnabled map[string]bool `json:"keyRoutingEnabled,omitempty"`
-	// SessionRotateMinutes 已废弃（2026-10-27，上游 a99d94b：会话改为每次
-	// API 调用新铸，轮换无意义）。字段保留只为读取旧配置文件不报错，
-	// 装载后零作用；新落盘恒写 0。
-	SessionRotateMinutes int `json:"sessionRotateMinutes"`
 	// PinProxyPerKey 每个 key/账号固定一个出口代理（默认 true）。指针类型：
 	// nil = 旧配置文件没有该键 → 按默认开启处理（见 pinProxyPerKeyEnabled）。
 	// 关闭后恢复按请求轮转（zen 按 key 的 IP 指纹会重新出现，仅排障用）。
@@ -543,9 +536,6 @@ func defaultZenConfig() *zenConfigData {
 		BaseURL:        zenAPIBase,
 		MaxConcurrency: 8,
 		Retries:        3,
-		// SessionRotateMinutes 不再赋默认值：会话轮换已随 2026-10-27
-		// fresh-per-call 语义下线（上游见 a99d94b）。字段保留只为兼容读旧
-		// 配置文件（装载后零作用），新落盘写 0。
 		// 每 key 固定出口：2026-10-21 起 zen 按 key 记录出口 IP，轮转会
 		// 让整池 key 被判可疑，故默认开启（无代理时自动退回直连）。
 		PinProxyPerKey: boolPtr(true),
@@ -629,9 +619,6 @@ func normalizeZenKeys(cfg *zenConfigData) {
 	} else {
 		cfg.Key = cleaned[0]
 	}
-	// 旧版别名表（ProxyAliases）的折叠已随代理池拆出，见
-	// proxy_pool_config.go 的 foldLegacyProxyAliases：代理行不再属于 zen 配置，
-	// 这里不能再去改它。本字段保留只为读取旧配置文件。
 }
 
 func loadZenConfig() *zenConfigData {

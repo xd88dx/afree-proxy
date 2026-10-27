@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"log"
 	"os"
-	"strings"
 	"sync"
 )
 
@@ -69,7 +68,6 @@ func loadGlobalConfigLocked() *globalConfigData {
 		if !os.IsNotExist(err) {
 			log.Printf("global config: read %s: %v", globalConfigPath(), err)
 		}
-		migrateGlobalConfigLocked()
 		return globalCfg
 	}
 	var g globalConfigData
@@ -112,72 +110,6 @@ func atomicWriteFile(path string, data []byte) {
 	if err := os.Rename(tmp, path); err != nil {
 		log.Printf("replace %s: %v", path, err)
 		_ = os.Remove(tmp)
-	}
-}
-
-// migrateGlobalConfigLocked 一次性迁移:把散落的旧文件内容合并进
-// afree-config.json。仅在 afree-config.json 不存在时执行;迁移成功后旧文件
-// 保留(部署方确认后自行删除),以便回滚。调用方必须持有 globalCfgMu。
-func migrateGlobalConfigLocked() {
-	moved := 0
-	if data, err := os.ReadFile(kit.ResolveDataPath(".session-secret")); err == nil {
-		if s := strings.TrimSpace(string(data)); len(s) >= 64 {
-			globalCfg.SessionSecret = s
-			moved++
-		}
-	}
-	if data, err := os.ReadFile(kit.ResolveDataPath("combos.json")); err == nil {
-		var list []*Combo
-		if json.Unmarshal(data, &list) == nil && len(list) > 0 {
-			globalCfg.Combos = list
-			moved++
-		}
-	}
-	if data, err := os.ReadFile(kit.ResolveDataPath(".model-blacklist.json")); err == nil {
-		var f modelBlacklistFile
-		if json.Unmarshal(data, &f) == nil && len(f.Items) > 0 {
-			globalCfg.ModelBlacklist = f.Items
-			moved++
-		}
-	}
-	if data, err := os.ReadFile(kit.ResolveDataPath(".platform-blacklist.json")); err == nil {
-		var f platformBanFile
-		if json.Unmarshal(data, &f) == nil && len(f.Platforms) > 0 {
-			globalCfg.PlatformBlacklist = f.Platforms
-			moved++
-		}
-	}
-	if data, err := os.ReadFile(kit.ResolveDataPath(".cline-stream-required.json")); err == nil {
-		var m map[string]string
-		if json.Unmarshal(data, &m) == nil && len(m) > 0 {
-			globalCfg.ClineStreamRequired = m
-			moved++
-		}
-	}
-	if data, err := os.ReadFile(kit.ResolveDataPath(".cline-accounts.json")); err == nil {
-		var probe struct {
-			AdminLogEnabled *bool    `json:"adminLogEnabled"`
-			Strategy        string   `json:"strategy"`
-			Keys            []string `json:"keys"`
-		}
-		if json.Unmarshal(data, &probe) == nil {
-			if probe.AdminLogEnabled != nil {
-				globalCfg.AdminLogEnabled = probe.AdminLogEnabled
-				moved++
-			}
-			if probe.Strategy != "" {
-				globalCfg.Strategy = probe.Strategy
-				moved++
-			}
-			if len(probe.Keys) > 0 {
-				globalCfg.ClientKeys = probe.Keys
-				moved++
-			}
-		}
-	}
-	if moved > 0 {
-		saveGlobalConfigLocked()
-		log.Printf("global config: migrated %d section(s) from legacy files into %s", moved, globalConfigPath())
 	}
 }
 

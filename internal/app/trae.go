@@ -31,7 +31,6 @@ func traeConfigPath() string { return kit.ResolveDataPath("trae-config.json") }
 // initTrae 加载配置 + 注入出站解析/HTTP client 工厂。StartProxy 早期调用
 // 一次；失败只记日志不影响既有平台（与 WorkBuddy 子系统同口径）。
 func initTrae() {
-	migrateLegacyDataFile("trae-config.json", ".trae-config.json")
 	trae.Load(traeConfigPath())
 	trae.SetExitResolver(func(acc *trae.Account) (string, bool) {
 		if acc == nil {

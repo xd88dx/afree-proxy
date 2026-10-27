@@ -26,7 +26,6 @@ func otherConfigPath() string { return kit.ResolveDataPath("other-config.json") 
 
 // initOther 加载配置 + 注入 HTTP client 工厂 + 启动周期同步。StartProxy 早期调用一次。
 func initOther() {
-	migrateLegacyDataFile("other-config.json", ".other-config.json")
 	other.Load(otherConfigPath())
 	other.SetClientProvider(proxyClientFor)
 	// 出口成败/握手延迟回传（同 AMDCloud：此前无任何观测钩子）。

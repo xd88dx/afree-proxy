@@ -25,7 +25,6 @@ func thConfigPath() string { return kit.ResolveDataPath("tkhb-config.json") }
 
 // initTokenHarbor 加载配置 + 注入出站解析/HTTP client 工厂。StartProxy 早期调用一次。
 func initTokenHarbor() {
-	migrateLegacyDataFile("tkhb-config.json", ".th-config.json")
 	tokenharbor.Load(thConfigPath())
 	tokenharbor.SetExitResolver(func(key string) (string, bool) {
 		if key == "" {

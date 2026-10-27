@@ -27,7 +27,6 @@ func orConfigPath() string { return kit.ResolveDataPath("oprt-config.json") }
 // initOpenRouter 加载配置 + 注入出站解析/HTTP client 工厂。StartProxy 早期
 // 调用一次；失败只记日志不影响既有平台（与 WorkBuddy 子系统同口径）。
 func initOpenRouter() {
-	migrateLegacyDataFile("oprt-config.json", ".or-config.json")
 	openrouter.Load(orConfigPath())
 	openrouter.SetExitResolver(func(key string) (string, bool) {
 		if key == "" {

@@ -100,28 +100,6 @@ func normalizeProxyPoolConfig(c *proxyPoolConfigData) {
 	}
 }
 
-// foldProxyAliases 把"代理地址 -> 别名"折叠成代理行的 #fragment（面板与拨号
-// 都按整行处理，别名随行保存）。已带 # 的行不重复折叠，因此可反复调用。
-func foldProxyAliases(cfg *proxyPoolConfigData, aliases map[string]string) bool {
-	if cfg == nil || len(aliases) == 0 {
-		return false
-	}
-	changed := false
-	for u, alias := range aliases {
-		alias = strings.TrimSpace(alias)
-		if alias == "" || strings.Contains(u, "#") {
-			continue
-		}
-		for i, row := range cfg.Proxies {
-			if row == u {
-				cfg.Proxies[i] = row + "#" + alias
-				changed = true
-			}
-		}
-	}
-	return changed
-}
-
 // saveProxyPoolConfig 只覆盖 proxy-config.json 的出口池段，不动健康统计与
 // WorkBuddy 绑定。
 func saveProxyPoolConfig(c *proxyPoolConfigData) error {

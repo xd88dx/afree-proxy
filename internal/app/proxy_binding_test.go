@@ -41,14 +41,12 @@ type zenTestConfig struct {
 	MaxConcurrency       int
 	Retries              int
 	Compaction           zenCompactConfig
-	ProxyAliases         map[string]string
 	ProxyIsolation       *bool
 	BackupProxyEnabled   *bool
 	ProxyExclusions      map[string][]string
 	ProxyBindCaps        map[string]int
 	KeyBindings          map[string]proxyBinding
 	KeyRoutingEnabled    map[string]bool
-	SessionRotateMinutes int
 
 	Proxies             []string
 	ProxyStrategy       string
@@ -66,10 +64,8 @@ func (c *zenTestConfig) zen() *zenConfigData {
 		MaxConcurrency:       c.MaxConcurrency,
 		Retries:              c.Retries,
 		Compaction:           c.Compaction,
-		ProxyAliases:         c.ProxyAliases,
 		KeyBindings:          c.KeyBindings,
 		KeyRoutingEnabled:    c.KeyRoutingEnabled,
-		SessionRotateMinutes: c.SessionRotateMinutes,
 	}
 }
 
