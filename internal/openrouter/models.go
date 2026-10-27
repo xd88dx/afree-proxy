@@ -73,6 +73,21 @@ func catalogHTTPClient() *http.Client {
 	if CatalogClient != nil {
 		return CatalogClient
 	}
+	// 目录同步与 chat 同链路：按 key 绑定/全局规则解析代理出口取 client。
+	// 此前此处是裸直连——CF 对直连/uTLS 指纹连接的间歇重置会让目录同步偶发
+	// 失败（与 tokenharbor/amd 同现象，tokenharbor 曾因此连续 16h 失败）。
+	// 逐 key 试出口：停用的 key 不参与路由（等同不在池里）、解析不到出口则
+	// 换下一个；全部不可用或面板选直连（resolveExit 返回空）时回落旧行为。
+	for _, key := range Keys() {
+		if !RoutingEnabled(key) {
+			continue
+		}
+		proxyURL, ok := resolveExit(key)
+		if !ok || proxyURL == "" {
+			continue
+		}
+		return httpClientFor(proxyURL)
+	}
 	return &http.Client{Timeout: 25 * time.Second}
 }
 

@@ -30,6 +30,21 @@ func catalogHTTPClient() *http.Client {
 	if CatalogClient != nil {
 		return CatalogClient
 	}
+	// 目录同步与 chat 同链路：按 key 绑定/全局规则解析代理出口取 client。
+	// 此前此处是裸直连——本机透明代理退役后跨境直连不可达（与 tokenharbor
+	// 同现象，后者直接按地区 403 拒绝中国大陆/港澳）。逐 key 试出口：停用的
+	// key 不参与路由（等同不在池里）、解析不到出口则换下一个；全部不可用或
+	// 面板选直连（resolveExit 返回空）时回落旧行为：直连。
+	for _, key := range Keys() {
+		if !RoutingEnabled(key) {
+			continue
+		}
+		proxyURL, ok := resolveExit(key)
+		if !ok || proxyURL == "" {
+			continue
+		}
+		return httpClientFor(proxyURL)
+	}
 	return &http.Client{Timeout: 25 * time.Second}
 }
 
