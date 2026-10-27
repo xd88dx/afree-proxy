@@ -661,6 +661,7 @@ func handleTraeConfig(w http.ResponseWriter, r *http.Request) {
 		"useProxies":              trae.ProxiesEnabled(),
 		"gateway":                 c.Gateway,
 		"selection":               c.Selection,
+		"endpoint":                c.Endpoint,
 		"autoCheckin":             c.AutoCheckin != nil && *c.AutoCheckin,
 		"accounts":                traeAccountStates(),
 		"maxConcurrency":          c.MaxConcurrency,
@@ -691,6 +692,7 @@ func handleTraeConfigUpdate(w http.ResponseWriter, r *http.Request) {
 		MaxConc     *int    `json:"maxConcurrency"`
 		Retries     *int    `json:"retries"`
 		Selection   *string `json:"selection"`
+		Endpoint    *string `json:"endpoint"`
 		AutoCheckin *bool   `json:"autoCheckin"`
 	}
 	if err := json.Unmarshal(body, &patch); err != nil {
@@ -713,6 +715,10 @@ func handleTraeConfigUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 	if patch.Selection != nil {
 		next.Selection = strings.TrimSpace(*patch.Selection)
+	}
+	if patch.Endpoint != nil {
+		// normalize() 内校验：非法值回落 auto（空）
+		next.Endpoint = strings.TrimSpace(*patch.Endpoint)
 	}
 	if patch.AutoCheckin != nil {
 		next.AutoCheckin = patch.AutoCheckin

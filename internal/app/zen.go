@@ -411,6 +411,17 @@ func zenKeyRoutingEnabled(key string) bool {
 	return true
 }
 
+// zenHasRoutableKey 是否存在参与路由的启用 key（面板模型目录/刷新的展示
+// 门控，与 platformHasRoutableCredential 的 zen 分支同判定）。
+func zenHasRoutableKey() bool {
+	for _, k := range getZenConfig().Keys {
+		if zenKeyRoutingEnabled(k) {
+			return true
+		}
+	}
+	return false
+}
+
 // reconcileZenKeyRouting 整体替换 key 池后对齐"参与路由"表（面板保存 key 列表
 // 时调用）。统一口径：新引入的 key 默认不参与路由（面板勾选"启用"后才生效，
 // 与 Cline/WorkBuddy 的新增身份默认禁用一致）；已有 key 保持原状态；被移除的

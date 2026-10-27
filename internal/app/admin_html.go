@@ -575,7 +575,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
   <div class="section-body">
     <div class="flex" style="margin-bottom:10px;gap:10px">
       <button class="btn btn-sm btn-primary" onclick="refreshModels()">Refresh models</button>
-      <span class="hint" style="margin:0">Auto-syncs the official model feeds from upstreams (every 5 minutes)</span>
+      <span class="hint" style="margin:0">Automatically synced from the official model source upstream (every 5 minutes)</span>
     </div>
     <div id="accModelsBody">Loading...</div>
   </div>
@@ -670,9 +670,16 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
 <div class="section">
   <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 5-6"/></svg></span> Model catalog</div>
   <div class="section-body">
-    <div class="flex" style="margin-bottom:10px;gap:10px">
+    <div class="flex" style="margin-bottom:10px;gap:10px;align-items:center;flex-wrap:wrap">
       <button class="btn btn-sm btn-primary" onclick="refreshTraeModels()">Refresh models</button>
-          <span class="hint" style="margin:0">The model catalog syncs from the upstream live catalog every 5 minutes; with no enabled account, no models are shown here or in /v1/models.</span>
+          <span class="hint" style="margin:0;flex:1;min-width:200px">Automatically synced from the official model source upstream (every 5 minutes)</span>
+      <label class="hint" style="margin:0;white-space:nowrap" for="traeEndpoint">Endpoint</label>
+      <select id="traeEndpoint" onchange="saveTraeEndpoint(this.value)" style="max-width:220px" title="Upstream endpoint: Auto = merged catalog via the native raw_chat transport; Remote / TraeWork switch requests to the chat_sessions transport (same as the upstream project)">
+        <option value="auto">Auto route</option>
+        <option value="remote">Remote</option>
+        <option value="traecode">TraeCode</option>
+        <option value="traework">TraeWork</option>
+      </select>
     </div>
     <div id="traeModelsBody">Loading...</div>
     </div>
@@ -1045,7 +1052,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
   <div class="section-body">
     <div class="flex" style="margin-bottom:10px;gap:10px">
       <button class="btn btn-sm btn-primary" onclick="refreshModels()">Refresh models</button>
-      <span class="hint" style="margin:0">Auto-syncs the official model feeds from upstreams (every 5 minutes)</span>
+      <span class="hint" style="margin:0">Automatically synced from the official model source upstream (every 5 minutes)</span>
     </div>
     <div id="ocModelsBody">Loading...</div>
   </div>
@@ -1202,7 +1209,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
   <div class="section-body">
     <div class="flex" style="margin-bottom:10px;gap:10px">
       <button class="btn btn-sm btn-primary" onclick="refreshWbModels()">Refresh models</button>
-      <span class="hint" style="margin:0">Auto-syncs the official model feeds from upstreams (every 5 minutes)</span>
+      <span class="hint" style="margin:0">Automatically synced from the official model source upstream (every 5 minutes)</span>
     </div>
     <div id="wbModelsBody">Loading...</div>
   </div>
@@ -1271,7 +1278,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
   <div class="section-body">
         <div class="flex" style="margin-bottom:10px;gap:10px">
       <button class="btn btn-sm btn-primary" onclick="refreshOrModels()">Refresh models</button>
-      <span class="hint" style="margin:0">Automatically synced from the official free-model source upstream (every 5 minutes).</span>
+      <span class="hint" style="margin:0">Automatically synced from the official model source upstream (every 5 minutes)</span>
     </div>
     <div id="orModelsBody">Loading...</div>
     </div>
@@ -1341,7 +1348,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
   <div class="section-body">
         <div class="flex" style="margin-bottom:10px;gap:10px">
       <button class="btn btn-sm btn-primary" onclick="refreshAmdModels()">Refresh models</button>
-      <span class="hint" style="margin:0">Automatically synced from the official free-model source upstream (every 5 minutes).</span>
+      <span class="hint" style="margin:0">Automatically synced from the official model source upstream (every 5 minutes)</span>
     </div>
     <div id="amdModelsBody">Loading...</div>
     </div>
@@ -1411,7 +1418,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
   <div class="section-body">
         <div class="flex" style="margin-bottom:10px;gap:10px">
       <button class="btn btn-sm btn-primary" onclick="refreshTHModels()">Refresh models</button>
-      <span class="hint" style="margin:0">Automatically synced from the official free-model source upstream (every 5 minutes).</span>
+      <span class="hint" style="margin:0">Automatically synced from the official model source upstream (every 5 minutes)</span>
     </div>
     <div id="thModelsBody">Loading...</div>
     </div>
@@ -2277,7 +2284,7 @@ const I18N_ZH = {
   'Generated keys authenticate client access to the proxy API; they only take effect when the API_KEY environment variable is not set.': '生成的 key 用于客户端调用代理 API 鉴权，该 key 仅在未设置 API_KEY 环境变量时生效。',
   'Generate new key': '生成新 key',
   'Refresh models': '刷新模型',
-  'Auto-syncs the official model feeds from upstreams (every 5 minutes)': '自动同步上游的官方模型源（每 5 分钟）',
+  'Automatically synced from the official model source upstream (every 5 minutes)': '自动同步上游的官方模型源（每 5 分钟）',
   'Record admin logs': '记录管理日志',
   'Request headers (mimicking the Cline CLI)': '请求头（模拟 Cline CLI）',
   'Header': '请求头',
@@ -2410,7 +2417,6 @@ const I18N_ZH = {
   'Recovers ': '恢复于 ',
   // ===== OpenRouter / AMDCloud / TokenHarbor 页（目录/限流/弹窗） =====
   'Model catalog': '模型目录',
-  'Automatically synced from the official free-model source upstream (every 5 minutes).': '自动同步上游的官方免费模型源（每 5 分钟）。',
   'Upstream limits: 30 requests/min per key, 8 concurrent per key, 20 requests/min per account.': '上游限制：单个密钥 30 次/分钟、8 并发，单个账号 20 次/分钟。',
   'Upstream limits: 60 requests/min per account, 100 requests/min per IP.': '上游限制：每账号 60 次/分钟，每 IP 100 次/分钟。',
   'Re-sync the free-model catalog from openrouter.ai': '从 openrouter.ai 重新同步免费模型目录',
@@ -2582,18 +2588,25 @@ const I18N_ZH = {
   'Unblocked: ': '已解禁：',
   // Trae 平台页
   'Gateway': '网关',
+  'Endpoint': '端点',
+  'Auto route': '自动路由',
+  'Upstream endpoint switched': '上游端点已切换',
+  'Upstream endpoint: Auto = merged catalog via the native raw_chat transport; Remote / TraeWork switch requests to the chat_sessions transport (same as the upstream project)': '上游端点：自动 = 合并目录走原生 raw_chat 传输；Remote / TraeWork 切换为 chat_sessions 传输（与原项目一致）',
   'Counted locally by this proxy from upstream usage events': '由本网关按上游用量事件本地计数',
   'Re-sync the model catalog from the TraeWork upstream using an enabled account': '用一个已启用的账号从 TraeWork 上游重新同步模型目录',
   'Models appear here once an account is enabled — the catalog syncs from upstream': '启用账号后此处才会显示并同步模型目录',
   'Models appear here once a credential is enabled — the catalog syncs from upstream': '启用账号或 key 后此处才会显示并同步模型目录',
   'no enabled AMDCloud key — enable a key first, then refresh': '没有启用的 AMDCloud key —— 请先启用 key 再刷新',
   'no enabled Trae account — enable an account first, then refresh': '没有启用的 TraeWork 账号 —— 请先启用账号再刷新',
+  'no enabled OpenCode key — enable a key first, then refresh': '没有启用的 OpenCode key —— 请先启用 key 再刷新',
+  'no enabled OpenRouter key — enable a key first, then refresh': '没有启用的 OpenRouter key —— 请先启用 key 再刷新',
+  'no enabled key on this platform — enable a key first, then refresh': '该平台没有启用的 key —— 请先启用 key 再刷新',
+  'no enabled Cline account — enable an account first, then refresh': '没有启用的 Cline 账号 —— 请先启用账号再刷新',
   'no enabled TokenHarbor key — enable a key first, then refresh': '没有启用的 TokenHarbor key —— 请先启用 key 再刷新',
   'model sync started': '模型同步已启动',
   'synced, ': '已同步 ',
   ' new models': ' 个新模型',
   'Sync started': '同步已启动',
-  'The model catalog syncs from the upstream live catalog every 5 minutes; with no enabled account, no models are shown here or in /v1/models.': '模型目录每 5 分钟从上游 live 目录同步；未启用任何账号时，此处与 /v1/models 都不显示模型。',
   'Add accounts': '添加账号',
   'No TraeWork accounts yet — click Add accounts': '暂无 TraeWork 账号——点"添加账号"',
   'Add TraeWork accounts': '添加 TraeWork 账号',
@@ -5018,6 +5031,7 @@ async function loadModels() {
     await syncModelBlacklist();
     const d = await api('GET', '/models');
     const models = d.data.models || [];
+    const clineCredOk = d.data.credentialsEnabled !== false;
     let info = '';
     if (d.data.lastSync) info += T('· official feed: ') + new Date(d.data.lastSync).toLocaleTimeString('en-US');
     // 目录区已分平台迁回各自页面：同名 pill（data-models-info）每页一个，统一回填。
@@ -5039,12 +5053,14 @@ async function loadModels() {
             '<span style="font-family:\'JetBrains Mono\',monospace;font-size:13px;flex:1">' + esc(m.id) + '</span>' +
             '<span class="model-tag free">' + T('no charge') + '</span>' +
             banBtn('cline', m.id))).join('')
-        : '<div class="empty">' + T('No models') + '</div>';
+        : '<div class="empty">' + T(clineCredOk ? 'No models' : 'Models appear here once an account is enabled — the catalog syncs from upstream') + '</div>';
     }
     // OpenCode 免费模型（OpenCode 页底部目录区）
     const ocBox = _('ocModelsBody');
     if (ocBox) {
-      const zen = await api('GET', '/opencode/models').then(r => r.data.models || []).catch(() => []);
+      const zr = await api('GET', '/opencode/models').then(r => r.data).catch(() => null);
+      const zen = (zr && zr.models) || [];
+      const zenCredOk = !zr || zr.credentialsEnabled !== false;
       const zenV = zen.filter(notBlocked);
       ocBox.innerHTML = zenV.length
         ? zenV.map(m => row(
@@ -5053,7 +5069,7 @@ async function loadModels() {
               wbContextTagHTML(m.context, T('Context')) +
               // 目录是裸 ID，对外形态带 zen: 前缀——封禁按对外 ID 记。
               banBtn('zen', 'zen:' + m.id))).join('')
-        : '<div class="empty">' + T('No models') + '</div>';
+        : '<div class="empty">' + T(zenCredOk ? 'No models' : 'Models appear here once a credential is enabled — the catalog syncs from upstream') + '</div>';
     }
     // WorkBuddy 模型（WorkBuddy 页底部目录区；行样式与 cline/OpenCode 目录
     // 完全一致，不再内嵌倍率筛选行——倍率走上方配置表单的 Model rate filter，
@@ -6576,6 +6592,7 @@ async function loadTraeConfig() {
     }
     renderTraeAccounts(accs);
     _('traeGateway').value = c.gateway || '';
+    if (_('traeEndpoint')) _('traeEndpoint').value = c.endpoint || 'auto';
     _('traeMaxConc').value = c.maxConcurrency || 8;
     _('traeRetries').value = c.retries || 3;
     if (_('traeSelection')) _('traeSelection').value = c.selection || '';
@@ -6620,6 +6637,17 @@ async function saveTraeConfig() {
     toast(T('TraeWork config saved'), 'success');
     loadTraeConfig();
   } catch (e) { toast(T('Save failed: ') + e.message, 'error'); }
+}
+
+async function saveTraeEndpoint(ep) {
+  try {
+    await api('POST', '/trae/config/update', { endpoint: ep });
+    toast(T('Upstream endpoint switched'), 'success');
+    loadTraeConfig();
+  } catch (e) {
+    toast(T('Save failed: ') + e.message, 'error');
+    loadTraeConfig(); // 回读真实值，避免下拉框与后端漂移
+  }
 }
 
 async function refreshTraeModels() {
@@ -7565,7 +7593,7 @@ async function loadOtherConfig() {
   otherSelectedModels = p.selectedModels || [];
   if (_('otherLivePrompt') && !_('otherLivePrompt').value) _('otherLivePrompt').value = T('Test message, please reply with hello only');
   renderOtherModelSelect(otherKnownModels, otherSelectedModels, p.manualModels || []);
-  
+
   renderOtherKeys(p.keyStates || []);
 }
 
@@ -7643,7 +7671,7 @@ function onOtherModelToggle(cb) {
   if (cb.checked && i < 0) otherSelectedModels.push(id);
   if (!cb.checked && i >= 0) otherSelectedModels.splice(i, 1);
   _('otherModelSelectToggle').textContent = otherModelSelectSummary();
-  
+
   queueSaveOtherSelected();
 }
 
@@ -7702,7 +7730,7 @@ async function refreshOtherModels() {
       otherKnownModels = np.models || [];
       otherSelectedModels = np.selectedModels || [];
       renderOtherModelSelect(otherKnownModels, otherSelectedModels, np.manualModels || []);
-      
+
       renderOtherKeys(np.keyStates || []);
     }
     toast(T('Model catalog synced'), 'success');
@@ -7739,7 +7767,7 @@ async function addOtherManualModel() {
       otherKnownModels = np.models || [];
       otherSelectedModels = np.selectedModels || [];
       renderOtherModelSelect(otherKnownModels, otherSelectedModels, np.manualModels || []);
-      
+
     }
     input.value = '';
     toast(T('Added') + ': ' + m, 'success');

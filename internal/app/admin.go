@@ -1309,9 +1309,18 @@ func handleAdminModels(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ensureModelsFresh()
+	// 展示门控（2026-10-27 与 AMD/zen 等平台统一）：没有任何启用账号时不
+	// 对外提供模型目录——列出来也调不通。credentialsEnabled 供前端区分
+	// 「无凭据」（引导启用账号）与「目录为空」两种空态。
+	credentialsEnabled := platformHasRoutableCredential(platCline)
+	models := []*ModelInfo{}
+	if credentialsEnabled {
+		models = getFreeModels()
+	}
 	writeAPI(w, http.StatusOK, apiResponse{Success: true, Data: map[string]any{
-		"models":   getFreeModels(),
-		"lastSync": modelsLastSync,
+		"models":             models,
+		"lastSync":           modelsLastSync,
+		"credentialsEnabled": credentialsEnabled,
 	}})
 }
 
@@ -1319,6 +1328,15 @@ func handleAdminModels(w http.ResponseWriter, r *http.Request) {
 func handleAdminModelsRefresh(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "POST" {
 		writeAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
+		return
+	}
+	// 与 AMD/zen 同口径：无启用账号时拒绝同步并给出提示（目录此时也不展示，
+	// 同步无意义）。
+	if !platformHasRoutableCredential(platCline) {
+		writeAPI(w, http.StatusOK, apiResponse{
+			Success: false,
+			Message: "no enabled Cline account — enable an account first, then refresh",
+		})
 		return
 	}
 	initModelsCache()

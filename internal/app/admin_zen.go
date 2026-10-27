@@ -314,34 +314,49 @@ func handleZenModels(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	initZenModels()
+	// 展示门控（与 amd/tokenharbor/trae 同口径，2026-10-27 用户定）：没有
+	// 任何参与路由的启用 key 时目录不对外提供——匿名 "public" 哨兵已移除，
+	// 上游匿名层也不可用，列出来只会让用户选中后调不通。
+	// credentialsEnabled 供前端区分「无凭据」（引导启用）与「目录为空」。
+	credentialsEnabled := zenHasRoutableKey()
 	zenModelsMu.RLock()
 	models := make([]map[string]any, 0, len(zenModels))
-	for _, m := range zenModels {
-		if !isZenFreeModel(m) {
-			continue
+	if credentialsEnabled {
+		for _, m := range zenModels {
+			if !isZenFreeModel(m) {
+				continue
+			}
+			models = append(models, map[string]any{
+				// 网关前缀（zen:<id>）：与 /v1/models 输出一致，面板即所见即所调。
+				// 裸 ID 仍可解析（存量 IDE 配置与 combo target 兼容）。
+				"id":        zenPrefixedID(m.ID),
+				"aliases":   m.Aliases,
+				"context":   m.Context,
+				"output":    m.Output,
+				"source":    m.Source,
+				"upstream":  m.Upstream,
+				"toolCall":  m.ToolCall,
+				"reasoning": m.Reasoning,
+				"attach":    m.Attach,
+			})
 		}
-		models = append(models, map[string]any{
-			// 网关前缀（zen:<id>）：与 /v1/models 输出一致，面板即所见即所调。
-			// 裸 ID 仍可解析（存量 IDE 配置与 combo target 兼容）。
-			"id":        zenPrefixedID(m.ID),
-			"aliases":   m.Aliases,
-			"context":   m.Context,
-			"output":    m.Output,
-			"source":    m.Source,
-			"upstream":  m.Upstream,
-			"toolCall":  m.ToolCall,
-			"reasoning": m.Reasoning,
-			"attach":    m.Attach,
-		})
 	}
 	zenModelsMu.RUnlock()
-	writeAPI(w, http.StatusOK, apiResponse{Success: true, Data: map[string]any{"models": models, "count": len(models)}})
+	writeAPI(w, http.StatusOK, apiResponse{Success: true, Data: map[string]any{"models": models, "count": len(models), "credentialsEnabled": credentialsEnabled}})
 }
 
 // POST /admin/api/zen/models/refresh
 func handleZenModelsRefresh(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "POST" {
 		writeAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
+		return
+	}
+	// 与 AMD/TokenHarbor 同口径：无启用 key 时拒绝同步并给出提示。
+	if !zenHasRoutableKey() {
+		writeAPI(w, http.StatusOK, apiResponse{
+			Success: false,
+			Message: "no enabled OpenCode key — enable a key first, then refresh",
+		})
 		return
 	}
 	added, err := syncZenModels()

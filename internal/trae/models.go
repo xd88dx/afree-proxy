@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"reflect"
 	"sort"
 	"strconv"
 	"strings"
@@ -35,6 +36,16 @@ type Model struct {
 	// 4023 model unknown（2026-10-26 实测 kimi-k2.6 / deepseek-v4-pro）。
 	// 不落盘、不外发（-），仅用于展示过滤。
 	Native bool `json:"-"`
+	// Tiers 端点档位（面板端点下拉框 / 请求分发依据，原项目端点语义）：
+	//   - traecode：原生 get_detail_param 档（chat_v3 / solo_agent）确认过；
+	//   - remote：web 目录 solo_agent_remote（含 lite）分组确认过；
+	//   - traework：web 目录 solo_work_remote（含 lite）分组确认过。
+	// 不落盘（-），目录每次启动由 seed + live 同步重建。
+	Tiers []string `json:"-"`
+	// TierCfg 各档位的 web 目录原始条目（chat_sessions 请求 custom_model
+	// 的构造源，原项目 _build_web_model_config 的输入）。按档位独立保存：
+	// Agent 与 Work 的 descriptor 能力不同，不能互借。
+	TierCfg map[string]map[string]any `json:"-"`
 }
 
 // seedModels TraeCode 客户端已知模型（raw_client.py _KNOWN_MODELS 实测表）。
@@ -125,6 +136,12 @@ func SyncCatalog() (int, error) {
 			continue
 		}
 		for id, m := range entries {
+			// 原生档字段（Function/RawName/raw 名映射）权威，但 web 目录
+			// 带来的端点档位（Tiers/TierCfg）不能丢——native 直接覆盖会让
+			// remote/traework 档只剩 web 独有条目（面板下拉框空档）。
+			if web, ok := live[id]; ok {
+				mergeTiers(&m, web)
+			}
 			live[id] = m
 			seen[id] = true
 		}
@@ -181,6 +198,7 @@ func applyCatalog(in map[string]Model) int {
 				cur.Name = m.Name
 			}
 			cur.Context = maxInt(cur.Context, m.Context)
+			mergeTiers(&cur, m)
 			m = cur
 		}
 		if m.RawName == "" {
@@ -193,13 +211,44 @@ func applyCatalog(in map[string]Model) int {
 		if m.Function == "" {
 			m.Function = "chat_v3"
 		}
-		if exists && cur == m {
+		if exists {
+			mergeTiers(&m, cur)
+		}
+		// 变更检测：Model 含切片/映射字段后不可整体比较，用 reflect.DeepEqual
+		if exists && reflect.DeepEqual(m, cur) {
 			continue
 		}
 		changed++
 		catalogModels[id] = m
 	}
 	return changed
+}
+
+// mergeTiers 并入 src 的端点档位与各档原始条目（dst 优先，缺才补）。
+func mergeTiers(dst *Model, src Model) {
+	for _, t := range src.Tiers {
+		found := false
+		for _, dt := range dst.Tiers {
+			if dt == t {
+				found = true
+				break
+			}
+		}
+		if !found {
+			dst.Tiers = append(dst.Tiers, t)
+		}
+	}
+	if len(src.TierCfg) == 0 {
+		return
+	}
+	if dst.TierCfg == nil {
+		dst.TierCfg = map[string]map[string]any{}
+	}
+	for t, cfg := range src.TierCfg {
+		if _, ok := dst.TierCfg[t]; !ok {
+			dst.TierCfg[t] = cfg
+		}
+	}
 }
 
 // fetchSoloModelConfigs 拉取 TraeCode 原生目录（按函数档）：
@@ -331,6 +380,7 @@ func fetchSoloModelConfigs(base, token, userID, function string) (map[string]Mod
 			Function: firstNonEmpty(e.RawFunction, function),
 			Context:  maxInt(e.DisplayCfg.ContextWindow, e.DisplayCfg.ContextTokens, e.DisplayCfg.MaxTokens, anyToInt(e.ContextTokensObj)),
 			Native:   true,
+			Tiers:    []string{"traecode"},
 		}
 		if out[id].ID == "" || m.RawName != "" {
 			out[id] = m
@@ -396,10 +446,28 @@ var soloHiddenIDs = map[string]bool{
 	"explore_sub_agent_v2": true, "file_search_agent": true, "work": true,
 }
 
+// classifyTier web 目录函数名 → 端点档位（原项目 _catalog_endpoint 的三档
+// 收敛：afree 端点下拉只有 remote / traecode / traework，design 组归 remote）。
+func classifyTier(fn string) string {
+	f := strings.ToLower(strings.TrimSpace(fn))
+	switch {
+	case strings.Contains(f, "work"):
+		return "traework"
+	case strings.Contains(f, "agent"):
+		return "remote"
+	case strings.Contains(f, "design"):
+		return "remote"
+	default:
+		return "remote"
+	}
+}
+
 // fetchWebModelConfigs 拉取 web 客户端模型目录：
 // GET {remote_base}/models?functions=solo_agent_remote,solo_work_remote,solo_design_remote&show_custom_model=true
 // 响应 data.list[] 为分组（function/agent_type 字段），组内 models[] 每条
 // config_name/configName（或旧载荷的 name/model_name）是请求 id。
+// 除可服务清单外，还按分组函数记录端点档位（Tiers）与各档原始条目
+// （TierCfg，chat_sessions custom_model 构造源）。
 func fetchWebModelConfigs(token, edition string) (map[string]Model, error) {
 	base := RemoteBaseFor(edition)
 	url := base + "/models?functions=solo_agent_remote%2Csolo_work_remote%2Csolo_design_remote&show_custom_model=true"
@@ -433,23 +501,9 @@ func fetchWebModelConfigs(token, edition string) (map[string]Model, error) {
 	var payload struct {
 		Data struct {
 			List []struct {
-				Function string `json:"function"`
-				Models   []struct {
-					ConfigName      string `json:"config_name"`
-					ConfigNameCamel string `json:"configName"`
-					Name            string `json:"name"`
-					ModelName       string `json:"model_name"`
-					ModelNameCamel  string `json:"modelName"`
-					DisplayName     string `json:"display_name"`
-					DisplayNameCam  string `json:"displayName"`
-					RawFunction     string `json:"raw_chat_function"`
-					RawFunctionCam  string `json:"rawChatFunction"`
-					// 上下文字段上游形态不稳定（int / 字符串 / 对象都出现过），
-					// 宽松存 any 再转数
-					ContextWindow  any `json:"context_window_size"`
-					ContextWindowC any `json:"contextWindow"`
-					ContextTokens  any `json:"context_window_tokens"`
-				} `json:"models"`
+				Function  string           `json:"function"`
+				AgentType string           `json:"agent_type"`
+				Models    []map[string]any `json:"models"`
 			} `json:"list"`
 		} `json:"data"`
 	}
@@ -457,20 +511,59 @@ func fetchWebModelConfigs(token, edition string) (map[string]Model, error) {
 		return nil, err
 	}
 	out := map[string]Model{}
+	addTier := func(m *Model, tier string) {
+		for _, t := range m.Tiers {
+			if t == tier {
+				return
+			}
+		}
+		m.Tiers = append(m.Tiers, tier)
+	}
 	for _, g := range payload.Data.List {
+		gfn := firstNonEmpty(g.Function, g.AgentType)
 		for _, rm := range g.Models {
-			id := firstNonEmpty(rm.ConfigName, rm.ConfigNameCamel, rm.ModelName, rm.ModelNameCamel, rm.Name)
+			if rm == nil {
+				continue
+			}
+			id := firstNonEmpty(
+				strField(rm, "config_name"), strField(rm, "configName"),
+				strField(rm, "model_name"), strField(rm, "modelName"),
+				strField(rm, "name"))
 			if id == "" {
 				continue
 			}
-			m := Model{ID: id, Function: firstNonEmpty(rm.RawFunction, rm.RawFunctionCam, "chat_v3")}
-			m.Name = firstNonEmpty(rm.DisplayName, rm.DisplayNameCam, rm.Name)
-			if m.Context == 0 {
-				m.Context = maxInt(anyToInt(rm.ContextWindow), anyToInt(rm.ContextWindowC), anyToInt(rm.ContextTokens))
+			// 条目级 raw_chat_function 优先于分组函数（同组可携带多函数）
+			fn := firstNonEmpty(strField(rm, "raw_chat_function"), strField(rm, "rawChatFunction"), gfn)
+			tier := classifyTier(fn)
+			m := Model{
+				ID:       id,
+				Function: fn,
+				Name:     firstNonEmpty(strField(rm, "display_name"), strField(rm, "displayName"), strField(rm, "name")),
+				Context: maxInt(anyToInt(rm["context_window_size"]), anyToInt(rm["contextWindow"]),
+					anyToInt(rm["context_window_tokens"])),
+				Tiers:   []string{tier},
+				TierCfg: map[string]map[string]any{tier: rm},
 			}
-			if _, exists := out[id]; !exists {
+			cur, exists := out[id]
+			if !exists {
 				out[id] = m
+				continue
 			}
+			// 同一模型出现在多个分组：合并档位与各档原始条目（首个 wins）
+			addTier(&cur, tier)
+			if cur.TierCfg == nil {
+				cur.TierCfg = map[string]map[string]any{}
+			}
+			if _, ok := cur.TierCfg[tier]; !ok {
+				cur.TierCfg[tier] = rm
+			}
+			if cur.Context == 0 {
+				cur.Context = m.Context
+			}
+			if cur.Name == "" {
+				cur.Name = m.Name
+			}
+			out[id] = cur
 		}
 	}
 	if len(out) == 0 {
@@ -563,10 +656,22 @@ func modelList(nativeOnly bool) []Model {
 	if !HasEnabledAccount() {
 		return []Model{}
 	}
+	// 端点过滤（面板下拉框）：remote / traework 只列对应档位确认过的条目
+	//（这些条目经由 chat_sessions 传输可服务）；auto（默认）与 traecode
+	// 维持原生档口径不变。
+	endpointFilter := ""
+	switch strings.ToLower(strings.TrimSpace(Get().Endpoint)) {
+	case "remote", "traework":
+		endpointFilter = strings.ToLower(strings.TrimSpace(Get().Endpoint))
+	}
 	catalogMu.RLock()
 	out := make([]Model, 0, len(catalogModels))
 	for _, m := range catalogModels {
-		if nativeOnly && !m.Native {
+		if endpointFilter != "" {
+			if !modelHasTier(m, endpointFilter) {
+				continue
+			}
+		} else if nativeOnly && !m.Native {
 			continue
 		}
 		out = append(out, m)

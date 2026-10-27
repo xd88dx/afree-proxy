@@ -820,6 +820,15 @@ func handleOtherModelsRefresh(w http.ResponseWriter, r *http.Request) {
 		writeAPI(w, http.StatusNotFound, apiResponse{Error: "platform not found: " + req.Slug})
 		return
 	}
+	// 与 AMD/TokenHarbor 同口径：该子平台无启用 key 时拒绝同步并给出提示
+	//（前端 refreshOtherModels 已有同判定，此处兜底防直连 API）。
+	if !otherPlatformHasRoutableKey(p) {
+		writeAPI(w, http.StatusOK, apiResponse{
+			Success: false,
+			Message: "no enabled key on this platform — enable a key first, then refresh",
+		})
+		return
+	}
 	_, err := other.TrySync(p)
 	if err != nil {
 		writeAPI(w, http.StatusBadGateway, apiResponse{Error: err.Error()})

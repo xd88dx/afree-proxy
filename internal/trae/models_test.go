@@ -5,6 +5,8 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"sort"
+	"strings"
 	"testing"
 )
 
@@ -210,7 +212,7 @@ func TestSyncCatalogMergesNativeScopes(t *testing.T) {
 	if m := got["solo-only"]; m.Function != "solo_agent" {
 		t.Fatalf("solo-only entry = %+v", m)
 	}
-	if m := got["web-only"]; m.RawName != "web-only" || m.Function != "chat_v3" || m.Native {
+	if m := got["web-only"]; m.RawName != "web-only" || m.Function != "solo_work_remote" || m.Native {
 		t.Fatalf("web-only entry = %+v", m)
 	}
 	if m := got["glm-5.2"]; !m.Native {
@@ -439,5 +441,50 @@ func TestSyncCatalogRequiresRoutableAccount(t *testing.T) {
 	}
 	if hits != 0 {
 		t.Fatalf("catalog fetched %d time(s) without routable credential", hits)
+	}
+}
+
+// 端点下拉框：remote / traework 档位过滤模型列表（auto 维持原生档口径）。
+func TestModelListEndpointFilter(t *testing.T) {
+	resetCatalog(t)
+	prev := Get()
+	t.Cleanup(func() { Set(prev) })
+	Set(&Config{Gateway: DefaultGateway, Accounts: []*Account{{ID: "u1", Token: "tok"}}})
+	catalogMu.Lock()
+	catalogModels = map[string]Model{
+		"glm-5.2": {ID: "glm-5.2", Native: true, Function: "solo_agent", Tiers: []string{"traecode", "remote"}},
+		"glm-5":   {ID: "glm-5", Native: false, Function: "solo_agent_remote", Tiers: []string{"remote"}},
+		"seed-work": {ID: "seed-work", Native: false, Function: "solo_work_remote",
+			Tiers: []string{"traework"}, TierCfg: map[string]map[string]any{"solo_work_remote": {"config_name": "seed-work"}}},
+		"native-only": {ID: "native-only", Native: true, Function: "chat_v3", Tiers: []string{"traecode"}},
+	}
+	catalogLoaded = true
+	catalogMu.Unlock()
+
+	cases := []struct {
+		endpoint string
+		want     []string
+	}{
+		{"", []string{"glm-5.2", "native-only"}},         // auto：原生档
+		{"auto", []string{"glm-5.2", "native-only"}},     // auto
+		{"traecode", []string{"glm-5.2", "native-only"}}, // TraeCode 档 = 原生档
+		{"remote", []string{"glm-5", "glm-5.2"}},         // Remote 档
+		{"traework", []string{"seed-work"}},              // TraeWork 档
+	}
+	for _, tc := range cases {
+		Set(&Config{Gateway: DefaultGateway, Accounts: []*Account{{ID: "u1", Token: "tok"}}, Endpoint: tc.endpoint})
+		got := []string{}
+		for _, m := range ModelList() {
+			got = append(got, m.ID)
+		}
+		sort.Strings(got)
+		if strings.Join(got, ",") != strings.Join(tc.want, ",") {
+			t.Fatalf("endpoint=%q ModelList = %v, want %v", tc.endpoint, got, tc.want)
+		}
+	}
+	// 端点过滤不影响显式解析（隐藏条目仍可请求，失败给上游真实错误）
+	Set(&Config{Gateway: DefaultGateway, Accounts: []*Account{{ID: "u1", Token: "tok"}}, Endpoint: "traework"})
+	if _, ok := Resolve("glm-5.2"); !ok {
+		t.Fatal("endpoint filter must not break Resolve")
 	}
 }

@@ -105,6 +105,13 @@ type Config struct {
 	// 空 = 跟随全局账号池策略（POOL_STRATEGY，默认 round_robin）；TRAE_STRATEGY
 	// 环境变量优先级更高（见 app.traeStrategy）。
 	Selection string `json:"selection,omitempty"`
+	// Endpoint 上游端点（原项目 UPSTREAM_MODE 的三档收敛，面板下拉框）：
+	//   - "" / auto（默认）：自动路由 = 合并目录 + 每模型自己的 Function 档
+	//     走 raw_chat（TraeCode 桌面协议，历史行为不变）；
+	//   - remote：chat_sessions 传输（solo_agent_remote 执行器，Agent 档）；
+	//   - traecode：同 auto 的传输（raw_chat），仅模型目录按 TraeCode 档过滤；
+	//   - traework：chat_sessions 传输（solo_work_remote 执行器，Work 档）。
+	Endpoint string `json:"endpoint,omitempty"`
 	// AutoCheckin 每日自动签到开关。nil = 关闭（与上游原版默认一致）。
 	AutoCheckin *bool `json:"autoCheckin,omitempty"`
 	// Cool 冷却表：账号 ID -> 冷却截止时刻（内存态，不落盘）。
@@ -159,6 +166,14 @@ func (c *Config) normalize() {
 	case "round_robin", "credit-priority", "fill", "random":
 	default:
 		c.Selection = ""
+	}
+	// 端点选择（面板下拉）：auto（空，默认）/ remote / traecode / traework。
+	// 非法值回落 auto（原项目 UPSTREAM_MODE 校验同语义）。
+	switch strings.ToLower(strings.TrimSpace(c.Endpoint)) {
+	case "remote", "traecode", "traework":
+		c.Endpoint = strings.ToLower(strings.TrimSpace(c.Endpoint))
+	default:
+		c.Endpoint = ""
 	}
 	if c.Cool == nil {
 		c.Cool = map[string]time.Time{}

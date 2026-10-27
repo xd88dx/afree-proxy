@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -458,6 +459,13 @@ type Stream struct {
 	resp *http.Response
 	sc   *bufio.Scanner
 
+	// transport 形态：remote=true 走 chat_sessions 事件翻译（remote.go），
+	// false = raw_chat 原生协议。两条链路共用 Next/事件聚合。
+	remote     bool
+	remoteStop *remoteStopInfo
+	// pending 消化单帧产出多个事件（如 plan_item 的思考+正文）。
+	pending []*StreamEvent
+
 	// 聚合状态：文本/思考各自独立累计（快照/增量混合处理），
 	// 工具调用按 index 分槽合并（args 跨帧拼接）。
 	textAcc  string
@@ -479,6 +487,12 @@ type Stream struct {
 // 重置，导致 event: error / done / token_usage 全部退化成按 payload 猜名字，
 // 上游错误被当成无内容断流、用量丢失、done 识别失败）。
 func (s *Stream) Next() (*StreamEvent, error) {
+	// plan_item 等单帧多事件的余量先行
+	if len(s.pending) > 0 {
+		ev := s.pending[0]
+		s.pending = s.pending[1:]
+		return ev, nil
+	}
 	pending := ""
 	for s.sc.Scan() {
 		line := strings.TrimSpace(s.sc.Text())
@@ -527,15 +541,45 @@ func (s *Stream) Next() (*StreamEvent, error) {
 	return nil, nil
 }
 
-// Close 释放底层响应体。
+// Close 释放底层响应体；remote 会话未见 done 时尽力 stop（原项目语义：
+// 提前失败不留挂着的事件流会话）。
 func (s *Stream) Close() {
 	if s.resp != nil && s.resp.Body != nil {
 		s.resp.Body.Close()
+	}
+	if s.remote && s.remoteStop != nil && !s.SawDone {
+		s.stopRemoteSession()
+	}
+}
+
+// stopRemoteSession POST /chat_sessions/{sid}/stop（失败静默，原项目同口径）。
+func (s *Stream) stopRemoteSession() {
+	info := s.remoteStop
+	body, _ := json.Marshal(map[string]any{
+		"chat_session_id": info.sessionID,
+		"user_message_id": info.messageID,
+	})
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, info.base+"/chat_sessions/"+info.sessionID+"/stop", bytes.NewReader(body))
+	if err != nil {
+		return
+	}
+	for k, v := range info.headers {
+		req.Header.Set(k, v)
+	}
+	client := httpClientFor(info.proxyURL)
+	if resp, err := client.Do(req); err == nil {
+		resp.Body.Close()
 	}
 }
 
 // consume 处理一个 data 帧；返回 (事件, 是否产出事件)。
 func (s *Stream) consume(obj map[string]any, evName string) (*StreamEvent, bool) {
+	// remote chat_sessions 事件族单独翻译（remote.go 注释里的协议对照）
+	if s.remote {
+		return s.consumeRemote(obj, evName)
+	}
 	// error 事件：先于一切内容检查（上游有时先吐模型输出再报错）
 	if evName == "error" {
 		code, msg := extractError(obj)
@@ -608,6 +652,161 @@ func (s *Stream) classifyStreamError() {
 	case isCapacityCode(e.Code), ContainsQuotaText(e.Body):
 		e.RateLimited = true
 	}
+}
+
+// ============ remote chat_sessions 事件翻译（remote.go 协议对照） ============
+
+// consumeRemote chat_sessions 事件帧 → 归一化 StreamEvent。
+// 对照原项目 sse.py translate_web_events：
+//   - heartbeat/keepalive/ping → 忽略（afree 聚合层自行保活）
+//   - plan_item → thought=思考快照，content=可见正文快照（两者独立累计）
+//   - message|assistant_message|response|text|output → 可见正文快照
+//   - token_usage / done / error 与 raw_chat 同构
+func (s *Stream) consumeRemote(obj map[string]any, evName string) (*StreamEvent, bool) {
+	if remoteDebugEvents {
+		if raw, err := json.Marshal(obj); err == nil {
+			limit := 400
+			if evName == "plan_item" || evName == "message" || evName == "assistant_message" {
+				limit = 1600
+			}
+			log.Printf("trae remote event name=%s data=%s", evName, kit.Truncate(string(raw), limit))
+		}
+	}
+	switch evName {
+	case "error":
+		code, msg := extractError(obj)
+		if raw, err := json.Marshal(obj); err == nil {
+			log.Printf("trae remote stream error event: %s", kit.Truncate(string(raw), 800))
+		}
+		s.Err = &HTTPError{Code: code, Body: msg}
+		s.classifyStreamError()
+		return &StreamEvent{Type: "error", Code: code, Message: msg}, true
+	case "heartbeat", "keepalive", "ping", "model_config", "keep_alive":
+		return nil, false
+	case "token_usage":
+		if u := mapUsage(obj); u != nil {
+			s.Usage = u
+			return &StreamEvent{Type: "usage", Usage: u}, true
+		}
+		return nil, false
+	case "done", "response_done", "stream_done":
+		s.SawDone = true
+		if fr := payloadFinishReason(obj); fr != "" {
+			s.Finish = fr
+		}
+		if u := mapUsage(obj); u != nil && s.Usage == nil {
+			s.Usage = u
+		}
+		// 原项目收尾兜底（sse.py 翻译器末段）：SOLO Remote 执行器会把
+		// 整个回答放在 plan_item.thought（reasoning 通道），final summary
+		// 挂在 tool_call_info(finish).params.summary。无可见正文时把思考
+		// 摘要作为正文输出——否则纯文字对话 content 恒为空。
+		if s.textAcc == "" && s.thinkAcc != "" {
+			s.textAcc = s.thinkAcc
+			s.pending = append(s.pending, &StreamEvent{Type: "done", FinishReason: s.Finish})
+			return &StreamEvent{Type: "text", Text: s.thinkAcc}, true
+		}
+		return &StreamEvent{Type: "done", FinishReason: s.Finish}, true
+	case "plan_item":
+		var out []*StreamEvent
+		if th := payloadReasoning(obj); th != "" {
+			if delta, changed := s.addReasoning(th); changed && delta != "" {
+				out = append(out, &StreamEvent{Type: "reasoning", Text: delta})
+			}
+		}
+		if txt := webPlanContent(obj); txt != "" {
+			if delta, changed := s.addText(txt); changed && delta != "" {
+				out = append(out, &StreamEvent{Type: "text", Text: delta})
+			}
+		}
+		if fr := payloadFinishReason(obj); fr != "" {
+			s.Finish = fr
+		}
+		if len(out) == 0 {
+			return nil, false
+		}
+		s.pending = append(s.pending, out[1:]...)
+		return out[0], true
+	}
+	if !textBearingEvents[evName] {
+		return nil, false
+	}
+	// message 族：正文可能嵌套在 message/agent_message/assistant_message
+	// 子对象里，content 可能是块数组（webMessageText 全形态解析）。
+	if txt := webMessageText(obj); txt != "" {
+		if calls := extractToolCalls(obj); len(calls) > 0 {
+			s.mergeToolCalls(calls)
+		}
+		if delta, changed := s.addText(txt); changed && delta != "" {
+			return &StreamEvent{Type: "text", Text: delta}, true
+		}
+	}
+	if fr := payloadFinishReason(obj); fr != "" {
+		s.Finish = fr
+	}
+	return nil, false
+}
+
+// webMessageText remote message 族事件可见正文（原项目 _web_message_text）。
+func webMessageText(obj map[string]any) string {
+	data := obj
+	for _, key := range []string{"message", "agent_message", "assistant_message"} {
+		if nested, ok := obj[key].(map[string]any); ok {
+			data = nested
+			break
+		}
+	}
+	if c, ok := data["content"].(string); ok {
+		return c
+	}
+	if blocks, ok := data["content"].([]any); ok {
+		var b strings.Builder
+		for _, block := range blocks {
+			switch s := block.(type) {
+			case string:
+				b.WriteString(s)
+			case map[string]any:
+				bt, _ := s["type"].(string)
+				switch strings.ToLower(bt) {
+				case "reasoning", "thinking", "reasoning_text":
+					continue // 思考块不计入可见正文
+				}
+				if t, ok := s["text"].(string); ok {
+					b.WriteString(t)
+				} else if t, ok := s["content"].(string); ok {
+					b.WriteString(t)
+				}
+			}
+		}
+		return b.String()
+	}
+	if v := firstString(data, "text", "response", "answer", "output"); v != "" {
+		return v
+	}
+	for _, key := range []string{"text", "response", "answer", "output"} {
+		if blocks, ok := data[key].([]any); ok {
+			var b strings.Builder
+			for _, block := range blocks {
+				switch s := block.(type) {
+				case string:
+					b.WriteString(s)
+				case map[string]any:
+					if t, ok := s["text"].(string); ok {
+						b.WriteString(t)
+					}
+				}
+			}
+			if b.Len() > 0 {
+				return b.String()
+			}
+		}
+	}
+	return ""
+}
+
+// webPlanContent plan_item 可见正文（content 字段；thought 走 reasoning 通道）。
+func webPlanContent(obj map[string]any) string {
+	return webMessageText(map[string]any{"content": obj["content"]})
 }
 
 // addText 快照/增量混合聚合（sse.py ProtocolTextAccumulator 语义）：
@@ -755,7 +954,7 @@ func payloadEventName(obj map[string]any) string {
 var textBearingEvents = map[string]bool{
 	"": true, "output": true, "response": true, "message": true,
 	"assistant_message": true, "text_delta": true, "translated_text": true,
-	"accumulated": true,
+	"accumulated": true, "text": true,
 }
 
 // payloadTextFor 按事件名决定是否提取文本；非文本事件返回空。
@@ -1034,6 +1233,8 @@ func Chat(ctx context.Context, opts ChatOpts) (*Stream, *Account, error) {
 	if retries <= 0 {
 		retries = 3
 	}
+	primary, fallbackFn := transportSelector(opts)
+	fallbackUsed := false
 	delay := time.Second
 	rateLimited := 0
 	for attempt := 0; ; attempt++ {
@@ -1064,7 +1265,13 @@ func Chat(ctx context.Context, opts ChatOpts) (*Stream, *Account, error) {
 			continue
 		}
 		observeAttempt(ctx, acc, proxyURL)
-		stream, err := chatOnce(ctx, acc, opts, proxyURL)
+		stream, err := primary(ctx, acc, opts, proxyURL)
+		if err != nil && fallbackFn != nil && !fallbackUsed && remoteFallbackEligible(err) {
+			// auto 分流回落（原项目 TRAE_AUTO_ROUTE 语义，单次）：
+			// 纯文字 Remote 失败回落 raw_chat；工具/图片 raw_chat 失败回落 Remote。
+			fallbackUsed = true
+			stream, err = fallbackFn(ctx, acc, opts, proxyURL)
+		}
 		if err == nil {
 			return stream, acc, nil
 		}
@@ -1124,8 +1331,101 @@ func chatCandidates() [][2]string {
 	return [][2]string{{gw, rawChatV2Endpoint}}
 }
 
-// chatOnce 单账号单次请求：遍历候选，200 即返回解析流。
-func chatOnce(ctx context.Context, acc *Account, opts ChatOpts, proxyURL string) (*Stream, error) {
+// transportSelector 端点 → (主传输, 回落传输)。原项目端点语义：
+//   - remote / traework：固定 chat_sessions 传输，不回落；
+//   - traecode：固定 raw_chat，不回落；
+//   - auto（默认，原项目 TRAE_AUTO_ROUTE）：工具/图片/工具历史请求走
+//     raw_chat（IDE Agent），纯文字走 Remote（chat_sessions）；
+//     主传输失败（可重试类错误）回落另一条一次。
+//     模型目录未确认 remote 档（种子/原生条目）时不分流，维持 raw_chat。
+func transportSelector(opts ChatOpts) (primary, fallback func(context.Context, *Account, ChatOpts, string) (*Stream, error)) {
+	ep := strings.ToLower(strings.TrimSpace(Get().Endpoint))
+	switch ep {
+	case "remote", "traework":
+		return remoteChatOnce, nil
+	case "traecode":
+		return rawChatOnce, nil
+	}
+	if requestHasToolsOrImages(opts.Params) {
+		return rawChatOnce, remoteChatOnce
+	}
+	if !modelHasTier(opts.Model, "remote") {
+		return rawChatOnce, nil
+	}
+	return remoteChatOnce, rawChatOnce
+}
+
+// remoteFallbackEligible 回落只对"可重试"类失败生效：网络错误 / 5xx 等。
+// 限流、认证失效、参数错误、模型/权益级错误（4023/1005）换传输也不会变，
+// 走原有的换号/上抛逻辑。
+func remoteFallbackEligible(err error) bool {
+	var he *HTTPError
+	if !errors.As(err, &he) {
+		return true // 网络级错误
+	}
+	if he.RateLimited || he.AuthFailure || he.ParamError {
+		return false
+	}
+	switch he.Code {
+	case "1005", "4023":
+		return false
+	}
+	return true
+}
+
+// requestHasToolsOrImages 请求是否携带工具或图片（auto 分流判据，
+// 原项目：tools/tool_choice/工具历史/图片请求 → IDE Agent）。
+func requestHasToolsOrImages(params map[string]any) bool {
+	if params == nil {
+		return false
+	}
+	if tools, ok := params["tools"].([]any); ok && len(tools) > 0 {
+		return true
+	}
+	if tc, ok := params["tool_choice"]; ok && tc != nil {
+		return true
+	}
+	msgs, _ := params["messages"].([]any)
+	for _, raw := range msgs {
+		m, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		role, _ := m["role"].(string)
+		if role == "tool" {
+			return true
+		}
+		if _, ok := m["tool_calls"].([]any); ok {
+			return true
+		}
+		if contentHasImage(m["content"]) {
+			return true
+		}
+	}
+	return false
+}
+
+// contentHasImage content 中是否带图片块（image_url / image 形态）。
+func contentHasImage(v any) bool {
+	blocks, ok := v.([]any)
+	if !ok {
+		return false
+	}
+	for _, b := range blocks {
+		bm, ok := b.(map[string]any)
+		if !ok {
+			continue
+		}
+		bt, _ := bm["type"].(string)
+		if bt == "image_url" || bt == "image" {
+			return true
+		}
+	}
+	return false
+}
+
+// rawChatOnce 单账号单次请求（raw_chat 原链路）：遍历候选，200 即返回解析流。
+func rawChatOnce(ctx context.Context, acc *Account, opts ChatOpts, proxyURL string) (*Stream, error) {
 	body := BuildChatBody(opts.Params, opts.Model, acc.ID)
 	bodyJSON, err := json.Marshal(body)
 	if err != nil {
