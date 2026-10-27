@@ -51,7 +51,16 @@ go test ./... -count=1             # 除下述既有失败外应全绿
 
 ## 6. 生产部署
 
-镜像 `afree-proxy:prod-<日期>-<序号>`，容器 `afree`（`--restart always`、`-p 3457:3457`、`-v D:/DockerApp/afree:/app/data`）。重建时必须显式传 `PORT` / `DATA_DIR` / `API_KEY` / `ADMIN_PASSWORD`——删旧容器会丢 env，所以先 `docker inspect` 旧容器取值存进同一 shell 变量，再造新容器，并用 env 全量哈希比对验证继承成功。旧容器先 `stop`+`rename afree-bak` 保留回滚窗口，端点验证通过后再删。
+生产由 **`D:\DockerApp\docker-compose.yml`**(compose project `tokenapp`,同一文件还管 `newapi`、`mihomo`)里的 `afree` 服务管理,容器名 `afree`,端口 3457,数据卷 `D:/DockerApp/afree`。判断依据:`docker inspect afree` 带 `com.docker.compose.project=tokenapp` 标签,`config_files` 指向该文件。
+
+同步流程:
+
+1. `docker build -t afree-proxy:prod-<日期>-<序号> .`
+2. 把 `D:\DockerApp\docker-compose.yml` 中 `afree` 服务的 `image:` 改成新 tag。
+3. `docker compose up -d afree`(按 config-hash 变化重建)。
+4. 验证:`Up (healthy)`、`GET /`→302、`GET /v1/models`→200、启动日志出现账号加载与 `model blacklist: restored N entry(ies)`。
+
+**不要用 `docker run` 重建**:那会丢掉 compose 标签与 project 归属,与真实管理方式脱节。该文件里凭据是明文,而终端输出会对凭据脱敏——不要拿脱敏后的占位符去改文件。
 
 生产 `prod-*` 镜像只保留最近 3 个。
 
