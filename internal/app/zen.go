@@ -671,17 +671,23 @@ func loadZenConfig() *zenConfigData {
 }
 
 func saveZenConfig() {
-	zenConfigMu.Lock()
-	next := *zenConfig
-	zenConfigMu.Unlock()
 	// 冷却表随配置落盘（2026-10-28）：快照包级 zenKeyCool，map 独立拷贝，
 	// 避免 mutateZenConfigFile 持有的引用与运行时并发写交叉。
 	zenKeyMu.Lock()
-	next.Cool = make(map[string]time.Time, len(zenKeyCool))
+	cool := make(map[string]time.Time, len(zenKeyCool))
 	for k, v := range zenKeyCool {
-		next.Cool[k] = v
+		cool[k] = v
 	}
 	zenKeyMu.Unlock()
+	// 同一份快照回写 zenConfig.Cool（写时复制换指针）：cooldownZenKey 只写
+	// zenKeyCool，若不回写，getZenConfig 浅拷出去的 Cool 永远停在启动值，
+	// setZenConfig 按 c.Cool 重建时会把运行期冷却清零并持久化
+	//（2026-10-29 审计修复：面板任意热改清零冷却）。
+	zenConfigMu.Lock()
+	next := *zenConfig
+	next.Cool = cool
+	zenConfig = &next
+	zenConfigMu.Unlock()
 	// 只覆盖 zen 段，sessions/modelAliases/endpoints 原样保留。
 	mutateZenConfigFile(func(f *zenConfigFileData) {
 		f.zenConfigData = next
@@ -711,7 +717,6 @@ func setZenConfig(c *zenConfigData) {
 	zenConfigMu.Lock()
 	zenConfig = c
 	zenConfigMu.Unlock()
-	saveZenConfig()
 	rebuildZenSem()
 	// 清理已移除 key 的轮转状态
 	valid := map[string]bool{}
@@ -719,7 +724,9 @@ func setZenConfig(c *zenConfigData) {
 		valid[k] = true
 	}
 	zenKeyMu.Lock()
-	// 冷却表以配置为准回填（管理导入/面板保存路径）；启动路径走 init()。
+	// 冷却表以配置为准回填（管理导入=忠实还原备份冷却；面板保存路径的 c.Cool
+	// 经 saveZenConfig 回写后已是运行期现值，重建无损）。回填必须先于落盘，
+	// 否则快照到盘上的还是回填前的旧表。
 	zenKeyCool = make(map[string]time.Time, len(c.Cool))
 	for k, v := range c.Cool {
 		zenKeyCool[k] = v
@@ -750,6 +757,9 @@ func setZenConfig(c *zenConfigData) {
 	// key 列表变化都要重算 egress 绑定：新 key 分配空闲代理、被移除的 key
 	// 释放代理（代理池变化侧的挂钩在 setProxyPool，本地代理池不在 zen 配置里）。
 	reconcileEgressBindings()
+	// 落盘放最后：saveZenConfig 快照的是回填后的 zenKeyCool，并把同一份快照
+	// 回写 zenConfig.Cool，盘、内存、后续 getZenConfig 三者一致。
+	saveZenConfig()
 }
 
 // validateProxyList 校验代理列表格式: 支持 http/https/socks5/socks5h, 必须包含 host:port。
@@ -761,12 +771,12 @@ func validateProxyList(proxies []string) error {
 		}
 		u, err := url.Parse(line)
 		if err != nil {
-			return fmt.Errorf("代理格式无效 %q: %v", line, err)
+			return fmt.Errorf("invalid proxy line %q: %v", line, err)
 		}
 		switch u.Scheme {
 		case "http", "https", "socks5", "socks5h":
 		default:
-			return fmt.Errorf("代理 %q 协议不受支持（支持 http/https/socks5/socks5h）", line)
+			return fmt.Errorf("proxy %q: unsupported scheme (supported: http/https/socks5/socks5h)", line)
 		}
 		if u.Host == "" {
 			return fmt.Errorf("代理 %q 缺少 host:port", line)
@@ -1049,6 +1059,7 @@ func uncoolZenKey(key string) {
 	zenKeyMu.Lock()
 	delete(zenKeyCool, key)
 	zenKeyMu.Unlock()
+	saveZenConfig() // 解除冷却同步落盘：否则重启后 init() 会把盘上的冷却复活
 }
 
 // zenCallOpts 单次上游调用的可选参数（变参：既有 callZenAPI/callZenResponsesAPI

@@ -40,24 +40,33 @@ func PickKey(strategy string, boundRoutable func(key string) bool) string {
 		}
 	}
 	routingOff := map[string]bool{}
+	// KeyRoutingEnabled 会被 pruneRemovedKeys 在 mu 下就地删改，读它要持锁
+	//（Cool 同理：Cooldown/Uncool 在 mu 下写，PickKey 的清理与读也必须走 mu，
+	// keyMu 只护轮转游标 keyIdx）。
+	mu.RLock()
 	for _, k := range keys {
 		if !c.RoutingEnabled(k) {
 			routingOff[k] = true
 		}
 	}
+	mu.RUnlock()
 	if len(blocked) == len(keys) || len(routingOff) == len(keys) {
 		return ""
 	}
 	keyMu.Lock()
 	defer keyMu.Unlock()
 	now := time.Now()
+	mu.Lock()
 	for k, until := range c.Cool {
 		if now.After(until) {
 			delete(c.Cool, k)
 		}
 	}
+	mu.Unlock()
 	buildCandidates := func(ignoreCooling bool) []string {
 		var out []string
+		mu.RLock()
+		defer mu.RUnlock()
 		for i := 0; i < len(keys); i++ {
 			k := keys[(keyIdx+i)%len(keys)]
 			if blocked[k] || routingOff[k] {
@@ -178,7 +187,10 @@ func Uncool(key string) {
 
 // CooldownUntil 只读查询冷却截止时刻。
 func CooldownUntil(key string) (time.Time, bool) {
-	until, ok := Get().Cool[key]
+	c := Get()
+	mu.RLock()
+	defer mu.RUnlock()
+	until, ok := c.Cool[key]
 	return until, ok
 }
 

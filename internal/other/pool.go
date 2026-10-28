@@ -176,6 +176,8 @@ func Uncool(p *Platform, key string) {
 
 // CooldownUntil 只读查询冷却截止时刻。
 func CooldownUntil(p *Platform, key string) (time.Time, bool) {
+	keyMu.Lock()
+	defer keyMu.Unlock()
 	until, ok := p.Cool[key]
 	return until, ok
 }

@@ -358,6 +358,9 @@ func Set(next *Config) {
 }
 
 // save 原子落盘（临时文件 + rename）。Cool（冷却表）随配置一并持久化。
+// marshal 全程持 mu.RLock：Cool 是就地上写的活 map，无锁 marshal 会与
+// Cooldown 的写入构成 "concurrent map iteration and map write"
+// 进程级崩溃（2026-10-29 审计修复）。
 func save() {
 	saveMu.Lock()
 	defer saveMu.Unlock()
@@ -365,9 +368,8 @@ func save() {
 		return
 	}
 	mu.RLock()
-	disk := *cfg
+	data, err := json.MarshalIndent(cfg, "", "  ")
 	mu.RUnlock()
-	data, err := json.MarshalIndent(&disk, "", "  ")
 	if err != nil {
 		fmt.Printf("  trae config marshal failed: %v\n", err)
 		return

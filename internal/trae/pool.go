@@ -49,13 +49,19 @@ func PickAccount(strategy string, boundRoutable func(*Account) bool) *Account {
 	keyMu.Lock()
 	defer keyMu.Unlock()
 	now := time.Now()
+	// Cool 由 Cooldown/Uncool 在 mu 下就地上写，PickKey 的清理与读也必须走
+	// mu（keyMu 只护轮转游标 accIdx），否则并发迭代+写会直接 fatal。
+	mu.Lock()
 	for id, until := range c.Cool {
 		if now.After(until) {
 			delete(c.Cool, id)
 		}
 	}
+	mu.Unlock()
 	buildCandidates := func(ignoreCooling bool) []*Account {
 		var out []*Account
+		mu.RLock()
+		defer mu.RUnlock()
 		for i := 0; i < len(accounts); i++ {
 			a := accounts[(accIdx+i)%len(accounts)]
 			if blocked[a.ID] || routingOff[a.ID] {
@@ -198,7 +204,10 @@ func Uncool(id string) {
 
 // CooldownUntil 只读查询冷却截止时刻。
 func CooldownUntil(id string) (time.Time, bool) {
-	until, ok := Get().Cool[id]
+	c := Get()
+	mu.RLock()
+	defer mu.RUnlock()
+	until, ok := c.Cool[id]
 	return until, ok
 }
 

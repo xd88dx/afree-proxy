@@ -570,6 +570,13 @@ func pickAccountExcluding(exclude map[string]bool) *Account {
 	p := loadPool()
 	poolMu.Lock()
 
+	// 隔离模式：绑定主备都不可用（冷却中/已从池中删除）的账号整体跳过——
+	// 与 pickAccount 同一口径。本函数是请求链（callClineAPI failover）实际
+	// 使用的选号函数，缺这条检查时绑定出口冷却的账号会被轮到，随后在
+	// pickBoundProxy 处以非 clineAPIError 失败、整请求终止且不换号
+	//（2026-10-29 审计修复）。检查在 poolMu 内完成，读的是绑定字段本身；
+	// 可用性走 proxyCooldownsMu/zenConfigMu，都是叶子锁且无反向获取。
+	isolation := proxyIsolationEnabled()
 	active := make([]*Account, 0, len(p.Accounts))
 	for _, a := range p.Accounts {
 		if a.Status == "cooldown" && !a.CooldownUntil.IsZero() && time.Now().After(a.CooldownUntil) {
@@ -583,6 +590,9 @@ func pickAccountExcluding(exclude map[string]bool) *Account {
 		// poolEnabled=false 等价于“池里没有这个账号”：面板 Pool 列勾掉之后，
 		// 既不被选号，也不作为 429/5xx 的故障转移候选。
 		if !accountPoolEnabled(a) {
+			continue
+		}
+		if isolation && !boundProxiesRoutable(a.ProxyMain, a.ProxyBackup) {
 			continue
 		}
 		if exclude[a.AccountID] {

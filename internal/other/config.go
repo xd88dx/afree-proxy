@@ -315,7 +315,10 @@ func PlatformByPrefix(prefix string) *Platform {
 }
 
 // ClonePlatform 深拷贝一个子平台（写时复制用，运行时字段一并拷贝）。
+// 拷贝 Cool 持 keyMu：源平台的 Cool 会被 Cooldown/Uncool 并发就地写。
 func ClonePlatform(p *Platform) *Platform {
+	keyMu.Lock()
+	defer keyMu.Unlock()
 	cp := *p
 	cp.Keys = append([]string(nil), p.Keys...)
 	cp.KeyRoutingEnabled = map[string]bool{}
@@ -350,13 +353,18 @@ func Set(next *Config) {
 	rebuildAllSemLocked()
 }
 
-// save 原子落盘（临时文件 + rename）。Cool 为运行时字段不落盘。
+// save 原子落盘（临时文件 + rename）。Cool（冷却表）随配置一并持久化。
+// marshal 全程持 keyMu：Cool 在 Cooldown/Uncool/PickKey 下就地上写（keyMu 域），
+// 无锁 marshal 会构成 "concurrent map iteration and map write" 进程级崩溃
+// （2026-10-29 审计修复）； Platforms 切片本体另持 mu.RLock 防 Set 换指针。
+// 锁序固定 keyMu → mu，与 KeyStatus 一致；无任何 mu → keyMu 反向路径。
 func save() {
 	saveMu.Lock()
 	defer saveMu.Unlock()
 	if ConfigPath == "" {
 		return
 	}
+	keyMu.Lock()
 	mu.RLock()
 	disk := *cfg
 	disk.Platforms = make([]Platform, len(cfg.Platforms))
@@ -366,6 +374,7 @@ func save() {
 	}
 	mu.RUnlock()
 	data, err := json.MarshalIndent(&disk, "", "  ")
+	keyMu.Unlock()
 	if err != nil {
 		fmt.Printf("  other config marshal failed: %v\n", err)
 		return
@@ -415,9 +424,11 @@ func ProxiesEnabled() bool {
 }
 
 // KeyStatus 面板展示用的单平台每 key 运行时状态（key 值打码，明文不出口）。
+// KeyTokens/Cool 是 keyMu 域的就地写运行时表，读它们必须持 keyMu
+// （Keys/KeyBindings 走写时复制，无锁读安全）。
 func KeyStatus(p *Platform) []map[string]any {
-	mu.RLock()
-	defer mu.RUnlock()
+	keyMu.Lock()
+	defer keyMu.Unlock()
 	now := time.Now()
 	out := make([]map[string]any, 0, len(p.Keys))
 	for i, k := range p.Keys {
