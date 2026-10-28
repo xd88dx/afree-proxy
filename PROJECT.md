@@ -41,7 +41,7 @@ go test ./... -count=1             # 除下述既有失败外应全绿
 - `internal/workbuddy/server` 的 `TestChatStreamPassthrough`（全量测试时 `LastTokensPerSecond=nil`）。根因：`tokensPerSecond()`（`handler.go:2011`）在 `ttfb <= 0` 时返回 `ok=false`，`RecordTokenUsage`（`pool/state.go:395`）据此置 nil，而断言（`handler_test.go:462`）要求非 nil；httptest 即时响应下 `ttfb` 常被测成 0。属上游测试既有缺陷，改了会与后续同步持续冲突。
 - `internal/workbuddy/updater` 的 `TestInstallReplacesRestartsAndRecovers`（Windows 上 `fork/exec wb2api.exe` 报 "This version of %1 is not compatible"，测试固件的假二进制无法 exec）。该包不 import 任何 `afree-proxy/internal/*`，与业务改动无因果关系。
 
-换行：仓库是 CRLF。用 `gofmt` 前先 `tr -d '\r'`，格式化后 `sed 's/$/\r/'` 还原，否则整文件显示为全部改动。`gofmt` 是原生程序，不认 MSYS 路径——传 `$(cygpath -w <路径>)`，且**不要**把 `gofmt` 的 stderr 一起重定向进结果文件（会写坏源文件）。
+换行：行尾由 `.gitattributes` + `.editorconfig` 强制统一为 LF（规则与判据见 `AGENTS.md` §3）。`gofmt` 是原生程序，不认 MSYS 路径——传 `$(cygpath -w <路径>)`，且**不要**把 `gofmt` 的 stderr 一起重定向进结果文件（会写坏源文件）。
 
 ## 5. 本地定制不可丢
 
@@ -89,7 +89,9 @@ iStore 的面板密码是 `233@.afree`(与本机 compose 里的值不同);登录
 `D:/DockerApp/afree/` 下的 `*.json` 由 `C:/AppSelf/!Apps/AutoTool/rsync/task/sync-istore-docker.ps1` 从 iStore 拉(定时任务 `sync-istore-docker`,每 10 分钟):
 
 - 默认、也就是定时任务实际执行的方式:只把 iStore 的 `/docker/app/*` rsync 到 `D:/dockerapp/iStore/` 做备份,**不部署、不重启**。
-- 加 `-Deploy` 才把 `afree/*.json` 变换内网 IP 后写进 `D:/DockerApp/afree/` 并 `docker restart afree`。
+- 加 `-Deploy` 才把 `afree/*.json` 变换内网 IP 后写进 `D:/DockerApp/afree/` 并 `docker restart afree`(mihomo 配置变了也会一并 `docker restart mihomo`)。
+
+**compose 不在同步范围内,端口映射要手工维护**:脚本只搬 `mihomo/config.yaml` 和 `afree/*.json`,不碰 compose。iStore 的 mihomo 走 `network_mode: host`,配置里写了的 listener 端口自动绑到宿主机;本机是 bridge + 端口白名单(`D:/DockerApp/docker-compose.yml` 的 mihomo `ports:`)。所以 **iStore 每新增或改动一个 listener 端口,本机都要手工同步那一行**。判据是容器内 `docker exec mihomo netstat -lnt`(能看到监听)与宿主机 `/dev/tcp/127.0.0.1/<port>`(连不上)不一致——看到这种组合就是漏了映射。踩过的例子:iStore 新增 `12308` 未映射,补上之后 iStore 又把它改成了 `10086`。
 
 早先的 v2 默认就部署,导致本机容器每 10 分钟重启一次:因为 **iStore 上正在服务流量的实例会持续改写 `currentIdx`、`accounts` 状态、`egressBindings` 这类运行时字段**,「iStore 侧文件 sha256 变了」的防抖判据于是每次命中。该判据在 v3 已移除,不要再加回来。
 

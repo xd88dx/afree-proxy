@@ -1,0 +1,31 @@
+# https://editorconfig.org
+# 与 .gitattributes 配合:这里是编辑器侧约定,那边是 git 侧强制。
+# 任何编辑器/IDE 打开本仓文件都会按此格式化,避免再出现行尾混杂。
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+# Go:缩进用 tab(gofmt 约定)
+[*.go]
+indent_style = tab
+
+# 数据/文档/前端:2 空格
+[*.{md,yml,yaml,json,js,css,html}]
+indent_style = space
+indent_size = 2
+
+# Python:4 空格
+[*.py]
+indent_style = space
+indent_size = 4
+
+# Windows 原生脚本必须 CRLF(当前仓库没有,预留)
+[*.{ps1,cmd,bat}]
+end_of_line = crlf
+
+[Makefile]
+indent_style = tab

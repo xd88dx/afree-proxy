@@ -1,1 +1,11 @@
+# 统一行尾:仓库内容与检出内容一律 LF,优先于 core.autocrlf。
+# 判据:git ls-files --eol 应全部为 i/lf w/lf。
+* text=auto eol=lf
+
+# Windows 原生脚本必须 CRLF(当前仓库没有此类文件,预留避免将来踩坑)
+*.ps1 text eol=crlf
+*.cmd text eol=crlf
+*.bat text eol=crlf
+
+# 容器入口脚本必须 LF,否则容器内 exec 报 "no such file or directory"
 entrypoint.sh text eol=lf
