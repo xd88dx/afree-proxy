@@ -59,3 +59,42 @@
 ## 9. 技能与文档同步
 
 改动波及 agent 技能文档（`.agents/skills/` 等）时一并修正，包括会误导后续 agent 的过时指引，不必等用户逐项批准。
+
+## 10. 外网连接与代理
+
+本机出网必须经代理。三个候选的**实测结论（2026-10-28）**，用前先探、通即用——代理服务端的分流规则会变，本表有保质期：
+
+```bash
+for p in 127.0.0.1:10808 127.0.0.1:7890 10.10.10.3:1080; do
+  curl -s -o /dev/null -w "$p %{http_code} %{time_total}s\n" \
+    -x "socks5h://$p" --max-time 10 https://api.github.com/
+done
+```
+
+判据：`http_code=200` 且耗时正常才算通；`000` 且耗时接近 `--max-time` 就是不可用。
+
+| 代理 | 支持协议 | GitHub（`api.github.com`） | 通用墙外 | 结论 |
+|---|---|---|---|---|
+| `127.0.0.1:10808` | socks5 / socks5h / http | 200，0.73–0.96s | google `204`；wikipedia、1.1.1.1、raw.githubusercontent 全通，0.73–0.89s | **首选**：全通、延迟稳定 |
+| `127.0.0.1:7890` | socks5 / socks5h / http | 200，0.42–0.62s（三者最快） | **google 不通**（http、socks5、socks5h 均为 `000`）；wikipedia、1.1.1.1 约 2.0–2.3s | 备选：只有 GitHub 族更快，域名覆盖不全，用它必须能回退 |
+| `10.10.10.3:1080` | — | 20s 超时 `000` | 未再测（前者已失败） | **不可用**：TCP 端口开着，SOCKS 转发不通 |
+
+- 默认走 `10808`。只有纯 GitHub 批量操作、且刚探过 7890 可用时，才换 7890 提速。
+- **别用「端口在听」「TCP 能连上」判代理可用**——`10.10.10.3:1080` 正是端口开、转发死。也别说"设了 `ALL_PROXY` 就能用"：Windows schannel 下环境变量代理对 git 无效（报 `schannel: failed to receive handshake`），`http.sslBackend=openssl` 也救不回来。
+
+git 出网（HTTPS）必须用 **URL 级**代理键：
+
+```bash
+git -c 'http.https://github.com.proxy=socks5h://127.0.0.1:10808' \
+    -c 'http.proxy=socks5h://127.0.0.1:10808' \
+    -c 'https.proxy=socks5h://127.0.0.1:10808' fetch <remote> main
+```
+
+git 推送（`origin` 是 SSH）走另一条路——上面三个代理键对 push 无效：
+
+```bash
+ssh -o ProxyCommand='connect -S 127.0.0.1:10808 %h %p' -T git@github.com   # 应回 Hi <user>! You've successfully authenticated
+git -c core.sshCommand='ssh -o ProxyCommand="connect -S 127.0.0.1:10808 %h %p"' push origin main
+```
+
+`connect` 位于 `/mingw64/bin/connect`。直推报 `Connection closed by <ip> port 443` 是没走代理，不是密钥或权限问题。
