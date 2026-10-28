@@ -212,7 +212,7 @@ func handleZenConfigUpdate(w http.ResponseWriter, r *http.Request) {
 		expr := strings.TrimSpace(*patch.ProxySubCron)
 		if expr != "" {
 			if err := validateCronExpr(expr); err != nil {
-				writeAPI(w, http.StatusBadRequest, apiResponse{Error: "cron 表达式无效: " + err.Error()})
+				writeAPI(w, http.StatusBadRequest, apiResponse{Error: "invalid cron expression: " + err.Error()})
 				return
 			}
 		}

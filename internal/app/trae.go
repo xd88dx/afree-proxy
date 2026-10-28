@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"strings"
 	"sync"
@@ -73,8 +74,8 @@ func initTrae() {
 		}
 		setUpstreamExit(ctx, proxyExitType(proxyURL, main, backup, bound))
 	})
-	// 启动即预热模型目录：先同步一次，再进 10 分钟轮询。展示层只列原生档
-	// 确认过的条目，首次同步完成前列表为空，不能等轮询第一跳（10 分钟）。
+	// 启动即预热模型目录：先同步一次，再进 5 分钟轮询。展示层只列原生档
+	// 确认过的条目，首次同步完成前列表为空，不能等轮询第一跳（5 分钟）。
 	trae.InitCatalog()
 	go func() {
 		syncTraeCatalog(1)
@@ -84,7 +85,7 @@ func initTrae() {
 	startTraeJobs()
 }
 
-// startTraeModelsRefresher 每 10 分钟同步一次 live 模型目录（需要至少一个
+// startTraeModelsRefresher 每 5 分钟同步一次 live 模型目录（需要至少一个
 // 启用账号的 JWT；失败下一轮自然重试）。
 func startTraeModelsRefresher() {
 	ticker := time.NewTicker(5 * time.Minute)
@@ -1400,9 +1401,34 @@ var (
 	traeLastIngest   *traeHelperIngest
 )
 
+// webAuthSourceAllowed /api/web-auth 的来源判定：回环、内网（RFC1918/ULA）、
+// 链路本地放行；公网来源拒绝。RemoteAddr 无法解析时按拒绝处理（fail-closed）。
+// CLIENT_IP_HEADER 反代头不采信——凭据写入端点信任的只能是 TCP 对端。
+func webAuthSourceAllowed(r *http.Request) bool {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return false
+	}
+	ip := net.ParseIP(host)
+	if ip == nil {
+		return false
+	}
+	return ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast()
+}
+
 // POST /api/web-auth  body: helper 解析后的凭据 dict（token/refreshToken/userId/...）
 // 响应契约与原版一致：{"success":true} / {"success":false,"error":"..."}。
+//
+// 源限制（2026-10-29 审计修复）：本端点无认证（helper 是裸脚本，加认证会破坏
+// 与上游 web_login.py 的行级基线等价），但凭据写入绝不能对公网开放。设计场景
+// 是 helper 与用户浏览器同网段：本机部署=127.0.0.1，NAS/LAN 部署=内网 PC 的
+// RFC1918/ULA 地址——因此只放行回环+内网源，公网/反代外来源一律 403 fail-closed。
 func handleTraeWebAuth(w http.ResponseWriter, r *http.Request) {
+	if !webAuthSourceAllowed(r) {
+		log.Printf("trae web-auth rejected: non-local source %s", r.RemoteAddr)
+		writeJSON(w, http.StatusForbidden, map[string]any{"success": false, "error": "web-auth endpoint only accepts local/LAN sources"})
+		return
+	}
 	if r.Method != http.MethodPost {
 		writeJSON(w, http.StatusMethodNotAllowed, map[string]any{"success": false, "error": "method not allowed"})
 		return
@@ -1424,9 +1450,10 @@ func handleTraeWebAuth(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		rec.Message = err.Error()
 	} else if added {
-		rec.Message = "凭据已写入服务器"
+		// 英文源文 + 面板 T() 词条（I18N_ZH）双语；这两条是固定串，可整句词条。
+		rec.Message = "Credentials saved to server"
 	} else {
-		rec.Message = "账号已存在"
+		rec.Message = "Account already exists"
 	}
 	traeLastIngestMu.Lock()
 	traeLastIngest = rec

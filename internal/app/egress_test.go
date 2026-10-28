@@ -245,22 +245,9 @@ func TestEgressBindingsPersistWithoutPlaintextKeys(t *testing.T) {
 	}
 }
 
-// zen 与 cline 是两个独立 namespace：同一代理可各服务一个身份。
-func TestEgressNamespacesAreIndependent(t *testing.T) {
-	setupEgressTest(t, []string{"socks5://p1:1080"})
-	setEgressKeys(t, []string{"sk-a"})
-	// 手动登记一个 cline 账号绑定，复用同一个代理
-	egressMu.Lock()
-	egressBindings[egressNSCline+"acct-1"] = egressBinding{Proxy: "socks5://p1:1080"}
-	egressMu.Unlock()
-
-	if _, ok := egressProxyForZen("sk-a"); !ok {
-		t.Fatal("zen key must keep its proxy alongside a cline account")
-	}
-	if p, ok := egressProxyForCline("acct-1"); !ok || p != "socks5://p1:1080" {
-		t.Fatalf("cline binding lost: %q %v", p, ok)
-	}
-}
+// （TestEgressNamespacesAreIndependent 已随 cline egress namespace 一并删除：
+// reconcileEgressBindings 只分配 zen，cline 出口绑定走账号级 ProxyMain/ProxyBackup
+// 体系，cline namespace 无任何写入方，属死通路。2026-10-29 审计清理。）
 
 func containsBytes(haystack, needle []byte) bool {
 	if len(needle) == 0 {

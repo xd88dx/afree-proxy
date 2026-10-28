@@ -1696,6 +1696,22 @@ func EnsureFresh(a *Account) error {
 	return fc.err
 }
 
+// auxClient 辅助上游调用（token 刷新/用户信息/额度/签到）的出口化 client：
+// 与会话同源解析账号出口（绑定主备 → 全局池/直连，DISABLE_DIRECT 约束在
+// app 层 SetExitResolver），出口不可用时报错而非裸直连——会话走代理而辅助
+// 调用走家庭 IP 的不一致是风控信号（2026-10-29 审计修复）。client 按出口
+// 工厂取用后浅拷保留 30s 超时帽（会话 client 面向流式长跑不设超时，
+// 辅助调用必须有界）。
+func auxClient(a *Account) (*http.Client, error) {
+	proxyURL, ok := resolveExitFor(a)
+	if !ok {
+		return nil, fmt.Errorf("account %s bound proxies unavailable (cooling or removed); skipped by proxy isolation", a.ID)
+	}
+	c := *httpClientFor(proxyURL)
+	c.Timeout = 30 * time.Second
+	return &c, nil
+}
+
 // doRefresh 调 ExchangeToken 换新 JWT 并落盘（ClientSecret 字面 "-"，
 // 上游协议如此）。响应键：Result.Token/RefreshToken/TokenExpireAt/...，
 // 错误在 ResponseMetadata.Error。
@@ -1717,7 +1733,10 @@ func doRefresh(a *Account) error {
 	for k, v := range oauthHeaders(a.Token, deviceID16(a.ID)) {
 		req.Header.Set(k, v)
 	}
-	client := &http.Client{Timeout: 30 * time.Second}
+	client, err := auxClient(a)
+	if err != nil {
+		return err
+	}
 	resp, err := client.Do(req)
 	if err != nil {
 		return fmt.Errorf("trae refresh request: %w", err)
@@ -1795,7 +1814,10 @@ func GetUserInfo(a *Account) (string, error) {
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("x-cloudide-token", a.Token)
-	client := &http.Client{Timeout: 30 * time.Second}
+	client, err := auxClient(a)
+	if err != nil {
+		return "", err
+	}
 	resp, err := client.Do(req)
 	if err != nil {
 		return "", err
@@ -1828,7 +1850,10 @@ func FetchCredits(a *Account) (*Credits, error) {
 	for k, v := range oauthHeaders(a.Token, deviceID16(a.ID)) {
 		req.Header.Set(k, v)
 	}
-	client := &http.Client{Timeout: 30 * time.Second}
+	client, err := auxClient(a)
+	if err != nil {
+		return nil, err
+	}
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err

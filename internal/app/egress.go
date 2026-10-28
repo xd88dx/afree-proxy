@@ -18,21 +18,19 @@ import (
 // 一个 key 永远从同一个出口出去。
 //
 // 容量规则：同一个 namespace 内一个代理只服务一个身份。代理数少于身份数时，
-// 多出来的身份没有绑定 —— 它们被 pickZenKey / pickAccountExcluding 过滤掉，
-// 而不是退回直连或借用别的出口（那正是要消除的指纹）。
-// zen 与 cline 是两个独立 namespace：同一个代理同时服务一个 zen key 和一个
-// cline 账号是安全的，两个上游各自只看到属于自己那一个身份。
+// 多出来的身份没有绑定 —— 它们被 pickZenKey 过滤掉，而不是退回直连或借用
+// 别的出口（那正是要消除的指纹）。cline 账号不接本表：它的出口绑定走账号级
+// ProxyMain/ProxyBackup 体系（proxy_binding.go + 面板绑定列），两套并存会让
+// 同一账号在两个绑定表里各有一份出口，互相打架。
 //
 // 持久化：proxy-config.json 的 egressBindings 段（2026-10-27 从独立的
-// .egress-bindings.json 并入——它就是代理域的数据；旧文件首启一次性迁入，
-// 见 proxy_config.go 的迁移逻辑）。绑定必须跨重启保留——每次启动重新分配
+// .egress-bindings.json 并入——它就是代理域的数据；旧文件的自动迁移已随
+// 2026-10-27 死代码清理移除，部署目录若仍有残留旧文件需手工合并）。绑定必须跨重启保留——每次启动重新分配
 // 等于让 key 换 IP，正好重新触发上游告警。zen key 在表里只以 sha256 前
-// 8 字节的 hex 出现，所以不含明文凭据，可以安全地贴进 issue。cline 账号
-// ID 是 UUID 而非凭据，保持可读以便排查。
+// 8 字节的 hex 出现，所以不含明文凭据，可以安全地贴进 issue。
 
 const (
-	egressNSZen   = "zen:"
-	egressNSCline = "cline:"
+	egressNSZen = "zen:"
 )
 
 // egressBinding 单个身份绑定的出口。
@@ -194,8 +192,7 @@ func egressProxyFor(ns, id string) (string, bool) {
 	return b.Proxy, true
 }
 
-func egressProxyForZen(key string) (string, bool)  { return egressProxyFor(egressNSZen, key) }
-func egressProxyForCline(id string) (string, bool) { return egressProxyFor(egressNSCline, id) }
+func egressProxyForZen(key string) (string, bool) { return egressProxyFor(egressNSZen, key) }
 
 // pinProxyPerKeyEnabled 面板开关（默认开）。nil 表示旧配置没有这个键。
 func pinProxyPerKeyEnabled() bool {

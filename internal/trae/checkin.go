@@ -122,7 +122,10 @@ func checkinCall(a *Account, action string) (enable bool, checkedIn bool, credit
 	for k, v := range oauthHeaders(a.Token, deviceID16Gen(a.ID, a.CheckinDeviceGen)) {
 		req.Header.Set(k, v)
 	}
-	client := &http.Client{Timeout: 30 * time.Second}
+	client, err := auxClient(a)
+	if err != nil {
+		return false, false, 0, "", err
+	}
 	resp, err := client.Do(req)
 	if err != nil {
 		return false, false, 0, "", err

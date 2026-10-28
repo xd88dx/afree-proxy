@@ -410,6 +410,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
 .tr-dirty > td{background:rgba(234,179,8,.09)}
 .dirty-hint{box-shadow:0 0 0 2px var(--accent)}
 .btn-warn{background:var(--amber);border-color:var(--amber);color:#1a1a1a;font-weight:600}
+.only-router-notice{background:rgba(240,160,32,.12);border:1px solid var(--amber);border-radius:8px;padding:8px 12px;margin:0 0 14px;font-size:13px;color:var(--text1)}
 .trae-acc{border:1px solid var(--border);border-radius:10px;margin-bottom:10px;background:rgba(148,163,184,.04)}
 .trae-acc summary{cursor:pointer;padding:10px 14px;font-weight:600;user-select:none;list-style:none;display:flex;align-items:center;gap:8px}
 .trae-acc summary::-webkit-details-marker{display:none}
@@ -811,16 +812,16 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
   </div>
 </div>
 <div class="section">
-  <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><path d="M3 17l5-6 4 3 4-7 5 4"/><path d="M3 21h18"/></svg></span> 代理健康<span style="flex:1"></span><button class="btn btn-sm" onclick="clearProxyHealthStore()" title="Wipe this browser's stored online-rate rows (manual edits and proxies no longer in the pool); the table falls back to current backend data.">Clear data</button></div>
+  <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><path d="M3 17l5-6 4 3 4-7 5 4"/><path d="M3 21h18"/></svg></span> Proxy health<span style="flex:1"></span><button class="btn btn-sm" onclick="clearProxyHealthStore()" title="Wipe this browser's stored online-rate rows (manual edits and proxies no longer in the pool); the table falls back to current backend data.">Clear data</button></div>
   <div class="section-body">
     <div class="table-wrap">
     <table>
       <thead><tr>
         <th>Proxy</th>
         <th style="text-align:center" title="Upstream attempts that egressed via this proxy since the pool was last edited">Attempts</th>
-        <th style="text-align:center" title="Transport-layer success rate since the pool was last edited (upstream 4xx/5xx still counts as the proxy being online)">在线率</th>
-        <th style="text-align:center" title="Success rate over the last 50 attempts; red below 80% (min 10 samples).">最近在线率</th>
-        <th style="text-align:center;cursor:pointer;user-select:none" onclick="ppHsSortToggle()" title="Average tunnel-setup time over successful attempts (TCP+TLS+CONNECT handshake only — excludes upstream first byte and task duration). Lower is better. Click to sort.">平均握手延迟<span id="ppHsSortMark"></span></th>
+        <th style="text-align:center" title="Transport-layer success rate since the pool was last edited (upstream 4xx/5xx still counts as the proxy being online)">Online rate</th>
+        <th style="text-align:center" title="Success rate over the last 50 attempts; red below 80% (min 10 samples).">Recent online rate</th>
+        <th style="text-align:center;cursor:pointer;user-select:none" onclick="ppHsSortToggle()" title="Average tunnel-setup time over successful attempts (TCP+TLS+CONNECT handshake only — excludes upstream first byte and task duration). Lower is better. Click to sort.">Avg handshake<span id="ppHsSortMark"></span></th>
         <th>Last OK</th>
         <th>Last Fail</th>
         <th>Cooldown</th>
@@ -1922,11 +1923,9 @@ const I18N_ZH = {
   'Import JSON': '导入 JSON',
   'Failed to load WorkBuddy accounts: ': '加载 WorkBuddy 账号失败：',
   'Credits': '额度',
-  'Check-in': '签到',
   'Disabled': '已停用',
   'Deleted': '已删除',
   'accounts': '账号',
-  'tok': 'token',
   'Get authorization link': '获取授权链接',
   'Choose a realm and request an authorization link.': '选择区域并请求授权链接。',
   'Copy failed': '复制失败',
@@ -1997,13 +1996,9 @@ const I18N_ZH = {
   'Appended to every platform\'s exclusion list (staged) — click Save to apply': '已追加进所有平台的排除列表（暂存）——点「保存」后生效',
   'Click to pick platforms to ban…': '点击选择要封禁的平台…',
   'Platform': '平台',
-  'Excluded proxies': '排除的代理',
   'Exclude Direct': '排除直连',
-  'Add excluded proxy': '添加排除代理',
   'No pool proxies left to exclude': '没有可添加的池内代理（都已排除或池为空）',
-  'Add proxy': '添加',
   'Remove': '移除',
-  'Nothing excluded': '未排除',
   'Max reuse per proxy': '代理最多复用',
   'times': '次',
   'Search and add a proxy…': '搜索并添加代理…',
@@ -2015,11 +2010,9 @@ const I18N_ZH = {
   '=true.': '=true 时强制开启。',
   'Backup proxy — off by default: every identity uses its main proxy only; a cooling or removed main proxy is skipped for that round. On: the backup proxy serves as the fallback for the main one.': '备用代理：默认关闭——每个身份只走主代理，主代理冷却或被移除时直接跳过。开启后：备用代理作为主代理的兜底。',
   'Platform-level blacklist and per-proxy binding cap for automatic assignment only — one-click bind and reorder-by-latency. Manual bindings and runtime routing are never restricted.': '仅作用于自动分配——「一键代理」与「凭据延迟重排」两个批量操作；手动绑定和运行期路由不受限制。',
-  'Excluded': '已排除',
   ' · excluded': ' · 已排除',
   ' row(s) left unchanged — every allowed proxy is excluded or at cap': ' 行无法改绑：可用代理都已拉黑或达到上限',
   're-bind proxies of the selected platforms: healthy (fast, allowed) bindings stay put; slow/unrecorded/excluded/over-cap ones are re-filled from the remaining pool (better-only for healthy rows), then auto-save.': '重排所选平台的代理绑定：健康绑定（快代理且未拉黑/未超限）保持不动；慢/无记录/被拉黑/超限的行从剩余代理池回填（健康行只在更优时才换），并自动保存。',
-  'Re-bind proxies of all credentials (except Direct/Global) ordered by measured latency, then auto-save.': '按实测延迟重排全部凭据（直连/全局除外）的代理绑定并自动保存。',
   'Latency reorder finished with errors — loads failed: ': '延迟重排完成但有错误——加载失败：',
   '; saves failed: ': '；保存失败：',
   'Reordered ': '已按延迟重排 ',
@@ -2057,7 +2050,6 @@ const I18N_ZH = {
   'Running': '执行中',
   'Finished': '执行结束',
   'CN (China)': 'CN (国内版)',
-  'Global (International)': 'Global (国际版)',
   'Points breakdown': '积分构成',
   'Pick a concurrency, then click "Scan tasks"': '选择并发数后点击“扫描任务”',
   'Concurrency': '并发',
@@ -2184,7 +2176,6 @@ const I18N_ZH = {
   ') — ': '）— ',
   'cooldown until ': '冷却至 ',
   ' (seed)': '（种子）',
-  ' failed': ' 失败',
   'Email (optional)': '邮箱（可选）',
   'Cancel': '取消',
   'Edit nickname': '修改昵称',
@@ -2234,7 +2225,6 @@ const I18N_ZH = {
   'Egress proxies': '出口代理',
   'One proxy per line:': '每行一个代理：',
   '. All upstreams share this list; unhealthy proxies are skipped automatically.': '。所有上游共用此列表；不健康的代理会被自动跳过。',
-  'The alias (#name) is a proxy\'s identity — re-binding survives alias-preserving URL changes.': '别名（#name）是代理的身份标识——URL 变化但别名不变时，绑定关系保持有效。',
   'When a subscription URL is set, this list is managed by the subscription and read-only; it serves as the fallback pool while a fetch fails.': '设置订阅链接后，此列表由订阅管理、只读不可编辑；拉取失败时作为兜底池使用。',
   'or': '或',
   'one per line: socks://b64(user:pass)@host:port#alias, socks5://user:pass@host:port#alias or http://host:port': '每行一条：socks://b64(账号:密码)@host:port#别名、socks5://账号:密码@host:port#别名 或 http://host:port（#别名自动识别）',
@@ -2249,14 +2239,10 @@ const I18N_ZH = {
   'Use proxy pool': '走代理池',
   'Proxy': '代理',
   'Attempts': '尝试数',
-  'Rate': '在线率',
-  'Recent': '最近',
   'Last OK': '最近成功',
   'Last Fail': '最近失败',
   'Upstream attempts that egressed via this proxy since the pool was last edited': '上次编辑代理池以来，经此代理出网的上游尝试次数',
-  'Success rate over the last 50 attempts; red below 80% (min 10 samples).': '最近 50 次尝试的在线率；低于 80% 标红（至少 10 个样本）。',
   'Average tunnel-setup time over successful attempts (TCP+TLS+CONNECT handshake only — excludes upstream first byte and task duration). Lower is better. Click to sort.': '成功尝试的平均隧道建立耗时（仅 TCP+TLS+CONNECT 握手——不含上游首字节与任务耗时）。越低越好。点击排序。',
-  'Average tunnel-setup time over successful attempts (TCP+TLS+CONNECT handshake only — excludes upstream first byte and task duration). Lower is better.': '成功尝试的平均隧道建立耗时（仅 TCP+TLS+CONNECT 握手——不含上游首字节与任务耗时）。越低越好。',
   'Time to first byte: from request start to the first response byte (streaming = first upstream token; - = no response body, e.g. 413)': '首字节耗时：请求开始到首个响应字节（流式=上游首 token 到达；-=无响应体如 413）',
   'Avg tunnel-setup time of successful attempts (TCP+TLS+CONNECT), excluding upstream response; samples: ': '成功尝试的平均隧道建立耗时（TCP+TLS+CONNECT），不含上游响应；样本数 ',
   'Add API keys': '添加 API key',
@@ -2264,7 +2250,6 @@ const I18N_ZH = {
   'Transport-layer success rate since the pool was last edited (upstream 4xx/5xx still counts as the proxy being online)': '上次编辑代理池以来的传输层成功率（上游 4xx/5xx 不算代理失败）',
   'Success rate over the last 50 attempts; red below 80% (min 10 samples).': '最近 50 次尝试的成功率；样本≥10 且低于 80% 时标红。',
   'Rates are sampled passively from real traffic — no probing. "No data" = unused since the last pool edit; editing the proxy list resets counters.': '在线率仅被动采样自真实流量——不产生探测流量。“无数据”=自上次编辑代理池后未使用；编辑代理列表会清零计数。',
-  'Rows follow the backend pool; values persist in this browser to survive pool edits (add-only — a returning proxy picks up its stored numbers). Console override: proxyRateSet(\'香港-01\', 0.42).': '行列表跟随代理池后端；数值在本浏览器留存以扛住池编辑清零（只加不删，代理回归后自动恢复留存值）。控制台改数：proxyRateSet(\'香港-01\', 0.42)。',
   'Clear data': '清空数据',
   'Wipe this browser\'s stored online-rate rows (manual edits and proxies no longer in the pool); the table falls back to current backend data.': '清掉本浏览器留存的在线率行（手动改动与已不在池内的代理），表格回退到后端当前数据。',
   'Clear the browser-stored online-rate data? Backend stats are untouched.': '清空浏览器留存的在线率数据？后端统计不受影响。',
@@ -2274,7 +2259,6 @@ const I18N_ZH = {
   'Headers restored to defaults': '请求头已恢复默认',
   'OpenCode keys without proxy bindings follow this switch.': 'OpenCode 未绑定代理的 key 遵循此开关。',
   'Clear bindings': '清空代理',
-  ' and ': ' 和 ',
   'Enable all': '一键启用',
   'Direct connection': '直连',
   'Save': '保存',
@@ -2295,7 +2279,6 @@ const I18N_ZH = {
   'Unsupported backup version': '不支持的备份版本',
   'Invalid backup file: ': '备份文件无效：',
   'Import replaces sections present in the file (accounts / keys / proxies / combos ...). All imported identities start DISABLED. Continue?': '导入将用文件内容替换当前对应的配置段（所有凭据、代理池、别名等，文件中存在的段都会替换）。导入的所有凭据一律禁用，需在面板逐个启用。继续？',
-  'Import will replace ALL persisted config with the file contents. Confirm whether to keep each platform\'s credential enabled states.': '导入将替换所有持久化配置，请确认是否保留各平台凭据启用状态。',
   'Select all': '全选',
   'Invert': '反选',
   'No platform selected': '未选择任何平台',
@@ -2307,10 +2290,7 @@ const I18N_ZH = {
   'Isolation mode': '隔离模式',
   'Enabled (default) — bound identities only ever use their bound exits': '启用（默认）—— 绑定的身份只从绑定出口出网',
   'Disabled — ignore bindings; exits rotate per the strategy above (direct when pool off)': '关闭 —— 忽略绑定；出口按上方轮转策略轮换（未启用代理池时直连）',
-  'Isolation on: identities egress only via their bound exits (main → backup); both down = skipped — never another exit or direct. Forced on when': '开启隔离：每个身份只从绑定的出口出站（主→备）；都不可用即跳过——绝不改走其他出口或直连。设有',
-  '=true.': '=true 时强制开启。',
   'Enable backup proxies': '启用备用代理',
-  'Off by default: main proxy only — cooling/removed = skipped for that round. On: backup acts as fallback.': '默认关闭：每个身份只走主代理——主代理冷却或被移除时该轮直接跳过。开启后：备用代理作为主代理的兜底。',
   // 网关设置页
   'API keys': 'API key',
   'Generated keys authenticate client access to the proxy API; they only take effect when the API_KEY environment variable is not set.': '生成的 key 用于客户端调用代理 API 鉴权，该 key 仅在未设置 API_KEY 环境变量时生效。',
@@ -2353,7 +2333,6 @@ const I18N_ZH = {
   'Create custom alias': '创建自定义别名',
   'Clients use the alias ID as the model name; the proxy rewrites it to the target. Alias must not collide with real model IDs, and the target must stay on the same platform.': '客户端以别名 ID 作为模型名，代理将其改写为目标模型。别名不得与真实模型 ID 冲突，且目标必须属于同一平台。',
   'Alias ID': '别名 ID',
-  'Platform': '平台',
   'Existing custom aliases': '现有自定义别名',
   'Target model': '目标模型',
   // opencode 页
@@ -2373,7 +2352,6 @@ const I18N_ZH = {
   'Switch language / 切换语言': '切换语言',
   'cooling': '冷却中',
   'Base URL': 'Base URL',
-  'Rate-limit defense': '限流防御',
   'Max concurrency': '最大并发',
   'Rate-limit retries': '限流重试次数',
   'Save rate-limit config': '保存限流配置',
@@ -2391,8 +2369,6 @@ const I18N_ZH = {
   'Context': '上下文',
   'Maximum context length': '最大上下文长度',
   'Today': '今日',
-  'Total': '累计',
-  'No data': '暂无数据',
   'total': '累计',
   'tokens (exact when upstream returns usage, otherwise estimated)': 'tokens（上游返回 usage 时精确，否则为估算）',
   // 模型状态标签
@@ -2419,9 +2395,7 @@ const I18N_ZH = {
   'Requesting...': '请求中...',
   'Admin session expired': '管理员会话已过期',
   'Bind main proxy by row order: 1st account to Direct, then the proxy pool in order (staged - click Save to apply; enable/disable and backup untouched)': '按行序绑定主代理：第 1 个账号绑 Direct，其余依代理池顺序（暂存，点「保存」生效；不影响启用/禁用与备用绑定）',
-  'Re-sync the model catalog from the Trae upstream using an enabled account': '使用已启用账号从 Trae 上游重新同步模型目录',
   'Export failed: ': '导出失败：',
-  'Update failed: ': '更新失败：',
   'Generation failed: ': '生成失败：',
   'Add failed: ': '添加失败：',
   'Import failed: ': '导入失败：',
@@ -2431,7 +2405,6 @@ const I18N_ZH = {
   'All persisted data deleted': '已删除全部持久化数据',
   'Account added: ': '账号已添加：',
   'Account ': '账号 ',
-  ' — ': ' —— ',
   'Available': '可用',
   'Error': '错误',
   '\nEstimated recovery: ': '\n预计恢复：',
@@ -2454,9 +2427,6 @@ const I18N_ZH = {
   'Model catalog': '模型目录',
   'Upstream limits: 30 requests/min per key, 8 concurrent per key, 20 requests/min per account.': '上游限制：单个密钥 30 次/分钟、8 并发，单个账号 20 次/分钟。',
   'Upstream limits: 60 requests/min per account, 100 requests/min per IP.': '上游限制：每账号 60 次/分钟，每 IP 100 次/分钟。',
-  'Re-sync the free-model catalog from openrouter.ai': '从 openrouter.ai 重新同步免费模型目录',
-  'Re-sync the model catalog from AMDCloud': '从 AMDCloud 重新同步模型目录',
-  'Re-sync the free-model catalog from TokenHarbor (needs a key)': '从 TokenHarbor 重新同步免费模型目录（需要 key）',
   'Add OpenRouter keys': '添加 OpenRouter key',
   'One OpenRouter API key per line (sk-or-v1-…). New keys start with routing disabled — tick Pool to enable.': '每行一个 OpenRouter API key（sk-or-v1-…）。新 key 默认不参与路由——勾选"启用"后生效。',
   'Add AMDCloud keys': '添加 AMDCloud key',
@@ -2527,7 +2497,6 @@ const I18N_ZH = {
   'Create': '创建',
   'Sub-platform created': '子平台已创建',
   'Added': '已添加',
-  ' keys': ' 个密钥',
   'Test passed': '测试通过',
   'Saved': '已保存',
   'No keys configured': '未配置密钥',
@@ -2597,15 +2566,12 @@ const I18N_ZH = {
   'No AMDCloud keys configured': '没有配置任何 AMDCloud key',
   'No TokenHarbor keys configured': '没有配置任何 TokenHarbor key',
   'Probe the rate limit; if still limited, stays cooling with a recovery time': '探测限流状态；若仍在限流则保持冷却并显示恢复时间',
-  'Batch test done': '批量测试完成',
   // 静态 hint 段落与状态标签补漏（TreeWalker 按文本节点整段匹配）
   'Counted since process start.': '统计自进程启动起。',
   'No API keys yet': '还没有 API key',
   '— no sub-platform yet —': '— 还没有子平台 —',
   'Search models…': '搜索模型…',
-  'Average tunnel-setup time over successful attempts (TCP+TLS+CONNECT handshake only — excludes upstream first byte and task duration). Lower is better.': '成功请求的平均隧道建立耗时（仅统计 TCP+TLS+CONNECT 握手，不含上游首包与任务耗时）。越低越好。',
   'live': '活跃',
-  'n/a': '无',
   'not minted': '未铸造',
   // 封禁模型区（模型黑名单）
   'Banned models': '封禁模型',
@@ -2621,7 +2587,6 @@ const I18N_ZH = {
   'Banned: ': '已封禁：',
   'Unblocked: ': '已解禁：',
   // 封禁档位标签（trae 按端点档位封禁：remote/traecode/traework）
-  'Endpoint tier': '端点档位',
   'banned on this endpoint tier only': '仅该端点档位被封，同 ID 其他档位不受影响',
   'No matching ban entry — it may have been unblocked already.': '未找到对应的封禁条目——可能已经解禁过了。',
   // Trae 平台页
@@ -2631,7 +2596,6 @@ const I18N_ZH = {
   'Upstream endpoint switched': '上游端点已切换',
   'Upstream endpoint: Auto = merged catalog via the native raw_chat transport; Remote / TraeWork switch requests to the chat_sessions transport (same as the upstream project)': '上游端点：自动 = 合并目录走原生 raw_chat 传输；Remote / TraeWork 切换为 chat_sessions 传输（与原项目一致）',
   'Counted locally by this proxy from upstream usage events': '由本网关按上游用量事件本地计数',
-  'Re-sync the model catalog from the TraeWork upstream using an enabled account': '用一个已启用的账号从 TraeWork 上游重新同步模型目录',
   'Models appear here once an account is enabled — the catalog syncs from upstream': '启用账号后此处才会显示并同步模型目录',
   'Models appear here once a credential is enabled — the catalog syncs from upstream': '启用账号或 key 后此处才会显示并同步模型目录',
   'no enabled AMDCloud key — enable a key first, then refresh': '没有启用的 AMDCloud key —— 请先启用 key 再刷新',
@@ -2650,7 +2614,6 @@ const I18N_ZH = {
   'Add TraeWork accounts': '添加 TraeWork 账号',
   'Tokens (one per line)': 'Token（每行一个）',
   'Automation': '自动化',
-  'Token valid': 'token 有效',
   'Token expired': 'token 已过期',
   'No refresh token': '无刷新令牌',
   'Unlimited': '不限量',
@@ -2658,7 +2621,6 @@ const I18N_ZH = {
   ' — ': ' — ',
   ' — unlimited credits': ' — 不限量额度',
   ' — credits: ': ' — 额度：',
-  'No accounts to test': '没有可测试的账号',
   'Enter at least one token': '请至少输入一个 token',
   ', skipped ': '，跳过 ',
   'Remove this account from the pool': '把该账号移出账号池',
@@ -2697,8 +2659,60 @@ const I18N_ZH = {
   'Save automation config': '保存自动化配置',
   'Remaining credits from the latest snapshot (auto-refreshed in the background; Test refreshes on demand)': '最新快照的剩余额度（后台自动刷新；Test 按钮即时刷新）',
   'Account master switch. Off = the account does not exist: check-in, balance refresh and Test all skip it, and it never routes.': '账号总开关。关闭 = 账号视为不存在：签到、余额刷新与 Test 全部跳过，也绝不参与路由。',
+  // 2026-10-29 汉化遗留修复：代理健康表头（原模板写死中文）、后端固定消息、
+  // zen egress 徽标、combos 空态等（详见当次审查台账）。标识词/技术值不译：
+  // Trae 端点档位 Remote/traecode/traework、reasoning effort 档位、产品名。
+  'Proxy health': '代理健康',
+  'Online rate': '在线率',
+  'Recent online rate': '最近在线率',
+  'Avg handshake': '平均握手延迟',
+  'Credentials saved to server': '凭据已写入服务器',
+  'Account already exists': '账号已存在',
+  'account #': '账号#',
+  'Proxy pool updated: ': '代理池已更新：',
+  ' entries': ' 条',
+  'subscription identical to current pool, skipped': '订阅内容与现池一致，跳过替换',
+  'WorkBuddy account imported': 'WorkBuddy 账号已导入',
+  'No models on this platform': '该平台暂无模型',
+  '(empty reply)': '（空回复）',
+  'auto-banned: account tier lacks access to this model': '账号权限不足，自动封禁',
+  'banned manually by admin': '管理员手动封禁',
+  'auto-banned: model name not available on this gateway (4023)': '模型名不可用，自动封禁',
+  'Session-routing mode: maintenance tasks are disabled by the ONLY_ROUTER environment variable — auto check-in, balance refresh, task center and similar controls have no effect.': '仅会话路由模式：维护任务已被环境变量 ONLY_ROUTER 停用——自动签到、余额刷新、任务中心等控件不会生效。',
 };
 function T(s) { return LANG === 'zh' ? (I18N_ZH[s] || s) : s; }
+// loadRuntimeFlags 启动时拉一次运行时开关快照；ONLY_ROUTER=true 时面板顶部
+// 常驻提示条，说明维护类控件被 env 强制停用——不让"开关显示开着但任务不跑"
+// 的撒谎控件存在（2026-10-29）。拉取失败视为未开启（提示条只是展示增强）。
+async function loadRuntimeFlags() {
+  try {
+    const d = await api('GET', '/runtime-flags');
+    if (d.data && d.data.onlyRouter) showOnlyRouterNotice();
+  } catch (e) { /* ignore */ }
+}
+function showOnlyRouterNotice() {
+  if (document.getElementById('onlyRouterNotice')) return;
+  const bar = document.createElement('div');
+  bar.id = 'onlyRouterNotice';
+  bar.className = 'only-router-notice';
+  bar.textContent = T('Session-routing mode: maintenance tasks are disabled by the ONLY_ROUTER environment variable — auto check-in, balance refresh, task center and similar controls have no effect.');
+  const main = document.querySelector('.main');
+  if (main) main.prepend(bar);
+}
+// fmtUpstream 请求日志 Upstream 列渲染：后端 "account #N"（英文源文，数字可变
+// 无法整句词条）按前缀词条中文化；其余值（代理 URL、'-'）原样。
+function fmtUpstream(u) {
+  if (!u) return '';
+  const m = /^account #(\d+)$/.exec(u);
+  return m ? T('account #') + m[1] : u;
+}
+// fmtSubUpdMsg 订阅更新结果渲染：固定消息走 T() 词条；"Proxy pool updated: N
+// entries" 数字可变，按形状拆成 前缀词条 + 数字 + 后缀词条。
+function fmtSubUpdMsg(msg) {
+  const m = /^Proxy pool updated: (\d+) entries$/.exec(msg || '');
+  if (m) return esc(T('Proxy pool updated: ') + m[1] + T(' entries'));
+  return esc(msg ? T(msg) : T('Update done'));
+}
 function toggleLang() {
   localStorage.setItem('lang', LANG === 'zh' ? 'en' : 'zh');
   location.reload();
@@ -3532,7 +3546,7 @@ async function importWorkbuddyAccounts(input) {
     const response = await fetch(API + '/workbuddy/accounts/import', { method: 'POST', body: form });
     const result = await response.json().catch(() => ({}));
     if (!response.ok || result.ok === false) throw new Error(result.error || response.statusText || 'upload failed');
-    toast('WorkBuddy account imported', 'success');
+    toast(T('WorkBuddy account imported'), 'success');
     await loadWorkbuddyAccounts();
   } catch (e) { toast(T('Import failed: ') + e.message, 'error'); }
   input.value = '';
@@ -4922,7 +4936,7 @@ async function loadLogs() {
         '<td class="mono" style="font-size:11px">' + esc(l.path || '-') + '</td>' +
         '<td class="mono" style="font-size:12px">' + esc(l.model || '-') + '</td>' +
         '<td><span class="model-tag">' + esc(route) + '</span></td>' +
-        '<td class="mono" style="font-size:11px">' + esc(l.upstream || '-') + '</td>' +
+        '<td class="mono" style="font-size:11px">' + esc(fmtUpstream(l.upstream) || '-') + '</td>' +
         '<td>' + esc(proxy) + '</td>' +
         '<td style="font-weight:600;' + STATUS_CLASS(st) + '"' + (l.error ? ' title="' + esc(l.error) + '"' : '') + '>' + st + '</td>' +
         '<td class="mono" style="font-size:11px" title="' + esc(T('Time to first byte: from request start to the first response byte (streaming = first upstream token; - = no response body, e.g. 413)')) + '">' + (l.ttfb_ms == null || l.ttfb_ms < 0 ? '-' : l.ttfb_ms + ' ms') + '</td>' +
@@ -5210,7 +5224,7 @@ async function loadModelBlacklist() {
       return '<tr>' +
         '<td>' + esc(plat) + '</td>' +
         '<td style="font-family:\'JetBrains Mono\',monospace" title="' + title + '">' + esc(it.model) + scopeTag + '</td>' +
-        '<td style="font-size:12px;color:var(--text2)">' + esc(it.reason || '—') + '</td>' +
+        '<td style="font-size:12px;color:var(--text2)">' + esc(it.reason ? T(it.reason) : '—') + '</td>' +
         '<td style="font-size:12px;color:var(--text2)">' + esc(when) + '</td>' +
         '<td style="text-align:center;white-space:nowrap">' +
           '<button class="btn btn-sm" data-bl-test="1" data-platform="' + esc(it.platform) + '" data-model="' + esc(it.model) + '">' + T('Test') + '</button> ' +
@@ -5484,18 +5498,8 @@ async function loadOcConfig() {
     _('ocRetries').value = c.retries || 3;
     if (_('ocOrgID')) _('ocOrgID').value = c.orgID || '';
     if (_('ocPinProxy')) _('ocPinProxy').value = String(c.pinProxyPerKey !== false);
-    const eg = c.egress || {};
-    if (_('ocEgressInfo')) {
-      const un = eg.unassigned || 0;
-      _('ocEgressInfo').innerHTML = !eg.enabled
-        ? '<span style="color:var(--text2)">disabled — per-request rotation</span>'
-        : (!eg.active
-            ? '<span style="color:var(--text2)">no proxies — direct</span>'
-            : '<span style="color:' + (un > 0 ? 'var(--danger)' : 'var(--accent2)') + '">' +
-              (eg.proxies || 0) + ' prox' + ((eg.proxies || 0) === 1 ? 'y' : 'ies') + ' · ' +
-              (eg.assigned || 0) + '/' + (eg.identities || 0) + ' keys bound' +
-              (un > 0 ? ' · ' + un + ' key' + (un === 1 ? '' : 's') + ' skipped' : '') + '</span>');
-    }
+    // （ocEgressInfo 徽记块已删：其 HTML 挂点随 2026-10-24 面板改版移除，本段
+    // 一直是查不到元素的死代码——egress 状态以代理池页的绑定表为准。）
     _('ocCompactAuto').value = String(c.compaction ? c.compaction.auto : true);
     _('ocCompactBuffer').value = c.compaction ? c.compaction.buffer : 20000;
     _('ocKeepTokens').value = c.compaction ? c.compaction.keepTokens : 8000;
@@ -6278,7 +6282,7 @@ async function triggerProxySubUpdate() {
   el.textContent = T('Updating...');
   try {
     const r = await api('POST', '/proxypool/subscription/update');
-    el.innerHTML = '<span style="color:var(--accent2)">' + esc(r.message || T('Update done')) + '</span>';
+    el.innerHTML = '<span style="color:var(--accent2)">' + fmtSubUpdMsg(r.message) + '</span>';
   } catch (e) {
     el.innerHTML = '<span style="color:var(--danger)">' + esc(e.message) + '</span>';
   }
@@ -7026,7 +7030,7 @@ function pollTraeHelperStatus() {
   api('GET', '/trae/helper/status').then(d => {
     const r = d.data || {};
     if (!r.seen || !r.at || r.at < traeHelperSince) return;
-    _('traeHelperStatus').textContent = (r.success ? T('Account ready: ') : T('Authorization failed: ')) + (r.message || '');
+    _('traeHelperStatus').textContent = (r.success ? T('Account ready: ') : T('Authorization failed: ')) + (r.message ? T(r.message) : '');
     if (r.success) {
       toast(r.added ? T('Account added: ') + (r.label || '') : T('Account already in the pool: ') + (r.label || ''), 'success');
       traeHelperSince = r.at;
@@ -7774,7 +7778,7 @@ async function otherLiveRequest() {
   try {
     const r = await api('POST', '/other/chat', { slug: p.slug, model: otherProbeModelValue(), prompt: prompt });
     const d = r.data || {};
-    toast(T('Request succeeded') + ': ' + (d.reply || '(empty reply)') + '  [' + d.model + ' · ' + d.keyMask + ' · ' + d.latencyMs + 'ms]', 'success', 12000);
+    toast(T('Request succeeded') + ': ' + (d.reply || T('(empty reply)')) + '  [' + d.model + ' · ' + d.keyMask + ' · ' + d.latencyMs + 'ms]', 'success', 12000);
   } catch (e) {
     const d = (e && e.data) || {};
     toast(T('Request failed') + ': ' + (d.reason || e.message), 'error', 12000);
@@ -7795,6 +7799,10 @@ async function refreshOtherModels() {
   toast(T('Syncing models…'));
   try {
     const r = await api('POST', '/other/models/refresh', { slug: p.slug });
+    // api() 只在带 error 字段时抛错；后端拒同步（如全部凭据被禁）返回的是
+    // success:false + message，不接住就会误弹下面的"目录已同步"成功提示
+    //（与其余平台 refresh 的 success:false 检查同款，2026-10-29 补齐）。
+    if (r && r.success === false) { toast(T(r.message || 'Refresh failed: '), 'error'); return; }
     const np = r.data && r.data.platform;
     if (np) {
       otherKnownModels = np.models || [];
@@ -8255,7 +8263,7 @@ async function fillComboModels() {
         comboModels.tokenharbor = (d.data.models || []).map(m => String(m.id || '').replace(/^tkhb:/, '')).filter(Boolean);
       }
     }
-    if (!comboModels[platform].length) { sel.innerHTML = '<option value="">No models on this platform</option>'; return; }
+    if (!comboModels[platform].length) { sel.innerHTML = '<option value="">' + T('No models on this platform') + '</option>'; return; }
     sel.innerHTML = comboModels[platform].map(id => '<option value="' + esc(id) + '">' + esc(id) + '</option>').join('');
   } catch (e) { sel.innerHTML = '<option value="">Failed to load model list</option>'; }
 }
@@ -8312,6 +8320,7 @@ loadAccounts();
 loadKeys();
 loadModels();
 loadConfig();
+loadRuntimeFlags();
 restoreTab();
 // 拖拽排序（Account pool 三菜单）：submit 即时落库，reload 重拉对齐派生状态
 // （ocKeysBody 的 index 暂存协议、Cline 的轮转游标、wb 的 order 持久化）。

@@ -175,7 +175,7 @@ func parseProxyLine(raw string) (canonical string, alias string, err error) {
 	// #fragment 是别名（用户可读标注），不属于代理地址本身
 	u, err := url.Parse(line)
 	if err != nil {
-		return "", "", fmt.Errorf("代理格式无效 %q: %v", line, err)
+		return "", "", fmt.Errorf("invalid proxy line %q: %v", line, err)
 	}
 	alias = strings.TrimSpace(u.Fragment)
 
@@ -184,13 +184,13 @@ func parseProxyLine(raw string) (canonical string, alias string, err error) {
 		u.Scheme = "socks5"
 	case "socks5", "socks5h", "http", "https":
 	default:
-		return "", "", fmt.Errorf("代理 %q 协议不受支持（支持 http/https/socks5/socks5h，及订阅分享的 socks://）", line)
+		return "", "", fmt.Errorf("proxy %q: unsupported scheme (supported: http/https/socks5/socks5h, and socks:// from subscriptions)", line)
 	}
 	if u.Host == "" {
-		return "", "", fmt.Errorf("代理 %q 缺少 host:port", line)
+		return "", "", fmt.Errorf("proxy %q: missing host:port", line)
 	}
 	if _, _, err := net.SplitHostPort(u.Host); err != nil {
-		return "", "", fmt.Errorf("代理 %q 缺少端口: %v", line, err)
+		return "", "", fmt.Errorf("proxy %q: missing port: %v", line, err)
 	}
 
 	// userinfo：常见订阅分享把 user:pass 整体 base64 后放在 @ 前

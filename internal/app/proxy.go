@@ -1229,13 +1229,8 @@ func callClineAPI(ctx context.Context, params map[string]any, stream bool, usePr
 			}
 			// 绑定策略下"没有可用账号"通常是代理不够：明确说出来，
 			// 否则用户只看到 "no active accounts" 而池子里其实有 11 个。
-			if useProxies && egressBindingActive() {
-				return nil, nil, fmt.Errorf("no account has an egress proxy assigned: %w",
-					egressShortfallError("cline", egressNSCline, poolAccountIDs()))
-			}
-			// 拒绝消息统一模板（2026-10-28 对齐）：前缀与各平台一致，
-			// describePoolStatus 的池状态细节（冷却/停用/恢复时间分布）拼在
-			// 尾巴上，排查"池里有号却报无可用"仍然一目了然。
+			// cline 不接 egress 自动钉定表（zen 专属），2026-10-29 移除按该表
+			// 误诊"代理没分够"的分支。
 			return nil, nil, fmt.Errorf("no cline account routable: all configured accounts are cooling, routing-disabled or bound-exit-blocked (%s)", describePoolStatus())
 		}
 		tried[acc.AccountID] = true
@@ -1296,15 +1291,16 @@ func clineAPIWithAccount(ctx context.Context, params map[string]any, stream bool
 	}
 	// 出口选择（见 proxy_binding.go）：
 	//   - 隔离模式且账号有绑定：只在 {主, 备} 内尝试（至多 2 次），绑定出口
-	//     全不可用时报错且不冷却账号 —— 绝不退回其他出口或直连（pickAccount
-	//     已过滤掉双不可用的账号，这里 !ok 只剩选号与拨号之间的窄竞态窗口）。
+	//     全不可用时报错且不冷却账号 —— 绝不退回其他出口或直连
+	//     （pickAccountExcluding 已过滤掉双不可用的账号，这里 !ok 只剩选号与
+	//     拨号之间的窄竞态窗口）。
 	//   - 未绑定 + useProxies：旧规则，每次尝试全局轮转挑代理（至多 3 次）。
 	//   - 未绑定 + 直连：1 次，网络错误 5 分钟短冷却（原语义）。
 	// 代理路径上的网络错误只冷却代理本身,绝不冷却账号 —— 代理故障不污染账号池。
 	main, backup, bound := accountProxyBinding(acc)
 	log.Printf("  upstream: account=%s stream=%v tools=%d msgs=%d max_tokens=%v effort=%v useProxies=%v boundExit=%v",
 		truncateEmail(acc.Email), stream, toolCount, getMsgCount(params), body["max_tokens"], body["reasoning_effort"], useProxies, bound)
-	setUpstreamInfo(ctx, fmt.Sprintf("账号#%d", accountNumber(acc)))
+	setUpstreamInfo(ctx, fmt.Sprintf("account #%d", accountNumber(acc)))
 	client := kit.HTTPClient
 	attempts := 1
 	switch {
@@ -1709,8 +1705,10 @@ func handleStreamBufferedGeneric(w http.ResponseWriter, r *http.Request, plat st
 		lines, usage, complete, brk := bufferUpstreamSSE(resp.Body)
 		resp.Body.Close()
 		if complete {
-			// 只把成功这次的上游消耗记账（中断的尝试不重复记账）
-			if usage != nil && usageFn != nil {
+			// 只把成功这次的上游消耗记账（中断的尝试不重复记账）。
+			// usage 为 nil 时也要调用：usageTokens 会退回入站请求估算兜底，
+			// 上游末帧没给 usage 不能记成 0（2026-10-29）。
+			if usageFn != nil {
 				usageFn(usage)
 			}
 			if n > 1 {
@@ -1788,18 +1786,22 @@ func handleNonStreamResponseWithUsage(w http.ResponseWriter, upstream *http.Resp
 		return
 	}
 
-	if onUsage != nil {
-		if u, ok := raw["usage"].(map[string]any); ok && len(u) > 0 {
-			onUsage(u)
-		}
-	}
-
 	// Some Cline responses wrap in {data: {...}}
+	// 必须先解包再取 usage（2026-10-29）：部分 cline 账号的非流式响应是
+	// {data:{...usage...}} 包装形态，此前在解包前取 raw["usage"] 取不到，
+	// 该次消耗就完全记不上（面板"今日 token"恒为 0）。
 	out := raw
 	if data, ok := raw["data"]; ok {
 		if d, ok := data.(map[string]any); ok {
 			out = d
 		}
+	}
+
+	if onUsage != nil {
+		// u 可能为 nil/空：usageTokens 会退回入站请求估算兜底，因此无论上游
+		// 给没给 usage 都要调用一次——否则兜底形同虚设，缺失时记为 0。
+		u, _ := out["usage"].(map[string]any)
+		onUsage(u)
 	}
 
 	out = normalizeOpenAIResponse(out)
@@ -2918,9 +2920,10 @@ func handleAnthropicMessages(w http.ResponseWriter, r *http.Request) {
 			})
 			return
 		}
-		if u, ok := out["usage"].(map[string]any); ok && len(u) > 0 {
-			usageFn(u)
-		}
+		// 上游聚合后无 usage 时同样调用一次：usageTokens 会退回入站请求估算，
+		// 不能因为上游没给 usage 就把该次消耗记成 0（2026-10-29）。
+		u, _ := out["usage"].(map[string]any)
+		usageFn(u)
 		out = normalizeOpenAIResponse(out)
 		truncateAtStopSequences(out, stopSequencesFrom(openAIReq))
 		anthropicResp := openAIToAnthropic(out)
@@ -3003,6 +3006,7 @@ func handleZenAnthropic(w http.ResponseWriter, r *http.Request, req anthropicReq
 			return
 		}
 		defer resp.Body.Close()
+		usedKey := takeUsedKey(resp)
 		// 上游恒 stream=true：resp.Body 是原生 responses SSE，先聚合
 		var chat map[string]any
 		if chat, rerr = responsesSSEToChat(resp); rerr != nil {
@@ -3014,6 +3018,8 @@ func handleZenAnthropic(w http.ResponseWriter, r *http.Request, req anthropicReq
 		// 聚合结果不含上游 model（responsesSSEToChat 置空），两种客户端
 		// 形态都要回填网关模型 ID，避免 Anthropic 应答 model 为空。
 		chat["model"] = zm.ID
+		// 记账：聚合已完成，两种客户端形态都在此记一次（chat 路径同口径）。
+		recordChatUsage(func(u map[string]any) { recordZenKeyTokens(usedKey, usageTokens(u, openAIReq)) }, chat)
 		if isStream {
 			// responses 原生流已聚合为 chat：对 Anthropic 流式客户端按
 			// Anthropic SSE 事件序列重发（message_start → 文本/工具块 →
@@ -3039,6 +3045,7 @@ func handleZenAnthropic(w http.ResponseWriter, r *http.Request, req anthropicReq
 			return
 		}
 		defer resp2.Body.Close()
+		usedKey := takeUsedKey(resp2)
 		chat, aerr := responsesSSEToChat(resp2)
 		if aerr != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]any{
@@ -3047,6 +3054,7 @@ func handleZenAnthropic(w http.ResponseWriter, r *http.Request, req anthropicReq
 			return
 		}
 		chat["model"] = zm.ID
+		recordChatUsage(func(u map[string]any) { recordZenKeyTokens(usedKey, usageTokens(u, openAIReq)) }, chat)
 		if isStream {
 			// 流式客户端：与原生分支一致地重发 Anthropic SSE 事件序列
 			//（回非流式 JSON 会让 SDK 的流解析器直接报错）
@@ -3065,8 +3073,12 @@ func handleZenAnthropic(w http.ResponseWriter, r *http.Request, req anthropicReq
 	}
 	defer resp.Body.Close()
 
+	usedKey := takeUsedKey(resp)
 	if isStream {
-		handleAnthropicStreamWithUsage(w, resp, zm.ID, toolSchemas, stopSequencesFrom(openAIReq), nil)
+		// 记账取末帧 usage，流完后记一次（逐帧记账会重复计入）。
+		var lastUsage map[string]any
+		handleAnthropicStreamWithUsage(w, resp, zm.ID, toolSchemas, stopSequencesFrom(openAIReq), func(u map[string]any) { lastUsage = u })
+		recordChatUsage(func(u map[string]any) { recordZenKeyTokens(usedKey, usageTokens(u, openAIReq)) }, map[string]any{"usage": lastUsage})
 		return
 	}
 
@@ -3080,6 +3092,7 @@ func handleZenAnthropic(w http.ResponseWriter, r *http.Request, req anthropicReq
 		return
 	}
 	chatOut["model"] = zm.ID
+	recordChatUsage(func(u map[string]any) { recordZenKeyTokens(usedKey, usageTokens(u, openAIReq)) }, chatOut)
 	chatOut = normalizeOpenAIResponse(chatOut)
 	// 与 finishZenAnthropicNonStream 保持一致：上游对 stop 的执行不可靠，
 	// 非流式应答统一在网关侧兜底截断（漏掉这里会让 stop_sequences 静默失效）

@@ -722,6 +722,7 @@ func handleResponses(w http.ResponseWriter, r *http.Request) {
 				})
 				return
 			}
+			nUsedKey := takeUsedKey(nresp)
 			agg, aerr := responsesSSEToChat(nresp)
 			if aerr != nil {
 				log.Printf("  responses zen native aggregate error: %v", aerr)
@@ -731,6 +732,7 @@ func handleResponses(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			agg["model"] = zm.ID
+			recordChatUsage(func(u map[string]any) { recordZenKeyTokens(nUsedKey, usageTokens(u, chat)) }, agg)
 			if isStream {
 				// 复用 chat SSE→responses 转换：把聚合结果包成一条 chat SSE 流喂进去。
 				// 原生流此前已完整读出，这里不再有增量；对客户端仍按 responses
@@ -758,13 +760,17 @@ func handleResponses(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		defer resp.Body.Close()
+		usedKey := takeUsedKey(resp)
 		if isStream {
 			w.Header().Set("Content-Type", "text/event-stream")
 			w.Header().Set("Cache-Control", "no-cache")
 			w.Header().Set("Connection", "keep-alive")
 			w.Header().Set("Access-Control-Allow-Origin", "*")
 			w.WriteHeader(http.StatusOK)
-			chatStreamToResponses(w, resp, nil)
+			// 记账取末帧 usage，流完后记一次（逐帧记账会重复计入）。
+			var lastUsage map[string]any
+			chatStreamToResponses(w, resp, func(u map[string]any) { lastUsage = u })
+			recordChatUsage(func(u map[string]any) { recordZenKeyTokens(usedKey, usageTokens(u, chat)) }, map[string]any{"usage": lastUsage})
 			return
 		}
 		raw, cerr := collectStreamResponse(resp)
@@ -774,6 +780,7 @@ func handleResponses(w http.ResponseWriter, r *http.Request) {
 			})
 			return
 		}
+		recordChatUsage(func(u map[string]any) { recordZenKeyTokens(usedKey, usageTokens(u, chat)) }, raw)
 		writeJSON(w, http.StatusOK, chatToResponses(normalizeOpenAIResponse(raw)))
 		return
 	}

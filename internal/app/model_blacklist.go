@@ -39,13 +39,15 @@ import (
 // ============================================================================
 
 // 封禁原因统一文案（面板「封禁原因」列直接展示，不再放上游原话——
-// 上游原始报文保留在 Detail 字段，悬停提示可见）。
+// 上游原始报文保留在 Detail 字段，悬停提示可见）。英文源文 + 面板 I18N_ZH
+// 词条双语（2026-10-29 汉化遗留修复）；存量中文文案由 normalizeBanReason
+// 在加载/导入时归一。
 const (
-	BanReasonAuto   = "账号权限不足，自动封禁"
-	BanReasonManual = "管理员手动封禁"
+	BanReasonAuto   = "auto-banned: account tier lacks access to this model"
+	BanReasonManual = "banned manually by admin"
 	// BanReasonModelGone 模型名在 TraeCode 网关上不存在（4023）：不是权限问题，
 	// 而是目录给的名字发不出请求（web-only/旧名），换任何账号同样报错。
-	BanReasonModelGone = "模型名不可用，自动封禁"
+	BanReasonModelGone = "auto-banned: model name not available on this gateway (4023)"
 )
 
 // 平台标识（与对外模型前缀对应）。
@@ -87,6 +89,21 @@ func blacklistKey(platform, model string) string {
 	return platform + "|" + model
 }
 
+// normalizeBanReason 存量数据归一（2026-10-29 常量中文化改英文化的配套）：
+// 旧中文文案映射到新英文常量。Reason 只做展示、不参与任何比对逻辑，
+// 归一只影响表格列显示。
+func normalizeBanReason(reason string) string {
+	switch reason {
+	case "账号权限不足，自动封禁":
+		return BanReasonAuto
+	case "管理员手动封禁":
+		return BanReasonManual
+	case "模型名不可用，自动封禁":
+		return BanReasonModelGone
+	}
+	return reason
+}
+
 func ensureModelBlacklistLoaded() {
 	modelBlacklistMu.Lock()
 	defer modelBlacklistMu.Unlock()
@@ -99,6 +116,9 @@ func ensureModelBlacklistLoaded() {
 	if len(g.ModelBlacklist) > 0 {
 		modelBlacklistItems = make(map[string]*modelBlacklistEntry, len(g.ModelBlacklist))
 		for k, e := range g.ModelBlacklist {
+			if e != nil {
+				e.Reason = normalizeBanReason(e.Reason)
+			}
 			modelBlacklistItems[k] = e
 		}
 	}

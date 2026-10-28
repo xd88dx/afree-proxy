@@ -102,15 +102,16 @@ func workbuddyObserveAccount(ctx context.Context, a *wbauth.Auth, exitRaw string
 }
 
 // workbuddyUpstreamLabel 日志「账号/Key」列的账号标识：与面板 # 列同口径的
-// 展示行号 —— 账号#N（N = 当前 List 展示顺序中的行号，拖拽重排后按新顺序
-// 重新编号）。昵称不参与（面板账号列已展示，日志只留序号方便排查）。
+// 展示行号 —— account #N（N = 当前 List 展示顺序中的行号，拖拽重排后按新顺序
+// 重新编号；英文源文，面板渲染时经 T('account #') 词条中文化）。昵称不参与
+// （面板账号列已展示，日志只留序号方便排查）。
 func workbuddyUpstreamLabel(uid string) string {
 	uid = strings.TrimSpace(uid)
 	n := 0
 	if workbuddySub != nil && workbuddySub.pool != nil {
 		n = workbuddySub.pool.IndexOf(uid)
 	}
-	return fmt.Sprintf("账号#%d", n)
+	return fmt.Sprintf("account #%d", n)
 }
 
 // workbuddyExitType 与 workbuddyProxyFor 同口径判定出口类型：隔离开启且

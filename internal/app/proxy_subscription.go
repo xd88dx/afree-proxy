@@ -236,9 +236,11 @@ func handleProxySubUpdate(w http.ResponseWriter, r *http.Request) {
 		writeAPI(w, http.StatusOK, apiResponse{Error: err.Error()})
 		return
 	}
-	msg := fmt.Sprintf("已更新代理池：%d 条", n)
+	// 英文源文（面板渲染处经 T() 词条中文化；含数字的整句由前端按
+	// "Proxy pool updated: <n> entries" 形状拆分翻译）。
+	msg := fmt.Sprintf("Proxy pool updated: %d entries", n)
 	if skipped {
-		msg = "订阅内容与现池一致，跳过替换"
+		msg = "subscription identical to current pool, skipped"
 	}
 	writeAPI(w, http.StatusOK, apiResponse{Success: true, Message: msg, Data: map[string]any{"updated": n, "skipped": skipped}})
 }

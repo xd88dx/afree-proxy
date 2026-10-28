@@ -28,7 +28,11 @@ import (
 
 // platformChatCall 平台统一 chat 调用器：stream=true 时 Body 为 chat SSE，
 // stream=false 时为聚合 JSON。调用器内部负责选号/出口解析/重试。
-type platformChatCall func(ctx context.Context, params map[string]any, stream bool) (*http.Response, error)
+// 第二返回值是该次上游尝试的记账回调（key 已捕获在闭包里，传 usage 帧即记
+// token；trae 在聚合内部自行记账，回调恒 nil）。stream=true 时由
+// bufferedStreamCaller 在最终成功那次以末帧调用后不再外传（重试的中间尝试
+// 不记账，回放路径也不逐帧重复记账）。
+type platformChatCall func(ctx context.Context, params map[string]any, stream bool) (*http.Response, func(map[string]any), error)
 
 // platformModelErr 未命中模型/未配置凭据类错误：对客户端 400/401 而非 502。
 type platformModelErr struct {
@@ -56,9 +60,13 @@ func resolvePlatformChatCallerRaw(model string) (platformChatCall, bool) {
 		if !resolved {
 			return rejectCaller(fmt.Sprintf("model %q is not a free openrouter model", id), false), true
 		}
-		return func(ctx context.Context, params map[string]any, stream bool) (*http.Response, error) {
+		return func(ctx context.Context, params map[string]any, stream bool) (*http.Response, func(map[string]any), error) {
 			resp, _, err := openrouter.Chat(ctx, params, m.ID, stream, globalStrategy(), orBoundRoutable, nil)
-			return resp, err
+			if err != nil {
+				return nil, nil, err
+			}
+			usedKey := takeUsedKey(resp)
+			return resp, func(u map[string]any) { openrouter.RecordKeyTokens(usedKey, usageTokens(u, params)) }, nil
 		}, true
 	}
 	if id, ok := amd.StripPrefix(model); ok {
@@ -66,9 +74,13 @@ func resolvePlatformChatCallerRaw(model string) (platformChatCall, bool) {
 		if !resolved {
 			return rejectCaller(fmt.Sprintf("model %q is not an AMDCloud model", id), false), true
 		}
-		return func(ctx context.Context, params map[string]any, stream bool) (*http.Response, error) {
+		return func(ctx context.Context, params map[string]any, stream bool) (*http.Response, func(map[string]any), error) {
 			resp, _, err := amd.Chat(ctx, params, m.ID, stream, globalStrategy(), amdBoundRoutable)
-			return resp, err
+			if err != nil {
+				return nil, nil, err
+			}
+			usedKey := takeUsedKey(resp)
+			return resp, func(u map[string]any) { amd.RecordKeyTokens(usedKey, usageTokens(u, params)) }, nil
 		}, true
 	}
 	if id, ok := tokenharbor.StripPrefix(model); ok {
@@ -76,9 +88,13 @@ func resolvePlatformChatCallerRaw(model string) (platformChatCall, bool) {
 		if !resolved {
 			return rejectCaller(fmt.Sprintf("model %q is not a free TokenHarbor model", id), false), true
 		}
-		return func(ctx context.Context, params map[string]any, stream bool) (*http.Response, error) {
+		return func(ctx context.Context, params map[string]any, stream bool) (*http.Response, func(map[string]any), error) {
 			resp, _, err := tokenharbor.Chat(ctx, params, m.ID, stream, globalStrategy(), thBoundRoutable)
-			return resp, err
+			if err != nil {
+				return nil, nil, err
+			}
+			usedKey := takeUsedKey(resp)
+			return resp, func(u map[string]any) { tokenharbor.RecordKeyTokens(usedKey, usageTokens(u, params)) }, nil
 		}, true
 	}
 	if id, ok := trae.StripPrefix(model); ok {
@@ -89,17 +105,19 @@ func resolvePlatformChatCallerRaw(model string) (platformChatCall, bool) {
 		if len(trae.AccountIDs()) == 0 {
 			return rejectCaller("No Trae accounts configured. Add accounts on the Trae page.", true), true
 		}
-		return func(ctx context.Context, params map[string]any, stream bool) (*http.Response, error) {
+		return func(ctx context.Context, params map[string]any, stream bool) (*http.Response, func(map[string]any), error) {
 			// 上游恒流式：聚合为 OpenAI chat SSE；缺 done 的断流产物原样
 			// 返回（无 error），由 bufferedStreamCaller 判完成并整体重试。
+			// 记账在聚合内部完成（RecordAccountTokens），无需回调。
 			if !stream {
-				return aggregateTraeCompletionResponse(ctx, params, m)
+				resp, err := aggregateTraeCompletionResponse(ctx, params, m)
+				return resp, nil, err
 			}
 			data, _, _, err := aggregateTraeSSE(ctx, params, m)
 			if err != nil {
-				return nil, err
+				return nil, nil, err
 			}
-			return sseBytesResponse(data), nil
+			return sseBytesResponse(data), nil, nil
 		}, true
 	}
 	if p, bare, ok := other.ResolvePrefix(model); ok && p != nil {
@@ -110,9 +128,13 @@ func resolvePlatformChatCallerRaw(model string) (platformChatCall, bool) {
 		if len(p.Keys) == 0 {
 			return rejectCaller(fmt.Sprintf("No keys configured for platform %q. Add keys on the Other page.", p.Name), true), true
 		}
-		return func(ctx context.Context, params map[string]any, stream bool) (*http.Response, error) {
+		return func(ctx context.Context, params map[string]any, stream bool) (*http.Response, func(map[string]any), error) {
 			resp, _, err := other.Chat(ctx, p, params, m.ID, stream, globalStrategy(), otherBoundRoutable(p), otherExitFn(p))
-			return resp, err
+			if err != nil {
+				return nil, nil, err
+			}
+			usedKey := takeUsedKey(resp)
+			return resp, func(u map[string]any) { other.RecordKeyTokens(p, usedKey, usageTokens(u, params)) }, nil
 		}, true
 	}
 	return nil, false
@@ -120,39 +142,45 @@ func resolvePlatformChatCallerRaw(model string) (platformChatCall, bool) {
 
 // rejectCaller 固定失败的调用器（模型未命中/凭据未配置）。
 func rejectCaller(msg string, authError bool) platformChatCall {
-	return func(context.Context, map[string]any, bool) (*http.Response, error) {
-		return nil, &platformModelErr{msg: msg, authError: authError}
+	return func(context.Context, map[string]any, bool) (*http.Response, func(map[string]any), error) {
+		return nil, nil, &platformModelErr{msg: msg, authError: authError}
 	}
 }
 
 // bufferedStreamCaller 流式调用加"缓冲+中断重试"（与 handleStreamBufferedGeneric
 // 同口径）：完整缓冲上游 chat SSE，未见 finish/[DONE] 整次重试（平台内部
 // 自选新账号/key，出口绑定语义不变）。非流式直通。ctx 取消不重试。
+// 记账口径：只有最终成功这次以末帧 usage 调一次记账回调并置空外传——
+// 重试的中间尝试不重复记账，回放路径（chatStreamToResponses 等）拿到的
+// 回调为 nil，也不会逐帧重复记账。
 func bufferedStreamCaller(caller platformChatCall) platformChatCall {
-	return func(ctx context.Context, params map[string]any, stream bool) (*http.Response, error) {
+	return func(ctx context.Context, params map[string]any, stream bool) (*http.Response, func(map[string]any), error) {
 		if !stream {
 			return caller(ctx, params, false)
 		}
 		var lastBrk error
 		for n := 1; n <= StreamMaxAttempts(); n++ {
-			resp, err := caller(ctx, params, true)
+			resp, usageFn, err := caller(ctx, params, true)
 			if err != nil {
-				return nil, err
+				return nil, nil, err
 			}
-			lines, _, complete, brk := bufferUpstreamSSE(resp.Body)
+			lines, usage, complete, brk := bufferUpstreamSSE(resp.Body)
 			resp.Body.Close()
 			if complete {
-				return sseLinesResponse(lines), nil
+				if usageFn != nil && usage != nil {
+					usageFn(usage)
+				}
+				return sseLinesResponse(lines), nil, nil
 			}
 			if ctx.Err() != nil {
-				return nil, ctx.Err()
+				return nil, nil, ctx.Err()
 			}
 			lastBrk = brk
 		}
 		if lastBrk != nil {
-			return nil, fmt.Errorf("upstream stream interrupted: %v", lastBrk)
+			return nil, nil, fmt.Errorf("upstream stream interrupted: %v", lastBrk)
 		}
-		return nil, errors.New("upstream stream interrupted")
+		return nil, nil, errors.New("upstream stream interrupted")
 	}
 }
 
@@ -201,8 +229,10 @@ func writePlatformCallError(w http.ResponseWriter, err error) {
 // handleResponsesViaChat 前缀平台模型的 /v1/responses 入口：上游恒流式拿
 // chat SSE（调用器已含缓冲重试），流式客户端经 chatStreamToResponses 重放，
 // 非流式聚合后 chatToResponses 输出（与 zen 路径同一套转换件）。
+// 记账：流式的已在 bufferedStreamCaller 以末帧完成（回调不外传）；非流式从
+// 聚合 chat JSON 提 usage 记账。
 func handleResponsesViaChat(w http.ResponseWriter, r *http.Request, chat map[string]any, model string, isStream bool, caller platformChatCall) {
-	resp, err := caller(r.Context(), chat, true)
+	resp, usageFn, err := caller(r.Context(), chat, true)
 	if err != nil {
 		writePlatformCallError(w, err)
 		return
@@ -225,6 +255,7 @@ func handleResponsesViaChat(w http.ResponseWriter, r *http.Request, chat map[str
 		return
 	}
 	raw["model"] = model
+	recordChatUsage(usageFn, raw)
 	writeJSON(w, http.StatusOK, chatToResponses(normalizeOpenAIResponse(raw)))
 }
 
@@ -232,19 +263,21 @@ func handleResponsesViaChat(w http.ResponseWriter, r *http.Request, chat map[str
 
 // handleAnthropicViaChat 前缀平台模型的 /v1/messages 入口：openAIReq 已由
 // anthropicToOpenAI 归一；流式经 handleAnthropicStreamWithUsage 转发，非流式
-// 聚合后 openAIToAnthropic 输出。
+// 聚合后 openAIToAnthropic 输出。记账口径与 handleResponsesViaChat 相同。
 func handleAnthropicViaChat(w http.ResponseWriter, r *http.Request, req anthropicReq, openAIReq map[string]any, toolSchemas map[string]map[string]bool, caller platformChatCall) {
 	if req.Stream {
-		resp, err := caller(r.Context(), openAIReq, true)
+		resp, _, err := caller(r.Context(), openAIReq, true)
 		if err != nil {
 			writePlatformCallError(w, err)
 			return
 		}
 		defer resp.Body.Close()
+		// 末参 onUsage 传 nil：记账已在 bufferedStreamCaller 以末帧完成，
+		// 回放路径不逐帧重复记账。
 		handleAnthropicStreamWithUsage(w, resp, req.Model, toolSchemas, stopSequencesFrom(openAIReq), nil)
 		return
 	}
-	resp, err := caller(r.Context(), openAIReq, false)
+	resp, usageFn, err := caller(r.Context(), openAIReq, false)
 	if err != nil {
 		writePlatformCallError(w, err)
 		return
@@ -257,7 +290,19 @@ func handleAnthropicViaChat(w http.ResponseWriter, r *http.Request, req anthropi
 		})
 		return
 	}
+	recordChatUsage(usageFn, chat)
 	finishAnthropicNonStreamFromChat(w, chat, req.Model, openAIReq)
+}
+
+// recordChatUsage 非流式路径记账：usageFn 由平台调用器给出，usage 从聚合的
+// chat JSON 提取；两者任一缺失即跳过（trae 内部已记账，usageFn 恒 nil）。
+func recordChatUsage(usageFn func(map[string]any), chat map[string]any) {
+	if usageFn == nil || chat == nil {
+		return
+	}
+	if u, ok := chat["usage"].(map[string]any); ok {
+		usageFn(u)
+	}
 }
 
 // finishAnthropicNonStreamFromChat 聚合 chat JSON → Anthropic 响应（与

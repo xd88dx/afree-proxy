@@ -55,8 +55,8 @@ func defaultGlobalConfig() *globalConfigData {
 	return &globalConfigData{Strategy: "round_robin"}
 }
 
-// loadGlobalConfigLocked 读取(并缓存)全局配置;文件不存在时先尝试从六个旧
-// 文件一次性迁移。调用方必须持有 globalCfgMu。
+// loadGlobalConfigLocked 读取(并缓存)全局配置;文件不存在时直接用默认配置
+// （旧文件一次性迁移已随 2026-10-27 死代码清理移除）。调用方必须持有 globalCfgMu。
 func loadGlobalConfigLocked() *globalConfigData {
 	if globalCfgLoaded {
 		return globalCfg

@@ -60,6 +60,7 @@ func registerAdminRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/admin/api/sso/import", adminCORS(auth(handleSSOImport)))
 	mux.HandleFunc("/admin/api/request-stats", adminCORS(auth(handleRequestStats)))
 	mux.HandleFunc("/admin/api/stats", adminCORS(auth(handleAdminStats)))
+	mux.HandleFunc("/admin/api/runtime-flags", adminCORS(auth(handleRuntimeFlags)))
 	mux.HandleFunc("/admin/api/accounts/delete-all", adminCORS(auth(handleAdminDeleteAll)))
 	mux.HandleFunc("/admin/api/data/delete-all", adminCORS(auth(handleAdminDeleteAllData)))
 	mux.HandleFunc("/admin/api/accounts/reset", adminCORS(auth(handleAdminAccountReset)))
@@ -211,6 +212,19 @@ func adminStaticHandler(w http.ResponseWriter, r *http.Request) {
 	http.NotFound(w, r)
 }
 
+// handleRuntimeFlags GET /admin/api/runtime-flags：运行时环境开关快照，面板
+// 用它呈现"被 env 强制覆盖"的状态（如 ONLY_ROUTER 停用维护任务），避免出现
+// 静默无效的开关（死配置判据）。实时读 env，进程内不缓存。
+func handleRuntimeFlags(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
+		return
+	}
+	writeAPI(w, http.StatusOK, apiResponse{Success: true, Data: map[string]any{
+		"onlyRouter": kit.OnlyRouter(),
+	}})
+}
+
 // GET /admin/api/accounts
 func handleAdminAccounts(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "GET" {
@@ -218,18 +232,10 @@ func handleAdminAccounts(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	accounts := ListAccounts()
-	// 出口绑定（与 zen key 同一套规则）：cline 走代理池时每个账号固定一个
-	// 出口，没有分到代理的账号会被 pickAccountExcluding 跳过。面板必须能
-	// 看出原因，否则只会看到"账号都在却选不到"。
-	if clineProxiesEnabled() && egressBindingActive() {
-		for _, a := range accounts {
-			if p, ok := egressProxyForCline(a.AccountID); ok {
-				a.EgressProxy = maskProxyURL(p)
-			} else {
-				a.NoEgress = true
-			}
-		}
-	}
+	// cline 账号不走 egress 自动钉定表（那是 zen 专属，见 egress.go
+	// reconcileEgressBindings）：cline 的出口绑定是账号级 ProxyMain/ProxyBackup
+	//（proxy_binding.go + 面板绑定列）。2026-10-29 移除了对空表的查询——它
+	// 恒未命中，只会给每个账号盖上错误的 NoEgress=true。
 	writeAPI(w, http.StatusOK, apiResponse{
 		Success: true,
 		Data: map[string]any{

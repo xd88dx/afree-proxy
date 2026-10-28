@@ -624,6 +624,8 @@ func importModelBlacklist(in map[string]*modelBlacklistEntry) {
 		if k == "" || v == nil || v.Platform == "" || v.Model == "" {
 			continue
 		}
+		// 旧备份的中文封禁原因归一到当前常量（见 normalizeBanReason）。
+		v.Reason = normalizeBanReason(v.Reason)
 		next[k] = v
 	}
 	modelBlacklistMu.Lock()

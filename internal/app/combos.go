@@ -83,7 +83,7 @@ func resolveCombo(id string) *Combo {
 	return nil
 }
 
-// comboPlatformValid 自定义别名的平台白名单（六平台）。面板保存与备份导入
+// comboPlatformValid 自定义别名的平台白名单（七平台）。面板保存与备份导入
 // 共用同一份口径——新平台接入时两处一起改。
 func comboPlatformValid(platform string) bool {
 	switch platform {

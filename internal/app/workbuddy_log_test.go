@@ -26,12 +26,12 @@ func TestWorkbuddyObserveAccountFillsLogColumns(t *testing.T) {
 	})
 
 	// 未绑定账号 + 直连出口：代理列记 direct（确实没经代理）。
-	// workbuddySub 未初始化时序号恒 0（账号#0），真实序号只在网关运行时取池顺序。
+	// workbuddySub 未初始化时序号恒 0（account #0），真实序号只在网关运行时取池顺序。
 	// 标签只有序号（昵称/uID 不参与，面板账号列已展示）。
 	ctx, ui := withUpstreamInfo(context.Background())
 	workbuddyObserveAccount(ctx, &wbauth.Auth{UID: "uid-plain", Nickname: "n1"}, "")
-	if ui.label != "账号#0" {
-		t.Fatalf("upstream label = %q, want %q", ui.label, "账号#0")
+	if ui.label != "account #0" {
+		t.Fatalf("upstream label = %q, want %q", ui.label, "account #0")
 	}
 	if ui.exit != "direct" {
 		t.Fatalf("exit = %q, want direct", ui.exit)
@@ -40,8 +40,8 @@ func TestWorkbuddyObserveAccountFillsLogColumns(t *testing.T) {
 	// 绑定主代理且本次从主出网：代理列记 main。
 	ctx2, ui2 := withUpstreamInfo(context.Background())
 	workbuddyObserveAccount(ctx2, &wbauth.Auth{UID: "uid-main"}, "socks5://main:1080")
-	if ui2.label != "账号#0" {
-		t.Fatalf("upstream label = %q, want 账号#0", ui2.label)
+	if ui2.label != "account #0" {
+		t.Fatalf("upstream label = %q, want account #0", ui2.label)
 	}
 	if ui2.exit != "main" {
 		t.Fatalf("exit = %q, want main", ui2.exit)
@@ -50,8 +50,8 @@ func TestWorkbuddyObserveAccountFillsLogColumns(t *testing.T) {
 	// 标签只有序号，不再带 UID/昵称（防日志列被撑爆）。
 	ctx3, ui3 := withUpstreamInfo(context.Background())
 	workbuddyObserveAccount(ctx3, &wbauth.Auth{UID: "0123456789abcdef"}, "")
-	if ui3.label != "账号#0" {
-		t.Fatalf("label = %q, want 账号#0", ui3.label)
+	if ui3.label != "account #0" {
+		t.Fatalf("label = %q, want account #0", ui3.label)
 	}
 
 	// 非网关请求（ctx 无日志槽位）与 nil 账号：不得 panic。
