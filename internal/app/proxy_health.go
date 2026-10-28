@@ -7,7 +7,13 @@ import (
 	"sync"
 	"time"
 
+	"afree-proxy/internal/amd"
+	"afree-proxy/internal/cline"
 	"afree-proxy/internal/kit"
+	"afree-proxy/internal/openrouter"
+	"afree-proxy/internal/other"
+	"afree-proxy/internal/tokenharbor"
+	"afree-proxy/internal/trae"
 )
 
 // ============================================================================
@@ -31,7 +37,52 @@ const (
 	proxyHealthRecentN = 50
 	// proxyHealthFlushInterval 落盘周期。进程被 kill 时最多丢这个窗口的数据。
 	proxyHealthFlushInterval = 60 * time.Second
+	// proxyTransportCooldown 传输层失败后该出口退出轮转的时长，与 cline/zen
+	// 请求循环里的既有口径一致：短冷却能跳过真死节点又快速自愈，长冷却会让
+	// 几次慢请求毒化整个池（2026-10-28 统一到所有平台）。
+	proxyTransportCooldown = 2 * time.Minute
 )
+
+// isTransportLayerFailure err 是否为传输层失败（拨号 / CONNECT / SOCKS / TLS
+// 握手、连接被重置或 EOF）。判定口径与 cline/zen 的冷却同源：
+//
+//   - 传输层失败 → 出口不可用，该代理应退出轮转；
+//   - 各平台的 HTTP 状态类错误（429/5xx/4023）→ 上游返回了响应，出口是通的，
+//     冷却好节点正是 09-16「stop poisoning exits on upstream-side failures」
+//     要避免的事。
+//
+// 各平台包有各自的 HTTPError 类型（字段一致、类型不同），这里按类型排除；
+// 其余（网络级）一律视为传输层失败。
+func isTransportLayerFailure(err error) bool {
+	if err == nil {
+		return false
+	}
+	var te *trae.HTTPError
+	if errors.As(err, &te) {
+		return false
+	}
+	var ae *amd.HTTPError
+	if errors.As(err, &ae) {
+		return false
+	}
+	var oe *openrouter.HTTPError
+	if errors.As(err, &oe) {
+		return false
+	}
+	var th *tokenharbor.HTTPError
+	if errors.As(err, &th) {
+		return false
+	}
+	var ot *other.HTTPError
+	if errors.As(err, &ot) {
+		return false
+	}
+	var ce *cline.StatusError
+	if errors.As(err, &ce) {
+		return false
+	}
+	return true
+}
 
 // proxyHealthEntry 单个代理的累计 + 最近窗口记账。
 type proxyHealthEntry struct {
@@ -81,6 +132,15 @@ func recordProxyOutcome(proxyURL string, ok bool, err error, hsMs int64) {
 	}
 	if err != nil && (errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)) {
 		return
+	}
+	// 传输层失败：让该出口退出轮转 2 分钟（2026-10-28 统一到全平台）。
+	// cline/zen 在各自请求循环里已调用，此处重复命中是幂等的（同为 2 分钟）。
+	// 此前其余平台只记账不自愈：坏节点会被轮转反复选中，于是同一个节点故障
+	// 被轮流记到多个凭据头上（冷却 / trae 自动封禁），本行补上这个缺口。
+	if !ok && isTransportLayerFailure(err) {
+		if idx := proxyIdxInPool(proxyURL); idx >= 0 {
+			cooldownUpstreamProxy(idx, proxyTransportCooldown)
+		}
 	}
 	ensureProxyHealthLoaded()
 

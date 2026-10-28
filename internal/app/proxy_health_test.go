@@ -7,6 +7,13 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"afree-proxy/internal/amd"
+	"afree-proxy/internal/cline"
+	"afree-proxy/internal/openrouter"
+	"afree-proxy/internal/other"
+	"afree-proxy/internal/tokenharbor"
+	"afree-proxy/internal/trae"
 )
 
 // 代理在线率统计（纯被动口径）的行为回归：
@@ -173,5 +180,58 @@ func TestProxyHealthPersistsAcrossRestart(t *testing.T) {
 	}
 	if len(e.Recent) != 2 || e.Recent[0] != true || e.Recent[1] != false {
 		t.Fatalf("restored recent = %v", e.Recent)
+	}
+}
+
+// 传输层失败 vs 上游状态错误（2026-10-28）：只有前者该让出口退出轮转，
+// 后者是上游返回了响应——冷却好节点正是 09-16 那次提交要避免的"毒化出口"。
+func TestIsTransportLayerFailure(t *testing.T) {
+	transport := errors.New("dial tcp 10.0.0.1:1080: i/o timeout")
+	cases := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{"nil", nil, false},
+		{"network dial", transport, true},
+		{"context canceled", context.Canceled, true}, // 传输层判定；取消过滤在 recordProxyOutcome 内
+		{"trae HTTPError", &trae.HTTPError{Status: 429, Code: "4023"}, false},
+		{"amd HTTPError", &amd.HTTPError{Status: 502}, false},
+		{"openrouter HTTPError", &openrouter.HTTPError{Status: 500}, false},
+		{"tokenharbor HTTPError", &tokenharbor.HTTPError{Status: 503}, false},
+		{"other HTTPError", &other.HTTPError{Status: 400}, false},
+		{"cline StatusError", &cline.StatusError{Status: 401}, false},
+	}
+	for _, c := range cases {
+		if got := isTransportLayerFailure(c.err); got != c.want {
+			t.Errorf("%s: isTransportLayerFailure = %v, want %v", c.name, got, c.want)
+		}
+	}
+}
+
+// 传输层失败冷却出口（2026-10-28）：全平台统一——此前只有 cline/zen 会摘掉
+// 坏节点，其余平台只记账不自愈，坏节点被轮转反复选中、把故障记到多个凭据头上。
+func TestRecordProxyOutcomeCoolsBadExit(t *testing.T) {
+	setupBindingTest(t, &zenTestConfig{Proxies: []string{"http://a:1", "http://b:2"}})
+	// 传输层失败：该代理退出轮转
+	recordProxyOutcome("http://a:1", false, errors.New("EOF"), 0)
+	if proxyAvailable(0) {
+		t.Fatal("transport-layer failure must cool the exit proxy")
+	}
+	if !proxyAvailable(1) {
+		t.Fatal("unrelated proxy must stay available")
+	}
+	// 上游状态错误：不冷却（出口是通的）
+	proxyCooldownsMu.Lock()
+	delete(proxyCooldowns, 0)
+	proxyCooldownsMu.Unlock()
+	recordProxyOutcome("http://a:1", false, &amd.HTTPError{Status: 502}, 0)
+	if !proxyAvailable(0) {
+		t.Fatal("upstream 5xx must not cool a healthy exit")
+	}
+	// 成功尝试不冷却
+	recordProxyOutcome("http://b:2", true, nil, 12)
+	if !proxyAvailable(1) {
+		t.Fatal("successful attempt must not cool the exit")
 	}
 }
