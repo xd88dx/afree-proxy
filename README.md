@@ -88,7 +88,7 @@ docker run -d --name afree-proxy \
 | `CLINE_HEADER_TIMEOUT`                   | `60`          | Cline 上游「等响应头」看门狗秒数（0 = 关闭），超时换号重试；不影响头到达之后的流式 body                                                                                                                                                                                     |
 | `UNABLE_FORCE`                           | `false`       | 全冷却兜底开关。`false`（默认）：平台凭据**全部冷却**时一律拒绝（冷却凭据绝不参与路由），拒绝消息统一为 `no <platform> ... routable` 模板；`true`：全冷却时继续按各平台兜底实现选用冷却中的凭据（保持请求流动，WorkBuddy 软冷却豁免/最早到期优先、zen live 优先等扩展保留） |
 | `DISABLE_DIRECT`                         | `false`       | 直连禁用开关。`true`：出口为直连的凭据全部失效——绑定直连哨兵的凭据在隔离过滤阶段剔除；未绑定凭据在面板直连模式或代理池空兜底下同样失效，请求报 `no ... exit ... DISABLE_DIRECT`。`false`（默认）与既有行为相同                                                              |
-| `ONLY_ROUTER`                            | `false`       | 仅会话路由开关。`true`：所有平台只保留 chat 请求及其必要支撑（token 续期、模型目录同步、倍率预热），WorkBuddy 签到/保活/余额巡检/补领清扫与 Trae 签到/额度刷新等维护任务一律不启动——面板上的自动签到等开关被本变量强制覆盖。`false`（默认）按各自配置照常运行               |
+| `ONLY_ROUTER`                            | `false`       | 仅会话路由开关。`true`：所有平台只保留 chat 请求及其必要支撑（token 续期、模型目录同步、倍率预热），WorkBuddy 签到/保活/余额巡检/补领清扫与 Trae 签到/额度刷新等维护任务一律不启动——面板上的自动签到等开关被本变量强制覆盖，且面板顶部显示常驻提示条。`false`（默认）按各自配置照常运行               |
 
 以上三个开关（`UNABLE_FORCE` / `DISABLE_DIRECT` / `ONLY_ROUTER`）解析同一套布尔值：`1` / `true` / `yes` / `y` / `on`（大小写不敏感）为真，其余为假；实时读取，改容器 env 重启即生效。
 
@@ -122,7 +122,7 @@ Model:     cline-free/deepseek-v4.1-flash   （Cline 池）
 **Claude Code / Cline** — Anthropic 方言 `POST /v1/messages`，同 Base URL 同 key。
 **OpenAI Responses 方言** — `POST /v1/responses`（工具调用、流式事件、usage 全翻译）。
 
-`GET /v1/models` 列出全部可服务模型（含 Combos）。免费目录自动同步（cline/zen/trae/or/amd/th 全部 5min，wb 实时探测）；线上列表是权威，内置种子只覆盖冷启动/离线启动，下架/新免费模型自动增删。
+`GET /v1/models` 列出全部可服务模型（含 Combos）。免费目录自动同步（cline/zen/trae/or/amd/th 全部 5min，wb 实时探测；同步走凭据绑定的出口，无可用出口时跳过本轮绝不直连）；线上列表是权威，内置种子只覆盖冷启动/离线启动，下架/新免费模型自动增删。
 
 ### Combos（别名模型）
 
@@ -134,7 +134,7 @@ Model:     cline-free/deepseek-v4.1-flash   （Cline 池）
 
 ## TraeWork 网页授权
 
-添加账号走「网页授权」手风琴弹窗：网关生成本机授权助手（Python，监听 127.0.0.1:8765），浏览器打开授权页登录后凭据回传网关。助手脚本从网关下载，面板会比对 relay 源防止凭据写错实例；也支持手动粘贴凭据。授权只认本机 helper——上游实测拒绝网关直连回调。
+添加账号走「网页授权」手风琴弹窗：网关生成本机授权助手（Python，监听 127.0.0.1:8765），浏览器打开授权页登录后凭据回传网关。助手脚本从网关下载，面板会比对 relay 源防止凭据写错实例；也支持手动粘贴凭据。授权只认本机 helper——上游实测拒绝网关直连回调。凭据写入端点 `/api/web-auth` 仅接受回环与内网来源（RFC1918/ULA），公网来源一律 403，不采信反代头。
 
 ## 数据目录（持久化结构）
 
