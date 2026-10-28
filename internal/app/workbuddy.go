@@ -32,7 +32,7 @@ import (
 
 // 版本口径：misakano 线不跟语义化版本（CI 用日期版本注入），此处记录上游来源
 // 与同步日期；基线 misakano/main 49f9db4（2026-10-28 同步）。
-const workbuddyVersion = "2026.10.28-misakano+afree"
+const workbuddyVersion = "2026.10.29-misakano+afree"
 
 // workbuddySubsystem 把源项目的账号池/熔断/调度/面板/兼容接口作为独立子系统
 // 挂在现有 afree-proxy 上。账号凭证与状态落在 data/workbuddy/ 下，不与 Cline
@@ -158,6 +158,13 @@ func startWorkBuddy() (*workbuddySubsystem, error) {
 	// CN 模型目录与对话全部报 "unsupported protocol scheme \"\""（2026-10-22 部署实测）。
 	if cfg.CN.ChatBase != "" {
 		up.ChatBaseCN = cfg.CN.ChatBase
+	}
+	// cn.billing_base 国内 billing/growth 上游 base 覆盖（上游 9ca34c2，5.9.3
+	// 客户端默认 www.workbuddy.cn）：与 cn.chat_base 同口径——vendored
+	// billingBase() 对 CN **没有空值回退**，仅在显式非空时覆盖，退回旧域
+	// codebuddy.cn 时手工填该键。
+	if cfg.CN.BillingBase != "" {
+		up.BillingBaseCN = cfg.CN.BillingBase
 	}
 	// dns_servers / WB2A_DNS（上游 eacee47）：仅作用于 WorkBuddy 出站解析。
 	// 不动 http.DefaultTransport——afree 多平台共进程，改全局会波及其他平台出站。

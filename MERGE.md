@@ -13,13 +13,13 @@ WorkBuddy 一栏的基线同时登记在 `scripts/workbuddy-vendor-baseline.json
 
 ## Cline
 
-本次未涉及上游同步（2026-10-28 核对：`foxy1402/cline-proxy` main 仍为 `571f9b9`，与 2026-10-27 同步基线一致，无新提交；`571f9b9` 的改动全部属于 OpenCode 线，见文末 OpenCode 节）。
+本次未涉及上游同步（2026-10-28 核对：`foxy1402/cline-proxy` main 仍为 `571f9b9`，与 2026-10-27 同步基线一致，无新提交；`571f9b9` 的改动全部属于 OpenCode 线，见文末 OpenCode 节。2026-10-29 复核：仍为 `571f9b9`，无新提交）。
 
 ## TreaWork
 
 上游:`autumnsentiment/Trae2api-cn`(Trae CN / Trae Solo CN 模型反代,Python,MIT)。**这条线不是 vendor/merge 关系**:上游是 Python 全栈,本地 `internal/trae/` + `internal/app/trae.go` 是 Go 重写,行为跟随上游协议;唯一逐行移植的产物是内嵌的本机授权助手 `web_login.py`(`internal/trae/helper_script.go`),只有它需要跟上游比对。2026-10-27 的 cline-proxy 合并未涉及本线。
 
-**2026-10-28 核对**：上游最新 tag 仍为 `v1.0.10`（`bb7b659`），与 2026-10-27 同步基线一致，本线无新版本，本次未涉及上游同步。
+**2026-10-28 核对**：上游最新 tag 仍为 `v1.0.10`（`bb7b659`），与 2026-10-27 同步基线一致，本线无新版本，本次未涉及上游同步。**2026-10-29 复核**：仍为 `v1.0.10`，无新版本。
 
 ### 2026-10-27 — v1.0.9 (db189e2) → v1.0.10 (bb7b659)
 
@@ -82,6 +82,26 @@ WorkBuddy 一栏的基线同时登记在 `scripts/workbuddy-vendor-baseline.json
 - `workbuddyVersion` → `2026.10.28-misakano+afree`,注释同步改记基线 `49f9db4`。
 - 验证:`go build ./...`、`go vet ./...` 全绿;`gofmt` 干净(vendor 树 LF 直跑;`internal/app` 三个改动文件先 `tr -d '\r'` 再跑);`go test ./internal/app/ -count=1` ok、`./internal/workbuddy/config/ -count=1` ok;全量 `go test ./... -count=1` 仅 `TestChatStreamPassthrough` 失败——既有 flaky,单独 `-run` 复跑 PASS,判据与 2026-10-27 条目一致。
 - 容器验证(本机测试容器 `D:/DockerApp`,镜像 `afree-proxy:test-20261028-1023`):`Up (healthy)`、`GET /health` 200;启动日志 `workbuddy: 思考档位策略开,默认档 max(客户端优先=true,作用域=level)`;面板 `GET /admin/workbuddy/api/config` 回读 `thinking={"enabled":true,"default_effort":"max","client_priority":true,"override_scope":"level"}`、`pool.strategy={"domestic":"weighted_random","international":"weighted_random"}`;`POST` 改 `client_priority=false`/`override_scope=all` → `restart_required:[]` 且日志出现「思考档位策略已热更新」→ 回读一致 → 已改回默认值。
+- 生产:未同步,等用户「同步」指令(见 PROJECT.md 部署节)。
+
+### 2026-10-29 — 49f9db4 → 9ca34c2
+
+- 上游:misakano7545/workbuddy2api-panel,vendor + 三方合并(`scripts/sync_workbuddy.py`;源工作树 `D:/下载/Github/workbuddy2api-panel-misakano` 先 `git checkout --detach misakano/main`)。
+  **fetch 陷阱(本次踩坑)**:该工作树有三个远端——`origin` 指向 xd88dx 的 fork、`upstream` 指向 linguo2625469(已停维护的平行血统,push 已 DISABLED)、`misakano` 才是同步源。核对更新必须 `git fetch misakano main`;本次误 fetch `origin` 拉回 linguo 线的停维护状态(179 提交/-52581 行),差点误判上游删码。
+- 基线:`49f9db4` → 本次无冲突自动推进到 `9ca34c2`(8 提交 / 27 文件 / +1880 -237)
+- 上游主线:
+  - WorkBuddy 5.9.3 客户端请求契约对齐:`ee1c80d`(九处)+ `8ecf115`(国区补六处+抓包黄金头集回归)+ `47f1ed6`(剩余六处)——`headers.go` 大改,新增 `cn_contract_test.go`/`headers_parity_test.go` 两个黄金集回归
+  - 6020/6021 渠道排队恢复改为**请求内轮转**,终态改回 429+Retry-After(`f07eba5`/PR #108)——对 afree 的 429 冷却联动透明(终态语义不变)
+  - 11-128 拆句策略:首选「拆句留在 system」,搬家降为第二层(`e4dd458`,`prompt.go` + `split_test.go`)
+  - 新配置键 `cn.billing_base`(billing/growth 上游 base 覆盖,默认 www.workbuddy.cn,可退回 codebuddy.cn)
+  - 配套:`session/ids.go`、`cache_key.go`、`modelbusy.go`、`report.go` 账单直发重构(新 /v2/report 头族)、`auth.IdSource()`
+- 冲突:0(53 文件干净合并);上游新增 3 个测试文件;跳过本地已删 `upstream/dns_test.go`(上游 dns_test 回归,本地该功能未接入,维持不复活)
+- 脚本适配:`vendor_workbuddy.py` 改写引擎支持**元组计数**——report.go 裸 `c.doJSON(req)` 在基线树 1 处、新上游树 2 处,同一条规则要对两棵构建树都精确命中,固定计数必挂(先报 found 2 再报 found 1 的翻转即此因);规则改 `(1, 2)` 元组,`text.replace` 恒全量替换
+- 装配接线(人工):
+  - `cn.billing_base`:`workbuddy.go` 启动 + `workbuddy_config.go` 热更新,与 `cn.chat_base` 同口径——vendored `billingBase()` 对 CN **无空值回退**,仅显式非空时覆盖(Global 侧两条路径本次同步前已接线);面板不暴露(与 chat_base 同为手写 JSON 键,避免死配置)
+  - `workbuddyVersion` → `2026.10.29-misakano+afree`;restartRequired 清单注释补 `cn.billing_base`
+- 核对不合并:`auth.IdSource()`/6020 请求内轮转/headers 契约均为 vendor 内部改造,无新面板或配置面;上游 `models.hidden`(misakano 线 c5841c1 等)与 afree 模型黑名单语义不同,维持 2026-10-28 的不合并决策
+- 验证:`go build ./...`、`go vet ./...` 全绿;`go test ./internal/workbuddy/... ./internal/app/ -count=1` 唯一失败 `TestChatStreamPassthrough`——既有 flaky,单独 `-run` 复跑 PASS,判定标准同 2026-10-27 条目
 - 生产:未同步,等用户「同步」指令(见 PROJECT.md 部署节)。
 
 ## OpenCode

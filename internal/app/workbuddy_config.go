@@ -127,6 +127,10 @@ func saveWorkbuddyConfig(
 	if newCfg.CN.ChatBase != "" {
 		up.ChatBaseCN = newCfg.CN.ChatBase
 	}
+	// cn.billing_base 同口径：billingBase() 对 CN 无空值回退，仅在显式非空时覆盖。
+	if newCfg.CN.BillingBase != "" {
+		up.BillingBaseCN = newCfg.CN.BillingBase
+	}
 	wbauth.SetGlobalEnabled(newCfg.Global.Enabled)
 
 	p.SetBreaker(newCfg.Pool.BreakerThreshold, newCfg.BreakerCooldownDur, newCfg.BreakerCooldownMaxD)
@@ -187,8 +191,8 @@ func saveWorkbuddyConfig(
 // 只报告确实变化且无法热生效的字段——未变化不重复提示，改回原值自动清除。
 // afree 与上游字段集差异（均为有意）：
 //   - listen/auth_dir/state_file/api_key 被 afree 固定回写部署值，永不变化，不列；
-//   - upstream.*（UA/版本/超时等）、global.*、cn.chat_base、models.hidden 在
-//     saveWorkbuddyConfig 中热应用，不列；
+//   - upstream.*（UA/版本/超时等）、global.*、cn.chat_base、cn.billing_base、
+//     models.hidden 在 saveWorkbuddyConfig 中热应用，不列；
 //   - admin/alerting 在 afree 部署中无消费方（未接线，重启也不生效），不列，
 //     避免诱导用户无效重启。
 func restartRequiredWorkbuddyFields(cur, next *wbconfig.Config) []string {

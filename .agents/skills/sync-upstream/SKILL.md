@@ -58,6 +58,8 @@ python scripts/sync_workbuddy.py            # 实际合并；冲突则解决后 
 python scripts/sync_workbuddy.py --seal     # 冲突清零后登记新基线
 ```
 
+**核对更新只 fetch `misakano` 远端**（2026-10-29 踩坑）：源工作树 `workbuddy2api-panel-misakano` 有三个远端——`origin`=xd88dx 的 fork、`upstream`=linguo2625469（已停维护的平行血统，push 已 DISABLED）、`misakano`=同步源。裸 `git fetch origin main` 会拉回 linguo 线（其停维护提交 -5 万行，差点误判上游删码）。正确姿势：`git -c <代理键> fetch misakano main` 后对 `misakano/main` 比对基线。改写锚点随上游结构漂移时修 `scripts/vendor_workbuddy.py`：同一条规则要同时命中基线树与新上游树，计数可用元组（如 report.go 的 `(1, 2)`）。
+
 脚本前置条件与失败处理见 workbuddy-vendor.md。
 
 **Trae 比对线**（不合并，只核对内嵌脚本）：

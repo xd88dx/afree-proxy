@@ -91,7 +91,10 @@ EGRESS_REWRITES = {
         ("c.HTTP.Do(req)", "c.doHTTP(req, a)", 1),
         ("c.globalRegisterJSON(req)", "c.globalRegisterJSON(a, req)", 3),
     ),
-    "upstream/report.go": (("c.doJSON(req)", "c.doJSON(a, req)", 1),),
+    # 9ca34c2 起 report.go 裸调用基线树 1 处、新上游树 2 处（billing 族 +
+    # /v2/report 直发），作用域都持有 a *auth.Auth → 元组计数；
+    # 合并产物里 1 处保留 OURS 已改写形态、1 处裸调用被本规则改写。
+    "upstream/report.go": (("c.doJSON(req)", "c.doJSON(a, req)", (1, 2)),),
     # misakano 线 school.go 只剩 1 处调用（data, err := 形式）；通配
     # "c.doJSON(req)" 规则会误伤该行，故按字面量整行匹配。
     "upstream/school.go": (("data, err := c.doJSON(req)", "data, err := c.doJSON(a, req)", 1),),
@@ -146,9 +149,14 @@ def apply_egress_rewrites(pkg: Path) -> None:
         text = path.read_text(encoding="utf-8")
         for old, new, expected in rewrites:
             actual = text.count(old)
-            if actual != expected:
+            # expected 可以是 int 或 int 元组：同一规则要同时作用于基线树与
+            # 新上游树，锚点出现次数会随上游结构漂移（如 report.go 在
+            # 49f9db4=1 处、9ca34c2=2 处），元组列出各树可接受的计数；
+            # text.replace 恒替换全部命中。
+            allowed = expected if isinstance(expected, tuple) else (expected,)
+            if actual not in allowed:
                 raise RuntimeError(
-                    f"{relative}: expected {expected} occurrence(s) of {old!r}, found {actual}"
+                    f"{relative}: expected {'/'.join(map(str, allowed))} occurrence(s) of {old!r}, found {actual}"
                 )
             text = text.replace(old, new)
         path.write_text(text, encoding="utf-8", newline="\n")
