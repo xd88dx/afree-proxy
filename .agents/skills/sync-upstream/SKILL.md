@@ -29,6 +29,8 @@ description: 同步 afree-proxy 三条上游线的完整流程与陷阱清单—
 8. **本机 git 出网必须用 URL 级代理键**(2026-10-28 实测):只设 `http.proxy` / `https.proxy` / `ALL_PROXY` 环境变量时,Windows schannel 后端仍报 `schannel: failed to receive handshake, SSL/TLS connection failed`;`-c http.sslBackend=openssl` 也无效。唯一验证可用的形式是三条一起给:
    `git -c 'http.https://github.com.proxy=socks5h://127.0.0.1:10808' -c 'http.proxy=socks5h://127.0.0.1:10808' -c 'https.proxy=socks5h://127.0.0.1:10808' ls-remote|fetch ...`
    仓库无持久代理配置(`git config --list --show-origin | grep proxy` 为空),每条 git 网络命令都要带。连通性判据看 `ls-remote` 是否吐出哈希;shell 显示 `exit=0` 而工具 `exit_code=128` 时按失败处理。
+   **push 不走 https,上面三个代理键对它无效**:本仓 `origin` 是 `git@github.com:xd88dx/afree-proxy.git`(SSH),`~/.ssh/config` 又把 `github.com` 映射到 `ssh.github.com:443`,直推会报 `Connection closed by <ip> port 443`(看着像权限问题,其实是没走代理)。可用形式是让 ssh 自己走代理:
+   `git -c core.sshCommand='ssh -o ProxyCommand="connect -S 127.0.0.1:10808 %h %p"' push origin main`(`connect` 在 `/mingw64/bin/connect`)。先 `ssh -o ProxyCommand='connect -S 127.0.0.1:10808 %h %p' -T git@github.com` 应打印 `Hi <user>! You've successfully authenticated` 再推。
 
 ## 2. 三条线各自的入口
 
