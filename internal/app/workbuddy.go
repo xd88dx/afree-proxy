@@ -31,8 +31,8 @@ import (
 )
 
 // 版本口径：misakano 线不跟语义化版本（CI 用日期版本注入），此处记录上游来源
-// 与同步日期；基线 misakano/main 37b3f4c（2026-10-27 同步）。
-const workbuddyVersion = "2026.10.27-misakano+afree"
+// 与同步日期；基线 misakano/main 49f9db4（2026-10-28 同步）。
+const workbuddyVersion = "2026.10.28-misakano+afree"
 
 // workbuddySubsystem 把源项目的账号池/熔断/调度/面板/兼容接口作为独立子系统
 // 挂在现有 afree-proxy 上。账号凭证与状态落在 data/workbuddy/ 下，不与 Cline
@@ -132,6 +132,16 @@ func startWorkBuddy() (*workbuddySubsystem, error) {
 	up.IdleTimeout = time.Duration(cfg.Upstream.IdleTimeoutSeconds) * time.Second
 	up.SanitizeFingerprints.Store(cfg.Features.SanitizeBlacklistFingerprints)
 	up.SanitizeBrandScope.Store(cfg.Features.SanitizeBrandScope)
+	// 思考档位策略（上游 thinking 节 / issue #18、#21）：启动即装载，面板保存
+	// 配置时经 saveWorkbuddyConfig 热更新。缺省启用（default_effort=max），
+	// 不接这一行则客户端缺档时网关不再补档——上游默认行为会静默丢失。
+	up.SetEffortPolicy(effortPolicyOf(cfg))
+	if cfg.Thinking.Enabled {
+		log.Printf("workbuddy: 思考档位策略开，默认档 %s（客户端优先=%v，作用域=%s）",
+			cfg.Thinking.DefaultEffort, cfg.Thinking.ClientPriority, cfg.Thinking.OverrideScope)
+	} else {
+		log.Printf("workbuddy: 思考档位策略关（不补档、不改写客户端档位）")
+	}
 	up.UserAgent = cfg.Upstream.UserAgent
 	up.ClientVersion = cfg.Upstream.ClientVersion
 	up.CliVersion = cfg.Upstream.CliVersion
@@ -223,6 +233,13 @@ func startWorkBuddy() (*workbuddySubsystem, error) {
 		// misakano 线新增热字段：模型名映射与 6004 降级路由表（见 livecfg.Snapshot）。
 		ModelAliases:  livecfg.NormalizeModelAliases(cfg.Models.Aliases),
 		ModelFallback: cfg.Pool.ModelFallback,
+		// 思考档位策略镜像（上游 thinking 节）：模型页的「网关档位」列据此
+		// 显示当前生效值，缺了这几项面板一律显示「策略关闭」。
+		ThinkingEnabled:        cfg.Thinking.Enabled,
+		ThinkingDefaultEffort:  cfg.Thinking.DefaultEffort,
+		ThinkingClientPriority: cfg.Thinking.ClientPriority,
+		ThinkingOverrideScope:  cfg.Thinking.OverrideScope,
+		ThinkingModelDefaults:  cfg.Thinking.ModelDefaults,
 	})
 	rec := wbusage.New(filepath.Join(dir, "usage.json"))
 	rec.Start()

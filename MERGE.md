@@ -13,11 +13,13 @@ WorkBuddy 一栏的基线同时登记在 `scripts/workbuddy-vendor-baseline.json
 
 ## Cline
 
-本次未涉及上游同步（`571f9b9` 的改动全部属于 OpenCode 线，见文末 OpenCode 节）。
+本次未涉及上游同步（2026-10-28 核对：`foxy1402/cline-proxy` main 仍为 `571f9b9`，与 2026-10-27 同步基线一致，无新提交；`571f9b9` 的改动全部属于 OpenCode 线，见文末 OpenCode 节）。
 
 ## TreaWork
 
 上游:`autumnsentiment/Trae2api-cn`(Trae CN / Trae Solo CN 模型反代,Python,MIT)。**这条线不是 vendor/merge 关系**:上游是 Python 全栈,本地 `internal/trae/` + `internal/app/trae.go` 是 Go 重写,行为跟随上游协议;唯一逐行移植的产物是内嵌的本机授权助手 `web_login.py`(`internal/trae/helper_script.go`),只有它需要跟上游比对。2026-10-27 的 cline-proxy 合并未涉及本线。
+
+**2026-10-28 核对**：上游最新 tag 仍为 `v1.0.10`（`bb7b659`），与 2026-10-27 同步基线一致，本线无新版本，本次未涉及上游同步。
 
 ### 2026-10-27 — v1.0.9 (db189e2) → v1.0.10 (bb7b659)
 
@@ -53,7 +55,34 @@ WorkBuddy 一栏的基线同时登记在 `scripts/workbuddy-vendor-baseline.json
   - 根因（已定位，非猜测）：`tokensPerSecond()`（`internal/workbuddy/server/handler.go:2011`）在 `ttfb <= 0` 时返回 `ok=false`，`RecordTokenUsage`（`pool/state.go:395`）据此把 `LastTokensPerSecond` 置 nil；而测试断言（`handler_test.go:462`）要求该值非 nil 且 > 0。测试用 httptest 即时响应，`ttfb` 常被测成 0，于是整包跑必挂、单独跑则过——属测试与环境速度耦合的既有缺陷。
   - 决策（用户 2026-10-27 拍板）：**不修**。该文件是上游测试，改动会与后续上游同步持续产生冲突，收益不抵成本；保留 flaky 并在本台账与 skill 中记录判定方法。
 
-- 生产：与 OpenCode 线同一镜像 `afree-proxy:prod-20261027-35`（一次构建覆盖两条线），部署验证见 OpenCode 节。
+- 生产:与 OpenCode 线同一镜像 `afree-proxy:prod-20261027-35`(一次构建覆盖两条线),部署验证见 OpenCode 节。
+
+### 2026-10-28 — 5367e78 → 49f9db4
+
+- 上游:misakano7545/workbuddy2api-panel,vendor + 三方合并(`scripts/sync_workbuddy.py`;源工作树 `D:/下载/Github/workbuddy2api-panel-misakano` 先 `git checkout --detach misakano/main`)
+- 基线:`5367e78` → 本次 `--seal` 后推进到 `49f9db4`
+- 上游新增(10 提交 / 41 文件 / +2632 -116),三条主线:
+  - 网关思考档位策略(#104 `1792ef1`+`b3623b5`+`e3a6f7a`,#105 `2fe1aa2`,#106 `a5e3de0`):配置新增 `thinking` 节(`enabled`/`default_effort`/`client_priority`/`override_scope`/`model_defaults`)、`upstream/effort_policy.go`、`server/listing.go` 按策略改写 `/v1/models` 的 `reasoning_default_effort` 与 `reasoning_supported_efforts`、面板模型行内档位与「下游可见」开关、配置页策略三选一
+  - sanitize:`4f79fc8`(身份句式整句清理、`@` 段换 workspace root、11102 负缓存 TTL)、`db31fc2`(中和 DSH 系统提示里的 `@` 路径说明段)、`49f9db4`(enum 补类型、11-128 搬家抢救、默认监听回环、上游目录监控 `server/watchdog.go`)
+  - 测试:`4a577fc`(补 #104 改签名后遗漏的 `prepareBodyOpt` 调用点)、`tool_enum_type_test.go`、`listing_test.go`、`payload_test.go`
+- 冲突(4 文件 5 处,全部「两侧保留」,无单向丢弃):
+  - `internal/workbuddy/panel/panel.go`:上游 `stalePanelModelsSnapshot()` 降级目录 **vs** 本地 `p.withLiveFlags()` + `global_source` → 探测失败时改用 stale 快照并标 `stale:true`(保留 `WARN` 日志),正常分支 `"models": p.withLiveFlags(out)`;两侧都拿不到才 `502`。
+  - `internal/workbuddy/livecfg/livecfg.go`:上游 Thinking 五字段 **与** 本地 `ModelRateFilter float64` 并集保留。
+  - `internal/workbuddy/config/config.go`:上游 Thinking 缺省(`enabled=true`/`max`/`client_priority=true`/`level`) **与** 本地地区调度缺省(`domestic`/`international` = `weighted_random`)都保留;`normalize()` 同时调 `normalizeThinking()` 与 `Pool.Strategy.Normalize()`。
+  - `internal/workbuddy/config/config_test.go`:冲突块内本地无对应测试,按上游语义重建 `TestThinkingDefaults`/`TestThinkingRejectsInvalid`/`TestThinkingNormalize`(非丢弃语义)。
+- 装配接线(脚本不代劳):
+  - `internal/app/workbuddy.go`:启动即 `up.SetEffortPolicy(effortPolicyOf(cfg))` 并打印策略日志;`livecfg.Snapshot` 补 `ThinkingEnabled`/`ThinkingDefaultEffort`/`ThinkingClientPriority`/`ThinkingOverrideScope`/`ThinkingModelDefaults` 五个镜像字段。
+  - `internal/app/workbuddy_config.go`:新增 `effortPolicyOf()`(`nil` → `nil`,等于完全不碰出站档位);热更新路径同样写五个镜像字段 + `SetEffortPolicy` + 「已热更新」日志——**改档无需重启**。
+  - `internal/app/admin_html.go`:WorkBuddy 配置页新增 4 个控件(`thinking.enabled`、`default_effort` 六档下拉、`client_priority`、`override_scope`)与对应中文词条;`thinking.model_defaults`(按模型覆盖)不进表单,手写 JSON 后由深合并保留。
+  - `/v1/models` 档位声明**无需额外接线**:`workbuddySubsystem.modelList()` 直接取 `w.server.ModelList()`,`declareReasoning` 在 vendor 内生效。实测 105 条模型里 11 条 wb 模型带 `reasoning_*`:`wbcn:glm-5.3-flash` → `max`(档位表含 max,策略复查生效)、`wbcn:hy3` → `high`(档位表无 max,自动 clamp),证明改写确实按策略走而非透传上游原值。
+  - 未接线(核查后决定,非疏漏):
+    - `server/watchdog.go` 上游目录监控:需要 alerting 出口,afree 无该管道;`watchdog.enabled` 默认 false,面板**不**暴露开关(避免死配置)。
+    - 上游 `app.js` 的模型行内「网关档位」下拉与「下游可见」开关:afree 面板不复用上游前端;`models.hidden` 与 afree 既有模型黑名单语义不同,未合并。
+- `internal/config.example.json`:从上游 `config.example.json` 原样拷入(非改写)。上游 `TestConfigExampleParses` 读 `../../config.example.json`——上游在 `cmd/server/`,vendor 后落在 `internal/workbuddy/config/`,该相对路径正好指向 `internal/config.example.json`。**不改上游测试文件**(会被下次同步覆盖)。
+- `workbuddyVersion` → `2026.10.28-misakano+afree`,注释同步改记基线 `49f9db4`。
+- 验证:`go build ./...`、`go vet ./...` 全绿;`gofmt` 干净(vendor 树 LF 直跑;`internal/app` 三个改动文件先 `tr -d '\r'` 再跑);`go test ./internal/app/ -count=1` ok、`./internal/workbuddy/config/ -count=1` ok;全量 `go test ./... -count=1` 仅 `TestChatStreamPassthrough` 失败——既有 flaky,单独 `-run` 复跑 PASS,判据与 2026-10-27 条目一致。
+- 容器验证(本机测试容器 `D:/DockerApp`,镜像 `afree-proxy:test-20261028-1023`):`Up (healthy)`、`GET /health` 200;启动日志 `workbuddy: 思考档位策略开,默认档 max(客户端优先=true,作用域=level)`;面板 `GET /admin/workbuddy/api/config` 回读 `thinking={"enabled":true,"default_effort":"max","client_priority":true,"override_scope":"level"}`、`pool.strategy={"domestic":"weighted_random","international":"weighted_random"}`;`POST` 改 `client_priority=false`/`override_scope=all` → `restart_required:[]` 且日志出现「思考档位策略已热更新」→ 回读一致 → 已改回默认值。
+- 生产:未同步,等用户「同步」指令(见 PROJECT.md 部署节)。
 
 ## OpenCode
 
@@ -78,6 +107,7 @@ WorkBuddy 一栏的基线同时登记在 `scripts/workbuddy-vendor-baseline.json
 - 顺手修正：`zen_decode_test.go` 的 import 由 `cline-go-proxy/internal/kit` 改为 `afree-proxy/internal/kit`（上游 module 名残留，会让 `go vet ./...` 失败）。
 - 验证：`go build ./...` 通过；`go vet ./...` 通过；`go test ./internal/app/ -run 'Zen|Session|OrgID|Egress|Decode|Gate' -count=1` → ok。
 - 生产：镜像 `afree-proxy:prod-20261027-35` 重建 `afree` 容器（`--restart always`、`D:/DockerApp/afree:/app/data`、`-p 3457:3457`），env 全量哈希与旧容器一致（`9eb6f4999012f044`，未丢凭据），状态 healthy；`GET /`→302 登录页、`GET /v1/models`→200；镜像内验证 `ocOrgID` 3 处、`ocSessionRotate` 0 处。
+- **2026-10-28 核对**：`foxy1402/cline-proxy` main 仍为 `571f9b9`，无新提交，本次未涉及本线上游同步。
 
 ## 本地死代码清理
 

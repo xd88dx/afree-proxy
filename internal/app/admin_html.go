@@ -1193,6 +1193,25 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
           <div class="wb-field"><label for="wbPromptFile">Prompt file</label><input id="wbPromptFile" data-wb-path="prompt.file" data-wb-send-empty="1" placeholder="Leave empty = built-in default prompt"></div>
           <div class="wb-switch"><input type="checkbox" id="wbSanitize" data-wb-path="features.sanitize_blacklist_fingerprints"><label for="wbSanitize">Sanitize outbound fingerprints</label></div>
           <div class="wb-switch"><input type="checkbox" id="wbStickyEnabled" data-wb-path="session_sticky.enabled"><label for="wbStickyEnabled">Sticky session routing</label></div>
+          <div class="wb-switch"><input type="checkbox" id="wbThinkingEnabled" data-wb-path="thinking.enabled"><label for="wbThinkingEnabled">Thinking tier policy</label></div>
+          <div class="wb-field"><label for="wbThinkingEffort">Default thinking tier</label>
+            <select id="wbThinkingEffort" data-wb-path="thinking.default_effort">
+              <option value="max">max — highest the model supports</option>
+              <option value="xhigh">xhigh</option>
+              <option value="high">high</option>
+              <option value="medium">medium</option>
+              <option value="low">low</option>
+              <option value="minimal">minimal</option>
+            </select>
+          </div>
+          <div class="wb-switch"><input type="checkbox" id="wbThinkingClientPriority" data-wb-path="thinking.client_priority"><label for="wbThinkingClientPriority">Client tier wins</label></div>
+          <div class="wb-field"><label for="wbThinkingScope">Gateway override scope</label>
+            <select id="wbThinkingScope" data-wb-path="thinking.override_scope">
+              <option value="level">level — tiers only, client off kept</option>
+              <option value="all">all — also override client off</option>
+            </select>
+          </div>
+          <div class="hint" style="margin-top:6px">Tier policy fills in a thinking tier when the client omits one; override scope only matters when client tiers do not win.</div>
           <div class="hint" style="margin-top:10px">Upstash Redis mirror, auth dir, and state file are edited in the config file manually (restart items).</div>
         </div>
       </div>
@@ -2147,6 +2166,14 @@ const I18N_ZH = {
   'Leave empty = built-in default prompt': '留空 = 内置默认提示词',
   'Sanitize outbound fingerprints': '出站请求指纹脱敏',
   'Sticky session routing': '会话粘性路由',
+  'Thinking tier policy': '思考档位策略',
+  'Default thinking tier': '默认思考档位',
+  'max — highest the model supports': 'max — 模型支持的最高档',
+  'Client tier wins': '客户端档位优先',
+  'Gateway override scope': '网关覆盖作用域',
+  'level — tiers only, client off kept': 'level — 只改档位，保留客户端关闭思考',
+  'all — also override client off': 'all — 连客户端关闭也改写为开启',
+  'Tier policy fills in a thinking tier when the client omits one; override scope only matters when client tiers do not win.': '策略在客户端未传档位时补上思考档位；覆盖作用域仅在客户端档位不优先时才起作用。',
   'Upstash Redis mirror, auth dir, and state file are edited in the config file manually (restart items).': 'Upstash Redis 镜像、凭证目录与状态文件路径需手工编辑配置文件（判为重启项）。',
   'Discard changes': '放弃修改',
   'Save configuration': '保存配置',

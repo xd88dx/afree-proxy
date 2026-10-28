@@ -26,14 +26,21 @@ description: 同步 afree-proxy 三条上游线的完整流程与陷阱清单—
 6. **收尾必写 `MERGE.md` 台账**（用户 2026-10-27 要求）：仓库根 `MERGE.md` 按 Cline / TreaWork / WorkBuddy / OpenCode 四条线记录同步历史。每次同步在对应线追加一节 `### YYYY-MM-DD — <基线短哈希> → <目标短哈希>`，写明上游仓库与合并方式、基线与目标、吸收项（带原因）、丢弃项（带原因）、本地定制保留清单、验证结果；未涉及的线保留原文并写"本次未涉及上游同步"。历史记录只追加不删改。
    **分节前先判平台归属，写错节等于台账失效**：`foxy1402/cline-proxy` 是**一个上游承载两条平台线**——`zen*.go` / `admin_zen.go` / 面板 `oc*` 字段 / `ZEN_*` 配置 / `internal/kit/http.go`（`DecodeResponse` 只被 `zen.go` 调用）属于 **OpenCode**；Cline 账号池与 `/v1` 通用转发/方言转换属于 **Cline**。判据命令：`git diff --name-only <本地旧HEAD> <merge提交> | grep -iE 'zen|opencode'` 与 `| grep -i cline`，两者只应付出一条线；不要因为上游叫 cline-proxy 就把 zen 改动记在 Cline 下。
 7. **根 `AGENTS.md` 是其他 agent 的唯一自动入口**:`MERGE.md` 和本 skill 都不会被其他 agent 自动加载。根目录按「通用 / 专属」拆两份——`AGENTS.md` 放**跨项目通用规则**(git 纪律、验证要求、删除判据、上游台账格式),`PROJECT.md` 放**本项目专属事实**(平台归属表、三条线入口、flaky 不修、本地定制清单、部署流程);`AGENTS.md` 顶部强指向 `PROJECT.md` 并要求动手前必读。改动这些规则时同步更新对应文件,否则下一个 agent 会重犯。
+8. **本机 git 出网必须用 URL 级代理键**(2026-10-28 实测):只设 `http.proxy` / `https.proxy` / `ALL_PROXY` 环境变量时,Windows schannel 后端仍报 `schannel: failed to receive handshake, SSL/TLS connection failed`;`-c http.sslBackend=openssl` 也无效。唯一验证可用的形式是三条一起给:
+   `git -c 'http.https://github.com.proxy=socks5h://127.0.0.1:10808' -c 'http.proxy=socks5h://127.0.0.1:10808' -c 'https.proxy=socks5h://127.0.0.1:10808' ls-remote|fetch ...`
+   仓库无持久代理配置(`git config --list --show-origin | grep proxy` 为空),每条 git 网络命令都要带。连通性判据看 `ls-remote` 是否吐出哈希;shell 显示 `exit=0` 而工具 `exit_code=128` 时按失败处理。
 
 ## 2. 三条线各自的入口
 
 **fork 上游线**（merge 冲突多，是体力活）：
 
 ```bash
-git fetch https://github.com/foxy1402/cline-proxy main
-# 上次同步到哪：找最近的 "merge: sync upstream" 提交，其第二父即基线
+# 本机 git 出网要带 URL 级代理键(见 §1 铁律 8),否则 schannel 握手失败
+git -c 'http.https://github.com.proxy=socks5h://127.0.0.1:10808' \
+    -c 'http.proxy=socks5h://127.0.0.1:10808' \
+    -c 'https.proxy=socks5h://127.0.0.1:10808' \
+    fetch https://github.com/foxy1402/cline-proxy main
+# 上次同步到哪:找最近的 "merge: sync upstream" 提交,其第二父即基线
 git log --oneline --grep="sync upstream" --merges -1
 git log --oneline <基线哈希>..FETCH_HEAD   # 只用于预览，合并时用显式哈希
 git merge --no-ff --no-commit <上游HEAD哈希>   # 试合并，评估冲突

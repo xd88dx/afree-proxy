@@ -52,6 +52,7 @@ python scripts/sync_workbuddy.py --seal
 1. `internal/app/workbuddy.go` + `workbuddy_config.go`：新配置键的装配与热应用、`restartRequired` 清单、`workbuddyVersion` 版本号对齐上游 `appVersion`（脚本会 diff 提醒）。
 2. 上游新增面板能力若要在集成面板露出，按 add-platform skill 的面板规范接 i18n。
 3. 容器验证（SKILL.md §3），然后 `git add -A && git commit`（信息注明上游版本区间，参照 bef9062 的格式）。
+4. **`internal/config.example.json` 是上游根文件的副本，脚本不会带**（它不在 vendor 树内）。上游 `cmd/server/config_test.go` 的 `TestConfigExampleParses` 读 `../../config.example.json`：上游在 `cmd/server/`，vendor 后包落在 `internal/workbuddy/config/`，该相对路径正好指向 `internal/config.example.json`。上游改了样例就 `cp <上游克隆>/config.example.json internal/config.example.json`，否则 `go test ./internal/workbuddy/config/` 因缺文件失败。**不要改上游测试文件绕过**（下次同步会覆盖，且与「不为过测试改上游测试」的既定口径冲突）。
 
 ## 5. vendor 构建失败的唯一原因：改写锚点失效
 

@@ -3,6 +3,7 @@ package app
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"reflect"
@@ -92,9 +93,20 @@ func saveWorkbuddyConfig(
 		// misakano 线新增热字段：模型名映射与 6004 降级路由表。
 		ModelAliases:  livecfg.NormalizeModelAliases(newCfg.Models.Aliases),
 		ModelFallback: newCfg.Pool.ModelFallback,
+		// 思考档位策略镜像：与 up.SetEffortPolicy 同批热更新，面板立即回显新生效值。
+		ThinkingEnabled:        newCfg.Thinking.Enabled,
+		ThinkingDefaultEffort:  newCfg.Thinking.DefaultEffort,
+		ThinkingClientPriority: newCfg.Thinking.ClientPriority,
+		ThinkingOverrideScope:  newCfg.Thinking.OverrideScope,
+		ThinkingModelDefaults:  newCfg.Thinking.ModelDefaults,
 	})
 	up.SanitizeFingerprints.Store(newCfg.Features.SanitizeBlacklistFingerprints)
 	up.SanitizeBrandScope.Store(newCfg.Features.SanitizeBrandScope)
+	// 思考档位策略热生效：改默认档 / 客户端优先 / 作用域后，下一次 chat 即按新策略。
+	up.SetEffortPolicy(effortPolicyOf(newCfg))
+	log.Printf("workbuddy: 思考档位策略已热更新（开=%v，默认档=%s，客户端优先=%v，作用域=%s）",
+		newCfg.Thinking.Enabled, newCfg.Thinking.DefaultEffort,
+		newCfg.Thinking.ClientPriority, newCfg.Thinking.OverrideScope)
 	up.HTTP.Timeout = time.Duration(newCfg.Upstream.TimeoutSeconds) * time.Second
 	up.HeaderTimeout = time.Duration(newCfg.Upstream.HeaderTimeoutSeconds) * time.Second
 	if tr, ok := up.ChatHTTP.Transport.(*http.Transport); ok {
@@ -234,4 +246,20 @@ func mergedWorkbuddyJSON(m map[string]any) []byte {
 		return []byte("{}")
 	}
 	return b
+}
+
+// effortPolicyOf 把 config thinking 节转成 upstream 运行时策略（同上游
+// cmd/server.effortPolicyOf）。nil 配置返回 nil，SetEffortPolicy 对 nil 记
+// 「无策略」，即完全不碰出站档位；Enabled=false 的策略同样不生效。
+func effortPolicyOf(cfg *wbconfig.Config) *upstream.EffortPolicy {
+	if cfg == nil {
+		return nil
+	}
+	return &upstream.EffortPolicy{
+		Enabled:        cfg.Thinking.Enabled,
+		DefaultEffort:  cfg.Thinking.DefaultEffort,
+		ClientPriority: cfg.Thinking.ClientPriority,
+		OverrideScope:  cfg.Thinking.OverrideScope,
+		ModelDefaults:  cfg.Thinking.ModelDefaults,
+	}
 }
