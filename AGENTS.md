@@ -18,7 +18,17 @@
 
 ## 3. 换行与格式化
 
-格式化前先确认仓库换行风格（`.gitattributes` 或 `git ls-files --eol`）。CRLF 仓库用 `gofmt` 前先 `tr -d '\r'`，格式化后 `sed 's/$/\r/'` 还原，否则整文件显示为全部改动。
+**行尾由 `.gitattributes` + `.editorconfig` 强制统一为 LF**（唯一例外：Windows 原生脚本 `.ps1/.cmd/.bat` 用 CRLF；`entrypoint.sh` 必须 LF）。这两个文件是权威，不要凭 `core.autocrlf` 或编辑器默认值推断风格，也不要再手工做「反斜杠 r」的来回转换。
+
+判据：`git ls-files --eol` 应全部为 `i/lf w/lf`。出现 `w/crlf` 或 `w/mixed` 就是工作区没按规则检出——`w/mixed`（同一文件一半 LF 一半 CRLF）最危险，`gofmt` 和 diff 都会把整文件翻成改动。
+
+发现不一致时，先确认没有别人未提交的改动，再重整：
+
+```bash
+git status --short          # 有并行 agent 的改动时，不要往下走
+git add --renormalize .     # 只按 .gitattributes 重整行尾，不改内容
+git status --short          # 复核：应只列出纯行尾变化的文件
+```
 
 用 `git diff --stat` 复核：纯逻辑改动不应出现大量无关增删行。
 
@@ -62,10 +72,10 @@
 
 ## 10. 外网连接与代理
 
-本机出网必须经代理。三个候选的**实测结论（2026-10-28）**，用前先探、通即用——代理服务端的分流规则会变，本表有保质期：
+本机出网必须经代理。五个候选的**实测结论（2026-10-28 12:39）**，用前先探、通即用——代理服务端的分流规则会变，本表有保质期：
 
 ```bash
-for p in 127.0.0.1:10808 127.0.0.1:7890 10.10.10.3:1080; do
+for p in 127.0.0.1:10086 127.0.0.1:7890 127.0.0.1:10808 10.10.10.5:10086 10.10.10.3:1080; do
   curl -s -o /dev/null -w "$p %{http_code} %{time_total}s\n" \
     -x "socks5h://$p" --max-time 10 https://api.github.com/
 done
@@ -73,28 +83,32 @@ done
 
 判据：`http_code=200` 且耗时正常才算通；`000` 且耗时接近 `--max-time` 就是不可用。
 
-| 代理 | 支持协议 | GitHub（`api.github.com`） | 通用墙外 | 结论 |
-|---|---|---|---|---|
-| `127.0.0.1:10808` | socks5 / socks5h / http | 200，0.73–0.96s | google `204`；wikipedia、1.1.1.1、raw.githubusercontent 全通，0.73–0.89s | **首选**：全通、延迟稳定 |
-| `127.0.0.1:7890` | socks5 / socks5h / http | 200，0.42–0.62s（三者最快） | **google 不通**（http、socks5、socks5h 均为 `000`）；wikipedia、1.1.1.1 约 2.0–2.3s | 备选：只有 GitHub 族更快，域名覆盖不全，用它必须能回退 |
-| `10.10.10.3:1080` | — | 20s 超时 `000` | 未再测（前者已失败） | **不可用**：TCP 端口开着，SOCKS 转发不通 |
+| 代理 | 支持协议 | api.github.com | gstatic/generate_204 | 其他实测 | 结论 |
+|---|---|---|---|---|---|
+| `127.0.0.1:10086` | socks5 / socks5h | 200，0.23s | 204，0.21s | raw.githubusercontent 301；api.openai.com 401（能到达即链路通） | **首选**：本机 mihomo，全场最快 |
+| `127.0.0.1:10808` | socks5 / socks5h / http | 200，0.43s | 204，0.80s | raw 301；openai 401 | 备选：稳定，延迟略高 |
+| `127.0.0.1:7890` | socks5 / socks5h / http | 200，0.42s | 204，1.79s | — | 备选：GitHub 快，通用墙外明显偏慢 |
+| `10.10.10.5:10086` | socks5 / socks5h | 200，0.42s | 204，0.41s | — | 备选：内网 iStore 上的 mihomo（host 网络） |
+| `10.10.10.3:1080` | socks5 / socks5h | 200，1.59s | 204，0.30s | — | 兜底：链路通但慢 |
 
-- 默认走 `10808`。只有纯 GitHub 批量操作、且刚探过 7890 可用时，才换 7890 提速。
-- **别用「端口在听」「TCP 能连上」判代理可用**——`10.10.10.3:1080` 正是端口开、转发死。也别说"设了 `ALL_PROXY` 就能用"：Windows schannel 下环境变量代理对 git 无效（报 `schannel: failed to receive handshake`），`http.sslBackend=openssl` 也救不回来。
+- 默认走 `127.0.0.1:10086`；不通时按 `127.0.0.1:10808` → `127.0.0.1:7890` 回退。
+- **Hermes 后端（Hermes Agent 自身的模型与工具出网）固定用 `127.0.0.1:10086`。**
+- 上一版（同日早些时候）的结论**已翻转，不要照抄旧表**：`10.10.10.3:1080` 由「不可用」恢复为可通（当时是端口开、转发死）；`127.0.0.1:7890` 的 google 由「不通」变为可通但慢（1.79s）；`127.0.0.1:10808` 不再是首选。
+- **别用「端口在听」「TCP 能连上」判代理可用**——端口开、转发死是常态。也别说"设了 `ALL_PROXY` 就能用"：Windows schannel 下环境变量代理对 git 无效（报 `schannel: failed to receive handshake`），`http.sslBackend=openssl` 也救不回来。
 
 git 出网（HTTPS）必须用 **URL 级**代理键：
 
 ```bash
-git -c 'http.https://github.com.proxy=socks5h://127.0.0.1:10808' \
-    -c 'http.proxy=socks5h://127.0.0.1:10808' \
-    -c 'https.proxy=socks5h://127.0.0.1:10808' fetch <remote> main
+git -c 'http.https://github.com.proxy=socks5h://127.0.0.1:10086' \
+    -c 'http.proxy=socks5h://127.0.0.1:10086' \
+    -c 'https.proxy=socks5h://127.0.0.1:10086' fetch <remote> main
 ```
 
 git 推送（`origin` 是 SSH）走另一条路——上面三个代理键对 push 无效：
 
 ```bash
-ssh -o ProxyCommand='connect -S 127.0.0.1:10808 %h %p' -T git@github.com   # 应回 Hi <user>! You've successfully authenticated
-git -c core.sshCommand='ssh -o ProxyCommand="connect -S 127.0.0.1:10808 %h %p"' push origin main
+ssh -o ProxyCommand='connect -S 127.0.0.1:10086 %h %p' -T git@github.com   # 应回 Hi <user>! You've successfully authenticated
+git -c core.sshCommand='ssh -o ProxyCommand="connect -S 127.0.0.1:10086 %h %p"' push origin main
 ```
 
 `connect` 位于 `/mingw64/bin/connect`。直推报 `Connection closed by <ip> port 443` 是没走代理，不是密钥或权限问题。
