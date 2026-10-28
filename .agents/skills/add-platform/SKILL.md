@@ -21,7 +21,7 @@ description: 在 afree-proxy 中新增一个上游平台的完整迁移配方—
 2. **代理隔离第一**：宁弃请求不暴露直连 IP，绝不回退直连；`PROXY_ISOLATION` 只接受 true/false；"清空代理" = 清绑定 + 全部置禁用，二者永远绑 together。
 3. **暂存编辑模型**：账号表的一切编辑只改 DOM（`markRowDirty` 黄底），点平台"保存"按钮才逐行 diff 快照提交。新列、新交互必须接进这套体系，不做即时保存（OpenCode 的 Enabled 勾选是历史例外，别模仿）。
 4. **i18n 机制**：静态文本写英文源文，中文显示靠 `I18N_ZH` 词条；JS 动态拼接的每个文本片段单独包 `T()`；`egComboHTML` 的 title 参数调用方负责 T()；字典键结尾不能带空格（HTML 里要保留尾随空格用 `&#x20;`）。key 池平台页面**全量 i18n 化**（OpenRouter/AMDCloud/TokenHarbor 接入时零英文残留是验收项）。细节见 references/frontend.md §1。
-5. **验证铁律**：本机无 Go，一律 docker builder；改完前端必须 `docker rm -f` 重建镜像才能在浏览器看到新页面（`docker restart` 不更新文件系统）；会话回显不可信，以 git diff / 真实构建 / 浏览器截图为准。
+5. **验证铁律**：本机已有 Go（`C:\AppSelf\Go`，go1.27.2，PATH 已含；2026-10-15 起），宿主机直接 `go build/vet/test`；旧的 `afree-proxy:workbuddy-builder` 编译镜像已于 2026-10-27 清理删除，别再引用。改完前端必须 `docker rm -f` 重建镜像才能在浏览器看到新页面（`docker restart` 不更新文件系统）；会话回显不可信，以 git diff / 真实构建 / 浏览器截图为准。
 
 ## 2. 总流程
 
@@ -50,36 +50,37 @@ description: 在 afree-proxy 中新增一个上游平台的完整迁移配方—
 | 代理池相关 | egComboHTML 主/备双槽绑定、proxy/clear 语义、出口观测 | backend §6 |
 | 克隆一个 key 池平台 | internal/openrouter 四件套改名 + app 桥接接线清单 | backend §9 |
 
-## 4. 平台对照速查表（2026-10-11 六平台）
+## 4. 平台对照速查表（2026-10-29 八平台；OpenRouter/AMDCloud/TokenHarbor 三列共用 key 池克隆模式）
 
-| | Cline | OpenCode(zen) | WorkBuddy | OpenRouter/AMDCloud/TokenHarbor |
-|---|---|---|---|---|
-| 形态 | 原生账号池 | key 池（app 层） | vendor 树 | key 池（四件套克隆） |
-| 凭据 | refreshToken/API key（Account） | API key 列表（zen keys） | auth 文件目录 | API key 列表（Keys） |
-| 启停字段 | `Account.PoolEnabled *bool` | key `routingEnabled` | `auth.poolEnabled *bool` | `KeyRoutingEnabled map[string]bool` |
-| 默认禁用点 | `pool.go addAccount` | `reconcileZenKeyRouting` | vendor `panel/login.go`+`import.go` | 各包 `ReconcileRouting`（config.go） |
-| 启停 API | `/accounts/pool/enabled{,/all}` | `/opencode/keys/routing{,/all}` | `/workbuddy/enabled` | `/<or|amd|tokenharbor>/keys/routing{,/all}` |
-| 绑定代理 | `/accounts/proxy(/clear)` | `/opencode/keys/proxy(/clear)` | 行内 egCommit 暂存 | `/<x>/keys/proxy(/clear)` |
-| 选号过滤 | `pool.go accountPoolEnabled` | zen 轮转跳过禁用 key | wbpool ServableForRealm | 各包 pool.go `RoutingEnabled` 过滤 |
-| 平台设置 | /admin/api/config | /admin/api/opencode/config | wbConfigForm→vendor API | /admin/api/<x>/config{,/update} |
-| 前端 tbody | `accountTableBody` | `ocKeysBody` | `wbAccountsBody` | `orKeysBody`/`amdKeysBody`/`thKeysBody` |
-| 快照变量 | `accSnapshot` | `keySnapshot` | `wbSnapshot` | `orKeySnapshot`/`amdKeySnapshot`/`thKeySnapshot` |
-| 网关前缀 | `cline-free/` | `zen:` | `wbcn:`/`wbgb:` | `oprt:` / `amd:` / `tkhb:` |
-| 添加入口弹窗 | `accAddDialog` | `zenKeyAddDialog` | `wbAddDialog` | `<x>KeyAddDialog` |
-| 走池下拉 | `ppCline` | `ppZen` | `ppWb` | `ppOr`/`ppAmd`/`ppTh` |
-| 仪表盘卡/统计桶 | dashCline/reqCline | dashOc/reqZen | dashWb/reqWb | dashOr/dashAmd/dashTh + req 同名 |
+| | Cline | OpenCode(zen) | WorkBuddy | TraeWork | OpenRouter/AMDCloud/TokenHarbor | Other |
+|---|---|---|---|---|---|---|
+| 形态 | 原生账号池 | key 池（app 层） | vendor 树 | Go 重写协议栈（`internal/trae/` + `internal/app/trae.go`） | key 池（四件套克隆） | key 池四件套 + 多子平台（`internal/other/`，platforms 数组） |
+| 凭据 | refreshToken/API key（Account） | API key 列表（zen keys） | auth 文件目录 | OAuth 账号（本机 8765 helper 网页授权/手动粘贴） | API key 列表（Keys） | 各子平台 key |
+| 启停字段 | `Account.PoolEnabled *bool` | key `routingEnabled` | `auth.poolEnabled *bool` | `PoolEnabled *bool`（nil=参与）+ 账号级路由参与表 | `KeyRoutingEnabled map[string]bool` | `KeyRoutingEnabled map[string]bool`（按子平台） |
+| 默认禁用点 | `pool.go addAccount` | `reconcileZenKeyRouting` | vendor `panel/login.go`+`import.go` | `internal/trae/config.go` `ReconcilePoolEnabled` | 各包 `ReconcileRouting`（config.go） | `internal/other/config.go` Reconcile（新增 key 默认 false） |
+| 启停 API | `/accounts/pool/enabled{,/all}` | `/opencode/keys/routing{,/all}` | `/workbuddy/enabled` | `/trae/accounts/enabled` + `/trae/accounts/routing{,/all}` | `/<or|amd|tokenharbor>/keys/routing{,/all}` | `/other/keys/routing{,/all}` |
+| 绑定代理 | `/accounts/proxy(/clear)` | `/opencode/keys/proxy(/clear)` | 行内 egCommit 暂存 | `/trae/accounts/proxy(/clear)` | `/<x>/keys/proxy(/clear)` | `/other/keys/proxy(/clear)`（按 slug） |
+| 选号过滤 | `pool.go accountPoolEnabled` | zen 轮转跳过禁用 key | wbpool ServableForRealm | `internal/trae/pool.go` 路由表过滤 | 各包 pool.go `RoutingEnabled` 过滤 | internal/other `Platform.RoutingEnabled` |
+| 平台设置 | /admin/api/config | /admin/api/opencode/config | wbConfigForm→vendor API | `/trae/config{,/update}` | `/admin/api/<x>/config{,/update}` | `/other/config{,/update}` + `/other/platforms`（子平台增删） |
+| 前端 tbody | `accountTableBody` | `ocKeysBody` | `wbAccountsBody` | `traeAccountsBody` | `orKeysBody`/`amdKeysBody`/`thKeysBody` | `otherKeysBody` + `otherPlatformBody` |
+| 快照变量 | `accSnapshot` | `keySnapshot` | `wbSnapshot` | `traeAccSnapshot` | `orKeySnapshot`/`amdKeySnapshot`/`thKeySnapshot` | `otherKeySnapshot` |
+| 网关前缀 | `cline-free/` | `zen:` | `wbcn:`/`wbgb:` | `trae:` | `oprt:` / `amd:` / `tkhb:` | 子平台自定前缀（如 `acme:`） |
+| 添加入口弹窗 | `accAddDialog` | `zenKeyAddDialog` | `wbAddDialog` | `traeAddDialog` | `<x>KeyAddDialog` | `otherKeyAddDialog`/`otherPlatformDialog` |
+| 走池下拉 | `ppCline` | `ppZen` | `ppWb` | `ppTrae` | `ppOr`/`ppAmd`/`ppTh` | `ppOther` |
+| 仪表盘卡/统计桶 | dashCline/reqCline | dashOc/reqZen | dashWb/reqWb | dashTrae/reqTrae | dashOr/dashAmd/dashTh + req 同名 | dashOther/reqOther |
 
 ## 5. 验证清单
 
 ```bash
-# 编译+vet+全量测试（容器内无 git，路径挂载注意 MSYS_NO_PATHCONV=1）
-MSYS_NO_PATHCONV=1 docker run --rm -v "D:/下载/Github/afree-proxy:/build" -w /build \
-  afree-proxy:workbuddy-builder sh -c 'go build ./... && go vet ./internal/... && go test ./...'
-# -race 需先在容器内 apk add --no-cache gcc musl-dev；全量必须跑（新包内部测试会漏掉跨包状态渗漏）
+# 编译+vet+全量测试：本机 Go 直跑（go1.27.2，PATH 已含）
+go build ./... && go vet ./internal/... && go test ./...
+# -race 单独跑：go test -race ./internal/app/（Windows 需本机有 gcc/clang，缺则跳过 race）
 
-# 浏览器验证：改前端后必须重建镜像
+# 浏览器验证：改前端后必须重建镜像（docker restart 不更新文件系统）
 docker rm -f afree-proxy-workbuddy-test
-MSYS_NO_PATHCONV=1 docker run -d --name afree-proxy-workbuddy-test -e DATA_DIR=/app/data -p 3457:3457 afree-proxy:workbuddy-local
+MSYS_NO_PATHCONV=1 docker run -d --name afree-proxy-workbuddy-test -e DATA_DIR=/app/data -p 3457:3457 <新构建的测试镜像>
+# 测试镜像用 PROJECT.md §6 的本机构建流程：docker build -t afree-proxy:test-$(date +%Y%m%d-%H%M) .
+# 旧的 afree-proxy:workbuddy-builder / workbuddy-local 镜像已删除（2026-10-27 清理），命令里别再引用
 ```
 
 浏览器验证用真实点击 + 截图/API 断言，不用会话回显。测试容器 `docker rm -f` 强杀会丢内存态账号（flusher 未落盘），验持久化用 `docker restart`。

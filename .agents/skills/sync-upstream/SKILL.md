@@ -18,7 +18,7 @@ description: 同步 afree-proxy 三条上游线的完整流程与陷阱清单—
 
 ## 1. 公共铁律
 
-1. **验证环境**（2026-10-15 更新）：本机已有 Go（`C:\AppSelf\Go`，go1.27.2，PATH 已含），宿主机可直接 `go build/vet/test/-race` 作为快速验证；与部署形态对齐的容器验证（linux/amd64）仍可用，见 §3。无论在哪跑：build/vet/test 全绿 + `-race ./internal/app/` 才算过。
+1. **验证环境**（2026-10-15 更新）：本机已有 Go（`C:\AppSelf\Go`，go1.27.2，PATH 已含），宿主机可直接 `go build/vet/test` 作为快速验证；与部署形态对齐的容器验证（linux/amd64）按 PROJECT.md §6 本机构建测试镜像流程做。旧的 `afree-proxy:workbuddy-builder` 编译镜像已于 2026-10-27 清理删除，`docker run` 挂载它的旧命令作废。无论在哪跑：build/vet/test 全绿 + `-race ./internal/app/` 才算过。
 2. **全量测试必须跑**：上游测试有状态渗漏（模型表/failover 状态不恢复），单跑 `-run` 会假通过；前缀类 zen 测试全量挂 = 渗漏复发，修法见 cline-proxy-merge.md §4。
 3. **引用上游提交用显式哈希**，绝不依赖 `FETCH_HEAD`——后台 IDE fetch 会把 `.git/FETCH_HEAD` 覆写成自己 fork 的记录，导致把本地 HEAD 误当上游（真实踩坑）。
 4. **会话回显不可信**：冲突解决结果以 `git diff`、容器构建、真实测试输出为准。
@@ -28,7 +28,7 @@ description: 同步 afree-proxy 三条上游线的完整流程与陷阱清单—
 7. **根 `AGENTS.md` 是其他 agent 的唯一自动入口**:`MERGE.md` 和本 skill 都不会被其他 agent 自动加载。根目录按「通用 / 专属」拆两份——`AGENTS.md` 放**跨项目通用规则**(git 纪律、验证要求、删除判据、上游台账格式),`PROJECT.md` 放**本项目专属事实**(平台归属表、三条线入口、flaky 不修、本地定制清单、部署流程);`AGENTS.md` 顶部强指向 `PROJECT.md` 并要求动手前必读。改动这些规则时同步更新对应文件,否则下一个 agent 会重犯。
 8. **本机 git 出网必须用 URL 级代理键**(2026-10-28 实测):只设 `http.proxy` / `https.proxy` / `ALL_PROXY` 环境变量时,Windows schannel 后端仍报 `schannel: failed to receive handshake, SSL/TLS connection failed`;`-c http.sslBackend=openssl` 也无效。唯一验证可用的形式是三条一起给:
    `git -c 'http.https://github.com.proxy=socks5h://127.0.0.1:10808' -c 'http.proxy=socks5h://127.0.0.1:10808' -c 'https.proxy=socks5h://127.0.0.1:10808' ls-remote|fetch ...`
-   仓库无持久代理配置(`git config --list --show-origin | grep proxy` 为空),每条 git 网络命令都要带。连通性判据看 `ls-remote` 是否吐出哈希;shell 显示 `exit=0` 而工具 `exit_code=128` 时按失败处理。
+   端口用哪个以 AGENTS.md §10 的五候选实测表为准（用前先探，通即用；示例里的 10808 只是当时实测值）。仓库无持久代理配置(`git config --list --show-origin | grep proxy` 为空),每条 git 网络命令都要带。连通性判据看 `ls-remote` 是否吐出哈希;shell 显示 `exit=0` 而工具 `exit_code=128` 时按失败处理。
    **push 不走 https,上面三个代理键对它无效**:本仓 `origin` 是 `git@github.com:xd88dx/afree-proxy.git`(SSH),`~/.ssh/config` 又把 `github.com` 映射到 `ssh.github.com:443`,直推会报 `Connection closed by <ip> port 443`(看着像权限问题,其实是没走代理)。可用形式是让 ssh 自己走代理:
    `git -c core.sshCommand='ssh -o ProxyCommand="connect -S 127.0.0.1:10808 %h %p"' push origin main`(`connect` 在 `/mingw64/bin/connect`)。先 `ssh -o ProxyCommand='connect -S 127.0.0.1:10808 %h %p' -T git@github.com` 应打印 `Hi <user>! You've successfully authenticated` 再推。
 
@@ -78,10 +78,12 @@ Go 侧（`internal/trae/*.go`、`internal/app/trae.go`）**没有可比对基线
 ## 3. 验证命令（三条线通用）
 
 ```bash
-MSYS_NO_PATHCONV=1 docker run --rm -v "D:/下载/Github/afree-proxy:/build" -w /build \
-  afree-proxy:workbuddy-builder sh -c \
-  'go build ./... && go vet ./internal/... && go test ./... && go test -race ./internal/app/'
-# -race 需容器内先有 gcc/musl：apk add --no-cache gcc musl-dev
+# 本机 Go 直跑（首选；go1.27.2 已在 PATH）
+go build ./... && go vet ./internal/... && go test ./... && go test -race ./internal/app/
+# race 需本机有 gcc/clang，缺则单独跳过 race 并在台账注明
+
+# 需要与部署形态（linux/amd64）对齐的容器验证时，按 PROJECT.md §6 构建测试镜像：
+docker build -t afree-proxy:test-$(date +%Y%m%d-%H%M) .
 # gofmt -l 报一片 = CRLF 工作区形态（autocrlf），非本次编辑引入，忽略
 ```
 

@@ -26,22 +26,22 @@ Cursor / ZCode / Cline / Claude Code ──►  afree-proxy  ──►  Cline �
 - **代理隔离第一优先。** 每个账号/key 可绑定主/备出口代理，请求永远从绑定出口发出；两个出口都不可用时该身份整体跳过——**绝不回退其他出口或直连**。未绑定身份沿用面板的每平台走池开关。
 - **凭据启用/禁用语义全平台一致。** 「启用」列 = 是否参与请求轮转。新增身份默认禁用（存量缺字段仍按启用，升级不停服）。**任何平台没有任何启用凭据（含反代开关全关）时整平台 503 拒路由**，与封禁平台同闸；模型目录只对可服务配置展示——无启用凭据时面板目录显示引导空态、`/v1/models` 摘除该平台模型。
 - **函数调用真实可用。** 对真实上游全量实测：流式/非流式、并行工具调用、`/v1/responses` 与 Anthropic 流式，含上游工具参数怪癖修复。
-- **中文管理面板** `/admin/`：仪表盘、Cline 账号池、TraeWork、WorkBuddy（内嵌原面板）、OpenCode、AMDCloud、OpenRouter、TokenHarbor、Other、代理池、网关设置（自定义别名/封禁平台/封禁模型）、请求日志、实时统计。
+- **中文管理面板** `/admin/`：仪表盘（内含实时统计分区）、Cline 账号池、TraeWork、WorkBuddy（内嵌原面板）、OpenCode、AMDCloud、OpenRouter、TokenHarbor、Other、代理池、网关设置（封禁平台/封禁模型）、自定义别名、请求日志。
 
 ## 平台速览
 
 | 平台        | 前缀              | 凭据类型                                                                        | 模型目录                                                                        | 探测默认模型               |
 | ----------- | ----------------- | ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- | -------------------------- |
-| Cline       | `cline-free/`     | OAuth refreshToken / 静态 `sk_` key                                             | 官方免费源 60s 自动同步                                                         | 排序最小                   |
-| TraeWork    | `trae:`           | OAuth（本机 8765 helper 网页授权）                                              | 上游目录 10min 同步（需可路由账号）                                             | `glm-5.2`                  |
+| Cline       | `cline-free/`     | OAuth refreshToken / 静态 `sk_` key                                             | 官方免费源 5min 自动同步                                                        | 排序最小                   |
+| TraeWork    | `trae:`           | OAuth（本机 8765 helper 网页授权）                                              | 上游目录 5min 同步（需可路由账号）                                              | `glm-5.2`                  |
 | WorkBuddy   | `wbcn:` / `wbgb:` | OAuth（内嵌面板登录）                                                           | CN/Global 双域实时探测                                                          | 官方稳定模型优先           |
-| OpenCode    | `zen:`            | zen key（本地铸造会话 ID）                                                      | 上游免费目录 60s 同步                                                           | `big-pickle` 优先          |
+| OpenCode    | `zen:`            | zen key（本地铸造会话 ID）                                                      | 上游免费目录 5min 同步                                                          | `big-pickle` 优先          |
 | OpenRouter  | `oprt:`           | `sk-or-v1-…` key                                                                | [free-models 页白名单](https://openrouter.ai/collections/free-models) 5min 同步 | `openrouter/free`          |
 | AMDCloud    | `amd:`            | `rc-…` key（[Token Factory](https://developer.amd.com.cn/radeon/tokenfactory)） | 上游 `/v1/models` 5min 同步（需 Bearer key；仅 chat 模型）                      | `DeepSeek-V4-Flash`        |
 | TokenHarbor | `tkhb:`           | `thk_live_…` key（[dashboard](https://tokenharbor.ai/dashboard/api-keys)）      | 上游 `/v1/models` 5min 同步（需 key；仅 `:free`）                               | `deepseek-v4.1-flash:free` |
 | Other       | 自定 `acme:`      | 各上游 key                                                                      | `{BaseURL}/models` 拉取 + 手动添加 + 多选暴露                                   | 设置页配置                 |
 
-各平台共用同一套池语义：轮转策略、429 按 `Retry-After` 冷却、Test 按钮发真实探测请求并在成功后立即解除冷却、主/备代理绑定、新增身份默认不参与路由。**key 池平台**（OpenRouter/AMDCloud/TokenHarbor/Other）401/403 冷却 1 小时；Cline 账号池 401/403 直接标记账号过期（等刷新恢复）。
+各平台共用同一套池语义：轮转策略、429 按 `Retry-After` 冷却、Test 按钮发真实探测请求并在成功后立即解除冷却、主/备代理绑定、新增身份默认不参与路由。**key 池平台**（OpenRouter/AMDCloud/TokenHarbor/Other）401/403 冷却 1 小时；Cline 账号池 401（含刷新被 400/401/403 拒绝）直接标记账号过期（等刷新恢复），chat 直接 403 不改账号状态、原样返回。
 
 ## 快速开始（Docker）
 
@@ -52,10 +52,10 @@ docker run -d --name afree-proxy \
   -e PORT=3457 \
   -e API_KEY=change-me \
   -e ADMIN_PASSWORD=change-me-too \
-  ghcr.io/foxy1402/cline-proxy:latest
+  ghcr.io/xd88dx/afree-proxy:latest
 ```
 
-打开 `http://127.0.0.1:3457/admin/`，用 `ADMIN_PASSWORD` 登录，添加账号或 key。镜像多架构（`linux/amd64` 原生 + `linux/arm64` 交叉编译）；`:latest` 随每次构建发布，`vX.Y.Z` tag 额外发布 `:X.Y.Z`。
+打开 `http://127.0.0.1:3457/admin/`，用 `ADMIN_PASSWORD` 登录，添加账号或 key。镜像多架构（`linux/amd64` + `linux/arm64`，Dockerfile 用 `TARGETARCH` 做 Go 原生交叉编译，无需 QEMU）；发布规则（`.github/workflows/docker-publish.yml`）：push `main` → `:latest`，push `zen-harvest` 分支 → `:zencli`，tag `v0.9.0-harvest` → `:26.10.10`。
 
 > 镜像名跟随 GitHub 仓库名；仓库名不同请替换。
 
@@ -83,6 +83,9 @@ docker run -d --name afree-proxy \
 | `CLIENT_IP_HEADER`                       | 空            | 反代环境下信任该头作为客户端 IP（如 `X-Real-IP`），用于登录限流；默认只用 RemoteAddr                                                                                                                                                                                        |
 | `LOG_FILE_MAX_MB`                        | `10`          | `requests.jsonl` 与 `afree-proxy.log` 大小上限（MB），超限清空/轮转                                                                                                                                                                                                         |
 | `STREAM_LOG`                             | `false`       | `true` 把 Anthropic 路径原始 SSE 落盘（**完整对话内容**，仅排障用）                                                                                                                                                                                                         |
+| `APPLY_SYSTEM_PROMPT_OVERRIDE`           | `false`       | `true` 启用工作目录下 `override.md` 作为系统提示词替换（容器内即 `/app/override.md`；默认保留客户端自己的提示词）                                                                                                                                                           |
+| `CLINE_FORCE_STREAM`                     | `false`       | `true` 时 Cline 上游一律走流式：客户端要非流式也由网关把 SSE 聚合回普通 JSON；默认按模型元数据/自学习逐模型判定                                                                                                                                                             |
+| `CLINE_HEADER_TIMEOUT`                   | `60`          | Cline 上游「等响应头」看门狗秒数（0 = 关闭），超时换号重试；不影响头到达之后的流式 body                                                                                                                                                                                     |
 | `UNABLE_FORCE`                           | `false`       | 全冷却兜底开关。`false`（默认）：平台凭据**全部冷却**时一律拒绝（冷却凭据绝不参与路由），拒绝消息统一为 `no <platform> ... routable` 模板；`true`：全冷却时继续按各平台兜底实现选用冷却中的凭据（保持请求流动，WorkBuddy 软冷却豁免/最早到期优先、zen live 优先等扩展保留） |
 | `DISABLE_DIRECT`                         | `false`       | 直连禁用开关。`true`：出口为直连的凭据全部失效——绑定直连哨兵的凭据在隔离过滤阶段剔除；未绑定凭据在面板直连模式或代理池空兜底下同样失效，请求报 `no ... exit ... DISABLE_DIRECT`。`false`（默认）与既有行为相同                                                              |
 | `ONLY_ROUTER`                            | `false`       | 仅会话路由开关。`true`：所有平台只保留 chat 请求及其必要支撑（token 续期、模型目录同步、倍率预热），WorkBuddy 签到/保活/余额巡检/补领清扫与 Trae 签到/额度刷新等维护任务一律不启动——面板上的自动签到等开关被本变量强制覆盖。`false`（默认）按各自配置照常运行               |
@@ -97,7 +100,7 @@ Fail-closed 启动：绑定非环回地址时，未设 `API_KEY` **或**未设 `
 
 ### OpenCode zen 会话 ID
 
-zen 会话 ID 在**本地铸造**——上游免费层格式门是无状态检查（`^ses_[0-9a-f]{12}[0-9A-Za-z]{14}$`），网关为每个 key 首次使用时铸造兼容 ID 并持久化到数据卷（`zen-config.json` 的 `sessions` 段），无内嵌 CLI、无收割机。请求级 ID（`x-opencode-request`）与注入的 gate 工具参数 schema 同样对齐官方 CLI 形态。连续 2 次 FreeTier 403 自动重铸重试；**会话每次 API 调用新铸**（2026-10-27 对齐 CLI v2.1.4 行为——旧版粘性会话的复用形态会被上游影子封禁到 UTC 午夜），同一调用的重试沿用同一会话。旧的 `ZEN_SESSION_ROTATE_MINUTES` 轮换机制随之作废，env 不再被读取。
+zen 会话 ID 在**本地铸造**——上游免费层格式门是无状态检查（`^ses_[0-9a-f]{12}[0-9A-Za-z]{14}$`），网关为每个 key 首次使用时铸造兼容 ID 并持久化到数据卷（`zen-config.json` 的 `sessions` 段），无内嵌 CLI、无收割机。请求级 ID（`x-opencode-request`）与注入的 gate 工具参数 schema 同样对齐官方 CLI 形态。FreeTier 403 会在**本请求内**换新会话重试一次，仍 403 则该 key 冷却 15 分钟；**会话每次 API 调用新铸**（2026-10-27 对齐 CLI v2.1.4 行为——旧版粘性会话的复用形态会被上游影子封禁到 UTC 午夜），同一调用的重试沿用同一会话。旧的 `ZEN_SESSION_ROTATE_MINUTES` 轮换机制随之作废，env 不再被读取。
 
 ## 连接 IDE
 
@@ -142,15 +145,15 @@ Model:     cline-free/deepseek-v4.1-flash   （Cline 池）
 | `afree-config.json`                                                                                    | 全局：会话密钥、网关客户端 key、面板请求日志开关、账号选号策略、Combos、模型/平台封禁表、cline「必须流式」学习表        |
 | `proxy-config.json`                                                                                    | 出口代理池 + 出口策略 + 订阅、各平台走池开关、代理隔离段（开关/排除表/绑定上限，含 WorkBuddy 账号绑定）、代理在线率统计 |
 | `cline-config.json`                                                                                    | Cline 账号池（账号、游标、请求头）                                                                                      |
-| `zen-config.json`                                                                                      | OpenCode zen：key 池与配置 + 粘性会话 + 死模型别名 + 端点学习结果                                                       |
-| `trae-config.json` / `amd-config.json` / `oprt-config.json` / `tkhb-config.json` / `other-config.json` | 各平台全量（账号/key 池、启用状态、平台专属开关）                                                                       |
+| `zen-config.json`                                                                                      | OpenCode zen：key 池与配置 + 冷却表（`cool` 段）+ 每 key 会话身份（`sessions` 段）+ 死模型别名 + 端点学习结果                                                             |
+| `trae-config.json` / `amd-config.json` / `oprt-config.json` / `tkhb-config.json` / `other-config.json` | 各平台全量（账号/key 池、启用状态、冷却表、代理绑定、平台专属开关）                                                     |
 | `workbuddy/config.json` + `workbuddy/auths/` + `workbuddy/request-logs/`                               | WorkBuddy 部署配置、授权凭据、请求日志（沿用 vendor 目录结构）                                                          |
 
 凭据的代理绑定表（`keyBindings`）跟着凭据池留在各自的平台文件里，不并入 `proxy-config.json`：它的键是凭据明文，搬过去会让同一批明文在两处各存一份。走池开关是布尔值，不敏感，所以归代理域。
 
 日志类保持独立：`afree-proxy.log`、`afree-proxy-stream.log`、`requests.jsonl`。旧的 `zen-stats.jsonl`（zen 学习统计）已无任何写入方，属历史遗留，可直接删除。
 
-旧文件名（`.cline-accounts.json`、`.zen-sessions.json`、`.proxy-pool.json`、`.or-config.json`、`.egress-bindings.json` 等）在首次启动时自动复制到新文件名一次；旧文件保留但不再写入，确认新版运行正常后可自行删除。
+旧文件名的自动迁移已随 2026-10-27 死代码清理基本移除，唯一保留的是 zen 一条线：`zen-config.json` 不存在时，旧点文件（`.zen-config.json`、`.zen-sessions.json`、`.zen-model-aliases.json`、`.zen-endpoints.json`）会被读入合并一次（`zen_config_file.go` 的 `migrateZenConfigFileLocked`）。其余旧文件名（`.cline-accounts.json`、`.proxy-pool.json`、`.or-config.json`、`.egress-bindings.json` 等）不再有任何迁移逻辑，确认新版运行正常后可自行删除。
 
 ## 代理池与选号策略
 
@@ -201,10 +204,10 @@ socks5/socks5h 全支持；直连哨兵（主 = direct）可显式声明直连�
 ```bash
 go build ./... && go vet ./...
 ./afree-proxy -host 127.0.0.1 -port 3457   # 或: go run .
-docker compose up -d --build               # 源码构建（PROXY_PORT 换端口）
+docker compose up -d --build               # 源码构建（PROXY_PORT 换端口；需先在同目录建 .env 提供 API_KEY/ADMIN_PASSWORD，compose 以 ${VAR:?} 强制）
 ```
 
-CI：push 到 `main` 跑 `go build` + `go vet`，Buildx 发布多架构镜像到 GHCR（amd64 原生编译，arm64 交叉编译；仅内嵌 opencode CLI 阶段在构建期跑 QEMU）。打 `v*` tag 额外发布版本 tag。
+CI：push 到 `main` / `zen-harvest` 先跑 `go build` + `go vet` + `go test`，再 Buildx 发布多架构镜像到 GHCR——`main` → `:latest`，`zen-harvest` → `:zencli`，tag `v0.9.0-harvest` → `:26.10.10`；Dockerfile 以 `TARGETARCH` 做 Go 原生交叉编译，无 QEMU、无内嵌 CLI 阶段。
 
 代码结构：
 
@@ -214,13 +217,13 @@ CI：push 到 `main` 跑 `go build` + `go vet`，Buildx 发布多架构镜像到
 │   ├── proxy.go             /v1 路由、chat handler、上游调用、聚合
 │   ├── responses.go         /v1/responses 方言翻译
 │   ├── cross_endpoint.go    /v1/responses 与 /v1/messages 的多平台归口 + 缓冲重试
-│   ├── zen.go / zen_session.go / zen_endpoint.go   zen 上游、会话铸造/轮转、端点自学习
+│   ├── zen.go / zen_session.go / zen_endpoint.go   zen 上游、会话铸造、端点自学习
 │   ├── trae.go              TraeWork：raw 协议、SSE 聚合、签到调度、OAuth helper
 │   ├── amd.go / openrouter.go / tokenharbor.go / other.go   key 池平台四件套
 │   ├── workbuddy.go/_config/_proxy/_dialects  WorkBuddy 子系统、出口绑定、方言
 │   ├── platform_routability.go  无启用凭据整平台拒路由闸
 │   ├── platform_blacklist.go / model_blacklist.go  封禁平台/封禁模型
-│   ├── global_config.go / proxy_config.go / proxy_pool_config.go / zen_config_file.go   配置落盘（全局/代理域/zen，含旧文件迁移）
+│   ├── global_config.go / proxy_config.go / proxy_pool_config.go / zen_config_file.go   配置落盘（全局/代理域/zen；仅 zen 保留旧点文件读入合并）
 │   ├── pool.go               Cline 账号池
 │   ├── combos.go            别名模型
 │   ├── admin*.go            管理面板：API、会话认证、UI、各平台页

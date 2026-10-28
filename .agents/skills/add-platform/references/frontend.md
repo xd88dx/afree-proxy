@@ -16,16 +16,16 @@
 
 ## 2. 导航菜单 + 标签页
 
-- 导航项：`<div class="nav-item" data-tab="xxx"><span class="nav-ico"><svg…/></svg></span> 英文名</div>`。现状十一个：dashboard/accounts/opencode/openrouter/amdcloud/tokenharbor/workbuddy/proxypool/settings/combos/logs（注意：key 池 tab 的 data-tab 用 `amdcloud` 而非 `amd`；面板展示名用 AMDCloud，与 `amd` 前缀/包名/`/admin/api/amd/*` 路径不同，改名时三处要一起对齐）。svg 用 24×24 简笔几何图形，风格与现有一致。
+- 导航项：`<div class="nav-item" data-tab="xxx"><span class="nav-ico"><svg…/></svg></span> 英文名</div>`。现状十三个：dashboard/accounts/trae/opencode/workbuddy/openrouter/amdcloud/tokenharbor/other/proxypool/settings/combos/logs（注意：key 池 tab 的 data-tab 用 `amdcloud` 而非 `amd`；面板展示名用 AMDCloud，与 `amd` 前缀/包名/`/admin/api/amd/*` 路径不同，改名时三处要一起对齐）。svg 用 24×24 简笔几何图形，风格与现有一致。
 - 页面体：`<div id="tab-xxx" class="tab-panel" style="display:none">`；首个面板 dashboard 不带 display:none。
 - 切换：nav 点击委托 `switchTab`（惰性加载：首次进入时 loadXxx——**新平台的 load 调用要加进 switchTab 的 if 链**，如 `if (name === 'openrouter') loadOrConfig()`）；`restoreTab` 从 location.hash 恢复（`_('tab-'+h)` 元素存在即白名单，非法回落 dashboard）。**hash 恢复必须在所有 const 声明之后执行**（TDZ 坑：`WB_API_PREFIX` 这类平台 const 若未初始化会报错）。
-- 仪表盘六卡：`.dash-grid` + `.dash-card`（可点击跳转平台页，id 形如 `dashCline/dashOc/dashWb/dashOr/dashAmd/dashTh`）+ 请求统计卡（`reqCline/reqZen/reqWb/reqOr/reqAmd/reqTh`，数据来自 `/admin/api/request-stats`——后端 logs.go 的 per-route 计数要为新平台加分类桶）。`loadStats` 10s 轮询仅仪表盘可见时执行。
+- 仪表盘八卡：`.dash-grid` + `.dash-card`（可点击跳转平台页，id 形如 `dashCline/dashOc/dashWb/dashTrae/dashOr/dashAmd/dashTh/dashOther`）+ 请求统计卡（`reqCline/reqZen/reqWb/reqTrae/reqOr/reqAmd/reqTh/reqOther`，数据来自 `/admin/api/request-stats`——后端 logs.go 的 per-route 计数要为新平台加分类桶）。`loadStats` 10s 轮询仅仪表盘可见时执行。
 
 ## 3. 账号列表 + 暂存编辑体系
 
 - 表结构：手写 `<thead>`（列含 title 说明）+ `<tbody id="xxxBody">`；行由 `loadXxx()` 以 innerHTML 模板渲染，**所有插值过 `esc()`**；uid 展示 `id.slice(0,10)+'…'`，完整值进 title。
 - 暂存编辑三件套（新列/新交互必须接线）：
-  1. 快照变量：`accSnapshot` / `keySnapshot` / `wbSnapshot` / `orKeySnapshot` / `amdKeySnapshot` / `thKeySnapshot`（key 池平台另配 `<x>CfgCache` 缓存上次 GET 的 config，save 时回填不在表单里的字段）——loadXxx 时记录已保存态（代理绑定主/备 + 启用布尔）。
+  1. 快照变量：`accSnapshot` / `keySnapshot` / `wbSnapshot` / `traeAccSnapshot` / `orKeySnapshot` / `amdKeySnapshot` / `thKeySnapshot` / `otherKeySnapshot`（key 池平台另配 `<x>CfgCache` 缓存上次 GET 的 config，save 时回填不在表单里的字段）——loadXxx 时记录已保存态（代理绑定主/备 + 启用布尔）。
   2. 脏标记：`markRowDirty(row, kind)` 加 `.tr-dirty` 黄底 + 保存按钮 `.dirty-hint`；`clearDirtyMarks(tbodyId, btnId)` 复位。
   3. 保存：`saveAccountEdits` / `saveKeyEdits` / `saveWorkbuddyEdits`（key 池族复用 saveKeyEdits 模式，逐平台一份）——逐行与快照 diff，只提交有变化的行，逐行 POST，汇总一条 toast（失败计数 + `T('Saved ')` 等词条），收尾 loadXxx + 清脏标记。
 - 启用（Pool/路由）列放表格**最后一列**（横向滚动区内；自动化测试对离屏元素要用 evaluate dispatchEvent）。
@@ -34,7 +34,7 @@
 ## 4. 操作按钮区域布局（用户明确的版式约定）
 
 - **页脚三区**（表格下方一行 flex space-between）：
-  - 左：添加入口（btn-primary）——弹窗模式（`accAddDialog`/`zenKeyAddDialog`/`orKeyAddDialog`/`amdKeyAddDialog`/`thKeyAddDialog`/`wbAddDialog` 样式族），单输入 `credPayload` 自动识别（sk_ 前缀 = API key，否则 refreshToken），可带可选邮箱；textarea 逐行批量（合并去重后全量提交，提交后新 key 走默认禁用）。**key 池平台的添加弹窗没有"描述"输入框**（2026-10-11 UI 约定：只有 key 列表 textarea）。
+  - 左：添加入口（btn-primary）——弹窗模式（`accAddDialog`/`zenKeyAddDialog`/`traeAddDialog`/`orKeyAddDialog`/`amdKeyAddDialog`/`thKeyAddDialog`/`otherKeyAddDialog`/`wbAddDialog` 样式族；Other 另有 `otherPlatformDialog` 建子平台），单输入 `credPayload` 自动识别（sk_ 前缀 = API key，否则 refreshToken），可带可选邮箱；textarea 逐行批量（合并去重后全量提交，提交后新 key 走默认禁用）。**key 池平台的添加弹窗没有"描述"输入框**（2026-10-11 UI 约定：只有 key 列表 textarea）。
   - 中：批量操作组——一键启用/一键禁用（`stageAllAccountsPool` / `stageAllKeysRouting` / `stageAllWbPool`，只改 DOM 进暂存）、清空代理（暂存清绑定+全部置禁用，confirm 文案注明"点击保存后生效"）、批量测试（串行 POST `/test` 接口，按钮显示 i/n 进度，汇总 toast，分隔符 `T(', ')`）。
   - 右：复位（btn-warn 琥珀黄，= clearDirtyMarks + loadXxx）+ 保存（btn-primary）。
 - **顶部操作行**（section-body 顶部 flex space-between）：左 = 重操作入口（如任务中心/全部刷新），右 = 直接执行类（全部签到/宠物巡检等）。
@@ -51,7 +51,7 @@
 
 ## 6. 网关设置页与自定义别名页里引入新平台
 
-- **走池下拉**（proxypool 页"全局策略"组）：现状六个 select——`ppCline/ppZen/ppWb/ppOr/ppAmd/ppTh`，选项"代理/直连"，**缺省=代理**。后端字段 key 池型为 config 内 `UseProxies *bool`（nil→true，经 `/<x>/config/update` 提交）。新平台：加一个下拉 + config 字段（*bool，nil→true）+ 出站选择处消费。
+- **走池下拉**（proxypool 页"全局策略"组）：现状八个 select——`ppCline/ppZen/ppWb/ppTrae/ppOr/ppAmd/ppTh/ppOther`，选项"代理/直连"，**缺省=代理**。后端字段 key 池型为 config 内 `UseProxies *bool`（nil→true，经 `/<x>/config/update` 提交）。新平台：加一个下拉 + config 字段（*bool，nil→true）+ 出站选择处消费。
 - **默认模型下拉**（Gateway settings / 各平台配置区）：纯模型 ID 不带前缀后缀；`/admin/api/config/update {defaultModel}` 模式。
 - **自定义别名（combos）**：`combos.go` 是唯一事实源——`validateCombo` 的 platform 白名单加 "x"；target 校验 switch 里加 X 分支（**target 必须在 X 自己的模型列表内，跨平台选型直接报错**）；前端 Custom aliases 页平台下拉加选项 + 模型目标随平台联动加载。别名字段：`{id, platform, target, useProxies}`。
 

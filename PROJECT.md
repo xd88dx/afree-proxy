@@ -98,7 +98,7 @@ iStore 的面板密码是 `233@.afree`(与本机 compose 里的值不同);登录
 
 ## 7. 死配置判据（本仓）
 
-不要把本仓没有路由入口的上游端点暴露成面板开关。判据：`grep -rn '"/v1' internal/app/*.go | grep -v _test` —— 主 mux 只注册 `/v1/chat/completions`、`/v1/messages`、`/v1/responses`、`/v1/models`、`/v1/health`；workbuddy 的 `/v1/embeddings`、`/v1/search`、`/v1/fetch`、`/v1/images/*` 从未挂到主 mux（生产一律 404）。
+不要把本仓没有路由入口的上游端点暴露成面板开关。判据：`grep -rn '"/v1' internal/app/*.go | grep -v _test` —— 主 mux 只注册 `/v1/chat/completions`、`/v1/messages`、`/v1/responses`、`/v1/models`、`/v1/health`（另有不带 `/v1` 前缀的同名别名路由与 `/api/web-auth`、`/trae/oauth/helper` 两个 trae 授权端点，2026-10-29 核对）；workbuddy 的 `/v1/embeddings`、`/v1/search`、`/v1/fetch`、`/v1/images/*` 从未挂到主 mux（生产一律 404）。
 
 ## 8. 面板文案与中文翻译（每次改面板 / 同步上游必查）
 
