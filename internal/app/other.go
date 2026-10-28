@@ -125,9 +125,15 @@ func otherExitFn(p *other.Platform) func(key string) (string, bool) {
 		main, backup, bound := other.BindingOf(p, key)
 		if !bound {
 			if !other.ProxiesEnabled() {
+				if kit.DisableDirect() {
+					return "", false // 直连被禁：凭据失效（2026-10-28）
+				}
 				return "", true
 			}
 			url, _ := pickUpstreamProxy()
+			if url == "" && kit.DisableDirect() {
+				return "", false // 代理池空兜底的直连同样不放行
+			}
 			return url, true
 		}
 		url, _, ok := pickBoundProxy(main, backup)

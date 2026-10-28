@@ -39,6 +39,8 @@ func TestReserveBlocksFallbackPathPaidModel(t *testing.T) {
 // TestReserveFallbackAllowsFreeModel 兜底路径对**免费档**照常放行：reserve 拦的是
 // 付费/未知倍率，不得让见底号连 x0.00 免费模型也接不到（那等于变相禁用）。
 func TestReserveFallbackAllowsFreeModel(t *testing.T) {
+	// 兜底语义仅在 UNABLE_FORCE=true 下启用（2026-10-28 用户定，默认拒绝）。
+	t.Setenv("UNABLE_FORCE", "true")
 	withNoPickGap(t)
 	p := New("")
 	p.SetCostExploreInterval(0)
@@ -59,6 +61,8 @@ func TestReserveFallbackAllowsFreeModel(t *testing.T) {
 // TestReserveFallbackControlNoReserve 对照组：同一场景不设 reserve 时**必须**能选出。
 // 缺了这条，上两条可能因为「兜底压根没走到」而假绿（正是既有测试的毛病）。
 func TestReserveFallbackControlNoReserve(t *testing.T) {
+	// 兜底语义仅在 UNABLE_FORCE=true 下启用（2026-10-28 用户定，默认拒绝）。
+	t.Setenv("UNABLE_FORCE", "true")
 	withNoPickGap(t)
 	p := New("")
 	p.SetCostExploreInterval(0)

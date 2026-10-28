@@ -164,6 +164,11 @@ func resolveBackupSlot(submitted, storedBackup string) string {
 // 同一代理），实际拨号必须用池内最新 URI，否则旧地址已死。
 func pickBoundProxy(main, backup string) (proxyURL string, idx int, ok bool) {
 	if isEgressDirect(main) {
+		// DISABLE_DIRECT=true：绑定直连哨兵 = 明确选择了直连，凭据整体失效
+		//（隔离候选过滤经 boundProxiesRoutable 自动剔除，2026-10-28 用户定）。
+		if kit.DisableDirect() {
+			return "", -1, false
+		}
 		return "", -1, true
 	}
 	if main != "" {
@@ -175,6 +180,9 @@ func pickBoundProxy(main, backup string) (proxyURL string, idx int, ok bool) {
 		return "", -1, false
 	}
 	if isEgressDirect(backup) {
+		if kit.DisableDirect() {
+			return "", -1, false
+		}
 		return "", -1, true
 	}
 	if backup != "" && backup != main {
@@ -312,9 +320,15 @@ func boundExitFor(key string) (proxyURL string, idx int, ok bool) {
 		return "", -1, false
 	}
 	if !zenProxiesEnabled() {
+		if kit.DisableDirect() {
+			return "", -1, false // 直连被禁：key 失效（2026-10-28）
+		}
 		return "", -1, true // 面板选择直连：即使代理列表非空也不走池
 	}
 	proxyURL, idx = pickUpstreamProxy()
+	if proxyURL == "" && kit.DisableDirect() {
+		return "", -1, false // 代理池空兜底的直连同样不放行
+	}
 	return proxyURL, idx, true
 }
 

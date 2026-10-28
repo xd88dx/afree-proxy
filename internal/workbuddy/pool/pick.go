@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"time"
 
+	"afree-proxy/internal/kit"
 	"afree-proxy/internal/workbuddy/auth"
 	"afree-proxy/internal/workbuddy/logfmt"
 )
@@ -80,9 +81,14 @@ func (p *Pool) pick(tried map[string]bool, reqModel, realm string) *auth.Auth {
 		cands = append(cands, e)
 	}
 	if len(cands) == 0 {
-		// 全冷却兜底：无 healthy 候选时，从冷却账号里选 until 最早到期的一个
-		// （熔断/冷却共用 expiry 口径，取较早截止者）。禁用的账号永不参与兜底。
-		// 有序策略（地区调度）例外（旧线语义）：等待恢复，不提前试探仍在冷却中的账号。
+		// 全冷却：UNABLE_FORCE=false（默认）一律拒绝——冷却凭据不参与路由，
+		// 请求以统一的 no <platform> ... routable 错误失败（2026-10-28 用户定）。
+		// true 时恢复既有兜底：加权策略在冷却账号里选 until 最早到期的一个
+		// （软冷却模型豁免等扩展保留）；有序策略（地区调度）例外（旧线语义）：
+		// 等待恢复，不提前试探仍在冷却中的账号。禁用的账号永不参与兜底。
+		if !kit.UnableForce() {
+			return nil
+		}
 		if p.strategyForRealmLocked(realm) != WeightedRandom {
 			return nil
 		}

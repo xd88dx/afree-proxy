@@ -481,6 +481,8 @@ func TestHealthyForModelAccountCooledAllowsNothingAfterUntil(t *testing.T) {
 // TestHealthyForModelPriorityViaPick 端到端：全账号冷却中的账号即使对某模型无独立冷却
 // 也不被选出；健康 + 仅该模型 6004 的账号走模型豁免（同一账号对不同模型口径分离）。
 func TestHealthyForModelPriorityViaPick(t *testing.T) {
+	// 兜底语义仅在 UNABLE_FORCE=true 下启用（2026-10-28 用户定，默认拒绝）。
+	t.Setenv("UNABLE_FORCE", "true")
 	withNoPickGap(t)
 	p := New("")
 	p.Add(&auth.Auth{UID: "cooled"})

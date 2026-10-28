@@ -955,3 +955,52 @@ func TestSetZenKeyProxyBindingBackupToggleRoundTrip(t *testing.T) {
 		t.Fatalf("backup must survive a main-only clear while disabled, got %+v", got)
 	}
 }
+
+// DISABLE_DIRECT=true（2026-10-28 用户定）：绑定直连哨兵的凭据整体失效——
+// 主/备哨兵都不再放行直连出口；默认 false 时行为不变（TestPickBoundProxyDirectSentinel）。
+func TestPickBoundProxyDirectSentinelDisabled(t *testing.T) {
+	setupBindingTest(t, &zenTestConfig{
+		Keys:               []string{"sk-test"},
+		Proxies:            []string{"http://a:1"},
+		BackupProxyEnabled: boolPtr(true),
+	})
+	t.Setenv("DISABLE_DIRECT", "true")
+	if _, _, ok := pickBoundProxy("direct", ""); ok {
+		t.Fatal("DISABLE_DIRECT=true must invalidate the direct-sentinel binding")
+	}
+	setProxyCooldownIdx(t, 0, time.Minute)
+	if _, _, ok := pickBoundProxy("http://a:1", "direct"); ok {
+		t.Fatal("DISABLE_DIRECT=true must not fall back to a direct backup")
+	}
+}
+
+// zen 未绑定 key 的全局直连（面板直连模式）与代理池空兜底直连，同样被
+// DISABLE_DIRECT 拒绝；走池时不受影响。
+func TestBoundExitForGlobalDirectDisabled(t *testing.T) {
+	setupBindingTest(t, &zenTestConfig{
+		Keys: []string{"sk-test"},
+	})
+	off := false
+	pp := getProxyPool()
+	pp.ZenUseProxies = &off
+	setProxyPool(pp)
+	t.Setenv("DISABLE_DIRECT", "true")
+	if _, _, ok := boundExitFor("sk-test"); ok {
+		t.Fatal("DISABLE_DIRECT=true must reject the global direct egress for unbound keys")
+	}
+	// 走池 + 池非空：不受影响
+	on := true
+	pp.ZenUseProxies = &on
+	pp.Proxies = []string{"http://a:1"}
+	setProxyPool(pp)
+	u, _, ok := boundExitFor("sk-test")
+	if !ok || u == "" {
+		t.Fatalf("proxied egress must stay routable, got %q ok=%v", u, ok)
+	}
+	// 池空兜底直连：拒绝
+	pp.Proxies = nil
+	setProxyPool(pp)
+	if _, _, ok := boundExitFor("sk-test"); ok {
+		t.Fatal("DISABLE_DIRECT=true must reject the empty-pool direct fallback")
+	}
+}

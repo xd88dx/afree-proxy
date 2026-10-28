@@ -4,6 +4,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"afree-proxy/internal/kit"
 )
 
 // ============ 多 key 轮转 ============
@@ -65,8 +67,8 @@ func PickKey(strategy string, boundRoutable func(key string) bool) string {
 		return out
 	}
 	candidates := buildCandidates(false)
-	if len(candidates) == 0 {
-		candidates = buildCandidates(true) // 全冷却时兜底（保持请求流动）
+	if len(candidates) == 0 && kit.UnableForce() {
+		candidates = buildCandidates(true) // 全冷却兜底（UNABLE_FORCE=true：保持请求流动）
 	}
 	if len(candidates) == 0 {
 		return ""

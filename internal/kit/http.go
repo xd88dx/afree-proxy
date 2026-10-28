@@ -87,6 +87,12 @@ func HTTPPostForm(rawURL string, form url.Values) (*http.Response, error) {
 }
 
 func HTTPPostJSON(rawURL string, body any) (*http.Response, error) {
+	return HTTPPostJSONWithClient(JSONHTTPClient, rawURL, body)
+}
+
+// HTTPPostJSONWithClient 同 HTTPPostJSON，但允许调用方指定 client——
+// 出口化场景（token 刷新等走绑定/池代理，与凭据的会话出口保持 IP 一致）。
+func HTTPPostJSONWithClient(client *http.Client, rawURL string, body any) (*http.Response, error) {
 	data, err := json.Marshal(body)
 	if err != nil {
 		return nil, err
@@ -96,7 +102,7 @@ func HTTPPostJSON(rawURL string, body any) (*http.Response, error) {
 		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	return JSONHTTPClient.Do(req)
+	return client.Do(req)
 }
 
 // DecodeResponse 按 Content-Encoding 给 resp.Body 套上解码器，并删除

@@ -410,6 +410,8 @@ func TestCreditFloorBlocksFallbackPath(t *testing.T) {
 // TestCreditFloorFallbackAllowsFreeModel 兜底路径对**免费**模型照常放行：保底只拦
 // 收费，不得让触底号连免费模型也接不到（那等于变相禁用）。
 func TestCreditFloorFallbackAllowsFreeModel(t *testing.T) {
+	// 兜底语义仅在 UNABLE_FORCE=true 下启用（2026-10-28 用户定，默认拒绝）。
+	t.Setenv("UNABLE_FORCE", "true")
 	withNoPickGap(t)
 	p := New("")
 	p.SetCostExploreInterval(0)

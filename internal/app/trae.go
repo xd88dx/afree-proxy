@@ -40,9 +40,15 @@ func initTrae() {
 		if !bound {
 			// 未绑定 = 全局规则：面板选直连时不走池
 			if !trae.ProxiesEnabled() {
+				if kit.DisableDirect() {
+					return "", false // 直连被禁：凭据失效（2026-10-28）
+				}
 				return "", true
 			}
 			url, _ := pickUpstreamProxy()
+			if url == "" && kit.DisableDirect() {
+				return "", false // 代理池空兜底的直连同样不放行
+			}
 			return url, true
 		}
 		url, _, ok := pickBoundProxy(main, backup)
@@ -1482,7 +1488,13 @@ func handleTraeHelperStatus(w http.ResponseWriter, r *http.Request) {
 
 // startTraeJobs 后台任务：额度定期刷新（30 分钟一轮）+ 自动签到巡检
 // （每 30 分钟检查，AutoCheckin 开启时才真正执行）。首轮错开启动高峰。
+// ONLY_ROUTER=true（2026-10-28 用户定）时整体不启动：仅会话路由，面板的
+// 自动签到开关被强制覆盖；模型目录同步与请求路径不受影响。
 func startTraeJobs() {
+	if kit.OnlyRouter() {
+		log.Printf("[only-router] ONLY_ROUTER=true: trae 额度刷新与自动签到任务已禁用（仅会话路由）")
+		return
+	}
 	go func() {
 		time.Sleep(2 * time.Minute)
 		for {
@@ -1578,6 +1590,11 @@ func handleTraeCheckin(w http.ResponseWriter, r *http.Request) {
 		writeAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
 		return
 	}
+	// ONLY_ROUTER=true：仅会话路由，手动签到同样拒绝（2026-10-28 用户定）。
+	if kit.OnlyRouter() {
+		writeAPI(w, http.StatusServiceUnavailable, apiResponse{Error: "maintenance tasks are disabled by ONLY_ROUTER (session routing only)"})
+		return
+	}
 	res := runTraeCheckinAll()
 	log.Printf("trae manual checkin: %d/%d ok, %d already, %d failed", res.ok, res.total, res.already, res.failed)
 	writeAPI(w, http.StatusOK, apiResponse{
@@ -1591,6 +1608,11 @@ func handleTraeCheckin(w http.ResponseWriter, r *http.Request) {
 func handleTraeCreditsRefresh(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
+		return
+	}
+	// ONLY_ROUTER=true：仅会话路由，手动额度刷新同样拒绝（2026-10-28 用户定）。
+	if kit.OnlyRouter() {
+		writeAPI(w, http.StatusServiceUnavailable, apiResponse{Error: "maintenance tasks are disabled by ONLY_ROUTER (session routing only)"})
 		return
 	}
 	n := refreshAllTraeCredits()

@@ -83,8 +83,17 @@ docker run -d --name afree-proxy \
 | `CLIENT_IP_HEADER` | 空 | 反代环境下信任该头作为客户端 IP（如 `X-Real-IP`），用于登录限流；默认只用 RemoteAddr |
 | `LOG_FILE_MAX_MB` | `10` | `requests.jsonl` 与 `afree-proxy.log` 大小上限（MB），超限清空/轮转 |
 | `STREAM_LOG` | `false` | `true` 把 Anthropic 路径原始 SSE 落盘（**完整对话内容**，仅排障用） |
+| `UNABLE_FORCE` | `false` | 全冷却兜底开关。`false`（默认）：平台凭据**全部冷却**时一律拒绝（冷却凭据绝不参与路由），拒绝消息统一为 `no <platform> ... routable` 模板；`true`：全冷却时继续按各平台兜底实现选用冷却中的凭据（保持请求流动，WorkBuddy 软冷却豁免/最早到期优先、zen live 优先等扩展保留） |
+| `DISABLE_DIRECT` | `false` | 直连禁用开关。`true`：出口为直连的凭据全部失效——绑定直连哨兵的凭据在隔离过滤阶段剔除；未绑定凭据在面板直连模式或代理池空兜底下同样失效，请求报 `no ... exit ... DISABLE_DIRECT`。`false`（默认）与既有行为相同 |
+| `ONLY_ROUTER` | `false` | 仅会话路由开关。`true`：所有平台只保留 chat 请求及其必要支撑（token 续期、模型目录同步、倍率预热），WorkBuddy 签到/保活/余额巡检/补领清扫与 Trae 签到/额度刷新等维护任务一律不启动——面板上的自动签到等开关被本变量强制覆盖。`false`（默认）按各自配置照常运行 |
+
+以上三个开关（`UNABLE_FORCE` / `DISABLE_DIRECT` / `ONLY_ROUTER`）解析同一套布尔值：`1` / `true` / `yes` / `y` / `on`（大小写不敏感）为真，其余为假；实时读取，改容器 env 重启即生效。
 
 Fail-closed 启动：绑定非环回地址时，未设 `API_KEY` **或**未设 `ADMIN_PASSWORD`（且未设 `REQUIRE_ADMIN_AUTH=false` 豁免）都拒绝启动。
+
+### WorkBuddy（vendored 上游）环境变量
+
+`WB2A_*` 前缀的 40+ 个变量属于 vendored 的 WorkBuddy 上游子系统（`internal/workbuddy/config/config.go` 集中读取），覆盖监听/超时/指纹/思考档位/调度抖动/预算告警等，详见该文件头部注释。常用：`WB2A_LISTEN`（独立监听地址，通常不需要）、`WB2A_SOFT_RATE`（软冷却时长）、`WB2A_SCHEDULE_JITTER_MINUTES`（调度抖动）、`WB2A_ADMIN_ENABLED`（上游管理端点，缺省关）。其余 `TRAE_REMOTE_DEBUG`（Trae 事件帧转储）、`ZEN_PIN_KEY`（zen 排障钉定）见上表与对应章节；`INVOCATION_ID` / `NOTIFY_SOCKET` / `RC_SVCNAME` / `LAUNCH_JOBKEY_LABEL` 是 updater 的服务管理器探测（systemd/OpenRC/launchd），不是配置项。
 
 ### OpenCode zen 会话 ID
 

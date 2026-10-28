@@ -5,6 +5,8 @@ package server
 import (
 	"net/http"
 	"strings"
+
+	"afree-proxy/internal/kit"
 )
 
 // TaskRunner 各 Run*Now 里本面板实际有的六个。*scheduler.Scheduler 满足它。
@@ -35,6 +37,13 @@ func (h *Handler) taskRunners() map[string]func() {
 }
 
 func (h *Handler) adminTaskRun(w http.ResponseWriter, r *http.Request) {
+	// ONLY_ROUTER=true（2026-10-28 用户定）：仅会话路由——后台调度已禁用，
+	// 面板「立即执行」的手动触发同样拒绝，否则备用实例仍能手动打上游。
+	if kit.OnlyRouter() {
+		writeOpenAIError(w, http.StatusServiceUnavailable, "unavailable",
+			"maintenance tasks are disabled by ONLY_ROUTER (session routing only)")
+		return
+	}
 	name := strings.TrimSpace(r.PathValue("name"))
 	runners := h.taskRunners()
 	if runners == nil {

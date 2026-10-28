@@ -397,3 +397,27 @@ func contains(s, sub string) bool {
 	}
 	return false
 }
+
+// 全冷却默认拒绝（UNABLE_FORCE 未设，2026-10-28 用户定）；true 时恢复兜底。
+func TestPickZenKeyAllCoolingFollowsUnableForce(t *testing.T) {
+	setupZenSessionTestUpstream(t)
+	cfg := getZenConfig()
+	cfg2 := *cfg
+	cfg2.Keys = []string{"sk-a", "sk-b"}
+	setZenConfig(&cfg2)
+	t.Cleanup(func() { c := *cfg; setZenConfig(&c) })
+	zenKeyMu.Lock()
+	zenKeyCool = map[string]time.Time{
+		"sk-a": time.Now().Add(5 * time.Minute),
+		"sk-b": time.Now().Add(5 * time.Minute),
+	}
+	zenKeyIdx = 0
+	zenKeyMu.Unlock()
+	if got := pickZenKey(); got != "" {
+		t.Fatalf("default must reject when all keys are cooling, got %q", got)
+	}
+	t.Setenv("UNABLE_FORCE", "true")
+	if got := pickZenKey(); got != "sk-a" && got != "sk-b" {
+		t.Fatalf("UNABLE_FORCE=true must fall back to a cooling key, got %q", got)
+	}
+}

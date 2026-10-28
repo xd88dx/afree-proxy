@@ -175,7 +175,7 @@ func Chat(ctx context.Context, p *Platform, params map[string]any, modelID strin
 			key = PickKey(p, strategy, boundRoutable)
 		}
 		if key == "" {
-			return nil, rateLimited, fmt.Errorf("no key routable on platform %q: all configured keys are cooling, routing-disabled or bound-exit-blocked", p.Name)
+			return nil, rateLimited, fmt.Errorf("no %s key routable: all configured keys are cooling, routing-disabled or bound-exit-blocked", p.Slug)
 		}
 		proxyURL := ""
 		if exitFn != nil {

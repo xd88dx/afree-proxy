@@ -1233,7 +1233,10 @@ func callClineAPI(ctx context.Context, params map[string]any, stream bool, usePr
 				return nil, nil, fmt.Errorf("no account has an egress proxy assigned: %w",
 					egressShortfallError("cline", egressNSCline, poolAccountIDs()))
 			}
-			return nil, nil, fmt.Errorf("no active accounts available: %s", describePoolStatus())
+			// 拒绝消息统一模板（2026-10-28 对齐）：前缀与各平台一致，
+			// describePoolStatus 的池状态细节（冷却/停用/恢复时间分布）拼在
+			// 尾巴上，排查"池里有号却报无可用"仍然一目了然。
+			return nil, nil, fmt.Errorf("no cline account routable: all configured accounts are cooling, routing-disabled or bound-exit-blocked (%s)", describePoolStatus())
 		}
 		tried[acc.AccountID] = true
 		lastAcc = acc
@@ -1329,8 +1332,14 @@ func clineAPIWithAccount(ctx context.Context, params map[string]any, stream bool
 			}
 		} else if useProxies {
 			proxyURL, pidx = pickUpstreamProxy()
+			if proxyURL == "" && kit.DisableDirect() {
+				return nil, fmt.Errorf("cline account %s has no proxy exit: direct egress is disabled by DISABLE_DIRECT", truncateEmail(acc.Email))
+			}
 			client = proxyClientFor(proxyURL)
 			log.Printf("  cline upstream via %s", maskProxyURL(proxyURL))
+		} else if kit.DisableDirect() {
+			// 未绑定 + 面板直连模式：DISABLE_DIRECT=true 时凭据失效（2026-10-28）。
+			return nil, fmt.Errorf("cline account %s has no proxy exit: direct egress is disabled by DISABLE_DIRECT", truncateEmail(acc.Email))
 		}
 		// 每次尝试重建请求: bytes.Reader 只能读一次,
 		// 复用已发送的 req 会以 "ContentLength=N with Body length 0" 失败

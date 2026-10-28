@@ -1,6 +1,9 @@
 package trae
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
 
 // TestPickAccountCreditPriority 覆盖 panel「Selection strategy = credit-priority」
 // 的选号语义：额度余量多者优先，unlimited 恒最优先，同额度按池序稳定。
@@ -62,5 +65,23 @@ func TestNormalizeKeepsRoundRobin(t *testing.T) {
 	c.normalize()
 	if c.Selection != "" {
 		t.Fatalf("unknown strategy must be cleared, got %q", c.Selection)
+	}
+}
+
+// 全冷却默认拒绝（UNABLE_FORCE 未设，2026-10-28 用户定）；true 时恢复兜底。
+func TestPickAccountAllCoolingFollowsUnableForce(t *testing.T) {
+	saved := Get()
+	t.Cleanup(func() { Set(saved) })
+	Set(&Config{Gateway: DefaultGateway, Accounts: []*Account{
+		{ID: "u1", Token: "tok"}, {ID: "u2", Token: "tok"},
+	}, Endpoint: "auto"})
+	Cooldown("u1", 5*time.Minute)
+	Cooldown("u2", 5*time.Minute)
+	if got := PickAccount("round_robin", nil); got != nil {
+		t.Fatalf("default must reject when all accounts are cooling, got %+v", got)
+	}
+	t.Setenv("UNABLE_FORCE", "true")
+	if got := PickAccount("round_robin", nil); got == nil {
+		t.Fatal("UNABLE_FORCE=true must fall back to a cooling account")
 	}
 }

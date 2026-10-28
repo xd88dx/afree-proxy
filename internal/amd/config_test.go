@@ -234,3 +234,19 @@ func TestProbeModelPrefersDocumentedModel(t *testing.T) {
 		t.Fatalf("probe model should prefer DeepSeek-V4-Flash, got %q", m.ID)
 	}
 }
+
+// 全冷却默认拒绝（UNABLE_FORCE 未设，2026-10-28 用户定）；true 时恢复兜底。
+func TestPickKeyAllCoolingFollowsUnableForce(t *testing.T) {
+	dir := t.TempDir()
+	Load(filepath.Join(dir, ".amd-config.json"))
+	Set(&Config{Keys: []string{"a", "b"}})
+	Cooldown("a", 5*60e9)
+	Cooldown("b", 5*60e9)
+	if got := PickKey("round_robin", nil); got != "" {
+		t.Fatalf("default must reject when all keys are cooling, got %q", got)
+	}
+	t.Setenv("UNABLE_FORCE", "true")
+	if got := PickKey("round_robin", nil); got != "a" && got != "b" {
+		t.Fatalf("UNABLE_FORCE=true must fall back to a cooling key, got %q", got)
+	}
+}

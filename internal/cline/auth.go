@@ -1,14 +1,16 @@
 package cline
 
 import (
-	"afree-proxy/internal/kit"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"net/url"
 	"os"
 	"strings"
 	"time"
+
+	"afree-proxy/internal/kit"
 )
 
 const (
@@ -162,11 +164,18 @@ func IsAuthRejection(err error) bool {
 }
 
 func RefreshClineToken(refreshToken string) (*clineRefreshResp, error) {
+	return RefreshClineTokenWithClient(kit.JSONHTTPClient, refreshToken)
+}
+
+// RefreshClineTokenWithClient 允许指定 client：app 层按账号出口解析传入
+// 代理 client，让刷新请求与该账号的会话流量保持同一出口 IP（风控一致性，
+// 2026-10-28）。默认 RefreshClineToken 走 JSONHTTPClient（直连）。
+func RefreshClineTokenWithClient(client *http.Client, refreshToken string) (*clineRefreshResp, error) {
 	body := map[string]string{
 		"refreshToken": refreshToken,
 		"grantType":    "refresh_token",
 	}
-	resp, err := kit.HTTPPostJSON(ClineAPIBase+"/auth/refresh", body)
+	resp, err := kit.HTTPPostJSONWithClient(client, ClineAPIBase+"/auth/refresh", body)
 	if err != nil {
 		return nil, fmt.Errorf("cline refresh: %w", err)
 	}

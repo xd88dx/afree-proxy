@@ -6,6 +6,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"afree-proxy/internal/kit"
 )
 
 // ============ 账号轮转 ============
@@ -69,8 +71,8 @@ func PickAccount(strategy string, boundRoutable func(*Account) bool) *Account {
 		return out
 	}
 	candidates := buildCandidates(false)
-	if len(candidates) == 0 {
-		candidates = buildCandidates(true) // 全冷却时兜底（保持请求流动）
+	if len(candidates) == 0 && kit.UnableForce() {
+		candidates = buildCandidates(true) // 全冷却兜底（UNABLE_FORCE=true：保持请求流动）
 	}
 	if len(candidates) == 0 {
 		return nil

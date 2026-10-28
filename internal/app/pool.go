@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"net/http"
 	"os"
 	"sync"
 	"time"
@@ -436,7 +437,20 @@ func doRefreshAccountToken(acc *Account) error {
 		poolMu.Unlock()
 		return fmt.Errorf("static api key account cannot refresh")
 	}
-	resp, err := cline.RefreshClineToken(acc.RefreshToken)
+	// 刷新请求出口化（2026-10-28 风控对齐）：与会话请求同源——绑定主备优先，
+	// 未绑定走全局规则（池或直连）。账号会话走代理 IP 而刷新直连，IP 不一致
+	// 本身就是风控信号。DISABLE_DIRECT=true 时直连兜底同样不放行。
+	client, cerr := clineRefreshClient(acc)
+	if cerr != nil {
+		poolMu.Lock()
+		acc.Status = "cooldown"
+		acc.CooldownUntil = time.Now().Add(5 * time.Minute)
+		acc.LastReason = "refresh exit unavailable: " + cerr.Error()
+		savePoolLocked()
+		poolMu.Unlock()
+		return fmt.Errorf("token refresh exit unavailable: %w", cerr)
+	}
+	resp, err := cline.RefreshClineTokenWithClient(client, acc.RefreshToken)
 	if err != nil {
 		poolMu.Lock()
 		if cline.IsAuthRejection(err) {
@@ -672,6 +686,30 @@ func ensureAccountToken(acc *Account) (string, error) {
 	tok = acc.AccessToken
 	poolMu.Unlock()
 	return tok, nil
+}
+
+// clineRefreshClient token 刷新请求的出口 client：与会话请求同源——绑定主备
+// 优先（pickBoundProxy，直连哨兵受 DISABLE_DIRECT 约束），未绑定走全局规则
+// （clineUseProxies 开关决定池或直连，池空兜底直连同样受 DISABLE_DIRECT 约束）。
+func clineRefreshClient(acc *Account) (*http.Client, error) {
+	if acc.ProxyMain != "" || acc.ProxyBackup != "" {
+		url, _, ok := pickBoundProxy(acc.ProxyMain, acc.ProxyBackup)
+		if !ok {
+			return nil, fmt.Errorf("bound proxies unavailable (cooling or removed)")
+		}
+		return proxyClientFor(url), nil
+	}
+	if !poolClineUseProxies() {
+		if kit.DisableDirect() {
+			return nil, fmt.Errorf("direct egress is disabled by DISABLE_DIRECT")
+		}
+		return kit.HTTPClient, nil
+	}
+	url, _ := pickUpstreamProxy()
+	if url == "" && kit.DisableDirect() {
+		return nil, fmt.Errorf("no proxy available and direct egress is disabled by DISABLE_DIRECT")
+	}
+	return proxyClientFor(url), nil
 }
 
 func ListAccounts() []*Account {

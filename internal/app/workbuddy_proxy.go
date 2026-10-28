@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 
+	"afree-proxy/internal/kit"
 	wbauth "afree-proxy/internal/workbuddy/auth"
 )
 
@@ -133,9 +134,15 @@ func workbuddyExitType(uid, exitRaw string) string {
 // 非空也不走池（与 OpenCode 的 boundExitFor 同语义）。
 func workbuddyGlobalExit() (string, bool) {
 	if !workbuddyProxiesEnabled() {
+		if kit.DisableDirect() {
+			return "", false // 直连被禁：凭据失效（2026-10-28）
+		}
 		return "", true
 	}
 	url, _ := pickUpstreamProxy()
+	if url == "" && kit.DisableDirect() {
+		return "", false // 代理池空兜底的直连同样不放行
+	}
 	return url, true
 }
 

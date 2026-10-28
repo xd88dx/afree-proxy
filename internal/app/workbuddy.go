@@ -339,10 +339,17 @@ func startWorkBuddy() (*workbuddySubsystem, error) {
 	gwRef = h
 
 	ctx, cancel := context.WithCancel(context.Background())
-	go sch.Run(ctx)
-	sch.StartBalanceRefresh(ctx, cfg.BalanceRefreshInterval)
-	// 补领清扫周期启动（task_sweep_enabled=false 时 interval<=0，函数内部不启动）。
-	sch.StartTaskSweep(ctx, cfg.TaskSweepInterval)
+	// ONLY_ROUTER=true（2026-10-28 用户定）：仅会话路由——签到/保活/余额巡检/
+	// 补领清扫等维护任务一律不启动，面板调度开关被强制覆盖；token 续期、
+	// 积分倍率预热等请求路径支撑保留。
+	if kit.OnlyRouter() {
+		log.Printf("[only-router] ONLY_ROUTER=true: workbuddy 签到/保活/余额巡检等维护任务已禁用（仅会话路由）")
+	} else {
+		go sch.Run(ctx)
+		sch.StartBalanceRefresh(ctx, cfg.BalanceRefreshInterval)
+		// 补领清扫周期启动（task_sweep_enabled=false 时 interval<=0，函数内部不启动）。
+		sch.StartTaskSweep(ctx, cfg.TaskSweepInterval)
+	}
 	// 启动即预热模型积分倍率表（供积分保底的目录兜底判定）：倍率只在
 	// FetchModels/FetchGlobalModelInfos 成功时填充且均为懒触发，重启后的空窗期
 	// 里 ModelRate 恒为空串，触底号会被当成「收费未知」放行并打穿。异步执行，

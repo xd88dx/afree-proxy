@@ -213,8 +213,8 @@ func TestCallClineAPIRejectsAllDisabled(t *testing.T) {
 	if err == nil {
 		t.Fatal("all accounts disabled: callClineAPI must fail instead of using a disabled account")
 	}
-	if !strings.Contains(err.Error(), "no active accounts") {
-		t.Fatalf("error = %v, want it to mention no active accounts", err)
+	if !strings.Contains(err.Error(), "no cline account routable") {
+		t.Fatalf("error = %v, want it to mention no cline account routable", err)
 	}
 }
 

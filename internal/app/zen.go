@@ -792,7 +792,7 @@ func zenNoKeyError() error {
 	if egressBindingActive() {
 		return egressShortfallError("zen", egressNSZen, getZenConfig().Keys)
 	}
-	return fmt.Errorf("no zen key routable: all configured keys' bound proxies are cooling or removed (proxy isolation)")
+	return fmt.Errorf("no zen key routable: all configured keys are cooling, routing-disabled or bound-exit-blocked")
 }
 
 // zenBlockedExitErr 固定 key（pinKey 面板 Test / ZEN_PIN_KEY）出口不可用时
@@ -893,8 +893,8 @@ func pickZenKey() string {
 	if len(candidates) == 0 {
 		candidates = buildCandidates(false, false)
 	}
-	if len(candidates) == 0 {
-		candidates = buildCandidates(false, true)
+	if len(candidates) == 0 && kit.UnableForce() {
+		candidates = buildCandidates(false, true) // 全冷却兜底（UNABLE_FORCE=true：保持请求流动）
 	}
 	if len(candidates) == 0 {
 		return ""

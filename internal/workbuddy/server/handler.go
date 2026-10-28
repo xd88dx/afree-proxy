@@ -1796,7 +1796,9 @@ func (h *Handler) chatCompletions(w http.ResponseWriter, r *http.Request) {
 	// 没有上游原文可透传，不编造）。
 	status := http.StatusServiceUnavailable
 	code := "no_healthy_account"
-	msg := "all accounts are temporarily unavailable, please retry later"
+	// 拒绝消息统一模板（2026-10-28 对齐）：本地调度类失败（无可用账号）与
+	// key 类平台同构；code 保持 no_healthy_account 不变，客户端/监控无感。
+	msg := "no workbuddy account routable: all configured accounts are cooling, routing-disabled or bound-exit-blocked"
 	// quota：积分耗尽专用形态（429 + type/code 同为 insufficient_quota，OpenAI
 	// 自己的 quota 错误口径；客户端据此不重试）。
 	quota := false

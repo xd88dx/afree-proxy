@@ -36,9 +36,15 @@ func initOpenRouter() {
 		if !bound {
 			// 未绑定 = 全局规则：面板选直连时不走池
 			if !openrouter.ProxiesEnabled() {
+				if kit.DisableDirect() {
+					return "", false // 直连被禁：凭据失效（2026-10-28）
+				}
 				return "", true
 			}
 			url, _ := pickUpstreamProxy()
+			if url == "" && kit.DisableDirect() {
+				return "", false // 代理池空兜底的直连同样不放行
+			}
 			return url, true
 		}
 		url, _, ok := pickBoundProxy(main, backup)

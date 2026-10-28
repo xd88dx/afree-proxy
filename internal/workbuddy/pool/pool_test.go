@@ -1315,6 +1315,8 @@ func TestBreakerExponentialBackoffCapped(t *testing.T) {
 }
 
 func TestFallbackPicksEarliestExpiry(t *testing.T) {
+	// 兜底语义仅在 UNABLE_FORCE=true 下启用（2026-10-28 用户定，默认拒绝）。
+	t.Setenv("UNABLE_FORCE", "true")
 	p := New("")
 	p.Add(&auth.Auth{UID: "late"})
 	p.Add(&auth.Auth{UID: "early"})
@@ -1328,6 +1330,8 @@ func TestFallbackPicksEarliestExpiry(t *testing.T) {
 }
 
 func TestFallbackSkipsDisabled(t *testing.T) {
+	// 兜底语义仅在 UNABLE_FORCE=true 下启用（2026-10-28 用户定，默认拒绝）。
+	t.Setenv("UNABLE_FORCE", "true")
 	p := New("")
 	p.Add(&auth.Auth{UID: "cooled"})
 	p.Add(&auth.Auth{UID: "dead"})
@@ -1362,6 +1366,8 @@ func TestFallbackAllHardReturnsNil(t *testing.T) {
 }
 
 func TestFallbackSoftAndBreakerParticipate(t *testing.T) {
+	// 兜底语义仅在 UNABLE_FORCE=true 下启用（2026-10-28 用户定，默认拒绝）。
+	t.Setenv("UNABLE_FORCE", "true")
 	// D3：soft 与 breaker 冷却号允许参与兜底，取最早到期者。
 	p := New("")
 	p.Add(&auth.Auth{UID: "soft"})
@@ -2326,5 +2332,22 @@ func TestNextDay4AMIsCST(t *testing.T) {
 	want := time.Date(2026, 10, 21, 20, 0, 0, 0, time.UTC) // 北京 10-22 04:00
 	if got := nextDay4AM(now); !got.Equal(want) {
 		t.Fatalf("nextDay4AM=%v want %v", got, want)
+	}
+}
+
+// 全冷却默认拒绝（UNABLE_FORCE 未设，2026-10-28 用户定）；true 时恢复
+// 「最早到期优先」兜底（软冷却豁免等扩展不受影响，各自测试已覆盖）。
+func TestPickAllCoolingFollowsUnableForce(t *testing.T) {
+	withNoPickGap(t)
+	p := New("")
+	e := &auth.Auth{UID: "cool-1"}
+	p.Add(e)
+	p.Cooldown("cool-1", CoolSoft, 2*time.Minute, "test")
+	if a := p.Pick(); a != nil {
+		t.Fatalf("default must reject when the only account is cooling, got %+v", a)
+	}
+	t.Setenv("UNABLE_FORCE", "true")
+	if a := p.Pick(); a == nil {
+		t.Fatal("UNABLE_FORCE=true must fall back to the cooling account")
 	}
 }
