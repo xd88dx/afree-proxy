@@ -46,10 +46,10 @@ type Account struct {
 type AccountPool struct {
 	Accounts   []*Account `json:"accounts"`
 	CurrentIdx int        `json:"currentIdx"`
-	// ClineUseProxies 只用于读旧 .cline-accounts.json 做一次性迁移；
-	// 开关本体存在 proxy-config.json 的代理池段（见 platform_proxies.go），
-	// 本字段永远以 nil 落盘，omitempty 下不会出现在 cline-config.json 里。
-	ClineUseProxies *bool `json:"clineUseProxies,omitempty"`
+	// （ClineUseProxies 历史遗留字段已删，2026-10-29 审计清理：走池开关本体
+	// 在 proxy-config.json 的代理池段（platform_proxies.go），本结构体上的
+	// 同名字段自迁移后无任何读写方；旧 cline-config.json 里残留的该 JSON 键
+	// 由 encoding/json 静默忽略，读取不受影响。）
 	// Headers 是模拟 Cline CLI 的自定义请求头（面板保存，重启回放）。
 	// 客户端 key、账号调度策略、/admin 日志开关都在 afree-config.json。
 	Headers map[string]string `json:"headers,omitempty"`

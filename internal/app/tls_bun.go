@@ -25,6 +25,7 @@ import (
 //  2. No Padding extension at the end — v2 sends none.
 //  3. SignatureAlgorithms grows from 9 to 20, in the exact v2 order
 //     below (raw uint16 values where uTLS has no named constant).
+//
 // Cipher list, ALPN (http/1.1 only), extension order (minus padding),
 // and SupportedVersions (TLS1.3, TLS1.2) are unchanged from v1.
 //
@@ -52,66 +53,63 @@ func bunSpecForConn() *utls.ClientHelloSpec {
 			0x002F, // TLS_RSA_WITH_AES_128_CBC_SHA
 			0x0035, // TLS_RSA_WITH_AES_256_CBC_SHA
 		},
-	CompressionMethods: []uint8{0x00},
-	Extensions: []utls.TLSExtension{
-		&utls.SNIExtension{},
-		&utls.ExtendedMasterSecretExtension{},
-		&utls.RenegotiationInfoExtension{Renegotiation: utls.RenegotiateOnceAsClient},
-		&utls.SupportedCurvesExtension{Curves: []utls.CurveID{
-			utls.X25519MLKEM768, // 4588, v2 only — must be first
-			utls.X25519,         // 29
-			utls.CurveP256,      // 23
-			utls.CurveP384,      // 24
-		}},
-		&utls.SupportedPointsExtension{SupportedPoints: []byte{0x00}},
-		&utls.SessionTicketExtension{},
-		&utls.ALPNExtension{AlpnProtocols: []string{"http/1.1"}},
-		&utls.StatusRequestExtension{},
-		// v2 order, verbatim from the 2026-10-26 capture. Named constants
-		// cover the first 14; the last 6 are legacy schemes with no uTLS
-		// constant, sent as raw values (uTLS marshals the list as-is).
-		&utls.SignatureAlgorithmsExtension{SupportedSignatureAlgorithms: []utls.SignatureScheme{
-			utls.ECDSAWithP256AndSHA256, // 1027
-			utls.ECDSAWithP384AndSHA384, // 1283
-			utls.ECDSAWithP521AndSHA512, // 1539
-			utls.Ed25519,               // 2055
-			2056, // 0x0808, v2 only
-			2057, // 0x0809, v2 only
-			2058, // 0x080a, v2 only
-			2059, // 0x080b, v2 only
-			utls.PSSWithSHA256, // 2052
-			utls.PSSWithSHA384, // 2053
-			utls.PSSWithSHA512, // 2054
-			utls.PKCS1WithSHA256, // 1025
-			utls.PKCS1WithSHA384, // 1281
-			utls.PKCS1WithSHA512, // 1537
-			771,  // 0x0303, legacy, v2 only
-			769,  // 0x0301, legacy, v2 only
-			770,  // 0x0302, legacy, v2 only
-			1026, // 0x0402, legacy, v2 only
-			1282, // 0x0502, legacy, v2 only
-			1538, // 0x0602, legacy, v2 only
-		}},
-		&utls.SCTExtension{},
-		// Empty Data = auto-generate fresh shares per handshake, in order:
-		// MLKEM768 first (1216 bytes), then X25519 (32 bytes), matching v2.
-		&utls.KeyShareExtension{KeyShares: []utls.KeyShare{
-			{Group: utls.X25519MLKEM768},
-			{Group: utls.X25519},
-		}},
-		&utls.PSKKeyExchangeModesExtension{Modes: []uint8{utls.PskModeDHE}},
-		&utls.SupportedVersionsExtension{Versions: []uint16{
-			utls.VersionTLS13, // 772
-			utls.VersionTLS12, // 771
-		}},
-		// No Padding extension: CLI v2 sends none. The old BoringPadding
-		// extension was a v1 fingerprint marker and must not be sent.
+		CompressionMethods: []uint8{0x00},
+		Extensions: []utls.TLSExtension{
+			&utls.SNIExtension{},
+			&utls.ExtendedMasterSecretExtension{},
+			&utls.RenegotiationInfoExtension{Renegotiation: utls.RenegotiateOnceAsClient},
+			&utls.SupportedCurvesExtension{Curves: []utls.CurveID{
+				utls.X25519MLKEM768, // 4588, v2 only — must be first
+				utls.X25519,         // 29
+				utls.CurveP256,      // 23
+				utls.CurveP384,      // 24
+			}},
+			&utls.SupportedPointsExtension{SupportedPoints: []byte{0x00}},
+			&utls.SessionTicketExtension{},
+			&utls.ALPNExtension{AlpnProtocols: []string{"http/1.1"}},
+			&utls.StatusRequestExtension{},
+			// v2 order, verbatim from the 2026-10-26 capture. Named constants
+			// cover the first 14; the last 6 are legacy schemes with no uTLS
+			// constant, sent as raw values (uTLS marshals the list as-is).
+			&utls.SignatureAlgorithmsExtension{SupportedSignatureAlgorithms: []utls.SignatureScheme{
+				utls.ECDSAWithP256AndSHA256, // 1027
+				utls.ECDSAWithP384AndSHA384, // 1283
+				utls.ECDSAWithP521AndSHA512, // 1539
+				utls.Ed25519,                // 2055
+				2056,                        // 0x0808, v2 only
+				2057,                        // 0x0809, v2 only
+				2058,                        // 0x080a, v2 only
+				2059,                        // 0x080b, v2 only
+				utls.PSSWithSHA256,          // 2052
+				utls.PSSWithSHA384,          // 2053
+				utls.PSSWithSHA512,          // 2054
+				utls.PKCS1WithSHA256,        // 1025
+				utls.PKCS1WithSHA384,        // 1281
+				utls.PKCS1WithSHA512,        // 1537
+				771,                         // 0x0303, legacy, v2 only
+				769,                         // 0x0301, legacy, v2 only
+				770,                         // 0x0302, legacy, v2 only
+				1026,                        // 0x0402, legacy, v2 only
+				1282,                        // 0x0502, legacy, v2 only
+				1538,                        // 0x0602, legacy, v2 only
+			}},
+			&utls.SCTExtension{},
+			// Empty Data = auto-generate fresh shares per handshake, in order:
+			// MLKEM768 first (1216 bytes), then X25519 (32 bytes), matching v2.
+			&utls.KeyShareExtension{KeyShares: []utls.KeyShare{
+				{Group: utls.X25519MLKEM768},
+				{Group: utls.X25519},
+			}},
+			&utls.PSKKeyExchangeModesExtension{Modes: []uint8{utls.PskModeDHE}},
+			&utls.SupportedVersionsExtension{Versions: []uint16{
+				utls.VersionTLS13, // 772
+				utls.VersionTLS12, // 771
+			}},
+			// No Padding extension: CLI v2 sends none. The old BoringPadding
+			// extension was a v1 fingerprint marker and must not be sent.
 		},
 		TLSVersMin: utls.VersionTLS12,
 		TLSVersMax: utls.VersionTLS13,
 	}
 	return &spec
 }
-
-
-

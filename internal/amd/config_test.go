@@ -1,7 +1,6 @@
 package amd
 
 import (
-	"time"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -9,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestDefaultConfigNormalize(t *testing.T) {

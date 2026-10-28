@@ -176,7 +176,7 @@ type decodedBody struct {
 }
 
 func (d *decodedBody) Read(p []byte) (int, error) { return d.inner.Read(p) }
-func (d *decodedBody) Close() error              { return d.inner.Close() }
+func (d *decodedBody) Close() error               { return d.inner.Close() }
 
 // readCloser 给只有 Read 的解码器（brotli）补上 Close（关底层连接）。
 type readCloser struct {

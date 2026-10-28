@@ -130,14 +130,36 @@ func InitCatalog() {
 //   - live 条目补全 raw 名（上一轮目录/种子里已验证的映射优先）与上下文限制；
 //   - 种子条目 live 没列的保留（上游临时裁剪不该立刻掐断可用模型）；
 //   - 网络/解析失败返回错误，目录原地不动（单档失败不阻断其余档）。
+//
+// catalogClient 目录同步的出口化 client（2026-10-29）：与 auxClient 同口径——
+// 同步凭据经账号绑定/全局出口出网，不再裸直连（家庭 IP 出网是风控信号）。
+// CatalogClient（测试注入）优先；出口不可用 fail-closed 报错，本轮同步跳过。
+func catalogClient(a *Account) (*http.Client, error) {
+	if CatalogClient != nil {
+		return CatalogClient, nil
+	}
+	proxyURL, ok := resolveExitFor(a)
+	if !ok {
+		return nil, fmt.Errorf("no routable exit for trae catalog sync (account %s exit cooling/removed or DISABLE_DIRECT)", a.ID)
+	}
+	c := *httpClientFor(proxyURL)
+	c.Timeout = 25 * time.Second
+	return &c, nil
+}
+
 func SyncCatalog() (int, error) {
 	catalogSyncMu.Lock()
 	defer catalogSyncMu.Unlock()
-	token, edition := catalogProbeCredential()
-	if token == "" {
+	acc, edition := catalogProbeCredential()
+	if acc == nil {
 		return 0, fmt.Errorf("no enabled trae account to fetch the live catalog")
 	}
-	live, err := fetchWebModelConfigs(token, edition)
+	token := acc.Token
+	client, err := catalogClient(acc)
+	if err != nil {
+		return 0, err
+	}
+	live, err := fetchWebModelConfigs(token, edition, client)
 	if err != nil {
 		return 0, err
 	}
@@ -149,7 +171,7 @@ func SyncCatalog() (int, error) {
 	seen := make(map[string]bool, 64)
 	complete := true
 	for _, function := range nativeCatalogFunctions {
-		entries, ferr := fetchSoloModelConfigs(base, token, userID, function)
+		entries, ferr := fetchSoloModelConfigs(base, token, userID, function, client)
 		if ferr != nil {
 			complete = false
 			continue
@@ -289,7 +311,7 @@ func mergeTiers(dst *Model, src Model) {
 // model_detail_list 里 __dev 后缀项优先（上游真实 raw id；__max 在 chat_v3 下
 // 实测大量 4001/4023）。条目的 Function 记为查询用的函数档——上游目录不回显
 // raw_chat_function，请求必须与目录档一致才不会 4001。
-func fetchSoloModelConfigs(base, token, userID, function string) (map[string]Model, error) {
+func fetchSoloModelConfigs(base, token, userID, function string, client *http.Client) (map[string]Model, error) {
 	body, _ := json.Marshal(map[string]any{
 		"function":            function,
 		"config_names":        nil,
@@ -305,10 +327,6 @@ func fetchSoloModelConfigs(base, token, userID, function string) (map[string]Mod
 	}
 	for k, v := range soloHeaders(token, userID) {
 		req.Header.Set(k, v)
-	}
-	client := CatalogClient
-	if client == nil {
-		client = &http.Client{Timeout: 15 * time.Second}
 	}
 	resp, err := client.Do(req)
 	if err != nil {
@@ -453,16 +471,17 @@ func soloHeaders(token, userID string) map[string]string {
 	}
 }
 
-// catalogProbeCredential 取首个**可路由**账号的凭据与版本（live 目录请求用）。
-// 与展示/同步门控同口径（Routable）：目录同步是"给可服务清单取数"，没有参与
-// 路由的凭据就不同步——账号总闸/反代开关全关时不该产生任何上游请求。
-func catalogProbeCredential() (token, edition string) {
+// catalogProbeCredential 取首个**可路由**账号（live 目录请求用，返回账号本体
+// 供出口解析）。与展示/同步门控同口径（Routable）：目录同步是"给可服务清单
+// 取数"，没有参与路由的凭据就不同步——账号总闸/反代开关全关时不该产生任何
+// 上游请求。
+func catalogProbeCredential() (*Account, string) {
 	for _, a := range Get().Accounts {
 		if a.Routable() && a.Token != "" {
-			return a.Token, a.Edition
+			return a, a.Edition
 		}
 	}
-	return "", ""
+	return nil, ""
 }
 
 // soloHiddenIDs 原版隐藏的内部路由/子代理配置（上游也下发它们，但不是
@@ -494,7 +513,7 @@ func classifyTier(fn string) string {
 // config_name/configName（或旧载荷的 name/model_name）是请求 id。
 // 除可服务清单外，还按分组函数记录端点档位（Tiers）与各档原始条目
 // （TierCfg，chat_sessions custom_model 构造源）。
-func fetchWebModelConfigs(token, edition string) (map[string]Model, error) {
+func fetchWebModelConfigs(token, edition string, client *http.Client) (map[string]Model, error) {
 	base := RemoteBaseFor(edition)
 	url := base + "/models?functions=solo_agent_remote%2Csolo_work_remote%2Csolo_design_remote&show_custom_model=true"
 	req, err := http.NewRequest(http.MethodGet, url, nil)
@@ -503,10 +522,6 @@ func fetchWebModelConfigs(token, edition string) (map[string]Model, error) {
 	}
 	for k, v := range webHeaders(token, edition) {
 		req.Header.Set(k, v)
-	}
-	client := CatalogClient
-	if client == nil {
-		client = &http.Client{Timeout: 25 * time.Second}
 	}
 	endpoint := CatalogURLOverride
 	if endpoint != "" {

@@ -2,6 +2,7 @@ package amd
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"sort"
 	"strings"
@@ -26,26 +27,33 @@ var (
 	CatalogClient *http.Client
 )
 
-func catalogHTTPClient() *http.Client {
+func catalogHTTPClient() (*http.Client, error) {
 	if CatalogClient != nil {
-		return CatalogClient
+		return CatalogClient, nil
 	}
 	// 目录同步与 chat 同链路：按 key 绑定/全局规则解析代理出口取 client。
 	// 此前此处是裸直连——本机透明代理退役后跨境直连不可达（与 tokenharbor
 	// 同现象，后者直接按地区 403 拒绝中国大陆/港澳）。逐 key 试出口：停用的
-	// key 不参与路由（等同不在池里）、解析不到出口则换下一个；全部不可用或
-	// 面板选直连（resolveExit 返回空）时回落旧行为：直连。
+	// key 不参与路由（等同不在池里），解析失败（含 DISABLE_DIRECT 判否）换
+	// 下一个；面板显式选直连（resolveExit 返回空但 ok）按显式直连取 client；
+	// 全部不可用时 fail-closed 返回错误，本轮同步跳过、下轮再试——绝不隐式
+	// 回落直连（2026-10-29 审计修复：隐式回落会让同步凭据经家庭 IP 出网）。
 	for _, key := range Keys() {
 		if !RoutingEnabled(key) {
 			continue
 		}
 		proxyURL, ok := resolveExit(key)
-		if !ok || proxyURL == "" {
+		if !ok {
 			continue
 		}
-		return httpClientFor(proxyURL)
+		if proxyURL == "" {
+			dc := *httpClientFor(proxyURL)
+			dc.Timeout = 25 * time.Second
+			return &dc, nil
+		}
+		return httpClientFor(proxyURL), nil
 	}
-	return &http.Client{Timeout: 25 * time.Second}
+	return nil, fmt.Errorf("no routable exit for catalog sync (keys cooling/disabled or DISABLE_DIRECT)")
 }
 
 type catalogEntry struct {
@@ -115,7 +123,11 @@ func SyncCatalog() (int, error) {
 			break
 		}
 	}
-	resp, err := catalogHTTPClient().Do(req)
+	client, err := catalogHTTPClient()
+	if err != nil {
+		return 0, err
+	}
+	resp, err := client.Do(req)
 	if err != nil {
 		return 0, err
 	}

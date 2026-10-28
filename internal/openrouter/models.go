@@ -2,6 +2,7 @@ package openrouter
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"sort"
 	"strings"
@@ -69,26 +70,33 @@ func catalogEndpoint() string {
 	return CatalogURL
 }
 
-func catalogHTTPClient() *http.Client {
+func catalogHTTPClient() (*http.Client, error) {
 	if CatalogClient != nil {
-		return CatalogClient
+		return CatalogClient, nil
 	}
 	// 目录同步与 chat 同链路：按 key 绑定/全局规则解析代理出口取 client。
 	// 此前此处是裸直连——CF 对直连/uTLS 指纹连接的间歇重置会让目录同步偶发
 	// 失败（与 tokenharbor/amd 同现象，tokenharbor 曾因此连续 16h 失败）。
-	// 逐 key 试出口：停用的 key 不参与路由（等同不在池里）、解析不到出口则
-	// 换下一个；全部不可用或面板选直连（resolveExit 返回空）时回落旧行为。
+	// 逐 key 试出口：停用的 key 不参与路由（等同不在池里），解析失败（含
+	// DISABLE_DIRECT 判否）换下一个；面板显式选直连（resolveExit 返回空但
+	// ok）按显式直连取 client；全部不可用时 fail-closed 返回错误，本轮同步
+	// 跳过、下轮再试——绝不隐式回落直连（2026-10-29 审计修复）。
 	for _, key := range Keys() {
 		if !RoutingEnabled(key) {
 			continue
 		}
 		proxyURL, ok := resolveExit(key)
-		if !ok || proxyURL == "" {
+		if !ok {
 			continue
 		}
-		return httpClientFor(proxyURL)
+		if proxyURL == "" {
+			dc := *httpClientFor(proxyURL)
+			dc.Timeout = 25 * time.Second
+			return &dc, nil
+		}
+		return httpClientFor(proxyURL), nil
 	}
-	return &http.Client{Timeout: 25 * time.Second}
+	return nil, fmt.Errorf("no routable exit for catalog sync (keys cooling/disabled or DISABLE_DIRECT)")
 }
 
 // pricingAllZero 判断一条 pricing 记录是否全零（免费）。字符串解析失败视为不免费。
@@ -159,7 +167,11 @@ func SyncCatalog() (int, error) {
 		return 0, err
 	}
 	req.Header.Set("Accept", "application/json")
-	resp, err := catalogHTTPClient().Do(req)
+	client, err := catalogHTTPClient()
+	if err != nil {
+		return 0, err
+	}
+	resp, err := client.Do(req)
 	if err != nil {
 		return 0, err
 	}

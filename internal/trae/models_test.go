@@ -100,7 +100,7 @@ func TestFetchSoloModelConfigsFunctionScope(t *testing.T) {
 	defer srv.Close()
 
 	CatalogClient = srv.Client()
-	got, err := fetchSoloModelConfigs(srv.URL, "tok", "uid-1", "solo_agent")
+	got, err := fetchSoloModelConfigs(srv.URL, "tok", "uid-1", "solo_agent", srv.Client())
 	if err != nil {
 		t.Fatalf("fetch: %v", err)
 	}
@@ -143,7 +143,7 @@ func TestFetchSoloModelConfigsDataEnvelope(t *testing.T) {
 	}))
 	defer srv.Close()
 	CatalogClient = srv.Client()
-	got, err := fetchSoloModelConfigs(srv.URL, "tok", "uid", "chat_v3")
+	got, err := fetchSoloModelConfigs(srv.URL, "tok", "uid", "chat_v3", srv.Client())
 	if err != nil {
 		t.Fatalf("fetch: %v", err)
 	}
