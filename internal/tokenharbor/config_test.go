@@ -1,6 +1,7 @@
 package tokenharbor
 
 import (
+	"time"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -289,5 +290,26 @@ func TestPickKeyAllCoolingFollowsUnableForce(t *testing.T) {
 	t.Setenv("UNABLE_FORCE", "true")
 	if got := PickKey("round_robin", nil); got != "a" && got != "b" {
 		t.Fatalf("UNABLE_FORCE=true must fall back to a cooling key, got %q", got)
+	}
+}
+
+// 冷却落盘回读（2026-10-28 用户定）：Cooldown 后重新 Load 同一配置文件，
+// 冷却必须保留——重启后上游刚限流过的凭据不得立即回池被重试。
+func TestCooldownPersistedAcrossReload(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, ".tkhb-config.json")
+	Load(path)
+	Set(&Config{Keys: []string{"a", "b"}})
+	Cooldown("a", 5*60e9)
+	// 模拟重启：重新加载同一文件
+	Load(path)
+	until, ok := CooldownUntil("a")
+	if !ok || until.Before(time.Now()) {
+		t.Fatalf("cooldown for key a must survive reload, ok=%v until=%v", ok, until)
+	}
+	Uncool("a")
+	Load(path)
+	if _, ok := CooldownUntil("a"); ok {
+		t.Fatal("uncooled key must stay uncooled after reload")
 	}
 }

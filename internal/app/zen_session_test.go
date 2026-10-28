@@ -421,3 +421,32 @@ func TestPickZenKeyAllCoolingFollowsUnableForce(t *testing.T) {
 		t.Fatalf("UNABLE_FORCE=true must fall back to a cooling key, got %q", got)
 	}
 }
+
+// 冷却落盘回读（2026-10-28 用户定）：冷却写入后落盘，重新加载配置冷却保留。
+func TestZenKeyCoolPersistedAcrossReload(t *testing.T) {
+	setupZenSessionTestUpstream(t)
+	cfg := getZenConfig()
+	cfg2 := *cfg
+	cfg2.Keys = []string{"sk-a", "sk-b"}
+	setZenConfig(&cfg2)
+	t.Cleanup(func() { c := *cfg; setZenConfig(&c) })
+	zenKeyMu.Lock()
+	zenKeyCool["sk-a"] = time.Now().Add(5 * time.Minute)
+	zenKeyMu.Unlock()
+	saveZenConfig()
+	// 模拟重启：直接重读 zen-config.json
+	zenFileMu.Lock()
+	f := loadZenConfigFileLocked()
+	zenFileMu.Unlock()
+	if _, ok := f.Cool["sk-a"]; !ok {
+		t.Fatal("zen key cooldown must be persisted to zen-config.json")
+	}
+	// setZenConfig 路径回填运行时 map
+	setZenConfig(&f.zenConfigData)
+	zenKeyMu.Lock()
+	_, ok := zenKeyCool["sk-a"]
+	zenKeyMu.Unlock()
+	if !ok {
+		t.Fatal("reloaded config must repopulate zenKeyCool")
+	}
+}

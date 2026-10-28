@@ -30,16 +30,16 @@ Cursor / ZCode / Cline / Claude Code ──►  afree-proxy  ──►  Cline �
 
 ## 平台速览
 
-| 平台 | 前缀 | 凭据类型 | 模型目录 | 探测默认模型 |
-|---|---|---|---|---|
-| Cline | `cline-free/` | OAuth refreshToken / 静态 `sk_` key | 官方免费源 60s 自动同步 | 排序最小 |
-| TraeWork | `trae:` | OAuth（本机 8765 helper 网页授权） | 上游目录 10min 同步（需可路由账号） | `glm-5.2` |
-| WorkBuddy | `wbcn:` / `wbgb:` | OAuth（内嵌面板登录） | CN/Global 双域实时探测 | 官方稳定模型优先 |
-| OpenCode | `zen:` | zen key（本地铸造会话 ID） | 上游免费目录 60s 同步 | `big-pickle` 优先 |
-| OpenRouter | `oprt:` | `sk-or-v1-…` key | [free-models 页白名单](https://openrouter.ai/collections/free-models) 5min 同步 | `openrouter/free` |
-| AMDCloud | `amd:` | `rc-…` key（[Token Factory](https://developer.amd.com.cn/radeon/tokenfactory)） | 上游 `/v1/models` 5min 同步（需 Bearer key；仅 chat 模型） | `DeepSeek-V4-Flash` |
-| TokenHarbor | `tkhb:` | `thk_live_…` key（[dashboard](https://tokenharbor.ai/dashboard/api-keys)） | 上游 `/v1/models` 5min 同步（需 key；仅 `:free`） | `deepseek-v4.1-flash:free` |
-| Other | 自定 `acme:` | 各上游 key | `{BaseURL}/models` 拉取 + 手动添加 + 多选暴露 | 设置页配置 |
+| 平台        | 前缀              | 凭据类型                                                                        | 模型目录                                                                        | 探测默认模型               |
+| ----------- | ----------------- | ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- | -------------------------- |
+| Cline       | `cline-free/`     | OAuth refreshToken / 静态 `sk_` key                                             | 官方免费源 60s 自动同步                                                         | 排序最小                   |
+| TraeWork    | `trae:`           | OAuth（本机 8765 helper 网页授权）                                              | 上游目录 10min 同步（需可路由账号）                                             | `glm-5.2`                  |
+| WorkBuddy   | `wbcn:` / `wbgb:` | OAuth（内嵌面板登录）                                                           | CN/Global 双域实时探测                                                          | 官方稳定模型优先           |
+| OpenCode    | `zen:`            | zen key（本地铸造会话 ID）                                                      | 上游免费目录 60s 同步                                                           | `big-pickle` 优先          |
+| OpenRouter  | `oprt:`           | `sk-or-v1-…` key                                                                | [free-models 页白名单](https://openrouter.ai/collections/free-models) 5min 同步 | `openrouter/free`          |
+| AMDCloud    | `amd:`            | `rc-…` key（[Token Factory](https://developer.amd.com.cn/radeon/tokenfactory)） | 上游 `/v1/models` 5min 同步（需 Bearer key；仅 chat 模型）                      | `DeepSeek-V4-Flash`        |
+| TokenHarbor | `tkhb:`           | `thk_live_…` key（[dashboard](https://tokenharbor.ai/dashboard/api-keys)）      | 上游 `/v1/models` 5min 同步（需 key；仅 `:free`）                               | `deepseek-v4.1-flash:free` |
+| Other       | 自定 `acme:`      | 各上游 key                                                                      | `{BaseURL}/models` 拉取 + 手动添加 + 多选暴露                                   | 设置页配置                 |
 
 各平台共用同一套池语义：轮转策略、429 按 `Retry-After` 冷却、Test 按钮发真实探测请求并在成功后立即解除冷却、主/备代理绑定、新增身份默认不参与路由。**key 池平台**（OpenRouter/AMDCloud/TokenHarbor/Other）401/403 冷却 1 小时；Cline 账号池 401/403 直接标记账号过期（等刷新恢复）。
 
@@ -63,29 +63,29 @@ docker run -d --name afree-proxy \
 
 ## 关键环境变量
 
-| 变量 | 默认 | 说明 |
-|---|---|---|
-| `PORT` | `3457` | 监听端口（`-port` flag 优先） |
-| `DATA_DIR` | `/app/data` | 容器内状态目录 |
-| `API_KEY` / `API_KEY_FILE` | 空 | `/v1` 唯一有效 key（`Authorization: Bearer` 或 `x-api-key`） |
-| `ADMIN_PASSWORD` / `ADMIN_PASSWORD_FILE` | 空 | 管理面板密码；设置后所有 `/admin/*` 需登录 |
-| `PROXY_ISOLATION` | 未设置 | 身份↔出口绑定：`true` 强制开启（面板只读）；`false` 默认改为关（面板可改）；未设置默认开启。只接受 true/false |
-| `STRICT_MODEL_MATCH` | `true` | 未知模型名 400 而非静默兜底 |
-| `ZEN_ORG_ID` | 空 | OAuth 账户组织 ID,写入 `x-opencode-org-id` 头;原始 API key 流量不需要(官方 CLI 也只对 OAuth 账户发该头)。面板可改,env 设置时以 env 为准 |
-| `ZEN_PIN_KEY` | 空 | 排障:所有 zen 上游请求固定用第 n 个 key(1 起)而非轮转 |
-| `POOL_STRATEGY` | `round_robin` | 全部平台的凭据调度策略（Cline/zen/or/amd/th/other 共用）：`round_robin` / `fill` / `random`。WorkBuddy 用 vendor 自己的国内/国际分区策略；Trae 未设 `TRAE_STRATEGY` 时回落此值 |
-| `TRAE_STRATEGY` | 未设置 | Trae 独立凭据调度策略：`round_robin` / `fill` / `random` / `credit-priority`（额度多者优先）。优先于面板 Selection，未设置时回落 `POOL_STRATEGY` |
-| `PUID` / `PGID` | `100` / `101` | 容器运行身份（entrypoint 自愈属主后降权；bind mount 时设为宿主机用户） |
-| `LOG_REQUESTS` | `true` | 请求日志（仅元数据：IP/路径/模型/状态/耗时，绝无对话内容） |
-| `MAX_BODY_MB` | `32` | 请求体上限，超出 413 |
-| `STREAM_ATTEMPT` | `2` | 流式中断缓冲重试总次数；每次重试会重耗上游免费额度 |
-| `REQUIRE_ADMIN_AUTH` | `true` | 设 `false` 仅当反代已处理认证——同时豁免 fail-closed 启动检查里的 ADMIN_PASSWORD 要求 |
-| `CLIENT_IP_HEADER` | 空 | 反代环境下信任该头作为客户端 IP（如 `X-Real-IP`），用于登录限流；默认只用 RemoteAddr |
-| `LOG_FILE_MAX_MB` | `10` | `requests.jsonl` 与 `afree-proxy.log` 大小上限（MB），超限清空/轮转 |
-| `STREAM_LOG` | `false` | `true` 把 Anthropic 路径原始 SSE 落盘（**完整对话内容**，仅排障用） |
-| `UNABLE_FORCE` | `false` | 全冷却兜底开关。`false`（默认）：平台凭据**全部冷却**时一律拒绝（冷却凭据绝不参与路由），拒绝消息统一为 `no <platform> ... routable` 模板；`true`：全冷却时继续按各平台兜底实现选用冷却中的凭据（保持请求流动，WorkBuddy 软冷却豁免/最早到期优先、zen live 优先等扩展保留） |
-| `DISABLE_DIRECT` | `false` | 直连禁用开关。`true`：出口为直连的凭据全部失效——绑定直连哨兵的凭据在隔离过滤阶段剔除；未绑定凭据在面板直连模式或代理池空兜底下同样失效，请求报 `no ... exit ... DISABLE_DIRECT`。`false`（默认）与既有行为相同 |
-| `ONLY_ROUTER` | `false` | 仅会话路由开关。`true`：所有平台只保留 chat 请求及其必要支撑（token 续期、模型目录同步、倍率预热），WorkBuddy 签到/保活/余额巡检/补领清扫与 Trae 签到/额度刷新等维护任务一律不启动——面板上的自动签到等开关被本变量强制覆盖。`false`（默认）按各自配置照常运行 |
+| 变量                                     | 默认          | 说明                                                                                                                                                                                                                                                                        |
+| ---------------------------------------- | ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `PORT`                                   | `3457`        | 监听端口（`-port` flag 优先）                                                                                                                                                                                                                                               |
+| `DATA_DIR`                               | `/app/data`   | 容器内状态目录                                                                                                                                                                                                                                                              |
+| `API_KEY` / `API_KEY_FILE`               | 空            | `/v1` 唯一有效 key（`Authorization: Bearer` 或 `x-api-key`）                                                                                                                                                                                                                |
+| `ADMIN_PASSWORD` / `ADMIN_PASSWORD_FILE` | 空            | 管理面板密码；设置后所有 `/admin/*` 需登录                                                                                                                                                                                                                                  |
+| `PROXY_ISOLATION`                        | 未设置        | 身份↔出口绑定：`true` 强制开启（面板只读）；`false` 默认改为关（面板可改）；未设置默认开启。只接受 true/false                                                                                                                                                               |
+| `STRICT_MODEL_MATCH`                     | `true`        | 未知模型名 400 而非静默兜底                                                                                                                                                                                                                                                 |
+| `ZEN_ORG_ID`                             | 空            | OAuth 账户组织 ID,写入 `x-opencode-org-id` 头;原始 API key 流量不需要(官方 CLI 也只对 OAuth 账户发该头)。面板可改,env 设置时以 env 为准                                                                                                                                     |
+| `ZEN_PIN_KEY`                            | 空            | 排障:所有 zen 上游请求固定用第 n 个 key(1 起)而非轮转                                                                                                                                                                                                                       |
+| `POOL_STRATEGY`                          | `round_robin` | 全部平台的凭据调度策略（Cline/zen/or/amd/th/other 共用）：`round_robin` / `fill` / `random`。WorkBuddy 用 vendor 自己的国内/国际分区策略；Trae 未设 `TRAE_STRATEGY` 时回落此值                                                                                              |
+| `TRAE_STRATEGY`                          | 未设置        | Trae 独立凭据调度策略：`round_robin` / `fill` / `random` / `credit-priority`（额度多者优先）。优先于面板 Selection，未设置时回落 `POOL_STRATEGY`                                                                                                                            |
+| `PUID` / `PGID`                          | `100` / `101` | 容器运行身份（entrypoint 自愈属主后降权；bind mount 时设为宿主机用户）                                                                                                                                                                                                      |
+| `LOG_REQUESTS`                           | `true`        | 请求日志（仅元数据：IP/路径/模型/状态/耗时，绝无对话内容）                                                                                                                                                                                                                  |
+| `MAX_BODY_MB`                            | `32`          | 请求体上限，超出 413                                                                                                                                                                                                                                                        |
+| `STREAM_ATTEMPT`                         | `2`           | 流式中断缓冲重试总次数；每次重试会重耗上游免费额度                                                                                                                                                                                                                          |
+| `REQUIRE_ADMIN_AUTH`                     | `true`        | 设 `false` 仅当反代已处理认证——同时豁免 fail-closed 启动检查里的 ADMIN_PASSWORD 要求                                                                                                                                                                                        |
+| `CLIENT_IP_HEADER`                       | 空            | 反代环境下信任该头作为客户端 IP（如 `X-Real-IP`），用于登录限流；默认只用 RemoteAddr                                                                                                                                                                                        |
+| `LOG_FILE_MAX_MB`                        | `10`          | `requests.jsonl` 与 `afree-proxy.log` 大小上限（MB），超限清空/轮转                                                                                                                                                                                                         |
+| `STREAM_LOG`                             | `false`       | `true` 把 Anthropic 路径原始 SSE 落盘（**完整对话内容**，仅排障用）                                                                                                                                                                                                         |
+| `UNABLE_FORCE`                           | `false`       | 全冷却兜底开关。`false`（默认）：平台凭据**全部冷却**时一律拒绝（冷却凭据绝不参与路由），拒绝消息统一为 `no <platform> ... routable` 模板；`true`：全冷却时继续按各平台兜底实现选用冷却中的凭据（保持请求流动，WorkBuddy 软冷却豁免/最早到期优先、zen live 优先等扩展保留） |
+| `DISABLE_DIRECT`                         | `false`       | 直连禁用开关。`true`：出口为直连的凭据全部失效——绑定直连哨兵的凭据在隔离过滤阶段剔除；未绑定凭据在面板直连模式或代理池空兜底下同样失效，请求报 `no ... exit ... DISABLE_DIRECT`。`false`（默认）与既有行为相同                                                              |
+| `ONLY_ROUTER`                            | `false`       | 仅会话路由开关。`true`：所有平台只保留 chat 请求及其必要支撑（token 续期、模型目录同步、倍率预热），WorkBuddy 签到/保活/余额巡检/补领清扫与 Trae 签到/额度刷新等维护任务一律不启动——面板上的自动签到等开关被本变量强制覆盖。`false`（默认）按各自配置照常运行               |
 
 以上三个开关（`UNABLE_FORCE` / `DISABLE_DIRECT` / `ONLY_ROUTER`）解析同一套布尔值：`1` / `true` / `yes` / `y` / `on`（大小写不敏感）为真，其余为假；实时读取，改容器 env 重启即生效。
 
@@ -137,14 +137,14 @@ Model:     cline-free/deepseek-v4.1-flash   （Cline 池）
 
 `DATA_DIR`（容器内 `/app/data`）下每个平台一份配置文件，跨平台能力单独成文件：
 
-| 文件 | 内容 |
-|---|---|
-| `afree-config.json` | 全局：会话密钥、网关客户端 key、面板请求日志开关、账号选号策略、Combos、模型/平台封禁表、cline「必须流式」学习表 |
-| `proxy-config.json` | 出口代理池 + 出口策略 + 订阅、各平台走池开关、代理隔离段（开关/排除表/绑定上限，含 WorkBuddy 账号绑定）、代理在线率统计 |
-| `cline-config.json` | Cline 账号池（账号、游标、请求头） |
-| `zen-config.json` | OpenCode zen：key 池与配置 + 粘性会话 + 死模型别名 + 端点学习结果 |
-| `trae-config.json` / `amd-config.json` / `oprt-config.json` / `tkhb-config.json` / `other-config.json` | 各平台全量（账号/key 池、启用状态、平台专属开关） |
-| `workbuddy/config.json` + `workbuddy/auths/` + `workbuddy/request-logs/` | WorkBuddy 部署配置、授权凭据、请求日志（沿用 vendor 目录结构） |
+| 文件                                                                                                   | 内容                                                                                                                    |
+| ------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------- |
+| `afree-config.json`                                                                                    | 全局：会话密钥、网关客户端 key、面板请求日志开关、账号选号策略、Combos、模型/平台封禁表、cline「必须流式」学习表        |
+| `proxy-config.json`                                                                                    | 出口代理池 + 出口策略 + 订阅、各平台走池开关、代理隔离段（开关/排除表/绑定上限，含 WorkBuddy 账号绑定）、代理在线率统计 |
+| `cline-config.json`                                                                                    | Cline 账号池（账号、游标、请求头）                                                                                      |
+| `zen-config.json`                                                                                      | OpenCode zen：key 池与配置 + 粘性会话 + 死模型别名 + 端点学习结果                                                       |
+| `trae-config.json` / `amd-config.json` / `oprt-config.json` / `tkhb-config.json` / `other-config.json` | 各平台全量（账号/key 池、启用状态、平台专属开关）                                                                       |
+| `workbuddy/config.json` + `workbuddy/auths/` + `workbuddy/request-logs/`                               | WorkBuddy 部署配置、授权凭据、请求日志（沿用 vendor 目录结构）                                                          |
 
 凭据的代理绑定表（`keyBindings`）跟着凭据池留在各自的平台文件里，不并入 `proxy-config.json`：它的键是凭据明文，搬过去会让同一批明文在两处各存一份。走池开关是布尔值，不敏感，所以归代理域。
 
@@ -156,10 +156,10 @@ Model:     cline-free/deepseek-v4.1-flash   （Cline 池）
 
 两个互不相干的调度维度，容易混：
 
-| 维度 | 决定什么 | 策略入口 | 存放 |
-|---|---|---|---|
-| 账号选号 | 这次请求用哪个账号 / key | `POOL_STRATEGY`（默认 `round_robin`）；Trae 另有 `TRAE_STRATEGY` | `data/afree-config.json` 的 `strategy` |
-| 出口选路 | 这次请求从哪条线路 / IP 出去 | 面板「代理池」页的调度策略 | `data/proxy-config.json` 的 `proxyStrategy` |
+| 维度     | 决定什么                     | 策略入口                                                         | 存放                                        |
+| -------- | ---------------------------- | ---------------------------------------------------------------- | ------------------------------------------- |
+| 账号选号 | 这次请求用哪个账号 / key     | `POOL_STRATEGY`（默认 `round_robin`）；Trae 另有 `TRAE_STRATEGY` | `data/afree-config.json` 的 `strategy`      |
+| 出口选路 | 这次请求从哪条线路 / IP 出去 | 面板「代理池」页的调度策略                                       | `data/proxy-config.json` 的 `proxyStrategy` |
 
 代理池配置（代理列表、出口策略、订阅、各平台走池开关）存在 `data/proxy-config.json`，不寄居在任何平台配置里——代理池是全局能力（7 个平台共用），不属于 OpenCode zen。出口策略：`round_robin`（默认）/ `random` / `fill`。
 
@@ -186,15 +186,15 @@ socks5/socks5h 全支持；直连哨兵（主 = direct）可显式声明直连�
 
 ## Troubleshooting（实测经验）
 
-| 症状 | 实际含义 | 处理 |
-|---|---|---|
-| `bound proxies unavailable … the credential itself was not verified` | **出口**挂了，不是凭据坏。隔离语义下绑定身份被跳过，绝不改道 | 修/换绑定出口；**别删 key**；到提示的冷却时刻后重测 |
-| 单次 Test 失败，几分钟后无任何改动又通过 | 出口冷却只有 2 分钟，并发探测会把正常出口打成短暂冷却 | 单次失败不下结论，≥2 分钟后重测 |
-| `502` 内嵌上游 4xx 文本 | 客户端参数错；网关把所有上游错误映射为 502 | 读内嵌的上游 message；注意客户端重试 502 会重耗免费额度 |
-| `400 model … is not available on this gateway`（刚还好好的） | 目录是活的：上游 feed 会修剪下架模型 | 重读 `/v1/models`；脚本/CI 别写死模型 ID |
-| `amd model sync failed: catalog status 401` | 同步凭据失效（AMD key 会静默过期；同步需启用 key 的 Bearer 头） | 重测 AMD key |
-| TokenHarbor `403 … network address not accepted` | **出口 IP** 被封，不是 key | 给该 key 换绑定出口 |
-| zen 免费层 `403 FreeTierError` 突增 | 上游收紧了格式门（会话/请求 ID/gate 工具） | 看日志刷新频率趋势；网关会自动重铸重试 |
+| 症状                                                                 | 实际含义                                                        | 处理                                                    |
+| -------------------------------------------------------------------- | --------------------------------------------------------------- | ------------------------------------------------------- |
+| `bound proxies unavailable … the credential itself was not verified` | **出口**挂了，不是凭据坏。隔离语义下绑定身份被跳过，绝不改道    | 修/换绑定出口；**别删 key**；到提示的冷却时刻后重测     |
+| 单次 Test 失败，几分钟后无任何改动又通过                             | 出口冷却只有 2 分钟，并发探测会把正常出口打成短暂冷却           | 单次失败不下结论，≥2 分钟后重测                         |
+| `502` 内嵌上游 4xx 文本                                              | 客户端参数错；网关把所有上游错误映射为 502                      | 读内嵌的上游 message；注意客户端重试 502 会重耗免费额度 |
+| `400 model … is not available on this gateway`（刚还好好的）         | 目录是活的：上游 feed 会修剪下架模型                            | 重读 `/v1/models`；脚本/CI 别写死模型 ID                |
+| `amd model sync failed: catalog status 401`                          | 同步凭据失效（AMD key 会静默过期；同步需启用 key 的 Bearer 头） | 重测 AMD key                                            |
+| TokenHarbor `403 … network address not accepted`                     | **出口 IP** 被封，不是 key                                      | 给该 key 换绑定出口                                     |
+| zen 免费层 `403 FreeTierError` 突增                                  | 上游收紧了格式门（会话/请求 ID/gate 工具）                      | 看日志刷新频率趋势；网关会自动重铸重试                  |
 
 ## 开发
 

@@ -119,8 +119,9 @@ type Config struct {
 	Endpoint string `json:"endpoint,omitempty"`
 	// AutoCheckin 每日自动签到开关。nil = 关闭（与上游原版默认一致）。
 	AutoCheckin *bool `json:"autoCheckin,omitempty"`
-	// Cool 冷却表：账号 ID -> 冷却截止时刻（内存态，不落盘）。
-	Cool map[string]time.Time `json:"-"`
+	// Cool 冷却表：账号 ID -> 冷却截止时刻。落盘持久化（2026-10-28 用户定）：
+	// 重启后冷却保留，避免上游刚限流过的账号立即回池被重试；选号时惰性清理过期项。
+	Cool map[string]time.Time `json:"cool,omitempty"`
 }
 
 // DefaultGateway Trae 中国区模型网关（fallback api5-normal.mchost.guru 在
@@ -356,7 +357,7 @@ func Set(next *Config) {
 	pruneRemovedAccounts(next)
 }
 
-// save 原子落盘（临时文件 + rename）。Cool 为运行时字段不落盘。
+// save 原子落盘（临时文件 + rename）。Cool（冷却表）随配置一并持久化。
 func save() {
 	saveMu.Lock()
 	defer saveMu.Unlock()
@@ -366,7 +367,6 @@ func save() {
 	mu.RLock()
 	disk := *cfg
 	mu.RUnlock()
-	disk.Cool = nil
 	data, err := json.MarshalIndent(&disk, "", "  ")
 	if err != nil {
 		fmt.Printf("  trae config marshal failed: %v\n", err)

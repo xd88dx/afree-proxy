@@ -10,12 +10,12 @@
 
 同一个文件常承载多个平台的面板段与路由，改错平台是本仓最常见的事故来源。
 
-| 平台线 | 代码位置 | 面板字段 / 环境变量 |
-|---|---|---|
-| Cline | `internal/cline/`；`internal/app/proxy.go` 的账号池、轮换、冷却与 `/v1` 通用转发 | — |
-| OpenCode (zen) | `internal/app/zen*.go`、`internal/app/admin_zen.go`；`internal/kit/http.go` 的 `DecodeResponse` | `oc*`、`ZEN_*` |
-| TraeWork | `internal/trae/`、`internal/app/trae.go` | `trae*`、`TRAE_*` |
-| WorkBuddy | `internal/workbuddy/**`（vendor 树）、`internal/app/workbuddy*.go` | `wb*` |
+| 平台线         | 代码位置                                                                                        | 面板字段 / 环境变量 |
+| -------------- | ----------------------------------------------------------------------------------------------- | ------------------- |
+| Cline          | `internal/cline/`；`internal/app/proxy.go` 的账号池、轮换、冷却与 `/v1` 通用转发                | —                   |
+| OpenCode (zen) | `internal/app/zen*.go`、`internal/app/admin_zen.go`；`internal/kit/http.go` 的 `DecodeResponse` | `oc*`、`ZEN_*`      |
+| TraeWork       | `internal/trae/`、`internal/app/trae.go`                                                        | `trae*`、`TRAE_*`   |
+| WorkBuddy      | `internal/workbuddy/**`（vendor 树）、`internal/app/workbuddy*.go`                              | `wb*`               |
 
 `internal/app/admin_html.go` 是**所有平台共用**的单文件面板，按 h2 / tab 分段，`oc*` 属于 OpenCode 而不是 Cline。改一处必须确认它属于哪个平台段。
 
@@ -52,7 +52,6 @@ go test ./... -count=1             # 除下述既有失败外应全绿
 上游功能但**必须由本仓 app 层装配**才生效（2026-10-28 起）：workbuddy 的网关思考档位策略（上游 `thinking` 配置节）。装配点三处，漏任一处都不会报错、只是功能静默失效——`internal/app/workbuddy.go`（启动）与 `internal/app/workbuddy_config.go`（热更新）里的 `up.SetEffortPolicy(effortPolicyOf(cfg))`、`livecfg.Snapshot` 的五个 `Thinking*` 镜像字段、面板四个控件（`thinking.enabled` / `default_effort` / `client_priority` / `override_scope`）。上游同类装配在 `cmd/server/main.go`，本仓没有那个入口。
 
 `internal/config.example.json` 是上游仓库根 `config.example.json` 的副本（上游 `TestConfigExampleParses` 用相对路径读它，vendor 后正好指到这里）。同步脚本只搬 `internal/workbuddy/` 树，**不会**带这类根文件；上游更新样例后要手工 `cp`。**不要删**——删了 `go test ./internal/workbuddy/config/` 直接缺文件失败。
-
 
 ## 6. 部署:本机测试,iStore 生产
 
@@ -105,11 +104,11 @@ iStore 的面板密码是 `233@.afree`(与本机 compose 里的值不同);登录
 
 `internal/app/admin_html.go` 的界面是**英文原文 + `I18N_ZH` 词条表**双层结构。`LANG === 'zh'` 时由三条路径替换：
 
-| 路径 | 实现 | 覆盖对象 |
-|---|---|---|
-| 静态文本节点 | `i18nTextNode` + `i18nSubtree` 的 TreeWalker | 标签、hint、按钮、表头、说明段 |
-| 属性 | `i18nAttrs`（`attributeFilter: ['title','placeholder']`） | 悬浮提示、输入框占位符 |
-| JS 字符串 | `T('...')` | toast、动态拼接的行、状态标签 |
+| 路径         | 实现                                                      | 覆盖对象                       |
+| ------------ | --------------------------------------------------------- | ------------------------------ |
+| 静态文本节点 | `i18nTextNode` + `i18nSubtree` 的 TreeWalker              | 标签、hint、按钮、表头、说明段 |
+| 属性         | `i18nAttrs`（`attributeFilter: ['title','placeholder']`） | 悬浮提示、输入框占位符         |
+| JS 字符串    | `T('...')`                                                | toast、动态拼接的行、状态标签  |
 
 **未进词条的文案在中文界面下会原样显示英文**——这是本仓最常见的「功能做完但界面半中半英」缺陷。每次开发新功能或同步上游后，逐项自查：
 

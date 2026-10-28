@@ -36,8 +36,10 @@ type Config struct {
 	// Token 记账（内存态，面板"今日/累计 token"与"最近使用"列）：
 	// key 明文 -> 今日/累计 prompt+completion 消耗与最近成功时间。
 	KeyTokens map[string]KeyTokenStats `json:"keyTokens,omitempty"`
-	// Cooldown 冷却表：key 明文 -> 冷却截止时刻（内存态，不落盘）。
-	Cool map[string]time.Time `json:"-"`
+	// Cooldown 冷却表：key 明文 -> 冷却截止时刻。落盘持久化（2026-10-28
+	// 用户定）：重启后冷却保留，避免上游刚限流过的凭据立即回池被重试；
+	// 选号时惰性清理过期项。
+	Cool map[string]time.Time `json:"cool,omitempty"`
 }
 
 // Binding 一个 key 的出口绑定：主代理优先、备用代理兜底；双不可用 = 该 key
@@ -277,7 +279,7 @@ func Set(next *Config) {
 	pruneRemovedKeys(next)
 }
 
-// save 原子落盘（临时文件 + rename）。Cool 为运行时字段不落盘。
+// save 原子落盘（临时文件 + rename）。Cool（冷却表）随配置一并持久化。
 func save() {
 	saveMu.Lock()
 	defer saveMu.Unlock()
@@ -287,7 +289,6 @@ func save() {
 	mu.RLock()
 	disk := *cfg
 	mu.RUnlock()
-	disk.Cool = nil
 	data, err := json.MarshalIndent(&disk, "", "  ")
 	if err != nil {
 		fmt.Printf("  tokenharbor config marshal failed: %v\n", err)

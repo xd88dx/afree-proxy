@@ -53,8 +53,9 @@ type Platform struct {
 	Models ModelState `json:"models"`
 	// KeyTokens token 记账（内存态，不落盘）：key 明文 -> 今日/累计消耗与最近使用。
 	KeyTokens map[string]KeyTokenStats `json:"-"`
-	// Cool 冷却表（内存态，不落盘）：key 明文 -> 冷却截止时刻。
-	Cool map[string]time.Time `json:"-"`
+	// Cool 冷却表：key 明文 -> 冷却截止时刻。落盘持久化（2026-10-28 用户定）：
+	// 重启后冷却保留，避免上游刚限流过的 key 立即回池被重试；选号时惰性清理过期项。
+	Cool map[string]time.Time `json:"cool,omitempty"`
 }
 
 // Binding 一个 key 的出口绑定：主代理优先、备用代理兜底；双不可用 = 该 key
@@ -361,7 +362,6 @@ func save() {
 	disk.Platforms = make([]Platform, len(cfg.Platforms))
 	for i, p := range cfg.Platforms {
 		cp := p
-		cp.Cool = nil
 		disk.Platforms[i] = cp
 	}
 	mu.RUnlock()

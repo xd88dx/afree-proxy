@@ -332,6 +332,11 @@ type zenConfigData struct {
 	// nil = 旧配置文件没有该键 → 按默认开启处理（见 pinProxyPerKeyEnabled）。
 	// 关闭后恢复按请求轮转（zen 按 key 的 IP 指纹会重新出现，仅排障用）。
 	PinProxyPerKey *bool `json:"pinProxyPerKey,omitempty"`
+	// Cool zen key 冷却表：key 明文 -> 冷却截止时刻。落盘持久化（2026-10-28
+	// 用户定）：重启后冷却保留，避免上游刚限流过的 key 立即回池被重试。
+	// 运行时真身是包级 zenKeyCool（zenKeyMu 保护），save/load 时双向同步；
+	// pickZenKey 惰性清理过期项。
+	Cool map[string]time.Time `json:"cool,omitempty"`
 }
 
 // proxyRuleKinds 自动分配规则（ProxyExclusions/ProxyBindCaps）的基础平台
@@ -561,6 +566,17 @@ var (
 
 func init() {
 	rebuildZenSem()
+	// 冷却表落盘回填（2026-10-28）：zenConfig 的 Cool 是启动加载的落盘形态，
+	// 运行时真身 zenKeyCool 在其后的 var 块初始化，只能在这里（init 阶段，
+	// 所有包级变量就绪后）回填。
+	zenKeyMu.Lock()
+	if len(zenConfig.Cool) > 0 {
+		zenKeyCool = make(map[string]time.Time, len(zenConfig.Cool))
+		for k, v := range zenConfig.Cool {
+			zenKeyCool[k] = v
+		}
+	}
+	zenKeyMu.Unlock()
 }
 
 func rebuildZenSem() {
@@ -658,6 +674,14 @@ func saveZenConfig() {
 	zenConfigMu.Lock()
 	next := *zenConfig
 	zenConfigMu.Unlock()
+	// 冷却表随配置落盘（2026-10-28）：快照包级 zenKeyCool，map 独立拷贝，
+	// 避免 mutateZenConfigFile 持有的引用与运行时并发写交叉。
+	zenKeyMu.Lock()
+	next.Cool = make(map[string]time.Time, len(zenKeyCool))
+	for k, v := range zenKeyCool {
+		next.Cool[k] = v
+	}
+	zenKeyMu.Unlock()
 	// 只覆盖 zen 段，sessions/modelAliases/endpoints 原样保留。
 	mutateZenConfigFile(func(f *zenConfigFileData) {
 		f.zenConfigData = next
@@ -695,6 +719,11 @@ func setZenConfig(c *zenConfigData) {
 		valid[k] = true
 	}
 	zenKeyMu.Lock()
+	// 冷却表以配置为准回填（管理导入/面板保存路径）；启动路径走 init()。
+	zenKeyCool = make(map[string]time.Time, len(c.Cool))
+	for k, v := range c.Cool {
+		zenKeyCool[k] = v
+	}
 	for k := range zenKeyCool {
 		if !valid[k] {
 			delete(zenKeyCool, k)
@@ -981,6 +1010,7 @@ func cooldownZenKey(key string, d time.Duration) time.Duration {
 	zenKeyMu.Lock()
 	zenKeyCool[key] = time.Now().Add(d)
 	zenKeyMu.Unlock()
+	saveZenConfig() // 冷却落盘持久化（2026-10-28）：重启后冷却保留
 	return d
 }
 

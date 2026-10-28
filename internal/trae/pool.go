@@ -181,6 +181,7 @@ func Cooldown(id string, d time.Duration) time.Duration {
 	}
 	c.Cool[id] = time.Now().Add(d)
 	mu.Unlock()
+	save() // 冷却落盘持久化（2026-10-28）：重启后冷却保留
 	return d
 }
 
@@ -192,6 +193,7 @@ func Uncool(id string) {
 	mu.Lock()
 	delete(cfg.Cool, id)
 	mu.Unlock()
+	save() // 解除冷却同步落盘
 }
 
 // CooldownUntil 只读查询冷却截止时刻。

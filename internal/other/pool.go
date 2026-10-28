@@ -159,6 +159,7 @@ func Cooldown(p *Platform, key string, d time.Duration) time.Duration {
 	}
 	p.Cool[key] = time.Now().Add(d)
 	keyMu.Unlock()
+	save() // 冷却落盘持久化（2026-10-28）：重启后冷却保留
 	return d
 }
 
@@ -170,6 +171,7 @@ func Uncool(p *Platform, key string) {
 	keyMu.Lock()
 	delete(p.Cool, key)
 	keyMu.Unlock()
+	save() // 解除冷却同步落盘
 }
 
 // CooldownUntil 只读查询冷却截止时刻。

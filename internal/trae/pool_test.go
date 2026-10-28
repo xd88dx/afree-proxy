@@ -1,6 +1,7 @@
 package trae
 
 import (
+	"path/filepath"
 	"testing"
 	"time"
 )
@@ -83,5 +84,29 @@ func TestPickAccountAllCoolingFollowsUnableForce(t *testing.T) {
 	t.Setenv("UNABLE_FORCE", "true")
 	if got := PickAccount("round_robin", nil); got == nil {
 		t.Fatal("UNABLE_FORCE=true must fall back to a cooling account")
+	}
+}
+
+// 冷却落盘回读（2026-10-28 用户定）：Cooldown 后重新加载配置，冷却保留。
+func TestCooldownPersistedAcrossReload(t *testing.T) {
+	dir := t.TempDir()
+	saved := Get()
+	t.Cleanup(func() { Set(saved) })
+	ConfigPath = filepath.Join(dir, "trae-config.json")
+	t.Cleanup(func() { ConfigPath = "" })
+	Set(&Config{Gateway: DefaultGateway, Accounts: []*Account{
+		{ID: "u1", Token: "tok"}, {ID: "u2", Token: "tok"},
+	}, Endpoint: "auto"})
+	Cooldown("u1", 5*time.Minute)
+	// 模拟重启：重新加载同一文件
+	Load(ConfigPath)
+	until, ok := Get().Cool["u1"]
+	if !ok || until.Before(time.Now()) {
+		t.Fatalf("cooldown must survive reload, ok=%v until=%v", ok, until)
+	}
+	Uncool("u1")
+	Load(ConfigPath)
+	if _, ok := Get().Cool["u1"]; ok {
+		t.Fatal("uncooled account must stay uncooled after reload")
 	}
 }
