@@ -1354,10 +1354,14 @@ func chatCandidates() [][2]string {
 //   - remote / traework：固定 chat_sessions 传输，不回落；
 //   - traecode：固定 raw_chat，不回落；
 //   - auto（默认，原项目 TRAE_AUTO_ROUTE + 档位路由 2026-10-27 用户定）：
-//     工具/图片请求走 raw_chat（IDE Agent，工具协议完整）；纯文字按模型
-//     档位选传输——有 remote 档走 Remote，仅有 traework 档走 TraeWork，
-//     仅有原生档走 raw_chat；主传输失败（可重试类错误）回落一次（Remote
-//     ↔ raw，或 Remote → TraeWork，对齐原项目 work fallback）。
+//     工具/图片请求 raw_chat 优先（IDE Agent，工具协议完整）；纯文字按模型
+//     档位选传输——remote > traework > raw；主传输失败（可重试类错误）回落
+//     一次（Remote ↔ raw，或 Remote → TraeWork，对齐原项目 work fallback）。
+//     2026-10-28 用户定（一刀切）：档位被黑名单命中即视为不可用，主/回落
+//     都只在「有档位且未被封」里选——兑现「封禁摘掉不可用档位，请求自动走
+//     剩下那条，只要有一条路能走通就保留路由」。免费账号权限问题全局同因，
+//     不按封禁原因（4023/11158/1005）分层。全部档位被封时兜底 raw（模型已
+//     从目录剔除，显式请求让上游真实错误透出并再次落档封禁，幂等）。
 //     模型无任何 chat_sessions 档时不分流，维持 raw_chat。
 func transportSelector(opts ChatOpts) (primary, fallback func(context.Context, *Account, ChatOpts, string) (*Stream, error)) {
 	ep := strings.ToLower(strings.TrimSpace(Get().Endpoint))
@@ -1369,34 +1373,53 @@ func transportSelector(opts ChatOpts) (primary, fallback func(context.Context, *
 	case "traecode":
 		return rawChatOnce, nil
 	}
-	// auto：先看请求特征（工具/图片永远 raw 优先——工具协议只有 raw 完整）
+	// auto：档位可用性 = 有该档（能力前提）且该档未被黑名单命中。
+	// banChecker 未注入时 modelBannedIn 恒 false，退化为纯 modelHasTier。
+	usable := func(tier string) bool {
+		return modelHasTier(opts.Model, tier) && !modelBannedIn(tier, opts.Model.ID)
+	}
+	// 工具/图片：raw 优先（工具协议只有 raw 完整）。降级仅针对「raw 档存在
+	// 但被封」：raw 档根本不存在（能力缺失，如 work-only 模型）维持原
+	// 「先试 raw、失败回落」语义，不在本次改动范围。
+	hasRawCap := modelHasTier(opts.Model, "traecode")
 	if requestHasToolsOrImages(opts.Params) {
+		if !hasRawCap || usable("traecode") {
+			switch {
+			case usable("remote"):
+				return rawChatOnce, remoteChatOnce
+			case usable("traework"):
+				return rawChatOnce, remoteWorkChatOnce
+			default:
+				return rawChatOnce, nil
+			}
+		}
 		switch {
-		case modelHasTier(opts.Model, "remote"):
-			return rawChatOnce, remoteChatOnce
-		case modelHasTier(opts.Model, "traework"):
-			return rawChatOnce, remoteWorkChatOnce
+		case usable("remote"):
+			return remoteChatOnce, nil
+		case usable("traework"):
+			return remoteWorkChatOnce, nil
 		default:
 			return rawChatOnce, nil
 		}
 	}
-	// 纯文字：按模型档位选主传输
-	hasNative := modelHasTier(opts.Model, "traecode")
+	// 纯文字：按可用档位选主传输（remote > traework > raw 优先级不变）
 	switch {
-	case modelHasTier(opts.Model, "remote"):
+	case usable("remote"):
 		switch {
-		case hasNative:
+		case usable("traecode"):
 			return remoteChatOnce, rawChatOnce
-		case modelHasTier(opts.Model, "traework"):
+		case usable("traework"):
 			return remoteChatOnce, remoteWorkChatOnce // Remote 失败回落 Work（原项目 work fallback）
 		default:
 			return remoteChatOnce, nil
 		}
-	case modelHasTier(opts.Model, "traework"):
-		if hasNative {
+	case usable("traework"):
+		if usable("traecode") {
 			return remoteWorkChatOnce, rawChatOnce
 		}
 		return remoteWorkChatOnce, nil
+	case usable("traecode"):
+		return rawChatOnce, nil
 	default:
 		return rawChatOnce, nil
 	}
