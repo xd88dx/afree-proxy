@@ -1265,11 +1265,14 @@ func recordProbeUsage(p *Panel, uid, model string, u map[string]any, latencyMs i
 	if n, ok := num("total_tokens"); ok {
 		delta.HasTotalTokens, delta.TotalTokens = true, n
 	}
+	delta.HasLatencyMs, delta.LatencyMs = true, latencyMs
+	// 没有 token 数也要记一次：RecordTokenUsage 会刷新「最近使用/最近模型/请求数」。
+	// 上游确实可能不给 usage（此时今日用量不动是对的——不编造消耗），但探测
+	// 成功却不刷新最近使用，会让面板看起来像"点了没反应"（2026-10-30 用户报）。
+	p.cfg.Pool.RecordTokenUsage(uid, delta)
 	if !delta.HasPromptTokens && !delta.HasCompletionTokens && !delta.HasTotalTokens {
 		return
 	}
-	delta.HasLatencyMs, delta.LatencyMs = true, latencyMs
-	p.cfg.Pool.RecordTokenUsage(uid, delta)
 	if p.cfg.Usage != nil {
 		realm := "cn"
 		if a, ok := p.cfg.Pool.Status(uid); ok && a.Realm != "" {
@@ -1286,6 +1289,50 @@ func recordProbeUsage(p *Panel, uid, model string, u map[string]any, latencyMs i
 			HasLatency:       true,
 		}, true)
 	}
+}
+
+// probeUsageFromBody 从探测响应体里取 usage 对象（取不到返回 nil）。
+//
+// 关键前提：出站 body 一律被 upstream.prepareBody 强制 stream=true（见
+// upstream/payload.go 的 obj["stream"] = true），所以探测请求虽然写了
+// "stream": false，拿回来的其实是 **SSE 文本**（"data: {...}\n\ndata: [DONE]"），
+// 不是聚合 JSON。此前这里直接 json.Unmarshal 整段 → 必然失败 → usage 永远取不到
+// → "测试通过，但今日用量和最近使用都不更新"（2026-10-30 用户报）。
+// 两种形态都认：先按聚合 JSON 试，失败再逐帧扫 SSE（取最后一帧带 usage 的，
+// 末帧 usage 最全）；data 包装层同样剥一次。
+func probeUsageFromBody(raw []byte) map[string]any {
+	var obj map[string]any
+	if json.Unmarshal(raw, &obj) == nil {
+		if d, ok := obj["data"].(map[string]any); ok && d["usage"] != nil {
+			obj = d
+		}
+		if u, ok := obj["usage"].(map[string]any); ok && len(u) > 0 {
+			return u
+		}
+		return nil
+	}
+	var last map[string]any
+	for _, line := range strings.Split(string(raw), "\n") {
+		line = strings.TrimSpace(line)
+		if !strings.HasPrefix(line, "data: ") {
+			continue
+		}
+		payload := strings.TrimPrefix(line, "data: ")
+		if payload == "[DONE]" {
+			continue
+		}
+		var fr map[string]any
+		if json.Unmarshal([]byte(payload), &fr) != nil {
+			continue
+		}
+		if d, ok := fr["data"].(map[string]any); ok && d["usage"] != nil {
+			fr = d
+		}
+		if u, ok := fr["usage"].(map[string]any); ok && len(u) > 0 {
+			last = u
+		}
+	}
+	return last
 }
 
 func probeOnce(p *Panel, a *auth.Auth, uid, probeModel string) (map[string]any, upstream.ErrKind, error) {
@@ -1317,15 +1364,9 @@ func probeOnce(p *Panel, a *auth.Auth, uid, probeModel string) (map[string]any, 
 			raw, rerr := io.ReadAll(rc)
 			rc.Close()
 			if rerr == nil {
-				var obj map[string]any
-				if json.Unmarshal(raw, &obj) == nil {
-					if d, ok := obj["data"].(map[string]any); ok && d["usage"] != nil {
-						obj = d
-					}
-					if u, ok := obj["usage"].(map[string]any); ok && len(u) > 0 {
-						recordProbeUsage(p, uid, probeModel, u, latencyMs)
-					}
-				}
+				// 记账：usage 能取到就记消耗，取不到也记一次"这次用过"
+				//（刷新最近使用），不再静默跳过。
+				recordProbeUsage(p, uid, probeModel, probeUsageFromBody(raw), latencyMs)
 			}
 		}
 		return out, upstream.ErrNone, nil

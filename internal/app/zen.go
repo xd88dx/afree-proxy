@@ -2367,9 +2367,15 @@ func callZenResponsesAPI(ctx context.Context, params map[string]any, stream bool
 				return nil, rateLimited, fmt.Errorf("client aborted: %w", err)
 			}
 			if pidx >= 0 {
-				cooldownUpstreamProxy(pidx, 2*time.Minute)
+				// 隧道后流错误（上游 EOF / reset，出口其实通着）单次不冷却 ——
+				// 窗口内累计到阈值才冷却（2026-10-30 用户报：好出口被误冷却）。
+				if shouldCooldownExit(proxyURL, err) {
+					cooldownUpstreamProxy(pidx, 2*time.Minute)
+					log.Printf("  zen proxy failed (%v), cooldown exit %s for 2m", err, viaProxy)
+				} else {
+					log.Printf("  zen upstream-side stream error (%v) on exit %s — not cooling the exit", err, viaProxy)
+				}
 				recordProxyOutcome(proxyURL, false, err, 0)
-				log.Printf("  zen proxy failed (%v), cooldown exit %s for 2m", err, viaProxy)
 			}
 			if attempt < retries {
 				log.Printf("  zen responses network error (%v), retry %d/%d after %v", err, attempt+1, retries, delay)
@@ -2649,9 +2655,15 @@ func callZenAPI(ctx context.Context, params map[string]any, stream bool, opts ..
 			// 上游过载时 CF 重置连接的表现与死代理相同,5~10 分钟的冷却会让
 			// 几次慢模型测试就毒化整个池;2 分钟仍能跳过真死代理,又快速自愈。
 			if pidx >= 0 {
-				cooldownUpstreamProxy(pidx, 2*time.Minute)
+				// 隧道后流错误（上游 EOF / reset，出口其实通着）单次不冷却 ——
+				// 窗口内累计到阈值才冷却（2026-10-30 用户报：好出口被误冷却）。
+				if shouldCooldownExit(proxyURL, err) {
+					cooldownUpstreamProxy(pidx, 2*time.Minute)
+					log.Printf("  zen proxy failed (%v), cooldown exit %s for 2m", err, viaProxy)
+				} else {
+					log.Printf("  zen upstream-side stream error (%v) on exit %s — not cooling the exit", err, viaProxy)
+				}
 				recordProxyOutcome(proxyURL, false, err, 0)
-				log.Printf("  zen proxy failed (%v), cooldown exit %s for 2m", err, viaProxy)
 			}
 			// 网络错误:退避重试(瞬时可恢复);ctx 取消时中断等待
 			if attempt < retries {

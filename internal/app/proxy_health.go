@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log"
+	"strings"
 	"sync"
 	"time"
 
@@ -53,6 +54,104 @@ const (
 //
 // 各平台包有各自的 HTTPError 类型（字段一致、类型不同），这里按类型排除；
 // 其余（网络级）一律视为传输层失败。
+// isUpstreamSideStreamFailure err 是否为"隧道已建通之后"的流错误。
+//
+// 判据：Go 的 *url.Error 形如 `Post "https://host/path": <cause>` —— 出现
+// 「方法 + URL」前缀，说明拨号 + CONNECT/SOCKS + TLS 已经走通、请求已发出，
+// 出口隧道本身是好的；失败发生在隧道之后的流上（上游主动关连接 / 对端重置 /
+// 空闲连接被掐）。这类错误的责任在上游或链路中段，**不能判定为出口代理不可用**。
+//
+// 反例（仍要冷却，不含这些关键词）：`dial tcp …: i/o timeout`、
+// `proxyconnect tcp: …`、`socks5 …`、`tls: …` —— 都发生在建连阶段。
+//
+// 2026-10-30 用户报：`Post "https://www.codebuddy.ai/v2/chat/completions": EOF`
+// 把一直在线的 10106 出口冷却了 2 分钟，而绑同一出口的其它凭据照常通。
+func isUpstreamSideStreamFailure(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	if !(strings.HasPrefix(msg, "Post \"") || strings.HasPrefix(msg, "Get \"") ||
+		strings.HasPrefix(msg, "Put \"") || strings.HasPrefix(msg, "Head \"") ||
+		strings.HasPrefix(msg, "Patch \"") || strings.HasPrefix(msg, "Delete \"")) {
+		return false
+	}
+	_, cause, ok := strings.Cut(msg, "\": ")
+	if !ok {
+		return false
+	}
+	// 建连阶段的关键词优先命中：隧道还没建起来就失败，责任在出口（要冷却），
+	// 即使 cause 里恰好带着 EOF（例如 `proxyconnect tcp: EOF`）。
+	for _, s := range []string{
+		"dial tcp", "dial unix", "proxyconnect", "socks", "tls:", "no such host",
+		"connect:", "handshake", "connection refused", "network is unreachable",
+		"no route to host", "i/o timeout", "context deadline exceeded",
+	} {
+		if strings.Contains(cause, s) {
+			return false
+		}
+	}
+	for _, s := range []string{
+		"EOF", "connection reset by peer", "broken pipe",
+		"http: server closed idle connection", "server closed the connection", "stream closed",
+	} {
+		if strings.Contains(cause, s) {
+			return true
+		}
+	}
+	return false
+}
+
+// 隧道后流错误的冷却门限：单次不冷却（上游 EOF 很常见，冷却就是误判），
+// 窗口内累计到阈值才认为这条隧道真断了。
+const (
+	proxyStreamFailWindow    = 60 * time.Second
+	proxyStreamFailThreshold = 2
+)
+
+var (
+	proxyStreamFailMu sync.Mutex
+	proxyStreamFails  = map[string][]time.Time{}
+)
+
+// proxyStreamFailStrike 记一次"隧道后流错误"，返回是否达到冷却门限。
+func proxyStreamFailStrike(proxyURL string) bool {
+	if proxyURL == "" {
+		return false
+	}
+	now := time.Now()
+	proxyStreamFailMu.Lock()
+	defer proxyStreamFailMu.Unlock()
+	kept := make([]time.Time, 0, proxyStreamFailThreshold+1)
+	for _, t := range proxyStreamFails[proxyURL] {
+		if now.Sub(t) <= proxyStreamFailWindow {
+			kept = append(kept, t)
+		}
+	}
+	kept = append(kept, now)
+	if len(kept) >= proxyStreamFailThreshold {
+		delete(proxyStreamFails, proxyURL) // 触发即清零，避免窗口内反复冷却
+		return true
+	}
+	proxyStreamFails[proxyURL] = kept
+	return false
+}
+
+// shouldCooldownExit err 是否应当让该出口退出轮转。三态归因：
+//
+//   - 上游响应类错误（各平台 HTTPError/StatusError）→ 出口是通的，不冷却；
+//   - 建连阶段失败（拨号 / CONNECT / SOCKS / TLS）→ 出口不可用，立刻冷却；
+//   - 隧道已建通后的流错误（EOF / reset …）→ 单次不冷却，窗口内累计到阈值才冷却。
+func shouldCooldownExit(proxyURL string, err error) bool {
+	if err == nil || !isTransportLayerFailure(err) {
+		return false
+	}
+	if isUpstreamSideStreamFailure(err) {
+		return proxyStreamFailStrike(proxyURL)
+	}
+	return true
+}
+
 func isTransportLayerFailure(err error) bool {
 	if err == nil {
 		return false
@@ -137,7 +236,7 @@ func recordProxyOutcome(proxyURL string, ok bool, err error, hsMs int64) {
 	// cline/zen 在各自请求循环里已调用，此处重复命中是幂等的（同为 2 分钟）。
 	// 此前其余平台只记账不自愈：坏节点会被轮转反复选中，于是同一个节点故障
 	// 被轮流记到多个凭据头上（冷却 / trae 自动封禁），本行补上这个缺口。
-	if !ok && isTransportLayerFailure(err) {
+	if !ok && shouldCooldownExit(proxyURL, err) {
 		if idx := proxyIdxInPool(proxyURL); idx >= 0 {
 			cooldownUpstreamProxy(idx, proxyTransportCooldown)
 		}

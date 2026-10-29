@@ -2,19 +2,29 @@ package app
 
 import "testing"
 
-// CLINE_FORCE_STREAM 关闭（默认）时，判定仍按模型：未知模型不强制流式。
+// 总闸默认关闭：判定仍按模型（未知模型不强制流式）。
+//（CLINE_FORCE_STREAM 已于 2026-10-30 删除，统一到 FORCE_STREAM。）
 func TestUpstreamNeedsStream_DefaultOff(t *testing.T) {
-	t.Setenv("CLINE_FORCE_STREAM", "")
+	t.Setenv("FORCE_STREAM", "")
 	if upstreamNeedsStream("definitely-not-a-known-model-xyz") {
-		t.Fatal("force-off 时未知模型不应要求流式")
+		t.Fatal("总闸关闭时未知模型不应要求流式")
 	}
 }
 
-// 开关打开后，任何模型都要走上游流式（客户端非流式由网关聚合）。
+// 总闸打开：任何模型都走上游流式（客户端非流式由网关聚合）。
 func TestUpstreamNeedsStream_ForceOn(t *testing.T) {
-	t.Setenv("CLINE_FORCE_STREAM", "true")
+	t.Setenv("FORCE_STREAM", "true")
 	if !upstreamNeedsStream("definitely-not-a-known-model-xyz") {
-		t.Fatal("force-on 时任何模型都应要求流式")
+		t.Fatal("FORCE_STREAM=true 时任何模型都应要求流式")
+	}
+}
+
+// 删掉的旧开关不再被读取：设了也不该生效（避免有人按旧文档配置后误以为管用）。
+func TestUpstreamNeedsStream_LegacyEnvIgnored(t *testing.T) {
+	t.Setenv("FORCE_STREAM", "")
+	t.Setenv("CLINE_FORCE_STREAM", "true")
+	if upstreamNeedsStream("definitely-not-a-known-model-xyz") {
+		t.Fatal("CLINE_FORCE_STREAM 已废弃，不应再影响判定")
 	}
 }
 

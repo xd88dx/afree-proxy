@@ -1366,9 +1366,15 @@ func clineAPIWithAccount(ctx context.Context, params map[string]any, stream bool
 			// 长冷却会让几次慢请求毒化整个池;2 分钟能跳过真死代理又快速自愈。
 			// 绑定账号（隔离模式）同样适用：全局开关为直连时，绑定代理的网络
 			// 错误也绝不毒化账号（pidx=-1 的直连兜底冷却为 no-op）。
-			cooldownUpstreamProxy(pidx, 2*time.Minute)
+			// 隧道后流错误（上游 EOF / reset，出口其实通着）单次不冷却 ——
+			// 窗口内累计到阈值才冷却，避免一次上游断流就毒化好出口（2026-10-30）。
+			if shouldCooldownExit(proxyURL, lastErr) {
+				cooldownUpstreamProxy(pidx, 2*time.Minute)
+				log.Printf("  cline proxy failed (%v), cooldown exit 2m, retrying on next", lastErr)
+			} else {
+				log.Printf("  cline upstream-side stream error (%v) on exit — not cooling the exit", lastErr)
+			}
 			recordProxyOutcome(proxyURL, false, lastErr, 0)
-			log.Printf("  cline proxy failed (%v), cooldown exit 2m, retrying on next", lastErr)
 			continue
 		}
 		// 直连网络错误：临时短冷却 5 分钟
@@ -2179,11 +2185,11 @@ func modelNeedsStream(modelID string) bool {
 	return clineStreamRequired(modelID)
 }
 
-// upstreamNeedsStream 上游是否该走流式：CLINE_FORCE_STREAM 全局开关优先，其次
-// 按模型判定。所有"客户端要非流式"的 cline 入口都必须问这个函数，别再直接调
-// modelNeedsStream —— 否则全局开关会漏掉部分 API 形态（chat/messages/responses）。
+// upstreamNeedsStream 上游是否该走流式：FORCE_STREAM 总闸优先，其次按模型判定。
+// 所有"客户端要非流式"的 cline 入口都必须问这个函数，别再直接调
+// modelNeedsStream —— 否则总闸会漏掉部分 API 形态（chat/messages/responses）。
 func upstreamNeedsStream(modelID string) bool {
-	if ClineForceStream() {
+	if ForceStream() {
 		return true
 	}
 	return modelNeedsStream(modelID)

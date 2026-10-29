@@ -32,7 +32,13 @@ import (
 //	LOG_REQUESTS               请求日志开关，默认 true；"false" 完全关闭（含 body 探测）
 //	LOG_FILE_MAX_MB            requests.jsonl 大写上限 MB，默认 10，超出清空
 //	APPLY_SYSTEM_PROMPT_OVERRIDE  "true" 才启用 override.md 系统提示词替换，默认关闭
-//	STREAM_LOG                 "true" 把 Anthropic 流式原始 SSE 落盘（完整对话，慎用）
+//	FORCE_STREAM               "true" = 全部平台强制流式总闸（默认 false）。
+//	                           驱动 cline（唯一按模型判定的平台）；其余平台恒为
+//	                           上游流式、客户端要非流式时由网关聚合，不受它影响。
+//	                           开之前必须确认没有"只支持非流式"的模型——那些模型
+//	                           会直接失败（没有反向学习机制）。
+//	                           （CLINE_FORCE_STREAM 已于 2026-10-30 删除，统一到本开关）
+//	STREAM_ATTEMPT             流式首发+重试次数，默认 2
 //	STRICT_MODEL_MATCH         "false" 时未知模型静默回退默认模型（默认显式 400）
 //	CLIENT_IP_HEADER           反代部署下取真实客户端 IP 的请求头名（登录限流用）
 //	ZEN_PIN_KEY                zen key 池固定用第 n 个 key（1 起），排障/单 key 直测用
@@ -277,12 +283,17 @@ func SystemPromptOverrideEnabled() bool {
 	return v
 }
 
-// ClineForceStream CLINE_FORCE_STREAM=true 时 cline 上游一律走流式：客户端要
-// 非流式时由网关把上游 SSE 聚合回普通 JSON（与 zen 同形态）。默认 false =
-// 仍按模型元数据/命名约定/自学习逐模型判定。开全局开关前必须先确认没有"只支持
-// 非流式"的模型，否则那些模型会直接失败（没有反向学习机制）。
-func ClineForceStream() bool {
-	v, _ := envBool("CLINE_FORCE_STREAM")
+// ForceStream FORCE_STREAM=true 时"全部平台一律强制流式"的总闸。
+//
+// 现状（2026-10-30 核对）：除 cline 外所有平台的**非流式**入口早就在强制上游
+// 流式——amd/openrouter/tokenharbor/other 的非流式处理传 Chat(..., true)，
+// zen 全部 callZenAPI(..., true)，trae/wb 在各自的 client 里硬编码
+// stream=true；客户端要非流式时由网关 collectStreamResponse 聚合回 JSON。
+// 所以这个总闸实际只驱动 cline（唯一按模型判定的平台），其余平台恒为流式、
+// 不受它影响（也不提供"关闭强制流式"的反向开关——上游非流式路径没有反向
+// 学习机制，关了只会把长期未走的路径暴露成故障）。
+func ForceStream() bool {
+	v, _ := envBool("FORCE_STREAM")
 	return v
 }
 
