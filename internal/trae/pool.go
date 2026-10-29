@@ -167,6 +167,7 @@ func RecordAccountTokens(id string, tokens int64) {
 		}
 	}
 	mu.Unlock()
+	markTokensDirty() // 合批落盘
 }
 
 // Cooldown 把账号置为冷却，冷却期内轮转跳过。返回实际生效的时长。

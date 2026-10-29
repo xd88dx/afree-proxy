@@ -7,6 +7,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"afree-proxy/internal/kit"
 )
 
 // ============ 配置与数据模型 ============
@@ -365,6 +367,14 @@ func Set(next *Config) {
 // marshal 全程持 mu.RLock：Cool 是就地上写的活 map，无锁 marshal 会与
 // Cooldown 的写入构成 "concurrent map iteration and map write"
 // 进程级崩溃（2026-10-29 审计修复）。
+// token 记账的合批落盘器（2026-10-30）：记账表已随配置落盘，但写盘只发生在
+// 冷却/面板保存等"顺带"路径上——没有这些事件时，重启会丢掉最近消耗的记账
+// （实测 amd 配置文件的记账日期停在 10-28）。记账后只打脏标记，由后台
+// goroutine 周期写盘；save 自带串行保护，调用方持锁期间不要 Mark。
+var tokensFlush = kit.NewDirtyFlusher(10*time.Second, save)
+
+func markTokensDirty() { tokensFlush.Mark() }
+
 func save() {
 	saveMu.Lock()
 	defer saveMu.Unlock()

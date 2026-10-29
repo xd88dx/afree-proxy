@@ -1871,6 +1871,12 @@ applyTheme(getTheme());
 
 const _ = id => document.getElementById(id);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+// 全站时刻统一 24 小时制（2026-10-30 用户定）：toLocaleString/en-US 默认出
+// 12 小时制（"4:29:53 PM"），每次调用都要显式 hour12:false，否则同一页面里
+// 会出现 AM/PM 与 24 小时制混排。所有时刻渲染一律走这两个常量，不要另起
+// toLocaleString 调用。
+const TZ = 'en-US';
+const TIME_OPT = { hour12: false };
 const fmtNum = n => (n || 0).toLocaleString('en-US');
 // fmtWhen 把服务器发来的 RFC3339 时刻渲染成浏览器的本地时间（同一时刻在不同
 // 时区看到各自的钟点）。容器时区是 UTC，直接显示服务器格式化的读数会和本地
@@ -1880,7 +1886,7 @@ const fmtNum = n => (n || 0).toLocaleString('en-US');
 const fmtWhen = s => {
   if (!s || String(s).startsWith('0001-')) return '';
   const d = new Date(s);
-  return isNaN(d.getTime()) ? s : d.toLocaleString('en-US');
+  return isNaN(d.getTime()) ? s : d.toLocaleString(TZ, TIME_OPT);
 };
 // fmtShort 紧凑时刻（MM-DD HH:mm）：表格窄列（冷却中/轮换周期/恢复提示）用，
 // 避免完整 toLocaleString 长串撑宽挤压相邻列；完整读数放 title 悬浮。
@@ -1891,8 +1897,8 @@ const fmtShort = s => {
   const p = n => String(n).padStart(2, '0');
   return (d.getMonth() + 1) + '-' + p(d.getDate()) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
 };
-// fmtLastUsed 凭据表「最近使用」列的紧凑时刻：去年份（en-US 完整串
-// 10/27/2026, 4:29:53 PM → 10/27 4:29:53 PM），避免年份撑宽窄列；
+// fmtLastUsed 凭据表「最近使用」列的紧凑时刻：去年份（完整串
+// 10/27/2026, 18:29:53 → 10/27 18:29:53），避免年份撑宽窄列；
 // 解析失败/零值行为与 fmtWhen 一致（2026-10-27 用户定）。
 const fmtLastUsed = s => {
   if (!s || String(s).startsWith('0001-')) return '';
@@ -2283,6 +2289,16 @@ const I18N_ZH = {
   'OpenCode keys without proxy bindings follow this switch.': 'OpenCode 未绑定代理的 key 遵循此开关。',
   'Clear bindings': '清空代理',
   'Enable all': '一键启用',
+  // 批量启停（一键启用/一键禁用）的结果提示（2026-10-30 用户定：不提示等于失灵）
+  'Staged ': '已暂存 ',
+  ' row(s) — click Save to apply': ' 行——点「保存」后生效',
+  'All ': '全部 ',
+  ' row(s) are already in this state — nothing to stage': ' 行已经是该状态，无需暂存',
+  'No rows to change': '没有可改动的行',
+  ' · ': ' · ',
+  ' row(s) skipped (locked)': ' 行被互锁跳过',
+  'Account switch staged on for ': '已顺带暂存开启账号开关 ',
+  ' row(s) so the gateway switch can apply — click Save': ' 行的账号开关，反代开关才生效——点「保存」提交',
   'Direct connection': '直连',
   'Save': '保存',
   'Cline accounts without proxy bindings follow this switch.': 'Cline 未绑定代理的账号遵循此开关。',
@@ -3157,15 +3173,36 @@ async function saveWorkbuddyEdits() {
   await loadWorkbuddyAccounts();
 }
 function stageAllWbPool(enabled) {
+  let staged = 0, same = 0, locked = 0, accOpened = 0;
   document.querySelectorAll('#wbAccountsBody input[data-wb-pool]').forEach(cb => {
+    const row = cb.closest('tr');
+    const acc = row ? row.querySelector('input[data-wb-account]') : null;
+    let rowChanged = false;
+    if (enabled && cb.disabled && acc && !acc.checked) {
+      if (acc.disabled) { locked++; return; }
+      acc.checked = true;
+      cb.disabled = false;                       // 解除互锁，反代框恢复可勾
+      const accSnap = wbSnapshot[cb.dataset.wbPool];
+      cb.checked = accSnap ? accSnap.enabled !== false : true;
+      accOpened++;
+      rowChanged = true;
+    }
+    if (cb.disabled || (acc && !acc.checked)) { locked++; return; }
     const snap = wbSnapshot[cb.dataset.wbPool];
-    if (snap && snap.enabled === enabled) return;
-    // 互锁：账号开关关闭的行不参与反代批量操作（勾选框本身禁用，后端也会拒绝）
-    const acc = cb.closest('tr').querySelector('input[data-wb-account]');
-    if (cb.disabled || (acc && !acc.checked)) return;
+    if (snap && snap.enabled === enabled) {
+      // 反代本来就是目标态：只有"顺带开了账号开关"的行才算改动
+      if (rowChanged) { markRowDirty(row, 'wb'); staged++; } else same++;
+      return;
+    }
     cb.checked = enabled;
-    markRowDirty(cb.closest('tr'), 'wb');
+    markRowDirty(row, 'wb');
+    staged++;
   });
+  if (enabled && accOpened) {
+    // 顺带开的账号开关也算暂存改动，提示里说明清楚，避免用户以为只动了反代
+    toast(T('Account switch staged on for ') + accOpened + T(' row(s) so the gateway switch can apply — click Save'), 'success');
+  }
+  stageBatchResult(staged, same, locked);
 }
 function stageClearWorkbuddyProxyBindings() {
   if (!confirm(T('Clear proxy bindings on ALL accounts and disable them? Takes effect when you click Save.'))) return;
@@ -3740,7 +3777,7 @@ async function loadStats() {
     setReq('reqTh', rs.tokenharbor);
     setReq('reqOther', rs.other);
     const hint = _('reqStatsHint');
-    if (hint && d.data && d.data.since) hint.textContent = T('Counted since ') + new Date(d.data.since).toLocaleString();
+    if (hint && d.data && d.data.since) hint.textContent = T('Counted since ') + new Date(d.data.since).toLocaleString(TZ, TIME_OPT);
   } catch (e) { /* ignore */ }
 }
 
@@ -4116,6 +4153,18 @@ function clearDirtyMarks(tbodyId, btnId) {
   const btn = _(btnId);
   if (btn) btn.classList.remove('dirty-hint');
 }
+// stageBatchResult 批量启停（一键启用/一键禁用）的统一结果提示。
+// 这类按钮只做暂存：与已保存状态一致的行不产生待保存项，被互锁/禁用跳过的行
+// 也不动。没有提示时用户点完看不到任何变化，等于"按钮失灵"（2026-10-30 用户定），
+// 所以无论有没有改动都要回一句：改了几行、几行本来就是这个状态、几行被锁跳过。
+function stageBatchResult(staged, same, locked) {
+  let msg;
+  if (staged) msg = T('Staged ') + staged + T(' row(s) — click Save to apply');
+  else if (same) msg = T('All ') + same + T(' row(s) are already in this state — nothing to stage');
+  else msg = T('No rows to change');
+  if (locked) msg += T(' · ') + locked + T(' row(s) skipped (locked)');
+  toast(msg, staged ? 'success' : 'info');
+}
 // 清空单行代理绑定（暂存）：主=全局时备自动跟随锁定
 function stageRowBindingClear(row, kind) {
   const main = row.querySelector('.eg-input[data-eg="' + kind + '"][data-slot="main"]');
@@ -4420,12 +4469,15 @@ async function reorderByLatency(kinds) {
 
 let accSnapshot = {};
 function stageAllAccountsPool(enabled) {
+  let staged = 0, same = 0;
   document.querySelectorAll('#accountTableBody input[data-pool-enabled]').forEach(cb => {
     const snap = accSnapshot[cb.dataset.poolEnabled];
-    if (snap && snap.enabled === enabled) return; // 与已保存状态一致，不产生待保存项
+    if (snap && snap.enabled === enabled) { same++; return; } // 与已保存状态一致，不产生待保存项
     cb.checked = enabled;
     markRowDirty(cb.closest('tr'), 'acc');
+    staged++;
   });
+  stageBatchResult(staged, same, 0);
 }
 function stageClearAccountProxies() {
   document.querySelectorAll('#accountTableBody tr').forEach(row => {
@@ -4994,7 +5046,7 @@ async function loadLogs() {
     const logs = d.data.logs || [];
     if (!logs.length) { tbody.innerHTML = '<tr><td colspan="11" class="empty">No requests logged</td></tr>'; return; }
     tbody.innerHTML = logs.map(l => {
-      const t = l.time ? new Date(l.time).toLocaleString('en-US') : '-';
+      const t = l.time ? new Date(l.time).toLocaleString(TZ, TIME_OPT) : '-';
       const route = ROUTE_LABEL[l.route] || l.route || '-';
       const st = l.status || 0;
       const proxy = PROXY_LABEL[l.proxyType] || '-';
@@ -5172,7 +5224,7 @@ async function loadModels() {
     const models = d.data.models || [];
     const clineCredOk = d.data.credentialsEnabled !== false;
     let info = '';
-    if (d.data.lastSync) info += T('· official feed: ') + new Date(d.data.lastSync).toLocaleTimeString('en-US');
+    if (d.data.lastSync) info += T('· official feed: ') + new Date(d.data.lastSync).toLocaleTimeString(TZ, TIME_OPT);
     // 目录区已分平台迁回各自页面：同名 pill（data-models-info）每页一个，统一回填。
     document.querySelectorAll('[data-models-info]').forEach(el => { el.textContent = info; });
     const row = (inner) => '<div style="display:flex;align-items:center;gap:10px;padding:8px 12px;margin:5px 0;background:rgba(148,163,184,.06);border:1px solid var(--border);border-radius:10px;transition:.15s">' + inner + '</div>';
@@ -5281,7 +5333,7 @@ async function loadModelBlacklist() {
     }
     tb.innerHTML = items.map(it => {
       const plat = BLACKLIST_PLATFORM_LABEL[it.platform] || it.platform;
-      const when = it.createdAt ? new Date(it.createdAt).toLocaleString() : '—';
+      const when = it.createdAt ? new Date(it.createdAt).toLocaleString(TZ, TIME_OPT) : '—';
       // 悬停看上游原始报文 + 业务码；表格列只放统一文案（自动/手动封禁）。
       const title = esc([it.code ? 'code ' + it.code : '', it.detail || ''].filter(Boolean).join(' · ')).slice(0, 800);
       // trae 按端点档位封禁：模型 ID 后挂档位标签，解禁按钮带上档位——
@@ -5676,12 +5728,15 @@ function renderOcKeyStates(ks) {
 }
 
 function stageAllKeysRouting(enabled) {
+  let staged = 0, same = 0;
   document.querySelectorAll('#ocKeysBody input[data-zr]').forEach(cb => {
     const snap = keySnapshot[parseInt(cb.dataset.zr, 10)];
-    if (snap && snap.routing === enabled) return;
+    if (snap && snap.routing === enabled) { same++; return; }
     cb.checked = enabled;
     markRowDirty(cb.closest('tr'), 'key');
+    staged++;
   });
+  stageBatchResult(staged, same, 0);
 }
 async function saveKeyEdits() {
   const rows = [...document.querySelectorAll('#ocKeysBody tr')].filter(r => r.querySelector('.eg-input'));
@@ -6593,12 +6648,15 @@ function renderOrKeyStates(ks) {
 }
 
 function stageAllOrKeysRouting(enabled) {
+  let staged = 0, same = 0;
   document.querySelectorAll('#orKeysBody input[data-orr]').forEach(cb => {
     const snap = orKeySnapshot[parseInt(cb.dataset.orr, 10)];
-    if (snap && snap.routing === enabled) return;
+    if (snap && snap.routing === enabled) { same++; return; }
     cb.checked = enabled;
     markRowDirty(cb.closest('tr'), 'or');
+    staged++;
   });
+  stageBatchResult(staged, same, 0);
 }
 // 清空代理（暂存）：全部 key 清绑定 + 路由全部禁用，与 zen/账号页同语义
 function stageClearOrKeyProxies() {
@@ -6946,14 +7004,17 @@ async function saveTraeLabel(index, label) {
 }
 
 function stageAllTraeRouting(enabled) {
+  let staged = 0, same = 0, locked = 0;
   document.querySelectorAll('#traeAccountsBody input[data-trr]').forEach(cb => {
     // wb 同款互锁：总闸关闭（禁用态）的行不参与批量启停
-    if (cb.disabled) return;
+    if (cb.disabled) { locked++; return; }
     const snap = traeAccSnapshot[parseInt(cb.dataset.trr, 10)];
-    if (snap && snap.routing === enabled) return;
+    if (snap && snap.routing === enabled) { same++; return; }
     cb.checked = enabled;
     markRowDirty(cb.closest('tr'), 'trae');
+    staged++;
   });
+  stageBatchResult(staged, same, locked);
 }
 // 清空代理（暂存）：全部账号清绑定 + 路由全部禁用，与 zen/账号页同语义
 function stageClearTraeProxies() {
@@ -7296,12 +7357,15 @@ function renderAmdKeyStates(ks) {
 }
 
 function stageAllAmdKeysRouting(enabled) {
+  let staged = 0, same = 0;
   document.querySelectorAll('#amdKeysBody input[data-amdr]').forEach(cb => {
     const snap = amdKeySnapshot[parseInt(cb.dataset.amdr, 10)];
-    if (snap && snap.routing === enabled) return;
+    if (snap && snap.routing === enabled) { same++; return; }
     cb.checked = enabled;
     markRowDirty(cb.closest('tr'), 'amd');
+    staged++;
   });
+  stageBatchResult(staged, same, 0);
 }
 // 清空代理（暂存）：全部 key 清绑定 + 路由全部禁用，与 OpenRouter 页同语义
 function stageClearAmdKeyProxies() {
@@ -7568,12 +7632,15 @@ function renderTHKeyStates(ks) {
 }
 
 function stageAllTHKeysRouting(enabled) {
+  let staged = 0, same = 0;
   document.querySelectorAll('#thKeysBody input[data-thr]').forEach(cb => {
     const snap = thKeySnapshot[parseInt(cb.dataset.thr, 10)];
-    if (snap && snap.routing === enabled) return;
+    if (snap && snap.routing === enabled) { same++; return; }
     cb.checked = enabled;
     markRowDirty(cb.closest('tr'), 'th');
+    staged++;
   });
+  stageBatchResult(staged, same, 0);
 }
 // 清空代理（暂存）：全部 key 清绑定 + 路由全部禁用，与 AMDCloud/OpenRouter 页同语义
 function stageClearTHKeyProxies() {
@@ -7996,12 +8063,15 @@ function renderOtherKeys(ks) {
 }
 
 function stageAllOtherKeysRouting(enabled) {
+  let staged = 0, same = 0;
   document.querySelectorAll('#otherKeysBody input[data-otr]').forEach(cb => {
     const snap = otherKeySnapshot[cb.dataset.otr];
-    if (snap && snap.routing === enabled) return;
+    if (snap && snap.routing === enabled) { same++; return; }
     cb.checked = enabled;
     markRowDirty(cb.closest('tr'), 'other');
+    staged++;
   });
+  stageBatchResult(staged, same, 0);
 }
 // 清空代理（暂存）：全部 key 清绑定 + 路由全部禁用，与 AMDCloud 页同语义
 function stageClearOtherKeyProxies() {
@@ -8374,7 +8444,7 @@ async function loadCombos() {
         '<td><span class="model-tag">' + esc(c.platform === 'zen' ? 'opencode' : c.platform) + '</span></td>' +
         '<td style="text-align:left;font-family:monospace">' + esc(c.target) + '</td>' +
         '<td>' + (c.useProxies ? '<span class="model-tag" style="color:var(--accent2)">socks5 pool</span>' : '-') + '</td>' +
-        '<td style="font-size:11px">' + (c.createdAt ? new Date(c.createdAt).toLocaleString('en-US') : '-') + '</td>' +
+        '<td style="font-size:11px">' + (c.createdAt ? new Date(c.createdAt).toLocaleString(TZ, TIME_OPT) : '-') + '</td>' +
         '<td><button class="btn btn-sm btn-danger" data-delcombo="' + esc(c.id) + '">Delete</button></td>' +
       '</tr>').join('') +
       '</tbody></table></div>';

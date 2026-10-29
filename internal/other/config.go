@@ -8,6 +8,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"afree-proxy/internal/kit"
 )
 
 // ============ 配置与数据模型 ============
@@ -51,8 +53,12 @@ type Platform struct {
 	Retries int `json:"retries"`
 	// Models 模型目录状态（拉取/手动/勾选/探测模型）。
 	Models ModelState `json:"models"`
-	// KeyTokens token 记账（内存态，不落盘）：key 明文 -> 今日/累计消耗与最近使用。
-	KeyTokens map[string]KeyTokenStats `json:"-"`
+	// KeyTokens token 记账（落盘持久化，2026-10-30）：key 明文 -> 今日/累计
+	// 消耗与最近使用。原先标了 json:"-" 只活在内存里，重启后子平台（ddx /
+	// agnes 等）面板上的今日/累计 token 全被清零——与 amd/or/th 的落盘口径
+	// 不一致。记账变更不实时写盘：由 markTokensDirty + 后台 flusher 合批落盘
+	// （见 flushTokens），避免每个请求重写整个配置文件。
+	KeyTokens map[string]KeyTokenStats `json:"keyTokens,omitempty"`
 	// Cool 冷却表：key 明文 -> 冷却截止时刻。落盘持久化（2026-10-28 用户定）：
 	// 重启后冷却保留，避免上游刚限流过的 key 立即回池被重试；选号时惰性清理过期项。
 	Cool map[string]time.Time `json:"cool,omitempty"`
@@ -66,7 +72,7 @@ type Binding struct {
 }
 
 // KeyTokenStats 单个 key 的 token 记账：今日/累计消耗（prompt+completion）
-// 与跨日日期、最近成功时间。内存态（不落盘）。
+// 与跨日日期、最近成功时间。随平台配置落盘（2026-10-30 起）。
 type KeyTokenStats struct {
 	Today      int64     `json:"today,omitempty"`
 	Total      int64     `json:"total,omitempty"`
@@ -189,7 +195,32 @@ func normalizeKeys(p *Platform) {
 		cleaned = append(cleaned, k)
 	}
 	p.Keys = cleaned
+	// 记账表随 key 池收敛：已移除的 key 不该在文件里留下永不命中的累计值
+	// （与 amd/or/th 的 normalize 同口径）。
+	if len(p.KeyTokens) > 0 {
+		valid := map[string]bool{}
+		for _, k := range cleaned {
+			valid[k] = true
+		}
+		for k := range p.KeyTokens {
+			if !valid[k] {
+				delete(p.KeyTokens, k)
+			}
+		}
+		if len(p.KeyTokens) == 0 {
+			p.KeyTokens = nil
+		}
+	}
 }
+
+// token 记账落盘：记账发生在每个请求的热路径上，逐请求重写整个配置文件太重，
+// 故只打脏标记，由后台 flusher 合批写盘（kit.DirtyFlusher，与 app 层 cline
+// 账号池的 markPoolDirtyLocked + flusher 同思路）。
+// save 自带 saveMu 串行且与 keyMu/mu 的锁序一致，故 Mark 可在 keyMu 外调用。
+var tokensFlush = kit.NewDirtyFlusher(10*time.Second, save)
+
+// markTokensDirty 标记 token 记账有未落盘变更。
+func markTokensDirty() { tokensFlush.Mark() }
 
 // ReconcileRouting 整体替换 key 池后对齐路由参与表：新引入的 key 默认不
 // 参与路由（面板勾选"Pool"后才生效），已有 key 保持原状态，被移除的 key

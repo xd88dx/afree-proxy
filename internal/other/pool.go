@@ -139,6 +139,7 @@ func RecordKeyTokens(p *Platform, key string, tokens int64) {
 	st.LastUsedAt = time.Now()
 	p.KeyTokens[key] = st
 	keyMu.Unlock()
+	markTokensDirty() // 合批落盘（键已不在表里时记账也不会丢）
 }
 
 // Cooldown 把 key 置为冷却，冷却期内轮转跳过。返回实际生效的时长

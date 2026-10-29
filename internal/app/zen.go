@@ -337,6 +337,12 @@ type zenConfigData struct {
 	// 运行时真身是包级 zenKeyCool（zenKeyMu 保护），save/load 时双向同步；
 	// pickZenKey 惰性清理过期项。
 	Cool map[string]time.Time `json:"cool,omitempty"`
+	// KeyTokens zen key token 记账：key 明文 -> 今日/累计消耗与最近使用。
+	// 落盘持久化（2026-10-30）：原先只活在包级 zenKeyTokens 里，重启后面板
+	// 「今日/累计 token」整列清零——与 amd/or/th/other 的落盘口径不一致。
+	// 机制与 Cool 完全相同：运行时真身是包级 zenKeyTokens（zenKeyMu 保护），
+	// save/load 双向同步；记账变更打脏标记由后台 flusher 合批写盘。
+	KeyTokens map[string]zenKeyTokenStats `json:"keyTokens,omitempty"`
 }
 
 // proxyRuleKinds 自动分配规则（ProxyExclusions/ProxyBindCaps）的基础平台
@@ -576,6 +582,14 @@ func init() {
 			zenKeyCool[k] = v
 		}
 	}
+	// token 记账同样回填补量（2026-10-30）：与冷却同机制，配置里已落盘的
+	// 今日/累计值回填到运行时表，重启后不再清零。
+	if len(zenConfig.KeyTokens) > 0 {
+		zenKeyTokens = make(map[string]zenKeyTokenStats, len(zenConfig.KeyTokens))
+		for k, v := range zenConfig.KeyTokens {
+			zenKeyTokens[k] = v
+		}
+	}
 	zenKeyMu.Unlock()
 }
 
@@ -683,9 +697,16 @@ func saveZenConfig() {
 	// zenKeyCool，若不回写，getZenConfig 浅拷出去的 Cool 永远停在启动值，
 	// setZenConfig 按 c.Cool 重建时会把运行期冷却清零并持久化
 	//（2026-10-29 审计修复：面板任意热改清零冷却）。
+	zenKeyMu.Lock()
+	tokens := make(map[string]zenKeyTokenStats, len(zenKeyTokens))
+	for k, v := range zenKeyTokens {
+		tokens[k] = v
+	}
+	zenKeyMu.Unlock()
 	zenConfigMu.Lock()
 	next := *zenConfig
 	next.Cool = cool
+	next.KeyTokens = tokens
 	zenConfig = &next
 	zenConfigMu.Unlock()
 	// 只覆盖 zen 段，sessions/modelAliases/endpoints 原样保留。
@@ -734,6 +755,13 @@ func setZenConfig(c *zenConfigData) {
 	for k := range zenKeyCool {
 		if !valid[k] {
 			delete(zenKeyCool, k)
+		}
+	}
+	// 记账表以配置为准回填（导入=忠实还原备份），已移除 key 的条目清理掉。
+	zenKeyTokens = make(map[string]zenKeyTokenStats, len(c.KeyTokens))
+	for k, v := range c.KeyTokens {
+		if valid[k] {
+			zenKeyTokens[k] = v
 		}
 	}
 	zenKeyIdx = 0
@@ -1001,7 +1029,16 @@ func recordZenKeyTokens(key string, tokens int64) {
 	st.LastUsedAt = time.Now()
 	zenKeyTokens[key] = st
 	zenKeyMu.Unlock()
+	markZenTokensDirty() // 合批落盘：不在这里同步写文件（热路径）
 }
+
+// zen token 记账落盘：记账在每个请求的热路径上，逐请求重写 zen-config.json
+// 太重，故只打脏标记，由后台 flusher 合批写盘（kit.DirtyFlusher，与 cline
+// 账号池的 markPoolDirtyLocked + startPoolFlusher 同思路）。
+// saveZenConfig 自身会取 zenKeyMu，故 Mark 必须在 zenKeyMu 之外调用。
+var zenTokensFlush = kit.NewDirtyFlusher(10*time.Second, saveZenConfig)
+
+func markZenTokensDirty() { zenTokensFlush.Mark() }
 
 // cooldownZenKey 将 key 置为冷却，冷却期内 round-robin 跳过它。
 // 返回实际生效的冷却时长（0 = 空 key 未冷却）——
