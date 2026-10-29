@@ -110,3 +110,15 @@ git -c core.sshCommand='ssh -o ProxyCommand="connect -S 127.0.0.1:10086 %h %p"' 
 ```
 
 `connect` 位于 `/mingw64/bin/connect`。直推报 `Connection closed by <ip> port 443` 是没走代理，不是密钥或权限问题。
+
+## 11. iStore 生产环境只读（2026-10-29 用户定）
+
+iStore（`root@10.10.10.5`，SSH 密钥 `~/.ssh/id_ed25519_nat`）上跑着生产容器（当前是 `afree`，未来可能有其他），**未经用户显式同意，禁止做任何修改性操作**。允许的操作：
+
+- 日志读取（`docker logs`、读数据目录里的日志/落账文件）；
+- 状态查询（`docker ps` / `inspect` / `images` 等只读命令）；
+- 只读探测（curl 探活等，不改变服务状态）。
+
+**禁止**：创建/删除/重建任何容器、镜像；增删改数据目录文件；改配置、改 env、开关面板功能；上传文件；任何测试性部署。**所有修改与测试一律在本机（Windows Docker）执行**——本机 afree 容器（端口 3457）是测试环境，生产镜像流程与生产部署必须用户明确指示后才动。
+
+如果任务看似需要在 iStore 上验证，先停下来问用户，不要自行创建任何资源。
