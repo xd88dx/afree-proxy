@@ -55,6 +55,8 @@ func zenConfigPayload() map[string]any {
 		// 自动分配规则（平台级代理黑名单 / 每代理绑定上限），代理池页编辑。
 		"proxyExclusions": binding.ProxyExclusions,
 		"proxyBindCaps":   binding.ProxyBindCaps,
+		// 延迟重排的"保持不变"阈值（秒，生效值——未配置时为默认 8s）。
+		"reorderKeepSec": reorderKeepSec(),
 		// egress 自动钉定层（3758eb7）：开关状态与容量快照（代理够不够分）。
 		"pinProxyPerKey": pinProxyPerKeyEnabled(),
 		"egress":         zenEgressSnapshot(),
@@ -108,6 +110,9 @@ func handleZenConfigUpdate(w http.ResponseWriter, r *http.Request) {
 		// 自动分配规则：nil = 不改动；非 nil = 整表替换（空表 = 全部清除）。
 		ProxyExclusions map[string][]string `json:"proxyExclusions"`
 		ProxyBindCaps   map[string]int      `json:"proxyBindCaps"`
+		// 延迟重排阈值（秒）：指针区分"未提交"与显式 0（0 = 所有有记录的
+		// 代理都算慢、全部进入修复段）。
+		ReorderKeepSec *float64 `json:"reorderKeepSec"`
 		// OAuth 账户组织 ID（x-opencode-org-id，上游 571f9b9）：空串 = 清除该头。
 		OrgID *string `json:"orgID"`
 		// 每 key 固定出口代理（egress 层，3758eb7）：指针区分"未提交"与显式 false。
@@ -276,6 +281,17 @@ func handleZenConfigUpdate(w http.ResponseWriter, r *http.Request) {
 			clean = nil
 		}
 		bindingNext.ProxyBindCaps = clean
+		bindingChanged = true
+	}
+	if patch.ReorderKeepSec != nil {
+		// 负数无意义（延迟不会为负），上限只做宽松护栏（600s = 10 分钟，
+		// 再大等于"所有代理都保持不变"，重排就没意义了）。
+		v := *patch.ReorderKeepSec
+		if v < 0 || v > 600 {
+			writeAPI(w, http.StatusBadRequest, apiResponse{Error: "invalid reorderKeepSec: must be between 0 and 600 seconds"})
+			return
+		}
+		bindingNext.ReorderKeepSec = v
 		bindingChanged = true
 	}
 	if patch.PinProxyPerKey != nil {

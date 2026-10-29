@@ -22,6 +22,21 @@ type proxyBindingConfigData struct {
 	BackupProxyEnabled *bool               `json:"backupProxyEnabled,omitempty"`
 	ProxyExclusions    map[string][]string `json:"proxyExclusions,omitempty"`
 	ProxyBindCaps      map[string]int      `json:"proxyBindCaps,omitempty"`
+	// 延迟重排的"保持不变"阈值（秒）：平均握手延迟 ≤ 该值的代理视为健康、
+	// 保持现绑定不参与重排。0/缺项 = 取 defaultReorderKeepSec。
+	ReorderKeepSec float64 `json:"reorderKeepSec,omitempty"`
+}
+
+// defaultReorderKeepSec 阈值缺省值（秒）：与旧版硬编码 6s 的口径不同——
+// 默认 8s（2026-10-29 用户定），面板可改并落盘。
+const defaultReorderKeepSec = 8.0
+
+// reorderKeepSec 生效阈值（秒）：未配置/非正值回落默认。
+func reorderKeepSec() float64 {
+	if v := getProxyBindingConfig().ReorderKeepSec; v > 0 {
+		return v
+	}
+	return defaultReorderKeepSec
 }
 
 var (
@@ -46,6 +61,7 @@ func loadProxyBindingConfigLocked() *proxyBindingConfigData {
 		BackupProxyEnabled: f.BackupProxyEnabled,
 		ProxyExclusions:    f.ProxyExclusions,
 		ProxyBindCaps:      f.ProxyBindCaps,
+		ReorderKeepSec:     f.ReorderKeepSec,
 	}
 	proxyBindingLoadedPath = path
 	return proxyBindingCfg
@@ -73,5 +89,6 @@ func setProxyBindingConfig(c *proxyBindingConfigData) {
 		f.BackupProxyEnabled = cp.BackupProxyEnabled
 		f.ProxyExclusions = cp.ProxyExclusions
 		f.ProxyBindCaps = cp.ProxyBindCaps
+		f.ReorderKeepSec = cp.ReorderKeepSec
 	})
 }

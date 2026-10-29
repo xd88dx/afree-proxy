@@ -55,6 +55,9 @@ type proxyConfigFileData struct {
 	ProxyExclusions map[string][]string `json:"proxyExclusions,omitempty"`
 	// 每代理绑定上限:平台 kind -> 单代理最多绑几条凭据。
 	ProxyBindCaps map[string]int `json:"proxyBindCaps,omitempty"`
+	// 延迟重排"保持不变"阈值(秒):≤ 该延迟的代理保持现绑定不重排。见
+	// proxy_binding_config.go 的 reorderKeepSec(0/缺项 = 默认 8s)。
+	ReorderKeepSec float64 `json:"reorderKeepSec,omitempty"`
 	// 凭据代理绑定表不放这里:它的键是 key 明文,跟 key 一起留在各平台的
 	// <平台>-config.json 里(zen 的见 zenConfigData.KeyBindings)。
 

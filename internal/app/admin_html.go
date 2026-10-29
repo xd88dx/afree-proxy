@@ -730,12 +730,20 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
           </div>
           <div id="ppBulkMenu" class="pb-menu" style="display:none"></div>
         </div>
-        <button class="btn btn-sm btn-primary" style="margin-top:4px;white-space:nowrap" onclick="ppBulkApply()">Batch-append</button>
+        <div style="display:flex;gap:8px;margin-top:4px">
+          <button class="btn btn-sm btn-warn btn-static" id="ppBulkResetBtn" style="white-space:nowrap" onclick="ppBulkReset()" title="Discard staged exclusions and reload the last saved state">Discard</button>
+          <button class="btn btn-sm btn-primary" style="white-space:nowrap" onclick="ppBulkApply()">Append</button>
+        </div>
       </div>
     </div>
     <div id="ppRulesBody"><div class="pr-none" style="padding:10px 12px">Loading...</div></div>
     <div class="form-actions" style="margin-top:12px">
       <button class="btn btn-primary" onclick="saveProxyRules()">Save proxy exclusion rules</button>
+      <span class="pr-capbox" style="margin-left:10px" title="Proxies at or below this latency (seconds) keep their current binding and are skipped by reordering; slower ones are refilled from the pool. Saved on change.">
+        <span class="pr-unit">Keep latency ≤</span>
+        <input class="pr-cap" id="ppReorderKeepSec" type="number" min="0" max="600" step="0.1" value="8.0" style="width:56px" onchange="saveReorderKeepSec(this.value)">
+        <span class="pr-unit">s</span>
+      </span>
       <button class="btn btn-success" onclick="openReorderDlg()" style="margin-left:10px">Reorder credential proxies by latency</button>
     </div>
   </div>
@@ -1733,7 +1741,8 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
     <button class="btn btn-sm" onclick="closeReorderDlg()">Close</button>
   </div>
   <div class="wb-dialog-body">
-    <div class="hint" style="margin-bottom:10px">re-bind proxies of the selected platforms: healthy (fast, allowed) bindings stay put; slow/unrecorded/excluded/over-cap ones are re-filled from the remaining pool (better-only for healthy rows), then auto-save.</div>
+    <div class="hint" style="margin-bottom:6px">re-bind proxies of the selected platforms: healthy (fast, allowed) bindings stay put; slow/unrecorded/excluded/over-cap ones are re-filled from the remaining pool (better-only for healthy rows), then auto-save.</div>
+    <div class="hint" id="impReorderKeepHint" style="margin-bottom:10px"></div>
     <div style="display:flex;gap:8px;margin-bottom:12px">
       <button class="btn btn-sm" onclick="impKeepSetAll('impReorderRows',false)">Select all</button>
       <button class="btn btn-sm" onclick="impKeepSetAll('impReorderRows',true)">Invert</button>
@@ -1990,7 +1999,8 @@ const I18N_ZH = {
   'Save proxy exclusion rules': '保存代理排除规则',
   'Saved proxy exclusion rules': '代理排除规则已保存',
   'Proxy exclusion rules: ': '代理排除规则：',
-  'Batch-append': '批量追加',
+  'Append': '追加',
+  'Discard staged exclusions and reload the last saved state': '放弃暂存的排除修改，恢复为上次保存的状态',
   'Clear selection': '清空选择',
   'Nothing to append': '没有需要追加的代理',
   'Appended to every platform\'s exclusion list (staged) — click Save to apply': '已追加进所有平台的排除列表（暂存）——点「保存」后生效',
@@ -2006,6 +2016,13 @@ const I18N_ZH = {
   ' sub-platform(s) · each configured separately': ' 个子平台 · 各自独立配置',
   'No sub-platform yet': '暂无子平台',
   'Reorder credential proxies by latency': '凭据代理延迟重排',
+  // 延迟重排阈值（保持不变的代理延迟上限）
+  'Keep latency ≤': '保持延迟 ≤',
+  's': '秒',
+  'Proxies at or below this latency (seconds) keep their current binding and are skipped by reordering; slower ones are refilled from the pool. Saved on change.': '延迟不高于该值（秒）的代理保持现绑定、不参与重排；更慢的才从池里回填。改动即时落盘。',
+  'Latency keep threshold saved': '延迟保持阈值已保存',
+  ' — slower bindings are refilled': ' —— 慢于该值的绑定才会被回填',
+  'Keep threshold must be between 0 and 600 seconds': '保持阈值需为 0~600 秒之间的数值',
   'Proxy isolation: each credential only egresses via its bound exits; when none is available it is skipped — never another exit or direct. Forced on when': '代理隔离：每个凭据只从绑定的出口出站，都不可用则跳过——绝不改走其他出口或直连。设有',
   '=true.': '=true 时强制开启。',
   'Backup proxy — off by default: every identity uses its main proxy only; a cooling or removed main proxy is skipped for that round. On: the backup proxy serves as the fallback for the main one.': '备用代理：默认关闭——每个身份只走主代理，主代理冷却或被移除时直接跳过。开启后：备用代理作为主代理的兜底。',
@@ -3970,6 +3987,8 @@ async function loadProxyListCache() {
     backupProxyOn = d.data.backupProxyEnabled === true;
     proxyExclusions = d.data.proxyExclusions || {};
     proxyBindCaps = d.data.proxyBindCaps || {};
+    reorderKeepSecCfg = Number(d.data.reorderKeepSec) > 0 ? Number(d.data.reorderKeepSec) : 8;
+    syncReorderKeepSecInput();
     syncProxyHealthCache((d.data.runtime || {}).proxyHealth);
   } catch (e) { /* keep previous cache */ }
 }
@@ -4145,8 +4164,9 @@ function stageProxiesByOrder(kind) {
 // ========== 凭据延迟重排（跨平台，弹窗选平台） ==========
 // 点按钮先开确认弹窗（与导入配置同款式：文案 + 平台开关 + 全选/反选），确认后
 // 把选中平台的凭据表中主槽绑定了真实代理的行（全局 ''/直连 direct 不参与），按
-// 实测平均握手延迟重新分配代理：≤6s 快代理延迟升序在前 → 无记录代理（按池
-// 序）→ >6s 慢代理（延迟升序）。重复绑定保留（同一代理出现几次进队列几次），
+// 实测平均握手延迟重新分配代理：≤阈值 快代理延迟升序在前 → 无记录代理（按池
+// 序）→ >阈值 慢代理（延迟升序）。阈值（秒）在按钮左侧输入框改，落盘持久化。
+// 重复绑定保留（同一代理出现几次进队列几次），
 // 按各表行序从上到下依次回填。重选后逐平台自动调用既有保存函数落盘。
 // 注意：懒加载 —— 各平台表格仅在访问过对应页后渲染，重排前先逐类加载；
 // 自动保存会连带保存所选平台各表所有未落盘的暂存改动。
@@ -4168,6 +4188,11 @@ const REORDER_SAVERS = { acc: saveAccountEdits, trae: saveTraeEdits, key: saveKe
                          or: saveOrKeyEdits, amd: saveAmdKeyEdits, th: saveTHKeyEdits, other: saveOtherKeyEdits };
 // 打开重排确认弹窗：平台行固定 7 项（与菜单同序），默认全部勾选
 function openReorderDlg() {
+  // 弹窗里回显本次生效的阈值：重排按它判定"健康/慢"，不回显用户无法确认
+  // 改的值是否真被用上（阈值输入框在按钮左边，弹窗会盖住它）。
+  const hint = _('impReorderKeepHint');
+  if (hint) hint.textContent = T('Keep latency ≤') + ' ' + (reorderKeepMs() / 1000).toFixed(1) + T('s') +
+    T(' — slower bindings are refilled');
   const grid = _('impReorderRows');
   grid.style.display = 'grid';
   grid.style.gridTemplateColumns = 'repeat(2, minmax(0,1fr))';
@@ -4187,7 +4212,43 @@ function confirmReorder() {
   if (!kinds.length) { toast(T('No platform selected'), 'info'); return; }
   reorderByLatency(kinds);
 }
-// 延迟数值（毫秒）：无记录返回 0。阈值 6000ms 与延迟徽标五档的 6s 分界（6~10s 黄）一致。
+// 延迟数值（毫秒）：无记录返回 0。
+// ===== 延迟重排阈值（保持不变的代理延迟上限，秒 → 毫秒）=====
+// 平均握手延迟 ≤ 阈值的代理视为健康：保持现绑定、不参与重排。阈值在代理池页
+// 的输入框里改（落盘 proxy-config.json 的 reorderKeepSec，后端默认 8s）。
+// reorderKeepMs 读输入框（秒→毫秒），缺框或非法值回落 8000ms 与后端默认一致；
+// reorderKeepSecCfg 是服务端最近一次生效值，用于非法输入时回填。
+let reorderKeepSecCfg = 8;
+function reorderKeepMs() {
+  const el = _('ppReorderKeepSec');
+  const v = el ? Number(el.value) : NaN;
+  return isFinite(v) && v >= 0 ? Math.round(v * 1000) : 8000;
+}
+function syncReorderKeepSecInput() {
+  const el = _('ppReorderKeepSec');
+  // 正在输入时别回写（onchange 落盘失败回填另说——那里失焦后才触发）
+  if (!el || document.activeElement === el) return;
+  const n = Number(reorderKeepSecCfg);
+  el.value = (isFinite(n) && n > 0 ? n : 8).toFixed(1);
+}
+// saveReorderKeepSec 阈值即时落盘：它只影响重排行为，不进排除规则的暂存态，
+// 改完（失焦/回车）就写盘，不必等「保存代理排除规则」。
+async function saveReorderKeepSec(v) {
+  const n = Number(v);
+  if (!isFinite(n) || n < 0 || n > 600) {
+    toast(T('Keep threshold must be between 0 and 600 seconds'), 'error');
+    syncReorderKeepSecInput();
+    return;
+  }
+  try {
+    await api('POST', '/opencode/config/update', { reorderKeepSec: n });
+    reorderKeepSecCfg = n;
+    toast(T('Latency keep threshold saved'), 'success');
+  } catch (e) {
+    toast(T('Save failed: ') + e.message, 'error');
+    syncReorderKeepSecInput();
+  }
+}
 function proxyHsMsForReorder(v) {
   const r = proxyHealthByProxy[proxyHealthKey(v)];
   return Math.round(Number(r && r.avgHsMs) || 0);
@@ -4197,10 +4258,10 @@ function proxyPoolIdxForReorder(v) {
   return i >= 0 ? i : Number.MAX_SAFE_INTEGER;
 }
 // 重排队列（三段式，行序从上到下依次取用）：
-//   ① 已绑定的 ≤6s 快代理（延迟升序，重复绑定保留多份）
+//   ① 已绑定的 ≤阈值 快代理（延迟升序，重复绑定保留多份）
 //   ② 无记录代理——已绑定的无记录 + **池内未绑定的无记录代理**（合并后按池序；
 //      不在池内的失效绑定排同段末尾）
-//   ③ 已绑定的 >6s 慢代理（延迟升序，重复绑定保留多份）
+//   ③ 已绑定的 >阈值 慢代理（延迟升序，重复绑定保留多份）
 // 无记录段纳入池内未绑定代理，是让"无数据"节点排到慢节点之上、优先被启用的关键
 //（否则从未绑定过的无记录代理永远不进队列，慢节点原位保留）。
 // ===== 代理排除规则（原「自动分配规则」；平台级代理黑名单 + 每代理绑定上限）=====
@@ -4213,8 +4274,8 @@ const PROXY_RULE_DIRECT_KEY = '__direct__';   // 直连在排除表里的哨兵�
 // 直连不是池条目，映射到哨兵键后查同一张排除表
 const proxyExcludedFor = (v, kind) => (proxyExclusions[v === EGRESS_DIRECT ? PROXY_RULE_DIRECT_KEY : v] || []).indexOf(kind) >= 0;
 const proxyCapFor = kind => Math.max(0, Number(proxyBindCaps[kind]) || 0);
-// 延迟档位：0=≤6s 快 1=无记录 2=>6s 慢（阈值与延迟徽标五档的 6s 分界一致）。
-const proxyTierFor = v => { const ms = proxyHsMsForReorder(v); return ms > 6000 ? 2 : (ms > 0 ? 0 : 1); };
+// 延迟档位：0=≤阈值 快 1=无记录 2=>阈值 慢（阈值见 reorderKeepMs，面板可调）。
+const proxyTierFor = v => { const ms = proxyHsMsForReorder(v); return ms > reorderKeepMs() ? 2 : (ms > 0 ? 0 : 1); };
 
 // 冻结-供给-修复回填（取代旧的三段式全量重排 —— 那会把快代理之间也互相洗牌）：
 //   冻结段：绑定健康（快代理、未拉黑、未超上限）的行原样不动，绑定关系趋稳；
@@ -4227,6 +4288,8 @@ const proxyTierFor = v => { const ms = proxyHsMsForReorder(v); return ms > 6000 
 // 返回实际改动行数。
 function applyReorderRules(kind, parts) {
   const cap = proxyCapFor(kind);
+  // 阈值本轮重排内固定：一次重排中途读输入框不会漂移（改值只影响下一次）
+  const keepMs = reorderKeepMs();
   const inPool = v => proxyListCache.indexOf(v) >= 0;
   // 供给偏好序：池内未被拉黑的代理，快（延迟升序）→ 无记录（池序）→ 慢（延迟升序）
   const pref = proxyListCache.filter(p => !proxyExcludedFor(p, kind)).sort((a, b) => {
@@ -4243,7 +4306,7 @@ function applyReorderRules(kind, parts) {
     const ms = proxyHsMsForReorder(v);
     seen[v] = (seen[v] || 0) + 1;
     const overCap = cap > 0 && seen[v] > cap;
-    const bad = proxyExcludedFor(v, kind) || overCap || ms > 6000 || ms <= 0;
+    const bad = proxyExcludedFor(v, kind) || overCap || ms > keepMs || ms <= 0;
     if (bad) repair.push({ m: m, v: v, forced: proxyExcludedFor(v, kind) || overCap });
     else cnt[v] = (cnt[v] || 0) + 1;
   });
@@ -5759,6 +5822,8 @@ async function loadProxyPool() {
     backupProxyOn = c.backupProxyEnabled === true;
     proxyExclusions = c.proxyExclusions || {};
     proxyBindCaps = c.proxyBindCaps || {};
+    reorderKeepSecCfg = Number(c.reorderKeepSec) > 0 ? Number(c.reorderKeepSec) : 8;
+    syncReorderKeepSecInput();
     renderProxyRules();
     _('ppProxies').value = (c.proxies || []).join('\n');
     _('ppStrategy').value = c.proxyStrategy || 'round_robin';
@@ -6194,14 +6259,38 @@ function ppBulkEverywhere() {
 function ppBulkSyncChips() {
   const chips = _('ppBulkChips');
   if (!chips) return;
-  const sel = [...ppBulkSel].map(p =>
-    '<span class="pr-chip pr-chip-sel" title="' + esc(egLabel(p)) + '"><span>' + esc(egLabel(p)) + '</span>' +
-    '<button type="button" onclick="event.stopPropagation();ppBulkPick(decodeURIComponent(this.dataset.pp),false)" data-pp="' + esc(encodeURIComponent(p)) + '" title="' + esc(T('Remove')) + '">×</button></span>');
-  // 已全平台排除的代理回显为置灰 chip（pr-chip-allex）：× = 从所有平台批量取消
-  const everywhere = ppBulkEverywhere().map(p =>
-    '<span class="pr-chip pr-chip-allex" title="' + esc(T('Excluded on every platform — × removes it from all (staged)')) + '"><span>' + esc(egLabel(p)) + '</span>' +
-    '<button type="button" onclick="event.stopPropagation();ppBulkRemoveEverywhere(decodeURIComponent(this.dataset.pp))" data-pp="' + esc(encodeURIComponent(p)) + '" title="' + esc(T('Remove')) + '">×</button></span>');
-  chips.innerHTML = sel.concat(everywhere).join('');
+  // 与卡片已排除列表同一口径（prExSorted）：以代理池原始顺序为骨架遍历输出，
+  // 勾选后 chips 立即按池序排好，而不是按勾选先后堆在末尾。池外残留（已从池里
+  // 删掉但仍被勾选的条目）兜底排在最后。
+  const everywhere = new Set(ppBulkEverywhere());
+  const chipOf = (p, kind) => kind === 'sel'
+    ? '<span class="pr-chip pr-chip-sel" title="' + esc(egLabel(p)) + '"><span>' + esc(egLabel(p)) + '</span>' +
+      '<button type="button" onclick="event.stopPropagation();ppBulkPick(decodeURIComponent(this.dataset.pp),false)" data-pp="' + esc(encodeURIComponent(p)) + '" title="' + esc(T('Remove')) + '">×</button></span>'
+    // 已全平台排除的代理回显为置灰 chip（pr-chip-allex）：× = 从所有平台批量取消
+    : '<span class="pr-chip pr-chip-allex" title="' + esc(T('Excluded on every platform — × removes it from all (staged)')) + '"><span>' + esc(egLabel(p)) + '</span>' +
+      '<button type="button" onclick="event.stopPropagation();ppBulkRemoveEverywhere(decodeURIComponent(this.dataset.pp))" data-pp="' + esc(encodeURIComponent(p)) + '" title="' + esc(T('Remove')) + '">×</button></span>';
+  const out = [];
+  proxyListCache.forEach(p => {
+    if (ppBulkSel.has(p)) out.push(chipOf(p, 'sel'));
+    else if (everywhere.has(p)) out.push(chipOf(p, 'allex'));
+  });
+  ppBulkSel.forEach(p => { if (proxyListCache.indexOf(p) < 0) out.push(chipOf(p, 'sel')); });
+  chips.innerHTML = out.join('');
+}
+// ppBulkReset 复位：丢弃代理排除规则区（含批量追加框）的全部暂存修改，按服务端
+// 上次保存的状态重绘。与账号表/封禁平台的 Discard 同语义——只丢暂存，不动落盘。
+async function ppBulkReset() {
+  ppBulkSel.clear();
+  ppBulkQuery = '';
+  prActiveKind = '';
+  prQuery = '';
+  const i = _('ppBulkIn');
+  if (i) i.value = '';
+  pbMenuHide(_('ppBulkMenu'));
+  try { await loadProxyListCache(); } catch (e) { /* 拉取失败就用现有缓存重建 */ }
+  ppRulesCache = null;
+  renderProxyRules();
+  toast(T('Staged selections reset'), 'info');
 }
 // ppBulkRemoveEverywhere 批量取消：把该代理从所有平台的排除列表移除（暂存），
 // 随后重绘各卡片——该代理重新出现在候选菜单与各卡片可选项里，点保存才落盘。
