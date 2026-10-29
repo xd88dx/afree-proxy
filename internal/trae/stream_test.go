@@ -3,8 +3,10 @@ package trae
 import (
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 // newSSEStream 从原始 SSE 文本构造解析游标（上游线格式：event: + data: + 空行）。
@@ -208,4 +210,69 @@ func TestStreamDeltaEventsRender(t *testing.T) {
 	if ev := nextOfType(t, s, "text"); ev.Text != "def" {
 		t.Fatalf("translated_text = %+v", ev)
 	}
+}
+
+// TestStreamWatchdogTimeouts 读取超时看门狗（2026-10-29）：首事件超时与流中
+// 空闲超时到点必须迫使 Next 返回读错误，而不是无限挂起。
+func TestStreamWatchdogTimeouts(t *testing.T) {
+	// ① 首事件超时：服务器只挂住不发任何数据
+	t.Run("first-event", func(t *testing.T) {
+		t.Setenv("TRAE_REMOTE_FIRST_EVENT_TIMEOUT", "1")
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "text/event-stream")
+			w.WriteHeader(http.StatusOK)
+			w.(http.Flusher).Flush()
+			select {
+			case <-r.Context().Done():
+			case <-time.After(10 * time.Second):
+			}
+		}))
+		defer srv.Close()
+		resp, err := srv.Client().Get(srv.URL)
+		if err != nil {
+			t.Fatalf("get: %v", err)
+		}
+		s := newStream(resp)
+		defer s.Close()
+		start := time.Now()
+		if _, err := s.Next(); err == nil {
+			t.Fatal("Next() should return read error after first-event timeout")
+		}
+		if el := time.Since(start); el > 5*time.Second {
+			t.Fatalf("first-event watchdog too slow: %v", el)
+		}
+	})
+
+	// ② 空闲超时：先发一帧模型事件，随后静默
+	t.Run("idle", func(t *testing.T) {
+		t.Setenv("TRAE_REMOTE_FIRST_EVENT_TIMEOUT", "0") // 关闭首事件计时
+		t.Setenv("TRAE_STREAM_IDLE_TIMEOUT", "1")
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "text/event-stream")
+			w.WriteHeader(http.StatusOK)
+			io.WriteString(w, "event: message\ndata: {\"content\":\"hi\"}\n\n")
+			w.(http.Flusher).Flush()
+			select {
+			case <-r.Context().Done():
+			case <-time.After(10 * time.Second):
+			}
+		}))
+		defer srv.Close()
+		resp, err := srv.Client().Get(srv.URL)
+		if err != nil {
+			t.Fatalf("get: %v", err)
+		}
+		s := newStream(resp)
+		defer s.Close()
+		if _, err := s.Next(); err != nil {
+			t.Fatalf("first event should arrive: %v", err)
+		}
+		start := time.Now()
+		if _, err := s.Next(); err == nil {
+			t.Fatal("Next() should return read error after idle timeout")
+		}
+		if el := time.Since(start); el > 5*time.Second {
+			t.Fatalf("idle watchdog too slow: %v", el)
+		}
+	})
 }

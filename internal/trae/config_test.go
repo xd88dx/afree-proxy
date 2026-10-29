@@ -324,6 +324,37 @@ func TestParseCreditsBody(t *testing.T) {
 	}
 }
 
+// TestParseCreditsBodyParallelLimit 并发权益跨 pack 取最大（含功能 pack 与
+// product_extra 兜底链），credits 口径不受影响（2026-10-29 991502 排查）。
+func TestParseCreditsBodyParallelLimit(t *testing.T) {
+	c, err := parseCreditsBody([]byte(`{"usage_summary":{"consumed_amount":0,"total_amount":4700},"user_entitlement_pack_list":[
+		{"entitlement_base_info":{"product_type":0,"quota":{"enable_solo_agent":true,"solo_agent_parallel_limit":1}},"usage":{}},
+		{"entitlement_base_info":{"quota":{"credits_limit":4000,"solo_agent_parallel_limit":2}},"usage":{}},
+		{"entitlement_base_info":{"product_extra":{"subscription_extra":{"quota":{"solo_agent_parallel_limit":5}}}},"usage":{}}
+	]}`))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if c.ParallelLimit != 5 {
+		t.Fatalf("parallel limit = %d, want 5 (max across packs incl. product_extra chain)", c.ParallelLimit)
+	}
+	if c.Limit != 4700 {
+		t.Fatalf("credits limit = %v, want usage_summary 4700 (parallel parsing must not disturb credits)", c.Limit)
+	}
+	// quota 非空时不走 product_extra 兜底（对齐上游取数顺序）
+	c, err = parseCreditsBody([]byte(`{"usage_summary":{"total_amount":100},"user_entitlement_pack_list":[
+		{"entitlement_base_info":{"quota":{"credits_limit":100},"product_extra":{"subscription_extra":{"quota":{"solo_agent_parallel_limit":9}}}},"usage":{}}
+	]}`))
+	if err != nil || c.ParallelLimit != 0 {
+		t.Fatalf("quota non-empty must shadow product_extra = %+v err = %v", c, err)
+	}
+	// 无 parallel 字段 = 0（闸门走保守默认）
+	c, err = parseCreditsBody([]byte(`{"usage_summary":{"total_amount":100},"user_entitlement_pack_list":[{"entitlement_base_info":{"quota":{"credits_limit":100}},"usage":{}}]}`))
+	if err != nil || c.ParallelLimit != 0 {
+		t.Fatalf("no parallel field = %+v err = %v", c, err)
+	}
+}
+
 func mustObj(t *testing.T, s string) map[string]any {
 	t.Helper()
 	var m map[string]any

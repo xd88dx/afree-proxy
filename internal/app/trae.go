@@ -244,32 +244,112 @@ func traeStrategy() string {
 	return globalStrategy()
 }
 
+// traeStreamOutcome 一次流消费的结果分类（缓冲层重试与 Work 回落的判据）。
+type traeStreamOutcome int
+
+const (
+	traeOutcomeComplete          traeStreamOutcome = iota // 收到 done，完整
+	traeOutcomeBrokenNoModelEvent                         // 断流且未出任何模型事件（可 Work 回落）
+	traeOutcomeBrokenPartial                              // 出过模型事件后断流（回放部分内容，缓冲层重试）
+	traeOutcomeRateLimited                                // 流内 error 事件且限流（缓冲层换号重试）
+)
+
+// isTraeModelEvent 计入"模型事件"的事件类型（对齐上游 observed_model_event；
+// queue 是排队提示不算）。
+func isTraeModelEvent(t string) bool {
+	switch t {
+	case "text", "reasoning", "usage", "done":
+		return true
+	}
+	return false
+}
+
 // aggregateTraeSSE 运行一次 trae.Chat 并把事件流翻译成完整 OpenAI SSE 字节。
 // 流中途断开/收到 error 事件：返回已生成部分（无 [DONE]，缓冲层据此重试）；
 // 上游在首字节前失败：返回 err。usage 随返回值带回（记账用）。
+// 断流未出任何模型事件时先尝试同账号 Work 回落（上游 work fallback 语义）。
 func aggregateTraeSSE(ctx context.Context, params map[string]any, m trae.Model) (data []byte, usage *trae.Usage, accID string, err error) {
-	stream, acc, err := trae.Chat(ctx, trae.ChatOpts{
+	opts := trae.ChatOpts{
 		Model:         m,
 		Params:        params,
 		Strategy:      traeStrategy(),
 		BoundRoutable: traeBoundRoutable,
-	})
+	}
+	stream, acc, err := trae.Chat(ctx, opts)
 	if err != nil {
 		traeAutoBanOnHTTPError(m, acc, err)
 		return nil, nil, "", err
 	}
+	data, usage, outcome, cerr := consumeTraeAgg(ctx, stream, m, acc)
+	if cerr != nil {
+		return nil, usage, acc.ID, cerr
+	}
+	switch outcome {
+	case traeOutcomeComplete:
+		return data, usage, acc.ID, nil
+	case traeOutcomeBrokenNoModelEvent:
+		// 首个模型事件前流结束：对齐上游 work fallback（main.py:8940，
+		// !observed_model_event && retryable → 换 solo_work_remote 会话重发）。
+		if wdata, wusage, wok := traeWorkFallbackOnce(ctx, acc, stream, opts, m); wok {
+			return wdata, wusage, acc.ID, nil
+		}
+		return data, usage, acc.ID, nil
+	default:
+		// Partial / RateLimited：交缓冲层按断流重试（原语义）
+		return data, usage, acc.ID, nil
+	}
+}
+
+// traeWorkFallbackOnce 同账号 Work 传输回落一次：仅在断流发生于 remote 档
+//（agent 执行器）且未出模型事件时触发；Work 侧也断/出错则放弃回落，
+// 交缓冲层重试。
+func traeWorkFallbackOnce(ctx context.Context, acc *trae.Account, first *trae.Stream, opts trae.ChatOpts, m trae.Model) (data []byte, usage *trae.Usage, ok bool) {
+	if first == nil || first.Tier != "remote" {
+		return nil, nil, false
+	}
+	wok, wstream, err := trae.ChatWorkFallback(ctx, acc, opts)
+	if !wok {
+		return nil, nil, false
+	}
+	if err != nil {
+		log.Printf("  trae work fallback failed: %v", err)
+		return nil, nil, false
+	}
+	defer wstream.Close()
+	log.Printf("  trae work fallback: remote ended before first model event, account=%q model=%s", acc.Label, m.ID)
+	data, usage, outcome, cerr := consumeTraeAgg(ctx, wstream, m, acc)
+	if cerr != nil || outcome != traeOutcomeComplete {
+		return nil, nil, false
+	}
+	return data, usage, true
+}
+
+// consumeTraeAgg 消费一条 trae 流并聚合为 OpenAI SSE 字节（含 Close）。
+// 断流（读错误 / EOF 未见到 done）时返回已聚合的部分内容，由调用方按
+// outcome 决定重试方式。
+func consumeTraeAgg(ctx context.Context, stream *trae.Stream, m trae.Model, acc *trae.Account) (data []byte, usage *trae.Usage, outcome traeStreamOutcome, err error) {
 	defer stream.Close()
 	agg := &traeAgg{model: trae.ModelPrefix + m.ID, accID: acc.ID}
 	agg.chunk(map[string]any{"role": "assistant"}, nil)
+	sawModelEvent := false
 	for {
 		ev, rerr := stream.Next()
 		if rerr != nil {
 			// 上游读错误：部分内容 + 让缓冲层按断流重试
-			return agg.buf.Bytes(), agg.usage, acc.ID, nil
+			if sawModelEvent {
+				return agg.buf.Bytes(), agg.usage, traeOutcomeBrokenPartial, nil
+			}
+			return agg.buf.Bytes(), agg.usage, traeOutcomeBrokenNoModelEvent, nil
 		}
 		if ev == nil {
-			// 上游 EOF 未见到 done：视为断流（缓冲层重试）
-			return agg.buf.Bytes(), agg.usage, acc.ID, nil
+			// 上游 EOF 未见到 done：视为断流（缓冲层重试 / Work 回落）
+			if sawModelEvent {
+				return agg.buf.Bytes(), agg.usage, traeOutcomeBrokenPartial, nil
+			}
+			return agg.buf.Bytes(), agg.usage, traeOutcomeBrokenNoModelEvent, nil
+		}
+		if isTraeModelEvent(ev.Type) {
+			sawModelEvent = true
 		}
 		switch ev.Type {
 		case "text", "queue":
@@ -306,16 +386,16 @@ func aggregateTraeSSE(ctx context.Context, params map[string]any, m trae.Model) 
 			reason := traeMapFinishReason(agg.finish, len(agg.tools) > 0)
 			agg.chunk(map[string]any{}, reason)
 			agg.buf.WriteString("data: [DONE]\n\n")
-			return agg.buf.Bytes(), agg.usage, acc.ID, nil
+			return agg.buf.Bytes(), agg.usage, traeOutcomeComplete, nil
 		case "error":
 			// 上游业务错误：限流/配额换账号可能修复，保留断流语义让缓冲层
 			// 重试；其余（模型不存在 4023、参数/权益 4001/1005 等）换号无用，
 			// 直接上抛真实原因——不要再退化成"空流"。
 			if stream.Err != nil && stream.Err.RateLimited {
-				return agg.buf.Bytes(), agg.usage, acc.ID, nil
+				return agg.buf.Bytes(), agg.usage, traeOutcomeRateLimited, nil
 			}
 			traeAutoBanModel(m, acc, ev.Code, traeEventErrorText(ev), stream.Transport)
-			return nil, agg.usage, acc.ID, fmt.Errorf("trae upstream error: %s", traeEventErrorText(ev))
+			return nil, agg.usage, traeOutcomeBrokenPartial, fmt.Errorf("trae upstream error: %s", traeEventErrorText(ev))
 		}
 	}
 }
@@ -379,12 +459,14 @@ func traeAutoBanOnHTTPError(m trae.Model, acc *trae.Account, err error, transpor
 }
 
 // traeTransportScope 传输名 → 封禁档位（remote/traecode/traework）。
-// 空/未知 → 空串（全档封禁，保守兜底）。
+// 空/未知 → 空串（全档封禁，保守兜底）。agent 类型名（solo_agent_remote /
+// solo_work_remote）是 Stream/HTTPError.Transport 的原始取值，一并归一，
+// 避免 remote 流的失败落成"全档封禁"（2026-10-29 排查发现）。
 func traeTransportScope(transport string) string {
 	switch strings.ToLower(strings.TrimSpace(transport)) {
-	case "remote":
+	case "remote", "solo_agent_remote":
 		return "remote"
-	case "work":
+	case "work", "solo_work_remote":
 		return "traework"
 	case "raw":
 		return "traecode"
@@ -483,13 +565,60 @@ func aggregateTraeCompletion(ctx context.Context, params map[string]any, m trae.
 		traeAutoBanOnHTTPError(m, acc, err)
 		return nil, "", err
 	}
+	completion, cerr := consumeTraeCompletion(ctx, stream, m, acc)
+	if cerr == nil {
+		return completion, acc.ID, nil
+	}
+	// 空流（remote 档首事件前断流）→ Work 回落一次，与流式路径同口径
+	if errors.Is(cerr, errTraeEmptyStream) {
+		if wcompletion, wok := traeWorkFallbackCompletion(ctx, acc, stream, trae.ChatOpts{
+			Model: m, Params: params, Strategy: traeStrategy(), BoundRoutable: traeBoundRoutable,
+		}, m); wok {
+			return wcompletion, acc.ID, nil
+		}
+	}
+	return nil, acc.ID, cerr
+}
+
+// errTraeEmptyStream 流未产出任何内容即结束（触发 Work 回落判据）。
+var errTraeEmptyStream = errors.New("trae upstream returned an empty stream")
+
+// traeWorkFallbackCompletion 非流式路径的 Work 回落（对齐 traeWorkFallbackOnce）。
+func traeWorkFallbackCompletion(ctx context.Context, acc *trae.Account, first *trae.Stream, opts trae.ChatOpts, m trae.Model) (map[string]any, bool) {
+	if first == nil || first.Tier != "remote" {
+		return nil, false
+	}
+	wok, wstream, err := trae.ChatWorkFallback(ctx, acc, opts)
+	if !wok {
+		return nil, false
+	}
+	if err != nil {
+		log.Printf("  trae work fallback failed: %v", err)
+		return nil, false
+	}
+	defer wstream.Close()
+	log.Printf("  trae work fallback (non-stream): remote ended before first model event, account=%q model=%s", acc.Label, m.ID)
+	completion, cerr := consumeTraeCompletion(ctx, wstream, m, acc)
+	if cerr != nil {
+		return nil, false
+	}
+	return completion, true
+}
+
+// consumeTraeCompletion 非流式消费一条 trae 流（含 Close），聚合为 completion。
+func consumeTraeCompletion(ctx context.Context, stream *trae.Stream, m trae.Model, acc *trae.Account) (map[string]any, error) {
 	defer stream.Close()
 	var content, reasoning strings.Builder
 	var usage *trae.Usage
 	for {
 		ev, rerr := stream.Next()
 		if rerr != nil {
-			return nil, acc.ID, fmt.Errorf("trae upstream stream error: %w", rerr)
+			// 读错误：零内容视为空流（可 Work 回落，对齐上游 read-timeout
+			// retryable 语义）；已出内容按错误上抛
+			if content.Len() == 0 && reasoning.Len() == 0 && len(stream.ToolCallsSnapshot()) == 0 {
+				return nil, fmt.Errorf("trae upstream returned an empty stream (%w)", errTraeEmptyStream)
+			}
+			return nil, fmt.Errorf("trae upstream stream error: %w", rerr)
 		}
 		if ev == nil {
 			break
@@ -503,19 +632,19 @@ func aggregateTraeCompletion(ctx context.Context, params map[string]any, m trae.
 			usage = ev.Usage
 		case "error":
 			traeAutoBanModel(m, acc, ev.Code, traeEventErrorText(ev), stream.Transport)
-			return nil, acc.ID, fmt.Errorf("trae upstream error: %s", traeEventErrorText(ev))
+			return nil, fmt.Errorf("trae upstream error: %s", traeEventErrorText(ev))
 		case "done":
 			if usage == nil {
 				usage = stream.Usage
 			}
-			return buildTraeCompletion(m, content.String(), reasoning.String(), stream.ToolCallsSnapshot(), usage, ev.FinishReason), acc.ID, nil
+			return buildTraeCompletion(m, content.String(), reasoning.String(), stream.ToolCallsSnapshot(), usage, ev.FinishReason), nil
 		}
 	}
 	// 无 done 终止：有内容就按现状返回，否则报错（空响应不伪装成功）
 	if content.Len() > 0 || reasoning.Len() > 0 || len(stream.ToolCallsSnapshot()) > 0 {
-		return buildTraeCompletion(m, content.String(), reasoning.String(), stream.ToolCallsSnapshot(), usage, ""), acc.ID, nil
+		return buildTraeCompletion(m, content.String(), reasoning.String(), stream.ToolCallsSnapshot(), usage, ""), nil
 	}
-	return nil, acc.ID, errors.New("trae upstream returned an empty stream")
+	return nil, errTraeEmptyStream
 }
 
 // buildTraeCompletion 组装 OpenAI chat.completion 响应体。

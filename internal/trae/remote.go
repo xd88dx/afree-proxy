@@ -364,6 +364,22 @@ func remoteWorkChatOnce(ctx context.Context, acc *Account, opts ChatOpts, proxyU
 	return remoteChatOnce(ctx, acc, opts, proxyURL)
 }
 
+// ChatWorkFallback 首个模型事件前断流的 Work 传输回落（对齐上游
+// main.py work fallback：remote 流未出任何模型事件即结束 → stop 旧会话后
+// 改走 solo_work_remote 会话重发，同账号）。返回 ok=false 表示该模型无
+// traework 档、档位被封或出口不可用，调用方维持原重试语义。
+func ChatWorkFallback(ctx context.Context, acc *Account, opts ChatOpts) (ok bool, stream *Stream, err error) {
+	if !modelHasTier(opts.Model, "traework") || modelBannedIn("traework", opts.Model.ID) {
+		return false, nil, nil
+	}
+	proxyURL, ok := resolveExitFor(acc)
+	if !ok {
+		return false, nil, fmt.Errorf("account %s bound proxies unavailable (cooling or removed); work fallback skipped by proxy isolation", acc.ID)
+	}
+	stream, err = remoteWorkChatOnce(ctx, acc, opts, proxyURL)
+	return true, stream, err
+}
+
 // remoteChatOnce remote/traework 端点单次请求：创建会话 → 打开事件流。
 // 返回的 Stream 与 raw_chat 同构（Next/Close/Usage/Err/ToolCallsSnapshot），
 // 事件翻译在 Stream.consumeRemote。
@@ -378,6 +394,17 @@ func remoteChatOnce(ctx context.Context, acc *Account, opts ChatOpts, proxyURL s
 	if !modelHasTier(opts.Model, agentTypeTier(agentType)) {
 		return nil, fmt.Errorf("Trae remote model is not available for the bound account: %s", opts.Model.ID)
 	}
+	// 按账号会话闸门：上限 = 权益 solo_agent_parallel_limit（未知默认 2）。
+	// 等待期间持有全局信号量，不会超卖上游并发（2026-10-29 991502 排查）。
+	if !acquireAccountSlot(ctx, acc) {
+		return nil, fmt.Errorf("client aborted: %w", ctx.Err())
+	}
+	slotHeld := true
+	defer func() {
+		if slotHeld {
+			releaseAccountSlot(acc.ID)
+		}
+	}()
 	// TierCfg 以档位名（remote/traework）为键；同一档的原始条目就是
 	// custom_model 构造源（agent_type 只决定传输执行器与查询分组）。
 	rawCfg := opts.Model.TierCfg[agentTypeTier(agentType)]
@@ -501,12 +528,16 @@ func remoteChatOnce(ctx context.Context, acc *Account, opts ChatOpts, proxyURL s
 	}
 	stream := newStream(eresp)
 	stream.remote = true
-	stream.Transport = agentType // remote / work（档位名与封禁 scope 对齐）
+	stream.Transport = agentType // solo_agent_remote / solo_work_remote（封禁 scope 见 traeTransportScope）
+	stream.Tier = agentTypeTier(agentType) // remote / work（档位名，回落判断用）
 	stream.remoteStop = &remoteStopInfo{
 		base: base, sessionID: payload.Data.ChatSessionID,
 		messageID: payload.Data.MessageID, token: acc.Token,
 		headers: buildRemoteHeaders(acc, false), proxyURL: proxyURL,
 	}
+	// 槽位随流生命周期：Close（stop 之后）释放。
+	slotHeld = false
+	stream.slotRelease = func() { releaseAccountSlot(acc.ID) }
 	return stream, nil
 }
 

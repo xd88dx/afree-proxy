@@ -12,6 +12,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -472,12 +473,26 @@ type Stream struct {
 	resp *http.Response
 	sc   *bufio.Scanner
 
+	// 读取超时体系（对齐上游 trae_remote_client.py：首事件 120s / 流中
+	// 空闲 300s，均可在 env 覆盖，0 = 关闭）。到点直接关闭底层响应体，
+	// Next 以读错误返回——下游按断流处理（重试 / Work 回落），僵尸流不再
+	// 无限占用会话闸门槽位（2026-10-29）。
+	firstEvTimer *time.Timer
+	idleTimer    *time.Timer
+	firstEvSeen  bool
+
 	// transport 形态：remote=true 走 chat_sessions 事件翻译（remote.go），
 	// false = raw_chat 原生协议。Transport 是对外档位名（raw/remote/work），
 	// 按端点封禁（2026-10-27）据此把封禁落到对应档位。
 	remote     bool
 	Transport  string
+	// Tier 档位名（remote/work/raw），会话型传输的回落判断用；
+	// raw 流与旧数据为空。
+	Tier       string
 	remoteStop *remoteStopInfo
+	// slotRelease 按账号会话闸门槽位释放（remoteChatOnce 成功后挂入，
+	// Close 时在 stop 之后调用）。
+	slotRelease func()
 	// pending 消化单帧产出多个事件（如 plan_item 的思考+正文）。
 	pending []*StreamEvent
 
@@ -509,7 +524,11 @@ func (s *Stream) Next() (*StreamEvent, error) {
 		return ev, nil
 	}
 	pending := ""
-	for s.sc.Scan() {
+	for {
+		s.touchIdleWatch() // 本次阻塞读的空闲计时（首事件前由首事件计时接管）
+		if !s.sc.Scan() {
+			break
+		}
 		line := strings.TrimSpace(s.sc.Text())
 		if line == "" {
 			pending = "" // 空行 = 事件边界
@@ -547,6 +566,10 @@ func (s *Stream) Next() (*StreamEvent, error) {
 			evName = normalizeEventName(payloadEventName(obj))
 		}
 		if ev, handled := s.consume(obj, evName); handled {
+			switch ev.Type {
+			case "text", "reasoning", "tool_calls", "usage", "done":
+				s.markModelEvent()
+			}
 			return ev, nil
 		}
 	}
@@ -556,18 +579,24 @@ func (s *Stream) Next() (*StreamEvent, error) {
 	return nil, nil
 }
 
-// Close 释放底层响应体；remote 会话未见 done 时尽力 stop（原项目语义：
-// 提前失败不留挂着的事件流会话）。
+// Close 释放底层响应体；停掉读取超时计时器；remote 会话未见 done 时尽力
+// stop（原项目语义：提前失败不留挂着的事件流会话），stop 之后才释放账号
+// 会话槽位（对齐上游 cleanup_remote_session：先 stop 再 release slot）。
 func (s *Stream) Close() {
+	s.stopStreamWatches()
 	if s.resp != nil && s.resp.Body != nil {
 		s.resp.Body.Close()
 	}
 	if s.remote && s.remoteStop != nil && !s.SawDone {
 		s.stopRemoteSession()
 	}
+	if s.slotRelease != nil {
+		s.slotRelease()
+	}
 }
 
-// stopRemoteSession POST /chat_sessions/{sid}/stop（失败静默，原项目同口径）。
+// stopRemoteSession POST /chat_sessions/{sid}/stop（尽力而为；结果落日志，
+// 用于验证卡死会话清理是否真实生效——2026-10-29 排查期间 stop 静默吞错）。
 func (s *Stream) stopRemoteSession() {
 	info := s.remoteStop
 	body, _ := json.Marshal(map[string]any{
@@ -578,15 +607,21 @@ func (s *Stream) stopRemoteSession() {
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, info.base+"/chat_sessions/"+info.sessionID+"/stop", bytes.NewReader(body))
 	if err != nil {
+		log.Printf("trae stop session %s: build request failed: %v", kit.Truncate(info.sessionID, 16), err)
 		return
 	}
 	for k, v := range info.headers {
 		req.Header.Set(k, v)
 	}
+	start := time.Now()
 	client := httpClientFor(info.proxyURL)
-	if resp, err := client.Do(req); err == nil {
-		resp.Body.Close()
+	resp, err := client.Do(req)
+	if err != nil {
+		log.Printf("trae stop session %s: FAILED after %dms: %v", kit.Truncate(info.sessionID, 16), time.Since(start).Milliseconds(), err)
+		return
 	}
+	resp.Body.Close()
+	log.Printf("trae stop session %s: status=%d %dms", kit.Truncate(info.sessionID, 16), resp.StatusCode, time.Since(start).Milliseconds())
 }
 
 // consume 处理一个 data 帧；返回 (事件, 是否产出事件)。
@@ -1541,11 +1576,88 @@ func rawChatOnce(ctx context.Context, acc *Account, opts ChatOpts, proxyURL stri
 	return nil, lastErr
 }
 
-// newStream 从 200 响应构造解析游标（SSE 行缓冲上限 8MB，防畸形超长行 OOM）。
+// newStream 从 200 响应构造解析游标（SSE 行缓冲上限 8MB，防畸形超长行 OOM），
+// 并装配读取超时看门狗。
 func newStream(resp *http.Response) *Stream {
 	sc := bufio.NewScanner(resp.Body)
 	sc.Buffer(make([]byte, 64*1024), 8<<20)
-	return &Stream{resp: resp, sc: sc}
+	s := &Stream{resp: resp, sc: sc}
+	s.armFirstEventWatch()
+	return s
+}
+
+// ============ 流读取超时（对齐上游 120s 首事件 / 300s 空闲） ============
+
+const (
+	defaultFirstEventTimeout = 120 * time.Second
+	defaultStreamIdleTimeout = 300 * time.Second
+)
+
+// streamTimeoutEnv 秒数 env（<=0 = 对应超时关闭）。
+func streamTimeoutEnv(name string, def time.Duration) time.Duration {
+	if v := strings.TrimSpace(os.Getenv(name)); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			if n <= 0 {
+				return 0
+			}
+			return time.Duration(n) * time.Second
+		}
+	}
+	return def
+}
+
+// killStream 看门狗到点：关底层响应体迫使 Scan 返回读错误（幂等）。
+func (s *Stream) killStream(reason string) {
+	log.Printf("trae stream watchdog: %s, closing stream", reason)
+	s.resp.Body.Close()
+}
+
+// armFirstEventWatch 首个模型事件前超时（上游 TRAE_REMOTE_FIRST_EVENT_TIMEOUT
+// 同语义：心跳不算模型事件，排队/心跳-only 的僵尸流到点被杀）。
+func (s *Stream) armFirstEventWatch() {
+	d := streamTimeoutEnv("TRAE_REMOTE_FIRST_EVENT_TIMEOUT", defaultFirstEventTimeout)
+	if d <= 0 || s.resp == nil || s.resp.Body == nil {
+		return
+	}
+	s.firstEvTimer = time.AfterFunc(d, func() { s.killStream(fmt.Sprintf("no model event within %s", d)) })
+}
+
+// touchIdleWatch 流中空闲超时：每收到一行数据重置（上游 TRAE_WEB_STREAM_TIMEOUT
+// 同语义；心跳行也续期——只防真死连接，不杀慢生成）。
+func (s *Stream) touchIdleWatch() {
+	if s.firstEvTimer != nil && !s.firstEvSeen {
+		return // 首事件计时优先，避免双计时器竞争
+	}
+	d := streamTimeoutEnv("TRAE_STREAM_IDLE_TIMEOUT", defaultStreamIdleTimeout)
+	if d <= 0 || s.resp == nil || s.resp.Body == nil {
+		return
+	}
+	if s.idleTimer == nil {
+		s.idleTimer = time.AfterFunc(d, func() { s.killStream(fmt.Sprintf("idle for %s", d)) })
+		return
+	}
+	s.idleTimer.Reset(d)
+}
+
+// markModelEvent 产出模型事件时调用：解除首事件计时，切换到空闲计时。
+func (s *Stream) markModelEvent() {
+	if s.firstEvSeen {
+		return
+	}
+	s.firstEvSeen = true
+	if s.firstEvTimer != nil {
+		s.firstEvTimer.Stop()
+	}
+}
+
+// stopStreamWatches Close 时停掉全部计时器。
+func (s *Stream) stopStreamWatches() {
+	if s.firstEvTimer != nil {
+		s.firstEvTimer.Stop()
+	}
+	if s.idleTimer != nil {
+		s.idleTimer.Stop()
+	}
 }
 
 // ============ 并发信号量（与 openrouter 同构） ============
@@ -1598,6 +1710,105 @@ func releaseSem() {
 
 // SetMaxConcurrency 并发上限变化后重建信号量（保存配置时调用）。
 func SetMaxConcurrency() { rebuildSem() }
+
+// ============ 按账号会话闸门（对齐上游 solo_agent_parallel_limit） ============
+//
+// 上游 trae_client.py/auth.py：从权益快照读每账号 solo_agent_parallel_limit，
+// 调度时按 (limit - inflight) 选号，避免把上游并发顶满触发 991502
+// （solo_agent_parallel_limit 429）和事件流被掐。本地闸门只覆盖会话型传输
+//（remote/traework，raw_chat 不建会话不受此限），建会话前获取、流关闭
+//（stop 之后）释放。权益未知时用保守默认 defaultAccountParallelLimit。
+
+const defaultAccountParallelLimit = 2
+
+// accountParallelLimitOverride TRAE_ACCOUNT_PARALLEL_LIMIT 覆盖权益解析
+//（排障用：<=0 不覆盖）。
+var accountParallelLimitOverride = sync.OnceValue(func() int {
+	n, _ := strconv.Atoi(strings.TrimSpace(os.Getenv("TRAE_ACCOUNT_PARALLEL_LIMIT")))
+	return n
+})
+
+// AccountParallelLimit 账号会话并发上限：权益快照优先，env 覆盖次之，
+// 未知回保守默认。
+func AccountParallelLimit(acc *Account) int {
+	if n := accountParallelLimitOverride(); n > 0 {
+		return n
+	}
+	mu.Lock()
+	c := acc.Credits
+	mu.Unlock()
+	if c != nil && c.ParallelLimit > 0 {
+		return c.ParallelLimit
+	}
+	return defaultAccountParallelLimit
+}
+
+// accountGate 计数闸门（mutex+通知通道，支持运行中改上限）。
+type accountGate struct {
+	mu     sync.Mutex
+	limit  int
+	used   int
+	notify chan struct{} // release 时关闭并置 nil，唤醒所有等待者
+}
+
+func (g *accountGate) setLimit(n int) {
+	if n <= 0 {
+		return
+	}
+	g.mu.Lock()
+	g.limit = n
+	g.mu.Unlock()
+}
+
+func (g *accountGate) acquire(ctx context.Context) bool {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	for g.used >= g.limit {
+		ch := g.notify
+		if ch == nil {
+			ch = make(chan struct{})
+			g.notify = ch
+		}
+		g.mu.Unlock()
+		select {
+		case <-ch:
+		case <-ctx.Done():
+			return false
+		}
+		g.mu.Lock()
+	}
+	g.used++
+	return true
+}
+
+func (g *accountGate) release() {
+	g.mu.Lock()
+	if g.used > 0 {
+		g.used--
+	}
+	if ch := g.notify; ch != nil {
+		close(ch)
+		g.notify = nil
+	}
+	g.mu.Unlock()
+}
+
+var accountGates sync.Map // accountID -> *accountGate
+
+// acquireAccountSlot 会话型传输建会话前调用；ctx 取消返回 false。
+func acquireAccountSlot(ctx context.Context, acc *Account) bool {
+	v, _ := accountGates.LoadOrStore(acc.ID, &accountGate{limit: AccountParallelLimit(acc)})
+	g := v.(*accountGate)
+	g.setLimit(AccountParallelLimit(acc)) // 权益刷新后跟随
+	return g.acquire(ctx)
+}
+
+// releaseAccountSlot 与 acquireAccountSlot 配对（流 Close 时调用）。
+func releaseAccountSlot(accID string) {
+	if v, ok := accountGates.Load(accID); ok {
+		v.(*accountGate).release()
+	}
+}
 
 func sleepCtx(ctx context.Context, d time.Duration) bool {
 	t := time.NewTimer(d)
@@ -1899,15 +2110,22 @@ func parseCreditsBody(b []byte) (*Credits, error) {
 			firstString(top, "user_pay_identity_str", "userPayIdentityText"),
 		),
 	}
+	// 额度口径：usage_summary 优先（剩余=total-consumed）；无 summary 时
+	// 兜底取首个 credits_limit != 0 的 pack（product_type=0 的功能开关 pack
+	// 无额度自然跳过）。并发权益口径独立：跨全部 pack 取
+	// solo_agent_parallel_limit 最大值（上游 trae_client.py parallel_limits
+	// 同口径）——两者同载于一个响应，不能因 summary 命中跳过 pack 扫描。
+	creditsDone := false
 	if us, ok := src["usage_summary"].(map[string]any); ok {
 		total := numField(us, "total_amount")
 		consumed := numField(us, "consumed_amount")
 		if total > 0 {
 			c.Limit = total
 			c.Remaining = total - consumed
-			return c, nil
+			creditsDone = true
 		}
 	}
+	parallelMax := 0
 	packs, _ := src["user_entitlement_pack_list"].([]any)
 	for _, raw := range packs {
 		p, ok := raw.(map[string]any)
@@ -1919,16 +2137,21 @@ func parseCreditsBody(b []byte) (*Credits, error) {
 			continue
 		}
 		limit := numField(base, "credits_limit")
-		if limit == 0 {
-			if q, ok := base["quota"].(map[string]any); ok {
-				limit = numField(q, "credits_limit")
-			}
+		quota := map[string]any(nil)
+		if q, ok := base["quota"].(map[string]any); ok {
+			quota = q
+		}
+		if limit == 0 && quota != nil {
+			limit = numField(quota, "credits_limit")
 		}
 		if limit == 0 {
 			if pe, ok := base["product_extra"].(map[string]any); ok {
 				if se, ok := pe["subscription_extra"].(map[string]any); ok {
 					if q, ok := se["quota"].(map[string]any); ok {
 						limit = numField(q, "credits_limit")
+						if quota == nil {
+							quota = q
+						}
 					}
 				}
 			}
@@ -1937,25 +2160,33 @@ func parseCreditsBody(b []byte) (*Credits, error) {
 					if pk, ok := pe["package_extra"].(map[string]any); ok {
 						if q, ok := pk["quota"].(map[string]any); ok {
 							limit = numField(q, "credits_limit")
+							if quota == nil {
+								quota = q
+							}
 						}
 					}
 				}
 			}
 		}
-		if limit == 0 {
-			continue
+		// solo_agent_parallel_limit 与 credits_limit 同源（quota 下，含
+		// product_extra 兜底链；quota 非空时以 quota 为准，对齐上游）。
+		if n := numField(quota, "solo_agent_parallel_limit"); n > float64(parallelMax) {
+			parallelMax = int(n)
 		}
-		usage, _ := p["usage"].(map[string]any)
-		if limit < 0 {
-			c.Unlimited = true
-			c.Limit = -1
-			c.Remaining = -1
-		} else {
-			c.Limit = limit
-			c.Remaining = limit - numField(usage, "credits_amount")
+		if !creditsDone && limit != 0 {
+			usage, _ := p["usage"].(map[string]any)
+			if limit < 0 {
+				c.Unlimited = true
+				c.Limit = -1
+				c.Remaining = -1
+			} else {
+				c.Limit = limit
+				c.Remaining = limit - numField(usage, "credits_amount")
+			}
+			creditsDone = true
 		}
-		break
 	}
+	c.ParallelLimit = parallelMax
 	return c, nil
 }
 

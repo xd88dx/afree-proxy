@@ -90,6 +90,10 @@ type Credits struct {
 	UpdatedAt time.Time `json:"updatedAt,omitempty"`
 	// Identity 套餐身份（user_pay_identity_str，如 ProPlus）；空 = 未知。
 	Identity string `json:"identity,omitempty"`
+	// ParallelLimit 会话并发权益（entitlement pack quota 里的
+	// solo_agent_parallel_limit，多个活跃 pack 取最大值；0 = 未知，闸门
+	// 用保守默认）。对齐上游 trae_client.py 的 parallel_limits 聚合。
+	ParallelLimit int `json:"parallelLimit,omitempty"`
 }
 
 // Config Trae 平台全部状态，落盘于 DATA_DIR/.trae-config.json。
