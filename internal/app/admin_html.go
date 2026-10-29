@@ -2017,7 +2017,7 @@ const I18N_ZH = {
   'No sub-platform yet': '暂无子平台',
   'Reorder credential proxies by latency': '凭据代理延迟重排',
   // 延迟重排阈值（保持不变的代理延迟上限）
-  'Keep latency ≤': '保持延迟 ≤',
+  'Keep latency ≤': '延迟阈值',
   's': '秒',
   'Proxies at or below this latency (seconds) keep their current binding and are skipped by reordering; slower ones are refilled from the pool. Saved on change.': '延迟不高于该值（秒）的代理保持现绑定、不参与重排；更慢的才从池里回填。改动即时落盘。',
   'Latency keep threshold saved': '延迟保持阈值已保存',
