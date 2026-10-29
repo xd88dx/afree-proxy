@@ -719,7 +719,7 @@ func logChatRowFull(ttfb, total time.Duration, model, mode, uid, nick string, st
 	}
 	fmt.Fprintf(chatLogOut, "| #%03d | %s | %s | %s | %d | %s | TTFB=%s | tok=%s | %s | cache=%s | total=%.1fs |%s%s%s\n",
 		seq,
-		time.Now().Format("15:04:05"),
+		time.Now().Format("2006-01-02 15:04:05"),
 		model,
 		mode,
 		status,

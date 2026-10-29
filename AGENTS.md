@@ -1,5 +1,7 @@
 # AGENTS.md — 通用 agent 协作规则
 
+使用中文和用户交流。
+
 面向所有在本仓工作的 AI agent（Claude Code / Codex / Cline / OpenCode / Hermes 等）。
 
 本文件是**通用规则**，可原样复制到其他项目复用。**项目专属规则见 `PROJECT.md`，动手前必读。如果不存在则提示用户**
