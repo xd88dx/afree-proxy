@@ -185,6 +185,12 @@ tr:hover .nick-pen{opacity:.85}
 .status-dot.active{background:var(--accent2)}
 .status-dot.cooldown{background:var(--amber)}
 .status-dot.expired{background:var(--danger)}
+/* 凭据表格全列居中（2026-10-29 用户定）：8 平台账号/key 表的表头与内容。
+   :has() 从 tbody 反选所在表的 thead；nick-wrap / wb-account 是 flex 容器，
+   text-align 管不到，单独补 justify-content。 */
+table:has(#accountTableBody) th,table:has(#traeAccountsBody) th,table:has(#ocKeysBody) th,table:has(#wbAccountsBody) th,table:has(#orKeysBody) th,table:has(#amdKeysBody) th,table:has(#thKeysBody) th,table:has(#otherKeysBody) th,#accountTableBody td,#traeAccountsBody td,#ocKeysBody td,#wbAccountsBody td,#orKeysBody td,#amdKeysBody td,#thKeysBody td,#otherKeysBody td{text-align:center}
+/* 账号/Key 列（各表第 2 列）：表头居中，内容左对齐（2026-10-29 用户定） */
+#accountTableBody td:nth-child(2),#traeAccountsBody td:nth-child(2),#ocKeysBody td:nth-child(2),#wbAccountsBody td:nth-child(2),#orKeysBody td:nth-child(2),#amdKeysBody td:nth-child(2),#thKeysBody td:nth-child(2),#otherKeysBody td:nth-child(2){text-align:left}
 
 /* ===== Buttons ===== */
 .btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:7px 15px;border:1px solid var(--border);border-radius:var(--radius-sm);background:rgba(255,255,255,.04);color:var(--text);cursor:pointer;font-size:13px;transition:.15s;text-decoration:none;font-family:inherit;white-space:nowrap}
@@ -3020,8 +3026,8 @@ function renderWorkbuddyAccounts() {
         '</div>' +
         '<div class="wb-account-id" title="' + esc(realm + ' · ' + id) + '">' + esc(realm) + ' · ' + esc(shortId) + '</div>' +
       '</div></div></td>' +
-      '<td><div style="display:flex;gap:6px;align-items:center">' +
-        '<div style="display:flex;flex-direction:column;gap:2px;min-width:0">' + statusHtml + '</div>' + checkinV +
+      '<td><div style="display:flex;gap:6px;align-items:center;justify-content:center">' +
+        '<div style="display:flex;flex-direction:column;gap:2px;min-width:0;align-items:center">' + statusHtml + '</div>' + checkinV +
       '</div></td>' +
       '<td>' + esc(credits) + (creditsTotal ? '<span style="color:var(--text3)"> / ' + esc(creditsTotal) + '</span>' : '') + '</td>' +
       '<td title="' + T('Today') + ' ' + fmtNum(tokensToday) + ' / ' + T('total') + ' ' + fmtNum(tokensTotal) + ' ' + T('tokens (exact when upstream returns usage, otherwise estimated)') + '">' + fmtTokens(tokensToday) + ' / ' + fmtTokens(tokensTotal) + '</td>' +
@@ -3924,7 +3930,7 @@ async function loadAccounts() {
         '</div>' +
         (nick ? '<div class="nick-sub" title="' + esc(a.email) + '">' + esc(a.email) + '</div>' : '') +
         '</div></td>' +
-        '<td><span class="status ' + st + '"><span class="status-dot ' + st + '"></span>' + (sn[a.status] || st) + '</span>' + statusExtra + '</td>' +
+        '<td style="text-align:center"><span class="status ' + st + '"><span class="status-dot ' + st + '"></span>' + (sn[a.status] || st) + '</span>' + statusExtra + '</td>' +
           '<td title="' + T('Today') + ' ' + fmtNum(a.tokensToday) + ' / ' + T('total') + ' ' + fmtNum(a.tokensTotal) + ' ' + T('tokens (exact when upstream returns usage, otherwise estimated)') + '">' + fmtTokens(a.tokensToday) + ' / ' + fmtTokens(a.tokensTotal) + '</td>' +
         '<td class="mono" style="font-size:11px">' + lu + '</td>' +
         bindCell +
@@ -5649,7 +5655,7 @@ function renderOcKeyStates(ks) {
           '<button class="btn btn-sm btn-danger" data-zdel="' + k.index + '" title="' + esc(T('Remove this key from the pool')) + '">Delete</button></td>';
         return '<tr draggable="true" data-drag-id="' + k.index + '"><td>#' + (k.index + 1) + (k.current ? ' <span style="color:var(--accent)" title="' + esc(T('next in rotation')) + '">●</span>' : '') + '</td>' +
           '<td style="font-family:monospace;font-size:11px">' + esc(k.keyMask) + '</td>' +
-          '<td>' + stCell + '</td>' +
+          '<td style="text-align:center">' + stCell + '</td>' +
           keyTokensCell(k) +
           keyLastUsedCell(k) +
           bind +
@@ -6566,7 +6572,7 @@ function renderOrKeyStates(ks) {
           '<button class="btn btn-sm btn-danger" data-ordel="' + k.index + '" title="' + esc(T('Remove this key from the pool')) + '">Delete</button>' + '</td>';
         return '<tr draggable="true" data-drag-id="' + k.index + '"><td>#' + (k.index + 1) + '</td>' +
           '<td style="font-family:monospace;font-size:11px">' + esc(k.keyMask) + '</td>' +
-          '<td>' + cool + '</td>' +
+          '<td style="text-align:center">' + cool + '</td>' +
           keyTokensCell(k) +
           keyLastUsedCell(k) +
           bind +
@@ -6892,8 +6898,8 @@ function renderTraeAccounts(accs) {
             '</div>' +
             '<div class="wb-account-id">' + esc(shortId) + '</div>' +
           '</div></td>' +
-          '<td><div style="display:flex;gap:6px;align-items:center">' +
-            '<div style="display:flex;flex-direction:column;gap:2px;min-width:0">' + cool + (tokenState ? tokenState : '') + '</div>' +
+          '<td><div style="display:flex;gap:6px;align-items:center;justify-content:center">' +
+            '<div style="display:flex;flex-direction:column;gap:2px;min-width:0;align-items:center">' + cool + (tokenState ? tokenState : '') + '</div>' +
             checkinV +
           '</div></td>' +
           '<td>' + credits + '</td>' +
@@ -7269,7 +7275,7 @@ function renderAmdKeyStates(ks) {
           '<button class="btn btn-sm btn-danger" data-amddel="' + k.index + '" title="' + esc(T('Remove this key from the pool')) + '">Delete</button>' + '</td>';
         return '<tr draggable="true" data-drag-id="' + k.index + '"><td>#' + (k.index + 1) + '</td>' +
           '<td style="font-family:monospace;font-size:11px">' + esc(k.keyMask) + '</td>' +
-          '<td>' + cool + '</td>' +
+          '<td style="text-align:center">' + cool + '</td>' +
           keyTokensCell(k) +
           keyLastUsedCell(k) +
           bind +
@@ -7541,7 +7547,7 @@ function renderTHKeyStates(ks) {
           '<button class="btn btn-sm btn-danger" data-thdel="' + k.index + '" title="' + esc(T('Remove this key from the pool')) + '">Delete</button>' + '</td>';
         return '<tr draggable="true" data-drag-id="' + k.index + '"><td>#' + (k.index + 1) + '</td>' +
           '<td style="font-family:monospace;font-size:11px">' + esc(k.keyMask) + '</td>' +
-          '<td>' + cool + '</td>' +
+          '<td style="text-align:center">' + cool + '</td>' +
           keyTokensCell(k) +
           keyLastUsedCell(k) +
           bind +
@@ -7972,7 +7978,7 @@ function renderOtherKeys(ks) {
       '<button class="btn btn-sm btn-danger" data-otdel="' + k.index + '" title="' + esc(T('Delete this key')) + '">' + T('Delete') + '</button>' + '</td>';
     return '<tr draggable="true" data-drag-id="' + k.index + '"><td>' + (i + 1) + '</td>' +
       '<td style="font-family:monospace;font-size:11px">' + esc(k.keyMask) + '</td>' +
-      '<td>' + cool + '</td>' +
+      '<td style="text-align:center">' + cool + '</td>' +
       keyTokensCell(k) +
       keyLastUsedCell(k) +
       bind + actions + routing + '</tr>';

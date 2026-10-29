@@ -290,6 +290,10 @@ func aggregateTraeSSE(ctx context.Context, params map[string]any, m trae.Model) 
 	case traeOutcomeBrokenNoModelEvent:
 		// 首个模型事件前流结束：对齐上游 work fallback（main.py:8940，
 		// !observed_model_event && retryable → 换 solo_work_remote 会话重发）。
+		// 同时给该账号 30s 短冷却（2026-10-29 排查：EOF 成簇出现时该账号上游
+		// 并发坑位被活会话/僵尸会话占满，继续重试只会再吃一个会话）——缓冲层
+		// 下一次 Chat 自动轮换到其他账号；Work 回落不受影响（同账号直达）。
+		trae.Cooldown(acc.ID, 30*time.Second)
 		if wdata, wusage, wok := traeWorkFallbackOnce(ctx, acc, stream, opts, m); wok {
 			return wdata, wusage, acc.ID, nil
 		}

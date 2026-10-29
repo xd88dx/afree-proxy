@@ -580,15 +580,17 @@ func (s *Stream) Next() (*StreamEvent, error) {
 }
 
 // Close 释放底层响应体；停掉读取超时计时器；remote 会话未见 done 时尽力
-// stop（原项目语义：提前失败不留挂着的事件流会话），stop 之后才释放账号
-// 会话槽位（对齐上游 cleanup_remote_session：先 stop 再 release slot）。
+// stop（原项目语义：提前失败不留挂着的事件流会话；异步执行，对齐上游
+// asyncio.create_task——stop 经代理实测 7~9s，同步会拖慢断流重试路径），
+// stop 之后才释放账号会话槽位（对齐上游 cleanup_remote_session：先 stop
+// 再 release slot）。
 func (s *Stream) Close() {
 	s.stopStreamWatches()
 	if s.resp != nil && s.resp.Body != nil {
 		s.resp.Body.Close()
 	}
 	if s.remote && s.remoteStop != nil && !s.SawDone {
-		s.stopRemoteSession()
+		go s.stopRemoteSession()
 	}
 	if s.slotRelease != nil {
 		s.slotRelease()

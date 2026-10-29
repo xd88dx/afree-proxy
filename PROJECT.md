@@ -53,6 +53,8 @@ go test ./... -count=1             # 除下述既有失败外应全绿
 
 `internal/config.example.json` 是上游仓库根 `config.example.json` 的副本（上游 `TestConfigExampleParses` 用相对路径读它，vendor 后正好指到这里）。同步脚本只搬 `internal/workbuddy/` 树，**不会**带这类根文件；上游更新样例后要手工 `cp`。**不要删**——删了 `go test ./internal/workbuddy/config/` 直接缺文件失败。
 
+Trae 平台 991502 防护三件套（2026-10-29，本地定制，合并/同步时优先保留）：上游 `solo_agent_parallel_limit`（权益实测=2/账号）被并发顶满时新会话 429 或建立后立即被掐（EOF at 2 lines）。① 按账号会话闸门：`internal/trae/client.go` 的 `accountGate`，上限取权益快照 `Credits.ParallelLimit`（`parseCreditsBody` 从 `ide_user_ent_usage` pack.quota 解析，**额度与并发双口径独立扫描**，usage_summary 命中不得跳过 pack 扫描），未知默认 2，`TRAE_ACCOUNT_PARALLEL_LIMIT` 可覆盖；仅会话型传输（remote/traework）受限，raw 不受限。② 读取超时看门狗：首事件 120s / 流中空闲 300s（`TRAE_REMOTE_FIRST_EVENT_TIMEOUT` / `TRAE_STREAM_IDLE_TIMEOUT`，0=关），心跳行续期。③ 首模型事件前断流 → 同账号 Work 回落一次（`ChatWorkFallback`）+ 该账号 30s 短冷却让缓冲层重试轮换。断流清理：`Stream.Close` 异步 `stop /chat_sessions/{sid}/stop`（对齐上游 asyncio.create_task；同步会话经代理实测 7~9s 拖慢重试），随后才释放闸门槽位。
+
 ## 6. 部署:本机测试,iStore 生产
 
 **两台机器各有一个叫 `afree` 的容器,职责不同**:本机是测试容器,iStore 是生产。判断生产看**流量**而不是容器名——只有 iStore 的 `docker logs afree` 里有实时请求行(`| #NNN | hh:mm:ss | ... | 200 | ... tok=...`),本机的只有启动初始化日志。
@@ -127,3 +129,7 @@ grep -o 'placeholder="[^"]\+"' internal/app/admin_html.go | sed 's/^placeholder=
 ```
 
 注意 `I18N_ZH` 是 JS 对象字面量：**同名键写两次不会报错，后者静默覆盖前者**，界面会显示成你以为错的那条。新增词条前后都 `grep -n "'<原文>'"` 确认只有一处。
+
+## 9. 面板凭据表格对齐约定（2026-10-29 用户定）
+
+8 个平台的账号/key 表（tbody id：`accountTableBody` / `traeAccountsBody` / `ocKeysBody` / `wbAccountsBody` / `orKeysBody` / `amdKeysBody` / `thKeysBody` / `otherKeysBody`）：**所有列的表头与内容居中，唯独账号/Key 列（各表第 2 列）表头居中、内容左对齐**。实现集中在 `admin_html.go` 的 CSS 追加段（`table:has(#xxxBody) th` + `#xxxBody td` + `td:nth-child(2)` 左对齐覆盖）；flex 容器（状态列的竖排栈、签到竖徽章）`text-align` 管不到，用 `justify-content:center` 单独处理。新增平台表格时把 tbody id 加进该规则，不要逐 td 写内联样式。
