@@ -13,13 +13,13 @@ WorkBuddy 一栏的基线同时登记在 `scripts/workbuddy-vendor-baseline.json
 
 ## Cline
 
-本次未涉及上游同步（2026-10-28 核对：`foxy1402/cline-proxy` main 仍为 `571f9b9`，与 2026-10-27 同步基线一致，无新提交；`571f9b9` 的改动全部属于 OpenCode 线，见文末 OpenCode 节。2026-10-29 复核：仍为 `571f9b9`，无新提交）。
+本次未涉及上游同步（2026-10-28 核对：`foxy1402/cline-proxy` main 仍为 `571f9b9`，与 2026-10-27 同步基线一致，无新提交；`571f9b9` 的改动全部属于 OpenCode 线，见文末 OpenCode 节。2026-10-29 复核：仍为 `571f9b9`，无新提交。2026-10-30 复核：上游推进到 `b8a1be0`，但区间内 4 提交全部落在 zen/OpenCode 侧（`git diff 571f9b9 b8a1be0` 无 Cline 侧文件），Cline 线本次零吸收，详见 OpenCode 节）。
 
 ## TreaWork
 
 上游:`autumnsentiment/Trae2api-cn`(Trae CN / Trae Solo CN 模型反代,Python,MIT)。**这条线不是 vendor/merge 关系**:上游是 Python 全栈,本地 `internal/trae/` + `internal/app/trae.go` 是 Go 重写,行为跟随上游协议;唯一逐行移植的产物是内嵌的本机授权助手 `web_login.py`(`internal/trae/helper_script.go`),只有它需要跟上游比对。2026-10-27 的 cline-proxy 合并未涉及本线。
 
-**2026-10-28 核对**：上游最新 tag 仍为 `v1.0.10`（`bb7b659`），与 2026-10-27 同步基线一致，本线无新版本，本次未涉及上游同步。**2026-10-29 复核**：仍为 `v1.0.10`，无新版本。
+**2026-10-28 核对**：上游最新 tag 仍为 `v1.0.10`（`bb7b659`），与 2026-10-27 同步基线一致，本线无新版本，本次未涉及上游同步。**2026-10-29 复核**：仍为 `v1.0.10`，无新版本。**2026-10-30 复核**：仍为 `v1.0.10`（tags API 与 main HEAD 均为 `bb7b659`），无新版本，本次未涉及上游同步。
 
 ### 2026-10-27 — v1.0.9 (db189e2) → v1.0.10 (bb7b659)
 
@@ -104,6 +104,36 @@ WorkBuddy 一栏的基线同时登记在 `scripts/workbuddy-vendor-baseline.json
 - 验证:`go build ./...`、`go vet ./...` 全绿;`go test ./internal/workbuddy/... ./internal/app/ -count=1` 唯一失败 `TestChatStreamPassthrough`——既有 flaky,单独 `-run` 复跑 PASS,判定标准同 2026-10-27 条目
 - 生产:未同步,等用户「同步」指令(见 PROJECT.md 部署节)。
 
+### 2026-10-30 — 9ca34c2 → 5caddab
+
+- 上游:misakano7545/workbuddy2api-panel,vendor + 三方合并(`scripts/sync_workbuddy.py`;源工作树 `D:/下载/Github/workbuddy2api-panel-misakano` 先 `git checkout --detach misakano/main`)。
+- 基线:`9ca34c2` → 本次解决 4 文件冲突后 `--seal` 推进到 `5caddab`(22 提交 / 63 文件 / +3828 -727)
+- 上游主线(22 提交):
+  - 429 隔离冷却:`22868bb`(普通 429 按模型隔离)+ `e8eca81`(chat 软限流按模型隔离);Kimi 工具兼容只展开 `$ref`、删按工具名硬编码裁剪(`854e74c`,新增 `upstream/kimi_tools.go`)
+  - 在途满等待:`9f70e00`(issue #117)新增 `pool.SlotWaitForRealm`(号都在途≠号在冷却,调用方等一个名额而不是直接 503;`server/slotwait_test.go`)
+  - 断开记账:`7d43b96` 非流式「调用方断开」记 499 不记 502;`6d595fa` embeddings 6020/6021 改 429+Retry-After 与 chat 同口径
+  - 模型降级与校验:PR #107(`5ad7b35`/`a5e8e9c`)保留模型降级配置 + embeddings 响应校验
+  - 面板账号池:PR #113(`fd91f42`/`6cdc6fb`)按域(cn/global)分类切换 + `9232c89` 备注按钮直改本机 + 标签自适应;`4850b45` 渲染桩
+  - 国际版:`bb6d581` 每日活跃走网页会话链(新增 `upstream/webagent.go` 431 行 + 测试)、签到改「先查状态再领」(新增 `scheduler/checkin_global.go`/`webactivity.go`);`09f2eeb` 国际版无 /v2/chat/busy 不再阻断目录缓存
+  - 目录:`c5ac20f` /v1/models 只列官方客户端菜单显示的模型(新增 `upstream/clientpick.go` 按 UA 族裁剪;CN/Global 两域各自对齐)
+  - 任务体系:`4d643b1` 任务撞 429 等待重试;`96a33f1` 删已下架 4 任务(Model_chat_GLM5.2/Buddy_App_QQ/create_canvas/black_cat,官方 1018 行任务列表实测均不存在)与整个夜猫子排程;`046b1fd` 账号任务列表里没有的 code 不再空打上游;`a25192e` updater 删刚跑过的 exe 重试
+  - 文案:`cbc8aaa`/`5373578`/`5caddab` 注释不再点名已删任务
+- 冲突(4 文件,全部两侧融合):
+  - `panel/panel.go`:本地已先行实现 `fetchErrs` 拆 `catalogErrs`/`busyErrs`(与上游 09f2eeb 同思路),融合取本地命名 + 上游新语义——busy 失败并入 `busyErrs` 且成功/部分成功响应透出 `busy_errs` 字段、「只有目录错误才拒绝写缓存」;本地 stale 快照回放链保留(先回放 → 部分 stale → 502,`writeErr` 明细改用 `catalogErrs`)
+  - `pool/state.go`:上游新增 `SlotWaitForRealm` 整段并入 + 本地 `List` 拖拽排序注释保留
+  - `upstream/global_models.go`:上游把 `outInfos`/`ids` 声明提前,本地兜底分支的重复 `:=` 改为复用(`ids = ids[:0]`——outInfos 是 byID 子集)
+  - `scheduler/scheduler_test.go`:本地 `TestBlackcatEligibility` 随夜猫子删除
+- 跟随上游删除(本地同批为死代码,判据可复核):`scheduler/blackcat.go`、`upstream/blackcat.go`、`scheduler/night_cap_test.go`。判据:本地 `taskKind` 枚举(`scheduler.go:356-364`)只有 checkin/travel/activity/keepalive/growth 五类,无 taskBlackcat;`runBlackcat`/`RunBlackcatNow` 全仓引用仅剩定义文件与自身测试;上游删除理由为官方任务列表实测下架(96a33f1 提交说明)。`upstream/streak_extras.go` 是 blackcat 的继任(新手礼包/heatmap/补签卡),本地 scheduler 已在用。装配层同步删 `BlackcatHours`/`BlackcatEnabled`/`BlackcatDisabled` 引用(`internal/app/workbuddy.go`/`workbuddy_config.go`);config 侧 `Schedule` 结构体字段已随 vendor 树更新,面板本就未暴露夜猫子开关(无死配置)。
+- 测试适配:`pool/model_rate_test.go` 的 `TestFallbackCannotBypassModelRateCooldown` 显式 `t.Setenv("UNABLE_FORCE", "1")`——本地 2026-10-28 定的全冷却拒绝默认语义与上游「兜底默认可用」不同,开开关后与上游断言一致(与 OpenCode 线 `TestPickZenKeyStillReturnsWhenAllCooled` 同款处理)。
+- 装配接线(人工):
+  - `makeup_cards_per_round`:2026-10-27 线已接线(`internal/config.example.json` 同值 0),本轮无新动作。
+  - `cn` 配置节本轮无新增键;`webagent`/`checkin_global`/`clientpick` 均为 vendor 内部改造,无新面板/配置面。
+  - 上游 `panel/app.js` 模型行改动本地不复用(维持 2026-10-28「面板不复用上游前端」决策)。
+  - `workbuddyVersion` → `2026.10.30-misakano+afree`,注释基线改记 `5caddab`。
+- 踩坑(记录):合并收尾期间误执行了一次 `git stash -q`(未指定 pathspec),把 62 个 vendor 改动整体收进 stash;诊断 pool 测试时发现 `git status` 全空才回查 stash list,`git stash pop` 完整恢复,无损失。教训:工作区有未提交改动时禁止无差别 stash,排查既有失败应优先用 `git worktree add --detach` 旁路对照。
+- 验证:`go build ./...`、`go vet ./...` 全绿;`gofmt -l` 干净(仅 `trae.go` 既有不对齐,HEAD 亦然,非本次引入);`go test ./... -count=1` **28 包全绿**——本轮连既有 flaky `TestChatStreamPassthrough` 也通过(其失败条件 ttfb 测成 0 与机器速度耦合,本轮环境未触发);`updater` 包 13.285s 全绿(其 Windows fork/exec 缺陷未触发)。
+- 生产:未同步,等用户「同步」指令(见 PROJECT.md 部署节)。
+
 ## OpenCode
 
 ### 2026-10-27 — a99d94b → 571f9b9
@@ -128,6 +158,37 @@ WorkBuddy 一栏的基线同时登记在 `scripts/workbuddy-vendor-baseline.json
 - 验证：`go build ./...` 通过；`go vet ./...` 通过；`go test ./internal/app/ -run 'Zen|Session|OrgID|Egress|Decode|Gate' -count=1` → ok。
 - 生产：镜像 `afree-proxy:prod-20261027-35` 重建 `afree` 容器（`--restart always`、`D:/DockerApp/afree:/app/data`、`-p 3457:3457`），env 全量哈希与旧容器一致（`9eb6f4999012f044`，未丢凭据），状态 healthy；`GET /`→302 登录页、`GET /v1/models`→200；镜像内验证 `ocOrgID` 3 处、`ocSessionRotate` 0 处。
 - **2026-10-28 核对**：`foxy1402/cline-proxy` main 仍为 `571f9b9`，无新提交，本次未涉及本线上游同步。
+
+### 2026-10-30 — 571f9b9 → b8a1be0
+
+- 上游：foxy1402/cline-proxy（与 Cline 同一上游仓库），合并方式 `git merge --no-ff`
+- 上次同步 merge：`e60437c` 线上的基线 `571f9b9`（2026-10-27 同步）
+- 本次目标：`b8a1be0` — 区间 4 提交，**全部落在 zen/OpenCode 侧**（`git diff 571f9b9 b8a1be0` 无 Cline 侧文件；`proxy.go` 的改动集中在 `handleZenChat`/`handleZenAnthropic` 等 zen 函数）
+- 平台归属：**OpenCode 线**，Cline 零吸收（Cline 节已登记）
+- merge commit：`7849181`，冲突 5 文件（README.md/admin_html.go/egress_test.go/proxy.go/zen.go）+ TODO.md modify/delete
+- 吸收：
+  - `a31d5bb4` base path 修复：`zenAPIBase` 更正为 `https://opencode.ai/inference/openai/v1`（CLI 2.1.4 抓包实证；旧 `/inference/v1` 少 `/openai` 段，来自 2026-10-15 一次过时观测）；新增 `zenStaleBase` 存量迁移（只迁移恰等于旧默认值的配置）；`fetchZenRegistry` 增返回 `providerAPI`（opencode provider 的 api 字段），`applyZenRegistryBase` 每次目录同步按官方目录自愈基地址——只改「项目默认值」，面板手填的不动；拒绝任何非 `https://opencode.ai/inference/...` 的目录值（防篡改目录把带 Authorization 的请求引去别处）
+  - `2870f747` 429 fan-out 预算：`max429KeySwitches=4`——换 key 是请求内唯一不可逆操作，不设上限时一个大请求 4 秒冷却整池（2026-10-30 上游实测 5 key/4s）；实际生效值与 retries 取小，日志 `key-switch budget exhausted` 标记停止点
+  - `0e216a09` 冷却封顶：`zenRateLimitCooldown=20min`——上游 `Retry-After` 是「距下一个 00:00 UTC」的倒计时而非真实恢复时间（实测 RA=20h46m 而 18 分钟后同 key 恢复 200），按 RA 冷藏会让多 key 池白停一整天；短 RA 与缺头 1 分钟回落不变
+  - `2870f747` 压缩阈值：`defaultCompactBuffer` 20000→80000——旧值对「客户端上限 128k < 模型阈值 168k」场景压缩永不触发（那次 429 的直接成因）；`legacyCompactBuffer=20000` 只在恰等于旧值时迁移
+  - `b8a1be0` 429 快速失败：429 不推进 `markZenFail`（限流不是降级，注释随上游并入）；无可轮转 key 时跳过 30s 睡眠立即交还 429（上游实测单 key 池 101s→0.01s）；`zenClientErrorStatus` 把上游 429 透传给客户端（回 502 会让 IDE 判定网关坏），聚合/解析类错误保持 502
+  - 面板：`ocBaseURL` placeholder、`ocCompactBuffer` 缺省 80000、`loadOcConfig`/`saveOcConfig` 缺省值同步
+  - 测试：新增 `zen_baseurl_test.go`（4 用例）、`zen_body_wire_test.go`（include_usage 强制/纯 usage 帧过滤）、`zen_fanout_test.go`（11 用例，覆盖预算/封顶/快速失败/轮转）；`zen_catalog_seed_test.go` 适配新签名
+- 本地适配（上游架构差异，全部人工逐项核对）：
+  - `proxy.go` 整体取本地形态（本地是缓冲流架构且 2026-10 重构时已删上游的 `zenStatsTracker` 统计体系/`stats.go`），再手工摘入 6 处 `zenClientErrorStatus` 429 透传（chat/responses/anthropic 三路径 + 缓冲流 attempt 分支；cline 等平台错误非 `zenHTTPError` 仍回 502）
+  - 上游 `include_usage` 强制注入保留在 `buildZenBody`（zen.go，本地同函数）；纯 usage 帧过滤移植到本地 `replaySSE`（新增 `clientWantsStreamUsage`/`isUsageOnlyChunk`，`keepUsageOnly=false` 时回放层吞帧——与上游直通路径 `handleStreamResponseUsage` 语义等价，缓冲架构下过滤点后移）
+  - `markZenSuccess`/`markZenFail`/`zenFailedNow` 组按上游并入（`zen_fanout_test.go` 依赖），`zenConfigData` 补 `FailoverCount`/`FailoverMinutes` 字段；但本地 `routeModel` 的 zen→cline 降级门 2026-10 前已删除，**不恢复**——新并入的 failover 状态机当前仅测试可达，`markZenFail` 的「cline 池为空直接忽略」分支本地有 `poolStatusSnapshot` 支撑
+  - `admin_zen.go`/面板无上游新字段需要接线（`failoverActive` 未摘，无调用方）
+  - README 冲突按「文档以本地中文为准」处理：删除自动合并混入的上游英文块（本地 2026-10 重构已删该节），上游新增 4 个行为点的中文摘录见下方「文档同步」
+  - `TODO.md` modify/delete 取删除（本地不维护上游 TODO）
+  - `egress_test.go` 取本地（新文件名 `zen-config.json`、无 `enabled` 字段——死代码清理后的本地形态，上游测试改回旧值是上游侧回退，不跟）
+- 测试适配（上游测试自带缺陷，速查文档 §3 既知模式）：
+  - `zen_fanout_test.go` 删 `Enabled`/`Proxies`/`Failover` 赋值（本地结构体无此字段）；补 5 处 `setZenModelForTest` 裸调的 `savedModels` 恢复——上游裸调不恢复模型表，全量跑时 `TestZen429StillRotatesToHealthyKey` 毒化后 `zen_prefix_test.go` 三个解析测试全挂（本次实测复现，二分定位到最小毒化集）
+  - `TestPickZenKeyStillReturnsWhenAllCooled` 显式 `UNABLE_FORCE=1`：上游断言「整池冷却仍轮转」，本地 2026-10-25 定的语义是全冷却兜底由开关门控，开开关后语义一致
+  - `zen_body_wire_test.go` 的 usage 帧测试改走本地 `replaySSE` 路径（上游 `handleStreamResponseUsage` 本地不存在）；`zenKeyUsage` 清理块改 `zenKeyTokens`（本地记账变量名）
+- 文档同步：README 的 zen 行为段落以代码为准补记——`zenClientErrorStatus` 429 透传、20 分钟冷却封顶、fan-out 预算 4、压缩 buffer 80000 与存量迁移、base path 目录自愈（上游 README 的「capped at 24h」说法与其最终代码矛盾，**未采纳**，以 `zenRateLimitCooldown=20min` 为准）
+- 验证：`go build ./...`、`go vet ./...` 全绿；`go test ./... -count=1` 27 包 ok，唯一失败为既知项（`TestChatStreamPassthrough` 既有 flaky；`TestInstallReplacesRestartsAndRecovers` Windows fork/exec 既有缺陷，单跑 PASS 且不 import 本次改动）；`-race` 因本机无 C 编译器跳过（同 2026-10-27 先例，台账注明）
+- 生产：未同步，等用户「同步」指令（见 PROJECT.md 部署节）。
 
 ## 本地死代码清理
 

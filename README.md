@@ -102,6 +102,15 @@ Fail-closed 启动：绑定非环回地址时，未设 `API_KEY` **或**未设 `
 
 zen 会话 ID 在**本地铸造**——上游免费层格式门是无状态检查（`^ses_[0-9a-f]{12}[0-9A-Za-z]{14}$`），网关为每个 key 首次使用时铸造兼容 ID 并持久化到数据卷（`zen-config.json` 的 `sessions` 段），无内嵌 CLI、无收割机。请求级 ID（`x-opencode-request`）与注入的 gate 工具参数 schema 同样对齐官方 CLI 形态。FreeTier 403 会在**本请求内**换新会话重试一次，仍 403 则该 key 冷却 15 分钟；**会话每次 API 调用新铸**（2026-10-27 对齐 CLI v2.1.4 行为——旧版粘性会话的复用形态会被上游影子封禁到 UTC 午夜），同一调用的重试沿用同一会话。旧的 `ZEN_SESSION_ROTATE_MINUTES` 轮换机制随之作废，env 不再被读取。
 
+### OpenCode zen 上游基地址与 429 行为
+
+- **基地址**（2026-10-30 抓包更正）：上游基地址是 `https://opencode.ai/inference/openai/v1`。它不再靠人工观测写死：每次目录同步都读 `models.opencode.ai` 里 opencode provider 的 `api` 字段（官方 CLI 读的同一份数据）自动校正配置——只改「仍是项目默认值」的配置，面板手填过的一律不动；目录返回非 `https://opencode.ai/inference/…` 的值一律拒绝（防止被篡改的目录把带着 Authorization 的请求引去别处）。加载时恰等于两个历史默认值（`/zen/v1`、`/inference/v1`）的存量配置自动迁移并记日志 `zen baseURL migrated: …`。
+- **429 透传**：上游 429 原样透传给客户端（`zenClientErrorStatus`），不包装成 502——502 会让 IDE 判定网关坏了，而 429 客户端会按 Retry-After 退避。聚合/解析类故障仍回 502。
+- **冷却封顶**：429 冷却 key 的时长封顶 20 分钟。上游 `Retry-After` 是「距下一个 00:00 UTC」的倒计时而非真实恢复时间（实测 RA=20h46m 而 18 分钟后同 key 已恢复 200），按全值冷藏会让多 key 池白停一整天。短 Retry-After 原样生效，缺头回落 1 分钟。
+- **fan-out 预算**：一次客户端请求最多冷却 `1 + max429KeySwitches(4)` 个 key（与 retries 取小）。换 key 不可逆而等待可逆，两者不共用计数——超预算即停止并记 `key-switch budget exhausted`，不让一个坏请求烧穿整池。
+- **全冷却兜底**：整池冷却时是否继续轮转试探由 `UNABLE_FORCE` 开关门控（默认拒绝；`true` 保持请求流动，见上表）。
+- **上下文压缩阈值**：压缩在 `context − max(output, buffer)` 处触发，`buffer` 缺省 80000（面板可调）。旧缺省 20000 对「客户端自身把输入封顶在 128k」的场景永不触发（200k 窗口/32k 输出模型阈值 168k），满载请求原样送上游撞 429；恰等于旧值 20000 的存量配置自动迁移，手调过的不动。
+
 ## 连接 IDE
 
 **Cursor / ZCode / OpenAI 系** — `POST /v1/chat/completions`：

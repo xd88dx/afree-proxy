@@ -59,6 +59,7 @@ python scripts/sync_workbuddy.py --seal     # 冲突清零后登记新基线
 ```
 
 **核对更新只 fetch `misakano` 远端**（2026-10-29 踩坑）：源工作树 `workbuddy2api-panel-misakano` 有三个远端——`origin`=xd88dx 的 fork、`upstream`=linguo2625469（已停维护的平行血统，push 已 DISABLED）、`misakano`=同步源。裸 `git fetch origin main` 会拉回 linguo 线（其停维护提交 -5 万行，差点误判上游删码）。正确姿势：`git -c <代理键> fetch misakano main` 后对 `misakano/main` 比对基线。改写锚点随上游结构漂移时修 `scripts/vendor_workbuddy.py`：同一条规则要同时命中基线树与新上游树，计数可用元组（如 report.go 的 `(1, 2)`）。
+**合并收尾纪律（2026-10-30 踩坑）**：解决冲突期间工作区有大量未提交改动时，**禁止无差别 `git stash -q`**（哪怕本意只是快速对照某个文件的旧版）——一次把 62 个 vendor 改动整体收进 stash 后 `git status` 全空，极易误判「改动丢了」。排查既有失败要用 `git worktree add --detach <scratch> <HEAD>` 旁路对照；确需 stash 时必须带 pathspec 并在收尾 `git stash list` 核对清零。
 
 脚本前置条件与失败处理见 workbuddy-vendor.md。
 

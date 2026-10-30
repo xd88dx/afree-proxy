@@ -32,7 +32,11 @@
 **测试文件**：
 - zen_session_test.go 的 setup 名是 `setupZenSessionTestUpstream`（本地改名；`proxy_binding_test.go` 里另有一个**同名无返回值**的 `setupZenSessionTest`，上游移植的测试要改调 Upstream 版，不能加别名——会撞车）。
 - 上游测试自带两类渗漏 bug，要顺手修：`setZenModelForTest` 裸调后不恢复模型表（补 savedModels cleanup）；5xx 大户测试结尾加 `defer markZenSuccess()` 重置 failover 状态。
+  - 补 cleanup 时**顺序必须是 save 在 set 之前**：`savedModels := zenModels` 若写在 `setZenModelForTest` 之后，保存的已是毒化表，恢复等于没恢复（2026-10-30 实测：`zen_fanout_test.go` 5 处裸调先毒化后全量挂 `zen_prefix_test.go` 三个解析测试；第一次补丁顺序反了，跑全量仍挂才暴露）。正确模板见 `zen_key_test.go:56-61`。
+  - 2026-10-30 新增第三类：上游测试断言的「整池冷却兜底/全冷却兜底」在本地受 `UNABLE_FORCE` 开关门控（默认拒绝，2026-10-25/10-28 用户定）。上游此类测试要在开头显式 `t.Setenv("UNABLE_FORCE", "1")` 并注释本地语义来源。已知两处：`TestPickZenKeyStillReturnsWhenAllCooled`（zen）、`TestFallbackCannotBypassModelRateCooldown`（workbuddy pool）。
 - 测试里 `cfg.Enabled = true` / `cfgCopy.Enabled = true` 直接删。
+- `proxy.go` 的冲突是两套流式体系交织（本地缓冲流 `handleStreamBufferedGeneric`+`replaySSE` vs 上游直通流 `handleStreamResponseUsage`+`zenStatsTracker`），**整体取本地再手工摘点**比逐块解冲突可靠（2026-10-30 实践：`git checkout --ours proxy.go` 后用 python 按唯一锚点替换 6 处 `zenClientErrorStatus`）。上游新增纯函数（如 `clientWantsStreamUsage`/`isUsageOnlyChunk`）可移植，测试里引用上游直通函数的用例改走本地等价路径（replaySSE）。
+- 上游 zen.go 新增的 failover 组（`markZenFail`/`zenFailCount`/`FailoverCount` 字段）若新测试文件依赖则并入，但本地 `routeModel` 的 zen→cline 降级门已删**不恢复**——并入的状态机仅测试可达，要在台账注明。`var zenSem` 块记得补 `zenFailCount`/`zenFailUntil`（上游 var 块在本地同名块处被顶掉，速查 §4 既有模式）。
 
 ## 4. 全量测试挂了怎么排查（渗漏复发时）
 
