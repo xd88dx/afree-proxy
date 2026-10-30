@@ -4108,12 +4108,19 @@ function proxyRateSet(match, rate) {
 }
 // 下拉行右侧展示的最近在线率：无样本返回 null（不标注）。底色按每 20%
 // 一档共五档（见 proxyRateTier），替代旧"低率标红"的单档口径。
-function proxyRecentRate(p) {
+// eg 表单的 data-eg 值 → 出口冷却的平台 kind（acc/key 是历史字段名，其余同名）。
+const EG_KIND_TO_PK = { acc: 'cline', key: 'zen', trae: 'trae', wb: 'wb', or: 'or', amd: 'amd', th: 'th', other: 'other' };
+// proxyRecentRate 出口的最近在线率徽章。kind = 调用方所在平台（eg 的 data-eg
+// 值，可空）：平台级冷却**只影响对应平台**的徽章——wb 被冷却时，wb 页显示 ∞，
+// cline 页照常显示真实在线率（cline 用它是正常的）；无平台上下文（代理池
+// 健康表）时任一平台冷却即显示 ∞，悬停看明细（2026-10-30 用户定）。
+function proxyRecentRate(p, kind) {
   const r = proxyHealthByProxy[proxyHealthKey(p)];
-  // 平台级冷却中：在线率徽章显示 ∞（横8）——冷却期间该平台根本不选这个出口，
-  // 在线率样本没有意义（2026-10-30 用户定）。悬停列出冷却中的平台与解除时刻。
-  if (r && r.platformCooling && r.platformCooling.length) {
-    return { text: '∞', tier: 'yellow', platformCooling: r.platformCooling };
+  const pk = EG_KIND_TO_PK[kind] || kind || '';
+  const pc = (r && r.platformCooling) || [];
+  const mine = pk ? pc.filter(c => c.kind === pk) : pc;
+  if (mine.length) {
+    return { text: '∞', tier: 'yellow', platformCooling: mine };
   }
   if (!r || r.recentRate === null || r.recentRate === undefined) return null;
   return { text: Math.round(r.recentRate * 100) + '%', tier: proxyRateTier(r.recentRate) };
@@ -4622,9 +4629,9 @@ function egSearchText(p) {
 // eg-rate 同源（proxyHealthByProxy 缓存、同一套五档配色）。全局/直连或两个
 // 指标都无样本时返回空串（不占位）。槽位恒定：在线率固定最右（right:6px），
 // 握手延迟（.hs）恒定 right:46px——只有延迟时在线率位置空着，延迟不右移。
-function egBadgeHTML(value) {
+function egBadgeHTML(value, kind) {
   if (!value || value === EGRESS_DIRECT) return '';
-  const rate = proxyRecentRate(value);
+  const rate = proxyRecentRate(value, kind);
   const hs = proxyRecentHs(value);
   if (!rate && !hs) return '';
   const pcTitle = (rate && rate.platformCooling)
@@ -4639,7 +4646,7 @@ function egSyncBadge(input) {
   if (!wrap) return;
   const old = wrap.querySelectorAll('.eg-badge');
   old.forEach(el => el.remove());
-  const html = egBadgeHTML(input.dataset.value || '');
+  const html = egBadgeHTML(input.dataset.value || '', input.dataset.eg || '');
   wrap.classList.toggle('has-badge', !!html);
   wrap.classList.toggle('has-hs', html.indexOf('eg-badge hs') >= 0);
   if (html) wrap.insertAdjacentHTML('beforeend', html);
@@ -4650,7 +4657,7 @@ function egComboHTML(kind, id, slot, value, title, disabled) {
     ? T(slot === 'backup' && !backupProxyOn ? 'Backup proxies are disabled — follows the main slot' : 'Follows the main slot')
     : title;
   // 在线率徽标：选中后仍显示该节点的最近在线率与平均握手延迟，聚焦输入时由 CSS 隐藏
-  const badge = egBadgeHTML(value || '');
+  const badge = egBadgeHTML(value || '', kind);
   return '<span class="eg-wrap' + (badge ? ' has-badge' : '') + (badge.indexOf('eg-badge hs') >= 0 ? ' has-hs' : '') + '">' +
     '<input type="text" class="eg-input" data-eg="' + kind + '" data-egid="' + esc(id) + '" data-slot="' + slot + '" data-value="' + esc(value || '') + '" value="' + esc(egLabel(value)) + '" title="' + esc(t) + '"' + (disabled ? ' disabled' : '') + ' autocomplete="off" spellcheck="false">' +
     badge +
@@ -4715,7 +4722,7 @@ function egRenderItems(input, menu, q) {
     const kind = input.dataset.eg;
     const ex = kind ? proxyExcludedFor(p, kind) : false;
     return { v: p, label: egLabel(p) + (ex ? T(' · excluded') : ''), active: cur === p,
-             rate: proxyRecentRate(p), hs: proxyRecentHs(p) };
+             rate: proxyRecentRate(p, kind), hs: proxyRecentHs(p) };
   };
   const proxies = q === ''
     ? proxyListCache.map(proxyItem)

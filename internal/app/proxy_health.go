@@ -251,8 +251,12 @@ func recordProxyOutcome(kind, proxyURL string, ok bool, err error, hsMs int64) {
 			if idx := proxyIdxInPool(proxyURL); idx >= 0 {
 				if scope == "global" {
 					cooldownUpstreamProxy(idx, proxyTransportCooldown)
+					log.Printf("[exit-cooldown] %s exit %s cooled %v globally (transport failure: %v)",
+						kind, kit.MaskProxyURL(proxyURL), proxyTransportCooldown, err)
 				} else {
 					cooldownUpstreamProxyFor(kind, idx, proxyPlatformCooldown)
+					log.Printf("[exit-cooldown] %s exit %s cooled %v platform-scoped (upstream-side stream error: %v)",
+						kind, kit.MaskProxyURL(proxyURL), proxyPlatformCooldown, err)
 				}
 			}
 		}
