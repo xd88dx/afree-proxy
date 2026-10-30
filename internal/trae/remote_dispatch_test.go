@@ -7,8 +7,8 @@ import (
 	"testing"
 )
 
-// auto 分流判定（原项目 TRAE_AUTO_ROUTE 语义）：工具/图片走 raw_chat，
-// 纯文字走 Remote；目录未确认 remote 档不分流。
+// auto 分流判定（2026-10-30 反转：raw 端点对 flash 系 config 恒 4001，
+// 工具/图片也走 remote 优先，raw 降为回落；见 client.go transportSelector）。
 func TestTransportSelector(t *testing.T) {
 	prev := Get()
 	t.Cleanup(func() { Set(prev) })
@@ -37,11 +37,12 @@ func TestTransportSelector(t *testing.T) {
 		wantFallback func(context.Context, *Account, ChatOpts, string) (*Stream, error) // nil = 无回落
 	}{
 		{"auto plain remote-tier model", "", remoteModel, plainParams, remoteChatOnce, rawChatOnce},
-		{"auto tools keep raw", "", remoteModel, toolParams, rawChatOnce, remoteChatOnce},
-		{"auto image keeps raw", "", remoteModel, imageParams, rawChatOnce, remoteChatOnce},
+		{"auto tools remote first", "", remoteModel, toolParams, remoteChatOnce, rawChatOnce},
+		{"auto image remote first", "", remoteModel, imageParams, remoteChatOnce, rawChatOnce},
+		{"auto tools remote+raw model", "", Model{ID: "m4", Tiers: []string{"remote", "traecode"}}, toolParams, remoteChatOnce, rawChatOnce},
 		{"auto plain native-only model", "", nativeModel, plainParams, rawChatOnce, nil},
 		{"auto plain work-only model", "", workOnlyModel, plainParams, remoteWorkChatOnce, nil},
-		{"auto tools work-only model", "", workOnlyModel, toolParams, rawChatOnce, remoteWorkChatOnce},
+		{"auto tools work-only model", "", workOnlyModel, toolParams, remoteWorkChatOnce, nil},
 		{"auto plain remote-only model", "", remoteOnlyModel, plainParams, remoteChatOnce, nil},
 		{"auto plain remote+work model", "", remoteWorkModel, plainParams, remoteChatOnce, remoteWorkChatOnce},
 		{"remote endpoint pinned", "remote", nativeModel, toolParams, remoteChatOnce, nil},

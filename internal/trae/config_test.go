@@ -242,18 +242,35 @@ func TestBuildChatBodyShape(t *testing.T) {
 	if len(sid) != 36 || strings.Count(sid, "-") != 4 {
 		t.Fatalf("session_id not UUID-shaped: %q", sid)
 	}
+	// 文本协议：tools 字段绝不进 raw 请求体（上游端点会掐断请求）
+	for _, k := range []string{"tools", "tool_choice", "parallel_tool_calls"} {
+		if _, ok := body[k]; ok {
+			t.Fatalf("raw body must not carry %q", k)
+		}
+	}
 	msgs := body["messages"].([]map[string]any)
-	if len(msgs) != 3 {
+	if len(msgs) != 4 {
 		t.Fatalf("messages = %d", len(msgs))
 	}
-	if msgs[0]["content"].([]map[string]any)[0]["text"] != "hello" {
-		t.Fatalf("user text = %v", msgs[0]["content"])
+	// 运行时 system 在首条（客户端工具协议注入）
+	if msgs[0]["role"] != "system" {
+		t.Fatalf("runtime system prompt must be first, got %v", msgs[0]["role"])
 	}
-	if _, ok := msgs[1]["tool_calls"]; !ok {
-		t.Fatal("assistant tool_calls dropped")
+	if msgs[1]["content"].([]map[string]any)[0]["text"] != "hello" {
+		t.Fatalf("user text = %v", msgs[1]["content"])
 	}
-	if msgs[2]["tool_call_id"] != "c1" || msgs[2]["role"] != "tool" {
-		t.Fatalf("tool message = %v", msgs[2])
+	// assistant 历史 tool_calls 文本化为调用摘要
+	assistantText := msgs[2]["content"].([]map[string]any)[0]["text"].(string)
+	if !strings.Contains(assistantText, "Client tool call [c1] f") {
+		t.Fatalf("assistant tool history not serialized: %q", assistantText)
+	}
+	// tool 消息文本化为 user 角色的结果文本
+	if msgs[3]["role"] != "user" {
+		t.Fatalf("tool message must become user, got %v", msgs[3]["role"])
+	}
+	toolText := msgs[3]["content"].([]map[string]any)[0]["text"].(string)
+	if !strings.Contains(toolText, "Client tool result [c1] f status=succeeded") {
+		t.Fatalf("tool result not serialized: %q", toolText)
 	}
 	// session_id 确定性：同账号同模型两次构造必须一致
 	body2 := BuildChatBody(params, m, "acc-1")
@@ -263,14 +280,14 @@ func TestBuildChatBodyShape(t *testing.T) {
 }
 
 func TestConvertImageDataURL(t *testing.T) {
-	out := convertContent([]any{
+	out := nativeImageBlocks([]any{
 		map[string]any{"type": "image_url", "image_url": map[string]any{"url": "data:image/png;base64,QUJD", "detail": "high"}},
 	})
 	v, ok := out[0]["value"].(map[string]any)
 	if !ok || v["mimeType"] != "image/png" || v["data"] != "QUJD" {
 		t.Fatalf("image block = %v", out[0])
 	}
-	out = convertContent([]any{map[string]any{"type": "image_url", "image_url": map[string]any{"url": "https://example.com/a.png"}}})
+	out = nativeImageBlocks([]any{map[string]any{"type": "image_url", "image_url": map[string]any{"url": "https://example.com/a.png"}}})
 	v, _ = out[0]["value"].(map[string]any)
 	if v["mimeType"] != "url" || v["data"] != "https://example.com/a.png" {
 		t.Fatalf("url image block = %v", out[0])
@@ -278,12 +295,31 @@ func TestConvertImageDataURL(t *testing.T) {
 }
 
 func TestConvertMessagesRoles(t *testing.T) {
-	out := convertMessages([]any{
+	// function→tool 消息带工具痕迹会注入 runtime system（对齐上游
+	// has_tool_protocol 判据），developer 映射在 system 之后第一条
+	out := buildRawMessages([]any{
 		map[string]any{"role": "developer", "content": "sys"},
 		map[string]any{"role": "function", "content": "r", "name": "fn"},
-	})
-	if out[0]["role"] != "system" || out[1]["role"] != "tool" {
-		t.Fatalf("role mapping = %v", out)
+	}, nil, false, nil)
+	if len(out) != 3 {
+		t.Fatalf("messages = %d", len(out))
+	}
+	if out[0]["role"] != "system" || !strings.Contains(out[0]["content"].([]map[string]any)[0]["text"].(string), "You are Trae Code") {
+		t.Fatalf("runtime system must be injected first: %v", out[0]["role"])
+	}
+	if out[1]["role"] != "system" || out[1]["content"].([]map[string]any)[0]["text"] != "sys" {
+		t.Fatalf("developer must map to system: %v", out[1])
+	}
+	if out[2]["role"] != "user" {
+		t.Fatalf("function must map to user, got %v", out[2]["role"])
+	}
+	// 纯净消息（developer→system）不注入 runtime prompt
+	clean := buildRawMessages([]any{
+		map[string]any{"role": "developer", "content": "sys"},
+		map[string]any{"role": "user", "content": "hi"},
+	}, nil, false, nil)
+	if len(clean) != 2 || clean[0]["role"] != "system" || clean[0]["content"].([]map[string]any)[0]["text"] != "sys" {
+		t.Fatalf("clean passthrough broken: %v", clean)
 	}
 }
 

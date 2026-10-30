@@ -231,9 +231,13 @@ func strField(obj map[string]any, key string) string {
 // flattenRemoteQuery OpenAI messages → remote 端点 query（原项目 flatten_query）：
 //   - system → "[System]\n…"；assistant → "[Assistant]\n…"（含工具调用历史）
 //   - tool   → "[Client Tool Result: id name status=…]\n…"
+//   - 图片块 → {"type":"image_url","value":{...}} 渲染器块（与文本 part 并列，
+//     remote 执行器接受多模态 parts；图片丢弃会静默丢信息，2026-10-30 工具
+//     请求分流到 remote 后补齐）
 //   - 结果包成 [{"type":"text","data":{"content":…}}] 的 parts JSON
 func flattenRemoteQuery(msgs []any) string {
 	parts := make([]string, 0, len(msgs))
+	images := make([]map[string]any, 0, 2)
 	for _, raw := range msgs {
 		m, ok := raw.(map[string]any)
 		if !ok {
@@ -246,14 +250,26 @@ func flattenRemoteQuery(msgs []any) string {
 		case "function":
 			role = "tool"
 		}
-		content := remoteContentText(m["content"])
+		content := m["content"]
+		if blocks, ok := content.([]any); ok {
+			for _, b := range blocks {
+				if bm, ok := b.(map[string]any); ok {
+					if bt, _ := bm["type"].(string); bt == "image_url" || bt == "image" {
+						if img := convertImageBlock(imageURLString(bm), bm); img != nil {
+							images = append(images, img)
+						}
+					}
+				}
+			}
+		}
+		text := remoteContentText(content)
 		switch role {
 		case "system":
-			parts = append(parts, "[System]\n"+content)
+			parts = append(parts, "[System]\n"+text)
 		case "assistant":
 			blocks := []string{}
-			if content != "" {
-				blocks = append(blocks, content)
+			if text != "" {
+				blocks = append(blocks, text)
 			}
 			if hist := serializeRemoteToolHistory(m["tool_calls"]); hist != "" {
 				blocks = append(blocks, hist)
@@ -274,13 +290,15 @@ func flattenRemoteQuery(msgs []any) string {
 			if remoteToolFailed(m) {
 				status = "failed"
 			}
-			parts = append(parts, fmt.Sprintf("[Client Tool Result: %s %s status=%s]\n%s", id, name, status, content))
+			parts = append(parts, fmt.Sprintf("[Client Tool Result: %s %s status=%s]\n%s", id, name, status, text))
 		default:
-			parts = append(parts, content)
+			parts = append(parts, text)
 		}
 	}
-	text := strings.Join(parts, "\n\n")
-	wrapped, _ := json.Marshal([]map[string]any{{"type": "text", "data": map[string]any{"content": text}}})
+	all := make([]map[string]any, 0, 1+len(images))
+	all = append(all, map[string]any{"type": "text", "data": map[string]any{"content": strings.Join(parts, "\n\n")}})
+	all = append(all, images...)
+	wrapped, _ := json.Marshal(all)
 	return string(wrapped)
 }
 
@@ -430,10 +448,25 @@ func remoteChatOnce(ctx context.Context, acc *Account, opts ChatOpts, proxyURL s
 	base := remoteBaseOf(acc)
 	sid := remoteStableSessionID(acc.ID, configName)
 	msgs, _ := opts.Params["messages"].([]any)
+	// 客户端工具定义文本化进 query 头部（2026-10-30 工具请求分流 remote 后
+	// 补齐）：chat_sessions 端点同样没有 tools 字段，SOLO 执行器只能靠
+	// query 文本里的运行时提示感知客户端工具，缺了模型会说"没有这个工具"
+	// 然后拒绝调用。协议形态与 raw 档 runtimeSystemPrompt 一致。
+	queryMsgs := msgs
+	toolDefs, hasToolsKey := normToolDefs(opts.Params["tools"])
+	if hasToolsKey {
+		toolChoice := opts.Params["tool_choice"]
+		var parallel *bool
+		if ptc, ok := opts.Params["parallel_tool_calls"].(bool); ok {
+			parallel = &ptc
+		}
+		runtime := []any{map[string]any{"role": "system", "content": runtimeSystemPrompt(toolDefs, toolChoice, parallel)}}
+		queryMsgs = append(runtime, msgs...)
+	}
 	initialMessage := map[string]any{
 		"chat_session_id":          "",
 		"content":                  []any{},
-		"query":                    flattenRemoteQuery(msgs),
+		"query":                    flattenRemoteQuery(queryMsgs),
 		"model_name":               configName,
 		"agent_type":               agentType,
 		"agent_id":                 agentType,
@@ -528,7 +561,7 @@ func remoteChatOnce(ctx context.Context, acc *Account, opts ChatOpts, proxyURL s
 	}
 	stream := newStream(eresp)
 	stream.remote = true
-	stream.Transport = agentType // solo_agent_remote / solo_work_remote（封禁 scope 见 traeTransportScope）
+	stream.Transport = agentType           // solo_agent_remote / solo_work_remote（封禁 scope 见 traeTransportScope）
 	stream.Tier = agentTypeTier(agentType) // remote / work（档位名，回落判断用）
 	stream.remoteStop = &remoteStopInfo{
 		base: base, sessionID: payload.Data.ChatSessionID,

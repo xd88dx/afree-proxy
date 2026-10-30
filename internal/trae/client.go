@@ -304,12 +304,14 @@ func deviceID16Gen(accountID string, generation int) string {
 
 // ============ 请求体 ============
 
-// BuildChatBody 构造 raw_chat 请求体。OpenAI messages 转块数组私有格式：
-//   - 文本 → {"type":"text","text":...}
-//   - 图片 data URL → {"type":"image_url","value":{"mimeType":...,"data":<裸base64>}}
-//   - assistant.tool_calls / tool 消息原样保留（原生工具协议）
-//
-// tools/tool_choice/parallel_tool_calls 客户端提供时直接透传。
+// BuildChatBody 构造 raw_chat 请求体。raw 端点只接受文本消息（上游
+// build_raw_chat_body docstring：带 OpenAI tools 字段会在模型产出前被上游
+// 掐断——生产实测 tools≥38 的 agent 请求成簇 EOF 502，tools=0 全 200）：
+//   - 工具定义文本化进运行时 system 消息（schema 48k 字符预算降级紧凑签名），
+//     body 不携带 tools/tool_choice/parallel_tool_calls；
+//   - 历史 tool_calls / tool 消息文本化（调用摘要 + "Client tool result" 文本），
+//     历史压缩（80 条 / 120k 字符，env 可调）；
+//   - 图片保留 renderer image_url 块。
 func BuildChatBody(params map[string]any, m Model, accountID string) map[string]any {
 	body := map[string]any{
 		"config_name":       m.ID,
@@ -321,18 +323,8 @@ func BuildChatBody(params map[string]any, m Model, accountID string) map[string]
 		"config_source":     1,
 	}
 	msgs, _ := params["messages"].([]any)
-	body["messages"] = convertMessages(msgs)
-	if tools, ok := params["tools"]; ok && tools != nil {
-		body["tools"] = tools
-		if tc, ok := params["tool_choice"]; ok && tc != nil {
-			body["tool_choice"] = tc
-		}
-		if ptc, ok := params["parallel_tool_calls"]; ok && ptc != nil {
-			if b, isBool := ptc.(bool); isBool {
-				body["parallel_tool_calls"] = b
-			}
-		}
-	}
+	toolDefs, hasToolsKey := normToolDefs(params["tools"])
+	body["messages"] = buildRawMessages(msgs, toolDefs, hasToolsKey, params)
 	// reasoning_effort 透传（raw_chat v2 可选字段白名单成员）
 	if eff := firstString(params, "reasoning_effort", "reasoningEffort"); eff != "" {
 		body["reasoning_effort"] = eff
@@ -340,70 +332,31 @@ func BuildChatBody(params map[string]any, m Model, accountID string) map[string]
 	return body
 }
 
-// convertMessages OpenAI messages → Trae 块数组。规则（raw_client.py
-// build_traecode_messages / _traecode_content_blocks）：
-//   - developer → system，function → tool
-//   - content 字符串 → [{type:text}]；content 块数组逐块转换（图片转 value 形态）
-//   - assistant.tool_calls、tool.tool_call_id/name 原样保留
-func convertMessages(msgs []any) []map[string]any {
-	out := make([]map[string]any, 0, len(msgs))
-	for _, raw := range msgs {
+// normToolDefs 客户端 tools → 归一定义列表；键存在（含空列表）返回
+// hasToolsKey=true（与上游 "tools" in options 语义一致）。
+func normToolDefs(v any) ([]map[string]any, bool) {
+	list, ok := v.([]any)
+	if !ok {
+		if v != nil {
+			return nil, true
+		}
+		return nil, false
+	}
+	defs := make([]map[string]any, 0, len(list))
+	seen := map[string]bool{}
+	for _, raw := range list {
 		m, ok := raw.(map[string]any)
 		if !ok {
 			continue
 		}
-		role, _ := m["role"].(string)
-		switch role {
-		case "developer":
-			role = "system"
-		case "function":
-			role = "tool"
+		d, ok := normToolDef(m)
+		if !ok || seen[d["name"].(string)] {
+			continue
 		}
-		entry := map[string]any{"role": role, "content": convertContent(m["content"])}
-		if tcs, ok := m["tool_calls"].([]any); ok && len(tcs) > 0 {
-			entry["tool_calls"] = tcs
-		}
-		if v, ok := m["tool_call_id"].(string); ok && v != "" {
-			entry["tool_call_id"] = v
-		}
-		if v, ok := m["name"].(string); ok && v != "" {
-			entry["name"] = v
-		}
-		out = append(out, entry)
+		seen[d["name"].(string)] = true
+		defs = append(defs, d)
 	}
-	return out
-}
-
-// convertContent 字符串 → 单文本块；块数组逐块转换；nil → 空数组。
-func convertContent(v any) []map[string]any {
-	out := []map[string]any{}
-	switch c := v.(type) {
-	case string:
-		if c != "" {
-			out = append(out, map[string]any{"type": "text", "text": c})
-		}
-	case []any:
-		for _, b := range c {
-			bm, ok := b.(map[string]any)
-			if !ok {
-				continue
-			}
-			bt, _ := bm["type"].(string)
-			switch bt {
-			case "text":
-				t, _ := bm["text"].(string)
-				out = append(out, map[string]any{"type": "text", "text": t})
-			case "image_url":
-				iu, _ := bm["image_url"].(map[string]any)
-				url, _ := iu["url"].(string)
-				out = append(out, convertImageBlock(url, iu))
-			default:
-				// 未知块原样透传（上游不认会显式报错，好过静默丢内容）
-				out = append(out, bm)
-			}
-		}
-	}
-	return out
+	return defs, true
 }
 
 // convertImageBlock OpenAI image_url → Trae 渲染器块：
@@ -484,8 +437,8 @@ type Stream struct {
 	// transport 形态：remote=true 走 chat_sessions 事件翻译（remote.go），
 	// false = raw_chat 原生协议。Transport 是对外档位名（raw/remote/work），
 	// 按端点封禁（2026-10-27）据此把封禁落到对应档位。
-	remote     bool
-	Transport  string
+	remote    bool
+	Transport string
 	// Tier 档位名（remote/work/raw），会话型传输的回落判断用；
 	// raw 流与旧数据为空。
 	Tier       string
@@ -503,6 +456,11 @@ type Stream struct {
 	tools    map[int]*ToolCall
 	toolOrd  []int
 	lastPos  int // 排队位置去重
+
+	// 文本协议状态（仅 raw 传输）：textAcc 累计原文里的 <opencode_tool_call>
+	// 块提取出的工具调用与剥离后的可见文本快照。
+	protoKeys map[string]bool
+	protoVis  string
 
 	Usage   *Usage
 	Finish  string
@@ -676,8 +634,16 @@ func (s *Stream) consume(obj map[string]any, evName string) (*StreamEvent, bool)
 	}
 	if txt := payloadTextFor(evName, obj); txt != "" {
 		delta, textChanged := s.addText(txt)
-		if textChanged && delta != "" {
-			return &StreamEvent{Type: "text", Text: delta}, true
+		if textChanged {
+			if s.Transport == "raw" {
+				// 文本协议：累计原文里提取 <opencode_tool_call> 块并产出
+				// 剥离后的可见增量（见 extractTextToolCalls）。
+				if ev, produced := s.protoConsume(); produced {
+					return ev, true
+				}
+			} else if delta != "" {
+				return &StreamEvent{Type: "text", Text: delta}, true
+			}
 		}
 	}
 	if th := payloadReasoning(obj); th != "" {
@@ -752,22 +718,36 @@ func (s *Stream) consumeRemote(obj map[string]any, evName string) (*StreamEvent,
 		// 原项目收尾兜底（sse.py 翻译器末段）：SOLO Remote 执行器会把
 		// 整个回答放在 plan_item.thought（reasoning 通道），final summary
 		// 挂在 tool_call_info(finish).params.summary。无可见正文时把思考
-		// 摘要作为正文输出——否则纯文字对话 content 恒为空。
+		// 摘要作为正文输出——否则纯文字对话 content 恒为空。thinkAcc 已在
+		// plan_item 里做过工具块剥离，这里直接输出。
 		if s.textAcc == "" && s.thinkAcc != "" {
-			s.textAcc = s.thinkAcc
 			s.pending = append(s.pending, &StreamEvent{Type: "done", FinishReason: s.Finish})
 			return &StreamEvent{Type: "text", Text: s.thinkAcc}, true
 		}
 		return &StreamEvent{Type: "done", FinishReason: s.Finish}, true
 	case "plan_item":
 		var out []*StreamEvent
-		if th := payloadReasoning(obj); th != "" {
+		// thought 与 reasoning_content 是 plan_item 的两个独立字段：推理轨迹
+		// 走 reasoning_content（逐帧增长快照），**工具调用块落 thought**
+		//（2026-10-30 实测：get_weather 调用整块在 thought、reasoning_content
+		// 此时不变）。分开提取：reasoning_content → 思考通道；thought 先剥
+		// 文本工具块（调用并入 tool_calls）再并进思考通道，客户端看不到
+		// 协议原文。
+		if th := firstString(obj, "reasoning_content", "reasoningContent"); th != "" {
 			if delta, changed := s.addReasoning(th); changed && delta != "" {
 				out = append(out, &StreamEvent{Type: "reasoning", Text: delta})
 			}
 		}
+		if thought := firstString(obj, "thought", "thinking"); thought != "" {
+			vis := s.protoStrip(thought)
+			if vis != "" {
+				if delta, changed := s.addReasoning(vis); changed && delta != "" {
+					out = append(out, &StreamEvent{Type: "reasoning", Text: delta})
+				}
+			}
+		}
 		if txt := webPlanContent(obj); txt != "" {
-			if delta, changed := s.addText(txt); changed && delta != "" {
+			if delta, changed := s.addText(s.protoStrip(txt)); changed && delta != "" {
 				out = append(out, &StreamEvent{Type: "text", Text: delta})
 			}
 		}
@@ -870,6 +850,62 @@ func (s *Stream) addText(txt string) (string, bool) {
 		s.textAcc = next
 	}
 	return delta, changed
+}
+
+// protoStrip 输入文本(常为快照)里的文本工具块提取进工具槽位后返回剥离后的
+// 可见文本——remote plan_item thought/content 通道用(调用不产出 text 事件)。
+func (s *Stream) protoStrip(txt string) string {
+	if !strings.Contains(txt, "<") {
+		return txt
+	}
+	visible, calls := extractTextToolCalls(txt)
+	for _, c := range calls {
+		key := c.Name + "\x00" + c.ArgsJSON
+		if s.protoKeys == nil {
+			s.protoKeys = map[string]bool{}
+		}
+		if s.protoKeys[key] {
+			continue
+		}
+		s.protoKeys[key] = true
+		s.mergeToolCalls([]ToolCall{{Index: 1000 + len(s.toolOrd), Name: c.Name, ArgsJSON: c.ArgsJSON}})
+	}
+	return visible
+}
+
+// protoConsume raw 传输的文本协议处理：从累计原文提取文本工具块（新调用并入
+// 工具槽位，序号从 1000 起，避免与原生 index 撞槽），并产出剥离后可见文本的
+// 增量。可见文本缩短（快照替换语义）只更新快照，无可回撤增量。
+func (s *Stream) protoConsume() (*StreamEvent, bool) {
+	visible, calls := extractTextToolCalls(s.textAcc)
+	for _, c := range calls {
+		key := c.Name + "\x00" + c.ArgsJSON
+		if s.protoKeys == nil {
+			s.protoKeys = map[string]bool{}
+		}
+		if s.protoKeys[key] {
+			continue
+		}
+		s.protoKeys[key] = true
+		s.mergeToolCalls([]ToolCall{{Index: 1000 + len(s.toolOrd), Name: c.Name, ArgsJSON: c.ArgsJSON}})
+	}
+	if visible == s.protoVis {
+		return nil, false
+	}
+	delta := ""
+	if strings.HasPrefix(visible, s.protoVis) {
+		delta = visible[len(s.protoVis):]
+	} else if !strings.HasPrefix(s.protoVis, visible) {
+		// 新剥离区间打断前缀关系：从公共前缀之后继续
+		if n := commonPrefixLen(s.protoVis, visible); len(visible) > n {
+			delta = visible[n:]
+		}
+	}
+	s.protoVis = visible
+	if delta == "" {
+		return nil, false
+	}
+	return &StreamEvent{Type: "text", Text: delta}, true
 }
 
 func (s *Stream) addReasoning(txt string) (string, bool) {
@@ -1372,6 +1408,31 @@ func Chat(ctx context.Context, opts ChatOpts) (*Stream, *Account, error) {
 	}
 }
 
+// traeDumpWire 把请求头/体写入 DATA_DIR/trae-wire/<ts>-<rand>.json
+// （token 截断到 16 字符，避免凭据整段落盘）。
+func traeDumpWire(req *http.Request, bodyJSON []byte) {
+	dir := kit.ResolveDataPath("trae-wire")
+	if mkErr := os.MkdirAll(dir, 0o755); mkErr != nil {
+		return
+	}
+	headers := map[string]string{}
+	for k, v := range req.Header {
+		val := strings.Join(v, ",")
+		if strings.EqualFold(k, "Authorization") || strings.EqualFold(k, "X-Cloudide-Token") || strings.EqualFold(k, "X-Ide-Token") {
+			if len(val) > 32 {
+				val = val[:32] + "...[trunc]"
+			}
+		}
+		headers[k] = val
+	}
+	rec, _ := json.Marshal(map[string]any{
+		"at": time.Now().UTC().Format(time.RFC3339), "url": req.URL.String(),
+		"headers": headers, "body": json.RawMessage(bodyJSON),
+	})
+	name := fmt.Sprintf("%s-%s.json", time.Now().UTC().Format("150405"), randHex(4))
+	_ = os.WriteFile(dir+"/"+name, rec, 0o600)
+}
+
 // chatCandidates 网关 × 端点候选：默认网关带 api5 回退与 v1 端点回退；
 // 自定义网关不回退（单候选）。
 func chatCandidates() [][2]string {
@@ -1415,24 +1476,37 @@ func transportSelector(opts ChatOpts) (primary, fallback func(context.Context, *
 	usable := func(tier string) bool {
 		return modelHasTier(opts.Model, tier) && !modelBannedIn(tier, opts.Model.ID)
 	}
-	// 工具/图片：raw 优先（工具协议只有 raw 完整）。降级仅针对「raw 档存在
-	// 但被封」：raw 档根本不存在（能力缺失，如 work-only 模型）维持原
-	// 「先试 raw、失败回落」语义，不在本次改动范围。
-	hasRawCap := modelHasTier(opts.Model, "traecode")
+	// 工具/图片：remote 优先（2026-10-30 实测反转）：raw 端点对 flash 系
+	// config（glm-5.3-flash 等六个闪模型）恒 4001 "param invalid"——探针把
+	// body/头/TLS 指纹逐项对齐网关后依旧复现，raw 档纯文本最小请求也 4001，
+	// 与请求形状无关，是上游按档位隔离了这些 config。同请求 remote 档
+	// （chat_sessions + flattenQuery 文本化）实测 200（2 工具 85k 字产出、
+	// 24 工具 agent 正常）。工具协议在 remote 档经 flattenRemoteQuery 文本化，
+	// 响应侧由 Stream 的文本工具块解析承接。raw 降为回落（remote 失败时
+	// 仍值得试一次：非 flash 系 config 的 raw 档在生产里 200 过）。
+	// 降级仅针对「remote 档存在但被封」：remote 档根本不存在（能力缺失）
+	// 维持 raw 直发。
 	if requestHasToolsOrImages(opts.Params) {
-		if !hasRawCap || usable("traecode") {
+		hasRemoteCap := modelHasTier(opts.Model, "remote")
+		if hasRemoteCap && usable("remote") {
 			switch {
-			case usable("remote"):
-				return rawChatOnce, remoteChatOnce
 			case usable("traework"):
-				return rawChatOnce, remoteWorkChatOnce
+				return remoteChatOnce, remoteWorkChatOnce
+			case usable("traecode"):
+				return remoteChatOnce, rawChatOnce
 			default:
-				return rawChatOnce, nil
+				return remoteChatOnce, nil
 			}
 		}
+		if modelHasTier(opts.Model, "traecode") {
+			// remote 缺档或被封:有 raw 能力就直发 raw(work 仅当 remote 缺档时
+			// 才值得作回落,被封 remote 换 work 同因必败)
+			if !hasRemoteCap && usable("traework") {
+				return rawChatOnce, remoteWorkChatOnce
+			}
+			return rawChatOnce, nil
+		}
 		switch {
-		case usable("remote"):
-			return remoteChatOnce, nil
 		case usable("traework"):
 			return remoteWorkChatOnce, nil
 		default:
@@ -1532,6 +1606,11 @@ func contentHasImage(v any) bool {
 }
 
 // rawChatOnce 单账号单次请求（raw_chat 原链路）：遍历候选，200 即返回解析流。
+// traeWireDump wire 排障开关（TRAE_WIRE_DEBUG=1）：落盘每次 raw_chat 的请求
+// 头/体与响应首字节到 DATA_DIR/trae-wire/，现场对照「同一 body 探针 4001、
+// 网关 200」类问题（2026-10-30 排查引入）。默认关闭零开销。
+var traeWireDump = strings.EqualFold(strings.TrimSpace(os.Getenv("TRAE_WIRE_DEBUG")), "1")
+
 func rawChatOnce(ctx context.Context, acc *Account, opts ChatOpts, proxyURL string) (*Stream, error) {
 	body := BuildChatBody(opts.Params, opts.Model, acc.ID)
 	bodyJSON, err := json.Marshal(body)
@@ -1546,6 +1625,9 @@ func rawChatOnce(ctx context.Context, acc *Account, opts ChatOpts, proxyURL stri
 		}
 		for k, v := range chatHeaders(acc, opts.Model, randHex(8)) {
 			req.Header.Set(k, v)
+		}
+		if traeWireDump {
+			traeDumpWire(req, bodyJSON)
 		}
 		hsStart := time.Now()
 		resp, err := httpClientFor(proxyURL).Do(req)
@@ -1724,7 +1806,7 @@ func SetMaxConcurrency() { rebuildSem() }
 const defaultAccountParallelLimit = 2
 
 // accountParallelLimitOverride TRAE_ACCOUNT_PARALLEL_LIMIT 覆盖权益解析
-//（排障用：<=0 不覆盖）。
+// （排障用：<=0 不覆盖）。
 var accountParallelLimitOverride = sync.OnceValue(func() int {
 	n, _ := strconv.Atoi(strings.TrimSpace(os.Getenv("TRAE_ACCOUNT_PARALLEL_LIMIT")))
 	return n

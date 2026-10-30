@@ -36,22 +36,22 @@ func TestTransportSelectorBanAware(t *testing.T) {
 		wantPrimary  func(context.Context, *Account, ChatOpts, string) (*Stream, error)
 		wantFallback func(context.Context, *Account, ChatOpts, string) (*Stream, error)
 	}{
-		// traecode(raw) 被封：纯文字与工具请求都自动走 remote，且不再挂
-		// 必败的 raw 回落（4023/1005 不回落，挂着只会白跑）。
+		// traecode(raw) 被封：纯文字与工具请求都走 remote（工具请求 2026-10-30
+		// 起 remote 优先，raw 封禁只决定回落链）。
 		{"plain raw-banned two-tier", twoTier, plainParams,
 			[]string{"traecode|glm-5.2"}, remoteChatOnce, nil},
 		{"tools raw-banned two-tier degrade", twoTier, toolParams,
 			[]string{"traecode|glm-5.2"}, remoteChatOnce, nil},
-		// remote 被封：纯文字走 raw（原先主传输选 remote 必败且不回落）。
+		// remote 被封：纯文字走 raw；工具请求回落 raw（2026-10-30 反转）。
 		{"plain remote-banned two-tier", twoTier, plainParams,
 			[]string{"remote|glm-5.2"}, rawChatOnce, nil},
 		{"tools remote-banned two-tier", twoTier, toolParams,
 			[]string{"remote|glm-5.2"}, rawChatOnce, nil},
-		// 三档模型 raw 被封：纯文字 remote → work 回落；工具请求降级 remote。
+		// 三档模型 raw 被封：remote → work 回落（纯文字与工具同链）。
 		{"plain raw-banned three-tier", threeTier, plainParams,
 			[]string{"traecode|glm-5.3-flash"}, remoteChatOnce, remoteWorkChatOnce},
 		{"tools raw-banned three-tier", threeTier, toolParams,
-			[]string{"traecode|glm-5.3-flash"}, remoteChatOnce, nil},
+			[]string{"traecode|glm-5.3-flash"}, remoteChatOnce, remoteWorkChatOnce},
 		// 仅 work 档健康时保留路由。
 		{"plain work-only unbanned", workOnly, plainParams, nil, remoteWorkChatOnce, nil},
 		// 全档被封：目录已剔除该模型，显式请求兜底 raw 让上游真实错误透出。
