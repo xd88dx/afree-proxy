@@ -887,9 +887,9 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
 <div class="section">
   <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></span> Banned models <span id="blacklistCount" class="probe-pill" style="font-weight:normal"></span></div>
   <div class="section-body">
-    <div class="hint" style="margin-top:0">Banned automatically (upstream refuses them for this account type, e.g. code 11158) or manually — hidden from /v1/models. Test sends a real request with the first enabled credential; Unblock only removes the entry, the same upstream error bans it again.</div>
-    <div style="display:flex;gap:8px;margin-bottom:10px;align-items:center;flex-wrap:wrap">
-      <button class="btn btn-sm" id="batchUnblockBtn" style="white-space:nowrap">Unblock selected</button>
+    <div class="hint">Banned automatically (upstream refuses them for this account type, e.g. code 11158) or manually — hidden from /v1/models. Test sends a real request with the first enabled credential; Unblock only removes the entry, the same upstream error bans it again.</div>
+    <div class="form-actions">
+      <button class="btn btn-success" id="batchUnblockBtn" style="white-space:nowrap">Unblock selected</button>
       <span style="flex:1"></span>
       <select id="batchBanPlatform" style="width:auto;flex:0 0 auto;min-width:130px;padding:6px 10px;border:1px solid var(--border);border-radius:8px;background:var(--bg);color:var(--text)"></select>
       <input id="batchBanKeyword" placeholder="Keyword (case-insensitive)" style="width:200px;flex:0 0 auto;padding:6px 10px;border:1px solid var(--border);border-radius:8px;background:var(--bg);color:var(--text)">
