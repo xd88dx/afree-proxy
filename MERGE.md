@@ -133,7 +133,7 @@ WorkBuddy 一栏的基线同时登记在 `scripts/workbuddy-vendor-baseline.json
 - 踩坑(记录):合并收尾期间误执行了一次 `git stash -q`(未指定 pathspec),把 62 个 vendor 改动整体收进 stash;诊断 pool 测试时发现 `git status` 全空才回查 stash list,`git stash pop` 完整恢复,无损失。教训:工作区有未提交改动时禁止无差别 stash,排查既有失败应优先用 `git worktree add --detach` 旁路对照。
 - 验证:`go build ./...`、`go vet ./...` 全绿;`gofmt -l` 干净(仅 `trae.go` 既有不对齐,HEAD 亦然,非本次引入);`go test ./... -count=1` **28 包全绿**——本轮连既有 flaky `TestChatStreamPassthrough` 也通过(其失败条件 ttfb 测成 0 与机器速度耦合,本轮环境未触发);`updater` 包 13.285s 全绿(其 Windows fork/exec 缺陷未触发)。
 
-- **race 补录（同日）**:用户要求补装 C 编译器跑 race,不再跳过。装 winlibs gcc 16.2.0(便携版,`C:/AppSelf/mingw64`,与 Go 同目录约定,zip 已删)。`CGO_ENABLED=1 go test -race ./... -count=1` 首轮 25 包 ok、3 失败,**全部是本次同步引入的真数据竞争**,当场修复:
+- **race 补录（同日）**:用户要求补装 C 编译器跑 race,不再跳过。装 winlibs gcc 16.2.0(便携版,`C:/AppSelf/Mingw`,与 Go 同目录约定,zip 已删)。`CGO_ENABLED=1 go test -race ./... -count=1` 首轮 25 包 ok、3 失败,**全部是本次同步引入的真数据竞争**,当场修复:
   - `upstream/webagent.go`(上游 bb6d581 新增):读 SSE 的 goroutine 直接 `res.Events++`/`res.Chunks++`,主 goroutine 轮询循环同时读写同一 `WebTurnResult`(上游注释明说"不 join"),race 检出 334 写 vs 383/386 读。修复:计数改局部 `atomic.Int64`(`sseEvents`/`sseChunks`),各返回点合并回 `res`——原子读无竞争;数值可能少最后一两帧,纯观测统计可接受。
   - `panel/models_busy_cache_test.go`(上游新增测试固件):`cfgHits`/`busyHits` 局部 int 被 global 三路并发探测 goroutine 同时 `++`。修复:改 `atomic.Int64`。
   - 复跑 `CGO_ENABLED=1 go test -race ./... -count=1`:**28 包全绿**;普通模式 `go test ./... -count=1` 同样 28 包全绿(既知 flaky 本轮未触发)。
