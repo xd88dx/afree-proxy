@@ -98,6 +98,13 @@ iStore 的面板密码是 `233@.afree`(与本机 compose 里的值不同);登录
 
 本机自建镜像 tag（`afree-proxy:*`）只保留最近 7 个（2026-10-30 用户定，从 3 提到 7）。tag 口径：本机一律用 `test-YYYYMMDD-HHMM`——本机容器跑的镜像就是测试镜像，不再区分 `prod-*`/`test-*` 两套 tag（旧台账里的 `prod-*` 标签是历史产物，`prod-*` 只存在于 GHCR 的 CI 发布语境；本机构建新镜像时不要再打 `prod-` 前缀）。
 
+**本机部署流程（2026-10-30 用户定，维持 test-* 命名 + 每次部署更新 compose）**：
+
+1. 构建：`docker build -t afree-proxy:test-YYYYMMDD-HHMM .`（在仓库根，时间取当前时刻）；
+2. 更新 `D:/DockerApp/docker-compose.yml`（tokenapp 项目）里 `afree` 服务的 `image:` 行为该 tag。**该行是多 agent 共写点**：改前先 `grep -n "image: afree-proxy" docker-compose.yml` 看当前值——若与上次部署不同，说明有并行部署，先确认那个镜像的来历再覆盖；
+3. `cd /d/DockerApp && docker compose up -d afree`（不要用 `docker run` 手工重建，会让容器脱离 compose 管理）；
+4. 验证：`docker compose ps` + 容器 healthy + `/v1/models` 或面板探活。
+
 ## 7. 死配置判据（本仓）
 
 不要把本仓没有路由入口的上游端点暴露成面板开关。判据：`grep -rn '"/v1' internal/app/*.go | grep -v _test` —— 主 mux 只注册 `/v1/chat/completions`、`/v1/messages`、`/v1/responses`、`/v1/models`、`/v1/health`（另有不带 `/v1` 前缀的同名别名路由与 `/api/web-auth`、`/trae/oauth/helper` 两个 trae 授权端点，2026-10-29 核对）；workbuddy 的 `/v1/embeddings`、`/v1/search`、`/v1/fetch`、`/v1/images/*` 从未挂到主 mux（生产一律 404）。

@@ -842,6 +842,18 @@ func testAccount(acc *Account) (map[string]any, string) {
 		probeClient = proxyClientFor(proxyURL)
 		probeExit = proxyURL
 	}
+	// 未绑定账号的探测出口 = 服务器本机直连（probeExit 空）。DISABLE_DIRECT=true
+	// 时直连是明确禁用的出口，与请求路径（proxy.go）同口径——探测同样是一次
+	// 真实上游请求，从本机 IP 发出会把服务器身份暴露给本应走代理的账号。
+	// 此前只有请求路径拦、探测路径不拦（其余 7 个平台的出口解析函数都拦了）。
+	if probeExit == "" && kit.DisableDirect() {
+		return map[string]any{
+			"accountId": acc.AccountID,
+			"email":     acc.Email,
+			"status":    "error",
+			"reason":    "direct egress disabled by DISABLE_DIRECT; probe skipped",
+		}, "error"
+	}
 
 	resp, err := probeClient.Do(req)
 	if err != nil {

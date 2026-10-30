@@ -720,7 +720,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
     </div>
     <div id="ppSubUpdateResult" style="margin:-6px 0 10px;font-size:12px;min-height:14px"></div>
     <div class="hint" style="margin-bottom:10px">Subscription refresh replaces the whole pool with the fetched list. Fetch failures keep the current pool.</div>
-    <div class="form-actions"><button class="btn btn-primary" onclick="saveProxyPool()">Save proxy pool</button></div>
+    <div class="form-actions"><button class="btn btn-primary" onclick="saveProxyPool()">Save proxy pool</button><button class="btn btn-success" id="ppTestAllBtn" onclick="testAllCredentialPlatforms()" title="Run the batch test once on every platform's credential list (Cline / TraeWork / OpenCode / OpenRouter / AMDCloud / TokenHarbor / Other / WorkBuddy), one platform at a time">Test all credentials</button></div>
   </div>
 </div>
 <div class="section">
@@ -2263,6 +2263,10 @@ const I18N_ZH = {
   'Random (random)': '随机（random）',
   'Fill (fill)': '填满优先（fill）',
   'Save proxy pool': '保存代理池',
+  'Test all credentials': '全量测试',
+  "Run the batch test once on every platform's credential list (Cline / TraeWork / OpenCode / OpenRouter / AMDCloud / TokenHarbor / Other / WorkBuddy), one platform at a time": '对 8 个平台的凭据列表各跑一次批量测试（Cline / TraeWork / OpenCode / OpenRouter / AMDCloud / TokenHarbor / Other / WorkBuddy），逐个平台串行执行',
+  'All-platform test finished': '全平台测试完成',
+  'All-platform test finished with errors: ': '全平台测试完成，失败项：',
   'Global policy': '全局策略',
   'Cline': 'Cline',
   'Use proxy pool': '走代理池',
@@ -4419,6 +4423,64 @@ function collectReorderParts(kind) {
     .filter(Boolean)
     .filter(m => m.dataset.value && (m.dataset.value !== EGRESS_DIRECT || directIn));
 }
+// testAllCredentialPlatforms 全量测试（代理池页「全量测试」，2026-10-30 用户定）：
+// 等价于依次在 8 个平台的凭据列表上各点一次「批量测试」。两个必须处理的点：
+//   - 批量测试依赖各平台**列表渲染时**写入的快照（accSnapshot/keySnapshot …），
+//     停在代理池页时其它平台的列表从没渲染过，所以先拉齐 8 个平台的数据；
+//   - Other 页一屏只渲染一个子平台，沿用 reorderOtherAll 的手法逐个切换、
+//     渲染、跑测试，跑完恢复用户原本选中的子平台。
+// 串行执行（每个批量测试内部本身也串行），避免同时打爆多个上游。
+async function testAllCredentialPlatforms() {
+  const btn = _('ppTestAllBtn');
+  const label = btn ? btn.innerHTML : '';
+  if (btn) btn.disabled = true;
+  const failed = [];
+  const safe = p => Promise.resolve(p).catch(() => {});
+  try {
+    await Promise.all([
+      safe(loadAccounts()), safe(loadOcConfig()), safe(loadOrConfig()),
+      safe(loadTraeConfig()), safe(loadTHConfig()), safe(loadAmdConfig()),
+      safe(loadOtherConfig()), safe(loadWorkbuddyAccounts()),
+    ]);
+    const steps = [
+      ['Cline', batchTestAccounts],
+      ['OpenCode', batchTestKeys],
+      ['OpenRouter', batchTestOrKeys],
+      ['AMDCloud', batchTestAmdKeys],
+      ['TokenHarbor', batchTestTHKeys],
+      ['TraeWork', batchTestTraeAccounts],
+      ['WorkBuddy', batchTestWorkbuddyAccounts],
+    ];
+    const others = (otherConfig && otherConfig.platforms) || [];
+    const total = steps.length + others.length;
+    let done = 0;
+    const tick = name => { if (btn) btn.innerHTML = '<span class="loading"></span>' + name + ' ' + (done + 1) + '/' + total; };
+    for (const st of steps) {
+      tick(st[0]);
+      try { await st[1](); } catch (e) { failed.push(st[0]); }
+      done++;
+    }
+    // Other 逐个子平台（与 reorderOtherAll 同手法）
+    const prevSlug = currentOtherSlug;
+    for (const p of others) {
+      currentOtherSlug = p.slug;
+      const sel = _('otherPlatformSelect');
+      if (sel) sel.value = p.slug;
+      renderOtherKeys(p.keyStates || []);
+      tick('Other');
+      try { await batchTestOtherKeys(); } catch (e) { failed.push('other:' + p.slug); }
+      done++;
+    }
+    currentOtherSlug = prevSlug;
+    const sel = _('otherPlatformSelect');
+    if (sel) sel.value = prevSlug;
+    await safe(loadOtherConfig());
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = label; }
+  }
+  toast(failed.length ? T('All-platform test finished with errors: ') + failed.join(', ')
+    : T('All-platform test finished'), failed.length ? 'warning' : 'success', 8000);
+}
 // Other 子平台逐个重排：Other 页一屏只渲染一个子平台的 keys（currentOtherSlug
 // 选择器），saveOtherKeyEdits 也只按 slug 保存当前子平台 —— 必须逐个切换、
 // 渲染、重排、保存，最后恢复用户原本选中的子平台。
@@ -5981,14 +6043,9 @@ function renderProxyHealth(rowsIn) {
           ? '<span style="color:var(--text3)">-</span>'
           : '<span class="pp-rate t-' + proxyRateTier(rate) + (v.length > 3 ? ' w3' : '') + '">' + esc(v) + '</span>';
         const cum = pct(r.rate);
-        // 平台级冷却中：最近在线率徽章同样换 ∞（悬停列平台与解除时刻）；
-        // 累计在线率保留数字（历史事实，不重写）。
-        const pc = r.platformCooling || [];
-        const pcTitle = pc.length
-          ? ' title="' + esc(pc.map(c => T('Platform cooldown') + ': ' + c.kind + ' · ' + fmtWhen(c.until)).join('\n')) + '"' : '';
-        const rec = pc.length
-          ? '<span class="pp-rate t-yellow w3"' + pcTitle + '>∞</span>'
-          : pct(r.recentRate);
+        // 代理健康表是**全局视图**：只反映出口本身的成败，不混入平台级冷却
+        // （平台级冷却只在对应平台页的绑定徽章上以 ∞ 表达，2026-10-30 用户定）。
+        const rec = pct(r.recentRate);
         // Avg HS：成功尝试的平均握手延迟（ms），无样本显示 -。
         const hs = (r.avgHsMs === null || r.avgHsMs === undefined)
           ? '<span style="color:var(--text3)">-</span>'
@@ -5998,13 +6055,11 @@ function renderProxyHealth(rowsIn) {
           '<td class="mono" style="font-size:11px">' + esc(egLabel(r.proxy)) + '</td>' +
           '<td style="text-align:center">' + (r.attempts || 0) + '</td>' +
           '<td style="text-align:center">' + rateCell(cum, r.rate) + '</td>' +
-          '<td style="text-align:center">' + (pc.length ? rec : rateCell(rec, r.recentRate)) + '</td>' +
+          '<td style="text-align:center">' + rateCell(rec, r.recentRate) + '</td>' +
           '<td style="text-align:center" title="' + esc(T('Avg tunnel-setup time of successful attempts (TCP+TLS+CONNECT), excluding upstream response; samples: ')) + (r.hsCount || 0) + '">' + hs + '</td>' +
           '<td class="mono" style="font-size:11px">' + (r.lastOk ? fmtWhen(r.lastOk) : '<span style="color:var(--text3)">-</span>') + '</td>' +
           '<td class="mono" style="font-size:11px"' + failTitle + '>' + (r.lastFail ? fmtWhen(r.lastFail) : '<span style="color:var(--text3)">-</span>') + '</td>' +
-          '<td>' + ((r.cooling ? '<span style="color:var(--warning,#eab308)">' + T('cooldown until ') + fmtWhen(r.coolingUntil) + '</span>' : '') ||
-            (pc.length ? '<span style="color:var(--warning,#eab308)">' + pc.map(c => T('Platform cooldown') + ' ' + esc(c.kind) + ' · ' + fmtWhen(c.until)).join('<br>') + '</span>' : '') ||
-            '<span style="color:var(--text3)">-</span>') + '</td>' +
+          '<td>' + (r.cooling ? '<span style="color:var(--warning,#eab308)">' + T('cooldown until ') + fmtWhen(r.coolingUntil) + '</span>' : '<span style="color:var(--text3)">-</span>') + '</td>' +
         '</tr>';
       }).join('')
     : '<tr><td colspan="8" class="empty">No proxies configured</td></tr>';
