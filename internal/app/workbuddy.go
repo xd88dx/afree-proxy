@@ -31,8 +31,8 @@ import (
 )
 
 // 版本口径：misakano 线不跟语义化版本（CI 用日期版本注入），此处记录上游来源
-// 与同步日期；基线 misakano/main 49f9db4（2026-10-28 同步）。
-const workbuddyVersion = "2026.10.29-misakano+afree"
+// 与同步日期；基线 misakano/main 5caddab（2026-10-30 同步）。
+const workbuddyVersion = "2026.10.30-misakano+afree"
 
 // workbuddySubsystem 把源项目的账号池/熔断/调度/面板/兼容接口作为独立子系统
 // 挂在现有 afree-proxy 上。账号凭证与状态落在 data/workbuddy/ 下，不与 Cline
@@ -215,14 +215,12 @@ func startWorkBuddy() (*workbuddySubsystem, error) {
 		TravelHours:        cfg.Schedule.TravelHours,
 		ActivityHours:      cfg.Schedule.ActivityHours,
 		KeepaliveHours:     cfg.Schedule.KeepaliveHours,
-		BlackcatHours:      cfg.Schedule.BlackcatHours,
 		GrowthHours:        cfg.Schedule.GrowthHours,
 		ExpiringSoonWindow: cfg.ExpiringSoonDur,
 		CheckinDisabled:    !cfg.Schedule.CheckinEnabled,
 		TravelDisabled:     !cfg.Schedule.TravelEnabled,
 		ActivityDisabled:   !cfg.Schedule.ActivityEnabled,
 		KeepaliveDisabled:  !cfg.Schedule.KeepaliveEnabled,
-		BlackcatDisabled:   !cfg.Schedule.BlackcatEnabled,
 		GrowthDisabled:     !cfg.Schedule.GrowthEnabled,
 		// 保号类四任务是否覆盖禁用账号（缺省 false = 禁用即跳过，与源项目同口径）。
 		IncludeDisabledInTasks: cfg.Schedule.IncludeDisabledInTasks,

@@ -114,6 +114,12 @@ type Panel struct {
 	taskMu    sync.Mutex
 	taskLocks map[string]*sync.Mutex
 
+	// softRateMu/softRateUntil 上游软限流（429）的账号级冷却截止：撞过一次就记下来，
+	// 同一轮里后续任务动作直接快失败，不每个动作都再睡一遍——一轮全量任务有几十个
+	// 动作，逐个睡会让后台作业卡住几十分钟，还占着 taskLocks 把手动触发一起堵死。
+	softRateMu    sync.Mutex
+	softRateUntil map[string]time.Time
+
 	// batchRunning 手动全量运维接口（签到/旅行/活跃/保活/余额）共用的防重入闸门：
 	// 这些动作都是逐号打上游，并发跑两轮 = 每号至少翻倍上游请求，正是批间节流
 	// 要避免的场景。TryLock 语义，见 tryStartBatch。
@@ -612,7 +618,14 @@ func (p *Panel) modelsRefresh(w http.ResponseWriter, r *http.Request) {
 
 func (p *Panel) models(w http.ResponseWriter, r *http.Request) {
 	out := make([]map[string]any, 0)
-	var fetchErrs []string
+	// catalogErrs = 目录探测失败（决定「整份视图是否可信」→ 报 502 / 不写缓存）；
+	// busyErrs = 繁忙度观测失败（**只是少一列**，目录本身已经拿到）。
+	//
+	// 两者必须分开：此前只有 fetchErrs 一个切片，国际版 /v2/chat/busy 恒 404（见
+	// upstream/modelbusy.go）就永久占着一条错误，于是 `len(fetchErrs)==0` 的写缓存条件
+	// 永远不成立——只要池里有 global 账号，模型目录缓存完全失效，面板每次刷新都实打上游。
+	var catalogErrs []string
+	var busyErrs []string
 
 	// refresh=1：强制重探 global 目录（issue #216 现象 3）。此前按钮只是重读 1h 缓存，
 	// 上游目录变了也纹丝不动。CN 侧本来就是每请求直连上游（无缓存），无需处理。
@@ -637,7 +650,7 @@ func (p *Panel) models(w http.ResponseWriter, r *http.Request) {
 			cnAcct = acct
 			infos, err := p.cfg.Upstream.FetchModels(acct)
 			if err != nil {
-				fetchErrs = append(fetchErrs, "cn: "+err.Error())
+				catalogErrs = append(catalogErrs, "cn: "+err.Error())
 			} else {
 				for _, mi := range infos {
 					out = append(out, panelModelEntry("cn", mi, mi.Efforts, mi.DefaultEffort, p.cfg.Upstream.HTTP))
@@ -654,7 +667,7 @@ func (p *Panel) models(w http.ResponseWriter, r *http.Request) {
 				globalAcct = acct
 				infos := p.cfg.Upstream.FetchGlobalModelInfos(acct)
 				if len(infos) == 0 {
-					fetchErrs = append(fetchErrs, "global: 上游未返回可用模型")
+					catalogErrs = append(catalogErrs, "global: 上游未返回可用模型")
 				} else {
 					efforts, defaults := p.cfg.Upstream.GlobalEffortSnapshot()
 					for _, mi := range infos {
@@ -735,8 +748,8 @@ func (p *Panel) models(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 模型繁忙度（官方 /v2/chat/busy，只读观测，见 upstream/modelbusy.go）：与目录同一批
-	// 账号查，附到对应域的行上。查不到就不填字段（不编造）；失败只并入 fetchErrs（目录本身
-	// 已经拿到了，不该因为繁忙度查询失败把整个视图打成 502）。
+	// 账号查，附到对应域的行上。查不到就不填字段（不编造）；失败只并入 busyErrs（目录本身
+	// 已经拿到了，不该因为繁忙度查询失败把整个视图打成 502，更不该阻断目录缓存）。
 	for realm, acct := range map[string]*auth.Auth{"cn": cnAcct, "global": globalAcct} {
 		if acct == nil {
 			continue
@@ -753,9 +766,11 @@ func (p *Panel) models(w http.ResponseWriter, r *http.Request) {
 		}
 		levels, err := p.cfg.Upstream.ModelBusy(acct, ids)
 		if err != nil {
-			// 繁忙度是只读观测（misakano 语义：out 非空时失败不影响响应），只记日志
-			// 不进 fetchErrs——afree 的陈旧快照回放按 fetchErrs 判「目录探测失败」，
-			// 观测失败混进去会把全新目录误标 stale。
+			// 繁忙度是只读观测：只记日志 + 并入 busyErrs（目录不受影响），
+			// 不进 catalogErrs——afree 的陈旧快照回放按 catalogErrs 判
+			// 「目录探测失败」，观测失败混进去会把全新目录误标 stale。
+			// busyErrs 仍收集，响应的 busy_errs 字段透出明细（上游 09f2eeb）。
+			busyErrs = append(busyErrs, realm+" busy: "+err.Error())
 			log.Printf("WARN: [panel] %s busy: %v", realm, err)
 			continue
 		}
@@ -768,14 +783,17 @@ func (p *Panel) models(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if len(out) == 0 && len(fetchErrs) == 0 {
+	// 一个错都没有且 out 为空 → 池里没有可用账号：503 引导添加账号
+	// （有错则继续往下，交给 stale 回放 / 502 分支处理，不在此提前拒绝）。
+	if len(out) == 0 && len(catalogErrs) == 0 && len(busyErrs) == 0 {
 		writeErr(w, http.StatusServiceUnavailable, "没有可用账号：请先在面板添加账号再查询")
 		return
 	}
 	globalSource := p.cfg.Upstream.GlobalCatalogSource()
-	if len(fetchErrs) == 0 {
-		// 上游缓存层 + afree 的「最后完整快照」双写：缓存服务常规并发读，
-		// 快照供探测失败时回放，用途不同，不能只留一边。
+	// 只有目录错误才拒绝写缓存；繁忙度失败不阻断（否则国际版恒 404 会让缓存永久失效）。
+	// 上游缓存层 + afree 的「最后完整快照」双写：缓存服务常规并发读，
+	// 快照供探测失败时回放，用途不同，不能只留一边。
+	if len(catalogErrs) == 0 {
 		p.storeModelsCache(&modelsCacheEntry{models: out, globalSource: globalSource})
 		storePanelModelsSnapshot(out)
 		writeJSON(w, http.StatusOK, map[string]any{
@@ -785,23 +803,27 @@ func (p *Panel) models(w http.ResponseWriter, r *http.Request) {
 			// 前端据此提示「拿到的是回落/降级目录」——issue #216 里用户只看到「少了 11 个模型」，
 			// 完全不知道已经降级到企业端点（那份目录只有 18 条、hy4-preview 的倍率还是旧值）。
 			"global_source": globalSource,
+			// busy_errs 繁忙度观测失败明细（目录不受影响）：国际版没有 /v2/chat/busy，
+			// 首轮会在这里出现一条，之后按域短路不再产生。
+			"busy_errs": busyErrs,
 		})
 		return
 	}
 	if ent, age, ok := stalePanelModelsSnapshot(); ok {
 		log.Printf("WARN: [panel] models probe failed (%s); serving last good catalog (%d entries, age %s)",
-			strings.Join(fetchErrs, "; "), len(ent), age.Round(time.Second))
+			strings.Join(catalogErrs, "; "), len(ent), age.Round(time.Second))
 		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "models": p.withLiveFlags(ent), "stale": true,
 			"global_source": globalSource})
 		return
 	}
 	if len(out) > 0 {
-		// 部分成功且无快照：交出现有结果但标记 stale，前端仍能展示。
+		// 部分成功且无快照：交出现有结果但标记 stale，前端仍能展示；
+		// busy_errs 繁忙度观测失败明细一并透出（目录不受影响）。
 		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "models": p.withLiveFlags(out), "stale": true,
-			"global_source": globalSource})
+			"global_source": globalSource, "busy_errs": busyErrs})
 		return
 	}
-	writeErr(w, http.StatusBadGateway, "fetch models: "+strings.Join(fetchErrs, "; "))
+	writeErr(w, http.StatusBadGateway, "fetch models: "+strings.Join(catalogErrs, "; "))
 }
 
 // panelModelsSnapshot 最后一次完整成功的 models 响应条目（已含 realm 前缀与

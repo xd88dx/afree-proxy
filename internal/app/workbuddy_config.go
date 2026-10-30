@@ -164,14 +164,12 @@ func saveWorkbuddyConfig(
 		TravelHours:    newCfg.Schedule.TravelHours,
 		ActivityHours:  newCfg.Schedule.ActivityHours,
 		KeepaliveHours: newCfg.Schedule.KeepaliveHours,
-		BlackcatHours:  newCfg.Schedule.BlackcatHours,
 		GrowthHours:    newCfg.Schedule.GrowthHours,
 
 		CheckinDisabled:        !newCfg.Schedule.CheckinEnabled,
 		TravelDisabled:         !newCfg.Schedule.TravelEnabled,
 		ActivityDisabled:       !newCfg.Schedule.ActivityEnabled,
 		KeepaliveDisabled:      !newCfg.Schedule.KeepaliveEnabled,
-		BlackcatDisabled:       !newCfg.Schedule.BlackcatEnabled,
 		GrowthDisabled:         !newCfg.Schedule.GrowthEnabled,
 		IncludeDisabledInTasks: newCfg.Schedule.IncludeDisabledInTasks,
 
