@@ -888,10 +888,17 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
   <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></span> Banned models <span id="blacklistCount" class="probe-pill" style="font-weight:normal"></span></div>
   <div class="section-body">
     <div class="hint" style="margin-top:0">Banned automatically (upstream refuses them for this account type, e.g. code 11158) or manually — hidden from /v1/models. Test sends a real request with the first enabled credential; Unblock only removes the entry, the same upstream error bans it again.</div>
+    <div style="display:flex;gap:8px;margin-bottom:10px;align-items:center;flex-wrap:wrap">
+      <button class="btn btn-sm" id="batchUnblockBtn" style="white-space:nowrap">Unblock selected</button>
+      <span style="flex:1"></span>
+      <select id="batchBanPlatform" style="width:auto;flex:0 0 auto;min-width:130px;padding:6px 10px;border:1px solid var(--border);border-radius:8px;background:var(--bg);color:var(--text)"></select>
+      <input id="batchBanKeyword" placeholder="Keyword (case-insensitive)" style="width:200px;flex:0 0 auto;padding:6px 10px;border:1px solid var(--border);border-radius:8px;background:var(--bg);color:var(--text)">
+      <button class="btn btn-sm btn-danger" id="batchBanBtn" style="white-space:nowrap">Ban matched</button>
+    </div>
     <div class="table-wrap">
       <table>
-        <thead><tr><th style="width:140px">Platform</th><th>Model</th><th style="width:190px">Ban reason</th><th style="width:180px">Blocked at</th><th style="width:200px;text-align:center">Actions</th></tr></thead>
-        <tbody id="blacklistBody"><tr><td colspan="5" class="empty">Loading...</td></tr></tbody>
+        <thead><tr><th style="width:36px;text-align:center"><input type="checkbox" id="blCheckAll" style="width:auto;padding:0;vertical-align:middle"></th><th style="width:140px">Platform</th><th>Model</th><th style="width:190px">Ban reason</th><th style="width:180px">Blocked at</th><th style="width:200px;text-align:center">Actions</th></tr></thead>
+        <tbody id="blacklistBody"><tr><td colspan="6" class="empty">Loading...</td></tr></tbody>
       </table>
     </div>
   </div>
@@ -2628,6 +2635,15 @@ const I18N_ZH = {
   'Unblock this model? It becomes available in /v1/models again; the same upstream error will ban it again.': '解禁该模型？它会重新出现在 /v1/models；若上游仍报同样的错误，程序会再次封禁。',
   'Ban this model? It is removed from /v1/models immediately; you can unblock it in the Banned models table.': '封禁该模型？它会立即从 /v1/models 移除；之后可在封禁模型表中解禁。',
   'Banned: ': '已封禁：',
+  'Select platform': '选择平台',
+  'Select platform first': '请先选择平台',
+  'Ban matched': '批量封禁',
+  'Unblock selected': '批量解禁',
+  'Nothing selected': '未勾选任何模型',
+  'Unblock the selected models? They are re-banned automatically on the same upstream error.': '解禁勾选中的模型？同样的上游错误会再次自动封禁。',
+  'Keyword (case-insensitive)': '关键字（大小写不敏感）',
+  'Keyword is required': '请输入关键字',
+  'Ban all models of this platform containing the keyword (case-insensitive)?': '封禁该平台所有包含关键字的模型（大小写不敏感）？',
   'Unblocked: ': '已解禁：',
   // 封禁档位标签（trae 按端点档位封禁：remote/traecode/traework）
   'banned on this endpoint tier only': '仅该端点档位被封，同 ID 其他档位不受影响',
@@ -2720,6 +2736,7 @@ const I18N_ZH = {
   'No models on this platform': '该平台暂无模型',
   '(empty reply)': '（空回复）',
   'auto-banned: account tier lacks access to this model': '账号权限不足，自动封禁',
+  'auto-banned: model removed from official free feed': '官方免费目录已下线，自动封禁',
   'banned manually by admin': '管理员手动封禁',
   'auto-banned: model name not available on this gateway (4023)': '模型名不可用，自动封禁',
   'Session-routing mode: maintenance tasks are disabled by the ONLY_ROUTER environment variable — auto check-in, balance refresh, task center and similar controls have no effect.': '仅会话路由模式：维护任务已被环境变量 ONLY_ROUTER 停用——自动签到、余额刷新、任务中心等控件不会生效。',
@@ -5382,8 +5399,9 @@ async function loadModels() {
 // 手动封禁：各模型展示区的「封禁」按钮。两类均已从 /v1/models 移除。
 // Test = 用该平台第一个启用凭据发一次真实请求；Unblock = 只移出名单，
 // 后续同样的上游错误会再次自动封禁（手动封禁解禁后不会自动恢复）。
+// 顺序与左侧导航菜单一致（Cline → TraeWork → WorkBuddy → OpenCode → …）。
 const BLACKLIST_PLATFORM_LABEL = {
-  workbuddy: 'WorkBuddy', zen: 'OpenCode', cline: 'Cline', trae: 'Trae',
+  cline: 'Cline', trae: 'TraeWork', workbuddy: 'WorkBuddy', zen: 'OpenCode',
   amd: 'AMDCloud', openrouter: 'OpenRouter', tokenharbor: 'TokenHarbor', other: 'Other'
 };
 // 已拉黑模型 ID 集合（对外 ID，如 wbgb:gpt-6-luna）。设置页各模型块渲染前
@@ -5399,13 +5417,14 @@ async function syncModelBlacklist() {
   } catch (e) { return []; }
 }
 async function loadModelBlacklist() {
+  fillBatchBanPlatforms();
   const tb = _('blacklistBody');
   if (!tb) return;
   try {
     const items = await syncModelBlacklist();
     if (_('blacklistCount')) _('blacklistCount').textContent = items.length ? '· ' + items.length : '';
     if (!items.length) {
-      tb.innerHTML = '<tr><td colspan="5" class="empty">' + T('No blocked models') + '</td></tr>';
+      tb.innerHTML = '<tr><td colspan="6" class="empty">' + T('No blocked models') + '</td></tr>';
       return;
     }
     tb.innerHTML = items.map(it => {
@@ -5420,6 +5439,7 @@ async function loadModelBlacklist() {
         ? ' <span class="model-tag" title="' + esc(T('banned on this endpoint tier only')) + '">' + esc(it.scope) + '</span>'
         : '';
       return '<tr>' +
+        '<td style="text-align:center"><input type="checkbox" class="bl-check" style="width:auto;padding:0;vertical-align:middle" data-platform="' + esc(it.platform) + '" data-model="' + esc(it.model) + '" data-scope="' + esc(it.scope || '') + '"></td>' +
         '<td>' + esc(plat) + '</td>' +
         '<td style="font-family:\'JetBrains Mono\',monospace" title="' + title + '">' + esc(it.model) + scopeTag + '</td>' +
         '<td style="font-size:12px;color:var(--text2)">' + esc(it.reason ? T(it.reason) : '—') + '</td>' +
@@ -5433,6 +5453,72 @@ async function loadModelBlacklist() {
     tb.innerHTML = '<tr><td colspan="5" class="empty">' + esc(T('Failed to load') + ': ' + e.message) + '</td></tr>';
   }
 }
+
+// 批量封禁（2026-10-31 用户定）：平台下拉 + 关键字（大小写不敏感）+ 批量按钮。
+// 平台选项复用封禁表的平台标签表；关键字为空时后端也拒绝（空关键字=全量，危险）。
+function fillBatchBanPlatforms() {
+  const sel = _('batchBanPlatform');
+  if (!sel || sel.options.length) return;
+  const opt = document.createElement('option');
+  opt.value = ''; opt.textContent = T('Select platform');
+  sel.appendChild(opt);
+  Object.entries(BLACKLIST_PLATFORM_LABEL).forEach(([k, label]) => {
+    if (k === 'other') return; // Other 子平台模型名自定义，关键字批量封禁不适用
+    const o = document.createElement('option');
+    o.value = k; o.textContent = label;
+    sel.appendChild(o);
+  });
+}
+async function batchBanModels() {
+  const platform = _('batchBanPlatform').value;
+  const kw = _('batchBanKeyword').value.trim();
+  if (!platform) { toast(T('Select platform first'), 'warn'); return; }
+  if (!kw) { toast(T('Keyword is required'), 'warn'); return; }
+  if (!confirm(T('Ban all models of this platform containing the keyword (case-insensitive)?'))) return;
+  const btn = _('batchBanBtn');
+  btn.disabled = true;
+  try {
+    const d = await api('POST', '/models/blacklist/batch-ban', { platform: platform, keyword: kw });
+    const r = (d.data || {});
+    toast(T('Banned: ') + (r.banned || 0) + ' / ' + (r.matched || 0), 'success');
+    _('batchBanKeyword').value = '';
+    loadModelBlacklist();
+  } catch (e) {
+    toast(e.message, 'error');
+  } finally {
+    btn.disabled = false;
+  }
+}
+document.getElementById('batchBanBtn')?.addEventListener('click', batchBanModels);
+
+// 批量解禁（2026-10-31 用户定）：勾选行 → 逐条调既有解禁端点（trae 带档位）。
+// 全选框只切换当前可见行；解禁完成后整表刷新（勾选态随重渲染自然清空）。
+document.getElementById('blCheckAll')?.addEventListener('change', e => {
+  const on = e.target.checked;
+  document.querySelectorAll('#blacklistBody input.bl-check').forEach(cb => { cb.checked = on; });
+});
+document.getElementById('batchUnblockBtn')?.addEventListener('click', async () => {
+  const picked = [...document.querySelectorAll('#blacklistBody input.bl-check:checked')]
+    .map(cb => ({ platform: cb.dataset.platform, model: cb.dataset.model, scope: cb.dataset.scope || '' }));
+  if (!picked.length) { toast(T('Nothing selected'), 'warn'); return; }
+  if (!confirm(T('Unblock the selected models? They are re-banned automatically on the same upstream error.'))) return;
+  const btn = _('batchUnblockBtn');
+  btn.disabled = true;
+  let ok = 0;
+  try {
+    for (const it of picked) {
+      try {
+        await api('POST', '/models/blacklist/unblock', { platform: it.platform, model: it.model, scope: it.scope });
+        ok++;
+      } catch (e) { toast(esc(it.model) + ': ' + e.message, 'error'); }
+    }
+    toast(T('Unblocked: ') + ok + ' / ' + picked.length, ok === picked.length ? 'success' : 'warn');
+    loadModelBlacklist();
+  } finally {
+    btn.disabled = false;
+  }
+});
+
 async function testBlockedModel(btn) {
   const platform = btn.dataset.platform, model = btn.dataset.model;
   const old = btn.textContent;

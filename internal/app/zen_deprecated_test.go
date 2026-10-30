@@ -208,6 +208,11 @@ func setupZenDepTest(t *testing.T, upstream *httptest.Server) {
 
 	savedModels, savedAliases := zenModels, zenAliases
 	zenModelsMu.Lock()
+	// 宽限表一并清空恢复：syncZenModels 的 prune 会把主表条目转入宽限表
+	//（resolve 的宽限兜底先于 deprecation 落盘映射命中），不隔离会让本测试
+	// 的 410 迁移断言被前序测试残留的宽限条目顶掉（全量顺序跑实测）。
+	savedGrace := zenGraceModels
+	zenGraceModels = map[string]zenGraceEntry{}
 	zenModels = map[string]*ZenModel{
 		"mimo-v2.5-free":       {ID: "mimo-v2.5-free", Source: "live"},
 		"mimo-v2.6-flash-free": {ID: "mimo-v2.6-flash-free", Source: "live"},
@@ -216,7 +221,7 @@ func setupZenDepTest(t *testing.T, upstream *httptest.Server) {
 	zenModelsMu.Unlock()
 	t.Cleanup(func() {
 		zenModelsMu.Lock()
-		zenModels, zenAliases = savedModels, savedAliases
+		zenModels, zenAliases, zenGraceModels = savedModels, savedAliases, savedGrace
 		zenModelsMu.Unlock()
 	})
 

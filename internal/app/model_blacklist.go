@@ -48,6 +48,11 @@ const (
 	// BanReasonModelGone 模型名在 TraeCode 网关上不存在（4023）：不是权限问题，
 	// 而是目录给的名字发不出请求（web-only/旧名），换任何账号同样报错。
 	BanReasonModelGone = "auto-banned: model name not available on this gateway (4023)"
+	// BanReasonFeedRemoved 官方免费目录下线：cline 的 recommended-models free
+	// feed 已把该模型移走（2026-10-31 实测移入付费 clinePass 档），免费账号池
+	// 请求固定 404 model not found。性质与 BanReasonAuto（账号档位不够）不同
+	// ——换更高权益的账号池也救不回来，只能等官方把它放回免费档或人工解禁。
+	BanReasonFeedRemoved = "auto-banned: model removed from official free feed"
 )
 
 // 平台标识（与对外模型前缀对应）。
@@ -104,6 +109,20 @@ func normalizeBanReason(reason string) string {
 	return reason
 }
 
+// normalizeEntry 加载/导入时的整条归一：文案映射之外，cline 404 类存量条目
+// （2026-10-31 修复落地前拉的，统一挂在 BanReasonAuto 下）按 detail 特征
+// （上游 404 model not found 报文）归一到更准确的 BanReasonFeedRemoved。
+// 判据要 detail 配合——trae 1005/4001 等真权限条目 detail 不含该报文，不受影响。
+func normalizeEntry(e *modelBlacklistEntry) {
+	if e == nil {
+		return
+	}
+	e.Reason = normalizeBanReason(e.Reason)
+	if e.Platform == platCline && e.Reason == BanReasonAuto && strings.Contains(e.Detail, "model not found") {
+		e.Reason = BanReasonFeedRemoved
+	}
+}
+
 func ensureModelBlacklistLoaded() {
 	modelBlacklistMu.Lock()
 	defer modelBlacklistMu.Unlock()
@@ -117,7 +136,7 @@ func ensureModelBlacklistLoaded() {
 		modelBlacklistItems = make(map[string]*modelBlacklistEntry, len(g.ModelBlacklist))
 		for k, e := range g.ModelBlacklist {
 			if e != nil {
-				e.Reason = normalizeBanReason(e.Reason)
+				normalizeEntry(e)
 			}
 			modelBlacklistItems[k] = e
 		}
@@ -380,6 +399,10 @@ func platformOfModel(model string) string {
 		return platWorkBuddy
 	case strings.HasPrefix(model, "zen:"):
 		return platZen
+	case strings.HasPrefix(model, "cline-free/"):
+		// cline 免费目录的对外前缀（seed/live 目录里带前缀的条目）。裸名
+		// （z-ai/glm-5.3-flash 等 live feed 直出的 ID）仍返回空串不猜。
+		return platCline
 	case strings.HasPrefix(model, amd.ModelPrefix):
 		return platAMD
 	case strings.HasPrefix(model, openrouter.ModelPrefix):
@@ -437,11 +460,25 @@ func (c *modelErrorCapture) finish() {
 		return
 	}
 	body := c.buf.String()
-	if !IsModelPermissionDenied(c.status, body) {
-		return
-	}
 	platform := platformOfModel(c.model)
 	if platform == "" {
+		return
+	}
+	if platform == platCline {
+		// cline 上游对免费目录已移除的模型（官方 feed 缩水后目录残留）固定回
+		// 404 {"error":"model not found"}；网关错误信封是 500 内嵌 "API 404: ..."，
+		// 状态码不可用，只认文案。不放进 IsModelPermissionDenied 全局判据：
+		// trae 的按档位封禁走 traeAutoBanModel，全局文案会让中间件把 trae 的
+		// 同类 404 也按全档拉黑，破坏 2026-10-27 的 scope 设计。
+		// 原因用 BanReasonFeedRemoved：这不是账号档位问题，是官方免费 feed
+		// 已把模型移走（2026-10-31 实测移入付费 clinePass 档）。
+		if !strings.Contains(strings.ToLower(body), "model not found") {
+			return
+		}
+		BlacklistModel(platform, c.model, businessCodeOf(body), BanReasonFeedRemoved, body)
+		return
+	}
+	if !IsModelPermissionDenied(c.status, body) {
 		return
 	}
 	BlacklistModel(platform, c.model, businessCodeOf(body), BanReasonAuto, body)
@@ -534,6 +571,16 @@ func withModelBlacklistScan(h http.HandlerFunc) http.HandlerFunc {
 			})
 			return
 		}
+		// 模型服务闸（2026-10-31 用户定）：已拉黑模型与不在对外目录的模型
+		// 在请求路径直接拒，不再透传上游 —— 目录里能看到的才能请求到，
+		// 与 /v1/models 严格同口径（见 servedModelGate）。
+		if status, msg := servedModelGate(probe.Model); status != 0 {
+			log.Printf("  model gate reject: %q -> %d", probe.Model, status)
+			writeJSON(w, status, map[string]any{
+				"error": map[string]string{"message": msg, "type": "invalid_request_error"},
+			})
+			return
+		}
 		cw := &modelErrorCapture{ResponseWriter: w, model: probe.Model}
 		h(cw, r)
 		cw.finish()
@@ -577,6 +624,95 @@ func handleModelBlacklistUnblock(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeAPI(w, http.StatusOK, apiResponse{Success: true, Message: "unblocked"})
+}
+
+// platformModelIDs 枚举平台全部对外模型 ID（与 /v1/models 各平台段同源，
+// 不做黑名单过滤——批量封禁要能重新命中已封禁条目做幂等跳过）。
+// combo 别名不在内：封禁表达的是对真实模型的意志，别名只是虚拟入口。
+func platformModelIDs(platform string) []string {
+	var rows []map[string]any
+	switch platform {
+	case platCline:
+		rows = apiModelList()
+	case platZen:
+		for _, zm := range zenModelList() {
+			if id, _ := zm["id"].(string); id != "" {
+				rows = append(rows, map[string]any{"id": id})
+			}
+		}
+	case platWorkBuddy:
+		rows = workbuddyModelEntries()
+	case platOpenRouter:
+		rows = orModelList()
+	case platAMD:
+		rows = amdModelList()
+	case platTokenHarbor:
+		rows = thModelList()
+	case platTrae:
+		rows = traeModelList()
+	case platOther:
+		rows = otherModelList()
+	}
+	ids := make([]string, 0, len(rows))
+	for _, m := range rows {
+		if id, _ := m["id"].(string); id != "" {
+			ids = append(ids, id)
+		}
+	}
+	return ids
+}
+
+// batchBanPlatformModels 批量封禁：平台目录里 ID 包含关键字（大小写不敏感）
+// 的模型全部加入黑名单。已在名单里的条目保持原样（不覆盖自动封禁原因）。
+// 返回命中数与新封禁的 ID 列表。
+func batchBanPlatformModels(platform, keyword string) (matched int, banned []string) {
+	keyword = strings.ToLower(strings.TrimSpace(keyword))
+	for _, id := range platformModelIDs(platform) {
+		if !strings.Contains(strings.ToLower(id), keyword) {
+			continue
+		}
+		matched++
+		if IsModelBlacklisted(id) {
+			continue
+		}
+		BlacklistModel(platform, id, "", BanReasonManual, "batch ban by keyword: "+keyword)
+		banned = append(banned, id)
+	}
+	return matched, banned
+}
+
+// POST /admin/api/models/blacklist/batch-ban  body: { platform, keyword }
+//
+// 批量封禁（2026-10-31 用户定）：面板「封禁模型」表格下方的平台下拉 +
+// 关键字输入（大小写不敏感）+ 批量封禁按钮。例如 platform=trae、
+// keyword=doubao → trae 目录里所有 ID 含 "doubao" 的模型全部封禁。
+// 空平台/空关键字拒绝（空关键字会匹配全部模型，属于危险操作）。
+func handleModelBlacklistBatchBan(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
+		return
+	}
+	var req struct {
+		Platform string `json:"platform"`
+		Keyword  string `json:"keyword"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req); err != nil {
+		writeAPI(w, http.StatusBadRequest, apiResponse{Error: "invalid json"})
+		return
+	}
+	platform := strings.TrimSpace(req.Platform)
+	keyword := strings.TrimSpace(req.Keyword)
+	if platform == "" || keyword == "" {
+		writeAPI(w, http.StatusBadRequest, apiResponse{Error: "platform and keyword are required"})
+		return
+	}
+	matched, banned := batchBanPlatformModels(platform, keyword)
+	log.Printf("  batch ban: platform=%s keyword=%q matched=%d banned=%d", platform, keyword, matched, len(banned))
+	writeAPI(w, http.StatusOK, apiResponse{Success: true, Data: map[string]any{
+		"matched": matched,
+		"banned":  len(banned),
+		"models":  banned,
+	}})
 }
 
 // POST /admin/api/models/blacklist/ban  body: { platform, model }

@@ -208,89 +208,9 @@ func StartProxy(host string, port int) error {
 		})
 	}
 
+	// modelsHandler：/v1/models 输出（servedModelEntries + 字段归一化）。
 	modelsHandler := apiKeyHandler(func(w http.ResponseWriter, r *http.Request) {
-		ensureModelsFresh()
-		data := apiModelList()
-		// 合并 zen 免费模型（OpenCode 上游常开，无独立启停开关）
-		for _, zm := range zenModelList() {
-			data = append(data, map[string]any{
-				"id":       zm["id"],
-				"object":   "model",
-				"created":  time.Now().UnixMilli(),
-				"owned_by": "opencode-zen",
-				"source":   "zen-free",
-				"status":   "active",
-				"cost":     "free",
-				"context":  zm["context"],
-				"output":   zm["output"],
-			})
-		}
-		// 合并 WorkBuddy 模型（cn:/global: 前缀，源项目路由协议）。
-		data = append(data, workbuddyModelEntries()...)
-		// 合并 OpenRouter 免费模型（oprt: 前缀）。
-		data = append(data, orModelList()...)
-		// 合并 AMDCloud 免费模型（amd: 前缀）。
-		data = append(data, amdModelList()...)
-		// 合并 TokenHarbor 免费模型（tkhb: 前缀）。
-		data = append(data, thModelList()...)
-		// 合并 Trae 模型（trae: 前缀，TraeCode raw 协议账号池）。
-		data = append(data, traeModelList()...)
-		// 合并 Other 子平台勾选模型（各子平台自定义前缀）。
-		data = append(data, otherModelList()...)
-		// combo 别名模型（仪表盘自定义的虚拟模型 ID）。展示门控同平台段：
-		// 声明平台没有可路由凭据时别名也不出目录（否则用户选中后必然失败）。
-		for _, c := range listCombos() {
-			if !platformHasRoutableCredential(c.Platform) {
-				continue
-			}
-			owned := "cline"
-			if c.Platform == "zen" {
-				owned = "opencode-zen"
-			} else if c.Platform == "workbuddy" {
-				owned = "workbuddy"
-			} else if c.Platform == "openrouter" {
-				owned = "openrouter"
-			} else if c.Platform == "amd" {
-				owned = "amd-cloud"
-			} else if c.Platform == "tokenharbor" {
-				owned = "tokenharbor"
-			} else if c.Platform == "trae" {
-				owned = "trae"
-			}
-			data = append(data, map[string]any{
-				"id":       c.ID,
-				"object":   "model",
-				"created":  c.CreatedAt.UnixMilli(),
-				"owned_by": owned,
-				"source":   "combo",
-				"status":   "active",
-				"cost":     "free",
-			})
-		}
-		// 黑名单过滤：已确认「上游不允许该账号类型调用」的模型不再对外提供，
-		// 否则客户端（含 new-api 渠道映射）会反复选中它、每次都吃一轮无谓失败。
-		// 面板「收费模型」区仍可见，可测试/解禁。平台封禁同理（整平台摘除，
-		// combo 别名按声明平台判），面板各平台页的模型目录仍可见。
-		kept := data[:0]
-		for _, m := range data {
-			if id, _ := m["id"].(string); id != "" {
-				if bannedPlatformOf(id) != "" {
-					continue
-				}
-				// trae 平台模型不走这里的平台级黑名单过滤：封禁按端点档位
-				// 隔离（remote/traecode/traework 各自独立），由 trae.ModelList
-				// 内部按当前端点过滤（2026-10-27）。
-				if strings.HasPrefix(id, "trae:") {
-					kept = append(kept, m)
-					continue
-				}
-				if IsModelBlacklisted(id) {
-					continue
-				}
-			}
-			kept = append(kept, m)
-		}
-		data = kept
+		data := servedModelEntries()
 		// 字段归一化（归纳、统一、透传）：业内 OpenAI 官方 /v1/models 只有
 		// id/object/created/owned_by，同类聚合器 OpenRouter 每条带 context_length
 		//（Gemini 叫 inputTokenLimit）。各来源字段名不一，统一到标准形态：
@@ -1465,10 +1385,37 @@ func clineAPIWithAccount(ctx context.Context, params map[string]any, stream bool
 
 // accountUsageFn 构造账号 token 记账回调：从上游 usage 提取
 // prompt_tokens + completion_tokens，计入该账号今日/累计消耗。
+// 仅 cline 路径使用（chat / 流式缓冲 / anthropic / responses 四个入口），
+// 因此顺带做 cline 专属的计费哨兵：usage.cost > 0 说明官方已把该模型移出
+// 免费档开始计费（2026-10-31 实测 free 组模型 cost 恒为 0，z-ai/glm 转计费
+// 后 cost>0）——自动拉黑摘出目录，避免"能出字但在烧账号额度"的静默漏洞。
 func accountUsageFn(acc *Account, params map[string]any) func(map[string]any) {
 	return func(u map[string]any) {
 		recordAccountTokens(acc, usageTokens(u, params))
+		clineAutoBanPaidUsage(params, u)
 	}
+}
+
+// clineAutoBanPaidUsage cline 计费哨兵：成功响应的 usage.cost > 0 即拉黑。
+// 只认 cline 形态的模型（本回调只在 cline 路径被调用）；cost 取 float64，
+// free 模型上游恒报 0，任何正值都是计费信号。判据独立于 404 拉黑（那是
+// 模型彻底下线），原因同用 BanReasonFeedRemoved——性质都是"官方不再免费"。
+func clineAutoBanPaidUsage(params map[string]any, u map[string]any) {
+	if u == nil {
+		return
+	}
+	cost, ok := u["cost"].(float64)
+	if !ok || cost <= 0 || params == nil {
+		return
+	}
+	model, _ := params["model"].(string)
+	id := displayClineModelID(model)
+	if id == "" || IsModelBlacklisted(id) {
+		return
+	}
+	detail := fmt.Sprintf("usage.cost=%g (paid model served to free account)", cost)
+	BlacklistModel(platCline, id, "cost", BanReasonFeedRemoved, detail)
+	log.Printf("  cline paid-usage ban: %s cost=%g", id, cost)
 }
 
 // usageTokens 从上游 usage 包提取 prompt+completion 消耗；
@@ -3939,4 +3886,149 @@ func workbuddyModelEntries() []map[string]any {
 	out := make([]map[string]any, 0, len(list))
 	out = append(out, chat...)
 	return append(out, image...)
+}
+
+// servedModelEntries 对外模型目录的单一口径：全平台聚合（cline/zen/wb/
+// oprt/amd/tkhb/trae/other/combo 别名）减去平台封禁与模型黑名单。/v1/models
+// 输出与请求路径的服务闸共用，保证「目录里能看到的才能请求到」严格一致。
+func servedModelEntries() []map[string]any {
+	ensureModelsFresh()
+	data := apiModelList()
+	// 合并 zen 免费模型（OpenCode 上游常开，无独立启停开关）
+	for _, zm := range zenModelList() {
+		data = append(data, map[string]any{
+			"id":       zm["id"],
+			"object":   "model",
+			"created":  time.Now().UnixMilli(),
+			"owned_by": "opencode-zen",
+			"source":   "zen-free",
+			"status":   "active",
+			"cost":     "free",
+			"context":  zm["context"],
+			"output":   zm["output"],
+		})
+	}
+	// 合并 WorkBuddy 模型（wbcn:/wbgb: 前缀，vendor 层翻译源项目 realm）。
+	data = append(data, workbuddyModelEntries()...)
+	// 合并 OpenRouter 免费模型（oprt: 前缀）。
+	data = append(data, orModelList()...)
+	// 合并 AMDCloud 免费模型（amd: 前缀）。
+	data = append(data, amdModelList()...)
+	// 合并 TokenHarbor 免费模型（tkhb: 前缀）。
+	data = append(data, thModelList()...)
+	// 合并 Trae 模型（trae: 前缀，TraeCode raw 协议账号池）。
+	data = append(data, traeModelList()...)
+	// 合并 Other 子平台勾选模型（各子平台自定义前缀）。
+	data = append(data, otherModelList()...)
+	// combo 别名模型（仪表盘自定义的虚拟模型 ID）。展示门控同平台段：
+	// 声明平台没有可路由凭据时别名也不出目录（否则用户选中后必然失败）。
+	for _, c := range listCombos() {
+		if !platformHasRoutableCredential(c.Platform) {
+			continue
+		}
+		owned := "cline"
+		if c.Platform == "zen" {
+			owned = "opencode-zen"
+		} else if c.Platform == "workbuddy" {
+			owned = "workbuddy"
+		} else if c.Platform == "openrouter" {
+			owned = "openrouter"
+		} else if c.Platform == "amd" {
+			owned = "amd-cloud"
+		} else if c.Platform == "tokenharbor" {
+			owned = "tokenharbor"
+		} else if c.Platform == "trae" {
+			owned = "trae"
+		}
+		data = append(data, map[string]any{
+			"id":       c.ID,
+			"object":   "model",
+			"created":  c.CreatedAt.UnixMilli(),
+			"owned_by": owned,
+			"source":   "combo",
+			"status":   "active",
+			"cost":     "free",
+		})
+	}
+	// 黑名单过滤：已确认「上游不允许该账号类型调用」的模型不再对外提供，
+	// 否则客户端（含 new-api 渠道映射）会反复选中它、每次都吃一轮无谓失败。
+	// 面板「收费模型」区仍可见，可测试/解禁。平台封禁同理（整平台摘除，
+	// combo 别名按声明平台判），面板各平台页的模型目录仍可见。
+	kept := data[:0]
+	for _, m := range data {
+		if id, _ := m["id"].(string); id != "" {
+			if bannedPlatformOf(id) != "" {
+				continue
+			}
+			// trae 平台模型不走这里的平台级黑名单过滤：封禁按端点档位
+			// 隔离（remote/traecode/traework 各自独立），由 trae.ModelList
+			// 内部按当前端点过滤（2026-10-27）。
+			if strings.HasPrefix(id, "trae:") {
+				kept = append(kept, m)
+				continue
+			}
+			if IsModelBlacklisted(id) {
+				continue
+			}
+		}
+		kept = append(kept, m)
+	}
+	return kept
+}
+
+// gateRefreshMinInterval / gateRefreshLast 见 strictModelGate（models.go）：
+// 目录闪断空窗（zen 目录分钟级同步、prune 后秒回）里的请求不应误拒，
+// 节流地强制刷新两份缓存再重查，30 秒窗口内多个未命中只真实刷新一次。
+
+// servedModelGate 请求路径的模型服务闸（2026-10-31 用户定，三入口统一收口）：
+//   - 已拉黑模型直接拒（此前拉黑只摘目录不拦请求，重复请求仍打上游）；
+//   - 不在对外目录的模型直接拒 —— 与 /v1/models 严格同口径（x/y 平台各自
+//     只服务自己目录里的模型，网关整体提供并集；客户端拼错/编造的模型名
+//     不再透传上游乱猜）。
+//
+// 空 model 放行：由既有入口校验（三端点 model 必填 400）负责错误语义。
+// 返回 (httpStatus, message)；status 0 = 放行。
+func servedModelGate(model string) (int, string) {
+	model = strings.TrimSpace(model)
+	if model == "" {
+		return 0, ""
+	}
+	if IsModelBlacklisted(model) {
+		return http.StatusNotFound, "model " + model + " is banned and no longer served by this gateway" +
+			" (see the Banned models table in the admin panel)"
+	}
+	if modelIsServed(model) {
+		return 0, ""
+	}
+	// 未命中不立即拒绝：目录按分钟刷新且上游存在闪断空窗（2026-09-27 实测
+	// zen 目录 prune 后秒回），请求可能恰好落进空窗。节流地强制同步再重查，
+	// 仍找不到才拒——真不存在的模型会在这里被拦住，不再透传上游。
+	if last := gateRefreshLast.Load(); time.Since(time.Unix(last, 0)) >= gateRefreshMinInterval &&
+		gateRefreshLast.CompareAndSwap(last, time.Now().Unix()) {
+		syncModelsOnce()
+		if _, err := syncZenModels(); err != nil {
+			log.Printf("  served gate: zen catalog refresh failed (%v)", err)
+		}
+		if modelIsServed(model) {
+			return 0, ""
+		}
+	}
+	return http.StatusNotFound, "model " + model + " is not served by this gateway (see /v1/models for the model list)"
+}
+
+// modelIsServed 模型是否在对外目录（/v1/models 同口径）。对外 ID 天然带
+// 平台前缀（cline-free/ zen: wbcn: wbgb: oprt: amd: tkhb: trae: other-*:、
+// combo 别名），请求侧精确匹配即可（2026-10-31 用户定：不做裸名拼写兼容，
+// 不在 models api 输出里的形态一律拒）。
+func modelIsServed(model string) bool {
+	model = strings.TrimSpace(model)
+	if model == "" {
+		return true
+	}
+	for _, m := range servedModelEntries() {
+		if id, _ := m["id"].(string); id == model {
+			return true
+		}
+	}
+	return false
 }

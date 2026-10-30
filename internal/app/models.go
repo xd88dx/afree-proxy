@@ -45,22 +45,11 @@ const (
 
 const recommendedModelsURL = cline.ClineAPIBase + "/ai/cline/recommended-models"
 
-// seedModelCandidates 冷启动兜底：仅在首次成功同步之前（或官方 feed 不可达）
-// 作为可服务的免费集。live 列表可用后以 live 为准，这些条目同样会被修剪，
-// 因此这里是"当前已知免费模型"的快照，不是永久清单。
-// Status=active：兜底条目本来就是可用模型，getDefaultModel 才能在没有 live
-// 结果时选出一个真正可用的默认模型（否则回退值是空字符串）。
-// 2026-09-18 快照（= 官方 recommended-models 的 free 列表，容器内实测 5 个）。
-func seedModelCandidates() []*ModelInfo {
-	return []*ModelInfo{
-		{ID: "cline-free/deepseek-v4.1-flash", Source: "free", Provider: "cline-free", Cost: "free", Status: ModelActive, RequiresStream: true},
-		{ID: "cline-free/muse-spark-1.3-contributor", Source: "free", Provider: "cline-free", Cost: "free", Status: ModelActive, RequiresStream: true},
-		{ID: "cline-free/solar-pro4", Source: "free", Provider: "cline-free", Cost: "free", Status: ModelActive, RequiresStream: true},
-		{ID: "z-ai/glm-5.3-flash", Source: "free", Provider: "z-ai", Cost: "free", Status: ModelActive, RequiresStream: true},
-		{ID: "poolside/laguna-s-2.1:free", Source: "free", Provider: "poolside", Cost: "free", Status: ModelActive},
-	}
-}
-
+// initModelsCache 建立空缓存。没有冷启动兜底（2026-10-31 用户定）：免费
+// 模型的唯一来源是官方 recommended-models feed，首次同步成功之前 / feed
+// 不可达时目录就是空的 —— 宁愿空着也不用过期快照兜底。背景：官方会把
+// free 模型静默移入付费档（2026-10-31 实测 deepseek/muse/solar-pro4 移入
+// clinePass，z-ai/glm 转为计费），过期快照会把计费模型当免费模型对外提供。
 func initModelsCache() {
 	modelsMu.Lock()
 	defer modelsMu.Unlock()
@@ -68,9 +57,6 @@ func initModelsCache() {
 		return
 	}
 	modelsCache = make(map[string]*ModelInfo)
-	for _, m := range seedModelCandidates() {
-		modelsCache[m.ID] = m
-	}
 }
 
 func getFreeModels() []*ModelInfo {
@@ -380,8 +366,7 @@ func strictModelGate(model string) string {
 			return ""
 		}
 	}
-	return fmt.Sprintf("model %q is not available on this gateway (see /v1/models for the model list). "+
-		"Set STRICT_MODEL_MATCH=false to fall back to the default model instead", model)
+	return fmt.Sprintf("model %q is not available on this gateway (see /v1/models for the model list)", model)
 }
 
 func apiModelList() []map[string]any {

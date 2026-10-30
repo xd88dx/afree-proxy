@@ -1,6 +1,32 @@
 package app
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
+
+// injectClineModels 测试注入：modelsCache 是全局的且不再有 seed 兜底
+// （2026-10-31 用户定：目录唯一来源是官方 feed），需要条目的测试锁内注入、
+// 结束恢复空缓存。注入 ID 用 feed 原样形态（cline-free/* 自带前缀、其余不带）。
+func injectClineModels(t *testing.T, ids ...string) {
+	t.Helper()
+	initModelsCache()
+	modelsMu.Lock()
+	saved := make(map[string]*ModelInfo, len(modelsCache))
+	for k, v := range modelsCache {
+		saved[k] = v
+	}
+	now := time.Now()
+	for _, id := range ids {
+		modelsCache[id] = &ModelInfo{ID: id, Source: "free", Cost: "free", Status: ModelActive, SyncedAt: now}
+	}
+	modelsMu.Unlock()
+	t.Cleanup(func() {
+		modelsMu.Lock()
+		modelsCache = saved
+		modelsMu.Unlock()
+	})
+}
 
 // Cline 模型 ID 规范化：feed 自带 cline-free/ 前缀的原样，其余补前缀。
 func TestDisplayClineModelID(t *testing.T) {
@@ -28,22 +54,22 @@ func TestCanonicalClineModelID(t *testing.T) {
 
 // modelInClineList 接受两种形态。
 func TestModelInClineListAcceptsBothForms(t *testing.T) {
-	initModelsCache()
-	// 种子表里的条目（测试进程未跑过 live 同步）：z-ai/*、poolside/* 不带前缀，
+	// 注入条目（测试进程无 live 同步）：z-ai/*、poolside/* 不带前缀，
 	// cline-free/* 自带。两种都必须命中。
+	injectClineModels(t, "z-ai/glm-5.3-flash", "poolside/laguna-s-2.1:free", "cline-free/deepseek-v4.1-flash")
 	if !modelInClineList("z-ai/glm-5.3-flash") {
-		t.Error("seed id without prefix must be in list")
+		t.Error("injected id without prefix must be in list")
 	}
 	if !modelInClineList("cline-free/z-ai/glm-5.3-flash") {
 		t.Error("prefixed id must resolve back to the feed id")
 	}
 	if !modelInClineList("poolside/laguna-s-2.1:free") {
-		t.Error("seed id without prefix must be in list")
+		t.Error("injected id without prefix must be in list")
 	}
 	// cline-free/* 原生条目的缓存键自带前缀：展示形态与剥前缀裸名都必须
 	// 命中（只查剥前缀形态会漏掉整类原生条目，STRICT 门控误拒）。
 	if !modelInClineList("cline-free/deepseek-v4.1-flash") {
-		t.Error("seed native cline-free/* id must be in list")
+		t.Error("native cline-free/* id must be in list")
 	}
 	if !modelInClineList("deepseek-v4.1-flash") {
 		t.Error("bare form of a native cline-free/* entry must be in list")
@@ -56,7 +82,7 @@ func TestModelInClineListAcceptsBothForms(t *testing.T) {
 // normalizeRequestModel 带前缀请求要解析到 feed 真实 ID（出站/记账用真实 ID）：
 // cline-free/* 原生条目的真实 ID 自带前缀，z-ai/* poolside/* 等不带。
 func TestNormalizeRequestModelResolvesFeedID(t *testing.T) {
-	initModelsCache()
+	injectClineModels(t, "z-ai/glm-5.3-flash", "cline-free/deepseek-v4.1-flash")
 	if got := normalizeRequestModel("cline-free/z-ai/glm-5.3-flash"); got != "z-ai/glm-5.3-flash" {
 		t.Errorf("normalizeRequestModel = %q, want the feed id", got)
 	}
@@ -84,6 +110,7 @@ func TestAPIModelListClineIDsArePrefixed(t *testing.T) {
 		poolMu.Unlock()
 	}()
 	initModelsCache()
+	injectClineModels(t, "z-ai/glm-5.3-flash", "cline-free/deepseek-v4.1-flash")
 	list := apiModelList()
 	if len(list) == 0 {
 		t.Fatal("routable account must yield a non-empty cline catalog")

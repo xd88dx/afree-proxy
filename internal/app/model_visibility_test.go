@@ -101,6 +101,9 @@ func TestAPIModelListRequiresRoutableAccount(t *testing.T) {
 	pool = &AccountPool{Accounts: []*Account{{
 		AccountID: "a2", Email: "b@test", Status: "active", PoolEnabled: &on,
 	}}}
+	// 目录内容只来自官方 feed（无 seed 兜底），注入条目验证"有可路由账号
+	// 时目录可见"——账号门控与目录内容是两个独立维度。
+	injectClineModels(t, "z-ai/glm-5.3-flash")
 	if got := apiModelList(); len(got) == 0 {
 		t.Fatal("routable account must list cline catalog")
 	}
