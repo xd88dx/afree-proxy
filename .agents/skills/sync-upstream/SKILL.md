@@ -83,7 +83,8 @@ Go 侧（`internal/trae/*.go`、`internal/app/trae.go`）**没有可比对基线
 ```bash
 # 本机 Go 直跑（首选；go1.27.2 已在 PATH）
 go build ./... && go vet ./internal/... && go test ./... && go test -race ./internal/app/
-# race 需本机有 gcc/clang，缺则单独跳过 race 并在台账注明
+# race 本机直跑（2026-10-30 起）：export PATH="/c/AppSelf/mingw64/bin:$PATH" && CGO_ENABLED=1，不再跳过
+# 同步引入/触及并发代码（goroutine/共享 struct）时 race 必跑——上游「不 join 的 goroutine 直写共享 struct」普通模式测不出（webagent.go 教训）
 
 # 需要与部署形态（linux/amd64）对齐的容器验证时，按 PROJECT.md §6 构建测试镜像：
 docker build -t afree-proxy:test-$(date +%Y%m%d-%H%M) .
