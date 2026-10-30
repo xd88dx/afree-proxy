@@ -189,6 +189,7 @@ WorkBuddy 一栏的基线同时登记在 `scripts/workbuddy-vendor-baseline.json
 - **数据后果与恢复**:丢失的 cool(20 分钟封顶的短时状态,自愈)与 keyTokens(记账,无法找回,从零重计)不可恢复——rsync 备份目录与 iStore 侧均无丢失前版本;`modelAliases`/`endpoints` 在 iStore 本为空(无学习事件,`omitempty`),非丢失。iStore 生产侧同样中招(02:26 写入),待用户下次部署 GHCR 新镜像后自愈;本机运行态已随修复后的镜像恢复记账能力。
 - **其他平台排查**(同型「全量替换+逐字段重建」模式):`amd.go:250`/`openrouter.go:226,435`/`tokenharbor.go:198` 的 next **均已拷 KeyTokens/Cool**(写得晚、字段已存在);`otherCloneConfig` 深拷含运行时表;`traeCloneConfig` 显式拷 Cool(trae 无 keyTokens);WorkBuddy 配置与运行态分文件;cline 账号编辑走单账号端点。**唯一漏的就是 zen**——已修。
 - fork 上游线核对:`foxy1402/cline-proxy` main 仍为 `b8a1be0`,无新提交,本次无 fork 侧吸收。
+- 本机测试环境更新(同日):镜像 `afree-proxy:test-20261031-0302` 构建,compose 换 tag 起 `afree` 容器——`Up (healthy)`、`/health` 200(activeAccounts=19),旧镜像按 7 个窗口清理。
 - 验证:`go build ./...`、`go vet ./...` 全绿;`go test ./... -count=1` 28 包全绿(含新回归测试);`CGO_ENABLED=1 go test -race ./internal/app/` ok。
 
 ### 2026-10-30 — 571f9b9 → b8a1be0
