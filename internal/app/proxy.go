@@ -760,7 +760,7 @@ func handleZenChat(w http.ResponseWriter, r *http.Request, params map[string]any
 	}
 	if err != nil {
 		log.Printf("  zen api error: %v", err)
-		writeJSON(w, http.StatusBadGateway, map[string]any{
+		writeJSON(w, zenClientErrorStatus(err), map[string]any{
 			"error": map[string]string{"message": err.Error(), "type": "api_error"},
 		})
 		return
@@ -801,7 +801,7 @@ func handleZenChatDirect(w http.ResponseWriter, r *http.Request, params map[stri
 	resp, _, err := callZenAPI(r.Context(), params, true)
 	if err != nil {
 		log.Printf("  zen api error: %v", err)
-		writeJSON(w, http.StatusBadGateway, map[string]any{
+		writeJSON(w, zenClientErrorStatus(err), map[string]any{
 			"error": map[string]string{"message": err.Error(), "type": "api_error"},
 		})
 		return
@@ -854,7 +854,7 @@ func handleZenResponsesNative(w http.ResponseWriter, r *http.Request, params map
 			return true
 		}
 		log.Printf("  zen responses api error: %v", err)
-		writeJSON(w, http.StatusBadGateway, map[string]any{
+		writeJSON(w, zenClientErrorStatus(err), map[string]any{
 			"error": map[string]string{"message": err.Error(), "type": "api_error"},
 		})
 		return false
@@ -1707,7 +1707,8 @@ func handleStreamBufferedGeneric(w http.ResponseWriter, r *http.Request, plat st
 		resp, usageFn, err := attempt(r.Context())
 		if err != nil {
 			log.Printf("  [%s] %s attempt %d/%d api error: %v", rid, plat, n, StreamMaxAttempts(), err)
-			writeJSON(w, http.StatusBadGateway, map[string]any{
+			// zen 的 429 透传给客户端退避；cline 等平台错误非 zenHTTPError，仍回 502
+			writeJSON(w, zenClientErrorStatus(err), map[string]any{
 				"error": map[string]string{"message": err.Error(), "type": "api_error"},
 			})
 			return
@@ -1725,7 +1726,7 @@ func handleStreamBufferedGeneric(w http.ResponseWriter, r *http.Request, plat st
 				log.Printf("  [%s] %s attempt %d/%d recovered after %d break(s)", rid, plat, n, StreamMaxAttempts(), n-1)
 				setUpstreamNote(r.Context(), fmt.Sprintf("%d次中断已重试", n-1))
 			}
-			replaySSE(w, lines)
+			replaySSE(w, lines, clientWantsStreamUsage(params))
 			return
 		}
 		// 中断归因：ctx 已取消 = 下游先断开连带取消上游读，非上游故障
@@ -1768,7 +1769,38 @@ func handleClineStreamBuffered(w http.ResponseWriter, r *http.Request, params ma
 }
 
 // replaySSE 逐字回放缓冲的上游 SSE（保真度与旧直通路径一致）。
-func replaySSE(w http.ResponseWriter, lines []string) {
+// clientWantsStreamUsage 客户端是否自己要求了流式 usage 帧
+// （stream_options.include_usage）。zen 路径为统计恒向上游要该帧，只有客户端
+// 要了才原样透传（见 replaySSE）。
+func clientWantsStreamUsage(params map[string]any) bool {
+	so, ok := params["stream_options"].(map[string]any)
+	if !ok {
+		return false
+	}
+	v, _ := so["include_usage"].(bool)
+	return v
+}
+
+// isUsageOnlyChunk 判断一帧是否为 stream_options.include_usage 产生的纯 usage 帧：
+// choices 为空数组（或缺失）且带 usage。
+func isUsageOnlyChunk(obj map[string]any) bool {
+	u, ok := obj["usage"].(map[string]any)
+	if !ok || len(u) == 0 {
+		return false
+	}
+	raw, present := obj["choices"]
+	if !present || raw == nil {
+		return true
+	}
+	choices, _ := raw.([]any)
+	return len(choices) == 0
+}
+
+// replaySSE 逐字回放缓冲的上游 SSE（保真度与旧直通路径一致）。
+// keepUsageOnly=false 时吞掉纯 usage 收尾帧：zen 路径为拿 token 统计恒向上游
+// 要 stream_options.include_usage，上游因此在末尾补一帧 choices=[]；客户端自己
+// 没要 usage 时这帧是网关引入的额外数据，不下发。
+func replaySSE(w http.ResponseWriter, lines []string, keepUsageOnly bool) {
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
@@ -1776,6 +1808,15 @@ func replaySSE(w http.ResponseWriter, lines []string) {
 	w.WriteHeader(http.StatusOK)
 	var sb strings.Builder
 	for _, ln := range lines {
+		if !keepUsageOnly {
+			trimmed := strings.TrimSpace(ln)
+			if strings.HasPrefix(trimmed, "data:") {
+				var obj map[string]any
+				if json.Unmarshal([]byte(strings.TrimSpace(trimmed[5:])), &obj) == nil && isUsageOnlyChunk(obj) {
+					continue
+				}
+			}
+		}
 		sb.WriteString(ln)
 		if !strings.HasSuffix(ln, "\n") {
 			sb.WriteString("\n")
@@ -3010,7 +3051,7 @@ func handleZenAnthropic(w http.ResponseWriter, r *http.Request, req anthropicReq
 		resp, _, rerr := callZenResponsesAPI(r.Context(), openAIReq, true)
 		if rerr != nil {
 			log.Printf("  anthropic zen responses api error: %v", rerr)
-			writeJSON(w, http.StatusBadGateway, map[string]any{
+			writeJSON(w, zenClientErrorStatus(rerr), map[string]any{
 				"error": map[string]string{"message": rerr.Error(), "type": "api_error"},
 			})
 			return
@@ -3049,7 +3090,7 @@ func handleZenAnthropic(w http.ResponseWriter, r *http.Request, req anthropicReq
 		resp2, _, rerr := callZenResponsesAPI(r.Context(), openAIReq, true)
 		if rerr != nil {
 			log.Printf("  anthropic zen responses api error: %v", rerr)
-			writeJSON(w, http.StatusBadGateway, map[string]any{
+			writeJSON(w, zenClientErrorStatus(rerr), map[string]any{
 				"error": map[string]string{"message": rerr.Error(), "type": "api_error"},
 			})
 			return
@@ -3076,7 +3117,7 @@ func handleZenAnthropic(w http.ResponseWriter, r *http.Request, req anthropicReq
 	}
 	if err != nil {
 		log.Printf("  anthropic zen api error: %v", err)
-		writeJSON(w, http.StatusBadGateway, map[string]any{
+		writeJSON(w, zenClientErrorStatus(err), map[string]any{
 			"error": map[string]string{"message": err.Error(), "type": "api_error"},
 		})
 		return

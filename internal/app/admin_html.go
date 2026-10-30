@@ -982,7 +982,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
       <div class="field" style="margin:0">
         <label>Base URL</label>
         <div style="display:flex;gap:8px;align-items:center">
-          <input type="text" id="ocBaseURL" placeholder="https://opencode.ai/inference/v1" style="flex:1;min-width:0">
+          <input type="text" id="ocBaseURL" placeholder="https://opencode.ai/inference/openai/v1" style="flex:1;min-width:0">
           <button class="btn btn-primary btn-sm" onclick="saveOcConfig()">Confirm</button>
         </div>
       </div>
@@ -1034,7 +1034,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
       <div class="field"><label>Auto-compaction</label>
         <select id="ocCompactAuto"><option value="true">On</option><option value="false">Off</option></select>
       </div>
-      <div class="field"><label>Reserved buffer</label><input type="text" id="ocCompactBuffer" placeholder="20000"></div>
+      <div class="field"><label>Reserved buffer</label><input type="text" id="ocCompactBuffer" placeholder="80000"></div>
     </div>
     <div class="form-row">
       <div class="field"><label>Tail tokens kept</label><input type="text" id="ocKeepTokens" placeholder="8000"></div>
@@ -5630,7 +5630,7 @@ async function loadOcConfig() {
     // （ocEgressInfo 徽记块已删：其 HTML 挂点随 2026-10-24 面板改版移除，本段
     // 一直是查不到元素的死代码——egress 状态以代理池页的绑定表为准。）
     _('ocCompactAuto').value = String(c.compaction ? c.compaction.auto : true);
-    _('ocCompactBuffer').value = c.compaction ? c.compaction.buffer : 20000;
+    _('ocCompactBuffer').value = c.compaction ? c.compaction.buffer : 80000;
     _('ocKeepTokens').value = c.compaction ? c.compaction.keepTokens : 8000;
     _('ocSummaryModel').value = c.compaction ? (c.compaction.summaryModel || '') : '';
     _('ocMaxSummary').value = c.compaction ? c.compaction.maxSummary : 4096;
@@ -5650,7 +5650,7 @@ async function saveOcConfig() {
     pinProxyPerKey: _('ocPinProxy') ? _('ocPinProxy').value === 'true' : true,
     compaction: {
       auto: _('ocCompactAuto').value === 'true',
-      buffer: parseInt(_('ocCompactBuffer').value) || 20000,
+      buffer: parseInt(_('ocCompactBuffer').value) || 80000,
       keepTokens: parseInt(_('ocKeepTokens').value) || 8000,
       summaryModel: _('ocSummaryModel').value.trim(),
       maxSummary: parseInt(_('ocMaxSummary').value) || 4096

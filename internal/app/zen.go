@@ -89,15 +89,40 @@ type zenGraceEntry struct {
 
 var zenGraceModels = map[string]zenGraceEntry{} // 读写均走 zenModelsMu
 
-// zenAPIBase 上游基地址。2026-10-15 实测：官方目录（models.opencode.ai）
-// 已把 opencode provider 的 api 指向 /inference/v1，CLI 直连新后端；旧
-// /zen/v1 经 console 中转后匿名免费请求恒 403 FreeTierError（中转剥
-// Authorization 并改名 x-opencode-request，校验无法通过），故默认与存量
-// 配置一并迁移到 /inference/v1（见 loadZenConfig 的迁移逻辑）。
-const zenAPIBase = "https://opencode.ai/inference/v1"
+// zenAPIBase 上游基地址（编译期默认值）。
+//
+// 2026-10-30 抓包更正：官方目录（models.opencode.ai）里 opencode provider 的
+// api 是 /inference/openai/v1，全部 8 个免费模型的 provider.api 也一致；真实
+// CLI 2.1.4 发往 /inference/openai/v1/chat/completions。此前这里写死的
+// /inference/v1 来自 2026-10-15 的一次观测，上游改了路径而仓库没跟——差一个
+// 路径段。默认值已同步，并且 syncZenModels 会按目录里的 provider.api 自愈
+// （见 applyZenRegistryBase），不再依赖某次人工观测。
+const zenAPIBase = "https://opencode.ai/inference/openai/v1"
+
+// zenStaleBase 2026-10-15 ~ 2026-10-30 期间的（错误的）编译期默认值。
+// 仅用于识别并迁移存量的 .zen-config.json：用户没改过 baseURL 时它被写进了
+// 配置文件，不迁移的话旧安装会一直停在短路径上。
+const zenStaleBase = "https://opencode.ai/inference/v1"
 
 // zenLegacyBase 已废弃的旧基地址，仅用于存量配置迁移识别。
 const zenLegacyBase = "https://opencode.ai/zen/v1"
+
+// max429KeySwitches 一次客户端请求因 429 最多切换几个 key 的硬上限。
+// 换 key 是本次调用里唯一不可逆的操作：cooldownZenKey 会把该 key 冻结到
+// zenRateLimitCooldown。若不设上限，一个大请求 429 后沿池顺序把每个 key 逐个
+// 冷却，整池在几秒内报废——2026-10-30 实测：单个 291 条消息的请求 4 秒内冷却
+// 了 5 个 key。上限取 4（实际生效值再与 retries 取小），保证一次坏请求最多
+// 牺牲少数几个 key，而不是整个池。
+const max429KeySwitches = 4
+
+// zenRateLimitCooldown zen key 因 429 冷却的时长上限。
+//
+// 上游的 Retry-After 是"距下一个 00:00 UTC"的倒计时，不是真实恢复时间：实测
+// 最后一个 429 报 RA=20h46m，而 18 分钟后同一 key 就恢复 200 了。按 RA 冷藏会
+// 让多 key 池里的 key 白停一整天。取 20 分钟：足够把流量让给别的 key，又能在
+// 一次瞬时节流过去后很快自愈。（整池都冷却时 pickZenKey 仍会轮转试探，不会
+// 出现无 key 可用。）
+const zenRateLimitCooldown = 20 * time.Minute
 
 // ZenModelPrefix zen 免费模型的网关前缀（与 workbuddy 的 cn:/global:、
 // openrouter 的 or: 同思路）：平台越来越多，加前缀让客户端在模型列表里
@@ -115,6 +140,20 @@ func zenCanonicalID(id string) string {
 
 // zenPrefixedID 把目录 ID 加上网关前缀（/v1/models 输出用）。
 func zenPrefixedID(id string) string { return ZenModelPrefix + id }
+
+// legacyCompactBuffer 压缩 buffer 的历史默认值，仅用于存量配置迁移。
+const legacyCompactBuffer = 20000
+
+// defaultCompactBuffer 压缩预留缓冲（token）。20000 的旧默认值对"客户端自身
+// 上限低于模型窗口"的场景无效：阈值 = ctx - max(output, buffer)，200k 窗口、
+// 32k 输出时阈值 168k，而客户端（OpenClaw 等）可能在 128k 就封顶——压缩永远
+// 不会触发，网关把满载请求原样送上游。
+//
+// 80000 让 200k/32k 这类模型的阈值降到 120k，落进 128k 客户端上限之内；
+// 大窗口模型（beam 1M、nemotron-lightning 262k/262k）仍由 max(output, buffer)
+// 主导，行为不变。压缩本身保留 8000 token 尾部（keepTokens），所以抬高 buffer
+// 只是"更早开始摘要"，不会让上下文变浅。
+const defaultCompactBuffer = 80000
 
 func initZenModels() {
 	zenModelsMu.Lock()
@@ -309,11 +348,16 @@ type zenConfigData struct {
 	// 推导它，空值即省略（正确）；使用 OAuth token 作 key 时，应从
 	// 账户元数据填入，否则上游看到 OAuth token 却无 org 头，与官方
 	// 客户端形态不一致。绝不编造。
-	OrgID          string           `json:"orgID,omitempty"`
-	BaseURL        string           `json:"baseURL"`
-	MaxConcurrency int              `json:"maxConcurrency"` // zen 上游最大并发,防 worker 瞬时超限,默认 8
-	Retries        int              `json:"retries"`        // 限流/网络错误重试次数,默认 3
-	Compaction     zenCompactConfig `json:"compaction"`
+	OrgID          string `json:"orgID,omitempty"`
+	BaseURL        string `json:"baseURL"`
+	MaxConcurrency int    `json:"maxConcurrency"` // zen 上游最大并发,防 worker 瞬时超限,默认 8
+	Retries        int    `json:"retries"`        // 限流/网络错误重试次数,默认 3
+	// 故障转移阈值/窗口（上游 b8a1be0 随 markZenFail 组引入）：连续 FailoverCount
+	// 次失败才降级 zen，窗口 FailoverMinutes 分钟。429 恒不计数（限流不是降级）；
+	// cline 池为空时 markZenFail 直接忽略（无转移目标，路由过去只会 401）。
+	FailoverCount   int              `json:"failoverCount"`
+	FailoverMinutes int              `json:"failoverMinutes"`
+	Compaction      zenCompactConfig `json:"compaction"`
 	// 代理隔离/备用/排除表/绑定上限已迁出到 proxy-config.json 的隔离与绑定段
 	// (见 proxy_binding_config.go)—— 代理池与隔离规则是全局能力,不该由某个
 	// 平台的配置文件托管。
@@ -552,7 +596,7 @@ func defaultZenConfig() *zenConfigData {
 		PinProxyPerKey: boolPtr(true),
 		Compaction: zenCompactConfig{
 			Auto:       true,
-			Buffer:     20000,
+			Buffer:     defaultCompactBuffer,
 			KeepTokens: 8000,
 			MaxSummary: 4096,
 		},
@@ -566,8 +610,10 @@ var (
 
 // 并发信号量：zen 上游最大并发（maxConcurrency 配置，rebuildZenSem 重建）。
 var (
-	zenSem     chan struct{}
-	zenStateMu sync.Mutex
+	zenSem       chan struct{}
+	zenFailCount int       // 连续失败计数（markZenFail/markZenSuccess 维护）
+	zenFailUntil time.Time // 故障转移截止时间
+	zenStateMu   sync.Mutex
 )
 
 func init() {
@@ -602,6 +648,69 @@ func rebuildZenSem() {
 	zenStateMu.Lock()
 	zenSem = make(chan struct{}, n)
 	zenStateMu.Unlock()
+}
+
+func markZenSuccess() {
+	zenStateMu.Lock()
+	zenFailCount = 0
+	zenFailUntil = time.Time{}
+	zenStateMu.Unlock()
+}
+
+func markZenFail() {
+	// 故障转移只在"有地方可去"时才有意义。cline 池为空时把 zen 判为 degraded
+	// 会把请求路由到一个没有账号的池，客户端拿到 401 "No accounts in pool" ——
+	// 比原来的 429 更糟且更难懂（2026-10-30 实测：8 并发打满 3 次失败阈值后，
+	// 后续所有请求都变成 401，看起来像"zen 彻底坏了"）。
+	// 池为空时直接不记失败：zen 自己的 429/冷却逻辑仍在工作，没有可转移的目标。
+	if total, active := poolStatusSnapshot(); total == 0 || active == 0 {
+		return
+	}
+	cfg := getZenConfig()
+	thr := cfg.FailoverCount
+	if thr <= 0 {
+		thr = 3
+	}
+	window := cfg.FailoverMinutes
+	if window <= 0 {
+		window = 5
+	}
+	zenStateMu.Lock()
+	zenFailCount++
+	if zenFailCount >= thr {
+		zenFailUntil = time.Now().Add(time.Duration(window) * time.Minute)
+	}
+	zenStateMu.Unlock()
+}
+
+// zenFailedNow zen 是否处于故障转移状态
+func zenFailedNow() bool {
+	zenStateMu.Lock()
+	defer zenStateMu.Unlock()
+	if zenFailUntil.IsZero() {
+		return false
+	}
+	if time.Now().After(zenFailUntil) {
+		zenFailCount = 0
+		zenFailUntil = time.Time{}
+		return false
+	}
+	return true
+}
+
+// zenClientErrorStatus 把 zen 上游的错误映射成回给客户端的 HTTP 状态码。
+//
+// 默认 502：网关确实没能从上游拿到 2xx，语义是"坏网关"。
+// 限流例外：上游 429 是"我这个 key 用完了，你等会再来"，原因在客户端可以
+// 应对的一侧（退避重试、换模型）。回 502 会让 IDE 认为网关坏了——实测
+// OpenCode/Claude 系客户端对 502 的处置是标记服务不可用，而对 429 会按
+// Retry-After 退避重试。故 429 原样透传状态码。
+func zenClientErrorStatus(err error) int {
+	var he *zenHTTPError
+	if errors.As(err, &he) && he.Status == http.StatusTooManyRequests {
+		return http.StatusTooManyRequests
+	}
+	return http.StatusBadGateway
 }
 
 // isRateLimited 限流信号识别: 429/503 直接命中; 502/403 按错误体关键词。
@@ -680,6 +789,20 @@ func loadZenConfig() *zenConfigData {
 	// 物化让缺省语义在读取后即可见、下次保存即写回配置文件。
 	if cfg.PinProxyPerKey == nil {
 		cfg.PinProxyPerKey = boolPtr(true)
+	}
+	// 存量配置迁移：2026-10-15 的错误默认值 /inference/v1 少了 /openai 一段。
+	// 同样只迁移恰好等于该旧默认值的配置——显式填过自定义地址的不动。
+	if strings.TrimRight(cfg.BaseURL, "/") == zenStaleBase {
+		cfg.BaseURL = zenAPIBase
+		log.Printf("zen baseURL migrated: %s -> %s (upstream moved the free-tier path under /openai)", zenStaleBase, zenAPIBase)
+	}
+	// 存量配置迁移：压缩 buffer 旧默认 20000 对"客户端上限低于模型窗口"的
+	// 场景无效（200k/32k 模型 -> 阈值 168k，而客户端可能 128k 就封顶，
+	// 压缩永不触发）。只迁移恰好等于旧默认值的配置；显式调过的不动。
+	if cfg.Compaction.Buffer == legacyCompactBuffer {
+		cfg.Compaction.Buffer = defaultCompactBuffer
+		log.Printf("zen compaction buffer migrated: %d -> %d (old value never fired below a 128k client cap)",
+			legacyCompactBuffer, defaultCompactBuffer)
 	}
 	return cfg
 }
@@ -1051,8 +1174,19 @@ func cooldownZenKey(key string, d time.Duration) time.Duration {
 	if d <= 0 {
 		d = time.Minute
 	}
-	if d > maxCooldown {
-		d = maxCooldown
+	// Retry-After 不可信，必须封顶（2026-10-30 实测）。
+	//
+	// zen 的 Retry-After 恒等于"距下一个 00:00 UTC 的秒数"（实测 75020/74810/
+	// 73790…，全部落在同日 23:59:5x），它是每日窗口的复位倒计时，不是这次限流
+	// 的真实恢复时间。实际观测：最后一个 429（RA=20h46m）之后 **18 分钟**就恢复
+	// 正常 200 了——按 RA 冷藏 key 会让 6 key 池里的 5 个 key 白停一整天，而池子
+	// 其实已经可用。
+	//
+	// 因此 zen key 的冷却以 zenRateLimitCooldown 封顶：够久到把流量让给别的 key，
+	// 又不至于让一次瞬时节流把整池停到午夜。若整个池都在冷却，pickZenKey 仍会
+	// 轮转返回一个 key 继续试探，所以封顶不会造成"无 key 可用"。
+	if d > zenRateLimitCooldown {
+		d = zenRateLimitCooldown
 	}
 	zenKeyMu.Lock()
 	zenKeyCool[key] = time.Now().Add(d)
@@ -1097,6 +1231,19 @@ func uncoolZenKey(key string) {
 	delete(zenKeyCool, key)
 	zenKeyMu.Unlock()
 	saveZenConfig() // 解除冷却同步落盘：否则重启后 init() 会把盘上的冷却复活
+}
+
+// zenAnyKeyRotatable 是否还有"当前 key 之外、且未在冷却"的 key 可以马上换过去。
+// 决定 429 之后该不该睡眠重试：没有可换的 key 时，睡 30s 再打同一个已冷却的
+// key 只是在挂住客户端的连接（实测单 key 池一次请求挂 101s 才返回 429）。
+// 与 pickZenKey 不同：这里不推进 round-robin 游标，只是只读探测。
+func zenAnyKeyRotatable(cur string) bool {
+	for _, k := range getZenConfig().Keys {
+		if k != "" && k != cur && !zenKeyCooling(k) {
+			return true
+		}
+	}
+	return false
 }
 
 // zenCallOpts 单次上游调用的可选参数（变参：既有 callZenAPI/callZenResponsesAPI
@@ -1236,6 +1383,12 @@ func zenGateTools() []any {
 					"name":        d.Name,
 					"description": d.Description,
 					"parameters":  d.ParametersChat,
+					// CLI 2.1.4 抓包：12 个 gate 工具的 function 里都带
+					// "strict": false。responses 路径一直有该字段
+					// （zenMergeResponsesTools），chat 路径漏了——同一份工具集
+					// 在两条路径上形态不一致，补齐。语义上 strict 缺省即 false，
+					// 这里是形态对齐而非行为改变。
+					"strict": false,
 				},
 			})
 		}
@@ -1248,6 +1401,7 @@ func zenGateTools() []any {
 				"name":        s.name,
 				"description": s.desc,
 				"parameters":  zenEmptySchema(),
+				"strict":      false,
 			},
 		})
 	}
@@ -1269,10 +1423,40 @@ func buildZenBody(params map[string]any, stream bool) map[string]any {
 	}
 	if stream {
 		body["stream"] = true
+		// CLI 2.1.4 在 chat 路径恒发 {"include_usage":true}（2026-10-30 抓包）。
+		// 上游只有收到该字段才会在 SSE 末尾补一帧纯 usage 块——不发的话网关的
+		// 流式 token 统计恒为 0（onUsage 从来收不到数据）。这一帧不带 choices，
+		// 客户端的 OpenAI 解析器会忽略它，形态安全。
+		//
+		// 在客户端给的对象上合并而不是整体替换：客户端若传了别的
+		// stream_options 子键，不该因为网关要统计就丢掉。客户端显式写
+		// include_usage:false 时仍改为 true —— 网关需要该帧做统计，而下发时
+		// 会按客户端的原始意愿吞掉它（见 clientWantsStreamUsage）。
+		so := map[string]any{"include_usage": true}
+		if cs, ok := params["stream_options"].(map[string]any); ok {
+			for k, v := range cs {
+				if k != "include_usage" {
+					so[k] = v
+				}
+			}
+		}
+		body["stream_options"] = so
+	} else {
+		// 非流式路径不该带上流式专有字段（passThroughKeys 会原样搬过来）。
+		delete(body, "stream_options")
 	}
 	if model, ok := params["model"].(string); ok {
 		if m, ok := resolveZenModel(model); ok {
 			body["model"] = m.ID
+			// 输出上限默认值：CLI 2.1.4 对 big-pickle 发 max_completion_tokens
+			// =32000，正是目录里该模型的 limit.output（2026-10-30 抓包 + 目录
+			// 核对一致）。网关此前完全不发该字段——上游用自己更大的缺省值，
+			// 与真实客户端形态不同。客户端显式给了就尊重客户端的值。
+			if _, has := body["max_completion_tokens"]; !has {
+				if _, hasTok := body["max_tokens"]; !hasTok && m.Output > 0 {
+					body["max_completion_tokens"] = m.Output
+				}
+			}
 		}
 	}
 	delete(body, "reasoning_effort")
@@ -2286,6 +2470,13 @@ func callZenResponsesAPI(ctx context.Context, params map[string]any, stream bool
 	retryKey := ""          // 非空时重试沿用该 key（保持 key sess_ 一致）
 	remapped := false       // 410 弃用迁移至多一次，防别名链循环
 	sessionRetried := false // FreeTier 403 换新会话后同 key 重试至多一次
+	// keySwitches 限制"一次客户端请求最多冷却几个 key"（同 chat 路径，
+	// 见 callZenAPI 里的说明：换 key 会不可逆地冷却 key，必须单独设上限）。
+	keySwitches := 0
+	maxKeySwitches := retries
+	if maxKeySwitches > max429KeySwitches {
+		maxKeySwitches = max429KeySwitches
+	}
 	// 2026-10-27: fresh session per API call (zenCallIdentity). Same
 	// session across retries of this call, fresh if the key switches
 	// or a 403 forces a refresh. See zen_session.go.
@@ -2447,15 +2638,24 @@ func callZenResponsesAPI(ctx context.Context, params map[string]any, stream bool
 			if o.pinKey != "" {
 				return nil, rateLimited, apiErr
 			}
-			if next := pickZenKey(); next != "" && next != key && !zenKeyCooling(next) {
-				// 必须同步改写 retryKey：循环头 key=retryKey，只改 key 不改
-				// retryKey 会让下一次迭代继续用刚冷却的旧 key，无限 429 空转。
-				key = next
-				retryKey = next
-				log.Printf("  zen responses rate limited (%d), switching to next zen key (%d configured)", resp.StatusCode, len(cfg.Keys))
-				continue
+			if keySwitches < maxKeySwitches {
+				if next := pickZenKey(); next != "" && next != key && !zenKeyCooling(next) {
+					// 必须同步改写 retryKey：循环头 key=retryKey，只改 key 不改
+					// retryKey 会让下一次迭代继续用刚冷却的旧 key，无限 429 空转。
+					log.Printf("  zen responses rate limited (%d), switching to next zen key (%d configured, switch %d/%d)",
+						resp.StatusCode, len(cfg.Keys), keySwitches+1, maxKeySwitches)
+					key = next
+					retryKey = next
+					keySwitches++
+					continue
+				}
+			} else if len(cfg.Keys) > keySwitches+1 {
+				log.Printf("  zen responses rate limited (%d): key-switch budget exhausted (%d/%d) with %d key(s) configured, not cooling the rest",
+					resp.StatusCode, keySwitches, maxKeySwitches, len(cfg.Keys))
 			}
-			if attempt < retries {
+			// 无 key 可换时快速失败，语义与 chat 路径一致（见那里的长注释）：
+			// 睡 30s 后必然重撞同一个已冷却的 key，只是把客户端连接挂住。
+			if attempt < retries && zenAnyKeyRotatable(key) {
 				wait := delay
 				if retryAfter := parseRetryAfter(resp.Header.Get("Retry-After")); retryAfter > wait {
 					wait = retryAfter
@@ -2470,6 +2670,14 @@ func callZenResponsesAPI(ctx context.Context, params map[string]any, stream bool
 				delay = zenRetryDelay(delay)
 				continue
 			}
+			if attempt < retries {
+				log.Printf("  zen responses rate limited (%d): no rotatable key, failing fast instead of sleeping %d more time(s)",
+					resp.StatusCode, retries-attempt)
+			}
+			// 限流不是"zen 挂了"：上游明确回了 HTTP 429，服务正常，只是这个
+			// key/身份当前超了窗口。把它计入故障转移会让一次瞬时节流把整个 zen
+			// 路由切走（cline 池为空时客户端直接吃 401），而限流本来已由 key
+			// 冷却 + 换 key + 重试处理。故此处不推进 failover。
 			return nil, rateLimited, apiErr
 		}
 
@@ -2570,6 +2778,23 @@ func callZenAPI(ctx context.Context, params map[string]any, stream bool, opts ..
 	rateLimited := 0
 	remapped := false       // 410 弃用迁移至多一次，防别名链循环
 	sessionRetried := false // FreeTier 403 换新会话后同 key 重试至多一次
+	// keySwitches 限制"一次客户端请求最多冷却几个 key"。
+	//
+	// 2026-10-30 实测事故：一个 291 条消息的大请求 429 后，下面的换 key 分支
+	// 用 `continue` 绕过了 `attempt < retries` 判断，而循环头是 `for attempt := 0; ;`
+	// 无上界——结果 4 秒内把池里 5 个 key 全部冷却到 24h（maxCooldown）。
+	// 一次请求的规模问题因此被放大成"整池被封"的假象。
+	//
+	// 语义区分：睡眠重试（attempt < retries）是"等一等再用同一个 key"，成本低；
+	// 换 key 会永久冷却一个 key，成本高且不可逆。故单独计数、单独设上限，
+	// 不占用重试预算：keySwitches 上限 = retries（默认 3），即一次请求最多
+	// 触碰 1 + 3 = 4 个 key，最多冷却 4 个。这与"重试次数"是两件事，
+	// 不能共用一个计数器。
+	keySwitches := 0
+	maxKeySwitches := retries
+	if maxKeySwitches > max429KeySwitches {
+		maxKeySwitches = max429KeySwitches
+	}
 	// 2026-10-27: fresh session per API call (zenCallIdentity). Same
 	// session across retries of this call, fresh if the key switches
 	// or a 403 forces a refresh. See zen_session.go.
@@ -2718,13 +2943,30 @@ func callZenAPI(ctx context.Context, params map[string]any, stream bool, opts ..
 			if o.pinKey != "" {
 				return nil, rateLimited, apiErr
 			}
-			if next := pickZenKey(); next != "" && next != key && !zenKeyCooling(next) {
-				log.Printf("  zen rate limited (%d), switching to next zen key (%d configured)", resp.StatusCode, len(cfg.Keys))
-				key = next
-				retryKey = next
-				continue
+			if keySwitches < maxKeySwitches {
+				if next := pickZenKey(); next != "" && next != key && !zenKeyCooling(next) {
+					log.Printf("  zen rate limited (%d), switching to next zen key (%d configured, switch %d/%d)",
+						resp.StatusCode, len(cfg.Keys), keySwitches+1, maxKeySwitches)
+					key = next
+					retryKey = next
+					keySwitches++
+					continue
+				}
+			} else if len(cfg.Keys) > keySwitches+1 {
+				// 还有没用过的 key，但本次请求的换 key 预算已用完。必须明确
+				// 记一行：否则表现为"明明还有 key 却直接 429 返回"，排查时
+				// 会误以为是 key 池配置问题。
+				log.Printf("  zen rate limited (%d): key-switch budget exhausted (%d/%d) with %d key(s) configured, not cooling the rest",
+					resp.StatusCode, keySwitches, maxKeySwitches, len(cfg.Keys))
 			}
-			if attempt < retries {
+			// 睡眠重试只在"等一等就可能变好"时有价值。这个 key 刚被冷却
+			// zenRateLimitCooldown（20 分钟），而这里的等待上限只有 30s ——
+			// 睡醒后重试必然还是撞同一个已冷却的 key。实测单 key 池下，
+			// 一次请求要挂 101 秒（4 次 upstream × 30s 睡眠）才把 429 交还，
+			// IDE 侧看起来像"网关卡死"，而真实结论在第一秒就已确定。
+			// 故：还有别的 key 可轮转 → 上面的换 key 分支已 continue；
+			// 没有 → 立即返回 429，把退避权交还给客户端。
+			if attempt < retries && zenAnyKeyRotatable(key) {
 				// Retry-After 封顶 30s：更长的等待没有意义（槽位被占、客户端早已离开）
 				wait := delay
 				if retryAfter := parseRetryAfter(resp.Header.Get("Retry-After")); retryAfter > wait {
@@ -2740,6 +2982,14 @@ func callZenAPI(ctx context.Context, params map[string]any, stream bool, opts ..
 				delay = zenRetryDelay(delay)
 				continue
 			}
+			if attempt < retries {
+				log.Printf("  zen rate limited (%d): no rotatable key, failing fast instead of sleeping %d more time(s)",
+					resp.StatusCode, retries-attempt)
+			}
+			// 限流不是"zen 挂了"：上游明确回了 HTTP 429，服务正常，只是这个
+			// key/身份当前超了窗口。把它计入故障转移会让一次瞬时节流把整个 zen
+			// 路由切走（cline 池为空时客户端直接吃 401），而限流本来已由 key
+			// 冷却 + 换 key + 重试处理。故此处不推进 failover。
 			return nil, rateLimited, apiErr
 		}
 
@@ -2904,29 +3154,34 @@ type zenModelOverlay struct {
 }
 
 // fetchZenRegistry 拉取公共目录 api.json，返回（限额 overlay、价格门集合、
-// 是否可达）。价格门 = cost.input==0 && cost.output==0 且 status 非
-// deprecated。模型 ID 以条目内 id 优先、map key 兜底。目录不可达返回
-// (空, 空, false)，调用方按 fail-open 处理。
-// 唯一实现：syncZenModels 的层 2/3 共用，避免两处价格门逻辑漂移。
-func fetchZenRegistry() (map[string]zenModelOverlay, map[string]bool, bool) {
+// provider 级 api 基地址、是否可达）。价格门 = cost.input==0 && cost.output==0
+// 且 status 非 deprecated。模型 ID 以条目内 id 优先、map key 兜底。目录不可达
+// 返回 (空, 空, "", false)，调用方按 fail-open 处理。
+// providerAPI 是 opencode provider 的 api 字段——免费层真正的上游基地址。
+// 它此前只存在于一次人工观测里（见 zenAPIBase 的注释），现在每次目录同步都
+// 重新取一遍，供 applyZenRegistryBase 校正默认值。
+// 唯一实现：syncZenModels 使用（会话铸造改本地后不再有第二消费者），
+// 避免两处价格门逻辑漂移。
+func fetchZenRegistry() (map[string]zenModelOverlay, map[string]bool, string, bool) {
 	overlay := map[string]zenModelOverlay{}
 	freeGate := map[string]bool{}
 	oreq, err := http.NewRequest("GET", zenRegistryURL, nil)
 	if err != nil {
-		return overlay, freeGate, false
+		return overlay, freeGate, "", false
 	}
 	oreq.Header.Set("User-Agent", "opencode/latest/cli")
 	client := &http.Client{Timeout: 25 * time.Second}
 	oresp, err := client.Do(oreq)
 	if err != nil {
-		return overlay, freeGate, false
+		return overlay, freeGate, "", false
 	}
 	defer oresp.Body.Close()
 	if oresp.StatusCode != 200 {
-		return overlay, freeGate, false
+		return overlay, freeGate, "", false
 	}
 	var payload map[string]struct {
 		NPM    string `json:"npm"`
+		API    string `json:"api"`
 		Models map[string]struct {
 			ID         string `json:"id"`
 			Status     string `json:"status"`
@@ -2952,11 +3207,11 @@ func fetchZenRegistry() (map[string]zenModelOverlay, map[string]bool, bool) {
 	// 体积上限：目录正常约几百 KB，恶意/异常响应不应无界读入内存。
 	// 超限即视为不可达（fail-open 的调用方保留上次目录）。
 	if json.NewDecoder(io.LimitReader(oresp.Body, maxRegistryBytes+1)).Decode(&payload) != nil {
-		return overlay, freeGate, false
+		return overlay, freeGate, "", false
 	}
 	prov, ok := payload["opencode"]
 	if !ok {
-		return overlay, freeGate, false
+		return overlay, freeGate, "", false
 	}
 	for id, m := range prov.Models {
 		if m.ID != "" {
@@ -2984,7 +3239,54 @@ func fetchZenRegistry() (map[string]zenModelOverlay, map[string]bool, bool) {
 			freeGate[id] = true
 		}
 	}
-	return overlay, freeGate, true
+	return overlay, freeGate, strings.TrimRight(strings.TrimSpace(prov.API), "/"), true
+}
+
+// applyZenRegistryBase 用目录里的 provider.api 校正 zen 上游基地址。
+//
+// 背景：zenAPIBase 是编译期常量，而免费层的路径已经改过一次（/zen/v1 →
+// /inference/v1 → /inference/openai/v1），每次都靠人工观测再改代码，期间网关
+// 一直打在已经不存在的旧路径上。目录本身就是这个地址的唯一权威（真实 CLI
+// 也读同一份数据），所以每次目录同步都拿它校正一次。
+//
+// 三条纪律：
+//   - 只在基地址仍等于"本项目的默认值"时校正。用户在面板里显式填过别的
+//     地址（自建中转、抓包代理）就绝不动它——那是明确的意图，不是过时的
+//     观测。
+//   - 只接受 https://opencode.ai/inference/... 的值。目录是远端数据，不能让
+//     一个被污染或中间人改写的响应把带 Authorization 的流量导去任意主机，也
+//     不能把它指回已失效的 /zen/v1（匿名流量在那里恒 403）。
+//   - 写盘时走 setZenConfig 的既有路径（含 saveZenConfig 的原子写），并留日志。
+//
+// 返回是否发生校正。
+func applyZenRegistryBase(registryAPI string, current string) bool {
+	want := strings.TrimRight(strings.TrimSpace(registryAPI), "/")
+	if want == "" {
+		return false
+	}
+	// 目录给的是顶级 provider api；免费模型都在 /inference/openai/v1 下。
+	// 只接受 https://opencode.ai/inference/...：既避免把凭据送去别处，也避免
+	// 被篡改的目录把基地址指回已失效的 /zen/v1（匿名流量在那里恒 403）。
+	u, err := url.Parse(want)
+	if err != nil || u.Scheme != "https" || !strings.EqualFold(u.Host, "opencode.ai") ||
+		!strings.HasPrefix(u.Path, "/inference/") {
+		log.Printf("zen registry api ignored (not https://opencode.ai/inference/...): %q", kit.Truncate(want, 120))
+		return false
+	}
+	cur := strings.TrimRight(strings.TrimSpace(current), "/")
+	// 只覆盖"仍是默认值"的情形：zenAPIBase（当前默认）与 zenStaleBase
+	// （上一版默认，已由 loadZenConfig 迁移，这里兜住运行期改目录的情况）。
+	if cur != zenAPIBase && cur != zenStaleBase {
+		return false
+	}
+	if cur == want {
+		return false
+	}
+	cfg := *getZenConfig()
+	cfg.BaseURL = want
+	setZenConfig(&cfg)
+	log.Printf("zen baseURL corrected from registry: %s -> %s", cur, want)
+	return true
 }
 
 // zenDesiredFromLive 推导可服务的免费模型集（纯函数，便于测试）：
@@ -3019,20 +3321,21 @@ func zenDesiredFromLive(registryOK bool, freeGate map[string]bool) (map[string]b
 //     同步 spawn 一次 CLI 进程并不便宜。
 //  3. 限额 overlay：目录 limit.context/output + tool_call / reasoning /
 //     attachment 旗标 + per-model provider.npm（端点种子，见 applyZenCatalog）。
+//  4. 上游基地址：目录 provider.api 与"仍是默认值"的配置不符时自动校正
+//     （见 applyZenRegistryBase）——免费层路径改过一次，不该再靠人工观测。
 //
 // 增删一律以本次 live 结果为准：表中的种子条目若不再通过价格门会被移除
 // （种子只在首次成功同步之前的冷启动/离线状态提供兜底，不参与日常增删）。
 // 返回新增模型数。无任何 live 来源可达时返回错误并保留旧表。
 func syncZenModels() (int, error) {
 	initZenModels()
-	overlay, freeGate, registryOK := fetchZenRegistry()
-
-	// 目录不可达时返回错误并保留旧表（收割机时代的 CLI 成员表兜底已随
-	// 内嵌 CLI 一起移除，见 zenDesiredFromLive）。
+	overlay, freeGate, registryAPI, registryOK := fetchZenRegistry()
 	desired, derr := zenDesiredFromLive(registryOK, freeGate)
 	if derr != nil {
 		return 0, derr
 	}
+	// 基地址先校正：后面 applyZenCatalog 之后马上可能有请求进来。
+	applyZenRegistryBase(registryAPI, getZenConfig().BaseURL)
 	added := applyZenCatalog(desired, overlay)
 	pruned := pruneZenModelsTo(desired)
 	// 重新敷用已学习的端点覆盖：新出现的模型（以及被 prune 后重建的条目）不在
