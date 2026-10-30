@@ -242,3 +242,12 @@ WorkBuddy 一栏的基线同时登记在 `scripts/workbuddy-vendor-baseline.json
 - 镜像清理：删除非 `prod-*` 标签 `local`、`sync-test-20261027`、`refactor3`、`workbuddy-local`、`workbuddy-builder`（927MB 构建镜像），各自独立 image ID 均实际删层。删除后 `afree-proxy` 剩 `prod-20261027-37/36/35`（随后部署 prod-38，`-35` 再删，见下条）。
 - 文档重构：根 `AGENTS.md` 拆为两份——`AGENTS.md` 只留**跨项目通用规则**（git 纪律、验证要求、换行与工具路径、临时文件、删除判据、工具安装、上游台账格式、禁止死配置、技能同步），新增 `PROJECT.md` 承载**本项目专属事实**（这是什么、平台归属表、三条上游线与 `MERGE.md` 格式、构建与两个已知失败、本地定制清单、生产部署、本仓死配置判据）。`AGENTS.md` 顶部强指向 `PROJECT.md`。`.agents/skills/sync-upstream/SKILL.md` 第 7 条同步改写。
 - 生产：镜像 `afree-proxy:prod-20261027-38`（`9c51a324ce9e`，37.4MB）重建 `afree` 容器，env 全量哈希 `9eb6f4999012` 与旧容器一致（未丢凭据），`Up (healthy)`；`GET /`→302、`GET /v1/models`→200；启动日志正常——`Loaded 19 active accounts`、`WorkBuddy subsystem ready: accounts=7`、`model blacklist: restored 5 entry(ies)`（删自愈后读取仍正常）、zen 目录同步 6 新增 / 4 剔除。旧容器 `afree-bak` 验证通过后删除。`prod-*` 保留最近 3 个（`38/37/36`），`-35` 已删。
+
+### 2026-10-30 — 镜像 tag 口径统一（prod-* 退出本机）
+
+本节不属于任何上游同步，记录本地镜像口径决策（用户 2026-10-30 指示），避免后来者被历史 `prod-*` 文案误导。
+
+- **历史（本节以上各行原文不改）**：2026-10-27 之前本机镜像用过两套 tag——`prod-*`（部署本机测试容器时打）与 `test-*`（容器验证时打），两者其实都跑在同一台本机的 `afree` 容器上，命名分歧是历史沿革不是角色差异。真正语义上的「生产镜像」只有 GHCR 的 `ghcr.io/xd88dx/afree-proxy:latest`（CI 从 main 构建发布，iStore 自行 pull），从未在本机打 tag。
+- **新口径（2026-10-30 用户定）**：本机构建一律打 `test-YYYYMMDD-HHMM`，不再打 `prod-*`。判据：本机容器跑的就是测试镜像（PROJECT.md §6「判断生产看流量」），`prod-` 前缀只属于 CI/GHCR 发布语境。
+- **清理**：本机 `afree-proxy:*` 标签按创建时间倒序保留 7 个（用户定，从 3 提到 7；`PROJECT.md` §6 已同步改写），删除其余 15 个（`prod-20261028-2..20261030-3`、`prod-20261029-1..4`、`fix-20261029{,b}`），实际删层 42 步。保留：`test-20261030-1724`（当前 `afree` 容器在用）、`prod-20261030-8/7/6/5/4`、`test-20261030-4`——保留的旧 `prod-*` 标签仅是还没轮出窗口的历史镜像，不代表恢复 `prod-*` 命名。
+- **文案更正范围**：`PROJECT.md` §6 保留数与口径；本节。`MERGE.md` 以上历史行按「台账只追加不删改」保留原文，其中「生产:镜像 prod-…重建容器」等表述按今天的口径理解即为「本机部署镜像 test-/prod-<tag>」。记忆侧 `afree-prod-deploy` 已同步改写。
