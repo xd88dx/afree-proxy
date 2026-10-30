@@ -39,6 +39,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"afree-proxy/internal/workbuddy/auth"
@@ -304,7 +305,11 @@ func (c *Client) RunWebAgentTurn(ctx context.Context, a *auth.Auth, id string, s
 
 	// 读 SSE：只统计，不解析 update 内容（打卡不关心说了什么）。
 	// 流结束（或 ctx 取消）时 goroutine 自然退出，不阻塞主流程。
+	// 计数走原子：本 goroutine 与下方轮询循环并发（主流程从不 join），普通
+	// 读写 res 字段是数据竞争（2026-10-30 race 实测）；各返回点再合并进 res，
+	// 原子读无竞争，数值可能比真实少最后一两帧——纯观测统计，可接受。
 	done := make(chan struct{})
+	var sseEvents, sseChunks atomic.Int64
 	go func() {
 		defer close(done)
 		sc := bufio.NewScanner(stream.Body)
@@ -331,12 +336,12 @@ func (c *Client) RunWebAgentTurn(ctx context.Context, a *auth.Auth, id string, s
 			}
 			switch msg.Method {
 			case "session/update":
-				res.Events++
+				sseEvents.Add(1)
 				if msg.Params.Update.SessionUpdate == "agent_message_chunk" {
-					res.Chunks++
+					sseChunks.Add(1)
 				}
 			case "session/endTurn":
-				res.Events++
+				sseEvents.Add(1)
 			}
 		}
 	}()
@@ -351,11 +356,13 @@ func (c *Client) RunWebAgentTurn(ctx context.Context, a *auth.Auth, id string, s
 			"terminal": false,
 		},
 	}); err != nil {
+		res.Events, res.Chunks = int(sseEvents.Load()), int(sseChunks.Load())
 		return res, fmt.Errorf("acp initialize: %w", err)
 	}
 	if err := rpc(2, "session/load", map[string]any{
 		"sessionId": sess.SessionID, "cwd": sess.Cwd, "mcpServers": []any{},
 	}); err != nil {
+		res.Events, res.Chunks = int(sseEvents.Load()), int(sseChunks.Load())
 		return res, fmt.Errorf("acp session/load: %w", err)
 	}
 	// session/set_model 是 ACP 扩展方法，**非致命**：失败时这一轮仍会跑完，只是
@@ -368,6 +375,7 @@ func (c *Client) RunWebAgentTurn(ctx context.Context, a *auth.Auth, id string, s
 		"sessionId": sess.SessionID,
 		"prompt":    []map[string]string{{"type": "text", "text": prompt}},
 	}); err != nil {
+		res.Events, res.Chunks = int(sseEvents.Load()), int(sseChunks.Load())
 		return res, fmt.Errorf("acp session/prompt: %w", err)
 	}
 
@@ -379,19 +387,23 @@ func (c *Client) RunWebAgentTurn(ctx context.Context, a *auth.Auth, id string, s
 			res.Status = st
 			switch strings.ToLower(st) {
 			case "completed":
+				res.Events, res.Chunks = int(sseEvents.Load()), int(sseChunks.Load())
 				res.Elapsed = time.Since(started)
 				return res, nil
 			case "failed", "error", "deleted":
+				res.Events, res.Chunks = int(sseEvents.Load()), int(sseChunks.Load())
 				res.Elapsed = time.Since(started)
 				return res, fmt.Errorf("web conversation status=%s", st)
 			}
 		}
 		if time.Now().After(deadline) {
+			res.Events, res.Chunks = int(sseEvents.Load()), int(sseChunks.Load())
 			res.Elapsed = time.Since(started)
 			return res, fmt.Errorf("web conversation 在 %s 内没有跑完（status=%s）", webTurnTimeout, res.Status)
 		}
 		select {
 		case <-ctx.Done():
+			res.Events, res.Chunks = int(sseEvents.Load()), int(sseChunks.Load())
 			res.Elapsed = time.Since(started)
 			return res, ctx.Err()
 		case <-time.After(webPollInterval):
