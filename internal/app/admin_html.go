@@ -222,7 +222,7 @@ select{cursor:pointer;appearance:none;background-image:linear-gradient(45deg,tra
 .field textarea{display:block}
 .form-row .field{flex:1;min-width:180px}
 .form-row .field label{display:block;font-size:12px;color:var(--text2);margin-bottom:6px;font-weight:500}
-.form-actions{display:flex;gap:10px;margin-top:14px;flex-wrap:wrap}
+.form-actions{display:flex;gap:10px;margin-top:10px;flex-wrap:wrap}
 /* 出口绑定联想下拉（combobox） */
 .eg-input{width:170px;font-size:12px;padding:5px 8px;border-radius:7px;border:1px solid var(--border-strong);background:var(--bg3);color:var(--text);cursor:pointer}
 .eg-wrap{position:relative;display:inline-block;vertical-align:middle}
@@ -889,7 +889,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
   <div class="section-body">
     <div class="hint">Banned automatically (upstream refuses them for this account type, e.g. code 11158) or manually — hidden from /v1/models. Test sends a real request with the first enabled credential; Unblock only removes the entry, the same upstream error bans it again.</div>
     <div class="form-actions">
-      <button class="btn btn-success" id="batchUnblockBtn" style="white-space:nowrap">Unblock selected</button>
+      <button class="btn btn-sm btn-success" id="batchUnblockBtn" style="white-space:nowrap">Unblock selected</button>
       <span style="flex:1"></span>
       <select id="batchBanPlatform" style="width:auto;flex:0 0 auto;min-width:130px;padding:6px 10px;border:1px solid var(--border);border-radius:8px;background:var(--bg);color:var(--text)"></select>
       <input id="batchBanKeyword" placeholder="Keyword (case-insensitive)" style="width:200px;flex:0 0 auto;padding:6px 10px;border:1px solid var(--border);border-radius:8px;background:var(--bg);color:var(--text)">
