@@ -110,17 +110,6 @@ func proxyIdxInPool(raw string) int {
 	return -1
 }
 
-// proxyAvailableURL 绑定代理当前是否可用：必须仍在池列表中且未冷却。
-// 已从池中删除的绑定一律视为不可用 —— 隔离语义下宁可跳过身份，也不能让它
-// 静默改走直连（那就把服务器本机 IP 暴露给了本应隔离的身份）。
-func proxyAvailableURL(raw string) bool {
-	idx := proxyIdxInPool(raw)
-	if idx < 0 {
-		return false
-	}
-	return proxyAvailable(idx)
-}
-
 // egressDirect 直连哨兵：绑定主/备用槽位存 "direct" 表示该槽位选择直连出口。
 // 主 = direct → 该身份强制直连（备无意义）；主 = 代理、备 = direct → 主不可用
 // 时直连兜底。哨兵不会与真实代理 URL 冲突（代理必须带 scheme://host:port）。
@@ -162,7 +151,7 @@ func resolveBackupSlot(submitted, storedBackup string) string {
 // pickBoundProxy 为一次上游尝试从绑定对中选可用出口。返回的 proxyURL 是
 // **池内当前地址**：绑定行可能因订阅更新只保留旧端口/凭据（备注名相同即
 // 同一代理），实际拨号必须用池内最新 URI，否则旧地址已死。
-func pickBoundProxy(main, backup string) (proxyURL string, idx int, ok bool) {
+func pickBoundProxyFor(kind, main, backup string) (proxyURL string, idx int, ok bool) {
 	if isEgressDirect(main) {
 		// DISABLE_DIRECT=true：绑定直连哨兵 = 明确选择了直连，凭据整体失效
 		//（隔离候选过滤经 boundProxiesRoutable 自动剔除，2026-10-28 用户定）。
@@ -172,7 +161,7 @@ func pickBoundProxy(main, backup string) (proxyURL string, idx int, ok bool) {
 		return "", -1, true
 	}
 	if main != "" {
-		if idx := proxyIdxInPool(main); idx >= 0 && proxyAvailable(idx) {
+		if idx := proxyIdxInPool(main); idx >= 0 && proxyAvailableFor(kind, idx) {
 			return getProxyPool().Proxies[idx], idx, true
 		}
 	}
@@ -186,7 +175,7 @@ func pickBoundProxy(main, backup string) (proxyURL string, idx int, ok bool) {
 		return "", -1, true
 	}
 	if backup != "" && backup != main {
-		if idx := proxyIdxInPool(backup); idx >= 0 && proxyAvailable(idx) {
+		if idx := proxyIdxInPool(backup); idx >= 0 && proxyAvailableFor(kind, idx) {
 			return getProxyPool().Proxies[idx], idx, true
 		}
 	}
@@ -197,11 +186,11 @@ func pickBoundProxy(main, backup string) (proxyURL string, idx int, ok bool) {
 // （未绑定身份走全局规则，不算被隔离挡住）。备用代理开关关闭时只剩备用槽的绑定
 // （主槽为空）同样不可路由 —— 那种状态面板产不出来，只在手改配置文件时出现，
 // 一律按"该身份没有出口"处理并跳过，不退回全局规则（那可能是直连）。
-func boundProxiesRoutable(main, backup string) bool {
+func boundProxiesRoutableFor(kind, main, backup string) bool {
 	if main == "" && backup == "" {
 		return true
 	}
-	_, _, ok := pickBoundProxy(main, backup)
+	_, _, ok := pickBoundProxyFor(kind, main, backup)
 	return ok
 }
 
@@ -303,7 +292,7 @@ func workbuddyProxiesEnabled() bool {
 func boundExitFor(key string) (proxyURL string, idx int, ok bool) {
 	main, backup, bound := keyBindingOf(key)
 	if bound {
-		return pickBoundProxy(main, backup)
+		return pickBoundProxyFor(pkZen, main, backup)
 	}
 	// egress 自动钉定层（上游 3758eb7 整合）：钉定生效（开关开 + 池非空）时，
 	// 未绑定 key 使用自动分配的固定出口（重启不变，分配幂等）——zen 免费层按
@@ -325,7 +314,7 @@ func boundExitFor(key string) (proxyURL string, idx int, ok bool) {
 		}
 		return "", -1, true // 面板选择直连：即使代理列表非空也不走池
 	}
-	proxyURL, idx = pickUpstreamProxy()
+	proxyURL, idx = pickUpstreamProxyFor(pkZen)
 	if proxyURL == "" && kit.DisableDirect() {
 		return "", -1, false // 代理池空兜底的直连同样不放行
 	}

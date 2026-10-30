@@ -211,17 +211,17 @@ func TestPickBoundProxyMainThenBackup(t *testing.T) {
 		BackupProxyEnabled: boolPtr(true),
 	})
 	// 主可用 → 主
-	if u, idx, ok := pickBoundProxy("http://a:1", "http://b:2"); !ok || u != "http://a:1" || idx != 0 {
+	if u, idx, ok := pickBoundProxyFor(pkCline, "http://a:1", "http://b:2"); !ok || u != "http://a:1" || idx != 0 {
 		t.Fatalf("main expected, got %q idx=%d ok=%v", u, idx, ok)
 	}
 	// 主冷却 → 备
 	setProxyCooldownIdx(t, 0, time.Minute)
-	if u, idx, ok := pickBoundProxy("http://a:1", "http://b:2"); !ok || u != "http://b:2" || idx != 1 {
+	if u, idx, ok := pickBoundProxyFor(pkCline, "http://a:1", "http://b:2"); !ok || u != "http://b:2" || idx != 1 {
 		t.Fatalf("backup expected, got %q idx=%d ok=%v", u, idx, ok)
 	}
 	// 双冷却 → 不可用（调用方必须跳过该身份）
 	setProxyCooldownIdx(t, 1, time.Minute)
-	if _, _, ok := pickBoundProxy("http://a:1", "http://b:2"); ok {
+	if _, _, ok := pickBoundProxyFor(pkCline, "http://a:1", "http://b:2"); ok {
 		t.Fatal("both cooling must report unavailable")
 	}
 }
@@ -233,14 +233,14 @@ func TestPickBoundProxyStaleBinding(t *testing.T) {
 		Proxies:            []string{"http://b:2"},
 		BackupProxyEnabled: boolPtr(true),
 	})
-	if u, idx, ok := pickBoundProxy("http://removed:9", "http://b:2"); !ok || u != "http://b:2" || idx != 0 {
+	if u, idx, ok := pickBoundProxyFor(pkCline, "http://removed:9", "http://b:2"); !ok || u != "http://b:2" || idx != 0 {
 		t.Fatalf("stale main should fall to backup, got %q idx=%d ok=%v", u, idx, ok)
 	}
-	if _, _, ok := pickBoundProxy("http://removed:9", "http://also-removed:9"); ok {
+	if _, _, ok := pickBoundProxyFor(pkCline, "http://removed:9", "http://also-removed:9"); ok {
 		t.Fatal("both stale must report unavailable")
 	}
 	// 双空 = 未绑定：也报不可用（boundProxiesRoutable 才区分未绑定语义）
-	if _, _, ok := pickBoundProxy("", ""); ok {
+	if _, _, ok := pickBoundProxyFor(pkCline, "", ""); ok {
 		t.Fatal("empty pair must report unavailable")
 	}
 }
@@ -250,11 +250,11 @@ func TestBoundProxiesRoutableUnboundSemantics(t *testing.T) {
 		Keys:    []string{"sk-test"},
 		Proxies: []string{"http://a:1"},
 	})
-	if !boundProxiesRoutable("", "") {
+	if !boundProxiesRoutableFor(pkCline, "", "") {
 		t.Fatal("unbound identity must count as routable")
 	}
 	setProxyCooldownIdx(t, 0, time.Minute)
-	if boundProxiesRoutable("http://a:1", "") {
+	if boundProxiesRoutableFor(pkCline, "http://a:1", "") {
 		t.Fatal("bound exit cooling must count as not routable")
 	}
 }
@@ -390,19 +390,19 @@ func TestPickBoundProxyDirectSentinel(t *testing.T) {
 		BackupProxyEnabled: boolPtr(true),
 	})
 	// 主 = direct：无论池状态如何都直连
-	if u, idx, ok := pickBoundProxy("direct", ""); !ok || u != "" || idx != -1 {
+	if u, idx, ok := pickBoundProxyFor(pkCline, "direct", ""); !ok || u != "" || idx != -1 {
 		t.Fatalf("main=direct must yield direct egress, got %q idx=%d ok=%v", u, idx, ok)
 	}
 	// 主代理冷却 + 备 = direct：直连兜底
 	setProxyCooldownIdx(t, 0, time.Minute)
-	if u, idx, ok := pickBoundProxy("http://a:1", "direct"); !ok || u != "" || idx != -1 {
+	if u, idx, ok := pickBoundProxyFor(pkCline, "http://a:1", "direct"); !ok || u != "" || idx != -1 {
 		t.Fatalf("direct backup must yield direct egress, got %q idx=%d ok=%v", u, idx, ok)
 	}
 	// 主代理恢复可用时不走直连兜底（直接清除冷却，避免 1ms 计时竞态）
 	proxyCooldownsMu.Lock()
 	delete(proxyCooldowns, 0)
 	proxyCooldownsMu.Unlock()
-	if u, _, ok := pickBoundProxy("http://a:1", "direct"); !ok || u != "http://a:1" {
+	if u, _, ok := pickBoundProxyFor(pkCline, "http://a:1", "direct"); !ok || u != "http://a:1" {
 		t.Fatalf("available main must win over direct backup, got %q ok=%v", u, ok)
 	}
 }
@@ -418,31 +418,31 @@ func TestBackupProxyDisabledIgnoresBackupSlot(t *testing.T) {
 		t.Fatal("backup proxy switch must default to off")
 	}
 	// 主可用 → 主（备用槽被完全忽略）
-	if u, idx, ok := pickBoundProxy("http://a:1", "http://b:2"); !ok || u != "http://a:1" || idx != 0 {
+	if u, idx, ok := pickBoundProxyFor(pkCline, "http://a:1", "http://b:2"); !ok || u != "http://a:1" || idx != 0 {
 		t.Fatalf("main expected, got %q idx=%d ok=%v", u, idx, ok)
 	}
 	// 主冷却 → 不可用（不尝试备）
 	setProxyCooldownIdx(t, 0, time.Minute)
-	if u, _, ok := pickBoundProxy("http://a:1", "http://b:2"); ok {
+	if u, _, ok := pickBoundProxyFor(pkCline, "http://a:1", "http://b:2"); ok {
 		t.Fatalf("backup must not be tried while the switch is off, got %q", u)
 	}
 	// 备用槽的直连哨兵同样不生效：关闭备用代理不等于打开直连兜底
-	if _, _, ok := pickBoundProxy("http://a:1", "direct"); ok {
+	if _, _, ok := pickBoundProxyFor(pkCline, "http://a:1", "direct"); ok {
 		t.Fatal("direct backup must not be used while the switch is off")
 	}
 	// 主 = direct 的强制直连语义不受开关影响
-	if u, _, ok := pickBoundProxy("direct", ""); !ok || u != "" {
+	if u, _, ok := pickBoundProxyFor(pkCline, "direct", ""); !ok || u != "" {
 		t.Fatalf("main=direct must still egress directly, got %q ok=%v", u, ok)
 	}
 	// 主代理已从池中删除 → 不可用（不回退备、不回退直连）
-	if _, _, ok := pickBoundProxy("http://removed:9", "http://b:2"); ok {
+	if _, _, ok := pickBoundProxyFor(pkCline, "http://removed:9", "http://b:2"); ok {
 		t.Fatal("stale main must report unavailable instead of falling to backup")
 	}
 	// routable 判定同步收敛：主不可用即不可路由
-	if boundProxiesRoutable("http://a:1", "http://b:2") {
+	if boundProxiesRoutableFor(pkCline, "http://a:1", "http://b:2") {
 		t.Fatal("pair must not be routable when the main is cooling and the backup switch is off")
 	}
-	if !boundProxiesRoutable("", "") {
+	if !boundProxiesRoutableFor(pkCline, "", "") {
 		t.Fatal("unbound identity must still count as routable")
 	}
 }
@@ -932,17 +932,17 @@ func TestSetZenKeyProxyBindingBackupToggleRoundTrip(t *testing.T) {
 	}
 
 	// 4. 关闭态：备用槽不参与路由 —— 主不可用时无兜底（ok=false）
-	if _, _, ok := pickBoundProxy("http://gone:1", getZenConfig().KeyBindings["sk-1"].Backup); ok {
+	if _, _, ok := pickBoundProxyFor(pkCline, "http://gone:1", getZenConfig().KeyBindings["sk-1"].Backup); ok {
 		t.Fatal("backup must not act as fallback while backup proxies are disabled")
 	}
 	// 主可用则正常走主
-	if url, _, ok := pickBoundProxy("http://a:1", getZenConfig().KeyBindings["sk-1"].Backup); !ok || url != "http://a:1" {
+	if url, _, ok := pickBoundProxyFor(pkCline, "http://a:1", getZenConfig().KeyBindings["sk-1"].Backup); !ok || url != "http://a:1" {
 		t.Fatalf("main must be used while enabled: url=%q ok=%v", url, ok)
 	}
 
 	// 5. 重开开关：保留的备值立刻重新生效
 	setBackupSwitch(true)
-	if _, _, ok := pickBoundProxy("http://gone:1", getZenConfig().KeyBindings["sk-1"].Backup); !ok {
+	if _, _, ok := pickBoundProxyFor(pkCline, "http://gone:1", getZenConfig().KeyBindings["sk-1"].Backup); !ok {
 		t.Fatal("re-enabled backup must be usable again")
 	}
 
@@ -965,11 +965,11 @@ func TestPickBoundProxyDirectSentinelDisabled(t *testing.T) {
 		BackupProxyEnabled: boolPtr(true),
 	})
 	t.Setenv("DISABLE_DIRECT", "true")
-	if _, _, ok := pickBoundProxy("direct", ""); ok {
+	if _, _, ok := pickBoundProxyFor(pkCline, "direct", ""); ok {
 		t.Fatal("DISABLE_DIRECT=true must invalidate the direct-sentinel binding")
 	}
 	setProxyCooldownIdx(t, 0, time.Minute)
-	if _, _, ok := pickBoundProxy("http://a:1", "direct"); ok {
+	if _, _, ok := pickBoundProxyFor(pkCline, "http://a:1", "direct"); ok {
 		t.Fatal("DISABLE_DIRECT=true must not fall back to a direct backup")
 	}
 }

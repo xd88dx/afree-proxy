@@ -80,7 +80,7 @@ func workbuddyProxyFor(a *wbauth.Auth) (string, bool) {
 	if !bound || (b.Main == "" && b.Backup == "") {
 		return workbuddyGlobalExit()
 	}
-	url, _, usable := pickBoundProxy(b.Main, b.Backup)
+	url, _, usable := pickBoundProxyFor(pkWb, b.Main, b.Backup)
 	return url, usable
 }
 
@@ -140,7 +140,7 @@ func workbuddyGlobalExit() (string, bool) {
 		}
 		return "", true
 	}
-	url, _ := pickUpstreamProxy()
+	url, _ := pickUpstreamProxyFor(pkWb)
 	if url == "" && kit.DisableDirect() {
 		return "", false // 代理池空兜底的直连同样不放行
 	}

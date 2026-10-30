@@ -29,7 +29,9 @@ func initOther() {
 	other.Load(otherConfigPath())
 	other.SetClientProvider(proxyClientFor)
 	// 出口成败/握手延迟回传（同 AMDCloud：此前无任何观测钩子）。
-	other.SetProxyObserver(recordProxyOutcome)
+	other.SetProxyObserver(func(u string, ok bool, e error, ms int64) {
+		recordProxyOutcome(pkOther, u, ok, e, ms)
+	})
 	other.SetAttemptObserver(otherAttemptObserver)
 	go startOtherModelsRefresher()
 }
@@ -130,13 +132,13 @@ func otherExitFn(p *other.Platform) func(key string) (string, bool) {
 				}
 				return "", true
 			}
-			url, _ := pickUpstreamProxy()
+			url, _ := pickUpstreamProxyFor(pkOther)
 			if url == "" && kit.DisableDirect() {
 				return "", false // 代理池空兜底的直连同样不放行
 			}
 			return url, true
 		}
-		url, _, ok := pickBoundProxy(main, backup)
+		url, _, ok := pickBoundProxyFor(pkOther, main, backup)
 		return url, ok
 	}
 }
@@ -151,7 +153,7 @@ func otherBoundRoutable(p *other.Platform) func(key string) bool {
 		if !bound {
 			return true
 		}
-		return boundProxiesRoutable(main, backup)
+		return boundProxiesRoutableFor(pkOther, main, backup)
 	}
 }
 

@@ -1316,7 +1316,7 @@ func clineAPIWithAccount(ctx context.Context, params map[string]any, stream bool
 		proxyURL, pidx := "", -1
 		if bound {
 			var ok bool
-			proxyURL, pidx, ok = pickBoundProxy(main, backup)
+			proxyURL, pidx, ok = pickBoundProxyFor(pkCline, main, backup)
 			if !ok {
 				return nil, fmt.Errorf("account %s bound proxies unavailable (cooling or removed); account skipped by proxy isolation", truncateEmail(acc.Email))
 			}
@@ -1327,7 +1327,7 @@ func clineAPIWithAccount(ctx context.Context, params map[string]any, stream bool
 				log.Printf("  cline upstream via bound exit %s", maskProxyURL(proxyURL))
 			}
 		} else if useProxies {
-			proxyURL, pidx = pickUpstreamProxy()
+			proxyURL, pidx = pickUpstreamProxyFor(pkCline)
 			if proxyURL == "" && kit.DisableDirect() {
 				return nil, fmt.Errorf("cline account %s has no proxy exit: direct egress is disabled by DISABLE_DIRECT", truncateEmail(acc.Email))
 			}
@@ -1354,7 +1354,7 @@ func clineAPIWithAccount(ctx context.Context, params map[string]any, stream bool
 		}
 		if lastErr == nil {
 			setUpstreamExit(ctx, proxyExitType(proxyURL, main, backup, bound))
-			recordProxyOutcome(proxyURL, true, nil, time.Since(hsStart).Milliseconds())
+			recordProxyOutcome(pkCline, proxyURL, true, nil, time.Since(hsStart).Milliseconds())
 			exitURL = proxyURL
 			break
 		}
@@ -1368,13 +1368,17 @@ func clineAPIWithAccount(ctx context.Context, params map[string]any, stream bool
 			// 错误也绝不毒化账号（pidx=-1 的直连兜底冷却为 no-op）。
 			// 隧道后流错误（上游 EOF / reset，出口其实通着）单次不冷却 ——
 			// 窗口内累计到阈值才冷却，避免一次上游断流就毒化好出口（2026-10-30）。
-			if shouldCooldownExit(proxyURL, lastErr) {
-				cooldownUpstreamProxy(pidx, 2*time.Minute)
-				log.Printf("  cline proxy failed (%v), cooldown exit 2m, retrying on next", lastErr)
+			if scope, cool := shouldCooldownExit(pkCline, proxyURL, lastErr); cool {
+				if scope == "global" {
+					cooldownUpstreamProxy(pidx, 2*time.Minute)
+				} else {
+					cooldownUpstreamProxyFor(pkCline, pidx, proxyPlatformCooldown)
+				}
+				log.Printf("  cline proxy failed (%v), cooldown exit %s 2m, retrying on next", lastErr, scope)
 			} else {
 				log.Printf("  cline upstream-side stream error (%v) on exit — not cooling the exit", lastErr)
 			}
-			recordProxyOutcome(proxyURL, false, lastErr, 0)
+			recordProxyOutcome(pkCline, proxyURL, false, lastErr, 0)
 			continue
 		}
 		// 直连网络错误：临时短冷却 5 分钟
@@ -1403,10 +1407,10 @@ func clineAPIWithAccount(ctx context.Context, params map[string]any, stream bool
 			resp2, derr := client.Do(req2.WithContext(wctx2))
 			stopWatch2()
 			if derr != nil {
-				recordProxyOutcome(exitURL, false, derr, 0)
+				recordProxyOutcome(pkCline, exitURL, false, derr, 0)
 				return nil, fmt.Errorf("upstream retry: %w", derr)
 			}
-			recordProxyOutcome(exitURL, true, nil, time.Since(hsStart2).Milliseconds())
+			recordProxyOutcome(pkCline, exitURL, true, nil, time.Since(hsStart2).Milliseconds())
 			if resp2.StatusCode == 401 {
 				resp2.Body.Close()
 				poolMu.Lock()

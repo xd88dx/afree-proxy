@@ -179,7 +179,9 @@ func startWorkBuddy() (*workbuddySubsystem, error) {
 	up.ObserveAccount = workbuddyObserveAccount
 	// 出口成败观测（代理在线率统计）：WB 路径的拨号在 vendor 树内完成，成败
 	// 只能靠这个钩子透出。直连出口与 ctx 取消由钩子/filter 各自忽略。
-	up.ObserveProxy = recordProxyOutcome
+	up.ObserveProxy = func(u string, ok bool, e error, ms int64) {
+		recordProxyOutcome(pkWb, u, ok, e, ms)
+	}
 	// 积分保底的「收费」兜底判据：接上游模型目录的积分倍率表。本地实测台账无
 	// 观测时用它判收费；倍率表由探测下发，闭包每次调用读实时快照。
 	p.SetModelRateOf(up.ModelRate)

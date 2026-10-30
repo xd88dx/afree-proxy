@@ -39,19 +39,21 @@ func initAMD() {
 				}
 				return "", true
 			}
-			url, _ := pickUpstreamProxy()
+			url, _ := pickUpstreamProxyFor(pkAmd)
 			if url == "" && kit.DisableDirect() {
 				return "", false // 代理池空兜底的直连同样不放行
 			}
 			return url, true
 		}
-		url, _, ok := pickBoundProxy(main, backup)
+		url, _, ok := pickBoundProxyFor(pkAmd, main, backup)
 		return url, ok
 	})
 	amd.SetClientProvider(proxyClientFor)
 	// 出口成败/握手延迟回传：此前 AMDCloud 走代理但没有任何观测钩子，代理
 	// 健康面板的在线率与握手延迟对它永远无样本（显示 -）。
-	amd.SetProxyObserver(recordProxyOutcome)
+	amd.SetProxyObserver(func(u string, ok bool, e error, ms int64) {
+		recordProxyOutcome(pkAmd, u, ok, e, ms)
+	})
 	amd.SetAttemptObserver(scopedObserver(keyPoolAttemptObserver(amd.KeyIndex, amd.BindingOf)))
 	// 启动即预热模型目录（异步，失败保留种子）
 	amd.InitCatalog()
@@ -120,7 +122,7 @@ func amdBoundRoutable(key string) bool {
 	if !bound {
 		return true
 	}
-	return boundProxiesRoutable(main, backup)
+	return boundProxiesRoutableFor(pkAmd, main, backup)
 }
 
 // handleAMDChat AMD chat/completions 转发（网关命中 amd: 前缀时调用）。

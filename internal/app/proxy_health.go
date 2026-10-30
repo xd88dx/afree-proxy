@@ -38,10 +38,14 @@ const (
 	proxyHealthRecentN = 50
 	// proxyHealthFlushInterval 落盘周期。进程被 kill 时最多丢这个窗口的数据。
 	proxyHealthFlushInterval = 60 * time.Second
-	// proxyTransportCooldown 传输层失败后该出口退出轮转的时长，与 cline/zen
-	// 请求循环里的既有口径一致：短冷却能跳过真死节点又快速自愈，长冷却会让
-	// 几次慢请求毒化整个池（2026-10-28 统一到所有平台）。
+	// proxyTransportCooldown 传输层失败后该出口退出轮转的时长（**全局层**：
+	// 建连阶段失败），与 cline/zen 请求循环里的既有口径一致：短冷却能跳过真死
+	// 节点又快速自愈，长冷却会让几次慢请求毒化整个池（2026-10-28 统一到所有平台）。
 	proxyTransportCooldown = 2 * time.Minute
+	// proxyPlatformCooldown 平台级冷却时长（2026-10-30 用户定 10 分钟）：隧道后
+	// 流错误 2-strike 触发。封禁（如 codebuddy 封出口 IP）存续期以小时/天计，
+	// 10 分钟显著减少循环期的无效重试；代价是解封后最多 10 分钟才恢复，可接受。
+	proxyPlatformCooldown = 10 * time.Minute
 )
 
 // isTransportLayerFailure err 是否为传输层失败（拨号 / CONNECT / SOCKS / TLS
@@ -103,7 +107,8 @@ func isUpstreamSideStreamFailure(err error) bool {
 }
 
 // 隧道后流错误的冷却门限：单次不冷却（上游 EOF 很常见，冷却就是误判），
-// 窗口内累计到阈值才认为这条隧道真断了。
+// 窗口内累计到阈值才认为这条隧道真断了。计数键是 kind+出口：wb 的失败不能被
+// amd 的失败凑数——平台封 IP 的伤害只该落在那个平台。
 const (
 	proxyStreamFailWindow    = 60 * time.Second
 	proxyStreamFailThreshold = 2
@@ -115,41 +120,44 @@ var (
 )
 
 // proxyStreamFailStrike 记一次"隧道后流错误"，返回是否达到冷却门限。
-func proxyStreamFailStrike(proxyURL string) bool {
+func proxyStreamFailStrike(kind, proxyURL string) bool {
 	if proxyURL == "" {
 		return false
 	}
+	key := kind + "\x00" + proxyURL
 	now := time.Now()
 	proxyStreamFailMu.Lock()
 	defer proxyStreamFailMu.Unlock()
 	kept := make([]time.Time, 0, proxyStreamFailThreshold+1)
-	for _, t := range proxyStreamFails[proxyURL] {
+	for _, t := range proxyStreamFails[key] {
 		if now.Sub(t) <= proxyStreamFailWindow {
 			kept = append(kept, t)
 		}
 	}
 	kept = append(kept, now)
 	if len(kept) >= proxyStreamFailThreshold {
-		delete(proxyStreamFails, proxyURL) // 触发即清零，避免窗口内反复冷却
+		delete(proxyStreamFails, key) // 触发即清零，避免窗口内反复冷却
 		return true
 	}
-	proxyStreamFails[proxyURL] = kept
+	proxyStreamFails[key] = kept
 	return false
 }
 
-// shouldCooldownExit err 是否应当让该出口退出轮转。三态归因：
-//
-//   - 上游响应类错误（各平台 HTTPError/StatusError）→ 出口是通的，不冷却；
-//   - 建连阶段失败（拨号 / CONNECT / SOCKS / TLS）→ 出口不可用，立刻冷却；
-//   - 隧道已建通后的流错误（EOF / reset …）→ 单次不冷却，窗口内累计到阈值才冷却。
-func shouldCooldownExit(proxyURL string, err error) bool {
+// shouldCooldownExit err 是否应当让该出口退出轮转，以及**冷却的作用范围**。
+// 返回 (scope, ok)：scope = "global"（建连失败，出口对谁都死）或
+// "platform"（隧道后流错误达成 2-strike，大概率是目标封了出口 IP）；
+// ok=false = 不冷却（上游响应类错误、未达门限的隧道后流错误）。
+func shouldCooldownExit(kind, proxyURL string, err error) (string, bool) {
 	if err == nil || !isTransportLayerFailure(err) {
-		return false
+		return "", false
 	}
 	if isUpstreamSideStreamFailure(err) {
-		return proxyStreamFailStrike(proxyURL)
+		if proxyStreamFailStrike(kind, proxyURL) {
+			return "platform", true
+		}
+		return "", false
 	}
-	return true
+	return "global", true
 }
 
 func isTransportLayerFailure(err error) bool {
@@ -220,25 +228,33 @@ type proxyHealthFile struct {
 	Proxies map[string]*proxyHealthEntry `json:"proxies"`
 }
 
-// recordProxyOutcome 记一次出口成败。proxyURL 为空 = 直连出口，不是代理，不记。
-// err 非空且源自 context 取消/截止（客户端放弃）时同样不记 —— 与现有冷却
-// 判据的"ctx 取消不冷却"口径一致。
+// recordProxyOutcome 记一次出口成败。kind 为平台标识（cline/zen/amd/or/th/
+// other/trae/wb，见各调用点），决定平台级冷却的作用范围。proxyURL 为空 = 直连
+// 出口，不是代理，不记。err 非空且源自 context 取消/截止（客户端放弃）时同样
+// 不记 —— 与现有冷却判据的"ctx 取消不冷却"口径一致。
 // hsMs 握手耗时（毫秒）：调用方 Do 前后 time.Since；仅 ok=true 时记入平均，
 // 失败/直连/取消路径传 0 即可。
-func recordProxyOutcome(proxyURL string, ok bool, err error, hsMs int64) {
+func recordProxyOutcome(kind, proxyURL string, ok bool, err error, hsMs int64) {
 	if proxyURL == "" {
 		return
 	}
 	if err != nil && (errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)) {
 		return
 	}
-	// 传输层失败：让该出口退出轮转 2 分钟（2026-10-28 统一到全平台）。
-	// cline/zen 在各自请求循环里已调用，此处重复命中是幂等的（同为 2 分钟）。
-	// 此前其余平台只记账不自愈：坏节点会被轮转反复选中，于是同一个节点故障
-	// 被轮流记到多个凭据头上（冷却 / trae 自动封禁），本行补上这个缺口。
-	if !ok && shouldCooldownExit(proxyURL, err) {
-		if idx := proxyIdxInPool(proxyURL); idx >= 0 {
-			cooldownUpstreamProxy(idx, proxyTransportCooldown)
+	// 传输层失败：按归因决定冷却范围（2026-10-30 平台粒度）。
+	//   - 建连阶段失败 → 全局冷却：出口本身不可用，对谁都死；
+	//   - 隧道后流错误达成 2-strike → 只冷却失败发生的平台：大概率是目标封了
+	//     出口 IP（如 codebuddy 封 Oracle 段），绑同一出口的其它平台无感。
+	// cline/zen 在各自请求循环里已调用，此处重复命中是幂等的。
+	if !ok {
+		if scope, cool := shouldCooldownExit(kind, proxyURL, err); cool {
+			if idx := proxyIdxInPool(proxyURL); idx >= 0 {
+				if scope == "global" {
+					cooldownUpstreamProxy(idx, proxyTransportCooldown)
+				} else {
+					cooldownUpstreamProxyFor(kind, idx, proxyPlatformCooldown)
+				}
+			}
 		}
 	}
 	ensureProxyHealthLoaded()
@@ -361,6 +377,21 @@ func proxyHealthSnapshot() []map[string]any {
 		if until, cooling := cooldowns[raw]; cooling {
 			row["cooling"] = true
 			row["coolingUntil"] = until
+		}
+		// 平台级冷却（kind -> 截止）：随行输出，前端把在线率徽章换成 ∞。
+		if idx := proxyIdxInPool(raw); idx >= 0 {
+			now := time.Now()
+			proxyCooldownsMu.Lock()
+			var pcList []map[string]any
+			for kind, m := range proxyPlatformCooldowns {
+				if until, ok := m[idx]; ok && now.Before(until) {
+					pcList = append(pcList, map[string]any{"kind": kind, "until": until.UTC().Format(time.RFC3339)})
+				}
+			}
+			proxyCooldownsMu.Unlock()
+			if len(pcList) > 0 {
+				row["platformCooling"] = pcList
+			}
 		}
 		if e := proxyHealthStats[raw]; e != nil {
 			row["attempts"] = e.Attempts

@@ -524,7 +524,7 @@ func pickAccount() *Account {
 		// 整体跳过 —— 隔离优先于可用性，绝不退回其他出口。检查在 poolMu 内
 		// 完成：读的是绑定字段本身；可用性走 proxyCooldownsMu/zenConfigMu，
 		// 都是叶子锁且无反向获取，无锁序风险。
-		if isolation && !boundProxiesRoutable(a.ProxyMain, a.ProxyBackup) {
+		if isolation && !boundProxiesRoutableFor(pkCline, a.ProxyMain, a.ProxyBackup) {
 			continue
 		}
 		active = append(active, a)
@@ -592,7 +592,7 @@ func pickAccountExcluding(exclude map[string]bool) *Account {
 		if !accountPoolEnabled(a) {
 			continue
 		}
-		if isolation && !boundProxiesRoutable(a.ProxyMain, a.ProxyBackup) {
+		if isolation && !boundProxiesRoutableFor(pkCline, a.ProxyMain, a.ProxyBackup) {
 			continue
 		}
 		if exclude[a.AccountID] {
@@ -703,7 +703,7 @@ func ensureAccountToken(acc *Account) (string, error) {
 // （clineUseProxies 开关决定池或直连，池空兜底直连同样受 DISABLE_DIRECT 约束）。
 func clineRefreshClient(acc *Account) (*http.Client, error) {
 	if acc.ProxyMain != "" || acc.ProxyBackup != "" {
-		url, _, ok := pickBoundProxy(acc.ProxyMain, acc.ProxyBackup)
+		url, _, ok := pickBoundProxyFor(pkCline, acc.ProxyMain, acc.ProxyBackup)
 		if !ok {
 			return nil, fmt.Errorf("bound proxies unavailable (cooling or removed)")
 		}
@@ -715,7 +715,7 @@ func clineRefreshClient(acc *Account) (*http.Client, error) {
 		}
 		return kit.HTTPClient, nil
 	}
-	url, _ := pickUpstreamProxy()
+	url, _ := pickUpstreamProxyFor(pkCline)
 	if url == "" && kit.DisableDirect() {
 		return nil, fmt.Errorf("no proxy available and direct egress is disabled by DISABLE_DIRECT")
 	}
@@ -874,7 +874,7 @@ func describePoolStatus() string {
 				continue
 			}
 			active++
-			if isolation && !boundProxiesRoutable(a.ProxyMain, a.ProxyBackup) {
+			if isolation && !boundProxiesRoutableFor(pkCline, a.ProxyMain, a.ProxyBackup) {
 				boundBlocked++
 			}
 		case "cooldown":

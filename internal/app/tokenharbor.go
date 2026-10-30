@@ -39,18 +39,20 @@ func initTokenHarbor() {
 				}
 				return "", true
 			}
-			url, _ := pickUpstreamProxy()
+			url, _ := pickUpstreamProxyFor(pkTh)
 			if url == "" && kit.DisableDirect() {
 				return "", false // 代理池空兜底的直连同样不放行
 			}
 			return url, true
 		}
-		url, _, ok := pickBoundProxy(main, backup)
+		url, _, ok := pickBoundProxyFor(pkTh, main, backup)
 		return url, ok
 	})
 	tokenharbor.SetClientProvider(proxyClientFor)
 	// 出口成败/握手延迟回传（同 AMDCloud：此前无任何观测钩子）。
-	tokenharbor.SetProxyObserver(recordProxyOutcome)
+	tokenharbor.SetProxyObserver(func(u string, ok bool, e error, ms int64) {
+		recordProxyOutcome(pkTh, u, ok, e, ms)
+	})
 	tokenharbor.SetAttemptObserver(scopedObserver(keyPoolAttemptObserver(tokenharbor.KeyIndex, tokenharbor.BindingOf)))
 	// 启动即预热模型目录（异步；无 key 时保持种子）
 	tokenharbor.InitCatalog()
@@ -119,7 +121,7 @@ func thBoundRoutable(key string) bool {
 	if !bound {
 		return true
 	}
-	return boundProxiesRoutable(main, backup)
+	return boundProxiesRoutableFor(pkTh, main, backup)
 }
 
 // handleTHChat TokenHarbor chat/completions 转发（网关命中 tkhb: 前缀时调用）。

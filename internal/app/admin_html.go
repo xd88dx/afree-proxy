@@ -2702,6 +2702,7 @@ const I18N_ZH = {
   // zen egress 徽标、combos 空态等（详见当次审查台账）。标识词/技术值不译：
   // Trae 端点档位 Remote/traecode/traework、reasoning effort 档位、产品名。
   'Proxy health': '代理健康',
+  'Platform cooldown': '平台冷却',
   'Online rate': '在线率',
   'Recent online rate': '最近在线率',
   'Avg handshake': '平均握手延迟',
@@ -4109,6 +4110,11 @@ function proxyRateSet(match, rate) {
 // 一档共五档（见 proxyRateTier），替代旧"低率标红"的单档口径。
 function proxyRecentRate(p) {
   const r = proxyHealthByProxy[proxyHealthKey(p)];
+  // 平台级冷却中：在线率徽章显示 ∞（横8）——冷却期间该平台根本不选这个出口，
+  // 在线率样本没有意义（2026-10-30 用户定）。悬停列出冷却中的平台与解除时刻。
+  if (r && r.platformCooling && r.platformCooling.length) {
+    return { text: '∞', tier: 'yellow', platformCooling: r.platformCooling };
+  }
   if (!r || r.recentRate === null || r.recentRate === undefined) return null;
   return { text: Math.round(r.recentRate * 100) + '%', tier: proxyRateTier(r.recentRate) };
 }
@@ -4621,7 +4627,9 @@ function egBadgeHTML(value) {
   const rate = proxyRecentRate(value);
   const hs = proxyRecentHs(value);
   if (!rate && !hs) return '';
-  return (rate ? '<span class="eg-badge t-' + rate.tier + (rate.text.length > 3 ? ' w3' : '') + '">' + esc(rate.text) + '</span>' : '') +
+  const pcTitle = (rate && rate.platformCooling)
+    ? ' title="' + esc(rate.platformCooling.map(c => T('Platform cooldown') + ': ' + c.kind + ' · ' + fmtWhen(c.until)).join('\n')) + '"' : '';
+  return (rate ? '<span class="eg-badge t-' + rate.tier + (rate.text.length > 3 ? ' w3' : '') + '"' + pcTitle + '>' + esc(rate.text) + '</span>' : '') +
     (hs ? '<span class="eg-badge hs w3 t-' + hs.tier + '">' + esc(hs.text) + '</span>' : '');
 }
 // egSyncBadge 按当前 dataset.value 重绘右侧在线率/握手延迟徽标（选中/失焦/
@@ -5966,7 +5974,14 @@ function renderProxyHealth(rowsIn) {
           ? '<span style="color:var(--text3)">-</span>'
           : '<span class="pp-rate t-' + proxyRateTier(rate) + (v.length > 3 ? ' w3' : '') + '">' + esc(v) + '</span>';
         const cum = pct(r.rate);
-        const rec = pct(r.recentRate);
+        // 平台级冷却中：最近在线率徽章同样换 ∞（悬停列平台与解除时刻）；
+        // 累计在线率保留数字（历史事实，不重写）。
+        const pc = r.platformCooling || [];
+        const pcTitle = pc.length
+          ? ' title="' + esc(pc.map(c => T('Platform cooldown') + ': ' + c.kind + ' · ' + fmtWhen(c.until)).join('\n')) + '"' : '';
+        const rec = pc.length
+          ? '<span class="pp-rate t-yellow w3"' + pcTitle + '>∞</span>'
+          : pct(r.recentRate);
         // Avg HS：成功尝试的平均握手延迟（ms），无样本显示 -。
         const hs = (r.avgHsMs === null || r.avgHsMs === undefined)
           ? '<span style="color:var(--text3)">-</span>'
@@ -5976,11 +5991,13 @@ function renderProxyHealth(rowsIn) {
           '<td class="mono" style="font-size:11px">' + esc(egLabel(r.proxy)) + '</td>' +
           '<td style="text-align:center">' + (r.attempts || 0) + '</td>' +
           '<td style="text-align:center">' + rateCell(cum, r.rate) + '</td>' +
-          '<td style="text-align:center">' + rateCell(rec, r.recentRate) + '</td>' +
+          '<td style="text-align:center">' + (pc.length ? rec : rateCell(rec, r.recentRate)) + '</td>' +
           '<td style="text-align:center" title="' + esc(T('Avg tunnel-setup time of successful attempts (TCP+TLS+CONNECT), excluding upstream response; samples: ')) + (r.hsCount || 0) + '">' + hs + '</td>' +
           '<td class="mono" style="font-size:11px">' + (r.lastOk ? fmtWhen(r.lastOk) : '<span style="color:var(--text3)">-</span>') + '</td>' +
           '<td class="mono" style="font-size:11px"' + failTitle + '>' + (r.lastFail ? fmtWhen(r.lastFail) : '<span style="color:var(--text3)">-</span>') + '</td>' +
-          '<td>' + (r.cooling ? '<span style="color:var(--warning,#eab308)">' + T('cooldown until ') + fmtWhen(r.coolingUntil) + '</span>' : '<span style="color:var(--text3)">-</span>') + '</td>' +
+          '<td>' + ((r.cooling ? '<span style="color:var(--warning,#eab308)">' + T('cooldown until ') + fmtWhen(r.coolingUntil) + '</span>' : '') ||
+            (pc.length ? '<span style="color:var(--warning,#eab308)">' + pc.map(c => T('Platform cooldown') + ' ' + esc(c.kind) + ' · ' + fmtWhen(c.until)).join('<br>') + '</span>' : '') ||
+            '<span style="color:var(--text3)">-</span>') + '</td>' +
         '</tr>';
       }).join('')
     : '<tr><td colspan="8" class="empty">No proxies configured</td></tr>';

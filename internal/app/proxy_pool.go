@@ -21,12 +21,29 @@ import (
 	"afree-proxy/internal/kit"
 )
 
+// 平台 kind 常量：出口冷却/记账的平台维度取值（与面板凭据页 kind 同口径）。
+const (
+	pkCline = "cline"
+	pkZen   = "zen"
+	pkAmd   = "amd"
+	pkOr    = "or"
+	pkTh    = "th"
+	pkOther = "other"
+	pkTrae  = "trae"
+	pkWb    = "wb"
+)
+
 var (
 	proxyRRCounter atomic.Uint64
 
-	proxyCooldowns   = map[int]time.Time{} // 代理索引 -> 冷却截止
+	proxyCooldowns   = map[int]time.Time{} // 代理索引 -> 冷却截止（全局层：建连失败）
 	proxyCooldownsMu sync.Mutex
 )
+
+// proxyPlatformCooldowns 平台粒度冷却：kind -> idx -> 冷却截止（2026-10-30）。
+// 隧道已建通后的流错误（目标平台封出口 IP / 上游问题）只冷却失败发生的平台，
+// 绑同一出口的其它平台完全无感——否则个别平台封 IP 会毒化整个出口池。
+var proxyPlatformCooldowns = map[string]map[int]time.Time{}
 
 // proxyClientCache 按代理 URL 缓存钉定代理的 HTTP 客户端（uTLS Chrome 指纹 + h2）。
 // key 为代理 URL；"" 表示直连。zen 与 cline 上游共用，请求级轮转时
@@ -60,7 +77,8 @@ func proxyClientFor(proxyURL string) *http.Client {
 	return c
 }
 
-// cooldownUpstreamProxy 标记某出口代理冷却,冷却期内轮询跳过
+// cooldownUpstreamProxy 标记某出口代理**全局**冷却，冷却期内所有平台跳过。
+// 只用于建连阶段失败（拨号/CONNECT/SOCKS/TLS）——出口本身不可用，对谁都死。
 func cooldownUpstreamProxy(idx int, d time.Duration) {
 	if idx < 0 {
 		return
@@ -74,6 +92,50 @@ func cooldownUpstreamProxy(idx int, d time.Duration) {
 	proxyCooldownsMu.Lock()
 	proxyCooldowns[idx] = time.Now().Add(d)
 	proxyCooldownsMu.Unlock()
+}
+
+// cooldownUpstreamProxyFor 标记某出口对**单个平台**冷却。
+func cooldownUpstreamProxyFor(kind string, idx int, d time.Duration) {
+	if kind == "" || idx < 0 {
+		return
+	}
+	if d <= 0 {
+		d = 10 * time.Minute
+	}
+	if d > maxCooldown {
+		d = maxCooldown
+	}
+	proxyCooldownsMu.Lock()
+	m := proxyPlatformCooldowns[kind]
+	if m == nil {
+		m = map[int]time.Time{}
+		proxyPlatformCooldowns[kind] = m
+	}
+	m[idx] = time.Now().Add(d)
+	proxyCooldownsMu.Unlock()
+}
+
+// proxyAvailableFor 出口对 kind 平台当前是否可选：全局冷却 + 平台级冷却两层
+// 任一命中即不可选。kind 为空 = 只看全局层（无平台上下文的调用方）。
+func proxyAvailableFor(kind string, idx int) bool {
+	if !proxyAvailable(idx) {
+		return false
+	}
+	if kind == "" {
+		return true
+	}
+	proxyCooldownsMu.Lock()
+	defer proxyCooldownsMu.Unlock()
+	m := proxyPlatformCooldowns[kind]
+	until, ok := m[idx]
+	if !ok {
+		return true
+	}
+	if time.Now().After(until) {
+		delete(m, idx)
+		return true
+	}
+	return false
 }
 
 func proxyAvailable(idx int) bool {
@@ -132,7 +194,9 @@ func proxyCooldownUntil(raw string) time.Time {
 // 无代理配置返回 ("", -1)。跳过冷却中的代理;全部冷却时返回轮转位。
 // 由调用方在每次上游尝试时显式调用 —— 请求级轮转（round_robin 一比一）,
 // 不依赖连接复用时机。
-func pickUpstreamProxy() (string, int) {
+// pickUpstreamProxyFor 全局代理池轮转选口（kind 平台视角）：冷却跳过含平台级
+// 冷却——某出口被 wb 平台冷却时，amd 的兜底轮转仍可选中它。
+func pickUpstreamProxyFor(kind string) (string, int) {
 	cfg := getProxyPool()
 	n := len(cfg.Proxies)
 	if n == 0 {
@@ -147,7 +211,7 @@ func pickUpstreamProxy() (string, int) {
 	}
 	// 冷却跳过:线性探测下一个可用代理
 	for i := 0; i < n; i++ {
-		if proxyAvailable(idx) {
+		if proxyAvailableFor(kind, idx) {
 			break
 		}
 		idx = (idx + 1) % n

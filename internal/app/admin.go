@@ -828,7 +828,7 @@ func testAccount(acc *Account) (map[string]any, string) {
 	probeClient := kit.HTTPClient
 	var probeExit string
 	if main, backup, bound := accountProxyBinding(acc); bound {
-		proxyURL, _, ok := pickBoundProxy(main, backup)
+		proxyURL, _, ok := pickBoundProxyFor(pkCline, main, backup)
 		if !ok {
 			return map[string]any{
 				"accountId": acc.AccountID,
@@ -846,7 +846,7 @@ func testAccount(acc *Account) (map[string]any, string) {
 	resp, err := probeClient.Do(req)
 	if err != nil {
 		// 网络错误：5 分钟短冷却（恢复时间取返回值，避免锁外读账号字段）
-		recordProxyOutcome(probeExit, false, err, 0)
+		recordProxyOutcome(pkCline, probeExit, false, err, 0)
 		reason := "network error: " + err.Error()
 		until := markAccountCooldown(acc, reason, 5*time.Minute)
 		return map[string]any{
@@ -860,7 +860,7 @@ func testAccount(acc *Account) (map[string]any, string) {
 			"remaining":     formatDuration(time.Until(until)),
 		}, "cooldown"
 	}
-	recordProxyOutcome(probeExit, true, nil, 0)
+	recordProxyOutcome(pkCline, probeExit, true, nil, 0)
 	defer resp.Body.Close()
 
 	bodyBytes, _ := io.ReadAll(resp.Body)

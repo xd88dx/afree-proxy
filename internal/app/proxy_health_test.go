@@ -42,11 +42,11 @@ func TestProxyHealthRecordSkipsDirectAndAborts(t *testing.T) {
 	resetProxyHealthForTest(t)
 
 	px := "socks5://u:p@10.0.0.1:1080#a"
-	recordProxyOutcome(px, true, nil, 150)
-	recordProxyOutcome("", true, nil, 0)                              // 直连：不是代理，不记
-	recordProxyOutcome(px, true, context.Canceled, 0)                 // 客户端取消：不计成功
-	recordProxyOutcome(px, false, context.DeadlineExceeded, 0)        // 客户端截止：不计失败
-	recordProxyOutcome(px, false, errors.New("dial tcp: refused"), 0) // 真失败
+	recordProxyOutcome(pkZen, px, true, nil, 150)
+	recordProxyOutcome(pkZen, "", true, nil, 0)                              // 直连：不是代理，不记
+	recordProxyOutcome(pkZen, px, true, context.Canceled, 0)                 // 客户端取消：不计成功
+	recordProxyOutcome(pkZen, px, false, context.DeadlineExceeded, 0)        // 客户端截止：不计失败
+	recordProxyOutcome(pkZen, px, false, errors.New("dial tcp: refused"), 0) // 真失败
 
 	proxyHealthMu.Lock()
 	e := proxyHealthStats[px]
@@ -72,10 +72,10 @@ func TestProxyHealthRecentWindowTrims(t *testing.T) {
 	px := "socks5://w:1"
 	// 前 proxyHealthRecentN 次全失败，再补 10 次成功：窗口内应只剩这 10 次成功。
 	for i := 0; i < proxyHealthRecentN; i++ {
-		recordProxyOutcome(px, false, errors.New("dead"), 0)
+		recordProxyOutcome(pkZen, px, false, errors.New("dead"), 0)
 	}
 	for i := 0; i < 10; i++ {
-		recordProxyOutcome(px, true, nil, 100)
+		recordProxyOutcome(pkZen, px, true, nil, 100)
 	}
 
 	proxyHealthMu.Lock()
@@ -96,8 +96,8 @@ func TestProxyHealthSnapshotMasksAndFilters(t *testing.T) {
 	setupBindingTest(t, &zenTestConfig{Proxies: []string{"http://user:secret@10.0.0.9:8080#home"}})
 	resetProxyHealthForTest(t)
 
-	recordProxyOutcome("http://user:secret@10.0.0.9:8080#home", true, nil, 0)
-	recordProxyOutcome("http://ghost:1", true, nil, 0) // 已不在池中的孤儿条目
+	recordProxyOutcome(pkZen, "http://user:secret@10.0.0.9:8080#home", true, nil, 0)
+	recordProxyOutcome(pkZen, "http://ghost:1", true, nil, 0) // 已不在池中的孤儿条目
 
 	rows := proxyHealthSnapshot()
 	if len(rows) != 1 {
@@ -119,7 +119,7 @@ func TestProxyHealthSnapshotMasksAndFilters(t *testing.T) {
 func TestProxyHealthSnapshotListsUnusedProxiesWithoutData(t *testing.T) {
 	setupBindingTest(t, &zenTestConfig{Proxies: []string{"socks5://used:1", "socks5://idle:1"}})
 	resetProxyHealthForTest(t)
-	recordProxyOutcome("socks5://used:1", true, nil, 0)
+	recordProxyOutcome(pkZen, "socks5://used:1", true, nil, 0)
 
 	rows := proxyHealthSnapshot()
 	if len(rows) != 2 {
@@ -138,7 +138,7 @@ func TestProxyHealthResetOnPoolEdit(t *testing.T) {
 	setupBindingTest(t, &zenTestConfig{Proxies: []string{"socks5://old:1"}})
 	resetProxyHealthForTest(t)
 
-	recordProxyOutcome("socks5://old:1", false, errors.New("boom"), 0)
+	recordProxyOutcome(pkZen, "socks5://old:1", false, errors.New("boom"), 0)
 
 	req := httptest.NewRequest("POST", "/admin/api/opencode/config/update",
 		strings.NewReader(`{"proxies":["socks5://new:1"]}`))
@@ -161,8 +161,8 @@ func TestProxyHealthPersistsAcrossRestart(t *testing.T) {
 	setupBindingTest(t, &zenTestConfig{Proxies: []string{"socks5://a:1"}})
 	resetProxyHealthForTest(t)
 
-	recordProxyOutcome("socks5://a:1", true, nil, 150)
-	recordProxyOutcome("socks5://a:1", false, errors.New("reset by peer"), 0)
+	recordProxyOutcome(pkZen, "socks5://a:1", true, nil, 150)
+	recordProxyOutcome(pkZen, "socks5://a:1", false, errors.New("reset by peer"), 0)
 	flushProxyHealth()
 
 	// 模拟进程重启：内存清零 + 重置懒加载，再从落盘文件恢复。
@@ -214,7 +214,7 @@ func TestIsTransportLayerFailure(t *testing.T) {
 func TestRecordProxyOutcomeCoolsBadExit(t *testing.T) {
 	setupBindingTest(t, &zenTestConfig{Proxies: []string{"http://a:1", "http://b:2"}})
 	// 传输层失败：该代理退出轮转
-	recordProxyOutcome("http://a:1", false, errors.New("EOF"), 0)
+	recordProxyOutcome(pkZen, "http://a:1", false, errors.New("EOF"), 0)
 	if proxyAvailable(0) {
 		t.Fatal("transport-layer failure must cool the exit proxy")
 	}
@@ -225,12 +225,12 @@ func TestRecordProxyOutcomeCoolsBadExit(t *testing.T) {
 	proxyCooldownsMu.Lock()
 	delete(proxyCooldowns, 0)
 	proxyCooldownsMu.Unlock()
-	recordProxyOutcome("http://a:1", false, &amd.HTTPError{Status: 502}, 0)
+	recordProxyOutcome(pkZen, "http://a:1", false, &amd.HTTPError{Status: 502}, 0)
 	if !proxyAvailable(0) {
 		t.Fatal("upstream 5xx must not cool a healthy exit")
 	}
 	// 成功尝试不冷却
-	recordProxyOutcome("http://b:2", true, nil, 12)
+	recordProxyOutcome(pkZen, "http://b:2", true, nil, 12)
 	if !proxyAvailable(1) {
 		t.Fatal("successful attempt must not cool the exit")
 	}

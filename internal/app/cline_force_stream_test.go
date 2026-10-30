@@ -3,7 +3,7 @@ package app
 import "testing"
 
 // 总闸默认关闭：判定仍按模型（未知模型不强制流式）。
-//（CLINE_FORCE_STREAM 已于 2026-10-30 删除，统一到 FORCE_STREAM。）
+// （CLINE_FORCE_STREAM 已于 2026-10-30 删除，统一到 FORCE_STREAM。）
 func TestUpstreamNeedsStream_DefaultOff(t *testing.T) {
 	t.Setenv("FORCE_STREAM", "")
 	if upstreamNeedsStream("definitely-not-a-known-model-xyz") {

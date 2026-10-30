@@ -41,18 +41,20 @@ func initOpenRouter() {
 				}
 				return "", true
 			}
-			url, _ := pickUpstreamProxy()
+			url, _ := pickUpstreamProxyFor(pkOr)
 			if url == "" && kit.DisableDirect() {
 				return "", false // 代理池空兜底的直连同样不放行
 			}
 			return url, true
 		}
-		url, _, ok := pickBoundProxy(main, backup)
+		url, _, ok := pickBoundProxyFor(pkOr, main, backup)
 		return url, ok
 	})
 	openrouter.SetClientProvider(proxyClientFor)
 	// 出口成败/握手延迟回传（同 AMDCloud：此前无任何观测钩子）。
-	openrouter.SetProxyObserver(recordProxyOutcome)
+	openrouter.SetProxyObserver(func(u string, ok bool, e error, ms int64) {
+		recordProxyOutcome(pkOr, u, ok, e, ms)
+	})
 	openrouter.SetAttemptObserver(scopedObserver(keyPoolAttemptObserver(openrouter.KeyIndex, openrouter.BindingOf)))
 	// 启动即预热模型目录（异步，失败保留种子）
 	openrouter.InitCatalog()
@@ -118,7 +120,7 @@ func orBoundRoutable(key string) bool {
 	if !bound {
 		return true
 	}
-	return boundProxiesRoutable(main, backup)
+	return boundProxiesRoutableFor(pkOr, main, backup)
 }
 
 // handleOrChat OpenRouter chat/completions 转发（网关 /v1/chat/completions 命中

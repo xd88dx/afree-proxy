@@ -46,17 +46,19 @@ func initTrae() {
 				}
 				return "", true
 			}
-			url, _ := pickUpstreamProxy()
+			url, _ := pickUpstreamProxyFor(pkTrae)
 			if url == "" && kit.DisableDirect() {
 				return "", false // 代理池空兜底的直连同样不放行
 			}
 			return url, true
 		}
-		url, _, ok := pickBoundProxy(main, backup)
+		url, _, ok := pickBoundProxyFor(pkTrae, main, backup)
 		return url, ok
 	})
 	trae.SetClientProvider(proxyClientFor)
-	trae.SetProxyObserver(recordProxyOutcome)
+	trae.SetProxyObserver(func(u string, ok bool, e error, ms int64) {
+		recordProxyOutcome(pkTrae, u, ok, e, ms)
+	})
 	// 按端点档位的封禁查询（2026-10-27）：trae.ModelList 展示过滤时回查
 	// app 层黑名单（scope 隔离：raw/remote/work 互不影响）。
 	trae.SetBanChecker(func(scope, bareID string) bool {
@@ -159,7 +161,7 @@ func traeBoundRoutable(acc *trae.Account) bool {
 	if !bound {
 		return true
 	}
-	return boundProxiesRoutable(main, backup)
+	return boundProxiesRoutableFor(pkTrae, main, backup)
 }
 
 // ============ Trae SSE → OpenAI 翻译 ============
