@@ -129,24 +129,14 @@ func handleZenConfigUpdate(w http.ResponseWriter, r *http.Request) {
 		writeAPI(w, http.StatusBadRequest, apiResponse{Error: "invalid JSON: " + err.Error()})
 		return
 	}
-	next := &zenConfigData{
-		Key:            cur.Key,
-		Keys:           cur.Keys,
-		BaseURL:        cur.BaseURL,
-		MaxConcurrency: cur.MaxConcurrency,
-		Retries:        cur.Retries,
-		// KeyBindings 必须随 next 保留：config/update 是全量替换语义，漏拷会把
-		// 每个 key 的主/备出口绑定整体清掉——绑定按 key 明文存，是代理隔离的
-		// 载体，丢了隔离就退化成走共享池。
-		KeyBindings: cur.KeyBindings,
-		// KeyRoutingEnabled 必须随 next 保留：config/update 是全量替换语义，
-		// 漏拷会把面板勾选的路由参与表整体清掉（缺项 = 全部参与）。
-		KeyRoutingEnabled: cur.KeyRoutingEnabled,
-		Compaction:        cur.Compaction,
-		// OrgID 必须随 next 保留（全量替换语义，漏拷 = 保存面板即清掉 org 头）。
-		OrgID:          cur.OrgID,
-		PinProxyPerKey: cur.PinProxyPerKey,
-	}
+	// next 从 cur 浅拷贝起步再按 patch 覆盖——不再逐字段枚举。config/update 是
+	// 全量替换语义，逐字段拷贝已三次漏掉后来新增的字段（2026-10-29
+	// KeyRoutingEnabled、2026-10-29 Cool、2026-10-31 Cool/KeyTokens——最后一次
+	// 把运行态冷却表与 token 记账整体清零并落盘，rsync -Deploy 又把坏配置倒灌
+	// 本机）。浅拷贝保证今后给 zenConfigData 加任何字段都不会再从这里漏。
+	// map 字段（KeyBindings/KeyRoutingEnabled/Cool/KeyTokens）与 cur 共享引用，
+	// 与既有行为一致（setZenConfig 内部按 key 列表做写时清理，不就地改写）。
+	next := *cur
 	if patch.ZenUseProxies != nil {
 		poolNext.ZenUseProxies = patch.ZenUseProxies
 		poolChanged = true
@@ -172,7 +162,7 @@ func handleZenConfigUpdate(w http.ResponseWriter, r *http.Request) {
 	if patch.Keys != nil || (patch.Key != nil && *patch.Key != "") {
 		// key 池发生变动：新 key 默认禁用路由（面板勾选启用后生效），移除的 key
 		// 清理表项——与 Cline/WorkBuddy 的新增身份默认不启用统一口径。
-		reconcileZenKeyRouting(next, cur)
+		reconcileZenKeyRouting(&next, cur)
 	}
 	if patch.BaseURL != nil && *patch.BaseURL != "" {
 		next.BaseURL = strings.TrimRight(*patch.BaseURL, "/")
@@ -320,7 +310,7 @@ func handleZenConfigUpdate(w http.ResponseWriter, r *http.Request) {
 		}
 		next.Compaction = base
 	}
-	setZenConfig(next)
+	setZenConfig(&next)
 	if bindingChanged {
 		setProxyBindingConfig(&bindingNext)
 	}

@@ -13,13 +13,13 @@ WorkBuddy 一栏的基线同时登记在 `scripts/workbuddy-vendor-baseline.json
 
 ## Cline
 
-本次未涉及上游同步（2026-10-28 核对：`foxy1402/cline-proxy` main 仍为 `571f9b9`，与 2026-10-27 同步基线一致，无新提交；`571f9b9` 的改动全部属于 OpenCode 线，见文末 OpenCode 节。2026-10-29 复核：仍为 `571f9b9`，无新提交。2026-10-30 复核：上游推进到 `b8a1be0`，但区间内 4 提交全部落在 zen/OpenCode 侧（`git diff 571f9b9 b8a1be0` 无 Cline 侧文件），Cline 线本次零吸收，详见 OpenCode 节）。
+本次未涉及上游同步（2026-10-28 核对：`foxy1402/cline-proxy` main 仍为 `571f9b9`，与 2026-10-27 同步基线一致，无新提交；`571f9b9` 的改动全部属于 OpenCode 线，见文末 OpenCode 节。2026-10-29 复核：仍为 `571f9b9`，无新提交。2026-10-30 复核：上游推进到 `b8a1be0`，但区间内 4 提交全部落在 zen/OpenCode 侧（`git diff 571f9b9 b8a1be0` 无 Cline 侧文件），Cline 线本次零吸收，详见 OpenCode 节。2026-10-31 复核：仍为 `b8a1be0`，无新提交，本次未涉及）。
 
 ## TreaWork
 
 上游:`autumnsentiment/Trae2api-cn`(Trae CN / Trae Solo CN 模型反代,Python,MIT)。**这条线不是 vendor/merge 关系**:上游是 Python 全栈,本地 `internal/trae/` + `internal/app/trae.go` 是 Go 重写,行为跟随上游协议;唯一逐行移植的产物是内嵌的本机授权助手 `web_login.py`(`internal/trae/helper_script.go`),只有它需要跟上游比对。2026-10-27 的 cline-proxy 合并未涉及本线。
 
-**2026-10-28 核对**：上游最新 tag 仍为 `v1.0.10`（`bb7b659`），与 2026-10-27 同步基线一致，本线无新版本，本次未涉及上游同步。**2026-10-29 复核**：仍为 `v1.0.10`，无新版本。**2026-10-30 复核**：仍为 `v1.0.10`（tags API 与 main HEAD 均为 `bb7b659`），无新版本，本次未涉及上游同步。
+**2026-10-28 核对**：上游最新 tag 仍为 `v1.0.10`（`bb7b659`），与 2026-10-27 同步基线一致，本线无新版本，本次未涉及上游同步。**2026-10-29 复核**：仍为 `v1.0.10`，无新版本。**2026-10-30 复核**：仍为 `v1.0.10`（tags API 与 main HEAD 均为 `bb7b659`），无新版本，本次未涉及上游同步。**2026-10-31 复核**：仍为 `v1.0.10`，无新版本，本次未涉及上游同步。
 
 ### 2026-10-27 — v1.0.9 (db189e2) → v1.0.10 (bb7b659)
 
@@ -134,6 +134,17 @@ WorkBuddy 一栏的基线同时登记在 `scripts/workbuddy-vendor-baseline.json
 - 部署(本机测试环境,2026-10-30 17:24):用户指令「同步」。镜像 `afree-proxy:test-20261030-1724` 构建后 compose(`D:/DockerApp/docker-compose.yml`)换 tag 起 `afree` 容器:`Up (healthy)`、`/health` 200(activeAccounts=19)、启动日志正常(19 账号 + WorkBuddy 7、思考档位策略开、zen 目录同步 6 新增、二进制内验证 `inference/openai/v1` 命中)。**过程中发现 wb 模型段不出目录**:定性为 10-30 02:07 一次备份导入触发的既有隔离护栏(`admin_backup.go:37`「导入的上游身份全部禁用」,7 个 wb 账号 `account_enabled=false`,`.bak` 仍 true 可证),与本次同步无关;新容器只是让该门控(`AvailableUIDs` 不含禁用账号 → `workbuddyModelEntries` 返回 nil)如实生效。经面板 API 逐账号恢复启用后 `/v1/models` 102 条、wb 段 11 条(与 2026-10-28 记录一致)。CI「Publish Docker image」对 `98518df` 已 success,GHCR latest 就绪,生产由用户在 iStore 自行 `compose pull`。
 - 验证:`go build ./...`、`go vet ./...` 全绿;`gofmt -l` 干净(仅 `trae.go` 既有不对齐,HEAD 亦然,非本次引入);`go test ./... -count=1` **28 包全绿**——本轮连既有 flaky `TestChatStreamPassthrough` 也通过(其失败条件 ttfb 测成 0 与机器速度耦合,本轮环境未触发);`updater` 包 13.285s 全绿(其 Windows fork/exec 缺陷未触发)。
 
+### 2026-10-31 — 5caddab → 96b816d
+
+- 上游:misakano7545/workbuddy2api-panel,vendor + 三方合并(`scripts/sync_workbuddy.py`;源工作树先 `git checkout --detach misakano/main`)。
+- 基线:`5caddab` → 本次 0 冲突自动推进到 `96b816d`(2 提交 / 19 文件 / +1044 -186)。
+- 上游主线:
+  - `847deb1` WorkBuddy 5.9.4 国际版真机抓包对齐:`headers.go` 大改(+162)——`X-Private-Data` 头、UA 按桌面/CLI 分族、`baggage` 头、XRW 形态;新增 `upstream/ua_family_test.go`/`gl_contract_test.go`(国际版头族黄金集);`webagent.go` 上游同区域有改动,与本地的 race 原子计数修复三方合并自动融合(0 冲突,`sseEvents`/`sseChunks` 保留)。
+  - `96b816d` 设备码登录链路改桌面端口径(platform/UA/头族):`loginsite.go` +200、`panel/login.go` +91,设备码轮询/激活走桌面端形态。
+- 装配核查:两提交均为 vendor 内部协议层改造,无新配置键/面板面;`restartRequired` 清单无新增。
+- `workbuddyVersion` → `2026.10.31-misakano+afree`;基线 seal 至 `96b816d`。
+- 验证:`go build ./...`、`go vet ./...` 全绿;`gofmt -l` 干净(仅 `trae.go` 既有);`go test ./... -count=1` 28 包全绿;`CGO_ENABLED=1 go test -race ./internal/workbuddy/... ./internal/app/` 22 包全绿。
+
 - **race 补录（同日）**:用户要求补装 C 编译器跑 race,不再跳过。装 winlibs gcc 16.2.0(便携版,`C:/AppSelf/Mingw`,与 Go 同目录约定,zip 已删)。`CGO_ENABLED=1 go test -race ./... -count=1` 首轮 25 包 ok、3 失败,**全部是本次同步引入的真数据竞争**,当场修复:
   - `upstream/webagent.go`(上游 bb6d581 新增):读 SSE 的 goroutine 直接 `res.Events++`/`res.Chunks++`,主 goroutine 轮询循环同时读写同一 `WebTurnResult`(上游注释明说"不 join"),race 检出 334 写 vs 383/386 读。修复:计数改局部 `atomic.Int64`(`sseEvents`/`sseChunks`),各返回点合并回 `res`——原子读无竞争;数值可能少最后一两帧,纯观测统计可接受。
   - `panel/models_busy_cache_test.go`(上游新增测试固件):`cfgHits`/`busyHits` 局部 int 被 global 三路并发探测 goroutine 同时 `++`。修复:改 `atomic.Int64`。
@@ -165,6 +176,20 @@ WorkBuddy 一栏的基线同时登记在 `scripts/workbuddy-vendor-baseline.json
 - 验证：`go build ./...` 通过；`go vet ./...` 通过；`go test ./internal/app/ -run 'Zen|Session|OrgID|Egress|Decode|Gate' -count=1` → ok。
 - 生产：镜像 `afree-proxy:prod-20261027-35` 重建 `afree` 容器（`--restart always`、`D:/DockerApp/afree:/app/data`、`-p 3457:3457`），env 全量哈希与旧容器一致（`9eb6f4999012f044`，未丢凭据），状态 healthy；`GET /`→302 登录页、`GET /v1/models`→200；镜像内验证 `ocOrgID` 3 处、`ocSessionRotate` 0 处。
 - **2026-10-28 核对**：`foxy1402/cline-proxy` main 仍为 `571f9b9`，无新提交，本次未涉及本线上游同步。
+
+### 2026-10-31 — 修复:面板保存清空 zen 运行态历史段（数据遗失事故）
+
+- **现象**:用户报告 OpenCode 历史数据遗失——`zen-config.json` 的 `cool`（冷却表）/`keyTokens`（token 记账）段消失,面板「今日/累计 token」清零。
+- **根因**(链条三层放大):
+  1. `handleZenConfigUpdate`(admin_zen.go:132)构造 `next` 时**逐字段枚举拷贝,漏掉 `Cool`/`KeyTokens`**(以及 2026-10-30 新增的 `FailoverCount`/`FailoverMinutes`);
+  2. `setZenConfig` 的回填语义是「冷却/记账表**以配置为准**」(注释明示管理导入=忠实还原)——next 里这两段为 nil,于是**包级运行态 `zenKeyCool`/`zenKeyTokens` 被清零**;
+  3. 任何后续 `saveZenConfig`(`saveKeyEdits` 的 /opencode/keys/proxy、token 记账落盘等)从包级快照回写——**空表固化落盘**。
+- **触发面**:面板「保存排除代理规则」(`/opencode/config/update`,patch 含 proxyExclusions/proxyBindCaps)是最高频入口;「凭据代理重排/一键代理」(`/opencode/keys/proxy`)本身安全,但在 1 之后执行会把丢失固化。10-31 02:26 iStore 面板触发,02:31 rsync `-Deploy` 把坏配置倒灌本机并重启容器(本机 StartedAt 02:31:10 实证)。**同型事故第三次**:2026-10-29 KeyRoutingEnabled、2026-10-29 Cool(审计修复 saveZenConfig 回写,但 next 漏拷未修)、2026-10-31 本次——逐字段枚举是结构性缺陷。
+- **修复**:next 改为 `next := *cur` 浅拷贝起步、按 patch 覆盖(`reconcileZenKeyRouting`/`setZenConfig` 调用点改传址)——今后 zenConfigData 新增任何字段都不可能再从这里漏。回归测试 `TestZenConfigUpdateKeepsRuntimeSections`:面板保存后运行态冷却/记账/绑定与磁盘三段全部保留;**反向验证**(回退旧代码跑同一测试)确认测试真能抓住该 bug。
+- **数据后果与恢复**:丢失的 cool(20 分钟封顶的短时状态,自愈)与 keyTokens(记账,无法找回,从零重计)不可恢复——rsync 备份目录与 iStore 侧均无丢失前版本;`modelAliases`/`endpoints` 在 iStore 本为空(无学习事件,`omitempty`),非丢失。iStore 生产侧同样中招(02:26 写入),待用户下次部署 GHCR 新镜像后自愈;本机运行态已随修复后的镜像恢复记账能力。
+- **其他平台排查**(同型「全量替换+逐字段重建」模式):`amd.go:250`/`openrouter.go:226,435`/`tokenharbor.go:198` 的 next **均已拷 KeyTokens/Cool**(写得晚、字段已存在);`otherCloneConfig` 深拷含运行时表;`traeCloneConfig` 显式拷 Cool(trae 无 keyTokens);WorkBuddy 配置与运行态分文件;cline 账号编辑走单账号端点。**唯一漏的就是 zen**——已修。
+- fork 上游线核对:`foxy1402/cline-proxy` main 仍为 `b8a1be0`,无新提交,本次无 fork 侧吸收。
+- 验证:`go build ./...`、`go vet ./...` 全绿;`go test ./... -count=1` 28 包全绿(含新回归测试);`CGO_ENABLED=1 go test -race ./internal/app/` ok。
 
 ### 2026-10-30 — 571f9b9 → b8a1be0
 
