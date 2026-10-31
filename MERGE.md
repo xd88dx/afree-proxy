@@ -192,6 +192,29 @@ WorkBuddy 一栏的基线同时登记在 `scripts/workbuddy-vendor-baseline.json
 - 本机测试环境更新(同日):镜像 `afree-proxy:test-20261031-0302` 构建,compose 换 tag 起 `afree` 容器——`Up (healthy)`、`/health` 200(activeAccounts=19),旧镜像按 7 个窗口清理。
 - 验证:`go build ./...`、`go vet ./...` 全绿;`go test ./... -count=1` 28 包全绿(含新回归测试);`CGO_ENABLED=1 go test -race ./internal/app/` ok。
 
+### 2026-10-31 — b8a1be0 → a41f1756
+
+- 上游：foxy1402/cline-proxy（与 Cline 同一上游仓库），合并方式 `git merge --no-ff --no-commit a41f1756`
+- 上次同步：`227d302` 前的基线 `b8a1be0`（2026-10-30 同步）
+- 本次目标：`a41f1756` — 区间 1 提交：`zen: park day-exhausted keys instead of retrying every 20 minutes`
+- 平台归属：**OpenCode 线**（`git diff b8a1be0 a41f1756 --name-only`：TODO.md、admin_html.go、admin_zen.go、zen.go、zen_fanout_test.go、zen_park_test.go，全部 zen 侧；Cline 零吸收）
+- 吸收项（带原因）：
+  - **zen key 日额度耗尽停放（park）机制**：429 按 `zenDailyExhausted`（body=FreeUsageLimitError + RA 指向 00:00 UTC ±30min + 非 FreeTierError）分流——瞬时节流仍走 20min 冷却，日额度耗尽改停放（30min 起步指数退避至 6h 封顶，停放期内零上游请求，到期只放一个探针）。解决"日配额用完的 key 每 20 分钟被重试一次、白停一整天"的问题。
+  - `parkZenKey`/`zenDailyExhausted`/`anyZenKeyParked`/`zenAllParkedUntil`/`zenParkProbeCount`/`zenKeyParked` 等函数与 chat/responses 两路径的 attempt-0 全池停放拦截、200 成功解除停放、面板 parked 状态显示（admin_zen.go status API 的 parked/parkedUntil/parkProbes/parkReason 字段自动合并）。
+- 本地定制保留清单（冲突解决原则"本地框架 + 吸收 park 语义"）：
+  - `pickZenKey` 保留本地三轮候选 + 调度策略框架（fill/random/round_robin、blocked/routingOff/noEgress 过滤、UNABLE_FORCE 兜底门控），parked 过滤并入 buildCandidates；上游 `eligible`/`bound`（egress 绑定快照）不并入——本地 `noEgress` 覆盖同语义。
+  - `recordZenKeyTokens`（上游名 markZenKeySuccess）保留本地 zenKeyTokens 记账 + 吸收 200 解除停放 `delete(zenKeyPark, key)`；上游 `zenKeyUsage` 成功计数不并入（本地由 zenKeyTokens 替代）。
+  - `admin_html.go` key 表行渲染保留本地 egCombo/routing/拖拽整段，parked 状态吸收进 stCell 判定链（优先于冷却，新词条 `Quota parked`→额度停放）。
+  - 上游第三轮"直通停放中的 key"的形态不吸收——调用方 `zenAllParkedUntil` 在 attempt 0 先行拦截报错，直通到不了且违反"停放期内零请求"语义（上游注释宣称的调用方检查实际不存在，属未完成意图）。
+  - TODO.md 保持本仓删除（modify/delete 冲突取删除侧）。
+- 测试本地适配（上游 3 处时间炸弹/字段差异 + 1 处渗漏）：
+  - `zen_park_test.go` 写死 `Retry-After: 80378`（上游提交时刻的午夜倒计时，非该时段运行必挂）→ 改运行时 `retryAfterToMidnight()` 动态值。
+  - `cfg.Enabled`/`cfg.Proxies` 引用删（本地 zenConfigData 无这两个字段，zen 启停由可路由性闸判定）。
+  - `markZenKeySuccess` 调用改本地 `recordZenKeyTokens`（带 tokens 参数）。
+  - `setZenModelForTest` 三处裸调补 `savedModels` cleanup（上游渗漏 bug，模板 zen_key_test.go:56-61）——不补则 zen_prefix/zen_route 三测试全量挂。
+- 验证：build/vet 绿；`go test ./... -count=1` 全绿；`go test -race ./internal/app/` 绿。
+- 生产：未同步，等用户「同步」指令。
+
 ### 2026-10-30 — 571f9b9 → b8a1be0
 
 - 上游：foxy1402/cline-proxy（与 Cline 同一上游仓库），合并方式 `git merge --no-ff`
