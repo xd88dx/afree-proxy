@@ -313,14 +313,6 @@ type proxyHealthFile struct {
 
 // proxyHealthPath 独立健康统计文件（使用痕迹，不进配置监测集合）。
 func proxyHealthPath() string { return kit.ResolveDataPath("proxy-state.json") }
-
-// legacyProxyHealthShim 从旧 proxy-config.json 原文提取 health 段的一次性
-// 迁移载体——与 proxyConfigFileData 解耦，避免两套字段定义互相牵连。
-type legacyProxyHealthShim struct {
-	HealthSavedAt time.Time                    `json:"healthSavedAt,omitempty"`
-	Health        map[string]*proxyHealthEntry `json:"health,omitempty"`
-}
-
 // recordProxyOutcome 记一次出口成败。kind 为平台标识（cline/zen/amd/or/th/
 // other/trae/wb，见各调用点），决定平台级冷却的作用范围。proxyURL 为空 = 直连
 // 出口，不是代理，不记。err 非空且源自 context 取消/截止（客户端放弃）时同样
@@ -439,28 +431,7 @@ func importProxyHealthBackup(f *proxyHealthFile) {
 	proxyHealthMu.Unlock()
 	flushProxyHealth()
 }
-
-// renameLegacyProxyState 命名统一迁移（2026-11-01）：状态文件统一为
-// *-state.json；旧 proxy-health.json 存在且新名缺失时改名续用。
-func renameLegacyProxyState() {
-	path := proxyHealthPath()
-	legacy := strings.TrimSuffix(path, "-state.json") + "-health.json"
-	if legacy == path {
-		return
-	}
-	if _, err := os.Stat(legacy); err != nil {
-		return
-	}
-	if _, err := os.Stat(path); err == nil {
-		return // 新名已在：旧名留档不动
-	}
-	if err := os.Rename(legacy, path); err == nil {
-		log.Printf("proxy state: renamed legacy %s -> %s", legacy, path)
-	}
-}
-
 func loadProxyHealth() {
-	renameLegacyProxyState()
 	path := proxyHealthPath()
 	raw, err := os.ReadFile(path)
 	if err != nil {
@@ -468,10 +439,6 @@ func loadProxyHealth() {
 			log.Printf("proxy health: read %s: %v (starting empty)", path, err)
 			return
 		}
-		// 一次性迁移：新文件缺失时从旧 proxy-config.json 的 health 段提取，
-		// 避免升级后统计清零（迁移幂等：新文件一旦存在即不再走这里）。
-		migrateProxyHealthFromConfig()
-		return
 	}
 	var f proxyHealthFile
 	if err := json.Unmarshal(raw, &f); err != nil {
@@ -485,37 +452,6 @@ func loadProxyHealth() {
 	}
 	absorbProxyHealthStats(f.Proxies, path)
 }
-
-// migrateProxyHealthFromConfig 从旧 proxy-config.json 原文提取 health 段并
-// 写入独立文件。必须在任何 mutateProxyConfigFile 写回之前执行（启动序列里
-// 的 ensureProxyHealthLoaded 保证）——否则旧 health 段会在下一次配置写回时
-// 被剥离丢弃，统计就丢了。
-func migrateProxyHealthFromConfig() {
-	shimRaw, err := os.ReadFile(proxyConfigPath())
-	if err != nil {
-		return // 没有旧文件 = 没有可迁移的数据
-	}
-	var shim legacyProxyHealthShim
-	if err := json.Unmarshal(shimRaw, &shim); err != nil || len(shim.Health) == 0 {
-		return
-	}
-	absorbProxyHealthStats(shim.Health, proxyConfigPath())
-	proxyHealthFileMu.Lock()
-	defer proxyHealthFileMu.Unlock()
-	out := proxyHealthFile{SavedAt: shim.HealthSavedAt, Proxies: shim.Health}
-	if out.SavedAt.IsZero() {
-		out.SavedAt = time.Now()
-	}
-	if raw, err := json.MarshalIndent(out, "", "  "); err == nil {
-		atomicWriteFile(proxyHealthPath(), raw)
-	}
-	// 顺手重写配置文件剥离旧 health 段（proxyConfigFileData 已无对应字段）：
-	// 升级即完成清理。
-	mutateProxyConfigFile(func(f *proxyConfigFileData) {})
-	log.Printf("proxy health: migrated %d stat(s) from %s to %s",
-		len(shim.Health), proxyConfigPath(), proxyHealthPath())
-}
-
 // absorbProxyHealthStats 把读出的统计表灌入内存（Recent 截断 + 日志）。
 func absorbProxyHealthStats(stats map[string]*proxyHealthEntry, from string) {
 	for _, e := range stats {

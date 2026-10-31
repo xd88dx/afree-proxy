@@ -23,12 +23,12 @@ func TestZenAPIBaseIsOpenAIPath(t *testing.T) {
 	}
 }
 
-// 旧安装的 .zen-config.json 里存的是上一版默认值，必须被迁移到新路径；
+// 存量 zen-config.json 里存的是上一版默认值，必须被抬升到新路径；
 // 否则升级后仍然打在短路径上（本次问题的根本形态）。
 func TestLoadZenConfigMigratesStaleBase(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("DATA_DIR", dir)
-	path := filepath.Join(dir, ".zen-config.json")
+	path := filepath.Join(dir, "zen-config.json")
 	if err := os.WriteFile(path, []byte(`{"enabled":true,"key":"public","keys":["public"],"baseURL":"`+staleBase+`"}`), 0600); err != nil {
 		t.Fatal(err)
 	}
@@ -42,7 +42,7 @@ func TestLoadZenConfigMigratesStaleBase(t *testing.T) {
 func TestLoadZenConfigKeepsCustomBase(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("DATA_DIR", dir)
-	path := filepath.Join(dir, ".zen-config.json")
+	path := filepath.Join(dir, "zen-config.json")
 	const custom = "https://mirror.example.test/v1"
 	if err := os.WriteFile(path, []byte(`{"enabled":true,"key":"public","keys":["public"],"baseURL":"`+custom+`"}`), 0600); err != nil {
 		t.Fatal(err)
@@ -93,12 +93,12 @@ func TestApplyZenRegistryBase(t *testing.T) {
 	}
 }
 
-// 存量配置的压缩 buffer 迁移：旧默认 20000 必须被抬到 80000，否则升级后
+// 存量配置的压缩 buffer 抬升：旧默认 20000 必须被抬到 80000，否则升级后
 // 压缩仍然永不触发（200k/32k 模型阈值 168k > 128k 客户端上限）。
 func TestLoadZenConfigMigratesLegacyCompactBuffer(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("DATA_DIR", dir)
-	path := filepath.Join(dir, ".zen-config.json")
+	path := filepath.Join(dir, "zen-config.json")
 	body := `{"enabled":true,"key":"public","keys":["public"],"compaction":{"auto":true,"buffer":20000,"keepTokens":8000,"maxSummary":4096}}`
 	if err := os.WriteFile(path, []byte(body), 0600); err != nil {
 		t.Fatal(err)
@@ -117,7 +117,7 @@ func TestLoadZenConfigMigratesLegacyCompactBuffer(t *testing.T) {
 func TestLoadZenConfigKeepsCustomCompactBuffer(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("DATA_DIR", dir)
-	path := filepath.Join(dir, ".zen-config.json")
+	path := filepath.Join(dir, "zen-config.json")
 	body := `{"enabled":true,"key":"public","keys":["public"],"compaction":{"auto":true,"buffer":45000}}`
 	if err := os.WriteFile(path, []byte(body), 0600); err != nil {
 		t.Fatal(err)

@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"strings"
 	"time"
 
 	"afree-proxy/internal/kit"
@@ -43,8 +42,8 @@ type usageData struct {
 
 var (
 	// usage 痕迹真身（mu 保护）。usageData 本身即落盘形态；Accounts 冷启动
-	// 即初始化——迁移路径（migrateUsageFromConfig）对它就地上写，nil map
-	// 会在首次真实数据升级时 panic（2026-11-01 本机容器实测踩过）。
+	// 即初始化——所有写入路径（迁移/记账/导入）都对它就地上写，nil map 会
+	// 直接 panic（2026-11-01 本机容器实测踩过，勿回退为零值初始化）。
 	usage = &usageData{Accounts: map[string]*accountUsage{}}
 	// UsagePath 痕迹文件路径（app 层注入 DATA_DIR/trae-state.json）；空 = 不落盘
 	// （测试场景），内存记账照常。
@@ -115,30 +114,10 @@ func saveUsage() {
 	}
 }
 
-// renameLegacyUsageState 命名统一迁移（2026-11-01）：状态文件统一为
-// *-state.json；旧 *-usage.json 存在且新名缺失时改名续用（两段式迁移的
-// 第二段，第一段是"config 痕迹键 → 独立文件"）。
-func renameLegacyUsageState() {
-	legacy := strings.TrimSuffix(UsagePath, "-state.json") + "-usage.json"
-	if legacy == UsagePath {
-		return
-	}
-	if _, err := os.Stat(legacy); err != nil {
-		return
-	}
-	if _, err := os.Stat(UsagePath); err == nil {
-		return // 新名已在：旧名留档不动
-	}
-	if err := os.Rename(legacy, UsagePath); err == nil {
-		fmt.Printf("  trae state: renamed legacy %s -> %s\n", legacy, UsagePath)
-	}
-}
-
-// loadUsage 读取痕迹文件（Load 尾部调用一次）。新文件缺失时从旧
-// trae-config.json 一次性迁移各账号痕迹与冷却表（幂等：新文件一旦存在即不再
-// 迁移）；解析失败改名留档（与 config 同款），空表启动。
+// loadUsage 读取痕迹文件（Load 尾部调用一次）。缺失即空表启动；解析失败
+// 改名留档（与 config 同款）。旧格式的一次性迁移已随 2026-11-01 死代码清理
+// 移除——升级前先在旧版导出含统计快照的备份，新版导入还原。
 func loadUsage() {
-	renameLegacyUsageState() // 2026-11-01 命名统一：旧 *-usage.json 改名续用
 	if UsagePath == "" {
 		return
 	}
@@ -148,7 +127,6 @@ func loadUsage() {
 			fmt.Printf("  trae usage read %s: %v (starting empty)\n", UsagePath, err)
 			return
 		}
-		migrateUsageFromConfig()
 		return
 	}
 	if err := json.Unmarshal(data, usage); err != nil {
@@ -162,64 +140,6 @@ func loadUsage() {
 		usage.Cool = map[string]time.Time{}
 	}
 }
-
-// legacyAccountShim/legacyConfigShim 从旧 trae-config.json 原文提取痕迹的
-// 一次性迁移载体（与 Account/Config 解耦）。
-type legacyAccountShim struct {
-	ID               string        `json:"id"`
-	Tokens           TokenStats    `json:"tokens,omitempty"`
-	Credits          *Credits      `json:"credits,omitempty"`
-	Checkin          *CheckinState `json:"checkin,omitempty"`
-	CheckinDeviceGen int           `json:"checkinDeviceGen,omitempty"`
-}
-
-type legacyConfigShim struct {
-	Accounts []legacyAccountShim  `json:"accounts,omitempty"`
-	Cool     map[string]time.Time `json:"cool,omitempty"`
-}
-
-// migrateUsageFromConfig 从旧 trae-config.json 提取各账号痕迹与冷却表并写入
-// 独立文件。必须在任何 trae-config.json 写回之前执行（initTrae 里注入
-// UsagePath 先于 Load，Load 之内先 loadUsage 后任何 save，天然满足）。
-func migrateUsageFromConfig() {
-	data, err := os.ReadFile(ConfigPath)
-	if err != nil {
-		return
-	}
-	var shim legacyConfigShim
-	if err := json.Unmarshal(data, &shim); err != nil {
-		return
-	}
-	if shim.Cool == nil {
-		shim.Cool = map[string]time.Time{}
-	}
-	usage.Cool = shim.Cool
-	if usage.Accounts == nil {
-		usage.Accounts = map[string]*accountUsage{} // 防御：冷启动兜底（包级已初始化）
-	}
-	n := 0
-	for _, la := range shim.Accounts {
-		if la.ID == "" {
-			continue
-		}
-		usage.Accounts[la.ID] = &accountUsage{
-			Tokens:           la.Tokens,
-			Credits:          la.Credits,
-			Checkin:          la.Checkin,
-			CheckinDeviceGen: la.CheckinDeviceGen,
-		}
-		n++
-	}
-	if n == 0 && len(shim.Cool) == 0 {
-		return
-	}
-	saveUsage()
-	// 顺手重写配置文件剥离旧痕迹键（Account/Config 已无对应字段）。
-	save()
-	fmt.Printf("  trae usage: migrated %d account trace(s) and %d cooldown(s) from %s\n",
-		n, len(shim.Cool), ConfigPath)
-}
-
 // StateSnapshotJSON 统计快照（配置备份 state 段，2026-11-01）：与落盘文件
 // 同形态的 JSON。Credits/Checkin 深拷——marshal 在锁外进行，不与额度刷新/
 // 签到写路径竞争。

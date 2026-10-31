@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"strings"
 	"time"
 
 	"afree-proxy/internal/kit"
@@ -98,30 +97,10 @@ func saveUsage() {
 	}
 }
 
-// renameLegacyUsageState 命名统一迁移（2026-11-01）：状态文件统一为
-// *-state.json；旧 *-usage.json 存在且新名缺失时改名续用（两段式迁移的
-// 第二段，第一段是"config 痕迹键 → 独立文件"）。
-func renameLegacyUsageState() {
-	legacy := strings.TrimSuffix(UsagePath, "-state.json") + "-usage.json"
-	if legacy == UsagePath {
-		return
-	}
-	if _, err := os.Stat(legacy); err != nil {
-		return
-	}
-	if _, err := os.Stat(UsagePath); err == nil {
-		return // 新名已在：旧名留档不动
-	}
-	if err := os.Rename(legacy, UsagePath); err == nil {
-		fmt.Printf("  other state: renamed legacy %s -> %s\n", legacy, UsagePath)
-	}
-}
-
 // loadUsage 读取痕迹文件（Load 尾部调用一次）。新文件缺失时从旧
 // other-config.json 一次性迁移各子平台的 keyTokens/cool 键（幂等：新文件一旦
 // 存在即不再迁移）；解析失败改名留档（与 config 同款），空表启动。
 func loadUsage() {
-	renameLegacyUsageState() // 2026-11-01 命名统一：旧 *-usage.json 改名续用
 	if UsagePath == "" {
 		return
 	}
@@ -131,7 +110,6 @@ func loadUsage() {
 			fmt.Printf("  other usage read %s: %v (starting empty)\n", UsagePath, err)
 			return
 		}
-		migrateUsageFromConfig()
 		return
 	}
 	if err := json.Unmarshal(data, usage); err != nil {
@@ -145,50 +123,6 @@ func loadUsage() {
 		usage.Platforms = map[string]*platformUsage{}
 	}
 }
-
-// legacyPlatformShim/legacyConfigShim 从旧 other-config.json 原文提取痕迹的
-// 一次性迁移载体（与 Platform/Config 解耦）。
-type legacyPlatformShim struct {
-	Slug      string                   `json:"slug"`
-	KeyTokens map[string]KeyTokenStats `json:"keyTokens,omitempty"`
-	Cool      map[string]time.Time     `json:"cool,omitempty"`
-}
-
-type legacyConfigShim struct {
-	Platforms []legacyPlatformShim `json:"platforms,omitempty"`
-}
-
-// migrateUsageFromConfig 从旧 other-config.json 提取各子平台 keyTokens/cool
-// 并写入独立文件。必须在任何 other-config.json 写回之前执行（initOther 里
-// 注入 UsagePath 先于 Load，Load 之内先 loadUsage 后任何 save，天然满足）。
-func migrateUsageFromConfig() {
-	data, err := os.ReadFile(ConfigPath)
-	if err != nil {
-		return
-	}
-	var shim legacyConfigShim
-	if err := json.Unmarshal(data, &shim); err != nil {
-		return
-	}
-	nTokens, nCool := 0, 0
-	for _, lp := range shim.Platforms {
-		if lp.Slug == "" || (len(lp.KeyTokens) == 0 && len(lp.Cool) == 0) {
-			continue
-		}
-		usage.Platforms[lp.Slug] = &platformUsage{KeyTokens: lp.KeyTokens, Cool: lp.Cool}
-		nTokens += len(lp.KeyTokens)
-		nCool += len(lp.Cool)
-	}
-	if nTokens == 0 && nCool == 0 {
-		return
-	}
-	saveUsage()
-	// 顺手重写配置文件剥离旧痕迹键（Platform 已无对应字段）。
-	save()
-	fmt.Printf("  other usage: migrated %d token entry(s) and %d cooldown(s) from %s\n",
-		nTokens, nCool, ConfigPath)
-}
-
 // StateSnapshotJSON 统计快照（配置备份 state 段，2026-11-01）：与落盘文件
 // 同形态的 JSON；痕迹真身由 keyMu 保护，快照深拷（含 per-slug 表）。
 func StateSnapshotJSON() json.RawMessage {

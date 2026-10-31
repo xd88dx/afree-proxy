@@ -6,7 +6,6 @@ import (
 	"testing"
 	"time"
 
-	"afree-proxy/internal/kit"
 )
 
 // 隔离测试环境：独立 DATA_DIR，并清空进程级会话/失败印记状态。
@@ -256,75 +255,6 @@ func TestPruneRemovesSessionsAndFailureMarks(t *testing.T) {
 
 // 旧版本会话文件迁移：合法格式的 ses_* 保留（格式即凭证），sess_* 占位
 // 直接换成新铸造 ID——占位今天就在 403，永远不会自愈。
-func TestLegacySessionFileMigration(t *testing.T) {
-	dir := setupZenSessionTestUpstream(t)
-	now := time.Now().Unix()
-	// 前两条是真实的 30 字符合法 ID（4+12 小写 hex+14 base62），钉住 keep 分支；
-	// 第三条是 4+26 的旧 sess_ 占位，钉住 replace 分支。
-	validLive := "ses_" + "0123456789ab" + "0123456789ABcd" // 30 字符合法
-	validOld := "ses_" + "000000000001" + "zyxwvu98765432"  // 30 字符合法，旧时间位
-	if !kit.ValidZenSessionID(validLive) || !kit.ValidZenSessionID(validOld) {
-		t.Fatalf("fixture IDs must be format-valid: %q %q", validLive, validOld)
-	}
-	legacy := `{
-  "sk-legacy-live": {"session": "` + validLive + `", "ua": "opencode/1.18.31", "updated": ` + itoa(now) + `, "harvestedAt": ` + itoa(now) + `},
-  "sk-legacy-old": {"session": "` + validOld + `", "ua": "opencode/1.18.31", "updated": ` + itoa(now-30*24*3600) + `},
-  "sk-legacy-placeholder": {"session": "sess_placeholder000000000000", "ua": "opencode/1.18.31", "updated": ` + itoa(now) + `}
-}`
-	if err := os.WriteFile(filepath.Join(dir, ".zen-sessions.json"), []byte(legacy), 0600); err != nil {
-		t.Fatalf("write legacy file: %v", err)
-	}
-	zenSessMu.Lock()
-	zenSessions = map[string]*zenSessionEntry{}
-	zenSessLoaded = false
-	zenSessPath = ""
-	zenSessMu.Unlock()
-	loadZenSessions()
-
-	if !zenSessionLive("sk-legacy-live") {
-		t.Fatal("legacy ses_* session must survive migration (format-valid)")
-	}
-	if !zenSessionLive("sk-legacy-old") {
-		t.Fatal("aged legacy ses_* session is still format-valid (live), just old")
-	}
-	if !zenSessionLive("sk-legacy-placeholder") {
-		t.Fatal("legacy sess_* placeholder must be replaced with a locally minted ID and become live")
-	}
-
-	zenSessMu.Lock()
-	liveEntry := zenSessions["sk-legacy-live"]
-	oldEntry := zenSessions["sk-legacy-old"]
-	if liveEntry == nil || oldEntry == nil {
-		zenSessMu.Unlock()
-		t.Fatal("kept entries missing after load")
-	}
-	keptLive, keptOld := liveEntry.Session, oldEntry.Session
-	mig := liveEntry.CreatedAt
-	repl := zenSessions["sk-legacy-placeholder"].Session
-	zenSessMu.Unlock()
-	// keep 分支真实命中：两条合法 ID 原样保留（未被替换、未被重新铸造）
-	if keptLive != validLive || keptOld != validOld {
-		t.Fatalf("format-valid entries must be kept verbatim, got %q / %q", keptLive, keptOld)
-	}
-	if mig != now {
-		t.Fatalf("migrated entry should inherit harvestedAt as CreatedAt, got %d want %d", mig, now)
-	}
-	if repl == "sess_placeholder000000000000" || !zenSessionLive("sk-legacy-placeholder") {
-		t.Fatalf("placeholder was not replaced with a minted ID: %q", repl)
-	}
-	if !kit.ValidZenSessionID(repl) {
-		t.Fatalf("replacement must be a valid minted ID, got %q", repl)
-	}
-	// 空 UA 回填：旧文件缺 ua 时请求会带空 UA，破坏指纹伪装
-	zenSessMu.Lock()
-	zenSessions["sk-legacy-live"].UA = ""
-	zenSessMu.Unlock()
-	_, _, ua := StickyZenIdentity("sk-legacy-live")
-	if ua != zenNativeUA {
-		t.Fatalf("empty UA must be backfilled, got %q", ua)
-	}
-}
-
 // 坏文件先备份再空跑：否则紧随其后的 save 会直接覆盖，出问题时无从追查。
 // 会话表与 zen 配置同住 zen-config.json，损坏留档针对整文件。
 func TestCorruptSessionFileIsBackedUp(t *testing.T) {

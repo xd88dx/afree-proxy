@@ -173,7 +173,7 @@ Model:     cline-free/deepseek-v4.1-flash   （Cline 池）
 
 日志类保持独立：`afree-proxy.log`、`afree-proxy-stream.log`、`requests.jsonl`。
 
-历史迁移均为一次性且幂等：旧点文件 → 现名 config（zen 一条线保留，见 `zen_config_file.go` 的 `migrateZenConfigFileLocked`）；config 内嵌痕迹键 → 独立 state 文件 → `*-state.json` 统一命名（2026-10-31/11-01 两段，`*-usage.json` 旧名自动改名续用）。
+历史迁移（旧点文件合并、痕迹键拆出、`*-state.json` 统一命名）已全部完成并**移除迁移代码**（2026-11-01 死代码清理）：跨版本升级不再自动搬数据——升级前先在旧版「网关设置」导出含统计快照的备份，新版导入还原（默认勾选「导入统计数据」）。
 
 ## 代理池与选号策略
 

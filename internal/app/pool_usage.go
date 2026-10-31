@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"log"
 	"os"
-	"strings"
 	"time"
 
 	"afree-proxy/internal/kit"
@@ -100,40 +99,16 @@ func savePoolUsage() {
 	defer poolMu.Unlock()
 	savePoolUsageLocked()
 }
-
-// renameLegacyPoolState 命名统一迁移（2026-11-01）：状态文件统一为
-// *-state.json；旧 *-usage.json 存在且新名缺失时改名续用（两段式迁移的
-// 第二段，第一段是"config 痕迹键 → 独立文件"）。调用方持有 poolMu 的
-// loadPool 时序内执行，rename 只动盘上文件不触碰内存态。
-func renameLegacyPoolState() {
-	legacy := strings.TrimSuffix(poolUsagePath, "-state.json") + "-usage.json"
-	if legacy == poolUsagePath {
-		return
-	}
-	if _, err := os.Stat(legacy); err != nil {
-		return
-	}
-	if _, err := os.Stat(poolUsagePath); err == nil {
-		return // 新名已在：旧名留档不动
-	}
-	if err := os.Rename(legacy, poolUsagePath); err == nil {
-		log.Printf("pool state: renamed legacy %s -> %s", legacy, poolUsagePath)
-	}
-}
-
 // loadPoolUsage 启动加载痕迹文件（loadPool 尾部调用，poolMu 已持有）。
-// 新文件缺失时从旧 cline-config.json 一次性迁移账号痕迹与游标（幂等：新文件
-// 一旦存在即不再迁移）；解析失败改名留档（与池文件同款），空表启动。
+// 缺失即空表启动；解析失败改名留档（与池文件同款）。旧格式的一次性迁移已随
+// 2026-11-01 死代码清理移除——升级前先在旧版导出含统计快照的备份，新版导入还原。
 func loadPoolUsage() {
-	renameLegacyPoolState()
 	raw, err := os.ReadFile(poolUsagePath)
 	if err != nil {
 		if !os.IsNotExist(err) {
 			log.Printf("pool usage: read %s: %v (starting empty)", poolUsagePath, err)
 			return
 		}
-		migratePoolUsageFromConfig()
-		return
 	}
 	var f poolUsageData
 	if err := json.Unmarshal(raw, &f); err != nil {
@@ -150,75 +125,7 @@ func loadPoolUsage() {
 	poolUsage = &f
 	log.Printf("pool usage: restored %d account trace(s), cursor=%d from %s",
 		len(f.Accounts), f.CurrentIdx, poolUsagePath)
-}
-
-// legacyAccountShim/legacyPoolShim 从旧 cline-config.json 原文提取痕迹的
-// 一次性迁移载体（与 Account/AccountPool 解耦）。
-type legacyAccountShim struct {
-	AccountID       string    `json:"accountId"`
-	Status          string    `json:"status"`
-	LastUsed        time.Time `json:"lastUsed"`
-	UsageCount      int64     `json:"usageCount"`
-	UsageCountToday int64     `json:"usageCountToday"`
-	UsageDate       string    `json:"usageDate"`
-	TokensTotal     int64     `json:"tokensTotal"`
-	TokensToday     int64     `json:"tokensToday"`
-	TokensDate      string    `json:"tokensDate"`
-	CooldownUntil   time.Time `json:"cooldownUntil,omitempty"`
-	LastReason      string    `json:"lastReason,omitempty"`
-}
-
-type legacyPoolShim struct {
-	CurrentIdx int                  `json:"currentIdx"`
-	Accounts   []*legacyAccountShim `json:"accounts"`
-}
-
-// migratePoolUsageFromConfig 从旧 cline-config.json 提取痕迹并写入独立文件。
-// 必须在任何 cline-config.json 写回之前执行（StartProxy 的 loadPool 在一切
-// 保存之前，天然满足）。
-func migratePoolUsageFromConfig() {
-	raw, err := os.ReadFile(poolPath)
-	if err != nil {
-		return
-	}
-	var shim legacyPoolShim
-	if err := json.Unmarshal(raw, &shim); err != nil {
-		return
-	}
-	next := &poolUsageData{CurrentIdx: shim.CurrentIdx, Accounts: map[string]*accountUsage{}}
-	n := 0
-	for _, la := range shim.Accounts {
-		if la == nil || la.AccountID == "" {
-			continue
-		}
-		next.Accounts[la.AccountID] = &accountUsage{
-			Status:          la.Status,
-			LastUsed:        la.LastUsed,
-			UsageCount:      la.UsageCount,
-			UsageCountToday: la.UsageCountToday,
-			UsageDate:       la.UsageDate,
-			TokensTotal:     la.TokensTotal,
-			TokensToday:     la.TokensToday,
-			TokensDate:      la.TokensDate,
-			CooldownUntil:   la.CooldownUntil,
-			LastReason:      la.LastReason,
-		}
-		n++
-	}
-	if n == 0 && shim.CurrentIdx == 0 {
-		return
-	}
-	poolUsage = next
-	savePoolUsageLocked()
-	// 顺手重写配置文件剥离旧痕迹键（pool 结构已无对应字段，序列化自然不含）：
-	// 升级即完成清理，配置文件立刻达到"无痕迹键"的监测口径。poolMu 由
-	// loadPool 调用方持有，savePoolLocked 可直接调。
-	savePoolLocked()
-	log.Printf("pool usage: migrated %d account trace(s), cursor=%d from cline-config.json",
-		n, shim.CurrentIdx)
-}
-
-// poolStateBackupSnapshot 统计快照（配置备份 state 段，2026-11-01）。
+}// poolStateBackupSnapshot 统计快照（配置备份 state 段，2026-11-01）。
 // 调用方必须持有 poolMu。
 func poolStateBackupSnapshotLocked() *poolUsageData {
 	out := &poolUsageData{CurrentIdx: poolUsage.CurrentIdx}

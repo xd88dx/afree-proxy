@@ -3,16 +3,12 @@ package app
 // ============================================================================
 // zen 单文件配置(zen-config.json)
 //
-// 历史上 zen 的数据散在四个文件里:
-//   .zen-config.json        key 池 / baseURL / 并发 / 重试 / compaction
-//   .zen-sessions.json      粘性会话表(每 key 一个会话 ID)
-//   .zen-model-aliases.json 弃用模型 -> 继任模型的学习结果
-//   .zen-endpoints.json     模型走 chat / responses 的学习结果
-//
-// 后三者都是"zen 这一个平台的运行态",却被拆成三个文件:同一把锁要维护四份
-// 落盘,损坏/备份/迁移都要逐文件处理。现合并为单一 zen-config.json:
-// 内嵌 zen 配置 + sessions / modelAliases / endpoints 三个附加段,
-// 同一把 zenFileMu 串行化"读-改-写",各子系统只覆盖自己那一段。
+// zen 的配置态与三个附加段（sessions / modelAliases / endpoints）同住
+// zen-config.json：同一把 zenFileMu 串行化"读-改-写"，各子系统只覆盖自己
+// 那一段。历史上散在 .zen-config.json / .zen-sessions.json /
+// .zen-model-aliases.json / .zen-endpoints.json 四份旧文件里的数据早已合并
+// 完毕；旧点文件的读取迁移随 2026-11-01 死代码清理移除（生产/本机部署态
+// 均已无旧点文件，实测判据）。
 //
 // 锁序:子系统锁(zenConfigMu / zenSessMu / zenDepMu / zenEndpointSaveMu)在外,
 // zenFileMu 在内。持有 zenFileMu 期间绝不获取任何子系统锁。
@@ -79,7 +75,9 @@ func loadZenConfigFileLocked() *zenConfigFileData {
 		log.Printf("zen config: read %s: %v (using defaults)", path, err)
 		return defaultZenConfigFile()
 	}
-	f := migrateZenConfigFileLocked()
+	// 文件不存在：默认配置落盘。旧点文件（.zen-config.json 等）的一次性迁移
+	// 已随 2026-11-01 死代码清理移除——生产/本机部署态均已无旧点文件（实测）。
+	f := defaultZenConfigFile()
 	saveZenConfigFileLocked(f)
 	return f
 }
@@ -102,43 +100,3 @@ func mutateZenConfigFile(fn func(*zenConfigFileData)) {
 	saveZenConfigFileLocked(f)
 }
 
-// migrateZenConfigFileLocked 一次性迁移:把四份旧文件合并进 zen-config.json。
-// 旧文件保留不删,便于回滚。调用方必须持有 zenFileMu。
-func migrateZenConfigFileLocked() *zenConfigFileData {
-	f := defaultZenConfigFile()
-	sections := 0
-
-	if raw, err := os.ReadFile(kit.ResolveDataPath(".zen-config.json")); err == nil {
-		var old zenConfigData
-		if json.Unmarshal(raw, &old) == nil {
-			f.zenConfigData = old
-			sections++
-		}
-	}
-	if raw, err := os.ReadFile(kit.ResolveDataPath(".zen-sessions.json")); err == nil {
-		var old map[string]*zenSessionEntry
-		if json.Unmarshal(raw, &old) == nil && len(old) > 0 {
-			f.Sessions = old
-			sections++
-		}
-	}
-	if raw, err := os.ReadFile(kit.ResolveDataPath(".zen-model-aliases.json")); err == nil {
-		var old map[string]*zenDepEntry
-		if json.Unmarshal(raw, &old) == nil && len(old) > 0 {
-			f.ModelAliases = old
-			sections++
-		}
-	}
-	if raw, err := os.ReadFile(kit.ResolveDataPath(".zen-endpoints.json")); err == nil {
-		var old map[string]string
-		if json.Unmarshal(raw, &old) == nil && len(old) > 0 {
-			f.Endpoints = old
-			sections++
-		}
-	}
-
-	if sections > 0 {
-		log.Printf("zen config: migrated %d section(s) from legacy files into %s", sections, zenConfigPath())
-	}
-	return f
-}

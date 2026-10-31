@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"log"
 	"os"
-	"strings"
 	"time"
 
 	"afree-proxy/internal/kit"
@@ -63,32 +62,10 @@ func saveZenUsage() {
 	}
 	atomicWriteFile(zenUsagePath(), raw)
 }
-
-// renameLegacyZenState 命名统一迁移（2026-11-01）：状态文件统一为
-// *-state.json；旧 *-usage.json 存在且新名缺失时改名续用（两段式迁移的
-// 第二段，第一段是"config 痕迹键 → 独立文件"）。
-func renameLegacyZenState() {
-	path := zenUsagePath()
-	legacy := strings.TrimSuffix(path, "-state.json") + "-usage.json"
-	if legacy == path {
-		return
-	}
-	if _, err := os.Stat(legacy); err != nil {
-		return
-	}
-	if _, err := os.Stat(path); err == nil {
-		return // 新名已在：旧名留档不动
-	}
-	if err := os.Rename(legacy, path); err == nil {
-		log.Printf("zen state: renamed legacy %s -> %s", legacy, path)
-	}
-}
-
-// loadZenUsage 启动加载痕迹文件回填真身（init 调用，替代原 zenConfig 回填）。
-// 新文件缺失时从旧 zen-config.json 一次性迁移 cool/keyTokens 键（幂等：新
-// 文件一旦存在即不再迁移）；解析失败改名留档，空表启动。
+// loadZenUsage 启动加载痕迹文件回填真身（init 调用）。缺失即空表启动；
+// 解析失败改名留档。旧格式的一次性迁移已随 2026-11-01 死代码清理移除——
+// 升级前先在旧版导出含统计快照的备份，新版导入还原。
 func loadZenUsage() {
-	renameLegacyZenState()
 	path := zenUsagePath()
 	raw, err := os.ReadFile(path)
 	if err != nil {
@@ -96,8 +73,6 @@ func loadZenUsage() {
 			log.Printf("zen usage: read %s: %v (starting empty)", path, err)
 			return
 		}
-		migrateZenUsageFromConfig()
-		return
 	}
 	var f zenUsageFile
 	if err := json.Unmarshal(raw, &f); err != nil {
@@ -118,40 +93,7 @@ func loadZenUsage() {
 	zenKeyMu.Unlock()
 	log.Printf("zen usage: restored %d cooldown(s) and %d token entry(s) from %s",
 		len(f.Cool), len(f.KeyTokens), path)
-}
-
-// legacyZenConfigShim 从旧 zen-config.json 原文提取 cool/keyTokens 的一次性
-// 迁移载体（与 zenConfigData 解耦）。
-type legacyZenConfigShim struct {
-	Cool      map[string]time.Time        `json:"cool,omitempty"`
-	KeyTokens map[string]zenKeyTokenStats `json:"keyTokens,omitempty"`
-}
-
-// migrateZenUsageFromConfig 从旧 zen-config.json 提取痕迹并写入独立文件。
-func migrateZenUsageFromConfig() {
-	raw, err := os.ReadFile(kit.ResolveDataPath("zen-config.json"))
-	if err != nil {
-		return
-	}
-	var shim legacyZenConfigShim
-	if err := json.Unmarshal(raw, &shim); err != nil {
-		return
-	}
-	if len(shim.Cool) == 0 && len(shim.KeyTokens) == 0 {
-		return
-	}
-	zenKeyMu.Lock()
-	zenKeyCool = shim.Cool
-	zenKeyTokens = shim.KeyTokens
-	zenKeyMu.Unlock()
-	saveZenUsage()
-	// 顺手重写配置文件剥离旧 cool/keyTokens 键（zenConfigData 已无对应字段）。
-	saveZenConfig()
-	log.Printf("zen usage: migrated %d cooldown(s) and %d token entry(s) from zen-config.json",
-		len(shim.Cool), len(shim.KeyTokens))
-}
-
-// zenStateBackupSnapshot 统计快照（配置备份 state 段，2026-11-01）：真身
+}// zenStateBackupSnapshot 统计快照（配置备份 state 段，2026-11-01）：真身
 // zenKeyCool/zenKeyTokens 在 zenKeyMu 下深拷。
 func zenStateBackupSnapshot() *zenUsageFile {
 	zenKeyMu.Lock()

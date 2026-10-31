@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"strings"
 	"time"
 
 	"afree-proxy/internal/kit"
@@ -74,30 +73,10 @@ func saveUsage() {
 	}
 }
 
-// renameLegacyUsageState 命名统一迁移（2026-11-01）：状态文件统一为
-// *-state.json；旧 *-usage.json 存在且新名缺失时改名续用（两段式迁移的
-// 第二段，第一段是"config 痕迹键 → 独立文件"）。
-func renameLegacyUsageState() {
-	legacy := strings.TrimSuffix(UsagePath, "-state.json") + "-usage.json"
-	if legacy == UsagePath {
-		return
-	}
-	if _, err := os.Stat(legacy); err != nil {
-		return
-	}
-	if _, err := os.Stat(UsagePath); err == nil {
-		return // 新名已在：旧名留档不动
-	}
-	if err := os.Rename(legacy, UsagePath); err == nil {
-		fmt.Printf("  tokenharbor state: renamed legacy %s -> %s\n", legacy, UsagePath)
-	}
-}
-
-// loadUsage 读取痕迹文件（Load 尾部调用一次）。新文件缺失时从旧
-// tkhb-config.json 一次性迁移 keyTokens/cool 键（幂等：新文件一旦存在即不再
-// 迁移）；解析失败改名留档（与 config 同款），空表启动。
+// loadUsage 读取痕迹文件（Load 尾部调用一次）。缺失即空表启动；解析失败
+// 改名留档（与 config 同款）。旧格式的一次性迁移已随 2026-11-01 死代码清理
+// 移除——升级前先在旧版导出含统计快照的备份，新版导入还原。
 func loadUsage() {
-	renameLegacyUsageState() // 2026-11-01 命名统一：旧 *-usage.json 改名续用
 	if UsagePath == "" {
 		return
 	}
@@ -107,7 +86,6 @@ func loadUsage() {
 			fmt.Printf("  tokenharbor usage read %s: %v (starting empty)\n", UsagePath, err)
 			return
 		}
-		migrateUsageFromConfig()
 		return
 	}
 	if err := json.Unmarshal(data, usage); err != nil {
@@ -120,33 +98,6 @@ func loadUsage() {
 	if usage.Cool == nil {
 		usage.Cool = map[string]time.Time{}
 	}
-}
-
-// migrateUsageFromConfig 从旧 tkhb-config.json 原文提取 keyTokens/cool 并写入
-// 独立文件。必须在任何 tkhb-config.json 写回之前执行（initTokenHarbor 里
-// SetUsagePath 先于 Load，Load 之内先 loadUsage 后任何 save，天然满足）。
-func migrateUsageFromConfig() {
-	data, err := os.ReadFile(ConfigPath)
-	if err != nil {
-		return // 没有旧文件 = 没有可迁移的数据
-	}
-	var shim usageData
-	if err := json.Unmarshal(data, &shim); err != nil {
-		return
-	}
-	if shim.Cool == nil {
-		shim.Cool = map[string]time.Time{}
-	}
-	usage.KeyTokens = shim.KeyTokens
-	usage.Cool = shim.Cool
-	if len(shim.KeyTokens) == 0 && len(shim.Cool) == 0 {
-		return
-	}
-	saveUsage()
-	// 顺手重写配置文件剥离旧痕迹键（Config 已无对应字段，序列化自然不含）。
-	save()
-	fmt.Printf("  tokenharbor usage: migrated %d token entry(s) and %d cooldown(s) from %s\n",
-		len(shim.KeyTokens), len(shim.Cool), ConfigPath)
 }
 
 // StateSnapshotJSON 统计快照（配置备份 state 段，2026-11-01）：与落盘文件
