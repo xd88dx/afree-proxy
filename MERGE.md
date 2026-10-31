@@ -13,13 +13,13 @@ WorkBuddy 一栏的基线同时登记在 `scripts/workbuddy-vendor-baseline.json
 
 ## Cline
 
-本次未涉及上游同步（2026-10-28 核对：`foxy1402/cline-proxy` main 仍为 `571f9b9`，与 2026-10-27 同步基线一致，无新提交；`571f9b9` 的改动全部属于 OpenCode 线，见文末 OpenCode 节。2026-10-29 复核：仍为 `571f9b9`，无新提交。2026-10-30 复核：上游推进到 `b8a1be0`，但区间内 4 提交全部落在 zen/OpenCode 侧（`git diff 571f9b9 b8a1be0` 无 Cline 侧文件），Cline 线本次零吸收，详见 OpenCode 节。2026-10-31 复核：仍为 `b8a1be0`，无新提交，本次未涉及）。
+本次未涉及上游同步（2026-10-28 核对：`foxy1402/cline-proxy` main 仍为 `571f9b9`，与 2026-10-27 同步基线一致，无新提交；`571f9b9` 的改动全部属于 OpenCode 线，见文末 OpenCode 节。2026-10-29 复核：仍为 `571f9b9`，无新提交。2026-10-30 复核：上游推进到 `b8a1be0`，但区间内 4 提交全部落在 zen/OpenCode 侧（`git diff 571f9b9 b8a1be0` 无 Cline 侧文件），Cline 线本次零吸收，详见 OpenCode 节。2026-10-31 复核：仍为 `b8a1be0`，无新提交，本次未涉及。2026-10-31 二次复核：上游推进到 `a41f1756`，但区间内 1 提交全部落在 zen/OpenCode 侧（`git diff b8a1be0 a41f1756 --name-only` 无 Cline 侧文件），Cline 线零吸收，详见 OpenCode 节）。
 
 ## TreaWork
 
 上游:`autumnsentiment/Trae2api-cn`(Trae CN / Trae Solo CN 模型反代,Python,MIT)。**这条线不是 vendor/merge 关系**:上游是 Python 全栈,本地 `internal/trae/` + `internal/app/trae.go` 是 Go 重写,行为跟随上游协议;唯一逐行移植的产物是内嵌的本机授权助手 `web_login.py`(`internal/trae/helper_script.go`),只有它需要跟上游比对。2026-10-27 的 cline-proxy 合并未涉及本线。
 
-**2026-10-28 核对**：上游最新 tag 仍为 `v1.0.10`（`bb7b659`），与 2026-10-27 同步基线一致，本线无新版本，本次未涉及上游同步。**2026-10-29 复核**：仍为 `v1.0.10`，无新版本。**2026-10-30 复核**：仍为 `v1.0.10`（tags API 与 main HEAD 均为 `bb7b659`），无新版本，本次未涉及上游同步。**2026-10-31 复核**：仍为 `v1.0.10`，无新版本，本次未涉及上游同步。
+**2026-10-28 核对**：上游最新 tag 仍为 `v1.0.10`（`bb7b659`），与 2026-10-27 同步基线一致，本线无新版本，本次未涉及上游同步。**2026-10-29 复核**：仍为 `v1.0.10`，无新版本。**2026-10-30 复核**：仍为 `v1.0.10`（tags API 与 main HEAD 均为 `bb7b659`），无新版本，本次未涉及上游同步。**2026-10-31 复核**：仍为 `v1.0.10`，无新版本，本次未涉及上游同步。**2026-10-31 二次复核**：仍为 `v1.0.10`（main HEAD `bb7b659`），helper 比对 exit 0，本次未涉及上游同步。
 
 ### 2026-10-27 — v1.0.9 (db189e2) → v1.0.10 (bb7b659)
 
@@ -133,6 +133,10 @@ WorkBuddy 一栏的基线同时登记在 `scripts/workbuddy-vendor-baseline.json
 - 踩坑(记录):合并收尾期间误执行了一次 `git stash -q`(未指定 pathspec),把 62 个 vendor 改动整体收进 stash;诊断 pool 测试时发现 `git status` 全空才回查 stash list,`git stash pop` 完整恢复,无损失。教训:工作区有未提交改动时禁止无差别 stash,排查既有失败应优先用 `git worktree add --detach` 旁路对照。
 - 部署(本机测试环境,2026-10-30 17:24):用户指令「同步」。镜像 `afree-proxy:test-20261030-1724` 构建后 compose(`D:/DockerApp/docker-compose.yml`)换 tag 起 `afree` 容器:`Up (healthy)`、`/health` 200(activeAccounts=19)、启动日志正常(19 账号 + WorkBuddy 7、思考档位策略开、zen 目录同步 6 新增、二进制内验证 `inference/openai/v1` 命中)。**过程中发现 wb 模型段不出目录**:定性为 10-30 02:07 一次备份导入触发的既有隔离护栏(`admin_backup.go:37`「导入的上游身份全部禁用」,7 个 wb 账号 `account_enabled=false`,`.bak` 仍 true 可证),与本次同步无关;新容器只是让该门控(`AvailableUIDs` 不含禁用账号 → `workbuddyModelEntries` 返回 nil)如实生效。经面板 API 逐账号恢复启用后 `/v1/models` 102 条、wb 段 11 条(与 2026-10-28 记录一致)。CI「Publish Docker image」对 `98518df` 已 success,GHCR latest 就绪,生产由用户在 iStore 自行 `compose pull`。
 - 验证:`go build ./...`、`go vet ./...` 全绿;`gofmt -l` 干净(仅 `trae.go` 既有不对齐,HEAD 亦然,非本次引入);`go test ./... -count=1` **28 包全绿**——本轮连既有 flaky `TestChatStreamPassthrough` 也通过(其失败条件 ttfb 测成 0 与机器速度耦合,本轮环境未触发);`updater` 包 13.285s 全绿(其 Windows fork/exec 缺陷未触发)。
+
+### 2026-10-31 复核（vendor 线）
+
+上游 `misakano7545/workbuddy2api-panel` main 无新提交（基线 `96b816d` 不变，版本 dev），`sync_workbuddy.py --report` 确认零改动，本次未涉及上游同步。
 
 ### 2026-10-31 — 5caddab → 96b816d
 
