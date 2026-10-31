@@ -595,14 +595,6 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
 
 <div class="section">
   <div class="section-body">
-    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin:0 6px 12px">
-      <span class="wb-toolbar">
-        <button class="btn btn-sm" onclick="refreshTraeCredits()" title="Refresh every enabled account's credit snapshot (feeds the Credits column and credit-priority selection)">Refresh balances</button>
-      </span>
-      <span class="wb-toolbar">
-        <button class="btn btn-sm" onclick="runTraeCheckin()" title="Daily check-in for every enabled account that has not checked in today">Check in all</button>
-      </span>
-    </div>
     <div class="form-row">
       <div class="field" style="margin:0">
         <label>Gateway</label>
@@ -615,6 +607,14 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
     <div class="flex" style="gap:10px;margin:8px 0;align-items:center;flex-wrap:wrap">
       <label class="hint" style="margin:0">Probe model (used by the Test buttons):</label>
       <select id="traeProbeModel" style="max-width:420px"><option value="">auto</option></select>
+    </div>
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin:0 6px 8px">
+      <span class="wb-toolbar">
+        <button class="btn btn-sm" onclick="refreshTraeCredits()" title="Refresh every enabled account's credit snapshot (feeds the Credits column and credit-priority selection)">Refresh balances</button>
+      </span>
+      <span class="wb-toolbar">
+        <button class="btn btn-sm" onclick="runTraeCheckin()" title="Daily check-in for every enabled account that has not checked in today">Check in all</button>
+      </span>
     </div>
     <div class="table-wrap" style="margin-bottom:10px">
       <table>
@@ -968,7 +968,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
         <select id="comboPlatform" onchange="fillComboModels()"><option value="cline">Cline</option><option value="trae">TraeWork</option><option value="workbuddy">WorkBuddy</option><option value="zen">OpenCode</option><option value="amd">AMDCloud</option><option value="openrouter">OpenRouter</option><option value="tokenharbor">TokenHarbor</option></select>
       </div>
       <div class="field" style="flex:2"><label>Target model</label><select id="comboTarget"></select></div>
-      <div class="field" style="flex:0 0 auto;display:flex;align-items:flex-end"><label style="display:flex;gap:6px;align-items:center;white-space:nowrap;padding-bottom:8px"><input type="checkbox" id="comboUseProxies"> Use proxy pool</label></div>
+      <div class="field" style="flex:0 0 auto;display:flex;align-items:flex-end"><label style="display:flex;gap:6px;align-items:center;white-space:nowrap;margin:0;padding-bottom: 8px;"><input type="checkbox" id="comboUseProxies"> Use proxy pool</label></div>
     </div>
     <button class="btn btn-primary" onclick="createCombo()">Create custom alias</button>
   </div>
@@ -1128,13 +1128,13 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
     <div style="display:flex;align-items:center;gap:8px;margin:10px 6px 4px">
       <div style="flex:1;display:flex;gap:8px;justify-content:flex-start">
         <button class="btn btn-primary btn-sm" onclick="openWorkbuddyAdd()">Add account</button>
-        <button class="btn btn-sm" id="wbTestAllBtn" onclick="batchTestWorkbuddyAccounts()" title="Run the Test probe on every row.">Test all</button>
       </div>
       <div style="flex:1;display:flex;gap:8px;justify-content:center">
         <button class="btn btn-sm" onclick="stageAllWbPool(true)">Enable all</button>
         <button class="btn btn-sm" onclick="stageAllWbPool(false)">Disable all</button>
         <button class="btn btn-sm" onclick="stageProxiesByOrder('wb')" title="Bind main proxy by row order: 1st credential to Direct, then the proxy pool in order (staged - click Save to apply; enable/disable and backup untouched)">Bind proxies in order</button>
         <button class="btn btn-sm" onclick="stageClearWorkbuddyProxyBindings()" title="Stage only — click Save to apply. Clears bindings and disables every row.">Clear bindings</button>
+        <button class="btn btn-sm" id="wbTestAllBtn" onclick="batchTestWorkbuddyAccounts()" title="Run the Test probe on every row.">Test all</button>
       </div>
       <div style="flex:1;display:flex;gap:8px;justify-content:flex-end">
         <button class="btn btn-sm btn-warn" id="wbResetBtn" onclick="resetWorkbuddyEdits()" title="Discard staged changes and reload the last saved state">Discard</button>
