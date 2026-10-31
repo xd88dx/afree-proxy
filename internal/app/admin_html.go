@@ -675,7 +675,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
 <div class="section">
   <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 5-6"/></svg></span> Model catalog</div>
   <div class="section-body">
-    <div class="flex" style="margin-bottom:10px;gap:10px;align-items:center;flex-wrap:wrap">
+    <div class="flex" style="margin-bottom:10px;gap:10px">
       <button class="btn btn-sm btn-primary" onclick="refreshTraeModels()">Refresh models</button>
           <span class="hint" style="margin:0;flex:1;min-width:200px">Automatically synced from the official model source upstream (every 5 minutes)</span>
       <label class="hint" style="margin:0;white-space:nowrap" for="traeEndpoint">Endpoint</label>
@@ -736,7 +736,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
           </div>
           <div id="ppBulkMenu" class="pb-menu" style="display:none"></div>
         </div>
-        <div style="display:flex;gap:8px;margin-top:4px">
+        <div style="display:flex;gap:8px;margin-top:8px">
           <button class="btn btn-sm btn-warn btn-static" id="ppBulkResetBtn" style="white-space:nowrap" onclick="ppBulkReset()" title="Discard staged exclusions and reload the last saved state">Discard</button>
           <button class="btn btn-sm btn-primary" style="white-space:nowrap" onclick="ppBulkApply()">Append</button>
         </div>
@@ -876,7 +876,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
         </div>
         <div id="platformBanMenu" class="pb-menu" style="display:none"></div>
       </div>
-      <div style="display:flex;gap:8px;margin-top:4px">
+      <div style="display:flex;gap:8px;margin-top:8px">
         <button class="btn btn-sm btn-warn btn-static" id="platformBanResetBtn" style="white-space:nowrap" onclick="resetPlatformBans()" title="Discard staged selections and reload the saved ban state">Discard</button>
         <button class="btn btn-sm btn-primary btn-static" id="platformBanApplyBtn" style="white-space:nowrap" onclick="applyPlatformBans()">Save</button>
       </div>
@@ -2638,6 +2638,7 @@ const I18N_ZH = {
   'Select platform': '选择平台',
   'Select platform first': '请先选择平台',
   'Ban matched': '批量封禁',
+  'Quota parked': '额度停放',
   'Unblock selected': '批量解禁',
   'Nothing selected': '未勾选任何模型',
   'Unblock the selected models? They are re-banned automatically on the same upstream error.': '解禁勾选中的模型？同样的上游错误会再次自动封禁。',
@@ -5836,7 +5837,12 @@ function renderOcKeyStates(ks) {
         // 铸造时刻进 title）> 会话已失效（下次请求自动重铸）> 无会话（待启用，
         // 路由启用后自动铸造）。
         let stCell;
-        if (k.cooling) {
+        if (k.parked) {
+          // 日额度耗尽停放（上游 a41f1756）：区别于冷却——当天不会再好，
+          // 停放期内零上游请求，到期只放一个探针（probes 次数进小字）。
+          stCell = '<span class="status cooldown"><span class="status-dot cooldown"></span>' + T('Quota parked') + '</span>' +
+            '<div style="font-size:10px;color:var(--danger);margin-top:2px;white-space:nowrap" title="' + esc(k.parkReason || '') + '">' + esc(fmtShort(k.parkedUntil)) + (k.parkProbes ? ' · ' + k.parkProbes + ' probe(s)' : '') + '</div>';
+        } else if (k.cooling) {
           stCell = '<span class="status cooldown"><span class="status-dot cooldown"></span>' + T('Cooldown') + '</span>' +
             (k.cooldownUntil ? '<div style="font-size:10px;color:var(--text3);margin-top:2px;white-space:nowrap" title="' + esc(fmtWhen(k.cooldownUntil)) + '">' + T('Recovers ') + esc(fmtShort(k.cooldownUntil)) + '</div>' : '');
         } else if (k.session && k.sessionLive) {

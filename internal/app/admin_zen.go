@@ -529,6 +529,15 @@ func testZenKey(key string, index int, modelID string) (map[string]any, string) 
 		if he.RateLimited {
 			result["httpStatus"] = he.Status
 			result["reason"] = fmt.Sprintf("rate limited (HTTP %d): %s", he.Status, kit.Truncate(he.Body, 300))
+			// 日额度耗尽走的是停放（parked）而不是冷却：面板必须能区分
+			// "等 20 分钟"和"等下一批探针"，否则用户会盯着 20 分钟白等。
+			if ps, ok := zenKeyParkSnapshot(key); ok {
+				result["parked"] = true
+				result["parkedUntil"] = ps.Until.UTC().Format(time.RFC3339)
+				result["parkProbes"] = ps.Probes
+				result["remaining"] = formatDuration(time.Until(ps.Until))
+				return result, "parked"
+			}
 			if until, ok := zenKeyCooldownUntil(key); ok {
 				result["cooldownUntil"] = until.UTC().Format(time.RFC3339)
 				result["remaining"] = formatDuration(time.Until(until))
@@ -572,6 +581,7 @@ func testZenKey(key string, index int, modelID string) (map[string]any, string) 
 	// 调用路径各一处）已在上游 200 路径里做过，这里只复位冷却
 	// （与 cline 的 Test 按钮同语义）。
 	uncoolZenKey(key)
+	unparkZenKey(key)
 	result["reason"] = "ok"
 	return result, "active"
 }
