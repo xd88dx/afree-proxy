@@ -106,12 +106,27 @@ git -c 'http.https://github.com.proxy=socks5h://127.0.0.1:10086' \
 
 git 推送（`origin` 是 SSH）走另一条路——上面三个代理键对 push 无效：
 
+**首选：`ssh.github.com:443` + PySocks 隧道**（2026-10-31 实测）。`/mingw64/bin/connect`
+已随 Git 更新消失，`ProxyCommand connect` 会报 `Connection closed by UNKNOWN port
+65535`（易误判为密钥/网络问题）；直连 22 端口也会被重置。系统 python 无 PySocks，
+用 `C:/AppSelf/Python/python.exe`：
+
 ```bash
-ssh -o ProxyCommand='connect -S 127.0.0.1:10086 %h %p' -T git@github.com   # 应回 Hi <user>! You've successfully authenticated
-git -c core.sshCommand='ssh -o ProxyCommand="connect -S 127.0.0.1:10086 %h %p"' push origin main
+# ① 隧道脚本放纯 ASCII 路径（%TEMP% 即可；仓库中文路径会让 ProxyCommand 无输出）。
+#    脚本用 socks.socksocket 连 127.0.0.1:10086 双向泵 stdin/stdout↔socket，
+#    **stdin 侧必须 read1()/os.read()**——read(n) 会阻塞凑满字节数，SSH banner 死锁。
+# ② 认证测试（实测 2026-10-31）：
+ssh -o IdentitiesOnly=yes -o IdentityFile="C:/Users/dxing/.ssh/id_ed25519_xd88dx" \
+  -o ProxyCommand="C:/AppSelf/Python/python.exe C:/Users/<user>/AppData/Local/Temp/socks_tunnel.py %h %p" \
+  -p 443 -T git@ssh.github.com   # 应回 Hi <user>! You've successfully authenticated
+# ③ 推送：
+git -c core.sshCommand='ssh -o IdentitiesOnly=yes -o IdentityFile="C:/Users/dxing/.ssh/id_ed25519_xd88dx" -o ProxyCommand="C:/AppSelf/Python/python.exe C:/Users/<user>/AppData/Local/Temp/socks_tunnel.py %h %p" -p 443' push origin main
 ```
 
-`connect` 位于 `/mingw64/bin/connect`。直推报 `Connection closed by <ip> port 443` 是没走代理，不是密钥或权限问题。
+密钥→账号实测映射（443 隧道，2026-10-31）：`id_ed25519_xd88dx`→xd88dx（本仓库）、
+`id_ed25519_xdserv`→xdserv、`id_ed25519_xdserva`→xdserva、`id_ed25519_xxx`→cuegita；
+`id_ed25519_vps`、`id_ed25519_nat` 无 GitHub 权限。早前"xd88dx 未注册成功"是 22
+端口被重置造成的误判。隧道脚本用完即删。
 
 ## 11. iStore 生产环境只读（2026-10-29 用户定）
 
