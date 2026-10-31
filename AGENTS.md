@@ -112,9 +112,14 @@ git 推送（`origin` 是 SSH）走另一条路——上面三个代理键对 pu
 用 `C:/AppSelf/Python/python.exe`：
 
 ```bash
-# ① 隧道脚本放纯 ASCII 路径（%TEMP% 即可；仓库中文路径会让 ProxyCommand 无输出）。
+# ① 隧道脚本放纯 ASCII 路径。**Git Bash 的 $TEMP 是 /tmp（MSYS），不是 Windows
+#    %TEMP%**——`cat > "$TEMP/..."` 会把脚本写到 MSYS tmp，而 ProxyCommand 引用
+#    C:/Users/<user>/AppData/Local/Temp/ 找不到文件、python 秒退（2026-11-01 实测）。
+#    必须写显式 Windows 路径。
 #    脚本用 socks.socksocket 连 127.0.0.1:10086 双向泵 stdin/stdout↔socket，
-#    **stdin 侧必须 read1()/os.read()**——read(n) 会阻塞凑满字节数，SSH banner 死锁。
+#    **stdin 侧必须 read1()/os.read()**——read(n) 会阻塞凑满字节数，SSH banner 死锁；
+#    **socket 侧必须 recv()/sendall()**——Windows 上 os.read(s.fileno()) 对 socket
+#    handle 无效，立即 OSError 静默退出（同报错，2026-11-01 实测第二坑）。
 # ② 认证测试（实测 2026-10-31）：
 ssh -o IdentitiesOnly=yes -o IdentityFile="C:/Users/dxing/.ssh/id_ed25519_xd88dx" \
   -o ProxyCommand="C:/AppSelf/Python/python.exe C:/Users/<user>/AppData/Local/Temp/socks_tunnel.py %h %p" \
