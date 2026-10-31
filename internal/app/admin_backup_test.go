@@ -1,6 +1,7 @@
 package app
 
 import (
+	"bytes"
 	"encoding/json"
 	"net/http/httptest"
 	"os"
@@ -448,5 +449,125 @@ func TestConfigBackupWorkbuddyOrder(t *testing.T) {
 	}
 	if got := strings.Join(uids, ","); got != "a,b,c" {
 		t.Fatalf("local order must stay untouched when backup has no order, got %q", got)
+	}
+}
+
+// TestConfigBackupStateRoundTrip 统计快照（2026-11-01）：导出携带 state 段
+// （八域痕迹，与 *-state.json 同形态）；导入按 importState 开关还原（默认）
+// 或保留现值（取消勾选）。覆盖两种快照形态：app 层 struct（cline）与平台包
+// JSON 往返（openrouter，StateSnapshotJSON/ImportStateJSON）。
+func TestConfigBackupStateRoundTrip(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("DATA_DIR", tmp)
+	savedPath, savedPool, savedUsagePath := poolPath, pool, poolUsagePath
+	poolPath = filepath.Join(tmp, "cline-config.json")
+	poolUsagePath = filepath.Join(tmp, "cline-state.json")
+	pool = nil
+	t.Cleanup(func() { poolPath, poolUsagePath = savedPath, savedUsagePath; pool = savedPool })
+
+	// openrouter：配置与痕迹路径都指向临时目录
+	openrouter.UsagePath = filepath.Join(tmp, "or-state.json")
+	t.Cleanup(func() { openrouter.UsagePath = "" })
+	openrouter.Load(filepath.Join(tmp, "or-config.json"))
+
+	// 造运行态：cline 账号 + 痕迹（3 次调用/300 tokens）、or key 记账（100）
+	loadPool()
+	poolMu.Lock()
+	pool = &AccountPool{Accounts: []*Account{{AccountID: "acc_s1", Email: "s@x"}}}
+	poolUsage = &poolUsageData{Accounts: map[string]*accountUsage{
+		"acc_s1": {Status: "active", UsageCount: 3, TokensTotal: 300},
+	}}
+	poolMu.Unlock()
+	openrouter.RecordKeyTokens("ork_s1", 100)
+
+	// ---- 导出：state 段必须携带两域快照 ----
+	expReq := httptest.NewRequest("GET", "/admin/api/config/export", nil)
+	expRR := httptest.NewRecorder()
+	handleAdminConfigExport(expRR, expReq)
+	if expRR.Code != 200 {
+		t.Fatalf("export status = %d", expRR.Code)
+	}
+	var backup struct {
+		State struct {
+			Cline struct {
+				Accounts map[string]struct {
+					UsageCount  int64 `json:"usageCount"`
+					TokensTotal int64 `json:"tokensTotal"`
+				} `json:"accounts"`
+			} `json:"cline"`
+			OpenRouter json.RawMessage `json:"openrouter"`
+		} `json:"state"`
+	}
+	if err := json.Unmarshal(expRR.Body.Bytes(), &backup); err != nil {
+		t.Fatalf("parse export: %v", err)
+	}
+	if got := backup.State.Cline.Accounts["acc_s1"]; got.UsageCount != 3 || got.TokensTotal != 300 {
+		t.Fatalf("cline state missing in export: %+v", backup.State.Cline)
+	}
+	var orSnap struct {
+		KeyTokens map[string]struct {
+			Today int64 `json:"Today"`
+		} `json:"keyTokens"`
+	}
+	if len(backup.State.OpenRouter) == 0 || json.Unmarshal(backup.State.OpenRouter, &orSnap) != nil || orSnap.KeyTokens["ork_s1"].Today != 100 {
+		t.Fatalf("openrouter state missing in export: %s", backup.State.OpenRouter)
+	}
+
+	// ---- 导入（importState 缺省 = 还原）：先清零现值再验证回填 ----
+	poolMu.Lock()
+	poolUsage = &poolUsageData{}
+	poolMu.Unlock()
+	openrouter.ClearUsage()
+	importBody := expRR.Body.String()
+	importReq := httptest.NewRequest("POST", "/admin/api/config/import", strings.NewReader(importBody))
+	importRR := httptest.NewRecorder()
+	handleAdminConfigImport(importRR, importReq)
+	if importRR.Code != 200 {
+		t.Fatalf("import status = %d: %s", importRR.Code, importRR.Body.String())
+	}
+	poolMu.Lock()
+	got := usagePeekLocked(&Account{AccountID: "acc_s1"})
+	poolMu.Unlock()
+	if got == nil || got.UsageCount != 3 || got.TokensTotal != 300 {
+		t.Fatalf("cline state not restored on import: %+v", got)
+	}
+	var orBack struct {
+		KeyTokens map[string]struct {
+			Today int64 `json:"Today"`
+		} `json:"keyTokens"`
+	}
+	if err := json.Unmarshal(openrouter.StateSnapshotJSON(), &orBack); err != nil {
+		t.Fatal(err)
+	}
+	if orBack.KeyTokens["ork_s1"].Today != 100 {
+		t.Fatalf("openrouter state not restored on import: %+v", orBack)
+	}
+
+	// ---- 导入（importState=false）：统计保留导入时刻现值（清零后不回填） ----
+	poolMu.Lock()
+	poolUsage = &poolUsageData{}
+	poolMu.Unlock()
+	openrouter.ClearUsage()
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(importBody), &payload); err != nil {
+		t.Fatal(err)
+	}
+	payload["importState"] = false
+	patch, _ := json.Marshal(payload)
+	importReq2 := httptest.NewRequest("POST", "/admin/api/config/import", bytes.NewReader(patch))
+	importRR2 := httptest.NewRecorder()
+	handleAdminConfigImport(importRR2, importReq2)
+	if importRR2.Code != 200 {
+		t.Fatalf("import2 status = %d: %s", importRR2.Code, importRR2.Body.String())
+	}
+	// 2026-11-01 用户定：取消勾选 =「不保留统计值」——清零（不是保留现值）。
+	poolMu.Lock()
+	got2 := usagePeekLocked(&Account{AccountID: "acc_s1"})
+	poolMu.Unlock()
+	if got2 != nil && (got2.UsageCount != 0 || got2.TokensTotal != 0) {
+		t.Fatalf("unchecking import statistics must clear traces, got %+v", got2)
+	}
+	if n := len(openrouter.StateSnapshotJSON()); n > 4 {
+		t.Fatalf("unchecking import statistics must clear or ledger, got %d bytes", n)
 	}
 }

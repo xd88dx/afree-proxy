@@ -469,9 +469,8 @@ func handleAdminAccountAdd(w http.ResponseWriter, r *http.Request) {
 			AccountID: "acc_" + kit.RandHex(8),
 			Email:     email,
 			APIToken:  req.APIToken,
-			Status:    "active",
 		}
-		addAccount(acc)
+		addAccount(acc) // 痕迹表懒创建，默认 status=active
 		log.Printf("API-key account added: %s", email)
 		writeAPI(w, http.StatusOK, apiResponse{
 			Success: true,
@@ -502,13 +501,12 @@ func handleAdminAccountAdd(w http.ResponseWriter, r *http.Request) {
 		RefreshToken: req.RefreshToken,
 		AccessToken:  "workos:" + resp.Data.AccessToken,
 		ExpiresAt:    clineExpiryMs(resp.Data.ExpiresAt),
-		Status:       "active",
 	}
 	if resp.Data.RefreshToken != "" {
 		acc.RefreshToken = resp.Data.RefreshToken
 	}
 
-	addAccount(acc)
+	addAccount(acc) // 痕迹表懒创建，默认 status=active
 	log.Printf("Account added via API: %s", req.Email)
 
 	writeAPI(w, http.StatusOK, apiResponse{
@@ -517,7 +515,7 @@ func handleAdminAccountAdd(w http.ResponseWriter, r *http.Request) {
 		Data: map[string]any{
 			"accountId": acc.AccountID,
 			"email":     acc.Email,
-			"status":    acc.Status,
+			"status":    "active",
 		},
 	})
 }
@@ -616,9 +614,8 @@ func handleSSOImport(w http.ResponseWriter, r *http.Request) {
 				RefreshToken: token,
 				AccessToken:  "workos:" + resp.Data.AccessToken,
 				ExpiresAt:    clineExpiryMs(resp.Data.ExpiresAt),
-				Status:       "active",
 			}
-			addAccount(acc)
+			addAccount(acc) // 痕迹表懒创建，默认 status=active
 			imported++
 		}
 	}
@@ -648,7 +645,8 @@ func handleAdminDeleteAll(w http.ResponseWriter, r *http.Request) {
 	// 否则"删除全部账号"会顺手作废所有已分发的客户端 key
 	loadPool()
 	poolMu.Lock()
-	pool = &AccountPool{Accounts: []*Account{}, CurrentIdx: 0}
+	pool = &AccountPool{Accounts: []*Account{}}
+	clearPoolUsageLocked() // 痕迹表与游标一并清空（即时落盘痕迹文件）
 	poolMu.Unlock()
 	savePool()
 	writeAPI(w, http.StatusOK, apiResponse{Success: true, Message: "All accounts deleted"})
@@ -773,9 +771,9 @@ func testAccountProbeModel() string {
 // testAccount 执行单账号探测（Test 按钮语义）。
 func testAccount(acc *Account) (map[string]any, string) {
 	// 状态快照必须在池锁内取：探测可能持续数秒，期间刷新协程/其他请求会改写
-	// 同一结构体，锁外读是数据竞争。
+	// 同一痕迹表，锁外读是数据竞争。
 	poolMu.Lock()
-	prevStatus := acc.Status
+	prevStatus := accountStatusLocked(acc)
 	poolMu.Unlock()
 
 	// 取 token（expired/cooldown 也尝试刷新，测试按钮不因状态直接拒绝）
@@ -783,10 +781,11 @@ func testAccount(acc *Account) (map[string]any, string) {
 	if err != nil {
 		reason := "token refresh failed: " + err.Error()
 		poolMu.Lock()
-		acc.LastReason = reason
-		acc.Status = "expired"
-		acc.CooldownUntil = time.Time{}
-		savePoolLocked()
+		u := usageForLocked(acc)
+		u.LastReason = reason
+		u.Status = "expired"
+		u.CooldownUntil = time.Time{}
+		savePoolUsageLocked()
 		poolMu.Unlock()
 		return map[string]any{
 			"accountId":  acc.AccountID,
@@ -906,10 +905,11 @@ func testAccount(acc *Account) (map[string]any, string) {
 
 	if resp.StatusCode == 401 {
 		poolMu.Lock()
-		acc.Status = "expired"
-		acc.LastReason = "401 unauthorized"
-		acc.CooldownUntil = time.Time{}
-		savePoolLocked()
+		u := usageForLocked(acc)
+		u.Status = "expired"
+		u.LastReason = "401 unauthorized"
+		u.CooldownUntil = time.Time{}
+		savePoolUsageLocked()
 		poolMu.Unlock()
 		return map[string]any{
 			"accountId":  acc.AccountID,
@@ -933,9 +933,10 @@ func testAccount(acc *Account) (map[string]any, string) {
 
 	// 成功：清除所有异常状态（冷却/过期/原因），并递增使用计数
 	poolMu.Lock()
-	acc.Status = "active"
-	acc.LastReason = ""
-	acc.CooldownUntil = time.Time{}
+	u := usageForLocked(acc)
+	u.Status = "active"
+	u.LastReason = ""
+	u.CooldownUntil = time.Time{}
 	poolMu.Unlock()
 	bumpUsage(acc)
 	// Test 也是真实上游消耗：记账口径与 /v1 业务流量统一（2026-10-27 用户定）。

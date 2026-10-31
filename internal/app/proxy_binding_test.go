@@ -264,8 +264,8 @@ func TestPickAccountSkipsBoundBlockedAccounts(t *testing.T) {
 		Keys:    []string{"sk-test"},
 		Proxies: []string{"http://a:1", "http://b:2"},
 	})
-	accA := &Account{AccountID: "a", Email: "a@x", Status: "active", APIToken: "sk_test", ProxyMain: "http://a:1", ProxyBackup: "http://b:2"}
-	accB := &Account{AccountID: "b", Email: "b@x", Status: "active"}
+	accA := &Account{AccountID: "a", Email: "a@x", APIToken: "sk_test", ProxyMain: "http://a:1", ProxyBackup: "http://b:2"}
+	accB := &Account{AccountID: "b", Email: "b@x"}
 	swapTestPool(t, []*Account{accA, accB})
 
 	// 双出口都冷却：绑定账号被跳过，未绑定账号仍可选
@@ -276,10 +276,11 @@ func TestPickAccountSkipsBoundBlockedAccounts(t *testing.T) {
 		t.Fatalf("expected unbound account b, got %+v", acc)
 	}
 
-	// B 也进入冷却、绑定账号仍被隔离挡住 → 无号可选
+	// B 也进入冷却、绑定账号仍被隔离挡住 → 无号可选（冷却住痕迹表）
 	poolMu.Lock()
-	accB.Status = "cooldown"
-	accB.CooldownUntil = time.Now().Add(time.Hour)
+	u := usageForLocked(accB)
+	u.Status = "cooldown"
+	u.CooldownUntil = time.Now().Add(time.Hour)
 	poolMu.Unlock()
 	if acc := pickAccount(); acc != nil {
 		t.Fatalf("expected nil when every account is blocked/cooling, got %+v", acc)
@@ -452,7 +453,7 @@ func TestSetAccountProxyBinding(t *testing.T) {
 		Keys:    []string{"sk-test"},
 		Proxies: []string{"http://a:1", "http://b:2"},
 	})
-	swapTestPool(t, []*Account{{AccountID: "a", Email: "a@x", Status: "active"}})
+	swapTestPool(t, []*Account{{AccountID: "a", Email: "a@x"}})
 
 	if err := setAccountProxyBinding("a", "http://a:1", "http://b:2"); err != nil {
 		t.Fatalf("set: %v", err)
@@ -833,7 +834,7 @@ func TestBoundProxyNetworkErrorDoesNotPoisonAccount(t *testing.T) {
 		ProxyIsolation: boolPtr(true),
 	})
 	swapTestPool(t, []*Account{{
-		AccountID: "a", Email: "a@x", Status: "active", APIToken: "sk_test",
+		AccountID: "a", Email: "a@x", APIToken: "sk_test",
 		ProxyMain: "http://127.0.0.1:1",
 	}})
 	// 假上游：网络错误发生在代理拨号层，上游不该被碰到
@@ -849,8 +850,12 @@ func TestBoundProxyNetworkErrorDoesNotPoisonAccount(t *testing.T) {
 		t.Fatal("expected error from unreachable bound proxy")
 	}
 	poolMu.Lock()
-	st := pool.Accounts[0].Status
-	until := pool.Accounts[0].CooldownUntil
+	st := "active" // 无痕迹记录 = 默认 active（拆分后新账号不落痕迹行）
+	var until time.Time
+	if u := usagePeekLocked(pool.Accounts[0]); u != nil {
+		st = u.Status
+		until = u.CooldownUntil
+	}
 	poolMu.Unlock()
 	if st != "active" || !until.IsZero() {
 		t.Fatalf("bound proxy network error must not cool the account, got status=%s until=%v", st, until)

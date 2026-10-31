@@ -8,8 +8,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	"afree-proxy/internal/kit"
 )
 
 // ============ 配置与数据模型 ============
@@ -36,13 +34,10 @@ type Config struct {
 	MaxConcurrency int `json:"maxConcurrency"`
 	// Retries 限流/网络错误重试次数，默认 3。
 	Retries int `json:"retries"`
-	// Token 记账（内存态 + 落盘，面板"今日/累计 token"与"最近使用"列）：
-	// key 明文 -> 今日/累计 prompt+completion 消耗与最近成功时间。
-	KeyTokens map[string]KeyTokenStats `json:"keyTokens,omitempty"`
-	// Cooldown 冷却表：key 明文 -> 冷却截止时刻。落盘持久化（2026-10-28
-	// 用户定）：重启后冷却保留，避免上游刚限流过的凭据立即回池被重试；
-	// 选号时惰性清理过期项。
-	Cool map[string]time.Time `json:"cool,omitempty"`
+	// KeyTokens（token 记账）与 Cool（冷却表）已拆出到独立 amd-state.json
+	// （usage.go，2026-10-31）：它们是随请求/429 变化的使用痕迹，留在配置
+	// 文件里会干扰外部对配置变更的监测。数据真身在包级 usage（mu 保护），
+	// 冷却落盘持久化语义不变。
 }
 
 // Binding 一个 key 的出口绑定：主代理优先、备用代理兜底；双不可用 = 该 key
@@ -128,9 +123,6 @@ func (c *Config) normalize() {
 	if c.Retries < 0 {
 		c.Retries = 0
 	}
-	if c.Cool == nil {
-		c.Cool = map[string]time.Time{}
-	}
 }
 
 // ReconcileRouting 整体替换 key 池后对齐路由参与表（保存 key 列表时调用）：
@@ -203,13 +195,14 @@ var ConfigPath string
 func Load(path string) {
 	ConfigPath = path
 	mu.Lock()
-	defer mu.Unlock()
 	if loaded {
+		mu.Unlock()
 		return
 	}
 	loaded = true
 	data, err := os.ReadFile(path)
 	if err != nil {
+		mu.Unlock()
 		return
 	}
 	if err := json.Unmarshal(data, cfg); err != nil {
@@ -217,9 +210,14 @@ func Load(path string) {
 		if renErr := os.Rename(path, path+".corrupt-"+stamp); renErr == nil {
 			fmt.Printf("  amd config corrupt JSON; moved to %s.corrupt-%s\n", path, stamp)
 		}
+		mu.Unlock()
 		return
 	}
 	cfg.normalize()
+	mu.Unlock()
+	// 痕迹加载/迁移在配置写锁外执行：迁移内部的 saveUsage 要拿 mu.RLock，
+	// 写锁内调用会自死锁（2026-10-31 端到端实测发现并修复）。
+	loadUsage()
 }
 
 // ============ 并发信号量 ============
@@ -285,18 +283,11 @@ func Set(next *Config) {
 	pruneRemovedKeys(next)
 }
 
-// save 原子落盘（临时文件 + rename）。Cool（冷却表）随配置一并持久化。
-// marshal 全程持 mu.RLock：Cool/KeyTokens/KeyBindings 都是就地上写的活 map，
-// 无锁 marshal 会与 Cooldown/RecordKeyTokens 的写入构成
-// "concurrent map iteration and map write" 进程级崩溃（2026-10-29 审计修复）。
-// token 记账的合批落盘器（2026-10-30）：记账表已随配置落盘，但写盘只发生在
-// 冷却/面板保存等"顺带"路径上——没有这些事件时，重启会丢掉最近消耗的记账
-// （实测 amd 配置文件的记账日期停在 10-28）。记账后只打脏标记，由后台
-// goroutine 周期写盘；save 自带串行保护，调用方持锁期间不要 Mark。
-var tokensFlush = kit.NewDirtyFlusher(10*time.Second, save)
-
-func markTokensDirty() { tokensFlush.Mark() }
-
+// save 原子落盘（临时文件 + rename）。拆分后只写配置字段——KeyTokens/Cool
+// 等使用痕迹走 usage.go 的 saveUsage 独立落盘。
+// marshal 全程持 mu.RLock：KeyBindings/KeyRoutingEnabled 都是就地上写的活
+// map，无锁 marshal 会与写路径构成 "concurrent map iteration and map write"
+// 进程级崩溃（2026-10-29 审计修复）。
 func save() {
 	saveMu.Lock()
 	defer saveMu.Unlock()
@@ -324,16 +315,15 @@ func save() {
 	}
 }
 
-// pruneRemovedKeys 清理不再存在于 key 池的绑定/路由/token/冷却条目。
+// pruneRemovedKeys 清理不再存在于 key 池的绑定/路由条目，以及 usage 里的
+// 痕迹条目（token 记账/冷却）。
 func pruneRemovedKeys(c *Config) {
-	if len(c.KeyBindings) == 0 && len(c.KeyRoutingEnabled) == 0 && len(c.KeyTokens) == 0 && len(c.Cool) == 0 {
-		return
-	}
+	mu.Lock()
+	defer mu.Unlock()
 	valid := map[string]bool{}
 	for _, k := range c.Keys {
 		valid[k] = true
 	}
-	mu.Lock()
 	for k := range c.KeyBindings {
 		if !valid[k] {
 			delete(c.KeyBindings, k)
@@ -344,23 +334,13 @@ func pruneRemovedKeys(c *Config) {
 			delete(c.KeyRoutingEnabled, k)
 		}
 	}
-	for k := range c.KeyTokens {
-		if !valid[k] {
-			delete(c.KeyTokens, k)
-		}
-	}
-	for k := range c.Cool {
-		if !valid[k] {
-			delete(c.Cool, k)
-		}
-	}
 	if len(c.KeyBindings) == 0 {
 		c.KeyBindings = nil
 	}
 	if len(c.KeyRoutingEnabled) == 0 {
 		c.KeyRoutingEnabled = nil
 	}
-	mu.Unlock()
+	pruneUsageLocked(valid)
 }
 
 // KeyStatus 面板展示用的每 key 运行时状态（key 值打码，明文不出口）。
@@ -376,7 +356,7 @@ func KeyStatus() []map[string]any {
 			"keyMask":        maskKey(k),
 			"routingEnabled": c.RoutingEnabled(k),
 		}
-		if ts, ok := c.KeyTokens[k]; ok {
+		if ts, ok := usage.KeyTokens[k]; ok {
 			st["tokensToday"] = ts.Today
 			st["tokensTotal"] = ts.Total
 			if !ts.LastUsedAt.IsZero() {
@@ -387,7 +367,7 @@ func KeyStatus() []map[string]any {
 			st["proxyMain"] = b.Main
 			st["proxyBackup"] = b.Backup
 		}
-		if until, ok := c.Cool[k]; ok && now.Before(until) {
+		if until, ok := usage.Cool[k]; ok && now.Before(until) {
 			st["cooling"] = true
 			st["cooldownUntil"] = until.Format(time.RFC3339)
 		} else {

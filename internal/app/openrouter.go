@@ -27,6 +27,7 @@ func orConfigPath() string { return kit.ResolveDataPath("oprt-config.json") }
 // initOpenRouter 加载配置 + 注入出站解析/HTTP client 工厂。StartProxy 早期
 // 调用一次；失败只记日志不影响既有平台（与 WorkBuddy 子系统同口径）。
 func initOpenRouter() {
+	openrouter.UsagePath = kit.ResolveDataPath("oprt-state.json")
 	openrouter.Load(orConfigPath())
 	openrouter.SetExitResolver(func(key string) (string, bool) {
 		if key == "" {
@@ -230,20 +231,12 @@ func handleOrConfigUpdate(w http.ResponseWriter, r *http.Request) {
 		KeyBindings:       map[string]openrouter.Binding{},
 		MaxConcurrency:    cur.MaxConcurrency,
 		Retries:           cur.Retries,
-		KeyTokens:         map[string]openrouter.KeyTokenStats{},
-		Cool:              map[string]time.Time{},
 	}
 	for k, v := range cur.KeyRoutingEnabled {
 		next.KeyRoutingEnabled[k] = v
 	}
 	for k, v := range cur.KeyBindings {
 		next.KeyBindings[k] = v
-	}
-	for k, v := range cur.KeyTokens {
-		next.KeyTokens[k] = v
-	}
-	for k, v := range cur.Cool {
-		next.Cool[k] = v
 	}
 	// 走池开关存在 proxy-config.json 的代理池段，不写进平台文件。
 	if patch.UseProxies != nil {
@@ -439,20 +432,12 @@ func orCloneConfig() (*openrouter.Config, *openrouter.Config) {
 		KeyBindings:       map[string]openrouter.Binding{},
 		MaxConcurrency:    cur.MaxConcurrency,
 		Retries:           cur.Retries,
-		KeyTokens:         map[string]openrouter.KeyTokenStats{},
-		Cool:              map[string]time.Time{},
 	}
 	for k, v := range cur.KeyRoutingEnabled {
 		next.KeyRoutingEnabled[k] = v
 	}
 	for k, v := range cur.KeyBindings {
 		next.KeyBindings[k] = v
-	}
-	for k, v := range cur.KeyTokens {
-		next.KeyTokens[k] = v
-	}
-	for k, v := range cur.Cool {
-		next.Cool[k] = v
 	}
 	return cur, next
 }
@@ -625,14 +610,15 @@ func orTestKey(index int, modelID string) (map[string]any, string) {
 }
 
 // clearOpenrouterKeysForDataDelete 清空 OpenRouter key 池与绑定/路由表
-// （保留 baseURL 与平台设置）。
+// （保留 baseURL 与平台设置）；token 记账与冷却表一并清空（ClearUsage 即时
+// 落盘痕迹文件）。
 func clearOpenrouterKeysForDataDelete() int {
 	cur, next := orCloneConfig()
 	n := len(cur.Keys)
 	next.Keys = nil
 	next.KeyBindings = map[string]openrouter.Binding{}
 	next.KeyRoutingEnabled = map[string]bool{}
-	next.Cool = map[string]time.Time{}
 	openrouter.Set(next)
+	openrouter.ClearUsage()
 	return n
 }

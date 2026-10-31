@@ -37,7 +37,7 @@ func platformHasRoutableCredential(platform string) bool {
 		poolMu.Lock()
 		defer poolMu.Unlock()
 		for _, a := range p.Accounts {
-			if a != nil && a.Status == "active" && accountPoolEnabled(a) {
+			if a != nil && accountStatusLocked(a) == "active" && accountPoolEnabled(a) {
 				return true
 			}
 		}

@@ -8,8 +8,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	"afree-proxy/internal/kit"
 )
 
 // ============ 配置与数据模型 ============
@@ -53,15 +51,10 @@ type Platform struct {
 	Retries int `json:"retries"`
 	// Models 模型目录状态（拉取/手动/勾选/探测模型）。
 	Models ModelState `json:"models"`
-	// KeyTokens token 记账（落盘持久化，2026-10-30）：key 明文 -> 今日/累计
-	// 消耗与最近使用。原先标了 json:"-" 只活在内存里，重启后子平台（ddx /
-	// agnes 等）面板上的今日/累计 token 全被清零——与 amd/or/th 的落盘口径
-	// 不一致。记账变更不实时写盘：由 markTokensDirty + 后台 flusher 合批落盘
-	// （见 flushTokens），避免每个请求重写整个配置文件。
-	KeyTokens map[string]KeyTokenStats `json:"keyTokens,omitempty"`
-	// Cool 冷却表：key 明文 -> 冷却截止时刻。落盘持久化（2026-10-28 用户定）：
-	// 重启后冷却保留，避免上游刚限流过的 key 立即回池被重试；选号时惰性清理过期项。
-	Cool map[string]time.Time `json:"cool,omitempty"`
+	// KeyTokens（token 记账）与 Cool（冷却表）已拆出到独立 other-state.json
+	// （usage.go，2026-10-31）：它们是随请求/429 变化的使用痕迹，留在配置
+	// 文件里会干扰外部对配置变更的监测。数据真身在包级 usage（按 slug 分键，
+	// keyMu 保护），冷却落盘持久化语义不变。
 }
 
 // Binding 一个 key 的出口绑定：主代理优先、备用代理兜底；双不可用 = 该 key
@@ -160,7 +153,7 @@ func (c *Config) PrefixConflict(p, skipSlug string) (string, bool) {
 }
 
 // normalize 常规化：每平台 key 去重、baseURL 去尾斜杠、并发/重试下限修正、
-// 冷却表初始化、前缀规范化、勾选表补齐。
+// 前缀规范化、勾选表补齐。
 func (c *Config) normalize() {
 	for i := range c.Platforms {
 		p := &c.Platforms[i]
@@ -172,9 +165,6 @@ func (c *Config) normalize() {
 		}
 		if p.Retries < 0 {
 			p.Retries = 0
-		}
-		if p.Cool == nil {
-			p.Cool = map[string]time.Time{}
 		}
 		if p.Models.Selected == nil {
 			p.Models.Selected = map[string]bool{}
@@ -195,32 +185,7 @@ func normalizeKeys(p *Platform) {
 		cleaned = append(cleaned, k)
 	}
 	p.Keys = cleaned
-	// 记账表随 key 池收敛：已移除的 key 不该在文件里留下永不命中的累计值
-	// （与 amd/or/th 的 normalize 同口径）。
-	if len(p.KeyTokens) > 0 {
-		valid := map[string]bool{}
-		for _, k := range cleaned {
-			valid[k] = true
-		}
-		for k := range p.KeyTokens {
-			if !valid[k] {
-				delete(p.KeyTokens, k)
-			}
-		}
-		if len(p.KeyTokens) == 0 {
-			p.KeyTokens = nil
-		}
-	}
 }
-
-// token 记账落盘：记账发生在每个请求的热路径上，逐请求重写整个配置文件太重，
-// 故只打脏标记，由后台 flusher 合批写盘（kit.DirtyFlusher，与 app 层 cline
-// 账号池的 markPoolDirtyLocked + flusher 同思路）。
-// save 自带 saveMu 串行且与 keyMu/mu 的锁序一致，故 Mark 可在 keyMu 外调用。
-var tokensFlush = kit.NewDirtyFlusher(10*time.Second, save)
-
-// markTokensDirty 标记 token 记账有未落盘变更。
-func markTokensDirty() { tokensFlush.Mark() }
 
 // ReconcileRouting 整体替换 key 池后对齐路由参与表：新引入的 key 默认不
 // 参与路由（面板勾选"Pool"后才生效），已有 key 保持原状态，被移除的 key
@@ -294,13 +259,14 @@ var ConfigPath string
 func Load(path string) {
 	ConfigPath = path
 	mu.Lock()
-	defer mu.Unlock()
 	if loaded {
+		mu.Unlock()
 		return
 	}
 	loaded = true
 	data, err := os.ReadFile(path)
 	if err != nil {
+		mu.Unlock()
 		return
 	}
 	if err := json.Unmarshal(data, cfg); err != nil {
@@ -308,11 +274,17 @@ func Load(path string) {
 		if renErr := os.Rename(path, path+".corrupt-"+stamp); renErr == nil {
 			fmt.Printf("  other config corrupt JSON; moved to %s.corrupt-%s\n", path, stamp)
 		}
+		mu.Unlock()
 		return
 	}
 	cfg.normalize()
 	// 已持 mu 写锁：必须走不重入的 rebuildAllSemLocked（见其注释）。
 	rebuildAllSemLocked()
+	mu.Unlock()
+	// 痕迹加载/迁移在配置写锁外执行：迁移内部的 saveUsage 要拿 keyMu，
+	// 而 save（迁移里的"顺手重写配置"）锁序 saveMu → keyMu → mu.RLock，
+	// 写锁内调用会自死锁（2026-10-31 端到端实测发现并修复）。
+	loadUsage()
 }
 
 // Get 返回活配置指针（调用方遵循写时复制：先拷贝平台再改再 Set）。
@@ -345,11 +317,10 @@ func PlatformByPrefix(prefix string) *Platform {
 	return nil
 }
 
-// ClonePlatform 深拷贝一个子平台（写时复制用，运行时字段一并拷贝）。
-// 拷贝 Cool 持 keyMu：源平台的 Cool 会被 Cooldown/Uncool 并发就地写。
+// ClonePlatform 深拷贝一个子平台（写时复制用）。KeyRoutingEnabled/KeyBindings
+// 走写时复制、无并发就地写，无锁拷贝安全；token 记账/冷却在痕迹文件侧
+// （usage.go，按 slug 键），不随 Platform 对象拷贝。
 func ClonePlatform(p *Platform) *Platform {
-	keyMu.Lock()
-	defer keyMu.Unlock()
 	cp := *p
 	cp.Keys = append([]string(nil), p.Keys...)
 	cp.KeyRoutingEnabled = map[string]bool{}
@@ -366,28 +337,28 @@ func ClonePlatform(p *Platform) *Platform {
 	for k, v := range p.Models.Selected {
 		cp.Models.Selected[k] = v
 	}
-	cp.Cool = map[string]time.Time{}
-	for k, v := range p.Cool {
-		cp.Cool[k] = v
-	}
 	return &cp
 }
 
-// Set 替换配置：normalize → 落盘 → 重建并发信号量。
+// Set 替换配置：normalize → 落盘 → 重建并发信号量。痕迹收敛（key 池缩小时
+// 清理已移除 key 的记账/冷却，原 normalizeKeys 口径）在 save 之后做——
+// PrunePlatformUsage 自拿 keyMu，不能在 mu 内调（锁序约定：无 mu → keyMu）。
 func Set(next *Config) {
 	next.normalize()
 	mu.Lock()
 	cfg = next
 	mu.Unlock()
 	save()
+	for i := range next.Platforms {
+		PrunePlatformUsage(next.Platforms[i].Slug, next.Platforms[i].Keys)
+	}
 	// rebuildAllSemLocked 只读包级 cfg 与 semMu，不再取 mu，故无需持 mu。
 	rebuildAllSemLocked()
 }
 
-// save 原子落盘（临时文件 + rename）。Cool（冷却表）随配置一并持久化。
-// marshal 全程持 keyMu：Cool 在 Cooldown/Uncool/PickKey 下就地上写（keyMu 域），
-// 无锁 marshal 会构成 "concurrent map iteration and map write" 进程级崩溃
-// （2026-10-29 审计修复）； Platforms 切片本体另持 mu.RLock 防 Set 换指针。
+// save 原子落盘（临时文件 + rename）。拆分后只写配置字段——KeyTokens/Cool
+// 等使用痕迹走 usage.go 的 saveUsage 独立落盘。
+// marshal 全程持 keyMu → mu.RLock：Platforms 切片本体防 Set 换指针；
 // 锁序固定 keyMu → mu，与 KeyStatus 一致；无任何 mu → keyMu 反向路径。
 func save() {
 	saveMu.Lock()
@@ -455,12 +426,13 @@ func ProxiesEnabled() bool {
 }
 
 // KeyStatus 面板展示用的单平台每 key 运行时状态（key 值打码，明文不出口）。
-// KeyTokens/Cool 是 keyMu 域的就地写运行时表，读它们必须持 keyMu
+// token 记账/冷却在痕迹表（keyMu 域的就地写活 map），读它们必须持 keyMu
 // （Keys/KeyBindings 走写时复制，无锁读安全）。
 func KeyStatus(p *Platform) []map[string]any {
 	keyMu.Lock()
 	defer keyMu.Unlock()
 	now := time.Now()
+	u := usageBySlugLocked(p.Slug)
 	out := make([]map[string]any, 0, len(p.Keys))
 	for i, k := range p.Keys {
 		st := map[string]any{
@@ -468,20 +440,26 @@ func KeyStatus(p *Platform) []map[string]any {
 			"keyMask":        maskKey(k),
 			"routingEnabled": p.RoutingEnabled(k),
 		}
-		if ts, ok := p.KeyTokens[k]; ok {
-			st["tokensToday"] = ts.Today
-			st["tokensTotal"] = ts.Total
-			if !ts.LastUsedAt.IsZero() {
-				st["lastUsed"] = ts.LastUsedAt.Format(time.RFC3339)
+		if u != nil {
+			if ts, ok := u.KeyTokens[k]; ok {
+				st["tokensToday"] = ts.Today
+				st["tokensTotal"] = ts.Total
+				if !ts.LastUsedAt.IsZero() {
+					st["lastUsed"] = ts.LastUsedAt.Format(time.RFC3339)
+				}
 			}
 		}
 		if b, ok := p.KeyBindings[k]; ok && (b.Main != "" || b.Backup != "") {
 			st["proxyMain"] = b.Main
 			st["proxyBackup"] = b.Backup
 		}
-		if until, ok := p.Cool[k]; ok && now.Before(until) {
-			st["cooling"] = true
-			st["cooldownUntil"] = until.Format(time.RFC3339)
+		if u != nil {
+			if until, ok := u.Cool[k]; ok && now.Before(until) {
+				st["cooling"] = true
+				st["cooldownUntil"] = until.Format(time.RFC3339)
+			} else {
+				st["cooling"] = false
+			}
 		} else {
 			st["cooling"] = false
 		}

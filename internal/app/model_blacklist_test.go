@@ -242,7 +242,7 @@ func TestClineModelNotFoundAutoBan(t *testing.T) {
 	resetModelBlacklistForTest(t)
 	// 平台可路由性闸要求 cline 池有 active 账号，种一个。
 	p := loadPool()
-	p.Accounts = append(p.Accounts, &Account{AccountID: "scan-cline-t1", Status: "active"})
+	p.Accounts = append(p.Accounts, &Account{AccountID: "scan-cline-t1"})
 	t.Cleanup(func() { p.Accounts = p.Accounts[:0] })
 	// 请求路径有服务闸（目录外一律拒）：注入被测模型让请求穿过闸。
 	injectClineModels(t, "cline-free/muse-spark-1.3-contributor")
@@ -331,7 +331,7 @@ func TestServedModelGate(t *testing.T) {
 	resetModelBlacklistForTest(t)
 	// apiModelList 的展示门控要求 cline 有可路由账号，种一个。
 	p := loadPool()
-	p.Accounts = append(p.Accounts, &Account{AccountID: "gate-cline-t1", Status: "active"})
+	p.Accounts = append(p.Accounts, &Account{AccountID: "gate-cline-t1"})
 	t.Cleanup(func() { p.Accounts = p.Accounts[:0] })
 	injectClineModels(t, "z-ai/glm-5.3-flash")
 
@@ -388,7 +388,7 @@ func TestBatchBanPlatformModels(t *testing.T) {
 	t.Setenv("DATA_DIR", t.TempDir())
 	resetModelBlacklistForTest(t)
 	p := loadPool()
-	p.Accounts = append(p.Accounts, &Account{AccountID: "batch-cline-t1", Status: "active"})
+	p.Accounts = append(p.Accounts, &Account{AccountID: "batch-cline-t1"})
 	t.Cleanup(func() { p.Accounts = p.Accounts[:0] })
 	injectClineModels(t,
 		"z-ai/glm-5.3-flash", "cline-free/DOUBAO-Seed-2.1-Pro", "poolside/laguna-s-2.1:free")

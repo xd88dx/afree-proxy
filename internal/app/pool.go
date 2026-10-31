@@ -24,14 +24,15 @@ func init() {
 	poolPath = kit.ResolveDataPath("cline-config.json")
 }
 
-// markPoolDirtyLocked 标记池有待落盘变更（调用方必须持有 poolMu）。
-// 热路径（选号/计数）不再每次全量写盘 —— poolMu 是全局锁，磁盘 I/O
-// 会把所有在途请求串行化；后台 flusher 每 2s 补一次写。
+// markPoolDirtyLocked 标记使用痕迹有待落盘变更（调用方必须持有 poolMu）。
+// 热路径（选号/计数）不再每次写盘 —— poolMu 是全局锁，磁盘 I/O 会把所有
+// 在途请求串行化；后台 flusher 每 2s 补一次写。2026-10-31 拆分后 flusher
+// 只写 cline-state.json（痕迹），配置文件仅在显式保存点写。
 func markPoolDirtyLocked() {
 	poolDirty = true
 }
 
-// startPoolFlusher 启动池文件后台落盘循环；进程退出由 flushPoolNow 兜底。
+// startPoolFlusher 启动痕迹文件后台落盘循环；进程退出由 flushPoolNow 兜底。
 func startPoolFlusher() {
 	go func() {
 		ticker := time.NewTicker(2 * time.Second)
@@ -42,7 +43,7 @@ func startPoolFlusher() {
 			poolDirty = false
 			poolMu.Unlock()
 			if dirty {
-				savePool()
+				savePoolUsage()
 			}
 		}
 	}()
@@ -53,10 +54,10 @@ func flushPoolNow() {
 	poolMu.Lock()
 	dirty := poolDirty
 	poolDirty = false
-	poolMu.Unlock()
 	if dirty {
-		savePool()
+		savePoolUsageLocked()
 	}
+	poolMu.Unlock()
 }
 
 // kit.ResolveDataPath 数据文件路径解析：优先可执行文件目录，其次当前工作目录。
@@ -118,6 +119,10 @@ func loadPool() *AccountPool {
 		proxyConfig.Headers = h
 	}
 	proxyConfigMu.Unlock()
+	// 使用痕迹从独立文件加载（含旧配置文件的一次性迁移，见 pool_usage.go）。
+	// 必须在此处（任何 cline-config.json 写回之前）完成，否则迁移提取不到
+	// 旧文件里的痕迹键。
+	loadPoolUsage()
 	return pool
 }
 
@@ -131,7 +136,6 @@ func persistProxyConfig(cfg *proxyConfigData) {
 		h[k] = v
 	}
 	p.Headers = h
-	markPoolDirtyLocked()
 	poolMu.Unlock()
 	savePool()
 }
@@ -158,7 +162,7 @@ func poolStatusCounts() (total, active, cooldown, expired int) {
 	defer poolMu.Unlock()
 	for _, a := range p.Accounts {
 		total++
-		switch a.Status {
+		switch accountStatusLocked(a) {
 		case "active":
 			if accountPoolEnabled(a) {
 				active++
@@ -186,7 +190,6 @@ func setAccountPoolEnabled(accountID string, enabled bool) error {
 	for _, a := range p.Accounts {
 		if a != nil && a.AccountID == accountID {
 			a.PoolEnabled = &enabled
-			markPoolDirtyLocked()
 			found = true
 			break
 		}
@@ -217,9 +220,6 @@ func setAllAccountsPoolEnabled(enabled bool) int {
 		a.PoolEnabled = &v
 		n++
 	}
-	if n > 0 {
-		markPoolDirtyLocked()
-	}
 	poolMu.Unlock()
 	if n > 0 {
 		savePool()
@@ -227,12 +227,12 @@ func setAllAccountsPoolEnabled(enabled bool) int {
 	return n
 }
 
-// poolCurrentIdx 线程安全地读取账号轮转游标。
+// poolCurrentIdx 线程安全地读取账号轮转游标（痕迹文件侧，2s flusher 持久化）。
 func poolCurrentIdx() int {
-	p := loadPool()
+	loadPool()
 	poolMu.Lock()
 	defer poolMu.Unlock()
-	return p.CurrentIdx
+	return poolUsage.CurrentIdx
 }
 
 // reorderAccounts 按给定 accountId 顺序重排账号池（管理面板拖拽排序）。
@@ -255,9 +255,10 @@ func reorderAccounts(order []string) (int, error) {
 		byID[a.AccountID] = a
 	}
 	// 游标重映射基准：重排前 CurrentIdx 指向的账号（越界按无游标处理）。
+	// 游标住痕迹文件（pool_usage.go）。
 	var curID string
-	if p.CurrentIdx >= 0 && p.CurrentIdx < len(p.Accounts) {
-		curID = p.Accounts[p.CurrentIdx].AccountID
+	if poolUsage.CurrentIdx >= 0 && poolUsage.CurrentIdx < len(p.Accounts) {
+		curID = p.Accounts[poolUsage.CurrentIdx].AccountID
 	}
 
 	next := make([]*Account, 0, len(p.Accounts))
@@ -283,16 +284,17 @@ func reorderAccounts(order []string) (int, error) {
 	}
 
 	p.Accounts = next
-	p.CurrentIdx = 0
+	poolUsage.CurrentIdx = 0
 	if curID != "" {
 		for i, a := range next {
 			if a.AccountID == curID {
-				p.CurrentIdx = i
+				poolUsage.CurrentIdx = i
 				break
 			}
 		}
 	}
-	savePoolLocked() // 管理操作直接落盘（不走 2s flusher，避免多余写盘）
+	savePoolLocked()    // 管理操作直接落盘（不走 2s flusher，避免多余写盘）
+	savePoolUsageLocked() // 游标重映射结果随本次落盘进痕迹文件
 	return len(next), nil
 }
 
@@ -362,7 +364,14 @@ func removeAccount(accountID string) bool {
 	for i, a := range p.Accounts {
 		if a.AccountID == accountID {
 			p.Accounts = append(p.Accounts[:i], p.Accounts[i+1:]...)
+			// 账号删除后痕迹表的孤儿条目一并清理（痕迹随账号走）
+			valid := map[string]bool{}
+			for _, rest := range p.Accounts {
+				valid[rest.AccountID] = true
+			}
+			prunePoolUsageLocked(valid)
 			savePoolLocked()
+			savePoolUsageLocked()
 			poolMu.Unlock()
 			// 释放该账号占用的代理给下一个账号
 			reconcileEgressBindings()
@@ -431,9 +440,10 @@ func doRefreshAccountToken(acc *Account) error {
 		// 静态 key 无刷新能力 —— 只有在 key 被上游拒绝（401）后才会走到这里，
 		// 直接判失效，不再发无意义的刷新请求
 		poolMu.Lock()
-		acc.Status = "expired"
-		acc.LastReason = "api key rejected upstream (static key cannot refresh)"
-		savePoolLocked()
+		u := usageForLocked(acc)
+		u.Status = "expired"
+		u.LastReason = "api key rejected upstream (static key cannot refresh)"
+		savePoolUsageLocked()
 		poolMu.Unlock()
 		return fmt.Errorf("static api key account cannot refresh")
 	}
@@ -443,27 +453,29 @@ func doRefreshAccountToken(acc *Account) error {
 	client, cerr := clineRefreshClient(acc)
 	if cerr != nil {
 		poolMu.Lock()
-		acc.Status = "cooldown"
-		acc.CooldownUntil = time.Now().Add(5 * time.Minute)
-		acc.LastReason = "refresh exit unavailable: " + cerr.Error()
-		savePoolLocked()
+		u := usageForLocked(acc)
+		u.Status = "cooldown"
+		u.CooldownUntil = time.Now().Add(5 * time.Minute)
+		u.LastReason = "refresh exit unavailable: " + cerr.Error()
+		savePoolUsageLocked()
 		poolMu.Unlock()
 		return fmt.Errorf("token refresh exit unavailable: %w", cerr)
 	}
 	resp, err := cline.RefreshClineTokenWithClient(client, acc.RefreshToken)
 	if err != nil {
 		poolMu.Lock()
+		u := usageForLocked(acc)
 		if cline.IsAuthRejection(err) {
 			// 上游明确拒绝该 refresh token（400/401/403）—— 账号确实失效
-			acc.Status = "expired"
-			acc.LastReason = "refresh rejected: " + err.Error()
+			u.Status = "expired"
+			u.LastReason = "refresh rejected: " + err.Error()
 		} else {
 			// 网络故障 / 5xx 是瞬时的: 短冷却 5 分钟,不判死账号
-			acc.Status = "cooldown"
-			acc.CooldownUntil = time.Now().Add(5 * time.Minute)
-			acc.LastReason = "refresh transient error: " + err.Error()
+			u.Status = "cooldown"
+			u.CooldownUntil = time.Now().Add(5 * time.Minute)
+			u.LastReason = "refresh transient error: " + err.Error()
 		}
-		savePoolLocked()
+		savePoolUsageLocked()
 		poolMu.Unlock()
 		return fmt.Errorf("token refresh failed: %w", err)
 	}
@@ -479,9 +491,12 @@ func doRefreshAccountToken(acc *Account) error {
 		acc.RefreshToken = resp.Data.RefreshToken
 	}
 	acc.ExpiresAt = clineExpiryMs(resp.Data.ExpiresAt)
-	acc.Status = "active"
-	acc.LastReason = ""
-	savePoolLocked()
+	// AccessToken 是 json:"-" 的内存态字段，随痕迹文件外的配置文件无关；
+	// 状态复位写痕迹文件。
+	u := usageForLocked(acc)
+	u.Status = "active"
+	u.LastReason = ""
+	savePoolUsageLocked()
 	poolMu.Unlock()
 	return nil
 }
@@ -509,12 +524,14 @@ func pickAccount() *Account {
 	active := make([]*Account, 0)
 	for _, a := range p.Accounts {
 		// 自动解除已到期的冷却
-		if a.Status == "cooldown" && !a.CooldownUntil.IsZero() && time.Now().After(a.CooldownUntil) {
-			a.Status = "active"
-			a.CooldownUntil = time.Time{}
-			a.LastReason = ""
+		if u := usagePeekLocked(a); u != nil && u.Status == "cooldown" &&
+			!u.CooldownUntil.IsZero() && time.Now().After(u.CooldownUntil) {
+			u.Status = "active"
+			u.CooldownUntil = time.Time{}
+			u.LastReason = ""
+			markPoolDirtyLocked()
 		}
-		if a.Status != "active" {
+		if accountStatusLocked(a) != "active" {
 			continue
 		}
 		if !accountPoolEnabled(a) {
@@ -545,11 +562,11 @@ func pickAccount() *Account {
 		n := time.Now().UnixNano() % int64(len(active))
 		acc = active[n]
 	default: // round_robin
-		if p.CurrentIdx >= len(active) {
-			p.CurrentIdx = 0
+		if poolUsage.CurrentIdx >= len(active) {
+			poolUsage.CurrentIdx = 0
 		}
-		acc = active[p.CurrentIdx]
-		p.CurrentIdx = (p.CurrentIdx + 1) % len(active)
+		acc = active[poolUsage.CurrentIdx]
+		poolUsage.CurrentIdx = (poolUsage.CurrentIdx + 1) % len(active)
 	}
 
 	markPoolDirtyLocked()
@@ -579,12 +596,14 @@ func pickAccountExcluding(exclude map[string]bool) *Account {
 	isolation := proxyIsolationEnabled()
 	active := make([]*Account, 0, len(p.Accounts))
 	for _, a := range p.Accounts {
-		if a.Status == "cooldown" && !a.CooldownUntil.IsZero() && time.Now().After(a.CooldownUntil) {
-			a.Status = "active"
-			a.CooldownUntil = time.Time{}
-			a.LastReason = ""
+		if u := usagePeekLocked(a); u != nil && u.Status == "cooldown" &&
+			!u.CooldownUntil.IsZero() && time.Now().After(u.CooldownUntil) {
+			u.Status = "active"
+			u.CooldownUntil = time.Time{}
+			u.LastReason = ""
+			markPoolDirtyLocked()
 		}
-		if a.Status != "active" {
+		if accountStatusLocked(a) != "active" {
 			continue
 		}
 		// poolEnabled=false 等价于“池里没有这个账号”：面板 Pool 列勾掉之后，
@@ -617,11 +636,11 @@ func pickAccountExcluding(exclude map[string]bool) *Account {
 		n := time.Now().UnixNano() % int64(len(active))
 		acc = active[n]
 	default: // round_robin
-		if p.CurrentIdx >= len(active) {
-			p.CurrentIdx = 0
+		if poolUsage.CurrentIdx >= len(active) {
+			poolUsage.CurrentIdx = 0
 		}
-		acc = active[p.CurrentIdx]
-		p.CurrentIdx = (p.CurrentIdx + 1) % len(active)
+		acc = active[poolUsage.CurrentIdx]
+		poolUsage.CurrentIdx = (poolUsage.CurrentIdx + 1) % len(active)
 	}
 
 	markPoolDirtyLocked()
@@ -647,7 +666,7 @@ func pickAccountAny() *Account {
 		if !accountPoolEnabled(a) {
 			continue
 		}
-		if a.Status == "active" {
+		if accountStatusLocked(a) == "active" {
 			return a
 		}
 		if fallback == nil {
@@ -722,44 +741,49 @@ func clineRefreshClient(acc *Account) (*http.Client, error) {
 	return proxyClientFor(url), nil
 }
 
-func ListAccounts() []*Account {
+func ListAccounts() []*AccountView {
 	p := loadPool()
 	poolMu.Lock()
 
 	// 自动解除已到期的冷却，确保返回的列表是最新状态
 	usageDate := time.Now().Format("2006-01-02")
 	for _, a := range p.Accounts {
-		if a.Status == "cooldown" && !a.CooldownUntil.IsZero() && time.Now().After(a.CooldownUntil) {
-			a.Status = "active"
-			a.CooldownUntil = time.Time{}
-			a.LastReason = ""
+		u := usageForLocked(a)
+		if u.Status == "cooldown" && !u.CooldownUntil.IsZero() && time.Now().After(u.CooldownUntil) {
+			u.Status = "active"
+			u.CooldownUntil = time.Time{}
+			u.LastReason = ""
 		}
-		if a.UsageDate != usageDate {
-			a.UsageDate = usageDate
-			a.UsageCountToday = 0
+		if u.UsageDate != usageDate {
+			u.UsageDate = usageDate
+			u.UsageCountToday = 0
 		}
-		if a.TokensDate != usageDate {
-			a.TokensDate = usageDate
-			a.TokensToday = 0
+		if u.TokensDate != usageDate {
+			u.TokensDate = usageDate
+			u.TokensToday = 0
 		}
 	}
-	result := make([]*Account, len(p.Accounts))
+	result := make([]*AccountView, len(p.Accounts))
 	for i, a := range p.Accounts {
+		u := usagePeekLocked(a)
+		if u == nil {
+			u = &accountUsage{Status: "active"}
+		}
 		// Don't expose tokens
-		result[i] = &Account{
+		result[i] = &AccountView{
 			AccountID:       a.AccountID,
 			Email:           a.Email,
 			Nickname:        a.Nickname,
-			Status:          a.Status,
-			LastUsed:        a.LastUsed,
-			UsageCount:      a.UsageCount,
-			UsageCountToday: a.UsageCountToday,
-			UsageDate:       a.UsageDate,
-			TokensTotal:     a.TokensTotal,
-			TokensToday:     a.TokensToday,
-			TokensDate:      a.TokensDate,
-			CooldownUntil:   a.CooldownUntil,
-			LastReason:      a.LastReason,
+			Status:          u.Status,
+			LastUsed:        u.LastUsed,
+			UsageCount:      u.UsageCount,
+			UsageCountToday: u.UsageCountToday,
+			UsageDate:       u.UsageDate,
+			TokensTotal:     u.TokensTotal,
+			TokensToday:     u.TokensToday,
+			TokensDate:      u.TokensDate,
+			CooldownUntil:   u.CooldownUntil,
+			LastReason:      u.LastReason,
 			// 代理绑定随列表下发（面板编辑用）。代理 URL 可能含凭据，但代理
 			// 池页本来就完整展示列表，信任级别相同。
 			ProxyMain:   a.ProxyMain,
@@ -776,7 +800,9 @@ func ListAccounts() []*Account {
 
 // markAccountCooldown 将账号置为冷却状态，并记录预计恢复时间。
 // duration 为冷却时长；duration<=0 时使用默认冷却。
-// 返回设置的恢复时间（调用方用它代替锁外读取 acc.CooldownUntil）。
+// 返回设置的恢复时间（调用方用它代替锁外读取痕迹表的 CooldownUntil）。
+// 冷却即时落盘痕迹文件（2026-10-28 持久化决策，2026-10-31 落点换
+// cline-state.json）。
 func markAccountCooldown(acc *Account, reason string, duration time.Duration) time.Time {
 	if acc == nil {
 		return time.Time{}
@@ -788,11 +814,12 @@ func markAccountCooldown(acc *Account, reason string, duration time.Duration) ti
 		duration = maxCooldown
 	}
 	poolMu.Lock()
-	acc.Status = "cooldown"
-	acc.CooldownUntil = time.Now().Add(duration)
-	acc.LastReason = reason
-	savePoolLocked()
-	until := acc.CooldownUntil
+	u := usageForLocked(acc)
+	u.Status = "cooldown"
+	u.CooldownUntil = time.Now().Add(duration)
+	u.LastReason = reason
+	savePoolUsageLocked()
+	until := u.CooldownUntil
 	poolMu.Unlock()
 	return until
 }
@@ -806,13 +833,14 @@ func bumpUsage(acc *Account) {
 	poolMu.Lock()
 	now := time.Now()
 	today := now.Format("2006-01-02")
-	if acc.UsageDate != today {
-		acc.UsageDate = today
-		acc.UsageCountToday = 0
+	u := usageForLocked(acc)
+	if u.UsageDate != today {
+		u.UsageDate = today
+		u.UsageCountToday = 0
 	}
-	acc.UsageCountToday++
-	acc.UsageCount++
-	acc.LastUsed = now
+	u.UsageCountToday++
+	u.UsageCount++
+	u.LastUsed = now
 	markPoolDirtyLocked()
 	poolMu.Unlock()
 }
@@ -824,11 +852,12 @@ func resetTodayUsage(acc *Account) {
 	}
 
 	poolMu.Lock()
-	acc.UsageDate = time.Now().Format("2006-01-02")
-	acc.UsageCountToday = 0
-	acc.TokensDate = time.Now().Format("2006-01-02")
-	acc.TokensToday = 0
-	savePoolLocked()
+	u := usageForLocked(acc)
+	u.UsageDate = time.Now().Format("2006-01-02")
+	u.UsageCountToday = 0
+	u.TokensDate = time.Now().Format("2006-01-02")
+	u.TokensToday = 0
+	savePoolUsageLocked()
 	poolMu.Unlock()
 }
 
@@ -841,12 +870,13 @@ func recordAccountTokens(acc *Account, tokens int64) {
 
 	poolMu.Lock()
 	today := time.Now().Format("2006-01-02")
-	if acc.TokensDate != today {
-		acc.TokensDate = today
-		acc.TokensToday = 0
+	u := usageForLocked(acc)
+	if u.TokensDate != today {
+		u.TokensDate = today
+		u.TokensToday = 0
 	}
-	acc.TokensToday += tokens
-	acc.TokensTotal += tokens
+	u.TokensToday += tokens
+	u.TokensTotal += tokens
 	markPoolDirtyLocked()
 	poolMu.Unlock()
 }
@@ -867,7 +897,12 @@ func describePoolStatus() string {
 	boundBlocked := 0
 	var nextRecover *time.Time
 	for _, a := range p.Accounts {
-		switch a.Status {
+		u := usagePeekLocked(a)
+		status := "active"
+		if u != nil {
+			status = u.Status
+		}
+		switch status {
 		case "active":
 			if !accountPoolEnabled(a) {
 				disabled++
@@ -879,9 +914,9 @@ func describePoolStatus() string {
 			}
 		case "cooldown":
 			cooldown++
-			if !a.CooldownUntil.IsZero() {
-				if nextRecover == nil || a.CooldownUntil.Before(*nextRecover) {
-					t := a.CooldownUntil
+			if u != nil && !u.CooldownUntil.IsZero() {
+				if nextRecover == nil || u.CooldownUntil.Before(*nextRecover) {
+					t := u.CooldownUntil
 					nextRecover = &t
 				}
 			}
@@ -960,10 +995,9 @@ func AddAccountFromDeviceAuth() (*Account, error) {
 		RefreshToken: reg.Data.RefreshToken,
 		AccessToken:  "workos:" + reg.Data.AccessToken,
 		ExpiresAt:    clineExpiryMs(reg.Data.ExpiresAt),
-		Status:       "active",
 	}
 
-	addAccount(acc)
+	addAccount(acc) // 痕迹表懒创建，默认 status=active
 	fmt.Printf("  Account added! Email: %s\n", email)
 	return acc, nil
 }

@@ -12,8 +12,8 @@ import (
 //
 // 语义与 amd/openrouter.PickKey 同构，但池是 per-platform 的：调用方传
 // *Platform，选 key 只在该子平台的池内进行。轮转游标是包级运行态
-// （slug -> 下标），不落盘、不进配置结构。keyMu 同时保护各平台的
-// Usage/Cool 运行时表（写路径只在请求与探测路径）。
+// （slug -> 下标），不落盘、不进配置结构。keyMu 同时保护各子平台的使用
+// 痕迹表（usage.go 的 usage，按 slug 键；写路径只在请求与探测路径）。
 
 var (
 	keyMu     sync.Mutex
@@ -61,9 +61,10 @@ func PickKey(p *Platform, strategy string, boundRoutable func(key string) bool) 
 	keyMu.Lock()
 	defer keyMu.Unlock()
 	now := time.Now()
-	for k, until := range p.Cool {
+	u := usageForLocked(p.Slug)
+	for k, until := range u.Cool {
 		if now.After(until) {
-			delete(p.Cool, k)
+			delete(u.Cool, k)
 		}
 	}
 	keyIdx := keyCursor(p.Slug)
@@ -75,7 +76,7 @@ func PickKey(p *Platform, strategy string, boundRoutable func(key string) bool) 
 				continue
 			}
 			if !ignoreCooling {
-				if _, cooling := p.Cool[k]; cooling {
+				if _, cooling := u.Cool[k]; cooling {
 					continue
 				}
 			}
@@ -125,11 +126,12 @@ func RecordKeyTokens(p *Platform, key string, tokens int64) {
 		return
 	}
 	keyMu.Lock()
-	if p.KeyTokens == nil {
-		p.KeyTokens = map[string]KeyTokenStats{}
+	u := usageForLocked(p.Slug)
+	if u.KeyTokens == nil {
+		u.KeyTokens = map[string]KeyTokenStats{}
 	}
 	today := time.Now().Format("2006-01-02")
-	st := p.KeyTokens[key]
+	st := u.KeyTokens[key]
 	if st.Date != today {
 		st.Date = today
 		st.Today = 0
@@ -137,7 +139,7 @@ func RecordKeyTokens(p *Platform, key string, tokens int64) {
 	st.Today += tokens
 	st.Total += tokens
 	st.LastUsedAt = time.Now()
-	p.KeyTokens[key] = st
+	u.KeyTokens[key] = st
 	keyMu.Unlock()
 	markTokensDirty() // 合批落盘（键已不在表里时记账也不会丢）
 }
@@ -155,12 +157,13 @@ func Cooldown(p *Platform, key string, d time.Duration) time.Duration {
 		d = 24 * time.Hour
 	}
 	keyMu.Lock()
-	if p.Cool == nil {
-		p.Cool = map[string]time.Time{}
+	u := usageForLocked(p.Slug)
+	if u.Cool == nil {
+		u.Cool = map[string]time.Time{}
 	}
-	p.Cool[key] = time.Now().Add(d)
+	u.Cool[key] = time.Now().Add(d)
 	keyMu.Unlock()
-	save() // 冷却落盘持久化（2026-10-28）：重启后冷却保留
+	saveUsage() // 冷却落盘持久化（2026-10-28）：重启后冷却保留
 	return d
 }
 
@@ -170,16 +173,22 @@ func Uncool(p *Platform, key string) {
 		return
 	}
 	keyMu.Lock()
-	delete(p.Cool, key)
+	if u := usageBySlugLocked(p.Slug); u != nil {
+		delete(u.Cool, key)
+	}
 	keyMu.Unlock()
-	save() // 解除冷却同步落盘
+	saveUsage() // 解除冷却同步落盘
 }
 
 // CooldownUntil 只读查询冷却截止时刻。
 func CooldownUntil(p *Platform, key string) (time.Time, bool) {
 	keyMu.Lock()
 	defer keyMu.Unlock()
-	until, ok := p.Cool[key]
+	u := usageBySlugLocked(p.Slug)
+	if u == nil {
+		return time.Time{}, false
+	}
+	until, ok := u.Cool[key]
 	return until, ok
 }
 

@@ -25,6 +25,7 @@ func amdConfigPath() string { return kit.ResolveDataPath("amd-config.json") }
 
 // initAMD 加载配置 + 注入出站解析/HTTP client 工厂。StartProxy 早期调用一次。
 func initAMD() {
+	amd.UsagePath = kit.ResolveDataPath("amd-state.json")
 	amd.Load(amdConfigPath())
 	amd.SetExitResolver(func(key string) (string, bool) {
 		if key == "" {
@@ -244,7 +245,9 @@ func handleAMDConfigUpdate(w http.ResponseWriter, r *http.Request) {
 	writeAPI(w, http.StatusOK, apiResponse{Success: true, Message: "AMDCloud config saved"})
 }
 
-// amdCloneConfig 写时复制：拷贝运行时字段（路由表/绑定/冷却）到新配置。
+// amdCloneConfig 写时复制：拷贝运行时字段（路由表/绑定）到新配置。token
+// 记账/冷却在使用痕迹文件（amd-state.json）里，跟 key 集合走、不随 Config
+// 对象复制，这里不涉及。
 func amdCloneConfig() (*amd.Config, *amd.Config) {
 	cur := amd.Get()
 	next := &amd.Config{
@@ -254,20 +257,12 @@ func amdCloneConfig() (*amd.Config, *amd.Config) {
 		KeyBindings:       map[string]amd.Binding{},
 		MaxConcurrency:    cur.MaxConcurrency,
 		Retries:           cur.Retries,
-		KeyTokens:         map[string]amd.KeyTokenStats{},
-		Cool:              map[string]time.Time{},
 	}
 	for k, v := range cur.KeyRoutingEnabled {
 		next.KeyRoutingEnabled[k] = v
 	}
 	for k, v := range cur.KeyBindings {
 		next.KeyBindings[k] = v
-	}
-	for k, v := range cur.KeyTokens {
-		next.KeyTokens[k] = v
-	}
-	for k, v := range cur.Cool {
-		next.Cool[k] = v
 	}
 	return cur, next
 }
@@ -554,15 +549,14 @@ func amdTestKey(index int, modelID string) (map[string]any, string) {
 }
 
 // clearAMDKeysForDataDelete 清空 AMDCloud key 池与绑定/路由表（保留 baseURL
-// 与平台设置）。
+// 与平台设置）；token 记账与冷却表一并清空（ClearUsage 即时落盘痕迹文件）。
 func clearAMDKeysForDataDelete() int {
 	cur, next := amdCloneConfig()
 	n := len(cur.Keys)
 	next.Keys = nil
 	next.KeyBindings = map[string]amd.Binding{}
 	next.KeyRoutingEnabled = map[string]bool{}
-	next.KeyTokens = map[string]amd.KeyTokenStats{}
-	next.Cool = map[string]time.Time{}
 	amd.Set(next)
+	amd.ClearUsage()
 	return n
 }

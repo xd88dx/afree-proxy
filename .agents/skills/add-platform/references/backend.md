@@ -48,7 +48,7 @@ WB 特例：`/admin/api/workbuddy/enabled` 注册在 proxy.go（workbuddy 路由
 
 **key 池四件套模式**（openrouter/amd/tokenharbor 同构，形态 B 首选）：
 - load：`handleOrConfig` GET → 组装 map（keyStates 快照含 usage/cooling/routingEnabled/proxyMain/proxyBackup）。
-- save：`handleOrConfigUpdate` POST patch——patch struct 全指针字段（`*bool`/`*int`/`*string`，nil=未提交），`next := 深拷贝 cur`（**Keys/KeyRoutingEnabled/KeyBindings/Usage/Cool 每张 map 都要拷**，漏拷 = 保存时静默清空该表）→ 逐字段应用 patch → `ReconcileRouting`（keys 整体替换时）→ 落盘 + 热应用。
+- save：`handleOrConfigUpdate` POST patch——patch struct 全指针字段（`*bool`/`*int`/`*string`，nil=未提交），`next := 深拷贝 cur`（**Keys/KeyRoutingEnabled/KeyBindings 每张 map 都要拷**，漏拷 = 保存时静默清空该表；KeyTokens/Cool 住痕迹文件不随 Config 拷贝）→ 逐字段应用 patch → `ReconcileRouting`（keys 整体替换时）→ 落盘 + 热应用。
 - key 池无"重启项"概念：全部字段热生效（池参数从 config 直接读）。
 
 **vendor wbConfigForm 模式**（形态 C）：load 侧 `Default()+Load()+normalize()`，save 侧**保留磁盘未提交键 + 原子落盘 + 热应用**（参照 workbuddy_config.go saveWorkbuddyConfig：merge 现有 map → ParseConfig → tmp+rename → 热应用 → 返回 restartRequired）。
@@ -94,12 +94,13 @@ WB 特例：`/admin/api/workbuddy/enabled` 注册在 proxy.go（workbuddy 路由
 
 **四件套**（`internal/<x>/`，从 internal/openrouter 复制后改包名）：
 - `client.go`：上游调用。OpenRouter = 标准 OpenAI 兼容 chat/completions；key 选择与出口解析留在**主包**（主包持有代理池/隔离语义），本包只做"给定 key + Exit + Client 发一次请求 + 重试"。`HTTPError{Status, Body, RateLimited}` 类型化错误、`CallOpts{PinKey, Exit, Client}`。
-- `config.go`：`Config{Keys, KeyRoutingEnabled, KeyBindings, MaxConcurrency, Retries, Usage, Cool, ...}` + `Load(path)/Get()/Save()` + `ReconcileRouting(next, cur)`（新 key 默认 false）+ `RoutingEnabled(key)`（缺项=true）+ key 掩码。
+- `config.go`：`Config{Keys, KeyRoutingEnabled, KeyBindings, MaxConcurrency, Retries, ...}`（**纯配置**）+ `Load(path)/Get()/Save()` + `ReconcileRouting(next, cur)`（新 key 默认 false）+ `RoutingEnabled(key)`（缺项=true）+ key 掩码。
+- `usage.go`（2026-10-31 拆分必带）：`usageData{KeyTokens, Cool}` 包级 usage 真身 + `UsagePath`（app 层注入 `DATA_DIR/<x>-state.json`）+ `saveUsage`/`loadUsage`（含从旧 config 的一次性迁移）+ `markTokensDirty`（10s DirtyFlusher）+ `ClearUsage`/`pruneUsageLocked`。**KeyTokens/Cool 等使用痕迹不进 `<x>-config.json`**——配置文件保持"仅面板操作才变"（2026-11-01 命名铁律：`*-config.json`=配置态、`*-state.json`=状态态，新平台按此命名即自动纳入外部监测的 config-manifest 指纹清单）。
 - `models.go`：目录同步与免费模型判定（各平台协议不同：OpenRouter 白名单收 free-models 页 + openrouter/free 兜底、AMDCloud/TH 收 Public Free Model APIs；价格门/成员表语义按平台定）。
 - `pool.go`：轮转（round_robin/fill/random）、冷却、并发信号量、`RoutingEnabled` 过滤。
 
 **2026-10-29 起克隆必须携带的不变量**（审查后固化，漏任何一条都会复现已修的缺陷）：
-- **Cool 持久化 + 单锁纪律**：`Cool map[string]time.Time` 带 `cool,omitempty` 随配置落盘，Cooldown/Uncool 后即时 save；**全部 Cool 访问（写/惰性清理/读/展示）走 config 包 `mu`**——禁止裸读（`Get().Cool[k]`）、禁止第二把锁护同一 map（会 "concurrent map iteration and map write" 直接崩进程），keyMu 只护轮转游标；`save()` 全程持 `mu.RLock` marshal（浅拷贝后放锁再 marshal = 崩溃）。
+- **痕迹落盘 + 单锁纪律（2026-10-31 更新）**：KeyTokens/Cool 住 `usage.go` 的痕迹文件（`UsagePath`），Cooldown/Uncool 后即时 `saveUsage()`，记账打脏标记合批；**全部痕迹访问（写/惰性清理/读/展示）走 config 包 `mu`**——禁止裸读、禁止第二把锁护同一结构（会 "concurrent map iteration and map write" 直接崩进程），keyMu 只护轮转游标；`save()`/`saveUsage()` 全程持 `mu.RLock` marshal（浅拷贝后放锁再 marshal = 崩溃）。**`Load()` 必须在 `mu.Unlock()` 之后调 `loadUsage()`**——迁移内的 saveUsage 要拿 `mu.RLock`，写锁内调用自死锁（五包同构，端到端实测踩过）。
 - **目录同步 fail-closed**：`catalogHTTPClient()` 逐 key 试出口（解析失败含 DISABLE_DIRECT 判否跳过），面板显式选直连（resolveExit 返回空但 ok）才直连并补 25s 超时；全部不可用返回 error 让本轮同步跳过——**绝不隐式回落裸直连**（amd/or/th/tokenharbor/trae 五处实证）。
 - **UNABLE_FORCE 兜底分支**：全冷却时 `kit.UnableForce()` 才允许冷却凭据回池（`buildCandidates(true)`），拒绝消息走 `no <platform> ... routable` 统一模板。
 - **usage 记账接线**：`handle<X>Chat` 用 `takeUsedKey(resp)`（key 从响应头取）组 `usageFn := func(u){ X.RecordKeyTokens(usedKey, usageTokens(u, params)) }`；cross_endpoint 的 `platformChatCall` 签名要求返回 `(resp, usageFn, err)`，流式由 bufferedStreamCaller 以末帧记一次——漏接 = /v1/messages 与 /v1/responses 上该平台用量恒 0。

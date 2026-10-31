@@ -8,6 +8,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 )
 
 func poolBool(v bool) *bool { return &v }
@@ -15,19 +16,25 @@ func poolBool(v bool) *bool { return &v }
 func resetPoolForEnableTest(t *testing.T, accounts []*Account) {
 	t.Helper()
 	oldPool, oldPath, oldDirty := pool, poolPath, poolDirty
+	oldUsage, oldUsagePath := poolUsage, poolUsagePath
 	pool = &AccountPool{Accounts: accounts}
 	poolPath = t.TempDir() + "/pool.json"
+	poolUsagePath = t.TempDir() + "/usage.json"
+	poolUsage = &poolUsageData{}
 	poolDirty = false
 	t.Cleanup(func() {
 		pool, poolPath, poolDirty = oldPool, oldPath, oldDirty
+		poolUsage, poolUsagePath = oldUsage, oldUsagePath
 	})
 }
 
 func TestPoolEnabledDefaultsEnabledAndFiltersRotation(t *testing.T) {
-	disabled := &Account{AccountID: "off", Email: "off@example.com", Status: "active", PoolEnabled: poolBool(false)}
-	legacy := &Account{AccountID: "legacy", Email: "legacy@example.com", Status: "active"}
-	cooldown := &Account{AccountID: "cooldown", Email: "cool@example.com", Status: "cooldown"}
+	disabled := &Account{AccountID: "off", Email: "off@example.com", PoolEnabled: poolBool(false)}
+	legacy := &Account{AccountID: "legacy", Email: "legacy@example.com"}
+	cooldown := &Account{AccountID: "cooldown", Email: "cool@example.com"}
 	resetPoolForEnableTest(t, []*Account{disabled, legacy, cooldown})
+	// cooldown 账号的冷却住痕迹表（拆分后 Account 不再携带 Status）
+	markAccountCooldown(cooldown, "test", time.Hour)
 
 	if !accountPoolEnabled(legacy) {
 		t.Fatal("legacy account without poolEnabled must default to enabled")
@@ -57,7 +64,7 @@ func TestPoolEnabledCanBePersistedExplicitly(t *testing.T) {
 	poolPath = path
 	t.Cleanup(func() { poolPath = oldPath })
 
-	a := &Account{AccountID: "off", Email: "off@example.com", Status: "active", PoolEnabled: poolBool(false)}
+	a := &Account{AccountID: "off", Email: "off@example.com", PoolEnabled: poolBool(false)}
 	pool = &AccountPool{Accounts: []*Account{a}}
 	savePool()
 
@@ -101,7 +108,6 @@ func TestAdminAccountSetPoolEnabledDoesNotChangeStatus(t *testing.T) {
 	acc := &Account{
 		AccountID:   "acct_1",
 		Email:       "acct@example.com",
-		Status:      "active",
 		PoolEnabled: poolBool(true),
 	}
 	resetPoolForEnableTest(t, []*Account{acc})
@@ -114,8 +120,8 @@ func TestAdminAccountSetPoolEnabledDoesNotChangeStatus(t *testing.T) {
 		t.Fatalf("handler status = %d, body = %s", rec.Code, rec.Body.String())
 	}
 
-	if acc.Status != "active" {
-		t.Fatalf("Status changed to %q; pool toggle must not change account status", acc.Status)
+	if got := AccountStatus(acc); got != "active" {
+		t.Fatalf("Status changed to %q; pool toggle must not change account status", got)
 	}
 	if acc.PoolEnabled == nil || *acc.PoolEnabled {
 		t.Fatalf("PoolEnabled = %+v, want false", acc.PoolEnabled)
@@ -142,7 +148,7 @@ func TestAdminAccountSetPoolEnabledDoesNotChangeStatus(t *testing.T) {
 	var resp struct {
 		Success bool `json:"success"`
 		Data    struct {
-			Accounts []*Account `json:"accounts"`
+			Accounts []*AccountView `json:"accounts"`
 		} `json:"data"`
 	}
 	if err := json.Unmarshal(listRec.Body.Bytes(), &resp); err != nil {
@@ -165,12 +171,12 @@ func TestAdminAccountSetPoolEnabledDoesNotChangeStatus(t *testing.T) {
 // loadPool 的物化，不影响新添加。
 func TestAddAccountDefaultsDisabled(t *testing.T) {
 	resetPoolForEnableTest(t, nil)
-	addAccount(&Account{AccountID: "fresh", Email: "fresh@example.com", Status: "active"})
+	addAccount(&Account{AccountID: "fresh", Email: "fresh@example.com"})
 	if got := pool.Accounts[0]; got.PoolEnabled == nil || *got.PoolEnabled {
 		t.Fatalf("fresh account must default to routing-disabled, got %v", got.PoolEnabled)
 	}
 	enabled := true
-	addAccount(&Account{AccountID: "explicit", Email: "explicit@example.com", Status: "active", PoolEnabled: &enabled})
+	addAccount(&Account{AccountID: "explicit", Email: "explicit@example.com", PoolEnabled: &enabled})
 	if got := pool.Accounts[1]; got.PoolEnabled == nil || !*got.PoolEnabled {
 		t.Fatal("explicit PoolEnabled=true must survive addAccount")
 	}
@@ -187,8 +193,8 @@ func useFillStrategy(t *testing.T) {
 // 不参与选号，也不作为 429/5xx 的故障转移候选（pickAccountExcluding 是
 // callClineAPI 唯一的选号入口）。
 func TestPickAccountExcludingSkipsPoolDisabled(t *testing.T) {
-	off := &Account{AccountID: "off", Email: "off@example.com", Status: "active", APIToken: "tok-off", PoolEnabled: poolBool(false)}
-	on := &Account{AccountID: "on", Email: "on@example.com", Status: "active", APIToken: "tok-on", PoolEnabled: poolBool(true)}
+	off := &Account{AccountID: "off", Email: "off@example.com", APIToken: "tok-off", PoolEnabled: poolBool(false)}
+	on := &Account{AccountID: "on", Email: "on@example.com", APIToken: "tok-on", PoolEnabled: poolBool(true)}
 	resetPoolForEnableTest(t, []*Account{off, on})
 	useFillStrategy(t)
 
@@ -205,7 +211,7 @@ func TestPickAccountExcludingSkipsPoolDisabled(t *testing.T) {
 
 // 全部停用时 cline 上游调用直接失败，不偷偷拿停用账号顶上去。
 func TestCallClineAPIRejectsAllDisabled(t *testing.T) {
-	off := &Account{AccountID: "off", Email: "off@example.com", Status: "active", APIToken: "tok-off", PoolEnabled: poolBool(false)}
+	off := &Account{AccountID: "off", Email: "off@example.com", APIToken: "tok-off", PoolEnabled: poolBool(false)}
 	resetPoolForEnableTest(t, []*Account{off})
 	useFillStrategy(t)
 
@@ -220,14 +226,17 @@ func TestCallClineAPIRejectsAllDisabled(t *testing.T) {
 
 // 停用账号对只读调用（模型列表同步走 pickAccountAny 的冷却兜底）同样不存在。
 func TestPickAccountAnySkipsPoolDisabled(t *testing.T) {
-	off := &Account{AccountID: "off", Email: "off@example.com", Status: "cooldown", APIToken: "tok-off", PoolEnabled: poolBool(false)}
-	on := &Account{AccountID: "on", Email: "on@example.com", Status: "cooldown", APIToken: "tok-on", PoolEnabled: poolBool(true)}
+	off := &Account{AccountID: "off", Email: "off@example.com", APIToken: "tok-off", PoolEnabled: poolBool(false)}
+	on := &Account{AccountID: "on", Email: "on@example.com", APIToken: "tok-on", PoolEnabled: poolBool(true)}
 	resetPoolForEnableTest(t, []*Account{off, on})
+	// 两个账号都置冷却：on 可作为 pickAccountAny 的 fallback，off（停用）不可
+	markAccountCooldown(off, "test", time.Hour)
+	markAccountCooldown(on, "test", time.Hour)
 	if got := pickAccountAny(); got != on {
 		t.Fatalf("pickAccountAny() = %v, want the enabled account", got)
 	}
 
-	only := &Account{AccountID: "off2", Email: "off2@example.com", Status: "active", APIToken: "tok-off2", PoolEnabled: poolBool(false)}
+	only := &Account{AccountID: "off2", Email: "off2@example.com", APIToken: "tok-off2", PoolEnabled: poolBool(false)}
 	resetPoolForEnableTest(t, []*Account{only})
 	if got := pickAccountAny(); got != nil {
 		t.Fatalf("all accounts disabled: pickAccountAny() = %v, want nil", got)

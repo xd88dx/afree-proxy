@@ -32,6 +32,7 @@ func traeConfigPath() string { return kit.ResolveDataPath("trae-config.json") }
 // initTrae 加载配置 + 注入出站解析/HTTP client 工厂。StartProxy 早期调用
 // 一次；失败只记日志不影响既有平台（与 WorkBuddy 子系统同口径）。
 func initTrae() {
+	trae.UsagePath = kit.ResolveDataPath("trae-state.json")
 	trae.Load(traeConfigPath())
 	trae.SetExitResolver(func(acc *trae.Account) (string, bool) {
 		if acc == nil {
@@ -776,21 +777,23 @@ func traeAccountStates() []map[string]any {
 		if a.Edition != "" {
 			st["edition"] = a.Edition
 		}
-		if a.Tokens.Today > 0 || a.Tokens.Total > 0 || !a.Tokens.LastUsedAt.IsZero() {
-			st["tokensToday"] = a.Tokens.Today
-			st["tokensTotal"] = a.Tokens.Total
-			if !a.Tokens.LastUsedAt.IsZero() {
-				st["lastUsed"] = a.Tokens.LastUsedAt.Format(time.RFC3339)
+		// 使用痕迹（记账/签到/额度/冷却）住 trae-state.json，按账号 ID 取副本
+		u := trae.UsageFor(a.ID)
+		if u.Tokens.Today > 0 || u.Tokens.Total > 0 || !u.Tokens.LastUsedAt.IsZero() {
+			st["tokensToday"] = u.Tokens.Today
+			st["tokensTotal"] = u.Tokens.Total
+			if !u.Tokens.LastUsedAt.IsZero() {
+				st["lastUsed"] = u.Tokens.LastUsedAt.Format(time.RFC3339)
 			}
 		}
-		if ck := a.Checkin; ck != nil {
+		if ck := u.Checkin; ck != nil {
 			st["checkin"] = map[string]any{
 				"checkedIn": ck.CheckedIn,
 				"date":      ck.Date,
 				"lastError": ck.LastError,
 			}
 		}
-		if cr := a.Credits; cr != nil {
+		if cr := u.Credits; cr != nil {
 			st["credits"] = map[string]any{
 				"remaining": cr.Remaining, "limit": cr.Limit,
 				"unlimited": cr.Unlimited, "identity": cr.Identity,
@@ -800,7 +803,7 @@ func traeAccountStates() []map[string]any {
 			st["proxyMain"] = a.ProxyMain
 			st["proxyBackup"] = a.ProxyBackup
 		}
-		if until, cooling := c.Cool[a.ID]; cooling && now.Before(until) {
+		if until, cooling := trae.CooldownUntil(a.ID); cooling && now.Before(until) {
 			st["cooling"] = true
 			st["cooldownUntil"] = until.Format(time.RFC3339)
 		} else {
@@ -1127,7 +1130,6 @@ func traeCloneConfig() (*trae.Config, *trae.Config) {
 		AutoCheckin:    cur.AutoCheckin,
 		MaxConcurrency: cur.MaxConcurrency,
 		Retries:        cur.Retries,
-		Cool:           map[string]time.Time{},
 	}
 	if cur.Accounts != nil {
 		next.Accounts = make([]*trae.Account, len(cur.Accounts))
@@ -1135,9 +1137,6 @@ func traeCloneConfig() (*trae.Config, *trae.Config) {
 			cp := *a
 			next.Accounts[i] = &cp
 		}
-	}
-	for k, v := range cur.Cool {
-		next.Cool[k] = v
 	}
 	return cur, next
 }
@@ -1229,11 +1228,9 @@ func traeDeleteAccount(index int) error {
 	if index < 0 || index >= len(cur.Accounts) {
 		return fmt.Errorf("account index out of range")
 	}
-	id := cur.Accounts[index].ID
 	_, next := traeCloneConfig()
 	next.Accounts = append(next.Accounts[:index], next.Accounts[index+1:]...)
-	delete(next.Cool, id)
-	trae.Set(next)
+	trae.Set(next) // Set 内部 pruneRemovedAccounts 同步清理痕迹表的冷却/记账条目
 	return nil
 }
 
@@ -1481,13 +1478,14 @@ func traeProbeBlacklistedModel(bare string) (map[string]any, string) {
 	return result, "active"
 }
 
-// clearTraeAccountsForDataDelete 清空 Trae 账号池（保留网关等平台设置）。
+// clearTraeAccountsForDataDelete 清空 Trae 账号池（保留网关等平台设置）；
+// 使用痕迹（记账/签到/额度/冷却）一并清空（ClearUsage 即时落盘痕迹文件）。
 func clearTraeAccountsForDataDelete() int {
 	_, next := traeCloneConfig()
 	n := len(next.Accounts)
 	next.Accounts = nil
-	next.Cool = map[string]time.Time{}
 	trae.Set(next)
+	trae.ClearUsage()
 	return n
 }
 

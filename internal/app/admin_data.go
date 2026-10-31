@@ -63,11 +63,11 @@ func clearPoolForDataDelete() (accounts, clientKeys int) {
 	accounts = len(old.Accounts)
 	clientKeys = len(globalClientKeys())
 	pool = &AccountPool{
-		Accounts:   []*Account{},
-		CurrentIdx: 0,
-		Headers:    defaultProxyConfig().Headers,
+		Accounts: []*Account{},
+		Headers:  defaultProxyConfig().Headers,
 	}
 	poolDirty = false
+	clearPoolUsageLocked() // 痕迹表与游标一并清空（即时落盘痕迹文件）
 	poolMu.Unlock()
 	savePool()
 
@@ -93,6 +93,8 @@ func clearOpenCodeKeysForDataDelete() int {
 	// key 池已清空，绑定表随之失效（绑定按 key 明文存，留着就是垃圾配置）。
 	next.KeyBindings = nil
 	setZenConfig(&next)
+	// 冷却/记账痕迹一并清空（痕迹文件即时落盘）。
+	ClearZenUsage()
 	return n
 }
 
@@ -184,6 +186,9 @@ func clearProxyPoolForDataDelete() int {
 	setZenConfig(defaultZenConfig())
 	clearAllAccountProxies()
 	clearAllKeyProxies()
+	// 出口健康统计（独立 proxy-state.json）随代理池一并清空：列表已换，
+	// 旧出口的成败样本没有保留价值（与编辑池即清零同一决策口径）。
+	resetProxyHealthStats()
 	return n
 }
 

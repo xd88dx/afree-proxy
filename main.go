@@ -46,7 +46,7 @@ func main() {
 		fmt.Printf("Account added to pool successfully!\n")
 		fmt.Printf("  Account ID: %s\n", acc.AccountID)
 		fmt.Printf("  Email:      %s\n", acc.Email)
-		fmt.Printf("  Status:     %s\n", acc.Status)
+		fmt.Printf("  Status:     %s\n", app.AccountStatus(acc))
 		fmt.Println("\nRun without flags to start the proxy with account rotation.")
 		return
 	}

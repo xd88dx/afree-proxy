@@ -51,6 +51,31 @@ func ResolveDataPath(filename string) string {
 	return filepath.Join(pwd, "data", filename)
 }
 
+// DataDir 数据目录本身（供需要"列出目录内容"的场景，如配置指纹清单的
+// glob 收集）。判定与 ResolveDataPath 的默认落点一致：DATA_DIR 优先，
+// 其次可执行文件目录 data/，再次工作目录 data/。
+func DataDir() string {
+	if dir := strings.TrimSpace(os.Getenv("DATA_DIR")); dir != "" {
+		return dir
+	}
+	candidates := []string{}
+	if exe, err := os.Executable(); err == nil {
+		candidates = append(candidates, filepath.Join(filepath.Dir(exe), "data"))
+	}
+	if wd, err := os.Getwd(); err == nil {
+		candidates = append(candidates, filepath.Join(wd, "data"))
+	}
+	for _, c := range candidates {
+		if fi, err := os.Stat(c); err == nil && fi.IsDir() {
+			return c
+		}
+	}
+	if len(candidates) > 0 {
+		return candidates[0]
+	}
+	return "data"
+}
+
 // FileExists 判断文件是否存在。
 func FileExists(path string) bool {
 	_, err := os.Stat(path)

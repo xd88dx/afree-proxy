@@ -63,7 +63,7 @@ func TestAutoStreamLearnThroughRealCallee(t *testing.T) {
 	poolMu.Lock()
 	savedPool := pool
 	pool = &AccountPool{Accounts: []*Account{{
-		AccountID: "probe-1", Email: "probe@test", APIToken: "sk-test-static-key", Status: "active",
+		AccountID: "probe-1", Email: "probe@test", APIToken: "sk-test-static-key",
 	}}}
 	poolMu.Unlock()
 	defer func() {
@@ -128,7 +128,7 @@ func TestCallClineAPINon200ReturnsTypedError(t *testing.T) {
 	poolMu.Lock()
 	savedPool := pool
 	pool = &AccountPool{Accounts: []*Account{{
-		AccountID: "probe-2", Email: "probe2@test", APIToken: "sk-test-static-key", Status: "active",
+		AccountID: "probe-2", Email: "probe2@test", APIToken: "sk-test-static-key",
 	}}}
 	poolMu.Unlock()
 	defer func() {
@@ -188,8 +188,8 @@ func TestCallClineAPIFailoverOn429(t *testing.T) {
 	poolMu.Lock()
 	savedPool := pool
 	pool = &AccountPool{Accounts: []*Account{
-		{AccountID: "a-1", Email: "a1@test", APIToken: "sk-key-A", Status: "active"},
-		{AccountID: "a-2", Email: "a2@test", APIToken: "sk-key-B", Status: "active"},
+		{AccountID: "a-1", Email: "a1@test", APIToken: "sk-key-A"},
+		{AccountID: "a-2", Email: "a2@test", APIToken: "sk-key-B"},
 	}}
 	poolMu.Unlock()
 	defer func() {
@@ -221,9 +221,13 @@ func TestCallClineAPIFailoverOn429(t *testing.T) {
 			a1 = a
 		}
 	}
+	var st string
+	if u := usagePeekLocked(a1); u != nil {
+		st = u.Status
+	}
 	poolMu.Unlock()
-	if a1 == nil || a1.Status != "cooldown" {
-		t.Fatalf("the 429 account must be cooled, got %+v", a1)
+	if a1 == nil || st != "cooldown" {
+		t.Fatalf("the 429 account must be cooled, got %+v (status %q)", a1, st)
 	}
 }
 
@@ -245,7 +249,7 @@ func TestCallClineAPI429UnparseableShortCooldown(t *testing.T) {
 	poolMu.Lock()
 	savedPool := pool
 	pool = &AccountPool{Accounts: []*Account{
-		{AccountID: "only", Email: "only@test", APIToken: "sk-only", Status: "active"},
+		{AccountID: "only", Email: "only@test", APIToken: "sk-only"},
 	}}
 	poolMu.Unlock()
 	defer func() {
@@ -264,7 +268,10 @@ func TestCallClineAPI429UnparseableShortCooldown(t *testing.T) {
 
 	poolMu.Lock()
 	acc := pool.Accounts[0]
-	until := acc.CooldownUntil
+	var until time.Time
+	if u := usagePeekLocked(acc); u != nil {
+		until = u.CooldownUntil
+	}
 	poolMu.Unlock()
 	if until.IsZero() {
 		t.Fatal("the 429 account must be put on cooldown")
@@ -292,7 +299,7 @@ func TestCallClineAPI429QuotaKeywordLongCooldown(t *testing.T) {
 	poolMu.Lock()
 	savedPool := pool
 	pool = &AccountPool{Accounts: []*Account{
-		{AccountID: "quota", Email: "quota@test", APIToken: "sk-quota", Status: "active"},
+		{AccountID: "quota", Email: "quota@test", APIToken: "sk-quota"},
 	}}
 	poolMu.Unlock()
 	defer func() {
@@ -310,7 +317,10 @@ func TestCallClineAPI429QuotaKeywordLongCooldown(t *testing.T) {
 	}
 
 	poolMu.Lock()
-	until := pool.Accounts[0].CooldownUntil
+	var until time.Time
+	if u := usagePeekLocked(pool.Accounts[0]); u != nil {
+		until = u.CooldownUntil
+	}
 	poolMu.Unlock()
 	if d := time.Until(until); d < 17*time.Hour {
 		t.Fatalf("quota-exhausted 429 must get a long cooldown, got %v", d)
@@ -456,7 +466,7 @@ func TestClineHeadersOnTheWire(t *testing.T) {
 	poolMu.Lock()
 	savedPool := pool
 	pool = &AccountPool{Accounts: []*Account{{
-		AccountID: "hdr-1", Email: "hdr@test", APIToken: "sk-static-key", Status: "active",
+		AccountID: "hdr-1", Email: "hdr@test", APIToken: "sk-static-key",
 	}}}
 	poolMu.Unlock()
 	defer func() {

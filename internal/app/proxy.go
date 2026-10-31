@@ -66,7 +66,10 @@ func StartProxy(host string, port int) error {
 	p := loadPool()
 	activeCount := 0
 	for _, a := range p.Accounts {
-		if a.Status == "active" {
+		// 启动预热单线程（flusher/请求路径尚未启动），裸读痕迹表安全；
+		// accountStatusLocked 的约定锁 poolMu 在此不适用（refreshAccountToken
+		// 内部会拿锁，这里不能先持着）。
+		if accountStatusLocked(a) == "active" {
 			// 停用（poolEnabled=false）的账号相当于不在池里：不做启动预热，
 			// 也不占 activeCount。重新启用后由请求路径的 ensureAccountToken
 			// 惰性刷新，不会被“没预热过”卡住。
@@ -91,6 +94,12 @@ func StartProxy(host string, port int) error {
 	startModelsRefresher()
 	startZenModelsRefresher()
 	startPoolFlusher()
+	// 配置指纹清单：外部监测只盯 config-manifest.json 一个文件（glob 收集
+	// 全部 *-config.json + wb 配置/凭据，新平台自动纳入）。
+	startConfigManifestWatcher()
+	// 健康统计的旧数据迁移必须在任何 mutateProxyConfigFile 写回之前完成，
+	// 否则旧 proxy-config.json 里的 health 段会被下一次配置写回剥离丢弃。
+	ensureProxyHealthLoaded()
 	loadZenEndpoints()
 	// 出口绑定必须在首次请求之前就位：否则第一批请求会用轮转出来的
 	// 出口发出，恰好是上游记录 IP 的那一刻。
@@ -1336,16 +1345,16 @@ func clineAPIWithAccount(ctx context.Context, params map[string]any, stream bool
 			if resp2.StatusCode == 401 {
 				resp2.Body.Close()
 				poolMu.Lock()
-				acc.Status = "expired"
-				savePoolLocked()
+				usageForLocked(acc).Status = "expired"
+				savePoolUsageLocked()
 				poolMu.Unlock()
 				return nil, fmt.Errorf("account %s token expired permanently", truncateEmail(acc.Email))
 			}
 			resp = resp2
 		} else {
 			poolMu.Lock()
-			acc.Status = "expired"
-			savePoolLocked()
+			usageForLocked(acc).Status = "expired"
+			savePoolUsageLocked()
 			poolMu.Unlock()
 			return nil, fmt.Errorf("account %s refresh failed: %w", truncateEmail(acc.Email), rerr)
 		}

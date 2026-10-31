@@ -1738,9 +1738,13 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
   </div>
   <div class="wb-dialog-body">
     <div class="hint" style="margin-bottom:10px">Import will replace ALL persisted config with the file contents. Confirm whether to keep each platform's credential enabled states.</div>
-    <div style="display:flex;gap:8px;margin-bottom:12px">
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px">
       <button class="btn btn-sm" onclick="impKeepSetAll('impKeepRows',false)">Select all</button>
       <button class="btn btn-sm" onclick="impKeepSetAll('impKeepRows',true)">Invert</button>
+      <!-- 统计快照勾选框（默认勾选）：备份含 state 段才可见；取消勾选 = 各平台统计保留导入时刻现值 -->
+      <label id="impStateRow" style="margin-left:auto;display:none;gap:6px;align-items:center;cursor:pointer;white-space:nowrap">
+        <input type="checkbox" id="impStateToggle" checked> <span>Import statistics</span>
+      </label>
     </div>
     <div id="impKeepRows" style="display:flex;flex-direction:column;gap:10px;margin-bottom:14px"></div>
     <div style="display:flex;gap:8px;justify-content:flex-end">
@@ -2332,6 +2336,7 @@ const I18N_ZH = {
   'Import replaces sections present in the file (accounts / keys / proxies / combos ...). All imported identities start DISABLED. Continue?': '导入将用文件内容替换当前对应的配置段（所有凭据、代理池、别名等，文件中存在的段都会替换）。导入的所有凭据一律禁用，需在面板逐个启用。继续？',
   'Select all': '全选',
   'Invert': '反选',
+  'Import statistics': '导入统计数据',
   'No platform selected': '未选择任何平台',
   'Confirm import': '确认导入',
   'State': '状态',
@@ -4945,6 +4950,11 @@ function onImportFileChange(event) {
       const parsed = JSON.parse(reader.result);
       if (parsed.version !== 1 && parsed.version !== 2) throw new Error(T('Unsupported backup version'));
       const rows = impKeepRowsFor(parsed);
+      // 统计快照勾选框：备份携带 state 段（新版导出）才显示，默认勾选；
+      // 旧版备份无该段则隐藏，导入行为与原版一致。
+      const hasState = !!parsed.state;
+      _('impStateRow').style.display = hasState ? 'inline-flex' : 'none';
+      if (hasState) _('impStateToggle').checked = true;
       if (rows.length === 0) {
         // 备份不含任何上游身份：无沿用选项，按原确认流程直接导入
         if (!confirm(T('Import replaces sections present in the file (accounts / keys / proxies / combos ...). All imported identities start DISABLED. Continue?'))) return;
@@ -5008,14 +5018,18 @@ function confirmImpKeep() {
   _('impKeepRows').querySelectorAll('input[type=checkbox][data-keep]').forEach(cb => {
     if (cb.checked) keep[cb.getAttribute('data-keep')] = true;
   });
+  const importState = _('impStateRow').style.display !== 'none' && _('impStateToggle').checked;
   const parsed = importParsed;
   importParsed = null;
   _('impKeepDialog').close();
-  doImportConfig(parsed, keep);
+  doImportConfig(parsed, keep, importState);
 }
 
-async function doImportConfig(parsed, keep) {
+async function doImportConfig(parsed, keep, importState) {
   const payload = Object.assign({}, parsed, { keepEnabled: keep });
+  // 统计还原开关：仅当备份携带 state 段时随请求下发（后端默认按勾选处理）；
+  // 旧版备份 / 取消勾选时不带该键，各平台统计保留导入时刻现值。
+  if (importState !== undefined && parsed.state) payload.importState = importState;
   try {
     const d = await api('POST', '/config/import', payload);
     const imp = (d.data && d.data.imported) || {};

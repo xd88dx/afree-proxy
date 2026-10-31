@@ -7,8 +7,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	"afree-proxy/internal/kit"
 )
 
 // ============ 配置与数据模型 ============
@@ -49,15 +47,11 @@ type Account struct {
 	// ProxyMain / ProxyBackup 出口绑定（隔离模式：主优先备兜底，双不可用跳过）。
 	ProxyMain   string `json:"proxyMain,omitempty"`
 	ProxyBackup string `json:"proxyBackup,omitempty"`
-	// Tokens token 记账（今日/累计 prompt+completion，跨日重置）。
-	Tokens TokenStats `json:"tokens,omitempty"`
-	// Credits 最近一次额度查询快照（后台定期刷新 + Test 即时刷新）。
-	Credits *Credits `json:"credits,omitempty"`
-	// Checkin 最近一次签到状态（status/claim 结果投影，面板"状态"列展示）。
-	Checkin *CheckinState `json:"checkin,omitempty"`
-	// CheckinDeviceGen 签到设备 ID 代际（9074 换设备后 +1，持久化）：
-	// 设备 ID = deviceID16Gen(账号ID, 代际)，代际 0 为初始派生。
-	CheckinDeviceGen int `json:"checkinDeviceGen,omitempty"`
+	// Tokens（token 记账）/Credits（额度快照）/Checkin（签到状态）/
+	// CheckinDeviceGen（签到设备代际）已拆出到独立 trae-state.json
+	// （usage.go，2026-10-31，按账号 ID 键）：它们是随请求/签到/额度刷新变化
+	// 的使用痕迹，留在配置文件里会干扰外部对配置变更的监测。凭据三件套
+	//（Token/RefreshToken/ExpiredAt）保留在这里——续期回写属凭据轮转。
 }
 
 // CheckinState 每日签到状态（checkin_credits/status + claim 的投影）。
@@ -115,8 +109,7 @@ type Config struct {
 	// unlimited 恒最优先；依赖后台额度刷新的数据）| fill | random。
 	// 空 = 跟随全局账号池策略（POOL_STRATEGY，默认 round_robin）；TRAE_STRATEGY
 	// 环境变量优先级更高（见 app.traeStrategy）。
-	Selection string `json:"selection,omitempty"`
-	// Endpoint 上游端点（原项目 UPSTREAM_MODE 的三档收敛，面板下拉框）：
+	Selection string `json:"selection,omitempty"`	// Endpoint 上游端点（原项目 UPSTREAM_MODE 的三档收敛，面板下拉框）：
 	//   - "" / auto（默认）：自动路由 = 合并目录 + 每模型自己的 Function 档
 	//     走 raw_chat（TraeCode 桌面协议，历史行为不变）；
 	//   - remote：chat_sessions 传输（solo_agent_remote 执行器，Agent 档）；
@@ -125,9 +118,9 @@ type Config struct {
 	Endpoint string `json:"endpoint,omitempty"`
 	// AutoCheckin 每日自动签到开关。nil = 关闭（与上游原版默认一致）。
 	AutoCheckin *bool `json:"autoCheckin,omitempty"`
-	// Cool 冷却表：账号 ID -> 冷却截止时刻。落盘持久化（2026-10-28 用户定）：
-	// 重启后冷却保留，避免上游刚限流过的账号立即回池被重试；选号时惰性清理过期项。
-	Cool map[string]time.Time `json:"cool,omitempty"`
+	// Cool 冷却表已拆出到独立 trae-state.json（usage.go，2026-10-31）：
+	// 它是随 429/失败变化的使用痕迹，留在配置文件里会干扰外部对配置变更的
+	// 监测。落盘持久化语义不变（2026-10-28 用户定）。
 }
 
 // DefaultGateway Trae 中国区模型网关（fallback api5-normal.mchost.guru 在
@@ -150,7 +143,6 @@ func DefaultConfig() *Config {
 		Gateway:        DefaultGateway,
 		MaxConcurrency: 8,
 		Retries:        3,
-		Cool:           map[string]time.Time{},
 	}
 }
 
@@ -186,9 +178,6 @@ func (c *Config) normalize() {
 		c.Endpoint = strings.ToLower(strings.TrimSpace(c.Endpoint))
 	default:
 		c.Endpoint = ""
-	}
-	if c.Cool == nil {
-		c.Cool = map[string]time.Time{}
 	}
 	cleaned := c.Accounts[:0]
 	seen := map[string]bool{}
@@ -327,13 +316,14 @@ var ConfigPath string
 func Load(path string) {
 	ConfigPath = path
 	mu.Lock()
-	defer mu.Unlock()
 	if loaded {
+		mu.Unlock()
 		return
 	}
 	loaded = true
 	data, err := os.ReadFile(path)
 	if err != nil {
+		mu.Unlock()
 		return
 	}
 	if err := json.Unmarshal(data, cfg); err != nil {
@@ -341,9 +331,14 @@ func Load(path string) {
 		if renErr := os.Rename(path, path+".corrupt-"+stamp); renErr == nil {
 			fmt.Printf("  trae config corrupt JSON; moved to %s.corrupt-%s\n", path, stamp)
 		}
+		mu.Unlock()
 		return
 	}
 	cfg.normalize()
+	mu.Unlock()
+	// 痕迹加载/迁移在配置写锁外执行：迁移内部的 saveUsage 要拿 mu.RLock，
+	// 写锁内调用会自死锁（2026-10-31 端到端实测发现并修复）。
+	loadUsage()
 }
 
 // Get 返回活配置指针（写时复制语义由调用方保证：先拷贝再 Set）。
@@ -363,18 +358,10 @@ func Set(next *Config) {
 	pruneRemovedAccounts(next)
 }
 
-// save 原子落盘（临时文件 + rename）。Cool（冷却表）随配置一并持久化。
-// marshal 全程持 mu.RLock：Cool 是就地上写的活 map，无锁 marshal 会与
-// Cooldown 的写入构成 "concurrent map iteration and map write"
-// 进程级崩溃（2026-10-29 审计修复）。
-// token 记账的合批落盘器（2026-10-30）：记账表已随配置落盘，但写盘只发生在
-// 冷却/面板保存等"顺带"路径上——没有这些事件时，重启会丢掉最近消耗的记账
-// （实测 amd 配置文件的记账日期停在 10-28）。记账后只打脏标记，由后台
-// goroutine 周期写盘；save 自带串行保护，调用方持锁期间不要 Mark。
-var tokensFlush = kit.NewDirtyFlusher(10*time.Second, save)
-
-func markTokensDirty() { tokensFlush.Mark() }
-
+// save 原子落盘（临时文件 + rename）。拆分后只写配置字段——Tokens/Credits/
+// Checkin/Cool 等使用痕迹走 usage.go 的 saveUsage 独立落盘。
+// marshal 全程持 mu.RLock：Accounts 是活指针切片，无锁 marshal 会与写路径
+// 构成数据竞争（2026-10-29 审计修复口径）。
 func save() {
 	saveMu.Lock()
 	defer saveMu.Unlock()
@@ -402,27 +389,20 @@ func save() {
 	}
 }
 
-// pruneRemovedAccounts 清理不再在池中的账号的冷却条目（记账/绑定随账号
-// 结构体走，无需单独清理）。
+// pruneRemovedAccounts 清理不再在池中的账号的痕迹/冷却条目。
 func pruneRemovedAccounts(c *Config) {
-	if len(c.Cool) == 0 {
-		return
-	}
 	valid := map[string]bool{}
 	for _, a := range c.Accounts {
 		valid[a.ID] = true
 	}
 	mu.Lock()
-	for id := range c.Cool {
-		if !valid[id] {
-			delete(c.Cool, id)
-		}
-	}
-	mu.Unlock()
+	defer mu.Unlock()
+	pruneUsageLocked(valid)
 }
 
 // CloneConfig 写时复制的克隆对（app 层各池操作同模式）：cur 供 diff 基准，
-// next 为待改副本。两张表都深拷，改 next 后调 Set 落盘。
+// next 为待改副本。改 next 后调 Set 落盘。使用痕迹不随 Config 对象复制
+//（跟账号 ID 走，住在痕迹文件侧）。
 func CloneConfig() (cur, next *Config) {
 	c := Get()
 	cur = c
@@ -433,7 +413,6 @@ func CloneConfig() (cur, next *Config) {
 		AutoCheckin:    c.AutoCheckin,
 		MaxConcurrency: c.MaxConcurrency,
 		Retries:        c.Retries,
-		Cool:           map[string]time.Time{},
 	}
 	if c.Accounts != nil {
 		next.Accounts = make([]*Account, len(c.Accounts))
@@ -441,9 +420,6 @@ func CloneConfig() (cur, next *Config) {
 			cp := *a
 			next.Accounts[i] = &cp
 		}
-	}
-	for k, v := range c.Cool {
-		next.Cool[k] = v
 	}
 	return cur, next
 }

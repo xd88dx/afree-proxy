@@ -69,6 +69,19 @@ func zenBackupSnapshot() *zenConfigData {
 	return &c
 }
 
+// stateBackup 统计快照段（备份文件 state 键）：八域痕迹的聚合，各段形态与
+// 各自 *-state.json 落盘文件一致。
+type stateBackup struct {
+	Cline       *poolUsageData   `json:"cline,omitempty"`
+	Zen         *zenUsageFile    `json:"zen,omitempty"`
+	Trae        json.RawMessage  `json:"trae,omitempty"`
+	AMD         json.RawMessage  `json:"amd,omitempty"`
+	OpenRouter  json.RawMessage  `json:"openrouter,omitempty"`
+	TokenHarbor json.RawMessage  `json:"tokenharbor,omitempty"`
+	Other       json.RawMessage  `json:"other,omitempty"`
+	ProxyHealth *proxyHealthFile `json:"proxyHealth,omitempty"`
+}
+
 type configBackup struct {
 	Version         int               `json:"version"`
 	ExportedAt      time.Time         `json:"exportedAt"`
@@ -116,6 +129,16 @@ type configBackup struct {
 	ZenDepAliases map[string]*zenDepEntry `json:"zenDepAliases,omitempty"`
 	// ClineStreamRequired cline "必须流式"自学习结果（afree-config.json 的 clineStreamRequired 段）。
 	ClineStreamRequired map[string]string `json:"clineStreamRequired,omitempty"`
+	// State 统计快照（2026-11-01）：各平台使用痕迹（token 记账/冷却/账号状态/
+	// 轮转游标/出口健康），与 *-state.json 落盘同形态。导出始终携带；导入按
+	// ImportState 开关取舍（弹窗勾选框，默认勾选）。五平台包（trae/amd/or/th/
+	// other）以 JSON 往返（与落盘同形态），不暴露包内类型。WorkBuddy 的
+	// vendor state 不在此列——其内存态由 vendor 池 5s flusher 全量托管，运行时
+	// 导入会被覆盖，统计随迁走数据卷复制路径。
+	State *stateBackup `json:"state,omitempty"`
+	// ImportState 导入方对"还原统计快照"的选择（弹窗勾选框，默认勾选）。
+	// nil = 按导入处理（备份携带 state 段即还原）。
+	ImportState *bool `json:"importState,omitempty"`
 	// KeepEnabled 导入方对"沿用启用状态"的逐平台选择（导入弹窗 switch，默认
 	// 全不沿用）。缺项/false = 隔离护栏生效（导入身份一律禁用，原行为）；
 	// true = 保留备份内该平台的启用状态。key：cline / zen / oprt / amd /
@@ -136,6 +159,8 @@ func handleAdminConfigExport(w http.ResponseWriter, r *http.Request) {
 		cp := *a
 		accounts[i] = &cp
 	}
+	// cline 统计快照同锁取（poolUsage 由 poolMu 保护）
+	clineState := poolStateBackupSnapshotLocked()
 	poolMu.Unlock()
 	clientKeys := globalClientKeys()
 
@@ -185,6 +210,16 @@ func handleAdminConfigExport(w http.ResponseWriter, r *http.Request) {
 		PlatformBlacklist:   exportPlatformBlacklist(),
 		ZenDepAliases:       exportZenDepAliases(),
 		ClineStreamRequired: exportClineStreamRequired(),
+		State: &stateBackup{
+			Cline:       clineState,
+			Zen:         zenStateBackupSnapshot(),
+			Trae:        trae.StateSnapshotJSON(),
+			AMD:         amd.StateSnapshotJSON(),
+			OpenRouter:  openrouter.StateSnapshotJSON(),
+			TokenHarbor: tokenharbor.StateSnapshotJSON(),
+			Other:       other.StateSnapshotJSON(),
+			ProxyHealth: proxyHealthBackupSnapshot(),
+		},
 	}
 	data, err := json.MarshalIndent(backup, "", "  ")
 	if err != nil {
@@ -297,9 +332,6 @@ func handleAdminConfigImport(w http.ResponseWriter, r *http.Request) {
 				a.AccountID = "acc_" + kit.RandHex(8)
 			}
 			seen[a.AccountID] = true
-			if a.Status != "active" && a.Status != "cooldown" && a.Status != "expired" {
-				a.Status = "active"
-			}
 			// 隔离护栏：导入账号一律禁用参与轮换（poolEnabled 缺项 = 启用，
 			// 必须显式写 false，不能靠清字段）。导入弹窗对该平台勾选"沿用
 			// 启用状态"时保留备份内原状态（nil = 启用同口径）。
@@ -312,8 +344,10 @@ func handleAdminConfigImport(w http.ResponseWriter, r *http.Request) {
 		p := loadPool()
 		poolMu.Lock()
 		p.Accounts = accounts
-		p.CurrentIdx = 0
-		markPoolDirtyLocked()
+		// 账号集合整体替换：痕迹表无条件清零（2026-11-01 用户定——勾选统计
+		// 导入时随后由 state 快照回填=「保留统计值」；取消勾选则清零不回填=
+		// 「不保留统计值」），游标归零。
+		clearPoolUsageLocked()
 		poolMu.Unlock()
 		// 旧账号的刷新单飞句柄一并作废
 		refreshFlightMu.Lock()
@@ -558,6 +592,51 @@ func handleAdminConfigImport(w http.ResponseWriter, r *http.Request) {
 	}
 	if len(backup.WorkBuddyProxies) > 0 {
 		imported["workBuddyProxies"] = importWorkbuddyProxyBindings(backup.WorkBuddyProxies)
+	}
+
+	// ---- 统计快照（2026-11-01，用户定）：勾选（默认）=「保留统计值」——
+	// 各域痕迹整体替换为备份快照（cline 在账号集合替换之后回填）；取消勾选
+	// =「不保留统计值」——各域统计清零（cline 已在账号段清零）。旧版备份无
+	// state 段：维持原行为（cline 清零、其余域不碰），无统计可回填。
+	if st := backup.State; st != nil && (backup.ImportState == nil || *backup.ImportState) {
+		if st.Cline != nil {
+			poolMu.Lock()
+			importPoolStateBackupLocked(st.Cline)
+			savePoolUsageLocked()
+			poolMu.Unlock()
+		}
+		if st.Zen != nil {
+			importZenStateBackup(st.Zen)
+		}
+		if len(st.Trae) > 0 {
+			_ = trae.ImportStateJSON(st.Trae)
+		}
+		if len(st.AMD) > 0 {
+			_ = amd.ImportStateJSON(st.AMD)
+		}
+		if len(st.OpenRouter) > 0 {
+			_ = openrouter.ImportStateJSON(st.OpenRouter)
+		}
+		if len(st.TokenHarbor) > 0 {
+			_ = tokenharbor.ImportStateJSON(st.TokenHarbor)
+		}
+		if len(st.Other) > 0 {
+			_ = other.ImportStateJSON(st.Other)
+		}
+		if st.ProxyHealth != nil {
+			importProxyHealthBackup(st.ProxyHealth)
+		}
+		imported["state"] = 1
+	} else {
+		// 取消勾选：统计不保留——除 cline（账号段已清零）外的各域一并清零。
+		amd.ClearUsage()
+		openrouter.ClearUsage()
+		tokenharbor.ClearUsage()
+		other.ClearAllUsage()
+		trae.ClearUsage()
+		ClearZenUsage()
+		resetProxyHealthStats()
+		imported["stateCleared"] = 1
 	}
 
 	// ---- 模型封禁表 / 平台封禁表 / zen 死模型别名 / cline 必须流式学习结果

@@ -25,6 +25,7 @@ func thConfigPath() string { return kit.ResolveDataPath("tkhb-config.json") }
 
 // initTokenHarbor 加载配置 + 注入出站解析/HTTP client 工厂。StartProxy 早期调用一次。
 func initTokenHarbor() {
+	tokenharbor.UsagePath = kit.ResolveDataPath("tkhb-state.json")
 	tokenharbor.Load(thConfigPath())
 	tokenharbor.SetExitResolver(func(key string) (string, bool) {
 		if key == "" {
@@ -192,7 +193,9 @@ func handleTHConfig(w http.ResponseWriter, r *http.Request) {
 	writeAPI(w, http.StatusOK, apiResponse{Success: true, Data: data})
 }
 
-// thCloneConfig 写时复制：拷贝运行时字段（路由表/绑定/冷却）到新配置。
+// thCloneConfig 写时复制：拷贝运行时字段（路由表/绑定）到新配置。token
+// 记账/冷却在使用痕迹文件（tkhb-state.json）里，跟 key 集合走、不随 Config
+// 对象复制，这里不涉及。
 func thCloneConfig() (*tokenharbor.Config, *tokenharbor.Config) {
 	cur := tokenharbor.Get()
 	next := &tokenharbor.Config{
@@ -202,20 +205,12 @@ func thCloneConfig() (*tokenharbor.Config, *tokenharbor.Config) {
 		KeyBindings:       map[string]tokenharbor.Binding{},
 		MaxConcurrency:    cur.MaxConcurrency,
 		Retries:           cur.Retries,
-		KeyTokens:         map[string]tokenharbor.KeyTokenStats{},
-		Cool:              map[string]time.Time{},
 	}
 	for k, v := range cur.KeyRoutingEnabled {
 		next.KeyRoutingEnabled[k] = v
 	}
 	for k, v := range cur.KeyBindings {
 		next.KeyBindings[k] = v
-	}
-	for k, v := range cur.KeyTokens {
-		next.KeyTokens[k] = v
-	}
-	for k, v := range cur.Cool {
-		next.Cool[k] = v
 	}
 	return cur, next
 }
@@ -553,15 +548,15 @@ func thTestKey(index int, modelID string) (map[string]any, string) {
 }
 
 // clearTokenHarborKeysForDataDelete 清空 TokenHarbor key 池与绑定/路由表
-// （保留 baseURL 与平台设置）。
+// （保留 baseURL 与平台设置）；token 记账与冷却表一并清空（ClearUsage 即时
+// 落盘痕迹文件）。
 func clearTokenHarborKeysForDataDelete() int {
 	cur, next := thCloneConfig()
 	n := len(cur.Keys)
 	next.Keys = nil
 	next.KeyBindings = map[string]tokenharbor.Binding{}
 	next.KeyRoutingEnabled = map[string]bool{}
-	next.KeyTokens = map[string]tokenharbor.KeyTokenStats{}
-	next.Cool = map[string]time.Time{}
 	tokenharbor.Set(next)
+	tokenharbor.ClearUsage()
 	return n
 }

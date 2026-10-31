@@ -102,7 +102,7 @@ func TestAPIModelListClineIDsArePrefixed(t *testing.T) {
 	savedPool := pool
 	on := true
 	poolMu.Lock()
-	pool = &AccountPool{Accounts: []*Account{{AccountID: "a", Status: "active", PoolEnabled: &on}}}
+	pool = &AccountPool{Accounts: []*Account{{AccountID: "a", PoolEnabled: &on}}}
 	poolMu.Unlock()
 	defer func() {
 		poolMu.Lock()

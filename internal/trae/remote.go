@@ -87,8 +87,8 @@ func remoteStableSessionID(accountID, model string) string {
 // 空 = Free。原项目 raw identity 数值本地没有，按 Free=0 / 其他=文案回退）。
 func remoteIdentityText(acc *Account) (raw, text string) {
 	text = "Free"
-	if acc.Credits != nil && strings.TrimSpace(acc.Credits.Identity) != "" {
-		text = strings.TrimSpace(acc.Credits.Identity)
+	if cr := UsageFor(acc.ID).Credits; cr != nil && strings.TrimSpace(cr.Identity) != "" {
+		text = strings.TrimSpace(cr.Identity)
 	}
 	if strings.EqualFold(text, "free") {
 		return "0", text

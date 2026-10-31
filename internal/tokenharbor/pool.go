@@ -51,9 +51,9 @@ func PickKey(strategy string, boundRoutable func(key string) bool) string {
 	defer keyMu.Unlock()
 	now := time.Now()
 	mu.Lock()
-	for k, until := range c.Cool {
+	for k, until := range usage.Cool {
 		if now.After(until) {
-			delete(c.Cool, k)
+			delete(usage.Cool, k)
 		}
 	}
 	mu.Unlock()
@@ -67,7 +67,7 @@ func PickKey(strategy string, boundRoutable func(key string) bool) string {
 				continue
 			}
 			if !ignoreCooling {
-				if _, cooling := c.Cool[k]; cooling {
+				if _, cooling := usage.Cool[k]; cooling {
 					continue
 				}
 			}
@@ -126,13 +126,12 @@ func RecordKeyTokens(key string, tokens int64) {
 	if key == "" || tokens <= 0 {
 		return
 	}
-	c := Get()
 	mu.Lock()
-	if c.KeyTokens == nil {
-		c.KeyTokens = map[string]KeyTokenStats{}
+	if usage.KeyTokens == nil {
+		usage.KeyTokens = map[string]KeyTokenStats{}
 	}
 	today := time.Now().Format("2006-01-02")
-	st := c.KeyTokens[key]
+	st := usage.KeyTokens[key]
 	if st.Date != today {
 		st.Date = today
 		st.Today = 0
@@ -140,7 +139,7 @@ func RecordKeyTokens(key string, tokens int64) {
 	st.Today += tokens
 	st.Total += tokens
 	st.LastUsedAt = time.Now()
-	c.KeyTokens[key] = st
+	usage.KeyTokens[key] = st
 	mu.Unlock()
 	markTokensDirty() // 合批落盘
 }
@@ -157,14 +156,13 @@ func Cooldown(key string, d time.Duration) time.Duration {
 	if d > 24*time.Hour {
 		d = 24 * time.Hour
 	}
-	c := Get()
 	mu.Lock()
-	if c.Cool == nil {
-		c.Cool = map[string]time.Time{}
+	if usage.Cool == nil {
+		usage.Cool = map[string]time.Time{}
 	}
-	c.Cool[key] = time.Now().Add(d)
+	usage.Cool[key] = time.Now().Add(d)
 	mu.Unlock()
-	save() // 冷却落盘持久化（2026-10-28）：重启后冷却保留
+	saveUsage() // 冷却落盘持久化（2026-10-28）：重启后冷却保留
 	return d
 }
 
@@ -174,17 +172,16 @@ func Uncool(key string) {
 		return
 	}
 	mu.Lock()
-	delete(cfg.Cool, key)
+	delete(usage.Cool, key)
 	mu.Unlock()
-	save() // 解除冷却同步落盘
+	saveUsage() // 解除冷却同步落盘
 }
 
 // CooldownUntil 只读查询冷却截止时刻。
 func CooldownUntil(key string) (time.Time, bool) {
-	c := Get()
 	mu.RLock()
 	defer mu.RUnlock()
-	until, ok := c.Cool[key]
+	until, ok := usage.Cool[key]
 	return until, ok
 }
 

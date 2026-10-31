@@ -1813,15 +1813,12 @@ var accountParallelLimitOverride = sync.OnceValue(func() int {
 })
 
 // AccountParallelLimit 账号会话并发上限：权益快照优先，env 覆盖次之，
-// 未知回保守默认。
+// 未知回保守默认。额度快照住痕迹表（usage.go）。
 func AccountParallelLimit(acc *Account) int {
 	if n := accountParallelLimitOverride(); n > 0 {
 		return n
 	}
-	mu.Lock()
-	c := acc.Credits
-	mu.Unlock()
-	if c != nil && c.ParallelLimit > 0 {
+	if c := UsageFor(acc.ID).Credits; c != nil && c.ParallelLimit > 0 {
 		return c.ParallelLimit
 	}
 	return defaultAccountParallelLimit
@@ -2164,9 +2161,9 @@ func FetchCredits(a *Account) (*Credits, error) {
 	}
 	c.UpdatedAt = time.Now().UTC()
 	mu.Lock()
-	a.Credits = c
+	usageForLocked(a.ID).Credits = c
 	mu.Unlock()
-	save()
+	saveUsage() // 额度快照即时落盘（痕迹文件）
 	return c, nil
 }
 

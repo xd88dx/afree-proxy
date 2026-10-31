@@ -49,12 +49,12 @@ func PickAccount(strategy string, boundRoutable func(*Account) bool) *Account {
 	keyMu.Lock()
 	defer keyMu.Unlock()
 	now := time.Now()
-	// Cool 由 Cooldown/Uncool 在 mu 下就地上写，PickKey 的清理与读也必须走
-	// mu（keyMu 只护轮转游标 accIdx），否则并发迭代+写会直接 fatal。
+	// Cool 由 Cooldown/Uncool 在 mu 下就地上写，PickAccount 的清理与读也必须
+	// 走 mu（keyMu 只护轮转游标 accIdx），否则并发迭代+写会直接 fatal。
 	mu.Lock()
-	for id, until := range c.Cool {
+	for id, until := range usage.Cool {
 		if now.After(until) {
-			delete(c.Cool, id)
+			delete(usage.Cool, id)
 		}
 	}
 	mu.Unlock()
@@ -68,7 +68,7 @@ func PickAccount(strategy string, boundRoutable func(*Account) bool) *Account {
 				continue
 			}
 			if !ignoreCooling {
-				if _, cooling := c.Cool[a.ID]; cooling {
+				if _, cooling := usage.Cool[a.ID]; cooling {
 					continue
 				}
 			}
@@ -124,15 +124,16 @@ func PickAccount(strategy string, boundRoutable func(*Account) bool) *Account {
 }
 
 // creditSortKey 额度优先排序键：unlimited=0 恒最小（最优先），其余按剩余额度
-// 降序（取负），未知额度视为 0。
+// 降序（取负），未知额度视为 0。额度快照住痕迹表（usage.go），带锁取副本。
 func creditSortKey(a *Account) float64 {
-	if a.Credits == nil {
+	u := UsageFor(a.ID)
+	if u.Credits == nil {
 		return 0
 	}
-	if a.Credits.Unlimited {
+	if u.Credits.Unlimited {
 		return -1e18
 	}
-	return -a.Credits.Remaining
+	return -u.Credits.Remaining
 }
 
 // AccountIndex 账号在池中的序号（1-based 展示用）；不存在返回 0。
@@ -151,21 +152,16 @@ func RecordAccountTokens(id string, tokens int64) {
 	if id == "" || tokens <= 0 {
 		return
 	}
-	c := Get()
 	mu.Lock()
-	for _, a := range c.Accounts {
-		if a.ID == id {
-			today := time.Now().Format("2006-01-02")
-			if a.Tokens.Date != today {
-				a.Tokens.Date = today
-				a.Tokens.Today = 0
-			}
-			a.Tokens.Today += tokens
-			a.Tokens.Total += tokens
-			a.Tokens.LastUsedAt = time.Now()
-			break
-		}
+	u := usageForLocked(id)
+	today := time.Now().Format("2006-01-02")
+	if u.Tokens.Date != today {
+		u.Tokens.Date = today
+		u.Tokens.Today = 0
 	}
+	u.Tokens.Today += tokens
+	u.Tokens.Total += tokens
+	u.Tokens.LastUsedAt = time.Now()
 	mu.Unlock()
 	markTokensDirty() // 合批落盘
 }
@@ -181,14 +177,13 @@ func Cooldown(id string, d time.Duration) time.Duration {
 	if d > 24*time.Hour {
 		d = 24 * time.Hour
 	}
-	c := Get()
 	mu.Lock()
-	if c.Cool == nil {
-		c.Cool = map[string]time.Time{}
+	if usage.Cool == nil {
+		usage.Cool = map[string]time.Time{}
 	}
-	c.Cool[id] = time.Now().Add(d)
+	usage.Cool[id] = time.Now().Add(d)
 	mu.Unlock()
-	save() // 冷却落盘持久化（2026-10-28）：重启后冷却保留
+	saveUsage() // 冷却落盘持久化（2026-10-28）：重启后冷却保留
 	return d
 }
 
@@ -198,17 +193,16 @@ func Uncool(id string) {
 		return
 	}
 	mu.Lock()
-	delete(cfg.Cool, id)
+	delete(usage.Cool, id)
 	mu.Unlock()
-	save() // 解除冷却同步落盘
+	saveUsage() // 解除冷却同步落盘
 }
 
 // CooldownUntil 只读查询冷却截止时刻。
 func CooldownUntil(id string) (time.Time, bool) {
-	c := Get()
 	mu.RLock()
 	defer mu.RUnlock()
-	until, ok := c.Cool[id]
+	until, ok := usage.Cool[id]
 	return until, ok
 }
 

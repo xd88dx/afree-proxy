@@ -7,6 +7,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -32,8 +33,10 @@ import (
 // 代理列表一有变动就整体清空统计（resetProxyHealthStats），所以键的稳定性
 // 只需覆盖"两次编辑之间"的窗口。
 //
-// 落盘 proxy-config.json 的 health 段：内存记账 + 脏标记 + 60s 周期原子落盘，
-// 重启续算。
+// 落盘独立的 proxy-state.json（2026-10-31 从 proxy-config.json 的 health 段
+// 拆出——它是随请求高频变化的使用痕迹，留在配置文件里会干扰外部对配置变更
+// 的监测）：内存记账 + 脏标记 + 60s 周期原子落盘，重启续算；首次加载时若
+// 新文件缺失则从旧 proxy-config.json 的 health 段一次性迁移。
 // ============================================================================
 
 const (
@@ -298,11 +301,24 @@ var (
 	proxyHealthStats = map[string]*proxyHealthEntry{}
 	proxyHealthDirty bool
 	proxyHealthOnce  sync.Once
+	// proxyHealthFileMu 串行化对 proxy-state.json 的写（flush 循环与
+	// resetProxyHealthStats 的同步 flush 可能并发进入写文件段）。
+	proxyHealthFileMu sync.Mutex
 )
 
 type proxyHealthFile struct {
 	SavedAt time.Time                    `json:"savedAt"`
 	Proxies map[string]*proxyHealthEntry `json:"proxies"`
+}
+
+// proxyHealthPath 独立健康统计文件（使用痕迹，不进配置监测集合）。
+func proxyHealthPath() string { return kit.ResolveDataPath("proxy-state.json") }
+
+// legacyProxyHealthShim 从旧 proxy-config.json 原文提取 health 段的一次性
+// 迁移载体——与 proxyConfigFileData 解耦，避免两套字段定义互相牵连。
+type legacyProxyHealthShim struct {
+	HealthSavedAt time.Time                    `json:"healthSavedAt,omitempty"`
+	Health        map[string]*proxyHealthEntry `json:"health,omitempty"`
 }
 
 // recordProxyOutcome 记一次出口成败。kind 为平台标识（cline/zen/amd/or/th/
@@ -387,14 +403,121 @@ func ensureProxyHealthLoaded() {
 	})
 }
 
-func loadProxyHealth() {
-	proxyFileMu.Lock()
-	f := loadProxyConfigFileLocked()
-	stats := f.Health
-	proxyFileMu.Unlock()
-	if stats == nil {
+// proxyHealthBackupSnapshot 统计快照（配置备份 state 段，2026-11-01）。
+func proxyHealthBackupSnapshot() *proxyHealthFile {
+	ensureProxyHealthLoaded()
+	proxyHealthMu.Lock()
+	out := proxyHealthFile{
+		SavedAt: time.Now(),
+		Proxies: make(map[string]*proxyHealthEntry, len(proxyHealthStats)),
+	}
+	for k, e := range proxyHealthStats {
+		if e == nil {
+			continue
+		}
+		cp := *e
+		out.Proxies[k] = &cp
+	}
+	proxyHealthMu.Unlock()
+	return &out
+}
+
+// importProxyHealthBackup 统计导入（配置备份还原）：整体替换真身并立即落盘。
+func importProxyHealthBackup(f *proxyHealthFile) {
+	ensureProxyHealthLoaded()
+	proxyHealthMu.Lock()
+	next := make(map[string]*proxyHealthEntry, len(f.Proxies))
+	for k, e := range f.Proxies {
+		if e == nil {
+			continue
+		}
+		cp := *e
+		next[k] = &cp
+	}
+	proxyHealthStats = next
+	proxyHealthDirty = true
+	proxyHealthMu.Unlock()
+	flushProxyHealth()
+}
+
+// renameLegacyProxyState 命名统一迁移（2026-11-01）：状态文件统一为
+// *-state.json；旧 proxy-health.json 存在且新名缺失时改名续用。
+func renameLegacyProxyState() {
+	path := proxyHealthPath()
+	legacy := strings.TrimSuffix(path, "-state.json") + "-health.json"
+	if legacy == path {
 		return
 	}
+	if _, err := os.Stat(legacy); err != nil {
+		return
+	}
+	if _, err := os.Stat(path); err == nil {
+		return // 新名已在：旧名留档不动
+	}
+	if err := os.Rename(legacy, path); err == nil {
+		log.Printf("proxy state: renamed legacy %s -> %s", legacy, path)
+	}
+}
+
+func loadProxyHealth() {
+	renameLegacyProxyState()
+	path := proxyHealthPath()
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		if !os.IsNotExist(err) {
+			log.Printf("proxy health: read %s: %v (starting empty)", path, err)
+			return
+		}
+		// 一次性迁移：新文件缺失时从旧 proxy-config.json 的 health 段提取，
+		// 避免升级后统计清零（迁移幂等：新文件一旦存在即不再走这里）。
+		migrateProxyHealthFromConfig()
+		return
+	}
+	var f proxyHealthFile
+	if err := json.Unmarshal(raw, &f); err != nil {
+		// 坏文件防护与各 config 文件同款：改名留证，空表启动。
+		stamp := time.Now().Format("20060102-150405")
+		if renErr := os.Rename(path, path+".corrupt-"+stamp); renErr == nil {
+			log.Printf("proxy health: corrupt JSON at %s; moved to %s.corrupt-%s", path, path, stamp)
+		}
+		log.Printf("proxy health: parse failed: %v (starting empty)", err)
+		return
+	}
+	absorbProxyHealthStats(f.Proxies, path)
+}
+
+// migrateProxyHealthFromConfig 从旧 proxy-config.json 原文提取 health 段并
+// 写入独立文件。必须在任何 mutateProxyConfigFile 写回之前执行（启动序列里
+// 的 ensureProxyHealthLoaded 保证）——否则旧 health 段会在下一次配置写回时
+// 被剥离丢弃，统计就丢了。
+func migrateProxyHealthFromConfig() {
+	shimRaw, err := os.ReadFile(proxyConfigPath())
+	if err != nil {
+		return // 没有旧文件 = 没有可迁移的数据
+	}
+	var shim legacyProxyHealthShim
+	if err := json.Unmarshal(shimRaw, &shim); err != nil || len(shim.Health) == 0 {
+		return
+	}
+	absorbProxyHealthStats(shim.Health, proxyConfigPath())
+	proxyHealthFileMu.Lock()
+	defer proxyHealthFileMu.Unlock()
+	out := proxyHealthFile{SavedAt: shim.HealthSavedAt, Proxies: shim.Health}
+	if out.SavedAt.IsZero() {
+		out.SavedAt = time.Now()
+	}
+	if raw, err := json.MarshalIndent(out, "", "  "); err == nil {
+		atomicWriteFile(proxyHealthPath(), raw)
+	}
+	// 顺手重写配置文件剥离旧 health 段（proxyConfigFileData 已无对应字段）：
+	// 升级即完成清理。
+	mutateProxyConfigFile(func(f *proxyConfigFileData) {})
+	log.Printf("proxy health: migrated %d stat(s) from %s to %s",
+		len(shim.Health), proxyConfigPath(), proxyHealthPath())
+}
+
+// absorbProxyHealthStats 把读出的统计表灌入内存（Recent 截断 + 日志）。
+func absorbProxyHealthStats(stats map[string]*proxyHealthEntry, from string) {
 	for _, e := range stats {
 		if e == nil {
 			continue
@@ -404,7 +527,7 @@ func loadProxyHealth() {
 		}
 	}
 	proxyHealthStats = stats
-	log.Printf("proxy health: restored %d proxy stat(s) from %s", len(proxyHealthStats), proxyConfigPath())
+	log.Printf("proxy health: restored %d proxy stat(s) from %s", len(proxyHealthStats), from)
 }
 
 func proxyHealthFlushLoop() {
@@ -432,11 +555,16 @@ func flushProxyHealth() {
 	proxyHealthDirty = false
 	proxyHealthMu.Unlock()
 
-	// 只覆盖 proxy-config.json 的 health 段，出口池与绑定段原样保留。
-	mutateProxyConfigFile(func(f *proxyConfigFileData) {
-		f.HealthSavedAt = out.SavedAt
-		f.Health = out.Proxies
-	})
+	// 直接原子写独立文件，不再经过 proxy-config.json（配置文件保持"仅用户
+	// 操作才变"，外部监测配置变更不被健康统计噪声淹没）。
+	proxyHealthFileMu.Lock()
+	defer proxyHealthFileMu.Unlock()
+	raw, err := json.MarshalIndent(out, "", "  ")
+	if err != nil {
+		log.Printf("proxy health: marshal: %v", err)
+		return
+	}
+	atomicWriteFile(proxyHealthPath(), raw)
 }
 
 // proxyHealthSnapshot 面板用的每代理统计表。以当前代理池为基准逐行输出

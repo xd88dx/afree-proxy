@@ -50,16 +50,16 @@ func CheckinClaim(a *Account) (bool, float64, error) {
 	if err == nil || code != "9074" {
 		return checkedIn, credits, err
 	}
-	// 9074：设备维度假性限流 → 换设备 ID，10 分钟后台重试
-	if a.Checkin != nil && a.Checkin.Rotations >= checkin9074MaxRotations {
-		errText := fmt.Sprintf("device rate limited (code 9074) — %d device rotations exhausted today", a.Checkin.Rotations)
+	// 9074：设备维度假性限流 → 换设备 ID，10 分钟后台重试（签到状态住痕迹表）
+	if ck := UsageFor(a.ID).Checkin; ck != nil && ck.Rotations >= checkin9074MaxRotations {
+		errText := fmt.Sprintf("device rate limited (code 9074) — %d device rotations exhausted today", ck.Rotations)
 		recordCheckin(a, false, 0, errText)
 		log.Printf("trae checkin 9074: account %s gave up (%s)", a.ID, errText)
 		return false, 0, fmt.Errorf("%s", errText)
 	}
 	rotateCheckinDevice(a)
 	recordCheckin(a, false, 0, "device rate limited (code 9074) — device rotated, retry in 10m")
-	log.Printf("trae checkin 9074: account %s rotated to device gen %d, retry in %s", a.ID, a.CheckinDeviceGen, checkin9074Backoff)
+	log.Printf("trae checkin 9074: account %s rotated to device gen %d, retry in %s", a.ID, UsageFor(a.ID).CheckinDeviceGen, checkin9074Backoff)
 	scheduleCheckinRetry(a.ID)
 	return false, 0, fmt.Errorf("device rate limited (code 9074) — device rotated, retry in 10m")
 }
@@ -75,16 +75,18 @@ func claimOnce(a *Account) (checkedIn bool, credits float64, code string, err er
 }
 
 // rotateCheckinDevice 设备代际 +1（持久化）并记当日轮换次数。
+// 代际与轮换次数住痕迹表（usage.go，按账号 ID 键）。
 func rotateCheckinDevice(a *Account) {
 	mu.Lock()
-	a.CheckinDeviceGen++
+	u := usageForLocked(a.ID)
+	u.CheckinDeviceGen++
 	today := time.Now().Format("2006-01-02")
-	if a.Checkin == nil || a.Checkin.Date != today {
-		a.Checkin = &CheckinState{Date: today}
+	if u.Checkin == nil || u.Checkin.Date != today {
+		u.Checkin = &CheckinState{Date: today}
 	}
-	a.Checkin.Rotations++
+	u.Checkin.Rotations++
 	mu.Unlock()
-	save()
+	saveUsage()
 }
 
 // scheduleCheckinRetry 10 分钟后台重试：确认账号仍在且今天未签成功才继续，
@@ -113,13 +115,13 @@ func scheduleCheckinRetry(accountID string) {
 }
 
 // checkinCall 调 status/claim 端点并解析信封（data 嵌套与平铺双兜底）。
-// 设备 ID 按账号当前代际派生（9074 轮换后自动使用新 ID）。
+// 设备 ID 按账号当前代际派生（9074 轮换后自动使用新 ID；代际住痕迹表）。
 func checkinCall(a *Account, action string) (enable bool, checkedIn bool, credits float64, code string, err error) {
 	req, err := http.NewRequest(http.MethodPost, apiHostCN+"/trae/api/v2/ug/checkin_credits/"+action, bytes.NewReader([]byte("{}")))
 	if err != nil {
 		return false, false, 0, "", err
 	}
-	for k, v := range oauthHeaders(a.Token, deviceID16Gen(a.ID, a.CheckinDeviceGen)) {
+	for k, v := range oauthHeaders(a.Token, deviceID16Gen(a.ID, UsageFor(a.ID).CheckinDeviceGen)) {
 		req.Header.Set(k, v)
 	}
 	client, err := auxClient(a)
@@ -171,11 +173,12 @@ func RecordCheckinResult(a *Account, checkedIn bool, credits float64, errText st
 // 当日轮换次数跨记录保留，跨日自动清零）。
 func recordCheckin(a *Account, checkedIn bool, credits float64, errText string) {
 	mu.Lock()
+	u := usageForLocked(a.ID)
 	rotations := 0
-	if a.Checkin != nil && a.Checkin.Date == time.Now().Format("2006-01-02") {
-		rotations = a.Checkin.Rotations
+	if u.Checkin != nil && u.Checkin.Date == time.Now().Format("2006-01-02") {
+		rotations = u.Checkin.Rotations
 	}
-	a.Checkin = &CheckinState{
+	u.Checkin = &CheckinState{
 		CheckedIn: checkedIn,
 		Date:      time.Now().Format("2006-01-02"),
 		LastAt:    time.Now().UTC(),
@@ -184,15 +187,16 @@ func recordCheckin(a *Account, checkedIn bool, credits float64, errText string) 
 		Rotations: rotations,
 	}
 	mu.Unlock()
-	save()
+	saveUsage()
 }
 
 // NeedsCheckin 该账号今天是否还没签（以本地记录为准；无记录视为未签）。
 func NeedsCheckin(a *Account) bool {
-	if a.Checkin == nil {
+	ck := UsageFor(a.ID).Checkin
+	if ck == nil {
 		return true
 	}
-	return a.Checkin.Date != time.Now().Format("2006-01-02") || !a.Checkin.CheckedIn
+	return ck.Date != time.Now().Format("2006-01-02") || !ck.CheckedIn
 }
 
 func boolField(obj map[string]any, key string) bool {

@@ -422,9 +422,14 @@ func TestPickZenKeyAllCoolingFollowsUnableForce(t *testing.T) {
 	}
 }
 
-// 冷却落盘回读（2026-10-28 用户定）：冷却写入后落盘，重新加载配置冷却保留。
+// 冷却落盘回读（2026-10-28 用户定）：冷却写入后落盘，重新加载冷却保留。
+// 2026-10-31 拆分后持久化目标是独立的 zen-state.json。
 func TestZenKeyCoolPersistedAcrossReload(t *testing.T) {
 	setupZenSessionTestUpstream(t)
+	dir := t.TempDir()
+	oldOverride := zenUsagePathOverride
+	zenUsagePathOverride = filepath.Join(dir, "zen-state.json")
+	t.Cleanup(func() { zenUsagePathOverride = oldOverride })
 	cfg := getZenConfig()
 	cfg2 := *cfg
 	cfg2.Keys = []string{"sk-a", "sk-b"}
@@ -433,20 +438,14 @@ func TestZenKeyCoolPersistedAcrossReload(t *testing.T) {
 	zenKeyMu.Lock()
 	zenKeyCool["sk-a"] = time.Now().Add(5 * time.Minute)
 	zenKeyMu.Unlock()
-	saveZenConfig()
-	// 模拟重启：直接重读 zen-config.json
-	zenFileMu.Lock()
-	f := loadZenConfigFileLocked()
-	zenFileMu.Unlock()
-	if _, ok := f.Cool["sk-a"]; !ok {
-		t.Fatal("zen key cooldown must be persisted to zen-config.json")
-	}
-	// setZenConfig 路径回填运行时 map
-	setZenConfig(&f.zenConfigData)
+	saveZenUsage()
+	// 模拟重启：重读痕迹文件回填运行时表
+	zenKeyCool = map[string]time.Time{}
+	loadZenUsage()
 	zenKeyMu.Lock()
 	_, ok := zenKeyCool["sk-a"]
 	zenKeyMu.Unlock()
 	if !ok {
-		t.Fatal("reloaded config must repopulate zenKeyCool")
+		t.Fatal("zen key cooldown must be persisted to zen-state.json and survive reload")
 	}
 }

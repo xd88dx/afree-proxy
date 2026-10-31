@@ -394,17 +394,10 @@ type zenConfigData struct {
 	// nil = 旧配置文件没有该键 → 按默认开启处理（见 pinProxyPerKeyEnabled）。
 	// 关闭后恢复按请求轮转（zen 按 key 的 IP 指纹会重新出现，仅排障用）。
 	PinProxyPerKey *bool `json:"pinProxyPerKey,omitempty"`
-	// Cool zen key 冷却表：key 明文 -> 冷却截止时刻。落盘持久化（2026-10-28
-	// 用户定）：重启后冷却保留，避免上游刚限流过的 key 立即回池被重试。
-	// 运行时真身是包级 zenKeyCool（zenKeyMu 保护），save/load 时双向同步；
-	// pickZenKey 惰性清理过期项。
-	Cool map[string]time.Time `json:"cool,omitempty"`
-	// KeyTokens zen key token 记账：key 明文 -> 今日/累计消耗与最近使用。
-	// 落盘持久化（2026-10-30）：原先只活在包级 zenKeyTokens 里，重启后面板
-	// 「今日/累计 token」整列清零——与 amd/or/th/other 的落盘口径不一致。
-	// 机制与 Cool 完全相同：运行时真身是包级 zenKeyTokens（zenKeyMu 保护），
-	// save/load 双向同步；记账变更打脏标记由后台 flusher 合批写盘。
-	KeyTokens map[string]zenKeyTokenStats `json:"keyTokens,omitempty"`
+	// Cool（key 冷却表）与 KeyTokens（key token 记账）已拆出到独立
+	// zen-state.json（zen_usage.go，2026-10-31）：它们是随请求/429 变化的
+	// 使用痕迹，留在配置文件里会干扰外部对配置变更的监测。运行时真身仍是
+	// 包级 zenKeyCool/zenKeyTokens（zenKeyMu 保护），冷却落盘持久化语义不变。
 }
 
 // proxyRuleKinds 自动分配规则（ProxyExclusions/ProxyBindCaps）的基础平台
@@ -636,25 +629,9 @@ var (
 
 func init() {
 	rebuildZenSem()
-	// 冷却表落盘回填（2026-10-28）：zenConfig 的 Cool 是启动加载的落盘形态，
-	// 运行时真身 zenKeyCool 在其后的 var 块初始化，只能在这里（init 阶段，
-	// 所有包级变量就绪后）回填。
-	zenKeyMu.Lock()
-	if len(zenConfig.Cool) > 0 {
-		zenKeyCool = make(map[string]time.Time, len(zenConfig.Cool))
-		for k, v := range zenConfig.Cool {
-			zenKeyCool[k] = v
-		}
-	}
-	// token 记账同样回填补量（2026-10-30）：与冷却同机制，配置里已落盘的
-	// 今日/累计值回填到运行时表，重启后不再清零。
-	if len(zenConfig.KeyTokens) > 0 {
-		zenKeyTokens = make(map[string]zenKeyTokenStats, len(zenConfig.KeyTokens))
-		for k, v := range zenConfig.KeyTokens {
-			zenKeyTokens[k] = v
-		}
-	}
-	zenKeyMu.Unlock()
+	// 冷却/记账从独立痕迹文件回填（zen_usage.go，2026-10-31 拆分；原从
+	// zenConfig.Cool/KeyTokens 回填的路径随字段一并移除）。
+	loadZenUsage()
 }
 
 func rebuildZenSem() {
@@ -826,31 +803,11 @@ func loadZenConfig() *zenConfigData {
 }
 
 func saveZenConfig() {
-	// 冷却表随配置落盘（2026-10-28）：快照包级 zenKeyCool，map 独立拷贝，
-	// 避免 mutateZenConfigFile 持有的引用与运行时并发写交叉。
-	zenKeyMu.Lock()
-	cool := make(map[string]time.Time, len(zenKeyCool))
-	for k, v := range zenKeyCool {
-		cool[k] = v
-	}
-	zenKeyMu.Unlock()
-	// 同一份快照回写 zenConfig.Cool（写时复制换指针）：cooldownZenKey 只写
-	// zenKeyCool，若不回写，getZenConfig 浅拷出去的 Cool 永远停在启动值，
-	// setZenConfig 按 c.Cool 重建时会把运行期冷却清零并持久化
-	//（2026-10-29 审计修复：面板任意热改清零冷却）。
-	zenKeyMu.Lock()
-	tokens := make(map[string]zenKeyTokenStats, len(zenKeyTokens))
-	for k, v := range zenKeyTokens {
-		tokens[k] = v
-	}
-	zenKeyMu.Unlock()
 	zenConfigMu.Lock()
 	next := *zenConfig
-	next.Cool = cool
-	next.KeyTokens = tokens
-	zenConfig = &next
 	zenConfigMu.Unlock()
-	// 只覆盖 zen 段，sessions/modelAliases/endpoints 原样保留。
+	// 只覆盖 zen 段，sessions/modelAliases/endpoints 原样保留。冷却/记账
+	// 已拆到 zen-state.json（zen_usage.go），不再随配置落盘。
 	mutateZenConfigFile(func(f *zenConfigFileData) {
 		f.zenConfigData = next
 	})
@@ -886,23 +843,17 @@ func setZenConfig(c *zenConfigData) {
 		valid[k] = true
 	}
 	zenKeyMu.Lock()
-	// 冷却表以配置为准回填（管理导入=忠实还原备份冷却；面板保存路径的 c.Cool
-	// 经 saveZenConfig 回写后已是运行期现值，重建无损）。回填必须先于落盘，
-	// 否则快照到盘上的还是回填前的旧表。
-	zenKeyCool = make(map[string]time.Time, len(c.Cool))
-	for k, v := range c.Cool {
-		zenKeyCool[k] = v
-	}
+	// 冷却/记账真身保留运行期现值（2026-10-31 拆分：痕迹不再随配置回填，
+	// 备份导入不还原冷却/记账，与 amd/or/th/other 口径一致）；已移除 key 的
+	// 条目清理掉。
 	for k := range zenKeyCool {
 		if !valid[k] {
 			delete(zenKeyCool, k)
 		}
 	}
-	// 记账表以配置为准回填（导入=忠实还原备份），已移除 key 的条目清理掉。
-	zenKeyTokens = make(map[string]zenKeyTokenStats, len(c.KeyTokens))
-	for k, v := range c.KeyTokens {
-		if valid[k] {
-			zenKeyTokens[k] = v
+	for k := range zenKeyTokens {
+		if !valid[k] {
+			delete(zenKeyTokens, k)
 		}
 	}
 	zenKeyIdx = 0
@@ -926,9 +877,10 @@ func setZenConfig(c *zenConfigData) {
 	// key 列表变化都要重算 egress 绑定：新 key 分配空闲代理、被移除的 key
 	// 释放代理（代理池变化侧的挂钩在 setProxyPool，本地代理池不在 zen 配置里）。
 	reconcileEgressBindings()
-	// 落盘放最后：saveZenConfig 快照的是回填后的 zenKeyCool，并把同一份快照
-	// 回写 zenConfig.Cool，盘、内存、后续 getZenConfig 三者一致。
+	// 落盘放最后：配置写 zen-config.json；冷却/记账的现值落痕迹文件
+	// （zen-state.json，key 移除后的清理结果随本次落盘持久化）。
 	saveZenConfig()
+	saveZenUsage()
 }
 
 // validateProxyList 校验代理列表格式: 支持 http/https/socks5/socks5h, 必须包含 host:port。
@@ -1392,7 +1344,7 @@ func recordZenKeyTokens(key string, tokens int64) {
 // 太重，故只打脏标记，由后台 flusher 合批写盘（kit.DirtyFlusher，与 cline
 // 账号池的 markPoolDirtyLocked + startPoolFlusher 同思路）。
 // saveZenConfig 自身会取 zenKeyMu，故 Mark 必须在 zenKeyMu 之外调用。
-var zenTokensFlush = kit.NewDirtyFlusher(10*time.Second, saveZenConfig)
+var zenTokensFlush = kit.NewDirtyFlusher(10*time.Second, saveZenUsage)
 
 func markZenTokensDirty() { zenTokensFlush.Mark() }
 
@@ -1424,7 +1376,7 @@ func cooldownZenKey(key string, d time.Duration) time.Duration {
 	zenKeyMu.Lock()
 	zenKeyCool[key] = time.Now().Add(d)
 	zenKeyMu.Unlock()
-	saveZenConfig() // 冷却落盘持久化（2026-10-28）：重启后冷却保留
+	saveZenUsage() // 冷却落盘持久化（2026-10-28）：重启后冷却保留
 	return d
 }
 
@@ -1463,7 +1415,7 @@ func uncoolZenKey(key string) {
 	zenKeyMu.Lock()
 	delete(zenKeyCool, key)
 	zenKeyMu.Unlock()
-	saveZenConfig() // 解除冷却同步落盘：否则重启后 init() 会把盘上的冷却复活
+	saveZenUsage() // 解除冷却同步落盘：否则重启后 loadZenUsage 会把盘上的冷却复活
 }
 
 // zenAnyKeyRotatable 是否还有"当前 key 之外、且未在冷却"的 key 可以马上换过去。

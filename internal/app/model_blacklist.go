@@ -857,7 +857,7 @@ func testBlacklistModel(platform, model string) (map[string]any, string) {
 		poolMu.Lock()
 		var acc *Account
 		for _, a := range p.Accounts {
-			if a != nil && a.Status == "active" && accountPoolEnabled(a) {
+			if a != nil && accountStatusLocked(a) == "active" && accountPoolEnabled(a) {
 				acc = a
 				break
 			}

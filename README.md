@@ -59,7 +59,7 @@ docker run -d --name afree-proxy \
 
 > 镜像名跟随 GitHub 仓库名；仓库名不同请替换。
 
-所有状态都在 `/app/data` 卷里，备份 = 复制该卷。
+所有状态都在 `/app/data` 卷里，备份 = 复制该卷。面板「网关设置 → 配置导入导出」覆盖**配置态 + 统计快照**（导出始终携带各平台使用痕迹；导入弹窗「导入统计数据」默认勾选=还原统计，取消=清零统计）——WorkBuddy 的运行态统计不在此列，随卷复制迁移。`config-manifest.json` 是程序自维护的配置指纹清单，供外部监测配置变更（盯它一个文件即可）。
 
 ## 关键环境变量
 
@@ -147,22 +147,33 @@ Model:     cline-free/deepseek-v4.1-flash   （Cline 池）
 
 ## 数据目录（持久化结构）
 
-`DATA_DIR`（容器内 `/app/data`）下每个平台一份配置文件，跨平台能力单独成文件：
+`DATA_DIR`（容器内 `/app/data`）下的持久化按**配置态 / 状态态**二分（2026-11-01 命名铁律：`*-config.json` = 配置，`*-state.json` = 状态）：
 
-| 文件                                                                                                   | 内容                                                                                                                    |
-| ------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------- |
-| `afree-config.json`                                                                                    | 全局：会话密钥、网关客户端 key、面板请求日志开关、账号选号策略、Combos、模型/平台封禁表、cline「必须流式」学习表        |
-| `proxy-config.json`                                                                                    | 出口代理池 + 出口策略 + 订阅、各平台走池开关、代理隔离段（开关/排除表/绑定上限，含 WorkBuddy 账号绑定）、代理在线率统计 |
-| `cline-config.json`                                                                                    | Cline 账号池（账号、游标、请求头）                                                                                      |
-| `zen-config.json`                                                                                      | OpenCode zen：key 池与配置 + 冷却表（`cool` 段）+ 每 key 会话身份（`sessions` 段）+ 死模型别名 + 端点学习结果                                                             |
-| `trae-config.json` / `amd-config.json` / `oprt-config.json` / `tkhb-config.json` / `other-config.json` | 各平台全量（账号/key 池、启用状态、冷却表、代理绑定、平台专属开关）                                                     |
-| `workbuddy/config.json` + `workbuddy/auths/` + `workbuddy/request-logs/`                               | WorkBuddy 部署配置、授权凭据、请求日志（沿用 vendor 目录结构）                                                          |
+| 配置态（`*-config.json`，仅面板操作/凭据轮转才变）                                                       | 内容                                                                                                                    |
+| -------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `afree-config.json`                                                                                      | 全局：会话密钥、网关客户端 key、面板请求日志开关、账号选号策略、Combos、模型/平台封禁表、cline「必须流式」学习表        |
+| `proxy-config.json`                                                                                      | 出口代理池 + 出口策略 + 订阅、各平台走池开关、代理隔离段（开关/排除表/绑定上限，含 WorkBuddy 账号绑定）、egress 钉定表  |
+| `cline-config.json`                                                                                      | Cline 账号池（账号凭据、请求头）                                                                                        |
+| `zen-config.json`                                                                                        | OpenCode zen：key 池与配置 + 每 key 会话身份（`sessions` 段）+ 死模型别名 + 端点学习结果                                |
+| `trae-config.json` / `amd-config.json` / `oprt-config.json` / `tkhb-config.json` / `other-config.json`   | 各平台账号/key 池、启用状态、代理绑定、平台专属开关                                                                     |
+| `workbuddy/config.json` + `workbuddy/auths/`                                                             | WorkBuddy 部署配置、授权凭据（沿用 vendor 目录结构）                                                                    |
 
-凭据的代理绑定表（`keyBindings`）跟着凭据池留在各自的平台文件里，不并入 `proxy-config.json`：它的键是凭据明文，搬过去会让同一批明文在两处各存一份。走池开关是布尔值，不敏感，所以归代理域。
+| 状态态（`*-state.json`，随请求/后台任务高频变化——外部监测配置变更时忽略这批文件）                        | 内容                                                                                                                    |
+| -------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `cline-state.json`                                                                                       | Cline 每账号使用痕迹（状态/最近使用/调用与 token 计数/冷却）+ 轮转游标（2s 合批）                                       |
+| `zen-state.json`                                                                                         | zen key 冷却表 + 每 key token 记账                                                                                      |
+| `trae-state.json`                                                                                        | TraeWork 每账号 token 记账/额度快照/签到状态/设备代际 + 账号冷却                                                        |
+| `amd-state.json` / `oprt-state.json` / `tkhb-state.json` / `other-state.json`                            | 各 key 池的 key 级 token 记账 + 冷却表（other 按子平台分键）                                                            |
+| `proxy-state.json`                                                                                       | 代理出口在线率统计（60s 合批，编辑池清零）                                                                              |
+| `workbuddy/state.json`、`workbuddy/usage.json`、`workbuddy/request-logs/`                                | WorkBuddy 运行态/用量分桶/请求日志（vendor 目录结构）                                                                   |
 
-日志类保持独立：`afree-proxy.log`、`afree-proxy-stream.log`、`requests.jsonl`。旧的 `zen-stats.jsonl`（zen 学习统计）已无任何写入方，属历史遗留，可直接删除。
+**`config-manifest.json`（配置指纹清单）**：程序自动维护的全部配置态文件 sha256 清单（glob 收集 `*-config.json` + wb 配置/凭据，新平台自动纳入；entries 无变化时连 `updatedAt` 都不更新）。外部监测配置变更只需盯这一个文件——它变了才有配置真的变了。
 
-旧文件名的自动迁移已随 2026-10-27 死代码清理基本移除，唯一保留的是 zen 一条线：`zen-config.json` 不存在时，旧点文件（`.zen-config.json`、`.zen-sessions.json`、`.zen-model-aliases.json`、`.zen-endpoints.json`）会被读入合并一次（`zen_config_file.go` 的 `migrateZenConfigFileLocked`）。其余旧文件名（`.cline-accounts.json`、`.proxy-pool.json`、`.or-config.json`、`.egress-bindings.json` 等）不再有任何迁移逻辑，确认新版运行正常后可自行删除。
+设计要点：token 记账/冷却/状态等使用痕迹**不进** `*-config.json`——配置文件保持"仅面板操作才变"，外部按 manifest 监测配置零噪声。凭据的代理绑定表（`keyBindings`）跟着凭据池留在各自的平台文件里（键是凭据明文，不重复存放）；走池开关是布尔值，归代理域。冷却是 2026-10-28 起的持久化决策：重启后冷却保留（落 `*-state.json`），避免刚被限流的凭据立即回池。
+
+日志类保持独立：`afree-proxy.log`、`afree-proxy-stream.log`、`requests.jsonl`。
+
+历史迁移均为一次性且幂等：旧点文件 → 现名 config（zen 一条线保留，见 `zen_config_file.go` 的 `migrateZenConfigFileLocked`）；config 内嵌痕迹键 → 独立 state 文件 → `*-state.json` 统一命名（2026-10-31/11-01 两段，`*-usage.json` 旧名自动改名续用）。
 
 ## 代理池与选号策略
 
@@ -184,7 +195,7 @@ WorkBuddy 的账号调度用 vendor 自己的国内/国际分区策略，与 `PO
 - 每个身份（Cline 账号 / zen key / WorkBuddy 账号 / TraeWork 账号 / 各 key 池 key）绑定一主一备代理。请求永远走主，主不可用走备，两者都冷却/被删时该身份整体跳过——**绝不回退其他出口或直连，隔离优先于可用性**。
 - 未绑定身份沿用面板每平台的走池开关（缺省 = 走池），空绑定配置行为与旧版完全一致。
 - 面板支持单行绑定、一键按行序分配（第 1 行绑直连哨兵、其余按代理池顺序依次绑主槽，多余行保持原绑定）、一键清空；绑定代理被删时行标 ⚠ 并保持跳过直到修复。备用代理开关关闭时备用槽整体退出路由（保留旧值，重开即恢复）。
-- **代理在线率**：代理池页显示每个代理真实流量的传输层成功率（累计 + 最近 50 次滚动窗口），纯被动采样不产生探活流量、不影响路由。五档配色：≥80% 绿、60–80% 蓝、40–60% 粉、20–40% 黄、<20% 红，便于一眼挑出该换的节点。统计落盘在 `proxy-config.json` 的 health 段，编辑池清零。zen key 的出口自动钉定表同样并入该文件的 `egressBindings` 段（键为 sha256 哈希，不含明文 key）。
+- **代理在线率**：代理池页显示每个代理真实流量的传输层成功率（累计 + 最近 50 次滚动窗口），纯被动采样不产生探活流量、不影响路由。五档配色：≥80% 绿、60–80% 蓝、40–60% 粉、20–40% 黄、<20% 红，便于一眼挑出该换的节点。统计落盘在 `proxy-state.json`（60s 合批），编辑池清零。zen key 的出口自动钉定表在 `proxy-config.json` 的 `egressBindings` 段（键为 sha256 哈希，不含明文 key）。
 
 socks5/socks5h 全支持；直连哨兵（主 = direct）可显式声明直连出口。zen 免费额度按出口 IP 计（约 200 请求/5h），把 key 绑到不同出口才是真正解锁多 key 容量的方式。
 

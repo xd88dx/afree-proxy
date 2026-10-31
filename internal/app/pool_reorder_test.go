@@ -11,11 +11,11 @@ import (
 // 新位置；未知 accountId 整体拒绝且池不被半改；未提及的账号按原相对顺序追加尾部；
 // 立即落盘。
 func TestReorderAccounts(t *testing.T) {
-	a1 := &Account{AccountID: "a1", Email: "1@example.com", Status: "active"}
-	a2 := &Account{AccountID: "a2", Email: "2@example.com", Status: "active"}
-	a3 := &Account{AccountID: "a3", Email: "3@example.com", Status: "active"}
+	a1 := &Account{AccountID: "a1", Email: "1@example.com"}
+	a2 := &Account{AccountID: "a2", Email: "2@example.com"}
+	a3 := &Account{AccountID: "a3", Email: "3@example.com"}
 	resetPoolForEnableTest(t, []*Account{a1, a2, a3})
-	pool.CurrentIdx = 1 // 游标指向 a2
+	poolUsage.CurrentIdx = 1 // 游标指向 a2（住痕迹侧，2026-10-31 拆分）
 
 	// 全量置换：a3 提到最前；游标账号 a2 从 index 1 挪到 index 2，游标跟随
 	n, err := reorderAccounts([]string{"a3", "a1", "a2"})
@@ -28,8 +28,8 @@ func TestReorderAccounts(t *testing.T) {
 	if pool.Accounts[0] != a3 || pool.Accounts[1] != a1 || pool.Accounts[2] != a2 {
 		t.Fatalf("order = %s,%s,%s, want a3,a1,a2", pool.Accounts[0].AccountID, pool.Accounts[1].AccountID, pool.Accounts[2].AccountID)
 	}
-	if pool.CurrentIdx != 2 {
-		t.Fatalf("CurrentIdx = %d, want 2 (cursor follows a2)", pool.CurrentIdx)
+	if poolUsage.CurrentIdx != 2 {
+		t.Fatalf("CurrentIdx = %d, want 2 (cursor follows a2)", poolUsage.CurrentIdx)
 	}
 	// 立即落盘：读回 JSON 首个 accountId 必须是 a3
 	raw, err := os.ReadFile(poolPath)
@@ -65,7 +65,7 @@ func TestReorderAccounts(t *testing.T) {
 		t.Fatalf("partial order = %s,%s,%s, want a1,a3,a2 (untouched keep relative order)",
 			pool.Accounts[0].AccountID, pool.Accounts[1].AccountID, pool.Accounts[2].AccountID)
 	}
-	if pool.CurrentIdx != 2 {
-		t.Fatalf("CurrentIdx = %d, want 2 (cursor still on a2)", pool.CurrentIdx)
+	if poolUsage.CurrentIdx != 2 {
+		t.Fatalf("CurrentIdx = %d, want 2 (cursor still on a2)", poolUsage.CurrentIdx)
 	}
 }

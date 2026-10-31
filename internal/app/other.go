@@ -26,6 +26,7 @@ func otherConfigPath() string { return kit.ResolveDataPath("other-config.json") 
 
 // initOther 加载配置 + 注入 HTTP client 工厂 + 启动周期同步。StartProxy 早期调用一次。
 func initOther() {
+	other.UsagePath = kit.ResolveDataPath("other-state.json")
 	other.Load(otherConfigPath())
 	other.SetClientProvider(proxyClientFor)
 	// 出口成败/握手延迟回传（同 AMDCloud：此前无任何观测钩子）。
@@ -1053,7 +1054,8 @@ func otherTestKey(slug string, index int, modelID string) (map[string]any, strin
 }
 
 // clearOtherKeysForDataDelete 清空全部子平台的 key 池与绑定/路由表
-// （保留平台本身、baseURL、前缀与模型勾选配置）。
+// （保留平台本身、baseURL、前缀与模型勾选配置）；token 记账与冷却表一并
+// 清空（ClearAllUsage 即时落盘痕迹文件）。
 func clearOtherKeysForDataDelete() int {
 	_, next := otherCloneConfig()
 	n := 0
@@ -1062,10 +1064,9 @@ func clearOtherKeysForDataDelete() int {
 		next.Platforms[i].Keys = nil
 		next.Platforms[i].KeyBindings = map[string]other.Binding{}
 		next.Platforms[i].KeyRoutingEnabled = map[string]bool{}
-		next.Platforms[i].KeyTokens = map[string]other.KeyTokenStats{}
-		next.Platforms[i].Cool = map[string]time.Time{}
 	}
 	other.Set(next)
+	other.ClearAllUsage()
 	return n
 }
 

@@ -9,15 +9,19 @@ import (
 // TestPickAccountCreditPriority 覆盖 panel「Selection strategy = credit-priority」
 // 的选号语义：额度余量多者优先，unlimited 恒最优先，同额度按池序稳定。
 // 回归点：该分支曾因 app 层只传全局账号池策略而完全不可达。
+// 2026-10-31 拆分：额度快照住痕迹表（按账号 ID 键），经 UsageFor/导入函数设置。
 func TestPickAccountCreditPriority(t *testing.T) {
 	saved := Get()
 	t.Cleanup(func() { Set(saved) })
 
-	poor := &Account{ID: "poor", Token: "t1", Credits: &Credits{Remaining: 5}}
-	rich := &Account{ID: "rich", Token: "t2", Credits: &Credits{Remaining: 500}}
-	unlimited := &Account{ID: "unl", Token: "t3", Credits: &Credits{Unlimited: true, Limit: -1}}
+	poor := &Account{ID: "poor", Token: "t1"}
+	rich := &Account{ID: "rich", Token: "t2"}
+	unlimited := &Account{ID: "unl", Token: "t3"}
 
 	Set(&Config{Accounts: []*Account{poor, rich, unlimited}})
+	setUsageCredits("poor", &Credits{Remaining: 5})
+	setUsageCredits("rich", &Credits{Remaining: 500})
+	setUsageCredits("unl", &Credits{Unlimited: true, Limit: -1})
 	if got := PickAccount("credit-priority", nil); got == nil || got.ID != "unl" {
 		t.Fatalf("unlimited account must win credit-priority: got %+v", got)
 	}
@@ -38,15 +42,24 @@ func TestPickAccountCreditPriority(t *testing.T) {
 	}
 }
 
+// setUsageCredits 测试辅助：直接写包级 usage 的额度快照（mu 下）。
+func setUsageCredits(id string, c *Credits) {
+	mu.Lock()
+	usageForLocked(id).Credits = c
+	mu.Unlock()
+}
+
 // TestPickAccountRoundRobinIgnoresCredits round_robin 不受额度影响，按池序轮转。
 func TestPickAccountRoundRobinIgnoresCredits(t *testing.T) {
 	saved := Get()
 	t.Cleanup(func() { Set(saved) })
 
 	// 额度故意与池序相反：round_robin 仍应先取池序第一个。
-	rich := &Account{ID: "rich", Token: "t1", Credits: &Credits{Remaining: 900}}
-	poor := &Account{ID: "poor", Token: "t2", Credits: &Credits{Remaining: 1}}
+	rich := &Account{ID: "rich", Token: "t1"}
+	poor := &Account{ID: "poor", Token: "t2"}
 	Set(&Config{Accounts: []*Account{rich, poor}})
+	setUsageCredits("rich", &Credits{Remaining: 900})
+	setUsageCredits("poor", &Credits{Remaining: 1})
 
 	got1 := PickAccount("round_robin", nil)
 	got2 := PickAccount("round_robin", nil)
@@ -87,26 +100,28 @@ func TestPickAccountAllCoolingFollowsUnableForce(t *testing.T) {
 	}
 }
 
-// 冷却落盘回读（2026-10-28 用户定）：Cooldown 后重新加载配置，冷却保留。
+// 冷却落盘回读（2026-10-28 用户定）：Cooldown 后重新加载，冷却保留。
+// 2026-10-31 拆分后持久化目标是独立的 trae-state.json。
 func TestCooldownPersistedAcrossReload(t *testing.T) {
 	dir := t.TempDir()
 	saved := Get()
 	t.Cleanup(func() { Set(saved) })
 	ConfigPath = filepath.Join(dir, "trae-config.json")
-	t.Cleanup(func() { ConfigPath = "" })
+	UsagePath = filepath.Join(dir, "trae-state.json")
+	t.Cleanup(func() { ConfigPath = ""; UsagePath = "" })
 	Set(&Config{Gateway: DefaultGateway, Accounts: []*Account{
 		{ID: "u1", Token: "tok"}, {ID: "u2", Token: "tok"},
 	}, Endpoint: "auto"})
 	Cooldown("u1", 5*time.Minute)
-	// 模拟重启：重新加载同一文件
+	// 模拟重启：重新加载同一对文件
 	Load(ConfigPath)
-	until, ok := Get().Cool["u1"]
+	until, ok := CooldownUntil("u1")
 	if !ok || until.Before(time.Now()) {
 		t.Fatalf("cooldown must survive reload, ok=%v until=%v", ok, until)
 	}
 	Uncool("u1")
 	Load(ConfigPath)
-	if _, ok := Get().Cool["u1"]; ok {
+	if _, ok := CooldownUntil("u1"); ok {
 		t.Fatal("uncooled account must stay uncooled after reload")
 	}
 }

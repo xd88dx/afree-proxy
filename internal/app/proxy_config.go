@@ -8,9 +8,13 @@ package app
 //   .proxy-health.json    每个出口的被动健康统计(60s 脏标记落盘)
 //   .workbuddy-proxies.json  WorkBuddy 账号的主/备出口绑定
 //
-// 三份文件互相引用同一批出口地址,编辑一处要同步三处,且每次都要读三个文件。
-// 现合并为单一 proxy-config.json:同一把 proxyFileMu 串行化"读-改-写",
+// 三份文件互相引用同一批出口地址,编辑一处要同步三处,且每次都要读三个文件,
+// 故合并为单一 proxy-config.json:同一把 proxyFileMu 串行化"读-改-写",
 // 各子系统只覆盖自己那一段,互不吞掉对方的改动。
+//
+// 2026-10-31 health 段又拆回独立文件 proxy-state.json(proxy_health.go):
+// 它是随请求高频变化的使用痕迹,留在配置文件里会干扰外部对配置变更的监测;
+// 出口池/隔离绑定等真正的配置段仍由本文件托管。
 //
 // 锁序:子系统锁(proxyPoolMu / proxyHealthMu / wbProxyMu)在外,proxyFileMu
 // 在内。持有 proxyFileMu 期间绝不获取任何子系统锁。
@@ -21,7 +25,6 @@ import (
 	"log"
 	"os"
 	"sync"
-	"time"
 
 	"afree-proxy/internal/kit"
 )
@@ -61,9 +64,9 @@ type proxyConfigFileData struct {
 	// 凭据代理绑定表不放这里:它的键是 key 明文,跟 key 一起留在各平台的
 	// <平台>-config.json 里(zen 的见 zenConfigData.KeyBindings)。
 
-	// ---- 出口健康统计(被动口径,见 proxy_health.go) ----
-	HealthSavedAt time.Time                    `json:"healthSavedAt,omitempty"`
-	Health        map[string]*proxyHealthEntry `json:"health,omitempty"`
+	// ---- 出口健康统计已拆出到独立 proxy-state.json（proxy_health.go，
+	// 2026-10-31）：随请求高频变化的使用痕迹不进配置文件，外部监测配置变更
+	// 不被统计噪声淹没。旧文件的 health 段由一次性迁移读取后自然消失。
 
 	// ---- WorkBuddy 账号出口绑定 ----
 	WorkbuddyBindings map[string]workbuddyProxyBinding `json:"workbuddyBindings,omitempty"`
