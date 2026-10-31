@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"afree-proxy/internal/amd"
 	"afree-proxy/internal/cline"
@@ -209,14 +210,28 @@ func TestIsTransportLayerFailure(t *testing.T) {
 	}
 }
 
-// 传输层失败冷却出口（2026-10-28）：全平台统一——此前只有 cline/zen 会摘掉
-// 坏节点，其余平台只记账不自愈，坏节点被轮转反复选中、把故障记到多个凭据头上。
+// 传输层失败冷却出口（2026-10-28 全平台统一；2026-10-31 改 2-strike）：
+// 此前只有 cline/zen 会摘掉坏节点，其余平台只记账不自愈，坏节点被轮转反复
+// 选中、把故障记到多个凭据头上。单次失败只记账，窗口内第二次才冷却。
 func TestRecordProxyOutcomeCoolsBadExit(t *testing.T) {
 	setupBindingTest(t, &zenTestConfig{Proxies: []string{"http://a:1", "http://b:2"}})
-	// 传输层失败：该代理退出轮转
+	t.Cleanup(func() {
+		proxyCooldownsMu.Lock()
+		proxyCooldowns = map[int]time.Time{}
+		proxyStreamFailMu.Lock()
+		proxyStreamFails = map[string][]time.Time{}
+		proxyStreamFailMu.Unlock()
+		proxyCooldownsMu.Unlock()
+	})
+	// 传输层失败第 1 次：只记账，不冷却（2-strike，单次抖动不摘出口）
+	recordProxyOutcome(pkZen, "http://a:1", false, errors.New("EOF"), 0)
+	if !proxyAvailable(0) {
+		t.Fatal("single transport-layer failure must not cool the exit yet (2-strike)")
+	}
+	// 第 2 次（60s 窗口内）：退出轮转
 	recordProxyOutcome(pkZen, "http://a:1", false, errors.New("EOF"), 0)
 	if proxyAvailable(0) {
-		t.Fatal("transport-layer failure must cool the exit proxy")
+		t.Fatal("repeated transport-layer failure must cool the exit proxy")
 	}
 	if !proxyAvailable(1) {
 		t.Fatal("unrelated proxy must stay available")

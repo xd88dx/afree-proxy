@@ -2,8 +2,11 @@ package app
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"io"
 	"log"
+	"net/http"
 	"strings"
 	"sync"
 	"time"
@@ -39,8 +42,9 @@ const (
 	// proxyHealthFlushInterval 落盘周期。进程被 kill 时最多丢这个窗口的数据。
 	proxyHealthFlushInterval = 60 * time.Second
 	// proxyTransportCooldown 传输层失败后该出口退出轮转的时长（**全局层**：
-	// 建连阶段失败），与 cline/zen 请求循环里的既有口径一致：短冷却能跳过真死
-	// 节点又快速自愈，长冷却会让几次慢请求毒化整个池（2026-10-28 统一到所有平台）。
+	// 建连阶段失败 60s 窗口 2-strike 后触发，2026-10-31 用户定——单次网络
+	// 抖动（如唯一凭据的一次拨号失败）不再把出口对全部平台冷却；短冷却能跳过
+	// 真死节点又快速自愈，长冷却会让几次慢请求毒化整个池。
 	proxyTransportCooldown = 2 * time.Minute
 	// proxyPlatformCooldown 平台级冷却时长（2026-10-30 用户定 10 分钟）：隧道后
 	// 流错误 2-strike 触发。封禁（如 codebuddy 封出口 IP）存续期以小时/天计，
@@ -66,7 +70,12 @@ const (
 // 空闲连接被掐）。这类错误的责任在上游或链路中段，**不能判定为出口代理不可用**。
 //
 // 反例（仍要冷却，不含这些关键词）：`dial tcp …: i/o timeout`、
-// `proxyconnect tcp: …`、`socks5 …`、`tls: …` —— 都发生在建连阶段。
+// `proxyconnect tcp: …`、`socks5 …` —— 都发生在建连阶段。
+//
+// TLS 归平台级（2026-10-31 用户定）：端到端 TLS 握手发生在 CONNECT/SOCKS
+// 隧道建立**之后**——`net/http: TLS handshake timeout`、`tls: handshake
+// failure` 等说明隧道本身是通的，超时多半是链路中段或目标侧抖动，不是出口
+// 死了，不该全局冷却。
 //
 // 2026-10-30 用户报：`Post "https://www.codebuddy.ai/v2/chat/completions": EOF`
 // 把一直在线的 10106 出口冷却了 2 分钟，而绑同一出口的其它凭据照常通。
@@ -85,10 +94,11 @@ func isUpstreamSideStreamFailure(err error) bool {
 		return false
 	}
 	// 建连阶段的关键词优先命中：隧道还没建起来就失败，责任在出口（要冷却），
-	// 即使 cause 里恰好带着 EOF（例如 `proxyconnect tcp: EOF`）。
+	// 即使 cause 里恰好带着 EOF（例如 `proxyconnect tcp: EOF`）。注意 TLS
+	// 不在此列——见上方注释，端到端 TLS 错误归平台级。
 	for _, s := range []string{
-		"dial tcp", "dial unix", "proxyconnect", "socks", "tls:", "no such host",
-		"connect:", "handshake", "connection refused", "network is unreachable",
+		"dial tcp", "dial unix", "proxyconnect", "socks", "no such host",
+		"connect:", "connection refused", "network is unreachable",
 		"no route to host", "i/o timeout", "context deadline exceeded",
 	} {
 		if strings.Contains(cause, s) {
@@ -98,6 +108,7 @@ func isUpstreamSideStreamFailure(err error) bool {
 	for _, s := range []string{
 		"EOF", "connection reset by peer", "broken pipe",
 		"http: server closed idle connection", "server closed the connection", "stream closed",
+		"tls", "TLS", "handshake",
 	} {
 		if strings.Contains(cause, s) {
 			return true
@@ -106,9 +117,18 @@ func isUpstreamSideStreamFailure(err error) bool {
 	return false
 }
 
-// 隧道后流错误的冷却门限：单次不冷却（上游 EOF 很常见，冷却就是误判），
-// 窗口内累计到阈值才认为这条隧道真断了。计数键是 kind+出口：wb 的失败不能被
-// amd 的失败凑数——平台封 IP 的伤害只该落在那个平台。
+// ============================================================================
+// 失败 strike 计数（2026-10-31 重构）：
+//
+//   - 计数键 failKey(kind, proxyURL)：平台层 kind 为平台标识；全局层 kind 为
+//     空串——全局失败与平台失败天然不互相凑数。
+//   - **只在 recordProxyOutcome 一处记账**（recordExitFailure）。cline/zen 的
+//     请求循环里也调 shouldCooldownExit，但那是**纯查询**（算上本次是否达
+//     阈值），不写计数——否则同一次失败会被循环 + recordProxyOutcome 记两次，
+//     2-strike 退化为 1-strike（2026-10-31 修复的存量 bug）。
+//   - 全局层（建连失败）与平台层（隧道后流错误）都是窗口内 2-strike 触发
+//     （2026-10-31 用户定）：单次网络抖动不再把唯一可用出口全局冷却 2 分钟。
+// ============================================================================
 const (
 	proxyStreamFailWindow    = 60 * time.Second
 	proxyStreamFailThreshold = 2
@@ -119,15 +139,20 @@ var (
 	proxyStreamFails  = map[string][]time.Time{}
 )
 
-// proxyStreamFailStrike 记一次"隧道后流错误"，返回是否达到冷却门限。
-func proxyStreamFailStrike(kind, proxyURL string) bool {
-	if proxyURL == "" {
-		return false
-	}
-	key := kind + "\x00" + proxyURL
+// failKey strike 计数键：kind 为空 = 全局层。
+func failKey(kind, proxyURL string) string { return kind + "\x00" + proxyURL }
+
+// proxyFailStrike 记一次失败，返回是否达到冷却门限（达到即清零，避免窗口内
+// 反复冷却）。只在 recordExitFailure 中调用——记账单点，防双计。
+func proxyFailStrike(key string) bool {
 	now := time.Now()
 	proxyStreamFailMu.Lock()
 	defer proxyStreamFailMu.Unlock()
+	return proxyFailStrikeLocked(key, now)
+}
+
+// proxyFailStrikeLocked 已持锁的记录+判定。
+func proxyFailStrikeLocked(key string, now time.Time) bool {
 	kept := make([]time.Time, 0, proxyStreamFailThreshold+1)
 	for _, t := range proxyStreamFails[key] {
 		if now.Sub(t) <= proxyStreamFailWindow {
@@ -143,21 +168,73 @@ func proxyStreamFailStrike(kind, proxyURL string) bool {
 	return false
 }
 
+// proxyFailStrikePending 非变异查询：算上"本次"失败是否达到门限。供请求
+// 循环里先于 recordProxyOutcome 的判定使用（只判不记，见 failKey 注释）。
+func proxyFailStrikePending(key string) bool {
+	now := time.Now()
+	proxyStreamFailMu.Lock()
+	defer proxyStreamFailMu.Unlock()
+	n := 0
+	for _, t := range proxyStreamFails[key] {
+		if now.Sub(t) <= proxyStreamFailWindow {
+			n++
+		}
+	}
+	return n+1 >= proxyStreamFailThreshold
+}
+
+// clearFailStrikes 清掉某出口的全部失败计数（全局 + 各平台）。手动解禁用。
+func clearFailStrikes(proxyURL string) {
+	suffix := "\x00" + proxyURL
+	proxyStreamFailMu.Lock()
+	defer proxyStreamFailMu.Unlock()
+	for k := range proxyStreamFails {
+		if strings.HasSuffix(k, suffix) {
+			delete(proxyStreamFails, k)
+		}
+	}
+}
+
+// recordExitFailure 记一次出口失败（唯一记账点），达到门限时返回冷却作用域
+// （"global"/"platform"），否则空串。
+func recordExitFailure(kind, proxyURL string, err error) string {
+	if err == nil || !isTransportLayerFailure(err) {
+		return ""
+	}
+	if isUpstreamSideStreamFailure(err) {
+		if proxyFailStrike(failKey(kind, proxyURL)) {
+			return "platform"
+		}
+		return ""
+	}
+	if proxyFailStrike(failKey("", proxyURL)) {
+		return "global"
+	}
+	return ""
+}
+
 // shouldCooldownExit err 是否应当让该出口退出轮转，以及**冷却的作用范围**。
-// 返回 (scope, ok)：scope = "global"（建连失败，出口对谁都死）或
+// 返回 (scope, ok)：scope = "global"（建连失败 2-strike，出口对谁都死）或
 // "platform"（隧道后流错误达成 2-strike，大概率是目标封了出口 IP）；
-// ok=false = 不冷却（上游响应类错误、未达门限的隧道后流错误）。
+// ok=false = 不冷却（上游响应类错误、未达门限的失败）。
+//
+// **本函数不写任何计数**：cline/zen 请求循环用它做即时判定（本次算第 N 次，
+// 随后的 recordProxyOutcome 才真正记账并触发冷却），二者对同一次失败的结论
+// 一致，冷却动作幂等。
 func shouldCooldownExit(kind, proxyURL string, err error) (string, bool) {
 	if err == nil || !isTransportLayerFailure(err) {
 		return "", false
 	}
 	if isUpstreamSideStreamFailure(err) {
-		if proxyStreamFailStrike(kind, proxyURL) {
+		if proxyFailStrikePending(failKey(kind, proxyURL)) {
 			return "platform", true
 		}
 		return "", false
 	}
-	return "global", true
+	if proxyFailStrikePending(failKey("", proxyURL)) {
+		return "global", true
+	}
+	return "", false
 }
 
 func isTransportLayerFailure(err error) bool {
@@ -241,13 +318,14 @@ func recordProxyOutcome(kind, proxyURL string, ok bool, err error, hsMs int64) {
 	if err != nil && (errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)) {
 		return
 	}
-	// 传输层失败：按归因决定冷却范围（2026-10-30 平台粒度）。
-	//   - 建连阶段失败 → 全局冷却：出口本身不可用，对谁都死；
+	// 传输层失败：按归因决定冷却范围（2026-10-30 平台粒度；2026-10-31 全局层
+	// 也 2-strike）。strike 记账只在这一处发生——cline/zen 请求循环的
+	// shouldCooldownExit 是纯查询，同一次失败不会被记两次。
+	//   - 建连阶段失败 2-strike → 全局冷却：出口本身不可用，对谁都死；
 	//   - 隧道后流错误达成 2-strike → 只冷却失败发生的平台：大概率是目标封了
 	//     出口 IP（如 codebuddy 封 Oracle 段），绑同一出口的其它平台无感。
-	// cline/zen 在各自请求循环里已调用，此处重复命中是幂等的。
 	if !ok {
-		if scope, cool := shouldCooldownExit(kind, proxyURL, err); cool {
+		if scope := recordExitFailure(kind, proxyURL, err); scope != "" {
 			if idx := proxyIdxInPool(proxyURL); idx >= 0 {
 				if scope == "global" {
 					cooldownUpstreamProxy(idx, proxyTransportCooldown)
@@ -423,4 +501,132 @@ func proxyHealthSnapshot() []map[string]any {
 		out = append(out, row)
 	}
 	return out
+}
+
+// proxyIdxByPanelID 面板健康表行 → 池内索引。健康表里的 proxy 是打码 URL
+// （凭据不可回传给前端），所以这里按"打码后相等"匹配；也兼容原始 URL 与
+// 备注名（proxyIdxInPool）。找不到返回 -1。
+func proxyIdxByPanelID(id string) int {
+	if id == "" {
+		return -1
+	}
+	cfg := getProxyPool()
+	for i, p := range cfg.Proxies {
+		if maskProxyURL(p) == id {
+			return i
+		}
+	}
+	return proxyIdxInPool(id)
+}
+
+// clearProxyCooldowns 手动解禁某出口：清全局冷却、全部平台的平台级冷却、
+// 全部失败 strike 计数。2026-10-31 用户定：单次网络抖动误冷却（尤其出口是
+// 唯一可用出口时）应可即时恢复，不必干等冷却到期。
+// 入参支持面板健康表的打码 URL、原始 URL 与备注名——strike 计数键是原始
+// URL，所以先解析回池内原始条目再清。
+func clearProxyCooldowns(id string) string {
+	raw := id
+	if idx := proxyIdxByPanelID(id); idx >= 0 {
+		raw = getProxyPool().Proxies[idx]
+		proxyCooldownsMu.Lock()
+		delete(proxyCooldowns, idx)
+		for _, m := range proxyPlatformCooldowns {
+			delete(m, idx)
+		}
+		proxyCooldownsMu.Unlock()
+	}
+	clearFailStrikes(raw)
+	return raw
+}
+
+// handleProxyCooldownSet POST /admin/api/proxypool/cooldown/set
+// body: {"proxy": "<打码 URL/原始 URL/备注名>", "kind": "global"|"cline"|"zen"|...（空=global）, "minutes": 10}
+// 手动把某出口置入冷却（与 clear 对称）：运维摘除出口、以及面板上制造
+// 冷却态验证"解禁"按钮都用它。
+func handleProxyCooldownSet(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		writeAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
+		return
+	}
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		writeAPI(w, http.StatusBadRequest, apiResponse{Error: err.Error()})
+		return
+	}
+	defer r.Body.Close()
+	var req struct {
+		Proxy   string `json:"proxy"`
+		Kind    string `json:"kind"`
+		Minutes int    `json:"minutes"`
+	}
+	if err := json.Unmarshal(body, &req); err != nil {
+		writeAPI(w, http.StatusBadRequest, apiResponse{Error: "bad json: " + err.Error()})
+		return
+	}
+	req.Proxy = strings.TrimSpace(req.Proxy)
+	idx := proxyIdxByPanelID(strings.TrimSpace(req.Proxy))
+	if idx < 0 {
+		writeAPI(w, http.StatusNotFound, apiResponse{Error: "proxy not in pool: " + req.Proxy})
+		return
+	}
+	if req.Minutes <= 0 {
+		req.Minutes = 10
+	}
+	d := time.Duration(req.Minutes) * time.Minute
+	if d > maxCooldown {
+		d = maxCooldown
+	}
+	raw := getProxyPool().Proxies[idx]
+	kind := strings.TrimSpace(req.Kind)
+	if kind == "" || kind == "global" {
+		cooldownUpstreamProxy(idx, d)
+	} else {
+		cooldownUpstreamProxyFor(kind, idx, d)
+	}
+	log.Printf("[exit-cooldown] manual set: exit %s cooled %v (kind=%s)", kit.MaskProxyURL(raw), d, kind)
+	writeAPI(w, http.StatusOK, apiResponse{
+		Success: true,
+		Message: "Cooldown set",
+		Data:    map[string]any{"proxy": maskProxyURL(raw), "kind": kind, "minutes": int(d.Minutes())},
+	})
+}
+
+// handleProxyCooldownClear POST /admin/api/proxypool/cooldown/clear
+// body: {"proxy": "<面板健康表里的打码 URL 或原始 URL/备注名>"}
+// 一键清除该出口的全局冷却 + 平台级冷却 + 失败计数。
+func handleProxyCooldownClear(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		writeAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
+		return
+	}
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		writeAPI(w, http.StatusBadRequest, apiResponse{Error: err.Error()})
+		return
+	}
+	defer r.Body.Close()
+	var req struct {
+		Proxy string `json:"proxy"`
+	}
+	if err := json.Unmarshal(body, &req); err != nil {
+		writeAPI(w, http.StatusBadRequest, apiResponse{Error: "bad json: " + err.Error()})
+		return
+	}
+	req.Proxy = strings.TrimSpace(req.Proxy)
+	if req.Proxy == "" {
+		writeAPI(w, http.StatusBadRequest, apiResponse{Error: "proxy is required"})
+		return
+	}
+	if proxyIdxByPanelID(req.Proxy) < 0 {
+		writeAPI(w, http.StatusNotFound, apiResponse{Error: "proxy not in pool: " + req.Proxy})
+		return
+	}
+	raw := clearProxyCooldowns(req.Proxy)
+	log.Printf("[exit-cooldown] manual unban: exit %s cooldowns and strike counters cleared",
+		kit.MaskProxyURL(raw))
+	writeAPI(w, http.StatusOK, apiResponse{
+		Success: true,
+		Message: "Cooldown cleared",
+		Data:    map[string]any{"proxy": maskProxyURL(raw)},
+	})
 }

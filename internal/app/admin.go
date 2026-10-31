@@ -78,6 +78,10 @@ func registerAdminRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/admin/api/config/import", adminCORS(auth(handleAdminConfigImport)))
 	// 代理池订阅：手动触发一次更新（面板"立即更新"按钮）
 	mux.HandleFunc("/admin/api/proxypool/subscription/update", adminCORS(auth(handleProxySubUpdate)))
+	// 手动解禁：清除某出口的全局/平台级冷却与失败计数（2026-10-31）
+	mux.HandleFunc("/admin/api/proxypool/cooldown/clear", adminCORS(auth(handleProxyCooldownClear)))
+	// 手动置冷：把某出口置入冷却（与 clear 对称，2026-10-31）
+	mux.HandleFunc("/admin/api/proxypool/cooldown/set", adminCORS(auth(handleProxyCooldownSet)))
 	mux.HandleFunc("/admin/api/keys/delete", adminCORS(auth(handleAdminDeleteKey)))
 	mux.HandleFunc("/admin/api/models", adminCORS(auth(handleAdminModels)))
 	mux.HandleFunc("/admin/api/models/refresh", adminCORS(auth(handleAdminModelsRefresh)))

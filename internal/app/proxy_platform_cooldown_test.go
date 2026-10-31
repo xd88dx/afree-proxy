@@ -62,10 +62,16 @@ func TestPlatformScopedCooldown(t *testing.T) {
 		t.Fatalf("wb pool rotation must skip cooled exit (got idx=%d)", idx)
 	}
 
-	// ③ 建连阶段失败：全局冷却，所有平台一起避开
-	recordProxyOutcome(pkAmd, healthy, false, fmt.Errorf("dial tcp 1.2.3.4:443: connect: connection refused"), 0)
+	// ③ 建连阶段失败：60s 窗口 2-strike（2026-10-31）后全局冷却，所有平台一起
+	// 避开；单次失败只记账不冷却
+	dialErr := fmt.Errorf("dial tcp 1.2.3.4:443: connect: connection refused")
+	recordProxyOutcome(pkAmd, healthy, false, dialErr, 0)
+	if !proxyAvailableFor(pkAmd, healthyIdx) || !proxyAvailableFor(pkWb, healthyIdx) {
+		t.Fatal("single establishment failure must not cool yet (2-strike)")
+	}
+	recordProxyOutcome(pkAmd, healthy, false, dialErr, 0)
 	if proxyAvailableFor(pkAmd, healthyIdx) || proxyAvailableFor(pkWb, healthyIdx) {
-		t.Fatal("establishment failure must cool the exit globally")
+		t.Fatal("repeated establishment failure must cool the exit globally")
 	}
 	if len(proxyCooldowns) != 1 {
 		t.Fatalf("establishment failure should write global cooldown: %v", proxyCooldowns)

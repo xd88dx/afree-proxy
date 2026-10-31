@@ -839,8 +839,9 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
         <th>Last OK</th>
         <th>Last Fail</th>
         <th>Cooldown</th>
+        <th style="text-align:center" title="Manual unban while a cooldown is active (global or platform-scoped): clears the cooldown and the failure counters so the exit rejoins the rotation immediately.">Actions</th>
       </tr></thead>
-      <tbody id="ppHealthBody"><tr><td colspan="8" class="empty">Loading...</td></tr></tbody>
+      <tbody id="ppHealthBody"><tr><td colspan="9" class="empty">Loading...</td></tr></tbody>
     </table>
     </div>
     <div class="hint" style="margin-top:8px">Rates are sampled passively from real traffic — no probing. "No data" = unused since the last pool edit; editing the proxy list resets counters.</div>
@@ -2210,7 +2211,7 @@ const I18N_ZH = {
   'Key #': 'key #',
   ' (': '（',
   ') — ': '）— ',
-  'cooldown until ': '冷却至 ',
+  'cooldown until ': '冷却至 ', // 2026-10-31 起健康表冷却列只显示时间戳；词条保留给其他可能引用处
   ' (seed)': '（种子）',
   'Email (optional)': '邮箱（可选）',
   'Cancel': '取消',
@@ -2401,6 +2402,14 @@ const I18N_ZH = {
   // 提示气泡（title 属性）此前未进翻译表，中文界面下显示英文
   'Switch language / 切换语言': '切换语言',
   'cooling': '冷却中',
+  'Unban': '解禁',
+  'Cool': '置冷',
+  'Cooldown cleared': '已解除冷却',
+  'Cooldown set (10 min)': '已置入冷却（10 分钟）',
+  'Unban failed: ': '解禁失败：',
+  'Cooldown failed: ': '置冷失败：',
+  'Clear global and platform cooldowns plus failure counters for this exit; use it when a one-off network hiccup wrongly cooled the only usable exit': '清除该出口的全局/平台级冷却与失败计数；适用于单次网络抖动误冷却唯一可用出口的情况',
+  'Put this exit into a 10-minute global cooldown (manual removal from rotation); pairs with Unban': '把该出口置入 10 分钟全局冷却（手动摘出轮转）；与"解禁"配对使用',
   'Base URL': 'Base URL',
   'Max concurrency': '最大并发',
   'Rate-limit retries': '限流重试次数',
@@ -6151,10 +6160,34 @@ function renderProxyHealth(rowsIn) {
           '<td style="text-align:center" title="' + esc(T('Avg tunnel-setup time of successful attempts (TCP+TLS+CONNECT), excluding upstream response; samples: ')) + (r.hsCount || 0) + '">' + hs + '</td>' +
           '<td class="mono" style="font-size:11px">' + (r.lastOk ? fmtWhen(r.lastOk) : '<span style="color:var(--text3)">-</span>') + '</td>' +
           '<td class="mono" style="font-size:11px"' + failTitle + '>' + (r.lastFail ? fmtWhen(r.lastFail) : '<span style="color:var(--text3)">-</span>') + '</td>' +
-          '<td>' + (r.cooling ? '<span style="color:var(--warning,#eab308)">' + T('cooldown until ') + fmtWhen(r.coolingUntil) + '</span>' : '<span style="color:var(--text3)">-</span>') + '</td>' +
+          '<td>' + (r.cooling ? '<span class="mono" style="font-size:11px;color:var(--warning,#eab308)">' + fmtWhen(r.coolingUntil) + '</span>' : '<span style="color:var(--text3)">-</span>') + '</td>' +
+          '<td style="text-align:center">' +
+            ((r.cooling || (r.platformCooling && r.platformCooling.length))
+              ? '<button class="btn btn-sm" data-proxy="' + esc(r.proxy) + '" onclick="clearProxyCooldown(this.dataset.proxy)" title="' + esc(T('Clear global and platform cooldowns plus failure counters for this exit; use it when a one-off network hiccup wrongly cooled the only usable exit')) + '">' + T('Unban') + '</button>'
+              : '<button class="btn btn-sm" data-proxy="' + esc(r.proxy) + '" onclick="setProxyCooldown(this.dataset.proxy)" title="' + esc(T('Put this exit into a 10-minute global cooldown (manual removal from rotation); pairs with Unban')) + '">' + T('Cool') + '</button>') +
+          '</td>' +
         '</tr>';
       }).join('')
-    : '<tr><td colspan="8" class="empty">No proxies configured</td></tr>';
+    : '<tr><td colspan="9" class="empty">No proxies configured</td></tr>';
+}
+
+// clearProxyCooldown 手动解禁：清该出口的全局/平台级冷却与失败计数。
+// 入参是健康表里的打码 URL（凭据不落前端），后端按打码匹配回原始条目。
+async function clearProxyCooldown(proxy) {
+  try {
+    await api('POST', '/proxypool/cooldown/clear', { proxy: proxy });
+    toast(T('Cooldown cleared'), 'success');
+  } catch (e) { toast(T('Unban failed: ') + e.message, 'error'); }
+  loadProxyPool();
+}
+
+// setProxyCooldown 手动置冷：全局冷却 10 分钟（与 Unban 对称的测试/运维入口）。
+async function setProxyCooldown(proxy) {
+  try {
+    await api('POST', '/proxypool/cooldown/set', { proxy: proxy, minutes: 10 });
+    toast(T('Cooldown set (10 min)'), 'success');
+  } catch (e) { toast(T('Cooldown failed: ') + e.message, 'error'); }
+  loadProxyPool();
 }
 
 // syncProxyListEditable 订阅链接有值时代理列表只读（池由订阅管理，

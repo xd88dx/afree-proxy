@@ -1286,8 +1286,10 @@ func clineAPIWithAccount(ctx context.Context, params map[string]any, stream bool
 			// 长冷却会让几次慢请求毒化整个池;2 分钟能跳过真死代理又快速自愈。
 			// 绑定账号（隔离模式）同样适用：全局开关为直连时，绑定代理的网络
 			// 错误也绝不毒化账号（pidx=-1 的直连兜底冷却为 no-op）。
-			// 隧道后流错误（上游 EOF / reset，出口其实通着）单次不冷却 ——
-			// 窗口内累计到阈值才冷却，避免一次上游断流就毒化好出口（2026-10-30）。
+			// shouldCooldownExit 纯查询（不写计数），真正的 strike 记账与冷却
+			// 在下面的 recordProxyOutcome 单点完成——两处结论一致，动作幂等。
+			// 建连失败与隧道后流错误都是 60s 窗口 2-strike（2026-10-31）：
+			// 单次网络抖动不再全局冷却唯一可用出口。
 			if scope, cool := shouldCooldownExit(pkCline, proxyURL, lastErr); cool {
 				if scope == "global" {
 					cooldownUpstreamProxy(pidx, 2*time.Minute)

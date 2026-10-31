@@ -2815,8 +2815,9 @@ func callZenResponsesAPI(ctx context.Context, params map[string]any, stream bool
 				return nil, rateLimited, fmt.Errorf("client aborted: %w", err)
 			}
 			if pidx >= 0 {
-				// 隧道后流错误（上游 EOF / reset，出口其实通着）单次不冷却 ——
-				// 窗口内累计到阈值才冷却（2026-10-30 用户报：好出口被误冷却）。
+				// shouldCooldownExit 纯查询（不写计数），真正的 strike 记账与冷却
+				// 在下面的 recordProxyOutcome 单点完成。建连失败与隧道后流错误
+				// 都是 60s 窗口 2-strike（2026-10-31）。
 				if scope, cool := shouldCooldownExit(pkZen, proxyURL, err); cool {
 					if scope == "global" {
 						cooldownUpstreamProxy(pidx, 2*time.Minute)
@@ -3180,8 +3181,9 @@ func callZenAPI(ctx context.Context, params map[string]any, stream bool, opts ..
 			// 上游过载时 CF 重置连接的表现与死代理相同,5~10 分钟的冷却会让
 			// 几次慢模型测试就毒化整个池;2 分钟仍能跳过真死代理,又快速自愈。
 			if pidx >= 0 {
-				// 隧道后流错误（上游 EOF / reset，出口其实通着）单次不冷却 ——
-				// 窗口内累计到阈值才冷却（2026-10-30 用户报：好出口被误冷却）。
+				// shouldCooldownExit 纯查询（不写计数），真正的 strike 记账与冷却
+				// 在下面的 recordProxyOutcome 单点完成。建连失败与隧道后流错误
+				// 都是 60s 窗口 2-strike（2026-10-31）。
 				if scope, cool := shouldCooldownExit(pkZen, proxyURL, err); cool {
 					if scope == "global" {
 						cooldownUpstreamProxy(pidx, 2*time.Minute)
