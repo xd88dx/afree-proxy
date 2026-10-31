@@ -1349,6 +1349,9 @@ func handleAdminModels(w http.ResponseWriter, r *http.Request) {
 }
 
 // POST /admin/api/models/refresh
+// 2026-10-31：改走全平台统一的刷新契约（见 admin_models_refresh.go）。Cline 的
+// 目录同步是异步 goroutine（要遍历多个上游，同步等会让面板卡几十秒），如实
+// 返回 sync_started —— 前端按同一套 key 渲染，不再拿「已刷新」冒充结果。
 func handleAdminModelsRefresh(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "POST" {
 		writeAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
@@ -1357,10 +1360,7 @@ func handleAdminModelsRefresh(w http.ResponseWriter, r *http.Request) {
 	// 与 AMD/zen 同口径：无启用账号时拒绝同步并给出提示（目录此时也不展示，
 	// 同步无意义）。
 	if !platformHasRoutableCredential(platCline) {
-		writeAPI(w, http.StatusOK, apiResponse{
-			Success: false,
-			Message: "no enabled Cline account — enable an account first, then refresh",
-		})
+		writeCatalogNoCredential(w, platCline)
 		return
 	}
 	initModelsCache()
@@ -1368,11 +1368,11 @@ func handleAdminModelsRefresh(w http.ResponseWriter, r *http.Request) {
 	syncing := modelsSyncing
 	modelsMu.Unlock()
 	if syncing {
-		writeAPI(w, http.StatusOK, apiResponse{Success: true, Message: "sync already running"})
+		writeCatalogAlreadyRunning(w, platCline)
 		return
 	}
 	go syncModelsOnce()
-	writeAPI(w, http.StatusOK, apiResponse{Success: true, Message: "model sync started"})
+	writeCatalogSyncStarted(w, platCline)
 }
 
 // GET /admin/api/stats

@@ -359,6 +359,8 @@ func handleZenModels(w http.ResponseWriter, r *http.Request) {
 }
 
 // POST /admin/api/zen/models/refresh
+// 2026-10-31：改走全平台统一的刷新契约（见 admin_models_refresh.go）——此前
+// 只有 zen 报新增数、其余平台报总数，同一个「刷新」按钮各处口径不一。
 func handleZenModelsRefresh(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "POST" {
 		writeAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
@@ -366,18 +368,17 @@ func handleZenModelsRefresh(w http.ResponseWriter, r *http.Request) {
 	}
 	// 与 AMD/TokenHarbor 同口径：无启用 key 时拒绝同步并给出提示。
 	if !zenHasRoutableKey() {
-		writeAPI(w, http.StatusOK, apiResponse{
-			Success: false,
-			Message: "no enabled OpenCode key — enable a key first, then refresh",
-		})
+		writeCatalogNoCredential(w, platZen)
 		return
 	}
-	added, err := syncZenModels()
+	before := len(zenModelList())
+	_, err := syncZenModels()
 	if err != nil {
-		writeAPI(w, http.StatusBadGateway, apiResponse{Error: "sync failed: " + err.Error()})
+		writeCatalogSyncFailed(w, platZen, err)
 		return
 	}
-	writeAPI(w, http.StatusOK, apiResponse{Success: true, Message: fmt.Sprintf("synced, %d new models", added)})
+	total := len(zenModelList())
+	writeCatalogResult(w, platZen, total-before, total)
 }
 
 // GET /admin/api/zen/sessions

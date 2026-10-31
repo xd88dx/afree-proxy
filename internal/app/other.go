@@ -811,6 +811,8 @@ func handleOtherKeyTest(w http.ResponseWriter, r *http.Request) {
 }
 
 // POST /admin/api/other/models/refresh  body: { slug }
+// 2026-10-31：改走全平台统一的刷新契约（见 admin_models_refresh.go）——此前
+// 只回一句没有数量的 "Catalog refreshed"。
 func handleOtherModelsRefresh(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
@@ -831,22 +833,27 @@ func handleOtherModelsRefresh(w http.ResponseWriter, r *http.Request) {
 	// 与 AMD/TokenHarbor 同口径：该子平台无启用 key 时拒绝同步并给出提示
 	//（前端 refreshOtherModels 已有同判定，此处兜底防直连 API）。
 	if !otherPlatformHasRoutableKey(p) {
-		writeAPI(w, http.StatusOK, apiResponse{
-			Success: false,
-			Message: "no enabled key on this platform — enable a key first, then refresh",
-		})
+		writeCatalogNoCredential(w, platOther)
 		return
 	}
-	_, err := other.TrySync(p)
+	before := len(other.KnownModels(p))
+	added, err := other.TrySync(p)
 	if err != nil {
-		writeAPI(w, http.StatusBadGateway, apiResponse{Error: err.Error()})
+		writeCatalogSyncFailed(w, platOther, err)
 		return
 	}
-	writeAPI(w, http.StatusOK, apiResponse{
-		Success: true,
-		Message: "Catalog refreshed",
-		Data:    map[string]any{"platform": platformAPI(other.PlatformBySlug(req.Slug))},
-	})
+	// TrySync 可能内部换掉服务商条目，按 slug 重取活对象再统计。
+	live := other.PlatformBySlug(req.Slug)
+	if live == nil {
+		live = p
+	}
+	total := len(other.KnownModels(live))
+	if added <= 0 {
+		// 上游没给数量时退回长度差（遗漏 motives 的新增也不算错报）
+		added = total - before
+	}
+	// Other 靠这份平台快照即时重绘模型勾选区，其余平台无需带。
+	writeCatalogResultExtra(w, platOther, added, total, map[string]any{"sub": platformAPI(live)})
 }
 
 // POST /admin/api/other/models/manual  body: { slug, model }

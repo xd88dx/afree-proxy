@@ -70,26 +70,32 @@ func startTHModelsRefresher() {
 }
 
 // syncTHCatalog 同步目录；attempts 为额外重试次数（不含首次）。
-func syncTHCatalog(attempts int) {
+//
+// 返回最后一次错误（全部重试失败时）——2026-10-31：与 amd/openrouter 同款
+// 静默失败问题一并修掉，手动刷新端点据此报真实失败。
+func syncTHCatalog(attempts int) error {
 	// 无启用 key：官方目录需认证，同步注定 403——静默跳过（面板提示走
 	// 手动刷新端点的明确文案），与 amd/traeWork 的同步门控同款。
 	if !tokenharbor.HasEnabledKey() {
-		return
+		return errors.New("no enabled TokenHarbor key")
 	}
+	var lastErr error
 	for i := 0; i <= attempts; i++ {
 		changed, err := tokenharbor.SyncCatalog()
 		if err == nil {
 			if changed > 0 {
 				log.Printf("tokenharbor model sync: %d model(s) updated", changed)
 			}
-			return
+			return nil
 		}
+		lastErr = err
 		if i < attempts {
 			time.Sleep(time.Duration(i+1) * 2 * time.Second)
 		} else {
 			log.Printf("tokenharbor model sync failed: %v", err)
 		}
 	}
+	return lastErr
 }
 
 // thModelList /v1/models 合并用的模型条目。
@@ -463,20 +469,23 @@ func handleTHKeyTest(w http.ResponseWriter, r *http.Request) {
 }
 
 // POST /admin/api/tokenharbor/models/refresh
+// 2026-10-31：改走全平台统一的刷新契约（见 admin_models_refresh.go）。
 func handleTHModelsRefresh(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
 		return
 	}
 	if !tokenharbor.HasEnabledKey() {
-		writeAPI(w, http.StatusOK, apiResponse{
-			Success: false,
-			Message: "no enabled TokenHarbor key — enable a key first, then refresh",
-		})
+		writeCatalogNoCredential(w, platTokenHarbor)
 		return
 	}
-	syncTHCatalog(2)
-	writeAPI(w, http.StatusOK, apiResponse{Success: true, Message: fmt.Sprintf("synced, %d free models", len(tokenharbor.ModelList()))})
+	before := len(tokenharbor.ModelList())
+	if err := syncTHCatalog(2); err != nil {
+		writeCatalogSyncFailed(w, platTokenHarbor, err)
+		return
+	}
+	total := len(tokenharbor.ModelList())
+	writeCatalogResult(w, platTokenHarbor, total-before, total)
 }
 
 // thTestKey 对单个 key 发一个极小探测请求（与其他平台的 Test 同语义）：

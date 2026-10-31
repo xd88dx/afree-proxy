@@ -73,21 +73,28 @@ func startOrModelsRefresher() {
 }
 
 // syncOrCatalog 同步目录；attempts 为额外重试次数（不含首次）。
-func syncOrCatalog(attempts int) {
+//
+// 返回最后一次错误（全部重试失败时）——2026-10-31：此前错误在此静默吞掉，
+// 手动刷新端点照样报「synced, 0 free models」，与 amd 同款问题。后台同步
+// 任务调用方无需改动（Go 允许忽略返回值）。
+func syncOrCatalog(attempts int) error {
+	var lastErr error
 	for i := 0; i <= attempts; i++ {
 		added, err := openrouter.SyncCatalog()
 		if err == nil {
 			if added > 0 {
 				log.Printf("openrouter model sync: %d new free models", added)
 			}
-			return
+			return nil
 		}
+		lastErr = err
 		if i < attempts {
 			time.Sleep(time.Duration(i+1) * 2 * time.Second)
 		} else {
 			log.Printf("openrouter model sync failed: %v", err)
 		}
 	}
+	return lastErr
 }
 
 // orModelList /v1/models 合并用的模型条目。
@@ -404,6 +411,7 @@ func handleOrKeyTest(w http.ResponseWriter, r *http.Request) {
 }
 
 // POST /admin/api/openrouter/models/refresh
+// 2026-10-31：改走全平台统一的刷新契约（见 admin_models_refresh.go）。
 func handleOrModelsRefresh(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
@@ -411,14 +419,16 @@ func handleOrModelsRefresh(w http.ResponseWriter, r *http.Request) {
 	}
 	// 与 AMD/TokenHarbor 同口径：无启用 key 时拒绝同步并给出提示。
 	if !openrouter.HasEnabledKey() {
-		writeAPI(w, http.StatusOK, apiResponse{
-			Success: false,
-			Message: "no enabled OpenRouter key — enable a key first, then refresh",
-		})
+		writeCatalogNoCredential(w, platOpenRouter)
 		return
 	}
-	syncOrCatalog(2)
-	writeAPI(w, http.StatusOK, apiResponse{Success: true, Message: fmt.Sprintf("synced, %d free models", len(openrouter.ModelList()))})
+	before := len(openrouter.ModelList())
+	if err := syncOrCatalog(2); err != nil {
+		writeCatalogSyncFailed(w, platOpenRouter, err)
+		return
+	}
+	total := len(openrouter.ModelList())
+	writeCatalogResult(w, platOpenRouter, total-before, total)
 }
 
 // ============ OpenRouter key 池操作（写时复制，与 zen 同口径） ============

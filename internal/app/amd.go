@@ -71,26 +71,33 @@ func startAMDModelsRefresher() {
 }
 
 // syncAMDCatalog 同步目录；attempts 为额外重试次数（不含首次）。
-func syncAMDCatalog(attempts int) {
+//
+// 返回最后一次错误（全部重试失败时）——2026-10-31：此前错误在此静默吞掉，
+// 手动刷新端点照样按新目录长度报「synced, 0 models」，用户以为是刷成功了、
+// 上游就是没有模型。Go 允许调用方忽略返回值，后台同步任务无需改动。
+func syncAMDCatalog(attempts int) error {
 	// 无启用 key：官方目录需认证，同步注定 401——静默跳过（面板提示走
 	// 手动刷新端点的明确文案），与 traeWork 的 catalogProbeCredential 同款。
 	if !amd.HasEnabledKey() {
-		return
+		return errors.New("no enabled AMDCloud key")
 	}
+	var lastErr error
 	for i := 0; i <= attempts; i++ {
 		changed, err := amd.SyncCatalog()
 		if err == nil {
 			if changed > 0 {
 				log.Printf("amd model sync: %d model(s) updated", changed)
 			}
-			return
+			return nil
 		}
+		lastErr = err
 		if i < attempts {
 			time.Sleep(time.Duration(i+1) * 2 * time.Second)
 		} else {
 			log.Printf("amd model sync failed: %v", err)
 		}
 	}
+	return lastErr
 }
 
 // amdModelList /v1/models 合并用的模型条目。
@@ -464,20 +471,24 @@ func handleAMDKeyTest(w http.ResponseWriter, r *http.Request) {
 }
 
 // POST /admin/api/amd/models/refresh
+// 2026-10-31：改走全平台统一的刷新契约（见 admin_models_refresh.go）——
+// 带 platform/added/total，同步失败不再静默报成功。
 func handleAMDModelsRefresh(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
 		return
 	}
 	if !amd.HasEnabledKey() {
-		writeAPI(w, http.StatusOK, apiResponse{
-			Success: false,
-			Message: "no enabled AMDCloud key — enable a key first, then refresh",
-		})
+		writeCatalogNoCredential(w, platAMD)
 		return
 	}
-	syncAMDCatalog(2)
-	writeAPI(w, http.StatusOK, apiResponse{Success: true, Message: fmt.Sprintf("synced, %d models", len(amd.ModelList()))})
+	before := len(amd.ModelList())
+	if err := syncAMDCatalog(2); err != nil {
+		writeCatalogSyncFailed(w, platAMD, err)
+		return
+	}
+	total := len(amd.ModelList())
+	writeCatalogResult(w, platAMD, total-before, total)
 }
 
 // amdTestKey 对单个 key 发一个极小探测请求（与 cline/zen/openrouter 的 Test

@@ -98,25 +98,29 @@ func startTraeModelsRefresher() {
 }
 
 // syncTraeCatalog 同步目录；attempts 为额外重试次数（不含首次）。
-// 没有启用账号时静默跳过（展示门控下同步也无意义，不刷错误日志）。
-func syncTraeCatalog(attempts int) {
+// 没有启用账号时跳过（展示门控下同步也无意义）并返回错误供调用方判别。
+// 2026-10-31：同步失败不再静默吞掉，手动刷新端点据此报真实失败。
+func syncTraeCatalog(attempts int) error {
 	if !trae.HasEnabledAccount() {
-		return
+		return errors.New("no enabled Trae account")
 	}
+	var lastErr error
 	for i := 0; i <= attempts; i++ {
 		changed, err := trae.SyncCatalog()
 		if err == nil {
 			if changed > 0 {
 				log.Printf("trae model sync: %d models changed", changed)
 			}
-			return
+			return nil
 		}
+		lastErr = err
 		if i < attempts {
 			time.Sleep(time.Duration(i+1) * 2 * time.Second)
 		} else {
 			log.Printf("trae model sync failed: %v", err)
 		}
 	}
+	return lastErr
 }
 
 // traeModelList /v1/models 合并用的模型条目（trae: 前缀对外暴露）。
@@ -1104,20 +1108,23 @@ func handleTraeAccountTest(w http.ResponseWriter, r *http.Request) {
 }
 
 // POST /admin/api/trae/models/refresh
+// 2026-10-31：改走全平台统一的刷新契约（见 admin_models_refresh.go）。
 func handleTraeModelsRefresh(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
 		return
 	}
 	if !trae.HasEnabledAccount() {
-		writeAPI(w, http.StatusOK, apiResponse{
-			Success: false,
-			Message: "no enabled Trae account — enable an account first, then refresh",
-		})
+		writeCatalogNoCredential(w, platTrae)
 		return
 	}
-	syncTraeCatalog(1)
-	writeAPI(w, http.StatusOK, apiResponse{Success: true, Message: fmt.Sprintf("synced, %d models", len(trae.ModelList()))})
+	before := len(trae.ModelList())
+	if err := syncTraeCatalog(1); err != nil {
+		writeCatalogSyncFailed(w, platTrae, err)
+		return
+	}
+	total := len(trae.ModelList())
+	writeCatalogResult(w, platTrae, total-before, total)
 }
 
 // ============ Trae 账号池操作（写时复制，与 openrouter 同口径） ============

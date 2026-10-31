@@ -581,7 +581,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
   <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 5-6"/></svg></span> Model catalog <span class="probe-pill" data-models-info style="font-weight:normal"></span></div>
   <div class="section-body">
     <div class="flex" style="margin-bottom:10px;gap:10px">
-      <button class="btn btn-sm btn-primary" onclick="refreshModels()">Refresh models</button>
+      <button class="btn btn-sm btn-primary" onclick="refreshClineModels(this)">Refresh models</button>
       <span class="hint" style="margin:0">Automatically synced from the official model source upstream (every 5 minutes)</span>
     </div>
     <div id="accModelsBody">Loading...</div>
@@ -676,7 +676,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
   <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 5-6"/></svg></span> Model catalog</div>
   <div class="section-body">
     <div class="flex" style="margin-bottom:10px;gap:10px">
-      <button class="btn btn-sm btn-primary" onclick="refreshTraeModels()">Refresh models</button>
+      <button class="btn btn-sm btn-primary" onclick="refreshTraeModels(this)">Refresh models</button>
           <span class="hint" style="margin:0;flex:1;min-width:200px">Automatically synced from the official model source upstream (every 5 minutes)</span>
       <label class="hint" style="margin:0;white-space:nowrap" for="traeEndpoint">Endpoint</label>
       <select id="traeEndpoint" onchange="saveTraeEndpoint(this.value)" style="max-width:220px" title="Upstream endpoint: Auto = merged catalog via the native raw_chat transport; Remote / TraeWork switch requests to the chat_sessions transport (same as the upstream project)">
@@ -1074,7 +1074,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
   <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 5-6"/></svg></span> Model catalog <span class="probe-pill" data-models-info style="font-weight:normal"></span></div>
   <div class="section-body">
     <div class="flex" style="margin-bottom:10px;gap:10px">
-      <button class="btn btn-sm btn-primary" onclick="refreshModels()">Refresh models</button>
+      <button class="btn btn-sm btn-primary" onclick="refreshZenModels(this)">Refresh models</button>
       <span class="hint" style="margin:0">Automatically synced from the official model source upstream (every 5 minutes)</span>
     </div>
     <div id="ocModelsBody">Loading...</div>
@@ -1250,7 +1250,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
   <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 5-6"/></svg></span> Model catalog <span class="probe-pill" data-models-info style="font-weight:normal"></span></div>
   <div class="section-body">
     <div class="flex" style="margin-bottom:10px;gap:10px">
-      <button class="btn btn-sm btn-primary" onclick="refreshWbModels()">Refresh models</button>
+      <button class="btn btn-sm btn-primary" onclick="refreshWbModels(this)">Refresh models</button>
       <span class="hint" style="margin:0">Automatically synced from the official model source upstream (every 5 minutes)</span>
     </div>
     <div id="wbModelsBody">Loading...</div>
@@ -1317,7 +1317,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
   <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 5-6"/></svg></span> Model catalog</div>
   <div class="section-body">
         <div class="flex" style="margin-bottom:10px;gap:10px">
-      <button class="btn btn-sm btn-primary" onclick="refreshOrModels()">Refresh models</button>
+      <button class="btn btn-sm btn-primary" onclick="refreshOrModels(this)">Refresh models</button>
       <span class="hint" style="margin:0">Automatically synced from the official model source upstream (every 5 minutes)</span>
     </div>
     <div id="orModelsBody">Loading...</div>
@@ -1385,7 +1385,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
   <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 5-6"/></svg></span> Model catalog</div>
   <div class="section-body">
         <div class="flex" style="margin-bottom:10px;gap:10px">
-      <button class="btn btn-sm btn-primary" onclick="refreshAmdModels()">Refresh models</button>
+      <button class="btn btn-sm btn-primary" onclick="refreshAmdModels(this)">Refresh models</button>
       <span class="hint" style="margin:0">Automatically synced from the official model source upstream (every 5 minutes)</span>
     </div>
     <div id="amdModelsBody">Loading...</div>
@@ -1453,7 +1453,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
   <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 5-6"/></svg></span> Model catalog</div>
   <div class="section-body">
         <div class="flex" style="margin-bottom:10px;gap:10px">
-      <button class="btn btn-sm btn-primary" onclick="refreshTHModels()">Refresh models</button>
+      <button class="btn btn-sm btn-primary" onclick="refreshTHModels(this)">Refresh models</button>
       <span class="hint" style="margin:0">Automatically synced from the official model source upstream (every 5 minutes)</span>
     </div>
     <div id="thModelsBody">Loading...</div>
@@ -1542,7 +1542,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
           <div class="ms-list" id="otherModelSelectList"></div>
         </div>
       </div>
-      <button class="btn btn-sm" onclick="refreshOtherModels()" style="flex:0 0 auto;align-self:center" title="Re-sync the model catalog from the upstream (needs a credential)">Refresh models</button>
+      <button class="btn btn-sm" onclick="refreshOtherModels(this)" style="flex:0 0 auto;align-self:center" title="Re-sync the model catalog from the upstream (needs a credential)">Refresh models</button>
     </div>
     <!-- 第二行：左半=手动添加模型，右半=真实会话测试，各占一半 -->
     <div class="flex" style="gap:10px;margin:0;align-items:center">
@@ -2502,7 +2502,17 @@ const I18N_ZH = {
   'OpenRouter config saved': 'OpenRouter 配置已保存',
   'AMDCloud config saved': 'AMDCloud 配置已保存',
   'TokenHarbor config saved': 'TokenHarbor 配置已保存',
-  'Catalog refreshed': '目录已刷新',
+  // ---- 统一「刷新模型目录」提示（2026-10-31，见 refreshCatalog）----
+  'Syncing…': '同步中…',
+  'Catalog synced: ': '目录已同步：',
+  ' models': ' 个模型',
+  'added ': '新增 ',
+  ' new': ' 个',
+  'No enabled credential — enable one first, then refresh': '没有启用的凭据 —— 请先启用凭据再刷新',
+  'Upstream returned no models — check credentials, egress and upstream status': '上游未返回任何模型 —— 请检查凭据、出口与上游状态',
+  'Catalog sync started in the background — reload this page in a few seconds': '目录同步已在后台启动 —— 稍后刷新本页查看结果',
+  'A catalog sync is already running': '目录同步正在进行中',
+  'upstream unavailable': '上游不可用',
   'No free models yet — click Refresh models': '暂无免费模型——点"刷新模型"',
   'No models yet — click Refresh models': '暂无模型——点"刷新模型"',
   'Failed to load': '加载失败',
@@ -2546,8 +2556,6 @@ const I18N_ZH = {
   'Request succeeded': '请求成功',
   'Request failed': '请求失败',
   'Test message, please reply with hello only': '测试消息，请只回复你好',
-  'Syncing models…': '正在同步模型…',
-  'Model catalog synced': '模型目录已同步',
   'Add model': '添加模型',
   'Remove this manually added model': '删除这个手动添加的模型',
   'Manual model removed': '已删除手动添加的模型',
@@ -2672,17 +2680,6 @@ const I18N_ZH = {
   'Counted locally by this proxy from upstream usage events': '由本网关按上游用量事件本地计数',
   'Models appear here once an account is enabled — the catalog syncs from upstream': '启用账号后此处才会显示并同步模型目录',
   'Models appear here once a credential is enabled — the catalog syncs from upstream': '启用账号或 key 后此处才会显示并同步模型目录',
-  'no enabled AMDCloud key — enable a key first, then refresh': '没有启用的 AMDCloud key —— 请先启用 key 再刷新',
-  'no enabled Trae account — enable an account first, then refresh': '没有启用的 TraeWork 账号 —— 请先启用账号再刷新',
-  'no enabled OpenCode key — enable a key first, then refresh': '没有启用的 OpenCode key —— 请先启用 key 再刷新',
-  'no enabled OpenRouter key — enable a key first, then refresh': '没有启用的 OpenRouter key —— 请先启用 key 再刷新',
-  'no enabled key on this platform — enable a key first, then refresh': '该平台没有启用的 key —— 请先启用 key 再刷新',
-  'no enabled Cline account — enable an account first, then refresh': '没有启用的 Cline 账号 —— 请先启用账号再刷新',
-  'no enabled TokenHarbor key — enable a key first, then refresh': '没有启用的 TokenHarbor key —— 请先启用 key 再刷新',
-  'model sync started': '模型同步已启动',
-  'synced, ': '已同步 ',
-  ' new models': ' 个新模型',
-  'Sync started': '同步已启动',
   'Add accounts': '添加账号',
   'No TraeWork accounts yet — click Add accounts': '暂无 TraeWork 账号——点"添加账号"',
   'Add TraeWork accounts': '添加 TraeWork 账号',
@@ -5606,29 +5603,103 @@ document.addEventListener('click', e => {
   if (u) unblockBlockedModel(u);
 });
 
-async function refreshModels() {
+// ========== 统一「刷新模型目录」入口（2026-10-31）==========
+// 此前每个平台一个 refreshXxxModels()，各自拼提示、各自判成败，结果是四处串味：
+//   · Cline 页顺带刷了 OpenCode 目录，两条结果拼成一行提示（"OpenCode key 未启用"
+//     出现在 Cline 页）；
+//   · WorkBuddy 打的是子系统面板的 models/refresh，该端点不带 refresh=1 只重读
+//     自己 60s 缓存，等于点了跟没点一样；
+//   · 后端 syncXxxCatalog 把失败静默吞掉，handler 照新旧目录长度报成功，
+//     于是出现「刷新成功，0 个模型」；
+//   · 有的平台报新增数、有的报总数、有的只报一句 "Catalog refreshed"。
+// 现在后端统一返回 {success, message, data:{platform, added, total}}（见
+// internal/app/admin_models_refresh.go），前端统一在此渲染同一套提示。
+async function refreshCatalog(btn, cfg) {
+  const idle = btn ? btn.textContent : '';
+  const busy = on => { if (btn) { btn.disabled = on; btn.textContent = on ? T('Syncing…') : idle; } };
+  busy(true);
+  let res = null;
   try {
-    document.querySelectorAll('[data-models-info]').forEach(el => { el.textContent = '· syncing...'; });
-    // 两个上游的模型源一起刷新（Cline feed + OpenCode 目录）
-    const [d, z] = await Promise.all([
-      api('POST', '/models/refresh').catch(e => ({ message: e.message })),
-      api('POST', '/opencode/models/refresh').catch(e => ({ message: e.message }))
-    ]);
-    // 后端 Message 是固定短语（model sync started / synced, N new models），
-    // 走 T() 翻译；N 为动态数字，拆前后半截分别翻。
-    const tr = m => {
-      if (!m) return m;
-      let t = T(m);
-      if (t !== m) return t;
-      const mm = m.match(/^(synced, )(\d+)( new models)$/);
-      if (mm) return T('synced, ') + mm[2] + T(' new models');
-      return m;
-    };
-    const msg = [tr(d.message || (d.data && d.data.message)), tr(z.message || (z.data && z.data.message))].filter(Boolean).join(' | ');
-    toast(msg || T('Sync started'), 'info');
-    setTimeout(loadModels, 3000);
-  } catch (e) { toast(T('Refresh failed: ') + e.message, 'error'); document.querySelectorAll('[data-models-info]').forEach(el => { el.textContent = ''; }); }
+    res = cfg.wb ? await wbCatalogSync(cfg) : await catalogSync(cfg);
+    catalogResultToast(res, cfg);
+    if (cfg.onDone) await cfg.onDone(res);
+  } catch (e) {
+    // api() 只在后端带 error 字段时抛；这里统一成「刷新失败 + 真实原因」
+    toast((cfg.label ? cfg.label + ' · ' : '') + T('Refresh failed: ') + e.message, 'error');
+  } finally {
+    busy(false);
+    if (cfg.reload) {
+      // Cline 的目录同步是后台 goroutine，立刻重拉只会再拿一次旧结果——
+      // 给它 3 秒起跑（与原实现同一节奏），其余平台同步内联完成，立即刷新。
+      if (res && res.message === 'sync_started') await new Promise(r => setTimeout(r, 3000));
+      await cfg.reload();
+    }
+  }
 }
+
+// catalogSync 标准平台：直接拿统一契约的结果。
+async function catalogSync(cfg) {
+  const d = await api('POST', cfg.endpoint, cfg.body);
+  if (d && d.success === false) {
+    // 可预期拒绝（无凭据 / 上游空目录）走 message；后端填了 error 的按异常抛
+    if (d.error) throw new Error(d.error);
+    return { kind: 'rejected', message: d.message || '' };
+  }
+  const data = (d && d.data) || {};
+  return {
+    kind: 'synced',
+    message: d.message || '',
+    total: data.total || 0,
+    added: data.added || 0,
+    data: data
+  };
+}
+
+// wbCatalogSync WorkBuddy：子系统面板是另一套形态（{ok, models, cached}），
+// 且必须带 refresh=1 才会绕过它自己的 60s 目录缓存真的重探上游。
+async function wbCatalogSync(cfg) {
+  const d = await api('POST', cfg.endpoint + '?refresh=1');
+  if (d && d.ok === false) throw new Error(d.error || T('upstream unavailable'));
+  const total = Array.isArray(d.models) ? d.models.length : 0;
+  if (!total) return { kind: 'rejected', message: 'no_models_returned' };
+  return { kind: 'synced', message: 'synced', total: total, added: 0, cached: !!d.cached };
+}
+
+function catalogResultToast(res, cfg) {
+  // 前缀统一「平台名 · 结果」，分隔符用 ASCII（中英双语都不跑版）
+  const pre = cfg.label ? cfg.label + ' · ' : '';
+  if (res.kind === 'rejected') {
+    if (res.message === 'no_enabled_credential') {
+      toast(pre + T('No enabled credential — enable one first, then refresh'), 'error');
+      return;
+    }
+    if (res.message === 'no_models_returned') {
+      toast(pre + T('Upstream returned no models — check credentials, egress and upstream status'), 'error');
+      return;
+    }
+    toast(pre + T('Refresh failed: ') + (res.message || ''), 'error');
+    return;
+  }
+  if (res.message === 'sync_started') {
+    toast(pre + T('Catalog sync started in the background — reload this page in a few seconds'), 'info');
+    return;
+  }
+  if (res.message === 'sync_already_running') {
+    toast(pre + T('A catalog sync is already running'), 'info');
+    return;
+  }
+  const added = res.added > 0 ? ' · ' + T('added ') + res.added + T(' new') : '';
+  toast(pre + T('Catalog synced: ') + res.total + T(' models') + added, 'success');
+}
+
+// 各平台入口：只声明端点与刷新后要重载的视图，判成败与提示一律交给上面。
+const refreshClineModels = btn => refreshCatalog(btn, { label: 'Cline', endpoint: '/models/refresh', reload: loadModels });
+const refreshZenModels = btn => refreshCatalog(btn, { label: 'OpenCode', endpoint: '/opencode/models/refresh', reload: loadModels });
+const refreshTraeModels = btn => refreshCatalog(btn, { label: 'TraeWork', endpoint: '/trae/models/refresh', reload: loadTraeConfig });
+const refreshOrModels = btn => refreshCatalog(btn, { label: 'OpenRouter', endpoint: '/openrouter/models/refresh', reload: loadOrConfig });
+const refreshAmdModels = btn => refreshCatalog(btn, { label: 'AMDCloud', endpoint: '/amd/models/refresh', reload: loadAmdConfig });
+const refreshTHModels = btn => refreshCatalog(btn, { label: 'TokenHarbor', endpoint: '/tokenharbor/models/refresh', reload: loadTHConfig });
+const refreshWbModels = btn => refreshCatalog(btn, { label: 'WorkBuddy', wb: true, endpoint: WB_API_PREFIX + '/models/refresh', reload: loadModels });
 
 // ========== Banned platforms（封禁平台） ==========
 // 整平台退出会话路由（platform_blacklist.go）：/v1/models 同步摘除、请求直接
@@ -6794,25 +6865,6 @@ async function saveOrConfig() {
   } catch (e) { toast(T('Save failed: ') + e.message, 'error'); }
 }
 
-// refreshWbModels WorkBuddy 目录强制重探：失效 vendor 的 global 缓存与兜底
-// 快照（POST models/refresh 即重探一次），随后重拉主目录刷新各页模型块。
-async function refreshWbModels() {
-  try {
-    await api('POST', WB_API_PREFIX + '/models/refresh');
-    await loadModels();
-    toast(T('Catalog refreshed'), 'success');
-  } catch (e) { toast(T('Refresh failed: ') + e.message, 'error'); }
-}
-
-async function refreshOrModels() {
-  try {
-    const d = await api('POST', '/openrouter/models/refresh');
-    if (d && d.success === false) { toast(T(d.message || 'Refresh failed: '), 'error'); return; }
-    await loadOrConfig();
-    toast(T('Catalog refreshed'), 'success');
-    loadOrConfig();
-  } catch (e) { toast(T('Refresh failed: ') + e.message, 'error'); }
-}
 
 // key 状态表：key 掩码 / 今日累计 token / 最近使用 / 冷却 / 代理绑定 / 测试 /
 // 删除 / 启用（暂存编辑）。
@@ -7095,15 +7147,6 @@ async function saveTraeEndpoint(ep) {
   }
 }
 
-async function refreshTraeModels() {
-  try {
-    const d = await api('POST', '/trae/models/refresh');
-    // 后端对无启用账号返回 success:false + Message（api() 不抛异常），按统一口径提示
-    if (d && d.success === false) { toast(T(d.message || 'Refresh failed: '), 'error'); return; }
-    await loadTraeConfig();
-    toast(T('Catalog refreshed'), 'success');
-  } catch (e) { toast(T('Refresh failed: ') + e.message, 'error'); }
-}
 
 // 账号状态表：昵称 + JWT 掩码 / token 到期 / 今日累计 token / 额度 / 签到 /
 // 冷却 / 代理绑定 / 测试 / 删除 / 双开关（反代 = 路由参与，账号 = 总闸，
@@ -7512,16 +7555,6 @@ async function saveAmdConfig() {
   } catch (e) { toast(T('Save failed: ') + e.message, 'error'); }
 }
 
-async function refreshAmdModels() {
-  try {
-    const d = await api('POST', '/amd/models/refresh');
-    // 后端对无启用 key 返回 success:false + Message（api() 不抛异常），按统一口径提示
-    if (d && d.success === false) { toast(T(d.message || 'Refresh failed: '), 'error'); return; }
-    await loadAmdConfig();
-    toast(T('Catalog refreshed'), 'success');
-    loadAmdConfig();
-  } catch (e) { toast(T('Refresh failed: ') + e.message, 'error'); }
-}
 
 // key 状态表：key 掩码 / 今日累计 token / 最近使用 / 冷却 / 代理绑定 / 测试 /
 // 删除 / 启用（暂存编辑）。
@@ -7788,15 +7821,6 @@ async function saveTHConfig() {
   } catch (e) { toast(T('Save failed: ') + e.message, 'error'); }
 }
 
-async function refreshTHModels() {
-  try {
-    const d = await api('POST', '/tokenharbor/models/refresh');
-    if (d && d.success === false) { toast(T(d.message || 'Refresh failed: '), 'error'); return; }
-    await loadTHConfig();
-    toast(T('Catalog refreshed'), 'success');
-    loadTHConfig();
-  } catch (e) { toast(T('Refresh failed: ') + e.message, 'error'); }
-}
 
 // key 状态表：key 掩码 / 今日累计 token / 最近使用 / 冷却 / 代理绑定 / 测试 /
 // 删除 / 启用（暂存编辑）。
@@ -8167,7 +8191,7 @@ async function otherLiveRequest() {
   }
 }
 
-async function refreshOtherModels() {
+function refreshOtherModels(btn) {
   const p = currentOtherPlatform();
   if (!p) return;
   // 无凭据无法拉上游目录，先提示再中止。判定用 keyStates —— 平台对象只带这个
@@ -8176,23 +8200,22 @@ async function refreshOtherModels() {
   const ks = p.keyStates || [];
   if (!ks.length) { toast(T('Add a credential first'), 'error'); return; }
   if (!ks.some(k => k.routingEnabled !== false)) { toast(T('No available credentials'), 'error'); return; }
-  toast(T('Syncing models…'));
-  try {
-    const r = await api('POST', '/other/models/refresh', { slug: p.slug });
-    // api() 只在带 error 字段时抛错；后端拒同步（如全部凭据被禁）返回的是
-    // success:false + message，不接住就会误弹下面的"目录已同步"成功提示
-    //（与其余平台 refresh 的 success:false 检查同款，2026-10-29 补齐）。
-    if (r && r.success === false) { toast(T(r.message || 'Refresh failed: '), 'error'); return; }
-    const np = r.data && r.data.platform;
-    if (np) {
-      otherKnownModels = np.models || [];
-      otherSelectedModels = np.selectedModels || [];
-      renderOtherModelSelect(otherKnownModels, otherSelectedModels, np.manualModels || []);
-
-      renderOtherKeys(np.keyStates || []);
+  // 成败判定与提示统一交给 refreshCatalog；这里的 onDone 只做 Other 特有的即时重绘。
+  return refreshCatalog(btn, {
+    label: p.name || 'Other',
+    endpoint: '/other/models/refresh',
+    body: { slug: p.slug },
+    reload: loadOtherConfig,
+    onDone: res => {
+      const np = res.data && res.data.sub;   // 后端挂在 data.sub 的平台快照
+      if (np) {
+        otherKnownModels = np.models || [];
+        otherSelectedModels = np.selectedModels || [];
+        renderOtherModelSelect(otherKnownModels, otherSelectedModels, np.manualModels || []);
+        renderOtherKeys(np.keyStates || []);
+      }
     }
-    toast(T('Model catalog synced'), 'success');
-  } catch (e) { toast(T('Refresh failed: ') + e.message, 'error'); }
+  });
 }
 
 // removeOtherManualModel 删掉一个手动添加的模型（后端同时取消其勾选）。
