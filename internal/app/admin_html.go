@@ -2286,10 +2286,10 @@ const I18N_ZH = {
   "Run the batch test once on every platform's credential list (Cline / TraeWork / OpenCode / OpenRouter / AMDCloud / TokenHarbor / Other / WorkBuddy), one platform at a time": '对 8 个平台的凭据列表各跑一次批量测试（Cline / TraeWork / OpenCode / OpenRouter / AMDCloud / TokenHarbor / Other / WorkBuddy），逐个平台串行执行',
   'All-platform test finished': '全平台测试完成',
   ' — skipped (no routable credentials): ': '，跳过（无可路由凭据）：',
-  ' — skipped (platform banned): ': '，跳过（已被网关封禁）：',
+  ' — skipped (gateway banned): ': '，跳过（已被网关封禁）：',
   'Platform is banned in gateway settings — test skipped': '平台已在网关设置中封禁——测试跳过',
-  ' skipped (routing off)': ' 跳过（无法路由）',
-  'No routable credentials (routing off)': '无可路由凭据',
+  ' skipped (unroutable)': ' 跳过（无法路由）',
+  'No routable credentials': '无可路由凭据',
   'All-platform test finished with errors: ': '全平台测试完成，失败项：',
   'Global policy': '全局策略',
   'Cline': 'Cline',
@@ -2422,11 +2422,11 @@ const I18N_ZH = {
   'Unban': '解禁',
   'Cool': '冷却',
   'Cooldown cleared': '已解除冷却',
-  'Cooldown set (manual, until unban)': '已手动冷却',
+  'Cooldown set (manual)': '已手动冷却',
   'Unban failed: ': '解禁失败：',
   'Cooldown failed: ': '冷却失败：',
   'Clear global and platform cooldowns plus failure counters for this exit; use it when a one-off network hiccup wrongly cooled the only usable exit': '清除该出口的全局/平台级冷却与失败计数；适用于单次网络抖动误冷却唯一可用出口的情况',
-  'Take this exit out of rotation (manual cooldown until you unban it); pairs with Unban': '把该出口摘出轮转，只能"解禁"解除该状态',
+  'Take this exit out of rotation — only Unban clears it': '把该出口摘出轮转，只能"解禁"解除该状态',
   'Manual': '手动',
   'Base URL': 'Base URL',
   'Max concurrency': '最大并发',
@@ -3321,7 +3321,7 @@ async function batchTestWorkbuddyAccounts() {
   const ids = all.filter(id => wbSnapshot[id] && wbSnapshot[id].enabled !== false);
   const skipped = all.length - ids.length;
   if (!ids.length) {
-    if (all.length) toast(T('No routable credentials (routing off)'), 'info');
+    if (all.length) toast(T('No routable credentials'), 'info');
     else toast(T('No accounts to test'), 'info');
     return { tested: 0, skipped };
   }
@@ -3343,7 +3343,7 @@ async function batchTestWorkbuddyAccounts() {
   }
   toast(T('Batch test done: ') + ids.length + T(' tested, ') + ok + T(' ok') +
     (cool ? T(', ') + cool + T(' cooling') : '') + (err ? T(', ') + err + T(' error') : '') +
-    (skipped ? T(', ') + skipped + T(' skipped (routing off)') : ''),
+    (skipped ? T(', ') + skipped + T(' skipped (unroutable)') : ''),
     err ? 'warning' : 'success', 6000);
   loadWorkbuddyAccounts();
   return { tested: ids.length, skipped };
@@ -4552,7 +4552,7 @@ async function testAllCredentialPlatforms() {
   let msg = failed.length ? T('All-platform test finished with errors: ') + failed.join(', ')
     : T('All-platform test finished');
   if (skipped.length) msg += T(' — skipped (no routable credentials): ') + skipped.join(', ');
-  if (banned.length) msg += T(' — skipped (platform banned): ') + banned.join(', ');
+  if (banned.length) msg += T(' — skipped (gateway banned): ') + banned.join(', ');
   toast(msg, failed.length ? 'warning' : 'success', 8000);
 }
 // Other 子平台逐个重排：Other 页一屏只渲染一个子平台的 keys（currentOtherSlug
@@ -4714,7 +4714,7 @@ async function batchTestAccounts() {
   const ids = all.filter(id => accSnapshot[id] && accSnapshot[id].enabled !== false);
   const skipped = all.length - ids.length;
   if (!ids.length) {
-    if (all.length) toast(T('No routable credentials (routing off)'), 'info');
+    if (all.length) toast(T('No routable credentials'), 'info');
     else toast(T('No accounts to test'), 'info');
     return { tested: 0, skipped };
   }
@@ -4736,7 +4736,8 @@ async function batchTestAccounts() {
     if (btn) { btn.disabled = false; btn.innerHTML = original; }
   }
   toast(T('Batch test done: ') + ids.length + T(' tested, ') + ok + T(' ok') +
-    (cool ? T(', ') + cool + T(' cooling') : '') + (err ? T(', ') + err + T(' error') : ''),
+    (cool ? T(', ') + cool + T(' cooling') : '') + (err ? T(', ') + err + T(' error') : '') +
+    (skipped ? T(', ') + skipped + T(' skipped (unroutable)') : ''),
     err ? 'warning' : 'success', 6000);
   loadAccounts(); loadStats();
   return { tested: ids.length, skipped };
@@ -6167,7 +6168,7 @@ async function batchTestKeys() {
   const idxs = all.filter(i => keySnapshot[i] && keySnapshot[i].routing !== false);
   const skipped = all.length - idxs.length;
   if (!idxs.length) {
-    if (all.length) toast(T('No routable credentials (routing off)'), 'info');
+    if (all.length) toast(T('No routable credentials'), 'info');
     else toast(T('No keys to test'), 'info');
     return { tested: 0, skipped };
   }
@@ -6192,7 +6193,8 @@ async function batchTestKeys() {
     if (btn) { btn.disabled = false; btn.innerHTML = original; }
   }
   toast(T('Batch test done: ') + idxs.length + T(' tested, ') + ok + T(' ok') +
-    (cool ? T(', ') + cool + T(' cooling') : '') + (err ? T(', ') + err + T(' error') : ''),
+    (cool ? T(', ') + cool + T(' cooling') : '') + (err ? T(', ') + err + T(' error') : '') +
+    (skipped ? T(', ') + skipped + T(' skipped (unroutable)') : ''),
     err ? 'warning' : 'success', 6000);
   loadOcConfig();
   return { tested: idxs.length, skipped };
@@ -6368,7 +6370,7 @@ function renderProxyHealth(rowsIn) {
           '<td style="text-align:center">' +
             ((r.cooling || (r.platformCooling && r.platformCooling.length))
               ? '<button class="btn btn-sm btn-success" data-proxy="' + esc(r.proxy) + '" onclick="clearProxyCooldown(this.dataset.proxy)" title="' + esc(T('Clear global and platform cooldowns plus failure counters for this exit; use it when a one-off network hiccup wrongly cooled the only usable exit')) + '">' + T('Unban') + '</button>'
-              : '<button class="btn btn-sm btn-warning" data-proxy="' + esc(r.proxy) + '" onclick="setProxyCooldown(this.dataset.proxy)" title="' + esc(T('Take this exit out of rotation (manual cooldown until you unban it); pairs with Unban')) + '">' + T('Cool') + '</button>') +
+              : '<button class="btn btn-sm btn-warning" data-proxy="' + esc(r.proxy) + '" onclick="setProxyCooldown(this.dataset.proxy)" title="' + esc(T('Take this exit out of rotation — only Unban clears it')) + '">' + T('Cool') + '</button>') +
           '</td>' +
         '</tr>';
       }).join('')
@@ -6390,7 +6392,7 @@ async function clearProxyCooldown(proxy) {
 async function setProxyCooldown(proxy) {
   try {
     await api('POST', '/proxypool/cooldown/set', { proxy: proxy, manual: true });
-    toast(T('Cooldown set (manual, until unban)'), 'success');
+    toast(T('Cooldown set (manual)'), 'success');
   } catch (e) { toast(T('Cooldown failed: ') + e.message, 'error'); }
   loadProxyPool();
 }
@@ -7148,7 +7150,7 @@ async function batchTestOrKeys() {
   const idxs = all.filter(i => orKeySnapshot[i] && orKeySnapshot[i].routing !== false);
   const skipped = all.length - idxs.length;
   if (!idxs.length) {
-    if (all.length) toast(T('No routable credentials (routing off)'), 'info');
+    if (all.length) toast(T('No routable credentials'), 'info');
     else toast(T('No keys to test'), 'info');
     return { tested: 0, skipped };
   }
@@ -7173,7 +7175,8 @@ async function batchTestOrKeys() {
     if (btn) { btn.disabled = false; btn.innerHTML = original; }
   }
   toast(T('Batch test done: ') + idxs.length + T(' tested, ') + ok + T(' ok') +
-    (cool ? T(', ') + cool + T(' cooling') : '') + (err ? T(', ') + err + T(' error') : ''),
+    (cool ? T(', ') + cool + T(' cooling') : '') + (err ? T(', ') + err + T(' error') : '') +
+    (skipped ? T(', ') + skipped + T(' skipped (unroutable)') : ''),
     err ? 'warning' : 'success', 6000);
   loadOrConfig();
   return { tested: idxs.length, skipped };
@@ -7521,7 +7524,7 @@ async function batchTestTraeAccounts() {
   const idxs = all.filter(i => traeAccSnapshot[i] && traeAccSnapshot[i].routing !== false);
   const skipped = all.length - idxs.length;
   if (!idxs.length) {
-    if (all.length) toast(T('No routable credentials (routing off)'), 'info');
+    if (all.length) toast(T('No routable credentials'), 'info');
     else toast(T('No accounts to test'), 'info');
     return { tested: 0, skipped };
   }
@@ -7544,7 +7547,7 @@ async function batchTestTraeAccounts() {
   }
   toast(T('Batch test done: ') + idxs.length + T(' tested, ') + ok + T(' ok') +
     (cool ? T(', ') + cool + T(' cooling') : '') + (err ? T(', ') + err + T(' error') : '') +
-    (skipped ? T(', ') + skipped + T(' skipped (routing off)') : ''),
+    (skipped ? T(', ') + skipped + T(' skipped (unroutable)') : ''),
     err ? 'warning' : 'success', 6000);
   loadTraeConfig();
   return { tested: idxs.length, skipped };
@@ -7872,7 +7875,7 @@ async function batchTestAmdKeys() {
   const idxs = all.filter(i => amdKeySnapshot[i] && amdKeySnapshot[i].routing !== false);
   const skipped = all.length - idxs.length;
   if (!idxs.length) {
-    if (all.length) toast(T('No routable credentials (routing off)'), 'info');
+    if (all.length) toast(T('No routable credentials'), 'info');
     else toast(T('No keys to test'), 'info');
     return { tested: 0, skipped };
   }
@@ -7897,7 +7900,8 @@ async function batchTestAmdKeys() {
     if (btn) { btn.disabled = false; btn.innerHTML = original; }
   }
   toast(T('Batch test done: ') + idxs.length + T(' tested, ') + ok + T(' ok') +
-    (cool ? T(', ') + cool + T(' cooling') : '') + (err ? T(', ') + err + T(' error') : ''),
+    (cool ? T(', ') + cool + T(' cooling') : '') + (err ? T(', ') + err + T(' error') : '') +
+    (skipped ? T(', ') + skipped + T(' skipped (unroutable)') : ''),
     err ? 'warning' : 'success', 6000);
   loadAmdConfig();
   return { tested: idxs.length, skipped };
@@ -8154,7 +8158,7 @@ async function batchTestTHKeys() {
   const idxs = all.filter(i => thKeySnapshot[i] && thKeySnapshot[i].routing !== false);
   const skipped = all.length - idxs.length;
   if (!idxs.length) {
-    if (all.length) toast(T('No routable credentials (routing off)'), 'info');
+    if (all.length) toast(T('No routable credentials'), 'info');
     else toast(T('No keys to test'), 'info');
     return { tested: 0, skipped };
   }
@@ -8179,7 +8183,8 @@ async function batchTestTHKeys() {
     if (btn) { btn.disabled = false; btn.innerHTML = original; }
   }
   toast(T('Batch test done: ') + idxs.length + T(' tested, ') + ok + T(' ok') +
-    (cool ? T(', ') + cool + T(' cooling') : '') + (err ? T(', ') + err + T(' error') : ''),
+    (cool ? T(', ') + cool + T(' cooling') : '') + (err ? T(', ') + err + T(' error') : '') +
+    (skipped ? T(', ') + skipped + T(' skipped (unroutable)') : ''),
     err ? 'warning' : 'success', 6000);
   loadTHConfig();
   return { tested: idxs.length, skipped };
@@ -8605,7 +8610,7 @@ async function batchTestOtherKeys() {
   const ids = all.filter(id => otherKeySnapshot[id] && otherKeySnapshot[id].routing !== false);
   const skipped = all.length - ids.length;
   if (!ids.length) {
-    if (all.length) toast(T('No routable credentials (routing off)'), 'info');
+    if (all.length) toast(T('No routable credentials'), 'info');
     else toast(T('No keys to test'), 'info');
     return { tested: 0, skipped };
   }
@@ -8628,7 +8633,7 @@ async function batchTestOtherKeys() {
     if (btn) { btn.disabled = false; btn.innerHTML = original; }
   }
   toast(T('Batch test done: ') + ids.length + T(' tested, ') + ok + T(' ok') + (err ? T(', ') + err + T(' error') : '') +
-    (skipped ? T(', ') + skipped + T(' skipped (routing off)') : ''),
+    (skipped ? T(', ') + skipped + T(' skipped (unroutable)') : ''),
     err ? 'warning' : 'success', 6000);
   loadOtherConfig();
   return { tested: ids.length, skipped };
