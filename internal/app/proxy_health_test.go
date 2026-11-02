@@ -250,3 +250,92 @@ func TestRecordProxyOutcomeCoolsBadExit(t *testing.T) {
 		t.Fatal("successful attempt must not cool the exit")
 	}
 }
+
+// 延迟测试读数（proxy_probe.go，2026-11-03）：与统计同文件落盘、同「编辑池
+// 即清零」语义，且打码快照不泄漏原始 URL。
+func TestProxyTestEntryPersistAndReset(t *testing.T) {
+	setupBindingTest(t, &zenTestConfig{Proxies: []string{"socks5://a:1"}})
+	resetProxyHealthForTest(t)
+
+	proxyTestMu.Lock()
+	proxyTestStats["socks5://a:1"] = &proxyTestEntry{
+		At: time.Now(), Ok: true, MinMs: 120, MedianMs: 340, Samples: 3,
+	}
+	proxyTestMu.Unlock()
+	// 与生产路径一致：tests 写入必须伴随脏标记（runProxyLatencyBatch 的做法）
+	proxyHealthMu.Lock()
+	proxyHealthDirty = true
+	proxyHealthMu.Unlock()
+	flushProxyHealth()
+
+	// 模拟进程重启：内存清零 + 重置懒加载，再从落盘文件恢复。
+	proxyTestMu.Lock()
+	proxyTestStats = map[string]*proxyTestEntry{}
+	proxyTestMu.Unlock()
+	proxyHealthOnce = sync.Once{}
+	ensureProxyHealthLoaded()
+
+	proxyTestMu.Lock()
+	e := proxyTestStats["socks5://a:1"]
+	proxyTestMu.Unlock()
+	if e == nil || !e.Ok || e.MinMs != 120 || e.MedianMs != 340 || e.Samples != 3 {
+		t.Fatalf("restored test entry = %+v, want ok min=120 median=340 samples=3", e)
+	}
+
+	// 编辑池即清零（与统计同闸）
+	req := httptest.NewRequest("POST", "/admin/api/opencode/config/update",
+		strings.NewReader(`{"proxies":["socks5://b:2"]}`))
+	rec := httptest.NewRecorder()
+	handleZenConfigUpdate(rec, req)
+	if rec.Code != 200 {
+		t.Fatalf("pool edit failed: %d %s", rec.Code, rec.Body.String())
+	}
+	proxyTestMu.Lock()
+	n := len(proxyTestStats)
+	proxyTestMu.Unlock()
+	if n != 0 {
+		t.Fatalf("pool edit must clear latency test entries, got %d", n)
+	}
+
+	// 快照行打码：tests 段不在健康快照中直接出现，行 proxy 一律打码
+	snap := proxyHealthSnapshot()
+	for _, row := range snap {
+		if s, _ := row["proxy"].(string); strings.Contains(s, "socks5://a:1") {
+			t.Fatalf("snapshot leaked raw url: %v", row)
+		}
+	}
+}
+
+// 测试样本计入统计（2026-11-03 用户定）：attempts/successes/recent/HS 均值
+// 与真实流量同池记账，但**绝不触发冷却**——失败再多也只有统计意义。
+func TestRecordProxyTestOutcomeUpdatesStatsWithoutCooldown(t *testing.T) {
+	setupBindingTest(t, &zenTestConfig{Proxies: []string{"socks5://a:1"}})
+	resetProxyHealthForTest(t)
+
+	recordProxyTestOutcome("socks5://a:1", true, nil, 200)
+	recordProxyTestOutcome("socks5://a:1", false, errors.New("dial tcp: refused"), 0)
+
+	proxyHealthMu.Lock()
+	e := proxyHealthStats["socks5://a:1"]
+	proxyHealthMu.Unlock()
+	if e == nil || e.Attempts != 2 || e.Successes != 1 {
+		t.Fatalf("attempts/successes = %d/%d, want 2/1", e.Attempts, e.Successes)
+	}
+	if e.HSCount != 1 || e.HSSumMs != 200 {
+		t.Fatalf("hsCount/hsSumMs = %d/%d, want 1/200", e.HSCount, e.HSSumMs)
+	}
+	if len(e.Recent) != 2 || e.Recent[0] != true || e.Recent[1] != false {
+		t.Fatalf("recent = %v, want [true false]", e.Recent)
+	}
+	if !strings.Contains(e.LastErr, "refused") {
+		t.Fatalf("lastErr = %q, want refused", e.LastErr)
+	}
+
+	// 红线：连续失败也绝不冷却（没有 strike 记账）
+	for i := 0; i < 5; i++ {
+		recordProxyTestOutcome("socks5://a:1", false, errors.New("EOF"), 0)
+	}
+	if !proxyAvailable(0) {
+		t.Fatal("test failures must never trigger cooldown")
+	}
+}

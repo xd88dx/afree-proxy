@@ -82,6 +82,8 @@ func registerAdminRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/admin/api/proxypool/cooldown/clear", adminCORS(auth(handleProxyCooldownClear)))
 	// 手动置冷：把某出口置入冷却（与 clear 对称，2026-10-31）
 	mux.HandleFunc("/admin/api/proxypool/cooldown/set", adminCORS(auth(handleProxyCooldownSet)))
+	// 代理测试：批量测全部出口到中性目标的延迟（2026-11-03，纯测量不触碰路由）
+	mux.HandleFunc("/admin/api/proxypool/test", adminCORS(auth(handleProxyPoolLatencyTest)))
 	mux.HandleFunc("/admin/api/keys/delete", adminCORS(auth(handleAdminDeleteKey)))
 	mux.HandleFunc("/admin/api/models", adminCORS(auth(handleAdminModels)))
 	mux.HandleFunc("/admin/api/models/refresh", adminCORS(auth(handleAdminModelsRefresh)))

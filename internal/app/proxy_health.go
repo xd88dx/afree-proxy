@@ -24,10 +24,14 @@ import (
 // ============================================================================
 // 代理出口健康度统计（afree 本地功能）
 //
-// 纯被动口径：只记录真实上游请求的"出口成败"，不做任何主动探活。成败判定与
+// 纯被动口径：只记录真实上游请求的"出口成败"，不做任何后台探活。成败判定与
 // cooldownUpstreamProxy 完全同源 —— 传输层成功（拨号 + CONNECT/SOCKS + TLS）
 // 算在线，传输层报错算失败；上游 4xx/5xx 是上游的问题，不扣代理的分；客户端
 // 取消（context 取消/截止）不计入任何一端。
+//
+// 2026-11-03 用户定：面板「代理测试」的手动探测样本（proxy_probe.go 的
+// recordProxyTestOutcome）也计入本统计（在线率/最近在线率/平均握手延迟），
+// 但**不带 strike 计数与冷却**——统计归统计，路由归人。
 //
 // 键是规范化代理 URL（不是列表索引）：索引会随列表编辑位移。按用户决策，
 // 代理列表一有变动就整体清空统计（resetProxyHealthStats），所以键的稳定性
@@ -131,6 +135,7 @@ func isUpstreamSideStreamFailure(err error) bool {
 //     2-strike 退化为 1-strike（2026-10-31 修复的存量 bug）。
 //   - 全局层（建连失败）与平台层（隧道后流错误）都是窗口内 2-strike 触发
 //     （2026-10-31 用户定）：单次网络抖动不再把唯一可用出口全局冷却 2 分钟。
+//
 // ============================================================================
 const (
 	proxyStreamFailWindow    = 60 * time.Second
@@ -309,10 +314,14 @@ var (
 type proxyHealthFile struct {
 	SavedAt time.Time                    `json:"savedAt"`
 	Proxies map[string]*proxyHealthEntry `json:"proxies"`
+	// Tests 面板「代理测试」按钮的最近读数（proxy_probe.go，2026-11-03）。
+	// 与统计同文件同清零语义：编辑池即随 resetProxyHealthStats 清空。
+	Tests map[string]*proxyTestEntry `json:"tests,omitempty"`
 }
 
 // proxyHealthPath 独立健康统计文件（使用痕迹，不进配置监测集合）。
 func proxyHealthPath() string { return kit.ResolveDataPath("proxy-state.json") }
+
 // recordProxyOutcome 记一次出口成败。kind 为平台标识（cline/zen/amd/or/th/
 // other/trae/wb，见各调用点），决定平台级冷却的作用范围。proxyURL 为空 = 直连
 // 出口，不是代理，不记。err 非空且源自 context 取消/截止（客户端放弃）时同样
@@ -378,13 +387,17 @@ func recordProxyOutcome(kind, proxyURL string, ok bool, err error, hsMs int64) {
 }
 
 // resetProxyHealthStats 代理列表变动时整体清空统计（用户决策：编辑即清零，
-// 不做键迁移）。同步落盘空文件，避免崩溃后旧统计复活。
+// 不做键迁移）。同步落盘空文件，避免崩溃后旧统计复活。延迟测试读数同池键、
+// 同语义，一并清空（2026-11-03）。
 func resetProxyHealthStats() {
 	ensureProxyHealthLoaded()
 	proxyHealthMu.Lock()
 	proxyHealthStats = map[string]*proxyHealthEntry{}
 	proxyHealthDirty = true
 	proxyHealthMu.Unlock()
+	proxyTestMu.Lock()
+	proxyTestStats = map[string]*proxyTestEntry{}
+	proxyTestMu.Unlock()
 	flushProxyHealth()
 }
 
@@ -411,6 +424,15 @@ func proxyHealthBackupSnapshot() *proxyHealthFile {
 		out.Proxies[k] = &cp
 	}
 	proxyHealthMu.Unlock()
+	proxyTestMu.Lock()
+	if len(proxyTestStats) > 0 {
+		out.Tests = make(map[string]*proxyTestEntry, len(proxyTestStats))
+		for k, t := range proxyTestStats {
+			cp := *t
+			out.Tests[k] = &cp
+		}
+	}
+	proxyTestMu.Unlock()
 	return &out
 }
 
@@ -429,6 +451,17 @@ func importProxyHealthBackup(f *proxyHealthFile) {
 	proxyHealthStats = next
 	proxyHealthDirty = true
 	proxyHealthMu.Unlock()
+	proxyTestMu.Lock()
+	nextTests := make(map[string]*proxyTestEntry, len(f.Tests))
+	for k, t := range f.Tests {
+		if t == nil {
+			continue
+		}
+		cp := *t
+		nextTests[k] = &cp
+	}
+	proxyTestStats = nextTests
+	proxyTestMu.Unlock()
 	flushProxyHealth()
 }
 func loadProxyHealth() {
@@ -451,7 +484,22 @@ func loadProxyHealth() {
 		return
 	}
 	absorbProxyHealthStats(f.Proxies, path)
+	// tests 段（延迟测试读数）随同恢复；旧文件无该段 → 空表。
+	proxyTestMu.Lock()
+	nextTests := make(map[string]*proxyTestEntry, len(f.Tests))
+	for k, t := range f.Tests {
+		if t == nil {
+			continue
+		}
+		nextTests[k] = t
+	}
+	proxyTestStats = nextTests
+	proxyTestMu.Unlock()
+	if len(nextTests) > 0 {
+		log.Printf("proxy health: restored %d latency test entry(s) from %s", len(nextTests), path)
+	}
 }
+
 // absorbProxyHealthStats 把读出的统计表灌入内存（Recent 截断 + 日志）。
 func absorbProxyHealthStats(stats map[string]*proxyHealthEntry, from string) {
 	for _, e := range stats {
@@ -489,6 +537,15 @@ func flushProxyHealth() {
 		out.Proxies[k] = &cp
 	}
 	proxyHealthDirty = false
+	proxyTestMu.Lock()
+	if len(proxyTestStats) > 0 {
+		out.Tests = make(map[string]*proxyTestEntry, len(proxyTestStats))
+		for k, t := range proxyTestStats {
+			cp := *t
+			out.Tests[k] = &cp
+		}
+	}
+	proxyTestMu.Unlock()
 	proxyHealthMu.Unlock()
 
 	// 直接原子写独立文件，不再经过 proxy-config.json（配置文件保持"仅用户
@@ -562,6 +619,21 @@ func proxyHealthSnapshot() []map[string]any {
 			}
 			row["lastErr"] = e.LastErr
 		}
+		// 延迟测试最近读数随行输出（proxy_probe.go，2026-11-03）。零样本行
+		// 也要带——它正是「冷却显示冻结」事故里最需要跟随后端的那类行。
+		proxyTestMu.Lock()
+		te := proxyTestStats[raw]
+		proxyTestMu.Unlock()
+		if te != nil {
+			row["test"] = map[string]any{
+				"ok":       te.Ok,
+				"minMs":    te.MinMs,
+				"medianMs": te.MedianMs,
+				"samples":  te.Samples,
+				"err":      te.Err,
+				"at":       te.At.UTC().Format(time.RFC3339),
+			}
+		}
 		out = append(out, row)
 	}
 	return out
@@ -607,7 +679,9 @@ func clearProxyCooldowns(id string) string {
 
 // handleProxyCooldownSet POST /admin/api/proxypool/cooldown/set
 // body: {"proxy": "<打码 URL/原始 URL/备注名>", "kind": "global"|"cline"|"zen"|...（空=global）,
-//        "minutes": 10} 或 {"manual": true}
+//
+//	"minutes": 10} 或 {"manual": true}
+//
 // 手动把某出口置入冷却（与 clear 对称）。两种形态：
 //   - manual=true（面板「冷却」按钮，2026-11-02 用户定）：无到期时间，
 //     摘出轮转后只有手动解禁才恢复；

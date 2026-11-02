@@ -201,10 +201,6 @@ table:has(#accountTableBody) th,table:has(#traeAccountsBody) th,table:has(#ocKey
 .btn-primary:hover{background:var(--btn-primary-hover)}
 .btn-success{background:var(--btn-success-bg);border-color:transparent;color:#fff;font-weight:600}
 .btn-success:hover{background:var(--btn-success-hover)}
-/* 黄色系按钮（2026-11-02 用户定）：健康表「冷却」= 手动摘出轮转的警示操作，
-   与绿色「解禁」（恢复操作）在色相上直接区分。黄底用深字保证明暗主题都可读。 */
-.btn-warning{background:#eab308;border-color:transparent;color:#1c1917;font-weight:600}
-.btn-warning:hover{background:#ca9a04}
 .btn-danger{border-color:rgba(224,112,95,.4);color:var(--danger);background:transparent}
 .btn-danger:hover{background:rgba(224,112,95,.1);border-color:var(--danger)}
 .btn-sm{padding:3px 10px;font-size:12px;border-radius:6px}
@@ -743,7 +739,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
           </div>
           <div id="ppBulkMenu" class="pb-menu" style="display:none"></div>
         </div>
-        <div style="display:flex;gap:8px;margin-top:8px">
+        <div style="display:flex;gap:8px;margin-top:6px">
           <button class="btn btn-sm btn-warn btn-static" id="ppBulkResetBtn" style="white-space:nowrap" onclick="ppBulkReset()" title="Discard staged exclusions and reload the last saved state">Discard</button>
           <button class="btn btn-sm btn-primary" style="white-space:nowrap" onclick="ppBulkApply()">Append</button>
         </div>
@@ -833,7 +829,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
   </div>
 </div>
 <div class="section">
-  <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><path d="M3 17l5-6 4 3 4-7 5 4"/><path d="M3 21h18"/></svg></span> Proxy health<span style="flex:1"></span><button class="btn btn-sm" onclick="clearProxyHealthStore()" title="Wipe this browser's stored online-rate rows (manual edits and proxies no longer in the pool); the table falls back to current backend data.">Clear data</button></div>
+  <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><path d="M3 17l5-6 4 3 4-7 5 4"/><path d="M3 21h18"/></svg></span> Proxy health<span style="flex:1"></span><button class="btn btn-sm" id="ppTestBtn" onclick="runProxyLatencyTest(this)" title="Send up to 3 HTTPS probes per exit to www.gstatic.com/generate_204 (204 no-auth target) through the same dial stack as real traffic; shows the min latency of successful samples and feeds the online-rate and handshake stats. Never touches routing or cooldowns.">Test latency</button><button class="btn btn-sm" onclick="clearProxyHealthStore()" title="Wipe this browser's stored online-rate rows (manual edits and proxies no longer in the pool); the table falls back to current backend data.">Clear data</button></div>
   <div class="section-body">
     <div class="table-wrap">
     <table>
@@ -843,15 +839,16 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
         <th style="text-align:center" title="Transport-layer success rate since the pool was last edited (upstream 4xx/5xx still counts as the proxy being online)">Online rate</th>
         <th style="text-align:center" title="Success rate over the last 50 attempts; red below 80% (min 10 samples).">Recent online rate</th>
         <th style="text-align:center;cursor:pointer;user-select:none" onclick="ppHsSortToggle()" title="Average tunnel-setup time over successful attempts (TCP+TLS+CONNECT handshake only — excludes upstream first byte and task duration). Lower is better. Click to sort.">Avg handshake<span id="ppHsSortMark"></span></th>
+        <th style="text-align:center" title="Latest manual latency test: min / median over up to 3 HTTPS probes to www.gstatic.com/generate_204 through the same dial stack as real traffic; the samples also feed the rate and handshake stats. Routing and cooldowns are untouched.">Test</th>
         <th>Last OK</th>
         <th>Last Fail</th>
         <th>Cooldown</th>
         <th style="text-align:center" title="Manual unban while a cooldown is active (global or platform-scoped): clears the cooldown and the failure counters so the exit rejoins the rotation immediately.">Actions</th>
       </tr></thead>
-      <tbody id="ppHealthBody"><tr><td colspan="9" class="empty">Loading...</td></tr></tbody>
+      <tbody id="ppHealthBody"><tr><td colspan="10" class="empty">Loading...</td></tr></tbody>
     </table>
     </div>
-    <div class="hint" style="margin-top:8px">Rates are sampled passively from real traffic — no probing. "No data" = unused since the last pool edit; editing the proxy list resets counters.</div>
+    <div class="hint" style="margin-top:8px">Rates are sampled passively from real traffic and manual latency tests — no background probing. "No data" = unused since the last pool edit; editing the proxy list resets counters.</div>
     <div class="hint" style="margin-top:4px">Rows follow the backend pool; values persist in this browser to survive pool edits (add-only — a returning proxy picks up its stored numbers). Console override: proxyRateSet('香港-01', 0.42).</div>
   </div>
 </div>
@@ -884,7 +881,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
         </div>
         <div id="platformBanMenu" class="pb-menu" style="display:none"></div>
       </div>
-      <div style="display:flex;gap:8px;margin-top:8px">
+      <div style="display:flex;gap:8px;margin-top:6px">
         <button class="btn btn-sm btn-warn btn-static" id="platformBanResetBtn" style="white-space:nowrap" onclick="resetPlatformBans()" title="Discard staged selections and reload the saved ban state">Discard</button>
         <button class="btn btn-sm btn-primary btn-static" id="platformBanApplyBtn" style="white-space:nowrap" onclick="applyPlatformBans()">Save</button>
       </div>
@@ -2306,7 +2303,6 @@ const I18N_ZH = {
   'All its keys will be removed. This cannot be undone.': '该子平台的所有密钥都将被移除，此操作不可撤销。',
   'Transport-layer success rate since the pool was last edited (upstream 4xx/5xx still counts as the proxy being online)': '上次编辑代理池以来的传输层成功率（上游 4xx/5xx 不算代理失败）',
   'Success rate over the last 50 attempts; red below 80% (min 10 samples).': '最近 50 次尝试的成功率；样本≥10 且低于 80% 时标红。',
-  'Rates are sampled passively from real traffic — no probing. "No data" = unused since the last pool edit; editing the proxy list resets counters.': '在线率仅被动采样自真实流量——不产生探测流量。“无数据”=自上次编辑代理池后未使用；编辑代理列表会清零计数。',
   'Clear data': '清空数据',
   'Wipe this browser\'s stored online-rate rows (manual edits and proxies no longer in the pool); the table falls back to current backend data.': '清掉本浏览器留存的在线率行（手动改动与已不在池内的代理），表格回退到后端当前数据。',
   'Clear the browser-stored online-rate data? Backend stats are untouched.': '清空浏览器留存的在线率数据？后端统计不受影响。',
@@ -2751,6 +2747,16 @@ const I18N_ZH = {
   'Online rate': '在线率',
   'Recent online rate': '最近在线率',
   'Avg handshake': '平均握手延迟',
+  // 2026-11-03 代理测试按钮（proxy_probe 方案一：中性目标 3 采样取最小值，
+  // 样本计入在线率/握手统计但不触发冷却）。「Test」「Failed」复用既有词条，
+  // 勿在此重复添加。
+  'Test latency': '代理测试',
+  'Testing…': '测试中…',
+  'Latency test finished': '代理测试完成',
+  'Proxy test failed: ': '代理测试失败：',
+  'Send up to 3 HTTPS probes per exit to www.gstatic.com/generate_204 (204 no-auth target) through the same dial stack as real traffic; shows the min latency of successful samples and feeds the online-rate and handshake stats. Never touches routing or cooldowns.': '每条出口向 www.gstatic.com/generate_204（anycast、204 空响应、无鉴权）发最多 3 次 HTTPS 探测，与真实请求同一拨号栈；显示成功样本的最小延迟，样本计入在线率与握手统计。绝不触碰路由与冷却。',
+  'Latest manual latency test: min / median over up to 3 HTTPS probes to www.gstatic.com/generate_204 through the same dial stack as real traffic; the samples also feed the rate and handshake stats. Routing and cooldowns are untouched.': '最近一次手动延迟测试：对 www.gstatic.com/generate_204 最多 3 次 HTTPS 探测的最小/中位延迟，与真实请求同一拨号栈；样本同时计入在线率与握手统计。路由与冷却不受影响。',
+  'Rates are sampled passively from real traffic and manual latency tests — no background probing. "No data" = unused since the last pool edit; editing the proxy list resets counters.': '在线率被动采样自真实流量与手动延迟测试——无后台探测。“无数据”=自上次编辑代理池后未使用；编辑代理列表会清零计数。',
   'Credentials saved to server': '凭据已写入服务器',
   'Account already exists': '账号已存在',
   'account #': '账号#',
@@ -4125,11 +4131,26 @@ function saveProxyHealthStore() {
 function syncProxyHealthCache(rows) {
   proxyHealthBackendRows = (rows || []).filter(r => r && r.proxy);
   proxyHealthByProxy = loadProxyHealthStore();
+  // 页面在测试中途被刷新会留下残留的 testing 标记：加载时一律清掉。
+  Object.keys(proxyHealthByProxy).forEach(k => { delete proxyHealthByProxy[k].testing; });
   proxyHealthBackendRows.forEach(r => {
     const k = proxyHealthKey(r.proxy);
     const old = proxyHealthByProxy[k];
     if (old && old.m) return;                 // 手改行不被后端覆盖
-    if (old && !(r.attempts > 0)) return;     // 后端无数据（编辑清零/暂离归来）→ 保留留存值
+    if (old && !(r.attempts > 0)) {
+      // 后端无样本（编辑清零/暂离归来）→ 统计数值保留留存值兜底；但冷却状态
+      // （cooling/coolingUntil/platformCooling）与延迟测试读数（test）是路由
+      // 真相/最新事实，必须始终跟随后端快照——否则零样本代理（如从未有流量
+      // 的出口）点了「冷却」后表格永远不翻转，看起来像按钮失灵（2026-11-03
+      // 修复，EUserv 实证：后端日志五次 manual set 全成功，前端无一显示）。
+      const merged = Object.assign({}, old);
+      merged.cooling = !!r.cooling;
+      merged.coolingUntil = r.coolingUntil || '';
+      merged.platformCooling = r.platformCooling;
+      merged.test = r.test;
+      proxyHealthByProxy[k] = merged;
+      return;
+    }
     proxyHealthByProxy[k] = Object.assign({}, r);
   });
   saveProxyHealthStore();
@@ -6307,7 +6328,7 @@ async function loadProxyPool() {
     } catch (e) { _('ppOther').value = 'true'; }
     // 展示行与后端池保持一致（只列当前池内代理），数值取本地合并快照——
     // 池编辑清零/代理暂离期间由留存层兜底，代理回归后旧数据自动恢复显示
-    renderProxyHealth(proxyHealthBackendRows.map(r => proxyHealthByProxy[proxyHealthKey(r.proxy)]).filter(Boolean));
+    renderProxyHealth(proxyHealthPoolRows());
   } catch (e) { /* ignore */ }
 }
 
@@ -6320,7 +6341,10 @@ function ppHsSortToggle() {
   ppHsSort = (ppHsSort + 1) % 3;
   const mark = _('ppHsSortMark');
   if (mark) mark.textContent = ppHsSort === 1 ? ' ▲' : ppHsSort === 2 ? ' ▼' : '';
-  renderProxyHealth(Object.values(proxyHealthByProxy));
+  // 与 loadProxyPool 同口径：只渲染后端池内代理的行——Object.values 会把
+  // localStorage 里的孤儿行（已出池/键已变的代理）也带上，点它们的按钮
+  // 后端 404（proxy not in pool），表现同样是"点了没反应"。
+  renderProxyHealth(proxyHealthPoolRows());
 }
 function renderProxyHealth(rowsIn) {
   const tb = _('ppHealthBody');
@@ -6353,6 +6377,16 @@ function renderProxyHealth(rowsIn) {
         const hs = (r.avgHsMs === null || r.avgHsMs === undefined)
           ? '<span style="color:var(--text3)">-</span>'
           : '<span class="mono" style="font-size:11px">' + Math.round(r.avgHsMs) + ' ms</span>';
+        // Test：最近一次手动延迟测试（proxy_probe 后端，min 为主要读数，
+        // 中位数/样本数/时间进悬浮提示）。测试进行中显示 …，失败显示红字。
+        const t = r.test;
+        const testCell = r.testing
+          ? '<span class="mono" style="font-size:11px;color:var(--text3)">…</span>'
+          : !t
+            ? '<span style="color:var(--text3)">-</span>'
+            : t.ok
+              ? '<span class="mono" style="font-size:11px" title="' + esc(t.minMs + ' / ' + t.medianMs + ' ms · ' + (t.samples || 0) + '/' + PP_TEST_SAMPLES + ' · ' + fmtWhen(t.at)) + '">' + esc(t.minMs) + ' ms</span>'
+              : '<span style="font-size:11px;color:var(--danger,#ef4444)" title="' + esc(t.err || '') + '">' + T('Failed') + '</span>';
         const failTitle = r.lastErr ? ' title="' + esc(r.lastErr) + '"' : '';
         return '<tr>' +
           '<td class="mono" style="font-size:11px">' + esc(egLabel(r.proxy)) + '</td>' +
@@ -6360,6 +6394,7 @@ function renderProxyHealth(rowsIn) {
           '<td style="text-align:center">' + rateCell(cum, r.rate) + '</td>' +
           '<td style="text-align:center">' + rateCell(rec, r.recentRate) + '</td>' +
           '<td style="text-align:center" title="' + esc(T('Avg tunnel-setup time of successful attempts (TCP+TLS+CONNECT), excluding upstream response; samples: ')) + (r.hsCount || 0) + '">' + hs + '</td>' +
+          '<td style="text-align:center">' + testCell + '</td>' +
           '<td class="mono" style="font-size:11px">' + (r.lastOk ? fmtWhen(r.lastOk) : '<span style="color:var(--text3)">-</span>') + '</td>' +
           '<td class="mono" style="font-size:11px"' + failTitle + '>' + (r.lastFail ? fmtWhen(r.lastFail) : '<span style="color:var(--text3)">-</span>') + '</td>' +
           '<td>' + (r.cooling
@@ -6370,11 +6405,52 @@ function renderProxyHealth(rowsIn) {
           '<td style="text-align:center">' +
             ((r.cooling || (r.platformCooling && r.platformCooling.length))
               ? '<button class="btn btn-sm btn-success" data-proxy="' + esc(r.proxy) + '" onclick="clearProxyCooldown(this.dataset.proxy)" title="' + esc(T('Clear global and platform cooldowns plus failure counters for this exit; use it when a one-off network hiccup wrongly cooled the only usable exit')) + '">' + T('Unban') + '</button>'
-              : '<button class="btn btn-sm btn-warning" data-proxy="' + esc(r.proxy) + '" onclick="setProxyCooldown(this.dataset.proxy)" title="' + esc(T('Take this exit out of rotation — only Unban clears it')) + '">' + T('Cool') + '</button>') +
+              : '<button class="btn btn-sm btn-warn" data-proxy="' + esc(r.proxy) + '" onclick="setProxyCooldown(this.dataset.proxy)" title="' + esc(T('Take this exit out of rotation — only Unban clears it')) + '">' + T('Cool') + '</button>') +
           '</td>' +
         '</tr>';
       }).join('')
-    : '<tr><td colspan="9" class="empty">No proxies configured</td></tr>';
+    : '<tr><td colspan="10" class="empty">No proxies configured</td></tr>';
+}
+
+// PP_TEST_SAMPLES 与后端 proxyTestSamples 对齐（3 次取最小值），仅供 tooltip 展示。
+const PP_TEST_SAMPLES = 3;
+
+// proxyHealthPoolRows 展示行的唯一口径：与后端池一致的行 + 本地合并快照的
+// 数值。loadProxyPool / 排序切换 / 测试按钮三处共用，杜绝孤儿行再进表格。
+function proxyHealthPoolRows() {
+  return proxyHealthBackendRows.map(r => proxyHealthByProxy[proxyHealthKey(r.proxy)]).filter(Boolean);
+}
+
+// runProxyLatencyTest 手动批量测延迟（2026-11-03 方案一）：后端逐出口对中性
+// 目标（gstatic 204）发 3 次 HTTPS 探测（与真实请求同一拨号栈），结果只做
+// 展示与落盘，不触碰路由、统计与冷却。进行中按钮禁用、各行显示 …。
+async function runProxyLatencyTest(btn) {
+  if (!btn || btn.disabled) return;
+  const original = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = T('Testing…');
+  proxyHealthPoolRows().forEach(r => { r.testing = 1; });
+  renderProxyHealth(proxyHealthPoolRows());
+  try {
+    const d = await api('POST', '/proxypool/test', {});
+    (d.data.rows || []).forEach(row => {
+      const k = proxyHealthKey(row.proxy);
+      if (!proxyHealthByProxy[k]) return;
+      delete proxyHealthByProxy[k].testing;
+      proxyHealthByProxy[k].test = row;
+    });
+    saveProxyHealthStore();
+    toast(T('Latency test finished'), 'success');
+  } catch (e) {
+    toast(T('Proxy test failed: ') + e.message, 'error');
+  }
+  // 测试样本已计入后端统计（attempts/在线率/握手均值，2026-11-03 用户定）：
+  // 拉一次快照让统计列与 test 列一并刷新，而不是等下一次自然轮询。
+  await loadProxyPool();
+  proxyHealthPoolRows().forEach(r => { delete r.testing; });
+  renderProxyHealth(proxyHealthPoolRows());
+  btn.disabled = false;
+  btn.innerHTML = original;
 }
 
 // clearProxyCooldown 手动解禁：清该出口的全局/平台级冷却与失败计数。
