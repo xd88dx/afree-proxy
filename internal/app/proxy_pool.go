@@ -38,6 +38,11 @@ var (
 
 	proxyCooldowns   = map[int]time.Time{} // 代理索引 -> 冷却截止（全局层：建连失败）
 	proxyCooldownsMu sync.Mutex
+
+	// proxyManualCooled 手动冷却（面板「冷却」按钮，2026-11-02 用户定）：
+	// 不设到期时间——摘出轮转后只有手动解禁（clearProxyCooldowns）才恢复。
+	// 与 timed 冷却并存：手动标记优先（到期与否都不参与轮转）。
+	proxyManualCooled = map[int]bool{}
 )
 
 // proxyPlatformCooldowns 平台粒度冷却：kind -> idx -> 冷却截止（2026-10-30）。
@@ -94,6 +99,17 @@ func cooldownUpstreamProxy(idx int, d time.Duration) {
 	proxyCooldownsMu.Unlock()
 }
 
+// markProxyManualCooled 手动冷却某出口：无到期时间，只有 clearProxyCooldowns
+// 解禁才恢复（代理池重建时一并清空，索引失效后标记无意义）。
+func markProxyManualCooled(idx int) {
+	if idx < 0 {
+		return
+	}
+	proxyCooldownsMu.Lock()
+	proxyManualCooled[idx] = true
+	proxyCooldownsMu.Unlock()
+}
+
 // cooldownUpstreamProxyFor 标记某出口对**单个平台**冷却。
 func cooldownUpstreamProxyFor(kind string, idx int, d time.Duration) {
 	if kind == "" || idx < 0 {
@@ -141,6 +157,10 @@ func proxyAvailableFor(kind string, idx int) bool {
 func proxyAvailable(idx int) bool {
 	proxyCooldownsMu.Lock()
 	defer proxyCooldownsMu.Unlock()
+	// 手动冷却无到期概念：timed 冷却过期与否都不影响手动标记的判定。
+	if proxyManualCooled[idx] {
+		return false
+	}
 	until, ok := proxyCooldowns[idx]
 	if !ok {
 		return true
@@ -167,6 +187,13 @@ func proxyCooldownStatus() map[string]string {
 			}
 		}
 	}
+	// 手动冷却以空串标记（覆盖同出口的 timed 记录）：无到期时间，面板显示
+	// 「手动」而不是一个虚假的恢复时刻。
+	for idx, on := range proxyManualCooled {
+		if on && idx >= 0 && idx < len(cfg.Proxies) {
+			out[cfg.Proxies[idx]] = ""
+		}
+	}
 	return out
 }
 
@@ -183,6 +210,10 @@ func proxyCooldownUntil(raw string) time.Time {
 	}
 	proxyCooldownsMu.Lock()
 	defer proxyCooldownsMu.Unlock()
+	// 手动冷却没有恢复时刻：返回零值，调用方的错误文案只说不可用、不编时间。
+	if proxyManualCooled[idx] {
+		return time.Time{}
+	}
 	until, ok := proxyCooldowns[idx]
 	if !ok || !time.Now().Before(until) {
 		return time.Time{}

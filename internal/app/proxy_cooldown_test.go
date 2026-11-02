@@ -294,3 +294,53 @@ func TestProxyStreamFailStrikeWindow(t *testing.T) {
 		t.Fatal("stale failure outside window must not count toward the threshold")
 	}
 }
+
+// TestProxyManualCooldown 手动冷却（2026-11-02 用户定）：面板「冷却」= 无到期
+// 时间的全局摘除——timed 冷却过期与否都不影响，只有 clearProxyCooldowns 恢复；
+// 状态快照以空 until 表达（面板据此显示「手动」，不编造恢复时刻）。
+func TestProxyManualCooldown(t *testing.T) {
+	setupBindingTest(t, &zenTestConfig{Proxies: []string{
+		"socks5://u:p@10.0.0.1:11201#MANUAL-TEST",
+	}})
+	t.Cleanup(func() {
+		proxyCooldownsMu.Lock()
+		proxyCooldowns = map[int]time.Time{}
+		proxyManualCooled = map[int]bool{}
+		proxyCooldownsMu.Unlock()
+	})
+	const p = "socks5://u:p@10.0.0.1:11201#MANUAL-TEST"
+	idx := proxyIdxInPool(p)
+	if idx < 0 {
+		t.Fatal("test proxy must be in pool")
+	}
+
+	markProxyManualCooled(idx)
+	if proxyAvailable(idx) {
+		t.Fatal("manually cooled exit must be unavailable")
+	}
+	if proxyAvailableFor(pkZen, idx) {
+		t.Fatal("manual cooldown must apply to every platform")
+	}
+	// 同时存在一份**已过期**的 timed 冷却：手动标记仍要生效
+	proxyCooldownsMu.Lock()
+	proxyCooldowns[idx] = time.Now().Add(-time.Minute)
+	proxyCooldownsMu.Unlock()
+	if proxyAvailable(idx) {
+		t.Fatal("expired timed cooldown must not lift the manual flag")
+	}
+	// 快照：手动冷却以空 until 标记；恢复时刻查询返回零值
+	if v, ok := proxyCooldownStatus()[p]; !ok || v != "" {
+		t.Fatalf("manual cooldown must surface as empty until, got %q ok=%v", v, ok)
+	}
+	if !proxyCooldownUntil(p).IsZero() {
+		t.Fatal("manual cooldown must have no recovery moment")
+	}
+	// 解禁是唯一恢复路径
+	clearProxyCooldowns(p)
+	if !proxyAvailable(idx) {
+		t.Fatal("clear must lift the manual cooldown")
+	}
+	if _, ok := proxyCooldownStatus()[p]; ok {
+		t.Fatal("cleared manual cooldown must not appear in status")
+	}
+}

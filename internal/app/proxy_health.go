@@ -594,6 +594,8 @@ func clearProxyCooldowns(id string) string {
 		raw = getProxyPool().Proxies[idx]
 		proxyCooldownsMu.Lock()
 		delete(proxyCooldowns, idx)
+		// 手动冷却（无到期）也随解禁一并移除——它是唯一恢复路径。
+		delete(proxyManualCooled, idx)
 		for _, m := range proxyPlatformCooldowns {
 			delete(m, idx)
 		}
@@ -604,9 +606,12 @@ func clearProxyCooldowns(id string) string {
 }
 
 // handleProxyCooldownSet POST /admin/api/proxypool/cooldown/set
-// body: {"proxy": "<打码 URL/原始 URL/备注名>", "kind": "global"|"cline"|"zen"|...（空=global）, "minutes": 10}
-// 手动把某出口置入冷却（与 clear 对称）：运维摘除出口、以及面板上制造
-// 冷却态验证"解禁"按钮都用它。
+// body: {"proxy": "<打码 URL/原始 URL/备注名>", "kind": "global"|"cline"|"zen"|...（空=global）,
+//        "minutes": 10} 或 {"manual": true}
+// 手动把某出口置入冷却（与 clear 对称）。两种形态：
+//   - manual=true（面板「冷却」按钮，2026-11-02 用户定）：无到期时间，
+//     摘出轮转后只有手动解禁才恢复；
+//   - minutes=N：定时冷却，运维/测试脚本用，到期自动恢复。
 func handleProxyCooldownSet(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "POST" {
 		writeAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
@@ -622,6 +627,7 @@ func handleProxyCooldownSet(w http.ResponseWriter, r *http.Request) {
 		Proxy   string `json:"proxy"`
 		Kind    string `json:"kind"`
 		Minutes int    `json:"minutes"`
+		Manual  bool   `json:"manual"`
 	}
 	if err := json.Unmarshal(body, &req); err != nil {
 		writeAPI(w, http.StatusBadRequest, apiResponse{Error: "bad json: " + err.Error()})
@@ -633,6 +639,18 @@ func handleProxyCooldownSet(w http.ResponseWriter, r *http.Request) {
 		writeAPI(w, http.StatusNotFound, apiResponse{Error: "proxy not in pool: " + req.Proxy})
 		return
 	}
+	raw := getProxyPool().Proxies[idx]
+	kind := strings.TrimSpace(req.Kind)
+	if req.Manual {
+		markProxyManualCooled(idx)
+		log.Printf("[exit-cooldown] manual set: exit %s cooled indefinitely (kind=%s, until unban)", kit.MaskProxyURL(raw), kind)
+		writeAPI(w, http.StatusOK, apiResponse{
+			Success: true,
+			Message: "Cooldown set",
+			Data:    map[string]any{"proxy": maskProxyURL(raw), "kind": kind, "manual": true},
+		})
+		return
+	}
 	if req.Minutes <= 0 {
 		req.Minutes = 10
 	}
@@ -640,8 +658,6 @@ func handleProxyCooldownSet(w http.ResponseWriter, r *http.Request) {
 	if d > maxCooldown {
 		d = maxCooldown
 	}
-	raw := getProxyPool().Proxies[idx]
-	kind := strings.TrimSpace(req.Kind)
 	if kind == "" || kind == "global" {
 		cooldownUpstreamProxy(idx, d)
 	} else {

@@ -141,6 +141,8 @@ func setProxyPool(c *proxyPoolConfigData) {
 	if proxiesChanged(old.Proxies, c.Proxies) {
 		proxyCooldownsMu.Lock()
 		proxyCooldowns = map[int]time.Time{}
+		// 手动冷却同样按索引记录：索引位移后标记就错位了，一并失效。
+		proxyManualCooled = map[int]bool{}
 		proxyCooldownsMu.Unlock()
 		resetProxyHealthStats()
 	}

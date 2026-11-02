@@ -201,6 +201,10 @@ table:has(#accountTableBody) th,table:has(#traeAccountsBody) th,table:has(#ocKey
 .btn-primary:hover{background:var(--btn-primary-hover)}
 .btn-success{background:var(--btn-success-bg);border-color:transparent;color:#fff;font-weight:600}
 .btn-success:hover{background:var(--btn-success-hover)}
+/* 黄色系按钮（2026-11-02 用户定）：健康表「冷却」= 手动摘出轮转的警示操作，
+   与绿色「解禁」（恢复操作）在色相上直接区分。黄底用深字保证明暗主题都可读。 */
+.btn-warning{background:#eab308;border-color:transparent;color:#1c1917;font-weight:600}
+.btn-warning:hover{background:#ca9a04}
 .btn-danger{border-color:rgba(224,112,95,.4);color:var(--danger);background:transparent}
 .btn-danger:hover{background:rgba(224,112,95,.1);border-color:var(--danger)}
 .btn-sm{padding:3px 10px;font-size:12px;border-radius:6px}
@@ -2278,6 +2282,7 @@ const I18N_ZH = {
   'Test all credentials': '全量测试',
   "Run the batch test once on every platform's credential list (Cline / TraeWork / OpenCode / OpenRouter / AMDCloud / TokenHarbor / Other / WorkBuddy), one platform at a time": '对 8 个平台的凭据列表各跑一次批量测试（Cline / TraeWork / OpenCode / OpenRouter / AMDCloud / TokenHarbor / Other / WorkBuddy），逐个平台串行执行',
   'All-platform test finished': '全平台测试完成',
+  ' — skipped (no enabled credentials): ': '，跳过（无启用凭据）：',
   'All-platform test finished with errors: ': '全平台测试完成，失败项：',
   'Global policy': '全局策略',
   'Cline': 'Cline',
@@ -2408,13 +2413,14 @@ const I18N_ZH = {
   'Switch language / 切换语言': '切换语言',
   'cooling': '冷却中',
   'Unban': '解禁',
-  'Cool': '置冷',
+  'Cool': '冷却',
   'Cooldown cleared': '已解除冷却',
-  'Cooldown set (10 min)': '已置入冷却（10 分钟）',
+  'Cooldown set (manual, until unban)': '已手动冷却（解禁前一直生效）',
   'Unban failed: ': '解禁失败：',
-  'Cooldown failed: ': '置冷失败：',
+  'Cooldown failed: ': '冷却失败：',
   'Clear global and platform cooldowns plus failure counters for this exit; use it when a one-off network hiccup wrongly cooled the only usable exit': '清除该出口的全局/平台级冷却与失败计数；适用于单次网络抖动误冷却唯一可用出口的情况',
-  'Put this exit into a 10-minute global cooldown (manual removal from rotation); pairs with Unban': '把该出口置入 10 分钟全局冷却（手动摘出轮转）；与"解禁"配对使用',
+  'Take this exit out of rotation (manual cooldown until you unban it); pairs with Unban': '把该出口摘出轮转（手动冷却，解禁前不恢复）；与"解禁"配对使用',
+  'Manual': '手动',
   'Base URL': 'Base URL',
   'Max concurrency': '最大并发',
   'Rate-limit retries': '限流重试次数',
@@ -4217,7 +4223,7 @@ function stageRowBindingClear(row, kind) {
   if (!main) return false;
   if (!main.dataset.value) return false;
   main.dataset.value = '';
-  main.value = egLabel('');
+  main.value = egDisplayLabel('');
   egSyncBadge(main);
   egApplyMainLinkage(row, '');
   return true;
@@ -4251,7 +4257,7 @@ function stageProxiesByOrder(kind) {
     const v = seq[i];
     if (main.dataset.value === v) return;
     main.dataset.value = v;
-    main.value = egLabel(v);
+    main.value = egDisplayLabel(v);
     egSyncBadge(main);
     egApplyMainLinkage(row, v);
     markRowDirty(row, kind);
@@ -4430,7 +4436,7 @@ function applyReorderRules(kind, parts) {
     cnt[best] = (cnt[best] || 0) + 1;
     if (best !== r.v) {
       r.m.dataset.value = best;
-      r.m.value = egLabel(best);
+      r.m.value = egDisplayLabel(best);
       egSyncBadge(r.m);
       egApplyMainLinkage(r.m.closest('tr'), best);
       markRowDirty(r.m.closest('tr'), kind);
@@ -4459,11 +4465,35 @@ function collectReorderParts(kind) {
 //   - Other 页一屏只渲染一个子平台，沿用 reorderOtherAll 的手法逐个切换、
 //     渲染、跑测试，跑完恢复用户原本选中的子平台。
 // 串行执行（每个批量测试内部本身也串行），避免同时打爆多个上游。
+// platformHasEnabledCred 平台是否还有启用凭据（2026-11-02 用户定）：全量测试
+// 只测仍有启用凭据的平台——某平台凭据的反代开关全关（或账号总闸全关）时，
+// 整个平台跳过，不打无谓的真实上游请求。读各平台渲染快照（调用方
+// testAllCredentialPlatforms 已先拉齐 8 个平台的数据）；快照为空视为"没有
+// 启用凭据"，但快照键缺失的条目按启用处理（保守，不误跳）。
+function platformHasEnabledCred(kind) {
+  const some = snap => Object.keys(snap || {}).some(id => {
+    const s = snap[id];
+    if (!s) return false;
+    if (s.routing === false || s.enabled === false || s.account === false) return false;
+    return true;
+  });
+  switch (kind) {
+    case 'Cline': return some(accSnapshot);
+    case 'OpenCode': return some(keySnapshot);
+    case 'OpenRouter': return some(orKeySnapshot);
+    case 'AMDCloud': return some(amdKeySnapshot);
+    case 'TokenHarbor': return some(thKeySnapshot);
+    case 'TraeWork': return some(traeAccSnapshot);
+    case 'WorkBuddy': return some(wbSnapshot);
+  }
+  return true;
+}
 async function testAllCredentialPlatforms() {
   const btn = _('ppTestAllBtn');
   const label = btn ? btn.innerHTML : '';
   if (btn) btn.disabled = true;
   const failed = [];
+  const skipped = [];
   const safe = p => Promise.resolve(p).catch(() => {});
   try {
     await Promise.all([
@@ -4486,6 +4516,8 @@ async function testAllCredentialPlatforms() {
     const tick = name => { if (btn) btn.innerHTML = '<span class="loading"></span>' + name + ' ' + (done + 1) + '/' + total; };
     for (const st of steps) {
       tick(st[0]);
+      // 无启用凭据的平台整平台跳过（2026-11-02 用户定）
+      if (!platformHasEnabledCred(st[0])) { skipped.push(st[0]); done++; continue; }
       try { await st[1](); } catch (e) { failed.push(st[0]); }
       done++;
     }
@@ -4497,6 +4529,10 @@ async function testAllCredentialPlatforms() {
       if (sel) sel.value = p.slug;
       renderOtherKeys(p.keyStates || []);
       tick('Other');
+      // 子平台同样按启用凭据跳过（渲染后的快照即该子平台状态）
+      if (!Object.keys(otherKeySnapshot).some(id => otherKeySnapshot[id] && otherKeySnapshot[id].routing !== false)) {
+        skipped.push('other:' + p.slug); done++; continue;
+      }
       try { await batchTestOtherKeys(); } catch (e) { failed.push('other:' + p.slug); }
       done++;
     }
@@ -4507,8 +4543,10 @@ async function testAllCredentialPlatforms() {
   } finally {
     if (btn) { btn.disabled = false; btn.innerHTML = label; }
   }
-  toast(failed.length ? T('All-platform test finished with errors: ') + failed.join(', ')
-    : T('All-platform test finished'), failed.length ? 'warning' : 'success', 8000);
+  let msg = failed.length ? T('All-platform test finished with errors: ') + failed.join(', ')
+    : T('All-platform test finished');
+  if (skipped.length) msg += T(' — skipped (no enabled credentials): ') + skipped.join(', ');
+  toast(msg, failed.length ? 'warning' : 'success', 8000);
 }
 // Other 子平台逐个重排：Other 页一屏只渲染一个子平台的 keys（currentOtherSlug
 // 选择器），saveOtherKeyEdits 也只按 slug 保存当前子平台 —— 必须逐个切换、
@@ -4710,6 +4748,29 @@ function egLabel(v) {
   } catch (e) { /* 非 URL 形态，回退打码 */ }
   return maskProxyLabel(v);
 }
+// egShortLabel 备注名过长时中间缩略、保留首尾（2026-11-02 用户定）：
+// eg-input 固定 170px 宽，长备注名选中后被硬截断，只剩前半段看不出节点是谁。
+// 宽度按半角字符当量计（CJK/全角按 2），超出 budget 时取头部约 60%、尾部
+// 约 25%，中间以 … 代替。health 表 / 下拉菜单等宽裕处仍显示全名，不受影响。
+function egShortLabel(label, budget) {
+  const w = ch => ch.charCodeAt(0) > 0x2e7f ? 2 : 1;
+  let total = 0;
+  for (const ch of label) total += w(ch);
+  if (total <= budget) return label;
+  const chars = [...label];
+  const headBudget = Math.ceil(budget * 0.6);
+  const tailBudget = Math.floor(budget * 0.25);
+  let head = 0, acc = 0;
+  while (head < chars.length && acc + w(chars[head]) <= headBudget) { acc += w(chars[head]); head++; }
+  let tailStart = chars.length; acc = 0;
+  while (tailStart > head && acc + w(chars[tailStart - 1]) <= tailBudget) { acc += w(chars[tailStart - 1]); tailStart--; }
+  return chars.slice(0, head).join('') + '…' + chars.slice(tailStart).join('');
+}
+// EG_LABEL_BUDGET eg-input 显示预算（半角当量）：170px 宽 / 12px 字号下约
+// 22 个半角字符，再扣掉右侧在线率徽标的遮挡余量。
+const EG_LABEL_BUDGET = 22;
+// egDisplayLabel 绑定输入框的显示值：egLabel + 超长中间缩略。
+function egDisplayLabel(v) { return egShortLabel(egLabel(v), EG_LABEL_BUDGET); }
 // egSearchText 代理的搜索匹配域(小写):别名 + 去协议前缀的原始串(host:port#alias)。
 // 协议前缀(socks5:// 等)不含检索信息,纳进来会让 "e" 这类单字符命中全池——
 // 四个搜索点(绑定联想框/排除卡片/卡片 Enter/批量追加)统一走本函数。
@@ -4747,10 +4808,15 @@ function egComboHTML(kind, id, slot, value, title, disabled) {
   const t = disabled
     ? T(slot === 'backup' && !backupProxyOn ? 'Backup proxies are disabled — follows the main slot' : 'Follows the main slot')
     : title;
+  // 显示值与全名：备注名过长时输入框里中间缩略，完整备注名追加进 title
+  //（hover 可见），缩略不丢信息。
+  const full = egLabel(value || '');
+  const disp = egShortLabel(full, EG_LABEL_BUDGET);
+  const t2 = disp !== full ? t + '\n' + full : t;
   // 在线率徽标：选中后仍显示该节点的最近在线率与平均握手延迟，聚焦输入时由 CSS 隐藏
   const badge = egBadgeHTML(value || '', kind);
   return '<span class="eg-wrap' + (badge ? ' has-badge' : '') + (badge.indexOf('eg-badge hs') >= 0 ? ' has-hs' : '') + '">' +
-    '<input type="text" class="eg-input" data-eg="' + kind + '" data-egid="' + esc(id) + '" data-slot="' + slot + '" data-value="' + esc(value || '') + '" value="' + esc(egLabel(value)) + '" title="' + esc(t) + '"' + (disabled ? ' disabled' : '') + ' autocomplete="off" spellcheck="false">' +
+    '<input type="text" class="eg-input" data-eg="' + kind + '" data-egid="' + esc(id) + '" data-slot="' + slot + '" data-value="' + esc(value || '') + '" value="' + esc(disp) + '" title="' + esc(t2) + '"' + (disabled ? ' disabled' : '') + ' autocomplete="off" spellcheck="false">' +
     badge +
     '</span>';
 }
@@ -4763,7 +4829,7 @@ function egApplyMainLinkage(row, mainValue) {
   if (!backup) return;
   if (!backupProxyOn || mainValue === '' || mainValue === EGRESS_DIRECT) {
     backup.dataset.value = mainValue;
-    backup.value = egLabel(mainValue);
+    backup.value = egDisplayLabel(mainValue);
     egSyncBadge(backup);
     backup.disabled = true;
     backup.title = T(!backupProxyOn ? 'Backup proxies are disabled — follows the main slot' : 'Follows the main slot');
@@ -4832,7 +4898,7 @@ function egRenderItems(input, menu, q) {
 }
 function egCommit(input, value) {
   input.dataset.value = value;
-  input.value = egLabel(value);
+  input.value = egDisplayLabel(value);
   egSyncBadge(input);
   egCloseMenu();
   input.blur();
@@ -4853,7 +4919,7 @@ document.addEventListener('keydown', e => { if (e.key === 'Escape') egCloseMenu(
 document.addEventListener('blur', e => {
   if (e.target.classList && e.target.classList.contains('eg-input')) {
     // 未选择直接失焦：显示还原为当前绑定值的标签
-    e.target.value = egLabel(e.target.dataset.value);
+    e.target.value = egDisplayLabel(e.target.dataset.value);
     egSyncBadge(e.target);
     setTimeout(egCloseMenu, 150);
   }
@@ -6245,11 +6311,15 @@ function renderProxyHealth(rowsIn) {
           '<td style="text-align:center" title="' + esc(T('Avg tunnel-setup time of successful attempts (TCP+TLS+CONNECT), excluding upstream response; samples: ')) + (r.hsCount || 0) + '">' + hs + '</td>' +
           '<td class="mono" style="font-size:11px">' + (r.lastOk ? fmtWhen(r.lastOk) : '<span style="color:var(--text3)">-</span>') + '</td>' +
           '<td class="mono" style="font-size:11px"' + failTitle + '>' + (r.lastFail ? fmtWhen(r.lastFail) : '<span style="color:var(--text3)">-</span>') + '</td>' +
-          '<td>' + (r.cooling ? '<span class="mono" style="font-size:11px;color:var(--warning,#eab308)">' + fmtWhen(r.coolingUntil) + '</span>' : '<span style="color:var(--text3)">-</span>') + '</td>' +
+          '<td>' + (r.cooling
+            // 手动冷却（2026-11-02 用户定）没有到期时间：后端 coolingUntil 为空串，
+            // 显示「手动」——不显示恢复时刻，因为只有点「解禁」才会恢复。
+            ? '<span class="mono" style="font-size:11px;color:var(--warning,#eab308)">' + (r.coolingUntil ? esc(fmtWhen(r.coolingUntil)) : esc(T('Manual'))) + '</span>'
+            : '<span style="color:var(--text3)">-</span>') + '</td>' +
           '<td style="text-align:center">' +
             ((r.cooling || (r.platformCooling && r.platformCooling.length))
-              ? '<button class="btn btn-sm" data-proxy="' + esc(r.proxy) + '" onclick="clearProxyCooldown(this.dataset.proxy)" title="' + esc(T('Clear global and platform cooldowns plus failure counters for this exit; use it when a one-off network hiccup wrongly cooled the only usable exit')) + '">' + T('Unban') + '</button>'
-              : '<button class="btn btn-sm" data-proxy="' + esc(r.proxy) + '" onclick="setProxyCooldown(this.dataset.proxy)" title="' + esc(T('Put this exit into a 10-minute global cooldown (manual removal from rotation); pairs with Unban')) + '">' + T('Cool') + '</button>') +
+              ? '<button class="btn btn-sm btn-success" data-proxy="' + esc(r.proxy) + '" onclick="clearProxyCooldown(this.dataset.proxy)" title="' + esc(T('Clear global and platform cooldowns plus failure counters for this exit; use it when a one-off network hiccup wrongly cooled the only usable exit')) + '">' + T('Unban') + '</button>'
+              : '<button class="btn btn-sm btn-warning" data-proxy="' + esc(r.proxy) + '" onclick="setProxyCooldown(this.dataset.proxy)" title="' + esc(T('Take this exit out of rotation (manual cooldown until you unban it); pairs with Unban')) + '">' + T('Cool') + '</button>') +
           '</td>' +
         '</tr>';
       }).join('')
@@ -6266,11 +6336,12 @@ async function clearProxyCooldown(proxy) {
   loadProxyPool();
 }
 
-// setProxyCooldown 手动置冷：全局冷却 10 分钟（与 Unban 对称的测试/运维入口）。
+// setProxyCooldown 手动冷却（2026-11-02 用户定）：不带到期时间——面板上的
+// 「冷却」= 把出口摘出轮转，只有点「解禁」才恢复，不再走 10 分钟自动到期。
 async function setProxyCooldown(proxy) {
   try {
-    await api('POST', '/proxypool/cooldown/set', { proxy: proxy, minutes: 10 });
-    toast(T('Cooldown set (10 min)'), 'success');
+    await api('POST', '/proxypool/cooldown/set', { proxy: proxy, manual: true });
+    toast(T('Cooldown set (manual, until unban)'), 'success');
   } catch (e) { toast(T('Cooldown failed: ') + e.message, 'error'); }
   loadProxyPool();
 }
