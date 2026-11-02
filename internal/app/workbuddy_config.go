@@ -85,6 +85,7 @@ func saveWorkbuddyConfig(
 		SoftCooldown:         newCfg.SoftRateDur,
 		SanitizeFingerprints: newCfg.Features.SanitizeBlacklistFingerprints,
 		RecordClientInfo:     newCfg.Logging.RequestClientInfo,
+		RecordContext:        newCfg.Logging.RequestArchiveContext,
 		ModelRateFilter:      newCfg.Pool.ModelRateFilter,
 		HiddenModels:         livecfg.NormalizeHiddenModels(newCfg.Models.Hidden),
 		// models.allowed 白名单（上游 issue #68，37b3f4c）：与 Hidden 对称的热字段。
@@ -102,6 +103,12 @@ func saveWorkbuddyConfig(
 	})
 	up.SanitizeFingerprints.Store(newCfg.Features.SanitizeBlacklistFingerprints)
 	up.SanitizeBrandScope.Store(newCfg.Features.SanitizeBrandScope)
+	// keep_recent_rounds（上游 issue #99）与 tls_fingerprint（上游 80e275e）热生效：
+	// 前者原子写，后者运行期可切（「换指纹反而握手失败」时改配置即回滚 node 档）。
+	up.KeepRecentRounds.Store(int64(newCfg.Prompt.KeepRecentRounds))
+	if err := up.SetTLSFingerprint(newCfg.Upstream.TLSFingerprint); err != nil {
+		log.Printf("workbuddy: tls_fingerprint 热更新配置无效，保持原档: %v", err)
+	}
 	// 思考档位策略热生效：改默认档 / 客户端优先 / 作用域后，下一次 chat 即按新策略。
 	up.SetEffortPolicy(effortPolicyOf(newCfg))
 	log.Printf("workbuddy: 思考档位策略已热更新（开=%v，默认档=%s，客户端优先=%v，作用域=%s）",
@@ -149,6 +156,7 @@ func saveWorkbuddyConfig(
 	p.SetAccountPriority(newCfg.Pool.AccountPriority)
 	p.SetAccountShare(newCfg.Pool.AccountShare)
 	p.SetCreditFloorMaxRate(newCfg.Pool.CreditFloorMaxRate)
+	p.SetBalanceWindow(newCfg.BalanceWindowDur) // 窗口用量调度热生效（0 关停）
 	sch.SetTaskSweepInterval(newCfg.TaskSweepInterval)
 	if pn != nil {
 		pn.SetGrowthConcurrency(newCfg.Schedule.GrowthConcurrency) // 排程轮次并发热生效
@@ -169,6 +177,7 @@ func saveWorkbuddyConfig(
 		CheckinDisabled:        !newCfg.Schedule.CheckinEnabled,
 		TravelDisabled:         !newCfg.Schedule.TravelEnabled,
 		ActivityDisabled:       !newCfg.Schedule.ActivityEnabled,
+		WebActivityDisabled:    !newCfg.Schedule.WebActivityEnabled,
 		KeepaliveDisabled:      !newCfg.Schedule.KeepaliveEnabled,
 		GrowthDisabled:         !newCfg.Schedule.GrowthEnabled,
 		IncludeDisabledInTasks: newCfg.Schedule.IncludeDisabledInTasks,
@@ -189,8 +198,10 @@ func saveWorkbuddyConfig(
 // 只报告确实变化且无法热生效的字段——未变化不重复提示，改回原值自动清除。
 // afree 与上游字段集差异（均为有意）：
 //   - listen/auth_dir/state_file/api_key 被 afree 固定回写部署值，永不变化，不列；
-//   - upstream.*（UA/版本/超时等）、global.*、cn.chat_base、cn.billing_base、
-//     models.hidden 在 saveWorkbuddyConfig 中热应用，不列；
+//   - upstream.*（UA/版本/超时/tls_fingerprint 等）、global.*、cn.chat_base、
+//     cn.billing_base、models.hidden、pool.balance_window、prompt.keep_recent_rounds、
+//     logging.request_archive_context、schedule.web_activity_enabled 在
+//     saveWorkbuddyConfig 中热应用，不列；
 //   - admin/alerting 在 afree 部署中无消费方（未接线，重启也不生效），不列，
 //     避免诱导用户无效重启。
 func restartRequiredWorkbuddyFields(cur, next *wbconfig.Config) []string {

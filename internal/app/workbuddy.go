@@ -32,7 +32,7 @@ import (
 
 // 版本口径：misakano 线不跟语义化版本（CI 用日期版本注入），此处记录上游来源
 // 与同步日期；基线 misakano/main 96b816d（2026-10-31 同步）。
-const workbuddyVersion = "2026.10.31-misakano+afree"
+const workbuddyVersion = "2026.11.02-misakano+afree"
 
 // workbuddySubsystem 把源项目的账号池/熔断/调度/面板/兼容接口作为独立子系统
 // 挂在现有 afree-proxy 上。账号凭证与状态落在 data/workbuddy/ 下，不与 Cline
@@ -122,6 +122,9 @@ func startWorkBuddy() (*workbuddySubsystem, error) {
 	p.SetAccountPriority(cfg.Pool.AccountPriority)
 	p.SetAccountShare(cfg.Pool.AccountShare)
 	p.SetCreditFloorMaxRate(cfg.Pool.CreditFloorMaxRate)
+	// 窗口用量调度（上游 40d98f9 / issue #112）：按 (账号, 模型) 窗口消费 token
+	// 反比降权打散热点；缺省 1h，"0" 关停。热路径同键。
+	p.SetBalanceWindow(cfg.BalanceWindowDur)
 
 	up := upstream.New()
 	up.HTTP.Timeout = time.Duration(cfg.Upstream.TimeoutSeconds) * time.Second
@@ -132,6 +135,13 @@ func startWorkBuddy() (*workbuddySubsystem, error) {
 	up.IdleTimeout = time.Duration(cfg.Upstream.IdleTimeoutSeconds) * time.Second
 	up.SanitizeFingerprints.Store(cfg.Features.SanitizeBlacklistFingerprints)
 	up.SanitizeBrandScope.Store(cfg.Features.SanitizeBrandScope)
+	// 出站 TLS 指纹档位（上游 80e275e / PR #135）：缺省 "node" 复刻官方
+	// ClientHello（JA3/JA4 对齐真机），空值等价 node；配错保持 node 档不致命。
+	if err := up.SetTLSFingerprint(cfg.Upstream.TLSFingerprint); err != nil {
+		log.Printf("workbuddy: tls_fingerprint 配置无效，保持 node 档: %v", err)
+	}
+	// keep_recent_rounds（上游 issue #99）：出站前只保留最近 N 轮对话，0=全量透传。
+	up.KeepRecentRounds.Store(int64(cfg.Prompt.KeepRecentRounds))
 	// 思考档位策略（上游 thinking 节 / issue #18、#21）：启动即装载，面板保存
 	// 配置时经 saveWorkbuddyConfig 热更新。缺省启用（default_effort=max），
 	// 不接这一行则客户端缺档时网关不再补档——上游默认行为会静默丢失。
@@ -220,8 +230,10 @@ func startWorkBuddy() (*workbuddySubsystem, error) {
 		CheckinDisabled:    !cfg.Schedule.CheckinEnabled,
 		TravelDisabled:     !cfg.Schedule.TravelEnabled,
 		ActivityDisabled:   !cfg.Schedule.ActivityEnabled,
-		KeepaliveDisabled:  !cfg.Schedule.KeepaliveEnabled,
-		GrowthDisabled:     !cfg.Schedule.GrowthEnabled,
+		// 国际版「网页通道」每日活跃腿（上游 issue #111）：缺省关，显式 true 才跑。
+		WebActivityDisabled: !cfg.Schedule.WebActivityEnabled,
+		KeepaliveDisabled:   !cfg.Schedule.KeepaliveEnabled,
+		GrowthDisabled:      !cfg.Schedule.GrowthEnabled,
 		// 保号类四任务是否覆盖禁用账号（缺省 false = 禁用即跳过，与源项目同口径）。
 		IncludeDisabledInTasks: cfg.Schedule.IncludeDisabledInTasks,
 	})
@@ -232,6 +244,7 @@ func startWorkBuddy() (*workbuddySubsystem, error) {
 		SoftCooldown:         cfg.SoftRateDur,
 		SanitizeFingerprints: cfg.Features.SanitizeBlacklistFingerprints,
 		RecordClientInfo:     cfg.Logging.RequestClientInfo,
+		RecordContext:        cfg.Logging.RequestArchiveContext,
 		ModelRateFilter:      cfg.Pool.ModelRateFilter,
 		HiddenModels:         livecfg.NormalizeHiddenModels(cfg.Models.Hidden),
 		// models.allowed 白名单（上游 issue #68，37b3f4c）：与 Hidden 对称的热字段。
@@ -329,6 +342,7 @@ func startWorkBuddy() (*workbuddySubsystem, error) {
 		// 来源记录开关经 livecfg 热生效；此处同时填静态字段，供 Live 为 nil 的
 		// 裸用/测试路径拿到同一缺省值。
 		RecordClientInfo: cfg.Logging.RequestClientInfo,
+		RecordContext:    cfg.Logging.RequestArchiveContext,
 		GlobalEnabled:    cfg.Global.Enabled,
 		// 模型黑名单原始条目（config models.hidden）；运行期以 livecfg 快照为准
 		//（热生效），此处供 Live 为 nil 的裸用/测试路径。

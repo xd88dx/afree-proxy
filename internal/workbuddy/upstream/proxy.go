@@ -147,3 +147,95 @@ func (c *Client) doHTTP(req *http.Request, a *auth.Auth) (*http.Response, error)
 	c.observeProxy(raw, err, time.Since(hsStart).Milliseconds())
 	return resp, err
 }
+
+// ---- 上游 40d98f9 起的统一出站口（原上游 proxy.go 内容，随 PRESERVE 落本仓）----
+
+// officialConnectionValue 给出该 path 上官方客户端实际发送的 Connection 值。
+//
+// 上游 2026-10-30 双版本真机抓包（CN 5.9.3 / GL 5.9.4）：官方在每条 RPC 上都
+// 显式写了 Connection —— 除 /v3/config 是 close 外，其余全是 keep-alive。
+// HTTP/1.1 默认即复用，Go 因此从不发送这一行，但头集合少了它就是少一个字段；
+// 风控按白名单查头时，"缺一个官方必发的头"和"多一个官方不发的头"一样显眼。
+//
+// 没抓到过的 path 返回空串，保持 Go 默认行为，不臆造。
+func officialConnectionValue(path string) string {
+	switch path {
+	case "/v3/config":
+		return "close"
+	case "/v2/chat/completions", "/v2/chat/busy", "/v2/report":
+		return "keep-alive"
+	}
+	return ""
+}
+
+// applyConnectionHeader 把官方那个显式的 Connection 头补回去。
+//
+// close 不能写进 Header：net/http 的 transferWriter 会按 req.Close 自己写一行
+// Connection: close，手写会重复成两行。keep-alive 相反 —— Go 认为它是默认值所以
+// 从不发出，必须手写才会出现在线上字节里。
+func applyConnectionHeader(req *http.Request) {
+	switch officialConnectionValue(req.URL.Path) {
+	case "close":
+		req.Close = true
+	case "keep-alive":
+		req.Header.Set("Connection", "keep-alive")
+	}
+}
+
+// do 是账号感知的唯一出站口（上游 40d98f9 起全部 13 个出站点收敛于此），
+// 在上游形态上叠加 afree 的 ProxyFor 按账号钉定出口：ProxyFor 已挂时走
+// fail-closed 的账号出口（短 RPC 记账走 doHTTP、chat 走 doChat 带握手观测）；
+// 未挂时保持上游语义（ProxyPool 或直连）。
+func (c *Client) do(req *http.Request, a *auth.Auth, chat bool) (*http.Response, error) {
+	req = normalizeHeaderSpelling(req)
+	applyConnectionHeader(req)
+	if c.ProxyFor != nil && a != nil {
+		if chat {
+			return c.doChat(req, a)
+		}
+		return c.doHTTP(req, a)
+	}
+	client := c.HTTP
+	if chat {
+		client = c.chatHTTP()
+	}
+	if c.ProxyPool == nil || a == nil {
+		return client.Do(req)
+	}
+	return c.ProxyPool.Do(client, req, a.UID, a.Realm())
+}
+
+// doChat chat SSE 出站：Timeout=0 的钉定 client + 握手耗时观测（hsStart 拨号
+// 前打点，与 cline/zen 路径同口径；此前恒传 0 导致 wb 出口「平均握手延迟」
+// 徽标永远无样本）。
+func (c *Client) doChat(req *http.Request, a *auth.Auth) (*http.Response, error) {
+	cl, raw, err := c.chatClientFor(req.Context(), a)
+	if err != nil {
+		return nil, err
+	}
+	hsStart := time.Now()
+	resp, err := cl.Do(req)
+	c.observeProxy(raw, err, time.Since(hsStart).Milliseconds())
+	return resp, err
+}
+
+// closeIdleEgress 传输层失败后清空闲连接（上游 chat 失败分支调用）。账号钉定
+// 出口时清对应的代理 Transport——上游原形态只清基础 chat Transport，钉定场景
+// 清错了对象；直连（ProxyFor 未挂/出口为空）回落基础 Transport，与上游一致。
+func (c *Client) closeIdleEgress(a *auth.Auth) {
+	target := http.RoundTripper(c.chatHTTP().Transport)
+	if c.ProxyFor != nil && a != nil {
+		if raw, ok := c.ProxyFor(a); ok {
+			raw = strings.TrimSpace(raw)
+			if raw != "" {
+				c.proxyMu.Lock()
+				tr := c.proxyTransports[raw]
+				c.proxyMu.Unlock()
+				if tr != nil {
+					target = tr
+				}
+			}
+		}
+	}
+	roundTripCloseIdle(target)
+}

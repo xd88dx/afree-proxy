@@ -13,13 +13,13 @@ WorkBuddy 一栏的基线同时登记在 `scripts/workbuddy-vendor-baseline.json
 
 ## Cline
 
-本次未涉及上游同步（2026-10-28 核对：`foxy1402/cline-proxy` main 仍为 `571f9b9`，与 2026-10-27 同步基线一致，无新提交；`571f9b9` 的改动全部属于 OpenCode 线，见文末 OpenCode 节。2026-10-29 复核：仍为 `571f9b9`，无新提交。2026-10-30 复核：上游推进到 `b8a1be0`，但区间内 4 提交全部落在 zen/OpenCode 侧（`git diff 571f9b9 b8a1be0` 无 Cline 侧文件），Cline 线本次零吸收，详见 OpenCode 节。2026-10-31 复核：仍为 `b8a1be0`，无新提交，本次未涉及。2026-10-31 二次复核：上游推进到 `a41f1756`，但区间内 1 提交全部落在 zen/OpenCode 侧（`git diff b8a1be0 a41f1756 --name-only` 无 Cline 侧文件），Cline 线零吸收，详见 OpenCode 节）。
+本次未涉及上游同步（2026-10-28 核对：`foxy1402/cline-proxy` main 仍为 `571f9b9`，与 2026-10-27 同步基线一致，无新提交；`571f9b9` 的改动全部属于 OpenCode 线，见文末 OpenCode 节。2026-10-29 复核：仍为 `571f9b9`，无新提交。2026-10-30 复核：上游推进到 `b8a1be0`，但区间内 4 提交全部落在 zen/OpenCode 侧（`git diff 571f9b9 b8a1be0` 无 Cline 侧文件），Cline 线本次零吸收，详见 OpenCode 节。2026-10-31 复核：仍为 `b8a1be0`，无新提交，本次未涉及。2026-10-31 二次复核：上游推进到 `a41f1756`，但区间内 1 提交全部落在 zen/OpenCode 侧（`git diff b8a1be0 a41f1756 --name-only` 无 Cline 侧文件），Cline 线零吸收，详见 OpenCode 节。2026-11-02 复核：仍为 `a41f1756`，无新提交，本次未涉及）。
 
 ## TreaWork
 
 上游:`autumnsentiment/Trae2api-cn`(Trae CN / Trae Solo CN 模型反代,Python,MIT)。**这条线不是 vendor/merge 关系**:上游是 Python 全栈,本地 `internal/trae/` + `internal/app/trae.go` 是 Go 重写,行为跟随上游协议;唯一逐行移植的产物是内嵌的本机授权助手 `web_login.py`(`internal/trae/helper_script.go`),只有它需要跟上游比对。2026-10-27 的 cline-proxy 合并未涉及本线。
 
-**2026-10-28 核对**：上游最新 tag 仍为 `v1.0.10`（`bb7b659`），与 2026-10-27 同步基线一致，本线无新版本，本次未涉及上游同步。**2026-10-29 复核**：仍为 `v1.0.10`，无新版本。**2026-10-30 复核**：仍为 `v1.0.10`（tags API 与 main HEAD 均为 `bb7b659`），无新版本，本次未涉及上游同步。**2026-10-31 复核**：仍为 `v1.0.10`，无新版本，本次未涉及上游同步。**2026-10-31 二次复核**：仍为 `v1.0.10`（main HEAD `bb7b659`），helper 比对 exit 0，本次未涉及上游同步。
+**2026-10-28 核对**：上游最新 tag 仍为 `v1.0.10`（`bb7b659`），与 2026-10-27 同步基线一致，本线无新版本，本次未涉及上游同步。**2026-10-29 复核**：仍为 `v1.0.10`，无新版本。**2026-10-30 复核**：仍为 `v1.0.10`（tags API 与 main HEAD 均为 `bb7b659`），无新版本，本次未涉及上游同步。**2026-10-31 复核**：仍为 `v1.0.10`，无新版本，本次未涉及上游同步。**2026-10-31 二次复核**：仍为 `v1.0.10`（main HEAD `bb7b659`），helper 比对 exit 0，本次未涉及上游同步。**2026-11-02 复核**：仍为 `v1.0.10`（tags API 与 main HEAD 均为 `bb7b659`），无新版本，本次未涉及上游同步。
 
 ### 2026-10-27 — v1.0.9 (db189e2) → v1.0.10 (bb7b659)
 
@@ -137,6 +137,37 @@ WorkBuddy 一栏的基线同时登记在 `scripts/workbuddy-vendor-baseline.json
 ### 2026-10-31 复核（vendor 线）
 
 上游 `misakano7545/workbuddy2api-panel` main 无新提交（基线 `96b816d` 不变，版本 dev），`sync_workbuddy.py --report` 确认零改动，本次未涉及上游同步。
+
+### 2026-11-02 — 96b816d → 40d98f9
+
+- 上游：misakano7545/workbuddy2api-panel，vendor + 三方合并（`scripts/sync_workbuddy.py`；源工作树 `D:/下载/Github/workbuddy2api-panel-misakano` 先 `git checkout --detach misakano/main`）。
+- 基线：`96b816d` → 本次解决 3 文件冲突后 `--seal` 推进到 `40d98f9`（**46 提交 / 116 文件 / +9874 -307**，本线开档以来最大单轮）。
+- 上游主线（按子系统归组）：
+  - **出站指纹/头族对齐真机**：`80e275e` 出站 TLS 指纹复刻官方 Node/OpenSSL（JA3+JA4 双对齐，新 `upstream/tlsfingerprint.go`，配置 `upstream.tls_fingerprint` 缺省 `node`、env `WB2A_TLS_FINGERPRINT`）；`dd2ec95` 出站请求头发送顺序对齐；`56f479d`/`673a446` 补发官方必发的显式 `Connection` 头（`officialConnectionValue`：`/v3/config`=close、chat/busy/report=keep-alive）；`ee5467c` 头名拼写逐名映射纠正（新 `headcase.go`）；`fbe8d3f`/`01d4f1d` 真机头夹具 + 出站报文探针升级成 CI 门禁。
+  - **传输层收敛**：13 个出站点全部收敛到 `c.do(req, a, chat)`（上游重写 `upstream/proxy.go`）；`doJSON` 上游自带 auth 参（`(req, a)` 序）；`673a446`/PR #136 经代理的 HTTPS 先建隧道再走指纹握手，修 SOCKS 绕过代理直连与 HTTP 代理丢指纹。
+  - **代理池（PR #122/#135）**：新包 `internal/proxypool`（连接池/TLS over SOCKS/按 realm 与账号绑定），`upstream.Client` 增 `ProxyPool` 字段，panel 增「代理池」视图与账号级绑定 UI，server 四处引用。**afree 不接上游 ProxyPool**（workbuddy 出口走本仓 ProxyFor 钉定），处理见下。
+  - **选号新特性**：`b2d130d` 窗口用量调度（issue #112，`pool.balance_window` 缺省 1h，权重 /= 1+used/mean 同层均值，热生效）；`8903487` 模型别名支持通配 + Claude Code 计数端点（PR #140）；`2d23068` 跟进 #102/#99/#39/#3（含 `prompt.keep_recent_rounds` 只保留最近 N 轮，issue #99）。
+  - **排程/国际版**：`78be43d` 国际版只留旧桌面端 workbuddy.ai、下架 codebuddy.ai 入口；`schedule.web_activity_enabled`（issue #111）网页通道活跃腿**缺省关**。
+  - **修复族**：`6562731` 6020 带 retry_after 不再换号重打（#125）；`4b7a805` 域名被路由拒绝（15021）跨域兜底且不罚号（#130）；`4d7d1e6` usage 跨段合并 prompt 取末段（#134）；`192267a` chat 流水补 request_id（#128）；`9b9174b` model_fallback 支持带域前缀键（#127）；`47d1e2f` 运行日志增量游标改单调 seq（#126）；`bd0cc1d` 登录 client 禁 h2 + 传输层重试（#129）；`e2e40ca` web_search_result 补 encrypted_content/page_age（#121）；`7490cfb` /v1/models 追加 models.dev 形状能力声明（#119）。
+  - **面板**：`6020a64` 鉴权改「默认拒绝」（`ServeHTTP` 统一入口 + `publicPanelPaths` 白名单，新增路由漏包不再静默公开）；`39fba11` 配置页分域编辑 cn/global 的 chat_base/billing_base（#131）；`771da0f` 事件日志区分客户端原始档位与网关补档（#132）；`76727b8`/`410398f` 降级标注按域命中（#137）；`8ab87d4` 请求上下文弹窗；`1a81f25` 跨账号合计默认收起；`56bef12` 代理池视图（见上）。
+  - **logging**：`logging.request_archive_context`（缺省 false）请求事件可记会话上下文（system+messages），上游注释明示是排障临时手段。
+  - autobot.py/CI 大量迭代（Hermes 报告自动化）——不在 vendor 树内，本线不涉及。
+- 冲突（3 文件，人工逐块解决）：
+  - `upstream/client.go`（1 块）：chat 出站块。取上游 `c.do(req, a, true)` 形态；本仓手工适配的握手耗时观测（hsStart/observeProxy）**收进 `doChat`**（语义不丢）；错误分支清池改 `c.closeIdleEgress(a)`——上游原形态只清基础 chat Transport，账号钉定出口时要清对应代理 Transport。
+  - `panel/panel.go`（2 块）：上游 6020a64 把逐条鉴权改为 ServeHTTP 默认拒绝，路由表去 withAuth 包装。路由表取上游裸形态（鉴权由 ServeHTTP 统一覆盖）；**本仓独有路由补回**：`POST /panel/api/models/refresh`（本地模型刷新）与 `POST /panel/api/accounts/{uid}/test`（本仓单号探测端点，基线上游本就没有）。本仓 `withAuth` 方法随上游删除（被默认拒绝取代）。
+  - `pool/pick.go`（1 块）：上游窗口用量降权 vs 本仓地区调度分支同挂点。两侧融合：本地策略分支（`pickOrderedLocked` 顺序路径）先行早退，上游 `uctx`/`usageDiv` 权重循环随后——顺序策略不走权重、加权随机路径获得用量降权。
+- 脚本适配（`vendor_workbuddy.py`，合并前修改）：
+  - `PACKAGES` 补 `"proxypool"`（上游/panel/server 三处引用，漏了会 silently 缺包）。
+  - `EGRESS_REWRITES` 重构为**双树规则**：本仓 `(a, req)` 参数序保留——基线树规则 `(1,0)` 保证 base==ours（历史合并产物形态），新树规则 `(0,n)` 把 theirs 统一成本地形态，两侧一致则三方合并零冲突；旧「`chatHTTP().Do(req)`→chatClientFor」直呼改写作废删除（上游已收敛 `c.do`，`roundTripCloseIdle` 改映射 `c.closeIdleEgress(a)`，两树通用）。
+  - `apply_panel_iframe_rewrites` 补元组计数支持（与 EGRESS 同口径，基线树无代理池导航项计 0）；`panel/index.html` 加规则隐藏「代理池」导航 `<li hidden>`——afree 不接 ProxyPool（`cfg.ProxyPool` 恒 nil，API 一律 501），按死配置红线不给一个点了就报错的入口；账号行绑定 UI 本就有 `proxyData` 空守卫不受影响。
+  - 测试适配：`decode_body_test.go` 2 处内联 `&auth.Auth{...}` 的 `doJSON(req, …)` 调用换序为 `(…, req)`（规则只覆盖字面 `a` 形态，内联字面量逃逸）。
+- 装配接线（人工，上游在 `cmd/server/main.go` 做、本仓无该入口）：
+  - 启动 + 热路径成对补：`p.SetBalanceWindow(BalanceWindowDur)`、`up.SetTLSFingerprint(...)`（错值报日志保持 node 档；`validateTLSFingerprint("")`→node 已核对）、`up.KeepRecentRounds.Store(...)`、`sch` 参数与 `Reconfigure` 补 `WebActivityDisabled`；`livecfg.Snapshot` 与 server.Config 静态字段补 `RecordContext`。
+  - 新配置键 5 个全部有缺省且**全部热生效**（`restartRequired` 注释清单同步补记，无一入重启清单）：`upstream.tls_fingerprint`=node、`prompt.keep_recent_rounds`=0、`pool.balance_window`=1h、`logging.request_archive_context`=false、`schedule.web_activity_enabled`=false。
+  - `workbuddyVersion` → `2026.11.02-misakano+afree`；`internal/config.example.json` 从上游原样拷入。
+- 验证：`go build ./...`、`go vet ./...` 全绿；`gofmt` vendor 树与手改文件干净；`go test ./... -count=1` **28 包全绿**（连既有 flaky 也未触发）；`CGO_ENABLED=1 go test -race ./... -count=1` 全绿（上游引入 TLS 指纹/代理池并发面，race 不跳过）。
+- 本机测试环境：镜像 `afree-proxy:test-20261102-1345`（compose tag 实测生效，容器内二进制版本串 `2026.11.02-misakano+afree` 已核），`D:\DockerApp\docker-compose.yml` 换 tag 后 `docker compose -f … -p tokenapp up -d afree` 重建（注意：必须在 `-f D:\DockerApp\docker-compose.yml` 下执行，仓库内 compose 同目录解析会因 `afree-proxy` 服务缺 `.env` 插值失败）；`Up (healthy)`、`/health` 200，启动日志无错误：wb 7 账号全恢复、zen 冷却 13 token、cline 19 trace、proxy 17 状态、218 用量桶，`restart=always` 保持。
+- 生产：未同步，等用户在 iStore 自行 `compose pull`（GHCR 由 CI 从 main 构建）。
 
 ### 2026-10-31 — 5caddab → 96b816d
 

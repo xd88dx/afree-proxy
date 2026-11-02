@@ -48,6 +48,7 @@ PACKAGES = (
     "usage",
     "logfmt",
     "redisstore",
+    "proxypool",   # 2026-11-02 上游新增：代理池管理（PR #122/#135，被 upstream/panel/server 引用）
 )
 
 ASSET_SUFFIXES = (".go", ".md", ".json", ".html", ".js", ".css", ".txt")
@@ -67,42 +68,68 @@ PROXY_FIELD_BLOCK = """\tChatHTTP *http.Client
 \t// HeaderTimeout"""
 
 # Account-authenticated upstream calls must resolve the stable per-account exit.
-# The upstream project calls its HTTP clients directly, so re-vendoring applies
-# these fail-closed routing edits after copying and before building.
+# 上游 40d98f9（PR #122/#135）起出站收敛到 c.do(req, a, chat)（upstream/proxy.go），
+# 本仓 PRESERVE 自己的 proxy.go 并在其中实现同签名 do()：先走 ProxyFor 按账号
+# 钉定出口（fail-closed + 观测），ProxyFor 未挂时回落上游 ProxyPool/直连语义。
+# 改写规则因此按「两棵树」维护：基线树规则保证 base==ours（历史合并产物形态），
+# 新树规则把 theirs 统一成本地 (a, req) 参数序——两侧一致则三方合并零冲突。
+# 计数一律元组：同一锚点在两棵树的命中数不同，元组列出两树各自可接受的计数。
 EGRESS_REWRITES = {
     "upstream/client.go": (
-        ("func (c *Client) doJSON(req *http.Request)", "func (c *Client) doJSON(a *auth.Auth, req *http.Request)", 1),
-        ("c.HTTP.Do(req)", "c.doHTTP(req, a)", 3),
-        ("data, err := c.doJSON(req)", "data, err := c.doJSON(a, req)", 1),
-        (
-            "resp, err := c.chatHTTP().Do(req)",
-            "chatClient, err := c.chatClientFor(a)\n\t\tif err != nil {\n\t\t\tcancel()\n\t\t\treturn nil, 0, nil, err\n\t\t}\n\t\tresp, err := chatClient.Do(req)",
-            1,
-        ),
-        ("roundTripCloseIdle(c.chatHTTP().Transport)", "roundTripCloseIdle(chatClient.Transport)", 1),
+        # 基线树：doJSON 无 auth 参；新树：auth 参在尾。两条规则分别命中，
+        # 把 doJSON 签名统一成本地 (a, req) 序。
+        ("func (c *Client) doJSON(req *http.Request)", "func (c *Client) doJSON(a *auth.Auth, req *http.Request)", (1, 0)),
+        ("func (c *Client) doJSON(req *http.Request, a *auth.Auth)", "func (c *Client) doJSON(a *auth.Auth, req *http.Request)", (0, 1)),
+        ("c.HTTP.Do(req)", "c.doHTTP(req, a)", (3, 0)),
+        ("data, err := c.doJSON(req)", "data, err := c.doJSON(a, req)", (1, 0)),
+        # 新树 doJSON 调用点（含 client.go 内部 caller）
+        ("c.doJSON(req, a)", "c.doJSON(a, req)", (0, 1, 2)),
+        # 上游 chat 出站失败清空闲连接：钉定出口时要清代理 Transport 而非基础
+        # Transport（两树该字面量各 1 处，closeIdleEgress 两树通用）。
+        ("roundTripCloseIdle(c.chatHTTP().Transport)", "c.closeIdleEgress(a)", (1, 1)),
     ),
     "upstream/desktop.go": (
-        ("c.doJSON(req)", "c.doJSON(a, req)", 4),
-        ("c.HTTP.Do(req)", "c.doHTTP(req, a)", 1),
+        ("c.doJSON(req)", "c.doJSON(a, req)", (4, 0)),
+        ("c.doJSON(req, a)", "c.doJSON(a, req)", (0, 4)),
+        ("c.HTTP.Do(req)", "c.doHTTP(req, a)", (1, 0)),
     ),
-    "upstream/global_models.go": (("c.HTTP.Do(req)", "c.doHTTP(req, a)", 1),),
+    "upstream/global_models.go": (("c.HTTP.Do(req)", "c.doHTTP(req, a)", (1, 0)),),
     "upstream/global_register.go": (
-        ("func (c *Client) globalRegisterJSON(req *http.Request)", "func (c *Client) globalRegisterJSON(a *auth.Auth, req *http.Request)", 1),
-        ("c.HTTP.Do(req)", "c.doHTTP(req, a)", 1),
-        ("c.globalRegisterJSON(req)", "c.globalRegisterJSON(a, req)", 3),
+        ("func (c *Client) globalRegisterJSON(req *http.Request)", "func (c *Client) globalRegisterJSON(a *auth.Auth, req *http.Request)", (1, 0)),
+        ("func (c *Client) globalRegisterJSON(req *http.Request, a *auth.Auth)", "func (c *Client) globalRegisterJSON(a *auth.Auth, req *http.Request)", (0, 1)),
+        ("c.HTTP.Do(req)", "c.doHTTP(req, a)", (1, 0)),
+        ("c.globalRegisterJSON(req)", "c.globalRegisterJSON(a, req)", (3, 0)),
+        ("c.globalRegisterJSON(req, a)", "c.globalRegisterJSON(a, req)", (0, 3)),
     ),
-    # 9ca34c2 起 report.go 裸调用基线树 1 处、新上游树 2 处（billing 族 +
-    # /v2/report 直发），作用域都持有 a *auth.Auth → 元组计数；
-    # 合并产物里 1 处保留 OURS 已改写形态、1 处裸调用被本规则改写。
-    "upstream/report.go": (("c.doJSON(req)", "c.doJSON(a, req)", (1, 2)),),
-    # misakano 线 school.go 只剩 1 处调用（data, err := 形式）；通配
-    # "c.doJSON(req)" 规则会误伤该行，故按字面量整行匹配。
-    "upstream/school.go": (("data, err := c.doJSON(req)", "data, err := c.doJSON(a, req)", 1),),
-    "upstream/tasks.go": (("c.doJSON(req)", "c.doJSON(a, req)", 3),),
-    "upstream/travel.go": (("c.doJSON(req)", "c.doJSON(a, req)", 1),),
+    "upstream/report.go": (
+        ("c.doJSON(req)", "c.doJSON(a, req)", (2, 0)),
+        ("c.doJSON(req, a)", "c.doJSON(a, req)", (0, 2)),
+    ),
+    "upstream/school.go": (
+        ("data, err := c.doJSON(req)", "data, err := c.doJSON(a, req)", (1, 0)),
+        ("data, err := c.doJSON(req, a)", "data, err := c.doJSON(a, req)", (0, 1)),
+    ),
+    "upstream/tasks.go": (
+        ("c.doJSON(req)", "c.doJSON(a, req)", (3, 0)),
+        ("c.doJSON(req, a)", "c.doJSON(a, req)", (0, 3)),
+    ),
+    "upstream/travel.go": (
+        ("c.doJSON(req)", "c.doJSON(a, req)", (1, 0)),
+        ("c.doJSON(req, a)", "c.doJSON(a, req)", (0, 1)),
+    ),
+    "upstream/profile.go": (
+        ("data, err := c.doJSON(req)", "data, err := c.doJSON(a, req)", (1, 0)),
+        ("data, err := c.doJSON(req, a)", "data, err := c.doJSON(a, req)", (0, 1)),
+    ),
     # misakano 新增文件；doJSON 调用各 1 处，按字面量整行匹配防误伤。
-    "upstream/modelbusy.go": (("data, err := c.doJSON(req)", "data, err := c.doJSON(a, req)", 1),),
-    "upstream/mp_events.go": ((("_, err = c.doJSON(req)"), "_, err = c.doJSON(a, req)", 1),),
+    "upstream/modelbusy.go": (
+        ("data, err := c.doJSON(req)", "data, err := c.doJSON(a, req)", (1, 0)),
+        ("data, err := c.doJSON(req, a)", "data, err := c.doJSON(a, req)", (0, 1)),
+    ),
+    "upstream/mp_events.go": (
+        (("_, err = c.doJSON(req)"), "_, err = c.doJSON(a, req)", (1, 0)),
+        (("_, err = c.doJSON(req, a)"), "_, err = c.doJSON(a, req)", (0, 1)),
+    ),
 }
 
 
@@ -129,15 +156,25 @@ def apply_panel_iframe_rewrites(pkg: Path) -> None:
             ("frame-ancestors 'none'", "frame-ancestors 'self'", 1),
             ('h.Get("X-Frame-Options") != "DENY"', 'h.Get("X-Frame-Options") != "SAMEORIGIN"', 1),
         ),
+        # 2026-11-02（上游 40d98f9/PR #122）：上游新增「代理池」视图。afree 的
+        # workbuddy 出口走自己的 ProxyFor（workbuddy-proxies.json 绑定），不接
+        # 上游 ProxyPool（面板 cfg.ProxyPool 恒 nil，API 一律 501）——按死配置
+        # 红线隐藏导航入口，避免给出一个点了就报错的控件。基线树无该导航项(0 处)。
+        "panel/index.html": (
+            ('<li><a href="#proxies" data-view="proxies">', '<li hidden><a href="#proxies" data-view="proxies">', (0, 1)),
+        ),
     }
     for relative, replacements in rewrites.items():
         path = pkg / relative
         text = path.read_text(encoding="utf-8")
         for old, new, expected in replacements:
             actual = text.count(old)
-            if actual != expected:
+            # 计数支持元组（与 apply_egress_rewrites 同口径）：同一锚点在基线树
+            # 与新上游树命中数不同（如 2026-11-02 隐藏代理池导航项，基线 0/新树 1）。
+            allowed = expected if isinstance(expected, tuple) else (expected,)
+            if actual not in allowed:
                 raise RuntimeError(
-                    f"{relative}: expected {expected} occurrence(s) of {old!r}, found {actual}"
+                    f"{relative}: expected {'/'.join(map(str, allowed))} occurrence(s) of {old!r}, found {actual}"
                 )
             text = text.replace(old, new)
         path.write_text(text, encoding="utf-8", newline="\n")
