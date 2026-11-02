@@ -28,6 +28,8 @@ type proxyPoolConfigData struct {
 	// 定时拉取订阅并整池替换 Proxies。
 	SubURL  string `json:"proxySubURL,omitempty"`
 	SubCron string `json:"proxySubCron,omitempty"`
+	// 代理测试的测速目标（proxy_probe.go）：空 = 默认 gstatic generate_204。
+	TestTarget string `json:"proxyTestTarget,omitempty"`
 	// 未绑定代理的身份是否走共享池：nil = 缺省（池非空即走）。
 	// 每个平台一份，语义相同，都属于代理域（见 platform_proxies.go）。
 	ClineUseProxies     *bool `json:"clineUseProxies,omitempty"`
@@ -60,6 +62,7 @@ func loadProxyPoolConfig() *proxyPoolConfigData {
 		Strategy:            f.Strategy,
 		SubURL:              f.SubURL,
 		SubCron:             f.SubCron,
+		TestTarget:          f.TestTarget,
 		ClineUseProxies:     f.ClineUseProxies,
 		AmdUseProxies:       f.AmdUseProxies,
 		OprtUseProxies:      f.OprtUseProxies,
@@ -108,6 +111,7 @@ func saveProxyPoolConfig(c *proxyPoolConfigData) error {
 		f.Strategy = c.Strategy
 		f.SubURL = c.SubURL
 		f.SubCron = c.SubCron
+		f.TestTarget = c.TestTarget
 		f.ClineUseProxies = c.ClineUseProxies
 		f.AmdUseProxies = c.AmdUseProxies
 		f.OprtUseProxies = c.OprtUseProxies
@@ -118,6 +122,17 @@ func saveProxyPoolConfig(c *proxyPoolConfigData) error {
 		f.WorkbuddyUseProxies = c.WorkbuddyUseProxies
 	})
 	return nil
+}
+
+// setProxyTestTarget 更新测速目标并落盘（面板健康表输入框，回车/失焦即存）。
+// 只动这一个字段，不走 setProxyPool——池子没变，不该触发冷却失效链。
+func setProxyTestTarget(target string) {
+	proxyPoolMu.Lock()
+	proxyPool.TestTarget = target
+	proxyPoolMu.Unlock()
+	mutateProxyConfigFile(func(f *proxyConfigFileData) {
+		f.TestTarget = target
+	})
 }
 
 func getProxyPool() *proxyPoolConfigData {

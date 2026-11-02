@@ -37,6 +37,9 @@ type proxyConfigFileData struct {
 	Strategy string   `json:"proxyStrategy"` // round_robin / random / fill
 	SubURL   string   `json:"proxySubURL,omitempty"`
 	SubCron  string   `json:"proxySubCron,omitempty"`
+	// 代理测试的测速目标（2026-11-03）：面板健康表输入框可改，空 = 默认
+	// gstatic generate_204（proxy_probe.go）。
+	TestTarget string `json:"proxyTestTarget,omitempty"`
 	// 各平台"未绑定凭据是否走共享池"开关。nil = 未配置 = 走池。
 	// 这些开关属于代理域（代理池页的下拉），所以跟池本体放同一个文件，
 	// 平台配置文件不再持有它们。

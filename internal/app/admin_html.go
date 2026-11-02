@@ -829,7 +829,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
   </div>
 </div>
 <div class="section">
-  <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><path d="M3 17l5-6 4 3 4-7 5 4"/><path d="M3 21h18"/></svg></span> Proxy health<span style="flex:1"></span><button class="btn btn-sm" id="ppTestBtn" onclick="runProxyLatencyTest(this)" title="Send up to 3 HTTPS probes per exit to www.gstatic.com/generate_204 (204 no-auth target) through the same dial stack as real traffic; shows the min latency of successful samples and feeds the online-rate and handshake stats. Never touches routing or cooldowns.">Test latency</button><button class="btn btn-sm" onclick="clearProxyHealthStore()" title="Wipe this browser's stored online-rate rows (manual edits and proxies no longer in the pool); the table falls back to current backend data.">Clear data</button></div>
+  <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><path d="M3 17l5-6 4 3 4-7 5 4"/><path d="M3 21h18"/></svg></span> Proxy health<span style="flex:1"></span><input id="ppTestTarget" class="mono" style="width:230px;padding:3px 8px;font-size:11px;margin-right:6px" spellcheck="false" onchange="saveProxyTestTarget(this)" placeholder="https://www.gstatic.com/generate_204"><button class="btn btn-sm" id="ppTestBtn" onclick="runProxyLatencyTest(this)" title="Send up to 3 HTTPS probes per exit to the target in the input box (default www.gstatic.com/generate_204) through the same dial stack as real traffic; shows the min latency of successful samples and feeds the online-rate and handshake stats. Never touches routing or cooldowns.">Test latency</button><button class="btn btn-sm" onclick="clearProxyHealthStore()" title="Wipe this browser's stored online-rate rows (manual edits and proxies no longer in the pool); the table falls back to current backend data.">Clear data</button></div>
   <div class="section-body">
     <div class="table-wrap">
     <table>
@@ -839,7 +839,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
         <th style="text-align:center" title="Transport-layer success rate since the pool was last edited (upstream 4xx/5xx still counts as the proxy being online)">Online rate</th>
         <th style="text-align:center" title="Success rate over the last 50 attempts; red below 80% (min 10 samples).">Recent online rate</th>
         <th style="text-align:center;cursor:pointer;user-select:none" onclick="ppHsSortToggle()" title="Average tunnel-setup time over successful attempts (TCP+TLS+CONNECT handshake only — excludes upstream first byte and task duration). Lower is better. Click to sort.">Avg handshake<span id="ppHsSortMark"></span></th>
-        <th style="text-align:center" title="Latest manual latency test: min / median over up to 3 HTTPS probes to www.gstatic.com/generate_204 through the same dial stack as real traffic; the samples also feed the rate and handshake stats. Routing and cooldowns are untouched.">Test</th>
+        <th style="text-align:center" title="Latest manual latency test: min / median over up to 3 HTTPS probes to the configured target through the same dial stack as real traffic; the samples also feed the rate and handshake stats. Routing and cooldowns are untouched.">Test</th>
         <th>Last OK</th>
         <th>Last Fail</th>
         <th>Cooldown</th>
@@ -2017,7 +2017,6 @@ const I18N_ZH = {
   'No credentials to bind': '当前页没有可绑定的凭据',
   'Proxy pool is empty': '代理池为空，无法按序绑定',
   'Already bound in this order': '当前已是该顺序，无需改动',
-  'Staged ': '已暂存 ',
   ' proxy binding(s) — click Save to apply': ' 条代理绑定，点保存生效',
   '; ': '；',
   ' row(s) left unchanged (no proxy left)': ' 行凭据无对应代理，保持原样',
@@ -2754,8 +2753,14 @@ const I18N_ZH = {
   'Testing…': '测试中…',
   'Latency test finished': '代理测试完成',
   'Proxy test failed: ': '代理测试失败：',
-  'Send up to 3 HTTPS probes per exit to www.gstatic.com/generate_204 (204 no-auth target) through the same dial stack as real traffic; shows the min latency of successful samples and feeds the online-rate and handshake stats. Never touches routing or cooldowns.': '每条出口向 www.gstatic.com/generate_204（anycast、204 空响应、无鉴权）发最多 3 次 HTTPS 探测，与真实请求同一拨号栈；显示成功样本的最小延迟，样本计入在线率与握手统计。绝不触碰路由与冷却。',
-  'Latest manual latency test: min / median over up to 3 HTTPS probes to www.gstatic.com/generate_204 through the same dial stack as real traffic; the samples also feed the rate and handshake stats. Routing and cooldowns are untouched.': '最近一次手动延迟测试：对 www.gstatic.com/generate_204 最多 3 次 HTTPS 探测的最小/中位延迟，与真实请求同一拨号栈；样本同时计入在线率与握手统计。路由与冷却不受影响。',
+  'Send up to 3 HTTPS probes per exit to the target in the input box (default www.gstatic.com/generate_204) through the same dial stack as real traffic; shows the min latency of successful samples and feeds the online-rate and handshake stats. Never touches routing or cooldowns.': '每条出口向输入框里的测速目标（默认 www.gstatic.com/generate_204）发最多 3 次 HTTPS 探测，与真实请求同一拨号栈；显示成功样本的最小延迟，样本计入在线率与握手统计。绝不触碰路由与冷却。',
+  'Latest manual latency test: min / median over up to 3 HTTPS probes to the configured target through the same dial stack as real traffic; the samples also feed the rate and handshake stats. Routing and cooldowns are untouched.': '最近一次手动延迟测试：对配置的测速目标最多 3 次 HTTPS 探测的最小/中位延迟，与真实请求同一拨号栈；样本同时计入在线率与握手统计。路由与冷却不受影响。',
+  // 2026-11-03 测速目标输入框（回车/失焦即存，留空回默认）
+  'Latency test target URL; Enter or blur saves it. Empty resets to the default. Any HTTP response counts as a sample.': '测速目标 URL；回车或失焦即保存，留空恢复默认。收到任意 HTTP 响应即计为样本。',
+  'Test target saved': '测速地址已保存',
+  'Test target failed: ': '测速地址保存失败：',
+  // 2026-11-03 行内单出口测试按钮（「Test」复用既有词条勿重复添加）
+  'Test just this exit: 3 probes to the configured target; updates the Test column and the online-rate stats of this row. Display only — routing and cooldowns are untouched.': '只测这一个出口：对配置的测速目标发 3 次探测；更新本行测试列与在线率统计。仅展示——路由与冷却不受影响。',
   'Rates are sampled passively from real traffic and manual latency tests — no background probing. "No data" = unused since the last pool edit; editing the proxy list resets counters.': '在线率被动采样自真实流量与手动延迟测试——无后台探测。“无数据”=自上次编辑代理池后未使用；编辑代理列表会清零计数。',
   'Credentials saved to server': '凭据已写入服务器',
   'Account already exists': '账号已存在',
@@ -6291,6 +6296,8 @@ async function loadProxyPool() {
     _('ppStrategy').value = c.proxyStrategy || 'round_robin';
     _('ppSubURL').value = c.proxySubURL || '';
     _('ppSubCron').value = c.proxySubCron || '';
+    // 测速目标预填生效值（池里没配时后端回显默认），改动 onchange 即存
+    _('ppTestTarget').value = c.proxyTestTarget || 'https://www.gstatic.com/generate_204';
     syncProxyListEditable();
     _('ppCline').value = String(!!cfg.data.clineUseProxies);
     _('ppIsolation').value = String(c.proxyIsolation !== false);
@@ -6403,6 +6410,7 @@ function renderProxyHealth(rowsIn) {
             ? '<span class="mono" style="font-size:11px;color:var(--warning,#eab308)">' + (r.coolingUntil ? esc(fmtWhen(r.coolingUntil)) : esc(T('Manual'))) + '</span>'
             : '<span style="color:var(--text3)">-</span>') + '</td>' +
           '<td style="text-align:center">' +
+            '<button class="btn btn-sm" data-proxy="' + esc(r.proxy) + '" onclick="testOneProxy(this)" title="' + esc(T('Test just this exit: 3 probes to the configured target; updates the Test column and the online-rate stats of this row. Display only — routing and cooldowns are untouched.')) + '">' + T('Test') + '</button> ' +
             ((r.cooling || (r.platformCooling && r.platformCooling.length))
               ? '<button class="btn btn-sm btn-success" data-proxy="' + esc(r.proxy) + '" onclick="clearProxyCooldown(this.dataset.proxy)" title="' + esc(T('Clear global and platform cooldowns plus failure counters for this exit; use it when a one-off network hiccup wrongly cooled the only usable exit')) + '">' + T('Unban') + '</button>'
               : '<button class="btn btn-sm btn-warn" data-proxy="' + esc(r.proxy) + '" onclick="setProxyCooldown(this.dataset.proxy)" title="' + esc(T('Take this exit out of rotation — only Unban clears it')) + '">' + T('Cool') + '</button>') +
@@ -6419,6 +6427,20 @@ const PP_TEST_SAMPLES = 3;
 // 数值。loadProxyPool / 排序切换 / 测试按钮三处共用，杜绝孤儿行再进表格。
 function proxyHealthPoolRows() {
   return proxyHealthBackendRows.map(r => proxyHealthByProxy[proxyHealthKey(r.proxy)]).filter(Boolean);
+}
+
+// saveProxyTestTarget 保存测速目标（onchange=回车/失焦触发）：后端校验
+// http(s) 形态并落盘 proxy-config.json，响应回显生效值；失败回读真实值。
+async function saveProxyTestTarget(el) {
+  const v = el.value.trim();
+  try {
+    const d = await api('POST', '/proxypool/test-target', { target: v });
+    el.value = d.data.target;
+    toast(T('Test target saved'), 'success');
+  } catch (e) {
+    toast(T('Test target failed: ') + e.message, 'error');
+    loadProxyPool();
+  }
 }
 
 // runProxyLatencyTest 手动批量测延迟（2026-11-03 方案一）：后端逐出口对中性
@@ -6451,6 +6473,39 @@ async function runProxyLatencyTest(btn) {
   renderProxyHealth(proxyHealthPoolRows());
   btn.disabled = false;
   btn.innerHTML = original;
+}
+
+// proxyOneTestInflight 行内单出口测试的在途集合：防止同一条出口被连点并发，
+// 也挡住批量测试进行中（后端 409）时的无谓重复请求。
+const proxyOneTestInflight = new Set();
+
+// testOneProxy 行内单出口测试（2026-11-03）：POST 带 proxy 参数只测这一条，
+// 结果与批量同口径（test 列 + 统计列联动刷新，不触碰路由与冷却）。在途标记
+// 让该行 Test 列显示 …。
+async function testOneProxy(btn) {
+  const proxy = btn.dataset.proxy;
+  const k = proxyHealthKey(proxy);
+  if (proxyOneTestInflight.has(k)) return;
+  proxyOneTestInflight.add(k);
+  const row = proxyHealthByProxy[k];
+  if (row) { row.testing = 1; renderProxyHealth(proxyHealthPoolRows()); }
+  try {
+    const d = await api('POST', '/proxypool/test', { proxy: proxy });
+    (d.data.rows || []).forEach(r => {
+      const k2 = proxyHealthKey(r.proxy);
+      if (!proxyHealthByProxy[k2]) return;
+      delete proxyHealthByProxy[k2].testing;
+      proxyHealthByProxy[k2].test = r;
+    });
+    saveProxyHealthStore();
+    toast(T('Latency test finished'), 'success');
+  } catch (e) {
+    toast(T('Proxy test failed: ') + e.message, 'error');
+  }
+  proxyOneTestInflight.delete(k);
+  await loadProxyPool();
+  proxyHealthPoolRows().forEach(r => { delete r.testing; });
+  renderProxyHealth(proxyHealthPoolRows());
 }
 
 // clearProxyCooldown 手动解禁：清该出口的全局/平台级冷却与失败计数。

@@ -43,9 +43,11 @@ func zenConfigPayload() map[string]any {
 		"proxyStrategy":       pool.Strategy,
 		"proxySubURL":         pool.SubURL,
 		"proxySubCron":        pool.SubCron,
-		"maxConcurrency":      cfg.MaxConcurrency,
-		"retries":             cfg.Retries,
-		"compaction":          cfg.Compaction,
+		// 代理测试的测速目标（生效值：池里没配时回显默认，前端输入框直接用它）。
+		"proxyTestTarget": proxyTestTarget(),
+		"maxConcurrency":  cfg.MaxConcurrency,
+		"retries":         cfg.Retries,
+		"compaction":      cfg.Compaction,
 		// 代理隔离（账号/key 绑定出口）：生效值 + 是否被 env 钉死（面板据此
 		// 禁用开关并提示）。
 		"proxyIsolation":          proxyIsolationEnabled(),
