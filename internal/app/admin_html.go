@@ -283,7 +283,7 @@ select{cursor:pointer;appearance:none;background-image:linear-gradient(45deg,tra
 
 /* ===== Toast ===== */
 /* 通知条：顶部居中悬浮，不顶格贴边，与页头留出呼吸空隙 */
-.toast{position:fixed;top:18px;left:50%;padding:12px 22px;border-radius:12px;color:#fff;z-index:9999;opacity:0;transform:translate(-50%,-14px) scale(.97);transition:.3s cubic-bezier(.2,.9,.3,1.2);font-size:13px;max-width:520px;backdrop-filter:blur(12px);border:1px solid rgba(255,255,255,.14);box-shadow:0 12px 40px rgba(2,6,23,.5);white-space:pre-line;text-align:center}
+.toast{position:fixed;top:18px;left:50%;padding:12px 22px;border-radius:12px;color:#fff;z-index:9999;opacity:0;transform:translate(-50%,-14px) scale(.97);transition:.3s cubic-bezier(.2,.9,.3,1.2);font-size:13px;max-width:520px;backdrop-filter:blur(12px);border:1px solid rgba(255,255,255,.14);box-shadow:0 12px 40px rgba(2,6,23,.5);white-space:pre-line;text-align:center;user-select:text}
 .toast.show{opacity:1;transform:translate(-50%,0)}
 .toast.success{background:#2b5a44}.toast.error{background:#7a3a30}
 .toast.info{background:#31465e}
@@ -364,7 +364,10 @@ body:not([data-theme="dark"]) .theme-toggle .dark-label{display:none}
 dialog{position:fixed;inset:0;margin:auto;width:min(720px,calc(100vw - 32px));max-height:calc(100vh - 48px);overflow:auto;padding:0;border:1px solid var(--border-strong);border-radius:8px;background:var(--bg2);color:var(--text);box-shadow:0 24px 70px rgba(0,0,0,.48)}
 dialog.wb-wide{width:min(1080px,calc(100vw - 32px))}
 dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
-.toast[popover]{position:fixed;inset:18px auto auto 50%;margin:0;border:1px solid rgba(255,255,255,.14);color:#fff;pointer-events:none}
+.toast[popover]{position:fixed;inset:18px auto auto 50%;margin:0;border:1px solid rgba(255,255,255,.14);color:#fff;pointer-events:auto;user-select:text;cursor:text}
+/* toast 文本可鼠标滑选复制（2026-11-02 用户定）：popover 原先 pointer-events:none
+   导致选不中文字。代价是展示期间 toast 会挡住其下方点击——弹窗短命（3.5s），
+   可接受；点击 toast 本体不关闭，等它自然消失。 */
 .wb-dialog-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 18px;border-bottom:1px solid var(--border);font-weight:650}
 .wb-dialog-body{padding:18px}
 .wb-dialog-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:16px}
@@ -2283,6 +2286,8 @@ const I18N_ZH = {
   "Run the batch test once on every platform's credential list (Cline / TraeWork / OpenCode / OpenRouter / AMDCloud / TokenHarbor / Other / WorkBuddy), one platform at a time": '对 8 个平台的凭据列表各跑一次批量测试（Cline / TraeWork / OpenCode / OpenRouter / AMDCloud / TokenHarbor / Other / WorkBuddy），逐个平台串行执行',
   'All-platform test finished': '全平台测试完成',
   ' — skipped (no routable credentials): ': '，跳过（无可路由凭据）：',
+  ' — skipped (platform banned): ': '，跳过（平台已在网关封禁）：',
+  'Platform is banned in gateway settings — test skipped': '平台已在网关设置中封禁——测试跳过',
   ' skipped (routing off)': ' 跳过（未启用反代）',
   'No routable credentials (routing off)': '无可路由凭据（反代开关全关）',
   'All-platform test finished with errors: ': '全平台测试完成，失败项：',
@@ -3302,6 +3307,13 @@ async function workbuddyActionFrom(button) {
 // wbBatchTestIds 供批量测试与单账号测试共用：逐个账号真实探测，汇总 toast。
 async function batchTestWorkbuddyAccounts() {
   const btn = _('wbTestAllBtn');
+  // 网关设置里封禁的平台不对外提供服务——批量测试跑在最外层，只测
+  // 当前网关对外提供的服务（2026-11-02 用户定）：封禁平台整平台跳过。
+  await fetchPlatformBans();
+  if (platformBans.has('workbuddy')) {
+    toast(T('Platform is banned in gateway settings — test skipped'), 'info');
+    return { tested: 0, skipped: 0, banned: true };
+  }
   // 2026-11-02 用户定：只测能路由的凭据。WorkBuddy 是账号总闸 + 反代开关
   // 双开关，**只看反代开关**（enabled/poolOn）——反代关 = 请求到不了该凭据 =
   // 跳过；账号总闸只管签到等维护任务，不参与测试判定。
@@ -4486,7 +4498,8 @@ async function testAllCredentialPlatforms() {
   const label = btn ? btn.innerHTML : '';
   if (btn) btn.disabled = true;
   const failed = [];
-  const skipped = [];
+  const skipped = [];      // 无可路由凭据
+  const banned = [];       // 网关设置里封禁的平台（不对外提供服务）
   const safe = p => Promise.resolve(p).catch(() => {});
   try {
     await Promise.all([
@@ -4511,7 +4524,7 @@ async function testAllCredentialPlatforms() {
       tick(st[0]);
       try {
         const r = await st[1]();
-        if (r && r.tested === 0) skipped.push(st[0]);
+        if (r && r.tested === 0) (r.banned ? banned.push(st[0]) : skipped.push(st[0]));
       } catch (e) { failed.push(st[0]); }
       done++;
     }
@@ -4525,7 +4538,7 @@ async function testAllCredentialPlatforms() {
       tick('Other');
       try {
         const r = await batchTestOtherKeys();
-        if (r && r.tested === 0) skipped.push('other:' + p.slug);
+        if (r && r.tested === 0) (r.banned ? banned.push('other:' + p.slug) : skipped.push('other:' + p.slug));
       } catch (e) { failed.push('other:' + p.slug); }
       done++;
     }
@@ -4539,6 +4552,7 @@ async function testAllCredentialPlatforms() {
   let msg = failed.length ? T('All-platform test finished with errors: ') + failed.join(', ')
     : T('All-platform test finished');
   if (skipped.length) msg += T(' — skipped (no routable credentials): ') + skipped.join(', ');
+  if (banned.length) msg += T(' — skipped (platform banned): ') + banned.join(', ');
   toast(msg, failed.length ? 'warning' : 'success', 8000);
 }
 // Other 子平台逐个重排：Other 页一屏只渲染一个子平台的 keys（currentOtherSlug
@@ -4687,6 +4701,13 @@ async function accAddFromDialog() {
 // 逐个串行执行避免打爆上游；按钮上显示进度，结束后汇总一条 toast。
 async function batchTestAccounts() {
   const btn = _('accTestBtn');
+  // 网关设置里封禁的平台不对外提供服务——批量测试跑在最外层，只测
+  // 当前网关对外提供的服务（2026-11-02 用户定）：封禁平台整平台跳过。
+  await fetchPlatformBans();
+  if (platformBans.has('cline')) {
+    toast(T('Platform is banned in gateway settings — test skipped'), 'info');
+    return { tested: 0, skipped: 0, banned: true };
+  }
   // 2026-11-02 用户定：只测**能路由**的凭据——反代开关（Pool）关闭的账号
   // 请求到不了，跳过不测。平台内一个可路由凭据都不剩 = 整平台自然跳过。
   const all = Object.keys(accSnapshot);
@@ -5869,6 +5890,16 @@ window.addEventListener('resize', () => {
   pbMenuHide(_('platformBanMenu'));
   pbMenuHide(_('ppBulkMenu'));
 });
+// fetchPlatformBans 轻量拉取封禁集（2026-11-02 用户定）：只更新已落盘的
+// platformBans，**不触碰 platformBansStaged**——批量测试在任意页发起时用它
+// 取最新封禁状态，不会冲掉网关设置页里未保存的暂存改动。拉取失败保留旧值
+// （不拦测试，与"保守不误跳"口径一致）。
+async function fetchPlatformBans() {
+  try {
+    const d = await api('GET', '/platforms/blacklist');
+    platformBans = new Set(((d.data || {}).items || []).map(i => i.platform));
+  } catch (e) { /* 保留旧值 */ }
+}
 // stagePlatformBan 暂存/取消暂存一个平台（不触 API，点「确认」才统一下发）
 function stagePlatformBan(key, on) {
   if (on) platformBansStaged.add(key); else platformBansStaged.delete(key);
@@ -6123,6 +6154,13 @@ async function deleteZenKey(index, btn) {
 // 逐个串行避免打爆上游，按钮显示进度。
 async function batchTestKeys() {
   const btn = _('ocTestBtn');
+  // 网关设置里封禁的平台不对外提供服务——批量测试跑在最外层，只测
+  // 当前网关对外提供的服务（2026-11-02 用户定）：封禁平台整平台跳过。
+  await fetchPlatformBans();
+  if (platformBans.has('zen')) {
+    toast(T('Platform is banned in gateway settings — test skipped'), 'info');
+    return { tested: 0, skipped: 0, banned: true };
+  }
   // 2026-11-02 用户定：只测能路由的凭据（路由关闭的 key 请求到不了，跳过），
   // 见 batchTestAccounts 注释。
   const all = Object.keys(keySnapshot).map(Number).sort((a, b) => a - b);
@@ -7097,6 +7135,13 @@ async function testOrKey(index, btn) {
 
 async function batchTestOrKeys() {
   const btn = _('orTestBtn');
+  // 网关设置里封禁的平台不对外提供服务——批量测试跑在最外层，只测
+  // 当前网关对外提供的服务（2026-11-02 用户定）：封禁平台整平台跳过。
+  await fetchPlatformBans();
+  if (platformBans.has('openrouter')) {
+    toast(T('Platform is banned in gateway settings — test skipped'), 'info');
+    return { tested: 0, skipped: 0, banned: true };
+  }
   // 2026-11-02 用户定：只测能路由的凭据（路由关闭的 key 请求到不了，跳过），
   // 见 batchTestAccounts 注释。
   const all = Object.keys(orKeySnapshot).map(Number).sort((a, b) => a - b);
@@ -7462,6 +7507,13 @@ async function testTraeAccount(index, btn) {
 
 async function batchTestTraeAccounts() {
   const btn = _('traeTestBtn');
+  // 网关设置里封禁的平台不对外提供服务——批量测试跑在最外层，只测
+  // 当前网关对外提供的服务（2026-11-02 用户定）：封禁平台整平台跳过。
+  await fetchPlatformBans();
+  if (platformBans.has('trae')) {
+    toast(T('Platform is banned in gateway settings — test skipped'), 'info');
+    return { tested: 0, skipped: 0, banned: true };
+  }
   // 2026-11-02 用户定：只测能路由的凭据。Trae 是账号总闸 + 反代开关双开关，
   // **只看反代开关**（routing）——反代关 = 请求到不了该凭据 = 跳过；账号总闸
   // 只管签到等维护任务，不参与测试判定。
@@ -7807,6 +7859,13 @@ async function testAmdKey(index, btn) {
 
 async function batchTestAmdKeys() {
   const btn = _('amdTestBtn');
+  // 网关设置里封禁的平台不对外提供服务——批量测试跑在最外层，只测
+  // 当前网关对外提供的服务（2026-11-02 用户定）：封禁平台整平台跳过。
+  await fetchPlatformBans();
+  if (platformBans.has('amd')) {
+    toast(T('Platform is banned in gateway settings — test skipped'), 'info');
+    return { tested: 0, skipped: 0, banned: true };
+  }
   // 2026-11-02 用户定：只测能路由的凭据（路由关闭的 key 请求到不了，跳过），
   // 见 batchTestAccounts 注释。
   const all = Object.keys(amdKeySnapshot).map(Number).sort((a, b) => a - b);
@@ -8082,6 +8141,13 @@ async function testTHKey(index, btn) {
 
 async function batchTestTHKeys() {
   const btn = _('thTestBtn');
+  // 网关设置里封禁的平台不对外提供服务——批量测试跑在最外层，只测
+  // 当前网关对外提供的服务（2026-11-02 用户定）：封禁平台整平台跳过。
+  await fetchPlatformBans();
+  if (platformBans.has('tokenharbor')) {
+    toast(T('Platform is banned in gateway settings — test skipped'), 'info');
+    return { tested: 0, skipped: 0, banned: true };
+  }
   // 2026-11-02 用户定：只测能路由的凭据（路由关闭的 key 请求到不了，跳过），
   // 见 batchTestAccounts 注释。
   const all = Object.keys(thKeySnapshot).map(Number).sort((a, b) => a - b);
@@ -8525,6 +8591,13 @@ async function testOtherKey(id, btn) {
 async function batchTestOtherKeys() {
   const p = currentOtherPlatform();
   if (!p) return;
+  // 网关设置里封禁的平台不对外提供服务——批量测试跑在最外层，只测
+  // 当前网关对外提供的服务（2026-11-02 用户定）：封禁平台整平台跳过。
+  await fetchPlatformBans();
+  if (platformBans.has('other:' + p.slug)) {
+    toast(T('Platform is banned in gateway settings — test skipped'), 'info');
+    return { tested: 0, skipped: 0, banned: true };
+  }
   const btn = _('otherTestBtn');
   // 2026-11-02 用户定：只测能路由的凭据（路由关闭的 key 请求到不了，跳过），
   // 见 batchTestAccounts 注释。
