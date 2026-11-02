@@ -2282,7 +2282,9 @@ const I18N_ZH = {
   'Test all credentials': '全量测试',
   "Run the batch test once on every platform's credential list (Cline / TraeWork / OpenCode / OpenRouter / AMDCloud / TokenHarbor / Other / WorkBuddy), one platform at a time": '对 8 个平台的凭据列表各跑一次批量测试（Cline / TraeWork / OpenCode / OpenRouter / AMDCloud / TokenHarbor / Other / WorkBuddy），逐个平台串行执行',
   'All-platform test finished': '全平台测试完成',
-  ' — skipped (no enabled credentials): ': '，跳过（无启用凭据）：',
+  ' — skipped (no routable credentials): ': '，跳过（无可路由凭据）：',
+  ' skipped (routing off)': ' 跳过（未启用反代）',
+  'No routable credentials (routing off)': '无可路由凭据（反代开关全关）',
   'All-platform test finished with errors: ': '全平台测试完成，失败项：',
   'Global policy': '全局策略',
   'Cline': 'Cline',
@@ -3300,8 +3302,17 @@ async function workbuddyActionFrom(button) {
 // wbBatchTestIds 供批量测试与单账号测试共用：逐个账号真实探测，汇总 toast。
 async function batchTestWorkbuddyAccounts() {
   const btn = _('wbTestAllBtn');
-  const ids = wbAccounts.map(wbRowId).filter(Boolean);
-  if (!ids.length) { toast(T('No accounts to test'), 'info'); return; }
+  // 2026-11-02 用户定：只测能路由的凭据。WorkBuddy 是账号总闸 + 反代开关
+  // 双开关，**只看反代开关**（enabled/poolOn）——反代关 = 请求到不了该凭据 =
+  // 跳过；账号总闸只管签到等维护任务，不参与测试判定。
+  const all = wbAccounts.map(wbRowId).filter(Boolean);
+  const ids = all.filter(id => wbSnapshot[id] && wbSnapshot[id].enabled !== false);
+  const skipped = all.length - ids.length;
+  if (!ids.length) {
+    if (all.length) toast(T('No routable credentials (routing off)'), 'info');
+    else toast(T('No accounts to test'), 'info');
+    return { tested: 0, skipped };
+  }
   const original = btn ? btn.innerHTML : '';
   if (btn) btn.disabled = true;
   let ok = 0, cool = 0, err = 0;
@@ -3319,9 +3330,11 @@ async function batchTestWorkbuddyAccounts() {
     if (btn) { btn.disabled = false; btn.innerHTML = original; }
   }
   toast(T('Batch test done: ') + ids.length + T(' tested, ') + ok + T(' ok') +
-    (cool ? T(', ') + cool + T(' cooling') : '') + (err ? T(', ') + err + T(' error') : ''),
+    (cool ? T(', ') + cool + T(' cooling') : '') + (err ? T(', ') + err + T(' error') : '') +
+    (skipped ? T(', ') + skipped + T(' skipped (routing off)') : ''),
     err ? 'warning' : 'success', 6000);
   loadWorkbuddyAccounts();
+  return { tested: ids.length, skipped };
 }
 
 async function workbuddyTestAccount(button, id) { const original = button ? button.innerHTML : '';
@@ -4465,29 +4478,9 @@ function collectReorderParts(kind) {
 //   - Other 页一屏只渲染一个子平台，沿用 reorderOtherAll 的手法逐个切换、
 //     渲染、跑测试，跑完恢复用户原本选中的子平台。
 // 串行执行（每个批量测试内部本身也串行），避免同时打爆多个上游。
-// platformHasEnabledCred 平台是否还有启用凭据（2026-11-02 用户定）：全量测试
-// 只测仍有启用凭据的平台——某平台凭据的反代开关全关（或账号总闸全关）时，
-// 整个平台跳过，不打无谓的真实上游请求。读各平台渲染快照（调用方
-// testAllCredentialPlatforms 已先拉齐 8 个平台的数据）；快照为空视为"没有
-// 启用凭据"，但快照键缺失的条目按启用处理（保守，不误跳）。
-function platformHasEnabledCred(kind) {
-  const some = snap => Object.keys(snap || {}).some(id => {
-    const s = snap[id];
-    if (!s) return false;
-    if (s.routing === false || s.enabled === false || s.account === false) return false;
-    return true;
-  });
-  switch (kind) {
-    case 'Cline': return some(accSnapshot);
-    case 'OpenCode': return some(keySnapshot);
-    case 'OpenRouter': return some(orKeySnapshot);
-    case 'AMDCloud': return some(amdKeySnapshot);
-    case 'TokenHarbor': return some(thKeySnapshot);
-    case 'TraeWork': return some(traeAccSnapshot);
-    case 'WorkBuddy': return some(wbSnapshot);
-  }
-  return true;
-}
+// 可路由性过滤在各平台 batchTestX 内逐凭据判定（2026-11-02 用户定）：没有
+// 独立的"平台级跳过"——反代（路由）开关关 = 请求到不了该凭据 = 不测；平台内
+// 一个可路由凭据都不剩时整平台自然跳过（batchTestX 返回 tested=0）。
 async function testAllCredentialPlatforms() {
   const btn = _('ppTestAllBtn');
   const label = btn ? btn.innerHTML : '';
@@ -4516,9 +4509,10 @@ async function testAllCredentialPlatforms() {
     const tick = name => { if (btn) btn.innerHTML = '<span class="loading"></span>' + name + ' ' + (done + 1) + '/' + total; };
     for (const st of steps) {
       tick(st[0]);
-      // 无启用凭据的平台整平台跳过（2026-11-02 用户定）
-      if (!platformHasEnabledCred(st[0])) { skipped.push(st[0]); done++; continue; }
-      try { await st[1](); } catch (e) { failed.push(st[0]); }
+      try {
+        const r = await st[1]();
+        if (r && r.tested === 0) skipped.push(st[0]);
+      } catch (e) { failed.push(st[0]); }
       done++;
     }
     // Other 逐个子平台（与 reorderOtherAll 同手法）
@@ -4529,11 +4523,10 @@ async function testAllCredentialPlatforms() {
       if (sel) sel.value = p.slug;
       renderOtherKeys(p.keyStates || []);
       tick('Other');
-      // 子平台同样按启用凭据跳过（渲染后的快照即该子平台状态）
-      if (!Object.keys(otherKeySnapshot).some(id => otherKeySnapshot[id] && otherKeySnapshot[id].routing !== false)) {
-        skipped.push('other:' + p.slug); done++; continue;
-      }
-      try { await batchTestOtherKeys(); } catch (e) { failed.push('other:' + p.slug); }
+      try {
+        const r = await batchTestOtherKeys();
+        if (r && r.tested === 0) skipped.push('other:' + p.slug);
+      } catch (e) { failed.push('other:' + p.slug); }
       done++;
     }
     currentOtherSlug = prevSlug;
@@ -4545,7 +4538,7 @@ async function testAllCredentialPlatforms() {
   }
   let msg = failed.length ? T('All-platform test finished with errors: ') + failed.join(', ')
     : T('All-platform test finished');
-  if (skipped.length) msg += T(' — skipped (no enabled credentials): ') + skipped.join(', ');
+  if (skipped.length) msg += T(' — skipped (no routable credentials): ') + skipped.join(', ');
   toast(msg, failed.length ? 'warning' : 'success', 8000);
 }
 // Other 子平台逐个重排：Other 页一屏只渲染一个子平台的 keys（currentOtherSlug
@@ -4694,8 +4687,16 @@ async function accAddFromDialog() {
 // 逐个串行执行避免打爆上游；按钮上显示进度，结束后汇总一条 toast。
 async function batchTestAccounts() {
   const btn = _('accTestBtn');
-  const ids = Object.keys(accSnapshot);
-  if (!ids.length) { toast(T('No accounts to test'), 'info'); return; }
+  // 2026-11-02 用户定：只测**能路由**的凭据——反代开关（Pool）关闭的账号
+  // 请求到不了，跳过不测。平台内一个可路由凭据都不剩 = 整平台自然跳过。
+  const all = Object.keys(accSnapshot);
+  const ids = all.filter(id => accSnapshot[id] && accSnapshot[id].enabled !== false);
+  const skipped = all.length - ids.length;
+  if (!ids.length) {
+    if (all.length) toast(T('No routable credentials (routing off)'), 'info');
+    else toast(T('No accounts to test'), 'info');
+    return { tested: 0, skipped };
+  }
   const original = btn ? btn.innerHTML : '';
   if (btn) btn.disabled = true;
   let ok = 0, cool = 0, err = 0;
@@ -4717,6 +4718,7 @@ async function batchTestAccounts() {
     (cool ? T(', ') + cool + T(' cooling') : '') + (err ? T(', ') + err + T(' error') : ''),
     err ? 'warning' : 'success', 6000);
   loadAccounts(); loadStats();
+  return { tested: ids.length, skipped };
 }
 
 function stageClearZenKeyProxies() {
@@ -6121,8 +6123,16 @@ async function deleteZenKey(index, btn) {
 // 逐个串行避免打爆上游，按钮显示进度。
 async function batchTestKeys() {
   const btn = _('ocTestBtn');
-  const idxs = Object.keys(keySnapshot).map(Number).sort((a, b) => a - b);
-  if (!idxs.length) { toast(T('No keys to test'), 'info'); return; }
+  // 2026-11-02 用户定：只测能路由的凭据（路由关闭的 key 请求到不了，跳过），
+  // 见 batchTestAccounts 注释。
+  const all = Object.keys(keySnapshot).map(Number).sort((a, b) => a - b);
+  const idxs = all.filter(i => keySnapshot[i] && keySnapshot[i].routing !== false);
+  const skipped = all.length - idxs.length;
+  if (!idxs.length) {
+    if (all.length) toast(T('No routable credentials (routing off)'), 'info');
+    else toast(T('No keys to test'), 'info');
+    return { tested: 0, skipped };
+  }
   const original = btn ? btn.innerHTML : '';
   if (btn) btn.disabled = true;
   let ok = 0, cool = 0, err = 0;
@@ -6147,6 +6157,7 @@ async function batchTestKeys() {
     (cool ? T(', ') + cool + T(' cooling') : '') + (err ? T(', ') + err + T(' error') : ''),
     err ? 'warning' : 'success', 6000);
   loadOcConfig();
+  return { tested: idxs.length, skipped };
 }
 
 // ========== 添加凭据弹窗（key 逐行填入文本域，合并进当前 key 池） ==========
@@ -7086,8 +7097,16 @@ async function testOrKey(index, btn) {
 
 async function batchTestOrKeys() {
   const btn = _('orTestBtn');
-  const idxs = Object.keys(orKeySnapshot).map(Number).sort((a, b) => a - b);
-  if (!idxs.length) { toast(T('No keys to test'), 'info'); return; }
+  // 2026-11-02 用户定：只测能路由的凭据（路由关闭的 key 请求到不了，跳过），
+  // 见 batchTestAccounts 注释。
+  const all = Object.keys(orKeySnapshot).map(Number).sort((a, b) => a - b);
+  const idxs = all.filter(i => orKeySnapshot[i] && orKeySnapshot[i].routing !== false);
+  const skipped = all.length - idxs.length;
+  if (!idxs.length) {
+    if (all.length) toast(T('No routable credentials (routing off)'), 'info');
+    else toast(T('No keys to test'), 'info');
+    return { tested: 0, skipped };
+  }
   const original = btn ? btn.innerHTML : '';
   if (btn) btn.disabled = true;
   let ok = 0, cool = 0, err = 0;
@@ -7112,6 +7131,7 @@ async function batchTestOrKeys() {
     (cool ? T(', ') + cool + T(' cooling') : '') + (err ? T(', ') + err + T(' error') : ''),
     err ? 'warning' : 'success', 6000);
   loadOrConfig();
+  return { tested: idxs.length, skipped };
 }
 
 function openOrKeyAddDialog() {
@@ -7442,8 +7462,17 @@ async function testTraeAccount(index, btn) {
 
 async function batchTestTraeAccounts() {
   const btn = _('traeTestBtn');
-  const idxs = Object.keys(traeAccSnapshot).map(Number).sort((a, b) => a - b);
-  if (!idxs.length) { toast(T('No accounts to test'), 'info'); return; }
+  // 2026-11-02 用户定：只测能路由的凭据。Trae 是账号总闸 + 反代开关双开关，
+  // **只看反代开关**（routing）——反代关 = 请求到不了该凭据 = 跳过；账号总闸
+  // 只管签到等维护任务，不参与测试判定。
+  const all = Object.keys(traeAccSnapshot).map(Number).sort((a, b) => a - b);
+  const idxs = all.filter(i => traeAccSnapshot[i] && traeAccSnapshot[i].routing !== false);
+  const skipped = all.length - idxs.length;
+  if (!idxs.length) {
+    if (all.length) toast(T('No routable credentials (routing off)'), 'info');
+    else toast(T('No accounts to test'), 'info');
+    return { tested: 0, skipped };
+  }
   const original = btn ? btn.innerHTML : '';
   if (btn) btn.disabled = true;
   let ok = 0, cool = 0, err = 0;
@@ -7462,9 +7491,11 @@ async function batchTestTraeAccounts() {
     if (btn) { btn.disabled = false; btn.innerHTML = original; }
   }
   toast(T('Batch test done: ') + idxs.length + T(' tested, ') + ok + T(' ok') +
-    (cool ? T(', ') + cool + T(' cooling') : '') + (err ? T(', ') + err + T(' error') : ''),
+    (cool ? T(', ') + cool + T(' cooling') : '') + (err ? T(', ') + err + T(' error') : '') +
+    (skipped ? T(', ') + skipped + T(' skipped (routing off)') : ''),
     err ? 'warning' : 'success', 6000);
   loadTraeConfig();
+  return { tested: idxs.length, skipped };
 }
 
 ['traeAccWeb', 'traeAccManual'].forEach(id => {
@@ -7776,8 +7807,16 @@ async function testAmdKey(index, btn) {
 
 async function batchTestAmdKeys() {
   const btn = _('amdTestBtn');
-  const idxs = Object.keys(amdKeySnapshot).map(Number).sort((a, b) => a - b);
-  if (!idxs.length) { toast(T('No keys to test'), 'info'); return; }
+  // 2026-11-02 用户定：只测能路由的凭据（路由关闭的 key 请求到不了，跳过），
+  // 见 batchTestAccounts 注释。
+  const all = Object.keys(amdKeySnapshot).map(Number).sort((a, b) => a - b);
+  const idxs = all.filter(i => amdKeySnapshot[i] && amdKeySnapshot[i].routing !== false);
+  const skipped = all.length - idxs.length;
+  if (!idxs.length) {
+    if (all.length) toast(T('No routable credentials (routing off)'), 'info');
+    else toast(T('No keys to test'), 'info');
+    return { tested: 0, skipped };
+  }
   const original = btn ? btn.innerHTML : '';
   if (btn) btn.disabled = true;
   let ok = 0, cool = 0, err = 0;
@@ -7802,6 +7841,7 @@ async function batchTestAmdKeys() {
     (cool ? T(', ') + cool + T(' cooling') : '') + (err ? T(', ') + err + T(' error') : ''),
     err ? 'warning' : 'success', 6000);
   loadAmdConfig();
+  return { tested: idxs.length, skipped };
 }
 
 function openAmdKeyAddDialog() {
@@ -8042,8 +8082,16 @@ async function testTHKey(index, btn) {
 
 async function batchTestTHKeys() {
   const btn = _('thTestBtn');
-  const idxs = Object.keys(thKeySnapshot).map(Number).sort((a, b) => a - b);
-  if (!idxs.length) { toast(T('No keys to test'), 'info'); return; }
+  // 2026-11-02 用户定：只测能路由的凭据（路由关闭的 key 请求到不了，跳过），
+  // 见 batchTestAccounts 注释。
+  const all = Object.keys(thKeySnapshot).map(Number).sort((a, b) => a - b);
+  const idxs = all.filter(i => thKeySnapshot[i] && thKeySnapshot[i].routing !== false);
+  const skipped = all.length - idxs.length;
+  if (!idxs.length) {
+    if (all.length) toast(T('No routable credentials (routing off)'), 'info');
+    else toast(T('No keys to test'), 'info');
+    return { tested: 0, skipped };
+  }
   const original = btn ? btn.innerHTML : '';
   if (btn) btn.disabled = true;
   let ok = 0, cool = 0, err = 0;
@@ -8068,6 +8116,7 @@ async function batchTestTHKeys() {
     (cool ? T(', ') + cool + T(' cooling') : '') + (err ? T(', ') + err + T(' error') : ''),
     err ? 'warning' : 'success', 6000);
   loadTHConfig();
+  return { tested: idxs.length, skipped };
 }
 
 function openTHKeyAddDialog() {
@@ -8477,8 +8526,16 @@ async function batchTestOtherKeys() {
   const p = currentOtherPlatform();
   if (!p) return;
   const btn = _('otherTestBtn');
-  const ids = Object.keys(otherKeySnapshot);
-  if (!ids.length) { toast(T('No keys to test'), 'info'); return; }
+  // 2026-11-02 用户定：只测能路由的凭据（路由关闭的 key 请求到不了，跳过），
+  // 见 batchTestAccounts 注释。
+  const all = Object.keys(otherKeySnapshot);
+  const ids = all.filter(id => otherKeySnapshot[id] && otherKeySnapshot[id].routing !== false);
+  const skipped = all.length - ids.length;
+  if (!ids.length) {
+    if (all.length) toast(T('No routable credentials (routing off)'), 'info');
+    else toast(T('No keys to test'), 'info');
+    return { tested: 0, skipped };
+  }
   const original = btn ? btn.innerHTML : '';
   if (btn) btn.disabled = true;
   let ok = 0, err = 0;
@@ -8497,9 +8554,11 @@ async function batchTestOtherKeys() {
   } finally {
     if (btn) { btn.disabled = false; btn.innerHTML = original; }
   }
-  toast(T('Batch test done: ') + ids.length + T(' tested, ') + ok + T(' ok') + (err ? T(', ') + err + T(' error') : ''),
+  toast(T('Batch test done: ') + ids.length + T(' tested, ') + ok + T(' ok') + (err ? T(', ') + err + T(' error') : '') +
+    (skipped ? T(', ') + skipped + T(' skipped (routing off)') : ''),
     err ? 'warning' : 'success', 6000);
   loadOtherConfig();
+  return { tested: ids.length, skipped };
 }
 
 /* ---- 子平台 CRUD / 配置保存 ---- */
