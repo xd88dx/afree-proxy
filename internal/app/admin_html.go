@@ -2748,10 +2748,9 @@ const I18N_ZH = {
   'Recent online rate': '最近在线率',
   'Avg handshake': '平均握手延迟',
   // 2026-11-03 代理测试按钮（proxy_probe 方案一：中性目标 3 采样取最小值，
-  // 样本计入在线率/握手统计但不触发冷却）。「Test」「Failed」复用既有词条，
-  // 勿在此重复添加。
+  // 样本计入在线率/握手统计但不触发冷却）。「Test」复用既有词条，
+  // 勿在此重复添加；测试中态复用既有「Testing」词条 + .loading 转圈样式。
   'Test latency': '代理测试',
-  'Testing…': '测试中…',
   'Latency test finished': '代理测试完成',
   'Proxy test failed: ': '代理测试失败：',
   'Send up to 3 HTTPS probes per exit to the target in the input box (default www.gstatic.com/generate_204) through the same dial stack as real traffic; shows the min latency of successful samples and feeds the online-rate and handshake stats. Never touches routing or cooldowns.': '每条出口向输入框里的测速目标（默认 www.gstatic.com/generate_204）发最多 3 次 HTTPS 探测，与真实请求同一拨号栈；显示成功样本的最小延迟，样本计入在线率与握手统计。绝不触碰路由与冷却。',
@@ -6412,7 +6411,12 @@ function renderProxyHealth(rowsIn) {
             ? '<span class="mono" style="font-size:11px;color:var(--warning,#eab308)">' + (r.coolingUntil ? esc(fmtWhen(r.coolingUntil)) : esc(T('Manual'))) + '</span>'
             : '<span style="color:var(--text3)">-</span>') + '</td>' +
           '<td style="text-align:center">' +
-            '<button class="btn btn-sm" data-proxy="' + esc(r.proxy) + '" onclick="testOneProxy(this)" title="' + esc(T('Test just this exit: 3 probes to the configured target; updates the Test column and the online-rate stats of this row. Display only — routing and cooldowns are untouched.')) + '">' + T('Test') + '</button> ' +
+            // 测试中：按钮整体换成禁用+转圈（2026-11-03 用户定）。渲染层按
+            // r.testing 出态——整表 innerHTML 重绘会销毁原按钮节点，转圈必须
+            // 由渲染逻辑承载，不能只改点击时捕获的 btn 引用。
+            (r.testing
+              ? '<button class="btn btn-sm" disabled title="' + esc(T('Testing')) + '"><span class="loading"></span>' + T('Testing') + '</button> '
+              : '<button class="btn btn-sm" data-proxy="' + esc(r.proxy) + '" onclick="testOneProxy(this)" title="' + esc(T('Test just this exit: 3 probes to the configured target; updates the Test column and the online-rate stats of this row. Display only — routing and cooldowns are untouched.')) + '">' + T('Test') + '</button> ') +
             ((r.cooling || (r.platformCooling && r.platformCooling.length))
               ? '<button class="btn btn-sm btn-success" data-proxy="' + esc(r.proxy) + '" onclick="clearProxyCooldown(this.dataset.proxy)" title="' + esc(T('Clear global and platform cooldowns plus failure counters for this exit; use it when a one-off network hiccup wrongly cooled the only usable exit')) + '">' + T('Unban') + '</button>'
               : '<button class="btn btn-sm btn-warn" data-proxy="' + esc(r.proxy) + '" onclick="setProxyCooldown(this.dataset.proxy)" title="' + esc(T('Take this exit out of rotation — only Unban clears it')) + '">' + T('Cool') + '</button>') +
@@ -6447,12 +6451,13 @@ async function saveProxyTestTarget(el) {
 
 // runProxyLatencyTest 手动批量测延迟（2026-11-03 方案一）：后端逐出口对中性
 // 目标（gstatic 204）发 3 次 HTTPS 探测（与真实请求同一拨号栈），结果只做
-// 展示与落盘，不触碰路由、统计与冷却。进行中按钮禁用、各行显示 …。
+// 展示与落盘，不触碰路由、统计与冷却。进行中批量按钮转圈，各行按钮随
+// r.testing 渲染成禁用+转圈（见 renderProxyHealth 操作列），Test 列显示 …。
 async function runProxyLatencyTest(btn) {
   if (!btn || btn.disabled) return;
   const original = btn.innerHTML;
   btn.disabled = true;
-  btn.innerHTML = T('Testing…');
+  btn.innerHTML = '<span class="loading"></span>' + T('Testing');
   proxyHealthPoolRows().forEach(r => { r.testing = 1; });
   renderProxyHealth(proxyHealthPoolRows());
   try {
@@ -6483,7 +6488,8 @@ const proxyOneTestInflight = new Set();
 
 // testOneProxy 行内单出口测试（2026-11-03）：POST 带 proxy 参数只测这一条，
 // 结果与批量同口径（test 列 + 统计列联动刷新，不触碰路由与冷却）。在途标记
-// 让该行 Test 列显示 …。
+// 让该行按钮渲染成禁用+转圈、Test 列显示 …（2026-11-03 用户定）。渲染会
+// 销毁传入的 btn 节点，转圈完全由 renderProxyHealth 按 r.testing 承载。
 async function testOneProxy(btn) {
   const proxy = btn.dataset.proxy;
   const k = proxyHealthKey(proxy);
