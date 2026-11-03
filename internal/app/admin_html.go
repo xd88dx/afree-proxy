@@ -2344,7 +2344,7 @@ const I18N_ZH = {
   'Import replaces sections present in the file (accounts / keys / proxies / combos ...). All imported identities start DISABLED. Continue?': '导入将用文件内容替换当前对应的配置段（所有凭据、代理池、别名等，文件中存在的段都会替换）。导入的所有凭据一律禁用，需在面板逐个启用。继续？',
   'Select all': '全选',
   'Invert': '反选',
-  'Import statistics': '导入统计数据（不勾选 = 保留本机现值）',
+  'Import statistics': '导入统计数据',
   'No platform selected': '未选择任何平台',
   'Confirm import': '确认导入',
   'State': '状态',
@@ -4308,7 +4308,7 @@ function stageProxiesByOrder(kind) {
     const v = seq[i];
     if (main.dataset.value === v) return;
     main.dataset.value = v;
-    main.value = egDisplayLabel(v);
+    main.value = egDisplayLabel(v, kind);
     egSyncBadge(main);
     egApplyMainLinkage(row, v);
     markRowDirty(row, kind);
@@ -4487,7 +4487,7 @@ function applyReorderRules(kind, parts) {
     cnt[best] = (cnt[best] || 0) + 1;
     if (best !== r.v) {
       r.m.dataset.value = best;
-      r.m.value = egDisplayLabel(best);
+      r.m.value = egDisplayLabel(best, kind);
       egSyncBadge(r.m);
       egApplyMainLinkage(r.m.closest('tr'), best);
       markRowDirty(r.m.closest('tr'), kind);
@@ -4816,11 +4816,25 @@ function egShortLabel(label, budget) {
   while (tailStart > head && acc + w(chars[tailStart - 1]) <= tailBudget) { acc += w(chars[tailStart - 1]); tailStart--; }
   return chars.slice(0, head).join('') + '…' + chars.slice(tailStart).join('');
 }
-// EG_LABEL_BUDGET eg-input 显示预算（半角当量）：170px 宽 / 12px 字号下约
-// 22 个半角字符，再扣掉右侧在线率徽标的遮挡余量。
+// eg-input 显示预算（半角当量），按右侧徽章遮挡分档：输入框固定 170px 宽 /
+// 12px 字号，无徽章约 22 个半角字符；仅在线率徽章时 padding-right:52px，
+// 可见区约 15 字符；在线率+握手双徽章时 padding-right:96px，可见区仅约
+// 9 字符——预算若不随徽章收窄，中间缩略串的头尾都会被徽章盖住，视觉上
+// 仍是尾部硬截断（2026-11-03 用户反馈「缩略没生效」的根因）。
 const EG_LABEL_BUDGET = 22;
-// egDisplayLabel 绑定输入框的显示值：egLabel + 超长中间缩略。
-function egDisplayLabel(v) { return egShortLabel(egLabel(v), EG_LABEL_BUDGET); }
+const EG_LABEL_BUDGET_BADGE = 15;
+const EG_LABEL_BUDGET_HS = 9;
+// egBudgetFor 按该绑定值实际会显示的徽章算预算（徽章只在聚焦时被 CSS 隐藏，
+// padding 恒在，按常驻遮挡算）。
+function egBudgetFor(value, kind) {
+  const html = egBadgeHTML(value || '', kind);
+  if (html.indexOf('eg-badge hs') >= 0) return EG_LABEL_BUDGET_HS;
+  if (html) return EG_LABEL_BUDGET_BADGE;
+  return EG_LABEL_BUDGET;
+}
+// egDisplayLabel 绑定输入框的显示值：egLabel + 超长中间缩略（kind 缺省按
+// 无徽章预算——空值/全局/直连本就无徽章）。
+function egDisplayLabel(v, kind) { return egShortLabel(egLabel(v), egBudgetFor(v, kind)); }
 // egSearchText 代理的搜索匹配域(小写):别名 + 去协议前缀的原始串(host:port#alias)。
 // 协议前缀(socks5:// 等)不含检索信息,纳进来会让 "e" 这类单字符命中全池——
 // 四个搜索点(绑定联想框/排除卡片/卡片 Enter/批量追加)统一走本函数。
@@ -4861,10 +4875,10 @@ function egComboHTML(kind, id, slot, value, title, disabled) {
   // 显示值与全名：备注名过长时输入框里中间缩略，完整备注名追加进 title
   //（hover 可见），缩略不丢信息。
   const full = egLabel(value || '');
-  const disp = egShortLabel(full, EG_LABEL_BUDGET);
+  const badge = egBadgeHTML(value || '', kind);
+  const disp = egShortLabel(full, egBudgetFor(value || '', kind));
   const t2 = disp !== full ? t + '\n' + full : t;
   // 在线率徽标：选中后仍显示该节点的最近在线率与平均握手延迟，聚焦输入时由 CSS 隐藏
-  const badge = egBadgeHTML(value || '', kind);
   return '<span class="eg-wrap' + (badge ? ' has-badge' : '') + (badge.indexOf('eg-badge hs') >= 0 ? ' has-hs' : '') + '">' +
     '<input type="text" class="eg-input" data-eg="' + kind + '" data-egid="' + esc(id) + '" data-slot="' + slot + '" data-value="' + esc(value || '') + '" value="' + esc(disp) + '" title="' + esc(t2) + '"' + (disabled ? ' disabled' : '') + ' autocomplete="off" spellcheck="false">' +
     badge +
@@ -4879,7 +4893,7 @@ function egApplyMainLinkage(row, mainValue) {
   if (!backup) return;
   if (!backupProxyOn || mainValue === '' || mainValue === EGRESS_DIRECT) {
     backup.dataset.value = mainValue;
-    backup.value = egDisplayLabel(mainValue);
+    backup.value = egDisplayLabel(mainValue, backup.dataset.eg);
     egSyncBadge(backup);
     backup.disabled = true;
     backup.title = T(!backupProxyOn ? 'Backup proxies are disabled — follows the main slot' : 'Follows the main slot');
@@ -4948,7 +4962,7 @@ function egRenderItems(input, menu, q) {
 }
 function egCommit(input, value) {
   input.dataset.value = value;
-  input.value = egDisplayLabel(value);
+  input.value = egDisplayLabel(value, input.dataset.eg);
   egSyncBadge(input);
   egCloseMenu();
   input.blur();
@@ -4969,7 +4983,7 @@ document.addEventListener('keydown', e => { if (e.key === 'Escape') egCloseMenu(
 document.addEventListener('blur', e => {
   if (e.target.classList && e.target.classList.contains('eg-input')) {
     // 未选择直接失焦：显示还原为当前绑定值的标签
-    e.target.value = egDisplayLabel(e.target.dataset.value);
+    e.target.value = egDisplayLabel(e.target.dataset.value, e.target.dataset.eg);
     egSyncBadge(e.target);
     setTimeout(egCloseMenu, 150);
   }
