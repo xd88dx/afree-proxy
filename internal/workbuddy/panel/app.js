@@ -686,9 +686,15 @@ function displayVersion(version) {
   return value === 'dev' ? 'dev' : 'v' + value;
 }
 
+function unknownVersionNote(update) {
+  const label = displayVersion(update.current_version) === 'dev' ? '开发构建 · 无法比较版本' : '当前版本无法比较';
+  return label + (update.latest_version ? ' · 最新 Release v' + update.latest_version : '');
+}
+
 function renderUpdateStatus(update) {
   if (!update) return;
   updateData = update;
+  const unknown = update.current_known === false;
   const local = displayVersion(update.current_version);
   $('navSub').textContent = local;
   $('navVer').textContent = local;
@@ -700,6 +706,8 @@ function renderUpdateStatus(update) {
     note.textContent = '正在准备更新…';
   } else if (update.last_error) {
     note.textContent = '更新失败：' + update.last_error;
+  } else if (unknown) {
+    note.textContent = unknownVersionNote(update);
   } else if (update.update_available) {
     note.textContent = '发现新版本 v' + update.latest_version + (update.can_install ? '' : ' · 请手动更新');
   } else if (update.latest_version) {
@@ -709,7 +717,7 @@ function renderUpdateStatus(update) {
   }
   $('btnUpdateInstall').hidden = !update.update_available || !update.can_install;
   $('btnUpdateInstall').disabled = updateBusy || !!update.installing;
-  $('btnUpdateRelease').hidden = !update.update_available || !!update.can_install || !update.release_url;
+  $('btnUpdateRelease').hidden = (!update.update_available && !unknown) || !!update.can_install || !update.release_url;
   $('btnUpdateCheck').disabled = updateBusy || !!update.installing;
 }
 
@@ -722,7 +730,10 @@ async function checkForUpdates() {
   try {
     const update = await api('update/check', { method: 'POST' });
     renderUpdateStatus(update);
-    toast(update.update_available ? '发现新版本 v' + update.latest_version : '当前已是最新版本', update.update_available ? 'ok' : '');
+    let message = '当前已是最新版本';
+    if (update.current_known === false) message = unknownVersionNote(update);
+    else if (update.update_available) message = '发现新版本 v' + update.latest_version;
+    toast(message, update.update_available ? 'ok' : '');
   } catch (e) {
     try { renderUpdateStatus(await api('update')); } catch (_) {}
     toast('检查更新失败：' + e.message, 'err');
@@ -1036,6 +1047,7 @@ async function loadModels(force) {
     const srcNote = { 'v3-desktop': '', 'v3-union': ' · ⚠ 国际版目录来自回落（IDE+CLI 并集）', 'enterprise': ' · ⚠ 国际版目录已降级到企业端点（窄目录/旧倍率）' }[d.global_source] || '';
     $('mdNote').textContent = mdAll.length + ' 个模型 · 已刷新降级缓存' + (hit ? ' · ' + hit + ' 个有实测上限' : '') + srcNote;
     renderModels();
+    refreshEffortDowngradeNote(); // 模型目录到位后才知道哪些档位会降级
   } catch (e) {
     mdAll = [];
     tb.innerHTML = '<tr><td colspan="9"><div class="empty">' + esc(e.message) + '</div></td></tr>';
@@ -1718,6 +1730,7 @@ const CFG_MAP = {
   models_allowed: ['models', 'allowed'],
   models_aliases: ['models', 'aliases'],
   thinking_enabled: ['thinking', 'enabled'],
+  thinking_default_effort: ['thinking', 'default_effort'],
   cn_chat_base: ['cn', 'chat_base'], cn_billing_base: ['cn', 'billing_base'],
   global_chat_base: ['global', 'chat_base'], global_billing_base: ['global', 'billing_base'],
 };
@@ -1771,7 +1784,41 @@ async function loadConfig() {
     $('cfgKey').disabled = !!d.api_key_env_managed;
     $('cfgKey').title = d.api_key_env_managed ? '访问密钥由启动环境变量设置，请在部署配置中修改。' : '';
     $('cfgNote').textContent = managed.length ? '由启动环境管理：' + managed.join('、') : '';
+    refreshEffortDowngradeNote(); // 回填后按当前值算一次降级提示
   } catch (e) { toast('读取配置失败：' + e.message, 'err'); }
+}
+
+/* 默认网关档位不支持提示：选中档位若高于/低于某些模型的支持范围，网关会按
+   「≤ 目标档的最高支持档，没有更低的正档则取最低正档」降级（off 不参与降级）。
+   数据来自 /panel/api/models 的 gateway_effort_wanted vs gateway_effort——
+   后端用出站同一套 ResolveGatewayEffort 算的，提示与真实注入不会漂移。
+
+   只在「改了默认档」时才需要重算，但模型目录是异步拉的（可能比配置晚到），
+   所以两处都调：配置回填后、模型列表加载后。目录为空时静默隐藏（不编造）。 */
+function refreshEffortDowngradeNote() {
+  const el = $('effortDowngradeNote');
+  if (!el) return;
+  const sel = $('cfgForm') && $('cfgForm').elements['thinking_default_effort'];
+  const want = sel ? String(sel.value || '').trim().toLowerCase() : '';
+  const models = (typeof mdAll !== 'undefined' && Array.isArray(mdAll)) ? mdAll : [];
+  if (!want || !models.length) { el.textContent = ''; return; }
+  // 只统计「真正会降级」的模型：目标档与生效档不同，且生效档非空（空 = 不改写，
+  // 比如该模型根本没声明档位，不属于降级）。
+  const downgraded = models.filter(m => {
+    const got = String(m.gateway_effort || '').trim().toLowerCase();
+    const w = String(m.gateway_effort_wanted || '').trim().toLowerCase();
+    return got && w === want && got !== want;
+  });
+  if (!downgraded.length) { el.textContent = ''; return; }
+  // 按落点聚合，最多列前三个，其余归到「等 N 个」——几十个模型全列出来会把面板撑爆。
+  const byTarget = {};
+  for (const m of downgraded) {
+    const t = String(m.gateway_effort || '').toLowerCase();
+    (byTarget[t] || (byTarget[t] = [])).push(m.id || '');
+  }
+  const parts = Object.keys(byTarget).sort().map(t => byTarget[t].length + ' 个降到 ' + t);
+  el.textContent = '⚠ 当前有 ' + downgraded.length + ' 个模型不支持 ' + want + '：' + parts.join('、') +
+    '（逐个模型可在「模型与档位」页的「网关档位」列单独指定）';
 }
 // thinkingModeOf 由 thinking.client_priority + override_scope 推导三选一的选中项。
 // 缺省（未写客户端优先）= 客户端优先，与 config 默认值一致。
@@ -1837,6 +1884,11 @@ function markDurationFields() {
 }
 $('cfgForm').addEventListener('input', ev => {
   if (DURATION_FIELDS.includes(ev.target.name)) markDurationFields();
+});
+// 改「默认网关档位」时立刻重算降级提示：让操作员在保存前就看到「这一档有几个模型
+// 支持、几个会降级」，而不是保存后去事件日志里猜实际生效的档位。
+$('cfgForm').addEventListener('change', ev => {
+  if (ev.target.name === 'thinking_default_effort') refreshEffortDowngradeNote();
 });
 $('btnEye').onclick = () => {
   const el = $('cfgKey');

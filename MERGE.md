@@ -138,6 +138,26 @@ WorkBuddy 一栏的基线同时登记在 `scripts/workbuddy-vendor-baseline.json
 
 上游 `misakano7545/workbuddy2api-panel` main 无新提交（基线 `96b816d` 不变，版本 dev），`sync_workbuddy.py --report` 确认零改动，本次未涉及上游同步。
 
+### 2026-11-04 — 40d98f9 → 6d534c5
+
+- 上游：misakano7545/workbuddy2api-panel，vendor + 三方合并（`scripts/sync_workbuddy.py`；源工作树 `D:/下载/Github/workbuddy2api-panel-misakano` 本次为 detached HEAD，`--pull` 报 not-on-branch，直接 `git checkout --detach 6d534c5`）。
+- 基线：`40d98f9` → **0 冲突**自动推进到 `6d534c5`（21 提交 / 60 文件 / +1530 -105）。
+- 上游主线（按子系统归组）：
+  - **连接复用族**：`02b941e` 流式请求关闭前读掉流尾 + `Close` 幂等，修上游连接无法复用（`proxypool/transport.go`、`upstream/idle.go`）；`a8be846` 客户端断开不再被记成上游断流、不再白发续写（`server/continue.go`，PR #154）；`b08e606`+`e5afc3f` 心跳帧不再吞掉紧随其后的 Responses 事件（`server/responses.go`、`upstream/sse.go`，PR #158）。
+  - **reqlog**：`8f761c1`/`b609bf7` 超长事件行截断+保护，不再让整页事件日志读不出来。
+  - **选号**：`2af7de6`/`a49859e` 到期加权不再低于关闭时权重，快过期窗口默认 `168h`→`720h`（PR #146）；`7be4c3b` 保留积分按域覆盖 `pool.reserve_credits_by_realm`（issue #147，键 `cn`/`global`，未写域回落全局阈值）。
+  - **面板**：`24b8f39`/`b954462` 默认网关档位可在面板配置+降级实时提示（PR #148）；`ResolveGatewayEffort` 降级不再落到 `off`（off 只作显式目标，防「要弱一档」静默变成「关掉思考」）；`6ddbaf8`/`27217e4` 企业版/API Key 账号不自动签到、不跑成长任务（PR #151）；`5866d6f` 成长任务按阶段 0 快照跳过已完成项、项间统一节流（issue #149）；`6d534c5` 删号后任务中心不再显示幽灵账号作业（issue #155）；`f6c4a45` 登录入口签到判据对齐 `SupportsPersonalGrowth`。
+  - **proxypool**：`8d48ee5` 代理全被停用时随机绑定回落直连（issue #150）——**afree 不接 ProxyPool，行为不受影响**。
+  - **updater/compose**：`2bf4587`/`4ceee4d` 未知构建版本不误报有更新；`6724698` compose 默认 GHCR 镜像、`fdcbdc7` Dockerfile Go module 代理改 ARG——均在 vendor 树外，本线不涉及；autobot.py/CI 同理。
+- 装配接线（人工，上游在 `cmd/server/main.go` 做、本仓无该入口）：
+  - 启动 + 热路径成对补 `p.SetReserveCreditsByRealm(...)`（`workbuddy.go:122` / `workbuddy_config.go:156`）——本次唯一新增注入方法（已 grep 上游全量 diff 确认无其他导出接口漂移）。
+  - 新配置键 1 个：`pool.reserve_credits_by_realm`，缺省空表=全部回落全局阈值，热生效，不进 `restartRequired`；`expiring_soon` 默认值变更随 `config.go` 带入（存量配置显式写 168h 的保持 168h，仅缺省行为放宽）。
+  - `workbuddyVersion` → `2026.11.04-misakano+afree`。
+- 跳过项（符合预期）：`upstream/dns_test.go` 本地已删、上游仍有，脚本按规则跳过。
+- 验证：`go build ./...`、`go vet ./internal/...` 全绿；`go test ./... -count=1` 28 包全绿（既有 flaky 本轮未触发）。`-race ./internal/app/` 首轮报 `TestClineModelNotFoundAutoBan` flaky——用 `git worktree add --detach .tmp/afree-premerge 37358b7` 在合并前 HEAD 复跑同包同复现（还搭一个 `TestAddAccountDefaultsDisabled`），**判既有、非本次引入**，按 2026-10-27 口径不修；单跑与复跑均过。
+- 本机测试环境：镜像 `afree-proxy:test-20261104-0021`，`D:\DockerApp\docker-compose.yml` 换 tag 重建，`Up (healthy)`、`/health` 200，启动日志无错误；容器内二进制版本串 `2026.11.04-misakano+afree` 已核。
+- 生产：未同步，等用户在 iStore 自行 `compose pull`（GHCR 由 CI 从 main 构建）。
+
 ### 2026-11-02 — 96b816d → 40d98f9
 
 - 上游：misakano7545/workbuddy2api-panel，vendor + 三方合并（`scripts/sync_workbuddy.py`；源工作树 `D:/下载/Github/workbuddy2api-panel-misakano` 先 `git checkout --detach misakano/main`）。

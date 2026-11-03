@@ -153,6 +153,7 @@ func saveWorkbuddyConfig(
 	// misakano 线新增热键：保留积分（normalize 保证非 nil 且 >=0）、账号优先级/
 	// 占比（issue #62）、保底倍率上限、补领清扫间隔。
 	p.SetReserveCredits(*newCfg.Pool.ReserveCredits)
+	p.SetReserveCreditsByRealm(newCfg.Pool.ReserveCreditsByRealm) // 按域覆盖保留积分热生效（issue #147）
 	p.SetAccountPriority(newCfg.Pool.AccountPriority)
 	p.SetAccountShare(newCfg.Pool.AccountShare)
 	p.SetCreditFloorMaxRate(newCfg.Pool.CreditFloorMaxRate)

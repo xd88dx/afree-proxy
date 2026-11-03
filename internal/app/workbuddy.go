@@ -31,8 +31,8 @@ import (
 )
 
 // 版本口径：misakano 线不跟语义化版本（CI 用日期版本注入），此处记录上游来源
-// 与同步日期；基线 misakano/main 96b816d（2026-10-31 同步）。
-const workbuddyVersion = "2026.11.02-misakano+afree"
+// 与同步日期；基线 misakano/main 6d534c5（2026-11-04 同步）。
+const workbuddyVersion = "2026.11.04-misakano+afree"
 
 // workbuddySubsystem 把源项目的账号池/熔断/调度/面板/兼容接口作为独立子系统
 // 挂在现有 afree-proxy 上。账号凭证与状态落在 data/workbuddy/ 下，不与 Cline
@@ -119,6 +119,7 @@ func startWorkBuddy() (*workbuddySubsystem, error) {
 	// misakano 线新增：保留积分（normalize 保证非 nil 且 >=0）、账号优先级/占比
 	//（issue #62）、保底倍率上限——与 saveWorkbuddyConfig 热应用同键。
 	p.SetReserveCredits(*cfg.Pool.ReserveCredits)
+	p.SetReserveCreditsByRealm(cfg.Pool.ReserveCreditsByRealm) // 按域覆盖保留积分（issue #147）
 	p.SetAccountPriority(cfg.Pool.AccountPriority)
 	p.SetAccountShare(cfg.Pool.AccountShare)
 	p.SetCreditFloorMaxRate(cfg.Pool.CreditFloorMaxRate)
