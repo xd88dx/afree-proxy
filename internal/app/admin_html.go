@@ -2753,14 +2753,14 @@ const I18N_ZH = {
   'Test latency': '代理测试',
   'Latency test finished': '代理测试完成',
   'Proxy test failed: ': '代理测试失败：',
-  'Send up to 3 HTTPS probes per exit to the target in the input box (default www.gstatic.com/generate_204) through the same dial stack as real traffic; shows the min latency of successful samples and feeds the online-rate and handshake stats. Never touches routing or cooldowns.': '每条出口向输入框里的测速目标（默认 www.gstatic.com/generate_204）发最多 3 次 HTTPS 探测，与真实请求同一拨号栈；显示成功样本的最小延迟，样本计入在线率与握手统计。绝不触碰路由与冷却。',
+  'Send up to 3 HTTPS probes per exit to the target in the input box (default www.gstatic.com/generate_204) through the same dial stack as real traffic; shows the min latency of successful samples and feeds the online-rate and handshake stats. Never touches routing or cooldowns.': '每条出口对测速目标发最多 3 次 HTTPS 探测，根据结果更新在线率与测试列数据，路由与冷却不受影响。',
   'Latest manual latency test: min / median over up to 3 HTTPS probes to the configured target through the same dial stack as real traffic; the samples also feed the rate and handshake stats. Routing and cooldowns are untouched.': '最近一次手动延迟测试：对配置的测速目标最多 3 次 HTTPS 探测的最小/中位延迟，与真实请求同一拨号栈；样本同时计入在线率与握手统计。路由与冷却不受影响。',
   // 2026-11-03 测速目标输入框（回车/失焦即存，留空回默认）
   'Latency test target URL; Enter or blur saves it. Empty resets to the default. Any HTTP response counts as a sample.': '测速目标 URL；回车或失焦即保存，留空恢复默认。收到任意 HTTP 响应即计为样本。',
   'Test target saved': '测速地址已保存',
   'Test target failed: ': '测速地址保存失败：',
   // 2026-11-03 行内单出口测试按钮（「Test」复用既有词条勿重复添加）
-  'Test just this exit: 3 probes to the configured target; updates the Test column and the online-rate stats of this row. Display only — routing and cooldowns are untouched.': '只测这一个出口：对配置的测速目标发 3 次探测；更新本行测试列与在线率统计。仅展示——路由与冷却不受影响。',
+  'Test just this exit: 3 probes to the configured target; updates the Test column and the online-rate stats of this row. Display only — routing and cooldowns are untouched.': '使用当前出口对测速目标发最多 3 次 HTTPS 探测，根据结果更新在线率与测试列数据，路由与冷却不受影响。',
   'Rates are sampled passively from real traffic and manual latency tests — no background probing. "No data" = unused since the last pool edit; editing the proxy list resets counters.': '在线率被动采样自真实流量与手动延迟测试——无后台探测。“无数据”=自上次编辑代理池后未使用；编辑代理列表会清零计数。',
   'Credentials saved to server': '凭据已写入服务器',
   'Account already exists': '账号已存在',
