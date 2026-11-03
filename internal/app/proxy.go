@@ -3864,39 +3864,38 @@ func sortModelEntriesByID(list []map[string]any) {
 // workbuddyModelEntries 返回 /v1/models 的 WorkBuddy 段条目，段内按 id 恒序。
 //
 // 段内原始顺序来自上游：cn 对话取 /v3/config 返回序（mergeModelInfos 纯拼接），
-// 图像取上游目录序，本地均无排序保证——上游改序或 v3 探测降级到
-// enterprise-only 都会让输出漂移。
+// 本地无排序保证——上游改序或 v3 探测降级到 enterprise-only 都会让输出漂移。
 //
-// vendor 的段内结构是「对话模型 → 出图模型」两段（generationModelEntries 追加
-// 在后），这里保留该分组语义，两组各自按 id 稳定排序：既让输出恒序，又不把
-// image_generation 条目混进对话名单。前缀 wbcn:/wbgb: 的字典序天然让 cn 在
-// global 前，与 vendor 原有域序一致。
+// 出图模型一律不对外（2026-11-03 用户定「只对外路由各平台页列表可见的模型」）：
+// wkbd 页列表按「生效倍率 ≤ 阈值」过滤，出图模型上游目录不给 credits 牌价
+// （缺失 ≠ 免费），页面永远不显示它们；对外目录若照 vendor 原样把
+// image_generation 条目单列追加，就成了「面板看不到、对外却在提供」的越权面
+// （2026-11-03 生产实测：/v1/models 比 wkbd 页多出 hunyuan-image-alpha/
+// -edit、hy-image-3.5 三条）。这里在 app 层剔除——/v1/models 与请求闸
+// （servedModelGate）同源，一处剔除两边同时收紧；vendor 的 /v1/images 端点
+// 在网关层本就未注册（生产实测 404），出图模型由此没有任何可达入口。今后
+// 上游新增出图模型同样自动被挡，不依赖逐个拉黑。
 //
-// 排序放在 afree 侧而非 vendor 目录（internal/workbuddy/），避免下次
-// sync_workbuddy 三方合并冲突。
+// 对话条目按 id 稳定排序：前缀 wbcn:/wbgb: 的字典序天然让 cn 在 global 前，
+// 与 vendor 原有域序一致。排序放在 afree 侧而非 vendor 目录
+// （internal/workbuddy/），避免下次 sync_workbuddy 三方合并冲突。
 func workbuddyModelEntries() []map[string]any {
 	// 展示门控与请求入口闸同口径（platform_routability.go）：没有可用账号时
-	// 整段不出目录。vendor 对话段由 AvailableUIDs 自然门控，但出图段读的是
-	// 目录解析时旁路填充的内存缓存、全程不看账号——在 app 层统一闸一次，
-	// 顺带盖住对话缓存短暂 stale 的回放窗口。
+	// 整段不出目录。vendor 对话段由 AvailableUIDs 自然门控——在 app 层统一
+	// 闸一次，顺带盖住对话缓存短暂 stale 的回放窗口。
 	if workbuddySub == nil || !platformHasRoutableCredential(platWorkBuddy) {
 		return nil
 	}
 	list := workbuddySub.modelList()
 	chat := make([]map[string]any, 0, len(list))
-	image := make([]map[string]any, 0)
 	for _, m := range list {
 		if isImage, _ := m["image_generation"].(bool); isImage {
-			image = append(image, m)
 			continue
 		}
 		chat = append(chat, m)
 	}
 	sortModelEntriesByID(chat)
-	sortModelEntriesByID(image)
-	out := make([]map[string]any, 0, len(list))
-	out = append(out, chat...)
-	return append(out, image...)
+	return chat
 }
 
 // servedModelEntries 对外模型目录的单一口径：全平台聚合（cline/zen/wb/
