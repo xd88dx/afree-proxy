@@ -133,7 +133,7 @@ Model:     cline-free/deepseek-v4.1-flash   （Cline 池）
 **Claude Code / Cline** — Anthropic 方言 `POST /v1/messages`，同 Base URL 同 key。
 **OpenAI Responses 方言** — `POST /v1/responses`（工具调用、流式事件、usage 全翻译）。
 
-`GET /v1/models` 列出全部可服务模型（含 Combos）。免费目录自动同步（cline/zen/trae/or/amd/th 全部 5min，wb 实时探测；同步走凭据绑定的出口，无可用出口时跳过本轮绝不直连）；线上列表是权威，内置种子只覆盖冷启动/离线启动，下架/新免费模型自动增删。**对外目录 = 各平台管理页可见的模型**（2026-11-03）：WorkBuddy 的出图模型在 app 层按目录的 `image_generation` 模态标志从目录与请求闸剔除（非按模型名）——页面看不见它们的根因是上游目录不给出图模型 credits 牌价（倍率筛选「缺失 ≠ 免费，一律不透出」）。边界：若后续上游给出图模型发了费率且 ≤ 阈值，需把该剔除改为与页面同源的倍率筛选才符合本原则（当前实现仍会挡住）；且 vendor 的 `/v1/images` 网关层未注册（生产实测 404），放开目录后仍无调用入口。
+`GET /v1/models` 列出全部可服务模型（含 Combos）。免费目录自动同步（cline/zen/trae/or/amd/th 全部 5min，wb 实时探测；同步走凭据绑定的出口，无可用出口时跳过本轮绝不直连）；线上列表是权威，内置种子只覆盖冷启动/离线启动，下架/新免费模型自动增删。**对外目录 = 各平台管理页可见的模型**（2026-11-03）：WorkBuddy 的出图模型在 app 层按**费率同源筛选**进出目录（与面板前端 `wbRate`/`wbModelMatchesFilter` 同构：promo 生效取 `promo_credits`，否则取 `credits`；缺失/不可解析一律不透出——缺失 ≠ 免费；≤ `pool.model_rate_filter` 阈值才放行），目录与请求闸同源。当前出图模型上游目录不给 credits 牌价，全部挡住；将来上游给某个出图模型发了牌价且 ≤ 阈值时会自动进目录，无需改代码。注意 vendor 的 `/v1/images` 网关层未注册（生产实测 404）——目录放行只解决「可见」，专用出图调用入口仍不存在。
 
 ### Combos（别名模型）
 

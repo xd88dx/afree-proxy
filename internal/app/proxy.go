@@ -24,6 +24,7 @@ import (
 	"os"
 	"os/signal"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -3866,15 +3867,17 @@ func sortModelEntriesByID(list []map[string]any) {
 // 段内原始顺序来自上游：cn 对话取 /v3/config 返回序（mergeModelInfos 纯拼接），
 // 本地无排序保证——上游改序或 v3 探测降级到 enterprise-only 都会让输出漂移。
 //
-// 出图模型一律不对外（2026-11-03 用户定「只对外路由各平台页列表可见的模型」）：
-// wkbd 页列表按「生效倍率 ≤ 阈值」过滤，出图模型上游目录不给 credits 牌价
-// （缺失 ≠ 免费），页面永远不显示它们；对外目录若照 vendor 原样把
-// image_generation 条目单列追加，就成了「面板看不到、对外却在提供」的越权面
-// （2026-11-03 生产实测：/v1/models 比 wkbd 页多出 hunyuan-image-alpha/
-// -edit、hy-image-3.5 三条）。这里在 app 层剔除——/v1/models 与请求闸
-// （servedModelGate）同源，一处剔除两边同时收紧；vendor 的 /v1/images 端点
-// 在网关层本就未注册（生产实测 404），出图模型由此没有任何可达入口。今后
-// 上游新增出图模型同样自动被挡，不依赖逐个拉黑。
+// 出图模型与页面同源过滤（2026-11-03 用户定「只对外路由各平台页列表可见的
+// 模型」+ 同日追定「剔除按费率同源，不按模态一刀切」）：wkbd 页列表按「生效
+// 倍率 ≤ 阈值」过滤且倍率缺失不透出（缺失 ≠ 免费），出图模型上游目录不给
+// credits 牌价，页面自然不显示。这里对 image_generation 条目套用与面板前端
+// wbRate/wbModelMatchesFilter 同构的倍率筛选（wbEntryRate + 阈值
+// pool.model_rate_filter）——当前无牌价全部挡住（2026-11-03 生产实测
+// /v1/models 曾比 wkbd 页多出 hunyuan-image-alpha/-edit、hy-image-3.5 三条），
+// 将来上游给某个出图模型发了牌价且 ≤ 阈值时会自动放行，无需改代码。
+// /v1/models 与请求闸（servedModelGate）同源，一处筛选两边同时收紧；vendor
+// 的 /v1/images 端点在网关层未注册（生产实测 404），即使目录放行，专用出图
+// 调用入口仍不存在。
 //
 // 对话条目按 id 稳定排序：前缀 wbcn:/wbgb: 的字典序天然让 cn 在 global 前，
 // 与 vendor 原有域序一致。排序放在 afree 侧而非 vendor 目录
@@ -3888,14 +3891,60 @@ func workbuddyModelEntries() []map[string]any {
 	}
 	list := workbuddySub.modelList()
 	chat := make([]map[string]any, 0, len(list))
+	threshold := workbuddySub.modelRateFilterThreshold()
 	for _, m := range list {
 		if isImage, _ := m["image_generation"].(bool); isImage {
-			continue
+			// 与前端 wbModelMatchesFilter 同口径：倍率缺失/不可解析一律隐藏
+			//（缺失 ≠ 免费），生效倍率 ≤ 阈值（含等号，1e-9 容差）才放行。
+			if rate, ok := wbEntryRate(m); !ok || rate > threshold+1e-9 {
+				continue
+			}
 		}
 		chat = append(chat, m)
 	}
 	sortModelEntriesByID(chat)
 	return chat
+}
+
+// wbEntryRate 把模型条目的倍率字段解析成数值，语义与面板前端 wbRate/wbNumber
+// 同构（出图模型费率同源筛选的数据面）：
+//   - promo 生效需 promo_factor 与 promo_credits 同时在场且 promo_credits 非
+//     空串（前端 promoted 判据同款）；此时只看 promo_credits，解析失败即缺失
+//     （不回落 credits，与前端一致）；
+//   - 否则取 credits；
+//   - 字段缺失/空串/剥掉装饰后无数字（"abc"/"NaN"/"Infinity"）一律 (0,false)。
+func wbEntryRate(m map[string]any) (float64, bool) {
+	pick := func(v any) (float64, bool) {
+		switch x := v.(type) {
+		case float64:
+			return x, true
+		case string:
+			cleaned := strings.Map(func(r rune) rune {
+				if (r >= '0' && r <= '9') || r == '.' || r == '-' {
+					return r
+				}
+				return -1
+			}, x)
+			if !strings.ContainsAny(cleaned, "0123456789") {
+				return 0, false
+			}
+			n, err := strconv.ParseFloat(cleaned, 64)
+			if err != nil {
+				return 0, false
+			}
+			return n, true
+		}
+		return 0, false
+	}
+	pf, hasPf := m["promo_factor"]
+	pc, hasPc := m["promo_credits"]
+	if hasPf && pf != nil && hasPc && pc != nil {
+		if pc != "" {
+			return pick(pc)
+		}
+		return 0, false
+	}
+	return pick(m["credits"])
 }
 
 // servedModelEntries 对外模型目录的单一口径：全平台聚合（cline/zen/wb/

@@ -74,9 +74,10 @@ func routableWBSub(models []map[string]any) *workbuddySubsystem {
 }
 
 // WorkBuddy 段端到端:vendor 按上游序吐出乱序列表 → 网关出口必须恒序,
-// 且出图模型(image_generation 条目)一律不对外——wkbd 页列表因上游不出图
-// 模型无 credits 牌价而永不显示它们,对外目录与请求闸同源,同样剔除
-// (2026-11-03 用户定:只对外路由各平台页列表可见的模型)。
+// 出图模型(image_generation 条目)走费率同源筛选——wkbd 页列表按倍率阈值
+// 过滤且缺失不透出,对外目录与请求闸同源(2026-11-03 用户定:只对外路由各
+// 平台页列表可见的模型;同日追定剔除按费率同源,不按模态一刀切)。
+// 无 credits 牌价的出图条目在缺省阈值 0.2 下全部挡住(见下组测试)。
 func TestWorkbuddyModelEntriesAreOrdered(t *testing.T) {
 	saved := workbuddySub
 	t.Cleanup(func() { workbuddySub = saved })
@@ -129,9 +130,48 @@ func TestWorkbuddyModelEntriesNilSubsystem(t *testing.T) {
 	}
 }
 
-// 服务闸同源回归（2026-11-03）：出图模型从目录剔除后，请求路径点名必须同样
-// 拒——modelIsServed/servedModelGate 与 /v1/models 共用 servedModelEntries，
+// 服务闸同源回归（2026-11-03）：无牌价出图模型从目录剔除后，请求路径点名必须
+// 同样拒——modelIsServed/servedModelGate 与 /v1/models 共用 servedModelEntries，
 // 不存在「列表看不见却点得通」的绕过口。
+
+// 费率同源筛选（2026-11-03 用户定）：出图条目不再按模态一刀切，改用与面板
+// 前端 wbRate/wbModelMatchesFilter 同构的倍率判据——promo 生效需
+// promo_factor + promo_credits 同时空场且后者可解析，否则取 credits；
+// 缺失/不可解析一律隐藏（缺失 ≠ 免费），≤ 阈值（缺省 0.2，1e-9 容差）放行。
+// 将来上游给某个出图模型发牌价且 ≤ 阈值时自动进目录，无需改代码。
+func TestWorkbuddyImageModelRateFilter(t *testing.T) {
+	saved := workbuddySub
+	t.Cleanup(func() { workbuddySub = saved })
+	workbuddySub = routableWBSub([]map[string]any{
+		{"id": "cn:alpha"},
+		{"id": "cn:img-free", "image_generation": true, "credits": "x0.1"},
+		{"id": "cn:img-pricey", "image_generation": true, "credits": "x5"},
+		{"id": "cn:img-norate", "image_generation": true},
+		{"id": "cn:img-promo", "image_generation": true, "credits": "x5", "promo_factor": "0.5", "promo_credits": "x0.15"},
+		{"id": "cn:img-promo-bad", "image_generation": true, "promo_factor": "0.5", "promo_credits": ""},
+		{"id": "cn:img-garbage", "image_generation": true, "credits": "abc"},
+	})
+
+	got := workbuddyModelEntries()
+	want := []string{"wbcn:alpha", "wbcn:img-free", "wbcn:img-promo"}
+	if len(got) != len(want) {
+		t.Fatalf("entries = %v, want %v", got, want)
+	}
+	for i := range want {
+		if id, _ := got[i]["id"].(string); id != want[i] {
+			t.Fatalf("entries = %v, want %v", got, want)
+		}
+	}
+	// 请求闸同源：放行条目必须可点名，剔除条目必须拒。
+	if !modelIsServed("wbcn:img-free") || !modelIsServed("wbcn:img-promo") {
+		t.Fatal("rate-passing image models must be servable")
+	}
+	for _, id := range []string{"wbcn:img-pricey", "wbcn:img-norate", "wbcn:img-promo-bad", "wbcn:img-garbage"} {
+		if modelIsServed(id) {
+			t.Fatalf("%s must not be servable", id)
+		}
+	}
+}
 func TestServedGateRejectsWorkbuddyImageModel(t *testing.T) {
 	t.Setenv("DATA_DIR", t.TempDir())
 	saved := workbuddySub

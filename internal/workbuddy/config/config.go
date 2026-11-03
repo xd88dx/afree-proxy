@@ -413,7 +413,8 @@ type Config struct {
 		// 缺省 nil = 不降级（对老配置零影响）。
 		ModelFallback map[string]string `json:"model_fallback"`
 		// ModelRateFilter 模型积分倍率筛选（单位 x，如 0.2 = 只列出生效倍率
-		// ≤0.2 的模型）。生效范围：网关侧 `/v1/models` 的 WorkBuddy 条目与
+		// ≤0.2 的模型）。生效范围：网关侧 `/v1/models` 的 WorkBuddy 条目（含
+		// 出图条目——2026-11-03 起出图段费率同源筛选，缺失牌价不透出）与
 		// 面板模型列表。生效倍率与 WorkBuddy 客户端看到的「当前生效价」同口径：
 		// 有机器可读优惠（promo_credits）取折扣价，否则取牌价（credits）；
 		// 倍率缺失/不可解析的模型视为未知价，一律隐藏（缺失 ≠ 免费，

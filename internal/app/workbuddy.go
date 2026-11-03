@@ -594,6 +594,15 @@ func (w *workbuddySubsystem) modelList() []map[string]any {
 	return out
 }
 
+// modelRateFilterThreshold 返回倍率筛选阈值（pool.model_rate_filter，缺省
+// 0.2，与 vendor Load 的缺省一致）。cfg 未装配（部分测试桩）时同样回退缺省。
+func (w *workbuddySubsystem) modelRateFilterThreshold() float64 {
+	if w == nil || w.cfg == nil {
+		return 0.2
+	}
+	return w.cfg.Pool.ModelRateFilter
+}
+
 // workbuddyAdminHandler 把源面板挂到 /admin/workbuddy/ 下：把外部路径重写到
 // 面板内部固定的 /panel/ 前缀。挂在 /admin 下是为了让管理会话 Cookie
 // （Path=/admin）随 iframe 与 api 请求一起发送；面板前端已改为相对 api 路径。
