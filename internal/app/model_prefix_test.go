@@ -5,6 +5,16 @@ import (
 	"time"
 )
 
+// throttleGateRefreshForTest 预占 strict-gate 的目录同步节流窗（30s）。
+// 未知模型命中 strict gate 时会节流地发起 live 目录同步（syncModelsOnce +
+// syncZenModels：出网拉官方 feed / zen registry，并写多份 DATA_DIR 文件）——
+// 单测不应发外网请求，预置节流时间戳让同步分支直接跳过；未知模型的 404
+// 结论不依赖同步结果。2026-11-03 CI 实测：TestServedModelGate 的 TempDir
+// 清理与同步写盘竞态（unlinkat … directory not empty）偶发打红 CI。
+func throttleGateRefreshForTest() {
+	gateRefreshLast.Store(time.Now().Unix())
+}
+
 // injectClineModels 测试注入：modelsCache 是全局的且不再有 seed 兜底
 // （2026-10-31 用户定：目录唯一来源是官方 feed），需要条目的测试锁内注入、
 // 结束恢复空缓存。注入 ID 用 feed 原样形态（cline-free/* 自带前缀、其余不带）。

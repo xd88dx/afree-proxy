@@ -328,6 +328,7 @@ func TestNormalizeEntryClineFeedRemoved(t *testing.T) {
 // 目录内模型放行；空 model 放行（错误语义归入口校验）。
 func TestServedModelGate(t *testing.T) {
 	t.Setenv("DATA_DIR", t.TempDir())
+	throttleGateRefreshForTest() // 未知模型分支不做 live 目录同步（不发外网、不写盘）
 	resetModelBlacklistForTest(t)
 	// apiModelList 的展示门控要求 cline 有可路由账号，种一个。
 	p := loadPool()

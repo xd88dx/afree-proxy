@@ -140,6 +140,7 @@ func TestWorkbuddyModelEntriesNilSubsystem(t *testing.T) {
 // 缺失/不可解析一律隐藏（缺失 ≠ 免费），≤ 阈值（缺省 0.2，1e-9 容差）放行。
 // 将来上游给某个出图模型发牌价且 ≤ 阈值时自动进目录，无需改代码。
 func TestWorkbuddyImageModelRateFilter(t *testing.T) {
+	throttleGateRefreshForTest() // servedModelGate 未知名不做 live 目录同步
 	saved := workbuddySub
 	t.Cleanup(func() { workbuddySub = saved })
 	workbuddySub = routableWBSub([]map[string]any{
@@ -174,6 +175,7 @@ func TestWorkbuddyImageModelRateFilter(t *testing.T) {
 }
 func TestServedGateRejectsWorkbuddyImageModel(t *testing.T) {
 	t.Setenv("DATA_DIR", t.TempDir())
+	throttleGateRefreshForTest() // servedModelGate 未知名不做 live 目录同步
 	saved := workbuddySub
 	t.Cleanup(func() { workbuddySub = saved })
 	workbuddySub = routableWBSub([]map[string]any{
