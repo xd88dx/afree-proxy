@@ -14,7 +14,7 @@
 | -------------- | ----------------------------------------------------------------------------------------------- | ------------------- |
 | Cline          | `internal/cline/`；`internal/app/proxy.go` 的账号池、轮换、冷却与 `/v1` 通用转发                | —                   |
 | OpenCode (zen) | `internal/app/zen*.go`、`internal/app/admin_zen.go`；`internal/kit/http.go` 的 `DecodeResponse` | `oc*`、`ZEN_*`      |
-| TraeWork       | `internal/trae/`、`internal/app/trae.go`                                                        | `trae*`、`TRAE_*`   |
+| TraeWork       | `internal/trae2api/`（vendor 树）、`internal/app/trae.go`（桥接）、`trae2api_helper*.go`          | `trae*`（桥接层）   |
 | WorkBuddy      | `internal/workbuddy/**`（vendor 树）、`internal/app/workbuddy*.go`                              | `wb*`               |
 
 `internal/app/admin_html.go` 是**所有平台共用**的单文件面板，按 h2 / tab 分段，`oc*` 属于 OpenCode 而不是 Cline。改一处必须确认它属于哪个平台段。
@@ -27,7 +27,7 @@
 
 - **Cline / OpenCode**：`foxy1402/cline-proxy`，`git merge --no-ff --no-commit <上游哈希>`。一个上游承载两条线，按改动文件的归属分节，判据 `git diff --name-only <旧HEAD> <merge提交> | grep -iE 'zen|opencode'` 与 `| grep -i cline`。
 - **WorkBuddy**：`misakano7545/workbuddy2api-panel`，`python scripts/sync_workbuddy.py`（三方 vendor 合并，基线 `scripts/workbuddy-vendor-baseline.json`）。
-- **TraeWork**：`autumnsentiment/Trae2api-cn`，**不 merge**——上游是 Python，本地是 Go 重写；唯一逐行移植的是内嵌 `web_login.py`，只做比对：`python scripts/check_trae_helper.py --upstream-dir <上游解包目录>`，基线 `scripts/trae-helper-baseline.json`。
+- **TraeWork**（2026-11-04 起换线）：`XCool-603/trae2api`（Go 零依赖），**vendor 三方合并**——`scripts/vendor_trae2api.py` 整树拷贝 12 子包到 `internal/trae2api/` + 幂等改写（出口接管/反代开关/新增身份钩子/console 挂载基址），`scripts/sync_trae2api.py` 三方合并，基线 `scripts/trae2api-vendor-baseline.json`；上游本地修复（textcall 兜底）以 `scripts/trae2api-afree.patch` 重放。旧线 `autumnsentiment/Trae2api-cn` 仅剩 helper 脚本比对（`scripts/check_trae_helper.py`，模板已迁 `internal/app/trae2api_helper_script.go`）。模型名透传：trae:/solo: 常驻，trae-intl:/solo-intl: 随 intl 配置。
 
 ## 4. 构建与验证
 
@@ -55,7 +55,7 @@ go test ./... -count=1             # 除下述既有失败外应全绿
 
 `internal/config.example.json` 是上游仓库根 `config.example.json` 的副本（上游 `TestConfigExampleParses` 用相对路径读它，vendor 后正好指到这里）。同步脚本只搬 `internal/workbuddy/` 树，**不会**带这类根文件；上游更新样例后要手工 `cp`。**不要删**——删了 `go test ./internal/workbuddy/config/` 直接缺文件失败。
 
-Trae 平台 991502 防护三件套（2026-10-29，本地定制，合并/同步时优先保留）：上游 `solo_agent_parallel_limit`（权益实测=2/账号）被并发顶满时新会话 429 或建立后立即被掐（EOF at 2 lines）。① 按账号会话闸门：`internal/trae/client.go` 的 `accountGate`，上限取权益快照 `Credits.ParallelLimit`（`parseCreditsBody` 从 `ide_user_ent_usage` pack.quota 解析，**额度与并发双口径独立扫描**，usage_summary 命中不得跳过 pack 扫描），未知默认 2，`TRAE_ACCOUNT_PARALLEL_LIMIT` 可覆盖；仅会话型传输（remote/traework）受限，raw 不受限。② 读取超时看门狗：首事件 120s / 流中空闲 300s（`TRAE_REMOTE_FIRST_EVENT_TIMEOUT` / `TRAE_STREAM_IDLE_TIMEOUT`，0=关），心跳行续期。③ 首模型事件前断流 → 同账号 Work 回落一次（`ChatWorkFallback`）+ 该账号 30s 短冷却让缓冲层重试轮换。断流清理：`Stream.Close` 异步 `stop /chat_sessions/{sid}/stop`（对齐上游 asyncio.create_task；同步会话经代理实测 7~9s 拖慢重试），随后才释放闸门槽位。
+**已随旧引擎移除（2026-11-04 换线）**：Trae 991502 防护三件套（账号会话闸门/读取超时看门狗/断流 Work 回落，原 `internal/trae/`）——vendored trae2api 自带分级冷却/熔断/降权与流中空闲监控（`idle_timeout_seconds`），防护语义由引擎承担：上游 `solo_agent_parallel_limit`（权益实测=2/账号）被并发顶满时新会话 429 或建立后立即被掐（EOF at 2 lines）。① 按账号会话闸门：`internal/trae/client.go` 的 `accountGate`，上限取权益快照 `Credits.ParallelLimit`（`parseCreditsBody` 从 `ide_user_ent_usage` pack.quota 解析，**额度与并发双口径独立扫描**，usage_summary 命中不得跳过 pack 扫描），未知默认 2，`TRAE_ACCOUNT_PARALLEL_LIMIT` 可覆盖；仅会话型传输（remote/traework）受限，raw 不受限。② 读取超时看门狗：首事件 120s / 流中空闲 300s（`TRAE_REMOTE_FIRST_EVENT_TIMEOUT` / `TRAE_STREAM_IDLE_TIMEOUT`，0=关），心跳行续期。③ 首模型事件前断流 → 同账号 Work 回落一次（`ChatWorkFallback`）+ 该账号 30s 短冷却让缓冲层重试轮换。断流清理：`Stream.Close` 异步 `stop /chat_sessions/{sid}/stop`（对齐上游 asyncio.create_task；同步会话经代理实测 7~9s 拖慢重试），随后才释放闸门槽位。
 
 ## 6. 部署:本机测试,iStore 生产
 
@@ -126,7 +126,7 @@ iStore 的面板密码是 `233@.afree`(与本机 compose 里的值不同);登录
 1. 新增/改动的 HTML 可见文本，在 `I18N_ZH` 里有**同名键**（机制匹配的是文本节点 `trim()` 后的整段原文，不是关键词）。
 2. 新增的 `title` / `placeholder` 说明性文案同样要有词条，键为属性值原文（含标点）。
 3. JS 动态拼接的文案一律走 `T('...')` 且键在表内。不要把中文直接写进 HTML/JS 模板——切到英文界面会露出中文。
-4. 允许不译的只有：model id、key 名前缀、纯示例值（`0.5`、`22`、`4096`）、单位、纯技术标识，以及**标识词与技术值**——端点档位名（Trae 的 `Remote`/`traecode`/`traework`，是 API 取值不是文案）、reasoning effort 档位（`xhigh`/`high`/`medium`/`low`/`minimal`）、产品名（`Token Factory`）。2026-10-29 用户定：这类词进词条反而制造假翻译。
+4. 允许不译的只有：model id、key 名前缀、纯示例值（`0.5`、`22`、`4096`）、单位、纯技术标识，以及**标识词与技术值**——域前缀名（TraeWork 的 `trae:`/`solo:`/`trae-intl:`/`solo-intl:`，是模型 ID 组成部分不是文案）、reasoning effort 档位（`xhigh`/`high`/`medium`/`low`/`minimal`）、产品名（`Token Factory`）。2026-10-29 用户定：这类词进词条反而制造假翻译。
 
 排查遗漏：
 

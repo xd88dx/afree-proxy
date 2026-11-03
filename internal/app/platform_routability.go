@@ -5,7 +5,6 @@ import (
 	"afree-proxy/internal/openrouter"
 	"afree-proxy/internal/other"
 	"afree-proxy/internal/tokenharbor"
-	"afree-proxy/internal/trae"
 )
 
 // ============================================================================
@@ -19,7 +18,7 @@ import (
 //
 // 判定口径按平台各自的"凭据启用"语义：
 //   - cline：账号池存在 Status=active 且 PoolEnabled 的账号
-//   - trae：trae.HasEnabledAccount()（账号总闸开、反代开关开且持有 token）
+//   - trae：trae2apiRoutableCount()>0（账号总闸开且反代开关开）
 //   - workbuddy：vendor 池存在可用账号（AvailableUIDs 非空，含总闸+反代
 //     开关+健康判定）
 //   - zen（OpenCode）：存在参与路由的 key（空池 = 不可路由；匿名 "public"
@@ -43,7 +42,9 @@ func platformHasRoutableCredential(platform string) bool {
 		}
 		return false
 	case platTrae:
-		return trae.HasEnabledAccount()
+		// vendored trae2api：账号总闸开（disabled=false）且反代开关开的账号
+		// 数 > 0（trae2apiRoutableCount）。
+		return trae2apiRoutableCount() > 0
 	case platWorkBuddy:
 		if workbuddySub == nil || workbuddySub.pool == nil {
 			return false

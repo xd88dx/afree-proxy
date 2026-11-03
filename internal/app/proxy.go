@@ -7,7 +7,6 @@ import (
 	openrouter "afree-proxy/internal/openrouter"
 	"afree-proxy/internal/other"
 	"afree-proxy/internal/tokenharbor"
-	"afree-proxy/internal/trae"
 	"bufio"
 	"bytes"
 	"context"
@@ -164,6 +163,9 @@ func StartProxy(host string, port int) error {
 		mux.HandleFunc("/admin/api/workbuddy/reorder", adminCORS(adminAuthMiddleware(handleWorkbuddyPoolReorder)))
 		mux.HandleFunc("/admin/api/workbuddy/nickname", adminCORS(adminAuthMiddleware(handleWorkbuddyNickname)))
 	}
+	// TraeWork 原版入口（vendored trae2api console）：新标签页打开 /admin/trae2api/，
+	// 复用管理会话 Cookie；console fetch 基址已在 vendor 阶段改写。
+	mux.Handle("/admin/trae2api/", trae2apiConsoleHandler())
 
 	apiKeyHandler := func(next http.HandlerFunc) http.HandlerFunc {
 		return corsHandler(func(w http.ResponseWriter, r *http.Request) {
@@ -329,9 +331,16 @@ func StartProxy(host string, port int) error {
 			return
 		}
 
-		// Trae 路由：trae:<model-id> 前缀（账号池平台，TraeCode raw 协议）
-		if trae.HasPrefix(model) {
-			handleTraeChat(w, r, params)
+		// TraeWork 路由（vendored trae2api）：域前缀模型名透传，进程内进
+		// vendored /v1/chat/completions（OpenAI 原生 SSE，无需聚合翻译）。
+		// 用 marshaled params（combo 别名可能改写过 model）。
+		if shouldServeTrae2api(model) {
+			rewritten, err := json.Marshal(params)
+			if err != nil {
+				writeJSON(w, http.StatusInternalServerError, map[string]any{"error": map[string]string{"message": err.Error(), "type": "api_error"}})
+				return
+			}
+			serveTrae2apiChat(w, r, rewritten)
 			return
 		}
 
@@ -3975,8 +3984,8 @@ func servedModelEntries() []map[string]any {
 	data = append(data, amdModelList()...)
 	// 合并 TokenHarbor 免费模型（tkhb: 前缀）。
 	data = append(data, thModelList()...)
-	// 合并 Trae 模型（trae: 前缀，TraeCode raw 协议账号池）。
-	data = append(data, traeModelList()...)
+	// 合并 Trae 模型（vendored trae2api 域前缀：trae:/solo:/trae-intl:/solo-intl:）。
+	data = append(data, trae2apiModelEntries()...)
 	// 合并 Other 子平台勾选模型（各子平台自定义前缀）。
 	data = append(data, otherModelList()...)
 	// combo 别名模型（仪表盘自定义的虚拟模型 ID）。展示门控同平台段：
@@ -4019,10 +4028,10 @@ func servedModelEntries() []map[string]any {
 			if bannedPlatformOf(id) != "" {
 				continue
 			}
-			// trae 平台模型不走这里的平台级黑名单过滤：封禁按端点档位
-			// 隔离（remote/traecode/traework 各自独立），由 trae.ModelList
-			// 内部按当前端点过滤（2026-10-27）。
-			if strings.HasPrefix(id, "trae:") {
+			// TraeWork 平台模型不走这里的通用黑名单过滤：封禁按 realm 隔离
+			// （trae/solo/trae-intl/solo-intl 各自独立），由 trae2apiModelEntries
+			// 内部按 realm 过滤（2026-11-04 起 vendored 引擎）。
+			if isTrae2apiModel(id) {
 				kept = append(kept, m)
 				continue
 			}

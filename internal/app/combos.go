@@ -4,7 +4,6 @@ import (
 	"afree-proxy/internal/amd"
 	openrouter "afree-proxy/internal/openrouter"
 	"afree-proxy/internal/tokenharbor"
-	"afree-proxy/internal/trae"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -131,9 +130,9 @@ func validateCombo(id, platform, target string) error {
 			return fmt.Errorf("combo id %q conflicts with a real tokenharbor model", id)
 		}
 	}
-	if trae.HasPrefix(id) {
-		if _, ok := trae.Resolve(id); ok {
-			return fmt.Errorf("combo id %q conflicts with a real trae model", id)
+	if trae2apiPlatformModel(id) {
+		if trae2apiModelExists(id) {
+			return fmt.Errorf("combo id %q conflicts with a real Trae model", id)
 		}
 	}
 	if resolveCombo(id) != nil {
@@ -176,7 +175,7 @@ func validateCombo(id, platform, target string) error {
 			return fmt.Errorf("target %q is not a free TokenHarbor model (cross-platform selection is not allowed)", target)
 		}
 	case "trae":
-		if _, ok := trae.Resolve(target); !ok {
+		if !trae2apiModelExists(target) {
 			return fmt.Errorf("target %q is not a known Trae model (cross-platform selection is not allowed)", target)
 		}
 	}

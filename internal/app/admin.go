@@ -135,20 +135,23 @@ func registerAdminRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/admin/api/openrouter/keys/test", adminCORS(auth(handleOrKeyTest)))
 	mux.HandleFunc("/admin/api/openrouter/keys/proxy", adminCORS(auth(handleOrKeySetProxy)))
 	mux.HandleFunc("/admin/api/openrouter/keys/proxy/clear", adminCORS(auth(handleOrKeyClearProxies)))
-	// Trae 平台（账号池，trae: 前缀，TraeCode raw 协议）：配置/模型/账号管理/测试/代理绑定
+	// TraeWork 平台（vendored trae2api 引擎，trae:/solo: 域前缀透传）：配置/模型/账号管理/测试/代理绑定
+	// 说明：上游选号为权重调度（idle/额度感知），旧的手动重排序端点随旧引擎
+	// 移除；手动 JWT 粘贴入口（accounts/add）改由 trae_helper.go 的新引擎
+	// 入库（设备密钥现场铸造）实现。
 	mux.HandleFunc("/admin/api/trae/config", adminCORS(auth(handleTraeConfig)))
 	mux.HandleFunc("/admin/api/trae/config/update", adminCORS(auth(handleTraeConfigUpdate)))
 	mux.HandleFunc("/admin/api/trae/models/refresh", adminCORS(auth(handleTraeModelsRefresh)))
 	mux.HandleFunc("/admin/api/trae/accounts/add", adminCORS(auth(handleTraeAccountAdd)))
 	mux.HandleFunc("/admin/api/trae/accounts/routing", adminCORS(auth(handleTraeAccountSetRouting)))
 	mux.HandleFunc("/admin/api/trae/accounts/routing/all", adminCORS(auth(handleTraeAccountSetRoutingAll)))
-	mux.HandleFunc("/admin/api/trae/accounts/reorder", adminCORS(auth(handleTraeAccountsReorder)))
 	mux.HandleFunc("/admin/api/trae/accounts/delete", adminCORS(auth(handleTraeAccountDelete)))
 	mux.HandleFunc("/admin/api/trae/accounts/label", adminCORS(auth(handleTraeAccountLabel)))
 	mux.HandleFunc("/admin/api/trae/accounts/enabled", adminCORS(auth(handleTraeAccountSetEnabled)))
 	mux.HandleFunc("/admin/api/trae/accounts/test", adminCORS(auth(handleTraeAccountTest)))
 	mux.HandleFunc("/admin/api/trae/accounts/proxy", adminCORS(auth(handleTraeAccountSetProxy)))
 	mux.HandleFunc("/admin/api/trae/accounts/proxy/clear", adminCORS(auth(handleTraeAccountClearProxies)))
+	mux.HandleFunc("/admin/api/trae/accounts/cooldown-clear", adminCORS(auth(handleTraeCooldownClear)))
 	mux.HandleFunc("/admin/api/trae/helper/status", adminCORS(auth(handleTraeHelperStatus)))
 	mux.HandleFunc("/admin/api/trae/checkin", adminCORS(auth(handleTraeCheckin)))
 	mux.HandleFunc("/admin/api/trae/credits/refresh", adminCORS(auth(handleTraeCreditsRefresh)))

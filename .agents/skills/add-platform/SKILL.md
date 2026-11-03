@@ -54,17 +54,17 @@ description: 在 afree-proxy 中新增一个上游平台的完整迁移配方—
 
 | | Cline | OpenCode(zen) | WorkBuddy | TraeWork | OpenRouter/AMDCloud/TokenHarbor | Other |
 |---|---|---|---|---|---|---|
-| 形态 | 原生账号池 | key 池（app 层） | vendor 树 | Go 重写协议栈（`internal/trae/` + `internal/app/trae.go`） | key 池（四件套克隆） | key 池四件套 + 多子平台（`internal/other/`，platforms 数组） |
-| 凭据 | refreshToken/API key（Account） | API key 列表（zen keys） | auth 文件目录 | OAuth 账号（本机 8765 helper 网页授权/手动粘贴） | API key 列表（Keys） | 各子平台 key |
-| 启停字段 | `Account.PoolEnabled *bool` | key `routingEnabled` | `auth.poolEnabled *bool` | `PoolEnabled *bool`（nil=参与）+ 账号级路由参与表 | `KeyRoutingEnabled map[string]bool` | `KeyRoutingEnabled map[string]bool`（按子平台） |
-| 默认禁用点 | `pool.go addAccount` | `reconcileZenKeyRouting` | vendor `panel/login.go`+`import.go` | `internal/trae/config.go` `ReconcilePoolEnabled` | 各包 `ReconcileRouting`（config.go） | `internal/other/config.go` Reconcile（新增 key 默认 false） |
+| 形态 | 原生账号池 | key 池（app 层） | vendor 树 | vendor 树 + 桥接（`internal/trae2api/` + `internal/app/trae.go`，2026-11-04 换线） | key 池（四件套克隆） | key 池四件套 + 多子平台（`internal/other/`，platforms 数组） |
+| 凭据 | refreshToken/API key（Account） | API key 列表（zen keys） | auth 文件目录 | 便携快照目录（`data/trae2api/accounts/*.json`，含设备密钥；8765 helper / token----refreshToken 粘贴 / 原版面板导入三通道） | API key 列表（Keys） | 各子平台 key |
+| 启停字段 | `Account.PoolEnabled *bool` | key `routingEnabled` | `auth.poolEnabled *bool` | 账号总闸=vendored `disabled` + 反代开关=`proxy-config.json trae2apiRouting`（查表缺失=启用，新增身份经 `AccountAddedHook` 显式落 false） | `KeyRoutingEnabled map[string]bool` | `KeyRoutingEnabled map[string]bool`（按子平台） |
+| 默认禁用点 | `pool.go addAccount` | `reconcileZenKeyRouting` | vendor `panel/login.go`+`import.go` | vendor 注入 `accountstore.AccountAddedHook`（trae.go `traeAccountAdded`） | 各包 `ReconcileRouting`（config.go） | `internal/other/config.go` Reconcile（新增 key 默认 false） |
 | 启停 API | `/accounts/pool/enabled{,/all}` | `/opencode/keys/routing{,/all}` | `/workbuddy/enabled` | `/trae/accounts/enabled` + `/trae/accounts/routing{,/all}` | `/<or|amd|tokenharbor>/keys/routing{,/all}` | `/other/keys/routing{,/all}` |
 | 绑定代理 | `/accounts/proxy(/clear)` | `/opencode/keys/proxy(/clear)` | 行内 egCommit 暂存 | `/trae/accounts/proxy(/clear)` | `/<x>/keys/proxy(/clear)` | `/other/keys/proxy(/clear)`（按 slug） |
-| 选号过滤 | `pool.go accountPoolEnabled` | zen 轮转跳过禁用 key | wbpool ServableForRealm | `internal/trae/pool.go` 路由表过滤 | 各包 pool.go `RoutingEnabled` 过滤 | internal/other `Platform.RoutingEnabled` |
+| 选号过滤 | `pool.go accountPoolEnabled` | zen 轮转跳过禁用 key | wbpool ServableForRealm | vendor 注入 `pool.RoutingAllowed` 钩子（trae.go `traeRoutingAllowed`） | 各包 pool.go `RoutingEnabled` 过滤 | internal/other `Platform.RoutingEnabled` |
 | 平台设置 | /admin/api/config | /admin/api/opencode/config | wbConfigForm→vendor API | `/trae/config{,/update}` | `/admin/api/<x>/config{,/update}` | `/other/config{,/update}` + `/other/platforms`（子平台增删） |
 | 前端 tbody | `accountTableBody` | `ocKeysBody` | `wbAccountsBody` | `traeAccountsBody` | `orKeysBody`/`amdKeysBody`/`thKeysBody` | `otherKeysBody` + `otherPlatformBody` |
 | 快照变量 | `accSnapshot` | `keySnapshot` | `wbSnapshot` | `traeAccSnapshot` | `orKeySnapshot`/`amdKeySnapshot`/`thKeySnapshot` | `otherKeySnapshot` |
-| 网关前缀 | `cline-free/` | `zen:` | `wbcn:`/`wbgb:` | `trae:` | `oprt:` / `amd:` / `tkhb:` | 子平台自定前缀（如 `acme:`） |
+| 网关前缀 | `cline-free/` | `zen:` | `wbcn:`/`wbgb:` | `trae:`/`solo:`（+intl 域随配置），模型名透传 | `oprt:` / `amd:` / `tkhb:` | 子平台自定前缀（如 `acme:`） |
 | 添加入口弹窗 | `accAddDialog` | `zenKeyAddDialog` | `wbAddDialog` | `traeAddDialog` | `<x>KeyAddDialog` | `otherKeyAddDialog`/`otherPlatformDialog` |
 | 走池下拉 | `ppCline` | `ppZen` | `ppWb` | `ppTrae` | `ppOr`/`ppAmd`/`ppTh` | `ppOther` |
 | 仪表盘卡/统计桶 | dashCline/reqCline | dashOc/reqZen | dashWb/reqWb | dashTrae/reqTrae | dashOr/dashAmd/dashTh + req 同名 | dashOther/reqOther |

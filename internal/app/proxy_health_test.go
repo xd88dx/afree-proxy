@@ -14,7 +14,7 @@ import (
 	"afree-proxy/internal/openrouter"
 	"afree-proxy/internal/other"
 	"afree-proxy/internal/tokenharbor"
-	"afree-proxy/internal/trae"
+	traectl "afree-proxy/internal/trae2api/traectl"
 )
 
 // 代理在线率统计（纯被动口径）的行为回归：
@@ -196,7 +196,7 @@ func TestIsTransportLayerFailure(t *testing.T) {
 		{"nil", nil, false},
 		{"network dial", transport, true},
 		{"context canceled", context.Canceled, true}, // 传输层判定；取消过滤在 recordProxyOutcome 内
-		{"trae HTTPError", &trae.HTTPError{Status: 429, Code: "4023"}, false},
+		{"trae2api RefreshError", &traectl.RefreshError{HTTPStatus: 429, Code: 4023}, false},
 		{"amd HTTPError", &amd.HTTPError{Status: 502}, false},
 		{"openrouter HTTPError", &openrouter.HTTPError{Status: 500}, false},
 		{"tokenharbor HTTPError", &tokenharbor.HTTPError{Status: 503}, false},

@@ -15,7 +15,6 @@ import (
 	openrouter "afree-proxy/internal/openrouter"
 	"afree-proxy/internal/other"
 	"afree-proxy/internal/tokenharbor"
-	"afree-proxy/internal/trae"
 )
 
 // ============ /v1/responses 与 /v1/messages 的全平台接入 ============
@@ -97,28 +96,10 @@ func resolvePlatformChatCallerRaw(model string) (platformChatCall, bool) {
 			return resp, func(u map[string]any) { tokenharbor.RecordKeyTokens(usedKey, usageTokens(u, params)) }, nil
 		}, true
 	}
-	if id, ok := trae.StripPrefix(model); ok {
-		m, resolved := trae.Resolve(id)
-		if !resolved {
-			return rejectCaller(fmt.Sprintf("model %q is not a known trae model", id), false), true
-		}
-		if len(trae.AccountIDs()) == 0 {
-			return rejectCaller("No Trae accounts configured. Add accounts on the Trae page.", true), true
-		}
-		return func(ctx context.Context, params map[string]any, stream bool) (*http.Response, func(map[string]any), error) {
-			// 上游恒流式：聚合为 OpenAI chat SSE；缺 done 的断流产物原样
-			// 返回（无 error），由 bufferedStreamCaller 判完成并整体重试。
-			// 记账在聚合内部完成（RecordAccountTokens），无需回调。
-			if !stream {
-				resp, err := aggregateTraeCompletionResponse(ctx, params, m)
-				return resp, nil, err
-			}
-			data, _, _, err := aggregateTraeSSE(ctx, params, m)
-			if err != nil {
-				return nil, nil, err
-			}
-			return sseBytesResponse(data), nil, nil
-		}, true
+	// TraeWork 路由（vendored trae2api）：域前缀模型名透传，进程内进
+	// vendored /v1/chat/completions（OpenAI 原生 SSE，无需聚合翻译）。
+	if caller, ok := trae2apiCaller(model); ok {
+		return caller, true
 	}
 	if p, bare, ok := other.ResolvePrefix(model); ok && p != nil {
 		m, resolved := other.ResolveSelected(p, bare)

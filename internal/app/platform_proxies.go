@@ -16,14 +16,12 @@ import (
 	"afree-proxy/internal/openrouter"
 	"afree-proxy/internal/other"
 	"afree-proxy/internal/tokenharbor"
-	"afree-proxy/internal/trae"
 )
 
 func init() {
 	amd.SetUseProxiesResolver(func() *bool { return platformUseProxies("amd") })
 	openrouter.SetUseProxiesResolver(func() *bool { return platformUseProxies("oprt") })
 	tokenharbor.SetUseProxiesResolver(func() *bool { return platformUseProxies("tkhb") })
-	trae.SetUseProxiesResolver(func() *bool { return platformUseProxies("trae") })
 	other.SetUseProxiesResolver(func() *bool { return platformUseProxies("other") })
 }
 

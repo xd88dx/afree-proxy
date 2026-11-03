@@ -1,0 +1,6 @@
+{
+  "commit": "6a861d98052418dfd2cc48c345de49ec61770f2d",
+  "synced_at": "2026-11-04T04:20:00+08:00",
+  "upstream_version": "0.2.6",
+  "note": "首次 vendor 基线。上游含另一会话 2026-11-04 的 textcall 修复（scripts/trae2api-afree.patch，工作区未提交，属合法 WIP 例外）"
+}

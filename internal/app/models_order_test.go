@@ -1,16 +1,13 @@
 package app
 
 import (
-	"io"
 	"net/http"
-	"net/http/httptest"
 	"path/filepath"
 	"testing"
 
 	"afree-proxy/internal/amd"
 	"afree-proxy/internal/openrouter"
 	"afree-proxy/internal/tokenharbor"
-	"afree-proxy/internal/trae"
 	wbauth "afree-proxy/internal/workbuddy/auth"
 	wbpool "afree-proxy/internal/workbuddy/pool"
 )
@@ -216,29 +213,6 @@ func TestPlatformSegmentsAreIDSorted(t *testing.T) {
 	thc.Keys = []string{"thk_live_test"}
 	thc.KeyRoutingEnabled = map[string]bool{"thk_live_test": true}
 	tokenharbor.Set(thc)
-
-	// trae：种子条目不带 Native（按设计只服务解析兜底、不进展示列表），
-	// 所以用注入缝跑一遍目录同步造两条 Native 条目（t-b 故意放在 t-a 前面）。
-	traeSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case "/api/remote/v1/models":
-			io.WriteString(w, `{"data":{"list":[{"function":"solo_work_remote","models":[{"name":"t-w"}]}]}}`)
-		case "/api/ide/v1/get_detail_param":
-			io.WriteString(w, `{"config_info_list":[
-				{"config_name":"t-b","model_detail_list":[{"model_name":"t-b__dev"}]},
-				{"config_name":"t-a","model_detail_list":[{"model_name":"t-a__dev"}]}]}`)
-		default:
-			http.NotFound(w, r)
-		}
-	}))
-	defer traeSrv.Close()
-	traePrev, traeCatalogClient, traeCatalogURL := trae.Get(), trae.CatalogClient, trae.CatalogURLOverride
-	trae.CatalogClient = traeSrv.Client()
-	trae.CatalogURLOverride = traeSrv.URL + "/api/remote/v1/models"
-	trae.Set(&trae.Config{Gateway: traeSrv.URL, Accounts: []*trae.Account{{ID: "u1", Token: "tok"}}})
-	if _, err := trae.SyncCatalog(); err != nil {
-		t.Fatalf("trae SyncCatalog: %v", err)
-	}
 	t.Cleanup(func() {
 		openrouter.Set(orPrev)
 		openrouter.ConfigPath = orPath
@@ -246,16 +220,12 @@ func TestPlatformSegmentsAreIDSorted(t *testing.T) {
 		amd.ConfigPath = amdPath
 		tokenharbor.Set(thPrev)
 		tokenharbor.ConfigPath = thPath
-		trae.Set(traePrev)
-		trae.CatalogClient = traeCatalogClient
-		trae.CatalogURLOverride = traeCatalogURL
 	})
 
 	segs := map[string][]map[string]any{
 		"openrouter":  orModelList(),
 		"amd":         amdModelList(),
 		"tokenharbor": thModelList(),
-		"trae":        traeModelList(),
 	}
 	for name, seg := range segs {
 		if len(seg) == 0 {

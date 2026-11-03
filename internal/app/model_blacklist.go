@@ -16,7 +16,6 @@ import (
 	"afree-proxy/internal/openrouter"
 	"afree-proxy/internal/other"
 	"afree-proxy/internal/tokenharbor"
-	"afree-proxy/internal/trae"
 )
 
 // ============================================================================
@@ -409,7 +408,7 @@ func platformOfModel(model string) string {
 		return platOpenRouter
 	case strings.HasPrefix(model, tokenharbor.ModelPrefix):
 		return platTokenHarbor
-	case strings.HasPrefix(model, trae.ModelPrefix):
+	case trae2apiPlatformModel(model):
 		return platTrae
 	}
 	if i := strings.IndexByte(model, ':'); i > 0 {
@@ -649,7 +648,7 @@ func platformModelIDs(platform string) []string {
 	case platTokenHarbor:
 		rows = thModelList()
 	case platTrae:
-		rows = traeModelList()
+		rows = trae2apiModelEntries()
 	case platOther:
 		rows = otherModelList()
 	}
@@ -832,7 +831,7 @@ func testBlacklistModel(platform, model string) (map[string]any, string) {
 		}
 		return map[string]any{"ok": false, "model": model, "error": "no enabled tokenharbor key"}, "error"
 	case platTrae:
-		return traeProbeBlacklistedModel(bare)
+		return trae2apiProbeBlacklistedModel(model)
 	case platOther:
 		// 子平台按前缀定位：模型 ID 形如 <prefix>:<model>。
 		pfx := model

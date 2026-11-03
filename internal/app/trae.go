@@ -1,860 +1,864 @@
 package app
 
+// TraeWork 平台桥接层。
+//
+// 引擎 = vendored trae2api（XCool-603/trae2api，纯标准库 Go，internal/trae2api/）。
+// 上游自带：OpenAI 兼容 /v1/chat/completions（SSE）、域前缀模型目录
+// （trae:/solo:/trae-intl:/solo-intl:）、多账号池（分级冷却/熔断/降权/会话粘性）、
+// Web console、OAuth 登录与便携快照导入、自动签到。本文件只做三件事：
+//
+//  1. 装配：vendored server 进程内启动（不占额外端口），config 落
+//     DATA_DIR/trae2api-config.json（进配置监测清单），运行态落
+//     DATA_DIR/trae2api/（state/metrics/accounts，使用痕迹不进配置监测口径）。
+//  2. afree 特色接线（经 vendor 注入的函数变量，不产生 import 环）：
+//     出口接管（主/备绑定 fail-closed + 走池开关，见 proxy_binding 约定）、
+//     反代开关（RoutingAllowed 选号过滤）、新增身份默认禁用（AccountAddedHook）。
+//  3. 网关分发与面板管理 API：trae:/solo:/… 前缀模型名**透传**（vendored
+//     原生解析域前缀），/v1/models trae 段 + 费率过滤，/admin/api/trae/* 代理
+//     到 vendored 管理端点。
+//
+// 鉴权分层：vendored 的 cfg.APIKey/webPassword 恒空（上游 withAuth 注入匿名
+// 管理员），真正的门禁是 afree 的网关鉴权与 /admin 会话——vendored 引擎只从
+// afree 内部可达（进程内 ServeHTTP / 管道 client），不监听任何端口。
+
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"log"
-	"net"
 	"net/http"
+	"os"
+	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
 
 	"afree-proxy/internal/kit"
-	trae "afree-proxy/internal/trae"
+
+	traeaccountstore "afree-proxy/internal/trae2api/accountstore"
+	traecfg "afree-proxy/internal/trae2api/config"
+	traepool "afree-proxy/internal/trae2api/pool"
+	traerealm "afree-proxy/internal/trae2api/realm"
+	traeserver "afree-proxy/internal/trae2api/server"
+	traectl "afree-proxy/internal/trae2api/traectl"
 )
 
-// ============ Trae 平台装配 ============
-//
-// Trae 账号池平台（trae: 前缀，Cloud-IDE-JWT + refresh token）：上游为
-// TraeCode raw_chat 自有协议（internal/trae 实现线协议），本文件做管理
-// API、账号池写时复制操作与网关分发的 SSE 翻译（Trae 事件流 → OpenAI
-// chunk 流）。代理隔离语义与 key 池平台同构：每账号主/备出口绑定，双
-// 不可用整体跳过，绝不直连回退。
+// trae2apiVersion vendored 引擎版本（与上游 internal/server Version 对齐，
+// sync 脚本会提醒更新）。
+const trae2apiVersion = "0.2.6"
 
-// traeConfigPath Trae 配置文件路径（DATA_DIR/trae-config.json）。
-func traeConfigPath() string { return kit.ResolveDataPath("trae-config.json") }
+func traeConfigPath() string { return kit.ResolveDataPath("trae2api-config.json") }
+func traeDataDir() string    { return kit.ResolveDataPath("trae2api") }
 
-// initTrae 加载配置 + 注入出站解析/HTTP client 工厂。StartProxy 早期调用
-// 一次；失败只记日志不影响既有平台（与 WorkBuddy 子系统同口径）。
+// ============ 子系统装配 ============
+
+type trae2apiSubsystem struct {
+	mu     sync.Mutex
+	cfg    *traecfg.Config
+	srv    *traeserver.Server
+	cancel context.CancelFunc
+	bgDone chan struct{}
+}
+
+var (
+	trae2apiMu    sync.Mutex
+	trae2apiSub   *trae2apiSubsystem
+	traeHooksOnce sync.Once
+)
+
+// trae2apiCurrent 返回当前子系统快照（nil = 未装载，调用方按 503 处理）。
+func trae2apiCurrent() *trae2apiSubsystem {
+	trae2apiMu.Lock()
+	defer trae2apiMu.Unlock()
+	return trae2apiSub
+}
+
+// initTrae 启动 vendored trae2api 子系统。失败只记日志不影响既有平台
+// （与 WorkBuddy 子系统同口径）。StartProxy 早期调用一次。
 func initTrae() {
-	trae.UsagePath = kit.ResolveDataPath("trae-state.json")
-	trae.Load(traeConfigPath())
-	trae.SetExitResolver(func(acc *trae.Account) (string, bool) {
-		if acc == nil {
-			return "", true
+	if err := trae2apiStart(); err != nil {
+		log.Printf("trae2api subsystem unavailable: %v", err)
+	}
+}
+
+// trae2apiLoadConfig 载入 vendored 配置并套上 afree 硬约束。配置文件缺失时
+// 由 vendored Load 落出厂模板（网关默认 https://trae-api-cn.mchost.guru）。
+func trae2apiLoadConfig() (*traecfg.Config, error) {
+	cfg, err := traecfg.Load(traeConfigPath())
+	if err != nil {
+		return nil, err
+	}
+	traeApplyAfreeConstraints(cfg)
+	return cfg, nil
+}
+
+// traeApplyAfreeConstraints afree 侧硬约束（面板不可改，重启后强制生效）：
+//   - 出口一律经 afree 解析（traectl.StoreHTTPClient 接管），上游自带的全局
+//     代理与 per-account proxy 字段是死配置，清空防止"面板改了不生效"。
+//   - 数据目录钉到 DATA_DIR/trae2api/（state/metrics/accounts 归置一处）。
+//   - 鉴权放空：匿名管理员由上游注入，门禁在 afree 网关层。
+func traeApplyAfreeConstraints(cfg *traecfg.Config) {
+	// 网关空值兜底：vendored client 内部有同值默认，但面板要显示真实值，
+	// 配置文件也应携带它（用户在面板看到的与实际生效的一致）。
+	if strings.TrimSpace(cfg.Trae.ChatBase) == "" {
+		cfg.Trae.ChatBase = "https://trae-api-cn.mchost.guru"
+	}
+	cfg.DataDir = traeDataDir()
+	cfg.APIKey = ""
+	cfg.WebPassword = ""
+	cfg.Trae.Proxy = ""
+	for i := range cfg.Trae.Accounts {
+		cfg.Trae.Accounts[i].Proxy = ""
+	}
+}
+
+func trae2apiStart() error {
+	trae2apiMu.Lock()
+	defer trae2apiMu.Unlock()
+	if trae2apiSub != nil {
+		return nil
+	}
+	cfg, err := trae2apiLoadConfig()
+	if err != nil {
+		return fmt.Errorf("load config: %w", err)
+	}
+	srv, err := traeserver.New(cfg)
+	if err != nil {
+		return fmt.Errorf("build server: %w", err)
+	}
+	traeHooksOnce.Do(traeWireHooks)
+	sub := &trae2apiSubsystem{cfg: cfg, srv: srv, bgDone: make(chan struct{})}
+	ctx, cancel := context.WithCancel(context.Background())
+	sub.cancel = cancel
+	go sub.runBackground(ctx)
+	trae2apiSub = sub
+	log.Printf("trae2api subsystem started (engine v%s, gateway=%s, data=%s)",
+		trae2apiVersion, cfg.Trae.ChatBase, cfg.DataDir)
+	return nil
+}
+
+// trae2apiRestart 配置保存后重建子系统：先摘除（请求闸 503），旧实例落盘
+// 池状态再停，避免与 vendored 30s ticker 竞争写 state.json。
+func trae2apiRestart() error {
+	trae2apiMu.Lock()
+	old := trae2apiSub
+	trae2apiSub = nil
+	trae2apiMu.Unlock()
+	if old != nil {
+		if old.srv != nil {
+			_ = old.srv.Pool().Save()
 		}
-		main, backup, bound := traeBindingOf(acc.ID)
-		if !bound {
-			// 未绑定 = 全局规则：面板选直连时不走池
-			if !trae.ProxiesEnabled() {
-				if kit.DisableDirect() {
-					return "", false // 直连被禁：凭据失效（2026-10-28）
-				}
-				return "", true
-			}
-			url, _ := pickUpstreamProxyFor(pkTrae)
-			if url == "" && kit.DisableDirect() {
-				return "", false // 代理池空兜底的直连同样不放行
-			}
-			return url, true
+		if old.cancel != nil {
+			old.cancel()
+			<-old.bgDone
 		}
-		url, _, ok := pickBoundProxyFor(pkTrae, main, backup)
-		return url, ok
-	})
-	trae.SetClientProvider(proxyClientFor)
-	trae.SetProxyObserver(func(u string, ok bool, e error, ms int64) {
-		recordProxyOutcome(pkTrae, u, ok, e, ms)
-	})
-	// 按端点档位的封禁查询（2026-10-27）：trae.ModelList 展示过滤时回查
-	// app 层黑名单（scope 隔离：raw/remote/work 互不影响）。
-	trae.SetBanChecker(func(scope, bareID string) bool {
-		return TraeModelBannedIn(scope, bareID)
-	})
-	trae.SetAttemptObserver(func(ctx context.Context, acc *trae.Account, proxyURL string) {
-		if ctx == nil || acc == nil {
+	}
+	return trae2apiStart()
+}
+
+// runBackground vendored 后台任务（额度刷新 30min/签到定时/metrics 落盘
+// 2min）+ 池状态 30s 落盘（cmd/server main 的节奏）。ctx 取消时做末次落盘。
+func (sub *trae2apiSubsystem) runBackground(ctx context.Context) {
+	defer close(sub.bgDone)
+	go sub.srv.RunBackground(ctx)
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			_ = sub.srv.Pool().Save()
 			return
+		case <-ticker.C:
+			_ = sub.srv.Pool().Save()
 		}
-		setUpstreamInfo(ctx, fmt.Sprintf("account#%d", trae.AccountIndex(acc.ID)))
-		main, backup, bound := traeBindingOf(acc.ID)
-		if !proxyIsolationEnabled() {
-			bound = false
-			main, backup = "", ""
-		}
-		setUpstreamExit(ctx, proxyExitType(proxyURL, main, backup, bound))
+	}
+}
+
+// traeWireHooks 把 afree 侧钩子注入 vendored 包级变量（进程级单例，上游原样
+// 为 nil = 上游行为）。闭包全部经 trae2apiCurrent() 动态取当前子系统，重启
+// 后无需重挂。
+func traeWireHooks() {
+	traectl.StoreHTTPClient = traeStoreHTTPClient
+	traepool.RoutingAllowed = traeRoutingAllowed
+	traeaccountstore.AccountAddedHook = traeAccountAdded
+}
+
+// ============ 出口接管（主/备绑定 + 走池开关） ============
+
+// trae2apiProxyBinding 与 workbuddyProxyBinding 同语义：主优先、备兜底，
+// 双不可用 = 本次请求直接失败（隔离优先），绝不退回直连。
+type trae2apiProxyBinding struct {
+	Main   string `json:"main,omitempty"`
+	Backup string `json:"backup,omitempty"`
+}
+
+var (
+	traeBindingsMu     sync.Mutex
+	traeBindingsLoaded bool
+	traeBindings       = map[string]trae2apiProxyBinding{}
+)
+
+func loadTraeBindingsLocked() {
+	if traeBindingsLoaded {
+		return
+	}
+	traeBindingsLoaded = true
+	proxyFileMu.Lock()
+	f := loadProxyConfigFileLocked()
+	bindings := f.Trae2apiBindings
+	proxyFileMu.Unlock()
+	if bindings != nil {
+		traeBindings = bindings
+	}
+}
+
+func saveTraeBindingsLocked() {
+	cp := make(map[string]trae2apiProxyBinding, len(traeBindings))
+	for uid, b := range traeBindings {
+		cp[uid] = b
+	}
+	mutateProxyConfigFile(func(f *proxyConfigFileData) {
+		f.Trae2apiBindings = cp
 	})
-	// 启动即预热模型目录：先同步一次，再进 5 分钟轮询。展示层只列原生档
-	// 确认过的条目，首次同步完成前列表为空，不能等轮询第一跳（5 分钟）。
-	trae.InitCatalog()
-	go func() {
-		syncTraeCatalog(1)
-		startTraeModelsRefresher()
-	}()
-	// 额度定期刷新 + 自动签到巡检
-	startTraeJobs()
-}
-
-// startTraeModelsRefresher 每 5 分钟同步一次 live 模型目录（需要至少一个
-// 启用账号的 JWT；失败下一轮自然重试）。
-func startTraeModelsRefresher() {
-	ticker := time.NewTicker(5 * time.Minute)
-	for range ticker.C {
-		syncTraeCatalog(1)
-	}
-}
-
-// syncTraeCatalog 同步目录；attempts 为额外重试次数（不含首次）。
-// 没有启用账号时跳过（展示门控下同步也无意义）并返回错误供调用方判别。
-// 2026-10-31：同步失败不再静默吞掉，手动刷新端点据此报真实失败。
-func syncTraeCatalog(attempts int) error {
-	if !trae.HasEnabledAccount() {
-		return errors.New("no enabled Trae account")
-	}
-	var lastErr error
-	for i := 0; i <= attempts; i++ {
-		changed, err := trae.SyncCatalog()
-		if err == nil {
-			if changed > 0 {
-				log.Printf("trae model sync: %d models changed", changed)
-			}
-			return nil
-		}
-		lastErr = err
-		if i < attempts {
-			time.Sleep(time.Duration(i+1) * 2 * time.Second)
-		} else {
-			log.Printf("trae model sync failed: %v", err)
-		}
-	}
-	return lastErr
-}
-
-// traeModelList /v1/models 合并用的模型条目（trae: 前缀对外暴露）。
-func traeModelList() []map[string]any {
-	out := make([]map[string]any, 0)
-	for _, m := range trae.ModelList() {
-		entry := map[string]any{
-			"id":       trae.ModelPrefix + m.ID,
-			"object":   "model",
-			"created":  time.Now().UnixMilli(),
-			"owned_by": "trae",
-			"source":   "trae",
-			"status":   "active",
-			"cost":     "free",
-		}
-		if m.Context > 0 {
-			entry["context"] = m.Context
-		}
-		out = append(out, entry)
-	}
-	return out
 }
 
 // traeBindingOf 账号的绑定出口（主/备）；未绑定时 bound=false。
-func traeBindingOf(id string) (main, backup string, bound bool) {
-	a := trae.FindAccount(id)
-	if a == nil {
+func traeBindingOf(uid string) (main, backup string, bound bool) {
+	traeBindingsMu.Lock()
+	defer traeBindingsMu.Unlock()
+	loadTraeBindingsLocked()
+	b, ok := traeBindings[uid]
+	if !ok || (b.Main == "" && b.Backup == "") {
 		return "", "", false
 	}
-	if a.ProxyMain == "" && a.ProxyBackup == "" {
-		return "", "", false
-	}
-	return a.ProxyMain, a.ProxyBackup, true
+	return b.Main, b.Backup, true
 }
 
-// traeBoundRoutable 该账号绑定出口是否可路由（隔离判定，注入 trae.PickAccount）。
-// 未绑定账号恒可路由（走全局规则）；绑定代理已从池中删除/冷却中则跳过。
-func traeBoundRoutable(acc *trae.Account) bool {
+// traeProxiesEnabled Trae 平台走池开关（proxy-config.json 的 traeUseProxies；
+// nil = 未配置 = 走池，与其他平台同约定）。
+func traeProxiesEnabled() bool {
+	if v := platformUseProxies("trae"); v != nil {
+		return *v
+	}
+	return true
+}
+
+// traeGlobalExit 未绑定身份的全局出口：走池开关开 → 池内轮转；关 → 直连
+// （DisableDirect 时不放行）。与 workbuddyGlobalExit 同口径。
+func traeGlobalExit() (string, bool) {
+	if traeProxiesEnabled() {
+		url, _ := pickUpstreamProxyFor(pkTrae)
+		if url == "" && kit.DisableDirect() {
+			return "", false
+		}
+		return url, true
+	}
+	if kit.DisableDirect() {
+		return "", false
+	}
+	return "", true
+}
+
+// traeStoreHTTPClient vendored 出口接管钩子（traectl.StoreHTTPClient）。
+// 语义与 workbuddyProxyFor 一致：
+//   - 隔离关闭：忽略绑定，按全局走池开关。
+//   - 隔离开启且有绑定：主→备 fail-closed，双不可用返回必然失败的客户端。
+//   - 隔离开启且未绑定：全局规则；直连哨兵按 DisableDirect 判定。
+//
+// 返回 nil = 交给上游原生 client（直连哨兵/全局直连）；非 nil = 钉定出口。
+func traeStoreHTTPClient(s *traectl.Store) *http.Client {
+	if s == nil {
+		return nil
+	}
+	uid := traeUIDOfStore(s)
+	if uid == "" {
+		return nil
+	}
 	if !proxyIsolationEnabled() {
-		return true
+		return traeEgressClient(uid)
 	}
-	main, backup, bound := traeBindingOf(acc.ID)
+	main, backup, bound := traeBindingOf(uid)
 	if !bound {
-		return true
+		return traeEgressClient(uid)
 	}
-	return boundProxiesRoutableFor(pkTrae, main, backup)
-}
-
-// ============ Trae SSE → OpenAI 翻译 ============
-
-// traeLengthFinish 终止原因里的"截断"族（sse.py _finish_reason 映射）。
-var traeLengthFinish = map[string]bool{
-	"length": true, "max_tokens": true, "max_output_tokens": true, "max_token": true,
-	"token_limit": true, "model_context_window_exceeded": true,
-	"context_window_exceeded": true, "context_length_exceeded": true,
-}
-
-// traeMapFinishReason 上游原始 finish_reason → OpenAI 标准值。
-func traeMapFinishReason(fr string, hasTools bool) string {
-	low := strings.ToLower(strings.TrimSpace(fr))
-	switch {
-	case hasTools:
-		return "tool_calls"
-	case traeLengthFinish[low]:
-		return "length"
-	case strings.Contains(low, "content_filter"), strings.Contains(low, "safety"):
-		return "content_filter"
-	default:
-		return "stop"
+	url, _, ok := pickBoundProxyFor(pkTrae, main, backup)
+	if !ok {
+		return traeFailClosedClient()
 	}
+	return traePooledClient(url)
 }
 
-// traeAgg 一次尝试的 OpenAI SSE 累积器。
-type traeAgg struct {
-	buf    bytes.Buffer
-	model  string
-	accID  string
-	usage  *trae.Usage
-	tools  []trae.ToolCall
-	finish string
-	accTok int64
-}
-
-func (a *traeAgg) chunk(delta map[string]any, finish any) {
-	chunk := map[string]any{
-		"id":      "chatcmpl-trae-" + a.accID,
-		"object":  "chat.completion.chunk",
-		"created": time.Now().UnixMilli(),
-		"model":   a.model,
-		"choices": []any{map[string]any{
-			"index":         0,
-			"delta":         delta,
-			"finish_reason": finish,
-		}},
+// traeEgressClient 全局规则出口（未绑定/隔离关闭时）。
+func traeEgressClient(uid string) *http.Client {
+	url, ok := traeGlobalExit()
+	if !ok {
+		return traeFailClosedClient()
 	}
-	if a.usage != nil && finish != nil {
-		chunk["usage"] = map[string]any{
-			"prompt_tokens":     a.usage.Prompt,
-			"completion_tokens": a.usage.Completion,
-			"total_tokens":      a.usage.Total,
+	return traePooledClient(url)
+}
+
+// traePooledClient 把池代理地址换成带观测的客户端；空串 = 直连（交还上游）。
+func traePooledClient(proxyURL string) *http.Client {
+	if proxyURL == "" {
+		return nil
+	}
+	base := proxyClientFor(proxyURL)
+	return &http.Client{Transport: traeObserveTransport{inner: base.Transport, proxy: proxyURL}}
+}
+
+// traeFailClosedClient 出口解析失败（绑定全不可用/隔离禁直连）时返回的
+// 客户端：每次 RoundTrip 直接报错，宁弃请求不暴露直连。
+func traeFailClosedClient() *http.Client {
+	return &http.Client{Transport: traeFailClosedTransport{}}
+}
+
+type traeFailClosedTransport struct{}
+
+func (traeFailClosedTransport) RoundTrip(*http.Request) (*http.Response, error) {
+	return nil, errors.New("trae2api: no usable egress (bound exits down or isolation denies direct)")
+}
+
+// traeObserveTransport 出站观测：出口健康统计 + 请求日志「账号/出口」列。
+// ctx 取自 vendored handler 的请求链（afree 直转路径带着原始请求上下文，
+// 面板/定时任务调用没有日志槽位时 setUpstreamInfo 内部 no-op）。
+type traeObserveTransport struct {
+	inner http.RoundTripper
+	proxy string
+}
+
+func (t traeObserveTransport) RoundTrip(r *http.Request) (*http.Response, error) {
+	if ctx := r.Context(); ctx != nil {
+		uid := traeUIDFromCtx(r)
+		if uid != "" {
+			setUpstreamInfo(ctx, trae2apiUpstreamLabel(uid))
+			setUpstreamExit(ctx, trae2apiExitType(uid, t.proxy))
 		}
 	}
-	b, _ := json.Marshal(chunk)
-	a.buf.WriteString("data: ")
-	a.buf.Write(b)
-	a.buf.WriteString("\n\n")
+	start := time.Now()
+	resp, err := t.inner.RoundTrip(r)
+	recordProxyOutcome(pkTrae, t.proxy, err == nil, err, time.Since(start).Milliseconds())
+	return resp, err
 }
 
-// traeStrategy 返回 Trae 的选号策略。优先级（高 → 低）：
-//  1. TRAE_STRATEGY 环境变量（Trae 独立策略，显式设置即覆盖）
-//  2. 面板「Selection strategy」（trae.Config.Selection）
-//  3. 全局账号池策略 proxyConfig.Strategy（POOL_STRATEGY，默认 round_robin）
-//
-// 取值 round_robin / fill / random / credit-priority。credit-priority 是
-// Trae 独有能力（额度余量多者优先），其它平台没有对应语义。
-func traeStrategy() string {
-	if s := strings.TrimSpace(envStr("TRAE_STRATEGY")); s != "" {
-		switch s {
-		case "round_robin", "fill", "random", "credit-priority":
-			return s
-		default:
-			log.Printf("invalid TRAE_STRATEGY %q, ignored (round_robin / fill / random / credit-priority)", s)
+// traeUIDFromCtx 从请求的 Authorization/vendored 侧不可行——出口 client 不带
+// 账号身份，这里退化为按 proxy 槽位只填出口列。账号列由面板凭据页呈现。
+func traeUIDFromCtx(*http.Request) string { return "" }
+
+// trae2apiUpstreamLabel 日志「账号/Key」列：account #N（与 wb 同口径，行号
+// 取池内顺序）。
+func trae2apiUpstreamLabel(uid string) string {
+	n := 0
+	if sub := trae2apiCurrent(); sub != nil {
+		for _, a := range sub.srv.Pool().All() {
+			n++
+			if a.UID == uid {
+				return fmt.Sprintf("account #%d", n)
+			}
 		}
 	}
-	if s := strings.TrimSpace(trae.Get().Selection); s != "" {
-		return s
-	}
-	return globalStrategy()
+	return fmt.Sprintf("account #%d", 0)
 }
 
-// traeStreamOutcome 一次流消费的结果分类（缓冲层重试与 Work 回落的判据）。
-type traeStreamOutcome int
-
-const (
-	traeOutcomeComplete          traeStreamOutcome = iota // 收到 done，完整
-	traeOutcomeBrokenNoModelEvent                         // 断流且未出任何模型事件（可 Work 回落）
-	traeOutcomeBrokenPartial                              // 出过模型事件后断流（回放部分内容，缓冲层重试）
-	traeOutcomeRateLimited                                // 流内 error 事件且限流（缓冲层换号重试）
-)
-
-// isTraeModelEvent 计入"模型事件"的事件类型（对齐上游 observed_model_event；
-// queue 是排队提示不算）。
-func isTraeModelEvent(t string) bool {
-	switch t {
-	case "text", "reasoning", "usage", "done":
-		return true
+// trae2apiExitType 与 traeStoreHTTPClient 同口径判定出口类型（面板日志列）。
+func trae2apiExitType(uid, exitRaw string) string {
+	if !proxyIsolationEnabled() {
+		return proxyExitType(exitRaw, "", "", false)
 	}
-	return false
+	main, backup, bound := traeBindingOf(uid)
+	if !bound {
+		return proxyExitType(exitRaw, "", "", false)
+	}
+	return proxyExitType(exitRaw, main, backup, true)
 }
 
-// aggregateTraeSSE 运行一次 trae.Chat 并把事件流翻译成完整 OpenAI SSE 字节。
-// 流中途断开/收到 error 事件：返回已生成部分（无 [DONE]，缓冲层据此重试）；
-// 上游在首字节前失败：返回 err。usage 随返回值带回（记账用）。
-// 断流未出任何模型事件时先尝试同账号 Work 回落（上游 work fallback 语义）。
-func aggregateTraeSSE(ctx context.Context, params map[string]any, m trae.Model) (data []byte, usage *trae.Usage, accID string, err error) {
-	opts := trae.ChatOpts{
-		Model:         m,
-		Params:        params,
-		Strategy:      traeStrategy(),
-		BoundRoutable: traeBoundRoutable,
+// traeUIDOfStore 由凭据存储反查池 UID（Store 指针比对，账号量级 = 几十，
+// 每次出站扫一遍可忽略）。config 文件直挂的 storage_path 账号 afree 不使用
+// （账号一律走 data/accounts 快照），识别不了时返回空串 = 不接管出口。
+func traeUIDOfStore(s *traectl.Store) string {
+	sub := trae2apiCurrent()
+	if sub == nil || s == nil {
+		return ""
 	}
-	stream, acc, err := trae.Chat(ctx, opts)
-	if err != nil {
-		traeAutoBanOnHTTPError(m, acc, err)
-		return nil, nil, "", err
-	}
-	data, usage, outcome, cerr := consumeTraeAgg(ctx, stream, m, acc)
-	if cerr != nil {
-		return nil, usage, acc.ID, cerr
-	}
-	switch outcome {
-	case traeOutcomeComplete:
-		return data, usage, acc.ID, nil
-	case traeOutcomeBrokenNoModelEvent:
-		// 首个模型事件前流结束：对齐上游 work fallback（main.py:8940，
-		// !observed_model_event && retryable → 换 solo_work_remote 会话重发）。
-		// 同时给该账号 30s 短冷却（2026-10-29 排查：EOF 成簇出现时该账号上游
-		// 并发坑位被活会话/僵尸会话占满，继续重试只会再吃一个会话）——缓冲层
-		// 下一次 Chat 自动轮换到其他账号；Work 回落不受影响（同账号直达）。
-		trae.Cooldown(acc.ID, 30*time.Second)
-		if wdata, wusage, wok := traeWorkFallbackOnce(ctx, acc, stream, opts, m); wok {
-			return wdata, wusage, acc.ID, nil
+	for _, ch := range sub.srv.Channels() {
+		for _, a := range ch.Accounts() {
+			if a.Store == s {
+				return a.UID
+			}
 		}
-		return data, usage, acc.ID, nil
-	default:
-		// Partial / RateLimited：交缓冲层按断流重试（原语义）
-		return data, usage, acc.ID, nil
-	}
-}
-
-// traeWorkFallbackOnce 同账号 Work 传输回落一次：仅在断流发生于 remote 档
-//（agent 执行器）且未出模型事件时触发；Work 侧也断/出错则放弃回落，
-// 交缓冲层重试。
-func traeWorkFallbackOnce(ctx context.Context, acc *trae.Account, first *trae.Stream, opts trae.ChatOpts, m trae.Model) (data []byte, usage *trae.Usage, ok bool) {
-	if first == nil || first.Tier != "remote" {
-		return nil, nil, false
-	}
-	wok, wstream, err := trae.ChatWorkFallback(ctx, acc, opts)
-	if !wok {
-		return nil, nil, false
-	}
-	if err != nil {
-		log.Printf("  trae work fallback failed: %v", err)
-		return nil, nil, false
-	}
-	defer wstream.Close()
-	log.Printf("  trae work fallback: remote ended before first model event, account=%q model=%s", acc.Label, m.ID)
-	data, usage, outcome, cerr := consumeTraeAgg(ctx, wstream, m, acc)
-	if cerr != nil || outcome != traeOutcomeComplete {
-		return nil, nil, false
-	}
-	return data, usage, true
-}
-
-// consumeTraeAgg 消费一条 trae 流并聚合为 OpenAI SSE 字节（含 Close）。
-// 断流（读错误 / EOF 未见到 done）时返回已聚合的部分内容，由调用方按
-// outcome 决定重试方式。
-func consumeTraeAgg(ctx context.Context, stream *trae.Stream, m trae.Model, acc *trae.Account) (data []byte, usage *trae.Usage, outcome traeStreamOutcome, err error) {
-	defer stream.Close()
-	agg := &traeAgg{model: trae.ModelPrefix + m.ID, accID: acc.ID}
-	agg.chunk(map[string]any{"role": "assistant"}, nil)
-	sawModelEvent := false
-	for {
-		ev, rerr := stream.Next()
-		if rerr != nil {
-			// 上游读错误：部分内容 + 让缓冲层按断流重试
-			if sawModelEvent {
-				return agg.buf.Bytes(), agg.usage, traeOutcomeBrokenPartial, nil
-			}
-			return agg.buf.Bytes(), agg.usage, traeOutcomeBrokenNoModelEvent, nil
-		}
-		if ev == nil {
-			// 上游 EOF 未见到 done：视为断流（缓冲层重试 / Work 回落）
-			if sawModelEvent {
-				return agg.buf.Bytes(), agg.usage, traeOutcomeBrokenPartial, nil
-			}
-			return agg.buf.Bytes(), agg.usage, traeOutcomeBrokenNoModelEvent, nil
-		}
-		if isTraeModelEvent(ev.Type) {
-			sawModelEvent = true
-		}
-		switch ev.Type {
-		case "text", "queue":
-			if ev.Text != "" {
-				agg.chunk(map[string]any{"content": ev.Text}, nil)
-			}
-		case "reasoning":
-			if ev.Text != "" {
-				agg.chunk(map[string]any{"reasoning_content": ev.Text}, nil)
-			}
-		case "usage":
-			agg.usage = ev.Usage
-		case "done":
-			agg.finish = ev.FinishReason
-			if agg.usage == nil {
-				agg.usage = stream.Usage
-			}
-			agg.tools = stream.ToolCallsSnapshot()
-			// 工具调用整块输出（OpenAI 增量形态：先 id/name/空参，再全参）
-			for i, tc := range agg.tools {
-				args := tc.ArgsJSON
-				if args == "" {
-					args = "{}"
-				}
-				id := tc.ID
-				if id == "" {
-					id = fmt.Sprintf("call_trae_%d_%s", i, agg.accID)
-				}
-				agg.chunk(map[string]any{"tool_calls": []any{map[string]any{
-					"index": i, "id": id, "type": "function",
-					"function": map[string]any{"name": tc.Name, "arguments": args},
-				}}}, nil)
-			}
-			reason := traeMapFinishReason(agg.finish, len(agg.tools) > 0)
-			agg.chunk(map[string]any{}, reason)
-			agg.buf.WriteString("data: [DONE]\n\n")
-			return agg.buf.Bytes(), agg.usage, traeOutcomeComplete, nil
-		case "error":
-			// 上游业务错误：限流/配额换账号可能修复，保留断流语义让缓冲层
-			// 重试；其余（模型不存在 4023、参数/权益 4001/1005 等）换号无用，
-			// 直接上抛真实原因——不要再退化成"空流"。
-			if stream.Err != nil && stream.Err.RateLimited {
-				return agg.buf.Bytes(), agg.usage, traeOutcomeRateLimited, nil
-			}
-			traeAutoBanModel(m, acc, ev.Code, traeEventErrorText(ev), stream.Transport)
-			return nil, agg.usage, traeOutcomeBrokenPartial, fmt.Errorf("trae upstream error: %s", traeEventErrorText(ev))
-		}
-	}
-}
-
-// traeEventErrorText 上游 error 事件的可读文案（带业务码，便于面板排障）。
-func traeEventErrorText(ev *trae.StreamEvent) string {
-	msg := strings.TrimSpace(ev.Message)
-	if msg == "" {
-		msg = "upstream error event"
-	}
-	if ev.Code != "" {
-		return msg + " (code " + ev.Code + ")"
-	}
-	return msg
-}
-
-// ============ 模型级失败自动封禁 ============
-//
-// 上游这几类答复换账号、重试都不会变，却只有真调一次才知道：
-//   - 1005 套餐/权益不足（实测 extra 带 {"plan":3}）
-//   - 4023 模型名未知（目录里的 web-only/旧名）
-//   - 4001 参数/权益错误（实测 glm-5.3 最小请求也 4001）
-//
-// 处理：命中后加入「平台+模型」黑名单（与面板「封禁模型」同表、同解禁
-// 入口），/v1/models 立刻不再列出，客户端不会反复选中它吃 502。
-//
-// 4001 的文案与"客户端传了上游不接受的东西"同形，直接封会误伤，故先复核：
-// 用**同一个账号**发一个纯文本最小请求，能出字说明是本次请求形状问题，不封；
-// 照样 4001 才封。复核异步执行，不拖慢客户端响应。
-
-// traeAutoBanDecision 错误码 → (是否封禁, 是否需复核)。
-func traeAutoBanDecision(code string) (ban, verify bool) {
-	switch strings.TrimSpace(code) {
-	case "1005", "4023":
-		return true, false
-	case "4001":
-		return true, true
-	}
-	return false, false
-}
-
-// traeAutoBanInflight 同一模型的复核去重（并发 502 不叠加探测请求）。
-var traeAutoBanInflight sync.Map
-
-// traeAutoBanOnHTTPError HTTP 级上游错误与流内 error 事件同判据自动封禁：
-// 上游以非 200 返回业务码时错误走 trae.Chat 的返回值（而非流内 error 事件），
-// Chat 已对 1005/4023/4001 不再换号重试，封禁入口也要对齐——否则同样的
-// 模型级失败每次都只报错不进黑名单，/v1/models 继续列出。
-func traeAutoBanOnHTTPError(m trae.Model, acc *trae.Account, err error, transport ...string) {
-	var he *trae.HTTPError
-	if !errors.As(err, &he) {
-		return
-	}
-	t := ""
-	if len(transport) > 0 && transport[0] != "" {
-		t = transport[0]
-	} else if he.Transport != "" {
-		t = he.Transport
-	}
-	traeAutoBanModel(m, acc, he.Code, fmt.Sprintf("HTTP %d: %s", he.Status, kit.Truncate(he.Body, 300)), t)
-}
-
-// traeTransportScope 传输名 → 封禁档位（remote/traecode/traework）。
-// 空/未知 → 空串（全档封禁，保守兜底）。agent 类型名（solo_agent_remote /
-// solo_work_remote）是 Stream/HTTPError.Transport 的原始取值，一并归一，
-// 避免 remote 流的失败落成"全档封禁"（2026-10-29 排查发现）。
-func traeTransportScope(transport string) string {
-	switch strings.ToLower(strings.TrimSpace(transport)) {
-	case "remote", "solo_agent_remote":
-		return "remote"
-	case "work", "solo_work_remote":
-		return "traework"
-	case "raw":
-		return "traecode"
 	}
 	return ""
 }
 
-// traeAutoBanModel 命中判据后封禁；4001 走异步复核。封禁按失败发生的
-// 传输落端点档位（2026-10-27 用户定）：raw(trae-b) 的失败不影响
-// remote(trae-a) / work(trae-c) 的同 ID 模型。transport 空 = 未知传输，
-// 全档封禁（保守兜底）。
-func traeAutoBanModel(m trae.Model, acc *trae.Account, code, detail, transport string) {
-	ban, verify := traeAutoBanDecision(code)
-	if !ban {
-		return
-	}
-	id := trae.ModelPrefix + m.ID
-	scope := traeTransportScope(transport)
-	if scope != "" && TraeModelBannedIn(scope, m.ID) {
-		return
-	}
-	if scope == "" && IsModelBlacklisted(id) {
-		return
-	}
-	reason := BanReasonAuto
-	if strings.TrimSpace(code) == "4023" {
-		reason = BanReasonModelGone
-	}
-	if !verify {
-		BlacklistModel(platTrae, id, code, reason, detail, scope)
-		return
-	}
-	if _, loaded := traeAutoBanInflight.LoadOrStore(id+"@"+scope, struct{}{}); loaded {
-		return
-	}
-	go func() {
-		defer traeAutoBanInflight.Delete(id + "@" + scope)
-		if !traeProbeFailsModel(m, acc) {
-			return
-		}
-		BlacklistModel(platTrae, id, code, reason, detail, scope)
-	}()
-}
+// ============ 反代开关（路由参与） ============
 
-// traeProbeFailsModel 同账号纯文本复核：仍然得到模型级失败返回 true；
-// 能出字 / 限流 / 读不出结论一律 false（宁可漏封，不误封）。
-func traeProbeFailsModel(m trae.Model, acc *trae.Account) bool {
-	if acc == nil {
-		return false
+var (
+	traeRoutingMu     sync.Mutex
+	traeRoutingLoaded bool
+	// traeRouting uid → 反代开关（true=参与模型路由）。查表缺失 = 启用
+	// （存量缺字段按启用的兼容边界）；新增身份经 traeAccountAdded 显式落
+	// false（新增身份默认禁用铁律）。
+	traeRouting = map[string]bool{}
+)
+
+func loadTraeRoutingLocked() {
+	if traeRoutingLoaded {
+		return
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
-	defer cancel()
-	params := map[string]any{
-		"model":      trae.ModelPrefix + m.ID,
-		"messages":   []any{map[string]any{"role": "user", "content": "Reply with exactly: OK"}},
-		"max_tokens": 16,
-	}
-	stream, _, err := trae.Chat(ctx, trae.ChatOpts{Model: m, Params: params, PinAccount: acc})
-	if err != nil {
-		var he *trae.HTTPError
-		if errors.As(err, &he) && !he.RateLimited {
-			ban, _ := traeAutoBanDecision(he.Code)
-			return ban
-		}
-		return false
-	}
-	defer stream.Close()
-	for {
-		ev, rerr := stream.Next()
-		if rerr != nil || ev == nil {
-			return false // 断流/EOF 读不出结论
-		}
-		switch ev.Type {
-		case "text", "reasoning", "done":
-			return false // 能产出内容 = 模型本身可用
-		case "error":
-			if stream.Err != nil && stream.Err.RateLimited {
-				return false
-			}
-			ban, _ := traeAutoBanDecision(ev.Code)
-			return ban
-		}
+	traeRoutingLoaded = true
+	proxyFileMu.Lock()
+	f := loadProxyConfigFileLocked()
+	routing := f.Trae2apiRouting
+	proxyFileMu.Unlock()
+	if routing != nil {
+		traeRouting = routing
 	}
 }
 
-// aggregateTraeCompletion 非流式：聚合事件流为一份 chat.completion JSON。
-// 同时返回服务账号 ID（token 记账归属）。
-func aggregateTraeCompletion(ctx context.Context, params map[string]any, m trae.Model) (map[string]any, string, error) {
-	stream, acc, err := trae.Chat(ctx, trae.ChatOpts{
-		Model:         m,
-		Params:        params,
-		Strategy:      traeStrategy(),
-		BoundRoutable: traeBoundRoutable,
+func saveTraeRoutingLocked() {
+	cp := make(map[string]bool, len(traeRouting))
+	for uid, v := range traeRouting {
+		cp[uid] = v
+	}
+	mutateProxyConfigFile(func(f *proxyConfigFileData) {
+		f.Trae2apiRouting = cp
 	})
-	if err != nil {
-		traeAutoBanOnHTTPError(m, acc, err)
-		return nil, "", err
-	}
-	completion, cerr := consumeTraeCompletion(ctx, stream, m, acc)
-	if cerr == nil {
-		return completion, acc.ID, nil
-	}
-	// 空流（remote 档首事件前断流）→ Work 回落一次，与流式路径同口径
-	if errors.Is(cerr, errTraeEmptyStream) {
-		if wcompletion, wok := traeWorkFallbackCompletion(ctx, acc, stream, trae.ChatOpts{
-			Model: m, Params: params, Strategy: traeStrategy(), BoundRoutable: traeBoundRoutable,
-		}, m); wok {
-			return wcompletion, acc.ID, nil
-		}
-	}
-	return nil, acc.ID, cerr
 }
 
-// errTraeEmptyStream 流未产出任何内容即结束（触发 Work 回落判据）。
-var errTraeEmptyStream = errors.New("trae upstream returned an empty stream")
-
-// traeWorkFallbackCompletion 非流式路径的 Work 回落（对齐 traeWorkFallbackOnce）。
-func traeWorkFallbackCompletion(ctx context.Context, acc *trae.Account, first *trae.Stream, opts trae.ChatOpts, m trae.Model) (map[string]any, bool) {
-	if first == nil || first.Tier != "remote" {
-		return nil, false
-	}
-	wok, wstream, err := trae.ChatWorkFallback(ctx, acc, opts)
-	if !wok {
-		return nil, false
-	}
-	if err != nil {
-		log.Printf("  trae work fallback failed: %v", err)
-		return nil, false
-	}
-	defer wstream.Close()
-	log.Printf("  trae work fallback (non-stream): remote ended before first model event, account=%q model=%s", acc.Label, m.ID)
-	completion, cerr := consumeTraeCompletion(ctx, wstream, m, acc)
-	if cerr != nil {
-		return nil, false
-	}
-	return completion, true
-}
-
-// consumeTraeCompletion 非流式消费一条 trae 流（含 Close），聚合为 completion。
-func consumeTraeCompletion(ctx context.Context, stream *trae.Stream, m trae.Model, acc *trae.Account) (map[string]any, error) {
-	defer stream.Close()
-	var content, reasoning strings.Builder
-	var usage *trae.Usage
-	for {
-		ev, rerr := stream.Next()
-		if rerr != nil {
-			// 读错误：零内容视为空流（可 Work 回落，对齐上游 read-timeout
-			// retryable 语义）；已出内容按错误上抛
-			if content.Len() == 0 && reasoning.Len() == 0 && len(stream.ToolCallsSnapshot()) == 0 {
-				return nil, fmt.Errorf("trae upstream returned an empty stream (%w)", errTraeEmptyStream)
-			}
-			return nil, fmt.Errorf("trae upstream stream error: %w", rerr)
-		}
-		if ev == nil {
-			break
-		}
-		switch ev.Type {
-		case "text", "queue":
-			content.WriteString(ev.Text)
-		case "reasoning":
-			reasoning.WriteString(ev.Text)
-		case "usage":
-			usage = ev.Usage
-		case "error":
-			traeAutoBanModel(m, acc, ev.Code, traeEventErrorText(ev), stream.Transport)
-			return nil, fmt.Errorf("trae upstream error: %s", traeEventErrorText(ev))
-		case "done":
-			if usage == nil {
-				usage = stream.Usage
-			}
-			return buildTraeCompletion(m, content.String(), reasoning.String(), stream.ToolCallsSnapshot(), usage, ev.FinishReason), nil
-		}
-	}
-	// 无 done 终止：有内容就按现状返回，否则报错（空响应不伪装成功）
-	if content.Len() > 0 || reasoning.Len() > 0 || len(stream.ToolCallsSnapshot()) > 0 {
-		return buildTraeCompletion(m, content.String(), reasoning.String(), stream.ToolCallsSnapshot(), usage, ""), nil
-	}
-	return nil, errTraeEmptyStream
-}
-
-// buildTraeCompletion 组装 OpenAI chat.completion 响应体。
-func buildTraeCompletion(m trae.Model, content, reasoning string, tools []trae.ToolCall, usage *trae.Usage, finish string) map[string]any {
-	msg := map[string]any{"role": "assistant", "content": content}
-	if reasoning != "" {
-		msg["reasoning_content"] = reasoning
-	}
-	if len(tools) > 0 {
-		tcs := make([]any, 0, len(tools))
-		for i, tc := range tools {
-			args := tc.ArgsJSON
-			if args == "" {
-				args = "{}"
-			}
-			id := tc.ID
-			if id == "" {
-				id = fmt.Sprintf("call_trae_%d", i)
-			}
-			tcs = append(tcs, map[string]any{
-				"id": id, "type": "function",
-				"function": map[string]any{"name": tc.Name, "arguments": args},
-			})
-		}
-		msg["tool_calls"] = tcs
-	}
-	resp := map[string]any{
-		"id":      "chatcmpl-trae",
-		"object":  "chat.completion",
-		"created": time.Now().UnixMilli(),
-		"model":   trae.ModelPrefix + m.ID,
-		"choices": []any{map[string]any{
-			"index":         0,
-			"message":       msg,
-			"finish_reason": traeMapFinishReason(finish, len(tools) > 0),
-		}},
-	}
-	if usage != nil {
-		resp["usage"] = map[string]any{
-			"prompt_tokens":     usage.Prompt,
-			"completion_tokens": usage.Completion,
-			"total_tokens":      usage.Total,
-		}
-	}
-	return resp
-}
-
-// handleTraeChat Trae chat/completions 转发（网关命中 trae: 前缀时调用）。
-// 上游永远流式：流式路径走"缓冲+中断重试"（与 cline/zen 同语义）；非流式
-// 由聚合器拼出完整 chat.completion。
-func handleTraeChat(w http.ResponseWriter, r *http.Request, params map[string]any) {
-	bare, _ := trae.StripPrefix(mustString(params["model"]))
-	m, ok := trae.Resolve(bare)
+func traeRoutingGet(uid string) bool {
+	traeRoutingMu.Lock()
+	defer traeRoutingMu.Unlock()
+	loadTraeRoutingLocked()
+	v, ok := traeRouting[uid]
 	if !ok {
-		writeJSON(w, http.StatusBadRequest, map[string]any{
-			"error": map[string]string{"message": fmt.Sprintf("model %q is not a known trae model", bare), "type": "invalid_request_error"},
-		})
+		return true
+	}
+	return v
+}
+
+func traeRoutingSet(uid string, enabled bool) {
+	traeRoutingMu.Lock()
+	defer traeRoutingMu.Unlock()
+	loadTraeRoutingLocked()
+	traeRouting[uid] = enabled
+	saveTraeRoutingLocked()
+}
+
+// traeRoutingAllowed vendored 反代开关钩子（traepool.RoutingAllowed）：关闭
+// 的账号不参与模型路由选号；签到/额度刷新等维护任务不经 Pick，不受影响。
+func traeRoutingAllowed(uid string) bool {
+	return traeRoutingGet(uid)
+}
+
+// traeAccountAdded vendored 新增身份钩子（traeaccountstore.AccountAddedHook）：
+// 新增身份默认不参与路由（2026-10-12 铁律），落盘后由面板显式打开。
+func traeAccountAdded(snap *traectl.CredentialSnapshot) {
+	if snap == nil {
 		return
 	}
-	if len(trae.AccountIDs()) == 0 {
-		writeJSON(w, http.StatusUnauthorized, map[string]any{
-			"error": map[string]string{"message": "No Trae accounts configured. Add accounts on the Trae page.", "type": "auth_error"},
-		})
-		return
+	uid := snap.Product + "-" + snap.UserID
+	traeRoutingSet(uid, false)
+	log.Printf("trae2api: account %s imported (routing disabled by default)", uid)
+}
+
+// ============ 可路由性与模型目录 ============
+
+// trae2apiRoutableCount 有凭据、账号开关开且反代开关开的账号数。0 = 整平台
+// 503 拒路由 + /v1/models 摘除（与 wb/cline 同闸）。
+func trae2apiRoutableCount() int {
+	sub := trae2apiCurrent()
+	if sub == nil {
+		return 0
 	}
-	isStream, _ := params["stream"].(bool)
-	if isStream {
-		handleStreamBufferedGeneric(w, r, "trae", params, func(ctx context.Context) (*http.Response, func(map[string]any), error) {
-			data, usage, accID, err := aggregateTraeSSE(ctx, params, m)
-			if err != nil {
-				return nil, nil, err
+	n := 0
+	for _, st := range sub.srv.Pool().List() {
+		if !st.Disabled && traeRoutingGet(st.UID) {
+			n++
+		}
+	}
+	return n
+}
+
+// trae2apiIntlEnabled 国际域（trae-intl:/solo-intl:）是否透出：跟随上游
+// intl 配置（默认开）。关闭时这四个前缀在网关层直接拒绝，避免 vendored 的
+// 跨域兜底把它们悄悄路由到 CN 账号。
+func trae2apiIntlEnabled() bool {
+	sub := trae2apiCurrent()
+	if sub == nil {
+		return false
+	}
+	return sub.cfg.Intl.Enabled
+}
+
+// trae2apiModelPrefixes 网关层认可的域前缀（透传给 vendored）。
+func trae2apiModelPrefixes() []string {
+	p := []string{traerealm.Trae + ":", traerealm.Solo + ":"}
+	if trae2apiIntlEnabled() {
+		p = append(p, traerealm.TraeIntl+":", traerealm.SoloIntl+":")
+	}
+	return p
+}
+
+// isTrae2apiModel 模型名是否归 TraeWork 平台（域前缀透传；intl 前缀仅在
+// 上游 intl 开启时认可）。
+func isTrae2apiModel(model string) bool {
+	for _, p := range trae2apiModelPrefixes() {
+		if strings.HasPrefix(model, p) {
+			return true
+		}
+	}
+	return false
+}
+
+// trae2apiPlatformModel 静态前缀判定（不随 intl 开关变化）——封禁/路由归类
+// 用：四个域前缀永远属于 TraeWork 平台命名空间。
+func trae2apiPlatformModel(model string) bool {
+	for _, p := range []string{
+		traerealm.Trae + ":", traerealm.Solo + ":",
+		traerealm.TraeIntl + ":", traerealm.SoloIntl + ":",
+	} {
+		if strings.HasPrefix(model, p) {
+			return true
+		}
+	}
+	return false
+}
+
+// trae2apiModelExists id 是否是 vendored 目录里的真实模型（combo 别名冲突
+// 检查用；intl 关闭时其域渠道不存在 → 自然不存在）。
+func trae2apiModelExists(id string) bool {
+	sub := trae2apiCurrent()
+	if sub == nil {
+		return false
+	}
+	for _, ch := range sub.srv.Channels() {
+		for _, e := range ch.ModelEntries() {
+			if eid, _ := e["id"].(string); eid == id {
+				return true
 			}
-			resp := &http.Response{
-				StatusCode: http.StatusOK,
-				Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
-				Body:       io.NopCloser(bytes.NewReader(data)),
+		}
+	}
+	return false
+}
+
+// trae2apiRateFilterThreshold 费率过滤阈值（0 = 关）。存 proxy-config.json
+// 的 trae2apiModelRateFilter（afree 侧配置，与 vendored 费率元数据同源比较）。
+func trae2apiRateFilterThreshold() float64 {
+	proxyFileMu.Lock()
+	defer proxyFileMu.Unlock()
+	f := loadProxyConfigFileLocked()
+	return f.Trae2apiModelRateFilter
+}
+
+// trae2apiModelEntries /v1/models 合并用的 Trae 段条目。模型名透传原则：
+// 条目 id 保持 vendored 原生形态（trae:xxx / solo:xxx），客户端按 ID 直接
+// 调用。过滤链：平台可路由闸 → 费率阈值（consumption_rate 明确大于阈值才
+// 剔除；上游未下发费率(0)的条目不能瞎杀——glm 系主力模型的费率常为 0）→
+// 平台模型黑名单（按 realm 隔离）。
+func trae2apiModelEntries() []map[string]any {
+	out := make([]map[string]any, 0)
+	sub := trae2apiCurrent()
+	if sub == nil || trae2apiRoutableCount() == 0 {
+		return out
+	}
+	threshold := trae2apiRateFilterThreshold()
+	for _, ch := range sub.srv.Channels() {
+		for _, e := range ch.ModelEntries() {
+			id, _ := e["id"].(string)
+			if id == "" {
+				continue
 			}
-			usageFn := func(map[string]any) {
-				if usage != nil {
-					trae.RecordAccountTokens(accID, usage.Prompt+usage.Completion)
+			bare := strings.TrimPrefix(id, ch.Realm+":")
+			if threshold > 0 {
+				if rate, ok := e["consumption_rate"].(float64); ok && rate > threshold {
+					continue
 				}
 			}
-			return resp, usageFn, nil
-		})
-		return
-	}
-	completion, accID, err := aggregateTraeCompletion(r.Context(), params, m)
-	if err != nil {
-		log.Printf("  trae api error: %v", err)
-		writeJSON(w, http.StatusBadGateway, map[string]any{
-			"error": map[string]string{"message": err.Error(), "type": "api_error"},
-		})
-		return
-	}
-	if usage, ok := completion["usage"].(map[string]any); ok && accID != "" {
-		trae.RecordAccountTokens(accID, int64(modelEntryInt(usage["prompt_tokens"])+modelEntryInt(usage["completion_tokens"])))
-	}
-	writeJSON(w, http.StatusOK, completion)
-}
-
-// ============ Trae 管理 API ============
-
-// traeAccountStates 面板展示用的每账号运行时状态（凭据打码，明文不出口）。
-func traeAccountStates() []map[string]any {
-	c := trae.Get()
-	now := time.Now()
-	out := make([]map[string]any, 0, len(c.Accounts))
-	for i, a := range c.Accounts {
-		st := map[string]any{
-			"index":          i,
-			"id":             a.ID,
-			"label":          a.Label,
-			"tokenMask":      trae.MaskToken(a.Token),
-			"hasRefresh":     a.RefreshToken != "",
-			"accountEnabled": a.EnabledOrDefault(),
-			// 原始路由意愿（不含总闸与运算；前端按 双开关合成显示态）
-			"routingEnabled": a.PoolEnabledOrDefault(),
-		}
-		if exp := traeTokenExpire(a); !exp.IsZero() {
-			st["expiredAt"] = exp.UTC().Format(time.RFC3339)
-			st["tokenUsable"] = time.Until(exp) > 5*time.Minute
-		}
-		if a.Edition != "" {
-			st["edition"] = a.Edition
-		}
-		// 使用痕迹（记账/签到/额度/冷却）住 trae-state.json，按账号 ID 取副本
-		u := trae.UsageFor(a.ID)
-		if u.Tokens.Today > 0 || u.Tokens.Total > 0 || !u.Tokens.LastUsedAt.IsZero() {
-			st["tokensToday"] = u.Tokens.Today
-			st["tokensTotal"] = u.Tokens.Total
-			if !u.Tokens.LastUsedAt.IsZero() {
-				st["lastUsed"] = u.Tokens.LastUsedAt.Format(time.RFC3339)
+			if TraeModelBannedIn(ch.Realm, bare) {
+				continue
 			}
-		}
-		if ck := u.Checkin; ck != nil {
-			st["checkin"] = map[string]any{
-				"checkedIn": ck.CheckedIn,
-				"date":      ck.Date,
-				"lastError": ck.LastError,
+			entry := make(map[string]any, len(e)+4)
+			for k, v := range e {
+				entry[k] = v
 			}
+			entry["source"] = "trae"
+			entry["status"] = "active"
+			entry["cost"] = "free"
+			out = append(out, entry)
 		}
-		if cr := u.Credits; cr != nil {
-			st["credits"] = map[string]any{
-				"remaining": cr.Remaining, "limit": cr.Limit,
-				"unlimited": cr.Unlimited, "identity": cr.Identity,
-			}
-		}
-		if a.ProxyMain != "" || a.ProxyBackup != "" {
-			st["proxyMain"] = a.ProxyMain
-			st["proxyBackup"] = a.ProxyBackup
-		}
-		if until, cooling := trae.CooldownUntil(a.ID); cooling && now.Before(until) {
-			st["cooling"] = true
-			st["cooldownUntil"] = until.Format(time.RFC3339)
-		} else {
-			st["cooling"] = false
-		}
-		out = append(out, st)
 	}
+	// 各平台段 ID 有序是面板/newapi 映射的既有约定（models_order_test）；
+	// vendored 目录顺序随启动/intl 配置漂移，出口处统一排序。
+	sort.Slice(out, func(i, j int) bool {
+		a, _ := out[i]["id"].(string)
+		b, _ := out[j]["id"].(string)
+		return a < b
+	})
 	return out
 }
 
-// traeTokenExpire 账号 token 过期时刻（未设置返回零值）。
-func traeTokenExpire(a *trae.Account) time.Time {
-	if a.ExpiredAt == "" {
-		return time.Time{}
-	}
-	t, err := time.Parse(time.RFC3339, a.ExpiredAt)
-	if err != nil {
-		return time.Time{}
-	}
-	return t
+// ============ 网关分发 ============
+
+// shouldServeTrae2api /v1 请求闸：子系统装载 + 模型带认可前缀。
+func shouldServeTrae2api(model string) bool {
+	return trae2apiCurrent() != nil && isTrae2apiModel(model)
 }
 
-// GET /admin/api/trae/config
+// serveTrae2apiChat 把请求原样交给 vendored /v1/chat/completions（进程内
+// ServeHTTP，与 workbuddy serveWorkBuddyChat 同机制）。模型名**透传**——
+// vendored 原生解析域前缀与 strict_models 校验，afree 不做任何翻译。
+func serveTrae2apiChat(rw http.ResponseWriter, r *http.Request, body []byte) {
+	sub := trae2apiCurrent()
+	if sub == nil {
+		writeJSON(rw, http.StatusServiceUnavailable, map[string]any{
+			"error": map[string]string{"message": "TraeWork subsystem unavailable", "type": "api_error"},
+		})
+		return
+	}
+	if trae2apiRoutableCount() == 0 {
+		writeJSON(rw, http.StatusServiceUnavailable, map[string]any{
+			"error": map[string]string{
+				"message": "No routable Trae accounts. Enable an account (and its gateway switch) on the Trae page.",
+				"type":    "api_error",
+			},
+		})
+		return
+	}
+	r.Body = io.NopCloser(strings.NewReader(string(body)))
+	r.ContentLength = int64(len(body))
+	sub.srv.Handler().ServeHTTP(rw, r)
+}
+
+// traeInprocessCaller 为平台 chat 调用器抽象（cross_endpoint）构造的进程内
+// client：请求直接进 vendored Handler，响应以 *http.Response 形态交还外层
+// 缓冲转发层（与 cline/zen 同一套流式/重试语义）。
+var traeInprocessHTTP = &http.Client{Transport: traeInprocessRoundTripper{}}
+
+const traeInprocessBase = "http://trae2api.inprocess"
+
+type traeInprocessRoundTripper struct{}
+
+// traePipeWriter 桥接 http.ResponseWriter 与 io.Pipe：handler 的写入变成
+// 响应体流，WriteHeader 的状态码经 channel 回传。
+type traePipeWriter struct {
+	header http.Header
+	pw     *io.PipeWriter
+	code   chan int
+	wrote  bool
+}
+
+func (w *traePipeWriter) Header() http.Header { return w.header }
+
+func (w *traePipeWriter) Write(p []byte) (int, error) {
+	if !w.wrote {
+		w.WriteHeader(http.StatusOK)
+	}
+	return w.pw.Write(p)
+}
+
+func (w *traePipeWriter) WriteHeader(code int) {
+	if w.wrote {
+		return
+	}
+	w.wrote = true
+	w.code <- code
+}
+
+// Flush 满足 http.Flusher：io.Pipe 是同步管道，Write 即到即达，无需额外动作。
+func (w *traePipeWriter) Flush() {}
+
+func (traeInprocessRoundTripper) RoundTrip(r *http.Request) (*http.Response, error) {
+	sub := trae2apiCurrent()
+	if sub == nil || sub.srv == nil {
+		return nil, errors.New("trae2api subsystem unavailable")
+	}
+	handler := sub.srv.Handler()
+	pr, pw := io.Pipe()
+	w := &traePipeWriter{header: make(http.Header), pw: pw, code: make(chan int, 1)}
+	go func() {
+		defer func() {
+			if rec := recover(); rec != nil {
+				if !w.wrote {
+					w.WriteHeader(http.StatusInternalServerError)
+				}
+				_ = pw.CloseWithError(fmt.Errorf("trae2api handler panic: %v", rec))
+			}
+		}()
+		handler.ServeHTTP(w, r)
+		_ = pw.Close()
+	}()
+	code := <-w.code
+	resp := &http.Response{
+		StatusCode: code,
+		Status:     fmt.Sprintf("%d %s", code, http.StatusText(code)),
+		Header:     w.header,
+		Body:       pr,
+		Request:    r,
+	}
+	if cl := w.header.Get("Content-Length"); cl != "" {
+		var n int64
+		if _, err := fmt.Sscan(cl, &n); err == nil {
+			resp.ContentLength = n
+		}
+	} else {
+		resp.ContentLength = -1
+	}
+	return resp, nil
+}
+
+// trae2apiCaller 平台 chat 调用器（anthropic 跨端点路径）：model 透传，
+// 记账回调恒 nil（token/积分记账由 vendored metrics 按账号自行落账）。
+func trae2apiCaller(model string) (platformChatCall, bool) {
+	if !isTrae2apiModel(model) {
+		return nil, false
+	}
+	if trae2apiCurrent() == nil {
+		return rejectCaller("TraeWork subsystem unavailable", false), true
+	}
+	if trae2apiRoutableCount() == 0 {
+		return rejectCaller("No routable Trae accounts. Add accounts on the Trae page.", true), true
+	}
+	return func(ctx context.Context, params map[string]any, stream bool) (*http.Response, func(map[string]any), error) {
+		body, err := json.Marshal(params)
+		if err != nil {
+			return nil, nil, err
+		}
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost,
+			traeInprocessBase+"/v1/chat/completions", bytesReader(body))
+		if err != nil {
+			return nil, nil, err
+		}
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := traeInprocessHTTP.Do(req)
+		if err != nil {
+			return nil, nil, err
+		}
+		return resp, nil, nil
+	}, true
+}
+
+func bytesReader(b []byte) io.Reader { return strings.NewReader(string(b)) }
+
+// ============ 管理面板 API（/admin/api/trae/*） ============
+
+// trae2apiAdminCall 进程内调用 vendored 管理端点（test/checkin/credits/
+// clear-cooldown/delete），经同一管道 client，鉴权 = 匿名管理员。
+func trae2apiAdminCall(method, path string, body []byte) (int, []byte, error) {
+	req, err := http.NewRequest(method, traeInprocessBase+path, bytesReader(body))
+	if err != nil {
+		return 0, nil, err
+	}
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	resp, err := traeInprocessHTTP.Do(req)
+	if err != nil {
+		return 0, nil, err
+	}
+	defer resp.Body.Close()
+	data, err := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
+	return resp.StatusCode, data, err
+}
+
+// handleTraeConfig GET /admin/api/trae/config —— 面板一次性取全：
+// vendored 配置子集 + afree 域字段（费率过滤/隔离/备用）+ 账号状态表。
 func handleTraeConfig(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		writeAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
 		return
 	}
-	c := trae.Get()
+	sub := trae2apiCurrent()
 	data := map[string]any{
-		"useProxies":              trae.ProxiesEnabled(),
-		"gateway":                 c.Gateway,
-		"selection":               c.Selection,
-		"endpoint":                c.Endpoint,
-		"autoCheckin":             c.AutoCheckin != nil && *c.AutoCheckin,
-		"accounts":                traeAccountStates(),
-		"maxConcurrency":          c.MaxConcurrency,
-		"retries":                 c.Retries,
-		"models":                  traeModelList(),
+		"engineVersion":           trae2apiVersion,
+		"loaded":                  sub != nil,
+		"useProxies":              traeProxiesEnabled(),
 		"proxyIsolation":          proxyIsolationEnabled(),
 		"proxyIsolationEnvLocked": proxyIsolationEnvLocked(),
 		"backupProxyEnabled":      backupProxyEnabled(),
+		"rateFilter":              trae2apiRateFilterThreshold(),
+		"routable":                trae2apiRoutableCount(),
+	}
+	if sub != nil {
+		cfg := sub.cfg
+		data["gateway"] = cfg.Trae.ChatBase
+		data["maxInFlight"] = cfg.Pool.MaxInFlight
+		data["breakerThreshold"] = cfg.Pool.BreakerThreshold
+		data["breakerCooldown"] = cfg.Pool.BreakerCooldown
+		data["cooldownSoftRate"] = cfg.Cooldown.SoftRate
+		data["cooldownSoftRateMax"] = cfg.Cooldown.SoftRateMax
+		data["cooldownModel"] = cfg.Cooldown.ModelCooldown
+		data["checkinEnabled"] = cfg.Schedule.CheckinEnabled
+		data["checkinHours"] = cfg.Schedule.CheckinHours
+		data["strictModels"] = cfg.Trae.StrictModels == nil || *cfg.Trae.StrictModels
+		data["sessionSticky"] = cfg.SessionSticky.Enabled
+		data["intlEnabled"] = cfg.Intl.Enabled
+		data["idleTimeout"] = cfg.Trae.IdleTimeoutSeconds
+		data["accounts"] = trae2apiAccountStates(sub)
+		data["models"] = trae2apiModelEntries()
 	}
 	writeAPI(w, http.StatusOK, apiResponse{Success: true, Data: data})
 }
 
-// POST /admin/api/trae/config/update
+// trae2apiAccountStates 账号表：vendored 池状态 + afree 双开关/绑定合并。
+func trae2apiAccountStates(sub *trae2apiSubsystem) []map[string]any {
+	// 锁序铁律（2026-11-04 实测死锁）：绝不能持 traeBindingsMu/traeRoutingMu
+	// 调 Pool().List()——List→Status→healthyLocked→RoutingAllowed 钩子→
+	// traeRoutingGet 会重入 traeRoutingMu，同 goroutine 自锁把 /v1/models、
+	// config 接口与后台 Pool.Save 全部堵死。先在各自锁内取快照，再查池。
+	traeBindingsMu.Lock()
+	loadTraeBindingsLocked()
+	bindings := make(map[string]trae2apiProxyBinding, len(traeBindings))
+	for uid, v := range traeBindings {
+		bindings[uid] = v
+	}
+	traeBindingsMu.Unlock()
+
+	statuses := sub.srv.Pool().List()
+	out := make([]map[string]any, 0, len(statuses))
+	for i, st := range statuses {
+		b := bindings[st.UID]
+		row := map[string]any{
+			"index":         i + 1,
+			"uid":           st.UID,
+			"label":         st.Label,
+			"realm":         st.Realm,
+			"product":       st.Product,
+			"owner":         st.Owner,
+			"disabled":      st.Disabled,
+			"disableReason": st.DisableReason,
+			"cooling":       st.Cooling,
+			"coolKind":      st.CoolKind,
+			"coolReason":    st.CoolReason,
+			"coolRemain":    st.CoolRemainSec,
+			"breaker":       st.Breaker,
+			"breakerRemain": st.BreakerRemain,
+			"degraded":      st.Degraded,
+			"healthy":       st.Healthy,
+			"inFlight":      st.InFlight,
+			"maxInFlight":   st.MaxInFlight,
+			"okCount":       st.OKCount,
+			"errCount":      st.ErrCount,
+			// routing 口径与实际路由判定一致（traeRoutingGet：查表缺失=启用）
+			"routing":       traeRoutingGet(st.UID),
+			"bindingMain":   b.Main,
+			"bindingBackup": b.Backup,
+		}
+		if st.Credits != nil {
+			row["credits"] = *st.Credits
+		}
+		if st.ModelCooling != nil {
+			row["modelCooling"] = st.ModelCooling
+		}
+		out = append(out, row)
+	}
+	return out
+}
+
+// handleTraeConfigUpdate POST /admin/api/trae/config/update —— vendored 配置
+// 子集 + 费率过滤 patch；vendored 无热更新，落盘后整组重启（池状态经
+// state.json 保留，冷却/熔断不丢）。useProxies 走 proxy-config.json 既有键。
 func handleTraeConfigUpdate(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
@@ -867,921 +871,661 @@ func handleTraeConfigUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 	defer r.Body.Close()
 	var patch struct {
-		UseProxies  *bool   `json:"useProxies"`
-		Gateway     *string `json:"gateway"`
-		MaxConc     *int    `json:"maxConcurrency"`
-		Retries     *int    `json:"retries"`
-		Selection   *string `json:"selection"`
-		Endpoint    *string `json:"endpoint"`
-		AutoCheckin *bool   `json:"autoCheckin"`
+		Gateway          *string  `json:"gateway"`
+		MaxInFlight      *int     `json:"maxInFlight"`
+		BreakerThreshold *int     `json:"breakerThreshold"`
+		BreakerCooldown  *string  `json:"breakerCooldown"`
+		CooldownSoftRate *string  `json:"cooldownSoftRate"`
+		CooldownSoftMax  *string  `json:"cooldownSoftRateMax"`
+		CooldownModel    *string  `json:"cooldownModel"`
+		CheckinEnabled   *bool    `json:"checkinEnabled"`
+		CheckinHours     *[]int   `json:"checkinHours"`
+		StrictModels     *bool    `json:"strictModels"`
+		SessionSticky    *bool    `json:"sessionSticky"`
+		IdleTimeout      *int     `json:"idleTimeout"`
+		IntlEnabled      *bool    `json:"intlEnabled"`
+		RateFilter       *float64 `json:"rateFilter"`
 	}
 	if err := json.Unmarshal(body, &patch); err != nil {
-		writeAPI(w, http.StatusBadRequest, apiResponse{Error: "invalid JSON: " + err.Error()})
+		writeAPI(w, http.StatusBadRequest, apiResponse{Error: err.Error()})
 		return
 	}
-	_, next := traeCloneConfig()
-	// 走池开关存在 proxy-config.json 的代理池段，不写进平台文件。
-	if patch.UseProxies != nil {
-		setPlatformUseProxies("trae", patch.UseProxies)
+
+	sub := trae2apiCurrent()
+	if sub == nil {
+		writeAPI(w, http.StatusServiceUnavailable, apiResponse{Error: "TraeWork subsystem unavailable"})
+		return
 	}
+	sub.mu.Lock()
+	cfg := sub.cfg
 	if patch.Gateway != nil {
-		next.Gateway = strings.TrimRight(strings.TrimSpace(*patch.Gateway), "/")
-	}
-	if patch.MaxConc != nil && *patch.MaxConc > 0 {
-		next.MaxConcurrency = *patch.MaxConc
-	}
-	if patch.Retries != nil && *patch.Retries >= 0 {
-		next.Retries = *patch.Retries
-	}
-	if patch.Selection != nil {
-		next.Selection = strings.TrimSpace(*patch.Selection)
-	}
-	if patch.Endpoint != nil {
-		// normalize() 内校验：非法值回落 auto（空）
-		next.Endpoint = strings.TrimSpace(*patch.Endpoint)
-	}
-	if patch.AutoCheckin != nil {
-		next.AutoCheckin = patch.AutoCheckin
-	}
-	trae.Set(next)
-	trae.SetMaxConcurrency()
-	writeAPI(w, http.StatusOK, apiResponse{Success: true, Message: "Trae config saved"})
-}
-
-// POST /admin/api/trae/accounts/add  body: { tokens: [JWT,...] }
-// 每行一个 Cloud-IDE-JWT；新账号默认不参与路由（三平台统一口径）。
-func handleTraeAccountAdd(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		writeAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
-		return
-	}
-	var req struct {
-		Tokens []string `json:"tokens"`
-	}
-	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req); err != nil {
-		writeAPI(w, http.StatusBadRequest, apiResponse{Error: "invalid JSON"})
-		return
-	}
-	added, skipped := 0, 0
-	for _, line := range req.Tokens {
-		line = strings.TrimSpace(line)
-		if line == "" {
-			continue
+		gw := strings.TrimSpace(*patch.Gateway)
+		if err := trae2apiValidateGateway(gw); err != nil {
+			sub.mu.Unlock()
+			writeAPI(w, http.StatusBadRequest, apiResponse{Error: err.Error()})
+			return
 		}
-		if !trae.LooksLikeCloudIDEJWT(line) {
-			skipped++
-			continue
+		cfg.Trae.ChatBase = gw
+	}
+	if patch.MaxInFlight != nil && *patch.MaxInFlight > 0 {
+		cfg.Pool.MaxInFlight = *patch.MaxInFlight
+	}
+	if patch.BreakerThreshold != nil && *patch.BreakerThreshold > 0 {
+		cfg.Pool.BreakerThreshold = *patch.BreakerThreshold
+	}
+	if patch.BreakerCooldown != nil {
+		cfg.Pool.BreakerCooldown = strings.TrimSpace(*patch.BreakerCooldown)
+	}
+	if patch.CooldownSoftRate != nil {
+		cfg.Cooldown.SoftRate = strings.TrimSpace(*patch.CooldownSoftRate)
+	}
+	if patch.CooldownSoftMax != nil {
+		cfg.Cooldown.SoftRateMax = strings.TrimSpace(*patch.CooldownSoftMax)
+	}
+	if patch.CooldownModel != nil {
+		cfg.Cooldown.ModelCooldown = strings.TrimSpace(*patch.CooldownModel)
+	}
+	if patch.CheckinEnabled != nil {
+		cfg.Schedule.CheckinEnabled = *patch.CheckinEnabled
+	}
+	if patch.CheckinHours != nil {
+		cfg.Schedule.CheckinHours = *patch.CheckinHours
+	}
+	if patch.StrictModels != nil {
+		v := *patch.StrictModels
+		cfg.Trae.StrictModels = &v
+	}
+	if patch.SessionSticky != nil {
+		cfg.SessionSticky.Enabled = *patch.SessionSticky
+	}
+	if patch.IdleTimeout != nil && *patch.IdleTimeout > 0 {
+		cfg.Trae.IdleTimeoutSeconds = *patch.IdleTimeout
+	}
+	if patch.IntlEnabled != nil {
+		cfg.Intl.Enabled = *patch.IntlEnabled
+	}
+	// afree 硬约束在序列化前重新套上（面板改不动的字段恒定）。
+	traeApplyAfreeConstraints(cfg)
+	raw, err := json.MarshalIndent(cfg, "", "  ")
+	sub.mu.Unlock()
+	if err != nil {
+		writeAPI(w, http.StatusInternalServerError, apiResponse{Error: err.Error()})
+		return
+	}
+	if err := os.WriteFile(traeConfigPath(), raw, 0o600); err != nil {
+		writeAPI(w, http.StatusInternalServerError, apiResponse{Error: err.Error()})
+		return
+	}
+	if patch.RateFilter != nil {
+		mutateProxyConfigFile(func(f *proxyConfigFileData) {
+			f.Trae2apiModelRateFilter = *patch.RateFilter
+		})
+	}
+	if err := trae2apiRestart(); err != nil {
+		writeAPI(w, http.StatusInternalServerError, apiResponse{Error: "restart: " + err.Error()})
+		return
+	}
+	writeAPI(w, http.StatusOK, apiResponse{Success: true, Data: map[string]any{"restarted": true}})
+}
+
+// trae2apiValidateGateway 网关域校验（判据自旧引擎 oauthOnlyHostFragments
+// 移植，2026-11-04 实测补缺）：OAuth/账号路由域作网关必失败——只承载 OAuth、
+// 不能发模型请求的域名直接拒绝保存，免得整池静默 5xx。
+func trae2apiValidateGateway(gw string) error {
+	if gw == "" {
+		return nil
+	}
+	lower := strings.ToLower(gw)
+	for _, frag := range []string{"api.trae.cn", "api.trae.com.cn", "trae-api.com.cn", "oauth"} {
+		if strings.Contains(lower, frag) {
+			return fmt.Errorf("gateway %q is an OAuth-only host and cannot serve model requests", gw)
 		}
-		id := trae.TokenAccountID(line)
-		if trae.HasAccount(id) {
-			skipped++
-			continue
-		}
-		cur, next := traeCloneConfig()
-		next.Accounts = append(next.Accounts, &trae.Account{ID: id, Token: line})
-		next.ReconcilePoolEnabled(next, cur)
-		trae.Set(next)
-		added++
 	}
-	msg := fmt.Sprintf("added %d account(s)", added)
-	if skipped > 0 {
-		msg += fmt.Sprintf(", skipped %d (duplicate or not a Cloud-IDE-JWT)", skipped)
-	}
-	log.Printf("trae accounts add: %s", msg)
-	writeAPI(w, http.StatusOK, apiResponse{Success: true, Message: msg, Data: map[string]any{"added": added, "skipped": skipped}})
+	return nil
 }
 
-// POST /admin/api/trae/accounts/routing  body: { index, enabled }
-func handleTraeAccountSetRouting(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		writeAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
-		return
-	}
-	var req struct {
-		Index   int  `json:"index"`
-		Enabled bool `json:"enabled"`
-	}
-	if err := json.NewDecoder(io.LimitReader(r.Body, 512)).Decode(&req); err != nil {
-		writeAPI(w, http.StatusBadRequest, apiResponse{Error: "invalid JSON"})
-		return
-	}
-	if err := traeSetAccountRouting(req.Index, req.Enabled); err != nil {
-		writeAPI(w, http.StatusBadRequest, apiResponse{Error: err.Error()})
-		return
-	}
-	writeAPI(w, http.StatusOK, apiResponse{Success: true, Message: fmt.Sprintf("account #%d routing enabled=%v", req.Index+1, req.Enabled)})
-}
-
-// POST /admin/api/trae/accounts/routing/all  body: { enabled }
-func handleTraeAccountSetRoutingAll(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		writeAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
-		return
-	}
-	var req struct {
-		Enabled bool `json:"enabled"`
-	}
-	if err := json.NewDecoder(io.LimitReader(r.Body, 512)).Decode(&req); err != nil {
-		writeAPI(w, http.StatusBadRequest, apiResponse{Error: "invalid JSON"})
-		return
-	}
-	n := traeSetAllAccountsRouting(req.Enabled)
-	writeAPI(w, http.StatusOK, apiResponse{Success: true, Message: fmt.Sprintf("routing enabled=%v on %d account(s)", req.Enabled, n)})
-}
-
-// POST /admin/api/trae/accounts/reorder  body: { order: [oldIndex,...] }
-func handleTraeAccountsReorder(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		writeAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
-		return
-	}
-	var req struct {
-		Order []int `json:"order"`
-	}
-	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req); err != nil {
-		writeAPI(w, http.StatusBadRequest, apiResponse{Error: "invalid JSON"})
-		return
-	}
-	if err := traeReorderAccounts(req.Order); err != nil {
-		writeAPI(w, http.StatusBadRequest, apiResponse{Error: err.Error()})
-		return
-	}
-	writeAPI(w, http.StatusOK, apiResponse{Success: true, Message: "Order saved", Data: map[string]any{"updated": len(req.Order)}})
-}
-
-// POST /admin/api/trae/accounts/delete  body: { index }
-func handleTraeAccountDelete(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		writeAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
-		return
-	}
-	var req struct {
-		Index int `json:"index"`
-	}
-	if err := json.NewDecoder(io.LimitReader(r.Body, 512)).Decode(&req); err != nil {
-		writeAPI(w, http.StatusBadRequest, apiResponse{Error: "invalid JSON"})
-		return
-	}
-	if err := traeDeleteAccount(req.Index); err != nil {
-		writeAPI(w, http.StatusBadRequest, apiResponse{Error: err.Error()})
-		return
-	}
-	writeAPI(w, http.StatusOK, apiResponse{Success: true, Message: fmt.Sprintf("account #%d deleted", req.Index+1)})
-}
-
-// POST /admin/api/trae/accounts/label  body: { index, label }
-func handleTraeAccountLabel(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		writeAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
-		return
-	}
-	var req struct {
-		Index int    `json:"index"`
-		Label string `json:"label"`
-	}
-	if err := json.NewDecoder(io.LimitReader(r.Body, 4096)).Decode(&req); err != nil {
-		writeAPI(w, http.StatusBadRequest, apiResponse{Error: "invalid JSON"})
-		return
-	}
-	if err := traeSetAccountLabel(req.Index, strings.TrimSpace(req.Label)); err != nil {
-		writeAPI(w, http.StatusBadRequest, apiResponse{Error: err.Error()})
-		return
-	}
-	writeAPI(w, http.StatusOK, apiResponse{Success: true, Message: "Label saved"})
-}
-
-// POST /admin/api/trae/accounts/proxy  body: { index, main, backup }
-func handleTraeAccountSetProxy(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		writeAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
-		return
-	}
-	var req struct {
-		Index  int    `json:"index"`
-		Main   string `json:"main"`
-		Backup string `json:"backup"`
-	}
-	if err := json.NewDecoder(io.LimitReader(r.Body, 4096)).Decode(&req); err != nil {
-		writeAPI(w, http.StatusBadRequest, apiResponse{Error: "invalid JSON"})
-		return
-	}
-	if err := traeSetAccountProxy(req.Index, req.Main, req.Backup); err != nil {
-		writeAPI(w, http.StatusBadRequest, apiResponse{Error: err.Error()})
-		return
-	}
-	writeAPI(w, http.StatusOK, apiResponse{Success: true, Message: "Account proxy binding saved"})
-}
-
-// POST /admin/api/trae/accounts/proxy/clear
-func handleTraeAccountClearProxies(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		writeAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
-		return
-	}
-	n := traeClearAllAccountProxies()
-	writeAPI(w, http.StatusOK, apiResponse{Success: true, Data: map[string]any{"cleared": n}})
-}
-
-// POST /admin/api/trae/accounts/test  body: { index }
-// GetUserInfo 验凭据（X-Cloudide-Token），成功顺带抓一次额度快照；首测且
-// 无备注时用 ScreenName 自动补显示名。
-func handleTraeAccountTest(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		writeAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
-		return
-	}
-	var req struct {
-		Index int `json:"index"`
-	}
-	if err := json.NewDecoder(io.LimitReader(r.Body, 512)).Decode(&req); err != nil {
-		writeAPI(w, http.StatusBadRequest, apiResponse{Error: "invalid JSON"})
-		return
-	}
-	result, status := traeTestAccount(req.Index)
-	result["status"] = status
-	log.Printf("Test trae account #%d: status=%s reason=%v", req.Index+1, status, result["reason"])
-	writeAPI(w, http.StatusOK, apiResponse{
-		Success: status == "active",
-		Message: status,
-		Data:    result,
-	})
-}
-
-// POST /admin/api/trae/models/refresh
-// 2026-10-31：改走全平台统一的刷新契约（见 admin_models_refresh.go）。
+// handleTraeModelsRefresh POST /admin/api/trae/models/refresh —— vendored
+// 目录随启动/intl 配置静态成型，这里仅重读并回传（老面板刷新按钮的语义）。
 func handleTraeModelsRefresh(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
 		return
 	}
-	if !trae.HasEnabledAccount() {
-		writeCatalogNoCredential(w, platTrae)
-		return
-	}
-	before := len(trae.ModelList())
-	if err := syncTraeCatalog(1); err != nil {
-		writeCatalogSyncFailed(w, platTrae, err)
-		return
-	}
-	total := len(trae.ModelList())
-	writeCatalogResult(w, platTrae, total-before, total)
+	models := trae2apiModelEntries()
+	writeAPI(w, http.StatusOK, apiResponse{Success: true, Data: map[string]any{
+		"models": models, "total": len(models), "added": 0}})
 }
 
-// ============ Trae 账号池操作（写时复制，与 openrouter 同口径） ============
-
-func traeCloneConfig() (*trae.Config, *trae.Config) {
-	cur := trae.Get()
-	next := &trae.Config{
-		Gateway:        cur.Gateway,
-		Selection:      cur.Selection,
-		AutoCheckin:    cur.AutoCheckin,
-		MaxConcurrency: cur.MaxConcurrency,
-		Retries:        cur.Retries,
-	}
-	if cur.Accounts != nil {
-		next.Accounts = make([]*trae.Account, len(cur.Accounts))
-		for i, a := range cur.Accounts {
-			cp := *a
-			next.Accounts[i] = &cp
-		}
-	}
-	return cur, next
-}
-
-// traeAccountAt 按索引取账号（越界报错）。
-func traeAccountAt(index int) (*trae.Config, *trae.Account, error) {
-	cur := trae.Get()
-	if index < 0 || index >= len(cur.Accounts) {
-		return nil, nil, fmt.Errorf("account index out of range")
-	}
-	_, next := traeCloneConfig()
-	return next, next.Accounts[index], nil
-}
-
-func traeSetAccountRouting(index int, enabled bool) error {
-	next, a, err := traeAccountAt(index)
-	if err != nil {
-		return err
-	}
-	// 与 WorkBuddy 同款互锁：账号总闸关闭时反代开关不得单独打开
-	if enabled && !a.EnabledOrDefault() {
-		return fmt.Errorf("account switch is off: enable the account first, then the gateway switch")
-	}
-	f := enabled
-	a.PoolEnabled = &f
-	trae.Set(next)
-	return nil
-}
-
-// traeSetAccountEnabled 账号总闸（对齐 WorkBuddy account-enabled）：关闭 = 该
-// 账号不参与路由且签到/额度刷新等维护任务一并跳过；开启不联动改写路由开关
-// （两持久化值独立，面板重开后自动恢复路由意愿）。
-func traeSetAccountEnabled(index int, enabled bool) error {
-	next, a, err := traeAccountAt(index)
-	if err != nil {
-		return err
-	}
-	f := enabled
-	a.Enabled = &f
-	trae.Set(next)
-	return nil
-}
-
-func traeSetAllAccountsRouting(enabled bool) int {
-	_, next := traeCloneConfig()
-	n := 0
-	for _, a := range next.Accounts {
-		f := enabled
-		a.PoolEnabled = &f
-		n++
-	}
-	trae.Set(next)
-	return n
-}
-
-func traeReorderAccounts(order []int) error {
-	cur := trae.Get()
-	n := len(cur.Accounts)
-	if len(order) == 0 {
-		return fmt.Errorf("order is required")
-	}
-	nextAccounts := make([]*trae.Account, 0, n)
-	seen := make(map[int]bool, n)
-	for _, idx := range order {
-		if idx < 0 || idx >= n {
-			return fmt.Errorf("account index out of range: %d", idx)
-		}
-		if seen[idx] {
-			continue
-		}
-		seen[idx] = true
-		nextAccounts = append(nextAccounts, cur.Accounts[idx])
-	}
-	if len(nextAccounts) != n {
-		for i, a := range cur.Accounts {
-			if !seen[i] {
-				nextAccounts = append(nextAccounts, a)
-			}
-		}
-	}
-	_, next := traeCloneConfig()
-	next.Accounts = nextAccounts
-	trae.Set(next)
-	return nil
-}
-
-func traeDeleteAccount(index int) error {
-	cur := trae.Get()
-	if index < 0 || index >= len(cur.Accounts) {
-		return fmt.Errorf("account index out of range")
-	}
-	_, next := traeCloneConfig()
-	next.Accounts = append(next.Accounts[:index], next.Accounts[index+1:]...)
-	trae.Set(next) // Set 内部 pruneRemovedAccounts 同步清理痕迹表的冷却/记账条目
-	return nil
-}
-
-func traeSetAccountLabel(index int, label string) error {
-	next, a, err := traeAccountAt(index)
-	if err != nil {
-		return err
-	}
-	a.Label = label
-	trae.Set(next)
-	return nil
-}
-
-func traeSetAccountProxy(index int, main, backup string) error {
-	main = strings.TrimSpace(main)
-	backup = strings.TrimSpace(backup)
-	cur := trae.Get()
-	if index < 0 || index >= len(cur.Accounts) {
-		return fmt.Errorf("account index out of range")
-	}
-	acc := cur.Accounts[index]
-	backup = resolveBackupSlot(backup, acc.ProxyBackup)
-	if err := validateProxyBinding(main, backup); err != nil {
-		return err
-	}
-	next, a, err := traeAccountAt(index)
-	if err != nil {
-		return err
-	}
-	if main == "" && backup == "" {
-		a.ProxyMain = ""
-		a.ProxyBackup = ""
-	} else {
-		a.ProxyMain = main
-		a.ProxyBackup = backup
-	}
-	trae.Set(next)
-	return nil
-}
-
-func traeClearAllAccountProxies() int {
-	n := 0
-	_, next := traeCloneConfig()
-	for _, a := range next.Accounts {
-		if a.ProxyMain != "" || a.ProxyBackup != "" {
-			n++
-		}
-		a.ProxyMain = ""
-		a.ProxyBackup = ""
-	}
-	trae.Set(next)
-	return n
-}
-
-// traeTestAccount 单账号探测：GetUserInfo 验凭据 + 顺手抓额度快照。
-// status ∈ active/cooldown/error。
-func traeTestAccount(index int) (map[string]any, string) {
-	cur := trae.Get()
-	result := map[string]any{"index": index}
-	if index < 0 || index >= len(cur.Accounts) {
-		result["reason"] = "account index out of range"
-		return result, "error"
-	}
-	acc := cur.Accounts[index]
-	result["tokenMask"] = trae.MaskToken(acc.Token)
-	if !acc.EnabledOrDefault() {
-		result["reason"] = "account switch is off: enable the account first"
-		return result, "error"
-	}
-	if !trae.TokenUsable(acc) {
-		result["reason"] = "token expired and no refresh credential"
-		return result, "error"
-	}
-	start := time.Now()
-	screen, err := trae.GetUserInfo(acc)
-	result["latencyMs"] = time.Since(start).Milliseconds()
-	if err != nil {
-		low := strings.ToLower(err.Error())
-		if strings.Contains(low, "status 429") || trae.ContainsQuotaText(err.Error()) {
-			if d := trae.Cooldown(acc.ID, time.Minute); d > 0 {
-				if until, ok := trae.CooldownUntil(acc.ID); ok {
-					result["cooldownUntil"] = until.UTC().Format(time.RFC3339)
-					result["remaining"] = formatDuration(time.Until(until))
-				}
-			}
-			result["reason"] = "rate limited: " + err.Error()
-			return result, "cooldown"
-		}
-		result["reason"] = err.Error()
-		return result, "error"
-	}
-	trae.Uncool(acc.ID)
-	if screen != "" {
-		result["screenName"] = screen
-		// 首测且无备注：用上游 ScreenName 自动补显示名（与 cline 昵称同思路）
-		if acc.Label == "" {
-			_ = traeSetAccountLabel(index, screen)
-			result["label"] = screen
-		}
-	}
-	// GetUserInfo 只证明凭据活着，不证明模型可调——部分模型对低套餐账号
-	// 返回 200 目录但请求必败（用户实测）。补发一条真实最小模型请求：
-	// 能出字才算 active；模型级失败（1005/4023/4001）原样回报并走自动封禁判据。
-	m, ok := trae.ProbeModel()
-	if !ok {
-		result["reason"] = "ok (userinfo) but no model available to probe; catalog empty"
-		return result, "active"
-	}
-	pstart := time.Now()
-	perr := traeProbeModelOnAccount(acc, m)
-	result["probeModel"] = m.ID
-	result["probeLatencyMs"] = time.Since(pstart).Milliseconds()
-	if perr != nil {
-		var he *trae.HTTPError
-		if errors.As(perr, &he) {
-			if he.RateLimited {
-				result["reason"] = "userinfo ok, model probe rate limited (HTTP %d): %s"
-				result["reason"] = fmt.Sprintf("userinfo ok, model probe rate limited (HTTP %d): %s", he.Status, kit.Truncate(he.Body, 200))
-				return result, "cooldown"
-			}
-			traeAutoBanOnHTTPError(m, acc, perr)
-			result["reason"] = fmt.Sprintf("userinfo ok but model probe failed (HTTP %d, code %s): %s", he.Status, he.Code, kit.Truncate(he.Body, 200))
-			return result, "error"
-		}
-		// 网络错误：凭据本身没问题，仍算 active 但注明
-		result["reason"] = "ok (userinfo); model probe network error: " + kit.Truncate(perr.Error(), 160)
-		return result, "active"
-	}
-	result["reason"] = "ok"
-	// 额度快照（best-effort，失败不影响探测结论）
-	if cr, err := trae.FetchCredits(acc); err == nil && cr != nil {
-		result["credits"] = map[string]any{
-			"remaining": cr.Remaining, "limit": cr.Limit,
-			"unlimited": cr.Unlimited, "identity": cr.Identity,
-		}
-	}
-	return result, "active"
-}
-
-// traeProbeModelOnAccount 用固定账号发一条 "Reply with exactly: OK" 最小模型
-// 请求（Test 探测的第二段）：与自动封禁复核同一路径。返回上游错误原样上抛；
-// 能读到任何文本事件即视为可用。这也让 Test 的消耗进入 per-账号 token 记账
-// （traeProbeFailsModel 内部走 trae.Chat 的记账通道之外，这里显式记录）。
-func traeProbeModelOnAccount(acc *trae.Account, m trae.Model) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-	defer cancel()
-	params := map[string]any{
-		"model":      trae.ModelPrefix + m.ID,
-		"messages":   []any{map[string]any{"role": "user", "content": "Reply with exactly: OK"}},
-		"max_tokens": 16,
-	}
-	stream, _, err := trae.Chat(ctx, trae.ChatOpts{Model: m, Params: params, PinAccount: acc})
-	if err != nil {
-		return err
-	}
-	defer stream.Close()
-	for {
-		ev, rerr := stream.Next()
-		if ev != nil && ev.Type == "usage" && ev.Usage != nil && acc.ID != "" {
-			trae.RecordAccountTokens(acc.ID, ev.Usage.Prompt+ev.Usage.Completion)
-		}
-		if rerr != nil || ev == nil {
-			return nil // EOF/断流：请求本身通了（HTTP 200），按可用处理
-		}
-		switch ev.Type {
-		case "text", "reasoning", "done":
-			return nil
-		case "error":
-			if stream.Err != nil {
-				return stream.Err
-			}
-			return fmt.Errorf("trae probe error event: %s", traeEventErrorText(ev))
-		}
-	}
-}
-
-// aggregateTraeCompletionResponse 非流式聚合并包成 JSON 伪响应
-// （cross_endpoint 的 trae 非流式调用器用）。
-func aggregateTraeCompletionResponse(ctx context.Context, params map[string]any, m trae.Model) (*http.Response, error) {
-	completion, _, err := aggregateTraeCompletion(ctx, params, m)
-	if err != nil {
-		return nil, err
-	}
-	b, err := json.Marshal(completion)
-	if err != nil {
-		return nil, err
-	}
-	return &http.Response{
-		StatusCode: http.StatusOK,
-		Header:     http.Header{"Content-Type": []string{"application/json"}},
-		Body:       io.NopCloser(bytes.NewReader(b)),
-	}, nil
-}
-
-// traeProbeBlacklistedModel 模型黑名单页的 trae 探测：取第一个可用账号对
-// 指定模型发一个极小请求，验证模型是否真实可调。
-func traeProbeBlacklistedModel(bare string) (map[string]any, string) {
-	result := map[string]any{"ok": false, "model": trae.ModelPrefix + bare}
-	m, ok := trae.Resolve(bare)
-	if !ok {
-		result["error"] = "unknown trae model: " + bare
-		return result, "error"
-	}
-	params := map[string]any{
-		"model":      trae.ModelPrefix + m.ID,
-		"messages":   []any{map[string]any{"role": "user", "content": "Reply with exactly: OK"}},
-		"max_tokens": 16,
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-	defer cancel()
-	start := time.Now()
-	stream, acc, err := trae.Chat(ctx, trae.ChatOpts{
-		Model: m, Params: params, Strategy: "fill", BoundRoutable: traeBoundRoutable,
-	})
-	if err != nil {
-		result["error"] = err.Error()
-		return result, "error"
-	}
-	defer stream.Close()
-	sawDone := false
-	for {
-		ev, rerr := stream.Next()
-		if rerr != nil || ev == nil {
-			break
-		}
-		if ev.Type == "done" {
-			sawDone = true
-			break
-		}
-		if ev.Type == "error" {
-			result["error"] = ev.Message
-			return result, "error"
-		}
-	}
-	result["latencyMs"] = time.Since(start).Milliseconds()
-	if !sawDone {
-		result["error"] = "upstream stream ended without a done event"
-		return result, "error"
-	}
-	if acc != nil {
-		trae.Uncool(acc.ID)
-	}
-	result["ok"] = true
-	result["error"] = "ok"
-	return result, "active"
-}
-
-// clearTraeAccountsForDataDelete 清空 Trae 账号池（保留网关等平台设置）；
-// 使用痕迹（记账/签到/额度/冷却）一并清空（ClearUsage 即时落盘痕迹文件）。
-func clearTraeAccountsForDataDelete() int {
-	_, next := traeCloneConfig()
-	n := len(next.Accounts)
-	next.Accounts = nil
-	trae.Set(next)
-	trae.ClearUsage()
-	return n
-}
-
-// ============ 账号总闸（对齐 WorkBuddy 双开关） ============
-
-// POST /admin/api/trae/accounts/enabled  body: { index, enabled }
+// handleTraeAccountSetEnabled POST /admin/api/trae/accounts/enabled —— 账号
+// 总闸（vendored disabled 字段）。关闭时连带关掉反代开关（互锁，与 wb 同款）：
+// 账号不存在了，路由参与位没有意义；重开账号不自动恢复路由（显式操作）。
 func handleTraeAccountSetEnabled(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
 		return
 	}
-	var req struct {
-		Index   int  `json:"index"`
-		Enabled bool `json:"enabled"`
+	var p struct {
+		UID     string `json:"uid"`
+		Enabled bool   `json:"enabled"`
 	}
-	if err := json.NewDecoder(io.LimitReader(r.Body, 512)).Decode(&req); err != nil {
-		writeAPI(w, http.StatusBadRequest, apiResponse{Error: "invalid JSON"})
-		return
-	}
-	if err := traeSetAccountEnabled(req.Index, req.Enabled); err != nil {
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&p); err != nil {
 		writeAPI(w, http.StatusBadRequest, apiResponse{Error: err.Error()})
 		return
 	}
-	writeAPI(w, http.StatusOK, apiResponse{Success: true, Message: fmt.Sprintf("account #%d enabled=%v", req.Index+1, req.Enabled)})
-}
-
-// ============ 本机授权助手对接（对齐上游原版 web_login.py 架构） ============
-//
-// 授权页强依赖本机 helper（127.0.0.1:8765，脚本由本网关提供下载）。helper
-// 收到授权回调后把凭据 POST 到本网关 /api/web-auth 入库（默认不参与路由）；
-// 面板轮询最近入库状态展示结果。三个端点：
-//   POST /api/web-auth            公开——helper 转发凭据入库（原版同路径）
-//   GET  /trae/oauth/helper       公开——下载按本部署预填 relay 的助手脚本
-//   GET  /admin/api/trae/helper/status  管理——最近一次入库结果
-
-type traeHelperIngest struct {
-	At      time.Time `json:"at"`
-	Success bool      `json:"success"`
-	Message string    `json:"message"`
-	Label   string    `json:"label"`
-	Added   bool      `json:"added"`
-}
-
-var (
-	traeLastIngestMu sync.Mutex
-	traeLastIngest   *traeHelperIngest
-)
-
-// webAuthSourceAllowed /api/web-auth 的来源判定：回环、内网（RFC1918/ULA）、
-// 链路本地放行；公网来源拒绝。RemoteAddr 无法解析时按拒绝处理（fail-closed）。
-// CLIENT_IP_HEADER 反代头不采信——凭据写入端点信任的只能是 TCP 对端。
-func webAuthSourceAllowed(r *http.Request) bool {
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		return false
-	}
-	ip := net.ParseIP(host)
-	if ip == nil {
-		return false
-	}
-	return ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast()
-}
-
-// POST /api/web-auth  body: helper 解析后的凭据 dict（token/refreshToken/userId/...）
-// 响应契约与原版一致：{"success":true} / {"success":false,"error":"..."}。
-//
-// 源限制（2026-10-29 审计修复）：本端点无认证（helper 是裸脚本，加认证会破坏
-// 与上游 web_login.py 的行级基线等价），但凭据写入绝不能对公网开放。设计场景
-// 是 helper 与用户浏览器同网段：本机部署=127.0.0.1，NAS/LAN 部署=内网 PC 的
-// RFC1918/ULA 地址——因此只放行回环+内网源，公网/反代外来源一律 403 fail-closed。
-func handleTraeWebAuth(w http.ResponseWriter, r *http.Request) {
-	if !webAuthSourceAllowed(r) {
-		log.Printf("trae web-auth rejected: non-local source %s", r.RemoteAddr)
-		writeJSON(w, http.StatusForbidden, map[string]any{"success": false, "error": "web-auth endpoint only accepts local/LAN sources"})
+	defer r.Body.Close()
+	sub := trae2apiCurrent()
+	if sub == nil {
+		writeAPI(w, http.StatusServiceUnavailable, apiResponse{Error: "TraeWork subsystem unavailable"})
 		return
 	}
+	if sub.srv.Pool().Get(p.UID) == nil {
+		writeAPI(w, http.StatusNotFound, apiResponse{Error: "account not found: " + p.UID})
+		return
+	}
+	reason := ""
+	if !p.Enabled {
+		reason = "disabled from panel"
+	}
+	if sub.srv.Pool().SetDisabled(p.UID, !p.Enabled, reason) {
+		_ = sub.srv.Pool().Save()
+	}
+	if !p.Enabled && traeRoutingGet(p.UID) {
+		traeRoutingSet(p.UID, false)
+	}
+	writeAPI(w, http.StatusOK, apiResponse{Success: true})
+}
+
+// handleTraeAccountSetRouting POST /admin/api/trae/accounts/routing —— 反代
+// 开关（路由参与位）。账号总闸关闭时不可打开（互锁）。
+func handleTraeAccountSetRouting(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		writeJSON(w, http.StatusMethodNotAllowed, map[string]any{"success": false, "error": "method not allowed"})
-		return
-	}
-	var creds map[string]any
-	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&creds); err != nil {
-		writeJSON(w, http.StatusOK, map[string]any{"success": false, "error": "invalid JSON: " + err.Error()})
-		return
-	}
-	acc, added, err := trae.AddFromHelperCreds(creds)
-	label := ""
-	if acc != nil {
-		label = acc.Label
-		if label == "" {
-			label = acc.ID
-		}
-	}
-	rec := &traeHelperIngest{At: time.Now().UTC(), Success: err == nil, Label: label, Added: added}
-	if err != nil {
-		rec.Message = err.Error()
-	} else if added {
-		// 英文源文 + 面板 T() 词条（I18N_ZH）双语；这两条是固定串，可整句词条。
-		rec.Message = "Credentials saved to server"
-	} else {
-		rec.Message = "Account already exists"
-	}
-	traeLastIngestMu.Lock()
-	traeLastIngest = rec
-	traeLastIngestMu.Unlock()
-	if err != nil {
-		log.Printf("trae web-auth ingest failed: %v", err)
-	} else {
-		log.Printf("trae web-auth ingest: account %q (%s), added=%v, routing disabled by default", label, acc.ID, added)
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"success": err == nil, "error": rec.Message, "label": label})
-}
-
-// GET /trae/oauth/helper?as=py —— 下载按本部署预填 relay 的授权助手脚本。
-// relay 取请求自身 Host（浏览器能打开面板就能运行助手连通网关）。
-func handleTraeHelperDownload(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		writeJSON(w, http.StatusMethodNotAllowed, map[string]any{"success": false, "error": "method not allowed"})
-		return
-	}
-	base := "http://" + r.Host
-	// 反向代理/HTTPS 部署：X-Forwarded-Proto 优先
-	if proto := r.Header.Get("X-Forwarded-Proto"); proto == "https" {
-		base = "https://" + r.Host
-	}
-	script := trae.HelperScript(base)
-	w.Header().Set("Content-Type", "text/x-python; charset=utf-8")
-	w.Header().Set("Content-Disposition", "attachment; filename=web_login.py")
-	w.Header().Set("Cache-Control", "no-store")
-	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write([]byte(script))
-}
-
-// GET /admin/api/trae/helper/status —— 最近一次 helper 入库结果。
-func handleTraeHelperStatus(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
 		writeAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
 		return
 	}
-	traeLastIngestMu.Lock()
-	rec := traeLastIngest
-	traeLastIngestMu.Unlock()
-	var data map[string]any
-	if rec == nil {
-		data = map[string]any{"seen": false}
-	} else {
-		data = map[string]any{
-			"seen":    true,
-			"at":      rec.At.Format(time.RFC3339),
-			"success": rec.Success,
-			"message": rec.Message,
-			"label":   rec.Label,
-			"added":   rec.Added,
-		}
+	var p struct {
+		UID     string `json:"uid"`
+		Enabled bool   `json:"enabled"`
 	}
-	writeAPI(w, http.StatusOK, apiResponse{Success: true, Data: data})
-}
-
-// ============ 签到与额度后台任务 ============
-
-// startTraeJobs 后台任务：额度定期刷新（30 分钟一轮）+ 自动签到巡检
-// （每 30 分钟检查，AutoCheckin 开启时才真正执行）。首轮错开启动高峰。
-// ONLY_ROUTER=true（2026-10-28 用户定）时整体不启动：仅会话路由，面板的
-// 自动签到开关被强制覆盖；模型目录同步与请求路径不受影响。
-func startTraeJobs() {
-	if kit.OnlyRouter() {
-		log.Printf("[only-router] ONLY_ROUTER=true: trae 额度刷新与自动签到任务已禁用（仅会话路由）")
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&p); err != nil {
+		writeAPI(w, http.StatusBadRequest, apiResponse{Error: err.Error()})
 		return
 	}
-	go func() {
-		time.Sleep(2 * time.Minute)
-		for {
-			refreshAllTraeCredits()
-			time.Sleep(30 * time.Minute)
-		}
-	}()
-	go func() {
-		time.Sleep(5 * time.Minute)
-		for {
-			if trae.Get().AutoCheckin != nil && *trae.Get().AutoCheckin {
-				res := runTraeCheckinAll()
-				if res.total > 0 {
-					log.Printf("trae auto checkin: %d/%d ok, %d failed", res.ok, res.total, res.failed)
-				}
-			}
-			time.Sleep(30 * time.Minute)
-		}
-	}()
+	defer r.Body.Close()
+	sub := trae2apiCurrent()
+	if sub == nil {
+		writeAPI(w, http.StatusServiceUnavailable, apiResponse{Error: "TraeWork subsystem unavailable"})
+		return
+	}
+	if a := sub.srv.Pool().Get(p.UID); a == nil {
+		writeAPI(w, http.StatusNotFound, apiResponse{Error: "account not found: " + p.UID})
+		return
+	} else if st := a.Status(time.Now()); st.Disabled && p.Enabled {
+		writeAPI(w, http.StatusBadRequest, apiResponse{
+			Error: "account switch is off; turn the account switch on first"})
+		return
+	}
+	traeRoutingSet(p.UID, p.Enabled)
+	writeAPI(w, http.StatusOK, apiResponse{Success: true})
 }
 
-// refreshAllTraeCredits 刷新全部账号总闸开启账号的额度快照（额度列与
-// credit-priority 选号的数据源）。静默：失败只记日志摘要。
-func refreshAllTraeCredits() int {
-	accs := trae.Get().Accounts
-	ok := 0
-	for _, a := range accs {
-		if a == nil || !a.EnabledOrDefault() || a.Token == "" {
-			continue
-		}
-		if _, err := trae.FetchCredits(a); err == nil {
-			ok++
+// handleTraeAccountSetRoutingAll POST /admin/api/trae/accounts/routing/all ——
+// 批量反代开关。enabled=false 全关；enabled=true 仅作用于"账号总闸开"的行。
+func handleTraeAccountSetRoutingAll(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
+		return
+	}
+	var p struct {
+		Enabled bool `json:"enabled"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&p); err != nil {
+		writeAPI(w, http.StatusBadRequest, apiResponse{Error: err.Error()})
+		return
+	}
+	defer r.Body.Close()
+	sub := trae2apiCurrent()
+	if sub == nil {
+		writeAPI(w, http.StatusServiceUnavailable, apiResponse{Error: "TraeWork subsystem unavailable"})
+		return
+	}
+	for _, st := range sub.srv.Pool().List() {
+		if !p.Enabled || !st.Disabled {
+			traeRoutingSet(st.UID, p.Enabled)
 		}
 	}
-	return ok
+	writeAPI(w, http.StatusOK, apiResponse{Success: true})
 }
 
-type traeCheckinResult struct {
-	total   int
-	ok      int
-	already int
-	failed  int
-}
-
-// runTraeCheckinAll 对账号总闸开启且今天未签的账号执行签到（串行）。
-func runTraeCheckinAll() traeCheckinResult {
-	var res traeCheckinResult
-	for _, a := range trae.Get().Accounts {
-		if a == nil || !a.EnabledOrDefault() || a.Token == "" {
-			continue
-		}
-		res.total++
-		if !trae.NeedsCheckin(a) {
-			res.already++
-			continue
-		}
-		if err := traeDoCheckin(a); err != nil {
-			res.failed++
-		} else {
-			res.ok++
-		}
+// handleTraeAccountSetProxy POST /admin/api/trae/accounts/proxy —— 主/备
+// 出口绑定（traeBindings 段，与 workbuddyBindings 同语义）。
+func handleTraeAccountSetProxy(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
+		return
 	}
-	return res
+	var p struct {
+		UID    string `json:"uid"`
+		Main   string `json:"main"`
+		Backup string `json:"backup"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&p); err != nil {
+		writeAPI(w, http.StatusBadRequest, apiResponse{Error: err.Error()})
+		return
+	}
+	defer r.Body.Close()
+	sub := trae2apiCurrent()
+	if sub == nil {
+		writeAPI(w, http.StatusServiceUnavailable, apiResponse{Error: "TraeWork subsystem unavailable"})
+		return
+	}
+	if sub.srv.Pool().Get(p.UID) == nil {
+		writeAPI(w, http.StatusNotFound, apiResponse{Error: "account not found: " + p.UID})
+		return
+	}
+	if p.Main == "" && p.Backup == "" {
+		writeAPI(w, http.StatusBadRequest, apiResponse{Error: "both main and backup are empty; use proxy/clear"})
+		return
+	}
+	traeBindingsMu.Lock()
+	loadTraeBindingsLocked()
+	prev := traeBindings[p.UID]
+	main := strings.TrimSpace(p.Main)
+	backup := resolveBackupSlot(strings.TrimSpace(p.Backup), prev.Backup)
+	if err := validateProxyBinding(main, backup); err != nil {
+		traeBindingsMu.Unlock()
+		writeAPI(w, http.StatusBadRequest, apiResponse{Error: err.Error()})
+		return
+	}
+	traeBindings[p.UID] = trae2apiProxyBinding{Main: main, Backup: backup}
+	saveTraeBindingsLocked()
+	traeBindingsMu.Unlock()
+	writeAPI(w, http.StatusOK, apiResponse{Success: true})
 }
 
-// traeDoCheckin 单账号签到：先 status 探测（上游 enable=false 说明活动未开），
-// 再 claim。错误上抛给调用方计数。
-func traeDoCheckin(a *trae.Account) error {
-	enable, checkedIn, credits, err := trae.CheckinStatus(a)
+// handleTraeAccountClearProxies POST /admin/api/trae/accounts/proxy/clear ——
+// 「清空代理」语义与各平台一致：清绑定 + 该账号路由置禁用（二者永远绑一起）。
+func handleTraeAccountClearProxies(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
+		return
+	}
+	var p struct {
+		UID string `json:"uid"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&p); err != nil {
+		writeAPI(w, http.StatusBadRequest, apiResponse{Error: err.Error()})
+		return
+	}
+	defer r.Body.Close()
+	traeBindingsMu.Lock()
+	loadTraeBindingsLocked()
+	delete(traeBindings, p.UID)
+	saveTraeBindingsLocked()
+	traeBindingsMu.Unlock()
+	traeRoutingSet(p.UID, false)
+	writeAPI(w, http.StatusOK, apiResponse{Success: true})
+}
+
+// handleTraeAccountDelete POST /admin/api/trae/accounts/delete —— 删除快照
+// 文件（vendored DELETE /admin/accounts/{name}），连带清理 afree 侧路由位。
+func handleTraeAccountDelete(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
+		return
+	}
+	var p struct {
+		UID string `json:"uid"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&p); err != nil {
+		writeAPI(w, http.StatusBadRequest, apiResponse{Error: err.Error()})
+		return
+	}
+	defer r.Body.Close()
+	code, data, err := trae2apiAdminCall(http.MethodDelete, "/admin/accounts/"+p.UID, nil)
 	if err != nil {
-		return err
+		writeAPI(w, http.StatusBadGateway, apiResponse{Error: err.Error()})
+		return
 	}
-	if !enable {
-		// 活动未开启：记状态（不算失败，但要清掉历史失败徽章，否则面板
-		// 永远挂着上一次的"签到失败"）
-		trae.RecordCheckinResult(a, false, 0, "check-in campaign not enabled for this account")
-		return nil
+	if code >= 400 {
+		writeAPI(w, code, apiResponse{Error: strings.TrimSpace(string(data))})
+		return
 	}
-	if checkedIn {
-		// 账号维度今天已签（status 口径）：落成功状态，清掉历史失败徽章。
-		// 此前不落记录，导致上午已签成功、下午手动 claim 撞 9074 后徽章
-		// 永远显示"签到失败"（2026-10-27 实测）。
-		trae.RecordCheckinResult(a, true, credits, "")
-		return nil
-	}
-	_, _, err = trae.CheckinClaim(a)
-	return err
+	traeBindingsMu.Lock()
+	loadTraeBindingsLocked()
+	delete(traeBindings, p.UID)
+	saveTraeBindingsLocked()
+	traeBindingsMu.Unlock()
+	writeAPI(w, http.StatusOK, apiResponse{Success: true})
 }
 
-// POST /admin/api/trae/checkin  body: {} —— 手动全部签到
+// handleTraeAccountLabel POST /admin/api/trae/accounts/label —— 昵称写入
+// vendored Store（Label 字段随快照持久化）。
+func handleTraeAccountLabel(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
+		return
+	}
+	var p struct {
+		UID   string `json:"uid"`
+		Label string `json:"label"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&p); err != nil {
+		writeAPI(w, http.StatusBadRequest, apiResponse{Error: err.Error()})
+		return
+	}
+	defer r.Body.Close()
+	sub := trae2apiCurrent()
+	if sub == nil {
+		writeAPI(w, http.StatusServiceUnavailable, apiResponse{Error: "TraeWork subsystem unavailable"})
+		return
+	}
+	a := sub.srv.Pool().Get(p.UID)
+	if a == nil || a.Store == nil {
+		writeAPI(w, http.StatusNotFound, apiResponse{Error: "account not found: " + p.UID})
+		return
+	}
+	// 快照文件是标签的持久层（重启后渠道重建以文件为准），运行时标签经
+	// Store.Load() + 池 SetLabel 同步（vendor 注入的并发安全写入口）。
+	label := strings.TrimSpace(p.Label)
+	path := a.Store.Path()
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		writeAPI(w, http.StatusInternalServerError, apiResponse{Error: err.Error()})
+		return
+	}
+	var m map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &m); err != nil {
+		writeAPI(w, http.StatusInternalServerError, apiResponse{Error: err.Error()})
+		return
+	}
+	enc, _ := json.Marshal(label)
+	m["label"] = enc
+	out, err := json.Marshal(m)
+	if err != nil {
+		writeAPI(w, http.StatusInternalServerError, apiResponse{Error: err.Error()})
+		return
+	}
+	if err := os.WriteFile(path, out, 0o600); err != nil {
+		writeAPI(w, http.StatusInternalServerError, apiResponse{Error: err.Error()})
+		return
+	}
+	if err := a.Store.Load(); err != nil {
+		writeAPI(w, http.StatusInternalServerError, apiResponse{Error: err.Error()})
+		return
+	}
+	a.SetLabel(label)
+	_ = sub.srv.Pool().Save()
+	writeAPI(w, http.StatusOK, apiResponse{Success: true})
+}
+
+// handleTraeAccountTest POST /admin/api/trae/accounts/test —— 沿用上游设计：
+// 额度连通性验证（真实 UG 调用 + 失败自动续期一次），无模型探测。
+func handleTraeAccountTest(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
+		return
+	}
+	var p struct {
+		UID string `json:"uid"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&p); err != nil {
+		writeAPI(w, http.StatusBadRequest, apiResponse{Error: err.Error()})
+		return
+	}
+	defer r.Body.Close()
+	code, data, err := trae2apiAdminCall(http.MethodPost, "/admin/accounts/"+p.UID+"/test", nil)
+	if err != nil {
+		writeAPI(w, http.StatusBadGateway, apiResponse{Error: err.Error()})
+		return
+	}
+	var vendored map[string]any
+	_ = json.Unmarshal(data, &vendored)
+	writeAPI(w, code, apiResponse{Success: code < 400, Data: vendored, Error: vendoredErr(vendored, code)})
+}
+
+// handleTraeCheckin POST /admin/api/trae/checkin —— 全量签到（vendored
+// CheckinAll：跳过国际版/SOLO、9074 换设备退避重试，签到失败不罚账号）。
 func handleTraeCheckin(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
 		return
 	}
-	// ONLY_ROUTER=true：仅会话路由，手动签到同样拒绝（2026-10-28 用户定）。
-	if kit.OnlyRouter() {
-		writeAPI(w, http.StatusServiceUnavailable, apiResponse{Error: "maintenance tasks are disabled by ONLY_ROUTER (session routing only)"})
+	code, data, err := trae2apiAdminCall(http.MethodPost, "/admin/checkin", nil)
+	if err != nil {
+		writeAPI(w, http.StatusBadGateway, apiResponse{Error: err.Error()})
 		return
 	}
-	res := runTraeCheckinAll()
-	log.Printf("trae manual checkin: %d/%d ok, %d already, %d failed", res.ok, res.total, res.already, res.failed)
-	writeAPI(w, http.StatusOK, apiResponse{
-		Success: res.failed == 0,
-		Message: fmt.Sprintf("checked in %d/%d", res.ok, res.total),
-		Data:    map[string]any{"total": res.total, "ok": res.ok, "already": res.already, "failed": res.failed},
-	})
+	var vendored map[string]any
+	_ = json.Unmarshal(data, &vendored)
+	writeAPI(w, code, apiResponse{Success: code < 400, Data: vendored, Error: vendoredErr(vendored, code)})
 }
 
-// POST /admin/api/trae/credits/refresh —— 手动刷新全部余额
+// handleTraeCreditsRefresh POST /admin/api/trae/credits/refresh —— 全量额度
+// 刷新（vendored RefreshCredits）。
 func handleTraeCreditsRefresh(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
 		return
 	}
-	// ONLY_ROUTER=true：仅会话路由，手动额度刷新同样拒绝（2026-10-28 用户定）。
-	if kit.OnlyRouter() {
-		writeAPI(w, http.StatusServiceUnavailable, apiResponse{Error: "maintenance tasks are disabled by ONLY_ROUTER (session routing only)"})
+	code, data, err := trae2apiAdminCall(http.MethodPost, "/admin/credits/refresh", nil)
+	if err != nil {
+		writeAPI(w, http.StatusBadGateway, apiResponse{Error: err.Error()})
 		return
 	}
-	n := refreshAllTraeCredits()
-	writeAPI(w, http.StatusOK, apiResponse{Success: true, Message: fmt.Sprintf("refreshed %d account(s)", n), Data: map[string]any{"refreshed": n}})
+	var vendored map[string]any
+	_ = json.Unmarshal(data, &vendored)
+	writeAPI(w, code, apiResponse{Success: code < 400, Data: vendored, Error: vendoredErr(vendored, code)})
+}
+
+// handleTraeCooldownClear POST /admin/api/trae/accounts/cooldown-clear ——
+// 解除账号冷却（vendored clear-cooldown）。
+func handleTraeCooldownClear(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
+		return
+	}
+	var p struct {
+		UID string `json:"uid"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&p); err != nil {
+		writeAPI(w, http.StatusBadRequest, apiResponse{Error: err.Error()})
+		return
+	}
+	defer r.Body.Close()
+	code, data, err := trae2apiAdminCall(http.MethodPost, "/admin/accounts/"+p.UID+"/clear-cooldown", nil)
+	if err != nil {
+		writeAPI(w, http.StatusBadGateway, apiResponse{Error: err.Error()})
+		return
+	}
+	writeAPI(w, code, apiResponse{Success: code < 400, Data: json.RawMessage(data)})
+}
+
+// vendoredErr 从 vendored OpenAI 风格错误体取可读消息。
+func vendoredErr(vendored map[string]any, code int) string {
+	if code < 400 {
+		return ""
+	}
+	if e, ok := vendored["error"].(map[string]any); ok {
+		if m, ok := e["message"].(string); ok {
+			return m
+		}
+	}
+	return fmt.Sprintf("vendored endpoint returned HTTP %d", code)
+}
+
+// ============ 原版 console 挂载（/admin/trae2api/） ============
+
+// trae2apiConsoleHandler 原版入口：vendored console 挂在本仓 /admin/trae2api/ 下
+// （新标签页打开，与 WorkBuddy「Original panel」同模式）。路径重写：
+//
+//	/admin/trae2api/api/X → /X  （console fetch 已被 vendor 改写到该基址）
+//	/admin/trae2api/X     → /X  （页面本体 /console 与根路径资源）
+//
+// 门禁复用 afree 管理会话 cookie；vendored 侧匿名管理员（cfg.APIKey/webPassword
+// 恒空），对公网不可达（本 handler 只挂在 afree /admin 鉴权之后）。
+func trae2apiConsoleHandler() http.Handler {
+	return adminAuthMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		sub := trae2apiCurrent()
+		if sub == nil {
+			writeJSON(w, http.StatusServiceUnavailable, map[string]any{
+				"error": "TraeWork subsystem unavailable"})
+			return
+		}
+		rest := strings.TrimPrefix(r.URL.Path, "/admin/trae2api")
+		if rest == "" || rest == "/" {
+			rest = "/console"
+		}
+		if strings.HasPrefix(rest, "/api/") {
+			rest = strings.TrimPrefix(rest, "/api")
+		}
+		r2 := r.Clone(r.Context())
+		r2.URL.Path = rest
+		sub.srv.Handler().ServeHTTP(w, r2)
+	}))
+}
+
+// ============ 备份导出 / 导入 ============
+
+// trae2apiBackupPayload 备份的 trae 段形态（2026-11-04 起）。config =
+// trae2api-config.json 原文；accounts = 快照文件名 → 快照 JSON；routing =
+// 反代开关表。旧引擎（trae-config.json 账号池）的形态不再兼容。
+type trae2apiBackupPayload struct {
+	Config   json.RawMessage            `json:"config,omitempty"`
+	Routing  map[string]bool            `json:"routing,omitempty"`
+	Accounts map[string]json.RawMessage `json:"accounts,omitempty"`
+}
+
+// trae2apiBackupSnapshot 备份导出：配置原文 + 全部账号快照 + 路由表。
+// vendored state.json（冷却/熔断/额度缓存）属使用痕迹，不随备份迁移。
+func trae2apiBackupSnapshot() json.RawMessage {
+	payload := trae2apiBackupPayload{Routing: traeRoutingCopy()}
+	if raw, err := os.ReadFile(traeConfigPath()); err == nil && json.Valid(raw) {
+		payload.Config = json.RawMessage(raw)
+	}
+	acc := map[string]json.RawMessage{}
+	entries, _ := os.ReadDir(filepath.Join(traeDataDir(), "accounts"))
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".json") {
+			continue
+		}
+		raw, err := os.ReadFile(filepath.Join(traeDataDir(), "accounts", e.Name()))
+		if err == nil && json.Valid(raw) {
+			acc[e.Name()] = json.RawMessage(raw)
+		}
+	}
+	payload.Accounts = acc
+	out, err := json.Marshal(payload)
+	if err != nil {
+		return nil
+	}
+	return out
+}
+
+func traeRoutingCopy() map[string]bool {
+	traeRoutingMu.Lock()
+	defer traeRoutingMu.Unlock()
+	loadTraeRoutingLocked()
+	cp := make(map[string]bool, len(traeRouting))
+	for uid, v := range traeRouting {
+		cp[uid] = v
+	}
+	return cp
+}
+
+// trae2apiRestoreBackup 备份导入：还原 config 与账号快照文件 + 路由表。
+// 隔离护栏：未勾选"沿用启用状态"时全部身份路由置禁用（与六平台口径一致）。
+// 旧引擎形态的 trae 段（无 config/accounts 键）报错跳过，不迁移。
+// 返回还原的账号数。
+func trae2apiRestoreBackup(raw json.RawMessage, keepEnabled bool) (int, error) {
+	var payload trae2apiBackupPayload
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		return 0, fmt.Errorf("not a trae2api backup segment (legacy engine shape?): %w", err)
+	}
+	if payload.Config == nil && len(payload.Accounts) == 0 {
+		return 0, errors.New("empty trae2api backup segment")
+	}
+	if payload.Config != nil {
+		// 旧引擎 trae-config.json 没有 trae.chat_base 键——据此区分形态。
+		var probe struct {
+			Trae struct {
+				ChatBase string `json:"chat_base"`
+			} `json:"trae"`
+		}
+		_ = json.Unmarshal(payload.Config, &probe)
+		if probe.Trae.ChatBase == "" {
+			return 0, errors.New("legacy trae config shape (pre-trae2api), not migrated")
+		}
+		if err := os.WriteFile(traeConfigPath(), payload.Config, 0o600); err != nil {
+			return 0, err
+		}
+	}
+	accountsDir := filepath.Join(traeDataDir(), "accounts")
+	if err := os.MkdirAll(accountsDir, 0o700); err != nil {
+		return 0, err
+	}
+	n := 0
+	for name, rawSnap := range payload.Accounts {
+		// 文件名白名单（快照命名 = <product>-<userId>.json），防路径逃逸。
+		if !strings.HasSuffix(name, ".json") || strings.ContainsAny(name, "/\\") ||
+			strings.Contains(name, "..") || name != filepath.Base(name) {
+			continue
+		}
+		if err := os.WriteFile(filepath.Join(accountsDir, name), rawSnap, 0o600); err != nil {
+			continue
+		}
+		n++
+		uid := strings.TrimSuffix(name, ".json")
+		if keepEnabled {
+			if v, ok := payload.Routing[uid]; ok {
+				traeRoutingSet(uid, v)
+			}
+		} else {
+			traeRoutingSet(uid, false)
+		}
+	}
+	if n > 0 || payload.Config != nil {
+		_ = trae2apiRestart()
+	}
+	return n, nil
+}
+
+// trae2apiProbeBlacklistedModel 黑名单页对 trae 封禁模型的定向探测：进程内
+// 发一次最小 chat 请求（真实计费意图极小：max_tokens=16），返回上游真实反应
+// 供人工判断"该不该解禁"。与旧引擎 traeProbeBlacklistedModel 同语义。
+func trae2apiProbeBlacklistedModel(model string) (map[string]any, string) {
+	params := map[string]any{
+		"model":      model,
+		"stream":     false,
+		"max_tokens": 16,
+		"messages":   []map[string]any{{"role": "user", "content": "Reply with exactly: OK"}},
+	}
+	body, err := json.Marshal(params)
+	if err != nil {
+		return map[string]any{"ok": false, "model": model, "error": err.Error()}, "error"
+	}
+	code, data, err := trae2apiAdminCall(http.MethodPost, "/v1/chat/completions", body)
+	if err != nil {
+		return map[string]any{"ok": false, "model": model, "error": err.Error()}, "error"
+	}
+	var resp struct {
+		Choices []struct {
+			FinishReason string `json:"finish_reason"`
+		} `json:"choices"`
+		Error map[string]any `json:"error"`
+	}
+	_ = json.Unmarshal(data, &resp)
+	if code >= 400 || resp.Error != nil {
+		msg := fmt.Sprintf("HTTP %d", code)
+		if resp.Error != nil {
+			if m, ok := resp.Error["message"].(string); ok {
+				msg = m
+			}
+		}
+		return map[string]any{"ok": false, "model": model, "status": code, "error": msg}, "error"
+	}
+	finish := ""
+	if len(resp.Choices) > 0 {
+		finish = resp.Choices[0].FinishReason
+	}
+	return map[string]any{"ok": true, "model": model, "finishReason": finish}, "ok"
 }

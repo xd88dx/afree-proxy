@@ -593,85 +593,99 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
 </div>
 
 <div id="tab-trae" class="tab-panel" style="display:none">
-<h2 style="margin-bottom:4px">TraeWork</h2>
+<h2 style="margin-bottom:4px;display:flex;justify-content:space-between;align-items:center;gap:12px">
+  <span>TraeWork</span>
+  <a class="btn btn-sm" href="/admin/trae2api/" target="_blank" rel="noopener" style="align-self:center">Original panel</a>
+</h2>
 <div class="hint" id="traeSummary" style="margin:0 0 16px">Loading...</div>
 
 <div class="section">
+  <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.2"/><path d="M3.5 20c.6-3.4 2.8-5.2 5.5-5.2s4.9 1.8 5.5 5.2"/><circle cx="17" cy="9" r="2.6"/><path d="M14.8 14.9c2.9-.4 5.2 1.2 5.7 4.4"/></svg></span> Credentials</div>
   <div class="section-body">
-    <div class="form-row">
-      <div class="field" style="margin:0">
-        <label>Gateway</label>
-        <div style="display:flex;gap:8px;align-items:center">
-          <input type="text" id="traeGateway" placeholder="https://trae-api-cn.mchost.guru" style="flex:1;min-width:0">
-          <button class="btn btn-primary btn-sm" onclick="saveTraeConfig()">Confirm</button>
-        </div>
-      </div>
-    </div>
-    <div class="flex" style="gap:10px;margin:8px 0;align-items:center;flex-wrap:wrap">
-      <label class="hint" style="margin:0">Probe model (used by the Test buttons):</label>
-      <select id="traeProbeModel" style="max-width:420px"><option value="">auto</option></select>
-    </div>
-    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin:0 6px 8px">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin:0 6px 8px;flex-wrap:wrap">
       <span class="wb-toolbar">
-        <button class="btn btn-sm" onclick="refreshTraeCredits()" title="Refresh every enabled account's credit snapshot (feeds the Credits column and credit-priority selection)">Refresh balances</button>
+        <button class="btn btn-primary btn-sm" onclick="openTraeAddDialog()">Add accounts</button>
+        <button class="btn btn-sm" onclick="refreshTraeCredits()" title="Refresh every enabled account's credit snapshot (feeds the Credits column)">Refresh balances</button>
+        <button class="btn btn-sm" onclick="runTraeCheckin()" title="Daily check-in for every account whose account switch is on (upstream schedule applies too)">Check in all</button>
       </span>
       <span class="wb-toolbar">
-        <button class="btn btn-sm" onclick="runTraeCheckin()" title="Daily check-in for every enabled account that has not checked in today">Check in all</button>
-      </span>
-    </div>
-    <div class="table-wrap" style="margin-bottom:10px">
-      <table>
-        <thead><tr><th style="width:44px">#</th><th style="width:150px">Account</th><th>Status</th><th title="Remaining credits from the latest snapshot (auto-refreshed in the background; Test refreshes on demand)">Credits</th><th title="Counted locally by this proxy from upstream usage events">Today/Total tokens</th><th>Last used</th><th title="Main exit first, backup as fallback; both down = row skipped (isolation).">Proxy binding</th><th style="width:130px;text-align:center">Actions</th><th style="text-align:center" title="Gateway (reverse proxy) switch: unchecked = model sessions never route to this account; check-in and all other maintenance tasks are unaffected. Can only be ticked while the account switch is on.">Gateway switch</th><th style="text-align:center" title="Account master switch. Off = the account does not exist: check-in, balance refresh and Test all skip it, and it never routes.">Account switch</th></tr></thead>
-        <tbody id="traeAccountsBody"><tr><td colspan="10" class="empty">Loading...</td></tr></tbody>
-      </table>
-    </div>
-    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin:10px 6px 4px">
-      <button class="btn btn-primary btn-sm" onclick="openTraeAddDialog()">Add accounts</button>
-      <div style="display:flex;gap:8px">
         <button class="btn btn-sm" onclick="stageAllTraeRouting(true)">Enable all</button>
         <button class="btn btn-sm" onclick="stageAllTraeRouting(false)">Disable all</button>
         <button class="btn btn-sm" onclick="stageProxiesByOrder('trae')" title="Bind main proxy by row order: 1st account to Direct, then the proxy pool in order (staged - click Save to apply; enable/disable and backup untouched)">Bind proxies in order</button>
         <button class="btn btn-sm" onclick="stageClearTraeProxies()" title="Stage only — click Save to apply. Clears bindings and disables every row.">Clear bindings</button>
-        <button class="btn btn-sm" id="traeTestBtn" onclick="batchTestTraeAccounts()" title="Run the Test probe on every row.">Test all</button>
-      </div>
-      <div style="display:flex;gap:8px">
+        <button class="btn btn-sm" id="traeTestBtn" onclick="batchTestTraeAccounts()" title="Run the Test probe on every routable row.">Test all</button>
+      </span>
+      <span class="wb-toolbar">
         <button class="btn btn-sm btn-warn" id="traeResetBtn" onclick="resetTraeEdits()" title="Discard staged changes and reload the last saved state">Discard</button>
         <button class="btn btn-primary btn-sm" id="traeSaveBtn" onclick="saveTraeEdits()">Save</button>
+      </span>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th style="width:44px">#</th><th style="width:150px">Account</th><th>Status</th><th title="Remaining credits from the latest snapshot (auto-refreshed in the background; Test refreshes on demand)">Credits</th><th title="Main exit first, backup as fallback; both down = row skipped (isolation).">Proxy binding</th><th style="width:130px;text-align:center">Actions</th><th style="text-align:center" title="Gateway (reverse proxy) switch: unchecked = model sessions never route to this account; check-in and all other maintenance tasks are unaffected. Can only be ticked while the account switch is on.">Gateway switch</th><th style="text-align:center" title="Account master switch. Off = the account does not exist: check-in, balance refresh and Test all skip it, and it never routes.">Account switch</th></tr></thead>
+        <tbody id="traeAccountsBody"><tr><td colspan="8" class="empty">Loading...</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h10M4 18h7"/></svg></span> Trae config</div>
+  <div class="section-body" id="traeConfigForm">
+    <div class="form-row">
+      <div class="field" style="flex:2">
+        <label>Gateway</label>
+        <div style="display:flex;gap:8px;align-items:center">
+          <input type="text" id="traeGateway" placeholder="https://trae-api-cn.mchost.guru" style="flex:1;min-width:0">
+          <button class="btn btn-primary btn-sm" onclick="saveTraeGateway()">Confirm</button>
+        </div>
+      </div>
+      <div class="field"><label>Rate filter (exclude models priced above)</label>
+        <select id="traeRateFilter">
+          <option value="0">Off</option>
+          <option value="0.5">0.5x</option>
+          <option value="1">1x</option>
+          <option value="2">2x</option>
+          <option value="5">5x</option>
+        </select>
       </div>
     </div>
-  </div>
-</div>
-
-<div class="section">
-  <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></span> Rate-limit defense</div>
-  <div class="section-body">
     <div class="form-row">
-      <div class="field"><label>Max concurrency</label><input type="text" id="traeMaxConc" placeholder="8"></div>
-      <div class="field"><label>Rate-limit retries</label><input type="text" id="traeRetries" placeholder="3"></div>
+      <div class="field"><label>Max in flight per account</label><input type="text" id="traeMaxInFlight" placeholder="8"></div>
+      <div class="field"><label>Breaker threshold</label><input type="text" id="traeBreakerThreshold" placeholder="3"></div>
+      <div class="field"><label>Breaker cooldown</label><input type="text" id="traeBreakerCooldown" placeholder="30m"></div>
+      <div class="field"><label>Stream idle timeout (s)</label><input type="text" id="traeIdleTimeout" placeholder="120"></div>
     </div>
-    <div class="form-actions"><button class="btn btn-primary" onclick="saveTraeConfig()">Save rate-limit config</button></div>
-  </div>
-</div>
-
-<div class="section">
-  <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><path d="M12 6v6l4 2"/><circle cx="12" cy="12" r="9"/></svg></span> Automation</div>
-  <div class="section-body">
     <div class="form-row">
-      <div class="field">
-        <label>Selection strategy</label>
-        <select id="traeSelection">
-          <option value="">Round-robin</option>
-          <option value="credit-priority">Credit priority (richest first)</option>
-        </select>
+      <div class="field"><label>Soft rate cooldown</label><input type="text" id="traeCoolSoft" placeholder="10m"></div>
+      <div class="field"><label>Soft rate cooldown max</label><input type="text" id="traeCoolSoftMax" placeholder="2h"></div>
+      <div class="field"><label>Model cooldown</label><input type="text" id="traeCoolModel" placeholder="10m"></div>
+    </div>
+    <div class="form-row">
+      <div class="field" style="display:flex;align-items:flex-end">
+        <label class="hint" style="display:flex;gap:6px;align-items:center;margin:0 0 8px;cursor:pointer;white-space:nowrap">
+          <input type="checkbox" id="traeCheckinEnabled"> Daily check-in
+        </label>
+      </div>
+      <div class="field"><label>Check-in hours (comma separated)</label><input type="text" id="traeCheckinHours" placeholder="9,21"></div>
+      <div class="field" style="display:flex;align-items:flex-end">
+        <label class="hint" style="display:flex;gap:6px;align-items:center;margin:0 0 8px;cursor:pointer;white-space:nowrap">
+          <input type="checkbox" id="traeStrictModels"> Strict models (reject unknown)
+        </label>
       </div>
       <div class="field" style="display:flex;align-items:flex-end">
         <label class="hint" style="display:flex;gap:6px;align-items:center;margin:0 0 8px;cursor:pointer;white-space:nowrap">
-          <input type="checkbox" id="traeAutoCheckin"> Daily check-in
+          <input type="checkbox" id="traeSessionSticky"> Session sticky
+        </label>
+      </div>
+      <div class="field" style="display:flex;align-items:flex-end">
+        <label class="hint" style="display:flex;gap:6px;align-items:center;margin:0 0 8px;cursor:pointer;white-space:nowrap">
+          <input type="checkbox" id="traeIntl"> International realms
         </label>
       </div>
     </div>
-    <div class="hint" style="margin-top:0">Credit priority picks the account with the most remaining credits first (unlimited accounts always first; needs the background balance refresh). Daily check-in claims every enabled account once per day.</div>
-    <div class="form-actions"><button class="btn btn-primary" onclick="saveTraeConfig()">Save automation config</button></div>
+    <div class="hint" style="margin-top:0">Selection is the engine's weight scheduling (idle + credit + balance aware) — the old manual ordering is gone. Rate filter removes models whose upstream consumption rate exceeds the threshold (models without a published rate stay). Config save restarts the engine; cooldowns persist via state.json.</div>
+    <div class="form-actions"><button class="btn btn-primary" onclick="saveTraeConfig()">Save Trae config</button></div>
   </div>
 </div>
 
@@ -680,20 +694,11 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
   <div class="section-body">
     <div class="flex" style="margin-bottom:10px;gap:10px">
       <button class="btn btn-sm btn-primary" onclick="refreshTraeModels(this)">Refresh models</button>
-          <span class="hint" style="margin:0;flex:1;min-width:200px">Automatically synced from the official model source upstream (every 5 minutes)</span>
-      <label class="hint" style="margin:0;white-space:nowrap" for="traeEndpoint">Endpoint</label>
-      <select id="traeEndpoint" onchange="saveTraeEndpoint(this.value)" style="max-width:220px" title="Upstream endpoint: Auto = merged catalog via the native raw_chat transport; Remote / TraeWork switch requests to the chat_sessions transport (same as the upstream project)">
-        <option value="auto">Auto route</option>
-        <option value="remote">Remote</option>
-        <option value="traecode">TraeCode</option>
-        <option value="traework">TraeWork</option>
-      </select>
+      <span class="hint" style="margin:0;flex:1;min-width:200px">Catalog follows the engine realms (trae: / solo: / trae-intl: / solo-intl:) — model names pass through to the gateway as-is</span>
     </div>
     <div id="traeModelsBody">Loading...</div>
-    </div>
   </div>
 </div>
-
 <div id="tab-proxypool" class="tab-panel" style="display:none">
 <h2>Proxy pool</h2>
 <div class="section">
@@ -1721,10 +1726,10 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
     <details class="trae-acc" id="traeAccManual">
       <summary>Manual paste</summary>
       <div class="trae-acc-body">
-        <p class="hint" style="margin:0 0 8px" id="traeAddHint">One Cloud-IDE-JWT (a 3-part JWT) per line. New accounts start with routing off — tick the Gateway switch to enable.</p>
+        <p class="hint" style="margin:0 0 8px" id="traeAddHint">One token----refreshToken line per account (both required — the engine refreshes with a freshly minted device key; token-only credentials cannot pass import validation). Portable snapshot JSON / ZIP import lives in the original panel (Original panel, top right). New accounts start with routing off.</p>
         <div class="field">
-          <label>Tokens (one per line)</label>
-          <textarea id="traeAddInput" rows="5" placeholder="eyJhbGciOi…" style="font-family:'JetBrains Mono',Consolas,monospace"></textarea>
+          <label>Credentials (one per line)</label>
+          <textarea id="traeAddInput" rows="5" placeholder="eyJhbGciOi…----eyJhbGciOi…" style="font-family:'JetBrains Mono',Consolas,monospace"></textarea>
         </div>
       </div>
     </details>
@@ -2680,37 +2685,56 @@ const I18N_ZH = {
   // 封禁档位标签（trae 按端点档位封禁：remote/traecode/traework）
   'banned on this endpoint tier only': '仅该端点档位被封，同 ID 其他档位不受影响',
   'No matching ban entry — it may have been unblocked already.': '未找到对应的封禁条目——可能已经解禁过了。',
-  // Trae 平台页
+  // TraeWork 平台页（vendored trae2api，2026-11-04 上游切换）
   'Gateway': '网关',
-  'Endpoint': '端点',
-  'Auto route': '自动路由',
-  'Upstream endpoint switched': '上游端点已切换',
-  'Upstream endpoint: Auto = merged catalog via the native raw_chat transport; Remote / TraeWork switch requests to the chat_sessions transport (same as the upstream project)': '上游端点：自动 = 合并目录走原生 raw_chat 传输；Remote / TraeWork 切换为 chat_sessions 传输（与原项目一致）',
-  'Counted locally by this proxy from upstream usage events': '由本网关按上游用量事件本地计数',
-  'Models appear here once an account is enabled — the catalog syncs from upstream': '启用账号后此处才会显示并同步模型目录',
-  'Models appear here once a credential is enabled — the catalog syncs from upstream': '启用账号或 key 后此处才会显示并同步模型目录',
+  'Credentials': '凭据列表',
+  'Trae config': 'Trae 配置',
+  'Rate filter (exclude models priced above)': '费率过滤（剔除高于该倍率的模型）',
+  'Max in flight per account': '单账号并发上限',
+  'Breaker threshold': '熔断阈值',
+  'Breaker cooldown': '熔断冷却',
+  'Stream idle timeout (s)': '流中空闲超时（秒）',
+  'Soft rate cooldown': '软限流冷却',
+  'Soft rate cooldown max': '软限流冷却上限',
+  'Model cooldown': '模型冷却',
+  'Check-in hours (comma separated)': '签到小时（逗号分隔）',
+  'Strict models (reject unknown)': '严格模型名（拒绝未知模型）',
+  'Session sticky': '会话粘性',
+  'International realms': '国际版域',
+  "Selection is the engine's weight scheduling (idle + credit + balance aware) — the old manual ordering is gone. Rate filter removes models whose upstream consumption rate exceeds the threshold (models without a published rate stay). Config save restarts the engine; cooldowns persist via state.json.": '选号由引擎权重调度（空闲/额度/余额感知）——旧的手动排序已移除。费率过滤剔除上游倍率超过阈值的模型（未下发费率的模型保留）。保存配置会重启引擎；冷却经 state.json 持久化。',
+  'Catalog follows the engine realms (trae: / solo: / trae-intl: / solo-intl:) — model names pass through to the gateway as-is': '目录跟随引擎域（trae: / solo: / trae-intl: / solo-intl:）——模型名原样透传给网关',
+  'Save Trae config': '保存 Trae 配置',
+  "Refresh every enabled account's credit snapshot (feeds the Credits column)": '刷新全部账号的额度快照（刷新"积分"列）',
+  'Daily check-in for every account whose account switch is on (upstream schedule applies too)': '对账号总闸开启的账号执行每日签到（上游定时任务同样生效）',
+  'Run the Test probe on every routable row.': '对每一行可路由凭据执行连通性探测。',
+  'Models appear here once an account is enabled — the catalog follows the engine realms': '启用账号后此处才会显示——目录跟随引擎域',
   'Add accounts': '添加账号',
-  'No TraeWork accounts yet — click Add accounts': '暂无 TraeWork 账号——点"添加账号"',
+  'No TraeWork accounts yet — click Add accounts or use the original panel import': '暂无 TraeWork 账号——点"添加账号"或在右上角"原版入口"导入',
   'Add TraeWork accounts': '添加 TraeWork 账号',
-  'Tokens (one per line)': 'Token（每行一个）',
-  'Automation': '自动化',
-  'Token expired': 'token 已过期',
-  'No refresh token': '无刷新令牌',
-  'Unlimited': '不限量',
+  'Credentials (one per line)': '凭据（每行一条）',
+  'One token----refreshToken line per account (both required — the engine refreshes with a freshly minted device key; token-only credentials cannot pass import validation). Portable snapshot JSON / ZIP import lives in the original panel (Original panel, top right). New accounts start with routing off.': '每行一条 token----refreshToken（两者都必须——引擎用现场铸造的设备密钥续期；仅 token 的凭据无法通过导入校验）。便携快照 JSON / ZIP 导入在右上角"原版入口"里。新账号默认不参与路由。',
   'Account #': '账号 #',
   ' — ': ' — ',
-  ' — unlimited credits': ' — 不限量额度',
   ' — credits: ': ' — 额度：',
-  'Enter at least one token': '请至少输入一个 token',
-  ', skipped ': '，跳过 ',
+  'Enter at least one credential line': '请至少输入一行凭据',
+  ', failed ': '，失败 ',
   'Remove this account from the pool': '把该账号移出账号池',
-  'TraeWork config saved': 'TraeWork 配置已保存',
+  'routable': '可路由',
+  'Disabled': '已禁用',
+  'disabled': '已禁用',
+  'engine unavailable — see server log': '引擎未运行——见服务端日志',
+  'Breaker': '熔断',
+  'Degraded': '降权',
+  'Gateway saved — engine restarted': '网关已保存——引擎已重启',
+  'TraeWork config saved — engine restarted': 'TraeWork 配置已保存——引擎已重启',
+  'Gateway is required': '网关不能为空',
+  ' — OK': ' — 正常',
+  'Saving…': '保存中…',
   ' — re-download it from THIS panel and restart it (python web_login.py)': ' ——请从本面板重新下载助手并重启（python web_login.py）',
   'Helper detected, but it writes credentials to ANOTHER deployment: ': '检测到助手，但它会把凭据写入另一个部署：',
   'Local helper detected (writes to this gateway) — click Open helper page, then use the authorization button there': '已检测到本机授权助手（凭据写入本网关）——点"打开授权助手页面"，在弹出的页面里点授权按钮',
   'Download helper': '下载授权助手',
   'Download the helper from this panel, run "python web_login.py" locally, then authorize on the opened page (sign in to trae.cn in the browser first). The account lands here automatically with routing off. The helper writes to the panel it was downloaded from.': '从本面板下载助手并在本机运行 python web_login.py，在打开的页面点授权即可（浏览器需已登录 trae.cn）。账号自动入库，默认不参与路由；助手写入下载它的那个网关。',
-  'One Cloud-IDE-JWT (a 3-part JWT) per line. New accounts start with routing off — tick the Gateway switch to enable.': '每行一个 Cloud-IDE-JWT（三段式）。新账号默认不参与路由，勾选反代开关启用。',
   'Open the helper page (127.0.0.1:8765) and click the authorize button there': '打开助手页面（127.0.0.1:8765），在页面里点授权按钮',
   'Web authorization': '网页授权',
   'Manual paste': '手动填写',
@@ -2721,8 +2745,6 @@ const I18N_ZH = {
   'Local helper NOT detected — download it, run "python web_login.py", then retry': '未检测到本机授权助手——先下载并在本机运行 web_login.py 后重试',
   // Trae 双开关 / 网页授权 / 签到 / 自动化
   'Refresh balances': '刷新余额',
-  'Refresh every enabled account\'s credit snapshot (feeds the Credits column and credit-priority selection)': '刷新所有已启用账号的额度快照（额度列与额度优先选号的数据源）',
-  'Daily check-in for every enabled account that has not checked in today': '给今天还没签到的已启用账号执行每日签到',
   'Daily check-in': '每日自动签到',
   'Checked in': '签到成功',
   'Check-in failed': '签到失败',
@@ -2732,11 +2754,6 @@ const I18N_ZH = {
   'Account ready: ': '账号就绪：',
   'Account already in the pool: ': '账号已在池中：',
   'Authorization failed: ': '授权失败：',
-  'Selection strategy': '选号策略',
-  'Round-robin': '轮转',
-  'Credit priority (richest first)': '额度优先（余量多者优先）',
-  'Credit priority picks the account with the most remaining credits first (unlimited accounts always first; needs the background balance refresh). Daily check-in claims every enabled account once per day.': '额度优先：余量最多的账号优先（不限量账号恒最优先；依赖后台余额刷新的数据）。每日签到会给每个已启用账号每天签一次。',
-  'Save automation config': '保存自动化配置',
   'Remaining credits from the latest snapshot (auto-refreshed in the background; Test refreshes on demand)': '最新快照的剩余额度（后台自动刷新；Test 按钮即时刷新）',
   'Account master switch. Off = the account does not exist: check-in, balance refresh and Test all skip it, and it never routes.': '账号总开关。关闭 = 账号视为不存在：签到、余额刷新与 Test 全部跳过，也绝不参与路由。',
   // 2026-10-29 汉化遗留修复：代理健康表头（原模板写死中文）、后端固定消息、
@@ -3817,7 +3834,7 @@ async function loadStats() {
   try {
     const d = await api('GET', '/trae/config');
     const accs = (d.data && d.data.accounts) || [];
-    setDash('dashTrae', 'accounts', accs.length, accs.filter(a => a.routingEnabled !== false).length, accs.filter(a => a.cooling).length);
+    setDash('dashTrae', 'accounts', accs.length, accs.filter(a => a.routing === true && a.disabled !== true).length, accs.filter(a => a.cooling || a.breaker).length);
   } catch (e) { /* ignore */ }
   try {
     const d = await api('GET', '/amd/config');
@@ -7360,12 +7377,23 @@ async function orKeyAddFromDialog() {
   }
 }
 
-// ========== Trae page ==========
-// Trae 账号池（trae: 前缀平台，Cloud-IDE-JWT 凭据）：配置加载/保存、账号表
-// 暂存编辑（绑定 + 路由启用 + 昵称改名）、批量测试、模型目录。协议与
-// OpenRouter 页同构，凭据列展示 JWT 掩码 + 昵称（铅笔改名）。
+// ========== TraeWork page（vendored trae2api 引擎，2026-11-04 上游切换）==========
+// 三区布局（对齐 WorkBuddy 页）：凭据列表 / Trae 配置 / 模型目录。模型名透传
+// （trae:/solo:/trae-intl:/solo-intl: 域前缀）；Test 按钮沿用上游设计（额度
+// 连通性验证，无探测模型下拉）；选号为上游权重调度，无手动重排序。
 let traeCfgCache = {};
-let traeAccSnapshot = {};
+let traeAccSnapshot = {};   // index → { uid, main, backup, routing, account }
+
+// traeFmtDur 秒 → 紧凑时长（"5m" / "2h30m"）：冷却/熔断剩余时间显示。
+function traeFmtDur(sec) {
+  sec = Math.max(0, Math.round(sec || 0));
+  if (sec >= 3600) {
+    const h = Math.floor(sec / 3600), m = Math.round((sec % 3600) / 60);
+    return h + 'h' + (m ? m + 'm' : '');
+  }
+  if (sec >= 60) return Math.round(sec / 60) + 'm';
+  return sec + 's';
+}
 
 async function loadTraeConfig() {
   try {
@@ -7376,103 +7404,133 @@ async function loadTraeConfig() {
     const accs = c.accounts || [];
     const sum = _('traeSummary');
     if (sum) {
-      const routed = accs.filter(a => a.routingEnabled !== false).length;
-      const cooling = accs.filter(a => a.cooling).length;
-      sum.textContent = accs.length + ' ' + T('accounts') + ' · ' + routed + ' ' + T('active') + ' · ' + cooling + ' ' + T('cooling');
+      const cooling = accs.filter(a => a.cooling || a.breaker || a.degraded).length;
+      const off = accs.filter(a => a.disabled).length;
+      sum.textContent = accs.length + ' ' + T('accounts') + ' · ' + (c.routable || 0) + ' ' + T('routable') +
+        ' · ' + cooling + ' ' + T('cooling') +
+        (off ? ' · ' + off + ' ' + T('disabled') : '') +
+        (!c.loaded ? ' · ' + T('engine unavailable — see server log') : '');
     }
     renderTraeAccounts(accs);
+    // 配置区回填（读到什么填什么，避免下拉框与后端漂移）
     _('traeGateway').value = c.gateway || '';
-    if (_('traeEndpoint')) _('traeEndpoint').value = c.endpoint || 'auto';
-    _('traeMaxConc').value = c.maxConcurrency || 8;
-    _('traeRetries').value = c.retries || 3;
-    if (_('traeSelection')) _('traeSelection').value = c.selection || '';
-    if (_('traeAutoCheckin')) _('traeAutoCheckin').checked = c.autoCheckin === true;
-    // 封禁过滤：黑名单语义是「不再对外提供」，页面模型列表同步剔除。
+    _('traeMaxInFlight').value = c.maxInFlight || 8;
+    _('traeBreakerThreshold').value = c.breakerThreshold || 3;
+    _('traeBreakerCooldown').value = c.breakerCooldown || '30m';
+    _('traeCoolSoft').value = c.cooldownSoftRate || '10m';
+    _('traeCoolSoftMax').value = c.cooldownSoftRateMax || '2h';
+    _('traeCoolModel').value = c.cooldownModel || '10m';
+    _('traeIdleTimeout').value = c.idleTimeout || 120;
+    _('traeCheckinEnabled').checked = c.checkinEnabled === true;
+    _('traeCheckinHours').value = (c.checkinHours || [9, 21]).join(',');
+    _('traeStrictModels').checked = c.strictModels === true;
+    _('traeSessionSticky').checked = c.sessionSticky === true;
+    _('traeIntl').checked = c.intlEnabled === true;
+    const rf = _('traeRateFilter');
+    if (rf) rf.value = String(c.rateFilter || 0);
+    // 模型目录（黑名单语义 = 不再对外提供，页面同步剔除）
     await syncModelBlacklist();
     const models = (c.models || []).filter(m => m && !modelBlacklistIds.has(m.id));
-    const sel = _('traeProbeModel');
-    if (sel) {
-      const prev = sel.value;
-      sel.innerHTML = '<option value="">' + T('auto') + '</option>' +
-        models.map(m => '<option value="' + esc(String(m.id || '').replace(/^trae:/, '')) + '">' + esc(m.id) + '</option>').join('');
-      if (Array.from(sel.options).some(o => o.value === prev)) sel.value = prev;
-    }
-    const tb = _('traeModelsBody');
-    if (tb) {
-      const row = inner => '<div style="display:flex;align-items:center;gap:10px;padding:8px 12px;margin:5px 0;background:rgba(148,163,184,.06);border:1px solid var(--border);border-radius:10px">' + inner + '</div>';
-      tb.innerHTML = models.length
-        ? models.map(m => row(
-            '<span style="font-family:\'JetBrains Mono\',monospace;font-size:13px;flex:1"' + (m.name ? ' title="' + esc(m.name) + '"' : '') + '>' + esc(m.id) + '</span>' +
-            '<span class="model-tag free">' + T('no charge') + '</span>' +
-            wbContextTagHTML(m.context, T('Context')) +
-            '<button class="btn btn-sm btn-danger" data-bl-ban="1" data-platform="trae" data-model="' + esc(m.id) + '" data-scope="' + esc(traeCfgCache.endpoint || 'auto') + '" data-refresh="trae" style="white-space:nowrap">' + T('Ban') + '</button>')).join('')
-        : '<div class="empty">' + T((c.accounts || []).some(x => x.accountEnabled !== false)
-            ? 'No models yet — click Refresh models'
-            : 'Models appear here once an account is enabled — the catalog syncs from upstream') + '</div>';
-    }
+    renderTraeModels(models, accs);
   } catch (e) { /* ignore */ }
 }
 
-async function saveTraeConfig() {
-  const body = {
-    gateway: _('traeGateway').value.trim(),
-    maxConcurrency: parseInt(_('traeMaxConc').value) || 8,
-    retries: parseInt(_('traeRetries').value) || 3,
-    selection: _('traeSelection') ? _('traeSelection').value : '',
-    autoCheckin: !(!_('traeAutoCheckin') || !_('traeAutoCheckin').checked),
-  };
+// saveTraeGateway 网关输入框旁的 Confirm：只改 chat_base 并重启引擎。
+async function saveTraeGateway() {
+  const gw = _('traeGateway').value.trim();
+  if (!gw) { toast(T('Gateway is required'), 'error'); return; }
   try {
-    await api('POST', '/trae/config/update', body);
-    toast(T('TraeWork config saved'), 'success');
+    await api('POST', '/trae/config/update', { gateway: gw });
+    toast(T('Gateway saved — engine restarted'), 'success');
     loadTraeConfig();
   } catch (e) { toast(T('Save failed: ') + e.message, 'error'); }
 }
 
-async function saveTraeEndpoint(ep) {
+// saveTraeConfig 配置区整体保存：vendored 无热更新，落盘后整组重启（池状态
+// 经 state.json 保留，冷却/熔断不丢）。
+async function saveTraeConfig() {
+  const body = {
+    gateway: _('traeGateway').value.trim(),
+    maxInFlight: parseInt(_('traeMaxInFlight').value) || 8,
+    breakerThreshold: parseInt(_('traeBreakerThreshold').value) || 3,
+    breakerCooldown: _('traeBreakerCooldown').value.trim() || '30m',
+    cooldownSoftRate: _('traeCoolSoft').value.trim() || '10m',
+    cooldownSoftRateMax: _('traeCoolSoftMax').value.trim() || '2h',
+    cooldownModel: _('traeCoolModel').value.trim() || '10m',
+    idleTimeout: parseInt(_('traeIdleTimeout').value) || 120,
+    checkinEnabled: !(!_('traeCheckinEnabled') || !_('traeCheckinEnabled').checked),
+    checkinHours: _('traeCheckinHours').value.split(',').map(s => parseInt(s.trim(), 10)).filter(n => n >= 0 && n <= 23),
+    strictModels: !(!_('traeStrictModels') || !_('traeStrictModels').checked),
+    sessionSticky: !(!_('traeSessionSticky') || !_('traeSessionSticky').checked),
+    intlEnabled: !(!_('traeIntl') || !_('traeIntl').checked),
+    rateFilter: parseFloat(_('traeRateFilter') ? _('traeRateFilter').value : '0') || 0,
+  };
+  const btn = document.querySelector('#traeConfigForm .form-actions button');
+  const original = btn ? btn.innerHTML : '';
+  if (btn) { btn.disabled = true; btn.innerHTML = '<span class="loading"></span>' + T('Saving…'); }
   try {
-    await api('POST', '/trae/config/update', { endpoint: ep });
-    toast(T('Upstream endpoint switched'), 'success');
+    await api('POST', '/trae/config/update', body);
+    toast(T('TraeWork config saved — engine restarted'), 'success');
     loadTraeConfig();
   } catch (e) {
     toast(T('Save failed: ') + e.message, 'error');
-    loadTraeConfig(); // 回读真实值，避免下拉框与后端漂移
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = original; }
   }
 }
 
+// renderTraeModels 模型目录行：模型 ID / 域徽章 / 倍率 / 上下文 / Ban。
+// Ban 的 scope = realm（trae/solo/trae-intl/solo-intl 各自独立封禁）。
+function renderTraeModels(models, accs) {
+  const tb = _('traeModelsBody');
+  if (!tb) return;
+  const realmTag = r => '<span class="model-tag">' + esc(r) + '</span>';
+  const row = inner => '<div style="display:flex;align-items:center;gap:10px;padding:8px 12px;margin:5px 0;background:rgba(148,163,184,.06);border:1px solid var(--border);border-radius:10px">' + inner + '</div>';
+  tb.innerHTML = models.length
+    ? models.map(m => {
+        const mult = (m.multiplier && m.multiplier !== '—') ? '<span class="model-tag">' + esc(m.multiplier) + '</span>' : '';
+        const hasEnabled = (accs || []).some(x => x.disabled === false && x.routing === true);
+        return row(
+          '<span style="font-family:\'JetBrains Mono\',monospace;font-size:13px;flex:1"' + (m.display_name ? ' title="' + esc(m.display_name) + '"' : '') + '>' + esc(m.id) + '</span>' +
+          realmTag(m.realm || String(m.id || '').split(':')[0]) +
+          mult +
+          wbContextTagHTML(m.context_window, T('Context')) +
+          '<button class="btn btn-sm btn-danger" data-bl-ban="1" data-platform="trae" data-model="' + esc(m.id) + '" data-scope="' + esc(m.realm || '') + '" data-refresh="trae" style="white-space:nowrap">' + T('Ban') + '</button>' +
+          (hasEnabled ? '' : ''));
+      }).join('')
+    : '<div class="empty">' + T((traeCfgCache.routable || 0) > 0
+        ? 'No models yet — click Refresh models'
+        : 'Models appear here once an account is enabled — the catalog follows the engine realms') + '</div>';
+}
 
-// 账号状态表：昵称 + JWT 掩码 / token 到期 / 今日累计 token / 额度 / 签到 /
-// 冷却 / 代理绑定 / 测试 / 删除 / 双开关（反代 = 路由参与，账号 = 总闸，
-// 对齐 WorkBuddy：总闸关 = 签到/额度刷新等维护任务一并停）。
+// renderTraeAccounts 凭据表（对齐 wb 口径）：昵称+UID / 状态（冷却/熔断/降权
+// /禁用原因）/ 积分 / 代理绑定 / 测试·删除 / 双开关（反代=路由参与，账号=总闸；
+// 总闸关 = 签到/额度刷新等维护任务一并停）。
 function renderTraeAccounts(accs) {
   const tb = _('traeAccountsBody');
   if (!tb) return;
   traeAccSnapshot = {};
   tb.innerHTML = accs.length
     ? accs.map(a => {
-        const cool = a.cooling
-          ? '<span class="status cooldown"><span class="status-dot cooldown"></span>' + T('Cooldown') + '</span>' +
-            (a.cooldownUntil ? '<div style="font-size:10px;color:var(--text3);margin-top:2px;white-space:nowrap" title="' + esc(fmtWhen(a.cooldownUntil)) + '">' + T('Recovers ') + esc(fmtShort(a.cooldownUntil)) + '</div>' : '')
-          : '<span class="status active"><span class="status-dot active"></span>' + T('Active') + '</span>';
-        // token 有效期：状态列内另起一行（绿色正常 / 红色过期 / 灰色无刷新令牌）
-        let tokenState = '';
-        if (a.expiredAt) {
-          const cls = a.tokenUsable === false ? 'var(--danger)' : 'var(--accent2)';
-          const txt = a.tokenUsable === false ? T('Token expired') + ' ' : '';
-          tokenState = '<div style="font-size:11px;margin-top:2px;color:' + cls + '">' + txt + esc(fmtShort(a.expiredAt)) + '</div>';
-        } else if (!a.hasRefresh) {
-          tokenState = '<div style="font-size:11px;margin-top:2px;color:var(--text3)">' + T('No refresh token') + '</div>';
-        }
-        let checkinV = '';
-        if (a.checkin && a.checkin.date === new Date().toLocaleDateString('sv')) {
-          const ok = a.checkin.checkedIn;
-          const txt = ok ? T('Checked in') : T('Check-in failed');
-          const cls = ok ? 'status active' : 'status cooldown';
-          checkinV = '<div class="' + cls + '" style="writing-mode:vertical-rl;text-orientation:upright;letter-spacing:2px;font-size:10px;padding:5px 2px;border-radius:8px;align-self:stretch;display:flex;align-items:center;justify-content:center" title="' + esc(a.checkin.lastError || txt) + '">' + esc(txt) + '</div>';
+        let cool;
+        if (a.disabled) {
+          cool = '<span class="status cooldown"><span class="status-dot cooldown"></span>' + T('Disabled') + '</span>' +
+            (a.disableReason ? '<div style="font-size:10px;color:var(--text3);margin-top:2px;max-width:170px;white-space:normal">' + esc(a.disableReason) + '</div>' : '');
+        } else if (a.breaker) {
+          cool = '<span class="status cooldown"><span class="status-dot cooldown"></span>' + T('Breaker') + '</span>' +
+            (a.breakerRemain ? '<div style="font-size:10px;color:var(--text3);margin-top:2px;white-space:nowrap">' + esc(traeFmtDur(a.breakerRemain)) + '</div>' : '');
+        } else if (a.cooling) {
+          cool = '<span class="status cooldown"><span class="status-dot cooldown"></span>' + T('Cooldown') + '</span>' +
+            (a.coolRemain ? '<div style="font-size:10px;color:var(--text3);margin-top:2px;white-space:nowrap" title="' + esc(a.coolReason || '') + '">' + esc(traeFmtDur(a.coolRemain)) + '</div>' : '');
+        } else if (a.degraded) {
+          cool = '<span class="status cooldown"><span class="status-dot cooldown"></span>' + T('Degraded') + '</span>';
+        } else {
+          cool = '<span class="status active"><span class="status-dot active"></span>' + T('Active') + '</span>';
         }
         const label = a.label || ('Account ' + (a.index + 1));
-        const shortId = a.id.length > 10 ? a.id.slice(0, 10) + '…' : a.id;
-        const pMain = a.proxyMain || '';
-        const pBackup = a.proxyBackup || '';
+        const shortId = a.uid.length > 18 ? a.uid.slice(0, 18) + '…' : a.uid;
+        const pMain = a.bindingMain || '';
+        const pBackup = a.bindingBackup || '';
         const backupLocked = !backupProxyOn || pMain === '' || pMain === EGRESS_DIRECT;
         const backupVal = backupLocked ? pMain : pBackup;
         const isStale = proxyStale;
@@ -7482,16 +7540,12 @@ function renderTraeAccounts(accs) {
           (isStale(pMain) || isStale(pBackup) ? ' <span title="' + esc(T('Bound proxy is no longer in the proxy pool — skipped until fixed')) + '" style="color:var(--danger)">⚠</span>' : '') +
           '</td>';
         let credits = '-';
-        if (a.credits) {
-          if (a.credits.unlimited) credits = T('Unlimited');
-          else if (a.credits.limit > 0) credits = fmtTokens(Math.max(0, Math.round(a.credits.remaining))) + ' / ' + fmtTokens(Math.round(a.credits.limit));
-          else if (a.credits.remaining > 0) credits = fmtTokens(Math.round(a.credits.remaining));
-        }
-        // 双开关快照：routing = 原始路由意愿（不含总闸与运算），account = 总闸
-        const accOn = a.accountEnabled !== false;
-        const routedIntent = a.routingEnabled !== false;
-        traeAccSnapshot[a.index] = { main: pMain, backup: backupVal, routing: routedIntent, account: accOn };
-        // 反代开关显示态 = 总闸开 && 路由意愿开；总闸关时反代禁用（wb 同款互锁）
+        if (a.credits != null) credits = fmtTokens(Math.max(0, Math.round(a.credits)));
+        // 双开关快照：routing = 路由参与位；account = 总闸（vendored disabled）
+        const accOn = a.disabled !== true;
+        const routedIntent = a.routing === true;
+        traeAccSnapshot[a.index] = { uid: a.uid, main: pMain, backup: backupVal, routing: routedIntent, account: accOn };
+        // 反代开关显示态 = 总闸开 && 路由位开；总闸关时反代禁用（wb 同款互锁）
         const poolCell = '<td style="text-align:center">' +
           '<input type="checkbox" data-trr="' + a.index + '"' + (accOn && routedIntent ? ' checked' : '') + (!accOn ? ' disabled' : '') +
           ' title="' + esc(T('Gateway (reverse proxy) switch: unchecked = model sessions never route to this account; check-in and all other maintenance tasks are unaffected. Can only be ticked while the account switch is on.')) + '"></td>';
@@ -7501,27 +7555,22 @@ function renderTraeAccounts(accs) {
         const actions = '<td style="white-space:nowrap;text-align:center">' +
           '<button class="btn btn-sm" data-trt="' + a.index + '">Test</button> ' +
           '<button class="btn btn-sm btn-danger" data-trdel="' + a.index + '" title="Remove this account from the pool">Delete</button>' + '</td>';
-        return '<tr draggable="true" data-drag-id="' + a.index + '"><td>#' + (a.index + 1) + '</td>' +
-          '<td style="min-width:0"><div style="max-width:150px" title="' + esc(label + '\n' + a.id + '\n' + (a.tokenMask || '') + (a.hasRefresh ? '' : '\n' + T('No refresh token'))) + '">' +
+        return '<tr><td>#' + (a.index + 1) + '</td>' +
+          '<td style="min-width:0"><div style="max-width:150px" title="' + esc(label + '\n' + a.uid) + '">' +
             '<div class="nick-wrap">' +
               '<span class="nick-name" style="font-weight:600">' + esc(label) + '</span>' +
               nickPen(a.index, label, T('Edit nickname')) +
             '</div>' +
             '<div class="wb-account-id">' + esc(shortId) + '</div>' +
           '</div></td>' +
-          '<td><div style="display:flex;gap:6px;align-items:center;justify-content:center">' +
-            '<div style="display:flex;flex-direction:column;gap:2px;min-width:0;align-items:center">' + cool + (tokenState ? tokenState : '') + '</div>' +
-            checkinV +
-          '</div></td>' +
+          '<td><div style="display:flex;gap:6px;align-items:center;justify-content:center">' + cool + '</div></td>' +
           '<td>' + credits + '</td>' +
-          keyTokensCell(a) +
-          keyLastUsedCell(a) +
           bind +
           actions +
           poolCell +
           accCell + '</tr>';
       }).join('')
-    : '<tr><td colspan="9" class="empty">' + T('No TraeWork accounts yet — click Add accounts') + '</td></tr>';
+    : '<tr><td colspan="8" class="empty">' + T('No TraeWork accounts yet — click Add accounts or use the original panel import') + '</td></tr>';
   tb.onclick = e => {
     const pen = e.target.closest('.nick-pen');
     if (pen) { startNickEdit(pen, { save: saveTraeLabel, reload: loadTraeConfig, allowEmpty: true }); return; }
@@ -7544,7 +7593,7 @@ function renderTraeAccounts(accs) {
         if (poolCb) { poolCb.disabled = true; poolCb.checked = false; }
       } else if (poolCb) {
         poolCb.disabled = false;
-        poolCb.checked = snap.routing !== false;
+        poolCb.checked = snap.routing === true;
       }
       markRowDirty(row, 'trae');
     }
@@ -7552,8 +7601,10 @@ function renderTraeAccounts(accs) {
 }
 
 async function saveTraeLabel(index, label) {
-  // data-nick-id 走 dataset 是字符串，端点 index 字段要 int
-  await api('POST', '/trae/accounts/label', { index: parseInt(index, 10), label: label });
+  // data-nick-id 是渲染序号；实际提交用快照里的 uid（vendored 账号主键）
+  const snap = traeAccSnapshot[parseInt(index, 10)] || {};
+  if (!snap.uid) throw new Error('account snapshot missing');
+  await api('POST', '/trae/accounts/label', { uid: snap.uid, label: label });
 }
 
 function stageAllTraeRouting(enabled) {
@@ -7586,23 +7637,24 @@ async function saveTraeEdits() {
   for (const row of rows) {
     const mainInput = row.querySelector('.eg-input[data-eg="trae"][data-slot="main"]');
     const idx = parseInt(mainInput.dataset.egid, 10);
+    const snap = traeAccSnapshot[idx];
+    if (!snap || !snap.uid) continue;
     const main = mainInput.dataset.value || '';
     const backup = row.querySelector('.eg-input[data-eg="trae"][data-slot="backup"]').dataset.value || '';
     const rcb = row.querySelector('input[data-trr]');
     const accCb = row.querySelector('input[data-tracc]');
-    const snap = traeAccSnapshot[idx] || { main: '', backup: '', routing: true, account: true };
     // wb 同款目标态：总闸关闭时不提交路由变更（重开自动恢复路由意愿）
     const nextAccount = accCb ? accCb.checked : snap.account;
     const nextRouting = (nextAccount && rcb) ? rcb.checked : snap.routing;
     try {
       if (main !== snap.main || backup !== snap.backup) {
-        await api('POST', '/trae/accounts/proxy', { index: idx, main: main, backup: backup });
+        await api('POST', '/trae/accounts/proxy', { uid: snap.uid, main: main, backup: backup });
       }
       if (nextAccount !== snap.account) {
-        await api('POST', '/trae/accounts/enabled', { index: idx, enabled: nextAccount });
+        await api('POST', '/trae/accounts/enabled', { uid: snap.uid, enabled: nextAccount });
       }
       if (nextRouting !== snap.routing) {
-        await api('POST', '/trae/accounts/routing', { index: idx, enabled: nextRouting });
+        await api('POST', '/trae/accounts/routing', { uid: snap.uid, enabled: nextRouting });
       }
       if (main !== snap.main || backup !== snap.backup || nextAccount !== snap.account || nextRouting !== snap.routing) changed++;
       row.classList.remove('tr-dirty');
@@ -7621,11 +7673,13 @@ function resetTraeEdits() {
 }
 
 async function deleteTraeAccount(index, btn) {
+  const snap = traeAccSnapshot[index] || {};
+  if (!snap.uid) return;
   if (!confirm(T('Delete this account?'))) return;
   const original = btn ? btn.innerHTML : '';
   if (btn) btn.disabled = true;
   try {
-    await api('POST', '/trae/accounts/delete', { index: index });
+    await api('POST', '/trae/accounts/delete', { uid: snap.uid });
     toast(T('Account #') + (index + 1) + T(' (deleted)'), 'success');
   } catch (e) {
     toast(T('Delete failed: ') + e.message, 'error');
@@ -7635,24 +7689,26 @@ async function deleteTraeAccount(index, btn) {
   }
 }
 
+// testTraeAccount 沿用上游设计：额度连通性验证（真实 UG 调用 + 失败自动
+// 续期一次），无模型选择。成功即清冷却（vendored NoteSuccess）。
 async function testTraeAccount(index, btn) {
+  const snap = traeAccSnapshot[index] || {};
+  if (!snap.uid) return;
   const original = btn ? btn.innerHTML : '';
   if (btn) { btn.disabled = true; btn.innerHTML = '<span class="loading"></span>Testing'; }
   try {
-    const d = await api('POST', '/trae/accounts/test', { index: index });
-    const r = d.data || {};
-    const label = { active: T('OK'), cooldown: T('Cooldown'), error: T('Error') }[r.status] || r.status;
-    let msg = T('Account #') + (index + 1) + (r.screenName ? ' (' + r.screenName + ')' : '') + T(' — ') + label;
-    if (r.latencyMs != null) msg += ' (' + r.latencyMs + 'ms)';
-    if (r.credits) {
-      msg += r.credits.unlimited ? T(' — unlimited credits') : T(' — credits: ') + (r.credits.remaining != null ? Math.round(r.credits.remaining) : '?');
-      if (r.credits.identity) msg += ' (' + r.credits.identity + ')';
+    const d = await api('POST', '/trae/accounts/test', { uid: snap.uid });
+    const r = (d.data || {});
+    if (r.ok) {
+      let msg = T('Account #') + (index + 1) + (r.label ? ' (' + r.label + ')' : '') + T(' — OK');
+      if (r.latency_ms != null) msg += ' (' + r.latency_ms + 'ms)';
+      if (r.credits != null) msg += T(' — credits: ') + r.credits;
+      toast(msg, 'success', 6000);
+    } else {
+      let msg = T('Account #') + (index + 1) + T(' — ') + (r.error || T('Error'));
+      if (r.latency_ms != null) msg += ' (' + r.latency_ms + 'ms)';
+      toast(msg, 'error', 6000);
     }
-    if (r.status === 'active') msg += T(' — cooldown cleared');
-    if (r.cooldownUntil) msg += T('\nEstimated recovery: ') + fmtWhen(r.cooldownUntil) + (r.remaining ? T(' (remaining ') + r.remaining + T(')') : '');
-    if (r.reason && r.reason !== 'ok') msg += '\n' + r.reason;
-    const type = r.status === 'active' ? 'success' : (r.status === 'cooldown' ? 'warning' : 'error');
-    toast(msg, type, 6000);
   } catch (e) {
     toast(T('Test failed: ') + e.message, 'error');
   } finally {
@@ -7674,7 +7730,7 @@ async function batchTestTraeAccounts() {
   // **只看反代开关**（routing）——反代关 = 请求到不了该凭据 = 跳过；账号总闸
   // 只管签到等维护任务，不参与测试判定。
   const all = Object.keys(traeAccSnapshot).map(Number).sort((a, b) => a - b);
-  const idxs = all.filter(i => traeAccSnapshot[i] && traeAccSnapshot[i].routing !== false);
+  const idxs = all.filter(i => traeAccSnapshot[i] && traeAccSnapshot[i].routing === true);
   const skipped = all.length - idxs.length;
   if (!idxs.length) {
     if (all.length) toast(T('No routable credentials'), 'info');
@@ -7683,23 +7739,20 @@ async function batchTestTraeAccounts() {
   }
   const original = btn ? btn.innerHTML : '';
   if (btn) btn.disabled = true;
-  let ok = 0, cool = 0, err = 0;
+  let ok = 0, err = 0;
   try {
     for (let i = 0; i < idxs.length; i++) {
       if (btn) btn.innerHTML = '<span class="loading"></span>' + (i + 1) + '/' + idxs.length;
       try {
-        const d = await api('POST', '/trae/accounts/test', { index: idxs[i] });
-        const r = d.data || {};
-        if (r.status === 'active') ok++;
-        else if (r.status === 'cooldown') cool++;
-        else err++;
+        const d = await api('POST', '/trae/accounts/test', { uid: traeAccSnapshot[idxs[i]].uid });
+        if ((d.data || {}).ok) ok++; else err++;
       } catch (e) { err++; }
     }
   } finally {
     if (btn) { btn.disabled = false; btn.innerHTML = original; }
   }
   toast(T('Batch test done: ') + idxs.length + T(' tested, ') + ok + T(' ok') +
-    (cool ? T(', ') + cool + T(' cooling') : '') + (err ? T(', ') + err + T(' error') : '') +
+    (err ? T(', ') + err + T(' error') : '') +
     (skipped ? T(', ') + skipped + T(' skipped (unroutable)') : ''),
     err ? 'warning' : 'success', 6000);
   loadTraeConfig();
@@ -7730,10 +7783,11 @@ function closeTraeAddDialog() {
   _('traeAddDialog').close();
 }
 
-// ========== Trae 本机授权助手（对齐上游原版 web_login.py 架构）==========
+// ========== Trae 本机授权助手（web_login.py，2026-11-04 起为本仓资产）==========
 // 授权页强依赖本机 helper（127.0.0.1:8765）：面板探测 /healthz 判定助手
-// 在跑；授权完成后 helper 把凭据 POST 到网关 /api/web-auth 入库，面板轮询
-// 最近入库状态展示结果。浏览器需已登录 trae.cn。
+// 在跑；授权完成后 helper 把凭据 POST 到网关 /api/web-auth 入库（桥接层
+// 现场铸造设备密钥补齐快照），面板轮询最近入库状态展示结果。浏览器需已
+// 登录 trae.cn。
 let traeHelperTimer = null;
 let traeHelperSince = '';
 
@@ -7776,23 +7830,22 @@ async function refreshTraeCredits() {
 async function runTraeCheckin() {
   const d = await api('POST', '/trae/checkin');
   const r = d.data || {};
-  let msg = T('Check-in done: ') + (r.ok || 0) + '/' + (r.total || 0);
-  if (r.already) msg += T(', ') + r.already + T(' already');
+  let msg = T('Check-in done: ') + (r.checked || r.succeed || 0) + '/' + (r.total || 0);
   if (r.failed) msg += T(', ') + r.failed + T(' failed');
   toast(msg, r.failed ? 'warning' : 'success', 6000);
   loadTraeConfig();
 }
 async function traeAddFromDialog() {
   const lines = _('traeAddInput').value.split('\n').map(s => s.trim()).filter(Boolean);
-  if (!lines.length) { toast(T('Enter at least one token'), 'error'); return; }
+  if (!lines.length) { toast(T('Enter at least one credential line'), 'error'); return; }
   const btn = _('traeAddSubmit');
   btn.disabled = true;
   try {
     const d = await api('POST', '/trae/accounts/add', { tokens: lines });
     const r = d.data || {};
     let msg = T('Added ') + (r.added || 0) + T(' account(s)');
-    if (r.skipped) msg += T(', skipped ') + r.skipped;
-    toast(msg, r.added ? 'success' : 'warning');
+    if (r.failed) msg += T(', failed ') + r.failed + (r.error ? ': ' + r.error : '');
+    toast(msg, r.added ? 'success' : 'warning', 8000);
     closeTraeAddDialog();
     loadTraeConfig(); loadStats();
   } catch (e) {
@@ -7801,7 +7854,6 @@ async function traeAddFromDialog() {
     btn.disabled = false;
   }
 }
-
 // ========== AMDCloud page ==========
 // AMDCloud key 池（amd: 前缀平台）：协议与 OpenRouter 页同构。
 let amdCfgCache = {};

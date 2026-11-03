@@ -1,0 +1,152 @@
+diff --git a/internal/server/chat.go b/internal/server/chat.go
+index 48a7599..545fe51 100644
+--- a/internal/server/chat.go
++++ b/internal/server/chat.go
+@@ -214,7 +214,18 @@ func toTraeRequest(req *chatRequest, bareModel string) traectl.ChatRequest {
+ 			for _, tc := range m.ToolCalls {
+ 				sb.WriteString(fmt.Sprintf("[调用工具 %s(%s)]\n", tc.Function.Name, tc.Function.Arguments))
+ 			}
+-			parts = append(parts, traectl.ChatPart{Type: "text", Text: sb.String()})
++			// 客户端可能把带 tool_calls 的 assistant 消息的 content 发成 ""（空串）
++			// —— parseContent 会产生一个空 text 片段，而上游对含空 text 片段的
++			// assistant 一律 4001「param is invalid」（实测）。追加调用文本前
++			// 先剔除空片段，只保留有内容的片段（图片等非文本片段不受影响）。
++			kept := make([]traectl.ChatPart, 0, len(parts)+1)
++			for _, p := range parts {
++				if p.Type == "text" && p.Text == "" {
++					continue
++				}
++				kept = append(kept, p)
++			}
++			parts = append(kept, traectl.ChatPart{Type: "text", Text: sb.String()})
+ 		}
+ 		if len(parts) == 0 {
+ 			parts = []traectl.ChatPart{{Type: "text", Text: ""}}
+@@ -463,6 +474,7 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
+ 
+ 	owners := s.ownerOf(r)
+ 	st := newChatStat(time.Now(), req.Model, stream)
++	st.toolsN = len(creq.Tools)
+ 	st.setRealm(realmKey)
+ 	st.setCredits(s.modelCreditCost(ch, bareModel))
+ 	st.collector = s.metrics
+@@ -696,6 +708,27 @@ func (s *Server) runChat(w http.ResponseWriter, r *http.Request, ch *Channel, ac
+ 		if err != nil {
+ 			return err
+ 		}
++		// 文本工具调用兜底（背景见 textcall.go）：把模型模仿历史编码格式
++		// 输出在正文里的 `[调用工具 ...]` 转回结构化 tool_calls。
++		if prose, calls, changed := extractTextToolCalls(agg.Content, creq.Tools); changed {
++			agg.Content = prose
++			base := 0
++			for _, tc := range agg.ToolCalls {
++				if tc.Index >= base {
++					base = tc.Index + 1
++				}
++			}
++			for _, c := range calls {
++				agg.ToolCalls = append(agg.ToolCalls, traectl.ToolCallDelta{
++					Index: base, ID: "call_" + randHex(8), Name: c.name, Args: c.args,
++				})
++				base++
++			}
++			if agg.FinishReason == "" || agg.FinishReason == "stop" {
++				agg.FinishReason = "tool_calls"
++			}
++			s.logf("INFO: 已把 %d 个正文中的文本形式工具调用转换为原生 tool_calls（非流式）", len(calls))
++		}
+ 		writeCompletion(w, bareModel, agg, st.credits)
+ 		st.recordUsage(agg.Usage)
+ 		if u := userFrom(r); u != nil && s.users != nil && agg.Usage != nil {
+@@ -767,6 +800,13 @@ func (s *Server) streamChat(w http.ResponseWriter, ctx context.Context, cl *trae
+ 	roleSent := false
+ 	// toolBuf 按 index 聚合工具调用增量（流结束时统一校验并发出）。
+ 	toolBuf := map[int]*toolAccum{}
++	// 文本工具调用兜底（背景见 textcall.go）：请求带 tools 时，模型可能模仿
++	// 历史编码格式在正文里"输出调用"而不是走原生 function_call 通道。过滤器
++	// 把这些调用从正文剥离并转回结构化 tool_calls；没有 tools 时整体直通。
++	tcf := newTextCallFilter(creq.Tools, func(s string) {
++		writeChunk(map[string]any{"content": s}, nil)
++	})
++	nextTextIdx := 0 // 文本调用可用的 tool_calls index（与原生调用错开）
+ 	err := cl.Chat(ctx, creq, func(d traectl.Delta) error {
+ 		// 任何一帧（含心跳）都说明上游已返回 2xx 并开始吐了 → 可以安全开流。
+ 		// 心跳帧本身只发一条 SSE 注释，客户端会忽略它，但字节到了就不会超时。
+@@ -794,7 +834,7 @@ func (s *Server) streamChat(w http.ResponseWriter, ctx context.Context, cl *trae
+ 			writeChunk(map[string]any{"reasoning_content": d.Reasoning}, nil)
+ 		}
+ 		if d.Content != "" {
+-			writeChunk(map[string]any{"content": d.Content}, nil)
++			tcf.feed(d.Content)
+ 		}
+ 		// 工具调用**先缓冲不发出**（见文件末尾的 truncation 说明）：
+ 		// SSE 被截断时 arguments 会只剩半截 JSON，原样发给客户端会让它
+@@ -818,6 +858,9 @@ func (s *Server) streamChat(w http.ResponseWriter, ctx context.Context, cl *trae
+ 				buf.name = tc.Name
+ 			}
+ 			buf.args.WriteString(tc.Args)
++			if tc.Index >= nextTextIdx {
++				nextTextIdx = tc.Index + 1
++			}
+ 		}
+ 		if len(d.ToolCalls) > 0 {
+ 			fmt.Fprint(w, ": keepalive\n\n")
+@@ -860,6 +903,35 @@ func (s *Server) streamChat(w http.ResponseWriter, ctx context.Context, cl *trae
+ 		writeChunk(map[string]any{"role": "assistant", "content": ""}, nil)
+ 	}
+ 
++	// 文本调用收尾：冲刷残余正文，把解析出的调用并入 toolBuf 统一校验发出
++	//（流被截断时未闭合的捕获会按正文原样放行，见 textcall.go）。
++	textCalls := tcf.finish()
++	for _, c := range textCalls {
++		buf := &toolAccum{id: "call_" + randHex(8), name: c.name}
++		buf.args.WriteString(c.args)
++		toolBuf[nextTextIdx] = buf
++		nextTextIdx++
++	}
++	if len(textCalls) > 0 {
++		repaired := 0
++		for _, c := range textCalls {
++			if c.repaired {
++				repaired++
++			}
++		}
++		s.logf("INFO: 已把 %d 个正文中的文本形式工具调用转换为原生 tool_calls"+
++			"（模型模仿历史编码格式所致，见 textcall.go；其中 %d 个参数经非法转义修复）",
++			len(textCalls), repaired)
++		if f := st.finishReason(); f == "" || f == "stop" {
++			st.setFinish("tool_calls")
++		}
++	}
++	// 漏转换诊断：正文里出现了疑似调用但没转换成功（名字不在清单 / 参数不可修复）。
++	// 没有这条日志，客户端"只显示字符串不执行"的问题无从定位。
++	for _, r := range tcf.takeRejections() {
++		s.logf("WARN: 疑似文本工具调用未转换: %s", r)
++	}
++
+ 	// 工具调用：校验完整性后再发出。
+ 	//
+ 	// 为什么必须校验：SSE 被截断（连接中断 / finish_reason==length）时，
+diff --git a/internal/server/server.go b/internal/server/server.go
+index 69ac302..12d7f98 100644
+--- a/internal/server/server.go
++++ b/internal/server/server.go
+@@ -791,6 +791,7 @@ type chatStat struct {
+ 	hasCredits bool
+ 
+ 	finish string
++	toolsN int // 请求声明的 tools 数量（诊断：文本调用转换是否具备前提）
+ 	logged bool
+ 
+ 	// collector 指标聚合器（可为 nil = 不采集）。
+@@ -859,8 +860,8 @@ func (s *chatStat) done() {
+ 	if s.hasCredits {
+ 		cred = fmt.Sprintf("%.2f", s.credits)
+ 	}
+-	log.Printf("[req] %-28s %-6s acct=%-28s finish=%-11s tok=%-10s credit=%-6s total=%s",
+-		s.model, s.mode, acct, s.finishReason(), tok, cred, total.Round(time.Millisecond))
++	log.Printf("[req] %-28s %-6s acct=%-28s finish=%-11s tok=%-10s credit=%-6s tools=%d total=%s",
++		s.model, s.mode, acct, s.finishReason(), tok, cred, s.toolsN, total.Round(time.Millisecond))
+ 
+ 	if s.collector == nil {
+ 		return

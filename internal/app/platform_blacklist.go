@@ -13,7 +13,6 @@ import (
 	"afree-proxy/internal/openrouter"
 	"afree-proxy/internal/other"
 	"afree-proxy/internal/tokenharbor"
-	"afree-proxy/internal/trae"
 )
 
 // ============================================================================
@@ -219,7 +218,7 @@ func routePlatformKeyOf(model string) string {
 		return platOpenRouter
 	case strings.HasPrefix(model, tokenharbor.ModelPrefix):
 		return platTokenHarbor
-	case strings.HasPrefix(model, trae.ModelPrefix):
+	case trae2apiPlatformModel(model):
 		return platTrae
 	}
 	if i := strings.IndexByte(model, ':'); i > 0 {

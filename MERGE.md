@@ -17,9 +17,26 @@ WorkBuddy 一栏的基线同时登记在 `scripts/workbuddy-vendor-baseline.json
 
 ## TreaWork
 
-上游:`autumnsentiment/Trae2api-cn`(Trae CN / Trae Solo CN 模型反代,Python,MIT)。**这条线不是 vendor/merge 关系**:上游是 Python 全栈,本地 `internal/trae/` + `internal/app/trae.go` 是 Go 重写,行为跟随上游协议;唯一逐行移植的产物是内嵌的本机授权助手 `web_login.py`(`internal/trae/helper_script.go`),只有它需要跟上游比对。2026-10-27 的 cline-proxy 合并未涉及本线。
+**2026-11-04 起上游换线**：`XCool-603/trae2api`（vendor 三方合并线，见下方 2026-11-04 条目）；`autumnsentiment/Trae2api-cn` 仅剩 helper 脚本比对。切换点 tag：`last-trae2api-cn`(49ec6be)。
+
+上游(历史线):`autumnsentiment/Trae2api-cn`(Trae CN / Trae Solo CN 模型反代,Python,MIT)。**这条线不是 vendor/merge 关系**:上游是 Python 全栈,本地 `internal/trae/` + `internal/app/trae.go` 是 Go 重写,行为跟随上游协议;唯一逐行移植的产物是内嵌的本机授权助手 `web_login.py`(`internal/trae/helper_script.go`),只有它需要跟上游比对。2026-10-27 的 cline-proxy 合并未涉及本线。
 
 **2026-10-28 核对**：上游最新 tag 仍为 `v1.0.10`（`bb7b659`），与 2026-10-27 同步基线一致，本线无新版本，本次未涉及上游同步。**2026-10-29 复核**：仍为 `v1.0.10`，无新版本。**2026-10-30 复核**：仍为 `v1.0.10`（tags API 与 main HEAD 均为 `bb7b659`），无新版本，本次未涉及上游同步。**2026-10-31 复核**：仍为 `v1.0.10`，无新版本，本次未涉及上游同步。**2026-10-31 二次复核**：仍为 `v1.0.10`（main HEAD `bb7b659`），helper 比对 exit 0，本次未涉及上游同步。**2026-11-02 复核**：仍为 `v1.0.10`（tags API 与 main HEAD 均为 `bb7b659`），无新版本，本次未涉及上游同步。
+
+### 2026-11-04 — 上游切换：autumnsentiment/Trae2api-cn（比对线）→ XCool-603/trae2api（vendor 三方合并线）
+
+里程碑：切换点已打 tag `last-trae2api-cn`（指向 49ec6be，远程与 `v0.9.0-harvest` 并列两枚里程碑 tag；切换前的最后一版旧线实现）。
+
+- 新上游:`XCool-603/trae2api`(Go、纯标准库零依赖、MIT,26 commits @ `6a861d9` = v0.2.6+9074 退避修复)。与旧上游 Trae2api-cn **无 fork 关系**(独立实现,架构参考同作者 workbuddy2api)。
+- 移植方式:**vendor 整树拷贝**(workbuddy 同款机制)——`scripts/vendor_trae2api.py` 把上游 `internal/` 12 个子包拷入 `internal/trae2api/`(排除 desktop/cli/cmd,反向 grep 证实核心包不 import 它们),import 前缀重写 `trae2api/internal/` → `afree-proxy/internal/trae2api/`;`scripts/sync_trae2api.py` 三方合并(基线 `scripts/trae2api-vendor-baseline.json` = `6a861d9` / v0.2.6),源树允许 textcall 四件套 WIP 例外(超出清单拒同步)。
+- 上游本地修复保留:另一会话 2026-11-04 实测的文本工具调用兜底 + 4001 空片段修复(`internal/server/chat.go`/`server.go` 改动 + 新文件 `server/textcall.go`/`textcall_test.go`),以 `scripts/trae2api-afree.patch`(9 hunks)随 vendor 对干净树重放,新文件走 PRESERVE_RELATIVE;补丁对干净父提交 135ac11 实测可应用。
+- afree 桥接注入(vendor 幂等改写,均为 vendor 包内函数变量,上游原样 nil = 上游行为):出口接管 `traectl.StoreHTTPClient`(主/备绑定 fail-closed + 走池开关,chat/续期/额度/签到四路全收口于 Store 层两个 client 构造点)、反代开关 `pool.RoutingAllowed`(healthyLocked 过滤,维护任务不受影响)、新增身份默认禁用 `accountstore.AccountAddedHook` + `pool.Account.SetLabel`、console 挂载基址 `/admin/trae2api/api`(app.js fetch 前缀改写 + 契约测试候选路径)。
+- 旧引擎 `internal/trae/`(13 文件,Trae2api-cn 的 Go 重写)整体删除;helper 资产(web_login.py 模板 + web-auth 入库)迁 `internal/app/trae2api_helper.go`/`trae2api_helper_script.go`;入库改为现场铸造 EC P-256 设备密钥 + 数字设备 ID/机器 ID 补齐快照后走 vendored import 端点(同步结果 + registerAccount 热加池);裸 JWT 无 refreshToken 拒绝(新引擎 Validate 硬校验,续期协议需设备私钥)。`scripts/check_trae_helper.py` 比对线保留(模板逐行未动)。
+- 网关格局:trae:/solo: 常驻 + trae-intl:/solo-intl: 随上游 intl 配置透出,**模型名透传零翻译**;Test 按钮沿用上游设计(额度连通性验证,探测模型下拉移除);选号为上游权重调度(idle/额度/余额感知,手动重排序端点移除);面板重构三区(凭据列表/Trae 配置/模型目录)+ 右上角"原版入口"(`/admin/trae2api/`)。
+- 备份:trae 段改 `{config, routing, accounts}` 形态;旧引擎形态导入时报错忽略(不迁移决定,存量 `trae-config.json`/`trae-state.json` 留盘作废)。
+- **移植后实测（真账号，2026-11-04 凌晨）**：克隆 `trae2api-xcool` 的便携快照（trae-cn-2745955326105609）文件级迁入 `data/trae2api/accounts/` 即入池；签到真实成功（+200 积分 5176→5276）、Test 额度连通 1403ms、**E2E chat 经绑定 EUserv 出口真实回复**（`trae:Doubao-Seed-Code` 0.06x，credit_cost 与目录倍率同源，[req] 日志账号列接通），代理健康 EUserv 25/25 全成功——出口钉定/模型名透传/引擎真实调用全链路实证。
+- **实测抓出并修复两个桥接缺陷**：①`trae2apiAccountStates` 持 traeRoutingMu 调 Pool().List()——List→Status→healthyLocked→RoutingAllowed 钩子重入 routing 锁自死锁（有账号后必现，/v1/models 与后台 Pool.Save 全堵死）；修复=先锁内取快照再查池，锁序回归测试 `TestTrae2apiBridgeLockOrder`（-race 并发三路径）。②config/update 漏了网关域校验（OAuth-only 域 api.trae.cn 作网关必失败——旧引擎 normalize 判据未随迁）；补 `trae2apiValidateGateway` + 测试。③routing 显示口径修正：AccountStates 用 traeRoutingGet（查表缺失=启用）而非 map 零值，面板显示与实际路由判定一致。
+- 验证:`go build ./...`、`go vet ./...` 全绿;`go test ./internal/app/ ./internal/trae2api/... -count=1` 全 ok(12 vendored 包 + app,含上游 server 包的 console 契约闸——vendor 布局候选路径已适配);三方合并演练(基线=父提交 135ac11)报告 2 文件直接合并 0 冲突;i18n 双向审计 0 缺失。
 
 ### 2026-10-27 — v1.0.9 (db189e2) → v1.0.10 (bb7b659)
 
@@ -80,6 +97,8 @@ WorkBuddy 一栏的基线同时登记在 `scripts/workbuddy-vendor-baseline.json
     - 上游 `app.js` 的模型行内「网关档位」下拉与「下游可见」开关:afree 面板不复用上游前端;`models.hidden` 与 afree 既有模型黑名单语义不同,未合并。
 - `internal/config.example.json`:从上游 `config.example.json` 原样拷入(非改写)。上游 `TestConfigExampleParses` 读 `../../config.example.json`——上游在 `cmd/server/`,vendor 后落在 `internal/workbuddy/config/`,该相对路径正好指向 `internal/config.example.json`。**不改上游测试文件**(会被下次同步覆盖)。
 - `workbuddyVersion` → `2026.10.28-misakano+afree`,注释同步改记基线 `49f9db4`。
+- **移植后实测（真账号，2026-11-04 凌晨）**：克隆 `trae2api-xcool` 的便携快照（trae-cn-2745955326105609）文件级迁入 `data/trae2api/accounts/` 即入池；签到真实成功（+200 积分 5176→5276）、Test 额度连通 1403ms、**E2E chat 经绑定 EUserv 出口真实回复**（`trae:Doubao-Seed-Code` 0.06x，credit_cost 与目录倍率同源，[req] 日志账号列接通），代理健康 EUserv 25/25 全成功——出口钉定/模型名透传/引擎真实调用全链路实证。
+- **实测抓出并修复两个桥接缺陷**：①`trae2apiAccountStates` 持 traeRoutingMu 调 Pool().List()——List→Status→healthyLocked→RoutingAllowed 钩子重入 routing 锁自死锁（有账号后必现，/v1/models 与后台 Pool.Save 全堵死）；修复=先锁内取快照再查池，锁序回归测试 `TestTrae2apiBridgeLockOrder`（-race 并发三路径）。②config/update 漏了网关域校验（OAuth-only 域 api.trae.cn 作网关必失败——旧引擎 normalize 判据未随迁）；补 `trae2apiValidateGateway` + 测试。③routing 显示口径修正：AccountStates 用 traeRoutingGet（查表缺失=启用）而非 map 零值，面板显示与实际路由判定一致。
 - 验证:`go build ./...`、`go vet ./...` 全绿;`gofmt` 干净(vendor 树 LF 直跑;`internal/app` 三个改动文件先 `tr -d '\r'` 再跑);`go test ./internal/app/ -count=1` ok、`./internal/workbuddy/config/ -count=1` ok;全量 `go test ./... -count=1` 仅 `TestChatStreamPassthrough` 失败——既有 flaky,单独 `-run` 复跑 PASS,判据与 2026-10-27 条目一致。
 - 容器验证(本机测试容器 `D:/DockerApp`,镜像 `afree-proxy:test-20261028-1023`):`Up (healthy)`、`GET /health` 200;启动日志 `workbuddy: 思考档位策略开,默认档 max(客户端优先=true,作用域=level)`;面板 `GET /admin/workbuddy/api/config` 回读 `thinking={"enabled":true,"default_effort":"max","client_priority":true,"override_scope":"level"}`、`pool.strategy={"domestic":"weighted_random","international":"weighted_random"}`;`POST` 改 `client_priority=false`/`override_scope=all` → `restart_required:[]` 且日志出现「思考档位策略已热更新」→ 回读一致 → 已改回默认值。
 - 生产:未同步,等用户「同步」指令(见 PROJECT.md 部署节)。
@@ -101,6 +120,8 @@ WorkBuddy 一栏的基线同时登记在 `scripts/workbuddy-vendor-baseline.json
   - `cn.billing_base`:`workbuddy.go` 启动 + `workbuddy_config.go` 热更新,与 `cn.chat_base` 同口径——vendored `billingBase()` 对 CN **无空值回退**,仅显式非空时覆盖(Global 侧两条路径本次同步前已接线);面板不暴露(与 chat_base 同为手写 JSON 键,避免死配置)
   - `workbuddyVersion` → `2026.10.29-misakano+afree`;restartRequired 清单注释补 `cn.billing_base`
 - 核对不合并:`auth.IdSource()`/6020 请求内轮转/headers 契约均为 vendor 内部改造,无新面板或配置面;上游 `models.hidden`(misakano 线 c5841c1 等)与 afree 模型黑名单语义不同,维持 2026-10-28 的不合并决策
+- **移植后实测（真账号，2026-11-04 凌晨）**：克隆 `trae2api-xcool` 的便携快照（trae-cn-2745955326105609）文件级迁入 `data/trae2api/accounts/` 即入池；签到真实成功（+200 积分 5176→5276）、Test 额度连通 1403ms、**E2E chat 经绑定 EUserv 出口真实回复**（`trae:Doubao-Seed-Code` 0.06x，credit_cost 与目录倍率同源，[req] 日志账号列接通），代理健康 EUserv 25/25 全成功——出口钉定/模型名透传/引擎真实调用全链路实证。
+- **实测抓出并修复两个桥接缺陷**：①`trae2apiAccountStates` 持 traeRoutingMu 调 Pool().List()——List→Status→healthyLocked→RoutingAllowed 钩子重入 routing 锁自死锁（有账号后必现，/v1/models 与后台 Pool.Save 全堵死）；修复=先锁内取快照再查池，锁序回归测试 `TestTrae2apiBridgeLockOrder`（-race 并发三路径）。②config/update 漏了网关域校验（OAuth-only 域 api.trae.cn 作网关必失败——旧引擎 normalize 判据未随迁）；补 `trae2apiValidateGateway` + 测试。③routing 显示口径修正：AccountStates 用 traeRoutingGet（查表缺失=启用）而非 map 零值，面板显示与实际路由判定一致。
 - 验证:`go build ./...`、`go vet ./...` 全绿;`go test ./internal/workbuddy/... ./internal/app/ -count=1` 唯一失败 `TestChatStreamPassthrough`——既有 flaky,单独 `-run` 复跑 PASS,判定标准同 2026-10-27 条目
 - 生产:未同步,等用户「同步」指令(见 PROJECT.md 部署节)。
 
@@ -132,6 +153,8 @@ WorkBuddy 一栏的基线同时登记在 `scripts/workbuddy-vendor-baseline.json
   - `workbuddyVersion` → `2026.10.30-misakano+afree`,注释基线改记 `5caddab`。
 - 踩坑(记录):合并收尾期间误执行了一次 `git stash -q`(未指定 pathspec),把 62 个 vendor 改动整体收进 stash;诊断 pool 测试时发现 `git status` 全空才回查 stash list,`git stash pop` 完整恢复,无损失。教训:工作区有未提交改动时禁止无差别 stash,排查既有失败应优先用 `git worktree add --detach` 旁路对照。
 - 部署(本机测试环境,2026-10-30 17:24):用户指令「同步」。镜像 `afree-proxy:test-20261030-1724` 构建后 compose(`D:/DockerApp/docker-compose.yml`)换 tag 起 `afree` 容器:`Up (healthy)`、`/health` 200(activeAccounts=19)、启动日志正常(19 账号 + WorkBuddy 7、思考档位策略开、zen 目录同步 6 新增、二进制内验证 `inference/openai/v1` 命中)。**过程中发现 wb 模型段不出目录**:定性为 10-30 02:07 一次备份导入触发的既有隔离护栏(`admin_backup.go:37`「导入的上游身份全部禁用」,7 个 wb 账号 `account_enabled=false`,`.bak` 仍 true 可证),与本次同步无关;新容器只是让该门控(`AvailableUIDs` 不含禁用账号 → `workbuddyModelEntries` 返回 nil)如实生效。经面板 API 逐账号恢复启用后 `/v1/models` 102 条、wb 段 11 条(与 2026-10-28 记录一致)。CI「Publish Docker image」对 `98518df` 已 success,GHCR latest 就绪,生产由用户在 iStore 自行 `compose pull`。
+- **移植后实测（真账号，2026-11-04 凌晨）**：克隆 `trae2api-xcool` 的便携快照（trae-cn-2745955326105609）文件级迁入 `data/trae2api/accounts/` 即入池；签到真实成功（+200 积分 5176→5276）、Test 额度连通 1403ms、**E2E chat 经绑定 EUserv 出口真实回复**（`trae:Doubao-Seed-Code` 0.06x，credit_cost 与目录倍率同源，[req] 日志账号列接通），代理健康 EUserv 25/25 全成功——出口钉定/模型名透传/引擎真实调用全链路实证。
+- **实测抓出并修复两个桥接缺陷**：①`trae2apiAccountStates` 持 traeRoutingMu 调 Pool().List()——List→Status→healthyLocked→RoutingAllowed 钩子重入 routing 锁自死锁（有账号后必现，/v1/models 与后台 Pool.Save 全堵死）；修复=先锁内取快照再查池，锁序回归测试 `TestTrae2apiBridgeLockOrder`（-race 并发三路径）。②config/update 漏了网关域校验（OAuth-only 域 api.trae.cn 作网关必失败——旧引擎 normalize 判据未随迁）；补 `trae2apiValidateGateway` + 测试。③routing 显示口径修正：AccountStates 用 traeRoutingGet（查表缺失=启用）而非 map 零值，面板显示与实际路由判定一致。
 - 验证:`go build ./...`、`go vet ./...` 全绿;`gofmt -l` 干净(仅 `trae.go` 既有不对齐,HEAD 亦然,非本次引入);`go test ./... -count=1` **28 包全绿**——本轮连既有 flaky `TestChatStreamPassthrough` 也通过(其失败条件 ttfb 测成 0 与机器速度耦合,本轮环境未触发);`updater` 包 13.285s 全绿(其 Windows fork/exec 缺陷未触发)。
 
 ### 2026-10-31 复核（vendor 线）
@@ -198,6 +221,8 @@ WorkBuddy 一栏的基线同时登记在 `scripts/workbuddy-vendor-baseline.json
   - `96b816d` 设备码登录链路改桌面端口径(platform/UA/头族):`loginsite.go` +200、`panel/login.go` +91,设备码轮询/激活走桌面端形态。
 - 装配核查:两提交均为 vendor 内部协议层改造,无新配置键/面板面;`restartRequired` 清单无新增。
 - `workbuddyVersion` → `2026.10.31-misakano+afree`;基线 seal 至 `96b816d`。
+- **移植后实测（真账号，2026-11-04 凌晨）**：克隆 `trae2api-xcool` 的便携快照（trae-cn-2745955326105609）文件级迁入 `data/trae2api/accounts/` 即入池；签到真实成功（+200 积分 5176→5276）、Test 额度连通 1403ms、**E2E chat 经绑定 EUserv 出口真实回复**（`trae:Doubao-Seed-Code` 0.06x，credit_cost 与目录倍率同源，[req] 日志账号列接通），代理健康 EUserv 25/25 全成功——出口钉定/模型名透传/引擎真实调用全链路实证。
+- **实测抓出并修复两个桥接缺陷**：①`trae2apiAccountStates` 持 traeRoutingMu 调 Pool().List()——List→Status→healthyLocked→RoutingAllowed 钩子重入 routing 锁自死锁（有账号后必现，/v1/models 与后台 Pool.Save 全堵死）；修复=先锁内取快照再查池，锁序回归测试 `TestTrae2apiBridgeLockOrder`（-race 并发三路径）。②config/update 漏了网关域校验（OAuth-only 域 api.trae.cn 作网关必失败——旧引擎 normalize 判据未随迁）；补 `trae2apiValidateGateway` + 测试。③routing 显示口径修正：AccountStates 用 traeRoutingGet（查表缺失=启用）而非 map 零值，面板显示与实际路由判定一致。
 - 验证:`go build ./...`、`go vet ./...` 全绿;`gofmt -l` 干净(仅 `trae.go` 既有);`go test ./... -count=1` 28 包全绿;`CGO_ENABLED=1 go test -race ./internal/workbuddy/... ./internal/app/` 22 包全绿。
 
 - **race 补录（同日）**:用户要求补装 C 编译器跑 race,不再跳过。装 winlibs gcc 16.2.0(便携版,`C:/AppSelf/Mingw`,与 Go 同目录约定,zip 已删)。`CGO_ENABLED=1 go test -race ./... -count=1` 首轮 25 包 ok、3 失败,**全部是本次同步引入的真数据竞争**,当场修复:
@@ -245,6 +270,8 @@ WorkBuddy 一栏的基线同时登记在 `scripts/workbuddy-vendor-baseline.json
 - **其他平台排查**(同型「全量替换+逐字段重建」模式):`amd.go:250`/`openrouter.go:226,435`/`tokenharbor.go:198` 的 next **均已拷 KeyTokens/Cool**(写得晚、字段已存在);`otherCloneConfig` 深拷含运行时表;`traeCloneConfig` 显式拷 Cool(trae 无 keyTokens);WorkBuddy 配置与运行态分文件;cline 账号编辑走单账号端点。**唯一漏的就是 zen**——已修。
 - fork 上游线核对:`foxy1402/cline-proxy` main 仍为 `b8a1be0`,无新提交,本次无 fork 侧吸收。
 - 本机测试环境更新(同日):镜像 `afree-proxy:test-20261031-0302` 构建,compose 换 tag 起 `afree` 容器——`Up (healthy)`、`/health` 200(activeAccounts=19),旧镜像按 7 个窗口清理。
+- **移植后实测（真账号，2026-11-04 凌晨）**：克隆 `trae2api-xcool` 的便携快照（trae-cn-2745955326105609）文件级迁入 `data/trae2api/accounts/` 即入池；签到真实成功（+200 积分 5176→5276）、Test 额度连通 1403ms、**E2E chat 经绑定 EUserv 出口真实回复**（`trae:Doubao-Seed-Code` 0.06x，credit_cost 与目录倍率同源，[req] 日志账号列接通），代理健康 EUserv 25/25 全成功——出口钉定/模型名透传/引擎真实调用全链路实证。
+- **实测抓出并修复两个桥接缺陷**：①`trae2apiAccountStates` 持 traeRoutingMu 调 Pool().List()——List→Status→healthyLocked→RoutingAllowed 钩子重入 routing 锁自死锁（有账号后必现，/v1/models 与后台 Pool.Save 全堵死）；修复=先锁内取快照再查池，锁序回归测试 `TestTrae2apiBridgeLockOrder`（-race 并发三路径）。②config/update 漏了网关域校验（OAuth-only 域 api.trae.cn 作网关必失败——旧引擎 normalize 判据未随迁）；补 `trae2apiValidateGateway` + 测试。③routing 显示口径修正：AccountStates 用 traeRoutingGet（查表缺失=启用）而非 map 零值，面板显示与实际路由判定一致。
 - 验证:`go build ./...`、`go vet ./...` 全绿;`go test ./... -count=1` 28 包全绿(含新回归测试);`CGO_ENABLED=1 go test -race ./internal/app/` ok。
 
 ### 2026-10-31 — b8a1be0 → a41f1756

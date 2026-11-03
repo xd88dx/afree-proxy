@@ -1,20 +1,20 @@
 ---
 name: sync-upstream
-description: 同步 afree-proxy 三条上游线的完整流程与陷阱清单——fork 上游 foxy1402/cline-proxy 的 git merge 线（含 Cline 与 OpenCode 两个平台）、参考项目 workbuddy2api-panel 的 vendor 三方合并线、Trae 上游 Trae2api-cn 的内嵌授权助手比对线。凡是要"同步上游/sync upstream/合并上游更新/GitHub 提示 behind/上游有新提交/更新 workbuddy vendor/核对 Trae 上游"时使用，即使用户只说了"更新一下"。
+description: 同步 afree-proxy 四条上游线的完整流程与陷阱清单——fork 上游 foxy1402/cline-proxy 的 git merge 线（含 Cline 与 OpenCode 两个平台）、workbuddy2api-panel 与 XCool-603/trae2api 两条 vendor 三方合并线、Trae 旧上游 Trae2api-cn 的内嵌授权助手比对线（仅 web_login.py 模板）。凡是要"同步上游/sync upstream/合并上游更新/GitHub 提示 behind/上游有新提交/更新 workbuddy vendor/更新 trae2api vendor/核对 Trae helper 上游"时使用，即使用户只说了"更新一下"。
 ---
 
 # 上游同步配方
 
-本仓有**三条独立的同步线**，先分清用户说的是哪条：
+本仓有**四条独立的同步线**，先分清用户说的是哪条：
 
-| | fork 上游线 | vendor 参考项目线 | Trae 比对线 |
-|---|---|---|---|
-| 上游 | `foxy1402/cline-proxy`（GitHub，本仓 main 的 fork 来源） | `misakano7545/workbuddy2api-panel`（本地克隆 `D:\下载\Github\workbuddy2api-panel`；曾误记为 `linguo2625469`，那是平行血统，勿用） | `autumnsentiment/Trae2api-cn`（Python，本地为 Go 重写，无代码可 merge） |
-| 同步对象 | 整个仓库（网关/zen/cline 核心） | 仅 `internal/workbuddy/` vendor 树 | 仅 `internal/trae/helper_script.go` 内嵌的 `web_login.py` |
-| 方式 | `git merge` 上游提交（历史相连） | `scripts/sync_workbuddy.py` 三方合并（vendor 产物） | `scripts/check_trae_helper.py` 逐行比对（不合并） |
-| 细节 | references/cline-proxy-merge.md | references/workbuddy-vendor.md | 见 §2 Trae 小节 |
+| | fork 上游线 | WorkBuddy vendor 线 | TraeWork vendor 线 | Trae helper 比对线 |
+|---|---|---|---|---|
+| 上游 | `foxy1402/cline-proxy`（GitHub，本仓 main 的 fork 来源） | `misakano7545/workbuddy2api-panel`（本地克隆 `D:\下载\Github\workbuddy2api-panel`；曾误记为 `linguo2625469`，那是平行血统，勿用） | `XCool-603/trae2api`（本地克隆 `D:\下载\Github	rae2api-xcool`，2026-11-04 换线） | `autumnsentiment/Trae2api-cn`（Python；仅剩 helper 脚本模板的逐行比对） |
+| 同步对象 | 整个仓库（网关/zen/cline 核心） | 仅 `internal/workbuddy/` vendor 树 | 仅 `internal/trae2api/` vendor 树 | 仅 `internal/app/trae2api_helper_script.go` 内嵌的 `web_login.py` |
+| 方式 | `git merge` 上游提交（历史相连） | `scripts/sync_workbuddy.py` 三方合并（vendor 产物） | `scripts/sync_trae2api.py` 三方合并（vendor 产物；源树允许 textcall 四件套 WIP） | `scripts/check_trae_helper.py` 逐行比对（不合并） |
+| 细节 | references/cline-proxy-merge.md | references/workbuddy-vendor.md | 见 §2 TraeWork 小节 | 见 §2 Trae 小节 |
 
-判别口诀：提到 cline/zen/behind/GitHub 提示 → fork 上游线；提到 WorkBuddy 面板/wb → vendor 线；提到 Trae/TraeWork/签到/9074/web_login → Trae 比对线。多条线都要更新时先做 fork 线（改动大、冲突多），再做 vendor 线，最后做 Trae 比对。
+判别口诀：提到 cline/zen/behind/GitHub 提示 → fork 上游线；提到 WorkBuddy 面板/wb → WorkBuddy vendor 线；提到 trae2api 引擎/vendor/TraeWork 网关 → TraeWork vendor 线；提到 web_login/授权助手/签到 9074（脚本层面）→ Trae 比对线。多条线都要更新时先做 fork 线（改动大、冲突多），再做两条 vendor 线，最后做 Trae 比对。
 
 ## 1. 公共铁律
 
@@ -63,6 +63,22 @@ python scripts/sync_workbuddy.py --seal     # 冲突清零后登记新基线
 
 脚本前置条件与失败处理见 workbuddy-vendor.md。
 
+**TraeWork vendor 线**（2026-11-04 起，XCool-603/trae2api）：
+
+```bash
+# 源树 = D:\下载\Github	rae2api-xcool（git clone，已含上游全史 + textcall 本地修复 WIP）
+python scripts/sync_trae2api.py --report   # dry-run：看会合并什么
+python scripts/sync_trae2api.py            # 实际合并；冲突解决后 --seal 登记基线
+python scripts/sync_trae2api.py --pull     # 先 ff-only 拉上游（注意：源树 WIP 与上游同文件冲突时 pull 会失败，先在上游提交或还原）
+python scripts/sync_trae2api.py --seal     # 解决冲突后登记新基线
+```
+
+- 机制：`vendor_trae2api.py` 整树拷贝 12 子包 + import 前缀重写 + **幂等改写**（出口接管 `traectl.StoreHTTPClient`、反代开关 `pool.RoutingAllowed`、`AccountAddedHook`/`SetLabel`、console fetch 基址 `/admin/trae2api/api`、契约测试候选路径）+ `scripts/trae2api-afree.patch` 重放（另一会话的 textcall 兜底修复；以 chat.go 出现 `newTextCallFilter(` 判定已应用则跳过）。
+- **改写锚点随上游漂移时**：vendor 脚本对计数不匹配直接 RuntimeError 报锚点失效——修 `scripts/vendor_trae2api.py` 的 REWRITES（计数支持元组，写法参照 `vendor_workbuddy.py` 的 EGRESS_REWRITES）。
+- 源树 WIP 白名单：`internal/server/{chat,server}.go` 修改 + `textcall{,_test}.go` 新增是**合法**（与补丁同源）；`internal/` 下出现清单外未提交内容会被拒绝同步。
+- 上游若自行合并了 textcall 修复：补丁 `git apply --check` 失败 → 从 vendor 脚本移除补丁引用并记录台账。
+- 版本号：上游 `internal/server/server.go` 的 `Version` var ↔ 本地 `internal/app/trae.go` 的 `trae2apiVersion`，sync 尾部会提醒对齐。
+
 **Trae 比对线**（不合并，只核对内嵌脚本）：
 
 ```bash
@@ -74,9 +90,9 @@ mkdir -p /tmp/trae-up && tar xzf /tmp/trae-up.tar.gz -C /tmp/trae-up --strip-com
 python scripts/check_trae_helper.py --upstream-dir "$(cygpath -w /tmp/trae-up)"
 ```
 
-exit 0 = `internal/trae/helper_script.go` 内嵌的 `web_login.py` 与上游逐行一致（仅 `__RELAY_URL__` 占位符差异）；exit 1 打印 unified diff，处理方式是**以上游文件重建内嵌模板**（只替换 `DEFAULT_RELAY_URL` 为 `__RELAY_URL__`、按 Go raw string 规则把反引号转义成 `` ` + "`" + ` ``），不要手工逐行改。升级后同步更新 `scripts/trae-helper-baseline.json` 的 version / commit / date。
+exit 0 = `internal/app/trae2api_helper_script.go` 内嵌的 `web_login.py` 与上游逐行一致（仅 `__RELAY_URL__` 占位符差异）；exit 1 打印 unified diff，处理方式是**以上游文件重建内嵌模板**（只替换 `DEFAULT_RELAY_URL` 为 `__RELAY_URL__`、按 Go raw string 规则把反引号转义成 `` ` + "`" + ` ``），不要手工逐行改。升级后同步更新 `scripts/trae-helper-baseline.json` 的 version / commit / date。
 
-Go 侧（`internal/trae/*.go`、`internal/app/trae.go`）**没有可比对基线**——上游全 Python，本地是重写，只能按上游 `docs/release-v*.md` 人工核对协议面，并把"已具备 / 已知架构差异 / 未逐条核对"三类结论写进 `MERGE.md` 的 TreaWork 节。已知差异见台账（本地全局信号量 vs 上游账号级 entitlement 并发池）。
+Go 侧旧引擎（原 `internal/trae/`，Trae2api-cn 的 Go 重写）已于 2026-11-04 整体删除——TraeWork 行为面由 TraeWork vendor 线（XCool-603/trae2api）承接，本线只剩 helper 脚本模板的比对职责。历史差异结论见 `MERGE.md` TreaWork 节（已随引擎退役归档）。
 
 ## 3. 验证命令（三条线通用）
 

@@ -18,7 +18,7 @@ import (
 	"afree-proxy/internal/openrouter"
 	"afree-proxy/internal/other"
 	"afree-proxy/internal/tokenharbor"
-	"afree-proxy/internal/trae"
+	traectl "afree-proxy/internal/trae2api/traectl"
 )
 
 // ============================================================================
@@ -249,8 +249,9 @@ func isTransportLayerFailure(err error) bool {
 	if err == nil {
 		return false
 	}
-	var te *trae.HTTPError
-	if errors.As(err, &te) {
+	// vendored trae2api 的业务错误（续期协议错误等）不算传输层失败。
+	var tre *traectl.RefreshError
+	if errors.As(err, &tre) {
 		return false
 	}
 	var ae *amd.HTTPError

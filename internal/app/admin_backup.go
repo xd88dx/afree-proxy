@@ -16,7 +16,6 @@ import (
 	"afree-proxy/internal/openrouter"
 	"afree-proxy/internal/other"
 	"afree-proxy/internal/tokenharbor"
-	"afree-proxy/internal/trae"
 	wbauth "afree-proxy/internal/workbuddy/auth"
 	wbserver "afree-proxy/internal/workbuddy/server"
 )
@@ -136,8 +135,11 @@ type configBackup struct {
 	// Other 子平台聚合配置（other-config.json）。2026-10-14 补：Other 页
 	// 上线时只做了网关/面板，未接备份，导致子平台与 key 池无法随配置迁移。
 	Other *other.Config `json:"other,omitempty"`
-	// Trae 账号池平台（trae-config.json，trae: 前缀）。
-	Trae *trae.Config `json:"trae,omitempty"`
+	// Trae 账号池平台（2026-11-04 起 vendored trae2api 引擎）：config =
+	// trae2api-config.json 原文，routing = 反代开关表，accounts = 快照文件
+	// 名 → 快照 JSON（data/trae2api/accounts/*.json）。旧引擎的 trae.Config
+	// 形态不再兼容，旧备份的 trae 段导入时忽略。
+	Trae json.RawMessage `json:"trae,omitempty"`
 	// WorkBuddyProxies WorkBuddy 账号代理绑定（proxy-config.json 的 WorkBuddy 段）。
 	// 2026-10-14 补：workbuddyBackup 原只覆盖 vendor config.json 与 auths
 	// 凭据，漏了出口绑定，导入后该文件仍留旧值（而非本机值），跨机迁移出错。
@@ -230,7 +232,7 @@ func handleAdminConfigExport(w http.ResponseWriter, r *http.Request) {
 		TokenHarbor:         tokenharbor.Get(),
 		WorkBuddy:           exportWorkbuddyBackup(),
 		Other:               other.Get(),
-		Trae:                trae.Get(),
+		Trae:                trae2apiBackupSnapshot(),
 		WorkBuddyProxies:    exportWorkbuddyProxyBindings(),
 		ModelBlacklist:      exportModelBlacklist(),
 		PlatformBlacklist:   exportPlatformBlacklist(),
@@ -239,7 +241,6 @@ func handleAdminConfigExport(w http.ResponseWriter, r *http.Request) {
 		State: &stateBackup{
 			Cline:       clineState,
 			Zen:         zenStateBackupSnapshot(),
-			Trae:        trae.StateSnapshotJSON(),
 			AMD:         amd.StateSnapshotJSON(),
 			OpenRouter:  openrouter.StateSnapshotJSON(),
 			TokenHarbor: tokenharbor.StateSnapshotJSON(),
@@ -615,22 +616,16 @@ func handleAdminConfigImport(w http.ResponseWriter, r *http.Request) {
 		other.Set(ocfg)
 		imported["otherKeys"] = nKeys
 	}
-	if backup.Trae != nil {
-		// Trae 账号池同口径：导入账号默认全部禁用（PoolEnabled 显式 false；
-		// nil = 参与路由，清表不算禁用），弹窗勾选"沿用启用状态"才保留原表。
-		tc := backup.Trae
-		for _, a := range tc.Accounts {
-			if a == nil {
-				continue
-			}
-			if !backup.KeepEnabled["trae"] {
-				f := false
-				a.PoolEnabled = &f
-			}
+	if len(backup.Trae) > 0 {
+		// TraeWork（vendored trae2api）同口径：导入账号默认全部禁用（反代开关
+		// 显式 false），弹窗勾选"沿用启用状态"才保留备份内开关表。旧引擎形态
+		// 的 trae 段（无 config 键）视为 legacy，忽略并提示。
+		n, err := trae2apiRestoreBackup(backup.Trae, backup.KeepEnabled["trae"])
+		if err != nil {
+			log.Printf("  config import: trae2api restore skipped: %v", err)
+		} else if n > 0 {
+			imported["traeAccounts"] = n
 		}
-		trae.Set(tc)
-		trae.SetMaxConcurrency()
-		imported["traeAccounts"] = len(tc.Accounts)
 	}
 	if len(backup.WorkBuddyProxies) > 0 {
 		imported["workBuddyProxies"] = importWorkbuddyProxyBindings(backup.WorkBuddyProxies)
@@ -659,7 +654,9 @@ func handleAdminConfigImport(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		// 五平台 JSON 包：勾选 = 整体替换（全量随备份）；不勾选 = 账号事实合并
-		// （冷却表 / trae 的 credits·签到覆盖，本机统计键保留本机值）。
+		// （冷却表覆盖，本机统计键保留本机值）。trae 段 2026-11-04 起由
+		// trae2apiRestoreBackup 单独处理（含 config/routing/accounts），不再走
+		// state 事实合并（vendored state.json 冷却不随备份迁移）。
 		mergeOrReplace := func(local, backupSeg json.RawMessage, traeAccounts bool, importFn func(json.RawMessage) error) {
 			if len(backupSeg) == 0 {
 				return
@@ -675,7 +672,6 @@ func handleAdminConfigImport(w http.ResponseWriter, r *http.Request) {
 			}
 			_ = importFn(merged)
 		}
-		mergeOrReplace(trae.StateSnapshotJSON(), st.Trae, true, trae.ImportStateJSON)
 		mergeOrReplace(amd.StateSnapshotJSON(), st.AMD, false, amd.ImportStateJSON)
 		mergeOrReplace(openrouter.StateSnapshotJSON(), st.OpenRouter, false, openrouter.ImportStateJSON)
 		mergeOrReplace(tokenharbor.StateSnapshotJSON(), st.TokenHarbor, false, tokenharbor.ImportStateJSON)

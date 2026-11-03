@@ -21,7 +21,6 @@ import (
 	openrouter "afree-proxy/internal/openrouter"
 	"afree-proxy/internal/other"
 	"afree-proxy/internal/tokenharbor"
-	"afree-proxy/internal/trae"
 )
 
 // routeStat 网关请求计数（进程生命周期，仅 /v1/ 路径）：请求数、错误数、
@@ -427,7 +426,7 @@ func requestLogMiddleware(next http.Handler) http.Handler {
 			route = "amd"
 		case tokenharbor.HasPrefix(model):
 			route = "tokenharbor"
-		case trae.HasPrefix(model):
+		case trae2apiPlatformModel(model):
 			route = "trae"
 		case otherHit:
 			route = "other"

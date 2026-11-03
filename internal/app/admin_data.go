@@ -4,6 +4,8 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
+	"strings"
 )
 
 // POST /admin/api/data/delete-all
@@ -23,7 +25,7 @@ func handleAdminDeleteAllData(w http.ResponseWriter, r *http.Request) {
 	amdKeys := clearAMDKeysForDataDelete()
 	thKeys := clearTokenHarborKeysForDataDelete()
 	otherKeys := clearOtherKeysForDataDelete()
-	traeAccounts := clearTraeAccountsForDataDelete()
+	traeAccounts := clearTrae2apiAccountsForDataDelete()
 	sessions := clearZenSessionsForDataDelete()
 	endpoints := clearZenEndpointsForDataDelete()
 	workbuddyAccounts := clearWorkbuddyAccountsForDataDelete()
@@ -227,4 +229,40 @@ func clearRequestLogsForDataDelete() {
 	if err := os.WriteFile(path, nil, 0600); err != nil {
 		log.Printf("data delete: truncate %s failed: %v", path, err)
 	}
+}
+
+// clearTrae2apiAccountsForDataDelete 清空 TraeWork 账号：删除全部快照文件 +
+// 清空路由参与表与出口绑定，然后重启 vendored 子系统（渠道按空账号重建）。
+func clearTrae2apiAccountsForDataDelete() int {
+	accountsDir := filepath.Join(traeDataDir(), "accounts")
+	entries, _ := os.ReadDir(accountsDir)
+	n := 0
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".json") {
+			continue
+		}
+		if err := os.Remove(filepath.Join(accountsDir, e.Name())); err != nil && !os.IsNotExist(err) {
+			log.Printf("trae2api data delete: remove %s failed: %v", e.Name(), err)
+			continue
+		}
+		n++
+	}
+	traeBindingsMu.Lock()
+	loadTraeBindingsLocked()
+	if len(traeBindings) > 0 {
+		traeBindings = map[string]trae2apiProxyBinding{}
+		saveTraeBindingsLocked()
+	}
+	traeBindingsMu.Unlock()
+	traeRoutingMu.Lock()
+	loadTraeRoutingLocked()
+	if len(traeRouting) > 0 {
+		traeRouting = map[string]bool{}
+		saveTraeRoutingLocked()
+	}
+	traeRoutingMu.Unlock()
+	if n > 0 {
+		_ = trae2apiRestart()
+	}
+	return n
 }
