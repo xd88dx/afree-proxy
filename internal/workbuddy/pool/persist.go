@@ -7,7 +7,6 @@ import (
 	"errors"
 	"io/fs"
 	"log"
-	"math"
 	"os"
 	"path/filepath"
 	"time"
@@ -149,115 +148,32 @@ func (p *Pool) load() {
 
 // applyAccountsLocked 用持久化账号状态覆盖/插入 byUID（placeholder 凭证，Add 时换全）。
 // 本地 load() 与 Redis 快照恢复共用；调用方必须已持有 p.mu。
+//
+// 字段分两段恢复（2026-11-03 口径，见 accountfacts.go）：账号事实经
+// applyAccountFactsLocked（含惰性清洗）；本机统计（successCount/errTotal/
+// lastSuccess/lastErr/tokenUsage）是部署侧路由痕迹，只走本地/快照恢复、
+// 不随配置备份迁移。
 func (p *Pool) applyAccountsLocked(accounts map[string]stateAccount) {
 	now := time.Now()
 	migratedState := false
 	for uid, s := range accounts {
-		// err_total 优先；旧文件的 err_count（连续错误）作一次性迁移源映射进来（二者取较大者，
-		// 尽最大可能保留历史观测信号——旧语义下 err_count 也真实发生过错误，不应丢）。
+		e := &entry{a: &auth.Auth{UID: uid}} // placeholder，Add 时会换成完整凭证
+		// 账号事实：余额/冷却/熔断降权/限额/成本/签到/运维意志 + 惰性清洗。
+		if e.applyAccountFactsLocked(s, now) {
+			migratedState = true
+		}
+		// 本机统计。err_total 优先；旧文件的 err_count（连续错误）作一次性
+		// 迁移源映射进来（二者取较大者，尽最大可能保留历史观测信号——旧语义下
+		// err_count 也真实发生过错误，不应丢）。
 		errTotal := s.ErrTotal
 		if int64(s.ErrCount) > errTotal {
 			errTotal = int64(s.ErrCount)
 		}
-		e := &entry{
-			a:                        &auth.Auth{UID: uid}, // placeholder，Add 时会换成完整凭证
-			credits:                  s.Credits,
-			creditsRemainder:         s.CreditsRemainder,
-			creditsTotal:             s.CreditsTotal,
-			creditsExpiring:          s.CreditsExpiring,
-			creditsEarliestExpiry:    s.CreditsEarliestExpiry,
-			creditsEarliestRemaining: s.CreditsEarliestRemaining,
-			disabled:                 s.Disabled,
-			paused:                   s.Paused,
-			reason:                   s.Reason,
-			disabledAt:               s.DisabledAt,
-			until:                    s.Until,
-			coolKind:                 s.CoolKind,
-			successCount:             s.SuccessCount,
-			errTotal:                 errTotal,
-			lastErr:                  s.LastErr,
-			lastSuccess:              s.LastSuccess,
-			lastCheckinDay:           s.LastCheckinDay,
-			tokenUsage:               s.TokenUsage,
-			softStreak:               s.SoftStreak,
-			sessionDeadFails:         s.SessionDeadFails,
-			consecutiveFails:         s.ConsecutiveFails,
-		}
-		// 亚积分余量合法性：越界/非有限值（旧数据或手改）清 0，保守回退整数口径。
-		if math.IsNaN(e.creditsRemainder) || math.IsInf(e.creditsRemainder, 0) || e.creditsRemainder < -0.5 || e.creditsRemainder >= 0.5 {
-			e.creditsRemainder = 0
-			migratedState = true
-		}
-		// 到期快照按当前时刻惰性清洗：已过期、零剩余或超出总余额的脏数据不恢复。
-		if e.creditsExpiring < 0 {
-			e.creditsExpiring = 0
-		}
-		if e.creditsExpiring > e.credits {
-			e.creditsExpiring = e.credits
-		}
-		if e.creditsEarliestRemaining < 0 || e.creditsEarliestRemaining > e.credits {
-			e.creditsEarliestRemaining = 0
-		}
-		if e.creditsEarliestRemaining == 0 || e.creditsEarliestExpiry.IsZero() || !now.Before(e.creditsEarliestExpiry) {
-			e.creditsEarliestExpiry = time.Time{}
-			e.creditsEarliestRemaining = 0
-		}
-		// 按日到期批次：惰性剔除已过期/零剩余条目；有批次时以批次为准同步最早批次，
-		// 保证重启后首页快照与明细仍同口径。
-		e.expiryBuckets = sanitizeExpiryBuckets(s.CreditsExpiryBuckets, now)
-		if len(e.expiryBuckets) > 0 {
-			e.creditsEarliestExpiry = e.expiryBuckets[0].ExpireAt
-			e.creditsEarliestRemaining = e.expiryBuckets[0].Remain
-		}
-		// 熔断器持久化恢复：breakerUntil 未过期才恢复（过期不复活），retryCount 仅在
-		// 熔断仍有效时保留（否则归零，不保留无用退避指数）。
-		if s.BreakerUntil != nil && now.Before(*s.BreakerUntil) {
-			e.breakerUntil = *s.BreakerUntil
-			e.retryCount = s.RetryCount
-		}
-		// 连败降权：未过期才恢复（过期/零值不写不复活）。
-		if s.DegradeUntil != nil && now.Before(*s.DegradeUntil) {
-			e.degradeUntil = *s.DegradeUntil
-		}
-		// 模型级独立冷却（6004 重置墙钟 / 11102 负缓存）：惰性过滤已过期条目。
-		if len(s.ModelCooldowns) > 0 {
-			for m, mc := range s.ModelCooldowns {
-				if mc.Until.IsZero() || !now.Before(mc.Until) {
-					continue
-				}
-				if e.modelCooldowns == nil {
-					e.modelCooldowns = map[string]modelCooldown{}
-				}
-				e.modelCooldowns[m] = modelCooldown{Until: mc.Until, ResetAt: mc.ResetAt, Reason: mc.Reason, AuditOnly: mc.AuditOnly}
-			}
-		}
-		// 手动关闭 (账号, 模型)：**无过期过滤**——它是永久语义，
-		// 与冷却（过期即弃）不同，不得被惰性清理顺手删掉。
-		if len(s.ModelOff) > 0 {
-			e.modelOff = map[string]modelOff{}
-			for m, o := range s.ModelOff {
-				e.modelOff[m] = modelOff{Since: o.Since, Note: o.Note}
-			}
-		}
-		// 成本账本：惰性过滤过期（modelCostTTL 外不恢复）+ 剔除结构破损条目
-		// （负/非有限 per1k / 零 LastSeen）。旧版缺失 credit 与真实 0 混为同一
-		// 记录形态；仅对「缺少可信标记的零价条目」降为未知（迁移一次），
-		// 正价旧记录保持可用（迁移上游 PR #104）。
-		if len(s.ModelCosts) > 0 {
-			for m, mc := range s.ModelCosts {
-				if mc.LastSeen.IsZero() || now.Sub(mc.LastSeen) > modelCostTTL || mc.CostPer1k < 0 || math.IsNaN(mc.CostPer1k) || math.IsInf(mc.CostPer1k, 0) {
-					continue
-				}
-				if mc.CostPer1k == 0 && !mc.CreditVerified {
-					migratedState = true
-					continue
-				}
-				if e.modelCost == nil {
-					e.modelCost = map[string]modelCostEntry{}
-				}
-				e.modelCost[m] = modelCostEntry{CostPer1k: mc.CostPer1k, LastSeen: mc.LastSeen, Samples: mc.Samples, CreditVerified: mc.CreditVerified}
-			}
-		}
+		e.errTotal = errTotal
+		e.successCount = s.SuccessCount
+		e.lastErr = s.LastErr
+		e.lastSuccess = s.LastSuccess
+		e.tokenUsage = s.TokenUsage
 		p.byUID[uid] = e
 	}
 	if migratedState {

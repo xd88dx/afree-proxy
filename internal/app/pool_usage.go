@@ -99,6 +99,7 @@ func savePoolUsage() {
 	defer poolMu.Unlock()
 	savePoolUsageLocked()
 }
+
 // loadPoolUsage 启动加载痕迹文件（loadPool 尾部调用，poolMu 已持有）。
 // 缺失即空表启动；解析失败改名留档（与池文件同款）。旧格式的一次性迁移已随
 // 2026-11-01 死代码清理移除——升级前先在旧版导出含统计快照的备份，新版导入还原。
@@ -125,7 +126,7 @@ func loadPoolUsage() {
 	poolUsage = &f
 	log.Printf("pool usage: restored %d account trace(s), cursor=%d from %s",
 		len(f.Accounts), f.CurrentIdx, poolUsagePath)
-}// poolStateBackupSnapshot 统计快照（配置备份 state 段，2026-11-01）。
+} // poolStateBackupSnapshot 统计快照（配置备份 state 段，2026-11-01）。
 // 调用方必须持有 poolMu。
 func poolStateBackupSnapshotLocked() *poolUsageData {
 	out := &poolUsageData{CurrentIdx: poolUsage.CurrentIdx}
@@ -157,6 +158,34 @@ func importPoolStateBackupLocked(f *poolUsageData) {
 		}
 	}
 	poolUsage = next
+}
+
+// importPoolStateFactsLocked 账号事实合并（2026-11-03 三层口径）：status/
+// cooldownUntil/lastReason 是账号事实（账号在上游的客观状态），勾选与否都
+// 应用；lastUsed/用量计数/token 记账/轮转游标是本机统计，保留本机现值。
+// 备份没有的账号不创建空痕迹（不凭空造状态）。调用方必须持有 poolMu。
+func importPoolStateFactsLocked(f *poolUsageData) {
+	if f == nil || len(f.Accounts) == 0 {
+		return
+	}
+	if poolUsage.Accounts == nil {
+		poolUsage.Accounts = map[string]*accountUsage{}
+	}
+	for id, u := range f.Accounts {
+		if u == nil {
+			continue
+		}
+		cur := poolUsage.Accounts[id]
+		if cur == nil {
+			cur = &accountUsage{Status: u.Status}
+			poolUsage.Accounts[id] = cur
+		}
+		if u.Status != "" {
+			cur.Status = u.Status
+		}
+		cur.CooldownUntil = u.CooldownUntil
+		cur.LastReason = u.LastReason
+	}
 }
 
 // clearPoolUsage 清空全部账号痕迹与游标并即时落盘（清空数据/导入重建时调用）。

@@ -387,6 +387,45 @@ func (r *Recorder) noteFlushFailure(stage string, err error) {
 // Save 立即落盘（面板「刷新」或关闭前调用）。
 func (r *Recorder) Save() { r.flush(true) }
 
+// SnapshotRaw 台账原文快照（配置备份 workbuddy.usage 段，2026-11-03 用户定
+// 「导出 = 容器全部数据」）：与 usage.json 落盘同形态。属统计层——导入方
+// 勾选「导入统计数据」时才经 ImportRaw 还原。
+func (r *Recorder) SnapshotRaw() json.RawMessage {
+	r.mu.Lock()
+	snap := file{Version: fileVersion, Saved: time.Now().Format(time.RFC3339), Buckets: make([]bucket, 0, len(r.buckets))}
+	for _, b := range r.buckets {
+		snap.Buckets = append(snap.Buckets, *b)
+	}
+	r.mu.Unlock()
+	data, err := json.Marshal(snap)
+	if err != nil {
+		return nil
+	}
+	return data
+}
+
+// ImportRaw 用备份中的 usage.json 原文替换当前台账（整体替换，与其他平台
+// state 段的勾选还原同语义）。解析失败返回错误、现值不动；成功后置脏并
+// 立即落盘（不依赖防抖周期）。
+func (r *Recorder) ImportRaw(raw []byte) error {
+	var f file
+	if err := json.Unmarshal(raw, &f); err != nil {
+		return err
+	}
+	next := make(map[string]*bucket, len(f.Buckets))
+	for i := range f.Buckets {
+		b := f.Buckets[i]
+		next[b.Scope+"|"+b.Realm+"|"+b.UID+"|"+b.Model+"|"+b.Rate] = &b
+	}
+	r.mu.Lock()
+	r.buckets = next
+	r.dirty = true
+	r.mu.Unlock()
+	r.flush(true)
+	log.Printf("[usage] 备份台账已还原（%d 个用量桶）", len(next))
+	return nil
+}
+
 // ---------------------------------------------------------------- 聚合 ----
 
 // Agg 一组累计量。

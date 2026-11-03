@@ -23,12 +23,22 @@ import (
 
 // ============ 配置导入导出（全量持久化状态） ============
 //
-// 导出：把所有需要持久化的状态聚合成一个 JSON——各平台凭据与配置
-// （Cline 账号、OpenCode key 及启用/绑定、OpenRouter/AMDCloud/TokenHarbor key 池、
-// Other 子平台聚合、WorkBuddy config + 凭据文件 + 出口绑定）、代理池（别名随行）、
-// 请求头、调度策略、默认
-// 模型、自定义别名、zen 粘性会话、端点学习结果。文件包含全部凭据，仅经管理
-// 面板鉴权后下载。新平台接入时必须同步补这里的导出/导入段，否则备份丢数据。
+// 三层口径（2026-11-03 用户定，「导出文件 → 全新容器 → 一模一样」）：
+//
+//   - **配置态**：各平台凭据与配置（Cline 账号、OpenCode key 及启用/绑定、
+//     OpenRouter/AMDCloud/TokenHarbor key 池、Other 子平台聚合、WorkBuddy
+//     config + 凭据文件 + 出口绑定）、代理池（别名随行）、请求头、调度策略、
+//     默认模型、自定义别名、zen 粘性会话、端点学习结果。
+//   - **账号事实**：账号/key 在上游的客观状态（冷却表、wb 余额/限额/实测成本/
+//     签到/运维意志、cline status、trae credits/签到）。
+//   - **本机统计**：token 记账、请求/成功失败计数、最近使用时间、轮转游标、
+//     出口健康统计、wb usage.json 实测台账。也是容器全部数据的一部分（全量
+//     导出），但导入时受「Import statistics」勾选控制；不勾选 = 保留本机现值。
+//
+// 导入规则：配置态与账号事实**无论勾选与否都导入**；本机统计仅勾选时导入。
+// 请求日志归档（requests.jsonl、workbuddy/request-logs/）与运行日志不进备份。
+// 文件包含全部凭据，仅经管理面板鉴权后下载。新平台接入时必须同步补这里的
+// 导出/导入段，否则备份丢数据。
 //
 // 导入：同一格式的 JSON，**按段替换** —— 文件中存在的段整体替换当前值，
 // 文件中没有的段保持不动；导入后各缓存/持久化文件同步重建。
@@ -38,14 +48,15 @@ import (
 // 出口在本地未必存在，原样启用等于把流量引向未经验证的身份。启用哪个由
 // 用户在面板逐个勾选。导入弹窗提供逐平台"沿用启用状态"switch（KeepEnabled，
 // 默认全不沿用 = 原护栏行为），显式勾选的平台保留备份内原状态。客户端 key
-// （本地访问凭据）与代理池不在此列。
+// （本地访问凭据）与代理池不在此列。全量克隆场景：逐平台勾选沿用即可得到
+// 一模一样的启用状态。
 
-const configBackupVersion = 2
+const configBackupVersion = 3
 
-// configBackupVersionOK 导入接受的版本：v2（六平台全量）与 v1（旧备份，
-// 缺的段保持不动）。更新的版本直接拒绝——按段替换语义下，未知段被静默
-// 丢弃比报错危险。
-func configBackupVersionOK(v int) bool { return v == 1 || v == 2 }
+// configBackupVersionOK 导入接受的版本：v3（三层口径全量）与 v1/v2（旧备份，
+// 缺的段保持不动；其 state 段按新语义分流——事实总导入、统计受勾选控制）。
+// 更新的版本直接拒绝——按段替换语义下，未知段被静默丢弃比报错危险。
+func configBackupVersionOK(v int) bool { return v == 1 || v == 2 || v == 3 }
 
 type workbuddyBackup struct {
 	// Config vendor config.json 原文。导入经 saveWorkbuddyConfig 落盘，
@@ -59,6 +70,16 @@ type workbuddyBackup struct {
 	// 表格退回 uid 排序，用户拖好的顺序等于白做（2026-10-21 实测发现）。
 	// 仅影响 List()/面板顺序，不参与选号（加权路由与顺序无关）。
 	Order []string `json:"order,omitempty"`
+	// State 池状态全量快照（state.json 同形态：accounts + scheduling + order，
+	// 2026-11-03 三层口径「导出 = 容器全部数据」）。导入时分层：账号事实
+	// （余额/冷却/限额/实测成本/签到/运维意志）无论勾选与否都应用；本机统计
+	// （token 用量/成功失败计数/最近使用/调度游标）仅勾选「Import statistics」
+	// 时应用，不勾选 = 保留本机现值。见 pool.ImportStateBackupJSON。
+	State json.RawMessage `json:"state,omitempty"`
+	// Usage 实测台账全量快照（usage.json 同形态，统计层）：按模型实测扣费/
+	// charge_variants。归统计层（2026-11-03 用户定）——勾选「Import statistics」
+	// 时整体替换，不勾选保留本机现值。见 wbusage.Recorder.ImportRaw。
+	Usage json.RawMessage `json:"usage,omitempty"`
 }
 
 // zenBackupSnapshot 取一份 zen 配置的拷贝用于备份。绑定表（keyBindings）的键
@@ -69,8 +90,12 @@ func zenBackupSnapshot() *zenConfigData {
 	return &c
 }
 
-// stateBackup 统计快照段（备份文件 state 键）：八域痕迹的聚合，各段形态与
-// 各自 *-state.json 落盘文件一致。
+// stateBackup 各平台 state 快照段（备份文件 state 键）：与各自 *-state.json
+// 落盘文件**同形态全量**（账号事实 + 本机统计都在内，2026-11-03 三层口径
+// 「导出 = 容器全部数据」）。导入时按层分流：账号事实总是应用；本机统计仅
+// 勾选「Import statistics」时应用（不勾选 = 保留本机现值，2026-11-03 起
+// 取消勾选不再清零）。WorkBuddy 的对应快照在 workbuddy.state / workbuddy.usage
+// 段（vendor 池由 5s flusher 托管，须写进池内存再落盘，不走本段）。
 type stateBackup struct {
 	Cline       *poolUsageData   `json:"cline,omitempty"`
 	Zen         *zenUsageFile    `json:"zen,omitempty"`
@@ -129,15 +154,16 @@ type configBackup struct {
 	ZenDepAliases map[string]*zenDepEntry `json:"zenDepAliases,omitempty"`
 	// ClineStreamRequired cline "必须流式"自学习结果（afree-config.json 的 clineStreamRequired 段）。
 	ClineStreamRequired map[string]string `json:"clineStreamRequired,omitempty"`
-	// State 统计快照（2026-11-01）：各平台使用痕迹（token 记账/冷却/账号状态/
-	// 轮转游标/出口健康），与 *-state.json 落盘同形态。导出始终携带；导入按
-	// ImportState 开关取舍（弹窗勾选框，默认勾选）。五平台包（trae/amd/or/th/
-	// other）以 JSON 往返（与落盘同形态），不暴露包内类型。WorkBuddy 的
-	// vendor state 不在此列——其内存态由 vendor 池 5s flusher 全量托管，运行时
-	// 导入会被覆盖，统计随迁走数据卷复制路径。
+	// State 各平台 state 快照（2026-11-01）：与 *-state.json 落盘同形态的
+	// **全量**快照（账号事实 + 本机统计，三层口径「导出 = 容器全部数据」）。
+	// 导出始终携带；导入分层——账号事实无论勾选与否都应用，本机统计仅勾选
+	// 「Import statistics」时应用（不勾选 = 保留本机现值）。五平台包
+	// （trae/amd/or/th/other）以 JSON 往返（与落盘同形态），不暴露包内类型。
+	// WorkBuddy 的池状态与实测台账在 workbuddy.state / workbuddy.usage 段。
 	State *stateBackup `json:"state,omitempty"`
-	// ImportState 导入方对"还原统计快照"的选择（弹窗勾选框，默认勾选）。
-	// nil = 按导入处理（备份携带 state 段即还原）。
+	// ImportState 导入方对「还原本机统计」的选择（弹窗勾选框，默认勾选）。
+	// 勾选 = 统计随备份还原；取消勾选 = 统计保留本机现值（2026-11-03 起
+	// 不再清零）。配置态与账号事实无论勾选与否都会导入。
 	ImportState *bool `json:"importState,omitempty"`
 	// KeepEnabled 导入方对"沿用启用状态"的逐平台选择（导入弹窗 switch，默认
 	// 全不沿用）。缺项/false = 隔离护栏生效（导入身份一律禁用，原行为）；
@@ -279,12 +305,21 @@ func exportWorkbuddyBackup() *workbuddyBackup {
 	}
 	// 展示顺序单独带上：state.json 不随备份走（里面还有 credits/cooling
 	// 等运行时状态，属于本机事实）。List() 已按自定义顺序输出，直接取 uid。
+	// 2026-11-03 起顺序与状态都进备份（见下）：Order 保留独立段兼容既有测试
+	// 与「只带 order 的最小备份」。
 	if sub.pool != nil {
 		for _, st := range sub.pool.List() {
 			if st.UID != "" {
 				wb.Order = append(wb.Order, st.UID)
 			}
 		}
+		// 池状态全量快照（state.json 同形态）：账号事实 + 本机统计都在内
+		// （「导出 = 容器全部数据」），导入端按勾选分层（pool.ImportStateBackupJSON）。
+		wb.State = sub.pool.StateSnapshotJSON()
+	}
+	// 实测台账快照（usage.json 同形态，统计层）。
+	if sub.usage != nil {
+		wb.Usage = sub.usage.SnapshotRaw()
 	}
 	files, _ := filepath.Glob(filepath.Join(sub.cfg.AuthDir, "workbuddy*.json"))
 	if len(files) > 0 {
@@ -319,6 +354,9 @@ func handleAdminConfigImport(w http.ResponseWriter, r *http.Request) {
 	}
 
 	imported := map[string]int{}
+	// 统计层开关（2026-11-03 三层口径）：勾选（缺省）= 本机统计随备份还原；
+	// 取消勾选 = 统计保留本机现值。配置态与账号事实不受此开关影响，总是导入。
+	includeStats := backup.ImportState == nil || *backup.ImportState
 
 	// ---- Cline 账号 ----
 	if backup.Accounts != nil {
@@ -344,10 +382,14 @@ func handleAdminConfigImport(w http.ResponseWriter, r *http.Request) {
 		p := loadPool()
 		poolMu.Lock()
 		p.Accounts = accounts
-		// 账号集合整体替换：痕迹表无条件清零（2026-11-01 用户定——勾选统计
-		// 导入时随后由 state 快照回填=「保留统计值」；取消勾选则清零不回填=
-		// 「不保留统计值」），游标归零。
-		clearPoolUsageLocked()
+		// 账号集合整体替换：清掉不在新集合里的孤儿痕迹（同 ID 账号的本机统计
+		// 保留现值——2026-11-03 三层口径，取消勾选统计也不再清零）。勾选统计
+		// 时随后由 state 快照整体回填；账号事实由 state 段合并（勾选与否都还原）。
+		valid := make(map[string]bool, len(accounts))
+		for _, a := range accounts {
+			valid[a.AccountID] = true
+		}
+		prunePoolUsageLocked(valid)
 		poolMu.Unlock()
 		// 旧账号的刷新单飞句柄一并作废
 		refreshFlightMu.Lock()
@@ -594,49 +636,54 @@ func handleAdminConfigImport(w http.ResponseWriter, r *http.Request) {
 		imported["workBuddyProxies"] = importWorkbuddyProxyBindings(backup.WorkBuddyProxies)
 	}
 
-	// ---- 统计快照（2026-11-01，用户定）：勾选（默认）=「保留统计值」——
-	// 各域痕迹整体替换为备份快照（cline 在账号集合替换之后回填）；取消勾选
-	// =「不保留统计值」——各域统计清零（cline 已在账号段清零）。旧版备份无
-	// state 段：维持原行为（cline 清零、其余域不碰），无统计可回填。
-	if st := backup.State; st != nil && (backup.ImportState == nil || *backup.ImportState) {
+	// ---- state 段（2026-11-03 三层口径）：全量快照按层分流。账号事实（冷却表/
+	// cline 状态 / trae 的 credits·签到）**无论勾选与否都应用**；本机统计（token
+	// 记账/请求计数/轮转游标/出口健康）仅勾选时随备份还原，不勾选 = 保留本机
+	// 现值（不再清零）。旧版备份带的统计字段在不勾选时同样被忽略。
+	if st := backup.State; st != nil {
 		if st.Cline != nil {
 			poolMu.Lock()
-			importPoolStateBackupLocked(st.Cline)
+			if includeStats {
+				importPoolStateBackupLocked(st.Cline)
+			} else {
+				importPoolStateFactsLocked(st.Cline)
+			}
 			savePoolUsageLocked()
 			poolMu.Unlock()
 		}
 		if st.Zen != nil {
-			importZenStateBackup(st.Zen)
+			if includeStats {
+				importZenStateBackup(st.Zen)
+			} else {
+				importZenStateFacts(st.Zen)
+			}
 		}
-		if len(st.Trae) > 0 {
-			_ = trae.ImportStateJSON(st.Trae)
+		// 五平台 JSON 包：勾选 = 整体替换（全量随备份）；不勾选 = 账号事实合并
+		// （冷却表 / trae 的 credits·签到覆盖，本机统计键保留本机值）。
+		mergeOrReplace := func(local, backupSeg json.RawMessage, traeAccounts bool, importFn func(json.RawMessage) error) {
+			if len(backupSeg) == 0 {
+				return
+			}
+			if includeStats {
+				_ = importFn(backupSeg)
+				return
+			}
+			merged, err := mergeStateFactsJSON(local, backupSeg, traeAccounts)
+			if err != nil {
+				log.Printf("  config import: state facts merge failed — keeping local values: %v", err)
+				return
+			}
+			_ = importFn(merged)
 		}
-		if len(st.AMD) > 0 {
-			_ = amd.ImportStateJSON(st.AMD)
-		}
-		if len(st.OpenRouter) > 0 {
-			_ = openrouter.ImportStateJSON(st.OpenRouter)
-		}
-		if len(st.TokenHarbor) > 0 {
-			_ = tokenharbor.ImportStateJSON(st.TokenHarbor)
-		}
-		if len(st.Other) > 0 {
-			_ = other.ImportStateJSON(st.Other)
-		}
-		if st.ProxyHealth != nil {
+		mergeOrReplace(trae.StateSnapshotJSON(), st.Trae, true, trae.ImportStateJSON)
+		mergeOrReplace(amd.StateSnapshotJSON(), st.AMD, false, amd.ImportStateJSON)
+		mergeOrReplace(openrouter.StateSnapshotJSON(), st.OpenRouter, false, openrouter.ImportStateJSON)
+		mergeOrReplace(tokenharbor.StateSnapshotJSON(), st.TokenHarbor, false, tokenharbor.ImportStateJSON)
+		mergeOrReplace(other.StateSnapshotJSON(), st.Other, false, other.ImportStateJSON)
+		if includeStats && st.ProxyHealth != nil {
 			importProxyHealthBackup(st.ProxyHealth)
 		}
 		imported["state"] = 1
-	} else {
-		// 取消勾选：统计不保留——除 cline（账号段已清零）外的各域一并清零。
-		amd.ClearUsage()
-		openrouter.ClearUsage()
-		tokenharbor.ClearUsage()
-		other.ClearAllUsage()
-		trae.ClearUsage()
-		ClearZenUsage()
-		resetProxyHealthStats()
-		imported["stateCleared"] = 1
 	}
 
 	// ---- 模型封禁表 / 平台封禁表 / zen 死模型别名 / cline 必须流式学习结果
@@ -663,7 +710,7 @@ func handleAdminConfigImport(w http.ResponseWriter, r *http.Request) {
 	// 凭据文件整体替换 auths 目录；默认全部账号禁用，弹窗勾选"沿用启用
 	// 状态"时保留凭据文件内的原始 pool_enabled ----
 	if backup.WorkBuddy != nil {
-		wbAuths, wbCfg := importWorkbuddyBackup(backup.WorkBuddy, backup.KeepEnabled["wb"])
+		wbAuths, wbCfg := importWorkbuddyBackup(backup.WorkBuddy, backup.KeepEnabled["wb"], includeStats)
 		if wbAuths >= 0 {
 			imported["workbuddyAuths"] = wbAuths
 		}
@@ -783,9 +830,11 @@ func importClineStreamRequired(in map[string]string) {
 
 // importWorkbuddyBackup 落盘 vendor config 与凭据文件；keepWbEnabled=false
 // 时禁用全部账号（隔离护栏），true 时保留凭据文件内的原始启用状态。
+// includeStats 控制统计层（本机统计 + usage 台账）：true = 随备份还原；
+// false = 保留本机现值（账号事实无论如何都应用，2026-11-03 三层口径）。
 // 返回 (导入账号数, config 是否已应用)；子系统未运行时返回 (-1, false)——
-// 此时凭据文件仍写盘（重启后生效），config 因需要热应用句柄而跳过。
-func importWorkbuddyBackup(wb *workbuddyBackup, keepWbEnabled bool) (int, bool) {
+// 此时凭据文件仍写盘（重启后生效），config/state/usage 因需要运行期句柄而跳过。
+func importWorkbuddyBackup(wb *workbuddyBackup, keepWbEnabled, includeStats bool) (int, bool) {
 	sub := workbuddySub
 	if sub == nil || sub.cfg == nil {
 		log.Printf("  config import: workbuddy subsystem not running, config segment skipped")
@@ -846,6 +895,22 @@ func importWorkbuddyBackup(wb *workbuddyBackup, keepWbEnabled bool) (int, bool) 
 			log.Printf("  config import: workbuddy config apply failed: %v", err)
 		} else {
 			cfgApplied = true
+		}
+	}
+	// 池状态（2026-11-03 三层口径）：账号事实总是应用；本机统计（token 用量/
+	// 成功失败计数/最近使用/调度游标）仅勾选统计时应用，不勾选 = 保留本机现值。
+	// 必须排在 SyncToDir（账号集合对齐）之后——uid 不在池中的条目丢弃。
+	if len(wb.State) > 0 && sub.pool != nil {
+		if n, err := sub.pool.ImportStateBackupJSON(wb.State, includeStats); err != nil {
+			log.Printf("  config import: workbuddy state apply failed: %v", err)
+		} else if n > 0 {
+			log.Printf("  config import: workbuddy pool state applied (%d accounts, stats=%v)", n, includeStats)
+		}
+	}
+	// 实测台账（统计层）：勾选统计才整体替换，不勾选保留本机现值。
+	if includeStats && len(wb.Usage) > 0 && sub.usage != nil {
+		if err := sub.usage.ImportRaw(wb.Usage); err != nil {
+			log.Printf("  config import: workbuddy usage apply failed: %v", err)
 		}
 	}
 	// 展示顺序最后套用：必须排在 SyncToDir（账号集合对齐）之后，否则对齐时

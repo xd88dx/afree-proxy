@@ -1745,7 +1745,8 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
     <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px">
       <button class="btn btn-sm" onclick="impKeepSetAll('impKeepRows',false)">Select all</button>
       <button class="btn btn-sm" onclick="impKeepSetAll('impKeepRows',true)">Invert</button>
-      <!-- 统计快照勾选框（默认勾选）：备份含 state 段才可见；取消勾选 = 各平台统计保留导入时刻现值 -->
+      <!-- 统计层勾选框（默认勾选，2026-11-03 三层口径）：勾选 = 本机统计随备份还原；
+           取消勾选 = 保留本机统计现值（不再清零）。配置态与账号事实无论勾选与否都会导入 -->
       <label id="impStateRow" style="margin-left:auto;display:none;gap:6px;align-items:center;cursor:pointer;white-space:nowrap">
         <input type="checkbox" id="impStateToggle" checked> <span>Import statistics</span>
       </label>
@@ -2343,7 +2344,7 @@ const I18N_ZH = {
   'Import replaces sections present in the file (accounts / keys / proxies / combos ...). All imported identities start DISABLED. Continue?': '导入将用文件内容替换当前对应的配置段（所有凭据、代理池、别名等，文件中存在的段都会替换）。导入的所有凭据一律禁用，需在面板逐个启用。继续？',
   'Select all': '全选',
   'Invert': '反选',
-  'Import statistics': '导入统计数据',
+  'Import statistics': '导入统计数据（不勾选 = 保留本机现值）',
   'No platform selected': '未选择任何平台',
   'Confirm import': '确认导入',
   'State': '状态',
@@ -5061,10 +5062,11 @@ function onImportFileChange(event) {
   reader.onload = () => {
     try {
       const parsed = JSON.parse(reader.result);
-      if (parsed.version !== 1 && parsed.version !== 2) throw new Error(T('Unsupported backup version'));
+      if (parsed.version !== 1 && parsed.version !== 2 && parsed.version !== 3) throw new Error(T('Unsupported backup version'));
       const rows = impKeepRowsFor(parsed);
-      // 统计快照勾选框：备份携带 state 段（新版导出）才显示，默认勾选；
-      // 旧版备份无该段则隐藏，导入行为与原版一致。
+      // 统计层勾选框：备份携带 state 段（v2+/v3 导出）才显示，默认勾选；
+      // 勾选 = 本机统计随备份还原，取消勾选 = 保留本机统计现值（2026-11-03
+      // 三层口径）。配置态与账号事实不受此开关影响。
       const hasState = !!parsed.state;
       _('impStateRow').style.display = hasState ? 'inline-flex' : 'none';
       if (hasState) _('impStateToggle').checked = true;

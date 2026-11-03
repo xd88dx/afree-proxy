@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"afree-proxy/internal/amd"
 	"afree-proxy/internal/openrouter"
@@ -15,6 +16,7 @@ import (
 	wbauth "afree-proxy/internal/workbuddy/auth"
 	wbconfig "afree-proxy/internal/workbuddy/config"
 	wbpool "afree-proxy/internal/workbuddy/pool"
+	wbusage "afree-proxy/internal/workbuddy/usage"
 )
 
 // 备份导入的隔离护栏：导入把一切上游身份置为禁用——Cline 账号 poolEnabled
@@ -172,12 +174,12 @@ func TestConfigImportKeepEnabled(t *testing.T) {
 }
 
 func TestConfigBackupVersionOK(t *testing.T) {
-	for _, v := range []int{1, 2} {
+	for _, v := range []int{1, 2, 3} {
 		if !configBackupVersionOK(v) {
 			t.Errorf("version %d must be accepted", v)
 		}
 	}
-	for _, v := range []int{0, 3, -1} {
+	for _, v := range []int{0, 4, -1} {
 		if configBackupVersionOK(v) {
 			t.Errorf("version %d must be rejected", v)
 		}
@@ -425,7 +427,7 @@ func TestConfigBackupWorkbuddyOrder(t *testing.T) {
 		p2.Add(&wbauth.Auth{UID: uid})
 	}
 	workbuddySub.pool = p2
-	importWorkbuddyBackup(exp, true)
+	importWorkbuddyBackup(exp, true, true)
 	uids := make([]string, 0, 3)
 	for _, st := range p2.List() {
 		uids = append(uids, st.UID)
@@ -442,7 +444,7 @@ func TestConfigBackupWorkbuddyOrder(t *testing.T) {
 	}
 	p3.SetOrder([]string{"a", "b", "c"})
 	workbuddySub.pool = p3
-	importWorkbuddyBackup(&workbuddyBackup{}, true)
+	importWorkbuddyBackup(&workbuddyBackup{}, true, true)
 	uids = uids[:0]
 	for _, st := range p3.List() {
 		uids = append(uids, st.UID)
@@ -452,10 +454,125 @@ func TestConfigBackupWorkbuddyOrder(t *testing.T) {
 	}
 }
 
-// TestConfigBackupStateRoundTrip 统计快照（2026-11-01）：导出携带 state 段
-// （八域痕迹，与 *-state.json 同形态）；导入按 importState 开关还原（默认）
-// 或保留现值（取消勾选）。覆盖两种快照形态：app 层 struct（cline）与平台包
-// JSON 往返（openrouter，StateSnapshotJSON/ImportStateJSON）。
+// TestConfigBackupWorkbuddyStateFacts wb 段三层口径（2026-11-03）：
+//   - 导出 = 全量：state（accounts+scheduling+order，事实+统计都在内）与
+//     usage（实测台账）都必须出现；
+//   - 导入勾选统计：事实与统计都还原（credits/冷却回池、台账回填）；
+//   - 导入不勾选统计：账号事实仍还原（余额回池），本机统计与台账保留本机现值。
+func TestConfigBackupWorkbuddyStateFacts(t *testing.T) {
+	tmp := t.TempDir()
+	authDir := filepath.Join(tmp, "auths")
+	if err := os.MkdirAll(authDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	// 导出方：账号 a 余额 500、实测成本观测（收费 0.1/1k），usage 台账有 bucket。
+	p1 := wbpool.New(filepath.Join(tmp, "state.json"))
+	defer p1.Close()
+	p1.Add(&wbauth.Auth{UID: "a"})
+	p1.Add(&wbauth.Auth{UID: "b"})
+	p1.SetCredits("a", 500, 0)
+	p1.NoteModelCost("a", "paid-model", 0.1, 1000)
+	p1.Flush()
+
+	usagePath := filepath.Join(tmp, "usage.json")
+	rec1 := wbusage.New(usagePath)
+	rec1.Start()
+	defer rec1.Stop()
+	rec1.Add(time.Now(), "cn", "a", "paid-model", wbusage.Delta{HasTotal: true, TotalTokens: 1234, HasCredit: true, Credit: 0.05}, true)
+	rec1.Save()
+
+	savedSub := workbuddySub
+	defer func() { workbuddySub = savedSub }()
+	workbuddySub = &workbuddySubsystem{
+		cfgPath: filepath.Join(tmp, "config.json"),
+		cfg:     &wbconfig.Config{AuthDir: authDir},
+		pool:    p1,
+		usage:   rec1,
+	}
+
+	exp := exportWorkbuddyBackup()
+	if exp == nil {
+		t.Fatal("export returned nil while the subsystem is running")
+	}
+	if len(exp.State) == 0 || !strings.Contains(string(exp.State), `"credits":500`) {
+		t.Fatalf("export must carry full pool state with credits, got: %s", exp.State)
+	}
+	if len(exp.Usage) == 0 || !strings.Contains(string(exp.Usage), `"t":1234`) {
+		t.Fatalf("export must carry usage ledger, got: %s", exp.Usage)
+	}
+
+	// 导入方：同名账号，台账先放一条本机现值（统计层必须能区分还原/保留）。
+	p2 := wbpool.New(filepath.Join(tmp, "state2.json"))
+	defer p2.Close()
+	p2.Add(&wbauth.Auth{UID: "a"})
+	p2.Add(&wbauth.Auth{UID: "b"})
+	usagePath2 := filepath.Join(tmp, "usage2.json")
+	rec2 := wbusage.New(usagePath2)
+	rec2.Start()
+	defer rec2.Stop()
+	workbuddySub.pool = p2
+	workbuddySub.usage = rec2
+
+	// 勾选统计：余额、实测成本与台账都随备份还原。
+	// （fake 子系统没有 vendor config 文件，cfgApplied=false 属预期——config
+	// 段的应用有专门覆盖，这里只验 state/usage 分层。）
+	importWorkbuddyBackup(exp, true, true)
+	if st, ok := p2.Status("a"); !ok || st.Credits != 500 {
+		t.Fatalf("credits must be restored on checked import: %+v ok=%v", st, ok)
+	}
+	if st, ok := p2.Status("a"); !ok || len(st.ModelCosts) == 0 || st.ModelCosts[0].Model != "paid-model" {
+		t.Fatalf("model cost facts must be restored on checked import: %+v", st)
+	}
+	var led struct {
+		Buckets []struct {
+			TotalTokens int64 `json:"t"`
+		} `json:"buckets"`
+	}
+	if err := json.Unmarshal(rec2.SnapshotRaw(), &led); err != nil {
+		t.Fatal(err)
+	}
+	if len(led.Buckets) == 0 || led.Buckets[0].TotalTokens != 1234 {
+		t.Fatalf("usage ledger must be restored on checked import: %s", rec2.SnapshotRaw())
+	}
+
+	// 不勾选统计：事实（余额）仍还原，台账保留本机现值。
+	p3 := wbpool.New(filepath.Join(tmp, "state3.json"))
+	defer p3.Close()
+	p3.Add(&wbauth.Auth{UID: "a"})
+	p3.Add(&wbauth.Auth{UID: "b"})
+	p3.SetCredits("a", 1, 0)
+	usagePath3 := filepath.Join(tmp, "usage3.json")
+	rec3 := wbusage.New(usagePath3)
+	rec3.Start()
+	defer rec3.Stop()
+	rec3.Add(time.Now(), "cn", "a", "local-model", wbusage.Delta{HasTotal: true, TotalTokens: 9}, true)
+	rec3.Save()
+	workbuddySub.pool = p3
+	workbuddySub.usage = rec3
+
+	importWorkbuddyBackup(exp, true, false)
+	if st, ok := p3.Status("a"); !ok || st.Credits != 500 {
+		t.Fatalf("account facts (credits) must be imported even without the statistics switch: %+v ok=%v", st, ok)
+	}
+	var led3 struct {
+		Buckets []struct {
+			TotalTokens int64 `json:"t"`
+		} `json:"buckets"`
+	}
+	if err := json.Unmarshal(rec3.SnapshotRaw(), &led3); err != nil {
+		t.Fatal(err)
+	}
+	if len(led3.Buckets) != 1 || led3.Buckets[0].TotalTokens != 9 {
+		t.Fatalf("unchecking import statistics must keep local usage ledger: %s", rec3.SnapshotRaw())
+	}
+}
+
+// TestConfigBackupStateRoundTrip state 段三层口径（2026-11-03）：导出 = 全量
+// 快照（账号事实 + 本机统计都在内）；导入勾选统计（默认）= 事实与统计都随备份
+// 还原；取消勾选 = 账号事实仍还原、本机统计保留本机现值（不再清零）。覆盖
+// app 层 struct（cline）与平台包 JSON 往返（openrouter，StateSnapshotJSON/
+// ImportStateJSON）两种形态。
 func TestConfigBackupStateRoundTrip(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv("DATA_DIR", tmp)
@@ -469,18 +586,28 @@ func TestConfigBackupStateRoundTrip(t *testing.T) {
 	openrouter.UsagePath = filepath.Join(tmp, "or-state.json")
 	t.Cleanup(func() { openrouter.UsagePath = "" })
 	openrouter.Load(filepath.Join(tmp, "or-config.json"))
+	// 记账 key 必须在 key 池内：导入配置段时 pruneRemovedKeys 会按新 key 集合
+	// 收敛痕迹（既有语义），池外 key 的记账条目会被清掉。
+	orc := openrouter.DefaultConfig()
+	orc.Keys = []string{"ork_s1"}
+	orc.KeyRoutingEnabled = map[string]bool{"ork_s1": true}
+	openrouter.Set(orc)
 
-	// 造运行态：cline 账号 + 痕迹（3 次调用/300 tokens）、or key 记账（100）
+	// 造导出方运行态：cline 账号冷却中（事实）+ 3 次调用/300 tokens（统计）、
+	// or key 记账 100（统计）。
 	loadPool()
 	poolMu.Lock()
-	pool = &AccountPool{Accounts: []*Account{{AccountID: "acc_s1", Email: "s@x"}}}
+	pool = &AccountPool{Accounts: []*Account{{AccountID: "acc_s1", Email: "s@x", RefreshToken: "r"}}}
 	poolUsage = &poolUsageData{Accounts: map[string]*accountUsage{
-		"acc_s1": {Status: "active", UsageCount: 3, TokensTotal: 300},
+		"acc_s1": {
+			Status: "cooldown", CooldownUntil: time.Now().Add(time.Hour).Round(time.Second),
+			LastReason: "429", UsageCount: 3, TokensTotal: 300,
+		},
 	}}
 	poolMu.Unlock()
 	openrouter.RecordKeyTokens("ork_s1", 100)
 
-	// ---- 导出：state 段必须携带两域快照 ----
+	// ---- 导出：state 段必须携带事实与统计（全量） ----
 	expReq := httptest.NewRequest("GET", "/admin/api/config/export", nil)
 	expRR := httptest.NewRecorder()
 	handleAdminConfigExport(expRR, expReq)
@@ -491,8 +618,11 @@ func TestConfigBackupStateRoundTrip(t *testing.T) {
 		State struct {
 			Cline struct {
 				Accounts map[string]struct {
-					UsageCount  int64 `json:"usageCount"`
-					TokensTotal int64 `json:"tokensTotal"`
+					Status        string    `json:"status"`
+					CooldownUntil time.Time `json:"cooldownUntil"`
+					LastReason    string    `json:"lastReason"`
+					UsageCount    int64     `json:"usageCount"`
+					TokensTotal   int64     `json:"tokensTotal"`
 				} `json:"accounts"`
 			} `json:"cline"`
 			OpenRouter json.RawMessage `json:"openrouter"`
@@ -501,8 +631,9 @@ func TestConfigBackupStateRoundTrip(t *testing.T) {
 	if err := json.Unmarshal(expRR.Body.Bytes(), &backup); err != nil {
 		t.Fatalf("parse export: %v", err)
 	}
-	if got := backup.State.Cline.Accounts["acc_s1"]; got.UsageCount != 3 || got.TokensTotal != 300 {
-		t.Fatalf("cline state missing in export: %+v", backup.State.Cline)
+	cl := backup.State.Cline.Accounts["acc_s1"]
+	if cl.Status != "cooldown" || cl.LastReason != "429" || cl.UsageCount != 3 || cl.TokensTotal != 300 || cl.CooldownUntil.IsZero() {
+		t.Fatalf("cline state missing in export (facts+stats): %+v", cl)
 	}
 	var orSnap struct {
 		KeyTokens map[string]struct {
@@ -513,7 +644,7 @@ func TestConfigBackupStateRoundTrip(t *testing.T) {
 		t.Fatalf("openrouter state missing in export: %s", backup.State.OpenRouter)
 	}
 
-	// ---- 导入（importState 缺省 = 还原）：先清零现值再验证回填 ----
+	// ---- 导入（importState 缺省 = 还原全部）：事实与统计都回填 ----
 	poolMu.Lock()
 	poolUsage = &poolUsageData{}
 	poolMu.Unlock()
@@ -528,8 +659,9 @@ func TestConfigBackupStateRoundTrip(t *testing.T) {
 	poolMu.Lock()
 	got := usagePeekLocked(&Account{AccountID: "acc_s1"})
 	poolMu.Unlock()
-	if got == nil || got.UsageCount != 3 || got.TokensTotal != 300 {
-		t.Fatalf("cline state not restored on import: %+v", got)
+	if got == nil || got.Status != "cooldown" || got.LastReason != "429" ||
+		got.UsageCount != 3 || got.TokensTotal != 300 || got.CooldownUntil.IsZero() {
+		t.Fatalf("cline facts+stats not restored on checked import: %+v", got)
 	}
 	var orBack struct {
 		KeyTokens map[string]struct {
@@ -540,14 +672,18 @@ func TestConfigBackupStateRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	if orBack.KeyTokens["ork_s1"].Today != 100 {
-		t.Fatalf("openrouter state not restored on import: %+v", orBack)
+		t.Fatalf("openrouter state not restored on checked import: %+v", orBack)
 	}
 
-	// ---- 导入（importState=false）：统计保留导入时刻现值（清零后不回填） ----
+	// ---- 导入（importState=false）：账号事实仍还原，本机统计保留本机现值 ----
+	// 先造一组与备份不同的本机现值：cline 统计 7 次/700 tokens、or 记账 999。
 	poolMu.Lock()
-	poolUsage = &poolUsageData{}
+	poolUsage = &poolUsageData{Accounts: map[string]*accountUsage{
+		"acc_s1": {Status: "active", UsageCount: 7, TokensTotal: 700},
+	}}
 	poolMu.Unlock()
 	openrouter.ClearUsage()
+	openrouter.RecordKeyTokens("ork_s1", 999)
 	var payload map[string]any
 	if err := json.Unmarshal([]byte(importBody), &payload); err != nil {
 		t.Fatal(err)
@@ -560,14 +696,26 @@ func TestConfigBackupStateRoundTrip(t *testing.T) {
 	if importRR2.Code != 200 {
 		t.Fatalf("import2 status = %d: %s", importRR2.Code, importRR2.Body.String())
 	}
-	// 2026-11-01 用户定：取消勾选 =「不保留统计值」——清零（不是保留现值）。
+	// 事实：备份的冷却状态/原因必须覆盖本机（无论勾选与否都导入）。
 	poolMu.Lock()
 	got2 := usagePeekLocked(&Account{AccountID: "acc_s1"})
 	poolMu.Unlock()
-	if got2 != nil && (got2.UsageCount != 0 || got2.TokensTotal != 0) {
-		t.Fatalf("unchecking import statistics must clear traces, got %+v", got2)
+	if got2 == nil || got2.Status != "cooldown" || got2.LastReason != "429" || got2.CooldownUntil.IsZero() {
+		t.Fatalf("cline facts must be imported even without the statistics switch: %+v", got2)
 	}
-	if n := len(openrouter.StateSnapshotJSON()); n > 4 {
-		t.Fatalf("unchecking import statistics must clear or ledger, got %d bytes", n)
+	// 统计：保留本机现值（2026-11-03 起不再清零、也不被备份覆盖）。
+	if got2.UsageCount != 7 || got2.TokensTotal != 700 {
+		t.Fatalf("unchecking import statistics must keep local stats, got %+v", got2)
+	}
+	var orBack2 struct {
+		KeyTokens map[string]struct {
+			Today int64 `json:"Today"`
+		} `json:"keyTokens"`
+	}
+	if err := json.Unmarshal(openrouter.StateSnapshotJSON(), &orBack2); err != nil {
+		t.Fatal(err)
+	}
+	if orBack2.KeyTokens["ork_s1"].Today != 999 {
+		t.Fatalf("unchecking import statistics must keep local or ledger: %+v", orBack2)
 	}
 }

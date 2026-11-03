@@ -62,6 +62,7 @@ func saveZenUsage() {
 	}
 	atomicWriteFile(zenUsagePath(), raw)
 }
+
 // loadZenUsage 启动加载痕迹文件回填真身（init 调用）。缺失即空表启动；
 // 解析失败改名留档。旧格式的一次性迁移已随 2026-11-01 死代码清理移除——
 // 升级前先在旧版导出含统计快照的备份，新版导入还原。
@@ -93,7 +94,7 @@ func loadZenUsage() {
 	zenKeyMu.Unlock()
 	log.Printf("zen usage: restored %d cooldown(s) and %d token entry(s) from %s",
 		len(f.Cool), len(f.KeyTokens), path)
-}// zenStateBackupSnapshot 统计快照（配置备份 state 段，2026-11-01）：真身
+} // zenStateBackupSnapshot 统计快照（配置备份 state 段，2026-11-01）：真身
 // zenKeyCool/zenKeyTokens 在 zenKeyMu 下深拷。
 func zenStateBackupSnapshot() *zenUsageFile {
 	zenKeyMu.Lock()
@@ -120,6 +121,19 @@ func importZenStateBackup(f *zenUsageFile) {
 	if f.KeyTokens != nil {
 		zenKeyTokens = f.KeyTokens
 	}
+	zenKeyMu.Unlock()
+	saveZenUsage()
+}
+
+// importZenStateFacts 账号事实合并（2026-11-03 三层口径）：key 冷却表是账号
+// 事实（key 在上游被限流的截止时刻），勾选与否都应用；token 记账是本机统计，
+// 保留本机现值。
+func importZenStateFacts(f *zenUsageFile) {
+	if f == nil || f.Cool == nil {
+		return
+	}
+	zenKeyMu.Lock()
+	zenKeyCool = f.Cool
 	zenKeyMu.Unlock()
 	saveZenUsage()
 }

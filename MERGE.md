@@ -335,3 +335,16 @@ WorkBuddy 一栏的基线同时登记在 `scripts/workbuddy-vendor-baseline.json
 - **新口径（2026-10-30 用户定）**：本机构建一律打 `test-YYYYMMDD-HHMM`，不再打 `prod-*`。判据：本机容器跑的就是测试镜像（PROJECT.md §6「判断生产看流量」），`prod-` 前缀只属于 CI/GHCR 发布语境。
 - **清理**：本机 `afree-proxy:*` 标签按创建时间倒序保留 7 个（用户定，从 3 提到 7；`PROJECT.md` §6 已同步改写），删除其余 15 个（`prod-20261028-2..20261030-3`、`prod-20261029-1..4`、`fix-20261029{,b}`），实际删层 42 步。保留：`test-20261030-1724`（当前 `afree` 容器在用）、`prod-20261030-8/7/6/5/4`、`test-20261030-4`——保留的旧 `prod-*` 标签仅是还没轮出窗口的历史镜像，不代表恢复 `prod-*` 命名。
 - **文案更正范围**：`PROJECT.md` §6 保留数与口径；本节。`MERGE.md` 以上历史行按「台账只追加不删改」保留原文，其中「生产:镜像 prod-…重建容器」等表述按今天的口径理解即为「本机部署镜像 test-/prod-<tag>」。记忆侧 `afree-prod-deploy` 已同步改写。
+
+### 2026-11-03 — afree 本地补丁：wb 池状态/实测台账进配置备份（三层口径）
+
+本节不属于上游同步，记录 vendor 树（misakano 线）上的 afree 本地新增，供下次 sync_workbuddy 三方合并时核对保留清单。
+
+- 背景：用户定「导出 = 容器全部数据（全新容器导入 → 一模一样）；导入时配置态与账号事实总是应用、本机统计受勾选控制；配置 hash 只盯配置态」。wb 的 state.json/usage.json 此前完全不在备份里。
+- vendor 树新增（均为 afree 本地文件/函数，上游没有）：
+  - `pool/accountfacts.go`：`StateSnapshotJSON()`（全量快照，与 state.json 落盘同形态）与 `ImportStateBackupJSON(raw, includeStats)`（账号事实总是应用、token 用量/成功失败计数/调度游标仅 includeStats 时应用、uid 不在池中丢弃）；`entry.applyAccountFactsLocked` 承载事实字段恢复与惰性清洗。
+  - `usage/usage.go`：`Recorder.SnapshotRaw()` / `Recorder.ImportRaw(raw)`（实测台账备份往返）。
+  - `pool/persist.go`：`applyAccountsLocked` 重构为「事实段（applyAccountFactsLocked）+ 统计段」两段恢复——本地/Redis 快照加载行为不变（纯重构，测试全过）。
+- app 层接线：`workbuddyBackup` 增 `state`/`usage` 段；`importWorkbuddyBackup` 增 includeStats 参数；cline/zen 事实合并函数；五平台（trae/amd/or/th/other）JSON 级事实合并 `backup_state_facts.go`。
+- 装配层无新配置键。不采纳项：无（纯新增）。
+- 验证：`go build ./...`、`go vet ./...` 全绿；`go test ./... -count=1` 29 包全过；本机容器实机导出（version 3）含 workbuddy.state（15 账号）/usage（218 桶）/state 八域。
