@@ -14,7 +14,7 @@
 | -------------- | ----------------------------------------------------------------------------------------------- | ------------------- |
 | Cline          | `internal/cline/`；`internal/app/proxy.go` 的账号池、轮换、冷却与 `/v1` 通用转发                | —                   |
 | OpenCode (zen) | `internal/app/zen*.go`、`internal/app/admin_zen.go`；`internal/kit/http.go` 的 `DecodeResponse` | `oc*`、`ZEN_*`      |
-| TraeWork       | `internal/trae2api/`（vendor 树）、`internal/app/trae.go`（桥接）、`trae2api_helper*.go`          | `trae*`（桥接层）   |
+| TraeWork       | `internal/trae2api/`（vendor 树）、`internal/app/trae.go`（桥接）、`trae2api_helper*.go`          | `trae*`（桥接层）；选号=引擎权重调度，`TRAE_STRATEGY` 已作废 |
 | WorkBuddy      | `internal/workbuddy/**`（vendor 树）、`internal/app/workbuddy*.go`                              | `wb*`               |
 
 `internal/app/admin_html.go` 是**所有平台共用**的单文件面板，按 h2 / tab 分段，`oc*` 属于 OpenCode 而不是 Cline。改一处必须确认它属于哪个平台段。
@@ -55,7 +55,7 @@ go test ./... -count=1             # 除下述既有失败外应全绿
 
 `internal/config.example.json` 是上游仓库根 `config.example.json` 的副本（上游 `TestConfigExampleParses` 用相对路径读它，vendor 后正好指到这里）。同步脚本只搬 `internal/workbuddy/` 树，**不会**带这类根文件；上游更新样例后要手工 `cp`。**不要删**——删了 `go test ./internal/workbuddy/config/` 直接缺文件失败。
 
-**已随旧引擎移除（2026-11-04 换线）**：Trae 991502 防护三件套（账号会话闸门/读取超时看门狗/断流 Work 回落，原 `internal/trae/`）——vendored trae2api 自带分级冷却/熔断/降权与流中空闲监控（`idle_timeout_seconds`），防护语义由引擎承担：上游 `solo_agent_parallel_limit`（权益实测=2/账号）被并发顶满时新会话 429 或建立后立即被掐（EOF at 2 lines）。① 按账号会话闸门：`internal/trae/client.go` 的 `accountGate`，上限取权益快照 `Credits.ParallelLimit`（`parseCreditsBody` 从 `ide_user_ent_usage` pack.quota 解析，**额度与并发双口径独立扫描**，usage_summary 命中不得跳过 pack 扫描），未知默认 2，`TRAE_ACCOUNT_PARALLEL_LIMIT` 可覆盖；仅会话型传输（remote/traework）受限，raw 不受限。② 读取超时看门狗：首事件 120s / 流中空闲 300s（`TRAE_REMOTE_FIRST_EVENT_TIMEOUT` / `TRAE_STREAM_IDLE_TIMEOUT`，0=关），心跳行续期。③ 首模型事件前断流 → 同账号 Work 回落一次（`ChatWorkFallback`）+ 该账号 30s 短冷却让缓冲层重试轮换。断流清理：`Stream.Close` 异步 `stop /chat_sessions/{sid}/stop`（对齐上游 asyncio.create_task；同步会话经代理实测 7~9s 拖慢重试），随后才释放闸门槽位。
+**已随旧引擎移除（2026-11-04 换线）**：Trae 991502 防护三件套（账号会话闸门/读取超时看门狗/断流 Work 回落，原 `internal/trae/`）——vendored trae2api 自带分级冷却/熔断/降权与流中空闲监控（`trae.idle_timeout_seconds`，引擎 `cooldown.*` 三档），防护语义由引擎承担。历史细节（accountGate 权益并发/看门狗 env/Work 回落）见 git 历史与 MERGE.md 归档；旧引擎专属 env（`TRAE_ACCOUNT_PARALLEL_LIMIT`/`TRAE_REMOTE_FIRST_EVENT_TIMEOUT`/`TRAE_STREAM_IDLE_TIMEOUT`/`TRAE_REMOTE_DEBUG`）与 `TRAE_STRATEGY` 一并作废。
 
 ## 6. 部署:本机测试,iStore 生产
 
@@ -109,7 +109,7 @@ iStore 的面板密码是 `233@.afree`(与本机 compose 里的值不同);登录
 
 ## 7. 死配置判据（本仓）
 
-不要把本仓没有路由入口的上游端点暴露成面板开关。判据：`grep -rn '"/v1' internal/app/*.go | grep -v _test` —— 主 mux 只注册 `/v1/chat/completions`、`/v1/messages`、`/v1/responses`、`/v1/models`、`/v1/health`（另有不带 `/v1` 前缀的同名别名路由与 `/api/web-auth`、`/trae/oauth/helper` 两个 trae 授权端点，2026-10-29 核对）；workbuddy 的 `/v1/embeddings`、`/v1/search`、`/v1/fetch`、`/v1/images/*` 从未挂到主 mux（生产一律 404）。
+不要把本仓没有路由入口的上游端点暴露成面板开关。判据：`grep -rn '"/v1' internal/app/*.go | grep -v _test` —— 主 mux 只注册 `/v1/chat/completions`、`/v1/messages`、`/v1/responses`、`/v1/models`、`/v1/health`（另有不带 `/v1` 前缀的同名别名路由与 `/api/web-auth`、`/trae/oauth/helper` 两个 trae 授权端点（2026-11-04 复核仍有效））；workbuddy 的 `/v1/embeddings`、`/v1/search`、`/v1/fetch`、`/v1/images/*` 从未挂到主 mux（生产一律 404）。
 
 ## 8. 面板文案与中文翻译（每次改面板 / 同步上游必查）
 

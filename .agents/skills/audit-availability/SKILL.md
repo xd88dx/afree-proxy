@@ -103,4 +103,12 @@ git show <上游哈希>:internal/app/models.go | grep -n "muse\|seed\|prune"
 5. newapi 渠道映射修复建议（死链别名 → 已实测可用的替代；标注哪些是"官方下线无等价"只能删）；
 6. 遗留与口径说明（凭据粒度、出口冷却事件、上游对比结论）。
 
+## 6. 2026-11-04 审计经验追加（全平台轮）
+
+- **目录透出门控逐平台核对**：vendored/聚合目录可能对"无凭据的域/段"照透条目（trae2api 四域渠道恒全建、oprt 活 feed 含已下线模型）。铁律：**列出来的必须调得通**——每平台段逐模型真打，503 no_account 类先修目录闸再谈凭据。
+- **自动拉黑接线盘点表（"机制存在但没接全"高发区）**：cline（404+计费 cost>0 双哨兵）、OR（404 恒拉黑/403 仅 agentic-harnesses+RegionError 文案、400 仅 chat 端点不兼容；key 级 403/429/5xx 绝不拉黑）、zen（仅 RegionError 文案）、trae vendored（引擎模型冷却）。审计时 grep `BlacklistModel(` 调用点对照各平台错误路径，缺接线就按 cline 判据骨架补——回归测试模板 `autoban_audit_test.go`。
+- **key 冷却长尾会掩盖端到端验证**：撞墙请求根本没到上游（`no key routable` 502），自动拉黑不触发。验证前清平台 key 冷却（内存态重启即清；落盘态如 oprt 改 `oprt-state.json` 的 `cool` 段后重启）。
+- **newapi 抽测口径**：渠道映射别名从 `one-api.db`（先复制再读）读 `channels.model_mapping`，抽 2~3 个别名全链路（newapi→afree→上游出字）。
+- **上游瞬时 vs 永久的隔离判据**：串行扫描高压下的 4xx/timeout 一律复测 2 次再定性；trae `max_tokens=1`→上游 3003 是引擎边界忠实透传，不是缺陷。
+
 详细命令模板与陷阱清单见 [references/audit-playbook.md](references/audit-playbook.md)。
