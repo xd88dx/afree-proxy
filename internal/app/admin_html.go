@@ -994,7 +994,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
     </div>
     <div class="table-wrap" style="margin-bottom:10px">
       <table>
-        <thead><tr><th style="width:50px">#</th><th style="width:110px">Key</th><th>Status</th><th title="Counted locally by this proxy — not the official free quota">Today/Total tokens</th><th>Last used</th><th title="Main exit first, backup as fallback; both down = row skipped (isolation).">Proxy binding</th><th style="width:130px;text-align:center">Actions</th><th style="text-align:center" title="Routing participation: unchecked keys never enter request rotation. Newly added keys start disabled — tick Pool to enable. Minting follows routing — keys with routing disabled stop auto-minting.">Pool</th></tr></thead>
+        <thead><tr><th style="width:50px">#</th><th style="width:110px">Key</th><th>Status</th><th title="Counted locally by this proxy — not the official free quota">Today/Total tokens</th><th>Last used</th><th title="Main exit first, backup as fallback; both down = row skipped (isolation).">Proxy binding</th><th style="width:130px;text-align:center">Actions</th><th style="text-align:center" title="Routing participation: unchecked keys never enter request rotation. Newly added keys start disabled — tick Pool to enable. Sessions are minted per upstream call.">Pool</th></tr></thead>
         <tbody id="ocKeysBody"><tr><td colspan="8" class="empty">Loading...</td></tr></tbody>
       </table>
     </div>
@@ -1047,11 +1047,11 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
 </div>
 
 <div class="section">
-  <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></span> Live session IDs (OpenCode FreeTier gate)
+  <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></span> Session snapshots (403-refresh log)
     <span id="ocSessSummary" class="probe-pill" style="font-weight:normal;margin-left:auto"></span>
   </div>
   <div class="section-body">
-    <p class="hint" style="margin-top:0" id="ocSessHint">The gateway mints a CLI-format session ID per key on first use and keeps it sticky; IDs persist in the data volume and are refreshed locally after repeated 403s.</p>
+    <p class="hint" style="margin-top:0" id="ocSessHint">Since 2026-10-27 the gateway mints a fresh CLI-format session per upstream call (official CLI v2 behavior) and keeps no sticky sessions — entries here are legacy snapshots written only when a key's session is re-minted after FreeTier 403s. No entry does not mean unused: check the token columns in the key table.</p>
     <div class="table-wrap">
       <table>
         <thead><tr><th style="width:70px">Key</th><th style="width:130px">Session</th><th style="width:150px">State</th><th>Minted at</th></tr></thead>
@@ -2424,8 +2424,11 @@ const I18N_ZH = {
   'empty = same as request model': '留空 = 与请求模型相同',
   'Summary cap': '摘要上限',
   'Save compaction config': '保存压缩配置',
-  'Live session IDs (OpenCode FreeTier gate)': 'Live 会话 ID（OpenCode FreeTier 门槛）',
-  'The gateway mints a CLI-format session ID per key on first use and keeps it sticky; IDs persist in the data volume and are refreshed locally after repeated 403s.': '网关在每个 key 首次使用时铸造一个 CLI 格式的会话 ID 并保持粘性；会话 ID 持久化在数据卷中，多次 403 后自动在本地换新。',
+  'Session snapshots (403-refresh log)': '会话快照（403 换新记录）',
+  'Since 2026-10-27 the gateway mints a fresh CLI-format session per upstream call (official CLI v2 behavior) and keeps no sticky sessions — entries here are legacy snapshots written only when a key\'s session is re-minted after FreeTier 403s. No entry does not mean unused: check the token columns in the key table.': '自 2026-10-27 起，网关对每次上游调用现铸全新 CLI 格式会话（对齐官方 CLI v2 行为），不再保持粘性会话——本表条目是遗留快照，仅在该 key 因 FreeTier 403 被动换新会话时写入。无条目不代表未使用：请看凭据表的 token 列。',
+  'sticky': '粘性',
+  'no 403 refresh': '无 403 换新记录',
+  'sessions are minted per call; no sticky snapshot': '会话每次调用现铸；无粘性快照',
   '.': '。',
   'Context': '上下文',
   'Maximum context length': '最大上下文长度',
@@ -2443,7 +2446,7 @@ const I18N_ZH = {
   'Other sub-platform keys without proxy bindings follow this switch.': 'Other 子平台未绑定代理的 key 遵循此开关。',
   'Pool': '启用',
   'Routing participation. New rows start disabled — tick Pool to enable.': '路由参与开关：新增行默认禁用，勾选 Pool 后参与轮转。',
-  'Routing participation: unchecked keys never enter request rotation. Newly added keys start disabled — tick Pool to enable. Minting follows routing — keys with routing disabled stop auto-minting.': '路由参与开关：不勾选的 key 不进入请求轮转，铸造跟随路由（路由禁用的 key 不再自动铸造）。新增 key 默认禁用，勾选 Pool 后启用。',
+  'Routing participation: unchecked keys never enter request rotation. Newly added keys start disabled — tick Pool to enable. Sessions are minted per upstream call.': '路由参与开关：不勾选的 key 不进入请求轮转。新增 key 默认禁用，勾选 Pool 后启用。会话每次上游调用现铸。',
   'Save failed: ': '保存失败：',
   'Test failed: ': '测试失败：',
   ' — cooling': ' —— 冷却中',
@@ -2640,7 +2643,6 @@ const I18N_ZH = {
   '— no sub-platform yet —': '— 还没有子平台 —',
   'Search models…': '搜索模型…',
   'live': '活跃',
-  'not minted': '未铸造',
   // 封禁模型区（模型黑名单）
   'Banned models': '封禁模型',
   'Ban reason': '封禁原因',
@@ -9059,17 +9061,17 @@ async function loadOcSessions() {
 
 function renderOcSessions(s) {
   const rows = s.sessions || [];
+  // 无粘性条目是常态（现铸模式下仅 403 换新写入），不做红绿警示。
   _('ocSessSummary').innerHTML = rows.length
-    ? '<span style="color:' + (s.liveCount === s.total ? 'var(--accent2)' : 'var(--danger)') + '">' +
-      s.liveCount + '/' + s.total + ' live</span>'
+    ? '<span style="color:var(--text2)">' + T('sticky') + ' ' + s.liveCount + '/' + s.total + '</span>'
     : '';
   _('ocSessBody').innerHTML = rows.length
     ? rows.map(k => {
         const state = k.noKey
-          ? '<span style="color:var(--text2)">no key</span>'
+          ? '<span style="color:var(--text2)">' + T('no key') + '</span>'
           : (k.live
-              ? '<span style="color:var(--accent2)">live</span>'
-              : '<span style="color:var(--danger)">not minted</span>');
+              ? '<span style="color:var(--accent2)">' + T('live') + '</span>'
+              : '<span style="color:var(--text2)">' + T('no 403 refresh') + '</span>');
         return '<tr><td>#' + (k.index + 1) + '</td>' +
           '<td style="font-family:monospace;font-size:11px">' + (k.session ? esc(k.session) + '…' : '-') + '</td>' +
           '<td>' + state + '</td>' +
