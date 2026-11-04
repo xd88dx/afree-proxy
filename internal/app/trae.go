@@ -563,8 +563,20 @@ func trae2apiModelEntries() []map[string]any {
 	if sub == nil || trae2apiRoutableCount() == 0 {
 		return out
 	}
+	// 域级可路由过滤（2026-11-04 审计铁律：列出来的必须调得通）——vendored
+	// channels 对四个域恒全建（包括 0 账号的 solo*/intl* 域），不加这层会把
+	// 无账号域的模型透出 /v1/models，调用方全撞 503 no_account。
+	routableRealms := make(map[string]bool)
+	for _, st := range sub.srv.Pool().List() {
+		if !st.Disabled && traeRoutingGet(st.UID) {
+			routableRealms[st.Realm] = true
+		}
+	}
 	threshold := trae2apiRateFilterThreshold()
 	for _, ch := range sub.srv.Channels() {
+		if !routableRealms[ch.Realm] {
+			continue
+		}
 		for _, e := range ch.ModelEntries() {
 			id, _ := e["id"].(string)
 			if id == "" {
