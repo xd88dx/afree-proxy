@@ -152,6 +152,25 @@ func (a *Account) SetLabel(label string) {
 // 刷新等维护任务不经 Pick，不受影响。
 var RoutingAllowed func(uid string) bool
 
+// NoteCheckin 记录一次签到动作结果（afree 面板徽章数据源；vendor 注入）。
+// 随池 state.json 持久化，重启不丢。
+func (p *Pool) NoteCheckin(uid, status, detail string) {
+	a := p.Get(uid)
+	if a == nil {
+		return
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.checkinDate = time.Now().Format("2006-01-02")
+	a.checkinChecked = status == "checked" || status == "already"
+	a.checkinFailed = status == "failed"
+	if status == "failed" {
+		a.checkinError = detail
+	} else {
+		a.checkinError = ""
+	}
+}
+
 func (a *Account) healthyLocked(now time.Time, model string) bool {
 	if a.disabled {
 		return false
@@ -180,6 +199,78 @@ func (a *Account) healthyLocked(now time.Time, model string) bool {
 		st.Credits = &c
 		st.CreditsTotal = a.creditsTotal
 	}""",
+            1,
+        ),
+        (
+            """		st.CreditsTotal = a.creditsTotal
+	}""",
+            """		st.CreditsTotal = a.creditsTotal
+	}
+	// 签到状态透出（afree 桥接展示用；空日期 = 从未执行过签到）
+	if a.checkinDate != "" {
+		st.CheckinDate = a.checkinDate
+		st.CheckinChecked = a.checkinChecked
+		st.CheckinFailed = a.checkinFailed
+		st.CheckinError = a.checkinError
+	}""",
+            1,
+        ),
+        (
+            """	Credits           *int64           `json:"credits,omitempty"`""",
+            """	Credits           *int64           `json:"credits,omitempty"`
+	// 签到状态（afree 桥接展示用；空日期 = 从未执行过签到）
+	CheckinDate    string `json:"checkin_date,omitempty"`
+	CheckinChecked bool   `json:"checkin_checked,omitempty"`
+	CheckinFailed  bool   `json:"checkin_failed,omitempty"`
+	CheckinError   string `json:"checkin_error,omitempty"`""",
+            1,
+        ),
+        (
+            """	Credits           int64             `json:"credits,omitempty"`
+	CreditsKnown      bool              `json:"credits_known,omitempty"`
+}""",
+            """	Credits           int64             `json:"credits,omitempty"`
+	CreditsKnown      bool              `json:"credits_known,omitempty"`
+	CheckinDate    string `json:"checkin_date,omitempty"`
+	CheckinChecked bool   `json:"checkin_checked,omitempty"`
+	CheckinFailed  bool   `json:"checkin_failed,omitempty"`
+	CheckinError   string `json:"checkin_error,omitempty"`
+}""",
+            1,
+        ),
+        (
+            """	a.mu.Unlock()
+		snap.Items[a.UID] = it""",
+            """		it.CheckinDate = a.checkinDate
+		it.CheckinChecked = a.checkinChecked
+		it.CheckinFailed = a.checkinFailed
+		it.CheckinError = a.checkinError
+		a.mu.Unlock()
+		snap.Items[a.UID] = it""",
+            1,
+        ),
+        (
+            """		a.credits = it.Credits
+		a.creditsKnown = it.CreditsKnown""",
+            """		a.credits = it.Credits
+		a.creditsKnown = it.CreditsKnown
+		a.checkinDate = it.CheckinDate
+		a.checkinChecked = it.CheckinChecked
+		a.checkinFailed = it.CheckinFailed
+		a.checkinError = it.CheckinError""",
+            1,
+        ),
+        (
+            """	creditsTotal  int64 // 总额度（用于算剩余比例；0 = 未知）
+	creditsKnown  bool""",
+            """	creditsTotal  int64 // 总额度（用于算剩余比例；0 = 未知）
+	creditsKnown  bool
+	// checkin 状态记录（afree 桥接展示用，vendor 注入）：最近一次签到动作的
+	// 结果快照。CheckinAll（vendored）每次动作后回写；落盘随池 state.json。
+	checkinDate    string // 动作日期 "2006-01-02"（空=从未执行过签到）
+	checkinChecked bool   // 该次动作是否已签上（checked / already）
+	checkinFailed  bool   // 该次动作是否失败
+	checkinError   string // 失败原因（面板徽章 tooltip）""",
             1,
         ),
     ),
@@ -256,6 +347,19 @@ const AFREE_API_BASE = '/admin/trae2api/api';""",
     ),
     # afree 桥接访问器（2026-11-04 账号表面板恢复旧列序所需）：Server.Metrics
     # 读当日/累计 token 与最近使用，Store.Mu 供桥接层锁内读 Cred.ExpiredAt。
+    "server/tasks.go": (
+        (
+            """			// 签到后顺手刷新额度，让控制台立刻看到新余额
+			s.refreshAccountCredits(ctx, a)
+			out = append(out, oc)""",
+            """			// 签到后顺手刷新额度，让控制台立刻看到新余额
+			s.refreshAccountCredits(ctx, a)
+			// 回写签到状态记录（afree 面板徽章数据源；随池 state.json 持久化）
+			s.pool.NoteCheckin(a.UID, oc.Status, oc.Detail)
+			out = append(out, oc)""",
+            1,
+        ),
+    ),
     "server/server.go": (
         (
             """// Pool 暴露账号池（供定时任务等外部组件使用）。

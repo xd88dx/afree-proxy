@@ -57,6 +57,63 @@ go test ./... -count=1             # 除下述既有失败外应全绿
 
 **已随旧引擎移除（2026-11-04 换线）**：Trae 991502 防护三件套（账号会话闸门/读取超时看门狗/断流 Work 回落，原 `internal/trae/`）——vendored trae2api 自带分级冷却/熔断/降权与流中空闲监控（`trae.idle_timeout_seconds`，引擎 `cooldown.*` 三档），防护语义由引擎承担。历史细节（accountGate 权益并发/看门狗 env/Work 回落）见 git 历史与 MERGE.md 归档；旧引擎专属 env（`TRAE_ACCOUNT_PARALLEL_LIMIT`/`TRAE_REMOTE_FIRST_EVENT_TIMEOUT`/`TRAE_STREAM_IDLE_TIMEOUT`/`TRAE_REMOTE_DEBUG`）与 `TRAE_STRATEGY` 一并作废。
 
+## 5b. TraeWork（vendored trae2api）移植规则与全局策略清单（2026-11-04 定稿）
+
+**新增其他平台时按此清单逐项适配**——每一条都是换线过程中实测踩坑后的结论，缺一条就是静默缺口。
+
+### 数据与装配
+- vendor 树 `internal/trae2api/`（`scripts/vendor_trae2api.py` 生成，勿手改）；桥接层 `internal/app/trae.go`；helper 资产 `internal/app/trae2api_helper*.go`。
+- 配置 `data/trae2api-config.json`（顶层 `*-config.json` 自动进 config-manifest 监测）；运行态 `data/trae2api/`（accounts/*.json 快照、state.json 冷却/熔断/禁用、metrics.json）。使用痕迹不进配置监测口径。
+- vendored 无热更新：面板保存配置 → 落盘 → `trae2apiRestart()`（先摘除再重启，旧实例先 `Pool().Save()` 防与 30s ticker 竞争写 state.json）。
+- 鉴权分层：vendored `cfg.APIKey`/`WebPassword` 恒空（`traeApplyAfreeConstraints` 每次重启强制），真门禁在 afree 网关层；`trae.proxy`（全局）与 per-account proxy 恒清空（出口由 afree 接管，防死配置）。
+- 网关 `chat_base` 面板不可改（沿用上游默认；`trae2apiValidateGateway` 保留给配置文件路径——OAuth-only 域拒收）。
+
+### 网关路由与目录
+- 域前缀透传：`trae:`/`solo:` 常驻，`trae-intl:`/`solo-intl:` 随 `intl.enabled`；intl 关闭时 afree 层直接拒绝（防 vendored 跨域兜底悄悄换账号）。模型名零翻译。
+- `/v1/models` **域级可路由过滤**：vendored 四域渠道恒全建，无启用凭据的域必须摘除（`routableRealms`）——"列出来的必须调得通"。
+- 请求闸 `shouldServeTrae2api` + 可路由数 0 → 503；`platformHasRoutableCredential(platTrae)` 同闸（禁用平台/无凭据跳过路由的判定链共用）。
+- Anthropic `/v1/messages` 与 `/v1/responses` 走 `trae2apiCaller`（进程内管道 client 进 vendored Handler，`traeInprocessRoundTripper` 桥接 http.ResponseWriter↔io.Pipe，含 panic recover）。
+- combos 别名冲突校验用 `trae2apiModelExists`（静态判定用 `trae2apiPlatformModel`，不随 intl 开关变化——封禁/日志归类需要全前缀）。
+
+### afree 特色注入（vendor 幂等改写，`scripts/vendor_trae2api.py` REWRITES）
+- 出口接管 `traectl.StoreHTTPClient`：chat 走 `Client.client()`、续期/额度/签到走 `Store.httpClient()`——两个咽喉全收口。语义：隔离开启且有绑定 → 主→备 fail-closed（`pickBoundProxyFor`）；未绑定/隔离关 → 全局走池开关（`traeUseProxies`）+ `DISABLE_DIRECT` fail-closed（`kit.DisableDirect()` 时直连不放行，返回 `traeFailClosedTransport` 宁弃请求不暴露直连）。
+- 反代开关 `pool.RoutingAllowed` 钩子 → `traeRoutingAllowed`（查 `proxy-config.json` 的 `trae2apiRouting`；查表缺失=启用兼容，新增身份经 `AccountAddedHook` 显式落 false）；账号总闸=vendored `disabled`（关总闸连带关反代，互锁 wb 同款）。
+- 新增身份默认禁用 `accountstore.AccountAddedHook` → `traeAccountAdded`。
+- 改名 `pool.Account.SetLabel`（快照文件是持久层，`Store.Load()`+池同步）。
+- console 挂载 `/admin/trae2api/`（原版入口；app.js fetch 基址改写 `AFREE_API_BASE='/admin/trae2api/api'` + 契约测试候选路径）。
+- 出口接管需要的服务器访问器：`Server.Metrics()`、`Store.Mu()`、`Status.CreditsTotal`（vendor 注入，同步上游时锚点漂移就修 REWRITES——计数失配会 RuntimeError 强校验）。
+
+### 全局策略适配清单（每平台必查）
+| 策略 | trae 适配点 |
+|---|---|
+| 禁用平台（platformBlacklist） | `platformOfModel` 认四域前缀（`trae2apiPlatformModel`）；`bannedPlatformOf` 同链 |
+| 无启用凭据跳过路由 | `platform_routability.go` `trae2apiRoutableCount()>0`（总闸开+反代开） |
+| 批量测试可路由过滤 | 前端只看反代开关（routing），不看总闸；封禁平台整平台跳过 |
+| 代理排除规则 | UI 走 `REORDER_PLATFORMS`（trae 在列），自动分配过滤 kind=`trae`；手动绑定不受限 |
+| 走池开关 | `proxy-config.json` `traeUseProxies`（nil=走池） |
+| 代理隔离（PROXY_ISOLATION） | `traeStoreHTTPClient` 隔离语义（绑定 fail-closed / 未绑定全局） |
+| DISABLE_DIRECT | 直连哨兵与池空兜底直连均不放行 |
+| ONLY_ROUTER | `runBackground` 里 `kit.OnlyRouter()` 禁 vendored `RunBackground`（签到/额度刷新）；metrics/池状态落盘是基础设施照常 |
+| 配置导入导出 | 备份 trae 段 `{config, routing, accounts}`（`trae2apiBackupSnapshot`/`trae2apiRestoreBackup`，旧引擎形态报错忽略）；KeepEnabled["trae"] 隔离护栏 |
+| 数据清空（delete-all） | `clearTrae2apiAccountsForDataDelete`（删快照+清绑定/路由+重启） |
+| 出口健康观测 | `traeObserveTransport` → `recordProxyOutcome(pkTrae,...)`；请求日志 `[req]` 账号/出口列经 `setUpstreamInfo/Exit` |
+| 模型黑名单 | realm scope 封禁（`TraeModelBannedIn(ch.Realm, bare)`）；黑名单页探测 `trae2apiProbeBlacklistedModel`（进程内最小 chat） |
+| 上游永久错误自动拉黑 | vendored 引擎自带模型级冷却（3003 等）；`/v1/models` 出口按 realm 过滤 |
+| 请求日志 | `[req]` 行 acct 列=池序号（`trae2apiUpstreamLabel`） |
+
+### 面板三区约定
+- 凭据表 10 列（换线前列序恢复）：#/账号/状态(含 token 过期行+签到竖徽章)/额度(剩余/总)/今日累计token/最近使用/代理绑定/操作/反代/总闸；上方只放 刷新余额+全部签到，添加账号/批量组/复位保存 在表格下方。
+- 配置区两列（wb-config-grid 同款）：左列=单账号并发/熔断/冷却/流空闲（引擎吞吐组），右列=费率过滤(0/0.1/0.2/0.3/0.5/1)+自动签到+签到时点+拒绝未知模型+会话粘性+国际版域；右下角 放弃修改→保存配置。
+- 模型目录：realm 徽章+倍率+Ban（scope=realm）。
+- 加号三通道：helper 网页授权（铸 EC P-256 设备密钥补齐快照）/粘贴 `token----refreshToken`/原版面板导入 JSON/ZIP；裸 JWT 拒绝。
+- i18n：新文案全走 I18N_ZH 词条（键尾无空格、撇号用 JS 双引号包 key——`account's` 未转义炸过整块脚本）；改完跑 `scripts/i18n_audit.py` + `i18n_reverse_audit.py` 双向清零。
+
+### 已知边界（如实展示）
+- 今日 token 计数重启后从引擎 recent 流水重建（近 100 条窗口），弱于旧引擎全量持久化；累计/最近使用不受影响。
+- 签到徽章显示最近一次动作结果（引擎池 state.json 持久化）；从未执行过签到不显示徽章。
+- `max_tokens=1` 上游稳定 3003（引擎边界，忠实透传）；`mt≥8` 正常。
+- vendored 无手动重排序/探测模型下拉（引擎权重调度+额度连通性验证设计，用户拍板沿用）。
+
 ## 6. 部署:本机测试,iStore 生产
 
 **两台机器各有一个叫 `afree` 的容器,职责不同**:本机是测试容器,iStore 是生产。判断生产看**流量**而不是容器名——只有 iStore 的 `docker logs afree` 里有实时请求行(`| #NNN | hh:mm:ss | ... | 200 | ... tok=...`),本机的只有启动初始化日志。

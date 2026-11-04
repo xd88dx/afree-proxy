@@ -70,6 +70,8 @@ func (s *Server) CheckinAll(ctx context.Context) []CheckinOutcome {
 			}
 			// 签到后顺手刷新额度，让控制台立刻看到新余额
 			s.refreshAccountCredits(ctx, a)
+			// 回写签到状态记录（afree 面板徽章数据源；随池 state.json 持久化）
+			s.pool.NoteCheckin(a.UID, oc.Status, oc.Detail)
 			out = append(out, oc)
 		}
 	}

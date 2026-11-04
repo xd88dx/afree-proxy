@@ -161,9 +161,16 @@ func trae2apiRestart() error {
 
 // runBackground vendored 后台任务（额度刷新 30min/签到定时/metrics 落盘
 // 2min）+ 池状态 30s 落盘（cmd/server main 的节奏）。ctx 取消时做末次落盘。
+// ONLY_ROUTER=true（2026-10-28 用户定，2026-11-04 审计补接 trae）：仅会话
+// 路由——vendored 的签到/额度刷新等维护任务不启动（面板自动签到开关被强制
+// 覆盖）；metrics 落盘与池状态落盘是观测/持久化基础设施，照常运行。
 func (sub *trae2apiSubsystem) runBackground(ctx context.Context) {
 	defer close(sub.bgDone)
-	go sub.srv.RunBackground(ctx)
+	if kit.OnlyRouter() {
+		log.Printf("[only-router] ONLY_ROUTER=true: trae2api 签到/额度刷新等维护任务已禁用（仅会话路由）")
+	} else {
+		go sub.srv.RunBackground(ctx)
+	}
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
 	for {
@@ -916,33 +923,18 @@ func trae2apiEnrichAccountRow(sub *trae2apiSubsystem, st traepool.Status, row ma
 		}
 		row["tokensToday"] = todayTokens
 	}
-	// 签到状态：今日已签标记（后台签到成功时由 handleTraeCheckin 落盘）
-	if v, ok := traeCheckinToday.Load(st.UID); ok {
-		row["checkin"] = v
-	}
-}
-
-// traeCheckinToday 今日签到回显表：uid → {checkedIn, date, lastError}。
-// 签到成功/已签/失败的最近一次结果（内存态；重启后直到下一次签到动作前无回显，
-// 与旧引擎 state.json 持久化相比是弱化——面板列在无数据时显示 "-"，可接受）。
-var traeCheckinToday sync.Map
-
-// traeRecordCheckinOutcome 记录一次签到结果供面板回显（handleTraeCheckin 调用）。
-func traeRecordCheckinOutcome(outcomes []map[string]any) {
-	today := time.Now().Format("2006-01-02")
-	for _, o := range outcomes {
-		uid, _ := o["uid"].(string)
-		if uid == "" {
-			continue
+	// 签到状态：引擎持久化记录（CheckinAll 动作后 NoteCheckin 回写，随池
+	// state.json 持久化；空日期 = 从未执行过签到，面板不显示徽章）
+	if st.CheckinDate != "" {
+		row["checkin"] = map[string]any{
+			"checkedIn": st.CheckinChecked,
+			"date":      st.CheckinDate,
+			"lastError": st.CheckinError,
+			"failed":    st.CheckinFailed,
 		}
-		status, _ := o["status"].(string)
-		traeCheckinToday.Store(uid, map[string]any{
-			"checkedIn": status == "checked" || status == "already",
-			"date":      today,
-			"lastError": o["detail"],
-		})
 	}
 }
+
 
 // handleTraeConfigUpdate POST /admin/api/trae/config/update —— vendored 配置
 // 子集 + 费率过滤 patch；vendored 无热更新，落盘后整组重启（池状态经
@@ -1384,9 +1376,6 @@ func handleTraeCheckin(w http.ResponseWriter, r *http.Request) {
 		Results []map[string]any `json:"results"`
 	}
 	_ = json.Unmarshal(data, &vendored)
-	if len(vendored.Results) > 0 {
-		traeRecordCheckinOutcome(vendored.Results)
-	}
 	writeAPI(w, code, apiResponse{Success: code < 400, Data: vendored, Error: vendoredErrCode(code)})
 }
 

@@ -79,6 +79,12 @@ type Account struct {
 	credits       int64
 	creditsTotal  int64 // 总额度（用于算剩余比例；0 = 未知）
 	creditsKnown  bool
+	// checkin 状态记录（afree 桥接展示用，vendor 注入）：最近一次签到动作的
+	// 结果快照。CheckinAll（vendored）每次动作后回写；落盘随池 state.json。
+	checkinDate    string // 动作日期 "2006-01-02"（空=从未执行过签到）
+	checkinChecked bool   // 该次动作是否已签上（checked / already）
+	checkinFailed  bool   // 该次动作是否失败
+	checkinError   string // 失败原因（面板徽章 tooltip）
 	// expiringCredits 是**即将过期**的额度量（由上游权益包的 EndTime 算出）。
 	// 用途：优先消耗快过期的额度，避免白白作废（参考实现的三因子之一）。
 	expiringCredits int64
@@ -298,6 +304,25 @@ func (a *Account) SetLabel(label string) {
 // nil）：非 nil 时，返回 false 的账号不参与模型路由选号（Pick）；签到/额度
 // 刷新等维护任务不经 Pick，不受影响。
 var RoutingAllowed func(uid string) bool
+
+// NoteCheckin 记录一次签到动作结果（afree 面板徽章数据源；vendor 注入）。
+// 随池 state.json 持久化，重启不丢。
+func (p *Pool) NoteCheckin(uid, status, detail string) {
+	a := p.Get(uid)
+	if a == nil {
+		return
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.checkinDate = time.Now().Format("2006-01-02")
+	a.checkinChecked = status == "checked" || status == "already"
+	a.checkinFailed = status == "failed"
+	if status == "failed" {
+		a.checkinError = detail
+	} else {
+		a.checkinError = ""
+	}
+}
 
 func (a *Account) healthyLocked(now time.Time, model string) bool {
 	if a.disabled {
@@ -1032,6 +1057,11 @@ type Status struct {
 	OKCount           int64            `json:"ok_count"`
 	ErrCount          int64            `json:"err_count"`
 	Credits           *int64           `json:"credits,omitempty"`
+	// 签到状态（afree 桥接展示用；空日期 = 从未执行过签到）
+	CheckinDate    string `json:"checkin_date,omitempty"`
+	CheckinChecked bool   `json:"checkin_checked,omitempty"`
+	CheckinFailed  bool   `json:"checkin_failed,omitempty"`
+	CheckinError   string `json:"checkin_error,omitempty"`
 	// CreditsTotal 账号总额度（0 = 未知）。afree 桥接层透传给面板做
 	// "剩余 / 总"展示（vendor 脚本注入，上游原样不受影响）。
 	CreditsTotal int64 `json:"credits_total,omitempty"`
@@ -1083,6 +1113,13 @@ func (a *Account) Status(now time.Time) Status {
 		c := a.credits
 		st.Credits = &c
 		st.CreditsTotal = a.creditsTotal
+	}
+	// 签到状态透出（afree 桥接展示用；空日期 = 从未执行过签到）
+	if a.checkinDate != "" {
+		st.CheckinDate = a.checkinDate
+		st.CheckinChecked = a.checkinChecked
+		st.CheckinFailed = a.checkinFailed
+		st.CheckinError = a.checkinError
 	}
 	if !a.lastUsed.IsZero() {
 		st.LastUsed = a.lastUsed.Format(time.RFC3339)
@@ -1194,6 +1231,10 @@ type persistedItem struct {
 	ErrCount          int64             `json:"err_count,omitempty"`
 	Credits           int64             `json:"credits,omitempty"`
 	CreditsKnown      bool              `json:"credits_known,omitempty"`
+	CheckinDate    string `json:"checkin_date,omitempty"`
+	CheckinChecked bool   `json:"checkin_checked,omitempty"`
+	CheckinFailed  bool   `json:"checkin_failed,omitempty"`
+	CheckinError   string `json:"checkin_error,omitempty"`
 }
 
 // Save 落盘状态快照（原子写）。
@@ -1228,6 +1269,10 @@ func (p *Pool) Save() error {
 				it.ModelCooling[m] = until.Format(time.RFC3339)
 			}
 		}
+			it.CheckinDate = a.checkinDate
+		it.CheckinChecked = a.checkinChecked
+		it.CheckinFailed = a.checkinFailed
+		it.CheckinError = a.checkinError
 		a.mu.Unlock()
 		snap.Items[a.UID] = it
 	}
@@ -1311,6 +1356,10 @@ func (p *Pool) Restore() error {
 		a.errCount = it.ErrCount
 		a.credits = it.Credits
 		a.creditsKnown = it.CreditsKnown
+		a.checkinDate = it.CheckinDate
+		a.checkinChecked = it.CheckinChecked
+		a.checkinFailed = it.CheckinFailed
+		a.checkinError = it.CheckinError
 		if len(it.ModelCooling) > 0 {
 			a.modelCooling = map[string]time.Time{}
 			for m, s := range it.ModelCooling {
