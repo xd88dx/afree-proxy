@@ -97,9 +97,9 @@ func saveUsage() {
 	}
 }
 
-// loadUsage 读取痕迹文件（Load 尾部调用一次）。新文件缺失时从旧
-// other-config.json 一次性迁移各子平台的 keyTokens/cool 键（幂等：新文件一旦
-// 存在即不再迁移）；解析失败改名留档（与 config 同款），空表启动。
+// loadUsage 读取痕迹文件（Load 尾部调用一次）。解析失败改名留档（与 config
+// 同款），空表启动。（旧 other-config.json 的 keyTokens/cool 一次性迁移已随
+// 清理移除；从旧版升级的部署改用备份导入还原。）
 func loadUsage() {
 	if UsagePath == "" {
 		return
@@ -123,6 +123,7 @@ func loadUsage() {
 		usage.Platforms = map[string]*platformUsage{}
 	}
 }
+
 // StateSnapshotJSON 统计快照（配置备份 state 段，2026-11-01）：与落盘文件
 // 同形态的 JSON；痕迹真身由 keyMu 保护，快照深拷（含 per-slug 表）。
 func StateSnapshotJSON() json.RawMessage {

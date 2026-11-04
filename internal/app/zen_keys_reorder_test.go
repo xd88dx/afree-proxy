@@ -23,7 +23,6 @@ func TestZenKeysReorderPermutationAndCompat(t *testing.T) {
 
 	cfg := *getZenConfig()
 	cfg.Keys = []string{"sk-aaa111", "sk-bbb222", "sk-pin333"}
-	cfg.Key = "sk-aaa111"
 	cfg.KeyRoutingEnabled = map[string]bool{"sk-bbb222": false}
 	setZenConfig(&cfg)
 	zenCfg := *getZenConfig()
@@ -37,10 +36,6 @@ func TestZenKeysReorderPermutationAndCompat(t *testing.T) {
 	got := getZenConfig()
 	if strings.Join(got.Keys, ",") != "sk-pin333,sk-aaa111,sk-bbb222" {
 		t.Fatalf("keys = %v, want [sk-pin333 sk-aaa111 sk-bbb222]", got.Keys)
-	}
-	// 兼容字段 Key 同步为新的 Keys[0]
-	if got.Key != "sk-pin333" {
-		t.Fatalf("compat key = %q, want sk-pin333 (new Keys[0])", got.Key)
 	}
 	// 绑定/路由表按 key 明文存储，重排不得丢
 	if b, ok := getZenConfig().KeyBindings["sk-bbb222"]; !ok || b.Main != "http://p1:1" {

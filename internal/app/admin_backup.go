@@ -52,10 +52,10 @@ import (
 
 const configBackupVersion = 3
 
-// configBackupVersionOK 导入接受的版本：v3（三层口径全量）与 v1/v2（旧备份，
-// 缺的段保持不动；其 state 段按新语义分流——事实总导入、统计受勾选控制）。
-// 更新的版本直接拒绝——按段替换语义下，未知段被静默丢弃比报错危险。
-func configBackupVersionOK(v int) bool { return v == 1 || v == 2 || v == 3 }
+// configBackupVersionOK 导入仅接受 v3（三层口径全量）。旧 v1/v2 备份不再兼容
+// （2026-11-05 清理：两代备份形态早已作废，全量重导一次即可升级）；更新的版本
+// 直接拒绝——按段替换语义下，未知段被静默丢弃比报错危险。
+func configBackupVersionOK(v int) bool { return v == configBackupVersion }
 
 type workbuddyBackup struct {
 	// Config vendor config.json 原文。导入经 saveWorkbuddyConfig 落盘，
@@ -64,16 +64,12 @@ type workbuddyBackup struct {
 	// AuthFiles WorkBuddy 凭据文件：文件名 -> base64(原文)。导入时整体
 	// 替换 auths 目录（workbuddy*.json），随后全部账号禁用。
 	AuthFiles map[string]string `json:"authFiles,omitempty"`
-	// Order 面板展示顺序（账号 uid 列表）。顺序存在 state.json 的 order 字段，
-	// 既不在 vendor config.json 也不在凭据文件里——不带这一段，跨机迁移后
-	// 表格退回 uid 排序，用户拖好的顺序等于白做（2026-10-21 实测发现）。
-	// 仅影响 List()/面板顺序，不参与选号（加权路由与顺序无关）。
-	Order []string `json:"order,omitempty"`
 	// State 池状态全量快照（state.json 同形态：accounts + scheduling + order，
 	// 2026-11-03 三层口径「导出 = 容器全部数据」）。导入时分层：账号事实
 	// （余额/冷却/限额/实测成本/签到/运维意志）无论勾选与否都应用；本机统计
 	// （token 用量/成功失败计数/最近使用/调度游标）仅勾选「Import statistics」
 	// 时应用，不勾选 = 保留本机现值。见 pool.ImportStateBackupJSON。
+	// 展示顺序在 state.order 内随快照走（独立 Order 段已随 2026-11-05 清理移除）。
 	State json.RawMessage `json:"state,omitempty"`
 	// Usage 实测台账全量快照（usage.json 同形态，统计层）：按模型实测扣费/
 	// charge_variants。归统计层（2026-11-03 用户定）——勾选「Import statistics」
@@ -305,18 +301,10 @@ func exportWorkbuddyBackup() *workbuddyBackup {
 	if raw, err := os.ReadFile(sub.cfgPath); err == nil {
 		wb.Config = json.RawMessage(raw)
 	}
-	// 展示顺序单独带上：state.json 不随备份走（里面还有 credits/cooling
-	// 等运行时状态，属于本机事实）。List() 已按自定义顺序输出，直接取 uid。
-	// 2026-11-03 起顺序与状态都进备份（见下）：Order 保留独立段兼容既有测试
-	// 与「只带 order 的最小备份」。
 	if sub.pool != nil {
-		for _, st := range sub.pool.List() {
-			if st.UID != "" {
-				wb.Order = append(wb.Order, st.UID)
-			}
-		}
 		// 池状态全量快照（state.json 同形态）：账号事实 + 本机统计都在内
 		// （「导出 = 容器全部数据」），导入端按勾选分层（pool.ImportStateBackupJSON）。
+		// 展示顺序在快照的 order 字段内随行，无需单独段。
 		wb.State = sub.pool.StateSnapshotJSON()
 	}
 	// 实测台账快照（usage.json 同形态，统计层）。
@@ -658,7 +646,7 @@ func handleAdminConfigImport(w http.ResponseWriter, r *http.Request) {
 		// （冷却表覆盖，本机统计键保留本机值）。trae 段 2026-11-04 起由
 		// trae2apiRestoreBackup 单独处理（含 config/routing/accounts），不再走
 		// state 事实合并（vendored state.json 冷却不随备份迁移）。
-		mergeOrReplace := func(local, backupSeg json.RawMessage, traeAccounts bool, importFn func(json.RawMessage) error) {
+		mergeOrReplace := func(local, backupSeg json.RawMessage, importFn func(json.RawMessage) error) {
 			if len(backupSeg) == 0 {
 				return
 			}
@@ -666,17 +654,17 @@ func handleAdminConfigImport(w http.ResponseWriter, r *http.Request) {
 				_ = importFn(backupSeg)
 				return
 			}
-			merged, err := mergeStateFactsJSON(local, backupSeg, traeAccounts)
+			merged, err := mergeStateFactsJSON(local, backupSeg)
 			if err != nil {
 				log.Printf("  config import: state facts merge failed — keeping local values: %v", err)
 				return
 			}
 			_ = importFn(merged)
 		}
-		mergeOrReplace(amd.StateSnapshotJSON(), st.AMD, false, amd.ImportStateJSON)
-		mergeOrReplace(openrouter.StateSnapshotJSON(), st.OpenRouter, false, openrouter.ImportStateJSON)
-		mergeOrReplace(tokenharbor.StateSnapshotJSON(), st.TokenHarbor, false, tokenharbor.ImportStateJSON)
-		mergeOrReplace(other.StateSnapshotJSON(), st.Other, false, other.ImportStateJSON)
+		mergeOrReplace(amd.StateSnapshotJSON(), st.AMD, amd.ImportStateJSON)
+		mergeOrReplace(openrouter.StateSnapshotJSON(), st.OpenRouter, openrouter.ImportStateJSON)
+		mergeOrReplace(tokenharbor.StateSnapshotJSON(), st.TokenHarbor, tokenharbor.ImportStateJSON)
+		mergeOrReplace(other.StateSnapshotJSON(), st.Other, other.ImportStateJSON)
 		if includeStats && st.ProxyHealth != nil {
 			importProxyHealthBackup(st.ProxyHealth)
 		}
@@ -761,8 +749,6 @@ func importModelBlacklist(in map[string]*modelBlacklistEntry) {
 		if k == "" || v == nil || v.Platform == "" || v.Model == "" {
 			continue
 		}
-		// 旧备份的中文封禁原因与 cline 404 类条目归一（见 normalizeEntry）。
-		normalizeEntry(v)
 		local, ok := next[k]
 		if !ok || local == nil {
 			next[k] = v
@@ -934,13 +920,7 @@ func importWorkbuddyBackup(wb *workbuddyBackup, keepWbEnabled, includeStats bool
 			log.Printf("  config import: workbuddy usage apply failed: %v", err)
 		}
 	}
-	// 展示顺序最后套用：必须排在 SyncToDir（账号集合对齐）之后，否则对齐时
-	// 新号按 uid 落到尾部、顺序被打乱。备份未带 order 时不动本机顺序（按段
-	// 替换语义里"缺字段 = 保持不动"）。未知 uid 由 SetOrder 自行忽略。
-	if len(wb.Order) > 0 && sub.pool != nil {
-		if n := sub.pool.SetOrder(wb.Order); n > 0 {
-			log.Printf("  config import: workbuddy display order applied (%d accounts)", n)
-		}
-	}
+	// 展示顺序随 state 快照走（ImportStateBackupJSON 内部套用，排在 SyncToDir
+	// 之后），无独立段。
 	return importedAuths, cfgApplied
 }

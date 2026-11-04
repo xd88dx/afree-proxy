@@ -62,7 +62,6 @@ func TestZenModelListRequiresEnabledKey(t *testing.T) {
 
 	empty := *getZenConfig()
 	empty.Keys = nil
-	empty.Key = ""
 	empty.KeyRoutingEnabled = nil
 	setZenConfig(&empty)
 	initZenModels()
@@ -72,7 +71,6 @@ func TestZenModelListRequiresEnabledKey(t *testing.T) {
 
 	named := *getZenConfig()
 	named.Keys = []string{"sk-test"}
-	named.Key = "sk-test"
 	named.KeyRoutingEnabled = nil // nil = 参与路由
 	setZenConfig(&named)
 	if got := zenModelList(); len(got) == 0 {

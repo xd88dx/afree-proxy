@@ -6097,10 +6097,12 @@ function renderOcKeyStates(ks) {
   tb.innerHTML = ks.length
     ? ks.map(k => {
         // 状态列（合并原 会话+冷却 两列，chip 样式与 cline 状态列一致）：
-        // 冷却中（含预计恢复小字）> 会话活跃（会话 ID 与
-        // 铸造时刻进 title）> 会话已失效（下次请求自动重铸）> 无会话（待启用，
-        // 路由启用后自动铸造）。
+        // 停放 > 冷却 > 活跃（有真实流量，或有粘性会话快照）> 快照失效（罕见）
+        // > 未使用（从无流量）。
         let stCell;
+        // 2026-10-27 起上游请求每次调用现铸会话、不落粘性表（zen_session.go），
+        // 无粘性快照不代表未使用——活跃判定跟随 token 记账。
+        const hasTraffic = (k.tokensTotal || 0) > 0 || !!k.lastUsed;
         if (k.parked) {
           // 日额度耗尽停放（上游 a41f1756）：区别于冷却——当天不会再好，
           // 停放期内零上游请求，到期只放一个探针（probes 次数进小字）。
@@ -6109,8 +6111,11 @@ function renderOcKeyStates(ks) {
         } else if (k.cooling) {
           stCell = '<span class="status cooldown"><span class="status-dot cooldown"></span>' + T('Cooldown') + '</span>' +
             (k.cooldownUntil ? '<div style="font-size:10px;color:var(--text3);margin-top:2px;white-space:nowrap" title="' + esc(fmtWhen(k.cooldownUntil)) + '">' + T('Recovers ') + esc(fmtShort(k.cooldownUntil)) + '</div>' : '');
-        } else if (k.session && k.sessionLive) {
-          stCell = '<span class="status active" title="' + esc(T('session minted')) + ' ' + esc(fmtWhen(k.sessionCreatedAt)) + ' · ' + esc(k.session) + '…"><span class="status-dot active"></span>' + T('Active') + '</span>';
+        } else if (hasTraffic || (k.session && k.sessionLive)) {
+          const titleAttr = (k.session && k.sessionLive)
+            ? esc(T('session minted')) + ' ' + esc(fmtWhen(k.sessionCreatedAt)) + ' · ' + esc(k.session) + '…'
+            : esc(T('sessions are minted per call; no sticky snapshot'));
+          stCell = '<span class="status active" title="' + titleAttr + '"><span class="status-dot active"></span>' + T('Active') + '</span>';
         } else if (k.session) {
           stCell = '<span class="status pending" title="' + esc(T('session minted')) + ' ' + esc(fmtWhen(k.sessionCreatedAt)) + '"><span class="status-dot pending"></span>' + T('stale') + '</span>';
         } else {
@@ -6279,7 +6284,7 @@ function closeZenKeyAddDialog() { _('zenKeyAddDialog').close(); }
 async function zenKeyAddFromDialog() {
   const lines = _('zenKeyAddInput').value.split('\n').map(s => s.trim()).filter(Boolean);
   if (!lines.length) { toast(T('Enter at least one key'), 'error'); return; }
-  const cur = (ocCfgCache.keys && ocCfgCache.keys.length) ? ocCfgCache.keys : (ocCfgCache.key ? [ocCfgCache.key] : []);
+  const cur = (ocCfgCache.keys && ocCfgCache.keys.length) ? ocCfgCache.keys : [];
   const fresh = lines.filter(l => !cur.includes(l));
   if (!fresh.length) { toast(T('No new keys (all already in the pool)'), 'info'); return; }
   const btn = _('zenKeyAddSubmit');
@@ -6630,13 +6635,10 @@ function ppRulesState() {
   if (!ppRulesCache) {
     ppRulesCache = {};
     ruleLeaves().forEach(r => {
-      // 兼容旧的整平台 "other" 规则：子平台未单独配置时继承它，保存后即归一为
-      // 子平台条目（Other 归类行不再写 kind=other）。
-      const legacy = r.sub ? 'other' : null;
       ppRulesCache[r.key] = {
-        cap: proxyCapFor(r.key) || (legacy ? proxyCapFor(legacy) : 0),
-        ex: proxyListCache.filter(p => proxyExcludedFor(p, r.key) || !!(legacy && proxyExcludedFor(p, legacy))),
-        dx: proxyExcludedFor(EGRESS_DIRECT, r.key) || !!(legacy && proxyExcludedFor(EGRESS_DIRECT, legacy))
+        cap: proxyCapFor(r.key),
+        ex: proxyListCache.filter(p => proxyExcludedFor(p, r.key)),
+        dx: proxyExcludedFor(EGRESS_DIRECT, r.key)
       };
     });
   }

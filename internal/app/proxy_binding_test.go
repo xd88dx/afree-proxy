@@ -35,7 +35,6 @@ func setupZenSessionTest(t *testing.T) {
 // proxyPoolConfigData。（Go 1.27 之前不允许在复合字面量里写内嵌结构的提升
 // 字段，所以这里显式复制 zenConfigData 的字段，而不是内嵌。）
 type zenTestConfig struct {
-	Key                string
 	Keys               []string
 	BaseURL            string
 	MaxConcurrency     int
@@ -58,7 +57,6 @@ type zenTestConfig struct {
 
 func (c *zenTestConfig) zen() *zenConfigData {
 	return &zenConfigData{
-		Key:               c.Key,
 		Keys:              c.Keys,
 		BaseURL:           c.BaseURL,
 		MaxConcurrency:    c.MaxConcurrency,

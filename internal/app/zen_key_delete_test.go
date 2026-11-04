@@ -37,9 +37,6 @@ func TestZenKeyDeleteRemovesKeyAndItsState(t *testing.T) {
 	if strings.Join(got.Keys, ",") != "sk-aaa111,sk-pin333" {
 		t.Fatalf("keys = %v, want [sk-aaa111 sk-pin333]", got.Keys)
 	}
-	if got.Key != got.Keys[0] {
-		t.Fatalf("compat key = %q, want Keys[0] = %q", got.Key, got.Keys[0])
-	}
 	if _, ok := getZenConfig().KeyBindings["sk-bbb222"]; ok {
 		t.Fatal("deleted key left a proxy binding behind")
 	}
@@ -56,7 +53,6 @@ func TestZenKeyDeleteLastKeyLeavesEmptyPool(t *testing.T) {
 
 	cfg := *getZenConfig()
 	cfg.Keys = []string{"sk-only-one"}
-	cfg.Key = "sk-only-one"
 	setZenConfig(&cfg)
 
 	if rec := deleteZenKeyAt(t, 0); rec.Code != http.StatusOK {
@@ -65,9 +61,6 @@ func TestZenKeyDeleteLastKeyLeavesEmptyPool(t *testing.T) {
 	got := getZenConfig()
 	if len(got.Keys) != 0 {
 		t.Fatalf("keys = %v, want empty pool", got.Keys)
-	}
-	if got.Key != "" {
-		t.Fatalf("compat key = %q, want empty", got.Key)
 	}
 }
 

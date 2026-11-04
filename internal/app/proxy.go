@@ -97,8 +97,8 @@ func StartProxy(host string, port int) error {
 	// 配置指纹清单：外部监测只盯 config-manifest.json 一个文件（glob 收集
 	// 全部 *-config.json + wb 配置/凭据，新平台自动纳入）。
 	startConfigManifestWatcher()
-	// 健康统计的旧数据迁移必须在任何 mutateProxyConfigFile 写回之前完成，
-	// 否则旧 proxy-config.json 里的 health 段会被下一次配置写回剥离丢弃。
+	// 健康统计在启动期加载（先于任何 mutateProxyConfigFile 写回）：拆出独立
+	// proxy-state.json 后两文件互不干扰，这里只是保证统计在任何请求前就位。
 	ensureProxyHealthLoaded()
 	loadZenEndpoints()
 	// 出口绑定必须在首次请求之前就位：否则第一批请求会用轮转出来的

@@ -90,7 +90,6 @@ func clearOpenCodeKeysForDataDelete() int {
 	next := *cfg
 	// 清空 key 池即清空 zen 凭据：保留其余 OpenCode 配置（baseURL、压缩和
 	// 代理策略），平台转为不可路由（目录隐藏、请求明确报错）。
-	next.Key = ""
 	next.Keys = nil
 	// key 池已清空，绑定表随之失效（绑定按 key 明文存，留着就是垃圾配置）。
 	next.KeyBindings = nil

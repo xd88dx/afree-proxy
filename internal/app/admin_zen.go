@@ -35,7 +35,6 @@ func zenConfigPayload() map[string]any {
 	return map[string]any{
 		"zenUseProxies":       zenProxiesEnabled(),
 		"workbuddyUseProxies": workbuddyProxiesEnabled(),
-		"key":                 cfg.Key,
 		"keys":                cfg.Keys,
 		"keyStates":           zenKeyStatus(),
 		"baseURL":             cfg.BaseURL,
@@ -98,7 +97,6 @@ func handleZenConfigUpdate(w http.ResponseWriter, r *http.Request) {
 	var patch struct {
 		ZenUseProxies       *bool    `json:"zenUseProxies"`
 		WorkbuddyUseProxies *bool    `json:"workbuddyUseProxies"`
-		Key                 *string  `json:"key"`
 		Keys                []string `json:"keys"`
 		BaseURL             *string  `json:"baseURL"`
 		Proxies             []string `json:"proxies"`
@@ -148,20 +146,13 @@ func handleZenConfigUpdate(w http.ResponseWriter, r *http.Request) {
 		poolChanged = true
 	}
 	if patch.Keys != nil {
-		// 多 key 池整体替换；兼容旧单 key 字段（key 非空时视为单元素列表）
-		if len(patch.Keys) == 0 && (patch.Key == nil || *patch.Key == "") {
+		// 多 key 池整体替换（旧单 key 提交兼容已随 2026-11-05 清理移除——
+		// 前端总是发 keys 数组）
+		if len(patch.Keys) == 0 {
 			writeAPI(w, http.StatusBadRequest, apiResponse{Error: "keys list is empty"})
 			return
 		}
-		if len(patch.Keys) > 0 {
-			next.Keys = patch.Keys
-		}
-	}
-	if patch.Key != nil && *patch.Key != "" && patch.Keys == nil {
-		// 旧客户端单 key 提交 → 单元素池
-		next.Keys = []string{*patch.Key}
-	}
-	if patch.Keys != nil || (patch.Key != nil && *patch.Key != "") {
+		next.Keys = patch.Keys
 		// key 池发生变动：新 key 默认禁用路由（面板勾选启用后生效），移除的 key
 		// 清理表项——与 Cline/WorkBuddy 的新增身份默认不启用统一口径。
 		reconcileZenKeyRouting(&next, cur)
@@ -704,12 +695,6 @@ func handleZenKeyDelete(w http.ResponseWriter, r *http.Request) {
 	keys = append(keys, cfg.Keys[:req.Index]...)
 	keys = append(keys, cfg.Keys[req.Index+1:]...)
 	next.Keys = keys
-	// Key 兼容字段必须一起清空：normalizeZenKeys 见到空 Keys 且 Key 非空时会
-	// 把 Key 重新灌回池子（旧单 key 配置的迁移规则），删最后一个 key 就成了
-	// 无声的假成功——key 还在，接口却回 200 deleted。
-	if len(keys) == 0 {
-		next.Key = ""
-	}
 	next.KeyRoutingEnabled = withoutKey(cfg.KeyRoutingEnabled, key)
 	// 该 key 的代理绑定一并删除（绑定按 key 明文存，key 不在了绑定就是垃圾）。
 	next.KeyBindings = withoutKey(cfg.KeyBindings, key)

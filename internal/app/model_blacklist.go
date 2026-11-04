@@ -93,35 +93,6 @@ func blacklistKey(platform, model string) string {
 	return platform + "|" + model
 }
 
-// normalizeBanReason 存量数据归一（2026-10-29 常量中文化改英文化的配套）：
-// 旧中文文案映射到新英文常量。Reason 只做展示、不参与任何比对逻辑，
-// 归一只影响表格列显示。
-func normalizeBanReason(reason string) string {
-	switch reason {
-	case "账号权限不足，自动封禁":
-		return BanReasonAuto
-	case "管理员手动封禁":
-		return BanReasonManual
-	case "模型名不可用，自动封禁":
-		return BanReasonModelGone
-	}
-	return reason
-}
-
-// normalizeEntry 加载/导入时的整条归一：文案映射之外，cline 404 类存量条目
-// （2026-10-31 修复落地前拉的，统一挂在 BanReasonAuto 下）按 detail 特征
-// （上游 404 model not found 报文）归一到更准确的 BanReasonFeedRemoved。
-// 判据要 detail 配合——trae 1005/4001 等真权限条目 detail 不含该报文，不受影响。
-func normalizeEntry(e *modelBlacklistEntry) {
-	if e == nil {
-		return
-	}
-	e.Reason = normalizeBanReason(e.Reason)
-	if e.Platform == platCline && e.Reason == BanReasonAuto && strings.Contains(e.Detail, "model not found") {
-		e.Reason = BanReasonFeedRemoved
-	}
-}
-
 func ensureModelBlacklistLoaded() {
 	modelBlacklistMu.Lock()
 	defer modelBlacklistMu.Unlock()
@@ -134,9 +105,6 @@ func ensureModelBlacklistLoaded() {
 	if len(g.ModelBlacklist) > 0 {
 		modelBlacklistItems = make(map[string]*modelBlacklistEntry, len(g.ModelBlacklist))
 		for k, e := range g.ModelBlacklist {
-			if e != nil {
-				normalizeEntry(e)
-			}
 			modelBlacklistItems[k] = e
 		}
 	}

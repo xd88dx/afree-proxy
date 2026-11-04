@@ -56,32 +56,11 @@ const trae2apiVersion = "0.2.6"
 func traeConfigPath() string { return filepath.Join(traeDataDir(), "config.json") }
 func traeDataDir() string    { return kit.ResolveDataPath("trae2api") }
 
-// traeLegacyConfigPath 旧布局的顶层散文件路径（仅迁移用）。
-const traeLegacyConfigRelPath = "trae2api-config.json"
-
-// traeMigrateConfigLayout 旧布局一次性迁移：data/trae2api-config.json →
-// data/trae2api/config.json。新布局已是目标态（新路径存在）或全新环境（两处
-// 都无）时不做事。MkdirAll 无条件执行——全新环境下 Load 的模板写入需要目录。
-// 在 trae2apiStart（含 Restart 路径）最前调用，先于任何读写。
-func traeMigrateConfigLayout() {
-	legacy := kit.ResolveDataPath(traeLegacyConfigRelPath)
-	if _, err := os.Stat(traeConfigPath()); err == nil {
-		_ = os.MkdirAll(traeDataDir(), 0o700) // 已是新布局：只兜底目录
-		return
-	}
-	if _, err := os.Stat(legacy); err != nil {
-		_ = os.MkdirAll(traeDataDir(), 0o700) // 全新环境：建目录等模板落位
-		return
-	}
-	if err := os.MkdirAll(traeDataDir(), 0o700); err != nil {
-		log.Printf("trae config migrate: mkdir %s: %v", traeDataDir(), err)
-		return
-	}
-	if err := os.Rename(legacy, traeConfigPath()); err != nil {
-		log.Printf("trae config migrate: rename %s -> %s: %v", legacy, traeConfigPath(), err)
-		return
-	}
-	log.Printf("trae config migrated: %s -> %s", traeLegacyConfigRelPath, filepath.Join("trae2api", "config.json"))
+// ensureTraeDataDir 子系统目录兜底（全新环境下 Load 的模板写入需要目录）。
+// 旧布局顶层散文件的 rename 迁移已随 2026-11-05 清理移除——存量部署均已
+// 迁移完毕，残留旧文件需手工搬入 trae2api/config.json。
+func ensureTraeDataDir() {
+	_ = os.MkdirAll(traeDataDir(), 0o700)
 }
 
 // ============ 子系统装配 ============
@@ -152,7 +131,7 @@ func trae2apiStart() error {
 	if trae2apiSub != nil {
 		return nil
 	}
-	traeMigrateConfigLayout()
+	ensureTraeDataDir()
 	cfg, err := trae2apiLoadConfig()
 	if err != nil {
 		return fmt.Errorf("load config: %w", err)
@@ -637,6 +616,12 @@ func trae2apiModelEntries() []map[string]any {
 			entry["source"] = "trae"
 			entry["status"] = "active"
 			entry["cost"] = "free"
+			// owned_by 用规范名 "trae"（与 combo 别名、其他平台段口径一致）：
+			// vendored 引擎透传的是产品 Label（"Trae CN"/"TRAE SOLO CN"），下游
+			// newapi 渠道映射（hermes afree-remap）按 owned_by 分桶且只认规范名，
+			// 非规范值会落进其「未知归渠道A」兜底，把 Trae 模型误挂到 Cline 渠道
+			// （2026-11-05 生产实证：20 个 trae 模型全进 A 桶）。
+			entry["owned_by"] = "trae"
 			out = append(out, entry)
 		}
 	}

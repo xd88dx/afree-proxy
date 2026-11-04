@@ -141,7 +141,7 @@ func TestZenKeyTestProbe403ReportsErrorWithoutStateChange(t *testing.T) {
 	})
 	key := "sk-aaa111"
 	// 先绑一个已知会话，探测后必须原样保留（探测不触碰会话状态）
-	StickyZenIdentity(key)
+	mintTestZenSession(t, key)
 	zenSessMu.Lock()
 	before := zenSessions[key].Session
 	zenSessMu.Unlock()
@@ -334,7 +334,6 @@ func TestZenKeyTestHandlerRejectsEmptyPool(t *testing.T) {
 	saved := getZenConfig()
 	cfg := *saved
 	cfg.Keys = nil
-	cfg.Key = ""
 	setZenConfig(&cfg)
 	t.Cleanup(func() { setZenConfig(saved) })
 
@@ -352,7 +351,6 @@ func TestZenEmptyPoolIsSafeAndExplicit(t *testing.T) {
 	saved := getZenConfig()
 	cfg := *saved
 	cfg.Keys = nil
-	cfg.Key = ""
 	setZenConfig(&cfg)
 	t.Cleanup(func() { setZenConfig(saved) })
 
@@ -363,10 +361,10 @@ func TestZenEmptyPoolIsSafeAndExplicit(t *testing.T) {
 		t.Fatalf("empty pool error = %v, want 'no zen key configured'", err)
 	}
 
-	legacy := &zenConfigData{Key: "public", Keys: []string{"public"}}
+	legacy := &zenConfigData{Keys: []string{"public"}}
 	normalizeZenKeys(legacy)
-	if len(legacy.Keys) != 0 || legacy.Key != "" {
-		t.Fatalf("legacy public sentinel must be stripped, got keys=%v key=%q", legacy.Keys, legacy.Key)
+	if len(legacy.Keys) != 0 {
+		t.Fatalf("legacy public sentinel must be stripped, got keys=%v", legacy.Keys)
 	}
 }
 

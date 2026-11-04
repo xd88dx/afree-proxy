@@ -41,7 +41,7 @@ func TestConfigImportDisablesAllIdentities(t *testing.T) {
 	openrouter.Load(filepath.Join(tmp, "or.json"))
 
 	body := `{
-	  "version": 2,
+	  "version": 3,
 	  "accounts": [
 	    {"accountID": "acc_t1", "refreshToken": "r", "apiToken": "sk_t", "status": "active", "poolEnabled": true}
 	  ],
@@ -109,7 +109,7 @@ func TestConfigImportKeepEnabled(t *testing.T) {
 	other.Load(filepath.Join(tmp, "other.json"))
 
 	body := `{
-	  "version": 2,
+	  "version": 3,
 	  "keepEnabled": {"cline": true, "oprt": true, "other:alpha": true},
 	  "accounts": [
 	    {"accountID": "acc_on", "refreshToken": "r1", "status": "active", "poolEnabled": true},
@@ -174,12 +174,12 @@ func TestConfigImportKeepEnabled(t *testing.T) {
 }
 
 func TestConfigBackupVersionOK(t *testing.T) {
-	for _, v := range []int{1, 2, 3} {
-		if !configBackupVersionOK(v) {
-			t.Errorf("version %d must be accepted", v)
-		}
+	// 仅接受当前版本 v3：旧 v1/v2 备份不再兼容（2026-11-05 清理），
+	// 更新版本必须显式拒绝（未知段静默丢弃比报错危险）。
+	if !configBackupVersionOK(3) {
+		t.Error("version 3 must be accepted")
 	}
-	for _, v := range []int{0, 4, -1} {
+	for _, v := range []int{0, 1, 2, 4, -1} {
 		if configBackupVersionOK(v) {
 			t.Errorf("version %d must be rejected", v)
 		}
@@ -218,7 +218,7 @@ func TestConfigBackupAMDCloudSectionName(t *testing.T) {
 
 		amd.Load(filepath.Join(tmp, "amd.json"))
 
-		body := `{"version":2,"amdcloud":{"keys":["rc-new"],"keyRoutingEnabled":{"rc-new":true}}}`
+		body := `{"version":3,"amdcloud":{"keys":["rc-new"],"keyRoutingEnabled":{"rc-new":true}}}`
 		req := httptest.NewRequest("POST", "/admin/api/config/import", strings.NewReader(body))
 		rr := httptest.NewRecorder()
 		handleAdminConfigImport(rr, req)
@@ -287,7 +287,7 @@ func TestConfigBackupOtherSection(t *testing.T) {
 
 		other.Load(filepath.Join(tmp, "other.json"))
 
-		body := `{"version":2,"other":{"platforms":[{"slug":"acme","name":"Acme","prefix":"acme",` +
+		body := `{"version":3,"other":{"platforms":[{"slug":"acme","name":"Acme","prefix":"acme",` +
 			`"baseURL":"http://x/v1","keys":["sk-1","sk-2"],` +
 			`"keyRoutingEnabled":{"sk-1":true,"sk-2":true}}]}}`
 		req := httptest.NewRequest("POST", "/admin/api/config/import", strings.NewReader(body))
@@ -365,9 +365,10 @@ func TestConfigBackupWorkBuddyProxies(t *testing.T) {
 
 // TestConfigBackupWorkbuddyOrder 备份必须覆盖 WorkBuddy 账号的**展示顺序**：
 // 顺序只存在 state.json 的 order 字段（不在 vendor config.json，也不在凭据
-// 文件里），2026-10-21 实测"拖拽顺序 + 导出导入"时正是这一段丢失——迁移后
-// 表格退回 uid 排序。这里覆盖三件事：导出取池的实际展示顺序、JSON 键名为
-// order、导入按备份顺序套用。
+// 文件里），2026-10-21 实测"拖拽顺序 + 导出导入"时正是这一段丢失。展示顺序
+// 随 state 快照的 order 字段迁移（2026-11-05 起独立 Order 段已删）：这里覆盖
+// 三件事——导出快照携带实际展示顺序、JSON 键名 order 在 workbuddy.state 内、
+// 导入经 ImportStateBackupJSON 按备份顺序套用。
 func TestConfigBackupWorkbuddyOrder(t *testing.T) {
 	tmp := t.TempDir()
 	authDir := filepath.Join(tmp, "auths")
@@ -397,27 +398,33 @@ func TestConfigBackupWorkbuddyOrder(t *testing.T) {
 	if exp == nil {
 		t.Fatal("export returned nil while the subsystem is running")
 	}
-	if got := strings.Join(exp.Order, ","); got != "c,a,b" {
-		t.Fatalf("exported order = %q, want c,a,b", got)
+	if len(exp.State) == 0 {
+		t.Fatal("exported backup must carry the state snapshot")
 	}
-	// 线上必须叫 order，且能原样解回
+	var sf struct {
+		Order []string `json:"order"`
+	}
+	if err := json.Unmarshal(exp.State, &sf); err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(sf.Order, ","); got != "c,a,b" {
+		t.Fatalf("exported state order = %q, want c,a,b", got)
+	}
+	// 线上键名必须是 workbuddy.state 内的 order
 	raw, err := json.Marshal(exp)
 	if err != nil {
 		t.Fatal(err)
 	}
-	var m map[string]json.RawMessage
-	if err := json.Unmarshal(raw, &m); err != nil {
+	var wbm map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &wbm); err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := m["order"]; !ok {
-		t.Error(`export must contain the "order" key inside the workbuddy section`)
-	}
-	var back workbuddyBackup
-	if err := json.Unmarshal(raw, &back); err != nil {
+	var st map[string]json.RawMessage
+	if err := json.Unmarshal(wbm["state"], &st); err != nil {
 		t.Fatal(err)
 	}
-	if strings.Join(back.Order, ",") != "c,a,b" {
-		t.Fatalf("order round-trip = %v, want [c a b]", back.Order)
+	if _, ok := st["order"]; !ok {
+		t.Error(`export must contain the "order" key inside workbuddy.state`)
 	}
 
 	// 目标实例：账号集合相同但顺序被打乱（无自定义顺序 = uid 排序）
@@ -429,14 +436,14 @@ func TestConfigBackupWorkbuddyOrder(t *testing.T) {
 	workbuddySub.pool = p2
 	importWorkbuddyBackup(exp, true, true)
 	uids := make([]string, 0, 3)
-	for _, st := range p2.List() {
-		uids = append(uids, st.UID)
+	for _, st2 := range p2.List() {
+		uids = append(uids, st2.UID)
 	}
 	if got := strings.Join(uids, ","); got != "c,a,b" {
 		t.Fatalf("order after import = %q, want c,a,b", got)
 	}
 
-	// 备份没带 order 时不碰本机顺序（缺字段 = 保持不动）
+	// 备份没带 state 时不碰本机顺序（缺字段 = 保持不动）
 	p3 := wbpool.New(filepath.Join(tmp, "state3.json"))
 	defer p3.Close()
 	for _, uid := range []string{"b", "a", "c"} {
@@ -446,11 +453,11 @@ func TestConfigBackupWorkbuddyOrder(t *testing.T) {
 	workbuddySub.pool = p3
 	importWorkbuddyBackup(&workbuddyBackup{}, true, true)
 	uids = uids[:0]
-	for _, st := range p3.List() {
-		uids = append(uids, st.UID)
+	for _, st3 := range p3.List() {
+		uids = append(uids, st3.UID)
 	}
 	if got := strings.Join(uids, ","); got != "a,b,c" {
-		t.Fatalf("local order must stay untouched when backup has no order, got %q", got)
+		t.Fatalf("local order must stay untouched when backup has no state, got %q", got)
 	}
 }
 

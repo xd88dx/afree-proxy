@@ -53,7 +53,6 @@ func TestZenModelListIDsArePrefixed(t *testing.T) {
 	})
 	cfg := *getZenConfig()
 	cfg.Keys = []string{"sk-test"}
-	cfg.Key = "sk-test"
 	cfg.KeyRoutingEnabled = nil
 	setZenConfig(&cfg)
 

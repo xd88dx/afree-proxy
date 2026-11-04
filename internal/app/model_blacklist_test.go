@@ -286,42 +286,6 @@ func TestClineModelNotFoundAutoBan(t *testing.T) {
 	}
 }
 
-// 存量归一：2026-10-31 修复落地前拉的 cline 404 条目挂在通用权限文案下，
-// 加载/导入时按 detail 特征归一到 FeedRemoved；trae 的真权限条目
-// （detail 是 1005/4001 报文，无 "model not found"）不受影响。
-func TestNormalizeEntryClineFeedRemoved(t *testing.T) {
-	legacy := &modelBlacklistEntry{
-		Platform: platCline, Model: "cline-free/deepseek-v4.1-flash",
-		Reason: BanReasonAuto, Detail: `API 404: {"error":"model not found","success":false}`,
-	}
-	normalizeEntry(legacy)
-	if legacy.Reason != BanReasonFeedRemoved {
-		t.Fatalf("cline legacy reason = %q, want %q", legacy.Reason, BanReasonFeedRemoved)
-	}
-
-	traeEntry := &modelBlacklistEntry{
-		Platform: platTrae, Model: "trae:kimi-k3.1-pro",
-		Reason: BanReasonAuto, Detail: `upstream error event (code 1005)`,
-	}
-	normalizeEntry(traeEntry)
-	if traeEntry.Reason != BanReasonAuto {
-		t.Fatalf("trae reason must stay %q, got %q", BanReasonAuto, traeEntry.Reason)
-	}
-
-	// cline 平台但 detail 不是 model not found 的（真权限类），同样保持原文案。
-	clinePerm := &modelBlacklistEntry{
-		Platform: platCline, Model: "z-ai/glm-5.3-flash",
-		Reason: BanReasonAuto, Detail: `429: quota exhausted`,
-	}
-	normalizeEntry(clinePerm)
-	if clinePerm.Reason != BanReasonAuto {
-		t.Fatalf("cline perm reason must stay %q, got %q", BanReasonAuto, clinePerm.Reason)
-	}
-
-	// nil 条目安全。
-	normalizeEntry(nil)
-}
-
 // 请求路径的模型服务闸（2026-10-31 用户定）：已拉黑模型拒、目录外模型拒、
 // 目录内模型放行；空 model 放行（错误语义归入口校验）。
 func TestServedModelGate(t *testing.T) {

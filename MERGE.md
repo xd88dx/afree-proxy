@@ -353,6 +353,34 @@ WorkBuddy 一栏的基线同时登记在 `scripts/workbuddy-vendor-baseline.json
 
 ## 本地死代码清理
 
+### 2026-11-05 — 全仓清理"为兼容旧版而保留的代码"（11 项）
+
+本节不属于任何上游同步，记录本地兼容层清理。判据一律为「**现网真实数据态验证**」：删除前逐一核对本机 `D:/DockerApp/afree` 与生产 tar 备份（2026-11-05 DR 演练解包 `.tmp/prod-tar-verify/afree`）的实际文件内容，证明兼容分支在两台现役部署上永不再触发。
+
+- **删除项与判据**：
+  1. `mergeStateFactsJSON` 的 `traeAccounts` 分支 + `mergeTraeAccountFacts` 整函数（`backup_state_facts.go`）：生产唯一调用点 `admin_backup.go` 四处全部传 `false`（trae 段 2026-11-04 起改走 `trae2apiRestoreBackup`），纯死分支；测试锁死的是生产不走的路径。
+  2. `configBackupVersionOK` 收紧到仅 v3（`admin_backup.go`）：接受 v1/v2 无独立代码分支，仅是版本号白名单。判据：项目自述"无存量备份文件"+ 2026-11-05 生产 DR 演练全量重导（v3），两处现役备份均为 v3。**影响：旧 v1/v2 备份文件导入报错**，需先经旧版本程序升级或手工补段。
+  3. `workbuddyBackup.Order` 独立段（`admin_backup.go` 导出/导入/字段三处）：顺序 2026-11-03 起已并入 `workbuddy.state` 快照（`stateFile.Order`）。**配套**：发现并修复真缺口——`pool.ImportStateBackupJSON` 原本不套用 order（一直靠独立段撑着），本次把 order 恢复接进 state 快照路径（`setOrderLocked` 从 `SetOrder` 提取锁内核心，事实层无条件套用、未知 uid 忽略、排在 SyncToDir 之后），跨机迁移顺序不丢。
+  4. zen 三常量等值迁移（`zen.go` `zenLegacyBase`/`zenStaleBase`/`legacyCompactBuffer` + `loadZenConfig` 三段 + `applyZenRegistryBase` 兜底）：判据为本机/生产 `zen-config.json` 均无 `/zen/v1`、`/inference/v1` 值，buffer 均 80000（新默认）；等值比较零误伤。
+  5. `zenSessionEntry.Minted`/`HarvestedAt` 旧字段 + load 迁移分支（harvestedAt→CreatedAt、minted 标记、非法格式替换、stamped 补戳）（`zen_session.go`）：判据为生产/本机 sessions 15 条 minted 全 true、harvestedAt 全部已并入 createdAt（10 条双键残留只是序列化残留，0 条"仅 harvestedAt"）；非法格式运行期由 refreshZenSession 的 403 自愈链路兜底。面板侧 `zenSessionSnapshot.Minted`（格式合法即 minted）是另一结构体的活字段，保留。
+  6. `StickyZenIdentity` 孤儿函数（`zen_session.go`）：2026-10-27 起 upstream 调用走 `zenCallIdentity`，全仓生产零调用；注释所称消费者实际走 `zenSessionSnapshotOf`/`zenLiveKeys`。测试改用新夹具 `mintTestZenSession`（已有合法条目不重铸）。
+  7. zen `Key` 单 key 兼容 bundle（`zenConfigData.Key` 字段 + `normalizeZenKeys` 单 key 提升 + 面板 GET `key` 字段 + config/update 旧单 key 提交 + 前端 `ocCfgCache.key` 回退）：判据为本机/生产 zen-config.json 均为 keys 数组形态（keys=20），前端同仓同版本发布（旧 JS 窗口≈0）。落盘不再写 `key` 键，旧文件残留按 JSON 未知字段忽略。
+  8. 封禁表旧文案归一（`model_blacklist.go` `normalizeBanReason`/`normalizeEntry` + 加载/导入调用点）：判据为本机/生产封禁表各 5 条均无旧中文文案；cline 404 现行写入路径直接写 `BanReasonFeedRemoved`（`proxy.go:1455` 等）。
+  9. 前端整平台 `other` kind 继承（`admin_html.go` `ppRulesState`）：判据为本机/生产 `proxy-config.json` 无 `kind:"other"` 旧规则（保存一次即自愈归一）。
+  10. `traeMigrateConfigLayout`/`traeLegacyConfigRelPath`（`trae.go`，改 `ensureTraeDataDir` 保目录兜底）：判据为本机无顶层 `trae2api-config.json`、生产 DR 后为全新目录；2026-11-05 迁移落地当日即完成全部部署。
+  11. `handleOtherKeysUpdate` 旧 `{slug,keys}` 整体替换形态（`other.go`）：前端唯一调用方只发 `{slug, add}`（`admin_html.go`），无其他调用者、无测试。
+- **注释修正（代码已无、注释仍称存在，防误导后续 agent）**：`proxy_health.go`/`proxy_config.go`/`proxy.go` 三处"health 段一次性迁移"注释（迁移代码 2026-11-01 已删）、`other/usage.go` loadUsage 注释、`config_manifest.go` trae 迁移出处注释。
+- **保留清单（核实为活代码/防御语义，勿后续误删）**：
+  - 缺字段缺省语义组：`PoolEnabled` nil→启用、traeRouting 缺失=启用（"新增身份默认禁用"铁律的存量边界）、`PinProxyPerKey` nil 物化、`account_enabled` 缺键=启用、proxyHealthFile 缺段=空表、wb order nil 回退。
+  - `normalizeIdentityHeaders`（cline 版本常量升级对已部署实例生效的机制本体）。
+  - 对外协议旧形：裸模型 ID/`opencode/` 前缀解析、wb `cn:`/`global:` 前缀接受——删了断存量 IDE 配置与 combo target，属对外协议稳定面，非项目内部兼容。
+  - `blacklistKeyScoped` scope 空=旧键形态（现行"全档封禁"仍写该形态）。
+  - trae legacy 备份段拒收护栏（防误判反兼容）、`ProxyExclusions` kind 白名单（防手改垃圾）。
+  - vendored 线全部（wb `ErrCount` 迁移、`auth.Parse` 扁平形、trae2api 各兼容点）：删除会持续污染 vendor 三方合并面，不动。
+  - `kit.ResolveDataPath` 根目录候选（部署形态兼容，收益/风险比不划算）。
+- 验证：`go build`/`go vet` 全绿；`go test ./... -count=1` 28 包全绿；`go test -race ./internal/app/` 3 轮 2 过 1 次既有 flaky（`TestClineModelNotFoundAutoBan`，2026-11-04 worktree 对照已判既有）；`-race ./internal/workbuddy/pool/ ./internal/workbuddy/server/` 全绿。
+- 文档同步：`.agents/skills/add-platform/references/backend.md` 备份导入版本口径 v1|v2 → 仅 v3。
+
 ### 2026-10-27 — 删除"兼容旧配置文件"的一次性迁移与死字段
 
 本节不属于任何上游同步（四条线本次均未拉新上游），记录本地清理，避免日后误判为回归。

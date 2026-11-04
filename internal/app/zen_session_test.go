@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"afree-proxy/internal/kit"
 )
 
 // 隔离测试环境：独立 DATA_DIR，并清空进程级会话/失败印记状态。
@@ -77,6 +78,27 @@ func TestPickZenKeyStillReturnsWhenNothingLive(t *testing.T) {
 	}
 }
 
+// mintTestZenSession 为 key 就地铸造一条会话条目（测试夹具）：替代已删的
+// StickyZenIdentity 惰性首铸路径——上游调用自 2026-10-27 起走 zenCallIdentity
+// 逐请求铸造，粘性表只承载面板展示与 403 换新。
+func mintTestZenSession(t *testing.T, key string) string {
+	t.Helper()
+	loadZenSessions()
+	zenSessMu.Lock()
+	defer zenSessMu.Unlock()
+	e := zenSessions[key]
+	if e != nil && kit.ValidZenSessionID(e.Session) {
+		return e.Session
+	}
+	if e == nil {
+		e = &zenSessionEntry{}
+		zenSessions[key] = e
+	}
+	mintZenSessionEntryLocked(e, time.Now())
+	saveZenSessionsLocked()
+	return e.Session
+}
+
 // 面板端点：key 快照必须报出 live 状态与已存在的会话。
 func TestZenSessionsSnapshot(t *testing.T) {
 	setupZenSessionTestUpstream(t)
@@ -86,7 +108,7 @@ func TestZenSessionsSnapshot(t *testing.T) {
 	setZenConfig(&cfg2)
 	t.Cleanup(func() { c := *cfg; setZenConfig(&c) })
 
-	StickyZenIdentity("sk-one") // 首次请求即本地铸造
+	mintTestZenSession(t, "sk-one") // 本地铸造
 	snaps := zenKeyStatus()
 	if len(snaps) != 2 {
 		t.Fatalf("got %d key states, want 2", len(snaps))
@@ -102,13 +124,13 @@ func TestZenSessionsSnapshot(t *testing.T) {
 	}
 }
 
-// StickyZenIdentity 铸造的会话必须通过 zen 的格式门
-// ^ses_[0-9a-f]{12}[0-9A-Za-z]{14}$，且同 key 复用、跨 key 不同。
-func TestStickyZenIdentityMintsValidSession(t *testing.T) {
+// 铸造的会话必须通过 zen 的格式门 ^ses_[0-9a-f]{12}[0-9A-Za-z]{14}$，
+// 同 key 复用、跨 key 不同，且 UA 补齐为客户端指纹。
+func TestMintedZenSessionPassesFormatGate(t *testing.T) {
 	setupZenSessionTestUpstream(t)
-	a1, _, _ := StickyZenIdentity("sk-a")
-	a2, _, _ := StickyZenIdentity("sk-a")
-	b, _, _ := StickyZenIdentity("sk-b")
+	a1 := mintTestZenSession(t, "sk-a")
+	a2 := mintTestZenSession(t, "sk-a")
+	b := mintTestZenSession(t, "sk-b")
 	if a1 != a2 {
 		t.Fatalf("sticky identity changed between calls: %s -> %s", a1, a2)
 	}
@@ -118,8 +140,11 @@ func TestStickyZenIdentityMintsValidSession(t *testing.T) {
 	if !zenSessionLive("sk-a") || !zenSessionLive("sk-b") {
 		t.Fatal("minted sessions must be live immediately (no placeholder state)")
 	}
-	if _, _, ua := StickyZenIdentity("sk-a"); ua != zenNativeUA {
-		t.Fatalf("UA = %q, want the native ai-sdk UA", ua)
+	zenSessMu.Lock()
+	ua := zenSessions["sk-a"].UA
+	zenSessMu.Unlock()
+	if ua != zenNativeUA {
+		t.Fatalf("UA = %q, want the native CLI UA", ua)
 	}
 }
 
@@ -154,7 +179,7 @@ func TestRefreshZenSessionMintsFreshSession(t *testing.T) {
 	setZenConfig(&cfg2)
 	t.Cleanup(func() { c := *cfg; setZenConfig(&c) })
 
-	StickyZenIdentity(key)
+	mintTestZenSession(t, key)
 	zenSessMu.Lock()
 	before := zenSessions[key].Session
 	zenSessMu.Unlock()
@@ -226,7 +251,7 @@ func TestZenSessionMarkSuccessClearsFailureMark(t *testing.T) {
 func TestPruneRemovesSessionsAndFailureMarks(t *testing.T) {
 	setupZenSessionTestUpstream(t)
 	k := "sk-removed"
-	StickyZenIdentity(k)
+	mintTestZenSession(t, k)
 	zenSessionFailed(k)
 
 	pruneZenKeyState(map[string]bool{})
@@ -242,7 +267,7 @@ func TestPruneRemovesSessionsAndFailureMarks(t *testing.T) {
 	}
 	// 未移除的 key 不受影响
 	k2 := "sk-kept"
-	StickyZenIdentity(k2)
+	mintTestZenSession(t, k2)
 	sess := zenSessions[k2].Session
 	pruneZenKeyState(map[string]bool{k2: true})
 	zenSessMu.Lock()

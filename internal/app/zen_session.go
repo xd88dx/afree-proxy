@@ -39,15 +39,10 @@ type zenSessionEntry struct {
 	Session string `json:"session"`
 	UA      string `json:"ua"`
 	Updated int64  `json:"updated"`
-	// Minted 历史字段：曾区分"CLI 收割过"与"本地随机占位"。本地铸造成为
-	// 唯一来源后所有条目恒为 true，保留只为兼容旧文件（读入后即不再有意义）。
-	Minted bool `json:"minted,omitempty"`
-	// CreatedAt 会话创建时间（unix 秒），日志/面板展示年龄用。
-	// 旧文件的 harvestedAt 读入时迁移到该字段，下次保存时写出新键名。
+	// CreatedAt 会话创建时间（unix 秒），日志/面板展示年龄用。旧文件曾经的
+	// minted/harvestedAt 字段已随 2026-11-05 兼容清理移除（存量部署迁移完毕，
+	// 文件里残留的旧键按 JSON 未知字段忽略）。
 	CreatedAt int64 `json:"createdAt,omitempty"`
-	// HarvestedAt 旧字段名，仅为读入旧文件保留（unmarshal 兜底），
-	// 加载时并入 CreatedAt，不再写回。
-	HarvestedAt int64 `json:"harvestedAt,omitempty"`
 	// RefreshedAt 最近一次"因 403 而被动换新会话"的时间（unix 秒）。
 	// 后台巡检/轮换铸造不写它（那是计划内换新），只有 403 触发的换新才写。
 	// 用途：识别"换新后很快又 403"的持续性故障——这种 403 换会话救不回来，
@@ -86,53 +81,15 @@ func loadZenSessions() {
 		defer zenFileMu.Unlock()
 		return loadZenConfigFileLocked().Sessions
 	}()
-	replaced, migrated, stamped := 0, 0, 0
-	now := time.Now().Unix()
 	for k, e := range m {
 		if e == nil || e.Session == "" {
 			continue
 		}
-		// 旧 harvestedAt → CreatedAt 一次性迁移（写出时只写新键名）。
-		if e.CreatedAt == 0 && e.HarvestedAt > 0 {
-			e.CreatedAt = e.HarvestedAt
-		}
-		if kit.ValidZenSessionID(e.Session) {
-			// 合法格式（旧收割条目或本会话铸造的）：原样保留，格式即凭证。
-			if !e.Minted {
-				e.Minted = true
-				migrated++
-			}
-			// 无创建时间的旧条目：以加载时刻起算轮换时钟，否则老化轮换对它永久失效
-			// （CreatedAt==0 被判为"年龄未知"而跳过）。只在真有会话时才补。
-			if e.CreatedAt == 0 {
-				e.CreatedAt = now
-				stamped++
-			}
-		} else {
-			// sess_* 占位等非法格式：今天就在 403，永远不会自愈，直接换成
-			// 本地铸造的新 ID。旧文件若无 CreatedAt 以加载时刻兜底。
-			e.Session = kit.MintZenSessionID()
-			e.Minted = true
-			if e.CreatedAt == 0 {
-				e.CreatedAt = now
-			}
-			replaced++
-		}
+		// 非法格式的占位/手改条目不再在加载时替换（旧版迁移分支已删）：
+		// 上游会以 403 拒绝，refreshZenSession 的既有自愈链路负责换新。
 		zenSessions[k] = e
 	}
 	log.Printf("zen sessions loaded: %d key(s) with sticky identity", len(zenSessions))
-	if replaced > 0 {
-		log.Printf("zen sessions migrated: %d invalid-format placeholder(s) replaced with locally minted IDs", replaced)
-	}
-	if migrated > 0 {
-		log.Printf("zen sessions migrated: %d entry(ies) marked minted from session id format", migrated)
-	}
-	if stamped > 0 {
-		log.Printf("zen sessions migrated: %d entry(ies) stamped with a rotation clock (createdAt=load time)", stamped)
-	}
-	if replaced > 0 || migrated > 0 || stamped > 0 {
-		saveZenSessionsLocked()
-	}
 }
 
 // saveZenSessionsLocked 持久化当前会话表（调用方持有 zenSessMu）。
@@ -227,13 +184,12 @@ func zenSessionDesc(key string) string {
 	}
 }
 
-// mintZenSessionEntryLocked 就地刷新条目的会话：新 ID + 新创建时间 + 合法标记，
+// mintZenSessionEntryLocked 就地刷新条目的会话：新 ID + 新创建时间，
 // 并在 UA 缺失时补上客户端指纹。调用方须持有 zenSessMu。
 // 请求路径与后台巡检共用，避免两处铸造逻辑漂移。
 func mintZenSessionEntryLocked(e *zenSessionEntry, now time.Time) {
 	e.Session = kit.MintZenSessionID()
 	e.CreatedAt = now.Unix()
-	e.Minted = true
 	// 主动铸造＝计划内换新（轮换/首铸），不是对 403 的反应：清掉被动换新
 	// 时间戳，让下一次真正的 403 仍能获得一次换新机会。
 	e.RefreshedAt = 0
@@ -287,41 +243,6 @@ func (c *zenCallIdentity) forKey(key string) (sess, req, ua string) {
 // legacy sticky store.
 func (c *zenCallIdentity) refresh(key string) {
 	delete(c.byKey, key)
-}
-
-// StickyZenIdentity is LEGACY since 2026-10-27: upstream calls no
-// longer use it (see zenCallIdentity above). It is kept for the admin
-// panel snapshot, the session rotator, and its tests, so those do not
-// break, but no new upstream code should call it.
-// It returns a key-bound stable identity: session ID and UA reused
-// across requests, request ID fresh each time.
-// 返回 (session, request, user-agent)。
-//
-// 老化轮换已随 2026-10-27 会话语义下线（fresh per call，本函数对上游调用
-// 不再被走过）：条目年龄不再驱动重铸，会话长生只影响面板展示的铸造时刻。
-// 保留惰性首铸：面板/巡检都需要条目存在才算"这个 key 有会话状态"。
-func StickyZenIdentity(key string) (sess, req, ua string) {
-	loadZenSessions()
-	zenSessMu.Lock()
-	defer zenSessMu.Unlock()
-	now := time.Now()
-	e, ok := zenSessions[key]
-	if !ok || !kit.ValidZenSessionID(e.Session) {
-		if e == nil {
-			e = &zenSessionEntry{}
-			zenSessions[key] = e
-		}
-		mintZenSessionEntryLocked(e, now)
-		saveZenSessionsLocked()
-		log.Printf("zen header session minted locally for key#%d (display only): %s", keyIndex(key), kit.Truncate(e.Session, 24))
-	}
-	e.Updated = now.Unix()
-	// 补 UA：旧版本文件或外部改写的条目可能缺这一项，空 UA 发出会被上游
-	// 按非 CLI 流量处理。UA 属于客户端指纹，须与会话铸造时一致。
-	if e.UA == "" {
-		e.UA = zenNativeUA
-	}
-	return e.Session, kit.MintZenRequestID(), e.UA
 }
 
 // pruneZenKeyState 配置变更后清理已移除 key 的运行时状态（会话粘性 + 403 印记）。

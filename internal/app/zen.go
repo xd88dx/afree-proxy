@@ -99,14 +99,6 @@ var zenGraceModels = map[string]zenGraceEntry{} // 读写均走 zenModelsMu
 // （见 applyZenRegistryBase），不再依赖某次人工观测。
 const zenAPIBase = "https://opencode.ai/inference/openai/v1"
 
-// zenStaleBase 2026-10-15 ~ 2026-10-30 期间的（错误的）编译期默认值。
-// 仅用于识别并迁移存量的 .zen-config.json：用户没改过 baseURL 时它被写进了
-// 配置文件，不迁移的话旧安装会一直停在短路径上。
-const zenStaleBase = "https://opencode.ai/inference/v1"
-
-// zenLegacyBase 已废弃的旧基地址，仅用于存量配置迁移识别。
-const zenLegacyBase = "https://opencode.ai/zen/v1"
-
 // max429KeySwitches 一次客户端请求因 429 最多切换几个 key 的硬上限。
 // 换 key 是本次调用里唯一不可逆的操作：cooldownZenKey 会把该 key 冻结到
 // zenRateLimitCooldown。若不设上限，一个大请求 429 后沿池顺序把每个 key 逐个
@@ -158,9 +150,6 @@ func zenCanonicalID(id string) string {
 
 // zenPrefixedID 把目录 ID 加上网关前缀（/v1/models 输出用）。
 func zenPrefixedID(id string) string { return ZenModelPrefix + id }
-
-// legacyCompactBuffer 压缩 buffer 的历史默认值，仅用于存量配置迁移。
-const legacyCompactBuffer = 20000
 
 // defaultCompactBuffer 压缩预留缓冲（token）。20000 的旧默认值对"客户端自身
 // 上限低于模型窗口"的场景无效：阈值 = ctx - max(output, buffer)，200k 窗口、
@@ -359,8 +348,9 @@ type zenCompactConfig struct {
 }
 
 type zenConfigData struct {
-	Key  string   `json:"key"`            // 兼容字段：始终等于 Keys[0]（旧版单 key 读取用）
 	Keys []string `json:"keys,omitempty"` // zen 多 key 池，请求按 round-robin 轮转
+	// （旧单 key 兼容字段 Key 已随 2026-11-05 清理移除：现网配置均为 keys 数组
+	// 形态，旧文件残留的 "key" 键按 JSON 未知字段忽略。）
 	// OrgID：OAuth 账户的组织 ID（x-opencode-org-id）。CLI v2 在 OAuth
 	// 账户流量中发该头，原始 API key 流量中没有。网关无法从 key 字符串
 	// 推导它，空值即省略（正确）；使用 OAuth token 作 key 时，应从
@@ -598,7 +588,6 @@ func defaultZenConfig() *zenConfigData {
 	return &zenConfigData{
 		// 不再有匿名 "public" 兜底：没有 key 就是空池，平台不可路由。
 		Keys:           nil,
-		Key:            "",
 		BaseURL:        zenAPIBase,
 		MaxConcurrency: 8,
 		Retries:        3,
@@ -729,14 +718,10 @@ func isRateLimited(status int, body string) bool {
 	return false
 }
 
-// normalizeZenKeys 规范 key 池：迁移旧单 key 字段、去空去重、剔除遗留的匿名
-// 哨兵 "public"（2026-10-26 起不再支持匿名访问）、同步兼容字段 Key = Keys[0]。
-// 允许空池：没有 key 时 zen 平台不可路由（目录隐藏、请求明确报错），不再回退
-// 到无凭据的 "public"。
+// normalizeZenKeys 规范 key 池：去空去重、剔除遗留的匿名哨兵 "public"
+// （2026-10-26 起不再支持匿名访问）。允许空池：没有 key 时 zen 平台不可路由
+// （目录隐藏、请求明确报错），不再回退到无凭据的 "public"。
 func normalizeZenKeys(cfg *zenConfigData) {
-	if len(cfg.Keys) == 0 && cfg.Key != "" {
-		cfg.Keys = []string{cfg.Key}
-	}
 	cleaned := make([]string, 0, len(cfg.Keys))
 	seen := map[string]bool{}
 	for _, k := range cfg.Keys {
@@ -748,11 +733,6 @@ func normalizeZenKeys(cfg *zenConfigData) {
 		cleaned = append(cleaned, k)
 	}
 	cfg.Keys = cleaned
-	if len(cleaned) == 0 {
-		cfg.Key = ""
-	} else {
-		cfg.Key = cleaned[0]
-	}
 }
 
 func loadZenConfig() *zenConfigData {
@@ -773,31 +753,11 @@ func loadZenConfig() *zenConfigData {
 	if cfg.BaseURL == "" {
 		cfg.BaseURL = zenAPIBase
 	}
-	// 存量配置迁移：旧默认 /zen/v1 对匿名免费层已失效（恒 403），
-	// 只迁移恰好等于旧默认值的配置；用户显式改过的其它地址不动。
-	if strings.TrimRight(cfg.BaseURL, "/") == zenLegacyBase {
-		cfg.BaseURL = zenAPIBase
-		log.Printf("zen baseURL migrated: %s -> %s (legacy zen endpoint rejects anonymous free-tier traffic)", zenLegacyBase, zenAPIBase)
-	}
 	// PinProxyPerKey 缺省物化（上游 3758eb7）：旧配置文件没有该键时按"开启"
 	// 落定为显式值。使用侧 pinProxyPerKeyEnabled 本就把 nil 解释为开启，这里
 	// 物化让缺省语义在读取后即可见、下次保存即写回配置文件。
 	if cfg.PinProxyPerKey == nil {
 		cfg.PinProxyPerKey = boolPtr(true)
-	}
-	// 存量配置迁移：2026-10-15 的错误默认值 /inference/v1 少了 /openai 一段。
-	// 同样只迁移恰好等于该旧默认值的配置——显式填过自定义地址的不动。
-	if strings.TrimRight(cfg.BaseURL, "/") == zenStaleBase {
-		cfg.BaseURL = zenAPIBase
-		log.Printf("zen baseURL migrated: %s -> %s (upstream moved the free-tier path under /openai)", zenStaleBase, zenAPIBase)
-	}
-	// 存量配置迁移：压缩 buffer 旧默认 20000 对"客户端上限低于模型窗口"的
-	// 场景无效（200k/32k 模型 -> 阈值 168k，而客户端可能 128k 就封顶，
-	// 压缩永不触发）。只迁移恰好等于旧默认值的配置；显式调过的不动。
-	if cfg.Compaction.Buffer == legacyCompactBuffer {
-		cfg.Compaction.Buffer = defaultCompactBuffer
-		log.Printf("zen compaction buffer migrated: %d -> %d (old value never fired below a 128k client cap)",
-			legacyCompactBuffer, defaultCompactBuffer)
 	}
 	return cfg
 }
@@ -3547,9 +3507,8 @@ func applyZenRegistryBase(registryAPI string, current string) bool {
 		return false
 	}
 	cur := strings.TrimRight(strings.TrimSpace(current), "/")
-	// 只覆盖"仍是默认值"的情形：zenAPIBase（当前默认）与 zenStaleBase
-	// （上一版默认，已由 loadZenConfig 迁移，这里兜住运行期改目录的情况）。
-	if cur != zenAPIBase && cur != zenStaleBase {
+	// 只覆盖"仍是当前默认值"的情形；用户显式改过的地址不碰。
+	if cur != zenAPIBase {
 		return false
 	}
 	if cur == want {

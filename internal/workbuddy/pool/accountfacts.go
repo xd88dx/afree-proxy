@@ -72,6 +72,12 @@ func (p *Pool) ImportStateBackupJSON(raw []byte, includeStats bool) (int, error)
 	if includeStats && len(sf.Scheduling) > 0 {
 		p.restoreSchedulingLocked(sf.Scheduling)
 	}
+	// 展示顺序随快照套用（管理态，不属统计层——与原独立 Order 段行为一致，
+	// 无论是否勾选统计都还原）。未知 uid 由 setOrderLocked 忽略。调用链已保证
+	// 本函数排在 SyncToDir（账号集合对齐）之后，新号不会错位。
+	if len(sf.Order) > 0 {
+		p.setOrderLocked(sf.Order)
+	}
 	p.mu.Unlock()
 	if applied > 0 {
 		p.dirty.Store(true)

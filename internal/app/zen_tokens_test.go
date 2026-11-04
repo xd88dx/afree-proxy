@@ -75,12 +75,10 @@ func TestZenKeyTokensPersist(t *testing.T) {
 		t.Fatalf("runtime tokens after reload=%d, want 42", got.Total)
 	}
 
-	// ③ key 被移除后记账条目一并清理（Key 是单 key 兼容字段，normalize 会用它
-	// 回填 Keys，两个都要清才是真的"没有这个 key 了"）
+	// ③ key 被移除后记账条目一并清理
 	cur := getZenConfig()
 	next := *cur
 	next.Keys = nil
-	next.Key = ""
 	setZenConfig(&next)
 	zenKeyMu.Lock()
 	left := len(zenKeyTokens)

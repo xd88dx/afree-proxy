@@ -69,7 +69,7 @@ type proxyConfigFileData struct {
 
 	// ---- 出口健康统计已拆出到独立 proxy-state.json（proxy_health.go，
 	// 2026-10-31）：随请求高频变化的使用痕迹不进配置文件，外部监测配置变更
-	// 不被统计噪声淹没。旧文件的 health 段由一次性迁移读取后自然消失。
+	// 不被统计噪声淹没。（旧文件 health 段的一次性迁移已随清理移除。）
 
 	// ---- WorkBuddy 账号出口绑定 ----
 	WorkbuddyBindings map[string]workbuddyProxyBinding `json:"workbuddyBindings,omitempty"`

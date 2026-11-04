@@ -908,6 +908,13 @@ func (p *Pool) orderedUIDsLocked() []string {
 func (p *Pool) SetOrder(uids []string) int {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	return p.setOrderLocked(uids)
+}
+
+// setOrderLocked SetOrder 的锁内核心（调用方须已持 p.mu）：未知 uid 忽略、
+// 未提及账号按 UID 排尾、立即落盘。备份导入（ImportStateBackupJSON，已在
+// 锁内）与面板拖拽（SetOrder）共用。
+func (p *Pool) setOrderLocked(uids []string) int {
 	used := make(map[string]bool, len(uids))
 	ordered := make([]string, 0, len(p.byUID))
 	for _, uid := range uids {

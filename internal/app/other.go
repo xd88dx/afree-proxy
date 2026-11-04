@@ -514,7 +514,6 @@ func handleOtherPlatformReorder(w http.ResponseWriter, r *http.Request) {
 
 // POST /admin/api/other/keys/update —— 追加 API key（面板"添加凭据"弹窗：
 // 每行一个，按明文去重；新 key 默认不参与路由）。body: { slug, add: [key,...] }
-// 也兼容整体替换的旧形态 { slug, keys: [...] }（keys 非空时优先整体替换）。
 func handleOtherKeysUpdate(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
@@ -529,7 +528,6 @@ func handleOtherKeysUpdate(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Slug string   `json:"slug"`
 		Add  []string `json:"add"`
-		Keys []string `json:"keys"`
 	}
 	if err := json.Unmarshal(body, &req); err != nil {
 		writeAPI(w, http.StatusBadRequest, apiResponse{Error: "invalid JSON: " + err.Error()})
@@ -543,22 +541,18 @@ func handleOtherKeysUpdate(w http.ResponseWriter, r *http.Request) {
 	hadKeys := len(cur.Keys) > 0
 	next := other.ClonePlatform(cur)
 	added := 0
-	if len(req.Keys) > 0 {
-		next.Keys = req.Keys // 整体替换（旧形态）
-	} else {
-		existing := map[string]bool{}
-		for _, k := range next.Keys {
-			existing[k] = true
+	existing := map[string]bool{}
+	for _, k := range next.Keys {
+		existing[k] = true
+	}
+	for _, k := range req.Add {
+		k = strings.TrimSpace(k)
+		if k == "" || existing[k] {
+			continue
 		}
-		for _, k := range req.Add {
-			k = strings.TrimSpace(k)
-			if k == "" || existing[k] {
-				continue
-			}
-			existing[k] = true
-			next.Keys = append(next.Keys, k)
-			added++
-		}
+		existing[k] = true
+		next.Keys = append(next.Keys, k)
+		added++
 	}
 	next.ReconcileRouting(cur)
 	otherReplacePlatform(next)
