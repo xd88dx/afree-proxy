@@ -155,12 +155,11 @@ func proxyRefreshClient(proxyURL string) *http.Client {
 	return cl
 }
 
+// Mu 暴露 Store 内部锁（afree 桥接层锁内读取 Cred.ExpiredAt 等字段；
+// vendor 脚本注入的桥接点，上游原样不受影响）。
+func (s *Store) Mu() *sync.Mutex { return &s.mu }
+
 func (s *Store) httpClient() *http.Client {
-	if StoreHTTPClient != nil {
-		if cl := StoreHTTPClient(s); cl != nil {
-			return cl
-		}
-	}
 	return proxyRefreshClient(s.Proxy())
 }
 

@@ -285,6 +285,10 @@ func New(cfg *config.Config) (*Server, error) {
 // Pool 暴露账号池（供定时任务等外部组件使用）。
 func (s *Server) Pool() *pool.Pool { return s.pool }
 
+// Metrics 暴露指标采集器（afree 桥接层读账号级 token 聚合/最近使用；
+// vendor 脚本注入的桥接点，上游原样不受影响）。
+func (s *Server) Metrics() *metrics.Collector { return s.metrics }
+
 // Channels 暴露渠道表。
 func (s *Server) Channels() map[string]*Channel { return s.channels }
 

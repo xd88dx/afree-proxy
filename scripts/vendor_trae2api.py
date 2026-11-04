@@ -234,7 +234,34 @@ const AFREE_API_BASE = '/admin/trae2api/api';""",
         ("fetch('/admin/dsh/export'", "fetch(AFREE_API_BASE + '/admin/dsh/export'", 1),
         ("fetch('/healthz')", "fetch(AFREE_API_BASE + '/healthz')", 1),
     ),
+    # afree 桥接访问器（2026-11-04 账号表面板恢复旧列序所需）：Server.Metrics
+    # 读当日/累计 token 与最近使用，Store.Mu 供桥接层锁内读 Cred.ExpiredAt。
+    "server/server.go": (
+        (
+            """// Pool 暴露账号池（供定时任务等外部组件使用）。
+func (s *Server) Pool() *pool.Pool { return s.pool }""",
+            """// Pool 暴露账号池（供定时任务等外部组件使用）。
+func (s *Server) Pool() *pool.Pool { return s.pool }
+
+// Metrics 暴露指标采集器（afree 桥接层读账号级 token 聚合/最近使用；
+// vendor 脚本注入的桥接点，上游原样不受影响）。
+func (s *Server) Metrics() *metrics.Collector { return s.metrics }""",
+            1,
+        ),
+    ),
+    "traectl/refresh.go": (
+        (
+            """func (s *Store) httpClient() *http.Client {""",
+            """// Mu 暴露 Store 内部锁（afree 桥接层锁内读取 Cred.ExpiredAt 等字段；
+// vendor 脚本注入的桥接点，上游原样不受影响）。
+func (s *Store) Mu() *sync.Mutex { return &s.mu }
+
+func (s *Store) httpClient() *http.Client {""",
+            1,
+        ),
+    ),
 }
+
 
 
 def apply_rewrites(pkg: Path) -> None:

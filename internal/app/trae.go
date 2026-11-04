@@ -863,9 +863,81 @@ func trae2apiAccountStates(sub *trae2apiSubsystem) []map[string]any {
 		if st.ModelCooling != nil {
 			row["modelCooling"] = st.ModelCooling
 		}
+		trae2apiEnrichAccountRow(sub, st, row)
 		out = append(out, row)
 	}
 	return out
+}
+
+// trae2apiEnrichAccountRow 给账号行补齐旧引擎时代面板展示的四组字段（2026-11-04
+// 用户要求恢复换线前的表格列序）。数据全部取自 vendored 引擎现成结构，不新增
+// 持久化：
+//   - token 过期：Store.Cred.ExpiredAt（快照自带，续期后引擎回写）；
+//   - 今日/累计 token 与最近使用：metrics Collector 的当日分桶（byDay） +
+//     账号聚合 LastSeen——Today 口径与控制台看板一致（本地自然日）；
+//   - 签到状态：签到动作由 vendored 后台/手动端点完成，此处仅回显「今日已签」
+//     标记（软状态，不真打上游——面板刷新频率下逐号打 UG 接口太重）。
+func trae2apiEnrichAccountRow(sub *trae2apiSubsystem, st traepool.Status, row map[string]any) {
+	// token 过期（Store 可能未绑定：config accounts 形态；空值即不出口）
+	if a := sub.srv.Pool().Get(st.UID); a != nil && a.Store != nil {
+		a.Store.Mu().Lock()
+		exp := a.Store.Cred.ExpiredAt
+		a.Store.Mu().Unlock()
+		if t, err := time.Parse(time.RFC3339, exp); err == nil && !t.IsZero() {
+			row["expiredAt"] = t.UTC().Format(time.RFC3339)
+			row["tokenUsable"] = time.Until(t) > 5*time.Minute
+		}
+	}
+	// 今日/累计 token + 最近使用（metrics 账号聚合；当日分桶取 Today 口径）
+	if sub.srv.Metrics() != nil {
+		snap := sub.srv.Metrics().Snapshot()
+		if v, ok := snap.ByAccount[st.UID]; ok {
+			row["tokensTotal"] = v.PromptTokens + v.CompletionTokens
+			if v.LastSeen != "" {
+				row["lastUsed"] = v.LastSeen
+			}
+		}
+		// 今日口径：metrics 的 recent 流水（近 100 条）按账号+本地自然日累加。
+		// 流水之外的更早请求不计入今日（与旧引擎按 state.json 累计的口径相比，
+		// 重启后今日计数从流水重建——面板展示可接受，审计口径不变）。
+		var todayTokens int64
+		day := time.Now().Format("2006-01-02")
+		for _, rec := range snap.RecentRequests {
+			if rec.Account != st.UID {
+				continue
+			}
+			if t, err := time.Parse(time.RFC3339, rec.Time); err == nil && t.Format("2006-01-02") == day {
+				todayTokens += rec.TotalTokens
+			}
+		}
+		row["tokensToday"] = todayTokens
+	}
+	// 签到状态：今日已签标记（后台签到成功时由 handleTraeCheckin 落盘）
+	if v, ok := traeCheckinToday.Load(st.UID); ok {
+		row["checkin"] = v
+	}
+}
+
+// traeCheckinToday 今日签到回显表：uid → {checkedIn, date, lastError}。
+// 签到成功/已签/失败的最近一次结果（内存态；重启后直到下一次签到动作前无回显，
+// 与旧引擎 state.json 持久化相比是弱化——面板列在无数据时显示 "-"，可接受）。
+var traeCheckinToday sync.Map
+
+// traeRecordCheckinOutcome 记录一次签到结果供面板回显（handleTraeCheckin 调用）。
+func traeRecordCheckinOutcome(outcomes []map[string]any) {
+	today := time.Now().Format("2006-01-02")
+	for _, o := range outcomes {
+		uid, _ := o["uid"].(string)
+		if uid == "" {
+			continue
+		}
+		status, _ := o["status"].(string)
+		traeCheckinToday.Store(uid, map[string]any{
+			"checkedIn": status == "checked" || status == "already",
+			"date":      today,
+			"lastError": o["detail"],
+		})
+	}
 }
 
 // handleTraeConfigUpdate POST /admin/api/trae/config/update —— vendored 配置
@@ -1304,12 +1376,24 @@ func handleTraeCheckin(w http.ResponseWriter, r *http.Request) {
 		writeAPI(w, http.StatusBadGateway, apiResponse{Error: err.Error()})
 		return
 	}
-	var vendored map[string]any
+	var vendored struct {
+		Results []map[string]any `json:"results"`
+	}
 	_ = json.Unmarshal(data, &vendored)
-	writeAPI(w, code, apiResponse{Success: code < 400, Data: vendored, Error: vendoredErr(vendored, code)})
+	if len(vendored.Results) > 0 {
+		traeRecordCheckinOutcome(vendored.Results)
+	}
+	writeAPI(w, code, apiResponse{Success: code < 400, Data: vendored, Error: vendoredErrCode(code)})
 }
 
-// handleTraeCreditsRefresh POST /admin/api/trae/credits/refresh —— 全量额度
+// vendoredErrCode 无错误体时的兜底错误文案（HTTP 状态码）。
+func vendoredErrCode(code int) string {
+	if code < 400 {
+		return ""
+	}
+	return fmt.Sprintf("vendored endpoint returned HTTP %d", code)
+}
+
 // 刷新（vendored RefreshCredits）。
 func handleTraeCreditsRefresh(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {

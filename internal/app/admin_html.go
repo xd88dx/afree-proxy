@@ -612,8 +612,8 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
     </div>
     <div class="table-wrap">
       <table>
-        <thead><tr><th style="width:44px">#</th><th style="width:150px">Account</th><th>Status</th><th title="Remaining credits from the latest snapshot (auto-refreshed in the background; Test refreshes on demand)">Credits</th><th title="Main exit first, backup as fallback; both down = row skipped (isolation).">Proxy binding</th><th style="width:130px;text-align:center">Actions</th><th style="text-align:center" title="Gateway (reverse proxy) switch: unchecked = model sessions never route to this account; check-in and all other maintenance tasks are unaffected. Can only be ticked while the account switch is on.">Gateway switch</th><th style="text-align:center" title="Account master switch. Off = the account does not exist: check-in, balance refresh and Test all skip it, and it never routes.">Account switch</th></tr></thead>
-        <tbody id="traeAccountsBody"><tr><td colspan="8" class="empty">Loading...</td></tr></tbody>
+        <thead><tr><th style="width:44px">#</th><th style="width:150px">Account</th><th>Status</th><th title="Remaining credits from the latest snapshot (auto-refreshed in the background; Test refreshes on demand)">Credits</th><th title="Counted locally by this proxy from upstream usage events">Today/Total tokens</th><th>Last used</th><th title="Main exit first, backup as fallback; both down = row skipped (isolation).">Proxy binding</th><th style="width:130px;text-align:center">Actions</th><th style="text-align:center" title="Gateway (reverse proxy) switch: unchecked = model sessions never route to this account; check-in and all other maintenance tasks are unaffected. Can only be ticked while the account switch is on.">Gateway switch</th><th style="text-align:center" title="Account master switch. Off = the account does not exist: check-in, balance refresh and Test all skip it, and it never routes.">Account switch</th></tr></thead>
+        <tbody id="traeAccountsBody"><tr><td colspan="10" class="empty">Loading...</td></tr></tbody>
       </table>
     </div>
     <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin:10px 6px 4px;flex-wrap:wrap">
@@ -2726,6 +2726,7 @@ const I18N_ZH = {
   // Trae 双开关 / 网页授权 / 签到 / 自动化
   'Refresh balances': '刷新余额',
   'Auto check-in': '自动签到',
+  'Token expired': 'token 已过期',
   'Checked in': '签到成功',
   'Check-in failed': '签到失败',
   'Check-in done: ': '签到完成：',
@@ -7500,6 +7501,21 @@ function renderTraeAccounts(accs) {
         } else {
           cool = '<span class="status active"><span class="status-dot active"></span>' + T('Active') + '</span>';
         }
+        // token 有效期（照搬换线前逻辑）：状态列内另起一行（绿色正常 / 红色过期）
+        let tokenState = '';
+        if (a.expiredAt) {
+          const cls = a.tokenUsable === false ? 'var(--danger)' : 'var(--accent2)';
+          const txt = a.tokenUsable === false ? T('Token expired') + ' ' : '';
+          tokenState = '<div style="font-size:11px;margin-top:2px;color:' + cls + '">' + txt + esc(fmtShort(a.expiredAt)) + '</div>';
+        }
+        // 签到竖徽章（照搬换线前逻辑）：今日已签显示在状态列右侧竖排
+        let checkinV = '';
+        if (a.checkin && a.checkin.date === new Date().toLocaleDateString('sv')) {
+          const ok = a.checkin.checkedIn;
+          const txt = ok ? T('Checked in') : T('Check-in failed');
+          const cls = ok ? 'status active' : 'status cooldown';
+          checkinV = '<div class="' + cls + '" style="writing-mode:vertical-rl;text-orientation:upright;letter-spacing:2px;font-size:10px;padding:5px 2px;border-radius:8px;align-self:stretch;display:flex;align-items:center;justify-content:center" title="' + esc(a.checkin.lastError || txt) + '">' + esc(txt) + '</div>';
+        }
         const label = a.label || ('Account ' + (a.index + 1));
         const shortId = a.uid.length > 18 ? a.uid.slice(0, 18) + '…' : a.uid;
         const pMain = a.bindingMain || '';
@@ -7536,14 +7552,19 @@ function renderTraeAccounts(accs) {
             '</div>' +
             '<div class="wb-account-id">' + esc(shortId) + '</div>' +
           '</div></td>' +
-          '<td><div style="display:flex;gap:6px;align-items:center;justify-content:center">' + cool + '</div></td>' +
+          '<td><div style="display:flex;gap:6px;align-items:center;justify-content:center">' +
+            '<div style="display:flex;flex-direction:column;gap:2px;min-width:0;align-items:center">' + cool + (tokenState ? tokenState : '') + '</div>' +
+            checkinV +
+          '</div></td>' +
           '<td>' + credits + '</td>' +
+          keyTokensCell(a) +
+          keyLastUsedCell(a) +
           bind +
           actions +
           poolCell +
           accCell + '</tr>';
       }).join('')
-    : '<tr><td colspan="8" class="empty">' + T('No TraeWork accounts yet — click Add accounts or use the original panel import') + '</td></tr>';
+    : '<tr><td colspan="10" class="empty">' + T('No TraeWork accounts yet — click Add accounts or use the original panel import') + '</td></tr>';
   tb.onclick = e => {
     const pen = e.target.closest('.nick-pen');
     if (pen) { startNickEdit(pen, { save: saveTraeLabel, reload: loadTraeConfig, allowEmpty: true }); return; }
