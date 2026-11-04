@@ -637,12 +637,9 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
   <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h10M4 18h7"/></svg></span> Trae config</div>
   <div class="section-body" id="traeConfigForm">
     <div class="form-row">
-      <div class="field" style="flex:2">
+      <div class="field" style="flex:1">
         <label>Gateway</label>
-        <div style="display:flex;gap:8px;align-items:center">
-          <input type="text" id="traeGateway" placeholder="https://trae-api-cn.mchost.guru" style="flex:1;min-width:0">
-          <button class="btn btn-primary btn-sm" onclick="saveTraeGateway()">Confirm</button>
-        </div>
+        <input type="text" id="traeGateway" placeholder="https://trae-api-cn.mchost.guru" style="width:100%;min-width:0">
       </div>
       <div class="field"><label>Rate filter (exclude models priced above)</label>
         <select id="traeRateFilter">
@@ -689,7 +686,10 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
       </div>
     </div>
     <div class="hint" style="margin-top:0">Selection is the engine's weight scheduling (idle + credit + balance aware) — the old manual ordering is gone. Rate filter removes models whose upstream consumption rate exceeds the threshold (models without a published rate stay). Config save restarts the engine; cooldowns persist via state.json.</div>
-    <div class="form-actions"><button class="btn btn-primary" onclick="saveTraeConfig()">Save Trae config</button></div>
+    <div class="form-actions" style="justify-content:flex-end;gap:8px">
+      <button class="btn btn-sm btn-warn" onclick="resetTraeConfigEdits()">Discard changes</button>
+      <button class="btn btn-primary" onclick="saveTraeConfig()">Save config</button>
+    </div>
   </div>
 </div>
 
@@ -698,10 +698,11 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
   <div class="section-body">
     <div class="flex" style="margin-bottom:10px;gap:10px">
       <button class="btn btn-sm btn-primary" onclick="refreshTraeModels(this)">Refresh models</button>
-      <span class="hint" style="margin:0;flex:1;min-width:200px">Catalog follows the engine realms (trae: / solo: / trae-intl: / solo-intl:) — model names pass through to the gateway as-is</span>
+      <span class="hint" style="margin:0">Automatically synced from the official model source upstream (every 5 minutes)</span>
     </div>
     <div id="traeModelsBody">Loading...</div>
   </div>
+</div>
 </div>
 <div id="tab-proxypool" class="tab-panel" style="display:none">
 <h2>Proxy pool</h2>
@@ -2706,8 +2707,7 @@ const I18N_ZH = {
   'Session sticky': '会话粘性',
   'International realms': '国际版域',
   "Selection is the engine's weight scheduling (idle + credit + balance aware) — the old manual ordering is gone. Rate filter removes models whose upstream consumption rate exceeds the threshold (models without a published rate stay). Config save restarts the engine; cooldowns persist via state.json.": '选号由引擎权重调度（空闲/额度/余额感知）——旧的手动排序已移除。费率过滤剔除上游倍率超过阈值的模型（未下发费率的模型保留）。保存配置会重启引擎；冷却经 state.json 持久化。',
-  'Catalog follows the engine realms (trae: / solo: / trae-intl: / solo-intl:) — model names pass through to the gateway as-is': '目录跟随引擎域（trae: / solo: / trae-intl: / solo-intl:）——模型名原样透传给网关',
-  'Save Trae config': '保存 Trae 配置',
+  'Save config': '保存配置',
   "Refresh every enabled account's credit snapshot (feeds the Credits column)": '刷新全部账号的额度快照（刷新"积分"列）',
   'Daily check-in for every account whose account switch is on (upstream schedule applies too)': '对账号总闸开启的账号执行每日签到（上游定时任务同样生效）',
   'Run the Test probe on every routable row.': '对每一行可路由凭据执行连通性探测。',
@@ -2729,9 +2729,7 @@ const I18N_ZH = {
   'engine unavailable — see server log': '引擎未运行——见服务端日志',
   'Breaker': '熔断',
   'Degraded': '降权',
-  'Gateway saved — engine restarted': '网关已保存——引擎已重启',
   'TraeWork config saved — engine restarted': 'TraeWork 配置已保存——引擎已重启',
-  'Gateway is required': '网关不能为空',
   ' — OK': ' — 正常',
   'Saving…': '保存中…',
   ' — re-download it from THIS panel and restart it (python web_login.py)': ' ——请从本面板重新下载助手并重启（python web_login.py）',
@@ -7439,15 +7437,10 @@ async function loadTraeConfig() {
   } catch (e) { /* ignore */ }
 }
 
-// saveTraeGateway 网关输入框旁的 Confirm：只改 chat_base 并重启引擎。
-async function saveTraeGateway() {
-  const gw = _('traeGateway').value.trim();
-  if (!gw) { toast(T('Gateway is required'), 'error'); return; }
-  try {
-    await api('POST', '/trae/config/update', { gateway: gw });
-    toast(T('Gateway saved — engine restarted'), 'success');
-    loadTraeConfig();
-  } catch (e) { toast(T('Save failed: ') + e.message, 'error'); }
+// resetTraeConfigEdits 配置区「放弃修改」：回读后端已保存值覆盖全部字段
+//（与凭据表的 resetTraeEdits 分属两个区域，互不影响）。
+function resetTraeConfigEdits() {
+  loadTraeConfig();
 }
 
 // saveTraeConfig 配置区整体保存：vendored 无热更新，落盘后整组重启（池状态
