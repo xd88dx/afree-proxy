@@ -638,6 +638,15 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
   <div class="section-body" id="traeConfigForm">
     <div class="wb-config-grid">
       <div class="wb-config-group">
+        <div class="wb-field"><label for="traeMaxInFlight">Max in-flight / account</label><input id="traeMaxInFlight" data-trae-type="number" placeholder="8"></div>
+        <div class="wb-field"><label for="traeBreakerThreshold">Breaker threshold</label><input id="traeBreakerThreshold" placeholder="3"></div>
+        <div class="wb-field"><label for="traeBreakerCooldown">Breaker cooldown</label><input id="traeBreakerCooldown" placeholder="30m"></div>
+        <div class="wb-field"><label for="traeCoolSoft">Soft rate cooldown</label><input id="traeCoolSoft" placeholder="10m"></div>
+        <div class="wb-field"><label for="traeCoolSoftMax">Soft cooldown max</label><input id="traeCoolSoftMax" placeholder="2h"></div>
+        <div class="wb-field"><label for="traeCoolModel">Model cooldown</label><input id="traeCoolModel" placeholder="10m"></div>
+        <div class="wb-field"><label for="traeIdleTimeout">Stream idle timeout (s)</label><input id="traeIdleTimeout" placeholder="120"></div>
+      </div>
+      <div class="wb-config-group">
         <div class="wb-field"><label for="traeRateFilter">Model rate filter</label>
           <select id="traeRateFilter">
             <option value="0">Off</option>
@@ -648,23 +657,13 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
             <option value="1">1</option>
           </select>
         </div>
-        <div class="wb-field"><label for="traeMaxInFlight">Max in-flight / account</label><input id="traeMaxInFlight" data-trae-type="number" placeholder="8"></div>
-        <div class="wb-field"><label for="traeBreakerThreshold">Breaker threshold</label><input id="traeBreakerThreshold" placeholder="3"></div>
-        <div class="wb-field"><label for="traeBreakerCooldown">Breaker cooldown</label><input id="traeBreakerCooldown" placeholder="30m"></div>
-        <div class="wb-field"><label for="traeCoolSoft">Soft rate cooldown</label><input id="traeCoolSoft" placeholder="10m"></div>
-        <div class="wb-field"><label for="traeCoolSoftMax">Soft cooldown max</label><input id="traeCoolSoftMax" placeholder="2h"></div>
-        <div class="wb-field"><label for="traeCoolModel">Model cooldown</label><input id="traeCoolModel" placeholder="10m"></div>
-      </div>
-      <div class="wb-config-group">
-        <div class="wb-field"><label for="traeIdleTimeout">Stream idle timeout (s)</label><input id="traeIdleTimeout" placeholder="120"></div>
-        <div class="wb-switch"><input type="checkbox" id="traeCheckinEnabled"><label for="traeCheckinEnabled">Daily check-in</label></div>
+        <div class="wb-switch"><input type="checkbox" id="traeCheckinEnabled"><label for="traeCheckinEnabled">Auto check-in</label></div>
         <div class="wb-field"><label for="traeCheckinHours">Check-in hours</label><input id="traeCheckinHours" placeholder="9,21"></div>
-        <div class="wb-switch"><input type="checkbox" id="traeStrictModels"><label for="traeStrictModels">Strict models (reject unknown)</label></div>
+        <div class="wb-switch"><input type="checkbox" id="traeStrictModels"><label for="traeStrictModels">Reject unknown models</label></div>
         <div class="wb-switch"><input type="checkbox" id="traeSessionSticky"><label for="traeSessionSticky">Session sticky</label></div>
         <div class="wb-switch"><input type="checkbox" id="traeIntl"><label for="traeIntl">International realms</label></div>
       </div>
     </div>
-    <div class="hint" style="margin-top:14px">Afree adaptation — the rate filter removes models whose upstream consumption rate exceeds the threshold (models without a published rate stay); stored in proxy-config.json, survives engine restarts. Gateway follows the engine's upstream default and is not editable here. Selection is the engine's weight scheduling; config save restarts the engine; cooldowns persist via state.json.</div>
     <div class="form-actions" style="justify-content:flex-end;gap:8px">
       <button class="btn" onclick="resetTraeConfigEdits()">Discard changes</button>
       <button class="btn btn-primary" onclick="saveTraeConfig()">Save config</button>
@@ -2682,12 +2681,11 @@ const I18N_ZH = {
   'Soft rate cooldown max': '软限流冷却上限',
   'Model cooldown': '模型冷却',
   'Check-in hours (comma separated)': '签到小时（逗号分隔）',
-  'Strict models (reject unknown)': '严格模型名（拒绝未知模型）',
+  'Reject unknown models': '拒绝未知模型',
   'Session sticky': '会话粘性',
   'International realms': '国际版域',
   "Selection is the engine's weight scheduling (idle + credit + balance aware) — the old manual ordering is gone. Rate filter removes models whose upstream consumption rate exceeds the threshold (models without a published rate stay). Config save restarts the engine; cooldowns persist via state.json.": '选号由引擎权重调度（空闲/额度/余额感知）——旧的手动排序已移除。费率过滤剔除上游倍率超过阈值的模型（未下发费率的模型保留）。保存配置会重启引擎；冷却经 state.json 持久化。',
   'Save config': '保存配置',
-  "Afree adaptation — the rate filter removes models whose upstream consumption rate exceeds the threshold (models without a published rate stay); stored in proxy-config.json, survives engine restarts. Gateway follows the engine's upstream default and is not editable here. Selection is the engine's weight scheduling; config save restarts the engine; cooldowns persist via state.json.": '本项目适配项——费率过滤剔除上游倍率超过阈值的模型（未下发费率的模型保留），存 proxy-config.json，引擎重启不丢；网关沿用上游默认配置，此处不支持修改。Selection 是引擎的权重调度；保存配置会重启引擎；冷却经 state.json 持久化。',
   "Refresh every enabled account's credit snapshot (feeds the Credits column)": '刷新全部账号的额度快照（刷新"积分"列）',
   'Daily check-in for every account whose account switch is on (upstream schedule applies too)': '对账号总闸开启的账号执行每日签到（上游定时任务同样生效）',
   'Run the Test probe on every routable row.': '对每一行可路由凭据执行连通性探测。',
@@ -2727,7 +2725,7 @@ const I18N_ZH = {
   'Local helper NOT detected — download it, run "python web_login.py", then retry': '未检测到本机授权助手——先下载并在本机运行 web_login.py 后重试',
   // Trae 双开关 / 网页授权 / 签到 / 自动化
   'Refresh balances': '刷新余额',
-  'Daily check-in': '每日自动签到',
+  'Auto check-in': '自动签到',
   'Checked in': '签到成功',
   'Check-in failed': '签到失败',
   'Check-in done: ': '签到完成：',
