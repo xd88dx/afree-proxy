@@ -738,24 +738,48 @@ func exportModelBlacklist() map[string]*modelBlacklistEntry {
 	return out
 }
 
-// importModelBlacklist 整体替换封禁表并即时落盘（与其他段同语义：
-// 备份里没有的段不动；有则连清空也生效）。空 key / nil 条目跳过。
+// importModelBlacklist 合并封禁表并即时落盘（2026-11-05 用户定，改变原整体
+// 替换语义）：封禁记录是跨机各自增长的运维状态，两台机器靠备份互导对齐——
+// 整体替换会让「导入旧备份」抹掉另一侧较新的封禁，被抹掉的模型重新出现在
+// /v1/models 并被 hermes 写回渠道（2026-11-04 实证：wbgb:gpt-6-luna 在生产
+// 渠道挂了三周）。合并规则：并集；同 key 两侧都有时取 createdAt 较新的记录
+// （LastAt/Hits 随记录整体走，不做字段级拼接）。空 key / nil 条目跳过。
+// 全新环境导入 = 本地空表全量吸收，行为与旧语义一致。
 func importModelBlacklist(in map[string]*modelBlacklistEntry) {
 	ensureModelBlacklistLoaded()
-	next := make(map[string]*modelBlacklistEntry, len(in))
+	added, updated := 0, 0
+	next := make(map[string]*modelBlacklistEntry, len(modelBlacklistItems)+len(in))
+	modelBlacklistMu.Lock()
+	for k, v := range modelBlacklistItems {
+		if k == "" || v == nil {
+			continue
+		}
+		next[k] = v
+	}
+	modelBlacklistMu.Unlock()
 	for k, v := range in {
 		if k == "" || v == nil || v.Platform == "" || v.Model == "" {
 			continue
 		}
 		// 旧备份的中文封禁原因与 cline 404 类条目归一（见 normalizeEntry）。
 		normalizeEntry(v)
-		next[k] = v
+		local, ok := next[k]
+		if !ok || local == nil {
+			next[k] = v
+			added++
+			continue
+		}
+		// 同 key 取较新记录；时间相同（例如同一次导入的往返）保持本地。
+		if v.CreatedAt.After(local.CreatedAt) {
+			next[k] = v
+			updated++
+		}
 	}
 	modelBlacklistMu.Lock()
 	modelBlacklistItems = next
 	modelBlacklistMu.Unlock()
 	flushModelBlacklist()
-	log.Printf("  config import: model blacklist replaced (%d entries)", len(next))
+	log.Printf("  config import: model blacklist merged (+%d new, %d newer-updated, total %d)", added, updated, len(next))
 }
 
 // exportZenDepAliases zen 死模型别名表快照（锁内加载 + 拷贝）。

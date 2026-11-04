@@ -6,6 +6,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 )
 
 // 模型黑名单行为回归：
@@ -494,5 +495,61 @@ func TestUnblockModelWithoutScopeClearsScopedEntries(t *testing.T) {
 	}
 	if !TraeModelBannedIn("trae-intl", "kimi-k3") {
 		t.Fatal("other scopes must survive a scoped unblock")
+	}
+}
+
+// 备份导入的封禁表合并语义（2026-11-05 用户定，取代整体替换）：
+// 封禁记录是跨机各自增长的运维状态，备份互导是对齐手段——
+//   本机独有条目必须保留（旧语义会抹掉另一侧较新的封禁，被抹的模型重回
+//   /v1/models 并被 hermes 写回渠道，2026-11-04 生产实证）；
+//   备份新增条目吸收；同 key 取 createdAt 较新的记录。
+func TestImportModelBlacklistMerges(t *testing.T) {
+	t.Setenv("DATA_DIR", t.TempDir())
+	resetModelBlacklistForTest(t)
+
+	// 本机已有两条：旧记录 + 新记录。
+	old := &modelBlacklistEntry{Platform: platAMD, Model: "amd:GLM-5.3-Flash",
+		Reason: BanReasonManual, CreatedAt: time.Date(2026, 10, 27, 14, 10, 16, 0, time.UTC)}
+	recent := &modelBlacklistEntry{Platform: platAMD, Model: "amd:MiMo-V2.6-Flash",
+		Reason: BanReasonManual, CreatedAt: time.Date(2026, 11, 4, 23, 16, 18, 0, time.UTC)}
+	modelBlacklistMu.Lock()
+	modelBlacklistItems = map[string]*modelBlacklistEntry{
+		blacklistKey(platAMD, "amd:GLM-5.3-Flash"):   old,
+		blacklistKey(platAMD, "amd:MiMo-V2.6-Flash"): recent,
+	}
+	modelBlacklistMu.Unlock()
+
+	// 备份带三条：GLM 同 key 但更旧（应被本机新记录保留）、MiMo 同 key 且更
+	// 新（应覆盖本机）、wbgb 为备份新增（应吸收）。
+	in := map[string]*modelBlacklistEntry{
+		blacklistKey(platAMD, "amd:GLM-5.3-Flash"): {
+			Platform: platAMD, Model: "amd:GLM-5.3-Flash", Reason: BanReasonManual,
+			CreatedAt: time.Date(2026, 10, 27, 14, 10, 16, 0, time.UTC).Add(-time.Hour),
+		},
+		blacklistKey(platAMD, "amd:MiMo-V2.6-Flash"): {
+			Platform: platAMD, Model: "amd:MiMo-V2.6-Flash", Reason: BanReasonManual,
+			CreatedAt: recent.CreatedAt.Add(time.Hour),
+		},
+		blacklistKey(platWorkBuddy, "wbgb:gpt-6-luna"): {
+			Platform: platWorkBuddy, Model: "wbgb:gpt-6-luna", Reason: BanReasonManual,
+			CreatedAt: time.Date(2026, 11, 4, 23, 48, 46, 0, time.UTC),
+		},
+	}
+	importModelBlacklist(in)
+
+	if len(modelBlacklistItems) != 3 {
+		t.Fatalf("merged list = %d entries, want 3", len(modelBlacklistItems))
+	}
+	if got := modelBlacklistItems[blacklistKey(platAMD, "amd:GLM-5.3-Flash")]; got != old {
+		t.Fatal("local-only-newer GLM entry must survive an older backup record")
+	}
+	if got := modelBlacklistItems[blacklistKey(platAMD, "amd:MiMo-V2.6-Flash")]; got == recent {
+		t.Fatal("backup's newer MiMo record must replace the local older one")
+	}
+	if got := modelBlacklistItems[blacklistKey(platWorkBuddy, "wbgb:gpt-6-luna")]; got == nil {
+		t.Fatal("backup-only wbgb entry must be absorbed")
+	}
+	if !IsModelBlacklisted("amd:GLM-5.3-Flash") || !IsModelBlacklisted("wbgb:gpt-6-luna") {
+		t.Fatal("all merged entries must be enforceable")
 	}
 }
