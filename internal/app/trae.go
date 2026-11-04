@@ -1533,14 +1533,17 @@ func trae2apiRestoreBackup(raw json.RawMessage, keepEnabled bool) (int, error) {
 		return 0, errors.New("empty trae2api backup segment")
 	}
 	if payload.Config != nil {
-		// 旧引擎 trae-config.json 没有 trae.chat_base 键——据此区分形态。
+		// 形态判定只看顶层 trae 键**存在与否**（2026-11-04 用户定：不再兼容
+		// 旧引擎格式，只考虑全新环境导出导入）。旧引擎 trae-config.json 顶层
+		// 是 accounts/users/interval，没有 trae 键；新引擎配置必有 trae 键。
+		// 不能用 chat_base 的值判定——afree 约束把网关空值兜底只做在启动装载
+		// （traeApplyAfreeConstraints），落盘文件里 chat_base 合法为空串，按值
+		// 判会把新引擎自己的完整备份误判成 legacy 整段跳过（实测翻车）。
 		var probe struct {
-			Trae struct {
-				ChatBase string `json:"chat_base"`
-			} `json:"trae"`
+			Trae json.RawMessage `json:"trae"`
 		}
 		_ = json.Unmarshal(payload.Config, &probe)
-		if probe.Trae.ChatBase == "" {
+		if len(probe.Trae) == 0 {
 			return 0, errors.New("legacy trae config shape (pre-trae2api), not migrated")
 		}
 		if err := os.WriteFile(traeConfigPath(), payload.Config, 0o600); err != nil {

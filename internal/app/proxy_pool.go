@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"io"
+	"log"
 	"net"
 	"net/http"
 	"net/url"
@@ -39,11 +40,55 @@ var (
 	proxyCooldowns   = map[int]time.Time{} // 代理索引 -> 冷却截止（全局层：建连失败）
 	proxyCooldownsMu sync.Mutex
 
-	// proxyManualCooled 手动冷却（面板「冷却」按钮，2026-11-02 用户定）：
-	// 不设到期时间——摘出轮转后只有手动解禁（clearProxyCooldowns）才恢复。
-	// 与 timed 冷却并存：手动标记优先（到期与否都不参与轮转）。
-	proxyManualCooled = map[int]bool{}
+// proxyManualCooled 手动冷却（面板「冷却」按钮，2026-11-02 用户定）：
+// 不设到期时间——摘出轮转后只有手动解禁（clearProxyCooldowns）才恢复。
+// 与 timed 冷却并存：手动标记优先（到期与否都不参与轮转）。
+// 2026-11-04 用户定持久化：随 proxy-state.json 的 manualCooled 段落盘/恢复
+// （索引键 ↔ URL 键互转见 snapshotProxyManualCooled/restoreProxyManualCooled），
+// 标记与解禁时立即触发同步落盘。
+proxyManualCooled = map[int]bool{}
 )
+
+// snapshotProxyManualCooled 内存索引键 → 落盘 URL 键。越界索引（池编辑后残留）
+// 忽略——它们本来就该在下次池编辑清零，不该带进文件。
+func snapshotProxyManualCooled() map[string]bool {
+	cfg := getProxyPool()
+	proxyCooldownsMu.Lock()
+	defer proxyCooldownsMu.Unlock()
+	out := make(map[string]bool, len(proxyManualCooled))
+	for idx, on := range proxyManualCooled {
+		if on && idx >= 0 && idx < len(cfg.Proxies) {
+			out[cfg.Proxies[idx]] = true
+		}
+	}
+	return out
+}
+
+// restoreProxyManualCooled 落盘 URL 键 → 内存索引键。池内不存在的 URL 丢弃。
+func restoreProxyManualCooled(m map[string]bool) {
+	if len(m) == 0 {
+		return
+	}
+	cfg := getProxyPool()
+	idxOf := make(map[string]int, len(cfg.Proxies))
+	for i, p := range cfg.Proxies {
+		idxOf[p] = i
+	}
+	proxyCooldownsMu.Lock()
+	for url, on := range m {
+		if !on {
+			continue
+		}
+		if idx, ok := idxOf[url]; ok {
+			proxyManualCooled[idx] = true
+		}
+	}
+	n := len(proxyManualCooled)
+	proxyCooldownsMu.Unlock()
+	if n > 0 {
+		log.Printf("proxy health: restored %d manual-cooled exit(s)", n)
+	}
+}
 
 // proxyPlatformCooldowns 平台粒度冷却：kind -> idx -> 冷却截止（2026-10-30）。
 // 隧道已建通后的流错误（目标平台封出口 IP / 上游问题）只冷却失败发生的平台，
@@ -101,6 +146,7 @@ func cooldownUpstreamProxy(idx int, d time.Duration) {
 
 // markProxyManualCooled 手动冷却某出口：无到期时间，只有 clearProxyCooldowns
 // 解禁才恢复（代理池重建时一并清空，索引失效后标记无意义）。
+// 标记即同步落盘（proxy-state.json 的 manualCooled 段，2026-11-04 用户定）。
 func markProxyManualCooled(idx int) {
 	if idx < 0 {
 		return
@@ -108,6 +154,7 @@ func markProxyManualCooled(idx int) {
 	proxyCooldownsMu.Lock()
 	proxyManualCooled[idx] = true
 	proxyCooldownsMu.Unlock()
+	flushProxyHealthManual()
 }
 
 // cooldownUpstreamProxyFor 标记某出口对**单个平台**冷却。

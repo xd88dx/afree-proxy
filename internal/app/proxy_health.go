@@ -318,6 +318,10 @@ type proxyHealthFile struct {
 	// Tests 面板「代理测试」按钮的最近读数（proxy_probe.go，2026-11-03）。
 	// 与统计同文件同清零语义：编辑池即随 resetProxyHealthStats 清空。
 	Tests map[string]*proxyTestEntry `json:"tests,omitempty"`
+	// ManualCooled 手动冷却出口表（键=池内完整 URL，2026-11-04 用户定持久化）：
+	// 内存真相是 proxyManualCooled（按索引），落盘换 URL 键——索引随池编辑位移，
+	// URL 键在池回归后仍能对上。编辑池时随 resetProxyHealthStats 清空。
+	ManualCooled map[string]bool `json:"manualCooled,omitempty"`
 }
 
 // proxyHealthPath 独立健康统计文件（使用痕迹，不进配置监测集合）。
@@ -434,6 +438,8 @@ func proxyHealthBackupSnapshot() *proxyHealthFile {
 		}
 	}
 	proxyTestMu.Unlock()
+	// 手动冷却表随备份带出（URL 键）。
+	out.ManualCooled = snapshotProxyManualCooled()
 	return &out
 }
 
@@ -463,6 +469,9 @@ func importProxyHealthBackup(f *proxyHealthFile) {
 	}
 	proxyTestStats = nextTests
 	proxyTestMu.Unlock()
+	// 手动冷却表随备份还原（URL 键 → 索引键）。备份没带该段（旧备份）= 清空
+	// 本机表——导入语义是整体替换，不是合并。
+	restoreProxyManualCooled(f.ManualCooled)
 	flushProxyHealth()
 }
 func loadProxyHealth() {
@@ -494,11 +503,13 @@ func loadProxyHealth() {
 		}
 		nextTests[k] = t
 	}
-	proxyTestStats = nextTests
-	proxyTestMu.Unlock()
+		proxyTestStats = nextTests
+		proxyTestMu.Unlock()
 	if len(nextTests) > 0 {
 		log.Printf("proxy health: restored %d latency test entry(s) from %s", len(nextTests), path)
 	}
+	// 手动冷却表随同恢复（URL 键 → 内存索引键；池内不存在的 URL 丢弃）。
+	restoreProxyManualCooled(f.ManualCooled)
 }
 
 // absorbProxyHealthStats 把读出的统计表灌入内存（Recent 截断 + 日志）。
@@ -547,6 +558,8 @@ func flushProxyHealth() {
 		}
 	}
 	proxyTestMu.Unlock()
+	// 手动冷却表随同落盘（内存索引键 → URL 键；越界索引忽略）。
+	out.ManualCooled = snapshotProxyManualCooled()
 	proxyHealthMu.Unlock()
 
 	// 直接原子写独立文件，不再经过 proxy-config.json（配置文件保持"仅用户
@@ -675,7 +688,47 @@ func clearProxyCooldowns(id string) string {
 		proxyCooldownsMu.Unlock()
 	}
 	clearFailStrikes(raw)
+	// 解禁即同步落盘（manualCooled 段少一条；无论 idx 命中与否都刷——幂等）。
+	flushProxyHealthManual()
 	return raw
+}
+
+// flushProxyHealthManual 手动冷却/解禁的同步落盘：不受 proxyHealthDirty 门控
+// （手动标记不产生统计脏位），直接组装全量快照原子写 proxy-state.json。
+// 与统计共用文件与文件锁，写频极低（仅面板按钮触发），无性能顾虑。
+func flushProxyHealthManual() {
+	proxyHealthFileMu.Lock()
+	defer proxyHealthFileMu.Unlock()
+	ensureProxyHealthLoaded()
+	proxyHealthMu.Lock()
+	out := proxyHealthFile{
+		SavedAt: time.Now(),
+		Proxies: make(map[string]*proxyHealthEntry, len(proxyHealthStats)),
+	}
+	for k, e := range proxyHealthStats {
+		if e == nil {
+			continue
+		}
+		cp := *e
+		out.Proxies[k] = &cp
+	}
+	proxyHealthMu.Unlock()
+	proxyTestMu.Lock()
+	if len(proxyTestStats) > 0 {
+		out.Tests = make(map[string]*proxyTestEntry, len(proxyTestStats))
+		for k, t := range proxyTestStats {
+			cp := *t
+			out.Tests[k] = &cp
+		}
+	}
+	proxyTestMu.Unlock()
+	out.ManualCooled = snapshotProxyManualCooled()
+	raw, err := json.MarshalIndent(out, "", "  ")
+	if err != nil {
+		log.Printf("proxy health: marshal (manual): %v", err)
+		return
+	}
+	atomicWriteFile(proxyHealthPath(), raw)
 }
 
 // handleProxyCooldownSet POST /admin/api/proxypool/cooldown/set

@@ -160,6 +160,9 @@ func setProxyPool(c *proxyPoolConfigData) {
 		proxyManualCooled = map[int]bool{}
 		proxyCooldownsMu.Unlock()
 		resetProxyHealthStats()
+		// 池编辑即清零 manualCooled 段：同步落盘把空表写回文件（与统计清零
+		// 同一口径，否则文件里残留旧标记，代理回归后被误恢复）。
+		flushProxyHealthManual()
 	}
 	validProxy := map[string]bool{"": true}
 	for _, p := range c.Proxies {
