@@ -839,7 +839,9 @@ func trae2apiAccountStates(sub *trae2apiSubsystem) []map[string]any {
 	for i, st := range statuses {
 		b := bindings[st.UID]
 		row := map[string]any{
-			"index":         i + 1,
+			// 0 基序号（前端统一 +1 显示，与其他平台一致；2026-11-04 用户报告
+			// 首行显示 #2——此前这里 i+1 与前端 (index+1) 叠成双重偏移）。
+			"index":         i,
 			"uid":           st.UID,
 			"label":         st.Label,
 			"realm":         st.Realm,

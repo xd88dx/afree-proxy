@@ -550,7 +550,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
       <div style="display:flex;gap:8px">
         <button class="btn btn-sm" onclick="stageAllAccountsPool(true)">Enable all</button>
         <button class="btn btn-sm" onclick="stageAllAccountsPool(false)">Disable all</button>
-        <button class="btn btn-sm" onclick="stageProxiesByOrder('acc')" title="Bind main proxy by row order: 1st credential to Direct, then the proxy pool in order (staged - click Save to apply; enable/disable and backup untouched)">Bind proxies in order</button>
+        <button class="btn btn-sm" onclick="refreshProxyHealthCache().then(() => stageProxiesByOrder('acc'))" title="Bind main proxy by row order: 1st credential to Direct, then the proxy pool in order, skipping manually disabled proxies (staged - click Save to apply; enable/disable and backup untouched)">Bind proxies in order</button>
         <button class="btn btn-sm" onclick="stageClearAccountProxies()" title="Stage only — click Save to apply. Clears bindings and disables every row.">Clear bindings</button>
         <button class="btn btn-sm" id="accTestBtn" onclick="batchTestAccounts()" title="Run the Test probe on every row.">Test all</button>
       </div>
@@ -620,7 +620,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
       <span class="wb-toolbar">
         <button class="btn btn-sm" onclick="stageAllTraeRouting(true)">Enable all</button>
         <button class="btn btn-sm" onclick="stageAllTraeRouting(false)">Disable all</button>
-        <button class="btn btn-sm" onclick="stageProxiesByOrder('trae')" title="Bind main proxy by row order: 1st account to Direct, then the proxy pool in order (staged - click Save to apply; enable/disable and backup untouched)">Bind proxies in order</button>
+        <button class="btn btn-sm" onclick="refreshProxyHealthCache().then(() => stageProxiesByOrder('trae'))" title="Bind main proxy by row order: 1st credential to Direct, then the proxy pool in order, skipping manually disabled proxies (staged - click Save to apply; enable/disable and backup untouched)">Bind proxies in order</button>
         <button class="btn btn-sm" onclick="stageClearTraeProxies()" title="Stage only — click Save to apply. Clears bindings and disables every row.">Clear bindings</button>
         <button class="btn btn-sm" id="traeTestBtn" onclick="batchTestTraeAccounts()" title="Run the Test probe on every routable row.">Test all</button>
       </span>
@@ -716,7 +716,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
 <div class="section">
   <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><path d="M4 5h16M4 12h10M4 19h7"/></svg></span> Proxy exclusion rules</div>
   <div class="section-body">
-    <div class="hint" style="margin-bottom:14px">Platform-level blacklist and per-proxy binding cap for automatic assignment only — one-click bind and reorder-by-latency. Manual bindings and runtime routing are never restricted.</div>
+    <div class="hint" style="margin-bottom:14px">Platform-level blacklist, per-proxy binding cap and manually disabled (cooled) proxies apply to automatic assignment only — one-click bind and reorder-by-latency. Manual bindings and runtime routing are never restricted.</div>
     <div style="margin-bottom:12px">
       <div style="display:flex;gap:10px;align-items:flex-start">
         <div style="flex:1;position:relative">
@@ -1003,7 +1003,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
       <div style="display:flex;gap:8px">
         <button class="btn btn-sm" onclick="stageAllKeysRouting(true)">Enable all</button>
         <button class="btn btn-sm" onclick="stageAllKeysRouting(false)">Disable all</button>
-        <button class="btn btn-sm" onclick="stageProxiesByOrder('key')" title="Bind main proxy by row order: 1st credential to Direct, then the proxy pool in order (staged - click Save to apply; enable/disable and backup untouched)">Bind proxies in order</button>
+        <button class="btn btn-sm" onclick="refreshProxyHealthCache().then(() => stageProxiesByOrder('key'))" title="Bind main proxy by row order: 1st credential to Direct, then the proxy pool in order, skipping manually disabled proxies (staged - click Save to apply; enable/disable and backup untouched)">Bind proxies in order</button>
         <button class="btn btn-sm" onclick="stageClearZenKeyProxies()" title="Stage only — click Save to apply. Clears bindings and disables every row.">Clear bindings</button>
         <button class="btn btn-sm" id="ocTestBtn" onclick="batchTestKeys()" title="Run the Test probe on every row.">Test all</button>
       </div>
@@ -1124,7 +1124,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
       <div style="flex:1;display:flex;gap:8px;justify-content:center">
         <button class="btn btn-sm" onclick="stageAllWbPool(true)">Enable all</button>
         <button class="btn btn-sm" onclick="stageAllWbPool(false)">Disable all</button>
-        <button class="btn btn-sm" onclick="stageProxiesByOrder('wb')" title="Bind main proxy by row order: 1st credential to Direct, then the proxy pool in order (staged - click Save to apply; enable/disable and backup untouched)">Bind proxies in order</button>
+        <button class="btn btn-sm" onclick="refreshProxyHealthCache().then(() => stageProxiesByOrder('wb'))" title="Bind main proxy by row order: 1st credential to Direct, then the proxy pool in order, skipping manually disabled proxies (staged - click Save to apply; enable/disable and backup untouched)">Bind proxies in order</button>
         <button class="btn btn-sm" onclick="stageClearWorkbuddyProxyBindings()" title="Stage only — click Save to apply. Clears bindings and disables every row.">Clear bindings</button>
         <button class="btn btn-sm" id="wbTestAllBtn" onclick="batchTestWorkbuddyAccounts()" title="Run the Test probe on every row.">Test all</button>
       </div>
@@ -1281,7 +1281,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
       <div style="display:flex;gap:8px">
         <button class="btn btn-sm" onclick="stageAllOrKeysRouting(true)">Enable all</button>
         <button class="btn btn-sm" onclick="stageAllOrKeysRouting(false)">Disable all</button>
-        <button class="btn btn-sm" onclick="stageProxiesByOrder('or')" title="Bind main proxy by row order: 1st credential to Direct, then the proxy pool in order (staged - click Save to apply; enable/disable and backup untouched)">Bind proxies in order</button>
+        <button class="btn btn-sm" onclick="refreshProxyHealthCache().then(() => stageProxiesByOrder('or'))" title="Bind main proxy by row order: 1st credential to Direct, then the proxy pool in order, skipping manually disabled proxies (staged - click Save to apply; enable/disable and backup untouched)">Bind proxies in order</button>
         <button class="btn btn-sm" onclick="stageClearOrKeyProxies()" title="Stage only — click Save to apply. Clears bindings and disables every row.">Clear bindings</button>
         <button class="btn btn-sm" id="orTestBtn" onclick="batchTestOrKeys()" title="Run the Test probe on every row.">Test all</button>
       </div>
@@ -1348,7 +1348,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
       <div style="display:flex;gap:8px">
         <button class="btn btn-sm" onclick="stageAllAmdKeysRouting(true)">Enable all</button>
         <button class="btn btn-sm" onclick="stageAllAmdKeysRouting(false)">Disable all</button>
-        <button class="btn btn-sm" onclick="stageProxiesByOrder('amd')" title="Bind main proxy by row order: 1st credential to Direct, then the proxy pool in order (staged - click Save to apply; enable/disable and backup untouched)">Bind proxies in order</button>
+        <button class="btn btn-sm" onclick="refreshProxyHealthCache().then(() => stageProxiesByOrder('amd'))" title="Bind main proxy by row order: 1st credential to Direct, then the proxy pool in order, skipping manually disabled proxies (staged - click Save to apply; enable/disable and backup untouched)">Bind proxies in order</button>
         <button class="btn btn-sm" onclick="stageClearAmdKeyProxies()" title="Stage only — click Save to apply. Clears bindings and disables every row.">Clear bindings</button>
         <button class="btn btn-sm" id="amdTestBtn" onclick="batchTestAmdKeys()" title="Run the Test probe on every row.">Test all</button>
       </div>
@@ -1416,7 +1416,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
       <div style="display:flex;gap:8px">
         <button class="btn btn-sm" onclick="stageAllTHKeysRouting(true)">Enable all</button>
         <button class="btn btn-sm" onclick="stageAllTHKeysRouting(false)">Disable all</button>
-        <button class="btn btn-sm" onclick="stageProxiesByOrder('th')" title="Bind main proxy by row order: 1st credential to Direct, then the proxy pool in order (staged - click Save to apply; enable/disable and backup untouched)">Bind proxies in order</button>
+        <button class="btn btn-sm" onclick="refreshProxyHealthCache().then(() => stageProxiesByOrder('th'))" title="Bind main proxy by row order: 1st credential to Direct, then the proxy pool in order, skipping manually disabled proxies (staged - click Save to apply; enable/disable and backup untouched)">Bind proxies in order</button>
         <button class="btn btn-sm" onclick="stageClearTHKeyProxies()" title="Stage only — click Save to apply. Clears bindings and disables every row.">Clear bindings</button>
         <button class="btn btn-sm" id="thTestBtn" onclick="batchTestTHKeys()" title="Run the Test probe on every row.">Test all</button>
       </div>
@@ -1509,7 +1509,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
       <div style="display:flex;gap:8px">
         <button class="btn btn-sm" onclick="stageAllOtherKeysRouting(true)">Enable all</button>
         <button class="btn btn-sm" onclick="stageAllOtherKeysRouting(false)">Disable all</button>
-        <button class="btn btn-sm" onclick="stageProxiesByOrder('other')" title="Bind main proxy by row order: 1st credential to Direct, then the proxy pool in order (staged - click Save to apply; enable/disable and backup untouched)">Bind proxies in order</button>
+        <button class="btn btn-sm" onclick="refreshProxyHealthCache().then(() => stageProxiesByOrder('other'))" title="Bind main proxy by row order: 1st credential to Direct, then the proxy pool in order, skipping manually disabled proxies (staged - click Save to apply; enable/disable and backup untouched)">Bind proxies in order</button>
         <button class="btn btn-sm" onclick="stageClearOtherKeyProxies()" title="Stage only — click Save to apply. Clears bindings and disables every row.">Clear bindings</button>
         <button class="btn btn-sm" id="otherTestBtn" onclick="batchTestOtherKeys()" title="Run the Test probe on every row.">Test all</button>
       </div>
@@ -1751,7 +1751,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
     <button class="btn btn-sm" onclick="closeReorderDlg()">Close</button>
   </div>
   <div class="wb-dialog-body">
-    <div class="hint" style="margin-bottom:6px">re-bind proxies of the selected platforms: healthy (fast, allowed) bindings stay put; slow/unrecorded/excluded/over-cap ones are re-filled from the remaining pool (better-only for healthy rows), then auto-save.</div>
+    <div class="hint" style="margin-bottom:6px">re-bind proxies of the selected platforms: healthy (fast, allowed) bindings stay put; slow/unrecorded/excluded/over-cap/manual-disabled ones are re-filled from the remaining pool (better-only for healthy rows), then auto-save.</div>
     <div class="hint" id="impReorderKeepHint" style="margin-bottom:10px"></div>
     <div style="display:flex;gap:8px;margin-bottom:12px">
       <button class="btn btn-sm" onclick="impKeepSetAll('impReorderRows',false)">Select all</button>
@@ -2001,13 +2001,14 @@ const I18N_ZH = {
   'Test all': '批量测试',
   'Disable all': '一键禁用',
   'Bind proxies in order': '一键代理',
-  'Bind main proxy by row order: 1st credential to Direct, then the proxy pool in order (staged - click Save to apply; enable/disable and backup untouched)': '按行序依次绑定主代理：第1个凭据绑直连，之后依次对应代理池（仅暂存，点保存才生效；不影响启用状态与备用代理）',
+  'Bind main proxy by row order: 1st credential to Direct, then the proxy pool in order, skipping manually disabled proxies (staged - click Save to apply; enable/disable and backup untouched)': '按行序依次绑定主代理：第1个凭据绑直连，之后依次对应代理池（跳过手动禁用的代理；仅暂存，点保存才生效；不影响启用状态与备用代理）',
   'No credentials to bind': '当前页没有可绑定的凭据',
   'Proxy pool is empty': '代理池为空，无法按序绑定',
   'Already bound in this order': '当前已是该顺序，无需改动',
   ' proxy binding(s) — click Save to apply': ' 条代理绑定，点保存生效',
   '; ': '；',
   ' row(s) left unchanged (no proxy left)': ' 行凭据无对应代理，保持原样',
+  ' manually disabled proxy(s) skipped': ' 个手动禁用的代理已跳过',
   'Reorder by latency': '凭据延迟重排',
   // 代理排除规则（代理池页：平台级代理黑名单 + 每代理绑定上限；原「自动分配规则」）
   'Proxy exclusion rules': '代理排除规则',
@@ -2041,10 +2042,10 @@ const I18N_ZH = {
   'Proxy isolation: each credential only egresses via its bound exits; when none is available it is skipped — never another exit or direct. Forced on when': '代理隔离：每个凭据只从绑定的出口出站，都不可用则跳过——绝不改走其他出口或直连。设有',
   '=true.': '=true 时强制开启。',
   'Backup proxy — off by default: every identity uses its main proxy only; a cooling or removed main proxy is skipped for that round. On: the backup proxy serves as the fallback for the main one.': '备用代理：默认关闭——每个身份只走主代理，主代理冷却或被移除时直接跳过。开启后：备用代理作为主代理的兜底。',
-  'Platform-level blacklist and per-proxy binding cap for automatic assignment only — one-click bind and reorder-by-latency. Manual bindings and runtime routing are never restricted.': '仅作用于自动分配——「一键代理」与「凭据延迟重排」两个批量操作；手动绑定和运行期路由不受限制。',
+  'Platform-level blacklist and per-proxy binding cap for automatic assignment only — one-click bind and reorder-by-latency. Manual bindings and runtime routing are never restricted.': '仅作用于自动分配——「一键代理」与「凭据延迟重排」两个批量操作；手动禁用（冷却）的代理同样不参与自动分配；手动绑定和运行期路由不受限制。',
   ' · excluded': ' · 已排除',
   ' row(s) left unchanged — every allowed proxy is excluded or at cap': ' 行无法改绑：可用代理都已拉黑或达到上限',
-  're-bind proxies of the selected platforms: healthy (fast, allowed) bindings stay put; slow/unrecorded/excluded/over-cap ones are re-filled from the remaining pool (better-only for healthy rows), then auto-save.': '重排所选平台的代理绑定：健康绑定（快代理且未拉黑/未超限）保持不动；慢/无记录/被拉黑/超限的行从剩余代理池回填（健康行只在更优时才换），并自动保存。',
+  're-bind proxies of the selected platforms: healthy (fast, allowed) bindings stay put; slow/unrecorded/excluded/over-cap ones are re-filled from the remaining pool (better-only for healthy rows), then auto-save.': '重排所选平台的代理绑定：健康绑定（快代理且未拉黑/未超限）保持不动；慢/无记录/被拉黑/超限/绑在手动禁用代理上的行从剩余代理池回填（健康行只在更优时才换），并自动保存。',
   'Latency reorder finished with errors — loads failed: ': '延迟重排完成但有错误——加载失败：',
   '; saves failed: ': '；保存失败：',
   'Reordered ': '已按延迟重排 ',
@@ -2454,7 +2455,6 @@ const I18N_ZH = {
   ' completed': ' 已完成',
   'Requesting...': '请求中...',
   'Admin session expired': '管理员会话已过期',
-  'Bind main proxy by row order: 1st account to Direct, then the proxy pool in order (staged - click Save to apply; enable/disable and backup untouched)': '按行序绑定主代理：第 1 个账号绑 Direct，其余依代理池顺序（暂存，点「保存」生效；不影响启用/禁用与备用绑定）',
   'Export failed: ': '导出失败：',
   'Generation failed: ': '生成失败：',
   'Add failed: ': '添加失败：',
@@ -4294,8 +4294,10 @@ function stageProxiesByOrder(kind) {
   if (!proxyListCache.length) { toast(T('Proxy pool is empty'), 'info'); return; }
   // 自动分配规则：对该平台拉黑的代理不参与按序绑定（手动绑定不受限）。
   // Other 的规则按子平台存（other:<slug>），这里用当前选中的子平台取候选。
+  // 手动禁用（健康表「冷却」，无到期）的代理同样不参与——后续凭据前移递补。
   const ruleKind = kind === 'other' && currentOtherSlug ? 'other:' + currentOtherSlug : kind;
-  const pool = proxyListCache.filter(p => !proxyExcludedFor(p, ruleKind));
+  const skippedManual = proxyListCache.filter(p => proxyManuallyCooled(p)).length;
+  const pool = proxyListCache.filter(p => !proxyExcludedFor(p, ruleKind) && !proxyManuallyCooled(p));
   const seq = proxyExcludedFor(EGRESS_DIRECT, ruleKind) ? pool : [EGRESS_DIRECT].concat(pool);
   let n = 0, left = 0;
   rows.forEach((row, i) => {
@@ -4312,7 +4314,8 @@ function stageProxiesByOrder(kind) {
   });
   if (!n) { toast(T('Already bound in this order'), 'info'); return; }
   toast(T('Staged ') + n + T(' proxy binding(s) — click Save to apply') +
-        (left ? T('; ') + left + T(' row(s) left unchanged (no proxy left)') : ''), 'success');
+        (left ? T('; ') + left + T(' row(s) left unchanged (no proxy left)') : '') +
+        (skippedManual ? T('; ') + skippedManual + T(' manually disabled proxy(s) skipped') : ''), 'success');
 }
 
 // ========== 凭据延迟重排（跨平台，弹窗选平台） ==========
@@ -4342,6 +4345,9 @@ const REORDER_SAVERS = { acc: saveAccountEdits, trae: saveTraeEdits, key: saveKe
                          or: saveOrKeyEdits, amd: saveAmdKeyEdits, th: saveTHKeyEdits, other: saveOtherKeyEdits };
 // 打开重排确认弹窗：平台行固定 7 项（与菜单同序），默认全部勾选
 function openReorderDlg() {
+  // 健康快照只在代理池页加载时刷新：重排可能从别的页触发，先拉最新状态，
+  // 手动禁用判定才不是旧缓存（一键代理按钮同款处理）。
+  refreshProxyHealthCache().then(() => {
   // 弹窗里回显本次生效的阈值：重排按它判定"健康/慢"，不回显用户无法确认
   // 改的值是否真被用上（阈值输入框在按钮左边，弹窗会盖住它）。
   const hint = _('impReorderKeepHint');
@@ -4357,6 +4363,7 @@ function openReorderDlg() {
     '<label class="imp-keep-row"><span>' + esc(r.label) + '</span><span class="imp-tgl"><input type="checkbox" data-keep="' + r.key + '" checked><i></i></span></label>'
   ).join('');
   _('impReorderDialog').showModal();
+  });
 }
 function closeReorderDlg() { _('impReorderDialog').close(); }
 function confirmReorder() {
@@ -4431,6 +4438,25 @@ const proxyCapFor = kind => Math.max(0, Number(proxyBindCaps[kind]) || 0);
 // 延迟档位：0=≤阈值 快 1=无记录 2=>阈值 慢（阈值见 reorderKeepMs，面板可调）。
 const proxyTierFor = v => { const ms = proxyHsMsForReorder(v); return ms > reorderKeepMs() ? 2 : (ms > 0 ? 0 : 1); };
 
+// proxyManuallyCooled 手动禁用判定（2026-11-04 用户定）：代理池健康表点「冷却」
+// 产生的无到期冷却 = 手动禁用，两条自动分配路径（一键代理/延迟重排）一律排除；
+// 真实请求失败触发的自动冷却（有到期时间）不影响自动分配，照旧逻辑。
+// 数据源 = 最近一次 /opencode/config 快照（loadProxyPool 刷新）；r.cooling 且
+// coolingUntil 为空串是后端手动标记的固定形态（proxyCooldownStatus 空串=手动）。
+// 本地留存行缺 cooling 字段时视为未禁用——不猜。
+const proxyManuallyCooled = v => {
+  const r = proxyHealthByProxy[proxyHealthKey(v)];
+  return !!r && r.cooling === true && !r.coolingUntil;
+};
+// 一键代理前拉一次最新代理池状态：健康快照只在代理池页加载时刷新，
+// 凭据页点按钮时缓存可能是旧的，误判会绕过手动禁用。
+async function refreshProxyHealthCache() {
+  try {
+    const c = (await api('GET', '/opencode/config')).data;
+    syncProxyHealthCache((c.runtime || {}).proxyHealth);
+  } catch (e) { /* 拉不到就按现有缓存判定 */ }
+}
+
 // 冻结-供给-修复回填（取代旧的三段式全量重排 —— 那会把快代理之间也互相洗牌）：
 //   冻结段：绑定健康（快代理、未拉黑、未超上限）的行原样不动，绑定关系趋稳；
 //   修复段：慢 / 无记录 / 被拉黑 / 超上限的行，从剩余供给按 快→无记录→慢 取最优：
@@ -4439,14 +4465,17 @@ const proxyTierFor = v => { const ms = proxyHsMsForReorder(v); return ms > reord
 //       没有更优供给时保持原绑定，重排 diff 最小。
 // 供给容量 = 上限 − 冻结占用 − 保留占用；被拉黑代理不进供给。每代理占用超过
 // 上限的部分（第 cap+1 处起）按行序判为超限进入修复段。
+// 手动禁用（健康表「冷却」，2026-11-04 用户定）与拉黑同口径：不进供给，绑在
+// 其上的行强制挪走（forced），哪怕只能拿到慢代理——重排后无凭据留在手动禁用
+// 出口上。自动冷却（有到期时间）不影响重排，照旧逻辑。
 // 返回实际改动行数。
 function applyReorderRules(kind, parts) {
   const cap = proxyCapFor(kind);
   // 阈值本轮重排内固定：一次重排中途读输入框不会漂移（改值只影响下一次）
   const keepMs = reorderKeepMs();
   const inPool = v => proxyListCache.indexOf(v) >= 0;
-  // 供给偏好序：池内未被拉黑的代理，快（延迟升序）→ 无记录（池序）→ 慢（延迟升序）
-  const pref = proxyListCache.filter(p => !proxyExcludedFor(p, kind)).sort((a, b) => {
+  // 供给偏好序：池内未被拉黑且未手动禁用的代理，快（延迟升序）→ 无记录（池序）→ 慢（延迟升序）
+  const pref = proxyListCache.filter(p => !proxyExcludedFor(p, kind) && !proxyManuallyCooled(p)).sort((a, b) => {
     const ta = proxyTierFor(a), tb = proxyTierFor(b);
     if (ta !== tb) return ta - tb;
     return ta === 1 ? proxyPoolIdxForReorder(a) - proxyPoolIdxForReorder(b)
@@ -4460,8 +4489,9 @@ function applyReorderRules(kind, parts) {
     const ms = proxyHsMsForReorder(v);
     seen[v] = (seen[v] || 0) + 1;
     const overCap = cap > 0 && seen[v] > cap;
-    const bad = proxyExcludedFor(v, kind) || overCap || ms > keepMs || ms <= 0;
-    if (bad) repair.push({ m: m, v: v, forced: proxyExcludedFor(v, kind) || overCap });
+    const forced = proxyExcludedFor(v, kind) || overCap || proxyManuallyCooled(v);
+    const bad = forced || ms > keepMs || ms <= 0;
+    if (bad) repair.push({ m: m, v: v, forced: forced });
     else cnt[v] = (cnt[v] || 0) + 1;
   });
   const capLeft = p => cap > 0 ? cap - (cnt[p] || 0) : Infinity;
@@ -4620,7 +4650,10 @@ async function reorderByLatency(kinds) {
       continue;
     }
     const parts = collectReorderParts(kind);
-    if (parts.length < 2) continue; // 无绑定或仅一处，无从重排
+    // 单行也进重排（2026-11-04 用户定）：绑在手动禁用/拉黑/超限代理上的单行
+    // 同样需要从池里换绑——"无从重排"只对洗牌语义成立，对强制修复不成立。
+    // applyReorderRules 对单行有完整语义（冻结段保留、修复段换绑），不会乱洗。
+    if (!parts.length) continue;
     total += applyReorderRules(kind, parts);
   }
   // 3. 逐平台自动保存（other 已在步骤 2 内随子平台保存；其余各保存函数自带
