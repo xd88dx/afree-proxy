@@ -910,15 +910,12 @@ func handleTraeConfigUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 	sub.mu.Lock()
 	cfg := sub.cfg
-	if patch.Gateway != nil {
-		gw := strings.TrimSpace(*patch.Gateway)
-		if err := trae2apiValidateGateway(gw); err != nil {
-			sub.mu.Unlock()
-			writeAPI(w, http.StatusBadRequest, apiResponse{Error: err.Error()})
-			return
-		}
-		cfg.Trae.ChatBase = gw
-	}
+	// gateway 不再接受面板修改（2026-11-04 用户定）：沿用上游 chat_base 默认
+	// （traeApplyAfreeConstraints 兜底补值）。patch 里的 gateway 字段直接忽略
+	// ——保持 API 兼容（老客户端不发新请求不会炸），但改了也不生效，防止出现
+	// "面板上没有的开关却暗中生效"的悖离。trae2apiValidateGateway 保留给
+	// config 文件校验路径。
+	_ = patch.Gateway
 	if patch.MaxInFlight != nil && *patch.MaxInFlight > 0 {
 		cfg.Pool.MaxInFlight = *patch.MaxInFlight
 	}

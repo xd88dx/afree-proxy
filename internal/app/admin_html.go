@@ -638,27 +638,24 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
   <div class="section-body" id="traeConfigForm">
     <div class="wb-config-grid">
       <div class="wb-config-group">
-        <h3>Project customizations (afree)</h3>
         <div class="wb-field"><label for="traeRateFilter">Model rate filter</label>
           <select id="traeRateFilter">
             <option value="0">Off</option>
-            <option value="0.5">0.5x</option>
-            <option value="1">1x</option>
-            <option value="2">2x</option>
-            <option value="5">5x</option>
+            <option value="0.1">0.1</option>
+            <option value="0.2">0.2</option>
+            <option value="0.3">0.3</option>
+            <option value="0.5">0.5</option>
+            <option value="1">1</option>
           </select>
         </div>
-        <div class="hint" style="margin-top:8px">Afree adaptation — removes models whose upstream consumption rate exceeds the threshold (models without a published rate stay). Stored in proxy-config.json, survives engine restarts; upstream trae2api has no such option.</div>
-      </div>
-      <div class="wb-config-group">
-        <h3>Engine config (upstream)</h3>
-        <div class="wb-field"><label for="traeGateway">Gateway</label><input id="traeGateway" placeholder="https://trae-api-cn.mchost.guru"></div>
         <div class="wb-field"><label for="traeMaxInFlight">Max in-flight / account</label><input id="traeMaxInFlight" data-trae-type="number" placeholder="8"></div>
         <div class="wb-field"><label for="traeBreakerThreshold">Breaker threshold</label><input id="traeBreakerThreshold" placeholder="3"></div>
         <div class="wb-field"><label for="traeBreakerCooldown">Breaker cooldown</label><input id="traeBreakerCooldown" placeholder="30m"></div>
         <div class="wb-field"><label for="traeCoolSoft">Soft rate cooldown</label><input id="traeCoolSoft" placeholder="10m"></div>
         <div class="wb-field"><label for="traeCoolSoftMax">Soft cooldown max</label><input id="traeCoolSoftMax" placeholder="2h"></div>
         <div class="wb-field"><label for="traeCoolModel">Model cooldown</label><input id="traeCoolModel" placeholder="10m"></div>
+      </div>
+      <div class="wb-config-group">
         <div class="wb-field"><label for="traeIdleTimeout">Stream idle timeout (s)</label><input id="traeIdleTimeout" placeholder="120"></div>
         <div class="wb-switch"><input type="checkbox" id="traeCheckinEnabled"><label for="traeCheckinEnabled">Daily check-in</label></div>
         <div class="wb-field"><label for="traeCheckinHours">Check-in hours</label><input id="traeCheckinHours" placeholder="9,21"></div>
@@ -667,7 +664,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
         <div class="wb-switch"><input type="checkbox" id="traeIntl"><label for="traeIntl">International realms</label></div>
       </div>
     </div>
-    <div class="hint" style="margin-top:14px">Selection is the engine's weight scheduling (idle + credit + balance aware) — the old manual ordering is gone. Config save restarts the engine; cooldowns persist via state.json.</div>
+    <div class="hint" style="margin-top:14px">Afree adaptation — the rate filter removes models whose upstream consumption rate exceeds the threshold (models without a published rate stay); stored in proxy-config.json, survives engine restarts. Gateway follows the engine's upstream default and is not editable here. Selection is the engine's weight scheduling; config save restarts the engine; cooldowns persist via state.json.</div>
     <div class="form-actions" style="justify-content:flex-end;gap:8px">
       <button class="btn" onclick="resetTraeConfigEdits()">Discard changes</button>
       <button class="btn btn-primary" onclick="saveTraeConfig()">Save config</button>
@@ -2690,9 +2687,7 @@ const I18N_ZH = {
   'International realms': '国际版域',
   "Selection is the engine's weight scheduling (idle + credit + balance aware) — the old manual ordering is gone. Rate filter removes models whose upstream consumption rate exceeds the threshold (models without a published rate stay). Config save restarts the engine; cooldowns persist via state.json.": '选号由引擎权重调度（空闲/额度/余额感知）——旧的手动排序已移除。费率过滤剔除上游倍率超过阈值的模型（未下发费率的模型保留）。保存配置会重启引擎；冷却经 state.json 持久化。',
   'Save config': '保存配置',
-  'Project customizations (afree)': '本项目定制（afree）',
-  'Engine config (upstream)': '原版配置（trae2api 引擎）',
-  'Afree adaptation — removes models whose upstream consumption rate exceeds the threshold (models without a published rate stay). Stored in proxy-config.json, survives engine restarts; upstream trae2api has no such option.': '本项目适配项——剔除上游倍率超过阈值的模型（未下发费率的模型保留）。存 proxy-config.json，引擎重启不丢；上游 trae2api 无此项。',
+  "Afree adaptation — the rate filter removes models whose upstream consumption rate exceeds the threshold (models without a published rate stay); stored in proxy-config.json, survives engine restarts. Gateway follows the engine's upstream default and is not editable here. Selection is the engine's weight scheduling; config save restarts the engine; cooldowns persist via state.json.": '本项目适配项——费率过滤剔除上游倍率超过阈值的模型（未下发费率的模型保留），存 proxy-config.json，引擎重启不丢；网关沿用上游默认配置，此处不支持修改。Selection 是引擎的权重调度；保存配置会重启引擎；冷却经 state.json 持久化。',
   "Refresh every enabled account's credit snapshot (feeds the Credits column)": '刷新全部账号的额度快照（刷新"积分"列）',
   'Daily check-in for every account whose account switch is on (upstream schedule applies too)': '对账号总闸开启的账号执行每日签到（上游定时任务同样生效）',
   'Run the Test probe on every routable row.': '对每一行可路由凭据执行连通性探测。',
@@ -7400,7 +7395,6 @@ async function loadTraeConfig() {
     }
     renderTraeAccounts(accs);
     // 配置区回填（读到什么填什么，避免下拉框与后端漂移）
-    _('traeGateway').value = c.gateway || '';
     _('traeMaxInFlight').value = c.maxInFlight || 8;
     _('traeBreakerThreshold').value = c.breakerThreshold || 3;
     _('traeBreakerCooldown').value = c.breakerCooldown || '30m';
@@ -7432,7 +7426,6 @@ function resetTraeConfigEdits() {
 // 经 state.json 保留，冷却/熔断不丢）。
 async function saveTraeConfig() {
   const body = {
-    gateway: _('traeGateway').value.trim(),
     maxInFlight: parseInt(_('traeMaxInFlight').value) || 8,
     breakerThreshold: parseInt(_('traeBreakerThreshold').value) || 3,
     breakerCooldown: _('traeBreakerCooldown').value.trim() || '30m',
