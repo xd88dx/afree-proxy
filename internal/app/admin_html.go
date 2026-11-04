@@ -602,12 +602,22 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
 <div class="section">
   <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.2"/><path d="M3.5 20c.6-3.4 2.8-5.2 5.5-5.2s4.9 1.8 5.5 5.2"/><circle cx="17" cy="9" r="2.6"/><path d="M14.8 14.9c2.9-.4 5.2 1.2 5.7 4.4"/></svg></span> Credentials</div>
   <div class="section-body">
-    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin:0 6px 8px;flex-wrap:wrap">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin:0 6px 8px">
       <span class="wb-toolbar">
-        <button class="btn btn-primary btn-sm" onclick="openTraeAddDialog()">Add accounts</button>
         <button class="btn btn-sm" onclick="refreshTraeCredits()" title="Refresh every enabled account's credit snapshot (feeds the Credits column)">Refresh balances</button>
+      </span>
+      <span class="wb-toolbar">
         <button class="btn btn-sm" onclick="runTraeCheckin()" title="Daily check-in for every account whose account switch is on (upstream schedule applies too)">Check in all</button>
       </span>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th style="width:44px">#</th><th style="width:150px">Account</th><th>Status</th><th title="Remaining credits from the latest snapshot (auto-refreshed in the background; Test refreshes on demand)">Credits</th><th title="Main exit first, backup as fallback; both down = row skipped (isolation).">Proxy binding</th><th style="width:130px;text-align:center">Actions</th><th style="text-align:center" title="Gateway (reverse proxy) switch: unchecked = model sessions never route to this account; check-in and all other maintenance tasks are unaffected. Can only be ticked while the account switch is on.">Gateway switch</th><th style="text-align:center" title="Account master switch. Off = the account does not exist: check-in, balance refresh and Test all skip it, and it never routes.">Account switch</th></tr></thead>
+        <tbody id="traeAccountsBody"><tr><td colspan="8" class="empty">Loading...</td></tr></tbody>
+      </table>
+    </div>
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin:10px 6px 4px;flex-wrap:wrap">
+      <button class="btn btn-primary btn-sm" onclick="openTraeAddDialog()">Add accounts</button>
       <span class="wb-toolbar">
         <button class="btn btn-sm" onclick="stageAllTraeRouting(true)">Enable all</button>
         <button class="btn btn-sm" onclick="stageAllTraeRouting(false)">Disable all</button>
@@ -619,12 +629,6 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
         <button class="btn btn-sm btn-warn" id="traeResetBtn" onclick="resetTraeEdits()" title="Discard staged changes and reload the last saved state">Discard</button>
         <button class="btn btn-primary btn-sm" id="traeSaveBtn" onclick="saveTraeEdits()">Save</button>
       </span>
-    </div>
-    <div class="table-wrap">
-      <table>
-        <thead><tr><th style="width:44px">#</th><th style="width:150px">Account</th><th>Status</th><th title="Remaining credits from the latest snapshot (auto-refreshed in the background; Test refreshes on demand)">Credits</th><th title="Main exit first, backup as fallback; both down = row skipped (isolation).">Proxy binding</th><th style="width:130px;text-align:center">Actions</th><th style="text-align:center" title="Gateway (reverse proxy) switch: unchecked = model sessions never route to this account; check-in and all other maintenance tasks are unaffected. Can only be ticked while the account switch is on.">Gateway switch</th><th style="text-align:center" title="Account master switch. Off = the account does not exist: check-in, balance refresh and Test all skip it, and it never routes.">Account switch</th></tr></thead>
-        <tbody id="traeAccountsBody"><tr><td colspan="8" class="empty">Loading...</td></tr></tbody>
-      </table>
     </div>
   </div>
 </div>
