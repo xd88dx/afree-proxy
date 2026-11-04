@@ -1032,6 +1032,9 @@ type Status struct {
 	OKCount           int64            `json:"ok_count"`
 	ErrCount          int64            `json:"err_count"`
 	Credits           *int64           `json:"credits,omitempty"`
+	// CreditsTotal 账号总额度（0 = 未知）。afree 桥接层透传给面板做
+	// "剩余 / 总"展示（vendor 脚本注入，上游原样不受影响）。
+	CreditsTotal int64 `json:"credits_total,omitempty"`
 	LastUsed          string           `json:"last_used,omitempty"`
 	TokenExpire       string           `json:"token_expire,omitempty"`
 	Proxy             string           `json:"proxy,omitempty"`
@@ -1079,6 +1082,7 @@ func (a *Account) Status(now time.Time) Status {
 	if a.creditsKnown {
 		c := a.credits
 		st.Credits = &c
+		st.CreditsTotal = a.creditsTotal
 	}
 	if !a.lastUsed.IsZero() {
 		st.LastUsed = a.lastUsed.Format(time.RFC3339)

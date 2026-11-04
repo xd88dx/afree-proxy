@@ -7529,7 +7529,11 @@ function renderTraeAccounts(accs) {
           (isStale(pMain) || isStale(pBackup) ? ' <span title="' + esc(T('Bound proxy is no longer in the proxy pool — skipped until fixed')) + '" style="color:var(--danger)">⚠</span>' : '') +
           '</td>';
         let credits = '-';
-        if (a.credits != null) credits = fmtTokens(Math.max(0, Math.round(a.credits)));
+        if (a.credits != null) {
+          // 剩余 / 总（creditsTotal 缺失/为 0 时只显示余量，同旧版权重）
+          if (a.creditsTotal > 0) credits = fmtTokens(Math.max(0, Math.round(a.credits))) + ' / ' + fmtTokens(Math.round(a.creditsTotal));
+          else credits = fmtTokens(Math.max(0, Math.round(a.credits)));
+        }
         // 双开关快照：routing = 路由参与位；account = 总闸（vendored disabled）
         const accOn = a.disabled !== true;
         const routedIntent = a.routing === true;

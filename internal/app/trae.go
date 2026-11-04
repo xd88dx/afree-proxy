@@ -859,6 +859,10 @@ func trae2apiAccountStates(sub *trae2apiSubsystem) []map[string]any {
 		}
 		if st.Credits != nil {
 			row["credits"] = *st.Credits
+			// 总额度（vendor Status.CreditsTotal，0=未知）——面板「剩余 / 总」
+			if st.CreditsTotal > 0 {
+				row["creditsTotal"] = st.CreditsTotal
+			}
 		}
 		if st.ModelCooling != nil {
 			row["modelCooling"] = st.ModelCooling

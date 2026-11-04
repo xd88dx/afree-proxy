@@ -162,6 +162,26 @@ func (a *Account) healthyLocked(now time.Time, model string) bool {
 	if now.Before(a.breakerUntil) {""",
             1,
         ),
+        (
+            """	Credits           *int64           `json:"credits,omitempty"`""",
+            """	Credits           *int64           `json:"credits,omitempty"`
+	// CreditsTotal 账号总额度（0 = 未知）。afree 桥接层透传给面板做
+	// "剩余 / 总"展示（vendor 脚本注入，上游原样不受影响）。
+	CreditsTotal int64 `json:"credits_total,omitempty"`""",
+            1,
+        ),
+        (
+            """	if a.creditsKnown {
+		c := a.credits
+		st.Credits = &c
+	}""",
+            """	if a.creditsKnown {
+		c := a.credits
+		st.Credits = &c
+		st.CreditsTotal = a.creditsTotal
+	}""",
+            1,
+        ),
     ),
     "accountstore/accountstore.go": (
         (
@@ -269,6 +289,8 @@ def apply_rewrites(pkg: Path) -> None:
         path = pkg / relative
         text = path.read_text(encoding="utf-8")
         for old, new, expected in rules:
+            if new in text and old not in text:
+                continue  # 已应用（幂等：与 apply_patch 的 marker-skip 同语义）
             actual = text.count(old)
             if actual != expected:
                 raise RuntimeError(
