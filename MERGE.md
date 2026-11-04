@@ -165,6 +165,23 @@ WorkBuddy 一栏的基线同时登记在 `scripts/workbuddy-vendor-baseline.json
 
 上游 `misakano7545/workbuddy2api-panel` main 无新提交（基线 `96b816d` 不变，版本 dev），`sync_workbuddy.py --report` 确认零改动，本次未涉及上游同步。
 
+### 2026-11-05 — 6d534c5 → dd01a52
+
+- 上游：misakano7545/workbuddy2api-panel，vendor + 三方合并（源工作树先 `git checkout --detach dd01a52`）。
+- 基线：`6d534c5` → 解决 2 冲突后 `--seal` 推进到 `dd01a52`（3 提交 / 47 文件 / +810 -30）。
+- 上游主线：
+  - `e6dd088` 账号分组（`entry.Group`/`stateAccount.Group`/`SetGroup` + 面板 `POST /panel/api/accounts/{uid}/group` 路由 + 分组筛选 UI）+ 事件日志可清空（`POST /panel/api/request_logs/clear`）、下拉记忆、20/30/50 展示条数（issue #159/#160）。
+  - `77d4762` 签到响应回显真实 realm，不再写字面量 "cn"。
+  - `dd01a52` 出站 tools 脱敏（`upstream/sanitize.go`）、轮询指纹跳过（`upstream/payload.go`）；AutoBot 补 DistPub——不在 vendor 树，本线不涉及。
+- 冲突（2 文件，均为本地 2026-11-03 accountfacts 重构 vs 上游单体形态）：
+  - `pool/persist.go`：取本地重构形态（entry 只造 placeholder，账号事实走 `applyAccountFactsLocked`、本机统计留 applyAccountsLocked）；上游新增的 `group` 恢复**吸收进 accountfacts.go** 运维意志段（`e.group = s.Group`，纯管理维度无惰性清洗）。
+  - `pool/state.go`：保留本地字段清单（`PoolEnabled`/`AccountEnabled` 指针/竖排签到徽章），插入 `Group: e.group` 一行；gofmt 分段对齐已重排。
+- 装配核查：无新配置键、无新注入方法（grep 上游全量 diff 确认）；新增 2 面板路由 vendor 内自洽，本地独有路由（`models/refresh`、`accounts/{uid}/test`）未受影响；`restartRequired` 无新增。`workbuddyVersion` → `2026.11.05-misakano+afree`。
+- 跳过项（符合预期）：`upstream/dns_test.go` 本地已删、上游仍有，脚本按规则跳过。
+- 验证：`go build ./...`、`go vet ./internal/...` 全绿；`go test ./... -count=1` 28 包全绿；`go test -race ./internal/workbuddy/... ./internal/app/` 20 包全绿（既有 flaky 本轮均未触发）。
+- 本机测试环境：镜像 `afree-proxy:test-20261105-0253`，compose 换 tag 重建，`Up (healthy)`、`/health` 200，wb 15 账号恢复、模型同步/warm rates 正常；容器内版本串 `2026.11.05-misakano+afree` 已核。
+- 生产：未同步，等用户在 iStore 自行 `compose pull`（GHCR 由 CI 从 main 构建）。
+
 ### 2026-11-04 — 40d98f9 → 6d534c5
 
 - 上游：misakano7545/workbuddy2api-panel，vendor + 三方合并（`scripts/sync_workbuddy.py`；源工作树 `D:/下载/Github/workbuddy2api-panel-misakano` 本次为 detached HEAD，`--pull` 报 not-on-branch，直接 `git checkout --detach 6d534c5`）。

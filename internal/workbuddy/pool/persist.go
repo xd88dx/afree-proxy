@@ -259,6 +259,7 @@ func (p *Pool) stateOverviewLocked() stateFile {
 			CreditsTotal:             e.creditsTotal,
 			Disabled:                 e.disabled,
 			Paused:                   e.paused,
+			Group:                    e.group,
 			SuccessCount:             e.successCount,
 			ErrTotal:                 e.errTotal,
 			LastSuccess:              e.lastSuccess,

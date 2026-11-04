@@ -96,6 +96,7 @@ func (e *entry) applyAccountFactsLocked(s stateAccount, now time.Time) bool {
 	e.creditsEarliestRemaining = s.CreditsEarliestRemaining
 	e.disabled = s.Disabled
 	e.paused = s.Paused
+	e.group = s.Group // 运维分组标签（上游 dd01a52 账号分组；纯管理维度，无清洗）
 	e.reason = s.Reason
 	e.disabledAt = s.DisabledAt
 	e.until = s.Until
