@@ -136,7 +136,8 @@ type configBackup struct {
 	// 上线时只做了网关/面板，未接备份，导致子平台与 key 池无法随配置迁移。
 	Other *other.Config `json:"other,omitempty"`
 	// Trae 账号池平台（2026-11-04 起 vendored trae2api 引擎）：config =
-	// trae2api-config.json 原文，routing = 反代开关表，accounts = 快照文件
+	// data/trae2api/config.json 原文（2026-11-05 迁入子系统目录），routing =
+	// 反代开关表，accounts = 快照文件
 	// 名 → 快照 JSON（data/trae2api/accounts/*.json）。旧引擎的 trae.Config
 	// 形态不再兼容，旧备份的 trae 段导入时忽略。
 	Trae json.RawMessage `json:"trae,omitempty"`

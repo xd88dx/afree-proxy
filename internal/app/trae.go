@@ -8,8 +8,9 @@ package app
 // Web console、OAuth 登录与便携快照导入、自动签到。本文件只做三件事：
 //
 //  1. 装配：vendored server 进程内启动（不占额外端口），config 落
-//     DATA_DIR/trae2api-config.json（进配置监测清单），运行态落
-//     DATA_DIR/trae2api/（state/metrics/accounts，使用痕迹不进配置监测口径）。
+//     DATA_DIR/trae2api/config.json（进配置监测清单；2026-11-05 从顶层散文件
+//     trae2api-config.json 迁入子系统目录，与 workbuddy/config.json 同构），
+//     运行态落 DATA_DIR/trae2api/（state/metrics/accounts，使用痕迹不进配置监测口径）。
 //  2. afree 特色接线（经 vendor 注入的函数变量，不产生 import 环）：
 //     出口接管（主/备绑定 fail-closed + 走池开关，见 proxy_binding 约定）、
 //     反代开关（RoutingAllowed 选号过滤）、新增身份默认禁用（AccountAddedHook）。
@@ -50,8 +51,38 @@ import (
 // sync 脚本会提醒更新）。
 const trae2apiVersion = "0.2.6"
 
-func traeConfigPath() string { return kit.ResolveDataPath("trae2api-config.json") }
+// traeConfigPath 配置落 data/trae2api/config.json（2026-11-05 用户定：从顶层
+// 散文件 trae2api-config.json 迁入子系统目录，与 workbuddy/config.json 同构）。
+func traeConfigPath() string { return filepath.Join(traeDataDir(), "config.json") }
 func traeDataDir() string    { return kit.ResolveDataPath("trae2api") }
+
+// traeLegacyConfigPath 旧布局的顶层散文件路径（仅迁移用）。
+const traeLegacyConfigRelPath = "trae2api-config.json"
+
+// traeMigrateConfigLayout 旧布局一次性迁移：data/trae2api-config.json →
+// data/trae2api/config.json。新布局已是目标态（新路径存在）或全新环境（两处
+// 都无）时不做事。MkdirAll 无条件执行——全新环境下 Load 的模板写入需要目录。
+// 在 trae2apiStart（含 Restart 路径）最前调用，先于任何读写。
+func traeMigrateConfigLayout() {
+	legacy := kit.ResolveDataPath(traeLegacyConfigRelPath)
+	if _, err := os.Stat(traeConfigPath()); err == nil {
+		_ = os.MkdirAll(traeDataDir(), 0o700) // 已是新布局：只兜底目录
+		return
+	}
+	if _, err := os.Stat(legacy); err != nil {
+		_ = os.MkdirAll(traeDataDir(), 0o700) // 全新环境：建目录等模板落位
+		return
+	}
+	if err := os.MkdirAll(traeDataDir(), 0o700); err != nil {
+		log.Printf("trae config migrate: mkdir %s: %v", traeDataDir(), err)
+		return
+	}
+	if err := os.Rename(legacy, traeConfigPath()); err != nil {
+		log.Printf("trae config migrate: rename %s -> %s: %v", legacy, traeConfigPath(), err)
+		return
+	}
+	log.Printf("trae config migrated: %s -> %s", traeLegacyConfigRelPath, filepath.Join("trae2api", "config.json"))
+}
 
 // ============ 子系统装配 ============
 
@@ -121,6 +152,7 @@ func trae2apiStart() error {
 	if trae2apiSub != nil {
 		return nil
 	}
+	traeMigrateConfigLayout()
 	cfg, err := trae2apiLoadConfig()
 	if err != nil {
 		return fmt.Errorf("load config: %w", err)
@@ -1475,7 +1507,7 @@ func trae2apiConsoleHandler() http.Handler {
 // ============ 备份导出 / 导入 ============
 
 // trae2apiBackupPayload 备份的 trae 段形态（2026-11-04 起）。config =
-// trae2api-config.json 原文；accounts = 快照文件名 → 快照 JSON；routing =
+// data/trae2api/config.json 原文；accounts = 快照文件名 → 快照 JSON；routing =
 // 反代开关表。旧引擎（trae-config.json 账号池）的形态不再兼容。
 type trae2apiBackupPayload struct {
 	Config   json.RawMessage            `json:"config,omitempty"`

@@ -63,7 +63,7 @@ go test ./... -count=1             # 除下述既有失败外应全绿
 
 ### 数据与装配
 - vendor 树 `internal/trae2api/`（`scripts/vendor_trae2api.py` 生成，勿手改）；桥接层 `internal/app/trae.go`；helper 资产 `internal/app/trae2api_helper*.go`。
-- 配置 `data/trae2api-config.json`（顶层 `*-config.json` 自动进 config-manifest 监测）；运行态 `data/trae2api/`（accounts/*.json 快照、state.json 冷却/熔断/禁用、metrics.json）。使用痕迹不进配置监测口径。
+- 配置 `data/trae2api/config.json`（2026-11-05 从顶层散文件迁入子系统目录，与 workbuddy/config.json 同构；config-manifest 显式登记监测；启动时自动迁移旧路径）；运行态同目录（accounts/*.json 快照、state.json 冷却/熔断/禁用+手动冷却、metrics.json）。使用痕迹不进配置监测口径。
 - vendored 无热更新：面板保存配置 → 落盘 → `trae2apiRestart()`（先摘除再重启，旧实例先 `Pool().Save()` 防与 30s ticker 竞争写 state.json）。
 - 鉴权分层：vendored `cfg.APIKey`/`WebPassword` 恒空（`traeApplyAfreeConstraints` 每次重启强制），真门禁在 afree 网关层；`trae.proxy`（全局）与 per-account proxy 恒清空（出口由 afree 接管，防死配置）。
 - 网关 `chat_base` 面板不可改（沿用上游默认；`trae2apiValidateGateway` 保留给配置文件路径——OAuth-only 域拒收）。

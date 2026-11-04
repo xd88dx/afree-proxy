@@ -27,6 +27,8 @@ import (
 //   - 数据目录顶层 *-config.json（各平台配置态）
 //   - workbuddy/config.json（vendor 子系统配置）
 //   - workbuddy/auths/*.json（wb 凭据文件，token 刷新会回写）
+//   - trae2api/config.json（vendor 子系统配置，2026-11-05 迁入子系统目录）
+//   - trae2api/accounts/*.json（trae 凭据快照）
 // 状态态文件（*-state.json 等）不进清单——它们随请求高频变化，不属监测对象。
 //
 // 零噪声保证：与上次 entries 对比无变化时不写盘（连 updatedAt 都保持不变），
@@ -86,9 +88,12 @@ func collectConfigManifestEntries() []configManifestEntry {
 			}
 		}
 	}
-	// TraeWork（vendored trae2api）：账号快照是配置态（含凭据，换号=配置
-	// 变更），与 workbuddy auths 同口径纳管；state.json 是运行态不进清单
-	// （冷却/额度随请求高频变化，2026-11-01 命名铁律）。
+	// TraeWork（vendored trae2api）子系统：config.json 是配置态（2026-11-05
+	// 从顶层散文件 trae2api-config.json 迁入子系统目录，与 workbuddy/config.json
+	// 同构，须显式登记——顶层 glob 只认 <x>-config.json）；账号快照是配置态
+	// （含凭据，换号=配置变更），与 workbuddy auths 同口径纳管；state.json 是
+	// 运行态不进清单（冷却/额度随请求高频变化，2026-11-01 命名铁律）。
+	add(filepath.Join("trae2api", "config.json"), filepath.Join(dir, "trae2api", "config.json"))
 	if accEntries, err := os.ReadDir(filepath.Join(dir, "trae2api", "accounts")); err == nil {
 		for _, e := range accEntries {
 			if e.IsDir() {
