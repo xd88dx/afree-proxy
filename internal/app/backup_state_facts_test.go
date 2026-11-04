@@ -63,8 +63,8 @@ func TestMergeStateFactsJSON(t *testing.T) {
 		}
 		var m struct {
 			Accounts map[string]struct {
-				Tokens           *json.RawMessage `json:"tokens"`
-				Credits          *struct {
+				Tokens  *json.RawMessage `json:"tokens"`
+				Credits *struct {
 					Credits float64 `json:"credits"`
 				} `json:"credits"`
 				Checkin *struct {

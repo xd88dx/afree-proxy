@@ -651,6 +651,21 @@ func applyOverride(params map[string]any) {
 	}
 }
 
+// zenAutoBanRegion zen 上游区域限制的模型级自动拉黑（2026-11-04 全平台审计
+// 补缺）：RegionError 是上游按部署区域判死的模型级永久错误（crouton-alpha/
+// pulse-alpha 实测稳定 403，与 key/会话无关，换号无用）——拉黑摘出目录，别让
+// 客户端每次撞墙。其余 zen 错误（429/5xx/会话死）不动模型，归 key/会话层。
+func zenAutoBanRegion(err error, zm *ZenModel) {
+	he, ok := err.(*zenHTTPError)
+	if !ok || !strings.Contains(he.Body, "RegionError") {
+		return
+	}
+	id := zenPrefixedID(zm.ID)
+	BlacklistModel(platZen, id, fmt.Sprintf("http%d", he.Status),
+		BanReasonFeedRemoved, kit.Truncate(he.Body, 200))
+	log.Printf("  zen autoban (region): %s removed from catalog", id)
+}
+
 // handleZenChat opencode zen 免费模型分支: 压缩 -> 上游 -> 透传,并记录统计
 func handleZenChat(w http.ResponseWriter, r *http.Request, params map[string]any) {
 	model, _ := params["model"].(string)
@@ -699,6 +714,7 @@ func handleZenChat(w http.ResponseWriter, r *http.Request, params map[string]any
 	}
 	if err != nil {
 		log.Printf("  zen api error: %v", err)
+		zenAutoBanRegion(err, zm)
 		writeJSON(w, zenClientErrorStatus(err), map[string]any{
 			"error": map[string]string{"message": err.Error(), "type": "api_error"},
 		})
@@ -740,6 +756,7 @@ func handleZenChatDirect(w http.ResponseWriter, r *http.Request, params map[stri
 	resp, _, err := callZenAPI(r.Context(), params, true)
 	if err != nil {
 		log.Printf("  zen api error: %v", err)
+		zenAutoBanRegion(err, zm)
 		writeJSON(w, zenClientErrorStatus(err), map[string]any{
 			"error": map[string]string{"message": err.Error(), "type": "api_error"},
 		})

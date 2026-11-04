@@ -133,6 +133,41 @@ func orBoundRoutable(key string) bool {
 
 // handleOrChat OpenRouter chat/completions 转发（网关 /v1/chat/completions 命中
 // or: 前缀时调用）。非流式聚合 SSE、流式透传，统计与 cline/zen 同口径。
+// orAutoBanPermanent OpenRouter 永久性上游错误的自动拉黑（2026-11-04 全平台
+// 可用性审计补缺：cline 有 404/计费双哨兵、trae 有模型冷却，openrouter 零接线
+// ——下线模型目录照列、每次请求撞墙把全部 key 打进冷却链）。判据（对照
+// 2026-11-04 实测铁证）：404 "no longer available / unavailable for free"=
+// 官方下线或转付费；403 "only available on agentic harnesses"=权益门槛（与
+// 账号无关、模型级永久）；400 "cannot be used with the chat/completions
+// endpoint"=该模型形态不支持 chat 端点。429/5xx/限流关键词不在此列（瞬时，
+// 由 key 冷却消化）。
+func orAutoBanPermanent(bare string, err error) {
+	he, ok := err.(*openrouter.HTTPError)
+	if !ok || he.RateLimited {
+		return
+	}
+	permanent := false
+	switch he.Status {
+	case http.StatusNotFound:
+		permanent = true // 上游对模型不存在固定 404（下线/转付费/tier）
+	case http.StatusForbidden:
+		// 403 仅当文案指认模型级门槛（agentic harnesses / region）才永久；
+		// 其余 403 是 key 级（会话/额度），归 key 冷却，绝不拉黑模型。
+		permanent = strings.Contains(he.Body, "agentic harnesses") ||
+			strings.Contains(he.Body, "RegionError")
+	case http.StatusBadRequest:
+		permanent = strings.Contains(he.Body, "chat/completions endpoint")
+	}
+	if !permanent {
+		return
+	}
+	id := openrouter.ModelPrefix + bare
+	BlacklistModel(platOpenRouter, id, fmt.Sprintf("http%d", he.Status),
+		BanReasonFeedRemoved, kit.Truncate(he.Body, 200))
+	log.Printf("  openrouter autoban: %s (%d) removed from catalog", id, he.Status)
+}
+
+// handleOrChat OpenRouter chat/completions 转发（网关 /v1/chat/completions 命中
 func handleOrChat(w http.ResponseWriter, r *http.Request, params map[string]any) {
 	bare, _ := openrouter.StripPrefix(mustString(params["model"]))
 	m, ok := openrouter.Resolve(bare)
@@ -153,6 +188,7 @@ func handleOrChat(w http.ResponseWriter, r *http.Request, params map[string]any)
 		handleStreamBufferedGeneric(w, r, "openrouter", params, func(ctx context.Context) (*http.Response, func(map[string]any), error) {
 			resp, _, err := openrouter.Chat(ctx, params, m.ID, true, globalStrategy(), orBoundRoutable, nil)
 			if err != nil {
+				orAutoBanPermanent(bare, err)
 				return nil, nil, err
 			}
 			usedKey := takeUsedKey(resp)
@@ -163,6 +199,7 @@ func handleOrChat(w http.ResponseWriter, r *http.Request, params map[string]any)
 	resp, _, err := openrouter.Chat(r.Context(), params, m.ID, true, globalStrategy(), orBoundRoutable, nil)
 	if err != nil {
 		log.Printf("  openrouter api error: %v", err)
+		orAutoBanPermanent(bare, err)
 		writeJSON(w, http.StatusBadGateway, map[string]any{
 			"error": map[string]string{"message": err.Error(), "type": "api_error"},
 		})

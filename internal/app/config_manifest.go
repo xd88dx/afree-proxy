@@ -37,7 +37,7 @@ import (
 // ============================================================================
 
 // configManifestEntry 单个配置态文件的指纹。File 为相对 DATA_DIR 的路径
-//（正斜杠语义由 filepath.Join 产出，Windows 上显示为反斜杠——监测脚本按
+// （正斜杠语义由 filepath.Join 产出，Windows 上显示为反斜杠——监测脚本按
 // 平台分隔符处理即可）。
 type configManifestEntry struct {
 	File   string `json:"file"`
