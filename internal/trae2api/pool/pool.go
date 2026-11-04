@@ -1235,6 +1235,7 @@ type persistedItem struct {
 	CheckinChecked bool   `json:"checkin_checked,omitempty"`
 	CheckinFailed  bool   `json:"checkin_failed,omitempty"`
 	CheckinError   string `json:"checkin_error,omitempty"`
+	CreditsTotal      int64             `json:"credits_total,omitempty"`
 }
 
 // Save 落盘状态快照（原子写）。
@@ -1273,6 +1274,7 @@ func (p *Pool) Save() error {
 		it.CheckinChecked = a.checkinChecked
 		it.CheckinFailed = a.checkinFailed
 		it.CheckinError = a.checkinError
+		it.CreditsTotal = a.creditsTotal
 		a.mu.Unlock()
 		snap.Items[a.UID] = it
 	}
@@ -1360,6 +1362,7 @@ func (p *Pool) Restore() error {
 		a.checkinChecked = it.CheckinChecked
 		a.checkinFailed = it.CheckinFailed
 		a.checkinError = it.CheckinError
+		a.creditsTotal = it.CreditsTotal
 		if len(it.ModelCooling) > 0 {
 			a.modelCooling = map[string]time.Time{}
 			for m, s := range it.ModelCooling {

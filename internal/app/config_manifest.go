@@ -86,6 +86,19 @@ func collectConfigManifestEntries() []configManifestEntry {
 			}
 		}
 	}
+	// TraeWork（vendored trae2api）：账号快照是配置态（含凭据，换号=配置
+	// 变更），与 workbuddy auths 同口径纳管；state.json 是运行态不进清单
+	// （冷却/额度随请求高频变化，2026-11-01 命名铁律）。
+	if accEntries, err := os.ReadDir(filepath.Join(dir, "trae2api", "accounts")); err == nil {
+		for _, e := range accEntries {
+			if e.IsDir() {
+				continue
+			}
+			if name := e.Name(); strings.HasSuffix(name, ".json") {
+				add(filepath.Join("trae2api", "accounts", name), filepath.Join(dir, "trae2api", "accounts", name))
+			}
+		}
+	}
 	add(filepath.Join("workbuddy", "config.json"), filepath.Join(dir, "workbuddy", "config.json"))
 	if authEntries, err := os.ReadDir(filepath.Join(dir, "workbuddy", "auths")); err == nil {
 		for _, e := range authEntries {

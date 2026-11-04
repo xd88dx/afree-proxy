@@ -239,12 +239,25 @@ func (a *Account) healthyLocked(now time.Time, model string) bool {
             1,
         ),
         (
+            """	CheckinError   string `json:"checkin_error,omitempty"`
+}
+
+// Save 落盘状态快照（原子写）。""",
+            """	CheckinError   string `json:"checkin_error,omitempty"`
+	CreditsTotal      int64             `json:"credits_total,omitempty"`
+}
+
+// Save 落盘状态快照（原子写）。""",
+            1,
+        ),
+        (
             """	a.mu.Unlock()
 		snap.Items[a.UID] = it""",
             """		it.CheckinDate = a.checkinDate
 		it.CheckinChecked = a.checkinChecked
 		it.CheckinFailed = a.checkinFailed
 		it.CheckinError = a.checkinError
+		it.CreditsTotal = a.creditsTotal
 		a.mu.Unlock()
 		snap.Items[a.UID] = it""",
             1,
@@ -257,7 +270,8 @@ func (a *Account) healthyLocked(now time.Time, model string) bool {
 		a.checkinDate = it.CheckinDate
 		a.checkinChecked = it.CheckinChecked
 		a.checkinFailed = it.CheckinFailed
-		a.checkinError = it.CheckinError""",
+		a.checkinError = it.CheckinError
+		a.creditsTotal = it.CreditsTotal""",
             1,
         ),
         (

@@ -600,7 +600,6 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
 <div class="hint" id="traeSummary" style="margin:0 0 16px">Loading...</div>
 
 <div class="section">
-  <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.2"/><path d="M3.5 20c.6-3.4 2.8-5.2 5.5-5.2s4.9 1.8 5.5 5.2"/><circle cx="17" cy="9" r="2.6"/><path d="M14.8 14.9c2.9-.4 5.2 1.2 5.7 4.4"/></svg></span> Credentials</div>
   <div class="section-body">
     <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin:0 6px 8px">
       <span class="wb-toolbar">
@@ -2670,7 +2669,6 @@ const I18N_ZH = {
   'No matching ban entry — it may have been unblocked already.': '未找到对应的封禁条目——可能已经解禁过了。',
   // TraeWork 平台页（vendored trae2api，2026-11-04 上游切换）
   'Gateway': '网关',
-  'Credentials': '凭据列表',
   'Trae config': 'Trae 配置',
   'Rate filter (exclude models priced above)': '费率过滤（剔除高于该倍率的模型）',
   'Max in flight per account': '单账号并发上限',
@@ -7508,7 +7506,7 @@ function renderTraeAccounts(accs) {
           const txt = a.tokenUsable === false ? T('Token expired') + ' ' : '';
           tokenState = '<div style="font-size:11px;margin-top:2px;color:' + cls + '">' + txt + esc(fmtShort(a.expiredAt)) + '</div>';
         }
-        // 签到竖徽章（照搬换线前逻辑）：今日已签显示在状态列右侧竖排
+        // 签到竖徽章：仅显示今天的签到结果（当天没有就不显示；用户 2026-11-04 定）
         let checkinV = '';
         if (a.checkin && a.checkin.date === new Date().toLocaleDateString('sv')) {
           const ok = a.checkin.checkedIn;
