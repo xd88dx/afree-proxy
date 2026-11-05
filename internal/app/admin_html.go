@@ -1047,21 +1047,6 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
 </div>
 
 <div class="section">
-  <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></span> Session snapshots (403-refresh log)
-    <span id="ocSessSummary" class="probe-pill" style="font-weight:normal;margin-left:auto"></span>
-  </div>
-  <div class="section-body">
-    <p class="hint" style="margin-top:0" id="ocSessHint">Since 2026-10-27 the gateway mints a fresh CLI-format session per upstream call (official CLI v2 behavior) and keeps no sticky sessions — entries here are legacy snapshots written only when a key's session is re-minted after FreeTier 403s. No entry does not mean unused: check the token columns in the key table.</p>
-    <div class="table-wrap">
-      <table>
-        <thead><tr><th style="width:70px">Key</th><th style="width:130px">Session</th><th style="width:150px">State</th><th>Minted at</th></tr></thead>
-        <tbody id="ocSessBody"><tr><td colspan="4" class="empty">Loading...</td></tr></tbody>
-      </table>
-    </div>
-  </div>
-</div>
-
-<div class="section">
   <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 5-6"/></svg></span> Model catalog <span class="probe-pill" data-models-info style="font-weight:normal"></span></div>
   <div class="section-body">
     <div class="flex" style="margin-bottom:10px;gap:10px">
@@ -2042,6 +2027,7 @@ const I18N_ZH = {
   'Proxy isolation: each credential only egresses via its bound exits; when none is available it is skipped — never another exit or direct. Forced on when': '代理隔离：每个凭据只从绑定的出口出站，都不可用则跳过——绝不改走其他出口或直连。设有',
   '=true.': '=true 时强制开启。',
   'Backup proxy — off by default: every identity uses its main proxy only; a cooling or removed main proxy is skipped for that round. On: the backup proxy serves as the fallback for the main one.': '备用代理：默认关闭——每个身份只走主代理，主代理冷却或被移除时直接跳过。开启后：备用代理作为主代理的兜底。',
+  'Platform-level blacklist, per-proxy binding cap and manually disabled (cooled) proxies apply to automatic assignment only — one-click bind and reorder-by-latency. Manual bindings and runtime routing are never restricted.': '平台拉黑、单代理绑定上限与手动禁用（冷却）的代理只约束自动分配——「一键代理」与「凭据延迟重排」两个批量操作；手动绑定和运行期路由不受限制。',
   ' · excluded': ' · 已排除',
   ' row(s) left unchanged — every allowed proxy is excluded or at cap': ' 行无法改绑：可用代理都已拉黑或达到上限',
   'Latency reorder finished with errors — loads failed: ': '延迟重排完成但有错误——加载失败：',
@@ -2248,7 +2234,6 @@ const I18N_ZH = {
   'Main exit — used whenever available': '主出口 —— 可用即优先',
   'Backup exit — used when main is cooling/removed': '备用出口 —— 主冷却/被删时使用',
   'Bound proxy is no longer in the proxy pool — skipped until fixed': '绑定的代理已不在代理池中——修复前跳过该行。',
-  'session minted': '会话铸造于',
   // 添加账号弹窗（accAddDialog，Cline 页"添加账号"按钮）
   'Token or API key *': 'Token 或 API key *',
   // 代理池页
@@ -2332,7 +2317,6 @@ const I18N_ZH = {
   'Import statistics': '导入统计数据',
   'No platform selected': '未选择任何平台',
   'Confirm import': '确认导入',
-  'State': '状态',
   'Global': '全局',
   'No matching proxies': '没有匹配的代理',
   'Proxy isolation (identity ↔ exit binding)': '代理隔离（身份 ↔ 出口绑定）',
@@ -2393,9 +2377,7 @@ const I18N_ZH = {
   'wrk_… (optional)': 'wrk_…（可选）',
   'OAuth account org id, sent as x-opencode-org-id. Only needed when the key is an OAuth token rather than a raw API key; leave empty to omit the header.': 'OAuth 账号的组织 ID，以 x-opencode-org-id 请求头发送。仅当该 key 是 OAuth token（而非原始 API key）时才需要；留空则不发送该头。',
   'Key': 'Key',
-  'Session': '会话',
   'TTFB': '首包耗时',
-  'Minted at': '铸造时间',
   'Rate-limit defense': '限流防御',
   // 提示气泡（title 属性）此前未进翻译表，中文界面下显示英文
   'Switch language / 切换语言': '切换语言',
@@ -2421,10 +2403,6 @@ const I18N_ZH = {
   'empty = same as request model': '留空 = 与请求模型相同',
   'Summary cap': '摘要上限',
   'Save compaction config': '保存压缩配置',
-  'Session snapshots (403-refresh log)': '会话快照（403 换新记录）',
-  'Since 2026-10-27 the gateway mints a fresh CLI-format session per upstream call (official CLI v2 behavior) and keeps no sticky sessions — entries here are legacy snapshots written only when a key\'s session is re-minted after FreeTier 403s. No entry does not mean unused: check the token columns in the key table.': '自 2026-10-27 起，网关对每次上游调用现铸全新 CLI 格式会话（对齐官方 CLI v2 行为），不再保持粘性会话——本表条目是遗留快照，仅在该 key 因 FreeTier 403 被动换新会话时写入。无条目不代表未使用：请看凭据表的 token 列。',
-  'sticky': '粘性',
-  'no 403 refresh': '无 403 换新记录',
   'sessions are minted per call; no sticky snapshot': '会话每次调用现铸；无粘性快照',
   '.': '。',
   'Context': '上下文',
@@ -2598,7 +2576,6 @@ const I18N_ZH = {
   'No combos yet — create one with the form above.': '还没有自定义别名 —— 用上方表单创建一个。',
   'Failed to load model list': '模型列表加载失败',
   'socks5 pool': 'socks5 池',
-  'stale': '已失效',
   'Pending activation': '待启用',
   'Subscription URL': '订阅链接（优先）',
   'Managed by the subscription URL — clear it to edit manually': '由订阅链接管理——清空后才能手动编辑',
@@ -2609,7 +2586,6 @@ const I18N_ZH = {
   'Update done': '更新完成',
   'Subscription refresh replaces the whole pool with the fetched list. Fetch failures keep the current pool.': '订阅刷新会用拉取到的列表整池替换，拉取失败保留现池不变。',
   '*/30 * * * * (min hour day month weekday)': '*/30 * * * *（分 时 日 月 周）',
-  'no key': '无 key',
   'Click to copy': '点击复制',
   'Remove this key from the pool': '将该密钥移出池',
   'next in rotation': '轮换顺序中的下一个',
@@ -2639,7 +2615,6 @@ const I18N_ZH = {
   'No API keys yet': '还没有 API key',
   '— no sub-platform yet —': '— 还没有子平台 —',
   'Search models…': '搜索模型…',
-  'live': '活跃',
   // 封禁模型区（模型黑名单）
   'Banned models': '封禁模型',
   'Ban reason': '封禁原因',
@@ -2921,7 +2896,7 @@ function switchTab(name) {
   if (name === 'settings') { loadKeys(); loadConfig(); loadPlatformBans(); }
   if (name === 'logs') loadLogs();
   if (name === 'proxypool') loadProxyPool();
-  if (name === 'opencode') { loadOcConfig(); loadOcModels(); loadOcSessions(); loadModels(); }
+  if (name === 'opencode') { loadOcConfig(); loadOcModels(); loadModels(); }
   if (name === 'workbuddy') { ensureWorkbuddyConsole(); loadModels(); }
   if (name === 'openrouter') loadOrConfig();
   if (name === 'amdcloud') loadAmdConfig();
@@ -6105,13 +6080,11 @@ function renderOcKeyStates(ks) {
         } else if (k.cooling) {
           stCell = '<span class="status cooldown"><span class="status-dot cooldown"></span>' + T('Cooldown') + '</span>' +
             (k.cooldownUntil ? '<div style="font-size:10px;color:var(--text3);margin-top:2px;white-space:nowrap" title="' + esc(fmtWhen(k.cooldownUntil)) + '">' + T('Recovers ') + esc(fmtShort(k.cooldownUntil)) + '</div>' : '');
-        } else if (hasTraffic || (k.session && k.sessionLive)) {
-          const titleAttr = (k.session && k.sessionLive)
-            ? esc(T('session minted')) + ' ' + esc(fmtWhen(k.sessionCreatedAt)) + ' · ' + esc(k.session) + '…'
-            : esc(T('sessions are minted per call; no sticky snapshot'));
-          stCell = '<span class="status active" title="' + titleAttr + '"><span class="status-dot active"></span>' + T('Active') + '</span>';
-        } else if (k.session) {
-          stCell = '<span class="status pending" title="' + esc(T('session minted')) + ' ' + esc(fmtWhen(k.sessionCreatedAt)) + '"><span class="status-dot pending"></span>' + T('stale') + '</span>';
+        } else if (hasTraffic) {
+          // 现铸模式（2026-10-27 起）无粘性会话可看：活跃 = 有真实流量
+          //（token 记账），title 说明语义（2026-11-05 会话快照区块拆除后
+          // 状态列同步去化石判定）。
+          stCell = '<span class="status active" title="' + esc(T('sessions are minted per call; no sticky snapshot')) + '"><span class="status-dot active"></span>' + T('Active') + '</span>';
         } else {
           stCell = '<span class="status pending"><span class="status-dot pending"></span>' + T('Pending activation') + '</span>';
         }
@@ -9043,35 +9016,6 @@ document.addEventListener('click', function (e) {
   }
 });
 
-async function loadOcSessions() {
-  try {
-    const d = await api('GET', '/opencode/sessions');
-    renderOcSessions(d.data);
-    return d.data;
-  } catch (e) { return null; }
-}
-
-function renderOcSessions(s) {
-  const rows = s.sessions || [];
-  // 无粘性条目是常态（现铸模式下仅 403 换新写入），不做红绿警示。
-  _('ocSessSummary').innerHTML = rows.length
-    ? '<span style="color:var(--text2)">' + T('sticky') + ' ' + s.liveCount + '/' + s.total + '</span>'
-    : '';
-  _('ocSessBody').innerHTML = rows.length
-    ? rows.map(k => {
-        const state = k.noKey
-          ? '<span style="color:var(--text2)">' + T('no key') + '</span>'
-          : (k.live
-              ? '<span style="color:var(--accent2)">' + T('live') + '</span>'
-              : '<span style="color:var(--text2)">' + T('no 403 refresh') + '</span>');
-        return '<tr><td>#' + (k.index + 1) + '</td>' +
-          '<td style="font-family:monospace;font-size:11px">' + (k.session ? esc(k.session) + '…' : '-') + '</td>' +
-          '<td>' + state + '</td>' +
-          '<td style="font-size:12px">' + (k.createdAt ? esc(fmtWhen(k.createdAt)) : '-') + '</td></tr>';
-      }).join('')
-    : '<tr><td colspan="4" class="empty">No opencode keys configured</td></tr>';
-}
-
 // ========== Combos (alias models) ==========
 const comboModels = { cline: [], trae: [], zen: [], workbuddy: [], amd: [], openrouter: [], tokenharbor: [] };
 
@@ -9183,10 +9127,6 @@ enableRowDragReorder('wbAccountsBody', ids => api('POST', '/workbuddy/reorder', 
 enableRowDragReorder('traeAccountsBody', ids => api('POST', '/trae/accounts/reorder', { uids: ids }), loadTraeConfig);
 // 平台概览只在仪表盘可见时轮询（loadStats 现在打三个接口，隐藏页轮询纯浪费）
 setInterval(() => { if (_('tab-dashboard').style.display !== 'none') loadStats(); }, 10000);
-// live 会话状态：只在 opencode 页可见时轮询（与日志页同样的省流约定）。
-setInterval(() => {
-  if (_('tab-opencode').style.display !== 'none') loadOcSessions();
-}, 20000);
 setInterval(() => { if (logsAuto && _('tab-logs').style.display !== 'none') loadLogs(); }, 8000);
 </script>
 </body>

@@ -1164,9 +1164,11 @@ func pickZenKey() string {
 	if alive == 0 {
 		return ""
 	}
-	// 先取 live 会话集合（zenSessMu）再进 zenKeyMu：两把锁不嵌套，避免与
-	// 收割路径（持 zenSessMu 时不取 zenKeyMu，反之亦然）形成锁序反转。
-	live := zenLiveKeys(keys)
+	// live 会话优先轮已删除（2026-11-05）：粘性会话时代"未 mint 的 key 必
+	// 403"是成立的（首用即铸造才有条目）；现铸模式（2026-10-27 起）下每次
+	// 调用现铸会话、zenSessions 不再随首用增长，live 集合退化为"老 key 化石
+	// 集合"——live 优先轮把此后添加的 key 永久挡在轮转外（生产实证：5 条
+	// 新 key 一天零流量恒"待启用"）。现铸下所有可路由 key 平等参与轮转。
 	zenKeyMu.Lock()
 	defer zenKeyMu.Unlock()
 	now := time.Now()
@@ -1196,19 +1198,15 @@ func pickZenKey() string {
 		return now.Before(st.Until)
 	}
 
-	// 三轮候选（保持既有优先级）：live 优先（未 mint 的 key 必 403，见
-	// zen_session.go 顶部注释）→ 未冷却 → 全冷却时兜底（保持请求流动）。
+	// 两轮候选：未冷却 → 全冷却时兜底（UNABLE_FORCE=true，保持请求流动）。
 	// 每轮候选按轮转顺序生成，最终由账号调度策略（round_robin/fill/random，
-	// 与 Cline 账号池共用同一配置）挑选。三轮都带着 blocked/routingOff/
+	// 与 Cline 账号池共用同一配置）挑选。两轮都带着 blocked/routingOff/
 	// noEgress 过滤——没出口的 key 连"冷却重试"都不该发出去。
-	buildCandidates := func(requireLive, ignoreCooling bool) []string {
+	buildCandidates := func(ignoreCooling bool) []string {
 		var out []string
 		for i := 0; i < len(keys); i++ {
 			k := keys[(zenKeyIdx+i)%len(keys)]
 			if blocked[k] || routingOff[k] || noEgress[k] || parked(k) {
-				continue
-			}
-			if requireLive && !live[k] {
 				continue
 			}
 			if !ignoreCooling {
@@ -1220,12 +1218,9 @@ func pickZenKey() string {
 		}
 		return out
 	}
-	candidates := buildCandidates(true, false)
-	if len(candidates) == 0 {
-		candidates = buildCandidates(false, false)
-	}
+	candidates := buildCandidates(false)
 	if len(candidates) == 0 && kit.UnableForce() {
-		candidates = buildCandidates(false, true) // 全冷却兜底（UNABLE_FORCE=true：保持请求流动）
+		candidates = buildCandidates(true) // 全冷却兜底（UNABLE_FORCE=true：保持请求流动）
 	}
 	if len(candidates) == 0 {
 		return ""
@@ -1402,12 +1397,9 @@ type zenCallOpts struct {
 // zenKeyStatus 每个 key 的运行时状态（管理面板展示用，key 值打码）。
 func zenKeyStatus() []map[string]any {
 	keys := getZenConfig().Keys
-	// 会话状态先快照（zenSessMu），再进 zenKeyMu：两把锁不嵌套。
-	sess := make([]zenSessionSnapshot, len(keys))
-	for i, k := range keys {
-		sess[i] = zenSessionSnapshotOf(k)
-	}
-	// 出口绑定同样先快照：egress 路径取 zenConfigMu/egressMu，不能与 zenKeyMu 嵌套。
+	// 出口绑定先快照：egress 路径取 zenConfigMu/egressMu，不能与 zenKeyMu 嵌套。
+	// （会话快照已随面板会话区块拆除移除：现铸模式下无粘性会话可展示，
+	// zenSessions 表仅剩 403 换新闸门在用，见 zen_session.go。）
 	egress := zenEgressSnapshotOf(keys)
 	zenKeyMu.Lock()
 	defer zenKeyMu.Unlock()
@@ -1420,9 +1412,6 @@ func zenKeyStatus() []map[string]any {
 			"current": i == zenKeyIdx%maxInt(len(keys), 1),
 			// 路由参与状态（面板"启用"列勾选，勾掉 = 不进入请求轮转）。
 			"routingEnabled": zenKeyRoutingEnabled(k),
-			// live 会话状态：面板据此看出哪些 key 已有粘性会话。
-			"sessionLive": sess[i].Live,
-			"session":     sess[i].Session,
 		}
 		if ts, ok := zenKeyTokens[k]; ok {
 			st["tokensToday"] = ts.Today
@@ -1439,9 +1428,6 @@ func zenKeyStatus() []map[string]any {
 			st["proxyBackup"] = backup
 			st["proxyStale"] = (main != "" && !isEgressDirect(main) && proxyIdxInPool(main) < 0) ||
 				(backup != "" && !isEgressDirect(backup) && proxyIdxInPool(backup) < 0)
-		}
-		if sess[i].CreatedAt > 0 {
-			st["createdAt"] = time.Unix(sess[i].CreatedAt, 0).Format(time.RFC3339)
 		}
 		// 出口绑定：面板必须能看出"这个 key 为什么不在轮转里"。
 		// 没有绑定的 key 在绑定策略下等于停用（见 pickZenKey）。

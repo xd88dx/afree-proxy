@@ -1259,6 +1259,39 @@ func handleTraeAccountSetProxy(w http.ResponseWriter, r *http.Request) {
 	writeAPI(w, http.StatusOK, apiResponse{Success: true})
 }
 
+// exportTrae2apiProxyBindings TraeWork 账号出口绑定（proxy-config.json 的
+// trae2apiBindings 段）随配置备份迁移（2026-11-05 用户实测补缺：导出→删卷→
+// 导入后绑定丢失，wb 同类缺口 2026-10-14 已补、trae 换线时没跟）。
+func exportTrae2apiProxyBindings() map[string]trae2apiProxyBinding {
+	traeBindingsMu.Lock()
+	defer traeBindingsMu.Unlock()
+	loadTraeBindingsLocked()
+	if len(traeBindings) == 0 {
+		return nil
+	}
+	out := make(map[string]trae2apiProxyBinding, len(traeBindings))
+	for k, v := range traeBindings {
+		out[k] = v
+	}
+	return out
+}
+
+// importTrae2apiProxyBindings 还原 TraeWork 出口绑定，返回写入条数。与 wb
+// 同采用"整体替换"：备份里出现的 uid 覆盖本机值；本机多出来的 uid 一并清掉，
+// 避免跨机迁移后残留旧机的绑定。
+func importTrae2apiProxyBindings(in map[string]trae2apiProxyBinding) int {
+	traeBindingsMu.Lock()
+	defer traeBindingsMu.Unlock()
+	loadTraeBindingsLocked()
+	next := make(map[string]trae2apiProxyBinding, len(in))
+	for k, v := range in {
+		next[k] = v
+	}
+	traeBindings = next
+	saveTraeBindingsLocked()
+	return len(next)
+}
+
 // handleTraeAccountClearProxies POST /admin/api/trae/accounts/proxy/clear ——
 // 「清空代理」语义与各平台一致：清绑定 + 该账号路由置禁用（二者永远绑一起）。
 func handleTraeAccountClearProxies(w http.ResponseWriter, r *http.Request) {

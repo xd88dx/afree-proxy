@@ -121,8 +121,6 @@ func registerAdminRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/admin/api/opencode/keys/proxy/clear", adminCORS(auth(handleZenKeyClearProxies)))
 	mux.HandleFunc("/admin/api/zen/keys/proxy", adminCORS(auth(handleZenKeySetProxy)))
 	mux.HandleFunc("/admin/api/opencode/keys/proxy", adminCORS(auth(handleZenKeySetProxy)))
-	mux.HandleFunc("/admin/api/zen/sessions", adminCORS(auth(handleZenSessions)))
-	mux.HandleFunc("/admin/api/opencode/sessions", adminCORS(auth(handleZenSessions)))
 	// OpenRouter 平台（key 池，or: 前缀）：配置/模型/key 管理/测试/代理绑定
 	mux.HandleFunc("/admin/api/openrouter/config", adminCORS(auth(handleOrConfig)))
 	mux.HandleFunc("/admin/api/openrouter/config/update", adminCORS(auth(handleOrConfigUpdate)))

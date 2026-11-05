@@ -374,43 +374,6 @@ func handleZenModelsRefresh(w http.ResponseWriter, r *http.Request) {
 	writeCatalogResult(w, platZen, total-before, total)
 }
 
-// GET /admin/api/zen/sessions
-// 每个 key 的会话状态（本地铸造，无 mint 任务进度）。
-func handleZenSessions(w http.ResponseWriter, r *http.Request) {
-	if r.Method != "GET" {
-		writeAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
-		return
-	}
-	keys := getZenConfig().Keys
-	sessions := make([]map[string]any, 0, len(keys))
-	live := 0
-	for i, k := range keys {
-		s := zenSessionSnapshotOf(k)
-		if s.Live {
-			live++
-		}
-		entry := map[string]any{
-			"index":     i,
-			"keyMask":   maskZenKey(k),
-			"noKey":     k == "",
-			"live":      s.Live,
-			"minted":    s.Minted,
-			"session":   s.Session,
-			"createdAt": "",
-		}
-		if s.CreatedAt > 0 {
-			entry["createdAt"] = time.Unix(s.CreatedAt, 0).Format(time.RFC3339)
-		}
-		sessions = append(sessions, entry)
-	}
-	data := map[string]any{
-		"liveCount": live,
-		"total":     len(keys),
-		"sessions":  sessions,
-	}
-	writeAPI(w, http.StatusOK, apiResponse{Success: true, Data: data})
-}
-
 // POST /admin/api/zen/keys/test   body: {"index": 0}
 // 对单个 zen key 发一个极小探测请求（与 cline 账号的 Test 按钮同语义）。
 // 整个探测固定在该 key 上（zenCallOpts.pinKey），绝不影响正常轮转；成功即

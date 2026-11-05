@@ -141,6 +141,10 @@ type configBackup struct {
 	// 2026-10-14 补：workbuddyBackup 原只覆盖 vendor config.json 与 auths
 	// 凭据，漏了出口绑定，导入后该文件仍留旧值（而非本机值），跨机迁移出错。
 	WorkBuddyProxies map[string]workbuddyProxyBinding `json:"workBuddyProxies,omitempty"`
+	// TraeProxies TraeWork 账号出口绑定（proxy-config.json 的 trae2apiBindings
+	// 段）。2026-11-05 补：trae 换线时未随 wb 的 2026-10-14 教训补齐，导出→
+	// 删卷→导入后绑定丢失（用户实测）。
+	TraeProxies map[string]trae2apiProxyBinding `json:"traeProxies,omitempty"`
 	// ModelBlacklist 模型封禁表（afree-config.json 的 modelBlacklist 段）。2026-10-19 补：
 	// 导出导入一直漏了封禁数据，跨机迁移后 /v1/models 把已确认不可调用的
 	// 模型重新暴露给客户端，每次选中都吃一轮无谓失败。
@@ -231,6 +235,7 @@ func handleAdminConfigExport(w http.ResponseWriter, r *http.Request) {
 		Other:               other.Get(),
 		Trae:                trae2apiBackupSnapshot(),
 		WorkBuddyProxies:    exportWorkbuddyProxyBindings(),
+		TraeProxies:         exportTrae2apiProxyBindings(),
 		ModelBlacklist:      exportModelBlacklist(),
 		PlatformBlacklist:   exportPlatformBlacklist(),
 		ZenDepAliases:       exportZenDepAliases(),
@@ -618,6 +623,9 @@ func handleAdminConfigImport(w http.ResponseWriter, r *http.Request) {
 	}
 	if len(backup.WorkBuddyProxies) > 0 {
 		imported["workBuddyProxies"] = importWorkbuddyProxyBindings(backup.WorkBuddyProxies)
+	}
+	if len(backup.TraeProxies) > 0 {
+		imported["traeProxies"] = importTrae2apiProxyBindings(backup.TraeProxies)
 	}
 
 	// ---- state 段（2026-11-03 三层口径）：全量快照按层分流。账号事实（冷却表/

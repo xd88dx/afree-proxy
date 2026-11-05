@@ -33,9 +33,11 @@ func setupZenSessionTestUpstream(t *testing.T) string {
 	return dir
 }
 
-// pickZenKey 必须优先挑 live key：只要池里还有合法会话的 key，
-// 未命中轮就该选它（异常窗口外的常规语义）。
-func TestPickZenKeyPrefersLiveSessions(t *testing.T) {
+// live 优先轮已随粘性会话退役（2026-11-05）：现铸模式下 zenSessions 不再
+// 随首用增长，live 集合退化为"老 key 化石集合"，会把新 key 永久挡在轮转外
+// （生产实证：5 条新 key 一天零流量恒"待启用"）。轮转对所有可路由 key 平等，
+// 有无会话快照不影响候选资格。
+func TestPickZenKeyIgnoresSessionSnapshots(t *testing.T) {
 	setupZenSessionTestUpstream(t)
 	cfg := getZenConfig()
 	cfg2 := *cfg
@@ -52,10 +54,13 @@ func TestPickZenKeyPrefersLiveSessions(t *testing.T) {
 	zenSessions["sk-live-2"] = &zenSessionEntry{Session: "ses_" + "0123456789ab" + "0123456789ABcd"}
 	zenSessMu.Unlock()
 
-	for i := 0; i < 5; i++ {
-		if got := pickZenKey(); got != "sk-live-2" {
-			t.Fatalf("pickZenKey = %q; must prefer the only live key", got)
-		}
+	// round_robin：三 key 平等轮转，每个都被选中；有快照的 sk-live-2 不垄断。
+	seen := map[string]bool{}
+	for i := 0; i < 9; i++ {
+		seen[pickZenKey()] = true
+	}
+	if len(seen) != 3 {
+		t.Fatalf("rotation must cover all 3 keys equally, saw %v", seen)
 	}
 }
 
@@ -99,7 +104,8 @@ func mintTestZenSession(t *testing.T, key string) string {
 	return e.Session
 }
 
-// 面板端点：key 快照必须报出 live 状态与已存在的会话。
+// 面板端点：key 快照不再携带会话字段（2026-11-05 会话快照区块拆除——
+// 现铸模式下无粘性会话可展示，zenSessions 仅剩 403 换新闸门在用）。
 func TestZenSessionsSnapshot(t *testing.T) {
 	setupZenSessionTestUpstream(t)
 	cfg := getZenConfig()
@@ -108,19 +114,15 @@ func TestZenSessionsSnapshot(t *testing.T) {
 	setZenConfig(&cfg2)
 	t.Cleanup(func() { c := *cfg; setZenConfig(&c) })
 
-	mintTestZenSession(t, "sk-one") // 本地铸造
+	mintTestZenSession(t, "sk-one") // 本地铸造（闸门路径仍写表）
 	snaps := zenKeyStatus()
 	if len(snaps) != 2 {
 		t.Fatalf("got %d key states, want 2", len(snaps))
 	}
-	if snaps[0]["sessionLive"] != true {
-		t.Fatalf("key #1 must report sessionLive after local minting: %+v", snaps[0])
-	}
-	if snaps[1]["sessionLive"] != false {
-		t.Fatalf("key #2 never requested; sessionLive must be false: %+v", snaps[1])
-	}
-	if _, ok := snaps[0]["createdAt"]; !ok {
-		t.Fatalf("key #1 must report createdAt after local minting: %+v", snaps[0])
+	for _, field := range []string{"sessionLive", "session", "createdAt"} {
+		if _, ok := snaps[0][field]; ok {
+			t.Fatalf("key state must not carry %q anymore (panel removed): %+v", field, snaps[0])
+		}
 	}
 }
 

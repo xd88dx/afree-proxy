@@ -127,23 +127,6 @@ func zenSessionLive(key string) bool {
 	return e != nil && kit.ValidZenSessionID(e.Session)
 }
 
-// zenLiveKeys 批量查询（一次加锁），供 pickZenKey 在轮转时优先挑 live key。
-func zenLiveKeys(keys []string) map[string]bool {
-	if len(keys) == 0 {
-		return nil
-	}
-	loadZenSessions()
-	zenSessMu.Lock()
-	defer zenSessMu.Unlock()
-	live := make(map[string]bool, len(keys))
-	for _, k := range keys {
-		if e := zenSessions[k]; e != nil && kit.ValidZenSessionID(e.Session) {
-			live[k] = true
-		}
-	}
-	return live
-}
-
 // zenSessionSnapshot 每个 key 的会话状态（管理面板展示；session 截断显示）。
 type zenSessionSnapshot struct {
 	Minted    bool
