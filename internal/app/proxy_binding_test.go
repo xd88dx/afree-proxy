@@ -472,6 +472,45 @@ func TestSetAccountProxyBinding(t *testing.T) {
 	}
 }
 
+// 绑定/清空是配置态，必须显式落盘（2026-11-05 生产实证：一键代理+保存后
+// 重启回滚——2026-10-31 拆分后后台 flusher 只写痕迹文件，只 markPoolDirty
+// 的配置改动重启即丢）。断言：保存后 cline-config.json 里就是新绑定。
+// poolPath 在包 init() 求值，不随 t.Setenv 变，测试直接覆写（admin_backup_test 同款）。
+func TestSetAccountProxyBindingPersistsToFile(t *testing.T) {
+	tmp := t.TempDir()
+	savedPath := poolPath
+	poolPath = filepath.Join(tmp, "cline-config.json")
+	t.Cleanup(func() { poolPath = savedPath })
+	setupBindingTest(t, &zenTestConfig{
+		Keys:    []string{"sk-test"},
+		Proxies: []string{"http://a:1", "http://b:2"},
+	})
+	swapTestPool(t, []*Account{{AccountID: "a", Email: "a@x"}})
+
+	if err := setAccountProxyBinding("a", "http://a:1", "http://b:2"); err != nil {
+		t.Fatalf("set: %v", err)
+	}
+	raw, err := os.ReadFile(filepath.Join(tmp, "cline-config.json"))
+	if err != nil {
+		t.Fatalf("read cline-config.json: %v", err)
+	}
+	if !strings.Contains(string(raw), "http://a:1") {
+		t.Fatal("binding must be written to cline-config.json immediately (not only in memory)")
+	}
+
+	// 清空同样落盘
+	if n := clearAllAccountProxies(); n != 1 {
+		t.Fatalf("clearAllAccountProxies = %d, want 1", n)
+	}
+	raw, err = os.ReadFile(filepath.Join(tmp, "cline-config.json"))
+	if err != nil {
+		t.Fatalf("read cline-config.json: %v", err)
+	}
+	if strings.Contains(string(raw), "http://a:1") {
+		t.Fatal("cleared binding must be persisted to cline-config.json immediately")
+	}
+}
+
 func TestSetZenKeyProxyBinding(t *testing.T) {
 	// 备用代理开关打开才能写入备用槽（关闭时 normalizeBackupSlot 会把备用槽收敛为空）
 	setupBindingTest(t, &zenTestConfig{

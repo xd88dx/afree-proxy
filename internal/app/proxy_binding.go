@@ -432,7 +432,11 @@ func setAccountProxyBinding(accountID, main, backup string) error {
 			}
 			a.ProxyMain = main
 			a.ProxyBackup = backup
-			markPoolDirtyLocked()
+			// 绑定是配置态，必须显式落盘：2026-10-31 配置/痕迹拆分后后台
+			// flusher 只写 cline-state.json（痕迹），只 markPoolDirty 的
+			// 配置改动在重启后丢失（2026-11-05 生产实证：一键代理+保存后
+			// 重启回滚）。与 setAccountPoolEnabled 的 savePool 同口径。
+			savePoolLocked()
 			return nil
 		}
 	}
@@ -484,7 +488,10 @@ func clearAllAccountProxies() int {
 		a.ProxyBackup = ""
 		n++
 	}
-	markPoolDirtyLocked()
+	if n > 0 {
+		// 配置态显式落盘（同 setAccountProxyBinding，见彼处注释）。
+		savePoolLocked()
+	}
 	poolMu.Unlock()
 	return n
 }
