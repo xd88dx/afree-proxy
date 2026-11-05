@@ -1092,18 +1092,80 @@ func anyZenKeyParked() bool {
 // pinProxyPerKey 开启且代理池非空时自动分配一个稳定出口（重启不变），代理比
 // key 少时多出来的 key 被过滤——它们的流量若继续发出（直连或借用别人的出口），
 // 上游就会把"一个 key 多个 IP"的指纹重新打上，这正是要消除的。
-// zenNoKeyError 轮转取不到 key 时的错误：区分"没有配置任何 key"与"全部
-// 被代理隔离挡住"，避免运维按空池排查代理池。
+// zenKeyGate key 参与轮转前的三层门（pickZenKey 的过滤与 zenNoKeyError 的
+// 报错共用同一实现，保证错误口径与真实过滤一致）：blocked = 隔离模式下显式
+// 绑定主备出口都不可用；routingOff = 面板"启用"列关闭（这类 key 也不参与
+// 自动铸造，见 KeyRoutingEnabled 字段注释：路由启用是铸造的前提）；
+// noEgress = egress 钉定生效（开关开 + 池非空）却没分到自动出口——直连或
+// 借用别人的出口都会重新打上"一 key 多 IP"指纹，整体过滤。不含 parked 层
+// （zenKeyMu 锁内状态，pickZenKey 的 buildCandidates 自行过滤）。
+func zenKeyGate(keys []string) (blocked, routingOff, noEgress map[string]bool) {
+	blocked = map[string]bool{}
+	routingOff = map[string]bool{}
+	noEgress = map[string]bool{}
+	if proxyIsolationEnabled() {
+		for _, k := range keys {
+			if main, backup, bound := keyBindingOf(k); bound && !boundProxiesRoutableFor(pkZen, main, backup) {
+				blocked[k] = true
+			}
+		}
+	}
+	for _, k := range keys {
+		if !zenKeyRoutingEnabled(k) {
+			routingOff[k] = true
+		}
+	}
+	if egressBindingActive() {
+		for _, k := range keys {
+			if _, ok := egressProxyForZen(k); !ok {
+				noEgress[k] = true
+			}
+		}
+	}
+	return blocked, routingOff, noEgress
+}
+
+// zenNoKeyError 轮转取不到 key 时的错误：按真实拒绝层给出可操作原因——
+// parked（免费日配额耗尽）、显式绑定出口隔离阻断、路由关闭、钉定层没分到
+// 出口四层分开报（2026-11-05 生产实证：20 个 key 白天全部因免费配额 parked，
+// 旧文案却恒报 "add proxies, or turn off pinProxyPerKey"，把官方配额限制
+// 误导成代理池容量问题）。
 func zenNoKeyError() error {
-	if len(getZenConfig().Keys) == 0 {
+	keys := getZenConfig().Keys
+	if len(keys) == 0 {
 		return fmt.Errorf("no zen key configured: add an enabled key in the admin panel")
 	}
-	// egress 钉定生效时，"全被挡"最常见的原因是代理比 key 少（一代理一 key），
-	// 用容量口径报错并给出可操作建议，别让人按"绑定出口冷却"去排查。
-	if egressBindingActive() {
-		return egressShortfallError("zen", egressNSZen, getZenConfig().Keys)
+	total := len(keys)
+	// 全部停放（日配额耗尽）：直接给配额语义与恢复时刻——这是官方免费层
+	// 限制，与代理池无关，别让人去查代理。
+	if until, ok := zenAllParkedUntil(); ok {
+		return fmt.Errorf("zen free daily quota exhausted: all %d key(s) parked; earliest auto-probe at %s UTC",
+			total, until.UTC().Format("15:04 MST"))
 	}
-	return fmt.Errorf("no zen key routable: all configured keys are cooling, routing-disabled or bound-exit-blocked")
+	blocked, routingOff, noEgress := zenKeyGate(keys)
+	parkedN := 0
+	for _, k := range keys {
+		if _, p := zenKeyParked(k); p {
+			parkedN++
+		}
+	}
+	parts := make([]string, 0, 4)
+	if parkedN > 0 {
+		parts = append(parts, fmt.Sprintf("%d parked (daily quota exhausted)", parkedN))
+	}
+	if n := len(blocked); n > 0 {
+		parts = append(parts, fmt.Sprintf("%d bound-exit-blocked (bound exits cooling or removed)", n))
+	}
+	if n := len(routingOff); n > 0 {
+		parts = append(parts, fmt.Sprintf("%d routing-disabled", n))
+	}
+	if n := len(noEgress); n > 0 {
+		parts = append(parts, fmt.Sprintf("%d without an auto-assigned egress (%d proxies configured)", n, len(getProxyPool().Proxies)))
+	}
+	if len(parts) == 0 {
+		return fmt.Errorf("no zen key routable: all %d key(s) are cooling — wait for cooldown expiry", total)
+	}
+	return fmt.Errorf("no zen key routable (%d keys): %s", total, strings.Join(parts, "; "))
 }
 
 // zenBlockedExitErr 固定 key（pinKey 面板 Test / ZEN_PIN_KEY）出口不可用时
@@ -1123,38 +1185,10 @@ func pickZenKey() string {
 	if len(keys) == 0 {
 		return ""
 	}
-	isolation := proxyIsolationEnabled()
-	// 绑定可用性只依赖叶子锁，先在循环外批量算好，三轮选择零额外加锁。
-	blocked := map[string]bool{}
-	if isolation {
-		for _, k := range keys {
-			main, backup, bound := keyBindingOf(k)
-			if bound && !boundProxiesRoutableFor(pkZen, main, backup) {
-				blocked[k] = true
-			}
-		}
-	}
-	// 面板"启用"列关掉的 key 不参与任何一轮候选，也不会被自动铸造
-	// （zenKeyAutoHarvestEnabled 跟随路由启用，见 KeyRoutingEnabled 字段注释：
-	// 路由启用是铸造的前提）。
-	routingOff := map[string]bool{}
-	for _, k := range keys {
-		if !zenKeyRoutingEnabled(k) {
-			routingOff[k] = true
-		}
-	}
-	// egress 钉定（3758eb7）：显式 KeyBindings 之下的自动层——钉定生效
-	// （开关开 + 池非空）却没分到自动出口的 key 整体过滤，直连或借用别人的
-	// 出口都会重新打上"一 key 多 IP"指纹。快照在 zenSessMu 之外取（egressMu
-	// 自带锁、不嵌套）。
-	noEgress := map[string]bool{}
-	if egressBindingActive() {
-		for _, k := range keys {
-			if _, ok := egressProxyForZen(k); !ok {
-				noEgress[k] = true
-			}
-		}
-	}
+	// 三层门一次算好（zenKeyGate 与 zenNoKeyError 共用，保证报错口径与真实
+	// 过滤一致）；绑定可用性只依赖叶子锁，先在循环外批量算好，三轮选择零
+	// 额外加锁。
+	blocked, routingOff, noEgress := zenKeyGate(keys)
 	alive := 0
 	for _, k := range keys {
 		if !blocked[k] && !routingOff[k] && !noEgress[k] {

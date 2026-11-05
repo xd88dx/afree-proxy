@@ -31,22 +31,14 @@ func initOpenRouter() {
 	openrouter.Load(orConfigPath())
 	openrouter.SetExitResolver(func(key string) (string, bool) {
 		if key == "" {
-			return "", true
+			// 空 key = 平台全局出口规则（无凭据场景的兜底，如目录同步），
+			// 与"未绑定 key"完全同语义（2026-11-05）。
+			return orGlobalEgressExit()
 		}
 		main, backup, bound := openrouter.BindingOf(key)
 		if !bound {
 			// 未绑定 = 全局规则：面板选直连时不走池
-			if !openrouter.ProxiesEnabled() {
-				if kit.DisableDirect() {
-					return "", false // 直连被禁：凭据失效（2026-10-28）
-				}
-				return "", true
-			}
-			url, _ := pickUpstreamProxyFor(pkOr)
-			if url == "" && kit.DisableDirect() {
-				return "", false // 代理池空兜底的直连同样不放行
-			}
-			return url, true
+			return orGlobalEgressExit()
 		}
 		url, _, ok := pickBoundProxyFor(pkOr, main, backup)
 		return url, ok
@@ -62,10 +54,37 @@ func initOpenRouter() {
 	go startOrModelsRefresher()
 }
 
-// startOrModelsRefresher 每 5 分钟同步一次免费模型目录。上游偶发 TLS EOF
-// （CF 对 uTLS 指纹连接的间歇重置，与 zen 注册表同现象），单次失败下一轮
-// 自然重试，这里再补一次立即重试提高恢复速度。
+// orGlobalEgressExit 平台全局出口（未绑定 key / 无凭据场景的统一语义）：
+// 走池开关开启→池出口（池空兜底直连受 DISABLE_DIRECT 判否）；关闭→显式直连
+// （DISABLE_DIRECT 判否）。绝不隐式绕过 DISABLE_DIRECT（2026-10-29 审计口径）。
+func orGlobalEgressExit() (string, bool) {
+	if !openrouter.ProxiesEnabled() {
+		if kit.DisableDirect() {
+			return "", false // 直连被禁：凭据失效（2026-10-28）
+		}
+		return "", true
+	}
+	url, _ := pickUpstreamProxyFor(pkOr)
+	if url == "" && kit.DisableDirect() {
+		return "", false // 代理池空兜底的直连同样不放行
+	}
+	return url, true
+}
+
+// startOrModelsRefresher 启动阶段以 30s 间隔快速重试直至首次同步成功（至多
+// 10 次，覆盖原 5 分钟空窗），之后转入常规 5 分钟 ticker。背景（2026-11-05
+// 生产空窗实证）：live 价格门为唯一权威后，冷启动目录=页面快照兜底；若首拉
+// 失败（备份导入后 key 全禁用、出口暂不可用是典型态），目录要等 5 分钟
+// ticker 才补——快照外新模型在该窗口内一律 404（strict-gate fail-closed）。
+// 上游偶发 TLS EOF（CF 对 uTLS 指纹连接的间歇重置，与 zen 注册表同现象）
+// 由 syncOrCatalog 的立即重试消化。
 func startOrModelsRefresher() {
+	for i := 0; i < 10; i++ {
+		if err := syncOrCatalog(2); err == nil {
+			break
+		}
+		time.Sleep(30 * time.Second)
+	}
 	ticker := time.NewTicker(5 * time.Minute)
 	for range ticker.C {
 		syncOrCatalog(2)

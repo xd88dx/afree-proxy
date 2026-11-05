@@ -651,3 +651,59 @@ func TestSetZenGateHeadersOrgID(t *testing.T) {
 		t.Fatalf("x-opencode-org-id = %v, want [wrk_test_org_123]", got)
 	}
 }
+
+// zenNoKeyError 按真实拒绝层报错（2026-11-05 生产实证：20 个 key 白天全部
+// 因免费配额 parked，旧文案却恒报 "add proxies, or turn off pinProxyPerKey"，
+// 把官方限制误导成代理池容量问题）：全 parked → 配额语义 + 探针时刻；
+// 分层混合 → 列各层计数；绝不再把非容量问题报成代理不够。
+func TestZenNoKeyErrorReportsRealRejectionLayer(t *testing.T) {
+	t.Setenv("DATA_DIR", t.TempDir())
+	saved := getZenConfig()
+	t.Cleanup(func() { setZenConfig(saved) })
+
+	newCfg := func(keys []string, routing map[string]bool) *zenConfigData {
+		cfg := *saved
+		cfg.Keys = keys
+		cfg.KeyRoutingEnabled = routing
+		return &cfg
+	}
+
+	// 全部路由关闭：报 routing-disabled，不报代理容量
+	setZenConfig(newCfg([]string{"k1", "k2"}, map[string]bool{"k1": false, "k2": false}))
+	err := zenNoKeyError()
+	if err == nil || !strings.Contains(err.Error(), "no zen key routable (2 keys)") || !strings.Contains(err.Error(), "2 routing-disabled") {
+		t.Fatalf("routing-off pool error = %v", err)
+	}
+	if strings.Contains(err.Error(), "add proxies") {
+		t.Fatalf("routing-off pool must not be reported as a proxy capacity problem: %v", err)
+	}
+
+	// 全部停放（免费日配额耗尽）：报配额语义，不报代理容量
+	setZenConfig(newCfg([]string{"k1", "k2"}, nil))
+	parkZenKey("k1", "test")
+	parkZenKey("k2", "test")
+	t.Cleanup(func() {
+		zenKeyMu.Lock()
+		zenKeyPark = map[string]zenParkState{}
+		zenKeyMu.Unlock()
+	})
+	err = zenNoKeyError()
+	if err == nil || !strings.Contains(err.Error(), "free daily quota exhausted") || !strings.Contains(err.Error(), "all 2 key(s) parked") {
+		t.Fatalf("all-parked pool error = %v", err)
+	}
+	if strings.Contains(err.Error(), "add proxies") {
+		t.Fatalf("parked pool must not be reported as a proxy capacity problem: %v", err)
+	}
+
+	// 混合：k1 parked + k2 routing 关——两层计数都列出
+	//（先清掉上一步的全量停放：zenAllParkedUntil 只看 park 不看路由层）
+	zenKeyMu.Lock()
+	zenKeyPark = map[string]zenParkState{}
+	zenKeyMu.Unlock()
+	parkZenKey("k1", "test")
+	setZenConfig(newCfg([]string{"k1", "k2"}, map[string]bool{"k2": false}))
+	err = zenNoKeyError()
+	if err == nil || !strings.Contains(err.Error(), "1 parked (daily quota exhausted)") || !strings.Contains(err.Error(), "1 routing-disabled") {
+		t.Fatalf("mixed pool error = %v", err)
+	}
+}

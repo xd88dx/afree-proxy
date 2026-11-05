@@ -1194,8 +1194,14 @@ func callClineAPI(ctx context.Context, params map[string]any, stream bool, usePr
 			return nil, acc, err
 		}
 		// 只对 429 / 5xx 换账号；4xx（400/401/403 等）重试无意义，原样返回。
+		// 例外（2026-11-05 生产实证）：403 呈 Google GFE HTML 拒绝页指纹 =
+		// 出口 IP 被上游前置拒收，非账号/key 问题（同一出口稍后即自愈：
+		// 19:47 被 GFE 403、20:34 同出口成功），换账号（隔离模式=换绑定出口）
+		// 可救活本次请求。
 		if ce.Status != http.StatusTooManyRequests && ce.Status < 500 {
-			return nil, acc, err
+			if ce.Status != http.StatusForbidden || !clineGFEProxyForbidden(ce.Body) {
+				return nil, acc, err
+			}
 		}
 		// "500 empty response content" 是模型属性（该模型必须流式），不是账号
 		// 故障：换账号徒劳，且会拖慢 callClineAutoStream 的"学习+改流式重试"。
@@ -1211,6 +1217,17 @@ func callClineAPI(ctx context.Context, params map[string]any, stream bool, usePr
 
 // clineFailoverAttempts 单次请求最多尝试的账号数（429/5xx 换账号）。
 const clineFailoverAttempts = 3
+
+// clineGFEProxyForbidden 403 响应体是否为 Google 前端（GFE）的 IP 拒绝页而非
+// cline API 的业务 403：HTML、Forbidden、"does not have permission" 三指纹同时
+// 命中才判。cline API 的业务 403 是 JSON（权益/会话类），换账号无意义；GFE
+// 页面拒的是出口 IP，换出口即可恢复。
+func clineGFEProxyForbidden(body string) bool {
+	low := strings.ToLower(body)
+	return strings.Contains(low, "<html") &&
+		strings.Contains(low, "forbidden") &&
+		strings.Contains(low, "does not have permission")
+}
 
 // clineAPIWithAccount 用指定账号执行一次上游调用（含代理轮转与 401 刷新）。
 // 429/5xx 以 *clineAPIError 返回，交由 callClineAPI 决定是否换账号。

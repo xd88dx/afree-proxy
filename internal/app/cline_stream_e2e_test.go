@@ -513,3 +513,103 @@ func TestClineHeadersOnTheWire(t *testing.T) {
 		t.Errorf("X-Task-ID %q must use the official <13 digits>_<5 base36> shape", got)
 	}
 }
+
+// GFE 403（出口 IP 被 Google 前端拒绝）：换账号重试而不是判死——出口被拒是
+// 间歇性的（2026-11-05 生产实证：19:47 同出口被 GFE 403、20:34 同出口成功），
+// 换账号（隔离模式=换绑定出口）可救活本次请求。
+func TestCallClineAPIFailoverOnGFE403(t *testing.T) {
+	t.Setenv("DATA_DIR", t.TempDir())
+
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.Header.Get("Authorization"), "key-A") {
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			w.WriteHeader(http.StatusForbidden)
+			_, _ = w.Write([]byte(`<html><head><title>403 Forbidden</title></head>` +
+				`<body text=#000000 bgcolor=#ffffff><h1>Error: Forbidden</h1>` +
+				`<h2>Your client does not have permission to get URL <code>/api/v1/chat/completions</code> from this server.</h2></body></html>`))
+			return
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("data: {\"choices\":[]}\n\n"))
+	}))
+	defer upstream.Close()
+
+	origBase := clineAPIBase
+	clineAPIBase = upstream.URL
+	defer func() { clineAPIBase = origBase }()
+
+	poolMu.Lock()
+	savedPool := pool
+	pool = &AccountPool{Accounts: []*Account{
+		{AccountID: "a-1", Email: "a1@test", APIToken: "sk-key-A"},
+		{AccountID: "a-2", Email: "a2@test", APIToken: "sk-key-B"},
+	}}
+	poolMu.Unlock()
+	defer func() {
+		poolMu.Lock()
+		pool = savedPool
+		poolMu.Unlock()
+	}()
+
+	resp, acc, err := callClineAPI(context.Background(), map[string]any{
+		"model":    "z-ai/glm-5.3-flash",
+		"messages": []any{map[string]any{"role": "user", "content": "hi"}},
+	}, false, false)
+	if err != nil {
+		t.Fatalf("GFE 403 must fail over to the healthy account, got err=%v", err)
+	}
+	if resp == nil || resp.StatusCode != 200 {
+		t.Fatalf("expected 200 from the healthy account, got %+v", resp)
+	}
+	defer resp.Body.Close()
+	if acc == nil || acc.AccountID != "a-2" {
+		t.Fatalf("returned account = %+v, want the healthy a-2", acc)
+	}
+}
+
+// 业务 403（cline API 的 JSON 拒绝，权益/会话类）：不换账号，原样返回——
+// 换账号重试无意义，且绝不把业务 403 误判成出口问题。
+func TestCallClineAPIBusiness403NoFailover(t *testing.T) {
+	t.Setenv("DATA_DIR", t.TempDir())
+
+	var calls atomic.Int32
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = w.Write([]byte(`{"error":"session expired"}`))
+	}))
+	defer upstream.Close()
+
+	origBase := clineAPIBase
+	clineAPIBase = upstream.URL
+	defer func() { clineAPIBase = origBase }()
+
+	poolMu.Lock()
+	savedPool := pool
+	pool = &AccountPool{Accounts: []*Account{
+		{AccountID: "a-1", Email: "a1@test", APIToken: "sk-key-A"},
+		{AccountID: "a-2", Email: "a2@test", APIToken: "sk-key-B"},
+	}}
+	poolMu.Unlock()
+	defer func() {
+		poolMu.Lock()
+		pool = savedPool
+		poolMu.Unlock()
+	}()
+
+	_, _, err := callClineAPI(context.Background(), map[string]any{
+		"model":    "z-ai/glm-5.3-flash",
+		"messages": []any{map[string]any{"role": "user", "content": "hi"}},
+	}, false, false)
+	if err == nil {
+		t.Fatal("business 403 must be returned as an error")
+	}
+	var apiErr *clineAPIError
+	if !errors.As(err, &apiErr) || apiErr.Status != http.StatusForbidden {
+		t.Fatalf("error must be the original 403 *clineAPIError, got %v", err)
+	}
+	if n := calls.Load(); n != 1 {
+		t.Fatalf("business 403 must not fail over, upstream called %d times", n)
+	}
+}

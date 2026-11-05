@@ -89,14 +89,28 @@ func catalogHTTPClient() (*http.Client, error) {
 		if !ok {
 			continue
 		}
-		if proxyURL == "" {
-			dc := *httpClientFor(proxyURL)
-			dc.Timeout = 25 * time.Second
-			return &dc, nil
-		}
-		return httpClientFor(proxyURL), nil
+		return egressClient(proxyURL), nil
 	}
-	return nil, fmt.Errorf("no routable exit for catalog sync (keys cooling/disabled or DISABLE_DIRECT)")
+	// key 全禁用/无 key：退到平台全局出口规则（app 注入 resolver 的空 key 语义
+	// = 未绑定 key 同款：走池/显式直连/DISABLE_DIRECT fail-closed）。目录端点
+	// 免认证，凭据全禁不应掐死公开数据的同步——2026-11-05 生产空窗实证：备份
+	// 导入后 key 全禁用，live 目录同步持续失败，快照外模型 404 达 5 分钟。
+	proxyURL, ok := resolveExit("")
+	if !ok {
+		return nil, fmt.Errorf("no routable exit for catalog sync (keys cooling/disabled, global egress blocked by DISABLE_DIRECT)")
+	}
+	return egressClient(proxyURL), nil
+}
+
+// egressClient 目录同步的出站 client：代理出口走池 client 原样；显式直连
+// （空 URL）用 25s 超时的直连拷贝。
+func egressClient(proxyURL string) *http.Client {
+	if proxyURL == "" {
+		dc := *httpClientFor(proxyURL)
+		dc.Timeout = 25 * time.Second
+		return &dc
+	}
+	return httpClientFor(proxyURL)
 }
 
 // pricingAllZero 判断一条 pricing 记录是否全零（免费）。字符串解析失败视为不免费。
