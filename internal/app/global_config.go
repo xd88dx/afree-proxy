@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"log"
 	"os"
+	"path/filepath"
 	"sync"
 )
 
@@ -100,11 +101,37 @@ func saveGlobalConfigLocked() {
 	atomicWriteFile(globalConfigPath(), raw)
 }
 
+// atomicWriteMu 按"最终文件路径"串行化并发写（2026-11-06）。调用方多数不在
+// 同一把锁内（如 saveZenUsage 快照后在锁外落盘），并发写同一目标时：
+// 固定 ".tmp" 名会互踩——A rename 走了 tmp，B 的 rename 报 ENOENT、快照丢失
+// （生产实证 zen-state.json 两次 rename 失败）；即便临时名唯一，Windows 上
+// 并发 rename 覆盖同一目标也会 Access denied。按路径加互斥锁后两者都消除。
+var atomicWriteMu sync.Map // path -> *sync.Mutex
+
 // atomicWriteFile 原子写:先写临时文件再 rename,崩溃中途写入不会截断原文件。
+// 临时文件每调用唯一命名，配合上面的按路径互斥，同路径并发写安全。
 func atomicWriteFile(path string, data []byte) {
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o600); err != nil {
+	m, _ := atomicWriteMu.LoadOrStore(path, &sync.Mutex{})
+	mu := m.(*sync.Mutex)
+	mu.Lock()
+	defer mu.Unlock()
+	dir, base := filepath.Split(path)
+	if dir == "" {
+		dir = "."
+	}
+	f, err := os.CreateTemp(dir, base+".tmp-*")
+	if err != nil {
+		log.Printf("write %s: %v", path, err)
+		return
+	}
+	tmp := f.Name()
+	_, err = f.Write(data)
+	if cerr := f.Close(); err == nil {
+		err = cerr
+	}
+	if err != nil {
 		log.Printf("write %s: %v", tmp, err)
+		_ = os.Remove(tmp)
 		return
 	}
 	if err := os.Rename(tmp, path); err != nil {

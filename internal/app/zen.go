@@ -3107,6 +3107,11 @@ func callZenAPI(ctx context.Context, params map[string]any, stream bool, opts ..
 				return nil, rateLimited, zenBlockedExitErr(key)
 			}
 			cooldownZenKey(key, 2*time.Minute)
+			// 清空 retryKey 换下一个 key（与 callZenResponsesAPI 同款）。留着的话
+			// 下一轮 retryKey 非空会跳过 pickZenKey 原样复用本 key，而其绑定出口
+			// 在冷却期内恒不可用——2026-11-06 生产实证：出口 10 分钟冷却期内单
+			// key 无睡眠无限自旋，刷出 30 万+ 行日志并打满一核。
+			retryKey = ""
 			log.Printf("  zen key#%d bound proxies unavailable, skipping key for 2m", keyIndex(key))
 			continue
 		}
