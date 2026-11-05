@@ -289,6 +289,10 @@ func (s *Server) Pool() *pool.Pool { return s.pool }
 // vendor 脚本注入的桥接点，上游原样不受影响）。
 func (s *Server) Metrics() *metrics.Collector { return s.metrics }
 
+// OnRecord afree 持久记账钩子（vendor 脚本注入的桥接点，上游原样为
+// nil）：非 nil 时每个完成的请求样本在 chatStat.done() 里回传宿主。
+var OnRecord func(s metrics.Sample)
+
 // Channels 暴露渠道表。
 func (s *Server) Channels() map[string]*Channel { return s.channels }
 
@@ -867,6 +871,17 @@ func (s *chatStat) done() {
 	log.Printf("[req] %-28s %-6s acct=%-28s finish=%-11s tok=%-10s credit=%-6s tools=%d total=%s",
 		s.model, s.mode, acct, s.finishReason(), tok, cred, s.toolsN, total.Round(time.Millisecond))
 
+	// OnRecord afree 持久记账钩子（vendor 脚本注入的桥接点，上游原样为
+	// nil）：每个完成的请求样本回传宿主，桥接层据此维护跨重启的今日/累计
+	// token 记账（vendored metrics 只有近 100 条流水，撑不起持久口径）。
+	if OnRecord != nil {
+		OnRecord(metrics.Sample{
+			Model: s.model, Account: s.accountUID, Realm: s.realm,
+			Streaming: s.mode == "stream", Success: s.success,
+			PromptTokens: s.promptTok, CompletionTokens: s.compTok,
+			HasUsage: s.hasUsage, At: s.start,
+		})
+	}
 	if s.collector == nil {
 		return
 	}

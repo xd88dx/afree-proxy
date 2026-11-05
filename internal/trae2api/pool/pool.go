@@ -253,6 +253,39 @@ func (p *Pool) Remove(uid string) {
 	p.order = out
 }
 
+// SetOrder 设置账号展示顺序（afree 面板拖拽排序；vendor 脚本注入的桥接
+// 点，上游原样不受影响）。**仅影响 All()/List() 的输出顺序**——选号是加权
+// 随机（weight 因子），与顺序无关。order 里的未知 uid 忽略；未提及的账号
+// 排尾部按 UID（保证全量入序、输出稳定）。不落盘：order 是进程内展示态，
+// 重启回 UID 序（"仅显示顺序"语义；需要持久时 afree 桥接层自行存储）。
+func (p *Pool) SetOrder(uids []string) int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	used := make(map[string]bool, len(uids))
+	ordered := make([]string, 0, len(p.byUID))
+	for _, uid := range uids {
+		if used[uid] {
+			continue
+		}
+		used[uid] = true
+		if _, ok := p.byUID[uid]; ok {
+			ordered = append(ordered, uid)
+		}
+	}
+	if len(ordered) < len(p.byUID) {
+		rest := make([]string, 0, len(p.byUID)-len(ordered))
+		for uid := range p.byUID {
+			if !used[uid] {
+				rest = append(rest, uid)
+			}
+		}
+		sort.Strings(rest)
+		ordered = append(ordered, rest...)
+	}
+	p.order = ordered
+	return len(ordered)
+}
+
 // Get 按 UID 取账号。
 func (p *Pool) Get(uid string) *Account {
 	p.mu.RLock()

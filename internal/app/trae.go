@@ -140,7 +140,7 @@ func trae2apiStart() error {
 	if err != nil {
 		return fmt.Errorf("build server: %w", err)
 	}
-	traeHooksOnce.Do(traeWireHooks)
+	traeHooksOnce.Do(func() { traeWireHooks(cfg.DataDir) })
 	sub := &trae2apiSubsystem{cfg: cfg, srv: srv, bgDone: make(chan struct{})}
 	ctx, cancel := context.WithCancel(context.Background())
 	sub.cancel = cancel
@@ -197,11 +197,18 @@ func (sub *trae2apiSubsystem) runBackground(ctx context.Context) {
 
 // traeWireHooks 把 afree 侧钩子注入 vendored 包级变量（进程级单例，上游原样
 // 为 nil = 上游行为）。闭包全部经 trae2apiCurrent() 动态取当前子系统，重启
-// 后无需重挂。
-func traeWireHooks() {
+// 后无需重挂。dataDir：记账文件路径的数据目录——本函数在 trae2apiStart 持
+// trae2apiMu 期间执行，不能经 trae2apiCurrent() 取（锁重入自死锁，
+// 2026-11-05 部署实测抓出）。
+func traeWireHooks(dataDir string) {
 	traectl.StoreHTTPClient = traeStoreHTTPClient
 	traepool.RoutingAllowed = traeRoutingAllowed
 	traeaccountstore.AccountAddedHook = traeAccountAdded
+	// 持久记账（今日/累计 token，tokens.json；2026-11-05 用户定：与其他平台
+	// 同口径，弃用 metrics 流水重建）+ 合批落盘循环。
+	traeserver.OnRecord = trae2apiTokenRecorder
+	trae2apiTokensLoad(dataDir)
+	startTrae2apiTokenFlusher()
 }
 
 // ============ 出口接管（主/备绑定 + 走池开关） ============
@@ -947,29 +954,15 @@ func trae2apiEnrichAccountRow(sub *trae2apiSubsystem, st traepool.Status, row ma
 			row["tokenUsable"] = time.Until(t) > 5*time.Minute
 		}
 	}
-	// 今日/累计 token + 最近使用（metrics 账号聚合；当日分桶取 Today 口径）
-	if sub.srv.Metrics() != nil {
-		snap := sub.srv.Metrics().Snapshot()
-		if v, ok := snap.ByAccount[st.UID]; ok {
-			row["tokensTotal"] = v.PromptTokens + v.CompletionTokens
-			if v.LastSeen != "" {
-				row["lastUsed"] = v.LastSeen
-			}
-		}
-		// 今日口径：metrics 的 recent 流水（近 100 条）按账号+本地自然日累加。
-		// 流水之外的更早请求不计入今日（与旧引擎按 state.json 累计的口径相比，
-		// 重启后今日计数从流水重建——面板展示可接受，审计口径不变）。
-		var todayTokens int64
-		day := time.Now().Format("2006-01-02")
-		for _, rec := range snap.RecentRequests {
-			if rec.Account != st.UID {
-				continue
-			}
-			if t, err := time.Parse(time.RFC3339, rec.Time); err == nil && t.Format("2006-01-02") == day {
-				todayTokens += rec.TotalTokens
-			}
-		}
-		row["tokensToday"] = todayTokens
+	// 今日/累计 token + 最近使用：持久记账表（trae2api/tokens.json，经
+	// server.OnRecord 钩子逐请求累加；2026-11-05 用户定）。跨重启不丢，跨日
+	// 惰性清零（展示层），与其他七平台同口径——vendored metrics 近 100 条
+	// 流水撑不起持久口径，弃用。
+	today, total, lastUsed, _ := trae2apiTokensSnapshot(st.UID)
+	row["tokensToday"] = today
+	row["tokensTotal"] = total
+	if lastUsed != "" {
+		row["lastUsed"] = lastUsed
 	}
 	// 签到状态：引擎持久化记录（CheckinAll 动作后 NoteCheckin 回写，随池
 	// state.json 持久化；空日期 = 从未执行过签到，面板不显示徽章）
@@ -1380,6 +1373,33 @@ func handleTraeAccountLabel(w http.ResponseWriter, r *http.Request) {
 	a.SetLabel(label)
 	_ = sub.srv.Pool().Save()
 	writeAPI(w, http.StatusOK, apiResponse{Success: true})
+}
+
+// handleTraeAccountsReorder POST /admin/api/trae/accounts/reorder body: { uids: [...] }
+// 凭据表拖拽排序（2026-11-05 用户定）：仅改展示顺序（vendored 池 order），
+// 选号是引擎加权随机与顺序无关——与 WorkBuddy SetOrder 同语义。
+func handleTraeAccountsReorder(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
+		return
+	}
+	if trae2apiCurrent() == nil {
+		writeAPI(w, http.StatusServiceUnavailable, apiResponse{Error: "TraeWork subsystem unavailable"})
+		return
+	}
+	var req struct {
+		UIDs []string `json:"uids"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req); err != nil {
+		writeAPI(w, http.StatusBadRequest, apiResponse{Error: "invalid JSON"})
+		return
+	}
+	if len(req.UIDs) == 0 {
+		writeAPI(w, http.StatusBadRequest, apiResponse{Error: "uids is required"})
+		return
+	}
+	n := trae2apiSetDisplayOrder(req.UIDs)
+	writeAPI(w, http.StatusOK, apiResponse{Success: true, Message: "Order saved", Data: map[string]any{"ordered": n}})
 }
 
 // handleTraeAccountTest POST /admin/api/trae/accounts/test —— 沿用上游设计：

@@ -149,6 +149,7 @@ func registerAdminRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/admin/api/trae/accounts/label", adminCORS(auth(handleTraeAccountLabel)))
 	mux.HandleFunc("/admin/api/trae/accounts/enabled", adminCORS(auth(handleTraeAccountSetEnabled)))
 	mux.HandleFunc("/admin/api/trae/accounts/test", adminCORS(auth(handleTraeAccountTest)))
+	mux.HandleFunc("/admin/api/trae/accounts/reorder", adminCORS(auth(handleTraeAccountsReorder)))
 	mux.HandleFunc("/admin/api/trae/accounts/proxy", adminCORS(auth(handleTraeAccountSetProxy)))
 	mux.HandleFunc("/admin/api/trae/accounts/proxy/clear", adminCORS(auth(handleTraeAccountClearProxies)))
 	mux.HandleFunc("/admin/api/trae/accounts/cooldown-clear", adminCORS(auth(handleTraeCooldownClear)))

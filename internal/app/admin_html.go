@@ -7575,7 +7575,7 @@ function renderTraeAccounts(accs) {
         const actions = '<td style="white-space:nowrap;text-align:center">' +
           '<button class="btn btn-sm" data-trt="' + a.index + '">Test</button> ' +
           '<button class="btn btn-sm btn-danger" data-trdel="' + a.index + '" title="Remove this account from the pool">Delete</button>' + '</td>';
-        return '<tr><td>#' + (a.index + 1) + '</td>' +
+        return '<tr draggable="true" data-drag-id="' + esc(a.uid) + '"><td>#' + (a.index + 1) + '</td>' +
           '<td style="min-width:0"><div style="max-width:150px" title="' + esc(label + '\n' + a.uid) + '">' +
             '<div class="nick-wrap">' +
               '<span class="nick-name" style="font-weight:600">' + esc(label) + '</span>' +
@@ -9178,6 +9178,9 @@ enableRowDragReorder('otherKeysBody', ids => {
   return api('POST', '/other/keys/reorder', { slug: p, order: ids.map(Number) });
 }, loadOtherConfig);
 enableRowDragReorder('wbAccountsBody', ids => api('POST', '/workbuddy/reorder', { uids: ids }), loadWorkbuddyAccounts);
+// TraeWork（2026-11-05 用户定）：仅改展示顺序（vendored 池 order），选号是
+// 引擎加权随机与顺序无关；行 data-drag-id = 账号 UID。
+enableRowDragReorder('traeAccountsBody', ids => api('POST', '/trae/accounts/reorder', { uids: ids }), loadTraeConfig);
 // 平台概览只在仪表盘可见时轮询（loadStats 现在打三个接口，隐藏页轮询纯浪费）
 setInterval(() => { if (_('tab-dashboard').style.display !== 'none') loadStats(); }, 10000);
 // live 会话状态：只在 opencode 页可见时轮询（与日志页同样的省流约定）。

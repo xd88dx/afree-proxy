@@ -287,6 +287,44 @@ func (a *Account) healthyLocked(now time.Time, model string) bool {
 	checkinError   string // 失败原因（面板徽章 tooltip）""",
             1,
         ),
+        (
+            """// Get 按 UID 取账号。""",
+            """// SetOrder 设置账号展示顺序（afree 面板拖拽排序；vendor 脚本注入的桥接
+// 点，上游原样不受影响）。**仅影响 All()/List() 的输出顺序**——选号是加权
+// 随机（weight 因子），与顺序无关。order 里的未知 uid 忽略；未提及的账号
+// 排尾部按 UID（保证全量入序、输出稳定）。不落盘：order 是进程内展示态，
+// 重启回 UID 序（"仅显示顺序"语义；需要持久时 afree 桥接层自行存储）。
+func (p *Pool) SetOrder(uids []string) int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	used := make(map[string]bool, len(uids))
+	ordered := make([]string, 0, len(p.byUID))
+	for _, uid := range uids {
+		if used[uid] {
+			continue
+		}
+		used[uid] = true
+		if _, ok := p.byUID[uid]; ok {
+			ordered = append(ordered, uid)
+		}
+	}
+	if len(ordered) < len(p.byUID) {
+		rest := make([]string, 0, len(p.byUID)-len(ordered))
+		for uid := range p.byUID {
+			if !used[uid] {
+				rest = append(rest, uid)
+			}
+		}
+		sort.Strings(rest)
+		ordered = append(ordered, rest...)
+	}
+	p.order = ordered
+	return len(ordered)
+}
+
+// Get 按 UID 取账号。""",
+            1,
+        ),
     ),
     "accountstore/accountstore.go": (
         (
@@ -383,7 +421,31 @@ func (s *Server) Pool() *pool.Pool { return s.pool }
 
 // Metrics 暴露指标采集器（afree 桥接层读账号级 token 聚合/最近使用；
 // vendor 脚本注入的桥接点，上游原样不受影响）。
-func (s *Server) Metrics() *metrics.Collector { return s.metrics }""",
+func (s *Server) Metrics() *metrics.Collector { return s.metrics }
+
+// OnRecord afree 持久记账钩子（vendor 脚本注入的桥接点，上游原样为
+// nil）：非 nil 时每个完成的请求样本在 chatStat.done() 里回传宿主。
+var OnRecord func(s metrics.Sample)""",
+            1,
+        ),
+        (
+            """	if s.collector == nil {
+		return
+	}""",
+            """	// OnRecord afree 持久记账钩子（vendor 脚本注入的桥接点，上游原样为
+	// nil）：每个完成的请求样本回传宿主，桥接层据此维护跨重启的今日/累计
+	// token 记账（vendored metrics 只有近 100 条流水，撑不起持久口径）。
+	if OnRecord != nil {
+		OnRecord(metrics.Sample{
+			Model: s.model, Account: s.accountUID, Realm: s.realm,
+			Streaming: s.mode == "stream", Success: s.success,
+			PromptTokens: s.promptTok, CompletionTokens: s.compTok,
+			HasUsage: s.hasUsage, At: s.start,
+		})
+	}
+	if s.collector == nil {
+		return
+	}""",
             1,
         ),
     ),
