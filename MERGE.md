@@ -280,6 +280,19 @@ WorkBuddy 一栏的基线同时登记在 `scripts/workbuddy-vendor-baseline.json
 
 ## OpenCode
 
+### 2026-11-06 — zen 免费层「几乎无法使用」根因调查（上游策略关停，非本仓缺陷，代码零改动）
+
+用户报告 OpenCode（zen）当期几乎无法使用，要求查 `yetone/magpie` 项目与 `issues?q=opencode` 找修复。调查结论：**上游 OpenCode 于 11 月初收紧免费层策略，第三方（含本仓与 magpie 生态）免费模型全面 FreeUsageLimitError，无代码修复空间**；本仓止损机制经核查健全，未改动。
+
+- **佐证链**：
+  - magpie（30k stars，本地 AI 网关，同样接 OpenCode zen）issue **#5398**（2026-11-05，Open，无回应）：「opencode zen 可以直接使用，付费模型可以正常用，免费模型都不能用」——与本仓现象同期同形态。
+  - magpie 源码（`internal/gateway/opencode_go_free_test.go`，2026-11 初新增）揭示上游端点已分化：付费 **OpenCode Go 走 `opencode.ai/zen/go/v1`**（订阅制），免费层由 OpenCode 官方以 **`Bearer public` 公共鉴权**代问（「OpenCode Zen provider, which needs no key」）——上游在把免费权益与官方客户端/OpenCode Go 订阅绑定。
+  - 本仓生产 11-05 全天：zen 654 请求仅 1 条 200；429 两种形态（`FreeUsageLimitError` 逐 key 撞墙 + 「free daily quota exhausted on all 20 key(s)」快速拒）。但 **20:38:47 key#9 成功 200**——per-key 免费额度仍独立存在，是额度被大砍而非全废。
+- **三组对照实测（2026-11-06，iStore 生产出口与本机）**：`Bearer public` 鉴权被上游接受（返回 FreeUsageLimitError 而非 401）但①生产在用出口、②zen 从未用过的空闲出口（EUserv）、③本机住宅宽带直连——**三者全部 429 FreeUsageLimitError**。排除「按 IP 额度」「出口 IP 信誉」「鉴权形态」假说；结合 magpie 用户（OAuth 插件形态）同样全挂，判定为**上游对官方客户端之外的一切形态关停/严限免费层**。
+- **本仓机制核查（无缺口，不改）**：park 退避（30m→翻倍→6h 上限，Retry-After 撒谎史 2026-10-30 在案故不直接采信）、全 park 快速拒（ttfb <1s 的 429 占 204/283，全 park 样本 174ms）、逐 key 撞墙窗口（>5s 的 74 条集中在 park 铺满前）均按设计工作。免费层既有工程（zenCallIdentity 现铸/CLI v2 指纹/egress 钉定）不是被拒原因——本机住宅 IP 直连同指纹同拒。
+- **修复路径（代码外）**：① 订阅 OpenCode Go 后可接 `/zen/go/v1` 端点（未订阅前不接——死配置判据）；② 增加 zen key 数量（per-key 额度独立，20 key 总量决定日供上限）；③ 等上游策略回摆（探针机制自动恢复，无需操作）；④ 下游 hermes 渠道映射已在按可用性把 afree/glm、afree/mimo 等切到 trae:/wbcn: 镜像（hermes 侧自动，用户自理领域）。
+- 副产：确证 `opencode-ai` npm 包与 magpie 的 OpenCode Go preset 形态，留档备查（`.tmp/magpie/` 分析材料）。
+
 ### 2026-11-05 — 主线复核（无更新）+ 副线 jasonxu114514/opencode2api 评估（零吸纳）
 
 - **主线**：`foxy1402/cline-proxy` main 仍为 `a41f1756`（= 2026-10-31 基线；注意本次 `git fetch` 后 `FETCH_HEAD` 再次被覆写成本仓 HEAD，按铁律 3 改用 GitHub API `ls-remote` 口径核实），无新提交。
