@@ -145,6 +145,10 @@ type configBackup struct {
 	// 段）。2026-11-05 补：trae 换线时未随 wb 的 2026-10-14 教训补齐，导出→
 	// 删卷→导入后绑定丢失（用户实测）。
 	TraeProxies map[string]trae2apiProxyBinding `json:"traeProxies,omitempty"`
+	// TraeDisplayOrder TraeWork 凭据展示顺序（proxy-config.json 的
+	// trae2apiDisplayOrder 段，UID 列表）。2026-11-05 补：顺序此前是进程内
+	// 展示态，导出→导入（或重启）后回到 UID 序（用户实测）。
+	TraeDisplayOrder []string `json:"traeDisplayOrder,omitempty"`
 	// ModelBlacklist 模型封禁表（afree-config.json 的 modelBlacklist 段）。2026-10-19 补：
 	// 导出导入一直漏了封禁数据，跨机迁移后 /v1/models 把已确认不可调用的
 	// 模型重新暴露给客户端，每次选中都吃一轮无谓失败。
@@ -236,6 +240,7 @@ func handleAdminConfigExport(w http.ResponseWriter, r *http.Request) {
 		Trae:                trae2apiBackupSnapshot(),
 		WorkBuddyProxies:    exportWorkbuddyProxyBindings(),
 		TraeProxies:         exportTrae2apiProxyBindings(),
+		TraeDisplayOrder:    traeDisplayOrderForBackup(),
 		ModelBlacklist:      exportModelBlacklist(),
 		PlatformBlacklist:   exportPlatformBlacklist(),
 		ZenDepAliases:       exportZenDepAliases(),
@@ -626,6 +631,9 @@ func handleAdminConfigImport(w http.ResponseWriter, r *http.Request) {
 	}
 	if len(backup.TraeProxies) > 0 {
 		imported["traeProxies"] = importTrae2apiProxyBindings(backup.TraeProxies)
+	}
+	if len(backup.TraeDisplayOrder) > 0 {
+		imported["traeDisplayOrder"] = importTrae2apiDisplayOrder(backup.TraeDisplayOrder)
 	}
 
 	// ---- state 段（2026-11-03 三层口径）：全量快照按层分流。账号事实（冷却表/

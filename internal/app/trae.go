@@ -146,6 +146,11 @@ func trae2apiStart() error {
 	sub.cancel = cancel
 	go sub.runBackground(ctx)
 	trae2apiSub = sub
+	// 凭据展示顺序（proxy-config.json trae2apiDisplayOrder 段，2026-11-05
+	// 用户定：顺序落盘并随备份迁移）——vendored 池的 order 是进程内新建的，
+	// 每次启动/重启都要把保存的顺序重新套上。
+	traeDisplayOrderLoad()
+	trae2apiApplyDisplayOrder(sub)
 	log.Printf("trae2api subsystem started (engine v%s, gateway=%s, data=%s)",
 		trae2apiVersion, cfg.Trae.ChatBase, cfg.DataDir)
 	return nil

@@ -77,9 +77,12 @@ type proxyConfigFileData struct {
 	// ---- TraeWork（vendored trae2api）出口绑定 / 反代开关 / 费率过滤 ----
 	// 键是池 UID（trae-cn-<userId>）。反代开关查表缺失 = 启用（存量兼容），
 	// 新增身份由 AccountAddedHook 显式落 false。费率阈值 0 = 关。
+	// Trae2apiDisplayOrder 凭据展示顺序（面板拖拽，2026-11-05 用户定：顺序
+	// 改动必须落盘并随配置备份迁移；UID 列表，未提及者排尾按 UID）。
 	Trae2apiBindings        map[string]trae2apiProxyBinding `json:"trae2apiBindings,omitempty"`
 	Trae2apiRouting         map[string]bool                 `json:"trae2apiRouting,omitempty"`
 	Trae2apiModelRateFilter float64                         `json:"trae2apiModelRateFilter,omitempty"`
+	Trae2apiDisplayOrder    []string                        `json:"trae2apiDisplayOrder,omitempty"`
 
 	// ---- zen key 出口自动钉定（egress.go，上游 400736b）----
 	// 键是 namespace+身份哈希（zen key 只存 sha256 前 8 字节 hex，不含明文）。

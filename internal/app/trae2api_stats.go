@@ -41,7 +41,25 @@ var (
 	traeTokens      = map[string]trae2apiTokenStats{}
 	traeTokensPath  string // 启动时按子系统数据目录解析；空 = 未初始化（仅内存）
 	traeTokensDirty bool
+
+	// traeDisplayOrder TraeWork 凭据展示顺序的内存副本（真身在
+	// proxy-config.json 的 trae2apiDisplayOrder 段，与 trae2apiBindings
+	// 同文件同锁管理）。启动装载、SetDisplayOrder/导入时同步。
+	traeOrderMu      sync.Mutex
+	traeDisplayOrder []string
 )
+
+// traeDisplayOrderLoadLocked 从 proxy-config 装载顺序副本（调用方须已持
+// proxyFileMu 或在启动单线程路径）。
+func traeDisplayOrderLoad() {
+	proxyFileMu.Lock()
+	f := loadProxyConfigFileLocked()
+	order := append([]string(nil), f.Trae2apiDisplayOrder...)
+	proxyFileMu.Unlock()
+	traeOrderMu.Lock()
+	traeDisplayOrder = order
+	traeOrderMu.Unlock()
+}
 
 // trae2apiTokensLoad 初始化记账表路径并加载存量。dataDir 由调用方显式传入
 // （trae2apiStart 在持有 trae2apiMu 期间经 traeWireHooks 调到这里——不能走
@@ -142,12 +160,69 @@ func trae2apiTokensSnapshot(uid string) (today, total int64, lastUsed, lastModel
 }
 
 // trae2apiSetDisplayOrder 重排 vendored 池的展示顺序（仅面板/状态列表，
-// 不改加权选号）。未提及/未知 uid 排尾按 UID。order 是进程内展示态（重启
-// 回 UID 序，"仅显示顺序"语义）；与 WorkBuddy SetOrder 同口径。
+// 不改加权选号）。顺序落 proxy-config.json 的 trae2apiDisplayOrder 段
+// （2026-11-05 用户定：顺序改动必须落盘、随配置备份迁移——此前是进程内
+// 展示态，重启即回 UID 序，实测丢）。未提及/未知 uid 排尾按 UID；备份导出
+// /导入经 TraeDisplayOrder 段（admin_backup.go）。
 func trae2apiSetDisplayOrder(uids []string) int {
 	sub := trae2apiCurrent()
 	if sub == nil {
 		return 0
 	}
-	return sub.srv.Pool().SetOrder(uids)
+	n := sub.srv.Pool().SetOrder(uids)
+	if n > 0 {
+		traeDisplayOrderSave(uids)
+	}
+	return n
+}
+
+// traeDisplayOrderSave 把展示顺序落 proxy-config.json（与 trae2apiBindings
+// 同文件同锁），并同步内存副本。
+func traeDisplayOrderSave(uids []string) {
+	traeOrderMu.Lock()
+	traeDisplayOrder = append([]string(nil), uids...)
+	traeOrderMu.Unlock()
+	mutateProxyConfigFile(func(f *proxyConfigFileData) {
+		f.Trae2apiDisplayOrder = append([]string(nil), uids...)
+	})
+}
+
+// trae2apiApplyDisplayOrder 把已保存的展示顺序套到给定池。sub 由调用方显式
+// 传入——启动路径（trae2apiStart）持 trae2apiMu 期间调用，不能经
+// trae2apiCurrent() 取（锁重入自死锁；同一坑第二次，2026-11-05 部署实测）。
+// 未提及/未知 uid 排尾按 UID（SetOrder 语义）。
+func trae2apiApplyDisplayOrder(sub *trae2apiSubsystem) {
+	if sub == nil {
+		return
+	}
+	traeOrderMu.Lock()
+	order := append([]string(nil), traeDisplayOrder...)
+	traeOrderMu.Unlock()
+	if len(order) > 0 {
+		sub.srv.Pool().SetOrder(order)
+	}
+}
+
+// traeDisplayOrderForBackup 导出用副本（admin_backup.go TraeDisplayOrder 段）。
+func traeDisplayOrderForBackup() []string {
+	traeOrderMu.Lock()
+	defer traeOrderMu.Unlock()
+	if len(traeDisplayOrder) == 0 {
+		return nil
+	}
+	return append([]string(nil), traeDisplayOrder...)
+}
+
+// importTrae2apiDisplayOrder 备份导入：落 proxy-config 段 + 同步内存副本 +
+// 套到当前池（子系统未启动时仅落盘，启动装载会再套）。与绑定段同"整体替换"
+// 语义；返回写入的 UID 数。
+func importTrae2apiDisplayOrder(uids []string) int {
+	traeOrderMu.Lock()
+	traeDisplayOrder = append([]string(nil), uids...)
+	traeOrderMu.Unlock()
+	mutateProxyConfigFile(func(f *proxyConfigFileData) {
+		f.Trae2apiDisplayOrder = append([]string(nil), uids...)
+	})
+	trae2apiApplyDisplayOrder(trae2apiCurrent())
+	return len(uids)
 }

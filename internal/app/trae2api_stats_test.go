@@ -1,6 +1,9 @@
 package app
 
 import (
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -58,5 +61,41 @@ func TestTrae2apiSetDisplayOrderTailAppendsUnknown(t *testing.T) {
 		if got[i] != want[i] {
 			t.Fatalf("order = %v, want %v", got, want)
 		}
+	}
+}
+
+// 展示顺序必须落盘（2026-11-05 用户定：顺序改动落盘、随配置备份迁移；
+// 此前是进程内展示态，导出→导入/重启即回 UID 序——生产实测丢）。
+func TestTraeDisplayOrderPersistsAndImports(t *testing.T) {
+	savedPath := proxyConfigPathOverride
+	proxyConfigPathOverride = filepath.Join(t.TempDir(), "proxy-config.json")
+	t.Cleanup(func() { proxyConfigPathOverride = savedPath })
+
+	// 落盘：写段后重读文件必须带 trae2apiDisplayOrder
+	traeDisplayOrderSave([]string{"u2", "u1"})
+	raw, err := os.ReadFile(proxyConfigPathOverride)
+	if err != nil {
+		t.Fatalf("read proxy-config.json: %v", err)
+	}
+	if !strings.Contains(string(raw), `"trae2apiDisplayOrder": [`) {
+		t.Fatalf("display order must be persisted to proxy-config.json: %s", raw)
+	}
+
+	// 新"进程"装载：空内存副本从文件恢复
+	traeOrderMu.Lock()
+	traeDisplayOrder = nil
+	traeOrderMu.Unlock()
+	traeDisplayOrderLoad()
+	if got := traeDisplayOrderForBackup(); len(got) != 2 || got[0] != "u2" || got[1] != "u1" {
+		t.Fatalf("reloaded order = %v, want [u2 u1]", got)
+	}
+
+	// 备份导入：整体替换 + 落盘
+	if n := importTrae2apiDisplayOrder([]string{"x"}); n != 1 {
+		t.Fatalf("import n = %d, want 1", n)
+	}
+	raw, _ = os.ReadFile(proxyConfigPathOverride)
+	if !strings.Contains(string(raw), `"x"`) || strings.Contains(string(raw), `"u2"`) {
+		t.Fatalf("import must replace the order wholesale: %s", raw)
 	}
 }
