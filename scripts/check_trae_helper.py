@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""比对 internal/trae/helper_script.go 内嵌的 web_login.py 与上游 Trae2api-cn 的差异。
+"""比对 internal/app/trae2api_helper_script.go 内嵌的 web_login.py 与上游 Trae2api-cn 的差异。
 
 背景:afree 的 Trae 本机授权助手内嵌了上游 Trae2api-cn 的 web_login.py(逐行移植)。
 Trae 线其余代码是本地 Go 实现,不走 vandor/merge 流程,所以只有这一个文件需要
@@ -24,7 +24,7 @@ import re
 import sys
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-LOCAL = os.path.join(REPO, "internal", "trae", "helper_script.go")
+LOCAL = os.path.join(REPO, "internal", "app", "trae2api_helper_script.go")
 BASELINE = os.path.join(REPO, "scripts", "trae-helper-baseline.json")
 MARKER = "const helperScriptTpl = `"
 

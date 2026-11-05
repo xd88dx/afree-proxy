@@ -38,7 +38,7 @@ go test ./... -count=1             # 除下述既有失败外应全绿
 
 **已知失败，不要修**：
 
-- `internal/workbuddy/server` 的 `TestChatStreamPassthrough`（全量测试时 `LastTokensPerSecond=nil`）。根因：`tokensPerSecond()`（`handler.go:2011`）在 `ttfb <= 0` 时返回 `ok=false`，`RecordTokenUsage`（`pool/state.go:395`）据此置 nil，而断言（`handler_test.go:462`）要求非 nil；httptest 即时响应下 `ttfb` 常被测成 0。属上游测试既有缺陷，改了会与后续同步持续冲突。
+- ~~`internal/workbuddy/server` 的 `TestChatStreamPassthrough`~~（2026-11-05 移除：上游 d596fa7 的 66e5344「客户端断开只按请求 ctx 判定」顺带修复了该 flaky，全量测试已稳定通过，历史根因记录见 MERGE.md WorkBuddy 节）。
 - `internal/workbuddy/updater` 的 `TestInstallReplacesRestartsAndRecovers`（Windows 上 `fork/exec wb2api.exe` 报 "This version of %1 is not compatible"，测试固件的假二进制无法 exec）。该包不 import 任何 `afree-proxy/internal/*`，与业务改动无因果关系。
 
 换行：行尾由 `.gitattributes` + `.editorconfig` 强制统一为 LF（规则与判据见 `AGENTS.md` §3）。`gofmt` 是原生程序，不认 MSYS 路径——传 `$(cygpath -w <路径>)`，且**不要**把 `gofmt` 的 stderr 一起重定向进结果文件（会写坏源文件）。

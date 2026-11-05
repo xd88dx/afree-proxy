@@ -13,7 +13,7 @@ WorkBuddy 一栏的基线同时登记在 `scripts/workbuddy-vendor-baseline.json
 
 ## Cline
 
-本次未涉及上游同步（2026-10-28 核对：`foxy1402/cline-proxy` main 仍为 `571f9b9`，与 2026-10-27 同步基线一致，无新提交；`571f9b9` 的改动全部属于 OpenCode 线，见文末 OpenCode 节。2026-10-29 复核：仍为 `571f9b9`，无新提交。2026-10-30 复核：上游推进到 `b8a1be0`，但区间内 4 提交全部落在 zen/OpenCode 侧（`git diff 571f9b9 b8a1be0` 无 Cline 侧文件），Cline 线本次零吸收，详见 OpenCode 节。2026-10-31 复核：仍为 `b8a1be0`，无新提交，本次未涉及。2026-10-31 二次复核：上游推进到 `a41f1756`，但区间内 1 提交全部落在 zen/OpenCode 侧（`git diff b8a1be0 a41f1756 --name-only` 无 Cline 侧文件），Cline 线零吸收，详见 OpenCode 节。2026-11-02 复核：仍为 `a41f1756`，无新提交，本次未涉及）。
+本次未涉及上游同步（2026-10-28 核对：`foxy1402/cline-proxy` main 仍为 `571f9b9`，与 2026-10-27 同步基线一致，无新提交；`571f9b9` 的改动全部属于 OpenCode 线，见文末 OpenCode 节。2026-10-29 复核：仍为 `571f9b9`，无新提交。2026-10-30 复核：上游推进到 `b8a1be0`，但区间内 4 提交全部落在 zen/OpenCode 侧（`git diff 571f9b9 b8a1be0` 无 Cline 侧文件），Cline 线本次零吸收，详见 OpenCode 节。2026-10-31 复核：仍为 `b8a1be0`，无新提交，本次未涉及。2026-10-31 二次复核：上游推进到 `a41f1756`，但区间内 1 提交全部落在 zen/OpenCode 侧（`git diff b8a1be0 a41f1756 --name-only` 无 Cline 侧文件），Cline 线零吸收，详见 OpenCode 节。2026-11-02 复核：仍为 `a41f1756`，无新提交，本次未涉及。2026-11-05 复核：仍为 `a41f1756`，无新提交，本次未涉及）。
 
 ## TreaWork
 
@@ -22,6 +22,15 @@ WorkBuddy 一栏的基线同时登记在 `scripts/workbuddy-vendor-baseline.json
 上游(历史线):`autumnsentiment/Trae2api-cn`(Trae CN / Trae Solo CN 模型反代,Python,MIT)。**这条线不是 vendor/merge 关系**:上游是 Python 全栈,本地 `internal/trae/` + `internal/app/trae.go` 是 Go 重写,行为跟随上游协议;唯一逐行移植的产物是内嵌的本机授权助手 `web_login.py`(`internal/trae/helper_script.go`),只有它需要跟上游比对。2026-10-27 的 cline-proxy 合并未涉及本线。
 
 **2026-10-28 核对**：上游最新 tag 仍为 `v1.0.10`（`bb7b659`），与 2026-10-27 同步基线一致，本线无新版本，本次未涉及上游同步。**2026-10-29 复核**：仍为 `v1.0.10`，无新版本。**2026-10-30 复核**：仍为 `v1.0.10`（tags API 与 main HEAD 均为 `bb7b659`），无新版本，本次未涉及上游同步。**2026-10-31 复核**：仍为 `v1.0.10`，无新版本，本次未涉及上游同步。**2026-10-31 二次复核**：仍为 `v1.0.10`（main HEAD `bb7b659`），helper 比对 exit 0，本次未涉及上游同步。**2026-11-02 复核**：仍为 `v1.0.10`（tags API 与 main HEAD 均为 `bb7b659`），无新版本，本次未涉及上游同步。
+
+### 2026-11-05 — 双线复核（XCool 主线无更新；Trae2api-cn 副线 v1.0.11 评估 + helper 比对）
+
+- **主线**：`XCool-603/trae2api` main 仍为 `6a861d9`（= vendor 基线，源树 fetch 后 `git log 6a861d9..origin/main` 为空），无新提交，vendor 树零改动。
+- **副线**：`autumnsentiment/Trae2api-cn` main 推进到 `5c87d6c`（v1.0.11；基线 `bb7b659` = v1.0.10）。逐条评估：
+  - `release v1.0.11`（cache accounting + reasoning controls + 企业入口实验）、`align account entitlement concurrency`、`prevent empty responses and retry storms`、`stabilize concurrent streaming`、`make native tool streams valid and parallel` 等全部是 Python 引擎层修复——本仓 Go 引擎已随 2026-11-04 换线删除，对应行为面由 vendored XCool 版承接（其自带分级冷却/熔断/流中空闲监控），**无吸纳价值**。
+  - `web_login.py`（helper 比对线唯一职责）：`check_trae_helper.py` **exit 0**，上游该文件自基线以来逐行未变，`trae-helper-baseline.json` 不推进。
+- 工具修正：`check_trae_helper.py` 的本地路径仍指旧引擎 `internal/trae/helper_script.go`（2026-11-04 换线遗漏），已改指 `internal/app/trae2api_helper_script.go` 并实测 exit 0。
+- 验证：本线零代码改动（除上述脚本路径修正）。
 
 ### 2026-11-04 — 上游切换：autumnsentiment/Trae2api-cn（比对线）→ XCool-603/trae2api（vendor 三方合并线）
 
@@ -165,6 +174,21 @@ WorkBuddy 一栏的基线同时登记在 `scripts/workbuddy-vendor-baseline.json
 
 上游 `misakano7545/workbuddy2api-panel` main 无新提交（基线 `96b816d` 不变，版本 dev），`sync_workbuddy.py --report` 确认零改动，本次未涉及上游同步。
 
+### 2026-11-05 二次 — dd01a52 → d596fa7
+
+- 上游：misakano7545/workbuddy2api-panel，vendor + 三方合并（源工作树 `workbuddy2api-panel-misakano` checkout 到 `misakano/main`）。
+- 基线：`dd01a52` → 解决冲突后 `--seal` 推进到 `d596fa7`（21 提交 / 33 文件 / +5293 -150）。
+- 上游主线：
+  - **出视频端点 + MCP 端点**（PR #162/#173：`server/videos.go` 997 行、`server/mcp.go` 518 行、`upstream/videos.go` 215 行——生图/改图/出视频/查任务；视频任务记账/收养 PR #175/#177，失败不罚号、有界探测不扇出全池）。
+  - **可选水印裁切**（PR #162/#168：上游新增 `internal/media` 包 + `server/watermark.go`，默认关闭；先读文件头查像素上限再解码、回读不跟随重定向）。
+  - 修复批：reqlog 清空通道改无缓冲（写循环停止不再卡死调用方）、客户端断开只按请求 ctx 判定（66e5344——**顺带修好了本仓「既有 flaky」`TestChatStreamPassthrough`**，本轮全量跑通过；PROJECT.md §4 对应条目已删）、同步等待与 MCP 内部请求跟随客户端 ctx、配置页分域 tab 自我隐藏修复、国际版也能出片。
+- **vendor 范围扩容**：`internal/media` 包在上游位于 `internal/workbuddy/` 之外（搬运清单 PACKAGES 未覆盖），首轮编译 `server/watermark.go` import 断链暴露——已把 `media` 加入 `scripts/vendor_workbuddy.py` PACKAGES 并把基线回滚到 `dd01a52` 重走三方合并（已解决文件在三方重算中幂等）。后续同步自动携带。
+- **冲突记录（用户要求留痕，方便回溯）**：`server/handler.go` 两处位置 × 两轮形态——首轮 2 处、基线回滚重走后 3 处（三方对「重复行布局差异」的过度拆分：上游在 `EmbeddingsEnabled` 后插 `WatermarkStripEnabled`、本地在同区域有 `ModelRateFilter`，diff 锚点重叠）。**两轮冲突本质相同：上游新实验字段 `WatermarkStripEnabled` vs 本地定制 `ModelRateFilter` 的并集场景，解决=两边都保留**（struct 字段两行并列；`loadLive` 快照合成两行都进白名单回退）。无语义取舍，不存在「以测试为准」的裁决点——用户「副线与主线冲突时以测试为准」的标注在本线未触发。
+- 装配决策：上游新端点（videos/mcp/watermark）的装配在上游 `cmd/server/main.go`，本仓无该入口——**未挂本仓主 mux，能力休眠**（与 `/v1/embeddings` 同口径，死配置判据：没路由入口的开关不暴露；`features.watermark_strip_enabled` 配置键不进本仓面板）。需要启用时在 app 层装配后单独评估。
+- 跳过项：`upstream/dns_test.go` 本地已删、上游仍有，脚本按规则跳过。
+- 验证：`go build ./...` 全绿；`go test ./internal/workbuddy/... -count=1` 16 包全绿（含上游新增 videos/watermark/mcp 全部测试）；既有 flaky `TestChatStreamPassthrough` 本轮通过（上游修复，详见上）。
+- 生产：未同步，等用户在 iStore 自行 `compose pull`（GHCR 由 CI 从 main 构建）。
+
 ### 2026-11-05 — 6d534c5 → dd01a52
 
 - 上游：misakano7545/workbuddy2api-panel，vendor + 三方合并（源工作树先 `git checkout --detach dd01a52`）。
@@ -255,6 +279,17 @@ WorkBuddy 一栏的基线同时登记在 `scripts/workbuddy-vendor-baseline.json
 - 生产:未同步,等用户「同步」指令(见 PROJECT.md 部署节)。
 
 ## OpenCode
+
+### 2026-11-05 — 主线复核（无更新）+ 副线 jasonxu114514/opencode2api 评估（零吸纳）
+
+- **主线**：`foxy1402/cline-proxy` main 仍为 `a41f1756`（= 2026-10-31 基线；注意本次 `git fetch` 后 `FETCH_HEAD` 再次被覆写成本仓 HEAD，按铁律 3 改用 GitHub API `ls-remote` 口径核实），无新提交。
+- **副线**：`jasonxu114514/opencode2api`（第三方 OpenCode 转 API 项目，与 afree 的 zen 官方 inference API 透传**架构不同**）近期 5 提交（2026-10-29 ~ 11-05）逐条评估：
+  - `#166 restore official tool names and drop ghost calls`：其 free-tier 形身向上游 body 注入官方工具集（shell/grep/glob…），模型回叫官方名而客户端未声明 → 「No such tool available」。修复=响应侧把官方名解析回客户端声明的工具 + 请求历史清洗幽灵 tool_call + 流式拆名挂起。**不吸纳**：该问题根因是它自有的 body 注入形态，afree 各平台均为官方 API 透传、无 body 注入，问题不存在；且 afree 的 cline 侧已有 `enforceToolChoiceNone`、zen 侧有 tool_choice 分流（2026-10-27 a41f1756 吸收）覆盖各自语义。
+  - `#170 per-key proxy binding with fail-closed routing`：**不吸纳**——afree 已有等价且更强的体系（`PROXY_ISOLATION` + `KeyBindings` 主备绑定 + `pinProxyPerKey` egress 钉定 + `DISABLE_DIRECT` fail-closed，2026-10-27 起），语义重复。
+  - `#171 passive availability tracking and opt-in probes`：**不吸纳**——afree 已有代理健康表被动在线率/握手统计（纯被动不探活，2026-10-26 用户定）+ 各平台 Test 探测。
+  - `#167 pin a Playground request to one relay`、webui 主题/分页/折叠芯片：其自有 webui/relay 架构的运维功能，afree 面板是自有单文件形态，**不适用**。
+  - `#153 probe the OpenCode origin instead of cloudflare.com`：探测目标语义，afree 代理测试目标本就可配置（2026-11-03 测速目标输入框），**不适用**。
+- 结论：副线本轮**零吸纳**，仅记录备查。副线与主线的冲突裁决（用户标注「以测试为准」）本轮未触发——两条线本次都没有产生需要合并进主线的代码。
 
 ### 2026-10-27 — a99d94b → 571f9b9
 
