@@ -272,3 +272,43 @@ func TestFallbackTruncateToolPairing(t *testing.T) {
 	}
 	_ = fmt.Sprint()
 }
+
+// 反向 mend（2026-11-06 采纳自 magpie #4944 同款场景）：上游纯文本回合的
+// 末帧报 finish_reason=tool_calls、流中却没有任何 delta 携带过工具调用——
+// agent 客户端会把每个这样的回合当成"调用被丢弃"重新 prompt。聚合出口改判
+// stop；既有正向 mend（有调用报 stop → tool_calls）不受影响。
+func TestAggregateToolCallsFinishWithNoCallsEndsStop(t *testing.T) {
+	sse := "data: {\"choices\":[{\"delta\":{\"content\":\"hello\"}}]}\n\n" +
+		"data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"tool_calls\"}]}\n\n" +
+		"data: [DONE]\n\n"
+	out, err := collectStreamResponse(sseResp(sse))
+	if err != nil {
+		t.Fatalf("aggregate: %v", err)
+	}
+	fr, _ := getNested(out, "choices", 0, "finish_reason").(string)
+	if fr != "stop" {
+		t.Fatalf("finish_reason = %q, want stop (no tool call was ever carried)", fr)
+	}
+	if _, has := getNested(out, "choices", 0, "message", "tool_calls").([]any); has {
+		t.Fatal("message must not carry tool_calls")
+	}
+	msg, _ := getNested(out, "choices", 0, "message", "content").(string)
+	if msg != "hello" {
+		t.Fatalf("content = %q, want the text delta preserved", msg)
+	}
+}
+
+// 对照：真有调用时 finish=tool_calls 照常（正向 mend 语义不受反向影响）。
+func TestAggregateRealToolCallsKeepToolCallsFinish(t *testing.T) {
+	sse := "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call_x\",\"function\":{\"name\":\"Bash\",\"arguments\":\"{\\\"c\\\":\\\"ls\\\"}\"}}]}}]}\n\n" +
+		"data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\n" +
+		"data: [DONE]\n\n"
+	out, err := collectStreamResponse(sseResp(sse))
+	if err != nil {
+		t.Fatalf("aggregate: %v", err)
+	}
+	fr, _ := getNested(out, "choices", 0, "finish_reason").(string)
+	if fr != "tool_calls" {
+		t.Fatalf("finish_reason = %q, want tool_calls (upstream said stop with a real call)", fr)
+	}
+}

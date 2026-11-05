@@ -401,6 +401,22 @@ WorkBuddy 一栏的基线同时登记在 `scripts/workbuddy-vendor-baseline.json
 - 验证：`go build ./...`、`go vet ./...` 全绿；`go test ./... -count=1` 27 包 ok，唯一失败为既知项（`TestChatStreamPassthrough` 既有 flaky；`TestInstallReplacesRestartsAndRecovers` Windows fork/exec 既有缺陷，单跑 PASS 且不 import 本次改动）；`-race` 当日因本机无 C 编译器跳过，**同日补装 winlibs gcc 后全仓 28 包 -race 全绿**（见下条补录）
 - 生产：未同步，等用户「同步」指令（见 PROJECT.md 部署节）。
 
+## magpie（全平台参考线，2026-11-06 立项）
+
+**定位（用户 2026-11-06 定）**：`yetone/magpie`（30k stars，Go + Bun 插件的本地 AI 网关）几乎覆盖所有平台的反代/协议互译/配额 failover，计入**所有平台**的副线——纯参考不合并，按需单点吸纳，每次排查在本节记基线（排查到哪条 commit、吸纳什么、丢弃什么），方便下回增量回溯。排查方法与评估口径见 `.agents/skills/sync-upstream/SKILL.md` §2.5。
+
+### 2026-11-06 — 首轮排查：基线 `498b6419`（2026-11-05 HEAD），吸纳 1 / 丢弃 4 类
+
+- 排查范围：近 30 条提交（2026-10-29 ~ 11-05）。
+- **吸纳 1 项**：`gateway: a Chat finish of tool_calls with no call in the stream ends stop (#4944)`——上游纯文本回合末帧报 `finish_reason:"tool_calls"` 且流中零 delta 携带调用，agent 客户端把每个回合当"调用被丢弃"重新 prompt（Hermes 经 magpie 实测三连重发）。移植到本仓**聚合层单点** `collectStreamResponse`（cline/zen/generic/compact/cross_endpoint 全部非流式聚合的收口，比 magpie 的 chatTidy 流式 tidy 更集中）——反向 mend：`tool_calls 无调用 → stop`；既有正向 mend（有调用报 stop → tool_calls）不受影响。测试 2 例（反向改判 + 真调用对照）。
+- **丢弃与理由**：
+  - `provider: OpenCode key 被拒后 bare 重问目录 (#4900)`——本仓 zen 目录同步（`zenRegistryURL`）本就不带 key（裸问），能力已具备。
+  - `gateway: SSE 流中裸 JSON 错误行识别`（Google Code Assist 形态）——触发面不在本仓上游集合（zen/cline/wb 上游均标准 SSE）；本仓透传架构下客户端可见原始字节，聚合路径错误提取另有覆盖。
+  - `gateway: 451 审查拒绝换路由组成员 (#5089)`、`回复开始后 filter finish 换成员 (#5075)`——magpie 路由组语义（client sees nothing 的组内换人）；本仓流中哲学为"已流出即终止"（c389701 口径），451 内容审查换 key 无意义（同请求同拒）。
+  - `catalog: sora 视频模型识别 (#4954)`、webui/插件/Codex 线程/LiveAgent 等其余 20 余条——本仓对应平台为 vendor 自含（wb 视频端点随 11-05 合并就位）或形态不同，不适用。
+- 验证：`go build/vet` 全绿；`go test ./internal/app/` 全绿（含新增 2 例）；全量 `go test ./...` 无失败。
+- 基线：`498b6419ffda24b068a6c747d786d829d0ebffa9`（2026-11-05T17:18Z）。下次排查从该哈希之后增量。
+
 ## 本地死代码清理
 
 ### 2026-11-05 — 全仓清理"为兼容旧版而保留的代码"（11 项）

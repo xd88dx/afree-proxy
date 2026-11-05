@@ -2153,6 +2153,14 @@ func collectStreamResponse(upstream *http.Response) (map[string]any, error) {
 		// 空串对 OpenAI 方言客户端是非法 finish_reason
 		finishReason = "stop"
 	}
+	if len(toolCalls) == 0 && finishReason == "tool_calls" {
+		// 反向 mend（2026-11-06，采纳自 magpie #4944 同款场景）：流中没有任何
+		// delta 携带过工具调用，末帧却报 tool_calls——某些上游对纯文本回合也
+		// 这样收尾，agent 客户端会把每个这样的回合当成"调用被丢弃"而重新
+		// prompt（Cline/Claude Code 实测三连重发）。改判 stop，纯文本回合照常
+		// 收尾；有调用的回合不受影响，下方正向 mend 照常工作。
+		finishReason = "stop"
+	}
 	if len(toolCalls) > 0 && finishReason == "stop" {
 		// 有工具调用却报 stop：agent 循环会把它当普通回复收尾，不再执行工具。
 		// length（被截断）保持原样，客户端应丢弃半截调用。

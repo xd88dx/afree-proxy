@@ -1,20 +1,29 @@
 ---
 name: sync-upstream
-description: 同步 afree-proxy 四条上游线的完整流程与陷阱清单——fork 上游 foxy1402/cline-proxy 的 git merge 线（含 Cline 与 OpenCode 两个平台）、workbuddy2api-panel 与 XCool-603/trae2api 两条 vendor 三方合并线、Trae 旧上游 Trae2api-cn 的内嵌授权助手比对线（仅 web_login.py 模板）。凡是要"同步上游/sync upstream/合并上游更新/GitHub 提示 behind/上游有新提交/更新 workbuddy vendor/更新 trae2api vendor/核对 Trae helper 上游"时使用，即使用户只说了"更新一下"。
+description: 同步 afree-proxy 五条上游线的完整流程与陷阱清单——fork 上游 foxy1402/cline-proxy 的 git merge 线（含 Cline 与 OpenCode 两个平台）、workbuddy2api-panel 与 XCool-603/trae2api 两条 vendor 三方合并线、Trae 旧上游 Trae2api-cn 的内嵌授权助手比对线（仅 web_login.py 模板）、yetone/magpie 全平台参考线（纯参考不合并）。凡是要"同步上游/sync upstream/合并上游更新/GitHub 提示 behind/上游有新提交/更新 workbuddy vendor/更新 trae2api vendor/核对 Trae helper 上游/参考 magpie 的实现"时使用，即使用户只说了"更新一下"。
 ---
 
 # 上游同步配方
 
-本仓有**四条独立的同步线**，先分清用户说的是哪条：
+本仓有**四条独立的同步线 + 一条全平台参考线**，先分清用户说的是哪条：
 
-| | fork 上游线 | WorkBuddy vendor 线 | TraeWork vendor 线 | Trae helper 比对线 |
-|---|---|---|---|---|
-| 上游 | `foxy1402/cline-proxy`（GitHub，本仓 main 的 fork 来源） | `misakano7545/workbuddy2api-panel`（本地克隆 `D:\下载\Github\workbuddy2api-panel`；曾误记为 `linguo2625469`，那是平行血统，勿用） | `XCool-603/trae2api`（本地克隆 `D:\下载\Github	rae2api-xcool`，2026-11-04 换线） | `autumnsentiment/Trae2api-cn`（Python；仅剩 helper 脚本模板的逐行比对） |
-| 同步对象 | 整个仓库（网关/zen/cline 核心） | 仅 `internal/workbuddy/` vendor 树 | 仅 `internal/trae2api/` vendor 树 | 仅 `internal/app/trae2api_helper_script.go` 内嵌的 `web_login.py` |
-| 方式 | `git merge` 上游提交（历史相连） | `scripts/sync_workbuddy.py` 三方合并（vendor 产物） | `scripts/sync_trae2api.py` 三方合并（vendor 产物；源树允许 textcall 四件套 WIP） | `scripts/check_trae_helper.py` 逐行比对（不合并） |
-| 细节 | references/cline-proxy-merge.md | references/workbuddy-vendor.md | 见 §2 TraeWork 小节 | 见 §2 Trae 小节 |
+| | fork 上游线 | WorkBuddy vendor 线 | TraeWork vendor 线 | Trae helper 比对线 | 全平台参考线（magpie） |
+|---|---|---|---|---|---|
+| 上游 | `foxy1402/cline-proxy`（GitHub，本仓 main 的 fork 来源） | `misakano7545/workbuddy2api-panel`（本地克隆 `D:\下载\Github\workbuddy2api-panel-misakano`；曾误记为 `linguo2625469`，那是平行血统，勿用。同目录无 `-misakano` 后缀的 `workbuddy2api-panel` 是旧克隆，fetch 它无用） | `XCool-603/trae2api`（本地克隆 `D:\下载\Github\trae2api`，2026-11-04 换线） | `autumnsentiment/Trae2api-cn`（Python；仅剩 helper 脚本模板的逐行比对） | `yetone/magpie`（30k stars 本地 AI 网关，Go + Bun 插件，几乎覆盖所有平台的反代/协议互译/配额 failover；**纯参考不合并**） |
+| 同步对象 | 整个仓库（网关/zen/cline 核心） | 仅 `internal/workbuddy/` vendor 树 | 仅 `internal/trae2api/` vendor 树 | 仅 `internal/app/trae2api_helper_script.go` 内嵌的 `web_login.py` | 无——按需单点吸纳 |
+| 方式 | `git merge` 上游提交（历史相连） | `scripts/sync_workbuddy.py` 三方合并（vendor 产物） | `scripts/sync_trae2api.py` 三方合并（vendor 产物；源树允许 textcall 四件套 WIP） | `scripts/check_trae_helper.py` 逐行比对（不合并） | 读源码/提交评估，择优单点移植，MERGE.md magpie 节记基线 |
+| 细节 | references/cline-proxy-merge.md | references/workbuddy-vendor.md | 见 §2 TraeWork 小节 | 见 §2 Trae 小节 | 见 §2.5 |
 
-判别口诀：提到 cline/zen/behind/GitHub 提示 → fork 上游线；提到 WorkBuddy 面板/wb → WorkBuddy vendor 线；提到 trae2api 引擎/vendor/TraeWork 网关 → TraeWork vendor 线；提到 web_login/授权助手/签到 9074（脚本层面）→ Trae 比对线。多条线都要更新时先做 fork 线（改动大、冲突多），再做两条 vendor 线，最后做 Trae 比对。
+判别口诀：提到 cline/zen/behind/GitHub 提示 → fork 上游线；提到 WorkBuddy 面板/wb → WorkBuddy vendor 线；提到 trae2api 引擎/vendor/TraeWork 网关 → TraeWork vendor 线；提到 web_login/授权助手/签到 9074（脚本层面）→ Trae 比对线；提到 magpie/某平台的现成实现/上游行为取证 → 参考线。多条线都要更新时先做 fork 线（改动大、冲突多），再做两条 vendor 线，最后做 Trae 比对与 magpie 排查。
+
+## 2.5 全平台参考线（yetone/magpie）
+
+2026-11-06 用户立项：magpie 几乎拥有所有平台的反代功能，日后开发十分具有参考价值。**它是订阅聚合网关（Claude/ChatGPT/Copilot/Gemini/OpenCode/qoder…约 70 agent），不是本仓任何平台的 fork/vendor**——不 merge、不 vendor，只做两类用途：
+
+1. **上游行为取证**（比官方仓 issue 快）：它的 gateway 测试文件是上游行为的高质量旁证——2026-11-05 zen 免费层关停的调查即靠 `internal/gateway/opencode_go_free_test.go` 定案（免费层 `Bearer public`、付费 OpenCode Go=`opencode.ai/zen/go/v1`）。
+2. **单点逻辑移植**：读它的提交/源码，匹配本仓架构后择优移植，MERGE.md magpie 节记基线（排查到哪条 commit、吸纳了什么、丢弃了什么）。首次基线 `498b6419`（2026-11-05），首轮吸纳 #4944 反向 mend（finish=tool_calls 无调用改判 stop，落在 `collectStreamResponse`）。
+
+排查方法：`api.github.com/repos/yetone/magpie/commits`（匿名 API 配额易耗尽，失败就拉 raw 文件）；其提交信息极详尽（动机+复现+验证+自评遗留），多数情况读完 message 即可判断价值，无需逐文件读 diff。评估时按本仓平台逐条对照（cline/zen/trae/wb/openrouter/amd/tkhb/other），架构不同的形态（free-tier 形身、路由组、webui）直接判不适用。
 
 ## 1. 公共铁律
 
