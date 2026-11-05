@@ -311,6 +311,24 @@ func ClineHeaderTimeout() time.Duration {
 	return 60 * time.Second
 }
 
+// ZenHeaderTimeout zen 上游「等响应头」看门狗时长（ZEN_HEADER_TIMEOUT 秒，
+// 默认 60，0 = 关闭）。与 CLINE_HEADER_TIMEOUT 同机制（复用
+// clineHeaderWatchdogFor），只包流式请求——zen 存在非流式转发，非流式的
+// 响应头要等整段生成完成，看门狗语义不成立，故恒不启用。黑洞出口（TCP 通、
+// 响应头被静默丢弃）会把流式请求悬到共用 transport 的
+// ResponseHeaderTimeout（5 分钟）甚至更久（2026-11-05 生产实证 632 秒），
+// 期间占着并发信号量且换 key 重试链不触发；看门狗把这类悬死在 60s 内转成
+// 网络错误，交回既有的冷却出口/换 key 重试链。
+func ZenHeaderTimeout() time.Duration {
+	if n, ok := envInt("ZEN_HEADER_TIMEOUT"); ok {
+		if n <= 0 {
+			return 0
+		}
+		return time.Duration(n) * time.Second
+	}
+	return 60 * time.Second
+}
+
 // StreamLogEnabled STREAM_LOG=true 时把 Anthropic 流式路径的原始 SSE 事件
 // 落盘到 afree-proxy-stream.log（完整对话内容、无大小上限），默认关闭。
 func StreamLogEnabled() bool {

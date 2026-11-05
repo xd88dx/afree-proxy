@@ -2759,7 +2759,20 @@ func callZenResponsesAPI(ctx context.Context, params map[string]any, stream bool
 		// 差值=TCP+TLS+CONNECT 握手耗时。此前恒传 0，导致 zen/opencode 出口的
 		// 「平均握手延迟」徽标永远无样本（面板显示 -），只有在线率在动。
 		hsStart := time.Now()
-		resp, err := proxyClientFor(proxyURL).Do(req)
+		// 流式请求的响应头看门狗（与 cline 同款，复用 clineHeaderWatchdogFor）：
+		// 黑洞出口（TCP 通、响应头被静默丢弃）会把请求悬到共用 transport 的
+		// ResponseHeaderTimeout（5 分钟）甚至更久（2026-11-05 生产实证 632 秒），
+		// 期间占着并发信号量且换 key 重试链不触发。只包流式——非流式的响应头
+		// 要等整段生成完成，看门狗语义不成立。
+		doCtx, stopWatch := ctx, func() bool { return false }
+		if stream {
+			doCtx, stopWatch = clineHeaderWatchdogFor(ctx, ZenHeaderTimeout())
+		}
+		resp, err := proxyClientFor(proxyURL).Do(req.WithContext(doCtx))
+		if stopWatch() {
+			log.Printf("  zen upstream: response header watchdog fired after %v (exit unresponsive, retrying)", ZenHeaderTimeout())
+			err = fmt.Errorf("zen response header watchdog fired after %v", ZenHeaderTimeout())
+		}
 		if err == nil {
 			mainP, backupP, boundP := keyBindingOf(key)
 			setUpstreamExit(ctx, proxyExitType(proxyURL, mainP, backupP, boundP))
@@ -3121,7 +3134,20 @@ func callZenAPI(ctx context.Context, params map[string]any, stream bool, opts ..
 		// 差值=TCP+TLS+CONNECT 握手耗时。此前恒传 0，导致 zen/opencode 出口的
 		// 「平均握手延迟」徽标永远无样本（面板显示 -），只有在线率在动。
 		hsStart := time.Now()
-		resp, err := proxyClientFor(proxyURL).Do(req)
+		// 流式请求的响应头看门狗（与 cline 同款，复用 clineHeaderWatchdogFor）：
+		// 黑洞出口（TCP 通、响应头被静默丢弃）会把请求悬到共用 transport 的
+		// ResponseHeaderTimeout（5 分钟）甚至更久（2026-11-05 生产实证 632 秒），
+		// 期间占着并发信号量且换 key 重试链不触发。只包流式——非流式的响应头
+		// 要等整段生成完成，看门狗语义不成立。
+		doCtx, stopWatch := ctx, func() bool { return false }
+		if stream {
+			doCtx, stopWatch = clineHeaderWatchdogFor(ctx, ZenHeaderTimeout())
+		}
+		resp, err := proxyClientFor(proxyURL).Do(req.WithContext(doCtx))
+		if stopWatch() {
+			log.Printf("  zen upstream: response header watchdog fired after %v (exit unresponsive, retrying)", ZenHeaderTimeout())
+			err = fmt.Errorf("zen response header watchdog fired after %v", ZenHeaderTimeout())
+		}
 		if err == nil {
 			mainP, backupP, boundP := keyBindingOf(key)
 			setUpstreamExit(ctx, proxyExitType(proxyURL, mainP, backupP, boundP))

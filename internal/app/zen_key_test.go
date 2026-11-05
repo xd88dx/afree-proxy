@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -705,5 +706,72 @@ func TestZenNoKeyErrorReportsRealRejectionLayer(t *testing.T) {
 	err = zenNoKeyError()
 	if err == nil || !strings.Contains(err.Error(), "1 parked (daily quota exhausted)") || !strings.Contains(err.Error(), "1 routing-disabled") {
 		t.Fatalf("mixed pool error = %v", err)
+	}
+}
+
+// 黑洞出口（TCP 通、响应头被静默丢弃）下，流式请求的响应头看门狗把悬死请求
+// 在 ZEN_HEADER_TIMEOUT 内掐断并按网络错误走重试链，而不是悬到 transport 级
+// ResponseHeaderTimeout（5 分钟，2026-11-05 生产实证 632 秒，期间占住并发
+// 信号量）。非流式请求不接看门狗——其响应头要等整段生成完成。
+func TestZenChatHeaderWatchdogCutsBlackholeExit(t *testing.T) {
+	t.Setenv("ZEN_HEADER_TIMEOUT", "1") // 1 秒看门狗
+
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// 黑洞：永不回响应头。客户端断开（看门狗 cancel / 测试 ctx 超时）正常会被
+		// server 的 background read 感知（有独立对照实验验证）；这里再加 10s 自退
+		// 兜底测试卫生——重试链的多个并发连接在 Close 等待时不至于悬死测试。
+		select {
+		case <-r.Context().Done():
+		case <-time.After(10 * time.Second):
+		}
+	}))
+	defer upstream.Close()
+
+	savedCfg := getZenConfig()
+	cfgCopy := *savedCfg
+	cfgCopy.BaseURL = upstream.URL
+	cfgCopy.Keys = []string{"sk-hang"}
+	clearTestProxyPool(t)
+	cfgCopy.Retries = 3
+	setZenConfig(&cfgCopy)
+	t.Cleanup(func() { setZenConfig(savedCfg) })
+	savedModels, savedAliases := zenModels, zenAliases
+	setZenModelForTest("aaa-probe-model", "")
+	t.Cleanup(func() {
+		zenModelsMu.Lock()
+		zenModels, zenAliases = savedModels, savedAliases
+		zenModelsMu.Unlock()
+	})
+
+	params := map[string]any{
+		"model":      "aaa-probe-model",
+		"messages":   []any{map[string]any{"role": "user", "content": "x"}},
+		"max_tokens": 64,
+	}
+
+	// 流式：看门狗生效——3 次重试每次 1s 掐断 + 退避延迟，总耗时应远小于
+	// transport 级 5 分钟（修复前该场景悬 632 秒）。
+	start := time.Now()
+	_, _, err := callZenAPI(t.Context(), params, true)
+	if err == nil {
+		t.Fatal("blackhole exit must fail, not hang")
+	}
+	if !strings.Contains(err.Error(), "watchdog fired") {
+		t.Fatalf("error must carry the watchdog reason, got %v", err)
+	}
+	if elapsed := time.Since(start); elapsed > 30*time.Second {
+		t.Fatalf("watchdog must cut the hang quickly, took %v", elapsed)
+	}
+
+	// 非流式：不看门狗——同一个黑洞出口下，请求由调用方 ctx 超时收场，
+	// 错误不得携带看门狗原因（证明看门狗只对 stream=true 启用）。
+	nctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
+	defer cancel()
+	_, _, err = callZenAPI(nctx, params, false)
+	if err == nil {
+		t.Fatal("blackhole exit must fail (by ctx timeout), not hang")
+	}
+	if strings.Contains(err.Error(), "watchdog fired") {
+		t.Fatalf("non-stream request must not be watchdogged, got %v", err)
 	}
 }
