@@ -1,9 +1,14 @@
 # Trae 平台六个 flash 模型使用说明
 
-> 2026-10-30 排查产出。基于本机测试容器(凭据1,端点 auto)实测 30 场景矩阵 +
-> 六模型工具调用两轮往返全测。适用 afree-proxy 网关 `/v1/chat/completions`。
+> ⚠️ **历史文档（2026-10-30 产出）**：本文基于**旧 Trae 引擎**（`internal/trae/`，
+> autumnsentiment/Trae2api-cn 的 Go 重写）实测。该引擎已随 2026-11-04 换线整体删除，
+> 现役引擎为 vendored `internal/trae2api/`（XCool-603/trae2api）——「端点归属」一节的
+> auto/remote/raw 三档与面板钉档机制**已不存在**（新引擎按模型所属 function 池如
+> `chat_v3`/`solo_work_lite` 自行选择传输，无面板钉档入口，见 PROJECT.md §5b）。
+> 下方「六模型实测结论」是**上游模型侧的行为特征**（上下文上限、超长输出、4000012
+> 推理循环等），与网关引擎无关，仍然有效；涉及旧引擎机制的字段仅作存档。
 
-## 端点归属
+## 端点归属（旧引擎，仅存档）
 
 这六个模型在 Trae 上游有三条传输档位,auto 模式下的路由规则(2026-10-30 起):
 
@@ -21,8 +26,8 @@ flash 系 config,raw 档实际只对非 flash 系模型(glm-5.2、DeepSeek-V4-Pr
 可用。工具协议在 remote 档经文本化承载(运行时 system 提示 + `<opencode_tool_call>`
 文本块),响应侧由网关解析回 OpenAI tool_calls。
 
-面板端点选择建议:**保持 auto**。钉 `traecode` 后这六个模型的工具请求必败 4001;
-钉 `remote` 一切正常但失去回落弹性。
+面板端点选择建议(旧引擎):**保持 auto**。钉 `traecode` 后这六个模型的工具请求必败 4001;
+钉 `remote` 一切正常但失去回落弹性。**（旧引擎机制,现役 vendored 引擎无钉档入口——整节仅存档）**
 
 ## 六模型实测结论(2026-10-30,凭据1)
 

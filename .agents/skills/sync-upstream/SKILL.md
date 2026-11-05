@@ -29,8 +29,7 @@ description: 同步 afree-proxy 四条上游线的完整流程与陷阱清单—
 8. **本机 git 出网必须用 URL 级代理键**(2026-10-28 实测):只设 `http.proxy` / `https.proxy` / `ALL_PROXY` 环境变量时,Windows schannel 后端仍报 `schannel: failed to receive handshake, SSL/TLS connection failed`;`-c http.sslBackend=openssl` 也无效。唯一验证可用的形式是三条一起给:
    `git -c 'http.https://github.com.proxy=socks5h://127.0.0.1:10808' -c 'http.proxy=socks5h://127.0.0.1:10808' -c 'https.proxy=socks5h://127.0.0.1:10808' ls-remote|fetch ...`
    端口用哪个以 AGENTS.md §10 的五候选实测表为准（用前先探，通即用；示例里的 10808 只是当时实测值）。仓库无持久代理配置(`git config --list --show-origin | grep proxy` 为空),每条 git 网络命令都要带。连通性判据看 `ls-remote` 是否吐出哈希;shell 显示 `exit=0` 而工具 `exit_code=128` 时按失败处理。
-   **push 不走 https,上面三个代理键对它无效**:本仓 `origin` 是 `git@github.com:xd88dx/afree-proxy.git`(SSH),`~/.ssh/config` 又把 `github.com` 映射到 `ssh.github.com:443`,直推会报 `Connection closed by <ip> port 443`(看着像权限问题,其实是没走代理)。可用形式是让 ssh 自己走代理:
-   `git -c core.sshCommand='ssh -o ProxyCommand="connect -S 127.0.0.1:10808 %h %p"' push origin main`(`connect` 在 `/mingw64/bin/connect`)。先 `ssh -o ProxyCommand='connect -S 127.0.0.1:10808 %h %p' -T git@github.com` 应打印 `Hi <user>! You've successfully authenticated` 再推。
+   **push 不走 https,上面三个代理键对它无效**:本仓 `origin` 是 `git@github.com:xd88dx/afree-proxy.git`(SSH),`~/.ssh/config` 又把 `github.com` 映射到 `ssh.github.com:443`,直推会报 `Connection closed by <ip> port 443`(看着像权限问题,其实是没走代理)。**首选:`ssh.github.com:443` + PySocks 隧道**(2026-10-31 实测;旧 `connect -S` 方案已作废——`/mingw64/bin/connect` 随 Git 更新消失,`ProxyCommand connect` 报 `Connection closed by UNKNOWN port 65535`,别再引用)。完整步骤(隧道脚本编写两坑、认证测试、推送命令、密钥→账号映射)以 `AGENTS.md` §10 为唯一权威,此处不重复维护;要点:隧道脚本放纯 ASCII 的显式 Windows 路径(Git Bash 的 `$TEMP` 是 MSYS /tmp,ProxyCommand 找不到)、stdin 侧 `read1()`/socket 侧 `recv()`、脚本用完即删。
 
 ## 2. 三条线各自的入口
 

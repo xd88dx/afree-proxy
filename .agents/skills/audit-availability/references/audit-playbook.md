@@ -106,3 +106,14 @@ newapi 映射建议：死别名 → 替代（标注"无等价只能删"）
 - 已修：cline 404/cost 自动拉黑 + `BanReasonFeedRemoved` 文案 + 存量归一；请求路径服务闸；去 seed 兜底。
 - 可用替代（实测）：deepseek→`wbgb:`/`zen:deepseek-v4.1-flash-free`；kimi→`trae:kimi-k3`；glm→`zen:glm-5.3-flash-free`/`wbcn:glm-5.3-flash`/`trae:glm-5.3-flash`；muse 无等价只能删。
 - `poolside/laguna-s-2.1:free` 不在 feed 但 cost=0（去兜底后已剪出目录；要用走 combo 别名）。
+
+## 10. 2026-11-05 审计追加（第二轮全量，含修复）
+
+- **审计中途的容器重启是天然干扰源**：本机 `sync-istore-docker` 定时任务 `-Deploy` 模式会 `docker restart afree`（10 分钟节拍）。重启瞬间进行中的 Test 请求报 `RemoteDisconnected`（Python 侧）——不是凭据坏，复测即可。审计前先 `docker inspect afree --format '{{.State.StartedAt}}'` 记下启动时刻，结果异常先对照。
+- **cline/zen 目录同步出口语义**（本轮已修，后续审计按此核对）：目录同步必须走凭据绑定出口（cline=账号绑定/走池开关，zen=boundExitFor 含 egress 钉定），裸直连在直连国际不可达的部署上会让目录自重启起每轮 EOF→目录清空→`firstActiveModel()` 空串→探测 400 "invalid model format"（这是**空 model** 的指纹，别误判成模型形态问题）。判定：`Test account` 报该 400 且 `/v1/models` cline 段为空 = 目录空；对照 `docker logs` 的 `model sync: failed (… EOF)`。
+- **容器内直连 ≠ 宿主机直连 ≠ 出口**：三者网络面不同，归因时分层探测——宿主机 `curl --socks5-hostname <出口>`、`docker exec afree wget -qO- <URL>`（镜像 alpine 有 busybox wget，无 curl；busybox wget 不支持 socks，只能测直连路径）。"经出口宿主机 200 但容器内失败"优先怀疑同步没接出口而不是出口坏。
+- **trae 域名分层**：chat 域 `trae-api-cn.mchost.guru` 与额度域 `api.trae.cn` 独立——额度域全网络 EOF 时 Test（额度连通性验证）恒败但 chat 可能照常，结论以真实 chat 请求为准，别凭 Test 失败判死 trae。
+- **stream 缺省契约检查**（本轮抓到 trae，新平台接入必查）：`POST /v1/chat/completions` **不带 stream 键**（OpenAI 缺省=false），响应必须是 `application/json`。vendored 引擎曾把缺省当 true 返回 SSE——探针脚本报 `JSONDecodeError char 0` 且 200 时，先看 Content-Type 是不是 text/event-stream。
+- **探针脚本自身健壮性**：`d.get("usage", {})` 在 `"usage": null` 时 TypeError（要用 `(d.get("usage") or {})`）；tool_calls 元素的 `function` 字段可能为 null，取值前判空——平台差异会让矩阵脚本整平台报 platform-error。
+- **自动拉黑的实时验证窗口**：探针撞 404/RegionError 当场即拉黑（blacklist API 可见 `auto-banned: model removed from official free feed`），同一轮里后续平台探到 `is banned and no longer served` 404 是**预期行为**不是新故障；报告口径按"已摘除"计。
+- **统一溢出报错**（2026-11-05 用户定，已实现）：网关把各上游 context-overflow 签名归一为 400 + `code: "context_length_exceeded"` + 压缩提示文案（`context_overflow.go`）；上下文档位测试时错误体出现该 code 即归一化生效，仍是 502 裸上游文案 = 签名缺口，往 patterns 里补。
