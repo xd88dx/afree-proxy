@@ -5112,12 +5112,15 @@ function onImportFileChange(event) {
 
 // impKeepRowsFor 从备份 JSON 提取含上游身份的平台行（Other 子平台逐行，
 // key 用 "other:<slug>" 与后端 KeepEnabled 对齐）。行序与左侧菜单一致：
-// Cline → OpenCode → WorkBuddy → AMDCloud → OpenRouter → TokenHarbor → Other。
-// 全不勾选 = 原隔离护栏行为。
+// Cline → TraeWork → OpenCode → WorkBuddy → AMDCloud → OpenRouter → TokenHarbor → Other。
+// 全不勾选 = 原隔离护栏行为。TraeWork（2026-11-05 补）：trae 换线时漏加此行，
+// 后端 KeepEnabled["trae"] 永远缺项 → trae2apiRestoreBackup 全部置 false——
+// 备份里明明带着 routing=true 也恢复不了（用户实测两轮）。
 function impKeepRowsFor(parsed) {
   const rows = [];
   const has = a => Array.isArray(a) && a.length > 0;
   if (has(parsed.accounts)) rows.push({ key: 'cline', label: 'Cline' });
+  if (parsed.trae && parsed.trae.accounts && Object.keys(parsed.trae.accounts).length > 0) rows.push({ key: 'trae', label: 'TraeWork' });
   if (has(parsed.zen && parsed.zen.keys)) rows.push({ key: 'zen', label: 'OpenCode' });
   if (parsed.workbuddy && parsed.workbuddy.authFiles && Object.keys(parsed.workbuddy.authFiles).length > 0) rows.push({ key: 'wb', label: 'WorkBuddy' });
   if (has(parsed.amdcloud && parsed.amdcloud.keys)) rows.push({ key: 'amd', label: 'AMDCloud' });

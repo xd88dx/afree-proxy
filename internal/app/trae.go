@@ -1652,6 +1652,9 @@ func trae2apiRestoreBackup(raw json.RawMessage, keepEnabled bool) (int, error) {
 		if len(probe.Trae) == 0 {
 			return 0, errors.New("legacy trae config shape (pre-trae2api), not migrated")
 		}
+		// 全新环境（清卷后导入）子系统目录尚不存在——WriteFile 不会自建父目录，
+		// 不补会让整段 restore 失败、routing/账号全部落空（2026-11-05 闭环测试抓出）。
+		ensureTraeDataDir()
 		if err := os.WriteFile(traeConfigPath(), payload.Config, 0o600); err != nil {
 			return 0, err
 		}
