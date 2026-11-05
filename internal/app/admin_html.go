@@ -2042,10 +2042,8 @@ const I18N_ZH = {
   'Proxy isolation: each credential only egresses via its bound exits; when none is available it is skipped — never another exit or direct. Forced on when': '代理隔离：每个凭据只从绑定的出口出站，都不可用则跳过——绝不改走其他出口或直连。设有',
   '=true.': '=true 时强制开启。',
   'Backup proxy — off by default: every identity uses its main proxy only; a cooling or removed main proxy is skipped for that round. On: the backup proxy serves as the fallback for the main one.': '备用代理：默认关闭——每个身份只走主代理，主代理冷却或被移除时直接跳过。开启后：备用代理作为主代理的兜底。',
-  'Platform-level blacklist and per-proxy binding cap for automatic assignment only — one-click bind and reorder-by-latency. Manual bindings and runtime routing are never restricted.': '仅作用于自动分配——「一键代理」与「凭据延迟重排」两个批量操作；手动禁用（冷却）的代理同样不参与自动分配；手动绑定和运行期路由不受限制。',
   ' · excluded': ' · 已排除',
   ' row(s) left unchanged — every allowed proxy is excluded or at cap': ' 行无法改绑：可用代理都已拉黑或达到上限',
-  're-bind proxies of the selected platforms: healthy (fast, allowed) bindings stay put; slow/unrecorded/excluded/over-cap ones are re-filled from the remaining pool (better-only for healthy rows), then auto-save.': '重排所选平台的代理绑定：健康绑定（快代理且未拉黑/未超限）保持不动；慢/无记录/被拉黑/超限/绑在手动禁用代理上的行从剩余代理池回填（健康行只在更优时才换），并自动保存。',
   'Latency reorder finished with errors — loads failed: ': '延迟重排完成但有错误——加载失败：',
   '; saves failed: ': '；保存失败：',
   'Reordered ': '已按延迟重排 ',
@@ -2207,7 +2205,6 @@ const I18N_ZH = {
   'Key #': 'key #',
   ' (': '（',
   ') — ': '）— ',
-  'cooldown until ': '冷却至 ', // 2026-10-31 起健康表冷却列只显示时间戳；词条保留给其他可能引用处
   ' (seed)': '（种子）',
   'Email (optional)': '邮箱（可选）',
   'Cancel': '取消',
@@ -2672,15 +2669,11 @@ const I18N_ZH = {
   // TraeWork 平台页（vendored trae2api，2026-11-04 上游切换）
   'Gateway': '网关',
   'Trae config': 'Trae 配置',
-  'Rate filter (exclude models priced above)': '费率过滤（剔除高于该倍率的模型）',
-  'Max in flight per account': '单账号并发上限',
   'Breaker threshold': '熔断阈值',
   'Breaker cooldown': '熔断冷却',
   'Stream idle timeout (s)': '流中空闲超时（秒）',
   'Soft rate cooldown': '软限流冷却',
-  'Soft rate cooldown max': '软限流冷却上限',
   'Model cooldown': '模型冷却',
-  'Check-in hours (comma separated)': '签到小时（逗号分隔）',
   'Reject unknown models': '拒绝未知模型',
   'Session sticky': '会话粘性',
   'International realms': '国际版域',
@@ -2754,7 +2747,6 @@ const I18N_ZH = {
   'Send up to 3 HTTPS probes per exit to the target in the input box (default www.gstatic.com/generate_204) through the same dial stack as real traffic; shows the min latency of successful samples and feeds the online-rate and handshake stats. Never touches routing or cooldowns.': '每条出口对测速目标发最多 3 次 HTTPS 探测，根据结果更新在线率与测试列数据，路由与冷却不受影响。',
   'Latest manual latency test: min / median over up to 3 HTTPS probes to the configured target through the same dial stack as real traffic; the samples also feed the rate and handshake stats. Routing and cooldowns are untouched.': '最近一次手动延迟测试：对配置的测速目标最多 3 次 HTTPS 探测的最小/中位延迟，与真实请求同一拨号栈；样本同时计入在线率与握手统计。路由与冷却不受影响。',
   // 2026-11-03 测速目标输入框（回车/失焦即存，留空回默认）
-  'Latency test target URL; Enter or blur saves it. Empty resets to the default. Any HTTP response counts as a sample.': '测速目标 URL；回车或失焦即保存，留空恢复默认。收到任意 HTTP 响应即计为样本。',
   'Test target saved': '测速地址已保存',
   'Test target failed: ': '测速地址保存失败：',
   // 2026-11-03 行内单出口测试按钮（「Test」复用既有词条勿重复添加）

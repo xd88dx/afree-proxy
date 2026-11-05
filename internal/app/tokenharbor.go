@@ -162,9 +162,7 @@ func handleTHChat(w http.ResponseWriter, r *http.Request, params map[string]any)
 	resp, _, err := tokenharbor.Chat(r.Context(), params, m.ID, true, globalStrategy(), thBoundRoutable)
 	if err != nil {
 		log.Printf("  tokenharbor api error: %v", err)
-		writeJSON(w, http.StatusBadGateway, map[string]any{
-			"error": map[string]string{"message": err.Error(), "type": "api_error"},
-		})
+		writeUpstreamAPIError(w, m.ID, err, http.StatusBadGateway)
 		return
 	}
 	defer resp.Body.Close()

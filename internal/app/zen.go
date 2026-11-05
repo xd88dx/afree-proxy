@@ -1523,6 +1523,21 @@ var zenGateToolSpecs = []struct{ name, desc string }{
 	{"execute", "Run JavaScript in a confined Code Mode runtime"},
 }
 
+// zenToolChoiceAutoOnly 个别免费模型只接受 tool_choice:"auto"（2026-11-05
+// 实测 crouton-alpha-free 400 拒 none/required）。恒 none 的 gate 过闸策略
+// 对它们降级为 auto。命中判据用模型 ID 精确匹配（含别名解析前后的形态）。
+func zenToolChoiceAutoOnly(reqModel string) bool {
+	m, ok := resolveZenModel(reqModel)
+	if !ok {
+		return false
+	}
+	switch m.ID {
+	case "crouton-alpha-free":
+		return true
+	}
+	return false
+}
+
 // zenGateTools chat 端点形态：tools[].{type,function:{name,description,parameters}}。
 // 返回 []any 与客户端解码出来的 tools 同型（下游要拼接两者）。
 // parameters 必须是官方真实 schema（空 schema 会被新后端 403，见
@@ -1639,8 +1654,16 @@ func buildZenBody(params map[string]any, stream bool) map[string]any {
 	//    声明的调用，IDE 解析失败（required 更会强制成一次必失败的工具调用）。
 	//  - 客户端有工具但没指定：auto，让模型按需调用客户端真实工具。
 	//  - 客户端显式指定且有工具：原样透传。
+	//  例外：个别免费模型只接受 "auto"（2026-11-05 实测 crouton-alpha-free：
+	//  400 "only \"auto\" is supported for tool_choice"，none/required 一律
+	//  拒）。这类模型降级为 auto——tools[] 里只有 gate 占位 stub，即便被
+	//  调用也只是格式门无副作用，好过整个请求 400。
 	if len(clientTools) == 0 {
-		body["tool_choice"] = "none"
+		if reqModel, _ := params["model"].(string); zenToolChoiceAutoOnly(reqModel) {
+			body["tool_choice"] = "auto"
+		} else {
+			body["tool_choice"] = "none"
+		}
 	} else if tc, ok := params["tool_choice"]; ok {
 		body["tool_choice"] = tc
 	} else {
@@ -3395,6 +3418,36 @@ type zenModelOverlay struct {
 // 重新取一遍，供 applyZenRegistryBase 校正默认值。
 // 唯一实现：syncZenModels 使用（会话铸造改本地后不再有第二消费者），
 // 避免两处价格门逻辑漂移。
+
+// zenSyncClient zen 目录同步（models.opencode.ai，无凭据的公开元数据请求）
+// 的出口解析，与会话请求同语义（boundExitFor：显式绑定 > egress 钉定 > 走池
+// 开关）——遍历参与路由的 key 取第一个可用出口；无 key/全不可用时按走池
+// 开关走池或直连，DISABLE_DIRECT 恒拦。此前是裸直连（2026-11-05 审计实测）：
+// 直连不可达的部署上 zen 免费目录自重启起每轮 "registry unreachable"，
+// 目录冻结在种子/旧表。
+func zenSyncClient() (*http.Client, error) {
+	cfg := getZenConfig()
+	for _, key := range cfg.Keys {
+		if !zenKeyRoutingEnabled(key) {
+			continue
+		}
+		if proxyURL, _, ok := boundExitFor(key); ok {
+			return withSyncTimeout(proxyClientFor(proxyURL)), nil
+		}
+	}
+	if zenProxiesEnabled() {
+		proxyURL, _ := pickUpstreamProxyFor(pkZen)
+		if proxyURL == "" && kit.DisableDirect() {
+			return nil, fmt.Errorf("pool empty and direct egress disabled by DISABLE_DIRECT")
+		}
+		return withSyncTimeout(proxyClientFor(proxyURL)), nil
+	}
+	if kit.DisableDirect() {
+		return nil, fmt.Errorf("direct egress disabled by DISABLE_DIRECT")
+	}
+	return withSyncTimeout(kit.HTTPClient), nil
+}
+
 func fetchZenRegistry() (map[string]zenModelOverlay, map[string]bool, string, bool) {
 	overlay := map[string]zenModelOverlay{}
 	freeGate := map[string]bool{}
@@ -3403,7 +3456,10 @@ func fetchZenRegistry() (map[string]zenModelOverlay, map[string]bool, string, bo
 		return overlay, freeGate, "", false
 	}
 	oreq.Header.Set("User-Agent", "opencode/latest/cli")
-	client := &http.Client{Timeout: 25 * time.Second}
+	client, err := zenSyncClient()
+	if err != nil {
+		return overlay, freeGate, "", false
+	}
 	oresp, err := client.Do(oreq)
 	if err != nil {
 		return overlay, freeGate, "", false

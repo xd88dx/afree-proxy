@@ -806,6 +806,17 @@ func testAccount(acc *Account) (map[string]any, string) {
 	// 构造极小探测请求：max_tokens=1, 单条用户消息。探测请求需与正常代理请求
 	// 使用相同的模型选择、流式策略和任务 ID，否则部分模型会返回空响应。
 	probeModel := testAccountProbeModel()
+	if probeModel == "" {
+		// 目录为空（同步持续失败，如出口断/直连不可达）时把空 model 交给上游
+		// 只会得到一条不知所谓的 400 "invalid model format"（2026-11-05 审计
+		// 实测）。这里明确报因，指向真正的故障面。
+		return map[string]any{
+			"accountId": acc.AccountID,
+			"email":     acc.Email,
+			"status":    "error",
+			"reason":    "no probe model: cline catalog is empty (model sync failing — check gateway logs / sync egress)",
+		}, "error"
+	}
 	sessionID := fmt.Sprintf("test_%d", time.Now().UnixMilli())
 	probeBody := map[string]any{
 		"model":            probeModel,
@@ -852,11 +863,25 @@ func testAccount(acc *Account) (map[string]any, string) {
 		}
 		probeClient = proxyClientFor(proxyURL)
 		probeExit = proxyURL
+	} else if clineProxiesEnabled() {
+		// 未绑定 + 走池：探测与请求路径同出口（全局轮转），不许探测绕开
+		// 池直连——那会把服务器 IP 暴露给按池路由的账号，且本机直连不可达的
+		// 部署上探测恒败、与真实流量结论相反（2026-11-05 审计对齐）。
+		proxyURL, _ := pickUpstreamProxyFor(pkCline)
+		if proxyURL == "" && kit.DisableDirect() {
+			return map[string]any{
+				"accountId": acc.AccountID,
+				"email":     acc.Email,
+				"status":    "error",
+				"reason":    "no proxy exit: direct egress disabled by DISABLE_DIRECT; probe skipped",
+			}, "error"
+		}
+		probeClient = proxyClientFor(proxyURL)
+		probeExit = proxyURL
 	}
-	// 未绑定账号的探测出口 = 服务器本机直连（probeExit 空）。DISABLE_DIRECT=true
-	// 时直连是明确禁用的出口，与请求路径（proxy.go）同口径——探测同样是一次
-	// 真实上游请求，从本机 IP 发出会把服务器身份暴露给本应走代理的账号。
-	// 此前只有请求路径拦、探测路径不拦（其余 7 个平台的出口解析函数都拦了）。
+	// 未绑定 + 面板直连模式：探测出口 = 服务器本机直连（probeExit 空）。
+	// DISABLE_DIRECT=true 时直连是明确禁用的出口，与请求路径（proxy.go）同
+	// 口径——探测同样是一次真实上游请求。
 	if probeExit == "" && kit.DisableDirect() {
 		return map[string]any{
 			"accountId": acc.AccountID,

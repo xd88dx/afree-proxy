@@ -164,9 +164,7 @@ func handleAMDChat(w http.ResponseWriter, r *http.Request, params map[string]any
 	resp, _, err := amd.Chat(r.Context(), params, m.ID, true, globalStrategy(), amdBoundRoutable)
 	if err != nil {
 		log.Printf("  amd api error: %v", err)
-		writeJSON(w, http.StatusBadGateway, map[string]any{
-			"error": map[string]string{"message": err.Error(), "type": "api_error"},
-		})
+		writeUpstreamAPIError(w, m.ID, err, http.StatusBadGateway)
 		return
 	}
 	defer resp.Body.Close()

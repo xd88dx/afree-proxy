@@ -200,9 +200,7 @@ func handleOrChat(w http.ResponseWriter, r *http.Request, params map[string]any)
 	if err != nil {
 		log.Printf("  openrouter api error: %v", err)
 		orAutoBanPermanent(bare, err)
-		writeJSON(w, http.StatusBadGateway, map[string]any{
-			"error": map[string]string{"message": err.Error(), "type": "api_error"},
-		})
+		writeUpstreamAPIError(w, m.ID, err, http.StatusBadGateway)
 		return
 	}
 	defer resp.Body.Close()

@@ -202,9 +202,7 @@ func handleOtherChat(w http.ResponseWriter, r *http.Request, params map[string]a
 	resp, _, err := other.Chat(r.Context(), p, params, m.ID, true, globalStrategy(), otherBoundRoutable(p), otherExitFn(p))
 	if err != nil {
 		log.Printf("  other api error (%s): %v", p.Slug, err)
-		writeJSON(w, http.StatusBadGateway, map[string]any{
-			"error": map[string]string{"message": err.Error(), "type": "api_error"},
-		})
+		writeUpstreamAPIError(w, m.ID, err, http.StatusBadGateway)
 		return
 	}
 	defer resp.Body.Close()

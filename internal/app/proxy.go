@@ -406,9 +406,7 @@ func StartProxy(host string, port int) error {
 		resp, acc, streamed, err := callClineAutoStream(r.Context(), params, upstreamStream, useProxies)
 		if err != nil {
 			log.Printf("  api error: %v", err)
-			writeJSON(w, http.StatusInternalServerError, map[string]any{
-				"error": map[string]string{"message": err.Error(), "type": "api_error"},
-			})
+			writeUpstreamAPIError(w, model, err, http.StatusInternalServerError)
 			return
 		}
 		defer resp.Body.Close()
@@ -421,9 +419,7 @@ func StartProxy(host string, port int) error {
 		if upstreamStream {
 			out, err := collectStreamResponse(resp)
 			if err != nil {
-				writeJSON(w, http.StatusInternalServerError, map[string]any{
-					"error": map[string]string{"message": err.Error(), "type": "parse_error"},
-				})
+				writeUpstreamAPIError(w, model, err, http.StatusInternalServerError)
 				return
 			}
 			if u, ok := out["usage"].(map[string]any); ok && len(u) > 0 {
@@ -715,9 +711,7 @@ func handleZenChat(w http.ResponseWriter, r *http.Request, params map[string]any
 	if err != nil {
 		log.Printf("  zen api error: %v", err)
 		zenAutoBanRegion(err, zm)
-		writeJSON(w, zenClientErrorStatus(err), map[string]any{
-			"error": map[string]string{"message": err.Error(), "type": "api_error"},
-		})
+		writeUpstreamAPIError(w, zm.ID, err, zenClientErrorStatus(err))
 		return
 	}
 	defer resp.Body.Close()
@@ -757,9 +751,7 @@ func handleZenChatDirect(w http.ResponseWriter, r *http.Request, params map[stri
 	if err != nil {
 		log.Printf("  zen api error: %v", err)
 		zenAutoBanRegion(err, zm)
-		writeJSON(w, zenClientErrorStatus(err), map[string]any{
-			"error": map[string]string{"message": err.Error(), "type": "api_error"},
-		})
+		writeUpstreamAPIError(w, zm.ID, err, zenClientErrorStatus(err))
 		return
 	}
 	defer resp.Body.Close()
@@ -810,9 +802,7 @@ func handleZenResponsesNative(w http.ResponseWriter, r *http.Request, params map
 			return true
 		}
 		log.Printf("  zen responses api error: %v", err)
-		writeJSON(w, zenClientErrorStatus(err), map[string]any{
-			"error": map[string]string{"message": err.Error(), "type": "api_error"},
-		})
+		writeUpstreamAPIError(w, zm.ID, err, zenClientErrorStatus(err))
 		return false
 	}
 	defer resp.Body.Close()
@@ -1692,10 +1682,9 @@ func handleStreamBufferedGeneric(w http.ResponseWriter, r *http.Request, plat st
 		resp, usageFn, err := attempt(r.Context())
 		if err != nil {
 			log.Printf("  [%s] %s attempt %d/%d api error: %v", rid, plat, n, StreamMaxAttempts(), err)
-			// zen 的 429 透传给客户端退避；cline 等平台错误非 zenHTTPError，仍回 502
-			writeJSON(w, zenClientErrorStatus(err), map[string]any{
-				"error": map[string]string{"message": err.Error(), "type": "api_error"},
-			})
+			// zen 的 429 透传给客户端退避；cline 等平台错误非 zenHTTPError，仍回 502；
+			// 上下文溢出签名统一改写 400 context_length_exceeded（见 context_overflow.go）
+			writeUpstreamAPIError(w, model, err, zenClientErrorStatus(err))
 			return
 		}
 		lines, usage, complete, brk := bufferUpstreamSSE(resp.Body)
@@ -2245,9 +2234,7 @@ func withStreamUsage(params map[string]any) {
 func finishZenChatNonStream(w http.ResponseWriter, resp *http.Response, zm *ZenModel, params map[string]any, usageFn func(map[string]any)) {
 	chat, aerr := collectStreamResponse(resp)
 	if aerr != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]any{
-			"error": map[string]string{"message": aerr.Error(), "type": "parse_error"},
-		})
+		writeUpstreamAPIError(w, zm.ID, aerr, http.StatusInternalServerError)
 		return
 	}
 	if usageFn != nil {
@@ -2931,9 +2918,7 @@ func handleAnthropicMessages(w http.ResponseWriter, r *http.Request) {
 	resp, acc, streamed, err := callClineAutoStream(r.Context(), openAIReq, upstreamStream, useProxies)
 	if err != nil {
 		log.Printf("  anthropic api error: %v", err)
-		writeJSON(w, http.StatusInternalServerError, map[string]any{
-			"error": map[string]string{"message": err.Error(), "type": "api_error"},
-		})
+		writeUpstreamAPIError(w, req.Model, err, http.StatusInternalServerError)
 		return
 	}
 	defer resp.Body.Close()
@@ -2951,9 +2936,7 @@ func handleAnthropicMessages(w http.ResponseWriter, r *http.Request) {
 	if upstreamStream {
 		out, err := collectStreamResponse(resp)
 		if err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]any{
-				"error": map[string]string{"message": err.Error(), "type": "parse_error"},
-			})
+			writeUpstreamAPIError(w, req.Model, err, http.StatusInternalServerError)
 			return
 		}
 		// 上游聚合后无 usage 时同样调用一次：usageTokens 会退回入站请求估算，
@@ -3036,9 +3019,7 @@ func handleZenAnthropic(w http.ResponseWriter, r *http.Request, req anthropicReq
 		resp, _, rerr := callZenResponsesAPI(r.Context(), openAIReq, true)
 		if rerr != nil {
 			log.Printf("  anthropic zen responses api error: %v", rerr)
-			writeJSON(w, zenClientErrorStatus(rerr), map[string]any{
-				"error": map[string]string{"message": rerr.Error(), "type": "api_error"},
-			})
+			writeUpstreamAPIError(w, zm.ID, rerr, zenClientErrorStatus(rerr))
 			return
 		}
 		defer resp.Body.Close()
@@ -3075,9 +3056,7 @@ func handleZenAnthropic(w http.ResponseWriter, r *http.Request, req anthropicReq
 		resp2, _, rerr := callZenResponsesAPI(r.Context(), openAIReq, true)
 		if rerr != nil {
 			log.Printf("  anthropic zen responses api error: %v", rerr)
-			writeJSON(w, zenClientErrorStatus(rerr), map[string]any{
-				"error": map[string]string{"message": rerr.Error(), "type": "api_error"},
-			})
+			writeUpstreamAPIError(w, zm.ID, rerr, zenClientErrorStatus(rerr))
 			return
 		}
 		defer resp2.Body.Close()
@@ -3102,9 +3081,7 @@ func handleZenAnthropic(w http.ResponseWriter, r *http.Request, req anthropicReq
 	}
 	if err != nil {
 		log.Printf("  anthropic zen api error: %v", err)
-		writeJSON(w, zenClientErrorStatus(err), map[string]any{
-			"error": map[string]string{"message": err.Error(), "type": "api_error"},
-		})
+		writeUpstreamAPIError(w, zm.ID, err, zenClientErrorStatus(err))
 		return
 	}
 	defer resp.Body.Close()
@@ -3122,9 +3099,7 @@ func handleZenAnthropic(w http.ResponseWriter, r *http.Request, req anthropicReq
 	// 后再转 anthropic 形态。
 	chatOut, aerr := collectStreamResponse(resp)
 	if aerr != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]any{
-			"error": map[string]string{"message": aerr.Error(), "type": "parse_error"},
-		})
+		writeUpstreamAPIError(w, zm.ID, aerr, http.StatusInternalServerError)
 		return
 	}
 	chatOut["model"] = zm.ID
@@ -3146,9 +3121,7 @@ func handleAnthropicStreamWithUsage(w http.ResponseWriter, upstream *http.Respon
 		log.Printf("  anthropic stream: streaming not supported for client, falling back to non-stream aggregation")
 		out, err := collectStreamResponse(upstream)
 		if err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]any{
-				"error": map[string]string{"message": err.Error(), "type": "parse_error"},
-			})
+			writeUpstreamAPIError(w, modelName, err, http.StatusInternalServerError)
 			return
 		}
 		if u, ok := out["usage"].(map[string]any); ok && len(u) > 0 {

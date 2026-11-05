@@ -2,6 +2,7 @@ package app
 
 import (
 	"afree-proxy/internal/cline"
+	"afree-proxy/internal/kit"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -88,6 +89,48 @@ type recommendedPayload struct {
 	} `json:"free"`
 }
 
+// clineSyncClient 目录同步的出口解析，与账号请求路径同语义（proxy.go chat）：
+// 选中账号有绑定走绑定出口（全不可用 fail-closed，不回落池/直连——feed 请求
+// 带该账号的 Bearer，出口漂移就是身份 IP 漂移）；未绑定按走池开关走池或直连，
+// DISABLE_DIRECT 恒拦直连。此前是裸直连（机制存在但没接全，2026-11-05 审计
+// 实测）：直连不可达的部署上 cline 目录自重启起每轮 EOF——目录清空、整段从
+// /v1/models 摘除、探测模型退化为空串。与五平台 catalogHTTPClient 同一纪律：
+// 无可用出口时跳过本轮，绝不隐式回落直连。
+func clineSyncClient() (*http.Client, string, error) {
+	acc := pickAccount()
+	if acc == nil {
+		acc = pickAccountAny()
+	}
+	if acc != nil {
+		if main, backup, bound := accountProxyBinding(acc); bound {
+			proxyURL, _, ok := pickBoundProxyFor(pkCline, main, backup)
+			if !ok {
+				return nil, "", fmt.Errorf("no routable exit for model sync: account %s bound proxies unavailable (cooling or removed)", truncateEmail(acc.Email))
+			}
+			return withSyncTimeout(proxyClientFor(proxyURL)), proxyURL, nil
+		}
+	}
+	if clineProxiesEnabled() {
+		proxyURL, _ := pickUpstreamProxyFor(pkCline)
+		if proxyURL == "" && kit.DisableDirect() {
+			return nil, "", fmt.Errorf("no routable exit for model sync: pool empty and direct egress disabled by DISABLE_DIRECT")
+		}
+		return withSyncTimeout(proxyClientFor(proxyURL)), proxyURL, nil
+	}
+	if kit.DisableDirect() {
+		return nil, "", fmt.Errorf("no routable exit for model sync: direct egress disabled by DISABLE_DIRECT")
+	}
+	return withSyncTimeout(kit.HTTPClient), "", nil
+}
+
+// withSyncTimeout 共享客户端不能改 Timeout（proxyClientFor 缓存复用），浅拷贝
+// 挂同步超时。Transport 指针共享是安全的（http.Client 并发只读自身字段）。
+func withSyncTimeout(c *http.Client) *http.Client {
+	cp := *c
+	cp.Timeout = modelsSyncTimeout
+	return &cp
+}
+
 func syncRecommendedModels() (int, error) {
 	initModelsCache()
 
@@ -105,6 +148,11 @@ func syncRecommendedModels() (int, error) {
 		return 0, err
 	}
 
+	client, _, err := clineSyncClient()
+	if err != nil {
+		return 0, err
+	}
+
 	req, err := http.NewRequest("GET", recommendedModelsURL, nil)
 	if err != nil {
 		return 0, err
@@ -114,7 +162,6 @@ func syncRecommendedModels() (int, error) {
 	// 2026-10-19 核对）；此前塞的 sess_sync_<ms> 既非官方形态也不是任务，
 	// 反而不像真实客户端。
 
-	client := &http.Client{Timeout: modelsSyncTimeout}
 	resp, err := client.Do(req)
 	if err != nil {
 		return 0, err

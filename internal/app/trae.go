@@ -662,6 +662,12 @@ func serveTrae2apiChat(rw http.ResponseWriter, r *http.Request, body []byte) {
 		})
 		return
 	}
+	// OpenAI 契约：stream 缺省 = false。vendored 引擎把缺省当 true（上游实现
+	// `req.Stream == nil || *req.Stream`），按规范省略 stream 的客户端会收到
+	// SSE 而不是 JSON（2026-11-05 审计实测）。只兜 /v1/chat/completions 入口：
+	// 缺省时显式置 false；/v1/messages、/v1/responses 走 trae2apiCaller，由
+	// 调用方参数决定流式语义，不经这里。
+	body = traeNormalizeStreamDefault(body)
 	r.Body = io.NopCloser(strings.NewReader(string(body)))
 	r.ContentLength = int64(len(body))
 	sub.srv.Handler().ServeHTTP(rw, r)
@@ -757,6 +763,11 @@ func trae2apiCaller(model string) (platformChatCall, bool) {
 		return rejectCaller("No routable Trae accounts. Add accounts on the Trae page.", true), true
 	}
 	return func(ctx context.Context, params map[string]any, stream bool) (*http.Response, func(map[string]any), error) {
+		// 流式语义以调用方参数为准（/v1/responses 恒 true 与其余平台对齐，
+		// /v1/messages 跟随客户端意图），不依赖 body 里的 stream 键——vendored
+		// 引擎把「缺省」当 true，与 OpenAI 缺省 false 相反，缺省请求会被错误
+		// 流式化（2026-11-05 审计实测）。
+		params["stream"] = stream
 		body, err := json.Marshal(params)
 		if err != nil {
 			return nil, nil, err
@@ -776,6 +787,24 @@ func trae2apiCaller(model string) (platformChatCall, bool) {
 }
 
 func bytesReader(b []byte) io.Reader { return strings.NewReader(string(b)) }
+
+// traeNormalizeStreamDefault 对请求体补 OpenAI 缺省语义：无 stream 键 = false
+// （显式 true/false 原样保留）。body 非 JSON 时原样返回。
+func traeNormalizeStreamDefault(body []byte) []byte {
+	var params map[string]any
+	if err := json.Unmarshal(body, &params); err != nil {
+		return body
+	}
+	if _, ok := params["stream"]; ok {
+		return body
+	}
+	params["stream"] = false
+	nb, err := json.Marshal(params)
+	if err != nil {
+		return body
+	}
+	return nb
+}
 
 // ============ 管理面板 API（/admin/api/trae/*） ============
 
@@ -953,7 +982,6 @@ func trae2apiEnrichAccountRow(sub *trae2apiSubsystem, st traepool.Status, row ma
 		}
 	}
 }
-
 
 // handleTraeConfigUpdate POST /admin/api/trae/config/update —— vendored 配置
 // 子集 + 费率过滤 patch；vendored 无热更新，落盘后整组重启（池状态经

@@ -717,9 +717,7 @@ func handleResponses(w http.ResponseWriter, r *http.Request) {
 			nresp, _, rerr := callZenResponsesAPI(r.Context(), chat, true)
 			if rerr != nil {
 				log.Printf("  responses zen native api error: %v", rerr)
-				writeJSON(w, zenClientErrorStatus(rerr), map[string]any{
-					"error": map[string]string{"message": rerr.Error(), "type": "api_error"},
-				})
+				writeUpstreamAPIError(w, chatModel, rerr, zenClientErrorStatus(rerr))
 				return
 			}
 			nUsedKey := takeUsedKey(nresp)
@@ -754,9 +752,7 @@ func handleResponses(w http.ResponseWriter, r *http.Request) {
 		resp, _, err := callZenAPI(r.Context(), chat, true)
 		if err != nil {
 			log.Printf("  responses zen api error: %v", err)
-			writeJSON(w, zenClientErrorStatus(err), map[string]any{
-				"error": map[string]string{"message": err.Error(), "type": "api_error"},
-			})
+			writeUpstreamAPIError(w, chatModel, err, zenClientErrorStatus(err))
 			return
 		}
 		defer resp.Body.Close()
@@ -775,9 +771,7 @@ func handleResponses(w http.ResponseWriter, r *http.Request) {
 		}
 		raw, cerr := collectStreamResponse(resp)
 		if cerr != nil {
-			writeJSON(w, http.StatusBadGateway, map[string]any{
-				"error": map[string]string{"message": cerr.Error(), "type": "api_error"},
-			})
+			writeUpstreamAPIError(w, chatModel, cerr, http.StatusBadGateway)
 			return
 		}
 		recordChatUsage(func(u map[string]any) { recordZenKeyTokens(usedKey, usageTokens(u, chat)) }, raw)
@@ -801,9 +795,7 @@ func handleResponses(w http.ResponseWriter, r *http.Request) {
 	}
 	up, acc, streamed, err := callClineAutoStream(r.Context(), chat, stream, useProxies)
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]any{
-			"error": map[string]string{"message": err.Error(), "type": "api_error"},
-		})
+		writeUpstreamAPIError(w, chatModel, err, http.StatusInternalServerError)
 		return
 	}
 	defer up.Body.Close()
@@ -824,7 +816,7 @@ func handleResponses(w http.ResponseWriter, r *http.Request) {
 	if stream {
 		out, err := collectStreamResponse(up)
 		if err != nil {
-			writeJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
+			writeUpstreamAPIError(w, chatModel, err, http.StatusInternalServerError)
 			return
 		}
 		if u, ok := out["usage"].(map[string]any); ok && len(u) > 0 {

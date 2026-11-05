@@ -239,9 +239,31 @@ func TestClineModelNotFoundAutoBan(t *testing.T) {
 	t.Setenv("DATA_DIR", t.TempDir())
 	resetModelBlacklistForTest(t)
 	// 平台可路由性闸要求 cline 池有 active 账号，种一个。
+	// 增删都必须持 poolMu：服务闸未命中会触发后台目录同步（pickAccountAny
+	// 持锁读账号），锁外改池构成数据竞争（2026-11-05 race 实测）。清理按
+	// AccountID 精确摘除——[:0] 会连别的测试种进来的账号一起清掉。
+	// 痕迹表也要清：poolUsage 是进程内单例，-count>1 时上一轮迭代留给
+	// scan-cline-t1 的 expired 痕迹会让本轮种下的账号直接不可路由。
 	p := loadPool()
+	poolMu.Lock()
 	p.Accounts = append(p.Accounts, &Account{AccountID: "scan-cline-t1"})
-	t.Cleanup(func() { p.Accounts = p.Accounts[:0] })
+	if poolUsage.Accounts != nil {
+		delete(poolUsage.Accounts, "scan-cline-t1")
+	}
+	poolMu.Unlock()
+	t.Cleanup(func() {
+		poolMu.Lock()
+		for i, a := range p.Accounts {
+			if a != nil && a.AccountID == "scan-cline-t1" {
+				p.Accounts = append(p.Accounts[:i], p.Accounts[i+1:]...)
+				break
+			}
+		}
+		if poolUsage.Accounts != nil {
+			delete(poolUsage.Accounts, "scan-cline-t1")
+		}
+		poolMu.Unlock()
+	})
 	// 请求路径有服务闸（目录外一律拒）：注入被测模型让请求穿过闸。
 	injectClineModels(t, "cline-free/muse-spark-1.3-contributor")
 
@@ -464,9 +486,10 @@ func TestUnblockModelWithoutScopeClearsScopedEntries(t *testing.T) {
 
 // 备份导入的封禁表合并语义（2026-11-05 用户定，取代整体替换）：
 // 封禁记录是跨机各自增长的运维状态，备份互导是对齐手段——
-//   本机独有条目必须保留（旧语义会抹掉另一侧较新的封禁，被抹的模型重回
-//   /v1/models 并被 hermes 写回渠道，2026-11-04 生产实证）；
-//   备份新增条目吸收；同 key 取 createdAt 较新的记录。
+//
+//	本机独有条目必须保留（旧语义会抹掉另一侧较新的封禁，被抹的模型重回
+//	/v1/models 并被 hermes 写回渠道，2026-11-04 生产实证）；
+//	备份新增条目吸收；同 key 取 createdAt 较新的记录。
 func TestImportModelBlacklistMerges(t *testing.T) {
 	t.Setenv("DATA_DIR", t.TempDir())
 	resetModelBlacklistForTest(t)
