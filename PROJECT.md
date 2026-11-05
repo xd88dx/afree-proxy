@@ -139,6 +139,8 @@ docker logs afree --tail 10
 
 **生产由用户手动同步**:本机测稳后推 `main`,CI 构建 GHCR,用户自己在 iStore 上 `cd /docker/app && docker compose pull afree && docker compose up -d afree`。agent 不要主动去 `pull` / `up -d` 生产容器。
 
+**agent 可在用户显式授权后代为执行**(2026-11-06 先例):`docker pull ghcr.io/xd88dx/afree-proxy:latest` → `bash /docker/app/rebuild.sh afree`。注意 `/docker/app/rebuild.sh` 只做 compose stop/rm/up,**不含 pull**——只跑脚本等于还在跑旧镜像。判断生产是否落后:`git show -s --format='%h %ci' origin/main` 对照 `docker images --format '{{.CreatedAt}}' ghcr.io/xd88dx/afree-proxy:latest`,镜像构建时间晚于 HEAD 提交时间才包含该提交。更新后验证:`docker stats` CPU 回落正常、`docker logs afree --since 2m` 出现各状态恢复行(zen usage / cline trace / proxy health restored)、`/health` 200。
+
 生产验证口径:`docker inspect afree --format '{{.Image}}'` 的 digest 变了、`docker ps` 为 `Up`、`GET /health` → 200、日志出现实时请求行。
 
 iStore 的面板密码是 `233@.afree`(与本机 compose 里的值不同);登录走 `POST /admin/api/login`,未登录时 `/admin/` 只返回约 3KB 的登录页,登录后才是完整面板。

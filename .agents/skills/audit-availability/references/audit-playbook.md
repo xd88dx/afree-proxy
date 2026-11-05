@@ -117,3 +117,52 @@ newapi 映射建议：死别名 → 替代（标注"无等价只能删"）
 - **探针脚本自身健壮性**：`d.get("usage", {})` 在 `"usage": null` 时 TypeError（要用 `(d.get("usage") or {})`）；tool_calls 元素的 `function` 字段可能为 null，取值前判空——平台差异会让矩阵脚本整平台报 platform-error。
 - **自动拉黑的实时验证窗口**：探针撞 404/RegionError 当场即拉黑（blacklist API 可见 `auto-banned: model removed from official free feed`），同一轮里后续平台探到 `is banned and no longer served` 404 是**预期行为**不是新故障；报告口径按"已摘除"计。
 - **统一溢出报错**（2026-11-05 用户定，已实现）：网关把各上游 context-overflow 签名归一为 400 + `code: "context_length_exceeded"` + 压缩提示文案（`context_overflow.go`）；上下文档位测试时错误体出现该 code 即归一化生效，仍是 502 裸上游文案 = 签名缺口，往 patterns 里补。
+
+## 11. 2026-11-06 审计追加（全凭据轮：130 凭据 + 出口池扫描，含两修复 89c8bd5）
+
+### 11a. 凭据级测试端点契约（管理面 Test 按钮 = 与面板同语义的逐凭据探针）
+
+| 平台 | 端点与入参 | 判定 | 坑 |
+|---|---|---|---|
+| cline | `POST /admin/api/accounts/test {accountId}`（列表 `GET /admin/api/accounts`，字段是 **`accountId`** 不是 id） | `data.status=='active'` | — |
+| zen/amd/oprt/tkhb | `POST /admin/api/{zen|amd|openrouter|tokenharbor}/keys/test {index, model?}` | 同上 | amd Test 探测预算 60s，上游慢会误报 `context deadline exceeded`——复测再定性 |
+| other | `POST /admin/api/other/keys/test {slug, index, model}` | 同上 | — |
+| trae | `POST /admin/api/trae/accounts/test {uid}`，uid=完整 `trae-cn-*`（账号 json 文件名，不是纯数字 userId） | vendored 透传 | 用数字 uid 报"账号不存在" |
+| workbuddy | `POST /admin/workbuddy/api/accounts/{uid}/test` | 扁平响应 `{ok,status,model,latencyMs,cooldownCleared}`，`status=='active'` | ① 挂载重写 `/admin/workbuddy/X → /panel/X`，**多写一层 panel 就是 404 page not found**；② 鉴权两层：外层 `adminAuthMiddleware` 吃 admin 会话 token（`/admin/api/login` 的 `data.token`），内层面板 `VerifyBearer(api_key)`；③ 响应是 vendored 扁平结构，**不走 afree apiResponse 包装**——按 `data.status` 解析恒得 null，全误报 FAIL |
+
+### 11b. 出口池健康扫描与"死出口拖累面"分析
+
+```bash
+# 全量出口并行连通扫描（出口清单取 proxy-config.json proxies[]，URL 形态 socks5://10.10.10.5:PORT#NAME）
+cat exits.txt | while read port name; do (r=$(curl -s -o /dev/null -w "%{http_code}" \
+  --socks5-hostname 10.10.10.5:$port -m 10 https://www.gstatic.com/generate_204); echo "$port $name $r") & done | sort -n
+```
+
+- 扫出死出口后必做**绑定关联分析**：一条死出口会同时拖累多个凭据——查各 `*-config.json` 的 `keyBindings`（zen/amd/oprt/tkhb/other）、`cline-config.json` 账号 `proxyMain`、以及 `proxy-config.json` 的 `egressBindings`/`trae2apiBindings`/`workbuddyBindings` 段（egress 钉定键是 key 哈希，`zen:<hash>`）。2026-11-06 实测：deplexo-DE(11107) 一条死出口挂了 5 个凭据，egressBindings 另有 4 个 zen key 被钉到死出口。
+- 换出口对比测试在**本机**做（`curl --socks5-hostname <候选出口> <上游>`），不动生产绑定——绑定修改属生产配置变更，列清单交用户。
+
+### 11c. GFE 403 = 出口 IP 被拉黑的判定法（非账号）
+
+出口 IP 被上游边缘（Google GFE 类）拦截时，cline Test 报 `API 403: <html>...Your client does not have permission to get URL...`。铁证：**用同一出口发无 token 的裸请求，同样被拦同一页面**（`curl --socks5-hostname <出口> https://api.cline.bot/api/v1/ai/cline/recommended-models`）；对照健康出口同路径回 200/401（可达）。判定为出口后处置是改绑出口，不要动账号。
+
+### 11d. 热循环（自旋）指纹与识别
+
+- 指纹：`docker stats` 单容器 CPU≈100%，`docker logs` 里同一 key 同一行错误每秒数百条（2026-11-06 实测 570 行/秒，"zen key#N bound proxies unavailable"）。日志驱动器 `max-size:50m` 轮转会让 flood **"消失"几分钟再出现**——别把轮转误判成自愈，`--timestamps` 按小时聚合计数即可看穿。
+- 本轮根因（已修 89c8bd5）：`callZenAPI` 的 `boundExitFor` 失败分支漏了 `retryKey = ""`（`callZenResponsesAPI` 同分支有——**平行修改漂移**是本项目两路径 bug 的固定成因，改 zen key 选择逻辑必须 chat/responses 两路径一起 grep）。审计老镜像时 `zen:<model>` 请求 150s 超时 + 容器 CPU 满 = 先查这个，别归因凭据。
+- 连带伤害：`cooldownZenKey` 每次自旋迭代都落盘 → 写风暴；写失败与竞态（11e）会同时出现。
+
+### 11e. 状态落盘并发竞态（已修 89c8bd5，后续审计按此核对）
+
+- 生产日志 `replace <state>.json: rename <state>.json.tmp ...: no such file or directory` = 固定 `.tmp` 名并发写互踩的指纹。修复：`atomicWriteFile`（`internal/app/global_config.go`）按最终路径 `sync.Map` 互斥 + `os.CreateTemp` 唯一临时名。**Windows 教训：临时名唯一后并发 rename 覆盖同一目标仍会 Access denied，按路径串行化才算修完**（回归测试 `TestAtomicWriteFileConcurrentWriters` 抓的）。
+- 同型固定 `.tmp` 写手仍在 `internal/amd/config.go+usage.go`、`internal/openrouter/usage.go`、`internal/other/config.go+usage.go`、`internal/workbuddy/config/config.go`（潜在，未爆）；`internal/app/pool.go`/`pool_usage.go` 已有 `poolSaveMu` 串行，不缺修复。审计若在非 app 平台看到同类 rename 报错，按同一处方修。
+
+### 11f. 生产更新流程实操（2026-11-06 首次 agent 授权执行）
+
+- 用户显式授权后：`docker pull ghcr.io/xd88dx/afree-proxy:latest` → `bash /docker/app/rebuild.sh afree`。**`rebuild.sh` 只做 compose stop/rm/up，不含 pull**——只跑脚本等于还在跑旧镜像。
+- 判断生产是否落后：`git show -s --format='%h %ci' origin/main`（本地 fetch 后）对照 `docker images --format '{{.CreatedAt}}' ghcr.io/xd88dx/afree-proxy:latest`——镜像构建时间晚于 HEAD 提交时间 = 镜像包含该提交。
+- 更新即验证：`docker stats`（CPU 应回 <1%）、`docker logs afree --since 2m` 看状态恢复行（zen usage/cline trace/proxy health 各一行 restored）、`/health` 200。重启会杀掉进行中的自旋/挂死 goroutine，也是现场取证前的"止血"手段（需授权）。
+
+### 11g. 本轮结果快照（对照基线）
+
+- 模型维度 23/24（唯一 FAIL `zen:glm-5.3-flash-free` 429 FreeUsageLimitError）；凭据维度 114/130（wb 15/15、trae 2/2、amd 10/10、tkhb 19/20、oprt 18/20、other 23/24、cline 17/19、zen 10/20）。16 个真实失败：官方限制 10（zen 9 key 日额度 UTC 零点复位 + oprt#12 账号被封 "Inference is blocked"，key 级 403 按设计不自动拉黑）+ 出口 6（11107 死×5 + 11104 被 GFE 拦×1）。出口池 34/39。
+- 无死链映射别名，24 目标全可服务（zen 额度耗尽窗口内 `zen:glm-*` 除外，复位自愈）。

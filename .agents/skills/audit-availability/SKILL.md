@@ -28,7 +28,7 @@ newapi 的渠道全部指向 afree 网关（`host.docker.internal:3457`），用
 # 目标形态即平台前缀：cline-free/ zen: wbcn: wbgb: trae: amd: oprt: tkhb: other-*:
 ```
 
-同时盘点各平台凭据启用状态（见上表）——按 newapi 口径测试的是模型维度（凭据由池轮换），"所有凭据逐一探测"超出映射范围，报告里说明口径即可。
+同时盘点各平台凭据启用状态（见上表）。
 
 ## 2. 真实请求测试（probe）
 
@@ -45,6 +45,10 @@ Authorization: Bearer 8008208820
 - **HTTP 200 = 通过**。空 reply 不是失败——reasoning 模型把 32 个 token 全花在思考上是正常形态。
 - 4xx/5xx 记录响应体原文（根因证据）。
 - 另抽 2~3 个 `afree/*` 别名经 newapi（`http://127.0.0.1:3123`）测全链路（newapi→afree）。
+
+## 2b. 凭据维度测试（2026-11-06 起为一等阶段）
+
+用户要求"全平台全凭据"时逐凭据走**管理面 Test 端点**（与面板按钮同语义，失败会按系统自身规则记冷却/停放）。130 凭据串行约 5 分钟，平台间也串行（共享出口，避免互相污染归因）。各平台端点契约、响应形状与坑（wb 扁平响应/trae 完整 uid/cline accountId 字段名）见 playbook §11a。凭据 FAIL 先做**出口池扫描**（playbook §11b）——一条死出口会同时拖累多个凭据，别逐个当账号问题归因。
 
 ## 3. 失败根因三分法（每个 FAIL 必须归因到三者之一，带铁证）
 
@@ -110,5 +114,13 @@ git show <上游哈希>:internal/app/models.go | grep -n "muse\|seed\|prune"
 - **key 冷却长尾会掩盖端到端验证**：撞墙请求根本没到上游（`no key routable` 502），自动拉黑不触发。验证前清平台 key 冷却（内存态重启即清；落盘态如 oprt 改 `oprt-state.json` 的 `cool` 段后重启）。
 - **newapi 抽测口径**：渠道映射别名从 `one-api.db`（先复制再读）读 `channels.model_mapping`，抽 2~3 个别名全链路（newapi→afree→上游出字）。
 - **上游瞬时 vs 永久的隔离判据**：串行扫描高压下的 4xx/timeout 一律复测 2 次再定性；trae `max_tokens=1`→上游 3003 是引擎边界忠实透传，不是缺陷。
+
+## 7. 2026-11-06 审计经验追加（全凭据轮，两缺陷已修 89c8bd5）
+
+- **凭据维度成为一等阶段**（§2b）：管理面 Test 端点逐凭据测试 + 出口池全量扫描。端点契约表、响应形状、坑全在 playbook §11a——**wb 面板端点是扁平响应不走 apiResponse、挂载重写多写一层 panel 就 404**，这两个坑让首轮脚本整平台假 FAIL。
+- **一条死出口 ≠ 一个凭据问题**：扫描出死出口后必须做绑定关联分析（keyBindings + cline proxyMain + egressBindings 三处都查）——本轮 deplexo-DE(11107) 一条死出口挂了 5 个凭据、egress 钉定另挂 4 个 zen key。GFE 403 用"无 token 裸请求同拦"判出口 IP 拉黑（playbook §11c），别误杀账号。
+- **热循环指纹**：容器 CPU≈100% + 同一 key 同一行日志每秒数百条 = 自旋（playbook §11d）。日志轮转会伪装成自愈。根因是 zen chat/responses 两路径平行修改漂移（chat 漏 `retryKey=""`），改 zen key 选择逻辑必须两路径一起 grep。
+- **落盘竞态指纹**：`rename *.json.tmp ... no such file or directory`（playbook §11e）。atomicWriteFile 已修（按路径互斥+唯一 tmp）；同型固定 `.tmp` 写手仍在 amd/openrouter/other/workbuddy 各自的落盘副本，见到同指纹按同处方修。
+- **生产更新实操**（playbook §11f）：用户授权后 `docker pull` + `rebuild.sh afree`，**rebuild.sh 不含 pull**；镜像构建时间 vs origin/main 提交时间判断生产是否落后；重启同时是自旋/挂死 goroutine 的止血手段（需授权）。
 
 详细命令模板与陷阱清单见 [references/audit-playbook.md](references/audit-playbook.md)。
