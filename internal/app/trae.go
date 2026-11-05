@@ -1079,9 +1079,12 @@ func handleTraeConfigUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if patch.RateFilter != nil {
-		mutateProxyConfigFile(func(f *proxyConfigFileData) {
-			f.Trae2apiModelRateFilter = *patch.RateFilter
-		})
+		// 经 getProxyBindingConfig→setProxyBindingConfig 同源路径写：倍率已在
+		// 隔离/绑定段（随备份迁移），直改文件会绕过 proxyBindingCfg 内存缓存，
+		// 后续 setProxyBindingConfig 会拿缓存旧值把刚存的倍率抹回去。
+		next := *getProxyBindingConfig()
+		next.Trae2apiModelRateFilter = *patch.RateFilter
+		setProxyBindingConfig(&next)
 	}
 	if err := trae2apiRestart(); err != nil {
 		writeAPI(w, http.StatusInternalServerError, apiResponse{Error: "restart: " + err.Error()})
