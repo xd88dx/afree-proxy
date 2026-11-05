@@ -182,17 +182,24 @@ func TestPricingAllZero(t *testing.T) {
 	}
 }
 
-func TestSyncCatalogKeepsOnlyPageModels(t *testing.T) {
+// live 为唯一权威（2026-11-05 快照白名单退役）：零价 + chatCapable 全量收
+// （上游上新自动进目录，stealth/crouton-alpha 类页面新增不再被 2026-10-10
+// 静态快照挡住）；价格转正剔除；非 chat 杂类（分类器/音频）不收。
+func TestSyncCatalogLiveAuthoritative(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]any{"data": []map[string]any{
-			// 页面上：仍免费 → 保留（限额更新）
+			// 快照里：仍免费 → 保留（限额更新）
 			{"id": "openrouter/free", "name": "Free Models Router", "context_length": 123456, "pricing": map[string]any{"prompt": "0", "completion": "0"}, "supported_parameters": []string{"tools"}},
-			// 页面上：价格已非零 → 剔除
+			// 快照里：价格已非零 → 剔除
 			{"id": "liquid/lfm-2.5-2.6b:free", "context_length": 65536, "pricing": map[string]any{"prompt": "0.001", "completion": "0"}},
-			// 页面外：即使免费也不收
-			{"id": "nvidia/nemotron-3-embed-1b:free", "context_length": 4096, "pricing": map[string]any{"prompt": "0", "completion": "0"}},
-			// 页面外且付费
-			{"id": "openai/gpt-5", "context_length": 400000, "pricing": map[string]any{"prompt": "1.25", "completion": "10"}},
+			// 快照外新上的免费对话模型 → 自动收录（本次修复的核心）
+			{"id": "stealth/crouton-alpha", "name": "Crouton Alpha", "context_length": 1048576, "pricing": map[string]any{"prompt": "0", "completion": "0"}, "supported_parameters": []string{"tools", "tool_choice"}, "architecture": map[string]any{"output_modalities": []string{"text"}}},
+			// 零价但非 chat（分类器，无 tools 参数）→ 不收
+			{"id": "nvidia/nemotron-3.5-content-safety:free", "context_length": 4096, "pricing": map[string]any{"prompt": "0", "completion": "0"}, "supported_parameters": []string{"max_tokens", "temperature"}, "architecture": map[string]any{"output_modalities": []string{"text"}}},
+			// 零价但非 chat（音频输出）→ 不收
+			{"id": "google/lyria-3-pro-preview", "context_length": 8192, "pricing": map[string]any{"prompt": "0", "completion": "0"}, "supported_parameters": []string{"max_tokens"}, "architecture": map[string]any{"output_modalities": []string{"text", "audio"}}},
+			// 付费
+			{"id": "openai/gpt-5", "context_length": 400000, "pricing": map[string]any{"prompt": "1.25", "completion": "10"}, "supported_parameters": []string{"tools"}},
 		}})
 	}))
 	defer srv.Close()
@@ -213,10 +220,13 @@ func TestSyncCatalogKeepsOnlyPageModels(t *testing.T) {
 		t.Errorf("expected 1 price-state change (lfm became paid), got %d", changed)
 	}
 	if _, ok := Resolve("liquid/lfm-2.5-2.6b:free"); ok {
-		t.Error("page model that is no longer free must be dropped")
+		t.Error("model that is no longer free must be dropped")
 	}
-	if _, ok := Resolve("nvidia/nemotron-3-embed-1b:free"); ok {
-		t.Error("off-page free model leaked into the catalog")
+	if _, ok := Resolve("nvidia/nemotron-3.5-content-safety:free"); ok {
+		t.Error("zero-priced non-chat classifier must not enter the catalog")
+	}
+	if _, ok := Resolve("google/lyria-3-pro-preview"); ok {
+		t.Error("zero-priced audio model must not enter the catalog")
 	}
 	if _, ok := Resolve("openai/gpt-5"); ok {
 		t.Error("paid model leaked into the catalog")
@@ -231,10 +241,16 @@ func TestSyncCatalogKeepsOnlyPageModels(t *testing.T) {
 	if !m.ToolCall {
 		t.Error("tool_call flag not captured")
 	}
+	// 核心断言：快照外的新免费模型自动进目录
+	nc, ok := Resolve("stealth/crouton-alpha")
+	if !ok {
+		t.Fatal("new off-snapshot free chat model must be auto-included (crouton-alpha regression)")
+	}
+	if nc.Context != 1048576 || !nc.ToolCall {
+		t.Errorf("new model fields not captured: %+v", nc)
+	}
 }
 
-// enableTestKey 给当前配置装一个参与路由的启用 key：模型目录的展示门控
-// 要求"至少一个可路由凭据"，目录类断言必须先满足这个前置。
 func enableTestKey(t *testing.T) {
 	t.Helper()
 	prevCfg := Get()

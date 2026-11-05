@@ -126,6 +126,36 @@ type catalogEntry struct {
 	Context   int            `json:"context_length"`
 	Pricing   map[string]any `json:"pricing"`
 	Supported []string       `json:"supported_parameters"`
+	Arch      struct {
+		OutputModalities []string `json:"output_modalities"`
+	} `json:"architecture"`
+}
+
+// chatCapable live 收录判据（2026-11-05 快照白名单退役）：输出模态含 text
+// 且声明 tools/tool_choice——本网关是 chat/agent 网关，收录面与官方 free 页
+// 的对话模型口径对齐。零价集合里的非对话杂类被它排除：nemotron content-safety
+// 分类器（无 tools 参数）、lyria 音频模型（output 含 audio 且无 tools）。
+// 输出模态缺失（旧字段形态）按含 text 处理，不误杀。
+func chatCapable(e catalogEntry) bool {
+	hasText := true // 缺失 = 不判
+	if len(e.Arch.OutputModalities) > 0 {
+		hasText = false
+		for _, m := range e.Arch.OutputModalities {
+			if m == "text" {
+				hasText = true
+				break
+			}
+		}
+	}
+	if !hasText {
+		return false
+	}
+	for _, p := range e.Supported {
+		if p == "tools" || p == "tool_choice" {
+			return true
+		}
+	}
+	return false
 }
 
 // InitCatalog 初始化目录：已加载过则立即返回；否则用页面快照兜底，再异步
@@ -152,11 +182,16 @@ func InitCatalog() {
 	go func() { _, _ = SyncCatalog() }()
 }
 
-// SyncCatalog 拉取 live 目录并与页面集合求交集：
-//   - 页面集合里的模型，live 显示价格非零（已取消免费）→ 剔除；
-//   - 页面集合里的模型，live 有更新限额/名称 → 就地更新；
-//   - 页面之外的价格为零模型 → 不收（页面白名单是唯一权威）；
-//   - 网络/解析失败 → 保留当前目录（不清空快照）。
+// SyncCatalog 拉取 live 目录，live 为唯一权威（2026-11-05 快照白名单退役，
+// 与 amd/tkhb/zen/cline 同款口径）：
+//   - live pricing 全零 + chatCapable（输出含 text 且支持 tools）→ 收录，
+//     上游新增免费模型自动进目录（此前卡在 2026-10-10 页面快照里，
+//     stealth/crouton-alpha 等页面上新被永久挡住——静态快照当永久白名单
+//     是反模式，页面会变、快照不会）；
+//   - live 价格非零（已取消免费）→ 剔除（含快照时代的收录项）；
+//   - 网络/解析失败 → 保留当前目录（不清空，离线可用）。
+//
+// PageModels 快照降级为纯冷启动兜底（首次成功同步之前）。
 //
 // 返回"价格状态发生变化"的模型数（日志用）。
 func SyncCatalog() (int, error) {
@@ -185,43 +220,41 @@ func SyncCatalog() (int, error) {
 	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
 		return 0, err
 	}
-	live := map[string]catalogEntry{}
-	for _, e := range payload.Data {
-		if id := strings.TrimSpace(e.ID); id != "" {
-			live[id] = e
-		}
-	}
 	catalogMu.Lock()
 	defer catalogMu.Unlock()
 	changed := 0
-	next := make(map[string]Model, len(catalogModels))
-	for id, cur := range catalogModels {
-		e, ok := live[id]
-		if !ok {
-			// 上游还没上架（或临时不可达）：保留快照，价格状态未知不剔除
-			next[id] = cur
+	next := make(map[string]Model, len(payload.Data))
+	for _, e := range payload.Data {
+		id := strings.TrimSpace(e.ID)
+		if id == "" || !chatCapable(e) {
 			continue
 		}
 		if !pricingAllZero(e.Pricing) {
-			// 页面仍列着但价格已非零：该模型不再是免费模型，剔除
-			changed++
+			// 仍留在 live 里但价格已非零：不再免费，剔除（上轮收录项也走这）
+			if _, was := catalogModels[id]; was {
+				changed++
+			}
 			continue
 		}
-		if e.Context > 0 {
-			cur.Context = e.Context
-		}
-		if e.Name != "" {
-			cur.Name = e.Name
-		}
+		toolCall := false
 		for _, p := range e.Supported {
 			if p == "tools" || p == "tool_choice" {
-				cur.ToolCall = true
+				toolCall = true
 				break
 			}
 		}
-		next[id] = cur
+		name := e.Name
+		if name == "" {
+			name = id
+		}
+		m := Model{ID: id, Name: name, Context: e.Context, ToolCall: toolCall}
+		if cur, ok := catalogModels[id]; ok && m != cur {
+			changed++
+		}
+		next[id] = m
 	}
 	if len(next) == 0 {
+		// live 全空（异常响应）：保留当前目录，不清空
 		return 0, nil
 	}
 	catalogModels = next
