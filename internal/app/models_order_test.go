@@ -9,6 +9,7 @@ import (
 	"afree-proxy/internal/openrouter"
 	"afree-proxy/internal/tokenharbor"
 	wbauth "afree-proxy/internal/workbuddy/auth"
+	wbconfig "afree-proxy/internal/workbuddy/config"
 	wbpool "afree-proxy/internal/workbuddy/pool"
 )
 
@@ -136,11 +137,12 @@ func TestWorkbuddyModelEntriesNilSubsystem(t *testing.T) {
 // promo_factor + promo_credits 同时空场且后者可解析，否则取 credits；
 // 缺失/不可解析一律隐藏（缺失 ≠ 免费），≤ 阈值（缺省 0.2，1e-9 容差）放行。
 // 将来上游给某个出图模型发牌价且 ≤ 阈值时自动进目录，无需改代码。
+// 2026-11-07 分域：CN 阈值管 wbcn、Global 阈值管 wbgb，两域互不越界。
 func TestWorkbuddyImageModelRateFilter(t *testing.T) {
 	throttleGateRefreshForTest() // servedModelGate 未知名不做 live 目录同步
 	saved := workbuddySub
 	t.Cleanup(func() { workbuddySub = saved })
-	workbuddySub = routableWBSub([]map[string]any{
+	sub := routableWBSub([]map[string]any{
 		{"id": "cn:alpha"},
 		{"id": "cn:img-free", "image_generation": true, "credits": "x0.1"},
 		{"id": "cn:img-pricey", "image_generation": true, "credits": "x5"},
@@ -148,10 +150,18 @@ func TestWorkbuddyImageModelRateFilter(t *testing.T) {
 		{"id": "cn:img-promo", "image_generation": true, "credits": "x5", "promo_factor": "0.5", "promo_credits": "x0.15"},
 		{"id": "cn:img-promo-bad", "image_generation": true, "promo_factor": "0.5", "promo_credits": ""},
 		{"id": "cn:img-garbage", "image_generation": true, "credits": "abc"},
+		// global 域：gbimg-mid 的 0.15 在 CN 阈值 0.2 下可过、在国际阈值 0.1 下
+		// 必须被滤——证明国际段没有蹭国内阈值。
+		{"id": "global:gbimg-free", "image_generation": true, "credits": "x0.1"},
+		{"id": "global:gbimg-mid", "image_generation": true, "credits": "x0.15"},
 	})
+	sub.cfg = &wbconfig.Config{}
+	sub.cfg.Pool.ModelRateFilterCN = 0.2
+	sub.cfg.Pool.ModelRateFilterGlobal = 0.1
+	workbuddySub = sub
 
 	got := workbuddyModelEntries()
-	want := []string{"wbcn:alpha", "wbcn:img-free", "wbcn:img-promo"}
+	want := []string{"wbcn:alpha", "wbcn:img-free", "wbcn:img-promo", "wbgb:gbimg-free"}
 	if len(got) != len(want) {
 		t.Fatalf("entries = %v, want %v", got, want)
 	}
@@ -164,7 +174,10 @@ func TestWorkbuddyImageModelRateFilter(t *testing.T) {
 	if !modelIsServed("wbcn:img-free") || !modelIsServed("wbcn:img-promo") {
 		t.Fatal("rate-passing image models must be servable")
 	}
-	for _, id := range []string{"wbcn:img-pricey", "wbcn:img-norate", "wbcn:img-promo-bad", "wbcn:img-garbage"} {
+	if !modelIsServed("wbgb:gbimg-free") {
+		t.Fatal("global rate-passing image model must be servable")
+	}
+	for _, id := range []string{"wbcn:img-pricey", "wbcn:img-norate", "wbcn:img-promo-bad", "wbcn:img-garbage", "wbgb:gbimg-mid"} {
 		if modelIsServed(id) {
 			t.Fatalf("%s must not be servable", id)
 		}

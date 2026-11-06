@@ -53,6 +53,12 @@ func saveWorkbuddyConfig(
 	merged["listen"] = ""
 	merged["auth_dir"] = authDir
 	merged["state_file"] = stateFile
+	// 旧单值倍率筛选键（2026-11-07 拆分为 _cn/_global）：磁盘旧值深合并会把
+	// 它带回来，解析端虽有 migrateModelRateFilterSplit 兜底，落盘前删掉
+	// 避免它在配置文件里永久残留、每次保存都要再迁移一次。
+	if poolMap, ok := merged["pool"].(map[string]any); ok {
+		delete(poolMap, "model_rate_filter")
+	}
 
 	newCfg, err := wbconfig.ParseConfig(mergedWorkbuddyJSON(merged))
 	if err != nil {
@@ -81,13 +87,14 @@ func saveWorkbuddyConfig(
 
 	newAllowedModels, newAllowlistEnabled := livecfg.NormalizeAllowedModels(newCfg.Models.Allowed)
 	live.Store(livecfg.Snapshot{
-		APIKey:               "",
-		SoftCooldown:         newCfg.SoftRateDur,
-		SanitizeFingerprints: newCfg.Features.SanitizeBlacklistFingerprints,
-		RecordClientInfo:     newCfg.Logging.RequestClientInfo,
-		RecordContext:        newCfg.Logging.RequestArchiveContext,
-		ModelRateFilter:      newCfg.Pool.ModelRateFilter,
-		HiddenModels:         livecfg.NormalizeHiddenModels(newCfg.Models.Hidden),
+		APIKey:                "",
+		SoftCooldown:          newCfg.SoftRateDur,
+		SanitizeFingerprints:  newCfg.Features.SanitizeBlacklistFingerprints,
+		RecordClientInfo:      newCfg.Logging.RequestClientInfo,
+		RecordContext:         newCfg.Logging.RequestArchiveContext,
+		ModelRateFilterCN:     newCfg.Pool.ModelRateFilterCN,
+		ModelRateFilterGlobal: newCfg.Pool.ModelRateFilterGlobal,
+		HiddenModels:          livecfg.NormalizeHiddenModels(newCfg.Models.Hidden),
 		// models.allowed 白名单（上游 issue #68，37b3f4c）：与 Hidden 对称的热字段。
 		AllowedModels:    newAllowedModels,
 		AllowlistEnabled: newAllowlistEnabled,

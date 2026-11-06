@@ -3915,12 +3915,13 @@ func workbuddyModelEntries() []map[string]any {
 	}
 	list := workbuddySub.modelList()
 	chat := make([]map[string]any, 0, len(list))
-	threshold := workbuddySub.modelRateFilterThreshold()
 	for _, m := range list {
 		if isImage, _ := m["image_generation"].(bool); isImage {
 			// 与前端 wbModelMatchesFilter 同口径：倍率缺失/不可解析一律隐藏
 			//（缺失 ≠ 免费），生效倍率 ≤ 阈值（含等号，1e-9 容差）才放行。
-			if rate, ok := wbEntryRate(m); !ok || rate > threshold+1e-9 {
+			// 阈值分域（2026-11-07）：按条目 id 前缀取 CN/国际阈值。
+			id, _ := m["id"].(string)
+			if rate, ok := wbEntryRate(m); !ok || rate > workbuddySub.workbuddyRateThresholdFor(id)+1e-9 {
 				continue
 			}
 		}

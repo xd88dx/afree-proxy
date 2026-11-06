@@ -1,6 +1,7 @@
 package config
 
 import (
+	"bytes"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -1183,47 +1184,93 @@ func TestConfigExampleParses(t *testing.T) {
 }
 
 func TestModelRateFilterDefaultsAndValidation(t *testing.T) {
-	// 缺省 0.2（与面板历史默认一致；Load 先 Default 再 Unmarshal 覆盖）。
+	// 缺省各 0.2（与面板历史默认一致；Load 先 Default 再 Unmarshal 覆盖）。
 	c, err := ParseConfig([]byte(`{}`))
 	if err != nil {
 		t.Fatalf("parse default: %v", err)
 	}
-	if c.Pool.ModelRateFilter != 0.2 {
-		t.Fatalf("default model_rate_filter=%v want 0.2", c.Pool.ModelRateFilter)
+	if c.Pool.ModelRateFilterCN != 0.2 || c.Pool.ModelRateFilterGlobal != 0.2 {
+		t.Fatalf("default rate filters cn=%v global=%v want 0.2/0.2",
+			c.Pool.ModelRateFilterCN, c.Pool.ModelRateFilterGlobal)
 	}
 
-	// 显式 0 合法（只看免费模型）：0 是「最严」档而非未配置态。
-	zero, err := ParseConfig([]byte(`{"pool":{"model_rate_filter":0}}`))
+	// 显式 0 合法（只看免费模型）：0 是「最严」档而非未配置态，且两域独立。
+	zero, err := ParseConfig([]byte(`{"pool":{"model_rate_filter_cn":0,"model_rate_filter_global":0.5}}`))
 	if err != nil {
 		t.Fatalf("parse zero: %v", err)
 	}
-	if zero.Pool.ModelRateFilter != 0 {
-		t.Fatalf("zero model_rate_filter=%v want 0", zero.Pool.ModelRateFilter)
+	if zero.Pool.ModelRateFilterCN != 0 || zero.Pool.ModelRateFilterGlobal != 0.5 {
+		t.Fatalf("zero split cn=%v global=%v want 0/0.5",
+			zero.Pool.ModelRateFilterCN, zero.Pool.ModelRateFilterGlobal)
 	}
 
-	// 负值钳 0。
-	neg, err := ParseConfig([]byte(`{"pool":{"model_rate_filter":-1}}`))
+	// 负值钳 0（逐域）。
+	neg, err := ParseConfig([]byte(`{"pool":{"model_rate_filter_cn":-1,"model_rate_filter_global":-0.5}}`))
 	if err != nil {
 		t.Fatalf("parse negative: %v", err)
 	}
-	if neg.Pool.ModelRateFilter != 0 {
-		t.Fatalf("negative clamped=%v want 0", neg.Pool.ModelRateFilter)
+	if neg.Pool.ModelRateFilterCN != 0 || neg.Pool.ModelRateFilterGlobal != 0 {
+		t.Fatalf("negative clamped cn=%v global=%v want 0/0",
+			neg.Pool.ModelRateFilterCN, neg.Pool.ModelRateFilterGlobal)
 	}
 
-	// >1 报错：该阈值无语义（所有模型都通过 = 没筛），fail fast。
-	if _, err := ParseConfig([]byte(`{"pool":{"model_rate_filter":1.5}}`)); err == nil {
-		t.Error("model_rate_filter >1 should fail fast")
+	// >1 报错：该阈值无语义（所有模型都通过 = 没筛），fail fast（逐域）。
+	if _, err := ParseConfig([]byte(`{"pool":{"model_rate_filter_cn":1.5}}`)); err == nil {
+		t.Error("model_rate_filter_cn >1 should fail fast")
+	}
+	if _, err := ParseConfig([]byte(`{"pool":{"model_rate_filter_global":1.5}}`)); err == nil {
+		t.Error("model_rate_filter_global >1 should fail fast")
+	}
+}
+
+func TestModelRateFilterLegacyMigration(t *testing.T) {
+	// 仅旧单值键：逐字段回落 → 两个新键都取旧值。
+	old, err := ParseConfig([]byte(`{"pool":{"model_rate_filter":0.3}}`))
+	if err != nil {
+		t.Fatalf("parse legacy: %v", err)
+	}
+	if old.Pool.ModelRateFilterCN != 0.3 || old.Pool.ModelRateFilterGlobal != 0.3 {
+		t.Fatalf("legacy migration cn=%v global=%v want 0.3/0.3",
+			old.Pool.ModelRateFilterCN, old.Pool.ModelRateFilterGlobal)
+	}
+
+	// 旧键 + 单个新键：新键域以新值为准，缺席域回落旧值。
+	mixed, err := ParseConfig([]byte(`{"pool":{"model_rate_filter":0.3,"model_rate_filter_global":0.5}}`))
+	if err != nil {
+		t.Fatalf("parse mixed: %v", err)
+	}
+	if mixed.Pool.ModelRateFilterCN != 0.3 || mixed.Pool.ModelRateFilterGlobal != 0.5 {
+		t.Fatalf("per-field fallback cn=%v global=%v want 0.3/0.5",
+			mixed.Pool.ModelRateFilterCN, mixed.Pool.ModelRateFilterGlobal)
+	}
+
+	// 双新键齐备：旧键被忽略并清除（迁移幂等，改写后旧键不再参与解析）。
+	both, err := ParseConfig([]byte(`{"pool":{"model_rate_filter":9,"model_rate_filter_cn":0.1,"model_rate_filter_global":0.2}}`))
+	if err != nil {
+		t.Fatalf("parse both: %v", err)
+	}
+	if both.Pool.ModelRateFilterCN != 0.1 || both.Pool.ModelRateFilterGlobal != 0.2 {
+		t.Fatalf("both-new cn=%v global=%v want 0.1/0.2",
+			both.Pool.ModelRateFilterCN, both.Pool.ModelRateFilterGlobal)
+	}
+
+	// 迁移后的字节流不再含旧键（落盘与 merge 类保存路径不会把旧键带回来）。
+	migrated := migrateModelRateFilterSplit([]byte(`{"pool":{"model_rate_filter":0.3}}`))
+	if bytes.Contains(migrated, []byte("model_rate_filter\"")) {
+		t.Fatalf("legacy key must be dropped after migration: %s", migrated)
 	}
 }
 
 func TestModelRateFilterEnvOverride(t *testing.T) {
-	// env 覆盖（无面板的容器部署也能定阈值）；非法值忽略回落配置/默认。
+	// env 覆盖（无面板的容器部署也能定阈值）；遗留单值 env 分域拆分后同时填
+	// 两域（语义与拆分前一致）；非法值忽略回落配置/默认。
 	t.Setenv("WB2A_MODEL_RATE_FILTER", "0.1")
 	c, err := Load("")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.Pool.ModelRateFilter != 0.1 {
-		t.Fatalf("env override=%v want 0.1", c.Pool.ModelRateFilter)
+	if c.Pool.ModelRateFilterCN != 0.1 || c.Pool.ModelRateFilterGlobal != 0.1 {
+		t.Fatalf("env override cn=%v global=%v want 0.1/0.1",
+			c.Pool.ModelRateFilterCN, c.Pool.ModelRateFilterGlobal)
 	}
 }

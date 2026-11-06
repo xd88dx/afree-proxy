@@ -427,17 +427,22 @@ type Config struct {
 		// 只对 6004 生效；11102/11101/普通 429/5xx 都不降级。
 		// 缺省 nil = 不降级（对老配置零影响）。
 		ModelFallback map[string]string `json:"model_fallback"`
-		// ModelRateFilter 模型积分倍率筛选（单位 x，如 0.2 = 只列出生效倍率
-		// ≤0.2 的模型）。生效范围：网关侧 `/v1/models` 的 WorkBuddy 条目（含
-		// 出图条目——2026-11-03 起出图段费率同源筛选，缺失牌价不透出）与
-		// 面板模型列表。生效倍率与 WorkBuddy 客户端看到的「当前生效价」同口径：
-		// 有机器可读优惠（promo_credits）取折扣价，否则取牌价（credits）；
-		// 倍率缺失/不可解析的模型视为未知价，一律隐藏（缺失 ≠ 免费，
-		// 无法证明 ≤ 阈值就不透出）。
-		// 默认 0.2；<=0 钳 0（0 = 只列免费）；>1 报错（那等于全量放开，
+		// ModelRateFilterCN / ModelRateFilterGlobal 模型积分倍率筛选（单位 x，
+		// 如 0.2 = 只列出生效倍率 ≤0.2 的模型），**分域**：CN 过滤 wbcn（vendor
+		// cn 域）条目，Global 过滤 wbgb（vendor global 域）条目——两域牌价体系
+		// 独立（CN 走 /v3/config，global 走桌面端探测），2026-11-07 起拆开各设。
+		// 生效范围：网关侧 `/v1/models` 的 WorkBuddy 条目（含出图条目——
+		// 2026-11-03 起出图段费率同源筛选，缺失牌价不透出）与面板模型列表。
+		// 生效倍率与 WorkBuddy 客户端看到的「当前生效价」同口径：有机器可读
+		// 优惠（promo_credits）取折扣价，否则取牌价（credits）；倍率缺失/不可
+		// 解析的模型视为未知价，一律隐藏（缺失 ≠ 免费，无法证明 ≤ 阈值就不透出）。
+		// 默认各 0.2；<=0 钳 0（0 = 只列免费）；>1 报错（那等于全量放开，
 		// 「不筛选」客户端自己忽略多余模型即可，不值得一个开关）。
 		// 热生效（经 livecfg 快照）：改完值 /v1/models 立刻按新阈值过滤。
-		ModelRateFilter float64 `json:"model_rate_filter"`
+		// 旧单值键 `model_rate_filter` 由 ParseConfigInto 入口的
+		// migrateModelRateFilterSplit 自动迁移（逐字段回落到两个新键）。
+		ModelRateFilterCN     float64 `json:"model_rate_filter_cn"`
+		ModelRateFilterGlobal float64 `json:"model_rate_filter_global"`
 	} `json:"pool"`
 
 	SessionSticky struct {
@@ -573,9 +578,10 @@ func Default() *Config {
 	// P1-1）；0/负数 normalize 回落默认（与 max_in_flight 的 0=不限语义不同，分档键
 	// 的 0 没有合理语义，回退分档默认最稳）。
 	c.Pool.MaxInFlightGlobal = 2
-	// 倍率筛选默认 0.2（与面板历史默认一致）；显式 0 合法（只列免费模型）。
+	// 倍率筛选默认各 0.2（与面板历史默认一致）；显式 0 合法（只列免费模型）。
 	// Load 先取 Default() 再 Unmarshal 覆盖，键缺席时字段保留此值。
-	c.Pool.ModelRateFilter = 0.2
+	c.Pool.ModelRateFilterCN = 0.2
+	c.Pool.ModelRateFilterGlobal = 0.2
 	c.Pool.BreakerThreshold = 3
 	c.Pool.BreakerCooldown = "30m"
 	c.Pool.BreakerCooldownMax = "6h"
@@ -637,9 +643,52 @@ func Load(path string) (*Config, error) {
 	return c, nil
 }
 
+// migrateModelRateFilterSplit 旧单值倍率筛选 → 分域双键的自动迁移（2026-11-07）。
+// `pool.model_rate_filter` 拆成 `model_rate_filter_cn` / `model_rate_filter_global`
+// 后，存量配置文件、面板旧表单残留、备份导入三种来源都还带着旧键——逐字段回落：
+// 某新键缺席且旧键在场 → 该新键取旧值；两个新键都在则以新键为准；改写后删旧键，
+// 防止 merge 类保存路径把它永久带回磁盘。幂等：无旧键或两新键齐备时原样返回。
+// JSON 语法错误不在此处报（原样交回主解析，保持报错口径不变）。
+func migrateModelRateFilterSplit(raw []byte) []byte {
+	var probe struct {
+		Pool struct {
+			Legacy *float64 `json:"model_rate_filter"`
+			CN     *float64 `json:"model_rate_filter_cn"`
+			Global *float64 `json:"model_rate_filter_global"`
+		} `json:"pool"`
+	}
+	if err := json.Unmarshal(raw, &probe); err != nil || probe.Pool.Legacy == nil {
+		return raw
+	}
+	if probe.Pool.CN != nil && probe.Pool.Global != nil {
+		return raw
+	}
+	var m map[string]any
+	if err := json.Unmarshal(raw, &m); err != nil {
+		return raw
+	}
+	pool, ok := m["pool"].(map[string]any)
+	if !ok {
+		return raw
+	}
+	if probe.Pool.CN == nil {
+		pool["model_rate_filter_cn"] = *probe.Pool.Legacy
+	}
+	if probe.Pool.Global == nil {
+		pool["model_rate_filter_global"] = *probe.Pool.Legacy
+	}
+	delete(pool, "model_rate_filter")
+	out, err := json.Marshal(m)
+	if err != nil {
+		return raw
+	}
+	return out
+}
+
 // ParseConfigInto 把 JSON 覆盖到 c 上并 normalize（不做 env、不读文件）。
 // 面板保存配置走这条路径：与 Load 完全同一套解析/校验逻辑，避免两处漂移。
 func ParseConfigInto(raw []byte, c *Config) (*Config, error) {
+	raw = migrateModelRateFilterSplit(raw)
 	if err := json.Unmarshal(raw, c); err != nil {
 		return nil, fmt.Errorf("parse config: %w", err)
 	}
@@ -850,8 +899,10 @@ func applyEnv(c *Config) {
 		}
 	}
 	if v := os.Getenv("WB2A_MODEL_RATE_FILTER"); v != "" {
+		// 遗留单值 env：分域拆分（2026-11-07）后同时填两域，语义与拆分前一致。
 		if f, err := strconv.ParseFloat(v, 64); err == nil {
-			c.Pool.ModelRateFilter = f
+			c.Pool.ModelRateFilterCN = f
+			c.Pool.ModelRateFilterGlobal = f
 		}
 	}
 }
@@ -1048,12 +1099,20 @@ func (c *Config) normalize() error {
 	}
 	// 倍率筛选：负值钳 0（只列免费，同口吻的「最严」）；>1 报错——大于牌价
 	// 上限的阈值没有语义（所有模型都通过，等于没筛），fail fast 防止配置漂移。
-	if c.Pool.ModelRateFilter < 0 {
-		c.Pool.ModelRateFilter = 0
+	// 两域同规（2026-11-07 拆分后逐域校验）。
+	if c.Pool.ModelRateFilterCN < 0 {
+		c.Pool.ModelRateFilterCN = 0
 	}
-	if c.Pool.ModelRateFilter > 1 {
-		return fmt.Errorf("pool.model_rate_filter: %v 无意义（>1 等于不筛选）——"+
-			"「不筛选」请让客户端忽略多余模型即可", c.Pool.ModelRateFilter)
+	if c.Pool.ModelRateFilterGlobal < 0 {
+		c.Pool.ModelRateFilterGlobal = 0
+	}
+	if v := c.Pool.ModelRateFilterCN; v > 1 {
+		return fmt.Errorf("pool.model_rate_filter_cn: %v 无意义（>1 等于不筛选）——"+
+			"「不筛选」请让客户端忽略多余模型即可", v)
+	}
+	if v := c.Pool.ModelRateFilterGlobal; v > 1 {
+		return fmt.Errorf("pool.model_rate_filter_global: %v 无意义（>1 等于不筛选）——"+
+			"「不筛选」请让客户端忽略多余模型即可", v)
 	}
 	if c.Pool.BreakerThreshold <= 0 {
 		c.Pool.BreakerThreshold = 3

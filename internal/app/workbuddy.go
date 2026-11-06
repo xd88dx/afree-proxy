@@ -241,13 +241,14 @@ func startWorkBuddy() (*workbuddySubsystem, error) {
 
 	allowedModels, allowlistEnabled := livecfg.NormalizeAllowedModels(cfg.Models.Allowed)
 	live := livecfg.New(livecfg.Snapshot{
-		APIKey:               "",
-		SoftCooldown:         cfg.SoftRateDur,
-		SanitizeFingerprints: cfg.Features.SanitizeBlacklistFingerprints,
-		RecordClientInfo:     cfg.Logging.RequestClientInfo,
-		RecordContext:        cfg.Logging.RequestArchiveContext,
-		ModelRateFilter:      cfg.Pool.ModelRateFilter,
-		HiddenModels:         livecfg.NormalizeHiddenModels(cfg.Models.Hidden),
+		APIKey:                "",
+		SoftCooldown:          cfg.SoftRateDur,
+		SanitizeFingerprints:  cfg.Features.SanitizeBlacklistFingerprints,
+		RecordClientInfo:      cfg.Logging.RequestClientInfo,
+		RecordContext:         cfg.Logging.RequestArchiveContext,
+		ModelRateFilterCN:     cfg.Pool.ModelRateFilterCN,
+		ModelRateFilterGlobal: cfg.Pool.ModelRateFilterGlobal,
+		HiddenModels:          livecfg.NormalizeHiddenModels(cfg.Models.Hidden),
 		// models.allowed 白名单（上游 issue #68，37b3f4c）：与 Hidden 对称的热字段。
 		AllowedModels:    allowedModels,
 		AllowlistEnabled: allowlistEnabled,
@@ -349,8 +350,9 @@ func startWorkBuddy() (*workbuddySubsystem, error) {
 		//（热生效），此处供 Live 为 nil 的裸用/测试路径。
 		ModelsHidden:  cfg.Models.Hidden,
 		ModelsAliases: cfg.Models.Aliases,
-		// 倍率筛选同样双填：Live 热改优先，静态字段兜底（同款理由）。
-		ModelRateFilter: cfg.Pool.ModelRateFilter,
+		// 倍率筛选同样双填（2026-11-07 分域）：Live 热改优先，静态字段兜底（同款理由）。
+		ModelRateFilterCN:     cfg.Pool.ModelRateFilterCN,
+		ModelRateFilterGlobal: cfg.Pool.ModelRateFilterGlobal,
 		// /metrics 端点开关（缺省关）：注册在装配期，改动需重启。
 		MetricsEnabled: cfg.Metrics.Enabled,
 		// 预算三闸（issue #229）初始值：saveWorkbuddyConfig 后续热改。
@@ -595,13 +597,19 @@ func (w *workbuddySubsystem) modelList() []map[string]any {
 	return out
 }
 
-// modelRateFilterThreshold 返回倍率筛选阈值（pool.model_rate_filter，缺省
-// 0.2，与 vendor Load 的缺省一致）。cfg 未装配（部分测试桩）时同样回退缺省。
-func (w *workbuddySubsystem) modelRateFilterThreshold() float64 {
+// workbuddyRateThresholdFor 返回模型条目适用的倍率筛选阈值（2026-11-07 分域）：
+// pool.model_rate_filter_cn / _global，缺省各 0.2（与 vendor Load 的缺省一致）。
+// 域由条目 id 前缀判定——wbgb:（vendor global:）走国际阈值，其余（wbcn: 或
+// 裸 ID）走国内阈值（vendor 语义裸 ID = CN 域，见 panel.ProbeModel 同款判定）。
+// cfg 未装配（部分测试桩）时同样回退缺省。
+func (w *workbuddySubsystem) workbuddyRateThresholdFor(entryID string) float64 {
 	if w == nil || w.cfg == nil {
 		return 0.2
 	}
-	return w.cfg.Pool.ModelRateFilter
+	if strings.HasPrefix(entryID, "wbgb:") || strings.HasPrefix(entryID, "global:") {
+		return w.cfg.Pool.ModelRateFilterGlobal
+	}
+	return w.cfg.Pool.ModelRateFilterCN
 }
 
 // workbuddyAdminHandler 把源面板挂到 /admin/workbuddy/ 下：把外部路径重写到

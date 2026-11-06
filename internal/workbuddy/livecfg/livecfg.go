@@ -47,11 +47,14 @@ type Snapshot struct {
 	ThinkingClientPriority bool
 	ThinkingOverrideScope  string
 	ThinkingModelDefaults  map[string]string
-	// ModelRateFilter 模型积分倍率筛选（config pool.model_rate_filter）。
-	// /v1/models 与面板模型列表按「生效倍率 ≤ 该值」过滤 WorkBuddy 条目；
-	// 0 = 只列免费，缺省 0.2（与 Snapshot 零值不同的键必须由装配层显式填充，
-	// 否则零值 0 会把目录收紧成只剩免费模型——见 workbuddy.go 的 livecfg.New）。
-	ModelRateFilter float64
+	// ModelRateFilterCN / ModelRateFilterGlobal 模型积分倍率筛选（config
+	// pool.model_rate_filter_cn / _global，2026-11-07 起分域）。/v1/models 与
+	// 面板模型列表按「生效倍率 ≤ 该域阈值」过滤 WorkBuddy 条目：CN 管 wbcn
+	// （vendor cn 域），Global 管 wbgb（vendor global 域）；0 = 只列免费，缺省
+	// 各 0.2（与 Snapshot 零值不同的键必须由装配层显式填充，否则零值 0 会把
+	// 目录收紧成只剩免费模型——见 workbuddy.go 的 livecfg.New）。
+	ModelRateFilterCN     float64
+	ModelRateFilterGlobal float64
 }
 
 // NormalizeModelAliases 把用户配置的 aliases 条目（"客户端名=真实模型名"）归一化为查找表。

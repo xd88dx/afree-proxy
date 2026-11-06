@@ -1150,8 +1150,18 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
         <div class="wb-config-group">
           <h3>Pool and cooldown</h3>
           <div class="wb-field"><label for="wbMaxInFlight">Max in-flight / account</label><input id="wbMaxInFlight" data-wb-path="pool.max_in_flight" data-wb-type="number" min="0" placeholder="3"></div>
-          <div class="wb-field"><label for="wbModelRateFilter">Model rate filter</label>
-            <select id="wbModelRateFilter" data-wb-path="pool.model_rate_filter" data-wb-type="number">
+          <div class="wb-field"><label for="wbModelRateFilterCN">CN model rate filter</label>
+            <select id="wbModelRateFilterCN" data-wb-path="pool.model_rate_filter_cn" data-wb-type="number">
+              <option value="0">0 — free only</option>
+              <option value="0.1">0.1</option>
+              <option value="0.2">0.2</option>
+              <option value="0.3">0.3</option>
+              <option value="0.5">0.5</option>
+              <option value="1">1</option>
+            </select>
+          </div>
+          <div class="wb-field"><label for="wbModelRateFilterGlobal">Global model rate filter</label>
+            <select id="wbModelRateFilterGlobal" data-wb-path="pool.model_rate_filter_global" data-wb-type="number">
               <option value="0">0 — free only</option>
               <option value="0.1">0.1</option>
               <option value="0.2">0.2</option>
@@ -2129,7 +2139,8 @@ const I18N_ZH = {
   'free': '免费',
   'Default tier': '默认档',
   'No WorkBuddy models under the current filter': '当前筛选下没有 WorkBuddy 模型',
-  'Model rate filter': '模型倍率筛选',
+  'CN model rate filter': '国内模型倍率筛选',
+  'Global model rate filter': '国际模型倍率筛选',
   '0 — free only': '0 — 仅免费',
   'WorkBuddy configuration': 'WorkBuddy 配置',
   'Managed by the admin session': '面板由当前管理员会话管理',
@@ -3675,8 +3686,10 @@ async function loadWorkbuddyConfig() {
     toast(T('WorkBuddy config load failed: ') + e.message, 'error');
   }
 }
-// syncWorkbuddyRateFilter 从服务端配置同步倍率筛选阈值；config 省略时自行拉取。
-// 非法/缺失值回落默认 0.2（与 wbconfig.Default()、and 服务端兜底同一数值）。
+// syncWorkbuddyRateFilter 从服务端配置同步分域倍率筛选阈值（2026-11-07 拆分：
+// pool.model_rate_filter_cn 管 wbcn、pool.model_rate_filter_global 管 wbgb）；
+// config 省略时自行拉取。非法/缺失值回落默认 0.2（与 wbconfig.Default()、
+// 服务端兜底同一数值）。
 async function syncWorkbuddyRateFilter(config) {
   let cfg = config;
   if (!cfg) {
@@ -3685,10 +3698,10 @@ async function syncWorkbuddyRateFilter(config) {
       cfg = result.config || result;
     } catch (e) { return; }
   }
-  const raw = Number(wbDig(cfg, 'pool.model_rate_filter'));
-  const next = WB_RATE_OPTIONS.includes(raw) ? raw : 0.2;
-  if (next !== workbuddyRateFilter) workbuddyRateFilter = next;
-  return next;
+  const cn = Number(wbDig(cfg, 'pool.model_rate_filter_cn'));
+  const gb = Number(wbDig(cfg, 'pool.model_rate_filter_global'));
+  workbuddyRateFilterCN = WB_RATE_OPTIONS.includes(cn) ? cn : 0.2;
+  workbuddyRateFilterGlobal = WB_RATE_OPTIONS.includes(gb) ? gb : 0.2;
 }
 function collectWorkbuddyConfig() {
   const out = {};
@@ -5370,10 +5383,12 @@ async function saveHeaders() {
 }
 
 const WB_RATE_OPTIONS = [0, 0.1, 0.2, 0.3, 0.5, 1.0];
-// 倍率筛选阈值：服务端配置（wbconfig pool.model_rate_filter）持有，网关
-// /v1/models 与面板同口径过滤。初值 0.2 只是首屏未加载完的占位——loadModels /
-// loadWorkbuddyConfig 拉到真值后立刻覆盖，落盘由 setWorkbuddyRateFilter 负责。
-let workbuddyRateFilter = 0.2;
+// 分域倍率筛选阈值（2026-11-07 拆分）：服务端配置（wbconfig
+// pool.model_rate_filter_cn / _global）持有，网关 /v1/models 与面板同口径
+// 过滤——CN 管 wbcn、Global 管 wbgb。初值 0.2 只是首屏未加载完的占位——
+// loadModels / loadWorkbuddyConfig 拉到真值后立刻覆盖，落盘走 wbConfigForm 保存。
+let workbuddyRateFilterCN = 0.2;
+let workbuddyRateFilterGlobal = 0.2;
 // 倍率解析：null / undefined / 空串 / 不可解析 → null（= 缺失），其余为数值。
 // 不能用 String(value ?? '').replace(...) 一把梭：那个式子把 null/'' 洗成
 // Number('') = 0，等于宣称「缺失 = 免费」，与 matchesModelRateFilter 的
@@ -5398,10 +5413,16 @@ function wbRate(m) {
 }
 // 倍率缺失（null）的模型一律隐藏：缺失 ≠ 免费（试用模型显式清空倍率、目录
 // 未刷新时整表缺失、上游没给 credits，都可能是收费模型），无法证明 ≤ 阈值就
-// 不展示，与服务端 matchesModelRateFilter 同口径。
+// 不展示，与服务端 matchesModelRateFilter 同口径。阈值分域（2026-11-07）：
+// wbgb:（vendor global: 同义）走国际阈值，其余（wbcn:/裸 ID）走国内阈值——
+// 与后端 workbuddyRateThresholdFor / vendor ProbeModel 的域判定同构。
 function wbModelMatchesFilter(m) {
   const rate = wbRate(m);
-  return rate !== null && rate <= workbuddyRateFilter + 1e-9;
+  if (rate === null) return false;
+  const id = String(m && m.id || '');
+  const threshold = (id.startsWith('wbgb:') || id.startsWith('global:'))
+    ? workbuddyRateFilterGlobal : workbuddyRateFilterCN;
+  return rate <= threshold + 1e-9;
 }
 // WorkBuddy vendor realm 前缀 → 网关前缀（与后端 wbVendorToRealm 同构）。
 // vendor /models 直接给 cn:/global:，但面板展示的模型 ID 必须与 /v1/models
@@ -5456,13 +5477,14 @@ function wbRateHTML(m) {
   return '<span title="' + esc(m.promo_note || '') + '">' + value + old + promo + '</span>';
 }
 // setWorkbuddyRateFilter 已随目录区内嵌的倍率筛选下拉移除（2026-10-24 UI 统一）：
-// 倍率改在 WorkBuddy configuration 表单的 Model rate filter 调整，保存后经
-// saveWorkbuddyConfig → loadModels 热刷新目录，无需独立入口。
+// 倍率改在 WorkBuddy configuration 表单的 CN / Global model rate filter 调整
+// （2026-11-07 起分域双下拉），保存后经 saveWorkbuddyConfig → loadModels 热刷新
+// 目录，无需独立入口。
 
 async function loadModels() {
   try {
     // 倍率阈值先于渲染拉取：它决定 wb 名单与下拉选中项（服务端配置，
-    // wbconfig pool.model_rate_filter）。
+    // wbconfig pool.model_rate_filter_cn / _global，分域）。
     await syncWorkbuddyRateFilter();
     // 黑名单同样先于渲染拉取：各页模型块都要剔除已封禁模型（封禁模型区的
     // 语义是「不再对外提供」，设置页列表不能还展示它们）。

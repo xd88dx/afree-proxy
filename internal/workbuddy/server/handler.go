@@ -115,11 +115,13 @@ type Config struct {
 	// Live 非 nil 时以热快照为准；裸用/单测路径用本字段。
 	EmbeddingsEnabled bool
 
-	// ModelRateFilter 模型积分倍率筛选（config pool.model_rate_filter）。
-	// /v1/models 只透出生效倍率 ≤ 该值的模型条目；缺省 0.2（静态兜底值，
-	// Live 为 nil 时使用——零值 0 会把目录收紧成只剩免费模型，必须显式装配）。
-	// 与 Live 同时给出时 Live 优先（面板在线改完立即生效）。
-	ModelRateFilter float64
+	// ModelRateFilterCN / ModelRateFilterGlobal 模型积分倍率筛选（config
+	// pool.model_rate_filter_cn / _global，2026-11-07 起分域：CN 管 wbcn，
+	// Global 管 wbgb）。/v1/models 只透出生效倍率 ≤ 该域阈值的模型条目；缺省
+	// 各 0.2（静态兜底值，Live 为 nil 时使用——零值 0 会把目录收紧成只剩免费
+	// 模型，必须显式装配）。与 Live 同时给出时 Live 优先（面板在线改完立即生效）。
+	ModelRateFilterCN     float64
+	ModelRateFilterGlobal float64
 
 	// WatermarkStripEnabled 实验特性「水印裁切」开关的静态回退
 	// （features.watermark_strip_enabled，默认关闭）。同上：Live 非 nil 时以热快照为准。
@@ -144,7 +146,8 @@ func (h *Handler) loadLive() livecfg.Snapshot {
 		AllowedModels:         allowed,
 		AllowlistEnabled:      enabled,
 		ModelAliases:          livecfg.NormalizeModelAliases(h.cfg.ModelsAliases),
-		ModelRateFilter:       h.cfg.ModelRateFilter,
+		ModelRateFilterCN:     h.cfg.ModelRateFilterCN,
+		ModelRateFilterGlobal: h.cfg.ModelRateFilterGlobal,
 	}
 }
 
@@ -200,17 +203,26 @@ func wildcardMatch(pattern, s string) bool {
 	return pi == len(p)
 }
 
-// modelRateFilter 返回当前生效的倍率筛选阈值。装配层（app/server.NewHandler）
-// 总会经 livecfg 传入 cfg.Pool.ModelRateFilter，而 Default()=0.2、normalize()
-// 钳负为 0，故快照值即配置真值——显式 0（「只列免费」）必须原样生效，
-// 绝不按未配置回退默认。仅当 Live 完全未装配（裸用/测试）且静态字段 <=0
-// 时回落 0.2，与面板历史默认一致。
-func (h *Handler) modelRateFilter() float64 {
+// modelRateFilterFor 返回指定域（"cn"/"global"）当前生效的倍率筛选阈值。
+// 装配层（app/server.NewHandler）总会经 livecfg 传入 cfg.Pool 的两个分域阈值，
+// 而 Default()=0.2、normalize() 钳负为 0，故快照值即配置真值——显式 0（「只列
+// 免费」）必须原样生效，绝不按未配置回退默认。仅当 Live 完全未装配（裸用/测试）
+// 且该域静态字段 <=0 时回落 0.2，与面板历史默认一致。2026-11-07 起分域：
+// CN 阈值管 wbcn（vendor cn 域），Global 阈值管 wbgb（vendor global 域）。
+func (h *Handler) modelRateFilterFor(realm string) float64 {
 	if h.cfg.Live != nil {
-		return h.cfg.Live.Load().ModelRateFilter
+		s := h.cfg.Live.Load()
+		if realm == "global" {
+			return s.ModelRateFilterGlobal
+		}
+		return s.ModelRateFilterCN
 	}
-	if h.cfg.ModelRateFilter > 0 {
-		return h.cfg.ModelRateFilter
+	if realm == "global" {
+		if h.cfg.ModelRateFilterGlobal > 0 {
+			return h.cfg.ModelRateFilterGlobal
+		}
+	} else if h.cfg.ModelRateFilterCN > 0 {
+		return h.cfg.ModelRateFilterCN
 	}
 	return 0.2
 }
@@ -245,7 +257,7 @@ func (h *Handler) matchesModelRateFilter(realm, id string) bool {
 	if !ok {
 		return false
 	}
-	return rate <= h.modelRateFilter()+1e-9
+	return rate <= h.modelRateFilterFor(realm)+1e-9
 }
 
 // softCooldown 返回当前生效的软冷却基数（热改优先，<=0 回退默认）。
