@@ -269,9 +269,17 @@ func StartProxy(host string, port int) error {
 
 		isStream, _ := params["stream"].(bool)
 		toolCount := 0
+		var toolNames []string
 		if tools, ok := params["tools"]; ok {
 			if t, ok := tools.([]any); ok {
 				toolCount = len(t)
+				for _, ti := range t {
+					tm, _ := ti.(map[string]any)
+					fn, _ := tm["function"].(map[string]any)
+					if n, _ := fn["name"].(string); n != "" {
+						toolNames = append(toolNames, n)
+					}
+				}
 			}
 		}
 		model, _ := params["model"].(string)
@@ -283,6 +291,16 @@ func StartProxy(host string, port int) error {
 				"error": map[string]string{"message": "model is required", "type": "invalid_request_error"},
 			})
 			return
+		}
+
+		// 网关层文本工具调用兜底（internal/textcall，2026-11-07）：请求带 tools
+		// 时包一层响应改写器——所有引擎（wbcn/trae/amd/zen/openrouter/...）的
+		// 响应出口统一在此把模型模仿历史编码格式输出的 `[调用工具 ...]` 转回
+		// 结构化 tool_calls。trae 引擎内部已有同样一层（vendored
+		// trae2api/server/textcall.go），转过的流到这里无文本可转、自然空转；
+		// 本层兜住其余全部引擎。无 tools 请求不包装，零开销。
+		if len(toolNames) > 0 {
+			w = newTextCallGateway(w, toolNames, model)
 		}
 
 		// WorkBuddy 路由：只接管源项目定义的 realm 前缀（cn:/global:），
