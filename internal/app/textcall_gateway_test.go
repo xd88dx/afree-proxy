@@ -137,6 +137,43 @@ func TestTextCallGWCap(t *testing.T) {
 	}
 }
 
+// CRLF 容错（2026-11-07 加固）：上游/回放路径若用 \r\n 行尾，"\n\n" 分帧会
+// 整体失效、整个响应滞留缓冲——ingest 剥 \r 后两种行尾都能分帧转换。
+func TestTextCallGWSSECRLF(t *testing.T) {
+	rec := httptest.NewRecorder()
+	gw := newTextCallGateway(rec, []string{"Bash"}, "m")
+	rec.Header().Set("Content-Type", "text/event-stream")
+	gw.WriteHeader(200)
+
+	crlf := strings.ReplaceAll(string(gwChunk("m", map[string]any{
+		"content": `[调用工具 Bash({"command": "pwd"})]`,
+	}, nil)), "\n", "\r\n")
+	crlfFinish := strings.ReplaceAll(string(gwChunk("m", map[string]any{}, "stop")), "\n", "\r\n")
+	done := strings.ReplaceAll("data: [DONE]\n\n", "\n", "\r\n")
+	// 一整个 Write 到达 + 跨 Write 到达两种形态都要能分帧
+	gw.Write([]byte(crlf))
+	gw.Write([]byte(crlfFinish))
+	mid := len(crlf) / 2
+	gw2 := newTextCallGateway(rec, []string{"Bash"}, "m")
+	gw2.WriteHeader(200)
+	gw2.Write([]byte(crlf[:mid]))
+	gw2.Write([]byte(crlf[mid:]))
+	gw2.Write([]byte(crlfFinish))
+	gw.Write([]byte(done))
+	gw2.Write([]byte(done))
+
+	out := rec.Body.String()
+	if n := strings.Count(out, `"delta":{"tool_calls"`); n != 2 {
+		t.Fatalf("CRLF 帧两段流各应转换 1 个，得到 %d: %s", n, out)
+	}
+	if strings.Contains(out, "\r") {
+		t.Fatalf("ingest 应剥离 \\r: %q", out)
+	}
+	if !strings.Contains(out, `"finish_reason":"tool_calls"`) {
+		t.Fatalf("CRLF 帧的 finish_reason 也应改写: %s", out)
+	}
+}
+
 // finish 之后到达的 usage 块：顺序保持（调用块 → finish → usage → [DONE]）。
 func TestTextCallGWUsageAfterFinishOrder(t *testing.T) {
 	rec := httptest.NewRecorder()

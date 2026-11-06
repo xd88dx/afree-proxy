@@ -67,7 +67,7 @@ type textCallGW struct {
 	sseBuf    []byte
 	jsonBuf   []byte
 	jsonDone  bool
-	nextIdx   int      // 下一个可用 tool_calls index（原生调用推进它，转换调用消费它）
+	nextIdx   int // 下一个可用 tool_calls index（原生调用推进它，转换调用消费它）
 	finishObj map[string]any
 	finishEvt []byte
 	haveFin   bool
@@ -121,7 +121,13 @@ func (g *textCallGW) Write(p []byte) (int, error) {
 	}
 	switch g.mode {
 	case "sse":
-		g.sseBuf = append(g.sseBuf, p...)
+		// 先剥 \r 再缓冲：事件按 "\n\n" 分帧，而流式回放路径（replaySSE）原样
+		// 保留上游行尾（bufferUpstreamSSE 的 ReadString 不剥 \r）——某上游一旦
+		// 改用 CRLF，"\n\n" 分帧会整体失效，整个响应滞留缓冲、客户端一个字节
+		// 都收不到（正是本层保险丝要防的"卡死"形态）。JSON 字符串里不允许裸
+		// 0x0D（合法形态是 \r 两字符转义序列），剥离不影响任何合法负载；
+		// afree 自产帧恒为 LF，此扫描对热路径只是一次 O(n) 字节遍历。
+		g.sseBuf = append(g.sseBuf, bytes.ReplaceAll(p, []byte("\r"), nil)...)
 		for {
 			i := bytes.Index(g.sseBuf, []byte("\n\n"))
 			if i < 0 {
@@ -253,7 +259,7 @@ func (g *textCallGW) emitToolCallChunk(index int, c textcall.Call) {
 		}
 	}
 	env["choices"] = []any{map[string]any{
-		"index":         0,
+		"index": 0,
 		"delta": map[string]any{"tool_calls": []any{map[string]any{
 			"index": index,
 			"id":    id,
