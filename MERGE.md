@@ -13,7 +13,7 @@ WorkBuddy 一栏的基线同时登记在 `scripts/workbuddy-vendor-baseline.json
 
 ## Cline
 
-本次未涉及上游同步（2026-10-28 核对：`foxy1402/cline-proxy` main 仍为 `571f9b9`，与 2026-10-27 同步基线一致，无新提交；`571f9b9` 的改动全部属于 OpenCode 线，见文末 OpenCode 节。2026-10-29 复核：仍为 `571f9b9`，无新提交。2026-10-30 复核：上游推进到 `b8a1be0`，但区间内 4 提交全部落在 zen/OpenCode 侧（`git diff 571f9b9 b8a1be0` 无 Cline 侧文件），Cline 线本次零吸收，详见 OpenCode 节。2026-10-31 复核：仍为 `b8a1be0`，无新提交，本次未涉及。2026-10-31 二次复核：上游推进到 `a41f1756`，但区间内 1 提交全部落在 zen/OpenCode 侧（`git diff b8a1be0 a41f1756 --name-only` 无 Cline 侧文件），Cline 线零吸收，详见 OpenCode 节。2026-11-02 复核：仍为 `a41f1756`，无新提交，本次未涉及。2026-11-05 复核：仍为 `a41f1756`，无新提交，本次未涉及）。
+本次未涉及上游同步（2026-10-28 核对：`foxy1402/cline-proxy` main 仍为 `571f9b9`，与 2026-10-27 同步基线一致，无新提交；`571f9b9` 的改动全部属于 OpenCode 线，见文末 OpenCode 节。2026-10-29 复核：仍为 `571f9b9`，无新提交。2026-10-30 复核：上游推进到 `b8a1be0`，但区间内 4 提交全部落在 zen/OpenCode 侧（`git diff 571f9b9 b8a1be0` 无 Cline 侧文件），Cline 线本次零吸收，详见 OpenCode 节。2026-10-31 复核：仍为 `b8a1be0`，无新提交，本次未涉及。2026-10-31 二次复核：上游推进到 `a41f1756`，但区间内 1 提交全部落在 zen/OpenCode 侧（`git diff b8a1be0 a41f1756 --name-only` 无 Cline 侧文件），Cline 线零吸收，详见 OpenCode 节。2026-11-02 复核：仍为 `a41f1756`，无新提交，本次未涉及。2026-11-05 复核：仍为 `a41f1756`，无新提交，本次未涉及。2026-11-07 复核：上游推进到 `c6b3c45`，区间 3 提交全部落在 zen/OpenCode 侧（zen system prompt 换位/429 请求抓包/真实计费 tokens），Cline 线零吸收，详见 OpenCode 节）。
 
 ## TreaWork
 
@@ -31,6 +31,14 @@ WorkBuddy 一栏的基线同时登记在 `scripts/workbuddy-vendor-baseline.json
   - `web_login.py`（helper 比对线唯一职责）：`check_trae_helper.py` **exit 0**，上游该文件自基线以来逐行未变，`trae-helper-baseline.json` 不推进。
 - 工具修正：`check_trae_helper.py` 的本地路径仍指旧引擎 `internal/trae/helper_script.go`（2026-11-04 换线遗漏），已改指 `internal/app/trae2api_helper_script.go` 并实测 exit 0。
 - 验证：本线零代码改动（除上述脚本路径修正）。
+
+### 2026-11-07 — 6a861d9 → 8bc4843（2 提交，0 冲突；跨域容灾恒关约束）
+
+- merge 随 ceae988 落库。上游：8bc4843 SSE 流未断流卡顿/限流假死修复+实时终止与无缝容灾；9eece39 跨版本域自动容灾（cross_realm_failover，上游默认 true）。
+- **afree 约束（§5b 清单新增）**：CrossRealmFailover 在 `traeApplyAfreeConstraints` 恒关——vendored 引擎内部"CN 耗尽悄悄切 Intl"绕过本仓库域透传契约（trae:=CN / trae-intl:=Intl，0a584b6 域级过滤 + intl 关闭直接拒绝），Intl 额度会被 CN 请求悄悄消耗。需要 Intl 容灾由下游显式调 trae-intl: 模型；面板不暴露该开关（死配置判据）。
+- 工具修正：vendor_trae2api.py SOURCE_ROOT 失效路径（trae2api-xcool→trae2api，正斜杠避 `	` 转义——SKILL.md 旧文档 tab 字符之谜即此坑）。源树 WIP（textcall 四件套）pathspec stash -u → pull --ff-only → pop 干净合入。
+- 验证：trae2api 12 包 + app 全量绿；基线 seal `8bc4843`。
+- 副线 Trae2api-cn：main 仍为 `5c87d6c`（v1.0.11）无新提交，helper 比对结论沿用 2026-11-06（exit 0）。
 
 ### 2026-11-04 — 上游切换：autumnsentiment/Trae2api-cn（比对线）→ XCool-603/trae2api（vendor 三方合并线）
 
@@ -174,6 +182,13 @@ WorkBuddy 一栏的基线同时登记在 `scripts/workbuddy-vendor-baseline.json
 
 上游 `misakano7545/workbuddy2api-panel` main 无新提交（基线 `96b816d` 不变，版本 dev），`sync_workbuddy.py --report` 确认零改动，本次未涉及上游同步。
 
+### 2026-11-07 — d596fa7 → 4830686（21 提交，冲突 2 文件均并集双保留）
+
+- merge 随双 vendor 提交 ceae988 落库。上游主线：auth 新版桌面端 `$wbEncrypted` 加密文件（自动解密+回写保持加密，wbSealed 字段）、11134 供应商过载不再罚号/换号并保留会话粘性（#188）、慢上传可见性+在途名额释放、入站请求体上限+11140 风控连坐保护、托管 image_generation 工具（Codex 出图用法+积分闸前移）、媒体接口对齐 OpenAI 资源形状、余额趋势事件绑定修复。
+- 冲突：auth/auth.go——上游 wbSealed 与本仓 poolEnabled/accountEnabled/nicknameLocked 字段并列双保留；panel/import.go——上游 e36ad07「覆盖凭据前求证新凭据活着」（VerifySessionByRefresh 三态，dead/inconclusive 不覆盖）+ 本仓新增身份默认禁用（SetPoolEnabled(false)，无条件形态为既有行为）顺序拼接。
+- 装配决策：上游 cmd/server 的新端点装配照例不进本仓 mux（能力休眠口径不变）。
+- 验证：workbuddy 21 包全绿；基线 seal `4830686`。
+
 ### 2026-11-05 二次 — dd01a52 → d596fa7
 
 - 上游：misakano7545/workbuddy2api-panel，vendor + 三方合并（源工作树 `workbuddy2api-panel-misakano` checkout 到 `misakano/main`）。
@@ -280,6 +295,12 @@ WorkBuddy 一栏的基线同时登记在 `scripts/workbuddy-vendor-baseline.json
 
 ## OpenCode
 
+### 2026-11-07 — a41f1756 → c6b3c45（3 提交全 zen 侧；429 诊断体系部分吸收）
+
+- merge `4bdfc13`，冲突 5 文件：zen.go（SystemRelocation 字段+本地函数块双保留）、admin_html/admin_zen（上游 UI 采纳——PinProxy 下拉复活本仓守卫代码、Relocate 新开关；config 大版式为准补 systemRelocation 键与 patch 应用）、proxy.go（capture 调用点采纳去 tracker、callZenAPI 三返回值以 `_` 接 rateLimited）、zen_park_test（strconv 写法）。
+- 吸收：①系统提示词换位（c6b3c45，relocateZenSystemPrompt，SystemRelocation 面板开关默认开——对齐官方 CLI 形态）；②opt-in 429 请求抓包（07d36c2，zen_capture.go——诊断 IDE 形 429 的请求落盘，正对我们正在经历的 429 排查需求）。
+- **丢弃（带理由）**：f80f9b7 stats 体系改动（真实计费 tokens UpstreamPromptTokens/CachedTokens+日志行）——落点 `internal/app/stats.go`/`zen_usage_test.go` 在本仓 6db3a21 有判据删除（面板统计已改 request-stats），tracker 仅 proxy.go 冲突块引用，保持删除。**概念留档**：其「入站估算与真实计费差一个量级（gate 工具 schema 12 工具≈12.8k token）」的洞察对排查"一次请求打爆日额度"仍有价值——日后若在 requests.jsonl 加 token 字段可参考其 applyZenUsage 形态。
+
 ### 2026-11-06 — zen 免费层「几乎无法使用」根因调查（上游策略关停，非本仓缺陷，代码零改动）
 
 用户报告 OpenCode（zen）当期几乎无法使用，要求查 `yetone/magpie` 项目与 `issues?q=opencode` 找修复。调查结论：**上游 OpenCode 于 11 月初收紧免费层策略，第三方（含本仓与 magpie 生态）免费模型全面 FreeUsageLimitError，无代码修复空间**；本仓止损机制经核查健全，未改动。
@@ -294,6 +315,10 @@ WorkBuddy 一栏的基线同时登记在 `scripts/workbuddy-vendor-baseline.json
   - **「加 key 扩容」路线已被用户实测否定（2026-11-06 用户确认 + 日志实证）**：key#16-20 是用户 11-05 新注册账号的 key，11-05 当天首次真实调用即 FreeUsageLimitError（key#16/#17/#20 共 21 条 429）——**上游对新账号免费额度为零**。key#9 的成功是老 key 的政策收紧前残存量，不是「per-key 额度可扩」的证据。上游免费层对 API key 形态（无论账号新旧）整体关闭。
   - 次生观察：key#18 出现 632 秒 EOF 挂起（zen chat 路径无响应头看门狗，cline 有 `clineHeaderWatchdog` 而 zen 侧无；`withSyncTimeout` 只包目录同步）——出口挂起时请求可悬 10 分钟占住并发信号量。上游恢复真实流量前不痛，列为低优先级加固项（与 cline 看门狗同款语义）。
 - 副产：确证 `opencode-ai` npm 包与 magpie 的 OpenCode Go preset 形态，留档备查（`.tmp/magpie/` 分析材料）。
+
+### 2026-11-07 — 主线 merge c6b3c45（见上）+ 副线 opencode2api 复核（无更新）
+
+- 副线 `jasonxu114514/opencode2api` main 仍为 `b296a61`（2026-11-05 后无新提交），评估结论沿用 2026-11-05（零吸纳）。
 
 ### 2026-11-05 — 主线复核（无更新）+ 副线 jasonxu114514/opencode2api 评估（零吸纳）
 
@@ -404,6 +429,12 @@ WorkBuddy 一栏的基线同时登记在 `scripts/workbuddy-vendor-baseline.json
 ## magpie（全平台参考线，2026-11-06 立项）
 
 **定位（用户 2026-11-06 定）**：`yetone/magpie`（30k stars，Go + Bun 插件的本地 AI 网关）几乎覆盖所有平台的反代/协议互译/配额 failover，计入**所有平台**的副线——纯参考不合并，按需单点吸纳，每次排查在本节记基线（排查到哪条 commit、吸纳什么、丢弃什么），方便下回增量回溯。排查方法与评估口径见 `.agents/skills/sync-upstream/SKILL.md` §2.5。
+
+### 2026-11-07 — 增量排查：498b6419 → e9bde25（15 提交，零吸纳）
+
+- 15 条提交（11-05 晚~11-07）全部是 magpie 自有平台的接入维护：ZCode mover 0.1.55/0.1.56 与 3012 错误处置粒度、Kiro mover 0.1.29/0.1.30、Codex 线程迁移与 UA 策略、WSL 进程管理、GUI 修复、/v1/decisions 转发、history 轮转预算 bug。
+- 与本仓 8 平台无交集；`cline: Upstream tick 不写 providerOptions（#5442，11-06 起 Cline API 403）`是 magpie 自身 provider 配置写盘形态的问题，本仓 cline 为账号池反代不带 providerOptions，不受影响——但其「Cline API 11-06 起对某类请求 403」的信号已留档备查。
+- 基线推进：`e9bde2520db7e66da840d249b74abb75bb3bb0e9`（2026-11-07T09:48Z）。
 
 ### 2026-11-06 — 首轮排查：基线 `498b6419`（2026-11-05 HEAD），吸纳 1 / 丢弃 4 类
 
