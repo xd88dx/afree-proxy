@@ -42,6 +42,11 @@ func TestInFlightLeaseReleasedOnSuccess(t *testing.T) {
 // TestInFlightLeaseReleasedOnErrorPaths 上游一直回错误、在途上限=1 时，每个请求都必须
 // 把名额还回去：否则后续请求会拿不到号（no_healthy_account），而不是继续打上游。
 func TestInFlightLeaseReleasedOnErrorPaths(t *testing.T) {
+	// afree 形态适配（2026-11-07）：账号级 4xx 触发软冷却后，本仓语义（2026-10-28
+	// 用户定）是冷却凭据不参与路由——默认会以 no_healthy_account 拒绝第二次请求，
+	// calls 断言失效。测试显式开 UNABLE_FORCE 兜底（冷却账号试探），让「错误路径
+	// 释放名额」的原意（第二次仍打到上游）在本仓也可验证；生产默认仍是 fail-closed。
+	t.Setenv("UNABLE_FORCE", "true")
 	// 三种都走「选号成功后才失败」的分支：内容级 4xx（ErrClient）、账号级 4xx
 	// （ErrAccountFault）、上游 5xx。它们都不禁用账号，所以能反复打到同一个号。
 	cases := []struct {
