@@ -82,7 +82,12 @@ type proxyConfigFileData struct {
 	Trae2apiBindings        map[string]trae2apiProxyBinding `json:"trae2apiBindings,omitempty"`
 	Trae2apiRouting         map[string]bool                 `json:"trae2apiRouting,omitempty"`
 	Trae2apiModelRateFilter float64                         `json:"trae2apiModelRateFilter,omitempty"`
-	Trae2apiDisplayOrder    []string                        `json:"trae2apiDisplayOrder,omitempty"`
+	// 分域倍率筛选（2026-11-07 用户定，照 wb 79cc3d6c 模式）：nil = 未配置 =
+	// 回落旧单值 trae2apiModelRateFilter（旧配置文件兼容）。CN 过滤 trae:/solo:，
+	// Intl 过滤 trae-intl:/solo-intl:。显式 0 = 关（指针区分「未配置」与「关」）。
+	Trae2apiModelRateFilterCN   *float64 `json:"trae2apiModelRateFilterCN,omitempty"`
+	Trae2apiModelRateFilterIntl *float64 `json:"trae2apiModelRateFilterIntl,omitempty"`
+	Trae2apiDisplayOrder        []string `json:"trae2apiDisplayOrder,omitempty"`
 
 	// ---- zen key 出口自动钉定（egress.go，上游 400736b）----
 	// 键是 namespace+身份哈希（zen key 只存 sha256 前 8 字节 hex，不含明文）。

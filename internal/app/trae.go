@@ -583,11 +583,46 @@ func trae2apiModelExists(id string) bool {
 
 // trae2apiRateFilterThreshold 费率过滤阈值（0 = 关）。存 proxy-config.json
 // 的 trae2apiModelRateFilter（afree 侧配置，与 vendored 费率元数据同源比较）。
+// 2026-11-07 拆分后保留作旧单值回落：分域键未配置（nil）时两域共用旧值。
 func trae2apiRateFilterThreshold() float64 {
 	proxyFileMu.Lock()
 	defer proxyFileMu.Unlock()
 	f := loadProxyConfigFileLocked()
 	return f.Trae2apiModelRateFilter
+}
+
+// trae2apiRateFilterThresholdCN / ...Intl 分域费率过滤阈值（2026-11-07 拆分，
+// 照 wb 79cc3d6c 模式）：CN 过滤 trae:/solo:（realm.Trae/Solo），Intl 过滤
+// trae-intl:/solo-intl:（realm.TraeIntl/SoloIntl）。分域键未配置（nil，旧
+// 配置文件形态）回落旧单值——行为等价 wb 的 migrateModelRateFilterSplit
+// 「逐字段回落自动迁移」，只是回落放在读取函数而非解析入口，少一处字节级
+// 预处理。显式 0 = 该域关。
+func trae2apiRateFilterThresholdCN() float64 {
+	proxyFileMu.Lock()
+	defer proxyFileMu.Unlock()
+	f := loadProxyConfigFileLocked()
+	if f.Trae2apiModelRateFilterCN != nil {
+		return *f.Trae2apiModelRateFilterCN
+	}
+	return f.Trae2apiModelRateFilter
+}
+
+func trae2apiRateFilterThresholdIntl() float64 {
+	proxyFileMu.Lock()
+	defer proxyFileMu.Unlock()
+	f := loadProxyConfigFileLocked()
+	if f.Trae2apiModelRateFilterIntl != nil {
+		return *f.Trae2apiModelRateFilterIntl
+	}
+	return f.Trae2apiModelRateFilter
+}
+
+// trae2apiRateFilterForRealm 按域取阈值。
+func trae2apiRateFilterForRealm(realm string) float64 {
+	if realm == traerealm.TraeIntl || realm == traerealm.SoloIntl {
+		return trae2apiRateFilterThresholdIntl()
+	}
+	return trae2apiRateFilterThresholdCN()
 }
 
 // trae2apiModelEntries /v1/models 合并用的 Trae 段条目。模型名透传原则：
@@ -610,11 +645,11 @@ func trae2apiModelEntries() []map[string]any {
 			routableRealms[st.Realm] = true
 		}
 	}
-	threshold := trae2apiRateFilterThreshold()
 	for _, ch := range sub.srv.Channels() {
 		if !routableRealms[ch.Realm] {
 			continue
 		}
+		threshold := trae2apiRateFilterForRealm(ch.Realm)
 		for _, e := range ch.ModelEntries() {
 			id, _ := e["id"].(string)
 			if id == "" {
@@ -862,7 +897,8 @@ func handleTraeConfig(w http.ResponseWriter, r *http.Request) {
 		"proxyIsolation":          proxyIsolationEnabled(),
 		"proxyIsolationEnvLocked": proxyIsolationEnvLocked(),
 		"backupProxyEnabled":      backupProxyEnabled(),
-		"rateFilter":              trae2apiRateFilterThreshold(),
+		"rateFilterCN":            trae2apiRateFilterThresholdCN(),
+		"rateFilterIntl":          trae2apiRateFilterThresholdIntl(),
 		"routable":                trae2apiRoutableCount(),
 	}
 	if sub != nil {
@@ -992,6 +1028,42 @@ func trae2apiEnrichAccountRow(sub *trae2apiSubsystem, st traepool.Status, row ma
 // handleTraeConfigUpdate POST /admin/api/trae/config/update —— vendored 配置
 // 子集 + 费率过滤 patch；vendored 无热更新，落盘后整组重启（池状态经
 // state.json 保留，冷却/熔断不丢）。useProxies 走 proxy-config.json 既有键。
+// traeApplyRateFilterPatch 倍率筛选 patch 应用（2026-11-07 拆分）：分域键
+// 独立于旧单键生效——面板只发新键（rateFilter 为 nil）时旧键 if 块绝不参与，
+// 两者并存时按「新键优先、旧键双写兜底」收敛到一致。抽出独立函数便于在
+// 子系统未启动的单测环境直接验证应用逻辑（handler 侧有 503 守卫）。
+// traeRateFilterPatch 倍率筛选 patch 的三个键（从 handleTraeConfigUpdate 的
+// 大 patch struct 里独立出来，便于单测直调）。
+type traeRateFilterPatch struct {
+	RateFilter     *float64 `json:"rateFilter"`
+	RateFilterCN   *float64 `json:"rateFilterCN"`
+	RateFilterIntl *float64 `json:"rateFilterIntl"`
+}
+
+func traeApplyRateFilterPatch(patch traeRateFilterPatch) {
+	// 经 getProxyBindingConfig→setProxyBindingConfig 同源路径写：倍率已在
+	// 隔离/绑定段（随备份迁移），直改文件会绕过 proxyBindingCfg 内存缓存，
+	// 后续 setProxyBindingConfig 会拿缓存旧值把刚存的倍率抹回去。
+	if patch.RateFilter != nil {
+		// 旧单键兼容：双写两域（面板已改用新键，此路径仅供旧脚本/手工 API）。
+		next := *getProxyBindingConfig()
+		next.Trae2apiModelRateFilter = *patch.RateFilter
+		next.Trae2apiModelRateFilterCN = patch.RateFilter
+		next.Trae2apiModelRateFilterIntl = patch.RateFilter
+		setProxyBindingConfig(&next)
+	}
+	if patch.RateFilterCN != nil || patch.RateFilterIntl != nil {
+		next := *getProxyBindingConfig()
+		if patch.RateFilterCN != nil {
+			next.Trae2apiModelRateFilterCN = patch.RateFilterCN
+		}
+		if patch.RateFilterIntl != nil {
+			next.Trae2apiModelRateFilterIntl = patch.RateFilterIntl
+		}
+		setProxyBindingConfig(&next)
+	}
+}
+
 func handleTraeConfigUpdate(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
@@ -1018,6 +1090,10 @@ func handleTraeConfigUpdate(w http.ResponseWriter, r *http.Request) {
 		IdleTimeout      *int     `json:"idleTimeout"`
 		IntlEnabled      *bool    `json:"intlEnabled"`
 		RateFilter       *float64 `json:"rateFilter"`
+		// 分域倍率筛选（2026-11-07 拆分）：新键优先；旧 rateFilter 键为兼容
+		// 保留，非空时双写两域（回落语义与读取端一致）。
+		RateFilterCN   *float64 `json:"rateFilterCN"`
+		RateFilterIntl *float64 `json:"rateFilterIntl"`
 	}
 	if err := json.Unmarshal(body, &patch); err != nil {
 		writeAPI(w, http.StatusBadRequest, apiResponse{Error: err.Error()})
@@ -1086,14 +1162,14 @@ func handleTraeConfigUpdate(w http.ResponseWriter, r *http.Request) {
 		writeAPI(w, http.StatusInternalServerError, apiResponse{Error: err.Error()})
 		return
 	}
-	if patch.RateFilter != nil {
-		// 经 getProxyBindingConfig→setProxyBindingConfig 同源路径写：倍率已在
-		// 隔离/绑定段（随备份迁移），直改文件会绕过 proxyBindingCfg 内存缓存，
-		// 后续 setProxyBindingConfig 会拿缓存旧值把刚存的倍率抹回去。
-		next := *getProxyBindingConfig()
-		next.Trae2apiModelRateFilter = *patch.RateFilter
-		setProxyBindingConfig(&next)
-	}
+	// 经 getProxyBindingConfig→setProxyBindingConfig 同源路径写：倍率已在
+	// 隔离/绑定段（随备份迁移），直改文件会绕过 proxyBindingCfg 内存缓存，
+	// 后续 setProxyBindingConfig 会拿缓存旧值把刚存的倍率抹回去。
+	traeApplyRateFilterPatch(traeRateFilterPatch{
+		RateFilter:     patch.RateFilter,
+		RateFilterCN:   patch.RateFilterCN,
+		RateFilterIntl: patch.RateFilterIntl,
+	})
 	if err := trae2apiRestart(); err != nil {
 		writeAPI(w, http.StatusInternalServerError, apiResponse{Error: "restart: " + err.Error()})
 		return

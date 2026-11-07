@@ -29,6 +29,10 @@ type proxyBindingConfigData struct {
 	// 2026-11-05 全字段落盘闭环测试补缺：此前 proxy 段不含它——导出丢、导入
 	// 的覆盖写再把本机值抹掉，跨机迁移后倍率过滤静默失效（实测 0.1 → 0）。
 	Trae2apiModelRateFilter float64 `json:"trae2apiModelRateFilter,omitempty"`
+	// 分域倍率筛选（2026-11-07 拆分）：nil = 未配置 = 回落旧单值。语义同
+	// proxyConfigFileData 的同名字段注释。
+	Trae2apiModelRateFilterCN   *float64 `json:"trae2apiModelRateFilterCN,omitempty"`
+	Trae2apiModelRateFilterIntl *float64 `json:"trae2apiModelRateFilterIntl,omitempty"`
 }
 
 // defaultReorderKeepSec 阈值缺省值（秒）：与旧版硬编码 6s 的口径不同——
@@ -61,12 +65,14 @@ func loadProxyBindingConfigLocked() *proxyBindingConfigData {
 	f := loadProxyConfigFileLocked()
 	proxyFileMu.Unlock()
 	proxyBindingCfg = &proxyBindingConfigData{
-		ProxyIsolation:          f.ProxyIsolation,
-		BackupProxyEnabled:      f.BackupProxyEnabled,
-		ProxyExclusions:         f.ProxyExclusions,
-		ProxyBindCaps:           f.ProxyBindCaps,
-		ReorderKeepSec:          f.ReorderKeepSec,
-		Trae2apiModelRateFilter: f.Trae2apiModelRateFilter,
+		ProxyIsolation:              f.ProxyIsolation,
+		BackupProxyEnabled:          f.BackupProxyEnabled,
+		ProxyExclusions:             f.ProxyExclusions,
+		ProxyBindCaps:               f.ProxyBindCaps,
+		ReorderKeepSec:              f.ReorderKeepSec,
+		Trae2apiModelRateFilter:     f.Trae2apiModelRateFilter,
+		Trae2apiModelRateFilterCN:   f.Trae2apiModelRateFilterCN,
+		Trae2apiModelRateFilterIntl: f.Trae2apiModelRateFilterIntl,
 	}
 	proxyBindingLoadedPath = path
 	return proxyBindingCfg
@@ -99,5 +105,7 @@ func setProxyBindingConfig(c *proxyBindingConfigData) {
 		// proxy-config.json，但它属于"隔离/绑定段"的配置语义（面板 trae 配置
 		// 区保存、随备份迁移）——漏在覆盖写之外会让导入抹掉本机值（实测）。
 		f.Trae2apiModelRateFilter = cp.Trae2apiModelRateFilter
+		f.Trae2apiModelRateFilterCN = cp.Trae2apiModelRateFilterCN
+		f.Trae2apiModelRateFilterIntl = cp.Trae2apiModelRateFilterIntl
 	})
 }

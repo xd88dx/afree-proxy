@@ -646,8 +646,18 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
         <div class="wb-field"><label for="traeIdleTimeout">Stream idle timeout (s)</label><input id="traeIdleTimeout" placeholder="120"></div>
       </div>
       <div class="wb-config-group">
-        <div class="wb-field"><label for="traeRateFilter">Model rate filter</label>
-          <select id="traeRateFilter">
+        <div class="wb-field"><label for="traeRateFilterCN">CN model rate filter</label>
+          <select id="traeRateFilterCN">
+            <option value="0">Off</option>
+            <option value="0.1">0.1</option>
+            <option value="0.2">0.2</option>
+            <option value="0.3">0.3</option>
+            <option value="0.5">0.5</option>
+            <option value="1">1</option>
+          </select>
+        </div>
+        <div class="wb-field"><label for="traeRateFilterIntl">Intl model rate filter</label>
+          <select id="traeRateFilterIntl">
             <option value="0">Off</option>
             <option value="0.1">0.1</option>
             <option value="0.2">0.2</option>
@@ -2153,8 +2163,8 @@ const I18N_ZH = {
   'free': '免费',
   'Default tier': '默认档',
   'No WorkBuddy models under the current filter': '当前筛选下没有 WorkBuddy 模型',
-  'Model rate filter': '模型倍率筛选',
   'CN model rate filter': '国内模型倍率筛选',
+  'Intl model rate filter': '国际模型倍率筛选',
   'Global model rate filter': '国际模型倍率筛选',
   '0 — free only': '0 — 仅免费',
   'WorkBuddy configuration': 'WorkBuddy 配置',
@@ -7492,8 +7502,10 @@ async function loadTraeConfig() {
     _('traeStrictModels').checked = c.strictModels === true;
     _('traeSessionSticky').checked = c.sessionSticky === true;
     _('traeIntl').checked = c.intlEnabled === true;
-    const rf = _('traeRateFilter');
-    if (rf) rf.value = String(c.rateFilter || 0);
+    const rfCN = _('traeRateFilterCN');
+    if (rfCN) rfCN.value = String(c.rateFilterCN || 0);
+    const rfIntl = _('traeRateFilterIntl');
+    if (rfIntl) rfIntl.value = String(c.rateFilterIntl || 0);
     // 模型目录（黑名单语义 = 不再对外提供，页面同步剔除）
     await syncModelBlacklist();
     const models = (c.models || []).filter(m => m && !modelBlacklistIds.has(m.id));
@@ -7523,7 +7535,8 @@ async function saveTraeConfig() {
     strictModels: !(!_('traeStrictModels') || !_('traeStrictModels').checked),
     sessionSticky: !(!_('traeSessionSticky') || !_('traeSessionSticky').checked),
     intlEnabled: !(!_('traeIntl') || !_('traeIntl').checked),
-    rateFilter: parseFloat(_('traeRateFilter') ? _('traeRateFilter').value : '0') || 0,
+    rateFilterCN: parseFloat(_('traeRateFilterCN') ? _('traeRateFilterCN').value : '0') || 0,
+    rateFilterIntl: parseFloat(_('traeRateFilterIntl') ? _('traeRateFilterIntl').value : '0') || 0,
   };
   const btn = document.querySelector('#traeConfigForm .form-actions button');
   const original = btn ? btn.innerHTML : '';
