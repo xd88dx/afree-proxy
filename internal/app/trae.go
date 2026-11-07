@@ -339,12 +339,16 @@ func traeEgressClient(uid string) *http.Client {
 }
 
 // traePooledClient 把池代理地址换成带观测的客户端；空串 = 直连（交还上游）。
+// 最外层是回退链守卫（死腿短路 + 中间失败观测，见 trae_fallback_guard.go），
+// 短路不出网、不计入出口健康统计。
 func traePooledClient(proxyURL string) *http.Client {
 	if proxyURL == "" {
 		return nil
 	}
 	base := proxyClientFor(proxyURL)
-	return &http.Client{Transport: traeObserveTransport{inner: base.Transport, proxy: proxyURL}}
+	return &http.Client{Transport: traeFallbackGuardTransport{
+		inner: traeObserveTransport{inner: base.Transport, proxy: proxyURL},
+	}}
 }
 
 // traeFailClosedClient 出口解析失败（绑定全不可用/隔离禁直连）时返回的
