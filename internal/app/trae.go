@@ -116,6 +116,14 @@ func traeApplyAfreeConstraints(cfg *traecfg.Config) {
 	if strings.TrimSpace(cfg.Trae.ChatBase) == "" {
 		cfg.Trae.ChatBase = "https://trae-api-cn.mchost.guru"
 	}
+	// 跨域容灾恒关（上游 9eece39 的 cross_realm_failover 默认 true）：vendored
+	// 引擎在 CN 域账号耗尽/冷却时自动切 Intl 域账号服务——这绕过本仓的域透传
+	// 契约（trae: 恒 CN、trae-intl: 恒 Intl，0a584b6 域级可路由过滤 + intl 关闭
+	// 时 afree 层直接拒绝），Intl 额度会被 CN 请求悄悄消耗、域记账错位。需要
+	// Intl 容灾时由客户端/下游显式调 trae-intl: 模型（newapi/hermes 渠道映射
+	// 层做 failover），引擎内部绝不跨域。
+	noFailover := false
+	cfg.Trae.CrossRealmFailover = &noFailover
 	cfg.DataDir = traeDataDir()
 	cfg.APIKey = ""
 	cfg.WebPassword = ""

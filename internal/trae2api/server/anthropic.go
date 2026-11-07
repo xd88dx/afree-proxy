@@ -124,9 +124,18 @@ func (s *Server) handleAnthropicMessages(w http.ResponseWriter, r *http.Request)
 
 	var lastErr error
 	for attempt := 0; attempt < s.maxRotate; attempt++ {
-		acct := s.pickWithWait(r.Context(), realmKey, bareModel, owners, tried)
+		var newCh *Channel
+		var newRealm string
+		acct, newCh, newRealm := s.pickAccountWithFailover(r.Context(), ch, realmKey, bareModel, owners, tried)
 		if acct == nil {
 			break
+		}
+		if newRealm != realmKey {
+			ch = newCh
+			realmKey = newRealm
+			st.setRealm(realmKey)
+			cost = s.modelCreditCost(ch, bareModel)
+			st.setCredits(cost)
 		}
 		tried[acct.UID] = true
 		if !s.pool.Acquire(acct.UID) {
@@ -315,6 +324,9 @@ func (s *Server) runAnthropicStream(w http.ResponseWriter, ctx context.Context, 
 	tokensUsed := int64(0)
 
 	err := cl.Chat(ctx, creq, func(d traectl.Delta) error {
+		if d.Keepalive {
+			return nil
+		}
 		if first {
 			first = false
 			ensureHeaders()
@@ -353,7 +365,7 @@ func (s *Server) runAnthropicStream(w http.ResponseWriter, ctx context.Context, 
 		if !headersWritten {
 			return err
 		}
-		return fmt.Errorf("%w: %v", errAlreadyStreaming, err)
+		return fmt.Errorf("%w: %w", errAlreadyStreaming, err)
 	}
 
 	sendEvent("content_block_stop", map[string]any{"type": "content_block_stop", "index": 0})

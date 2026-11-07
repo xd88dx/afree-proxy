@@ -516,9 +516,17 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		if acct == nil {
-			acct = s.pickWithWait(r.Context(), realmKey, bareModel, owners, tried)
+			var newCh *Channel
+			var newRealm string
+			acct, newCh, newRealm = s.pickAccountWithFailover(r.Context(), ch, realmKey, bareModel, owners, tried)
 			if acct == nil {
 				break
+			}
+			if newRealm != realmKey {
+				ch = newCh
+				realmKey = newRealm
+				st.setRealm(realmKey)
+				st.setCredits(s.modelCreditCost(ch, bareModel))
 			}
 			if !s.pool.Acquire(acct.UID) {
 				continue // 在途已满：换一个账号
@@ -626,6 +634,63 @@ func (s *Server) otherRealmChannel(realmKey string) (*Channel, bool) {
 	return alt, true
 }
 
+// pickAccountWithFailover 为当前请求选号。
+// 若开启了 CrossRealmFailover（默认开启），当目标版本域没有健康可用账号时，
+// 自动容灾探测并切换至配对版本域（如 trae ↔ trae-intl、solo ↔ solo-intl）。
+func (s *Server) pickAccountWithFailover(
+	ctx context.Context,
+	ch *Channel,
+	realmKey, bareModel string,
+	owners []string,
+	tried map[string]bool,
+) (*pool.Account, *Channel, string) {
+	if s.cfg.CrossRealmFailoverOn() {
+		// 1. 如果当前目标域没有任何健康/有额度的可用账号（全部在冷却/熔断/额度耗尽），
+		// 而配对版本域有健康账号且支持该模型，优先直接切到配对域，
+		// 避免从当前域的 soft-cooling fallback 兜底中反复捞出已失效账号。
+		if !s.pool.HasLiveAccounts(realmKey, bareModel, tried) {
+			if alt, ok := s.otherRealmChannel(realmKey); ok && alt != nil {
+				modelSupported := true
+				if s.cfg.StrictModelsOn() && alt.Catalog != nil && len(alt.Catalog.Models) > 0 {
+					_, modelSupported = alt.Catalog.ByID(bareModel)
+				}
+				if modelSupported && s.pool.HasLiveAccounts(alt.Realm, bareModel, tried) {
+					if altAcct := s.pickWithWait(ctx, alt.Realm, bareModel, owners, tried); altAcct != nil {
+						s.logf("INFO: 渠道 %q 账号额度耗尽或在冷却中，自动容灾切换到配对版本域 %q (acct=%s, model=%s)",
+							realmKey, alt.Realm, altAcct.UID, bareModel)
+						return altAcct, alt, alt.Realm
+					}
+				}
+			}
+		}
+	}
+
+	// 2. 正常在当前域选号
+	acct := s.pickWithWait(ctx, realmKey, bareModel, owners, tried)
+	if acct != nil {
+		return acct, ch, realmKey
+	}
+
+	// 3. 当前域未能选出账号（例如健康账号已全部在 tried 集合中试过且失败，或名额等待超时）
+	if s.cfg.CrossRealmFailoverOn() {
+		if alt, ok := s.otherRealmChannel(realmKey); ok && alt != nil {
+			modelSupported := true
+			if s.cfg.StrictModelsOn() && alt.Catalog != nil && len(alt.Catalog.Models) > 0 {
+				_, modelSupported = alt.Catalog.ByID(bareModel)
+			}
+			if modelSupported {
+				if altAcct := s.pickWithWait(ctx, alt.Realm, bareModel, owners, tried); altAcct != nil {
+					s.logf("INFO: 渠道 %q 账号已全部尝试或不可用，自动容灾切换到配对版本域 %q (acct=%s, model=%s)",
+						realmKey, alt.Realm, altAcct.UID, bareModel)
+					return altAcct, alt, alt.Realm
+				}
+			}
+		}
+	}
+
+	return nil, ch, realmKey
+}
+
 // pickWaitTimeout 是"名额满了"时愿意等多久。
 //
 // 取 20 秒：多数请求几秒内就结束并释放名额，20 秒足够消化常见的并发突发；
@@ -649,11 +714,14 @@ const pickWaitTimeout = 20 * time.Second
 // 不做这个区分的话：要么在"全池冷却 24 小时"时每个请求白等 20 秒
 // （把小问题放大成雪崩），要么在"只是并发突发"时直接给客户端 503。
 func (s *Server) pickWithWait(ctx context.Context, realmKey, model string, owners []string, tried map[string]bool) *pool.Account {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	if a := s.pool.Pick(realmKey, model, owners, tried); a != nil {
 		return a
 	}
-	// 没有健康账号 → 等也没用，立刻返回让上层给出明确原因
-	if s.pool.HealthyIgnoringInflight(realmKey) == 0 {
+	// 没有健康账号或没有未尝试的可用账号 → 等也没用，立刻返回让上层给出明确原因或进行容灾切换
+	if s.pool.HealthyIgnoringInflight(realmKey) == 0 || !s.pool.HasLiveAccounts(realmKey, model, tried) {
 		return nil
 	}
 
@@ -808,22 +876,28 @@ func (s *Server) streamChat(w http.ResponseWriter, ctx context.Context, cl *trae
 	})
 	nextTextIdx := 0 // 文本调用可用的 tool_calls index（与原生调用错开）
 	err := cl.Chat(ctx, creq, func(d traectl.Delta) error {
-		// 任何一帧（含心跳）都说明上游已返回 2xx 并开始吐了 → 可以安全开流。
-		// 心跳帧本身只发一条 SSE 注释，客户端会忽略它，但字节到了就不会超时。
-		if !headersWritten {
-			ensureHeaders()
-		}
-		if !roleSent {
-			roleSent = true
-			writeChunk(map[string]any{"role": "assistant", "content": ""}, nil)
-		}
 		if d.Keepalive {
+			// 如果还没写头，且排队时间较短，暂不提前提交 HTTP 200 响应头，
+			// 以免若紧接着收到限流/4011等错误时无法退回上层换号容灾。
+			if !headersWritten {
+				if time.Since(st.start) < 5*time.Second {
+					return nil
+				}
+				ensureHeaders()
+			}
 			// SSE 注释帧：合法且被所有解析器忽略，只用于"续命"
 			fmt.Fprint(w, ": keepalive\n\n")
 			if flusher != nil {
 				flusher.Flush()
 			}
 			return nil
+		}
+		if !headersWritten {
+			ensureHeaders()
+		}
+		if !roleSent {
+			roleSent = true
+			writeChunk(map[string]any{"role": "assistant", "content": ""}, nil)
 		}
 		if firstByte {
 			firstByte = false
@@ -895,7 +969,7 @@ func (s *Server) streamChat(w http.ResponseWriter, ctx context.Context, cl *trae
 		if flusher != nil {
 			flusher.Flush()
 		}
-		return fmt.Errorf("%w: %v", errAlreadyStreaming, err)
+		return fmt.Errorf("%w: %w", errAlreadyStreaming, err)
 	}
 
 	// 上游正常结束但一个增量都没发（空回复）：补上头与 role，让客户端拿到完整形状

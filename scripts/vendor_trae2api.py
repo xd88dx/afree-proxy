@@ -23,7 +23,7 @@ import sys
 
 
 # 上游工作树（XCool-603/trae2api 检出）。remote trae-upstream 同源。
-SOURCE_ROOT = Path(r"D:\下载\Github\trae2api-xcool")
+SOURCE_ROOT = Path("D:/下载/Github/trae2api")  # 2026-11-07 修正：xcool 目录名已不存在，实际克隆在 trae2api（正斜杠避开转义）
 TARGET_ROOT = Path(r"D:\下载\Github\afree-proxy")
 TARGET_PKG = TARGET_ROOT / "internal" / "trae2api"
 
