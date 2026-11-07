@@ -583,7 +583,19 @@ func trae2apiResolveMerged(merged, bare string) string {
 	if sub == nil {
 		return ""
 	}
+	// 可路由性过滤（与 trae2apiModelEntries 的目录归属同口径）：不可路由的
+	// 渠道不承接翻译——否则「trae 渠道无账号、solo 承接渲染」的交集模型会被
+	// 翻译回 trae，选号必 503。成员顺序保证 trae 可路由时交集仍以 trae 为主。
+	routable := map[string]bool{}
+	for _, st := range sub.srv.Pool().List() {
+		if !st.Disabled && traeRoutingGet(st.UID) {
+			routable[st.Realm] = true
+		}
+	}
 	for _, realm := range trae2apiMergedRealms(merged) {
+		if !routable[realm] {
+			continue
+		}
 		for _, ch := range sub.srv.Channels() {
 			if ch.Realm != realm {
 				continue
