@@ -63,6 +63,7 @@ combos.json
 .session-secret
 requests.jsonl
 
+.zcode/
 .workbuddy/
 .tmp/
 __pycache__/
