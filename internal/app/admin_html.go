@@ -992,6 +992,19 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
       <label class="hint" style="margin:0 0 0 6px">Org ID:</label>
       <input type="text" id="ocOrgID" placeholder="wrk_… (optional)" style="max-width:220px" title="OAuth account org id, sent as x-opencode-org-id. Only needed when the key is an OAuth token rather than a raw API key; leave empty to omit the header.">
     </div>
+    <p class="hint" style="margin-top:0">Session IDs are minted locally, one per API call, and match the upstream's format gate (<code>^ses_[0-9a-f]{12}[0-9A-Za-z]{14}$</code>) — no CLI or harvester involved. The sticky-session table below is informational only; upstream calls no longer reuse a session across requests.</p>
+    <div class="form-row">
+      <div class="field"><label>Pin one egress proxy per key</label>
+        <select id="ocPinProxy"><option value="true">On — one key, one exit IP</option><option value="false">Off — rotate per request</option></select>
+      </div>
+      <div class="field"><label>Relocate system prompt to user message</label>
+        <select id="ocSystemRelocate" title="The client's system/developer prompt is moved into the first user message wrapped in &lt;system&gt;…&lt;/system&gt;; the system role carries a short fixed prompt instead.">
+          <option value="true">On — system role keeps a fixed short prompt</option><option value="false">Off — forward the client system prompt as-is</option>
+        </select>
+      </div>
+      <div class="field"><label>Egress capacity</label><span id="ocEgressInfo" class="stat-mini" style="align-self:center">-</span></div>
+    </div>
+    <p class="hint" style="margin-top:0">opencode zen records the egress IP per key and treats a key seen from several IPs as suspicious, so each key is pinned to one proxy by default, and keys that got no proxy are skipped — they would otherwise leak an extra IP. One proxy serves one identity per upstream; Cline accounts get the same treatment when the Cline pool uses proxies. Turn this off only for troubleshooting.</p>
     <div class="table-wrap" style="margin-bottom:10px">
       <table>
         <thead><tr><th style="width:50px">#</th><th style="width:110px">Key</th><th>Status</th><th title="Counted locally by this proxy — not the official free quota">Today/Total tokens</th><th>Last used</th><th title="Main exit first, backup as fallback; both down = row skipped (isolation).">Proxy binding</th><th style="width:130px;text-align:center">Actions</th><th style="text-align:center" title="Routing participation: unchecked keys never enter request rotation. Newly added keys start disabled — tick Pool to enable. Sessions are minted per upstream call.">Pool</th></tr></thead>
@@ -6041,8 +6054,19 @@ async function loadOcConfig() {
     _('ocRetries').value = c.retries || 3;
     if (_('ocOrgID')) _('ocOrgID').value = c.orgID || '';
     if (_('ocPinProxy')) _('ocPinProxy').value = String(c.pinProxyPerKey !== false);
-    // （ocEgressInfo 徽记块已删：其 HTML 挂点随 2026-10-24 面板改版移除，本段
-    // 一直是查不到元素的死代码——egress 状态以代理池页的绑定表为准。）
+    if (_('ocSystemRelocate')) _('ocSystemRelocate').value = String(c.systemRelocation !== false);
+    const eg = c.egress || {};
+    if (_('ocEgressInfo')) {
+      const un = eg.unassigned || 0;
+      _('ocEgressInfo').innerHTML = !eg.enabled
+        ? '<span style="color:var(--text2)">disabled — per-request rotation</span>'
+        : (!eg.active
+            ? '<span style="color:var(--text2)">no proxies — direct</span>'
+            : '<span style="color:' + (un > 0 ? 'var(--danger)' : 'var(--accent2)') + '">' +
+              (eg.proxies || 0) + ' prox' + ((eg.proxies || 0) === 1 ? 'y' : 'ies') + ' · ' +
+              (eg.assigned || 0) + '/' + (eg.identities || 0) + ' keys bound' +
+              (un > 0 ? ' · ' + un + ' key' + (un === 1 ? '' : 's') + ' skipped' : '') + '</span>');
+    }
     _('ocCompactAuto').value = String(c.compaction ? c.compaction.auto : true);
     _('ocCompactBuffer').value = c.compaction ? c.compaction.buffer : 80000;
     _('ocKeepTokens').value = c.compaction ? c.compaction.keepTokens : 8000;
@@ -6062,6 +6086,7 @@ async function saveOcConfig() {
     retries: parseInt(_('ocRetries').value) || 3,
     orgID: _('ocOrgID') ? _('ocOrgID').value.trim() : '',
     pinProxyPerKey: _('ocPinProxy') ? _('ocPinProxy').value === 'true' : true,
+    systemRelocation: _('ocSystemRelocate') ? _('ocSystemRelocate').value === 'true' : true,
     compaction: {
       auto: _('ocCompactAuto').value === 'true',
       buffer: parseInt(_('ocCompactBuffer').value) || 80000,

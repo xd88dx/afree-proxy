@@ -63,6 +63,8 @@ func zenConfigPayload() map[string]any {
 		"egress":         zenEgressSnapshot(),
 		// OAuth 账户组织 ID（上游 571f9b9）：面板可编辑，空 = 不发该头。
 		"orgID": cfg.OrgID,
+		// 系统提示词换位（上游 c6b3c45）：面板开关，默认开。
+		"systemRelocation": zenSystemRelocationEnabled(),
 		"runtime": map[string]any{
 			"proxyCooldowns": proxyCooldownStatus(),
 			// 每代理在线率统计（纯被动：只记真实请求的出口成败）。URL 已打码。
@@ -117,6 +119,8 @@ func handleZenConfigUpdate(w http.ResponseWriter, r *http.Request) {
 		OrgID *string `json:"orgID"`
 		// 每 key 固定出口代理（egress 层，3758eb7）：指针区分"未提交"与显式 false。
 		PinProxyPerKey *bool `json:"pinProxyPerKey"`
+		// 系统提示词换位：指针用于区分"未提交"与显式 false。
+		SystemRelocation *bool `json:"systemRelocation"`
 		Compaction     *struct {
 			Auto         *bool   `json:"auto"`
 			Buffer       *int    `json:"buffer"`
@@ -279,6 +283,9 @@ func handleZenConfigUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 	if patch.PinProxyPerKey != nil {
 		next.PinProxyPerKey = patch.PinProxyPerKey
+	}
+	if patch.SystemRelocation != nil {
+		next.SystemRelocation = patch.SystemRelocation
 	}
 	if patch.OrgID != nil {
 		// 空串即清除（不编造 org id：原始 API key 流量本来就没有）。
