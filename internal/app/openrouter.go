@@ -121,13 +121,11 @@ func orModelList() []map[string]any {
 	out := make([]map[string]any, 0)
 	for _, m := range openrouter.ModelList() {
 		entry := map[string]any{
-			"id":       openrouter.ModelPrefix + m.ID,
-			"object":   "model",
-			"created":  time.Now().UnixMilli(),
-			"owned_by": "openrouter",
-			"source":   "openrouter-free",
-			"status":   "active",
-			"cost":     "free",
+			"id":      openrouter.ModelPrefix + m.ID,
+			"object":  "model",
+			"created": time.Now().UnixMilli(),
+			"status":  "active",
+			"cost":    "free",
 		}
 		if m.Context > 0 {
 			entry["context"] = m.Context

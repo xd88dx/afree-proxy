@@ -799,13 +799,8 @@ func trae2apiModelEntries() []map[string]any {
 					entry[k] = v
 				}
 				entry["id"] = merged + ":" + bare
-				entry["source"] = "trae"
 				entry["status"] = "active"
 				entry["cost"] = "free"
-				// owned_by 用规范名 "trae"（与 combo 别名、其他平台段口径一致）：
-				// vendored 引擎透传的是产品 Label（"Trae CN"/"TRAE SOLO CN"），下游
-				// newapi 渠道映射（hermes afree-remap）按 owned_by 分桶且只认规范名。
-				entry["owned_by"] = "trae"
 				out = append(out, entry)
 			}
 		}

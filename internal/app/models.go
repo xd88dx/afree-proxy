@@ -431,8 +431,6 @@ func apiModelList() []map[string]any {
 			"id":             displayClineModelID(m.ID),
 			"object":         "model",
 			"created":        time.Now().UnixMilli(),
-			"owned_by":       m.Provider,
-			"source":         m.Source,
 			"status":         m.Status,
 			"cost":           m.Cost,
 			"requiresStream": m.RequiresStream,

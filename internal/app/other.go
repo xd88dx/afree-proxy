@@ -104,13 +104,11 @@ func otherModelList() []map[string]any {
 		}
 		for _, m := range other.SelectedModels(&p) {
 			out = append(out, map[string]any{
-				"id":       p.Prefix + ":" + m.ID,
-				"object":   "model",
-				"created":  time.Now().UnixMilli(),
-				"owned_by": "other-" + p.Slug,
-				"source":   "other-" + p.Prefix,
-				"status":   "active",
-				"cost":     "free",
+				"id":      p.Prefix + ":" + m.ID,
+				"object":  "model",
+				"created": time.Now().UnixMilli(),
+				"status":  "active",
+				"cost":    "free",
 			})
 		}
 	}

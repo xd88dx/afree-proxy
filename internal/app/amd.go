@@ -105,13 +105,11 @@ func amdModelList() []map[string]any {
 	out := make([]map[string]any, 0)
 	for _, m := range amd.ModelList() {
 		entry := map[string]any{
-			"id":       amd.ModelPrefix + m.ID,
-			"object":   "model",
-			"created":  time.Now().UnixMilli(),
-			"owned_by": "amd-cloud",
-			"source":   "amd-free",
-			"status":   "active",
-			"cost":     "free-tier",
+			"id":      amd.ModelPrefix + m.ID,
+			"object":  "model",
+			"created": time.Now().UnixMilli(),
+			"status":  "active",
+			"cost":    "free-tier",
 		}
 		if m.Context > 0 {
 			entry["context"] = m.Context

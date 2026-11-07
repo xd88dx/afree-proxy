@@ -103,13 +103,11 @@ func thModelList() []map[string]any {
 	out := make([]map[string]any, 0)
 	for _, m := range tokenharbor.ModelList() {
 		entry := map[string]any{
-			"id":       tokenharbor.ModelPrefix + m.ID,
-			"object":   "model",
-			"created":  time.Now().UnixMilli(),
-			"owned_by": "tokenharbor",
-			"source":   "tokenharbor-free",
-			"status":   "active",
-			"cost":     "free",
+			"id":      tokenharbor.ModelPrefix + m.ID,
+			"object":  "model",
+			"created": time.Now().UnixMilli(),
+			"status":  "active",
+			"cost":    "free",
 		}
 		if m.Context > 0 {
 			entry["context"] = m.Context

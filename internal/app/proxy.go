@@ -4003,15 +4003,13 @@ func servedModelEntries() []map[string]any {
 	// 合并 zen 免费模型（OpenCode 上游常开，无独立启停开关）
 	for _, zm := range zenModelList() {
 		data = append(data, map[string]any{
-			"id":       zm["id"],
-			"object":   "model",
-			"created":  time.Now().UnixMilli(),
-			"owned_by": "opencode-zen",
-			"source":   "zen-free",
-			"status":   "active",
-			"cost":     "free",
-			"context":  zm["context"],
-			"output":   zm["output"],
+			"id":      zm["id"],
+			"object":  "model",
+			"created": time.Now().UnixMilli(),
+			"status":  "active",
+			"cost":    "free",
+			"context": zm["context"],
+			"output":  zm["output"],
 		})
 	}
 	// 合并 WorkBuddy 模型（wbcn:/wbgb: 前缀，vendor 层翻译源项目 realm）。
@@ -4032,28 +4030,12 @@ func servedModelEntries() []map[string]any {
 		if !platformHasRoutableCredential(c.Platform) {
 			continue
 		}
-		owned := "cline"
-		if c.Platform == "zen" {
-			owned = "opencode-zen"
-		} else if c.Platform == "workbuddy" {
-			owned = "workbuddy"
-		} else if c.Platform == "openrouter" {
-			owned = "openrouter"
-		} else if c.Platform == "amd" {
-			owned = "amd-cloud"
-		} else if c.Platform == "tokenharbor" {
-			owned = "tokenharbor"
-		} else if c.Platform == "trae" {
-			owned = "trae"
-		}
 		data = append(data, map[string]any{
-			"id":       c.ID,
-			"object":   "model",
-			"created":  c.CreatedAt.UnixMilli(),
-			"owned_by": owned,
-			"source":   "combo",
-			"status":   "active",
-			"cost":     "free",
+			"id":      c.ID,
+			"object":  "model",
+			"created": c.CreatedAt.UnixMilli(),
+			"status":  "active",
+			"cost":    "free",
 		})
 	}
 	// 黑名单过滤：已确认「上游不允许该账号类型调用」的模型不再对外提供，
@@ -4062,6 +4044,11 @@ func servedModelEntries() []map[string]any {
 	// combo 别名按声明平台判），面板各平台页的模型目录仍可见。
 	kept := data[:0]
 	for _, m := range data {
+		// 统一剥离 owned_by / source：对外目录不输出这两个字段。放在循环体
+		// 最前面，确保 trae（isTrae2apiModel 提前 continue）等所有路径都
+		// 能剥到，包括 vendor 透传的 owned_by（如 trae 的 "Trae CN"）。
+		delete(m, "owned_by")
+		delete(m, "source")
 		if id, _ := m["id"].(string); id != "" {
 			if bannedPlatformOf(id) != "" {
 				continue
