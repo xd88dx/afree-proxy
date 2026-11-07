@@ -2190,7 +2190,9 @@ const w = els.bhWindow, b = els.btnBalHist;
 if (!w) fail('桩没拿到 #bhWindow');
 if (typeof w.onchange !== 'function') fail('#bhWindow 没有绑定 onchange —— 改了窗口不会重新取数（issue #186）');
 w.value = '1'; w.onchange();
-if (!fetched.some(u => u.indexOf('/panel/api/balance_history?days=1') >= 0))
+// afree 形态适配：vendor 改写剥掉了 app.js 的 /panel 前缀（挂载基址不同），
+// 断言放宽为不锚定前缀——上游形态（/panel/api/...）与本仓形态（api/...）都匹配。
+if (!fetched.some(u => u.indexOf('balance_history?days=1') >= 0))
   fail('改窗口后没有按 days=1 取数，实际请求：' + JSON.stringify(fetched));
 if (!b) fail('桩没拿到 #btnBalHist');
 if (typeof b.onclick !== 'function') fail('#btnBalHist 没有绑定 onclick —— 刷新按钮是死的');
