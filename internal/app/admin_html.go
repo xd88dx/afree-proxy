@@ -716,7 +716,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
 <div class="section">
   <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><path d="M4 5h16M4 12h10M4 19h7"/></svg></span> Proxy exclusion rules</div>
   <div class="section-body">
-    <div class="hint" style="margin-bottom:14px">Platform-level blacklist, per-proxy binding cap and manually disabled (cooled) proxies apply to automatic assignment only — one-click bind and reorder-by-latency. Manual bindings and runtime routing are never restricted.</div>
+    <div class="hint" style="margin-bottom:14px">Platform-level blacklist, per-proxy binding cap and manually disabled (cooled) proxies apply to automatic assignment only — one-click bind and reorder-by-latency. CN-domain accounts of TraeWork/WorkBuddy are excluded from both batch operations, and the proxies they hold are never reassigned. Manual bindings and runtime routing are never restricted.</div>
     <div style="margin-bottom:12px">
       <div style="display:flex;gap:10px;align-items:flex-start">
         <div style="flex:1;position:relative">
@@ -2050,11 +2050,12 @@ const I18N_ZH = {
   'Proxy isolation: each credential only egresses via its bound exits; when none is available it is skipped — never another exit or direct. Forced on when': '代理隔离：每个凭据只从绑定的出口出站，都不可用则跳过——绝不改走其他出口或直连。设有',
   '=true.': '=true 时强制开启。',
   'Backup proxy — off by default: every identity uses its main proxy only; a cooling or removed main proxy is skipped for that round. On: the backup proxy serves as the fallback for the main one.': '备用代理：默认关闭——每个身份只走主代理，主代理冷却或被移除时直接跳过。开启后：备用代理作为主代理的兜底。',
-  'Platform-level blacklist, per-proxy binding cap and manually disabled (cooled) proxies apply to automatic assignment only — one-click bind and reorder-by-latency. Manual bindings and runtime routing are never restricted.': '平台拉黑、单代理绑定上限与手动禁用（冷却）的代理只约束自动分配——「一键代理」与「凭据延迟重排」两个批量操作；手动绑定和运行期路由不受限制。',
+  'Platform-level blacklist, per-proxy binding cap and manually disabled (cooled) proxies apply to automatic assignment only — one-click bind and reorder-by-latency. CN-domain accounts of TraeWork/WorkBuddy are excluded from both batch operations, and the proxies they hold are never reassigned. Manual bindings and runtime routing are never restricted.': '平台拉黑、单代理绑定上限与手动禁用（冷却）的代理只约束自动分配——「一键代理」与「凭据延迟重排」两个批量操作；TraeWork/WorkBuddy 的国内域账号不参与这两个批量操作，其占用的代理也不会被再分配。手动绑定和运行期路由不受限制。',
   ' · excluded': ' · 已排除',
   ' row(s) left unchanged — every allowed proxy is excluded or at cap': ' 行无法改绑：可用代理都已拉黑或达到上限',
   'Latency reorder finished with errors — loads failed: ': '延迟重排完成但有错误——加载失败：',
   '; saves failed: ': '；保存失败：',
+  ' CN-domain account row(s) untouched': ' 个国内域账号行保持原绑定',
   'Reordered ': '已按延迟重排 ',
   ' proxy binding(s) by latency and saved': ' 条代理绑定并已保存',
   'No changes to save': '没有需要保存的修改',
@@ -2152,6 +2153,7 @@ const I18N_ZH = {
   'free': '免费',
   'Default tier': '默认档',
   'No WorkBuddy models under the current filter': '当前筛选下没有 WorkBuddy 模型',
+  'Model rate filter': '模型倍率筛选',
   'CN model rate filter': '国内模型倍率筛选',
   'Global model rate filter': '国际模型倍率筛选',
   '0 — free only': '0 — 仅免费',
@@ -3080,7 +3082,8 @@ function renderWorkbuddyAccounts() {
     // **显示值**；可编辑值提交后由后端落 nickname 字段。
     const wbNick = account.nickname || '';
     const wbDisplayName = account.name || account.email || wbNick || ('Account ' + id);
-    return '<tr draggable="true" data-wb-id="' + esc(id) + '" data-drag-id="' + esc(id) + '">' +
+    // data-realm 供一键代理/延迟重排识别 CN 域行（同 trae 行注释口径）。
+    return '<tr draggable="true" data-wb-id="' + esc(id) + '" data-drag-id="' + esc(id) + '" data-realm="' + esc(realm) + '">' +
       '<td class="mono" style="font-size:11px;color:var(--text3)">#' + (i + 1) + '</td>' +
       '<td><div class="wb-account"><div class="wb-account-main">' +
         '<div class="nick-wrap">' +
@@ -4283,16 +4286,22 @@ const BIND_TBODY = { acc: '#accountTableBody', trae: '#traeAccountsBody', key: '
 function stageProxiesByOrder(kind) {
   const tbody = BIND_TBODY[kind];
   if (!tbody) return;
-  const rows = [...document.querySelectorAll(tbody + ' tr')]
+  let rows = [...document.querySelectorAll(tbody + ' tr')]
     .filter(r => r.querySelector('.eg-input[data-eg="' + kind + '"][data-slot="main"]'));
   if (!rows.length) { toast(T('No credentials to bind'), 'info'); return; }
   if (!proxyListCache.length) { toast(T('Proxy pool is empty'), 'info'); return; }
+  // CN 域账号行不参与一键代理（2026-11-07 用户定，仅 trae/wb 有域语义）：绑定
+  // 原样保留；其占用代理从分配序列剔除——专属出口不得再分给其他凭据。
+  const skippedCN = (kind === 'trae' || kind === 'wb')
+    ? rows.filter(r => r.dataset.realm === 'cn').length : 0;
+  if (skippedCN) rows = cnRowFilter(rows);
+  const cnOccupied = cnDomainOccupiedProxies();
   // 自动分配规则：对该平台拉黑的代理不参与按序绑定（手动绑定不受限）。
   // Other 的规则按子平台存（other:<slug>），这里用当前选中的子平台取候选。
   // 手动禁用（健康表「冷却」，无到期）的代理同样不参与——后续凭据前移递补。
   const ruleKind = kind === 'other' && currentOtherSlug ? 'other:' + currentOtherSlug : kind;
   const skippedManual = proxyListCache.filter(p => proxyManuallyCooled(p)).length;
-  const pool = proxyListCache.filter(p => !proxyExcludedFor(p, ruleKind) && !proxyManuallyCooled(p));
+  const pool = proxyListCache.filter(p => !proxyExcludedFor(p, ruleKind) && !proxyManuallyCooled(p) && !cnOccupied.has(p));
   const seq = proxyExcludedFor(EGRESS_DIRECT, ruleKind) ? pool : [EGRESS_DIRECT].concat(pool);
   let n = 0, left = 0;
   rows.forEach((row, i) => {
@@ -4310,7 +4319,8 @@ function stageProxiesByOrder(kind) {
   if (!n) { toast(T('Already bound in this order'), 'info'); return; }
   toast(T('Staged ') + n + T(' proxy binding(s) — click Save to apply') +
         (left ? T('; ') + left + T(' row(s) left unchanged (no proxy left)') : '') +
-        (skippedManual ? T('; ') + skippedManual + T(' manually disabled proxy(s) skipped') : ''), 'success');
+        (skippedManual ? T('; ') + skippedManual + T(' manually disabled proxy(s) skipped') : '') +
+        (skippedCN ? T('; ') + skippedCN + T(' CN-domain account row(s) untouched') : ''), 'success');
 }
 
 // ========== 凭据延迟重排（跨平台，弹窗选平台） ==========
@@ -4443,6 +4453,24 @@ const proxyManuallyCooled = v => {
   const r = proxyHealthByProxy[proxyHealthKey(v)];
   return !!r && r.cooling === true && !r.coolingUntil;
 };
+
+// CN 域账号批量操作保护（2026-11-07 用户定）：trae CN / wb cn 行不参与一键
+// 代理与延迟重排（绑定原样保留），其占用的主代理是专属出口、不得再分给其他
+// 凭据。cnDomainOccupiedProxies 跨表扫描两个表的 CN 行当前主槽占用（直连不
+// 算占用）——trae CN 占的代理在 wb 延迟重排时同样要避开，反之亦然。
+// 行识别靠渲染时写入的 tr data-realm（trae 由 uid 前缀推导、wb 由账号 realm）。
+function cnDomainOccupiedProxies() {
+  const occ = new Set();
+  ['#traeAccountsBody', '#wbAccountsBody'].forEach(sel => {
+    document.querySelectorAll(sel + ' tr[data-realm="cn"]').forEach(r => {
+      const m = r.querySelector('.eg-input[data-slot="main"]');
+      const v = m ? m.dataset.value : '';
+      if (v && v !== EGRESS_DIRECT) occ.add(v);
+    });
+  });
+  return occ;
+}
+const cnRowFilter = rows => rows.filter(r => r.dataset.realm !== 'cn');
 // 一键代理前拉一次最新代理池状态：健康快照只在代理池页加载时刷新，
 // 凭据页点按钮时缓存可能是旧的，误判会绕过手动禁用。
 async function refreshProxyHealthCache() {
@@ -4470,7 +4498,10 @@ function applyReorderRules(kind, parts) {
   const keepMs = reorderKeepMs();
   const inPool = v => proxyListCache.indexOf(v) >= 0;
   // 供给偏好序：池内未被拉黑且未手动禁用的代理，快（延迟升序）→ 无记录（池序）→ 慢（延迟升序）
-  const pref = proxyListCache.filter(p => !proxyExcludedFor(p, kind) && !proxyManuallyCooled(p)).sort((a, b) => {
+  // CN 域账号（trae/wb）占用的代理不进供给（2026-11-07 用户定）：专属出口
+  // 不得被重排分给其他凭据。跨表扫描——trae 重排时 wb CN 的占用同样避开。
+  const cnOccupied = cnDomainOccupiedProxies();
+  const pref = proxyListCache.filter(p => !proxyExcludedFor(p, kind) && !proxyManuallyCooled(p) && !cnOccupied.has(p)).sort((a, b) => {
     const ta = proxyTierFor(a), tb = proxyTierFor(b);
     if (ta !== tb) return ta - tb;
     return ta === 1 ? proxyPoolIdxForReorder(a) - proxyPoolIdxForReorder(b)
@@ -4522,10 +4553,15 @@ function applyReorderRules(kind, parts) {
 function collectReorderParts(kind) {
   const tbody = BIND_TBODY[kind];
   if (!tbody) return [];
+  // CN 域账号行不参与延迟重排（2026-11-07 用户定）：它们不出现在 parts 里，
+  // applyReorderRules 的冻结语义天然保留其原绑定；其占用代理由调用方
+  // （applyReorderRules 的供给过滤）从候选剔除。
+  const skipCN = kind === 'trae' || kind === 'wb';
   // 直连被该平台排除时，绑直连的行也进入修复段（强制挪到可用代理）；
   // 未排除时直连/全局照旧完全不参与重排（保持既有口径）。
   const directIn = proxyExcludedFor(EGRESS_DIRECT, kind);
   return [...document.querySelectorAll(tbody + ' tr')]
+    .filter(r => !skipCN || r.dataset.realm !== 'cn')
     .map(r => r.querySelector('.eg-input[data-eg="' + kind + '"][data-slot="main"]'))
     .filter(Boolean)
     .filter(m => m.dataset.value && (m.dataset.value !== EGRESS_DIRECT || directIn));
@@ -7598,7 +7634,10 @@ function renderTraeAccounts(accs) {
         const actions = '<td style="white-space:nowrap;text-align:center">' +
           '<button class="btn btn-sm" data-trt="' + a.index + '">Test</button> ' +
           '<button class="btn btn-sm btn-danger" data-trdel="' + a.index + '" title="Remove this account from the pool">Delete</button>' + '</td>';
-        return '<tr draggable="true" data-drag-id="' + esc(a.uid) + '"><td>#' + (a.index + 1) + '</td>' +
+        // data-realm 供一键代理/延迟重排识别 CN 域行（批量操作排除 + 占用代理
+        // 不参与再分配，2026-11-07 用户定）：intl 前缀 = 国际域，其余 = 国内域。
+        const trRealm = a.uid.indexOf('trae-intl-') === 0 ? 'intl' : 'cn';
+        return '<tr draggable="true" data-drag-id="' + esc(a.uid) + '" data-realm="' + trRealm + '"><td>#' + (a.index + 1) + '</td>' +
           '<td style="min-width:0"><div style="max-width:150px" title="' + esc(label + '\n' + a.uid) + '">' +
             '<div class="nick-wrap">' +
               '<span class="nick-name" style="font-weight:600">' + esc(label) + '</span>' +
