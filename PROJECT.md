@@ -70,7 +70,7 @@ go test ./... -count=1             # 除下述既有失败外应全绿
 - 网关 `chat_base` 面板不可改（沿用上游默认；`trae2apiValidateGateway` 保留给配置文件路径——OAuth-only 域拒收）。
 
 ### 网关路由与目录
-- 域前缀透传：`trae:`/`solo:` 常驻，`trae-intl:`/`solo-intl:` 随 `intl.enabled`；intl 关闭时 afree 层直接拒绝（防 vendored 跨域兜底悄悄换账号）。模型名零翻译。
+- 网关路由与目录（2026-11-07 合并域化）：对外仅两前缀 `tacn:`（国内 = Trae CN + SOLO CN）/`tagb:`（国际 = Trae Intl + SOLO Intl，随 `intl.enabled`；关闭时 tagb strict-gate 404）。vendored 四 realm 原样运转，afree 层做「目录合并（bare 去重、**交集以 trae 为主**，solo 独有才落 solo）+ 请求翻译」（trae2apiTranslateMerged）。旧四前缀 `trae:`/`solo:`/`trae-intl:`/`solo-intl:` 废除（strict-gate 404）。跨域容灾恒关不变（CrossRealmFailover，tacn/tagb 域透传契约同款）。
 - `/v1/models` **域级可路由过滤**：vendored 四域渠道恒全建，无启用凭据的域必须摘除（`routableRealms`）——"列出来的必须调得通"。
 - 请求闸 `shouldServeTrae2api` + 可路由数 0 → 503；`platformHasRoutableCredential(platTrae)` 同闸（禁用平台/无凭据跳过路由的判定链共用）。
 - Anthropic `/v1/messages` 与 `/v1/responses` 走 `trae2apiCaller`（进程内管道 client 进 vendored Handler，`traeInprocessRoundTripper` 桥接 http.ResponseWriter↔io.Pipe，含 panic recover）。

@@ -61,7 +61,9 @@ func TestPlatformOfModel(t *testing.T) {
 		"amd:Qwen3.8":                           platAMD,
 		"oprt:vendor/model":                     platOpenRouter,
 		"tkhb:deepseek:free":                    platTokenHarbor,
-		"trae:glm-5.2":                          platTrae,
+		"tacn:glm-5.2":                          platTrae,
+		"tagb:glm-5.2":                          platTrae,
+		"trae:glm-5.2":                          "", // 旧四前缀已废除（2026-11-07 tacn/tagb 合并域）
 		"deepseek-v4.1-flash":                   "", // 裸名无平台信息：不猜，避免误拉黑
 		"z-ai/glm-5.3-flash":                    "", // cline live feed 直出的裸名同样不猜
 	}

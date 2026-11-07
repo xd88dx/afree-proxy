@@ -277,15 +277,26 @@ func UnblockModel(platform, model string, scope ...string) bool {
 // TraeModelBannedIn trae 平台模型在指定端点档位是否被封禁（展示过滤用）：
 // 命中同档位条目或全档条目（scope 空）即为封禁。
 func TraeModelBannedIn(scope, bareID string) bool {
-	full := platTrae + ":" + bareID
+	// scope 合并域化（2026-11-07 tacn/tagb）：查询合并域时，存量内部 realm
+	// 记录（trae/solo/trae-intl/solo-intl）与合并域记录一并命中——封禁是对外
+	// 模型（tacn:bare）的语义，不分内部归属。
+	scopes := map[string]bool{scope: true}
+	for _, r := range trae2apiMergedRealms(scope) {
+		scopes[r] = true
+	}
 	ensureModelBlacklistLoaded()
 	modelBlacklistMu.Lock()
 	defer modelBlacklistMu.Unlock()
 	for _, e := range modelBlacklistItems {
-		if e == nil || e.Platform != platTrae || e.Model != full {
+		if e == nil || e.Platform != platTrae {
 			continue
 		}
-		if e.Scope == "" || e.Scope == scope {
+		// Model 兼容三种形态：trae:bare / solo:bare（拆分前的内部渠道 id）与
+		// tacn:bare / tagb:bare（合并域 id）——按 ":bare" 段后缀匹配。
+		if !strings.HasSuffix(e.Model, ":"+bareID) {
+			continue
+		}
+		if e.Scope == "" || scopes[e.Scope] {
 			return true
 		}
 	}

@@ -530,17 +530,125 @@ func trae2apiIntlEnabled() bool {
 	return sub.cfg.Intl.Enabled
 }
 
-// trae2apiModelPrefixes 网关层认可的域前缀（透传给 vendored）。
+// ============ 合并域（2026-11-07 用户定：池子对合并，形态向 wb 看齐）============
+//
+// 对外只有两个合并域：tacn（国内 = Trae CN + SOLO CN）、tagb（国际 = Trae Intl
+// + SOLO Intl）。vendored 引擎的四 realm 原样运转（选号/冷却/并发/额度按内部
+// realm 与账号体系），afree 层做「目录合并 + 前缀翻译」：对外模型 id =
+// tacn:bare / tagb:bare，请求时按「交集以 trae 为主」翻译回内部 realm:bare。
+// 旧四前缀（trae:/solo:/trae-intl:/solo-intl:）废除——不在目录 → strict-gate
+// 404，客户端与下游渠道映射改用新前缀（hermes 自动跟随 /v1/models）。
+const (
+	traeMergedCN   = "tacn"
+	traeMergedIntl = "tagb"
+)
+
+// trae2apiMergedRealms 合并域的内部 realm 成员（有序：trae 在前 = 交集以 trae 为主）。
+func trae2apiMergedRealms(merged string) []string {
+	if merged == traeMergedCN {
+		return []string{traerealm.Trae, traerealm.Solo}
+	}
+	if merged == traeMergedIntl {
+		return []string{traerealm.TraeIntl, traerealm.SoloIntl}
+	}
+	return nil
+}
+
+// trae2apiMergedOfRealm 内部 realm → 合并域（非 trae 四域返回空串）。
+func trae2apiMergedOfRealm(realm string) string {
+	if realm == traerealm.Trae || realm == traerealm.Solo {
+		return traeMergedCN
+	}
+	if realm == traerealm.TraeIntl || realm == traerealm.SoloIntl {
+		return traeMergedIntl
+	}
+	return ""
+}
+
+// trae2apiSplitMerged 拆合并域前缀：返回 (merged, bare, 是否合并域模型)。
+func trae2apiSplitMerged(model string) (string, string, bool) {
+	for _, m := range []string{traeMergedCN, traeMergedIntl} {
+		if p := m + ":"; strings.HasPrefix(model, p) {
+			return m, strings.TrimPrefix(model, p), true
+		}
+	}
+	return "", "", false
+}
+
+// trae2apiResolveMerged 合并域模型归属解析：bare 在哪个内部 realm 的渠道目录
+// 里就归谁（成员顺序保证交集命中 trae 在先）。intl 关闭时 tagb 不解析。
+// 返回空串 = 目录里不存在。
+func trae2apiResolveMerged(merged, bare string) string {
+	sub := trae2apiCurrent()
+	if sub == nil {
+		return ""
+	}
+	for _, realm := range trae2apiMergedRealms(merged) {
+		for _, ch := range sub.srv.Channels() {
+			if ch.Realm != realm {
+				continue
+			}
+			for _, e := range ch.ModelEntries() {
+				if id, _ := e["id"].(string); id == realm+":"+bare {
+					return realm
+				}
+			}
+		}
+	}
+	return ""
+}
+
+// trae2apiTranslateMerged 把合并域模型名翻译成内部 realm:bare 透传给 vendored
+// （交集以 trae 为主；solo 独有模型归 solo）。非合并域前缀原样返回。
+func trae2apiTranslateMerged(model string) string {
+	merged, bare, ok := trae2apiSplitMerged(model)
+	if !ok {
+		return model
+	}
+	if realm := trae2apiResolveMerged(merged, bare); realm != "" {
+		return realm + ":" + bare
+	}
+	// 目录里不存在：原样透传，vendored 按未知模型拒绝（与旧「不存在的模型」一致）。
+	return model
+}
+
+// trae2apiTranslateMergedBody 对请求体做合并域模型名翻译（serveTrae2apiChat
+// 的透传路径——vendored 只认内部 realm 前缀，对外 tacn:/tagb: 必须先翻译）。
+func trae2apiTranslateMergedBody(body []byte) []byte {
+	var probe struct {
+		Model string `json:"model"`
+	}
+	if json.Unmarshal(body, &probe) != nil || probe.Model == "" {
+		return body
+	}
+	translated := trae2apiTranslateMerged(probe.Model)
+	if translated == probe.Model {
+		return body
+	}
+	var m map[string]any
+	if json.Unmarshal(body, &m) != nil {
+		return body
+	}
+	m["model"] = translated
+	out, err := json.Marshal(m)
+	if err != nil {
+		return body
+	}
+	return out
+}
+
+// trae2apiModelPrefixes 网关层认可的合并域前缀（对外契约）。tagb 仅在 intl
+// 开启时认可（关闭时 tagb: 模型 strict-gate 404，与旧 trae-intl: 同语义）。
 func trae2apiModelPrefixes() []string {
-	p := []string{traerealm.Trae + ":", traerealm.Solo + ":"}
+	p := []string{traeMergedCN + ":"}
 	if trae2apiIntlEnabled() {
-		p = append(p, traerealm.TraeIntl+":", traerealm.SoloIntl+":")
+		p = append(p, traeMergedIntl+":")
 	}
 	return p
 }
 
-// isTrae2apiModel 模型名是否归 TraeWork 平台（域前缀透传；intl 前缀仅在
-// 上游 intl 开启时认可）。
+// isTrae2apiModel 模型名是否归 TraeWork 平台（合并域前缀；tagb 仅在 intl
+// 开启时认可）。旧四前缀（trae:/solo:/...）已废除，不再识别。
 func isTrae2apiModel(model string) bool {
 	for _, p := range trae2apiModelPrefixes() {
 		if strings.HasPrefix(model, p) {
@@ -551,34 +659,23 @@ func isTrae2apiModel(model string) bool {
 }
 
 // trae2apiPlatformModel 静态前缀判定（不随 intl 开关变化）——封禁/路由归类
-// 用：四个域前缀永远属于 TraeWork 平台命名空间。
+// 用：两个合并域前缀永远属于 TraeWork 平台命名空间。
 func trae2apiPlatformModel(model string) bool {
-	for _, p := range []string{
-		traerealm.Trae + ":", traerealm.Solo + ":",
-		traerealm.TraeIntl + ":", traerealm.SoloIntl + ":",
-	} {
-		if strings.HasPrefix(model, p) {
-			return true
-		}
-	}
-	return false
+	_, _, ok := trae2apiSplitMerged(model)
+	return ok
 }
 
 // trae2apiModelExists id 是否是 vendored 目录里的真实模型（combo 别名冲突
 // 检查用；intl 关闭时其域渠道不存在 → 自然不存在）。
 func trae2apiModelExists(id string) bool {
-	sub := trae2apiCurrent()
-	if sub == nil {
+	merged, bare, ok := trae2apiSplitMerged(id)
+	if !ok {
 		return false
 	}
-	for _, ch := range sub.srv.Channels() {
-		for _, e := range ch.ModelEntries() {
-			if eid, _ := e["id"].(string); eid == id {
-				return true
-			}
-		}
+	if merged == traeMergedIntl && !trae2apiIntlEnabled() {
+		return false
 	}
-	return false
+	return trae2apiResolveMerged(merged, bare) != ""
 }
 
 // trae2apiRateFilterThreshold 费率过滤阈值（0 = 关）。存 proxy-config.json
@@ -625,59 +722,76 @@ func trae2apiRateFilterForRealm(realm string) float64 {
 	return trae2apiRateFilterThresholdCN()
 }
 
-// trae2apiModelEntries /v1/models 合并用的 Trae 段条目。模型名透传原则：
-// 条目 id 保持 vendored 原生形态（trae:xxx / solo:xxx），客户端按 ID 直接
-// 调用。过滤链：平台可路由闸 → 费率阈值（consumption_rate 明确大于阈值才
-// 剔除；上游未下发费率(0)的条目不能瞎杀——glm 系主力模型的费率常为 0）→
-// 平台模型黑名单（按 realm 隔离）。
+// trae2apiModelEntries /v1/models 合并用的 Trae 段条目（2026-11-07 合并域化）：
+// 对外 id = tacn:bare / tagb:bare。构建：遍历内部 realm 成员（trae 在前），
+// **bare 名去重、交集以 trae 为主**——同一模型在 chat_v3 与 solo_work_lite
+// 两池都出现时归 trae 渠道服务（solo 独有模型才落 solo）。过滤链：渠道级
+// 可路由闸（交集模型的可达性跟着归属渠道走——「列出来的必须调得通」）→
+// 分域费率阈值（tacn 全体走 CN 阈值、tagb 走 Intl，不管内部归属）→ 平台
+// 模型黑名单（scope 合并域化，存量内部 realm 记录经 TraeModelBannedIn 兼容
+// 判定）。owned_by 恒规范名 "trae"（hermes 分桶契约不变）。
 func trae2apiModelEntries() []map[string]any {
 	out := make([]map[string]any, 0)
 	sub := trae2apiCurrent()
 	if sub == nil || trae2apiRoutableCount() == 0 {
 		return out
 	}
-	// 域级可路由过滤（2026-11-04 审计铁律：列出来的必须调得通）——vendored
-	// channels 对四个域恒全建（包括 0 账号的 solo*/intl* 域），不加这层会把
-	// 无账号域的模型透出 /v1/models，调用方全撞 503 no_account。
+	// 渠道级可路由性（2026-11-04 审计铁律：列出来的必须调得通）。
 	routableRealms := make(map[string]bool)
 	for _, st := range sub.srv.Pool().List() {
 		if !st.Disabled && traeRoutingGet(st.UID) {
 			routableRealms[st.Realm] = true
 		}
 	}
-	for _, ch := range sub.srv.Channels() {
-		if !routableRealms[ch.Realm] {
+	for _, merged := range []string{traeMergedCN, traeMergedIntl} {
+		if merged == traeMergedIntl && !trae2apiIntlEnabled() {
 			continue
 		}
-		threshold := trae2apiRateFilterForRealm(ch.Realm)
-		for _, e := range ch.ModelEntries() {
-			id, _ := e["id"].(string)
-			if id == "" {
+		threshold := trae2apiRateFilterThresholdCN()
+		if merged == traeMergedIntl {
+			threshold = trae2apiRateFilterThresholdIntl()
+		}
+		seen := map[string]bool{}
+		for _, realm := range trae2apiMergedRealms(merged) {
+			if !routableRealms[realm] {
 				continue
 			}
-			bare := strings.TrimPrefix(id, ch.Realm+":")
-			if threshold > 0 {
-				if rate, ok := e["consumption_rate"].(float64); ok && rate > threshold {
+			ch := sub.srv.Channels()[realm]
+			if ch == nil {
+				continue
+			}
+			for _, e := range ch.ModelEntries() {
+				id, _ := e["id"].(string)
+				if id == "" {
 					continue
 				}
+				bare := strings.TrimPrefix(id, realm+":")
+				if seen[bare] {
+					continue // 交集以 trae 为主（成员顺序保证 trae 先入）
+				}
+				seen[bare] = true
+				if threshold > 0 {
+					if rate, ok := e["consumption_rate"].(float64); ok && rate > threshold {
+						continue
+					}
+				}
+				if TraeModelBannedIn(merged, bare) {
+					continue
+				}
+				entry := make(map[string]any, len(e)+4)
+				for k, v := range e {
+					entry[k] = v
+				}
+				entry["id"] = merged + ":" + bare
+				entry["source"] = "trae"
+				entry["status"] = "active"
+				entry["cost"] = "free"
+				// owned_by 用规范名 "trae"（与 combo 别名、其他平台段口径一致）：
+				// vendored 引擎透传的是产品 Label（"Trae CN"/"TRAE SOLO CN"），下游
+				// newapi 渠道映射（hermes afree-remap）按 owned_by 分桶且只认规范名。
+				entry["owned_by"] = "trae"
+				out = append(out, entry)
 			}
-			if TraeModelBannedIn(ch.Realm, bare) {
-				continue
-			}
-			entry := make(map[string]any, len(e)+4)
-			for k, v := range e {
-				entry[k] = v
-			}
-			entry["source"] = "trae"
-			entry["status"] = "active"
-			entry["cost"] = "free"
-			// owned_by 用规范名 "trae"（与 combo 别名、其他平台段口径一致）：
-			// vendored 引擎透传的是产品 Label（"Trae CN"/"TRAE SOLO CN"），下游
-			// newapi 渠道映射（hermes afree-remap）按 owned_by 分桶且只认规范名，
-			// 非规范值会落进其「未知归渠道A」兜底，把 Trae 模型误挂到 Cline 渠道
-			// （2026-11-05 生产实证：20 个 trae 模型全进 A 桶）。
-			entry["owned_by"] = "trae"
-			out = append(out, entry)
 		}
 	}
 	// 各平台段 ID 有序是面板/newapi 映射的既有约定（models_order_test）；
@@ -723,6 +837,9 @@ func serveTrae2apiChat(rw http.ResponseWriter, r *http.Request, body []byte) {
 	// 缺省时显式置 false；/v1/messages、/v1/responses 走 trae2apiCaller，由
 	// 调用方参数决定流式语义，不经这里。
 	body = traeNormalizeStreamDefault(body)
+	// 合并域翻译（2026-11-07）：对外 tacn:/tagb: → 内部 realm:bare 透传给
+	// vendored（交集以 trae 为主，solo 独有归 solo）。
+	body = trae2apiTranslateMergedBody(body)
 	r.Body = io.NopCloser(strings.NewReader(string(body)))
 	r.ContentLength = int64(len(body))
 	sub.srv.Handler().ServeHTTP(rw, r)
@@ -823,6 +940,8 @@ func trae2apiCaller(model string) (platformChatCall, bool) {
 		// 引擎把「缺省」当 true，与 OpenAI 缺省 false 相反，缺省请求会被错误
 		// 流式化（2026-11-05 审计实测）。
 		params["stream"] = stream
+		// 合并域翻译（同 serveTrae2apiChat）：caller 服务跨端点路径。
+		params["model"] = trae2apiTranslateMerged(model)
 		body, err := json.Marshal(params)
 		if err != nil {
 			return nil, nil, err

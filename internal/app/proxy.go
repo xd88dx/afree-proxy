@@ -4066,9 +4066,9 @@ func servedModelEntries() []map[string]any {
 			if bannedPlatformOf(id) != "" {
 				continue
 			}
-			// TraeWork 平台模型不走这里的通用黑名单过滤：封禁按 realm 隔离
-			// （trae/solo/trae-intl/solo-intl 各自独立），由 trae2apiModelEntries
-			// 内部按 realm 过滤（2026-11-04 起 vendored 引擎）。
+			// TraeWork 平台模型不走这里的通用黑名单过滤：封禁按合并域隔离
+			// （tacn/tagb，2026-11-07 起；存量内部 realm 记录经
+			// TraeModelBannedIn 兼容判定），由 trae2apiModelEntries 内部过滤。
 			if isTrae2apiModel(id) {
 				kept = append(kept, m)
 				continue
