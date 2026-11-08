@@ -732,7 +732,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
         <div style="flex:1;position:relative">
           <div class="pr-tagbox" id="ppBulkBox" style="margin-top:0;min-height:38px" onclick="ppBulkBoxClick(event)">
             <span id="ppBulkChips" style="display:contents"></span>
-            <input class="pr-tagin" id="ppBulkIn" placeholder="Search and add a proxy…" onfocus="ppBulkFocus()" oninput="ppBulkInput(this.value)" onkeydown="ppBulkKey(event)">
+            <input class="pr-tagin" id="ppBulkIn" placeholder="Search and add a proxy…" data-i18n-placeholder="search_and_add_a_proxy" onfocus="ppBulkFocus()" oninput="ppBulkInput(this.value)" onkeydown="ppBulkKey(event)">
           </div>
           <div id="ppBulkMenu" class="pb-menu" style="display:none"></div>
         </div>
@@ -746,7 +746,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
     <div class="form-actions" style="margin-top:12px">
       <button class="btn btn-primary" onclick="saveProxyRules()" data-i18n="save_proxy_exclusion_rules">Save proxy exclusion rules</button>
       <span class="pr-capbox" style="margin-left:10px" title="Proxies at or below this latency (seconds) keep their current binding and are skipped by reordering; slower ones are refilled from the pool. Saved on change.">
-        <span class="pr-unit">Keep latency ≤</span>
+        <span class="pr-unit" data-i18n="keep_latency">Keep latency ≤</span>
         <input class="pr-cap" id="ppReorderKeepSec" type="number" min="0" max="600" step="0.1" value="8.0" style="width:56px" onchange="saveReorderKeepSec(this.value)">
         <span class="pr-unit">s</span>
       </span>
@@ -2926,8 +2926,9 @@ function i18nAttrs(el) {
   ['title', 'placeholder'].forEach(a => {
     const v = el.getAttribute(a);
     if (!v) return;
-    // 标题与 tooltip 分离的表头：title 走 data-i18n-title 专属 key
-    const titleKey = el.getAttribute('data-i18n-title');
+    // 标题与 tooltip 分离的表头：title 走 data-i18n-title / placeholder 走 data-i18n-placeholder 专属 key
+    const keyAttr = a === 'title' ? 'data-i18n-title' : (a === 'placeholder' ? 'data-i18n-placeholder' : null);
+    const titleKey = keyAttr ? el.getAttribute(keyAttr) : null;
     const t = titleKey ? (lookup(titleKey) !== titleKey ? lookup(titleKey) : (I18N[v.trim()] ? lookup(v.trim()) : null))
                   : (I18N[v.trim()] ? lookup(v.trim()) : null);
     if (t && t !== v) el.setAttribute(a, t);
