@@ -1178,6 +1178,9 @@ func TestConfigExampleParses(t *testing.T) {
 	if err := cfg.normalizeThinking(); err != nil {
 		t.Fatalf("normalize example thinking: %v", err)
 	}
+	// default_effort 期望 max：上游默认就是 max（取模型支持的最高档）；
+	// normalizeThinking 空值回落 max。曾为 high（hub #508），上游又改回 max，
+	// 以 config.go 字面量为准（2026-11-08 vendor 同步时校准）。
 	if !cfg.Thinking.Enabled || !cfg.Thinking.ClientPriority || cfg.Thinking.OverrideScope != "level" || cfg.Thinking.DefaultEffort != "max" {
 		t.Fatalf("unexpected example thinking defaults: %+v", cfg.Thinking)
 	}

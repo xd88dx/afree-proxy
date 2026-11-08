@@ -53,7 +53,7 @@ const (
 	ErrImageInvalid                     // 图片请求格式/数据无效 → 请求级错误：不罚号、不轮转，末端透传原文
 	ErrModelParamInvalid                // 11133「参数被模型供应商拒绝」（缺/空 messages、模型不支持图片等）→ 请求级错误：不罚号、不轮转，末端 400 透传原文
 	ErrClient                           // 其他 4xx / 业务错误
-	ErrUpstreamBusy                     // 6020「queue.waiting.title」/ 6021「queue.full.title」渠道级排队/队列满 → 上游容量信号：不罚号、不轮转，末端 503 透传原文
+	ErrUpstreamBusy                     // 6020/6021 排队满、11134「供应商过载」→ 上游容量信号：不罚号、保留会话粘性，末端 429 + Retry-After 透传原文
 	ErrToolMismatch                     // 11148「tool calls and tool results do not match」 → 请求内容级配对断裂：不罚号、不轮转，末端 400 透传原文
 )
 
@@ -1732,8 +1732,13 @@ func (c *Client) ChatStreamContext(ctx context.Context, a *auth.Auth, body []byt
 				return nil, 0, nil, fmt.Errorf("read body: %w", rerr)
 			}
 			kind := Classify(resp.StatusCode, string(raw))
+			// 这一行是排查「上游到底回了什么」的唯一入口，截断长度不能太短：
+			// 200 字符时连 `retry_policy:{retry:true,retry_af…` 都截在值前面（#188
+			// 实案），运维据此判断不了 retry_after 是秒还是毫秒。512 足够把业务码、
+			// 文案、retry_policy 与 requestId 一起带出来，又不至于把日志冲成一片。
+			// Error.Msg 仍按 200 截断——那条会透传给客户端，不跟着放大。
 			log.Printf("WARN: [upstream] chat_stream acct=%s: upstream %d %s body=%s",
-				logfmt.Label(a.UID, a.Nickname), resp.StatusCode, kind, truncate(string(raw), 200))
+				logfmt.Label(a.UID, a.Nickname), resp.StatusCode, kind, truncate(string(raw), 512))
 			// ≥400 直接返回（#119 后 global 单路径 /v2，chat 层无 fallback 链）。
 			// 分类一次、随 Kind 信封返回（含 Retry-After 头解析）：
 			// ErrNone 是防御分支（≥400 不应产生 None），返回原文让 handler 兜底。
