@@ -2313,7 +2313,6 @@ const I18N = {
   'Fill (fill)': { en: 'Fill (fill)', zh: '填满优先（fill）' },
   'Save proxy pool': { en: 'Save proxy pool', zh: '保存代理池' },
   'Test all credentials': { en: 'Test all credentials', zh: '全量测试' },
-  "Run the batch test once on every platform's credential list (Cline / TraeWork / OpenCode / OpenRouter / AMDCloud / TokenHarbor / Other / WorkBuddy), one platform at a time": '对 8 个平台的凭据列表各跑一次批量测试（Cline / TraeWork / OpenCode / OpenRouter / AMDCloud / TokenHarbor / Other / WorkBuddy），逐个平台串行执行',
   'all_platform_test_finished': { en: 'All-platform test finished', zh: '全平台测试完成' },
   'skipped_no_routable_credentials': { en: ' — skipped (no routable credentials): ', zh: '，跳过（无可路由凭据）：' },
   'skipped_gateway_banned': { en: ' — skipped (gateway banned): ', zh: '，跳过（已被网关封禁）：' },
@@ -2715,9 +2714,7 @@ const I18N = {
   'Reject unknown models': { en: 'Reject unknown models', zh: '拒绝未知模型' },
   'Session sticky': { en: 'Session sticky', zh: '会话粘性' },
   'International realms': { en: 'International realms', zh: '国际版域' },
-  "Selection is the engine's weight scheduling (idle + credit + balance aware) — the old manual ordering is gone. Rate filter removes models whose upstream consumption rate exceeds the threshold (models without a published rate stay). Config save restarts the engine; cooldowns persist via state.json.": '选号由引擎权重调度（空闲/额度/余额感知）——旧的手动排序已移除。费率过滤剔除上游倍率超过阈值的模型（未下发费率的模型保留）。保存配置会重启引擎；冷却经 state.json 持久化。',
   'Save config': { en: 'Save config', zh: '保存配置' },
-  "Refresh every enabled account's credit snapshot (feeds the Credits column)": '刷新全部账号的额度快照（刷新"积分"列）',
   'Daily check-in for every account whose account switch is on (upstream schedule applies too)': { en: 'Daily check-in for every account whose account switch is on (upstream schedule applies too)', zh: '对账号总闸开启的账号执行每日签到（上游定时任务同样生效）' },
   'Run the Test probe on every routable row.': { en: 'Run the Test probe on every routable row.', zh: '对每一行可路由凭据执行连通性探测。' },
   'Models appear here once an account is enabled — the catalog follows the engine realms': { en: 'Models appear here once an account is enabled — the catalog follows the engine realms', zh: '启用账号后此处才会显示——目录跟随引擎域' },
@@ -2805,11 +2802,12 @@ const I18N = {
   'auto-banned: model name not available on this gateway (4023)': { en: 'auto-banned: model name not available on this gateway (4023)', zh: '模型名不可用，自动封禁' },
   'session_routing_mode_maintenance_tasks_are_disab': { en: 'Session-routing mode: maintenance tasks are disabled by the ONLY_ROUTER environment variable — auto check-in, balance refresh, task center and similar controls have no effect.', zh: '仅会话路由模式：维护任务已被环境变量 ONLY_ROUTER 停用——自动签到、余额刷新、任务中心等控件不会生效。' },
   'reset': { en: 'Reset', zh: '重置' },
-  'Run the batch test once on every platform's credential list (Cline / TraeWork / OpenCode / OpenRouter / AMDCloud / TokenHarbor / Other / WorkBuddy), one platform at a time': { en: 'Run the batch test once on every platform's credential list (Cline / TraeWork / OpenCode / OpenRouter / AMDCloud / TokenHarbor / Other / WorkBuddy), one platform at a time', zh: '逐平台批量测一次每个平台的凭据列表' },
-  'Refresh every enabled account's credit snapshot (feeds the Credits column)': { en: 'Refresh every enabled account's credit snapshot (feeds the Credits column)', zh: '刷新每个已启用账号的额度快照（给额度列）' },
+  "Run the batch test once on every platform's credential list (Cline / TraeWork / OpenCode / OpenRouter / AMDCloud / TokenHarbor / Other / WorkBuddy), one platform at a time": { en: "Run the batch test once on every platform's credential list (Cline / TraeWork / OpenCode / OpenRouter / AMDCloud / TokenHarbor / Other / WorkBuddy), one platform at a time", zh: '逐平台批量测一次每个平台的凭据列表' },
+  "Refresh every enabled account's credit snapshot (feeds the Credits column)": { en: "Refresh every enabled account's credit snapshot (feeds the Credits column)", zh: '刷新每个已启用账号的额度快照（给额度列）' },
   'Manual unban while a cooldown is active (global or platform-scoped): clears the cooldown and the failure counters so the exit rejoins the rotation immediately.': { en: 'Manual unban while a cooldown is active (global or platform-scoped): clears the cooldown and the failure counters so the exit rejoins the rotation immediately.', zh: '冷却期间手动解封（全局或平台）：清除冷却与失败计数，该出口立即回到轮转。' },
   'Counted locally by this proxy from upstream usage events': { en: 'Counted locally by this proxy from upstream usage events', zh: '本代理里本地统计，与官方免费额度无关' },
   'Delete': { en: 'Delete', zh: '删除' },
+  "Selection is the engine's weight scheduling (idle + credit + balance aware) — the old manual ordering is gone. Rate filter removes models whose upstream consumption rate exceeds the threshold (models without a published rate stay). Config save restarts the engine; cooldowns persist via state.json.": { en: "Selection is the engine's weight scheduling (idle + credit + balance aware) — the old manual ordering is gone. Rate filter removes models whose upstream consumption rate exceeds the threshold (models without a published rate stay). Config save restarts the engine; cooldowns persist via state.json.", zh: '选号由引擎权重调度（空闲/额度/余额感知）——旧的手动排序已移除。费率过滤剔除上游倍率超过阈值的模型（未下发费率的模型保留）。保存配置会重启引擎；冷却经 state.json 持久化。' },
 };
 function T(key) { return lookup(key); }
 // loadRuntimeFlags 启动时拉一次运行时开关快照；ONLY_ROUTER=true 时面板顶部
