@@ -3132,7 +3132,7 @@ function wbBindingCell(account) {
     : '';
   return '<td style="white-space:nowrap">' +
     egComboHTML('wb', id, 'main', main, T('main_egress_requests_go_through_this_egress_when')) + ' ' +
-    egComboHTML('wb', id, 'backup', backupVal, T('backup_egress_fallback_while_the_main_egress_is_'), backupLocked) +
+    (backupProxyOn ? egComboHTML('wb', id, 'backup', backupVal, T('backup_egress_fallback_while_the_main_egress_is_'), backupLocked) : '') +
     staleMark +
     '</td>';
 }
@@ -4125,7 +4125,7 @@ async function loadAccounts() {
       const backupVal = backupLocked ? pMain : pBackup;
       const bindCell = '<td style="white-space:nowrap">' +
         egComboHTML('acc', a.accountId, 'main', pMain, T('main_exit_used_whenever_available')) + ' ' +
-        egComboHTML('acc', a.accountId, 'backup', backupVal, T('backup_exit_used_when_main_is_cooling_removed'), backupLocked) +
+        (backupProxyOn ? egComboHTML('acc', a.accountId, 'backup', backupVal, T('backup_exit_used_when_main_is_cooling_removed'), backupLocked) : '') +
         (stale ? ' <span title="' + esc(T('bound_proxy_is_no_longer_in_the_proxy_pool_skipp')) + '" style="color:var(--danger)">⚠</span>' : '') +
         '</td>';
       // PoolEnabled 与账号状态是两个维度：未设置时按启用渲染，显式 false
@@ -6312,7 +6312,7 @@ function renderOcKeyStates(ks) {
         const isStale = proxyStale;
         const bind = '<td style="white-space:nowrap">' +
           egComboHTML('key', k.index, 'main', pMain, T('main_exit_used_whenever_available')) + ' ' +
-          egComboHTML('key', k.index, 'backup', backupVal, T('backup_exit_used_when_main_is_cooling_removed'), backupLocked) +
+          (backupProxyOn ? egComboHTML('key', k.index, 'backup', backupVal, T('backup_exit_used_when_main_is_cooling_removed'), backupLocked) : '') +
           (isStale(pMain) || isStale(pBackup) ? ' <span title="' + esc(T('bound_proxy_is_no_longer_in_the_proxy_pool_skipp')) + '" style="color:var(--danger)">⚠</span>' : '') +
           '</td>';
         // Pool（路由启用）列：勾选后该 key 才参与请求轮转；铸造跟随路由，
@@ -7373,7 +7373,7 @@ function renderOrKeyStates(ks) {
         const isStale = proxyStale;
         const bind = '<td style="white-space:nowrap">' +
           egComboHTML('or', k.index, 'main', pMain, T('main_exit_used_whenever_available')) + ' ' +
-          egComboHTML('or', k.index, 'backup', backupVal, T('backup_exit_used_when_main_is_cooling_removed'), backupLocked) +
+          (backupProxyOn ? egComboHTML('or', k.index, 'backup', backupVal, T('backup_exit_used_when_main_is_cooling_removed'), backupLocked) : '') +
           (isStale(pMain) || isStale(pBackup) ? ' <span title="' + esc(T('bound_proxy_is_no_longer_in_the_proxy_pool_skipp')) + '" style="color:var(--danger)">⚠</span>' : '') +
           '</td>';
         const routed = k.routingEnabled !== false;
@@ -7741,7 +7741,7 @@ function renderTraeAccounts(accs) {
         const isStale = proxyStale;
         const bind = '<td style="white-space:nowrap">' +
           egComboHTML('trae', a.index, 'main', pMain, T('main_exit_used_whenever_available')) + ' ' +
-          egComboHTML('trae', a.index, 'backup', backupVal, T('backup_exit_used_when_main_is_cooling_removed'), backupLocked) +
+          (backupProxyOn ? egComboHTML('trae', a.index, 'backup', backupVal, T('backup_exit_used_when_main_is_cooling_removed'), backupLocked) : '') +
           (isStale(pMain) || isStale(pBackup) ? ' <span title="' + esc(T('bound_proxy_is_no_longer_in_the_proxy_pool_skipp')) + '" style="color:var(--danger)">⚠</span>' : '') +
           '</td>';
         let credits = '-';
@@ -8152,7 +8152,7 @@ function renderAmdKeyStates(ks) {
         const isStale = proxyStale;
         const bind = '<td style="white-space:nowrap">' +
           egComboHTML('amd', k.index, 'main', pMain, T('main_exit_used_whenever_available')) + ' ' +
-          egComboHTML('amd', k.index, 'backup', backupVal, T('backup_exit_used_when_main_is_cooling_removed'), backupLocked) +
+          (backupProxyOn ? egComboHTML('amd', k.index, 'backup', backupVal, T('backup_exit_used_when_main_is_cooling_removed'), backupLocked) : '') +
           (isStale(pMain) || isStale(pBackup) ? ' <span title="' + esc(T('bound_proxy_is_no_longer_in_the_proxy_pool_skipp')) + '" style="color:var(--danger)">⚠</span>' : '') +
           '</td>';
         const routed = k.routingEnabled !== false;
@@ -8433,7 +8433,7 @@ function renderTHKeyStates(ks) {
         const isStale = proxyStale;
         const bind = '<td style="white-space:nowrap">' +
           egComboHTML('th', k.index, 'main', pMain, T('main_exit_used_whenever_available')) + ' ' +
-          egComboHTML('th', k.index, 'backup', backupVal, T('backup_exit_used_when_main_is_cooling_removed'), backupLocked) +
+          (backupProxyOn ? egComboHTML('th', k.index, 'backup', backupVal, T('backup_exit_used_when_main_is_cooling_removed'), backupLocked) : '') +
           (isStale(pMain) || isStale(pBackup) ? ' <span title="' + esc(T('bound_proxy_is_no_longer_in_the_proxy_pool_skipp')) + '" style="color:var(--danger)">⚠</span>' : '') +
           '</td>';
         const routed = k.routingEnabled !== false;
@@ -8891,7 +8891,7 @@ function renderOtherKeys(ks) {
     const stale = proxyStale;
     const bind = '<td style="white-space:nowrap">' +
       egComboHTML('other', k.index, 'main', pMain, T('main_exit_used_whenever_available')) + ' ' +
-      egComboHTML('other', k.index, 'backup', backupVal, T('backup_exit_used_when_main_is_cooling_removed'), backupLocked) +
+      (backupProxyOn ? egComboHTML('other', k.index, 'backup', backupVal, T('backup_exit_used_when_main_is_cooling_removed'), backupLocked) : '') +
       (stale(pMain) || stale(pBackup) ? ' <span title="' + esc(T('bound_proxy_is_no_longer_in_the_proxy_pool_skipp')) + '" style="color:var(--danger)">⚠</span>' : '') +
       '</td>';
     const routed = k.routingEnabled !== false;
