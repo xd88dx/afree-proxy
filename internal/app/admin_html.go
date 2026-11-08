@@ -726,7 +726,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
 <div class="section">
   <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><path d="M4 5h16M4 12h10M4 19h7"/></svg></span> Proxy exclusion rules</div>
   <div class="section-body">
-    <div class="hint" style="margin-bottom:14px">Platform-level blacklist, per-proxy binding cap and manually disabled (cooled) proxies apply to automatic assignment only — one-click bind and reorder-by-latency. CN-domain accounts of TraeWork/WorkBuddy are excluded from both batch operations, and the proxies they hold are never reassigned. Manual bindings and runtime routing are never restricted.</div>
+    <div class="hint" style="margin-bottom:14px" data-i18n="Platform-level blacklist, per-proxy binding cap and manually disabled (cooled) proxies apply to automatic assignment only — one-click bind and reorder-by-latency. CN-domain accounts of TraeWork/WorkBuddy are excluded from both batch operations, and the proxies they hold are never reassigned within their own platform. Manual bindings and runtime routing are never restricted.">Platform-level blacklist, per-proxy binding cap and manually disabled (cooled) proxies apply to automatic assignment only — one-click bind and reorder-by-latency. CN-domain accounts of TraeWork/WorkBuddy are excluded from both batch operations, and the proxies they hold are never reassigned. Manual bindings and runtime routing are never restricted.</div>
     <div style="margin-bottom:12px">
       <div style="display:flex;gap:10px;align-items:flex-start">
         <div style="flex:1;position:relative">
@@ -998,18 +998,8 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
     </div>
     <div class="flex" style="gap:10px;margin:0 0 8px;align-items:center;flex-wrap:wrap">
       <label class="hint" style="margin:0">Probe model (used by the Test buttons):</label>
-      <select id="ocProbeModel" style="max-width:300px"><option value="">auto</option></select>
-      <label class="hint" style="margin:0 0 0 6px">Org ID:</label>
-      <input type="text" id="ocOrgID" placeholder="wrk_… (optional)" style="max-width:220px" title="OAuth account org id, sent as x-opencode-org-id. Only needed when the key is an OAuth token rather than a raw API key; leave empty to omit the header.">
+      <select id="ocProbeModel" style="max-width:420px"><option value="">auto</option></select>
     </div>
-    <p class="hint" style="margin-top:0">Session IDs are minted locally, one per API call, and match the upstream's format gate (<code>^ses_[0-9a-f]{12}[0-9A-Za-z]{14}$</code>) — no CLI or harvester involved. The sticky-session table below is informational only; upstream calls no longer reuse a session across requests.</p>
-    <div class="form-row">
-      <div class="field"><label>Pin one egress proxy per key</label>
-        <select id="ocPinProxy"><option value="true">On — one key, one exit IP</option><option value="false">Off — rotate per request</option></select>
-      </div>
-      <div class="field"><label>Egress capacity</label><span id="ocEgressInfo" class="stat-mini" style="align-self:center">-</span></div>
-    </div>
-    <p class="hint" style="margin-top:0">opencode zen records the egress IP per key and treats a key seen from several IPs as suspicious, so each key is pinned to one proxy by default, and keys that got no proxy are skipped — they would otherwise leak an extra IP. One proxy serves one identity per upstream; Cline accounts get the same treatment when the Cline pool uses proxies. Turn this off only for troubleshooting.</p>
     <div class="table-wrap" style="margin-bottom:10px">
       <table>
         <thead><tr><th style="width:50px">#</th><th style="width:110px">Key</th><th>Status</th><th title="Counted locally by this proxy — not the official free quota">Today/Total tokens</th><th>Last used</th><th title="Main exit first, backup as fallback; both down = row skipped (isolation).">Proxy binding</th><th style="width:130px;text-align:center">Actions</th><th style="text-align:center" title="Routing participation: unchecked keys never enter request rotation. Newly added keys start disabled — tick Pool to enable. Sessions are minted per upstream call.">Pool</th></tr></thead>
@@ -1065,35 +1055,35 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
 </div>
 
 <div class="section">
-  <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/></svg></span> opencode model list
-    <button class="btn btn-sm" onclick="refreshOcModels()" style="margin-left:auto">Sync now</button>
-    <span class="probe-pill" data-models-info style="font-weight:normal"></span>
-  </div>
+  <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><path d="M3 6h18M6 6v13a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V6M10 11h4"/></svg></span> <span data-i18n="Request size filter (shrink the upstream body)">Request size filter (shrink the upstream body)</span></div>
   <div class="section-body">
-    <div class="flex" style="margin-bottom:10px;gap:10px">
-      <button class="btn btn-sm btn-primary" onclick="refreshZenModels(this)">Refresh models</button>
-      <span class="hint" style="margin:0">Automatically synced from the official model source upstream (every 5 minutes)</span>
+    <p class="hint" style="margin-top:0" data-i18n="IDE requests are mostly tool schemas (137 KB total, 112 KB of that is tools). Dropping client tools before they reach upstream saves roughly 33k tokens per message. Gate tools (12) are never filtered.">IDE requests are mostly tool schemas (137 KB total, 112 KB of that is tools). Dropping client tools before they reach upstream saves roughly 33k tokens per message. Gate tools (12) are never filtered.</p>
+    <div class="form-row">
+      <div class="field" style="margin-top:5px;"><label data-i18n="Filter client tools">Filter client tools</label>
+        <select id="ocToolFilterEnabled"><option value="false">Off — forward every tool the IDE declares</option><option value="true">On — drop matching tools</option></select>
+      </div>
+      <div class="field"><label data-i18n="Max description chars (0 = keep)">Max description chars (0 = keep)</label><input type="text" id="ocToolFilterMaxDesc" placeholder="0"></div>
     </div>
-    <div id="ocModelsBody">Loading...</div>
+    <div class="form-row">
+      <div class="field" style="flex:2"><label data-i18n="Drop by name prefix (one per line)">Drop by name prefix (one per line)</label><textarea id="ocToolFilterPrefixes" rows="3" placeholder="mcp__" style="font-family:monospace;font-size:12px"></textarea></div>
+      <div class="field" style="flex:2"><label data-i18n="Drop by exact name (one per line)">Drop by exact name (one per line)</label><textarea id="ocToolFilterNames" rows="3" placeholder="CronCreate&#10;CreateWorkflow&#10;EnterPlanMode&#10;ExitPlanMode&#10;AskUserQuestion" style="font-family:monospace;font-size:12px"></textarea></div>
+    </div>
+    <p class="hint" style="margin-top:0" data-i18n="Starting suggestions: prefix mcp__ (MCP tools are the largest single schemas and a given turn usually uses one or two); names CronCreate, CreateWorkflow, EnterPlanMode, ExitPlanMode, AskUserQuestion (several KB each, rarely needed in a coding turn). Every drop is logged with the bytes saved.">Starting suggestions: prefix <code>mcp__</code> (MCP tools are the largest single schemas and a given turn usually uses one or two); names <code>CronCreate</code>, <code>CreateWorkflow</code>, <code>EnterPlanMode</code>, <code>ExitPlanMode</code>, <code>AskUserQuestion</code> (several KB each, rarely needed in a coding turn). Every drop is logged with the bytes saved.</p>
+    <div class="form-actions"><button class="btn btn-primary" onclick="saveOcConfig()" data-i18n="Save filter">Save filter</button></div>
   </div>
 </div>
 
 <div class="section">
-  <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><path d="M3 6h18M6 6v13a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V6M10 11h4"/></svg></span> Request size filter (shrink the upstream body)</div>
+  <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/></svg></span> <span data-i18n="opencode model list">opencode model list</span>
+    <button class="btn btn-sm" onclick="refreshOcModels()" style="margin-left:auto" data-i18n="Sync now">Sync now</button>
+    <span class="probe-pill" data-models-info style="font-weight:normal"></span>
+  </div>
   <div class="section-body">
-    <p class="hint" style="margin-top:0">A real IDE request is mostly tool schemas: a ZCode message measured 137 KB, of which 112 KB (82%) was 76 tool definitions — about 33k tokens for a single message, which the free daily quota cannot absorb. This filter drops client tools by name before the request goes upstream. The 12 required gate tools are never touched, and <code>parameters</code> are always kept in full — only the tool list and (optionally) description length are reduced. Disabled by default: dropping a tool removes it from the model's ability to call it.</p>
-    <div class="form-row">
-      <div class="field"><label>Filter client tools</label>
-        <select id="ocToolFilterEnabled"><option value="false">Off — forward every tool the IDE declares</option><option value="true">On — drop matching tools</option></select>
-      </div>
-      <div class="field"><label>Max description chars (0 = keep)</label><input type="text" id="ocToolFilterMaxDesc" placeholder="0"></div>
+    <div class="flex" style="margin-bottom:10px;gap:10px">
+      <button class="btn btn-sm btn-primary" onclick="refreshZenModels(this)" data-i18n="Refresh models">Refresh models</button>
+      <span class="hint" style="margin:0" data-i18n="Automatically synced from the official model source upstream (every 5 minutes)">Automatically synced from the official model source upstream (every 5 minutes)</span>
     </div>
-    <div class="form-row">
-      <div class="field" style="flex:2"><label>Drop by name prefix (one per line)</label><textarea id="ocToolFilterPrefixes" rows="3" placeholder="mcp__" style="font-family:monospace;font-size:12px"></textarea></div>
-      <div class="field" style="flex:2"><label>Drop by exact name (one per line)</label><textarea id="ocToolFilterNames" rows="3" placeholder="CronCreate&#10;CreateWorkflow&#10;EnterPlanMode&#10;ExitPlanMode&#10;AskUserQuestion" style="font-family:monospace;font-size:12px"></textarea></div>
-    </div>
-    <p class="hint" style="margin-top:0">Starting suggestions: prefix <code>mcp__</code> (MCP tools are the largest single schemas and a given turn usually uses one or two); names <code>CronCreate</code>, <code>CreateWorkflow</code>, <code>EnterPlanMode</code>, <code>ExitPlanMode</code>, <code>AskUserQuestion</code> (several KB each, rarely needed in a coding turn). Every drop is logged with the bytes saved.</p>
-    <div class="form-actions"><button class="btn btn-primary" onclick="saveOcConfig()">Save filter</button></div>
+    <div id="ocModelsBody">Loading...</div>
   </div>
 </div>
 </div>
@@ -2045,6 +2035,18 @@ const I18N_ZH = {
   ' row(s) left unchanged (no proxy left)': ' 行凭据无对应代理，保持原样',
   ' manually disabled proxy(s) skipped': ' 个手动禁用的代理已跳过',
   'Reorder by latency': '凭据延迟重排',
+  'Drop by name prefix (one per line)': '按名称前缀丢弃（每行一个）',
+  'Drop by exact name (one per line)': '按精确名称丢弃（每行一个）',
+  'Max description chars (0 = keep)': '描述字符上限（0 = 不截断）',
+  'Filter client tools': '过滤客户端工具',
+  'Request size filter (shrink the upstream body)': '请求体积过滤（缩小上游请求体）',
+  'IDE requests are mostly tool schemas (137 KB total, 112 KB of that is tools). Dropping client tools before they reach upstream saves roughly 33k tokens per message. Gate tools (12) are never filtered.': 'IDE 请求绝大部分是工具定义（全长 137 KB，其中 112 KB 是工具）。在送达上游前丢掉客户端工具，每条消息可省约 33k token。12 个网关必需工具（gate）永不参与过滤。',
+  'Starting suggestions: prefix mcp__ (MCP tools are the largest single schemas and a given turn usually uses one or two); names CronCreate, CreateWorkflow, EnterPlanMode, ExitPlanMode, AskUserQuestion (several KB each, rarely needed in a coding turn). Every drop is logged with the bytes saved.': '起始建议：前缀 mcp__（MCP 工具一般单条 schema 最大，但一轮对话通常只用一两个）；名单 CronCreate、CreateWorkflow、EnterPlanMode、ExitPlanMode、AskUserQuestion（每个数 KB，编程回合几乎用不上）。每次丢弃都会记日志并报节存字节数。',
+    'Save filter': '保存过滤器',
+    'opencode model list': 'opencode 模型列表',
+    'Sync now': '立即同步',
+    'Off — forward every tool the IDE declares': '关闭 — 透传 IDE 声明的全部工具',
+  'On — drop matching tools': '开启 — 丢弃匹配的工具',
   // 代理排除规则（代理池页：平台级代理黑名单 + 每代理绑定上限；原「自动分配规则」）
   'Proxy exclusion rules': '代理排除规则',
   'Save proxy exclusion rules': '保存代理排除规则',
@@ -2856,6 +2858,16 @@ function i18nAttrs(el) {
 }
 function i18nSubtree(root) {
   if (LANG !== 'zh') return;
+  // data-i18n 显式标记元素：按属性键整段替换（不受 code/inline 子节点打断文本节点拆分影响）。
+  // i18nTextNode 的 TreeWalker 对这类带 code 标签的段落会逐个子节点匹配而全失败，
+  // 导致整段英文残留——显式标记走属性键是唯一可靠路径。
+  if (root.querySelectorAll) {
+    root.querySelectorAll('[data-i18n]').forEach(el => {
+      const k = el.getAttribute('data-i18n');
+      const t = k && I18N_ZH[k.trim()];
+      if (t && el.textContent.trim() !== t) el.textContent = t;
+    });
+  }
   const w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
   while (w.nextNode()) i18nTextNode(w.currentNode);
   if (root.querySelectorAll) {
