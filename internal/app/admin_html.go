@@ -697,7 +697,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
   <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><circle cx="12" cy="5" r="2.5"/><circle cx="5" cy="19" r="2.5"/><circle cx="19" cy="19" r="2.5"/><path d="M12 7.5v4m0 0-5.5 5m5.5-5 5.5 5"/></svg></span> Egress proxies</div>
   <div class="section-body">
     <div class="hint" style="margin-bottom:10px">One proxy per line: <code>http://user:pass@host:port</code> or <code>socks5://host:port#alias</code>. All upstreams share this list; unhealthy proxies are skipped automatically.</div>
-    <div class="hint" style="margin-bottom:10px" data-i18n="The alias (#name) is a proxy's identity — re-binding survives alias-preserving URL changes.">The alias (#name) is a proxy's identity — re-binding survives alias-preserving URL changes.</div>
+    <div class="hint" style="margin-bottom:10px" data-i18n="alias_is_a_proxies_identity">The alias (#name) is a proxy's identity — re-binding survives alias-preserving URL changes.</div>
     <div class="hint" style="margin-bottom:10px">When a subscription URL is set, this list is managed by the subscription and read-only; it serves as the fallback pool while a fetch fails.</div>
     <div class="form-row">
       <div class="field" style="flex:3"><label>Proxy list</label>
@@ -726,7 +726,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
 <div class="section">
   <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><path d="M4 5h16M4 12h10M4 19h7"/></svg></span> Proxy exclusion rules</div>
   <div class="section-body">
-    <div class="hint" style="margin-bottom:14px" data-i18n="Platform-level blacklist, per-proxy binding cap and manually disabled (cooled) proxies apply to automatic assignment only — one-click bind and reorder-by-latency. CN-domain accounts of TraeWork/WorkBuddy are excluded from both batch operations, and the proxies they hold are never reassigned within their own platform. Manual bindings and runtime routing are never restricted.">Platform-level blacklist, per-proxy binding cap and manually disabled (cooled) proxies apply to automatic assignment only — one-click bind and reorder-by-latency. CN-domain accounts of TraeWork/WorkBuddy are excluded from both batch operations, and the proxies they hold are never reassigned. Manual bindings and runtime routing are never restricted.</div>
+    <div class="hint" style="margin-bottom:14px" data-i18n="Platform-level blacklist, per-proxy binding cap and manually disabled (cooled) proxies apply to automatic assignment only — one-click bind and reorder-by-latency. CN-domain accounts of TraeWork/WorkBuddy are excluded from both batch operations, and the proxies they hold are never reassigned within their own platform. Manual bindings and runtime routing are never restricted.">Platform-level blacklist, per-proxy binding cap and manually disabled (cooled) proxies apply to automatic assignment only — one-click bind and reorder-by-latency. CN-domain accounts of TraeWork/WorkBuddy are excluded from both batch operations, and the proxies they hold are never reassigned within their own platform. Manual bindings and runtime routing are never restricted.</div>
     <div style="margin-bottom:12px">
       <div style="display:flex;gap:10px;align-items:flex-start">
         <div style="flex:1;position:relative">
@@ -846,7 +846,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
     </table>
     </div>
     <div class="hint" style="margin-top:8px">Rates are sampled passively from real traffic and manual latency tests — no background probing. "No data" = unused since the last pool edit; editing the proxy list resets counters.</div>
-    <div class="hint" style="margin-top:4px" data-i18n="Rows follow the backend pool; values persist in this browser to survive pool edits (add-only — a returning proxy picks up its stored numbers). Console override: proxyRateSet('香港-01', 0.42).">Rows follow the backend pool; values persist in this browser to survive pool edits (add-only — a returning proxy picks up its stored numbers). Console override: proxyRateSet('香港-01', 0.42).</div>
+    <div class="hint" style="margin-top:4px" data-i18n="rows_follow_the_backend_pool">Rows follow the backend pool; values persist in this browser to survive pool edits (add-only — a returning proxy picks up its stored numbers). Console override: proxyRateSet('香港-01', 0.42).</div>
   </div>
 </div>
 </div>
@@ -1750,7 +1750,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
     <button class="btn btn-sm" onclick="closeImpKeep()" data-i18n="close">Close</button>
   </div>
   <div class="wb-dialog-body">
-    <div class="hint" style="margin-bottom:10px" data-i18n="Import will replace ALL persisted config with the file contents. Confirm whether to keep each platform's credential enabled states.">Import will replace ALL persisted config with the file contents. Confirm whether to keep each platform's credential enabled states.</div>
+    <div class="hint" style="margin-bottom:10px" data-i18n="import_will_replace_all">Import will replace ALL persisted config with the file contents. Confirm whether to keep each platform's credential enabled states.</div>
     <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px">
       <button class="btn btn-sm" onclick="impKeepSetAll('impKeepRows',false)" data-i18n="select_all">Select all</button>
       <button class="btn btn-sm" onclick="impKeepSetAll('impKeepRows',true)" data-i18n="invert">Invert</button>
@@ -2819,7 +2819,7 @@ const I18N = {
   'append': { en: 'Append', zh: '追加' },
   'ban_matched': { en: 'Ban matched', zh: '批量封禁' },
   'check_in_all': { en: 'Check in all', zh: '全部签到' },
-  'clear_bindings': { en: 'Clear bindings', zh: '清空代理绑定' },
+  'clear_bindings': { en: 'Clear bindings', zh: '清空代理' },
   'clear_data': { en: 'Clear data', zh: '清空数据' },
   'close': { en: 'Close', zh: '关闭' },
   'confirm': { en: 'Confirm', zh: '确认' },
@@ -2868,6 +2868,9 @@ const I18N = {
   'update_now': { en: 'Update now', zh: '立即更新' },
   'copy': { en: 'Copy', zh: '复制' },
   'activity_all': { en: 'Activity all', zh: '连登活跃' },
+  'alias_is_a_proxies_identity': { en: "The alias (#name) is a proxy's identity — re-binding survives alias-preserving URL changes.", zh: '别名（#name）是代理的身份——URL 变更但别名保留时，绑定关系仍有效。' },
+  'rows_follow_the_backend_pool': { en: 'Rows follow the backend pool; values persist in this browser to survive pool edits (add-only — a returning proxy picks up its stored numbers). Console override: proxyRateSet(\'香港-01\', 0.42).', zh: '行与后端代理池同步；数值存于本浏览器以便在池编辑后恢复（只增不减——已返回的代理会沿用存过的数字）。控制台覆盖：proxyRateSet(\'香港-01\', 0.42)。' },
+  'import_will_replace_all': { en: 'Import will replace ALL persisted config with the file contents. Confirm whether to keep each platform\'s credential enabled states.', zh: '导入将用文件内容替换全部持久化配置。请确认是否保留各平台凭据的启用状态。' },
 };
 function T(key) { return lookup(key); }
 // loadRuntimeFlags 启动时拉一次运行时开关快照；ONLY_ROUTER=true 时面板顶部

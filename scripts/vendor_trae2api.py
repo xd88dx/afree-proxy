@@ -10,7 +10,10 @@ vendor_workbuddy.py 同一套机制：
   - import 前缀重写 trae2api/internal/ → afree-proxy/internal/trae2api/；
   - 上游本地修复（另一会话 2026-11-04 实测的文本工具调用兜底 + 4001 空片段
     修复）以 scripts/trae2api-afree.patch 形式随 vendor 重放；新文件
-    （server/textcall*.go）走 PRESERVE_RELATIVE；
+    （server/textcall*.go）走 PRESERVE_RELATIVE（afree 自有文件：文本调用兜底
+    + 单响应 30 上限 defaultTextCallMax，与网关 internal/textcall 同值；若将来
+    删除 PRESERVE 兜底，必须同步把上限补进 REWRITES，否则上游无上限版本会
+    绕过网关单响应上限保险丝）;
   - afree 桥接点（出口接管 / 反代开关 / 新增身份默认禁用 / console 挂载基址）
     以幂等改写规则注入，均声明为 vendor 包内的函数变量（上游原样为 nil =
     上游行为），由 internal/app/trae.go 在运行时注入，不产生 import 环。
@@ -460,7 +463,10 @@ func (s *Store) httpClient() *http.Client {""",
             1,
         ),
     ),
-}
+    # textcall.go 已在 PRESERVE_RELATIVE（afree 自有文件，含网关同口径的单响应
+    # 转换上限 30，defaultTextCallMax；与 internal/textcall 同款 max 语义，超限
+    # 按正文放行）。若将来要删 PRESERVE 兜底，必须同步把本条改写里去——否则
+    # 上游无上限版本会绕过网关单响应上限保险丝。
 
 
 

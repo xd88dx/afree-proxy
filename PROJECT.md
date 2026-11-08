@@ -26,7 +26,7 @@
 - **cline**：`foxy1402/cline-proxy`（主线），`git merge --no-ff --no-commit <上游哈希>`。
 - **workbuddy**：`misakano7545/workbuddy2api-panel`（主线），`python scripts/sync_workbuddy.py`（三方 vendor 合并，基线 `scripts/workbuddy-vendor-baseline.json`；源工作树为 `D:\下载\Github\workbuddy2api-panel-misakano`，脚本以源树 HEAD 为上游）。
 - **opencode**：`foxy1402/cline-proxy`（主线，与 cline 同步一起）+ `jasonxu114514/opencode2api`（副线，只看更新、吸纳有价值逻辑，不 merge 不 vendor）。
-- **trae（主线）**：`XCool-603/trae2api`（2026-11-04 起换线，Go 零依赖），**vendor 三方合并**——`scripts/vendor_trae2api.py` 整树拷贝 12 子包到 `internal/trae2api/` + 幂等改写（出口接管/反代开关/新增身份钩子/console 挂载基址），`scripts/sync_trae2api.py` 三方合并，基线 `scripts/trae2api-vendor-baseline.json`；上游本地修复（textcall 兜底）以 `scripts/trae2api-afree.patch` 重放。模型名透传：trae:/solo: 常驻，trae-intl:/solo-intl: 随 intl 配置。
+- **trae（主线）**：`XCool-603/trae2api`（2026-11-04 起换线，Go 零依赖），**vendor 三方合并**——`scripts/vendor_trae2api.py` 整树拷贝 12 子包到 `internal/trae2api/` + 幂等改写（出口接管/反代开关/新增身份钩子/console 挂载基址），`scripts/sync_trae2api.py` 三方合并，基线 `scripts/trae2api-vendor-baseline.json`；上游本地修复（textcall 兜底）以 `scripts/trae2api-afree.patch` 重放。模型名合并域透传（2026-11-07 起）：对外 `tacn:`（CN Trae+SOLO）/`tagb:`（Intl，随 intl 配置），内部四 realm 仅实现细节。旧四前缀 `trae:`/`solo:`/`trae-intl:`/`solo-intl:` 废除（strict-gate 404）。
 - **trae（副线）**：`autumnsentiment/Trae2api-cn`（Python 项目，trae 更换基线前身），只看更新、吸纳有价值逻辑（XCool-603/trae2api 与 Trae2api-cn 是完全独立的 Go/Python 双实现，副线逻辑无跨语言直接移植形态，多以「上游行为取证 + 本仓形态差异结论」记录）。`web_login.py` 在主线里跑 helper 比对的额外职责还在（`scripts/check_trae_helper.py`，模板已迁 `internal/app/trae2api_helper_script.go`）。
 - **magpie（2026-11-06 用户立项，全平台纯参考）**：`yetone/magpie`（订阅聚合网关，覆盖约 70 agent/全主流平台）——**纯参考不合并**，按需单点吸纳 + `MERGE.md` magpie 节记基线增量回溯；也是上游行为取证的旁证源（其 gateway 测试文件质量高，zen 免费层关停即靠它定案）。详见技能 §2.5。
 
@@ -52,7 +52,7 @@ go test ./... -count=1             # 除下述既有失败外应全绿
 
 面板与运维侧新增的本地定制（2026-11-02/03 用户定，同步时同样优先保留）：健康表出口**手动冷却**（无到期时间，仅「解禁」恢复，`proxyManualCooled`）与绿色解禁/黄色冷却按钮；健康表**代理测试**（测速目标可配置、每出口最多 3 次 HTTPS 探测入在线率/握手统计，不触碰路由冷却）；**批量测试可路由过滤**（反代开关关闭的凭据跳过——Trae/WorkBuddy 只看反代开关不看账号总闸；网关封禁平台整平台跳过）；绑定名 eg-input **中间缩略**（`egShortLabel`）；wb 池状态/实测台账进配置备份（三层口径，见 `MERGE.md` 2026-11-03 节）。
 
-已废弃、不要从上游恢复：`SessionRotateMinutes` 与后台 key rotator、`ZEN_KEYS`（Go 源码从不读取）、上游 README 的 compose 配置段。
+已废弃、不要从上游恢复：后台 key rotator（`SessionRotateMinutes` 2026-11-08 随 a8fe356 吸收，见 MERGE 台账）、`ZEN_KEYS`（Go 源码从不读取）、上游 README 的 compose 配置段。
 
 上游功能但**必须由本仓 app 层装配**才生效（2026-10-28 起）：workbuddy 的网关思考档位策略（上游 `thinking` 配置节）。装配点三处，漏任一处都不会报错、只是功能静默失效——`internal/app/workbuddy.go`（启动）与 `internal/app/workbuddy_config.go`（热更新）里的 `up.SetEffortPolicy(effortPolicyOf(cfg))`、`livecfg.Snapshot` 的五个 `Thinking*` 镜像字段、面板四个控件（`thinking.enabled` / `default_effort` / `client_priority` / `override_scope`）。上游同类装配在 `cmd/server/main.go`，本仓没有那个入口。
 
@@ -85,6 +85,7 @@ go test ./... -count=1             # 除下述既有失败外应全绿
 - 改名 `pool.Account.SetLabel`（快照文件是持久层，`Store.Load()`+池同步）。
 - console 挂载 `/admin/trae2api/`（原版入口；app.js fetch 基址改写 `AFREE_API_BASE='/admin/trae2api/api'` + 契约测试候选路径）。
 - 出口接管需要的服务器访问器：`Server.Metrics()`、`Store.Mu()`、`Status.CreditsTotal`（vendor 注入，同步上游时锚点漂移就修 REWRITES——计数失配会 RuntimeError 强校验）。
+- `server/textcall.go`（文本工具调用兜底，afree 自有文件，走 PRESERVE_RELATIVE）：流式 `textCallFilter` 与非流式 `extractTextToolCalls` 均有单响应 30 上限 `defaultTextCallMax`（与网关 `internal/textcall.DefaultMaxPerResponse` 同值，超限按正文放行；两层互不重复计数——trae 内层先转，网关对已结构化响应无文本可转）。
 
 ### 全局策略适配清单（每平台必查）
 | 策略 | trae 适配点 |
@@ -97,7 +98,7 @@ go test ./... -count=1             # 除下述既有失败外应全绿
 | 代理隔离（PROXY_ISOLATION） | `traeStoreHTTPClient` 隔离语义（绑定 fail-closed / 未绑定全局） |
 | DISABLE_DIRECT | 直连哨兵与池空兜底直连均不放行 |
 | ONLY_ROUTER | `runBackground` 里 `kit.OnlyRouter()` 禁 vendored `RunBackground`（签到/额度刷新）；metrics/池状态落盘是基础设施照常 |
-| 配置导入导出 | 备份 trae 段 `{config, routing, accounts}`（`trae2apiBackupSnapshot`/`trae2apiRestoreBackup`，旧引擎形态报错忽略）；KeepEnabled["trae"] 隔离护栏 |
+| 配置导入导出 | 备份 trae 段 `{config, routing, accounts}`（`trae2apiBackupSnapshot`/`trae2apiRestoreBackup`，旧引擎形态报错（不再兼容旧格式））；KeepEnabled["trae"] 隔离护栏 |
 | 数据清空（delete-all） | `clearTrae2apiAccountsForDataDelete`（删快照+清绑定/路由+重启） |
 | 出口健康观测 | `traeObserveTransport` → `recordProxyOutcome(pkTrae,...)`；请求日志 `[req]` 账号/出口列经 `setUpstreamInfo/Exit` |
 | 模型黑名单 | realm scope 封禁（`TraeModelBannedIn(ch.Realm, bare)`）；黑名单页探测 `trae2apiProbeBlacklistedModel`（进程内最小 chat） |
@@ -106,10 +107,10 @@ go test ./... -count=1             # 除下述既有失败外应全绿
 
 ### 面板三区约定
 - 凭据表 10 列（换线前列序恢复）：#/账号/状态(含 token 过期行+签到竖徽章)/额度(剩余/总)/今日累计token/最近使用/代理绑定/操作/反代/总闸；上方只放 刷新余额+全部签到，添加账号/批量组/复位保存 在表格下方。
-- 配置区两列（wb-config-grid 同款）：左列=单账号并发/熔断/冷却/流空闲（引擎吞吐组），右列=费率过滤(0/0.1/0.2/0.3/0.5/1)+自动签到+签到时点+拒绝未知模型+会话粘性+国际版域；右下角 放弃修改→保存配置。
+- 配置区两列（wb-config-grid 同款）：左列=单账号并发/熔断/冷却/流空闲（引擎吞吐组），右列=CN/Intl 双域费率过滤（各 0/0.1/0.2/0.3/0.5/1，CN 过滤 tacn、Intl 过滤 tagb，旧单值仅回落）+自动签到+签到时点+拒绝未知模型+会话粘性+国际版域；右下角 放弃修改→保存配置。
 - 模型目录：realm 徽章+倍率+Ban（scope=realm）。
 - 加号三通道：helper 网页授权（铸 EC P-256 设备密钥补齐快照）/粘贴 `token----refreshToken`/原版面板导入 JSON/ZIP；裸 JWT 拒绝。
-- i18n：新文案全走 I18N_ZH 词条（键尾无空格、撇号用 JS 双引号包 key——`account's` 未转义炸过整块脚本）；改完跑 `scripts/i18n_audit.py` + `i18n_reverse_audit.py` 双向清零。
+- i18n：新文案全走 I18N 词条（2026-11-08 起 key→{en,zh} 结构）（键尾无空格、撇号用 JS 双引号包 key——`account's` 未转义炸过整块脚本）；改完跑 `scripts/i18n_audit.py` + `i18n_reverse_audit.py` 双向清零。
 
 ### 已知边界（如实展示）
 - 今日 token 计数重启后从引擎 recent 流水重建（近 100 条窗口），弱于旧引擎全量持久化；累计/最近使用不受影响。
@@ -175,7 +176,7 @@ iStore 的面板密码是 `233@.afree`(与本机 compose 里的值不同);登录
 
 ## 8. 面板文案与中文翻译（每次改面板 / 同步上游必查）
 
-`internal/app/admin_html.go` 的界面是**英文原文 + `I18N_ZH` 词条表**双层结构。`LANG === 'zh'` 时由三条路径替换：
+`internal/app/admin_html.go` 的界面是**英文原文 + `I18N` 对照词典**（2026-11-08 起 key→{en,zh} 结构，88f341e）+ `T()`/`data-i18n`（title/placeholder 走 `data-i18n-title`/`data-i18n-placeholder` 专属 key，伏笔 dbc476c/46d03e4）**双层结构。`LANG === 'zh'` 时由三条路径替换：
 
 | 路径         | 实现                                                      | 覆盖对象                       |
 | ------------ | --------------------------------------------------------- | ------------------------------ |
@@ -185,21 +186,21 @@ iStore 的面板密码是 `233@.afree`(与本机 compose 里的值不同);登录
 
 **未进词条的文案在中文界面下会原样显示英文**——这是本仓最常见的「功能做完但界面半中半英」缺陷。每次开发新功能或同步上游后，逐项自查：
 
-1. 新增/改动的 HTML 可见文本，在 `I18N_ZH` 里有**同名键**（机制匹配的是文本节点 `trim()` 后的整段原文，不是关键词）。
+1. 新增/改动的 HTML 可见文本，在 `I18N` 里有**同名键**（或 `data-i18n` slug 键）（机制匹配的是文本节点 `trim()` 后的整段原文，不是关键词）。
 2. 新增的 `title` / `placeholder` 说明性文案同样要有词条，键为属性值原文（含标点）。
 3. JS 动态拼接的文案一律走 `T('...')` 且键在表内。不要把中文直接写进 HTML/JS 模板——切到英文界面会露出中文。
-4. 允许不译的只有：model id、key 名前缀、纯示例值（`0.5`、`22`、`4096`）、单位、纯技术标识，以及**标识词与技术值**——域前缀名（TraeWork 的 `trae:`/`solo:`/`trae-intl:`/`solo-intl:`，是模型 ID 组成部分不是文案）、reasoning effort 档位（`xhigh`/`high`/`medium`/`low`/`minimal`）、产品名（`Token Factory`）。2026-10-29 用户定：这类词进词条反而制造假翻译。
+4. 允许不译的只有：model id、key 名前缀、纯示例值（`0.5`、`22`、`4096`）、单位、纯技术标识，以及**标识词与技术值**——域前缀名（TraeWork 的 `tacn:`/`tagb:`，WorkBuddy 的 `wbcn:`/`wbgb:`——是模型 ID 组成部分不是文案）、reasoning effort 档位（`xhigh`/`high`/`medium`/`low`/`minimal`）、产品名（`Token Factory`）。2026-10-29 用户定：这类词进词条反而制造假翻译。
 
 排查遗漏：
 
 ```bash
-# 面板里所有 tooltip 原文，逐个确认在 I18N_ZH 有同名键
+# 面板里所有 tooltip 原文，逐个确认在 I18N 有同名键
 grep -o 'title="[^"]\+"' internal/app/admin_html.go | sed 's/^title="//;s/"$//' | sort -u
 # 面板里所有 placeholder 原文（示例值可跳过）
 grep -o 'placeholder="[^"]\+"' internal/app/admin_html.go | sed 's/^placeholder="//;s/"$//' | sort -u
 ```
 
-注意 `I18N_ZH` 是 JS 对象字面量：**同名键写两次不会报错，后者静默覆盖前者**，界面会显示成你以为错的那条。新增词条前后都 `grep -n "'<原文>'"` 确认只有一处。
+注意 `I18N` 是 JS 对象字面量：**同名键写两次不会报错，后者静默覆盖前者**，界面会显示成你以为错的那条。新增词条前后都 `grep -n "'<原文>'"` 确认只有一处。
 
 ## 9. 面板凭据表格对齐约定（2026-10-29 用户定）
 

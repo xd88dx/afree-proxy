@@ -21,7 +21,7 @@ def js_unescape(s):
             out.append(c); i += 1
     return ''.join(out)
 
-m = re.search(r'const I18N_ZH = \{(.*?)\n\};', src, re.S)
+m = re.search(r'const I18N = \{(.*?)\n\};', src, re.S)
 raw_keys = re.findall(r"^\s*'((?:[^'\\]|\\.)*)'\s*:", m.group(1), re.M)
 src_nodict = src.replace(m.group(0), '')
 

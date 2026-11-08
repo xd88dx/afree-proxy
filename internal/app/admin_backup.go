@@ -526,7 +526,7 @@ func handleAdminConfigImport(w http.ResponseWriter, r *http.Request) {
 		}
 		imported["endpoints"] = len(backup.Endpoints)
 	}
-	// ---- 自定义别名 ----
+		// ---- 自定义别名 ----
 	if backup.Combos != nil {
 		combosMu.Lock()
 		valid := make([]*Combo, 0, len(backup.Combos))
@@ -538,6 +538,14 @@ func handleAdminConfigImport(w http.ResponseWriter, r *http.Request) {
 			// cline/zen 两平台的别名，白名单放宽不影响它们。
 			if !comboPlatformValid(c.Platform) {
 				continue
+			}
+			// 备份导入同样做 trae 旧前缀 target 迁移（与 loadCombos 同口径）。
+			if c.Platform == "trae" {
+				migrated, ok := migrateTraeComboTarget(c.Target)
+				if ok {
+					c = &Combo{ID: c.ID, Platform: c.Platform, Target: migrated,
+						UseProxies: c.UseProxies, CreatedAt: c.CreatedAt}
+				}
 			}
 			if c.Target == "" {
 				continue

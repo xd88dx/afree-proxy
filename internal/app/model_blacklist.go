@@ -68,9 +68,9 @@ const (
 
 // modelBlacklistEntry 一条拉黑记录。Model 存**对外模型 ID**（含前缀，
 // 如 wbgb:gpt-6-luna），与 /v1/models 的 id 同口径，过滤时直接比对。
-// Scope 端点档位（2026-10-27 用户定，仅 trae 平台使用）：remote/traecode/
-// traework——封禁按「失败发生的传输」落档位，trac-b(raw) 封禁不影响
-// trae-a(remote) 的同ID模型；空 = 全档（无档位信息的历史条目/手动全档封禁）。
+// Scope（2026-11-07 合并域化起仅兼容存量）：trae 平台存量记录的 scope 可能
+// 是内部 realm（trae/solo/trae-intl/solo-intl）或端点档位（remote/traecode/
+// traework）——TraeModelBannedIn 以合并域展开匹配；新封禁一律空 = 全档。
 type modelBlacklistEntry struct {
 	Platform  string    `json:"platform"`
 	Model     string    `json:"model"`
@@ -274,8 +274,9 @@ func UnblockModel(platform, model string, scope ...string) bool {
 	return removed
 }
 
-// TraeModelBannedIn trae 平台模型在指定端点档位是否被封禁（展示过滤用）：
-// 命中同档位条目或全档条目（scope 空）即为封禁。
+// TraeModelBannedIn trae 平台模型在指定合并域（tacn/tagb）是否被封禁
+// （展示过滤用）：命中同合并域条目、内部 realm 条目（存量兼容）或全档条目
+//（scope 空）即为封禁。
 func TraeModelBannedIn(scope, bareID string) bool {
 	// scope 合并域化（2026-11-07 tacn/tagb）：查询合并域时，存量内部 realm
 	// 记录（trae/solo/trae-intl/solo-intl）与合并域记录一并命中——封禁是对外
@@ -446,8 +447,8 @@ func (c *modelErrorCapture) finish() {
 		// cline 上游对免费目录已移除的模型（官方 feed 缩水后目录残留）固定回
 		// 404 {"error":"model not found"}；网关错误信封是 500 内嵌 "API 404: ..."，
 		// 状态码不可用，只认文案。不放进 IsModelPermissionDenied 全局判据：
-		// trae 的按档位封禁走 traeAutoBanModel，全局文案会让中间件把 trae 的
-		// 同类 404 也按全档拉黑，破坏 2026-10-27 的 scope 设计。
+		// trae 的封禁按合并域（tacn/tagb）查询（TraeModelBannedIn），全局文案若
+		// 对 trae 也按全档拉黑会破坏合并域语义（合并域条目或全档条目才算命中）。
 		// 原因用 BanReasonFeedRemoved：这不是账号档位问题，是官方免费 feed
 		// 已把模型移走（2026-10-31 实测移入付费 clinePass 档）。
 		if !strings.Contains(strings.ToLower(body), "model not found") {

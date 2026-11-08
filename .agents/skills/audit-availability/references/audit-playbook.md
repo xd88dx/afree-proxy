@@ -104,7 +104,7 @@ newapi 映射建议：死别名 → 替代（标注"无等价只能删"）
 
 - 33 个映射目标 30 过；3 死全为官方限制：cline 的 deepseek-v4.1-flash/muse-spark-1.3-contributor/solar-pro4 移入 clinePass（404）；z-ai/glm-5.3-flash 转计费（cost>0，已拉黑）；trae 的 kimi-k3.1-pro/k2.8-preview/k2.7-code 权益不足（1005/4001）。
 - 已修：cline 404/cost 自动拉黑 + `BanReasonFeedRemoved` 文案 + 存量归一；请求路径服务闸；去 seed 兜底。
-- 可用替代（实测）：deepseek→`wbgb:`/`zen:deepseek-v4.1-flash-free`；kimi→`trae:kimi-k3`；glm→`zen:glm-5.3-flash-free`/`wbcn:glm-5.3-flash`/`trae:glm-5.3-flash`；muse 无等价只能删。
+- 可用替代（实测）：deepseek→`wbgb:`/`zen:deepseek-v4.1-flash-free`；kimi→`tacn:kimi-k3`；glm→`zen:glm-5.3-flash-free`/`wbcn:glm-5.3-flash`/`tacn:glm-5.3-flash`；muse 无等价只能删。
 - `poolside/laguna-s-2.1:free` 不在 feed 但 cost=0（去兜底后已剪出目录；要用走 combo 别名）。
 
 ## 10. 2026-11-05 审计追加（第二轮全量，含修复）

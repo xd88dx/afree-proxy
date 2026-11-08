@@ -25,7 +25,7 @@ newapi 的渠道全部指向 afree 网关（`host.docker.internal:3457`），用
 
 ```python
 # 从 sqlite 读 channels.model_mapping，json 解析，汇总 values() 去重
-# 目标形态即平台前缀：cline-free/ zen: wbcn: wbgb: trae: amd: oprt: tkhb: other-*:
+# 目标形态即平台前缀：cline-free/ zen: wbcn: wbgb: tacn: tagb: amd: oprt: tkhb: other-*:
 ```
 
 同时盘点各平台凭据启用状态（见上表）。

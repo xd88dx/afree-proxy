@@ -19,7 +19,7 @@ def js_unescape(s):
             i += 1
     return ''.join(out)
 
-m = re.search(r'const I18N_ZH = \{', src)
+m = re.search(r'const I18N = \{', src)
 start = m.end()
 end = src.index('\n};', start)
 block = src[start:end]

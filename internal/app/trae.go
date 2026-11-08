@@ -692,16 +692,6 @@ func trae2apiModelExists(id string) bool {
 	return trae2apiResolveMerged(merged, bare) != ""
 }
 
-// trae2apiRateFilterThreshold 费率过滤阈值（0 = 关）。存 proxy-config.json
-// 的 trae2apiModelRateFilter（afree 侧配置，与 vendored 费率元数据同源比较）。
-// 2026-11-07 拆分后保留作旧单值回落：分域键未配置（nil）时两域共用旧值。
-func trae2apiRateFilterThreshold() float64 {
-	proxyFileMu.Lock()
-	defer proxyFileMu.Unlock()
-	f := loadProxyConfigFileLocked()
-	return f.Trae2apiModelRateFilter
-}
-
 // trae2apiRateFilterThresholdCN / ...Intl 分域费率过滤阈值（2026-11-07 拆分，
 // 照 wb 79cc3d6c 模式）：CN 过滤 trae:/solo:（realm.Trae/Solo），Intl 过滤
 // trae-intl:/solo-intl:（realm.TraeIntl/SoloIntl）。分域键未配置（nil，旧
@@ -726,14 +716,6 @@ func trae2apiRateFilterThresholdIntl() float64 {
 		return *f.Trae2apiModelRateFilterIntl
 	}
 	return f.Trae2apiModelRateFilter
-}
-
-// trae2apiRateFilterForRealm 按域取阈值。
-func trae2apiRateFilterForRealm(realm string) float64 {
-	if realm == traerealm.TraeIntl || realm == traerealm.SoloIntl {
-		return trae2apiRateFilterThresholdIntl()
-	}
-	return trae2apiRateFilterThresholdCN()
 }
 
 // trae2apiModelEntries /v1/models 合并用的 Trae 段条目（2026-11-07 合并域化）：
@@ -1904,9 +1886,11 @@ func trae2apiRestoreBackup(raw json.RawMessage, keepEnabled bool) (int, error) {
 // trae2apiProbeBlacklistedModel 黑名单页对 trae 封禁模型的定向探测：进程内
 // 发一次最小 chat 请求（真实计费意图极小：max_tokens=16），返回上游真实反应
 // 供人工判断"该不该解禁"。与旧引擎 traeProbeBlacklistedModel 同语义。
+// model 是合并域对外形态（tacn:/tagb:），vendored 只认内部 realm 前缀，须先翻译
+// （与 serveTrae2apiChat/trae2apiCaller 同口径，09589a0 漏接的第四条路径）。
 func trae2apiProbeBlacklistedModel(model string) (map[string]any, string) {
 	params := map[string]any{
-		"model":      model,
+		"model":      trae2apiTranslateMerged(model),
 		"stream":     false,
 		"max_tokens": 16,
 		"messages":   []map[string]any{{"role": "user", "content": "Reply with exactly: OK"}},

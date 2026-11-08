@@ -64,7 +64,7 @@ description: 在 afree-proxy 中新增一个上游平台的完整迁移配方—
 | 平台设置 | /admin/api/config | /admin/api/opencode/config | wbConfigForm→vendor API | `/trae/config{,/update}` | `/admin/api/<x>/config{,/update}` | `/other/config{,/update}` + `/other/platforms`（子平台增删） |
 | 前端 tbody | `accountTableBody` | `ocKeysBody` | `wbAccountsBody` | `traeAccountsBody` | `orKeysBody`/`amdKeysBody`/`thKeysBody` | `otherKeysBody` + `otherPlatformBody` |
 | 快照变量 | `accSnapshot` | `keySnapshot` | `wbSnapshot` | `traeAccSnapshot` | `orKeySnapshot`/`amdKeySnapshot`/`thKeySnapshot` | `otherKeySnapshot` |
-| 网关前缀 | `cline-free/` | `zen:` | `wbcn:`/`wbgb:` | `trae:`/`solo:`（+intl 域随配置），模型名透传 | `oprt:` / `amd:` / `tkhb:` | 子平台自定前缀（如 `acme:`） |
+| 网关前缀 | `cline-free/` | `zen:` | `wbcn:`/`wbgb:` | `tacn:`/`tagb:`（合并域，tagb 随 intl.enabled），bare 合并去重、交集以 trae 为主 | `oprt:` / `amd:` / `tkhb:` | 子平台自定前缀（如 `acme:`） |
 | 添加入口弹窗 | `accAddDialog` | `zenKeyAddDialog` | `wbAddDialog` | `traeAddDialog` | `<x>KeyAddDialog` | `otherKeyAddDialog`/`otherPlatformDialog` |
 | 走池下拉 | `ppCline` | `ppZen` | `ppWb` | `ppTrae` | `ppOr`/`ppAmd`/`ppTh` | `ppOther` |
 | 仪表盘卡/统计桶 | dashCline/reqCline | dashOc/reqZen | dashWb/reqWb | dashTrae/reqTrae | dashOr/dashAmd/dashTh + req 同名 | dashOther/reqOther |

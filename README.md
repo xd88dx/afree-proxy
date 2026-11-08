@@ -11,7 +11,7 @@ Cursor / ZCode / Cline / Claude Code ──►  afree-proxy  ──►  Cline �
    /v1/chat/completions                        │
    /v1/messages (Anthropic)                    ├─►  OpenCode zen 免费模型（多 key，zen: 前缀）
    /v1/responses (OpenAI Responses)            ├─►  WorkBuddy 账号（OAuth，wbcn:/wbgb: 前缀）
-   /v1/models                                  ├─►  TraeWork 账号（trae:/solo: 前缀）
+   /v1/models                                  ├─►  TraeWork 账号（tacn:/tagb: 合并域前缀）
                                                ├─►  OpenRouter 免费模型（多 key，oprt: 前缀）
                                                ├─►  AMDCloud 免费 API（多 key，amd: 前缀）
                                                ├─►  TokenHarbor 免费模型（多 key，tkhb: 前缀）
@@ -21,7 +21,7 @@ Cursor / ZCode / Cline / Claude Code ──►  afree-proxy  ──►  Cline �
 
 ## 核心特性
 
-- **一个端点，全部上游。** 网关按请求的 `model` 前缀路由：`wbcn:`/`wbgb:` → WorkBuddy，`trae:`/`solo:` → TraeWork，`oprt:` → OpenRouter，`amd:` → AMDCloud，`tkhb:` → TokenHarbor，`zen:` → opencode zen，Other 子平台自定前缀 → 对应子平台，zen 付费模型明确 400，其余走 Cline 账号池。旧形态（裸 zen ID、`cn:`/`global:`、无前缀 cline ID）仍兼容解析。Combos 可自定义别名模型 ID。
+- **一个端点，全部上游。** 网关按请求的 `model` 前缀路由：`wbcn:`/`wbgb:` → WorkBuddy，`tacn:`/`tagb:` → TraeWork（合并域：tacn=CN Trae+SOLO、tagb=Intl，随 intl.enabled），`oprt:` → OpenRouter，`amd:` → AMDCloud，`tkhb:` → TokenHarbor，`zen:` → opencode zen，Other 子平台自定前缀 → 对应子平台，zen 付费模型明确 400，其余走 Cline 账号池。旧形态（裸 zen ID、`cn:`/`global:`、无前缀 cline ID）仍兼容解析。Combos 可自定义别名模型 ID。
 - **三种客户端方言，一种上游语言。** `/v1/chat/completions` 近直通；`/v1/responses` 与 `/v1/messages`（Anthropic）双向翻译，含流式事件、工具调用与 usage。
 - **代理隔离第一优先。** 每个账号/key 可绑定主/备出口代理，请求永远从绑定出口发出；两个出口都不可用时该身份整体跳过——**绝不回退其他出口或直连**。未绑定身份沿用面板的每平台走池开关。
 - **凭据启用/禁用语义全平台一致。** 「启用」列 = 是否参与请求轮转。新增身份默认禁用（存量缺字段仍按启用，升级不停服）。**任何平台没有任何启用凭据（含反代开关全关）时整平台 503 拒路由**，与封禁平台同闸；模型目录只对可服务配置展示——无启用凭据时面板目录显示引导空态、`/v1/models` 摘除该平台模型。
@@ -33,7 +33,7 @@ Cursor / ZCode / Cline / Claude Code ──►  afree-proxy  ──►  Cline �
 | 平台        | 前缀              | 凭据类型                                                                        | 模型目录                                                                        | 探测默认模型               |
 | ----------- | ----------------- | ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- | -------------------------- |
 | Cline       | `cline-free/`     | OAuth refreshToken / 静态 `sk_` key                                             | 官方免费源 5min 自动同步                                                        | 排序最小                   |
-| TraeWork    | `trae:` / `solo:`（intl 域随配置） | 便携快照（含设备密钥；本机 helper 网页授权 / `token----refreshToken` 粘贴 / 原版面板导入） | 引擎目录实时（按域门控：无账号域不透出）                                        | 无探测下拉（Test=额度连通性验证，沿用上游设计） |
+| TraeWork    | `tacn:` / `tagb:`（tagb 随 `intl.enabled`） | 便携快照（含设备密钥；本机 helper 网页授权 / `token----refreshToken` 粘贴 / 原版面板导入） | 引擎目录实时（按域门控：无账号域不透出）                                        | 无探测下拉（Test=额度连通性验证，沿用上游设计） |
 | WorkBuddy   | `wbcn:` / `wbgb:` | OAuth（内嵌面板登录）                                                           | CN/Global 双域实时探测                                                          | 官方稳定模型优先           |
 | OpenCode    | `zen:`            | zen key（本地铸造会话 ID）                                                      | 上游免费目录 5min 同步                                                          | `big-pickle` 优先          |
 | OpenRouter  | `oprt:`           | `sk-or-v1-…` key                                                                | [free-models 页白名单](https://openrouter.ai/collections/free-models) 5min 同步 | `openrouter/free`          |
@@ -121,7 +121,7 @@ Base URL:  http://<host>:3457/v1
 API Key:   <API_KEY>
 Model:     cline-free/deepseek-v4.1-flash   （Cline 池）
            zen:big-pickle                    （OpenCode zen）
-           trae:glm-5.2                      （TraeWork）
+           tacn:glm-5.2                      （TraeWork）
            wbcn:claude-sonnet-4.5            （WorkBuddy CN 域）
            oprt:openrouter/free              （OpenRouter）
            amd:DeepSeek-V4-Flash             （AMDCloud）
@@ -132,7 +132,7 @@ Model:     cline-free/deepseek-v4.1-flash   （Cline 池）
 **Claude Code / Cline** — Anthropic 方言 `POST /v1/messages`，同 Base URL 同 key。
 **OpenAI Responses 方言** — `POST /v1/responses`（工具调用、流式事件、usage 全翻译）。
 
-`GET /v1/models` 列出全部可服务模型（含 Combos）。免费目录自动同步（cline/zen/or/amd/th 全部 5min，trae 由 vendored 引擎目录实时承载、trae 面板可手动刷新，wb 实时探测；同步走凭据绑定的出口，无可用出口时跳过本轮绝不直连）；线上列表是权威，内置种子只覆盖冷启动/离线启动，下架/新免费模型自动增删；上游返回模型级永久错误时自动穿透拉黑摘除（cline 404/计费、OR 404/403-agentic/400-endpoint、zen RegionError——2026-11-04 全平台审计补齐 OR/zen 接线）。**对外目录 = 各平台管理页可见的模型**（2026-11-03）：WorkBuddy 的出图模型在 app 层按**费率同源筛选**进出目录（与面板前端 `wbRate`/`wbModelMatchesFilter` 同构：promo 生效取 `promo_credits`，否则取 `credits`；缺失/不可解析一律不透出——缺失 ≠ 免费；≤ `pool.model_rate_filter` 阈值才放行），目录与请求闸同源。当前出图模型上游目录不给 credits 牌价，全部挡住；将来上游给某个出图模型发了牌价且 ≤ 阈值时会自动进目录，无需改代码。注意 vendor 的 `/v1/images` 网关层未注册（生产实测 404）——目录放行只解决「可见」，专用出图调用入口仍不存在。
+`GET /v1/models` 列出全部可服务模型（含 Combos）。对外目录统一剥离 `owned_by`/`source` 字段（2026-11-08），下游（hermes）勿再依赖该字段分桶。免费目录自动同步（cline/zen/or/amd/th 全部 5min，trae 由 vendored 引擎目录实时承载、trae 面板可手动刷新，wb 实时探测；同步走凭据绑定的出口，无可用出口时跳过本轮绝不直连）；线上列表是权威，内置种子只覆盖冷启动/离线启动，下架/新免费模型自动增删；上游返回模型级永久错误时自动穿透拉黑摘除（cline 404/计费、OR 404/403-agentic/400-endpoint、zen RegionError——2026-11-04 全平台审计补齐 OR/zen 接线）。**对外目录 = 各平台管理页可见的模型**（2026-11-03）：WorkBuddy 的出图模型在 app 层按**费率同源筛选**进出目录（与面板前端 `wbRate`/`wbModelMatchesFilter` 同构：promo 生效取 `promo_credits`，否则取 `credits`；缺失/不可解析一律不透出——缺失 ≠ 免费；≤ 对应域 `pool.model_rate_filter_cn`（过滤 `wbcn:`）/ `pool.model_rate_filter_global`（过滤 `wbgb:`）阈值才放行），目录与请求闸同源。当前出图模型上游目录不给 credits 牌价，全部挡住；将来上游给某个出图模型发了牌价且 ≤ 阈值时会自动进目录，无需改代码。注意 vendor 的 `/v1/images` 网关层未注册（生产实测 404）——目录放行只解决「可见」，专用出图调用入口仍不存在。
 
 ### Combos（别名模型）
 

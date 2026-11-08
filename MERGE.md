@@ -25,6 +25,13 @@ WorkBuddy 一栏的基线同时登记在 `scripts/workbuddy-vendor-baseline.json
 
 上游(历史线):`autumnsentiment/Trae2api-cn`(Trae CN / Trae Solo CN 模型反代,Python,MIT)。**这条线不是 vendor/merge 关系**:上游是 Python 全栈,本地 `internal/trae/` + `internal/app/trae.go` 是 Go 重写,行为跟随上游协议;唯一逐行移植的产物是内嵌的本机授权助手 `web_login.py`(`internal/trae/helper_script.go`),只有它需要跟上游比对。2026-10-27 的 cline-proxy 合并未涉及本线。
 
+### 2026-11-09 — vendored textcall 30 上限补齐（本地修复，非上游同步）
+
+- 背景：网关层 `internal/textcall`（`DefaultMaxPerResponse=30`，防病态模仿一口气吐数百个调用）与 vendored `internal/trae2api/server/textcall.go` 最初无上限内层转换并存——343 个内层调用下网关自然空转、客户端已卡死（`d0856c2` 上移时遗留缺口）。
+- **修复**：`server/textcall.go` 补 `defaultTextCallMax = 30`（与网关同值），`textCallFilter.feed` 与 `extractTextToolCalls` 双路径一致，超限按正文放行（内容不丢）。两层互不重复计数——trae 内层先转，网关对已结构化响应无文本可转。
+- **合并提示**：`server/textcall.go` / `textcall_test.go` 在 `PRESERVE_RELATIVE`（afree 自有文件，re-vendor 原样保留），下次 vendor/sync re-vendor 时自动保留；`scripts/vendor_trae2api.py` 头注释与 `PROJECT.md` §5b 已登记此改动。若将来删除 PRESERVE 兜底，必须同步把上限补进 REWRITES，否则上游无上限版本会绕过网关保险丝。
+- **验证**：`go test ./internal/app/ -count=1` 与 `go test ./internal/trae2api/server/ -count=1` 全绿；镜像 `test-20261109-0115` 部署。
+
 **2026-10-28 核对**：上游最新 tag 仍为 `v1.0.10`（`bb7b659`），与 2026-10-27 同步基线一致，本线无新版本，本次未涉及上游同步。**2026-10-29 复核**：仍为 `v1.0.10`，无新版本。**2026-10-30 复核**：仍为 `v1.0.10`（tags API 与 main HEAD 均为 `bb7b659`），无新版本，本次未涉及上游同步。**2026-10-31 复核**：仍为 `v1.0.10`，无新版本，本次未涉及上游同步。**2026-10-31 二次复核**：仍为 `v1.0.10`（main HEAD `bb7b659`），helper 比对 exit 0，本次未涉及上游同步。**2026-11-02 复核**：仍为 `v1.0.10`（tags API 与 main HEAD 均为 `bb7b659`），无新版本，本次未涉及上游同步。
 
 ### 2026-11-05 — 双线复核（XCool 主线无更新；Trae2api-cn 副线 v1.0.11 评估 + helper 比对）
@@ -320,18 +327,12 @@ WorkBuddy 一栏的基线同时登记在 `scripts/workbuddy-vendor-baseline.json
 ### 2026-11-08 — c6b3c45 → a8fe356（2 提交：tool filter 吸收；system prompt 换位随上游回退）
 
 - merge commit `7fb9f12`（merge 方式）：基线 `c6b3c45 → a8fe356`（上游 `foxy1402/cline-proxy` main），冲突 3 文件（`zen.go`/`admin_zen.go`/`admin_html.go`）。
-- **吸收**：`a8fe356` zen 客户端工具过滤（新增 `zen_toolfilter.go`，默认关闭：按 `denyPrefixes`/`denyNames` 丢弃客户端工具，可选截断 `maxDescription`；12 个网关必需工具不进过滤。实测 ZCode 单请求 137KB 中 112KB（82%）是 76 个工具定义）；`SessionRotateMinutes`（粘性会话本地轮换周期，默认 120，未首发 0 = 旧行为）。面板「请求体裁剪」与模型列表 section 合并保留（见 admin_html.go 冲突解决）。
+- **吸收**：`a8fe356` zen 客户端工具过滤（新增 `zen_toolfilter.go`，默认关闭：按 `denyPrefixes`/`denyNames` 丢弃客户端工具，可选截断 `maxDescription`；12 个网关必需工具不进过滤。背景：ZCode 单请求 137KB 中 112KB（82%）是 76 个工具定义，免费日额度吸收不了——这是体积问题不是内容问题）；`SessionRotateMinutes`（粘性会话本地轮换周期，默认 120，0 = 不轮换）。面板「请求体裁剪」与模型列表 section 合并保留（见 admin_html.go 冲突解决）。工具过滤器的 `toolFilter` 字段进 payload 与 patch 结构（面板可编辑，与浅拷贝口径兼容）。
 - **随上游回退**：`7dd0afe` 撤回 `c6b3c45` 的 system prompt relocation。`SystemRelocation` 字段、面板开关、`zenSystemRelocationEnabled` 与 `zen_env_marker_*` 测试随回退移除；`40d98f9`-era 的 `systemRelocation` 落盘键仍由浅拷贝兜底，不再读写生效（字段已删，存量配置里的旧键由 `normalize` 忽略）。
-- **本地定制保留**：`KeyBindings`/`KeyRoutingEnabled` 仍在 `zen-config.json`；代理池与隔离规则仍在 `proxy-config.json`（上游 `Proxies`/`ProxyStrategy` 段实际落 `kv` 旧字段，未回写）；`handleZenConfigUpdate` 仍用 `next := *cur` 浅拷贝（上游逐字段枚举的构造在冲突点被拒绝吸收——浅拷贝保证今后加字段不漏）；面板 `zenConfigPayload` 契约不变（代理池字段从 `pool` 段拼入，不在 zen 段）。
+- **本地定制保留**：`KeyBindings`/`KeyRoutingEnabled` 仍在 `zen-config.json`；代理池与隔离规则仍在 `proxy-config.json`（上游 `Proxies`/`ProxyStrategy` 段实际落 `kv` 旧字段，未回写）；`handleZenConfigUpdate` 仍用 `next := *cur` 浅拷贝（上游逐字段枚举的构造在冲突点被拒绝吸收——浅拷贝保证今后加字段不漏，是 2026-10-29 立的铁律）；面板 `zenConfigPayload` 契约不变（代理池字段从 `pool` 段拼入，不在 zen 段）。
 - **验证**：`go build ./... && go vet ./... && go test ./... -count=1 && go test -race ./internal/app/` 全绿。
 
-### 2026-11-08 — c6b3c45 → a8fe356（2 提交：tool filter 吸收；system prompt 换位随上游回退）
-
-- merge commit `7fb9f12`（merge 方式）：基线 `c6b3c45 → a8fe356`（上游 `foxy1402/cline-proxy` main），冲突 3 文件（`zen.go`/`admin_zen.go`/`admin_html.go`）。
-- **吸收**：`a8fe356` zen 客户端工具过滤（新增 `zen_toolfilter.go`，默认关闭：按 `denyPrefixes`/`denyNames` 丢弃客户端工具，可选截断 `maxDescription`；12 个网关必需工具不进过滤。背景：ZCode 单请求 137KB 中 112KB（82%）是 76 个工具定义，免费日额度吸收不了——这是体积问题不是内容问题）；`SessionRotateMinutes`（粘性会话本地轮换周期，默认 120，0 = 不轮换）。
-- **随上游回退**：`7dd0afe` 撤回 `c6b3c45` 的 system prompt relocation。`SystemRelocation` 字段、面板开关随之移除；存量配置里的 `systemRelocation` 旧键由浅拷贝兜底，不再读写生效。
-- **本地定制保留**：`KeyBindings`/`KeyRoutingEnabled` 仍在 `zen-config.json`；代理池与隔离规则仍在 `proxy-config.json`（未回 zen 段）；`handleZenConfigUpdate` 仍用 `next := *cur` 浅拷贝（上游逐字段枚举在本次冲突点拒绝采纳——是 2026-10-29 立的铁律）；面板 `zenConfigPayload` 契约不变（代理池字段从 `pool` 段拼入）。工具过滤器的 `toolFilter` 字段进 payload 与 patch 结构（面板可编辑，与浅拷贝口径兼容）。
-- **验证**：`go build ./... && go vet ./... && go test ./... -count=1 && go test -race ./internal/app/` 全绿。
+<!-- 2026-11-09 复核：同区间 c6b3c45→a8fe356 曾误记两节（标题相同），已合并为上节；保留此注释防重复追加。Trae 新前缀横注：自 2026-11-07（09589a0/1acf099/bd04118）起对外前缀改为 tacn/tagb，本文件此前 Trae 历史条目的 trae:/solo: 前缀按当时现状记录，不另改写。 -->
 
 ### 2026-11-07 — a41f1756 → c6b3c45（3 提交全 zen 侧；429 诊断体系部分吸收）
 

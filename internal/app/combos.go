@@ -43,11 +43,54 @@ func loadCombosLocked() {
 	g := loadGlobalConfigLocked()
 	list := append([]*Combo(nil), g.Combos...)
 	globalCfgMu.Unlock()
+	needsSave := false
 	for _, c := range list {
 		if c != nil && c.ID != "" && c.Target != "" {
+			// 存量迁移（2026-11-07 合并域化后）：trae 平台的 combo target 若是
+			// 废除的旧四前缀 trae:/solo:/trae-intl:/solo-intl:，归一化为合并域
+			// 对外 id（tacn:/tagb:），落盘一次。intl 域旧 target 在 intl 关闭时
+			// 不归一化（解析不到，避免误改）。
+			if c.Platform == "trae" {
+				migrated, ok := migrateTraeComboTarget(c.Target)
+				if ok {
+					c.Target = migrated
+					needsSave = true
+				}
+			}
 			combosList = append(combosList, c)
 		}
 	}
+	if needsSave {
+		saveCombosLocked()
+	}
+}
+
+// migrateTraeComboTarget 把 combo 中 trae 平台的旧前缀 target 归一化为合并域
+// 对外 id（2026-11-07 合并域化后存量 combo 迁移，调用方持有 combosMu）。
+// 已是合并域形态或解析不到时返回原值与 false。
+func migrateTraeComboTarget(target string) (string, bool) {
+	legacy := map[string]string{
+		"trae": traeMergedCN, "solo": traeMergedCN,
+		"trae-intl": traeMergedIntl, "solo-intl": traeMergedIntl,
+	}
+	for prefix, merged := range legacy {
+		p := prefix + ":"
+		if strings.HasPrefix(target, p) {
+			bare := strings.TrimPrefix(target, p)
+			if bare == "" {
+				return target, false
+			}
+			if merged == traeMergedIntl && !trae2apiIntlEnabled() {
+				return target, false
+			}
+			migrated := merged + ":" + bare
+			if trae2apiModelExists(migrated) {
+				return migrated, true
+			}
+			return target, false
+		}
+	}
+	return target, false
 }
 
 func saveCombosLocked() {

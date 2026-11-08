@@ -1,5 +1,8 @@
 # TODO — Public container deployment: stateless /v1 proxy with multi-account rotation
 
+> 历史规划归档（2026-11-09 复核）：本文件为 2025-09 起的规划草稿，M1-M9 均已落地或废弃，
+> 现状以 README.md / PROJECT.md 为准，不再作为任务清单使用。仅保留存档。
+
 ## zen daily quota exhaustion: park the key, do not retry it (2026-10-31)
 
 Yesterday's fix capped the key cooldown at 20 minutes because `Retry-After`

@@ -23,12 +23,6 @@ func TestTrae2apiRateFilterPerRealmFallbackAndSplit(t *testing.T) {
 	if got := trae2apiRateFilterThresholdIntl(); got != 0.2 {
 		t.Fatalf("Intl fallback = %v, want 0.2 (legacy single value)", got)
 	}
-	if trae2apiRateFilterForRealm("trae") != 0.2 || trae2apiRateFilterForRealm("solo") != 0.2 {
-		t.Fatal("CN realms must use the CN threshold")
-	}
-	if trae2apiRateFilterForRealm("trae-intl") != 0.2 || trae2apiRateFilterForRealm("solo-intl") != 0.2 {
-		t.Fatal("Intl realms must use the Intl threshold")
-	}
 
 	// 场景 2：分域拆分后——CN 显式 0.3、Intl 显式 0（关）；旧单值保持 0.2
 	// 但不得再生效（新键优先）。
@@ -42,12 +36,6 @@ func TestTrae2apiRateFilterPerRealmFallbackAndSplit(t *testing.T) {
 	}
 	if got := trae2apiRateFilterThresholdIntl(); got != 0 {
 		t.Fatalf("Intl = %v, want 0 (explicitly off)", got)
-	}
-	if trae2apiRateFilterForRealm("trae-intl") != 0 {
-		t.Fatal("Intl realm must honor the explicit off")
-	}
-	if trae2apiRateFilterForRealm("trae") != 0.3 {
-		t.Fatal("CN realm must honor its own threshold")
 	}
 }
 

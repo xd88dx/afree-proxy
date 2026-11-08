@@ -168,6 +168,12 @@ func isHex4(s string) bool {
 
 // ---- 增量解析（流式路径用） ----
 
+// defaultTextCallMax 单响应转换上限（与网关 internal/textcall.DefaultMaxPerResponse
+// 同值 30）：防模型病态模仿一次吐出数百个调用打爆客户端。超限后按正文放行（
+// 内容不丢），与网关层 Filter 语义一致，两层互不重复计数——trae 引擎内层
+// 先转，网关层对已结构化的响应无文本可转自然空转。
+const defaultTextCallMax = 30
+
 // textCallFilter 在流式过程中增量检测文本工具调用。
 //
 // 正文增量先进入 pending 缓冲：可能是模式前缀的尾巴会被暂扣（最多扣
@@ -258,6 +264,11 @@ func (f *textCallFilter) feed(delta string) {
 		default: // tcComplete
 			f.pending = f.pending[consumed:]
 			f.capture = false
+			if len(f.calls) >= defaultTextCallMax {
+				f.reject(fmt.Sprintf("超过单响应转换上限(%d)，按正文放行", defaultTextCallMax), name, args)
+				f.emit(raw)
+				continue
+			}
 			if canonical, ok := f.lookup(name); ok {
 				if fixed, rep, rok := acceptCallArgs(args); rok {
 					f.calls = append(f.calls, extractedCall{name: canonical, args: fixed, repaired: rep})
@@ -338,6 +349,12 @@ func extractTextToolCalls(content string, tools []traectl.Tool) (prose string, c
 		raw, name, args, consumed, st := parseTextCall(rest)
 		switch st {
 		case tcComplete:
+			if len(calls) >= defaultTextCallMax {
+				// 单响应转换上限（与流式过滤同值）：超限按正文放行。
+				sb.WriteString(raw)
+				rest = rest[consumed:]
+				continue
+			}
 			canonical, knownOK := "", false
 			if known[name] {
 				canonical, knownOK = name, true
