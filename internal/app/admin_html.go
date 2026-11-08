@@ -538,7 +538,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
     <div class="table-wrap">
     <table>
       <thead>
-        <tr><th style="width:44px">#</th><th>Email</th><th>Status</th><th title="Counted locally by this proxy — not the official free quota">Today/Total tokens</th><th>Last used</th><th title="Main exit first, backup as fallback; both down = row skipped (isolation).">Proxy binding</th><th style="text-align:center">Actions</th><th style="text-align:center" title="Routing participation. New rows start disabled — tick Pool to enable.">Pool</th></tr>
+        <tr><th style="width:44px">#</th><th data-i18n="Email">Email</th><th data-i18n="Status">Status</th><th title="Counted locally by this proxy — not the official free quota" data-i18n="Today/Total tokens">Today/Total tokens</th><th data-i18n="Last used">Last used</th><th title="Main exit first, backup as fallback; both down = row skipped (isolation)." data-i18n="Proxy binding">Proxy binding</th><th style="text-align:center" data-i18n="Actions">Actions</th><th style="text-align:center" title="Routing participation. New rows start disabled — tick Pool to enable." data-i18n="Pool">Pool</th></tr>
       </thead>
       <tbody id="accountTableBody">
         <tr><td colspan="8" class="empty">Loading...</td></tr>
@@ -546,35 +546,35 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
     </table>
     </div>
     <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin:10px 6px 4px">
-      <button class="btn btn-primary btn-sm" onclick="openAccAddDialog()">Add</button>
+      <button class="btn btn-primary btn-sm" onclick="openAccAddDialog()" data-i18n="add">Add</button>
       <div style="display:flex;gap:8px">
-        <button class="btn btn-sm" onclick="stageAllAccountsPool(true)">Enable all</button>
-        <button class="btn btn-sm" onclick="stageAllAccountsPool(false)">Disable all</button>
+        <button class="btn btn-sm" onclick="stageAllAccountsPool(true)" data-i18n="enable_all">Enable all</button>
+        <button class="btn btn-sm" onclick="stageAllAccountsPool(false)" data-i18n="disable_all">Disable all</button>
         <button class="btn btn-sm" onclick="refreshProxyHealthCache().then(() => stageProxiesByOrder('acc'))" title="Bind main proxy by row order: 1st credential to Direct, then the proxy pool in order, skipping manually disabled proxies (staged - click Save to apply; enable/disable and backup untouched)">Bind proxies in order</button>
-        <button class="btn btn-sm" onclick="stageClearAccountProxies()" title="Stage only — click Save to apply. Clears bindings and disables every row.">Clear bindings</button>
-        <button class="btn btn-sm" id="accTestBtn" onclick="batchTestAccounts()" title="Run the Test probe on every row.">Test all</button>
+        <button class="btn btn-sm" onclick="stageClearAccountProxies()" title="Stage only — click Save to apply. Clears bindings and disables every row." data-i18n="clear_bindings">Clear bindings</button>
+        <button class="btn btn-sm" id="accTestBtn" onclick="batchTestAccounts()" title="Run the Test probe on every row." data-i18n="test_all">Test all</button>
       </div>
       <div style="display:flex;gap:8px">
-        <button class="btn btn-sm btn-warn" id="accResetBtn" onclick="resetAccountEdits()" title="Discard staged changes and reload the last saved state">Discard</button>
+        <button class="btn btn-sm btn-warn" id="accResetBtn" onclick="resetAccountEdits()" title="Discard staged changes and reload the last saved state" data-i18n="discard">Discard</button>
         <button class="btn btn-primary btn-sm" id="accSaveBtn" onclick="saveAccountEdits()" data-i18n="save">Save</button>
       </div>
     </div>
   </div>
 </div>
 <div class="section">
-  <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h10"/></svg></span> Request headers (mimicking the Cline CLI)<button class="btn btn-sm" onclick="resetHeaders()" style="margin-left:auto" title="Restore the default Cline CLI headers">Restore defaults</button></div>
+  <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h10"/></svg></span> Request headers (mimicking the Cline CLI)<button class="btn btn-sm" onclick="resetHeaders()" style="margin-left:auto" title="Restore the default Cline CLI headers" data-i18n="restore_defaults">Restore defaults</button></div>
   <div class="section-body">
     <div class="table-wrap">
     <table>
-      <thead><tr><th style="width:220px">Header</th><th>Value</th><th style="width:40px"></th></tr></thead>
+      <thead><tr><th style="width:220px" data-i18n="Header">Header</th><th data-i18n="Value">Value</th><th style="width:40px"></th></tr></thead>
       <tbody id="headersTableBody">
         <tr><td colspan="3" class="empty">Loading...</td></tr>
       </tbody>
     </table>
     </div>
     <div class="form-actions">
-      <button class="btn btn-sm" onclick="addHeaderRow()">Add header</button>
-      <button class="btn btn-sm btn-primary" onclick="saveHeaders()">Save headers</button>
+      <button class="btn btn-sm" onclick="addHeaderRow()" data-i18n="add_header">Add header</button>
+      <button class="btn btn-sm btn-primary" onclick="saveHeaders()" data-i18n="save_headers">Save headers</button>
     </div>
     <div class="hint">Attached to every Cline API request to mimic the official client.</div>
   </div>
@@ -584,7 +584,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
   <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 5-6"/></svg></span> Model catalog <span class="probe-pill" data-models-info style="font-weight:normal"></span></div>
   <div class="section-body">
     <div class="flex" style="margin-bottom:10px;gap:10px">
-      <button class="btn btn-sm btn-primary" onclick="refreshClineModels(this)">Refresh models</button>
+      <button class="btn btn-sm btn-primary" onclick="refreshClineModels(this)" data-i18n="refresh_models">Refresh models</button>
       <span class="hint" style="margin:0">Automatically synced from the official model source upstream (every 5 minutes)</span>
     </div>
     <div id="accModelsBody">Loading...</div>
@@ -603,29 +603,29 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
   <div class="section-body">
     <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin:0 6px 8px">
       <span class="wb-toolbar">
-        <button class="btn btn-sm" onclick="refreshTraeCredits()" title="Refresh every enabled account's credit snapshot (feeds the Credits column)">Refresh balances</button>
+        <button class="btn btn-sm" onclick="refreshTraeCredits()" title="Refresh every enabled account's credit snapshot (feeds the Credits column)" data-i18n="refresh_balances">Refresh balances</button>
       </span>
       <span class="wb-toolbar">
-        <button class="btn btn-sm" onclick="runTraeCheckin()" title="Daily check-in for every account whose account switch is on (upstream schedule applies too)">Check in all</button>
+        <button class="btn btn-sm" onclick="runTraeCheckin()" title="Daily check-in for every account whose account switch is on (upstream schedule applies too)" data-i18n="check_in_all">Check in all</button>
       </span>
     </div>
     <div class="table-wrap">
       <table>
-        <thead><tr><th style="width:44px">#</th><th style="width:150px">Account</th><th>Status</th><th title="Remaining credits from the latest snapshot (auto-refreshed in the background; Test refreshes on demand)">Credits</th><th title="Counted locally by this proxy from upstream usage events">Today/Total tokens</th><th>Last used</th><th title="Main exit first, backup as fallback; both down = row skipped (isolation).">Proxy binding</th><th style="width:130px;text-align:center">Actions</th><th style="text-align:center" data-i18n="gateway_switch" data-i18n-title="gateway_reverse_proxy_switch_unchecked_model_ses" title="Gateway (reverse proxy) switch: unchecked = model sessions never route to this account; check-in and all other maintenance tasks are unaffected. Can only be ticked while the account switch is on.">Gateway switch</th><th style="text-align:center" data-i18n="account_switch" data-i18n-title="account_master_switch_off_the_account_does_not_e" title="Account master switch. Off = the account does not exist: check-in, balance refresh and Test all skip it, and it never routes.">Account switch</th></tr></thead>
+        <thead><tr><th style="width:44px">#</th><th style="width:150px" data-i18n="Account">Account</th><th data-i18n="Status">Status</th><th title="Remaining credits from the latest snapshot (auto-refreshed in the background; Test refreshes on demand)" data-i18n="Credits">Credits</th><th title="Counted locally by this proxy from upstream usage events" data-i18n="Today/Total tokens">Today/Total tokens</th><th data-i18n="Last used">Last used</th><th title="Main exit first, backup as fallback; both down = row skipped (isolation)." data-i18n="Proxy binding">Proxy binding</th><th style="width:130px;text-align:center" data-i18n="Actions">Actions</th><th style="text-align:center" data-i18n="gateway_switch" data-i18n-title="gateway_reverse_proxy_switch_unchecked_model_ses" title="Gateway (reverse proxy) switch: unchecked = model sessions never route to this account; check-in and all other maintenance tasks are unaffected. Can only be ticked while the account switch is on.">Gateway switch</th><th style="text-align:center" data-i18n="account_switch" data-i18n-title="account_master_switch_off_the_account_does_not_e" title="Account master switch. Off = the account does not exist: check-in, balance refresh and Test all skip it, and it never routes.">Account switch</th></tr></thead>
         <tbody id="traeAccountsBody"><tr><td colspan="10" class="empty">Loading...</td></tr></tbody>
       </table>
     </div>
     <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin:10px 6px 4px;flex-wrap:wrap">
-      <button class="btn btn-primary btn-sm" onclick="openTraeAddDialog()">Add accounts</button>
+      <button class="btn btn-primary btn-sm" onclick="openTraeAddDialog()" data-i18n="add_accounts">Add accounts</button>
       <span class="wb-toolbar">
-        <button class="btn btn-sm" onclick="stageAllTraeRouting(true)">Enable all</button>
-        <button class="btn btn-sm" onclick="stageAllTraeRouting(false)">Disable all</button>
+        <button class="btn btn-sm" onclick="stageAllTraeRouting(true)" data-i18n="enable_all">Enable all</button>
+        <button class="btn btn-sm" onclick="stageAllTraeRouting(false)" data-i18n="disable_all">Disable all</button>
         <button class="btn btn-sm" onclick="refreshProxyHealthCache().then(() => stageProxiesByOrder('trae'))" title="Bind main proxy by row order: 1st credential to Direct, then the proxy pool in order, skipping manually disabled proxies (staged - click Save to apply; enable/disable and backup untouched)">Bind proxies in order</button>
-        <button class="btn btn-sm" onclick="stageClearTraeProxies()" title="Stage only — click Save to apply. Clears bindings and disables every row.">Clear bindings</button>
-        <button class="btn btn-sm" id="traeTestBtn" onclick="batchTestTraeAccounts()" title="Run the Test probe on every routable row.">Test all</button>
+        <button class="btn btn-sm" onclick="stageClearTraeProxies()" title="Stage only — click Save to apply. Clears bindings and disables every row." data-i18n="clear_bindings">Clear bindings</button>
+        <button class="btn btn-sm" id="traeTestBtn" onclick="batchTestTraeAccounts()" title="Run the Test probe on every routable row." data-i18n="test_all">Test all</button>
       </span>
       <span class="wb-toolbar">
-        <button class="btn btn-sm btn-warn" id="traeResetBtn" onclick="resetTraeEdits()" title="Discard staged changes and reload the last saved state">Discard</button>
+        <button class="btn btn-sm btn-warn" id="traeResetBtn" onclick="resetTraeEdits()" title="Discard staged changes and reload the last saved state" data-i18n="discard">Discard</button>
         <button class="btn btn-primary btn-sm" id="traeSaveBtn" onclick="saveTraeEdits()" data-i18n="save">Save</button>
       </span>
     </div>
@@ -674,8 +674,8 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
       </div>
     </div>
     <div class="form-actions" style="justify-content:flex-end;gap:8px">
-      <button class="btn" onclick="resetTraeConfigEdits()">Discard changes</button>
-      <button class="btn btn-primary" onclick="saveTraeConfig()">Save config</button>
+      <button class="btn" onclick="resetTraeConfigEdits()" data-i18n="discard_changes">Discard changes</button>
+      <button class="btn btn-primary" onclick="saveTraeConfig()" data-i18n="save_config">Save config</button>
     </div>
   </div>
 </div>
@@ -684,7 +684,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
   <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 5-6"/></svg></span> Model catalog</div>
   <div class="section-body">
     <div class="flex" style="margin-bottom:10px;gap:10px">
-      <button class="btn btn-sm btn-primary" onclick="refreshTraeModels(this)">Refresh models</button>
+      <button class="btn btn-sm btn-primary" onclick="refreshTraeModels(this)" data-i18n="refresh_models">Refresh models</button>
       <span class="hint" style="margin:0">Automatically synced from the official model source upstream (every 5 minutes)</span>
     </div>
     <div id="traeModelsBody">Loading...</div>
@@ -714,13 +714,13 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
       <div class="field" style="flex:1"><label>Update frequency (cron)</label>
         <div style="display:flex;gap:8px;align-items:center">
           <input id="ppSubCron" placeholder="*/30 * * * * (min hour day month weekday)" style="flex:1;min-width:0">
-          <button class="btn" id="ppSubUpdateBtn" onclick="triggerProxySubUpdate()" style="white-space:nowrap">Update now</button>
+          <button class="btn" id="ppSubUpdateBtn" onclick="triggerProxySubUpdate()" style="white-space:nowrap" data-i18n="update_now">Update now</button>
         </div>
       </div>
     </div>
     <div id="ppSubUpdateResult" style="margin:-6px 0 10px;font-size:12px;min-height:14px"></div>
     <div class="hint" style="margin-bottom:10px">Subscription refresh replaces the whole pool with the fetched list. Fetch failures keep the current pool.</div>
-    <div class="form-actions"><button class="btn btn-primary" onclick="saveProxyPool()">Save proxy pool</button><button class="btn btn-success" id="ppTestAllBtn" onclick="testAllCredentialPlatforms()" title="Run the batch test once on every platform's credential list (Cline / TraeWork / OpenCode / OpenRouter / AMDCloud / TokenHarbor / Other / WorkBuddy), one platform at a time">Test all credentials</button></div>
+    <div class="form-actions"><button class="btn btn-primary" onclick="saveProxyPool()" data-i18n="save_proxy_pool">Save proxy pool</button><button class="btn btn-success" id="ppTestAllBtn" onclick="testAllCredentialPlatforms()" title="Run the batch test once on every platform's credential list (Cline / TraeWork / OpenCode / OpenRouter / AMDCloud / TokenHarbor / Other / WorkBuddy), one platform at a time" data-i18n="test_all_credentials">Test all credentials</button></div>
   </div>
 </div>
 <div class="section">
@@ -737,20 +737,20 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
           <div id="ppBulkMenu" class="pb-menu" style="display:none"></div>
         </div>
         <div style="display:flex;gap:8px;margin-top:6px">
-          <button class="btn btn-sm btn-warn btn-static" id="ppBulkResetBtn" style="white-space:nowrap" onclick="ppBulkReset()" title="Discard staged exclusions and reload the last saved state">Discard</button>
-          <button class="btn btn-sm btn-primary" style="white-space:nowrap" onclick="ppBulkApply()">Append</button>
+          <button class="btn btn-sm btn-warn btn-static" id="ppBulkResetBtn" style="white-space:nowrap" onclick="ppBulkReset()" title="Discard staged exclusions and reload the last saved state" data-i18n="discard">Discard</button>
+          <button class="btn btn-sm btn-primary" style="white-space:nowrap" onclick="ppBulkApply()" data-i18n="append">Append</button>
         </div>
       </div>
     </div>
     <div id="ppRulesBody"><div class="pr-none" style="padding:10px 12px">Loading...</div></div>
     <div class="form-actions" style="margin-top:12px">
-      <button class="btn btn-primary" onclick="saveProxyRules()">Save proxy exclusion rules</button>
+      <button class="btn btn-primary" onclick="saveProxyRules()" data-i18n="save_proxy_exclusion_rules">Save proxy exclusion rules</button>
       <span class="pr-capbox" style="margin-left:10px" title="Proxies at or below this latency (seconds) keep their current binding and are skipped by reordering; slower ones are refilled from the pool. Saved on change.">
         <span class="pr-unit">Keep latency ≤</span>
         <input class="pr-cap" id="ppReorderKeepSec" type="number" min="0" max="600" step="0.1" value="8.0" style="width:56px" onchange="saveReorderKeepSec(this.value)">
         <span class="pr-unit">s</span>
       </span>
-      <button class="btn btn-success" onclick="openReorderDlg()" style="margin-left:10px">Reorder credential proxies by latency</button>
+      <button class="btn btn-success" onclick="openReorderDlg()" style="margin-left:10px" data-i18n="reorder_credential_proxies_by_latency">Reorder credential proxies by latency</button>
     </div>
   </div>
 </div>
@@ -826,21 +826,21 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
   </div>
 </div>
 <div class="section">
-  <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><path d="M3 17l5-6 4 3 4-7 5 4"/><path d="M3 21h18"/></svg></span> Proxy health<span style="flex:1"></span><input id="ppTestTarget" class="mono" style="width:230px;padding:3px 8px;font-size:11px;margin-right:6px" spellcheck="false" onchange="saveProxyTestTarget(this)" placeholder="https://www.gstatic.com/generate_204"><button class="btn btn-sm" id="ppTestBtn" onclick="runProxyLatencyTest(this)" title="Send up to 3 HTTPS probes per exit to the target in the input box (default www.gstatic.com/generate_204) through the same dial stack as real traffic; shows the min latency of successful samples and feeds the online-rate and handshake stats. Never touches routing or cooldowns.">Test latency</button><button class="btn btn-sm" onclick="clearProxyHealthStore()" title="Wipe this browser's stored online-rate rows (manual edits and proxies no longer in the pool); the table falls back to current backend data.">Clear data</button></div>
+  <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><path d="M3 17l5-6 4 3 4-7 5 4"/><path d="M3 21h18"/></svg></span> Proxy health<span style="flex:1"></span><input id="ppTestTarget" class="mono" style="width:230px;padding:3px 8px;font-size:11px;margin-right:6px" spellcheck="false" onchange="saveProxyTestTarget(this)" placeholder="https://www.gstatic.com/generate_204"><button class="btn btn-sm" id="ppTestBtn" onclick="runProxyLatencyTest(this)" title="Send up to 3 HTTPS probes per exit to the target in the input box (default www.gstatic.com/generate_204) through the same dial stack as real traffic; shows the min latency of successful samples and feeds the online-rate and handshake stats. Never touches routing or cooldowns." data-i18n="test_latency">Test latency</button><button class="btn btn-sm" onclick="clearProxyHealthStore()" title="Wipe this browser's stored online-rate rows (manual edits and proxies no longer in the pool); the table falls back to current backend data." data-i18n="clear_data">Clear data</button></div>
   <div class="section-body">
     <div class="table-wrap">
     <table>
       <thead><tr>
-        <th>Proxy</th>
-        <th style="text-align:center" title="Upstream attempts that egressed via this proxy since the pool was last edited">Attempts</th>
-        <th style="text-align:center" title="Transport-layer success rate since the pool was last edited (upstream 4xx/5xx still counts as the proxy being online)">Online rate</th>
-        <th style="text-align:center" title="Success rate over the last 50 attempts; red below 80% (min 10 samples).">Recent online rate</th>
+        <th data-i18n="Proxy">Proxy</th>
+        <th style="text-align:center" title="Upstream attempts that egressed via this proxy since the pool was last edited" data-i18n="Attempts">Attempts</th>
+        <th style="text-align:center" title="Transport-layer success rate since the pool was last edited (upstream 4xx/5xx still counts as the proxy being online)" data-i18n="Online rate">Online rate</th>
+        <th style="text-align:center" title="Success rate over the last 50 attempts; red below 80% (min 10 samples)." data-i18n="Recent online rate">Recent online rate</th>
         <th style="text-align:center;cursor:pointer;user-select:none" onclick="ppHsSortToggle()" title="Average tunnel-setup time over successful attempts (TCP+TLS+CONNECT handshake only — excludes upstream first byte and task duration). Lower is better. Click to sort.">Avg handshake<span id="ppHsSortMark"></span></th>
-        <th style="text-align:center" title="Latest manual latency test: min / median over up to 3 HTTPS probes to the configured target through the same dial stack as real traffic; the samples also feed the rate and handshake stats. Routing and cooldowns are untouched.">Test</th>
-        <th>Last OK</th>
-        <th>Last Fail</th>
-        <th>Cooldown</th>
-        <th style="text-align:center" title="Manual unban while a cooldown is active (global or platform-scoped): clears the cooldown and the failure counters so the exit rejoins the rotation immediately.">Actions</th>
+        <th style="text-align:center" title="Latest manual latency test: min / median over up to 3 HTTPS probes to the configured target through the same dial stack as real traffic; the samples also feed the rate and handshake stats. Routing and cooldowns are untouched." data-i18n="test">Test</th>
+        <th data-i18n="Last OK">Last OK</th>
+        <th data-i18n="Last Fail">Last Fail</th>
+        <th data-i18n="cooldown_1">Cooldown</th>
+        <th style="text-align:center" title="Manual unban while a cooldown is active (global or platform-scoped): clears the cooldown and the failure counters so the exit rejoins the rotation immediately." data-i18n="Actions">Actions</th>
       </tr></thead>
       <tbody id="ppHealthBody"><tr><td colspan="10" class="empty">Loading...</td></tr></tbody>
     </table>
@@ -859,7 +859,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
   <div class="section-body">
     <p class="hint">Generated keys authenticate client access to the proxy API; they only take effect when the API_KEY environment variable is not set.</p>
     <div class="form-actions" style="margin-bottom:14px">
-      <button class="btn btn-success" onclick="generateKey()">Generate new key</button>
+      <button class="btn btn-success" onclick="generateKey()" data-i18n="generate_new_key">Generate new key</button>
     </div>
     <div id="keysList"></div>
     <div id="keyGenResult" style="margin-top:8px"></div>
@@ -879,7 +879,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
         <div id="platformBanMenu" class="pb-menu" style="display:none"></div>
       </div>
       <div style="display:flex;gap:8px;margin-top:6px">
-        <button class="btn btn-sm btn-warn btn-static" id="platformBanResetBtn" style="white-space:nowrap" onclick="resetPlatformBans()" title="Discard staged selections and reload the saved ban state">Discard</button>
+        <button class="btn btn-sm btn-warn btn-static" id="platformBanResetBtn" style="white-space:nowrap" onclick="resetPlatformBans()" title="Discard staged selections and reload the saved ban state" data-i18n="discard">Discard</button>
         <button class="btn btn-sm btn-primary btn-static" id="platformBanApplyBtn" style="white-space:nowrap" onclick="applyPlatformBans()" data-i18n="save">Save</button>
       </div>
     </div>
@@ -891,15 +891,15 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
   <div class="section-body">
     <div class="hint">Banned automatically (upstream refuses them for this account type, e.g. code 11158) or manually — hidden from /v1/models. Test sends a real request with the first enabled credential; Unblock only removes the entry, the same upstream error bans it again.</div>
     <div class="form-actions">
-      <button class="btn btn-sm btn-success" id="batchUnblockBtn" style="white-space:nowrap">Unblock selected</button>
+      <button class="btn btn-sm btn-success" id="batchUnblockBtn" style="white-space:nowrap" data-i18n="unblock_selected">Unblock selected</button>
       <span style="flex:1"></span>
       <select id="batchBanPlatform" style="width:auto;flex:0 0 auto;min-width:130px;padding:6px 10px;border:1px solid var(--border);border-radius:8px;background:var(--bg);color:var(--text)"></select>
       <input id="batchBanKeyword" placeholder="Keyword (case-insensitive)" style="width:200px;flex:0 0 auto;padding:6px 10px;border:1px solid var(--border);border-radius:8px;background:var(--bg);color:var(--text)">
-      <button class="btn btn-sm btn-danger" id="batchBanBtn" style="white-space:nowrap">Ban matched</button>
+      <button class="btn btn-sm btn-danger" id="batchBanBtn" style="white-space:nowrap" data-i18n="ban_matched">Ban matched</button>
     </div>
     <div class="table-wrap">
       <table>
-        <thead><tr><th style="width:36px;text-align:center"><input type="checkbox" id="blCheckAll" style="width:auto;padding:0;vertical-align:middle"></th><th style="width:140px">Platform</th><th>Model</th><th style="width:190px">Ban reason</th><th style="width:180px">Blocked at</th><th style="width:200px;text-align:center">Actions</th></tr></thead>
+        <thead><tr><th style="width:36px;text-align:center"><input type="checkbox" id="blCheckAll" style="width:auto;padding:0;vertical-align:middle"></th><th style="width:140px" data-i18n="Platform">Platform</th><th data-i18n="Model">Model</th><th style="width:190px" data-i18n="Ban reason">Ban reason</th><th style="width:180px" data-i18n="Blocked at">Blocked at</th><th style="width:200px;text-align:center" data-i18n="Actions">Actions</th></tr></thead>
         <tbody id="blacklistBody"><tr><td colspan="6" class="empty">Loading...</td></tr></tbody>
       </table>
     </div>
@@ -911,8 +911,8 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
   <div class="section-body">
     <div class="hint">Export contains credentials — keep the file safe. Import overwrites existing config.</div>
     <div class="form-actions">
-      <button class="btn btn-success" onclick="exportConfig()">Export config</button>
-      <button class="btn btn-primary" onclick="document.getElementById('importFile').click()">Import config</button>
+      <button class="btn btn-success" onclick="exportConfig()" data-i18n="export_config">Export config</button>
+      <button class="btn btn-primary" onclick="document.getElementById('importFile').click()" data-i18n="import_config">Import config</button>
       <input type="file" id="importFile" accept=".json,application/json" style="display:none" onchange="onImportFileChange(event)">
     </div>
   </div>
@@ -923,7 +923,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
   <div class="section-body">
     <div class="hint" style="margin-top:0">Deletes ALL persisted data (accounts, keys, proxies, config). Cannot be undone.</div>
     <div class="form-actions">
-      <button class="btn btn-danger" onclick="deleteAllData()">Delete all data</button>
+      <button class="btn btn-danger" onclick="deleteAllData()" data-i18n="delete_all_data">Delete all data</button>
     </div>
   </div>
 </div>
@@ -938,8 +938,8 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
       Record admin logs
     </label>
     <span class="auto-pill" id="logsAutoPill">Auto-refreshing</span>
-    <button class="btn btn-sm" onclick="toggleLogsAuto()" id="logsAutoBtn">Pause</button>
-    <button class="btn btn-sm" onclick="loadLogs()">Refresh</button>
+    <button class="btn btn-sm" onclick="toggleLogsAuto()" id="logsAutoBtn" data-i18n="pause">Pause</button>
+    <button class="btn btn-sm" onclick="loadLogs()" data-i18n="refresh">Refresh</button>
   </div>
 </div>
 <div class="section">
@@ -947,7 +947,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
     <div class="table-wrap">
     <table>
       <thead>
-        <tr><th>Time</th><th>Source</th><th>Method</th><th>Path</th><th>Model</th><th>Route</th><th>Upstream</th><th>Proxy</th><th>Status</th><th>TTFB</th><th>Duration</th></tr>
+        <tr><th data-i18n="Time">Time</th><th data-i18n="Source">Source</th><th data-i18n="Method">Method</th><th data-i18n="Path">Path</th><th data-i18n="Model">Model</th><th data-i18n="Route">Route</th><th data-i18n="Upstream">Upstream</th><th data-i18n="Proxy">Proxy</th><th data-i18n="Status">Status</th><th data-i18n="TTFB">TTFB</th><th data-i18n="Duration">Duration</th></tr>
       </thead>
       <tbody id="logsTableBody">
         <tr><td colspan="11" class="empty">Loading...</td></tr>
@@ -972,7 +972,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
       <div class="field" style="flex:2"><label>Target model</label><select id="comboTarget"></select></div>
       <div class="field" style="flex:0 0 auto;display:flex;align-items:flex-end"><label style="display:flex;gap:6px;align-items:center;white-space:nowrap;margin:0;padding-bottom: 8px;"><input type="checkbox" id="comboUseProxies"> Use proxy pool</label></div>
     </div>
-    <button class="btn btn-primary" onclick="createCombo()">Create custom alias</button>
+    <button class="btn btn-primary" onclick="createCombo()" data-i18n="create_custom_alias">Create custom alias</button>
   </div>
 </div>
 <div class="section">
@@ -992,7 +992,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
         <label>Base URL</label>
         <div style="display:flex;gap:8px;align-items:center">
           <input type="text" id="ocBaseURL" placeholder="https://opencode.ai/inference/openai/v1" style="flex:1;min-width:0">
-          <button class="btn btn-primary btn-sm" onclick="saveOcConfig()">Confirm</button>
+          <button class="btn btn-primary btn-sm" onclick="saveOcConfig()" data-i18n="confirm">Confirm</button>
         </div>
       </div>
     </div>
@@ -1002,21 +1002,21 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
     </div>
     <div class="table-wrap" style="margin-bottom:10px">
       <table>
-        <thead><tr><th style="width:50px">#</th><th style="width:110px">Key</th><th>Status</th><th title="Counted locally by this proxy — not the official free quota">Today/Total tokens</th><th>Last used</th><th title="Main exit first, backup as fallback; both down = row skipped (isolation).">Proxy binding</th><th style="width:130px;text-align:center">Actions</th><th style="text-align:center" title="Routing participation: unchecked keys never enter request rotation. Newly added keys start disabled — tick Pool to enable. Sessions are minted per upstream call.">Pool</th></tr></thead>
+        <thead><tr><th style="width:50px">#</th><th style="width:110px" data-i18n="Key">Key</th><th data-i18n="Status">Status</th><th title="Counted locally by this proxy — not the official free quota" data-i18n="Today/Total tokens">Today/Total tokens</th><th data-i18n="Last used">Last used</th><th title="Main exit first, backup as fallback; both down = row skipped (isolation)." data-i18n="Proxy binding">Proxy binding</th><th style="width:130px;text-align:center" data-i18n="Actions">Actions</th><th style="text-align:center" title="Routing participation: unchecked keys never enter request rotation. Newly added keys start disabled — tick Pool to enable. Sessions are minted per upstream call." data-i18n="Pool">Pool</th></tr></thead>
         <tbody id="ocKeysBody"><tr><td colspan="8" class="empty">Loading...</td></tr></tbody>
       </table>
     </div>
     <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin:10px 6px 4px">
-      <button class="btn btn-primary btn-sm" onclick="openZenKeyAddDialog()">Add credentials</button>
+      <button class="btn btn-primary btn-sm" onclick="openZenKeyAddDialog()" data-i18n="add_credentials">Add credentials</button>
       <div style="display:flex;gap:8px">
-        <button class="btn btn-sm" onclick="stageAllKeysRouting(true)">Enable all</button>
-        <button class="btn btn-sm" onclick="stageAllKeysRouting(false)">Disable all</button>
+        <button class="btn btn-sm" onclick="stageAllKeysRouting(true)" data-i18n="enable_all">Enable all</button>
+        <button class="btn btn-sm" onclick="stageAllKeysRouting(false)" data-i18n="disable_all">Disable all</button>
         <button class="btn btn-sm" onclick="refreshProxyHealthCache().then(() => stageProxiesByOrder('key'))" title="Bind main proxy by row order: 1st credential to Direct, then the proxy pool in order, skipping manually disabled proxies (staged - click Save to apply; enable/disable and backup untouched)">Bind proxies in order</button>
-        <button class="btn btn-sm" onclick="stageClearZenKeyProxies()" title="Stage only — click Save to apply. Clears bindings and disables every row.">Clear bindings</button>
-        <button class="btn btn-sm" id="ocTestBtn" onclick="batchTestKeys()" title="Run the Test probe on every row.">Test all</button>
+        <button class="btn btn-sm" onclick="stageClearZenKeyProxies()" title="Stage only — click Save to apply. Clears bindings and disables every row." data-i18n="clear_bindings">Clear bindings</button>
+        <button class="btn btn-sm" id="ocTestBtn" onclick="batchTestKeys()" title="Run the Test probe on every row." data-i18n="test_all">Test all</button>
       </div>
       <div style="display:flex;gap:8px">
-        <button class="btn btn-sm btn-warn" id="ocResetBtn" onclick="resetKeyEdits()" title="Discard staged changes and reload the last saved state">Discard</button>
+        <button class="btn btn-sm btn-warn" id="ocResetBtn" onclick="resetKeyEdits()" title="Discard staged changes and reload the last saved state" data-i18n="discard">Discard</button>
         <button class="btn btn-primary btn-sm" id="ocKeysSaveBtn" onclick="saveKeyEdits()" data-i18n="save">Save</button>
       </div>
     </div>
@@ -1030,7 +1030,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
       <div class="field"><label>Max concurrency</label><input type="text" id="ocMaxConc" placeholder="8"></div>
       <div class="field"><label>Rate-limit retries</label><input type="text" id="ocRetries" placeholder="3"></div>
     </div>
-    <div class="form-actions"><button class="btn btn-primary" onclick="saveOcConfig()">Save rate-limit config</button></div>
+    <div class="form-actions"><button class="btn btn-primary" onclick="saveOcConfig()" data-i18n="save_rate_limit_config">Save rate-limit config</button></div>
   </div>
 </div>
 
@@ -1050,7 +1050,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
     <div class="form-row">
       <div class="field"><label>Summary cap</label><input type="text" id="ocMaxSummary" placeholder="4096"></div>
     </div>
-    <div class="form-actions"><button class="btn btn-primary" onclick="saveOcConfig()">Save compaction config</button></div>
+    <div class="form-actions"><button class="btn btn-primary" onclick="saveOcConfig()" data-i18n="save_compaction_config">Save compaction config</button></div>
   </div>
 </div>
 
@@ -1101,14 +1101,14 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
   <div class="section-body" style="padding:6px">
     <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin:4px 6px 10px">
       <span class="wb-toolbar">
-        <button class="btn btn-sm" onclick="openWorkbuddyTodoScan()">Task center</button>
-        <button class="btn btn-sm" onclick="refreshWorkbuddyAccounts()" title="Refresh all account balances">Refresh all</button>
+        <button class="btn btn-sm" onclick="openWorkbuddyTodoScan()" data-i18n="task_center">Task center</button>
+        <button class="btn btn-sm" onclick="refreshWorkbuddyAccounts()" title="Refresh all account balances" data-i18n="refresh_all">Refresh all</button>
       </span>
       <span class="wb-toolbar">
-        <button class="btn btn-sm" onclick="runWorkbuddyBatch('checkin_all')">Check in all</button>
-        <button class="btn btn-sm" onclick="runWorkbuddyBatch('travel_all')">Pet patrol</button>
-        <button class="btn btn-sm" onclick="runWorkbuddyBatch('activity_all')">Activity all</button>
-        <button class="btn btn-sm" onclick="runWorkbuddyBatch('keepalive_all')">Refresh login</button>
+        <button class="btn btn-sm" onclick="runWorkbuddyBatch('checkin_all')" data-i18n="check_in_all">Check in all</button>
+        <button class="btn btn-sm" onclick="runWorkbuddyBatch('travel_all')" data-i18n="pet_patrol">Pet patrol</button>
+        <button class="btn btn-sm" onclick="runWorkbuddyBatch('activity_all')" data-i18n="activity_all">Activity all</button>
+        <button class="btn btn-sm" onclick="runWorkbuddyBatch('keepalive_all')" data-i18n="refresh_login">Refresh login</button>
       </span>
     </div>
     <div class="table-wrap">
@@ -1116,13 +1116,13 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
         <thead>
           <tr>
             <th style="width:44px">#</th>
-            <th>Account</th>
-            <th>Status</th>
-            <th>Credits</th>
-            <th title="Counted locally by this proxy — not the official free quota">Today/Total tokens</th>
-            <th>Last used</th>
-            <th title="Main exit first, backup as fallback; both down = row skipped (isolation).">Proxy binding</th>
-            <th style="text-align:center">Actions</th>
+            <th data-i18n="Account">Account</th>
+            <th data-i18n="Status">Status</th>
+            <th data-i18n="Credits">Credits</th>
+            <th title="Counted locally by this proxy — not the official free quota" data-i18n="Today/Total tokens">Today/Total tokens</th>
+            <th data-i18n="Last used">Last used</th>
+            <th title="Main exit first, backup as fallback; both down = row skipped (isolation)." data-i18n="Proxy binding">Proxy binding</th>
+            <th style="text-align:center" data-i18n="Actions">Actions</th>
             <th style="text-align:center" data-i18n="gateway_switch" data-i18n-title="gateway_reverse_proxy_switch_unchecked_model_ses" title="Gateway (reverse proxy) switch: unchecked = model sessions never route to this account; check-in and all other maintenance tasks are unaffected. Can only be ticked while the account switch is on.">Gateway switch</th>
             <th style="text-align:center" data-i18n="account_switch" data-i18n-title="Account master switch. Off = the account does not exist: check-in, patrol, activity, keepalive, night chats, growth and balance refresh all skip it, and it never routes." title="Account master switch. Off = the account does not exist: check-in, patrol, activity, keepalive, night chats, growth and balance refresh all skip it, and it never routes.">Account switch</th>
           </tr>
@@ -1134,17 +1134,17 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
     </div>
     <div style="display:flex;align-items:center;gap:8px;margin:10px 6px 4px">
       <div style="flex:1;display:flex;gap:8px;justify-content:flex-start">
-        <button class="btn btn-primary btn-sm" onclick="openWorkbuddyAdd()">Add account</button>
+        <button class="btn btn-primary btn-sm" onclick="openWorkbuddyAdd()" data-i18n="add_account">Add account</button>
       </div>
       <div style="flex:1;display:flex;gap:8px;justify-content:center">
-        <button class="btn btn-sm" onclick="stageAllWbPool(true)">Enable all</button>
-        <button class="btn btn-sm" onclick="stageAllWbPool(false)">Disable all</button>
+        <button class="btn btn-sm" onclick="stageAllWbPool(true)" data-i18n="enable_all">Enable all</button>
+        <button class="btn btn-sm" onclick="stageAllWbPool(false)" data-i18n="disable_all">Disable all</button>
         <button class="btn btn-sm" onclick="refreshProxyHealthCache().then(() => stageProxiesByOrder('wb'))" title="Bind main proxy by row order: 1st credential to Direct, then the proxy pool in order, skipping manually disabled proxies (staged - click Save to apply; enable/disable and backup untouched)">Bind proxies in order</button>
-        <button class="btn btn-sm" onclick="stageClearWorkbuddyProxyBindings()" title="Stage only — click Save to apply. Clears bindings and disables every row.">Clear bindings</button>
-        <button class="btn btn-sm" id="wbTestAllBtn" onclick="batchTestWorkbuddyAccounts()" title="Run the Test probe on every row.">Test all</button>
+        <button class="btn btn-sm" onclick="stageClearWorkbuddyProxyBindings()" title="Stage only — click Save to apply. Clears bindings and disables every row." data-i18n="clear_bindings">Clear bindings</button>
+        <button class="btn btn-sm" id="wbTestAllBtn" onclick="batchTestWorkbuddyAccounts()" title="Run the Test probe on every row." data-i18n="test_all">Test all</button>
       </div>
       <div style="flex:1;display:flex;gap:8px;justify-content:flex-end">
-        <button class="btn btn-sm btn-warn" id="wbResetBtn" onclick="resetWorkbuddyEdits()" title="Discard staged changes and reload the last saved state">Discard</button>
+        <button class="btn btn-sm btn-warn" id="wbResetBtn" onclick="resetWorkbuddyEdits()" title="Discard staged changes and reload the last saved state" data-i18n="discard">Discard</button>
         <button class="btn btn-primary btn-sm" id="wbSaveBtn" onclick="saveWorkbuddyEdits()" data-i18n="save">Save</button>
       </div>
     </div>
@@ -1255,8 +1255,8 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
         </div>
       </div>
       <div class="form-actions" style="justify-content:flex-end">
-        <button type="button" class="btn" onclick="loadWorkbuddyConfig()">Discard changes</button>
-        <button type="submit" class="btn btn-primary" id="wbSaveConfig">Save configuration</button>
+        <button type="button" class="btn" onclick="loadWorkbuddyConfig()" data-i18n="discard_changes">Discard changes</button>
+        <button type="submit" class="btn btn-primary" id="wbSaveConfig" data-i18n="save_configuration">Save configuration</button>
       </div>
     </div>
   </div>
@@ -1266,7 +1266,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
   <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 5-6"/></svg></span> Model catalog <span class="probe-pill" data-models-info style="font-weight:normal"></span></div>
   <div class="section-body">
     <div class="flex" style="margin-bottom:10px;gap:10px">
-      <button class="btn btn-sm btn-primary" onclick="refreshWbModels(this)">Refresh models</button>
+      <button class="btn btn-sm btn-primary" onclick="refreshWbModels(this)" data-i18n="refresh_models">Refresh models</button>
       <span class="hint" style="margin:0">Automatically synced from the official model source upstream (every 5 minutes)</span>
     </div>
     <div id="wbModelsBody">Loading...</div>
@@ -1287,7 +1287,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
         <label>Base URL</label>
         <div style="display:flex;gap:8px;align-items:center">
           <input type="text" id="orBaseURL" placeholder="https://openrouter.ai/api/v1" style="flex:1;min-width:0">
-          <button class="btn btn-primary btn-sm" onclick="saveOrConfig()">Confirm</button>
+          <button class="btn btn-primary btn-sm" onclick="saveOrConfig()" data-i18n="confirm">Confirm</button>
         </div>
       </div>
     </div>
@@ -1297,21 +1297,21 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
     </div>
     <div class="table-wrap" style="margin-bottom:10px">
       <table>
-        <thead><tr><th style="width:50px">#</th><th style="width:150px">Key</th><th>Status</th><th title="Counted locally by this proxy — not the official free quota">Today/Total tokens</th><th>Last used</th><th title="Main exit first, backup as fallback; both down = row skipped (isolation).">Proxy binding</th><th style="width:130px;text-align:center">Actions</th><th style="text-align:center" title="Routing participation. New rows start disabled — tick Pool to enable.">Pool</th></tr></thead>
+        <thead><tr><th style="width:50px">#</th><th style="width:150px" data-i18n="Key">Key</th><th data-i18n="Status">Status</th><th title="Counted locally by this proxy — not the official free quota" data-i18n="Today/Total tokens">Today/Total tokens</th><th data-i18n="Last used">Last used</th><th title="Main exit first, backup as fallback; both down = row skipped (isolation)." data-i18n="Proxy binding">Proxy binding</th><th style="width:130px;text-align:center" data-i18n="Actions">Actions</th><th style="text-align:center" title="Routing participation. New rows start disabled — tick Pool to enable." data-i18n="Pool">Pool</th></tr></thead>
         <tbody id="orKeysBody"><tr><td colspan="8" class="empty">Loading...</td></tr></tbody>
       </table>
     </div>
     <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin:10px 6px 4px">
-      <button class="btn btn-primary btn-sm" onclick="openOrKeyAddDialog()">Add credentials</button>
+      <button class="btn btn-primary btn-sm" onclick="openOrKeyAddDialog()" data-i18n="add_credentials">Add credentials</button>
       <div style="display:flex;gap:8px">
-        <button class="btn btn-sm" onclick="stageAllOrKeysRouting(true)">Enable all</button>
-        <button class="btn btn-sm" onclick="stageAllOrKeysRouting(false)">Disable all</button>
+        <button class="btn btn-sm" onclick="stageAllOrKeysRouting(true)" data-i18n="enable_all">Enable all</button>
+        <button class="btn btn-sm" onclick="stageAllOrKeysRouting(false)" data-i18n="disable_all">Disable all</button>
         <button class="btn btn-sm" onclick="refreshProxyHealthCache().then(() => stageProxiesByOrder('or'))" title="Bind main proxy by row order: 1st credential to Direct, then the proxy pool in order, skipping manually disabled proxies (staged - click Save to apply; enable/disable and backup untouched)">Bind proxies in order</button>
-        <button class="btn btn-sm" onclick="stageClearOrKeyProxies()" title="Stage only — click Save to apply. Clears bindings and disables every row.">Clear bindings</button>
-        <button class="btn btn-sm" id="orTestBtn" onclick="batchTestOrKeys()" title="Run the Test probe on every row.">Test all</button>
+        <button class="btn btn-sm" onclick="stageClearOrKeyProxies()" title="Stage only — click Save to apply. Clears bindings and disables every row." data-i18n="clear_bindings">Clear bindings</button>
+        <button class="btn btn-sm" id="orTestBtn" onclick="batchTestOrKeys()" title="Run the Test probe on every row." data-i18n="test_all">Test all</button>
       </div>
       <div style="display:flex;gap:8px">
-        <button class="btn btn-sm btn-warn" id="orResetBtn" onclick="resetOrKeyEdits()" title="Discard staged changes and reload the last saved state">Discard</button>
+        <button class="btn btn-sm btn-warn" id="orResetBtn" onclick="resetOrKeyEdits()" title="Discard staged changes and reload the last saved state" data-i18n="discard">Discard</button>
         <button class="btn btn-primary btn-sm" id="orKeysSaveBtn" onclick="saveOrKeyEdits()" data-i18n="save">Save</button>
       </div>
     </div>
@@ -1325,7 +1325,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
       <div class="field"><label>Max concurrency</label><input type="text" id="orMaxConc" placeholder="8"></div>
       <div class="field"><label>Rate-limit retries</label><input type="text" id="orRetries" placeholder="3"></div>
     </div>
-    <div class="form-actions"><button class="btn btn-primary" onclick="saveOrConfig()">Save rate-limit config</button></div>
+    <div class="form-actions"><button class="btn btn-primary" onclick="saveOrConfig()" data-i18n="save_rate_limit_config">Save rate-limit config</button></div>
   </div>
 </div>
 
@@ -1333,7 +1333,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
   <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 5-6"/></svg></span> Model catalog</div>
   <div class="section-body">
         <div class="flex" style="margin-bottom:10px;gap:10px">
-      <button class="btn btn-sm btn-primary" onclick="refreshOrModels(this)">Refresh models</button>
+      <button class="btn btn-sm btn-primary" onclick="refreshOrModels(this)" data-i18n="refresh_models">Refresh models</button>
       <span class="hint" style="margin:0">Automatically synced from the official model source upstream (every 5 minutes)</span>
     </div>
     <div id="orModelsBody">Loading...</div>
@@ -1354,7 +1354,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
         <label>Base URL</label>
         <div style="display:flex;gap:8px;align-items:center">
           <input type="text" id="amdBaseURL" placeholder="https://developer.amd.com.cn/radeon/api/v1" style="flex:1;min-width:0">
-          <button class="btn btn-primary btn-sm" onclick="saveAmdConfig()">Confirm</button>
+          <button class="btn btn-primary btn-sm" onclick="saveAmdConfig()" data-i18n="confirm">Confirm</button>
         </div>
       </div>
     </div>
@@ -1364,21 +1364,21 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
     </div>
     <div class="table-wrap" style="margin-bottom:10px">
       <table>
-        <thead><tr><th style="width:50px">#</th><th style="width:150px">Key</th><th>Status</th><th title="Counted locally by this proxy — not the official free quota">Today/Total tokens</th><th>Last used</th><th title="Main exit first, backup as fallback; both down = row skipped (isolation).">Proxy binding</th><th style="width:130px;text-align:center">Actions</th><th style="text-align:center" title="Routing participation. New rows start disabled — tick Pool to enable.">Pool</th></tr></thead>
+        <thead><tr><th style="width:50px">#</th><th style="width:150px" data-i18n="Key">Key</th><th data-i18n="Status">Status</th><th title="Counted locally by this proxy — not the official free quota" data-i18n="Today/Total tokens">Today/Total tokens</th><th data-i18n="Last used">Last used</th><th title="Main exit first, backup as fallback; both down = row skipped (isolation)." data-i18n="Proxy binding">Proxy binding</th><th style="width:130px;text-align:center" data-i18n="Actions">Actions</th><th style="text-align:center" title="Routing participation. New rows start disabled — tick Pool to enable." data-i18n="Pool">Pool</th></tr></thead>
         <tbody id="amdKeysBody"><tr><td colspan="8" class="empty">Loading...</td></tr></tbody>
       </table>
     </div>
     <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin:10px 6px 4px">
-      <button class="btn btn-primary btn-sm" onclick="openAmdKeyAddDialog()">Add credentials</button>
+      <button class="btn btn-primary btn-sm" onclick="openAmdKeyAddDialog()" data-i18n="add_credentials">Add credentials</button>
       <div style="display:flex;gap:8px">
-        <button class="btn btn-sm" onclick="stageAllAmdKeysRouting(true)">Enable all</button>
-        <button class="btn btn-sm" onclick="stageAllAmdKeysRouting(false)">Disable all</button>
+        <button class="btn btn-sm" onclick="stageAllAmdKeysRouting(true)" data-i18n="enable_all">Enable all</button>
+        <button class="btn btn-sm" onclick="stageAllAmdKeysRouting(false)" data-i18n="disable_all">Disable all</button>
         <button class="btn btn-sm" onclick="refreshProxyHealthCache().then(() => stageProxiesByOrder('amd'))" title="Bind main proxy by row order: 1st credential to Direct, then the proxy pool in order, skipping manually disabled proxies (staged - click Save to apply; enable/disable and backup untouched)">Bind proxies in order</button>
-        <button class="btn btn-sm" onclick="stageClearAmdKeyProxies()" title="Stage only — click Save to apply. Clears bindings and disables every row.">Clear bindings</button>
-        <button class="btn btn-sm" id="amdTestBtn" onclick="batchTestAmdKeys()" title="Run the Test probe on every row.">Test all</button>
+        <button class="btn btn-sm" onclick="stageClearAmdKeyProxies()" title="Stage only — click Save to apply. Clears bindings and disables every row." data-i18n="clear_bindings">Clear bindings</button>
+        <button class="btn btn-sm" id="amdTestBtn" onclick="batchTestAmdKeys()" title="Run the Test probe on every row." data-i18n="test_all">Test all</button>
       </div>
       <div style="display:flex;gap:8px">
-        <button class="btn btn-sm btn-warn" id="amdResetBtn" onclick="resetAmdKeyEdits()" title="Discard staged changes and reload the last saved state">Discard</button>
+        <button class="btn btn-sm btn-warn" id="amdResetBtn" onclick="resetAmdKeyEdits()" title="Discard staged changes and reload the last saved state" data-i18n="discard">Discard</button>
         <button class="btn btn-primary btn-sm" id="amdKeysSaveBtn" onclick="saveAmdKeyEdits()" data-i18n="save">Save</button>
       </div>
     </div>
@@ -1393,7 +1393,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
       <div class="field"><label>Max concurrency</label><input type="text" id="amdMaxConc" placeholder="8"></div>
       <div class="field"><label>Rate-limit retries</label><input type="text" id="amdRetries" placeholder="3"></div>
     </div>
-    <div class="form-actions"><button class="btn btn-primary" onclick="saveAmdConfig()">Save rate-limit config</button></div>
+    <div class="form-actions"><button class="btn btn-primary" onclick="saveAmdConfig()" data-i18n="save_rate_limit_config">Save rate-limit config</button></div>
   </div>
 </div>
 
@@ -1401,7 +1401,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
   <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 5-6"/></svg></span> Model catalog</div>
   <div class="section-body">
         <div class="flex" style="margin-bottom:10px;gap:10px">
-      <button class="btn btn-sm btn-primary" onclick="refreshAmdModels(this)">Refresh models</button>
+      <button class="btn btn-sm btn-primary" onclick="refreshAmdModels(this)" data-i18n="refresh_models">Refresh models</button>
       <span class="hint" style="margin:0">Automatically synced from the official model source upstream (every 5 minutes)</span>
     </div>
     <div id="amdModelsBody">Loading...</div>
@@ -1422,7 +1422,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
         <label>Base URL</label>
         <div style="display:flex;gap:8px;align-items:center">
           <input type="text" id="thBaseURL" placeholder="https://tokenharbor.ai/v1" style="flex:1;min-width:0">
-          <button class="btn btn-primary btn-sm" onclick="saveTHConfig()">Confirm</button>
+          <button class="btn btn-primary btn-sm" onclick="saveTHConfig()" data-i18n="confirm">Confirm</button>
         </div>
       </div>
     </div>
@@ -1432,21 +1432,21 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
     </div>
     <div class="table-wrap" style="margin-bottom:10px">
       <table>
-        <thead><tr><th style="width:50px">#</th><th style="width:150px">Key</th><th>Status</th><th title="Counted locally by this proxy — not the official free quota">Today/Total tokens</th><th>Last used</th><th title="Main exit first, backup as fallback; both down = row skipped (isolation).">Proxy binding</th><th style="width:130px;text-align:center">Actions</th><th style="text-align:center" title="Routing participation. New rows start disabled — tick Pool to enable.">Pool</th></tr></thead>
+        <thead><tr><th style="width:50px">#</th><th style="width:150px" data-i18n="Key">Key</th><th data-i18n="Status">Status</th><th title="Counted locally by this proxy — not the official free quota" data-i18n="Today/Total tokens">Today/Total tokens</th><th data-i18n="Last used">Last used</th><th title="Main exit first, backup as fallback; both down = row skipped (isolation)." data-i18n="Proxy binding">Proxy binding</th><th style="width:130px;text-align:center" data-i18n="Actions">Actions</th><th style="text-align:center" title="Routing participation. New rows start disabled — tick Pool to enable." data-i18n="Pool">Pool</th></tr></thead>
         <tbody id="thKeysBody"><tr><td colspan="8" class="empty">Loading...</td></tr></tbody>
       </table>
     </div>
     <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin:10px 6px 4px">
-      <button class="btn btn-primary btn-sm" onclick="openTHKeyAddDialog()">Add credentials</button>
+      <button class="btn btn-primary btn-sm" onclick="openTHKeyAddDialog()" data-i18n="add_credentials">Add credentials</button>
       <div style="display:flex;gap:8px">
-        <button class="btn btn-sm" onclick="stageAllTHKeysRouting(true)">Enable all</button>
-        <button class="btn btn-sm" onclick="stageAllTHKeysRouting(false)">Disable all</button>
+        <button class="btn btn-sm" onclick="stageAllTHKeysRouting(true)" data-i18n="enable_all">Enable all</button>
+        <button class="btn btn-sm" onclick="stageAllTHKeysRouting(false)" data-i18n="disable_all">Disable all</button>
         <button class="btn btn-sm" onclick="refreshProxyHealthCache().then(() => stageProxiesByOrder('th'))" title="Bind main proxy by row order: 1st credential to Direct, then the proxy pool in order, skipping manually disabled proxies (staged - click Save to apply; enable/disable and backup untouched)">Bind proxies in order</button>
-        <button class="btn btn-sm" onclick="stageClearTHKeyProxies()" title="Stage only — click Save to apply. Clears bindings and disables every row.">Clear bindings</button>
-        <button class="btn btn-sm" id="thTestBtn" onclick="batchTestTHKeys()" title="Run the Test probe on every row.">Test all</button>
+        <button class="btn btn-sm" onclick="stageClearTHKeyProxies()" title="Stage only — click Save to apply. Clears bindings and disables every row." data-i18n="clear_bindings">Clear bindings</button>
+        <button class="btn btn-sm" id="thTestBtn" onclick="batchTestTHKeys()" title="Run the Test probe on every row." data-i18n="test_all">Test all</button>
       </div>
       <div style="display:flex;gap:8px">
-        <button class="btn btn-sm btn-warn" id="thResetBtn" onclick="resetTHKeyEdits()" title="Discard staged changes and reload the last saved state">Discard</button>
+        <button class="btn btn-sm btn-warn" id="thResetBtn" onclick="resetTHKeyEdits()" title="Discard staged changes and reload the last saved state" data-i18n="discard">Discard</button>
         <button class="btn btn-primary btn-sm" id="thKeysSaveBtn" onclick="saveTHKeyEdits()" data-i18n="save">Save</button>
       </div>
     </div>
@@ -1461,7 +1461,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
       <div class="field"><label>Max concurrency</label><input type="text" id="thMaxConc" placeholder="8"></div>
       <div class="field"><label>Rate-limit retries</label><input type="text" id="thRetries" placeholder="3"></div>
     </div>
-    <div class="form-actions"><button class="btn btn-primary" onclick="saveTHConfig()">Save rate-limit config</button></div>
+    <div class="form-actions"><button class="btn btn-primary" onclick="saveTHConfig()" data-i18n="save_rate_limit_config">Save rate-limit config</button></div>
   </div>
 </div>
 
@@ -1469,7 +1469,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
   <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 5-6"/></svg></span> Model catalog</div>
   <div class="section-body">
         <div class="flex" style="margin-bottom:10px;gap:10px">
-      <button class="btn btn-sm btn-primary" onclick="refreshTHModels(this)">Refresh models</button>
+      <button class="btn btn-sm btn-primary" onclick="refreshTHModels(this)" data-i18n="refresh_models">Refresh models</button>
       <span class="hint" style="margin:0">Automatically synced from the official model source upstream (every 5 minutes)</span>
     </div>
     <div id="thModelsBody">Loading...</div>
@@ -1488,8 +1488,8 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
         <label>Sub-platform</label>
         <div style="display:flex;gap:8px;align-items:center">
           <select id="otherPlatformSelect" style="flex:1;min-width:0"><option value="">— no sub-platform yet —</option></select>
-          <button class="btn btn-primary btn-sm" onclick="openOtherPlatformDialog()">New sub-platform</button>
-          <button class="btn btn-sm" id="otherPlatformManageBtn" onclick="openOtherManageDialog()" title="Reorder or delete sub-platforms">Manage</button>
+          <button class="btn btn-primary btn-sm" onclick="openOtherPlatformDialog()" data-i18n="new_sub_platform">New sub-platform</button>
+          <button class="btn btn-sm" id="otherPlatformManageBtn" onclick="openOtherManageDialog()" title="Reorder or delete sub-platforms" data-i18n="manage">Manage</button>
         </div>
       </div>
     </div>
@@ -1509,14 +1509,14 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
         <label>Base URL</label>
         <div style="display:flex;gap:8px;align-items:center">
           <input type="text" id="otherBaseURL" placeholder="https://api.acme.com/v1" style="flex:1;min-width:0">
-          <button class="btn btn-primary btn-sm" onclick="saveOtherPlatformConfig()">Confirm</button>
+          <button class="btn btn-primary btn-sm" onclick="saveOtherPlatformConfig()" data-i18n="confirm">Confirm</button>
         </div>
       </div>
     </div>
     <div class="form-row" style="margin-top:10px;flex-wrap:nowrap">
       <div class="field" style="flex:1 1 0;min-width:0"><label>Max concurrency</label><input type="text" id="otherMaxConc" placeholder="8"></div>
       <div class="field" style="flex:1 1 0;min-width:0"><label>Rate-limit retries</label><input type="text" id="otherRetries" placeholder="3"></div>
-      <div class="field" style="flex:0 0 auto;min-width:0;align-self:stretch;display:grid;grid-template-rows:auto 1fr;align-items:center"><label aria-hidden="true" style="visibility:hidden">&nbsp;</label><button class="btn btn-primary btn-sm" onclick="saveOtherRateLimit()">Save rate-limit config</button></div>
+      <div class="field" style="flex:0 0 auto;min-width:0;align-self:stretch;display:grid;grid-template-rows:auto 1fr;align-items:center"><label aria-hidden="true" style="visibility:hidden">&nbsp;</label><button class="btn btn-primary btn-sm" onclick="saveOtherRateLimit()" data-i18n="save_rate_limit_config">Save rate-limit config</button></div>
     </div>
   </div>
 </div>
@@ -1525,21 +1525,21 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
   <div class="section-body">
     <div class="table-wrap" style="margin-bottom:10px">
       <table>
-        <thead><tr><th style="width:50px">#</th><th style="width:150px">Key</th><th>Status</th><th title="Counted locally by this proxy — not the official free quota">Today/Total tokens</th><th>Last used</th><th title="Main exit first, backup as fallback; both down = row skipped (isolation).">Proxy binding</th><th style="width:130px;text-align:center">Actions</th><th style="text-align:center" title="Routing participation. New rows start disabled — tick Pool to enable.">Pool</th></tr></thead>
+        <thead><tr><th style="width:50px">#</th><th style="width:150px" data-i18n="Key">Key</th><th data-i18n="Status">Status</th><th title="Counted locally by this proxy — not the official free quota" data-i18n="Today/Total tokens">Today/Total tokens</th><th data-i18n="Last used">Last used</th><th title="Main exit first, backup as fallback; both down = row skipped (isolation)." data-i18n="Proxy binding">Proxy binding</th><th style="width:130px;text-align:center" data-i18n="Actions">Actions</th><th style="text-align:center" title="Routing participation. New rows start disabled — tick Pool to enable." data-i18n="Pool">Pool</th></tr></thead>
         <tbody id="otherKeysBody"><tr><td colspan="8" class="empty">No keys configured</td></tr></tbody>
       </table>
     </div>
     <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin:10px 6px 4px">
-      <button class="btn btn-primary btn-sm" onclick="openOtherKeyAddDialog()">Add credentials</button>
+      <button class="btn btn-primary btn-sm" onclick="openOtherKeyAddDialog()" data-i18n="add_credentials">Add credentials</button>
       <div style="display:flex;gap:8px">
-        <button class="btn btn-sm" onclick="stageAllOtherKeysRouting(true)">Enable all</button>
-        <button class="btn btn-sm" onclick="stageAllOtherKeysRouting(false)">Disable all</button>
+        <button class="btn btn-sm" onclick="stageAllOtherKeysRouting(true)" data-i18n="enable_all">Enable all</button>
+        <button class="btn btn-sm" onclick="stageAllOtherKeysRouting(false)" data-i18n="disable_all">Disable all</button>
         <button class="btn btn-sm" onclick="refreshProxyHealthCache().then(() => stageProxiesByOrder('other'))" title="Bind main proxy by row order: 1st credential to Direct, then the proxy pool in order, skipping manually disabled proxies (staged - click Save to apply; enable/disable and backup untouched)">Bind proxies in order</button>
-        <button class="btn btn-sm" onclick="stageClearOtherKeyProxies()" title="Stage only — click Save to apply. Clears bindings and disables every row.">Clear bindings</button>
-        <button class="btn btn-sm" id="otherTestBtn" onclick="batchTestOtherKeys()" title="Run the Test probe on every row.">Test all</button>
+        <button class="btn btn-sm" onclick="stageClearOtherKeyProxies()" title="Stage only — click Save to apply. Clears bindings and disables every row." data-i18n="clear_bindings">Clear bindings</button>
+        <button class="btn btn-sm" id="otherTestBtn" onclick="batchTestOtherKeys()" title="Run the Test probe on every row." data-i18n="test_all">Test all</button>
       </div>
       <div style="display:flex;gap:8px">
-        <button class="btn btn-sm btn-warn" id="otherResetBtn" onclick="resetOtherKeyEdits()" title="Discard staged changes and reload the last saved state">Discard</button>
+        <button class="btn btn-sm btn-warn" id="otherResetBtn" onclick="resetOtherKeyEdits()" title="Discard staged changes and reload the last saved state" data-i18n="discard">Discard</button>
         <button class="btn btn-primary btn-sm" id="otherKeysSaveBtn" onclick="saveOtherKeyEdits()" data-i18n="save">Save</button>
       </div>
     </div>
@@ -1558,17 +1558,17 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
           <div class="ms-list" id="otherModelSelectList"></div>
         </div>
       </div>
-      <button class="btn btn-sm" onclick="refreshOtherModels(this)" style="flex:0 0 auto;align-self:center" title="Re-sync the model catalog from the upstream (needs a credential)">Refresh models</button>
+      <button class="btn btn-sm" onclick="refreshOtherModels(this)" style="flex:0 0 auto;align-self:center" title="Re-sync the model catalog from the upstream (needs a credential)" data-i18n="refresh_models">Refresh models</button>
     </div>
     <!-- 第二行：左半=手动添加模型，右半=真实会话测试，各占一半 -->
     <div class="flex" style="gap:10px;margin:0;align-items:center">
       <div class="flex" style="gap:8px;align-items:center;flex:1 1 0;min-width:0">
         <input type="text" id="otherManualModel" placeholder="add model id manually" style="flex:1 1 auto;min-width:0;font-family:'JetBrains Mono',Consolas,monospace">
-        <button class="btn btn-sm" onclick="addOtherManualModel()" style="flex:0 0 auto">Add model</button>
+        <button class="btn btn-sm" onclick="addOtherManualModel()" style="flex:0 0 auto" data-i18n="add_model">Add model</button>
       </div>
       <div class="flex" style="gap:8px;align-items:center;flex:1 1 0;min-width:0">
         <input type="text" id="otherLivePrompt" style="flex:1 1 auto;min-width:0">
-        <button class="btn btn-sm" id="otherLiveBtn" onclick="otherLiveRequest()" style="flex:0 0 auto" title="Send a real chat request using the first enabled credential">Real request</button>
+        <button class="btn btn-sm" id="otherLiveBtn" onclick="otherLiveRequest()" style="flex:0 0 auto" title="Send a real chat request using the first enabled credential" data-i18n="real_request">Real request</button>
       </div>
     </div>
   </div>
@@ -1585,7 +1585,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
 <dialog id="wbAddDialog">
   <div class="wb-dialog-head">
     <span>Add WorkBuddy account</span>
-    <button class="btn btn-sm" onclick="closeWorkbuddyAdd()">Close</button>
+    <button class="btn btn-sm" onclick="closeWorkbuddyAdd()" data-i18n="close">Close</button>
   </div>
   <div class="wb-dialog-body">
     <div class="form-row" style="margin-bottom:8px">
@@ -1597,12 +1597,12 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
     <div class="hint" id="wbAddStatus">Choose a realm and request an authorization link.</div>
     <div class="wb-link-row">
       <input type="text" id="wbOAuthUrl" readonly placeholder="authorization URL">
-      <button class="btn btn-sm" onclick="copyWorkbuddyOAuthUrl()">Copy</button>
-      <button class="btn btn-sm btn-primary" onclick="openWorkbuddyOAuthUrl()">Open</button>
+      <button class="btn btn-sm" onclick="copyWorkbuddyOAuthUrl()" data-i18n="copy">Copy</button>
+      <button class="btn btn-sm btn-primary" onclick="openWorkbuddyOAuthUrl()" data-i18n="open">Open</button>
     </div>
     <div class="wb-dialog-actions">
-      <button class="btn btn-primary" id="wbStartLogin">Get authorization link</button>
-      <button class="btn" id="wbImportJson" onclick="document.getElementById('wbDialogImportFile').click()">Import JSON</button>
+      <button class="btn btn-primary" id="wbStartLogin" data-i18n="get_authorization_link">Get authorization link</button>
+      <button class="btn" id="wbImportJson" onclick="document.getElementById('wbDialogImportFile').click()" data-i18n="import_json">Import JSON</button>
     </div>
     <input type="file" id="wbDialogImportFile" accept=".json" hidden onchange="importWorkbuddyAccounts(this)">
   </div>
@@ -1611,7 +1611,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
 <dialog id="wbDetailsDialog" class="wb-wide">
   <div class="wb-dialog-head">
     <span>Points breakdown <span class="auto-pill" id="wbDetailsWho"></span></span>
-    <button class="btn btn-sm" onclick="closeWorkbuddyDetails()">Close</button>
+    <button class="btn btn-sm" onclick="closeWorkbuddyDetails()" data-i18n="close">Close</button>
   </div>
   <div class="wb-dialog-body">
     <div class="hint" id="wbDetailsStatus">Loading...</div>
@@ -1622,7 +1622,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
 <dialog id="accAddDialog">
   <div class="wb-dialog-head">
     <span>Add account</span>
-    <button class="btn btn-sm" onclick="closeAccAddDialog()">Close</button>
+    <button class="btn btn-sm" onclick="closeAccAddDialog()" data-i18n="close">Close</button>
   </div>
   <div class="wb-dialog-body">
     <p class="hint" style="margin-top:0" id="accAddHint">The type is detected automatically — sk_... is pooled as a static API key, anything else as an OAuth refresh token.</p>
@@ -1635,8 +1635,8 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
       <input type="text" id="accAddEmail" placeholder="user@example.com">
     </div>
     <div class="wb-dialog-actions">
-      <button class="btn btn-primary" id="accAddSubmit" onclick="accAddFromDialog()">Add account</button>
-      <button class="btn" onclick="closeAccAddDialog()">Cancel</button>
+      <button class="btn btn-primary" id="accAddSubmit" onclick="accAddFromDialog()" data-i18n="add_account">Add account</button>
+      <button class="btn" onclick="closeAccAddDialog()" data-i18n="cancel">Cancel</button>
     </div>
   </div>
 </dialog>
@@ -1644,7 +1644,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
 <dialog id="zenKeyAddDialog">
   <div class="wb-dialog-head">
     <span>Add credentials</span>
-    <button class="btn btn-sm" onclick="closeZenKeyAddDialog()">Close</button>
+    <button class="btn btn-sm" onclick="closeZenKeyAddDialog()" data-i18n="close">Close</button>
   </div>
   <div class="wb-dialog-body">
     <p class="hint" style="margin-top:0" id="zenKeyAddHint">One OpenCode API key per line (oc_sk_...).</p>
@@ -1653,8 +1653,8 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
       <textarea id="zenKeyAddInput" rows="5" placeholder="oc_sk_..." style="font-family:'JetBrains Mono',Consolas,monospace"></textarea>
     </div>
     <div class="wb-dialog-actions">
-      <button class="btn btn-primary" id="zenKeyAddSubmit" onclick="zenKeyAddFromDialog()">Save</button>
-      <button class="btn" onclick="closeZenKeyAddDialog()">Cancel</button>
+      <button class="btn btn-primary" id="zenKeyAddSubmit" onclick="zenKeyAddFromDialog()" data-i18n="save">Save</button>
+      <button class="btn" onclick="closeZenKeyAddDialog()" data-i18n="cancel">Cancel</button>
     </div>
   </div>
 </dialog>
@@ -1662,7 +1662,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
 <dialog id="orKeyAddDialog">
   <div class="wb-dialog-head">
     <span>Add OpenRouter keys</span>
-    <button class="btn btn-sm" onclick="closeOrKeyAddDialog()">Close</button>
+    <button class="btn btn-sm" onclick="closeOrKeyAddDialog()" data-i18n="close">Close</button>
   </div>
   <div class="wb-dialog-body">
     <p class="hint" style="margin-top:0" id="orKeyAddHint">One OpenRouter API key per line (sk-or-v1-…). New keys start with routing disabled — tick Pool to enable.</p>
@@ -1671,8 +1671,8 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
       <textarea id="orKeyAddInput" rows="5" placeholder="sk-or-v1-…" style="font-family:'JetBrains Mono',Consolas,monospace"></textarea>
     </div>
     <div class="wb-dialog-actions">
-      <button class="btn btn-primary" id="orKeyAddSubmit" onclick="orKeyAddFromDialog()">Save</button>
-      <button class="btn" onclick="closeOrKeyAddDialog()">Cancel</button>
+      <button class="btn btn-primary" id="orKeyAddSubmit" onclick="orKeyAddFromDialog()" data-i18n="save">Save</button>
+      <button class="btn" onclick="closeOrKeyAddDialog()" data-i18n="cancel">Cancel</button>
     </div>
   </div>
 </dialog>
@@ -1680,7 +1680,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
 <dialog id="amdKeyAddDialog">
   <div class="wb-dialog-head">
     <span>Add AMDCloud keys</span>
-    <button class="btn btn-sm" onclick="closeAmdKeyAddDialog()">Close</button>
+    <button class="btn btn-sm" onclick="closeAmdKeyAddDialog()" data-i18n="close">Close</button>
   </div>
   <div class="wb-dialog-body">
     <p class="hint" style="margin-top:0" id="amdKeyAddHint">One AMDCloud API key per line (rc-…, issued at the <a href="https://developer.amd.com.cn/radeon/tokenfactory" target="_blank" rel="noopener" style="color:var(--accent)">Token Factory</a>). New keys start with routing disabled — tick Pool to enable.</p>
@@ -1689,8 +1689,8 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
       <textarea id="amdKeyAddInput" rows="5" placeholder="rc-…" style="font-family:'JetBrains Mono',Consolas,monospace"></textarea>
     </div>
     <div class="wb-dialog-actions">
-      <button class="btn btn-primary" id="amdKeyAddSubmit" onclick="amdKeyAddFromDialog()">Save</button>
-      <button class="btn" onclick="closeAmdKeyAddDialog()">Cancel</button>
+      <button class="btn btn-primary" id="amdKeyAddSubmit" onclick="amdKeyAddFromDialog()" data-i18n="save">Save</button>
+      <button class="btn" onclick="closeAmdKeyAddDialog()" data-i18n="cancel">Cancel</button>
     </div>
   </div>
 </dialog>
@@ -1698,7 +1698,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
 <dialog id="thKeyAddDialog">
   <div class="wb-dialog-head">
     <span>Add TokenHarbor keys</span>
-    <button class="btn btn-sm" onclick="closeTHKeyAddDialog()">Close</button>
+    <button class="btn btn-sm" onclick="closeTHKeyAddDialog()" data-i18n="close">Close</button>
   </div>
   <div class="wb-dialog-body">
     <p class="hint" style="margin-top:0" id="thKeyAddHint">One TokenHarbor universal key per line (thk_live_…, from the <a href="https://tokenharbor.ai/dashboard/api-keys" target="_blank" rel="noopener" style="color:var(--accent)">dashboard</a>). New keys start with routing disabled — tick Pool to enable.</p>
@@ -1707,8 +1707,8 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
       <textarea id="thKeyAddInput" rows="5" placeholder="thk_live_…" style="font-family:'JetBrains Mono',Consolas,monospace"></textarea>
     </div>
     <div class="wb-dialog-actions">
-      <button class="btn btn-primary" id="thKeyAddSubmit" onclick="thKeyAddFromDialog()">Save</button>
-      <button class="btn" onclick="closeTHKeyAddDialog()">Cancel</button>
+      <button class="btn btn-primary" id="thKeyAddSubmit" onclick="thKeyAddFromDialog()" data-i18n="save">Save</button>
+      <button class="btn" onclick="closeTHKeyAddDialog()" data-i18n="cancel">Cancel</button>
     </div>
   </div>
 </dialog>
@@ -1716,7 +1716,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
 <dialog id="traeAddDialog" style="width:min(560px,calc(100vw - 32px))">
   <div class="wb-dialog-head">
     <span>Add TraeWork accounts</span>
-    <button class="btn btn-sm" onclick="closeTraeAddDialog()">Close</button>
+    <button class="btn btn-sm" onclick="closeTraeAddDialog()" data-i18n="close">Close</button>
   </div>
   <div class="wb-dialog-body">
     <details class="trae-acc" id="traeAccWeb" open>
@@ -1725,7 +1725,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
         <p class="hint" style="margin:0 0 8px" id="traeOAuthHint">Download the helper from this panel, run "python web_login.py" locally, then authorize on the opened page (sign in to trae.cn in the browser first). The account lands here automatically with routing off. The helper writes to the panel it was downloaded from.</p>
         <div style="display:flex;gap:8px;margin-bottom:6px;align-items:center">
           <a class="btn btn-sm btn-static" href="/trae/oauth/helper" download="web_login.py">Download helper</a>
-          <button class="btn btn-sm btn-static" onclick="openTraeHelperPage()" title="Open the helper page (127.0.0.1:8765) and click the authorize button there">Open helper page</button>
+          <button class="btn btn-sm btn-static" onclick="openTraeHelperPage()" title="Open the helper page (127.0.0.1:8765) and click the authorize button there" data-i18n="open_helper_page">Open helper page</button>
         </div>
         <div class="hint" id="traeHelperStatus" style="margin:0">Checking local helper…</div>
       </div>
@@ -1741,8 +1741,8 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
       </div>
     </details>
     <div class="wb-dialog-actions">
-      <button class="btn btn-primary" id="traeAddSubmit" onclick="traeAddFromDialog()">Save</button>
-      <button class="btn" onclick="closeTraeAddDialog()">Cancel</button>
+      <button class="btn btn-primary" id="traeAddSubmit" onclick="traeAddFromDialog()" data-i18n="save">Save</button>
+      <button class="btn" onclick="closeTraeAddDialog()" data-i18n="cancel">Cancel</button>
     </div>
   </div>
 </dialog>
@@ -1750,13 +1750,13 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
 <dialog id="impKeepDialog" style="width:min(430px,calc(100vw - 32px))">
   <div class="wb-dialog-head">
     <span>Import config</span>
-    <button class="btn btn-sm" onclick="closeImpKeep()">Close</button>
+    <button class="btn btn-sm" onclick="closeImpKeep()" data-i18n="close">Close</button>
   </div>
   <div class="wb-dialog-body">
     <div class="hint" style="margin-bottom:10px" data-i18n="Import will replace ALL persisted config with the file contents. Confirm whether to keep each platform's credential enabled states.">Import will replace ALL persisted config with the file contents. Confirm whether to keep each platform's credential enabled states.</div>
     <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px">
-      <button class="btn btn-sm" onclick="impKeepSetAll('impKeepRows',false)">Select all</button>
-      <button class="btn btn-sm" onclick="impKeepSetAll('impKeepRows',true)">Invert</button>
+      <button class="btn btn-sm" onclick="impKeepSetAll('impKeepRows',false)" data-i18n="select_all">Select all</button>
+      <button class="btn btn-sm" onclick="impKeepSetAll('impKeepRows',true)" data-i18n="invert">Invert</button>
       <!-- 统计层勾选框（默认勾选，2026-11-03 三层口径）：勾选 = 本机统计随备份还原；
            取消勾选 = 保留本机统计现值（不再清零）。配置态与账号事实无论勾选与否都会导入 -->
       <label id="impStateRow" style="margin-left:auto;display:none;gap:6px;align-items:center;cursor:pointer;white-space:nowrap">
@@ -1765,34 +1765,34 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
     </div>
     <div id="impKeepRows" style="display:flex;flex-direction:column;gap:10px;margin-bottom:14px"></div>
     <div style="display:flex;gap:8px;justify-content:flex-end">
-      <button class="btn" onclick="closeImpKeep()">Cancel</button>
-      <button class="btn btn-primary" onclick="confirmImpKeep()">Confirm import</button>
+      <button class="btn" onclick="closeImpKeep()" data-i18n="cancel">Cancel</button>
+      <button class="btn btn-primary" onclick="confirmImpKeep()" data-i18n="confirm_import">Confirm import</button>
     </div>
   </div>
 </dialog>
 <dialog id="impReorderDialog" style="width:min(430px,calc(100vw - 32px))">
   <div class="wb-dialog-head">
     <span>Reorder by latency</span>
-    <button class="btn btn-sm" onclick="closeReorderDlg()">Close</button>
+    <button class="btn btn-sm" onclick="closeReorderDlg()" data-i18n="close">Close</button>
   </div>
   <div class="wb-dialog-body">
     <div class="hint" style="margin-bottom:6px" data-i18n="re-bind proxies of the selected platforms: healthy (fast, allowed) bindings stay put; slow/unrecorded/excluded/over-cap/manual-disabled ones are re-filled from the remaining pool (better-only for healthy rows), then auto-save.">re-bind proxies of the selected platforms: healthy (fast, allowed) bindings stay put; slow/unrecorded/excluded/over-cap/manual-disabled ones are re-filled from the remaining pool (better-only for healthy rows), then auto-save.</div>
     <div class="hint" id="impReorderKeepHint" style="margin-bottom:10px"></div>
     <div style="display:flex;gap:8px;margin-bottom:12px">
-      <button class="btn btn-sm" onclick="impKeepSetAll('impReorderRows',false)">Select all</button>
-      <button class="btn btn-sm" onclick="impKeepSetAll('impReorderRows',true)">Invert</button>
+      <button class="btn btn-sm" onclick="impKeepSetAll('impReorderRows',false)" data-i18n="select_all">Select all</button>
+      <button class="btn btn-sm" onclick="impKeepSetAll('impReorderRows',true)" data-i18n="invert">Invert</button>
     </div>
     <div id="impReorderRows" style="margin-bottom:14px"></div>
     <div style="display:flex;gap:8px;justify-content:flex-end">
-      <button class="btn" onclick="closeReorderDlg()">Cancel</button>
-      <button class="btn btn-primary" onclick="confirmReorder()">Confirm</button>
+      <button class="btn" onclick="closeReorderDlg()" data-i18n="cancel">Cancel</button>
+      <button class="btn btn-primary" onclick="confirmReorder()" data-i18n="confirm">Confirm</button>
     </div>
   </div>
 </dialog>
 <dialog id="otherPlatformDialog">
   <div class="wb-dialog-head">
     <span>New sub-platform</span>
-    <button class="btn btn-sm" onclick="closeOtherPlatformDialog()">Close</button>
+    <button class="btn btn-sm" onclick="closeOtherPlatformDialog()" data-i18n="close">Close</button>
   </div>
   <div class="wb-dialog-body">
     <p class="hint" style="margin-top:0">Create an entry for an upstream provider: shared Base URL, its API keys, and the model prefix its models are exposed under.</p>
@@ -1809,8 +1809,8 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
       <input type="text" id="opBaseURL" placeholder="https://api.acme.com/v1" style="font-family:'JetBrains Mono',Consolas,monospace">
     </div>
     <div class="wb-dialog-actions">
-      <button class="btn btn-primary" onclick="doOtherPlatformCreate()">Create</button>
-      <button class="btn" onclick="closeOtherPlatformDialog()">Cancel</button>
+      <button class="btn btn-primary" onclick="doOtherPlatformCreate()" data-i18n="create">Create</button>
+      <button class="btn" onclick="closeOtherPlatformDialog()" data-i18n="cancel">Cancel</button>
     </div>
   </div>
 </dialog>
@@ -1818,14 +1818,14 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
 <dialog id="otherManageDialog">
   <div class="wb-dialog-head">
     <span>Manage sub-platforms</span>
-    <button class="btn btn-sm" onclick="closeOtherManageDialog()">Close</button>
+    <button class="btn btn-sm" onclick="closeOtherManageDialog()" data-i18n="close">Close</button>
   </div>
   <div class="wb-dialog-body">
     <p class="hint" style="margin-top:0">Drag a row to change the order; the order decides how sub-platforms appear in the selector.</p>
     <div id="otherManageList"></div>
     <div class="wb-dialog-actions">
-      <button class="btn btn-primary" onclick="saveOtherPlatformOrder()">Save order</button>
-      <button class="btn" onclick="closeOtherManageDialog()">Cancel</button>
+      <button class="btn btn-primary" onclick="saveOtherPlatformOrder()" data-i18n="save_order">Save order</button>
+      <button class="btn" onclick="closeOtherManageDialog()" data-i18n="cancel">Cancel</button>
     </div>
   </div>
 </dialog>
@@ -1833,7 +1833,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
 <dialog id="otherKeyAddDialog">
   <div class="wb-dialog-head">
     <span>Add API keys</span>
-    <button class="btn btn-sm" onclick="closeOtherKeyAddDialog()">Close</button>
+    <button class="btn btn-sm" onclick="closeOtherKeyAddDialog()" data-i18n="close">Close</button>
   </div>
   <div class="wb-dialog-body">
     <p class="hint" style="margin-top:0" id="otherKeyAddHint">One API key per line for this sub-platform. New keys start with routing disabled — tick Pool to enable.</p>
@@ -1842,8 +1842,8 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
       <textarea id="otherKeyAddInput" rows="5" placeholder="sk-…" style="font-family:'JetBrains Mono',Consolas,monospace"></textarea>
     </div>
     <div class="wb-dialog-actions">
-      <button class="btn btn-primary" onclick="otherKeyAddFromDialog()">Save</button>
-      <button class="btn" onclick="closeOtherKeyAddDialog()">Cancel</button>
+      <button class="btn btn-primary" onclick="otherKeyAddFromDialog()" data-i18n="save">Save</button>
+      <button class="btn" onclick="closeOtherKeyAddDialog()" data-i18n="cancel">Cancel</button>
     </div>
   </div>
 </dialog>
@@ -1851,7 +1851,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
 <dialog id="wbTodoDialog" class="wb-wide">
   <div class="wb-dialog-head">
     <span>Task center&#x20;</span>
-    <button class="btn btn-sm" onclick="closeWorkbuddyTodoScan()">Close</button>
+    <button class="btn btn-sm" onclick="closeWorkbuddyTodoScan()" data-i18n="close">Close</button>
   </div>
   <div class="wb-dialog-body">
     <div class="justify-between">
@@ -1864,8 +1864,8 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
             <option value="3">3</option>
           </select>
         </label>
-        <button class="btn btn-sm" id="wbTodoScan" onclick="scanWorkbuddyTodos()">Scan tasks</button>
-        <button class="btn btn-sm btn-primary" id="wbTodoRunAll" onclick="runWorkbuddyAllTodos()">Run all</button>
+        <button class="btn btn-sm" id="wbTodoScan" onclick="scanWorkbuddyTodos()" data-i18n="scan_tasks">Scan tasks</button>
+        <button class="btn btn-sm btn-primary" id="wbTodoRunAll" onclick="runWorkbuddyAllTodos()" data-i18n="run_all">Run all</button>
       </div>
     </div>
     <div id="wbTodoBody" style="margin-top:12px"></div>
@@ -2813,6 +2813,64 @@ const I18N = {
   'ready': { en: 'Ready', zh: '就绪' },
   'suspended': { en: 'Suspended', zh: '已挂起' },
   'unknown': { en: 'Unknown', zh: '未知' },
+  'add': { en: 'Add', zh: '添加' },
+  'add_account': { en: 'Add account', zh: '添加账号' },
+  'add_accounts': { en: 'Add accounts', zh: '添加账号' },
+  'add_credentials': { en: 'Add credentials', zh: '添加凭据' },
+  'add_header': { en: 'Add header', zh: '添加请求头' },
+  'add_model': { en: 'Add model', zh: '添加模型' },
+  'append': { en: 'Append', zh: '追加' },
+  'ban_matched': { en: 'Ban matched', zh: '批量封禁' },
+  'check_in_all': { en: 'Check in all', zh: '全部签到' },
+  'clear_bindings': { en: 'Clear bindings', zh: '清空代理绑定' },
+  'clear_data': { en: 'Clear data', zh: '清空数据' },
+  'close': { en: 'Close', zh: '关闭' },
+  'confirm': { en: 'Confirm', zh: '确认' },
+  'confirm_import': { en: 'Confirm import', zh: '确认导入' },
+  'create': { en: 'Create', zh: '创建' },
+  'create_custom_alias': { en: 'Create custom alias', zh: '创建自定义别名' },
+  'delete_all_data': { en: 'Delete all data', zh: '删除全部数据' },
+  'disable_all': { en: 'Disable all', zh: '全部停用' },
+  'discard': { en: 'Discard', zh: '放弃' },
+  'discard_changes': { en: 'Discard changes', zh: '放弃修改' },
+  'enable_all': { en: 'Enable all', zh: '全部启用' },
+  'export_config': { en: 'Export config', zh: '导出配置' },
+  'generate_new_key': { en: 'Generate new key', zh: '生成新密钥' },
+  'get_authorization_link': { en: 'Get authorization link', zh: '获取授权链接' },
+  'import_config': { en: 'Import config', zh: '导入配置' },
+  'import_json': { en: 'Import JSON', zh: '导入 JSON' },
+  'invert': { en: 'Invert', zh: '反选' },
+  'manage': { en: 'Manage', zh: '管理' },
+  'new_sub_platform': { en: 'New sub-platform', zh: '新建子平台' },
+  'open': { en: 'Open', zh: '打开' },
+  'open_helper_page': { en: 'Open helper page', zh: '打开辅助页' },
+  'pause': { en: 'Pause', zh: '暂停' },
+  'pet_patrol': { en: 'Pet patrol', zh: '宠物巡检' },
+  'refresh': { en: 'Refresh', zh: '刷新' },
+  'refresh_all': { en: 'Refresh all', zh: '全部刷新' },
+  'refresh_balances': { en: 'Refresh balances', zh: '刷新余额' },
+  'refresh_login': { en: 'Refresh login', zh: '刷新登录' },
+  'refresh_models': { en: 'Refresh models', zh: '刷新模型' },
+  'reorder_credential_proxies_by_latency': { en: 'Reorder credential proxies by latency', zh: '按延迟重排凭据代理' },
+  'restore_defaults': { en: 'Restore defaults', zh: '恢复默认' },
+  'run_all': { en: 'Run all', zh: '全部运行' },
+  'save_compaction_config': { en: 'Save compaction config', zh: '保存压缩配置' },
+  'save_config': { en: 'Save config', zh: '保存配置' },
+  'save_headers': { en: 'Save headers', zh: '保存请求头' },
+  'save_order': { en: 'Save order', zh: '保存顺序' },
+  'save_proxy_exclusion_rules': { en: 'Save proxy exclusion rules', zh: '保存代理排除规则' },
+  'save_proxy_pool': { en: 'Save proxy pool', zh: '保存代理池' },
+  'save_rate_limit_config': { en: 'Save rate-limit config', zh: '保存限速配置' },
+  'scan_tasks': { en: 'Scan tasks', zh: '扫描任务' },
+  'select_all': { en: 'Select all', zh: '全选' },
+  'task_center': { en: 'Task center', zh: '任务中心' },
+  'test_all': { en: 'Test all', zh: '全部测试' },
+  'test_all_credentials': { en: 'Test all credentials', zh: '全量测试' },
+  'test_latency': { en: 'Test latency', zh: '代理测试' },
+  'unblock_selected': { en: 'Unblock selected', zh: '批量解禁' },
+  'update_now': { en: 'Update now', zh: '立即更新' },
+  'copy': { en: 'Copy', zh: '复制' },
+  'activity_all': { en: 'Activity all', zh: '连登活跃' },
 };
 function T(key) { return lookup(key); }
 // loadRuntimeFlags 启动时拉一次运行时开关快照；ONLY_ROUTER=true 时面板顶部
@@ -9228,7 +9286,7 @@ async function loadCombos() {
     const d = await api('GET', '/combos');
     const combos = d.data.combos || [];
     if (!combos.length) { _('combosList').innerHTML = '<div class="hint">No combos yet — create one with the form above.</div>'; return; }
-    _('combosList').innerHTML = '<div class="table-wrap"><table><thead><tr><th style="text-align:left">Alias ID</th><th>Platform</th><th style="text-align:left">Target model</th><th>Proxy</th><th>Created</th><th>Actions</th></tr></thead><tbody>' +
+    _('combosList').innerHTML = '<div class="table-wrap"><table><thead><tr><th style="text-align:left" data-i18n="Alias ID">Alias ID</th><th data-i18n="Platform">Platform</th><th style="text-align:left" data-i18n="Target model">Target model</th><th data-i18n="Proxy">Proxy</th><th data-i18n="Created">Created</th><th data-i18n="Actions">Actions</th></tr></thead><tbody>' +
       combos.map(c => '<tr>' +
         '<td style="text-align:left;font-family:monospace;font-weight:600">' + esc(c.id) + '</td>' +
         '<td><span class="model-tag">' + esc(c.platform === 'zen' ? 'opencode' : c.platform) + '</span></td>' +
