@@ -2808,6 +2808,11 @@ const I18N = {
   'Counted locally by this proxy from upstream usage events': { en: 'Counted locally by this proxy from upstream usage events', zh: '本代理里本地统计，与官方免费额度无关' },
   'Delete': { en: 'Delete', zh: '删除' },
   "Selection is the engine's weight scheduling (idle + credit + balance aware) — the old manual ordering is gone. Rate filter removes models whose upstream consumption rate exceeds the threshold (models without a published rate stay). Config save restarts the engine; cooldowns persist via state.json.": { en: "Selection is the engine's weight scheduling (idle + credit + balance aware) — the old manual ordering is gone. Rate filter removes models whose upstream consumption rate exceeds the threshold (models without a published rate stay). Config save restarts the engine; cooldowns persist via state.json.", zh: '选号由引擎权重调度（空闲/额度/余额感知）——旧的手动排序已移除。费率过滤剔除上游倍率超过阈值的模型（未下发费率的模型保留）。保存配置会重启引擎；冷却经 state.json 持久化。' },
+  'expired_1': { en: 'Expired', zh: '已失效' },
+  'authenticated': { en: 'Authenticated', zh: '已认证' },
+  'ready': { en: 'Ready', zh: '就绪' },
+  'suspended': { en: 'Suspended', zh: '已挂起' },
+  'unknown': { en: 'Unknown', zh: '未知' },
 };
 function T(key) { return lookup(key); }
 // loadRuntimeFlags 启动时拉一次运行时开关快照；ONLY_ROUTER=true 时面板顶部
@@ -3037,15 +3042,15 @@ function wbRowId(account) {
 function wbStatusInfo(account) {
   const status = String(account.status || (account.disabled ? 'disabled' : (account.cooling ? 'cooling' : 'active'))).toLowerCase();
   if (status === 'ready' || status === 'authenticated' || status === 'active' || status === 'enabled') {
-    return { cls: 'active', label: status === 'authenticated' ? 'Authenticated' : (status === 'active' ? 'Active' : 'Ready') };
+    return { cls: 'active', label: T(status === 'authenticated' ? 'authenticated' : (status === 'active' ? 'active_1' : 'ready')) };
   }
   if (status === 'cooling' || status === 'cooldown' || status === 'suspended') {
-    return { cls: 'cooldown', label: status === 'suspended' ? 'Suspended' : 'Cooling' };
+    return { cls: 'cooldown', label: T(status === 'suspended' ? 'suspended' : 'cooldown_1') };
   }
   if (status === 'disabled' || status === 'deleted' || status === 'error' || status === 'failed') {
-    return { cls: 'expired', label: status === 'deleted' ? 'Deleted' : (status === 'disabled' ? 'Disabled' : 'Error') };
+    return { cls: 'expired', label: T(status === 'deleted' ? 'deleted_1' : (status === 'disabled' ? 'disabled_1' : 'error_1_1')) };
   }
-  return { cls: 'expired', label: status === 'unknown' ? 'Unknown' : status };
+  return { cls: 'expired', label: status === 'unknown' ? T('unknown') : status };
 }
 function wbFmtTokens(value) {
   const n = Number(value || 0);
@@ -4040,7 +4045,7 @@ async function loadAccounts() {
       tbody.innerHTML = '<tr><td colspan="8" class="empty">No accounts yet</td></tr>';
       return;
     }
-    const sn = { active: 'Active', cooldown: 'Cooldown', expired: 'Expired' };
+    const sn = { active: T('active_1'), cooldown: T('cooldown_1'), expired: T('expired_1') };
     accSnapshot = {};
     tbody.innerHTML = list.map((a, i) => {
       const lu = a.lastUsed ? esc(fmtLastUsed(a.lastUsed)) : '-';
