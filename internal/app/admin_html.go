@@ -3158,9 +3158,9 @@ function renderWorkbuddyAccounts() {
       '<td class="mono" style="font-size:11px">' + (lastUsed ? esc(fmtLastUsed(lastUsed)) : '-') + '</td>' +
       wbBindingCell(account) +
       '<td style="white-space:nowrap;text-align:center"><div class="wb-action-group">' +
-        wbActionButton('test', id, 'Test') +
-        wbActionButton('details', id, 'Points') +
-        wbActionButton('delete', id, 'Delete', 'btn-danger') +
+        wbActionButton('test', id, T('test')) +
+        wbActionButton('details', id, T('points')) +
+        wbActionButton('delete', id, T('delete'), 'btn-danger') +
       '</div></td>' +
       poolCell +
       accCell +
