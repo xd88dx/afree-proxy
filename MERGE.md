@@ -325,6 +325,14 @@ WorkBuddy 一栏的基线同时登记在 `scripts/workbuddy-vendor-baseline.json
 - **本地定制保留**：`KeyBindings`/`KeyRoutingEnabled` 仍在 `zen-config.json`；代理池与隔离规则仍在 `proxy-config.json`（上游 `Proxies`/`ProxyStrategy` 段实际落 `kv` 旧字段，未回写）；`handleZenConfigUpdate` 仍用 `next := *cur` 浅拷贝（上游逐字段枚举的构造在冲突点被拒绝吸收——浅拷贝保证今后加字段不漏）；面板 `zenConfigPayload` 契约不变（代理池字段从 `pool` 段拼入，不在 zen 段）。
 - **验证**：`go build ./... && go vet ./... && go test ./... -count=1 && go test -race ./internal/app/` 全绿。
 
+### 2026-11-08 — c6b3c45 → a8fe356（2 提交：tool filter 吸收；system prompt 换位随上游回退）
+
+- merge commit `7fb9f12`（merge 方式）：基线 `c6b3c45 → a8fe356`（上游 `foxy1402/cline-proxy` main），冲突 3 文件（`zen.go`/`admin_zen.go`/`admin_html.go`）。
+- **吸收**：`a8fe356` zen 客户端工具过滤（新增 `zen_toolfilter.go`，默认关闭：按 `denyPrefixes`/`denyNames` 丢弃客户端工具，可选截断 `maxDescription`；12 个网关必需工具不进过滤。背景：ZCode 单请求 137KB 中 112KB（82%）是 76 个工具定义，免费日额度吸收不了——这是体积问题不是内容问题）；`SessionRotateMinutes`（粘性会话本地轮换周期，默认 120，0 = 不轮换）。
+- **随上游回退**：`7dd0afe` 撤回 `c6b3c45` 的 system prompt relocation。`SystemRelocation` 字段、面板开关随之移除；存量配置里的 `systemRelocation` 旧键由浅拷贝兜底，不再读写生效。
+- **本地定制保留**：`KeyBindings`/`KeyRoutingEnabled` 仍在 `zen-config.json`；代理池与隔离规则仍在 `proxy-config.json`（未回 zen 段）；`handleZenConfigUpdate` 仍用 `next := *cur` 浅拷贝（上游逐字段枚举在本次冲突点拒绝采纳——是 2026-10-29 立的铁律）；面板 `zenConfigPayload` 契约不变（代理池字段从 `pool` 段拼入）。工具过滤器的 `toolFilter` 字段进 payload 与 patch 结构（面板可编辑，与浅拷贝口径兼容）。
+- **验证**：`go build ./... && go vet ./... && go test ./... -count=1 && go test -race ./internal/app/` 全绿。
+
 ### 2026-11-07 — a41f1756 → c6b3c45（3 提交全 zen 侧；429 诊断体系部分吸收）
 
 - merge `4bdfc13`，冲突 5 文件：zen.go（SystemRelocation 字段+本地函数块双保留）、admin_html/admin_zen（上游 UI 采纳——PinProxy 下拉复活本仓守卫代码、Relocate 新开关；config 大版式为准补 systemRelocation 键与 patch 应用）、proxy.go（capture 调用点采纳去 tracker、callZenAPI 三返回值以 `_` 接 rateLimited）、zen_park_test（strconv 写法）。
@@ -455,6 +463,15 @@ WorkBuddy 一栏的基线同时登记在 `scripts/workbuddy-vendor-baseline.json
 - 文档同步：README 的 zen 行为段落以代码为准补记——`zenClientErrorStatus` 429 透传、20 分钟冷却封顶、fan-out 预算 4、压缩 buffer 80000 与存量迁移、base path 目录自愈（上游 README 的「capped at 24h」说法与其最终代码矛盾，**未采纳**，以 `zenRateLimitCooldown=20min` 为准）
 - 验证：`go build ./...`、`go vet ./...` 全绿；`go test ./... -count=1` 27 包 ok，唯一失败为既知项（`TestChatStreamPassthrough` 既有 flaky；`TestInstallReplacesRestartsAndRecovers` Windows fork/exec 既有缺陷，单跑 PASS 且不 import 本次改动）；`-race` 当日因本机无 C 编译器跳过，**同日补装 winlibs gcc 后全仓 28 包 -race 全绿**（见下条补录）
 - 生产：未同步，等用户「同步」指令（见 PROJECT.md 部署节）。
+
+## 副线（opencode2api / Trae2api-cn 吸收评估）+ magpie 参考线
+
+副线口径（2026-11-08 用户定）：**opencode2api**（opencode 副线）与 **Trae2api-cn**（trae 副线，Python 项目、trae 更换基线前身）只看近期更新、吸纳有价值逻辑，不 merge 不 vendor。本节记录每次副线评估的基线、吸收/丢弃结论；**magpie**（2026-11-06 立项，全平台纯参考）与副线共用本节，基线单独标注。
+
+### 2026-11-08 — （副线基线建立：opencode2api=`b296a61`，Trae2api-cn=`5c87d6c`）
+
+- **opencode2api**（`jasonxu114514/opencode2api`，副线）：HEAD `b296a61`，本次首次登记副线基线。11 月增量逐条评估，全部零吸纳：`6fbe12c` per-key proxy binding（本仓已有 `KeyBindings`/`pinProxyPerKey` + fail-closed 更宽覆盖）弃；`cee32f7` passive availability tracking + opt-in probes（本仓 `/v1/models` 目录过滤 + 倍率快照回放已有同等语义，opt-in probe 形态不适用）弃；`86be64b`/`b296a61` title/warp/playground 形态（与 IDE 契约不同）弃。
+- **Trae2api-cn**（`autumnsentiment/Trae2api-cn`，副线 + helper 比对）：HEAD `5c87d6c`（v1.0.11），登记为副线基线。v1.0.11 全部 Python 引擎层修复（`release v1.0.11`：cache accounting + reasoning controls + 企业入口实验；`align account entitlement concurrency`、`prevent empty responses`、`stabilize concurrent streaming`、`make native tool streams valid and parallel` 等），本仓 Go 引擎已退役、行为面由 vendored XCool 版承接，**零吸纳**。`web_login.py` helper 比对 exit 0（内嵌与上游 v1.0.10 逐行一致），`trae-helper-baseline.json` 不推进。
 
 ## magpie（全平台参考线，2026-11-06 立项）
 
