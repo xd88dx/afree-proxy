@@ -556,7 +556,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
       </div>
       <div style="display:flex;gap:8px">
         <button class="btn btn-sm btn-warn" id="accResetBtn" onclick="resetAccountEdits()" title="Discard staged changes and reload the last saved state">Discard</button>
-        <button class="btn btn-primary btn-sm" id="accSaveBtn" onclick="saveAccountEdits()">Save</button>
+        <button class="btn btn-primary btn-sm" id="accSaveBtn" onclick="saveAccountEdits()" data-i18n="save">Save</button>
       </div>
     </div>
   </div>
@@ -626,7 +626,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
       </span>
       <span class="wb-toolbar">
         <button class="btn btn-sm btn-warn" id="traeResetBtn" onclick="resetTraeEdits()" title="Discard staged changes and reload the last saved state">Discard</button>
-        <button class="btn btn-primary btn-sm" id="traeSaveBtn" onclick="saveTraeEdits()">Save</button>
+        <button class="btn btn-primary btn-sm" id="traeSaveBtn" onclick="saveTraeEdits()" data-i18n="save">Save</button>
       </span>
     </div>
   </div>
@@ -799,7 +799,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
         <div class="hint">Other sub-platform keys without proxy bindings follow this switch.</div>
       </div>
     </div>
-    <div class="form-actions"><button class="btn btn-primary" onclick="saveGlobalPolicy()">Save</button></div>
+    <div class="form-actions"><button class="btn btn-primary" onclick="saveGlobalPolicy()" data-i18n="save">Save</button></div>
   </div>
 </div>
 <div class="section">
@@ -822,7 +822,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
     <div class="hint">Proxy isolation: each credential only egresses via its bound exits; when none is available it is skipped — never another exit or direct. Forced on when <code>PROXY_ISOLATION</code>=true.</div>
     <div class="hint" id="ppIsolationHint" style="margin-top:4px"></div>
     <div class="hint" id="ppBackupHint" style="margin-top:4px">Backup proxy — off by default: every identity uses its main proxy only; a cooling or removed main proxy is skipped for that round. On: the backup proxy serves as the fallback for the main one.</div>
-    <div class="form-actions"><button class="btn btn-primary" onclick="saveIsolationOptions()">Save</button></div>
+    <div class="form-actions"><button class="btn btn-primary" onclick="saveIsolationOptions()" data-i18n="save">Save</button></div>
   </div>
 </div>
 <div class="section">
@@ -880,7 +880,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
       </div>
       <div style="display:flex;gap:8px;margin-top:6px">
         <button class="btn btn-sm btn-warn btn-static" id="platformBanResetBtn" style="white-space:nowrap" onclick="resetPlatformBans()" title="Discard staged selections and reload the saved ban state">Discard</button>
-        <button class="btn btn-sm btn-primary btn-static" id="platformBanApplyBtn" style="white-space:nowrap" onclick="applyPlatformBans()">Save</button>
+        <button class="btn btn-sm btn-primary btn-static" id="platformBanApplyBtn" style="white-space:nowrap" onclick="applyPlatformBans()" data-i18n="save">Save</button>
       </div>
     </div>
   </div>
@@ -2804,6 +2804,7 @@ const I18N = {
   'banned manually by admin': { en: 'banned manually by admin', zh: '管理员手动封禁' },
   'auto-banned: model name not available on this gateway (4023)': { en: 'auto-banned: model name not available on this gateway (4023)', zh: '模型名不可用，自动封禁' },
   'session_routing_mode_maintenance_tasks_are_disab': { en: 'Session-routing mode: maintenance tasks are disabled by the ONLY_ROUTER environment variable — auto check-in, balance refresh, task center and similar controls have no effect.', zh: '仅会话路由模式：维护任务已被环境变量 ONLY_ROUTER 停用——自动签到、余额刷新、任务中心等控件不会生效。' },
+  'reset': { en: 'Reset', zh: '重置' },
 };
 function T(key) { return lookup(key); }
 // loadRuntimeFlags 启动时拉一次运行时开关快照；ONLY_ROUTER=true 时面板顶部
@@ -4094,9 +4095,9 @@ async function loadAccounts() {
           // Action buttons dispatch via data-* attributes + delegated listeners:
           // inline onclick string concatenation gets HTML-decoded before JS parsing,
           // so even escaped quotes could be bypassed
-          '<button class="btn btn-sm" data-act="test" data-acc="' + esc(a.accountId) + '" title="Test whether the account works (success clears cooldown/expired state)">Test</button> ' +
-          '<button class="btn btn-sm" data-act="reset" data-acc="' + esc(a.accountId) + '" title="Probe the rate limit; if still limited, stays cooling with a recovery time">Reset</button> ' +
-          '<button class="btn btn-sm btn-danger" data-act="delete" data-acc="' + esc(a.accountId) + '" title="Delete">Delete</button>' +
+          '<button class="btn btn-sm" data-act="test" data-acc="' + esc(a.accountId) + '" title="Test whether the account works (success clears cooldown/expired state)">' + T('test') + '</button> ' +
+          '<button class="btn btn-sm" data-act="reset" data-acc="' + esc(a.accountId) + '" title="Probe the rate limit; if still limited, stays cooling with a recovery time">' + T('reset') + '</button> ' +
+          '<button class="btn btn-sm btn-danger" data-act="delete" data-acc="' + esc(a.accountId) + '" title="Delete">' + T('delete') + '</button>' +
         '</td>' +
         poolCell +
         '</tr>';
@@ -5307,7 +5308,7 @@ async function loadKeys() {
     el.innerHTML = keys.map(k =>
       '<div class="flex" style="margin-bottom:8px">' +
         '<span class="key-display" style="flex:1" data-copy="' + esc(k) + '" title="Click to copy">' + esc(k) + '</span>' +
-        '<button class="btn btn-sm btn-danger" data-delkey="' + esc(k) + '">Delete</button>' +
+        '<button class="btn btn-sm btn-danger" data-delkey="' + esc(k) + '">' + T('delete') + '</button>' +
       '</div>'
     ).join('');
     el.onclick = e => {
@@ -5453,7 +5454,7 @@ function addHeaderRow() {
   tr.innerHTML =
     '<td><input type="text" class="header-key" placeholder="Header-Name" style="font-size:12px;font-family:monospace"></td>' +
     '<td><input type="text" class="header-val" placeholder="value" style="font-size:12px;font-family:monospace"></td>' +
-    '<td><button class="btn btn-sm btn-danger" onclick="this.closest(\'tr\').remove()">Delete</button></td>';
+    '<td><button class="btn btn-sm btn-danger" onclick="this.closest(\'tr\').remove()">' + T('delete') + '</button></td>';
   tbody.appendChild(tr);
 }
 
@@ -6113,7 +6114,7 @@ async function loadConfig() {
         '<tr>' +
           '<td><input type="text" class="header-key" value="' + esc(k) + '" style="font-size:12px;font-family:monospace;width:100%"></td>' +
           '<td><input type="text" class="header-val" value="' + esc(v) + '" style="font-size:12px;font-family:monospace;width:100%"></td>' +
-          '<td><button class="btn btn-sm btn-danger" onclick="this.closest(\'tr\').remove()">Delete</button></td>' +
+          '<td><button class="btn btn-sm btn-danger" onclick="this.closest(\'tr\').remove()">' + T('delete') + '</button></td>' +
         '</tr>'
       ).join('');
     }
@@ -6258,8 +6259,8 @@ function renderOcKeyStates(ks) {
           '<input type="checkbox" data-zr="' + k.index + '"' + (routed ? ' checked' : '') + ' title="' + esc(T('participates_in_request_routing')) + '"></td>';
         // 操作列：测试（真实探测）+ 删除（红色，从 key 池移除该 key）
         const actions = '<td style="white-space:nowrap;text-align:center">' +
-          '<button class="btn btn-sm" data-zk="' + k.index + '">Test</button> ' +
-          '<button class="btn btn-sm btn-danger" data-zdel="' + k.index + '" title="' + esc(T('remove_this_key_from_the_pool')) + '">Delete</button></td>';
+          '<button class="btn btn-sm" data-zk="' + k.index + '">' + T('test') + '</button> ' +
+          '<button class="btn btn-sm btn-danger" data-zdel="' + k.index + '" title="' + esc(T('remove_this_key_from_the_pool')) + '">' + T('delete') + '</button></td>';
         return '<tr draggable="true" data-drag-id="' + k.index + '"><td>#' + (k.index + 1) + (k.current ? ' <span style="color:var(--accent)" title="' + esc(T('next_in_rotation')) + '">●</span>' : '') + '</td>' +
           '<td style="font-family:monospace;font-size:11px">' + esc(k.keyMask) + '</td>' +
           '<td style="text-align:center">' + stCell + '</td>' +
@@ -7316,8 +7317,8 @@ function renderOrKeyStates(ks) {
         const routing = '<td style="text-align:center">' +
           '<input type="checkbox" data-orr="' + k.index + '"' + (routed ? ' checked' : '') + ' title="' + esc(T('participates_in_request_routing')) + '">' + '</td>';
         const actions = '<td style="white-space:nowrap;text-align:center">' +
-          '<button class="btn btn-sm" data-ort="' + k.index + '">Test</button> ' +
-          '<button class="btn btn-sm btn-danger" data-ordel="' + k.index + '" title="' + esc(T('remove_this_key_from_the_pool')) + '">Delete</button>' + '</td>';
+          '<button class="btn btn-sm" data-ort="' + k.index + '">' + T('test') + '</button> ' +
+          '<button class="btn btn-sm btn-danger" data-ordel="' + k.index + '" title="' + esc(T('remove_this_key_from_the_pool')) + '">' + T('delete') + '</button>' + '</td>';
         return '<tr draggable="true" data-drag-id="' + k.index + '"><td>#' + (k.index + 1) + '</td>' +
           '<td style="font-family:monospace;font-size:11px">' + esc(k.keyMask) + '</td>' +
           '<td style="text-align:center">' + cool + '</td>' +
@@ -7697,8 +7698,8 @@ function renderTraeAccounts(accs) {
           '<input type="checkbox" data-tracc="' + a.index + '"' + (accOn ? ' checked' : '') +
           ' title="' + esc(T('account_master_switch_off_the_account_does_not_e')) + '"></td>';
         const actions = '<td style="white-space:nowrap;text-align:center">' +
-          '<button class="btn btn-sm" data-trt="' + a.index + '">Test</button> ' +
-          '<button class="btn btn-sm btn-danger" data-trdel="' + a.index + '" title="Remove this account from the pool">Delete</button>' + '</td>';
+          '<button class="btn btn-sm" data-trt="' + a.index + '">' + T('test') + '</button> ' +
+          '<button class="btn btn-sm btn-danger" data-trdel="' + a.index + '" title="Remove this account from the pool">' + T('delete') + '</button>' + '</td>';
         // data-realm 供一键代理/延迟重排识别 CN 域行（批量操作排除 + 占用代理
         // 不参与再分配，2026-11-07 用户定）：intl 前缀 = 国际域，其余 = 国内域。
         const trRealm = a.uid.indexOf('trae-intl-') === 0 ? 'intl' : 'cn';
@@ -8095,8 +8096,8 @@ function renderAmdKeyStates(ks) {
         const routing = '<td style="text-align:center">' +
           '<input type="checkbox" data-amdr="' + k.index + '"' + (routed ? ' checked' : '') + ' title="' + esc(T('participates_in_request_routing')) + '">' + '</td>';
         const actions = '<td style="white-space:nowrap;text-align:center">' +
-          '<button class="btn btn-sm" data-amdt="' + k.index + '">Test</button> ' +
-          '<button class="btn btn-sm btn-danger" data-amddel="' + k.index + '" title="' + esc(T('remove_this_key_from_the_pool')) + '">Delete</button>' + '</td>';
+          '<button class="btn btn-sm" data-amdt="' + k.index + '">' + T('test') + '</button> ' +
+          '<button class="btn btn-sm btn-danger" data-amddel="' + k.index + '" title="' + esc(T('remove_this_key_from_the_pool')) + '">' + T('delete') + '</button>' + '</td>';
         return '<tr draggable="true" data-drag-id="' + k.index + '"><td>#' + (k.index + 1) + '</td>' +
           '<td style="font-family:monospace;font-size:11px">' + esc(k.keyMask) + '</td>' +
           '<td style="text-align:center">' + cool + '</td>' +
@@ -8376,8 +8377,8 @@ function renderTHKeyStates(ks) {
         const routing = '<td style="text-align:center">' +
           '<input type="checkbox" data-thr="' + k.index + '"' + (routed ? ' checked' : '') + ' title="' + esc(T('participates_in_request_routing')) + '">' + '</td>';
         const actions = '<td style="white-space:nowrap;text-align:center">' +
-          '<button class="btn btn-sm" data-tht="' + k.index + '">Test</button> ' +
-          '<button class="btn btn-sm btn-danger" data-thdel="' + k.index + '" title="' + esc(T('remove_this_key_from_the_pool')) + '">Delete</button>' + '</td>';
+          '<button class="btn btn-sm" data-tht="' + k.index + '">' + T('test') + '</button> ' +
+          '<button class="btn btn-sm btn-danger" data-thdel="' + k.index + '" title="' + esc(T('remove_this_key_from_the_pool')) + '">' + T('delete') + '</button>' + '</td>';
         return '<tr draggable="true" data-drag-id="' + k.index + '"><td>#' + (k.index + 1) + '</td>' +
           '<td style="font-family:monospace;font-size:11px">' + esc(k.keyMask) + '</td>' +
           '<td style="text-align:center">' + cool + '</td>' +
@@ -9226,7 +9227,7 @@ async function loadCombos() {
         '<td style="text-align:left;font-family:monospace">' + esc(c.target) + '</td>' +
         '<td>' + (c.useProxies ? '<span class="model-tag" style="color:var(--accent2)">socks5 pool</span>' : '-') + '</td>' +
         '<td style="font-size:11px">' + (c.createdAt ? new Date(c.createdAt).toLocaleString(TZ, TIME_OPT) : '-') + '</td>' +
-        '<td><button class="btn btn-sm btn-danger" data-delcombo="' + esc(c.id) + '">Delete</button></td>' +
+        '<td><button class="btn btn-sm btn-danger" data-delcombo="' + esc(c.id) + '">' + T('delete') + '</button></td>' +
       '</tr>').join('') +
       '</tbody></table></div>';
     _('combosList').onclick = e => {
