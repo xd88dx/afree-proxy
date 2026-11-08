@@ -8666,6 +8666,9 @@ function toggleOtherModelSelect() {
   const wrap = _('otherModelSelect');
   panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
   if (panel.style.display !== 'block') { wrap.classList.remove('drop-up'); return; }
+  // 展开时重排一次，已勾选模型浮顶（保存完成后顺序即确定）。
+  const p = currentOtherPlatform();
+  renderOtherModelSelect(otherKnownModels, otherSelectedModels, p ? (p.manualModels || []) : []);
   _('otherModelSelectSearch').focus();
   placeOtherModelSelect();
 }
