@@ -1074,10 +1074,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
 </div>
 
 <div class="section">
-  <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/></svg></span> <span data-i18n="opencode model list">opencode model list</span>
-    <button class="btn btn-sm" onclick="refreshOcModels()" style="margin-left:auto" data-i18n="Sync now">Sync now</button>
-    <span class="probe-pill" data-models-info style="font-weight:normal"></span>
-  </div>
+  <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 5-6"/></svg></span> <span data-i18n="Model catalog">Model catalog</span></div>
   <div class="section-body">
     <div class="flex" style="margin-bottom:10px;gap:10px">
       <button class="btn btn-sm btn-primary" onclick="refreshZenModels(this)" data-i18n="Refresh models">Refresh models</button>
