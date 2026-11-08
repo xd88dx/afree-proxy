@@ -8626,7 +8626,12 @@ function renderOtherModelSelect(models, selected, manual) {
   if (!models || !models.length) {
     list.innerHTML = '<div class="ms-empty">' + T('No models yet — add manually or add a key and click Refresh models') + '</div>';
   } else {
-    list.innerHTML = models.map(m => {
+    const ordered = models.slice().sort((a, b) => {
+      const aSel = selected.indexOf(a) >= 0 ? 0 : 1;
+      const bSel = selected.indexOf(b) >= 0 ? 0 : 1;
+      return aSel - bSel || models.indexOf(a) - models.indexOf(b);
+    });
+    list.innerHTML = ordered.map(m => {
       // 只有手动添加的模型可删；上游同步来的删了会被下次刷新再拉回来。
       const del = manualIds.indexOf(m) >= 0
         ? '<button class="ms-del" title="' + esc(T('Remove this manually added model')) +
