@@ -470,8 +470,18 @@ WorkBuddy 一栏的基线同时登记在 `scripts/workbuddy-vendor-baseline.json
 
 ### 2026-11-08 — （副线基线建立：opencode2api=`b296a61`，Trae2api-cn=`5c87d6c`）
 
-- **opencode2api**（`jasonxu114514/opencode2api`，副线）：HEAD `b296a61`，本次首次登记副线基线。11 月增量逐条评估，全部零吸纳：`6fbe12c` per-key proxy binding（本仓已有 `KeyBindings`/`pinProxyPerKey` + fail-closed 更宽覆盖）弃；`cee32f7` passive availability tracking + opt-in probes（本仓 `/v1/models` 目录过滤 + 倍率快照回放已有同等语义，opt-in probe 形态不适用）弃；`86be64b`/`b296a61` title/warp/playground 形态（与 IDE 契约不同）弃。
-- **Trae2api-cn**（`autumnsentiment/Trae2api-cn`，副线 + helper 比对）：HEAD `5c87d6c`（v1.0.11），登记为副线基线。v1.0.11 全部 Python 引擎层修复（`release v1.0.11`：cache accounting + reasoning controls + 企业入口实验；`align account entitlement concurrency`、`prevent empty responses`、`stabilize concurrent streaming`、`make native tool streams valid and parallel` 等），本仓 Go 引擎已退役、行为面由 vendored XCool 版承接，**零吸纳**。`web_login.py` helper 比对 exit 0（内嵌与上游 v1.0.10 逐行一致），`trae-helper-baseline.json` 不推进。
+- **opencode2api**（`jasonxu114514/opencode2api`，副线）：HEAD `b296a61`，首次登记副线基线（此前结论已记本仓 OpenCode 节 2026-11-07 条目内的 opencode2api 复核）。11 月增量逐条评估，全部零吸纳：`6fbe12c` per-key proxy binding（本仓已有 `KeyBindings`/`pinProxyPerKey` + fail-closed 更宽覆盖）弃；`cee32f7` passive availability tracking + opt-in probes（本仓 `/v1/models` 目录过滤 + 倍率快照回放已有同等语义）弃；`86be64b`/`b296a61`/`46eb13e` title 请求保护 / Playground 形态（与 IDE 契约/形态不同）弃。
+- **Trae2api-cn**（`autumnsentiment/Trae2api-cn`，副线 + helper 比对）：HEAD `5c87d6c`（v1.0.11）。v1.0.11 全部 Python 引擎层修复（`release v1.0.11`：cache accounting + reasoning controls + 企业入口实验；`align account entitlement concurrency`、`prevent empty responses`、`stabilize concurrent streaming`、`make native tool streams valid and parallel` 等），本仓 Go 引擎已退役、行为面由 vendored XCool 版承接，**零吸纳**。`web_login.py` helper 比对 exit 0（内嵌与上游 v1.0.10 逐行一致），`trae-helper-baseline.json` 不推进。
+
+### 2026-11-08 — magpie 增量排查：e9bde25 → e7bcaa5（88 提交，零吸纳）
+
+- 命中语义（"opencode/zen/free/quota/429/session/route"）的 53 条，全部落在 **magpie 自有平台接入形态**（providers/GUI/routing groups/remote magpie/OpenMausBot/统一卡片/压缩导出/balance URL/会话卡片等均为 magpie webui/插件形态），本仓 8 平台无交集。
+- **重点项的形态判定**（与前轮结论同口径）：
+  - `claude auto mode classifier` 形态（#5585）——magpie 路由组语义，本仓流中哲学「已流出即终止」下无意义。
+  - `responses failed` 形态（#852）——magpie 会话线语义，与本仓聚合层形态不同。
+  - Kiro mover 等 Claude Code 排队——本仓无 Kiro 平台。
+- **判定**：零吸纳（与 11-07 轮一致）。
+- 基线推进到 `2026-11-08` 最新 slr/commit HEAD（API 返回最新时间为 `2026-11-08`）。下回增量从该时间之后排查。
 
 ## magpie（全平台参考线，2026-11-06 立项）
 
