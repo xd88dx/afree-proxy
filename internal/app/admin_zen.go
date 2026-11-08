@@ -42,33 +42,24 @@ func zenConfigPayload() map[string]any {
 		"proxyStrategy":       pool.Strategy,
 		"proxySubURL":         pool.SubURL,
 		"proxySubCron":        pool.SubCron,
-		// 代理测试的测速目标（生效值：池里没配时回显默认，前端输入框直接用它）。
-		"proxyTestTarget": proxyTestTarget(),
-		"maxConcurrency":  cfg.MaxConcurrency,
-		"retries":         cfg.Retries,
-		"compaction":      cfg.Compaction,
-		// 代理隔离（账号/key 绑定出口）：生效值 + 是否被 env 钉死（面板据此
-		// 禁用开关并提示）。
-		"proxyIsolation":          proxyIsolationEnabled(),
+		"proxyTestTarget":     proxyTestTarget(),
+		"maxConcurrency":      cfg.MaxConcurrency,
+		"retries":             cfg.Retries,
+		"compaction":          cfg.Compaction,
+		"proxyIsolation":      proxyIsolationEnabled(),
 		"proxyIsolationEnvLocked": proxyIsolationEnvLocked(),
-		// 备用代理开关：关闭时主代理不通不再尝试备用代理（绑定退化为只看主槽）。
-		"backupProxyEnabled": backupProxyEnabled(),
-		// 自动分配规则（平台级代理黑名单 / 每代理绑定上限），代理池页编辑。
-		"proxyExclusions": binding.ProxyExclusions,
-		"proxyBindCaps":   binding.ProxyBindCaps,
-		// 延迟重排的"保持不变"阈值（秒，生效值——未配置时为默认 8s）。
-		"reorderKeepSec": reorderKeepSec(),
-		// egress 自动钉定层（3758eb7）：开关状态与容量快照（代理够不够分）。
-		"pinProxyPerKey": pinProxyPerKeyEnabled(),
-		"egress":         zenEgressSnapshot(),
-		// OAuth 账户组织 ID（上游 571f9b9）：面板可编辑，空 = 不发该头。
-		"orgID": cfg.OrgID,
-		// 系统提示词换位（上游 c6b3c45）：面板开关，默认开。
-		"systemRelocation": zenSystemRelocationEnabled(),
+		"backupProxyEnabled":  backupProxyEnabled(),
+		"proxyExclusions":     binding.ProxyExclusions,
+		"proxyBindCaps":       binding.ProxyBindCaps,
+		"reorderKeepSec":      reorderKeepSec(),
+		"pinProxyPerKey":      pinProxyPerKeyEnabled(),
+		"egress":              zenEgressSnapshot(),
+		"orgID":               cfg.OrgID,
+		"toolFilter":          cfg.ToolFilter,
+		"sessionRotateMinutes": cfg.SessionRotateMinutes,
 		"runtime": map[string]any{
 			"proxyCooldowns": proxyCooldownStatus(),
-			// 每代理在线率统计（纯被动：只记真实请求的出口成败）。URL 已打码。
-			"proxyHealth": proxyHealthSnapshot(),
+			"proxyHealth":    proxyHealthSnapshot(),
 		},
 	}
 }
@@ -119,8 +110,6 @@ func handleZenConfigUpdate(w http.ResponseWriter, r *http.Request) {
 		OrgID *string `json:"orgID"`
 		// 每 key 固定出口代理（egress 层，3758eb7）：指针区分"未提交"与显式 false。
 		PinProxyPerKey *bool `json:"pinProxyPerKey"`
-		// 系统提示词换位：指针用于区分"未提交"与显式 false。
-		SystemRelocation *bool `json:"systemRelocation"`
 		Compaction     *struct {
 			Auto         *bool   `json:"auto"`
 			Buffer       *int    `json:"buffer"`
@@ -128,23 +117,26 @@ func handleZenConfigUpdate(w http.ResponseWriter, r *http.Request) {
 			SummaryModel *string `json:"summaryModel"`
 			MaxSummary   *int    `json:"maxSummary"`
 		} `json:"compaction"`
+		// 请求体积裁剪：指针/切片用于区分"未提交"与显式关闭或清空。
+		ToolFilter *struct {
+			Enabled        *bool    `json:"enabled"`
+			DenyPrefixes   []string `json:"denyPrefixes"`
+			DenyNames      []string `json:"denyNames"`
+			MaxDescription *int     `json:"maxDescription"`
+		} `json:"toolFilter"`
 	}
 	if err := json.Unmarshal(body, &patch); err != nil {
 		writeAPI(w, http.StatusBadRequest, apiResponse{Error: "invalid JSON: " + err.Error()})
 		return
 	}
-	// next 从 cur 浅拷贝起步再按 patch 覆盖——不再逐字段枚举。config/update 是
-	// 全量替换语义，逐字段拷贝已三次漏掉后来新增的字段（2026-10-29
-	// KeyRoutingEnabled、2026-10-29 Cool、2026-10-31 Cool/KeyTokens——最后一次
-	// 把运行态冷却表与 token 记账整体清零并落盘，rsync -Deploy 又把坏配置倒灌
-	// 本机）。浅拷贝保证今后给 zenConfigData 加任何字段都不会再从这里漏。
-	// map 字段（KeyBindings/KeyRoutingEnabled/Cool/KeyTokens）与 cur 共享引用，
-	// 与既有行为一致（setZenConfig 内部按 key 列表做写时清理，不就地改写）。
-	next := *cur
-	if patch.ZenUseProxies != nil {
-		poolNext.ZenUseProxies = patch.ZenUseProxies
-		poolChanged = true
-	}
+		// next 从 cur 浅拷贝起步再按 patch 覆盖——不再逐字段枚举。config/update 是
+		// 全量替换语义，逐字段拷贝已三次漏掉后来新增的字段（2026-10-29
+		// KeyRoutingEnabled、2026-10-29 Cool、2026-10-31 Cool/KeyTokens——最后一次
+		// 把运行态冷却表与 token 记账整体清零并落盘，rsync -Deploy 又把坏配置倒灌
+		// 本机）。浅拷贝保证今后给 zenConfigData 加任何字段都不会再从这里漏。
+		// map 字段（KeyBindings/KeyRoutingEnabled/Cool/KeyTokens）与 cur 共享引用，
+		// 与既有行为一致（setZenConfig 内部按 key 列表做写时清理，不就地改写）。
+		next := *cur
 	if patch.WorkbuddyUseProxies != nil {
 		poolNext.WorkbuddyUseProxies = patch.WorkbuddyUseProxies
 		poolChanged = true
@@ -284,9 +276,6 @@ func handleZenConfigUpdate(w http.ResponseWriter, r *http.Request) {
 	if patch.PinProxyPerKey != nil {
 		next.PinProxyPerKey = patch.PinProxyPerKey
 	}
-	if patch.SystemRelocation != nil {
-		next.SystemRelocation = patch.SystemRelocation
-	}
 	if patch.OrgID != nil {
 		// 空串即清除（不编造 org id：原始 API key 流量本来就没有）。
 		next.OrgID = strings.TrimSpace(*patch.OrgID)
@@ -310,14 +299,31 @@ func handleZenConfigUpdate(w http.ResponseWriter, r *http.Request) {
 		}
 		next.Compaction = base
 	}
-	setZenConfig(&next)
-	if bindingChanged {
-		setProxyBindingConfig(&bindingNext)
-	}
-	if poolChanged {
-		setProxyPool(&poolNext)
-	}
-	writeAPI(w, http.StatusOK, apiResponse{Success: true, Data: zenConfigPayload()})
+		if patch.ToolFilter != nil {
+			base := cur.ToolFilter
+			if patch.ToolFilter.Enabled != nil {
+				base.Enabled = *patch.ToolFilter.Enabled
+			}
+			// 空数组是合法值（清空名单），nil 才是"未提交"。
+			if patch.ToolFilter.DenyPrefixes != nil {
+				base.DenyPrefixes = patch.ToolFilter.DenyPrefixes
+			}
+			if patch.ToolFilter.DenyNames != nil {
+				base.DenyNames = patch.ToolFilter.DenyNames
+			}
+			if patch.ToolFilter.MaxDescription != nil && *patch.ToolFilter.MaxDescription >= 0 {
+				base.MaxDescription = *patch.ToolFilter.MaxDescription
+			}
+			next.ToolFilter = base
+		}
+		setZenConfig(&next)
+		if bindingChanged {
+			setProxyBindingConfig(&bindingNext)
+		}
+		if poolChanged {
+			setProxyPool(&poolNext)
+		}
+		writeAPI(w, http.StatusOK, apiResponse{Success: true, Data: zenConfigPayload()})
 }
 
 // GET /admin/api/opencode/models — 只返回免费模型

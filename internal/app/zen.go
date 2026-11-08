@@ -366,10 +366,6 @@ type zenConfigData struct {
 	FailoverCount   int              `json:"failoverCount"`
 	FailoverMinutes int              `json:"failoverMinutes"`
 	Compaction      zenCompactConfig `json:"compaction"`
-	// 代理隔离/备用/排除表/绑定上限已迁出到 proxy-config.json 的隔离与绑定段
-	// (见 proxy_binding_config.go)—— 代理池与隔离规则是全局能力,不该由某个
-	// 平台的配置文件托管。
-	//
 	// KeyBindings 反过来留在这里:它的键是 key 明文,属于 key 自己的数据。放进
 	// proxy-config.json 会让同一批明文 key 在 zen-config.json 的 keys 数组和
 	// 代理文件里各存一份,冗余且容易写不一致。其他平台(amd/or/th/other)的绑定
@@ -380,15 +376,17 @@ type zenConfigData struct {
 	// nil/缺项 = 参与。路由启用是铸造的前提（父集语义）：禁用路由的 key 不参与
 	// 选号，收割机也不再为它铸造会话（zenKeyAutoHarvestEnabled）。
 	KeyRoutingEnabled map[string]bool `json:"keyRoutingEnabled,omitempty"`
+	// ToolFilter 请求体积裁剪（默认关闭）。按前缀/名单丢弃客户端工具、可选
+	// 截断过长描述；gate 占位工具永不参与过滤。背景与实测数据见
+	// zen_toolfilter.go 顶部注释（tools 占 ZCode 单请求 82% 体积）。
+	ToolFilter zenToolFilterConfig `json:"toolFilter"`
+	// SessionRotateMinutes 粘性会话本地轮换周期（分钟），默认 120（2 小时）。
+	// 0 = 永不轮换（沿用旧行为，长跑后首个请求会因会话老化而变慢）。
+	SessionRotateMinutes int `json:"sessionRotateMinutes"`
 	// PinProxyPerKey 每个 key/账号固定一个出口代理（默认 true）。指针类型：
 	// nil = 旧配置文件没有该键 → 按默认开启处理（见 pinProxyPerKeyEnabled）。
 	// 关闭后恢复按请求轮转（zen 按 key 的 IP 指纹会重新出现，仅排障用）。
 	PinProxyPerKey *bool `json:"pinProxyPerKey,omitempty"`
-	// SystemRelocation 系统提示词换位（默认 true）：客户端的 system/developer
-	// 内容不再留在 system role，而是包进 <system>...</system> 放到第一条
-	// user 消息头部；system role 换成固定的短提示词（<env> 闸块照常追加）。
-	// 指针类型同 PinProxyPerKey：nil = 旧配置没有该键 → 默认开启。
-	SystemRelocation *bool `json:"systemRelocation,omitempty"`
 	// Cool（key 冷却表）与 KeyTokens（key token 记账）已拆出到独立
 	// zen-state.json（zen_usage.go，2026-10-31）：它们是随请求/429 变化的
 	// 使用痕迹，留在配置文件里会干扰外部对配置变更的监测。运行时真身仍是
@@ -583,10 +581,10 @@ func reorderZenKeys(order []int) error {
 			}
 		}
 	}
-	nc := *cfg
-	nc.Keys = next
-	setZenConfig(&nc)
-	return nil
+		nc := *cfg
+		nc.Keys = next
+		setZenConfig(&nc)
+		return nil
 }
 
 func defaultZenConfig() *zenConfigData {
@@ -598,14 +596,16 @@ func defaultZenConfig() *zenConfigData {
 		Retries:        3,
 		// 每 key 固定出口：2026-10-21 起 zen 按 key 记录出口 IP，轮转会
 		// 让整池 key 被判可疑，故默认开启（无代理时自动退回直连）。
-		PinProxyPerKey:   boolPtr(true),
-		SystemRelocation: boolPtr(true),
+		PinProxyPerKey: boolPtr(true),
 		Compaction: zenCompactConfig{
 			Auto:       true,
 			Buffer:     defaultCompactBuffer,
 			KeepTokens: 8000,
 			MaxSummary: 4096,
 		},
+		// 体积裁剪默认关闭：丢工具会削减模型可用能力，必须由使用者显式开启。
+		// 开启后按默认名单（丢弃 mcp__* 前缀工具）工作。
+		ToolFilter: defaultZenToolFilter(),
 	}
 }
 
@@ -1668,6 +1668,13 @@ func buildZenBody(params map[string]any, stream bool) map[string]any {
 	delete(body, "functions")
 	delete(body, "function_call")
 	clientTools := zenClientTools(params)
+	// 体积裁剪（默认关闭）：先裁客户端工具，再合并 gate 占位工具——
+	// gate 工具是过闸必需，绝不参与过滤。裁剪结果只影响本次上游 body。
+	if cfg, on := zenToolFilterActive(); on && len(clientTools) > 0 {
+		var st zenFilterToolStats
+		clientTools, st = zenFilterClientToolsChat(clientTools, cfg)
+		logZenToolFilter("chat", st)
+	}
 	if len(clientTools) == 0 {
 		body["tools"] = zenGateTools()
 	} else {
@@ -1695,9 +1702,6 @@ func buildZenBody(params map[string]any, stream bool) map[string]any {
 	} else {
 		body["tool_choice"] = "auto"
 	}
-	// 先换位（system 原文 → 首条 user 消息，system role 换成固定短提示词），
-	// 再补 <env> 闸块——闸块要追加在换位后的固定 system 消息上。
-	relocateZenSystemPrompt(body)
 	ensureZenEnvMarkerChat(body)
 	return body
 }
@@ -1753,125 +1757,6 @@ func zenContentText(content any) string {
 		}
 	}
 	return ""
-}
-
-// zenFixedSystemPrompt 是换位后 system role 携带的固定短提示词。客户端
-// 原始 system/developer 文本被移到第一条 user 消息头部（<system> 包裹），
-// <env> 闸块仍由 ensureZenEnvMarker* 追加到这条固定消息上——上游只检查
-// system 消息里 <env> 内的 "Working directory:"，内容本身不校验。
-const zenFixedSystemPrompt = "You are a helpful coding assistant."
-
-// zenSystemRelocationEnabled 面板开关（默认开）。nil 表示旧配置没有该键。
-func zenSystemRelocationEnabled() bool {
-	p := getZenConfig().SystemRelocation
-	if p == nil {
-		return true
-	}
-	return *p
-}
-
-// relocateZenSystemPrompt 实现 chat 路径的系统提示词换位（2026-11-07 需求）：
-// 所有 system/developer 消息的文本合并后，包进 <system>...</system> 前置到
-// 第一条 user 消息头部；原 system/developer 消息替换为一条固定的短 system
-// 消息。模型仍然收到客户端的完整系统指令（经由 user turn），而 system role
-// 保持简短。
-//
-// 与 ensureZenEnvMarkerChat 同样的纪律——先复制再改：body["messages"] 与
-// params["messages"] 共享底层切片（buildZenBody 只浅拷贝顶层 map），就地改
-// 消息 map 会把换位结果写回客户端参数，端点自适应重试、日志、token 估算
-// 随后读到的都是被污染的版本。
-//
-// 没有 user 消息时（纯 system/assistant 形态）原文无处安放，保留客户端
-// 原 system 消息不动——换位只在有接收方时生效。
-func relocateZenSystemPrompt(body map[string]any) {
-	if !zenSystemRelocationEnabled() {
-		return
-	}
-	msgs, ok := body["messages"].([]any)
-	if !ok || len(msgs) == 0 {
-		return
-	}
-	var sysIdx []int
-	var b strings.Builder
-	for i, m := range msgs {
-		mm, ok := m.(map[string]any)
-		if !ok {
-			continue
-		}
-		role, _ := mm["role"].(string)
-		if role != "system" && role != "developer" {
-			continue
-		}
-		if len(sysIdx) > 0 {
-			b.WriteString("\n\n")
-		}
-		b.WriteString(zenContentText(mm["content"]))
-		sysIdx = append(sysIdx, i)
-	}
-	if len(sysIdx) == 0 {
-		return
-	}
-	firstUser := -1
-	for i, m := range msgs {
-		mm, ok := m.(map[string]any)
-		if !ok {
-			continue
-		}
-		if role, _ := mm["role"].(string); role == "user" {
-			firstUser = i
-			break
-		}
-	}
-	if firstUser == -1 {
-		return
-	}
-	original := strings.TrimSpace(b.String())
-	isSys := func(i int) bool {
-		for _, si := range sysIdx {
-			if si == i {
-				return true
-			}
-		}
-		return false
-	}
-	out := make([]any, 0, len(msgs))
-	for i, m := range msgs {
-		switch {
-		case i == sysIdx[0]:
-			out = append(out, map[string]any{"role": "system", "content": zenFixedSystemPrompt})
-		case isSys(i):
-			// 其余 system/developer 消息删除（文本已并入第一条）。
-			continue
-		case i == firstUser:
-			mm, _ := m.(map[string]any)
-			if mm == nil {
-				out = append(out, m)
-				continue
-			}
-			cp := make(map[string]any, len(mm))
-			for k, v := range mm {
-				cp[k] = v
-			}
-			if original != "" {
-				wrap := "<system>\n" + original + "\n</system>\n\n"
-				switch c := cp["content"].(type) {
-				case string:
-					cp["content"] = wrap + c
-				case []any:
-					nc := make([]any, 0, len(c)+1)
-					nc = append(nc, map[string]any{"type": "text", "text": wrap})
-					nc = append(nc, c...)
-					cp["content"] = nc
-				default:
-					cp["content"] = wrap + zenContentText(cp["content"])
-				}
-			}
-			out = append(out, cp)
-		default:
-			out = append(out, m)
-		}
-	}
-	body["messages"] = out
 }
 
 // ensureZenEnvMarkerChat appends the env block to the first system
@@ -1958,53 +1843,6 @@ func ensureZenEnvMarkerResponses(body map[string]any) {
 		return
 	}
 	body["instructions"] = zenEnvBlock()
-}
-
-// relocateZenSystemPromptResponses 是 responses 路径的换位版：buildZenResponsesBody
-// 已把客户端 system/developer 文本并入顶层 instructions，这里把 instructions
-// 的原文包进 <system>...</system> 前置到 input 里第一条 user 条目，instructions
-// 替换为固定短提示词（<env> 闸块随后由 ensureZenEnvMarkerResponses 追加）。
-// input 条目都是 buildZenResponsesBody 新建的 map，就地改安全。
-func relocateZenSystemPromptResponses(body map[string]any) {
-	if !zenSystemRelocationEnabled() {
-		return
-	}
-	ins, ok := body["instructions"].(string)
-	if !ok || strings.TrimSpace(ins) == "" {
-		return
-	}
-	input, ok := body["input"].([]any)
-	if !ok {
-		return
-	}
-	firstUser := -1
-	for i, it := range input {
-		im, ok := it.(map[string]any)
-		if !ok {
-			continue
-		}
-		if role, _ := im["role"].(string); role == "user" {
-			firstUser = i
-			break
-		}
-	}
-	if firstUser == -1 {
-		return
-	}
-	im, _ := input[firstUser].(map[string]any)
-	wrap := "<system>\n" + strings.TrimSpace(ins) + "\n</system>\n\n"
-	switch c := im["content"].(type) {
-	case string:
-		im["content"] = wrap + c
-	case []any:
-		nc := make([]any, 0, len(c)+1)
-		nc = append(nc, map[string]any{"type": "text", "text": wrap})
-		nc = append(nc, c...)
-		im["content"] = nc
-	default:
-		im["content"] = wrap + zenContentText(im["content"])
-	}
-	body["instructions"] = zenFixedSystemPrompt
 }
 
 // zenClientTools 提取客户端工具（chat 嵌套形态 tools[]，兼容已废弃的
@@ -2247,9 +2085,15 @@ func buildZenResponsesBody(params map[string]any, modelID string, promptKey stri
 	//（chat 嵌套形态 400 missing name、tool_choice=none 400 only auto allowed）。
 	// 恒注入 11 个规范工具名 + auto——auto 是 responses 端点唯一接受的值。
 	// 客户端工具（chat 嵌套或已是 flat）优先于同名 gate stub，schema 才不丢。
-	body["tools"] = zenMergeResponsesTools(zenClientFlatTools(params))
+	flatTools := zenClientFlatTools(params)
+	// 体积裁剪（默认关闭）：同 chat 路径，只裁客户端工具，gate stub 不动。
+	if cfg, on := zenToolFilterActive(); on && len(flatTools) > 0 {
+		var st zenFilterToolStats
+		flatTools, st = zenFilterClientToolsFlat(flatTools, cfg)
+		logZenToolFilter("responses", st)
+	}
+	body["tools"] = zenMergeResponsesTools(flatTools)
 	body["tool_choice"] = "auto"
-	relocateZenSystemPromptResponses(body)
 	ensureZenEnvMarkerResponses(body)
 	return body
 }

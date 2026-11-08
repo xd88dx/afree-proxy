@@ -1007,11 +1007,6 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
       <div class="field"><label>Pin one egress proxy per key</label>
         <select id="ocPinProxy"><option value="true">On — one key, one exit IP</option><option value="false">Off — rotate per request</option></select>
       </div>
-      <div class="field"><label>Relocate system prompt to user message</label>
-        <select id="ocSystemRelocate" title="The client's system/developer prompt is moved into the first user message wrapped in &lt;system&gt;…&lt;/system&gt;; the system role carries a short fixed prompt instead.">
-          <option value="true">On — system role keeps a fixed short prompt</option><option value="false">Off — forward the client system prompt as-is</option>
-        </select>
-      </div>
       <div class="field"><label>Egress capacity</label><span id="ocEgressInfo" class="stat-mini" style="align-self:center">-</span></div>
     </div>
     <p class="hint" style="margin-top:0">opencode zen records the egress IP per key and treats a key seen from several IPs as suspicious, so each key is pinned to one proxy by default, and keys that got no proxy are skipped — they would otherwise leak an extra IP. One proxy serves one identity per upstream; Cline accounts get the same treatment when the Cline pool uses proxies. Turn this off only for troubleshooting.</p>
@@ -1070,13 +1065,35 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
 </div>
 
 <div class="section">
-  <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 5-6"/></svg></span> Model catalog <span class="probe-pill" data-models-info style="font-weight:normal"></span></div>
+  <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/></svg></span> opencode model list
+    <button class="btn btn-sm" onclick="refreshOcModels()" style="margin-left:auto">Sync now</button>
+    <span class="probe-pill" data-models-info style="font-weight:normal"></span>
+  </div>
   <div class="section-body">
     <div class="flex" style="margin-bottom:10px;gap:10px">
       <button class="btn btn-sm btn-primary" onclick="refreshZenModels(this)">Refresh models</button>
       <span class="hint" style="margin:0">Automatically synced from the official model source upstream (every 5 minutes)</span>
     </div>
     <div id="ocModelsBody">Loading...</div>
+  </div>
+</div>
+
+<div class="section">
+  <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><path d="M3 6h18M6 6v13a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V6M10 11h4"/></svg></span> Request size filter (shrink the upstream body)</div>
+  <div class="section-body">
+    <p class="hint" style="margin-top:0">A real IDE request is mostly tool schemas: a ZCode message measured 137 KB, of which 112 KB (82%) was 76 tool definitions — about 33k tokens for a single message, which the free daily quota cannot absorb. This filter drops client tools by name before the request goes upstream. The 12 required gate tools are never touched, and <code>parameters</code> are always kept in full — only the tool list and (optionally) description length are reduced. Disabled by default: dropping a tool removes it from the model's ability to call it.</p>
+    <div class="form-row">
+      <div class="field"><label>Filter client tools</label>
+        <select id="ocToolFilterEnabled"><option value="false">Off — forward every tool the IDE declares</option><option value="true">On — drop matching tools</option></select>
+      </div>
+      <div class="field"><label>Max description chars (0 = keep)</label><input type="text" id="ocToolFilterMaxDesc" placeholder="0"></div>
+    </div>
+    <div class="form-row">
+      <div class="field" style="flex:2"><label>Drop by name prefix (one per line)</label><textarea id="ocToolFilterPrefixes" rows="3" placeholder="mcp__" style="font-family:monospace;font-size:12px"></textarea></div>
+      <div class="field" style="flex:2"><label>Drop by exact name (one per line)</label><textarea id="ocToolFilterNames" rows="3" placeholder="CronCreate&#10;CreateWorkflow&#10;EnterPlanMode&#10;ExitPlanMode&#10;AskUserQuestion" style="font-family:monospace;font-size:12px"></textarea></div>
+    </div>
+    <p class="hint" style="margin-top:0">Starting suggestions: prefix <code>mcp__</code> (MCP tools are the largest single schemas and a given turn usually uses one or two); names <code>CronCreate</code>, <code>CreateWorkflow</code>, <code>EnterPlanMode</code>, <code>ExitPlanMode</code>, <code>AskUserQuestion</code> (several KB each, rarely needed in a coding turn). Every drop is logged with the bytes saved.</p>
+    <div class="form-actions"><button class="btn btn-primary" onclick="saveOcConfig()">Save filter</button></div>
   </div>
 </div>
 </div>
@@ -6100,7 +6117,6 @@ async function loadOcConfig() {
     _('ocRetries').value = c.retries || 3;
     if (_('ocOrgID')) _('ocOrgID').value = c.orgID || '';
     if (_('ocPinProxy')) _('ocPinProxy').value = String(c.pinProxyPerKey !== false);
-    if (_('ocSystemRelocate')) _('ocSystemRelocate').value = String(c.systemRelocation !== false);
     const eg = c.egress || {};
     if (_('ocEgressInfo')) {
       const un = eg.unassigned || 0;
@@ -6118,6 +6134,11 @@ async function loadOcConfig() {
     _('ocKeepTokens').value = c.compaction ? c.compaction.keepTokens : 8000;
     _('ocSummaryModel').value = c.compaction ? (c.compaction.summaryModel || '') : '';
     _('ocMaxSummary').value = c.compaction ? c.compaction.maxSummary : 4096;
+    const tf = c.toolFilter || {};
+    if (_('ocToolFilterEnabled')) _('ocToolFilterEnabled').value = String(!!tf.enabled);
+    if (_('ocToolFilterMaxDesc')) _('ocToolFilterMaxDesc').value = tf.maxDescription || 0;
+    if (_('ocToolFilterPrefixes')) _('ocToolFilterPrefixes').value = (tf.denyPrefixes || []).join('\n');
+    if (_('ocToolFilterNames')) _('ocToolFilterNames').value = (tf.denyNames || []).join('\n');
   } catch (e) { /* ignore */ }
 }
 
@@ -6132,13 +6153,18 @@ async function saveOcConfig() {
     retries: parseInt(_('ocRetries').value) || 3,
     orgID: _('ocOrgID') ? _('ocOrgID').value.trim() : '',
     pinProxyPerKey: _('ocPinProxy') ? _('ocPinProxy').value === 'true' : true,
-    systemRelocation: _('ocSystemRelocate') ? _('ocSystemRelocate').value === 'true' : true,
     compaction: {
       auto: _('ocCompactAuto').value === 'true',
       buffer: parseInt(_('ocCompactBuffer').value) || 80000,
       keepTokens: parseInt(_('ocKeepTokens').value) || 8000,
       summaryModel: _('ocSummaryModel').value.trim(),
       maxSummary: parseInt(_('ocMaxSummary').value) || 4096
+    },
+    toolFilter: {
+      enabled: _('ocToolFilterEnabled') ? _('ocToolFilterEnabled').value === 'true' : false,
+      denyPrefixes: _('ocToolFilterPrefixes') ? _('ocToolFilterPrefixes').value.split('\n').map(s => s.trim()).filter(Boolean) : [],
+      denyNames: _('ocToolFilterNames') ? _('ocToolFilterNames').value.split('\n').map(s => s.trim()).filter(Boolean) : [],
+      maxDescription: _('ocToolFilterMaxDesc') ? (Math.max(0, parseInt(_('ocToolFilterMaxDesc').value, 10) || 0)) : 0
     }
   };
   try {
