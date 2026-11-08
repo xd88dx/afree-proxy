@@ -697,7 +697,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
   <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><circle cx="12" cy="5" r="2.5"/><circle cx="5" cy="19" r="2.5"/><circle cx="19" cy="19" r="2.5"/><path d="M12 7.5v4m0 0-5.5 5m5.5-5 5.5 5"/></svg></span> Egress proxies</div>
   <div class="section-body">
     <div class="hint" style="margin-bottom:10px">One proxy per line: <code>http://user:pass@host:port</code> or <code>socks5://host:port#alias</code>. All upstreams share this list; unhealthy proxies are skipped automatically.</div>
-    <div class="hint" style="margin-bottom:10px">The alias (#name) is a proxy's identity — re-binding survives alias-preserving URL changes.</div>
+    <div class="hint" style="margin-bottom:10px" data-i18n="The alias (#name) is a proxy's identity — re-binding survives alias-preserving URL changes.">The alias (#name) is a proxy's identity — re-binding survives alias-preserving URL changes.</div>
     <div class="hint" style="margin-bottom:10px">When a subscription URL is set, this list is managed by the subscription and read-only; it serves as the fallback pool while a fetch fails.</div>
     <div class="form-row">
       <div class="field" style="flex:3"><label>Proxy list</label>
@@ -846,7 +846,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
     </table>
     </div>
     <div class="hint" style="margin-top:8px">Rates are sampled passively from real traffic and manual latency tests — no background probing. "No data" = unused since the last pool edit; editing the proxy list resets counters.</div>
-    <div class="hint" style="margin-top:4px">Rows follow the backend pool; values persist in this browser to survive pool edits (add-only — a returning proxy picks up its stored numbers). Console override: proxyRateSet('香港-01', 0.42).</div>
+    <div class="hint" style="margin-top:4px" data-i18n="Rows follow the backend pool; values persist in this browser to survive pool edits (add-only — a returning proxy picks up its stored numbers). Console override: proxyRateSet('香港-01', 0.42).">Rows follow the backend pool; values persist in this browser to survive pool edits (add-only — a returning proxy picks up its stored numbers). Console override: proxyRateSet('香港-01', 0.42).</div>
   </div>
 </div>
 </div>
@@ -1753,7 +1753,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
     <button class="btn btn-sm" onclick="closeImpKeep()">Close</button>
   </div>
   <div class="wb-dialog-body">
-    <div class="hint" style="margin-bottom:10px">Import will replace ALL persisted config with the file contents. Confirm whether to keep each platform's credential enabled states.</div>
+    <div class="hint" style="margin-bottom:10px" data-i18n="Import will replace ALL persisted config with the file contents. Confirm whether to keep each platform's credential enabled states.">Import will replace ALL persisted config with the file contents. Confirm whether to keep each platform's credential enabled states.</div>
     <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px">
       <button class="btn btn-sm" onclick="impKeepSetAll('impKeepRows',false)">Select all</button>
       <button class="btn btn-sm" onclick="impKeepSetAll('impKeepRows',true)">Invert</button>
@@ -1776,7 +1776,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
     <button class="btn btn-sm" onclick="closeReorderDlg()">Close</button>
   </div>
   <div class="wb-dialog-body">
-    <div class="hint" style="margin-bottom:6px">re-bind proxies of the selected platforms: healthy (fast, allowed) bindings stay put; slow/unrecorded/excluded/over-cap/manual-disabled ones are re-filled from the remaining pool (better-only for healthy rows), then auto-save.</div>
+    <div class="hint" style="margin-bottom:6px" data-i18n="re-bind proxies of the selected platforms: healthy (fast, allowed) bindings stay put; slow/unrecorded/excluded/over-cap/manual-disabled ones are re-filled from the remaining pool (better-only for healthy rows), then auto-save.">re-bind proxies of the selected platforms: healthy (fast, allowed) bindings stay put; slow/unrecorded/excluded/over-cap/manual-disabled ones are re-filled from the remaining pool (better-only for healthy rows), then auto-save.</div>
     <div class="hint" id="impReorderKeepHint" style="margin-bottom:10px"></div>
     <div style="display:flex;gap:8px;margin-bottom:12px">
       <button class="btn btn-sm" onclick="impKeepSetAll('impReorderRows',false)">Select all</button>
@@ -1947,857 +1947,865 @@ const fmtTokens = n => {
 // tokensToday/tokensTotal 缺失 = 老数据，未记账显示 -。
 const keyTokensCell = k => {
   if (k.tokensToday == null && k.tokensTotal == null) return '<td style="text-align:center;color:var(--text3)">-</td>';
-  return '<td title="' + T('Today') + ' ' + fmtNum(k.tokensToday) + ' / ' + T('total') + ' ' + fmtNum(k.tokensTotal) + ' ' + T('tokens (exact when upstream returns usage, otherwise estimated)') + '">' + fmtTokens(k.tokensToday) + ' / ' + fmtTokens(k.tokensTotal) + '</td>';
+  return '<td title="' + T('today') + ' ' + fmtNum(k.tokensToday) + ' / ' + T('total_1_1') + ' ' + fmtNum(k.tokensTotal) + ' ' + T('tokens_exact_when_upstream_returns_usage_otherwi') + '">' + fmtTokens(k.tokensToday) + ' / ' + fmtTokens(k.tokensTotal) + '</td>';
 };
 const keyLastUsedCell = k => '<td class="mono" style="font-size:11px">' + (k.lastUsed ? esc(fmtLastUsed(k.lastUsed)) : '-') + '</td>';
 // ========== i18n（English / 简体中文） ==========
-// 机制：字典以英文原文为键。静态 HTML 与 JS 渲染出的纯文本节点由
-// MutationObserver 即时翻译（渲染代码无需逐处包翻译函数）；与变量拼接的
-// 字符串在渲染处用 T() 包住英文片段；confirm() 原生对话框只能显式 T()。
+// 机制：I18N 按 key→{en,zh} 对照（将来加德语只需在 LANGS 追加 'de' 并在
+// 各词条加 de 列，lookup 逻辑不动）。静态文案用 data-i18n="key" 标记；
+// 动态拼接串在渲染处用 T('key')；其余静态/动态纯文本节点由
+// MutationObserver 按英文源文即时翻译（过渡兜底）；confirm() 只能显式 T()。
 // 切换语言 = 保存 localStorage 偏好 + location.reload()（避免维护反向映射，
 // 也保证重载后静态文本从首次渲染起就是目标语言）。
-let LANG = localStorage.getItem('lang') === 'zh' ? 'zh' : 'en';
-const I18N_ZH = {
+const LANGS = ['en', 'zh']; // 加语言：在此追加语言码，并给 I18N 每个 key 加同名语言列
+let LANG = LANGS.includes(localStorage.getItem('lang')) ? localStorage.getItem('lang') : 'en';
+function lookup(key) { // 按当前语言查词条；缺 key/缺语言列回退 en，没有则回退 key 本身
+  const e = I18N[key];
+  if (!e) return key;
+  return e[LANG] || e.en || key;
+}
+const I18N = {
   // WorkBuddy native admin console
-  'Original panel': '原版入口',
-  'Task center': '任务中心',
-  'Refresh all': '全部刷新',
-  'Refresh all account balances': '刷新全部账号的余额',
-  'Check in all': '全部签到',
-  'Pet patrol': '宠物巡检',
-  'Activity all': '连登活跃',
-  'Refresh login': '刷新登录',
-  'Refresh': '刷新',
-  'Account': '账号',
-  'Points': '积分',
-  'Import JSON': '导入 JSON',
-  'Failed to load WorkBuddy accounts: ': '加载 WorkBuddy 账号失败：',
-  'Credits': '额度',
-  'Disabled': '已停用',
-  'Deleted': '已删除',
-  'accounts': '账号',
-  'Get authorization link': '获取授权链接',
-  'Choose a realm and request an authorization link.': '选择区域并请求授权链接。',
-  'Copy failed': '复制失败',
+  'Original panel': { en: 'Original panel', zh: '原版入口' },
+  'Task center': { en: 'Task center', zh: '任务中心' },
+  'Refresh all': { en: 'Refresh all', zh: '全部刷新' },
+  'Refresh all account balances': { en: 'Refresh all account balances', zh: '刷新全部账号的余额' },
+  'Check in all': { en: 'Check in all', zh: '全部签到' },
+  'Pet patrol': { en: 'Pet patrol', zh: '宠物巡检' },
+  'Activity all': { en: 'Activity all', zh: '连登活跃' },
+  'Refresh login': { en: 'Refresh login', zh: '刷新登录' },
+  'Refresh': { en: 'Refresh', zh: '刷新' },
+  'Account': { en: 'Account', zh: '账号' },
+  'points': { en: 'Points', zh: '积分' },
+  'Import JSON': { en: 'Import JSON', zh: '导入 JSON' },
+  'failed_to_load_workbuddy_accounts': { en: 'Failed to load WorkBuddy accounts: ', zh: '加载 WorkBuddy 账号失败：' },
+  'Credits': { en: 'Credits', zh: '额度' },
+  'disabled_1': { en: 'Disabled', zh: '已停用' },
+  'deleted_1': { en: 'Deleted', zh: '已删除' },
+  'accounts': { en: 'accounts', zh: '账号' },
+  'Get authorization link': { en: 'Get authorization link', zh: '获取授权链接' },
+  'Choose a realm and request an authorization link.': { en: 'Choose a realm and request an authorization link.', zh: '选择区域并请求授权链接。' },
+  'copy_failed': { en: 'Copy failed', zh: '复制失败' },
   // 拖拽排序
-  'Save or discard staged edits before reordering': '有未保存的暂存修改，请先保存或放弃后再拖拽排序',
-  'Order saved': '顺序已保存',
-  'Reorder failed: ': '排序失败：',
-  'loaded': '已加载',
-  'load failed': '加载失败',
-  'WorkBuddy config load failed: ': 'WorkBuddy 配置加载失败：',
-  'WorkBuddy config saved': 'WorkBuddy 配置已保存',
-  'WorkBuddy config saved (': 'WorkBuddy 配置已保存 (',
-  ' restart items)': ' 个重启项)',
-  'WorkBuddy config save failed: ': 'WorkBuddy 配置保存失败：',
-  'WorkBuddy': 'WorkBuddy',
-  'Add WorkBuddy account': '添加 WorkBuddy 账号',
-  'Close': '关闭',
-  'Realm': '区域',
-  'authorization URL': '授权 URL',
-  'Copy': '复制',
+  'save_or_discard_staged_edits_before_reordering': { en: 'Save or discard staged edits before reordering', zh: '有未保存的暂存修改，请先保存或放弃后再拖拽排序' },
+  'order_saved': { en: 'Order saved', zh: '顺序已保存' },
+  'reorder_failed': { en: 'Reorder failed: ', zh: '排序失败：' },
+  'loaded': { en: 'loaded', zh: '已加载' },
+  'load_failed': { en: 'load failed', zh: '加载失败' },
+  'workbuddy_config_load_failed': { en: 'WorkBuddy config load failed: ', zh: 'WorkBuddy 配置加载失败：' },
+  'workbuddy_config_saved': { en: 'WorkBuddy config saved', zh: 'WorkBuddy 配置已保存' },
+  'workbuddy_config_saved_1': { en: 'WorkBuddy config saved (', zh: 'WorkBuddy 配置已保存 (' },
+  'restart_items': { en: ' restart items)', zh: ' 个重启项)' },
+  'workbuddy_config_save_failed': { en: 'WorkBuddy config save failed: ', zh: 'WorkBuddy 配置保存失败：' },
+  'WorkBuddy': { en: 'WorkBuddy', zh: 'WorkBuddy' },
+  'Add WorkBuddy account': { en: 'Add WorkBuddy account', zh: '添加 WorkBuddy 账号' },
+  'Close': { en: 'Close', zh: '关闭' },
+  'Realm': { en: 'Realm', zh: '区域' },
+  'authorization URL': { en: 'authorization URL', zh: '授权 URL' },
+  'Copy': { en: 'Copy', zh: '复制' },
   // 侧边导航 / 分组
-  'Account pool': '账号池',
-  'Services': '服务',
-  'Dashboard': '仪表盘',
-  'Gateway settings': '网关设置',
-  'Request logs': '请求日志',
-  'Proxy pool': '代理池',
-  'Custom aliases': '自定义别名',
-  'Light': '亮色',
-  'Dark': '暗色',
-  'Toggle theme': '切换主题',
+  'Account pool': { en: 'Account pool', zh: '账号池' },
+  'Services': { en: 'Services', zh: '服务' },
+  'Dashboard': { en: 'Dashboard', zh: '仪表盘' },
+  'Gateway settings': { en: 'Gateway settings', zh: '网关设置' },
+  'Request logs': { en: 'Request logs', zh: '请求日志' },
+  'Proxy pool': { en: 'Proxy pool', zh: '代理池' },
+  'Custom aliases': { en: 'Custom aliases', zh: '自定义别名' },
+  'Light': { en: 'Light', zh: '亮色' },
+  'Dark': { en: 'Dark', zh: '暗色' },
+  'Toggle theme': { en: 'Toggle theme', zh: '切换主题' },
   // 仪表盘
-  'Platform overview': '平台概览',
-  'Request statistics': '请求统计',
-  'Counted since ': '统计自 ',
-  'requests': '请求',
-  'errors': '错误',
-  'Avg ': '平均 ',
-  'Cooldown': '冷却中',
-  'Add account': '添加账号',
-  'Endpoints': '接口',
-  'OpenAI Chat format — works with most tools out of the box': 'OpenAI Chat 格式 —— 大多数工具开箱即用',
-  'Anthropic Messages format — for Claude Code / Cline and similar clients': 'Anthropic Messages 格式 —— 供 Claude Code / Cline 等客户端使用',
-  'OpenAI Responses format — for Cursor and similar clients': 'OpenAI Responses 格式 —— 供 Cursor 等客户端使用',
-  'Model list': '模型列表',
+  'Platform overview': { en: 'Platform overview', zh: '平台概览' },
+  'Request statistics': { en: 'Request statistics', zh: '请求统计' },
+  'counted_since': { en: 'Counted since ', zh: '统计自 ' },
+  'requests': { en: 'requests', zh: '请求' },
+  'errors': { en: 'errors', zh: '错误' },
+  'avg': { en: 'Avg ', zh: '平均 ' },
+  'cooldown_1': { en: 'Cooldown', zh: '冷却中' },
+  'Add account': { en: 'Add account', zh: '添加账号' },
+  'Endpoints': { en: 'Endpoints', zh: '接口' },
+  'OpenAI Chat format — works with most tools out of the box': { en: 'OpenAI Chat format — works with most tools out of the box', zh: 'OpenAI Chat 格式 —— 大多数工具开箱即用' },
+  'Anthropic Messages format — for Claude Code / Cline and similar clients': { en: 'Anthropic Messages format — for Claude Code / Cline and similar clients', zh: 'Anthropic Messages 格式 —— 供 Claude Code / Cline 等客户端使用' },
+  'OpenAI Responses format — for Cursor and similar clients': { en: 'OpenAI Responses format — for Cursor and similar clients', zh: 'OpenAI Responses 格式 —— 供 Cursor 等客户端使用' },
+  'Model list': { en: 'Model list', zh: '模型列表' },
   // 账号页
-  'Add': '添加帐号',
-  'Test all': '批量测试',
-  'Disable all': '一键禁用',
-  'Bind proxies in order': '一键代理',
-  'Bind main proxy by row order: 1st credential to Direct, then the proxy pool in order, skipping manually disabled proxies (staged - click Save to apply; enable/disable and backup untouched)': '按行序依次绑定主代理：第1个凭据绑直连，之后依次对应代理池（跳过手动禁用的代理；仅暂存，点保存才生效；不影响启用状态与备用代理）',
-  'No credentials to bind': '当前页没有可绑定的凭据',
-  'Proxy pool is empty': '代理池为空，无法按序绑定',
-  'Already bound in this order': '当前已是该顺序，无需改动',
-  ' proxy binding(s) — click Save to apply': ' 条代理绑定，点保存生效',
-  '; ': '；',
-  ' row(s) left unchanged (no proxy left)': ' 行凭据无对应代理，保持原样',
-  ' manually disabled proxy(s) skipped': ' 个手动禁用的代理已跳过',
-  'Reorder by latency': '凭据延迟重排',
-  'Drop by name prefix (one per line)': '按名称前缀丢弃（每行一个）',
-  'Drop by exact name (one per line)': '按精确名称丢弃（每行一个）',
-  'Max description chars (0 = keep)': '描述字符上限（0 = 不截断）',
-  'Filter client tools': '过滤客户端工具',
-  'Request size filter (shrink the upstream body)': '请求体积过滤（缩小上游请求体）',
-  'IDE requests are mostly tool schemas (137 KB total, 112 KB of that is tools). Dropping client tools before they reach upstream saves roughly 33k tokens per message. Gate tools (12) are never filtered.': 'IDE 请求绝大部分是工具定义（全长 137 KB，其中 112 KB 是工具）。在送达上游前丢掉客户端工具，每条消息可省约 33k token。12 个网关必需工具（gate）永不参与过滤。',
-  'Starting suggestions: prefix mcp__ (MCP tools are the largest single schemas and a given turn usually uses one or two); names CronCreate, CreateWorkflow, EnterPlanMode, ExitPlanMode, AskUserQuestion (several KB each, rarely needed in a coding turn). Every drop is logged with the bytes saved.': '起始建议：前缀 mcp__（MCP 工具一般单条 schema 最大，但一轮对话通常只用一两个）；名单 CronCreate、CreateWorkflow、EnterPlanMode、ExitPlanMode、AskUserQuestion（每个数 KB，编程回合几乎用不上）。每次丢弃都会记日志并报节存字节数。',
-    'Save filter': '保存过滤器',
-    'opencode model list': 'opencode 模型列表',
-    'Sync now': '立即同步',
-    'Off — forward every tool the IDE declares': '关闭 — 透传 IDE 声明的全部工具',
-  'On — drop matching tools': '开启 — 丢弃匹配的工具',
+  'Add': { en: 'Add', zh: '添加帐号' },
+  'Test all': { en: 'Test all', zh: '批量测试' },
+  'Disable all': { en: 'Disable all', zh: '一键禁用' },
+  'Bind proxies in order': { en: 'Bind proxies in order', zh: '一键代理' },
+  'Bind main proxy by row order: 1st credential to Direct, then the proxy pool in order, skipping manually disabled proxies (staged - click Save to apply; enable/disable and backup untouched)': { en: 'Bind main proxy by row order: 1st credential to Direct, then the proxy pool in order, skipping manually disabled proxies (staged - click Save to apply; enable/disable and backup untouched)', zh: '按行序依次绑定主代理：第1个凭据绑直连，之后依次对应代理池（跳过手动禁用的代理；仅暂存，点保存才生效；不影响启用状态与备用代理）' },
+  'no_credentials_to_bind': { en: 'No credentials to bind', zh: '当前页没有可绑定的凭据' },
+  'proxy_pool_is_empty': { en: 'Proxy pool is empty', zh: '代理池为空，无法按序绑定' },
+  'already_bound_in_this_order': { en: 'Already bound in this order', zh: '当前已是该顺序，无需改动' },
+  'proxy_binding_s_click_save_to_apply': { en: ' proxy binding(s) — click Save to apply', zh: ' 条代理绑定，点保存生效' },
+  '; ': { en: '; ', zh: '；' },
+  'row_s_left_unchanged_no_proxy_left': { en: ' row(s) left unchanged (no proxy left)', zh: ' 行凭据无对应代理，保持原样' },
+  'manually_disabled_proxy_s_skipped': { en: ' manually disabled proxy(s) skipped', zh: ' 个手动禁用的代理已跳过' },
+  'Reorder by latency': { en: 'Reorder by latency', zh: '凭据延迟重排' },
+  'Drop by name prefix (one per line)': { en: 'Drop by name prefix (one per line)', zh: '按名称前缀丢弃（每行一个）' },
+  'Drop by exact name (one per line)': { en: 'Drop by exact name (one per line)', zh: '按精确名称丢弃（每行一个）' },
+  'Max description chars (0 = keep)': { en: 'Max description chars (0 = keep)', zh: '描述字符上限（0 = 不截断）' },
+  'Filter client tools': { en: 'Filter client tools', zh: '过滤客户端工具' },
+  'Request size filter (shrink the upstream body)': { en: 'Request size filter (shrink the upstream body)', zh: '请求体积过滤（缩小上游请求体）' },
+  'IDE requests are mostly tool schemas (137 KB total, 112 KB of that is tools). Dropping client tools before they reach upstream saves roughly 33k tokens per message. Gate tools (12) are never filtered.': { en: 'IDE requests are mostly tool schemas (137 KB total, 112 KB of that is tools). Dropping client tools before they reach upstream saves roughly 33k tokens per message. Gate tools (12) are never filtered.', zh: 'IDE 请求绝大部分是工具定义（全长 137 KB，其中 112 KB 是工具）。在送达上游前丢掉客户端工具，每条消息可省约 33k token。12 个网关必需工具（gate）永不参与过滤。' },
+  'Starting suggestions: prefix mcp__ (MCP tools are the largest single schemas and a given turn usually uses one or two); names CronCreate, CreateWorkflow, EnterPlanMode, ExitPlanMode, AskUserQuestion (several KB each, rarely needed in a coding turn). Every drop is logged with the bytes saved.': { en: 'Starting suggestions: prefix mcp__ (MCP tools are the largest single schemas and a given turn usually uses one or two); names CronCreate, CreateWorkflow, EnterPlanMode, ExitPlanMode, AskUserQuestion (several KB each, rarely needed in a coding turn). Every drop is logged with the bytes saved.', zh: '起始建议：前缀 mcp__（MCP 工具一般单条 schema 最大，但一轮对话通常只用一两个）；名单 CronCreate、CreateWorkflow、EnterPlanMode、ExitPlanMode、AskUserQuestion（每个数 KB，编程回合几乎用不上）。每次丢弃都会记日志并报节存字节数。' },
+  'Save filter': { en: 'Save filter', zh: '保存过滤器' },
+  'opencode model list': { en: 'opencode model list', zh: 'opencode 模型列表' },
+  'Sync now': { en: 'Sync now', zh: '立即同步' },
+  'Off — forward every tool the IDE declares': { en: 'Off — forward every tool the IDE declares', zh: '关闭 — 透传 IDE 声明的全部工具' },
+  'On — drop matching tools': { en: 'On — drop matching tools', zh: '开启 — 丢弃匹配的工具' },
   // 代理排除规则（代理池页：平台级代理黑名单 + 每代理绑定上限；原「自动分配规则」）
-  'Proxy exclusion rules': '代理排除规则',
-  'Save proxy exclusion rules': '保存代理排除规则',
-  'Saved proxy exclusion rules': '代理排除规则已保存',
-  'Proxy exclusion rules: ': '代理排除规则：',
-  'Append': '追加',
-  'Discard staged exclusions and reload the last saved state': '放弃暂存的排除修改，恢复为上次保存的状态',
-  'Clear selection': '清空选择',
-  'Nothing to append': '没有需要追加的代理',
-  'Appended to every platform\'s exclusion list (staged) — click Save to apply': '已追加进所有平台的排除列表（暂存）——点「保存」后生效',
-  'Click to pick platforms to ban…': '点击选择要封禁的平台…',
-  'Platform': '平台',
-  'Exclude Direct': '排除直连',
-  'No pool proxies left to exclude': '没有可添加的池内代理（都已排除或池为空）',
-  'Remove': '移除',
-  'Max reuse per proxy': '代理最多复用',
-  'times': '次',
-  'Search and add a proxy…': '搜索并添加代理…',
-  'No match': '无匹配代理',
-  ' sub-platform(s) · each configured separately': ' 个子平台 · 各自独立配置',
-  'No sub-platform yet': '暂无子平台',
-  'Reorder credential proxies by latency': '凭据代理延迟重排',
+  'Proxy exclusion rules': { en: 'Proxy exclusion rules', zh: '代理排除规则' },
+  'Save proxy exclusion rules': { en: 'Save proxy exclusion rules', zh: '保存代理排除规则' },
+  'saved_proxy_exclusion_rules': { en: 'Saved proxy exclusion rules', zh: '代理排除规则已保存' },
+  'proxy_exclusion_rules': { en: 'Proxy exclusion rules: ', zh: '代理排除规则：' },
+  'Append': { en: 'Append', zh: '追加' },
+  'Discard staged exclusions and reload the last saved state': { en: 'Discard staged exclusions and reload the last saved state', zh: '放弃暂存的排除修改，恢复为上次保存的状态' },
+  'clear_selection': { en: 'Clear selection', zh: '清空选择' },
+  'nothing_to_append': { en: 'Nothing to append', zh: '没有需要追加的代理' },
+  'appended_to_every_platform_s_exclusion_list_stag': { en: 'Appended to every platform\'s exclusion list (staged) — click Save to apply', zh: '已追加进所有平台的排除列表（暂存）——点「保存」后生效' },
+  'Click to pick platforms to ban…': { en: 'Click to pick platforms to ban…', zh: '点击选择要封禁的平台…' },
+  'Platform': { en: 'Platform', zh: '平台' },
+  'exclude_direct': { en: 'Exclude Direct', zh: '排除直连' },
+  'No pool proxies left to exclude': { en: 'No pool proxies left to exclude', zh: '没有可添加的池内代理（都已排除或池为空）' },
+  'remove': { en: 'Remove', zh: '移除' },
+  'max_reuse_per_proxy': { en: 'Max reuse per proxy', zh: '代理最多复用' },
+  'times': { en: 'times', zh: '次' },
+  'search_and_add_a_proxy': { en: 'Search and add a proxy…', zh: '搜索并添加代理…' },
+  'No match': { en: 'No match', zh: '无匹配代理' },
+  'sub_platform_s_each_configured_separately': { en: ' sub-platform(s) · each configured separately', zh: ' 个子平台 · 各自独立配置' },
+  'no_sub_platform_yet': { en: 'No sub-platform yet', zh: '暂无子平台' },
+  'Reorder credential proxies by latency': { en: 'Reorder credential proxies by latency', zh: '凭据代理延迟重排' },
   // 延迟重排阈值（保持不变的代理延迟上限）
-  'Keep latency ≤': '延迟阈值',
-  's': '秒',
-  'Proxies at or below this latency (seconds) keep their current binding and are skipped by reordering; slower ones are refilled from the pool. Saved on change.': '延迟不高于该值（秒）的代理保持现绑定、不参与重排；更慢的才从池里回填。改动即时落盘。',
-  'Latency keep threshold saved': '延迟保持阈值已保存',
-  ' — slower bindings are refilled': ' —— 慢于该值的绑定才会被回填',
-  'Keep threshold must be between 0 and 600 seconds': '保持阈值需为 0~600 秒之间的数值',
-  'Proxy isolation: each credential only egresses via its bound exits; when none is available it is skipped — never another exit or direct. Forced on when': '代理隔离：每个凭据只从绑定的出口出站，都不可用则跳过——绝不改走其他出口或直连。设有',
-  '=true.': '=true 时强制开启。',
-  'Backup proxy — off by default: every identity uses its main proxy only; a cooling or removed main proxy is skipped for that round. On: the backup proxy serves as the fallback for the main one.': '备用代理：默认关闭——每个身份只走主代理，主代理冷却或被移除时直接跳过。开启后：备用代理作为主代理的兜底。',
-  'Platform-level blacklist, per-proxy binding cap and manually disabled (cooled) proxies apply to automatic assignment only — one-click bind and reorder-by-latency. CN-domain accounts of TraeWork/WorkBuddy are excluded from both batch operations, and the proxies they hold are never reassigned within their own platform. Manual bindings and runtime routing are never restricted.': '平台拉黑、单代理绑定上限与手动禁用（冷却）的代理只约束自动分配——「一键代理」与「凭据延迟重排」两个批量操作；TraeWork/WorkBuddy 的国内域账号不参与这两个批量操作，其占用的代理不会被同平台的其他账号再分配。手动绑定和运行期路由不受限制。',
-  ' · excluded': ' · 已排除',
-  ' row(s) left unchanged — every allowed proxy is excluded or at cap': ' 行无法改绑：可用代理都已拉黑或达到上限',
-  'Latency reorder finished with errors — loads failed: ': '延迟重排完成但有错误——加载失败：',
-  '; saves failed: ': '；保存失败：',
-  ' CN-domain account row(s) untouched': ' 个国内域账号行保持原绑定',
-  'Reordered ': '已按延迟重排 ',
-  ' proxy binding(s) by latency and saved': ' 条代理绑定并已保存',
-  'No changes to save': '没有需要保存的修改',
-  'Save failed for ': '保存失败 ',
-  ' account(s)': ' 个账号',
-  ' account change(s)': ' 处修改',
-  'No accounts to test': '没有可测试的账号',
-  'Batch test done: ': '批量测试完成：',
-  ' tested, ': ' 个已测，',
-  ' ok': ' 可用',
-  ' cooling': ' 冷却',
-  ' error': ' 异常',
-  'Participates in request routing': '参与请求路由',
-  'auto': '自动',
-  'The alias (#name) is a proxy\'s identity — re-binding survives alias-preserving URL changes.': '别名（#name）是代理的身份标识——URL 变化但别名不变时，绑定关系保持有效。',
-  'Rows follow the backend pool; values persist in this browser to survive pool edits (add-only — a returning proxy picks up its stored numbers). Console override: proxyRateSet(\'香港-01\', 0.42).': '行列表跟随代理池后端；数值在本浏览器留存以扛住池编辑清零（只加不删，代理回归后自动恢复留存值）。控制台改数：proxyRateSet(\'香港-01\', 0.42)。',
-  'Import will replace ALL persisted config with the file contents. Confirm whether to keep each platform\'s credential enabled states.': '导入将替换所有持久化配置，请确认是否保留各平台凭据启用状态。',
-  'International (codebuddy.ai)': '国际版（codebuddy.ai）',
-  'WorkBuddy (workbuddy.ai)': 'WorkBuddy 桌面版（workbuddy.ai）',
-  'Discard': '复位',
-  'Discard staged changes and reload the last saved state': '撤销暂存的修改，恢复为上次保存的状态',
-  'Add credentials': '添加凭据',
-  'Confirm': '确认',
-  'keys': '个 key',
-  'API keys (one per line) *': 'API key（每行一个）*',
-  'One OpenCode API key per line (oc_sk_...).': '每行一个 OpenCode API key（oc_sk_...）。',
-  'Enter at least one key': '请至少输入一个 key',
-  'No new keys (all already in the pool)': '没有新 key（均已在池中）',
-  'Added ': '已添加 ',
-  ' key(s)': ' 个 key',
-  'No keys to test': '没有可测试的 key',
-  ' (deleted)': '（已删除）',
-  'Running': '执行中',
-  'Finished': '执行结束',
-  'CN (China)': 'CN (国内版)',
-  'Points breakdown': '积分构成',
-  'Pick a concurrency, then click "Scan tasks"': '选择并发数后点击“扫描任务”',
-  'Concurrency': '并发',
-  'Scan tasks': '扫描任务',
-  'Run all': '全部执行',
-  'Main egress: requests go through this egress whenever available': '主出口：可用时固定从该出口发出',
-  'Backup egress: fallback while the main egress is cooling down or unavailable': '备用出口：主出口冷却或不可用时兜底',
-  'Failed to save ': '保存失败 ',
-  ' account edits': ' 个账号的修改',
-  'Clear proxy bindings on ALL accounts and disable them? Takes effect when you click Save.': '清空全部账号的代理绑定并置为禁用？点击"保存"后生效。',
-  'Delete this WorkBuddy account and its credentials?': '删除该 WorkBuddy 账号及其凭证？',
-  '(unnamed)': '(未命名)',
-  'Querying points breakdown from upstream...': '正在向上游查询积分构成...',
-  'No points data found for this account': '未找到该账号的积分数据',
-  'Live from upstream · ': '实时查询上游 · ',
-  ' points packages': ' 个积分包',
-  'Failed to read: ': '读取失败：',
-  'Query failed: ': '查询失败：',
-  'first issued ': '首发 ',
-  'Total ': '共 ',
-  ' package(s)': ' 个包',
-  'Remaining points · used ': '剩余积分 · 已用 ',
-  'Package / source': '包名 / 来源',
-  'Face value': '面额',
-  'Remaining': '剩余',
-  'Used': '已用',
-  'Granted': '发放',
-  'Expires': '到期',
-  'No points packages': '没有积分包',
-  'No pending tasks for all accounts': '全部账号没有待办任务',
-  'Energy': '能量',
-  'Task: ': '任务：',
-  'Description: ': '说明：',
-  'Progress: ': '进度：',
-  'Reward: ': '奖励：',
-  'Result: ': '结果：',
-  'Pending': '待执行',
-  'Scan failed: ': '扫描失败：',
-  ' item(s)': ' 项',
-  'Scanning with concurrency ': '正在按并发 ',
-  ' scanning tasks...': ' 扫描任务...',
-  'Scanning...': '扫描中...',
-  'Scan complete: ': '扫描完成：',
-  ' pending item(s)': ' 项待办',
-  'Claimed': '已领取',
-  'In progress': '进行中',
-  'Done': '完成',
-  'Skipped': '跳过',
-  'Failed': '失败',
-  ': ': '：',
-  'Failed to read queue: ': '读取队列失败：',
-  'Run all listed tasks with concurrency ': '按并发 ',
-  ' (tasks run serially within each account, auto-claim enabled). Confirm?': ' 执行列表中的全部任务（账号内串行，自动领取任务）。确认继续？',
-  'No pending tasks': '没有待办任务',
-  'Queue started: ': '队列已启动：',
-  ' item(s) (concurrency ': ' 项（并发 ',
-  'Queue started, running...': '队列已启动，正在执行...',
-  'Failed to run: ': '执行失败：',
-  'Saving...': '保存中...',
-  'free': '免费',
-  'Default tier': '默认档',
-  'No WorkBuddy models under the current filter': '当前筛选下没有 WorkBuddy 模型',
-  'CN model rate filter': '国内模型倍率筛选',
-  'Intl model rate filter': '国际模型倍率筛选',
-  'Global model rate filter': '国际模型倍率筛选',
-  '0 — free only': '0 — 仅免费',
-  'WorkBuddy configuration': 'WorkBuddy 配置',
-  'Managed by the admin session': '面板由当前管理员会话管理',
-  'Scheduled jobs': '定时任务',
-  'Automatic check-in': '自动签到',
-  'Check-in hours': '签到时点（小时，逗号分隔）',
-  'Automatic patrol': '自动巡检',
-  'Patrol hours': '旅行时点（小时，逗号分隔）',
-  'Automatic activity': '自动连登',
-  'Activity hours': '上报时点（小时，逗号分隔）',
-  'Automatic keepalive': '自动保活',
-  'Keepalive hours': '保活时点（小时，逗号分隔）',
-  'Background balance refresh': '后台刷新余额',
-  'Refresh interval (min)': '刷新间隔（分钟）',
-  'Growth tasks': '成长任务自动执行',
-  'Growth hours': '执行时点（小时，逗号分隔）',
-  'Pool and cooldown': '账号池与流量治理',
-  'Max in-flight / account': '单账号最大在途',
-  'Global in-flight limit': '国际版在途上限',
-  'Breaker threshold': '连续失败熔断阈值',
-  'Soft rate cooldown': '软限流冷却基数',
-  'Soft cooldown max': '软冷却退避上限',
-  'Breaker cooldown': '熔断基础时长',
-  'Breaker cooldown max': '熔断退避上限',
-  'Degrade threshold': '连败降权阈值',
-  'Degrade cooldown': '连败降权时长',
-  'Degrade cooldown max': '连败降权上限',
-  'Idle weight / hour': '闲置补偿 / 小时',
-  'Idle weight max': '闲置补偿上限',
-  'Cost explore window': '成本探索窗口',
-  'Sticky TTL': '会话粘性 TTL',
-  'Session and upstream': '上游与高级',
-  'Short request timeout': '短请求超时',
-  'First-byte timeout': '聊天首字节超时',
-  'Stream idle timeout': '流空闲超时',
-  'User-Agent': '出站 User-Agent',
-  'Leave empty = CLI / 2.171.0 CodeBuddy / 2.171.0': '留空 = CLI/2.171.0 CodeBuddy/2.171.0',
-  'System prompt mode': '系统提示词模式',
-  'custom — gateway-owned prompt (avoids fingerprint false positives)': 'custom — 网关自有提示词（避免指纹误报）',
-  'append — insert gateway prompt after client system (both apply)': 'append — 客户端 system 后插网关提示词（并用）',
-  'passthrough — pass client system through unchanged': 'passthrough — 透传客户端原始 system',
-  'Prompt file': '提示词文件路径',
-  'Leave empty = built-in default prompt': '留空 = 内置默认提示词',
-  'Sanitize outbound fingerprints': '出站请求指纹脱敏',
-  'Sticky session routing': '会话粘性路由',
-  'Thinking tier policy': '思考档位策略',
-  'Default thinking tier': '默认思考档位',
-  'max — highest the model supports': 'max — 模型支持的最高档',
-  'Client tier wins': '客户端档位优先',
-  'Gateway override scope': '网关覆盖作用域',
-  'level — tiers only, client off kept': 'level — 只改档位，保留客户端关闭思考',
-  'all — also override client off': 'all — 连客户端关闭也改写为开启',
-  'Tier policy fills in a thinking tier when the client omits one; override scope only matters when client tiers do not win.': '策略在客户端未传档位时补上思考档位；覆盖作用域仅在客户端档位不优先时才起作用。',
-  'Upstash Redis mirror, auth dir, and state file are edited in the config file manually (restart items).': 'Upstash Redis 镜像、凭证目录与状态文件路径需手工编辑配置文件（判为重启项）。',
-  'Discard changes': '放弃修改',
-  'Save configuration': '保存配置',
-  ' (was: ': '（原状态：',
-  'Reset failed: ': '恢复失败：',
-  'Key #': 'key #',
-  ' (': '（',
-  ') — ': '）— ',
-  ' (seed)': '（种子）',
-  'Email (optional)': '邮箱（可选）',
-  'Cancel': '取消',
-  'Edit nickname': '修改昵称',
-  'Nickname': '昵称',
-  'Nickname saved': '昵称已保存',
-  'Failed to save nickname: ': '昵称保存失败：',
-  'Nickname cannot be empty': '昵称不能为空',
-  'The type is detected automatically — sk_... is pooled as a static API key, anything else as an OAuth refresh token.': '类型自动识别：sk_... 按静态 API key 入池，其余按 OAuth refreshToken 处理。',
-  ', ': '，',
-  'Clear proxy bindings on ALL keys and disable routing? Click Save to apply.': '清空全部 key 的代理绑定并禁用路由？点击「保存」后生效。',
-  'Stage only — click Save to apply. Clears bindings and disables every row.': '仅暂存——点「保存」后生效。清空所有行的代理绑定并禁用。',
-  'Run the Test probe on every row.': '对本页所有行执行一次测试探测。',
-  'Email': '邮箱',
-  'Today/Total tokens': '今日/累计 token',
-  'Last used': '最近使用',
-  'Created': '创建时间',
-  'Proxy binding': '代理绑定',
-  'Actions': '操作',
+  'keep_latency': { en: 'Keep latency ≤', zh: '延迟阈值' },
+  's': { en: 's', zh: '秒' },
+  'Proxies at or below this latency (seconds) keep their current binding and are skipped by reordering; slower ones are refilled from the pool. Saved on change.': { en: 'Proxies at or below this latency (seconds) keep their current binding and are skipped by reordering; slower ones are refilled from the pool. Saved on change.', zh: '延迟不高于该值（秒）的代理保持现绑定、不参与重排；更慢的才从池里回填。改动即时落盘。' },
+  'latency_keep_threshold_saved': { en: 'Latency keep threshold saved', zh: '延迟保持阈值已保存' },
+  'slower_bindings_are_refilled': { en: ' — slower bindings are refilled', zh: ' —— 慢于该值的绑定才会被回填' },
+  'keep_threshold_must_be_between_0_and_600_seconds': { en: 'Keep threshold must be between 0 and 600 seconds', zh: '保持阈值需为 0~600 秒之间的数值' },
+  'Proxy isolation: each credential only egresses via its bound exits; when none is available it is skipped — never another exit or direct. Forced on when': { en: 'Proxy isolation: each credential only egresses via its bound exits; when none is available it is skipped — never another exit or direct. Forced on when', zh: '代理隔离：每个凭据只从绑定的出口出站，都不可用则跳过——绝不改走其他出口或直连。设有' },
+  '=true.': { en: '=true.', zh: '=true 时强制开启。' },
+  'Backup proxy — off by default: every identity uses its main proxy only; a cooling or removed main proxy is skipped for that round. On: the backup proxy serves as the fallback for the main one.': { en: 'Backup proxy — off by default: every identity uses its main proxy only; a cooling or removed main proxy is skipped for that round. On: the backup proxy serves as the fallback for the main one.', zh: '备用代理：默认关闭——每个身份只走主代理，主代理冷却或被移除时直接跳过。开启后：备用代理作为主代理的兜底。' },
+  'Platform-level blacklist, per-proxy binding cap and manually disabled (cooled) proxies apply to automatic assignment only — one-click bind and reorder-by-latency. CN-domain accounts of TraeWork/WorkBuddy are excluded from both batch operations, and the proxies they hold are never reassigned within their own platform. Manual bindings and runtime routing are never restricted.': { en: 'Platform-level blacklist, per-proxy binding cap and manually disabled (cooled) proxies apply to automatic assignment only — one-click bind and reorder-by-latency. CN-domain accounts of TraeWork/WorkBuddy are excluded from both batch operations, and the proxies they hold are never reassigned within their own platform. Manual bindings and runtime routing are never restricted.', zh: '平台拉黑、单代理绑定上限与手动禁用（冷却）的代理只约束自动分配——「一键代理」与「凭据延迟重排」两个批量操作；TraeWork/WorkBuddy 的国内域账号不参与这两个批量操作，其占用的代理不会被同平台的其他账号再分配。手动绑定和运行期路由不受限制。' },
+  'excluded': { en: ' · excluded', zh: ' · 已排除' },
+  'row_s_left_unchanged_every_allowed_proxy_is_excl': { en: ' row(s) left unchanged — every allowed proxy is excluded or at cap', zh: ' 行无法改绑：可用代理都已拉黑或达到上限' },
+  'latency_reorder_finished_with_errors_loads_faile': { en: 'Latency reorder finished with errors — loads failed: ', zh: '延迟重排完成但有错误——加载失败：' },
+  'saves_failed': { en: '; saves failed: ', zh: '；保存失败：' },
+  'cn_domain_account_row_s_untouched': { en: ' CN-domain account row(s) untouched', zh: ' 个国内域账号行保持原绑定' },
+  'reordered': { en: 'Reordered ', zh: '已按延迟重排 ' },
+  'proxy_binding_s_by_latency_and_saved': { en: ' proxy binding(s) by latency and saved', zh: ' 条代理绑定并已保存' },
+  'no_changes_to_save': { en: 'No changes to save', zh: '没有需要保存的修改' },
+  'save_failed_for': { en: 'Save failed for ', zh: '保存失败 ' },
+  'account_s': { en: ' account(s)', zh: ' 个账号' },
+  'account_change_s': { en: ' account change(s)', zh: ' 处修改' },
+  'no_accounts_to_test': { en: 'No accounts to test', zh: '没有可测试的账号' },
+  'batch_test_done': { en: 'Batch test done: ', zh: '批量测试完成：' },
+  'tested': { en: ' tested, ', zh: ' 个已测，' },
+  'ok': { en: ' ok', zh: ' 可用' },
+  'cooling_1': { en: ' cooling', zh: ' 冷却' },
+  'error_1': { en: ' error', zh: ' 异常' },
+  'participates_in_request_routing': { en: 'Participates in request routing', zh: '参与请求路由' },
+  'auto': { en: 'auto', zh: '自动' },
+  'The alias (#name) is a proxy\'s identity — re-binding survives alias-preserving URL changes.': { en: 'The alias (#name) is a proxy\'s identity — re-binding survives alias-preserving URL changes.', zh: '别名（#name）是代理的身份标识——URL 变化但别名不变时，绑定关系保持有效。' },
+  'Rows follow the backend pool; values persist in this browser to survive pool edits (add-only — a returning proxy picks up its stored numbers). Console override: proxyRateSet(\'香港-01\', 0.42).': { en: 'Rows follow the backend pool; values persist in this browser to survive pool edits (add-only — a returning proxy picks up its stored numbers). Console override: proxyRateSet(\'香港-01\', 0.42).', zh: '行列表跟随代理池后端；数值在本浏览器留存以扛住池编辑清零（只加不删，代理回归后自动恢复留存值）。控制台改数：proxyRateSet(\'香港-01\', 0.42)。' },
+  'Import will replace ALL persisted config with the file contents. Confirm whether to keep each platform\'s credential enabled states.': { en: 'Import will replace ALL persisted config with the file contents. Confirm whether to keep each platform\'s credential enabled states.', zh: '导入将替换所有持久化配置，请确认是否保留各平台凭据启用状态。' },
+  're-bind proxies of the selected platforms: healthy (fast, allowed) bindings stay put; slow/unrecorded/excluded/over-cap/manual-disabled ones are re-filled from the remaining pool (better-only for healthy rows), then auto-save.': { en: 're-bind proxies of the selected platforms: healthy (fast, allowed) bindings stay put; slow/unrecorded/excluded/over-cap/manual-disabled ones are re-filled from the remaining pool (better-only for healthy rows), then auto-save.', zh: '重新绑定所选平台的代理：健康的绑定保持不动，慢的/没测过的/被排除的/超配额的/手动禁用的用剩余代理池填补（健康行只换更好的），然后自动保存。' },
+  'International (codebuddy.ai)': { en: 'International (codebuddy.ai)', zh: '国际版（codebuddy.ai）' },
+  'WorkBuddy (workbuddy.ai)': { en: 'WorkBuddy (workbuddy.ai)', zh: 'WorkBuddy 桌面版（workbuddy.ai）' },
+  'Discard': { en: 'Discard', zh: '复位' },
+  'Discard staged changes and reload the last saved state': { en: 'Discard staged changes and reload the last saved state', zh: '撤销暂存的修改，恢复为上次保存的状态' },
+  'Add credentials': { en: 'Add credentials', zh: '添加凭据' },
+  'Confirm': { en: 'Confirm', zh: '确认' },
+  'keys': { en: 'keys', zh: '个 key' },
+  'API keys (one per line) *': { en: 'API keys (one per line) *', zh: 'API key（每行一个）*' },
+  'One OpenCode API key per line (oc_sk_...).': { en: 'One OpenCode API key per line (oc_sk_...).', zh: '每行一个 OpenCode API key（oc_sk_...）。' },
+  'enter_at_least_one_key': { en: 'Enter at least one key', zh: '请至少输入一个 key' },
+  'no_new_keys_all_already_in_the_pool': { en: 'No new keys (all already in the pool)', zh: '没有新 key（均已在池中）' },
+  'added_1': { en: 'Added ', zh: '已添加 ' },
+  'key_s': { en: ' key(s)', zh: ' 个 key' },
+  'no_keys_to_test': { en: 'No keys to test', zh: '没有可测试的 key' },
+  'deleted': { en: ' (deleted)', zh: '（已删除）' },
+  'running': { en: 'Running', zh: '执行中' },
+  'finished': { en: 'Finished', zh: '执行结束' },
+  'CN (China)': { en: 'CN (China)', zh: 'CN (国内版)' },
+  'Points breakdown': { en: 'Points breakdown', zh: '积分构成' },
+  'pick_a_concurrency_then_click_scan_tasks': { en: 'Pick a concurrency, then click "Scan tasks"', zh: '选择并发数后点击“扫描任务”' },
+  'Concurrency': { en: 'Concurrency', zh: '并发' },
+  'Scan tasks': { en: 'Scan tasks', zh: '扫描任务' },
+  'Run all': { en: 'Run all', zh: '全部执行' },
+  'main_egress_requests_go_through_this_egress_when': { en: 'Main egress: requests go through this egress whenever available', zh: '主出口：可用时固定从该出口发出' },
+  'backup_egress_fallback_while_the_main_egress_is_': { en: 'Backup egress: fallback while the main egress is cooling down or unavailable', zh: '备用出口：主出口冷却或不可用时兜底' },
+  'failed_to_save': { en: 'Failed to save ', zh: '保存失败 ' },
+  'account_edits': { en: ' account edits', zh: ' 个账号的修改' },
+  'clear_proxy_bindings_on_all_accounts_and_disable': { en: 'Clear proxy bindings on ALL accounts and disable them? Takes effect when you click Save.', zh: '清空全部账号的代理绑定并置为禁用？点击"保存"后生效。' },
+  'delete_this_workbuddy_account_and_its_credential': { en: 'Delete this WorkBuddy account and its credentials?', zh: '删除该 WorkBuddy 账号及其凭证？' },
+  'unnamed': { en: '(unnamed)', zh: '(未命名)' },
+  'querying_points_breakdown_from_upstream': { en: 'Querying points breakdown from upstream...', zh: '正在向上游查询积分构成...' },
+  'no_points_data_found_for_this_account': { en: 'No points data found for this account', zh: '未找到该账号的积分数据' },
+  'live_from_upstream': { en: 'Live from upstream · ', zh: '实时查询上游 · ' },
+  'points_packages': { en: ' points packages', zh: ' 个积分包' },
+  'failed_to_read': { en: 'Failed to read: ', zh: '读取失败：' },
+  'query_failed': { en: 'Query failed: ', zh: '查询失败：' },
+  'first_issued': { en: 'first issued ', zh: '首发 ' },
+  'total_1': { en: 'Total ', zh: '共 ' },
+  'package_s': { en: ' package(s)', zh: ' 个包' },
+  'remaining_points_used': { en: 'Remaining points · used ', zh: '剩余积分 · 已用 ' },
+  'package_source': { en: 'Package / source', zh: '包名 / 来源' },
+  'face_value': { en: 'Face value', zh: '面额' },
+  'remaining_1': { en: 'Remaining', zh: '剩余' },
+  'used': { en: 'Used', zh: '已用' },
+  'granted': { en: 'Granted', zh: '发放' },
+  'expires': { en: 'Expires', zh: '到期' },
+  'no_points_packages': { en: 'No points packages', zh: '没有积分包' },
+  'no_pending_tasks_for_all_accounts': { en: 'No pending tasks for all accounts', zh: '全部账号没有待办任务' },
+  'energy': { en: 'Energy', zh: '能量' },
+  'task': { en: 'Task: ', zh: '任务：' },
+  'description': { en: 'Description: ', zh: '说明：' },
+  'progress': { en: 'Progress: ', zh: '进度：' },
+  'reward': { en: 'Reward: ', zh: '奖励：' },
+  'result': { en: 'Result: ', zh: '结果：' },
+  'pending': { en: 'Pending', zh: '待执行' },
+  'scan_failed': { en: 'Scan failed: ', zh: '扫描失败：' },
+  'item_s': { en: ' item(s)', zh: ' 项' },
+  'scanning_with_concurrency': { en: 'Scanning with concurrency ', zh: '正在按并发 ' },
+  'scanning_tasks': { en: ' scanning tasks...', zh: ' 扫描任务...' },
+  'scanning': { en: 'Scanning...', zh: '扫描中...' },
+  'scan_complete': { en: 'Scan complete: ', zh: '扫描完成：' },
+  'pending_item_s': { en: ' pending item(s)', zh: ' 项待办' },
+  'claimed': { en: 'Claimed', zh: '已领取' },
+  'in_progress': { en: 'In progress', zh: '进行中' },
+  'done': { en: 'Done', zh: '完成' },
+  'skipped': { en: 'Skipped', zh: '跳过' },
+  'failed_3': { en: 'Failed', zh: '失败' },
+  'sep.colon': { en: ': ', zh: '：' },
+  'failed_to_read_queue': { en: 'Failed to read queue: ', zh: '读取队列失败：' },
+  'run_all_listed_tasks_with_concurrency': { en: 'Run all listed tasks with concurrency ', zh: '按并发 ' },
+  'tasks_run_serially_within_each_account_auto_clai': { en: ' (tasks run serially within each account, auto-claim enabled). Confirm?', zh: ' 执行列表中的全部任务（账号内串行，自动领取任务）。确认继续？' },
+  'no_pending_tasks': { en: 'No pending tasks', zh: '没有待办任务' },
+  'queue_started': { en: 'Queue started: ', zh: '队列已启动：' },
+  'item_s_concurrency': { en: ' item(s) (concurrency ', zh: ' 项（并发 ' },
+  'queue_started_running': { en: 'Queue started, running...', zh: '队列已启动，正在执行...' },
+  'failed_to_run': { en: 'Failed to run: ', zh: '执行失败：' },
+  'saving': { en: 'Saving...', zh: '保存中...' },
+  'free': { en: 'free', zh: '免费' },
+  'default_tier': { en: 'Default tier', zh: '默认档' },
+  'No WorkBuddy models under the current filter': { en: 'No WorkBuddy models under the current filter', zh: '当前筛选下没有 WorkBuddy 模型' },
+  'CN model rate filter': { en: 'CN model rate filter', zh: '国内模型倍率筛选' },
+  'Intl model rate filter': { en: 'Intl model rate filter', zh: '国际模型倍率筛选' },
+  'Global model rate filter': { en: 'Global model rate filter', zh: '国际模型倍率筛选' },
+  '0 — free only': { en: '0 — free only', zh: '0 — 仅免费' },
+  'WorkBuddy configuration': { en: 'WorkBuddy configuration', zh: 'WorkBuddy 配置' },
+  'Managed by the admin session': { en: 'Managed by the admin session', zh: '面板由当前管理员会话管理' },
+  'Scheduled jobs': { en: 'Scheduled jobs', zh: '定时任务' },
+  'Automatic check-in': { en: 'Automatic check-in', zh: '自动签到' },
+  'Check-in hours': { en: 'Check-in hours', zh: '签到时点（小时，逗号分隔）' },
+  'Automatic patrol': { en: 'Automatic patrol', zh: '自动巡检' },
+  'Patrol hours': { en: 'Patrol hours', zh: '旅行时点（小时，逗号分隔）' },
+  'Automatic activity': { en: 'Automatic activity', zh: '自动连登' },
+  'Activity hours': { en: 'Activity hours', zh: '上报时点（小时，逗号分隔）' },
+  'Automatic keepalive': { en: 'Automatic keepalive', zh: '自动保活' },
+  'Keepalive hours': { en: 'Keepalive hours', zh: '保活时点（小时，逗号分隔）' },
+  'Background balance refresh': { en: 'Background balance refresh', zh: '后台刷新余额' },
+  'Refresh interval (min)': { en: 'Refresh interval (min)', zh: '刷新间隔（分钟）' },
+  'Growth tasks': { en: 'Growth tasks', zh: '成长任务自动执行' },
+  'Growth hours': { en: 'Growth hours', zh: '执行时点（小时，逗号分隔）' },
+  'Pool and cooldown': { en: 'Pool and cooldown', zh: '账号池与流量治理' },
+  'Max in-flight / account': { en: 'Max in-flight / account', zh: '单账号最大在途' },
+  'Global in-flight limit': { en: 'Global in-flight limit', zh: '国际版在途上限' },
+  'Breaker threshold': { en: 'Breaker threshold', zh: '连续失败熔断阈值' },
+  'Soft rate cooldown': { en: 'Soft rate cooldown', zh: '软限流冷却基数' },
+  'Soft cooldown max': { en: 'Soft cooldown max', zh: '软冷却退避上限' },
+  'Breaker cooldown': { en: 'Breaker cooldown', zh: '熔断基础时长' },
+  'Breaker cooldown max': { en: 'Breaker cooldown max', zh: '熔断退避上限' },
+  'Degrade threshold': { en: 'Degrade threshold', zh: '连败降权阈值' },
+  'Degrade cooldown': { en: 'Degrade cooldown', zh: '连败降权时长' },
+  'Degrade cooldown max': { en: 'Degrade cooldown max', zh: '连败降权上限' },
+  'Idle weight / hour': { en: 'Idle weight / hour', zh: '闲置补偿 / 小时' },
+  'Idle weight max': { en: 'Idle weight max', zh: '闲置补偿上限' },
+  'Cost explore window': { en: 'Cost explore window', zh: '成本探索窗口' },
+  'Sticky TTL': { en: 'Sticky TTL', zh: '会话粘性 TTL' },
+  'Session and upstream': { en: 'Session and upstream', zh: '上游与高级' },
+  'Short request timeout': { en: 'Short request timeout', zh: '短请求超时' },
+  'First-byte timeout': { en: 'First-byte timeout', zh: '聊天首字节超时' },
+  'Stream idle timeout': { en: 'Stream idle timeout', zh: '流空闲超时' },
+  'User-Agent': { en: 'User-Agent', zh: '出站 User-Agent' },
+  'Leave empty = CLI / 2.171.0 CodeBuddy / 2.171.0': { en: 'Leave empty = CLI / 2.171.0 CodeBuddy / 2.171.0', zh: '留空 = CLI/2.171.0 CodeBuddy/2.171.0' },
+  'System prompt mode': { en: 'System prompt mode', zh: '系统提示词模式' },
+  'custom — gateway-owned prompt (avoids fingerprint false positives)': { en: 'custom — gateway-owned prompt (avoids fingerprint false positives)', zh: 'custom — 网关自有提示词（避免指纹误报）' },
+  'append — insert gateway prompt after client system (both apply)': { en: 'append — insert gateway prompt after client system (both apply)', zh: 'append — 客户端 system 后插网关提示词（并用）' },
+  'passthrough — pass client system through unchanged': { en: 'passthrough — pass client system through unchanged', zh: 'passthrough — 透传客户端原始 system' },
+  'Prompt file': { en: 'Prompt file', zh: '提示词文件路径' },
+  'Leave empty = built-in default prompt': { en: 'Leave empty = built-in default prompt', zh: '留空 = 内置默认提示词' },
+  'Sanitize outbound fingerprints': { en: 'Sanitize outbound fingerprints', zh: '出站请求指纹脱敏' },
+  'Sticky session routing': { en: 'Sticky session routing', zh: '会话粘性路由' },
+  'Thinking tier policy': { en: 'Thinking tier policy', zh: '思考档位策略' },
+  'Default thinking tier': { en: 'Default thinking tier', zh: '默认思考档位' },
+  'max — highest the model supports': { en: 'max — highest the model supports', zh: 'max — 模型支持的最高档' },
+  'Client tier wins': { en: 'Client tier wins', zh: '客户端档位优先' },
+  'Gateway override scope': { en: 'Gateway override scope', zh: '网关覆盖作用域' },
+  'level — tiers only, client off kept': { en: 'level — tiers only, client off kept', zh: 'level — 只改档位，保留客户端关闭思考' },
+  'all — also override client off': { en: 'all — also override client off', zh: 'all — 连客户端关闭也改写为开启' },
+  'Tier policy fills in a thinking tier when the client omits one; override scope only matters when client tiers do not win.': { en: 'Tier policy fills in a thinking tier when the client omits one; override scope only matters when client tiers do not win.', zh: '策略在客户端未传档位时补上思考档位；覆盖作用域仅在客户端档位不优先时才起作用。' },
+  'Upstash Redis mirror, auth dir, and state file are edited in the config file manually (restart items).': { en: 'Upstash Redis mirror, auth dir, and state file are edited in the config file manually (restart items).', zh: 'Upstash Redis 镜像、凭证目录与状态文件路径需手工编辑配置文件（判为重启项）。' },
+  'Discard changes': { en: 'Discard changes', zh: '放弃修改' },
+  'save_configuration': { en: 'Save configuration', zh: '保存配置' },
+  'was': { en: ' (was: ', zh: '（原状态：' },
+  'reset_failed': { en: 'Reset failed: ', zh: '恢复失败：' },
+  'key': { en: 'Key #', zh: 'key #' },
+  'sep.lparen': { en: ' (', zh: '（' },
+  'sep.rparen_emdash': { en: ') — ', zh: '）— ' },
+  'seed': { en: ' (seed)', zh: '（种子）' },
+  'Email (optional)': { en: 'Email (optional)', zh: '邮箱（可选）' },
+  'cancel': { en: 'Cancel', zh: '取消' },
+  'edit_nickname': { en: 'Edit nickname', zh: '修改昵称' },
+  'nickname': { en: 'Nickname', zh: '昵称' },
+  'nickname_saved': { en: 'Nickname saved', zh: '昵称已保存' },
+  'failed_to_save_nickname': { en: 'Failed to save nickname: ', zh: '昵称保存失败：' },
+  'nickname_cannot_be_empty': { en: 'Nickname cannot be empty', zh: '昵称不能为空' },
+  'The type is detected automatically — sk_... is pooled as a static API key, anything else as an OAuth refresh token.': { en: 'The type is detected automatically — sk_... is pooled as a static API key, anything else as an OAuth refresh token.', zh: '类型自动识别：sk_... 按静态 API key 入池，其余按 OAuth refreshToken 处理。' },
+  ', ': { en: ', ', zh: '，' },
+  'clear_proxy_bindings_on_all_keys_and_disable_rou': { en: 'Clear proxy bindings on ALL keys and disable routing? Click Save to apply.', zh: '清空全部 key 的代理绑定并禁用路由？点击「保存」后生效。' },
+  'Stage only — click Save to apply. Clears bindings and disables every row.': { en: 'Stage only — click Save to apply. Clears bindings and disables every row.', zh: '仅暂存——点「保存」后生效。清空所有行的代理绑定并禁用。' },
+  'Run the Test probe on every row.': { en: 'Run the Test probe on every row.', zh: '对本页所有行执行一次测试探测。' },
+  'Email': { en: 'Email', zh: '邮箱' },
+  'Today/Total tokens': { en: 'Today/Total tokens', zh: '今日/累计 token' },
+  'Last used': { en: 'Last used', zh: '最近使用' },
+  'Created': { en: 'Created', zh: '创建时间' },
+  'Proxy binding': { en: 'Proxy binding', zh: '代理绑定' },
+  'Actions': { en: 'Actions', zh: '操作' },
   // WorkBuddy 账号表双开关列（账号/反代，afree）
-  'Account switch': '账号开关',
-  'Gateway switch': '反代开关',
-  'Account master switch. Off = the account does not exist: check-in, patrol, activity, keepalive, night chats, growth and balance refresh all skip it, and it never routes.': '账号总开关。关闭 = 该账号不存在：签到、旅行、活跃、保活、夜猫子、成长任务与余额刷新全部跳过，也不再参与路由。',
-  'Gateway (reverse proxy) switch: unchecked = model sessions never route to this account; check-in and all other maintenance tasks are unaffected. Can only be ticked while the account switch is on.': '反代开关：不勾选 = 模型会话不路由到该账号；签到等其余维护任务不受影响。只有账号开关开启时才能勾选。',
-  'Account master switch: off = the account does not exist — check-in, tasks and balance refresh all stop, and it never routes': '账号总开关：关闭 = 该账号不存在——签到、任务与余额刷新全部停止，也不再路由',
-  'Gateway switch: unchecked = model sessions never route to this account; check-in and all other maintenance tasks are unaffected': '反代开关：不勾选 = 模型会话不路由到该账号；签到等其余维护任务不受影响',
+  'account_switch': { en: 'Account switch', zh: '账号开关' },
+  'gateway_switch': { en: 'Gateway switch', zh: '反代开关' },
+  'Account master switch. Off = the account does not exist: check-in, patrol, activity, keepalive, night chats, growth and balance refresh all skip it, and it never routes.': { en: 'Account master switch. Off = the account does not exist: check-in, patrol, activity, keepalive, night chats, growth and balance refresh all skip it, and it never routes.', zh: '账号总开关。关闭 = 该账号不存在：签到、旅行、活跃、保活、夜猫子、成长任务与余额刷新全部跳过，也不再参与路由。' },
+  'gateway_reverse_proxy_switch_unchecked_model_ses': { en: 'Gateway (reverse proxy) switch: unchecked = model sessions never route to this account; check-in and all other maintenance tasks are unaffected. Can only be ticked while the account switch is on.', zh: '反代开关：不勾选 = 模型会话不路由到该账号；签到等其余维护任务不受影响。只有账号开关开启时才能勾选。' },
+  'account_master_switch_off_the_account_does_not_e_1': { en: 'Account master switch: off = the account does not exist — check-in, tasks and balance refresh all stop, and it never routes', zh: '账号总开关：关闭 = 该账号不存在——签到、任务与余额刷新全部停止，也不再路由' },
+  'gateway_switch_unchecked_model_sessions_never_ro': { en: 'Gateway switch: unchecked = model sessions never route to this account; check-in and all other maintenance tasks are unaffected', zh: '反代开关：不勾选 = 模型会话不路由到该账号；签到等其余维护任务不受影响' },
   // 封禁平台（网关设置页，封禁模型区上方；整平台退出会话路由）
-  'Banned platforms': '封禁平台',
-  'Banned platforms stop participating in session routing — models leave /v1/models and requests fail immediately; maintenance tasks (check-in etc.) are unaffected. Other sub-platforms can be banned individually. Changes are staged — click Save to save.': '封禁后整平台退出会话路由——模型从 /v1/models 移除、调用立即失败；签到等维护任务不受影响。Other 的子平台可单独封禁。改动先暂存，点「保存」后统一落盘。',
-  'Banned automatically (upstream refuses them for this account type, e.g. code 11158) or manually — hidden from /v1/models. Test sends a real request with the first enabled credential; Unblock only removes the entry, the same upstream error bans it again.': '自动封禁（上游按账号类型拒绝，如 code 11158）或手动封禁；已从 /v1/models 移除。Test 用该平台第一个启用的凭据发真实请求验证；「解禁」只移出名单，同样的上游错误会再次封禁。',
+  'Banned platforms': { en: 'Banned platforms', zh: '封禁平台' },
+  'Banned platforms stop participating in session routing — models leave /v1/models and requests fail immediately; maintenance tasks (check-in etc.) are unaffected. Other sub-platforms can be banned individually. Changes are staged — click Save to save.': { en: 'Banned platforms stop participating in session routing — models leave /v1/models and requests fail immediately; maintenance tasks (check-in etc.) are unaffected. Other sub-platforms can be banned individually. Changes are staged — click Save to save.', zh: '封禁后整平台退出会话路由——模型从 /v1/models 移除、调用立即失败；签到等维护任务不受影响。Other 的子平台可单独封禁。改动先暂存，点「保存」后统一落盘。' },
+  'Banned automatically (upstream refuses them for this account type, e.g. code 11158) or manually — hidden from /v1/models. Test sends a real request with the first enabled credential; Unblock only removes the entry, the same upstream error bans it again.': { en: 'Banned automatically (upstream refuses them for this account type, e.g. code 11158) or manually — hidden from /v1/models. Test sends a real request with the first enabled credential; Unblock only removes the entry, the same upstream error bans it again.', zh: '自动封禁（上游按账号类型拒绝，如 code 11158）或手动封禁；已从 /v1/models 移除。Test 用该平台第一个启用的凭据发真实请求验证；「解禁」只移出名单，同样的上游错误会再次封禁。' },
   // 封禁平台暂存 + 确认按钮（勾选/去选只改暂存，「确认」差集统一下发落盘）
-  'Staged — click Save to save': '已暂存，点「保存」后落盘',
-  'No changes to apply': '没有需要应用的改动',
-  'Platform bans saved': '封禁平台已保存',
+  'staged_click_save_to_save': { en: 'Staged — click Save to save', zh: '已暂存，点「保存」后落盘' },
+  'no_changes_to_apply': { en: 'No changes to apply', zh: '没有需要应用的改动' },
+  'platform_bans_saved': { en: 'Platform bans saved', zh: '封禁平台已保存' },
   // 批量追加框「已在所有平台排除」回显 chip 与批量取消
-  'Excluded on every platform — × removes it from all (staged)': '已在所有平台排除——点 × 从所有平台批量取消（暂存）',
-  'Removed from every platform\'s exclusion list (staged) — click Save to apply': '已从所有平台的排除列表移除（暂存）——点「保存」后生效',
-  'Loading...': '加载中...',
-  'Counted locally by this proxy — not the official free quota': '本代理本地统计 —— 非官方免费额度',
-  'Main exit first, backup as fallback; both down = row skipped (isolation).': '主出口优先，备用兜底；都不可用即跳过该行（隔离模式）。',
-  'Main exit — used whenever available': '主出口 —— 可用即优先',
-  'Backup exit — used when main is cooling/removed': '备用出口 —— 主冷却/被删时使用',
-  'Bound proxy is no longer in the proxy pool — skipped until fixed': '绑定的代理已不在代理池中——修复前跳过该行。',
+  'excluded_on_every_platform_removes_it_from_all_s': { en: 'Excluded on every platform — × removes it from all (staged)', zh: '已在所有平台排除——点 × 从所有平台批量取消（暂存）' },
+  'removed_from_every_platform_s_exclusion_list_sta': { en: 'Removed from every platform\'s exclusion list (staged) — click Save to apply', zh: '已从所有平台的排除列表移除（暂存）——点「保存」后生效' },
+  'Loading...': { en: 'Loading...', zh: '加载中...' },
+  'Counted locally by this proxy — not the official free quota': { en: 'Counted locally by this proxy — not the official free quota', zh: '本代理本地统计 —— 非官方免费额度' },
+  'Main exit first, backup as fallback; both down = row skipped (isolation).': { en: 'Main exit first, backup as fallback; both down = row skipped (isolation).', zh: '主出口优先，备用兜底；都不可用即跳过该行（隔离模式）。' },
+  'main_exit_used_whenever_available': { en: 'Main exit — used whenever available', zh: '主出口 —— 可用即优先' },
+  'backup_exit_used_when_main_is_cooling_removed': { en: 'Backup exit — used when main is cooling/removed', zh: '备用出口 —— 主冷却/被删时使用' },
+  'bound_proxy_is_no_longer_in_the_proxy_pool_skipp': { en: 'Bound proxy is no longer in the proxy pool — skipped until fixed', zh: '绑定的代理已不在代理池中——修复前跳过该行。' },
   // 添加账号弹窗（accAddDialog，Cline 页"添加账号"按钮）
-  'Token or API key *': 'Token 或 API key *',
+  'Token or API key *': { en: 'Token or API key *', zh: 'Token 或 API key *' },
   // 代理池页
-  'Egress proxies': '出口代理',
-  'One proxy per line:': '每行一个代理：',
-  '. All upstreams share this list; unhealthy proxies are skipped automatically.': '。所有上游共用此列表；不健康的代理会被自动跳过。',
-  'When a subscription URL is set, this list is managed by the subscription and read-only; it serves as the fallback pool while a fetch fails.': '设置订阅链接后，此列表由订阅管理、只读不可编辑；拉取失败时作为兜底池使用。',
-  'or': '或',
-  'one per line: socks://b64(user:pass)@host:port#alias, socks5://user:pass@host:port#alias or http://host:port': '每行一条：socks://b64(账号:密码)@host:port#别名、socks5://账号:密码@host:port#别名 或 http://host:port（#别名自动识别）',
-  'Proxy list': '代理列表',
-  'Proxy selection strategy': '代理选择策略',
-  'Round-robin (round_robin)': '轮询（round_robin）',
-  'Random (random)': '随机（random）',
-  'Fill (fill)': '填满优先（fill）',
-  'Save proxy pool': '保存代理池',
-  'Test all credentials': '全量测试',
+  'Egress proxies': { en: 'Egress proxies', zh: '出口代理' },
+  'One proxy per line:': { en: 'One proxy per line:', zh: '每行一个代理：' },
+  '. All upstreams share this list; unhealthy proxies are skipped automatically.': { en: '. All upstreams share this list; unhealthy proxies are skipped automatically.', zh: '。所有上游共用此列表；不健康的代理会被自动跳过。' },
+  'When a subscription URL is set, this list is managed by the subscription and read-only; it serves as the fallback pool while a fetch fails.': { en: 'When a subscription URL is set, this list is managed by the subscription and read-only; it serves as the fallback pool while a fetch fails.', zh: '设置订阅链接后，此列表由订阅管理、只读不可编辑；拉取失败时作为兜底池使用。' },
+  'or': { en: 'or', zh: '或' },
+  'one per line: socks://b64(user:pass)@host:port#alias, socks5://user:pass@host:port#alias or http://host:port': { en: 'one per line: socks://b64(user:pass)@host:port#alias, socks5://user:pass@host:port#alias or http://host:port', zh: '每行一条：socks://b64(账号:密码)@host:port#别名、socks5://账号:密码@host:port#别名 或 http://host:port（#别名自动识别）' },
+  'Proxy list': { en: 'Proxy list', zh: '代理列表' },
+  'Proxy selection strategy': { en: 'Proxy selection strategy', zh: '代理选择策略' },
+  'Round-robin (round_robin)': { en: 'Round-robin (round_robin)', zh: '轮询（round_robin）' },
+  'Random (random)': { en: 'Random (random)', zh: '随机（random）' },
+  'Fill (fill)': { en: 'Fill (fill)', zh: '填满优先（fill）' },
+  'Save proxy pool': { en: 'Save proxy pool', zh: '保存代理池' },
+  'Test all credentials': { en: 'Test all credentials', zh: '全量测试' },
   "Run the batch test once on every platform's credential list (Cline / TraeWork / OpenCode / OpenRouter / AMDCloud / TokenHarbor / Other / WorkBuddy), one platform at a time": '对 8 个平台的凭据列表各跑一次批量测试（Cline / TraeWork / OpenCode / OpenRouter / AMDCloud / TokenHarbor / Other / WorkBuddy），逐个平台串行执行',
-  'All-platform test finished': '全平台测试完成',
-  ' — skipped (no routable credentials): ': '，跳过（无可路由凭据）：',
-  ' — skipped (gateway banned): ': '，跳过（已被网关封禁）：',
-  'Platform is banned in gateway settings — test skipped': '平台已在网关设置中封禁——测试跳过',
-  ' skipped (unroutable)': ' 跳过（无法路由）',
-  'No routable credentials': '无可路由凭据',
-  'All-platform test finished with errors: ': '全平台测试完成，失败项：',
-  'Global policy': '全局策略',
-  'Cline': 'Cline',
-  'Use proxy pool': '走代理池',
-  'Proxy': '代理',
-  'Attempts': '尝试数',
-  'Last OK': '最近成功',
-  'Last Fail': '最近失败',
-  'Upstream attempts that egressed via this proxy since the pool was last edited': '上次编辑代理池以来，经此代理出网的上游尝试次数',
-  'Average tunnel-setup time over successful attempts (TCP+TLS+CONNECT handshake only — excludes upstream first byte and task duration). Lower is better. Click to sort.': '成功尝试的平均隧道建立耗时（仅 TCP+TLS+CONNECT 握手——不含上游首字节与任务耗时）。越低越好。点击排序。',
-  'Time to first byte: from request start to the first response byte (streaming = first upstream token; - = no response body, e.g. 413)': '首字节耗时：请求开始到首个响应字节（流式=上游首 token 到达；-=无响应体如 413）',
-  'Avg tunnel-setup time of successful attempts (TCP+TLS+CONNECT), excluding upstream response; samples: ': '成功尝试的平均隧道建立耗时（TCP+TLS+CONNECT），不含上游响应；样本数 ',
-  'Add API keys': '添加 API key',
-  'All its keys will be removed. This cannot be undone.': '该子平台的所有密钥都将被移除，此操作不可撤销。',
-  'Transport-layer success rate since the pool was last edited (upstream 4xx/5xx still counts as the proxy being online)': '上次编辑代理池以来的传输层成功率（上游 4xx/5xx 不算代理失败）',
-  'Success rate over the last 50 attempts; red below 80% (min 10 samples).': '最近 50 次尝试的成功率；样本≥10 且低于 80% 时标红。',
-  'Clear data': '清空数据',
-  'Wipe this browser\'s stored online-rate rows (manual edits and proxies no longer in the pool); the table falls back to current backend data.': '清掉本浏览器留存的在线率行（手动改动与已不在池内的代理），表格回退到后端当前数据。',
-  'Clear the browser-stored online-rate data? Backend stats are untouched.': '清空浏览器留存的在线率数据？后端统计不受影响。',
-  'Cleared local online-rate data': '已清空本地在线率数据',
-  'Restore defaults': '恢复默认',
-  'Restore the default Cline CLI headers': '恢复默认的 Cline CLI 请求头',
-  'Headers restored to defaults': '请求头已恢复默认',
-  'OpenCode keys without proxy bindings follow this switch.': 'OpenCode 未绑定代理的 key 遵循此开关。',
-  'Clear bindings': '清空代理',
-  'Enable all': '一键启用',
+  'all_platform_test_finished': { en: 'All-platform test finished', zh: '全平台测试完成' },
+  'skipped_no_routable_credentials': { en: ' — skipped (no routable credentials): ', zh: '，跳过（无可路由凭据）：' },
+  'skipped_gateway_banned': { en: ' — skipped (gateway banned): ', zh: '，跳过（已被网关封禁）：' },
+  'platform_is_banned_in_gateway_settings_test_skip': { en: 'Platform is banned in gateway settings — test skipped', zh: '平台已在网关设置中封禁——测试跳过' },
+  'skipped_unroutable': { en: ' skipped (unroutable)', zh: ' 跳过（无法路由）' },
+  'no_routable_credentials': { en: 'No routable credentials', zh: '无可路由凭据' },
+  'all_platform_test_finished_with_errors': { en: 'All-platform test finished with errors: ', zh: '全平台测试完成，失败项：' },
+  'Global policy': { en: 'Global policy', zh: '全局策略' },
+  'Cline': { en: 'Cline', zh: 'Cline' },
+  'Use proxy pool': { en: 'Use proxy pool', zh: '走代理池' },
+  'Proxy': { en: 'Proxy', zh: '代理' },
+  'Attempts': { en: 'Attempts', zh: '尝试数' },
+  'Last OK': { en: 'Last OK', zh: '最近成功' },
+  'Last Fail': { en: 'Last Fail', zh: '最近失败' },
+  'Upstream attempts that egressed via this proxy since the pool was last edited': { en: 'Upstream attempts that egressed via this proxy since the pool was last edited', zh: '上次编辑代理池以来，经此代理出网的上游尝试次数' },
+  'Average tunnel-setup time over successful attempts (TCP+TLS+CONNECT handshake only — excludes upstream first byte and task duration). Lower is better. Click to sort.': { en: 'Average tunnel-setup time over successful attempts (TCP+TLS+CONNECT handshake only — excludes upstream first byte and task duration). Lower is better. Click to sort.', zh: '成功尝试的平均隧道建立耗时（仅 TCP+TLS+CONNECT 握手——不含上游首字节与任务耗时）。越低越好。点击排序。' },
+  'time_to_first_byte_from_request_start_to_the_fir': { en: 'Time to first byte: from request start to the first response byte (streaming = first upstream token; - = no response body, e.g. 413)', zh: '首字节耗时：请求开始到首个响应字节（流式=上游首 token 到达；-=无响应体如 413）' },
+  'Avg tunnel-setup time of successful attempts (TCP+TLS+CONNECT), excluding upstream response; samples: ': { en: 'Avg tunnel-setup time of successful attempts (TCP+TLS+CONNECT), excluding upstream response; samples: ', zh: '成功尝试的平均隧道建立耗时（TCP+TLS+CONNECT），不含上游响应；样本数 ' },
+  'Add API keys': { en: 'Add API keys', zh: '添加 API key' },
+  'all_its_keys_will_be_removed_this_cannot_be_undo': { en: 'All its keys will be removed. This cannot be undone.', zh: '该子平台的所有密钥都将被移除，此操作不可撤销。' },
+  'Transport-layer success rate since the pool was last edited (upstream 4xx/5xx still counts as the proxy being online)': { en: 'Transport-layer success rate since the pool was last edited (upstream 4xx/5xx still counts as the proxy being online)', zh: '上次编辑代理池以来的传输层成功率（上游 4xx/5xx 不算代理失败）' },
+  'Success rate over the last 50 attempts; red below 80% (min 10 samples).': { en: 'Success rate over the last 50 attempts; red below 80% (min 10 samples).', zh: '最近 50 次尝试的成功率；样本≥10 且低于 80% 时标红。' },
+  'Clear data': { en: 'Clear data', zh: '清空数据' },
+  'Wipe this browser\'s stored online-rate rows (manual edits and proxies no longer in the pool); the table falls back to current backend data.': { en: 'Wipe this browser\'s stored online-rate rows (manual edits and proxies no longer in the pool); the table falls back to current backend data.', zh: '清掉本浏览器留存的在线率行（手动改动与已不在池内的代理），表格回退到后端当前数据。' },
+  'clear_the_browser_stored_online_rate_data_backen': { en: 'Clear the browser-stored online-rate data? Backend stats are untouched.', zh: '清空浏览器留存的在线率数据？后端统计不受影响。' },
+  'cleared_local_online_rate_data': { en: 'Cleared local online-rate data', zh: '已清空本地在线率数据' },
+  'Restore defaults': { en: 'Restore defaults', zh: '恢复默认' },
+  'Restore the default Cline CLI headers': { en: 'Restore the default Cline CLI headers', zh: '恢复默认的 Cline CLI 请求头' },
+  'headers_restored_to_defaults': { en: 'Headers restored to defaults', zh: '请求头已恢复默认' },
+  'OpenCode keys without proxy bindings follow this switch.': { en: 'OpenCode keys without proxy bindings follow this switch.', zh: 'OpenCode 未绑定代理的 key 遵循此开关。' },
+  'Clear bindings': { en: 'Clear bindings', zh: '清空代理' },
+  'Enable all': { en: 'Enable all', zh: '一键启用' },
   // 批量启停（一键启用/一键禁用）的结果提示（2026-10-30 用户定：不提示等于失灵）
-  'Staged ': '已暂存 ',
-  ' row(s) — click Save to apply': ' 行——点「保存」后生效',
-  'All ': '全部 ',
-  ' row(s) are already in this state — nothing to stage': ' 行已经是该状态，无需暂存',
-  'No rows to change': '没有可改动的行',
-  ' · ': ' · ',
-  ' row(s) skipped (locked)': ' 行被互锁跳过',
-  'Account switch staged on for ': '已顺带暂存开启账号开关 ',
-  ' row(s) so the gateway switch can apply — click Save': ' 行的账号开关，反代开关才生效——点「保存」提交',
-  'Direct connection': '直连',
-  'Save': '保存',
-  'Cline accounts without proxy bindings follow this switch.': 'Cline 未绑定代理的账号遵循此开关。',
-  'TraeWork accounts without proxy bindings follow this switch.': 'TraeWork 未绑定代理的账号遵循此开关。',
-  'Delete': '删除',
-  'Test': '测试',
-  'Reset': '重置',
-  'Open': '打开',
-  'Admin panel:': '管理面板：',
-  'API address:': 'API 地址：',
-  'Config export / import': '配置导入导出',
-  'Export config': '导出配置',
-  'Import config': '导入配置',
-  'Export contains credentials — keep the file safe. Import overwrites existing config.': '导出文件包含凭据——请妥善保管。导入会覆盖现有配置。',
-  'Config exported': '配置已导出',
-  'Config imported': '配置已导入',
-  'Unsupported backup version': '不支持的备份版本',
-  'Invalid backup file: ': '备份文件无效：',
-  'Import replaces sections present in the file (accounts / keys / proxies / combos ...). All imported identities start DISABLED. Continue?': '导入将用文件内容替换当前对应的配置段（所有凭据、代理池、别名等，文件中存在的段都会替换）。导入的所有凭据一律禁用，需在面板逐个启用。继续？',
-  'Select all': '全选',
-  'Invert': '反选',
-  'Import statistics': '导入统计数据',
-  'No platform selected': '未选择任何平台',
-  'Confirm import': '确认导入',
-  'Global': '全局',
-  'No matching proxies': '没有匹配的代理',
-  'Proxy isolation (identity ↔ exit binding)': '代理隔离（身份 ↔ 出口绑定）',
-  'Isolation mode': '隔离模式',
-  'Enabled (default) — bound identities only ever use their bound exits': '启用（默认）—— 绑定的身份只从绑定出口出网',
-  'Disabled — ignore bindings; exits rotate per the strategy above (direct when pool off)': '关闭 —— 忽略绑定；出口按上方轮转策略轮换（未启用代理池时直连）',
-  'Enable backup proxies': '启用备用代理',
+  'staged': { en: 'Staged ', zh: '已暂存 ' },
+  'row_s_click_save_to_apply': { en: ' row(s) — click Save to apply', zh: ' 行——点「保存」后生效' },
+  'all': { en: 'All ', zh: '全部 ' },
+  'row_s_are_already_in_this_state_nothing_to_stage': { en: ' row(s) are already in this state — nothing to stage', zh: ' 行已经是该状态，无需暂存' },
+  'no_rows_to_change': { en: 'No rows to change', zh: '没有可改动的行' },
+  'sep.dot': { en: ' · ', zh: ' · ' },
+  'row_s_skipped_locked': { en: ' row(s) skipped (locked)', zh: ' 行被互锁跳过' },
+  'account_switch_staged_on_for': { en: 'Account switch staged on for ', zh: '已顺带暂存开启账号开关 ' },
+  'row_s_so_the_gateway_switch_can_apply_click_save': { en: ' row(s) so the gateway switch can apply — click Save', zh: ' 行的账号开关，反代开关才生效——点「保存」提交' },
+  'Direct connection': { en: 'Direct connection', zh: '直连' },
+  'save': { en: 'Save', zh: '保存' },
+  'Cline accounts without proxy bindings follow this switch.': { en: 'Cline accounts without proxy bindings follow this switch.', zh: 'Cline 未绑定代理的账号遵循此开关。' },
+  'TraeWork accounts without proxy bindings follow this switch.': { en: 'TraeWork accounts without proxy bindings follow this switch.', zh: 'TraeWork 未绑定代理的账号遵循此开关。' },
+  'delete': { en: 'Delete', zh: '删除' },
+  'test': { en: 'Test', zh: '测试' },
+  'Reset': { en: 'Reset', zh: '重置' },
+  'Open': { en: 'Open', zh: '打开' },
+  'Admin panel:': { en: 'Admin panel:', zh: '管理面板：' },
+  'API address:': { en: 'API address:', zh: 'API 地址：' },
+  'Config export / import': { en: 'Config export / import', zh: '配置导入导出' },
+  'Export config': { en: 'Export config', zh: '导出配置' },
+  'Import config': { en: 'Import config', zh: '导入配置' },
+  'Export contains credentials — keep the file safe. Import overwrites existing config.': { en: 'Export contains credentials — keep the file safe. Import overwrites existing config.', zh: '导出文件包含凭据——请妥善保管。导入会覆盖现有配置。' },
+  'config_exported': { en: 'Config exported', zh: '配置已导出' },
+  'config_imported': { en: 'Config imported', zh: '配置已导入' },
+  'unsupported_backup_version': { en: 'Unsupported backup version', zh: '不支持的备份版本' },
+  'invalid_backup_file': { en: 'Invalid backup file: ', zh: '备份文件无效：' },
+  'import_replaces_sections_present_in_the_file_acc': { en: 'Import replaces sections present in the file (accounts / keys / proxies / combos ...). All imported identities start DISABLED. Continue?', zh: '导入将用文件内容替换当前对应的配置段（所有凭据、代理池、别名等，文件中存在的段都会替换）。导入的所有凭据一律禁用，需在面板逐个启用。继续？' },
+  'Select all': { en: 'Select all', zh: '全选' },
+  'Invert': { en: 'Invert', zh: '反选' },
+  'Import statistics': { en: 'Import statistics', zh: '导入统计数据' },
+  'no_platform_selected': { en: 'No platform selected', zh: '未选择任何平台' },
+  'Confirm import': { en: 'Confirm import', zh: '确认导入' },
+  'global': { en: 'Global', zh: '全局' },
+  'no_matching_proxies': { en: 'No matching proxies', zh: '没有匹配的代理' },
+  'Proxy isolation (identity ↔ exit binding)': { en: 'Proxy isolation (identity ↔ exit binding)', zh: '代理隔离（身份 ↔ 出口绑定）' },
+  'Isolation mode': { en: 'Isolation mode', zh: '隔离模式' },
+  'Enabled (default) — bound identities only ever use their bound exits': { en: 'Enabled (default) — bound identities only ever use their bound exits', zh: '启用（默认）—— 绑定的身份只从绑定出口出网' },
+  'Disabled — ignore bindings; exits rotate per the strategy above (direct when pool off)': { en: 'Disabled — ignore bindings; exits rotate per the strategy above (direct when pool off)', zh: '关闭 —— 忽略绑定；出口按上方轮转策略轮换（未启用代理池时直连）' },
+  'Enable backup proxies': { en: 'Enable backup proxies', zh: '启用备用代理' },
   // 网关设置页
-  'API keys': 'API key',
-  'Generated keys authenticate client access to the proxy API; they only take effect when the API_KEY environment variable is not set.': '生成的 key 用于客户端调用代理 API 鉴权，该 key 仅在未设置 API_KEY 环境变量时生效。',
-  'Generate new key': '生成新 key',
-  'Refresh models': '刷新模型',
-  'Automatically synced from the official model source upstream (every 5 minutes)': '自动同步上游的官方模型源（每 5 分钟）',
-  'Record admin logs': '记录管理日志',
-  'Request headers (mimicking the Cline CLI)': '请求头（模拟 Cline CLI）',
-  'Header': '请求头',
-  'Value': '值',
-  'Add header': '添加请求头',
-  'Save headers': '保存请求头',
-  'Attached to every Cline API request to mimic the official client.': '随每个转发到 Cline API 的请求附上，用于模拟官方客户端。',
-  'Danger zone': '危险区',
-  'Delete all data': '删除全部数据',
-  'Deletes ALL persisted data (accounts, keys, proxies, config). Cannot be undone.': '删除所有持久化数据（所有凭据、代理、配置）。不可恢复。',
-  'Delete ALL persisted data? This will clear Cline accounts and client keys, OpenCode keys, WorkBuddy accounts, the proxy pool, default model, request headers, scheduling strategy, custom aliases, sticky sessions, and request logs. This cannot be undone!': '确定删除全部持久化数据？将清空所有平台的凭据、代理池、默认模型、请求头、调度策略、自定义别名、粘性会话和请求日志，且不可撤销！',
-  'no charge': '免费',
+  'API keys': { en: 'API keys', zh: 'API key' },
+  'Generated keys authenticate client access to the proxy API; they only take effect when the API_KEY environment variable is not set.': { en: 'Generated keys authenticate client access to the proxy API; they only take effect when the API_KEY environment variable is not set.', zh: '生成的 key 用于客户端调用代理 API 鉴权，该 key 仅在未设置 API_KEY 环境变量时生效。' },
+  'Generate new key': { en: 'Generate new key', zh: '生成新 key' },
+  'Refresh models': { en: 'Refresh models', zh: '刷新模型' },
+  'Automatically synced from the official model source upstream (every 5 minutes)': { en: 'Automatically synced from the official model source upstream (every 5 minutes)', zh: '自动同步上游的官方模型源（每 5 分钟）' },
+  'Record admin logs': { en: 'Record admin logs', zh: '记录管理日志' },
+  'Request headers (mimicking the Cline CLI)': { en: 'Request headers (mimicking the Cline CLI)', zh: '请求头（模拟 Cline CLI）' },
+  'Header': { en: 'Header', zh: '请求头' },
+  'Value': { en: 'Value', zh: '值' },
+  'Add header': { en: 'Add header', zh: '添加请求头' },
+  'Save headers': { en: 'Save headers', zh: '保存请求头' },
+  'Attached to every Cline API request to mimic the official client.': { en: 'Attached to every Cline API request to mimic the official client.', zh: '随每个转发到 Cline API 的请求附上，用于模拟官方客户端。' },
+  'Danger zone': { en: 'Danger zone', zh: '危险区' },
+  'Delete all data': { en: 'Delete all data', zh: '删除全部数据' },
+  'Deletes ALL persisted data (accounts, keys, proxies, config). Cannot be undone.': { en: 'Deletes ALL persisted data (accounts, keys, proxies, config). Cannot be undone.', zh: '删除所有持久化数据（所有凭据、代理、配置）。不可恢复。' },
+  'delete_all_persisted_data_this_will_clear_cline_': { en: 'Delete ALL persisted data? This will clear Cline accounts and client keys, OpenCode keys, WorkBuddy accounts, the proxy pool, default model, request headers, scheduling strategy, custom aliases, sticky sessions, and request logs. This cannot be undone!', zh: '确定删除全部持久化数据？将清空所有平台的凭据、代理池、默认模型、请求头、调度策略、自定义别名、粘性会话和请求日志，且不可撤销！' },
+  'no_charge': { en: 'no charge', zh: '免费' },
   // 请求日志页
-  'last 500 entries, persisted to data/requests.jsonl': '最近 500 条，持久化到 data/requests.jsonl',
-  'Auto-refreshing': '自动刷新中',
-  'Pause': '暂停',
-  'Time': '时间',
-  'Source': '来源',
-  'Method': '方法',
-  'Path': '路径',
-  'Model': '模型',
-  'Route': '路由',
-  'Upstream': '凭据',
-  'Main': '主',
-  'Backup': '备',
-  'Direct': '直连',
-  'Status': '状态',
-  'Duration': '耗时',
-  'cline': 'cline 池',
-  'admin': '管理',
-  'meta': '元数据',
-  'other': '其他',
+  'last 500 entries, persisted to data/requests.jsonl': { en: 'last 500 entries, persisted to data/requests.jsonl', zh: '最近 500 条，持久化到 data/requests.jsonl' },
+  'Auto-refreshing': { en: 'Auto-refreshing', zh: '自动刷新中' },
+  'Pause': { en: 'Pause', zh: '暂停' },
+  'Time': { en: 'Time', zh: '时间' },
+  'Source': { en: 'Source', zh: '来源' },
+  'Method': { en: 'Method', zh: '方法' },
+  'Path': { en: 'Path', zh: '路径' },
+  'Model': { en: 'Model', zh: '模型' },
+  'Route': { en: 'Route', zh: '路由' },
+  'Upstream': { en: 'Upstream', zh: '凭据' },
+  'Main': { en: 'Main', zh: '主' },
+  'Backup': { en: 'Backup', zh: '备' },
+  'direct': { en: 'Direct', zh: '直连' },
+  'Status': { en: 'Status', zh: '状态' },
+  'Duration': { en: 'Duration', zh: '耗时' },
+  'cline': { en: 'cline', zh: 'cline 池' },
+  'admin': { en: 'admin', zh: '管理' },
+  'meta': { en: 'meta', zh: '元数据' },
+  'other': { en: 'other', zh: '其他' },
   // Combos 页
-  'Create custom alias': '创建自定义别名',
-  'Clients use the alias ID as the model name; the proxy rewrites it to the target. Alias must not collide with real model IDs, and the target must stay on the same platform.': '客户端以别名 ID 作为模型名，代理将其改写为目标模型。别名不得与真实模型 ID 冲突，且目标必须属于同一平台。',
-  'Alias ID': '别名 ID',
-  'Existing custom aliases': '现有自定义别名',
-  'Target model': '目标模型',
+  'Create custom alias': { en: 'Create custom alias', zh: '创建自定义别名' },
+  'Clients use the alias ID as the model name; the proxy rewrites it to the target. Alias must not collide with real model IDs, and the target must stay on the same platform.': { en: 'Clients use the alias ID as the model name; the proxy rewrites it to the target. Alias must not collide with real model IDs, and the target must stay on the same platform.', zh: '客户端以别名 ID 作为模型名，代理将其改写为目标模型。别名不得与真实模型 ID 冲突，且目标必须属于同一平台。' },
+  'Alias ID': { en: 'Alias ID', zh: '别名 ID' },
+  'Existing custom aliases': { en: 'Existing custom aliases', zh: '现有自定义别名' },
+  'Target model': { en: 'Target model', zh: '目标模型' },
   // opencode 页
-  'OpenCode': 'OpenCode',
-  'On': '开',
-  'Off': '关',
-  'Probe model (used by the Test buttons):': '探测模型（Test 按钮使用）：',
-  'Org ID:': '组织 ID：',
-  'wrk_… (optional)': 'wrk_…（可选）',
-  'OAuth account org id, sent as x-opencode-org-id. Only needed when the key is an OAuth token rather than a raw API key; leave empty to omit the header.': 'OAuth 账号的组织 ID，以 x-opencode-org-id 请求头发送。仅当该 key 是 OAuth token（而非原始 API key）时才需要；留空则不发送该头。',
-  'Key': 'Key',
-  'TTFB': '首包耗时',
-  'Rate-limit defense': '限流防御',
+  'OpenCode': { en: 'OpenCode', zh: 'OpenCode' },
+  'On': { en: 'On', zh: '开' },
+  'Off': { en: 'Off', zh: '关' },
+  'Probe model (used by the Test buttons):': { en: 'Probe model (used by the Test buttons):', zh: '探测模型（Test 按钮使用）：' },
+  'Org ID:': { en: 'Org ID:', zh: '组织 ID：' },
+  'wrk_… (optional)': { en: 'wrk_… (optional)', zh: 'wrk_…（可选）' },
+  'OAuth account org id, sent as x-opencode-org-id. Only needed when the key is an OAuth token rather than a raw API key; leave empty to omit the header.': { en: 'OAuth account org id, sent as x-opencode-org-id. Only needed when the key is an OAuth token rather than a raw API key; leave empty to omit the header.', zh: 'OAuth 账号的组织 ID，以 x-opencode-org-id 请求头发送。仅当该 key 是 OAuth token（而非原始 API key）时才需要；留空则不发送该头。' },
+  'Key': { en: 'Key', zh: 'Key' },
+  'TTFB': { en: 'TTFB', zh: '首包耗时' },
+  'Rate-limit defense': { en: 'Rate-limit defense', zh: '限流防御' },
   // 提示气泡（title 属性）此前未进翻译表，中文界面下显示英文
-  'Switch language / 切换语言': '切换语言',
-  'cooling': '冷却中',
-  'Unban': '解禁',
-  'Cool': '冷却',
-  'Cooldown cleared': '已解除冷却',
-  'Cooldown set (manual)': '已手动冷却',
-  'Unban failed: ': '解禁失败：',
-  'Cooldown failed: ': '冷却失败：',
-  'Clear global and platform cooldowns plus failure counters for this exit; use it when a one-off network hiccup wrongly cooled the only usable exit': '清除该出口的全局/平台级冷却与失败计数；适用于单次网络抖动误冷却唯一可用出口的情况',
-  'Take this exit out of rotation — only Unban clears it': '把该出口摘出轮转，只能"解禁"解除该状态',
-  'Manual': '手动',
-  'Base URL': 'Base URL',
-  'Max concurrency': '最大并发',
-  'Rate-limit retries': '限流重试次数',
-  'Save rate-limit config': '保存限流配置',
-  'Context compaction (OpenCode official mechanism)': '上下文压缩（OpenCode 官方机制）',
-  'Auto-compaction': '自动压缩',
-  'Reserved buffer': '预留缓冲',
-  'Tail tokens kept': '尾部保留 token',
-  'Summary model': '摘要模型',
-  'empty = same as request model': '留空 = 与请求模型相同',
-  'Summary cap': '摘要上限',
-  'Save compaction config': '保存压缩配置',
-  'sessions are minted per call; no sticky snapshot': '会话每次调用现铸；无粘性快照',
-  '.': '。',
-  'Context': '上下文',
-  'Maximum context length': '最大上下文长度',
-  'Today': '今日',
-  'total': '累计',
-  'tokens (exact when upstream returns usage, otherwise estimated)': 'tokens（上游返回 usage 时精确，否则为估算）',
+  'Switch language / 切换语言': { en: 'Switch language / 切换语言', zh: '切换语言' },
+  'cooling_2': { en: 'cooling', zh: '冷却中' },
+  'unban': { en: 'Unban', zh: '解禁' },
+  'cool': { en: 'Cool', zh: '冷却' },
+  'cooldown_cleared_1': { en: 'Cooldown cleared', zh: '已解除冷却' },
+  'cooldown_set_manual': { en: 'Cooldown set (manual)', zh: '已手动冷却' },
+  'unban_failed': { en: 'Unban failed: ', zh: '解禁失败：' },
+  'cooldown_failed': { en: 'Cooldown failed: ', zh: '冷却失败：' },
+  'clear_global_and_platform_cooldowns_plus_failure': { en: 'Clear global and platform cooldowns plus failure counters for this exit; use it when a one-off network hiccup wrongly cooled the only usable exit', zh: '清除该出口的全局/平台级冷却与失败计数；适用于单次网络抖动误冷却唯一可用出口的情况' },
+  'take_this_exit_out_of_rotation_only_unban_clears': { en: 'Take this exit out of rotation — only Unban clears it', zh: '把该出口摘出轮转，只能"解禁"解除该状态' },
+  'manual': { en: 'Manual', zh: '手动' },
+  'Base URL': { en: 'Base URL', zh: 'Base URL' },
+  'Max concurrency': { en: 'Max concurrency', zh: '最大并发' },
+  'Rate-limit retries': { en: 'Rate-limit retries', zh: '限流重试次数' },
+  'Save rate-limit config': { en: 'Save rate-limit config', zh: '保存限流配置' },
+  'Context compaction (OpenCode official mechanism)': { en: 'Context compaction (OpenCode official mechanism)', zh: '上下文压缩（OpenCode 官方机制）' },
+  'Auto-compaction': { en: 'Auto-compaction', zh: '自动压缩' },
+  'Reserved buffer': { en: 'Reserved buffer', zh: '预留缓冲' },
+  'Tail tokens kept': { en: 'Tail tokens kept', zh: '尾部保留 token' },
+  'Summary model': { en: 'Summary model', zh: '摘要模型' },
+  'empty = same as request model': { en: 'empty = same as request model', zh: '留空 = 与请求模型相同' },
+  'Summary cap': { en: 'Summary cap', zh: '摘要上限' },
+  'Save compaction config': { en: 'Save compaction config', zh: '保存压缩配置' },
+  'sessions_are_minted_per_call_no_sticky_snapshot': { en: 'sessions are minted per call; no sticky snapshot', zh: '会话每次调用现铸；无粘性快照' },
+  '.': { en: '.', zh: '。' },
+  'context': { en: 'Context', zh: '上下文' },
+  'maximum_context_length': { en: 'Maximum context length', zh: '最大上下文长度' },
+  'today': { en: 'Today', zh: '今日' },
+  'total_1_1': { en: 'total', zh: '累计' },
+  'tokens_exact_when_upstream_returns_usage_otherwi': { en: 'tokens (exact when upstream returns usage, otherwise estimated)', zh: 'tokens（上游返回 usage 时精确，否则为估算）' },
   // 模型状态标签
-  'error': '错误',
+  'error': { en: 'error', zh: '错误' },
   // 通用 toast / 确认 / 片段
-  'Saved ': '已保存 ',
-  'WorkBuddy accounts without proxy bindings follow this switch.': 'WorkBuddy 未绑定代理的账号遵循此开关。',
-  'OpenRouter keys without proxy bindings follow this switch.': 'OpenRouter 未绑定代理的 key 遵循此开关。',
-  'AMDCloud keys without proxy bindings follow this switch.': 'AMDCloud 未绑定代理的 key 遵循此开关。',
-  'TokenHarbor keys without proxy bindings follow this switch.': 'TokenHarbor 未绑定代理的 key 遵循此开关。',
-  'Other sub-platform keys without proxy bindings follow this switch.': 'Other 子平台未绑定代理的 key 遵循此开关。',
-  'Pool': '启用',
-  'Routing participation. New rows start disabled — tick Pool to enable.': '路由参与开关：新增行默认禁用，勾选 Pool 后参与轮转。',
-  'Routing participation: unchecked keys never enter request rotation. Newly added keys start disabled — tick Pool to enable. Sessions are minted per upstream call.': '路由参与开关：不勾选的 key 不进入请求轮转。新增 key 默认禁用，勾选 Pool 后启用。会话每次上游调用现铸。',
-  'Save failed: ': '保存失败：',
-  'Test failed: ': '测试失败：',
-  ' — cooling': ' —— 冷却中',
-  'Check failed: ': '检查失败：',
-  'Delete failed: ': '删除失败：',
-  'Refresh failed: ': '刷新失败：',
-  ' started': ' 已开始',
-  ' failed: ': ' 失败：',
-  ' completed': ' 已完成',
-  'Requesting...': '请求中...',
-  'Admin session expired': '管理员会话已过期',
-  'Export failed: ': '导出失败：',
-  'Generation failed: ': '生成失败：',
-  'Add failed: ': '添加失败：',
-  'Import failed: ': '导入失败：',
-  'Create failed: ': '创建失败：',
-  'Failed to load accounts: ': '账号加载失败：',
-  'Failed to load: ': '加载失败：',
-  'All persisted data deleted': '已删除全部持久化数据',
-  'Account added: ': '账号已添加：',
-  'Account ': '账号 ',
-  'Available': '可用',
-  'Error': '错误',
-  '\nEstimated recovery: ': '\n预计恢复：',
-  '\nReason: ': '\n原因：',
-  '\nHTTP: ': '\nHTTP：',
-  ' (estimated recovery ': '（预计恢复 ',
-  ' (remaining ': '（剩余 ',
-  ')': '）',
-  'OK': '成功',
-  ' — cooldown cleared': ' —— 冷却已清除',
-  ' via ': '，模型 ',
-  'Combo created: ': '自定义别名已创建：',
-  'Delete combo ': '删除自定义别名 ',
-  '? Clients using this alias will no longer be able to call it.': '？使用该别名的客户端将无法继续调用。',
-  'Delete this account?': '确定删除该账号？',
-  'Delete this key?': '确定删除该 key？',
-  'OAuth failed: ': 'OAuth 登录失败：',
-  'Recovers ': '恢复于 ',
+  'saved_1': { en: 'Saved ', zh: '已保存 ' },
+  'WorkBuddy accounts without proxy bindings follow this switch.': { en: 'WorkBuddy accounts without proxy bindings follow this switch.', zh: 'WorkBuddy 未绑定代理的账号遵循此开关。' },
+  'OpenRouter keys without proxy bindings follow this switch.': { en: 'OpenRouter keys without proxy bindings follow this switch.', zh: 'OpenRouter 未绑定代理的 key 遵循此开关。' },
+  'AMDCloud keys without proxy bindings follow this switch.': { en: 'AMDCloud keys without proxy bindings follow this switch.', zh: 'AMDCloud 未绑定代理的 key 遵循此开关。' },
+  'TokenHarbor keys without proxy bindings follow this switch.': { en: 'TokenHarbor keys without proxy bindings follow this switch.', zh: 'TokenHarbor 未绑定代理的 key 遵循此开关。' },
+  'Other sub-platform keys without proxy bindings follow this switch.': { en: 'Other sub-platform keys without proxy bindings follow this switch.', zh: 'Other 子平台未绑定代理的 key 遵循此开关。' },
+  'Pool': { en: 'Pool', zh: '启用' },
+  'Routing participation. New rows start disabled — tick Pool to enable.': { en: 'Routing participation. New rows start disabled — tick Pool to enable.', zh: '路由参与开关：新增行默认禁用，勾选 Pool 后参与轮转。' },
+  'Routing participation: unchecked keys never enter request rotation. Newly added keys start disabled — tick Pool to enable. Sessions are minted per upstream call.': { en: 'Routing participation: unchecked keys never enter request rotation. Newly added keys start disabled — tick Pool to enable. Sessions are minted per upstream call.', zh: '路由参与开关：不勾选的 key 不进入请求轮转。新增 key 默认禁用，勾选 Pool 后启用。会话每次上游调用现铸。' },
+  'save_failed': { en: 'Save failed: ', zh: '保存失败：' },
+  'test_failed': { en: 'Test failed: ', zh: '测试失败：' },
+  'cooling_1_1': { en: ' — cooling', zh: ' —— 冷却中' },
+  'check_failed': { en: 'Check failed: ', zh: '检查失败：' },
+  'delete_failed': { en: 'Delete failed: ', zh: '删除失败：' },
+  'refresh_failed': { en: 'Refresh failed: ', zh: '刷新失败：' },
+  'started': { en: ' started', zh: ' 已开始' },
+  'failed_1': { en: ' failed: ', zh: ' 失败：' },
+  'completed': { en: ' completed', zh: ' 已完成' },
+  'requesting': { en: 'Requesting...', zh: '请求中...' },
+  'admin_session_expired': { en: 'Admin session expired', zh: '管理员会话已过期' },
+  'export_failed': { en: 'Export failed: ', zh: '导出失败：' },
+  'generation_failed': { en: 'Generation failed: ', zh: '生成失败：' },
+  'add_failed': { en: 'Add failed: ', zh: '添加失败：' },
+  'import_failed': { en: 'Import failed: ', zh: '导入失败：' },
+  'create_failed': { en: 'Create failed: ', zh: '创建失败：' },
+  'failed_to_load_accounts': { en: 'Failed to load accounts: ', zh: '账号加载失败：' },
+  'failed_to_load_1': { en: 'Failed to load: ', zh: '加载失败：' },
+  'all_persisted_data_deleted': { en: 'All persisted data deleted', zh: '已删除全部持久化数据' },
+  'account_added': { en: 'Account added: ', zh: '账号已添加：' },
+  'account': { en: 'Account ', zh: '账号 ' },
+  'Available': { en: 'Available', zh: '可用' },
+  'error_1_1': { en: 'Error', zh: '错误' },
+  'sep.estimated_recovery': { en: '\nEstimated recovery: ', zh: '\n预计恢复：' },
+  'sep.reason': { en: '\nReason: ', zh: '\n原因：' },
+  'sep.http': { en: '\nHTTP: ', zh: '\nHTTP：' },
+  'estimated_recovery': { en: ' (estimated recovery ', zh: '（预计恢复 ' },
+  'remaining': { en: ' (remaining ', zh: '（剩余 ' },
+  'sep.rparen': { en: ')', zh: '）' },
+  'ok_2': { en: 'OK', zh: '成功' },
+  'cooldown_cleared': { en: ' — cooldown cleared', zh: ' —— 冷却已清除' },
+  'via': { en: ' via ', zh: '，模型 ' },
+  'combo_created': { en: 'Combo created: ', zh: '自定义别名已创建：' },
+  'delete_combo': { en: 'Delete combo ', zh: '删除自定义别名 ' },
+  'clients_using_this_alias_will_no_longer_be_able_': { en: '? Clients using this alias will no longer be able to call it.', zh: '？使用该别名的客户端将无法继续调用。' },
+  'delete_this_account': { en: 'Delete this account?', zh: '确定删除该账号？' },
+  'delete_this_key_1': { en: 'Delete this key?', zh: '确定删除该 key？' },
+  'oauth_failed': { en: 'OAuth failed: ', zh: 'OAuth 登录失败：' },
+  'recovers': { en: 'Recovers ', zh: '恢复于 ' },
   // ===== OpenRouter / AMDCloud / TokenHarbor 页（目录/限流/弹窗） =====
-  'Model catalog': '模型目录',
-  'Upstream limits: 30 requests/min per key, 8 concurrent per key, 20 requests/min per account.': '上游限制：单个密钥 30 次/分钟、8 并发，单个账号 20 次/分钟。',
-  'Upstream limits: 60 requests/min per account, 100 requests/min per IP.': '上游限制：每账号 60 次/分钟，每 IP 100 次/分钟。',
-  'Add OpenRouter keys': '添加 OpenRouter key',
-  'One OpenRouter API key per line (sk-or-v1-…). New keys start with routing disabled — tick Pool to enable.': '每行一个 OpenRouter API key（sk-or-v1-…）。新 key 默认不参与路由——勾选"启用"后生效。',
-  'Add AMDCloud keys': '添加 AMDCloud key',
-  'One AMDCloud API key per line (rc-…, issued at the': '每行一个 AMDCloud API key（rc-…，获取自',
-  '). New keys start with routing disabled — tick Pool to enable.': '）。新 key 默认不参与路由——勾选"启用"后生效。',
-  'Add TokenHarbor keys': '添加 TokenHarbor key',
-  'One TokenHarbor universal key per line (thk_live_…, from the': '每行一个 TokenHarbor 通用 key（thk_live_…，获取自',
-  'dashboard': '控制台',
-  'OpenRouter config saved': 'OpenRouter 配置已保存',
-  'AMDCloud config saved': 'AMDCloud 配置已保存',
-  'TokenHarbor config saved': 'TokenHarbor 配置已保存',
+  'Model catalog': { en: 'Model catalog', zh: '模型目录' },
+  'Upstream limits: 30 requests/min per key, 8 concurrent per key, 20 requests/min per account.': { en: 'Upstream limits: 30 requests/min per key, 8 concurrent per key, 20 requests/min per account.', zh: '上游限制：单个密钥 30 次/分钟、8 并发，单个账号 20 次/分钟。' },
+  'Upstream limits: 60 requests/min per account, 100 requests/min per IP.': { en: 'Upstream limits: 60 requests/min per account, 100 requests/min per IP.', zh: '上游限制：每账号 60 次/分钟，每 IP 100 次/分钟。' },
+  'Add OpenRouter keys': { en: 'Add OpenRouter keys', zh: '添加 OpenRouter key' },
+  'One OpenRouter API key per line (sk-or-v1-…). New keys start with routing disabled — tick Pool to enable.': { en: 'One OpenRouter API key per line (sk-or-v1-…). New keys start with routing disabled — tick Pool to enable.', zh: '每行一个 OpenRouter API key（sk-or-v1-…）。新 key 默认不参与路由——勾选"启用"后生效。' },
+  'Add AMDCloud keys': { en: 'Add AMDCloud keys', zh: '添加 AMDCloud key' },
+  'One AMDCloud API key per line (rc-…, issued at the': { en: 'One AMDCloud API key per line (rc-…, issued at the', zh: '每行一个 AMDCloud API key（rc-…，获取自' },
+  '). New keys start with routing disabled — tick Pool to enable.': { en: '). New keys start with routing disabled — tick Pool to enable.', zh: '）。新 key 默认不参与路由——勾选"启用"后生效。' },
+  'Add TokenHarbor keys': { en: 'Add TokenHarbor keys', zh: '添加 TokenHarbor key' },
+  'One TokenHarbor universal key per line (thk_live_…, from the': { en: 'One TokenHarbor universal key per line (thk_live_…, from the', zh: '每行一个 TokenHarbor 通用 key（thk_live_…，获取自' },
+  'dashboard': { en: 'dashboard', zh: '控制台' },
+  'openrouter_config_saved': { en: 'OpenRouter config saved', zh: 'OpenRouter 配置已保存' },
+  'amdcloud_config_saved': { en: 'AMDCloud config saved', zh: 'AMDCloud 配置已保存' },
+  'tokenharbor_config_saved': { en: 'TokenHarbor config saved', zh: 'TokenHarbor 配置已保存' },
   // ---- 统一「刷新模型目录」提示（2026-10-31，见 refreshCatalog）----
-  'Syncing…': '同步中…',
-  'Catalog synced: ': '目录已同步：',
-  ' models': ' 个模型',
-  'added ': '新增 ',
-  ' new': ' 个',
-  'No enabled credential — enable one first, then refresh': '没有启用的凭据 —— 请先启用凭据再刷新',
-  'Upstream returned no models — check credentials, egress and upstream status': '上游未返回任何模型 —— 请检查凭据、出口与上游状态',
-  'Catalog sync started in the background — reload this page in a few seconds': '目录同步已在后台启动 —— 稍后刷新本页查看结果',
-  'A catalog sync is already running': '目录同步正在进行中',
-  'upstream unavailable': '上游不可用',
-  'No free models yet — click Refresh models': '暂无免费模型——点"刷新模型"',
-  'No models yet — click Refresh models': '暂无模型——点"刷新模型"',
-  'Failed to load': '加载失败',
-  'Invalid proxy format: ': '代理格式无效：',
-  'No models': '没有模型',
-  '· official feed: ': '· 官方源同步于 ',
-  'Check complete': '检查完成',
-  'cooldown': '冷却中',
-  'active': '可用',
-  'expired': '已失效',
+  'syncing': { en: 'Syncing…', zh: '同步中…' },
+  'catalog_synced': { en: 'Catalog synced: ', zh: '目录已同步：' },
+  'models': { en: ' models', zh: ' 个模型' },
+  'added_2': { en: 'added ', zh: '新增 ' },
+  'new': { en: ' new', zh: ' 个' },
+  'no_enabled_credential_enable_one_first_then_refr': { en: 'No enabled credential — enable one first, then refresh', zh: '没有启用的凭据 —— 请先启用凭据再刷新' },
+  'upstream_returned_no_models_check_credentials_eg': { en: 'Upstream returned no models — check credentials, egress and upstream status', zh: '上游未返回任何模型 —— 请检查凭据、出口与上游状态' },
+  'catalog_sync_started_in_the_background_reload_th': { en: 'Catalog sync started in the background — reload this page in a few seconds', zh: '目录同步已在后台启动 —— 稍后刷新本页查看结果' },
+  'a_catalog_sync_is_already_running': { en: 'A catalog sync is already running', zh: '目录同步正在进行中' },
+  'upstream_unavailable': { en: 'upstream unavailable', zh: '上游不可用' },
+  'no_free_models_yet_click_refresh_models': { en: 'No free models yet — click Refresh models', zh: '暂无免费模型——点"刷新模型"' },
+  'No models yet — click Refresh models': { en: 'No models yet — click Refresh models', zh: '暂无模型——点"刷新模型"' },
+  'failed_to_load': { en: 'Failed to load', zh: '加载失败' },
+  'invalid_proxy_format': { en: 'Invalid proxy format: ', zh: '代理格式无效：' },
+  'No models': { en: 'No models', zh: '没有模型' },
+  'official_feed': { en: '· official feed: ', zh: '· 官方源同步于 ' },
+  'check_complete': { en: 'Check complete', zh: '检查完成' },
+  'cooldown': { en: 'cooldown', zh: '冷却中' },
+  'active_1_1': { en: 'active', zh: '可用' },
+  'expired': { en: 'expired', zh: '已失效' },
   // Other 页（多子平台）
-  'Other': 'Other',
-  'Sub-platform': '子平台',
-  'New sub-platform': '新建子平台',
-  'Manage sub-platforms': '管理子平台',
-  'Reorder or delete sub-platforms': '排序或删除子平台',
-  'Manage': '管理',
-  'Drag a row to change the order; the order decides how sub-platforms appear in the selector.': '拖动行可调整顺序；该顺序决定子平台在下拉框中的显示顺序。',
-  'Save order': '保存顺序',
-  'Drag to reorder': '拖动以排序',
-  'Delete this key': '删除此密钥',
-  'Name': '名称',
-  'Name *': '名称 *',
-  'Models': '模型',
-  'Model prefix (required)': '模型前缀（必填）',
-  'Model prefix (required, unique) *': '模型前缀（必填，唯一）*',
-  'Name and prefix are required': '名称和前缀为必填项',
-  'No sub-platform yet. Click "New sub-platform" to add one.': '暂无子平台。点击"新建子平台"添加一个。',
-  'Select a sub-platform to view details': '请选择子平台以查看详情',
-  'No sub-platform yet — click "New sub-platform" to add one': '还没有子平台 —— 点击"新建子平台"添加',
-  'Select a sub-platform on the left.': '在左侧选择一个子平台。',
-  ' sub-platform(s). Models are exposed as <prefix>:<model-id>': ' 个子平台。模型以 <prefix>:<model-id> 形式对外暴露',
-  'Add a credential, then refresh models or add one manually': '请添加凭据后刷新模型或手动添加模型',
-  'Add a credential first': '请先添加凭据',
-  'No available models': '暂无可用模型',
-  'No available credentials': '暂无可用凭据',
-  'Real request': '真实请求',
-  'Re-sync the model catalog from the upstream (needs a credential)': '从上游重新同步模型目录（需要凭据）',
-  'Send a real chat request using the first enabled credential': '使用第一个已启用凭据发送真实会话请求',
-  'Sending…': '发送中…',
-  'Request succeeded': '请求成功',
-  'Request failed': '请求失败',
-  'Test message, please reply with hello only': '测试消息，请只回复你好',
-  'Add model': '添加模型',
-  'Remove this manually added model': '删除这个手动添加的模型',
-  'Manual model removed': '已删除手动添加的模型',
-  'Remove failed: ': '删除失败：',
-  'add model id manually': '手动输入模型 id',
-  'Enter a model id': '请输入模型 id',
-  'No models yet — add manually or add a key and click Refresh models': '暂无模型 —— 可手动添加，或添加密钥后点击"刷新模型"',
-  ' enabled': ' 已启用',
-  'none enabled': '未启用',
-  'Models updated': '模型已更新',
-  'Create': '创建',
-  'Sub-platform created': '子平台已创建',
-  'Added': '已添加',
-  'Test passed': '测试通过',
-  'Saved': '已保存',
-  'No keys configured': '未配置密钥',
-  'Create an entry for an upstream provider: shared Base URL, its API keys, and the model prefix its models are exposed under.': '为上游厂商创建条目：共享的 Base URL、其 API 密钥，以及模型对外暴露的前缀。',
-  'One API key per line for this sub-platform. New keys start with routing disabled — tick Pool to enable.': '每行一个 API 密钥。新密钥默认不参与路由 —— 勾选 Pool 启用。',
-  'No accounts yet': '暂无账号信息,请添加',
-  'Ready': '就绪',
-  'Authenticated': '已认证',
-  'Cooling': '冷却中',
-  'Suspended': '已暂停',
-  'Unknown': '未知',
-  'Balances refreshed': '余额已刷新',
-  'Requesting authorization link...': '正在请求授权链接...',
-  'Open the link and complete the browser login.': '打开链接并完成浏览器登录。',
-  'Authorization session created.': '授权会话已创建。',
-  'WorkBuddy account added': 'WorkBuddy 账号已添加',
-  'Authorization link copied': '授权链接已复制',
-  'Test whether the account works (success clears cooldown/expired state)': '测试账号是否可用（成功会解除冷却/过期状态）',
-  'Active': '活跃',
-  'Expired': '已失效',
-  'No proxies configured': '未配置代理',
-  'OpenCode config saved': 'OpenCode 配置已保存',
-  'Follows the main slot': '跟随主出口',
-  'PROXY_ISOLATION=true is set — isolation is forced on. Unset the env var (or set it to false) to control isolation from the panel.': '已设置 PROXY_ISOLATION=true —— 隔离被强制开启。删除该环境变量（或设为 false）才能在面板控制隔离。',
-  'Backup proxies are disabled — follows the main slot': '备用代理已关闭 —— 跟随主代理',
-  'Admin access logging enabled': '已开启管理页访问日志',
-  'Admin access logging disabled': '已关闭管理页访问日志',
-  'Paused': '已暂停',
-  'Resume': '继续',
-  'No requests logged': '暂无请求记录',
-  'No combos yet — create one with the form above.': '还没有自定义别名 —— 用上方表单创建一个。',
-  'Failed to load model list': '模型列表加载失败',
-  'socks5 pool': 'socks5 池',
-  'Pending activation': '待启用',
-  'Subscription URL': '订阅链接（优先）',
-  'Managed by the subscription URL — clear it to edit manually': '由订阅链接管理——清空后才能手动编辑',
-  'http://10.10.10.5:12321/proxy/socks.txt — the pool is then managed by this subscription; leave empty to edit the list manually': 'http://10.10.10.5:12321/proxy/socks.txt —— 填写后代理池由订阅管理；留空则手动编辑列表',
-  'Update frequency (cron)': '更新频率',
-  'Update now': '立即更新',
-  'Updating...': '更新中...',
-  'Update done': '更新完成',
-  'Subscription refresh replaces the whole pool with the fetched list. Fetch failures keep the current pool.': '订阅刷新会用拉取到的列表整池替换，拉取失败保留现池不变。',
-  '*/30 * * * * (min hour day month weekday)': '*/30 * * * *（分 时 日 月 周）',
-  'Click to copy': '点击复制',
-  'Remove this key from the pool': '将该密钥移出池',
-  'next in rotation': '轮换顺序中的下一个',
-  'Proxy pool saved': '代理池已保存',
-  'Global policy saved': '全局策略已保存',
-  'Proxy isolation settings saved': '代理隔离设置已保存',
-  'Account deleted': '账号已删除',
-  'Key deleted': 'key 已删除',
-  'Key generated': 'key 已生成',
-  'New key generated (click to copy)': '新 key 已生成（点击复制）',
-  'Copied to clipboard': '已复制到剪贴板',
-  'Rows with a value but no key were ignored': '有值但没有键名的行已被忽略',
-  'Headers saved': '请求头已保存',
-  'Enter a token or API key': '请输入 token 或 API key',
-  'Enter an alias ID': '请输入别名 ID',
-  'Select a target model': '请选择目标模型',
-  'Combo deleted': '自定义别名已删除',
-  'Testing': '测试中',
-  'Checking': '检查中',
-  'No opencode keys configured': '没有配置任何 opencode key',
-  'No OpenRouter keys configured': '没有配置任何 OpenRouter key',
-  'No AMDCloud keys configured': '没有配置任何 AMDCloud key',
-  'No TokenHarbor keys configured': '没有配置任何 TokenHarbor key',
-  'Probe the rate limit; if still limited, stays cooling with a recovery time': '探测限流状态；若仍在限流则保持冷却并显示恢复时间',
+  'Other': { en: 'Other', zh: 'Other' },
+  'Sub-platform': { en: 'Sub-platform', zh: '子平台' },
+  'New sub-platform': { en: 'New sub-platform', zh: '新建子平台' },
+  'Manage sub-platforms': { en: 'Manage sub-platforms', zh: '管理子平台' },
+  'Reorder or delete sub-platforms': { en: 'Reorder or delete sub-platforms', zh: '排序或删除子平台' },
+  'Manage': { en: 'Manage', zh: '管理' },
+  'Drag a row to change the order; the order decides how sub-platforms appear in the selector.': { en: 'Drag a row to change the order; the order decides how sub-platforms appear in the selector.', zh: '拖动行可调整顺序；该顺序决定子平台在下拉框中的显示顺序。' },
+  'Save order': { en: 'Save order', zh: '保存顺序' },
+  'drag_to_reorder': { en: 'Drag to reorder', zh: '拖动以排序' },
+  'delete_this_key': { en: 'Delete this key', zh: '删除此密钥' },
+  'Name': { en: 'Name', zh: '名称' },
+  'Name *': { en: 'Name *', zh: '名称 *' },
+  'Models': { en: 'Models', zh: '模型' },
+  'Model prefix (required)': { en: 'Model prefix (required)', zh: '模型前缀（必填）' },
+  'Model prefix (required, unique) *': { en: 'Model prefix (required, unique) *', zh: '模型前缀（必填，唯一）*' },
+  'name_and_prefix_are_required': { en: 'Name and prefix are required', zh: '名称和前缀为必填项' },
+  'no_sub_platform_yet_click_new_sub_platform_to_ad_1': { en: 'No sub-platform yet. Click "New sub-platform" to add one.', zh: '暂无子平台。点击"新建子平台"添加一个。' },
+  'select_a_sub_platform_to_view_details': { en: 'Select a sub-platform to view details', zh: '请选择子平台以查看详情' },
+  'no_sub_platform_yet_click_new_sub_platform_to_ad': { en: 'No sub-platform yet — click "New sub-platform" to add one', zh: '还没有子平台 —— 点击"新建子平台"添加' },
+  'select_a_sub_platform_on_the_left': { en: 'Select a sub-platform on the left.', zh: '在左侧选择一个子平台。' },
+  ' sub-platform(s). Models are exposed as <prefix>:<model-id>': { en: ' sub-platform(s). Models are exposed as <prefix>:<model-id>', zh: ' 个子平台。模型以 <prefix>:<model-id> 形式对外暴露' },
+  'add_a_credential_then_refresh_models_or_add_one_': { en: 'Add a credential, then refresh models or add one manually', zh: '请添加凭据后刷新模型或手动添加模型' },
+  'add_a_credential_first': { en: 'Add a credential first', zh: '请先添加凭据' },
+  'no_available_models': { en: 'No available models', zh: '暂无可用模型' },
+  'no_available_credentials': { en: 'No available credentials', zh: '暂无可用凭据' },
+  'real_request': { en: 'Real request', zh: '真实请求' },
+  'Re-sync the model catalog from the upstream (needs a credential)': { en: 'Re-sync the model catalog from the upstream (needs a credential)', zh: '从上游重新同步模型目录（需要凭据）' },
+  'Send a real chat request using the first enabled credential': { en: 'Send a real chat request using the first enabled credential', zh: '使用第一个已启用凭据发送真实会话请求' },
+  'sending': { en: 'Sending…', zh: '发送中…' },
+  'request_succeeded': { en: 'Request succeeded', zh: '请求成功' },
+  'request_failed': { en: 'Request failed', zh: '请求失败' },
+  'test_message_please_reply_with_hello_only': { en: 'Test message, please reply with hello only', zh: '测试消息，请只回复你好' },
+  'Add model': { en: 'Add model', zh: '添加模型' },
+  'remove_this_manually_added_model': { en: 'Remove this manually added model', zh: '删除这个手动添加的模型' },
+  'manual_model_removed': { en: 'Manual model removed', zh: '已删除手动添加的模型' },
+  'remove_failed': { en: 'Remove failed: ', zh: '删除失败：' },
+  'add model id manually': { en: 'add model id manually', zh: '手动输入模型 id' },
+  'enter_a_model_id': { en: 'Enter a model id', zh: '请输入模型 id' },
+  'no_models_yet_add_manually_or_add_a_key_and_clic': { en: 'No models yet — add manually or add a key and click Refresh models', zh: '暂无模型 —— 可手动添加，或添加密钥后点击"刷新模型"' },
+  'enabled': { en: ' enabled', zh: ' 已启用' },
+  'none_enabled': { en: 'none enabled', zh: '未启用' },
+  'models_updated': { en: 'Models updated', zh: '模型已更新' },
+  'Create': { en: 'Create', zh: '创建' },
+  'sub_platform_created': { en: 'Sub-platform created', zh: '子平台已创建' },
+  'added': { en: 'Added', zh: '已添加' },
+  'test_passed': { en: 'Test passed', zh: '测试通过' },
+  'saved': { en: 'Saved', zh: '已保存' },
+  'no_keys_configured': { en: 'No keys configured', zh: '未配置密钥' },
+  'Create an entry for an upstream provider: shared Base URL, its API keys, and the model prefix its models are exposed under.': { en: 'Create an entry for an upstream provider: shared Base URL, its API keys, and the model prefix its models are exposed under.', zh: '为上游厂商创建条目：共享的 Base URL、其 API 密钥，以及模型对外暴露的前缀。' },
+  'One API key per line for this sub-platform. New keys start with routing disabled — tick Pool to enable.': { en: 'One API key per line for this sub-platform. New keys start with routing disabled — tick Pool to enable.', zh: '每行一个 API 密钥。新密钥默认不参与路由 —— 勾选 Pool 启用。' },
+  'No accounts yet': { en: 'No accounts yet', zh: '暂无账号信息,请添加' },
+  'Ready': { en: 'Ready', zh: '就绪' },
+  'Authenticated': { en: 'Authenticated', zh: '已认证' },
+  'Cooling': { en: 'Cooling', zh: '冷却中' },
+  'Suspended': { en: 'Suspended', zh: '已暂停' },
+  'Unknown': { en: 'Unknown', zh: '未知' },
+  'balances_refreshed': { en: 'Balances refreshed', zh: '余额已刷新' },
+  'Requesting authorization link...': { en: 'Requesting authorization link...', zh: '正在请求授权链接...' },
+  'Open the link and complete the browser login.': { en: 'Open the link and complete the browser login.', zh: '打开链接并完成浏览器登录。' },
+  'Authorization session created.': { en: 'Authorization session created.', zh: '授权会话已创建。' },
+  'WorkBuddy account added': { en: 'WorkBuddy account added', zh: 'WorkBuddy 账号已添加' },
+  'Authorization link copied': { en: 'Authorization link copied', zh: '授权链接已复制' },
+  'Test whether the account works (success clears cooldown/expired state)': { en: 'Test whether the account works (success clears cooldown/expired state)', zh: '测试账号是否可用（成功会解除冷却/过期状态）' },
+  'active_1': { en: 'Active', zh: '活跃' },
+  'Expired': { en: 'Expired', zh: '已失效' },
+  'No proxies configured': { en: 'No proxies configured', zh: '未配置代理' },
+  'OpenCode config saved': { en: 'OpenCode config saved', zh: 'OpenCode 配置已保存' },
+  'Follows the main slot': { en: 'Follows the main slot', zh: '跟随主出口' },
+  'PROXY_ISOLATION=true is set — isolation is forced on. Unset the env var (or set it to false) to control isolation from the panel.': { en: 'PROXY_ISOLATION=true is set — isolation is forced on. Unset the env var (or set it to false) to control isolation from the panel.', zh: '已设置 PROXY_ISOLATION=true —— 隔离被强制开启。删除该环境变量（或设为 false）才能在面板控制隔离。' },
+  'Backup proxies are disabled — follows the main slot': { en: 'Backup proxies are disabled — follows the main slot', zh: '备用代理已关闭 —— 跟随主代理' },
+  'Admin access logging enabled': { en: 'Admin access logging enabled', zh: '已开启管理页访问日志' },
+  'Admin access logging disabled': { en: 'Admin access logging disabled', zh: '已关闭管理页访问日志' },
+  'Paused': { en: 'Paused', zh: '已暂停' },
+  'Resume': { en: 'Resume', zh: '继续' },
+  'No requests logged': { en: 'No requests logged', zh: '暂无请求记录' },
+  'No combos yet — create one with the form above.': { en: 'No combos yet — create one with the form above.', zh: '还没有自定义别名 —— 用上方表单创建一个。' },
+  'Failed to load model list': { en: 'Failed to load model list', zh: '模型列表加载失败' },
+  'socks5 pool': { en: 'socks5 pool', zh: 'socks5 池' },
+  'pending_activation': { en: 'Pending activation', zh: '待启用' },
+  'Subscription URL': { en: 'Subscription URL', zh: '订阅链接（优先）' },
+  'managed_by_the_subscription_url_clear_it_to_edit': { en: 'Managed by the subscription URL — clear it to edit manually', zh: '由订阅链接管理——清空后才能手动编辑' },
+  'http://10.10.10.5:12321/proxy/socks.txt — the pool is then managed by this subscription; leave empty to edit the list manually': { en: 'http://10.10.10.5:12321/proxy/socks.txt — the pool is then managed by this subscription; leave empty to edit the list manually', zh: 'http://10.10.10.5:12321/proxy/socks.txt —— 填写后代理池由订阅管理；留空则手动编辑列表' },
+  'Update frequency (cron)': { en: 'Update frequency (cron)', zh: '更新频率' },
+  'Update now': { en: 'Update now', zh: '立即更新' },
+  'updating': { en: 'Updating...', zh: '更新中...' },
+  'update_done': { en: 'Update done', zh: '更新完成' },
+  'Subscription refresh replaces the whole pool with the fetched list. Fetch failures keep the current pool.': { en: 'Subscription refresh replaces the whole pool with the fetched list. Fetch failures keep the current pool.', zh: '订阅刷新会用拉取到的列表整池替换，拉取失败保留现池不变。' },
+  '*/30 * * * * (min hour day month weekday)': { en: '*/30 * * * * (min hour day month weekday)', zh: '*/30 * * * *（分 时 日 月 周）' },
+  'Click to copy': { en: 'Click to copy', zh: '点击复制' },
+  'remove_this_key_from_the_pool': { en: 'Remove this key from the pool', zh: '将该密钥移出池' },
+  'next_in_rotation': { en: 'next in rotation', zh: '轮换顺序中的下一个' },
+  'Proxy pool saved': { en: 'Proxy pool saved', zh: '代理池已保存' },
+  'Global policy saved': { en: 'Global policy saved', zh: '全局策略已保存' },
+  'Proxy isolation settings saved': { en: 'Proxy isolation settings saved', zh: '代理隔离设置已保存' },
+  'Account deleted': { en: 'Account deleted', zh: '账号已删除' },
+  'Key deleted': { en: 'Key deleted', zh: 'key 已删除' },
+  'Key generated': { en: 'Key generated', zh: 'key 已生成' },
+  'New key generated (click to copy)': { en: 'New key generated (click to copy)', zh: '新 key 已生成（点击复制）' },
+  'Copied to clipboard': { en: 'Copied to clipboard', zh: '已复制到剪贴板' },
+  'Rows with a value but no key were ignored': { en: 'Rows with a value but no key were ignored', zh: '有值但没有键名的行已被忽略' },
+  'Headers saved': { en: 'Headers saved', zh: '请求头已保存' },
+  'Enter a token or API key': { en: 'Enter a token or API key', zh: '请输入 token 或 API key' },
+  'Enter an alias ID': { en: 'Enter an alias ID', zh: '请输入别名 ID' },
+  'Select a target model': { en: 'Select a target model', zh: '请选择目标模型' },
+  'Combo deleted': { en: 'Combo deleted', zh: '自定义别名已删除' },
+  'testing': { en: 'Testing', zh: '测试中' },
+  'Checking': { en: 'Checking', zh: '检查中' },
+  'No opencode keys configured': { en: 'No opencode keys configured', zh: '没有配置任何 opencode key' },
+  'No OpenRouter keys configured': { en: 'No OpenRouter keys configured', zh: '没有配置任何 OpenRouter key' },
+  'No AMDCloud keys configured': { en: 'No AMDCloud keys configured', zh: '没有配置任何 AMDCloud key' },
+  'No TokenHarbor keys configured': { en: 'No TokenHarbor keys configured', zh: '没有配置任何 TokenHarbor key' },
+  'Probe the rate limit; if still limited, stays cooling with a recovery time': { en: 'Probe the rate limit; if still limited, stays cooling with a recovery time', zh: '探测限流状态；若仍在限流则保持冷却并显示恢复时间' },
   // 静态 hint 段落与状态标签补漏（TreeWalker 按文本节点整段匹配）
-  'Counted since process start.': '统计自进程启动起。',
-  'No API keys yet': '还没有 API key',
-  '— no sub-platform yet —': '— 还没有子平台 —',
-  'Search models…': '搜索模型…',
+  'Counted since process start.': { en: 'Counted since process start.', zh: '统计自进程启动起。' },
+  'No API keys yet': { en: 'No API keys yet', zh: '还没有 API key' },
+  '— no sub-platform yet —': { en: '— no sub-platform yet —', zh: '— 还没有子平台 —' },
+  'Search models…': { en: 'Search models…', zh: '搜索模型…' },
   // 封禁模型区（模型黑名单）
-  'Banned models': '封禁模型',
-  'Ban reason': '封禁原因',
-  'Ban': '封禁',
-  'Blocked at': '封禁时间',
-  'Unblock': '解禁',
-  'No blocked models': '暂无被封禁的模型',
-  'Testing...': '测试中…',
-  'reachable — you can unblock it': '请求成功——可以解禁',
-  'Unblock this model? It becomes available in /v1/models again; the same upstream error will ban it again.': '解禁该模型？它会重新出现在 /v1/models；若上游仍报同样的错误，程序会再次封禁。',
-  'Ban this model? It is removed from /v1/models immediately; you can unblock it in the Banned models table.': '封禁该模型？它会立即从 /v1/models 移除；之后可在封禁模型表中解禁。',
-  'Banned: ': '已封禁：',
-  'Select platform': '选择平台',
-  'Select platform first': '请先选择平台',
-  'Ban matched': '批量封禁',
-  'Quota parked': '额度停放',
-  'Unblock selected': '批量解禁',
-  'Nothing selected': '未勾选任何模型',
-  'Unblock the selected models? They are re-banned automatically on the same upstream error.': '解禁勾选中的模型？同样的上游错误会再次自动封禁。',
-  'Keyword (case-insensitive)': '关键字（大小写不敏感）',
-  'Keyword is required': '请输入关键字',
-  'Ban all models of this platform containing the keyword (case-insensitive)?': '封禁该平台所有包含关键字的模型（大小写不敏感）？',
-  'Unblocked: ': '已解禁：',
+  'Banned models': { en: 'Banned models', zh: '封禁模型' },
+  'Ban reason': { en: 'Ban reason', zh: '封禁原因' },
+  'ban': { en: 'Ban', zh: '封禁' },
+  'Blocked at': { en: 'Blocked at', zh: '封禁时间' },
+  'unblock': { en: 'Unblock', zh: '解禁' },
+  'no_blocked_models': { en: 'No blocked models', zh: '暂无被封禁的模型' },
+  'testing_1': { en: 'Testing...', zh: '测试中…' },
+  'reachable_you_can_unblock_it': { en: 'reachable — you can unblock it', zh: '请求成功——可以解禁' },
+  'unblock_this_model_it_becomes_available_in_v1_mo': { en: 'Unblock this model? It becomes available in /v1/models again; the same upstream error will ban it again.', zh: '解禁该模型？它会重新出现在 /v1/models；若上游仍报同样的错误，程序会再次封禁。' },
+  'ban_this_model_it_is_removed_from_v1_models_imme': { en: 'Ban this model? It is removed from /v1/models immediately; you can unblock it in the Banned models table.', zh: '封禁该模型？它会立即从 /v1/models 移除；之后可在封禁模型表中解禁。' },
+  'banned': { en: 'Banned: ', zh: '已封禁：' },
+  'select_platform': { en: 'Select platform', zh: '选择平台' },
+  'select_platform_first': { en: 'Select platform first', zh: '请先选择平台' },
+  'Ban matched': { en: 'Ban matched', zh: '批量封禁' },
+  'quota_parked': { en: 'Quota parked', zh: '额度停放' },
+  'Unblock selected': { en: 'Unblock selected', zh: '批量解禁' },
+  'nothing_selected': { en: 'Nothing selected', zh: '未勾选任何模型' },
+  'unblock_the_selected_models_they_are_re_banned_a': { en: 'Unblock the selected models? They are re-banned automatically on the same upstream error.', zh: '解禁勾选中的模型？同样的上游错误会再次自动封禁。' },
+  'Keyword (case-insensitive)': { en: 'Keyword (case-insensitive)', zh: '关键字（大小写不敏感）' },
+  'keyword_is_required': { en: 'Keyword is required', zh: '请输入关键字' },
+  'ban_all_models_of_this_platform_containing_the_k': { en: 'Ban all models of this platform containing the keyword (case-insensitive)?', zh: '封禁该平台所有包含关键字的模型（大小写不敏感）？' },
+  'unblocked': { en: 'Unblocked: ', zh: '已解禁：' },
   // 封禁档位标签（trae 按端点档位封禁：remote/traecode/traework）
-  'banned on this endpoint tier only': '仅该端点档位被封，同 ID 其他档位不受影响',
-  'No matching ban entry — it may have been unblocked already.': '未找到对应的封禁条目——可能已经解禁过了。',
+  'banned_on_this_endpoint_tier_only': { en: 'banned on this endpoint tier only', zh: '仅该端点档位被封，同 ID 其他档位不受影响' },
+  'no_matching_ban_entry_it_may_have_been_unblocked': { en: 'No matching ban entry — it may have been unblocked already.', zh: '未找到对应的封禁条目——可能已经解禁过了。' },
   // TraeWork 平台页（vendored trae2api，2026-11-04 上游切换）
-  'Gateway': '网关',
-  'Trae config': 'Trae 配置',
-  'Breaker threshold': '熔断阈值',
-  'Breaker cooldown': '熔断冷却',
-  'Stream idle timeout (s)': '流中空闲超时（秒）',
-  'Soft rate cooldown': '软限流冷却',
-  'Model cooldown': '模型冷却',
-  'Reject unknown models': '拒绝未知模型',
-  'Session sticky': '会话粘性',
-  'International realms': '国际版域',
+  'Gateway': { en: 'Gateway', zh: '网关' },
+  'Trae config': { en: 'Trae config', zh: 'Trae 配置' },
+  'Breaker threshold': { en: 'Breaker threshold', zh: '熔断阈值' },
+  'Breaker cooldown': { en: 'Breaker cooldown', zh: '熔断冷却' },
+  'Stream idle timeout (s)': { en: 'Stream idle timeout (s)', zh: '流中空闲超时（秒）' },
+  'Soft rate cooldown': { en: 'Soft rate cooldown', zh: '软限流冷却' },
+  'Model cooldown': { en: 'Model cooldown', zh: '模型冷却' },
+  'Reject unknown models': { en: 'Reject unknown models', zh: '拒绝未知模型' },
+  'Session sticky': { en: 'Session sticky', zh: '会话粘性' },
+  'International realms': { en: 'International realms', zh: '国际版域' },
   "Selection is the engine's weight scheduling (idle + credit + balance aware) — the old manual ordering is gone. Rate filter removes models whose upstream consumption rate exceeds the threshold (models without a published rate stay). Config save restarts the engine; cooldowns persist via state.json.": '选号由引擎权重调度（空闲/额度/余额感知）——旧的手动排序已移除。费率过滤剔除上游倍率超过阈值的模型（未下发费率的模型保留）。保存配置会重启引擎；冷却经 state.json 持久化。',
-  'Save config': '保存配置',
+  'Save config': { en: 'Save config', zh: '保存配置' },
   "Refresh every enabled account's credit snapshot (feeds the Credits column)": '刷新全部账号的额度快照（刷新"积分"列）',
-  'Daily check-in for every account whose account switch is on (upstream schedule applies too)': '对账号总闸开启的账号执行每日签到（上游定时任务同样生效）',
-  'Run the Test probe on every routable row.': '对每一行可路由凭据执行连通性探测。',
-  'Models appear here once an account is enabled — the catalog follows the engine realms': '启用账号后此处才会显示——目录跟随引擎域',
-  'Add accounts': '添加账号',
-  'No TraeWork accounts yet — click Add accounts or use the original panel import': '暂无 TraeWork 账号——点"添加账号"或在右上角"原版入口"导入',
-  'Add TraeWork accounts': '添加 TraeWork 账号',
-  'Credentials (one per line)': '凭据（每行一条）',
-  'One token----refreshToken line per account (both required — the engine refreshes with a freshly minted device key; token-only credentials cannot pass import validation). Portable snapshot JSON / ZIP import lives in the original panel (Original panel, top right). New accounts start with routing off.': '每行一条 token----refreshToken（两者都必须——引擎用现场铸造的设备密钥续期；仅 token 的凭据无法通过导入校验）。便携快照 JSON / ZIP 导入在右上角"原版入口"里。新账号默认不参与路由。',
-  'Account #': '账号 #',
-  ' — ': ' — ',
-  ' — credits: ': ' — 额度：',
-  'Enter at least one credential line': '请至少输入一行凭据',
-  ', failed ': '，失败 ',
-  'Remove this account from the pool': '把该账号移出账号池',
-  'routable': '可路由',
-  'Disabled': '已禁用',
-  'disabled': '已禁用',
-  'engine unavailable — see server log': '引擎未运行——见服务端日志',
-  'Breaker': '熔断',
-  'Degraded': '降权',
-  'TraeWork config saved — engine restarted': 'TraeWork 配置已保存——引擎已重启',
-  ' — OK': ' — 正常',
-  'Saving…': '保存中…',
-  ' — re-download it from THIS panel and restart it (python web_login.py)': ' ——请从本面板重新下载助手并重启（python web_login.py）',
-  'Helper detected, but it writes credentials to ANOTHER deployment: ': '检测到助手，但它会把凭据写入另一个部署：',
-  'Local helper detected (writes to this gateway) — click Open helper page, then use the authorization button there': '已检测到本机授权助手（凭据写入本网关）——点"打开授权助手页面"，在弹出的页面里点授权按钮',
-  'Download helper': '下载授权助手',
-  'Download the helper from this panel, run "python web_login.py" locally, then authorize on the opened page (sign in to trae.cn in the browser first). The account lands here automatically with routing off. The helper writes to the panel it was downloaded from.': '从本面板下载助手并在本机运行 python web_login.py，在打开的页面点授权即可（浏览器需已登录 trae.cn）。账号自动入库，默认不参与路由；助手写入下载它的那个网关。',
-  'Open the helper page (127.0.0.1:8765) and click the authorize button there': '打开助手页面（127.0.0.1:8765），在页面里点授权按钮',
-  'Web authorization': '网页授权',
-  'Manual paste': '手动填写',
-  'Discard staged selections and reload the saved ban state': '放弃暂存的勾选，恢复为已保存的封禁状态',
-  'Staged selections reset': '已复位暂存的勾选',
-  'Open helper page': '打开授权助手页面',
-  'Checking local helper…': '正在检测本机授权助手…',
-  'Local helper NOT detected — download it, run "python web_login.py", then retry': '未检测到本机授权助手——先下载并在本机运行 web_login.py 后重试',
+  'Daily check-in for every account whose account switch is on (upstream schedule applies too)': { en: 'Daily check-in for every account whose account switch is on (upstream schedule applies too)', zh: '对账号总闸开启的账号执行每日签到（上游定时任务同样生效）' },
+  'Run the Test probe on every routable row.': { en: 'Run the Test probe on every routable row.', zh: '对每一行可路由凭据执行连通性探测。' },
+  'Models appear here once an account is enabled — the catalog follows the engine realms': { en: 'Models appear here once an account is enabled — the catalog follows the engine realms', zh: '启用账号后此处才会显示——目录跟随引擎域' },
+  'Add accounts': { en: 'Add accounts', zh: '添加账号' },
+  'no_traework_accounts_yet_click_add_accounts_or_u': { en: 'No TraeWork accounts yet — click Add accounts or use the original panel import', zh: '暂无 TraeWork 账号——点"添加账号"或在右上角"原版入口"导入' },
+  'Add TraeWork accounts': { en: 'Add TraeWork accounts', zh: '添加 TraeWork 账号' },
+  'Credentials (one per line)': { en: 'Credentials (one per line)', zh: '凭据（每行一条）' },
+  'One token----refreshToken line per account (both required — the engine refreshes with a freshly minted device key; token-only credentials cannot pass import validation). Portable snapshot JSON / ZIP import lives in the original panel (Original panel, top right). New accounts start with routing off.': { en: 'One token----refreshToken line per account (both required — the engine refreshes with a freshly minted device key; token-only credentials cannot pass import validation). Portable snapshot JSON / ZIP import lives in the original panel (Original panel, top right). New accounts start with routing off.', zh: '每行一条 token----refreshToken（两者都必须——引擎用现场铸造的设备密钥续期；仅 token 的凭据无法通过导入校验）。便携快照 JSON / ZIP 导入在右上角"原版入口"里。新账号默认不参与路由。' },
+  'account_1': { en: 'Account #', zh: '账号 #' },
+  'sep.emdash': { en: ' — ', zh: ' — ' },
+  'credits': { en: ' — credits: ', zh: ' — 额度：' },
+  'enter_at_least_one_credential_line': { en: 'Enter at least one credential line', zh: '请至少输入一行凭据' },
+  'failed_2': { en: ', failed ', zh: '，失败 ' },
+  'Remove this account from the pool': { en: 'Remove this account from the pool', zh: '把该账号移出账号池' },
+  'routable': { en: 'routable', zh: '可路由' },
+  'Disabled': { en: 'Disabled', zh: '已禁用' },
+  'disabled_1_1': { en: 'disabled', zh: '已禁用' },
+  'engine_unavailable_see_server_log': { en: 'engine unavailable — see server log', zh: '引擎未运行——见服务端日志' },
+  'breaker': { en: 'Breaker', zh: '熔断' },
+  'degraded': { en: 'Degraded', zh: '降权' },
+  'traework_config_saved_engine_restarted': { en: 'TraeWork config saved — engine restarted', zh: 'TraeWork 配置已保存——引擎已重启' },
+  'ok_1': { en: ' — OK', zh: ' — 正常' },
+  'saving_1': { en: 'Saving…', zh: '保存中…' },
+  're_download_it_from_this_panel_and_restart_it_py': { en: ' — re-download it from THIS panel and restart it (python web_login.py)', zh: ' ——请从本面板重新下载助手并重启（python web_login.py）' },
+  'helper_detected_but_it_writes_credentials_to_ano': { en: 'Helper detected, but it writes credentials to ANOTHER deployment: ', zh: '检测到助手，但它会把凭据写入另一个部署：' },
+  'local_helper_detected_writes_to_this_gateway_cli': { en: 'Local helper detected (writes to this gateway) — click Open helper page, then use the authorization button there', zh: '已检测到本机授权助手（凭据写入本网关）——点"打开授权助手页面"，在弹出的页面里点授权按钮' },
+  'Download helper': { en: 'Download helper', zh: '下载授权助手' },
+  'Download the helper from this panel, run "python web_login.py" locally, then authorize on the opened page (sign in to trae.cn in the browser first). The account lands here automatically with routing off. The helper writes to the panel it was downloaded from.': { en: 'Download the helper from this panel, run "python web_login.py" locally, then authorize on the opened page (sign in to trae.cn in the browser first). The account lands here automatically with routing off. The helper writes to the panel it was downloaded from.', zh: '从本面板下载助手并在本机运行 python web_login.py，在打开的页面点授权即可（浏览器需已登录 trae.cn）。账号自动入库，默认不参与路由；助手写入下载它的那个网关。' },
+  'Open the helper page (127.0.0.1:8765) and click the authorize button there': { en: 'Open the helper page (127.0.0.1:8765) and click the authorize button there', zh: '打开助手页面（127.0.0.1:8765），在页面里点授权按钮' },
+  'Web authorization': { en: 'Web authorization', zh: '网页授权' },
+  'Manual paste': { en: 'Manual paste', zh: '手动填写' },
+  'Discard staged selections and reload the saved ban state': { en: 'Discard staged selections and reload the saved ban state', zh: '放弃暂存的勾选，恢复为已保存的封禁状态' },
+  'staged_selections_reset': { en: 'Staged selections reset', zh: '已复位暂存的勾选' },
+  'Open helper page': { en: 'Open helper page', zh: '打开授权助手页面' },
+  'checking_local_helper': { en: 'Checking local helper…', zh: '正在检测本机授权助手…' },
+  'local_helper_not_detected_download_it_run_python': { en: 'Local helper NOT detected — download it, run "python web_login.py", then retry', zh: '未检测到本机授权助手——先下载并在本机运行 web_login.py 后重试' },
   // Trae 双开关 / 网页授权 / 签到 / 自动化
-  'Refresh balances': '刷新余额',
-  'Auto check-in': '自动签到',
-  'Token expired': 'token 已过期',
-  'Checked in': '签到成功',
-  'Check-in failed': '签到失败',
-  'Check-in done: ': '签到完成：',
-  ' already': ' 个已签过',
-  ' failed': ' 个失败',
-  'Account ready: ': '账号就绪：',
-  'Account already in the pool: ': '账号已在池中：',
-  'Authorization failed: ': '授权失败：',
-  'Remaining credits from the latest snapshot (auto-refreshed in the background; Test refreshes on demand)': '最新快照的剩余额度（后台自动刷新；Test 按钮即时刷新）',
-  'Account master switch. Off = the account does not exist: check-in, balance refresh and Test all skip it, and it never routes.': '账号总开关。关闭 = 账号视为不存在：签到、余额刷新与 Test 全部跳过，也绝不参与路由。',
+  'Refresh balances': { en: 'Refresh balances', zh: '刷新余额' },
+  'Auto check-in': { en: 'Auto check-in', zh: '自动签到' },
+  'token_expired': { en: 'Token expired', zh: 'token 已过期' },
+  'checked_in': { en: 'Checked in', zh: '签到成功' },
+  'check_in_failed': { en: 'Check-in failed', zh: '签到失败' },
+  'check_in_done': { en: 'Check-in done: ', zh: '签到完成：' },
+  ' already': { en: ' already', zh: ' 个已签过' },
+  'failed': { en: ' failed', zh: ' 个失败' },
+  'account_ready': { en: 'Account ready: ', zh: '账号就绪：' },
+  'account_already_in_the_pool': { en: 'Account already in the pool: ', zh: '账号已在池中：' },
+  'authorization_failed': { en: 'Authorization failed: ', zh: '授权失败：' },
+  'Remaining credits from the latest snapshot (auto-refreshed in the background; Test refreshes on demand)': { en: 'Remaining credits from the latest snapshot (auto-refreshed in the background; Test refreshes on demand)', zh: '最新快照的剩余额度（后台自动刷新；Test 按钮即时刷新）' },
+  'account_master_switch_off_the_account_does_not_e': { en: 'Account master switch. Off = the account does not exist: check-in, balance refresh and Test all skip it, and it never routes.', zh: '账号总开关。关闭 = 账号视为不存在：签到、余额刷新与 Test 全部跳过，也绝不参与路由。' },
   // 2026-10-29 汉化遗留修复：代理健康表头（原模板写死中文）、后端固定消息、
   // zen egress 徽标、combos 空态等（详见当次审查台账）。标识词/技术值不译：
   // Trae 端点档位 Remote/traecode/traework、reasoning effort 档位、产品名。
-  'Proxy health': '代理健康',
-  'Platform cooldown': '平台冷却',
-  'Online rate': '在线率',
-  'Recent online rate': '最近在线率',
-  'Avg handshake': '平均握手延迟',
+  'Proxy health': { en: 'Proxy health', zh: '代理健康' },
+  'platform_cooldown': { en: 'Platform cooldown', zh: '平台冷却' },
+  'Online rate': { en: 'Online rate', zh: '在线率' },
+  'Recent online rate': { en: 'Recent online rate', zh: '最近在线率' },
+  'Avg handshake': { en: 'Avg handshake', zh: '平均握手延迟' },
   // 2026-11-03 代理测试按钮（proxy_probe 方案一：中性目标 3 采样取最小值，
   // 样本计入在线率/握手统计但不触发冷却）。「Test」复用既有词条，
   // 勿在此重复添加；测试中态复用既有「Testing」词条 + .loading 转圈样式。
-  'Test latency': '代理测试',
-  'Latency test finished': '代理测试完成',
-  'Proxy test failed: ': '代理测试失败：',
-  'Send up to 3 HTTPS probes per exit to the target in the input box (default www.gstatic.com/generate_204) through the same dial stack as real traffic; shows the min latency of successful samples and feeds the online-rate and handshake stats. Never touches routing or cooldowns.': '每条出口对测速目标发最多 3 次 HTTPS 探测，根据结果更新在线率与测试列数据，路由与冷却不受影响。',
-  'Latest manual latency test: min / median over up to 3 HTTPS probes to the configured target through the same dial stack as real traffic; the samples also feed the rate and handshake stats. Routing and cooldowns are untouched.': '最近一次手动延迟测试：对配置的测速目标最多 3 次 HTTPS 探测的最小/中位延迟，与真实请求同一拨号栈；样本同时计入在线率与握手统计。路由与冷却不受影响。',
+  'Test latency': { en: 'Test latency', zh: '代理测试' },
+  'latency_test_finished': { en: 'Latency test finished', zh: '代理测试完成' },
+  'proxy_test_failed': { en: 'Proxy test failed: ', zh: '代理测试失败：' },
+  'Send up to 3 HTTPS probes per exit to the target in the input box (default www.gstatic.com/generate_204) through the same dial stack as real traffic; shows the min latency of successful samples and feeds the online-rate and handshake stats. Never touches routing or cooldowns.': { en: 'Send up to 3 HTTPS probes per exit to the target in the input box (default www.gstatic.com/generate_204) through the same dial stack as real traffic; shows the min latency of successful samples and feeds the online-rate and handshake stats. Never touches routing or cooldowns.', zh: '每条出口对测速目标发最多 3 次 HTTPS 探测，根据结果更新在线率与测试列数据，路由与冷却不受影响。' },
+  'Latest manual latency test: min / median over up to 3 HTTPS probes to the configured target through the same dial stack as real traffic; the samples also feed the rate and handshake stats. Routing and cooldowns are untouched.': { en: 'Latest manual latency test: min / median over up to 3 HTTPS probes to the configured target through the same dial stack as real traffic; the samples also feed the rate and handshake stats. Routing and cooldowns are untouched.', zh: '最近一次手动延迟测试：对配置的测速目标最多 3 次 HTTPS 探测的最小/中位延迟，与真实请求同一拨号栈；样本同时计入在线率与握手统计。路由与冷却不受影响。' },
   // 2026-11-03 测速目标输入框（回车/失焦即存，留空回默认）
-  'Test target saved': '测速地址已保存',
-  'Test target failed: ': '测速地址保存失败：',
+  'test_target_saved': { en: 'Test target saved', zh: '测速地址已保存' },
+  'test_target_failed': { en: 'Test target failed: ', zh: '测速地址保存失败：' },
   // 2026-11-03 行内单出口测试按钮（「Test」复用既有词条勿重复添加）
-  'Test just this exit: 3 probes to the configured target; updates the Test column and the online-rate stats of this row. Display only — routing and cooldowns are untouched.': '使用当前出口对测速目标发最多 3 次 HTTPS 探测，根据结果更新在线率与测试列数据，路由与冷却不受影响。',
-  'Rates are sampled passively from real traffic and manual latency tests — no background probing. "No data" = unused since the last pool edit; editing the proxy list resets counters.': '在线率被动采样自真实流量与手动延迟测试——无后台探测。“无数据”=自上次编辑代理池后未使用；编辑代理列表会清零计数。',
-  'Credentials saved to server': '凭据已写入服务器',
-  'Account already exists': '账号已存在',
-  'account #': '账号#',
-  'Proxy pool updated: ': '代理池已更新：',
-  ' entries': ' 条',
-  'subscription identical to current pool, skipped': '订阅内容与现池一致，跳过替换',
-  'WorkBuddy account imported': 'WorkBuddy 账号已导入',
-  'No models on this platform': '该平台暂无模型',
-  '(empty reply)': '（空回复）',
-  'auto-banned: account tier lacks access to this model': '账号权限不足，自动封禁',
-  'auto-banned: model removed from official free feed': '官方免费目录已下线，自动封禁',
-  'banned manually by admin': '管理员手动封禁',
-  'auto-banned: model name not available on this gateway (4023)': '模型名不可用，自动封禁',
-  'Session-routing mode: maintenance tasks are disabled by the ONLY_ROUTER environment variable — auto check-in, balance refresh, task center and similar controls have no effect.': '仅会话路由模式：维护任务已被环境变量 ONLY_ROUTER 停用——自动签到、余额刷新、任务中心等控件不会生效。',
+  'test_just_this_exit_3_probes_to_the_configured_t': { en: 'Test just this exit: 3 probes to the configured target; updates the Test column and the online-rate stats of this row. Display only — routing and cooldowns are untouched.', zh: '使用当前出口对测速目标发最多 3 次 HTTPS 探测，根据结果更新在线率与测试列数据，路由与冷却不受影响。' },
+  'Rates are sampled passively from real traffic and manual latency tests — no background probing. "No data" = unused since the last pool edit; editing the proxy list resets counters.': { en: 'Rates are sampled passively from real traffic and manual latency tests — no background probing. "No data" = unused since the last pool edit; editing the proxy list resets counters.', zh: '在线率被动采样自真实流量与手动延迟测试——无后台探测。“无数据”=自上次编辑代理池后未使用；编辑代理列表会清零计数。' },
+  'Credentials saved to server': { en: 'Credentials saved to server', zh: '凭据已写入服务器' },
+  'Account already exists': { en: 'Account already exists', zh: '账号已存在' },
+  'account_2': { en: 'account #', zh: '账号#' },
+  'proxy_pool_updated': { en: 'Proxy pool updated: ', zh: '代理池已更新：' },
+  'entries': { en: ' entries', zh: ' 条' },
+  'subscription identical to current pool, skipped': { en: 'subscription identical to current pool, skipped', zh: '订阅内容与现池一致，跳过替换' },
+  'workbuddy_account_imported': { en: 'WorkBuddy account imported', zh: 'WorkBuddy 账号已导入' },
+  'no_models_on_this_platform': { en: 'No models on this platform', zh: '该平台暂无模型' },
+  'empty_reply': { en: '(empty reply)', zh: '（空回复）' },
+  'auto-banned: account tier lacks access to this model': { en: 'auto-banned: account tier lacks access to this model', zh: '账号权限不足，自动封禁' },
+  'auto-banned: model removed from official free feed': { en: 'auto-banned: model removed from official free feed', zh: '官方免费目录已下线，自动封禁' },
+  'banned manually by admin': { en: 'banned manually by admin', zh: '管理员手动封禁' },
+  'auto-banned: model name not available on this gateway (4023)': { en: 'auto-banned: model name not available on this gateway (4023)', zh: '模型名不可用，自动封禁' },
+  'session_routing_mode_maintenance_tasks_are_disab': { en: 'Session-routing mode: maintenance tasks are disabled by the ONLY_ROUTER environment variable — auto check-in, balance refresh, task center and similar controls have no effect.', zh: '仅会话路由模式：维护任务已被环境变量 ONLY_ROUTER 停用——自动签到、余额刷新、任务中心等控件不会生效。' },
 };
-function T(s) { return LANG === 'zh' ? (I18N_ZH[s] || s) : s; }
+function T(key) { return lookup(key); }
 // loadRuntimeFlags 启动时拉一次运行时开关快照；ONLY_ROUTER=true 时面板顶部
 // 常驻提示条，说明维护类控件被 env 强制停用——不让"开关显示开着但任务不跑"
 // 的撒谎控件存在（2026-10-29）。拉取失败视为未开启（提示条只是展示增强）。
@@ -2812,7 +2820,7 @@ function showOnlyRouterNotice() {
   const bar = document.createElement('div');
   bar.id = 'onlyRouterNotice';
   bar.className = 'only-router-notice';
-  bar.textContent = T('Session-routing mode: maintenance tasks are disabled by the ONLY_ROUTER environment variable — auto check-in, balance refresh, task center and similar controls have no effect.');
+  bar.textContent = T('session_routing_mode_maintenance_tasks_are_disab');
   const main = document.querySelector('.main');
   if (main) main.prepend(bar);
 }
@@ -2821,25 +2829,26 @@ function showOnlyRouterNotice() {
 function fmtUpstream(u) {
   if (!u) return '';
   const m = /^account #(\d+)$/.exec(u);
-  return m ? T('account #') + m[1] : u;
+  return m ? T('account_2') + m[1] : u;
 }
 // fmtSubUpdMsg 订阅更新结果渲染：固定消息走 T() 词条；"Proxy pool updated: N
 // entries" 数字可变，按形状拆成 前缀词条 + 数字 + 后缀词条。
 function fmtSubUpdMsg(msg) {
   const m = /^Proxy pool updated: (\d+) entries$/.exec(msg || '');
-  if (m) return esc(T('Proxy pool updated: ') + m[1] + T(' entries'));
-  return esc(msg ? T(msg) : T('Update done'));
+  if (m) return esc(T('proxy_pool_updated') + m[1] + T('entries'));
+  return esc(msg ? T(msg) : T('update_done'));
 }
 function toggleLang() {
   localStorage.setItem('lang', LANG === 'zh' ? 'en' : 'zh');
   location.reload();
 }
-// 文本节点翻译：保留首尾空白（HTML 缩进），整段替换
+// 文本节点翻译：保留首尾空白（HTML 缩进），整段替换（按英文源文查，兜底过渡）
 function i18nTextNode(n) {
   const raw = n.nodeValue;
   const s = raw.trim();
   if (!s) return;
-  const t = I18N_ZH[s];
+  if (!I18N[s]) return;
+  const t = lookup(s);
   if (!t) return;
   const lead = raw.slice(0, raw.length - raw.trimStart().length);
   const trail = raw.slice(raw.trimEnd().length);
@@ -2850,7 +2859,8 @@ function i18nAttrs(el) {
   ['title', 'placeholder'].forEach(a => {
     const v = el.getAttribute(a);
     if (!v) return;
-    const t = I18N_ZH[v.trim()];
+    if (!I18N[v.trim()]) return;
+    const t = lookup(v.trim());
     // Same-value setAttribute still emits an attribute mutation and can loop
     // forever when a translated placeholder/title maps to itself.
     if (t && t !== v) el.setAttribute(a, t);
@@ -2864,7 +2874,7 @@ function i18nSubtree(root) {
   if (root.querySelectorAll) {
     root.querySelectorAll('[data-i18n]').forEach(el => {
       const k = el.getAttribute('data-i18n');
-      const t = k && I18N_ZH[k.trim()];
+      const t = k && lookup(k.trim());
       if (t && el.textContent.trim() !== t) el.textContent = t;
     });
   }
@@ -2993,7 +3003,7 @@ async function wbCall(action, params, body) {
   const res = await fetch(WB_API_PREFIX + '/' + encodedAction + (qs ? '?' + qs : ''), init);
   if (res.status === 401) {
     location.reload();
-    throw new Error(T('Admin session expired'));
+    throw new Error(T('admin_session_expired'));
   }
   let data = {};
   try { data = await res.json(); } catch (e) { /* preserve HTTP error below */ }
@@ -3053,11 +3063,11 @@ function wbBindingCell(account) {
   if (wbSnapshot[id]) { wbSnapshot[id].main = main; wbSnapshot[id].backup = backupVal; }
   const stale = proxyStale;
   const staleMark = (stale(main) || stale(backup))
-    ? ' <span title="' + T('Bound proxy is no longer in the proxy pool — skipped until fixed') + '" style="color:var(--danger)">⚠</span>'
+    ? ' <span title="' + T('bound_proxy_is_no_longer_in_the_proxy_pool_skipp') + '" style="color:var(--danger)">⚠</span>'
     : '';
   return '<td style="white-space:nowrap">' +
-    egComboHTML('wb', id, 'main', main, T('Main egress: requests go through this egress whenever available')) + ' ' +
-    egComboHTML('wb', id, 'backup', backupVal, T('Backup egress: fallback while the main egress is cooling down or unavailable'), backupLocked) +
+    egComboHTML('wb', id, 'main', main, T('main_egress_requests_go_through_this_egress_when')) + ' ' +
+    egComboHTML('wb', id, 'backup', backupVal, T('backup_egress_fallback_while_the_main_egress_is_'), backupLocked) +
     staleMark +
     '</td>';
 }
@@ -3088,7 +3098,7 @@ function renderWorkbuddyAccounts() {
     const statusHtml = '<span class="status ' + status.cls + '"' + (reason ? ' title="' + esc(status.label + ' · ' + reason) + '"' : '') + '><span class="status-dot ' + status.cls + '"></span>' + esc(status.label) + '</span>' +
       // 冷却中补恢复时刻（与 cline 页同款小字；完整读数走 title）
       (status.cls === 'cooldown' && account.until && !String(account.until).startsWith('0001-')
-        ? '<div style="font-size:10px;color:var(--text3);margin-top:2px;white-space:nowrap" title="' + esc(fmtWhen(account.until)) + '">' + T('Recovers ') + esc(fmtShort(account.until)) + '</div>'
+        ? '<div style="font-size:10px;color:var(--text3);margin-top:2px;white-space:nowrap" title="' + esc(fmtWhen(account.until)) + '">' + T('recovers') + esc(fmtShort(account.until)) + '</div>'
         : '');
     // 竖排签到徽章（2026-10-27，与 TraeWork 页统一）：尝试日=今天且未成功 →
     // 签到失败（title=原因）；今天已签 → 签到成功。global 域无签到体系不显示。
@@ -3098,7 +3108,7 @@ function renderWorkbuddyAccounts() {
     let checkinV = '';
     if (realm !== 'global' && (wbCheckinOk || wbAttemptDay === wbToday)) {
       const ok = wbCheckinOk;
-      const txt = ok ? T('Checked in') : T('Check-in failed');
+      const txt = ok ? T('checked_in') : T('check_in_failed');
       const cls = ok ? 'status active' : 'status cooldown';
       checkinV = '<div class="' + cls + '" style="writing-mode:vertical-rl;text-orientation:upright;letter-spacing:2px;font-size:10px;padding:5px 2px;border-radius:8px;align-self:stretch;display:flex;align-items:center;justify-content:center" title="' + esc(account.last_checkin_error || txt) + '">' + esc(txt) + '</div>';
     }
@@ -3110,10 +3120,10 @@ function renderWorkbuddyAccounts() {
     const poolOn = account.pool_enabled !== false;
     wbSnapshot[id] = { account: accEnabled, enabled: poolOn };
     const accCell = '<td style="text-align:center"><input type="checkbox" data-wb-account="' + esc(id) + '"' +
-      (accEnabled ? ' checked' : '') + ' title="' + esc(T('Account master switch: off = the account does not exist — check-in, tasks and balance refresh all stop, and it never routes')) + '" aria-label="' + esc(T('Account switch')) + '"></td>';
+      (accEnabled ? ' checked' : '') + ' title="' + esc(T('account_master_switch_off_the_account_does_not_e_1')) + '" aria-label="' + esc(T('account_switch')) + '"></td>';
     const poolCell = '<td style="text-align:center"><input type="checkbox" data-wb-pool="' + esc(id) + '"' +
       (accEnabled && poolOn ? ' checked' : '') + (!accEnabled ? ' disabled' : '') +
-      ' title="' + esc(T('Gateway switch: unchecked = model sessions never route to this account; check-in and all other maintenance tasks are unaffected')) + '" aria-label="' + esc(T('Gateway switch')) + '"></td>';
+      ' title="' + esc(T('gateway_switch_unchecked_model_sessions_never_ro')) + '" aria-label="' + esc(T('gateway_switch')) + '"></td>';
     // uid 过长会把 Account 列撑宽，昵称下方只留前 10 个字符，完整值走 title 悬浮。
     const shortId = id.length > 10 ? id.slice(0, 10) + '…' : id;
     // 账号列：昵称旁铅笔行内改名。手改后加本地锁（上游昵称同步跳过，不被
@@ -3127,7 +3137,7 @@ function renderWorkbuddyAccounts() {
       '<td><div class="wb-account"><div class="wb-account-main">' +
         '<div class="nick-wrap">' +
           '<span class="wb-account-name nick-name" title="' + esc(wbDisplayName) + '">' + esc(wbDisplayName) + '</span>' +
-          nickPen(id, wbDisplayName, T('Edit nickname')) +
+          nickPen(id, wbDisplayName, T('edit_nickname')) +
         '</div>' +
         '<div class="wb-account-id" title="' + esc(realm + ' · ' + id) + '">' + esc(realm) + ' · ' + esc(shortId) + '</div>' +
       '</div></div></td>' +
@@ -3135,7 +3145,7 @@ function renderWorkbuddyAccounts() {
         '<div style="display:flex;flex-direction:column;gap:2px;min-width:0;align-items:center">' + statusHtml + '</div>' + checkinV +
       '</div></td>' +
       '<td>' + esc(credits) + (creditsTotal ? '<span style="color:var(--text3)"> / ' + esc(creditsTotal) + '</span>' : '') + '</td>' +
-      '<td title="' + T('Today') + ' ' + fmtNum(tokensToday) + ' / ' + T('total') + ' ' + fmtNum(tokensTotal) + ' ' + T('tokens (exact when upstream returns usage, otherwise estimated)') + '">' + fmtTokens(tokensToday) + ' / ' + fmtTokens(tokensTotal) + '</td>' +
+      '<td title="' + T('today') + ' ' + fmtNum(tokensToday) + ' / ' + T('total_1_1') + ' ' + fmtNum(tokensTotal) + ' ' + T('tokens_exact_when_upstream_returns_usage_otherwi') + '">' + fmtTokens(tokensToday) + ' / ' + fmtTokens(tokensTotal) + '</td>' +
       '<td class="mono" style="font-size:11px">' + (lastUsed ? esc(fmtLastUsed(lastUsed)) : '-') + '</td>' +
       wbBindingCell(account) +
       '<td style="white-space:nowrap;text-align:center"><div class="wb-action-group">' +
@@ -3187,7 +3197,7 @@ function updateWorkbuddySummary() {
   if (!summary) return;
   const active = wbAccounts.filter(a => wbStatusInfo(a).cls === 'active').length;
   const cooling = wbAccounts.filter(a => wbStatusInfo(a).cls === 'cooldown').length;
-  summary.textContent = wbAccounts.length + ' ' + T('accounts') + ' · ' + active + ' ' + T('active') + ' · ' + cooling + ' ' + T('cooling');
+  summary.textContent = wbAccounts.length + ' ' + T('accounts') + ' · ' + active + ' ' + T('active_1_1') + ' · ' + cooling + ' ' + T('cooling_2');
 }
 async function loadWorkbuddyAccounts() {
   const tbody = _('wbAccountsBody');
@@ -3205,7 +3215,7 @@ async function loadWorkbuddyAccounts() {
       wbAccounts = [];
       renderWorkbuddyAccounts();
     } else if (tbody) {
-      tbody.innerHTML = '<tr><td colspan="9" class="empty">' + esc(T('Failed to load WorkBuddy accounts: ') + e.message) + '</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="9" class="empty">' + esc(T('failed_to_load_workbuddy_accounts') + e.message) + '</td></tr>';
     }
     updateWorkbuddySummary();
   }
@@ -3256,9 +3266,9 @@ async function saveWorkbuddyEdits() {
     } catch (e) { failed++; }
   }
   clearDirtyMarks('wbAccountsBody', 'wbSaveBtn');
-  if (failed) toast(T('Failed to save ') + failed + T(' account(s)'), 'error');
-  else if (!changed) toast(T('No changes to save'), 'info');
-  else toast(T('Saved ') + changed + T(' account edits'), 'success');
+  if (failed) toast(T('failed_to_save') + failed + T('account_s'), 'error');
+  else if (!changed) toast(T('no_changes_to_save'), 'info');
+  else toast(T('saved_1') + changed + T('account_edits'), 'success');
   await loadWorkbuddyAccounts();
 }
 function stageAllWbPool(enabled) {
@@ -3289,12 +3299,12 @@ function stageAllWbPool(enabled) {
   });
   if (enabled && accOpened) {
     // 顺带开的账号开关也算暂存改动，提示里说明清楚，避免用户以为只动了反代
-    toast(T('Account switch staged on for ') + accOpened + T(' row(s) so the gateway switch can apply — click Save'), 'success');
+    toast(T('account_switch_staged_on_for') + accOpened + T('row_s_so_the_gateway_switch_can_apply_click_save'), 'success');
   }
   stageBatchResult(staged, same, locked);
 }
 function stageClearWorkbuddyProxyBindings() {
-  if (!confirm(T('Clear proxy bindings on ALL accounts and disable them? Takes effect when you click Save.'))) return;
+  if (!confirm(T('clear_proxy_bindings_on_all_accounts_and_disable'))) return;
   document.querySelectorAll('#wbAccountsBody tr').forEach(row => {
     const main = row.querySelector('.eg-input[data-eg="wb"][data-slot="main"]');
     if (!main) return;
@@ -3322,15 +3332,15 @@ async function runWorkbuddyBatch(action) {
   const label = T(WB_BATCH_LABEL[action] || action);
   try {
     const result = await wbCall(action, {}, bodies[action] || {});
-    toast(result.message || (label + T(' started')), 'success');
+    toast(result.message || (label + T('started')), 'success');
     await loadWorkbuddyAccounts();
-  } catch (e) { toast(label + T(' failed: ') + e.message, 'error'); }
+  } catch (e) { toast(label + T('failed_1') + e.message, 'error'); }
 }
 async function workbuddyActionFrom(button) {
   const action = button.dataset.wbAction;
   const id = workbuddyBindingId(button.dataset.wbId);
   if (action === 'details') { openWorkbuddyDetails(id, button.dataset.wbId); return; }
-  if (action === 'delete' && !confirm(T('Delete this WorkBuddy account and its credentials?'))) return;
+  if (action === 'delete' && !confirm(T('delete_this_workbuddy_account_and_its_credential'))) return;
   const accountPath = 'accounts/' + encodeURIComponent(id);
   const actions = {
     delete: accountPath + '/remove'
@@ -3340,9 +3350,9 @@ async function workbuddyActionFrom(button) {
   button.disabled = true;
   try {
     const result = await wbCall(actions[action], {}, {});
-    toast(result.message || (T(action) + T(' completed')), 'success');
+    toast(result.message || (T(action) + T('completed')), 'success');
     await Promise.all([loadWorkbuddyAccounts(), loadWorkbuddyConfig()]);
-  } catch (e) { toast(T(action) + T(' failed: ') + e.message, 'error'); }
+  } catch (e) { toast(T(action) + T('failed_1') + e.message, 'error'); }
   finally { button.disabled = false; }
 }
 /* ---- WB 单号可用性探测（与 key 平台 Test 同构：spinner + 结果 toast） ---- */
@@ -3353,7 +3363,7 @@ async function batchTestWorkbuddyAccounts() {
   // 当前网关对外提供的服务（2026-11-02 用户定）：封禁平台整平台跳过。
   await fetchPlatformBans();
   if (platformBans.has('workbuddy')) {
-    toast(T('Platform is banned in gateway settings — test skipped'), 'info');
+    toast(T('platform_is_banned_in_gateway_settings_test_skip'), 'info');
     return { tested: 0, skipped: 0, banned: true };
   }
   // 2026-11-02 用户定：只测能路由的凭据。WorkBuddy 是账号总闸 + 反代开关
@@ -3363,8 +3373,8 @@ async function batchTestWorkbuddyAccounts() {
   const ids = all.filter(id => wbSnapshot[id] && wbSnapshot[id].enabled !== false);
   const skipped = all.length - ids.length;
   if (!ids.length) {
-    if (all.length) toast(T('No routable credentials'), 'info');
-    else toast(T('No accounts to test'), 'info');
+    if (all.length) toast(T('no_routable_credentials'), 'info');
+    else toast(T('no_accounts_to_test'), 'info');
     return { tested: 0, skipped };
   }
   const original = btn ? btn.innerHTML : '';
@@ -3383,9 +3393,9 @@ async function batchTestWorkbuddyAccounts() {
   } finally {
     if (btn) { btn.disabled = false; btn.innerHTML = original; }
   }
-  toast(T('Batch test done: ') + ids.length + T(' tested, ') + ok + T(' ok') +
-    (cool ? T(', ') + cool + T(' cooling') : '') + (err ? T(', ') + err + T(' error') : '') +
-    (skipped ? T(', ') + skipped + T(' skipped (unroutable)') : ''),
+  toast(T('batch_test_done') + ids.length + T('tested') + ok + T('ok') +
+    (cool ? T(', ') + cool + T('cooling_1') : '') + (err ? T(', ') + err + T('error_1') : '') +
+    (skipped ? T(', ') + skipped + T('skipped_unroutable') : ''),
     err ? 'warning' : 'success', 6000);
   loadWorkbuddyAccounts();
   return { tested: ids.length, skipped };
@@ -3396,13 +3406,13 @@ async function workbuddyTestAccount(button, id) { const original = button ? butt
   try {
     const d = await wbCall('accounts/' + encodeURIComponent(id) + '/test', {}, {});
     const ok = d.status === 'active';
-    let msg = ok ? T('Test passed') : T('Test failed: ') + (d.error || d.status || '');
+    let msg = ok ? T('test_passed') : T('test_failed') + (d.error || d.status || '');
     if (d.latencyMs != null) msg += ' (' + d.latencyMs + 'ms)';
-    if (ok && d.cooldownCleared) msg += T(' — cooldown cleared');
-    else if (d.status === 'cooldown') msg += T(' — cooling');
+    if (ok && d.cooldownCleared) msg += T('cooldown_cleared');
+    else if (d.status === 'cooldown') msg += T('cooling_1_1');
     toast(msg, ok ? 'success' : 'error', 6000);
   } catch (e) {
-    toast(T('Test failed: ') + e.message, 'error');
+    toast(T('test_failed') + e.message, 'error');
   } finally {
     if (button) { button.disabled = false; button.innerHTML = original; }
     loadWorkbuddyAccounts();
@@ -3411,9 +3421,9 @@ async function workbuddyTestAccount(button, id) { const original = button ? butt
 async function refreshWorkbuddyAccounts() {
   try {
     const result = await wbCall('balance_all', {}, {});
-    toast(result.message || T('Balances refreshed'), 'success');
+    toast(result.message || T('balances_refreshed'), 'success');
     await loadWorkbuddyAccounts();
-  } catch (e) { toast(T('Refresh failed: ') + e.message, 'error'); }
+  } catch (e) { toast(T('refresh_failed') + e.message, 'error'); }
 }
 
 const WB_PK_COLORS = ['#4f8cff', '#25b08b', '#e8a33d', '#c96bd6', '#e2607a',
@@ -3421,9 +3431,9 @@ const WB_PK_COLORS = ['#4f8cff', '#25b08b', '#e8a33d', '#c96bd6', '#e2607a',
 function wbPackageSources(packs) {
   const out = new Map();
   (packs || []).forEach(p => {
-    const key = String(p.package_code || '') + '|' + String(p.name || T('(unnamed)'));
+    const key = String(p.package_code || '') + '|' + String(p.name || T('unnamed'));
     const item = out.get(key) || {
-      key: key, name: p.name || T('(unnamed)'), count: 0, remain: 0, size: 0, used: 0,
+      key: key, name: p.name || T('unnamed'), count: 0, remain: 0, size: 0, used: 0,
       minCreated: '', minEnd: ''
     };
     item.count += 1;
@@ -3445,7 +3455,7 @@ let wbDetailsAccountId = null;
 function openWorkbuddyDetails(id, label) {
   wbDetailsAccountId = workbuddyBindingId(id);
   _('wbDetailsWho').textContent = label || id;
-  _('wbDetailsStatus').textContent = T('Querying points breakdown from upstream...');
+  _('wbDetailsStatus').textContent = T('querying_points_breakdown_from_upstream');
   _('wbDetailsBody').innerHTML = '';
   showWorkbuddyDialog(_('wbDetailsDialog'));
   loadWorkbuddyDetails();
@@ -3460,18 +3470,18 @@ async function loadWorkbuddyDetails() {
   try {
     const data = await wbCall('packages');
     const account = (data.accounts || []).find(a => String(a.uid) === String(wbDetailsAccountId));
-    if (!account) throw new Error(T('No points data found for this account'));
+    if (!account) throw new Error(T('no_points_data_found_for_this_account'));
     renderWorkbuddyDetails(account);
-    _('wbDetailsStatus').textContent = T('Live from upstream · ') + (account.packages || []).length + T(' points packages');
+    _('wbDetailsStatus').textContent = T('live_from_upstream') + (account.packages || []).length + T('points_packages');
   } catch (e) {
-    _('wbDetailsStatus').textContent = T('Failed to read: ') + e.message;
+    _('wbDetailsStatus').textContent = T('failed_to_read') + e.message;
     _('wbDetailsBody').innerHTML = '';
   }
 }
 function renderWorkbuddyDetails(a) {
   const body = _('wbDetailsBody');
   if (a.error) {
-    body.innerHTML = '<div class="empty">' + T('Query failed: ') + esc(a.error) + '</div>';
+    body.innerHTML = '<div class="empty">' + T('query_failed') + esc(a.error) + '</div>';
     return;
   }
   const packs = a.packages || [];
@@ -3484,14 +3494,14 @@ function renderWorkbuddyDetails(a) {
   const legend = sources.map(s =>
     '<span><i style="background:' + colorOf(s.key) + '"></i>' + esc(wbPackageLabel(s.name)) +
     ' x' + s.count + ' · ' + esc(wbFmtTokens(s.size)) +
-    (s.minCreated ? ' · ' + T('first issued ') + esc(s.minCreated.slice(5)) : '') + '</span>').join('');
+    (s.minCreated ? ' · ' + T('first_issued') + esc(s.minCreated.slice(5)) : '') + '</span>').join('');
   const rows = packs.map(p => {
-    const key = String(p.package_code || '') + '|' + String(p.name || T('(unnamed)'));
+    const key = String(p.package_code || '') + '|' + String(p.name || T('unnamed'));
     const sub = String(p.sub_product_code || '').replace(/^sp_tcaca_codebuddyide_?/, '') ||
       String(p.package_code || '').replace(/^TCACA_/, '');
     return '<tr><td><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:' +
       colorOf(key) + '"></span></td>' +
-      '<td>' + esc(p.name || T('(unnamed)')) + (sub ? '<div class="hint" style="font-size:11px">' + esc(sub) + '</div>' : '') + '</td>' +
+      '<td>' + esc(p.name || T('unnamed')) + (sub ? '<div class="hint" style="font-size:11px">' + esc(sub) + '</div>' : '') + '</td>' +
       '<td class="text-right">' + esc(wbFmtTokens(p.size)) + '</td>' +
       '<td class="text-right">' + esc(wbFmtTokens(p.remain)) + '</td>' +
       '<td class="text-right">' + esc(wbFmtTokens(p.used)) + '</td>' +
@@ -3501,14 +3511,14 @@ function renderWorkbuddyDetails(a) {
   body.innerHTML =
     '<div class="wb-pk-card"><div class="wb-pk-head"><div><div class="wb-pk-name">' +
       esc(a.nickname || a.uid) + '</div><div class="wb-pk-sub">' + esc(a.realm || '') + ' · ' + esc(a.uid) + '</div></div>' +
-      '<div class="wb-pk-sub">' + T('Total ') + esc(wbFmtTokens(a.size)) + ' · ' + packs.length + T(' package(s)') + '</div></div>' +
+      '<div class="wb-pk-sub">' + T('total_1') + esc(wbFmtTokens(a.size)) + ' · ' + packs.length + T('package_s') + '</div></div>' +
       '<div class="wb-pk-big">' + esc(wbFmtTokens(a.remain)) + '</div>' +
-      '<div class="wb-pk-sub">' + T('Remaining points · used ') + esc(wbFmtTokens(Math.max(0, Number(a.size || 0) - Number(a.remain || 0)))) + '</div>' +
+      '<div class="wb-pk-sub">' + T('remaining_points_used') + esc(wbFmtTokens(Math.max(0, Number(a.size || 0) - Number(a.remain || 0)))) + '</div>' +
       '<div class="wb-pk-mix">' + mix + '</div><div class="wb-pk-legend">' + legend + '</div></div>' +
-    '<div class="table-wrap"><table><thead><tr><th></th><th>' + T('Package / source') + '</th><th class="text-right">' + T('Face value') + '</th>' +
-      '<th class="text-right">' + T('Remaining') + '</th><th class="text-right">' + T('Used') + '</th><th class="text-right">' + T('Granted') + '</th>' +
-      '<th class="text-right">' + T('Expires') + '</th></tr></thead><tbody>' +
-      (rows || '<tr><td colspan="7" class="empty">' + T('No points packages') + '</td></tr>') + '</tbody></table></div>';
+    '<div class="table-wrap"><table><thead><tr><th></th><th>' + T('package_source') + '</th><th class="text-right">' + T('face_value') + '</th>' +
+      '<th class="text-right">' + T('remaining_1') + '</th><th class="text-right">' + T('used') + '</th><th class="text-right">' + T('granted') + '</th>' +
+      '<th class="text-right">' + T('expires') + '</th></tr></thead><tbody>' +
+      (rows || '<tr><td colspan="7" class="empty">' + T('no_points_packages') + '</td></tr>') + '</tbody></table></div>';
 }
 
 let wbTodoTimer = null;
@@ -3519,7 +3529,7 @@ function wbTodoConcurrency() {
 }
 function openWorkbuddyTodoScan() {
   wbTodoSeq = 0;
-  _('wbTodoStatus').textContent = T('Pick a concurrency, then click "Scan tasks"');
+  _('wbTodoStatus').textContent = T('pick_a_concurrency_then_click_scan_tasks');
   _('wbTodoBody').innerHTML = '';
   showWorkbuddyDialog(_('wbTodoDialog'));
 }
@@ -3533,7 +3543,7 @@ function renderWorkbuddyTodoAccounts(data) {
   const accounts = data.accounts || [];
   const groups = accounts.filter(a => (a.growth || []).length || a.growth_error);
   if (!groups.length) {
-    _('wbTodoBody').innerHTML = '<div class="empty">' + T('No pending tasks for all accounts') + '</div>';
+    _('wbTodoBody').innerHTML = '<div class="empty">' + T('no_pending_tasks_for_all_accounts') + '</div>';
     return;
   }
   _('wbTodoBody').innerHTML = groups.map(a => {
@@ -3542,22 +3552,22 @@ function renderWorkbuddyTodoAccounts(data) {
       const title = t.title || t.task_code || '';
       const desc = [t.task_desc, t.description].filter(Boolean).join('\n');
       const reward = [
-        Number(t.credit || 0) > 0 ? T('Points') + ' ' + t.credit : '',
-        Number(t.energy || 0) > 0 ? T('Energy') + ' ' + t.energy : ''
+        Number(t.credit || 0) > 0 ? T('points') + ' ' + t.credit : '',
+        Number(t.energy || 0) > 0 ? T('energy') + ' ' + t.energy : ''
       ].filter(Boolean).join(' · ');
       const tip = [
-        T('Task: ') + title,
-        T('Description: ') + (desc || '—'),
-        T('Progress: ') + progress,
-        T('Reward: ') + (reward || '—')
+        T('task') + title,
+        T('description') + (desc || '—'),
+        T('progress') + progress,
+        T('reward') + (reward || '—')
       ].join('\n');
       return '<div class="wb-todo-row" title="' + esc(tip) + '"><div class="nm"><div>' + esc(title) +
-        '</div><div class="id">' + esc(t.task_code || '') + '</div></div><span class="model-tag">' + T('Pending') + '</span>' +
+        '</div><div class="id">' + esc(t.task_code || '') + '</div></div><span class="model-tag">' + T('pending') + '</span>' +
         '<span class="wb-usage">' + esc(progress) + '</span></div>';
     }).join('');
-    const err = a.growth_error ? '<div class="hint" style="color:var(--danger)">' + T('Scan failed: ') + '' + esc(a.growth_error) + '</div>' : '';
+    const err = a.growth_error ? '<div class="hint" style="color:var(--danger)">' + T('scan_failed') + '' + esc(a.growth_error) + '</div>' : '';
     return '<details class="wb-todo-group"><summary class="wb-todo-title">' + esc(a.nickname || a.uid) +
-      ' <span class="auto-pill">' + esc(a.uid || '') + ' · ' + T(' item(s)') + '</span></summary>' + rows + err + '</details>';
+      ' <span class="auto-pill">' + esc(a.uid || '') + ' · ' + T('item_s') + '</span></summary>' + rows + err + '</details>';
   }).join('');
 }
 async function scanWorkbuddyTodos() {
@@ -3566,14 +3576,14 @@ async function scanWorkbuddyTodos() {
   const scanButton = _('wbTodoScan');
   if (button) button.disabled = true;
   if (scanButton) scanButton.disabled = true;
-  _('wbTodoStatus').textContent = T('Scanning with concurrency ') + concurrency + T(' scanning tasks...');
-  _('wbTodoBody').innerHTML = '<div class="empty">' + T('Scanning...') + '</div>';
+  _('wbTodoStatus').textContent = T('scanning_with_concurrency') + concurrency + T('scanning_tasks');
+  _('wbTodoBody').innerHTML = '<div class="empty">' + T('scanning') + '</div>';
   try {
     const data = await wbCall('tasks/scan_all', {}, { concurrency: concurrency });
     renderWorkbuddyTodoAccounts(data);
-    _('wbTodoStatus').textContent = T('Scan complete: ') + (data.pending_count || 0) + T(' pending item(s)');
+    _('wbTodoStatus').textContent = T('scan_complete') + (data.pending_count || 0) + T('pending_item_s');
   } catch (e) {
-    _('wbTodoStatus').textContent = T('Scan failed: ') + e.message;
+    _('wbTodoStatus').textContent = T('scan_failed') + e.message;
     _('wbTodoBody').innerHTML = '';
   } finally {
     if (button) button.disabled = false;
@@ -3589,17 +3599,17 @@ function renderWorkbuddyQueue(data) {
     if (!groups.has(key)) groups.set(key, { uid: key, nickname: it.nickname || key, items: [] });
     groups.get(key).items.push(it);
   });
-  const labels = { pending: T('Claimed'), running: T('In progress'), done: T('Done'), skipped: T('Skipped'), error: T('Failed') };
+  const labels = { pending: T('claimed'), running: T('in_progress'), done: T('done'), skipped: T('skipped'), error: T('failed_3') };
   _('wbTodoBody').innerHTML = Array.from(groups.values()).map(g =>
     '<details class="wb-todo-group"><summary class="wb-todo-title">' + esc(g.nickname) +
-      ' <span class="auto-pill">' + esc(g.uid) + ' · ' + T(' item(s)') + '</span></summary>' +
+      ' <span class="auto-pill">' + esc(g.uid) + ' · ' + T('item_s') + '</span></summary>' +
       g.items.map(it => {
         const title = it.title || it.code || '';
         const tip = [
-          T('Task: ') + title,
-          T('Description: ') + (it.desc || '—'),
-          it.progress ? T('Progress: ') + it.progress : '',
-          it.message ? T('Result: ') + it.message : ''
+          T('task') + title,
+          T('description') + (it.desc || '—'),
+          it.progress ? T('progress') + it.progress : '',
+          it.message ? T('result') + it.message : ''
         ].filter(Boolean).join('\n');
         const sub = [it.code, it.progress, it.message].filter(Boolean).join(' · ');
         return '<div class="wb-todo-row" title="' + esc(tip) + '"><div class="nm"><div>' + esc(title) +
@@ -3615,7 +3625,7 @@ async function pollWorkbuddyQueue() {
     if (seq !== wbTodoSeq) return;
     renderWorkbuddyQueue(data);
     const done = (data.items || []).filter(it => ['done', 'skipped', 'error'].includes(it.status)).length;
-    _('wbTodoStatus').textContent = (data.running ? T('Running') : T('Finished')) + T(': ') + done + ' / ' + (data.total || 0);
+    _('wbTodoStatus').textContent = (data.running ? T('running') : T('finished')) + T('sep.colon') + done + ' / ' + (data.total || 0);
     if (data.running) {
       wbTodoTimer = setTimeout(pollWorkbuddyQueue, 1500);
     } else {
@@ -3623,12 +3633,12 @@ async function pollWorkbuddyQueue() {
       await loadWorkbuddyAccounts();
     }
   } catch (e) {
-    _('wbTodoStatus').textContent = T('Failed to read queue: ') + e.message;
+    _('wbTodoStatus').textContent = T('failed_to_read_queue') + e.message;
   }
 }
 async function runWorkbuddyAllTodos() {
   const concurrency = wbTodoConcurrency();
-  if (!confirm(T('Run all listed tasks with concurrency ') + concurrency + T(' (tasks run serially within each account, auto-claim enabled). Confirm?'))) return;
+  if (!confirm(T('run_all_listed_tasks_with_concurrency') + concurrency + T('tasks_run_serially_within_each_account_auto_clai'))) return;
   const button = _('wbTodoRunAll');
   const scanButton = _('wbTodoScan');
   if (button) button.disabled = true;
@@ -3636,15 +3646,15 @@ async function runWorkbuddyAllTodos() {
   try {
     const result = await wbCall('tasks/run_queue', {}, { concurrency: concurrency, growth: true });
     if (!result.started) {
-      toast(result.message || T('No pending tasks'), 'info');
+      toast(result.message || T('no_pending_tasks'), 'info');
       return;
     }
     wbTodoSeq = result.seq || 0;
-    toast(T('Queue started: ') + result.total + T(' item(s) (concurrency ') + concurrency + T(')'), 'success');
-    _('wbTodoStatus').textContent = T('Queue started, running...');
+    toast(T('queue_started') + result.total + T('item_s_concurrency') + concurrency + T('sep.rparen'), 'success');
+    _('wbTodoStatus').textContent = T('queue_started_running');
     wbTodoTimer = setTimeout(pollWorkbuddyQueue, 800);
   } catch (e) {
-    toast(T('Failed to run: ') + e.message, 'error');
+    toast(T('failed_to_run') + e.message, 'error');
   } finally {
     if (button) button.disabled = false;
     if (scanButton) scanButton.disabled = false;
@@ -3666,7 +3676,7 @@ function closeWorkbuddyAdd() {
 async function startWorkbuddyOAuth() {
   const button = _('wbStartLogin');
   button.disabled = true;
-  button.textContent = T('Requesting...');
+  button.textContent = T('requesting');
   _('wbAddStatus').textContent = 'Requesting authorization link...';
   try {
     const payload = await wbCall('login/start', {}, { site: _('wbRealm').value });
@@ -3675,7 +3685,7 @@ async function startWorkbuddyOAuth() {
     _('wbAddStatus').textContent = url ? 'Open the link and complete the browser login.' : 'Authorization session created.';
     if (url) wbOAuthTimer = setTimeout(() => pollWorkbuddyOAuth(payload.state), 1200);
   } catch (e) {
-    _('wbAddStatus').textContent = T('OAuth failed: ') + e.message;
+    _('wbAddStatus').textContent = T('oauth_failed') + e.message;
   } finally {
     button.disabled = false;
     button.textContent = 'Get authorization link';
@@ -3686,14 +3696,14 @@ async function pollWorkbuddyOAuth(oauthId) {
   try {
     const payload = await wbCall('login/poll', { state: oauthId });
     if (payload.done) {
-      _('wbAddStatus').textContent = T('Account added: ') + (payload.nickname || payload.uid || '');
+      _('wbAddStatus').textContent = T('account_added') + (payload.nickname || payload.uid || '');
       toast('WorkBuddy account added', 'success');
       await loadWorkbuddyAccounts();
       return;
     }
     if (payload.status === 'failed' || payload.error) throw new Error(payload.error || payload.status || 'failed');
     wbOAuthTimer = setTimeout(() => pollWorkbuddyOAuth(oauthId), 1500);
-  } catch (e) { _('wbAddStatus').textContent = T('OAuth failed: ') + e.message; }
+  } catch (e) { _('wbAddStatus').textContent = T('oauth_failed') + e.message; }
 }
 function copyWorkbuddyOAuthUrl() {
   const value = _('wbOAuthUrl').value;
@@ -3713,9 +3723,9 @@ async function importWorkbuddyAccounts(input) {
     const response = await fetch(API + '/workbuddy/accounts/import', { method: 'POST', body: form });
     const result = await response.json().catch(() => ({}));
     if (!response.ok || result.ok === false) throw new Error(result.error || response.statusText || 'upload failed');
-    toast(T('WorkBuddy account imported'), 'success');
+    toast(T('workbuddy_account_imported'), 'success');
     await loadWorkbuddyAccounts();
-  } catch (e) { toast(T('Import failed: ') + e.message, 'error'); }
+  } catch (e) { toast(T('import_failed') + e.message, 'error'); }
   input.value = '';
 }
 
@@ -3737,8 +3747,8 @@ async function loadWorkbuddyConfig() {
     syncWorkbuddyRateFilter(config);
     _('wbConfigNote').textContent = T('loaded');
   } catch (e) {
-    _('wbConfigNote').textContent = T('load failed');
-    toast(T('WorkBuddy config load failed: ') + e.message, 'error');
+    _('wbConfigNote').textContent = T('load_failed');
+    toast(T('workbuddy_config_load_failed') + e.message, 'error');
   }
 }
 // syncWorkbuddyRateFilter 从服务端配置同步分域倍率筛选阈值（2026-11-07 拆分：
@@ -3784,16 +3794,16 @@ function collectWorkbuddyConfig() {
 async function saveWorkbuddyConfig() {
   const button = _('wbSaveConfig');
   button.disabled = true;
-  button.textContent = T('Saving...');
+  button.textContent = T('saving');
   try {
     const result = await wbCall('config', {}, collectWorkbuddyConfig());
     const restart = Array.isArray(result.restart_required) ? result.restart_required.length : 0;
-    toast(restart ? T('WorkBuddy config saved (') + restart + T(' restart items)') : T('WorkBuddy config saved'), 'success');
+    toast(restart ? T('workbuddy_config_saved_1') + restart + T('restart_items') : T('workbuddy_config_saved'), 'success');
     await loadWorkbuddyConfig();
     // 倍率阈值等影响目录的配置随保存热刷新（目录区不再内嵌独立筛选下拉）
     loadModels();
-  } catch (e) { toast(T('WorkBuddy config save failed: ') + e.message, 'error'); }
-  finally { button.disabled = false; button.textContent = T('Save configuration'); }
+  } catch (e) { toast(T('workbuddy_config_save_failed') + e.message, 'error'); }
+  finally { button.disabled = false; button.textContent = T('save_configuration'); }
 }
 
 (_('wbStartLogin') || {}).onclick = startWorkbuddyOAuth;
@@ -3815,14 +3825,14 @@ async function api(method, path, body) {
 function setDash(id, unit, total, active, cooling) {
   const el = _(id);
   if (!el) return;
-  el.textContent = total + ' ' + T(unit) + ' · ' + active + ' ' + T('active') + ' · ' + cooling + ' ' + T('cooling');
+  el.textContent = total + ' ' + T(unit) + ' · ' + active + ' ' + T('active_1_1') + ' · ' + cooling + ' ' + T('cooling_2');
 }
 // setReq 请求统计块：统一"N 请求 · N 错误 · 平均 N ms"
 function setReq(id, s) {
   const el = _(id);
   if (!el) return;
   s = s || {};
-  el.textContent = (s.requests || 0) + ' ' + T('requests') + ' · ' + (s.errors || 0) + ' ' + T('errors') + ' · ' + T('Avg ') + Math.round(s.avg_ms || 0) + 'ms';
+  el.textContent = (s.requests || 0) + ' ' + T('requests') + ' · ' + (s.errors || 0) + ' ' + T('errors') + ' · ' + T('avg') + Math.round(s.avg_ms || 0) + 'ms';
 }
 // loadStats 仪表盘三平台概览：Cline 走 /stats（含 expired 但概览行不展示），
 // OpenCode 取 /opencode/config 的 keyStates（可用=路由启用），WorkBuddy 取
@@ -3886,7 +3896,7 @@ async function loadStats() {
     setReq('reqTh', rs.tokenharbor);
     setReq('reqOther', rs.other);
     const hint = _('reqStatsHint');
-    if (hint && d.data && d.data.since) hint.textContent = T('Counted since ') + new Date(d.data.since).toLocaleString(TZ, TIME_OPT);
+    if (hint && d.data && d.data.since) hint.textContent = T('counted_since') + new Date(d.data.since).toLocaleString(TZ, TIME_OPT);
   } catch (e) { /* ignore */ }
 }
 
@@ -3908,7 +3918,7 @@ function enableRowDragReorder(tbodyId, submit, reload) {
     if (!tr || e.target.closest('input,select,textarea,button,a,label')) { e.preventDefault(); return; }
     if (tb.querySelector('tr.tr-dirty')) {
       e.preventDefault();
-      toast(T('Save or discard staged edits before reordering'), 'warning');
+      toast(T('save_or_discard_staged_edits_before_reordering'), 'warning');
       return;
     }
     e.dataTransfer.effectAllowed = 'move';
@@ -3934,9 +3944,9 @@ function enableRowDragReorder(tbodyId, submit, reload) {
     const ids = [...tb.querySelectorAll('tr[data-drag-id]')].map(tr => tr.dataset.dragId);
     try {
       await submit(ids);
-      toast(T('Order saved'), 'success');
+      toast(T('order_saved'), 'success');
     } catch (err) {
-      toast(T('Reorder failed: ') + err.message, 'error');
+      toast(T('reorder_failed') + err.message, 'error');
     }
     if (reload) reload(); // 成功=对齐派生状态；失败=回滚
   });
@@ -3968,11 +3978,11 @@ function startNickEdit(pen, opts) {
   input.className = 'nick-input';
   input.maxLength = 64;
   input.value = current;
-  input.placeholder = T('Nickname');
+  input.placeholder = T('nickname');
   const okBtn = document.createElement('button');
-  okBtn.type = 'button'; okBtn.className = 'nick-ok'; okBtn.textContent = '✓'; okBtn.title = T('Save');
+  okBtn.type = 'button'; okBtn.className = 'nick-ok'; okBtn.textContent = '✓'; okBtn.title = T('save');
   const noBtn = document.createElement('button');
-  noBtn.type = 'button'; noBtn.className = 'nick-no'; noBtn.textContent = '✕'; noBtn.title = T('Cancel');
+  noBtn.type = 'button'; noBtn.className = 'nick-no'; noBtn.textContent = '✕'; noBtn.title = T('cancel');
   wrap.append(input, okBtn, noBtn);
   input.focus();
   if (current) input.select();
@@ -3984,18 +3994,18 @@ function startNickEdit(pen, opts) {
   const doSave = async () => {
     if (busy) return;
     const v = input.value.trim();
-    if (!v && !opts.allowEmpty) { toast(T('Nickname cannot be empty'), 'warning'); input.focus(); return; }
+    if (!v && !opts.allowEmpty) { toast(T('nickname_cannot_be_empty'), 'warning'); input.focus(); return; }
     if (v === current) { cleanup(); return; } // 未变 = 视为取消，不打 API
     busy = true;
     try {
       await opts.save(id, v);
-      toast(T('Nickname saved'), 'success');
+      toast(T('nickname_saved'), 'success');
       cleanup();
       busy = false;
       opts.reload();
     } catch (err) {
       busy = false;
-      toast(T('Failed to save nickname: ') + err.message, 'error');
+      toast(T('failed_to_save_nickname') + err.message, 'error');
     }
   };
   const doCancel = () => { if (!busy) cleanup(); };
@@ -4020,7 +4030,7 @@ async function loadAccounts() {
     if (summary) {
       const active = (list || []).filter(a => a.status === 'active').length;
       const cooling = (list || []).filter(a => a.status === 'cooldown').length;
-      summary.textContent = (list || []).length + ' ' + T('accounts') + ' · ' + active + ' ' + T('active') + ' · ' + cooling + ' ' + T('cooling');
+      summary.textContent = (list || []).length + ' ' + T('accounts') + ' · ' + active + ' ' + T('active_1_1') + ' · ' + cooling + ' ' + T('cooling_2');
     }
     if (!list || list.length === 0) {
       tbody.innerHTML = '<tr><td colspan="8" class="empty">No accounts yet</td></tr>';
@@ -4034,7 +4044,7 @@ async function loadAccounts() {
       let statusExtra = '';
       if (a.status === 'cooldown') {
         const until = a.cooldownUntil ? fmtShort(a.cooldownUntil) : '';
-        statusExtra = until ? '<div style="font-size:10px;color:var(--text3);margin-top:2px;white-space:nowrap" title="' + esc(fmtWhen(a.cooldownUntil)) + '">' + T('Recovers ') + esc(until) + '</div>' : '';
+        statusExtra = until ? '<div style="font-size:10px;color:var(--text3);margin-top:2px;white-space:nowrap" title="' + esc(fmtWhen(a.cooldownUntil)) + '">' + T('recovers') + esc(until) + '</div>' : '';
       }
       // Proxy binding cells: main/backup comboboxes (Global / Direct / proxies
       // with type-ahead) saved on change. A binding that no longer exists in
@@ -4049,9 +4059,9 @@ async function loadAccounts() {
       const backupLocked = !backupProxyOn || pMain === '' || pMain === EGRESS_DIRECT;
       const backupVal = backupLocked ? pMain : pBackup;
       const bindCell = '<td style="white-space:nowrap">' +
-        egComboHTML('acc', a.accountId, 'main', pMain, T('Main exit — used whenever available')) + ' ' +
-        egComboHTML('acc', a.accountId, 'backup', backupVal, T('Backup exit — used when main is cooling/removed'), backupLocked) +
-        (stale ? ' <span title="' + esc(T('Bound proxy is no longer in the proxy pool — skipped until fixed')) + '" style="color:var(--danger)">⚠</span>' : '') +
+        egComboHTML('acc', a.accountId, 'main', pMain, T('main_exit_used_whenever_available')) + ' ' +
+        egComboHTML('acc', a.accountId, 'backup', backupVal, T('backup_exit_used_when_main_is_cooling_removed'), backupLocked) +
+        (stale ? ' <span title="' + esc(T('bound_proxy_is_no_longer_in_the_proxy_pool_skipp')) + '" style="color:var(--danger)">⚠</span>' : '') +
         '</td>';
       // PoolEnabled 与账号状态是两个维度：未设置时按启用渲染，显式 false
       // 才退出主选号；勾选改动先暂存，由"保存"按钮统一提交。
@@ -4060,7 +4070,7 @@ async function loadAccounts() {
       const poolCell = '<td style="text-align:center">' +
         '<input type="checkbox" data-pool-enabled="' + esc(a.accountId) + '"' +
         (poolEnabled ? ' checked' : '') +
-        ' title="' + esc(T('Participates in request routing')) + '" aria-label="' + esc(T('Participates in request routing')) + '">' +
+        ' title="' + esc(T('participates_in_request_routing')) + '" aria-label="' + esc(T('participates_in_request_routing')) + '">' +
         '</td>';
       const st = esc(a.status);
       // 账号列：昵称优先（设了昵称时主行显示昵称、小字保留邮箱），铅笔行内改名。
@@ -4072,12 +4082,12 @@ async function loadAccounts() {
         '<td class="mono" style="font-size:11px;color:var(--text3)">#' + (i + 1) + '</td>' +
         '<td><div class="nick-cell"><div class="nick-wrap">' +
           '<span class="nick-name" title="' + esc(displayName) + '">' + esc(displayName) + '</span>' +
-          nickPen(a.accountId, displayName, T('Edit nickname')) +
+          nickPen(a.accountId, displayName, T('edit_nickname')) +
         '</div>' +
         (nick ? '<div class="nick-sub" title="' + esc(a.email) + '">' + esc(a.email) + '</div>' : '') +
         '</div></td>' +
         '<td style="text-align:center"><span class="status ' + st + '"><span class="status-dot ' + st + '"></span>' + (sn[a.status] || st) + '</span>' + statusExtra + '</td>' +
-          '<td title="' + T('Today') + ' ' + fmtNum(a.tokensToday) + ' / ' + T('total') + ' ' + fmtNum(a.tokensTotal) + ' ' + T('tokens (exact when upstream returns usage, otherwise estimated)') + '">' + fmtTokens(a.tokensToday) + ' / ' + fmtTokens(a.tokensTotal) + '</td>' +
+          '<td title="' + T('today') + ' ' + fmtNum(a.tokensToday) + ' / ' + T('total_1_1') + ' ' + fmtNum(a.tokensTotal) + ' ' + T('tokens_exact_when_upstream_returns_usage_otherwi') + '">' + fmtTokens(a.tokensToday) + ' / ' + fmtTokens(a.tokensTotal) + '</td>' +
         '<td class="mono" style="font-size:11px">' + lu + '</td>' +
         bindCell +
         '<td style="white-space:nowrap;text-align:center">' +
@@ -4107,7 +4117,7 @@ async function loadAccounts() {
       else if (b.dataset.act === 'reset') resetAccount(id, b);
       else if (b.dataset.act === 'delete') deleteAccount(id);
     };
-  } catch (e) { toast(T('Failed to load accounts: ') + e.message, 'error'); }
+  } catch (e) { toast(T('failed_to_load_accounts') + e.message, 'error'); }
 }
 
 // ========== Proxy binding (account isolation) ==========
@@ -4197,12 +4207,12 @@ function syncProxyHealthCache(rows) {
 // 已下线代理的行），再用最近一次后端快照重新合并——表格回到后端当前状态。
 // 后端统计本身不受任何影响。
 function clearProxyHealthStore() {
-  if (!confirm(T('Clear the browser-stored online-rate data? Backend stats are untouched.'))) return;
+  if (!confirm(T('clear_the_browser_stored_online_rate_data_backen'))) return;
   try { localStorage.removeItem(PROXY_HEALTH_STORE_KEY); } catch (e) { /* ignore */ }
   syncProxyHealthCache(proxyHealthBackendRows);
   renderProxyHealth(Object.values(proxyHealthByProxy));
   document.querySelectorAll('.eg-input').forEach(el => egSyncBadge(el));
-  toast(T('Cleared local online-rate data'), 'success');
+  toast(T('cleared_local_online_rate_data'), 'success');
 }
 // proxyRateSet 控制台改数入口：proxyRateSet('香港-01', 0.42) 把该行最近在线率
 // 改为 42% 并留存（m 标记 → 不再被后端覆盖）。match 按完整键 / 别名 / URL
@@ -4295,10 +4305,10 @@ function clearDirtyMarks(tbodyId, btnId) {
 // 所以无论有没有改动都要回一句：改了几行、几行本来就是这个状态、几行被锁跳过。
 function stageBatchResult(staged, same, locked) {
   let msg;
-  if (staged) msg = T('Staged ') + staged + T(' row(s) — click Save to apply');
-  else if (same) msg = T('All ') + same + T(' row(s) are already in this state — nothing to stage');
-  else msg = T('No rows to change');
-  if (locked) msg += T(' · ') + locked + T(' row(s) skipped (locked)');
+  if (staged) msg = T('staged') + staged + T('row_s_click_save_to_apply');
+  else if (same) msg = T('all') + same + T('row_s_are_already_in_this_state_nothing_to_stage');
+  else msg = T('no_rows_to_change');
+  if (locked) msg += T('sep.dot') + locked + T('row_s_skipped_locked');
   toast(msg, staged ? 'success' : 'info');
 }
 // 清空单行代理绑定（暂存）：主=全局时备自动跟随锁定
@@ -4327,8 +4337,8 @@ function stageProxiesByOrder(kind) {
   if (!tbody) return;
   let rows = [...document.querySelectorAll(tbody + ' tr')]
     .filter(r => r.querySelector('.eg-input[data-eg="' + kind + '"][data-slot="main"]'));
-  if (!rows.length) { toast(T('No credentials to bind'), 'info'); return; }
-  if (!proxyListCache.length) { toast(T('Proxy pool is empty'), 'info'); return; }
+  if (!rows.length) { toast(T('no_credentials_to_bind'), 'info'); return; }
+  if (!proxyListCache.length) { toast(T('proxy_pool_is_empty'), 'info'); return; }
   // CN 域账号行不参与一键代理（2026-11-07 用户定，仅 trae/wb 有域语义）：绑定
   // 原样保留；其占用代理从分配序列剔除——专属出口不得再分给其他凭据。
   // 占用保护（cnOccupied）只对同样有 CN 域语义的平台生效（2026-11-08 用户定）：
@@ -4358,11 +4368,11 @@ function stageProxiesByOrder(kind) {
     markRowDirty(row, kind);
     n++;
   });
-  if (!n) { toast(T('Already bound in this order'), 'info'); return; }
-  toast(T('Staged ') + n + T(' proxy binding(s) — click Save to apply') +
-        (left ? T('; ') + left + T(' row(s) left unchanged (no proxy left)') : '') +
-        (skippedManual ? T('; ') + skippedManual + T(' manually disabled proxy(s) skipped') : '') +
-        (skippedCN ? T('; ') + skippedCN + T(' CN-domain account row(s) untouched') : ''), 'success');
+  if (!n) { toast(T('already_bound_in_this_order'), 'info'); return; }
+  toast(T('staged') + n + T('proxy_binding_s_click_save_to_apply') +
+        (left ? T('; ') + left + T('row_s_left_unchanged_no_proxy_left') : '') +
+        (skippedManual ? T('; ') + skippedManual + T('manually_disabled_proxy_s_skipped') : '') +
+        (skippedCN ? T('; ') + skippedCN + T('cn_domain_account_row_s_untouched') : ''), 'success');
 }
 
 // ========== 凭据延迟重排（跨平台，弹窗选平台） ==========
@@ -4398,8 +4408,8 @@ function openReorderDlg() {
   // 弹窗里回显本次生效的阈值：重排按它判定"健康/慢"，不回显用户无法确认
   // 改的值是否真被用上（阈值输入框在按钮左边，弹窗会盖住它）。
   const hint = _('impReorderKeepHint');
-  if (hint) hint.textContent = T('Keep latency ≤') + ' ' + (reorderKeepMs() / 1000).toFixed(1) + T('s') +
-    T(' — slower bindings are refilled');
+  if (hint) hint.textContent = T('keep_latency') + ' ' + (reorderKeepMs() / 1000).toFixed(1) + T('s') +
+    T('slower_bindings_are_refilled');
   const grid = _('impReorderRows');
   grid.style.display = 'grid';
   grid.style.gridTemplateColumns = 'repeat(2, minmax(0,1fr))';
@@ -4417,7 +4427,7 @@ function confirmReorder() {
   const kinds = [..._('impReorderRows').querySelectorAll('input[type=checkbox][data-keep]')]
     .filter(cb => cb.checked).map(cb => cb.getAttribute('data-keep'));
   _('impReorderDialog').close();
-  if (!kinds.length) { toast(T('No platform selected'), 'info'); return; }
+  if (!kinds.length) { toast(T('no_platform_selected'), 'info'); return; }
   reorderByLatency(kinds);
 }
 // 延迟数值（毫秒）：无记录返回 0。
@@ -4444,16 +4454,16 @@ function syncReorderKeepSecInput() {
 async function saveReorderKeepSec(v) {
   const n = Number(v);
   if (!isFinite(n) || n < 0 || n > 600) {
-    toast(T('Keep threshold must be between 0 and 600 seconds'), 'error');
+    toast(T('keep_threshold_must_be_between_0_and_600_seconds'), 'error');
     syncReorderKeepSecInput();
     return;
   }
   try {
     await api('POST', '/opencode/config/update', { reorderKeepSec: n });
     reorderKeepSecCfg = n;
-    toast(T('Latency keep threshold saved'), 'success');
+    toast(T('latency_keep_threshold_saved'), 'success');
   } catch (e) {
-    toast(T('Save failed: ') + e.message, 'error');
+    toast(T('save_failed') + e.message, 'error');
     syncReorderKeepSecInput();
   }
 }
@@ -4593,8 +4603,8 @@ function applyReorderRules(kind, parts) {
       n++;
     }
   }
-  if (stuck) toast(T('Proxy exclusion rules: ') + stuck +
-    T(' row(s) left unchanged — every allowed proxy is excluded or at cap'), 'warning', 6000);
+  if (stuck) toast(T('proxy_exclusion_rules') + stuck +
+    T('row_s_left_unchanged_every_allowed_proxy_is_excl'), 'warning', 6000);
   return n;
 }
 function collectReorderParts(kind) {
@@ -4679,10 +4689,10 @@ async function testAllCredentialPlatforms() {
   } finally {
     if (btn) { btn.disabled = false; btn.innerHTML = label; }
   }
-  let msg = failed.length ? T('All-platform test finished with errors: ') + failed.join(', ')
-    : T('All-platform test finished');
-  if (skipped.length) msg += T(' — skipped (no routable credentials): ') + skipped.join(', ');
-  if (banned.length) msg += T(' — skipped (gateway banned): ') + banned.join(', ');
+  let msg = failed.length ? T('all_platform_test_finished_with_errors') + failed.join(', ')
+    : T('all_platform_test_finished');
+  if (skipped.length) msg += T('skipped_no_routable_credentials') + skipped.join(', ');
+  if (banned.length) msg += T('skipped_gateway_banned') + banned.join(', ');
   toast(msg, failed.length ? 'warning' : 'success', 8000);
 }
 // Other 子平台逐个重排：Other 页一屏只渲染一个子平台的 keys（currentOtherSlug
@@ -4741,12 +4751,12 @@ async function reorderByLatency(kinds) {
     try { await REORDER_SAVERS[k](); } catch (e) { failedSaves.push(k); }
   }
   if (failedLoads.length || failedSaves.length) {
-    toast(T('Latency reorder finished with errors — loads failed: ') + failedLoads.join(',') +
-          T('; saves failed: ') + failedSaves.join(','), 'error');
+    toast(T('latency_reorder_finished_with_errors_loads_faile') + failedLoads.join(',') +
+          T('saves_failed') + failedSaves.join(','), 'error');
     return;
   }
-  if (!total) { toast(T('Already bound in this order'), 'info'); return; }
-  toast(T('Reordered ') + total + T(' proxy binding(s) by latency and saved'), 'success');
+  if (!total) { toast(T('already_bound_in_this_order'), 'info'); return; }
+  toast(T('reordered') + total + T('proxy_binding_s_by_latency_and_saved'), 'success');
 }
 
 let accSnapshot = {};
@@ -4793,9 +4803,9 @@ async function saveAccountEdits() {
     } catch (e) { failed++; }
   }
   clearDirtyMarks('accountTableBody', 'accSaveBtn');
-  if (failed) toast(T('Save failed for ') + failed + T(' account(s)'), 'error');
-  else if (!changed) toast(T('No changes to save'), 'info');
-  else toast(T('Saved ') + changed + T(' account change(s)'), 'success');
+  if (failed) toast(T('save_failed_for') + failed + T('account_s'), 'error');
+  else if (!changed) toast(T('no_changes_to_save'), 'info');
+  else toast(T('saved_1') + changed + T('account_change_s'), 'success');
   loadAccounts(); loadStats();
 }
 
@@ -4820,11 +4830,11 @@ async function accAddFromDialog() {
   btn.disabled = true;
   try {
     const d = await api('POST', '/accounts/add', { ...credPayload(token), email: email || undefined });
-    toast(T('Account added: ') + (d.data.email || ''), 'success');
+    toast(T('account_added') + (d.data.email || ''), 'success');
     closeAccAddDialog();
     loadAccounts(); loadStats();
   } catch (e) {
-    toast(T('Add failed: ') + e.message, 'error');
+    toast(T('add_failed') + e.message, 'error');
   } finally {
     btn.disabled = false;
   }
@@ -4838,7 +4848,7 @@ async function batchTestAccounts() {
   // 当前网关对外提供的服务（2026-11-02 用户定）：封禁平台整平台跳过。
   await fetchPlatformBans();
   if (platformBans.has('cline')) {
-    toast(T('Platform is banned in gateway settings — test skipped'), 'info');
+    toast(T('platform_is_banned_in_gateway_settings_test_skip'), 'info');
     return { tested: 0, skipped: 0, banned: true };
   }
   // 2026-11-02 用户定：只测**能路由**的凭据——反代开关（Pool）关闭的账号
@@ -4847,8 +4857,8 @@ async function batchTestAccounts() {
   const ids = all.filter(id => accSnapshot[id] && accSnapshot[id].enabled !== false);
   const skipped = all.length - ids.length;
   if (!ids.length) {
-    if (all.length) toast(T('No routable credentials'), 'info');
-    else toast(T('No accounts to test'), 'info');
+    if (all.length) toast(T('no_routable_credentials'), 'info');
+    else toast(T('no_accounts_to_test'), 'info');
     return { tested: 0, skipped };
   }
   const original = btn ? btn.innerHTML : '';
@@ -4868,16 +4878,16 @@ async function batchTestAccounts() {
   } finally {
     if (btn) { btn.disabled = false; btn.innerHTML = original; }
   }
-  toast(T('Batch test done: ') + ids.length + T(' tested, ') + ok + T(' ok') +
-    (cool ? T(', ') + cool + T(' cooling') : '') + (err ? T(', ') + err + T(' error') : '') +
-    (skipped ? T(', ') + skipped + T(' skipped (unroutable)') : ''),
+  toast(T('batch_test_done') + ids.length + T('tested') + ok + T('ok') +
+    (cool ? T(', ') + cool + T('cooling_1') : '') + (err ? T(', ') + err + T('error_1') : '') +
+    (skipped ? T(', ') + skipped + T('skipped_unroutable') : ''),
     err ? 'warning' : 'success', 6000);
   loadAccounts(); loadStats();
   return { tested: ids.length, skipped };
 }
 
 function stageClearZenKeyProxies() {
-  if (!confirm(T('Clear proxy bindings on ALL keys and disable routing? Click Save to apply.'))) return;
+  if (!confirm(T('clear_proxy_bindings_on_all_keys_and_disable_rou'))) return;
   document.querySelectorAll('#ocKeysBody tr').forEach(row => {
     const main = row.querySelector('.eg-input[data-eg="key"][data-slot="main"]');
     if (!main) return;
@@ -4897,8 +4907,8 @@ const EGRESS_DIRECT = 'direct';
 // 代理展示名：优先别名（URL 的 #fragment 随行持久化），无别名时打码凭据段。
 // 绑定下拉、冷却状态等只显示别名，不暴露完整地址。
 function egLabel(v) {
-  if (!v) return T('Global');
-  if (v === EGRESS_DIRECT) return T('Direct');
+  if (!v) return T('global');
+  if (v === EGRESS_DIRECT) return T('direct');
   try {
     const h = new URL(v).hash;
     if (h && h.length > 1) return decodeURIComponent(h.slice(1));
@@ -4958,7 +4968,7 @@ function egBadgeHTML(value, kind) {
   const hs = proxyRecentHs(value);
   if (!rate && !hs) return '';
   const pcTitle = (rate && rate.platformCooling)
-    ? ' title="' + esc(rate.platformCooling.map(c => T('Platform cooldown') + ': ' + c.kind + ' · ' + fmtWhen(c.until)).join('\n')) + '"' : '';
+    ? ' title="' + esc(rate.platformCooling.map(c => T('platform_cooldown') + ': ' + c.kind + ' · ' + fmtWhen(c.until)).join('\n')) + '"' : '';
   return (rate ? '<span class="eg-badge t-' + rate.tier + (rate.text.length > 3 ? ' w3' : '') + '"' + pcTitle + '>' + esc(rate.text) + '</span>' : '') +
     (hs ? '<span class="eg-badge hs w3 t-' + hs.tier + '">' + esc(hs.text) + '</span>' : '');
 }
@@ -5006,7 +5016,7 @@ function egApplyMainLinkage(row, mainValue) {
     backup.title = T(!backupProxyOn ? 'Backup proxies are disabled — follows the main slot' : 'Follows the main slot');
   } else {
     backup.disabled = false;
-    backup.title = T('Backup exit — used when main is cooling/removed');
+    backup.title = T('backup_exit_used_when_main_is_cooling_removed');
   }
 }
 function egCloseMenu() { const m = document.getElementById('egMenu'); if (m) m.remove(); }
@@ -5037,8 +5047,8 @@ function egRenderItems(input, menu, q) {
   const cur = input.dataset.value || '';
   const kind = input.dataset.eg;
   const items = [
-    { v: '', label: T('Global'), active: cur === '' },
-    { v: EGRESS_DIRECT, label: T('Direct') + (kind && proxyExcludedFor(EGRESS_DIRECT, kind) ? T(' · excluded') : ''), active: cur === EGRESS_DIRECT }
+    { v: '', label: T('global'), active: cur === '' },
+    { v: EGRESS_DIRECT, label: T('direct') + (kind && proxyExcludedFor(EGRESS_DIRECT, kind) ? T('excluded') : ''), active: cur === EGRESS_DIRECT }
   ];
   // 候选过滤:从第一个字符起即时过滤(与代理排除卡片输入框同一口径),
   // 空查询展示全部;别名或代理原始串任一包含即命中。无字符数门槛。
@@ -5049,7 +5059,7 @@ function egRenderItems(input, menu, q) {
   const proxyItem = p => {
     const kind = input.dataset.eg;
     const ex = kind ? proxyExcludedFor(p, kind) : false;
-    return { v: p, label: egLabel(p) + (ex ? T(' · excluded') : ''), active: cur === p,
+    return { v: p, label: egLabel(p) + (ex ? T('excluded') : ''), active: cur === p,
              rate: proxyRecentRate(p, kind), hs: proxyRecentHs(p) };
   };
   const proxies = q === ''
@@ -5064,7 +5074,7 @@ function egRenderItems(input, menu, q) {
     (it.hs ? '<span class="eg-rate hs-tag w3 t-' + it.hs.tier + '">' + it.hs.text + '</span>' : '') +
     '</div>'
   ).join('');
-  if (q !== '' && !proxies.length) html += '<div class="eg-item eg-hint">' + T('No matching proxies') + '</div>';
+  if (q !== '' && !proxies.length) html += '<div class="eg-item eg-hint">' + T('no_matching_proxies') + '</div>';
   menu.innerHTML = html;
 }
 function egCommit(input, value) {
@@ -5107,32 +5117,32 @@ async function testAccount(id, btn) {
     const prevMap = { active: 'Active', cooldown: 'Cooldown', expired: 'Expired', '': '' };
     // toast 用 textContent 渲染，参数一律不要再 esc()：转义会以字面量显示
     //（429 的错误体就变成可见的 &quot;error&quot;:…）
-    let msg = T('Account ') + (r.email || '') + T(' — ') + label;
-    if (r.prevStatus && r.prevStatus !== r.status) msg += T(' (was: ') + (prevMap[r.prevStatus] || r.prevStatus) + T(')');
-    if (r.cooldownUntil) msg += T('\nEstimated recovery: ') + fmtWhen(r.cooldownUntil);
-    if (r.remaining) msg += T(' (remaining ') + r.remaining + T(')');
+    let msg = T('account') + (r.email || '') + T('sep.emdash') + label;
+    if (r.prevStatus && r.prevStatus !== r.status) msg += T('was') + (prevMap[r.prevStatus] || r.prevStatus) + T('sep.rparen');
+    if (r.cooldownUntil) msg += T('sep.estimated_recovery') + fmtWhen(r.cooldownUntil);
+    if (r.remaining) msg += T('remaining') + r.remaining + T('sep.rparen');
     // 成功时不显示"原因 ok / HTTP 200"这类噪音：只有非成功结果才需要原因
     if (r.status !== 'active') {
-      if (r.reason) msg += T('\nReason: ') + r.reason;
-      if (r.httpStatus) msg += T('\nHTTP: ') + r.httpStatus;
+      if (r.reason) msg += T('sep.reason') + r.reason;
+      if (r.httpStatus) msg += T('sep.http') + r.httpStatus;
     }
     const type = r.status === 'active' ? 'success' : (r.status === 'cooldown' ? 'warning' : 'error');
     toast(msg, type, 6000);
     loadAccounts(); loadStats();
   } catch (e) {
-    toast(T('Test failed: ') + e.message, 'error');
+    toast(T('test_failed') + e.message, 'error');
   } finally {
     if (btn) { btn.disabled = false; btn.innerHTML = original; }
   }
 }
 
 async function deleteAccount(id) {
-  if (!confirm(T('Delete this account?'))) return;
+  if (!confirm(T('delete_this_account'))) return;
   try {
     await api('POST', '/accounts/delete', { accountId: id });
     toast('Account deleted', 'success');
     loadAccounts(); loadStats();
-  } catch (e) { toast(T('Delete failed: ') + e.message, 'error'); }
+  } catch (e) { toast(T('delete_failed') + e.message, 'error'); }
 }
 
 async function resetAccount(id, btn) {
@@ -5142,16 +5152,16 @@ async function resetAccount(id, btn) {
     const d = await api('POST', '/accounts/reset', { accountId: id });
     const r = d.data || {};
     const type = d.success ? 'success' : (r.status === 'cooldown' ? 'warning' : 'error');
-    let msg = d.message || T('Check complete');
+    let msg = d.message || T('check_complete');
     // 恢复时刻与剩余时长都由面板渲染：服务器发的是 RFC3339 时刻（浏览器本地
     // 时区显示），remaining 只在这里加一次，避免与服务器消息重复。
     // toast 走 textContent，不要再 esc()（会显示成字面量 &quot;）
-    if (r.cooldownUntil && r.status === 'cooldown') msg += T(' (estimated recovery ') + fmtWhen(r.cooldownUntil) + T(')');
-    if (r.remaining && r.status !== 'active') msg += T(' (remaining ') + r.remaining + T(')');
+    if (r.cooldownUntil && r.status === 'cooldown') msg += T('estimated_recovery') + fmtWhen(r.cooldownUntil) + T('sep.rparen');
+    if (r.remaining && r.status !== 'active') msg += T('remaining') + r.remaining + T('sep.rparen');
     toast(msg, type, 6000);
     loadAccounts(); loadStats();
   } catch (e) {
-    toast(T('Check failed: ') + e.message, 'error');
+    toast(T('check_failed') + e.message, 'error');
   } finally {
     if (btn) { btn.disabled = false; btn.innerHTML = original; }
   }
@@ -5169,8 +5179,8 @@ async function exportConfig() {
     a.href = url; a.download = 'afree-proxy-config-' + new Date().toISOString().slice(0, 10) + '.json';
     document.body.appendChild(a); a.click(); document.body.removeChild(a);
     URL.revokeObjectURL(url);
-    toast(T('Config exported'), 'success');
-  } catch (e) { toast(T('Export failed: ') + e.message, 'error'); }
+    toast(T('config_exported'), 'success');
+  } catch (e) { toast(T('export_failed') + e.message, 'error'); }
 }
 
 let importParsed = null; // 已通过版本校验、待弹窗确认的备份 JSON
@@ -5182,7 +5192,7 @@ function onImportFileChange(event) {
   reader.onload = () => {
     try {
       const parsed = JSON.parse(reader.result);
-      if (parsed.version !== 1 && parsed.version !== 2 && parsed.version !== 3) throw new Error(T('Unsupported backup version'));
+      if (parsed.version !== 1 && parsed.version !== 2 && parsed.version !== 3) throw new Error(T('unsupported_backup_version'));
       const rows = impKeepRowsFor(parsed);
       // 统计层勾选框：备份携带 state 段（v2+/v3 导出）才显示，默认勾选；
       // 勾选 = 本机统计随备份还原，取消勾选 = 保留本机统计现值（2026-11-03
@@ -5192,7 +5202,7 @@ function onImportFileChange(event) {
       if (hasState) _('impStateToggle').checked = true;
       if (rows.length === 0) {
         // 备份不含任何上游身份：无沿用选项，按原确认流程直接导入
-        if (!confirm(T('Import replaces sections present in the file (accounts / keys / proxies / combos ...). All imported identities start DISABLED. Continue?'))) return;
+        if (!confirm(T('import_replaces_sections_present_in_the_file_acc'))) return;
         doImportConfig(parsed, {});
         return;
       }
@@ -5212,7 +5222,7 @@ function onImportFileChange(event) {
       _('impKeepDialog').showModal();
     } catch (e) {
       importParsed = null;
-      toast(T('Invalid backup file: ') + e.message, 'error');
+      toast(T('invalid_backup_file') + e.message, 'error');
     }
   };
   reader.readAsText(file);
@@ -5272,9 +5282,9 @@ async function doImportConfig(parsed, keep, importState) {
     const d = await api('POST', '/config/import', payload);
     const imp = (d.data && d.data.imported) || {};
     const parts = Object.keys(imp).map(k => k + '=' + imp[k]);
-    toast(T('Config imported') + ' — ' + parts.join(', '), 'success');
+    toast(T('config_imported') + ' — ' + parts.join(', '), 'success');
     setTimeout(() => location.reload(), 1200);
-  } catch (e) { toast(T('Import failed: ') + e.message, 'error'); }
+  } catch (e) { toast(T('import_failed') + e.message, 'error'); }
 }
 
 
@@ -5323,26 +5333,26 @@ async function generateKey() {
     loadKeys();
     toast('Key generated', 'success');
     setTimeout(() => _('keyGenResult').innerHTML = '', 8000);
-  } catch (e) { toast(T('Generation failed: ') + e.message, 'error'); }
+  } catch (e) { toast(T('generation_failed') + e.message, 'error'); }
 }
 
 async function deleteKey(key) {
-  if (!confirm(T('Delete this key?'))) return;
+  if (!confirm(T('delete_this_key_1'))) return;
   try {
     await api('POST', '/keys/delete', { key });
     toast('Key deleted', 'success');
     loadKeys();
-  } catch (e) { toast(T('Delete failed: ') + e.message, 'error'); }
+  } catch (e) { toast(T('delete_failed') + e.message, 'error'); }
 }
 
 
 async function deleteAllData() {
-  if (!confirm(T('Delete ALL persisted data? This will clear Cline accounts and client keys, OpenCode keys, WorkBuddy accounts, the proxy pool, default model, request headers, scheduling strategy, custom aliases, sticky sessions, and request logs. This cannot be undone!'))) return;
+  if (!confirm(T('delete_all_persisted_data_this_will_clear_cline_'))) return;
   try {
     await api('POST', '/data/delete-all', {});
-    toast(T('All persisted data deleted'), 'success');
+    toast(T('all_persisted_data_deleted'), 'success');
     setTimeout(() => location.reload(), 1000);
-  } catch (e) { toast(T('Delete failed: ') + e.message, 'error'); }
+  } catch (e) { toast(T('delete_failed') + e.message, 'error'); }
 }
 
 function copyText(t, okMsg, fallbackEl) {
@@ -5351,7 +5361,7 @@ function copyText(t, okMsg, fallbackEl) {
     // 复制被浏览器策略挡下时必须如实报错，不能谎报成功——之前无条件弹
     // 「已复制」，用户粘贴时才发现剪贴板是空的。选中来源输入框方便手动 Ctrl+C。
     if (fallbackEl) { fallbackEl.focus(); fallbackEl.select(); }
-    toast(T('Copy failed'), 'error');
+    toast(T('copy_failed'), 'error');
   };
   // clipboard API 只在 secure context（https/localhost）可用；navigator.clipboard 为
   // undefined 时直接调用会同步抛错，.catch 接不住，必须先判空再走 execCommand 降级。
@@ -5416,7 +5426,7 @@ async function loadLogs() {
         '<td class="mono" style="font-size:11px">' + esc(fmtUpstream(l.upstream) || '-') + '</td>' +
         '<td>' + esc(proxy) + '</td>' +
         '<td style="font-weight:600;' + STATUS_CLASS(st) + '"' + (l.error ? ' title="' + esc(l.error) + '"' : '') + '>' + st + '</td>' +
-        '<td class="mono" style="font-size:11px" title="' + esc(T('Time to first byte: from request start to the first response byte (streaming = first upstream token; - = no response body, e.g. 413)')) + '">' + (l.ttfb_ms == null || l.ttfb_ms < 0 ? '-' : l.ttfb_ms + ' ms') + '</td>' +
+        '<td class="mono" style="font-size:11px" title="' + esc(T('time_to_first_byte_from_request_start_to_the_fir')) + '">' + (l.ttfb_ms == null || l.ttfb_ms < 0 ? '-' : l.ttfb_ms + ' ms') + '</td>' +
         '<td class="mono" style="font-size:11px">' + (l.duration_ms != null ? l.duration_ms + ' ms' : '-') + '</td>' +
       '</tr>';
     }).join('');
@@ -5433,7 +5443,7 @@ async function saveAdminLogToggle() {
     toast(cb.checked ? 'Admin access logging enabled' : 'Admin access logging disabled', 'success');
   } catch (e) {
     cb.checked = !cb.checked;  // 保存失败回滚勾选，避免界面与落盘状态不一致
-    toast(T('Save failed: ') + e.message, 'error');
+    toast(T('save_failed') + e.message, 'error');
   }
 }
 
@@ -5450,9 +5460,9 @@ function addHeaderRow() {
 async function resetHeaders() {
   try {
     await api('POST', '/headers/reset', {});
-    toast(T('Headers restored to defaults'), 'success');
+    toast(T('headers_restored_to_defaults'), 'success');
     loadConfig();
-  } catch (e) { toast(T('Reset failed: ') + e.message, 'error'); }
+  } catch (e) { toast(T('reset_failed') + e.message, 'error'); }
 }
 
 async function saveHeaders() {
@@ -5475,7 +5485,7 @@ async function saveHeaders() {
     const d = await api('POST', '/config/update', { headers });
     toast('Headers saved', 'success');
     loadConfig();
-  } catch (e) { toast(T('Save failed: ') + e.message, 'error'); }
+  } catch (e) { toast(T('save_failed') + e.message, 'error'); }
 }
 
 const WB_RATE_OPTIONS = [0, 0.1, 0.2, 0.3, 0.5, 1.0];
@@ -5589,7 +5599,7 @@ async function loadModels() {
     const models = d.data.models || [];
     const clineCredOk = d.data.credentialsEnabled !== false;
     let info = '';
-    if (d.data.lastSync) info += T('· official feed: ') + new Date(d.data.lastSync).toLocaleTimeString(TZ, TIME_OPT);
+    if (d.data.lastSync) info += T('official_feed') + new Date(d.data.lastSync).toLocaleTimeString(TZ, TIME_OPT);
     // 目录区已分平台迁回各自页面：同名 pill（data-models-info）每页一个，统一回填。
     document.querySelectorAll('[data-models-info]').forEach(el => { el.textContent = info; });
     const row = (inner) => '<div style="display:flex;align-items:center;gap:10px;padding:8px 12px;margin:5px 0;background:rgba(148,163,184,.06);border:1px solid var(--border);border-radius:10px;transition:.15s">' + inner + '</div>';
@@ -5599,7 +5609,7 @@ async function loadModels() {
     // 封禁按钮（手动封禁 = 加入黑名单，原因「管理员手动封禁」）。
     const banBtn = (platform, model, refresh) =>
       '<button class="btn btn-sm btn-danger" data-bl-ban="1" data-platform="' + esc(platform) + '" data-model="' + esc(model) + '"' +
-      (refresh ? ' data-refresh="' + esc(refresh) + '"' : '') + ' style="white-space:nowrap">' + T('Ban') + '</button>';
+      (refresh ? ' data-refresh="' + esc(refresh) + '"' : '') + ' style="white-space:nowrap">' + T('ban') + '</button>';
     // Cline 免费模型（账号页底部目录区）
     const accBox = _('accModelsBody');
     if (accBox) {
@@ -5607,7 +5617,7 @@ async function loadModels() {
       accBox.innerHTML = clineV.length
         ? clineV.map(m => row(
             '<span style="font-family:\'JetBrains Mono\',monospace;font-size:13px;flex:1">' + esc(m.id) + '</span>' +
-            '<span class="model-tag free">' + T('no charge') + '</span>' +
+            '<span class="model-tag free">' + T('no_charge') + '</span>' +
             banBtn('cline', m.id))).join('')
         : '<div class="empty">' + T(clineCredOk ? 'No models' : 'Models appear here once an account is enabled — the catalog syncs from upstream') + '</div>';
     }
@@ -5621,8 +5631,8 @@ async function loadModels() {
       ocBox.innerHTML = zenV.length
         ? zenV.map(m => row(
               '<span style="font-family:\'JetBrains Mono\',monospace;font-size:13px;flex:1">' + esc(m.id) + '</span>' +
-              '<span class="model-tag free">' + T('no charge') + '</span>' +
-              wbContextTagHTML(m.context, T('Context')) +
+              '<span class="model-tag free">' + T('no_charge') + '</span>' +
+              wbContextTagHTML(m.context, T('context')) +
               // 目录是裸 ID，对外形态带 zen: 前缀——封禁按对外 ID 记。
               banBtn('zen', 'zen:' + m.id))).join('')
         : '<div class="empty">' + T(zenCredOk ? 'No models' : 'Models appear here once a credential is enabled — the catalog syncs from upstream') + '</div>';
@@ -5647,20 +5657,18 @@ async function loadModels() {
               '<span style="font-family:\'JetBrains Mono\',monospace;font-size:13px;flex:1" title="' + esc(m.description || '') + '">' + esc(m.id) + '</span>' +
               free +
               '<span class="model-tag">' + wbRateHTML(m) + '</span>' +
-              '<span class="model-tag" title="' + T('Default tier') + '">' + esc(m.default_effort || '—') + '</span>' +
-              wbContextTagHTML(m.context_length, T('Maximum context length')) +
+              '<span class="model-tag" title="' + T('default_tier') + '">' + esc(m.default_effort || '—') + '</span>' +
+              wbContextTagHTML(m.context_length, T('maximum_context_length')) +
               banBtn('workbuddy', m.id));
           }).join('')
-        : '<div class="empty">' + T((wbUnavailable || wbAll.length === 0)
-            ? 'Models appear here once an account is enabled — the catalog syncs from upstream'
-            : 'No WorkBuddy models under the current filter') + '</div>';
+        : '<div class="empty">' + T((wbUnavailable || wbAll.length === 0) ? 'models_appear_here_once_an_account_is_enabled_the_catalog_syncs_from_upstream' : 'no_workbuddy_models_under_the_current_filter') + '</div>';
       wbBox.innerHTML = wbBlock;
     }
     loadModelBlacklist();
   } catch (e) {
     ['accModelsBody', 'ocModelsBody', 'wbModelsBody'].forEach(id => {
       const el = _(id);
-      if (el) el.textContent = T('Failed to load');
+      if (el) el.textContent = T('failed_to_load');
     });
   }
 }
@@ -5695,7 +5703,7 @@ async function loadModelBlacklist() {
     const items = await syncModelBlacklist();
     if (_('blacklistCount')) _('blacklistCount').textContent = items.length ? '· ' + items.length : '';
     if (!items.length) {
-      tb.innerHTML = '<tr><td colspan="6" class="empty">' + T('No blocked models') + '</td></tr>';
+      tb.innerHTML = '<tr><td colspan="6" class="empty">' + T('no_blocked_models') + '</td></tr>';
       return;
     }
     tb.innerHTML = items.map(it => {
@@ -5707,7 +5715,7 @@ async function loadModelBlacklist() {
       // 否则「解禁」只会去删不带档位的全档键，带档位的条目原地不动
       //（点了没反应，2026-10-28 修复）。
       const scopeTag = it.scope
-        ? ' <span class="model-tag" title="' + esc(T('banned on this endpoint tier only')) + '">' + esc(it.scope) + '</span>'
+        ? ' <span class="model-tag" title="' + esc(T('banned_on_this_endpoint_tier_only')) + '">' + esc(it.scope) + '</span>'
         : '';
       return '<tr>' +
         '<td style="text-align:center"><input type="checkbox" class="bl-check" style="width:auto;padding:0;vertical-align:middle" data-platform="' + esc(it.platform) + '" data-model="' + esc(it.model) + '" data-scope="' + esc(it.scope || '') + '"></td>' +
@@ -5716,12 +5724,12 @@ async function loadModelBlacklist() {
         '<td style="font-size:12px;color:var(--text2)">' + esc(it.reason ? T(it.reason) : '—') + '</td>' +
         '<td style="font-size:12px;color:var(--text2)">' + esc(when) + '</td>' +
         '<td style="text-align:center;white-space:nowrap">' +
-          '<button class="btn btn-sm" data-bl-test="1" data-platform="' + esc(it.platform) + '" data-model="' + esc(it.model) + '">' + T('Test') + '</button> ' +
-          '<button class="btn btn-sm btn-warn" data-bl-unblock="1" data-platform="' + esc(it.platform) + '" data-model="' + esc(it.model) + '" data-scope="' + esc(it.scope || '') + '">' + T('Unblock') + '</button>' +
+          '<button class="btn btn-sm" data-bl-test="1" data-platform="' + esc(it.platform) + '" data-model="' + esc(it.model) + '">' + T('test') + '</button> ' +
+          '<button class="btn btn-sm btn-warn" data-bl-unblock="1" data-platform="' + esc(it.platform) + '" data-model="' + esc(it.model) + '" data-scope="' + esc(it.scope || '') + '">' + T('unblock') + '</button>' +
         '</td></tr>';
     }).join('');
   } catch (e) {
-    tb.innerHTML = '<tr><td colspan="5" class="empty">' + esc(T('Failed to load') + ': ' + e.message) + '</td></tr>';
+    tb.innerHTML = '<tr><td colspan="5" class="empty">' + esc(T('failed_to_load') + ': ' + e.message) + '</td></tr>';
   }
 }
 
@@ -5731,7 +5739,7 @@ function fillBatchBanPlatforms() {
   const sel = _('batchBanPlatform');
   if (!sel || sel.options.length) return;
   const opt = document.createElement('option');
-  opt.value = ''; opt.textContent = T('Select platform');
+  opt.value = ''; opt.textContent = T('select_platform');
   sel.appendChild(opt);
   Object.entries(BLACKLIST_PLATFORM_LABEL).forEach(([k, label]) => {
     if (k === 'other') return; // Other 子平台模型名自定义，关键字批量封禁不适用
@@ -5743,15 +5751,15 @@ function fillBatchBanPlatforms() {
 async function batchBanModels() {
   const platform = _('batchBanPlatform').value;
   const kw = _('batchBanKeyword').value.trim();
-  if (!platform) { toast(T('Select platform first'), 'warn'); return; }
-  if (!kw) { toast(T('Keyword is required'), 'warn'); return; }
-  if (!confirm(T('Ban all models of this platform containing the keyword (case-insensitive)?'))) return;
+  if (!platform) { toast(T('select_platform_first'), 'warn'); return; }
+  if (!kw) { toast(T('keyword_is_required'), 'warn'); return; }
+  if (!confirm(T('ban_all_models_of_this_platform_containing_the_k'))) return;
   const btn = _('batchBanBtn');
   btn.disabled = true;
   try {
     const d = await api('POST', '/models/blacklist/batch-ban', { platform: platform, keyword: kw });
     const r = (d.data || {});
-    toast(T('Banned: ') + (r.banned || 0) + ' / ' + (r.matched || 0), 'success');
+    toast(T('banned') + (r.banned || 0) + ' / ' + (r.matched || 0), 'success');
     _('batchBanKeyword').value = '';
     loadModelBlacklist();
   } catch (e) {
@@ -5771,8 +5779,8 @@ document.getElementById('blCheckAll')?.addEventListener('change', e => {
 document.getElementById('batchUnblockBtn')?.addEventListener('click', async () => {
   const picked = [...document.querySelectorAll('#blacklistBody input.bl-check:checked')]
     .map(cb => ({ platform: cb.dataset.platform, model: cb.dataset.model, scope: cb.dataset.scope || '' }));
-  if (!picked.length) { toast(T('Nothing selected'), 'warn'); return; }
-  if (!confirm(T('Unblock the selected models? They are re-banned automatically on the same upstream error.'))) return;
+  if (!picked.length) { toast(T('nothing_selected'), 'warn'); return; }
+  if (!confirm(T('unblock_the_selected_models_they_are_re_banned_a'))) return;
   const btn = _('batchUnblockBtn');
   btn.disabled = true;
   let ok = 0;
@@ -5783,7 +5791,7 @@ document.getElementById('batchUnblockBtn')?.addEventListener('click', async () =
         ok++;
       } catch (e) { toast(esc(it.model) + ': ' + e.message, 'error'); }
     }
-    toast(T('Unblocked: ') + ok + ' / ' + picked.length, ok === picked.length ? 'success' : 'warn');
+    toast(T('unblocked') + ok + ' / ' + picked.length, ok === picked.length ? 'success' : 'warn');
     loadModelBlacklist();
   } finally {
     btn.disabled = false;
@@ -5793,12 +5801,12 @@ document.getElementById('batchUnblockBtn')?.addEventListener('click', async () =
 async function testBlockedModel(btn) {
   const platform = btn.dataset.platform, model = btn.dataset.model;
   const old = btn.textContent;
-  btn.disabled = true; btn.textContent = T('Testing...');
+  btn.disabled = true; btn.textContent = T('testing_1');
   try {
     const d = await api('POST', '/models/blacklist/test', { platform: platform, model: model });
     const ok = d.success === true || (d.data && d.data.status === 'active');
     const info = (d.data && (d.data.error || d.data.reason)) || d.message || '';
-    toast(model + ' → ' + (ok ? T('reachable — you can unblock it') : info), ok ? 'success' : 'error');
+    toast(model + ' → ' + (ok ? T('reachable_you_can_unblock_it') : info), ok ? 'success' : 'error');
   } catch (e) {
     toast(e.message, 'error');
   } finally {
@@ -5807,19 +5815,19 @@ async function testBlockedModel(btn) {
 }
 async function unblockBlockedModel(btn) {
   const platform = btn.dataset.platform, model = btn.dataset.model, scope = btn.dataset.scope || '';
-  if (!confirm(T('Unblock this model? It becomes available in /v1/models again; the same upstream error will ban it again.'))) return;
+  if (!confirm(T('unblock_this_model_it_becomes_available_in_v1_mo'))) return;
   btn.disabled = true;
   try {
     const d = await api('POST', '/models/blacklist/unblock', { platform: platform, model: model, scope: scope });
     // 后端删不到条目时返回 success=false：如实提示，不能无条件弹「已解禁」
     //（此前点了没反应却报成功，误导排查方向，2026-10-28 修复）。
     if (d.success === false) {
-      toast(T('No matching ban entry — it may have been unblocked already.'), 'error');
+      toast(T('no_matching_ban_entry_it_may_have_been_unblocked'), 'error');
       btn.disabled = false;
       loadModelBlacklist();
       return;
     }
-    toast(T('Unblocked: ') + model, 'success');
+    toast(T('unblocked') + model, 'success');
     loadModelBlacklist();
   } catch (e) {
     toast(e.message, 'error'); btn.disabled = false;
@@ -5829,11 +5837,11 @@ async function unblockBlockedModel(btn) {
 // 后端原因统一记「管理员手动封禁」。成功后刷新封禁表与当前所在页的模型列表。
 async function banModel(btn) {
   const platform = btn.dataset.platform, model = btn.dataset.model, scope = btn.dataset.scope || '';
-  if (!confirm(T('Ban this model? It is removed from /v1/models immediately; you can unblock it in the Banned models table.'))) return;
+  if (!confirm(T('ban_this_model_it_is_removed_from_v1_models_imme'))) return;
   btn.disabled = true;
   try {
     await api('POST', '/models/blacklist/ban', { platform: platform, model: model, scope: scope });
-    toast(T('Banned: ') + model, 'success');
+    toast(T('banned') + model, 'success');
     loadModelBlacklist();
     const ref = btn.dataset.refresh;
     if (ref === 'amd') loadAmdConfig();
@@ -5866,7 +5874,7 @@ document.addEventListener('click', e => {
 // internal/app/admin_models_refresh.go），前端统一在此渲染同一套提示。
 async function refreshCatalog(btn, cfg) {
   const idle = btn ? btn.textContent : '';
-  const busy = on => { if (btn) { btn.disabled = on; btn.textContent = on ? T('Syncing…') : idle; } };
+  const busy = on => { if (btn) { btn.disabled = on; btn.textContent = on ? T('syncing') : idle; } };
   busy(true);
   let res = null;
   try {
@@ -5875,7 +5883,7 @@ async function refreshCatalog(btn, cfg) {
     if (cfg.onDone) await cfg.onDone(res);
   } catch (e) {
     // api() 只在后端带 error 字段时抛；这里统一成「刷新失败 + 真实原因」
-    toast((cfg.label ? cfg.label + ' · ' : '') + T('Refresh failed: ') + e.message, 'error');
+    toast((cfg.label ? cfg.label + ' · ' : '') + T('refresh_failed') + e.message, 'error');
   } finally {
     busy(false);
     if (cfg.reload) {
@@ -5909,7 +5917,7 @@ async function catalogSync(cfg) {
 // 且必须带 refresh=1 才会绕过它自己的 60s 目录缓存真的重探上游。
 async function wbCatalogSync(cfg) {
   const d = await api('POST', cfg.endpoint + '?refresh=1');
-  if (d && d.ok === false) throw new Error(d.error || T('upstream unavailable'));
+  if (d && d.ok === false) throw new Error(d.error || T('upstream_unavailable'));
   const total = Array.isArray(d.models) ? d.models.length : 0;
   if (!total) return { kind: 'rejected', message: 'no_models_returned' };
   return { kind: 'synced', message: 'synced', total: total, added: 0, cached: !!d.cached };
@@ -5920,26 +5928,26 @@ function catalogResultToast(res, cfg) {
   const pre = cfg.label ? cfg.label + ' · ' : '';
   if (res.kind === 'rejected') {
     if (res.message === 'no_enabled_credential') {
-      toast(pre + T('No enabled credential — enable one first, then refresh'), 'error');
+      toast(pre + T('no_enabled_credential_enable_one_first_then_refr'), 'error');
       return;
     }
     if (res.message === 'no_models_returned') {
-      toast(pre + T('Upstream returned no models — check credentials, egress and upstream status'), 'error');
+      toast(pre + T('upstream_returned_no_models_check_credentials_eg'), 'error');
       return;
     }
-    toast(pre + T('Refresh failed: ') + (res.message || ''), 'error');
+    toast(pre + T('refresh_failed') + (res.message || ''), 'error');
     return;
   }
   if (res.message === 'sync_started') {
-    toast(pre + T('Catalog sync started in the background — reload this page in a few seconds'), 'info');
+    toast(pre + T('catalog_sync_started_in_the_background_reload_th'), 'info');
     return;
   }
   if (res.message === 'sync_already_running') {
-    toast(pre + T('A catalog sync is already running'), 'info');
+    toast(pre + T('a_catalog_sync_is_already_running'), 'info');
     return;
   }
-  const added = res.added > 0 ? ' · ' + T('added ') + res.added + T(' new') : '';
-  toast(pre + T('Catalog synced: ') + res.total + T(' models') + added, 'success');
+  const added = res.added > 0 ? ' · ' + T('added_2') + res.added + T('new') : '';
+  toast(pre + T('catalog_synced') + res.total + T('models') + added, 'success');
 }
 
 // 各平台入口：只声明端点与刷新后要重载的视图，判成败与提示一律交给上面。
@@ -5994,8 +6002,8 @@ function renderPlatformBan() {
   const opts = platformBanOptions();
   // chips：按选项序展示暂存集，× 取消暂存（点击不冒泡，避免开菜单）
   chips.innerHTML = opts.filter(o => platformBansStaged.has(o.key)).map(o =>
-    '<span class="pr-chip" title="' + esc(T('Staged — click Save to save')) + '"><span title="' + esc(o.key) + '">' + esc(o.label) + '</span>' +
-    '<button type="button" onclick="event.stopPropagation();stagePlatformBan(\'' + esc(o.key) + '\',false)" title="' + esc(T('Remove')) + '">×</button></span>'
+    '<span class="pr-chip" title="' + esc(T('staged_click_save_to_save')) + '"><span title="' + esc(o.key) + '">' + esc(o.label) + '</span>' +
+    '<button type="button" onclick="event.stopPropagation();stagePlatformBan(\'' + esc(o.key) + '\',false)" title="' + esc(T('remove')) + '">×</button></span>'
   ).join('');
   const cnt = _('platformBanCount');
   if (cnt) cnt.textContent = platformBansStaged.size ? '· ' + platformBansStaged.size : '';
@@ -6070,7 +6078,7 @@ function stagePlatformBan(key, on) {
 function resetPlatformBans() {
   platformBansStaged = new Set(platformBans);
   renderPlatformBan();
-  toast(T('Staged selections reset'), 'info');
+  toast(T('staged_selections_reset'), 'info');
 }
 // applyPlatformBans 确认按钮：暂存集 vs 已落盘集算差集，新增 → ban、取消 →
 // unban，全部成功后才把落盘集对齐暂存并重绘；中途失败则重拉服务器状态回滚
@@ -6078,18 +6086,18 @@ function resetPlatformBans() {
 async function applyPlatformBans() {
   const add = [...platformBansStaged].filter(k => !platformBans.has(k));
   const del = [...platformBans].filter(k => !platformBansStaged.has(k));
-  if (!add.length && !del.length) { toast(T('No changes to apply'), 'info'); return; }
+  if (!add.length && !del.length) { toast(T('no_changes_to_apply'), 'info'); return; }
   try {
     for (const k of add) await api('POST', '/platforms/blacklist/ban', { platform: k });
     for (const k of del) await api('POST', '/platforms/blacklist/unban', { platform: k });
   } catch (e) {
-    toast(T('Save failed: ') + e.message, 'error');
+    toast(T('save_failed') + e.message, 'error');
     try { await loadPlatformBans(); } catch (e2) { /* 重绘失败不影响错误提示 */ }
     return;
   }
   platformBans = new Set(platformBansStaged);
   renderPlatformBan();
-  toast(T('Platform bans saved') + ' (+' + add.length + ' / -' + del.length + ')', 'success');
+  toast(T('platform_bans_saved') + ' (+' + add.length + ' / -' + del.length + ')', 'success');
 }
 
 // ========== Config load ==========
@@ -6129,7 +6137,7 @@ async function loadOcConfig() {
     if (sum) {
       const routed = ks.filter(k => k.routingEnabled !== false).length;
       const cooling = ks.filter(k => k.cooling).length;
-      sum.textContent = ks.length + ' ' + T('keys') + ' · ' + routed + ' ' + T('active') + ' · ' + cooling + ' ' + T('cooling');
+      sum.textContent = ks.length + ' ' + T('keys') + ' · ' + routed + ' ' + T('active_1_1') + ' · ' + cooling + ' ' + T('cooling_2');
     }
     renderOcKeyStates(ks);
     _('ocBaseURL').value = c.baseURL || '';
@@ -6191,7 +6199,7 @@ async function saveOcConfig() {
     const d = await api('POST', '/opencode/config/update', body);
     toast('OpenCode config saved', 'success');
     loadOcConfig();
-  } catch (e) { toast(T('Save failed: ') + e.message, 'error'); }
+  } catch (e) { toast(T('save_failed') + e.message, 'error'); }
 }
 
 // per-key 状态表：key 掩码 / 今日累计 token / 最近使用 / 会话（ID + live 状态 +
@@ -6217,18 +6225,18 @@ function renderOcKeyStates(ks) {
         if (k.parked) {
           // 日额度耗尽停放（上游 a41f1756）：区别于冷却——当天不会再好，
           // 停放期内零上游请求，到期只放一个探针（probes 次数进小字）。
-          stCell = '<span class="status cooldown"><span class="status-dot cooldown"></span>' + T('Quota parked') + '</span>' +
+          stCell = '<span class="status cooldown"><span class="status-dot cooldown"></span>' + T('quota_parked') + '</span>' +
             '<div style="font-size:10px;color:var(--danger);margin-top:2px;white-space:nowrap" title="' + esc(k.parkReason || '') + '">' + esc(fmtShort(k.parkedUntil)) + (k.parkProbes ? ' · ' + k.parkProbes + ' probe(s)' : '') + '</div>';
         } else if (k.cooling) {
-          stCell = '<span class="status cooldown"><span class="status-dot cooldown"></span>' + T('Cooldown') + '</span>' +
-            (k.cooldownUntil ? '<div style="font-size:10px;color:var(--text3);margin-top:2px;white-space:nowrap" title="' + esc(fmtWhen(k.cooldownUntil)) + '">' + T('Recovers ') + esc(fmtShort(k.cooldownUntil)) + '</div>' : '');
+          stCell = '<span class="status cooldown"><span class="status-dot cooldown"></span>' + T('cooldown_1') + '</span>' +
+            (k.cooldownUntil ? '<div style="font-size:10px;color:var(--text3);margin-top:2px;white-space:nowrap" title="' + esc(fmtWhen(k.cooldownUntil)) + '">' + T('recovers') + esc(fmtShort(k.cooldownUntil)) + '</div>' : '');
         } else if (hasTraffic) {
           // 现铸模式（2026-10-27 起）无粘性会话可看：活跃 = 有真实流量
           //（token 记账），title 说明语义（2026-11-05 会话快照区块拆除后
           // 状态列同步去化石判定）。
-          stCell = '<span class="status active" title="' + esc(T('sessions are minted per call; no sticky snapshot')) + '"><span class="status-dot active"></span>' + T('Active') + '</span>';
+          stCell = '<span class="status active" title="' + esc(T('sessions_are_minted_per_call_no_sticky_snapshot')) + '"><span class="status-dot active"></span>' + T('active_1') + '</span>';
         } else {
-          stCell = '<span class="status pending"><span class="status-dot pending"></span>' + T('Pending activation') + '</span>';
+          stCell = '<span class="status pending"><span class="status-dot pending"></span>' + T('pending_activation') + '</span>';
         }
         // omitempty 下未绑定 key 没有这两个键，归一化为 ''
         const pMain = k.proxyMain || '';
@@ -6238,21 +6246,21 @@ function renderOcKeyStates(ks) {
         const backupVal = backupLocked ? pMain : pBackup;
         const isStale = proxyStale;
         const bind = '<td style="white-space:nowrap">' +
-          egComboHTML('key', k.index, 'main', pMain, T('Main exit — used whenever available')) + ' ' +
-          egComboHTML('key', k.index, 'backup', backupVal, T('Backup exit — used when main is cooling/removed'), backupLocked) +
-          (isStale(pMain) || isStale(pBackup) ? ' <span title="' + esc(T('Bound proxy is no longer in the proxy pool — skipped until fixed')) + '" style="color:var(--danger)">⚠</span>' : '') +
+          egComboHTML('key', k.index, 'main', pMain, T('main_exit_used_whenever_available')) + ' ' +
+          egComboHTML('key', k.index, 'backup', backupVal, T('backup_exit_used_when_main_is_cooling_removed'), backupLocked) +
+          (isStale(pMain) || isStale(pBackup) ? ' <span title="' + esc(T('bound_proxy_is_no_longer_in_the_proxy_pool_skipp')) + '" style="color:var(--danger)">⚠</span>' : '') +
           '</td>';
         // Pool（路由启用）列：勾选后该 key 才参与请求轮转；铸造跟随路由，
         // 路由关闭的 key 也不再被自动铸造。
         const routed = k.routingEnabled !== false;
         keySnapshot[k.index] = { main: pMain, backup: backupVal, routing: routed };
         const routing = '<td style="text-align:center">' +
-          '<input type="checkbox" data-zr="' + k.index + '"' + (routed ? ' checked' : '') + ' title="' + esc(T('Participates in request routing')) + '"></td>';
+          '<input type="checkbox" data-zr="' + k.index + '"' + (routed ? ' checked' : '') + ' title="' + esc(T('participates_in_request_routing')) + '"></td>';
         // 操作列：测试（真实探测）+ 删除（红色，从 key 池移除该 key）
         const actions = '<td style="white-space:nowrap;text-align:center">' +
           '<button class="btn btn-sm" data-zk="' + k.index + '">Test</button> ' +
-          '<button class="btn btn-sm btn-danger" data-zdel="' + k.index + '" title="' + esc(T('Remove this key from the pool')) + '">Delete</button></td>';
-        return '<tr draggable="true" data-drag-id="' + k.index + '"><td>#' + (k.index + 1) + (k.current ? ' <span style="color:var(--accent)" title="' + esc(T('next in rotation')) + '">●</span>' : '') + '</td>' +
+          '<button class="btn btn-sm btn-danger" data-zdel="' + k.index + '" title="' + esc(T('remove_this_key_from_the_pool')) + '">Delete</button></td>';
+        return '<tr draggable="true" data-drag-id="' + k.index + '"><td>#' + (k.index + 1) + (k.current ? ' <span style="color:var(--accent)" title="' + esc(T('next_in_rotation')) + '">●</span>' : '') + '</td>' +
           '<td style="font-family:monospace;font-size:11px">' + esc(k.keyMask) + '</td>' +
           '<td style="text-align:center">' + stCell + '</td>' +
           keyTokensCell(k) +
@@ -6307,9 +6315,9 @@ async function saveKeyEdits() {
     } catch (e) { failed++; }
   }
   clearDirtyMarks('ocKeysBody', 'ocKeysSaveBtn');
-  if (failed) toast(T('Save failed for ') + failed + T(' account(s)'), 'error');
-  else if (!changed) toast(T('No changes to save'), 'info');
-  else toast(T('Saved ') + changed + T(' account change(s)'), 'success');
+  if (failed) toast(T('save_failed_for') + failed + T('account_s'), 'error');
+  else if (!changed) toast(T('no_changes_to_save'), 'info');
+  else toast(T('saved_1') + changed + T('account_change_s'), 'success');
   loadOcConfig();
 }
 
@@ -6321,14 +6329,14 @@ function resetKeyEdits() {
 
 // 删除单个 key：从 key 池移除并按索引刷新（索引会前移，直接重拉）。
 async function deleteZenKey(index, btn) {
-  if (!confirm(T('Delete this key?'))) return;
+  if (!confirm(T('delete_this_key_1'))) return;
   const original = btn ? btn.innerHTML : '';
   if (btn) btn.disabled = true;
   try {
     await api('POST', '/opencode/keys/delete', { index: index });
-    toast(T('Key #') + (index + 1) + T(' (deleted)'), 'success');
+    toast(T('key') + (index + 1) + T('deleted'), 'success');
   } catch (e) {
-    toast(T('Delete failed: ') + e.message, 'error');
+    toast(T('delete_failed') + e.message, 'error');
   } finally {
     if (btn) { btn.disabled = false; btn.innerHTML = original; }
     loadOcConfig();
@@ -6343,7 +6351,7 @@ async function batchTestKeys() {
   // 当前网关对外提供的服务（2026-11-02 用户定）：封禁平台整平台跳过。
   await fetchPlatformBans();
   if (platformBans.has('zen')) {
-    toast(T('Platform is banned in gateway settings — test skipped'), 'info');
+    toast(T('platform_is_banned_in_gateway_settings_test_skip'), 'info');
     return { tested: 0, skipped: 0, banned: true };
   }
   // 2026-11-02 用户定：只测能路由的凭据（路由关闭的 key 请求到不了，跳过），
@@ -6352,8 +6360,8 @@ async function batchTestKeys() {
   const idxs = all.filter(i => keySnapshot[i] && keySnapshot[i].routing !== false);
   const skipped = all.length - idxs.length;
   if (!idxs.length) {
-    if (all.length) toast(T('No routable credentials'), 'info');
-    else toast(T('No keys to test'), 'info');
+    if (all.length) toast(T('no_routable_credentials'), 'info');
+    else toast(T('no_keys_to_test'), 'info');
     return { tested: 0, skipped };
   }
   const original = btn ? btn.innerHTML : '';
@@ -6376,9 +6384,9 @@ async function batchTestKeys() {
   } finally {
     if (btn) { btn.disabled = false; btn.innerHTML = original; }
   }
-  toast(T('Batch test done: ') + idxs.length + T(' tested, ') + ok + T(' ok') +
-    (cool ? T(', ') + cool + T(' cooling') : '') + (err ? T(', ') + err + T(' error') : '') +
-    (skipped ? T(', ') + skipped + T(' skipped (unroutable)') : ''),
+  toast(T('batch_test_done') + idxs.length + T('tested') + ok + T('ok') +
+    (cool ? T(', ') + cool + T('cooling_1') : '') + (err ? T(', ') + err + T('error_1') : '') +
+    (skipped ? T(', ') + skipped + T('skipped_unroutable') : ''),
     err ? 'warning' : 'success', 6000);
   loadOcConfig();
   return { tested: idxs.length, skipped };
@@ -6392,19 +6400,19 @@ function openZenKeyAddDialog() {
 function closeZenKeyAddDialog() { _('zenKeyAddDialog').close(); }
 async function zenKeyAddFromDialog() {
   const lines = _('zenKeyAddInput').value.split('\n').map(s => s.trim()).filter(Boolean);
-  if (!lines.length) { toast(T('Enter at least one key'), 'error'); return; }
+  if (!lines.length) { toast(T('enter_at_least_one_key'), 'error'); return; }
   const cur = (ocCfgCache.keys && ocCfgCache.keys.length) ? ocCfgCache.keys : [];
   const fresh = lines.filter(l => !cur.includes(l));
-  if (!fresh.length) { toast(T('No new keys (all already in the pool)'), 'info'); return; }
+  if (!fresh.length) { toast(T('no_new_keys_all_already_in_the_pool'), 'info'); return; }
   const btn = _('zenKeyAddSubmit');
   btn.disabled = true;
   try {
     await api('POST', '/opencode/config/update', { keys: cur.concat(fresh) });
-    toast(T('Added ') + fresh.length + T(' key(s)'), 'success');
+    toast(T('added_1') + fresh.length + T('key_s'), 'success');
     closeZenKeyAddDialog();
     loadOcConfig();
   } catch (e) {
-    toast(T('Save failed: ') + e.message, 'error');
+    toast(T('save_failed') + e.message, 'error');
   } finally {
     btn.disabled = false;
   }
@@ -6420,17 +6428,17 @@ async function testZenKey(index, btn) {
       model: (_('ocProbeModel') ? _('ocProbeModel').value : '')
     });
     const r = d.data || {};
-    const label = { active: T('OK'), cooldown: T('Cooldown'), error: T('Error') }[r.status] || r.status;
-    let msg = T('Key #') + (index + 1) + T(' (') + (r.keyMask || '') + T(') — ') + label;
-    if (r.model) msg += T(' via ') + r.model;
+    const label = { active: T('ok_2'), cooldown: T('cooldown_1'), error: T('error_1_1') }[r.status] || r.status;
+    let msg = T('key') + (index + 1) + T('sep.lparen') + (r.keyMask || '') + T('sep.rparen_emdash') + label;
+    if (r.model) msg += T('via') + r.model;
     if (r.latencyMs != null) msg += ' (' + r.latencyMs + 'ms)';
-    if (r.status === 'active') msg += T(' — cooldown cleared');
-    if (r.cooldownUntil) msg += T('\nEstimated recovery: ') + fmtWhen(r.cooldownUntil) + (r.remaining ? T(' (remaining ') + r.remaining + T(')') : '');
+    if (r.status === 'active') msg += T('cooldown_cleared');
+    if (r.cooldownUntil) msg += T('sep.estimated_recovery') + fmtWhen(r.cooldownUntil) + (r.remaining ? T('remaining') + r.remaining + T('sep.rparen') : '');
     if (r.reason && r.reason !== 'ok') msg += '\n' + r.reason;
     const type = r.status === 'active' ? 'success' : (r.status === 'cooldown' ? 'warning' : 'error');
     toast(msg, type, 6000);
   } catch (e) {
-    toast(T('Test failed: ') + e.message, 'error');
+    toast(T('test_failed') + e.message, 'error');
   } finally {
     if (btn) { btn.disabled = false; btn.innerHTML = original; }
     loadOcConfig();  // 冷却被清除/新设置，立即刷新状态表
@@ -6551,7 +6559,7 @@ function renderProxyHealth(rowsIn) {
             ? '<span style="color:var(--text3)">-</span>'
             : t.ok
               ? '<span class="mono" style="font-size:11px" title="' + esc(t.minMs + ' / ' + t.medianMs + ' ms · ' + (t.samples || 0) + '/' + PP_TEST_SAMPLES + ' · ' + fmtWhen(t.at)) + '">' + esc(t.minMs) + ' ms</span>'
-              : '<span style="font-size:11px;color:var(--danger,#ef4444)" title="' + esc(t.err || '') + '">' + T('Failed') + '</span>';
+              : '<span style="font-size:11px;color:var(--danger,#ef4444)" title="' + esc(t.err || '') + '">' + T('failed_3') + '</span>';
         const failTitle = r.lastErr ? ' title="' + esc(r.lastErr) + '"' : '';
         return '<tr>' +
           '<td class="mono" style="font-size:11px">' + esc(egLabel(r.proxy)) + '</td>' +
@@ -6565,18 +6573,18 @@ function renderProxyHealth(rowsIn) {
           '<td>' + (r.cooling
             // 手动冷却（2026-11-02 用户定）没有到期时间：后端 coolingUntil 为空串，
             // 显示「手动」——不显示恢复时刻，因为只有点「解禁」才会恢复。
-            ? '<span class="mono" style="font-size:11px;color:var(--warning,#eab308)">' + (r.coolingUntil ? esc(fmtWhen(r.coolingUntil)) : esc(T('Manual'))) + '</span>'
+            ? '<span class="mono" style="font-size:11px;color:var(--warning,#eab308)">' + (r.coolingUntil ? esc(fmtWhen(r.coolingUntil)) : esc(T('manual'))) + '</span>'
             : '<span style="color:var(--text3)">-</span>') + '</td>' +
           '<td style="text-align:center">' +
             // 测试中：按钮整体换成禁用+转圈（2026-11-03 用户定）。渲染层按
             // r.testing 出态——整表 innerHTML 重绘会销毁原按钮节点，转圈必须
             // 由渲染逻辑承载，不能只改点击时捕获的 btn 引用。
             (r.testing
-              ? '<button class="btn btn-sm" disabled title="' + esc(T('Testing')) + '"><span class="loading"></span>' + T('Testing') + '</button> '
-              : '<button class="btn btn-sm" data-proxy="' + esc(r.proxy) + '" onclick="testOneProxy(this)" title="' + esc(T('Test just this exit: 3 probes to the configured target; updates the Test column and the online-rate stats of this row. Display only — routing and cooldowns are untouched.')) + '">' + T('Test') + '</button> ') +
+              ? '<button class="btn btn-sm" disabled title="' + esc(T('testing')) + '"><span class="loading"></span>' + T('testing') + '</button> '
+              : '<button class="btn btn-sm" data-proxy="' + esc(r.proxy) + '" onclick="testOneProxy(this)" title="' + esc(T('test_just_this_exit_3_probes_to_the_configured_t')) + '">' + T('test') + '</button> ') +
             ((r.cooling || (r.platformCooling && r.platformCooling.length))
-              ? '<button class="btn btn-sm btn-success" data-proxy="' + esc(r.proxy) + '" onclick="clearProxyCooldown(this.dataset.proxy)" title="' + esc(T('Clear global and platform cooldowns plus failure counters for this exit; use it when a one-off network hiccup wrongly cooled the only usable exit')) + '">' + T('Unban') + '</button>'
-              : '<button class="btn btn-sm btn-warn" data-proxy="' + esc(r.proxy) + '" onclick="setProxyCooldown(this.dataset.proxy)" title="' + esc(T('Take this exit out of rotation — only Unban clears it')) + '">' + T('Cool') + '</button>') +
+              ? '<button class="btn btn-sm btn-success" data-proxy="' + esc(r.proxy) + '" onclick="clearProxyCooldown(this.dataset.proxy)" title="' + esc(T('clear_global_and_platform_cooldowns_plus_failure')) + '">' + T('unban') + '</button>'
+              : '<button class="btn btn-sm btn-warn" data-proxy="' + esc(r.proxy) + '" onclick="setProxyCooldown(this.dataset.proxy)" title="' + esc(T('take_this_exit_out_of_rotation_only_unban_clears')) + '">' + T('cool') + '</button>') +
           '</td>' +
         '</tr>';
       }).join('')
@@ -6599,9 +6607,9 @@ async function saveProxyTestTarget(el) {
   try {
     const d = await api('POST', '/proxypool/test-target', { target: v });
     el.value = d.data.target;
-    toast(T('Test target saved'), 'success');
+    toast(T('test_target_saved'), 'success');
   } catch (e) {
-    toast(T('Test target failed: ') + e.message, 'error');
+    toast(T('test_target_failed') + e.message, 'error');
     loadProxyPool();
   }
 }
@@ -6614,7 +6622,7 @@ async function runProxyLatencyTest(btn) {
   if (!btn || btn.disabled) return;
   const original = btn.innerHTML;
   btn.disabled = true;
-  btn.innerHTML = '<span class="loading"></span>' + T('Testing');
+  btn.innerHTML = '<span class="loading"></span>' + T('testing');
   proxyHealthPoolRows().forEach(r => { r.testing = 1; });
   renderProxyHealth(proxyHealthPoolRows());
   try {
@@ -6626,9 +6634,9 @@ async function runProxyLatencyTest(btn) {
       proxyHealthByProxy[k].test = row;
     });
     saveProxyHealthStore();
-    toast(T('Latency test finished'), 'success');
+    toast(T('latency_test_finished'), 'success');
   } catch (e) {
-    toast(T('Proxy test failed: ') + e.message, 'error');
+    toast(T('proxy_test_failed') + e.message, 'error');
   }
   // 测试样本已计入后端统计（attempts/在线率/握手均值，2026-11-03 用户定）：
   // 拉一次快照让统计列与 test 列一并刷新，而不是等下一次自然轮询。
@@ -6663,9 +6671,9 @@ async function testOneProxy(btn) {
       proxyHealthByProxy[k2].test = r;
     });
     saveProxyHealthStore();
-    toast(T('Latency test finished'), 'success');
+    toast(T('latency_test_finished'), 'success');
   } catch (e) {
-    toast(T('Proxy test failed: ') + e.message, 'error');
+    toast(T('proxy_test_failed') + e.message, 'error');
   }
   proxyOneTestInflight.delete(k);
   await loadProxyPool();
@@ -6678,8 +6686,8 @@ async function testOneProxy(btn) {
 async function clearProxyCooldown(proxy) {
   try {
     await api('POST', '/proxypool/cooldown/clear', { proxy: proxy });
-    toast(T('Cooldown cleared'), 'success');
-  } catch (e) { toast(T('Unban failed: ') + e.message, 'error'); }
+    toast(T('cooldown_cleared_1'), 'success');
+  } catch (e) { toast(T('unban_failed') + e.message, 'error'); }
   loadProxyPool();
 }
 
@@ -6688,8 +6696,8 @@ async function clearProxyCooldown(proxy) {
 async function setProxyCooldown(proxy) {
   try {
     await api('POST', '/proxypool/cooldown/set', { proxy: proxy, manual: true });
-    toast(T('Cooldown set (manual)'), 'success');
-  } catch (e) { toast(T('Cooldown failed: ') + e.message, 'error'); }
+    toast(T('cooldown_set_manual'), 'success');
+  } catch (e) { toast(T('cooldown_failed') + e.message, 'error'); }
   loadProxyPool();
 }
 
@@ -6701,7 +6709,7 @@ function syncProxyListEditable() {
   const locked = !!(_('ppSubURL').value || '').trim();
   ta.readOnly = locked;
   ta.style.opacity = locked ? '.55' : '';
-  ta.title = locked ? T('Managed by the subscription URL — clear it to edit manually') : '';
+  ta.title = locked ? T('managed_by_the_subscription_url_clear_it_to_edit') : '';
 }
 async function saveProxyPool() {
   const proxies = _('ppProxies').value.split('\n').map(s => s.trim()).filter(Boolean);
@@ -6709,7 +6717,7 @@ async function saveProxyPool() {
   if (!subUrl) {
     const PROXY_RE = /^(https?|socks5h?|socks):\/\/[^\s]+:\d+/;
     const bad = proxies.find(p => !PROXY_RE.test(p));
-    if (bad) { toast(T('Invalid proxy format: ') + bad + ' (need http(s)://host:port or socks5://host:port)', 'error'); return; }
+    if (bad) { toast(T('invalid_proxy_format') + bad + ' (need http(s)://host:port or socks5://host:port)', 'error'); return; }
   }
   try {
     const payload = { proxyStrategy: _('ppStrategy').value, proxySubURL: subUrl, proxySubCron: _('ppSubCron').value.trim() };
@@ -6718,7 +6726,7 @@ async function saveProxyPool() {
     await api('POST', '/opencode/config/update', payload);
     toast('Proxy pool saved', 'success');
     loadProxyPool();
-  } catch (e) { toast(T('Save failed: ') + e.message, 'error'); }
+  } catch (e) { toast(T('save_failed') + e.message, 'error'); }
 }
 
 // ===== 代理排除规则（平台黑名单 / 每代理上限）=====
@@ -6790,24 +6798,24 @@ function prCard(leaf, s) {
     '<span class="pr-chip" title="' + esc(egLabel(p)) + '">' + esc(egLabel(p)) +
     '<button type="button" data-kind="' + esc(k) + '" data-proxy="' + esc(encodeURIComponent(p)) + '"' +
     ' onmousedown="event.preventDefault()" onclick="ppRuleDelEx(this.dataset.kind,decodeURIComponent(this.dataset.proxy))"' +
-    ' title="' + esc(T('Remove')) + '">×</button></span>').join('');
+    ' title="' + esc(T('remove')) + '">×</button></span>').join('');
   const q = prActiveKind === k ? prQuery : '';
   const menu = prMenuRows(k, s);
   return '<div class="pr-card' + (leaf.sub ? ' pr-card-sub' : '') + '">' +
     '<div class="pr-card-head">' +
       '<span class="pr-name" title="' + esc(leaf.prefix ? k + ' · ' + leaf.prefix : k) + '">' + esc(leaf.label) + '</span>' +
       '<span class="pr-ctl">' +
-        '<span class="pr-capbox"><span class="pr-unit">' + T('Max reuse per proxy') + '</span>' +
+        '<span class="pr-capbox"><span class="pr-unit">' + T('max_reuse_per_proxy') + '</span>' +
         '<input class="pr-cap" id="ppCap-' + esc(k) + '" type="number" min="0" step="1" placeholder="1" value="' + (s.cap || 1) + '"' +
         ' oninput="ppRuleCapInput(\'' + esc(k) + '\',this.value)">' +
         '<span class="pr-unit">' + T('times') + '</span></span>' +
-        '<label class="pr-switch" title="' + esc(T('Exclude Direct')) + '"><input type="checkbox"' + (s.dx ? ' checked' : '') +
-        ' onchange="ppRuleToggleDirect(\'' + esc(k) + '\',this.checked)"><span>' + esc(T('Exclude Direct')) + '</span></label>' +
+        '<label class="pr-switch" title="' + esc(T('exclude_direct')) + '"><input type="checkbox"' + (s.dx ? ' checked' : '') +
+        ' onchange="ppRuleToggleDirect(\'' + esc(k) + '\',this.checked)"><span>' + esc(T('exclude_direct')) + '</span></label>' +
       '</span>' +
     '</div>' +
     '<div class="pr-tagbox" onclick="ppRuleFocus(\'' + esc(k) + '\')">' + chips +
       '<input class="pr-tagin" id="prTagIn-' + esc(k) + '" value="' + esc(q) + '"' +
-      ' placeholder="' + esc(chips ? '' : T('Search and add a proxy…')) + '"' +
+      ' placeholder="' + esc(chips ? '' : T('search_and_add_a_proxy')) + '"' +
       ' onfocus="ppRuleFocus(\'' + esc(k) + '\')" oninput="ppRuleInput(\'' + esc(k) + '\',this.value)"' +
       ' onkeydown="ppRuleKey(event,\'' + esc(k) + '\')">' +
     '</div>' +
@@ -6837,8 +6845,8 @@ function renderProxyRules() {
       '<svg class="pr-chev" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg>' +
       '<span class="pr-group-name">Other</span>' +
       '<span class="pr-group-meta">' + (subs.length
-        ? subs.length + T(' sub-platform(s) · each configured separately')
-        : T('No sub-platform yet')) + '</span>' +
+        ? subs.length + T('sub_platform_s_each_configured_separately')
+        : T('no_sub_platform_yet')) + '</span>' +
     '</div>';
   tb.innerHTML =
     '<div class="pr-grid">' + base.map(l => prCard(l, st[l.key])).join('') + '</div>' +
@@ -6936,9 +6944,9 @@ async function saveProxyRules() {
   });
   try {
     await api('POST', '/opencode/config/update', { proxyExclusions: exclusions, proxyBindCaps: caps });
-    toast(T('Saved proxy exclusion rules'), 'success');
+    toast(T('saved_proxy_exclusion_rules'), 'success');
     loadProxyPool();
-  } catch (e) { toast(T('Save failed: ') + e.message, 'error'); }
+  } catch (e) { toast(T('save_failed') + e.message, 'error'); }
 }
 
 // ===== 批量追加排除（可搜索多选输入框 + 右侧按钮）=====
@@ -7030,10 +7038,10 @@ function ppBulkSyncChips() {
   const everywhere = new Set(ppBulkEverywhere());
   const chipOf = (p, kind) => kind === 'sel'
     ? '<span class="pr-chip pr-chip-sel" title="' + esc(egLabel(p)) + '"><span>' + esc(egLabel(p)) + '</span>' +
-      '<button type="button" onclick="event.stopPropagation();ppBulkPick(decodeURIComponent(this.dataset.pp),false)" data-pp="' + esc(encodeURIComponent(p)) + '" title="' + esc(T('Remove')) + '">×</button></span>'
+      '<button type="button" onclick="event.stopPropagation();ppBulkPick(decodeURIComponent(this.dataset.pp),false)" data-pp="' + esc(encodeURIComponent(p)) + '" title="' + esc(T('remove')) + '">×</button></span>'
     // 已全平台排除的代理回显为置灰 chip（pr-chip-allex）：× = 从所有平台批量取消
-    : '<span class="pr-chip pr-chip-allex" title="' + esc(T('Excluded on every platform — × removes it from all (staged)')) + '"><span>' + esc(egLabel(p)) + '</span>' +
-      '<button type="button" onclick="event.stopPropagation();ppBulkRemoveEverywhere(decodeURIComponent(this.dataset.pp))" data-pp="' + esc(encodeURIComponent(p)) + '" title="' + esc(T('Remove')) + '">×</button></span>';
+    : '<span class="pr-chip pr-chip-allex" title="' + esc(T('excluded_on_every_platform_removes_it_from_all_s')) + '"><span>' + esc(egLabel(p)) + '</span>' +
+      '<button type="button" onclick="event.stopPropagation();ppBulkRemoveEverywhere(decodeURIComponent(this.dataset.pp))" data-pp="' + esc(encodeURIComponent(p)) + '" title="' + esc(T('remove')) + '">×</button></span>';
   const out = [];
   proxyListCache.forEach(p => {
     if (ppBulkSel.has(p)) out.push(chipOf(p, 'sel'));
@@ -7055,7 +7063,7 @@ async function ppBulkReset() {
   try { await loadProxyListCache(); } catch (e) { /* 拉取失败就用现有缓存重建 */ }
   ppRulesCache = null;
   renderProxyRules();
-  toast(T('Staged selections reset'), 'info');
+  toast(T('staged_selections_reset'), 'info');
 }
 // ppBulkRemoveEverywhere 批量取消：把该代理从所有平台的排除列表移除（暂存），
 // 随后重绘各卡片——该代理重新出现在候选菜单与各卡片可选项里，点保存才落盘。
@@ -7070,7 +7078,7 @@ function ppBulkRemoveEverywhere(p) {
   });
   ppBulkSyncChips();
   renderProxyRules();
-  toast(T('Removed from every platform\'s exclusion list (staged) — click Save to apply'), 'success');
+  toast(T('removed_from_every_platform_s_exclusion_list_sta'), 'success');
 }
 // ppBulkRenderMenu 候选 = 池内未选中代理（选中项已是 chip，不再进菜单），
 // 按 egLabel/原始串包含查询串过滤；已被所有平台排除的代理无可追加，不再展示。
@@ -7091,7 +7099,7 @@ function ppBulkRenderMenu() {
         '<span>' + esc(egLabel(p)) + '</span><span class="pr-opt-host">' + esc(host) + '</span></div>';
     }).join('');
   menu.innerHTML = (rows || '<div class="pr-opt-empty">' + T(q ? 'No match' : 'No pool proxies left to exclude') + '</div>') +
-    '<div class="pb-foot"><button class="btn btn-sm" style="flex:1" onclick="ppBulkClear()">' + T('Clear selection') + '</button></div>';
+    '<div class="pb-foot"><button class="btn btn-sm" style="flex:1" onclick="ppBulkClear()">' + T('clear_selection') + '</button></div>';
 }
 function ppBulkPick(p, on) {
   if (on) ppBulkSel.add(p); else ppBulkSel.delete(p);
@@ -7104,7 +7112,7 @@ function ppBulkClear() {
   ppBulkRenderMenu();
 }
 function ppBulkApply() {
-  if (!ppBulkSel.size) { toast(T('Nothing to append'), 'info'); return; }
+  if (!ppBulkSel.size) { toast(T('nothing_to_append'), 'info'); return; }
   const st = ppRulesState();
   let n = 0;
   ppBulkSel.forEach(p => {
@@ -7116,7 +7124,7 @@ function ppBulkApply() {
   ppBulkSyncChips();
   pbMenuHide(_('ppBulkMenu'));
   renderProxyRules();
-  toast(T('Appended to every platform\'s exclusion list (staged) — click Save to apply'), 'success');
+  toast(T('appended_to_every_platform_s_exclusion_list_stag'), 'success');
 }
 // 点击外部收起（菜单挂在 body 下，box 判断用框元素）
 document.addEventListener('click', ev => {
@@ -7133,7 +7141,7 @@ document.addEventListener('click', ev => {
 async function triggerProxySubUpdate() {
   const btn = _('ppSubUpdateBtn'), el = _('ppSubUpdateResult');
   btn.disabled = true;
-  el.textContent = T('Updating...');
+  el.textContent = T('updating');
   try {
     const r = await api('POST', '/proxypool/subscription/update');
     el.innerHTML = '<span style="color:var(--accent2)">' + fmtSubUpdMsg(r.message) + '</span>';
@@ -7163,7 +7171,7 @@ async function saveGlobalPolicy() {
     await api('POST', '/other/config/update', { useProxies: _('ppOther').value === 'true' });
     toast('Global policy saved', 'success');
     loadProxyPool();
-  } catch (e) { toast(T('Save failed: ') + e.message, 'error'); }
+  } catch (e) { toast(T('save_failed') + e.message, 'error'); }
 }
 
 // saveIsolationOptions 保存代理隔离区的两项：隔离模式 + 备用代理开关。两字段同在
@@ -7175,7 +7183,7 @@ async function saveIsolationOptions() {
   if (!iso.disabled) {
     try {
       await api('POST', '/opencode/config/update', { proxyIsolation: iso.value === 'true' });
-    } catch (e) { toast(T('Save failed: ') + e.message, 'error'); return; }
+    } catch (e) { toast(T('save_failed') + e.message, 'error'); return; }
   }
   const cb = _('ppBackupEnabled');
   try {
@@ -7186,7 +7194,7 @@ async function saveIsolationOptions() {
     refreshBindingTables();
   } catch (e) {
     cb.checked = !cb.checked;  // 保存失败回滚勾选
-    toast(T('Save failed: ') + e.message, 'error');
+    toast(T('save_failed') + e.message, 'error');
   }
 }
 
@@ -7212,7 +7220,7 @@ async function loadOcModels() {
     if (sel) {
       const prev = sel.value;
       sel.innerHTML = '<option value="">' + T('auto') + '</option>' +
-        models.map(m => '<option value="' + esc(m.id) + '">' + esc(m.id) + (m.source === 'live' ? '' : T(' (seed)')) + '</option>').join('');
+        models.map(m => '<option value="' + esc(m.id) + '">' + esc(m.id) + (m.source === 'live' ? '' : T('seed')) + '</option>').join('');
       if (Array.from(sel.options).some(o => o.value === prev)) sel.value = prev;
     }
   } catch (e) { /* ignore */ }
@@ -7235,7 +7243,7 @@ async function loadOrConfig() {
     if (sum) {
       const routed = ks.filter(k => k.routingEnabled !== false).length;
       const cooling = ks.filter(k => k.cooling).length;
-      sum.textContent = ks.length + ' ' + T('keys') + ' · ' + routed + ' ' + T('active') + ' · ' + cooling + ' ' + T('cooling');
+      sum.textContent = ks.length + ' ' + T('keys') + ' · ' + routed + ' ' + T('active_1_1') + ' · ' + cooling + ' ' + T('cooling_2');
     }
     renderOrKeyStates(ks);
     _('orBaseURL').value = c.baseURL || '';
@@ -7258,10 +7266,10 @@ async function loadOrConfig() {
       tb.innerHTML = models.length
         ? models.map(m => row(
             '<span style="font-family:\'JetBrains Mono\',monospace;font-size:13px;flex:1"' + (m.name ? ' title="' + esc(m.name) + '"' : '') + '>' + esc(m.id) + '</span>' +
-            '<span class="model-tag free">' + T('no charge') + '</span>' +
-            wbContextTagHTML(m.context, T('Context')) +
-            '<button class="btn btn-sm btn-danger" data-bl-ban="1" data-platform="openrouter" data-model="' + esc(m.id) + '" data-refresh="or" style="white-space:nowrap">' + T('Ban') + '</button>')).join('')
-        : '<div class="empty">' + T('No free models yet — click Refresh models') + '</div>';
+            '<span class="model-tag free">' + T('no_charge') + '</span>' +
+            wbContextTagHTML(m.context, T('context')) +
+            '<button class="btn btn-sm btn-danger" data-bl-ban="1" data-platform="openrouter" data-model="' + esc(m.id) + '" data-refresh="or" style="white-space:nowrap">' + T('ban') + '</button>')).join('')
+        : '<div class="empty">' + T('no_free_models_yet_click_refresh_models') + '</div>';
     }
   } catch (e) { /* ignore */ }
 }
@@ -7275,9 +7283,9 @@ async function saveOrConfig() {
   };
   try {
     await api('POST', '/openrouter/config/update', body);
-    toast(T('OpenRouter config saved'), 'success');
+    toast(T('openrouter_config_saved'), 'success');
     loadOrConfig();
-  } catch (e) { toast(T('Save failed: ') + e.message, 'error'); }
+  } catch (e) { toast(T('save_failed') + e.message, 'error'); }
 }
 
 
@@ -7290,26 +7298,26 @@ function renderOrKeyStates(ks) {
   tb.innerHTML = ks.length
     ? ks.map(k => {
         const cool = k.cooling
-          ? '<span class="status cooldown"><span class="status-dot cooldown"></span>' + T('Cooldown') + '</span>' +
-            (k.cooldownUntil ? '<div style="font-size:10px;color:var(--text3);margin-top:2px;white-space:nowrap" title="' + esc(fmtWhen(k.cooldownUntil)) + '">' + T('Recovers ') + esc(fmtShort(k.cooldownUntil)) + '</div>' : '')
-          : '<span class="status active"><span class="status-dot active"></span>' + T('Active') + '</span>';
+          ? '<span class="status cooldown"><span class="status-dot cooldown"></span>' + T('cooldown_1') + '</span>' +
+            (k.cooldownUntil ? '<div style="font-size:10px;color:var(--text3);margin-top:2px;white-space:nowrap" title="' + esc(fmtWhen(k.cooldownUntil)) + '">' + T('recovers') + esc(fmtShort(k.cooldownUntil)) + '</div>' : '')
+          : '<span class="status active"><span class="status-dot active"></span>' + T('active_1') + '</span>';
         const pMain = k.proxyMain || '';
         const pBackup = k.proxyBackup || '';
         const backupLocked = !backupProxyOn || pMain === '' || pMain === EGRESS_DIRECT;
         const backupVal = backupLocked ? pMain : pBackup;
         const isStale = proxyStale;
         const bind = '<td style="white-space:nowrap">' +
-          egComboHTML('or', k.index, 'main', pMain, T('Main exit — used whenever available')) + ' ' +
-          egComboHTML('or', k.index, 'backup', backupVal, T('Backup exit — used when main is cooling/removed'), backupLocked) +
-          (isStale(pMain) || isStale(pBackup) ? ' <span title="' + esc(T('Bound proxy is no longer in the proxy pool — skipped until fixed')) + '" style="color:var(--danger)">⚠</span>' : '') +
+          egComboHTML('or', k.index, 'main', pMain, T('main_exit_used_whenever_available')) + ' ' +
+          egComboHTML('or', k.index, 'backup', backupVal, T('backup_exit_used_when_main_is_cooling_removed'), backupLocked) +
+          (isStale(pMain) || isStale(pBackup) ? ' <span title="' + esc(T('bound_proxy_is_no_longer_in_the_proxy_pool_skipp')) + '" style="color:var(--danger)">⚠</span>' : '') +
           '</td>';
         const routed = k.routingEnabled !== false;
         orKeySnapshot[k.index] = { main: pMain, backup: backupVal, routing: routed };
         const routing = '<td style="text-align:center">' +
-          '<input type="checkbox" data-orr="' + k.index + '"' + (routed ? ' checked' : '') + ' title="' + esc(T('Participates in request routing')) + '">' + '</td>';
+          '<input type="checkbox" data-orr="' + k.index + '"' + (routed ? ' checked' : '') + ' title="' + esc(T('participates_in_request_routing')) + '">' + '</td>';
         const actions = '<td style="white-space:nowrap;text-align:center">' +
           '<button class="btn btn-sm" data-ort="' + k.index + '">Test</button> ' +
-          '<button class="btn btn-sm btn-danger" data-ordel="' + k.index + '" title="' + esc(T('Remove this key from the pool')) + '">Delete</button>' + '</td>';
+          '<button class="btn btn-sm btn-danger" data-ordel="' + k.index + '" title="' + esc(T('remove_this_key_from_the_pool')) + '">Delete</button>' + '</td>';
         return '<tr draggable="true" data-drag-id="' + k.index + '"><td>#' + (k.index + 1) + '</td>' +
           '<td style="font-family:monospace;font-size:11px">' + esc(k.keyMask) + '</td>' +
           '<td style="text-align:center">' + cool + '</td>' +
@@ -7376,9 +7384,9 @@ async function saveOrKeyEdits() {
     } catch (e) { failed++; }
   }
   clearDirtyMarks('orKeysBody', 'orKeysSaveBtn');
-  if (failed) toast(T('Save failed for ') + failed + T(' account(s)'), 'error');
-  else if (!changed) toast(T('No changes to save'), 'info');
-  else toast(T('Saved ') + changed + T(' account change(s)'), 'success');
+  if (failed) toast(T('save_failed_for') + failed + T('account_s'), 'error');
+  else if (!changed) toast(T('no_changes_to_save'), 'info');
+  else toast(T('saved_1') + changed + T('account_change_s'), 'success');
   loadOrConfig(); loadStats();
 }
 
@@ -7388,14 +7396,14 @@ function resetOrKeyEdits() {
 }
 
 async function deleteOrKey(index, btn) {
-  if (!confirm(T('Delete this key?'))) return;
+  if (!confirm(T('delete_this_key_1'))) return;
   const original = btn ? btn.innerHTML : '';
   if (btn) btn.disabled = true;
   try {
     await api('POST', '/openrouter/keys/delete', { index: index });
-    toast(T('Key #') + (index + 1) + T(' (deleted)'), 'success');
+    toast(T('key') + (index + 1) + T('deleted'), 'success');
   } catch (e) {
-    toast(T('Delete failed: ') + e.message, 'error');
+    toast(T('delete_failed') + e.message, 'error');
   } finally {
     if (btn) { btn.disabled = false; btn.innerHTML = original; }
     loadOrConfig(); loadStats();
@@ -7411,17 +7419,17 @@ async function testOrKey(index, btn) {
       model: (_('orProbeModel') ? _('orProbeModel').value : '')
     });
     const r = d.data || {};
-    const label = { active: T('OK'), cooldown: T('Cooldown'), error: T('Error') }[r.status] || r.status;
-    let msg = T('Key #') + (index + 1) + T(' (') + (r.keyMask || '') + T(') — ') + label;
-    if (r.model) msg += T(' via ') + r.model;
+    const label = { active: T('ok_2'), cooldown: T('cooldown_1'), error: T('error_1_1') }[r.status] || r.status;
+    let msg = T('key') + (index + 1) + T('sep.lparen') + (r.keyMask || '') + T('sep.rparen_emdash') + label;
+    if (r.model) msg += T('via') + r.model;
     if (r.latencyMs != null) msg += ' (' + r.latencyMs + 'ms)';
-    if (r.status === 'active') msg += T(' — cooldown cleared');
-    if (r.cooldownUntil) msg += T('\nEstimated recovery: ') + fmtWhen(r.cooldownUntil) + (r.remaining ? T(' (remaining ') + r.remaining + T(')') : '');
+    if (r.status === 'active') msg += T('cooldown_cleared');
+    if (r.cooldownUntil) msg += T('sep.estimated_recovery') + fmtWhen(r.cooldownUntil) + (r.remaining ? T('remaining') + r.remaining + T('sep.rparen') : '');
     if (r.reason && r.reason !== 'ok') msg += '\n' + r.reason;
     const type = r.status === 'active' ? 'success' : (r.status === 'cooldown' ? 'warning' : 'error');
     toast(msg, type, 6000);
   } catch (e) {
-    toast(T('Test failed: ') + e.message, 'error');
+    toast(T('test_failed') + e.message, 'error');
   } finally {
     if (btn) { btn.disabled = false; btn.innerHTML = original; }
     loadOrConfig();
@@ -7434,7 +7442,7 @@ async function batchTestOrKeys() {
   // 当前网关对外提供的服务（2026-11-02 用户定）：封禁平台整平台跳过。
   await fetchPlatformBans();
   if (platformBans.has('openrouter')) {
-    toast(T('Platform is banned in gateway settings — test skipped'), 'info');
+    toast(T('platform_is_banned_in_gateway_settings_test_skip'), 'info');
     return { tested: 0, skipped: 0, banned: true };
   }
   // 2026-11-02 用户定：只测能路由的凭据（路由关闭的 key 请求到不了，跳过），
@@ -7443,8 +7451,8 @@ async function batchTestOrKeys() {
   const idxs = all.filter(i => orKeySnapshot[i] && orKeySnapshot[i].routing !== false);
   const skipped = all.length - idxs.length;
   if (!idxs.length) {
-    if (all.length) toast(T('No routable credentials'), 'info');
-    else toast(T('No keys to test'), 'info');
+    if (all.length) toast(T('no_routable_credentials'), 'info');
+    else toast(T('no_keys_to_test'), 'info');
     return { tested: 0, skipped };
   }
   const original = btn ? btn.innerHTML : '';
@@ -7467,9 +7475,9 @@ async function batchTestOrKeys() {
   } finally {
     if (btn) { btn.disabled = false; btn.innerHTML = original; }
   }
-  toast(T('Batch test done: ') + idxs.length + T(' tested, ') + ok + T(' ok') +
-    (cool ? T(', ') + cool + T(' cooling') : '') + (err ? T(', ') + err + T(' error') : '') +
-    (skipped ? T(', ') + skipped + T(' skipped (unroutable)') : ''),
+  toast(T('batch_test_done') + idxs.length + T('tested') + ok + T('ok') +
+    (cool ? T(', ') + cool + T('cooling_1') : '') + (err ? T(', ') + err + T('error_1') : '') +
+    (skipped ? T(', ') + skipped + T('skipped_unroutable') : ''),
     err ? 'warning' : 'success', 6000);
   loadOrConfig();
   return { tested: idxs.length, skipped };
@@ -7482,19 +7490,19 @@ function openOrKeyAddDialog() {
 function closeOrKeyAddDialog() { _('orKeyAddDialog').close(); }
 async function orKeyAddFromDialog() {
   const lines = _('orKeyAddInput').value.split('\n').map(s => s.trim()).filter(Boolean);
-  if (!lines.length) { toast(T('Enter at least one key'), 'error'); return; }
+  if (!lines.length) { toast(T('enter_at_least_one_key'), 'error'); return; }
   const cur = (orCfgCache.keys && orCfgCache.keys.length) ? orCfgCache.keys : [];
   const fresh = lines.filter(l => !cur.includes(l));
-  if (!fresh.length) { toast(T('No new keys (all already in the pool)'), 'info'); return; }
+  if (!fresh.length) { toast(T('no_new_keys_all_already_in_the_pool'), 'info'); return; }
   const btn = _('orKeyAddSubmit');
   btn.disabled = true;
   try {
     await api('POST', '/openrouter/config/update', { keys: cur.concat(fresh) });
-    toast(T('Added ') + fresh.length + T(' key(s)'), 'success');
+    toast(T('added_1') + fresh.length + T('key_s'), 'success');
     closeOrKeyAddDialog();
     loadOrConfig(); loadStats();
   } catch (e) {
-    toast(T('Save failed: ') + e.message, 'error');
+    toast(T('save_failed') + e.message, 'error');
   } finally {
     btn.disabled = false;
   }
@@ -7530,9 +7538,9 @@ async function loadTraeConfig() {
       const cooling = accs.filter(a => a.cooling || a.breaker || a.degraded).length;
       const off = accs.filter(a => a.disabled).length;
       sum.textContent = accs.length + ' ' + T('accounts') + ' · ' + (c.routable || 0) + ' ' + T('routable') +
-        ' · ' + cooling + ' ' + T('cooling') +
-        (off ? ' · ' + off + ' ' + T('disabled') : '') +
-        (!c.loaded ? ' · ' + T('engine unavailable — see server log') : '');
+        ' · ' + cooling + ' ' + T('cooling_2') +
+        (off ? ' · ' + off + ' ' + T('disabled_1_1') : '') +
+        (!c.loaded ? ' · ' + T('engine_unavailable_see_server_log') : '');
     }
     renderTraeAccounts(accs);
     // 配置区回填（读到什么填什么，避免下拉框与后端漂移）
@@ -7586,13 +7594,13 @@ async function saveTraeConfig() {
   };
   const btn = document.querySelector('#traeConfigForm .form-actions button');
   const original = btn ? btn.innerHTML : '';
-  if (btn) { btn.disabled = true; btn.innerHTML = '<span class="loading"></span>' + T('Saving…'); }
+  if (btn) { btn.disabled = true; btn.innerHTML = '<span class="loading"></span>' + T('saving_1'); }
   try {
     await api('POST', '/trae/config/update', body);
-    toast(T('TraeWork config saved — engine restarted'), 'success');
+    toast(T('traework_config_saved_engine_restarted'), 'success');
     loadTraeConfig();
   } catch (e) {
-    toast(T('Save failed: ') + e.message, 'error');
+    toast(T('save_failed') + e.message, 'error');
   } finally {
     if (btn) { btn.disabled = false; btn.innerHTML = original; }
   }
@@ -7613,13 +7621,11 @@ function renderTraeModels(models, accs) {
           '<span style="font-family:\'JetBrains Mono\',monospace;font-size:13px;flex:1"' + (m.display_name ? ' title="' + esc(m.display_name) + '"' : '') + '>' + esc(m.id) + '</span>' +
           realmTag(m.realm || String(m.id || '').split(':')[0]) +
           mult +
-          wbContextTagHTML(m.context_window, T('Context')) +
-          '<button class="btn btn-sm btn-danger" data-bl-ban="1" data-platform="trae" data-model="' + esc(m.id) + '" data-scope="' + esc(m.realm || '') + '" data-refresh="trae" style="white-space:nowrap">' + T('Ban') + '</button>' +
+          wbContextTagHTML(m.context_window, T('context')) +
+          '<button class="btn btn-sm btn-danger" data-bl-ban="1" data-platform="trae" data-model="' + esc(m.id) + '" data-scope="' + esc(m.realm || '') + '" data-refresh="trae" style="white-space:nowrap">' + T('ban') + '</button>' +
           (hasEnabled ? '' : ''));
       }).join('')
-    : '<div class="empty">' + T((traeCfgCache.routable || 0) > 0
-        ? 'No models yet — click Refresh models'
-        : 'Models appear here once an account is enabled — the catalog follows the engine realms') + '</div>';
+    : '<div class="empty">' + T((traeCfgCache.routable || 0) > 0 ? 'no_models_yet_click_refresh_models' : 'models_appear_here_once_an_account_is_enabled_the_catalog_follows_the_engine_realms') + '</div>';
 }
 
 // renderTraeAccounts 凭据表（对齐 wb 口径）：昵称+UID / 状态（冷却/熔断/降权
@@ -7633,31 +7639,31 @@ function renderTraeAccounts(accs) {
     ? accs.map(a => {
         let cool;
         if (a.disabled) {
-          cool = '<span class="status cooldown"><span class="status-dot cooldown"></span>' + T('Disabled') + '</span>' +
+          cool = '<span class="status cooldown"><span class="status-dot cooldown"></span>' + T('disabled_1') + '</span>' +
             (a.disableReason ? '<div style="font-size:10px;color:var(--text3);margin-top:2px;max-width:170px;white-space:normal">' + esc(a.disableReason) + '</div>' : '');
         } else if (a.breaker) {
-          cool = '<span class="status cooldown"><span class="status-dot cooldown"></span>' + T('Breaker') + '</span>' +
+          cool = '<span class="status cooldown"><span class="status-dot cooldown"></span>' + T('breaker') + '</span>' +
             (a.breakerRemain ? '<div style="font-size:10px;color:var(--text3);margin-top:2px;white-space:nowrap">' + esc(traeFmtDur(a.breakerRemain)) + '</div>' : '');
         } else if (a.cooling) {
-          cool = '<span class="status cooldown"><span class="status-dot cooldown"></span>' + T('Cooldown') + '</span>' +
+          cool = '<span class="status cooldown"><span class="status-dot cooldown"></span>' + T('cooldown_1') + '</span>' +
             (a.coolRemain ? '<div style="font-size:10px;color:var(--text3);margin-top:2px;white-space:nowrap" title="' + esc(a.coolReason || '') + '">' + esc(traeFmtDur(a.coolRemain)) + '</div>' : '');
         } else if (a.degraded) {
-          cool = '<span class="status cooldown"><span class="status-dot cooldown"></span>' + T('Degraded') + '</span>';
+          cool = '<span class="status cooldown"><span class="status-dot cooldown"></span>' + T('degraded') + '</span>';
         } else {
-          cool = '<span class="status active"><span class="status-dot active"></span>' + T('Active') + '</span>';
+          cool = '<span class="status active"><span class="status-dot active"></span>' + T('active_1') + '</span>';
         }
         // token 有效期（照搬换线前逻辑）：状态列内另起一行（绿色正常 / 红色过期）
         let tokenState = '';
         if (a.expiredAt) {
           const cls = a.tokenUsable === false ? 'var(--danger)' : 'var(--accent2)';
-          const txt = a.tokenUsable === false ? T('Token expired') + ' ' : '';
+          const txt = a.tokenUsable === false ? T('token_expired') + ' ' : '';
           tokenState = '<div style="font-size:11px;margin-top:2px;color:' + cls + '">' + txt + esc(fmtShort(a.expiredAt)) + '</div>';
         }
         // 签到竖徽章：仅显示今天的签到结果（当天没有就不显示；用户 2026-11-04 定）
         let checkinV = '';
         if (a.checkin && a.checkin.date === new Date().toLocaleDateString('sv')) {
           const ok = a.checkin.checkedIn;
-          const txt = ok ? T('Checked in') : T('Check-in failed');
+          const txt = ok ? T('checked_in') : T('check_in_failed');
           const cls = ok ? 'status active' : 'status cooldown';
           checkinV = '<div class="' + cls + '" style="writing-mode:vertical-rl;text-orientation:upright;letter-spacing:2px;font-size:10px;padding:5px 2px;border-radius:8px;align-self:stretch;display:flex;align-items:center;justify-content:center" title="' + esc(a.checkin.lastError || txt) + '">' + esc(txt) + '</div>';
         }
@@ -7669,9 +7675,9 @@ function renderTraeAccounts(accs) {
         const backupVal = backupLocked ? pMain : pBackup;
         const isStale = proxyStale;
         const bind = '<td style="white-space:nowrap">' +
-          egComboHTML('trae', a.index, 'main', pMain, T('Main exit — used whenever available')) + ' ' +
-          egComboHTML('trae', a.index, 'backup', backupVal, T('Backup exit — used when main is cooling/removed'), backupLocked) +
-          (isStale(pMain) || isStale(pBackup) ? ' <span title="' + esc(T('Bound proxy is no longer in the proxy pool — skipped until fixed')) + '" style="color:var(--danger)">⚠</span>' : '') +
+          egComboHTML('trae', a.index, 'main', pMain, T('main_exit_used_whenever_available')) + ' ' +
+          egComboHTML('trae', a.index, 'backup', backupVal, T('backup_exit_used_when_main_is_cooling_removed'), backupLocked) +
+          (isStale(pMain) || isStale(pBackup) ? ' <span title="' + esc(T('bound_proxy_is_no_longer_in_the_proxy_pool_skipp')) + '" style="color:var(--danger)">⚠</span>' : '') +
           '</td>';
         let credits = '-';
         if (a.credits != null) {
@@ -7686,10 +7692,10 @@ function renderTraeAccounts(accs) {
         // 反代开关显示态 = 总闸开 && 路由位开；总闸关时反代禁用（wb 同款互锁）
         const poolCell = '<td style="text-align:center">' +
           '<input type="checkbox" data-trr="' + a.index + '"' + (accOn && routedIntent ? ' checked' : '') + (!accOn ? ' disabled' : '') +
-          ' title="' + esc(T('Gateway (reverse proxy) switch: unchecked = model sessions never route to this account; check-in and all other maintenance tasks are unaffected. Can only be ticked while the account switch is on.')) + '"></td>';
+          ' title="' + esc(T('gateway_reverse_proxy_switch_unchecked_model_ses')) + '"></td>';
         const accCell = '<td style="text-align:center">' +
           '<input type="checkbox" data-tracc="' + a.index + '"' + (accOn ? ' checked' : '') +
-          ' title="' + esc(T('Account master switch. Off = the account does not exist: check-in, balance refresh and Test all skip it, and it never routes.')) + '"></td>';
+          ' title="' + esc(T('account_master_switch_off_the_account_does_not_e')) + '"></td>';
         const actions = '<td style="white-space:nowrap;text-align:center">' +
           '<button class="btn btn-sm" data-trt="' + a.index + '">Test</button> ' +
           '<button class="btn btn-sm btn-danger" data-trdel="' + a.index + '" title="Remove this account from the pool">Delete</button>' + '</td>';
@@ -7700,7 +7706,7 @@ function renderTraeAccounts(accs) {
           '<td style="min-width:0"><div style="max-width:150px" title="' + esc(label + '\n' + a.uid) + '">' +
             '<div class="nick-wrap">' +
               '<span class="nick-name" style="font-weight:600">' + esc(label) + '</span>' +
-              nickPen(a.index, label, T('Edit nickname')) +
+              nickPen(a.index, label, T('edit_nickname')) +
             '</div>' +
             '<div class="wb-account-id">' + esc(shortId) + '</div>' +
           '</div></td>' +
@@ -7716,7 +7722,7 @@ function renderTraeAccounts(accs) {
           poolCell +
           accCell + '</tr>';
       }).join('')
-    : '<tr><td colspan="10" class="empty">' + T('No TraeWork accounts yet — click Add accounts or use the original panel import') + '</td></tr>';
+    : '<tr><td colspan="10" class="empty">' + T('no_traework_accounts_yet_click_add_accounts_or_u') + '</td></tr>';
   tb.onclick = e => {
     const pen = e.target.closest('.nick-pen');
     if (pen) { startNickEdit(pen, { save: saveTraeLabel, reload: loadTraeConfig, allowEmpty: true }); return; }
@@ -7807,9 +7813,9 @@ async function saveTraeEdits() {
     } catch (e) { failed++; }
   }
   clearDirtyMarks('traeAccountsBody', 'traeSaveBtn');
-  if (failed) toast(T('Save failed for ') + failed + T(' account(s)'), 'error');
-  else if (!changed) toast(T('No changes to save'), 'info');
-  else toast(T('Saved ') + changed + T(' account change(s)'), 'success');
+  if (failed) toast(T('save_failed_for') + failed + T('account_s'), 'error');
+  else if (!changed) toast(T('no_changes_to_save'), 'info');
+  else toast(T('saved_1') + changed + T('account_change_s'), 'success');
   loadTraeConfig(); loadStats();
 }
 
@@ -7821,14 +7827,14 @@ function resetTraeEdits() {
 async function deleteTraeAccount(index, btn) {
   const snap = traeAccSnapshot[index] || {};
   if (!snap.uid) return;
-  if (!confirm(T('Delete this account?'))) return;
+  if (!confirm(T('delete_this_account'))) return;
   const original = btn ? btn.innerHTML : '';
   if (btn) btn.disabled = true;
   try {
     await api('POST', '/trae/accounts/delete', { uid: snap.uid });
-    toast(T('Account #') + (index + 1) + T(' (deleted)'), 'success');
+    toast(T('account_1') + (index + 1) + T('deleted'), 'success');
   } catch (e) {
-    toast(T('Delete failed: ') + e.message, 'error');
+    toast(T('delete_failed') + e.message, 'error');
   } finally {
     if (btn) { btn.disabled = false; btn.innerHTML = original; }
     loadTraeConfig(); loadStats();
@@ -7846,17 +7852,17 @@ async function testTraeAccount(index, btn) {
     const d = await api('POST', '/trae/accounts/test', { uid: snap.uid });
     const r = (d.data || {});
     if (r.ok) {
-      let msg = T('Account #') + (index + 1) + (r.label ? ' (' + r.label + ')' : '') + T(' — OK');
+      let msg = T('account_1') + (index + 1) + (r.label ? ' (' + r.label + ')' : '') + T('ok_1');
       if (r.latency_ms != null) msg += ' (' + r.latency_ms + 'ms)';
-      if (r.credits != null) msg += T(' — credits: ') + r.credits;
+      if (r.credits != null) msg += T('credits') + r.credits;
       toast(msg, 'success', 6000);
     } else {
-      let msg = T('Account #') + (index + 1) + T(' — ') + (r.error || T('Error'));
+      let msg = T('account_1') + (index + 1) + T('sep.emdash') + (r.error || T('error_1_1'));
       if (r.latency_ms != null) msg += ' (' + r.latency_ms + 'ms)';
       toast(msg, 'error', 6000);
     }
   } catch (e) {
-    toast(T('Test failed: ') + e.message, 'error');
+    toast(T('test_failed') + e.message, 'error');
   } finally {
     if (btn) { btn.disabled = false; btn.innerHTML = original; }
     loadTraeConfig();
@@ -7869,7 +7875,7 @@ async function batchTestTraeAccounts() {
   // 当前网关对外提供的服务（2026-11-02 用户定）：封禁平台整平台跳过。
   await fetchPlatformBans();
   if (platformBans.has('trae')) {
-    toast(T('Platform is banned in gateway settings — test skipped'), 'info');
+    toast(T('platform_is_banned_in_gateway_settings_test_skip'), 'info');
     return { tested: 0, skipped: 0, banned: true };
   }
   // 2026-11-02 用户定：只测能路由的凭据。Trae 是账号总闸 + 反代开关双开关，
@@ -7879,8 +7885,8 @@ async function batchTestTraeAccounts() {
   const idxs = all.filter(i => traeAccSnapshot[i] && traeAccSnapshot[i].routing === true);
   const skipped = all.length - idxs.length;
   if (!idxs.length) {
-    if (all.length) toast(T('No routable credentials'), 'info');
-    else toast(T('No accounts to test'), 'info');
+    if (all.length) toast(T('no_routable_credentials'), 'info');
+    else toast(T('no_accounts_to_test'), 'info');
     return { tested: 0, skipped };
   }
   const original = btn ? btn.innerHTML : '';
@@ -7897,9 +7903,9 @@ async function batchTestTraeAccounts() {
   } finally {
     if (btn) { btn.disabled = false; btn.innerHTML = original; }
   }
-  toast(T('Batch test done: ') + idxs.length + T(' tested, ') + ok + T(' ok') +
-    (err ? T(', ') + err + T(' error') : '') +
-    (skipped ? T(', ') + skipped + T(' skipped (unroutable)') : ''),
+  toast(T('batch_test_done') + idxs.length + T('tested') + ok + T('ok') +
+    (err ? T(', ') + err + T('error_1') : '') +
+    (skipped ? T(', ') + skipped + T('skipped_unroutable') : ''),
     err ? 'warning' : 'success', 6000);
   loadTraeConfig();
   return { tested: idxs.length, skipped };
@@ -7913,7 +7919,7 @@ async function batchTestTraeAccounts() {
 });
 function openTraeAddDialog() {
   _('traeAddInput').value = '';
-  _('traeHelperStatus').textContent = T('Checking local helper…');
+  _('traeHelperStatus').textContent = T('checking_local_helper');
   // 手风琴回到默认态（details 状态跨弹窗开合保留，需显式复位）
   if (_('traeAccWeb')) _('traeAccWeb').open = true;
   if (_('traeAccManual')) _('traeAccManual').open = false;
@@ -7941,13 +7947,13 @@ function probeTraeHelper() {
   fetch('http://127.0.0.1:8765/healthz', { cache: 'no-store' }).then(r => r.json()).then(h => {
     const relay = (h && h.relay || '').replace(/\/$/, '');
     if (relay && relay !== location.origin) {
-      _('traeHelperStatus').innerHTML = esc(T('Helper detected, but it writes credentials to ANOTHER deployment: ')) +
-        '<b>' + esc(relay) + '</b>' + esc(T(' — re-download it from THIS panel and restart it (python web_login.py)'));
+      _('traeHelperStatus').innerHTML = esc(T('helper_detected_but_it_writes_credentials_to_ano')) +
+        '<b>' + esc(relay) + '</b>' + esc(T('re_download_it_from_this_panel_and_restart_it_py'));
       return;
     }
-    _('traeHelperStatus').textContent = T('Local helper detected (writes to this gateway) — click Open helper page, then use the authorization button there');
+    _('traeHelperStatus').textContent = T('local_helper_detected_writes_to_this_gateway_cli');
   }).catch(() => {
-    _('traeHelperStatus').textContent = T('Local helper NOT detected — download it, run "python web_login.py", then retry');
+    _('traeHelperStatus').textContent = T('local_helper_not_detected_download_it_run_python');
   });
 }
 function openTraeHelperPage() {
@@ -7957,9 +7963,9 @@ function pollTraeHelperStatus() {
   api('GET', '/trae/helper/status').then(d => {
     const r = d.data || {};
     if (!r.seen || !r.at || r.at < traeHelperSince) return;
-    _('traeHelperStatus').textContent = (r.success ? T('Account ready: ') : T('Authorization failed: ')) + (r.message ? T(r.message) : '');
+    _('traeHelperStatus').textContent = (r.success ? T('account_ready') : T('authorization_failed')) + (r.message ? T(r.message) : '');
     if (r.success) {
-      toast(r.added ? T('Account added: ') + (r.label || '') : T('Account already in the pool: ') + (r.label || ''), 'success');
+      toast(r.added ? T('account_added') + (r.label || '') : T('account_already_in_the_pool') + (r.label || ''), 'success');
       traeHelperSince = r.at;
       loadTraeConfig(); loadStats();
     }
@@ -7970,32 +7976,32 @@ function pollTraeHelperStatus() {
 
 async function refreshTraeCredits() {
   await api('POST', '/trae/credits/refresh');
-  toast(T('Balances refreshed'), 'success');
+  toast(T('balances_refreshed'), 'success');
   loadTraeConfig();
 }
 async function runTraeCheckin() {
   const d = await api('POST', '/trae/checkin');
   const r = d.data || {};
-  let msg = T('Check-in done: ') + (r.checked || r.succeed || 0) + '/' + (r.total || 0);
-  if (r.failed) msg += T(', ') + r.failed + T(' failed');
+  let msg = T('check_in_done') + (r.checked || r.succeed || 0) + '/' + (r.total || 0);
+  if (r.failed) msg += T(', ') + r.failed + T('failed');
   toast(msg, r.failed ? 'warning' : 'success', 6000);
   loadTraeConfig();
 }
 async function traeAddFromDialog() {
   const lines = _('traeAddInput').value.split('\n').map(s => s.trim()).filter(Boolean);
-  if (!lines.length) { toast(T('Enter at least one credential line'), 'error'); return; }
+  if (!lines.length) { toast(T('enter_at_least_one_credential_line'), 'error'); return; }
   const btn = _('traeAddSubmit');
   btn.disabled = true;
   try {
     const d = await api('POST', '/trae/accounts/add', { tokens: lines });
     const r = d.data || {};
-    let msg = T('Added ') + (r.added || 0) + T(' account(s)');
-    if (r.failed) msg += T(', failed ') + r.failed + (r.error ? ': ' + r.error : '');
+    let msg = T('added_1') + (r.added || 0) + T('account_s');
+    if (r.failed) msg += T('failed_2') + r.failed + (r.error ? ': ' + r.error : '');
     toast(msg, r.added ? 'success' : 'warning', 8000);
     closeTraeAddDialog();
     loadTraeConfig(); loadStats();
   } catch (e) {
-    toast(T('Save failed: ') + e.message, 'error');
+    toast(T('save_failed') + e.message, 'error');
   } finally {
     btn.disabled = false;
   }
@@ -8016,7 +8022,7 @@ async function loadAmdConfig() {
     if (sum) {
       const routed = ks.filter(k => k.routingEnabled !== false).length;
       const cooling = ks.filter(k => k.cooling).length;
-      sum.textContent = ks.length + ' ' + T('keys') + ' · ' + routed + ' ' + T('active') + ' · ' + cooling + ' ' + T('cooling');
+      sum.textContent = ks.length + ' ' + T('keys') + ' · ' + routed + ' ' + T('active_1_1') + ' · ' + cooling + ' ' + T('cooling_2');
     }
     renderAmdKeyStates(ks);
     _('amdBaseURL').value = c.baseURL || '';
@@ -8039,12 +8045,10 @@ async function loadAmdConfig() {
       tb.innerHTML = models.length
         ? models.map(m => row(
             '<span style="font-family:\'JetBrains Mono\',monospace;font-size:13px;flex:1"' + (m.name ? ' title="' + esc(m.name) + '"' : '') + '>' + esc(m.id) + '</span>' +
-            '<span class="model-tag free">' + T('no charge') + '</span>' +
-            wbContextTagHTML(m.context, T('Context')) +
-            '<button class="btn btn-sm btn-danger" data-bl-ban="1" data-platform="amd" data-model="' + esc(m.id) + '" data-refresh="amd" style="white-space:nowrap">' + T('Ban') + '</button>')).join('')
-        : '<div class="empty">' + T((ks || []).some(k => k.routingEnabled !== false)
-            ? 'No models yet — click Refresh models'
-            : 'Models appear here once a credential is enabled — the catalog syncs from upstream') + '</div>';
+            '<span class="model-tag free">' + T('no_charge') + '</span>' +
+            wbContextTagHTML(m.context, T('context')) +
+            '<button class="btn btn-sm btn-danger" data-bl-ban="1" data-platform="amd" data-model="' + esc(m.id) + '" data-refresh="amd" style="white-space:nowrap">' + T('ban') + '</button>')).join('')
+        : '<div class="empty">' + T((ks || []).some(k => k.routingEnabled !== false) ? 'no_models_yet_click_refresh_models' : 'models_appear_here_once_a_credential_is_enabled_the_catalog_syncs_from_upstream') + '</div>';
     }
   } catch (e) { /* ignore */ }
 }
@@ -8058,9 +8062,9 @@ async function saveAmdConfig() {
   };
   try {
     await api('POST', '/amd/config/update', body);
-    toast(T('AMDCloud config saved'), 'success');
+    toast(T('amdcloud_config_saved'), 'success');
     loadAmdConfig();
-  } catch (e) { toast(T('Save failed: ') + e.message, 'error'); }
+  } catch (e) { toast(T('save_failed') + e.message, 'error'); }
 }
 
 
@@ -8073,26 +8077,26 @@ function renderAmdKeyStates(ks) {
   tb.innerHTML = ks.length
     ? ks.map(k => {
         const cool = k.cooling
-          ? '<span class="status cooldown"><span class="status-dot cooldown"></span>' + T('Cooldown') + '</span>' +
-            (k.cooldownUntil ? '<div style="font-size:10px;color:var(--text3);margin-top:2px;white-space:nowrap" title="' + esc(fmtWhen(k.cooldownUntil)) + '">' + T('Recovers ') + esc(fmtShort(k.cooldownUntil)) + '</div>' : '')
-          : '<span class="status active"><span class="status-dot active"></span>' + T('Active') + '</span>';
+          ? '<span class="status cooldown"><span class="status-dot cooldown"></span>' + T('cooldown_1') + '</span>' +
+            (k.cooldownUntil ? '<div style="font-size:10px;color:var(--text3);margin-top:2px;white-space:nowrap" title="' + esc(fmtWhen(k.cooldownUntil)) + '">' + T('recovers') + esc(fmtShort(k.cooldownUntil)) + '</div>' : '')
+          : '<span class="status active"><span class="status-dot active"></span>' + T('active_1') + '</span>';
         const pMain = k.proxyMain || '';
         const pBackup = k.proxyBackup || '';
         const backupLocked = !backupProxyOn || pMain === '' || pMain === EGRESS_DIRECT;
         const backupVal = backupLocked ? pMain : pBackup;
         const isStale = proxyStale;
         const bind = '<td style="white-space:nowrap">' +
-          egComboHTML('amd', k.index, 'main', pMain, T('Main exit — used whenever available')) + ' ' +
-          egComboHTML('amd', k.index, 'backup', backupVal, T('Backup exit — used when main is cooling/removed'), backupLocked) +
-          (isStale(pMain) || isStale(pBackup) ? ' <span title="' + esc(T('Bound proxy is no longer in the proxy pool — skipped until fixed')) + '" style="color:var(--danger)">⚠</span>' : '') +
+          egComboHTML('amd', k.index, 'main', pMain, T('main_exit_used_whenever_available')) + ' ' +
+          egComboHTML('amd', k.index, 'backup', backupVal, T('backup_exit_used_when_main_is_cooling_removed'), backupLocked) +
+          (isStale(pMain) || isStale(pBackup) ? ' <span title="' + esc(T('bound_proxy_is_no_longer_in_the_proxy_pool_skipp')) + '" style="color:var(--danger)">⚠</span>' : '') +
           '</td>';
         const routed = k.routingEnabled !== false;
         amdKeySnapshot[k.index] = { main: pMain, backup: backupVal, routing: routed };
         const routing = '<td style="text-align:center">' +
-          '<input type="checkbox" data-amdr="' + k.index + '"' + (routed ? ' checked' : '') + ' title="' + esc(T('Participates in request routing')) + '">' + '</td>';
+          '<input type="checkbox" data-amdr="' + k.index + '"' + (routed ? ' checked' : '') + ' title="' + esc(T('participates_in_request_routing')) + '">' + '</td>';
         const actions = '<td style="white-space:nowrap;text-align:center">' +
           '<button class="btn btn-sm" data-amdt="' + k.index + '">Test</button> ' +
-          '<button class="btn btn-sm btn-danger" data-amddel="' + k.index + '" title="' + esc(T('Remove this key from the pool')) + '">Delete</button>' + '</td>';
+          '<button class="btn btn-sm btn-danger" data-amddel="' + k.index + '" title="' + esc(T('remove_this_key_from_the_pool')) + '">Delete</button>' + '</td>';
         return '<tr draggable="true" data-drag-id="' + k.index + '"><td>#' + (k.index + 1) + '</td>' +
           '<td style="font-family:monospace;font-size:11px">' + esc(k.keyMask) + '</td>' +
           '<td style="text-align:center">' + cool + '</td>' +
@@ -8159,9 +8163,9 @@ async function saveAmdKeyEdits() {
     } catch (e) { failed++; }
   }
   clearDirtyMarks('amdKeysBody', 'amdKeysSaveBtn');
-  if (failed) toast(T('Save failed for ') + failed + T(' account(s)'), 'error');
-  else if (!changed) toast(T('No changes to save'), 'info');
-  else toast(T('Saved ') + changed + T(' account change(s)'), 'success');
+  if (failed) toast(T('save_failed_for') + failed + T('account_s'), 'error');
+  else if (!changed) toast(T('no_changes_to_save'), 'info');
+  else toast(T('saved_1') + changed + T('account_change_s'), 'success');
   loadAmdConfig(); loadStats();
 }
 
@@ -8171,14 +8175,14 @@ function resetAmdKeyEdits() {
 }
 
 async function deleteAmdKey(index, btn) {
-  if (!confirm(T('Delete this key?'))) return;
+  if (!confirm(T('delete_this_key_1'))) return;
   const original = btn ? btn.innerHTML : '';
   if (btn) btn.disabled = true;
   try {
     await api('POST', '/amd/keys/delete', { index: index });
-    toast(T('Key #') + (index + 1) + T(' (deleted)'), 'success');
+    toast(T('key') + (index + 1) + T('deleted'), 'success');
   } catch (e) {
-    toast(T('Delete failed: ') + e.message, 'error');
+    toast(T('delete_failed') + e.message, 'error');
   } finally {
     if (btn) { btn.disabled = false; btn.innerHTML = original; }
     loadAmdConfig(); loadStats();
@@ -8194,17 +8198,17 @@ async function testAmdKey(index, btn) {
       model: (_('amdProbeModel') ? _('amdProbeModel').value : '')
     });
     const r = d.data || {};
-    const label = { active: T('OK'), cooldown: T('Cooldown'), error: T('Error') }[r.status] || r.status;
-    let msg = T('Key #') + (index + 1) + T(' (') + (r.keyMask || '') + T(') — ') + label;
-    if (r.model) msg += T(' via ') + r.model;
+    const label = { active: T('ok_2'), cooldown: T('cooldown_1'), error: T('error_1_1') }[r.status] || r.status;
+    let msg = T('key') + (index + 1) + T('sep.lparen') + (r.keyMask || '') + T('sep.rparen_emdash') + label;
+    if (r.model) msg += T('via') + r.model;
     if (r.latencyMs != null) msg += ' (' + r.latencyMs + 'ms)';
-    if (r.status === 'active') msg += T(' — cooldown cleared');
-    if (r.cooldownUntil) msg += T('\nEstimated recovery: ') + fmtWhen(r.cooldownUntil) + (r.remaining ? T(' (remaining ') + r.remaining + T(')') : '');
+    if (r.status === 'active') msg += T('cooldown_cleared');
+    if (r.cooldownUntil) msg += T('sep.estimated_recovery') + fmtWhen(r.cooldownUntil) + (r.remaining ? T('remaining') + r.remaining + T('sep.rparen') : '');
     if (r.reason && r.reason !== 'ok') msg += '\n' + r.reason;
     const type = r.status === 'active' ? 'success' : (r.status === 'cooldown' ? 'warning' : 'error');
     toast(msg, type, 6000);
   } catch (e) {
-    toast(T('Test failed: ') + e.message, 'error');
+    toast(T('test_failed') + e.message, 'error');
   } finally {
     if (btn) { btn.disabled = false; btn.innerHTML = original; }
     loadAmdConfig();
@@ -8217,7 +8221,7 @@ async function batchTestAmdKeys() {
   // 当前网关对外提供的服务（2026-11-02 用户定）：封禁平台整平台跳过。
   await fetchPlatformBans();
   if (platformBans.has('amd')) {
-    toast(T('Platform is banned in gateway settings — test skipped'), 'info');
+    toast(T('platform_is_banned_in_gateway_settings_test_skip'), 'info');
     return { tested: 0, skipped: 0, banned: true };
   }
   // 2026-11-02 用户定：只测能路由的凭据（路由关闭的 key 请求到不了，跳过），
@@ -8226,8 +8230,8 @@ async function batchTestAmdKeys() {
   const idxs = all.filter(i => amdKeySnapshot[i] && amdKeySnapshot[i].routing !== false);
   const skipped = all.length - idxs.length;
   if (!idxs.length) {
-    if (all.length) toast(T('No routable credentials'), 'info');
-    else toast(T('No keys to test'), 'info');
+    if (all.length) toast(T('no_routable_credentials'), 'info');
+    else toast(T('no_keys_to_test'), 'info');
     return { tested: 0, skipped };
   }
   const original = btn ? btn.innerHTML : '';
@@ -8250,9 +8254,9 @@ async function batchTestAmdKeys() {
   } finally {
     if (btn) { btn.disabled = false; btn.innerHTML = original; }
   }
-  toast(T('Batch test done: ') + idxs.length + T(' tested, ') + ok + T(' ok') +
-    (cool ? T(', ') + cool + T(' cooling') : '') + (err ? T(', ') + err + T(' error') : '') +
-    (skipped ? T(', ') + skipped + T(' skipped (unroutable)') : ''),
+  toast(T('batch_test_done') + idxs.length + T('tested') + ok + T('ok') +
+    (cool ? T(', ') + cool + T('cooling_1') : '') + (err ? T(', ') + err + T('error_1') : '') +
+    (skipped ? T(', ') + skipped + T('skipped_unroutable') : ''),
     err ? 'warning' : 'success', 6000);
   loadAmdConfig();
   return { tested: idxs.length, skipped };
@@ -8265,19 +8269,19 @@ function openAmdKeyAddDialog() {
 function closeAmdKeyAddDialog() { _('amdKeyAddDialog').close(); }
 async function amdKeyAddFromDialog() {
   const lines = _('amdKeyAddInput').value.split('\n').map(s => s.trim()).filter(Boolean);
-  if (!lines.length) { toast(T('Enter at least one key'), 'error'); return; }
+  if (!lines.length) { toast(T('enter_at_least_one_key'), 'error'); return; }
   const cur = (amdCfgCache.keys && amdCfgCache.keys.length) ? amdCfgCache.keys : [];
   const fresh = lines.filter(l => !cur.includes(l));
-  if (!fresh.length) { toast(T('No new keys (all already in the pool)'), 'info'); return; }
+  if (!fresh.length) { toast(T('no_new_keys_all_already_in_the_pool'), 'info'); return; }
   const btn = _('amdKeyAddSubmit');
   btn.disabled = true;
   try {
     await api('POST', '/amd/config/update', { keys: cur.concat(fresh) });
-    toast(T('Added ') + fresh.length + T(' key(s)'), 'success');
+    toast(T('added_1') + fresh.length + T('key_s'), 'success');
     closeAmdKeyAddDialog();
     loadAmdConfig(); loadStats();
   } catch (e) {
-    toast(T('Save failed: ') + e.message, 'error');
+    toast(T('save_failed') + e.message, 'error');
   } finally {
     btn.disabled = false;
   }
@@ -8299,7 +8303,7 @@ async function loadTHConfig() {
     if (sum) {
       const routed = ks.filter(k => k.routingEnabled !== false).length;
       const cooling = ks.filter(k => k.cooling).length;
-      sum.textContent = ks.length + ' ' + T('keys') + ' · ' + routed + ' ' + T('active') + ' · ' + cooling + ' ' + T('cooling');
+      sum.textContent = ks.length + ' ' + T('keys') + ' · ' + routed + ' ' + T('active_1_1') + ' · ' + cooling + ' ' + T('cooling_2');
     }
     renderTHKeyStates(ks);
     _('thBaseURL').value = c.baseURL || '';
@@ -8322,12 +8326,10 @@ async function loadTHConfig() {
       tb.innerHTML = models.length
         ? models.map(m => row(
             '<span style="font-family:\'JetBrains Mono\',monospace;font-size:13px;flex:1"' + (m.name ? ' title="' + esc(m.name) + '"' : '') + '>' + esc(m.id) + '</span>' +
-            '<span class="model-tag free">' + T('no charge') + '</span>' +
-            wbContextTagHTML(m.context, T('Context')) +
-            '<button class="btn btn-sm btn-danger" data-bl-ban="1" data-platform="tokenharbor" data-model="' + esc(m.id) + '" data-refresh="th" style="white-space:nowrap">' + T('Ban') + '</button>')).join('')
-        : '<div class="empty">' + T((thCfgCache.keyStates || []).some(k => k.routingEnabled !== false)
-            ? 'No free models yet — click Refresh models'
-            : 'Models appear here once a credential is enabled — the catalog syncs from upstream') + '</div>';
+            '<span class="model-tag free">' + T('no_charge') + '</span>' +
+            wbContextTagHTML(m.context, T('context')) +
+            '<button class="btn btn-sm btn-danger" data-bl-ban="1" data-platform="tokenharbor" data-model="' + esc(m.id) + '" data-refresh="th" style="white-space:nowrap">' + T('ban') + '</button>')).join('')
+        : '<div class="empty">' + T((thCfgCache.keyStates || []).some(k => k.routingEnabled !== false) ? 'no_free_models_yet_click_refresh_models' : 'models_appear_here_once_a_credential_is_enabled_the_catalog_syncs_from_upstream') + '</div>';
     }
   } catch (e) { /* ignore */ }
 }
@@ -8341,9 +8343,9 @@ async function saveTHConfig() {
   };
   try {
     await api('POST', '/tokenharbor/config/update', body);
-    toast(T('TokenHarbor config saved'), 'success');
+    toast(T('tokenharbor_config_saved'), 'success');
     loadTHConfig();
-  } catch (e) { toast(T('Save failed: ') + e.message, 'error'); }
+  } catch (e) { toast(T('save_failed') + e.message, 'error'); }
 }
 
 
@@ -8356,26 +8358,26 @@ function renderTHKeyStates(ks) {
   tb.innerHTML = ks.length
     ? ks.map(k => {
         const cool = k.cooling
-          ? '<span class="status cooldown"><span class="status-dot cooldown"></span>' + T('Cooldown') + '</span>' +
-            (k.cooldownUntil ? '<div style="font-size:10px;color:var(--text3);margin-top:2px;white-space:nowrap" title="' + esc(fmtWhen(k.cooldownUntil)) + '">' + T('Recovers ') + esc(fmtShort(k.cooldownUntil)) + '</div>' : '')
-          : '<span class="status active"><span class="status-dot active"></span>' + T('Active') + '</span>';
+          ? '<span class="status cooldown"><span class="status-dot cooldown"></span>' + T('cooldown_1') + '</span>' +
+            (k.cooldownUntil ? '<div style="font-size:10px;color:var(--text3);margin-top:2px;white-space:nowrap" title="' + esc(fmtWhen(k.cooldownUntil)) + '">' + T('recovers') + esc(fmtShort(k.cooldownUntil)) + '</div>' : '')
+          : '<span class="status active"><span class="status-dot active"></span>' + T('active_1') + '</span>';
         const pMain = k.proxyMain || '';
         const pBackup = k.proxyBackup || '';
         const backupLocked = !backupProxyOn || pMain === '' || pMain === EGRESS_DIRECT;
         const backupVal = backupLocked ? pMain : pBackup;
         const isStale = proxyStale;
         const bind = '<td style="white-space:nowrap">' +
-          egComboHTML('th', k.index, 'main', pMain, T('Main exit — used whenever available')) + ' ' +
-          egComboHTML('th', k.index, 'backup', backupVal, T('Backup exit — used when main is cooling/removed'), backupLocked) +
-          (isStale(pMain) || isStale(pBackup) ? ' <span title="' + esc(T('Bound proxy is no longer in the proxy pool — skipped until fixed')) + '" style="color:var(--danger)">⚠</span>' : '') +
+          egComboHTML('th', k.index, 'main', pMain, T('main_exit_used_whenever_available')) + ' ' +
+          egComboHTML('th', k.index, 'backup', backupVal, T('backup_exit_used_when_main_is_cooling_removed'), backupLocked) +
+          (isStale(pMain) || isStale(pBackup) ? ' <span title="' + esc(T('bound_proxy_is_no_longer_in_the_proxy_pool_skipp')) + '" style="color:var(--danger)">⚠</span>' : '') +
           '</td>';
         const routed = k.routingEnabled !== false;
         thKeySnapshot[k.index] = { main: pMain, backup: backupVal, routing: routed };
         const routing = '<td style="text-align:center">' +
-          '<input type="checkbox" data-thr="' + k.index + '"' + (routed ? ' checked' : '') + ' title="' + esc(T('Participates in request routing')) + '">' + '</td>';
+          '<input type="checkbox" data-thr="' + k.index + '"' + (routed ? ' checked' : '') + ' title="' + esc(T('participates_in_request_routing')) + '">' + '</td>';
         const actions = '<td style="white-space:nowrap;text-align:center">' +
           '<button class="btn btn-sm" data-tht="' + k.index + '">Test</button> ' +
-          '<button class="btn btn-sm btn-danger" data-thdel="' + k.index + '" title="' + esc(T('Remove this key from the pool')) + '">Delete</button>' + '</td>';
+          '<button class="btn btn-sm btn-danger" data-thdel="' + k.index + '" title="' + esc(T('remove_this_key_from_the_pool')) + '">Delete</button>' + '</td>';
         return '<tr draggable="true" data-drag-id="' + k.index + '"><td>#' + (k.index + 1) + '</td>' +
           '<td style="font-family:monospace;font-size:11px">' + esc(k.keyMask) + '</td>' +
           '<td style="text-align:center">' + cool + '</td>' +
@@ -8442,9 +8444,9 @@ async function saveTHKeyEdits() {
     } catch (e) { failed++; }
   }
   clearDirtyMarks('thKeysBody', 'thKeysSaveBtn');
-  if (failed) toast(T('Save failed for ') + failed + T(' account(s)'), 'error');
-  else if (!changed) toast(T('No changes to save'), 'info');
-  else toast(T('Saved ') + changed + T(' account change(s)'), 'success');
+  if (failed) toast(T('save_failed_for') + failed + T('account_s'), 'error');
+  else if (!changed) toast(T('no_changes_to_save'), 'info');
+  else toast(T('saved_1') + changed + T('account_change_s'), 'success');
   loadTHConfig(); loadStats();
 }
 
@@ -8454,14 +8456,14 @@ function resetTHKeyEdits() {
 }
 
 async function deleteTHKey(index, btn) {
-  if (!confirm(T('Delete this key?'))) return;
+  if (!confirm(T('delete_this_key_1'))) return;
   const original = btn ? btn.innerHTML : '';
   if (btn) btn.disabled = true;
   try {
     await api('POST', '/tokenharbor/keys/delete', { index: index });
-    toast(T('Key #') + (index + 1) + T(' (deleted)'), 'success');
+    toast(T('key') + (index + 1) + T('deleted'), 'success');
   } catch (e) {
-    toast(T('Delete failed: ') + e.message, 'error');
+    toast(T('delete_failed') + e.message, 'error');
   } finally {
     if (btn) { btn.disabled = false; btn.innerHTML = original; }
     loadTHConfig(); loadStats();
@@ -8477,17 +8479,17 @@ async function testTHKey(index, btn) {
       model: (_('thProbeModel') ? _('thProbeModel').value : '')
     });
     const r = d.data || {};
-    const label = { active: T('OK'), cooldown: T('Cooldown'), error: T('Error') }[r.status] || r.status;
-    let msg = T('Key #') + (index + 1) + T(' (') + (r.keyMask || '') + T(') — ') + label;
-    if (r.model) msg += T(' via ') + r.model;
+    const label = { active: T('ok_2'), cooldown: T('cooldown_1'), error: T('error_1_1') }[r.status] || r.status;
+    let msg = T('key') + (index + 1) + T('sep.lparen') + (r.keyMask || '') + T('sep.rparen_emdash') + label;
+    if (r.model) msg += T('via') + r.model;
     if (r.latencyMs != null) msg += ' (' + r.latencyMs + 'ms)';
-    if (r.status === 'active') msg += T(' — cooldown cleared');
-    if (r.cooldownUntil) msg += T('\nEstimated recovery: ') + fmtWhen(r.cooldownUntil) + (r.remaining ? T(' (remaining ') + r.remaining + T(')') : '');
+    if (r.status === 'active') msg += T('cooldown_cleared');
+    if (r.cooldownUntil) msg += T('sep.estimated_recovery') + fmtWhen(r.cooldownUntil) + (r.remaining ? T('remaining') + r.remaining + T('sep.rparen') : '');
     if (r.reason && r.reason !== 'ok') msg += '\n' + r.reason;
     const type = r.status === 'active' ? 'success' : (r.status === 'cooldown' ? 'warning' : 'error');
     toast(msg, type, 6000);
   } catch (e) {
-    toast(T('Test failed: ') + e.message, 'error');
+    toast(T('test_failed') + e.message, 'error');
   } finally {
     if (btn) { btn.disabled = false; btn.innerHTML = original; }
     loadTHConfig();
@@ -8500,7 +8502,7 @@ async function batchTestTHKeys() {
   // 当前网关对外提供的服务（2026-11-02 用户定）：封禁平台整平台跳过。
   await fetchPlatformBans();
   if (platformBans.has('tokenharbor')) {
-    toast(T('Platform is banned in gateway settings — test skipped'), 'info');
+    toast(T('platform_is_banned_in_gateway_settings_test_skip'), 'info');
     return { tested: 0, skipped: 0, banned: true };
   }
   // 2026-11-02 用户定：只测能路由的凭据（路由关闭的 key 请求到不了，跳过），
@@ -8509,8 +8511,8 @@ async function batchTestTHKeys() {
   const idxs = all.filter(i => thKeySnapshot[i] && thKeySnapshot[i].routing !== false);
   const skipped = all.length - idxs.length;
   if (!idxs.length) {
-    if (all.length) toast(T('No routable credentials'), 'info');
-    else toast(T('No keys to test'), 'info');
+    if (all.length) toast(T('no_routable_credentials'), 'info');
+    else toast(T('no_keys_to_test'), 'info');
     return { tested: 0, skipped };
   }
   const original = btn ? btn.innerHTML : '';
@@ -8533,9 +8535,9 @@ async function batchTestTHKeys() {
   } finally {
     if (btn) { btn.disabled = false; btn.innerHTML = original; }
   }
-  toast(T('Batch test done: ') + idxs.length + T(' tested, ') + ok + T(' ok') +
-    (cool ? T(', ') + cool + T(' cooling') : '') + (err ? T(', ') + err + T(' error') : '') +
-    (skipped ? T(', ') + skipped + T(' skipped (unroutable)') : ''),
+  toast(T('batch_test_done') + idxs.length + T('tested') + ok + T('ok') +
+    (cool ? T(', ') + cool + T('cooling_1') : '') + (err ? T(', ') + err + T('error_1') : '') +
+    (skipped ? T(', ') + skipped + T('skipped_unroutable') : ''),
     err ? 'warning' : 'success', 6000);
   loadTHConfig();
   return { tested: idxs.length, skipped };
@@ -8548,19 +8550,19 @@ function openTHKeyAddDialog() {
 function closeTHKeyAddDialog() { _('thKeyAddDialog').close(); }
 async function thKeyAddFromDialog() {
   const lines = _('thKeyAddInput').value.split('\n').map(s => s.trim()).filter(Boolean);
-  if (!lines.length) { toast(T('Enter at least one key'), 'error'); return; }
+  if (!lines.length) { toast(T('enter_at_least_one_key'), 'error'); return; }
   const cur = (thCfgCache.keys && thCfgCache.keys.length) ? thCfgCache.keys : [];
   const fresh = lines.filter(l => !cur.includes(l));
-  if (!fresh.length) { toast(T('No new keys (all already in the pool)'), 'info'); return; }
+  if (!fresh.length) { toast(T('no_new_keys_all_already_in_the_pool'), 'info'); return; }
   const btn = _('thKeyAddSubmit');
   btn.disabled = true;
   try {
     await api('POST', '/tokenharbor/config/update', { keys: cur.concat(fresh) });
-    toast(T('Added ') + fresh.length + T(' key(s)'), 'success');
+    toast(T('added_1') + fresh.length + T('key_s'), 'success');
     closeTHKeyAddDialog();
     loadTHConfig(); loadStats();
   } catch (e) {
-    toast(T('Save failed: ') + e.message, 'error');
+    toast(T('save_failed') + e.message, 'error');
   } finally {
     btn.disabled = false;
   }
@@ -8589,9 +8591,9 @@ async function loadOtherConfig() {
   const prev = currentOtherSlug;
   // 初始态：value="" 是纯提示项，不对应任何子平台，因此不自动选中第一个。
   sel.innerHTML = ps.length
-    ? '<option value="">' + T('Select a sub-platform to view details') + '</option>' +
+    ? '<option value="">' + T('select_a_sub_platform_to_view_details') + '</option>' +
       ps.map(p => '<option value="' + esc(p.slug) + '">' + esc(p.name || p.slug) + ' (' + esc(p.prefix) + ')</option>').join('')
-    : '<option value="">' + T('No sub-platform yet — click "New sub-platform" to add one') + '</option>';
+    : '<option value="">' + T('no_sub_platform_yet_click_new_sub_platform_to_ad') + '</option>';
   if (ps.length && prev && ps.some(p => p.slug === prev)) currentOtherSlug = prev;
   else currentOtherSlug = '';
   sel.value = currentOtherSlug;
@@ -8599,8 +8601,8 @@ async function loadOtherConfig() {
   _('otherPlatformBody').style.display = p ? 'block' : 'none';
   if (!p) {
     _('otherSummary').textContent = ps.length
-      ? T('Select a sub-platform on the left.')
-      : T('No sub-platform yet. Click "New sub-platform" to add one.');
+      ? T('select_a_sub_platform_on_the_left')
+      : T('no_sub_platform_yet_click_new_sub_platform_to_ad_1');
     return;
   }
   _('otherSummary').textContent = ps.length + T(' sub-platform(s). Models are exposed as <prefix>:<model-id>');
@@ -8611,7 +8613,7 @@ async function loadOtherConfig() {
   _('otherRetries').value = p.retries || 3;
   otherKnownModels = p.models || [];
   otherSelectedModels = p.selectedModels || [];
-  if (_('otherLivePrompt') && !_('otherLivePrompt').value) _('otherLivePrompt').value = T('Test message, please reply with hello only');
+  if (_('otherLivePrompt') && !_('otherLivePrompt').value) _('otherLivePrompt').value = T('test_message_please_reply_with_hello_only');
   renderOtherModelSelect(otherKnownModels, otherSelectedModels, p.manualModels || []);
 
   renderOtherKeys(p.keyStates || []);
@@ -8624,7 +8626,7 @@ function renderOtherModelSelect(models, selected, manual) {
   const list = _('otherModelSelectList');
   const manualIds = manual || [];
   if (!models || !models.length) {
-    list.innerHTML = '<div class="ms-empty">' + T('No models yet — add manually or add a key and click Refresh models') + '</div>';
+    list.innerHTML = '<div class="ms-empty">' + T('no_models_yet_add_manually_or_add_a_key_and_clic') + '</div>';
   } else {
     const ordered = models.slice().sort((a, b) => {
       const aSel = selected.indexOf(a) >= 0 ? 0 : 1;
@@ -8634,7 +8636,7 @@ function renderOtherModelSelect(models, selected, manual) {
     list.innerHTML = ordered.map(m => {
       // 只有手动添加的模型可删；上游同步来的删了会被下次刷新再拉回来。
       const del = manualIds.indexOf(m) >= 0
-        ? '<button class="ms-del" title="' + esc(T('Remove this manually added model')) +
+        ? '<button class="ms-del" title="' + esc(T('remove_this_manually_added_model')) +
           '" onclick="removeOtherManualModel(\'' + esc(m) + '\', event)">\u00d7</button>'
         : '';
       return '<label class="ms-item" data-id="' + esc(m) + '">' +
@@ -8649,8 +8651,8 @@ function renderOtherModelSelect(models, selected, manual) {
 function otherModelSelectSummary() {
   const n = otherSelectedModels.length;
   // 无模型时给出下一步指引，而非一个无解释的破折号。
-  if (!otherKnownModels.length) return T('Add a credential, then refresh models or add one manually');
-  return n ? n + ' / ' + otherKnownModels.length + T(' enabled') : T('none enabled');
+  if (!otherKnownModels.length) return T('add_a_credential_then_refresh_models_or_add_one_');
+  return n ? n + ' / ' + otherKnownModels.length + T('enabled') : T('none_enabled');
 }
 
 // otherProbeModelValue 探测模型：探测显示已从面板移除，但 Test 逻辑不变——
@@ -8714,8 +8716,8 @@ async function saveOtherSelected() {
   try {
     const r = await api('POST', '/other/models/selected', { slug: p.slug, selected: otherSelectedModels });
     otherSelectedModels = (r.data && r.data.platform && r.data.platform.selectedModels) || otherSelectedModels;
-    toast(T('Models updated'), 'success');
-  } catch (e) { toast(T('Save failed: ') + e.message, 'error'); }
+    toast(T('models_updated'), 'success');
+  } catch (e) { toast(T('save_failed') + e.message, 'error'); }
 }
 
 // otherLiveRequest 用第一个已启用凭据发起一次真实会话，并把上游回复回显。
@@ -8724,20 +8726,20 @@ async function otherLiveRequest() {
   const p = currentOtherPlatform();
   if (!p) return;
   const prompt = (_('otherLivePrompt') ? _('otherLivePrompt').value : '').trim();
-  if (!otherSelectedModels.length) { toast(T('No available models'), 'error'); return; }
+  if (!otherSelectedModels.length) { toast(T('no_available_models'), 'error'); return; }
   const enabled = (p.keyStates || []).filter(k => k.routingEnabled);
-  if (!enabled.length) { toast(T('No available credentials'), 'error'); return; }
+  if (!enabled.length) { toast(T('no_available_credentials'), 'error'); return; }
   const btn = _('otherLiveBtn');
-  if (btn) { btn.disabled = true; btn.innerHTML = '<span class="loading"></span>' + T('Sending…'); }
+  if (btn) { btn.disabled = true; btn.innerHTML = '<span class="loading"></span>' + T('sending'); }
   try {
     const r = await api('POST', '/other/chat', { slug: p.slug, model: otherProbeModelValue(), prompt: prompt });
     const d = r.data || {};
-    toast(T('Request succeeded') + ': ' + (d.reply || T('(empty reply)')) + '  [' + d.model + ' · ' + d.keyMask + ' · ' + d.latencyMs + 'ms]', 'success', 12000);
+    toast(T('request_succeeded') + ': ' + (d.reply || T('empty_reply')) + '  [' + d.model + ' · ' + d.keyMask + ' · ' + d.latencyMs + 'ms]', 'success', 12000);
   } catch (e) {
     const d = (e && e.data) || {};
-    toast(T('Request failed') + ': ' + (d.reason || e.message), 'error', 12000);
+    toast(T('request_failed') + ': ' + (d.reason || e.message), 'error', 12000);
   } finally {
-    if (btn) { btn.disabled = false; btn.textContent = T('Real request'); }
+    if (btn) { btn.disabled = false; btn.textContent = T('real_request'); }
   }
 }
 
@@ -8748,8 +8750,8 @@ function refreshOtherModels(btn) {
   // 字段，没有 p.keys；启用口径 routingEnabled !== false，与后端 RoutingEnabled
   // 缺省 true 一致：全部禁用时同步无意义，后端同样会拒。
   const ks = p.keyStates || [];
-  if (!ks.length) { toast(T('Add a credential first'), 'error'); return; }
-  if (!ks.some(k => k.routingEnabled !== false)) { toast(T('No available credentials'), 'error'); return; }
+  if (!ks.length) { toast(T('add_a_credential_first'), 'error'); return; }
+  if (!ks.some(k => k.routingEnabled !== false)) { toast(T('no_available_credentials'), 'error'); return; }
   // 成败判定与提示统一交给 refreshCatalog；这里的 onDone 只做 Other 特有的即时重绘。
   return refreshCatalog(btn, {
     label: p.name || 'Other',
@@ -8782,15 +8784,15 @@ async function removeOtherManualModel(id, ev) {
       otherSelectedModels = np.selectedModels || [];
       renderOtherModelSelect(otherKnownModels, otherSelectedModels, np.manualModels || []);
     }
-    toast(T('Manual model removed'), 'success');
-  } catch (e) { toast(T('Remove failed: ') + e.message, 'error'); }
+    toast(T('manual_model_removed'), 'success');
+  } catch (e) { toast(T('remove_failed') + e.message, 'error'); }
 }
 
 async function addOtherManualModel() {
   const p = currentOtherPlatform();
   const input = _('otherManualModel');
   const m = input.value.trim();
-  if (!p || !m) { toast(T('Enter a model id'), 'error'); return; }
+  if (!p || !m) { toast(T('enter_a_model_id'), 'error'); return; }
   try {
     const r = await api('POST', '/other/models/manual', { slug: p.slug, model: m });
     const np = r.data && r.data.platform;
@@ -8801,8 +8803,8 @@ async function addOtherManualModel() {
 
     }
     input.value = '';
-    toast(T('Added') + ': ' + m, 'success');
-  } catch (e) { toast(T('Add failed: ') + e.message, 'error'); }
+    toast(T('added') + ': ' + m, 'success');
+  } catch (e) { toast(T('add_failed') + e.message, 'error'); }
 }
 
 
@@ -8811,29 +8813,29 @@ function renderOtherKeys(ks) {
   const tb = _('otherKeysBody');
   if (!tb) return;
   otherKeySnapshot = {};
-  if (!ks.length) { tb.innerHTML = '<tr><td colspan="8" class="empty">' + T('No keys configured') + '</td></tr>'; return; }
+  if (!ks.length) { tb.innerHTML = '<tr><td colspan="8" class="empty">' + T('no_keys_configured') + '</td></tr>'; return; }
   tb.innerHTML = ks.map((k, i) => {
     const cool = k.cooling
-      ? '<span class="status cooldown"><span class="status-dot cooldown"></span>' + T('Cooldown') + '</span>' +
-        (k.cooldownUntil ? '<div style="font-size:10px;color:var(--text3);margin-top:2px;white-space:nowrap" title="' + esc(fmtWhen(k.cooldownUntil)) + '">' + T('Recovers ') + esc(fmtShort(k.cooldownUntil)) + '</div>' : '')
-      : '<span class="status active"><span class="status-dot active"></span>' + T('Active') + '</span>';
+      ? '<span class="status cooldown"><span class="status-dot cooldown"></span>' + T('cooldown_1') + '</span>' +
+        (k.cooldownUntil ? '<div style="font-size:10px;color:var(--text3);margin-top:2px;white-space:nowrap" title="' + esc(fmtWhen(k.cooldownUntil)) + '">' + T('recovers') + esc(fmtShort(k.cooldownUntil)) + '</div>' : '')
+      : '<span class="status active"><span class="status-dot active"></span>' + T('active_1') + '</span>';
     const pMain = k.proxyMain || '';
     const pBackup = k.proxyBackup || '';
     const backupLocked = !backupProxyOn || pMain === '' || pMain === EGRESS_DIRECT;
     const backupVal = backupLocked ? pMain : pBackup;
     const stale = proxyStale;
     const bind = '<td style="white-space:nowrap">' +
-      egComboHTML('other', k.index, 'main', pMain, T('Main exit — used whenever available')) + ' ' +
-      egComboHTML('other', k.index, 'backup', backupVal, T('Backup exit — used when main is cooling/removed'), backupLocked) +
-      (stale(pMain) || stale(pBackup) ? ' <span title="' + esc(T('Bound proxy is no longer in the proxy pool — skipped until fixed')) + '" style="color:var(--danger)">⚠</span>' : '') +
+      egComboHTML('other', k.index, 'main', pMain, T('main_exit_used_whenever_available')) + ' ' +
+      egComboHTML('other', k.index, 'backup', backupVal, T('backup_exit_used_when_main_is_cooling_removed'), backupLocked) +
+      (stale(pMain) || stale(pBackup) ? ' <span title="' + esc(T('bound_proxy_is_no_longer_in_the_proxy_pool_skipp')) + '" style="color:var(--danger)">⚠</span>' : '') +
       '</td>';
     const routed = k.routingEnabled !== false;
     otherKeySnapshot[k.index] = { main: pMain, backup: backupVal, routing: routed };
     const routing = '<td style="text-align:center">' +
-      '<input type="checkbox" data-otr="' + k.index + '"' + (routed ? ' checked' : '') + ' title="' + esc(T('Participates in request routing')) + '">' + '</td>';
+      '<input type="checkbox" data-otr="' + k.index + '"' + (routed ? ' checked' : '') + ' title="' + esc(T('participates_in_request_routing')) + '">' + '</td>';
     const actions = '<td style="white-space:nowrap;text-align:center">' +
-      '<button class="btn btn-sm" data-ott="' + k.index + '">' + T('Test') + '</button> ' +
-      '<button class="btn btn-sm btn-danger" data-otdel="' + k.index + '" title="' + esc(T('Delete this key')) + '">' + T('Delete') + '</button>' + '</td>';
+      '<button class="btn btn-sm" data-ott="' + k.index + '">' + T('test') + '</button> ' +
+      '<button class="btn btn-sm btn-danger" data-otdel="' + k.index + '" title="' + esc(T('delete_this_key')) + '">' + T('delete') + '</button>' + '</td>';
     return '<tr draggable="true" data-drag-id="' + k.index + '"><td>' + (i + 1) + '</td>' +
       '<td style="font-family:monospace;font-size:11px">' + esc(k.keyMask) + '</td>' +
       '<td style="text-align:center">' + cool + '</td>' +
@@ -8900,9 +8902,9 @@ async function saveOtherKeyEdits() {
     } catch (e) { failed++; }
   }
   clearDirtyMarks('otherKeysBody', 'otherKeysSaveBtn');
-  if (failed) toast(T('Save failed for ') + failed + T(' account(s)'), 'error');
-  else if (!changed) toast(T('No changes to save'), 'info');
-  else toast(T('Saved ') + changed + T(' account change(s)'), 'success');
+  if (failed) toast(T('save_failed_for') + failed + T('account_s'), 'error');
+  else if (!changed) toast(T('no_changes_to_save'), 'info');
+  else toast(T('saved_1') + changed + T('account_change_s'), 'success');
   loadOtherConfig(); loadStats();
 }
 
@@ -8912,15 +8914,15 @@ function resetOtherKeyEdits() {
 }
 
 async function deleteOtherKey(id, btn) {
-  if (!confirm(T('Delete this key?'))) return;
+  if (!confirm(T('delete_this_key_1'))) return;
   const original = btn ? btn.innerHTML : '';
   if (btn) btn.disabled = true;
   try {
     const p = currentOtherPlatform();
     await api('POST', '/other/keys/delete', { slug: p.slug, index: Number(id) });
-    toast(T('Deleted'), 'success');
+    toast(T('deleted_1'), 'success');
   } catch (e) {
-    toast(T('Delete failed: ') + e.message, 'error');
+    toast(T('delete_failed') + e.message, 'error');
   } finally {
     if (btn) { btn.disabled = false; btn.innerHTML = original; }
     loadOtherConfig(); loadStats();
@@ -8941,11 +8943,11 @@ async function testOtherKey(id, btn) {
     const r = (d.data && d.data) || {};
     const ok = d.success === true;
     const msg = ok
-      ? T('Test passed') + (r.latencyMs != null ? ' (' + r.latencyMs + 'ms)' : '') + (r.status === 'active' ? T(' — cooldown cleared') : '')
-      : T('Test failed: ') + (r.reason || r.error || '');
+      ? T('test_passed') + (r.latencyMs != null ? ' (' + r.latencyMs + 'ms)' : '') + (r.status === 'active' ? T('cooldown_cleared') : '')
+      : T('test_failed') + (r.reason || r.error || '');
     toast(msg, ok ? 'success' : 'error', 6000);
   } catch (e) {
-    toast(T('Test failed: ') + e.message, 'error');
+    toast(T('test_failed') + e.message, 'error');
   } finally {
     if (btn) { btn.disabled = false; btn.innerHTML = original; }
     loadOtherConfig();
@@ -8959,7 +8961,7 @@ async function batchTestOtherKeys() {
   // 当前网关对外提供的服务（2026-11-02 用户定）：封禁平台整平台跳过。
   await fetchPlatformBans();
   if (platformBans.has('other:' + p.slug)) {
-    toast(T('Platform is banned in gateway settings — test skipped'), 'info');
+    toast(T('platform_is_banned_in_gateway_settings_test_skip'), 'info');
     return { tested: 0, skipped: 0, banned: true };
   }
   const btn = _('otherTestBtn');
@@ -8969,8 +8971,8 @@ async function batchTestOtherKeys() {
   const ids = all.filter(id => otherKeySnapshot[id] && otherKeySnapshot[id].routing !== false);
   const skipped = all.length - ids.length;
   if (!ids.length) {
-    if (all.length) toast(T('No routable credentials'), 'info');
-    else toast(T('No keys to test'), 'info');
+    if (all.length) toast(T('no_routable_credentials'), 'info');
+    else toast(T('no_keys_to_test'), 'info');
     return { tested: 0, skipped };
   }
   const original = btn ? btn.innerHTML : '';
@@ -8991,8 +8993,8 @@ async function batchTestOtherKeys() {
   } finally {
     if (btn) { btn.disabled = false; btn.innerHTML = original; }
   }
-  toast(T('Batch test done: ') + ids.length + T(' tested, ') + ok + T(' ok') + (err ? T(', ') + err + T(' error') : '') +
-    (skipped ? T(', ') + skipped + T(' skipped (unroutable)') : ''),
+  toast(T('batch_test_done') + ids.length + T('tested') + ok + T('ok') + (err ? T(', ') + err + T('error_1') : '') +
+    (skipped ? T(', ') + skipped + T('skipped_unroutable') : ''),
     err ? 'warning' : 'success', 6000);
   loadOtherConfig();
   return { tested: ids.length, skipped };
@@ -9011,14 +9013,14 @@ async function doOtherPlatformCreate() {
   const name = _('opName').value.trim();
   const prefix = _('opPrefix').value.trim().replace(/^:+/, '');
   const baseURL = _('opBaseURL').value.trim().replace(/\/+$/, '');
-  if (!name || !prefix) { toast(T('Name and prefix are required'), 'error'); return; }
+  if (!name || !prefix) { toast(T('name_and_prefix_are_required'), 'error'); return; }
   try {
     const r = await api('POST', '/other/platforms', { name: name, prefix: prefix, baseURL: baseURL });
     closeOtherPlatformDialog();
     currentOtherSlug = (r.data && r.data.platform && r.data.platform.slug) || '';
-    toast(T('Sub-platform created'), 'success');
+    toast(T('sub_platform_created'), 'success');
     loadOtherConfig();
-  } catch (e) { toast(T('Create failed: ') + e.message, 'error'); }
+  } catch (e) { toast(T('create_failed') + e.message, 'error'); }
 }
 
 
@@ -9035,14 +9037,14 @@ function renderOtherManageList() {
   const box = _('otherManageList');
   if (!box) return;
   const ps = (otherConfig && otherConfig.platforms) || [];
-  if (!ps.length) { box.innerHTML = '<div class="mg-empty">' + esc(T('No sub-platform yet. Click "New sub-platform" to add one.')) + '</div>'; return; }
+  if (!ps.length) { box.innerHTML = '<div class="mg-empty">' + esc(T('no_sub_platform_yet_click_new_sub_platform_to_ad_1')) + '</div>'; return; }
   box.innerHTML = ps.map(p =>
     '<div class="mg-row" draggable="true" data-slug="' + esc(p.slug) + '">' +
-      '<span class="mg-handle" title="' + esc(T('Drag to reorder')) + '">⣿</span>' +
+      '<span class="mg-handle" title="' + esc(T('drag_to_reorder')) + '">⣿</span>' +
       '<span class="mg-name">' + esc(p.name || p.slug) + '</span>' +
       '<span class="mg-prefix">' + esc(p.prefix) + '</span>' +
       '<span class="mg-meta" title="' + esc(p.slug + (p.baseURL ? ' · ' + p.baseURL : '')) + '">' + esc(p.slug) + ' · ' + esc(p.baseURL || '') + '</span>' +
-      '<button class="btn btn-sm btn-danger" data-del="' + esc(p.slug) + '">' + esc(T('Delete')) + '</button>' +
+      '<button class="btn btn-sm btn-danger" data-del="' + esc(p.slug) + '">' + esc(T('delete')) + '</button>' +
     '</div>').join('');
   // 删除走事件委托：slug 只出现在 HTML 属性里，不拼进 JS 字符串字面量。
   box.querySelectorAll('.mg-row [data-del]').forEach(btn => {
@@ -9093,14 +9095,14 @@ async function deleteOtherPlatformBySlug(slug) {
   const ps = (otherConfig && otherConfig.platforms) || [];
   const p = ps.find(x => x.slug === slug);
   if (!p) return;
-  if (!confirm(T('Delete') + ' "' + (p.name || p.slug) + '" (' + p.prefix + ':)? ' + T('All its keys will be removed. This cannot be undone.'))) return;
+  if (!confirm(T('delete') + ' "' + (p.name || p.slug) + '" (' + p.prefix + ':)? ' + T('all_its_keys_will_be_removed_this_cannot_be_undo'))) return;
   try {
     await api('POST', '/other/platforms/delete', { slug: slug });
     if (currentOtherSlug === slug) currentOtherSlug = '';
-    toast(T('Deleted'), 'success');
+    toast(T('deleted_1'), 'success');
     await loadOtherConfig(); loadStats();
     renderOtherManageList();
-  } catch (e) { toast(T('Delete failed: ') + e.message, 'error'); }
+  } catch (e) { toast(T('delete_failed') + e.message, 'error'); }
 }
 
 async function saveOtherPlatformOrder() {
@@ -9108,10 +9110,10 @@ async function saveOtherPlatformOrder() {
   if (!slugs.length) { closeOtherManageDialog(); return; }
   try {
     await api('POST', '/other/platforms/reorder', { slugs: slugs });
-    toast(T('Order saved'), 'success');
+    toast(T('order_saved'), 'success');
     closeOtherManageDialog();
     await loadOtherConfig();
-  } catch (e) { toast(T('Save failed: ') + e.message, 'error'); }
+  } catch (e) { toast(T('save_failed') + e.message, 'error'); }
 }
 
 async function saveOtherPlatformConfig() {
@@ -9120,12 +9122,12 @@ async function saveOtherPlatformConfig() {
   const name = _('otherName').value.trim();
   const prefix = _('otherPrefix').value.trim().replace(/^:+/, '');
   const baseURL = _('otherBaseURL').value.trim().replace(/\/+$/, '');
-  if (!name || !prefix) { toast(T('Name and prefix are required'), 'error'); return; }
+  if (!name || !prefix) { toast(T('name_and_prefix_are_required'), 'error'); return; }
   try {
     await api('POST', '/other/config/update', { slug: p.slug, name: name, prefix: prefix, baseURL: baseURL });
-    toast(T('Saved'), 'success');
+    toast(T('saved'), 'success');
     loadOtherConfig();
-  } catch (e) { toast(T('Save failed: ') + e.message, 'error'); }
+  } catch (e) { toast(T('save_failed') + e.message, 'error'); }
 }
 
 async function saveOtherRateLimit() {
@@ -9137,9 +9139,9 @@ async function saveOtherRateLimit() {
       maxConcurrency: parseInt(_('otherMaxConc').value, 10) || 8,
       retries: parseInt(_('otherRetries').value, 10) || 3,
     });
-    toast(T('Saved'), 'success');
+    toast(T('saved'), 'success');
     loadOtherConfig();
-  } catch (e) { toast(T('Save failed: ') + e.message, 'error'); }
+  } catch (e) { toast(T('save_failed') + e.message, 'error'); }
 }
 
 /* ---- 添加 key 弹窗 ---- */
@@ -9152,15 +9154,15 @@ function closeOtherKeyAddDialog() { _('otherKeyAddDialog').close(); }
 async function otherKeyAddFromDialog() {
   const p = currentOtherPlatform();
   const text = _('otherKeyAddInput').value.trim();
-  if (!p || !text) { toast(T('Enter at least one key'), 'error'); return; }
+  if (!p || !text) { toast(T('enter_at_least_one_key'), 'error'); return; }
   const keys = text.split('\n').map(s => s.trim()).filter(Boolean);
   try {
     const r = await api('POST', '/other/keys/update', { slug: p.slug, add: keys });
     closeOtherKeyAddDialog();
     const added = (r.data && r.data.added) != null ? r.data.added : keys.length;
-    toast(T('Added') + ' ' + added + ' ' + T('keys'), 'success');
+    toast(T('added') + ' ' + added + ' ' + T('keys'), 'success');
     loadOtherConfig();
-  } catch (e) { toast(T('Add failed: ') + e.message, 'error'); }
+  } catch (e) { toast(T('add_failed') + e.message, 'error'); }
 }
 
 /* 点击面板外部收起多选下拉 */
@@ -9207,7 +9209,7 @@ async function fillComboModels() {
         comboModels.tokenharbor = (d.data.models || []).map(m => String(m.id || '').replace(/^tkhb:/, '')).filter(Boolean);
       }
     }
-    if (!comboModels[platform].length) { sel.innerHTML = '<option value="">' + T('No models on this platform') + '</option>'; return; }
+    if (!comboModels[platform].length) { sel.innerHTML = '<option value="">' + T('no_models_on_this_platform') + '</option>'; return; }
     sel.innerHTML = comboModels[platform].map(id => '<option value="' + esc(id) + '">' + esc(id) + '</option>').join('');
   } catch (e) { sel.innerHTML = '<option value="">Failed to load model list</option>'; }
 }
@@ -9231,7 +9233,7 @@ async function loadCombos() {
       const b = e.target.closest('button[data-delcombo]');
       if (b) deleteCombo(b.dataset.delcombo);
     };
-  } catch (e) { _('combosList').textContent = T('Failed to load: ') + e.message; }
+  } catch (e) { _('combosList').textContent = T('failed_to_load_1') + e.message; }
 }
 
 async function createCombo() {
@@ -9242,20 +9244,20 @@ async function createCombo() {
   if (!target) { toast('Select a target model', 'error'); return; }
   try {
     await api('POST', '/combos/create', { id, platform, target, useProxies: _('comboUseProxies').checked });
-    toast(T('Combo created: ') + id + ' → ' + target, 'success');
+    toast(T('combo_created') + id + ' → ' + target, 'success');
     _('comboId').value = '';
     _('comboUseProxies').checked = false;
     loadCombos();
-  } catch (e) { toast(T('Create failed: ') + e.message, 'error'); }
+  } catch (e) { toast(T('create_failed') + e.message, 'error'); }
 }
 
 async function deleteCombo(id) {
-  if (!confirm(T('Delete combo ') + id + T('? Clients using this alias will no longer be able to call it.'))) return;
+  if (!confirm(T('delete_combo') + id + T('clients_using_this_alias_will_no_longer_be_able_'))) return;
   try {
     await api('POST', '/combos/delete', { id });
     toast('Combo deleted', 'success');
     loadCombos();
-  } catch (e) { toast(T('Delete failed: ') + e.message, 'error'); }
+  } catch (e) { toast(T('delete_failed') + e.message, 'error'); }
 }
 
 // ========== Init ==========

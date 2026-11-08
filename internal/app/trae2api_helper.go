@@ -93,7 +93,7 @@ func handleTraeWebAuth(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		rec.Message = err.Error()
 	} else if added {
-		// 英文源文 + 面板 T() 词条（I18N_ZH）双语；这两条是固定串，可整句词条。
+		// 英文源文 + 面板 T() 词条（I18N）双语；这两条是固定串，可整句词条。
 		rec.Message = "Credentials saved to server"
 	} else {
 		rec.Message = "Account already exists"
