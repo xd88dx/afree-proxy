@@ -7327,7 +7327,6 @@ async function loadOrConfig() {
     const tb = _('orModelsBody');
     if (tb) {
       // 展示样式与网关设置页一致：等宽 ID + 免费标签 + 上下文标签（Name 进 title）
-      const row = inner => '<div style="display:flex;align-items:center;gap:10px;padding:8px 12px;margin:5px 0;background:rgba(148,163,184,.06);border:1px solid var(--border);border-radius:10px">' + inner + '</div>';
       tb.innerHTML = models.length
         ? models.map(m => row(
             '<span style="font-family:\'JetBrains Mono\',monospace;font-size:13px;flex:1"' + (m.name ? ' title="' + esc(m.name) + '"' : '') + '>' + esc(m.id) + '</span>' +
@@ -7677,7 +7676,6 @@ function renderTraeModels(models, accs) {
   const tb = _('traeModelsBody');
   if (!tb) return;
   const realmTag = r => '<span class="model-tag">' + esc(r) + '</span>';
-  const row = inner => '<div style="display:flex;align-items:center;gap:10px;padding:8px 12px;margin:5px 0;background:rgba(148,163,184,.06);border:1px solid var(--border);border-radius:10px">' + inner + '</div>';
   tb.innerHTML = models.length
     ? models.map(m => {
         const mult = (m.multiplier && m.multiplier !== '—') ? '<span class="model-tag">' + esc(m.multiplier) + '</span>' : '';
@@ -8106,7 +8104,6 @@ async function loadAmdConfig() {
     const tb = _('amdModelsBody');
     if (tb) {
       // 展示样式与网关设置页一致：等宽 ID + 免费标签 + 上下文标签（Name 进 title）
-      const row = inner => '<div style="display:flex;align-items:center;gap:10px;padding:8px 12px;margin:5px 0;background:rgba(148,163,184,.06);border:1px solid var(--border);border-radius:10px">' + inner + '</div>';
       tb.innerHTML = models.length
         ? models.map(m => row(
             '<span style="font-family:\'JetBrains Mono\',monospace;font-size:13px;flex:1"' + (m.name ? ' title="' + esc(m.name) + '"' : '') + '>' + esc(m.id) + '</span>' +
@@ -8387,7 +8384,6 @@ async function loadTHConfig() {
     const tb = _('thModelsBody');
     if (tb) {
       // 展示样式与网关设置页一致：等宽 ID + 免费标签 + 上下文标签（Name 进 title）
-      const row = inner => '<div style="display:flex;align-items:center;gap:10px;padding:8px 12px;margin:5px 0;background:rgba(148,163,184,.06);border:1px solid var(--border);border-radius:10px">' + inner + '</div>';
       tb.innerHTML = models.length
         ? models.map(m => row(
             '<span style="font-family:\'JetBrains Mono\',monospace;font-size:13px;flex:1"' + (m.name ? ' title="' + esc(m.name) + '"' : '') + '>' + esc(m.id) + '</span>' +
