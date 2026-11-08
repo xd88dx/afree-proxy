@@ -611,7 +611,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
     </div>
     <div class="table-wrap">
       <table>
-        <thead><tr><th style="width:44px">#</th><th style="width:150px">Account</th><th>Status</th><th title="Remaining credits from the latest snapshot (auto-refreshed in the background; Test refreshes on demand)">Credits</th><th title="Counted locally by this proxy from upstream usage events">Today/Total tokens</th><th>Last used</th><th title="Main exit first, backup as fallback; both down = row skipped (isolation).">Proxy binding</th><th style="width:130px;text-align:center">Actions</th><th style="text-align:center" data-i18n="gateway_switch" title="Gateway (reverse proxy) switch: unchecked = model sessions never route to this account; check-in and all other maintenance tasks are unaffected. Can only be ticked while the account switch is on.">Gateway switch</th><th style="text-align:center" data-i18n="account_switch" title="Account master switch. Off = the account does not exist: check-in, balance refresh and Test all skip it, and it never routes.">Account switch</th></tr></thead>
+        <thead><tr><th style="width:44px">#</th><th style="width:150px">Account</th><th>Status</th><th title="Remaining credits from the latest snapshot (auto-refreshed in the background; Test refreshes on demand)">Credits</th><th title="Counted locally by this proxy from upstream usage events">Today/Total tokens</th><th>Last used</th><th title="Main exit first, backup as fallback; both down = row skipped (isolation).">Proxy binding</th><th style="width:130px;text-align:center">Actions</th><th style="text-align:center" data-i18n="gateway_switch" data-i18n-title="gateway_reverse_proxy_switch_unchecked_model_ses" title="Gateway (reverse proxy) switch: unchecked = model sessions never route to this account; check-in and all other maintenance tasks are unaffected. Can only be ticked while the account switch is on.">Gateway switch</th><th style="text-align:center" data-i18n="account_switch" data-i18n-title="account_master_switch_off_the_account_does_not_e" title="Account master switch. Off = the account does not exist: check-in, balance refresh and Test all skip it, and it never routes.">Account switch</th></tr></thead>
         <tbody id="traeAccountsBody"><tr><td colspan="10" class="empty">Loading...</td></tr></tbody>
       </table>
     </div>
@@ -1123,8 +1123,8 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
             <th>Last used</th>
             <th title="Main exit first, backup as fallback; both down = row skipped (isolation).">Proxy binding</th>
             <th style="text-align:center">Actions</th>
-            <th style="text-align:center" data-i18n="gateway_switch" title="Gateway (reverse proxy) switch: unchecked = model sessions never route to this account; check-in and all other maintenance tasks are unaffected. Can only be ticked while the account switch is on.">Gateway switch</th>
-            <th style="text-align:center" data-i18n="account_switch" title="Account master switch. Off = the account does not exist: check-in, patrol, activity, keepalive, night chats, growth and balance refresh all skip it, and it never routes.">Account switch</th>
+            <th style="text-align:center" data-i18n="gateway_switch" data-i18n-title="gateway_reverse_proxy_switch_unchecked_model_ses" title="Gateway (reverse proxy) switch: unchecked = model sessions never route to this account; check-in and all other maintenance tasks are unaffected. Can only be ticked while the account switch is on.">Gateway switch</th>
+            <th style="text-align:center" data-i18n="account_switch" data-i18n-title="Account master switch. Off = the account does not exist: check-in, patrol, activity, keepalive, night chats, growth and balance refresh all skip it, and it never routes." title="Account master switch. Off = the account does not exist: check-in, patrol, activity, keepalive, night chats, growth and balance refresh all skip it, and it never routes.">Account switch</th>
           </tr>
         </thead>
         <tbody id="wbAccountsBody">
@@ -2863,10 +2863,10 @@ function i18nAttrs(el) {
   ['title', 'placeholder'].forEach(a => {
     const v = el.getAttribute(a);
     if (!v) return;
-    if (!I18N[v.trim()]) return;
-    const t = lookup(v.trim());
-    // Same-value setAttribute still emits an attribute mutation and can loop
-    // forever when a translated placeholder/title maps to itself.
+    // 标题与 tooltip 分离的表头：title 走 data-i18n-title 专属 key
+    const titleKey = el.getAttribute('data-i18n-title');
+    const t = titleKey ? (lookup(titleKey) !== titleKey ? lookup(titleKey) : (I18N[v.trim()] ? lookup(v.trim()) : null))
+                  : (I18N[v.trim()] ? lookup(v.trim()) : null);
     if (t && t !== v) el.setAttribute(a, t);
   });
 }
