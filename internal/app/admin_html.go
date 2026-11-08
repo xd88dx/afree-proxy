@@ -1124,7 +1124,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
             <th title="Main exit first, backup as fallback; both down = row skipped (isolation).">Proxy binding</th>
             <th style="text-align:center">Actions</th>
             <th style="text-align:center" data-i18n="gateway_reverse_proxy_switch_unchecked_model_ses" title="Gateway (reverse proxy) switch: unchecked = model sessions never route to this account; check-in and all other maintenance tasks are unaffected. Can only be ticked while the account switch is on.">Gateway switch</th>
-            <th style="text-align:center" title="Account master switch. Off = the account does not exist: check-in, patrol, activity, keepalive, night chats, growth and balance refresh all skip it, and it never routes.">Account switch</th>
+            <th style="text-align:center" data-i18n="Account master switch. Off = the account does not exist: check-in, patrol, activity, keepalive, night chats, growth and balance refresh all skip it, and it never routes." title="Account master switch. Off = the account does not exist: check-in, patrol, activity, keepalive, night chats, growth and balance refresh all skip it, and it never routes.">Account switch</th>
           </tr>
         </thead>
         <tbody id="wbAccountsBody">
@@ -2278,8 +2278,8 @@ const I18N = {
   'gateway_switch': { en: 'Gateway switch', zh: '反代开关' },
   'Account master switch. Off = the account does not exist: check-in, patrol, activity, keepalive, night chats, growth and balance refresh all skip it, and it never routes.': { en: 'Account master switch. Off = the account does not exist: check-in, patrol, activity, keepalive, night chats, growth and balance refresh all skip it, and it never routes.', zh: '账号总开关。关闭 = 该账号不存在：签到、旅行、活跃、保活、夜猫子、成长任务与余额刷新全部跳过，也不再参与路由。' },
   'gateway_reverse_proxy_switch_unchecked_model_ses': { en: 'Gateway (reverse proxy) switch: unchecked = model sessions never route to this account; check-in and all other maintenance tasks are unaffected. Can only be ticked while the account switch is on.', zh: '反代开关：不勾选 = 模型会话不路由到该账号；签到等其余维护任务不受影响。只有账号开关开启时才能勾选。' },
-  'account_master_switch_off_the_account_does_not_e_1': { en: 'Account master switch: off = the account does not exist — check-in, tasks and balance refresh all stop, and it never routes', zh: '账号总开关：关闭 = 该账号不存在——签到、任务与余额刷新全部停止，也不再路由' },
-  'gateway_switch_unchecked_model_sessions_never_ro': { en: 'Gateway switch: unchecked = model sessions never route to this account; check-in and all other maintenance tasks are unaffected', zh: '反代开关：不勾选 = 模型会话不路由到该账号；签到等其余维护任务不受影响' },
+  'account_master_switch_wb': { en: 'Account master switch: off = the account does not exist — check-in, tasks and balance refresh all stop, and it never routes', zh: '账号总开关：关闭 = 该账号不存在——签到、任务与余额刷新全部停止，也不再路由' },
+  'gateway_switch_line': { en: 'Gateway switch: unchecked = model sessions never route to this account; check-in and all other maintenance tasks are unaffected', zh: '反代开关：不勾选 = 模型会话不路由到该账号；签到等其余维护任务不受影响' },
   // 封禁平台（网关设置页，封禁模型区上方；整平台退出会话路由）
   'Banned platforms': { en: 'Banned platforms', zh: '封禁平台' },
   'Banned platforms stop participating in session routing — models leave /v1/models and requests fail immediately; maintenance tasks (check-in etc.) are unaffected. Other sub-platforms can be banned individually. Changes are staged — click Save to save.': { en: 'Banned platforms stop participating in session routing — models leave /v1/models and requests fail immediately; maintenance tasks (check-in etc.) are unaffected. Other sub-platforms can be banned individually. Changes are staged — click Save to save.', zh: '封禁后整平台退出会话路由——模型从 /v1/models 移除、调用立即失败；签到等维护任务不受影响。Other 的子平台可单独封禁。改动先暂存，点「保存」后统一落盘。' },
@@ -3124,10 +3124,10 @@ function renderWorkbuddyAccounts() {
     const poolOn = account.pool_enabled !== false;
     wbSnapshot[id] = { account: accEnabled, enabled: poolOn };
     const accCell = '<td style="text-align:center"><input type="checkbox" data-wb-account="' + esc(id) + '"' +
-      (accEnabled ? ' checked' : '') + ' title="' + esc(T('account_master_switch_off_the_account_does_not_e_1')) + '" aria-label="' + esc(T('account_switch')) + '"></td>';
+      (accEnabled ? ' checked' : '') + ' title="' + esc(T('account_master_switch_wb')) + '" aria-label="' + esc(T('account_switch')) + '"></td>';
     const poolCell = '<td style="text-align:center"><input type="checkbox" data-wb-pool="' + esc(id) + '"' +
       (accEnabled && poolOn ? ' checked' : '') + (!accEnabled ? ' disabled' : '') +
-      ' title="' + esc(T('gateway_switch_unchecked_model_sessions_never_ro')) + '" aria-label="' + esc(T('gateway_switch')) + '"></td>';
+      ' title="' + esc(T('gateway_switch_line')) + '" aria-label="' + esc(T('gateway_switch')) + '"></td>';
     // uid 过长会把 Account 列撑宽，昵称下方只留前 10 个字符，完整值走 title 悬浮。
     const shortId = id.length > 10 ? id.slice(0, 10) + '…' : id;
     // 账号列：昵称旁铅笔行内改名。手改后加本地锁（上游昵称同步跳过，不被
