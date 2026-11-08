@@ -1074,7 +1074,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
 </div>
 
 <div class="section">
-  <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 5-6"/></svg></span> <span data-i18n="Model catalog">Model catalog</span></div>
+  <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 5-6"/></svg></span> <span data-i18n="Model catalog">Model catalog</span> <span class="probe-pill" data-models-info style="font-weight:normal"></span></div>
   <div class="section-body">
     <div class="flex" style="margin-bottom:10px;gap:10px">
       <button class="btn btn-sm btn-primary" onclick="refreshZenModels(this)" data-i18n="Refresh models">Refresh models</button>
@@ -7676,6 +7676,7 @@ async function saveTraeConfig() {
 function renderTraeModels(models, accs) {
   const tb = _('traeModelsBody');
   if (!tb) return;
+  const row = (inner) => '<div style="display:flex;align-items:center;gap:10px;padding:8px 12px;margin:5px 0;background:rgba(148,163,184,.06);border:1px solid var(--border);border-radius:10px;transition:.15s">' + inner + '</div>';
   const realmTag = r => '<span class="model-tag">' + esc(r) + '</span>';
   tb.innerHTML = models.length
     ? models.map(m => {
