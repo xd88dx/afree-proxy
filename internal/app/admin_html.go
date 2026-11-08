@@ -1017,7 +1017,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
       </div>
       <div style="display:flex;gap:8px">
         <button class="btn btn-sm btn-warn" id="ocResetBtn" onclick="resetKeyEdits()" title="Discard staged changes and reload the last saved state">Discard</button>
-        <button class="btn btn-primary btn-sm" id="ocKeysSaveBtn" onclick="saveKeyEdits()">Save</button>
+        <button class="btn btn-primary btn-sm" id="ocKeysSaveBtn" onclick="saveKeyEdits()" data-i18n="save">Save</button>
       </div>
     </div>
   </div>
@@ -1145,7 +1145,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
       </div>
       <div style="flex:1;display:flex;gap:8px;justify-content:flex-end">
         <button class="btn btn-sm btn-warn" id="wbResetBtn" onclick="resetWorkbuddyEdits()" title="Discard staged changes and reload the last saved state">Discard</button>
-        <button class="btn btn-primary btn-sm" id="wbSaveBtn" onclick="saveWorkbuddyEdits()">Save</button>
+        <button class="btn btn-primary btn-sm" id="wbSaveBtn" onclick="saveWorkbuddyEdits()" data-i18n="save">Save</button>
       </div>
     </div>
   </div>
@@ -1312,7 +1312,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
       </div>
       <div style="display:flex;gap:8px">
         <button class="btn btn-sm btn-warn" id="orResetBtn" onclick="resetOrKeyEdits()" title="Discard staged changes and reload the last saved state">Discard</button>
-        <button class="btn btn-primary btn-sm" id="orKeysSaveBtn" onclick="saveOrKeyEdits()">Save</button>
+        <button class="btn btn-primary btn-sm" id="orKeysSaveBtn" onclick="saveOrKeyEdits()" data-i18n="save">Save</button>
       </div>
     </div>
   </div>
@@ -1379,7 +1379,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
       </div>
       <div style="display:flex;gap:8px">
         <button class="btn btn-sm btn-warn" id="amdResetBtn" onclick="resetAmdKeyEdits()" title="Discard staged changes and reload the last saved state">Discard</button>
-        <button class="btn btn-primary btn-sm" id="amdKeysSaveBtn" onclick="saveAmdKeyEdits()">Save</button>
+        <button class="btn btn-primary btn-sm" id="amdKeysSaveBtn" onclick="saveAmdKeyEdits()" data-i18n="save">Save</button>
       </div>
     </div>
   </div>
@@ -1447,7 +1447,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
       </div>
       <div style="display:flex;gap:8px">
         <button class="btn btn-sm btn-warn" id="thResetBtn" onclick="resetTHKeyEdits()" title="Discard staged changes and reload the last saved state">Discard</button>
-        <button class="btn btn-primary btn-sm" id="thKeysSaveBtn" onclick="saveTHKeyEdits()">Save</button>
+        <button class="btn btn-primary btn-sm" id="thKeysSaveBtn" onclick="saveTHKeyEdits()" data-i18n="save">Save</button>
       </div>
     </div>
   </div>
@@ -1540,7 +1540,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
       </div>
       <div style="display:flex;gap:8px">
         <button class="btn btn-sm btn-warn" id="otherResetBtn" onclick="resetOtherKeyEdits()" title="Discard staged changes and reload the last saved state">Discard</button>
-        <button class="btn btn-primary btn-sm" id="otherKeysSaveBtn" onclick="saveOtherKeyEdits()">Save</button>
+        <button class="btn btn-primary btn-sm" id="otherKeysSaveBtn" onclick="saveOtherKeyEdits()" data-i18n="save">Save</button>
       </div>
     </div>
   </div>
