@@ -2077,7 +2077,7 @@ const I18N_ZH = {
   'Proxy isolation: each credential only egresses via its bound exits; when none is available it is skipped — never another exit or direct. Forced on when': '代理隔离：每个凭据只从绑定的出口出站，都不可用则跳过——绝不改走其他出口或直连。设有',
   '=true.': '=true 时强制开启。',
   'Backup proxy — off by default: every identity uses its main proxy only; a cooling or removed main proxy is skipped for that round. On: the backup proxy serves as the fallback for the main one.': '备用代理：默认关闭——每个身份只走主代理，主代理冷却或被移除时直接跳过。开启后：备用代理作为主代理的兜底。',
-  'Platform-level blacklist, per-proxy binding cap and manually disabled (cooled) proxies apply to automatic assignment only — one-click bind and reorder-by-latency. CN-domain accounts of TraeWork/WorkBuddy are excluded from both batch operations, and the proxies they hold are never reassigned. Manual bindings and runtime routing are never restricted.': '平台拉黑、单代理绑定上限与手动禁用（冷却）的代理只约束自动分配——「一键代理」与「凭据延迟重排」两个批量操作；TraeWork/WorkBuddy 的国内域账号不参与这两个批量操作，其占用的代理也不会被再分配。手动绑定和运行期路由不受限制。',
+  'Platform-level blacklist, per-proxy binding cap and manually disabled (cooled) proxies apply to automatic assignment only — one-click bind and reorder-by-latency. CN-domain accounts of TraeWork/WorkBuddy are excluded from both batch operations, and the proxies they hold are never reassigned within their own platform. Manual bindings and runtime routing are never restricted.': '平台拉黑、单代理绑定上限与手动禁用（冷却）的代理只约束自动分配——「一键代理」与「凭据延迟重排」两个批量操作；TraeWork/WorkBuddy 的国内域账号不参与这两个批量操作，其占用的代理不会被同平台的其他账号再分配。手动绑定和运行期路由不受限制。',
   ' · excluded': ' · 已排除',
   ' row(s) left unchanged — every allowed proxy is excluded or at cap': ' 行无法改绑：可用代理都已拉黑或达到上限',
   'Latency reorder finished with errors — loads failed: ': '延迟重排完成但有错误——加载失败：',
@@ -4319,10 +4319,13 @@ function stageProxiesByOrder(kind) {
   if (!proxyListCache.length) { toast(T('Proxy pool is empty'), 'info'); return; }
   // CN 域账号行不参与一键代理（2026-11-07 用户定，仅 trae/wb 有域语义）：绑定
   // 原样保留；其占用代理从分配序列剔除——专属出口不得再分给其他凭据。
-  const skippedCN = (kind === 'trae' || kind === 'wb')
-    ? rows.filter(r => r.dataset.realm === 'cn').length : 0;
+  // 占用保护（cnOccupied）只对同样有 CN 域语义的平台生效（2026-11-08 用户定）：
+  // 否则 cline/opencode 等平台一键代理会被 trae/wb CN 账号占住的代理（如 DDSG）
+  // 误伤——其他平台没有「CN 专属出口」的概念。
+  const hasCNRealm = kind === 'trae' || kind === 'wb';
+  const skippedCN = hasCNRealm ? rows.filter(r => r.dataset.realm === 'cn').length : 0;
   if (skippedCN) rows = cnRowFilter(rows);
-  const cnOccupied = cnDomainOccupiedProxies();
+  const cnOccupied = hasCNRealm ? cnDomainOccupiedProxies() : new Set();
   // 自动分配规则：对该平台拉黑的代理不参与按序绑定（手动绑定不受限）。
   // Other 的规则按子平台存（other:<slug>），这里用当前选中的子平台取候选。
   // 手动禁用（健康表「冷却」，无到期）的代理同样不参与——后续凭据前移递补。
@@ -4481,10 +4484,13 @@ const proxyManuallyCooled = v => {
   return !!r && r.cooling === true && !r.coolingUntil;
 };
 
-// CN 域账号批量操作保护（2026-11-07 用户定）：trae CN / wb cn 行不参与一键
-// 代理与延迟重排（绑定原样保留），其占用的主代理是专属出口、不得再分给其他
-// 凭据。cnDomainOccupiedProxies 跨表扫描两个表的 CN 行当前主槽占用（直连不
-// 算占用）——trae CN 占的代理在 wb 延迟重排时同样要避开，反之亦然。
+// CN 域账号批量操作保护（2026-11-07 用户定；2026-11-08 收窄生效范围）：
+// trae CN / wb cn 行不参与一键代理与延迟重排（绑定原样保留），其占用的主代理
+// 是专属出口、不得再分给同平台其他凭据。cnDomainOccupiedProxies 跨表扫描两个
+// 表的 CN 行当前主槽占用（直连不算占用）——trae 与 wb 互避对方 CN 账号的占用。
+// 占用保护只在 trae/wb 自身的批量操作里生效（调用方判定 kind）：cline/
+// opencode 等没有 CN 域语义的平台一键代理/重排不受此约束，CN 账号占用的代理
+// 照常进它们的分配序列。
 // 行识别靠渲染时写入的 tr data-realm（trae 由 uid 前缀推导、wb 由账号 realm）。
 function cnDomainOccupiedProxies() {
   const occ = new Set();
@@ -4526,8 +4532,10 @@ function applyReorderRules(kind, parts) {
   const inPool = v => proxyListCache.indexOf(v) >= 0;
   // 供给偏好序：池内未被拉黑且未手动禁用的代理，快（延迟升序）→ 无记录（池序）→ 慢（延迟升序）
   // CN 域账号（trae/wb）占用的代理不进供给（2026-11-07 用户定）：专属出口
-  // 不得被重排分给其他凭据。跨表扫描——trae 重排时 wb CN 的占用同样避开。
-  const cnOccupied = cnDomainOccupiedProxies();
+  // 不得被重排分给其他凭据。跨表扫描 + 只在有 CN 域语义的平台生效
+  // （2026-11-08 用户定）：trae/wb 互避对方 CN 账号的占用；cline/opencode 等
+  // 没有域语义，不受 CN 专属出口约束。
+  const cnOccupied = (kind === 'trae' || kind === 'wb') ? cnDomainOccupiedProxies() : new Set();
   const pref = proxyListCache.filter(p => !proxyExcludedFor(p, kind) && !proxyManuallyCooled(p) && !cnOccupied.has(p)).sort((a, b) => {
     const ta = proxyTierFor(a), tb = proxyTierFor(b);
     if (ta !== tb) return ta - tb;

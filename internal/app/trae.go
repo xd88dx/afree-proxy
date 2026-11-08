@@ -326,7 +326,7 @@ func traeStoreHTTPClient(s *traectl.Store) *http.Client {
 	if !ok {
 		return traeFailClosedClient()
 	}
-	return traePooledClient(url)
+	return traePooledClient(url, uid)
 }
 
 // traeEgressClient 全局规则出口（未绑定/隔离关闭时）。
@@ -335,19 +335,22 @@ func traeEgressClient(uid string) *http.Client {
 	if !ok {
 		return traeFailClosedClient()
 	}
-	return traePooledClient(url)
+	return traePooledClient(url, uid)
 }
 
 // traePooledClient 把池代理地址换成带观测的客户端；空串 = 直连（交还上游）。
 // 最外层是回退链守卫（死腿短路 + 中间失败观测，见 trae_fallback_guard.go），
 // 短路不出网、不计入出口健康统计。
-func traePooledClient(proxyURL string) *http.Client {
+// uid 是本次出站命中的账号（调用方已按 Store 反查）：vendored 每次发请求都
+// 重新调 StoreHTTPClient(c.Store)，client 按请求构造，闭包捕获即精确归属，
+// 无需从出站请求上下文反推（出口 client 不带账号身份，上下文里没有）。
+func traePooledClient(proxyURL, uid string) *http.Client {
 	if proxyURL == "" {
 		return nil
 	}
 	base := proxyClientFor(proxyURL)
 	return &http.Client{Transport: traeFallbackGuardTransport{
-		inner: traeObserveTransport{inner: base.Transport, proxy: proxyURL},
+		inner: traeObserveTransport{inner: base.Transport, proxy: proxyURL, uid: uid},
 	}}
 }
 
@@ -364,30 +367,25 @@ func (traeFailClosedTransport) RoundTrip(*http.Request) (*http.Response, error) 
 }
 
 // traeObserveTransport 出站观测：出口健康统计 + 请求日志「账号/出口」列。
-// ctx 取自 vendored handler 的请求链（afree 直转路径带着原始请求上下文，
-// 面板/定时任务调用没有日志槽位时 setUpstreamInfo 内部 no-op）。
+// uid 由构造方闭包注入（traeStoreHTTPClient 按 Store 反查，见 traePooledClient）；
+// vendored 的续期/签到/额度等后台出站同样经这里，但没有日志槽位时
+// setUpstreamInfo 内部 no-op，不会污染。
 type traeObserveTransport struct {
 	inner http.RoundTripper
 	proxy string
+	uid   string // 本次出站命中的账号 UID；空 = 未知（面板只填出口列）
 }
 
 func (t traeObserveTransport) RoundTrip(r *http.Request) (*http.Response, error) {
-	if ctx := r.Context(); ctx != nil {
-		uid := traeUIDFromCtx(r)
-		if uid != "" {
-			setUpstreamInfo(ctx, trae2apiUpstreamLabel(uid))
-			setUpstreamExit(ctx, trae2apiExitType(uid, t.proxy))
-		}
+	if ctx := r.Context(); ctx != nil && t.uid != "" {
+		setUpstreamInfo(ctx, trae2apiUpstreamLabel(t.uid))
+		setUpstreamExit(ctx, trae2apiExitType(t.uid, t.proxy))
 	}
 	start := time.Now()
 	resp, err := t.inner.RoundTrip(r)
 	recordProxyOutcome(pkTrae, t.proxy, err == nil, err, time.Since(start).Milliseconds())
 	return resp, err
 }
-
-// traeUIDFromCtx 从请求的 Authorization/vendored 侧不可行——出口 client 不带
-// 账号身份，这里退化为按 proxy 槽位只填出口列。账号列由面板凭据页呈现。
-func traeUIDFromCtx(*http.Request) string { return "" }
 
 // trae2apiUpstreamLabel 日志「账号/Key」列：account #N（与 wb 同口径，行号
 // 取池内顺序）。

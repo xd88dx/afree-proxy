@@ -1353,7 +1353,8 @@ func clineAPIWithAccount(ctx context.Context, params map[string]any, stream bool
 			// 错误也绝不毒化账号（pidx=-1 的直连兜底冷却为 no-op）。
 			// shouldCooldownExit 纯查询（不写计数），真正的 strike 记账与冷却
 			// 在下面的 recordProxyOutcome 单点完成——两处结论一致，动作幂等。
-			// 建连失败与隧道后流错误都是 60s 窗口 2-strike（2026-10-31）：
+				// 建连失败与隧道后流错误都是 60s 窗口 N-strike（N 由
+				// PROXY_COOLDOWN_STRIKES 控制，默认 3，2026-11-08）：
 			// 单次网络抖动不再全局冷却唯一可用出口。
 			if scope, cool := shouldCooldownExit(pkCline, proxyURL, lastErr); cool {
 				if scope == "global" {

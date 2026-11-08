@@ -50,12 +50,13 @@ const (
 	// proxyHealthFlushInterval 落盘周期。进程被 kill 时最多丢这个窗口的数据。
 	proxyHealthFlushInterval = 60 * time.Second
 	// proxyTransportCooldown 传输层失败后该出口退出轮转的时长（**全局层**：
-	// 建连阶段失败 60s 窗口 2-strike 后触发，2026-10-31 用户定——单次网络
+	// 建连阶段失败 60s 窗口 N-strike 后触发，2026-10-31 用户定 2-strike、
+	// 2026-11-08 用户定阈值改 PROXY_COOLDOWN_STRIKES 可配默认 3——单次网络
 	// 抖动（如唯一凭据的一次拨号失败）不再把出口对全部平台冷却；短冷却能跳过
 	// 真死节点又快速自愈，长冷却会让几次慢请求毒化整个池。
 	proxyTransportCooldown = 2 * time.Minute
 	// proxyPlatformCooldown 平台级冷却时长（2026-10-30 用户定 10 分钟）：隧道后
-	// 流错误 2-strike 触发。封禁（如 codebuddy 封出口 IP）存续期以小时/天计，
+	// 流错误 N-strike 触发。封禁（如 codebuddy 封出口 IP）存续期以小时/天计，
 	// 10 分钟显著减少循环期的无效重试；代价是解封后最多 10 分钟才恢复，可接受。
 	proxyPlatformCooldown = 10 * time.Minute
 )
@@ -134,14 +135,27 @@ func isUpstreamSideStreamFailure(err error) bool {
 //     请求循环里也调 shouldCooldownExit，但那是**纯查询**（算上本次是否达
 //     阈值），不写计数——否则同一次失败会被循环 + recordProxyOutcome 记两次，
 //     2-strike 退化为 1-strike（2026-10-31 修复的存量 bug）。
-//   - 全局层（建连失败）与平台层（隧道后流错误）都是窗口内 2-strike 触发
+//   - 全局层（建连失败）与平台层（隧道后流错误）都是窗口内 N-strike 触发
+//     （N 由 PROXY_COOLDOWN_STRIKES 控制，默认 3）。
 //     （2026-10-31 用户定）：单次网络抖动不再把唯一可用出口全局冷却 2 分钟。
 //
 // ============================================================================
 const (
-	proxyStreamFailWindow    = 60 * time.Second
-	proxyStreamFailThreshold = 2
+	proxyStreamFailWindow = 60 * time.Second
+	// proxyStreamFailThresholdDefault 触发冷却所需的失败次数默认值（60s 窗口内）。
+	// 由 PROXY_COOLDOWN_STRIKES 覆盖，默认 3（2026-11-08 用户定）——单次偶发
+	// 抖动后还有两次机会再试，避免出口被两次紧邻抖动判死。
+	proxyStreamFailThresholdDefault = 3
 )
+
+// proxyCooldownStrikes 冷却触发的失败次数：读 PROXY_COOLDOWN_STRIKES，
+// 非法值（<1）回落默认 3。启动期读一次即可，热改不影响在途计数。
+func proxyCooldownStrikes() int {
+	if n, ok := envInt("PROXY_COOLDOWN_STRIKES"); ok && n >= 1 {
+		return n
+	}
+	return proxyStreamFailThresholdDefault
+}
 
 var (
 	proxyStreamFailMu sync.Mutex
@@ -162,14 +176,15 @@ func proxyFailStrike(key string) bool {
 
 // proxyFailStrikeLocked 已持锁的记录+判定。
 func proxyFailStrikeLocked(key string, now time.Time) bool {
-	kept := make([]time.Time, 0, proxyStreamFailThreshold+1)
+	threshold := proxyCooldownStrikes()
+	kept := make([]time.Time, 0, threshold+1)
 	for _, t := range proxyStreamFails[key] {
 		if now.Sub(t) <= proxyStreamFailWindow {
 			kept = append(kept, t)
 		}
 	}
 	kept = append(kept, now)
-	if len(kept) >= proxyStreamFailThreshold {
+	if len(kept) >= threshold {
 		delete(proxyStreamFails, key) // 触发即清零，避免窗口内反复冷却
 		return true
 	}
@@ -181,6 +196,7 @@ func proxyFailStrikeLocked(key string, now time.Time) bool {
 // 循环里先于 recordProxyOutcome 的判定使用（只判不记，见 failKey 注释）。
 func proxyFailStrikePending(key string) bool {
 	now := time.Now()
+	threshold := proxyCooldownStrikes()
 	proxyStreamFailMu.Lock()
 	defer proxyStreamFailMu.Unlock()
 	n := 0
@@ -189,7 +205,7 @@ func proxyFailStrikePending(key string) bool {
 			n++
 		}
 	}
-	return n+1 >= proxyStreamFailThreshold
+	return n+1 >= threshold
 }
 
 // clearFailStrikes 清掉某出口的全部失败计数（全局 + 各平台）。手动解禁用。
@@ -223,8 +239,8 @@ func recordExitFailure(kind, proxyURL string, err error) string {
 }
 
 // shouldCooldownExit err 是否应当让该出口退出轮转，以及**冷却的作用范围**。
-// 返回 (scope, ok)：scope = "global"（建连失败 2-strike，出口对谁都死）或
-// "platform"（隧道后流错误达成 2-strike，大概率是目标封了出口 IP）；
+// 返回 (scope, ok)：scope = "global"（建连失败 N-strike，出口对谁都死）或
+// "platform"（隧道后流错误达成 N-strike，大概率是目标封了出口 IP）；
 // ok=false = 不冷却（上游响应类错误、未达门限的失败）。
 //
 // **本函数不写任何计数**：cline/zen 请求循环用它做即时判定（本次算第 N 次，

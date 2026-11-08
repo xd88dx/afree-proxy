@@ -214,6 +214,8 @@ func TestIsTransportLayerFailure(t *testing.T) {
 // 此前只有 cline/zen 会摘掉坏节点，其余平台只记账不自愈，坏节点被轮转反复
 // 选中、把故障记到多个凭据头上。单次失败只记账，窗口内第二次才冷却。
 func TestRecordProxyOutcomeCoolsBadExit(t *testing.T) {
+	// 锁定阈值为 2，断言的是"N-strike 触发冷却"机制本身
+	t.Setenv("PROXY_COOLDOWN_STRIKES", "2")
 	setupBindingTest(t, &zenTestConfig{Proxies: []string{"http://a:1", "http://b:2"}})
 	t.Cleanup(func() {
 		proxyCooldownsMu.Lock()

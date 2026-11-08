@@ -11,6 +11,9 @@ import (
 // **只冷却该平台的视角**——绑同一出口的其它平台完全无感；而建连阶段失败
 // （出口真死）仍然是全局冷却，所有平台一起避开。
 func TestPlatformScopedCooldown(t *testing.T) {
+	// 测试断言的是"N-strike 触发 + 平台隔离"机制，阈值本身是可配项。
+	// 用 PROXY_COOLDOWN_STRIKES=2 把测试前提锁死，避免默认值变动牵连。
+	t.Setenv("PROXY_COOLDOWN_STRIKES", "2")
 	setupBindingTest(t, &zenTestConfig{Proxies: []string{
 		"socks5://u:p@10.0.0.1:11106#DDPHX",
 		"socks5://u:p@10.0.0.1:11105#DDFRK",

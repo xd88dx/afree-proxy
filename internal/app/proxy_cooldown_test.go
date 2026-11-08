@@ -15,6 +15,8 @@ import (
 // 循环用它即时判定，真正的记账在 recordExitFailure（recordProxyOutcome 内）
 // 单点完成。
 func TestShouldCooldownExit(t *testing.T) {
+	// 锁定阈值为 2，断言的是"N-strike 触发冷却"机制本身
+	t.Setenv("PROXY_COOLDOWN_STRIKES", "2")
 	const p = "socks5://10.10.10.5:10106#DDPHX"
 	reset := func() {
 		proxyStreamFailMu.Lock()
