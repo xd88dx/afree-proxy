@@ -15,6 +15,10 @@ WorkBuddy 一栏的基线同时登记在 `scripts/workbuddy-vendor-baseline.json
 
 本次未涉及上游同步（2026-10-28 核对：`foxy1402/cline-proxy` main 仍为 `571f9b9`，与 2026-10-27 同步基线一致，无新提交；`571f9b9` 的改动全部属于 OpenCode 线，见文末 OpenCode 节。2026-10-29 复核：仍为 `571f9b9`，无新提交。2026-10-30 复核：上游推进到 `b8a1be0`，但区间内 4 提交全部落在 zen/OpenCode 侧（`git diff 571f9b9 b8a1be0` 无 Cline 侧文件），Cline 线本次零吸收，详见 OpenCode 节。2026-10-31 复核：仍为 `b8a1be0`，无新提交，本次未涉及。2026-10-31 二次复核：上游推进到 `a41f1756`，但区间内 1 提交全部落在 zen/OpenCode 侧（`git diff b8a1be0 a41f1756 --name-only` 无 Cline 侧文件），Cline 线零吸收，详见 OpenCode 节。2026-11-02 复核：仍为 `a41f1756`，无新提交，本次未涉及。2026-11-05 复核：仍为 `a41f1756`，无新提交，本次未涉及。2026-11-07 复核：上游推进到 `c6b3c45`，区间 3 提交全部落在 zen/OpenCode 侧（zen system prompt 换位/429 请求抓包/真实计费 tokens），Cline 线零吸收，详见 OpenCode 节）。
 
+### 2026-11-08 — c6b3c45 → a8fe356
+
+本次区间内 2 提交（`7dd0afe` revert + `a8fe356` tool filter）全在 zen/OpenCode 侧（`git diff --name-only c6b3c45 a8fe356` 仅含 `zen*.go`、`admin_zen.go`、`admin_html.go`（OpenCode 面板区块）、`zen_toolfilter*.go`、env-marker 测试与 TODO.md），无 `proxy.go`/转发/方言转换侧文件，Cline 线零吸收，详见 OpenCode 节。
+
 ## TreaWork
 
 **2026-11-04 起上游换线**：`XCool-603/trae2api`（vendor 三方合并线，见下方 2026-11-04 条目）；`autumnsentiment/Trae2api-cn` 仅剩 helper 脚本比对。切换点 tag：`last-trae2api-cn`(49ec6be)。
@@ -182,6 +186,16 @@ WorkBuddy 一栏的基线同时登记在 `scripts/workbuddy-vendor-baseline.json
 
 上游 `misakano7545/workbuddy2api-panel` main 无新提交（基线 `96b816d` 不变，版本 dev），`sync_workbuddy.py --report` 确认零改动，本次未涉及上游同步。
 
+### 2026-11-08 — 4830686 → b42712c（20 提交；1 冲突 + 1 断言）
+
+- 吸收：输出预算下限（`upstream/output_budget.go` 新增，修「高档位思考把份额度吃光」截断）+ 续写闸门改累计上限（`server/continue.go`）+ 抬过额度请求在 length 处自动续接 + thinking 吃光预算也续写（`server/handler.go`）+ 思考吃光预算时也自动续写 + SSE clientgone 日志；默认档位 high 方向回退自洽 `max`（以 vendor config 字面量为准，胖 `test` 断言同步校准）。
+- 冲突解决（`panel/panel.go` 一处）：接受上游的 catalogErrs/busyErrs 分拆（`fetch_errors` 只取目录失败，繁忙度失败另有 `busy_errs`）；保留本地的陈旧快照回放（`stalePanelModelsSnapshot`，超 1h stale 上限才回 502）——与 2026-11-05 约定一致（繁忙度失败不混进 `catalogErrs`，避免新目录被误标 stale）。
+- 测试同步校准（`config_test.go`）：`TestConfigExampleParses` 默认档位断言随上游改为 `max`（`normalizeThinking` 空值回落 `max`，与字面量一致）。
+- 源树注记：源树 `main` 与 `misakano/main` 分叉严重（179/628，两条血统），**不得对工作树 main 做 ff**——本次同步从 `misakano/main` 检出的 `b42712c` 读取、seal `b42712c`。源树 `main` 上的 diverge + 停维护声明与本仓同步无关。
+- **TraitHelper 比对**：`check_trae_helper.py` exit 0（内嵌 `web_login.py` 与上游 v1.0.10 逐行一致），`trae-helper-baseline.json` 不推进。
+- 验证：`go build ./... && go vet ./... && go test ./... -count=1` 全过；基线 seal `b42712c`（dev）。
+- **TraeWork 线**：上游 `8bc4843` 无新提交，本次未涉及（沿用 2026-11-07 基线）。
+
 ### 2026-11-07 — d596fa7 → 4830686（21 提交，冲突 2 文件均并集双保留）
 
 - merge 随双 vendor 提交 ceae988 落库。上游主线：auth 新版桌面端 `$wbEncrypted` 加密文件（自动解密+回写保持加密，wbSealed 字段）、11134 供应商过载不再罚号/换号并保留会话粘性（#188）、慢上传可见性+在途名额释放、入站请求体上限+11140 风控连坐保护、托管 image_generation 工具（Codex 出图用法+积分闸前移）、媒体接口对齐 OpenAI 资源形状、余额趋势事件绑定修复。
@@ -293,7 +307,23 @@ WorkBuddy 一栏的基线同时登记在 `scripts/workbuddy-vendor-baseline.json
   - 教训:普通模式全绿不代表无竞争——上游"不 join 的 goroutine 直写共享 struct"模式普通模式测不出,race 是唯一检出手段。vendor 线引入并发代码时 `-race` 不应再跳过。
 - 生产:未同步,等用户「同步」指令(见 PROJECT.md 部署节)。
 
+### 2026-11-08 — 4830686 → b42712c（20 提交；1 冲突 + 1 断言）
+
+- 吸收：输出预算下限（`upstream/output_budget.go` 新增，修「高档位思考把份额度吃光」截断）与续写闸门改累计上限（`server/continue.go`）、抬过额度请求在 length 处自动续接、思考吃光预算也自动续写（`server/handler.go`）、响应 reasoning-only 失败改判失败（`server/responses.go`）、SSE clientgone 可观测（`upstream/sse.go`）、断流截断终态（`upstream/stream_truncation_terminal_test.go` 等。上游默认档位改 high 与本地 hermes/reorder 语义的交叉面无冲突，未吸收默认档位改动（以 vendor config 的 `thinking.default_effort` 断言校准为准，见下）。
+- 冲突解决（`panel/panel.go` 一处）：接受上游 `fetch_errors`/`busy_errs` 拆字段；本仓陈旧快照回放逻辑（`stalePanelModelsSnapshot` 超 stale 上限 1h 才回 502）保留——与 2026-11-05 约定一致（繁忙度失败不混进 `catalogErrs`，避免新目录被误标 stale）。
+- 测试同步校准：`config_test.go` 的 `TestConfigExampleParses` 默认档位断言随上游改为 `max`（`normalizeThinking` 空值回落 `max`，与字面量一致——上游默认改 high 在本批提交中已自洽回 max，见 `1df3b83`）。
+- 源树注记：源树 `main` 与 `misakano/main` 早已分叉（与 linguo 平行血统混入，见 2026-10-29 踩坑注记），**不得对源树 `main` 做 ff/pull**；本次同步读取的是 `misakano/main` 检出，`sync --seal` 写入基线 `b42712c`（dev）也是它。源树工作区改动（`24101b9`-era divergent）未动——这是源工作树自身的分支状态，不在本仓同步职责内。
+
+
 ## OpenCode
+
+### 2026-11-08 — c6b3c45 → a8fe356（2 提交：tool filter 吸收；system prompt 换位随上游回退）
+
+- merge commit `7fb9f12`（merge 方式）：基线 `c6b3c45 → a8fe356`（上游 `foxy1402/cline-proxy` main），冲突 3 文件（`zen.go`/`admin_zen.go`/`admin_html.go`）。
+- **吸收**：`a8fe356` zen 客户端工具过滤（新增 `zen_toolfilter.go`，默认关闭：按 `denyPrefixes`/`denyNames` 丢弃客户端工具，可选截断 `maxDescription`；12 个网关必需工具不进过滤。实测 ZCode 单请求 137KB 中 112KB（82%）是 76 个工具定义）；`SessionRotateMinutes`（粘性会话本地轮换周期，默认 120，未首发 0 = 旧行为）。面板「请求体裁剪」与模型列表 section 合并保留（见 admin_html.go 冲突解决）。
+- **随上游回退**：`7dd0afe` 撤回 `c6b3c45` 的 system prompt relocation。`SystemRelocation` 字段、面板开关、`zenSystemRelocationEnabled` 与 `zen_env_marker_*` 测试随回退移除；`40d98f9`-era 的 `systemRelocation` 落盘键仍由浅拷贝兜底，不再读写生效（字段已删，存量配置里的旧键由 `normalize` 忽略）。
+- **本地定制保留**：`KeyBindings`/`KeyRoutingEnabled` 仍在 `zen-config.json`；代理池与隔离规则仍在 `proxy-config.json`（上游 `Proxies`/`ProxyStrategy` 段实际落 `kv` 旧字段，未回写）；`handleZenConfigUpdate` 仍用 `next := *cur` 浅拷贝（上游逐字段枚举的构造在冲突点被拒绝吸收——浅拷贝保证今后加字段不漏）；面板 `zenConfigPayload` 契约不变（代理池字段从 `pool` 段拼入，不在 zen 段）。
+- **验证**：`go build ./... && go vet ./... && go test ./... -count=1 && go test -race ./internal/app/` 全绿。
 
 ### 2026-11-07 — a41f1756 → c6b3c45（3 提交全 zen 侧；429 诊断体系部分吸收）
 
