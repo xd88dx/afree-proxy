@@ -50,6 +50,8 @@ PACKAGES = (
     "redisstore",
     "proxypool",   # 2026-11-02 上游新增：代理池管理（PR #122/#135，被 upstream/panel/server 引用）
     "media",       # 2026-11-05 上游新增：水印裁切（server/watermark.go 引用；PR #162/#168）
+    "debugcap",    # 2026-11-10 上游新增：调试抓包（server/responses.go 引用）
+    "jsonscan",    # 2026-11-10 上游新增：JSON 扫描件（prompt/session/upstream/kimi_tools 引用）
 )
 
 ASSET_SUFFIXES = (".go", ".md", ".json", ".html", ".js", ".css", ".txt")

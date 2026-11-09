@@ -55,6 +55,7 @@ const (
 	ErrClient                           // 其他 4xx / 业务错误
 	ErrUpstreamBusy                     // 6020/6021 排队满、11134「供应商过载」→ 上游容量信号：不罚号、保留会话粘性，末端 429 + Retry-After 透传原文
 	ErrToolMismatch                     // 11148「tool calls and tool results do not match」 → 请求内容级配对断裂：不罚号、不轮转，末端 400 透传原文
+	ErrEmptyContent                     // 11151「a message has empty content」→ 请求内容级空段（出站已补位，这里是兜底）：不罚号、不轮转，末端 400 透传原文
 )
 
 func (k ErrKind) String() string {
@@ -91,6 +92,8 @@ func (k ErrKind) String() string {
 		return "upstream_busy"
 	case ErrToolMismatch:
 		return "tool_mismatch"
+	case ErrEmptyContent:
+		return "empty_content"
 	default:
 		return "none"
 	}
@@ -796,6 +799,15 @@ func Classify(status int, body string) ErrKind {
 	if status == http.StatusBadRequest && isModelParamInvalid(body) {
 		return ErrModelParamInvalid
 	}
+	// 11151「a message has empty content」：空 text 段被上游判为硬 400。出站前
+	// empty_text_part.go 已经补位（含「字符串被当 parts 嗅探」那种），到这里说明
+	// 补位没覆盖的形态（例如不经 payload 管线的端点），但它是**同一请求的错**：
+	// 换任何账号都会被同一处拒绝，轮转只会白打整池并喂连败。
+	// 只认结构化 code：文案 "empty content" 可能出现在用户自己的消息里，按词判会把
+	// 正常请求误分类成「不再轮转」。
+	if status == http.StatusBadRequest && hasBusinessCode(body, "11151") {
+		return ErrEmptyContent
+	}
 	// 内容策略拦截（HTTP 400 + 审核文案）：判在通用 ErrClient 之前。
 	// 这是误报信号，不罚账号，由网关降级重试处理（见 handler.applyErrorPolicy）。
 	if status >= 400 {
@@ -1162,7 +1174,7 @@ func (c *Client) brandScopeGlobal() bool {
 // realm 为账号 Realm()（cn/global），供 efforts 缓存分桶（跨域 effort 集合不互相污染）。
 // 返回改写后的请求体、客户端原始请求档位与本次实际生效档位
 // （requested 与 effective 的区别见 prepareBodyOpt 注释；issue #43）。
-func (c *Client) prepareBody(body []byte, realm, uid, conversationID string) ([]byte, string, string) {
+func (c *Client) prepareBody(body []byte, realm, uid, conversationID, convReqID string) ([]byte, string, string) {
 	body = prepareKimiTools(body, realm)
 	efforts, defs := c.effortsSnapshot(realm), c.defaultEffortsSnapshot(realm)
 	maxOut := c.modelMaxOutSnapshot(realm)
@@ -1179,7 +1191,7 @@ func (c *Client) prepareBody(body []byte, realm, uid, conversationID string) ([]
 	// prompt_cache_key 注入（P0 费用优化，费用降 ~17×）：按账号隔离的稳定缓存键，
 	// 让同一客户端对同一账号的连续请求命中上游前缀缓存。与 body 归一化共用
 	// prepareBodyOpt 的同一次 map 解析，不再二次 Unmarshal/Marshal。
-	return prepareBodyOpt(body, c.SanitizeFingerprints.Load(), c.brandScopeGlobal(), efforts, defs, maxOut, realm, c.EffortPolicy(), uid, conversationID, true, int(c.KeepRecentRounds.Load()))
+	return prepareBodyOpt(body, c.SanitizeFingerprints.Load(), c.brandScopeGlobal(), efforts, defs, maxOut, realm, c.EffortPolicy(), uid, conversationID, true, int(c.KeepRecentRounds.Load()), convReqID)
 }
 
 // effortsSnapshot 返回 effort 能力缓存副本；nil 表示未知（透传不降级）。
@@ -1334,35 +1346,46 @@ func (e errReader) Read([]byte) (int, error) { return 0, e.err }
 // body 读失败（连接中断/空闲掐流/截断）返回普通错误（非 *Error）——半截 body 不进
 // Classify，不参与账号惩罚（传输层故障不该喂熔断误罚号）。
 func (c *Client) doJSON(a *auth.Auth, req *http.Request) (json.RawMessage, error) {
+	env, _, err := c.doJSONRaw(req, a)
+	return env.Data, err
+}
+
+// doJSONRaw 同 doJSON，另外把**原始响应体**一并返回。
+//
+// 为什么需要：多数接口是 {code,msg,data} 信封，doJSON 只交 data 就够了；但账号
+// 资料接口 /console/account 在实际环境里出现过两种形态（顶层平铺 uid/nickname 与
+// {code:0,data:{...}} 包装）。平铺形态没有 code 字段，信封解析后 Code=0、Data 为空，
+// 只看 data 会得到一个空对象——调用方必须能拿到原文自己判形态。
+func (c *Client) doJSONRaw(req *http.Request, a *auth.Auth) (apiEnvelope, []byte, error) {
+	var env apiEnvelope
 	resp, err := c.do(req, a, false)
 	if err != nil {
-		return nil, err
+		return env, nil, err
 	}
 	defer resp.Body.Close()
 	raw, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if err != nil {
-		return nil, fmt.Errorf("read body: %w", err)
+		return env, nil, fmt.Errorf("read body: %w", err)
 	}
 	// 必须在 Classify / Unmarshal 之前解压：这两步都按文本处理 raw。
 	if raw, err = decodeResponseBody(resp, raw); err != nil {
-		return nil, err
+		return env, nil, err
 	}
 	if resp.StatusCode >= 400 {
 		kind := Classify(resp.StatusCode, string(raw))
-		return nil, &Error{Kind: kind, Status: resp.StatusCode, Msg: truncate(string(raw), 200)}
+		return env, raw, &Error{Kind: kind, Status: resp.StatusCode, Msg: truncate(string(raw), 200)}
 	}
-	var env apiEnvelope
 	if err := json.Unmarshal(raw, &env); err != nil {
-		return nil, fmt.Errorf("parse failed: %w (body: %s)", err, truncate(string(raw), 120))
+		return env, raw, fmt.Errorf("parse failed: %w (body: %s)", err, truncate(string(raw), 120))
 	}
 	if env.Code != 0 {
 		kind := Classify(resp.StatusCode, env.Msg)
 		if kind == ErrNone {
 			kind = ErrClient
 		}
-		return nil, &Error{Kind: kind, Status: resp.StatusCode, Msg: fmt.Sprintf("code=%d msg=%s", env.Code, truncate(env.Msg, 160))}
+		return env, raw, &Error{Kind: kind, Status: resp.StatusCode, Msg: fmt.Sprintf("code=%d msg=%s", env.Code, truncate(env.Msg, 160))}
 	}
-	return env.Data, nil
+	return env, raw, nil
 }
 
 // RefreshToken 刷新 access token；成功时更新 a 的字段（缺省值保留旧值），
@@ -1664,10 +1687,7 @@ func (c *Client) ChatStreamContext(ctx context.Context, a *auth.Auth, body []byt
 		ctx = context.Background()
 	}
 	prepStart := time.Now()
-	prepared, requested, effort := c.prepareBody(body, a.Realm(), a.UID, cacheKeySource(meta))
-	// body 侧会话字段（issue #51）：把本轮 ID 同时写进消息体，与出站头保持头体一致
-	// （官方桌面端头与体都带 conversationRequestId）。见 conv_fields.go。
-	prepared = injectConversationFields(prepared, meta.ConversationRequestID)
+	prepared, requested, effort := c.prepareBody(body, a.Realm(), a.UID, cacheKeySource(meta), meta.ConversationRequestID)
 	if timing != nil {
 		// Zero means unmeasured; coarse clocks can report zero for completed work.
 		timing.Prep += max(time.Since(prepStart), time.Nanosecond)

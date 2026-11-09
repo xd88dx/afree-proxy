@@ -582,7 +582,7 @@ func Default() *Config {
 	// 思考档位策略缺省：网关按模型最高档补缺档请求，但客户端显式档位优先
 	// （client_priority=true），且不覆盖客户端的关闭思考意图（override_scope=level）。
 	c.Thinking.Enabled = true
-	c.Thinking.DefaultEffort = "max"
+	c.Thinking.DefaultEffort = upstream.DefaultGatewayEffort
 	c.Thinking.ClientPriority = true
 	c.Thinking.OverrideScope = "level"
 	// 地区调度缺省：两域都加权随机（与 misakano 线「无地区配置」的全局行为一致）。
@@ -1331,7 +1331,7 @@ func (c *Config) normalize() error {
 func (c *Config) normalizeThinking() error {
 	c.Thinking.DefaultEffort = strings.ToLower(strings.TrimSpace(c.Thinking.DefaultEffort))
 	if c.Thinking.DefaultEffort == "" {
-		c.Thinking.DefaultEffort = "max"
+		c.Thinking.DefaultEffort = upstream.DefaultGatewayEffort
 	}
 	if c.Thinking.DefaultEffort == "off" || !upstream.IsEffortLevel(c.Thinking.DefaultEffort) {
 		return fmt.Errorf("thinking.default_effort: %q 不是合法档位（max 或 low/medium/high/xhigh 等）", c.Thinking.DefaultEffort)
