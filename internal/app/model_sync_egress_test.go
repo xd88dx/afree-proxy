@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"strings"
 	"testing"
 )
@@ -99,7 +100,7 @@ func TestTestAccountEmptyCatalogReportsCause(t *testing.T) {
 		modelsMu.Unlock()
 	})
 
-	result, status := testAccount(&Account{AccountID: "acc_empty", Email: "empty@x", APIToken: "sk_test"})
+	result, status := testAccount(context.Background(), &Account{AccountID: "acc_empty", Email: "empty@x", APIToken: "sk_test"})
 	if status != "error" {
 		t.Fatalf("status = %q, want error", status)
 	}

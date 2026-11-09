@@ -64,6 +64,7 @@ combos.json
 requests.jsonl
 
 .zcode/
+.zcodeignore
 .workbuddy/
 .tmp/
 __pycache__/

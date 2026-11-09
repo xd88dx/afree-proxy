@@ -2,6 +2,7 @@ package app
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"log"
@@ -774,7 +775,7 @@ func handleModelBlacklistTest(w http.ResponseWriter, r *http.Request) {
 		writeAPI(w, http.StatusBadRequest, apiResponse{Error: "invalid JSON"})
 		return
 	}
-	result, status := testBlacklistModel(req.Platform, req.Model)
+	result, status := testBlacklistModel(r.Context(), req.Platform, req.Model)
 	result["status"] = status
 	log.Printf("Test blacklisted model %s %s: status=%s reason=%v", req.Platform, req.Model, status, result["error"])
 	writeAPI(w, http.StatusOK, apiResponse{
@@ -785,7 +786,8 @@ func handleModelBlacklistTest(w http.ResponseWriter, r *http.Request) {
 }
 
 // testBlacklistModel 按平台分派到各平台既有的探测实现（都取第一个启用凭据）。
-func testBlacklistModel(platform, model string) (map[string]any, string) {
+// ctx 透传给 cline 的 testAccount（其他平台探测实现尚不接收 ctx）。
+func testBlacklistModel(ctx context.Context, platform, model string) (map[string]any, string) {
 	bare := model
 	if i := strings.IndexByte(model, ':'); i >= 0 {
 		bare = model[i+1:]
@@ -862,7 +864,7 @@ func testBlacklistModel(platform, model string) (map[string]any, string) {
 		}
 		poolMu.Unlock()
 		if acc != nil {
-			return testAccount(acc)
+			return testAccount(ctx, acc)
 		}
 		return map[string]any{"ok": false, "model": model, "error": "no enabled cline account"}, "error"
 	}

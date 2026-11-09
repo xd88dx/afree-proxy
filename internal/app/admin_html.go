@@ -2479,6 +2479,12 @@ const I18N = {
   '.': { en: '.', zh: '。' },
   'context': { en: 'Context', zh: '上下文' },
   'maximum_context_length': { en: 'Maximum context length', zh: '最大上下文长度' },
+  // 模型目录元数据标签（上游 2026-11-08 能力移植）
+  'max_output_tokens': { en: 'Max output tokens', zh: '最大输出 tokens' },
+  'reasoning': { en: 'reasoning', zh: '推理' },
+  'supports_tools': { en: 'tools', zh: '工具' },
+  'structured_output': { en: 'structured output', zh: '结构化输出' },
+  'catalog_metadata_source': { en: 'metadata joined from upstream catalog', zh: '元数据补自上游模型目录' },
   'today': { en: 'Today', zh: '今日' },
   'total_1_1': { en: 'total', zh: '累计' },
   'tokens_exact_when_upstream_returns_usage_otherwi': { en: 'tokens (exact when upstream returns usage, otherwise estimated)', zh: 'tokens（上游返回 usage 时精确，否则为估算）' },
@@ -5714,14 +5720,31 @@ async function loadModels() {
     const banBtn = (platform, model, refresh) =>
       '<button class="btn btn-sm btn-danger" data-bl-ban="1" data-platform="' + esc(platform) + '" data-model="' + esc(model) + '"' +
       (refresh ? ' data-refresh="' + esc(refresh) + '"' : '') + ' style="white-space:nowrap">' + T('ban') + '</button>';
+    // 目录行元数据小标签（上游 2026-11-08 目录元数据能力的本地移植）：只渲染
+    // 真实拿到的字段，缺失就不显示（不猜、不占位假值）。显示文本全部走 T()。
+    const modelMetaTags = (m) => {
+      const t = [];
+      if (m.context_length) t.push(wbContextTagHTML(m.context_length, T('context')));
+      const outTok = m.max_output_tokens || m.max_completion_tokens;
+      if (outTok) t.push('<span class="model-tag" title="' + T('max_output_tokens') + '">' + Number(outTok).toLocaleString() + '</span>');
+      if (m.supports_reasoning) {
+        const eff = m.reasoning_efforts && m.reasoning_efforts.length ? ' (' + m.reasoning_efforts.join('/') + ')' : '';
+        t.push('<span class="model-tag">' + T('reasoning') + esc(eff) + '</span>');
+      }
+      if (m.supports_tools) t.push('<span class="model-tag">' + T('supports_tools') + '</span>');
+      if (m.supports_structured_output) t.push('<span class="model-tag">' + T('structured_output') + '</span>');
+      return t.join('');
+    };
     // Cline 免费模型（账号页底部目录区）
     const accBox = _('accModelsBody');
     if (accBox) {
       const clineV = models.filter(notBlocked);
       accBox.innerHTML = clineV.length
         ? clineV.map(m => row(
-            '<span style="font-family:\'JetBrains Mono\',monospace;font-size:13px;flex:1">' + esc(m.id) + '</span>' +
+            '<span style="font-family:\'JetBrains Mono\',monospace;font-size:13px;flex:1"' +
+            (m.metadata_source ? ' title="' + T('catalog_metadata_source') + ' ↳ ' + esc(m.metadata_source) + '"' : '') + '>' + esc(m.id) + '</span>' +
             '<span class="model-tag free">' + T('no_charge') + '</span>' +
+            modelMetaTags(m) +
             banBtn('cline', m.id))).join('')
         : '<div class="empty">' + T(clineCredOk ? 'No models' : 'Models appear here once an account is enabled — the catalog syncs from upstream') + '</div>';
     }

@@ -19,6 +19,18 @@ WorkBuddy 一栏的基线同时登记在 `scripts/workbuddy-vendor-baseline.json
 
 本次区间内 2 提交（`7dd0afe` revert + `a8fe356` tool filter）全在 zen/OpenCode 侧（`git diff --name-only c6b3c45 a8fe356` 仅含 `zen*.go`、`admin_zen.go`、`admin_html.go`（OpenCode 面板区块）、`zen_toolfilter*.go`、env-marker 测试与 TODO.md），无 `proxy.go`/转发/方言转换侧文件，Cline 线零吸收，详见 OpenCode 节。
 
+### 2026-11-10 — a8fe356 → 2c737c2（2 提交；15 文件冲突；Cline/OpenCode 双侧吸收）
+
+上游 `bdc5967` 全库审计修复（自愈三重失效 + prune 误删 + 6 项小修）与 `2c737c2` CI shuffle flag 修正（本仓 workflow 已是 `-shuffle=1` 形态，零改动）。Cline 侧吸收：模型自愈机制整体（FailStreak 阈值冷却/isModelLevelFailure 宁漏勿错判/extraFreeModels 第三来源/catalog 元数据目录）、流式聚合双记失败修复、`emitChatAsSSE` 2048 字节整倍数 panic 修复、quota 判定收窄（裸 "exceeded" 不再 18h 误冷）、`/v1/responses` error 帧检查、testAccount 加 ctx 防挂死、模型级失败记账（本地等价实现：scanBufferedSSE 于缓冲完成时记账 + `clineModelCooling` chat 入口 503 显式拒绝）、请求日志单写协程（stat/截断竞态修复，落盘路径保留本地 reqLogPath 访问器）。OpenCode 侧吸收：别名解析链深度帽（防外部文件成环栈溢出 fatal）、别名指针重指向（canonical 表取新条目，修 mimo/ling/pickle 等永驻 seed 快照）、停放 key 不再判可轮转（zenAnyKeyRotatable 排除 parked）、`loadZenDeps` 自环/环装载期检测（数据源保留本地 zen-config.json ModelAliases 段）、responses→chat 反向纠错返回值改 false（本地 HEAD 存在同款误学缺陷，采纳修复）。
+
+丢弃/保留：`ZEN_KEYS` env 播种与 `ZEN_SESSION_ROTATE_MINUTES` 不采纳（本地 loadZenConfig 已重写走 zen-config.json 单文件，envList 消费点不存在，按死代码判据删）；上游直通流（`handleStreamResponseUsage`/`handleStreamResponseWithUsage`）不采纳，流末记账摘入本地缓冲流体系；pickZenKey 上游四轮停放兜底不采纳（本地语义=停放期内一次都不发，buildCandidates 恒滤 parked）；defaultModel 兜底全部丢弃（2026-10-25 已连根删）；上游测试落盘断言改走 afree-config.json（本地学习表住全局配置）；`cfgCopy.Enabled` 删除。并发学习丢失更新：-race 实测 15/16，快照改在写盘串行锁内取（saveClineStreamLatest，上游同款洞见适配 mutateGlobalConfig 落盘）。
+
+面板（admin_html.go）：上游元数据行不照搬——cline 目录行以本地 i18n 架构摘入（modelMetaTags：context/max_output/reasoning/tools/structured 标签 + metadata_source 悬停），新增 5 个 i18n 键（max_output_tokens/reasoning/supports_tools/structured_output/catalog_metadata_source），显示文本全部 T()。
+
+验证：go build/vet 全绿；`go test ./... -count=1` 无失败；`go test -race ./internal/app/` 通过（含修复后的并发学习回归）。既有 flaky `TestChatStreamPassthrough`（workbuddy/server）未受影响。
+
+# Conflicts: .gitignore README.md internal/app/{admin,admin_html,cline_stream,config,logs,models,pool,proxy,zen,zen_deprecated}.go internal/app/{zen_fanout,zen_key,zen_park}_test.go
+
 ## TreaWork
 
 **2026-11-04 起上游换线**：`XCool-603/trae2api`（vendor 三方合并线，见下方 2026-11-04 条目）；`autumnsentiment/Trae2api-cn` 仅剩 helper 脚本比对。切换点 tag：`last-trae2api-cn`(49ec6be)。

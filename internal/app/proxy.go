@@ -390,6 +390,19 @@ func StartProxy(host string, port int) error {
 			return
 		}
 
+		// 冷却中的模型显式 503（上游 2026-11-08 自愈修复的本地落地）：列表里
+		// 藏掉不够——IDE 把模型名钉在配置里从不看 /v1/models，继续路由会让
+		// 每次失败把冷却无限续期。宁弃请求不撞已知坏模型。
+		if clineModelCooling(model) {
+			writeJSON(w, http.StatusServiceUnavailable, map[string]any{
+				"error": map[string]string{
+					"message": "model " + model + " is temporarily cooling down after repeated failures, retry later",
+					"type":    "temporarily_unavailable",
+				},
+			})
+			return
+		}
+
 		upstreamStream := isStream
 		if !isStream {
 			model := normalizeRequestModel(model)
@@ -435,11 +448,22 @@ func StartProxy(host string, port int) error {
 		usageFn := accountUsageFn(acc, params)
 
 		if upstreamStream {
-			out, err := collectStreamResponse(resp)
+			// 传真实模型名给自愈记账：上游 0 字节即报错时帧里没有 model，
+			// 只能靠这里。用 normalizeRequestModel 保证与实际调用的名字一致。
+			out, err := collectStreamResponse(resp, normalizeRequestModel(model))
 			if err != nil {
+				// collectStreamResponse 内部已经按帧内 model（拿不到时用我们传的
+				// hint）记过失败了。这里**不能**再记一次：两条路径在"帧内 model
+				// 等于请求 model"这个最常见的形态下同时命中，FailStreak 一次失败
+				// 就 +2，阈值 3 实际两次就触发。
 				writeUpstreamAPIError(w, model, err, http.StatusInternalServerError)
 				return
 			}
+			// 流聚合成功 = 这个模型真的能干活，此时才清失败计数。
+			// 用响应里自报的 model 记账，不要用 normalizeRequestModel：
+			// 它对未知 id 原样透传（不保证是实际服务的模型），等于拿 A 的成功
+			// 去清 B 的失败计数（真模型 streak 不变，而健康模型被莫名"复活"）。
+			recordModelSuccess(servedModelOf(out, model))
 			if u, ok := out["usage"].(map[string]any); ok && len(u) > 0 {
 				usageFn(u)
 			}
@@ -817,11 +841,16 @@ func handleZenResponsesNative(w http.ResponseWriter, r *http.Request, params map
 		// 反向纠错：若 responses 路径上报"该用 chat"（未来反向模型），
 		// 学回 chat 并改走 chat 路径重试一次。
 		if isWrongEndpointResponses(err) {
+			// 这里已经学到了正确答案（该走 chat），不能再让调用方把
+			// "responses 可用"落盘覆盖掉它 —— 返回 false 表示"不要记 responses"。
+			// 早先返回 true，调用方据此 learnZenEndpoint(zm.ID,"responses")，
+			// 把刚学到的 chat 覆盖成刚被拒绝的 responses，模型就此永久钉死在
+			// 错误端点上，每个请求白付两次失败往返。
 			learnZenEndpoint(zm.ID, "")
 			log.Printf("  zen endpoint auto-learn: model=%s responses rejected (%v), retrying chat",
 				zm.ID, kit.Truncate(err.Error(), 120))
 			handleZenChatDirect(w, r, params, zm)
-			return true
+			return false
 		}
 		log.Printf("  zen responses api error: %v", err)
 		writeUpstreamAPIError(w, zm.ID, err, zenClientErrorStatus(err))
@@ -915,7 +944,11 @@ func emitChatAsSSE(w http.ResponseWriter, chat map[string]any, usageFn func(map[
 	content, _ := msg["content"].(string)
 	for len(content) > 0 {
 		n := 2048
-		if len(content) < n {
+		if len(content) <= n {
+			// 必须用 <=：内容长度正好是 2048 的整数倍时，下面探测 content[n]
+			// 会越界 panic（len==2048 时 content[2048] 下标越界）。recover 兜得住，
+			// 但 SSE 头已经发出去了，客户端只会看到一条没有 finish_reason /
+			// [DONE] 的截断流。
 			n = len(content)
 		} else {
 			// 不能在多字节字符中间切断：SSE 消费端逐块做 UTF-8 解码，半个字符会被
@@ -1206,10 +1239,24 @@ func callClineAPI(ctx context.Context, params map[string]any, stream bool, usePr
 
 		resp, err := clineAPIWithAccount(ctx, params, stream, useProxies, acc)
 		if err == nil {
+			// 注意：这里**不能**记 success。上游常常先回 200 再在 SSE 帧里
+			// 报错（provider 挂掉时就是这样），此时 API 层是"成功"的，真正的
+			// 失败要等调用方聚合流才知道。在这里清零会让 failStreak 永远
+			// 在 1↔2 之间抖动、达不到阈值（实测踩过）。
+			// 成功的清零放在真正消费完流之后，见 markModelServed。
 			return resp, acc, nil
 		}
 		lastErr = err
 		var ce *clineAPIError
+		if errors.As(err, &ce) {
+			// 模型级错误（404 model not found / 500 inference failed /
+			// stream_initialization_failed）与账号无关：换账号救不回来，但反复
+			// 出现说明这个免费模型确实坏了 —— 记一次，累计到阈值就下架冷却。
+			// 429 / 鉴权类不算模型故障，isModelLevelFailure 会滤掉。
+			if id, _ := params["model"].(string); id != "" {
+				recordModelFailure(id, ce.Status, ce.Body)
+			}
+		}
 		if !errors.As(err, &ce) {
 			// 网络/令牌/取消等错误：不换账号（换账号无助于网络层故障，且
 			// 取消必须立即终止）。直接返回。
@@ -1689,6 +1736,48 @@ func bufferUpstreamSSE(body io.Reader) (lines []string, usage map[string]any, co
 // 实际服务的账号/key，由各平台 attempt 闭包构造）。
 type streamAttemptFn func(ctx context.Context) (*http.Response, func(map[string]any), error)
 
+// scanBufferedSSE 从缓冲的 SSE 行里提取自愈记账所需的两件事：
+// 上游自报的 model（取最后一个非空值，{data:{...}} 包裹形态先解包）与
+// 帧内 error 事件的 message（流式路径错误帧会原样转发给客户端，这里只负责
+// 让记账知道它发生过）。都不存在时返回空串。
+func scanBufferedSSE(lines []string) (servedModel, frameErr string) {
+	for _, ln := range lines {
+		trimmed := strings.TrimSpace(ln)
+		if !strings.HasPrefix(trimmed, "data:") {
+			continue
+		}
+		payload := strings.TrimSpace(trimmed[5:])
+		if payload == "" || payload == "[DONE]" {
+			continue
+		}
+		var obj map[string]any
+		if json.Unmarshal([]byte(payload), &obj) != nil {
+			continue
+		}
+		if d, ok := obj["data"].(map[string]any); ok {
+			if _, has := d["choices"]; has {
+				obj = d
+			}
+		}
+		if m, ok := obj["model"].(string); ok && m != "" {
+			servedModel = m
+		}
+		if e, ok := obj["error"]; ok && e != nil {
+			msg := ""
+			if em, ok := e.(map[string]any); ok {
+				msg, _ = em["message"].(string)
+			}
+			if msg == "" {
+				msg = strings.TrimSpace(fmt.Sprint(e))
+			}
+			if msg != "" && msg != "<nil>" {
+				frameErr = msg
+			}
+		}
+	}
+	return servedModel, frameErr
+}
+
 // handleStreamBufferedGeneric 全平台通用的流式"缓冲+中断重试"路径：
 // 上游 SSE 先完整缓冲、拿到 finish/[DONE] 才整体回放；中途断流则重新执行
 // attempt（平台内部自选新账号/key，出口绑定语义不变）。ctx 取消（客户端
@@ -1728,6 +1817,27 @@ func handleStreamBufferedGeneric(w http.ResponseWriter, r *http.Request, plat st
 			if n > 1 {
 				log.Printf("  [%s] %s attempt %d/%d recovered after %d break(s)", rid, plat, n, StreamMaxAttempts(), n-1)
 				setUpstreamNote(r.Context(), fmt.Sprintf("%d次中断已重试", n-1))
+			}
+			// 模型级自愈记账（上游 2026-11-08 修复的本地等价实现）：流式是
+			// 客户端主力路径，success 只在非流式聚合分支记的话，一个到过阈值
+			// 的模型 streak 永远清不掉——之后每次模型级错误都再冷却 30 分钟。
+			// 优先帧内自报 model（上游真实服务的模型）；帧内缺失时按两种键
+			// 形态回查 cline 缓存（zen 等其他平台不在该缓存，no-op）。帧内
+			// error 事件已随流原样转发给客户端，此处按模型级失败记账。
+			served, frameErr := scanBufferedSSE(lines)
+			if served == "" {
+				modelsMu.Lock()
+				if key, ok := clineListLookupLocked(model); ok {
+					served = key
+				}
+				modelsMu.Unlock()
+			}
+			if served != "" {
+				if frameErr != "" {
+					recordModelFailure(served, http.StatusOK, frameErr)
+				} else {
+					recordModelSuccess(served)
+				}
 			}
 			replaySSE(w, lines, clientWantsStreamUsage(params))
 			return
@@ -1963,7 +2073,22 @@ func isSSELine(line string) bool {
 	return false
 }
 
-func collectStreamResponse(upstream *http.Response) (map[string]any, error) {
+// servedModelOf 取上游自报的模型名，取不到才回退到请求里的模型。
+// 自愈记账必须记"真正干活的模型"：normalizeRequestModel 在缓存 miss 时会
+// 返回默认模型，用它记账会把成功/失败记到别的模型头上。
+func servedModelOf(resp map[string]any, requested string) string {
+	if m, ok := resp["model"].(string); ok && m != "" {
+		return m
+	}
+	return requested
+}
+
+// collectStreamResponse 把上游 chat SSE 聚合成一条 chat JSON。
+//
+// hintModel 用于自愈记账：上游可能在**发出任何帧之前**就报错（provider 整个
+// 挂掉时就是这样，0 字节就 error 帧），此时帧里没有 model 字段可用，只能靠
+// 调用方传入的模型名。传空串则退化为"只信帧内的 model"。
+func collectStreamResponse(upstream *http.Response, hintModel ...string) (map[string]any, error) {
 	// 自己关掉响应体：本函数把 body 整个读完，所有权理应在此结束。兄弟函数
 	// responsesSSEToChat 一直这么做；这里不关会让连接既不回收也不复用，在长跑
 	// 容器里按请求数泄漏（压缩路径每次摘要都走这条）。
@@ -2065,6 +2190,17 @@ func collectStreamResponse(upstream *http.Response) (map[string]any, error) {
 					msg = strings.TrimSpace(fmt.Sprint(e))
 				}
 				if msg != "" && msg != "<nil>" {
+					// 模型级自愈：provider 挂掉时上游仍然回 200，错误藏在 SSE
+					// 帧里（2026-11-08 实测 laguna 就是这样，API 层完全看不出问题）。
+					// 优先用帧内自报的 model；0 字节即报错时帧里没有 model，
+					// 退回调用方给的 hintModel。
+					failModel := model
+					if failModel == "" && len(hintModel) > 0 {
+						failModel = hintModel[0]
+					}
+					if failModel != "" {
+						recordModelFailure(failModel, http.StatusOK, msg)
+					}
 					return nil, fmt.Errorf("upstream stream error after %d bytes: %s", content.Len(), msg)
 				}
 			}
@@ -3858,11 +3994,20 @@ func parseHumanDuration(s string) time.Duration {
 // isClineQuotaExhausted 从 429 错误体判断是否为配额耗尽（而非瞬时限流）。
 // 只有明确的配额措辞才返回 true；429 缺少可解析时长时用它决定兜底冷却长度：
 // 配额耗尽 → 18h，其余 → 20min 短冷却。
+//
+// 关键词必须**足够具体**：早先的列表里有裸的 "exceeded"，而瞬时限流的典型
+// 正文就是 "Rate limit exceeded" —— 于是一次没带 Retry-After 的普通限流会把
+// 健康账号冷却 18 小时，每个账号来一发整个池子就空了。只认同时表达"额度"
+// 语义的组合，不认任何单独的 "limit"/"exceeded"。
 func isClineQuotaExhausted(body string) bool {
 	low := strings.ToLower(body)
 	for _, kw := range []string{
-		"quota", "exceeded", "insufficient", "out of credit", "no credits",
-		"daily limit", "monthly limit", "usage limit", "credit limit", "billing",
+		"quota exceeded", "quota exhausted", "exceeded your quota",
+		"insufficient quota", "insufficient credit", "insufficient balance",
+		"out of credit", "out of credits", "no credits", "no credit left",
+		"daily limit reach", "daily limit exceed", "monthly limit reach", "monthly limit exceed",
+		"usage limit reach", "usage limit exceed", "credit limit reach",
+		"billing hard limit", "free tier limit",
 	} {
 		if strings.Contains(low, kw) {
 			return true

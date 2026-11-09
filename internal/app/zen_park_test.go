@@ -196,13 +196,7 @@ func TestAllParkedBailsOutWithoutUpstreamCall(t *testing.T) {
 	cfg.BaseURL = upstream.URL
 	cfg.Keys = []string{"k1"}
 	setZenConfig(&cfg)
-	savedModels, savedAliases := zenModels, zenAliases
-	setZenModelForTest("zzz-parked-model", "")
-	t.Cleanup(func() {
-		zenModelsMu.Lock()
-		zenModels, zenAliases = savedModels, savedAliases
-		zenModelsMu.Unlock()
-	})
+	withZenModelForTest(t, "zzz-parked-model", "")
 	t.Cleanup(func() { setZenConfig(saved) })
 	zenSessFailedMu.Lock()
 	zenSessFailed = map[string]int{}
@@ -254,13 +248,7 @@ func TestDailyExhaustedParksAndStopsRetrying(t *testing.T) {
 	cfg.Keys = []string{"k1"}
 	cfg.Retries = 3
 	setZenConfig(&cfg)
-	savedModels, savedAliases := zenModels, zenAliases
-	setZenModelForTest("zzz-quota-model", "")
-	t.Cleanup(func() {
-		zenModelsMu.Lock()
-		zenModels, zenAliases = savedModels, savedAliases
-		zenModelsMu.Unlock()
-	})
+	withZenModelForTest(t, "zzz-quota-model", "")
 	t.Cleanup(func() { setZenConfig(saved) })
 	zenSessFailedMu.Lock()
 	zenSessFailed = map[string]int{}
@@ -320,13 +308,7 @@ func TestDailyExhaustedRotatesToHealthyKey(t *testing.T) {
 	cfg.Keys = []string{"sk-bad", "sk-good"}
 	cfg.Retries = 3
 	setZenConfig(&cfg)
-	savedModels, savedAliases := zenModels, zenAliases
-	setZenModelForTest("zzz-multi-model", "")
-	t.Cleanup(func() {
-		zenModelsMu.Lock()
-		zenModels, zenAliases = savedModels, savedAliases
-		zenModelsMu.Unlock()
-	})
+	withZenModelForTest(t, "zzz-multi-model", "")
 	t.Cleanup(func() { setZenConfig(saved) })
 	zenSessFailedMu.Lock()
 	zenSessFailed = map[string]int{}

@@ -31,6 +31,16 @@ import (
 var (
 	clineStreamMu      sync.RWMutex
 	clineStreamLearned map[string]string // model id -> 学习时间(RFC3339)
+
+	// clineStreamSaveMu 串行化写盘。
+	//
+	// 学习路径为了不在 RWMutex 下做慢 I/O，是"锁内改内存、锁外写盘"。两个
+	// 并发请求同时学到不同模型时，两次 saveClineStream 会同时往**同一个**
+	// .tmp 路径写：一把 O_TRUNC 覆盖另一把正在写的内容，随后先完成的 rename
+	// 发布出去，后一个 rename 报 ENOENT（只记日志）。结果是丢更新（新学的
+	// 模型被旧快照覆盖，下次仍要付一次失败重试）甚至发出半截 JSON。
+	// 与 zen_endpoint.go 的 zenEndpointSaveMu 同一手法。
+	clineStreamSaveMu sync.Mutex
 )
 
 // clineEmptyStreamErr 响应是否呈"该模型必须流式"的指纹：HTTP 500 且 body 含
@@ -80,16 +90,12 @@ func learnClineStreamRequired(modelID string) {
 		return
 	}
 	clineStreamLearned[modelID] = time.Now().Format(time.RFC3339)
-	// 持锁只做内存改动：写盘是慢 I/O，快照出去在锁外做，避免阻塞并发请求的
+	// 持锁只做内存改动：写盘是慢 I/O，放在内存锁外做，避免阻塞并发请求的
 	// modelNeedsStream 读路径。
-	snapshot := make(map[string]string, len(clineStreamLearned))
-	for k, v := range clineStreamLearned {
-		snapshot[k] = v
-	}
 	clineStreamMu.Unlock()
 
 	log.Printf("cline stream learned: model=%s requires stream=true (persisted)", modelID)
-	saveClineStream(snapshot)
+	saveClineStreamLatest()
 }
 
 // loadClineStreamLearned 启动时从全局配置(afree-config.json)恢复学习结果。
@@ -113,8 +119,32 @@ func loadClineStreamLearned() {
 	}
 }
 
+// saveClineStreamLatest 落盘当前内存学习表的全量快照。
+//
+// 快照必须在**写盘串行锁内**取，不在内存锁内取：只给写盘加互斥还不够——
+// 如果每个并发学习先各自取快照、再排队写盘，排在后面的旧快照会把前面新写的
+// 覆盖掉（经典 lost update，-race 实测 16 并发最终只落盘 15 个）。真正的语义
+// 是"落盘当前最新的全量状态"：每个拿到写盘锁的调用方重新快照内存表，最后
+// 落盘的一定是最全的一份。
+// 代价：慢 I/O 期间持有 clineStreamSaveMu，但这把锁不参与读路径
+// （modelNeedsStream 只碰 clineStreamMu），不会拖慢请求。
+func saveClineStreamLatest() {
+	clineStreamSaveMu.Lock()
+	defer clineStreamSaveMu.Unlock()
+
+	clineStreamMu.RLock()
+	snapshot := make(map[string]string, len(clineStreamLearned))
+	for k, v := range clineStreamLearned {
+		snapshot[k] = v
+	}
+	clineStreamMu.RUnlock()
+	saveClineStream(snapshot)
+}
+
 // saveClineStream 写入全局配置(入参是不持锁的快照)。写失败只记日志不阻断请求——
 // 学习结果是优化项，丢失只会让下一次非流式请求再付一次重试代价。
+// 学习路径必须走 saveClineStreamLatest（快照在写盘锁内取）；本函数供备份导入
+// 等已持有明确全量快照的调用方使用。
 func saveClineStream(learned map[string]string) {
 	cp := make(map[string]string, len(learned))
 	for k, v := range learned {

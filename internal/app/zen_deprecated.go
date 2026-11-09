@@ -42,13 +42,52 @@ func loadZenDepsLocked() {
 		defer zenFileMu.Unlock()
 		return loadZenConfigFileLocked().ModelAliases
 	}()
+	loaded := 0
+	rejected := 0
 	for k, e := range m {
-		if e != nil && e.Replacement != "" {
-			zenDepAliases[k] = e
+		if e == nil || e.Replacement == "" {
+			continue
+		}
+		fk, fr := normalizeZenModelID(k), normalizeZenModelID(e.Replacement)
+		if fr == "" || fk == fr {
+			// 自环（A→A）：resolveZenModel 的递归兜底会立刻再查同一个 id。
+			log.Printf("zen model alias %q -> %q is a self-reference, dropped", k, e.Replacement)
+			rejected++
+			continue
+		}
+		zenDepAliases[k] = e
+		loaded++
+	}
+	// 环检测：A→B→A 这类链会让 resolveZenModel 来回递归。那里已有深度上限
+	// 兜底（不会崩），但把坏数据留在内存里等于每个请求白走一趟递归并刷日志，
+	// 所以在装载时就把落在环上的起始条目丢掉。
+	for k := range zenDepAliases {
+		seen := map[string]bool{}
+		cur := normalizeZenModelID(k)
+		cyclic := false
+		for i := 0; i <= zenAliasMaxDepth; i++ {
+			if seen[cur] {
+				cyclic = true
+				break
+			}
+			seen[cur] = true
+			e, ok := zenDepAliases[cur]
+			if !ok {
+				break
+			}
+			cur = normalizeZenModelID(e.Replacement)
+		}
+		if cyclic {
+			log.Printf("zen model alias chain starting at %q is cyclic, dropped", k)
+			delete(zenDepAliases, k)
+			rejected++
 		}
 	}
-	if len(zenDepAliases) > 0 {
+	if loaded > 0 {
 		log.Printf("zen model aliases loaded: %d mapping(s)", len(zenDepAliases))
+	}
+	if rejected > 0 {
+		log.Printf("zen model aliases: %d invalid mapping(s) dropped", rejected)
 	}
 }
 

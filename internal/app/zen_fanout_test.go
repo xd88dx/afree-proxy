@@ -47,13 +47,7 @@ func TestZen429KeySwitchIsBounded(t *testing.T) {
 	cfgCopy.Retries = 3
 	setZenConfig(&cfgCopy)
 	t.Cleanup(func() { setZenConfig(savedCfg) })
-	savedModels, savedAliases := zenModels, zenAliases
-	t.Cleanup(func() {
-		zenModelsMu.Lock()
-		zenModels, zenAliases = savedModels, savedAliases
-		zenModelsMu.Unlock()
-	})
-	setZenModelForTest("aaa-429-model", "")
+	withZenModelForTest(t, "aaa-429-model", "")
 	t.Cleanup(func() {
 		zenKeyMu.Lock()
 		zenKeyCool = map[string]time.Time{}
@@ -139,13 +133,7 @@ func TestZenResponses429KeySwitchIsBounded(t *testing.T) {
 	cfgCopy.Retries = 3
 	setZenConfig(&cfgCopy)
 	t.Cleanup(func() { setZenConfig(savedCfg) })
-	savedModels, savedAliases := zenModels, zenAliases
-	t.Cleanup(func() {
-		zenModelsMu.Lock()
-		zenModels, zenAliases = savedModels, savedAliases
-		zenModelsMu.Unlock()
-	})
-	setZenModelForTest("resp-429-model", "responses")
+	withZenModelForTest(t, "resp-429-model", "responses")
 	t.Cleanup(func() {
 		zenKeyMu.Lock()
 		zenKeyCool = map[string]time.Time{}
@@ -300,13 +288,7 @@ func TestRateLimitDoesNotTriggerFailover(t *testing.T) {
 	cp.FailoverCount = 1 // 一次失败就足以触发 failover，便于验证
 	setZenConfig(&cp)
 	t.Cleanup(func() { setZenConfig(savedCfg) })
-	savedModels, savedAliases := zenModels, zenAliases
-	t.Cleanup(func() {
-		zenModelsMu.Lock()
-		zenModels, zenAliases = savedModels, savedAliases
-		zenModelsMu.Unlock()
-	})
-	setZenModelForTest("rl-model", "")
+	withZenModelForTest(t, "rl-model", "")
 	t.Cleanup(func() {
 		zenKeyMu.Lock()
 		zenKeyCool = map[string]time.Time{}
@@ -390,13 +372,7 @@ func TestZen429FailsFastWhenNoRotatableKey(t *testing.T) {
 	cfgCopy.Keys = []string{"sk-single-key"}
 	cfgCopy.Retries = 3
 	setZenConfig(&cfgCopy)
-	savedModels, savedAliases := zenModels, zenAliases
-	t.Cleanup(func() {
-		zenModelsMu.Lock()
-		zenModels, zenAliases = savedModels, savedAliases
-		zenModelsMu.Unlock()
-	})
-	setZenModelForTest("bbb-single-model", "")
+	withZenModelForTest(t, "bbb-single-model", "")
 	t.Cleanup(func() {
 		setZenConfig(savedCfg)
 		zenKeyMu.Lock()
@@ -447,13 +423,7 @@ func TestZen429StillRotatesToHealthyKey(t *testing.T) {
 	cfgCopy.Keys = []string{"sk-bad", "sk-good"}
 	cfgCopy.Retries = 3
 	setZenConfig(&cfgCopy)
-	savedModels, savedAliases := zenModels, zenAliases
-	t.Cleanup(func() {
-		zenModelsMu.Lock()
-		zenModels, zenAliases = savedModels, savedAliases
-		zenModelsMu.Unlock()
-	})
-	setZenModelForTest("ccc-rotate-model", "")
+	withZenModelForTest(t, "ccc-rotate-model", "")
 	t.Cleanup(func() {
 		setZenConfig(savedCfg)
 		zenKeyMu.Lock()

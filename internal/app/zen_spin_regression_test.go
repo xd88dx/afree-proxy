@@ -51,7 +51,7 @@ func TestZenChatBlockedExitSwitchesKeyInsteadOfSpinning(t *testing.T) {
 		zenKeyMu.Unlock()
 	})
 
-	setZenModelForTest("aaa-spin-model", "")
+	withZenModelForTest(t, "aaa-spin-model", "")
 
 	params := map[string]any{
 		"model":    "aaa-spin-model",
