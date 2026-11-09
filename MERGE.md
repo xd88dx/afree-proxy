@@ -37,6 +37,27 @@ WorkBuddy 一栏的基线同时登记在 `scripts/workbuddy-vendor-baseline.json
 
 上游(历史线):`autumnsentiment/Trae2api-cn`(Trae CN / Trae Solo CN 模型反代,Python,MIT)。**这条线不是 vendor/merge 关系**:上游是 Python 全栈,本地 `internal/trae/` + `internal/app/trae.go` 是 Go 重写,行为跟随上游协议;唯一逐行移植的产物是内嵌的本机授权助手 `web_login.py`(`internal/trae/helper_script.go`),只有它需要跟上游比对。2026-10-27 的 cline-proxy 合并未涉及本线。
 
+### 2026-11-10 — 8bc4843 → b63408d（1 提交，0 冲突）
+
+上游 `b63408d`：Trae 邀请码+新手奖励体系（server/invite.go + traectl/invite.go，UG 链路经 postUGBody→Store 注入 client，出口接管覆盖）、Anthropic 流式/thinking 增强、console 邀请 UI。`internal/cmd/invite` CLI 不在 vendor 12 子包内且无 vendored 引用方，不引入。invite 出站已核走 s.httpClient()，无裸直连漏接。
+
+**补丁治理（重要教训）**：`trae2api-afree.patch` 按新基线重生成——旧补丁针对 6a861d9 时代；2026-11-07 同步时 theirs 侧因源树 WIP 跳过补丁、`git apply` 对 8bc4843 干净归档从未被验证，本次 base 侧（archive(8bc4843)）patch 失败暴露该盲区。新补丁=源树 WIP 相对 b63408d 的未暂存 diff（chat.go 两版间未变、server.go hunk 上下文两版兼容）。另：源树 WIP（textcall 四件套）与上游 server.go 同文件阻塞 ff 拉取，按纪律 pathspec stash→ff→pop（stash list 清零核对）。`vendor_trae2api.py` 的 save_baseline 顺带钉 LF。
+
+版本 0.2.6 两版一致。验证：build/vet 全绿，internal/trae2api/... 与 internal/app/ 测试全过。
+
+### 2026-11-10 — 8bc4843 → b63408d（1 提交，0 冲突）
+
+上游 `b63408d`：Trae 邀请码+新手奖励体系（server/invite.go + traectl/invite.go，UG 链路经 postUGBody→Store 注入 client，出口接管覆盖）、Anthropic 流式/thinking 增强、console 邀请 UI。`internal/cmd/invite` CLI 不在 vendor 12 子包内且无 vendored 引用方，不引入。invite 出站已核走 s.httpClient()，无裸直连漏接。
+
+**补丁治理（重要教训）**：`trae2api-afree.patch` 按新基线重生成——旧补丁针对 6a861d9 时代；2026-11-07 同步时 theirs 侧因源树 WIP 跳过补丁、`git apply` 对 8bc4843 干净归档从未被验证，本次 base 侧（archive(8bc4843)）patch 失败暴露该盲区。新补丁=源树 WIP 相对 b63408d 的未暂存 diff（chat.go 两版间未变、server.go hunk 上下文两版兼容）。另：源树 WIP（textcall 四件套）与上游 server.go 同文件阻塞 ff 拉取，按纪律 pathspec stash→ff→pop（stash list 清零核对）。`vendor_trae2api.py` 的 save_baseline 顺带钉 LF。
+
+版本 0.2.6 两版一致。验证：build/vet 全绿，internal/trae2api/... 与 internal/app/ 测试全过。
+
+
+### 2026-11-10 — helper 比对线：基线推进 v1.0.10/bb7b659 → v1.0.11/5c87d6c
+
+上游唯一增量 `5c87d6c`（v1.0.11，2026-11-05）未改 `web_login.py`：tar 包（main HEAD=5c87d6c）比对 exit 0 逐行一致。`trae-helper-baseline.json` 登记 v1.0.11/5c87d6c（2026-11-05）。引擎层 v1.0.11 变更已于 2026-11-08 评估为零吸纳（Go 引擎退役，行为面由 vendored XCool 版承接），本次无新增评估项。
+
 ### 2026-11-09 — vendored textcall 30 上限补齐（本地修复，非上游同步）
 
 - 背景：网关层 `internal/textcall`（`DefaultMaxPerResponse=30`，防病态模仿一口气吐数百个调用）与 vendored `internal/trae2api/server/textcall.go` 最初无上限内层转换并存——343 个内层调用下网关自然空转、客户端已卡死（`d0856c2` 上移时遗留缺口）。
@@ -204,6 +225,15 @@ WorkBuddy 一栏的基线同时登记在 `scripts/workbuddy-vendor-baseline.json
 ### 2026-10-31 复核（vendor 线）
 
 上游 `misakano7545/workbuddy2api-panel` main 无新提交（基线 `96b816d` 不变，版本 dev），`sync_workbuddy.py --report` 确认零改动，本次未涉及上游同步。
+
+### 2026-11-10 — b42712c → 4bdbd60（15 提交，1 冲突）
+
+上游要点：会话键派生兜底（`d165e6e` 只发 user_id 的客户端按内容派生键，前缀缓存不再全量 miss）、think tag 拆分（新子包 upstream/thinktag.go）、长文续接与「说一句就停/思考完直接收尾」救援重发（07f8ae0/c2003af/1037397/4bdbd60）、cockpit 导入兼容嵌套/驼峰/字典形态（cffb038）+ 多文件预览导入（c5ce29b）、资料接口空昵称不再静默成功（d78131b）、出站空 text 段补位+11151 归请求级（f987bac）、Kimi/GLM reasoning 镜像、thinking.default_effort 缺省统一 `upstream.DefaultGatewayEffort`（877324f，修复默认 high 从未生效）、debugcap/jsonscan 新子包、cache_audit.py。
+
+本地适配：`vendor_workbuddy.py` PACKAGES 扩 debugcap/jsonscan（上游 alert/probe 子包无 vendored 引用方，死代码判据不引入）；handler.go 会话解析冲突=本地有序策略门控（StrategyForRealm≠WeightedRandom 时 LookupForModel 只查不建）保留 + 会话键改用上游 bindKey 派生；`upstream/dns_test.go` 保持本地已删；workbuddyVersion 对齐 2026.11.10-misakano+afree。wb 面板新增能力（多文件导入预览）属 vendored 面板自有中文 UI，不经 afree admin 面板，无需 i18n 接入。**源树 main 曾错挂 linguo 停维血统（73a7560），已 checkout -B 重置回 misakano/main**（血统坑复发点：源树本地分支不可信，以 misakano/main 为准）。
+
+验证：build/vet 全绿，internal/workbuddy/... 测试全过（含既有 flaky TestChatStreamPassthrough 本轮通过）。
+
 
 ### 2026-11-08 — 4830686 → b42712c（20 提交；1 冲突 + 1 断言）
 
@@ -480,6 +510,16 @@ WorkBuddy 一栏的基线同时登记在 `scripts/workbuddy-vendor-baseline.json
 ## 副线（opencode2api / Trae2api-cn 吸收评估）+ magpie 参考线
 
 副线口径（2026-11-08 用户定）：**opencode2api**（opencode 副线）与 **Trae2api-cn**（trae 副线，Python 项目、trae 更换基线前身）只看近期更新、吸纳有价值逻辑，不 merge 不 vendor。本节记录每次副线评估的基线、吸收/丢弃结论；**magpie**（2026-11-06 立项，全平台纯参考）与副线共用本节，基线单独标注。
+
+### 2026-11-10 — 副线复核（opencode2api 零新提交；magpie 691a104→547585cd 零吸纳）
+
+- **opencode2api**：HEAD 仍为 `b296a61`（2026-11-05），自基线零新提交，无评估项。
+- **Trae2api-cn**：上游最新 `5c87d6c`（v1.0.11）；helper 比对 exit 0、基线推进记 TreaWork 节 2026-11-10 条目；引擎层零吸纳结论沿用 2026-11-08。
+- **magpie**（三轮增量 2026-11-08 基线 `691a104` → `547585cd`，约 100 提交）：全部为 magpie 自有形态（Memory/memdistill 子系统、GUI providers 页、sessions 统计、routing group、/v1/magpie/* 配额钱包、i18n、dsh 哈希分块）。重点甄别两项：
+  - `835439eb` 平行工具调用复用 index（0,0,1）致参数串包——触发面是 magpie 自有 amr-link（Responses→Chat 适配器）放大 deepseek-v4.1-flash 的流式怪癖（opencode-go 同模型 0/55）；本仓无实证，修法落点在 vendored wb sse.go（mergeToolCallDelta 按索引合并同构缺陷面）成本高且无本地触发证据，**零吸纳留档**：未来 wb/zen 上游若现平行调用参数串包（客户端收到 `{...}{...}` 断裂参数），按「新 id 命中已占 index → 改派下一个空闲 index 并重映射后续片段」修。
+  - `803d7747` 按厂商命名时限避让限流账号——本仓 zen 429 冷却封顶 20 分钟（Retry-After 谎报）+ key 池冷却语义已覆盖且刻意不同，弃。
+- magpie 基线推进：`547585cd`（2026-11-09T20:07Z）。
+
 
 ### 2026-11-08 — （副线基线建立：opencode2api=`b296a61`，Trae2api-cn=`5c87d6c`）
 
