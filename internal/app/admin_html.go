@@ -726,7 +726,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
 <div class="section">
   <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><path d="M4 5h16M4 12h10M4 19h7"/></svg></span> Proxy exclusion rules</div>
   <div class="section-body">
-    <div class="hint" style="margin-bottom:14px" data-i18n="Platform-level blacklist, per-proxy binding cap and manually disabled (cooled) proxies apply to automatic assignment only — one-click bind and reorder-by-latency. CN-domain accounts of TraeWork/WorkBuddy are excluded from both batch operations, and the proxies they hold are never reassigned within their own platform. Manual bindings and runtime routing are never restricted.">Platform-level blacklist, per-proxy binding cap and manually disabled (cooled) proxies apply to automatic assignment only — one-click bind and reorder-by-latency. CN-domain accounts of TraeWork/WorkBuddy are excluded from both batch operations, and the proxies they hold are never reassigned within their own platform. Manual bindings and runtime routing are never restricted.</div>
+    <div class="hint" style="margin-bottom:14px" data-i18n="Blacklist, binding cap and manual cooldown apply only to batch operations — one-click bind and reorder-by-latency. TraeWork/WorkBuddy CN-domain accounts are excluded, and the proxies they hold are never reassigned within their platform. Manual bindings and runtime routing are unrestricted.">Blacklist, binding cap and manual cooldown apply only to batch operations — one-click bind and reorder-by-latency. TraeWork/WorkBuddy CN-domain accounts are excluded, and the proxies they hold are never reassigned within their platform. Manual bindings and runtime routing are unrestricted.</div>
     <div style="margin-bottom:12px">
       <div style="display:flex;gap:10px;align-items:flex-start">
         <div style="flex:1;position:relative">
@@ -878,7 +878,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
         </select>
       </div>
     </div>
-    <div class="hint" data-i18n="strategy_scope_hint">Applies to Cline, OpenCode, OpenRouter, AMDCloud, TokenHarbor and Other. TraeWork and WorkBuddy use their engine's own scheduling. Forced by POOL_STRATEGY when that env var is set.</div>
+    <div class="hint" data-i18n="strategy_scope_hint">Per-platform account selection strategy; TraeWork and WorkBuddy follow their own engine scheduling. POOL_STRATEGY env var takes precedence when set.</div>
     <div class="hint" id="ppAccountStrategyHint" style="margin-top:4px"></div>
     <div class="form-actions"><button class="btn btn-primary" onclick="saveAccountStrategy()" data-i18n="save">Save</button></div>
   </div>
@@ -2098,7 +2098,7 @@ const I18N = {
   'Proxy isolation: each credential only egresses via its bound exits; when none is available it is skipped — never another exit or direct. Forced on when': { en: 'Proxy isolation: each credential only egresses via its bound exits; when none is available it is skipped — never another exit or direct. Forced on when', zh: '代理隔离：每个凭据只从绑定的出口出站，都不可用则跳过——绝不改走其他出口或直连。设有' },
   '=true.': { en: '=true.', zh: '=true 时强制开启。' },
   'Backup proxy — off by default: every identity uses its main proxy only; a cooling or removed main proxy is skipped for that round. On: the backup proxy serves as the fallback for the main one.': { en: 'Backup proxy — off by default: every identity uses its main proxy only; a cooling or removed main proxy is skipped for that round. On: the backup proxy serves as the fallback for the main one.', zh: '备用代理：默认关闭——每个身份只走主代理，主代理冷却或被移除时直接跳过。开启后：备用代理作为主代理的兜底。' },
-  'Platform-level blacklist, per-proxy binding cap and manually disabled (cooled) proxies apply to automatic assignment only — one-click bind and reorder-by-latency. CN-domain accounts of TraeWork/WorkBuddy are excluded from both batch operations, and the proxies they hold are never reassigned within their own platform. Manual bindings and runtime routing are never restricted.': { en: 'Platform-level blacklist, per-proxy binding cap and manually disabled (cooled) proxies apply to automatic assignment only — one-click bind and reorder-by-latency. CN-domain accounts of TraeWork/WorkBuddy are excluded from both batch operations, and the proxies they hold are never reassigned within their own platform. Manual bindings and runtime routing are never restricted.', zh: '平台拉黑、单代理绑定上限与手动禁用（冷却）的代理只约束自动分配——「一键代理」与「凭据延迟重排」两个批量操作；TraeWork/WorkBuddy 的国内域账号不参与这两个批量操作，其占用的代理不会被同平台的其他账号再分配。手动绑定和运行期路由不受限制。' },
+  'Blacklist, binding cap and manual cooldown apply only to batch operations — one-click bind and reorder-by-latency. TraeWork/WorkBuddy CN-domain accounts are excluded, and the proxies they hold are never reassigned within their platform. Manual bindings and runtime routing are unrestricted.': { en: 'Blacklist, binding cap and manual cooldown apply only to batch operations — one-click bind and reorder-by-latency. TraeWork/WorkBuddy CN-domain accounts are excluded, and the proxies they hold are never reassigned within their platform. Manual bindings and runtime routing are unrestricted.', zh: '拉黑、绑定上限与手动冷却只约束「一键代理」「凭据延迟重排」两个批量操作；TraeWork/WorkBuddy 国内域账号不参与，其占用的代理不会被同平台账号再分配。手动绑定与运行期路由不受限。' },
   'excluded': { en: ' · excluded', zh: ' · 已排除' },
   'row_s_left_unchanged_every_allowed_proxy_is_excl': { en: ' row(s) left unchanged — every allowed proxy is excluded or at cap', zh: ' 行无法改绑：可用代理都已拉黑或达到上限' },
   'latency_reorder_finished_with_errors_loads_faile': { en: 'Latency reorder finished with errors — loads failed: ', zh: '延迟重排完成但有错误——加载失败：' },
@@ -2429,6 +2429,7 @@ const I18N = {
   'Upstream': { en: 'Upstream', zh: '凭据' },
   'Main': { en: 'Main', zh: '主' },
   'Backup': { en: 'Backup', zh: '备' },
+  'Direct': { en: 'Direct', zh: '直连' },
   'direct': { en: 'Direct', zh: '直连' },
   'Status': { en: 'Status', zh: '状态' },
   'Duration': { en: 'Duration', zh: '耗时' },
@@ -2622,7 +2623,7 @@ const I18N = {
   'round_robin_default_rotate_through_every_routable_credential_in_order': { en: 'Round robin (default) — rotate through every routable credential in order', zh: '轮询(默认)——按顺序轮流使用每个可路由凭据' },
   'fill_always_the_first_routable_credential_no_rotation': { en: 'Fill — always the first routable credential, no rotation', zh: '填充——固定用第一个可路由凭据,不轮转' },
   'random_pick_a_routable_credential_at_random': { en: 'Random — pick a routable credential at random', zh: '随机——随机挑一个可路由凭据' },
-  'strategy_scope_hint': { en: 'Applies to Cline, OpenCode, OpenRouter, AMDCloud, TokenHarbor and Other. TraeWork and WorkBuddy use their engine\'s own scheduling. Forced by POOL_STRATEGY when that env var is set.', zh: '作用于 Cline / OpenCode / OpenRouter / AMDCloud / TokenHarbor / Other。TraeWork 与 WorkBuddy 用各自引擎的调度。设置了 POOL_STRATEGY 环境变量时以它为准。' },
+  'strategy_scope_hint': { en: 'Per-platform account selection strategy; TraeWork and WorkBuddy follow their own engine scheduling. POOL_STRATEGY env var takes precedence when set.', zh: '各平台的账号选择策略，其中 TraeWork 与 WorkBuddy 遵循各自引擎的调度。设置了 POOL_STRATEGY 环境变量时以它为准。' },
   'footer_api_address': { en: 'API address:', zh: 'API 地址:' },
   'footer_admin_panel': { en: 'Admin panel: /admin/', zh: '管理面板:/admin/' },
   'proxy_list_hint': { en: 'One proxy per line: http://user:pass@host:port or socks5://host:port#alias. All upstreams share this list; unhealthy proxies are skipped automatically.', zh: '每行一条代理:http://user:pass@host:port 或 socks5://host:port#alias。所有上游共用这份列表,不健康的出口会被自动跳过。' },
@@ -3333,13 +3334,15 @@ async function saveWorkbuddyEdits() {
     if (!mainInput) continue;
     const uid = mainInput.dataset.egid;
     const main = mainInput.dataset.value || '';
-    const backup = row.querySelector('.eg-input[data-eg="wb"][data-slot="backup"]').dataset.value || '';
     const cb = row.querySelector('input[data-wb-pool]');
     const accCb = row.querySelector('input[data-wb-account]');
     // 快照在渲染时记录（wbBindingCell 写入 main/backup 生效值），diff 与显示同口径。
     const snap = wbSnapshot[uid] || {};
     const snapMain = String(snap.main ?? '');
     const snapBackup = String(snap.backup ?? '');
+    // 备下拉未渲染（备用代理开关关闭）时沿用快照值：不产生假 diff，提交的
+    // 备值也会被后端 resolveBackupSlot 的保留语义兜住。
+    const backup = row.querySelector('.eg-input[data-eg="wb"][data-slot="backup"]')?.dataset.value ?? snapBackup;
     const snapAccount = snap.account !== undefined ? snap.account : true;
     const snapEnabled = snap.enabled !== undefined ? snap.enabled : true;
     // 目标态：账号开关以勾选框为准；反代开关只在账号开关最终开启时才可能变化
@@ -4887,9 +4890,11 @@ async function saveAccountEdits() {
     const mainInput = row.querySelector('.eg-input[data-eg="acc"][data-slot="main"]');
     const id = mainInput.dataset.egid;
     const main = mainInput.dataset.value || '';
-    const backup = row.querySelector('.eg-input[data-eg="acc"][data-slot="backup"]').dataset.value || '';
     const cb = row.querySelector('input[data-pool-enabled]');
     const snap = accSnapshot[id] || { main: '', backup: '', enabled: true };
+    // 备下拉未渲染（备用代理开关关闭）时沿用快照值：不产生假 diff；主槽变化
+    // 触发的 POST 里备值也会被后端 resolveBackupSlot 的保留语义兜住。
+    const backup = row.querySelector('.eg-input[data-eg="acc"][data-slot="backup"]')?.dataset.value ?? snap.backup;
     try {
       if (main !== snap.main || backup !== snap.backup) {
         await api('POST', '/accounts/proxy', { accountId: id, main: main, backup: backup });
@@ -5514,7 +5519,7 @@ async function loadLogs() {
       const t = l.time ? new Date(l.time).toLocaleString(TZ, TIME_OPT) : '-';
       const route = ROUTE_LABEL[l.route] || l.route || '-';
       const st = l.status || 0;
-      const proxy = PROXY_LABEL[l.proxyType] || '-';
+      const proxy = PROXY_LABEL[l.proxyType] ? T(PROXY_LABEL[l.proxyType]) : '-';
       return '<tr>' +
         '<td class="mono" style="font-size:11px">' + t + '</td>' +
         '<td class="mono" style="font-size:11px">' + esc(l.client || '-') + '</td>' +
@@ -6399,9 +6404,9 @@ async function saveKeyEdits() {
     const mainInput = row.querySelector('.eg-input[data-eg="key"][data-slot="main"]');
     const idx = parseInt(mainInput.dataset.egid, 10);
     const main = mainInput.dataset.value || '';
-    const backup = row.querySelector('.eg-input[data-eg="key"][data-slot="backup"]').dataset.value || '';
     const rcb = row.querySelector('input[data-zr]');
     const snap = keySnapshot[idx] || { main: '', backup: '', routing: true };
+    const backup = row.querySelector('.eg-input[data-eg="key"][data-slot="backup"]')?.dataset.value ?? snap.backup;
     try {
       if (main !== snap.main || backup !== snap.backup) {
         await api('POST', '/opencode/keys/proxy', { index: idx, main: main, backup: backup });
@@ -7502,9 +7507,9 @@ async function saveOrKeyEdits() {
     const mainInput = row.querySelector('.eg-input[data-eg="or"][data-slot="main"]');
     const idx = parseInt(mainInput.dataset.egid, 10);
     const main = mainInput.dataset.value || '';
-    const backup = row.querySelector('.eg-input[data-eg="or"][data-slot="backup"]').dataset.value || '';
     const rcb = row.querySelector('input[data-orr]');
     const snap = orKeySnapshot[idx] || { main: '', backup: '', routing: true };
+    const backup = row.querySelector('.eg-input[data-eg="or"][data-slot="backup"]')?.dataset.value ?? snap.backup;
     try {
       if (main !== snap.main || backup !== snap.backup) {
         await api('POST', '/openrouter/keys/proxy', { index: idx, main: main, backup: backup });
@@ -7925,7 +7930,7 @@ async function saveTraeEdits() {
     const snap = traeAccSnapshot[idx];
     if (!snap || !snap.uid) continue;
     const main = mainInput.dataset.value || '';
-    const backup = row.querySelector('.eg-input[data-eg="trae"][data-slot="backup"]').dataset.value || '';
+    const backup = row.querySelector('.eg-input[data-eg="trae"][data-slot="backup"]')?.dataset.value ?? snap.backup;
     const rcb = row.querySelector('input[data-trr]');
     const accCb = row.querySelector('input[data-tracc]');
     // wb 同款目标态：总闸关闭时不提交路由变更（重开自动恢复路由意愿）
@@ -8281,9 +8286,9 @@ async function saveAmdKeyEdits() {
     const mainInput = row.querySelector('.eg-input[data-eg="amd"][data-slot="main"]');
     const idx = parseInt(mainInput.dataset.egid, 10);
     const main = mainInput.dataset.value || '';
-    const backup = row.querySelector('.eg-input[data-eg="amd"][data-slot="backup"]').dataset.value || '';
     const rcb = row.querySelector('input[data-amdr]');
     const snap = amdKeySnapshot[idx] || { main: '', backup: '', routing: true };
+    const backup = row.querySelector('.eg-input[data-eg="amd"][data-slot="backup"]')?.dataset.value ?? snap.backup;
     try {
       if (main !== snap.main || backup !== snap.backup) {
         await api('POST', '/amd/keys/proxy', { index: idx, main: main, backup: backup });
@@ -8562,9 +8567,9 @@ async function saveTHKeyEdits() {
     const mainInput = row.querySelector('.eg-input[data-eg="th"][data-slot="main"]');
     const idx = parseInt(mainInput.dataset.egid, 10);
     const main = mainInput.dataset.value || '';
-    const backup = row.querySelector('.eg-input[data-eg="th"][data-slot="backup"]').dataset.value || '';
     const rcb = row.querySelector('input[data-thr]');
     const snap = thKeySnapshot[idx] || { main: '', backup: '', routing: true };
+    const backup = row.querySelector('.eg-input[data-eg="th"][data-slot="backup"]')?.dataset.value ?? snap.backup;
     try {
       if (main !== snap.main || backup !== snap.backup) {
         await api('POST', '/tokenharbor/keys/proxy', { index: idx, main: main, backup: backup });
@@ -9020,9 +9025,9 @@ async function saveOtherKeyEdits() {
     const mainInput = row.querySelector('.eg-input[data-eg="other"][data-slot="main"]');
     const index = Number(mainInput.dataset.egid);
     const main = mainInput.dataset.value || '';
-    const backup = row.querySelector('.eg-input[data-eg="other"][data-slot="backup"]').dataset.value || '';
     const rcb = row.querySelector('input[data-otr]');
     const snap = otherKeySnapshot[index] || { main: '', backup: '', routing: true };
+    const backup = row.querySelector('.eg-input[data-eg="other"][data-slot="backup"]')?.dataset.value ?? snap.backup;
     try {
       if (main !== snap.main || backup !== snap.backup) {
         await api('POST', '/other/keys/proxy', { slug: p.slug, index: index, main: main, backup: backup });
