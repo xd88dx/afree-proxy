@@ -245,6 +245,11 @@ func restartRequiredWorkbuddyFields(cur, next *wbconfig.Config) []string {
 	changed("logging.request_archive_enabled", cur.Logging.RequestArchiveEnabled, next.Logging.RequestArchiveEnabled)
 	changed("logging.request_retention_days", cur.Logging.RequestRetentionDays, next.Logging.RequestRetentionDays)
 	changed("logging.request_archive_max_mb", cur.Logging.RequestArchiveMaxMB, next.Logging.RequestArchiveMaxMB)
+	// 余额后台刷新：enabled=false 时 vendor 的 StartBalanceRefresh 不建消费循环
+	// （interval<=0 直接 return），热更新的 SetBalanceInterval 只 poke 不补建——
+	// 关闭后再勾选并保存，循环永不启动且面板原本不提示重启（2026-11-09 审计修复）。
+	changed("schedule.balance_refresh_enabled", cur.Schedule.BalanceRefreshEnabled, next.Schedule.BalanceRefreshEnabled)
+	changed("schedule.balance_refresh_minutes", cur.Schedule.BalanceRefreshMinutes, next.Schedule.BalanceRefreshMinutes)
 	return out
 }
 

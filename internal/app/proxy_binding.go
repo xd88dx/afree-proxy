@@ -304,7 +304,12 @@ func boundExitFor(key string) (proxyURL string, idx int, ok bool) {
 	// （useProxies 开关决定走池轮转或直连）。
 	if egressBindingActive() {
 		if p, found := egressProxyForZen(key); found {
-			return p, proxyIndex(p), true
+			// 钉定出口同样要过可用性判定（2026-11-09）：被自动/手动冷却的出口不能
+			// 继续承载该 key——否则钉定路径对冷却完全免疫，与显式绑定路径结论相反。
+			if i := proxyIndex(p); i >= 0 && proxyAvailableFor(pkZen, i) {
+				return p, i, true
+			}
+			return "", -1, false
 		}
 		return "", -1, false
 	}
@@ -314,7 +319,11 @@ func boundExitFor(key string) (proxyURL string, idx int, ok bool) {
 		}
 		return "", -1, true // 面板选择直连：即使代理列表非空也不走池
 	}
-	proxyURL, idx = pickUpstreamProxyFor(pkZen)
+	var exitOK bool
+	proxyURL, idx, exitOK = upstreamProxyForKind(pkZen)
+	if !exitOK {
+		return "", -1, false // 出口全被手动冷却：摘出轮转，不走直连兜底
+	}
 	if proxyURL == "" && kit.DisableDirect() {
 		return "", -1, false // 代理池空兜底的直连同样不放行
 	}

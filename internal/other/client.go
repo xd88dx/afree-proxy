@@ -31,6 +31,9 @@ type HTTPError struct {
 
 func (e *HTTPError) Error() string { return fmt.Sprintf("other api %d: %s", e.Status, e.Body) }
 
+// HTTPStatus 让网关统一提取上游状态码（429 需原样透传给客户端）。
+func (e *HTTPError) HTTPStatus() int { return e.Status }
+
 type pinKeyCtx struct{}
 
 // WithPinKey 把固定 key 放进 ctx（面板 Test 用）。
@@ -153,10 +156,11 @@ func Chat(ctx context.Context, p *Platform, params map[string]any, modelID strin
 	}
 	endpoint := p.BaseURL + "/chat/completions"
 	// 并发上限：拿到槽位才进入重试循环（槽位持有到本次调用返回，与 amd 同口径）
-	if !acquireSem(ctx, p.Slug, p.MaxConcurrency) {
+	sem, ok := acquireSem(ctx, p.Slug, p.MaxConcurrency)
+	if !ok {
 		return nil, 0, fmt.Errorf("client aborted: %w", ctx.Err())
 	}
-	defer releaseSem(p.Slug, p.MaxConcurrency)
+	defer releaseSem(sem)
 	retries := p.Retries
 	if retries <= 0 {
 		retries = 3

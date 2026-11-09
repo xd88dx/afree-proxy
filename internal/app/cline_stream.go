@@ -55,6 +55,9 @@ func (e *clineAPIError) Error() string {
 	return fmt.Sprintf("API %d: %s", e.Status, e.Body)
 }
 
+// HTTPStatus 让上游错误的状态码可被 upstreamErrorStatus 统一提取。
+func (e *clineAPIError) HTTPStatus() int { return e.Status }
+
 // clineStreamRequired 该模型是否已被学习为"必须流式"。
 func clineStreamRequired(modelID string) bool {
 	clineStreamMu.RLock()

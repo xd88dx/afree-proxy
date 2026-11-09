@@ -765,6 +765,7 @@ func (s *Server) runChat(w http.ResponseWriter, r *http.Request, ch *Channel, ac
 	creq traectl.ChatRequest, bareModel string, stream, includeUsage bool, st *chatStat) error {
 
 	cl := ch.ClientFor(acct)
+	afreeObserveAccount(r.Context(), acct.UID)
 	// 续期成功后同步池内状态（余额/健康判定依赖过期时间）
 	cl.OnRefresh = func(product, expiresAt string) {
 		s.pool.NoteSuccess(acct.UID)

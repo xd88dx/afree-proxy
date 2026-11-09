@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"time"
 )
 
 // ============================================================================
@@ -73,7 +74,15 @@ func loadGlobalConfigLocked() *globalConfigData {
 	}
 	var g globalConfigData
 	if json.Unmarshal(raw, &g) != nil {
-		log.Printf("global config: corrupt JSON at %s (starting clean)", globalConfigPath())
+		// 损坏文件绝不能被默认值静默覆盖：本文件承载 clientKeys（/v1 鉴权）、
+		// combos、模型/平台黑名单，而首个面板会话（loadSessionSecret）就会
+		// 触发整文件写回——不隔离等于一次损坏就永久丢失这些配置。
+		stamp := time.Now().Format("20060102-150405")
+		if renErr := os.Rename(globalConfigPath(), globalConfigPath()+".corrupt-"+stamp); renErr == nil {
+			log.Printf("SEVERE: global config is corrupt JSON; moved to %s.corrupt-%s for manual recovery; starting clean", globalConfigPath(), stamp)
+		} else {
+			log.Printf("SEVERE: global config is corrupt JSON (quarantine rename failed: %v); starting clean", renErr)
+		}
 		return globalCfg
 	}
 	if g.Strategy == "" {

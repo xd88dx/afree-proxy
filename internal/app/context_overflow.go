@@ -19,6 +19,7 @@ package app
 // 程序化判别。其余错误维持各调用点原有状态码与文案，行为不变。
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -88,6 +89,32 @@ func writeContextOverflowError(w http.ResponseWriter, model, upstreamMsg string)
 // writeUpstreamAPIError 上游调用错误的统一出口：溢出签名改写为 400
 // context_length_exceeded，其余按 fallbackStatus 原样透传（api_error）。
 // 各调用点原状态码语义不变，仅溢出形态被归一。
+// upstreamErrorStatus 上游错误的对外状态码：错误自带 429 时原样透传，其余按
+// fallback（各调用点既有口径）。限流是"该凭据用完了，等会儿再来"，客户端会按
+// Retry-After 退避重试；包成 502 会让 IDE 判定网关故障并标记渠道不可用（zen 侧
+// 早已如此，2026-11-09 收口到全平台）。提取靠上游错误类型的 HTTPStatus() 方法
+// （amd/openrouter/tokenharbor/other/zen/cline 与跨端点调用器通用）。
+// upstreamHTTPError 带状态码的上游错误：供调用器把非 200 响应转成 error（而不是
+// 让伪成功的响应体流进正常解析路径），状态码经 HTTPStatus() 被统一提取。
+type upstreamHTTPError struct {
+	Status int
+	Body   string
+}
+
+func (e *upstreamHTTPError) Error() string {
+	return fmt.Sprintf("upstream API %d: %s", e.Status, kit.Truncate(e.Body, 500))
+}
+
+func (e *upstreamHTTPError) HTTPStatus() int { return e.Status }
+
+func upstreamErrorStatus(err error, fallback int) int {
+	var sc interface{ HTTPStatus() int }
+	if errors.As(err, &sc) && sc.HTTPStatus() == http.StatusTooManyRequests {
+		return http.StatusTooManyRequests
+	}
+	return fallback
+}
+
 func writeUpstreamAPIError(w http.ResponseWriter, model string, err error, fallbackStatus int) {
 	msg := err.Error()
 	if isContextOverflow(msg) {

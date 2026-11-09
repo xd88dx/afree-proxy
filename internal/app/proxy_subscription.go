@@ -146,12 +146,16 @@ func refreshProxySubscription() (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	// 与面板"代理列表"保存路径一致：逐行 parseProxyLine 规范化 + validateProxyList
+	// 与面板"代理列表"保存路径一致：逐行 parseProxyLine 规范化 + validateProxyList。
+	// 单行不可解析（注释行、不支持的 scheme、缺端口）只跳过并计数——订阅里混进
+	// 一行脏数据不该让整池永不更新（2026-11-09 审计修复，与文件头口径对齐）。
 	canonical := make([]string, 0, 16)
+	skipped := 0
 	for _, line := range strings.Split(string(body), "\n") {
 		parsed, _, err := parseProxyLine(line)
 		if err != nil {
-			return 0, err
+			skipped++
+			continue
 		}
 		if parsed == "" {
 			continue
@@ -160,6 +164,9 @@ func refreshProxySubscription() (int, error) {
 	}
 	if len(canonical) == 0 {
 		return 0, fmt.Errorf("订阅内容为空或无有效代理行")
+	}
+	if skipped > 0 {
+		log.Printf("proxy subscription: skipped %d unparsable line(s)", skipped)
 	}
 	if err := validateProxyList(canonical); err != nil {
 		return 0, err

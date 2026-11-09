@@ -535,7 +535,11 @@ func (p *Pool) Pick(realm, model string, owners []string, tried map[string]bool)
 			}
 		}
 		usable := !a.disabled && !isHard && !degraded && !modelCooled &&
-			(a.maxInFlight <= 0 || a.inFlight < a.maxInFlight)
+			(a.maxInFlight <= 0 || a.inFlight < a.maxInFlight) &&
+			// afree 反代开关是硬策略,不是健康信号:关闭的账号在兜底路径同样
+			// 不得服务(2026-11-09 修复:此前只挡了 healthyLocked,兜底分支
+			// 放行,关掉开关的账号仍会被选中)。
+			(RoutingAllowed == nil || RoutingAllowed(a.UID))
 		a.mu.Unlock()
 		if usable {
 			fallback = append(fallback, a)

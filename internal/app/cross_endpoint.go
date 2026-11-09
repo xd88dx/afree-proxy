@@ -200,7 +200,7 @@ func writePlatformCallError(w http.ResponseWriter, err error) {
 		return
 	}
 	log.Printf("  cross-endpoint chat error: %v", err)
-	writeUpstreamAPIError(w, "", err, http.StatusBadGateway)
+	writeUpstreamAPIError(w, "", err, upstreamErrorStatus(err, http.StatusBadGateway))
 }
 
 // ============ /v1/responses ============

@@ -516,21 +516,19 @@ func semFor(slug string, n int) chan struct{} {
 	return s
 }
 
-// acquireSem 占一个并发槽位；ctx 取消时不再占用。返回 false 表示客户端已离开。
-func acquireSem(ctx context.Context, slug string, n int) bool {
+// acquireSem 占一个并发槽位并返回该槽位所属信号量；ctx 取消时不占用。
+// 释放必须用这里返回的 channel：Set 会整体重建 sems，重查会释放到新表上永久阻塞。
+func acquireSem(ctx context.Context, slug string, n int) (chan struct{}, bool) {
 	s := semFor(slug, n)
 	select {
 	case s <- struct{}{}:
-		return true
+		return s, true
 	case <-ctx.Done():
-		return false
+		return nil, false
 	}
 }
 
-func releaseSem(slug string, n int) {
-	semMu.Lock()
-	s := sems[slug]
-	semMu.Unlock()
+func releaseSem(s chan struct{}) {
 	if s != nil {
 		<-s
 	}

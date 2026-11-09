@@ -46,7 +46,7 @@ func TestZenToolFilterDisabledByDefault(t *testing.T) {
 func TestZenToolFilterDropsByPrefix(t *testing.T) {
 	setZenToolFilter(t, zenToolFilterConfig{Enabled: true, DenyPrefixes: []string{"mcp__"}})
 	body := buildZenBody(map[string]any{
-		"model": "big-pickle",
+		"model":    "big-pickle",
 		"messages": []any{},
 		"tools": []any{
 			chatTool("mcp__node_repl__js", "huge"),
@@ -81,7 +81,7 @@ func TestZenToolFilterDropsByExactName(t *testing.T) {
 		DenyNames: []string{"CronCreate", "createworkflow", "AskUserQuestion"},
 	})
 	body := buildZenBody(map[string]any{
-		"model": "big-pickle",
+		"model":    "big-pickle",
 		"messages": []any{},
 		"tools": []any{
 			chatTool("CronCreate", "x"),
@@ -200,7 +200,7 @@ func TestZenToolFilterAllDroppedFallsBackToGateOnly(t *testing.T) {
 	setZenToolFilter(t, zenToolFilterConfig{Enabled: true, DenyPrefixes: []string{"mcp__"}})
 	body := buildZenBody(map[string]any{
 		"model": "big-pickle", "messages": []any{},
-		"tools":   []any{chatTool("mcp__a", "x"), chatTool("mcp__b", "y")},
+		"tools":       []any{chatTool("mcp__a", "x"), chatTool("mcp__b", "y")},
 		"tool_choice": "auto",
 	}, false)
 	if got := len(body["tools"].([]any)); got != len(zenGateToolSpecs) {

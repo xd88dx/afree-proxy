@@ -90,6 +90,10 @@ func clearOpenCodeKeysForDataDelete() int {
 	next := *cfg
 	// 清空 key 池即清空 zen 凭据：保留其余 OpenCode 配置（baseURL、压缩和
 	// 代理策略），平台转为不可路由（目录隐藏、请求明确报错）。
+	// 注意：整个"清空全部数据"流程随后还会跑 clearProxyPoolForDataDelete，那里把
+	// zen 配置整体重置为出厂值——最终连 baseURL/压缩设置一并复位，与面板文案
+	// 「Deletes ALL persisted data (... config)」一致；上面的"保留"语义只在
+	// 单独调用本函数时成立。
 	next.Keys = nil
 	// key 池已清空，绑定表随之失效（绑定按 key 明文存，留着就是垃圾配置）。
 	next.KeyBindings = nil

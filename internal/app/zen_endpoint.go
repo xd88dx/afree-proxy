@@ -51,6 +51,9 @@ func (e *zenHTTPError) Error() string {
 	return fmt.Sprintf("zen API %d: %s", e.Status, e.Body)
 }
 
+// HTTPStatus 让上游错误的状态码可被 upstreamErrorStatus 统一提取。
+func (e *zenHTTPError) HTTPStatus() int { return e.Status }
+
 // zenDeprecationFromError 从上游非 2xx 答复里识别弃用信号：
 //   - 410 + body 带 "replacement":"<id>"（实测 mimo-v2.5-free 形态）→ 返回继任 ID；
 //   - 400 + "model is unavailable" / "modeldeprecated"（实测 qwen3.6-plus-free

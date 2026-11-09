@@ -17,9 +17,9 @@ type Account struct {
 	// APIToken 静态 API key（sk_...）账号：设置后直接作为 Bearer 使用，
 	// 不刷新（无 refresh token）；json 序列化持久化，重启后仍生效。
 	// 优先级高于 RefreshToken/AccessToken。
-	APIToken    string    `json:"apiToken,omitempty"`
-	AccessToken string    `json:"-"`
-	ExpiresAt   int64     `json:"-"`
+	APIToken    string `json:"apiToken,omitempty"`
+	AccessToken string `json:"-"`
+	ExpiresAt   int64  `json:"-"`
 	// 代理绑定（账号隔离，见 proxy_binding.go）：主代理优先，备用代理兜底；
 	// 两者都不可用（冷却中/已从池中删除）时该账号在选号阶段被整体跳过 ——
 	// 隔离优先于可用性，绝不退回其他出口。空 = 未绑定，沿用全局代理规则。
@@ -58,7 +58,7 @@ type poolUsageData struct {
 
 // AccountView 面板账号列表行（GET /admin/api/accounts 输出）：Account 配置态
 // 与 accountUsage 痕迹的合成视图，JSON 键与拆分前 Account 序列化逐字一致
-//（前端零改动）。
+// （前端零改动）。
 type AccountView struct {
 	AccountID string `json:"accountId"`
 	Email     string `json:"email"`

@@ -4,7 +4,7 @@ package app
 //
 // 引擎 = vendored trae2api（XCool-603/trae2api，纯标准库 Go，internal/trae2api/）。
 // 上游自带：OpenAI 兼容 /v1/chat/completions（SSE）、域前缀模型目录
-// （trae:/solo:/trae-intl:/solo-intl:）、多账号池（分级冷却/熔断/降权/会话粘性）、
+// （对外合并域 tacn:/tagb:，内部四 realm）、多账号池（分级冷却/熔断/降权/会话粘性）、
 // Web console、OAuth 登录与便携快照导入、自动签到。本文件只做三件事：
 //
 //  1. 装配：vendored server 进程内启动（不占额外端口），config 落
@@ -14,8 +14,8 @@ package app
 //  2. afree 特色接线（经 vendor 注入的函数变量，不产生 import 环）：
 //     出口接管（主/备绑定 fail-closed + 走池开关，见 proxy_binding 约定）、
 //     反代开关（RoutingAllowed 选号过滤）、新增身份默认禁用（AccountAddedHook）。
-//  3. 网关分发与面板管理 API：trae:/solo:/… 前缀模型名**透传**（vendored
-//     原生解析域前缀），/v1/models trae 段 + 费率过滤，/admin/api/trae/* 代理
+//  3. 网关分发与面板管理 API：tacn:/tagb: 前缀模型名经合并域翻译后进 vendored
+//     引擎，/v1/models trae 段 + 费率过滤，/admin/api/trae/* 代理
 //     到 vendored 管理端点。
 //
 // 鉴权分层：vendored 的 cfg.APIKey/webPassword 恒空（上游 withAuth 注入匿名
@@ -71,6 +71,27 @@ type trae2apiSubsystem struct {
 	srv    *traeserver.Server
 	cancel context.CancelFunc
 	bgDone chan struct{}
+	// vendorDone vendored RunBackground 退出信号（ONLY_ROUTER 下立即关闭）：
+	// 它在 ctx 取消时会做末次落盘，重启必须等它，否则旧实例的写盘可能晚于新
+	// 实例启动、把新状态盖回去（2026-11-09）。等有上限，见 traeRestartJoinTimeout。
+	vendorDone chan struct{}
+}
+
+// traeRestartJoinTimeout 重启等待旧实例退出的总预算：等到就是干净的单一写者，
+// 等不到（vendor 卡住）也绝不能把面板保存拖成无限转圈——超时记日志后继续。
+const traeRestartJoinTimeout = 5 * time.Second
+
+// waitClosedUntil 等到 done 关闭或 by 到点，超时只记日志不阻塞（by 为过去时刻
+// 即刻返回，故调用方可用同一个截止时刻串行等两个信号）。
+func waitClosedUntil(done <-chan struct{}, by time.Time, what string) {
+	if done == nil {
+		return
+	}
+	select {
+	case <-done:
+	case <-time.After(time.Until(by)):
+		log.Printf("trae2api restart: %s did not stop within %v; continuing without waiting", what, traeRestartJoinTimeout)
+	}
 }
 
 var (
@@ -105,23 +126,32 @@ func trae2apiLoadConfig() (*traecfg.Config, error) {
 	return cfg, nil
 }
 
+// traeDefaultChatBase vendored 引擎的 chat 上游默认基址（traecfg 内部同值）。
+const traeDefaultChatBase = "https://trae-api-cn.mchost.guru"
+
 // traeApplyAfreeConstraints afree 侧硬约束（面板不可改，重启后强制生效）：
 //   - 出口一律经 afree 解析（traectl.StoreHTTPClient 接管），上游自带的全局
 //     代理与 per-account proxy 字段是死配置，清空防止"面板改了不生效"。
 //   - 数据目录钉到 DATA_DIR/trae2api/（state/metrics/accounts 归置一处）。
 //   - 鉴权放空：匿名管理员由上游注入，门禁在 afree 网关层。
 func traeApplyAfreeConstraints(cfg *traecfg.Config) {
-	// 网关空值兜底：vendored client 内部有同值默认，但面板要显示真实值，
-	// 配置文件也应携带它（用户在面板看到的与实际生效的一致）。
-	if strings.TrimSpace(cfg.Trae.ChatBase) == "" {
-		cfg.Trae.ChatBase = "https://trae-api-cn.mchost.guru"
+	// 网关空值兜底 + OAuth-only 域拒收：vendored client 内部有同值默认，但面板要
+	// 显示真实值，配置文件也应携带它。手改配置文件把 chat_base 指到只承载 OAuth
+	// 的域（api.trae.cn 等）会让整池静默 5xx——这里回退默认并告警（2026-11-09：
+	// trae2apiValidateGateway 此前没有任何生产调用点，文档承诺的拒收并不存在）。
+	cfg.Trae.ChatBase = strings.TrimSpace(cfg.Trae.ChatBase)
+	if cfg.Trae.ChatBase == "" {
+		cfg.Trae.ChatBase = traeDefaultChatBase
+	} else if err := trae2apiValidateGateway(cfg.Trae.ChatBase); err != nil {
+		log.Printf("trae2api: %v; falling back to %s", err, traeDefaultChatBase)
+		cfg.Trae.ChatBase = traeDefaultChatBase
 	}
 	// 跨域容灾恒关（上游 9eece39 的 cross_realm_failover 默认 true）：vendored
 	// 引擎在 CN 域账号耗尽/冷却时自动切 Intl 域账号服务——这绕过本仓的域透传
-	// 契约（trae: 恒 CN、trae-intl: 恒 Intl，0a584b6 域级可路由过滤 + intl 关闭
-	// 时 afree 层直接拒绝），Intl 额度会被 CN 请求悄悄消耗、域记账错位。需要
-	// Intl 容灾时由客户端/下游显式调 trae-intl: 模型（newapi/hermes 渠道映射
-	// 层做 failover），引擎内部绝不跨域。
+	// 契约（tacn 恒 CN、tagb 恒 Intl，域级可路由过滤 + intl 关闭时 afree 层直接
+	// 拒绝），Intl 额度会被 CN 请求悄悄消耗、域记账错位。需要 Intl 容灾时由
+	// 客户端/下游显式调 tagb: 模型（newapi/hermes 渠道映射层做 failover），
+	// 引擎内部绝不跨域。
 	noFailover := false
 	cfg.Trae.CrossRealmFailover = &noFailover
 	cfg.DataDir = traeDataDir()
@@ -149,7 +179,7 @@ func trae2apiStart() error {
 		return fmt.Errorf("build server: %w", err)
 	}
 	traeHooksOnce.Do(func() { traeWireHooks(cfg.DataDir) })
-	sub := &trae2apiSubsystem{cfg: cfg, srv: srv, bgDone: make(chan struct{})}
+	sub := &trae2apiSubsystem{cfg: cfg, srv: srv, bgDone: make(chan struct{}), vendorDone: make(chan struct{})}
 	ctx, cancel := context.WithCancel(context.Background())
 	sub.cancel = cancel
 	go sub.runBackground(ctx)
@@ -177,7 +207,11 @@ func trae2apiRestart() error {
 		}
 		if old.cancel != nil {
 			old.cancel()
-			<-old.bgDone
+			// 两个信号都要等：bgDone = 我们的 30s 落盘循环，vendorDone = vendored
+			// 后台任务（它在 ctx 取消时也写盘）。共用同一个截止时刻，总预算封顶。
+			stopBy := time.Now().Add(traeRestartJoinTimeout)
+			waitClosedUntil(old.bgDone, stopBy, "state flusher")
+			waitClosedUntil(old.vendorDone, stopBy, "engine background tasks")
 		}
 	}
 	return trae2apiStart()
@@ -192,8 +226,12 @@ func (sub *trae2apiSubsystem) runBackground(ctx context.Context) {
 	defer close(sub.bgDone)
 	if kit.OnlyRouter() {
 		log.Printf("[only-router] ONLY_ROUTER=true: trae2api 签到/额度刷新等维护任务已禁用（仅会话路由）")
+		close(sub.vendorDone) // 无 vendored 后台任务，重启无需等待
 	} else {
-		go sub.srv.RunBackground(ctx)
+		go func() {
+			sub.srv.RunBackground(ctx)
+			close(sub.vendorDone)
+		}()
 	}
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
@@ -220,6 +258,10 @@ func traeWireHooks(dataDir string) {
 	// 持久记账（今日/累计 token，tokens.json；2026-11-05 用户定：与其他平台
 	// 同口径，弃用 metrics 流水重建）+ 合批落盘循环。
 	traeserver.OnRecord = trae2apiTokenRecorder
+	// 账号选定观测：填请求日志的「账号/凭据」与「出口」列。出口接管钩子只在
+	// 账号走代理时才跑到，直连绑定的账号拿不到任何回调、两列恒空（2026-11-09
+	// 修复；本钩子与出口无关，只回报"谁在服务"）。
+	traeserver.AfreeAccountObserver = trae2apiObserveAccount
 	trae2apiTokensLoad(dataDir)
 	startTrae2apiTokenFlusher()
 }
@@ -288,7 +330,10 @@ func traeProxiesEnabled() bool {
 // （DisableDirect 时不放行）。与 workbuddyGlobalExit 同口径。
 func traeGlobalExit() (string, bool) {
 	if traeProxiesEnabled() {
-		url, _ := pickUpstreamProxyFor(pkTrae)
+		url, _, ok := upstreamProxyForKind(pkTrae)
+		if !ok {
+			return "", false // 出口全被手动冷却：摘出轮转，不走直连兜底
+		}
 		if url == "" && kit.DisableDirect() {
 			return "", false
 		}
@@ -389,6 +434,28 @@ func (t traeObserveTransport) RoundTrip(r *http.Request) (*http.Response, error)
 
 // trae2apiUpstreamLabel 日志「账号/Key」列：account #N（与 wb 同口径，行号
 // 取池内顺序）。
+// trae2apiObserveAccount 是 vendored AfreeAccountObserver 的实现:账号选定后
+// 填请求日志两列(面板与运维排查用)。面板/定时任务的 ctx 没有日志槽位,
+// setUpstreamInfo/Exit 内部即 no-op。
+func trae2apiObserveAccount(ctx context.Context, uid string) {
+	if ctx == nil || uid == "" {
+		return
+	}
+	setUpstreamInfo(ctx, trae2apiUpstreamLabel(uid))
+	// 出口列:走代理的路径由 traeObserveTransport 写精确值(main/backup);
+	// 直连路径没有观测传输,这里补齐 direct。只在"无需选池"的分支写,避免
+	// observer 里调 pickUpstreamProxyFor 白耗一次轮转位。
+	main, _, bound := traeBindingOf(uid)
+	if bound {
+		if strings.EqualFold(strings.TrimSpace(main), "direct") {
+			setUpstreamExit(ctx, "direct")
+		}
+		return
+	}
+	if !traeProxiesEnabled() {
+		setUpstreamExit(ctx, "direct")
+	}
+}
 func trae2apiUpstreamLabel(uid string) string {
 	n := 0
 	if sub := trae2apiCurrent(); sub != nil {
@@ -693,8 +760,8 @@ func trae2apiModelExists(id string) bool {
 }
 
 // trae2apiRateFilterThresholdCN / ...Intl 分域费率过滤阈值（2026-11-07 拆分，
-// 照 wb 79cc3d6c 模式）：CN 过滤 trae:/solo:（realm.Trae/Solo），Intl 过滤
-// trae-intl:/solo-intl:（realm.TraeIntl/SoloIntl）。分域键未配置（nil，旧
+// 照 wb 79cc3d6c 模式）：CN 阈值管合并域 tacn（realm Trae/Solo），Intl 管 tagb
+// （realm TraeIntl/SoloIntl）。分域键未配置（nil，旧
 // 配置文件形态）回落旧单值——行为等价 wb 的 migrateModelRateFilterSplit
 // 「逐字段回落自动迁移」，只是回落放在读取函数而非解析入口，少一处字节级
 // 预处理。显式 0 = 该域关。
@@ -946,6 +1013,15 @@ func trae2apiCaller(model string) (platformChatCall, bool) {
 		resp, err := traeInprocessHTTP.Do(req)
 		if err != nil {
 			return nil, nil, err
+		}
+		// 非 200 必须是 error：vendored 的错误体是普通 JSON，让调用方拿 200 假设
+		// 去解析（流式路径按 SSE 收、非流式路径按 chat JSON 解）会把它变成
+		// "upstream stream interrupted"/解析失败，真实状态码（400/429/5xx）与上游
+		// 原话全丢（2026-11-09 修复；429 经 upstreamErrorStatus 原样透传）。
+		if resp.StatusCode != http.StatusOK {
+			body, _ := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
+			resp.Body.Close()
+			return nil, nil, &upstreamHTTPError{Status: resp.StatusCode, Body: string(body)}
 		}
 		return resp, nil, nil
 	}, true
@@ -1199,6 +1275,7 @@ func handleTraeConfigUpdate(w http.ResponseWriter, r *http.Request) {
 		SessionSticky    *bool    `json:"sessionSticky"`
 		IdleTimeout      *int     `json:"idleTimeout"`
 		IntlEnabled      *bool    `json:"intlEnabled"`
+		UseProxies       *bool    `json:"useProxies"`
 		RateFilter       *float64 `json:"rateFilter"`
 		// 分域倍率筛选（2026-11-07 拆分）：新键优先；旧 rateFilter 键为兼容
 		// 保留，非空时双写两域（回落语义与读取端一致）。
@@ -1215,13 +1292,37 @@ func handleTraeConfigUpdate(w http.ResponseWriter, r *http.Request) {
 		writeAPI(w, http.StatusServiceUnavailable, apiResponse{Error: "TraeWork subsystem unavailable"})
 		return
 	}
+	// 走池开关（Global policy）不属于 vendored 配置：落 proxy-config.json 的
+	// traeUseProxies（与其它七个平台同一归属）。此前 patch 结构缺该字段，
+	// 面板保存后回弹、开关恒为默认（2026-11-09 审计修复）。
+	if patch.UseProxies != nil {
+		setPlatformUseProxies("trae", patch.UseProxies)
+	}
+	// 时长字段必须先校验再落盘：vendor 的 traecfg.normalize 对非法时长是硬失败
+	// （Load 报错），而本函数是"先写文件再重启"——一次笔误（如 "30" 缺单位）就会
+	// 让引擎装不起来、子系统变 nil，连生成本次故障的 config/update 自身都被 503
+	// 守卫挡住，面板无法自愈（2026-11-09 审计修复）。
+	for name, v := range map[string]*string{
+		"breaker_cooldown":   patch.BreakerCooldown,
+		"cooldown_soft_rate": patch.CooldownSoftRate,
+		"cooldown_soft_max":  patch.CooldownSoftMax,
+		"cooldown_model":     patch.CooldownModel,
+	} {
+		if v == nil || strings.TrimSpace(*v) == "" {
+			continue
+		}
+		if _, err := time.ParseDuration(strings.TrimSpace(*v)); err != nil {
+			writeAPI(w, http.StatusBadRequest, apiResponse{Error: fmt.Sprintf("%s: invalid duration %q (use forms like 30m or 2h)", name, *v)})
+			return
+		}
+	}
 	sub.mu.Lock()
 	cfg := sub.cfg
 	// gateway 不再接受面板修改（2026-11-04 用户定）：沿用上游 chat_base 默认
 	// （traeApplyAfreeConstraints 兜底补值）。patch 里的 gateway 字段直接忽略
 	// ——保持 API 兼容（老客户端不发新请求不会炸），但改了也不生效，防止出现
-	// "面板上没有的开关却暗中生效"的悖离。trae2apiValidateGateway 保留给
-	// config 文件校验路径。
+	// "面板上没有的开关却暗中生效"的悖离。gateway 的手改值由装载路径
+	// traeApplyAfreeConstraints 调 trae2apiValidateGateway 把关（非法域回退默认）。
 	_ = patch.Gateway
 	if patch.MaxInFlight != nil && *patch.MaxInFlight > 0 {
 		cfg.Pool.MaxInFlight = *patch.MaxInFlight
@@ -1289,7 +1390,8 @@ func handleTraeConfigUpdate(w http.ResponseWriter, r *http.Request) {
 
 // trae2apiValidateGateway 网关域校验（判据自旧引擎 oauthOnlyHostFragments
 // 移植，2026-11-04 实测补缺）：OAuth/账号路由域作网关必失败——只承载 OAuth、
-// 不能发模型请求的域名直接拒绝保存，免得整池静默 5xx。
+// 不能发模型请求的域名被判非法。调用点 = traeApplyAfreeConstraints（装载期
+// 回退默认并告警，不让引擎因此装不起来）。
 func trae2apiValidateGateway(gw string) error {
 	if gw == "" {
 		return nil

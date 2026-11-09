@@ -45,7 +45,7 @@ func TestParseTextCallParensInsideString(t *testing.T) {
 
 func TestParseTextCallMalformed(t *testing.T) {
 	cases := []string{
-		`[调用工具 文档]`,            // 非调用：讲解性文本
+		`[调用工具 文档]`,             // 非调用：讲解性文本
 		`[调用工具 foo(不是json)]`,    // 参数不是 JSON
 		`[调用工具 foo({"a":1]})]`,  // 括号类型不配平
 		`[调用工具 foo({"a":1}) x]`, // 缺右括号收尾
@@ -239,7 +239,7 @@ func TestFilterCapDropsExcess(t *testing.T) {
 		t.Fatalf("应记录 3 个溢出，得到 %d", f.Dropped())
 	}
 	// 溢出的 3 个按正文放行（可见，不静默丢）
-	if n := strings.Count(calls文本.String() + tail, `[调用工具 Bash(`); n != 3 {
+	if n := strings.Count(calls文本.String()+tail, `[调用工具 Bash(`); n != 3 {
 		t.Fatalf("溢出调用应按正文放行 3 个，得到 %d", n)
 	}
 }

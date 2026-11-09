@@ -276,7 +276,7 @@ func UnblockModel(platform, model string, scope ...string) bool {
 
 // TraeModelBannedIn trae 平台模型在指定合并域（tacn/tagb）是否被封禁
 // （展示过滤用）：命中同合并域条目、内部 realm 条目（存量兼容）或全档条目
-//（scope 空）即为封禁。
+// （scope 空）即为封禁。
 func TraeModelBannedIn(scope, bareID string) bool {
 	// scope 合并域化（2026-11-07 tacn/tagb）：查询合并域时，存量内部 realm
 	// 记录（trae/solo/trae-intl/solo-intl）与合并域记录一并命中——封禁是对外
@@ -297,7 +297,10 @@ func TraeModelBannedIn(scope, bareID string) bool {
 		if !strings.HasSuffix(e.Model, ":"+bareID) {
 			continue
 		}
-		if e.Scope == "" || scopes[e.Scope] {
+		// scope 空 = 全档；合并域/内部 realm 命中所属域；旧引擎端点档位词汇
+		// （remote/traecode/traework）在新引擎无对应维度，按全档处理——否则存量
+		// 条目谁也匹配不上，等于静默解禁（2026-11-09）。
+		if e.Scope == "" || traeLegacyScopes[e.Scope] || scopes[e.Scope] {
 			return true
 		}
 	}
@@ -725,18 +728,34 @@ func handleModelBlacklistBan(w http.ResponseWriter, r *http.Request) {
 	writeAPI(w, http.StatusOK, apiResponse{Success: true, Message: "banned"})
 }
 
-// normalizeTraeScope trae 平台的端点档位归一：仅接受 remote/traecode/
-// traework；其余（含 auto 视图/非 trae 平台）返回空 = 全档封禁。
+// normalizeTraeScope trae 平台的封禁档位归一：接受合并域（tacn/tagb）与内部
+// realm（trae/solo/trae-intl/solo-intl），内部 realm 折到所属合并域——封禁是
+// 对外模型（tacn:bare / tagb:bare）的语义，不分内部归属。
+// 2026-11-09 修复：此前白名单是旧引擎词汇 remote/traecode/traework，而面板
+// 实发 vendor 条目的内部 realm，scope 恒被丢成空 → 域级 Ban 静默升级成
+// 跨合并域的全域封禁。
 func normalizeTraeScope(platform, scope string) string {
 	if platform != platTrae {
 		return ""
 	}
-	switch strings.ToLower(strings.TrimSpace(scope)) {
-	case "remote", "traecode", "traework":
-		return strings.ToLower(strings.TrimSpace(scope))
+	s := strings.ToLower(strings.TrimSpace(scope))
+	if s == "" {
+		return ""
 	}
+	if merged := trae2apiMergedOfRealm(s); merged != "" {
+		return merged
+	}
+	if s == traeMergedCN || s == traeMergedIntl {
+		return s
+	}
+	// 旧引擎（2026-11-04 换线前）的端点档位词汇：新引擎按模型所属 function 池
+	// 自行选择传输，没有"档位"这个维度，故一律落成全档封禁（fail-closed：该封的
+	// 继续封，不会因为词汇失配而静默放行）。存量条目由 TraeModelBannedIn 同口径命中。
 	return ""
 }
+
+// traeLegacyScopes 旧引擎端点档位词汇（仅用于识别存量封禁条目）。
+var traeLegacyScopes = map[string]bool{"remote": true, "traecode": true, "traework": true}
 
 // POST /admin/api/models/blacklist/test  body: { platform, model }
 //

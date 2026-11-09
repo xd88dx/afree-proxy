@@ -150,33 +150,15 @@ func validateCombo(id, platform, target string) error {
 	if target == "" {
 		return fmt.Errorf("target model is required")
 	}
-	// ID 不得与真实模型冲突（Cline 表带/不带 cline-free/ 前缀都算、zen 前缀
-	// 形态、OpenRouter 前缀形态）
+	// ID 不得与真实模型冲突。comboIDRe 的语法不含 ':'，因此带前缀平台
+	// （zen:/oprt:/amd:/tkhb:/tacn:/tagb:）的 ID 在函数入口就被拒，永远不会走到
+	// 这里——只保留真正可达的两类：Cline 目录（裸名与 cline-free/ 形态）与 zen
+	// 裸名别名（存量配置仍认裸 ID，见 resolveZenModel）。
 	if modelInClineList(id) {
 		return fmt.Errorf("combo id %q conflicts with a real cline model", id)
 	}
 	if _, isZen := resolveZenModel(id); isZen {
 		return fmt.Errorf("combo id %q conflicts with a real zen model", id)
-	}
-	if openrouter.HasPrefix(id) {
-		if _, ok := openrouter.Resolve(id); ok {
-			return fmt.Errorf("combo id %q conflicts with a real openrouter model", id)
-		}
-	}
-	if amd.HasPrefix(id) {
-		if _, ok := amd.Resolve(id); ok {
-			return fmt.Errorf("combo id %q conflicts with a real amd model", id)
-		}
-	}
-	if tokenharbor.HasPrefix(id) {
-		if _, ok := tokenharbor.Resolve(id); ok {
-			return fmt.Errorf("combo id %q conflicts with a real tokenharbor model", id)
-		}
-	}
-	if trae2apiPlatformModel(id) {
-		if trae2apiModelExists(id) {
-			return fmt.Errorf("combo id %q conflicts with a real Trae model", id)
-		}
 	}
 	if resolveCombo(id) != nil {
 		return fmt.Errorf("combo id %q already exists", id)

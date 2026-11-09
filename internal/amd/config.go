@@ -240,26 +240,24 @@ func rebuildSem() {
 	semMu.Unlock()
 }
 
-// acquireSem 占一个并发槽位；ctx 取消时不再占用。返回 false 表示客户端已离开。
-func acquireSem(ctx context.Context) bool {
+// acquireSem 占一个并发槽位并返回该槽位所属信号量；ctx 取消时不占用。
+// 释放必须用这里返回的 channel：Set 会整体换表，重查 sems 会释放到新表上永久阻塞。
+func acquireSem(ctx context.Context) (chan struct{}, bool) {
 	semMu.Lock()
 	s := sem
 	semMu.Unlock()
 	if s == nil {
-		return true
+		return nil, true
 	}
 	select {
 	case s <- struct{}{}:
-		return true
+		return s, true
 	case <-ctx.Done():
-		return false
+		return nil, false
 	}
 }
 
-func releaseSem() {
-	semMu.Lock()
-	s := sem
-	semMu.Unlock()
+func releaseSem(s chan struct{}) {
 	if s != nil {
 		<-s
 	}

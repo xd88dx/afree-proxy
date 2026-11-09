@@ -31,6 +31,9 @@ type HTTPError struct {
 
 func (e *HTTPError) Error() string { return fmt.Sprintf("openrouter api %d: %s", e.Status, e.Body) }
 
+// HTTPStatus 让网关统一提取上游状态码（429 需原样透传给客户端）。
+func (e *HTTPError) HTTPStatus() int { return e.Status }
+
 // CallOpts 单次调用的可选参数。
 type CallOpts struct {
 	// PinKey 固定本次调用只用一个 key（面板 Test 探测）；空 = 正常轮转。
@@ -187,10 +190,11 @@ func Chat(ctx context.Context, params map[string]any, modelID string, stream boo
 	}
 	endpoint := c.BaseURL + "/chat/completions"
 	// 并发上限：拿到槽位才进入重试循环（槽位持有到本次调用返回，与 zen 同口径）
-	if !acquireSem(ctx) {
+	sem, ok := acquireSem(ctx)
+	if !ok {
 		return nil, 0, fmt.Errorf("client aborted: %w", ctx.Err())
 	}
-	defer releaseSem()
+	defer releaseSem(sem)
 	retries := c.Retries
 	if retries <= 0 {
 		retries = 3

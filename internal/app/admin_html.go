@@ -867,6 +867,23 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
 </div>
 
 <div class="section">
+  <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><path d="M4 7h11a4 4 0 0 1 0 8H6"/><path d="M8 11l-4 4 4 4"/><path d="M20 17H9"/></svg></span> <span data-i18n="account_rotation_strategy">Account rotation strategy</span></div>
+  <div class="section-body">
+    <div class="form-row">
+      <div class="field"><label data-i18n="which_credential_each_request_uses">Which credential each request uses</label>
+        <select id="ppAccountStrategy">
+          <option value="round_robin" data-i18n="round_robin_default_rotate_through_every_routable_credential_in_order">Round robin (default) — rotate through every routable credential in order</option>
+          <option value="fill" data-i18n="fill_always_the_first_routable_credential_no_rotation">Fill — always the first routable credential, no rotation</option>
+          <option value="random" data-i18n="random_pick_a_routable_credential_at_random">Random — pick a routable credential at random</option>
+        </select>
+      </div>
+    </div>
+    <div class="hint" data-i18n="strategy_scope_hint">Applies to Cline, OpenCode, OpenRouter, AMDCloud, TokenHarbor and Other. TraeWork and WorkBuddy use their engine's own scheduling. Forced by POOL_STRATEGY when that env var is set.</div>
+    <div class="hint" id="ppAccountStrategyHint" style="margin-top:4px"></div>
+    <div class="form-actions"><button class="btn btn-primary" onclick="saveAccountStrategy()" data-i18n="save">Save</button></div>
+  </div>
+</div>
+<div class="section">
   <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M5.6 5.6l12.8 12.8"/></svg></span> Banned platforms <span id="platformBanCount" class="probe-pill" style="font-weight:normal"></span></div>
   <div class="section-body">
     <div class="hint" style="margin-top:0">Banned platforms stop participating in session routing — models leave /v1/models and requests fail immediately; maintenance tasks (check-in etc.) are unaffected. Other sub-platforms can be banned individually. Changes are staged — click Save to save.</div>
@@ -2047,8 +2064,6 @@ const I18N = {
   'IDE requests are mostly tool schemas (137 KB total, 112 KB of that is tools). Dropping client tools before they reach upstream saves roughly 33k tokens per message. Gate tools (12) are never filtered.': { en: 'IDE requests are mostly tool schemas (137 KB total, 112 KB of that is tools). Dropping client tools before they reach upstream saves roughly 33k tokens per message. Gate tools (12) are never filtered.', zh: 'IDE 请求绝大部分是工具定义（全长 137 KB，其中 112 KB 是工具）。在送达上游前丢掉客户端工具，每条消息可省约 33k token。12 个网关必需工具（gate）永不参与过滤。' },
   'Starting suggestions: prefix mcp__ (MCP tools are the largest single schemas and a given turn usually uses one or two); names CronCreate, CreateWorkflow, EnterPlanMode, ExitPlanMode, AskUserQuestion (several KB each, rarely needed in a coding turn). Every drop is logged with the bytes saved.': { en: 'Starting suggestions: prefix mcp__ (MCP tools are the largest single schemas and a given turn usually uses one or two); names CronCreate, CreateWorkflow, EnterPlanMode, ExitPlanMode, AskUserQuestion (several KB each, rarely needed in a coding turn). Every drop is logged with the bytes saved.', zh: '起始建议：前缀 mcp__（MCP 工具一般单条 schema 最大，但一轮对话通常只用一两个）；名单 CronCreate、CreateWorkflow、EnterPlanMode、ExitPlanMode、AskUserQuestion（每个数 KB，编程回合几乎用不上）。每次丢弃都会记日志并报节存字节数。' },
   'Save filter': { en: 'Save filter', zh: '保存过滤器' },
-  'opencode model list': { en: 'opencode model list', zh: 'opencode 模型列表' },
-  'Sync now': { en: 'Sync now', zh: '立即同步' },
   'Off — forward every tool the IDE declares': { en: 'Off — forward every tool the IDE declares', zh: '关闭 — 透传 IDE 声明的全部工具' },
   'On — drop matching tools': { en: 'On — drop matching tools', zh: '开启 — 丢弃匹配的工具' },
   // 代理排除规则（代理池页：平台级代理黑名单 + 每代理绑定上限；原「自动分配规则」）
@@ -2432,9 +2447,6 @@ const I18N = {
   'On': { en: 'On', zh: '开' },
   'Off': { en: 'Off', zh: '关' },
   'Probe model (used by the Test buttons):': { en: 'Probe model (used by the Test buttons):', zh: '探测模型（Test 按钮使用）：' },
-  'Org ID:': { en: 'Org ID:', zh: '组织 ID：' },
-  'wrk_… (optional)': { en: 'wrk_… (optional)', zh: 'wrk_…（可选）' },
-  'OAuth account org id, sent as x-opencode-org-id. Only needed when the key is an OAuth token rather than a raw API key; leave empty to omit the header.': { en: 'OAuth account org id, sent as x-opencode-org-id. Only needed when the key is an OAuth token rather than a raw API key; leave empty to omit the header.', zh: 'OAuth 账号的组织 ID，以 x-opencode-org-id 请求头发送。仅当该 key 是 OAuth token（而非原始 API key）时才需要；留空则不发送该头。' },
   'Key': { en: 'Key', zh: 'Key' },
   'TTFB': { en: 'TTFB', zh: '首包耗时' },
   'Rate-limit defense': { en: 'Rate-limit defense', zh: '限流防御' },
@@ -2603,15 +2615,21 @@ const I18N = {
   'sub_platform_created': { en: 'Sub-platform created', zh: '子平台已创建' },
   'added': { en: 'Added', zh: '已添加' },
   'test_passed': { en: 'Test passed', zh: '测试通过' },
+  'strategy_env_locked_hint': { en: 'POOL_STRATEGY is set and takes precedence over this panel — unset the env var to control the rotation strategy here.', zh: 'POOL_STRATEGY 已设置并优先于面板——要在此处控制轮转策略请先取消该环境变量。' },
+  'isolation_env_locked_hint': { en: 'PROXY_ISOLATION=true is set — isolation is forced on. Unset the env var (or set it to false) to control isolation from the panel.', zh: 'PROXY_ISOLATION=true 已设置——隔离被强制开启。取消该环境变量(或设为 false)才能在面板控制隔离。' },
+  'account_rotation_strategy': { en: 'Account rotation strategy', zh: '账号轮转策略' },
+  'which_credential_each_request_uses': { en: 'Which credential each request uses', zh: '每次请求用哪个凭据' },
+  'round_robin_default_rotate_through_every_routable_credential_in_order': { en: 'Round robin (default) — rotate through every routable credential in order', zh: '轮询(默认)——按顺序轮流使用每个可路由凭据' },
+  'fill_always_the_first_routable_credential_no_rotation': { en: 'Fill — always the first routable credential, no rotation', zh: '填充——固定用第一个可路由凭据,不轮转' },
+  'random_pick_a_routable_credential_at_random': { en: 'Random — pick a routable credential at random', zh: '随机——随机挑一个可路由凭据' },
+  'strategy_scope_hint': { en: 'Applies to Cline, OpenCode, OpenRouter, AMDCloud, TokenHarbor and Other. TraeWork and WorkBuddy use their engine\'s own scheduling. Forced by POOL_STRATEGY when that env var is set.', zh: '作用于 Cline / OpenCode / OpenRouter / AMDCloud / TokenHarbor / Other。TraeWork 与 WorkBuddy 用各自引擎的调度。设置了 POOL_STRATEGY 环境变量时以它为准。' },
   'saved': { en: 'Saved', zh: '已保存' },
   'no_keys_configured': { en: 'No keys configured', zh: '未配置密钥' },
   'Create an entry for an upstream provider: shared Base URL, its API keys, and the model prefix its models are exposed under.': { en: 'Create an entry for an upstream provider: shared Base URL, its API keys, and the model prefix its models are exposed under.', zh: '为上游厂商创建条目：共享的 Base URL、其 API 密钥，以及模型对外暴露的前缀。' },
   'One API key per line for this sub-platform. New keys start with routing disabled — tick Pool to enable.': { en: 'One API key per line for this sub-platform. New keys start with routing disabled — tick Pool to enable.', zh: '每行一个 API 密钥。新密钥默认不参与路由 —— 勾选 Pool 启用。' },
   'No accounts yet': { en: 'No accounts yet', zh: '暂无账号信息,请添加' },
   'Ready': { en: 'Ready', zh: '就绪' },
-  'Authenticated': { en: 'Authenticated', zh: '已认证' },
   'Cooling': { en: 'Cooling', zh: '冷却中' },
-  'Suspended': { en: 'Suspended', zh: '已暂停' },
   'Unknown': { en: 'Unknown', zh: '未知' },
   'balances_refreshed': { en: 'Balances refreshed', zh: '余额已刷新' },
   'Requesting authorization link...': { en: 'Requesting authorization link...', zh: '正在请求授权链接...' },
@@ -2703,18 +2721,17 @@ const I18N = {
   // TraeWork 平台页（vendored trae2api，2026-11-04 上游切换）
   'Gateway': { en: 'Gateway', zh: '网关' },
   'Trae config': { en: 'Trae config', zh: 'Trae 配置' },
-  'Breaker threshold': { en: 'Breaker threshold', zh: '熔断阈值' },
-  'Breaker cooldown': { en: 'Breaker cooldown', zh: '熔断冷却' },
   'Stream idle timeout (s)': { en: 'Stream idle timeout (s)', zh: '流中空闲超时（秒）' },
-  'Soft rate cooldown': { en: 'Soft rate cooldown', zh: '软限流冷却' },
   'Model cooldown': { en: 'Model cooldown', zh: '模型冷却' },
   'Reject unknown models': { en: 'Reject unknown models', zh: '拒绝未知模型' },
   'Session sticky': { en: 'Session sticky', zh: '会话粘性' },
   'International realms': { en: 'International realms', zh: '国际版域' },
   'Save config': { en: 'Save config', zh: '保存配置' },
   'Daily check-in for every account whose account switch is on (upstream schedule applies too)': { en: 'Daily check-in for every account whose account switch is on (upstream schedule applies too)', zh: '对账号总闸开启的账号执行每日签到（上游定时任务同样生效）' },
-  'Run the Test probe on every routable row.': { en: 'Run the Test probe on every routable row.', zh: '对每一行可路由凭据执行连通性探测。' },
   'Models appear here once an account is enabled — the catalog follows the engine realms': { en: 'Models appear here once an account is enabled — the catalog follows the engine realms', zh: '启用账号后此处才会显示——目录跟随引擎域' },
+  'Models appear here once an account is enabled — the catalog syncs from upstream': { en: 'Models appear here once an account is enabled — the catalog syncs from upstream', zh: '启用账号后此处才会显示——目录从上游同步' },
+  'Models appear here once a credential is enabled — the catalog syncs from upstream': { en: 'Models appear here once a credential is enabled — the catalog syncs from upstream', zh: '启用凭据后此处才会显示——目录从上游同步' },
+  'No models yet — click Refresh models': { en: 'No models yet — click Refresh models', zh: '暂无模型——点刷新模型' },
   'Add accounts': { en: 'Add accounts', zh: '添加账号' },
   'no_traework_accounts_yet_click_add_accounts_or_u': { en: 'No TraeWork accounts yet — click Add accounts or use the original panel import', zh: '暂无 TraeWork 账号——点"添加账号"或在右上角"原版入口"导入' },
   'Add TraeWork accounts': { en: 'Add TraeWork accounts', zh: '添加 TraeWork 账号' },
@@ -2804,7 +2821,6 @@ const I18N = {
   'Manual unban while a cooldown is active (global or platform-scoped): clears the cooldown and the failure counters so the exit rejoins the rotation immediately.': { en: 'Manual unban while a cooldown is active (global or platform-scoped): clears the cooldown and the failure counters so the exit rejoins the rotation immediately.', zh: '冷却期间手动解封（全局或平台）：清除冷却与失败计数，该出口立即回到轮转。' },
   'Counted locally by this proxy from upstream usage events': { en: 'Counted locally by this proxy from upstream usage events', zh: '本代理里本地统计，与官方免费额度无关' },
   'Delete': { en: 'Delete', zh: '删除' },
-  "Selection is the engine's weight scheduling (idle + credit + balance aware) — the old manual ordering is gone. Rate filter removes models whose upstream consumption rate exceeds the threshold (models without a published rate stay). Config save restarts the engine; cooldowns persist via state.json.": { en: "Selection is the engine's weight scheduling (idle + credit + balance aware) — the old manual ordering is gone. Rate filter removes models whose upstream consumption rate exceeds the threshold (models without a published rate stay). Config save restarts the engine; cooldowns persist via state.json.", zh: '选号由引擎权重调度（空闲/额度/余额感知）——旧的手动排序已移除。费率过滤剔除上游倍率超过阈值的模型（未下发费率的模型保留）。保存配置会重启引擎；冷却经 state.json 持久化。' },
   'expired_1': { en: 'Expired', zh: '已失效' },
   'authenticated': { en: 'Authenticated', zh: '已认证' },
   'ready': { en: 'Ready', zh: '就绪' },
@@ -3036,7 +3052,7 @@ function switchTab(name) {
   if (name === 'dashboard') { loadStats(); loadAccounts(); }
   if (name === 'accounts') { loadAccounts(); loadModels(); }
   if (name === 'trae') loadTraeConfig();
-  if (name === 'settings') { loadKeys(); loadConfig(); loadPlatformBans(); }
+  if (name === 'settings') { loadKeys(); loadConfig(); loadPlatformBans(); loadAccountStrategy(); }
   if (name === 'logs') loadLogs();
   if (name === 'proxypool') loadProxyPool();
   if (name === 'opencode') { loadOcConfig(); loadOcModels(); loadModels(); }
@@ -3788,7 +3804,7 @@ async function importWorkbuddyAccounts(input) {
   try {
     const form = new FormData();
     form.append('file', file, file.name);
-    const response = await fetch(API + '/workbuddy/accounts/import', { method: 'POST', body: form });
+    const response = await fetch(WB_API_PREFIX + '/import/cockpit', { method: 'POST', body: form });
     const result = await response.json().catch(() => ({}));
     if (!response.ok || result.ok === false) throw new Error(result.error || response.statusText || 'upload failed');
     toast(T('workbuddy_account_imported'), 'success');
@@ -3883,8 +3899,12 @@ async function api(method, path, body) {
   if (body) { opts.headers['Content-Type'] = 'application/json'; opts.body = JSON.stringify(body); }
   const res = await fetch(API + path, opts);
   if (res.status === 401 && path !== '/login') { location.reload(); return new Promise(() => {}); }
-  const data = await res.json();
-  if (!data.success && data.error) throw new Error(data.error);
+  // 非 JSON 响应（404/405/500 的 text/plain）不能把 SyntaxError 当错误信息抛给用户
+  // ——toast 里会出现 "Unexpected token '<'"，排查方向被带偏。
+  let data = null;
+  try { data = await res.json(); } catch (_) { data = null; }
+  if (!res.ok) throw new Error((data && (data.error || data.message)) || ('HTTP ' + res.status));
+  if (data && !data.success && data.error) throw new Error(data.error);
   return data;
 }
 
@@ -5729,7 +5749,7 @@ async function loadModels() {
               wbContextTagHTML(m.context_length, T('maximum_context_length')) +
               banBtn('workbuddy', m.id));
           }).join('')
-        : '<div class="empty">' + T((wbUnavailable || wbAll.length === 0) ? 'models_appear_here_once_an_account_is_enabled_the_catalog_syncs_from_upstream' : 'no_workbuddy_models_under_the_current_filter') + '</div>';
+        : '<div class="empty">' + T((wbUnavailable || wbAll.length === 0) ? 'Models appear here once an account is enabled — the catalog syncs from upstream' : 'No WorkBuddy models under the current filter') + '</div>';
       wbBox.innerHTML = wbBlock;
     }
     loadModelBlacklist();
@@ -6538,7 +6558,7 @@ async function loadProxyPool() {
     _('ppBackupEnabled').checked = c.backupProxyEnabled === true;
     if (c.proxyIsolationEnvLocked) {
       _('ppIsolation').disabled = true;
-      _('ppIsolationHint').innerHTML = '<span style="color:var(--warning,#eab308)">PROXY_ISOLATION=true is set — isolation is forced on. Unset the env var (or set it to false) to control isolation from the panel.</span>';
+      _('ppIsolationHint').innerHTML = '<span style="color:var(--warning,#eab308)">' + T('isolation_env_locked_hint') + '</span>';
     } else {
       _('ppIsolation').disabled = false;
       _('ppIsolationHint').textContent = '';
@@ -7246,6 +7266,39 @@ async function saveGlobalPolicy() {
 // zen 配置但分两次请求下发——PROXY_ISOLATION=true 锁定面板时后端会整体拒绝携带
 // proxyIsolation 的请求，分开才能让备用代理开关在锁定态照常保存（锁定态下拉框
 // disabled，跳过第一笔）。备用代理开关联动绑定表重绘，保存失败回滚勾选。
+// loadAccountStrategy 回显账号轮转策略(网关设置页)。env POOL_STRATEGY 设置时
+// 后端以 env 为准,下拉置只读并给出说明——不留会撒谎的控件。
+async function loadAccountStrategy() {
+  const sel = _('ppAccountStrategy');
+  if (!sel) return;
+  try {
+    const d = await api('GET', '/opencode/config');
+    const c = d.data || {};
+    sel.value = c.strategy || 'round_robin';
+    if (c.strategyEnvLocked) {
+      sel.disabled = true;
+      _('ppAccountStrategyHint').innerHTML = '<span style="color:var(--warning,#eab308)">' + T('strategy_env_locked_hint') + '</span>';
+    } else {
+      sel.disabled = false;
+      _('ppAccountStrategyHint').textContent = '';
+    }
+  } catch (e) { /* 面板首屏容错:读不到就保持默认选项 */ }
+}
+
+// saveAccountStrategy 保存账号选号策略(与后端 handleZenConfigUpdate 的 strategy 同键)。
+// env POOL_STRATEGY 设置时后端拒绝、控件已置只读,这里只在可写时提交。
+async function saveAccountStrategy() {
+  const sel = _('ppAccountStrategy');
+  if (!sel || sel.disabled) return;
+  try {
+    await api('POST', '/opencode/config/update', { strategy: sel.value });
+    toast(T('saved'), 'success');
+    loadAccountStrategy();
+  } catch (e) {
+    toast(T('save_failed') + e.message, 'error');
+    loadProxyPool();
+  }
+}
 async function saveIsolationOptions() {
   const iso = _('ppIsolation');
   if (!iso.disabled) {
@@ -7271,6 +7324,7 @@ async function saveIsolationOptions() {
 // 与"复位"同语义 —— 开关是全局设置，重绘比就地改 DOM 更不容易出现半更新。
 function refreshBindingTables() {
   if (_('accountTableBody') && _('accountTableBody').querySelector('.eg-input')) loadAccounts();
+  if (_('traeAccountsBody') && _('traeAccountsBody').querySelector('.eg-input')) loadTraeConfig();
   if (_('ocKeysBody') && _('ocKeysBody').querySelector('.eg-input')) loadOcConfig();
   if (_('wbAccountsBody') && _('wbAccountsBody').querySelector('.eg-input')) loadWorkbuddyAccounts();
   if (_('orKeysBody') && _('orKeysBody').querySelector('.eg-input')) loadOrConfig();
@@ -7693,7 +7747,7 @@ function renderTraeModels(models, accs) {
           '<button class="btn btn-sm btn-danger" data-bl-ban="1" data-platform="trae" data-model="' + esc(m.id) + '" data-scope="' + esc(m.realm || '') + '" data-refresh="trae" style="white-space:nowrap">' + T('ban') + '</button>' +
           (hasEnabled ? '' : ''));
       }).join('')
-    : '<div class="empty">' + T((traeCfgCache.routable || 0) > 0 ? 'no_models_yet_click_refresh_models' : 'models_appear_here_once_an_account_is_enabled_the_catalog_follows_the_engine_realms') + '</div>';
+    : '<div class="empty">' + T((traeCfgCache.routable || 0) > 0 ? 'No models yet — click Refresh models' : 'Models appear here once an account is enabled — the catalog follows the engine realms') + '</div>';
 }
 
 // renderTraeAccounts 凭据表（对齐 wb 口径）：昵称+UID / 状态（冷却/熔断/降权
@@ -8116,7 +8170,7 @@ async function loadAmdConfig() {
             '<span class="model-tag free">' + T('no_charge') + '</span>' +
             wbContextTagHTML(m.context, T('context')) +
             '<button class="btn btn-sm btn-danger" data-bl-ban="1" data-platform="amd" data-model="' + esc(m.id) + '" data-refresh="amd" style="white-space:nowrap">' + T('ban') + '</button>')).join('')
-        : '<div class="empty">' + T((ks || []).some(k => k.routingEnabled !== false) ? 'no_models_yet_click_refresh_models' : 'models_appear_here_once_a_credential_is_enabled_the_catalog_syncs_from_upstream') + '</div>';
+        : '<div class="empty">' + T((ks || []).some(k => k.routingEnabled !== false) ? 'No models yet — click Refresh models' : 'Models appear here once a credential is enabled — the catalog syncs from upstream') + '</div>';
     }
   } catch (e) { /* ignore */ }
 }

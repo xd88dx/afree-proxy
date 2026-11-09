@@ -40,7 +40,10 @@ func initTokenHarbor() {
 				}
 				return "", true
 			}
-			url, _ := pickUpstreamProxyFor(pkTh)
+			url, _, ok := upstreamProxyForKind(pkTh)
+			if !ok {
+				return "", false // 出口全被手动冷却：摘出轮转，不走直连兜底
+			}
 			if url == "" && kit.DisableDirect() {
 				return "", false // 代理池空兜底的直连同样不放行
 			}
@@ -160,7 +163,7 @@ func handleTHChat(w http.ResponseWriter, r *http.Request, params map[string]any)
 	resp, _, err := tokenharbor.Chat(r.Context(), params, m.ID, true, globalStrategy(), thBoundRoutable)
 	if err != nil {
 		log.Printf("  tokenharbor api error: %v", err)
-		writeUpstreamAPIError(w, m.ID, err, http.StatusBadGateway)
+		writeUpstreamAPIError(w, m.ID, err, upstreamErrorStatus(err, http.StatusBadGateway))
 		return
 	}
 	defer resp.Body.Close()

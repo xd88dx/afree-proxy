@@ -210,3 +210,16 @@ func PrunePlatformUsage(slug string, keys []string) {
 	keyMu.Unlock()
 	markTokensDirty()
 }
+
+// PrunePlatform 删除某个已不存在的子平台的全部痕迹（子平台被删时调用）。
+// PrunePlatformUsage 只修剪被移除的 key、不删 slug 本身——删平台后痕迹会永久
+// 残留（含陈旧冷却），建了又删会让 other-state.json 单调增长（2026-11-09 补齐）。
+func PrunePlatform(slug string) {
+	if slug == "" {
+		return
+	}
+	keyMu.Lock()
+	delete(usage.Platforms, slug)
+	keyMu.Unlock()
+	markTokensDirty()
+}

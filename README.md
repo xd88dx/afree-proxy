@@ -43,6 +43,8 @@ Cursor / ZCode / Cline / Claude Code ──►  afree-proxy  ──►  Cline �
 
 各平台共用同一套池语义：轮转策略、429 按 `Retry-After` 冷却、Test 按钮发真实探测请求并在成功后立即解除冷却、主/备代理绑定、新增身份默认不参与路由。**key 池平台**（OpenRouter/AMDCloud/TokenHarbor/Other）401/403 冷却 1 小时；Cline 账号池 401（含刷新被 400/401/403 拒绝）直接标记账号过期（等刷新恢复），chat 直接 403 不改账号状态、原样返回。
 
+**上游 429 原样透传**（2026-11-09 全平台收口）：上游限流时网关回 `429`（不再包装成 502），客户端可据此按 `Retry-After` 退避重试——包装成 502 会让 IDE 判定网关故障并标记该渠道不可用。上下文溢出仍统一改写为 `400 context_length_exceeded`，其余上游错误保持 502。
+
 **批量测试只测网关对外提供的服务**（2026-11-02）：各平台页「批量测试」与代理池页「全量测试」逐凭据判可路由性——反代（路由）开关关闭的凭据请求到不了，跳过不测（Trae/WorkBuddy 双开关平台只看反代开关，账号总闸不参与判定）；网关设置里封禁的平台整平台跳过。平台内一个可路由凭据都不剩时该平台自然跳过，完成提示列出跳过项。
 
 ## 快速开始（Docker）
@@ -75,7 +77,7 @@ docker run -d --name afree-proxy \
 | `STRICT_MODEL_MATCH`                     | `true`        | 未知模型名 400 而非静默兜底                                                                                                                                                                                                                                                 |
 | `ZEN_ORG_ID`                             | 空            | OAuth 账户组织 ID,写入 `x-opencode-org-id` 头;原始 API key 流量不需要(官方 CLI 也只对 OAuth 账户发该头)。面板可改,env 设置时以 env 为准                                                                                                                                     |
 | `ZEN_PIN_KEY`                            | 空            | 排障:所有 zen 上游请求固定用第 n 个 key(1 起)而非轮转                                                                                                                                                                                                                       |
-| `POOL_STRATEGY`                          | `round_robin` | 全部平台的凭据调度策略（Cline/zen/or/amd/th/other 共用）：`round_robin` / `fill` / `random`。WorkBuddy 用 vendor 自己的国内/国际分区策略；TraeWork（2026-11-04 换线）用 vendored trae2api 引擎的权重调度（空闲/额度/余额感知，`data/trae2api/config.json` 的 `pool.*`），不走本变量                                                                                              |
+| `POOL_STRATEGY`                          | `round_robin` | 全部平台的凭据调度策略（Cline/zen/or/amd/th/other 共用）：`round_robin` / `fill` / `random`。**设置即以 env 为准**——网关设置页「账号轮转策略」下拉（位于「封禁平台」上方）随之置只读并给出提示；未设置时用面板保存值（落 `afree-config.json`）。WorkBuddy 用 vendor 自己的国内/国际分区策略；TraeWork（2026-11-04 换线）用 vendored trae2api 引擎的权重调度（空闲/额度/余额感知，`data/trae2api/config.json` 的 `pool.*`），不走本变量                                                                                              |
 | `PUID` / `PGID`                          | `100` / `101` | 容器运行身份（entrypoint 自愈属主后降权；bind mount 时设为宿主机用户）                                                                                                                                                                                                      |
 | `LOG_REQUESTS`                           | `true`        | 请求日志（仅元数据：IP/路径/模型/状态/耗时，绝无对话内容）                                                                                                                                                                                                                  |
 | `MAX_BODY_MB`                            | `32`          | 请求体上限，超出 413                                                                                                                                                                                                                                                        |
@@ -156,14 +158,14 @@ Model:     cline-free/deepseek-v4.1-flash   （Cline 池）
 | `proxy-config.json`                                                                                      | 出口代理池 + 出口策略 + 订阅、各平台走池开关、代理隔离段（开关/排除表/绑定上限，含 WorkBuddy 账号绑定）、egress 钉定表  |
 | `cline-config.json`                                                                                      | Cline 账号池（账号凭据、请求头）                                                                                        |
 | `zen-config.json`                                                                                        | OpenCode zen：key 池与配置 + 每 key 会话身份（`sessions` 段）+ 死模型别名 + 端点学习结果                                |
-| `trae-config.json` / `amd-config.json` / `oprt-config.json` / `tkhb-config.json` / `other-config.json`   | 各平台账号/key 池、启用状态、代理绑定、平台专属开关                                                                     |
+| `trae2api/config.json` + `trae2api/accounts/` / `amd-config.json` / `oprt-config.json` / `tkhb-config.json` / `other-config.json`   | TraeWork 引擎配置与便携快照（2026-11-05 迁入 vendored 子系统目录）、其余各平台账号/key 池、启用状态、代理绑定、平台专属开关 |
 | `workbuddy/config.json` + `workbuddy/auths/`                                                             | WorkBuddy 部署配置、授权凭据（沿用 vendor 目录结构）                                                                    |
 
 | 状态态（`*-state.json`，随请求/后台任务高频变化——外部监测配置变更时忽略这批文件）                        | 内容                                                                                                                    |
 | -------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
 | `cline-state.json`                                                                                       | Cline 每账号使用痕迹（状态/最近使用/调用与 token 计数/冷却）+ 轮转游标（2s 合批）                                       |
 | `zen-state.json`                                                                                         | zen key 冷却表 + 每 key token 记账                                                                                      |
-| `trae-state.json`                                                                                        | TraeWork 每账号 token 记账/额度快照/签到状态/设备代际 + 账号冷却                                                        |
+| `trae2api/state.json` / `trae2api/metrics.json`                                                          | TraeWork 引擎运行态：账号冷却/熔断/禁用+手动冷却、签到与额度（state）与指标（metrics）                                  |
 | `amd-state.json` / `oprt-state.json` / `tkhb-state.json` / `other-state.json`                            | 各 key 池的 key 级 token 记账 + 冷却表（other 按子平台分键）                                                            |
 | `proxy-state.json`                                                                                       | 代理出口在线率统计（60s 合批，编辑池清零）                                                                              |
 | `workbuddy/state.json`、`workbuddy/usage.json`、`workbuddy/request-logs/`                                | WorkBuddy 运行态/用量分桶/请求日志（vendor 目录结构）                                                                   |
@@ -182,10 +184,10 @@ Model:     cline-free/deepseek-v4.1-flash   （Cline 池）
 
 | 维度     | 决定什么                     | 策略入口                                                         | 存放                                        |
 | -------- | ---------------------------- | ---------------------------------------------------------------- | ------------------------------------------- |
-| 账号选号 | 这次请求用哪个账号 / key     | `POOL_STRATEGY`（默认 `round_robin`）；TraeWork 用引擎权重调度 | `data/afree-config.json` 的 `strategy`      |
+| 账号选号 | 这次请求用哪个账号 / key     | 面板「账号轮转策略」下拉，或 `POOL_STRATEGY`（env 优先，默认 `round_robin`）；TraeWork 用引擎权重调度 | `data/afree-config.json` 的 `strategy`      |
 | 出口选路 | 这次请求从哪条线路 / IP 出去 | 面板「代理池」页的调度策略                                       | `data/proxy-config.json` 的 `proxyStrategy` |
 
-代理池配置（代理列表、出口策略、订阅、各平台走池开关）存在 `data/proxy-config.json`，不寄居在任何平台配置里——代理池是全局能力（7 个平台共用），不属于 OpenCode zen。出口策略：`round_robin`（默认）/ `random` / `fill`。
+代理池配置（代理列表、出口策略、订阅、各平台走池开关）存在 `data/proxy-config.json`，不寄居在任何平台配置里——代理池是全局能力（8 个平台共用：Cline / TraeWork / OpenCode / WorkBuddy / OpenRouter / AMDCloud / TokenHarbor / Other），不属于 OpenCode zen。出口策略：`round_robin`（默认）/ `random` / `fill`。
 
 WorkBuddy 的账号调度用 vendor 自己的国内/国际分区策略，与 `POOL_STRATEGY` 无关。
 
@@ -197,11 +199,11 @@ WorkBuddy 的账号调度用 vendor 自己的国内/国际分区策略，与 `PO
 - 未绑定身份沿用面板每平台的走池开关（缺省 = 走池），空绑定配置行为与旧版完全一致。
 - 面板支持单行绑定、一键按行序分配（第 1 行绑直连哨兵、其余按代理池顺序依次绑主槽，多余行保持原绑定）、一键清空；绑定代理被删时行标 ⚠ 并保持跳过直到修复。备用代理开关关闭时备用槽整体退出路由（保留旧值，重开即恢复）。
 - **代理在线率**：代理池页显示每个代理的传输层成功率（累计 + 最近 50 次滚动窗口）与平均握手延迟。两个数据源：真实流量的**被动采样**（不产生探活流量）+ 健康表**手动延迟测试**（「代理测试」按钮：每出口对可配置的测速目标发最多 3 次 HTTPS 探测，默认 `www.gstatic.com/generate_204`，与真实请求同一拨号栈；单行「只测这一个出口」同理；样本计入在线率与握手统计，显示层不影响路由与冷却）。五档配色：≥80% 绿、60–80% 蓝、40–60% 粉、20–40% 黄、<20% 红，便于一眼挑出该换的节点。统计落盘在 `proxy-state.json`（60s 合批），编辑池清零。zen key 的出口自动钉定表在 `proxy-config.json` 的 `egressBindings` 段（键为 sha256 哈希，不含明文 key）。
-- **出口手动冷却 / 解禁**（2026-11-02）：健康表行内「冷却」按钮把该出口摘出轮转——**手动冷却无到期时间**，只有点「解禁」才恢复（状态列显示「手动」而非编造的恢复时刻）；「解禁」一键清除该出口的全局 + 平台级冷却与失败计数，用于单次网络抖动误冷却唯一可用出口的场景。自动冷却口径不变：建连失败走全局 2 分钟（2-strike，单次失败不冷却），隧道后流错误走平台级 10 分钟。
+- **出口手动冷却 / 解禁**（2026-11-02）：健康表行内「冷却」按钮把该出口摘出轮转——**手动冷却无到期时间**，只有点「解禁」才恢复（状态列显示「手动」而非编造的恢复时刻）；「解禁」一键清除该出口的全局 + 平台级冷却与失败计数，用于单次网络抖动误冷却唯一可用出口的场景。自动冷却口径不变：建连失败走全局 2 分钟（2-strike，单次失败不冷却），隧道后流错误走平台级 10 分钟。**手动摘除对所有路径生效**（2026-11-09 修复）：未绑定身份轮转、zen 的 egress 钉定出口与各平台目录同步一并跳过手动冷却出口；池内出口全部被手动冷却时按「无可用出口」拒绝该轮请求（fail-closed，绝不静默改用被摘除的出口、也不静默转直连）。限时冷却遇全池不可用仍保留历史 fail-open 轮转位。
 
 socks5/socks5h 全支持；直连哨兵（主 = direct）可显式声明直连出口。zen 免费额度按出口 IP 计（约 200 请求/5h），把 key 绑到不同出口才是真正解锁多 key 容量的方式。
 
-**未绑定 zen key 的自动钉定（egress，上游 3758eb7）**：zen 免费层按 key 记录出口 IP，一个 key 出现多个 IP 整池会被判可疑。因此未显式绑定的 zen key 在「代理池非空」时自动分配一个稳定出口（一代理一 key，绑定幂等、重启不变，落 `.egress-bindings.json` 且不含明文 key）；代理比 key 少时多出的 key 被过滤并报容量错误（加代理，或在 zen 配置关闭 `pinProxyPerKey`），绝不直连或借用别人的出口。cline 账号不接此层——账号级绑定走面板的主/备绑定与自动分配。
+**未绑定 zen key 的自动钉定（egress，上游 3758eb7）**：zen 免费层按 key 记录出口 IP，一个 key 出现多个 IP 整池会被判可疑。因此未显式绑定的 zen key 在「代理池非空」时自动分配一个稳定出口（一代理一 key，绑定幂等、重启不变，落 `.egress-bindings.json` 且不含明文 key）；代理比 key 少时多出的 key 被过滤并报容量错误（加代理，或在 zen 配置关闭 `pinProxyPerKey`），绝不直连或借用别人的出口。**钉定出口同样参与冷却判定**（2026-11-09 修复）：被自动或手动冷却的钉定出口不再承载该 key，该 key 本轮跳过（而不是继续用坏出口）。cline 账号不接此层——账号级绑定走面板的主/备绑定与自动分配。
 
 ## 封禁与黑名单
 

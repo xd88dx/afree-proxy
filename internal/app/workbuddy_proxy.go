@@ -140,7 +140,10 @@ func workbuddyGlobalExit() (string, bool) {
 		}
 		return "", true
 	}
-	url, _ := pickUpstreamProxyFor(pkWb)
+	url, _, ok := upstreamProxyForKind(pkWb)
+	if !ok {
+		return "", false // 出口全被手动冷却：摘出轮转，不走直连兜底
+	}
 	if url == "" && kit.DisableDirect() {
 		return "", false // 代理池空兜底的直连同样不放行
 	}

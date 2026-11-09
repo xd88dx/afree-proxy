@@ -40,13 +40,13 @@ var (
 	proxyCooldowns   = map[int]time.Time{} // 代理索引 -> 冷却截止（全局层：建连失败）
 	proxyCooldownsMu sync.Mutex
 
-// proxyManualCooled 手动冷却（面板「冷却」按钮，2026-11-02 用户定）：
-// 不设到期时间——摘出轮转后只有手动解禁（clearProxyCooldowns）才恢复。
-// 与 timed 冷却并存：手动标记优先（到期与否都不参与轮转）。
-// 2026-11-04 用户定持久化：随 proxy-state.json 的 manualCooled 段落盘/恢复
-// （索引键 ↔ URL 键互转见 snapshotProxyManualCooled/restoreProxyManualCooled），
-// 标记与解禁时立即触发同步落盘。
-proxyManualCooled = map[int]bool{}
+	// proxyManualCooled 手动冷却（面板「冷却」按钮，2026-11-02 用户定）：
+	// 不设到期时间——摘出轮转后只有手动解禁（clearProxyCooldowns）才恢复。
+	// 与 timed 冷却并存：手动标记优先（到期与否都不参与轮转）。
+	// 2026-11-04 用户定持久化：随 proxy-state.json 的 manualCooled 段落盘/恢复
+	// （索引键 ↔ URL 键互转见 snapshotProxyManualCooled/restoreProxyManualCooled），
+	// 标记与解禁时立即触发同步落盘。
+	proxyManualCooled = map[int]bool{}
 )
 
 // snapshotProxyManualCooled 内存索引键 → 落盘 URL 键。越界索引（池编辑后残留）
@@ -287,14 +287,42 @@ func pickUpstreamProxyFor(kind string) (string, int) {
 	case "fill":
 		idx = 0
 	}
-	// 冷却跳过:线性探测下一个可用代理
+	// 冷却跳过：线性探测下一个可用出口。探测无果时按冷却种类分岔——限时冷却
+	// fail-open 返回轮转位（历史口径：探测无果也不能断流）；命中手动冷却
+	//（用户显式摘除、无到期时间、只有解禁恢复）则返回空，交调用方按"无可用
+	// 出口"fail-closed。否则单出口池点「冷却」对路由零效果，等于控件撒谎。
 	for i := 0; i < n; i++ {
 		if proxyAvailableFor(kind, idx) {
-			break
+			return cfg.Proxies[idx], idx
 		}
 		idx = (idx + 1) % n
 	}
+	if proxyManualCooledAt(idx) {
+		return "", -1
+	}
 	return cfg.Proxies[idx], idx
+}
+
+// proxyManualCooledAt 该池下标是否处于手动冷却（无到期时间，仅解禁恢复）。
+func proxyManualCooledAt(idx int) bool {
+	proxyCooldownsMu.Lock()
+	defer proxyCooldownsMu.Unlock()
+	return proxyManualCooled[idx]
+}
+
+// upstreamProxyForKind 出口选择的三态封装，供各平台未绑定路径统一调用：
+// 池空 → ("", -1, true)，调用方按既有口径决定直连兜底（受 DISABLE_DIRECT 约束）；
+// 池非空且有可用出口 → (url, idx, true)；池非空但出口全被手动冷却 →
+// ("", -1, false)，调用方必须 fail-closed，绝不静默改用被摘除的出口、也不静默转直连。
+func upstreamProxyForKind(kind string) (string, int, bool) {
+	if len(getProxyPool().Proxies) == 0 {
+		return "", -1, true
+	}
+	url, idx := pickUpstreamProxyFor(kind)
+	if url == "" {
+		return "", -1, false
+	}
+	return url, idx, true
 }
 
 func maskProxyURL(raw string) string { return kit.MaskProxyURL(raw) }

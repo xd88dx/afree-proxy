@@ -33,30 +33,32 @@ func zenConfigPayload() map[string]any {
 	binding := getProxyBindingConfig()
 	pool := getProxyPool()
 	return map[string]any{
-		"zenUseProxies":       zenProxiesEnabled(),
-		"workbuddyUseProxies": workbuddyProxiesEnabled(),
-		"keys":                cfg.Keys,
-		"keyStates":           zenKeyStatus(),
-		"baseURL":             cfg.BaseURL,
-		"proxies":             pool.Proxies,
-		"proxyStrategy":       pool.Strategy,
-		"proxySubURL":         pool.SubURL,
-		"proxySubCron":        pool.SubCron,
-		"proxyTestTarget":     proxyTestTarget(),
-		"maxConcurrency":      cfg.MaxConcurrency,
-		"retries":             cfg.Retries,
-		"compaction":          cfg.Compaction,
-		"proxyIsolation":      proxyIsolationEnabled(),
+		"zenUseProxies":           zenProxiesEnabled(),
+		"workbuddyUseProxies":     workbuddyProxiesEnabled(),
+		"keys":                    cfg.Keys,
+		"keyStates":               zenKeyStatus(),
+		"baseURL":                 cfg.BaseURL,
+		"proxies":                 pool.Proxies,
+		"proxyStrategy":           pool.Strategy,
+		"proxySubURL":             pool.SubURL,
+		"proxySubCron":            pool.SubCron,
+		"proxyTestTarget":         proxyTestTarget(),
+		"maxConcurrency":          cfg.MaxConcurrency,
+		"retries":                 cfg.Retries,
+		"compaction":              cfg.Compaction,
+		"proxyIsolation":          proxyIsolationEnabled(),
 		"proxyIsolationEnvLocked": proxyIsolationEnvLocked(),
-		"backupProxyEnabled":  backupProxyEnabled(),
-		"proxyExclusions":     binding.ProxyExclusions,
-		"proxyBindCaps":       binding.ProxyBindCaps,
-		"reorderKeepSec":      reorderKeepSec(),
-		"pinProxyPerKey":      pinProxyPerKeyEnabled(),
-		"egress":              zenEgressSnapshot(),
-		"orgID":               cfg.OrgID,
-		"toolFilter":          cfg.ToolFilter,
-		"sessionRotateMinutes": cfg.SessionRotateMinutes,
+		"strategy":                globalStrategy(),
+		"strategyEnvLocked":       poolStrategyEnvLocked(),
+		"backupProxyEnabled":      backupProxyEnabled(),
+		"proxyExclusions":         binding.ProxyExclusions,
+		"proxyBindCaps":           binding.ProxyBindCaps,
+		"reorderKeepSec":          reorderKeepSec(),
+		"pinProxyPerKey":          pinProxyPerKeyEnabled(),
+		"egress":                  zenEgressSnapshot(),
+		"orgID":                   cfg.OrgID,
+		"toolFilter":              cfg.ToolFilter,
+		"sessionRotateMinutes":    cfg.SessionRotateMinutes,
 		"runtime": map[string]any{
 			"proxyCooldowns": proxyCooldownStatus(),
 			"proxyHealth":    proxyHealthSnapshot(),
@@ -88,18 +90,20 @@ func handleZenConfigUpdate(w http.ResponseWriter, r *http.Request) {
 	bindingNext := *getProxyBindingConfig()
 	bindingChanged := false
 	var patch struct {
-		ZenUseProxies       *bool    `json:"zenUseProxies"`
-		WorkbuddyUseProxies *bool    `json:"workbuddyUseProxies"`
-		Keys                []string `json:"keys"`
-		BaseURL             *string  `json:"baseURL"`
-		Proxies             []string `json:"proxies"`
-		ProxyStrategy       *string  `json:"proxyStrategy"`
-		ProxySubURL         *string  `json:"proxySubURL"`
-		ProxySubCron        *string  `json:"proxySubCron"`
-		MaxConcurrency      *int     `json:"maxConcurrency"`
-		Retries             *int     `json:"retries"`
-		ProxyIsolation      *bool    `json:"proxyIsolation"`
-		BackupProxyEnabled  *bool    `json:"backupProxyEnabled"`
+		ZenUseProxies       *bool `json:"zenUseProxies"`
+		WorkbuddyUseProxies *bool `json:"workbuddyUseProxies"`
+		// 账号选号策略(round_robin/fill/random):env POOL_STRATEGY 优先。
+		Strategy           *string  `json:"strategy"`
+		Keys               []string `json:"keys"`
+		BaseURL            *string  `json:"baseURL"`
+		Proxies            []string `json:"proxies"`
+		ProxyStrategy      *string  `json:"proxyStrategy"`
+		ProxySubURL        *string  `json:"proxySubURL"`
+		ProxySubCron       *string  `json:"proxySubCron"`
+		MaxConcurrency     *int     `json:"maxConcurrency"`
+		Retries            *int     `json:"retries"`
+		ProxyIsolation     *bool    `json:"proxyIsolation"`
+		BackupProxyEnabled *bool    `json:"backupProxyEnabled"`
 		// 自动分配规则：nil = 不改动；非 nil = 整表替换（空表 = 全部清除）。
 		ProxyExclusions map[string][]string `json:"proxyExclusions"`
 		ProxyBindCaps   map[string]int      `json:"proxyBindCaps"`
@@ -129,14 +133,20 @@ func handleZenConfigUpdate(w http.ResponseWriter, r *http.Request) {
 		writeAPI(w, http.StatusBadRequest, apiResponse{Error: "invalid JSON: " + err.Error()})
 		return
 	}
-		// next 从 cur 浅拷贝起步再按 patch 覆盖——不再逐字段枚举。config/update 是
-		// 全量替换语义，逐字段拷贝已三次漏掉后来新增的字段（2026-10-29
-		// KeyRoutingEnabled、2026-10-29 Cool、2026-10-31 Cool/KeyTokens——最后一次
-		// 把运行态冷却表与 token 记账整体清零并落盘，rsync -Deploy 又把坏配置倒灌
-		// 本机）。浅拷贝保证今后给 zenConfigData 加任何字段都不会再从这里漏。
-		// map 字段（KeyBindings/KeyRoutingEnabled/Cool/KeyTokens）与 cur 共享引用，
-		// 与既有行为一致（setZenConfig 内部按 key 列表做写时清理，不就地改写）。
-		next := *cur
+	// next 从 cur 浅拷贝起步再按 patch 覆盖——不再逐字段枚举。config/update 是
+	// 全量替换语义，逐字段拷贝已三次漏掉后来新增的字段（2026-10-29
+	// KeyRoutingEnabled、2026-10-29 Cool、2026-10-31 Cool/KeyTokens——最后一次
+	// 把运行态冷却表与 token 记账整体清零并落盘，rsync -Deploy 又把坏配置倒灌
+	// 本机）。浅拷贝保证今后给 zenConfigData 加任何字段都不会再从这里漏。
+	// map 字段（KeyBindings/KeyRoutingEnabled/Cool/KeyTokens）与 cur 共享引用，
+	// 与既有行为一致（setZenConfig 内部按 key 列表做写时清理，不就地改写）。
+	next := *cur
+	if patch.ZenUseProxies != nil {
+		// 与 workbuddy 同一「Global policy」区块提交：此前该字段只声明未读取，
+		// Zen 走池开关保存后回弹（2026-11-09 审计修复）。
+		poolNext.ZenUseProxies = patch.ZenUseProxies
+		poolChanged = true
+	}
 	if patch.WorkbuddyUseProxies != nil {
 		poolNext.WorkbuddyUseProxies = patch.WorkbuddyUseProxies
 		poolChanged = true
@@ -208,6 +218,22 @@ func handleZenConfigUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 	if patch.Retries != nil && *patch.Retries >= 0 {
 		next.Retries = *patch.Retries
+	}
+	if patch.Strategy != nil {
+		// 账号选号策略(与 handleAdminUpdateConfig 同一份持久化配置)。env
+		// POOL_STRATEGY 设置时优先,面板改了不生效——直接拒绝并说明,别让用户
+		// 以为保存成功(与 PROXY_ISOLATION 锁定同款)。
+		if poolStrategyEnvLocked() {
+			writeAPI(w, http.StatusBadRequest, apiResponse{Error: "POOL_STRATEGY is set and takes precedence; unset the env var to control the rotation strategy from the panel"})
+			return
+		}
+		switch *patch.Strategy {
+		case "round_robin", "fill", "random":
+			setGlobalStrategy(*patch.Strategy)
+		default:
+			writeAPI(w, http.StatusBadRequest, apiResponse{Error: "invalid strategy, must be: round_robin, fill, random"})
+			return
+		}
 	}
 	if patch.ProxyIsolation != nil {
 		// 仅 PROXY_ISOLATION=true 锁定面板（强制开启）；env=false 或未设置时
@@ -299,31 +325,31 @@ func handleZenConfigUpdate(w http.ResponseWriter, r *http.Request) {
 		}
 		next.Compaction = base
 	}
-		if patch.ToolFilter != nil {
-			base := cur.ToolFilter
-			if patch.ToolFilter.Enabled != nil {
-				base.Enabled = *patch.ToolFilter.Enabled
-			}
-			// 空数组是合法值（清空名单），nil 才是"未提交"。
-			if patch.ToolFilter.DenyPrefixes != nil {
-				base.DenyPrefixes = patch.ToolFilter.DenyPrefixes
-			}
-			if patch.ToolFilter.DenyNames != nil {
-				base.DenyNames = patch.ToolFilter.DenyNames
-			}
-			if patch.ToolFilter.MaxDescription != nil && *patch.ToolFilter.MaxDescription >= 0 {
-				base.MaxDescription = *patch.ToolFilter.MaxDescription
-			}
-			next.ToolFilter = base
+	if patch.ToolFilter != nil {
+		base := cur.ToolFilter
+		if patch.ToolFilter.Enabled != nil {
+			base.Enabled = *patch.ToolFilter.Enabled
 		}
-		setZenConfig(&next)
-		if bindingChanged {
-			setProxyBindingConfig(&bindingNext)
+		// 空数组是合法值（清空名单），nil 才是"未提交"。
+		if patch.ToolFilter.DenyPrefixes != nil {
+			base.DenyPrefixes = patch.ToolFilter.DenyPrefixes
 		}
-		if poolChanged {
-			setProxyPool(&poolNext)
+		if patch.ToolFilter.DenyNames != nil {
+			base.DenyNames = patch.ToolFilter.DenyNames
 		}
-		writeAPI(w, http.StatusOK, apiResponse{Success: true, Data: zenConfigPayload()})
+		if patch.ToolFilter.MaxDescription != nil && *patch.ToolFilter.MaxDescription >= 0 {
+			base.MaxDescription = *patch.ToolFilter.MaxDescription
+		}
+		next.ToolFilter = base
+	}
+	setZenConfig(&next)
+	if bindingChanged {
+		setProxyBindingConfig(&bindingNext)
+	}
+	if poolChanged {
+		setProxyPool(&poolNext)
+	}
+	writeAPI(w, http.StatusOK, apiResponse{Success: true, Data: zenConfigPayload()})
 }
 
 // GET /admin/api/opencode/models — 只返回免费模型

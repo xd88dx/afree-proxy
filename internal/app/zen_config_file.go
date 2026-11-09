@@ -99,4 +99,3 @@ func mutateZenConfigFile(fn func(*zenConfigFileData)) {
 	fn(f)
 	saveZenConfigFileLocked(f)
 }
-

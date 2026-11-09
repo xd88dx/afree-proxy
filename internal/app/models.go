@@ -111,7 +111,10 @@ func clineSyncClient() (*http.Client, string, error) {
 		}
 	}
 	if clineProxiesEnabled() {
-		proxyURL, _ := pickUpstreamProxyFor(pkCline)
+		proxyURL, _, exitOK := upstreamProxyForKind(pkCline)
+		if !exitOK {
+			return nil, "", fmt.Errorf("no routable exit for model sync: every pool exit is manually cooled")
+		}
 		if proxyURL == "" && kit.DisableDirect() {
 			return nil, "", fmt.Errorf("no routable exit for model sync: pool empty and direct egress disabled by DISABLE_DIRECT")
 		}

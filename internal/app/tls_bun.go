@@ -4,34 +4,26 @@ import (
 	utls "github.com/refraction-networking/utls"
 )
 
-// bunSpecForConn returns a FRESH ClientHelloSpec per connection.
+// bunSpecForConn 每次连接返回全新的 ClientHelloSpec。
 //
-// The spec holds mutable per-handshake state: ApplyPreset auto-generates the
-// X25519 key share into KeyShares[0].Data and ApplyConfig/session sync mutate
-// extension objects in place. Sharing one global spec across concurrent (or
-// even sequential) handshakes races on that state — the losers send malformed
-// hellos and fail with "local error: tls: internal error". A fresh deep copy
-// per DialTLS keeps the wire bytes identical (verified byte-for-byte against
-// the official CLI capture modulo random/session/keyshare) and is race-free.
+// spec 带可变握手状态:ApplyPreset 把 X25519 key share 写进 KeyShares[0].Data,
+// ApplyConfig/会话同步就地改扩展对象。共享一份全局 spec 会让并发(甚至串行)
+// 握手互相踩写,失败方发出畸形 hello 报 "tls: internal error";每连接深拷贝
+// 既保证线缆字节一致(与官方 CLI 抓包逐字节核对),也消除竞态。
 //
-// Captured live from opencode CLI 2.1.4 (Bun/BoringSSL) via a CONNECT
-// relay 2026-10-26 (SNI opencode.ai, bridge via a clean proxy IP — the
-// VM IP alone 429s even with a fresh account, so the capture IP matters).
-// Previous spec was CLI 1.18.31; v2 changes three things, all load-bearing
-// now that upstream 429s curl/Python stacks with the same IP/account/body:
-//  1. Curves/KeyShare gain X25519MLKEM768 (4588, 1216 bytes) FIRST,
-//     then X25519. uTLS v1.8.2 supports it; ApplyPreset auto-generates
-//     both shares when both groups are listed.
-//  2. No Padding extension at the end — v2 sends none.
-//  3. SignatureAlgorithms grows from 9 to 20, in the exact v2 order
-//     below (raw uint16 values where uTLS has no named constant).
+// 抓包来源:opencode CLI 2.1.4(Bun/BoringSSL),2026-10-26 经 CONNECT 中继
+// (SNI opencode.ai,需干净代理 IP——纯 VM IP 即便新账号也 429)。相较 CLI
+// 1.18.31 的 v1 有三处变化,均是在上游对同 IP/账号/体一律 429 curl/Python
+// 栈之后必须保留的:
+//  1. Curves/KeyShare 首位加 X25519MLKEM768(4588,1216 字节),其后 X25519。
+//  2. 末尾无 Padding 扩展。
+//  3. SignatureAlgorithms 由 9 增至 20,顺序即下方原值(uTLS 无具名常量的
+//     用裸 uint16)。
 //
-// Cipher list, ALPN (http/1.1 only), extension order (minus padding),
-// and SupportedVersions (TLS1.3, TLS1.2) are unchanged from v1.
+// 密码套件、ALPN(仅 http/1.1)、扩展顺序与 SupportedVersions 与 v1 相同。
 //
-// JA3 (v2, measured 2026-10-26):
-// 771,4865-4866-4867-49195-49199-49196-49200-52393-52392-49161-49171-49162-49172-156-157-47-53,0-23-65281-10-11-35-16-5-13-18-51-45-43,4588-29-23-24,0
-// JA3 md5: 1523504b38f0fae0d881d4b6554aac1b
+// JA3 (v2, 2026-10-26): 771,4865-4866-4867-49195-49199-49196-49200-52393-52392-49161-49171-49162-49172-156-157-47-53,0-23-65281-10-11-35-16-5-13-18-51-45-43,4588-29-23-24,0
+// md5: 1523504b38f0fae0d881d4b6554aac1b
 func bunSpecForConn() *utls.ClientHelloSpec {
 	spec := utls.ClientHelloSpec{
 		CipherSuites: []uint16{

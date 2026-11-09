@@ -29,6 +29,13 @@ func initOther() {
 	other.UsagePath = kit.ResolveDataPath("other-state.json")
 	other.Load(otherConfigPath())
 	other.SetClientProvider(proxyClientFor)
+	// 目录同步与 chat 同链路（2026-11-09 审计修复）：此前 FetchModels 走裸直连
+	// 默认 client，DISABLE_DIRECT / 绑定出口对同步全不生效——凭据与出口 IP 会
+	// 从宿主机直连泄漏。复用 otherExitFn，逐 key 解析出口，全部不可用即
+	// fail-closed 跳过本轮（与 amd/tokenharbor/openrouter 同口径）。
+	other.SetCatalogExitResolver(func(p *other.Platform, key string) (string, bool) {
+		return otherExitFn(p)(key)
+	})
 	// 出口成败/握手延迟回传（同 AMDCloud：此前无任何观测钩子）。
 	other.SetProxyObserver(func(u string, ok bool, e error, ms int64) {
 		recordProxyOutcome(pkOther, u, ok, e, ms)
@@ -131,7 +138,10 @@ func otherExitFn(p *other.Platform) func(key string) (string, bool) {
 				}
 				return "", true
 			}
-			url, _ := pickUpstreamProxyFor(pkOther)
+			url, _, ok := upstreamProxyForKind(pkOther)
+			if !ok {
+				return "", false // 出口全被手动冷却：摘出轮转，不走直连兜底
+			}
 			if url == "" && kit.DisableDirect() {
 				return "", false // 代理池空兜底的直连同样不放行
 			}
@@ -200,7 +210,7 @@ func handleOtherChat(w http.ResponseWriter, r *http.Request, params map[string]a
 	resp, _, err := other.Chat(r.Context(), p, params, m.ID, true, globalStrategy(), otherBoundRoutable(p), otherExitFn(p))
 	if err != nil {
 		log.Printf("  other api error (%s): %v", p.Slug, err)
-		writeUpstreamAPIError(w, m.ID, err, http.StatusBadGateway)
+		writeUpstreamAPIError(w, m.ID, err, upstreamErrorStatus(err, http.StatusBadGateway))
 		return
 	}
 	defer resp.Body.Close()
@@ -451,6 +461,7 @@ func handleOtherPlatformDelete(w http.ResponseWriter, r *http.Request) {
 	keys := len(cur.Platforms[idx].Keys)
 	next.Platforms = append(next.Platforms[:idx], next.Platforms[idx+1:]...)
 	other.Set(next)
+	other.PrunePlatform(req.Slug) // 痕迹表按 slug 独立存放，删除平台要一并清掉
 	writeAPI(w, http.StatusOK, apiResponse{
 		Success: true,
 		Message: fmt.Sprintf("Platform %q deleted (%d key(s) removed)", name, keys),

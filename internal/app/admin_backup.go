@@ -526,7 +526,7 @@ func handleAdminConfigImport(w http.ResponseWriter, r *http.Request) {
 		}
 		imported["endpoints"] = len(backup.Endpoints)
 	}
-		// ---- 自定义别名 ----
+	// ---- 自定义别名 ----
 	if backup.Combos != nil {
 		combosMu.Lock()
 		valid := make([]*Combo, 0, len(backup.Combos))

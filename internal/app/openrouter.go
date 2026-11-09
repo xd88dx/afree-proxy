@@ -64,7 +64,10 @@ func orGlobalEgressExit() (string, bool) {
 		}
 		return "", true
 	}
-	url, _ := pickUpstreamProxyFor(pkOr)
+	url, _, ok := upstreamProxyForKind(pkOr)
+	if !ok {
+		return "", false // 出口全被手动冷却：摘出轮转，不走直连兜底
+	}
 	if url == "" && kit.DisableDirect() {
 		return "", false // 代理池空兜底的直连同样不放行
 	}
@@ -217,7 +220,7 @@ func handleOrChat(w http.ResponseWriter, r *http.Request, params map[string]any)
 	if err != nil {
 		log.Printf("  openrouter api error: %v", err)
 		orAutoBanPermanent(bare, err)
-		writeUpstreamAPIError(w, m.ID, err, http.StatusBadGateway)
+		writeUpstreamAPIError(w, m.ID, err, upstreamErrorStatus(err, http.StatusBadGateway))
 		return
 	}
 	defer resp.Body.Close()

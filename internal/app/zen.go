@@ -581,10 +581,10 @@ func reorderZenKeys(order []int) error {
 			}
 		}
 	}
-		nc := *cfg
-		nc.Keys = next
-		setZenConfig(&nc)
-		return nil
+	nc := *cfg
+	nc.Keys = next
+	setZenConfig(&nc)
+	return nil
 }
 
 func defaultZenConfig() *zenConfigData {
@@ -696,11 +696,9 @@ func zenFailedNow() bool {
 // OpenCode/Claude 系客户端对 502 的处置是标记服务不可用，而对 429 会按
 // Retry-After 退避重试。故 429 原样透传状态码。
 func zenClientErrorStatus(err error) int {
-	var he *zenHTTPError
-	if errors.As(err, &he) && he.Status == http.StatusTooManyRequests {
-		return http.StatusTooManyRequests
-	}
-	return http.StatusBadGateway
+	// 2026-11-09 起 429 透传判定由 upstreamErrorStatus 全平台共用,本函数保留为
+	// zen 调用点的可读别名(行为不变:429 → 429,其余 → 502)。
+	return upstreamErrorStatus(err, http.StatusBadGateway)
 }
 
 // isRateLimited 限流信号识别: 429/503 直接命中; 502/403 按错误体关键词。
@@ -3431,7 +3429,9 @@ func zenModelList() []map[string]any {
 		}
 		cp := *m
 		entry := map[string]any{
-			// 网关前缀（zen:<id>）：客户端按列表 ID 直接调用；裸 ID 仍兼容。
+			// 网关前缀（zen:<id>）：客户端必须按列表 ID 调用——请求闸 servedModelGate
+			// 精确匹配目录，裸 ID 直连按 strict-gate 404；旧形态只在 combo target
+			// 与内部解析里仍被接受。
 			"id":        zenPrefixedID(cp.ID),
 			"context":   cp.Context,
 			"output":    cp.Output,
@@ -3507,7 +3507,10 @@ func zenSyncClient() (*http.Client, error) {
 		}
 	}
 	if zenProxiesEnabled() {
-		proxyURL, _ := pickUpstreamProxyFor(pkZen)
+		proxyURL, _, exitOK := upstreamProxyForKind(pkZen)
+		if !exitOK {
+			return nil, fmt.Errorf("every pool exit is manually cooled")
+		}
 		if proxyURL == "" && kit.DisableDirect() {
 			return nil, fmt.Errorf("pool empty and direct egress disabled by DISABLE_DIRECT")
 		}

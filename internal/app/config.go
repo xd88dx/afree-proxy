@@ -194,6 +194,10 @@ func ApplyEnvConfig() {
 	}
 }
 
+// poolStrategyEnvLocked POOL_STRATEGY 显式设置时为真：env 优先于持久化配置，
+// 此时面板的选号策略下拉只读（改了也不生效，不能留一个会撒谎的控件）。
+func poolStrategyEnvLocked() bool { return poolStrategyFromEnv }
+
 // isLoopbackHost 判断监听 host 是否仅本机可达。
 func isLoopbackHost(host string) bool {
 	host = strings.TrimSpace(host)

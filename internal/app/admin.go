@@ -866,7 +866,15 @@ func testAccount(acc *Account) (map[string]any, string) {
 		// 未绑定 + 走池：探测与请求路径同出口（全局轮转），不许探测绕开
 		// 池直连——那会把服务器 IP 暴露给按池路由的账号，且本机直连不可达的
 		// 部署上探测恒败、与真实流量结论相反（2026-11-05 审计对齐）。
-		proxyURL, _ := pickUpstreamProxyFor(pkCline)
+		proxyURL, _, exitOK := upstreamProxyForKind(pkCline)
+		if !exitOK {
+			return map[string]any{
+				"accountId": acc.AccountID,
+				"email":     acc.Email,
+				"status":    "error",
+				"reason":    "no proxy exit: every pool exit is manually cooled; probe skipped",
+			}, "error"
+		}
 		if proxyURL == "" && kit.DisableDirect() {
 			return map[string]any{
 				"accountId": acc.AccountID,
@@ -914,10 +922,9 @@ func testAccount(acc *Account) (map[string]any, string) {
 	bodyStr := string(bodyBytes)
 
 	if resp.StatusCode == 429 {
-		duration := parseInferenceCapDuration(bodyStr)
-		if duration <= 0 {
-			duration = parseRetryAfter(resp.Header.Get("Retry-After"))
-		}
+		// 与请求路径同口径分流（2026-11-09）：此前这里直接调 markAccountCooldown，
+		// 解析不出时长就落到它 18h 的兜底，一次面板 Test 就能把健康账号雪藏一天。
+		duration := cline429CooldownDuration(acc.Email, bodyStr, resp.Header.Get("Retry-After"))
 		reason := "429: " + kit.Truncate(bodyStr, 500)
 		until := markAccountCooldown(acc, reason, duration)
 		log.Printf("Test hit 429 on %s, cooldown %v", truncateEmail(acc.Email), duration)

@@ -70,10 +70,12 @@ func loadZenUsage() {
 	path := zenUsagePath()
 	raw, err := os.ReadFile(path)
 	if err != nil {
+		// 两个分支都直接返回：文件不存在时若继续走 Unmarshal(nil) 会打出
+		// 误导性的 "parse failed"，还会白试一次 rename。
 		if !os.IsNotExist(err) {
 			log.Printf("zen usage: read %s: %v (starting empty)", path, err)
-			return
 		}
+		return
 	}
 	var f zenUsageFile
 	if err := json.Unmarshal(raw, &f); err != nil {

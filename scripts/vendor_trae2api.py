@@ -65,6 +65,7 @@ TEXT_SUFFIXES = (".go", ".md", ".json", ".html", ".js", ".css", ".txt", ".yml")
 PRESERVE_RELATIVE = (
     Path("server") / "textcall.go",
     Path("server") / "textcall_test.go",
+    Path("server") / "afree_hooks.go",
 )
 
 # 幂等改写规则：file → [(old, new, expected_count), ...]。
@@ -94,6 +95,46 @@ func GlobalProxy() string {
 // 客户端，宁弃请求不暴露直连。
 var StoreHTTPClient func(s *Store) *http.Client
 """,
+            1,
+        ),
+    ),
+    # 账号选定观测：出口接管钩子只在账号走代理时被调用，直连绑定的账号拿不到
+    # 任何回调 → 请求日志的「账号/出口」两列恒空（2026-11-09 修复）。钩子本体在
+    # server/afree_hooks.go（PRESERVE_RELATIVE），这里只注入两处调用点。
+    # 反代开关必须同时挡兜底路径:Pick 对"软冷却/熔断但非硬冷却"的账号有一条
+    # 再试一次的兜底分支,它此前只判 disabled/冷却,不看 RoutingAllowed ——
+    # 关掉反代开关的账号在无 live 候选时仍会被选中(2026-11-09 修复)。
+    "pool/pool.go": (
+        (
+            """		usable := !a.disabled && !isHard && !degraded && !modelCooled &&
+			(a.maxInFlight <= 0 || a.inFlight < a.maxInFlight)
+""",
+            """		usable := !a.disabled && !isHard && !degraded && !modelCooled &&
+			(a.maxInFlight <= 0 || a.inFlight < a.maxInFlight) &&
+			// afree 反代开关是硬策略,不是健康信号:关闭的账号在兜底路径同样
+			// 不得服务(反代开关是硬策略)。
+			(RoutingAllowed == nil || RoutingAllowed(a.UID))
+""",
+            1,
+        ),
+    ),
+    "server/chat.go": (
+        (
+            """	cl := ch.ClientFor(acct)
+	// 续期成功后同步池内状态(余额/健康判定依赖过期时间)""",
+            """	cl := ch.ClientFor(acct)
+	afreeObserveAccount(r.Context(), acct.UID)
+	// 续期成功后同步池内状态(余额/健康判定依赖过期时间)""",
+            1,
+        ),
+    ),
+    "server/anthropic.go": (
+        (
+            """		cl := ch.ClientFor(acct)
+		cl.OnRefresh = func(product, expiresAt string) {""",
+            """		cl := ch.ClientFor(acct)
+		afreeObserveAccount(r.Context(), acct.UID)
+		cl.OnRefresh = func(product, expiresAt string) {""",
             1,
         ),
     ),

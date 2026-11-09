@@ -206,6 +206,11 @@ func importPlatformBlacklist(in map[string]*platformBanEntry) {
 // 返回 "" 表示无法判定（放行，交由各平台的未知模型报错路径处理）。
 func routePlatformKeyOf(model string) string {
 	model = strings.TrimSpace(model)
+	if model == "" {
+		// 空模型名交给入口的 400（model is required）：落到这里会被误判成
+		// Cline 裸名，再撞上可路由性闸报成"平台无可用凭据"，排查方向被带偏。
+		return ""
+	}
 	switch {
 	case strings.HasPrefix(model, wbRealmPrefixCN), strings.HasPrefix(model, wbRealmPrefixGlobal),
 		strings.HasPrefix(model, vendorRealmPrefixCN), strings.HasPrefix(model, vendorRealmPrefixGlobal):

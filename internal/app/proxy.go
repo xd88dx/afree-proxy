@@ -424,7 +424,7 @@ func StartProxy(host string, port int) error {
 		resp, acc, streamed, err := callClineAutoStream(r.Context(), params, upstreamStream, useProxies)
 		if err != nil {
 			log.Printf("  api error: %v", err)
-			writeUpstreamAPIError(w, model, err, http.StatusInternalServerError)
+			writeUpstreamAPIError(w, model, err, upstreamErrorStatus(err, http.StatusInternalServerError))
 			return
 		}
 		defer resp.Body.Close()
@@ -1312,7 +1312,11 @@ func clineAPIWithAccount(ctx context.Context, params map[string]any, stream bool
 				log.Printf("  cline upstream via bound exit %s", maskProxyURL(proxyURL))
 			}
 		} else if useProxies {
-			proxyURL, pidx = pickUpstreamProxyFor(pkCline)
+			var exitOK bool
+			proxyURL, pidx, exitOK = upstreamProxyForKind(pkCline)
+			if !exitOK {
+				return nil, fmt.Errorf("cline account %s: every pool exit is manually cooled", truncateEmail(acc.Email))
+			}
 			if proxyURL == "" && kit.DisableDirect() {
 				return nil, fmt.Errorf("cline account %s has no proxy exit: direct egress is disabled by DISABLE_DIRECT", truncateEmail(acc.Email))
 			}
@@ -1353,8 +1357,8 @@ func clineAPIWithAccount(ctx context.Context, params map[string]any, stream bool
 			// 错误也绝不毒化账号（pidx=-1 的直连兜底冷却为 no-op）。
 			// shouldCooldownExit 纯查询（不写计数），真正的 strike 记账与冷却
 			// 在下面的 recordProxyOutcome 单点完成——两处结论一致，动作幂等。
-				// 建连失败与隧道后流错误都是 60s 窗口 N-strike（N 由
-				// PROXY_COOLDOWN_STRIKES 控制，默认 3，2026-11-08）：
+			// 建连失败与隧道后流错误都是 60s 窗口 N-strike（N 由
+			// PROXY_COOLDOWN_STRIKES 控制，默认 3，2026-11-08）：
 			// 单次网络抖动不再全局冷却唯一可用出口。
 			if scope, cool := shouldCooldownExit(pkCline, proxyURL, lastErr); cool {
 				if scope == "global" {
@@ -1423,22 +1427,7 @@ func clineAPIWithAccount(ctx context.Context, params map[string]any, stream bool
 		// Mark account on cooldown on rate limits
 		if resp.StatusCode == 429 {
 			reason := kit.Truncate(string(bodyBytes), 500)
-			duration := parseInferenceCapDuration(string(bodyBytes))
-			if duration <= 0 {
-				duration = parseRetryAfter(resp.Header.Get("Retry-After"))
-			}
-			if duration <= 0 {
-				// 429 但既无 "Try again in ..." 也无 Retry-After: 无法区分
-				// 配额耗尽与瞬时限流。绝不落到 markAccountCooldown 的 18h 兜底——
-				// 那只有明确的配额信号才配得上，误判会把健康账号雪藏一整天。
-				if isClineQuotaExhausted(string(bodyBytes)) {
-					duration = 18 * time.Hour
-				} else {
-					duration = 20 * time.Minute
-				}
-				log.Printf("  429 without parseable wait on %s: defaulting to %v (quota=%v)",
-					truncateEmail(acc.Email), duration, isClineQuotaExhausted(string(bodyBytes)))
-			}
+			duration := cline429CooldownDuration(acc.Email, string(bodyBytes), resp.Header.Get("Retry-After"))
 			markAccountCooldown(acc, "429: "+reason, duration)
 			log.Printf("  account %s cooldown %v (reason: %s)", truncateEmail(acc.Email), duration, reason)
 		}
@@ -3786,6 +3775,25 @@ func freePort(port int) {
 		conn.Close()
 		time.Sleep(100 * time.Millisecond)
 	}
+}
+
+// cline429CooldownDuration 429 冷却时长分流：优先上游明确时长（Try again in /
+// Retry-After），都解析不出时按是否带配额耗尽信号取 18h / 20min。请求路径与
+// 面板 Test 共用——绝不能落到 markAccountCooldown 的 18h 兜底，那只有明确的
+// 配额信号才配得上，误判会把健康账号雪藏一整天。
+func cline429CooldownDuration(email, body, retryAfter string) time.Duration {
+	if d := parseInferenceCapDuration(body); d > 0 {
+		return d
+	}
+	if d := parseRetryAfter(retryAfter); d > 0 {
+		return d
+	}
+	d, quota := 20*time.Minute, isClineQuotaExhausted(body)
+	if quota {
+		d = 18 * time.Hour
+	}
+	log.Printf("  429 without parseable wait on %s: defaulting to %v (quota=%v)", truncateEmail(email), d, quota)
+	return d
 }
 
 // parseInferenceCapDuration 从 Cline 429 错误体中解析 "Try again in 17h 59m" 形式的等待时长。

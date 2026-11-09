@@ -144,6 +144,7 @@ func (s *Server) handleAnthropicMessages(w http.ResponseWriter, r *http.Request)
 		st.setAccount(acct.UID, acct.Label)
 
 		cl := ch.ClientFor(acct)
+		afreeObserveAccount(r.Context(), acct.UID)
 		cl.OnRefresh = func(product, expiresAt string) {
 			s.pool.NoteSuccess(acct.UID)
 		}

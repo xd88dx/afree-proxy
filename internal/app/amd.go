@@ -40,7 +40,10 @@ func initAMD() {
 				}
 				return "", true
 			}
-			url, _ := pickUpstreamProxyFor(pkAmd)
+			url, _, ok := upstreamProxyForKind(pkAmd)
+			if !ok {
+				return "", false // 出口全被手动冷却：摘出轮转，不走直连兜底
+			}
 			if url == "" && kit.DisableDirect() {
 				return "", false // 代理池空兜底的直连同样不放行
 			}
@@ -162,7 +165,7 @@ func handleAMDChat(w http.ResponseWriter, r *http.Request, params map[string]any
 	resp, _, err := amd.Chat(r.Context(), params, m.ID, true, globalStrategy(), amdBoundRoutable)
 	if err != nil {
 		log.Printf("  amd api error: %v", err)
-		writeUpstreamAPIError(w, m.ID, err, http.StatusBadGateway)
+		writeUpstreamAPIError(w, m.ID, err, upstreamErrorStatus(err, http.StatusBadGateway))
 		return
 	}
 	defer resp.Body.Close()

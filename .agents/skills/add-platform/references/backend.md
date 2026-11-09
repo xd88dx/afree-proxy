@@ -101,7 +101,7 @@ WB 特例：`/admin/api/workbuddy/enabled` 注册在 proxy.go（workbuddy 路由
 
 **2026-10-29 起克隆必须携带的不变量**（审查后固化，漏任何一条都会复现已修的缺陷）：
 - **痕迹落盘 + 单锁纪律（2026-10-31 更新）**：KeyTokens/Cool 住 `usage.go` 的痕迹文件（`UsagePath`），Cooldown/Uncool 后即时 `saveUsage()`，记账打脏标记合批；**全部痕迹访问（写/惰性清理/读/展示）走 config 包 `mu`**——禁止裸读、禁止第二把锁护同一结构（会 "concurrent map iteration and map write" 直接崩进程），keyMu 只护轮转游标；`save()`/`saveUsage()` 全程持 `mu.RLock` marshal（浅拷贝后放锁再 marshal = 崩溃）。**`Load()` 必须在 `mu.Unlock()` 之后调 `loadUsage()`**——迁移内的 saveUsage 要拿 `mu.RLock`，写锁内调用自死锁（五包同构，端到端实测踩过）。
-- **目录同步 fail-closed**：`catalogHTTPClient()` 逐 key 试出口（解析失败含 DISABLE_DIRECT 判否跳过），面板显式选直连（resolveExit 返回空但 ok）才直连并补 25s 超时；全部不可用返回 error 让本轮同步跳过——**绝不隐式回落裸直连**（amd/or/th/tokenharbor/trae 五处实证）。
+- **目录同步 fail-closed**：`catalogHTTPClient()` 逐 key 试出口（解析失败含 DISABLE_DIRECT 判否跳过），面板显式选直连（resolveExit 返回空但 ok）才直连并补 25s 超时；全部不可用返回 error 让本轮同步跳过——**绝不隐式回落裸直连**（amd/or/th/tokenharbor/trae 实证；2026-11-09 补齐 other：`FetchModels` 一直用包级 `CatalogClient` 的默认 client，装配层从不注入，是全仓唯一漏接的出网路径）。新平台自查判据：grep 本包的 `catalogHTTPClient`/`CatalogClient` 是否存在装配注入（`SetCatalogExitResolver`/`SetExitResolver`），没有就是漏接。
 - **UNABLE_FORCE 兜底分支**：全冷却时 `kit.UnableForce()` 才允许冷却凭据回池（`buildCandidates(true)`），拒绝消息走 `no <platform> ... routable` 统一模板。
 - **usage 记账接线**：`handle<X>Chat` 用 `takeUsedKey(resp)`（key 从响应头取）组 `usageFn := func(u){ X.RecordKeyTokens(usedKey, usageTokens(u, params)) }`；cross_endpoint 的 `platformChatCall` 签名要求返回 `(resp, usageFn, err)`，流式由 bufferedStreamCaller 以末帧记一次——漏接 = /v1/messages 与 /v1/responses 上该平台用量恒 0。
 

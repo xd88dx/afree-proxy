@@ -520,8 +520,8 @@ func loadProxyHealth() {
 		}
 		nextTests[k] = t
 	}
-		proxyTestStats = nextTests
-		proxyTestMu.Unlock()
+	proxyTestStats = nextTests
+	proxyTestMu.Unlock()
 	if len(nextTests) > 0 {
 		log.Printf("proxy health: restored %d latency test entry(s) from %s", len(nextTests), path)
 	}

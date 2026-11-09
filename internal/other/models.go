@@ -18,14 +18,42 @@ import (
 // Selected 勾选表按模型 ID 记录，上游模型上下线不清勾选 —— 只勾选的
 // 模型对外暴露（/v1/models 列出、网关放行），未勾选显式 400。
 
-// CatalogClient 覆盖 HTTP client（测试注入）；nil = 默认 25s 超时。
+// CatalogClient 覆盖 HTTP client（测试注入）；nil = 按 catalogExit 解析出口。
 var CatalogClient *http.Client
 
-func catalogHTTPClient() *http.Client {
+// catalogExit 目录同步的出站解析（主包装配期注入），语义同 Chat 的 exitFn：
+// 未绑定 key 走全局规则，绑定 key 走主备 fail-closed，DISABLE_DIRECT 判否。
+// 未注入（单测/独立使用）时退回直连默认 client。
+var catalogExit func(p *Platform, key string) (string, bool)
+
+// SetCatalogExitResolver 注入目录同步的出站解析（主包装配期调用）。
+func SetCatalogExitResolver(f func(p *Platform, key string) (string, bool)) {
+	catalogExit = f
+}
+
+func defaultCatalogClient() *http.Client { return &http.Client{Timeout: 25 * time.Second} }
+
+// catalogClientFor 一次定妥认证 key 与 HTTP client：key 与出口必须配对选取，
+// 逐个已启用 key 试出口（停用 key 等同不在池里）；全部不可用即 fail-closed，
+// 本轮同步跳过、下轮再试——绝不隐式回落直连（与 amd/tokenharbor 同口径）。
+func catalogClientFor(p *Platform, keys []string) (string, *http.Client, error) {
 	if CatalogClient != nil {
-		return CatalogClient
+		return keys[0], CatalogClient, nil
 	}
-	return &http.Client{Timeout: 25 * time.Second}
+	if catalogExit == nil {
+		return keys[0], defaultCatalogClient(), nil
+	}
+	for _, k := range keys {
+		proxyURL, ok := catalogExit(p, k)
+		if !ok {
+			continue
+		}
+		if proxyURL == "" {
+			return k, defaultCatalogClient(), nil
+		}
+		return k, httpClientFor(proxyURL), nil
+	}
+	return "", nil, fmt.Errorf("no routable exit for catalog sync (keys disabled or DISABLE_DIRECT)")
 }
 
 type catalogEntry struct {
@@ -42,24 +70,27 @@ func FetchModels(p *Platform) ([]Model, error) {
 	mu.RLock()
 	base := strings.TrimRight(p.BaseURL, "/")
 	anyKey := len(p.Keys) > 0
-	// 凭据口径与真实会话一致：取第一个已启用（参与路由）的 key。
-	// 在锁内连同 authKey 一起取出，避免解锁后再读 p.Keys 产生竞态。
-	authKey := ""
+	// 凭据口径与真实会话一致：只取已启用（参与路由）的 key，在锁内连同
+	// 出口解析一起取出，避免解锁后再读 p.Keys 产生竞态。
+	keys := make([]string, 0, len(p.Keys))
 	for _, k := range p.Keys {
 		if p.RoutingEnabled(k) {
-			authKey = k
-			break
+			keys = append(keys, k)
 		}
 	}
 	mu.RUnlock()
 	if !anyKey {
 		return nil, fmt.Errorf("no key configured: add a credential first")
 	}
-	if authKey == "" {
+	if len(keys) == 0 {
 		return nil, fmt.Errorf("no enabled credential: enable a key in the pool, then sync")
 	}
 	if base == "" {
 		return nil, fmt.Errorf("base URL is empty")
+	}
+	authKey, client, err := catalogClientFor(p, keys)
+	if err != nil {
+		return nil, err
 	}
 	req, err := http.NewRequest(http.MethodGet, base+"/models", nil)
 	if err != nil {
@@ -67,7 +98,7 @@ func FetchModels(p *Platform) ([]Model, error) {
 	}
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Authorization", "Bearer "+authKey)
-	resp, err := catalogHTTPClient().Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
 	}

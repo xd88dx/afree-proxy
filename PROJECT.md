@@ -42,9 +42,79 @@ go test ./... -count=1             # 除下述既有失败外应全绿
 **已知失败，不要修**：
 
 - ~~`internal/workbuddy/server` 的 `TestChatStreamPassthrough`~~（2026-11-05 移除：上游 d596fa7 的 66e5344「客户端断开只按请求 ctx 判定」顺带修复了该 flaky，全量测试已稳定通过，历史根因记录见 MERGE.md WorkBuddy 节）。
-- `internal/workbuddy/updater` 的 `TestInstallReplacesRestartsAndRecovers`（Windows 上 `fork/exec wb2api.exe` 报 "This version of %1 is not compatible"，测试固件的假二进制无法 exec）。该包不 import 任何 `afree-proxy/internal/*`，与业务改动无因果关系。
+- **已知失败：无**（2026-11-09 复核）。`internal/workbuddy/updater` 的 `TestInstallReplacesRestartsAndRecovers` 在 Windows 上由 `t.Skip("native self-update unavailable on this deployment")` 短路（`CanInstall()` 为 false），不再失败；该包不 import 任何 `afree-proxy/internal/*`，与业务改动无因果关系。同日 `go test ./... -count=1` 全绿。
 
 换行：行尾由 `.gitattributes` + `.editorconfig` 强制统一为 LF（规则与判据见 `AGENTS.md` §3）。`gofmt` 是原生程序，不认 MSYS 路径——传 `$(cygpath -w <路径>)`，且**不要**把 `gofmt` 的 stderr 一起重定向进结果文件（会写坏源文件）。
+
+## 4b. 2026-11-09 全量审查修复台账（追加式）
+
+第二轮全量审查（网关/池、八平台 provider、WB+Trae 桥接、面板 i18n、文档一致性）产出的修复。判据与验证：`go build ./... && go vet ./...` 全绿、`go test ./... -count=1` 全绿、`scripts/i18n_audit.py` 正向 0 缺失。
+
+| 缺口 | 根因 | 修复 |
+|---|---|---|
+| Other 目录同步裸直连 | `catalogHTTPClient()` 从不查绑定/走池/`DISABLE_DIRECT`（amd/tokenharbor/openrouter 三平台早已逐 key `resolveExit`） | `catalogClientFor` 逐 key 调注入的 `catalogExit`（app 层复用 `otherExitFn`），全不可用 fail-closed |
+| 保存配置挂死在途请求 | amd/openrouter/tokenharbor/other 的 `releaseSem` 重读包级信号量，而 `Set` 会整体换表 | `acquireSem` 返回本次入队的 channel，`releaseSem` 只释放它（zen 原本就是正确写法） |
+| 手动冷却对路由零效果 | `pickUpstreamProxyFor` 全不可用时无条件返回轮转位（可能是手动冷却出口） | 命中手动冷却即返回空；新增 `upstreamProxyForKind` 三态封装，12 处出口解析点 fail-closed；zen egress 钉定分支补 `proxyAvailableFor` 判定 |
+| 后台同步可打挂进程 | 轮转游标只夹上界，负值 `active[-n]` panic；`models.go` 的同步 goroutine 无 recover | `pickAccount`/`pickAccountExcluding` 夹取下界 |
+| `afree-config.json` 损坏即丢配置 | 解析失败只打日志、不隔离，首个面板会话用默认值整文件覆盖（`clientKeys` 清零后 `/v1` 退化为放行） | 照 `pool.go` 形态 rename 成 `.corrupt-<stamp>` 留档 |
+| 面板 Test 误雪藏账号 | Test 的 429 分支直接落 `markAccountCooldown` 的 18h 兜底 | 抽出 `cline429CooldownDuration`，与请求路径共用「配额信号才 18h、否则 20min」分流 |
+| Trae 配置一次笔误即不可自愈 | 四个时长字段无校验，先落盘再重启；vendor 对非法时长硬失败 → 子系统 nil、连 config/update 都被 503 挡 | 保存前 `time.ParseDuration` 校验（非法 400 不落盘） |
+| `trae2apiValidateGateway` 死代码 | 文档承诺「配置文件路径拒收 OAuth-only 域」，实际无生产调用点 | 装载期调用，非法域回退默认基址并告警（不让引擎因此装不起来） |
+| Trae/OpenCode 走池开关不落盘 | Trae patch 结构缺 `useProxies`；OpenCode 的 `ZenUseProxies` 只声明未读取 | 两处补 `setPlatformUseProxies`（trae/zen），与其余六平台同构 |
+| WB 面板 Import JSON 恒 404 | 前端请求 `/admin/api/workbuddy/accounts/import`（无此路由） | 改走 `WB_API_PREFIX + '/import/cockpit'`（vendor 端点，字段名 `file`） |
+| Trae 域级 Ban 静默升级为全域 | `normalizeTraeScope` 白名单是旧引擎词汇（remote/traecode/traework），面板实发内部 realm → scope 恒空 = 全档 | 白名单改收合并域与四 realm，内部 realm 折到 `tacn`/`tagb` |
+| WB 余额刷新热开启无效 | vendor 在 `enabled=false` 时根本不建消费循环，`SetBalanceInterval` 只 poke | `restartRequiredWorkbuddyFields` 补 `schedule.balance_refresh_*`，面板如实提示需重启 |
+| 空 model 误报平台无凭据 | `routePlatformKeyOf("")` 落成 Cline 裸名，撞可路由性闸报 503 | 空模型直接放行交入口 400 |
+| 订阅一行脏数据即整池不更新 | `syncProxySubscription` 任一行解析失败即整体返回错误 | 跳过并计数，仅当有效行为 0 时判失败 |
+| 面板 i18n 缺口 | 4 处 `T()` 传词典不存在的 snake_case 假键（中文界面显示键名）、2 处英文长句无键、3 组重复键后者静默覆盖 | 补 3 条词条、4 处改英文长句键、删重复键 |
+| 面板 `api()` 吞错误 | 非 JSON 响应抛 SyntaxError、`res.ok` 未检查 | 非 JSON 兜底 + 非 2xx 报 `error`/`message`/`HTTP <code>` |
+| 缩进漂移 | 11 个 afree 自有文件 gofmt 不干净 | `gofmt -w`（vendor 树不参与：`internal/trae2api/**`、`internal/workbuddy/**` 保持上游原样，gofmt 误改已回滚） |
+| Other 删子平台留残留 | `PrunePlatformUsage` 只修剪被移除的 key、不删 slug，被删子平台的冷却/记账永久留在 `other-state.json` | 新增 `PrunePlatform`，删子平台时一并清 |
+| 重复授权提示不实 | `trae2apiIngestCreds` 恒返回 `added=true`（vendor 响应无"已存在"标记），"Account already exists" 分支不可达 | 导入前查 `Pool().Get(uid)` 判定，返回真实 added |
+| 注释与事实漂移 | zen 端点注释称"裸 ID 仍兼容"、trae 注释称旧四前缀透传/旧词汇费率域、combos 前缀冲突注释暗示在线生效 | 逐条改为现状；`combos` 不可达分支显式标注（勿误以为生效） |
+
+**已验证无需修改（本轮核对结论）**：
+
+- **面板端点闭合性**：150 条 mux 注册 vs 154 处前端调用，**0 处前端调用无对应路由**；未引用项只有 5 个 `/v1` 对外网关端点（供 IDE 客户端）。核对脚本注意：`/admin/` 是 catch-all 静态注册，做闭合性匹配时必须排除以 `/` 结尾的注册，否则假阴性（本次踩坑）。
+- **数据清空（delete-all）**：8 平台 + 代理池 + combos + cline 流式学习 + 请求日志全覆盖，各平台均清 keys/bindings/routing **及 usage**；trae 按文档口径删快照+清绑定/路由+重启。zen 的 baseURL/压缩设置在流程末尾被 `clearProxyPoolForDataDelete` 整体重置——与面板文案「Deletes ALL persisted data (... config)」一致，已在该函数注释注明顺序。
+- **导入护栏 KeepEnabled**：cline/zen/oprt/amd/tkhb/`other:<slug>`/trae/wb 八个键全部被读取，无"该保护未保护"项。
+
+**未修（低优先，记录在案）**：无——2026-11-09 第二轮收尾已把下列项全部落地（详见 §4c）。
+
+**审计工具盲区备忘**：`scripts/i18n_audit.py` 只匹配 `T('…')` 字面量（正则要求引号紧跟 `T(`），三元表达式 `T(cond ? 'a' : 'b')` 里的键一律漏检；`i18n_reverse_audit.py` 的孤儿候选只作参考、不作删除依据。改面板后除跑两个脚本，还要 grep 一次 `T(` 的非字面量形态。
+
+## 4c. 2026-11-09 未修项清零（第二轮收尾）
+
+第一轮结束时留下的 5 项已全部处理。**行为契约变了的地方单独标注**。
+
+| 项 | 原问题 | 处理 |
+|---|---|---|
+| 上游 429 被包成 502 | amd/openrouter/tokenharbor/other/跨端点把上游 429 当 502 回给客户端，IDE 判定网关故障并标记渠道不可用（zen 早已正确） | 新增 `upstreamErrorStatus(err, fallback)`：错误自带 429 即透传，其余走 fallback。各上游错误类型补 `HTTPStatus()`（amd/openrouter/tokenharbor/other/zen/cline + 新增 `upstreamHTTPError`）；`zenClientErrorStatus` 退化为该函数的别名。**契约变更**：这五类平台的上游限流现在对外是 429（README 已记）。回归测试 `upstream_status_test.go` |
+| Trae 重启不等旧引擎收尾 | 重启只等自家 30s 落盘循环，未等 vendored `RunBackground`（它在 ctx 取消时也写 state/metrics），旧实例的写盘可能晚于新实例，把冷却/额度盖回一步 | 子系统新增 `vendorDone`，`trae2apiRestart` 用**同一截止时刻**串行等 `bgDone` 与 `vendorDone`，总预算 `traeRestartJoinTimeout = 5s`，超时只记日志继续（不让面板保存无限转圈）。ONLY_ROUTER 下无 vendored 任务，信号构造时即关闭 |
+| combos 死分支 | 带前缀平台的"撞名检查"永远不可达（combo ID 语法不含 `:`） | 删除 oprt/amd/tkhb/trae 四条不可达分支；保留真正可达的 Cline 目录与 zen 裸名别名检查，注释写明依据 |
+| 旧引擎 scope 存量条目失效 | 修完域级 Ban 后，存量 `scope=remote/traecode/traework` 条目谁也匹配不上 = 静默解禁 | 定义 `traeLegacyScopes`：读取侧按"全档封禁"命中，写入侧 `normalizeTraeScope` 一律落成空 scope（fail-closed，该封的继续封） |
+| 88 条孤儿词条 + `strategy` 无面板入口 | 反向审计脚本自述"仅参考"；选号策略只能 env/API 设置 | 三重判据甄别（词典区外无引用 ∧ 无 Go 侧产生 ∧ 大小写敏感）后删 9 条死词条，其余 77 条为动态 `T(变量)` 在用，保留；**新增面板「账号轮转策略」下拉**（**网关设置页，紧挨「封禁平台」上方**；全部可见文案走 `data-i18n` slug 键——含 `<code>` 的段落必须用属性键，否则文本节点被拆开永远匹配不上；后台 `handleZenConfigUpdate` 接 `strategy`，env `POOL_STRATEGY` 设置时后端 400 拒绝 + 控件置只读并提示，与 PROXY_ISOLATION 同款；加载挂在设置页切换 `loadAccountStrategy()`，不靠代理池页顺带），并顺手补上隔离锁定提示缺失的中文词条 |
+
+**甄别脚本判据（可复用）**：孤儿词条不能只信 `i18n_reverse_audit.py`——面板存在 `T(动态变量)` 形态（状态徽章、helper 消息、封禁原因由 Go 侧产生），必须再用"该字符串是否出现在 admin_html.go 之外的任何 Go/vendor 源码"交叉验证；本次据此避免了误删 `Credentials saved to server`、`auto-banned: …`、`Ready`、`Unknown`、` already` 等在用词条。另注意键里的省略号可能是 U+2026（`wrk_… (optional)`），按 ASCII 三点匹配会漏。
+
+## 4d. 2026-11-09 请求日志「TraeWork 两列为空」修复
+
+用户报「trae 平台的请求日志不显示凭据」。定位到**两个独立根因**，均已修并实测：
+
+| 根因 | 机制 | 修复 |
+|---|---|---|
+| 直连出口的账号完全不进观测 | 日志两列靠 `traeObserveTransport` 写入，而它在 `traePooledClient(url, uid)` 里构造；`url == ""`（绑定直连哨兵 / 走池关闭）时该函数返回 nil，vendored 回落到自带 client —— 于是**既不记录账号、也不记录出口** | 新增 vendored 注入点 `server.AfreeAccountObserver`（`server/afree_hooks.go`，PRESERVE_RELATIVE），在 `chat.go`/`anthropic.go` 每次 `ClientFor(acct)` 后回调 `afreeObserveAccount(r.Context(), acct.UID)`；afree 侧 `trae2apiObserveAccount` 填两列（直连场景补 `direct`）。与 WorkBuddy 的 `upstream.ObserveAccount` 同构 |
+| 反代开关在选号兜底路径失效 | `pool.Pick` 对"软冷却/熔断但非硬冷却"的账号有一条再试一次的**兜底分支**，其 `usable` 只判 `disabled`/硬冷却/降权/模型级冷却，**不看 `RoutingAllowed`** —— 关掉反代开关的账号在没有 live 候选时照旧被选中（日志与面板都显示已关闭，实际仍在服务） | 兜底分支补 `(RoutingAllowed == nil \|\| RoutingAllowed(a.UID))`；反代开关是硬策略，不是健康信号 |
+
+两处 vendor 改动都登记进 `scripts/vendor_trae2api.py`（`afree_hooks.go` 进 PRESERVE_RELATIVE，两处调用点 + 兜底判据各一条 REWRITES），re-vendor 不丢。
+
+**实测证据**（本机 `DISABLE_DIRECT=true` 容器）：
+
+- 仅直连绑定账号可路由 → `upstream=account #1  proxyType=direct`（改前两列都是 `-`）；请求 502 是 DISABLE_DIRECT 的 fail-closed 预期结果。
+- 临时放开 DISABLE_DIRECT 复测 → **200**，两列同样填满（验证完已恢复 `DISABLE_DIRECT: "true"`）。
+- 把代理绑定账号反代开关关掉后，该账号不再被选中（修复前 token 台账显示它仍在服务）。
+
+**排障备忘**：面板「请求日志」里 trae 行若仍为空，先确认镜像是否包含本修复——生产（iStore）跑 GHCR `latest`，需用户手动 pull 才生效；本机测试容器同理（旧 tag 不含新代码）。用户 2026-11-09 12:44–12:47 贴出的日志在本机 `requests.jsonl` 里查不到对应 UTC 行（04:44–04:47Z），说明那份日志来自另一实例（生产）的旧镜像。
 
 ## 5. 本地定制不可丢
 
@@ -108,7 +178,7 @@ go test ./... -count=1             # 除下述既有失败外应全绿
 ### 面板三区约定
 - 凭据表 10 列（换线前列序恢复）：#/账号/状态(含 token 过期行+签到竖徽章)/额度(剩余/总)/今日累计token/最近使用/代理绑定/操作/反代/总闸；上方只放 刷新余额+全部签到，添加账号/批量组/复位保存 在表格下方。
 - 配置区两列（wb-config-grid 同款）：左列=单账号并发/熔断/冷却/流空闲（引擎吞吐组），右列=CN/Intl 双域费率过滤（各 0/0.1/0.2/0.3/0.5/1，CN 过滤 tacn、Intl 过滤 tagb，旧单值仅回落）+自动签到+签到时点+拒绝未知模型+会话粘性+国际版域；右下角 放弃修改→保存配置。
-- 模型目录：realm 徽章+倍率+Ban（scope=realm）。
+- 模型目录：realm 徽章+倍率+Ban（scope 落地为合并域 `tacn`/`tagb`：面板上报 vendor 的内部 realm，`normalizeTraeScope` 折到所属合并域——直接透传会让 scope 落空变成跨域全域封禁；旧引擎词汇 remote/traecode/traework 仅为存量记录保留）。
 - 加号三通道：helper 网页授权（铸 EC P-256 设备密钥补齐快照）/粘贴 `token----refreshToken`/原版面板导入 JSON/ZIP；裸 JWT 拒绝。
 - i18n：新文案全走 I18N 词条（2026-11-08 起 key→{en,zh} 结构）（键尾无空格、撇号用 JS 双引号包 key——`account's` 未转义炸过整块脚本）；改完跑 `scripts/i18n_audit.py` + `i18n_reverse_audit.py` 双向清零。
 

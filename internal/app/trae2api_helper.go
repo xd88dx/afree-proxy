@@ -216,6 +216,15 @@ func trae2apiIngestCreds(creds map[string]any) (uid string, label string, added 
 	if err != nil {
 		return "", "", false, err
 	}
+	// 重复导入的判定：vendored 导入是覆盖语义（同名快照覆盖、uid 不变），响应里
+	// 没有"已存在"标记。这里在导入前查一次池——否则面板对重复授权恒报"新增"，
+	// 用户无法区分这次是新建还是覆盖（2026-11-09 修复）。
+	existed := false
+	if uid0 := strings.TrimSpace(userID); uid0 != "" {
+		if sub := trae2apiCurrent(); sub != nil && sub.srv != nil {
+			existed = sub.srv.Pool().Get(uid0) != nil
+		}
+	}
 	code, data, err := trae2apiAdminCall(http.MethodPost, "/admin/accounts/import",
 		[]byte(fmt.Sprintf(`{"text":%q,"product":"trae-cn"}`, string(snapJSON))))
 	if err != nil {
@@ -246,7 +255,7 @@ func trae2apiIngestCreds(creds map[string]any) (uid string, label string, added 
 	if label == "" {
 		label = r.UID
 	}
-	return r.UID, label, true, nil
+	return r.UID, label, !existed, nil
 }
 
 // handleTraeAccountAdd POST /admin/api/trae/accounts/add —— 手动粘贴凭据。

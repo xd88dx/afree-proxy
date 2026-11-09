@@ -293,7 +293,7 @@ func reorderAccounts(order []string) (int, error) {
 			}
 		}
 	}
-	savePoolLocked()    // 管理操作直接落盘（不走 2s flusher，避免多余写盘）
+	savePoolLocked()      // 管理操作直接落盘（不走 2s flusher，避免多余写盘）
 	savePoolUsageLocked() // 游标重映射结果随本次落盘进痕迹文件
 	return len(next), nil
 }
@@ -562,7 +562,9 @@ func pickAccount() *Account {
 		n := time.Now().UnixNano() % int64(len(active))
 		acc = active[n]
 	default: // round_robin
-		if poolUsage.CurrentIdx >= len(active) {
+		// 下界也要夹：state 文件被手改/旧版写入负值时 active[-n] 会 panic，
+		// 请求路径有 recover 兜，后台目录同步 goroutine 没有 —— panic 会打挂进程。
+		if poolUsage.CurrentIdx < 0 || poolUsage.CurrentIdx >= len(active) {
 			poolUsage.CurrentIdx = 0
 		}
 		acc = active[poolUsage.CurrentIdx]
@@ -636,7 +638,7 @@ func pickAccountExcluding(exclude map[string]bool) *Account {
 		n := time.Now().UnixNano() % int64(len(active))
 		acc = active[n]
 	default: // round_robin
-		if poolUsage.CurrentIdx >= len(active) {
+		if poolUsage.CurrentIdx < 0 || poolUsage.CurrentIdx >= len(active) {
 			poolUsage.CurrentIdx = 0
 		}
 		acc = active[poolUsage.CurrentIdx]
@@ -734,7 +736,10 @@ func clineRefreshClient(acc *Account) (*http.Client, error) {
 		}
 		return kit.HTTPClient, nil
 	}
-	url, _ := pickUpstreamProxyFor(pkCline)
+	url, _, exitOK := upstreamProxyForKind(pkCline)
+	if !exitOK {
+		return nil, fmt.Errorf("every pool exit is manually cooled")
+	}
 	if url == "" && kit.DisableDirect() {
 		return nil, fmt.Errorf("no proxy available and direct egress is disabled by DISABLE_DIRECT")
 	}
