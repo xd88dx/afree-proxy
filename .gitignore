@@ -70,3 +70,6 @@ __pycache__/
 
 # Preview binary for the throwaway UI test container (docker-run entrypoint)
 .afree-preview
+
+# AOCI init 自动生成的规则文件备份（原文件入库，备份留本地）
+*.backup.*
