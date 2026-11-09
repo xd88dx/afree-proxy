@@ -1,5 +1,5 @@
 diff --git a/internal/server/chat.go b/internal/server/chat.go
-index 48a7599..545fe51 100644
+index 172e0db..337c9e3 100644
 --- a/internal/server/chat.go
 +++ b/internal/server/chat.go
 @@ -214,7 +214,18 @@ func toTraeRequest(req *chatRequest, bareModel string) traectl.ChatRequest {
@@ -30,7 +30,7 @@ index 48a7599..545fe51 100644
  	st.setRealm(realmKey)
  	st.setCredits(s.modelCreditCost(ch, bareModel))
  	st.collector = s.metrics
-@@ -696,6 +708,27 @@ func (s *Server) runChat(w http.ResponseWriter, r *http.Request, ch *Channel, ac
+@@ -764,6 +776,27 @@ func (s *Server) runChat(w http.ResponseWriter, r *http.Request, ch *Channel, ac
  		if err != nil {
  			return err
  		}
@@ -58,7 +58,7 @@ index 48a7599..545fe51 100644
  		writeCompletion(w, bareModel, agg, st.credits)
  		st.recordUsage(agg.Usage)
  		if u := userFrom(r); u != nil && s.users != nil && agg.Usage != nil {
-@@ -767,6 +800,13 @@ func (s *Server) streamChat(w http.ResponseWriter, ctx context.Context, cl *trae
+@@ -835,6 +868,13 @@ func (s *Server) streamChat(w http.ResponseWriter, ctx context.Context, cl *trae
  	roleSent := false
  	// toolBuf 按 index 聚合工具调用增量（流结束时统一校验并发出）。
  	toolBuf := map[int]*toolAccum{}
@@ -70,9 +70,9 @@ index 48a7599..545fe51 100644
 +	})
 +	nextTextIdx := 0 // 文本调用可用的 tool_calls index（与原生调用错开）
  	err := cl.Chat(ctx, creq, func(d traectl.Delta) error {
- 		// 任何一帧（含心跳）都说明上游已返回 2xx 并开始吐了 → 可以安全开流。
- 		// 心跳帧本身只发一条 SSE 注释，客户端会忽略它，但字节到了就不会超时。
-@@ -794,7 +834,7 @@ func (s *Server) streamChat(w http.ResponseWriter, ctx context.Context, cl *trae
+ 		if d.Keepalive {
+ 			// 如果还没写头，且排队时间较短，暂不提前提交 HTTP 200 响应头，
+@@ -868,7 +908,7 @@ func (s *Server) streamChat(w http.ResponseWriter, ctx context.Context, cl *trae
  			writeChunk(map[string]any{"reasoning_content": d.Reasoning}, nil)
  		}
  		if d.Content != "" {
@@ -81,7 +81,7 @@ index 48a7599..545fe51 100644
  		}
  		// 工具调用**先缓冲不发出**（见文件末尾的 truncation 说明）：
  		// SSE 被截断时 arguments 会只剩半截 JSON，原样发给客户端会让它
-@@ -818,6 +858,9 @@ func (s *Server) streamChat(w http.ResponseWriter, ctx context.Context, cl *trae
+@@ -892,6 +932,9 @@ func (s *Server) streamChat(w http.ResponseWriter, ctx context.Context, cl *trae
  				buf.name = tc.Name
  			}
  			buf.args.WriteString(tc.Args)
@@ -91,7 +91,7 @@ index 48a7599..545fe51 100644
  		}
  		if len(d.ToolCalls) > 0 {
  			fmt.Fprint(w, ": keepalive\n\n")
-@@ -860,6 +903,35 @@ func (s *Server) streamChat(w http.ResponseWriter, ctx context.Context, cl *trae
+@@ -934,6 +977,35 @@ func (s *Server) streamChat(w http.ResponseWriter, ctx context.Context, cl *trae
  		writeChunk(map[string]any{"role": "assistant", "content": ""}, nil)
  	}
  
@@ -128,10 +128,10 @@ index 48a7599..545fe51 100644
  	//
  	// 为什么必须校验：SSE 被截断（连接中断 / finish_reason==length）时，
 diff --git a/internal/server/server.go b/internal/server/server.go
-index 69ac302..12d7f98 100644
+index 5ba32bb..84fb651 100644
 --- a/internal/server/server.go
 +++ b/internal/server/server.go
-@@ -791,6 +791,7 @@ type chatStat struct {
+@@ -796,6 +796,7 @@ type chatStat struct {
  	hasCredits bool
  
  	finish string
@@ -139,7 +139,7 @@ index 69ac302..12d7f98 100644
  	logged bool
  
  	// collector 指标聚合器（可为 nil = 不采集）。
-@@ -859,8 +860,8 @@ func (s *chatStat) done() {
+@@ -864,8 +865,8 @@ func (s *chatStat) done() {
  	if s.hasCredits {
  		cred = fmt.Sprintf("%.2f", s.credits)
  	}

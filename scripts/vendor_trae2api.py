@@ -541,7 +541,7 @@ def apply_patch(pkg: Path) -> None:
         capture_output=True,
         text=True,
     )
-    print(f"applied {PATCH_FILE.name} (9 hunks)")
+    print(f"applied {PATCH_FILE.name}")
 
 
 def main(source_root=None, target_root=None, preserve_from=None) -> int:
