@@ -104,27 +104,13 @@ var StoreHTTPClient func(s *Store) *http.Client
     # 反代开关必须同时挡兜底路径:Pick 对"软冷却/熔断但非硬冷却"的账号有一条
     # 再试一次的兜底分支,它此前只判 disabled/冷却,不看 RoutingAllowed ——
     # 关掉反代开关的账号在无 live 候选时仍会被选中(2026-11-09 修复)。
-    "pool/pool.go": (
-        (
-            """		usable := !a.disabled && !isHard && !degraded && !modelCooled &&
-			(a.maxInFlight <= 0 || a.inFlight < a.maxInFlight)
-""",
-            """		usable := !a.disabled && !isHard && !degraded && !modelCooled &&
-			(a.maxInFlight <= 0 || a.inFlight < a.maxInFlight) &&
-			// afree 反代开关是硬策略,不是健康信号:关闭的账号在兜底路径同样
-			// 不得服务(反代开关是硬策略)。
-			(RoutingAllowed == nil || RoutingAllowed(a.UID))
-""",
-            1,
-        ),
-    ),
     "server/chat.go": (
         (
             """	cl := ch.ClientFor(acct)
-	// 续期成功后同步池内状态(余额/健康判定依赖过期时间)""",
+	// 续期成功后同步池内状态（余额/健康判定依赖过期时间）""",
             """	cl := ch.ClientFor(acct)
 	afreeObserveAccount(r.Context(), acct.UID)
-	// 续期成功后同步池内状态(余额/健康判定依赖过期时间)""",
+	// 续期成功后同步池内状态（余额/健康判定依赖过期时间）""",
             1,
         ),
     ),
@@ -135,22 +121,6 @@ var StoreHTTPClient func(s *Store) *http.Client
             """		cl := ch.ClientFor(acct)
 		afreeObserveAccount(r.Context(), acct.UID)
 		cl.OnRefresh = func(product, expiresAt string) {""",
-            1,
-        ),
-    ),
-    "traectl/refresh.go": (
-        (
-            """func (s *Store) httpClient() *http.Client {
-	return proxyRefreshClient(s.Proxy())
-}""",
-            """func (s *Store) httpClient() *http.Client {
-	if StoreHTTPClient != nil {
-		if cl := StoreHTTPClient(s); cl != nil {
-			return cl
-		}
-	}
-	return proxyRefreshClient(s.Proxy())
-}""",
             1,
         ),
     ),
@@ -177,6 +147,17 @@ var StoreHTTPClient func(s *Store) *http.Client
         ),
     ),
     "pool/pool.go": (
+        (
+            """		usable := !a.disabled && !isHard && !degraded && !modelCooled &&
+			(a.maxInFlight <= 0 || a.inFlight < a.maxInFlight)""",
+            """		usable := !a.disabled && !isHard && !degraded && !modelCooled &&
+			(a.maxInFlight <= 0 || a.inFlight < a.maxInFlight) &&
+			// afree 反代开关是硬策略,不是健康信号:关闭的账号在兜底路径同样
+			// 不得服务(2026-11-09 修复:此前只挡了 healthyLocked,兜底分支
+			// 放行,关掉开关的账号仍会被选中)。
+			(RoutingAllowed == nil || RoutingAllowed(a.UID))""",
+            1,
+        ),
         (
             """func (a *Account) healthyLocked(now time.Time, model string) bool {
 	if a.disabled {
@@ -495,6 +476,20 @@ var OnRecord func(s metrics.Sample)""",
     ),
     "traectl/refresh.go": (
         (
+            """func (s *Store) httpClient() *http.Client {
+	return proxyRefreshClient(s.Proxy())
+}""",
+            """func (s *Store) httpClient() *http.Client {
+	if StoreHTTPClient != nil {
+		if cl := StoreHTTPClient(s); cl != nil {
+			return cl
+		}
+	}
+	return proxyRefreshClient(s.Proxy())
+}""",
+            1,
+        ),
+        (
             """func (s *Store) httpClient() *http.Client {""",
             """// Mu 暴露 Store 内部锁（afree 桥接层锁内读取 Cred.ExpiredAt 等字段；
 // vendor 脚本注入的桥接点，上游原样不受影响）。
@@ -508,6 +503,7 @@ func (s *Store) httpClient() *http.Client {""",
     # 转换上限 30，defaultTextCallMax；与 internal/textcall 同款 max 语义，超限
     # 按正文放行）。若将来要删 PRESERVE 兜底，必须同步把本条改写里去——否则
     # 上游无上限版本会绕过网关单响应上限保险丝。
+}
 
 
 

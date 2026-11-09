@@ -157,6 +157,32 @@ go test ./... -count=1             # 除下述既有失败外应全绿
 - 出口接管需要的服务器访问器：`Server.Metrics()`、`Store.Mu()`、`Status.CreditsTotal`（vendor 注入，同步上游时锚点漂移就修 REWRITES——计数失配会 RuntimeError 强校验）。
 - `server/textcall.go`（文本工具调用兜底，afree 自有文件，走 PRESERVE_RELATIVE）：流式 `textCallFilter` 与非流式 `extractTextToolCalls` 均有单响应 30 上限 `defaultTextCallMax`（与网关 `internal/textcall.DefaultMaxPerResponse` 同值，超限按正文放行；两层互不重复计数——trae 内层先转，网关对已结构化响应无文本可转）。
 
+### vendor 脚本自检(re-vendor / 改 REWRITES 前必跑)
+
+`scripts/vendor_trae2api.py` 是"从上游克隆重建 vendor 树"的唯一入口,它一旦坏了,上游同步就卡住——而它**曾经同时坏在三处**(2026-11-09 修):
+
+| 缺陷 | 后果 | 教训 |
+| --- | --- | --- |
+| `REWRITES = {` 缺闭合 `}` | 脚本无法被 Python 解析,整条 vendor 流程跑不起来(HEAD 上坏了很久没人发现,因为没人真跑) | 改完必须 `python -m py_compile scripts/vendor_trae2api.py` |
+| `"pool/pool.go"`、`"traectl/refresh.go"` 各出现两次 | 字典字面量重复键**后者静默覆盖前者**,先出现的那组规则直接丢 | 一个文件只能有一个键;新增规则并进现有块,别另起一块 |
+| 新规则的 `old` 取自**活树**而非上游 | 活树已含注入 → 上游匹配数 0 → 要么 RuntimeError,要么注入被跳过 | `old` 必须是**上游克隆的原文**,`new` = old + 注入 |
+
+另外,活 vendor 树曾缺 `traectl/refresh.go` 的 `StoreHTTPClient` 接管块(续期/额度/签到出站**没走 afree 出口解析**,`DISABLE_DIRECT` 下会静默直连)。已补齐。
+
+**复核方法(可复用,跑完必须 100% 一致)**:把流程干跑到 `.tmp/vendor-dry`,再与活 vendor 树逐字节比对;判据是 `differing: []`。出现差异就是"脚本与活树不一致"——要么规则没生效(功能会丢),要么活树被手改过(re-vendor 会回退),**两种都必须先弄清再同步**。脚本骨架:
+
+```python
+import importlib.util, filecmp
+from pathlib import Path
+spec = importlib.util.spec_from_file_location("vt", "scripts/vendor_trae2api.py")
+m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+print("exit", m.main(target_root=".tmp/vendor-dry", preserve_from="internal/trae2api"))
+live, gen = Path("internal/trae2api"), Path(".tmp/vendor-dry/internal/trae2api")
+print("differing:", [str(p.relative_to(gen)) for p in gen.rglob("*")
+      if p.is_file() and not filecmp.cmp(p, live / p.relative_to(gen), shallow=False)])
+```
+
+行为自证:接管是否真的生效,看 `DISABLE_DIRECT=true` 下直连绑定账号的额度查询——日志应出现 `no usable egress (bound exits down or isolation denies direct)`(fail-closed),而不是静默成功。
 ### 全局策略适配清单（每平台必查）
 | 策略 | trae 适配点 |
 |---|---|
@@ -254,7 +280,34 @@ iStore 的面板密码是 `233@.afree`(与本机 compose 里的值不同);登录
 | 属性         | `i18nAttrs`（`attributeFilter: ['title','placeholder']`） | 悬浮提示、输入框占位符         |
 | JS 字符串    | `T('...')`                                                | toast、动态拼接的行、状态标签  |
 
-**未进词条的文案在中文界面下会原样显示英文**——这是本仓最常见的「功能做完但界面半中半英」缺陷。每次开发新功能或同步上游后，逐项自查：
+**未进词条的文案在中文界面下会原样显示英文**——这是本仓最常见的「功能做完但界面半中半英」缺陷。
+
+### 8a. 硬性规则（2026-11-09 用户定）：新增文案必须走 i18n 机制，禁止裸英文
+
+任何新增/修改的面板文案都必须走下表某一条路径，并在**同一个改动**里把词条补齐。不允许"先写英文、以后再说"——中文界面下露英文即视为未完成。
+
+| 文案形态 | 必须这样写 |
+| --- | --- |
+| 纯文本节点（不含子元素） | 加 `data-i18n="<slug>"`，或让文本节点原文精确成为词典键 |
+| **含内联标签的段落**（`<code>`/`<b>`/`<a>`/`<span>` 混排） | **必须**用 `data-i18n="<slug>"` 属性键。翻译机制按单个文本节点匹配，内联标签会把句子拆成几段、每段都凑不成完整键 → 这类段落用文本节点键**永远翻不出来** |
+| 带超链接的段落 | 拆成「`<span data-i18n=前缀>` + 保留的 `<a>` + `<span data-i18n=后缀>`」，链接在两种语言下都保留（整段 `data-i18n` 会 textContent 覆盖、把链接吃掉） |
+| `title` / `placeholder` | `data-i18n-title` / `data-i18n-placeholder` 专属 key（属性值原文含标点） |
+| JS 动态拼接 / toast / 状态标签 | `T('...')` 且键在表内；禁止把中文写进 HTML/JS 模板（切英文界面会露中文） |
+| `<option>` 选项文案 | 元素上加 `data-i18n`，不要只靠文本节点匹配 |
+
+新词条一律用**语义 slug**（`account_rotation_strategy`、`proxy_isolation_hint`），不要拿整句英文当键——整句键在标点被改动后会静默失配。slug 词条与旧「原文当键」的词条可以共存（同一个词典对象）。
+
+**提交前必须跑**（退出码非 0 即视为未完成）：
+
+```bash
+python scripts/i18n_audit.py            # 三遍：T() 键、data-i18n 键、含内联标签的文本块
+python scripts/i18n_reverse_audit.py    # 孤儿候选（仅参考，勿直接删）
+```
+
+`i18n_audit.py` 的第三遍就是这条规则的守门员：它枚举「自身有文案且子元素全是行内元素」的元素，整段不在词典里又没 `data-i18n` 就报缺口——2026-11-09 修掉的 9 处（代理列表提示、代理隔离提示、请求日志标题、WorkBuddy 配置标题、AMDCloud/TokenHarbor 取 key 提示、侧栏页脚两行）都是它检出来的。
+
+### 8b. 逐项自查
+——这是本仓最常见的「功能做完但界面半中半英」缺陷。每次开发新功能或同步上游后，逐项自查：
 
 1. 新增/改动的 HTML 可见文本，在 `I18N` 里有**同名键**（或 `data-i18n` slug 键）（机制匹配的是文本节点 `trim()` 后的整段原文，不是关键词）。
 2. 新增的 `title` / `placeholder` 说明性文案同样要有词条，键为属性值原文（含标点）。

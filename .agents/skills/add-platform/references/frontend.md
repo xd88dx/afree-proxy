@@ -2,18 +2,27 @@
 
 面板 = Go 反引号字符串 `const adminHTML`，内含 CSS/HTML/JS。改完必须重建镜像才能浏览器验证。
 
-## 1. i18n 机制（每次改文案都涉及）
+## 1. i18n 机制(每次改文案都涉及)
 
-- 字典 `I18N_ZH`（const I18N_ZH = {...}）：键 = 英文源文，值 = 中文。`T(s)` 直译；`i18nSubtree` 启动时遍历静态文本节点（trim 后整节点匹配）；`i18nMO` MutationObserver 接住动态插入的节点与 title/placeholder 属性变更。
-- **规则**：
-  - 静态 HTML 文本一律英文源文；新增文案同步加词条。
-  - JS 拼接的动态串（toast/textContent/innerHTML 片段）每个文本片段单独包 `T()`，键与调用逐字符一致。
-  - 字典键结尾不能带空格——HTML 需要可见尾随空格时用 `&#x20;`（参照"任务中心&#x20;"）。
-  - 含 `<code>`/`<b>` 的 hint 被拆成多个文本节点，需按段建词条。
-  - `egComboHTML(kind,id,slot,value,title,disabled)` 的 title 参数**原始透传**，调用方必须传 `T('...')`。
-  - 静态文案与 JS 动态串同文案时，共用同一词条（先查重再加）。
-- 自查脚本模式：提取字典键 → 与"静态文本节点/title/placeholder/JS 字面量（剔除字典块自身）"三路精确匹配，不命中的即死键；T() 字面量参数反向核对必须全部命中字典。
-
+- 字典:`const I18N = { '<key>': { en: '...', zh: '...' }, ... }`(2026-11-08 起;旧形态"键=英文源文、值=中文"已废弃)。LANG=zh 时 `T('key')` 取 zh。
+- 三条翻译路径:`i18nSubtree` 的 TreeWalker 逐**文本节点**匹配(trim 后整节点)、`i18nAttrs` 管 `title`/`placeholder`(专属键走 `data-i18n-title`/`data-i18n-placeholder`)、`T()` 管 JS 动态串。
+- **硬性规则(2026-11-09 用户定,违反即视为未完成)**:
+  - 新增/修改的面板文案必须走 i18n,并在同一个改动里补词条;禁止裸英文进界面。
+  - 纯文本节点:加 `data-i18n="<slug>"`,或让节点原文精确成为词典键。
+  - **含内联标签的段落(`<code>`/`<b>`/`<a>`/`<span>` 混排):必须用 `data-i18n` 属性键**。TreeWalker 逐文本节点匹配,内联标签把句子拆成几段 → 用文本节点键**永远翻不出来**(本仓反复出现的漏译形态)。
+  - 带超链接的段落:拆成「`<span data-i18n=前缀>` + 保留 `<a>` + `<span data-i18n=后缀>`」;整段 `data-i18n` 会 textContent 覆盖、把链接吃掉。
+  - `<option>` 选项文案也在元素上加 `data-i18n`,别只靠文本节点匹配。
+  - JS 拼接的动态串(toast/textContent/innerHTML 片段)每个文本片段单独包 `T()`,键与调用逐字符一致。
+  - 新词条用**语义 slug**(如 `account_rotation_strategy`),不要拿整句英文当键——标点一改就静默失配。
+  - 字典键结尾不能带空格——HTML 需要可见尾随空格时用 `&#x20;`。
+  - `egComboHTML(kind,id,slot,value,title,disabled)` 的 title 参数**原始透传**,调用方必须传 `T('...')`。
+  - 静态文案与 JS 动态串同文案时共用同一词条(先查重再加)。
+- 允许不译:model id、key 前缀、纯示例值(`0.5`/`22`/`4096`)、单位、纯技术标识、域前缀名(`tacn:`/`wbcn:`)、reasoning 档位(`xhigh`…`minimal`)、产品名(`Token Factory`)。
+- 提交前必须跑(退出码非 0 = 有缺口):
+  ```bash
+  python scripts/i18n_audit.py           # 三遍:T() 键 / data-i18n 键 / 含内联标签的文本块
+  python scripts/i18n_reverse_audit.py   # 孤儿候选(仅参考,勿直接删:动态 T(变量) 在用)
+  ```
 ## 2. 导航菜单 + 标签页
 
 - 导航项：`<div class="nav-item" data-tab="xxx"><span class="nav-ico"><svg…/></svg></span> 英文名</div>`。现状十三个：dashboard/accounts/trae/opencode/workbuddy/openrouter/amdcloud/tokenharbor/other/proxypool/settings/combos/logs（注意：key 池 tab 的 data-tab 用 `amdcloud` 而非 `amd`；面板展示名用 AMDCloud，与 `amd` 前缀/包名/`/admin/api/amd/*` 路径不同，改名时三处要一起对齐）。svg 用 24×24 简笔几何图形，风格与现有一致。

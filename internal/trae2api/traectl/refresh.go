@@ -160,6 +160,11 @@ func proxyRefreshClient(proxyURL string) *http.Client {
 func (s *Store) Mu() *sync.Mutex { return &s.mu }
 
 func (s *Store) httpClient() *http.Client {
+	if StoreHTTPClient != nil {
+		if cl := StoreHTTPClient(s); cl != nil {
+			return cl
+		}
+	}
 	return proxyRefreshClient(s.Proxy())
 }
 

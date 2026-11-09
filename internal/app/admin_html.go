@@ -449,8 +449,8 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
 <div class="nav-item" data-tab="combos"><span class="nav-ico"><svg viewBox="0 0 24 24"><path d="M8 3v5a4 4 0 0 1-4 4 4 4 0 0 1 4 4v5M16 3v5a4 4 0 0 0 4 4 4 4 0 0 0-4 4v5"/></svg></span> Custom aliases</div>
 <div class="nav-item" data-tab="logs"><span class="nav-ico"><svg viewBox="0 0 24 24"><path d="M8 6h13M8 12h13M8 18h13"/><path d="M3 6h.01M3 12h.01M3 18h.01"/></svg></span> Request logs</div>
 <div class="sidebar-footer">
-  <div>Admin panel: <a href="/admin/">/admin/</a></div>
-  <div>API address: <span id="footerApiAddr">http://127.0.0.1:3457</span></div>
+  <div data-i18n="footer_admin_panel">Admin panel: /admin/</div>
+  <div><span data-i18n="footer_api_address">API address:</span> <span id="footerApiAddr">http://127.0.0.1:3457</span></div>
 </div>
 </div>
 
@@ -696,7 +696,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
 <div class="section">
   <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><circle cx="12" cy="5" r="2.5"/><circle cx="5" cy="19" r="2.5"/><circle cx="19" cy="19" r="2.5"/><path d="M12 7.5v4m0 0-5.5 5m5.5-5 5.5 5"/></svg></span> Egress proxies</div>
   <div class="section-body">
-    <div class="hint" style="margin-bottom:10px">One proxy per line: <code>http://user:pass@host:port</code> or <code>socks5://host:port#alias</code>. All upstreams share this list; unhealthy proxies are skipped automatically.</div>
+    <div class="hint" style="margin-bottom:10px" data-i18n="proxy_list_hint">One proxy per line: http://user:pass@host:port or socks5://host:port#alias. All upstreams share this list; unhealthy proxies are skipped automatically.</div>
     <div class="hint" style="margin-bottom:10px" data-i18n="alias_is_a_proxies_identity">The alias (#name) is a proxy's identity — re-binding survives alias-preserving URL changes.</div>
     <div class="hint" style="margin-bottom:10px">When a subscription URL is set, this list is managed by the subscription and read-only; it serves as the fallback pool while a fetch fails.</div>
     <div class="form-row">
@@ -819,7 +819,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
         </div>
       </div>
     </div>
-    <div class="hint">Proxy isolation: each credential only egresses via its bound exits; when none is available it is skipped — never another exit or direct. Forced on when <code>PROXY_ISOLATION</code>=true.</div>
+    <div class="hint" data-i18n="proxy_isolation_hint">Proxy isolation: each credential only egresses via its bound exits; when none is available it is skipped — never another exit or direct. Forced on when PROXY_ISOLATION=true.</div>
     <div class="hint" id="ppIsolationHint" style="margin-top:4px"></div>
     <div class="hint" id="ppBackupHint" style="margin-top:4px">Backup proxy — off by default: every identity uses its main proxy only; a cooling or removed main proxy is skipped for that round. On: the backup proxy serves as the fallback for the main one.</div>
     <div class="form-actions"><button class="btn btn-primary" onclick="saveIsolationOptions()" data-i18n="save">Save</button></div>
@@ -948,7 +948,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
 
 <div id="tab-logs" class="tab-panel" style="display:none">
 <div class="flex justify-between" style="margin-bottom:16px">
-  <h2>Request logs <span class="probe-pill" style="font-weight:normal">last 500 entries, persisted to data/requests.jsonl</span></h2>
+  <h2 data-i18n="request_logs_title">Request logs — last 500 entries, persisted to data/requests.jsonl</h2>
   <div style="display:flex;gap:8px;align-items:center">
     <label style="display:flex;gap:6px;align-items:center;white-space:nowrap;margin:0">
       <input type="checkbox" id="settingAdminLog" onchange="saveAdminLogToggle()" style="width:auto;padding:0;accent-color:var(--accent)">
@@ -1169,9 +1169,9 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
   <div class="section">
     <div class="section-title">
       <span class="sec-ico"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87.34 1.7 1.7 0 0 0-1 1.55V21a2 2 0 1 1-4 0v-.09a1.7 1.7 0 0 0-1-1.55 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.7 1.7 0 0 0 .34-1.87 1.7 1.7 0 0 0-1.55-1H3a2 2 0 1 1 0-4h.09a1.7 1.7 0 0 0 1.55-1 1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.7 1.7 0 0 0 1.87.34h0a1.7 1.7 0 0 0 1-1.55V3a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1 1.55h0a1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87v0a1.7 1.7 0 0 0 1.55 1H21a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.55 1z"/></svg></span>
-      WorkBuddy configuration
+      <span data-i18n="workbuddy_configuration">WorkBuddy configuration</span>
       <span style="flex:1"></span>
-      <span class="auto-pill" id="wbConfigNote">Managed by the admin session</span>
+      <span class="auto-pill" id="wbConfigNote" data-i18n="managed_by_the_admin_session">Managed by the admin session</span>
     </div>
     <div class="section-body">
       <div class="wb-config-grid">
@@ -1697,7 +1697,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
     <button class="btn btn-sm" onclick="closeAmdKeyAddDialog()" data-i18n="close">Close</button>
   </div>
   <div class="wb-dialog-body">
-    <p class="hint" style="margin-top:0" id="amdKeyAddHint">One AMDCloud API key per line (rc-…, issued at the <a href="https://developer.amd.com.cn/radeon/tokenfactory" target="_blank" rel="noopener" style="color:var(--accent)">Token Factory</a>). New keys start with routing disabled — tick Pool to enable.</p>
+    <p class="hint" style="margin-top:0" id="amdKeyAddHint"><span data-i18n="amd_key_add_hint_prefix">One AMDCloud API key per line (rc-…, issued at the</span> <a href="https://developer.amd.com.cn/radeon/tokenfactory" target="_blank" rel="noopener" style="color:var(--accent)">Token Factory</a><span data-i18n="amd_key_add_hint_suffix">). New keys start with routing disabled — tick Pool to enable.</span></p>
     <div class="field">
       <label>API keys (one per line) *</label>
       <textarea id="amdKeyAddInput" rows="5" placeholder="rc-…" style="font-family:'JetBrains Mono',Consolas,monospace"></textarea>
@@ -1715,7 +1715,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
     <button class="btn btn-sm" onclick="closeTHKeyAddDialog()" data-i18n="close">Close</button>
   </div>
   <div class="wb-dialog-body">
-    <p class="hint" style="margin-top:0" id="thKeyAddHint">One TokenHarbor universal key per line (thk_live_…, from the <a href="https://tokenharbor.ai/dashboard/api-keys" target="_blank" rel="noopener" style="color:var(--accent)">dashboard</a>). New keys start with routing disabled — tick Pool to enable.</p>
+    <p class="hint" style="margin-top:0" id="thKeyAddHint"><span data-i18n="th_key_add_hint_prefix">One TokenHarbor universal key per line (thk_live_…, from the</span> <a href="https://tokenharbor.ai/dashboard/api-keys" target="_blank" rel="noopener" style="color:var(--accent)">dashboard</a><span data-i18n="th_key_add_hint_suffix">). New keys start with routing disabled — tick Pool to enable.</span></p>
     <div class="field">
       <label>API keys (one per line) *</label>
       <textarea id="thKeyAddInput" rows="5" placeholder="thk_live_…" style="font-family:'JetBrains Mono',Consolas,monospace"></textarea>
@@ -2623,6 +2623,17 @@ const I18N = {
   'fill_always_the_first_routable_credential_no_rotation': { en: 'Fill — always the first routable credential, no rotation', zh: '填充——固定用第一个可路由凭据,不轮转' },
   'random_pick_a_routable_credential_at_random': { en: 'Random — pick a routable credential at random', zh: '随机——随机挑一个可路由凭据' },
   'strategy_scope_hint': { en: 'Applies to Cline, OpenCode, OpenRouter, AMDCloud, TokenHarbor and Other. TraeWork and WorkBuddy use their engine\'s own scheduling. Forced by POOL_STRATEGY when that env var is set.', zh: '作用于 Cline / OpenCode / OpenRouter / AMDCloud / TokenHarbor / Other。TraeWork 与 WorkBuddy 用各自引擎的调度。设置了 POOL_STRATEGY 环境变量时以它为准。' },
+  'footer_api_address': { en: 'API address:', zh: 'API 地址:' },
+  'footer_admin_panel': { en: 'Admin panel: /admin/', zh: '管理面板:/admin/' },
+  'proxy_list_hint': { en: 'One proxy per line: http://user:pass@host:port or socks5://host:port#alias. All upstreams share this list; unhealthy proxies are skipped automatically.', zh: '每行一条代理:http://user:pass@host:port 或 socks5://host:port#alias。所有上游共用这份列表,不健康的出口会被自动跳过。' },
+  'proxy_isolation_hint': { en: 'Proxy isolation: each credential only egresses via its bound exits; when none is available it is skipped — never another exit or direct. Forced on when PROXY_ISOLATION=true.', zh: '代理隔离:每个凭据只从自己绑定的出口出网;都不可用时该凭据本轮跳过——绝不改走别的出口、也不直连。PROXY_ISOLATION=true 时强制开启。' },
+  'request_logs_title': { en: 'Request logs — last 500 entries, persisted to data/requests.jsonl', zh: '请求日志——最近 500 条,落盘到 data/requests.jsonl' },
+  'workbuddy_configuration': { en: 'WorkBuddy configuration', zh: 'WorkBuddy 配置' },
+  'managed_by_the_admin_session': { en: 'Managed by the admin session', zh: '由管理会话托管' },
+  'amd_key_add_hint_prefix': { en: 'One AMDCloud API key per line (rc-..., issued at the', zh: '每行一条 AMDCloud API key(rc-…,在' },
+  'amd_key_add_hint_suffix': { en: '). New keys start with routing disabled — tick Pool to enable.', zh: ' 获取)。新 key 默认不参与路由——勾选 Pool 启用。' },
+  'th_key_add_hint_prefix': { en: 'One TokenHarbor universal key per line (thk_live_..., from the', zh: '每行一条 TokenHarbor 通用 key(thk_live_…,在' },
+  'th_key_add_hint_suffix': { en: '). New keys start with routing disabled — tick Pool to enable.', zh: ' 获取)。新 key 默认不参与路由——勾选 Pool 启用。' },
   'saved': { en: 'Saved', zh: '已保存' },
   'no_keys_configured': { en: 'No keys configured', zh: '未配置密钥' },
   'Create an entry for an upstream provider: shared Base URL, its API keys, and the model prefix its models are exposed under.': { en: 'Create an entry for an upstream provider: shared Base URL, its API keys, and the model prefix its models are exposed under.', zh: '为上游厂商创建条目：共享的 Base URL、其 API 密钥，以及模型对外暴露的前缀。' },
