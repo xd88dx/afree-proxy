@@ -898,6 +898,46 @@ func serveTrae2apiChat(rw http.ResponseWriter, r *http.Request, body []byte) {
 	// 合并域翻译（2026-11-07）：对外 tacn:/tagb: → 内部 realm:bare 透传给
 	// vendored（交集以 trae 为主，solo 独有归 solo）。
 	body = trae2apiTranslateMergedBody(body)
+
+	// 流式请求走"缓冲+中断重试"（与 cline/zen 同语义）：上游 SSE 先完整缓冲、
+	// 拿到 finish/[DONE] 才向客户端发 200 并回放；只有**缓冲不完整**（真流中断：
+	// EOF/连接重置/idle 断流）才换账号重试整个请求（每次 attempt 由引擎自选新
+	// 账号，重试上限 StreamMaxAttempts、ctx 取消不重试——不存在无限重试）。
+	// 引擎级 error 帧（上下文超长/4001/权限类确定性错误）后跟 [DONE]，缓冲完整、
+	// 不重试，error 帧原样回放给客户端——换账号救不回的错误不白打上游。
+	// 2026-11-10 用户定：trae 上游（IDE 逆向接口+恒流式+WAF）中断率高，直通流
+	// 时代"响应头已发就只能 200+error 帧"，agent 把半截回复当完成（伪成功）。
+	// 非流式保持直通：引擎聚合语义已在 vendored 内，无需外层包装。
+	var params map[string]any
+	_ = json.Unmarshal(body, &params)
+	isStream, _ := params["stream"].(bool)
+	if isStream {
+		handleStreamBufferedGeneric(rw, r, "trae", params, func(ctx context.Context) (*http.Response, func(map[string]any), error) {
+			reqBody, err := json.Marshal(params)
+			if err != nil {
+				return nil, nil, err
+			}
+			req, err := http.NewRequestWithContext(ctx, http.MethodPost,
+				traeInprocessBase+"/v1/chat/completions", bytesReader(reqBody))
+			if err != nil {
+				return nil, nil, err
+			}
+			req.Header.Set("Content-Type", "application/json")
+			resp, err := traeInprocessHTTP.Do(req)
+			if err != nil {
+				return nil, nil, err
+			}
+			if resp.StatusCode != http.StatusOK {
+				eb, _ := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
+				resp.Body.Close()
+				return nil, nil, &upstreamHTTPError{Status: resp.StatusCode, Body: string(eb)}
+			}
+			// 记账回调恒 nil：token/积分记账由 vendored metrics 按账号自行落账。
+			return resp, nil, nil
+		})
+		return
+	}
+
 	r.Body = io.NopCloser(strings.NewReader(string(body)))
 	r.ContentLength = int64(len(body))
 	sub.srv.Handler().ServeHTTP(rw, r)
