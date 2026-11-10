@@ -224,8 +224,8 @@ func TestPlatformSegmentsAreIDSorted(t *testing.T) {
 		]}`))
 	}))
 	defer orSrv.Close()
-	orPrevOverride := openrouter.CatalogURLOverride
-	openrouter.CatalogURLOverride = orSrv.URL
+	orPrevOverride := openrouter.GetCatalogURLOverride()
+	openrouter.SetCatalogURLOverride(orSrv.URL)
 	amdPrev, amdPath := amd.Get(), amd.ConfigPath
 	amd.ConfigPath = filepath.Join(t.TempDir(), "amd-config.json")
 	amdc := amd.DefaultConfig()
@@ -243,7 +243,7 @@ func TestPlatformSegmentsAreIDSorted(t *testing.T) {
 	t.Cleanup(func() {
 		openrouter.Set(orPrev)
 		openrouter.ConfigPath = orPath
-		openrouter.CatalogURLOverride = orPrevOverride
+		openrouter.SetCatalogURLOverride(orPrevOverride)
 		amd.Set(amdPrev)
 		amd.ConfigPath = amdPath
 		tokenharbor.Set(thPrev)

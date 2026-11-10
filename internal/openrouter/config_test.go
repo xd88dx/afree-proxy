@@ -203,8 +203,8 @@ func TestSyncCatalogLiveAuthoritative(t *testing.T) {
 		}})
 	}))
 	defer srv.Close()
-	CatalogURLOverride = srv.URL
-	defer func() { CatalogURLOverride = "" }()
+	SetCatalogURLOverride(srv.URL)
+	defer SetCatalogURLOverride("")
 	catalogMu.Lock()
 	// 现目录夹具（快照已取消，直接字面量造态）：openrouter/free 仍免费保留、
 	// lfm 已转付费剔除（changed=1 的来源）。
@@ -322,8 +322,8 @@ func TestSyncCatalogUnreachableKeepsCatalog(t *testing.T) {
 		w.WriteHeader(http.StatusInternalServerError)
 	}))
 	defer srv.Close()
-	CatalogURLOverride = srv.URL
-	defer func() { CatalogURLOverride = "" }()
+	SetCatalogURLOverride(srv.URL)
+	defer SetCatalogURLOverride("")
 	catalogMu.Lock()
 	catalogModels = map[string]Model{
 		"openrouter/free": {ID: "openrouter/free", ToolCall: true},
@@ -349,8 +349,8 @@ func TestColdStartEmptyUntilSync(t *testing.T) {
 		w.WriteHeader(http.StatusInternalServerError)
 	}))
 	defer srv.Close()
-	CatalogURLOverride = srv.URL
-	defer func() { CatalogURLOverride = "" }()
+	SetCatalogURLOverride(srv.URL)
+	defer SetCatalogURLOverride("")
 	catalogMu.Lock()
 	catalogModels = map[string]Model{}
 	catalogLoaded = false

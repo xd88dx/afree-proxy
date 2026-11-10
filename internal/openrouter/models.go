@@ -31,13 +31,32 @@ var (
 	catalogLoaded bool
 	catalogSyncMu sync.Mutex
 
-	CatalogURLOverride string
-	CatalogClient      *http.Client
+	CatalogClient *http.Client
+
+	// catalogOverrideMu 保护目录端点覆盖值：InitCatalog 的异步首拉 goroutine
+	// 会与测试的注入/恢复并发读写，裸包级变量在 -race 下必红（2026-11-11
+	// CI 实测）。存取一律走 SetCatalogURLOverride / catalogEndpoint。
+	catalogOverrideMu     sync.RWMutex
+	catalogURLOverrideVal string
 )
 
+// SetCatalogURLOverride 覆盖公共目录端点（测试注入/特殊部署用；空串 = 用 CatalogURL）。
+func SetCatalogURLOverride(v string) {
+	catalogOverrideMu.Lock()
+	catalogURLOverrideVal = v
+	catalogOverrideMu.Unlock()
+}
+
+// GetCatalogURLOverride 读取当前覆盖值（测试保存/恢复用）。
+func GetCatalogURLOverride() string {
+	catalogOverrideMu.RLock()
+	defer catalogOverrideMu.RUnlock()
+	return catalogURLOverrideVal
+}
+
 func catalogEndpoint() string {
-	if CatalogURLOverride != "" {
-		return CatalogURLOverride
+	if v := GetCatalogURLOverride(); v != "" {
+		return v
 	}
 	return CatalogURL
 }
