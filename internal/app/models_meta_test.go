@@ -253,8 +253,9 @@ func TestIsZeroPrice(t *testing.T) {
 	}
 }
 
-// isFreeChatModel 是"免费全集"的判据。三个条件缺一不可：
-// 双向零价、有 text 输出、声明支持 tools。
+// isFreeChatModel 是"免费全集"的判据：双向零价 + 声明支持 tools，
+// 加「text 输出或 :free 后缀」——2026-11-10 起官方把 :free 条目的
+// output_modalities 置空，modality 对这批条目不再是一票否决。
 func TestIsFreeChatModel(t *testing.T) {
 	mk := func(prompt, completion string, outMods, params []string) *clineMetaEntry {
 		e := &clineMetaEntry{SupportedParameters: params}
@@ -276,6 +277,20 @@ func TestIsFreeChatModel(t *testing.T) {
 		{"free chat but no tools", mk("0", "0", []string{"text"}, []string{"temperature"}), false},
 		{"free but completion priced", mk("0", "0.000001", []string{"text"}, textTools), false},
 		{"missing prompt price is not free", mk("", "", []string{"text"}, textTools), false},
+		// 2026-11-10 官方结构变更：:free 条目 output_modalities 置空——
+		// :free 后缀 + 零价 + tools 即收录（modality 置空不再一票否决）。
+		{"suffixed free with nulled modality (official 2026-11-10 form)",
+			func() *clineMetaEntry {
+				e := mk("0", "0", nil, textTools)
+				e.ID = "nvidia/nemotron-3.5-lightning:free"
+				return e
+			}(), true},
+		{"unsuffixed zero-priced with nulled modality stays out (lyria-like)",
+			func() *clineMetaEntry {
+				e := mk("0", "0", nil, nil)
+				e.ID = "google/lyria-3-pro-preview"
+				return e
+			}(), false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

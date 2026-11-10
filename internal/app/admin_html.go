@@ -5739,10 +5739,20 @@ async function loadModels() {
     const accBox = _('accModelsBody');
     if (accBox) {
       const clineV = models.filter(notBlocked);
+      // 显示用对外 ID（/v1/models 同形态，cline-free/ 前缀由网关补，与 Go
+      // displayClineModelID 同语义）；封禁传参保持内部 feed ID
+      //（IsModelBlacklisted 两种形态都认）。此前面板显示内部裸名
+      //（cohere/xxx:free），与客户端实际请求的 cline-free/cohere/xxx:free
+      // 对不上，排查封禁/调用时容易看岔。
+      const clineDisplayID = (id) => {
+        id = (id || '').trim();
+        if (!id || id.startsWith('cline-free/')) return id;
+        return 'cline-free/' + id;
+      };
       accBox.innerHTML = clineV.length
         ? clineV.map(m => row(
             '<span style="font-family:\'JetBrains Mono\',monospace;font-size:13px;flex:1"' +
-            (m.metadata_source ? ' title="' + T('catalog_metadata_source') + ' ↳ ' + esc(m.metadata_source) + '"' : '') + '>' + esc(m.id) + '</span>' +
+            (m.metadata_source ? ' title="' + T('catalog_metadata_source') + ' ↳ ' + esc(m.metadata_source) + '"' : '') + '>' + esc(clineDisplayID(m.id)) + '</span>' +
             '<span class="model-tag free">' + T('no_charge') + '</span>' +
             modelMetaTags(m) +
             banBtn('cline', m.id))).join('')

@@ -350,9 +350,13 @@ func isZeroPrice(s string) bool {
 
 // isFreeChatModel catalog 里这条模型是否属于"免费层可直接调用"的集合。
 //
-// 判据（三条都要满足，全部来自实测 + catalog 事实）：
+// 判据（全部来自实测 + catalog 事实）：
 //   - 输入与输出价格都是 0（prompt 缺失就不算——宁可少收不可误收）；
-//   - 输出模态含 text（排除 lyria 这类纯音频生成，它接不了 chat completion）；
+//   - ID 带 :free 后缀（官方免费层命名约定）或输出模态含 text。
+//     modality 检查本意是排除 lyria 这类纯音频/专用生成模型；2026-11-10 起
+//     官方把 :free 条目的 architecture.output_modalities 整体置空（三次重拉
+//     稳定复现），modality 对这批条目不再可用——:free 后缀本身就是免费的
+//     权威标记，零价+:free+tools 即收录，否则维持 text 模态要求；
 //   - 声明支持 tools（免费层的对话模型都支持；不支持的基本是专用生成模型）。
 func (e *clineMetaEntry) isFreeChatModel() bool {
 	if !isZeroPrice(e.Pricing.Prompt) || !isZeroPrice(e.Pricing.Completion) {
@@ -365,7 +369,8 @@ func (e *clineMetaEntry) isFreeChatModel() bool {
 			break
 		}
 	}
-	if !hasTextOut {
+	if !hasTextOut && !strings.HasSuffix(e.ID, ":free") {
+		// 无 :free 标记的零价条目（lyria 纯音频等）维持模态门槛防误收。
 		return false
 	}
 	for _, p := range e.SupportedParameters {

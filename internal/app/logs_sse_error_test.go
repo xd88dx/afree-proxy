@@ -2,9 +2,9 @@ package app
 
 import (
 	"net/http"
-	"time"
 	"net/http/httptest"
 	"testing"
+	"time"
 )
 
 // 伪成功治理回归（2026-11-10）：trae 流中断等形态 HTTP 层恒 200，失败信息
