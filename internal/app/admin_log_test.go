@@ -59,6 +59,9 @@ func TestPoolAdminLogEnabledDefaultOff(t *testing.T) {
 // 经过网关的模型会话请求照常记录。
 func TestMiddlewareSkipsAdminLogsByDefault(t *testing.T) {
 	swapReqLogSink(t)
+	// 显式隔离到 nil 默认态：测试名承诺的是"默认关"，不该吃前序测试残留的
+	// 全局配置（-shuffle 纪律，同 TestMiddlewareLogsAdminWhenEnabled）。
+	resetGlobalConfigForTest(t)
 	poolMu.Lock()
 	saved := pool
 	pool = &AccountPool{Accounts: []*Account{}}
@@ -125,6 +128,10 @@ func TestMiddlewareLogsAdminWhenEnabled(t *testing.T) {
 // 开关打开时照常回载（否则"关了开关但日志页还有面板行"看起来像没生效）。
 func TestLoadRequestLogsFromFileSkipsAdminRows(t *testing.T) {
 	swapReqLogSink(t)
+	// 全局配置隔离：本测试会把 adminLogEnabled 打开，不隔离会把 true 渗进
+	// 后续依赖"默认关"的测试（-shuffle 下 TestMiddlewareSkipsAdminLogsByDefault
+	// 排到本测试之后即红，2026-11-11 实测）。
+	resetGlobalConfigForTest(t)
 	poolMu.Lock()
 	saved := pool
 	pool = &AccountPool{Accounts: []*Account{}}
