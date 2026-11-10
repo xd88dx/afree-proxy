@@ -79,3 +79,26 @@ func TestTraeGuardPassthroughNon2xxAndError(t *testing.T) {
 		t.Fatalf("传输错误应透传: %v", err)
 	}
 }
+
+// 直连出口（traePooledClient("")）也必须被守卫覆盖：此前返回 nil 交还原生
+// client，死腿 create_agent_task 真实出网白耗一个往返（2026-11-10 生产
+// tacn 案例：未绑定出口账号的第 1 轮尝试 4s）。短路发生在守卫层，不会触网。
+func TestTraeDirectEgressShortCircuitsDeadLeg(t *testing.T) {
+	cl := traePooledClient("", "uid-test")
+	if cl == nil {
+		t.Fatal("直连出口应返回守卫客户端，而不是 nil（交还原生直连）")
+	}
+	req, _ := http.NewRequest("POST", "https://trae-api-cn.mchost.guru"+traeAgentTaskPath, strings.NewReader("{}"))
+	resp, err := cl.Do(req)
+	if err != nil {
+		t.Fatalf("短路不应报错: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("应返回 400，得到 %d", resp.StatusCode)
+	}
+	b, _ := io.ReadAll(resp.Body)
+	if !strings.Contains(string(b), "afree gateway") {
+		t.Fatalf("应由守卫短路返回（含 afree 标注）: %s", b)
+	}
+}

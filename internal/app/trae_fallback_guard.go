@@ -18,6 +18,12 @@ package app
 //
 // 短路返回与真实上游同构的 4001 响应体：引擎既有错误分类（code=4001 →
 // 「请求本身不合法，不冷却」）与客户端可见行为完全不变，只是更快、日志更诚实。
+//
+// 2026-11-11 补口子：直连出口此前经 traePooledClient("") 返回 nil 交还原生
+// client、绕过本守卫，死腿仍真实出网（生产 tacn 案例 21:03 第 1 轮尝试实测
+// 4s）；traectl 导出 SharedChatTransport 后直连也包守卫（traeDirectClient）。
+// 回退链「200 + error 事件」形态的中间降级（传输层只见 2xx，本层记不到）
+// 由 traectl Chat 循环补 [trae-chain] WARN。
 
 import (
 	"io"

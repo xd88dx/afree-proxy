@@ -1329,17 +1329,18 @@ func handleAdminConfig(w http.ResponseWriter, r *http.Request) {
 		address = proxyListenAddress
 	}
 	writeAPI(w, http.StatusOK, apiResponse{Success: true, Data: map[string]any{
-		"address":         address,
-		"strategy":        globalStrategy(),
-		"version":         "go-1.1",
-		"poolPath":        poolPath,
-		"headers":         cfg.Headers,
-		"clineUseProxies": poolClineUseProxies(),
-		"adminLogEnabled": poolAdminLogEnabled(),
+		"address":              address,
+		"strategy":             globalStrategy(),
+		"version":              "go-1.1",
+		"poolPath":             poolPath,
+		"headers":              cfg.Headers,
+		"clineUseProxies":      poolClineUseProxies(),
+		"adminLogEnabled":      poolAdminLogEnabled(),
+		"clineCatalogFeedOnly": globalClineCatalogFeedOnly(),
 	}})
 }
 
-// POST /admin/api/config  body: { strategy?, headers?, clineUseProxies?, adminLogEnabled? }
+// POST /admin/api/config  body: { strategy?, headers?, clineUseProxies?, adminLogEnabled?, clineCatalogFeedOnly? }
 func handleAdminUpdateConfig(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "POST" {
 		writeAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
@@ -1353,10 +1354,11 @@ func handleAdminUpdateConfig(w http.ResponseWriter, r *http.Request) {
 	defer r.Body.Close()
 
 	var req struct {
-		Strategy        string            `json:"strategy"`
-		Headers         map[string]string `json:"headers"`
-		ClineUseProxies *bool             `json:"clineUseProxies"`
-		AdminLogEnabled *bool             `json:"adminLogEnabled"`
+		Strategy             string            `json:"strategy"`
+		Headers              map[string]string `json:"headers"`
+		ClineUseProxies      *bool             `json:"clineUseProxies"`
+		AdminLogEnabled      *bool             `json:"adminLogEnabled"`
+		ClineCatalogFeedOnly *bool             `json:"clineCatalogFeedOnly"`
 	}
 	if err := json.Unmarshal(body, &req); err != nil {
 		writeAPI(w, http.StatusBadRequest, apiResponse{Error: "invalid JSON"})
@@ -1411,6 +1413,13 @@ func handleAdminUpdateConfig(w http.ResponseWriter, r *http.Request) {
 		changed = true
 	}
 
+	// cline 目录「仅展示插件免费」开关：存 afree-config.json，未设置（nil）
+	// 默认关闭（展示全部免费目录）。/admin/api/models 侧按此过滤，见 models.go。
+	if req.ClineCatalogFeedOnly != nil {
+		setGlobalClineCatalogFeedOnly(*req.ClineCatalogFeedOnly)
+		changed = true
+	}
+
 	if changed {
 		setProxyConfig(newCfg)
 		persistProxyConfig(newCfg)
@@ -1437,6 +1446,12 @@ func handleAdminModels(w http.ResponseWriter, r *http.Request) {
 	models := []*ModelInfo{}
 	if credentialsEnabled {
 		models = getFreeModels()
+		// 「仅展示插件免费」开关（2026-11-11 用户定）：插件 UI 的 FREE 组是
+		// 官方推荐位（recommended-models free 组）。开启后目录只列该组模型，
+		// 服务端过滤=数据事实生效；开关状态落盘 afree-config.json。
+		if globalClineCatalogFeedOnly() {
+			models = feedFreeModels(models)
+		}
 	}
 	writeAPI(w, http.StatusOK, apiResponse{Success: true, Data: map[string]any{
 		"models":             models,

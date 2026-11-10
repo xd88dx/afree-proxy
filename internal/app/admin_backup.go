@@ -103,15 +103,17 @@ type stateBackup struct {
 }
 
 type configBackup struct {
-	Version         int               `json:"version"`
-	ExportedAt      time.Time         `json:"exportedAt"`
-	Accounts        []*Account        `json:"accounts,omitempty"`
-	ClientKeys      []string          `json:"clientKeys,omitempty"`
-	ClineUseProxies *bool             `json:"clineUseProxies,omitempty"`
-	AdminLogEnabled *bool             `json:"adminLogEnabled,omitempty"`
-	Strategy        string            `json:"strategy,omitempty"`
-	Headers         map[string]string `json:"headers,omitempty"`
-	Zen             *zenConfigData    `json:"zen,omitempty"`
+	Version         int        `json:"version"`
+	ExportedAt      time.Time  `json:"exportedAt"`
+	Accounts        []*Account `json:"accounts,omitempty"`
+	ClientKeys      []string   `json:"clientKeys,omitempty"`
+	ClineUseProxies *bool      `json:"clineUseProxies,omitempty"`
+	AdminLogEnabled *bool      `json:"adminLogEnabled,omitempty"`
+	// ClineCatalogFeedOnly cline 目录「仅展示插件免费」开关（afree-config.json）。
+	ClineCatalogFeedOnly *bool             `json:"clineCatalogFeedOnly,omitempty"`
+	Strategy             string            `json:"strategy,omitempty"`
+	Headers              map[string]string `json:"headers,omitempty"`
+	Zen                  *zenConfigData    `json:"zen,omitempty"`
 	// ProxyPool 全局出口代理池(proxy-config.json 的出口池段)。2026-10-26 从
 	// zen 段拆出：代理池是全局能力，历史上寄居在 zen 配置里只是命名包袱。
 	ProxyPool *proxyPoolConfigData `json:"proxyPool,omitempty"`
@@ -217,34 +219,36 @@ func handleAdminConfigExport(w http.ResponseWriter, r *http.Request) {
 	// cline 走代理池开关：显式落盘（nil = 未设置 = 默认开启），导入按指针还原。
 	clineUse := poolClineUseProxies()
 	adminLog := poolAdminLogEnabled()
+	catalogFeedOnly := globalClineCatalogFeedOnly()
 	backup := configBackup{
-		Version:             configBackupVersion,
-		ExportedAt:          time.Now().UTC(),
-		Accounts:            accounts,
-		ClientKeys:          clientKeys,
-		ClineUseProxies:     &clineUse,
-		AdminLogEnabled:     &adminLog,
-		Strategy:            globalStrategy(),
-		Headers:             headers,
-		Zen:                 zenBackupSnapshot(),
-		ProxyPool:           getProxyPool(),
-		Proxy:               getProxyBindingConfig(),
-		Sessions:            sessions,
-		Endpoints:           loadZenEndpointsFile(),
-		Combos:              listCombos(),
-		OpenRouter:          openrouter.Get(),
-		AMDCloud:            amd.Get(),
-		TokenHarbor:         tokenharbor.Get(),
-		WorkBuddy:           exportWorkbuddyBackup(),
-		Other:               other.Get(),
-		Trae:                trae2apiBackupSnapshot(),
-		WorkBuddyProxies:    exportWorkbuddyProxyBindings(),
-		TraeProxies:         exportTrae2apiProxyBindings(),
-		TraeDisplayOrder:    traeDisplayOrderForBackup(),
-		ModelBlacklist:      exportModelBlacklist(),
-		PlatformBlacklist:   exportPlatformBlacklist(),
-		ZenDepAliases:       exportZenDepAliases(),
-		ClineStreamRequired: exportClineStreamRequired(),
+		Version:              configBackupVersion,
+		ExportedAt:           time.Now().UTC(),
+		Accounts:             accounts,
+		ClientKeys:           clientKeys,
+		ClineUseProxies:      &clineUse,
+		AdminLogEnabled:      &adminLog,
+		ClineCatalogFeedOnly: &catalogFeedOnly,
+		Strategy:             globalStrategy(),
+		Headers:              headers,
+		Zen:                  zenBackupSnapshot(),
+		ProxyPool:            getProxyPool(),
+		Proxy:                getProxyBindingConfig(),
+		Sessions:             sessions,
+		Endpoints:            loadZenEndpointsFile(),
+		Combos:               listCombos(),
+		OpenRouter:           openrouter.Get(),
+		AMDCloud:             amd.Get(),
+		TokenHarbor:          tokenharbor.Get(),
+		WorkBuddy:            exportWorkbuddyBackup(),
+		Other:                other.Get(),
+		Trae:                 trae2apiBackupSnapshot(),
+		WorkBuddyProxies:     exportWorkbuddyProxyBindings(),
+		TraeProxies:          exportTrae2apiProxyBindings(),
+		TraeDisplayOrder:     traeDisplayOrderForBackup(),
+		ModelBlacklist:       exportModelBlacklist(),
+		PlatformBlacklist:    exportPlatformBlacklist(),
+		ZenDepAliases:        exportZenDepAliases(),
+		ClineStreamRequired:  exportClineStreamRequired(),
 		State: &stateBackup{
 			Cline:       clineState,
 			Zen:         zenStateBackupSnapshot(),
@@ -411,6 +415,10 @@ func handleAdminConfigImport(w http.ResponseWriter, r *http.Request) {
 	if backup.AdminLogEnabled != nil {
 		setGlobalAdminLogEnabled(*backup.AdminLogEnabled)
 		imported["adminLogEnabled"] = 1
+	}
+	if backup.ClineCatalogFeedOnly != nil {
+		setGlobalClineCatalogFeedOnly(*backup.ClineCatalogFeedOnly)
+		imported["clineCatalogFeedOnly"] = 1
 	}
 
 	// ---- 调度策略 + 请求头 ----

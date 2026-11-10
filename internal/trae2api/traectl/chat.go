@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"strings"
 	"sync"
@@ -207,6 +208,12 @@ func sharedChatClient() *http.Client {
 	return chatClientVal
 }
 
+// SharedChatTransport 返回共享 chat 客户端的底层 Transport，供 afree 出口
+// 接管钩子（StoreHTTPClient）在直连分支包壳复用：直连也过死腿守卫时，仍用
+// 本 Transport 的连接参数（ResponseHeaderTimeout 等，单一事实来源在
+// transport.go），不改变任何连接行为。
+func SharedChatTransport() http.RoundTripper { return sharedChatClient().Transport }
+
 // proxyChatClient 获取或创建绑定指定代理的聊天客户端（连接池复用）。
 func proxyChatClient(proxyURL string) *http.Client {
 	proxyURL = strings.TrimSpace(proxyURL)
@@ -299,6 +306,12 @@ func (c *Client) Chat(ctx context.Context, req ChatRequest, onDelta func(Delta) 
 		var consumed *consumedError
 		if errors.As(err, &consumed) {
 			return consumed.err
+		}
+		// 中间端点降级观测：上游常用「200 + error 事件」表达拒绝，出口传输层
+		// 只见 2xx（afree 守卫只记 HTTP≥400），此前 ①② 为何挂完全静默、排查
+		// 只能靠猜。末级错误由上层（server/chat.go 收尾日志）携带账号记录，不重复。
+		if i < len(chatPaths)-1 {
+			log.Printf("[trae-chain] WARN: 端点 %s 降级下一级: %v", path, err)
 		}
 		lastErr = err
 	}

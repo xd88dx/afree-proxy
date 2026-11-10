@@ -351,7 +351,8 @@ func traeGlobalExit() (string, bool) {
 //   - 隔离开启且有绑定：主→备 fail-closed，双不可用返回必然失败的客户端。
 //   - 隔离开启且未绑定：全局规则；直连哨兵按 DisableDirect 判定。
 //
-// 返回 nil = 交给上游原生 client（直连哨兵/全局直连）；非 nil = 钉定出口。
+// 返回 nil = 交给上游原生 client（仅 Store 身份缺失的退化路径）；
+// 非 nil = 守卫包裹的出口（直连走原生 Transport + 守卫，代理走池客户端 + 观测）。
 func traeStoreHTTPClient(s *traectl.Store) *http.Client {
 	if s == nil {
 		return nil
@@ -383,7 +384,20 @@ func traeEgressClient(uid string) *http.Client {
 	return traePooledClient(url, uid)
 }
 
-// traePooledClient 把池代理地址换成带观测的客户端；空串 = 直连（交还上游）。
+// traeDirectClient 直连出口客户端：包装 vendored 原生 chat Transport
+// （traectl.SharedChatTransport，连接参数不变），只叠加回退链守卫（死腿短路 +
+// 非 2xx 观测）。此前直连返回 nil 交还原生 client，死腿 create_agent_task 会
+// 真实出网白耗一个往返（2026-11-10 生产 tacn 案例：未绑定出口账号的第 1 轮
+// 尝试实测 4s）。出口/账号列仍由账号 observer 补写 direct（见
+// trae2apiObserveAccount），与代理路径的 traeObserveTransport 互补不重复。
+func traeDirectClient() *http.Client {
+	return &http.Client{Transport: traeFallbackGuardTransport{
+		inner: traectl.SharedChatTransport(),
+	}}
+}
+
+// traePooledClient 把池代理地址换成带观测的客户端；空串 = 直连（原生
+// Transport + 守卫，见 traeDirectClient）。
 // 最外层是回退链守卫（死腿短路 + 中间失败观测，见 trae_fallback_guard.go），
 // 短路不出网、不计入出口健康统计。
 // uid 是本次出站命中的账号（调用方已按 Store 反查）：vendored 每次发请求都
@@ -391,7 +405,7 @@ func traeEgressClient(uid string) *http.Client {
 // 无需从出站请求上下文反推（出口 client 不带账号身份，上下文里没有）。
 func traePooledClient(proxyURL, uid string) *http.Client {
 	if proxyURL == "" {
-		return nil
+		return traeDirectClient()
 	}
 	base := proxyClientFor(proxyURL)
 	return &http.Client{Transport: traeFallbackGuardTransport{

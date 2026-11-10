@@ -369,28 +369,10 @@ func TestResolveMetaIDHandlesColonVariant(t *testing.T) {
 	}
 }
 
-// extraFreeModels 是 catalog 完全缺失的免费模型兜底。beam-free 用户实测
-// 在 CLI 里能正常对话，但服务端 catalog 查不到它 —— 只靠 catalog 会误删。
-// laguna 已于 2026-11-10 从兜底表移除（实测上游 404 "model not supported"，
-// 官方下线；兜底表不跟随自愈冷却，只能源头摘除）。
-func TestExtraFreeModelsCoverCatalogGaps(t *testing.T) {
-	want := map[string]bool{"reflection/beam-free": true}
-	for _, e := range extraFreeModels {
-		if e.ID == "poolside/laguna-s-2.1-free" {
-			t.Fatal("laguna must stay removed (upstream 404 as of 2026-11-10)")
-		}
-		if !want[e.ID] {
-			t.Fatalf("unexpected extra free model %q", e.ID)
-		}
-		delete(want, e.ID)
-		if e.ContextLength <= 0 || e.MaxOutputTokens <= 0 {
-			t.Fatalf("%q missing metadata: ctx=%d out=%d", e.ID, e.ContextLength, e.MaxOutputTokens)
-		}
-	}
-	if len(want) != 0 {
-		t.Fatalf("missing extra free models: %v", want)
-	}
-}
+// extraFreeModels 本地兜底已于 2026-11-11 用户拍板取消（机制与 beam-free
+// 条目一并丢弃）：catalog 完全缺失的模型不再靠硬编码清单维持——实测 200
+// 也一样下架（laguna 先例），官方 catalog 收录时自然回来。原
+// TestExtraFreeModelsCoverCatalogGaps 随机制删除。
 
 // 自愈：feed 说某个模型免费，不代表现在真能调通。19 个标价 0 的模型里实测
 // 有 4 个是坏的（gemma×2 上游 500、laguna provider 挂、crouton 404），这些
@@ -474,10 +456,11 @@ func TestNoSeedModelsOnColdStart(t *testing.T) {
 	}
 }
 
-// 回归：extraFreeModels 的 id 不在 live feed 里，早期实现每轮同步都会把它们
-// 删掉再重建 —— 连带清零自愈累积的 failStreak，导致永远达不到下架阈值。
-// （实测：laguna 连续 7 次 500，failStreak 始终是 1。）
-func TestPruneKeepsExtraFreeModels(t *testing.T) {
+// 回归（2026-11-11 语义反转）：extraFreeModels 本地兜底已取消，prune 不再有
+// 任何豁免名单——不在 live 并集（feed free 组 + catalog 零价）里的条目一律
+// 删除。catalog 数据缺口导致的"每轮删了又重建"不再存在：缺失就是缺失，
+// 目录如实反映官方两个上游的并集。
+func TestPruneRemovesModelsNotInLive(t *testing.T) {
 	modelsMu.Lock()
 	old := modelsCache
 	modelsCache = map[string]*ModelInfo{
@@ -487,21 +470,13 @@ func TestPruneKeepsExtraFreeModels(t *testing.T) {
 	}
 	live := map[string]bool{"live/ok": true}
 	pruned := pruneModelsLocked(live, true)
-	_, beamKept := modelsCache["reflection/beam-free"]
-	_, deadStillThere := modelsCache["some/dead-model"]
-	streak := modelsCache["reflection/beam-free"].FailStreak
+	_, beamGone := modelsCache["reflection/beam-free"]
+	_, deadGone := modelsCache["some/dead-model"]
 	modelsCache = old
 	modelsMu.Unlock()
-	_ = streak
 
-	if pruned != 1 || deadStillThere {
-		t.Fatalf("only the genuinely dead model should be pruned: pruned=%d deadStillThere=%v", pruned, deadStillThere)
-	}
-	if !beamKept {
-		t.Fatal("extraFreeModels must survive pruning (they are catalog gaps, not dead entries)")
-	}
-	if streak != 2 {
-		t.Fatalf("failStreak must survive pruning, got %d", streak)
+	if pruned != 2 || beamGone || deadGone {
+		t.Fatalf("live 之外的条目应全部剪除: pruned=%d beamGone=%v deadGone=%v", pruned, beamGone, deadGone)
 	}
 }
 

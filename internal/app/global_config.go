@@ -35,6 +35,11 @@ type globalConfigData struct {
 	ModelBlacklist      map[string]*modelBlacklistEntry `json:"modelBlacklist,omitempty"`
 	PlatformBlacklist   map[string]*platformBanEntry    `json:"platformBlacklist,omitempty"`
 	ClineStreamRequired map[string]string               `json:"clineStreamRequired,omitempty"`
+
+	// ClineCatalogFeedOnly cline 目录「仅展示插件免费」开关（面板显示偏好）：
+	// 插件 UI 的 FREE 组是官方推荐位（recommended-models free 组），开启后
+	// /admin/api/models 只返回该组模型。nil/未设置 = 关闭（展示全部免费目录）。
+	ClineCatalogFeedOnly *bool `json:"clineCatalogFeedOnly,omitempty"`
 }
 
 var (
@@ -191,6 +196,17 @@ func globalAdminLogEnabled() bool {
 
 func setGlobalAdminLogEnabled(v bool) {
 	mutateGlobalConfig(func(g *globalConfigData) { g.AdminLogEnabled = &v })
+}
+
+func globalClineCatalogFeedOnly() bool {
+	globalCfgMu.Lock()
+	defer globalCfgMu.Unlock()
+	g := loadGlobalConfigLocked()
+	return g.ClineCatalogFeedOnly != nil && *g.ClineCatalogFeedOnly
+}
+
+func setGlobalClineCatalogFeedOnly(v bool) {
+	mutateGlobalConfig(func(g *globalConfigData) { g.ClineCatalogFeedOnly = &v })
 }
 
 func globalClientKeys() []string {

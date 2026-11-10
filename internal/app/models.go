@@ -39,16 +39,22 @@ type ModelInfo struct {
 	SyncedAt       time.Time   `json:"syncedAt,omitempty"`
 
 	// 元数据（可选，来自 /ai/cline/models 的尽力回连）
-	ContextLength            int       `json:"contextLength,omitempty"`
-	MaxOutputTokens          int       `json:"maxOutputTokens,omitempty"`
-	InputModalities          []string  `json:"inputModalities,omitempty"`
-	OutputModalities         []string  `json:"outputModalities,omitempty"`
-	SupportsReasoning        bool      `json:"supportsReasoning,omitempty"`
-	SupportsTools            bool      `json:"supportsTools,omitempty"`
-	SupportsStructuredOutput bool      `json:"supportsStructuredOutput,omitempty"`
-	ReasoningEfforts         []string  `json:"reasoningEfforts,omitempty"`
-	MetaSource               string    `json:"metaSource,omitempty"`
-	MetaAt                   time.Time `json:"metaAt,omitempty"`
+	ContextLength            int      `json:"contextLength,omitempty"`
+	MaxOutputTokens          int      `json:"maxOutputTokens,omitempty"`
+	InputModalities          []string `json:"inputModalities,omitempty"`
+	OutputModalities         []string `json:"outputModalities,omitempty"`
+	SupportsReasoning        bool     `json:"supportsReasoning,omitempty"`
+	SupportsTools            bool     `json:"supportsTools,omitempty"`
+	SupportsStructuredOutput bool     `json:"supportsStructuredOutput,omitempty"`
+	ReasoningEfforts         []string `json:"reasoningEfforts,omitempty"`
+	MetaSource               string   `json:"metaSource,omitempty"`
+
+	// FeedFree 官方推荐位成员（recommended-models free 组，即插件 UI 的 FREE
+	// 组）：cline 目录「仅展示插件免费」开关的过滤依据。catalog 零价发现
+	// 不属于该组；每次同步对全量缓存重算——模型掉出 feed 后仍可能经 catalog
+	// 零价路径留在缓存，标记必须回落（见 applyFeedFreeMark）。
+	FeedFree bool      `json:"feedFree,omitempty"`
+	MetaAt   time.Time `json:"metaAt,omitempty"`
 
 	// 自愈：连续失败达到阈值后暂时从列表移除，冷却后自动复活。
 	// 上游的免费模型会整批下线（404）或 provider 挂掉（500 stream init），
@@ -73,12 +79,13 @@ const (
 const recommendedModelsURL = cline.ClineAPIBase + "/ai/cline/recommended-models"
 
 // initModelsCache 建立空缓存。没有冷启动兜底（2026-10-31 用户定）：免费
-// 模型的唯一来源是官方 recommended-models feed，首次同步成功之前 / feed
-// 不可达时目录就是空的 —— 宁愿空着也不用过期快照兜底。背景：官方会把
-// free 模型静默移入付费档（2026-10-31 实测 deepseek/muse/solar-pro4 移入
-// clinePass，z-ai/glm 转为计费），过期快照会把计费模型当免费模型对外提供。
-// 唯一例外是 extraFreeModels：ID 明确标 free、但服务端两个 feed 都没收录的
-// 条目（数据缺口而非"当下快照"），见其定义处。
+// 模型的唯一来源是官方两个上游（recommended-models free 组 + /ai/cline/models
+// 零价扫描）的并集，首次同步成功之前 / feed 不可达时目录就是空的 —— 宁愿
+// 空着也不用过期快照兜底。背景：官方会把 free 模型静默移入付费档（2026-10-31
+// 实测 deepseek/muse/solar-pro4 移入 clinePass，z-ai/glm 转为计费），过期
+// 快照会把计费模型当免费模型对外提供。extraFreeModels 本地兜底已于
+// 2026-11-11 用户拍板取消（beam-free 实测 200 但 catalog 缺条目，随机制一起
+// 丢弃；官方 catalog 收录它时自然回来）。
 func initModelsCache() {
 	modelsMu.Lock()
 	defer modelsMu.Unlock()
@@ -321,30 +328,13 @@ type clineMetaEntry struct {
 	} `json:"top_provider"`
 }
 
-// extraFreeModels 免费层的第三个来源：ID 明确标 free、但服务端 catalog 里
-// 完全没有条目的模型。
-//
-// 为什么必须硬编码这一小组：`reflection/beam-free` 和 `poolside/laguna-s-2.1-free`
-// 在 /ai/cline/models 里**查不到**（不是价格不对，是整个条目缺失），但官方 CLI
-// 自带的模型清单（@cline/llms 的 `cline` provider 块）把它们标为 input:0/output:0，
-// 且实测在免费账号上 200 通。只靠 catalog 会把它们当成"已下线"修剪掉。
-//
-// 这组只在"官方两个 feed 都不认识它"时作为兜底；一旦 catalog 收录同名条目，
-// catalog 的判据优先（见 syncRecommendedModels 的并集逻辑）。
-// 数据来源：@cline/llms dist/models.js 的 cline block（2026-11-08 提取）。
-var extraFreeModels = []struct {
-	ID              string
-	Name            string
-	ContextLength   int
-	MaxOutputTokens int
-}{
-	{ID: "reflection/beam-free", Name: "Beam 1.0 (Free)", ContextLength: 1048576, MaxOutputTokens: 131072},
-	// poolside/laguna-s-2.1-free 已于 2026-11-10 移除：实测上游 404 "model
-	// not supported"（官方把 OpenRouter 的 laguna 免费层下架了；11-08 上游
-	// 作者实测时还 200 通）。硬编码兜底表不跟随自愈冷却——每轮 upsert 都会
-	// 重建条目、FailStreak 清零，404 永远压不住目录展示，只能从源头摘除。
-	// 官方重新上线（catalog 收录或 CLI 清单复活）时再加回。
-}
+// extraFreeModels 本地兜底已于 2026-11-11 用户拍板取消（机制与 beam-free
+// 条目一并丢弃）：catalog 完全缺失的模型不再靠硬编码清单维持——实测 200
+// 也一样下架，官方 catalog 收录时自然回来。历史背景：该兜底曾覆盖
+// reflection/beam-free 与 poolside/laguna-s-2.1-free（后者 2026-11-10 实测
+// 上游 404 官方下线、先行移除）；两者在 /ai/cline/models 里都是整个条目
+// 缺失（数据缺口而非价格不对），来源是 @cline/llms dist/models.js 的
+// cline block（2026-11-08 提取）。
 
 // isZeroPrice 上游把价格写成字符串（"0" / "0.0" / "0.00000008"）。空串表示
 // 该字段缺失，不能当成免费——否则任何没填价的条目都会被误判为免费模型。
@@ -606,6 +596,13 @@ func syncRecommendedModels() (int, error) {
 	//      flint、inkling、nemotron-*-free 等，CLI 里都能选中并正常回话）。
 	// 只读来源 1 会漏掉大半免费模型（用户实测在 CLI 里选 Beam 1.0 (Free) 能聊）。
 	live := make(map[string]bool, len(payload.Free)+16)
+	// 官方推荐位成员表（recommended-models free 组，即插件 UI 的 FREE 组）：
+	// 目录「仅展示插件免费」开关的过滤依据（feedFree 标记）。catalog 零价
+	// 发现都不算——它们不在插件 FREE 组里。
+	feedFree := make(map[string]bool, len(payload.Free))
+	for _, m := range payload.Free {
+		feedFree[m.ID] = true
+	}
 	added := 0
 
 	upsert := func(id, name string) {
@@ -654,27 +651,10 @@ func syncRecommendedModels() (int, error) {
 	if freeFromCatalog > 0 {
 		log.Printf("model sync: %d zero-priced model(s) discovered in catalog", freeFromCatalog)
 	}
-	// 第三来源：ID 标 free 但服务端 catalog 完全没收录的条目（见 extraFreeModels）。
-	// 只有当 catalog 里确实不存在同 id 时才补，避免覆盖 catalog 的权威数据。
-	known := make(map[string]bool, len(meta))
-	for i := range meta {
-		known[meta[i].ID] = true
-	}
-	for _, e := range extraFreeModels {
-		if known[e.ID] {
-			continue
-		}
-		upsert(e.ID, e.Name)
-		// 元数据直接取自 CLI 自带清单（catalog 里没有这些条目，回连必然失败）
-		if m := modelsCache[e.ID]; m != nil {
-			m.ContextLength = e.ContextLength
-			m.MaxOutputTokens = e.MaxOutputTokens
-			m.SupportsTools = true
-			m.SupportsReasoning = true
-			m.MetaSource = "cline-cli catalog"
-			m.MetaAt = time.Now()
-		}
-	}
+
+	// feedFree 标记对全量缓存统一重算：模型掉出 feed 后仍可能经 catalog/extra
+	// 路径留在缓存，按上一轮残留的 true 会误展示。
+	applyFeedFreeMark(modelsCache, feedFree)
 
 	pruned := pruneModelsLocked(live, meta != nil)
 	if pruned > 0 {
@@ -687,6 +667,29 @@ func syncRecommendedModels() (int, error) {
 
 	modelsLastSync = time.Now()
 	return added, nil
+}
+
+// applyFeedFreeMark 对全量缓存重算 FeedFree 标记（每次同步调用一次）：只在
+// 官方推荐位（recommended-models free 组，即插件 UI 的 FREE 组）里的条目为
+// true。全量重算而非增量置位，是因为模型掉出 feed 后仍可能经 catalog 零价
+// 发现留在缓存，残留 true 会让「仅展示插件免费」误展示。
+func applyFeedFreeMark(cache map[string]*ModelInfo, feedFree map[string]bool) {
+	for _, m := range cache {
+		m.FeedFree = feedFree[m.ID]
+	}
+}
+
+// feedFreeModels 「仅展示插件免费」过滤：只留 FeedFree 条目。服务端过滤=
+// 数据事实生效（/admin/api/models 返回的就是过滤后的目录）；开关状态落盘
+// afree-config.json（clineCatalogFeedOnly，见 global_config.go）。
+func feedFreeModels(models []*ModelInfo) []*ModelInfo {
+	out := make([]*ModelInfo, 0, len(models))
+	for _, m := range models {
+		if m != nil && m.FeedFree {
+			out = append(out, m)
+		}
+	}
+	return out
 }
 
 // clineModelPrefix Cline 免费模型的命名空间前缀（官方 feed 里 cline-free/*
@@ -768,16 +771,9 @@ func pruneModelsLocked(live map[string]bool, catalogOK bool) int {
 			len(modelsCache), len(live))
 		return 0
 	}
-	// extraFreeModels 的 id 天生不在 live feed 里（它们是 catalog 的数据缺口），
-	// 不能按"不在 live 就删"处理 —— 否则每轮同步都会删掉再重建，连带把自愈
-	// 累积的 failStreak 清零，健康的坏模型永远达不到下架阈值。
-	keep := make(map[string]bool, len(extraFreeModels))
-	for _, e := range extraFreeModels {
-		keep[e.ID] = true
-	}
 	pruned := 0
 	for id := range modelsCache {
-		if !live[id] && !keep[id] {
+		if !live[id] {
 			delete(modelsCache, id)
 			pruned++
 		}
@@ -964,6 +960,13 @@ func apiModelList() []map[string]any {
 	// len(modelsCache)——那是无锁读 map 头，与 60s 刷新器并发时是 data race
 	//（/v1/models 是客户端热路径，每个请求都会走到这里）。
 	free := getFreeModels()
+	// 「仅展示插件免费」开关（2026-11-11 用户定）：对外目录与面板一致——
+	// 面板有什么，对外提供什么。开启后 cline 段只列官方推荐位（recommended
+	// free 组）。servedModelEntries/modelIsServed 与本函数同源，被隐藏的
+	// 模型请求侧也会被「不在目录」兜底拒，列表与路由语义保持一致。
+	if globalClineCatalogFeedOnly() {
+		free = feedFreeModels(free)
+	}
 	out := make([]map[string]any, 0, len(free))
 	for _, m := range free {
 		item := map[string]any{

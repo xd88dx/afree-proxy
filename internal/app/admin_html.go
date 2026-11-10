@@ -586,6 +586,10 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
     <div class="flex" style="margin-bottom:10px;gap:10px">
       <button class="btn btn-sm btn-primary" onclick="refreshClineModels(this)" data-i18n="refresh_models">Refresh models</button>
       <span class="hint" style="margin:0">Automatically synced from the official model source upstream (every 5 minutes)</span>
+      <label style="margin-left:auto;display:flex;gap:6px;align-items:center;white-space:nowrap" data-i18n-title="cline_catalog_feed_only_title" title="The FREE group in the plugin UI is the official recommendation slot (feed free group); when on, only those models are listed.">
+        <input type="checkbox" id="settingClineCatalogFeedOnly" onchange="saveClineCatalogFeedOnly()" style="width:auto;padding:0;accent-color:var(--accent)">
+        <span data-i18n="cline_catalog_feed_only" style="font-size:12px">Plugin FREE only</span>
+      </label>
     </div>
     <div id="accModelsBody">Loading...</div>
   </div>
@@ -2485,6 +2489,8 @@ const I18N = {
   'supports_tools': { en: 'tools', zh: '工具' },
   'structured_output': { en: 'structured output', zh: '结构化输出' },
   'catalog_metadata_source': { en: 'metadata joined from upstream catalog', zh: '元数据补自上游模型目录' },
+  'cline_catalog_feed_only': { en: 'Plugin FREE only', zh: '仅展示插件免费' },
+  'cline_catalog_feed_only_title': { en: 'The FREE group in the plugin UI is the official recommendation slot (feed free group); when on, only those models are listed.', zh: '插件 UI 的 FREE 组是官方推荐位（feed free 组）；开启后目录仅显示该组模型' },
   'today': { en: 'Today', zh: '今日' },
   'total_1_1': { en: 'total', zh: '累计' },
   'tokens_exact_when_upstream_returns_usage_otherwi': { en: 'tokens (exact when upstream returns usage, otherwise estimated)', zh: 'tokens（上游返回 usage 时精确，否则为估算）' },
@@ -5503,7 +5509,9 @@ function legacyCopy(t) {
 // admin / meta / unclassified 非平台路由，不在菜单中。
 const ROUTE_LABEL = { zen: 'opencode', cline: 'cline', admin: 'admin', meta: 'meta', workbuddy: 'workbuddy', openrouter: 'openrouter', amd: 'amdcloud', tokenharbor: 'tokenharbor', other: 'other', unclassified: 'unclassified' };
 const PROXY_LABEL = { main: 'Main', backup: 'Backup', direct: 'Direct' };
-const STATUS_CLASS = s => s >= 400 ? 'color:var(--danger)' : 'color:var(--accent2)';
+// 状态列着色：>=400 红；200+error 琥珀（纯 error 帧缓冲已在网关改判 502，
+// 此色仅剩"先有正文后断流"的残余形态）；干净 200 绿。
+const STATUS_CLASS = (s, err) => s >= 400 ? 'color:var(--danger)' : (err ? 'color:var(--amber)' : 'color:var(--accent2)');
 let logsAuto = true;
 
 function toggleLogsAuto() {
@@ -5535,7 +5543,7 @@ async function loadLogs() {
         '<td><span class="model-tag">' + esc(route) + '</span></td>' +
         '<td class="mono" style="font-size:11px">' + esc(fmtUpstream(l.upstream) || '-') + '</td>' +
         '<td>' + esc(proxy) + '</td>' +
-        '<td style="font-weight:600;' + STATUS_CLASS(st) + '"' + (l.error ? ' title="' + esc(l.error) + '"' : '') + '>' + st + '</td>' +
+        '<td style="font-weight:600;' + STATUS_CLASS(st, l.error) + '"' + (l.error ? ' title="' + esc(l.error) + '"' : '') + '>' + st + '</td>' +
         '<td class="mono" style="font-size:11px" title="' + esc(T('time_to_first_byte_from_request_start_to_the_fir')) + '">' + (l.ttfb_ms == null || l.ttfb_ms < 0 ? '-' : l.ttfb_ms + ' ms') + '</td>' +
         '<td class="mono" style="font-size:11px">' + (l.duration_ms != null ? l.duration_ms + ' ms' : '-') + '</td>' +
       '</tr>';
@@ -5551,6 +5559,23 @@ async function saveAdminLogToggle() {
   try {
     await api('POST', '/config/update', { adminLogEnabled: cb.checked });
     toast(cb.checked ? 'Admin access logging enabled' : 'Admin access logging disabled', 'success');
+  } catch (e) {
+    cb.checked = !cb.checked;  // 保存失败回滚勾选，避免界面与落盘状态不一致
+    toast(T('save_failed') + e.message, 'error');
+  }
+}
+
+// cline 目录「仅展示插件免费」（2026-11-11 用户定）：插件 UI 的 FREE 组是官方
+// 推荐位（feed free 组），catalog 零价发现不属于该组。对外 /v1/models 与面板
+// 同开关同口径（面板有什么，对外提供什么）。
+// 勾选即存（落盘 afree-config.json）+ 热刷新目录——过滤在服务端
+//（/admin/api/models），重拉即生效。
+async function saveClineCatalogFeedOnly() {
+  const cb = _('settingClineCatalogFeedOnly');
+  try {
+    await api('POST', '/config/update', { clineCatalogFeedOnly: cb.checked });
+    toast(T('cline_catalog_feed_only') + T('saved'), 'success');
+    loadModels();
   } catch (e) {
     cb.checked = !cb.checked;  // 保存失败回滚勾选，避免界面与落盘状态不一致
     toast(T('save_failed') + e.message, 'error');
@@ -6243,6 +6268,7 @@ async function loadConfig() {
     const d = await api('GET', '/config');
     const c = d.data;
     if (_('settingAdminLog')) _('settingAdminLog').checked = !!c.adminLogEnabled;
+    if (_('settingClineCatalogFeedOnly')) _('settingClineCatalogFeedOnly').checked = !!c.clineCatalogFeedOnly;
     if (c.poolPath && _('settingPoolPath')) _('settingPoolPath').value = c.poolPath;
     if (c.headers) {
       const tbody = _('headersTableBody');

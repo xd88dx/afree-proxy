@@ -1778,6 +1778,66 @@ func scanBufferedSSE(lines []string) (servedModel, frameErr string) {
 	return servedModel, frameErr
 }
 
+// bufferedSSEHasContent 判断缓冲 SSE 里是否吐过客户端可见的正文（文本/推理/
+// 工具调用）。纯 error 帧缓冲（心跳注释 + error 帧 + [DONE]，连 role 占位都
+// 没有）不算内容——网关据此把伪成功改判 502（见 handleStreamBufferedGeneric）。
+// role 占位块（content 为空串）与 usage 帧不算；anthropic 形态按 content_block
+// 帧判定。
+func bufferedSSEHasContent(lines []string) bool {
+	for _, ln := range lines {
+		trimmed := strings.TrimSpace(ln)
+		if !strings.HasPrefix(trimmed, "data:") {
+			continue
+		}
+		payload := strings.TrimSpace(trimmed[5:])
+		if payload == "" || payload == "[DONE]" {
+			continue
+		}
+		var obj map[string]any
+		if json.Unmarshal([]byte(payload), &obj) != nil {
+			continue
+		}
+		if d, ok := obj["data"].(map[string]any); ok {
+			if _, has := d["choices"]; has {
+				obj = d
+			}
+		}
+		if choices, ok := obj["choices"].([]any); ok {
+			for _, c := range choices {
+				cm, ok := c.(map[string]any)
+				if !ok {
+					continue
+				}
+				if sseDeltaHasContent(cm["delta"]) || sseDeltaHasContent(cm["message"]) {
+					return true
+				}
+			}
+		}
+		if t, _ := obj["type"].(string); strings.HasPrefix(t, "content_block") {
+			return true
+		}
+	}
+	return false
+}
+
+// sseDeltaHasContent 判定单个 delta/message 对象是否携带非空正文/推理/工具调用。
+func sseDeltaHasContent(v any) bool {
+	dm, ok := v.(map[string]any)
+	if !ok {
+		return false
+	}
+	if s, _ := dm["content"].(string); s != "" {
+		return true
+	}
+	if s, _ := dm["reasoning_content"].(string); s != "" {
+		return true
+	}
+	if tc, ok := dm["tool_calls"].([]any); ok && len(tc) > 0 {
+		return true
+	}
+	return false
+}
+
 // handleStreamBufferedGeneric 全平台通用的流式"缓冲+中断重试"路径：
 // 上游 SSE 先完整缓冲、拿到 finish/[DONE] 才整体回放；中途断流则重新执行
 // attempt（平台内部自选新账号/key，出口绑定语义不变）。ctx 取消（客户端
@@ -1838,6 +1898,19 @@ func handleStreamBufferedGeneric(w http.ResponseWriter, r *http.Request, plat st
 				} else {
 					recordModelSuccess(served)
 				}
+			}
+			// 纯 error 帧缓冲（无任何正文，2026-11-11 用户定）：afree 尚未向
+			// 客户端提交任何字节，直接改判 502——日志/agent 拿到真实失败语义
+			//（与"全部尝试中断"同款响应形态），不再出现"200+error 帧"伪成功。
+			// 先吐过正文才断流的残余形态仍回放 200 + error 帧（半截结果对
+			// 客户端仍有价值，Error 列已如实标记、面板琥珀色）。
+			if frameErr != "" && !bufferedSSEHasContent(lines) {
+				log.Printf("  [%s] %s buffered stream error-only (no content), returning 502: %s",
+					rid, plat, kit.Truncate(frameErr, 200))
+				writeJSON(w, http.StatusBadGateway, map[string]any{
+					"error": map[string]any{"message": kit.Truncate(frameErr, 300), "type": "upstream_error"},
+				})
+				return
 			}
 			replaySSE(w, lines, clientWantsStreamUsage(params))
 			return
