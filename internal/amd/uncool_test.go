@@ -1,7 +1,6 @@
 package amd
 
 import (
-	"path/filepath"
 	"testing"
 	"time"
 )
@@ -10,7 +9,7 @@ import (
 // 对不可重入的 RWMutex 自死锁，毒化整个包的锁（面板 test 按钮卡死）。
 // 修复后直接删 cfg.Cool；本用例在 5s 内不返回即失败（go test 超时兜底）。
 func TestUncoolNoDeadlock(t *testing.T) {
-	Load(filepath.Join(t.TempDir(), ".cfg-test.json"))
+	resetAmdConfigForTest(t)
 	Set(&Config{Keys: []string{"rc-k1"}})
 	Cooldown("rc-k1", time.Minute)
 	done := make(chan struct{})

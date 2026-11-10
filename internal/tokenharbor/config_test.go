@@ -77,8 +77,7 @@ func TestSetPersistsAndLoads(t *testing.T) {
 }
 
 func TestPickKeySkipsRoutingDisabledAndCooling(t *testing.T) {
-	dir := t.TempDir()
-	Load(filepath.Join(dir, ".th-config.json"))
+	resetTokenHarborConfigForTest(t)
 	cfg := &Config{Keys: []string{"a", "b", "c"}}
 	cfg.KeyRoutingEnabled = map[string]bool{"b": false}
 	Set(cfg)
@@ -91,8 +90,7 @@ func TestPickKeySkipsRoutingDisabledAndCooling(t *testing.T) {
 }
 
 func TestPickKeyRoundRobinAdvances(t *testing.T) {
-	dir := t.TempDir()
-	Load(filepath.Join(dir, ".th-config.json"))
+	resetTokenHarborConfigForTest(t)
 	Set(&Config{Keys: []string{"a", "b"}})
 	first := PickKey("round_robin", nil)
 	second := PickKey("round_robin", nil)
@@ -136,8 +134,7 @@ func TestSyncCatalogKeepsOnlyFreeSuffix(t *testing.T) {
 	catalogModels = map[string]Model{}
 	catalogLoaded = true
 	catalogMu.Unlock()
-	dir := t.TempDir()
-	Load(filepath.Join(dir, ".th-config.json"))
+	resetTokenHarborConfigForTest(t)
 	cfg := DefaultConfig()
 	cfg.BaseURL = srv.URL
 	cfg.Keys = []string{"thk_live_k1"}
@@ -170,8 +167,7 @@ func TestSyncCatalogWithoutKeyKeepsSeed(t *testing.T) {
 	}
 	catalogLoaded = true
 	catalogMu.Unlock()
-	dir := t.TempDir()
-	Load(filepath.Join(dir, ".th-config.json"))
+	resetTokenHarborConfigForTest(t)
 	Set(DefaultConfig()) // 无 key
 	changed, err := SyncCatalog()
 	if err != nil || changed != 0 {
@@ -207,8 +203,7 @@ func TestSyncCatalogUnreachableKeepsCurrent(t *testing.T) {
 	}
 	catalogLoaded = true
 	catalogMu.Unlock()
-	dir := t.TempDir()
-	Load(filepath.Join(dir, ".th-config.json"))
+	resetTokenHarborConfigForTest(t)
 	cfg := DefaultConfig()
 	cfg.BaseURL = srv.URL
 	cfg.Keys = []string{"thk_live_k1"}
@@ -230,8 +225,7 @@ func TestSyncCatalogEmptyKeepsCurrent(t *testing.T) {
 	catalogModels = map[string]Model{"deepseek-v4.1-flash:free": {ID: "deepseek-v4.1-flash:free"}}
 	catalogLoaded = true
 	catalogMu.Unlock()
-	dir := t.TempDir()
-	Load(filepath.Join(dir, ".th-config.json"))
+	resetTokenHarborConfigForTest(t)
 	cfg := DefaultConfig()
 	cfg.BaseURL = srv.URL
 	cfg.Keys = []string{"thk_live_k1"}
@@ -243,6 +237,21 @@ func TestSyncCatalogEmptyKeepsCurrent(t *testing.T) {
 }
 
 func TestSeedCatalogShape(t *testing.T) {
+	restoreCatalogForTest(t)
+	// 配置态一并重置：InitCatalog 起的后台 SyncCatalog goroutine 会拿当前
+	// Get().Keys 去 live 拉取——shuffle 下上一测试可能留着带 key 的配置与
+	// 已 Close 的 httptest BaseURL，goroutine 把种子目录改写后本测试与
+	// 后续 ProbeModel 断言拿到 0 或残目录（-shuffle=1 稳定复现）。
+	// DefaultConfig 无 key → 后台同步静默跳过，种子目录稳定。
+	resetTokenHarborConfigForTest(t)
+	restoreCatalogForTest(t)
+	// 自己配启用 key：ModelList 有展示门控（无启用 key 返回空）。10-29 起
+	// 本测试一直在吃 TestSyncCatalogWithoutKeyKeepsSeed 结尾残留的启用 key
+	// （该测试 Set 过带 key 配置且不恢复）——固定顺序下绿，-shuffle=1 露馅。
+	c := DefaultConfig()
+	c.Keys = []string{"tk-seed-test"}
+	c.KeyRoutingEnabled = map[string]bool{"tk-seed-test": true}
+	Set(c)
 	catalogMu.Lock()
 	catalogModels = map[string]Model{}
 	catalogLoaded = false
@@ -263,6 +272,13 @@ func TestSeedCatalogShape(t *testing.T) {
 }
 
 func TestProbeModelPrefersDeepSeek(t *testing.T) {
+	resetTokenHarborConfigForTest(t)
+	restoreCatalogForTest(t)
+	// ProbeModel 经 ModelList 吃展示门控——必须自配启用 key（同 SeedCatalogShape）。
+	c := DefaultConfig()
+	c.Keys = []string{"tk-probe-test"}
+	c.KeyRoutingEnabled = map[string]bool{"tk-probe-test": true}
+	Set(c)
 	catalogMu.Lock()
 	catalogModels = map[string]Model{
 		"claude-haiku-5.5:free":    {ID: "claude-haiku-5.5:free"},
@@ -279,8 +295,7 @@ func TestProbeModelPrefersDeepSeek(t *testing.T) {
 
 // 全冷却默认拒绝（UNABLE_FORCE 未设，2026-10-28 用户定）；true 时恢复兜底。
 func TestPickKeyAllCoolingFollowsUnableForce(t *testing.T) {
-	dir := t.TempDir()
-	Load(filepath.Join(dir, ".tkhb-config.json"))
+	resetTokenHarborConfigForTest(t)
 	Set(&Config{Keys: []string{"a", "b"}})
 	Cooldown("a", 5*60e9)
 	Cooldown("b", 5*60e9)

@@ -419,6 +419,12 @@ func TestReqLogModelTruncated(t *testing.T) {
 // 另一个 ENOENT，最终文件可能是旧快照（少一个模型）甚至半截 JSON。
 func TestClineStreamConcurrentLearnsPersistAll(t *testing.T) {
 	t.Setenv("DATA_DIR", t.TempDir())
+	// 全局配置单例必须一并重置：shuffle 下若排在 TestClineStreamLearnRoundTrip
+	// 之后，globalCfgLoaded=true 且 cfg 还指向它那份 TempDir 的内容，
+	// basePersisted 读到的是上一测试的存量，persisted-base 就对不上（-shuffle=1
+	// 稳定复现）。resetGlobalConfigForTest 自带恢复，本测试的内存学习表也一并
+	// 保存/恢复（与 cline_stream_e2e_test.go 同纪律）。
+	resetGlobalConfigForTest(t)
 	clineStreamMu.Lock()
 	saved := clineStreamLearned
 	clineStreamLearned = nil

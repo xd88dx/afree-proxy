@@ -77,8 +77,7 @@ func TestSetPersistsAndLoads(t *testing.T) {
 }
 
 func TestPickKeySkipsRoutingDisabledAndCooling(t *testing.T) {
-	dir := t.TempDir()
-	Load(filepath.Join(dir, ".amd-config.json"))
+	resetAmdConfigForTest(t)
 	cfg := &Config{Keys: []string{"a", "b", "c"}}
 	cfg.KeyRoutingEnabled = map[string]bool{"b": false}
 	Set(cfg)
@@ -91,8 +90,7 @@ func TestPickKeySkipsRoutingDisabledAndCooling(t *testing.T) {
 }
 
 func TestPickKeyRoundRobinAdvances(t *testing.T) {
-	dir := t.TempDir()
-	Load(filepath.Join(dir, ".amd-config.json"))
+	resetAmdConfigForTest(t)
 	Set(&Config{Keys: []string{"a", "b"}})
 	first := PickKey("round_robin", nil)
 	second := PickKey("round_robin", nil)
@@ -142,8 +140,7 @@ func TestSyncCatalogFiltersAndUpdates(t *testing.T) {
 	catalogModels = map[string]Model{}
 	catalogLoaded = true
 	catalogMu.Unlock()
-	dir := t.TempDir()
-	Load(filepath.Join(dir, ".amd-config.json"))
+	resetAmdConfigForTest(t)
 	cfg := DefaultConfig()
 	cfg.BaseURL = srv.URL
 	cfg.Keys = []string{"sk-test"}
@@ -177,8 +174,7 @@ func TestSyncCatalogUnreachableKeepsSeed(t *testing.T) {
 	}
 	catalogLoaded = true
 	catalogMu.Unlock()
-	dir := t.TempDir()
-	Load(filepath.Join(dir, ".amd-config.json"))
+	resetAmdConfigForTest(t)
 	cfg := DefaultConfig()
 	cfg.BaseURL = srv.URL
 	cfg.Keys = []string{"sk-test"}
@@ -238,8 +234,7 @@ func TestProbeModelPrefersDocumentedModel(t *testing.T) {
 
 // 全冷却默认拒绝（UNABLE_FORCE 未设，2026-10-28 用户定）；true 时恢复兜底。
 func TestPickKeyAllCoolingFollowsUnableForce(t *testing.T) {
-	dir := t.TempDir()
-	Load(filepath.Join(dir, ".amd-config.json"))
+	resetAmdConfigForTest(t)
 	Set(&Config{Keys: []string{"a", "b"}})
 	Cooldown("a", 5*60e9)
 	Cooldown("b", 5*60e9)
