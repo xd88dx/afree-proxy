@@ -371,9 +371,14 @@ func TestResolveMetaIDHandlesColonVariant(t *testing.T) {
 
 // extraFreeModels 是 catalog 完全缺失的免费模型兜底。beam-free 用户实测
 // 在 CLI 里能正常对话，但服务端 catalog 查不到它 —— 只靠 catalog 会误删。
+// laguna 已于 2026-11-10 从兜底表移除（实测上游 404 "model not supported"，
+// 官方下线；兜底表不跟随自愈冷却，只能源头摘除）。
 func TestExtraFreeModelsCoverCatalogGaps(t *testing.T) {
-	want := map[string]bool{"reflection/beam-free": true, "poolside/laguna-s-2.1-free": true}
+	want := map[string]bool{"reflection/beam-free": true}
 	for _, e := range extraFreeModels {
+		if e.ID == "poolside/laguna-s-2.1-free" {
+			t.Fatal("laguna must stay removed (upstream 404 as of 2026-11-10)")
+		}
 		if !want[e.ID] {
 			t.Fatalf("unexpected extra free model %q", e.ID)
 		}
@@ -476,15 +481,13 @@ func TestPruneKeepsExtraFreeModels(t *testing.T) {
 	modelsMu.Lock()
 	old := modelsCache
 	modelsCache = map[string]*ModelInfo{
-		"reflection/beam-free":       {ID: "reflection/beam-free", FailStreak: 2},
-		"poolside/laguna-s-2.1-free": {ID: "poolside/laguna-s-2.1-free", FailStreak: 2},
-		"some/dead-model":            {ID: "some/dead-model"},
-		"live/ok":                    {ID: "live/ok"},
+		"reflection/beam-free": {ID: "reflection/beam-free", FailStreak: 2},
+		"some/dead-model":      {ID: "some/dead-model"},
+		"live/ok":              {ID: "live/ok"},
 	}
 	live := map[string]bool{"live/ok": true}
 	pruned := pruneModelsLocked(live, true)
 	_, beamKept := modelsCache["reflection/beam-free"]
-	_, lagunaKept := modelsCache["poolside/laguna-s-2.1-free"]
 	_, deadStillThere := modelsCache["some/dead-model"]
 	streak := modelsCache["reflection/beam-free"].FailStreak
 	modelsCache = old
@@ -494,7 +497,7 @@ func TestPruneKeepsExtraFreeModels(t *testing.T) {
 	if pruned != 1 || deadStillThere {
 		t.Fatalf("only the genuinely dead model should be pruned: pruned=%d deadStillThere=%v", pruned, deadStillThere)
 	}
-	if !beamKept || !lagunaKept {
+	if !beamKept {
 		t.Fatal("extraFreeModels must survive pruning (they are catalog gaps, not dead entries)")
 	}
 	if streak != 2 {

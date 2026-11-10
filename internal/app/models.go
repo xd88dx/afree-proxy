@@ -217,6 +217,11 @@ func isModelLevelFailure(status int, body string) bool {
 	case strings.Contains(lb, "stream_initialization_failed"),
 		strings.Contains(lb, "failed to create stream"):
 		return true
+	// "failed to invoke model 'x' from O..."：provider 侧彻底挂掉（2026-11-10
+	// 实测 inkling-2-small / xing4.0 形态，API 层 200 无关，错误体即此话术）。
+	// 与 "failed to create stream" 同族——模型级确定性故障，换账号救不回来。
+	case strings.Contains(lb, "failed to invoke model"):
+		return true
 	case status == http.StatusNotFound:
 		return true
 	}
@@ -334,7 +339,11 @@ var extraFreeModels = []struct {
 	MaxOutputTokens int
 }{
 	{ID: "reflection/beam-free", Name: "Beam 1.0 (Free)", ContextLength: 1048576, MaxOutputTokens: 131072},
-	{ID: "poolside/laguna-s-2.1-free", Name: "Laguna S 2.1 Free", ContextLength: 256000, MaxOutputTokens: 32768},
+	// poolside/laguna-s-2.1-free 已于 2026-11-10 移除：实测上游 404 "model
+	// not supported"（官方把 OpenRouter 的 laguna 免费层下架了；11-08 上游
+	// 作者实测时还 200 通）。硬编码兜底表不跟随自愈冷却——每轮 upsert 都会
+	// 重建条目、FailStreak 清零，404 永远压不住目录展示，只能从源头摘除。
+	// 官方重新上线（catalog 收录或 CLI 清单复活）时再加回。
 }
 
 // isZeroPrice 上游把价格写成字符串（"0" / "0.0" / "0.00000008"）。空串表示
