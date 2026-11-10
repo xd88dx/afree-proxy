@@ -38,6 +38,11 @@ import (
 //	                           （CLINE_FORCE_STREAM 已于 2026-10-30 删除，统一到本开关）
 //	STREAM_ATTEMPT             流式首发+重试次数，默认 2
 //	STRICT_MODEL_MATCH         "false" 时未知模型静默回退默认模型（默认显式 400）
+//	ALLOW_BANNED               "true" 时封禁的平台/模型退化为「仅目录摘除」：
+//	                           /v1/models 不再列出，但请求这些模型 ID 仍照常
+//	                           路由（默认 false = 封禁同时拒绝请求）。调试/灰度
+//	                           用开关——封禁的语义是「不再对外服务」，开着等于
+//	                           封禁失效，用完应关回。
 //	CLIENT_IP_HEADER           反代部署下取真实客户端 IP 的请求头名（登录限流用）
 //	ZEN_PIN_KEY                zen key 池固定用第 n 个 key（1 起），排障/单 key 直测用
 //	                           （ZEN_SESSION_ROTATE_MINUTES 已废弃：2026-10-27 起会话
@@ -256,6 +261,17 @@ func LogRequestsEnabled() bool {
 	v, ok := envBool("LOG_REQUESTS")
 	if !ok {
 		return true
+	}
+	return v
+}
+
+// AllowBanned ALLOW_BANNED 是否启用（默认 false）：true 时封禁的平台/模型
+// 只从 /v1/models 摘除，请求侧仍照常路由（调试/灰度开关，见 env 文档注释）。
+// 实时读取，改 env 重启即生效——与三个风控开关同一纪律。
+func AllowBanned() bool {
+	v, ok := envBool("ALLOW_BANNED")
+	if !ok {
+		return false
 	}
 	return v
 }

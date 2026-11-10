@@ -4240,9 +4240,20 @@ func servedModelGate(model string) (int, string) {
 	if model == "" {
 		return 0, ""
 	}
-	if IsModelBlacklisted(model) {
+	// 模型拉黑拒请求：ALLOW_BANNED=true 时跳过（封禁退化为仅目录摘除，
+	// 请求照常路由——调试/灰度开关）。被拉黑模型同时被摘出目录，"不在目录"
+	// 的兜底拒也会拦它，所以放行必须在 modelIsServed 之前短路。
+	if banned := IsModelBlacklisted(model); banned && AllowBanned() {
+		return 0, ""
+	} else if banned {
 		return http.StatusNotFound, "model " + model + " is banned and no longer served by this gateway" +
 			" (see the Banned models table in the admin panel)"
+	}
+	// 平台封禁把整段目录摘掉（servedModelEntries 过滤），modelIsServed 会
+	// 因"不在目录"连带拒掉被封禁平台的全部模型——ALLOW_BANNED=true 时这层
+	// 连带也放行（该平台的模型 ID 仍可路由），否则开关对平台封禁无效。
+	if AllowBanned() && bannedPlatformOf(model) != "" {
+		return 0, ""
 	}
 	if modelIsServed(model) {
 		return 0, ""

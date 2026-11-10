@@ -93,7 +93,9 @@ docker run -d --name afree-proxy \
 | `DISABLE_DIRECT`                         | `false`       | 直连禁用开关。`true`：出口为直连的凭据全部失效——绑定直连哨兵的凭据在隔离过滤阶段剔除；未绑定凭据在面板直连模式或代理池空兜底下同样失效，请求报 `no ... exit ... DISABLE_DIRECT`。`false`（默认）与既有行为相同                                                              |
 | `ONLY_ROUTER`                            | `false`       | 仅会话路由开关。`true`：所有平台只保留 chat 请求及其必要支撑（token 续期、模型目录同步、倍率预热），WorkBuddy 签到/保活/余额巡检/补领清扫与 Trae 签到/额度刷新等维护任务一律不启动——面板上的自动签到等开关被本变量强制覆盖，且面板顶部显示常驻提示条。`false`（默认）按各自配置照常运行               |
 
-以上三个开关（`UNABLE_FORCE` / `DISABLE_DIRECT` / `ONLY_ROUTER`）解析同一套布尔值：`1` / `true` / `yes` / `y` / `on`（大小写不敏感）为真，其余为假；实时读取，改容器 env 重启即生效。
+| `ALLOW_BANNED`                           | `false`       | 封禁放行开关（调试/灰度用）。`true`：被封禁的平台/模型**仅从 `/v1/models` 目录摘除**（客户端看不到），但请求这些模型 ID 时仍照常路由——用于排查"封禁是否误伤"或灰度观察；日志/统计对这类请求照常记录。`false`（默认）：封禁同时拒绝请求（平台 503 / 模型 404），维持"封禁 = 不再对外服务"的语义。面板各平台页的模型目录不受本开关影响（管理员始终可见） |
+
+以上三个风控开关（`UNABLE_FORCE` / `DISABLE_DIRECT` / `ONLY_ROUTER`）与 `ALLOW_BANNED` 解析同一套布尔值：`1` / `true` / `yes` / `y` / `on`（大小写不敏感）为真，其余为假；实时读取，改容器 env 重启即生效。
 
 Fail-closed 启动：绑定非环回地址时，未设 `API_KEY` **或**未设 `ADMIN_PASSWORD`（且未设 `REQUIRE_ADMIN_AUTH=false` 豁免）都拒绝启动。
 

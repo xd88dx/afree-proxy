@@ -28,6 +28,11 @@ func TestZenPrefixResolvesSameModel(t *testing.T) {
 
 // 免费判定同样覆盖前缀形态（面板 Test 传 zen: 前缀也不能被拒）。
 func TestZenFreeModelResolutionWithPrefix(t *testing.T) {
+	// 自足初始化：本测试不设 DATA_DIR 也不依赖前序测试——resolveZenModel 不
+	// 自动播种，单跑（或 -shuffle 后恰好排在没有播种测试之前）时 zenModels
+	// 是 nil，resolve 恒 false。同文件的 TestZenPrefixResolvesSameModel 显式
+	// init，这里补齐同一纪律。
+	initZenModels()
 	m, ok := resolveZenFreeModel("zen:big-pickle")
 	if !ok || m == nil || m.ID != "big-pickle" {
 		t.Fatalf("prefixed free model must resolve to the bare ID, got %v %v", m, ok)

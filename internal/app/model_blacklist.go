@@ -530,16 +530,19 @@ func withModelBlacklistScan(h http.HandlerFunc) http.HandlerFunc {
 		_ = json.Unmarshal(raw, &probe)
 		// 封禁平台闸：模型封禁逐个摘、平台封禁整平台拒（错误信封与网关其余
 		// 错误同形；type=api_error 便于客户端与 402/429 等业务错误区分）。
-		if plat := bannedPlatformOf(probe.Model); plat != "" {
-			log.Printf("  platform banned: %q routed to %s (out of routing)", probe.Model, plat)
-			writeJSON(w, http.StatusServiceUnavailable, map[string]any{
-				"error": map[string]string{
-					"message": "model " + probe.Model + " belongs to platform " + plat +
-						" which is banned by the admin; unban it in the admin panel (Gateway settings → Banned platforms)",
-					"type": "api_error",
-				},
-			})
-			return
+		// ALLOW_BANNED=true 时本闸退化为仅目录摘除：请求照常路由（调试/灰度）。
+		if !AllowBanned() {
+			if plat := bannedPlatformOf(probe.Model); plat != "" {
+				log.Printf("  platform banned: %q routed to %s (out of routing)", probe.Model, plat)
+				writeJSON(w, http.StatusServiceUnavailable, map[string]any{
+					"error": map[string]string{
+						"message": "model " + probe.Model + " belongs to platform " + plat +
+							" which is banned by the admin; unban it in the admin panel (Gateway settings → Banned platforms)",
+						"type": "api_error",
+					},
+				})
+				return
+			}
 		}
 		// 平台可路由性闸：没有启用凭据（账号总闸/反代开关/key 启用列全关）
 		// 的平台与封禁同等对待 —— 宁拒不路由（2026-10-26 用户定）。

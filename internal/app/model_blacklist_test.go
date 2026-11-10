@@ -542,3 +542,100 @@ func TestImportModelBlacklistMerges(t *testing.T) {
 		t.Fatal("all merged entries must be enforceable")
 	}
 }
+
+// ALLOW_BANNED=true：封禁退化为「仅目录摘除」——请求侧平台闸与模型拉黑闸
+// 都放行（调试/灰度开关，默认 false 关闭时拒绝语义不变）。
+func TestAllowBannedSkipsBanGates(t *testing.T) {
+	t.Setenv("DATA_DIR", t.TempDir())
+	resetModelBlacklistForTest(t)
+	resetGlobalConfigForTest(t) // BanPlatform 落盘全局配置
+	resetPlatformBanForTest(t)
+
+	// 被拉黑模型先注入 cline 目录：servedModelGate 对"目录内但拉黑"走 404
+	// banned 分支（我们要验的语义）；若模型不在目录会落进"未知模型节流刷新"
+	// 分支触发 syncZenModels 拉真实上游并 prune zen 表——把 big-pickle 等种子
+	// 模型转进宽限表，毒化后续测试（-shuffle=1 下 TestZenFreeModelResolution
+	// WithPrefix 稳定挂）。参照 TestServedModelGate 的注入纪律。
+	// modelsLastSync 预填"刚同步过"：ensureModelsFresh/servedModelEntries 否则
+	// 会起后台 go syncModelsOnce() → syncZenModels 拉真实上游 prune zen 表，
+	// 本测试结束后才把 big-pickle 等种子模型转进宽限表——毒化后续测试
+	//（固定顺序也稳定复现，之前 -shuffle=1 才显眼是时序运气）。
+	modelsMu.Lock()
+	modelsLastSync = time.Now()
+	modelsSyncing = false
+	modelsMu.Unlock()
+	t.Cleanup(func() {
+		modelsMu.Lock()
+		modelsLastSync = time.Time{}
+		modelsSyncing = false
+		modelsMu.Unlock()
+	})
+	injectClineModels(t, "cline-free/banned-model")
+	BlacklistModel(platCline, "cline-free/banned-model", "", BanReasonAuto, "")
+	BanPlatform(platZen)
+	// zen 配启用 key：可路由性闸是独立语义（无凭据 503 不受 ALLOW_BANNED
+	// 影响），不配 key 的话 true 分支会被它拦下混淆断言。
+	savedCfg := getZenConfig()
+	cp := *savedCfg
+	cp.Keys = []string{"allow-banned-test-key"}
+	setZenConfig(&cp)
+	t.Cleanup(func() { setZenConfig(savedCfg) })
+
+	// 默认（false）：平台封禁 503、模型拉黑 404——语义不变。
+	if status, msg := servedModelGate("cline-free/banned-model"); status != http.StatusNotFound || !strings.Contains(msg, "banned") {
+		t.Fatalf("default: banned model gate = %d, want 404 banned", status)
+	}
+	h := withModelBlacklistScan(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(`{"model":"zen:mimo"}`))
+	rec := httptest.NewRecorder()
+	h(rec, req)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("default: banned platform should 503, got %d", rec.Code)
+	}
+
+	// true：闸放行（handler 被真实执行），目录过滤不受影响（不在本测试范围）。
+	// 请求模型换成目录内条目（injectZen 形态）：避免混入"不在对外目录 404"
+	// 的另一分支（模型服务闸对未知模型恒拒，与封禁无关）。
+	zenModelsMu.Lock()
+	savedZenModel := zenModels["allow-banned-in-catalog"]
+	zenModels["allow-banned-in-catalog"] = &ZenModel{ID: "allow-banned-in-catalog", Source: "seed"}
+	zenModelsMu.Unlock()
+	t.Cleanup(func() {
+		zenModelsMu.Lock()
+		if savedZenModel != nil {
+			zenModels["allow-banned-in-catalog"] = savedZenModel
+		} else {
+			delete(zenModels, "allow-banned-in-catalog")
+		}
+		zenModelsMu.Unlock()
+	})
+	t.Setenv("ALLOW_BANNED", "true")
+	reqIn := httptest.NewRequest(http.MethodPost, "/v1/chat/completions",
+		strings.NewReader(`{"model":"zen:allow-banned-in-catalog"}`))
+	rec2 := httptest.NewRecorder()
+	h(rec2, reqIn)
+	if rec2.Code != http.StatusOK {
+		t.Fatalf("allow_banned: banned platform should pass through, got %d", rec2.Code)
+	}
+	if status, _ := servedModelGate("cline-free/banned-model"); status != 0 {
+		t.Fatalf("allow_banned: banned model gate = %d, want pass", status)
+	}
+}
+
+// resetPlatformBanForTest 清空平台封禁表并跳过持久化加载（测试内用 BanPlatform
+// 显式构造状态；Cleanup 恢复为空并复位 loaded）。
+func resetPlatformBanForTest(t *testing.T) {
+	t.Helper()
+	platformBanMu.Lock()
+	platformBanItems = map[string]*platformBanEntry{}
+	platformBanLoaded = true
+	platformBanMu.Unlock()
+	t.Cleanup(func() {
+		platformBanMu.Lock()
+		platformBanItems = map[string]*platformBanEntry{}
+		platformBanLoaded = false
+		platformBanMu.Unlock()
+	})
+}

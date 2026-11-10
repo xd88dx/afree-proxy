@@ -285,6 +285,13 @@ type statusWriter struct {
 	// 请求日志收尾时从中提取可读的错误原因。成功响应（含 200 的 SSE 流）
 	// 不截获，零内存开销。
 	errBuf []byte
+	// sseError 200 已发出后的流内失败（SSE error 帧）：上游语义里"响应已
+	// 开始"就只能 200，失败信息藏在流里（trae 流中断、cline 帧内 error、
+	// anthropic event:error 同理）。不记下来日志就是"成功"，排查时与
+	// agent 实际失败对不上。命中即填充（首个 error 帧为准）。
+	sseError string
+	// sseScan 残余的不完整行（SSE 帧可能跨多次 Write 到达）。
+	sseScan []byte
 }
 
 // errBodyCap 错误响应体的截获上限：错误 JSON 都很小，2KB 足够还原原因。
@@ -294,6 +301,11 @@ const errBodyCap = 2048
 func (w *statusWriter) errorReason() string {
 	if w.status >= 400 && len(w.errBuf) > 0 {
 		return extractErrReason(w.errBuf)
+	}
+	// 200 但流内有 error 帧（伪成功）：Error 列如实标注，状态列不变（HTTP
+	// 层确实是 200），但计数进 errors——面板按错误数排序/告警不再漏掉这类。
+	if w.sseError != "" {
+		return w.sseError
 	}
 	return ""
 }
@@ -320,8 +332,114 @@ func (w *statusWriter) Write(b []byte) (int, error) {
 			n = len(b)
 		}
 		w.errBuf = append(w.errBuf, b[:n]...)
+	} else if w.status == http.StatusOK && w.sseError == "" {
+		// 200 的流式响应：扫描 SSE error 帧（伪成功治理）。帧可能跨多次
+		// Write 到达，残行缓存到下一片拼齐再判。
+		w.scanSSEError(b)
 	}
 	return w.ResponseWriter.Write(b)
+}
+
+// scanSSEError 在 200 响应字节流里找失败信号：chat 形态的 `data: {"error":...}`
+// 帧与 anthropic 形态的 `event: error` 行。只扫到首个命中为止（后续 Write
+// 零开销短路）；SSE 帧有行边界，按行解析，不完整的尾行留到下一片。
+// 只对会话流量生效（statusWriter 只包 /v1 与 admin），且失败流通常随即结束，
+// 残行缓存最多一行长度，无内存放大风险。
+func (w *statusWriter) scanSSEError(b []byte) {
+	if len(w.sseScan) > 0 {
+		b = append(w.sseScan, b...)
+		w.sseScan = nil
+	}
+	// 只保留最后一段不完整行（最多 8KB——错误帧都很小，超限说明不是错误帧）
+	const scanCap = 8 << 10
+	if i := bytes.LastIndexByte(b, '\n'); i >= 0 {
+		w.sseScan = append(w.sseScan[:0], b[i+1:]...)
+		if len(w.sseScan) > scanCap {
+			w.sseScan = nil
+		}
+		b = b[:i+1]
+	} else {
+		if len(b) > scanCap {
+			return
+		}
+		w.sseScan = append(w.sseScan[:0], b...)
+		return
+	}
+	for _, line := range bytes.Split(b, []byte{'\n'}) {
+		trimmed := bytes.TrimSpace(line)
+		if len(trimmed) == 0 {
+			continue
+		}
+		// anthropic 形态：`event: error` 行（其后的 data 行带 message）
+		if msg := anthropicSSEErrLine(trimmed, w); msg != "" {
+			w.sseError = msg
+			return
+		}
+		if !bytes.HasPrefix(trimmed, []byte("data:")) {
+			continue
+		}
+		payload := bytes.TrimSpace(trimmed[5:])
+		if len(payload) == 0 || bytes.Equal(payload, []byte("[DONE]")) {
+			continue
+		}
+		var obj map[string]any
+		if json.Unmarshal(payload, &obj) != nil {
+			continue
+		}
+		// chat 形态：{"error":{"message":...}}（trae 流中断/cline 帧内错误）
+		if e, ok := obj["error"]; ok && e != nil {
+			if msg := renderSSEErr(e); msg != "" {
+				w.sseError = msg
+				return
+			}
+		}
+		// anthropic data 形态：{"type":"error","error":{...}}
+		if t, _ := obj["type"].(string); t == "error" {
+			if e, ok := obj["error"]; ok && e != nil {
+				if msg := renderSSEErr(e); msg != "" {
+					w.sseError = msg
+					return
+				}
+			}
+		}
+	}
+}
+
+// anthropicSSEErrLine 识别 `event: error` 行；命中后取同次扫描里紧随的
+// data 行的 message 由调用方继续处理（这里只标记命中，把 error 对象暂存）。
+func anthropicSSEErrLine(line []byte, w *statusWriter) string {
+	if !bytes.HasPrefix(line, []byte("event:")) {
+		return ""
+	}
+	ev := bytes.TrimSpace(line[6:])
+	if bytes.Equal(ev, []byte("error")) {
+		return "upstream error event (see client log)"
+	}
+	return ""
+}
+
+// renderSSEErr 从 error 值提取可读消息（对象取 message，字符串原样）。
+func renderSSEErr(e any) string {
+	switch v := e.(type) {
+	case map[string]any:
+		if s, ok := v["message"].(string); ok && s != "" {
+			return truncateErrReason(s)
+		}
+	case string:
+		if v != "" {
+			return truncateErrReason(v)
+		}
+	}
+	return ""
+}
+
+// truncateErrReason 错误消息截断（与 extractErrReason 同口径）。
+func truncateErrReason(s string) string {
+	s = strings.Join(strings.Fields(s), " ")
+	if r := []rune(s); len(r) > 300 {
+		return string(r[:300]) + "…"
+	}
+	return s
 }
 
 // extractErrReason 从错误响应体提取可读原因：OpenAI 风格
@@ -491,6 +609,13 @@ func requestLogMiddleware(next http.Handler) http.Handler {
 		// 不再提取，分类失真，故计数放在 logEnabled 分支内随之停摆。
 		if logEnabled && strings.HasPrefix(r.URL.Path, "/v1/") {
 			recordRouteStat(route, sw.status, time.Since(start))
+			// 伪成功治理：200 但流内 error 帧 = 客户端实际失败，计入 errors
+			//（失败就是失败，面板错误数与 agent 实际失败对得上）。
+			if sw.status == http.StatusOK && sw.sseError != "" {
+				if rs := routeStats[route]; rs != nil {
+					rs.errors.Add(1)
+				}
+			}
 		}
 		// 面板自身的页面/接口访问、/health 健康检查，以及 /favicon.ico 等
 		// 浏览器/扫描器噪声（非 /v1/ 服务路径）：默认不记录（面板轮询会把
