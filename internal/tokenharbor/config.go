@@ -65,15 +65,12 @@ const ModelPrefix = "tkhb:"
 // FreeSuffix 免费模型标识后缀（models?category=free 页面列出的全部带此后缀）。
 const FreeSuffix = ":free"
 
-// SeedModels 冷启动兜底模型目录（tokenharbor.ai/models?category=free 页面
-// 实测快照，2026-10-27：2 个 :free 模型，价格全零）。/v1/models 需要 key 才能
-// 拉取，未配置 key 时以此种子服务。只收官方免费页当前列出的模型——限时活动
-// 模型（如已结束的 Claude Haiku 5.5 free）不收：活动结束上游即 404
-// campaign_ended，留在种子里只会让客户端选中必失败（2026-10-27 教训）。
-var SeedModels = []Model{
-	{ID: "deepseek-v4.1-flash:free", Name: "DeepSeek V4.1 Flash (free)"},
-	{ID: "mimo-v2.6-flash:free", Name: "MiMo V2.6 Flash (free)"},
-}
+// SeedModels 冷启动兜底快照已于 2026-11-11 用户拍板删除（与 amd/openrouter/
+// zen 同口径：目录如实反映 live 同步结果，宁空勿过期快照）。历史形态：
+// tokenharbor.ai/models?category=free 页面实测快照（2026-10-27，2 个 :free
+// 模型）；限时活动模型不收的教训（活动结束上游即 404 campaign_ended）随
+// live 同步的 :free 过滤天然延续。删除后冷启动目录为空，空表期间请求按
+// 目录门 fail-closed 拒，首拉由启动异步同步 + 30s×10 快速重试链尽快补齐。
 
 // Model TokenHarbor 免费模型条目（/v1/models 合并与面板展示用）。
 type Model struct {

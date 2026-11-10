@@ -159,11 +159,12 @@ func TestSyncCatalogKeepsOnlyFreeSuffix(t *testing.T) {
 	}
 }
 
-func TestSyncCatalogWithoutKeyKeepsSeed(t *testing.T) {
+func TestSyncCatalogWithoutKeyIsNoOp(t *testing.T) {
 	catalogMu.Lock()
-	catalogModels = map[string]Model{}
-	for _, m := range SeedModels {
-		catalogModels[m.ID] = m
+	// 现目录夹具（快照已取消，直接字面量造态）。
+	catalogModels = map[string]Model{
+		"deepseek-v4.1-flash:free": {ID: "deepseek-v4.1-flash:free"},
+		"mimo-v2.6-flash:free":     {ID: "mimo-v2.6-flash:free"},
 	}
 	catalogLoaded = true
 	catalogMu.Unlock()
@@ -173,21 +174,17 @@ func TestSyncCatalogWithoutKeyKeepsSeed(t *testing.T) {
 	if err != nil || changed != 0 {
 		t.Fatalf("no-key sync must be a silent no-op: %v %d", err, changed)
 	}
-	// 展示门控：无启用 key 时 ModelList 对外为空（种子仍留在目录里供
-	// Resolve 请求侧兜底）——用带启用 key 的配置验证种子还在。
+	// 展示门控：无启用 key 时 ModelList 对外为空；带启用 key 时现目录可见。
 	cfg := DefaultConfig()
 	cfg.Keys = []string{"tk-test"}
 	cfg.KeyRoutingEnabled = map[string]bool{"tk-test": true}
 	Set(cfg)
-	if len(ModelList()) != len(SeedModels) {
-		t.Errorf("seed must stand with an enabled key: got %d, want %d", len(ModelList()), len(SeedModels))
+	if len(ModelList()) != 2 {
+		t.Errorf("current catalog must stand with an enabled key: got %d, want 2", len(ModelList()))
 	}
-	if l := ModelList(); len(l) != 0 {
-		// 反向确认门控本身：切回无 key 配置应为空
-		Set(DefaultConfig())
-		if len(ModelList()) != 0 {
-			t.Errorf("no enabled key must hide catalog: got %d", len(ModelList()))
-		}
+	Set(DefaultConfig())
+	if len(ModelList()) != 0 {
+		t.Errorf("no enabled key must hide catalog: got %d", len(ModelList()))
 	}
 }
 
@@ -197,9 +194,10 @@ func TestSyncCatalogUnreachableKeepsCurrent(t *testing.T) {
 	}))
 	defer srv.Close()
 	catalogMu.Lock()
-	catalogModels = map[string]Model{}
-	for _, m := range SeedModels {
-		catalogModels[m.ID] = m
+	// 现目录夹具（快照已取消，直接字面量造态）。
+	catalogModels = map[string]Model{
+		"deepseek-v4.1-flash:free": {ID: "deepseek-v4.1-flash:free"},
+		"mimo-v2.6-flash:free":     {ID: "mimo-v2.6-flash:free"},
 	}
 	catalogLoaded = true
 	catalogMu.Unlock()
@@ -211,8 +209,8 @@ func TestSyncCatalogUnreachableKeepsCurrent(t *testing.T) {
 	if _, err := SyncCatalog(); err == nil {
 		t.Error("expected error on unreachable catalog")
 	}
-	if len(ModelList()) != len(SeedModels) {
-		t.Errorf("current catalog must survive an unreachable upstream: got %d, want %d", len(ModelList()), len(SeedModels))
+	if len(ModelList()) != 2 {
+		t.Errorf("current catalog must survive an unreachable upstream: got %d, want 2", len(ModelList()))
 	}
 }
 
@@ -236,38 +234,41 @@ func TestSyncCatalogEmptyKeepsCurrent(t *testing.T) {
 	}
 }
 
-func TestSeedCatalogShape(t *testing.T) {
+// 冷启动不再注入快照（2026-11-11 用户定，与 amd/openrouter 同口径）：
+// 目录如实反映 live 同步结果，宁空勿过期快照。空目录期间请求按目录门
+// fail-closed 拒。同步端点指到必失败的服务器，保证 goroutine 首拉不会异步
+// 填目录造成竞态。
+func TestColdStartEmptyUntilSync(t *testing.T) {
 	restoreCatalogForTest(t)
 	// 配置态一并重置：InitCatalog 起的后台 SyncCatalog goroutine 会拿当前
 	// Get().Keys 去 live 拉取——shuffle 下上一测试可能留着带 key 的配置与
-	// 已 Close 的 httptest BaseURL，goroutine 把种子目录改写后本测试与
-	// 后续 ProbeModel 断言拿到 0 或残目录（-shuffle=1 稳定复现）。
-	// DefaultConfig 无 key → 后台同步静默跳过，种子目录稳定。
+	// 已 Close 的 httptest BaseURL，goroutine 把目录改写后本测试与
+	// 后续 ProbeModel 断言拿到残目录（-shuffle=1 稳定复现）。
 	resetTokenHarborConfigForTest(t)
 	restoreCatalogForTest(t)
 	// 自己配启用 key：ModelList 有展示门控（无启用 key 返回空）。10-29 起
-	// 本测试一直在吃 TestSyncCatalogWithoutKeyKeepsSeed 结尾残留的启用 key
+	// 本测试一直在吃 TestSyncCatalogWithoutKeyIsNoOp 结尾残留的启用 key
 	// （该测试 Set 过带 key 配置且不恢复）——固定顺序下绿，-shuffle=1 露馅。
 	c := DefaultConfig()
-	c.Keys = []string{"tk-seed-test"}
-	c.KeyRoutingEnabled = map[string]bool{"tk-seed-test": true}
+	c.Keys = []string{"tk-cold-start-test"}
+	c.KeyRoutingEnabled = map[string]bool{"tk-cold-start-test": true}
+	// BaseURL 指到必失败的服务器：后台首拉注定失败，目录保持空表。
+	fail := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer fail.Close()
+	c.BaseURL = fail.URL
 	Set(c)
 	catalogMu.Lock()
 	catalogModels = map[string]Model{}
 	catalogLoaded = false
 	catalogMu.Unlock()
 	InitCatalog()
-	list := ModelList()
-	if len(list) != len(SeedModels) {
-		t.Fatalf("cold start must use the seed snapshot: got %d, want %d", len(list), len(SeedModels))
+	if l := ModelList(); len(l) != 0 {
+		t.Fatalf("cold start must be empty (no snapshot seed): got %d", len(l))
 	}
-	for _, sm := range SeedModels {
-		if _, ok := Resolve(sm.ID); !ok {
-			t.Errorf("seed model %q missing", sm.ID)
-		}
-		if !strings.HasSuffix(sm.ID, FreeSuffix) {
-			t.Errorf("seed model %q must carry the :free suffix", sm.ID)
-		}
+	if _, ok := Resolve("deepseek-v4.1-flash:free"); ok {
+		t.Error("no snapshot seed: deepseek-v4.1-flash:free must not appear before a successful sync")
 	}
 }
 

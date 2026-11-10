@@ -39,8 +39,8 @@ func resetTokenHarborConfigForTest(t *testing.T) {
 // restoreCatalogForTest 保存当前模型目录并在测试结束后恢复。
 //
 // 各同步测试直接改写 catalogModels/catalogLoaded（真身无 setter），不恢复会把
-// live 假目录带进后续测试；TestSeedCatalogShape 的 InitCatalog 还会起后台
-// SyncCatalog goroutine 消费上一测试残留的配置——恢复纪律掐断这条渗漏链。
+// live 假目录带进后续测试；TestColdStartEmptyUntilSync 的 InitCatalog 还会起
+// 后台 SyncCatalog goroutine 消费上一测试残留的配置——恢复纪律掐断这条渗漏链。
 func restoreCatalogForTest(t *testing.T) {
 	t.Helper()
 	catalogMu.Lock()

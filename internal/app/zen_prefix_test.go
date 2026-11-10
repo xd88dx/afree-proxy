@@ -2,9 +2,25 @@ package app
 
 import "testing"
 
-// zen: 前缀是附加能力：带前缀、裸 ID、别名都应解析到同一模型。
+// zenPrefixFixture 预置一个 big-pickle 目录条目并保存/恢复包级表。
+// 种子快照已取消（2026-11-11），冷启动表为空——前缀/裸 ID 解析语义改用
+// 字面量造态验证。
+func zenPrefixFixture(t *testing.T) {
+	t.Helper()
+	zenModelsMu.Lock()
+	savedModels := zenModels
+	zenModels = map[string]*ZenModel{"big-pickle": {ID: "big-pickle", Source: "live", Context: 200000, Output: 32000}}
+	zenModelsMu.Unlock()
+	t.Cleanup(func() {
+		zenModelsMu.Lock()
+		zenModels = savedModels
+		zenModelsMu.Unlock()
+	})
+}
+
+// zen: 前缀是附加能力：带前缀与裸 ID 都应解析到同一模型。
 func TestZenPrefixResolvesSameModel(t *testing.T) {
-	initZenModels()
+	zenPrefixFixture(t)
 	bare, ok := resolveZenModel("big-pickle")
 	if !ok {
 		t.Fatal("bare id must resolve (backwards compat)")
@@ -28,11 +44,9 @@ func TestZenPrefixResolvesSameModel(t *testing.T) {
 
 // 免费判定同样覆盖前缀形态（面板 Test 传 zen: 前缀也不能被拒）。
 func TestZenFreeModelResolutionWithPrefix(t *testing.T) {
-	// 自足初始化：本测试不设 DATA_DIR 也不依赖前序测试——resolveZenModel 不
-	// 自动播种，单跑（或 -shuffle 后恰好排在没有播种测试之前）时 zenModels
-	// 是 nil，resolve 恒 false。同文件的 TestZenPrefixResolvesSameModel 显式
-	// init，这里补齐同一纪律。
-	initZenModels()
+	// 夹具自足：本测试不依赖前序测试——单跑（或 -shuffle 后任意顺序）时
+	// 包级表由 zenPrefixFixture 提供，resolve 不受启动顺序影响。
+	zenPrefixFixture(t)
 	m, ok := resolveZenFreeModel("zen:big-pickle")
 	if !ok || m == nil || m.ID != "big-pickle" {
 		t.Fatalf("prefixed free model must resolve to the bare ID, got %v %v", m, ok)
@@ -41,7 +55,7 @@ func TestZenFreeModelResolutionWithPrefix(t *testing.T) {
 
 // 路由判定：前缀形态必须同样路由到 zen，而不是掉到 cline。
 func TestRouteModelWithZenPrefix(t *testing.T) {
-	initZenModels()
+	zenPrefixFixture(t)
 	if got := routeModel("zen:big-pickle"); got != "zen" {
 		t.Fatalf("prefixed zen model routed to %q", got)
 	}
@@ -61,7 +75,7 @@ func TestZenModelListIDsArePrefixed(t *testing.T) {
 	cfg.KeyRoutingEnabled = nil
 	setZenConfig(&cfg)
 
-	initZenModels()
+	zenPrefixFixture(t)
 	list := zenModelList()
 	if len(list) == 0 {
 		t.Fatal("model list empty")
@@ -76,7 +90,7 @@ func TestZenModelListIDsArePrefixed(t *testing.T) {
 
 // combo ID 与真实 zen 模型冲突的判定必须覆盖前缀形态。
 func TestComboIDConflictWithPrefixedZenModel(t *testing.T) {
-	initZenModels()
+	zenPrefixFixture(t)
 	if err := validateCombo("zen:big-pickle", "cline", "big-pickle"); err == nil {
 		t.Error("combo id must not collide with a real prefixed zen model")
 	}

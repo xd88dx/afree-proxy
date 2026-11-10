@@ -63,8 +63,11 @@ type catalogEntry struct {
 	ContextWindow int    `json:"context_window"`
 }
 
-// InitCatalog 初始化目录：已加载过则立即返回；否则用种子快照兜底，再异步
-// 同步 live 目录（需 key）。失败保留快照（离线可用）。
+// InitCatalog 初始化目录：已加载过则立即返回。冷启动不注入任何快照
+// （2026-11-11 用户定，与 amd/openrouter 同口径：目录如实反映 live 同步
+// 结果，宁空勿过期快照）。空目录期间请求按目录门 fail-closed 拒；异步
+// SyncCatalog 完成首拉后目录即为 live 权威态，app 层 30s×10 快速重试链
+// 保证首拉失败也尽快补齐。
 func InitCatalog() {
 	catalogMu.RLock()
 	ready := catalogLoaded
@@ -72,24 +75,20 @@ func InitCatalog() {
 	if ready {
 		return
 	}
-	seed := map[string]Model{}
-	for _, m := range SeedModels {
-		seed[m.ID] = m
-	}
 	catalogMu.Lock()
 	if catalogLoaded {
 		catalogMu.Unlock()
 		return
 	}
-	catalogModels = seed
+	catalogModels = map[string]Model{}
 	catalogLoaded = true
 	catalogMu.Unlock()
 	go func() { _, _ = SyncCatalog() }()
 }
 
 // SyncCatalog 用池内第一个参与路由的 key 拉取 live 目录，只保留 :free 条目。
-// 返回变更条数；无 key 配置时静默跳过（种子即目录）；网络/解析失败返回
-// 错误且保留当前目录。上游返回空集合同样不清空。
+// 返回变更条数；无 key 配置时静默跳过（无 key 目录本就不展示）；网络/解析
+// 失败返回错误且保留当前目录。上游返回空集合同样不清空。
 func SyncCatalog() (int, error) {
 	catalogSyncMu.Lock()
 	defer catalogSyncMu.Unlock()
@@ -182,7 +181,7 @@ func SyncCatalog() (int, error) {
 func ModelList() []Model {
 	InitCatalog()
 	// 展示门控（与 amd/traeWork/workbuddy 同款）：没有启用 key 时目录不对
-	// 外提供——种子快照只留作请求侧解析兜底，不当"可服务目录"展示。
+	// 外提供——列出来只会让用户选中后调不通（官方目录需认证，无 key 也拉不到）。
 	if !HasEnabledKey() {
 		return []Model{}
 	}

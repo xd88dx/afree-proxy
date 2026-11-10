@@ -64,10 +64,21 @@ func TestZenModelListRequiresEnabledKey(t *testing.T) {
 	empty.Keys = nil
 	empty.KeyRoutingEnabled = nil
 	setZenConfig(&empty)
-	initZenModels()
 	if got := zenModelList(); len(got) != 0 {
 		t.Fatalf("empty zen pool must not list models: %d", len(got))
 	}
+
+	// 目录夹具（种子快照已取消，直接字面量造态）：门控语义 = 无启用 key
+	// 不出目录，有启用 key 出目录。
+	zenModelsMu.Lock()
+	savedModels := zenModels
+	zenModels = map[string]*ZenModel{"big-pickle": {ID: "big-pickle", Source: "live"}}
+	zenModelsMu.Unlock()
+	t.Cleanup(func() {
+		zenModelsMu.Lock()
+		zenModels = savedModels
+		zenModelsMu.Unlock()
+	})
 
 	named := *getZenConfig()
 	named.Keys = []string{"sk-test"}

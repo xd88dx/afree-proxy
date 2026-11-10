@@ -206,9 +206,11 @@ func TestSyncCatalogLiveAuthoritative(t *testing.T) {
 	CatalogURLOverride = srv.URL
 	defer func() { CatalogURLOverride = "" }()
 	catalogMu.Lock()
-	catalogModels = map[string]Model{}
-	for _, m := range PageModels {
-		catalogModels[m.ID] = m
+	// 现目录夹具（快照已取消，直接字面量造态）：openrouter/free 仍免费保留、
+	// lfm 已转付费剔除（changed=1 的来源）。
+	catalogModels = map[string]Model{
+		"openrouter/free":          {ID: "openrouter/free", Context: 200000, ToolCall: true},
+		"liquid/lfm-2.5-2.6b:free": {ID: "liquid/lfm-2.5-2.6b:free", Context: 65536},
 	}
 	catalogLoaded = true
 	catalogMu.Unlock()
@@ -272,9 +274,9 @@ func enableTestKey(t *testing.T) {
 // 同口径），但条目仍可被显式解析。
 func TestModelListRequiresEnabledKey(t *testing.T) {
 	catalogMu.Lock()
-	catalogModels = map[string]Model{}
-	for _, m := range PageModels {
-		catalogModels[m.ID] = m
+	catalogModels = map[string]Model{
+		"openrouter/free": {ID: "openrouter/free", ToolCall: true},
+		"a/first:free":    {ID: "a/first:free"},
 	}
 	catalogLoaded = true
 	catalogMu.Unlock()
@@ -306,15 +308,42 @@ func TestModelListRequiresEnabledKey(t *testing.T) {
 	c2.Keys = []string{"k1"}
 	c2.KeyRoutingEnabled = map[string]bool{"k1": true}
 	Set(c2) // 启用
-	if l := ModelList(); len(l) != len(PageModels) {
-		t.Fatalf("enabled key must list page snapshot: got %d, want %d", len(l), len(PageModels))
+	if l := ModelList(); len(l) != 2 {
+		t.Fatalf("enabled key must list the catalog: got %d, want 2", len(l))
 	}
 	if _, ok := Resolve("openrouter/free"); !ok {
 		t.Fatal("hidden catalog must stay resolvable")
 	}
 }
 
-func TestSyncCatalogUnreachableKeepsPageSnapshot(t *testing.T) {
+func TestSyncCatalogUnreachableKeepsCatalog(t *testing.T) {
+	enableTestKey(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+	CatalogURLOverride = srv.URL
+	defer func() { CatalogURLOverride = "" }()
+	catalogMu.Lock()
+	catalogModels = map[string]Model{
+		"openrouter/free": {ID: "openrouter/free", ToolCall: true},
+		"a/first:free":    {ID: "a/first:free"},
+	}
+	catalogLoaded = true
+	catalogMu.Unlock()
+	if _, err := SyncCatalog(); err == nil {
+		t.Error("expected error on unreachable catalog")
+	}
+	if len(ModelList()) != 2 {
+		t.Errorf("current catalog must survive an unreachable catalog: got %d, want 2", len(ModelList()))
+	}
+}
+
+// 冷启动不再注入快照（2026-11-11 用户定，与 cline 同口径）：目录如实反映
+// live 同步结果，宁空勿过期快照——官方会把模型移出免费层，快照会把已计费
+// 模型当免费对外。空目录期间请求按 strict-gate fail-closed 拒。同步端点指到
+// 必失败的服务器，保证 goroutine 首拉不会异步填目录造成竞态。
+func TestColdStartEmptyUntilSync(t *testing.T) {
 	enableTestKey(t)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
@@ -324,37 +353,14 @@ func TestSyncCatalogUnreachableKeepsPageSnapshot(t *testing.T) {
 	defer func() { CatalogURLOverride = "" }()
 	catalogMu.Lock()
 	catalogModels = map[string]Model{}
-	for _, m := range PageModels {
-		catalogModels[m.ID] = m
-	}
-	catalogLoaded = true
-	catalogMu.Unlock()
-	if _, err := SyncCatalog(); err == nil {
-		t.Error("expected error on unreachable catalog")
-	}
-	if len(ModelList()) != len(PageModels) {
-		t.Errorf("page snapshot must survive an unreachable catalog: got %d, want %d", len(ModelList()), len(PageModels))
-	}
-}
-
-func TestSeedCatalogIsPageSnapshot(t *testing.T) {
-	enableTestKey(t)
-	catalogMu.Lock()
-	catalogModels = map[string]Model{}
 	catalogLoaded = false
 	catalogMu.Unlock()
 	InitCatalog()
-	list := ModelList()
-	if len(list) != len(PageModels) {
-		t.Fatalf("cold start must use the page snapshot: got %d, want %d", len(list), len(PageModels))
+	if l := ModelList(); len(l) != 0 {
+		t.Fatalf("cold start must be empty (no snapshot seed): got %d", len(l))
 	}
-	for _, pm := range PageModels {
-		if _, ok := Resolve(pm.ID); !ok {
-			t.Errorf("page model %q missing from seed catalog", pm.ID)
-		}
-	}
-	if _, ok := Resolve("openrouter/free"); !ok {
-		t.Error("official fallback openrouter/free must be in the seed catalog")
+	if _, ok := Resolve("openrouter/free"); ok {
+		t.Error("no snapshot seed: openrouter/free must not appear before a successful sync")
 	}
 }
 

@@ -58,14 +58,23 @@ func initTokenHarbor() {
 		recordProxyOutcome(pkTh, u, ok, e, ms)
 	})
 	tokenharbor.SetAttemptObserver(scopedObserver(keyPoolAttemptObserver(tokenharbor.KeyIndex, tokenharbor.BindingOf)))
-	// 启动即预热模型目录（异步；无 key 时保持种子）
+	// 启动即预热模型目录（异步；种子快照已取消，冷启动空表靠重试链补齐）
 	tokenharbor.InitCatalog()
 	go startTHModelsRefresher()
 }
 
-// startTHModelsRefresher 每 5 分钟同步一次模型目录（需 key；无 key 静默跳过）。
-// 上游偶发 TLS EOF（与 amd/openrouter 同现象），失败重试两次再放弃本轮。
+// startTHModelsRefresher 冷启动阶段以 30s 间隔快速重试直至首次同步成功
+// （至多 10 次，与 amd/openrouter/zen 同款：种子快照取消后空表意味着目录暂
+// 不可见，首拉要尽快），随后每 5 分钟同步一次。上游偶发 TLS EOF（与
+// amd/openrouter 同现象），每轮内失败重试两次再放弃。无启用 key 时不空转
+// 快链（官方目录需认证，同步注定 403；目录本就不展示）。
 func startTHModelsRefresher() {
+	for i := 0; i < 10 && tokenharbor.HasEnabledKey(); i++ {
+		if err := syncTHCatalog(2); err == nil {
+			break
+		}
+		time.Sleep(30 * time.Second)
+	}
 	ticker := time.NewTicker(5 * time.Minute)
 	for range ticker.C {
 		syncTHCatalog(2)

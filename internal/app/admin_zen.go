@@ -367,7 +367,6 @@ func handleZenModels(w http.ResponseWriter, r *http.Request) {
 		writeAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
 		return
 	}
-	initZenModels()
 	// 展示门控（与 amd/tokenharbor/trae 同口径，2026-10-27 用户定）：没有
 	// 任何参与路由的启用 key 时目录不对外提供——匿名 "public" 哨兵已移除，
 	// 上游匿名层也不可用，列出来只会让用户选中后调不通。
@@ -384,7 +383,6 @@ func handleZenModels(w http.ResponseWriter, r *http.Request) {
 				// 网关前缀（zen:<id>）：与 /v1/models 输出一致，面板即所见即所调。
 				// 裸 ID 仍可解析（存量 IDE 配置与 combo target 兼容）。
 				"id":        zenPrefixedID(m.ID),
-				"aliases":   m.Aliases,
 				"context":   m.Context,
 				"output":    m.Output,
 				"source":    m.Source,

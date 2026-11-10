@@ -2,6 +2,7 @@ package app
 
 import (
 	"net/http"
+	"net/http/httptest"
 	"path/filepath"
 	"testing"
 
@@ -201,39 +202,69 @@ func TestServedGateRejectsWorkbuddyImageModel(t *testing.T) {
 }
 
 // 回归护栏:各「自带排序」平台的段内顺序确实恒升序。这里直接打各段函数,
-// 不经过网络——目录由各包种子快照填充。展示门控（4e7d263）之后各段
-// ModelList 无启用凭据即返回空，断言会空转，所以先给四个平台各装一个
-// 可路由凭据。
+// 不经过网络——种子快照已取消（2026-11-11，or/amd/th 同日口径），目录改用
+// httptest 假上游注入：各包目录真身无导出 setter，但 SyncCatalog 是导出入口，
+// 指到本地假服务器即可造态。展示门控（4e7d263）之后各段 ModelList 无启用
+// 凭据即返回空，断言会空转，所以先给三个平台各装一个可路由凭据。
 func TestPlatformSegmentsAreIDSorted(t *testing.T) {
 	t.Setenv("DATA_DIR", t.TempDir())
 
-	// or/amd/th：装一个启用 key；trae：装一个可路由账号。各自保存/恢复原配置。
+	// or/amd/th：装一个启用 key + 一个假目录上游。各自保存/恢复原配置。
 	orPrev, orPath := openrouter.Get(), openrouter.ConfigPath
 	openrouter.ConfigPath = filepath.Join(t.TempDir(), "or-config.json")
 	orc := openrouter.DefaultConfig()
 	orc.Keys = []string{"sk-or-v1-test"}
 	orc.KeyRoutingEnabled = map[string]bool{"sk-or-v1-test": true}
 	openrouter.Set(orc)
+	orSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// 乱序喂入，验证 ModelList 的 sort.Slice 输出恒升序。
+		_, _ = w.Write([]byte(`{"data":[
+			{"id":"or-b:free","name":"B","context_length":1000,"pricing":{"prompt":"0","completion":"0"},"supported_parameters":["tools"],"architecture":{"output_modalities":["text"]}},
+			{"id":"or-a:free","name":"A","context_length":2000,"pricing":{"prompt":"0","completion":"0"},"supported_parameters":["tools"],"architecture":{"output_modalities":["text"]}}
+		]}`))
+	}))
+	defer orSrv.Close()
+	orPrevOverride := openrouter.CatalogURLOverride
+	openrouter.CatalogURLOverride = orSrv.URL
 	amdPrev, amdPath := amd.Get(), amd.ConfigPath
 	amd.ConfigPath = filepath.Join(t.TempDir(), "amd-config.json")
 	amdc := amd.DefaultConfig()
 	amdc.Keys = []string{"rc-test"}
 	amdc.KeyRoutingEnabled = map[string]bool{"rc-test": true}
+	amdc.BaseURL = amdSrv(t).URL
 	amd.Set(amdc)
 	thPrev, thPath := tokenharbor.Get(), tokenharbor.ConfigPath
 	tokenharbor.ConfigPath = filepath.Join(t.TempDir(), "th-config.json")
 	thc := tokenharbor.DefaultConfig()
 	thc.Keys = []string{"thk_live_test"}
 	thc.KeyRoutingEnabled = map[string]bool{"thk_live_test": true}
+	thc.BaseURL = thSrv(t).URL
 	tokenharbor.Set(thc)
 	t.Cleanup(func() {
 		openrouter.Set(orPrev)
 		openrouter.ConfigPath = orPath
+		openrouter.CatalogURLOverride = orPrevOverride
 		amd.Set(amdPrev)
 		amd.ConfigPath = amdPath
 		tokenharbor.Set(thPrev)
 		tokenharbor.ConfigPath = thPath
 	})
+
+	// 显式首拉（种子时代靠快照即时有目录；现在必须同步一次才有目录）。
+	// 先 InitCatalog 把 loaded 置位（否则 ModelList 内部的 InitCatalog 会把
+	// 已同步的目录清空再异步首拉，竞态窗口里读到空段）。
+	openrouter.InitCatalog()
+	amd.InitCatalog()
+	tokenharbor.InitCatalog()
+	if _, err := openrouter.SyncCatalog(); err != nil {
+		t.Fatalf("openrouter fake catalog sync: %v", err)
+	}
+	if _, err := amd.SyncCatalog(); err != nil {
+		t.Fatalf("amd fake catalog sync: %v", err)
+	}
+	if _, err := tokenharbor.SyncCatalog(); err != nil {
+		t.Fatalf("tokenharbor fake catalog sync: %v", err)
+	}
 
 	segs := map[string][]map[string]any{
 		"openrouter":  orModelList(),
@@ -242,7 +273,7 @@ func TestPlatformSegmentsAreIDSorted(t *testing.T) {
 	}
 	for name, seg := range segs {
 		if len(seg) == 0 {
-			t.Fatalf("%s segment is empty despite a routable credential — catalog seed missing or gating drifted", name)
+			t.Fatalf("%s segment is empty despite a routable credential and a synced fake catalog — gating drifted", name)
 		}
 		prev := ""
 		for _, m := range seg {
@@ -253,4 +284,30 @@ func TestPlatformSegmentsAreIDSorted(t *testing.T) {
 			prev = id
 		}
 	}
+}
+
+// amdSrv 假 AMDCloud 目录：乱序两条（output 留空=chat 可对话）。
+func amdSrv(t *testing.T) *httptest.Server {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"data":[
+			{"id":"DeepSeek-V4-Flash","name":"DeepSeek-V4-Flash","context_length":1048576,"providers":[{"tools":true}]},
+			{"id":"A/first","name":"A/first","context_length":4096}
+		]}`))
+	}))
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+// thSrv 假 TokenHarbor 目录：乱序两条 :free（category=free 参数直接忽略）。
+func thSrv(t *testing.T) *httptest.Server {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"data":[
+			{"id":"mimo-v2.6-flash:free","context_length":262144},
+			{"id":"a-first:free","context_length":4096}
+		]}`))
+	}))
+	t.Cleanup(srv.Close)
+	return srv
 }

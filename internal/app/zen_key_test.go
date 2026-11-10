@@ -54,11 +54,11 @@ func setupZenProbeTest(t *testing.T, handler http.HandlerFunc) {
 	setZenConfig(&cfgCopy)
 	t.Cleanup(func() { setZenConfig(savedCfg) })
 
-	savedModels, savedAliases := zenModels, zenAliases
+	savedModels := zenModels
 	withZenModelForTest(t, "aaa-probe-model", "")
 	t.Cleanup(func() {
 		zenModelsMu.Lock()
-		zenModels, zenAliases = savedModels, savedAliases
+		zenModels = savedModels
 		zenModelsMu.Unlock()
 	})
 }
@@ -369,18 +369,20 @@ func TestZenEmptyPoolIsSafeAndExplicit(t *testing.T) {
 	}
 }
 
-// 探测模型的优先级：big-pickle（免费层默认别名）> live 同步条目 > 种子兜底。
+// 探测模型的优先级：big-pickle > live/learned 同步条目（最小 id）> 任意
+// free 模型（最小 id）；目录为空返回 nil（种子快照已取消，冷启动空表靠启动
+// 同步 + 30s×10 快速重试链补齐，探测如实报错）。
 func TestZenProbeModelPreferenceOrder(t *testing.T) {
-	savedModels, savedAliases := zenModels, zenAliases
+	savedModels := zenModels
 	defer func() {
 		zenModelsMu.Lock()
-		zenModels, zenAliases = savedModels, savedAliases
+		zenModels = savedModels
 		zenModelsMu.Unlock()
 	}()
 
 	set := func(models ...ZenModel) {
 		zenModelsMu.Lock()
-		zenModels, zenAliases = make(map[string]*ZenModel), make(map[string]*ZenModel)
+		zenModels = make(map[string]*ZenModel)
 		for _, m := range models {
 			cp := m
 			zenModels[cp.ID] = &cp
@@ -388,39 +390,39 @@ func TestZenProbeModelPreferenceOrder(t *testing.T) {
 		zenModelsMu.Unlock()
 	}
 
-	// big-pickle 优先于 id 更小的 live 模型（默认别名的地位最高）。
+	// big-pickle 优先于 id 更小的 live 模型（免费层默认探测锚点地位最高）。
 	set(
 		ZenModel{ID: "aaa-live-model", Source: "live"},
-		ZenModel{ID: "big-pickle", Source: "seed"},
+		ZenModel{ID: "big-pickle", Source: "live"},
 	)
 	if got := zenProbeModel(); got == nil || got.ID != "big-pickle" {
-		t.Fatalf("got %v, want big-pickle (default free-tier alias wins)", got)
+		t.Fatalf("got %v, want big-pickle (default probe anchor wins)", got)
 	}
 
-	// 没有 big-pickle 时取 live 同步条目（上游当前确实在供），即使种子模型
-	// 的 id 更小。
+	// 没有 big-pickle 时取 live 同步条目（上游当前确实在供），即使
+	// -free 后缀模型的 id 更小。
 	set(
-		ZenModel{ID: "aaa-seed-model", Source: "seed"},
+		ZenModel{ID: "aaa-model-free", Source: ""},
 		ZenModel{ID: "zz-live-model", Source: "live"},
 	)
 	if got := zenProbeModel(); got == nil || got.ID != "zz-live-model" {
-		t.Fatalf("got %v, want zz-live-model (live beats smaller-id seed)", got)
+		t.Fatalf("got %v, want zz-live-model (live beats smaller-id suffix model)", got)
 	}
 
-	// 纯种子兜底（冷启动、同步不可达）：最小 id。
+	// 纯 -free 后缀兜底：最小 id。
 	set(
-		ZenModel{ID: "bbb-seed-model", Source: "seed"},
-		ZenModel{ID: "aaa-seed-model", Source: "seed"},
+		ZenModel{ID: "bbb-model-free", Source: ""},
+		ZenModel{ID: "aaa-model-free", Source: ""},
 	)
-	if got := zenProbeModel(); got == nil || got.ID != "aaa-seed-model" {
-		t.Fatalf("got %v, want aaa-seed-model (deterministic fallback)", got)
+	if got := zenProbeModel(); got == nil || got.ID != "aaa-model-free" {
+		t.Fatalf("got %v, want aaa-model-free (deterministic fallback)", got)
 	}
 
-	// 目录被清空时 initZenModels 会重新播种（冷启动契约）：探测返回
-	// big-pickle，而不是 nil——"目录空"在生产里只在首启瞬间出现。
+	// 目录为空（冷启动、同步未成功）：返回 nil，探测如实报错——不再有种子
+	// 快照兜底（2026-11-11 用户定，与 amd/tokenharbor/openrouter 同口径）。
 	set()
-	if got := zenProbeModel(); got == nil || got.ID != "big-pickle" {
-		t.Fatalf("got %v, want big-pickle re-seeded on an empty table", got)
+	if got := zenProbeModel(); got != nil {
+		t.Fatalf("got %v, want nil on an empty table (no seed snapshot)", got)
 	}
 }
 
@@ -432,16 +434,15 @@ func TestZenKeyTestHonorsExplicitModel(t *testing.T) {
 	})
 	// 两模型表：自动选择会挑 live 的 zzz-…，显式指定必须仍用 aaa-…。
 	zenModelsMu.Lock()
-	savedModels, savedAliases := zenModels, zenAliases
+	savedModels := zenModels
 	zenModels = map[string]*ZenModel{
-		"aaa-probe-model": {ID: "aaa-probe-model", Source: "seed"},
+		"aaa-probe-model": {ID: "aaa-probe-model", Source: "live"},
 		"zzz-probe-model": {ID: "zzz-probe-model", Source: "live"},
 	}
-	zenAliases = map[string]*ZenModel{}
 	zenModelsMu.Unlock()
 	t.Cleanup(func() {
 		zenModelsMu.Lock()
-		zenModels, zenAliases = savedModels, savedAliases
+		zenModels = savedModels
 		zenModelsMu.Unlock()
 	})
 

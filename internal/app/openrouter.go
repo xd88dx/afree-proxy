@@ -75,10 +75,11 @@ func orGlobalEgressExit() (string, bool) {
 }
 
 // startOrModelsRefresher 启动阶段以 30s 间隔快速重试直至首次同步成功（至多
-// 10 次，覆盖原 5 分钟空窗），之后转入常规 5 分钟 ticker。背景（2026-11-05
-// 生产空窗实证）：live 价格门为唯一权威后，冷启动目录=页面快照兜底；若首拉
-// 失败（备份导入后 key 全禁用、出口暂不可用是典型态），目录要等 5 分钟
-// ticker 才补——快照外新模型在该窗口内一律 404（strict-gate fail-closed）。
+// 10 次），之后转入常规 5 分钟 ticker。冷启动目录为空（2026-11-11 取消页面
+// 快照兜底，与 cline 同口径：宁空勿过期快照），首拉成功前目录就是空的、
+// oprt: 模型请求按 strict-gate fail-closed 拒——本链路负责把这段空窗压到
+// 最短。背景（2026-11-05 生产空窗实证）：首拉失败（备份导入后 key 全禁用、
+// 出口暂不可用是典型态）时目录要等 5 分钟 ticker 才补，请求全程 404。
 // 上游偶发 TLS EOF（CF 对 uTLS 指纹连接的间歇重置，与 zen 注册表同现象）
 // 由 syncOrCatalog 的立即重试消化。
 func startOrModelsRefresher() {

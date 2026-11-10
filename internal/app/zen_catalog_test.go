@@ -1,7 +1,6 @@
 package app
 
 import (
-	"strings"
 	"testing"
 )
 
@@ -46,20 +45,19 @@ func TestZenDesiredFromLiveNoSources(t *testing.T) {
 	}
 }
 
-// live 列表是权威：不在其中的条目一律移除（含种子），而不是只升级来源。
-func TestZenPruneRemovesStaleSeedEntries(t *testing.T) {
+// live 列表是权威：不在其中的条目一律移除，而不是只升级来源。
+func TestZenPruneRemovesStaleEntries(t *testing.T) {
 	zenModelsMu.Lock()
-	savedModels, savedAliases := zenModels, zenAliases
+	savedModels := zenModels
 	zenModels = map[string]*ZenModel{
-		"mimo-v2.5-free":         {ID: "mimo-v2.5-free", Source: "seed", Aliases: []string{"mimo"}},
-		"deepseek-v4-flash-free": {ID: "deepseek-v4-flash-free", Source: "seed"}, // 已 deprecated
-		"big-pickle":             {ID: "big-pickle", Source: "seed"},
+		"mimo-v2.5-free":         {ID: "mimo-v2.5-free", Source: "live"},
+		"deepseek-v4-flash-free": {ID: "deepseek-v4-flash-free", Source: "live"}, // 已 deprecated
+		"big-pickle":             {ID: "big-pickle", Source: "live"},
 	}
-	zenAliases = map[string]*ZenModel{"mimo": zenModels["mimo-v2.5-free"]}
 	zenModelsMu.Unlock()
 	defer func() {
 		zenModelsMu.Lock()
-		zenModels, zenAliases = savedModels, savedAliases
+		zenModels = savedModels
 		zenModelsMu.Unlock()
 	}()
 
@@ -69,29 +67,25 @@ func TestZenPruneRemovesStaleSeedEntries(t *testing.T) {
 	zenModelsMu.RLock()
 	defer zenModelsMu.RUnlock()
 	if _, ok := zenModels["deepseek-v4-flash-free"]; ok {
-		t.Error("deprecated seed survived a live sync (should be pruned)")
+		t.Error("deprecated entry survived a live sync (should be pruned)")
 	}
 	if _, ok := zenModels["mimo-v2.5-free"]; !ok {
 		t.Error("live model was pruned")
-	}
-	if _, ok := zenAliases["mimo"]; !ok {
-		t.Error("alias of a surviving model must be kept")
 	}
 }
 
 // 残表防御：live 结果明显偏小（接口抖动）时不得清空。
 func TestZenPruneSkipsOnSuspiciouslySmallLiveList(t *testing.T) {
 	zenModelsMu.Lock()
-	savedModels, savedAliases := zenModels, zenAliases
+	savedModels := zenModels
 	zenModels = map[string]*ZenModel{}
 	for _, id := range []string{"a", "b", "c", "d", "e", "f"} {
-		zenModels[id] = &ZenModel{ID: id, Source: "seed"}
+		zenModels[id] = &ZenModel{ID: id, Source: "live"}
 	}
-	zenAliases = map[string]*ZenModel{}
 	zenModelsMu.Unlock()
 	defer func() {
 		zenModelsMu.Lock()
-		zenModels, zenAliases = savedModels, savedAliases
+		zenModels = savedModels
 		zenModelsMu.Unlock()
 	}()
 
@@ -101,20 +95,5 @@ func TestZenPruneSkipsOnSuspiciouslySmallLiveList(t *testing.T) {
 	defer zenModelsMu.RUnlock()
 	if len(zenModels) != 6 {
 		t.Fatalf("table size = %d, want 6 (small live list must not prune)", len(zenModels))
-	}
-}
-
-// 种子兜底：没有 live 来源时表里仍是种子（离线可用），且种子里的别名可解析。
-func TestZenSeedBootstrapAliasesResolve(t *testing.T) {
-	initZenModels()
-	m, ok := resolveZenFreeModel("mimo")
-	if !ok {
-		t.Fatal("alias mimo must resolve to a free zen model")
-	}
-	if m.ID != "mimo-v2.5-free" {
-		t.Fatalf("alias mimo -> %q, want mimo-v2.5-free", m.ID)
-	}
-	if !strings.HasSuffix(m.ID, "-free") && m.ID != "big-pickle" {
-		t.Fatalf("resolved %q is not a free-looking id", m.ID)
 	}
 }

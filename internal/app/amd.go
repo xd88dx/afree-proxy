@@ -59,14 +59,23 @@ func initAMD() {
 		recordProxyOutcome(pkAmd, u, ok, e, ms)
 	})
 	amd.SetAttemptObserver(scopedObserver(keyPoolAttemptObserver(amd.KeyIndex, amd.BindingOf)))
-	// 启动即预热模型目录（异步，失败保留种子）
+	// 启动即预热模型目录（异步；种子快照已取消，冷启动空表靠重试链补齐）
 	amd.InitCatalog()
 	go startAMDModelsRefresher()
 }
 
-// startAMDModelsRefresher 每 5 分钟同步一次模型目录（免认证）。上游偶发
-// TLS EOF（与 openrouter/zen 同现象），失败重试两次再放弃本轮。
+// startAMDModelsRefresher 冷启动阶段以 30s 间隔快速重试直至首次同步成功
+// （至多 10 次，与 openrouter/zen 同款：种子快照取消后空表意味着目录暂不可
+// 见，首拉要尽快），随后每 5 分钟同步一次。上游偶发 TLS EOF（与
+// openrouter/zen 同现象），每轮内失败重试两次再放弃。无启用 key 时不空转
+// 快链（官方目录需认证，同步注定 401；目录本就不展示）。
 func startAMDModelsRefresher() {
+	for i := 0; i < 10 && amd.HasEnabledKey(); i++ {
+		if err := syncAMDCatalog(2); err == nil {
+			break
+		}
+		time.Sleep(30 * time.Second)
+	}
 	ticker := time.NewTicker(5 * time.Minute)
 	for range ticker.C {
 		syncAMDCatalog(2)

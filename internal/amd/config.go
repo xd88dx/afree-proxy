@@ -63,20 +63,12 @@ const DefaultAPIBase = "https://developer.amd.com.cn/radeon/api/v1"
 // ModelPrefix 网关分发前缀：客户端以 "amd:<model-id>" 形式调用本平台模型。
 const ModelPrefix = "amd:"
 
-// SeedModels 冷启动兜底模型目录（/v1/models 免认证实测快照，2026-10-10；
-// 仅收录 output_modalities 含 text 的对话模型，OCR 专用模型 MinerU2.5-Pro
-// 不适合 chat 网关，排除）。同步可达后以 live 为准。
-var SeedModels = []Model{
-	{ID: "DeepSeek-V4-Flash", Name: "DeepSeek-V4-Flash", Context: 1048576, ToolCall: true},
-	{ID: "DeepSeek-V4.1-Flash", Name: "DeepSeek-V4.1-Flash", Context: 1048576, ToolCall: true},
-	{ID: "DeepSeek-V4-Flash-Vision-Exp", Name: "DeepSeek-V4-Flash-Vision-Exp", Context: 1048576, ToolCall: true},
-	{ID: "GLM-5.3-Flash", Name: "GLM-5.3-Flash", Context: 262144, ToolCall: true},
-	{ID: "MiMo-V2.6-Flash", Name: "MiMo-V2.6-Flash", Context: 1048576, ToolCall: true},
-	{ID: "Qwen3.8-Flash-Next", Name: "Qwen3.8-Flash-Next", Context: 262144, ToolCall: true},
-	{ID: "Qwen3.8-27B", Name: "Qwen3.8-27B", Context: 262144, ToolCall: true},
-	{ID: "Gemma-4-31B-IT", Name: "Gemma-4-31B-IT", Context: 262144, ToolCall: true},
-	{ID: "MiniCPM5-2B", Name: "MiniCPM5-2B", Context: 131072, ToolCall: true},
-}
+// SeedModels 冷启动兜底快照已于 2026-11-11 用户拍板删除（与 tokenharbor/
+// openrouter/zen 同口径：目录如实反映 live 同步结果，宁空勿过期快照——官方
+// 会把模型移出免费层，快照会把已计费模型当免费对外）。历史形态：/v1/models
+// 免认证实测快照（2026-10-10，9 条对话模型），在首次 live 同步成功之前作为
+// 可服务集合。删除后冷启动目录为空，空表期间请求按目录门 fail-closed 拒，
+// 首拉由启动异步同步 + 30s×10 快速重试链尽快补齐。
 
 // Model AMDCloud 免费模型条目（/v1/models 合并与面板展示用）。
 type Model struct {

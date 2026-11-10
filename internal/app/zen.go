@@ -26,51 +26,35 @@ import (
 // ZenModel opencode zen 免费模型定义
 // ZenModel zen 模型条目。
 //
-// 并发约定（重要）：写者（initZenModels / applyZenCatalog / learnZenEndpoint /
+// 并发约定（重要）：写者（applyZenCatalog / learnZenEndpoint /
 // loadZenEndpoints）一律在 zenModelsMu 下"改副本再挂回"，绝不就地改写已发布的
 // 结构体。因此 resolveZenModel 返回的指针在锁外可安全读取任意字段——请求路径
 // 正是在锁外读 Upstream/Source/Context。新增写者必须遵守 copy-on-write，否则
 // 就是与请求路径的数据竞争。
 type ZenModel struct {
 	ID        string   `json:"id"`
-	Aliases   []string `json:"aliases,omitempty"`
 	Context   int      `json:"context"`
 	Output    int      `json:"output"`
-	Source    string   `json:"source"`               // seed=内置 / registry=公共目录同步 / synced=zen 上游同步
+	Source    string   `json:"source"`               // live=目录同步 / learned=端点学习器定论
 	Upstream  string   `json:"upstream,omitempty"`   // 强制原生上游端点: "responses"；空=默认 chat/completions
 	ToolCall  bool     `json:"toolCall,omitempty"`   // 目录声明的 tool_call 能力
 	Reasoning bool     `json:"reasoning,omitempty"`  // 目录声明的 reasoning 能力
 	Attach    bool     `json:"attachment,omitempty"` // 目录声明的图片/附件输入能力
 }
 
-// zenSeedModels 冷启动兜底列表：仅在"首次成功同步之前 + 目录/CLI 都不可达"
-// 时作为可服务的模型集（离线也能用）。它不再是 ID 的来源——运行时模型表由
-// syncZenModels 从 live 目录（官方 CLI `opencode models` 读的同一份
-// models.opencode.ai 数据）按价格门推导，种子条目若通不过价格门会被移除。
-// 种子里保留的别名（mimo/ling/nemotron/pickle…）与 muse-spark 的
-// Upstream=responses 提示会随同名 live 条目沿用。
-// 免费资格 = 公共目录 cost.input==0 && cost.output==0（big-pickle 这类无
-// "free" 后缀的免费模型也因此入选；deepseek-v4-flash 这类 status=deprecated
-// 的条目即使 cost 为 0 也不入选）。
-var zenSeedModels = []ZenModel{
-	{ID: "mimo-v2.5-free", Aliases: []string{"mimo-v2.5", "mimo"}, Context: 200000, Output: 32000, Source: "seed"},
-	{ID: "nemotron-3-ultra-free", Aliases: []string{"nemotron-3-ultra", "nemotron"}, Context: 1000000, Output: 128000, Source: "seed"},
-	{ID: "nemotron-3.5-lightning-free", Aliases: []string{"nemotron-3.5-lightning", "nemotron-lightning"}, Context: 262144, Output: 262144, Source: "seed"},
-	{ID: "ling-3.0-flash-fin-free", Aliases: []string{"ling-3.0-flash-fin", "ling-fin", "ling"}, Context: 262144, Output: 32768, Source: "seed"},
-	// big-pickle：zen 创始免费模型（无 free 后缀，目录 cost 0/0，1.18.31 实测可用；
-	// opencode zen 免费层的默认别名，永久保留在种子中）
-	{ID: "big-pickle", Aliases: []string{"pickle"}, Context: 200000, Output: 32000, Source: "seed"},
-	// muse-spark 只在原生 /v1/responses 端点上可用：官方 opencode CLI 实测
-	// 对该模型只发 POST /zen/v1/responses（带 tools + reason、返回 SSE），
-	// chat/completions 上该模型 500（需经 responses 原生调用再转回 chat 形态）
-	{ID: "muse-spark-1.3-contributor-free", Aliases: []string{"muse-spark-contributor"}, Context: 1048576, Output: 131072, Source: "seed", Upstream: "responses"},
-	{ID: "muse-spark-1.2-contributor-free", Aliases: []string{"muse-spark"}, Context: 1048576, Output: 131072, Source: "seed", Upstream: "responses"},
-}
+// zenSeedModels 冷启动兜底快照（含短别名表）已于 2026-11-11 用户拍板整机制
+// 删除（与 amd/tokenharbor/openrouter 同口径：目录如实反映 live 同步结果，
+// 宁空勿过期快照——免费层下架/转付费的模型不该靠内置清单续命）。历史形态：
+// 7 条免费模型快照，在首次成功同步之前作为可服务模型集，并绑定短别名
+// （mimo/pickle/muse-spark…）与 muse-spark 的 responses 端点提示。删除后：
+// 冷启动模型表为空直到首次 syncZenModels 成功（注册表免认证，启动即拉 +
+// 30s×10 快速重试链）；短别名不再解析（zen:<id>/裸 <id> 照常；410 迁移别名
+// 不受影响，持久化在 zen-config.json）；端点判定完全由目录 provider.npm
+// （zenNPMToUpstream）+ 端点学习器承担。
 
 var (
 	zenModelsMu sync.RWMutex
 	zenModels   = make(map[string]*ZenModel) // 主表:ID
-	zenAliases  = make(map[string]*ZenModel) // 别名表
 )
 
 // zenPruneGrace 目录裁剪宽限期。上游 live 目录存在分钟级闪断：实测同一模型
@@ -83,7 +67,6 @@ const zenPruneGrace = 30 * time.Minute
 
 type zenGraceEntry struct {
 	m        *ZenModel
-	aliased  []string // 随模型一起被裁掉的别名（解析时一并兜底）
 	prunedAt time.Time
 }
 
@@ -170,21 +153,6 @@ func zenPrefixedID(id string) string { return ZenModelPrefix + id }
 // 只是"更早开始摘要"，不会让上下文变浅。
 const defaultCompactBuffer = 80000
 
-func initZenModels() {
-	zenModelsMu.Lock()
-	defer zenModelsMu.Unlock()
-	if len(zenModels) > 0 {
-		return
-	}
-	for _, m := range zenSeedModels {
-		cp := m
-		zenModels[cp.ID] = &cp
-		for _, a := range cp.Aliases {
-			zenAliases[a] = &cp
-		}
-	}
-}
-
 // normalizeZenModelID 规范化 zen 模型 ID 用于表查找：trim + 小写 + 去掉
 // "opencode/" 前缀。zen 模型 ID（种子与官方目录 id）均为小写；客户端可能发
 // "Big-Pickle" 或 "opencode/big-pickle"，不规范化的查找会落空，进而把请求
@@ -194,16 +162,16 @@ func normalizeZenModelID(id string) string {
 }
 
 // resolveZenModel 解析模型名到 zen 模型。支持 "zen:" 前缀、遗留的
-// "opencode/" 前缀与裸 ID，以及别名（大小写不敏感）。前缀与别名都可解析：
-// 面板与 /v1/models 输出 zen:<id>，存量配置用裸 id 继续可用。
-// 别名优先: 同步来的付费同名模型(如 deepseek-v4-flash)不会覆盖 free 别名解析。
+// "opencode/" 前缀与裸 ID（统一走 zenCanonicalID 规范化）。面板与 /v1/models
+// 输出 zen:<id>，存量配置用裸 id 继续可用。短别名（mimo/pickle 等）已随
+// 种子快照一并删除（2026-11-11 用户定），不再解析。
 // 410 迁移别名是最后兜底：原始 ID 不存在时返回继任模型（真实模型永远优先，
 // 继任者上线不会被弃用别名遮蔽）。
 func resolveZenModel(id string) (*ZenModel, bool) {
 	return resolveZenModelDepth(id, 0)
 }
 
-// zenAliasMaxDepth 别名/迁移解析链的最大深度。持久化的别名表是外部文件，
+// zenAliasMaxDepth 410 迁移解析链的最大深度。持久化的迁移别名表是外部文件，
 // 可能被手改成自环（A→A）或互相成环（A→B→A）。没有上限时递归会耗尽
 // goroutine 栈，那是 fatal error: stack overflow —— recover 接不住，整个进程死。
 const zenAliasMaxDepth = 8
@@ -218,24 +186,6 @@ func resolveZenModelDepth(id string, depth int) (*ZenModel, bool) {
 		return nil, false
 	}
 	zenModelsMu.RLock()
-	aliasHit, isAlias := zenAliases[id]
-	// 非别名直查；别名则先查 canonical 表再退回别名指针。
-	//
-	// 别名表只在 initZenModels 里绑一次，而 applyZenCatalog / learnZenEndpoint
-	// 都是用**写时复制**把新条目挂到 zenModels[canonicalID] 上。别名指针永远
-	// 停在 seed 时的快照上：上下文窗口、输出上限、尤其是学习器判定的 Upstream
-	// 全都拿不到更新（mimo/ling/pickle/muse-spark* 这些文档里的别名全中招）。
-	// 所以别名命中后再按 canonical ID 取一次最新条目。
-	if isAlias && aliasHit != nil {
-		if fresh, ok := zenModels[aliasHit.ID]; ok && fresh != nil {
-			zenModelsMu.RUnlock()
-			return fresh, true
-		}
-	}
-	if isAlias {
-		zenModelsMu.RUnlock()
-		return aliasHit, true
-	}
 	if m, ok := zenModels[id]; ok {
 		zenModelsMu.RUnlock()
 		return m, true
@@ -266,23 +216,18 @@ func resolveZenGrace(id string) (*ZenModel, bool) {
 		if gid == id || e.m.ID == id {
 			return e.m, true
 		}
-		for _, a := range e.aliased {
-			if a == id {
-				return e.m, true
-			}
-		}
 	}
 	return nil, false
 }
 
-// isZenFreeModel 免费判定: seed 白名单、live 同步（已过价格门）、
-// learned（学习器改过端点但仍是同一批已入选免费模型）、或通用的 -free 后缀。
+// isZenFreeModel 免费判定: live 同步（已过价格门）、learned（学习器改过端点
+// 但仍是同一批已入选免费模型）、或通用的 -free 后缀。
 // big-pickle/union-alpha 无 free 后缀，靠 Source=="live"/"learned" 入选。
 func isZenFreeModel(m *ZenModel) bool {
 	if m == nil {
 		return false
 	}
-	if m.Source == "seed" || m.Source == "live" || m.Source == "learned" {
+	if m.Source == "live" || m.Source == "learned" {
 		return true
 	}
 	return strings.HasSuffix(m.ID, "-free")
@@ -291,15 +236,13 @@ func isZenFreeModel(m *ZenModel) bool {
 // zenProbeModel 管理面板 per-key "Test" 探测用的模型，按优先级：
 //  1. big-pickle —— zen 免费层的默认别名（mint 收割的首选同款），最稳；
 //  2. Source=="live" 的最小 id 模型 —— live 条目来自官方目录同步，
-//     是"上游当前确实在供"的证明，种子条目可能早已下架；
-//  3. 任意 free 模型的最小 id —— 冷启动且同步不可达时的纯种子兜底。
+//     是"上游当前确实在供"的证明；
+//  3. 任意 free 模型的最小 id —— 兜底。
 //
 // native-responses 模型也可能被选中——testZenKey 按其 Upstream 字段走对应
-// 上游调用，无需特判。目录为空时返回 nil，探测直接报错。
+// 上游调用，无需特判。目录为空时返回 nil，探测直接报错（种子快照已取消，
+// 冷启动空表靠启动同步 + 30s×10 快速重试链补齐，与 cline 空目录同口径）。
 func zenProbeModel() *ZenModel {
-	// 目录表是惰性填充的（面板打开模型页 / 定时同步 / 首个请求才会触发）：
-	// 探测必须自给自足，进程刚启动、谁都没碰过模型页时也要能测。
-	initZenModels()
 	zenModelsMu.RLock()
 	defer zenModelsMu.RUnlock()
 	if m, ok := zenModels["big-pickle"]; ok && isZenFreeModel(m) {
@@ -350,7 +293,6 @@ func routeModel(id string) string {
 	// 为键，客户端发 "Big-Pickle" / "opencode/big-pickle" 时不做归一就查不到，
 	// 请求会误落到 cline 池（或让标记形同虚设）。
 	zenID := normalizeZenModelID(id)
-	initZenModels()
 	// 上游 400 "Model is unavailable" 的死亡标记：直接拒绝，不再每次请求
 	// 都白烧一个上游往返。下次目录同步成功（或 TTL 过期）后自动解除。
 	// 例外：该 id 若已有 410 继任别名，别名优先——迁移后请求仍有真实去处，
@@ -3493,7 +3435,6 @@ func zenRetryDelay(d time.Duration) time.Duration {
 }
 
 func zenModelList() []map[string]any {
-	initZenModels()
 	// 展示门控：与请求入口的可路由性闸同判定——没有启用的具名 key 时
 	// 平台不可路由，目录继续展示只会让用户选中必失败的模型。
 	if !platformHasRoutableCredential(platZen) {
@@ -3754,28 +3695,25 @@ func zenDesiredFromLive(registryOK bool, freeGate map[string]bool) (map[string]b
 	return nil, fmt.Errorf("model catalog unavailable: registry unreachable")
 }
 
-// syncZenModels 同步免费模型（live 为准，种子只做冷启动兜底）。判定链：
+// syncZenModels 同步免费模型（live 为准）。判定链：
 //  1. 免费资格（唯一权威）：公共目录 models.opencode.ai 的 opencode 条目
 //     cost.input==0 && cost.output==0 且 status 无 deprecated 字样。无 free
 //     后缀但价格为 0 的模型（big-pickle）因此入选；status=deprecated 的
 //     *-free 条目即使价格为 0 也排除（上游已报 Model unavailable）。
 //     官方 CLI `opencode models` 读的是同一份目录（实测 2026-09-18：CLI 7 个
 //     = 目录中 opencode 提供方 cost 0/0 非 deprecated 的 7 个），所以价格门
-//     就是"真实模型列表"本身，无需再与种子交叉核对。
-//  2. 目录不可达时：用 `opencode models`（CLI，无认证）当成员表，配
-//     "-free" 后缀启发式（fail-open，保证离线/抖动时免费模型仍可用）。
-//     这是 CLI 列表唯一的用武之地——目录可用时它不给任何额外信息，而每次
-//     同步 spawn 一次 CLI 进程并不便宜。
-//  3. 限额 overlay：目录 limit.context/output + tool_call / reasoning /
+//     就是"真实模型列表"本身。
+//  2. 限额 overlay：目录 limit.context/output + tool_call / reasoning /
 //     attachment 旗标 + per-model provider.npm（端点种子，见 applyZenCatalog）。
-//  4. 上游基地址：目录 provider.api 与"仍是默认值"的配置不符时自动校正
+//  3. 上游基地址：目录 provider.api 与"仍是默认值"的配置不符时自动校正
 //     （见 applyZenRegistryBase）——免费层路径改过一次，不该再靠人工观测。
 //
-// 增删一律以本次 live 结果为准：表中的种子条目若不再通过价格门会被移除
-// （种子只在首次成功同步之前的冷启动/离线状态提供兜底，不参与日常增删）。
-// 返回新增模型数。无任何 live 来源可达时返回错误并保留旧表。
+// 目录不可达时返回错误并保留旧表（收割机时代的 CLI 成员表兜底已随内嵌 CLI
+// 移除，离线启动不再有第三方成员表来源，见 zenDesiredFromLive）。冷启动不再
+// 注入种子快照（2026-11-11 用户定，与 amd/tokenharbor/openrouter 同口径）：
+// 表为空直到首次成功同步，宁空勿过期。
+// 返回新增模型数。
 func syncZenModels() (int, error) {
-	initZenModels()
 	overlay, freeGate, registryAPI, registryOK := fetchZenRegistry()
 	desired, derr := zenDesiredFromLive(registryOK, freeGate)
 	if derr != nil {
@@ -3822,7 +3760,7 @@ func zenNPMToUpstream(npm string) (string, bool) {
 	}
 }
 
-// applyZenCatalog 把 live 结果写进模型表：存量条目就地更新（保留别名与
+// applyZenCatalog 把 live 结果写进模型表：存量条目就地更新（保留已定端的
 // Upstream 提示），新条目按 overlay 限额建立。返回新增数量。
 func applyZenCatalog(desired map[string]bool, overlay map[string]zenModelOverlay) int {
 	zenModelsMu.Lock()
@@ -3831,8 +3769,8 @@ func applyZenCatalog(desired map[string]bool, overlay map[string]zenModelOverlay
 	for id := range desired {
 		ov := overlay[id]
 		if cur, ok := zenModels[id]; ok {
-			// 存量条目：overlay 限额覆盖种子/上次估算；别名与 Upstream 提示
-			// （如 muse-spark 的原生 responses）沿用，Source 升级为 live。
+			// 存量条目：overlay 限额覆盖上次估算；已定端的 Upstream 提示
+			// 沿用，Source 升级为 live。
 			// 改副本再挂回（copy-on-write）：resolveZenModel 返回的指针在释放
 			// RLock 后仍被请求路径读取，就地改写会与其裸读竞争。
 			next := *cur
@@ -3848,8 +3786,7 @@ func applyZenCatalog(desired map[string]bool, overlay map[string]zenModelOverlay
 			// npm 路由重播种：仅当该模型尚无明确端点决策时按目录 npm 刷新。
 			// "决策"= Upstream 非空，或学习器已定论（Source=learned，含 chat
 			// 定论：learning 后 Upstream 归零但不得再被 npm 播回 responses）。
-			// load/reapplyLearnedEndpoints 恢复学习条目，这里不得回翻；
-			// muse-spark 等种子提示同样保留。
+			// load/reapplyLearnedEndpoints 恢复学习条目，这里不得回翻。
 			if next.Upstream != "" || next.Source == "learned" {
 				// 已有决策，保持
 			} else if ov.NPM != "" {
@@ -3866,10 +3803,6 @@ func applyZenCatalog(desired map[string]bool, overlay map[string]zenModelOverlay
 				next.Source = "live"
 			}
 			zenModels[id] = &next
-			continue
-		}
-		// 跳过与免费别名冲突的 ID（如付费 id 撞别名），保证别名解析不被覆盖
-		if _, conflict := zenAliases[id]; conflict {
 			continue
 		}
 		ctxN, outN := ov.Context, ov.Output
@@ -3906,10 +3839,9 @@ func applyZenCatalog(desired map[string]bool, overlay map[string]zenModelOverlay
 	return added
 }
 
-// pruneZenModelsTo 修剪掉不在 live 结果中的条目（含种子）：种子只是首次成功
-// 同步前的冷启动兜底，同步成功后以 live 为准，避免已下线/已转付费的模型继续
-// 挂出（别名一并移除）。防御：live 残表（接口抖动/改版）不清空本地列表 ——
-// 要求 live 结果不少于现有条数的一半。返回移除数量。
+// pruneZenModelsTo 修剪掉不在 live 结果中的条目：同步成功后以 live 为准，
+// 避免已下线/已转付费的模型继续挂出。防御：live 残表（接口抖动/改版）不清空
+// 本地列表 —— 要求 live 结果不少于现有条数的一半。返回移除数量。
 func pruneZenModelsTo(desired map[string]bool) int {
 	zenModelsMu.Lock()
 	defer zenModelsMu.Unlock()
@@ -3930,13 +3862,9 @@ func pruneZenModelsTo(desired map[string]bool) int {
 		// 上游（见 zenPruneGrace 注释）。宽限期内不回 live 列表（面板不挂出）。
 		zenGraceModels[id] = zenGraceEntry{
 			m:        m,
-			aliased:  append([]string(nil), m.Aliases...),
 			prunedAt: now,
 		}
 		delete(zenModels, id)
-		for _, a := range m.Aliases {
-			delete(zenAliases, a)
-		}
 		pruned++
 	}
 	// 宽限到期（历经多轮同步仍未回到 live 列表）：真下线，彻底清除
@@ -3950,11 +3878,17 @@ func pruneZenModelsTo(desired map[string]bool) int {
 
 // startZenModelsRefresher 定时同步 zen 模型列表（5 分钟，与各平台模型
 // 目录的自动同步节奏一致）。同步走公共注册表 api.json（免认证），不消耗任何
-// key 的配额。
+// key 的配额。冷启动阶段以 30s 间隔快速重试直至首次同步成功（至多 10 次，
+// 与 openrouter 同款）：种子快照取消后空表意味着目录暂不可见，首拉要尽快。
 func startZenModelsRefresher() {
 	go func() {
-		if _, err := syncZenModels(); err != nil {
-			log.Printf("zen model sync: failed (%v), keeping the current list", err)
+		for i := 0; i < 10; i++ {
+			if _, err := syncZenModels(); err == nil {
+				break
+			} else if i == 9 {
+				log.Printf("zen model sync: cold-start retries exhausted (%v), keeping the current list", err)
+			}
+			time.Sleep(30 * time.Second)
 		}
 		ticker := time.NewTicker(5 * time.Minute)
 		for range ticker.C {

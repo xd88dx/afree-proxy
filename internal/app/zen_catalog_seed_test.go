@@ -105,21 +105,20 @@ func TestZenNPMToUpstream(t *testing.T) {
 // 端点种子端到端：新条目按 npm 播种 responses/chat；已有条目不被回翻。
 func TestApplyZenCatalogSeedsUpstreamFromNPM(t *testing.T) {
 	zenModelsMu.Lock()
-	savedModels, savedAliases := zenModels, zenAliases
+	savedModels := zenModels
 	zenModels = map[string]*ZenModel{}
-	zenAliases = map[string]*ZenModel{}
 	zenModelsMu.Unlock()
 	defer func() {
 		zenModelsMu.Lock()
-		zenModels, zenAliases = savedModels, savedAliases
+		zenModels = savedModels
 		zenModelsMu.Unlock()
 	}()
 
 	// 预置一个 chat 模型且 Upstream==""（npm 应把它播成 responses），
 	// 和一个已被学习器定为 responses 的模型（npm=compatible 不得回翻）。
 	zenModelsMu.Lock()
-	zenModels["existing-chat"] = &ZenModel{ID: "existing-chat", Source: "seed", Upstream: ""}
-	zenModels["learned-responses"] = &ZenModel{ID: "learned-responses", Source: "seed", Upstream: "responses"}
+	zenModels["existing-chat"] = &ZenModel{ID: "existing-chat", Source: "live", Upstream: ""}
+	zenModels["learned-responses"] = &ZenModel{ID: "learned-responses", Source: "learned", Upstream: "responses"}
 	zenModelsMu.Unlock()
 
 	desired := map[string]bool{"existing-chat": true, "learned-responses": true, "fresh-responses": true, "fresh-chat": true}
@@ -148,16 +147,12 @@ func TestApplyZenCatalogSeedsUpstreamFromNPM(t *testing.T) {
 	if got := zenModels["fresh-chat"].Upstream; got != "" {
 		t.Errorf("fresh-chat Upstream = %q, want empty (default chat)", got)
 	}
-	// 种子的 muse-spark 提示（Upstream=responses + npm 缺失）不被 npm 重播种破坏
-	if m := zenSeedModels[5]; m.ID != "muse-spark-1.3-contributor-free" || m.Upstream != "responses" {
-		t.Errorf("muse-spark seed entry changed unexpectedly: %+v", m)
-	}
 }
 
 // 学习器改过端点的条目（Source=learned）必须仍是免费模型：big-pickle 这类
 // 无 -free 后缀的模型全靠 Source 入选，抹成 learned 后不能掉出免费表。
 func TestLearnedSourceStaysFree(t *testing.T) {
-	for _, src := range []string{"seed", "live", "learned"} {
+	for _, src := range []string{"live", "learned"} {
 		m := &ZenModel{ID: "big-pickle", Source: src}
 		if !isZenFreeModel(m) {
 			t.Errorf("Source=%q must be treated as free (no -free suffix)", src)
@@ -170,15 +165,14 @@ func TestLearnedSourceStaysFree(t *testing.T) {
 // 学习决策也已在表里生效。
 func TestApplyZenCatalogPreservesLearnedMarker(t *testing.T) {
 	zenModelsMu.Lock()
-	savedModels, savedAliases := zenModels, zenAliases
+	savedModels := zenModels
 	zenModels = map[string]*ZenModel{
 		"learned-chat": {ID: "learned-chat", Source: "learned", Upstream: ""},
 	}
-	zenAliases = map[string]*ZenModel{}
 	zenModelsMu.Unlock()
 	defer func() {
 		zenModelsMu.Lock()
-		zenModels, zenAliases = savedModels, savedAliases
+		zenModels = savedModels
 		zenModelsMu.Unlock()
 	}()
 

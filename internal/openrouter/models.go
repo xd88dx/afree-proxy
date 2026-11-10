@@ -12,45 +12,17 @@ import (
 
 // ============ 免费模型目录 ============
 //
-// 事实源：openrouter.ai/collections/free-models 页面列出的模型（2026-10-10
-// 实测 15 个免费生成模型 + 官方路由 openrouter/free）。使用率低/性能不足的
-// 其他零价模型（embedding / rerank / 图像 / 安全分类器等）不在页面上，一律
-// 不收 —— 页面集合是唯一白名单。同步时对 API 的 pricing 全零结果与该集合求
-// 交集：上游新增的免费模型在页面收录前不进入目录，页面列了但 API 还没上的
-// 也不进入（请求会 404）。冷启动以页面快照兜底（离线可用）。
+// 事实源：openrouter.ai/api/v1/models live 目录（零价 + chatCapable 判据，
+// 2026-11-05 起为唯一权威）。收录面与官方 free 页的对话模型口径对齐：
+// 零价集合里的 embedding / rerank / 图像 / 安全分类器等非对话杂类不收。
+// 冷启动快照（PageModels/SeedModels）已于 2026-11-11 用户拍板整机制取消
+//（与 cline extraFreeModels 同款处理）：目录如实反映 live 同步结果，宁空
+// 勿过期快照——官方会把模型移出免费层，快照会把已计费模型当免费对外。
+// 空目录期间请求按 strict-gate fail-closed 拒；startOrModelsRefresher 的
+// 30s×10 快速重试链负责尽快完成首拉。
 
 // CatalogURL 公共模型目录端点（免认证，含 pricing，用于交叉校验）。
 const CatalogURL = "https://openrouter.ai/api/v1/models"
-
-// PageModels openrouter.ai/collections/free-models 页面列出的免费模型快照
-// （2026-10-10 实测）。它是可服务模型的唯一白名单；live 同步只做
-// "价格仍为零"的交叉校验与限额字段更新，不引入页面之外的新模型。
-var PageModels = []Model{
-	{ID: "openrouter/free", Name: "Free Models Router (official fallback)", Context: 200000, ToolCall: true},
-	{ID: "nvidia/nemotron-3-ultra-550b-a55b:free", Name: "NVIDIA: Nemotron 3 Ultra (free)", Context: 1000000},
-	{ID: "thinkingmachines/inkling:free", Name: "Thinking Machines: Inkling (free)", Context: 1048576},
-	{ID: "thinkingmachines/inkling-small:free", Name: "Thinking Machines: Inkling Small (free)", Context: 1048576},
-	{ID: "nvidia/nemotron-3.5-lightning:free", Name: "NVIDIA: Nemotron 3.5 Lightning (free)", Context: 1000000},
-	{ID: "dots-studio/dots-3-note-preview:free", Name: "Dots Studio: Dots3-Note Preview (free)", Context: 512000},
-	{ID: "inclusionai/ling-3.1-flash", Name: "inclusionAI: Ling 3.1 Flash", Context: 262144},
-	{ID: "nvidia/nemotron-3-super-120b-a12b:free", Name: "NVIDIA: Nemotron 3 Super (free)", Context: 262144},
-	{ID: "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free", Name: "NVIDIA: Nemotron 3 Nano Omni (free)", Context: 256000},
-	{ID: "poolside/laguna-s-2.1:free", Name: "Poolside: Laguna S 2.1 (free)", Context: 262144},
-	{ID: "poolside/laguna-xs-2.1:free", Name: "Poolside: Laguna XS 2.1 (free)", Context: 262144},
-	{ID: "apodex/apodex-1.1-mini:free", Name: "Apodex: Apodex 1.1 Mini (free)", Context: 262144},
-	{ID: "cohere/north-mini-code:free", Name: "Cohere: North Mini Code (free)", Context: 256000},
-	{ID: "inception/mercury-decide:free", Name: "Inception: Mercury Decide (free)", Context: 262144},
-	{ID: "liquid/lfm-2.5-2.6b:free", Name: "LiquidAI: LFM2.5-2.6B (free)", Context: 65536},
-}
-
-// pageSet 页面集合（同步时的白名单；键为模型 ID）。
-var pageSet = func() map[string]bool {
-	m := make(map[string]bool, len(PageModels))
-	for _, e := range PageModels {
-		m[e.ID] = true
-	}
-	return m
-}()
 
 // Overrides 便于测试注入。
 var (
@@ -172,8 +144,11 @@ func chatCapable(e catalogEntry) bool {
 	return false
 }
 
-// InitCatalog 初始化目录：已加载过则立即返回；否则用页面快照兜底，再异步
-// 交叉校验（live 价格为零 + 限额更新）。失败保留快照（离线可用）。
+// InitCatalog 初始化目录：已加载过则立即返回。冷启动不注入任何快照
+// （2026-11-11 用户定，与 cline 同口径：目录如实反映 live 同步结果，宁空
+// 勿过期快照）。空目录期间请求按 strict-gate fail-closed 拒；异步 SyncCatalog
+// 完成首拉后目录即为 live 权威态，startOrModelsRefresher 的快速重试链保证
+// 首拉失败也尽快补齐。
 func InitCatalog() {
 	catalogMu.RLock()
 	ready := catalogLoaded
@@ -181,16 +156,12 @@ func InitCatalog() {
 	if ready {
 		return
 	}
-	seed := map[string]Model{}
-	for _, m := range PageModels {
-		seed[m.ID] = m
-	}
 	catalogMu.Lock()
 	if catalogLoaded {
 		catalogMu.Unlock()
 		return
 	}
-	catalogModels = seed
+	catalogModels = map[string]Model{}
 	catalogLoaded = true
 	catalogMu.Unlock()
 	go func() { _, _ = SyncCatalog() }()
@@ -205,7 +176,7 @@ func InitCatalog() {
 //   - live 价格非零（已取消免费）→ 剔除（含快照时代的收录项）；
 //   - 网络/解析失败 → 保留当前目录（不清空，离线可用）。
 //
-// PageModels 快照降级为纯冷启动兜底（首次成功同步之前）。
+// PageModels 快照已于 2026-11-11 整机制取消（冷启动目录为空，见 InitCatalog）。
 //
 // 返回"价格状态发生变化"的模型数（日志用）。
 func SyncCatalog() (int, error) {

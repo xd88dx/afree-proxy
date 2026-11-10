@@ -57,28 +57,11 @@ type KeyTokenStats struct {
 // DefaultAPIBase OpenRouter 官方 OpenAI 兼容端点。
 const DefaultAPIBase = "https://openrouter.ai/api/v1"
 
-// SeedModels 冷启动兜底模型目录（openrouter.ai/collections/free-models 实测
-// 快照，2026-10-10）：仅在首次从上游 /api/v1/models 同步成功之前作为可服务
-// 集合，同步成功后以 live 为准（含下线裁剪）。全部为 pricing 全零的免费条目。
-var SeedModels = []Model{
-	{ID: "openrouter/free", Name: "Free Models Router", Context: 200000, ToolCall: true},
-	{ID: "nvidia/nemotron-3-ultra-550b-a55b:free", Name: "NVIDIA: Nemotron 3 Ultra (free)", Context: 1000000},
-	{ID: "thinkingmachines/inkling:free", Name: "Thinking Machines: Inkling (free)", Context: 1048576},
-	{ID: "thinkingmachines/inkling-small:free", Name: "Thinking Machines: Inkling Small (free)", Context: 1048576},
-	{ID: "nvidia/nemotron-3.5-lightning:free", Name: "NVIDIA: Nemotron 3.5 Lightning (free)", Context: 1000000},
-	{ID: "dots-studio/dots-3-note-preview:free", Name: "Dots Studio: Dots3-Note Preview (free)", Context: 512000},
-	{ID: "inclusionai/ling-3.1-flash", Name: "inclusionAI: Ling 3.1 Flash", Context: 262144},
-	{ID: "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free", Name: "NVIDIA: Nemotron 3 Nano Omni (free)", Context: 256000},
-	{ID: "nvidia/nemotron-3-super-120b-a12b:free", Name: "NVIDIA: Nemotron 3 Super (free)", Context: 262144},
-	{ID: "google/gemma-4-26b-a4b-it:free", Name: "Google: Gemma 4 26B A4B (free)", Context: 262144},
-	{ID: "google/gemma-4-31b-it:free", Name: "Google: Gemma 4 31B (free)", Context: 262144},
-	{ID: "apodex/apodex-1.1-mini:free", Name: "Apodex: Apodex 1.1 Mini (free)", Context: 262144},
-	{ID: "poolside/laguna-s-2.1:free", Name: "Poolside: Laguna S 2.1 (free)", Context: 262144},
-	{ID: "poolside/laguna-xs-2.1:free", Name: "Poolside: Laguna XS 2.1 (free)", Context: 262144},
-	{ID: "cohere/north-mini-code:free", Name: "Cohere: North Mini Code (free)", Context: 256000},
-	{ID: "nvidia/nemotron-3.5-content-safety:free", Name: "NVIDIA: Nemotron 3.5 Content Safety (free)", Context: 128000},
-	{ID: "liquid/lfm-2.5-2.6b:free", Name: "LiquidAI: LFM2.5-2.6B (free)", Context: 65536},
-}
+// SeedModels 冷启动兜底快照已于 2026-11-11 用户拍板删除（与 PageModels 一并
+// 取消，冷启动目录为空、宁空勿过期快照，见 models.go InitCatalog）。历史
+// 形态：openrouter.ai/collections/free-models 页面实测快照（2026-10-10，17
+// 条零价条目），在首次 live 同步成功之前作为可服务集合。删除时该变量已无
+// 任何非测试引用（live 同步 2026-11-05 起为唯一权威）。
 
 // Model OpenRouter 免费模型条目（/v1/models 合并与面板展示用）。
 type Model struct {

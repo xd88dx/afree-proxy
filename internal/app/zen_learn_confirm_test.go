@@ -61,14 +61,7 @@ func TestEndpointLearnOnlyPersistsWhenRetrySucceeds(t *testing.T) {
 
 	model := "audit-probe-chat-native"
 	// 只注册这一个模型，避免污染其他测试的模型表
-	savedModels := zenModels
-	savedAliases := zenAliases
 	withZenModelForTest(t, model, "")
-	defer func() {
-		zenModelsMu.Lock()
-		zenModels, zenAliases = savedModels, savedAliases
-		zenModelsMu.Unlock()
-	}()
 
 	params := map[string]any{
 		"model":    model,
@@ -114,20 +107,17 @@ func TestEndpointLearnOnlyPersistsWhenRetrySucceeds(t *testing.T) {
 
 // withZenModelForTest 在测试里挂一张独立的模型表，并在测试结束后恢复原值。
 //
-// 必须恢复：它会**整个替换**包级 zenModels/zenAliases。早先那个不恢复的版本
-// 在整套 -shuffle=on 下会让后续测试看到"只剩一个模型、别名表空掉"的状态，
-// 而 initZenModels 因 len>0 直接返回，seed 别名再也补不回来，于是
-// TestZenSeedBootstrapAliasesResolve 随机变红。
+// 必须恢复：它会**整个替换**包级 zenModels。早先那个不恢复的版本在整套
+// -shuffle=on 下会让后续测试看到"只剩一个模型"的状态，随机变红。
 func withZenModelForTest(t *testing.T, id, upstream string) {
 	t.Helper()
 	zenModelsMu.Lock()
-	savedModels, savedAliases := zenModels, zenAliases
+	savedModels := zenModels
 	zenModels = map[string]*ZenModel{id: {ID: id, Context: 200000, Output: 32768, Source: "live", Upstream: upstream}}
-	zenAliases = map[string]*ZenModel{}
 	zenModelsMu.Unlock()
 	t.Cleanup(func() {
 		zenModelsMu.Lock()
-		zenModels, zenAliases = savedModels, savedAliases
+		zenModels = savedModels
 		zenModelsMu.Unlock()
 	})
 }
@@ -183,13 +173,7 @@ func TestResponsesEntryUsesNativeEndpointForResponsesModel(t *testing.T) {
 	defer setZenConfig(savedCfg)
 
 	model := "native-resp-model"
-	savedModels, savedAliases := zenModels, zenAliases
 	withZenModelForTest(t, model, "responses")
-	defer func() {
-		zenModelsMu.Lock()
-		zenModels, zenAliases = savedModels, savedAliases
-		zenModelsMu.Unlock()
-	}()
 
 	body := `{"model":"` + model + `","input":"say OK","stream":false}`
 	rec := &flushRecorder{header: http.Header{}}
@@ -238,13 +222,7 @@ func TestZenHeadersOnTheWire(t *testing.T) {
 	setZenConfig(cfg)
 	defer setZenConfig(savedCfg)
 
-	savedModels, savedAliases := zenModels, zenAliases
 	withZenModelForTest(t, "wire-zen-model", "") // chat endpoint
-	defer func() {
-		zenModelsMu.Lock()
-		zenModels, zenAliases = savedModels, savedAliases
-		zenModelsMu.Unlock()
-	}()
 
 	_, _, err = callZenAPI(t.Context(), map[string]any{
 		"model":    "wire-zen-model",

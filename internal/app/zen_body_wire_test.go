@@ -52,10 +52,19 @@ func TestBuildZenBodyStreamOptions(t *testing.T) {
 
 // max_completion_tokens 默认取目录 limit.output；客户端显式给了就用客户端的。
 func TestBuildZenBodyDefaultMaxCompletionTokens(t *testing.T) {
-	initZenModels()
+	// 目录夹具（种子快照已取消，直接字面量造态）。
+	zenModelsMu.Lock()
+	savedModels := zenModels
+	zenModels = map[string]*ZenModel{"big-pickle": {ID: "big-pickle", Source: "live", Output: 32000}}
+	zenModelsMu.Unlock()
+	t.Cleanup(func() {
+		zenModelsMu.Lock()
+		zenModels = savedModels
+		zenModelsMu.Unlock()
+	})
 	m, ok := resolveZenModel("big-pickle")
 	if !ok || m.Output <= 0 {
-		t.Skip("big-pickle seed missing")
+		t.Fatal("big-pickle fixture missing")
 	}
 
 	body := buildZenBody(map[string]any{"model": "big-pickle", "messages": []any{}}, true)

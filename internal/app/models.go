@@ -924,7 +924,6 @@ func strictModelGate(model string) string {
 	if !StrictModelMatchEnv() || modelInFreeList(model) {
 		return ""
 	}
-	initZenModels()
 	if _, ok := resolveZenModel(model); ok {
 		return ""
 	}

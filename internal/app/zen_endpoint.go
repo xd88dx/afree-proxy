@@ -187,7 +187,6 @@ func isWrongEndpointResponses(err error) bool {
 // learnZenEndpoint 学习并持久化某模型的原生端点（"responses" 或 ""）。
 // 与 applyZenCatalog 同样用副本替换：池内条目一旦发布就不再改写。
 func learnZenEndpoint(modelID, upstream string) {
-	initZenModels()
 	zenModelsMu.Lock()
 	m, ok := zenModels[modelID]
 	if ok && m != nil && m.Upstream != upstream {
@@ -215,7 +214,6 @@ func applyZenEndpoints(learned map[string]string) int {
 	if len(learned) == 0 {
 		return 0
 	}
-	initZenModels()
 	zenModelsMu.Lock()
 	defer zenModelsMu.Unlock()
 	n := 0

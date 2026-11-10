@@ -187,45 +187,6 @@ func TestEmitChatAsSSEMultibyteSafe(t *testing.T) {
 	}
 }
 
-// ---------- 7. zen 别名必须跟随目录/学习器更新 ----------
-
-// 别名表只在 initZenModels 里绑一次，而后续所有写入都是写时复制到
-// zenModels[canonical] 上。别名若继续返回旧指针，上下文窗口与端点判定
-// 全都停在 seed 快照（mimo/ling/pickle/muse-spark* 全中招）。
-func TestZenAliasFollowsCatalogUpdates(t *testing.T) {
-	zenModelsMu.Lock()
-	savedModels, savedAliases := zenModels, zenAliases
-	zenModels = map[string]*ZenModel{
-		"canonical/model-free": {ID: "canonical/model-free", Context: 1000, Output: 100, Upstream: ""},
-	}
-	zenAliases = map[string]*ZenModel{
-		"mimo": zenModels["canonical/model-free"],
-	}
-	zenModelsMu.Unlock()
-	t.Cleanup(func() {
-		zenModelsMu.Lock()
-		zenModels, zenAliases = savedModels, savedAliases
-		zenModelsMu.Unlock()
-	})
-
-	// 目录同步/学习器用写时复制替换 canonical 条目
-	zenModelsMu.Lock()
-	cp := *zenModels["canonical/model-free"]
-	cp.Context = 200000
-	cp.Upstream = "responses"
-	zenModels[cp.ID] = &cp
-	zenModelsMu.Unlock()
-
-	m, ok := resolveZenModel("mimo")
-	if !ok {
-		t.Fatal("alias must resolve")
-	}
-	if m.Context != 200000 || m.Upstream != "responses" {
-		t.Fatalf("alias returned the stale seed snapshot (ctx=%d upstream=%q); "+
-			"it must follow the canonical entry", m.Context, m.Upstream)
-	}
-}
-
 // ---------- 8. 别名环不得把进程递归到栈溢出 ----------
 
 // 持久化别名文件是外部可编辑的。A→A 自环或 A→B→A 成环必须被安全拒绝：

@@ -79,8 +79,11 @@ func chatCapable(e catalogEntry) bool {
 	return false
 }
 
-// InitCatalog 初始化目录：已加载过则立即返回；否则用种子快照兜底，再异步
-// 同步 live 目录。失败保留快照（离线可用）。
+// InitCatalog 初始化目录：已加载过则立即返回。冷启动不注入任何快照
+// （2026-11-11 用户定，与 openrouter/tokenharbor 同口径：目录如实反映
+// live 同步结果，宁空勿过期快照）。空目录期间请求按目录门 fail-closed 拒；
+// 异步 SyncCatalog 完成首拉后目录即为 live 权威态，app 层 30s×10 快速重试链
+// 保证首拉失败也尽快补齐。
 func InitCatalog() {
 	catalogMu.RLock()
 	ready := catalogLoaded
@@ -88,23 +91,19 @@ func InitCatalog() {
 	if ready {
 		return
 	}
-	seed := map[string]Model{}
-	for _, m := range SeedModels {
-		seed[m.ID] = m
-	}
 	catalogMu.Lock()
 	if catalogLoaded {
 		catalogMu.Unlock()
 		return
 	}
-	catalogModels = seed
+	catalogModels = map[string]Model{}
 	catalogLoaded = true
 	catalogMu.Unlock()
 	go func() { _, _ = SyncCatalog() }()
 }
 
-// SyncCatalog 拉取 live 模型目录（免认证）。返回变更条数；网络或解析失败
-// 时返回错误且保留当前目录（不清空种子）。上游空列表同样不清空。
+// SyncCatalog 拉取 live 模型目录（需启用 key 的 Bearer）。返回变更条数；
+// 网络或解析失败时返回错误且保留当前目录（不清空）。上游空列表同样不清空。
 func SyncCatalog() (int, error) {
 	catalogSyncMu.Lock()
 	defer catalogSyncMu.Unlock()
@@ -180,7 +179,7 @@ func SyncCatalog() (int, error) {
 func ModelList() []Model {
 	InitCatalog()
 	// 展示门控（与 traeWork/workbuddy 同款）：没有启用 key 时目录不对外
-	// 提供——种子快照只留作请求侧解析兜底，不当"可服务目录"展示。
+	// 提供——列出来只会让用户选中后调不通（官方目录需认证，无 key 也拉不到）。
 	if !HasEnabledKey() {
 		return []Model{}
 	}

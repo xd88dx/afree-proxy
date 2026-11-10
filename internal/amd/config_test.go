@@ -162,15 +162,16 @@ func TestSyncCatalogFiltersAndUpdates(t *testing.T) {
 	}
 }
 
-func TestSyncCatalogUnreachableKeepsSeed(t *testing.T) {
+func TestSyncCatalogUnreachableKeepsCatalog(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 	}))
 	defer srv.Close()
 	catalogMu.Lock()
-	catalogModels = map[string]Model{}
-	for _, m := range SeedModels {
-		catalogModels[m.ID] = m
+	// 现目录夹具（快照已取消，直接字面量造态）。
+	catalogModels = map[string]Model{
+		"DeepSeek-V4-Flash": {ID: "DeepSeek-V4-Flash", Context: 1048576, ToolCall: true},
+		"A/first":           {ID: "A/first"},
 	}
 	catalogLoaded = true
 	catalogMu.Unlock()
@@ -183,35 +184,36 @@ func TestSyncCatalogUnreachableKeepsSeed(t *testing.T) {
 	if _, err := SyncCatalog(); err == nil {
 		t.Error("expected error on unreachable catalog")
 	}
-	if len(ModelList()) != len(SeedModels) {
-		t.Errorf("seed must survive an unreachable catalog: got %d, want %d", len(ModelList()), len(SeedModels))
+	if len(ModelList()) != 2 {
+		t.Errorf("current catalog must survive an unreachable catalog: got %d, want 2", len(ModelList()))
 	}
 }
 
-func TestSeedCatalogShape(t *testing.T) {
-	// 无启用 key 时目录对外为空（展示门控）；种下启用 key 再验证种子快照。
-	cfg := Get()
-	next := *cfg
-	next.Keys = []string{"sk-test"}
-	next.KeyRoutingEnabled = map[string]bool{"sk-test": true}
-	Set(&next)
-	defer Set(cfg)
+// 冷启动不再注入快照（2026-11-11 用户定，与 openrouter/tokenharbor 同口径）：
+// 目录如实反映 live 同步结果，宁空勿过期快照——官方会把模型移出免费层，
+// 快照会把已计费模型当免费对外。空目录期间请求按目录门 fail-closed 拒。
+// 同步端点指到必失败的服务器，保证 goroutine 首拉不会异步填目录造成竞态。
+func TestColdStartEmptyUntilSync(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+	resetAmdConfigForTest(t)
+	cfg := DefaultConfig()
+	cfg.BaseURL = srv.URL
+	cfg.Keys = []string{"sk-test"}
+	cfg.KeyRoutingEnabled = map[string]bool{"sk-test": true}
+	Set(cfg)
 	catalogMu.Lock()
 	catalogModels = map[string]Model{}
 	catalogLoaded = false
 	catalogMu.Unlock()
 	InitCatalog()
-	list := ModelList()
-	if len(list) != len(SeedModels) {
-		t.Fatalf("cold start must use the seed snapshot: got %d, want %d", len(list), len(SeedModels))
+	if l := ModelList(); len(l) != 0 {
+		t.Fatalf("cold start must be empty (no snapshot seed): got %d", len(l))
 	}
-	for _, sm := range SeedModels {
-		if _, ok := Resolve(sm.ID); !ok {
-			t.Errorf("seed model %q missing", sm.ID)
-		}
-	}
-	if _, ok := Resolve("MinerU2.5-Pro"); ok {
-		t.Error("OCR-only model must not be in the seed catalog")
+	if _, ok := Resolve("DeepSeek-V4-Flash"); ok {
+		t.Error("no snapshot seed: DeepSeek-V4-Flash must not appear before a successful sync")
 	}
 }
 

@@ -115,9 +115,11 @@ func clearZenSessionsForDataDelete() int {
 	return n
 }
 
-// clearZenEndpointsForDataDelete 删除端点学习结果文件，并把内存模型表中被
-// 学习改写的 Upstream 回退到种子目录的原值（种子目录本身就是 responses 的
-// 模型不受影响）。
+// clearZenEndpointsForDataDelete 删除端点学习结果文件，并把内存模型表中
+// 学习器写下的 responses 定论回退到默认 chat（Upstream 清空）。目录 npm
+// 播种的 responses（Source!="learned"）是目录固有决策，不回退——取代旧版
+// 的"种子目录本身就是 responses 的模型不受影响"基线（种子快照已于
+// 2026-11-11 整机制删除）。
 func clearZenEndpointsForDataDelete() int {
 	learned := loadZenEndpointsFile()
 	// 学习结果住在 zen-config.json 的 endpoints 段，清空该段即可（不删整文件，
@@ -128,11 +130,6 @@ func clearZenEndpointsForDataDelete() int {
 	if len(learned) == 0 {
 		return 0
 	}
-	seedUpstream := map[string]string{}
-	for _, m := range zenSeedModels {
-		seedUpstream[m.ID] = m.Upstream
-	}
-	initZenModels()
 	zenModelsMu.Lock()
 	n := 0
 	for id, up := range learned {
@@ -140,12 +137,11 @@ func clearZenEndpointsForDataDelete() int {
 		if !ok || m == nil || up != "responses" || m.Upstream != "responses" {
 			continue
 		}
-		base := seedUpstream[id]
-		if base == "responses" {
-			continue
+		if m.Source != "learned" {
+			continue // npm/目录固有的 responses：非学习产物，不回退
 		}
 		next := *m
-		next.Upstream = base
+		next.Upstream = ""
 		zenModels[id] = &next
 		n++
 	}

@@ -206,7 +206,7 @@ func setupZenDepTest(t *testing.T, upstream *httptest.Server) {
 	setZenConfig(&cfgCopy)
 	t.Cleanup(func() { setZenConfig(savedCfg) })
 
-	savedModels, savedAliases := zenModels, zenAliases
+	savedModels := zenModels
 	zenModelsMu.Lock()
 	// 宽限表一并清空恢复：syncZenModels 的 prune 会把主表条目转入宽限表
 	//（resolve 的宽限兜底先于 deprecation 落盘映射命中），不隔离会让本测试
@@ -217,11 +217,10 @@ func setupZenDepTest(t *testing.T, upstream *httptest.Server) {
 		"mimo-v2.5-free":       {ID: "mimo-v2.5-free", Source: "live"},
 		"mimo-v2.6-flash-free": {ID: "mimo-v2.6-flash-free", Source: "live"},
 	}
-	zenAliases = map[string]*ZenModel{}
 	zenModelsMu.Unlock()
 	t.Cleanup(func() {
 		zenModelsMu.Lock()
-		zenModels, zenAliases, zenGraceModels = savedModels, savedAliases, savedGrace
+		zenModels, zenGraceModels = savedModels, savedGrace
 		zenModelsMu.Unlock()
 	})
 
@@ -279,13 +278,12 @@ func asZenHTTPError(err error, target **zenHTTPError) bool {
 // "Big-Pickle" 时，漏归一化会落空并误路由到 cline 池。
 func TestResolveZenModelNormalizesID(t *testing.T) {
 	zenModelsMu.Lock()
-	savedModels, savedAliases := zenModels, zenAliases
+	savedModels := zenModels
 	zenModels = map[string]*ZenModel{"big-pickle": {ID: "big-pickle", Source: "live"}}
-	zenAliases = map[string]*ZenModel{}
 	zenModelsMu.Unlock()
 	defer func() {
 		zenModelsMu.Lock()
-		zenModels, zenAliases = savedModels, savedAliases
+		zenModels = savedModels
 		zenModelsMu.Unlock()
 	}()
 
