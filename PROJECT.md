@@ -122,6 +122,8 @@ go test ./... -count=1             # 除下述既有失败外应全绿
 
 面板与运维侧新增的本地定制（2026-11-02/03 用户定，同步时同样优先保留）：健康表出口**手动冷却**（无到期时间，仅「解禁」恢复，`proxyManualCooled`）与绿色解禁/黄色冷却按钮；健康表**代理测试**（测速目标可配置、每出口最多 3 次 HTTPS 探测入在线率/握手统计，不触碰路由冷却）；**批量测试可路由过滤**（反代开关关闭的凭据跳过——Trae/WorkBuddy 只看反代开关不看账号总闸；网关封禁平台整平台跳过）；绑定名 eg-input **中间缩略**（`egShortLabel`）；wb 池状态/实测台账进配置备份（三层口径，见 `MERGE.md` 2026-11-03 节）。
 
+wb vendored 树 server 包手工改动（2026-11-11，re-vendor 时按 ours 保留）：`internal/workbuddy/server/logging.go` 与 `handler.go`——`chatStat` 携带客户端请求 ctx，`done` 落行时客户端已取消且 outcome 为空写回 `OutcomeInterrupted`（客户端断开的 200 请求不再记 `out=success`，handler 构造点传 `r.Context()`）。上游无此机制，同步冲突时优先保本语义。
+
 已废弃、不要从上游恢复：后台 key rotator（`SessionRotateMinutes` 2026-11-08 随 a8fe356 吸收，见 MERGE 台账）、`ZEN_KEYS`（Go 源码从不读取）、上游 README 的 compose 配置段。
 
 上游功能但**必须由本仓 app 层装配**才生效（2026-10-28 起）：workbuddy 的网关思考档位策略（上游 `thinking` 配置节）。装配点三处，漏任一处都不会报错、只是功能静默失效——`internal/app/workbuddy.go`（启动）与 `internal/app/workbuddy_config.go`（热更新）里的 `up.SetEffortPolicy(effortPolicyOf(cfg))`、`livecfg.Snapshot` 的五个 `Thinking*` 镜像字段、面板四个控件（`thinking.enabled` / `default_effort` / `client_priority` / `override_scope`）。上游同类装配在 `cmd/server/main.go`，本仓没有那个入口。

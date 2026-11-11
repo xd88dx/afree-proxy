@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -357,6 +358,46 @@ func TestLogChatRowNoUsageShowsDash(t *testing.T) {
 		if !strings.Contains(out, want) {
 			t.Errorf("row missing %q:\n%s", want, out)
 		}
+	}
+}
+
+// 客户端在 handler 返回前取消/断开：即使 status 200 也不记 success，
+// done 落行 out=interrupted（写回字段，归档快照同值）；显式 outcome 更具体，优先保留。
+func TestChatStatClientGoneInterrupted(t *testing.T) {
+	withChatLog(t)
+	gone, cancel := context.WithCancel(context.Background())
+	cancel()
+	st := newChatStat(time.Now(), "glm-5.3", true, nil)
+	st.status = http.StatusOK
+	st.requestID = "rid-gone"
+	st.ctx = gone
+	out := captureStdout(t, func() { st.done() })
+	if !strings.Contains(out, "out=interrupted") {
+		t.Errorf("client-gone 200 应记 out=interrupted：\n%s", out)
+	}
+	if st.outcome != reqlog.OutcomeInterrupted {
+		t.Errorf("字段未写回归档同值：%q", st.outcome)
+	}
+
+	// 对照：ctx 未取消的同形态请求仍记 success。
+	okSt := newChatStat(time.Now(), "glm-5.3", true, nil)
+	okSt.status = http.StatusOK
+	okSt.requestID = "rid-ok"
+	okSt.ctx = context.Background()
+	out = captureStdout(t, func() { okSt.done() })
+	if !strings.Contains(out, "out=success") {
+		t.Errorf("正常完成 200 应记 out=success：\n%s", out)
+	}
+
+	// 显式 outcome（stream_error）不被 client-gone 覆盖。
+	mixed := newChatStat(time.Now(), "glm-5.3", true, nil)
+	mixed.status = http.StatusOK
+	mixed.requestID = "rid-mixed"
+	mixed.ctx = gone
+	mixed.outcome = reqlog.OutcomeStreamError
+	out = captureStdout(t, func() { mixed.done() })
+	if !strings.Contains(out, "out=stream_error") {
+		t.Errorf("显式 outcome 应优先保留：\n%s", out)
 	}
 }
 

@@ -1146,6 +1146,9 @@ func (h *Handler) chatCompletions(w http.ResponseWriter, r *http.Request) {
 	// routeModel：映射请求显示真实路由名（别名 INFO 行已记录 客户端名 -> 真实名，
 	// 两行合看即全链路；流水行与账本/上游口径一致，运维排查不用做心算翻译）。
 	st := newChatStat(time.Now(), routeModel, peek.Stream, h.budget)
+	// 请求 ctx 交给统计对象：done 落行时据此归因「客户端在交付完成前取消/断开」
+	// （见 chatStat.ctx 注释），这类请求不再被记成 out=success。
+	st.ctx = r.Context()
 	if tr := requestTraceFrom(r); tr != nil {
 		tr.stat = st
 		// 来源在 ServeHTTP 入口采集（此时才知道开关与请求头），此处转交给统计对象，

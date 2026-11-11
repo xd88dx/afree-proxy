@@ -3,6 +3,7 @@ package server
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -93,6 +94,10 @@ type chatStat struct {
 	// 同一哲学：请求值与实际生效值分开记录，未降级时为空）。
 	modelEff string
 
+	// 客户端请求 ctx：done 落行时若已取消（handler 返回前客户端连接关闭/取消），
+	// 说明请求没有完整交付给客户端——即使上游流正常完成也不该记 success。
+	ctx context.Context
+
 	logged bool
 }
 
@@ -115,6 +120,14 @@ func (s *chatStat) done() {
 		return
 	}
 	s.logged = true
+	// 客户端在 handler 返回前就取消/断开（net/http 在 ServeHTTP 返回之后才取消
+	// 请求 ctx，因此此处看到取消只能是客户端侧的）：请求没有完整交付给客户端，
+	// 即使上游流正常完成也不算 success——标题类短请求被客户端中途放弃被记成
+	// 「成功」的误判就属于这一类。写回字段保持行日志与归档快照同值；显式设置过
+	// 的 outcome（stream_error 等）更具体，优先保留。
+	if s.outcome == "" && s.ctx != nil && s.ctx.Err() != nil {
+		s.outcome = reqlog.OutcomeInterrupted
+	}
 	total := time.Since(s.start)
 	logChatRowFull(s.ttfb, total, s.model, s.mode, s.uid, s.nick, s.status, s.toks,
 		s.think, s.cacheHit, s.cacheMiss, s.hasCache,
