@@ -1,7 +1,7 @@
 {
   "version": 1,
   "created_at": "2026-11-09T17:13:34Z",
-  "updated_at": "2026-11-11T06:36:10Z",
+  "updated_at": "2026-11-11T18:45:29Z",
   "files": {
     ".agents/skills/add-platform/SKILL.md": {
       "role": "index",
@@ -488,9 +488,9 @@
     },
     "Dockerfile": {
       "role": "index",
-      "sha256": "cd2ef98307fa2f368b5ba63cea89f4358cdc04a395dae1b6464db4e68f15b6bf",
-      "size": 1879,
-      "normalized_sha256": "cd2ef98307fa2f368b5ba63cea89f4358cdc04a395dae1b6464db4e68f15b6bf"
+      "sha256": "b94d43d3a9110295a2c16e6c3d8c65c381ef795bf95d3277e40de9b088c612f5",
+      "size": 2059,
+      "normalized_sha256": "b94d43d3a9110295a2c16e6c3d8c65c381ef795bf95d3277e40de9b088c612f5"
     },
     "MERGE.md": {
       "role": "index",
@@ -518,9 +518,9 @@
     },
     "aoci.code.txt": {
       "role": "index",
-      "sha256": "ff79b22d8a03d550f29c7261aea5afb03ef82f8bee33e84dfb09e96a7e297451",
-      "size": 167396,
-      "normalized_sha256": "ff79b22d8a03d550f29c7261aea5afb03ef82f8bee33e84dfb09e96a7e297451"
+      "sha256": "6b68e66f350353d8c7fe240cefa6d8aeb6248d04e2ae5d113ddcb860791fefd6",
+      "size": 168462,
+      "normalized_sha256": "6b68e66f350353d8c7fe240cefa6d8aeb6248d04e2ae5d113ddcb860791fefd6"
     },
     "aoci.meta.txt": {
       "role": "index",
@@ -548,9 +548,9 @@
     },
     "entrypoint.sh": {
       "role": "index",
-      "sha256": "0e7b4f967bac517d52e045298383d866535ee0583d49b2109edf5cc359bc80d2",
-      "size": 899,
-      "normalized_sha256": "0e7b4f967bac517d52e045298383d866535ee0583d49b2109edf5cc359bc80d2"
+      "sha256": "533ff39c5ba583d8216841592d240469bd4fc2b001d99322e18694a4fdff566f",
+      "size": 1596,
+      "normalized_sha256": "533ff39c5ba583d8216841592d240469bd4fc2b001d99322e18694a4fdff566f"
     },
     "go.mod": {
       "role": "index",
@@ -6993,6 +6993,12 @@
       "sha256": "05c4503e43d3c707881b19686cf96ad0df61aab8bbe1666184ac058d3efad4ab",
       "size": 2855,
       "normalized_sha256": "05c4503e43d3c707881b19686cf96ad0df61aab8bbe1666184ac058d3efad4ab"
+    },
+    "scripts/platform_audit.py": {
+      "role": "index",
+      "sha256": "e1d068c5e0a0e9fb6ea07b502d56031d24b8339c529695958db96900dee4152d",
+      "size": 10876,
+      "normalized_sha256": "e1d068c5e0a0e9fb6ea07b502d56031d24b8339c529695958db96900dee4152d"
     },
     "scripts/smoke_probe.go": {
       "role": "index",
