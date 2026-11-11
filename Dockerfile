@@ -31,6 +31,8 @@ WORKDIR /app
 # 一整层大体积二进制的副本。
 COPY --from=builder --chown=app:app /build/afree-proxy .
 COPY --chown=app:app entrypoint.sh /entrypoint.sh
+# 平台可用性检测脚本（随镜像分发；entrypoint 启动时播种到数据目录 scripts/）
+COPY --chown=app:app scripts/platform_audit.py /opt/afree/platform_audit.py
 
 RUN mkdir -p /app/data \
     && chown app:app /app/data \
