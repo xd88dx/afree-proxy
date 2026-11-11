@@ -1,7 +1,7 @@
 {
   "version": 1,
   "created_at": "2026-11-09T17:13:34Z",
-  "updated_at": "2026-11-10T22:21:19Z",
+  "updated_at": "2026-11-11T06:36:10Z",
   "files": {
     ".agents/skills/add-platform/SKILL.md": {
       "role": "index",
@@ -500,9 +500,9 @@
     },
     "PROJECT.md": {
       "role": "index",
-      "sha256": "9f98752d312612281f84bb6feda4d2482079e4aa9f10fb3139597cd3269c1419",
-      "size": 43057,
-      "normalized_sha256": "9f98752d312612281f84bb6feda4d2482079e4aa9f10fb3139597cd3269c1419"
+      "sha256": "76c5f2e771047c0efa3ac4c9dcde13b1f4f1996ca6990ec7ea615b26acb200f3",
+      "size": 43481,
+      "normalized_sha256": "76c5f2e771047c0efa3ac4c9dcde13b1f4f1996ca6990ec7ea615b26acb200f3"
     },
     "README.md": {
       "role": "index",
@@ -518,9 +518,9 @@
     },
     "aoci.code.txt": {
       "role": "index",
-      "sha256": "5775feb8da25e4646b1456960a6dfce6841317a975522e4b496237318c637e51",
-      "size": 166778,
-      "normalized_sha256": "5775feb8da25e4646b1456960a6dfce6841317a975522e4b496237318c637e51"
+      "sha256": "ff79b22d8a03d550f29c7261aea5afb03ef82f8bee33e84dfb09e96a7e297451",
+      "size": 167396,
+      "normalized_sha256": "ff79b22d8a03d550f29c7261aea5afb03ef82f8bee33e84dfb09e96a7e297451"
     },
     "aoci.meta.txt": {
       "role": "index",
@@ -1014,10 +1014,10 @@
     },
     "internal/app/models_order_test.go": {
       "role": "observe",
-      "sha256": "e31c121024c6e49bd9b2938515d392f484b912eef526841be9d6a652a5662e7f",
-      "size": 12908,
-      "normalized_sha256": "e31c121024c6e49bd9b2938515d392f484b912eef526841be9d6a652a5662e7f",
-      "format_sha256": "e31c121024c6e49bd9b2938515d392f484b912eef526841be9d6a652a5662e7f",
+      "sha256": "3bb0413a30cf7e59367eb6830827df2873ebdd184484aedb20c028111afb68e9",
+      "size": 12917,
+      "normalized_sha256": "3bb0413a30cf7e59367eb6830827df2873ebdd184484aedb20c028111afb68e9",
+      "format_sha256": "3bb0413a30cf7e59367eb6830827df2873ebdd184484aedb20c028111afb68e9",
       "format_kind": "gofmt"
     },
     "internal/app/nickname_test.go": {
@@ -1874,18 +1874,18 @@
     },
     "internal/openrouter/config_test.go": {
       "role": "observe",
-      "sha256": "27bed0b5d26bf4f732809e861deab5e5e6fde9d0d1049427d8bc859d1a21e967",
-      "size": 14278,
-      "normalized_sha256": "27bed0b5d26bf4f732809e861deab5e5e6fde9d0d1049427d8bc859d1a21e967",
-      "format_sha256": "27bed0b5d26bf4f732809e861deab5e5e6fde9d0d1049427d8bc859d1a21e967",
+      "sha256": "76299f50544d3c873918a5252a06430696093235ade84ceab3453aa1ead0663c",
+      "size": 14251,
+      "normalized_sha256": "76299f50544d3c873918a5252a06430696093235ade84ceab3453aa1ead0663c",
+      "format_sha256": "76299f50544d3c873918a5252a06430696093235ade84ceab3453aa1ead0663c",
       "format_kind": "gofmt"
     },
     "internal/openrouter/models.go": {
       "role": "index",
-      "sha256": "5de124320f25e4e6d1fd4c8add15782ee694daff19dfa82b127fd18e5f82bb56",
-      "size": 9782,
-      "normalized_sha256": "5de124320f25e4e6d1fd4c8add15782ee694daff19dfa82b127fd18e5f82bb56",
-      "format_sha256": "5de124320f25e4e6d1fd4c8add15782ee694daff19dfa82b127fd18e5f82bb56",
+      "sha256": "55d1f2ebd511f73c60e7d2b49d0fbf0ca7cbf2a1b210613db4faa5eced619068",
+      "size": 10523,
+      "normalized_sha256": "55d1f2ebd511f73c60e7d2b49d0fbf0ca7cbf2a1b210613db4faa5eced619068",
+      "format_sha256": "55d1f2ebd511f73c60e7d2b49d0fbf0ca7cbf2a1b210613db4faa5eced619068",
       "format_kind": "gofmt"
     },
     "internal/openrouter/pool.go": {
@@ -5020,10 +5020,10 @@
     },
     "internal/workbuddy/server/handler.go": {
       "role": "index",
-      "sha256": "b990f8dead2f5554d0ee4714dc422d51ccd74a0608a031295a0ffee792624e77",
-      "size": 152723,
-      "normalized_sha256": "b990f8dead2f5554d0ee4714dc422d51ccd74a0608a031295a0ffee792624e77",
-      "format_sha256": "b990f8dead2f5554d0ee4714dc422d51ccd74a0608a031295a0ffee792624e77",
+      "sha256": "92bbd60fe1216285b7c8620986710dbf7a5894364cc3d1e483be992a507c4b84",
+      "size": 152933,
+      "normalized_sha256": "92bbd60fe1216285b7c8620986710dbf7a5894364cc3d1e483be992a507c4b84",
+      "format_sha256": "92bbd60fe1216285b7c8620986710dbf7a5894364cc3d1e483be992a507c4b84",
       "format_kind": "gofmt"
     },
     "internal/workbuddy/server/handler_credit_floor_test.go": {
@@ -5148,18 +5148,18 @@
     },
     "internal/workbuddy/server/logging.go": {
       "role": "index",
-      "sha256": "b35432fe5d911c276727a2aac0db1b4417b0405c93f55569f750612371d9ddd5",
-      "size": 33863,
-      "normalized_sha256": "b35432fe5d911c276727a2aac0db1b4417b0405c93f55569f750612371d9ddd5",
-      "format_sha256": "b35432fe5d911c276727a2aac0db1b4417b0405c93f55569f750612371d9ddd5",
+      "sha256": "b3c70a443296fda2484c71c76a7536c993c7a7b7a684bd7fd244f087f5f5fb28",
+      "size": 34702,
+      "normalized_sha256": "b3c70a443296fda2484c71c76a7536c993c7a7b7a684bd7fd244f087f5f5fb28",
+      "format_sha256": "b3c70a443296fda2484c71c76a7536c993c7a7b7a684bd7fd244f087f5f5fb28",
       "format_kind": "gofmt"
     },
     "internal/workbuddy/server/logging_test.go": {
       "role": "observe",
-      "sha256": "ab34f811b23d4be588a69c16cd0d37ad049378fccb36a91c662942d2b126aa3f",
-      "size": 25601,
-      "normalized_sha256": "ab34f811b23d4be588a69c16cd0d37ad049378fccb36a91c662942d2b126aa3f",
-      "format_sha256": "ab34f811b23d4be588a69c16cd0d37ad049378fccb36a91c662942d2b126aa3f",
+      "sha256": "2e49322bb0a59772cc1d3d2cf14abd328ca6aa29d3b26e3a0207a2ac4b9a6061",
+      "size": 27116,
+      "normalized_sha256": "2e49322bb0a59772cc1d3d2cf14abd328ca6aa29d3b26e3a0207a2ac4b9a6061",
+      "format_sha256": "2e49322bb0a59772cc1d3d2cf14abd328ca6aa29d3b26e3a0207a2ac4b9a6061",
       "format_kind": "gofmt"
     },
     "internal/workbuddy/server/mcp.go": {
