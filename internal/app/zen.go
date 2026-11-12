@@ -1479,6 +1479,8 @@ func zenKeyStatus() []map[string]any {
 	// （会话快照已随面板会话区块拆除移除：现铸模式下无粘性会话可展示，
 	// zenSessions 表仅剩 403 换新闸门在用，见 zen_session.go。）
 	egress := zenEgressSnapshotOf(keys)
+	// 每 key 组织 ID 也先快照（zenOrgMu），同样不与 zenKeyMu 嵌套。
+	orgs := zenKeyOrgMap(keys)
 	zenKeyMu.Lock()
 	defer zenKeyMu.Unlock()
 	now := time.Now()
@@ -1518,6 +1520,12 @@ func zenKeyStatus() []map[string]any {
 		} else if e.bound {
 			st["proxy"] = ""
 			st["noEgress"] = true
+		}
+		// 每 key 组织 ID（x-opencode-org-id 的来源）。空 = 未解析（该头省略）。
+		// 面板必须能看出来，否则"为什么这个 key 的请求不带 org 头"无从判断。
+		if o := orgs[i]; o.OrgID != "" {
+			st["orgID"] = o.OrgID
+			st["orgSource"] = o.Source
 		}
 		if until, cooling := zenKeyCool[k]; cooling && now.Before(until) {
 			st["cooling"] = true
@@ -1693,8 +1701,20 @@ func buildZenBody(params map[string]any, stream bool) map[string]any {
 			}
 		}
 	}
-	delete(body, "reasoning_effort")
-	delete(body, "reasoningEffort")
+	// reasoning_effort：2026-11-11 桌面端 2.2.7 实测抓包推翻了此前"客户端
+	// 不发该字段"的结论。真实行为是"按模型能力决定"：
+	//   - deepseek-v4.1-flash-free（目录 capabilities.reasoning.effort =
+	//     ["low","high","max"]）→ 客户端发 reasoning_effort:"high"。
+	//   - big-pickle（capabilities.reasoning 只有 supported，无 effort）→
+	//     客户端完全不发。
+	// 也就是说 effort 由客户端的模型变体选择决定，不是网关该猜的东西。
+	// 故这里改为纯透传：客户端给就原样转发（驼峰统一成下划线），不给就
+	// 绝不补默认值——凭空造一个 "high" 反而会让非 reasoning 模型收到非法字段。
+	if eff, ok := params["reasoning_effort"]; ok && eff != nil {
+		body["reasoning_effort"] = eff
+	} else if eff, ok := params["reasoningEffort"]; ok && eff != nil {
+		body["reasoning_effort"] = eff
+	}
 	// FreeTier gate（2026-09-18 实测解码）：zen 免费层 chat 端点校验请求体
 	// 是否携带 opencode 工具集，缺失则 403（"can only be used from within
 	// OpenCode"）。恒注入 12 个 v2 规范工具名保证过闸。
@@ -1723,8 +1743,14 @@ func buildZenBody(params map[string]any, stream bool) map[string]any {
 	//    此时 tools[] 里只有 gate 占位 stub，客户端没有执行层；让上游按
 	//    auto/required 处理会让模型返回 read/shell/execute 这类客户端从未
 	//    声明的调用，IDE 解析失败（required 更会强制成一次必失败的工具调用）。
-	//  - 客户端有工具但没指定：auto，让模型按需调用客户端真实工具。
-	//  - 客户端显式指定且有工具：原样透传。
+	//    这是**故意**偏离官方客户端的唯一一处：官方客户端永远带着自己真实的
+	//    工具集，不存在"有 gate stub 但无执行层"的状态，所以它可以直接省略。
+	//  - 客户端有工具但没指定：省略该字段（上游 82abe7f）。2026-11-11 桌面端 2.2.7
+	//    抓包证实官方客户端在 chat 路径不发 tool_choice（上游缺省即 auto）。
+	//    此前网关补 "auto" 是多余字段——语义相同，但形态与真实客户端不同。
+	//  - 客户端显式指定且有工具：原样透传。旧版 function_call 语义等价于
+	//    tool_choice，转换 tools[] 后同样透传（否则老客户端的 "required"
+	//    会在转换中丢失）。
 	//  例外：个别免费模型只接受 "auto"（2026-11-05 实测 crouton-alpha-free：
 	//  400 "only \"auto\" is supported for tool_choice"，none/required 一律
 	//  拒）。这类模型降级为 auto——tools[] 里只有 gate 占位 stub，即便被
@@ -1737,8 +1763,10 @@ func buildZenBody(params map[string]any, stream bool) map[string]any {
 		}
 	} else if tc, ok := params["tool_choice"]; ok {
 		body["tool_choice"] = tc
+	} else if tc, ok := params["function_call"]; ok {
+		body["tool_choice"] = tc
 	} else {
-		body["tool_choice"] = "auto"
+		delete(body, "tool_choice")
 	}
 	ensureZenEnvMarkerChat(body)
 	return body
@@ -2146,13 +2174,19 @@ func buildZenResponsesBody(params map[string]any, modelID string, promptKey stri
 //     x-session-affinity, x-session-id，四个头同值（新鲜会话时四者
 //     相等；父会话/分支会话时 q 规则见静态 RE 报告，网关粘性会话
 //     属于新鲜会话情形，故四者同值正确）。
-//   - CLI v2 完全不发 x-opencode-request（静态计数 0，抓包亦无）。
-//     旧网关仍发该头是 v1 遗留指纹，必须去掉；requestID 参数保留
-//     仅为调用点兼容，不再写入任何头。
-//   - x-opencode-org-id 只在 OAuth 账户元数据有 orgID 时出现，网关
-//     的原始 key 字符串中没有该信息，绝不编造，缺省即正确。
+//   - x-opencode-request：v2 CLI 完全不发（静态计数 0，抓包亦无）。旧网关仍发该头
+//     是 v1 遗留指纹，必须去掉；requestID 参数保留仅为调用点兼容，不再写入任何头。
+//   - x-opencode-org-id：**按 key 解析**，绝不能是全局常量。2026-11-11 实测确认
+//     每个 zen key 绑定各自的 org（wrk_/org_ 前缀），跨 key 套用同一值会让上游
+//     看到"key 属于 A org、请求声称 B org"的矛盾形态。解析逻辑见 zen_key_org.go
+//     （按 key 向 console/api/orgs 发现 + 负缓存）；发现不到则省略该头，并在
+//     管理员显式配置 cfg.OrgID 时回退到该值。绝不编造。
 //   - x-opencode-project：网关没有客户端项目目录，global 是唯一诚实值。
-func setZenGateHeaders(req *http.Request, sess, requestID string) {
+//
+// key 是本次请求实际使用的那把 key（轮转/故障转移后可能不是 Keys[0]）——
+// 按它解析该 key 自己的 org，才能保证"头里的 org 就是这把 key 的 org"。
+// key 为空（匿名路径）时不发该头，除非管理员显式配置了 cfg.OrgID 兜底。
+func setZenGateHeaders(req *http.Request, sess, requestID, key string) {
 	_ = requestID // v2 CLI does not send x-opencode-request; do not emit it
 	req.Header["x-opencode-session-id"] = []string{sess}
 	req.Header["x-opencode-session"] = []string{sess}
@@ -2160,7 +2194,12 @@ func setZenGateHeaders(req *http.Request, sess, requestID string) {
 	req.Header["x-session-id"] = []string{sess}
 	req.Header["x-opencode-client"] = []string{"cli"}
 	req.Header["x-opencode-project"] = []string{"global"}
-	if org := getZenConfig().OrgID; org != "" {
+	if key != "" {
+		if org, _ := zenKeyOrgForRequest(key); org != "" {
+			req.Header["x-opencode-org-id"] = []string{org}
+		}
+	} else if org := strings.TrimSpace(getZenConfig().OrgID); org != "" {
+		// 无 key（匿名路径）：只有显式配置的值可用。
 		req.Header["x-opencode-org-id"] = []string{org}
 	}
 	// CLI v2 wire headers (2026-10-26 capture): Accept */*, and the
@@ -2171,11 +2210,30 @@ func setZenGateHeaders(req *http.Request, sess, requestID string) {
 	// practice, and the gateway parses SSE as raw bytes, so this is safe.
 	req.Header.Set("Accept", "*/*")
 	req.Header.Set("Accept-Encoding", "gzip, deflate, br, zstd")
+	// Connection: keep-alive。2026-11-11 Android 客户端 2.2.7 抓包（匿名真实
+	// inference 请求）确认官方客户端显式发这个头；Go 的 Transport 在正常
+	// keep-alive 时**省略**它（HTTP/1.1 默认即持久连接）。语义完全等价，纯粹
+	// 是头集合形态对齐。
+	req.Header.Set("Connection", "keep-alive")
 	// CLI v2 tracing headers, same trace/span across b3 and traceparent.
+	//
+	// b3 是 4 段（traceid-spanid-sampled-parentSpanId）。2026-11-11 桌面端
+	// 2.2.7 抓包逐字确认：真实客户端发的是
+	//   b3: <32hex>-<16hex>-1-<16hex>
+	// 而网关此前只发 3 段（省略 parentSpanId）。B3 规范里 parentSpanId 是
+	// 可选的，但官方客户端总是带上——网关是整条链路的最上游，没有真实父
+	// span，故随机生成一个：字段形态正确，且不虚构任何真实调用关系。
+	//
+	// 头名用小写：2026-11-11 Android 客户端 2.2.7 抓包（未登录、真实
+	// inference 请求）确认官方客户端发的是小写 `b3` / `traceparent`。Header.Set
+	// 会把名字规范化成 `B3` / `Traceparent`，字节层面与真实客户端不同。HTTP
+	// 头本就不区分大小写，但本函数其余身份头（x-opencode-*）都刻意用 map 直写
+	// 保持小写，这里若用 Set 就自相矛盾了。
 	traceID := kit.RandHex(16)
 	spanID := kit.RandHex(8)
-	req.Header.Set("b3", traceID+"-"+spanID+"-1")
-	req.Header.Set("traceparent", "00-"+traceID+"-"+spanID+"-01")
+	parentSpanID := kit.RandHex(8)
+	req.Header["b3"] = []string{traceID + "-" + spanID + "-1-" + parentSpanID}
+	req.Header["traceparent"] = []string{"00-" + traceID + "-" + spanID + "-01"}
 }
 
 // zenClientFlatTools 提取客户端工具并转成 responses 端点要求的 flat 形态。
@@ -2813,7 +2871,7 @@ func callZenResponsesAPI(ctx context.Context, params map[string]any, stream bool
 		req.Header.Set("User-Agent", ua)
 		// x-opencode-session-id：真实 CLI 两个头都发（request.ts）；对本仓库的
 		// 格式门结论无害，补上只为字节级对齐官方流量。
-		setZenGateHeaders(req, sess, user)
+		setZenGateHeaders(req, sess, user, key)
 		log.Printf("  zen upstream: model=%s responses stream=%v via=%s key=#%d attempt=%d session=%s",
 			zm.ID, stream, viaProxy, keyIndex(key), attempt+1, kit.Truncate(sess, 24))
 		setUpstreamInfo(ctx, fmt.Sprintf("key#%d", keyIndex(key)))
@@ -3183,7 +3241,7 @@ func callZenAPI(ctx context.Context, params map[string]any, stream bool, opts ..
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("User-Agent", ua)
 		// x-opencode-session-id：真实 CLI 两个头都发（request.ts），见 responses 路径。
-		setZenGateHeaders(req, sess, user)
+		setZenGateHeaders(req, sess, user, key)
 
 		log.Printf("  zen upstream: model=%s stream=%v msgs=%d via=%s key=#%d attempt=%d session=%s",
 			body["model"], stream, getMsgCount(params), viaProxy, keyIndex(key), attempt+1, kit.Truncate(sess, 24))

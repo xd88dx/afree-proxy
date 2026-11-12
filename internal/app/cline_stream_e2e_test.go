@@ -428,10 +428,10 @@ func TestClineHeadersContract(t *testing.T) {
 }
 
 // zen 上游身份头与 UA 必须与实测规格一致：UA 为 CLI v2 的
-// "opencode/latest/2.1.4/cli"（2026-10-26 实测，3758eb7；v2 chat/responses
+// "opencode/latest/2.2.7/cli"（2026-11-11 桌面端 2.2.7 抓包，上游 82abe7f；v2 chat/responses
 // 同一 UA，本地旧 ai-sdk 形态轮换表已废弃）；gate 头用官方的小写键名。
 func TestZenHeadersMatchAuditSpec(t *testing.T) {
-	if zenNativeUA != "opencode/latest/2.1.4/cli" {
+	if zenNativeUA != "opencode/latest/2.2.7/cli" {
 		t.Errorf("zenNativeUA drifted from the audit spec: %q", zenNativeUA)
 	}
 	// 轮换列表里的原生 UA 条目也必须是同一版本
@@ -445,8 +445,9 @@ func TestZenHeadersMatchAuditSpec(t *testing.T) {
 		t.Errorf("ZenUserAgents must contain the native v2 UA %q (got %v)", zenNativeUA, kit.ZenUserAgents)
 	}
 
-	// v2 CLI（3758eb7）：chat 与 responses 同一 UA，无 provider-utils 段切换。
-	if zenNativeUA != "opencode/latest/2.1.4/cli" {
+	// v2 CLI（2026-11-11 桌面端 2.2.7 抓包，上游 82abe7f）：chat 与 responses
+	// 同一 UA，无 provider-utils 段切换。
+	if zenNativeUA != "opencode/latest/2.2.7/cli" {
 		t.Errorf("zenNativeUA must be the CLI v2 UA, got %q", zenNativeUA)
 	}
 
@@ -454,7 +455,7 @@ func TestZenHeadersMatchAuditSpec(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	setZenGateHeaders(req, "ses_abcdef012345ABCDef012345", "msg_abcdefghijklmnopqrstuvwxyz12")
+	setZenGateHeaders(req, "ses_abcdef012345ABCDef012345", "msg_abcdefghijklmnopqrstuvwxyz12", "")
 	// 官方 CLI 发小写键名；raw map 必须是小写条目
 	for k, v := range map[string]string{
 		"x-opencode-session-id": "ses_abcdef012345ABCDef012345",

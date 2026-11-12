@@ -1019,12 +1019,14 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
     </div>
     <div class="flex" style="gap:10px;margin:0 0 8px;align-items:center;flex-wrap:wrap">
       <label class="hint" style="margin:0">Probe model (used by the Test buttons):</label>
-      <select id="ocProbeModel" style="max-width:420px"><option value="">auto</option></select>
+      <select id="ocProbeModel" style="max-width:420px"><option value="">auto — big-pickle first, then live models</option></select>
+      <label class="hint" style="margin:0 0 0 6px">Org ID (single key only):</label>
+      <input type="text" id="ocOrgID" placeholder="usually empty" style="max-width:220px" title="x-opencode-org-id. Upstream validates this against the key's workspace: a wrong value returns 403 &quot;Workspace access denied&quot;, so sending nothing is always safe and is what the official client does for API keys. This field is only used when the pool has exactly ONE key and that key's org cannot be discovered; with two or more keys it is ignored entirely, because one value cannot match every key. Leave it empty unless you have a single key and know its exact org id.">
     </div>
     <div class="table-wrap" style="margin-bottom:10px">
       <table>
-        <thead><tr><th style="width:50px">#</th><th style="width:110px" data-i18n="Key">Key</th><th data-i18n="Status">Status</th><th title="Counted locally by this proxy — not the official free quota" data-i18n="Today/Total tokens">Today/Total tokens</th><th data-i18n="Last used">Last used</th><th title="Main exit first, backup as fallback; both down = row skipped (isolation)." data-i18n="Proxy binding">Proxy binding</th><th style="width:130px;text-align:center" data-i18n="Actions">Actions</th><th style="text-align:center" title="Routing participation: unchecked keys never enter request rotation. Newly added keys start disabled — tick Pool to enable. Sessions are minted per upstream call." data-i18n="Pool">Pool</th></tr></thead>
-        <tbody id="ocKeysBody"><tr><td colspan="8" class="empty">Loading...</td></tr></tbody>
+        <thead><tr><th style="width:50px">#</th><th style="width:110px" data-i18n="Key">Key</th><th data-i18n="Status">Status</th><th title="Counted locally by this proxy — not the official free quota" data-i18n="Today/Total tokens">Today/Total tokens</th><th data-i18n="Last used">Last used</th><th title="x-opencode-org-id resolved per key from console/api/orgs; '-(fallback)' means the configured fallback is used because discovery returned nothing" data-i18n="Org">Org</th><th title="Main exit first, backup as fallback; both down = row skipped (isolation)." data-i18n="Proxy binding">Proxy binding</th><th style="width:130px;text-align:center" data-i18n="Actions">Actions</th><th style="text-align:center" title="Routing participation: unchecked keys never enter request rotation. Newly added keys start disabled — tick Pool to enable. Sessions are minted per upstream call." data-i18n="Pool">Pool</th></tr></thead>
+        <tbody id="ocKeysBody"><tr><td colspan="9" class="empty">Loading...</td></tr></tbody>
       </table>
     </div>
     <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin:10px 6px 4px">
@@ -6423,16 +6425,28 @@ function renderOcKeyStates(ks) {
         const actions = '<td style="white-space:nowrap;text-align:center">' +
           '<button class="btn btn-sm" data-zk="' + k.index + '">' + T('test') + '</button> ' +
           '<button class="btn btn-sm btn-danger" data-zdel="' + k.index + '" title="' + esc(T('remove_this_key_from_the_pool')) + '">' + T('delete') + '</button></td>';
+        // Org（per-key org id）列（上游 85a17bf/a10986c）：x-opencode-org-id
+        // 按 key 从 console/api/orgs 解析。未解析时该头省略；面板要能区分
+        // "没解析出来"（'-'，首次请求时解析）与"解析到了别的值"，以及
+        // 解析失败回落到手工配置值（config-fallback，黄色警示）。
+        let orgCell = '<span style="color:var(--text2)" title="not resolved yet — the header is omitted for this key (resolved on first request)">-</span>';
+        if (k.orgID) {
+          const fb = k.orgSource === 'config-fallback';
+          orgCell = '<span class="mono" style="font-size:11px' + (fb ? ';color:var(--warning,#c60)' : '') + '" title="' +
+            (fb ? 'discovery returned nothing for this key; using the configured fallback' : 'discovered from console/api/orgs') + '">' +
+            esc(k.orgID) + (fb ? ' (fallback)' : '') + '</span>';
+        }
         return '<tr draggable="true" data-drag-id="' + k.index + '"><td>#' + (k.index + 1) + (k.current ? ' <span style="color:var(--accent)" title="' + esc(T('next_in_rotation')) + '">●</span>' : '') + '</td>' +
           '<td style="font-family:monospace;font-size:11px">' + esc(k.keyMask) + '</td>' +
           '<td style="text-align:center">' + stCell + '</td>' +
           keyTokensCell(k) +
           keyLastUsedCell(k) +
+          '<td style="font-family:monospace;font-size:11px">' + orgCell + '</td>' +
           bind +
           actions +
           routing + '</tr>';
       }).join('')
-    : '<tr><td colspan="8" class="empty">No opencode keys configured</td></tr>';
+    : '<tr><td colspan="9" class="empty">No opencode keys configured</td></tr>';
   tb.onclick = e => {
     const b = e.target.closest('button[data-zk]');
     if (b) { testZenKey(parseInt(b.dataset.zk, 10), b); return; }

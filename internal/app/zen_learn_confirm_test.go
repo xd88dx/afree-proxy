@@ -237,8 +237,9 @@ func TestZenHeadersOnTheWire(t *testing.T) {
 	want := map[string]string{
 		"X-Opencode-Client":  "cli",
 		"X-Opencode-Project": "global",
-		// v2 CLI：chat 与 responses 同一个 UA（opencode/latest/2.1.4/cli，3758eb7）
-		"User-Agent": "opencode/latest/2.1.4/cli",
+		// v2 CLI：chat 与 responses 同一个 UA（opencode/latest/2.2.7/cli，
+		// 2026-11-11 桌面端 2.2.7 抓包，上游 82abe7f）
+		"User-Agent":         "opencode/latest/2.2.7/cli",
 	}
 	for k, v := range want {
 		if g := h.Get(k); g != v {

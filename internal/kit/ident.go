@@ -27,11 +27,14 @@ func WithRetryJitter(delay time.Duration) time.Duration {
 // ============================================================================
 
 var ZenUserAgents = []string{
-	// 2026-10-26 上游实测（3758eb7）：CLI v2.1.4 只发这一个 UA。旧版本轮换会让
+	// 2026-10-26 上游实测（3758eb7）：CLI v2 只发一个 UA。旧版本轮换会让
 	// 同一 key/会话在不同请求间换 UA 版本，正是上游识别非官方客户端的信号之一；
 	// 因此不再轮换旧 UA，只保留 v2 UA。（本地 1.x 时代的多 UA 轮换表随之作废，
 	// ai-sdk/bun 段的说明见 tls_bun.go 的 v2 ClientHello。）
-	"opencode/latest/2.1.4/cli",
+	//
+	// 2026-11-11 升到 2.2.7（上游 82abe7f：桌面端捆绑的运行时版本）。两个二进制的
+	// Bun 版本相同（v1.4.4），故 TLS 指纹不受影响。
+	"opencode/latest/2.2.7/cli",
 }
 
 // mustRand 读满 n 字节加密随机数；crypto/rand 失败说明系统熵源异常，

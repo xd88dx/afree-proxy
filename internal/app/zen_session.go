@@ -60,10 +60,15 @@ var (
 	// 销毁可能有价值的数据（重启后重试读取）。
 	zenSessSaveBlocked bool
 	// zenNativeUA 官方 CLI v2 的 UA（会话粘性与轮换列表共用）。
-	// 2026-10-26 上游实测（3758eb7）：CLI v2.1.4 在 chat 与 responses 两条路径
-	// 都发 opencode/latest/2.1.4/cli；旧 ai-sdk 形态 UA（1.18.35/1.19.3）已不是
+	// 2026-10-26 上游实测（3758eb7）：CLI v2 在 chat 与 responses 两条路径
+	// 都发 opencode/latest/<版本>/cli；旧 ai-sdk 形态 UA（1.18.35/1.19.3）已不是
 	// 官方客户端的 UA，与 v2 TLS 指纹（tls_bun.go）组合会被识别为旧客户端。
-	zenNativeUA = "opencode/latest/2.1.4/cli"
+	//
+	// 2026-11-11 升到 2.2.7（上游 82abe7f）—— 桌面端（Electron UI +
+	// opencode-cli.exe 边车）捆绑的运行时版本。安全性依据：两个二进制的
+	// Bun 版本完全相同（v1.4.4 / 38afee6c8，strings 逐字核对），
+	// 所以 2.2.7 与既有 Bun TLS 指纹（tls_bun.go 采集自 2.1.4）不冲突。
+	zenNativeUA = "opencode/latest/2.2.7/cli"
 )
 
 // loadZenSessions 启动时/首次使用时加载持久化会话（只读一次，失败则空跑）。
