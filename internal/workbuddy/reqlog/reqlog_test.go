@@ -28,6 +28,26 @@ func TestRecorderMetricsAndRecent(t *testing.T) {
 	}
 }
 
+// TestRecorderTruncatedBucket 锁定截断单列口径：truncated 既不进成功也不进失败，
+// Failed 派生公式 = completed − succeeded − truncated（out=truncated 新增时的口径）。
+func TestRecorderTruncatedBucket(t *testing.T) {
+	r := New(Config{})
+	r.Begin()
+	r.Record(Event{RequestID: "ok", Status: 200, OK: true, Outcome: OutcomeSuccess, DurationMs: 10})
+	r.Begin()
+	r.Record(Event{RequestID: "cut", Status: 200, OK: false, Outcome: OutcomeTruncated, DurationMs: 4000})
+	r.Begin()
+	r.Record(Event{RequestID: "bad", Status: 502, OK: false, Outcome: OutcomeHTTPError, DurationMs: 30})
+
+	s := r.Snapshot()
+	if s.Completed != 3 || s.Succeeded != 1 || s.Truncated != 1 || s.Failed != 1 {
+		t.Fatalf("counts = %+v, want completed=3 succeeded=1 truncated=1 failed=1", s)
+	}
+	if s.SuccessRate != 33.3 {
+		t.Fatalf("SuccessRate=%v, want 33.3（截断拖低成功率的诚实口径）", s.SuccessRate)
+	}
+}
+
 func TestArchiveRotationReadAndFilter(t *testing.T) {
 	dir := t.TempDir()
 	r := New(Config{Enabled: true, Dir: dir, FileMaxBytes: 120, MaxBytes: 1 << 20, RetentionDays: 7})

@@ -749,3 +749,37 @@ func TestChatStatDoneReattributesSuccessOnClientGone(t *testing.T) {
 		}
 	})
 }
+
+// TestRequestMetricsRecordsTruncated 锁定端到端归因：上游 200 但段无终态结束
+// （无 finish_reason、无 [DONE]）时，continue 层降级补截断终态、StreamHint 补
+// [DONE] 正常返回，outcome 记 truncated（reqlog.Truncated 单列），不与完整交付
+// 混在 success（2026-11-12 生产 trace 实测的截断隐形问题）。
+func TestRequestMetricsRecordsTruncated(t *testing.T) {
+	up := newFakeUpstream(t, func(string) (int, string, bool) {
+		// 有正文、无 finish_reason、无 [DONE]：上游说到一半断线的形态。
+		return 200, "data: {\"id\":\"c1\",\"object\":\"chat.completion.chunk\",\"model\":\"glm-5.2\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"说到一半\"}}]}\n\n", true
+	})
+	reqLog := reqlog.New(reqlog.Config{})
+	h := NewHandler(Config{
+		Pool:       testPoolWith(&auth.Auth{UID: "u1", AccessToken: "at1", ExpiresAt: 9999999999}),
+		Upstream:   up,
+		RequestLog: reqLog,
+	})
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest("POST", "/v1/chat/completions",
+		strings.NewReader(`{"model":"glm-5.2","stream":true,"messages":[]}`)))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("code=%d body=%s", rec.Code, rec.Body)
+	}
+	s := reqLog.Snapshot()
+	if s.Completed != 1 || s.Truncated != 1 || s.Succeeded != 0 || s.Failed != 0 {
+		t.Fatalf("metrics = %+v, want completed=1 truncated=1 succeeded=0 failed=0", s)
+	}
+	if e := s.Recent[0]; e.Outcome != reqlog.OutcomeTruncated {
+		t.Fatalf("event outcome=%q, want truncated", e.Outcome)
+	}
+	// 客户端协议侧仍是完整收尾：length 截断终态 + [DONE]（网关兜底，客户端可分辨）。
+	if !strings.Contains(rec.Body.String(), `"finish_reason":"length"`) || !strings.Contains(rec.Body.String(), "data: [DONE]") {
+		t.Fatalf("客户端必须拿到 length 截断终态与 [DONE]，实际 body:\n%s", rec.Body.String())
+	}
+}

@@ -1973,6 +1973,15 @@ func (h *Handler) chatCompletions(w http.ResponseWriter, r *http.Request) {
 				st.outcome = reqlog.OutcomeInterrupted
 			case stats.SawErrorFrame():
 				st.outcome = reqlog.OutcomeStreamError
+			case r.Context().Err() != nil:
+				// 客户端先走（含 continue 层让路给 StreamHint 补终态的路径）：无论
+				// 补没补终态，交付没有完成——interrupted 优先于 truncated/success。
+				st.outcome = reqlog.OutcomeInterrupted
+			case cont.SyntheticTruncation():
+				// 客户端仍在、上游段无终态结束：continue 层降级补的截断终态让协议
+				// 完整，但真实成因是上游断流——单独记账（reqlog.OutcomeTruncated），
+				// 不与完整交付混在 success 里。
+				st.outcome = reqlog.OutcomeTruncated
 			default:
 				st.outcome = reqlog.OutcomeSuccess
 			}

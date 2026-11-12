@@ -48,6 +48,12 @@ const (
 	OutcomeHTTPError   = "http_error"
 	OutcomeStreamError = "stream_error"
 	OutcomeInterrupted = "interrupted"
+	// OutcomeTruncated 上游段无终态结束（断流），网关按截断终态降级交付——客户端
+	// 拿到协议完整的 finish_reason=length，但真实成因是上游断流而非完整生成。
+	// 记账单列：不混入 success（虚高），也不算 Failed（客户端拿到了规范截断语义，
+	// 可自行决定续写/重试）。合法的 max_tokens 截断（上游自己发的 length）不受影响，
+	// 仍记 success——两者在补帧现场可精确区分（见 server/continue.go synthTruncation）。
+	OutcomeTruncated = "truncated"
 )
 
 // Config 归档参数。Enabled=false 时仍保留内存指标。
@@ -147,6 +153,7 @@ type Snapshot struct {
 	InFlight        int64        `json:"in_flight"`
 	Succeeded       int64        `json:"succeeded"`
 	Failed          int64        `json:"failed"`
+	Truncated       int64        `json:"truncated"`
 	SuccessRate     float64      `json:"success_rate"`
 	HTTPSuccessRate float64      `json:"http_success_rate"`
 	AvgDurationMs   float64      `json:"avg_duration_ms"`
@@ -161,6 +168,7 @@ type Recorder struct {
 	inFlight    int64
 	completed   int64
 	succeeded   int64
+	truncated   int64
 	httpSuccess int64
 	durationSum int64
 	recent      []Event
@@ -213,6 +221,9 @@ func (r *Recorder) Record(e Event) {
 	if e.OK {
 		r.succeeded++
 	}
+	if e.Outcome == OutcomeTruncated {
+		r.truncated++
+	}
 	if e.Status >= 200 && e.Status < 300 {
 		r.httpSuccess++
 	}
@@ -238,10 +249,13 @@ func (r *Recorder) Snapshot() Snapshot {
 		Completed: r.completed,
 		InFlight:  r.inFlight,
 		Succeeded: r.succeeded,
+		Truncated: r.truncated,
 		Recent:    append([]Event(nil), r.recent...),
 	}
 	if r.completed > 0 {
-		s.Failed = r.completed - r.succeeded
+		// Failed = 完成 − 成功 − 截断：截断既不算成功也不算失败（客户端拿到了
+		// 规范截断语义），单列供面板与排障单独观察上游断流频次。
+		s.Failed = r.completed - r.succeeded - r.truncated
 		s.SuccessRate = round1(float64(r.succeeded) / float64(r.completed) * 100)
 		s.HTTPSuccessRate = round1(float64(r.httpSuccess) / float64(r.completed) * 100)
 		s.AvgDurationMs = float64(r.durationSum) / float64(r.completed)

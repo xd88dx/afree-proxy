@@ -136,6 +136,13 @@ type continueReader struct {
 	// 人走了，不是上游故障，报成「疑似上游断流」会把排障引向错误方向。
 	readErr error
 
+	// synthTruncation 本请求是否补过截断终态（emitTruncationTerminal）：客户端仍在、
+	// 上游段无终态结束时的降级交付——协议完整（客户端拿到 finish_reason=length），
+	// 但真实成因是上游断流。handler 收尾据此记 out=truncated（reqlog 单列），不与
+	// 完整交付混在 success 里（2026-11-12 生产 trace 实测：截断行此前记 success，
+	// 与完整生成不可区分）。多段只置一次，重复置位幂等无害。
+	synthTruncation bool
+
 	usage map[string]any // 跨段累计 usage（数字叶子求和）
 
 	// 本段 usage 快照（每段重置）：判断「预算被思考吃光」只能看当前段——
@@ -538,6 +545,7 @@ func (r *continueReader) endSegment(sawDone bool) {
 			// 有真实输出才补终态：零输出段不能补——否则 StreamHint 的 validEvents 从 0
 			// 变 1，空流本该收敛的 502 观测会被伪装成「有内容的 200」。
 			if r.text.Len() > 0 || r.reason.Len() > 0 || r.toolSeen {
+				r.synthTruncation = true
 				r.emitTruncationTerminal()
 			}
 		}
@@ -569,6 +577,13 @@ func (r *continueReader) endSegment(sawDone bool) {
 // 那是上游断流，该按截断降级、照常盲重试。客户端真断开时 r.ctx 必然已取消，单看它就够。
 func (r *continueReader) clientGone() bool {
 	return r.ctx != nil && r.ctx.Err() != nil
+}
+
+// SyntheticTruncation 报告本请求是否补过截断终态（见 synthTruncation 字段）：handler
+// 收尾据此把 outcome 记成 reqlog.OutcomeTruncated 而非 success。continue 多段拼接下
+// 任一段降级补终态即置位（整条客户端可见流是「被截断的交付」）。
+func (r *continueReader) SyntheticTruncation() bool {
+	return r != nil && r.synthTruncation
 }
 
 // cutNoFinish 本段是否「没有任何正常收尾就结束」（上游断流）：既没给 finish_reason、
