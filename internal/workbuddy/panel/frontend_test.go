@@ -198,6 +198,7 @@ process.stdout.write(JSON.stringify({
   realBalanceErr: ctx.logLevel('panel: task auto uid=x status=done claim_error="" balance_error="timeout"'),
   chineseFail: ctx.logLevel('panel: disable uid=x（人工禁用）失败'),
   warn: ctx.logLevel('pool: uid=x 冷却中'),
+  truncRow: ctx.logLevel('[req] cn:glm-5.3-flash stream acct=u1(9476b8ad) finish=stop tok=1+2 credit=0.06 tools=0 total=4.1s | out=truncated | try=1 | credit=- |'),
   plain: ctx.logLevel('panel: task auto uid=x status=done'),
 }));`
 	f, err := os.CreateTemp(t.TempDir(), "log-level-*.cjs")
@@ -212,7 +213,7 @@ process.stdout.write(JSON.stringify({
 	if err != nil {
 		t.Fatalf("log level node test failed: %v\n%s", err, out)
 	}
-	const want = `{"okTask":"","twoEmpty":"","realFail":" e","realBalanceErr":" e","chineseFail":" e","warn":" w","plain":""}`
+	const want = `{"okTask":"","twoEmpty":"","realFail":" e","realBalanceErr":" e","chineseFail":" e","warn":" w","truncRow":" w","plain":""}`
 	if strings.TrimSpace(string(out)) != want {
 		t.Fatalf("log level=%s want %s", out, want)
 	}

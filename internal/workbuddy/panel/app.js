@@ -1534,6 +1534,8 @@ $('logChips').addEventListener('click', ev => {
 function logLevel(text) {
   const t = String(text == null ? '' : text).replace(/\b[a-z_]+=(?:""|'')/g, '');
   if (/error|失败|错误/.test(t)) return ' e';
+  // 截断交付（out=truncated / 截断终态）：降级但非失败，与 warn 同级琥珀警示。
+  if (/truncated|截断/.test(t)) return ' w';
   if (/warn|冷却|熔断/.test(t)) return ' w';
   return '';
 }
@@ -1750,9 +1752,10 @@ function reqMatch(e, f) {
 
 function reqOutcomeTag(e) {
   const outcome = String(e && e.outcome || '');
-  const label = { success: '成功', http_error: 'HTTP 错误', stream_error: '流错误', interrupted: '中断' }[outcome] || outcome || '—';
+  const label = { success: '成功', http_error: 'HTTP 错误', stream_error: '流错误', interrupted: '中断', truncated: '截断' }[outcome] || outcome || '—';
   const cls = outcome === 'success' ? 'ok'
     : outcome === 'interrupted' ? 'warn'
+    : outcome === 'truncated' ? 'warn'
     : outcome ? 'bad' : 'mute';
   return '<span class="tag ' + cls + '">' + esc(String(e && e.status || '—') + ' ' + label) + '</span>';
 }
@@ -1836,7 +1839,7 @@ if ($('btnCreditReload')) $('btnCreditReload').onclick = loadCreditHistory;
 
 function requestLogText(e) {
   const when = e && e.time ? new Date(e.time).toLocaleTimeString('zh-CN', { hour12: false }) : '—';
-  const outcomeLabel = { success: '成功', http_error: 'HTTP 错误', stream_error: '流错误', interrupted: '中断' };
+  const outcomeLabel = { success: '成功', http_error: 'HTTP 错误', stream_error: '流错误', interrupted: '中断', truncated: '截断' };
   const token = Number(e && e.total_tokens || 0) ||
     (Number(e && e.prompt_tokens || 0) + Number(e && e.completion_tokens || 0));
   let credit = 'credit —';
