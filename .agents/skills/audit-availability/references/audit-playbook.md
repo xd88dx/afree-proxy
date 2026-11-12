@@ -166,3 +166,14 @@ cat exits.txt | while read port name; do (r=$(curl -s -o /dev/null -w "%{http_co
 
 - 模型维度 23/24（唯一 FAIL `zen:glm-5.3-flash-free` 429 FreeUsageLimitError）；凭据维度 114/130（wb 15/15、trae 2/2、amd 10/10、tkhb 19/20、oprt 18/20、other 23/24、cline 17/19、zen 10/20）。16 个真实失败：官方限制 10（zen 9 key 日额度 UTC 零点复位 + oprt#12 账号被封 "Inference is blocked"，key 级 403 按设计不自动拉黑）+ 出口 6（11107 死×5 + 11104 被 GFE 拦×1）。出口池 34/39。
 - 无死链映射别名，24 目标全可服务（zen 额度耗尽窗口内 `zen:glm-*` 除外，复位自愈）。
+
+## 12. 2026-11-13 审计追加（全映射+全凭据轮，一缺陷已修）
+
+- **cline Test 探针「必须流式」假阴性（已修）**：探针 `max_tokens=1` + 仅在 `modelNeedsStream` 时置 stream；目录字典序探测模型一旦必须流式（推理模型），非流式探针结构性 500 `empty response content` → 健康账号全部假阴性（实测 0/19）。修复=admin.go testAccount 命中 `clineEmptyStreamErr` 指纹时学习+立即改流式重试一次（与请求路径 cline_stream.go 同语义），回归测试 `TestAccountMustStreamProbeRetriesWithStream`。**fork 上游 4f12cd2 同款缺陷**（无指纹重试），属领先上游修复。
+- **出口扫描必须用容器同款主机名**：`--socks5-hostname 127.0.0.1:<port>` 会把绑定了非环回接口的出口误判死（本轮 4/9 假阴性，11102/11120/11130/11135 实际经 `host.docker.internal` 全通）。判据：宿主机复扫用 `host.docker.internal:<port>`（Windows Docker Desktop 宿主上同样可解析）。
+- **Test 端点解析口径差异（解析错=整平台假 FAIL）**：keypool/cline/other=`data.status`；**trae=vendored `data.ok`/`data.error`**（没有 status 字段，按 `data.status=='active'` 判会 4 账号全误报）；**wb=扁平 `status`/`error`**。抽测前先读 handler 确认字段。
+- **newapi 映射含视频模型死链（已修，根因在 afree 不在映射）**：`wbcn/wbgb:kling-video-v3`、`wbcn:minimax-video-h3` 曾在 `/v1/models` 透出（vendor `video_generation: true` 单列，设计上「视频走 /v1/videos/generations」）但 afree 未挂 `/v1/videos`——**列出来的没有任何可达端点**，违反「列出来的必须调得通」；chat 探针上游回 11103 `Backend [maas] is not supported`（官方拒绝，三账号一致铁证）。根因=app 层 `workbuddyModelEntries` 的媒体条目费率同源筛选只接了 `image_generation`，vendor 后加的 `video_generation` 键漏接（2026-11-03「不按模态一刀切」机制的盲区）。修复=筛选扩到两类媒体键（回归测试 `TestWorkbuddyModelEntriesExcludeUnpricedVideoEntries`），目录/请求闸同源收紧：条目摘除 + 请求 404 not served。newapi 渠道映射应删去这三条目标（映射本就忠实镜像 afree 目录，勿归因为映射侧配置错误）。**审计教训：`/v1/models` 里的条目按字段分类盘点（image_generation/video_generation 等标记类），别只按前缀归类。**
+- **GFE 403/EOF 一律复测再定性**（§6 经验再确认）：本轮 lovemcsf(11106) GFE 403、liuxingsv(11111) EOF 复测均 PASS——单次边缘抖动不是出口死。
+- **newapi 渠道别名跨渠道同名**（如 `afree/glm` 同时映射 zen/wbcn 目标）：抽测按渠道映射值反查别名即可，同名别名在不同渠道语义不同，报告按渠道标注。
+- **本轮结果快照**：模型维度 27/29（唯二 FAIL=kling 视频映射死链）；凭据维度修复后 cline 17/19（direct 绑定 1+死出口 11112 绑定 1，均环境非账号）、zen 18/20、amd 9/10、oprt 24/25、tkhb 24/25、crow 5/5、agnes 23/25、ddx 3/4、trae 2/4（1 direct 绑定+1 额度域 EOF，chat 域探针全 PASS）、wb 13/15（1 出口绑定不可用+1 TLS 瞬时）；newapi 全链路 2/2。出口池 41/46（真死 10110/11112/11115/11128/11136，仅 11112 有 5 处绑定）。
+- **本机审计结论的适用边界（2026-11-13 用户追问后修正）**：本机容器 `DISABLE_DIRECT=true`+`ONLY_ROUTER=true`，而 iStore 生产两者皆未设——**凡「no usable egress/bound proxies unavailable（main=direct）」类 FAIL 都是本机环境产物**（本轮共 6 个 direct 绑定凭据：cline xd00dx、amd#0、agnes#0、ddx#0、wb 18210516867、trae 2745955326105609），生产 direct 可用（wb 18210516867 生产日志 04:59/05:00 实测 200 出字计费）。同理「死出口」清单（10110/11112…）是**本机端口转发拓扑**，生产有独立出口池与绑定，死出口拖累结论不外推。**跨环境成立的只有：凭据本身有效性（token/额度）、官方限制、项目缺陷。** 生产可用性如需审计级结论，只能被动观测生产日志（Test 端点会在生产记冷却，iStore 只读纪律不允许）。
