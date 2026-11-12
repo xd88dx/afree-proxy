@@ -226,6 +226,12 @@ WorkBuddy 一栏的基线同时登记在 `scripts/workbuddy-vendor-baseline.json
 
 上游 `misakano7545/workbuddy2api-panel` main 无新提交（基线 `96b816d` 不变，版本 dev），`sync_workbuddy.py --report` 确认零改动，本次未涉及上游同步。
 
+### 2026-11-12 二次 — 0fadf98 → 1c007bb（1 提交）
+
+- `1c007bb fix(campaign): 活动路径不带模块段——星巴克这期是 /portal/activity/tasks`（campaign.go 路径拼接去模块段 + logging 随动）。三方合并零冲突，seal 基线 `1c007bb`。
+- 注：工作区当时另有并行会话的 streamIdleTimeout 改动（amd/openrouter/other/tokenharbor client + kit/idle.go），不在 vendor 提交内（`92ae148`）。
+- 验证：`go build ./...` + `go test ./... -count=1` 全绿（含并行改动同场）。
+
 ### 2026-11-12 — 4bdbd60 → 0fadf98（30 提交；5 文件 6 处冲突）
 
 上游要点（按改动面）：
@@ -548,6 +554,14 @@ WorkBuddy 一栏的基线同时登记在 `scripts/workbuddy-vendor-baseline.json
 ## 副线（opencode2api / Trae2api-cn 吸收评估）+ magpie 参考线
 
 副线口径（2026-11-08 用户定）：**opencode2api**（opencode 副线）与 **Trae2api-cn**（trae 副线，Python 项目、trae 更换基线前身）只看近期更新、吸纳有价值逻辑，不 merge 不 vendor。本节记录每次副线评估的基线、吸收/丢弃结论；**magpie**（2026-11-06 立项，全平台纯参考）与副线共用本节，基线单独标注。
+
+### 2026-11-12 二次 — 副线复核（四线零新提交；magpie 647071f2→8cacbaa，106 提交，零吸纳）
+
+- **fork cline-proxy**：HEAD 仍 `4f12cd2`，与基线一致（当日早间刚同步）。
+- **XCool-603/trae2api**：HEAD 仍 `b63408d`；**Trae2api-cn**：仍 `5c87d6c`；**opencode2api**：仍 `b296a61`。
+- **workbuddy**：`1c007bb`（1 提交，记 WorkBuddy 节 2026-11-12 二次条目）。
+- **magpie**（`647071f2 → 8cacbaa`，106 提交）：按平台关键词仅命中 1 条 `e5ee114115`（magpie 文档站新增 WorkBuddy 页，纯文档形态），零吸纳。其余 105 条全为 magpie 自有形态（copilot/mistral/codex provider、site docs pages、gui/tray/update/management API）。
+- magpie 基线推进：`8cacbaa`（2026-11-12 二次排查）。
 
 ### 2026-11-12 — 副线复核（三条副线均零新提交；magpie 547585cd→647071f2，610 提交，零吸纳+2 情报）
 
