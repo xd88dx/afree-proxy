@@ -311,3 +311,31 @@ func thSrv(t *testing.T) *httptest.Server {
 	t.Cleanup(srv.Close)
 	return srv
 }
+
+// 视频生成单列条目（video_generation）与出图同走费率同源筛选：afree 未挂
+// /v1/videos，无牌价条目一律不透出——否则目录列出来的模型没有任何可达端点
+// （2026-11-13 审计：kling-video-v3/minimax-video-h3 在 /v1/models 透出、chat
+// 探针上游 11103 官方拒绝）。vendor 的视频单列机制晚于 image 过滤落地，app 层
+// 曾漏接该键——本测试锁定两类媒体条目都不进对外目录与请求闸。
+func TestWorkbuddyModelEntriesExcludeUnpricedVideoEntries(t *testing.T) {
+	saved := workbuddySub
+	t.Cleanup(func() { workbuddySub = saved })
+	workbuddySub = routableWBSub([]map[string]any{
+		{"id": "cn:alpha"},
+		{"id": "cn:kling-video-v3", "video_generation": true, "tags": []string{"text-to-video"}},
+		{"id": "global:kling-video-v3", "video_generation": true},
+	})
+
+	got := workbuddyModelEntries()
+	if len(got) != 1 {
+		t.Fatalf("entries = %v, want only the chat model", got)
+	}
+	if id, _ := got[0]["id"].(string); id != "wbcn:alpha" {
+		t.Fatalf("entry = %s, want wbcn:alpha", id)
+	}
+	for _, m := range got {
+		if isVideo, _ := m["video_generation"].(bool); isVideo {
+			t.Fatalf("video_generation entry leaked into served directory: %v", m)
+		}
+	}
+}

@@ -4142,12 +4142,14 @@ func sortModelEntriesByID(list []map[string]any) {
 //
 // 出图模型与页面同源过滤（2026-11-03 用户定「只对外路由各平台页列表可见的
 // 模型」+ 同日追定「剔除按费率同源，不按模态一刀切」）：wkbd 页列表按「生效
-// 倍率 ≤ 阈值」过滤且倍率缺失不透出（缺失 ≠ 免费），出图模型上游目录不给
-// credits 牌价，页面自然不显示。这里对 image_generation 条目套用与面板前端
-// wbRate/wbModelMatchesFilter 同构的倍率筛选（wbEntryRate + 阈值
+// 倍率 ≤ 阈值」过滤且倍率缺失不透出（缺失 ≠ 免费），媒体生成模型上游目录不给
+// credits 牌价，页面自然不显示。这里对 image_generation / video_generation 条目
+// 套用与面板前端 wbRate/wbModelMatchesFilter 同构的倍率筛选（wbEntryRate + 阈值
 // pool.model_rate_filter）——当前无牌价全部挡住（2026-11-03 生产实测
 // /v1/models 曾比 wkbd 页多出 hunyuan-image-alpha/-edit、hy-image-3.5 三条），
-// 将来上游给某个出图模型发了牌价且 ≤ 阈值时会自动放行，无需改代码。
+// 将来上游给某个媒体生成模型发了牌价且 ≤ 阈值时会自动放行——afree 未挂
+// /v1/videos（/v1/images 同未注册），届时放行即重新违反「列出来的必须调得通」，
+// 须先挂载对应端点或改回硬排除。
 // /v1/models 与请求闸（servedModelGate）同源，一处筛选两边同时收紧；vendor
 // 的 /v1/images 端点在网关层未注册（生产实测 404），即使目录放行，专用出图
 // 调用入口仍不存在。
@@ -4164,11 +4166,25 @@ func workbuddyModelEntries() []map[string]any {
 	}
 	list := workbuddySub.modelList()
 	chat := make([]map[string]any, 0, len(list))
+	// 媒体生成单列条目（vendor generationModelEntries 产出：image_generation /
+	// video_generation）与前端 wbModelMatchesFilter 同口径的费率筛选：倍率缺失/
+	// 不可解析一律隐藏（缺失 ≠ 免费），生效倍率 ≤ 阈值（含等号，1e-9 容差）才
+	// 放行。阈值分域（2026-11-07）：按条目 id 前缀取 CN/国际阈值。
+	//
+	// video_generation 2026-11-13 补接：vendor 的视频单列（「视频走
+	// /v1/videos/generations」）晚于本筛选落地，app 层此前只认 image_generation
+	// ——afree 未挂 /v1/videos，视频条目透出对话目录却没有任何可达端点
+	//（2026-11-13 审计实测：kling-video-v3/minimax-video-h3 chat 探针上游 11103
+	// 「Backend [maas] is not supported」，官方拒绝），违反「列出来的必须调得通」。
+	// 目录与请求闸同源消费本函数，此处收紧两边同时生效；newapi 渠道映射里的
+	// 同名目标随之 404，属预期（映射应删去这两条）。
+	mediaEntry := func(m map[string]any) bool {
+		isImage, _ := m["image_generation"].(bool)
+		isVideo, _ := m["video_generation"].(bool)
+		return isImage || isVideo
+	}
 	for _, m := range list {
-		if isImage, _ := m["image_generation"].(bool); isImage {
-			// 与前端 wbModelMatchesFilter 同口径：倍率缺失/不可解析一律隐藏
-			//（缺失 ≠ 免费），生效倍率 ≤ 阈值（含等号，1e-9 容差）才放行。
-			// 阈值分域（2026-11-07）：按条目 id 前缀取 CN/国际阈值。
+		if mediaEntry(m) {
 			id, _ := m["id"].(string)
 			if rate, ok := wbEntryRate(m); !ok || rate > workbuddySub.workbuddyRateThresholdFor(id)+1e-9 {
 				continue
