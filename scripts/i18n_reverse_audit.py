@@ -41,6 +41,9 @@ for mm in re.finditer(r'>([^<>]+)<', htmlpart):
 for mm in re.finditer(r'(?:title|placeholder)="([^"]*)"', htmlpart):
     t = mm.group(1).strip()
     refs.add(t); refs.add(htmlmod.unescape(t))
+# 2b) data-i18n / data-i18n-title / data-i18n-placeholder 属性值（显式键）
+for mm in re.finditer(r'data-i18n(?:-title|-placeholder)?="([^"]*)"', htmlpart):
+    refs.add(mm.group(1).strip())
 # 3) JS 区字符串字面量 + 大串内 HTML 文本节点
 jspart = src_nodict[html_end:]
 BS = chr(92)

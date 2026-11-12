@@ -1018,14 +1018,14 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
       </div>
     </div>
     <div class="flex" style="gap:10px;margin:0 0 8px;align-items:center;flex-wrap:wrap">
-      <label class="hint" style="margin:0">Probe model (used by the Test buttons):</label>
-      <select id="ocProbeModel" style="max-width:420px"><option value="">auto — big-pickle first, then live models</option></select>
-      <label class="hint" style="margin:0 0 0 6px">Org ID (single key only):</label>
-      <input type="text" id="ocOrgID" placeholder="usually empty" style="max-width:220px" title="x-opencode-org-id. Upstream validates this against the key's workspace: a wrong value returns 403 &quot;Workspace access denied&quot;, so sending nothing is always safe and is what the official client does for API keys. This field is only used when the pool has exactly ONE key and that key's org cannot be discovered; with two or more keys it is ignored entirely, because one value cannot match every key. Leave it empty unless you have a single key and know its exact org id.">
+      <label class="hint" style="margin:0" data-i18n="Probe model (used by the Test buttons):">Probe model (used by the Test buttons):</label>
+      <select id="ocProbeModel" style="max-width:420px"><option value="" data-i18n="zen_probe_auto">auto — big-pickle first, then live models</option></select>
+      <label class="hint" style="margin:0 0 0 6px" data-i18n="org_id_single_key_only">Org ID (single key only):</label>
+      <input type="text" id="ocOrgID" placeholder="usually empty" data-i18n-placeholder="org_id_usually_empty" style="max-width:220px" title="x-opencode-org-id. Upstream validates this against the key's workspace: a wrong value returns 403 &quot;Workspace access denied&quot;, so sending nothing is always safe and is what the official client does for API keys. This field is only used when the pool has exactly ONE key and that key's org cannot be discovered; with two or more keys it is ignored entirely, because one value cannot match every key. Leave it empty unless you have a single key and know its exact org id." data-i18n-title="org_id_single_key_title">
     </div>
     <div class="table-wrap" style="margin-bottom:10px">
       <table>
-        <thead><tr><th style="width:50px">#</th><th style="width:110px" data-i18n="Key">Key</th><th title="x-opencode-org-id resolved per key from console/api/orgs; '- (fallback)' means the configured fallback is used because discovery returned nothing" data-i18n="Org">Org</th><th data-i18n="Status">Status</th><th title="Counted locally by this proxy — not the official free quota" data-i18n="Today/Total tokens">Today/Total tokens</th><th data-i18n="Last used">Last used</th><th title="Main exit first, backup as fallback; both down = row skipped (isolation)." data-i18n="Proxy binding">Proxy binding</th><th style="width:130px;text-align:center" data-i18n="Actions">Actions</th><th style="text-align:center" title="Routing participation: unchecked keys never enter request rotation. Newly added keys start disabled — tick Pool to enable. Sessions are minted per upstream call." data-i18n="Pool">Pool</th></tr></thead>
+        <thead><tr><th style="width:50px">#</th><th style="width:110px" data-i18n="Key">Key</th><th title="x-opencode-org-id resolved per key from console/api/orgs; '- (fallback)' means the configured fallback is used because discovery returned nothing" data-i18n="org" data-i18n-title="org_col_title">Org</th><th data-i18n="Status">Status</th><th title="Counted locally by this proxy — not the official free quota" data-i18n="Today/Total tokens">Today/Total tokens</th><th data-i18n="Last used">Last used</th><th title="Main exit first, backup as fallback; both down = row skipped (isolation)." data-i18n="Proxy binding">Proxy binding</th><th style="width:130px;text-align:center" data-i18n="Actions">Actions</th><th style="text-align:center" title="Routing participation: unchecked keys never enter request rotation. Newly added keys start disabled — tick Pool to enable. Sessions are minted per upstream call." data-i18n="Pool">Pool</th></tr></thead>
         <tbody id="ocKeysBody"><tr><td colspan="9" class="empty">Loading...</td></tr></tbody>
       </table>
     </div>
@@ -2455,6 +2455,17 @@ const I18N = {
   'Off': { en: 'Off', zh: '关' },
   'Probe model (used by the Test buttons):': { en: 'Probe model (used by the Test buttons):', zh: '探测模型（Test 按钮使用）：' },
   'Key': { en: 'Key', zh: 'Key' },
+  // zen / opencode org id（上游 85a17bf/a10986c：每 key 解析 x-opencode-org-id）
+  'org': { en: 'Org', zh: '组织' },
+  'org_col_title': { en: "x-opencode-org-id resolved per key from console/api/orgs; '- (fallback)' means the configured fallback is used because discovery returned nothing", zh: '按 key 从 console/api/orgs 解析的 x-opencode-org-id；"-(fallback)" 表示自动发现失败、使用了配置的兜底值' },
+  'org_not_resolved': { en: 'not resolved yet — the header is omitted for this key (resolved on first request)', zh: '尚未解析——该 key 此次请求省略该头（首次请求时解析）' },
+  'org_discovered_title': { en: 'discovered from console/api/orgs', zh: '从 console/api/orgs 自动发现' },
+  'org_fallback_title': { en: 'discovery returned nothing for this key; using the configured fallback', zh: '该 key 自动发现失败，使用配置的兜底值' },
+  'org_fallback_suffix': { en: ' (fallback)', zh: '（兜底）' },
+  'org_id_single_key_only': { en: 'Org ID (single key only):', zh: 'Org ID（仅单 key 生效）：' },
+  'org_id_usually_empty': { en: 'usually empty', zh: '通常留空' },
+  'org_id_single_key_title': { en: "x-opencode-org-id. Upstream validates this against the key's workspace: a wrong value returns 403 \"Workspace access denied\", so sending nothing is always safe and is what the official client does for API keys. This field is only used when the pool has exactly ONE key and that key's org cannot be discovered; with two or more keys it is ignored entirely, because one value cannot match every key. Leave it empty unless you have a single key and know its exact org id.", zh: 'x-opencode-org-id。上游会校验该值与 key 的工作区是否匹配：值错误会返回 403「Workspace access denied」，因此不发永远安全，官方客户端对 API key 也是不发。该字段仅当池里恰好 1 把 key 且其 org 无法被自动发现时才会使用；≥2 把 key 时完全忽略（一个值不可能匹配所有 key 的工作区）。除非你是单 key 且确切知道它的 org id，否则留空。' },
+  'zen_probe_auto': { en: 'auto — big-pickle first, then live models', zh: '自动——先 big-pickle，再用 live 目录' },
   'TTFB': { en: 'TTFB', zh: '首包耗时' },
   'Rate-limit defense': { en: 'Rate-limit defense', zh: '限流防御' },
   // 提示气泡（title 属性）此前未进翻译表，中文界面下显示英文
@@ -3514,7 +3525,7 @@ async function batchTestWorkbuddyAccounts() {
 }
 
 async function workbuddyTestAccount(button, id) { const original = button ? button.innerHTML : '';
-  if (button) { button.disabled = true; button.innerHTML = '<span class="loading"></span>Testing'; }
+  if (button) { button.disabled = true; button.innerHTML = '<span class="loading"></span>' + T('testing'); }
   try {
     const d = await wbCall('accounts/' + encodeURIComponent(id) + '/test', {}, {});
     const ok = d.status === 'active';
@@ -5226,7 +5237,7 @@ document.addEventListener('blur', e => {
 
 async function testAccount(id, btn) {
   const original = btn ? btn.innerHTML : '';
-  if (btn) { btn.disabled = true; btn.innerHTML = '<span class="loading"></span>Testing'; }
+  if (btn) { btn.disabled = true; btn.innerHTML = '<span class="loading"></span>' + T('testing'); }
   try {
     const d = await api('POST', '/accounts/test', { accountId: id });
     const r = d.data || {};
@@ -5265,7 +5276,7 @@ async function deleteAccount(id) {
 
 async function resetAccount(id, btn) {
   const original = btn ? btn.innerHTML : '';
-  if (btn) { btn.disabled = true; btn.innerHTML = '<span class="loading"></span>Checking'; }
+  if (btn) { btn.disabled = true; btn.innerHTML = '<span class="loading"></span>' + T('Checking'); }
   try {
     const d = await api('POST', '/accounts/reset', { accountId: id });
     const r = d.data || {};
@@ -6429,12 +6440,12 @@ function renderOcKeyStates(ks) {
         // 按 key 从 console/api/orgs 解析。未解析时该头省略；面板要能区分
         // "没解析出来"（'-'，首次请求时解析）与"解析到了别的值"，以及
         // 解析失败回落到手工配置值（config-fallback，黄色警示）。
-        let orgCell = '<span style="color:var(--text2)" title="not resolved yet — the header is omitted for this key (resolved on first request)">-</span>';
+        let orgCell = '<span style="color:var(--text2)" title="' + esc(T('org_not_resolved')) + '">-</span>';
         if (k.orgID) {
           const fb = k.orgSource === 'config-fallback';
           orgCell = '<span class="mono" style="font-size:11px' + (fb ? ';color:var(--warning,#c60)' : '') + '" title="' +
-            (fb ? 'discovery returned nothing for this key; using the configured fallback' : 'discovered from console/api/orgs') + '">' +
-            esc(k.orgID) + (fb ? ' (fallback)' : '') + '</span>';
+            esc(fb ? T('org_fallback_title') : T('org_discovered_title')) + '">' +
+            esc(k.orgID) + (fb ? T('org_fallback_suffix') : '') + '</span>';
         }
         return '<tr draggable="true" data-drag-id="' + k.index + '"><td>#' + (k.index + 1) + (k.current ? ' <span style="color:var(--accent)" title="' + esc(T('next_in_rotation')) + '">●</span>' : '') + '</td>' +
           '<td style="font-family:monospace;font-size:11px">' + esc(k.keyMask) + '</td>' +
@@ -6597,7 +6608,7 @@ async function zenKeyAddFromDialog() {
 
 async function testZenKey(index, btn) {
   const original = btn ? btn.innerHTML : '';
-  if (btn) { btn.disabled = true; btn.innerHTML = '<span class="loading"></span>Testing'; }
+  if (btn) { btn.disabled = true; btn.innerHTML = '<span class="loading"></span>' + T('testing'); }
   try {
     const d = await api('POST', '/zen/keys/test', {
       index: index,
@@ -7623,7 +7634,7 @@ async function deleteOrKey(index, btn) {
 
 async function testOrKey(index, btn) {
   const original = btn ? btn.innerHTML : '';
-  if (btn) { btn.disabled = true; btn.innerHTML = '<span class="loading"></span>Testing'; }
+  if (btn) { btn.disabled = true; btn.innerHTML = '<span class="loading"></span>' + T('testing'); }
   try {
     const d = await api('POST', '/openrouter/keys/test', {
       index: index,
@@ -8058,7 +8069,7 @@ async function testTraeAccount(index, btn) {
   const snap = traeAccSnapshot[index] || {};
   if (!snap.uid) return;
   const original = btn ? btn.innerHTML : '';
-  if (btn) { btn.disabled = true; btn.innerHTML = '<span class="loading"></span>Testing'; }
+  if (btn) { btn.disabled = true; btn.innerHTML = '<span class="loading"></span>' + T('testing'); }
   try {
     const d = await api('POST', '/trae/accounts/test', { uid: snap.uid });
     const r = (d.data || {});
@@ -8402,7 +8413,7 @@ async function deleteAmdKey(index, btn) {
 
 async function testAmdKey(index, btn) {
   const original = btn ? btn.innerHTML : '';
-  if (btn) { btn.disabled = true; btn.innerHTML = '<span class="loading"></span>Testing'; }
+  if (btn) { btn.disabled = true; btn.innerHTML = '<span class="loading"></span>' + T('testing'); }
   try {
     const d = await api('POST', '/amd/keys/test', {
       index: index,
@@ -8683,7 +8694,7 @@ async function deleteTHKey(index, btn) {
 
 async function testTHKey(index, btn) {
   const original = btn ? btn.innerHTML : '';
-  if (btn) { btn.disabled = true; btn.innerHTML = '<span class="loading"></span>Testing'; }
+  if (btn) { btn.disabled = true; btn.innerHTML = '<span class="loading"></span>' + T('testing'); }
   try {
     const d = await api('POST', '/tokenharbor/keys/test', {
       index: index,
@@ -9143,7 +9154,7 @@ async function deleteOtherKey(id, btn) {
 /* ---- 测试（与 AMDCloud 同构：按钮内 spinner + 结果 toast） ---- */
 async function testOtherKey(id, btn) {
   const original = btn ? btn.innerHTML : '';
-  if (btn) { btn.disabled = true; btn.innerHTML = '<span class="loading"></span>Testing'; }
+  if (btn) { btn.disabled = true; btn.innerHTML = '<span class="loading"></span>' + T('testing'); }
   try {
     const p = currentOtherPlatform();
     const d = await api('POST', '/other/keys/test', {
