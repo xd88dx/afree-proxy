@@ -128,6 +128,14 @@ func httpClientFor(proxyURL string) *http.Client {
 	return http.DefaultClient
 }
 
+// streamIdleTimeout 上游响应体流中空闲上限：活跃吐数据续命不掐，静默超阈值
+// cancel 打断阻塞读（kit.MonitorBody）。默认 300s 与 workbuddy
+// idle_timeout_seconds 缺省一致；推理模型合法长思考不会静默——SSE 持续吐
+// reasoning 增量，只有"发完响应头后 body 永久停滞"才触发（2026-11-12 生产
+// 实测 22 分钟挂起形态）。响应头阶段由 proxyClientFor 的
+// ResponseHeaderTimeout(5m) 管，两者不重叠。测试直接改此变量缩短阈值。
+var streamIdleTimeout = 300 * time.Second
+
 // chatBodyKeys 只保留 OpenAI 兼容白名单字段（上游文档声明的参数集）。
 var chatBodyKeys = []string{
 	"tools", "tool_choice", "parallel_tool_calls",
@@ -208,8 +216,13 @@ func Chat(ctx context.Context, params map[string]any, modelID string, stream boo
 			continue
 		}
 		observeAttempt(ctx, key, proxyURL)
-		req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(bodyJSON))
+		// attemptCtx 子上下文仅圈住本次上游调用：body 空闲监控触发 cancel 时只
+		// 打断上游读，客户端 r.Context() 原样存活——网关缓冲聚合器据此归因
+		// upstream_break 并换号重试，而不是把整条客户端请求连带杀掉。
+		attemptCtx, attemptCancel := context.WithCancel(ctx)
+		req, err := http.NewRequestWithContext(attemptCtx, http.MethodPost, endpoint, bytes.NewReader(bodyJSON))
 		if err != nil {
+			attemptCancel()
 			return nil, rateLimited, fmt.Errorf("create request: %w", err)
 		}
 		req.Header.Set("Authorization", "Bearer "+key)
@@ -221,6 +234,7 @@ func Chat(ctx context.Context, params map[string]any, modelID string, stream boo
 		resp, err := httpClientFor(proxyURL).Do(req)
 		observeProxy(proxyURL, err == nil, err, time.Since(hsStart).Milliseconds())
 		if err != nil {
+			attemptCancel()
 			if ctx.Err() != nil {
 				return nil, rateLimited, fmt.Errorf("client aborted: %w", err)
 			}
@@ -233,6 +247,11 @@ func Chat(ctx context.Context, params map[string]any, modelID string, stream boo
 			}
 			return nil, rateLimited, fmt.Errorf("amd request: %w", err)
 		}
+		// 200 与非 200 都包流中空闲监控：上游"发完响应头后 body 永久停滞"时
+		// 静默超阈值 cancel attemptCtx 打断阻塞读——200 交给网关按
+		// upstream_break 换号重试，非 200 的 readBody 同样不会挂死。
+		// 200 返回后 attemptCancel 的所有权随 body 转移给调用方（Close 即取消）。
+		resp.Body = kit.MonitorBody(resp.Body, streamIdleTimeout, attemptCancel)
 		if resp.StatusCode == http.StatusOK {
 			resp.Header.Set("X-Afree-Used-Key", key)
 			return resp, rateLimited, nil
