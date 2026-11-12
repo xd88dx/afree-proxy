@@ -304,7 +304,7 @@ iStore 的面板密码是 `233@.afree`(与本机 compose 里的值不同);登录
 **提交前必须跑**（退出码非 0 即视为未完成）：
 
 ```bash
-python scripts/i18n_audit.py            # 三遍：T() 键、data-i18n 键、含内联标签的文本块
+python scripts/i18n_audit.py            # 五遍：T() 键、data-i18n 键、含内联标签的文本块、title/placeholder 裸英文、静态叶子文本裸英文
 python scripts/i18n_reverse_audit.py    # 孤儿候选（仅参考，勿直接删）
 ```
 

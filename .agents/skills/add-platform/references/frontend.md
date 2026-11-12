@@ -20,7 +20,7 @@
 - 允许不译:model id、key 前缀、纯示例值(`0.5`/`22`/`4096`)、单位、纯技术标识、域前缀名(`tacn:`/`wbcn:`)、reasoning 档位(`xhigh`…`minimal`)、产品名(`Token Factory`)。
 - 提交前必须跑(退出码非 0 = 有缺口):
   ```bash
-  python scripts/i18n_audit.py           # 三遍:T() 键 / data-i18n 键 / 含内联标签的文本块
+  python scripts/i18n_audit.py           # 五遍:T() 键 / data-i18n 键 / 含内联标签的文本块 / title·placeholder 裸英文 / 静态叶子文本裸英文
   python scripts/i18n_reverse_audit.py   # 孤儿候选(仅参考,勿直接删:动态 T(变量) 在用)
   ```
 ## 2. 导航菜单 + 标签页
