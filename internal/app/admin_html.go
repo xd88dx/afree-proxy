@@ -1025,7 +1025,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
     </div>
     <div class="table-wrap" style="margin-bottom:10px">
       <table>
-        <thead><tr><th style="width:50px">#</th><th style="width:110px" data-i18n="Key">Key</th><th data-i18n="Status">Status</th><th title="Counted locally by this proxy — not the official free quota" data-i18n="Today/Total tokens">Today/Total tokens</th><th data-i18n="Last used">Last used</th><th title="x-opencode-org-id resolved per key from console/api/orgs; '-(fallback)' means the configured fallback is used because discovery returned nothing" data-i18n="Org">Org</th><th title="Main exit first, backup as fallback; both down = row skipped (isolation)." data-i18n="Proxy binding">Proxy binding</th><th style="width:130px;text-align:center" data-i18n="Actions">Actions</th><th style="text-align:center" title="Routing participation: unchecked keys never enter request rotation. Newly added keys start disabled — tick Pool to enable. Sessions are minted per upstream call." data-i18n="Pool">Pool</th></tr></thead>
+        <thead><tr><th style="width:50px">#</th><th style="width:110px" data-i18n="Key">Key</th><th title="x-opencode-org-id resolved per key from console/api/orgs; '- (fallback)' means the configured fallback is used because discovery returned nothing" data-i18n="Org">Org</th><th data-i18n="Status">Status</th><th title="Counted locally by this proxy — not the official free quota" data-i18n="Today/Total tokens">Today/Total tokens</th><th data-i18n="Last used">Last used</th><th title="Main exit first, backup as fallback; both down = row skipped (isolation)." data-i18n="Proxy binding">Proxy binding</th><th style="width:130px;text-align:center" data-i18n="Actions">Actions</th><th style="text-align:center" title="Routing participation: unchecked keys never enter request rotation. Newly added keys start disabled — tick Pool to enable. Sessions are minted per upstream call." data-i18n="Pool">Pool</th></tr></thead>
         <tbody id="ocKeysBody"><tr><td colspan="9" class="empty">Loading...</td></tr></tbody>
       </table>
     </div>
@@ -6438,10 +6438,10 @@ function renderOcKeyStates(ks) {
         }
         return '<tr draggable="true" data-drag-id="' + k.index + '"><td>#' + (k.index + 1) + (k.current ? ' <span style="color:var(--accent)" title="' + esc(T('next_in_rotation')) + '">●</span>' : '') + '</td>' +
           '<td style="font-family:monospace;font-size:11px">' + esc(k.keyMask) + '</td>' +
+          '<td style="font-family:monospace;font-size:11px">' + orgCell + '</td>' +
           '<td style="text-align:center">' + stCell + '</td>' +
           keyTokensCell(k) +
           keyLastUsedCell(k) +
-          '<td style="font-family:monospace;font-size:11px">' + orgCell + '</td>' +
           bind +
           actions +
           routing + '</tr>';
