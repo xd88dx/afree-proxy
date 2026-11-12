@@ -1,7 +1,7 @@
 {
   "version": 1,
   "created_at": "2026-11-09T17:13:34Z",
-  "updated_at": "2026-11-12T21:03:40Z",
+  "updated_at": "2026-11-12T21:52:48Z",
   "files": {
     ".agents/skills/add-platform/SKILL.md": {
       "role": "index",
@@ -29,9 +29,9 @@
     },
     ".agents/skills/audit-availability/references/audit-playbook.md": {
       "role": "index",
-      "sha256": "442b00515dc629406fd191f79044afe5425ec171de2422b24387cdc8dd915651",
-      "size": 20431,
-      "normalized_sha256": "442b00515dc629406fd191f79044afe5425ec171de2422b24387cdc8dd915651"
+      "sha256": "c4739c0e6442ebfbae06ab4c08697dad09bb45530541e031a408525de28f3e78",
+      "size": 22199,
+      "normalized_sha256": "c4739c0e6442ebfbae06ab4c08697dad09bb45530541e031a408525de28f3e78"
     },
     ".agents/skills/sync-upstream/SKILL.md": {
       "role": "index",
@@ -518,9 +518,9 @@
     },
     "aoci.code.txt": {
       "role": "index",
-      "sha256": "f8a5d78c9d8c6579ed66a89711c4b096b7c52345b027a4bdad11ba5360928fd9",
-      "size": 184262,
-      "normalized_sha256": "f8a5d78c9d8c6579ed66a89711c4b096b7c52345b027a4bdad11ba5360928fd9"
+      "sha256": "c126800b68b426b37ca9b7c51448460e7bba5a53473af3909e2c22ce5cfab6e7",
+      "size": 184335,
+      "normalized_sha256": "c126800b68b426b37ca9b7c51448460e7bba5a53473af3909e2c22ce5cfab6e7"
     },
     "aoci.meta.txt": {
       "role": "index",
