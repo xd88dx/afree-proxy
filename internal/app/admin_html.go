@@ -1747,7 +1747,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
           <a class="btn btn-sm btn-static" href="/trae/oauth/helper" download="web_login.py">Download helper</a>
           <button class="btn btn-sm btn-static" onclick="openTraeHelperPage()" title="Open the helper page (127.0.0.1:8765) and click the authorize button there" data-i18n="open_helper_page">Open helper page</button>
         </div>
-        <div class="hint" id="traeHelperStatus" style="margin:0">Checking local helper…</div>
+        <div class="hint" id="traeHelperStatus" style="margin:0" data-i18n="checking_local_helper">Checking local helper…</div>
       </div>
     </details>
     <details class="trae-acc" id="traeAccManual">
@@ -1875,7 +1875,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
   </div>
   <div class="wb-dialog-body">
     <div class="justify-between">
-      <div class="hint" id="wbTodoStatus">Pick a concurrency, then click "Scan tasks"</div>
+      <div class="hint" id="wbTodoStatus" data-i18n="pick_a_concurrency_then_click_scan_tasks">Pick a concurrency, then click "Scan tasks"</div>
       <div class="wb-task-actions">
         <label class="inline-flex" style="font-size:12px;color:var(--text2)">Concurrency
           <select id="wbTodoConcurrency" style="width:64px">

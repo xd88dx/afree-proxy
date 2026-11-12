@@ -78,6 +78,8 @@ ALLOWED = {
     "TraeWork", "WorkBuddy", "OpenCode", "AMDCloud", "OpenRouter", "TokenHarbor",
     "Cline", "Cursor", "Claude Code", "Token Factory", "AFree Proxy",
 }
+# 工具过滤 textarea 的默认示例值（工具名，用户照着填的模板，不译）
+TOOL_NAME_SAMPLES = {"CronCreate", "CreateWorkflow", "EnterPlanMode", "ExitPlanMode", "AskUserQuestion"}
 
 
 class Node:
@@ -122,6 +124,7 @@ def full_text(n):
 
 
 gaps = []
+text_gaps = []
 
 
 def walk(n):
@@ -133,11 +136,75 @@ def walk(n):
         txt = norm(full_text(n))
         if txt and txt not in norm_keys and "data-i18n" not in n.attrs and txt not in ALLOWED:
             gaps.append(txt)
+    elif not kids and direct and re.search(r"[A-Za-z]{2,}", direct):
+        # 第五遍：无子元素的叶子文本。i18nTextNode 兜底按英文原文整段查词典，
+        # 原文不在词典且没挂 data-i18n → 中文界面残留英文（2026-11-12 补）。
+        # 枚举 option（文本=value 属性）是发给 API 的参数值，不译。
+        if n.tag == "option" and n.attrs.get("value") == direct.strip():
+            return
+        t = norm(full_text(n))
+        # 技术形态不译：URL、API 端点（POST /v1/...）、凭据示例、工具名单词。
+        if re.search(r"(://|\{\{|\$\{|POST /|GET /|PUT /|DELETE /|sk-|oc_|rc-|thk_|eyJ|mcp__|\.{3}|…$)", t):
+            return
+        if t in TOOL_NAME_SAMPLES:
+            return
+        if t and t not in norm_keys and "data-i18n" not in n.attrs and t not in ALLOWED:
+            text_gaps.append(t)
     for c in kids:
         walk(c)
 
 
 walk(p.root)
+
+
+# ---------------------------------------------------------------------------
+# 第四遍：title/placeholder 属性裸英文。
+# i18nAttrs 的兜底路径按英文原文查词典（I18N[v.trim()]），没挂 data-i18n-title/
+# data-i18n-placeholder 的属性必须能以原文命中词条，否则中文界面残留英文。
+# ---------------------------------------------------------------------------
+def attr_is_translatable(v):
+    v = norm(htmlmod.unescape(v))
+    if len(v) < 3:
+        return False
+    if not re.search(r"[A-Za-z]{2,}", v):
+        return False
+    # 纯技术形态：路径/URL/CSS/变量名/带花括号模板
+    if re.search(r"(://|\{\{|\$\{|^\w+\.\w+$|class=|style=|var\(--)", v):
+        return False
+    # 凭据/令牌格式示例（用户照着填的模板，翻译反而误导）：sk-…、oc_sk_…、
+    # thk_live_…、JWT（eyJ…）、mcp__ 前缀、rc- 前缀、省略号收尾的形态串。
+    if re.search(r"(sk-|oc_|rc-|thk_|eyJ|mcp__|\.{3}|…)", v):
+        return False
+    # 工具名枚举列表（CronCreate CreateWorkflow …）
+    if re.fullmatch(r"[A-Z][A-Za-z0-9_]+( [A-Z][A-Za-z0-9_]+)+", v):
+        return False
+    return True
+
+
+attr_gaps = []
+for mm in re.finditer(r'<([a-z][a-z0-9]*)\b[^>]*?((?:title|placeholder)="[^"]*")[^>]*>', html_part):
+    tag, attr = mm.group(1), mm.group(2)
+    if tag in SKIP or tag in VOID:
+        continue
+    am = re.match(r'(title|placeholder)="([^"]*)"', attr)
+    if not am:
+        continue
+    name, val = am.group(1), am.group(2)
+    whole = mm.group(0)
+    if f"data-i18n-{name}=" in whole:
+        continue  # 显式键已由检查 2 覆盖
+    if not attr_is_translatable(val):
+        continue
+    v = norm(htmlmod.unescape(val))
+    if v in norm_keys or v in ALLOWED:
+        continue
+    attr_gaps.append((name, v))
+
+
+# ---------------------------------------------------------------------------
+# 第五遍：静态纯文本节点裸英文 —— 已并入上方 walk() 的叶子检查（用 HTMLParser
+# 树而非正则：onclick 属性值里的 => 会把正则版截断造成误报）。
+# ---------------------------------------------------------------------------
 
 print("T() usages: %d  data-i18n keys: %d  dict keys: %d" % (len(used), len(attr_keys), len(keys)))
 print("--- MISSING zh entries for T() (%d) ---" % len(missing_t))
@@ -149,5 +216,11 @@ for s in missing_attr:
 print("--- 含内联标签的文本块缺显式键 (%d) ---  [必须加 data-i18n，否则中文界面留英文]" % len(gaps))
 for s in gaps:
     print(repr(s[:160]))
+print("--- title/placeholder 裸英文未命中词典 (%d) ---  [需 data-i18n-title/placeholder 或加词条]" % len(attr_gaps))
+for name, v in attr_gaps:
+    print(name + ": " + repr(v[:160]))
+print("--- 静态纯文本节点裸英文未命中词典 (%d) ---  [需 data-i18n 或加词条]" % len(text_gaps))
+for t in text_gaps:
+    print(repr(t[:160]))
 
-sys.exit(1 if (missing_t or missing_attr or gaps) else 0)
+sys.exit(1 if (missing_t or missing_attr or gaps or attr_gaps or text_gaps) else 0)
