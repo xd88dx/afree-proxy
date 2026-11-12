@@ -177,3 +177,11 @@ cat exits.txt | while read port name; do (r=$(curl -s -o /dev/null -w "%{http_co
 - **newapi 渠道别名跨渠道同名**（如 `afree/glm` 同时映射 zen/wbcn 目标）：抽测按渠道映射值反查别名即可，同名别名在不同渠道语义不同，报告按渠道标注。
 - **本轮结果快照**：模型维度 27/29（唯二 FAIL=kling 视频映射死链）；凭据维度修复后 cline 17/19（direct 绑定 1+死出口 11112 绑定 1，均环境非账号）、zen 18/20、amd 9/10、oprt 24/25、tkhb 24/25、crow 5/5、agnes 23/25、ddx 3/4、trae 2/4（1 direct 绑定+1 额度域 EOF，chat 域探针全 PASS）、wb 13/15（1 出口绑定不可用+1 TLS 瞬时）；newapi 全链路 2/2。出口池 41/46（真死 10110/11112/11115/11128/11136，仅 11112 有 5 处绑定）。
 - **本机审计结论的适用边界（2026-11-13 用户追问后修正）**：本机容器 `DISABLE_DIRECT=true`+`ONLY_ROUTER=true`，而 iStore 生产两者皆未设——**凡「no usable egress/bound proxies unavailable（main=direct）」类 FAIL 都是本机环境产物**（本轮共 6 个 direct 绑定凭据：cline xd00dx、amd#0、agnes#0、ddx#0、wb 18210516867、trae 2745955326105609），生产 direct 可用（wb 18210516867 生产日志 04:59/05:00 实测 200 出字计费）。同理「死出口」清单（10110/11112…）是**本机端口转发拓扑**，生产有独立出口池与绑定，死出口拖累结论不外推。**跨环境成立的只有：凭据本身有效性（token/额度）、官方限制、项目缺陷。** 生产可用性如需审计级结论，只能被动观测生产日志（Test 端点会在生产记冷却，iStore 只读纪律不允许）。
+
+### 12a. 2026-11-13 生产轮追加（出口重绑后全量复测）
+
+- **生产镜像新鲜度的功能级验证**：比时间戳更可靠的是直接验行为——本轮用「/v1/models 无 video_generation 条目」确认 latest 含 f66ad6e。生产 `latest` 构建时间晚于 HEAD 提交时间只是必要条件。
+- **gstatic 存活 ≠ 对特定上游存活**：出口 11109 对 gstatic/opencode.ai 全 204，但对 www.workbuddy.ai TLS 握手超时（22 分钟 3 次、wb 平台级冷却 10 分钟反复触发）——出口↔上游配对问题只在真实平台流量里暴露，出口池扫描测不出。症状就是某平台个别账号恒「no usable egress」，其他平台同口正常。
+- **瞬时抖动 →「所有 key cooling」的自证清白法**：一轮 EOF/429 风暴把 25 个 1:1 绑定 key 全冷却（多数 1h）时，直接跑逐 key Test（Test 不看冷却、钉 key 实测）——25/25 PASS 即证明 key/出口健康，冷却只是抖动残留等自愈；再配合经出口裸探上游 200。本轮 oprt 全平台暗 1h 属 openrouter 侧瞬时抖动+官方 Retry-After 语义，非缺陷。
+- **ident 截断坑**：凭据结果里 email 按 [-14:] 截断，「sf@outlook.com」实为 lovemcsf@outlook.com 的尾巴——对不上配置清单时先查截断再怀疑数据。
+- **生产轮结果快照**：模型 47/51（3 oprt EOF 瞬时+1 zen RegionError 官方地区限制且自动拉黑已生效摘除）；凭据修正后 151/152（zen key#13 日额度官方限制 UTC 复位；wb servgj=11109↔workbuddy.ai TLS 配对问题）；出口 42/46（死口零绑定拖累）。生产 wb GlobalEnabled 关（无 wbgb 段）属配置选择。零新代码缺陷，两已知修复（108c486/f66ad6e）在生产行为验证生效。
