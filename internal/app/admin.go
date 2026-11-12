@@ -888,7 +888,7 @@ func testAccount(ctx context.Context, acc *Account) (map[string]any, string) {
 	}
 	bodyJSON, _ := json.Marshal(probeBody)
 
-	req, err := http.NewRequestWithContext(ctx, "POST", cline.ClineAPIBase+"/chat/completions", bytes.NewReader(bodyJSON))
+	req, err := http.NewRequestWithContext(ctx, "POST", clineAPIBase+"/chat/completions", bytes.NewReader(bodyJSON))
 	if err != nil {
 		return map[string]any{
 			"accountId": acc.AccountID,
@@ -979,6 +979,29 @@ func testAccount(ctx context.Context, acc *Account) (map[string]any, string) {
 	// 上游能把进程 OOM 掉。判错只需要前几百字节。
 	bodyBytes, _ := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
 	bodyStr := string(bodyBytes)
+
+	// cline「必须流式」指纹（500 empty response content）：请求路径有同款自学习
+	// 重试（cline_stream.go），Test 探针此前没有——字典序选中的探测模型一旦必须
+	// 流式（当前目录全是此类），max_tokens=1 的非流式探针结构性 500，健康账号
+	// 全部假阴性（2026-11-13 审计实测 19/19 error）。同样学习 + 立即改流式重试
+	// 一次：SSE 也是 200 即探针通过（usage 提取对 SSE no-op，无副作用）。
+	if clineEmptyStreamErr(resp.StatusCode, bodyBytes) && probeBody["stream"] != true {
+		learnClineStreamRequired(probeModel)
+		probeBody["stream"] = true
+		retryJSON, _ := json.Marshal(probeBody)
+		retryCtx, cancelRetry := context.WithTimeout(ctx, 30*time.Second)
+		retryReq, err := http.NewRequestWithContext(retryCtx, "POST", clineAPIBase+"/chat/completions", bytes.NewReader(retryJSON))
+		if err == nil {
+			retryReq.Header = clineHeaders(token, sessionID)
+			retryResp, retryErr := probeClient.Do(retryReq)
+			if retryErr == nil {
+				retryBody, _ := io.ReadAll(io.LimitReader(retryResp.Body, 64<<10))
+				retryResp.Body.Close()
+				resp, bodyBytes, bodyStr = retryResp, retryBody, string(retryBody)
+			}
+		}
+		cancelRetry()
+	}
 
 	if resp.StatusCode == 429 {
 		// 与请求路径同口径分流（2026-11-09）：此前这里直接调 markAccountCooldown，
