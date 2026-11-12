@@ -171,3 +171,147 @@ func (p *Pool) pickOrderedLocked(cands []*entry, tried map[string]bool, model, r
 	}
 	return selected
 }
+
+// ============================================================================
+// 全局选号策略（上游 18a6776 移植）：与 linguo 线的地区策略并存。两套共用
+// scheduling map——key 同形 (realm+"\x1f"+model)，Strategy 标签作命名空间
+// （地区策略值带下划线，全局策略值不带），切策略时旧游标自动失效。
+// ============================================================================
+
+// 选号策略常量（config pool.selection_strategy 的取值）。
+const (
+	// StrategyWeighted 加权随机（缺省，既有行为）。
+	StrategyWeighted = "weighted"
+	// StrategyRoundRobin 轮询：每次请求换下一个号（按 UID 排序后的环）。
+	StrategyRoundRobin = "round_robin"
+	// StrategySequentialExhaust 顺序耗尽：当前号一直用到不可用才换下一个。
+	StrategySequentialExhaust = "sequential"
+)
+
+// NormalizeStrategy 归一化策略名（空/未知 → weighted）。
+func NormalizeStrategy(raw string) string {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case StrategyRoundRobin, "rr", "round-robin", "roundrobin":
+		return StrategyRoundRobin
+	case StrategySequentialExhaust, "sequential_exhaust", "seq", "exhaust", "sequentialexhaust":
+		return StrategySequentialExhaust
+	default:
+		return StrategyWeighted
+	}
+}
+
+// SetStrategy 设置选号策略（热生效）。未知值回落 weighted。
+func (p *Pool) SetStrategy(raw string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.strategy = NormalizeStrategy(raw)
+}
+
+// Strategy 当前生效策略（面板展示用）。
+func (p *Pool) Strategy() string {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.strategy == "" {
+		return StrategyWeighted
+	}
+	return p.strategy
+}
+
+// scheduleKey 游标分桶键：按 realm + 模型。
+func scheduleKey(realm, model string) string {
+	return realm + "\x1f" + model
+}
+
+// strategyOrder 给策略用的确定性顺序：按 UID 升序（权重不稳定，不能作环）。
+func strategyOrder(cands []*entry) []*entry {
+	out := make([]*entry, len(cands))
+	copy(out, cands)
+	sort.SliceStable(out, func(i, j int) bool { return out[i].a.UID < out[j].a.UID })
+	return out
+}
+
+// pickRoundRobinLocked 轮询：取环上游标的下一个。
+func (p *Pool) pickRoundRobinLocked(order []*entry, key string) *entry {
+	if len(order) == 0 {
+		return nil
+	}
+	cur := p.scheduling[key]
+	if cur.Strategy != StrategyRoundRobin {
+		cur = scheduleCursor{Strategy: StrategyRoundRobin}
+	}
+	next := 0
+	if cur.UID != "" {
+		for i, e := range order {
+			if e.a.UID == cur.UID {
+				next = (i + 1) % len(order)
+				break
+			}
+		}
+	}
+	selected := order[next]
+	p.scheduling[key] = scheduleCursor{Strategy: StrategyRoundRobin, UID: selected.a.UID}
+	p.dirty.Store(true)
+	return selected
+}
+
+// pickSequentialLocked 顺序耗尽：当前号还能用就一直用它，否则换排序上的下一个。
+func (p *Pool) pickSequentialLocked(order []*entry, key string) *entry {
+	if len(order) == 0 {
+		return nil
+	}
+	cur := p.scheduling[key]
+	if cur.Strategy != StrategySequentialExhaust {
+		cur = scheduleCursor{Strategy: StrategySequentialExhaust}
+	}
+	for _, e := range order {
+		if cur.UID != "" && e.a.UID == cur.UID {
+			p.scheduling[key] = scheduleCursor{Strategy: StrategySequentialExhaust, UID: cur.UID}
+			p.dirty.Store(true)
+			return e
+		}
+	}
+	selected := order[0]
+	for _, e := range order {
+		if e.a.UID > cur.UID {
+			selected = e
+			break
+		}
+	}
+	p.scheduling[key] = scheduleCursor{Strategy: StrategySequentialExhaust, UID: selected.a.UID}
+	p.dirty.Store(true)
+	return selected
+}
+
+// pickByStrategyLocked 按当前策略在候选里选一个；weighted 返回 nil（走加权随机）。
+func (p *Pool) pickByStrategyLocked(cands []*entry, reqModel, realm string, now time.Time) *entry {
+	if p.strategy == "" || p.strategy == StrategyWeighted {
+		return nil
+	}
+	order := strategyOrder(cands)
+	key := scheduleKey(realm, reqModel)
+	var selected *entry
+	switch p.strategy {
+	case StrategyRoundRobin:
+		selected = p.pickRoundRobinLocked(order, key)
+	case StrategySequentialExhaust:
+		selected = p.pickSequentialLocked(order, key)
+	default:
+		return nil
+	}
+	if selected == nil {
+		return nil
+	}
+	// 防并发撞号：选中号刚被别的 goroutine 用掉时，在剩余候选里按同一策略再取一次。
+	if selected.lastUsed.IsZero() || now.Sub(selected.lastUsed) >= minPickGap {
+		return selected
+	}
+	for _, e := range order {
+		if e == selected {
+			continue
+		}
+		if e.lastUsed.IsZero() || now.Sub(e.lastUsed) >= minPickGap {
+			return e
+		}
+	}
+	return selected
+}

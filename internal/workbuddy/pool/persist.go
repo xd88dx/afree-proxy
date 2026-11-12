@@ -142,6 +142,7 @@ func (p *Pool) load() {
 		return
 	}
 	p.applyAccountsLocked(sf.Accounts)
+	p.loadWindowsLocked(sf.Windows, time.Now())
 	p.restoreSchedulingLocked(sf.Scheduling)
 	p.order = sf.Order // 显示顺序随池状态恢复（旧文件无此字段 = nil，List 退回 UID 排序）
 }
@@ -192,7 +193,9 @@ func (p *Pool) adoptSnapshot(s snapshot) {
 }
 func (p *Pool) applySnapshotLocked(s snapshot) {
 	p.byUID = map[string]*entry{}
+	p.windows = nil
 	p.applyAccountsLocked(s.Accounts)
+	p.loadWindowsLocked(s.Windows, time.Now())
 	p.restoreSchedulingLocked(s.Scheduling)
 	p.order = s.Order // 显示顺序随快照恢复
 }
@@ -325,5 +328,6 @@ func (p *Pool) stateOverviewLocked() stateFile {
 		}
 		sf.Accounts[uid] = s
 	}
+	sf.Windows = p.windowsStateLocked(now)
 	return sf
 }

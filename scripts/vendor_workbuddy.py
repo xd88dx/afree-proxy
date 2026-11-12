@@ -105,8 +105,8 @@ EGRESS_REWRITES = {
         ("c.globalRegisterJSON(req, a)", "c.globalRegisterJSON(a, req)", (0, 3)),
     ),
     "upstream/report.go": (
-        ("c.doJSON(req)", "c.doJSON(a, req)", (2, 0)),
-        ("c.doJSON(req, a)", "c.doJSON(a, req)", (0, 2)),
+        ("c.doJSON(req)", "c.doJSON(a, req)", (0, 0)),
+        ("c.doJSON(req, a)", "c.doJSON(a, req)", (2, 1)),
     ),
     "upstream/school.go": (
         ("data, err := c.doJSON(req)", "data, err := c.doJSON(a, req)", (1, 0)),
