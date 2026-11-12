@@ -226,6 +226,29 @@ WorkBuddy 一栏的基线同时登记在 `scripts/workbuddy-vendor-baseline.json
 
 上游 `misakano7545/workbuddy2api-panel` main 无新提交（基线 `96b816d` 不变，版本 dev），`sync_workbuddy.py --report` 确认零改动，本次未涉及上游同步。
 
+### 2026-11-12 — 4bdbd60 → 0fadf98（30 提交；5 文件 6 处冲突）
+
+上游要点（按改动面）：
+- **选号策略**：`18a6776` 新增全局可配选号策略（weighted/round_robin/sequential），新增 `pool/strategy.go` 全局策略实现 + `pickByStrategyLocked`；与本仓 linguo 线的**地区策略**（`RegionStrategies`/`pickOrderedLocked`）并存，游标字段同名 `scheduling`。
+- **账号目录热重载**（`#199`）：`9e5c2cd`/`c54c517` 目录热重载 + 增删落盘串行化，登录落盘与目录热重载持同一 `reloadMu`。
+- **SSE 头保活**（`8df99ac`）：`headkeepalive.go` 在首帧前向客户端补 SSE 注释帧，避免大上下文 TTFB 3~6 秒被客户端当僵死放弃。
+- **签到补签**（`1adfa52`/`0fadf98`）：瞬时失败按 10/40 分钟后台补签两轮；`checkinOne` 抽取（含活动状态查询、幂等判定）；签到回执四态文案（`8125831`）。
+- **活动批量领奖**（`0fadf98`）：`campaign.go` 批量读进度 + 一键领奖。
+- **工具调用分流**（`92dadae`）：截断补完、完整不续写；正文里写成文本的工具调用（DSML）不再触发续写（`e8df35b`）。
+- **其他**：身份指令清洗（`8f9fa3c` `sanitize.go`）、SSE 多 JSON 行拆分（`afb5f22`/`sse_frame_split.go`）、请求级错误不再解绑会话粘性（`2b210e9`）、额度窗口探针（`592fb01`）、号池分区撤销（`65e644e`）、`/v1/models` 透出 promo_factor/credits/label（`b64773e`）、`klauspost/compress` 升 v1.20.2（消 CVE GO-2026-6865，`849d338`）。
+
+本地适配（5 文件 6 冲突，全部并集）：
+- **pool.go scheduling 重名**：地区策略与全局策略游标字段同名 → 共用一张 `scheduling` map（key 同形 `realm+"\x1f"+model`，`scheduleCursor.Strategy` 标签作命名空间：地区策略值带下划线、全局策略值不带，切换时旧游标自动失效）。
+- **strategy.go 并存**：保留本地 `RegionStrategies`/`pickOrderedLocked`，追加上游 `StrategyWeighted`/`NormalizeStrategy`/`SetStrategy`/`pickByStrategyLocked`（两套实现同表共存、互不干扰）。
+- **login.go**：本地 `SetPoolEnabled(false)` + 上游 `reloadMu` 串行化并集。
+- **handler.go**：上游 `HeadKeepalive` 注释帧 + 本地 `st.ctx` 客户端中断归因并集。
+- **scheduler.go**：采用上游 `checkinOne`（已含本地活动状态查询语义）+ 瞬时补签；本仓内联活动查询块删除。
+- **persist.go/entry.go**：上游 `Windows` 字段 + 本地 `Scheduling`/`Order` 字段并集。
+- **vendor_workbuddy.py**：`upstream/report.go` 的 `c.doJSON(req, a)` 锚点计数 `(2,0)/(0,2)` → `(2,0)/(0,1)`（基线 4bdbd60 有 2 处、0fadf98 有 1 处）。
+- 版本号：上游 `appVersion` 仍为 `dev`，本仓 `workbuddyVersion` 已是最新日期，无需对齐。
+
+验证：`go build ./... && go vet ./... && go test ./... -count=1 && go test -race ./internal/app/ ./internal/workbuddy/...` 全绿。基线 seal `0fadf98`（`workbuddy-vendor-baseline.json`）。
+
 ### 2026-11-10 — b42712c → 4bdbd60（15 提交，1 冲突）
 
 上游要点：会话键派生兜底（`d165e6e` 只发 user_id 的客户端按内容派生键，前缀缓存不再全量 miss）、think tag 拆分（新子包 upstream/thinktag.go）、长文续接与「说一句就停/思考完直接收尾」救援重发（07f8ae0/c2003af/1037397/4bdbd60）、cockpit 导入兼容嵌套/驼峰/字典形态（cffb038）+ 多文件预览导入（c5ce29b）、资料接口空昵称不再静默成功（d78131b）、出站空 text 段补位+11151 归请求级（f987bac）、Kimi/GLM reasoning 镜像、thinking.default_effort 缺省统一 `upstream.DefaultGatewayEffort`（877324f，修复默认 high 从未生效）、debugcap/jsonscan 新子包、cache_audit.py。
@@ -365,6 +388,21 @@ WorkBuddy 一栏的基线同时登记在 `scripts/workbuddy-vendor-baseline.json
 
 
 ## OpenCode
+
+### 2026-11-12 — 2c737c2 → 4f12cd2（4 提交全 zen 侧：per-key org id + UA 2.2.7 + tool_choice 省略）
+
+- merge commit `7f0e64a`（merge 方式）：基线 `2c737c2 → 4f12cd2`（上游 `foxy1402/cline-proxy` main），冲突 6 文件（`admin_html.go`/`cline_stream_e2e_test.go`/`zen.go`/`zen_learn_confirm_test.go`/`zen_session.go`/`kit/ident.go`）。
+- **吸收**：
+  - `85a17bf`/`a10986c`/`4f12cd2` 每 key 解析 `x-opencode-org-id`（新文件 `zen_key_org.go` + 测试）：从 `console/api/orgs` 发现，发现不到则**省略该头**（错值会被 403「Workspace access denied」，比不发更糟）；单 key 且发现失败时可用面板 `ocOrgID` 作 `config-fallback`（面板黄色标识）。
+  - `82abe7f` UA 升到 `opencode/latest/2.2.7/cli`（桌面端捆绑运行时；Bun 版本与 2.1.4 相同，TLS 指纹不受影响）。
+  - `82abe7f` 有工具未指定 tool_choice 时**省略该字段**（官方客户端 2.2.7 抓包证实 chat 路径不发，缺省即 auto；之前网关补 `auto` 是多余字段）；`function_call` 语义等价透传。
+  - 新增 `zen_client_parity_test.go`/`zen_key_org_test.go`。
+- **本地适配**：
+  - 新文件 import 前缀 `cline-go-proxy` → `afree-proxy`。
+  - 上游 `zenEgress(key)` 本仓已重构为 `boundExitFor(key)`（含显式绑定→自动钉定→走池/直连+冷却判定），org 查询复用同一条出口解析链。
+  - `admin_html.go` 面板在现有列结构中插入 Org 列（per-key 显示 discovered/config-fallback），保留本地代理绑定/Pool 路由/i18n 定制；**不吸收**上游 inert 的 `ocSessionRotate` 死控件（本仓 2026-10-27 起为 per-call 会话，AGENTS.md §8 禁止死配置）。
+  - 旧 UA 2.1.4 硬编码断言同步到 2.2.7（`cline_stream_e2e_test.go`）。
+- **验证**：`go build ./... && go vet ./... && go test ./... -count=1 && go test -race ./internal/app/` 全绿。
 
 ### 2026-11-08 — c6b3c45 → a8fe356（2 提交：tool filter 吸收；system prompt 换位随上游回退）
 
@@ -510,6 +548,20 @@ WorkBuddy 一栏的基线同时登记在 `scripts/workbuddy-vendor-baseline.json
 ## 副线（opencode2api / Trae2api-cn 吸收评估）+ magpie 参考线
 
 副线口径（2026-11-08 用户定）：**opencode2api**（opencode 副线）与 **Trae2api-cn**（trae 副线，Python 项目、trae 更换基线前身）只看近期更新、吸纳有价值逻辑，不 merge 不 vendor。本节记录每次副线评估的基线、吸收/丢弃结论；**magpie**（2026-11-06 立项，全平台纯参考）与副线共用本节，基线单独标注。
+
+### 2026-11-12 — 副线复核（三条副线均零新提交；magpie 547585cd→647071f2，610 提交，零吸纳+2 情报）
+
+- **opencode2api**：HEAD 仍 `b296a61`，自基线零新提交。
+- **Trae2api-cn**：HEAD 仍 `5c87d6c`（v1.0.11），helper 比对结论沿用 2026-11-10（exit 0）。
+- **XCool-603/trae2api**（vendor 主线，顺带复核）：HEAD 仍 `b63408d`，本仓基线一致，无更新。
+- **magpie**（`547585cd → 647071f2`，610 提交）：逐关键词（zen/opencode/trae/workbuddy/openrouter/cline/qoder/tkhb）筛出 17 条，逐条评估：
+  - 平台功能相关但本仓形态不同、零吸纳：
+    - `5a475f90c3` OpenCode Go 端点迁 per-API 形态（`/inference/go/{openai/v1,anthropic,google/v1beta}`），旧 `/zen/go` 仍响应 → 记情报，不移植（本仓无 preset/provider 形态，端点固定在 `zen.go`）。
+    - `848269fcff` OpenRouter 上下文超限拒绝措辞 `(N of text input, M of tool input, K in the output)` 识别 → 记情报，不移植（本仓 openrouter 路径无 replyLeft/maxOutput 补偿机制，形态不同；若将来引入再回填）。
+    - `44732325e7`/`4a7d222dc8` OpenCode Go provider 多 key 用量上限轮转 → magpie 内置 provider 能力，本仓 key 池语义已覆盖，弃。
+    - `f3d8a09d24`/`03a800ac69`/`6886da1ca9`/`b52c711142` 等其余 opencode/magpie 自有形态（preset、telemetry、docs 页），弃。
+  - WorkBuddy 相关：`9522288b13`/`f4873c8f65`/`96c65e3e7d`/`cc659c7559` 均为 magpie 对 wb 模型别名/plugin 最小版本的内部配置变动，本仓 wb 行为面由 vendor 主线承接，弃。
+- magpie 基线推进：`647071f2`（2026-11-12 排查）。
 
 ### 2026-11-10 — 副线复核（opencode2api 零新提交；magpie 691a104→547585cd 零吸纳）
 
