@@ -123,9 +123,16 @@ func (s *chatStat) done() {
 	// 客户端在 handler 返回前就取消/断开（net/http 在 ServeHTTP 返回之后才取消
 	// 请求 ctx，因此此处看到取消只能是客户端侧的）：请求没有完整交付给客户端，
 	// 即使上游流正常完成也不算 success——标题类短请求被客户端中途放弃被记成
-	// 「成功」的误判就属于这一类。写回字段保持行日志与归档快照同值；显式设置过
-	// 的 outcome（stream_error 等）更具体，优先保留。
-	if s.outcome == "" && s.ctx != nil && s.ctx.Err() != nil {
+	// 「成功」的误判就属于这一类。写回字段保持行日志与归档快照同值；stream_error
+	// 等更具体的显式诊断优先保留。
+	//
+	// 0c39781 的扩展（2026-11-12 生产实测复现，curl trace 铁证）：显式 success 也要
+	// 覆盖——continue 层在客户端先断开时按设计不补截断终态、以干净 EOF 交给
+	// StreamHint（连接已没人读，补帧没意义），StreamHint 补 length 截断终态后返回
+	// nil，handler 的 outcome 开关走到 default 显式写入 success，「流中客户端硬断被
+	// 记 out=success」正是这条链（数据流到中止瞬间、total 与中止时刻一致）。ctx 已
+	// 取消时 success 与 interrupted 不可能同时为真，覆盖 success 是安全的。
+	if (s.outcome == "" || s.outcome == reqlog.OutcomeSuccess) && s.ctx != nil && s.ctx.Err() != nil {
 		s.outcome = reqlog.OutcomeInterrupted
 	}
 	total := time.Since(s.start)

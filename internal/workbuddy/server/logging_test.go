@@ -693,3 +693,59 @@ func TestChatLogRowCarriesRequestID(t *testing.T) {
 		t.Fatalf("流水行必须带 credit= 段，实际输出:\n%s", out)
 	}
 }
+
+// TestChatStatDoneReattributesSuccessOnClientGone 锁定 0c39781 扩展的归因判据：
+// ctx 已取消（客户端先走）时，显式 success 也必须改判 interrupted——continue 层在
+// 客户端中止时不补截断终态、以干净 EOF 交给 StreamHint（2026-11-12 生产 trace 实测
+// 复现），handler 的 outcome 开关会走到 default 显式写入 success，原条件（仅 outcome
+// 为空）拦不住这条链。stream_error 等更具体的显式诊断仍优先保留。
+func TestChatStatDoneReattributesSuccessOnClientGone(t *testing.T) {
+	build := func() (*chatStat, context.CancelFunc) {
+		st := newChatStat(time.Now(), "glm-5.3-flash", true, nil)
+		ctx, cancel := context.WithCancel(context.Background())
+		st.ctx = ctx
+		return st, cancel
+	}
+
+	t.Run("显式success在ctx取消后改判interrupted", func(t *testing.T) {
+		st, cancel := build()
+		st.outcome = reqlog.OutcomeSuccess
+		st.status = http.StatusOK
+		cancel()
+		st.done()
+		if st.outcome != reqlog.OutcomeInterrupted {
+			t.Fatalf("ctx 已取消时显式 success 应改判 interrupted，实际 %q", st.outcome)
+		}
+	})
+
+	t.Run("ctx未取消的success保持success", func(t *testing.T) {
+		st, cancel := build()
+		defer cancel()
+		st.outcome = reqlog.OutcomeSuccess
+		st.status = http.StatusOK
+		st.done()
+		if st.outcome != reqlog.OutcomeSuccess {
+			t.Fatalf("客户端仍在时的正常完成不应改判，实际 %q", st.outcome)
+		}
+	})
+
+	t.Run("更具体的stream_error不被覆盖", func(t *testing.T) {
+		st, cancel := build()
+		st.outcome = reqlog.OutcomeStreamError
+		st.status = http.StatusOK
+		cancel()
+		st.done()
+		if st.outcome != reqlog.OutcomeStreamError {
+			t.Fatalf("更具体的显式诊断应优先保留，实际 %q", st.outcome)
+		}
+	})
+
+	t.Run("outcome为空且ctx取消回到0c39781原行为", func(t *testing.T) {
+		st, cancel := build()
+		cancel()
+		st.done()
+		if st.outcome != reqlog.OutcomeInterrupted {
+			t.Fatalf("空 outcome + ctx 取消应记 interrupted，实际 %q", st.outcome)
+		}
+	})
+}
