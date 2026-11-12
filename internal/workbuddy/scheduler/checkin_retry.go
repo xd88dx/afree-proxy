@@ -3,6 +3,7 @@ package scheduler
 import (
 	"context"
 	"log"
+	"sync"
 	"time"
 
 	"afree-proxy/internal/workbuddy/auth"
@@ -22,7 +23,21 @@ import (
 // 基本是账号或上游的系统性问题，靠重试解决不了，落 WARN 让运维看见。
 //
 // 变量而非常量：测试要把它压到毫秒级，避免真等 40 分钟。
-var checkinRetryDelays = []time.Duration{10 * time.Minute, 40 * time.Minute}
+//
+// 读写必须过 retryDelaysMu：补签循环在后台 goroutine 里读，而测试收尾（t.Cleanup）
+// 会恢复原值——CI -race 实测两边无锁并发报 DATA RACE。
+var (
+	checkinRetryDelays = []time.Duration{10 * time.Minute, 40 * time.Minute}
+	retryDelaysMu      sync.Mutex
+)
+
+// retryDelaysSnapshot 返回当前节奏的快照：后台循环在整个生命周期用同一份，
+// 测试中途改写不影响在跑轮次（shrink 永远发生在启动前）。
+func retryDelaysSnapshot() []time.Duration {
+	retryDelaysMu.Lock()
+	defer retryDelaysMu.Unlock()
+	return append([]time.Duration(nil), checkinRetryDelays...)
+}
 
 // checkinOne 对单个 CN 账号执行签到（不含余额查询）。返回 done 表示今天确实已签
 // （成功、上游显示已签、幂等拒绝三种都算），err 是真实失败原因供调用方判断可否重试。
@@ -74,19 +89,21 @@ func (s *Scheduler) startCheckinRetry(ctx context.Context, uids []string) {
 		return
 	}
 	pending := append([]string(nil), uids...)
+	delays := retryDelaysSnapshot()
 	log.Printf("[checkin] %d 个账号本轮瞬时失败，将在 %s、%s 后各补签一次（期间 21:00 排程照常）",
-		len(pending), checkinRetryDelays[0], checkinRetryDelays[len(checkinRetryDelays)-1])
+		len(pending), delays[0], delays[len(delays)-1])
 	go s.checkinRetryLoop(ctx, pending)
 }
 
 func (s *Scheduler) checkinRetryLoop(ctx context.Context, pending []string) {
+	delays := retryDelaysSnapshot()
 	prev := time.Duration(0)
-	for round := 0; round < len(checkinRetryDelays); round++ {
+	for round := 0; round < len(delays); round++ {
 		// 偏移是绝对的（10m、40m），所以这里睡的是与上一轮的差值。
-		if !sleepCtx(ctx, checkinRetryDelays[round]-prev) {
+		if !sleepCtx(ctx, delays[round]-prev) {
 			return // ctx 取消：停机，不补
 		}
-		prev = checkinRetryDelays[round]
+		prev = delays[round]
 
 		var still []string
 		for _, uid := range pending {
@@ -109,7 +126,7 @@ func (s *Scheduler) checkinRetryLoop(ctx context.Context, pending []string) {
 			switch {
 			case done:
 				log.Printf("[checkin] 补签成功 %s（第 %d 轮 / 共 %d 轮）",
-					logfmt.Label(uid, a.Nickname), round+1, len(checkinRetryDelays))
+					logfmt.Label(uid, a.Nickname), round+1, len(delays))
 			case err != nil && upstream.IsTransientBilling(err):
 				still = append(still, uid)
 			default:
@@ -124,7 +141,7 @@ func (s *Scheduler) checkinRetryLoop(ctx context.Context, pending []string) {
 		}
 	}
 	log.Printf("WARN: [checkin] 补签 %d 轮后仍有 %d 个账号失败（等 21:00 排程再试）：%s",
-		len(checkinRetryDelays), len(pending), joinUIDs(pending))
+		len(delays), len(pending), joinUIDs(pending))
 }
 
 // joinUIDs 只打 uid 前 8 位：日志里出现完整 uuid 没有额外信息，短前缀与面板一致。

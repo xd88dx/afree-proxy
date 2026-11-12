@@ -55,12 +55,19 @@ func newCheckinTestScheduler(t *testing.T, f *flakyCheckinUpstream) (*Scheduler,
 	return s, p, srv
 }
 
-// shrinkRetryDelays 把补签节奏压到毫秒级（生产 10m/40m）。
+// shrinkRetryDelays 把补签节奏压到毫秒级（生产 10m/40m）。读写必须过 retryDelaysMu：
+// 后台补签 goroutine 读同一变量，CI -race 实测测试收尾的恢复写与之并发报 DATA RACE。
 func shrinkRetryDelays(t *testing.T, ds ...time.Duration) {
 	t.Helper()
+	retryDelaysMu.Lock()
 	old := checkinRetryDelays
 	checkinRetryDelays = ds
-	t.Cleanup(func() { checkinRetryDelays = old })
+	retryDelaysMu.Unlock()
+	t.Cleanup(func() {
+		retryDelaysMu.Lock()
+		checkinRetryDelays = old
+		retryDelaysMu.Unlock()
+	})
 }
 
 // 瞬时失败（500 + 10001「请稍后重试」）→ 主批失败后自动补签，补签成功落 checkin_done。
