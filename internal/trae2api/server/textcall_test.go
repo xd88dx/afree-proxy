@@ -61,7 +61,7 @@ func TestParseTextCallMalformed(t *testing.T) {
 
 func TestParseTextCallIncomplete(t *testing.T) {
 	cases := []string{
-		`[调用工具 Power`,           // 名字未完
+		`[调用工具 Power`,            // 名字未完
 		`[调用工具 PowerShell({"a":`, // JSON 未闭合
 		`[调用工具`,
 	}
@@ -200,6 +200,25 @@ func TestTextCallFilterLogsUnclosed(t *testing.T) {
 	}
 	if len(f.rejected) == 0 {
 		t.Fatal("未闭合调用应记录诊断")
+	}
+	if strings.Contains(out.String(), "[调用工具") {
+		t.Fatalf("半截调用应丢弃而非放行: %q", out.String())
+	}
+}
+
+// 与网关层同语义：超上限的模仿文本丢弃而不是放行（2026-11-14 改）。
+func TestTextCallFilterCapDropsExcess(t *testing.T) {
+	var out strings.Builder
+	f := newTextCallFilter(testTools, func(s string) { out.WriteString(s) })
+	for i := 0; i < defaultTextCallMax+3; i++ {
+		f.feed(`[调用工具 Bash({"command": "echo ` + string(rune('a'+i%26)) + `"})]`)
+	}
+	calls := f.finish()
+	if len(calls) != defaultTextCallMax {
+		t.Fatalf("上限 %d 应只转换 %d 个，得到 %d", defaultTextCallMax, defaultTextCallMax, len(calls))
+	}
+	if n := strings.Count(out.String(), `[调用工具 Bash(`); n != 0 {
+		t.Fatalf("溢出调用应丢弃，正文仍残留 %d 个", n)
 	}
 }
 

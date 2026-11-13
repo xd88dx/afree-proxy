@@ -328,12 +328,15 @@ func (g *textCallGW) finalize() {
 		g.heldTail = nil
 		g.haveFin = false
 	}
-	// 观测：转换/溢出/拒绝情况进日志，出问题可从容器日志直接定位
-	if n := g.filter.Calls(); n > 0 || g.filter.Dropped() > 0 {
+	// 观测：转换/溢出/剥离/拒绝情况进日志，出问题可从容器日志直接定位
+	if n := g.filter.Calls(); n > 0 {
 		log.Printf("[textcall] 网关层转换 %d 个文本形式工具调用为原生 tool_calls（model=%s）", n, g.model)
-		if d := g.filter.Dropped(); d > 0 {
-			log.Printf("[textcall] WARN: %d 个调用超过单响应转换上限，按正文放行（model=%s）——模型疑似病态模仿，建议开新会话", d, g.model)
-		}
+	}
+	if d := g.filter.Dropped(); d > 0 {
+		log.Printf("[textcall] WARN: %d 个调用超过单响应转换上限，已丢弃（model=%s）——模型疑似病态模仿，建议开新会话", d, g.model)
+	}
+	if s := g.filter.Stripped(); s > 0 {
+		log.Printf("[textcall] 已剥离 %d 个 XML 包装标记行（model=%s）", s, g.model)
 	}
 	for _, r := range g.filter.Rejections() {
 		log.Printf("[textcall] WARN: 疑似文本工具调用未转换: %s（model=%s）", r, g.model)
@@ -363,26 +366,30 @@ func (g *textCallGW) handleJSONWrite(p []byte) (int, error) {
 						content, g.names, textcallMaxPerResponse())
 					if changed {
 						msg["content"] = prose
-						existing, _ := msg["tool_calls"].([]any)
-						for _, c := range calls {
-							c.ID = "call_" + textcallRandHex(8)
-							// 非流式 message.tool_calls 无 index 字段（OpenAI 规范仅在流式分片用）
-							existing = append(existing, map[string]any{
-								"id":   c.ID,
-								"type": "function",
-								"function": map[string]any{
-									"name":      c.Name,
-									"arguments": c.Args,
-								},
-							})
+						if len(calls) > 0 {
+							existing, _ := msg["tool_calls"].([]any)
+							for _, c := range calls {
+								c.ID = "call_" + textcallRandHex(8)
+								// 非流式 message.tool_calls 无 index 字段（OpenAI 规范仅在流式分片用）
+								existing = append(existing, map[string]any{
+									"id":   c.ID,
+									"type": "function",
+									"function": map[string]any{
+										"name":      c.Name,
+										"arguments": c.Args,
+									},
+								})
+							}
+							msg["tool_calls"] = existing
+							if fr, _ := ch["finish_reason"].(string); fr == "" || fr == "stop" {
+								ch["finish_reason"] = "tool_calls"
+							}
+							log.Printf("[textcall] 网关层转换 %d 个文本形式工具调用为原生 tool_calls（非流式，model=%s）", len(calls), g.model)
+						} else {
+							log.Printf("[textcall] 已剥离 XML 包装标记行（非流式，model=%s）", g.model)
 						}
-						msg["tool_calls"] = existing
-						if fr, _ := ch["finish_reason"].(string); (fr == "" || fr == "stop") && len(calls) > 0 {
-							ch["finish_reason"] = "tool_calls"
-						}
-						log.Printf("[textcall] 网关层转换 %d 个文本形式工具调用为原生 tool_calls（非流式，model=%s）", len(calls), g.model)
 						if capped > 0 {
-							log.Printf("[textcall] WARN: 非流式响应 %d 个调用超过单响应转换上限，按正文放行（model=%s）", capped, g.model)
+							log.Printf("[textcall] WARN: 非流式响应 %d 个调用超过单响应转换上限，已丢弃（model=%s）", capped, g.model)
 						}
 					}
 				}

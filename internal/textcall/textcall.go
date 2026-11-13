@@ -31,8 +31,17 @@
 // 2026-11-06 实测：长会话历史被文本调用填满后，模型会在**一次响应里连发 343 个**
 // 文本调用（5 分钟流、33K tokens）。全部照转会让客户端收到几百个并行 tool_calls，
 // 按 4s/个的处理速度卡死 20+ 分钟。MaxPerResponse（0 = 不限）在转换数达到上限后
-// 停止转换，剩余按正文原样放行并计数——客户端拿到前 N 个可执行调用 + 可见的溢出
-// 文本，而不是无限等待。
+// 停止转换，剩余按正文**丢弃**并计数（2026-11-14 改：放行改丢弃——溢出的模仿
+// 文本对客户端毫无可执行价值，放行只会污染会话记录，并随历史回流变成下一轮
+// 模仿的养料，放大成重试循环）。
+//
+// ## XML 包装标记行剥离
+//
+// 2026-11-13/14 生产实测：模型会把模仿调用包进 XML 包装标记（`<tool calls>`/
+// `</tool calls>`，空格形态；下划线形态与 function_calls 同族）。内层方括号调用
+// 被正常转换后，包装标记残留成孤儿标签透传到客户端，并随历史回流自我强化成
+// 重试循环。处理：独立成行的包装标记整行删除（行内出现不删，讲解该格式的
+// 正文不受影响）。
 package textcall
 
 import (
@@ -47,6 +56,16 @@ const patOpen = "[调用工具"
 
 // DefaultMaxPerResponse 是单响应转换数的默认上限。
 const DefaultMaxPerResponse = 30
+
+// wrapperTagLines 是模型把工具调用包进 XML 包装标记时的整行特征。
+// 空格形态（<tool calls>）为 2026-11-13/14 生产实测形态；其余为同族变体，
+// 与 workbuddy server/narration.go 的标记表对齐。
+var wrapperTagLines = []string{
+	"<tool calls>", "</tool calls>",
+	"<tool_call>", "</tool_call>",
+	"<tool_calls>", "</tool_calls>",
+	"<function_calls>", "</function_calls>",
+}
 
 // Call 是从正文里解析出的一个工具调用。
 type Call struct {
@@ -68,14 +87,20 @@ type Call struct {
 // 转而记入 calls；确认不是调用（或截断）的文本在 Finish 时原样冲刷 ——
 // 内容不丢，只是晚一点到达。
 type Filter struct {
-	names   map[string]bool
-	canon   map[string]string // lower(name) -> 请求声明的规范名
-	max     int               // 单响应转换上限；0 = 不限
-	pending []byte
-	capture bool // pending 是否正处于"从 '[' 开始的调用捕获"状态
-	calls   []Call
-	dropped int      // 因超上限而放弃转换的调用数
-	rejects []string // 诊断：疑似调用但未转换的原因（含片段）
+	names     map[string]bool
+	canon     map[string]string // lower(name) -> 请求声明的规范名
+	max       int               // 单响应转换上限；0 = 不限
+	pending   []byte
+	capture   bool // pending 是否正处于"从 '[' 开始的调用捕获"状态
+	calls     []Call
+	dropped   int      // 因超上限而放弃转换的调用数
+	stripped  int      // 剥离的 XML 包装标记行数
+	rejects   []string // 诊断：疑似调用但未转换的原因（含片段）
+	lineCarry []byte   // 逐行清理的半行缓冲（可能是跨增量的标记行前缀）
+	// atLineStart 记录已下发正文的最后一个字节是否为换行（响应开头视为行首），
+	// 供「独立成行调用」判定；callLineStart 是本次捕获的调用是否独占一行。
+	atLineStart   bool
+	callLineStart bool
 }
 
 // New 构造解析器。names 为请求声明的工具名清单；为空时整体直通（零开销）。
@@ -87,7 +112,7 @@ func New(names []string, max int) *Filter {
 		known[n] = true
 		canon[strings.ToLower(n)] = n
 	}
-	return &Filter{names: known, canon: canon, max: max}
+	return &Filter{names: known, canon: canon, max: max, atLineStart: true}
 }
 
 // Feed 处理一个正文增量，返回本次可以安全下发的正文（可能为空 —— 前缀暂扣
@@ -104,11 +129,12 @@ func (f *Filter) Feed(delta string) (released string) {
 			if i < 0 {
 				// 没有完整标记：只扣住可能是前缀的尾巴，其余立刻下发
 				hold := prefixHold(f.pending)
-				release(&sb, f.pending[:len(f.pending)-hold])
+				f.writeProse(&sb, f.pending[:len(f.pending)-hold])
 				f.pending = f.pending[len(f.pending)-hold:]
 				return sb.String()
 			}
-			release(&sb, f.pending[:i])
+			f.callLineStart = (i > 0 && f.pending[i-1] == '\n') || (i == 0 && f.atLineStart)
+			f.writeProse(&sb, f.pending[:i])
 			f.pending = f.pending[i:]
 			f.capture = true
 		}
@@ -121,7 +147,7 @@ func (f *Filter) Feed(delta string) (released string) {
 			// 必须留痕：这类"模型手写走样"的调用若静默放行，客户端就表现为
 			// "只显示字符串不执行"，而无从定位（2026-11-04 实测教训）。
 			f.reject("结构畸形（名字/收尾不符）", "", string(f.pending))
-			release(&sb, f.pending)
+			f.writeProse(&sb, f.pending)
 			f.pending = nil
 			f.capture = false
 			return sb.String()
@@ -130,38 +156,130 @@ func (f *Filter) Feed(delta string) (released string) {
 			f.capture = false
 			if f.max > 0 && len(f.calls) >= f.max {
 				f.dropped++
-				f.reject(fmt.Sprintf("超过单响应转换上限(%d)，按正文放行", f.max), name, args)
-				release(&sb, []byte(raw))
+				// 超上限的模仿文本对客户端没有可执行价值：丢弃而不是放行，
+				// 否则会污染会话记录并随历史回流强化模仿（2026-11-14 改）。
+				f.reject(fmt.Sprintf("超过单响应转换上限(%d)，已丢弃", f.max), name, args)
+				f.absorbLineBreak()
 				continue
 			}
 			if canonical, ok := f.lookup(name); ok {
 				if fixed, rep, rok := acceptCallArgs(args); rok {
 					f.calls = append(f.calls, Call{Name: canonical, Args: fixed, Repaired: rep})
+					f.absorbLineBreak()
 				} else {
 					f.reject("args 不可修复", name, args)
-					release(&sb, []byte(raw))
+					f.writeProse(&sb, []byte(raw))
 				}
 			} else {
 				f.reject("工具名不在清单", name, args)
-				release(&sb, []byte(raw))
+				f.writeProse(&sb, []byte(raw))
 			}
 		}
 	}
 }
 
+// absorbLineBreak 在「独立成行的调用」被剥离/丢弃后吸收其行尾换行，
+// 避免正文残留空行。行中调用的换行是正文分隔符，不能吸收。
+func (f *Filter) absorbLineBreak() {
+	if f.callLineStart && len(f.pending) > 0 && f.pending[0] == '\n' {
+		f.pending = f.pending[1:]
+	}
+}
+
+// writeProse 把确认非调用的正文经「包装标记行清理」后写入 sb。逐行处理：
+// 完整行立即清理下发，末行（可能是跨增量的标记行前缀）扣在 lineCarry 里。
+func (f *Filter) writeProse(sb *strings.Builder, b []byte) {
+	f.lineCarry = append(f.lineCarry, b...)
+	f.flushProse(sb, false)
+}
+
+// flushProse 下发 carry 里的完整行；final=true 时连无换行的残行一起收尾。
+// 残行只有在「还可能成为独立标记行」时才继续扣住，否则整段立即放行，
+// 保证正常正文的流式节奏不退化。
+func (f *Filter) flushProse(sb *strings.Builder, final bool) {
+	for {
+		i := bytes.IndexByte(f.lineCarry, '\n')
+		if i >= 0 {
+			line := f.lineCarry[:i+1]
+			f.lineCarry = f.lineCarry[i+1:]
+			if isWrapperTagLine(string(line)) {
+				f.stripped++
+				continue
+			}
+			sb.Write(line)
+			f.atLineStart = true
+			continue
+		}
+		if len(f.lineCarry) == 0 {
+			return
+		}
+		t := strings.TrimSpace(string(f.lineCarry))
+		if final {
+			if isWrapperTagLine(t) {
+				f.stripped++
+			} else {
+				sb.Write(f.lineCarry)
+				f.atLineStart = false
+			}
+			f.lineCarry = nil
+			return
+		}
+		if t == "" && len(f.lineCarry) > 64 {
+			sb.Write(f.lineCarry) // 纯空白长跑：不可能是标记行前缀，放行
+			f.lineCarry = nil
+			f.atLineStart = false
+			return
+		}
+		if wrapperTagHold(t) {
+			return // 扣住：可能是标记行或其前导空白，等下一增量
+		}
+		// 残行已不可能成为独立标记行（如 "abc <tool"）：整段立即放行
+		sb.Write(f.lineCarry)
+		f.lineCarry = nil
+		f.atLineStart = false
+		return
+	}
+}
+
+// isWrapperTagLine 报告一行（可含换行）是否是独立成行的 XML 包装标记。
+func isWrapperTagLine(line string) bool {
+	t := strings.TrimSpace(line)
+	for _, tag := range wrapperTagLines {
+		if t == tag {
+			return true
+		}
+	}
+	return false
+}
+
+// wrapperTagHold 报告残行的非空白内容是否仍可能补全成某个包装标记
+// （是某标记的前缀，或就是完整标记——还需等换行/结尾确认）。
+func wrapperTagHold(t string) bool {
+	for _, tag := range wrapperTagLines {
+		if strings.HasPrefix(tag, t) {
+			return true
+		}
+	}
+	return false
+}
+
 // Finish 在流结束时冲刷残余正文并返回解析出的调用列表。
 //
-// 未闭合的捕获（流被截断）按正文放行：半截调用原样下发会让客户端解析失败，
-// 但静默丢弃违背"内容不丢"原则 —— 与旧行为保持一致，交给客户端容错。
+// 未闭合的捕获（流被截断）**丢弃**（2026-11-14 改，原为按正文放行）：半截调用
+// 对客户端没有任何可执行价值——原样下发会让客户端解析失败，界面留下半截标记
+// 垃圾，还会随历史回流变成下一轮模仿的养料；诊断已留痕，内容不丢原则在此
+// 让位于「不污染会话」。
 func (f *Filter) Finish() (tail string, calls []Call) {
 	var sb strings.Builder
 	if len(f.pending) > 0 {
 		if f.capture {
-			f.reject("调用未闭合（流截断）", "", string(f.pending))
+			f.reject("调用未闭合（流截断），已丢弃", "", string(f.pending))
+		} else {
+			f.lineCarry = append(f.lineCarry, f.pending...)
 		}
-		release(&sb, f.pending)
 		f.pending = nil
 	}
+	f.flushProse(&sb, true)
 	return sb.String(), f.calls
 }
 
@@ -170,6 +288,9 @@ func (f *Filter) Calls() int { return len(f.calls) }
 
 // Dropped 因超过单响应上限而放弃转换的调用数。
 func (f *Filter) Dropped() int { return f.dropped }
+
+// Stripped 迄今剥离的 XML 包装标记行数。
+func (f *Filter) Stripped() int { return f.stripped }
 
 // Rejections 取走诊断记录（疑似调用但未转换的原因）。
 func (f *Filter) Rejections() []string {
@@ -195,7 +316,27 @@ func (f *Filter) reject(reason, name, args string) {
 	f.rejects = append(f.rejects, fmt.Sprintf("%s name=%q args=%.120q", reason, name, args))
 }
 
-func release(sb *strings.Builder, b []byte) { sb.Write(b) }
+// stripWrapperTagLines 删除独立成行的 XML 包装标记行，返回清理后的正文与
+// 删除行数。行内出现（同一行还有其他文字）不删——讲解该格式的正文不受影响。
+func stripWrapperTagLines(s string) (string, int) {
+	if !strings.Contains(s, "<") {
+		return s, 0
+	}
+	lines := strings.Split(s, "\n")
+	kept := make([]string, 0, len(lines))
+	n := 0
+	for _, ln := range lines {
+		if isWrapperTagLine(ln) {
+			n++
+			continue
+		}
+		kept = append(kept, ln)
+	}
+	if n == 0 {
+		return s, 0
+	}
+	return strings.Join(kept, "\n"), n
+}
 
 // prefixHold 返回 pending 尾部可能是 patOpen 前缀的最长字节数。
 // 匹配按字节进行：命中即意味着这些字节与模式前缀逐字节相同，天然对齐 UTF-8 边界。
@@ -215,10 +356,18 @@ func prefixHold(p []byte) int {
 // ---- 一次性解析（非流式路径用） ----
 
 // ExtractTextToolCalls 对完整正文做一次解析，返回剥离调用后的正文。
-// changed 为 true 表示正文发生了改写（调用被剥离）；capped 为因超上限放弃的数。
+// changed 为 true 表示正文发生了改写（调用被剥离或包装标记行被删除）；
+// capped 为因超上限丢弃的数。
 func ExtractTextToolCalls(content string, names []string, max int) (prose string, calls []Call, changed bool, capped int) {
-	if len(names) == 0 || !bytes.Contains([]byte(content), []byte(patOpen)) {
+	if len(names) == 0 {
 		return content, nil, false, 0
+	}
+	prose, stripped := stripWrapperTagLines(content)
+	if stripped > 0 {
+		changed = true
+	}
+	if !bytes.Contains([]byte(prose), []byte(patOpen)) {
+		return prose, nil, changed, 0
 	}
 	known := make(map[string]bool, len(names))
 	canon := make(map[string]string, len(names))
@@ -236,7 +385,8 @@ func ExtractTextToolCalls(content string, names []string, max int) (prose string
 		return "", false
 	}
 	var sb strings.Builder
-	rest := []byte(content)
+	written := 0 // 已写入 sb 对应的 prose 字节数（回查调用前一字节用）
+	rest := []byte(prose)
 	for {
 		i := bytes.Index(rest, []byte(patOpen))
 		if i < 0 {
@@ -244,31 +394,43 @@ func ExtractTextToolCalls(content string, names []string, max int) (prose string
 			break
 		}
 		sb.Write(rest[:i])
+		abs := written + i
+		lineStart := abs == 0 || prose[abs-1] == '\n'
 		rest = rest[i:]
 		raw, name, args, consumed, st := parseTextCall(rest)
 		switch st {
 		case tcComplete:
+			after := consumed
 			if max > 0 && len(calls) >= max {
+				// 超上限：模仿文本对客户端无可执行价值，丢弃（2026-11-14 改）。
 				capped++
-				sb.WriteString(raw)
 			} else if canonical, ok := lookup(name); ok {
 				if fixed, rep, ok := acceptCallArgs(args); ok {
 					calls = append(calls, Call{Name: canonical, Args: fixed, Repaired: rep})
 					changed = true
 				} else {
 					sb.WriteString(raw)
+					lineStart = false
 				}
 			} else {
 				sb.WriteString(raw)
+				lineStart = false
 			}
-			rest = rest[consumed:]
+			// 独立成行的调用被剥离/丢弃后，连同其行尾换行一并吸收，避免残留空行
+			if lineStart && after < len(rest) && rest[after] == '\n' {
+				after++
+			}
+			written = abs + after
+			rest = rest[after:]
 		default:
 			// incomplete / malformed：这个 '[' 不是标记起点，跳过继续找
 			sb.WriteByte(rest[0])
+			written++
 			rest = rest[1:]
 		}
 	}
-	return sb.String(), calls, changed, capped
+	prose = sb.String()
+	return prose, calls, changed, capped
 }
 
 // ---- 语法解析 ----

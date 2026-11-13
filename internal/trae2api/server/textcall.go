@@ -189,6 +189,10 @@ type textCallFilter struct {
 	calls    []extractedCall
 	rejected []string // 诊断：疑似调用但未转换的原因（含片段）
 	disabled bool
+	// atLineStart 记录已下发正文的最后一个字节是否为换行（响应开头视为行首）；
+	// callLineStart 是本次捕获的调用是否独占一行（剥离后吸收行尾换行用）。
+	atLineStart   bool
+	callLineStart bool
 }
 
 // newTextCallFilter 构造解析器。tools 为空时整体直通（零开销）。
@@ -200,7 +204,7 @@ func newTextCallFilter(tools []traectl.Tool, out func(string)) *textCallFilter {
 		known[t.Name] = true
 		canon[strings.ToLower(t.Name)] = t.Name
 	}
-	return &textCallFilter{known: known, canon: canon, out: out, disabled: len(known) == 0}
+	return &textCallFilter{known: known, canon: canon, out: out, disabled: len(known) == 0, atLineStart: true}
 }
 
 // lookup 解析工具名：精确命中优先，其次大小写不敏感地映射到请求声明的规范名
@@ -244,6 +248,7 @@ func (f *textCallFilter) feed(delta string) {
 				f.pending = f.pending[len(f.pending)-hold:]
 				return
 			}
+			f.callLineStart = (i > 0 && f.pending[i-1] == '\n') || (i == 0 && f.atLineStart)
 			f.emitB(f.pending[:i])
 			f.pending = f.pending[i:]
 			f.capture = true
@@ -265,13 +270,17 @@ func (f *textCallFilter) feed(delta string) {
 			f.pending = f.pending[consumed:]
 			f.capture = false
 			if len(f.calls) >= defaultTextCallMax {
-				f.reject(fmt.Sprintf("超过单响应转换上限(%d)，按正文放行", defaultTextCallMax), name, args)
-				f.emit(raw)
+				// 超上限的模仿文本对客户端没有可执行价值：丢弃而不是放行，
+				// 否则会污染会话记录并随历史回流强化模仿（2026-11-14 改，
+				// 与网关层 internal/textcall 同语义）。
+				f.reject(fmt.Sprintf("超过单响应转换上限(%d)，已丢弃", defaultTextCallMax), name, args)
+				f.absorbLineBreak()
 				continue
 			}
 			if canonical, ok := f.lookup(name); ok {
 				if fixed, rep, rok := acceptCallArgs(args); rok {
 					f.calls = append(f.calls, extractedCall{name: canonical, args: fixed, repaired: rep})
+					f.absorbLineBreak()
 				} else {
 					f.reject("args 不可修复", name, args)
 					f.emit(raw)
@@ -286,22 +295,33 @@ func (f *textCallFilter) feed(delta string) {
 
 // finish 在流结束时冲刷残余正文并返回解析出的调用列表。
 //
-// 未闭合的捕获（流被截断）按正文放行：半截调用原样下发会让客户端解析失败，
-// 但静默丢弃违背"内容不丢"原则 —— 与旧行为保持一致，交给客户端容错。
+// 未闭合的捕获（流被截断）**丢弃**（2026-11-14 改，原为按正文放行）：半截调用
+// 对客户端没有任何可执行价值，放行只会留下半截标记垃圾并随历史回流变成下一轮
+// 模仿的养料；诊断已留痕，与网关层 internal/textcall 同语义。
 func (f *textCallFilter) finish() []extractedCall {
 	if len(f.pending) > 0 {
 		if f.capture {
-			f.reject("调用未闭合（流截断）", "", string(f.pending))
+			f.reject("调用未闭合（流截断），已丢弃", "", string(f.pending))
+		} else {
+			f.emitB(f.pending)
 		}
-		f.emitB(f.pending)
 		f.pending = nil
 	}
 	return f.calls
 }
 
+// absorbLineBreak 在「独立成行的调用」被转换/丢弃后吸收其行尾换行，
+// 避免正文残留空行（与网关层 internal/textcall 同语义）。
+func (f *textCallFilter) absorbLineBreak() {
+	if f.callLineStart && len(f.pending) > 0 && f.pending[0] == '\n' {
+		f.pending = f.pending[1:]
+	}
+}
+
 func (f *textCallFilter) emit(s string) {
 	if s != "" && f.out != nil {
 		f.out(s)
+		f.atLineStart = strings.HasSuffix(s, "\n")
 	}
 }
 
@@ -350,8 +370,7 @@ func extractTextToolCalls(content string, tools []traectl.Tool) (prose string, c
 		switch st {
 		case tcComplete:
 			if len(calls) >= defaultTextCallMax {
-				// 单响应转换上限（与流式过滤同值）：超限按正文放行。
-				sb.WriteString(raw)
+				// 单响应转换上限（与流式过滤同值）：超限丢弃（2026-11-14 改）。
 				rest = rest[consumed:]
 				continue
 			}

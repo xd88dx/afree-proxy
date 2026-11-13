@@ -106,7 +106,7 @@ func TestTextCallGWNativeThenConvertedIndex(t *testing.T) {
 	}
 }
 
-// ③ 单响应上限：超过部分按正文放行，不再无限转换。
+// ③ 单响应上限：超过部分丢弃（2026-11-14 改：放行改丢弃），不再无限转换。
 func TestTextCallGWCap(t *testing.T) {
 	t.Setenv("TEXTCALL_MAX_PER_RESPONSE", "2")
 	rec := httptest.NewRecorder()
@@ -129,8 +129,8 @@ func TestTextCallGWCap(t *testing.T) {
 	if n := strings.Count(out, `"delta":{"tool_calls"`); n != 2 {
 		t.Fatalf("上限 2 应只转换 2 个，得到 %d", n)
 	}
-	if n := strings.Count(out, "[调用工具 Bash("); n != 4 {
-		t.Fatalf("溢出 4 个应按正文放行，得到 %d", n)
+	if n := strings.Count(out, "[调用工具 Bash("); n != 0 {
+		t.Fatalf("溢出 4 个应丢弃而非放行，残留 %d 个", n)
 	}
 	if !strings.Contains(out, `"finish_reason":"tool_calls"`) {
 		t.Fatalf("有转换调用时 finish_reason 仍应改写: %s", out)

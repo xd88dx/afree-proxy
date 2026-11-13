@@ -154,12 +154,63 @@ func TestFilterLogsMalformed(t *testing.T) {
 func TestFilterLogsUnclosed(t *testing.T) {
 	f := New(testNames, 0)
 	f.Feed(`[调用工具 Bash({"command": "echo hi`) // 流在此截断
-	_, calls := f.Finish()
+	tail, calls := f.Finish()
 	if len(calls) != 0 {
 		t.Fatal("未闭合调用不应转换")
 	}
 	if len(f.rejects) == 0 {
 		t.Fatal("未闭合调用应记录诊断")
+	}
+	if strings.Contains(tail, "[调用工具") {
+		t.Fatalf("半截调用应丢弃而非放行，tail=%q", tail)
+	}
+}
+
+// 2026-11-13/14 生产实测：模型把模仿调用包进 XML 包装标记，内层调用被转换后
+// 包装标记残留成孤儿标签透传到客户端。独立成行的包装标记应整行剥离。
+func TestFilterStripsWrapperTagLines(t *testing.T) {
+	f := New(testNames, 0)
+	out := f.Feed("开始整理。\n<tool calls>\n[调用工具 Bash({\"command\": \"pwd\"})]\n</tool calls>\n")
+	tail, calls := f.Finish()
+	out += tail
+	if len(calls) != 1 {
+		t.Fatalf("内层调用应转换，得到 %d；拒绝=%v", len(calls), f.rejects)
+	}
+	if strings.Contains(out, "tool calls") || strings.Contains(out, "tool_calls") {
+		t.Fatalf("包装标记应剥离: %q", out)
+	}
+	if out != "开始整理。\n" {
+		t.Fatalf("正文=%q", out)
+	}
+	if f.Stripped() != 2 {
+		t.Fatalf("应剥离 2 行，得到 %d", f.Stripped())
+	}
+}
+
+// 标记行跨增量到达（半个闭合标签 + 另半个）也要剥掉。
+func TestFilterStripsWrapperTagAcrossDeltas(t *testing.T) {
+	f := New(testNames, 0)
+	var out strings.Builder
+	out.WriteString(f.Feed("abc\n</tool"))
+	out.WriteString(f.Feed(" calls>\n完成"))
+	tail, _ := f.Finish()
+	out.WriteString(tail)
+	if strings.Contains(out.String(), "calls>") {
+		t.Fatalf("跨增量的标记行应剥离: %q", out.String())
+	}
+	if !strings.Contains(out.String(), "abc\n完成") {
+		t.Fatalf("正文=%q", out.String())
+	}
+}
+
+// 行内出现（同一行还有其他文字）不剥——讲解该格式的正文不受影响。
+func TestFilterKeepsInlineWrapperTags(t *testing.T) {
+	f := New(testNames, 0)
+	out := f.Feed("参见 <tool calls> 标记的说明\n下一行\n")
+	tail, _ := f.Finish()
+	out += tail
+	if !strings.Contains(out, "<tool calls>") {
+		t.Fatalf("行内标记不应剥离: %q", out)
 	}
 }
 
@@ -224,12 +275,14 @@ func TestAcceptCallArgsUnrepairable(t *testing.T) {
 	}
 }
 
-// 2026-11-06 病态输出：单响应 343 连发。上限应放行前 N 个、其余按正文放行。
+// 2026-11-06 病态输出：单响应 343 连发。上限应转换前 N 个；溢出按正文**丢弃**
+// （2026-11-14 改：放行改丢弃——溢出模仿文本无可执行价值，放行只会随历史回流
+// 强化模仿）。
 func TestFilterCapDropsExcess(t *testing.T) {
 	f := New(testNames, 3)
-	var calls文本 strings.Builder
+	var out strings.Builder
 	for i := 0; i < 6; i++ {
-		calls文本.WriteString(f.Feed(`[调用工具 Bash({"command": "echo ` + string(rune('a'+i)) + `"})]`))
+		out.WriteString(f.Feed(`[调用工具 Bash({"command": "echo ` + string(rune('a'+i)) + `"})]`))
 	}
 	tail, calls := f.Finish()
 	if len(calls) != 3 {
@@ -238,9 +291,8 @@ func TestFilterCapDropsExcess(t *testing.T) {
 	if f.Dropped() != 3 {
 		t.Fatalf("应记录 3 个溢出，得到 %d", f.Dropped())
 	}
-	// 溢出的 3 个按正文放行（可见，不静默丢）
-	if n := strings.Count(calls文本.String()+tail, `[调用工具 Bash(`); n != 3 {
-		t.Fatalf("溢出调用应按正文放行 3 个，得到 %d", n)
+	if n := strings.Count(out.String()+tail, `[调用工具 Bash(`); n != 0 {
+		t.Fatalf("溢出调用应丢弃，正文仍残留 %d 个", n)
 	}
 }
 
@@ -260,9 +312,29 @@ func TestExtractTextToolCallsOneShot(t *testing.T) {
 
 func TestExtractTextToolCallsCap(t *testing.T) {
 	content := strings.Repeat(`[调用工具 Bash({"command": "x"})]`, 5)
-	_, calls, changed, capped := ExtractTextToolCalls(content, testNames, 2)
+	prose, calls, changed, capped := ExtractTextToolCalls(content, testNames, 2)
 	if !changed || len(calls) != 2 || capped != 3 {
 		t.Fatalf("calls=%d capped=%d", len(calls), capped)
+	}
+	if prose != "" {
+		t.Fatalf("溢出调用应丢弃，prose=%q", prose)
+	}
+}
+
+// 非流式路径同样剥独立成行的包装标记；只有标记、没有方括号调用时也要剥到。
+func TestExtractStripsWrapperTagLines(t *testing.T) {
+	content := "<tool calls>\n[调用工具 Bash({\"command\": \"pwd\"})]\n</tool calls>\n完成"
+	prose, calls, changed, _ := ExtractTextToolCalls(content, testNames, 0)
+	if len(calls) != 1 || !changed {
+		t.Fatalf("calls=%d changed=%v", len(calls), changed)
+	}
+	if prose != "完成" {
+		t.Fatalf("prose=%q", prose)
+	}
+	tagOnly := "<tool calls>\n</tool calls>\n"
+	prose, calls, changed, _ = ExtractTextToolCalls(tagOnly, testNames, 0)
+	if len(calls) != 0 || !changed || prose != "" {
+		t.Fatalf("纯标记内容也应剥净: prose=%q calls=%d changed=%v", prose, len(calls), changed)
 	}
 }
 
