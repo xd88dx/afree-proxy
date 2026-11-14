@@ -2,6 +2,7 @@ package kit
 
 import (
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -30,6 +31,18 @@ type DirtyFlusher struct {
 	once  sync.Once
 }
 
+// suspendedForTest 测试挂起开关：置位后 Mark 不再启动周期 goroutine，已在跑的
+// 循环也不再写盘。测试二进制里包级 flusher 是泄漏 goroutine——首次 Mark 惰性
+// 启动、无停止路径，测试结束后仍会按周期向「当前 DATA_DIR」（随 t.Setenv 逐
+// 测试变化）写盘，与任何正在清理 t.TempDir 的测试竞态（RemoveAll: directory
+// not empty，CI 2026-11-12 0aaefa91 与 2026-11-14 ea0c2374 同型两例）。测试
+// 不依赖周期写盘语义——脏标记照置、显式 Flush 与同步保存点照写。
+var suspendedForTest atomic.Bool
+
+// SuspendFlushersForTest 挂起所有 DirtyFlusher 的周期写盘（仅测试用，
+// 在 TestMain 里 m.Run() 之前调用）。
+func SuspendFlushersForTest() { suspendedForTest.Store(true) }
+
 // NewDirtyFlusher 构造落盘器。save 必须是"整体写盘"函数（内部自带串行化），
 // 且调用时不能持有调用方的配置锁——它自己会去取。
 func NewDirtyFlusher(every time.Duration, save func()) *DirtyFlusher {
@@ -40,11 +53,14 @@ func NewDirtyFlusher(every time.Duration, save func()) *DirtyFlusher {
 }
 
 // Mark 标记有未落盘变更，并惰性启动后台 goroutine（首次调用时启动一次）。
+// 挂起态（SuspendFlushersForTest）下只置脏位，不启动周期写盘。
 func (f *DirtyFlusher) Mark() {
 	f.mu.Lock()
 	f.dirty = true
 	f.mu.Unlock()
-	f.once.Do(func() { go f.loop() })
+	if !suspendedForTest.Load() {
+		f.once.Do(func() { go f.loop() })
+	}
 }
 
 // Flush 立即写盘（外部显式触发，如优雅退出/管理操作）。无变更时直接返回。
@@ -62,6 +78,9 @@ func (f *DirtyFlusher) loop() {
 	t := time.NewTicker(f.every)
 	defer t.Stop()
 	for range t.C {
+		if suspendedForTest.Load() {
+			continue // 挂起态只空转不写盘（对挂起前已启动的循环兜底）
+		}
 		f.Flush()
 	}
 }
