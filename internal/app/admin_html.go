@@ -1123,6 +1123,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
       <span class="wb-toolbar">
         <button class="btn btn-sm" onclick="openWorkbuddyTodoScan()" data-i18n="task_center">Task center</button>
         <button class="btn btn-sm" onclick="refreshWorkbuddyAccounts()" title="Refresh all account balances" data-i18n="refresh_all">Refresh all</button>
+        <button class="btn btn-sm" onclick="openWorkbuddyShareOptimizer()" title="Compute suggested account shares from expiring-credit daily need and write them into pool.account_share" data-i18n="weight_optimize">Weight optimize</button>
       </span>
       <span class="wb-toolbar">
         <button class="btn btn-sm" onclick="runWorkbuddyBatch('checkin_all')" data-i18n="check_in_all">Check in all</button>
@@ -1139,6 +1140,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
             <th data-i18n="Account">Account</th>
             <th data-i18n="Status">Status</th>
             <th data-i18n="Credits">Credits</th>
+            <th style="text-align:center" title="Current share of account traffic from pool.account_share, normalized within the share table (written by Weight optimize; '-' = not in the table, falls back to weighted random)" data-i18n="weight_col">Weight</th>
             <th title="Counted locally by this proxy — not the official free quota" data-i18n="Today/Total tokens">Today/Total tokens</th>
             <th data-i18n="Last used">Last used</th>
             <th title="Main exit first, backup as fallback; both down = row skipped (isolation)." data-i18n="Proxy binding">Proxy binding</th>
@@ -1148,7 +1150,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
           </tr>
         </thead>
         <tbody id="wbAccountsBody">
-          <tr><td colspan="10" class="empty">Loading...</td></tr>
+          <tr><td colspan="11" class="empty">Loading...</td></tr>
         </tbody>
       </table>
     </div>
@@ -1625,6 +1627,33 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
       <button class="btn" id="wbImportJson" onclick="document.getElementById('wbDialogImportFile').click()" data-i18n="import_json">Import JSON</button>
     </div>
     <input type="file" id="wbDialogImportFile" accept=".json" hidden onchange="importWorkbuddyAccounts(this)">
+  </div>
+</dialog>
+
+<dialog id="wbShareDialog" class="wb-wide">
+  <div class="wb-dialog-head">
+    <span data-i18n="weight_optimize">Weight optimize</span>
+    <button class="btn btn-sm" onclick="closeWorkbuddyShare()" data-i18n="close">Close</button>
+  </div>
+  <div class="wb-dialog-body">
+    <div class="hint" data-i18n="weight_optimize_hint">Suggested shares follow each account's expiring-credit daily need (sum of each bucket's remain ÷ days until that date, min 1). Accounts without expiring batches get a 20% reserve split by balance. Shares are exclusive: only listed accounts serve traffic; if none can serve, routing falls back to weighted random.</div>
+    <div class="hint" id="wbShareWarn" style="color:var(--amber,#eab308);display:none"></div>
+    <div class="table-wrap" style="max-height:340px;overflow:auto;margin:8px 0">
+      <table>
+        <thead><tr>
+          <th data-i18n="Account">Account</th>
+          <th data-i18n="weight_nearest">Nearest expiry</th>
+          <th data-i18n="weight_need_total">Expiring total</th>
+          <th data-i18n="weight_daily_need">Daily need</th>
+          <th data-i18n="weight_suggested">Suggested share</th>
+        </tr></thead>
+        <tbody id="wbShareBody"><tr><td colspan="5" class="empty">Loading...</td></tr></tbody>
+      </table>
+    </div>
+    <div class="wb-dialog-actions">
+      <button class="btn btn-primary" id="wbShareApplyBtn" onclick="applyWorkbuddyShare()" data-i18n="apply_share">Apply shares</button>
+      <button class="btn btn-warn" onclick="clearWorkbuddyShare()" data-i18n="clear_share">Clear shares</button>
+    </div>
   </div>
 </dialog>
 
@@ -2855,6 +2884,27 @@ const I18N = {
   'reset': { en: 'Reset', zh: '重置' },
   "Run the batch test once on every platform's credential list (Cline / TraeWork / OpenCode / OpenRouter / AMDCloud / TokenHarbor / Other / WorkBuddy), one platform at a time": { en: "Run the batch test once on every platform's credential list (Cline / TraeWork / OpenCode / OpenRouter / AMDCloud / TokenHarbor / Other / WorkBuddy), one platform at a time", zh: '逐平台批量测一次每个平台的凭据列表' },
   "Refresh every enabled account's credit snapshot (feeds the Credits column)": { en: "Refresh every enabled account's credit snapshot (feeds the Credits column)", zh: '刷新每个已启用账号的额度快照（给额度列）' },
+  'weight_optimize': { en: 'Weight optimize', zh: '权重优化' },
+  'weight_col': { en: 'Weight', zh: '权重' },
+  'weight_nearest': { en: 'Nearest expiry', zh: '最近到期' },
+  'weight_need_total': { en: 'Expiring total', zh: '到期合计' },
+  'weight_daily_need': { en: 'Daily need', zh: '日均需耗' },
+  'weight_suggested': { en: 'Suggested share', zh: '建议占比' },
+  'apply_share': { en: 'Apply shares', zh: '应用占比' },
+  'clear_share': { en: 'Clear shares', zh: '清除占比' },
+  'reserve_tag': { en: 'Reserve', zh: '保底' },
+  "Compute suggested account shares from expiring-credit daily need and write them into pool.account_share": { en: "Compute suggested account shares from expiring-credit daily need and write them into pool.account_share", zh: '按快过期积分的日均需耗计算建议占比并写入 pool.account_share' },
+  "Current share of account traffic from pool.account_share, normalized within the share table (written by Weight optimize; '-' = not in the table, falls back to weighted random)": { en: "Current share of account traffic from pool.account_share, normalized within the share table (written by Weight optimize; '-' = not in the table, falls back to weighted random)", zh: '该账号当前从 pool.account_share 分得的流量占比（占比表内归一化；由「权重优化」写入；「-」= 不在表内，走普通加权随机）' },
+  'weight_optimize_hint': { en: 'Suggested shares follow each account\'s expiring-credit daily need (sum of each bucket\'s remain ÷ days until that date, min 1). Accounts without expiring batches get a 20% reserve split by balance. Shares are exclusive: only listed accounts serve traffic; if none can serve, routing falls back to weighted random.', zh: '建议占比按各号快过期积分的日均需耗计算（各到期批次额度 ÷ 距到期天数之和，最少按 1 天）。无快过期批次的号从 20% 保底份额里按余额比例分得。占比是独占的：只有表内号接单；表内号全部不可用时自动回落加权随机。' },
+  'reserve_tag_title': { en: 'Reserve account: no expiring batches, shares assigned from the 20% reserve by balance', zh: '保底号：无快过期批次，从 20% 保底份额按余额比例分得' },
+  'share_no_pressure': { en: 'No expiring-credit pressure — nothing to optimize', zh: '当前无快过期积分压力，无需优化' },
+  'share_applied': { en: 'Shares applied and hot-reloaded', zh: '占比已应用并热生效' },
+  'share_cleared': { en: 'Shares cleared — back to weighted random', zh: '占比已清除，回落加权随机路由' },
+  'share_optimize_failed': { en: 'Share optimize failed: ', zh: '权重优化失败：' },
+  'share_apply_failed': { en: 'Share write failed: ', zh: '占比写入失败：' },
+  'no expiring credits pressure — nothing to optimize': { en: 'No expiring-credit pressure — nothing to optimize', zh: '无快过期积分压力，无需优化' },
+  'account_priority configured — shares only apply within the current priority tier': { en: 'account_priority configured — shares only apply within the current priority tier', zh: '已配置 account_priority：占比仅对当前优先层内的号生效' },
+  'no eligible accounts': { en: 'No eligible accounts', zh: '无参与优化的账号' },
   'Manual unban while a cooldown is active (global or platform-scoped): clears the cooldown and the failure counters so the exit rejoins the rotation immediately.': { en: 'Manual unban while a cooldown is active (global or platform-scoped): clears the cooldown and the failure counters so the exit rejoins the rotation immediately.', zh: '冷却期间手动解封（全局或平台）：清除冷却与失败计数，该出口立即回到轮转。' },
   'Counted locally by this proxy from upstream usage events': { en: 'Counted locally by this proxy from upstream usage events', zh: '本代理里本地统计，与官方免费额度无关' },
   'Delete': { en: 'Delete', zh: '删除' },
@@ -3266,6 +3316,9 @@ function renderWorkbuddyAccounts() {
         '<div style="display:flex;flex-direction:column;gap:2px;min-width:0;align-items:center">' + statusHtml + '</div>' + checkinV +
       '</div></td>' +
       '<td>' + esc(credits) + (creditsTotal ? '<span style="color:var(--text3)"> / ' + esc(creditsTotal) + '</span>' : '') + '</td>' +
+      // 权重列（2026-11-15）：account_share 表内归一化百分比；未配置显示 -。
+      // account.share 是选号真值（Status.Share 透出，issue #62 配置自证）。
+      '<td style="text-align:center">' + wbShareCell(wbSharePct(account)) + '</td>' +
       '<td title="' + T('today') + ' ' + fmtNum(tokensToday) + ' / ' + T('total_1_1') + ' ' + fmtNum(tokensTotal) + ' ' + T('tokens_exact_when_upstream_returns_usage_otherwi') + '">' + fmtTokens(tokensToday) + ' / ' + fmtTokens(tokensTotal) + '</td>' +
       '<td class="mono" style="font-size:11px">' + (lastUsed ? esc(fmtLastUsed(lastUsed)) : '-') + '</td>' +
       wbBindingCell(account) +
@@ -3850,6 +3903,99 @@ async function importWorkbuddyAccounts(input) {
     await loadWorkbuddyAccounts();
   } catch (e) { toast(T('import_failed') + e.message, 'error'); }
   input.value = '';
+}
+
+// ========== 凭据权重优化（2026-11-15）==========
+// 占比纯按快过期积分日均需耗（后端 share-optimize 计算），写入 pool.account_share。
+// 权重列数据来自 overview 行内 account.share（表内归一化，未配置显示 -）。
+
+// wbSharePct 行内权重百分比：account.share ÷ 参与路由的 share 和 ×100。
+// 分母只累计「会接单」的号（两把开关开、未禁用、未暂停）——关闭号占着 share
+// 配置值但不参与选号，把它算进分母会低估活跃号的百分比。
+// 无 share 或分母为 0 → null（单元格显示 -）。
+function wbSharePct(account) {
+  const v = Number(account && account.share) || 0;
+  if (v <= 0) return null;
+  const eligible = a => a && !a.disabled && !a.paused && a.pool_enabled !== false &&
+    (a.account_enabled === undefined || a.account_enabled !== false);
+  let sum = 0;
+  for (const a of (wbAccounts || [])) if (eligible(a)) sum += Number(a && a.share) || 0;
+  if (sum <= 0) return null;
+  return Math.round(v / sum * 1000) / 10;
+}
+function wbShareCell(pct) {
+  return pct === null
+    ? '<span style="color:var(--text3)">-</span>'
+    : '<span class="mono" style="font-size:11px">' + pct + '%</span>';
+}
+
+// wbShareSuggestions 最近一次优化建议缓存（Apply 时提交 {uid: suggested}）。
+let wbShareSuggestions = null;
+
+async function openWorkbuddyShareOptimizer() {
+  const dlg = _('wbShareDialog');
+  const body = _('wbShareBody');
+  const warn = _('wbShareWarn');
+  const applyBtn = _('wbShareApplyBtn');
+  try {
+    const d = await api('GET', '/workbuddy/share-optimize');
+    const data = d.data || d;
+    wbShareSuggestions = data.suggestions || [];
+    const rows = wbShareSuggestions;
+    if (!rows.length) {
+      body.innerHTML = '<tr><td colspan="5" class="empty">' + esc(T('share_no_pressure')) + '</td></tr>';
+      applyBtn.disabled = true;
+      wbShareSuggestions = null;
+    } else {
+      body.innerHTML = rows.map(r =>
+        '<tr><td class="mono" style="font-size:11px">' + esc(r.nickname || r.uid) +
+        (r.reserved ? ' <span class="auto-pill" title="' + esc(T('reserve_tag_title')) + '">' + esc(T('reserve_tag')) + '</span>' : '') +
+        '</td><td class="mono" style="font-size:11px;text-align:center">' + esc(r.nearest || '-') +
+        '</td><td class="mono" style="font-size:11px;text-align:center">' + (r.need_total ? esc(Math.round(r.need_total)) : '-') +
+        '</td><td class="mono" style="font-size:11px;text-align:center">' + (r.daily_need ? esc(Math.round(r.daily_need * 10) / 10) : '-') +
+        '</td><td class="mono" style="font-size:11px;text-align:center">' + esc(r.suggested) + '%</td></tr>'
+      ).join('');
+      applyBtn.disabled = false;
+    }
+    const warns = data.warnings || [];
+    if (warn.length) {
+      warn.textContent = warns.map(w => T(w)).join(' ');
+      warn.style.display = '';
+    } else warn.style.display = 'none';
+    dlg.showModal();
+  } catch (e) {
+    toast(T('share_optimize_failed') + e.message, 'error');
+  }
+}
+function closeWorkbuddyShare() { const d = _('wbShareDialog'); if (d && d.open) d.close(); }
+
+async function applyWorkbuddyShare() {
+  if (!wbShareSuggestions || !wbShareSuggestions.length) return;
+  const shares = {};
+  for (const r of wbShareSuggestions) shares[r.uid] = r.suggested;
+  const btn = _('wbShareApplyBtn');
+  btn.disabled = true;
+  try {
+    await api('POST', '/workbuddy/account-share', { shares: shares });
+    toast(T('share_applied'), 'success');
+    closeWorkbuddyShare();
+    loadWorkbuddyAccounts();
+  } catch (e) {
+    toast(T('share_apply_failed') + e.message, 'error');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function clearWorkbuddyShare() {
+  try {
+    await api('POST', '/workbuddy/account-share', { clear: true });
+    toast(T('share_cleared'), 'success');
+    closeWorkbuddyShare();
+    loadWorkbuddyAccounts();
+  } catch (e) {
+    toast(T('share_apply_failed') + e.message, 'error');
+  }
 }
 
 async function loadWorkbuddyConfig() {

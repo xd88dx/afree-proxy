@@ -162,6 +162,12 @@ func StartProxy(host string, port int) error {
 		mux.HandleFunc("/admin/api/workbuddy/account-enabled", adminCORS(adminAuthMiddleware(handleWorkbuddyAccountSetEnabled)))
 		mux.HandleFunc("/admin/api/workbuddy/reorder", adminCORS(adminAuthMiddleware(handleWorkbuddyPoolReorder)))
 		mux.HandleFunc("/admin/api/workbuddy/nickname", adminCORS(adminAuthMiddleware(handleWorkbuddyNickname)))
+		// 凭据权重优化（2026-11-15）：按快过期积分日均需耗计算占比写入
+		// pool.account_share（见 workbuddy_share.go）。当前占比不设查询端点：
+		// overview 的 accounts[].share 已透出（Status.Share 配置自证透出），
+		// 权重列直接用行数据。
+		mux.HandleFunc("/admin/api/workbuddy/share-optimize", adminCORS(adminAuthMiddleware(handleWorkbuddyShareOptimize)))
+		mux.HandleFunc("/admin/api/workbuddy/account-share", adminCORS(adminAuthMiddleware(handleWorkbuddyShareSet)))
 	}
 	// TraeWork 原版入口（vendored trae2api console）：新标签页打开 /admin/trae2api/，
 	// 复用管理会话 Cookie；console fetch 基址已在 vendor 阶段改写。

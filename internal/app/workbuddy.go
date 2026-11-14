@@ -53,6 +53,11 @@ type workbuddySubsystem struct {
 	live       *livecfg.Holder
 	store      redisstore.Store
 
+	// saveConfig 与面板 SaveConfig 同源（saveWorkbuddyConfig 闭包，workbuddy.go
+	// 构造时赋值）：权重优化写入 account_share 复用同一条落盘+热更新链，
+	// 避免两处配置保存口径漂移。
+	saveConfig func(raw []byte) ([]string, error)
+
 	cancel context.CancelFunc
 
 	mu      sync.Mutex
@@ -400,6 +405,11 @@ func startWorkBuddy() (*workbuddySubsystem, error) {
 		live:       live,
 		store:      store,
 		cancel:     cancel,
+		// 与面板 SaveConfig 同源闭包：权重优化写入 account_share 复用同一条
+		// 落盘+热更新链（saveWorkbuddyConfig），两处保存口径不会漂移。
+		saveConfig: func(raw []byte) ([]string, error) {
+			return saveWorkbuddyConfig(cfgPath, raw, live, p, up, sch, gwRef, pnRef, authDir, stateFile)
+		},
 	}
 	log.Printf("WorkBuddy subsystem ready: accounts=%d auth_dir=%s", len(auths), cfg.AuthDir)
 	return sub, nil
