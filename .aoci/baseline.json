@@ -1,7 +1,7 @@
 {
   "version": 1,
   "created_at": "2026-11-09T17:13:34Z",
-  "updated_at": "2026-11-13T16:47:46Z",
+  "updated_at": "2026-11-14T03:31:04Z",
   "files": {
     ".agents/skills/add-platform/SKILL.md": {
       "role": "index",
@@ -29,9 +29,9 @@
     },
     ".agents/skills/audit-availability/references/audit-playbook.md": {
       "role": "index",
-      "sha256": "c4739c0e6442ebfbae06ab4c08697dad09bb45530541e031a408525de28f3e78",
-      "size": 22199,
-      "normalized_sha256": "c4739c0e6442ebfbae06ab4c08697dad09bb45530541e031a408525de28f3e78"
+      "sha256": "83928536ef28fd48a8049544a09835f75aac3d9bceee004e34873e4de958ae24",
+      "size": 22859,
+      "normalized_sha256": "83928536ef28fd48a8049544a09835f75aac3d9bceee004e34873e4de958ae24"
     },
     ".agents/skills/sync-upstream/SKILL.md": {
       "role": "index",
@@ -488,9 +488,9 @@
     },
     "Dockerfile": {
       "role": "index",
-      "sha256": "b94d43d3a9110295a2c16e6c3d8c65c381ef795bf95d3277e40de9b088c612f5",
-      "size": 2059,
-      "normalized_sha256": "b94d43d3a9110295a2c16e6c3d8c65c381ef795bf95d3277e40de9b088c612f5"
+      "sha256": "ba00e2e57949894e0abf17f7c0a8024c82eb2e14bb172ae4a953f32d31749bf1",
+      "size": 2215,
+      "normalized_sha256": "ba00e2e57949894e0abf17f7c0a8024c82eb2e14bb172ae4a953f32d31749bf1"
     },
     "MERGE.md": {
       "role": "index",
@@ -518,9 +518,9 @@
     },
     "aoci.code.txt": {
       "role": "index",
-      "sha256": "4d9c386f6d93e8c5dc22f2d32bc42a43c0c5b8f7a597b508833fe9749c8e11a4",
-      "size": 184808,
-      "normalized_sha256": "4d9c386f6d93e8c5dc22f2d32bc42a43c0c5b8f7a597b508833fe9749c8e11a4"
+      "sha256": "a52deae6e3258ec19c77f1928610ad644d85ea1177c1e4cbc8350546cb145563",
+      "size": 186047,
+      "normalized_sha256": "a52deae6e3258ec19c77f1928610ad644d85ea1177c1e4cbc8350546cb145563"
     },
     "aoci.meta.txt": {
       "role": "index",
@@ -548,9 +548,9 @@
     },
     "entrypoint.sh": {
       "role": "index",
-      "sha256": "533ff39c5ba583d8216841592d240469bd4fc2b001d99322e18694a4fdff566f",
-      "size": 1596,
-      "normalized_sha256": "533ff39c5ba583d8216841592d240469bd4fc2b001d99322e18694a4fdff566f"
+      "sha256": "640622590ae75b3bd0b6f4621dc8c78f6fda70d53c188656ea7ca56db6ac92cf",
+      "size": 1619,
+      "normalized_sha256": "640622590ae75b3bd0b6f4621dc8c78f6fda70d53c188656ea7ca56db6ac92cf"
     },
     "go.mod": {
       "role": "index",
@@ -7373,6 +7373,12 @@
       "sha256": "9cd3348f034e4aefd4a8c705120445f9f0720870c61933adef34e59316e4a7fe",
       "size": 3712,
       "normalized_sha256": "9cd3348f034e4aefd4a8c705120445f9f0720870c61933adef34e59316e4a7fe"
+    },
+    "scripts/egress_probe.py": {
+      "role": "index",
+      "sha256": "3d9aa49c1c29b80d1129ee9a11789bd0119b082b0f7328ed6d260efa47190155",
+      "size": 19005,
+      "normalized_sha256": "3d9aa49c1c29b80d1129ee9a11789bd0119b082b0f7328ed6d260efa47190155"
     },
     "scripts/i18n_audit.py": {
       "role": "index",
