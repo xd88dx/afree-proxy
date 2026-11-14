@@ -282,8 +282,11 @@ func (f *textCallFilter) feed(delta string) {
 					f.calls = append(f.calls, extractedCall{name: canonical, args: fixed, repaired: rep})
 					f.absorbLineBreak()
 				} else {
-					f.reject("args 不可修复", name, args)
-					f.emit(raw)
+					// args 结构残缺的模仿文本对客户端没有可执行价值：丢弃而不是
+					// 放行，否则会污染会话记录并随历史回流强化模仿（2026-11-14 改，
+					// 与「未闭合/超上限丢弃」及网关层 internal/textcall 同语义）。
+					f.reject("args 不可修复，已丢弃", name, args)
+					f.absorbLineBreak()
 				}
 			} else {
 				f.reject("工具名不在清单", name, args)
@@ -371,6 +374,10 @@ func extractTextToolCalls(content string, tools []traectl.Tool) (prose string, c
 		case tcComplete:
 			if len(calls) >= defaultTextCallMax {
 				// 单响应转换上限（与流式过滤同值）：超限丢弃（2026-11-14 改）。
+				// changed 必须置位：调用方（chat.go 非流式聚合）以 changed 决定
+				// 是否用 prose 替换正文，只丢弃不转换的轮次不置位会残留原文
+				// （2026-11-14 修）。
+				changed = true
 				rest = rest[consumed:]
 				continue
 			}
@@ -385,7 +392,9 @@ func extractTextToolCalls(content string, tools []traectl.Tool) (prose string, c
 					calls = append(calls, extractedCall{name: canonical, args: fixed, repaired: rep})
 					changed = true
 				} else {
-					sb.WriteString(raw)
+					// args 结构残缺：模仿文本对客户端无可执行价值，丢弃
+					// （2026-11-14 改，与流式及网关层 internal/textcall 同语义）。
+					changed = true
 				}
 			} else {
 				sb.WriteString(raw)

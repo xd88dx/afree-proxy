@@ -345,3 +345,42 @@ func TestExtractTextToolCallsNoNames(t *testing.T) {
 		t.Fatalf("无 names 时不应改写: changed=%v", changed)
 	}
 }
+
+// args 配平完整但含非 JSON 语法（生产 2026-11-14 实测：模型写 Python 风格
+// `True`，lenient 修复器只作用于字符串字面量内部、不修裸标识符）应丢弃而不是
+// 放行——放行会随历史回流强化模型模仿。注意日志里的 args 截断是 %.120q
+// 展示截断，不代表模型写到一半。
+func TestFilterUnrepairableArgsDropped(t *testing.T) {
+	f := New(testNames, 0)
+	out := f.Feed(`步骤 [调用工具 Bash({"pattern": "x", "path": "a.py", "-n": True})] 收尾`)
+	out += mustTail(f)
+	if strings.Contains(out, "[调用工具") {
+		t.Fatalf("不可修复 args 应丢弃: %q", out)
+	}
+	if !strings.Contains(out, "步骤") || !strings.Contains(out, "收尾") {
+		t.Fatalf("正常正文应保留: %q", out)
+	}
+	if _, calls := f.Finish(); len(calls) != 0 {
+		t.Fatalf("不可修复 args 不应产生调用: %+v", calls)
+	}
+}
+
+func TestExtractUnrepairableArgsDropped(t *testing.T) {
+	content := `前文 [调用工具 Bash({"pattern": "x", "path": "a.py", "-n": True})] 后文`
+	prose, calls, changed, _ := ExtractTextToolCalls(content, testNames, 0)
+	if !changed || len(calls) != 0 || strings.Contains(prose, "[调用工具") {
+		t.Fatalf("changed=%v calls=%d prose=%q", changed, len(calls), prose)
+	}
+	if !strings.Contains(prose, "前文") || !strings.Contains(prose, "后文") {
+		t.Fatalf("正常正文应保留: %q", prose)
+	}
+}
+
+// 超限丢弃轮次的 changed 亦须置位（正常路径由前置成功转换置位，此处防御性锁定）。
+func TestExtractOverflowSetsChanged(t *testing.T) {
+	content := `[调用工具 Bash({"command": "a"})][调用工具 Bash({"command": "b"})]`
+	prose, calls, changed, capped := ExtractTextToolCalls(content, testNames, 1)
+	if len(calls) != 1 || capped != 1 || !changed || prose != "" {
+		t.Fatalf("calls=%d capped=%d changed=%v prose=%q", len(calls), capped, changed, prose)
+	}
+}

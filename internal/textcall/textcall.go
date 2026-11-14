@@ -167,8 +167,12 @@ func (f *Filter) Feed(delta string) (released string) {
 					f.calls = append(f.calls, Call{Name: canonical, Args: fixed, Repaired: rep})
 					f.absorbLineBreak()
 				} else {
-					f.reject("args 不可修复", name, args)
-					f.writeProse(&sb, []byte(raw))
+					// args 结构残缺的模仿文本对客户端没有可执行价值：丢弃而不是
+					// 放行，否则会污染会话记录并随历史回流强化模仿（2026-11-14 改，
+					// 与「未闭合/超上限丢弃」同语义）。不计入 dropped（那是超上限
+					// 专用计数）；诊断已由 reject 留痕。
+					f.reject("args 不可修复，已丢弃", name, args)
+					f.absorbLineBreak()
 				}
 			} else {
 				f.reject("工具名不在清单", name, args)
@@ -403,14 +407,18 @@ func ExtractTextToolCalls(content string, names []string, max int) (prose string
 			after := consumed
 			if max > 0 && len(calls) >= max {
 				// 超上限：模仿文本对客户端无可执行价值，丢弃（2026-11-14 改）。
+				// changed 必须置位：调用方以 changed 决定是否用 prose 替换正文，
+				// 只丢弃不转换的轮次不置位会残留原文（2026-11-14 修）。
 				capped++
+				changed = true
 			} else if canonical, ok := lookup(name); ok {
 				if fixed, rep, ok := acceptCallArgs(args); ok {
 					calls = append(calls, Call{Name: canonical, Args: fixed, Repaired: rep})
 					changed = true
 				} else {
-					sb.WriteString(raw)
-					lineStart = false
+					// args 结构残缺：模仿文本对客户端无可执行价值，丢弃
+					// （2026-11-14 改，与流式及引擎层同语义；不计入 capped）。
+					changed = true
 				}
 			} else {
 				sb.WriteString(raw)

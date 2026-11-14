@@ -979,7 +979,8 @@ func (s *Server) streamChat(w http.ResponseWriter, ctx context.Context, cl *trae
 	}
 
 	// 文本调用收尾：冲刷残余正文，把解析出的调用并入 toolBuf 统一校验发出
-	//（流被截断时未闭合的捕获会按正文原样放行，见 textcall.go）。
+	//（流被截断时未闭合的捕获丢弃——半截调用无可执行价值，2026-11-14 改，
+	// 见 textcall.go finish）。
 	textCalls := tcf.finish()
 	for _, c := range textCalls {
 		buf := &toolAccum{id: "call_" + randHex(8), name: c.name}

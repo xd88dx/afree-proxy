@@ -291,3 +291,36 @@ func TestTextCallFilterRepairsArgs(t *testing.T) {
 		t.Fatalf("修复后参数仍非法: %v", err)
 	}
 }
+
+// args 配平完整但含非 JSON 语法（生产 2026-11-14 实测：模型写 Python 风格
+// `True`，lenient 修复器只作用于字符串字面量内部、不修裸标识符）应丢弃而不是
+// 放行——放行会随历史回流强化模型模仿。注意日志里的 args 截断是 %.120q
+// 展示截断，不代表模型写到一半。
+func TestTextCallFilterUnrepairableArgsDropped(t *testing.T) {
+	var out strings.Builder
+	f := newTextCallFilter(testTools, func(s string) { out.WriteString(s) })
+	f.feed(`步骤 [调用工具 Bash({"pattern": "x", "path": "a.py", "-n": True})] 收尾`)
+	calls := f.finish()
+	if strings.Contains(out.String(), "[调用工具") {
+		t.Fatalf("不可修复 args 应丢弃: %q", out.String())
+	}
+	if !strings.Contains(out.String(), "步骤") || !strings.Contains(out.String(), "收尾") {
+		t.Fatalf("正常正文应保留: %q", out.String())
+	}
+	if len(calls) != 0 {
+		t.Fatalf("不可修复 args 不应产生调用: %+v", calls)
+	}
+}
+
+// 非流式：不可修复 args 丢弃后 changed 必须置位（调用方以 changed 决定是否用
+// prose 替换正文），正常正文保留。
+func TestExtractTextToolCallsUnrepairableArgsDropped(t *testing.T) {
+	content := `前文 [调用工具 Bash({"pattern": "x", "path": "a.py", "-n": True})] 后文`
+	prose, calls, changed := extractTextToolCalls(content, testTools)
+	if !changed || len(calls) != 0 || strings.Contains(prose, "[调用工具") {
+		t.Fatalf("changed=%v calls=%d prose=%q", changed, len(calls), prose)
+	}
+	if !strings.Contains(prose, "前文") || !strings.Contains(prose, "后文") {
+		t.Fatalf("正常正文应保留: %q", prose)
+	}
+}
