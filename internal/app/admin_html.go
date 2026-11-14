@@ -6091,11 +6091,18 @@ async function catalogSync(cfg) {
 // wbCatalogSync WorkBuddy：子系统面板是另一套形态（{ok, models, cached}），
 // 且必须带 refresh=1 才会绕过它自己的 60s 目录缓存真的重探上游。
 async function wbCatalogSync(cfg) {
-  const d = await api('POST', cfg.endpoint + '?refresh=1');
-  if (d && d.ok === false) throw new Error(d.error || T('upstream_unavailable'));
-  const total = Array.isArray(d.models) ? d.models.length : 0;
+  // wb 的 endpoint 是子系统面板绝对路径（/admin/workbuddy/...），不能走 api()
+  // 的 API 前缀拼接——会拼出 /admin/api/admin/workbuddy/... 双前缀恒 404
+  //（2026-10-31 统一刷新时引入的静默缺陷，2026-11-14 用户报告）。
+  const res = await fetch(cfg.endpoint + '?refresh=1', { method: 'POST', headers: { 'Accept': 'application/json' } });
+  if (res.status === 401) { location.reload(); return new Promise(() => {}); }
+  let data = null;
+  try { data = await res.json(); } catch (_) { data = null; }
+  if (!res.ok) throw new Error((data && (data.error || data.message)) || ('HTTP ' + res.status));
+  if (data && data.ok === false) throw new Error(data.error || T('upstream_unavailable'));
+  const total = Array.isArray(data.models) ? data.models.length : 0;
   if (!total) return { kind: 'rejected', message: 'no_models_returned' };
-  return { kind: 'synced', message: 'synced', total: total, added: 0, cached: !!d.cached };
+  return { kind: 'synced', message: 'synced', total: total, added: 0, cached: !!data.cached };
 }
 
 function catalogResultToast(res, cfg) {
