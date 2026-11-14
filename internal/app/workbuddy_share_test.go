@@ -88,10 +88,30 @@ func TestShareOptimizePastBucketCountsAsToday(t *testing.T) {
 		shareTestStatus("b", 100, []wbpool.ExpiryBucket{bucketOn("2026-11-16", 50)}),
 	}
 	sugs, _ := computeShareSuggestions(list, now)
-	// a: 50/1=50；b: 50/1（11-16 距 11-15 = 1 天）=50 → 各 40
+	// a: 50/1=50；b: 50/1（11-16 距 11-15 = 1 天）=50 → 无保底号占比归一，各 50
+	//（2026-11-15 修：无保底号时 pressuredPct=100，原实现恒 80 导致总和 80）
 	a, b := shareSugByUID(sugs, "a"), shareSugByUID(sugs, "b")
-	if a == nil || b == nil || a.Suggested != 40 || b.Suggested != 40 {
-		t.Fatalf("期望各 40%%，得到 a=%+v b=%+v", a, b)
+	if a == nil || b == nil || a.Suggested != 50 || b.Suggested != 50 {
+		t.Fatalf("期望各 50%%，得到 a=%+v b=%+v", a, b)
+	}
+}
+
+// 无保底号时占比总和必须为 100（2026-11-15 生产实测回归：12 号全有批次，
+// 原实现占比总和恒 80）。
+func TestShareOptimizeNoReservedSumsTo100(t *testing.T) {
+	now := time.Date(2026, 11, 15, 12, 0, 0, 0, time.UTC)
+	list := []wbpool.Status{
+		shareTestStatus("a", 100, []wbpool.ExpiryBucket{bucketOn("2026-11-15", 102), bucketOn("2026-11-16", 606)}),
+		shareTestStatus("b", 100, []wbpool.ExpiryBucket{bucketOn("2026-11-15", 1), bucketOn("2026-11-16", 709)}),
+		shareTestStatus("c", 100, []wbpool.ExpiryBucket{bucketOn("2026-11-24", 3873)}),
+	}
+	sugs, _ := computeShareSuggestions(list, now)
+	sum := 0.0
+	for _, s := range sugs {
+		sum += s.Suggested
+	}
+	if len(sugs) != 3 || sum < 99.9 || sum > 100.1 {
+		t.Fatalf("3 个压力号占比和应为 100，得到 %d 条和 %v", len(sugs), sum)
 	}
 }
 

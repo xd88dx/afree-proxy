@@ -33,8 +33,8 @@ type wbShareSuggestion struct {
 	Nickname  string  `json:"nickname,omitempty"`
 	Realm     string  `json:"realm,omitempty"`
 	Nearest   string  `json:"nearest,omitempty"`    // 最近到期日（yyyy-mm-dd，空=无批次）
-	NeedTotal float64 `json:"need_total"`           // 快过期批次合计额度
-	DailyNeed float64 `json:"daily_need"`           // 日均需耗 = Σ(remain ÷ 距到期天数)
+	NeedTotal float64 `json:"need_total"`           // 7 天内到期批次合计（与面板「7 天内合计」同口径；日均需耗仍含全部批次摊薄）
+	DailyNeed float64 `json:"daily_need"`           // 日均需耗 = Σ(remain ÷ 距到期天数)，全部未来批次
 	Suggested float64 `json:"suggested"`            // 建议占比（百分比，全体和≈100）
 	Reserved  bool    `json:"reserved"`             // true = 保底号（无快过期批次）
 	Credits   int64   `json:"credits,omitempty"`    // 保底内部分配依据（余额比例）
@@ -43,13 +43,15 @@ type wbShareSuggestion struct {
 // shareDailyNeed 汇总一个账号的到期批次：日均需耗与最近到期日。
 // days 按自然日差、最少 1（今天到期的批次÷1，与积分到期提醒面板同口径）；
 // 过期未扣完的批次（负天数）同样按 1 算（最紧迫）。
-func shareDailyNeed(buckets []wbpool.ExpiryBucket, now time.Time) (need, daily float64, nearest string) {
+// need7d 只累计 7 天内到期的批次（展示口径与面板「7 天内合计」对齐）；
+// 日均需耗含全部未来批次——远期批次按天数摊薄、贡献自然衰减（2026-11-15
+// 用户定：占比纯按需耗，日均消耗不入权重逻辑）。
+func shareDailyNeed(buckets []wbpool.ExpiryBucket, now time.Time) (need, need7d, daily float64, nearest string) {
 	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
 	for _, b := range buckets {
 		if b.Remain <= 0 {
 			continue
 		}
-		need += float64(b.Remain)
 		days := 1
 		if t, err := time.ParseInLocation("2006-01-02", b.Date, now.Location()); err == nil {
 			if d := int(t.Sub(today).Hours() / 24); d > days {
@@ -63,9 +65,13 @@ func shareDailyNeed(buckets []wbpool.ExpiryBucket, now time.Time) (need, daily f
 				days = d + 1
 			}
 		}
+		need += float64(b.Remain)
+		if days <= 7 {
+			need7d += float64(b.Remain)
+		}
 		daily += float64(b.Remain) / float64(days)
 	}
-	return need, daily, nearest
+	return need, need7d, daily, nearest
 }
 
 // shareEligible 参与优化的账号口径：两把开关都开、未被硬禁用。冷却是瞬时状态
@@ -91,8 +97,8 @@ func computeShareSuggestions(list []wbpool.Status, now time.Time) ([]wbShareSugg
 		if !shareEligible(s) {
 			continue
 		}
-		need, daily, nearest := shareDailyNeed(s.CreditsExpiryBuckets, now)
-		sp := slot{st: s, need: need, daily: daily, nearest: nearest}
+		_, need7d, daily, nearest := shareDailyNeed(s.CreditsExpiryBuckets, now)
+		sp := slot{st: s, need: need7d, daily: daily, nearest: nearest}
 		if daily > 0 {
 			pressured = append(pressured, sp)
 		} else {
@@ -107,6 +113,13 @@ func computeShareSuggestions(list []wbpool.Status, now time.Time) ([]wbShareSugg
 		return nil, []string{"no expiring credits pressure — nothing to optimize"}
 	}
 	// 保底权重：合计 shareReservePct，内部按余额比例（余额全 0 → 均分）。
+	// 2026-11-15 修：保底份额只在真有保底号时扣留——全员有批次（无保底号）
+	// 时 pressuredPct 必须回满 100%，否则 20% 无人分、占比总和恒 80
+	//（生产实测：12 号全有批次，占比总和 80 而非 100）。
+	reservePct := 0.0
+	if len(reserved) > 0 {
+		reservePct = shareReservePct
+	}
 	reserveEach := func(n int) float64 { return shareReservePct / float64(n) }
 	var reserveSum int64
 	for _, sp := range reserved {
@@ -115,7 +128,7 @@ func computeShareSuggestions(list []wbpool.Status, now time.Time) ([]wbShareSugg
 		}
 	}
 	// 有压力号合计 100−reserve：内部按日均需耗比例。
-	pressuredPct := 100.0 - shareReservePct
+	pressuredPct := 100.0 - reservePct
 	var needSum float64
 	for _, sp := range pressured {
 		needSum += sp.daily
