@@ -36,9 +36,9 @@ func shareSugByUID(sugs []wbShareSuggestion, uid string) *wbShareSuggestion {
 func TestShareOptimizePressuredAndReserved(t *testing.T) {
 	now := time.Date(2026, 11, 15, 12, 0, 0, 0, time.UTC)
 	list := []wbpool.Status{
-		// a：今天到期 100 + 2 天后到期 100 → 100/1 + 100/2 = 150
+		// a：今天到期 100 + 2 天后到期 100 → 前缀和 100/1=100、200/3=66.7 → 100
 		shareTestStatus("a", 1000, []wbpool.ExpiryBucket{bucketOn("2026-11-15", 100), bucketOn("2026-11-17", 100)}),
-		// b：2 天后到期 60 → 30
+		// b：2 天后到期 60 → 60/2 = 30
 		shareTestStatus("b", 1000, []wbpool.ExpiryBucket{bucketOn("2026-11-17", 60)}),
 		// c/d：无批次保底，余额 3:1 → 15:5
 		shareTestStatus("c", 300, nil),
@@ -50,12 +50,12 @@ func TestShareOptimizePressuredAndReserved(t *testing.T) {
 	if len(sugs) != 4 {
 		t.Fatalf("期望 4 条建议（e 被排除），得到 %d", len(sugs))
 	}
-	if got := shareSugByUID(sugs, "a"); got == nil || got.DailyNeed != 150 || got.Suggested != 66.67 {
-		t.Fatalf("a 期望 daily=150 suggested=66.67（150/180×80），得到 %+v", got)
+	// a=100/120×80=66.67；b=20/120×80=13.33（11-17 可用 3 天：今天+明天+后天）
+	if got := shareSugByUID(sugs, "a"); got == nil || got.DailyNeed != 100 || got.Suggested != 66.67 {
+		t.Fatalf("a 期望 daily=100 suggested=66.67，得到 %+v", got)
 	}
-	if got := shareSugByUID(sugs, "b"); got == nil || got.DailyNeed != 30 || got.Suggested != 13.33 {
-		// 30/180×80 = 13.33
-		t.Fatalf("b 期望 daily=30 suggested=13.33，得到 %+v", got)
+	if got := shareSugByUID(sugs, "b"); got == nil || got.DailyNeed != 20 || got.Suggested != 13.33 {
+		t.Fatalf("b 期望 daily=20 suggested=13.33，得到 %+v", got)
 	}
 	if got := shareSugByUID(sugs, "c"); got == nil || !got.Reserved || got.Suggested != 15 {
 		t.Fatalf("c 期望保底 15（20×300/400），得到 %+v", got)
@@ -65,6 +65,28 @@ func TestShareOptimizePressuredAndReserved(t *testing.T) {
 	}
 	if len(warnings) != 0 {
 		t.Fatalf("无 priority 配置不应有警告: %v", warnings)
+	}
+}
+
+// 前缀和语义锁（2026-11-15 生产实测回归）：今天到期 102 + 明天到期 606 的日均
+// 需耗是 708/2=354（到明天为止烧完 708），不是 102/1+606/1=708 的批次叠加——
+// 消耗串行、上游 FEFO 先扣最早批次，一个号只有一个速率。
+func TestShareOptimizePrefixSumNotBatchSum(t *testing.T) {
+	now := time.Date(2026, 11, 15, 12, 0, 0, 0, time.UTC)
+	list := []wbpool.Status{
+		shareTestStatus("a", 100, []wbpool.ExpiryBucket{
+			bucketOn("2026-11-15", 102), bucketOn("2026-11-16", 606), bucketOn("2026-11-17", 107), bucketOn("2026-11-18", 108),
+		}),
+	}
+	sugs, _ := computeShareSuggestions(list, now)
+	a := shareSugByUID(sugs, "a")
+	// 前缀：102/1=102、708/2=354、815/3=271.7、923/4=230.75 → 最大 354
+	if a == nil || a.DailyNeed != 354 {
+		t.Fatalf("日均需耗应为前缀和最大值 354，得到 %+v", a)
+	}
+	// 7 天内合计 = 102+606+107+108 = 923
+	if a.NeedTotal != 923 {
+		t.Fatalf("7 天内合计应为 923，得到 %v", a.NeedTotal)
 	}
 }
 
@@ -88,11 +110,11 @@ func TestShareOptimizePastBucketCountsAsToday(t *testing.T) {
 		shareTestStatus("b", 100, []wbpool.ExpiryBucket{bucketOn("2026-11-16", 50)}),
 	}
 	sugs, _ := computeShareSuggestions(list, now)
-	// a: 50/1=50；b: 50/1（11-16 距 11-15 = 1 天）=50 → 无保底号占比归一，各 50
-	//（2026-11-15 修：无保底号时 pressuredPct=100，原实现恒 80 导致总和 80）
+	// a: 50/1=50（过期钳 1 天）；b: 50/2=25（11-16 可用 2 天）→ 无保底归一
+	// a=66.67、b=33.33（2026-11-15 修：无保底号 pressuredPct=100）
 	a, b := shareSugByUID(sugs, "a"), shareSugByUID(sugs, "b")
-	if a == nil || b == nil || a.Suggested != 50 || b.Suggested != 50 {
-		t.Fatalf("期望各 50%%，得到 a=%+v b=%+v", a, b)
+	if a == nil || b == nil || a.Suggested != 66.67 || b.Suggested != 33.33 {
+		t.Fatalf("期望 a=66.67 b=33.33，得到 a=%+v b=%+v", a, b)
 	}
 }
 
@@ -112,6 +134,73 @@ func TestShareOptimizeNoReservedSumsTo100(t *testing.T) {
 	}
 	if len(sugs) != 3 || sum < 99.9 || sum > 100.1 {
 		t.Fatalf("3 个压力号占比和应为 100，得到 %d 条和 %v", len(sugs), sum)
+	}
+}
+
+// cron 解析与匹配（权重优化定时任务）。
+func TestParseWbCron(t *testing.T) {
+	// 标准 5 字段
+	f, err := parseWbCron("0 */6 * * *")
+	if err != nil {
+		t.Fatalf("0 */6 * * * 应合法: %v", err)
+	}
+	if !f[0][0] || !f[1][0] || !f[1][6] || !f[1][12] {
+		t.Fatalf("步长域应含 0 分与 0/6/12 时: %v %v", f[0], f[1])
+	}
+	if f[1][1] {
+		t.Fatal("*/6 不应含 1 时")
+	}
+	// 列表 + 范围
+	if f, err = parseWbCron("5,15 9-11 * * 1-5"); err != nil {
+		t.Fatalf("列表/范围应合法: %v", err)
+	}
+	if !f[0][5] || !f[0][15] || f[0][16] || !f[1][9] || !f[1][11] || f[1][12] {
+		t.Fatalf("列表/范围解析错: %v %v", f[0], f[1])
+	}
+	if !f[4][1] || !f[4][5] || f[4][0] {
+		t.Fatalf("周域 1-5 应只含周一到周五: %v", f[4])
+	}
+	// 周 7 归一为周日
+	if f, err = parseWbCron("0 0 * * 7"); err != nil {
+		t.Fatalf("7 应合法: %v", err)
+	}
+	if !f[4][0] || f[4][7] {
+		t.Fatalf("周 7 应归一为 0: %v", f[4])
+	}
+	// 非法：字段数、超界、坏步长
+	for _, bad := range []string{"* * * *", "0 0 * * * *", "60 * * * *", "* 24 * * *", "*/0 * * * *", "a * * * *"} {
+		if _, err = parseWbCron(bad); err == nil {
+			t.Fatalf("%q 应非法", bad)
+		}
+	}
+}
+
+func TestWbCronMatch(t *testing.T) {
+	f, err := parseWbCron("30 9 * * 1-5")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// 2026-11-16 是周一
+	if !wbCronMatch(f, time.Date(2026, 11, 16, 9, 30, 0, 0, time.UTC)) {
+		t.Fatal("周一 09:30 应命中")
+	}
+	if wbCronMatch(f, time.Date(2026, 11, 16, 9, 31, 0, 0, time.UTC)) {
+		t.Fatal("非 30 分不应命中")
+	}
+	if wbCronMatch(f, time.Date(2026, 11, 15, 9, 30, 0, 0, time.UTC)) {
+		t.Fatal("周日不应命中")
+	}
+}
+
+func TestShareMapsEqual(t *testing.T) {
+	if !shareMapsEqual(map[string]float64{"a": 66.67}, map[string]float64{"a": 66.6700001}) {
+		t.Fatal("两位精度内应视为相等")
+	}
+	if shareMapsEqual(map[string]float64{"a": 66.67}, map[string]float64{"a": 66.68}) {
+		t.Fatal("0.01 差异不应视为相等")
+	}
+	if shareMapsEqual(map[string]float64{"a": 1}, map[string]float64{}) {
+		t.Fatal("长度不同不应相等")
 	}
 }
 

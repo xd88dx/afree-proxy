@@ -314,6 +314,23 @@ def main(source_root=None, target_root=None, preserve_from=None) -> int:
     text = text.replace("package main", "package config", 1)
     for prefix in SOURCE_PREFIXES:
         text = text.replace(prefix, TARGET_PREFIX)
+    # afree 权重优化定时任务（2026-11-15）：schedule 节注入 share_optimize_* 两字段。
+    # 锚点取上游 Schedule 结构的 include_disabled_in_tasks 行；缺锚点视为上游结构
+    # 变化，静默跳过会让活树与生成树失去同步，必须报错让 re-vendor 停下来修锚点。
+    _SHARE_OPT_ANCHOR = '\t\tIncludeDisabledInTasks bool `json:"include_disabled_in_tasks"`\n'
+    _SHARE_OPT_INJECT = (
+        '\t\t// ShareOptimizeEnabled/ShareOptimizeCron 凭据权重优化定时任务（afree 本地补丁，\n'
+        '\t\t// 2026-11-15）：true 时按 cron 周期重算 account_share 并写入配置（见 app 层\n'
+        '\t\t// workbuddy_share.go）；无快过期压力或占比与当前一致时跳过写入。\n'
+        '\t\tShareOptimizeEnabled bool   `json:"share_optimize_enabled"` // 缺省 false；true = 按 cron 自动优化\n'
+        '\t\tShareOptimizeCron    string `json:"share_optimize_cron"`    // 标准 5 字段 cron（分 时 日 月 周）；空 = 不调度\n'
+    )
+    if _SHARE_OPT_ANCHOR not in text:
+        raise RuntimeError(
+            "vendor_workbuddy: config.go Schedule 锚点未命中（上游结构变化）——"
+            "share_optimize 注入规则需同步更新锚点"
+        )
+    text = text.replace(_SHARE_OPT_ANCHOR, _SHARE_OPT_ANCHOR + _SHARE_OPT_INJECT, 1)
     (target_config_dir / "config.go").write_text(text, encoding="utf-8", newline="\n")
     copied += 1
     rewritten += 1

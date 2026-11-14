@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"afree-proxy/internal/kit"
@@ -57,6 +58,11 @@ type workbuddySubsystem struct {
 	// 构造时赋值）：权重优化写入 account_share 复用同一条落盘+热更新链，
 	// 避免两处配置保存口径漂移。
 	saveConfig func(raw []byte) ([]string, error)
+
+	// shareOptimizeSched 权重优化定时调度热值（schedule.share_optimize_*）：
+	// saveWorkbuddyConfig 热应用段写入，调度 goroutine 每分钟读——改 cron
+	// 无需重启。atomic.Pointer 指向 wbShareSched。
+	shareOptimizeSched atomic.Value
 
 	cancel context.CancelFunc
 
@@ -411,6 +417,12 @@ func startWorkBuddy() (*workbuddySubsystem, error) {
 			return saveWorkbuddyConfig(cfgPath, raw, live, p, up, sch, gwRef, pnRef, authDir, stateFile)
 		},
 	}
+	// 权重优化调度热值初值 + 循环启动（随 ctx 取消，与 subsystem 同生命周期）。
+	sub.shareOptimizeSched.Store(&wbShareSched{
+		enabled: cfg.Schedule.ShareOptimizeEnabled,
+		cron:    cfg.Schedule.ShareOptimizeCron,
+	})
+	startWorkbuddyShareOptimizeLoop(ctx)
 	log.Printf("WorkBuddy subsystem ready: accounts=%d auth_dir=%s", len(auths), cfg.AuthDir)
 	return sub, nil
 }

@@ -13,12 +13,16 @@ package app
 // （合计 20%，内部按余额比例分），保证总吞吐不降。
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log"
 	"math"
 	"net/http"
 	"sort"
+	"strconv"
+	"strings"
 	"time"
 
 	wbpool "afree-proxy/internal/workbuddy/pool"
@@ -40,38 +44,72 @@ type wbShareSuggestion struct {
 	Credits   int64   `json:"credits,omitempty"`    // 保底内部分配依据（余额比例）
 }
 
-// shareDailyNeed 汇总一个账号的到期批次：日均需耗与最近到期日。
+// shareDailyNeed 汇总一个账号的到期批次，返回（7 天内合计、日均需耗、最近到期日）。
+//
+// 日均需耗 = **前缀和约束的最大值**（2026-11-15 修正，原 Σ(remain_i÷days_i) 把
+// 各批次需求重复叠加、严重高估——消耗是串行的：上游 FEFO 先扣最早到期批次，
+// 一个号只有一个消耗速率，只要速率 ≥ 每个到期节点的「累计应烧 ÷ 可用天数」，
+// 全部批次都赶得上。例：今天到期 102 + 明天到期 606 → 正确 708/2=354/天，
+// 错误叠加 102/1+606/1=708/天）。各批次约束取 max：
+//
+//	daily = max_i( (Σ_{j≤i} remain_j) ÷ days_i )
+//
 // days 按自然日差、最少 1（今天到期的批次÷1，与积分到期提醒面板同口径）；
 // 过期未扣完的批次（负天数）同样按 1 算（最紧迫）。
-// need7d 只累计 7 天内到期的批次（展示口径与面板「7 天内合计」对齐）；
-// 日均需耗含全部未来批次——远期批次按天数摊薄、贡献自然衰减（2026-11-15
-// 用户定：占比纯按需耗，日均消耗不入权重逻辑）。
-func shareDailyNeed(buckets []wbpool.ExpiryBucket, now time.Time) (need, need7d, daily float64, nearest string) {
+// need7d 只累计 7 天内到期的批次（展示口径与面板「7 天内合计」对齐）。
+func shareDailyNeed(buckets []wbpool.ExpiryBucket, now time.Time) (need7d, daily float64, nearest string) {
 	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+	type dayBucket struct {
+		days   int
+		remain float64
+	}
+	var bks []dayBucket
 	for _, b := range buckets {
 		if b.Remain <= 0 {
 			continue
 		}
+		// 可用天数 = 自然日差 + 1（含今天）：今天到期 → 1 天；明天到期 → 2 天
+		//（今天+明天）——「距 1 天」与「今天到期」不是同一约束节点，不能同桶。
+		// 过期未扣完（差为负）钳 1（最紧迫）。面板「日均需耗」列是单批次
+		// 自然日差口径（249/2），与本前缀和口径（含今天）天数差 1——面板是
+		// 最早一批的简化读数，不与本公式逐值对齐。
 		days := 1
 		if t, err := time.ParseInLocation("2006-01-02", b.Date, now.Location()); err == nil {
-			if d := int(t.Sub(today).Hours() / 24); d > days {
-				days = d
+			if d := int(t.Sub(today).Hours() / 24); d > 0 {
+				days = d + 1
 			}
 			if nearest == "" || b.Date < nearest {
 				nearest = b.Date
 			}
 		} else if !b.ExpireAt.IsZero() {
-			if d := int(b.ExpireAt.Sub(now).Hours() / 24); d+1 > days {
+			if d := int(b.ExpireAt.Sub(now).Hours() / 24); d > 0 {
 				days = d + 1
 			}
 		}
-		need += float64(b.Remain)
 		if days <= 7 {
 			need7d += float64(b.Remain)
 		}
-		daily += float64(b.Remain) / float64(days)
+		bks = append(bks, dayBucket{days: days, remain: float64(b.Remain)})
 	}
-	return need, need7d, daily, nearest
+	// 前缀和约束：先按天数聚合（同日多批次合桶），再按天数升序累积，
+	// 每个到期节点算「累计应烧 ÷ 可用天数」，取最大。
+	byDay := map[int]float64{}
+	for _, bk := range bks {
+		byDay[bk.days] += bk.remain
+	}
+	daysList := make([]int, 0, len(byDay))
+	for d := range byDay {
+		daysList = append(daysList, d)
+	}
+	sort.Ints(daysList)
+	var cum float64
+	for _, d := range daysList {
+		cum += byDay[d]
+		if r := cum / float64(d); r > daily {
+			daily = r
+		}
+	}
+	return need7d, daily, nearest
 }
 
 // shareEligible 参与优化的账号口径：两把开关都开、未被硬禁用。冷却是瞬时状态
@@ -97,7 +135,7 @@ func computeShareSuggestions(list []wbpool.Status, now time.Time) ([]wbShareSugg
 		if !shareEligible(s) {
 			continue
 		}
-		_, need7d, daily, nearest := shareDailyNeed(s.CreditsExpiryBuckets, now)
+		need7d, daily, nearest := shareDailyNeed(s.CreditsExpiryBuckets, now)
 		sp := slot{st: s, need: need7d, daily: daily, nearest: nearest}
 		if daily > 0 {
 			pressured = append(pressured, sp)
@@ -276,3 +314,186 @@ func handleWorkbuddyShareSet(w http.ResponseWriter, r *http.Request) {
 
 // handleWorkbuddyShareGet 已移除（2026-11-15）：当前占比经 overview 的
 // accounts[].share 透出（Status.Share），无独立查询端点的必要——避免死端点。
+
+// ============================================================================
+// 权重优化定时任务（2026-11-15）：schedule.share_optimize_enabled + cron。
+// afree 层独立 goroutine 每分钟对齐 tick，命中 cron 即执行与手动按钮同一套
+// 计算+写入（runWorkbuddyShareOptimize）；配置热值经 workbuddySubsystem 的
+// atomic 热值透传（saveWorkbuddyConfig 热应用段写入），改 cron 无需重启。
+// ============================================================================
+
+// wbShareSched 权重优化调度热值快照。
+type wbShareSched struct {
+	enabled bool
+	cron    string
+}
+
+// parseWbCron 解析标准 5 字段 cron（分 时 日 月 周），支持 * , - /。
+// 返回每域允许值集合：分 0-59、时 0-23、日 1-31、月 1-12、周 0-6（0=周日，
+// 7 亦归一为 0）。注意日与周同时限定时取 **AND**（都须满足）——与 vixie cron
+// 的 OR 语义不同，但「每天/每周几点」这类实际用法不受影响，注释明示避免误解。
+func parseWbCron(spec string) ([5]map[int]bool, error) {
+	var fields [5]map[int]bool
+	parts := strings.Fields(strings.TrimSpace(spec))
+	if len(parts) != 5 {
+		return fields, fmt.Errorf("cron 需 5 个字段（分 时 日 月 周），得到 %d 个", len(parts))
+	}
+	domains := [5]struct{ min, max int }{{0, 59}, {0, 23}, {1, 31}, {1, 12}, {0, 6}}
+	for i, p := range parts {
+		set := map[int]bool{}
+		for _, piece := range strings.Split(p, ",") {
+			// step 前缀（*/n、a-b/n、a/n、*）
+			step := 1
+			body := piece
+			if k := strings.Index(piece, "/"); k >= 0 {
+				body = piece[:k]
+				s, err := strconv.Atoi(piece[k+1:])
+				if err != nil || s <= 0 {
+					return fields, fmt.Errorf("cron %q 步长非法", piece)
+				}
+				step = s
+			}
+			lo, hi := domains[i].min, domains[i].max
+			switch {
+			case body == "*":
+			case strings.Contains(body, "-"):
+				a, b := body[:strings.Index(body, "-")], body[strings.Index(body, "-")+1:]
+				lo2, err1 := strconv.Atoi(a)
+				hi2, err2 := strconv.Atoi(b)
+				if err1 != nil || err2 != nil || lo2 > hi2 {
+					return fields, fmt.Errorf("cron %q 范围非法", piece)
+				}
+				lo, hi = lo2, hi2
+			default:
+				v, err := strconv.Atoi(body)
+				if err != nil {
+					return fields, fmt.Errorf("cron %q 值非法", piece)
+				}
+				lo, hi = v, v
+			}
+			for v := lo; v <= hi; v += step {
+				// 周域放宽到 7（部分实现用 7 表示周日），归一为 0；其余域严格在界内。
+				maxV := domains[i].max
+				if i == 4 {
+					maxV = 7
+				}
+				if v < domains[i].min || v > maxV {
+					return fields, fmt.Errorf("cron %q 值超界（域允许 %d-%d）", piece, domains[i].min, maxV)
+				}
+				val := v
+				if i == 4 && val == 7 {
+					val = 0 // 周 7 = 周日
+				}
+				set[val] = true
+			}
+		}
+		if len(set) == 0 {
+			return fields, fmt.Errorf("cron 第 %d 域为空", i+1)
+		}
+		fields[i] = set
+	}
+	return fields, nil
+}
+
+// wbCronMatch 判断时刻 t 是否命中 cron 各域（本地时区，与既有排程口径一致）。
+func wbCronMatch(f [5]map[int]bool, t time.Time) bool {
+	dow := int(t.Weekday())
+	return f[0][t.Minute()] && f[1][t.Hour()] && f[2][t.Day()] && f[3][int(t.Month())] && f[4][dow]
+}
+
+// startWorkbuddyShareOptimizeLoop 启动调度 goroutine：每分钟对齐 tick，
+// 读热值 → cron 匹配 → 同一分钟防重 → 触发。ctx 取消即退出（随 subsystem stop）。
+func startWorkbuddyShareOptimizeLoop(ctx context.Context) {
+	go func() {
+		// 对齐到下一个整分钟再开始 tick。
+		now := time.Now()
+		time.Sleep(time.Until(now.Truncate(time.Minute).Add(time.Minute)))
+		ticker := time.NewTicker(time.Minute)
+		defer ticker.Stop()
+		lastFired := ""
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case t := <-ticker.C:
+				if workbuddySub == nil {
+					return
+				}
+				sched := workbuddySub.shareOptimizeSched.Load()
+				s, ok := sched.(*wbShareSched)
+				if !ok || s == nil || !s.enabled || strings.TrimSpace(s.cron) == "" {
+					continue
+				}
+				fields, err := parseWbCron(s.cron)
+				if err != nil {
+					// 非法 cron 只在日志提示一次的问题会刷屏——每个 tick 都报太吵；
+					// 记到分钟键上（lastFired 复用为「上次报错分钟」），同分钟只报一次。
+					key := t.Format("2006-01-02T15:04") + ":err"
+					if key != lastFired {
+						lastFired = key
+						log.Printf("workbuddy: 权重优化 cron 非法（%v），未调度", err)
+					}
+					continue
+				}
+				minuteKey := t.Format("2006-01-02T15:04")
+				if minuteKey == lastFired || !wbCronMatch(fields, t) {
+					continue
+				}
+				lastFired = minuteKey
+				runWorkbuddyShareOptimize("cron " + s.cron)
+			}
+		}
+	}()
+}
+
+// runWorkbuddyShareOptimize 执行一次权重优化：计算建议 → 与当前 pool 占比比对
+// → 有变化才写入（幂等，避免重复落盘）。手动按钮与定时触发共用。
+func runWorkbuddyShareOptimize(trigger string) {
+	if workbuddySub == nil || workbuddySub.saveConfig == nil || workbuddySub.pool == nil {
+		return
+	}
+	sugs, warnings := computeShareSuggestions(workbuddySub.pool.List(), time.Now())
+	if len(sugs) == 0 {
+		log.Printf("workbuddy: 权重优化（%s）：无快过期压力，跳过", trigger)
+		return
+	}
+	shares := make(map[string]float64, len(sugs))
+	for _, s := range sugs {
+		shares[s.UID] = s.Suggested
+	}
+	// 幂等：与 pool 当前生效占比（Status.Share）全等则跳过写入。
+	current := map[string]float64{}
+	for _, st := range workbuddySub.pool.List() {
+		if st.Share > 0 {
+			current[st.UID] = st.Share
+		}
+	}
+	if shareMapsEqual(shares, current) {
+		log.Printf("workbuddy: 权重优化（%s）：占比与当前一致，跳过写入", trigger)
+		return
+	}
+	raw, err := json.Marshal(map[string]any{"pool": map[string]any{"account_share": shares}})
+	if err != nil {
+		log.Printf("workbuddy: 权重优化（%s）：构造配置失败: %v", trigger, err)
+		return
+	}
+	if _, err := workbuddySub.saveConfig(raw); err != nil {
+		log.Printf("workbuddy: 权重优化（%s）：写入失败: %v", trigger, err)
+		return
+	}
+	log.Printf("workbuddy: 权重优化（%s）已应用 %d 个账号占比 %v %v", trigger, len(shares), shares, warnings)
+}
+
+// shareMapsEqual 占比表全等（浮点两位精度比较，避开 1e-15 尾差）。
+func shareMapsEqual(a, b map[string]float64) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for k, va := range a {
+		vb, ok := b[k]
+		if !ok || math.Abs(va-vb) > 0.005 {
+			return false
+		}
+	}
+	return true
+}

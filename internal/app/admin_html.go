@@ -1197,6 +1197,8 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
           <div class="wb-field"><label for="wbBalanceMinutes">Refresh interval (min)</label><input id="wbBalanceMinutes" data-wb-path="schedule.balance_refresh_minutes" data-wb-type="number" min="1" placeholder="5"></div>
           <div class="wb-switch"><input type="checkbox" id="wbGrowthEnabled" data-wb-path="schedule.growth_enabled"><label for="wbGrowthEnabled">Growth tasks</label></div>
           <div class="wb-field"><label for="wbGrowthHours">Growth hours</label><input id="wbGrowthHours" data-wb-path="schedule.growth_hours" data-wb-type="ints" placeholder="1"></div>
+          <div class="wb-switch"><input type="checkbox" id="wbShareOptimizeEnabled" data-wb-path="schedule.share_optimize_enabled"><label for="wbShareOptimizeEnabled" data-i18n="weight_optimize">Weight optimize</label></div>
+          <div class="wb-field"><label for="wbShareOptimizeCron" data-i18n-title="weight_optimize_cron_hint" title="Standard 5-field cron (min hour day month weekday), local timezone; e.g. '0 */6 * * *' = every 6 hours. Empty = not scheduled. Applied shares are skipped when unchanged." data-i18n="Weight optimize cron">Weight optimize cron</label><input id="wbShareOptimizeCron" data-wb-path="schedule.share_optimize_cron" placeholder="0 */6 * * *"></div>
         </div>
 
         <div class="wb-config-group">
@@ -2885,6 +2887,8 @@ const I18N = {
   "Run the batch test once on every platform's credential list (Cline / TraeWork / OpenCode / OpenRouter / AMDCloud / TokenHarbor / Other / WorkBuddy), one platform at a time": { en: "Run the batch test once on every platform's credential list (Cline / TraeWork / OpenCode / OpenRouter / AMDCloud / TokenHarbor / Other / WorkBuddy), one platform at a time", zh: '逐平台批量测一次每个平台的凭据列表' },
   "Refresh every enabled account's credit snapshot (feeds the Credits column)": { en: "Refresh every enabled account's credit snapshot (feeds the Credits column)", zh: '刷新每个已启用账号的额度快照（给额度列）' },
   'weight_optimize': { en: 'Weight optimize', zh: '权重优化' },
+  'Weight optimize cron': { en: 'Weight optimize cron', zh: '权重优化 cron' },
+  'weight_optimize_cron_hint': { en: 'Standard 5-field cron (min hour day month weekday), local timezone; e.g. \'0 */6 * * *\' = every 6 hours. Empty = not scheduled. Applied shares are skipped when unchanged.', zh: '标准 5 字段 cron（分 时 日 月 周），本地时区；如 0 */6 * * * 表示每 6 小时一次。留空 = 不调度。占比与当前一致时自动跳过写入。' },
   'weight_col': { en: 'Weight', zh: '权重' },
   'weight_nearest': { en: 'Nearest expiry', zh: '最近到期' },
   'weight_need_total': { en: 'Expiring in 7 days', zh: '7 天内到期' },
@@ -2895,7 +2899,7 @@ const I18N = {
   'reserve_tag': { en: 'Reserve', zh: '保底' },
   "Compute suggested account shares from expiring-credit daily need and write them into pool.account_share": { en: "Compute suggested account shares from expiring-credit daily need and write them into pool.account_share", zh: '按快过期积分的日均需耗计算建议占比并写入 pool.account_share' },
   "Current share of account traffic from pool.account_share, normalized within the share table (written by Weight optimize; '-' = not in the table, falls back to weighted random)": { en: "Current share of account traffic from pool.account_share, normalized within the share table (written by Weight optimize; '-' = not in the table, falls back to weighted random)", zh: '该账号当前从 pool.account_share 分得的流量占比（占比表内归一化；由「权重优化」写入；「-」= 不在表内，走普通加权随机）' },
-  'weight_optimize_hint': { en: 'Suggested shares follow each account\'s expiring-credit daily need (sum of every bucket\'s remain ÷ days until that date, min 1 — the "7-day" column shows only the 7-day total; far buckets still count, diluted by days). When every listed account has expiring batches the shares sum to 100%; accounts without expiring batches otherwise take a 20% reserve split by balance. Shares are exclusive: only listed accounts serve traffic; if none can serve, routing falls back to weighted random.', zh: '建议占比按各号快过期积分的日均需耗计算（全部未来批次额度 ÷ 各自距到期天数之和，最少按 1 天——「7 天内到期」列只是 7 天窗口合计，远期批次仍计入需耗、按天数摊薄）。全员都有到期批次时占比总和为 100%；有保底号（无快过期批次）时留 20% 按余额比例分给它们。占比是独占的：只有表内号接单；表内号全部不可用时自动回落加权随机。' },
+  'weight_optimize_hint': { en: 'Suggested shares follow each account\'s expiring-credit daily need — the minimum constant burn rate that clears every batch before it expires: max over expiry nodes of (cumulative credits due by that node ÷ days available from today, counting today; upstream FEFO burns earliest batches first). The "7-day" column shows only the 7-day total. When every listed account has expiring batches the shares sum to 100%; accounts without expiring batches otherwise take a 20% reserve split by balance. Shares are exclusive: only listed accounts serve traffic; if none can serve, routing falls back to weighted random.', zh: '建议占比按各号快过期积分的日均需耗计算——即「在每个到期节点前都能烧完」的最低恒定速率：对每个到期节点取（该节点前累计应烧额度 ÷ 从今天起的可用天数）的最大值，上游 FEFO 自动先扣最早批次（「7 天内到期」列只是 7 天窗口合计）。全员都有到期批次时占比总和为 100%；有保底号（无快过期批次）时留 20% 按余额比例分给它们。占比是独占的：只有表内号接单；表内号全部不可用时自动回落加权随机。' },
   'reserve_tag_title': { en: 'Reserve account: no expiring batches, shares assigned from the 20% reserve by balance', zh: '保底号：无快过期批次，从 20% 保底份额按余额比例分得' },
   'share_no_pressure': { en: 'No expiring-credit pressure — nothing to optimize', zh: '当前无快过期积分压力，无需优化' },
   'share_applied': { en: 'Shares applied and hot-reloaded', zh: '占比已应用并热生效' },

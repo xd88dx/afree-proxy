@@ -163,6 +163,14 @@ func saveWorkbuddyConfig(
 	p.SetReserveCreditsByRealm(newCfg.Pool.ReserveCreditsByRealm) // 按域覆盖保留积分热生效（issue #147）
 	p.SetAccountPriority(newCfg.Pool.AccountPriority)
 	p.SetAccountShare(newCfg.Pool.AccountShare)
+	// 权重优化调度热值（schedule.share_optimize_*，2026-11-15）：改 cron/开关
+	// 热生效无需重启——调度 goroutine 每分钟从 atomic 读。
+	if workbuddySub != nil {
+		workbuddySub.shareOptimizeSched.Store(&wbShareSched{
+			enabled: newCfg.Schedule.ShareOptimizeEnabled,
+			cron:    newCfg.Schedule.ShareOptimizeCron,
+		})
+	}
 	p.SetCreditFloorMaxRate(newCfg.Pool.CreditFloorMaxRate)
 	p.SetBalanceWindow(newCfg.BalanceWindowDur) // 窗口用量调度热生效（0 关停）
 	sch.SetTaskSweepInterval(newCfg.TaskSweepInterval)
