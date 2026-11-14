@@ -18,17 +18,20 @@ if [ "$(id -u)" = "0" ]; then
     mkdir -p "$dir"
     chown -R "$PUID:$PGID" "$dir" 2>/dev/null || true
   done
-  # 播种平台可用性检测脚本：数据目录无此文件或与镜像内版本不同才覆盖
+  # 播种随镜像分发的脚本到数据目录 scripts/：数据目录无此文件或与镜像内版本不同才覆盖
   # （镜像升级自动跟随新版本；字节一致则不动，不重复覆盖）。镜像内版本
   # 为权威——数据目录里的手工改动会在下次重建时被对齐回镜像版。
-  if [ -f /opt/afree/platform_audit.py ]; then
+  if [ -d /opt/afree ]; then
     mkdir -p /app/data/scripts
-    dest=/app/data/scripts/platform_audit.py
-    if [ ! -f "$dest" ] || ! cmp -s "$dest" /opt/afree/platform_audit.py; then
-      cp /opt/afree/platform_audit.py "$dest"
-      echo "[entrypoint] platform_audit.py 已播种/更新到数据目录 scripts/"
-    fi
-    chown "$PUID:$PGID" "$dest" 2>/dev/null || true
+    for f in /opt/afree/*.py; do
+      [ -f "$f" ] || continue
+      dest="/app/data/scripts/${f##*/}"
+      if [ ! -f "$dest" ] || ! cmp -s "$dest" "$f"; then
+        cp "$f" "$dest"
+        echo "[entrypoint] ${f##*/} 已播种/更新到数据目录 scripts/"
+      fi
+      chown "$PUID:$PGID" "$dest" 2>/dev/null || true
+    done
   fi
   exec su-exec "$PUID:$PGID" /app/afree-proxy "$@"
 fi

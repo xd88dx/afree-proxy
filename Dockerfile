@@ -33,6 +33,8 @@ COPY --from=builder --chown=app:app /build/afree-proxy .
 COPY --chown=app:app entrypoint.sh /entrypoint.sh
 # 平台可用性检测脚本（随镜像分发；entrypoint 启动时播种到数据目录 scripts/）
 COPY --chown=app:app scripts/platform_audit.py /opt/afree/platform_audit.py
+# 出口×平台分层探测脚本（同上播种；用法见脚本头 docstring）
+COPY --chown=app:app scripts/egress_probe.py /opt/afree/egress_probe.py
 
 RUN mkdir -p /app/data \
     && chown app:app /app/data \
