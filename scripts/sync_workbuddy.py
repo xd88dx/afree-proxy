@@ -89,7 +89,7 @@ def save_baseline(source: Path, commit: str) -> None:
         "commit": commit,
         "synced_at": datetime.now().astimezone().isoformat(timespec="seconds"),
         "upstream_version": upstream_version(source),
-    }, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    }, ensure_ascii=False, indent=2) + "\n", encoding="utf-8", newline="\n")
 
 
 def archive_commit(source: Path, commit: str, dest: Path) -> None:
