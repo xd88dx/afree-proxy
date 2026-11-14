@@ -225,7 +225,107 @@ PRESERVE_RELATIVE = (
     Path("pool") / "pool_enabled_test.go",
     # afree-local: newly added identities default to routing-disabled.
     Path("panel") / "add_default_test.go",
+    # ---- afree 补丁全量登记（2026-11-15，dry-run 对基线 10d01b4 全量 diff 得出）----
+    # 基线=源树 HEAD（10d01b4，2026-11-14 同步），以下 86 个文件是活树相对基线的
+    # 全部 afree 补丁（修改+新增），整文件按 ours 保留：re-vendor 不再冲掉它们；
+    # 上游更新这些文件时经 sync_workbuddy.py 三方合并手工吸收，不走本脚本。
+    # 逐锚点登记不现实（补丁密度高、锚点漂移风险大），整文件保留与 textcall.go
+    # 既有模式一致。
+    Path("auth/auth.go"),
+    Path("auth/auth_account_enabled_test.go"),
+    Path("auth/auth_nickname_test.go"),
+    Path("auth/auth_test.go"),
+    Path("auth/realm_test.go"),
+    Path("config/config.go"),
+    Path("config/config_test.go"),
+    Path("livecfg/livecfg.go"),
+    Path("loginsite/loginsite.go"),
+    Path("panel/add_default_test.go"),
+    Path("panel/app.js"),
+    Path("panel/autotask_claim_test.go"),
+    Path("panel/credit_upgrade_test.go"),
+    Path("panel/frontend_test.go"),
+    Path("panel/import.go"),
+    Path("panel/index.go"),
+    Path("panel/index.html"),
+    Path("panel/login.go"),
+    Path("panel/mobile.css"),
+    Path("panel/mobile.js"),
+    Path("panel/models_busy_cache_test.go"),
+    Path("panel/models_stale_test.go"),
+    Path("panel/panel.go"),
+    Path("panel/probe_usage_test.go"),
+    Path("panel/taskcenter.go"),
+    Path("pool/account_enabled_test.go"),
+    Path("pool/accountfacts.go"),
+    Path("pool/accountfacts_test.go"),
+    Path("pool/cooldown.go"),
+    Path("pool/credit_floor_test.go"),
+    Path("pool/entry.go"),
+    Path("pool/model_rate_test.go"),
+    Path("pool/modelcooldown_test.go"),
+    Path("pool/order_test.go"),
+    Path("pool/persist.go"),
+    Path("pool/pick.go"),
+    Path("pool/pool.go"),
+    Path("pool/pool_enabled_test.go"),
+    Path("pool/pool_test.go"),
+    Path("pool/realm.go"),
+    Path("pool/reserve_fallback_test.go"),
+    Path("pool/state.go"),
+    Path("pool/strategy.go"),
+    Path("pool/strategy_test.go"),
+    Path("reqlog/reqlog.go"),
+    Path("reqlog/reqlog_test.go"),
+    Path("scheduler/activity_test.go"),
+    Path("scheduler/checkin_retry.go"),
+    Path("scheduler/checkin_retry_test.go"),
+    Path("scheduler/scheduler.go"),
+    Path("scheduler/streak.go"),
+    Path("scheduler/travel.go"),
+    Path("server/admin_tasks.go"),
+    Path("server/afree_adapter.go"),
+    Path("server/continue.go"),
+    Path("server/egress_backoff_test.go"),
+    Path("server/handler.go"),
+    Path("server/handler_models_rate_filter_test.go"),
+    Path("server/handler_strategy_test.go"),
+    Path("server/handler_test.go"),
+    Path("server/logging.go"),
+    Path("server/logging_test.go"),
+    Path("server/slotlease_test.go"),
+    Path("server/toolonly.go"),
+    Path("session/session.go"),
+    Path("upstream/client.go"),
+    Path("upstream/connection_reuse_e2e_test.go"),
+    Path("upstream/contextwindow_test.go"),
+    Path("upstream/decode_body_test.go"),
+    Path("upstream/desktop.go"),
+    Path("upstream/global_models.go"),
+    Path("upstream/headcase_test.go"),
+    Path("upstream/headers.go"),
+    Path("upstream/images.go"),
+    Path("upstream/observe_proxy_test.go"),
+    Path("upstream/output_budget.go"),
+    Path("upstream/proxy.go"),
+    Path("upstream/proxy_test.go"),
+    Path("upstream/report.go"),
+    Path("upstream/sanitize.go"),
+    Path("upstream/streak.go"),
+    Path("upstream/tlsfingerprint.go"),
+    Path("upstream/tlsfingerprint_test.go"),
+    Path("upstream/useragent_test.go"),
+    Path("upstream/webagent.go"),
+    Path("usage/usage.go"),
+    # 上游基线新增、活树有意不纳入的文件（re-vendor 跳过拷贝，不带入活树）：
+    #   upstream/dns_test.go
 )
+
+# SKIP_UPSTREAM_FILES 上游基线有、活树有意不纳入的文件（见上）：拷贝主循环跳过。
+SKIP_UPSTREAM_FILES = (
+    "upstream/dns_test.go",
+)
+
 
 
 def main(source_root=None, target_root=None, preserve_from=None) -> int:
@@ -253,6 +353,7 @@ def main(source_root=None, target_root=None, preserve_from=None) -> int:
         path = preserve_root / relative
         if path.is_file():
             preserved[relative] = path.read_bytes()
+    preserve_set = {p.as_posix() for p in PRESERVE_RELATIVE}
 
     if pkg.exists():
         shutil.rmtree(pkg)
@@ -268,6 +369,8 @@ def main(source_root=None, target_root=None, preserve_from=None) -> int:
         target_dir.mkdir(parents=True, exist_ok=True)
         for source_file in sorted(p for p in source_dir.rglob("*") if p.is_file() and p.suffix in ASSET_SUFFIXES):
             rel = source_file.relative_to(source_dir)
+            if (Path(package) / rel).as_posix() in SKIP_UPSTREAM_FILES:
+                continue  # 上游基线有、活树有意不纳入（见 SKIP_UPSTREAM_FILES 注释）
             target_file = target_dir / rel
             target_file.parent.mkdir(parents=True, exist_ok=True)
             text = source_file.read_text(encoding="utf-8")
@@ -310,32 +413,23 @@ def main(source_root=None, target_root=None, preserve_from=None) -> int:
     source_config = src_root / "cmd" / "server" / "config.go"
     target_config_dir = pkg / "config"
     target_config_dir.mkdir(parents=True, exist_ok=True)
-    text = source_config.read_text(encoding="utf-8")
-    text = text.replace("package main", "package config", 1)
-    for prefix in SOURCE_PREFIXES:
-        text = text.replace(prefix, TARGET_PREFIX)
-    # afree 权重优化定时任务（2026-11-15）：schedule 节注入 share_optimize_* 两字段。
-    # 锚点取上游 Schedule 结构的 include_disabled_in_tasks 行；缺锚点视为上游结构
-    # 变化，静默跳过会让活树与生成树失去同步，必须报错让 re-vendor 停下来修锚点。
-    _SHARE_OPT_ANCHOR = '\t\tIncludeDisabledInTasks bool `json:"include_disabled_in_tasks"`\n'
-    _SHARE_OPT_INJECT = (
-        '\t\t// ShareOptimizeEnabled/ShareOptimizeCron 凭据权重优化定时任务（afree 本地补丁，\n'
-        '\t\t// 2026-11-15）：true 时按 cron 周期重算 account_share 并写入配置（见 app 层\n'
-        '\t\t// workbuddy_share.go）；无快过期压力或占比与当前一致时跳过写入。\n'
-        '\t\tShareOptimizeEnabled bool   `json:"share_optimize_enabled"` // 缺省 false；true = 按 cron 自动优化\n'
-        '\t\tShareOptimizeCron    string `json:"share_optimize_cron"`    // 标准 5 字段 cron（分 时 日 月 周）；空 = 不调度\n'
-    )
-    if _SHARE_OPT_ANCHOR not in text:
-        raise RuntimeError(
-            "vendor_workbuddy: config.go Schedule 锚点未命中（上游结构变化）——"
-            "share_optimize 注入规则需同步更新锚点"
-        )
-    text = text.replace(_SHARE_OPT_ANCHOR, _SHARE_OPT_ANCHOR + _SHARE_OPT_INJECT, 1)
-    (target_config_dir / "config.go").write_text(text, encoding="utf-8", newline="\n")
-    copied += 1
-    rewritten += 1
+    # 活树 config.go / config_test.go 带 afree 补丁（Strategy/AccountOrder 等）
+    # 且已整文件登记 PRESERVE——活树字节由上方 PRESERVE 写回，这里跳过上游
+    # 拷贝，否则上游版本会覆盖掉补丁（2026-11-15 登记存量补丁时踩过）。
+    config_preserved = "config/config.go" in preserve_set
+    config_test_preserved = "config/config_test.go" in preserve_set
+    if config_preserved:
+        print("note: config/config.go preserved from live tree, upstream copy skipped")
+    else:
+        text = source_config.read_text(encoding="utf-8")
+        text = text.replace("package main", "package config", 1)
+        for prefix in SOURCE_PREFIXES:
+            text = text.replace(prefix, TARGET_PREFIX)
+        (target_config_dir / "config.go").write_text(text, encoding="utf-8", newline="\n")
+        copied += 1
+        rewritten += 1
     source_config_test = src_root / "cmd" / "server" / "config_test.go"
-    if source_config_test.is_file():
+    if source_config_test.is_file() and not config_test_preserved:
         text = source_config_test.read_text(encoding="utf-8")
         text = text.replace("package main", "package config", 1)
         for prefix in SOURCE_PREFIXES:

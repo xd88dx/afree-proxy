@@ -15,14 +15,13 @@ package app
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"io"
 	"log"
 	"math"
 	"net/http"
 	"sort"
-	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	wbpool "afree-proxy/internal/workbuddy/pool"
@@ -316,132 +315,58 @@ func handleWorkbuddyShareSet(w http.ResponseWriter, r *http.Request) {
 // accounts[].share 透出（Status.Share），无独立查询端点的必要——避免死端点。
 
 // ============================================================================
-// 权重优化定时任务（2026-11-15）：schedule.share_optimize_enabled + cron。
-// afree 层独立 goroutine 每分钟对齐 tick，命中 cron 即执行与手动按钮同一套
-// 计算+写入（runWorkbuddyShareOptimize）；配置热值经 workbuddySubsystem 的
-// atomic 热值透传（saveWorkbuddyConfig 热应用段写入），改 cron 无需重启。
+// 权重优化定时任务（2026-11-15）：与代理池订阅自动更新（proxy_subscription.go
+// StartProxySubscriptionWorker）同一条调度路径——30s tick 热读 proxy-config
+// （wbShareOptimizeEnabled/Cron，zen-config 端点保存），validateCronExpr 校验、
+// (last, nowMin] 区间命中防漏防重，命中即执行与手动按钮同一套计算+写入。
+// cron 配置不走 vendored config（2026-11-15 用户定：WB vendor 补丁一律走
+// PRESERVE 整文件登记，不再往上游结构注入字段）。
 // ============================================================================
 
-// wbShareSched 权重优化调度热值快照。
-type wbShareSched struct {
-	enabled bool
-	cron    string
-}
+var (
+	wbShareOptMu   sync.Mutex
+	wbShareLastMin int // 上次触发的 Unix 分钟；同一分钟防重，跨 tick 区间扫描防漏
+)
 
-// parseWbCron 解析标准 5 字段 cron（分 时 日 月 周），支持 * , - /。
-// 返回每域允许值集合：分 0-59、时 0-23、日 1-31、月 1-12、周 0-6（0=周日，
-// 7 亦归一为 0）。注意日与周同时限定时取 **AND**（都须满足）——与 vixie cron
-// 的 OR 语义不同，但「每天/每周几点」这类实际用法不受影响，注释明示避免误解。
-func parseWbCron(spec string) ([5]map[int]bool, error) {
-	var fields [5]map[int]bool
-	parts := strings.Fields(strings.TrimSpace(spec))
-	if len(parts) != 5 {
-		return fields, fmt.Errorf("cron 需 5 个字段（分 时 日 月 周），得到 %d 个", len(parts))
-	}
-	domains := [5]struct{ min, max int }{{0, 59}, {0, 23}, {1, 31}, {1, 12}, {0, 6}}
-	for i, p := range parts {
-		set := map[int]bool{}
-		for _, piece := range strings.Split(p, ",") {
-			// step 前缀（*/n、a-b/n、a/n、*）
-			step := 1
-			body := piece
-			if k := strings.Index(piece, "/"); k >= 0 {
-				body = piece[:k]
-				s, err := strconv.Atoi(piece[k+1:])
-				if err != nil || s <= 0 {
-					return fields, fmt.Errorf("cron %q 步长非法", piece)
-				}
-				step = s
-			}
-			lo, hi := domains[i].min, domains[i].max
-			switch {
-			case body == "*":
-			case strings.Contains(body, "-"):
-				a, b := body[:strings.Index(body, "-")], body[strings.Index(body, "-")+1:]
-				lo2, err1 := strconv.Atoi(a)
-				hi2, err2 := strconv.Atoi(b)
-				if err1 != nil || err2 != nil || lo2 > hi2 {
-					return fields, fmt.Errorf("cron %q 范围非法", piece)
-				}
-				lo, hi = lo2, hi2
-			default:
-				v, err := strconv.Atoi(body)
-				if err != nil {
-					return fields, fmt.Errorf("cron %q 值非法", piece)
-				}
-				lo, hi = v, v
-			}
-			for v := lo; v <= hi; v += step {
-				// 周域放宽到 7（部分实现用 7 表示周日），归一为 0；其余域严格在界内。
-				maxV := domains[i].max
-				if i == 4 {
-					maxV = 7
-				}
-				if v < domains[i].min || v > maxV {
-					return fields, fmt.Errorf("cron %q 值超界（域允许 %d-%d）", piece, domains[i].min, maxV)
-				}
-				val := v
-				if i == 4 && val == 7 {
-					val = 0 // 周 7 = 周日
-				}
-				set[val] = true
-			}
-		}
-		if len(set) == 0 {
-			return fields, fmt.Errorf("cron 第 %d 域为空", i+1)
-		}
-		fields[i] = set
-	}
-	return fields, nil
-}
-
-// wbCronMatch 判断时刻 t 是否命中 cron 各域（本地时区，与既有排程口径一致）。
-func wbCronMatch(f [5]map[int]bool, t time.Time) bool {
-	dow := int(t.Weekday())
-	return f[0][t.Minute()] && f[1][t.Hour()] && f[2][t.Day()] && f[3][int(t.Month())] && f[4][dow]
-}
-
-// startWorkbuddyShareOptimizeLoop 启动调度 goroutine：每分钟对齐 tick，
-// 读热值 → cron 匹配 → 同一分钟防重 → 触发。ctx 取消即退出（随 subsystem stop）。
+// startWorkbuddyShareOptimizeLoop 启动调度 worker（进程级单实例，随 subsystem）。
 func startWorkbuddyShareOptimizeLoop(ctx context.Context) {
 	go func() {
-		// 对齐到下一个整分钟再开始 tick。
-		now := time.Now()
-		time.Sleep(time.Until(now.Truncate(time.Minute).Add(time.Minute)))
-		ticker := time.NewTicker(time.Minute)
+		ticker := time.NewTicker(30 * time.Second)
 		defer ticker.Stop()
-		lastFired := ""
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case t := <-ticker.C:
-				if workbuddySub == nil {
-					return
-				}
-				sched := workbuddySub.shareOptimizeSched.Load()
-				s, ok := sched.(*wbShareSched)
-				if !ok || s == nil || !s.enabled || strings.TrimSpace(s.cron) == "" {
-					continue
-				}
-				fields, err := parseWbCron(s.cron)
-				if err != nil {
-					// 非法 cron 只在日志提示一次的问题会刷屏——每个 tick 都报太吵；
-					// 记到分钟键上（lastFired 复用为「上次报错分钟」），同分钟只报一次。
-					key := t.Format("2006-01-02T15:04") + ":err"
-					if key != lastFired {
-						lastFired = key
-						log.Printf("workbuddy: 权重优化 cron 非法（%v），未调度", err)
-					}
-					continue
-				}
-				minuteKey := t.Format("2006-01-02T15:04")
-				if minuteKey == lastFired || !wbCronMatch(fields, t) {
-					continue
-				}
-				lastFired = minuteKey
-				runWorkbuddyShareOptimize("cron " + s.cron)
+		for now := range ticker.C {
+			if workbuddySub == nil || workbuddySub.saveConfig == nil {
+				continue
 			}
+			cfg := getProxyPool()
+			if !cfg.WbShareOptimizeEnabled {
+				continue
+			}
+			expr := strings.TrimSpace(cfg.WbShareOptimizeCron)
+			if expr == "" {
+				continue
+			}
+			if validateCronExpr(expr) != nil {
+				continue // 面板已校验；手改配置文件的坏表达式静默跳过
+			}
+			nowMin := int(now.Unix() / 60)
+			wbShareOptMu.Lock()
+			last := wbShareLastMin
+			wbShareOptMu.Unlock()
+			// 检查 (last, nowMin] 区间内是否有命中的整分钟（30s tick 防漏防重）
+			fired := false
+			for m := last + 1; m <= nowMin; m++ {
+				if cronMatches(expr, time.Unix(int64(m)*60, 0).Local()) {
+					fired = true
+					break
+				}
+			}
+			if !fired || last == nowMin {
+				continue
+			}
+			wbShareOptMu.Lock()
+			wbShareLastMin = nowMin
+			wbShareOptMu.Unlock()
+			runWorkbuddyShareOptimize("cron " + expr)
 		}
 	}()
 }

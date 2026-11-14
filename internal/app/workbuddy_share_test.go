@@ -137,61 +137,6 @@ func TestShareOptimizeNoReservedSumsTo100(t *testing.T) {
 	}
 }
 
-// cron 解析与匹配（权重优化定时任务）。
-func TestParseWbCron(t *testing.T) {
-	// 标准 5 字段
-	f, err := parseWbCron("0 */6 * * *")
-	if err != nil {
-		t.Fatalf("0 */6 * * * 应合法: %v", err)
-	}
-	if !f[0][0] || !f[1][0] || !f[1][6] || !f[1][12] {
-		t.Fatalf("步长域应含 0 分与 0/6/12 时: %v %v", f[0], f[1])
-	}
-	if f[1][1] {
-		t.Fatal("*/6 不应含 1 时")
-	}
-	// 列表 + 范围
-	if f, err = parseWbCron("5,15 9-11 * * 1-5"); err != nil {
-		t.Fatalf("列表/范围应合法: %v", err)
-	}
-	if !f[0][5] || !f[0][15] || f[0][16] || !f[1][9] || !f[1][11] || f[1][12] {
-		t.Fatalf("列表/范围解析错: %v %v", f[0], f[1])
-	}
-	if !f[4][1] || !f[4][5] || f[4][0] {
-		t.Fatalf("周域 1-5 应只含周一到周五: %v", f[4])
-	}
-	// 周 7 归一为周日
-	if f, err = parseWbCron("0 0 * * 7"); err != nil {
-		t.Fatalf("7 应合法: %v", err)
-	}
-	if !f[4][0] || f[4][7] {
-		t.Fatalf("周 7 应归一为 0: %v", f[4])
-	}
-	// 非法：字段数、超界、坏步长
-	for _, bad := range []string{"* * * *", "0 0 * * * *", "60 * * * *", "* 24 * * *", "*/0 * * * *", "a * * * *"} {
-		if _, err = parseWbCron(bad); err == nil {
-			t.Fatalf("%q 应非法", bad)
-		}
-	}
-}
-
-func TestWbCronMatch(t *testing.T) {
-	f, err := parseWbCron("30 9 * * 1-5")
-	if err != nil {
-		t.Fatal(err)
-	}
-	// 2026-11-16 是周一
-	if !wbCronMatch(f, time.Date(2026, 11, 16, 9, 30, 0, 0, time.UTC)) {
-		t.Fatal("周一 09:30 应命中")
-	}
-	if wbCronMatch(f, time.Date(2026, 11, 16, 9, 31, 0, 0, time.UTC)) {
-		t.Fatal("非 30 分不应命中")
-	}
-	if wbCronMatch(f, time.Date(2026, 11, 15, 9, 30, 0, 0, time.UTC)) {
-		t.Fatal("周日不应命中")
-	}
-}
-
 func TestShareMapsEqual(t *testing.T) {
 	if !shareMapsEqual(map[string]float64{"a": 66.67}, map[string]float64{"a": 66.6700001}) {
 		t.Fatal("两位精度内应视为相等")

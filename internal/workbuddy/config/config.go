@@ -185,11 +185,6 @@ type Config struct {
 		// 缺省 false = 保持既有行为，对老配置零影响。打开后禁用号仍会签到 / 保活，但
 		// **依旧不参与选号**：pool 选号侧的 disabled 过滤不受本开关影响。
 		IncludeDisabledInTasks bool `json:"include_disabled_in_tasks"`
-		// ShareOptimizeEnabled/ShareOptimizeCron 凭据权重优化定时任务（afree 本地补丁，
-		// 2026-11-15）：true 时按 cron 周期重算 account_share 并写入配置（见 app 层
-		// workbuddy_share.go）；无快过期压力或占比与当前一致时跳过写入。
-		ShareOptimizeEnabled bool   `json:"share_optimize_enabled"` // 缺省 false；true = 按 cron 自动优化
-		ShareOptimizeCron    string `json:"share_optimize_cron"`    // 标准 5 字段 cron（分 时 日 月 周）；空 = 不调度
 		// GrowthConcurrency 排程轮次的账号间并发（缺省 1，上限 4）：与面板手动
 		// 「执行队列」同一个并发语义；调高更快的代价是上游风控暴露面。
 		GrowthConcurrency int `json:"growth_concurrency"`

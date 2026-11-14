@@ -1197,8 +1197,8 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
           <div class="wb-field"><label for="wbBalanceMinutes">Refresh interval (min)</label><input id="wbBalanceMinutes" data-wb-path="schedule.balance_refresh_minutes" data-wb-type="number" min="1" placeholder="5"></div>
           <div class="wb-switch"><input type="checkbox" id="wbGrowthEnabled" data-wb-path="schedule.growth_enabled"><label for="wbGrowthEnabled">Growth tasks</label></div>
           <div class="wb-field"><label for="wbGrowthHours">Growth hours</label><input id="wbGrowthHours" data-wb-path="schedule.growth_hours" data-wb-type="ints" placeholder="1"></div>
-          <div class="wb-switch"><input type="checkbox" id="wbShareOptimizeEnabled" data-wb-path="schedule.share_optimize_enabled"><label for="wbShareOptimizeEnabled" data-i18n="weight_optimize">Weight optimize</label></div>
-          <div class="wb-field"><label for="wbShareOptimizeCron" data-i18n-title="weight_optimize_cron_hint" title="Standard 5-field cron (min hour day month weekday), local timezone; e.g. '0 */6 * * *' = every 6 hours. Empty = not scheduled. Applied shares are skipped when unchanged." data-i18n="Weight optimize cron">Weight optimize cron</label><input id="wbShareOptimizeCron" data-wb-path="schedule.share_optimize_cron" placeholder="0 */6 * * *"></div>
+          <div class="wb-switch"><input type="checkbox" id="wbShareOptimizeEnabled" onchange="saveWbShareOptimizeSchedule()"><label for="wbShareOptimizeEnabled" data-i18n="weight_optimize">Weight optimize</label></div>
+          <div class="wb-field"><label for="wbShareOptimizeCron" data-i18n-title="weight_optimize_cron_hint" title="Standard 5-field cron (min hour day month weekday), local timezone; e.g. '0 */6 * * *' = every 6 hours. Empty = not scheduled. Applied shares are skipped when unchanged." data-i18n="Weight optimize cron">Weight optimize cron</label><input id="wbShareOptimizeCron" onchange="saveWbShareOptimizeSchedule()" placeholder="0 */6 * * *"></div>
         </div>
 
         <div class="wb-config-group">
@@ -3118,6 +3118,7 @@ function showWorkbuddyDialog(dialog) {
 function ensureWorkbuddyConsole() {
   loadWorkbuddyAccounts();
   loadWorkbuddyConfig();
+  loadWbShareOptimizeSchedule();
 }
 document.querySelectorAll('.nav-item').forEach(el => {
   el.addEventListener('click', () => {
@@ -4000,6 +4001,31 @@ async function clearWorkbuddyShare() {
   } catch (e) {
     toast(T('share_apply_failed') + e.message, 'error');
   }
+}
+
+// saveWbShareOptimizeSchedule 权重优化定时任务保存（2026-11-15）：不走 WB
+// vendored config（wbShareOptimize 存 proxy-config，与订阅自动更新同一条
+// 调度路径），改走 /opencode/config/update patch——与代理池页 ppSubCron
+// 同款保存链。开关与 cron 任一变更即整体提交（后端校验 cron 非法即 400）。
+async function saveWbShareOptimizeSchedule() {
+  const enabled = _('wbShareOptimizeEnabled')?.checked === true;
+  const cron = (_('wbShareOptimizeCron')?.value || '').trim();
+  try {
+    await api('POST', '/opencode/config/update', { wbShareOptimizeEnabled: enabled, wbShareOptimizeCron: cron });
+    toast(T('saved_1'), 'success');
+  } catch (e) {
+    toast(T('save_failed') + e.message, 'error');
+    loadWbShareOptimizeSchedule(); // 失败回读真实值，避免界面显示未生效的输入
+  }
+}
+
+// loadWbShareOptimizeSchedule 从代理池配置回填两控件（WB 配置页打开时调）。
+async function loadWbShareOptimizeSchedule() {
+  try {
+    const c = (await api('GET', '/opencode/config')).data;
+    if (_('wbShareOptimizeEnabled')) _('wbShareOptimizeEnabled').checked = c.wbShareOptimizeEnabled === true;
+    if (_('wbShareOptimizeCron')) _('wbShareOptimizeCron').value = c.wbShareOptimizeCron || '';
+  } catch (e) { /* 配置页加载失败静默：两控件留空，保存时后端再校验 */ }
 }
 
 async function loadWorkbuddyConfig() {

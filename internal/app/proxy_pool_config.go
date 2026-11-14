@@ -40,6 +40,12 @@ type proxyPoolConfigData struct {
 	OtherUseProxies     *bool `json:"otherUseProxies,omitempty"`
 	ZenUseProxies       *bool `json:"zenUseProxies,omitempty"`
 	WorkbuddyUseProxies *bool `json:"workbuddyUseProxies,omitempty"`
+	// WorkBuddy 凭据权重优化定时任务（2026-11-15，与订阅自动更新同一条调度
+	// 路径：30s tick 热读本配置 + cronMatches 命中触发）：Enabled 开启后按
+	// Cron 周期重算 pool.account_share 并走 saveWorkbuddyConfig 链写入；
+	// 无快过期压力或占比与当前一致时跳过。
+	WbShareOptimizeEnabled bool   `json:"wbShareOptimizeEnabled,omitempty"`
+	WbShareOptimizeCron    string `json:"wbShareOptimizeCron,omitempty"`
 }
 
 func defaultProxyPoolConfig() *proxyPoolConfigData {
