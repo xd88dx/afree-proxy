@@ -71,6 +71,8 @@ func TestAutoStreamLearnThroughRealCallee(t *testing.T) {
 	defer func() { clineAPIBase = origBase }()
 
 	poolMu.Lock()
+	savedUsage := poolUsage
+	poolUsage = &poolUsageData{} // 干净台账：防前置测试残留的账号状态污染选号（shuffle 顺序依赖）
 	savedPool := pool
 	pool = &AccountPool{Accounts: []*Account{{
 		AccountID: "probe-1", Email: "probe@test", APIToken: "sk-test-static-key",
@@ -79,6 +81,7 @@ func TestAutoStreamLearnThroughRealCallee(t *testing.T) {
 	defer func() {
 		poolMu.Lock()
 		pool = savedPool
+		poolUsage = savedUsage
 		poolMu.Unlock()
 	}()
 
@@ -157,6 +160,8 @@ func TestCallClineAPINon200ReturnsTypedError(t *testing.T) {
 	defer func() { clineAPIBase = origBase }()
 
 	poolMu.Lock()
+	savedUsage := poolUsage
+	poolUsage = &poolUsageData{} // 干净台账：防前置测试残留的账号状态污染选号（shuffle 顺序依赖）
 	savedPool := pool
 	pool = &AccountPool{Accounts: []*Account{{
 		AccountID: "probe-2", Email: "probe2@test", APIToken: "sk-test-static-key",
@@ -165,6 +170,7 @@ func TestCallClineAPINon200ReturnsTypedError(t *testing.T) {
 	defer func() {
 		poolMu.Lock()
 		pool = savedPool
+		poolUsage = savedUsage
 		poolMu.Unlock()
 	}()
 
@@ -217,6 +223,8 @@ func TestCallClineAPIFailoverOn429(t *testing.T) {
 	defer func() { clineAPIBase = origBase }()
 
 	poolMu.Lock()
+	savedUsage := poolUsage
+	poolUsage = &poolUsageData{} // 干净台账：防前置测试残留的账号状态污染选号（shuffle 顺序依赖）
 	savedPool := pool
 	pool = &AccountPool{Accounts: []*Account{
 		{AccountID: "a-1", Email: "a1@test", APIToken: "sk-key-A"},
@@ -226,6 +234,7 @@ func TestCallClineAPIFailoverOn429(t *testing.T) {
 	defer func() {
 		poolMu.Lock()
 		pool = savedPool
+		poolUsage = savedUsage
 		poolMu.Unlock()
 	}()
 
@@ -278,6 +287,8 @@ func TestCallClineAPI429UnparseableShortCooldown(t *testing.T) {
 	defer func() { clineAPIBase = origBase }()
 
 	poolMu.Lock()
+	savedUsage := poolUsage
+	poolUsage = &poolUsageData{} // 干净台账：防前置测试残留的账号状态污染选号（shuffle 顺序依赖）
 	savedPool := pool
 	pool = &AccountPool{Accounts: []*Account{
 		{AccountID: "only", Email: "only@test", APIToken: "sk-only"},
@@ -286,6 +297,7 @@ func TestCallClineAPI429UnparseableShortCooldown(t *testing.T) {
 	defer func() {
 		poolMu.Lock()
 		pool = savedPool
+		poolUsage = savedUsage
 		poolMu.Unlock()
 	}()
 
@@ -328,6 +340,8 @@ func TestCallClineAPI429QuotaKeywordLongCooldown(t *testing.T) {
 	defer func() { clineAPIBase = origBase }()
 
 	poolMu.Lock()
+	savedUsage := poolUsage
+	poolUsage = &poolUsageData{} // 干净台账：防前置测试残留的账号状态污染选号（shuffle 顺序依赖）
 	savedPool := pool
 	pool = &AccountPool{Accounts: []*Account{
 		{AccountID: "quota", Email: "quota@test", APIToken: "sk-quota"},
@@ -336,6 +350,7 @@ func TestCallClineAPI429QuotaKeywordLongCooldown(t *testing.T) {
 	defer func() {
 		poolMu.Lock()
 		pool = savedPool
+		poolUsage = savedUsage
 		poolMu.Unlock()
 	}()
 
@@ -496,6 +511,8 @@ func TestClineHeadersOnTheWire(t *testing.T) {
 	defer func() { clineAPIBase = origBase }()
 
 	poolMu.Lock()
+	savedUsage := poolUsage
+	poolUsage = &poolUsageData{} // 干净台账：防前置测试残留的账号状态污染选号（shuffle 顺序依赖）
 	savedPool := pool
 	pool = &AccountPool{Accounts: []*Account{{
 		AccountID: "hdr-1", Email: "hdr@test", APIToken: "sk-static-key",
@@ -504,6 +521,7 @@ func TestClineHeadersOnTheWire(t *testing.T) {
 	defer func() {
 		poolMu.Lock()
 		pool = savedPool
+		poolUsage = savedUsage
 		poolMu.Unlock()
 	}()
 
@@ -572,6 +590,8 @@ func TestCallClineAPIFailoverOnGFE403(t *testing.T) {
 	defer func() { clineAPIBase = origBase }()
 
 	poolMu.Lock()
+	savedUsage := poolUsage
+	poolUsage = &poolUsageData{} // 干净台账：防前置测试残留的账号状态污染选号（shuffle 顺序依赖）
 	savedPool := pool
 	pool = &AccountPool{Accounts: []*Account{
 		{AccountID: "a-1", Email: "a1@test", APIToken: "sk-key-A"},
@@ -581,6 +601,7 @@ func TestCallClineAPIFailoverOnGFE403(t *testing.T) {
 	defer func() {
 		poolMu.Lock()
 		pool = savedPool
+		poolUsage = savedUsage
 		poolMu.Unlock()
 	}()
 
@@ -618,6 +639,8 @@ func TestCallClineAPIBusiness403NoFailover(t *testing.T) {
 	defer func() { clineAPIBase = origBase }()
 
 	poolMu.Lock()
+	savedUsage := poolUsage
+	poolUsage = &poolUsageData{} // 干净台账：防前置测试残留的账号状态污染选号（shuffle 顺序依赖）
 	savedPool := pool
 	pool = &AccountPool{Accounts: []*Account{
 		{AccountID: "a-1", Email: "a1@test", APIToken: "sk-key-A"},
@@ -627,6 +650,7 @@ func TestCallClineAPIBusiness403NoFailover(t *testing.T) {
 	defer func() {
 		poolMu.Lock()
 		pool = savedPool
+		poolUsage = savedUsage
 		poolMu.Unlock()
 	}()
 
