@@ -53,7 +53,7 @@ func fakeUpstreamErr(status int, body string) (*http.Response, *Account, error) 
 // 并把 streamed=true 交回调用方（调用方据此走聚合路径）。这正是命名约定漏判时
 // 用户唯一会碰到的失败形态，必须自动愈合。
 func TestCallClineAutoStreamLearnsAndRetries(t *testing.T) {
-	t.Setenv("DATA_DIR", t.TempDir())
+	t.Setenv("DATA_DIR", testDataDir(t))
 	clineStreamMu.Lock()
 	clineStreamLearned = nil
 	clineStreamMu.Unlock()
@@ -102,7 +102,7 @@ func TestCallClineAutoStreamLearnsAndRetries(t *testing.T) {
 // 重试也失败时：交回第一次的错误（调用方照旧报上游错误），且不谎报 streamed；
 // 模型仍被学习，因此后续请求不会再走这条非流式失败路径。
 func TestCallClineAutoStreamRetryFailureKeepsOriginalError(t *testing.T) {
-	t.Setenv("DATA_DIR", t.TempDir())
+	t.Setenv("DATA_DIR", testDataDir(t))
 	clineStreamMu.Lock()
 	clineStreamLearned = nil
 	clineStreamMu.Unlock()
@@ -139,7 +139,7 @@ func TestCallClineAutoStreamRetryFailureKeepsOriginalError(t *testing.T) {
 
 // 普通 500（过载/瞬时故障）不得被当作模型属性学习，也不得触发重试。
 func TestCallClineAutoStreamIgnoresPlain500(t *testing.T) {
-	t.Setenv("DATA_DIR", t.TempDir())
+	t.Setenv("DATA_DIR", testDataDir(t))
 	clineStreamMu.Lock()
 	clineStreamLearned = nil
 	clineStreamMu.Unlock()
@@ -243,7 +243,7 @@ func TestClineStreamLearnRoundTrip(t *testing.T) {
 
 // 空 model id 不写盘（调用方在拿不到 model 字段时不应污染学习结果）。
 func TestClineStreamLearnEmptyIDIgnored(t *testing.T) {
-	t.Setenv("DATA_DIR", t.TempDir())
+	t.Setenv("DATA_DIR", testDataDir(t))
 	resetGlobalConfigForTest(t)
 	loadClineStreamLearned()
 	learnClineStreamRequired("")

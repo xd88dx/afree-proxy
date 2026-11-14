@@ -75,7 +75,7 @@ func TestPlatformOfModel(t *testing.T) {
 }
 
 func TestModelBlacklistLifecycle(t *testing.T) {
-	t.Setenv("DATA_DIR", t.TempDir())
+	t.Setenv("DATA_DIR", testDataDir(t))
 	resetModelBlacklistForTest(t)
 
 	if IsModelBlacklisted("wbgb:gpt-6-luna") {
@@ -134,7 +134,7 @@ func TestModelBlacklistLifecycle(t *testing.T) {
 
 // 手动封禁：原因统一「管理员手动封禁」；对已存在条目覆盖原因。
 func TestBanModelManually(t *testing.T) {
-	t.Setenv("DATA_DIR", t.TempDir())
+	t.Setenv("DATA_DIR", testDataDir(t))
 	resetModelBlacklistForTest(t)
 
 	if !BanModel(platZen, "zen:big-pickle") {
@@ -168,7 +168,7 @@ func TestBanModelManually(t *testing.T) {
 // 场景用 zen 平台（wb 目录来自 vendor server，测试环境无法注入条目；
 // zen 目录可锁内注入，判据 11158 与平台无关）。
 func TestWithModelBlacklistScan(t *testing.T) {
-	t.Setenv("DATA_DIR", t.TempDir())
+	t.Setenv("DATA_DIR", testDataDir(t))
 	resetModelBlacklistForTest(t)
 	// zen 平台可路由性闸要求有启用 key（zenKeyRoutingEnabled 缺省启用）。
 	savedCfg := getZenConfig()
@@ -238,7 +238,7 @@ func TestWithModelBlacklistScan(t *testing.T) {
 // 网关错误信封是 500 内嵌 "API 404: ..."。命中文案即拉黑，让 /v1/models
 // 停止对外提供（客户端含 newapi 渠道映射，否则每次选中都白吃一轮失败）。
 func TestClineModelNotFoundAutoBan(t *testing.T) {
-	t.Setenv("DATA_DIR", t.TempDir())
+	t.Setenv("DATA_DIR", testDataDir(t))
 	resetModelBlacklistForTest(t)
 	// 平台可路由性闸要求 cline 池有 active 账号，种一个。
 	// 增删都必须持 poolMu：服务闸未命中会触发后台目录同步（pickAccountAny
@@ -313,7 +313,7 @@ func TestClineModelNotFoundAutoBan(t *testing.T) {
 // 请求路径的模型服务闸（2026-10-31 用户定）：已拉黑模型拒、目录外模型拒、
 // 目录内模型放行；空 model 放行（错误语义归入口校验）。
 func TestServedModelGate(t *testing.T) {
-	t.Setenv("DATA_DIR", t.TempDir())
+	t.Setenv("DATA_DIR", testDataDir(t))
 	throttleGateRefreshForTest() // 未知模型分支不做 live 目录同步（不发外网、不写盘）
 	resetModelBlacklistForTest(t)
 	// apiModelList 的展示门控要求 cline 有可路由账号，种一个。
@@ -345,7 +345,7 @@ func TestServedModelGate(t *testing.T) {
 
 // cline 计费哨兵：成功响应 usage.cost>0 自动拉黑（仅 cline 路径调用本函数）。
 func TestClineAutoBanPaidUsage(t *testing.T) {
-	t.Setenv("DATA_DIR", t.TempDir())
+	t.Setenv("DATA_DIR", testDataDir(t))
 	resetModelBlacklistForTest(t)
 
 	// cost>0：拉黑，对外 ID 归一（裸名补前缀）。
@@ -372,7 +372,7 @@ func TestClineAutoBanPaidUsage(t *testing.T) {
 // 批量封禁：平台目录 ID 大小写不敏感包含关键字即封；已封条目跳过不覆盖
 // 原因；空关键字/未知平台拒绝（空关键字=全量匹配，危险操作）。
 func TestBatchBanPlatformModels(t *testing.T) {
-	t.Setenv("DATA_DIR", t.TempDir())
+	t.Setenv("DATA_DIR", testDataDir(t))
 	resetModelBlacklistForTest(t)
 	p := loadPool()
 	p.Accounts = append(p.Accounts, &Account{AccountID: "batch-cline-t1"})
@@ -410,7 +410,7 @@ func TestBatchBanPlatformModels(t *testing.T) {
 
 // Trae 模型级失败判据：1005/4023 直接封，4001 先复核，限流不封。
 func TestTraeScopedBanIsolation(t *testing.T) {
-	t.Setenv("DATA_DIR", t.TempDir())
+	t.Setenv("DATA_DIR", testDataDir(t))
 	resetModelBlacklistForTest(t)
 
 	// trae 域封禁：不影响 solo 域
@@ -442,7 +442,7 @@ func TestTraeScopedBanIsolation(t *testing.T) {
 // 把按档位落的条目一起清掉。只删全档键会留下 trae/solo/trae-intl 条目，
 // 表现是点了「解禁」弹成功、刷新后条目原地不动（2026-10-28 修复）。
 func TestUnblockModelWithoutScopeClearsScopedEntries(t *testing.T) {
-	t.Setenv("DATA_DIR", t.TempDir())
+	t.Setenv("DATA_DIR", testDataDir(t))
 	resetModelBlacklistForTest(t)
 
 	// 自动封禁按传输落档位（4023 + raw → traecode），与生产数据同形。
@@ -493,7 +493,7 @@ func TestUnblockModelWithoutScopeClearsScopedEntries(t *testing.T) {
 //	/v1/models 并被 hermes 写回渠道，2026-11-04 生产实证）；
 //	备份新增条目吸收；同 key 取 createdAt 较新的记录。
 func TestImportModelBlacklistMerges(t *testing.T) {
-	t.Setenv("DATA_DIR", t.TempDir())
+	t.Setenv("DATA_DIR", testDataDir(t))
 	resetModelBlacklistForTest(t)
 
 	// 本机已有两条：旧记录 + 新记录。
@@ -546,7 +546,7 @@ func TestImportModelBlacklistMerges(t *testing.T) {
 // ALLOW_BANNED=true：封禁退化为「仅目录摘除」——请求侧平台闸与模型拉黑闸
 // 都放行（调试/灰度开关，默认 false 关闭时拒绝语义不变）。
 func TestAllowBannedSkipsBanGates(t *testing.T) {
-	t.Setenv("DATA_DIR", t.TempDir())
+	t.Setenv("DATA_DIR", testDataDir(t))
 	resetModelBlacklistForTest(t)
 	resetGlobalConfigForTest(t) // BanPlatform 落盘全局配置
 	resetPlatformBanForTest(t)

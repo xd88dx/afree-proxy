@@ -9,7 +9,7 @@ import (
 //   - 分域键显式配置 → 按域生效（CN 过滤 trae:/solo:，Intl 过滤 trae-intl:/solo-intl:）；
 //   - 显式 0 = 该域关（指针区分「未配置」与「关」）。
 func TestTrae2apiRateFilterPerRealmFallbackAndSplit(t *testing.T) {
-	t.Setenv("DATA_DIR", t.TempDir())
+	t.Setenv("DATA_DIR", testDataDir(t))
 
 	// 场景 1：旧配置形态——只有旧单值，双分域键 nil → 两域都回落旧值。
 	mutateProxyConfigFile(func(f *proxyConfigFileData) {
@@ -42,7 +42,7 @@ func TestTrae2apiRateFilterPerRealmFallbackAndSplit(t *testing.T) {
 // patch 应用路径回归（2026-11-07 拆分时踩坑：新键应用曾被插在旧键 if 块内，
 // 面板只发新键时整块跳过、保存静默无效）——分域键独立于旧键生效。
 func TestTrae2apiRateFilterPatchPerRealmKeyIndependent(t *testing.T) {
-	t.Setenv("DATA_DIR", t.TempDir())
+	t.Setenv("DATA_DIR", testDataDir(t))
 	mutateProxyConfigFile(func(f *proxyConfigFileData) {
 		f.Trae2apiModelRateFilter = 0
 		f.Trae2apiModelRateFilterCN = nil

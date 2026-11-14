@@ -379,7 +379,7 @@ func TestReqLogModelTruncated(t *testing.T) {
 // 两个并发请求学不同模型时，早先会同时写同一个 .tmp 路径：一个 rename 成功、
 // 另一个 ENOENT，最终文件可能是旧快照（少一个模型）甚至半截 JSON。
 func TestClineStreamConcurrentLearnsPersistAll(t *testing.T) {
-	t.Setenv("DATA_DIR", t.TempDir())
+	t.Setenv("DATA_DIR", testDataDir(t))
 	// 全局配置单例必须一并重置：shuffle 下若排在 TestClineStreamLearnRoundTrip
 	// 之后，globalCfgLoaded=true 且 cfg 还指向它那份 TempDir 的内容，
 	// basePersisted 读到的是上一测试的存量，persisted-base 就对不上（-shuffle=1

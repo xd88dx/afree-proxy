@@ -64,7 +64,7 @@ func TestRouteModelWithZenPrefix(t *testing.T) {
 // /v1/models 与面板列表输出的 ID 必须带前缀；裸 ID 写请求照常可用。
 func TestZenModelListIDsArePrefixed(t *testing.T) {
 	// 展示门控要求至少一个参与路由的 key（空池不展示）。
-	t.Setenv("DATA_DIR", t.TempDir())
+	t.Setenv("DATA_DIR", testDataDir(t))
 	prev := getZenConfig()
 	t.Cleanup(func() {
 		c := *prev

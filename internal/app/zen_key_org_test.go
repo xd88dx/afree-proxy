@@ -20,7 +20,7 @@ import (
 // resetZenOrgState 清空进程内缓存与持久化，避免测试互相污染。
 func resetZenOrgState(t *testing.T) {
 	t.Helper()
-	t.Setenv("DATA_DIR", t.TempDir())
+	t.Setenv("DATA_DIR", testDataDir(t))
 	zenOrgMu.Lock()
 	zenOrgLoaded = true // 阻止从磁盘加载
 	zenOrgData = zenOrgStore{Version: zenOrgFileVersion, Orgs: map[string]string{}, Failed: map[string]int64{}}

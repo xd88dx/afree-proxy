@@ -185,7 +185,7 @@ func TestWorkbuddyImageModelRateFilter(t *testing.T) {
 	}
 }
 func TestServedGateRejectsWorkbuddyImageModel(t *testing.T) {
-	t.Setenv("DATA_DIR", t.TempDir())
+	t.Setenv("DATA_DIR", testDataDir(t))
 	throttleGateRefreshForTest() // servedModelGate 未知名不做 live 目录同步
 	saved := workbuddySub
 	t.Cleanup(func() { workbuddySub = saved })
@@ -207,7 +207,7 @@ func TestServedGateRejectsWorkbuddyImageModel(t *testing.T) {
 // 指到本地假服务器即可造态。展示门控（4e7d263）之后各段 ModelList 无启用
 // 凭据即返回空，断言会空转，所以先给三个平台各装一个可路由凭据。
 func TestPlatformSegmentsAreIDSorted(t *testing.T) {
-	t.Setenv("DATA_DIR", t.TempDir())
+	t.Setenv("DATA_DIR", testDataDir(t))
 
 	// or/amd/th：装一个启用 key + 一个假目录上游。各自保存/恢复原配置。
 	orPrev, orPath := openrouter.Get(), openrouter.ConfigPath

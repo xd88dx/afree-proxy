@@ -41,7 +41,7 @@ func TestLoadZenConfigKeepsCustomBase(t *testing.T) {
 
 func TestApplyZenRegistryBase(t *testing.T) {
 	// 会经 setZenConfig 写盘并改全局配置：隔离到临时 DATA_DIR，结束后还原。
-	t.Setenv("DATA_DIR", t.TempDir())
+	t.Setenv("DATA_DIR", testDataDir(t))
 	saved := getZenConfig()
 	t.Cleanup(func() { setZenConfig(saved) })
 

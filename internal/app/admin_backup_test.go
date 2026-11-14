@@ -337,7 +337,7 @@ func TestConfigBackupWorkBuddyProxies(t *testing.T) {
 	})
 
 	t.Run("import replaces bindings", func(t *testing.T) {
-		t.Setenv("DATA_DIR", t.TempDir())
+		t.Setenv("DATA_DIR", testDataDir(t))
 
 		wbProxyMu.Lock()
 		wbProxyLoaded = false

@@ -33,8 +33,8 @@ func TestConfigBackupTraeProxies(t *testing.T) {
 	})
 
 	t.Run("import replaces bindings", func(t *testing.T) {
-		t.Setenv("DATA_DIR", t.TempDir())
-		t.Setenv("DATA_DIR", t.TempDir()) // 同 wb 测试口径；proxy-config 路径经 override 下设
+		t.Setenv("DATA_DIR", testDataDir(t))
+		t.Setenv("DATA_DIR", testDataDir(t)) // 同 wb 测试口径；proxy-config 路径经 override 下设
 		savedPath := proxyConfigPathOverride
 		proxyConfigPathOverride = filepath.Join(t.TempDir(), "proxy-config.json")
 		t.Cleanup(func() { proxyConfigPathOverride = savedPath })

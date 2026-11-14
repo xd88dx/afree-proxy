@@ -17,7 +17,7 @@ import (
 // 立即改 stream=true 重试 → SSE 200 即 active，并把模型记入学习表供后续直达。
 func TestAccountMustStreamProbeRetriesWithStream(t *testing.T) {
 	setupBindingTest(t, nil)
-	t.Setenv("DATA_DIR", t.TempDir())
+	t.Setenv("DATA_DIR", testDataDir(t))
 
 	clineStreamMu.Lock()
 	savedLearned := clineStreamLearned

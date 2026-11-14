@@ -14,7 +14,7 @@ import (
 
 // otherModelList 逐子平台判定：没有启用 key 的子平台整段不输出。
 func TestOtherModelListRequiresEnabledKey(t *testing.T) {
-	t.Setenv("DATA_DIR", t.TempDir())
+	t.Setenv("DATA_DIR", testDataDir(t))
 	prev := other.Get()
 	prevPath := other.ConfigPath
 	other.ConfigPath = filepath.Join(t.TempDir(), ".other-config.json")
@@ -53,7 +53,7 @@ func TestOtherModelListRequiresEnabledKey(t *testing.T) {
 // zen 需要至少一个参与路由的 key 才展示：空池在请求入口按不可路由处理，
 // 目录继续展示只会让用户选中必 503 的模型。
 func TestZenModelListRequiresEnabledKey(t *testing.T) {
-	t.Setenv("DATA_DIR", t.TempDir())
+	t.Setenv("DATA_DIR", testDataDir(t))
 	prev := getZenConfig()
 	t.Cleanup(func() {
 		c := *prev
@@ -121,7 +121,7 @@ func TestAPIModelListRequiresRoutableAccount(t *testing.T) {
 // combo 别名不带平台前缀：请求入口的可路由性闸必须按声明平台判，不能把
 // 别名当裸名（Cline）——否则声明 zen 的别名会去看 Cline 的凭据。
 func TestModelRoutePlatformKeyResolvesCombo(t *testing.T) {
-	t.Setenv("DATA_DIR", t.TempDir())
+	t.Setenv("DATA_DIR", testDataDir(t))
 	combosMu.Lock()
 	prevLoaded, prevList := combosLoaded, combosList
 	combosLoaded = true

@@ -17,7 +17,7 @@ import (
 
 func setupEgressTest(t *testing.T, proxies []string) {
 	t.Helper()
-	t.Setenv("DATA_DIR", t.TempDir())
+	t.Setenv("DATA_DIR", testDataDir(t))
 	// 代理池在 proxy-config.json（proxy_pool_config.go），测试重定向路径并
 	// 保存/恢复现池——与 setupBindingTest 同一隔离套路。
 	savedPoolPath := proxyConfigPathOverride

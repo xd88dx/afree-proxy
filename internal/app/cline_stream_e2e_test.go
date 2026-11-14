@@ -27,7 +27,7 @@ import (
 //  1. callClineAPI 对非 200 返回 *clineAPIError（携带状态码 + body）；
 //  2. callClineAutoStream 因此能真的学到该模型并改用 stream=true 重试。
 func TestAutoStreamLearnThroughRealCallee(t *testing.T) {
-	t.Setenv("DATA_DIR", t.TempDir())
+	t.Setenv("DATA_DIR", testDataDir(t))
 	// 必须保存并恢复：本测试会真学到 "poolside/laguna-s-2.1:free" 需要流式，
 	// 而 clineStreamLearned 是包级全局。不恢复的话，后续任何断言"干净状态"的
 	// 测试（TestClineStreamLearnRoundTrip 的第一句）都会因执行顺序不同而红
@@ -198,7 +198,7 @@ func TestCallClineAPINon200ReturnsTypedError(t *testing.T) {
 // 跨账号 failover：一个账号撞 429 时换下一个健康账号重试，而不是把整请求判死。
 // 假上游按 Authorization 里的 key 区分账号：key-A 恒 429，key-B 恒 200。
 func TestCallClineAPIFailoverOn429(t *testing.T) {
-	t.Setenv("DATA_DIR", t.TempDir())
+	t.Setenv("DATA_DIR", testDataDir(t))
 
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.Contains(r.Header.Get("Authorization"), "key-A") {
@@ -265,7 +265,7 @@ func TestCallClineAPIFailoverOn429(t *testing.T) {
 // 429 且错误体没有任何可解析时长时：绝不落到 markAccountCooldown 的 18h 兜底，
 // 除非错误体含明确配额措辞。此测断言"无配额措辞 → 短冷却"。
 func TestCallClineAPI429UnparseableShortCooldown(t *testing.T) {
-	t.Setenv("DATA_DIR", t.TempDir())
+	t.Setenv("DATA_DIR", testDataDir(t))
 
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusTooManyRequests)
@@ -315,7 +315,7 @@ func TestCallClineAPI429UnparseableShortCooldown(t *testing.T) {
 // 429 且错误体含明确配额措辞（quota exceeded）时：给足 18h，避免健康账号被
 // 一分钟一次地反复打回上游。
 func TestCallClineAPI429QuotaKeywordLongCooldown(t *testing.T) {
-	t.Setenv("DATA_DIR", t.TempDir())
+	t.Setenv("DATA_DIR", testDataDir(t))
 
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusTooManyRequests)
@@ -480,7 +480,7 @@ func TestZenHeadersMatchAuditSpec(t *testing.T) {
 // （大小写敏感）。这是"我们确实按最新 CLI 指纹发包"的端到端证据，
 // 单测 header map 只能证明构造正确，这里证明它真的上了线。
 func TestClineHeadersOnTheWire(t *testing.T) {
-	t.Setenv("DATA_DIR", t.TempDir())
+	t.Setenv("DATA_DIR", testDataDir(t))
 
 	got := make(chan http.Header, 1)
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -550,7 +550,7 @@ func TestClineHeadersOnTheWire(t *testing.T) {
 // 间歇性的（2026-11-05 生产实证：19:47 同出口被 GFE 403、20:34 同出口成功），
 // 换账号（隔离模式=换绑定出口）可救活本次请求。
 func TestCallClineAPIFailoverOnGFE403(t *testing.T) {
-	t.Setenv("DATA_DIR", t.TempDir())
+	t.Setenv("DATA_DIR", testDataDir(t))
 
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.Contains(r.Header.Get("Authorization"), "key-A") {
@@ -603,7 +603,7 @@ func TestCallClineAPIFailoverOnGFE403(t *testing.T) {
 // 业务 403（cline API 的 JSON 拒绝，权益/会话类）：不换账号，原样返回——
 // 换账号重试无意义，且绝不把业务 403 误判成出口问题。
 func TestCallClineAPIBusiness403NoFailover(t *testing.T) {
-	t.Setenv("DATA_DIR", t.TempDir())
+	t.Setenv("DATA_DIR", testDataDir(t))
 
 	var calls atomic.Int32
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

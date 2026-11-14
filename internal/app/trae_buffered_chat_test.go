@@ -26,7 +26,7 @@ import (
 // 503 no_account，是完全可控的非 200 形态。
 func newTraeBufferFixture(t *testing.T) {
 	t.Helper()
-	t.Setenv("DATA_DIR", t.TempDir())
+	t.Setenv("DATA_DIR", testDataDir(t))
 
 	cfg := traecfg.Default()
 	// DataDir 指到测试临时目录：默认 "./data" 会吃到工作目录的真实快照

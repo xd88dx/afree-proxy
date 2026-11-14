@@ -19,7 +19,7 @@ import (
 
 func newTrae2apiLockOrderFixture(t *testing.T) *trae2apiSubsystem {
 	t.Helper()
-	t.Setenv("DATA_DIR", t.TempDir())
+	t.Setenv("DATA_DIR", testDataDir(t))
 
 	cfg, err := trae2apiLoadConfig()
 	if err != nil {

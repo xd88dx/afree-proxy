@@ -15,7 +15,7 @@ import (
 
 func resetAutobanForTest(t *testing.T) {
 	t.Helper()
-	t.Setenv("DATA_DIR", t.TempDir())
+	t.Setenv("DATA_DIR", testDataDir(t))
 	resetModelBlacklistForTest(t)
 }
 

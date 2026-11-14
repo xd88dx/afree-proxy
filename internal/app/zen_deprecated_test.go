@@ -196,7 +196,7 @@ func TestAliasWinsOverDeadMark(t *testing.T) {
 
 func setupZenDepTest(t *testing.T, upstream *httptest.Server) {
 	t.Helper()
-	t.Setenv("DATA_DIR", t.TempDir())
+	t.Setenv("DATA_DIR", testDataDir(t))
 	savedCfg := getZenConfig()
 	cfgCopy := *savedCfg
 	cfgCopy.BaseURL = upstream.URL

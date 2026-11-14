@@ -651,7 +651,7 @@ func TestSetZenGateHeadersOrgID(t *testing.T) {
 // 把官方限制误导成代理池容量问题）：全 parked → 配额语义 + 探针时刻；
 // 分层混合 → 列各层计数；绝不再把非容量问题报成代理不够。
 func TestZenNoKeyErrorReportsRealRejectionLayer(t *testing.T) {
-	t.Setenv("DATA_DIR", t.TempDir())
+	t.Setenv("DATA_DIR", testDataDir(t))
 	saved := getZenConfig()
 	t.Cleanup(func() { setZenConfig(saved) })
 
