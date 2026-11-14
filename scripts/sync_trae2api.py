@@ -20,7 +20,7 @@ Usage:
   python scripts/sync_trae2api.py             # 合并上游进 vendor 树
   python scripts/sync_trae2api.py --report    # 只看将发生什么，不写文件
   python scripts/sync_trae2api.py --pull      # 先 ff-only 拉上游
-  python scripts/sync_trae2api.py --source D:/path/to/trae2api-xcool
+  python scripts/sync_trae2api.py --source D:/path/to/trae2api
   python scripts/sync_trae2api.py --seal      # 解决冲突后登记新基线
 """
 

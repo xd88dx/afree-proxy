@@ -148,10 +148,18 @@ def apply_panel_iframe_rewrites(pkg: Path) -> None:
             ("禁止被 iframe 嵌套（防点击劫持）", "仅允许同源管理页 iframe 嵌套（防第三方点击劫持）", 1),
             ("禁止被任何站点 iframe 嵌套（点击劫持）", "仅允许同源管理页 iframe 嵌套（阻止第三方点击劫持）", 1),
             ("frame-ancestors 'none'", "frame-ancestors 'self'", 2),
+            # 2026-11-13 上游 35228b3 加 X-Robots-Tag 后 gofmt 重排了注释对齐，
+            # 同一行的 // 前空格在基线树（11 空格）与新上游树（8 空格）不同——
+            # 拆成两个变体，各以 (0,1) 放行「恰好命中一侧」。
             (
                 'w.Header().Set("X-Frame-Options", "DENY")           // 老浏览器兜底（CSP frame-ancestors 的等价项）',
                 'w.Header().Set("X-Frame-Options", "SAMEORIGIN")     // 老浏览器兜底，仅允许同源嵌套',
-                1,
+                (0, 1),
+            ),
+            (
+                'w.Header().Set("X-Frame-Options", "DENY")        // 老浏览器兜底（CSP frame-ancestors 的等价项）',
+                'w.Header().Set("X-Frame-Options", "SAMEORIGIN")     // 老浏览器兜底，仅允许同源嵌套',
+                (0, 1),
             ),
         ),
         "panel/security_test.go": (

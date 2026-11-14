@@ -13,7 +13,7 @@ WorkBuddy 一栏的基线同时登记在 `scripts/workbuddy-vendor-baseline.json
 
 ## Cline
 
-本次未涉及上游同步（2026-10-28 核对：`foxy1402/cline-proxy` main 仍为 `571f9b9`，与 2026-10-27 同步基线一致，无新提交；`571f9b9` 的改动全部属于 OpenCode 线，见文末 OpenCode 节。2026-10-29 复核：仍为 `571f9b9`，无新提交。2026-10-30 复核：上游推进到 `b8a1be0`，但区间内 4 提交全部落在 zen/OpenCode 侧（`git diff 571f9b9 b8a1be0` 无 Cline 侧文件），Cline 线本次零吸收，详见 OpenCode 节。2026-10-31 复核：仍为 `b8a1be0`，无新提交，本次未涉及。2026-10-31 二次复核：上游推进到 `a41f1756`，但区间内 1 提交全部落在 zen/OpenCode 侧（`git diff b8a1be0 a41f1756 --name-only` 无 Cline 侧文件），Cline 线零吸收，详见 OpenCode 节。2026-11-02 复核：仍为 `a41f1756`，无新提交，本次未涉及。2026-11-05 复核：仍为 `a41f1756`，无新提交，本次未涉及。2026-11-07 复核：上游推进到 `c6b3c45`，区间 3 提交全部落在 zen/OpenCode 侧（zen system prompt 换位/429 请求抓包/真实计费 tokens），Cline 线零吸收，详见 OpenCode 节）。
+本次未涉及上游同步（2026-10-28 核对：`foxy1402/cline-proxy` main 仍为 `571f9b9`，与 2026-10-27 同步基线一致，无新提交；`571f9b9` 的改动全部属于 OpenCode 线，见文末 OpenCode 节。2026-10-29 复核：仍为 `571f9b9`，无新提交。2026-10-30 复核：上游推进到 `b8a1be0`，但区间内 4 提交全部落在 zen/OpenCode 侧（`git diff 571f9b9 b8a1be0` 无 Cline 侧文件），Cline 线本次零吸收，详见 OpenCode 节。2026-10-31 复核：仍为 `b8a1be0`，无新提交，本次未涉及。2026-10-31 二次复核：上游推进到 `a41f1756`，但区间内 1 提交全部落在 zen/OpenCode 侧（`git diff b8a1be0 a41f1756 --name-only` 无 Cline 侧文件），Cline 线零吸收，详见 OpenCode 节。2026-11-02 复核：仍为 `a41f1756`，无新提交，本次未涉及。2026-11-05 复核：仍为 `a41f1756`，无新提交，本次未涉及。2026-11-07 复核：上游推进到 `c6b3c45`，区间 3 提交全部落在 zen/OpenCode 侧（zen system prompt 换位/429 请求抓包/真实计费 tokens），Cline 线零吸收，详见 OpenCode 节。2026-11-14 复核：仍为 `4f12cd2`，无新提交，本次未涉及）。
 
 ### 2026-11-08 — c6b3c45 → a8fe356
 
@@ -37,13 +37,11 @@ WorkBuddy 一栏的基线同时登记在 `scripts/workbuddy-vendor-baseline.json
 
 上游(历史线):`autumnsentiment/Trae2api-cn`(Trae CN / Trae Solo CN 模型反代,Python,MIT)。**这条线不是 vendor/merge 关系**:上游是 Python 全栈,本地 `internal/trae/` + `internal/app/trae.go` 是 Go 重写,行为跟随上游协议;唯一逐行移植的产物是内嵌的本机授权助手 `web_login.py`(`internal/trae/helper_script.go`),只有它需要跟上游比对。2026-10-27 的 cline-proxy 合并未涉及本线。
 
-### 2026-11-10 — 8bc4843 → b63408d（1 提交，0 冲突）
+### 2026-11-14 — 复核（无更新）+ 台账去重
 
-上游 `b63408d`：Trae 邀请码+新手奖励体系（server/invite.go + traectl/invite.go，UG 链路经 postUGBody→Store 注入 client，出口接管覆盖）、Anthropic 流式/thinking 增强、console 邀请 UI。`internal/cmd/invite` CLI 不在 vendor 12 子包内且无 vendored 引用方，不引入。invite 出站已核走 s.httpClient()，无裸直连漏接。
-
-**补丁治理（重要教训）**：`trae2api-afree.patch` 按新基线重生成——旧补丁针对 6a861d9 时代；2026-11-07 同步时 theirs 侧因源树 WIP 跳过补丁、`git apply` 对 8bc4843 干净归档从未被验证，本次 base 侧（archive(8bc4843)）patch 失败暴露该盲区。新补丁=源树 WIP 相对 b63408d 的未暂存 diff（chat.go 两版间未变、server.go hunk 上下文两版兼容）。另：源树 WIP（textcall 四件套）与上游 server.go 同文件阻塞 ff 拉取，按纪律 pathspec stash→ff→pop（stash list 清零核对）。`vendor_trae2api.py` 的 save_baseline 顺带钉 LF。
-
-版本 0.2.6 两版一致。验证：build/vet 全绿，internal/trae2api/... 与 internal/app/ 测试全过。
+- **XCool-603/trae2api**：origin/main 仍 `b63408d`，与基线（2026-11-10）一致，无新提交，未合并。
+- **Trae2api-cn 副线**（helper 比对）：上游 HEAD 仍 `5c87d6c`（v1.0.11，2026-11-05），`check_trae_helper.py --upstream-dir` exit 0（内嵌 web_login.py 逐行一致），基线不变。
+- 台账勘误：本轮发现下方 2026-11-10 条目存在**逐字重复副本**（意外双写，内容完全一致零信息损失），已删除其一——不属"删改历史结论"，重复条目本身是数据缺陷。
 
 ### 2026-11-10 — 8bc4843 → b63408d（1 提交，0 冲突）
 
@@ -52,7 +50,6 @@ WorkBuddy 一栏的基线同时登记在 `scripts/workbuddy-vendor-baseline.json
 **补丁治理（重要教训）**：`trae2api-afree.patch` 按新基线重生成——旧补丁针对 6a861d9 时代；2026-11-07 同步时 theirs 侧因源树 WIP 跳过补丁、`git apply` 对 8bc4843 干净归档从未被验证，本次 base 侧（archive(8bc4843)）patch 失败暴露该盲区。新补丁=源树 WIP 相对 b63408d 的未暂存 diff（chat.go 两版间未变、server.go hunk 上下文两版兼容）。另：源树 WIP（textcall 四件套）与上游 server.go 同文件阻塞 ff 拉取，按纪律 pathspec stash→ff→pop（stash list 清零核对）。`vendor_trae2api.py` 的 save_baseline 顺带钉 LF。
 
 版本 0.2.6 两版一致。验证：build/vet 全绿，internal/trae2api/... 与 internal/app/ 测试全过。
-
 
 ### 2026-11-10 — helper 比对线：基线推进 v1.0.10/bb7b659 → v1.0.11/5c87d6c
 
@@ -392,8 +389,20 @@ WorkBuddy 一栏的基线同时登记在 `scripts/workbuddy-vendor-baseline.json
 - 测试同步校准：`config_test.go` 的 `TestConfigExampleParses` 默认档位断言随上游改为 `max`（`normalizeThinking` 空值回落 `max`，与字面量一致——上游默认改 high 在本批提交中已自洽回 max，见 `1df3b83`）。
 - 源树注记：源树 `main` 与 `misakano/main` 早已分叉（与 linguo 平行血统混入，见 2026-10-29 踩坑注记），**不得对源树 `main` 做 ff/pull**；本次同步读取的是 `misakano/main` 检出，`sync --seal` 写入基线 `b42712c`（dev）也是它。源树工作区改动（`24101b9`-era divergent）未动——这是源工作树自身的分支状态，不在本仓同步职责内。
 
+### 2026-11-14 — 1c007bb → 10d01b4（17 提交，冲突 0）
+
+- 上游 misakano7545/workbuddy2api-panel，vendor 三方合并（`sync_workbuddy.py`）；基线 `1c007bb`（2026-11-12 二次）→ `10d01b4`（2026-11-13，dev）。75 文件干净合并、冲突 0；上游新增 5（`pool/pick_exclusive_test.go`、`proxypool/intel{,_test}.go`、`server/queuebusy_test.go`、`upstream/modeltiers_exclusive_test.go`）；跳过本地已删 `upstream/dns_test.go`（历轮既定，维持不复活）。
+- 锚点修复：上游 `35228b3`（响应头禁收录）在 `panel/index.go` 加 `X-Robots-Tag` 后 gofmt 重排注释对齐，X-Frame-Options 行 `//` 前空格 11→8，`vendor_workbuddy.py` 该锚点拆两个变体、计数改 `(0,1)`（基线树/新上游树各命中其一），改写语义不变（DENY→SAMEORIGIN）。
+- 吸收项：6020/6021 渠道排队先在网关内等一轮再交回客户端（PR #217，`b957e32`/`e2b55bf`）；`/v1/messages` 转发 `output_config.format` 为 response_format（PR #216，结构化输出）；免费号事前不派「免费调不通」的模型（`7a48d72`，modelTiers accessMode=exclusive 且账号付费状态已知为免费才拦，池里只剩已知免费号时放行撞 11158 进负缓存）；授权链接补 version=5.9.4 与 loginSessionId、二维码支持到 v9（`320f5d4`/`0e863d8`/`eecc729`）；proxypool 出口归属记录（国家/住宅或机房/ISP，`3d0f293`）；余额趋势失效账号灰线不占色板（PR #215）；响应头 X-Robots-Tag 禁收录；testdata 脱敏真机凭证。
+- 装配接线（app 层，PROJECT.md §5 模式）：`p.SetExclusiveModels(up.ModelExclusive, up.PaidUser)`——付费状态由 billing summary 自动 `NotePaidUser`，两项注入任缺其一闸门关闭；proxypool intel 在 afree 无消费方（上游 ProxyPool nil、面板导航 hidden），vendored 原样保留。`workbuddyVersion` → `2026.11.13-misakano+afree`。
+- 本地定制幸存核对：chatStat ctx 归因（`logging.go` OutcomeInterrupted）、truncated 单列（`reqlog.go`/`continue.go`）、补签节奏锁（`checkin_retry.go` retryDelaysMu）均无损（冲突 0，ours 自动保留）。
+- 验证：`go build ./...`、`go vet ./...` 全绿；`go test ./... -count=1` 全绿（44 包）；`CGO_ENABLED=1 go test -race ./internal/app/` 全绿。源树 main 已 ff 至 misakano/main（`10d01b4`）。
 
 ## OpenCode
+
+### 2026-11-14 — 主线复核（无更新）
+
+- fork cline-proxy main 仍 `4f12cd2`，与 2026-11-12 合并基线一致，无新提交；OpenCode 与 Cline 两线本次均未涉及合并。
 
 ### 2026-11-12 — 2c737c2 → 4f12cd2（4 提交全 zen 侧：per-key org id + UA 2.2.7 + tool_choice 省略）
 
@@ -554,6 +563,12 @@ WorkBuddy 一栏的基线同时登记在 `scripts/workbuddy-vendor-baseline.json
 ## 副线（opencode2api / Trae2api-cn 吸收评估）+ magpie 参考线
 
 副线口径（2026-11-08 用户定）：**opencode2api**（opencode 副线）与 **Trae2api-cn**（trae 副线，Python 项目、trae 更换基线前身）只看近期更新、吸纳有价值逻辑，不 merge 不 vendor。本节记录每次副线评估的基线、吸收/丢弃结论；**magpie**（2026-11-06 立项，全平台纯参考）与副线共用本节，基线单独标注。
+
+### 2026-11-14 — 副线复核（四线零新提交；magpie e7bcaa5→7b002b6b，300 提交，零吸纳）
+
+- **fork cline-proxy** `4f12cd2`、**XCool-603/trae2api** `b63408d`、**Trae2api-cn** `5c87d6c`、**opencode2api** `b296a61`：全部与基线一致，零新提交（workbuddy 主线有更新，见 WorkBuddy 节 2026-11-14 条目）。
+- **magpie**（`e7bcaa5 → 7b002b6b`，300 提交，2026-11-08→11-14）：按平台关键词命中 39 条；细读最相关 3 条——`a97c8191b`（workbuddy 模型名渲染＝magpie GUI models.json 命名形态）、`36c5ee1e6`/`a4cd61f77`（claude 桥 run/session 文件留存与 429 限流后会话保留＝magpie 自有 claude provider 形态，本仓无 claude 平台；「限流保留会话避免缓存重传」思想与 wb 粘性+failKeepBinding 已覆盖）——其余 36 条标题全部落在 magpie 自有形态（sessions/usage/GUI/site 文档页/mover 版本/remote quotas/codex rollout/memory 插件），与本仓 8 平台网关语义无交集，零吸纳。
+- magpie 基线推进：`7b002b6b`（2026-11-14 排查）。
 
 ### 2026-11-12 二次 — 副线复核（四线零新提交；magpie 647071f2→8cacbaa，106 提交，零吸纳）
 

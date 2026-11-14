@@ -3,6 +3,9 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- 禁收录（与 setSecurityHeaders 的 X-Robots-Tag 同一条意图）：响应头挡抓取，
+     这条挡的是被缓存/另存后的页面快照。 -->
+<meta name="robots" content="noindex, nofollow">
 <title>WorkBuddy2API · 控制台</title>
 <!-- 首屏主题预热：必须留在样式表之前、且是同步外链脚本。
      html 根节点上的 data-theme="dark" 只是无脚本兜底；真实偏好在 localStorage，
@@ -792,6 +795,13 @@ legend { font-size: 12px; color: var(--ink-3); font-weight: 600; padding-bottom:
   .rm-row input { flex: 1; }
 
 .acc td.fl { line-height: 1.35; }
+/* 余额趋势：已失效账号的行整体降权。
+   它们**不参与统计**（已从合计里剔除），只作为历史记录陈列 —— 视觉上必须退到
+   背景，否则历史残留的余额会和活号争抢注意力（前注意加工层面）。 */
+.bh-dead { opacity: .45; }
+.bh-dead td { filter: grayscale(1); }
+.bh-sep td { padding: 6px 10px; font-size: 11.5px; color: var(--ink-3);
+  background: var(--surface-2); border-top: 1px solid var(--line); }
 .acc td.fl .fl-row { display: block; font-variant-numeric: tabular-nums; }
 .acc td.fl .fl-sub { font-size: 11.5px; color: var(--ink-3); }
 .fl-v { color: var(--ink-2); }

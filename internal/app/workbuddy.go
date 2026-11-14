@@ -32,7 +32,7 @@ import (
 
 // 版本口径：misakano 线不跟语义化版本（CI 用日期版本注入），此处记录上游来源
 // 与同步日期；基线 misakano/main dd01a52（2026-11-05 同步）。
-const workbuddyVersion = "2026.11.10-misakano+afree"
+const workbuddyVersion = "2026.11.13-misakano+afree"
 
 // workbuddySubsystem 把源项目的账号池/熔断/调度/面板/兼容接口作为独立子系统
 // 挂在现有 afree-proxy 上。账号凭证与状态落在 data/workbuddy/ 下，不与 Cline
@@ -196,6 +196,10 @@ func startWorkBuddy() (*workbuddySubsystem, error) {
 	// 积分保底的「收费」兜底判据：接上游模型目录的积分倍率表。本地实测台账无
 	// 观测时用它判收费；倍率表由探测下发，闭包每次调用读实时快照。
 	p.SetModelRateOf(up.ModelRate)
+	// 模型 exclusive 闸（上游 7a48d72）：目录 modelTiers accessMode=exclusive 且账号
+	// 付费状态已知为免费时事前不派单。付费状态由 billing summary 自动记录
+	// （NotePaidUser），两项注入任缺其一闸门即关闭（缺数据宁放行不误杀）。
+	p.SetExclusiveModels(up.ModelExclusive, up.PaidUser)
 
 	var sess *wbsession.Router
 	if cfg.SessionSticky.Enabled {
