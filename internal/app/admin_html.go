@@ -840,7 +840,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
         <th style="text-align:center" title="Transport-layer success rate since the pool was last edited (upstream 4xx/5xx still counts as the proxy being online)" data-i18n="Online rate">Online rate</th>
         <th style="text-align:center" title="Success rate over the last 50 attempts; red below 80% (min 10 samples)." data-i18n="Recent online rate">Recent online rate</th>
         <th style="text-align:center;cursor:pointer;user-select:none" onclick="ppHsSortToggle()" title="Average tunnel-setup time over successful attempts (TCP+TLS+CONNECT handshake only — excludes upstream first byte and task duration). Lower is better. Click to sort.">Avg handshake<span id="ppHsSortMark"></span></th>
-        <th style="text-align:center" title="Latest manual latency test: min / median over up to 3 HTTPS probes to the configured target through the same dial stack as real traffic; the samples also feed the rate and handshake stats. Routing and cooldowns are untouched." data-i18n="test">Test</th>
+        <th style="text-align:center;cursor:pointer;user-select:none" onclick="ppTestSortToggle()" title="Latest manual latency test: min / median over up to 3 HTTPS probes to the configured target through the same dial stack as real traffic; the samples also feed the rate and handshake stats. Routing and cooldowns are untouched. Click to sort." data-i18n="test_latency">Test latency<span id="ppTestSortMark"></span></th>
         <th data-i18n="Last OK">Last OK</th>
         <th data-i18n="Last Fail">Last Fail</th>
         <th data-i18n="cooldown_1">Cooldown</th>
@@ -2831,7 +2831,7 @@ const I18N = {
   'latency_test_finished': { en: 'Latency test finished', zh: '代理测试完成' },
   'proxy_test_failed': { en: 'Proxy test failed: ', zh: '代理测试失败：' },
   'Send up to 3 HTTPS probes per exit to the target in the input box (default www.gstatic.com/generate_204) through the same dial stack as real traffic; shows the min latency of successful samples and feeds the online-rate and handshake stats. Never touches routing or cooldowns.': { en: 'Send up to 3 HTTPS probes per exit to the target in the input box (default www.gstatic.com/generate_204) through the same dial stack as real traffic; shows the min latency of successful samples and feeds the online-rate and handshake stats. Never touches routing or cooldowns.', zh: '每条出口对测速目标发最多 3 次 HTTPS 探测，根据结果更新在线率与测试列数据，路由与冷却不受影响。' },
-  'Latest manual latency test: min / median over up to 3 HTTPS probes to the configured target through the same dial stack as real traffic; the samples also feed the rate and handshake stats. Routing and cooldowns are untouched.': { en: 'Latest manual latency test: min / median over up to 3 HTTPS probes to the configured target through the same dial stack as real traffic; the samples also feed the rate and handshake stats. Routing and cooldowns are untouched.', zh: '最近一次手动延迟测试：对配置的测速目标最多 3 次 HTTPS 探测的最小/中位延迟，与真实请求同一拨号栈；样本同时计入在线率与握手统计。路由与冷却不受影响。' },
+  'Latest manual latency test: min / median over up to 3 HTTPS probes to the configured target through the same dial stack as real traffic; the samples also feed the rate and handshake stats. Routing and cooldowns are untouched. Click to sort.': { en: 'Latest manual latency test: min / median over up to 3 HTTPS probes to the configured target through the same dial stack as real traffic; the samples also feed the rate and handshake stats. Routing and cooldowns are untouched. Click to sort.', zh: '最近一次手动延迟测试：对配置的测速目标最多 3 次 HTTPS 探测的最小/中位延迟，与真实请求同一拨号栈；样本同时计入在线率与握手统计。路由与冷却不受影响。点击排序。' },
   // 2026-11-03 测速目标输入框（回车/失焦即存，留空回默认）
   'test_target_saved': { en: 'Test target saved', zh: '测速地址已保存' },
   'test_target_failed': { en: 'Test target failed: ', zh: '测速地址保存失败：' },
@@ -2916,7 +2916,7 @@ const I18N = {
   'task_center': { en: 'Task center', zh: '任务中心' },
   'test_all': { en: 'Test all', zh: '全部测试' },
   'test_all_credentials': { en: 'Test all credentials', zh: '全量测试' },
-  'test_latency': { en: 'Test latency', zh: '代理测试' },
+  'test_latency': { en: 'Test latency', zh: '测试延迟' },
   'unblock_selected': { en: 'Unblock selected', zh: '批量解禁' },
   'update_now': { en: 'Update now', zh: '立即更新' },
   'copy': { en: 'Copy', zh: '复制' },
@@ -4385,20 +4385,25 @@ function proxyRecentRate(p, kind) {
   if (!r || r.recentRate === null || r.recentRate === undefined) return null;
   return { text: Math.round(r.recentRate * 100) + '%', tier: proxyRateTier(r.recentRate) };
 }
+// hsTierOf 握手延迟五档（2026-10-18 用户定）：0~2s 绿 / 2~4s 蓝 / 4~6s 粉 /
+// 6~10s 黄 / ≥10s 红（红档无上限，覆盖 10~15s 及以上）。凭据表代理徽标
+//（egBadgeHTML→proxyRecentHs）与代理池健康表握手/测试两列共用同一分档。
+function hsTierOf(ms) {
+  return ms < 2000 ? 'green' : ms < 4000 ? 'blue' : ms < 6000 ? 'pink' : ms < 10000 ? 'yellow' : 'red';
+}
+// hsBadgeText 延迟徽章的人类可读文本：1865ms→1.8s、653ms→0.6s（截断不四舍
+// 五入，与在线率标签同款定宽徽标）。
+function hsBadgeText(ms) {
+  return ms < 100 ? '<0.1s' : (Math.floor(ms / 100) / 10) + 's';
+}
 // proxyRecentHs 代理下拉/徽标用的平均握手延迟：数据与在线率同源
 //（proxyHealthByProxy ← runtime.proxyHealth 的 avgHsMs），无样本或 0 返回
-// null（不标注）。人类可读：1865ms→1.8s、653ms→0.6s（截断不四舍五入，
-// 与在线率标签同款定宽徽标）。五档取在线率镜像（越低越好）：
-// 0~2s 绿 / 2~4s 蓝 / 4~6s 粉 / 6~10s 黄 / ≥10s 红。
+// null（不标注）。分档与文本取公共函数（hsTierOf/hsBadgeText）。
 function proxyRecentHs(p) {
   const r = proxyHealthByProxy[proxyHealthKey(p)];
   const ms = Math.round(Number(r && r.avgHsMs) || 0);
   if (ms <= 0) return null;
-  const text = ms < 100 ? '<0.1s' : (Math.floor(ms / 100) / 10) + 's';
-  // 握手延迟五档（2026-10-18 用户定）：0~2s 绿 / 2~4s 蓝 / 4~6s 粉 / 6~10s 黄 /
-  // ≥10s 红（红档无上限，覆盖 10~15s 及以上）。
-  const tier = ms < 2000 ? 'green' : ms < 4000 ? 'blue' : ms < 6000 ? 'pink' : ms < 10000 ? 'yellow' : 'red';
-  return { text: text, tier: tier };
+  return { text: hsBadgeText(ms), tier: hsTierOf(ms) };
 }
 // 在线率五档：≥80% 绿、≥60% 蓝、≥40% 粉、≥20% 黄、以下红；底色取主题色
 //（双主题各一套）。代理下拉框（eg-badge/eg-rate）与代理池页健康表
@@ -6707,11 +6712,27 @@ async function loadProxyPool() {
 let ppHsSort = 0;
 function ppHsSortToggle() {
   ppHsSort = (ppHsSort + 1) % 3;
+  ppTestSort = 0; // 单列排序互斥：切到本列时清掉测试延迟列的状态与箭头
+  const other = _('ppTestSortMark');
+  if (other) other.textContent = '';
   const mark = _('ppHsSortMark');
   if (mark) mark.textContent = ppHsSort === 1 ? ' ▲' : ppHsSort === 2 ? ' ▼' : '';
   // 与 loadProxyPool 同口径：只渲染后端池内代理的行——Object.values 会把
   // localStorage 里的孤儿行（已出池/键已变的代理）也带上，点它们的按钮
   // 后端 404（proxy not in pool），表现同样是"点了没反应"。
+  renderProxyHealth(proxyHealthPoolRows());
+}
+// ppTestSort 测试延迟列排序状态：与 ppHsSort 同构（0=默认 1=升序 2=降序），
+// 两个排序互斥——同一时刻只有一列生效。
+let ppTestSort = 0;
+function ppTestSortToggle() {
+  ppTestSort = (ppTestSort + 1) % 3;
+  ppHsSort = 0;
+  const other = _('ppHsSortMark');
+  if (other) other.textContent = '';
+  const mark = _('ppTestSortMark');
+  if (mark) mark.textContent = ppTestSort === 1 ? ' ▲' : ppTestSort === 2 ? ' ▼' : '';
+  // 与 loadProxyPool 同口径：只渲染后端池内代理的行（孤儿行排除，见上）。
   renderProxyHealth(proxyHealthPoolRows());
 }
 function renderProxyHealth(rowsIn) {
@@ -6728,6 +6749,18 @@ function renderProxyHealth(rowsIn) {
       if (nb) return -1;
       return ppHsSort === 1 ? a.avgHsMs - b.avgHsMs : b.avgHsMs - a.avgHsMs;
     });
+  } else if (ppTestSort) {
+    // 测试延迟列排序：与平均握手延迟同构。键取成功测试的 minMs；无测试/
+    // 失败/测试中一律视为无样本恒排最后。
+    const key = r => (r.test && r.test.ok && typeof r.test.minMs === 'number') ? r.test.minMs : null;
+    rows = rowsIn.slice().sort((a, b) => {
+      const ka = key(a), kb = key(b);
+      const na = ka === null, nb = kb === null;
+      if (na && nb) return 0;
+      if (na) return 1;
+      if (nb) return -1;
+      return ppTestSort === 1 ? ka - kb : kb - ka;
+    });
   }
   tb.innerHTML = rows.length
     ? rows.map(r => {
@@ -6741,19 +6774,22 @@ function renderProxyHealth(rowsIn) {
         // 代理健康表是**全局视图**：只反映出口本身的成败，不混入平台级冷却
         // （平台级冷却只在对应平台页的绑定徽章上以 ∞ 表达，2026-10-30 用户定）。
         const rec = pct(r.recentRate);
-        // Avg HS：成功尝试的平均握手延迟（ms），无样本显示 -。
+        // Avg HS：成功尝试的平均握手延迟（ms），无样本显示 -。上色用凭据表
+        // 代理徽标同款五档（hsTierOf/hsBadgeText，2026-11-14 用户定）——
+        // 精确 ms 进列头悬浮提示，徽章文本与凭据表同款（1865ms→1.8s）。
         const hs = (r.avgHsMs === null || r.avgHsMs === undefined)
           ? '<span style="color:var(--text3)">-</span>'
-          : '<span class="mono" style="font-size:11px">' + Math.round(r.avgHsMs) + ' ms</span>';
+          : '<span class="pp-rate t-' + hsTierOf(r.avgHsMs) + ' w3">' + hsBadgeText(Math.round(r.avgHsMs)) + '</span>';
         // Test：最近一次手动延迟测试（proxy_probe 后端，min 为主要读数，
         // 中位数/样本数/时间进悬浮提示）。测试进行中显示 …，失败显示红字。
+        // 成功值上色：与握手延迟列同款五档徽章（凭据表代理徽标口径）。
         const t = r.test;
         const testCell = r.testing
           ? '<span class="mono" style="font-size:11px;color:var(--text3)">…</span>'
           : !t
             ? '<span style="color:var(--text3)">-</span>'
             : t.ok
-              ? '<span class="mono" style="font-size:11px" title="' + esc(t.minMs + ' / ' + t.medianMs + ' ms · ' + (t.samples || 0) + '/' + PP_TEST_SAMPLES + ' · ' + fmtWhen(t.at)) + '">' + esc(t.minMs) + ' ms</span>'
+              ? '<span class="pp-rate t-' + hsTierOf(t.minMs) + ' w3" title="' + esc(t.minMs + ' / ' + t.medianMs + ' ms · ' + (t.samples || 0) + '/' + PP_TEST_SAMPLES + ' · ' + fmtWhen(t.at)) + '">' + hsBadgeText(t.minMs) + '</span>'
               : '<span style="font-size:11px;color:var(--danger,#ef4444)" title="' + esc(t.err || '') + '">' + T('failed_3') + '</span>';
         const failTitle = r.lastErr ? ' title="' + esc(r.lastErr) + '"' : '';
         return '<tr>' +
