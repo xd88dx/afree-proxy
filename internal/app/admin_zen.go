@@ -58,7 +58,6 @@ func zenConfigPayload() map[string]any {
 		"egress":                  zenEgressSnapshot(),
 		"orgID":                   cfg.OrgID,
 		"toolFilter":              cfg.ToolFilter,
-		"sessionRotateMinutes":    cfg.SessionRotateMinutes,
 		"runtime": map[string]any{
 			"proxyCooldowns": proxyCooldownStatus(),
 			"proxyHealth":    proxyHealthSnapshot(),

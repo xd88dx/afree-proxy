@@ -361,9 +361,9 @@ type zenConfigData struct {
 	// 截断过长描述；gate 占位工具永不参与过滤。背景与实测数据见
 	// zen_toolfilter.go 顶部注释（tools 占 ZCode 单请求 82% 体积）。
 	ToolFilter zenToolFilterConfig `json:"toolFilter"`
-	// SessionRotateMinutes 粘性会话本地轮换周期（分钟），默认 120（2 小时）。
-	// 0 = 永不轮换（沿用旧行为，长跑后首个请求会因会话老化而变慢）。
-	SessionRotateMinutes int `json:"sessionRotateMinutes"`
+	// SessionRotateMinutes 已删除（2026-11-15 死配置清理）：后台粘性会话
+	// rotator 已废弃（2026-11-08 随 a8fe356 吸收上游移除），旧 config 键经
+	// JSON 未知字段自然忽略。
 	// PinProxyPerKey 每个 key/账号固定一个出口代理（默认 true）。指针类型：
 	// nil = 旧配置文件没有该键 → 按默认开启处理（见 pinProxyPerKeyEnabled）。
 	// 关闭后恢复按请求轮转（zen 按 key 的 IP 指纹会重新出现，仅排障用）。

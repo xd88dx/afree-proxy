@@ -128,7 +128,9 @@ wb vendored 树手工改动（2026-11-12/13，re-vendor 时按 ours 保留，承
 
 wb vendor 补丁登记（2026-11-15 完成，历史踩雷记录留档）：活树 vendor 相对基线（源树 HEAD `10d01b4`，2026-11-14 同步）存在大量 afree 历史补丁（config.go 的 Strategy/AccountOrder、livecfg 热字段、panel（app.js/index.go/login.go/mobile.css|js）、auth、usage、多个 `*_test.go` 等 86 文件），曾从未写入 vendor 脚本——**直接跑 `vendor_workbuddy.py` 会把它们全部冲成上游版本**（2026-11-15 踩雷一次，git 回滚救回）。**已全量登记**：86 个补丁文件（修改+新增）整文件进 `PRESERVE_RELATIVE`（dry-run 对基线 diff 全量盘点，逐锚点登记不现实——补丁密度高、漂移风险大，整文件保留与 textcall.go 既有模式一致）；`upstream/dns_test.go`（基线有、活树有意不纳入）进 `SKIP_UPSTREAM_FILES` 拷贝跳过；`config/config.go`+`config_test.go` 的特殊拷贝段加了 PRESERVE 尊重（此前 PRESERVE 写回会被该段的上游拷贝二次覆盖——验证 dry-run `differing: []` 时抓到）。**验证方法**：`main(target_root='.tmp/vendor-dry', preserve_from='internal/workbuddy')` 三参齐备（PRESERVE 字节从 preserve_from 读，不传则为空）后与活树逐字节比对，判据 `differing: []`。上游更新这些文件仍走 `sync_workbuddy.py` 三方合并手工吸收。
 
-已废弃、不要从上游恢复：后台 key rotator（`SessionRotateMinutes` 2026-11-08 随 a8fe356 吸收，见 MERGE 台账）、`ZEN_KEYS`（Go 源码从不读取）、上游 README 的 compose 配置段。
+已废弃、不要从上游恢复：后台 key rotator（`SessionRotateMinutes` 2026-11-08 随 a8fe356 吸收，见 MERGE 台账；**字段与透出点 2026-11-15 彻底删除**——GET `/opencode/config` 不再回显，旧 config 键经 JSON 未知字段忽略）、`ZEN_KEYS`（Go 源码从不读取）、上游 README 的 compose 配置段。
+
+WB vendored config 三节死配置删除（2026-11-15，探测结论见会话）：`alerting`（notifier 装配在上游 cmd/server/main.go，afree 无该入口）、`watchdog`（同 alerting）、`update`（原生自更新容器部署 CanInstall 恒 false，afree 从未装配 updater——panel.Config.Updater=nil，update 路由空转）。三节字段+normalizeAlerting/isClockTime/WB2A_ALERTING_* env 映射一并删除；旧 config 文件的对应键经 JSON 未知字段自然忽略，下次面板保存落盘后消失。上游更新这些节时**不走 PRESERVE 恢复**——除非 afree 补齐装配入口（接线 notifier/watchdog/update 前先恢复字段）。
 
 上游功能但**必须由本仓 app 层装配**才生效（2026-10-28 起）：workbuddy 的网关思考档位策略（上游 `thinking` 配置节）。装配点三处，漏任一处都不会报错、只是功能静默失效——`internal/app/workbuddy.go`（启动）与 `internal/app/workbuddy_config.go`（热更新）里的 `up.SetEffortPolicy(effortPolicyOf(cfg))`、`livecfg.Snapshot` 的五个 `Thinking*` 镜像字段、面板四个控件（`thinking.enabled` / `default_effort` / `client_priority` / `override_scope`）。上游同类装配在 `cmd/server/main.go`，本仓没有那个入口。
 

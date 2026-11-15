@@ -6,7 +6,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -40,24 +39,10 @@ type Config struct {
 		PollIntervalSec int `json:"poll_interval_sec"`
 	} `json:"panel"`
 
-	Update struct {
-		// AutoEnabled 每日按上海时间自动检查并安装原生 Release。
-		AutoEnabled bool `json:"auto_enabled"`
-		// AutoTime 自动更新时间，格式 HH:MM（Asia/Shanghai）。
-		AutoTime string `json:"auto_time"`
-		// Proxy 更新走哪个出口（issue #198，可热生效）：空 = 不显式设置；
-		// 支持 http:// / https:// / socks5://。出站被墙、api.github.com 通而
-		// release-assets 不通时填这里（或 mirror）。
-		Proxy string `json:"proxy"`
-		// ProxyFromEnv 是否沿用进程环境变量里的 HTTP(S)_PROXY（默认 true）。
-		// 设为 false 时只看 proxy 字段——容器里环境变量被别处塞了值、但更新
-		// 需要走另一条通道时用。
-		ProxyFromEnv *bool `json:"proxy_from_env"`
-		// Mirror 资产下载镜像前缀（issue #198），例如 https://ghfast.top/。
-		// 只作用于**资产下载**：Release 元数据（tag/digest/size）永远直连
-		// api.github.com，校验口径不变，镜像无法投毒。空 = 直连。
-		Mirror string `json:"mirror"`
-	} `json:"update"`
+	// Update 节已删除（2026-11-15 死配置清理）：原生自更新在容器部署下
+	// CanInstall() 恒 false（能力死），afree 也从未装配 updater（panel
+	// update 路由 p.cfg.Updater=nil 空转）。旧 config 文件里的 update 键
+	// 经 JSON 未知字段自然忽略。
 
 	Accounts struct {
 		// ReloadInterval 账号目录热重载轮询间隔（issue #199）。空 = 默认 10s；
@@ -543,28 +528,9 @@ type Config struct {
 	Metrics struct {
 		Enabled bool `json:"enabled"`
 	} `json:"metrics"`
-	Alerting struct {
-		Enabled             bool   `json:"enabled"`
-		WebhookURL          string `json:"webhook_url"`
-		Secret              string `json:"secret"`
-		IntervalSeconds     int    `json:"interval_seconds"`
-		TimeoutSeconds      int    `json:"timeout_seconds"`
-		StartupGraceSeconds int    `json:"startup_grace_seconds"`
-		MinHealthyCN        int    `json:"min_healthy_cn"`
-		MinHealthyGlobal    int    `json:"min_healthy_global"`
-		RecoverHealthy      int    `json:"recover_healthy"`
-		BreakerThreshold    int    `json:"breaker_threshold"`
-		ForTicks            int    `json:"for_ticks"`
-		ClearTicks          int    `json:"clear_ticks"`
-		SendResolve         bool   `json:"send_resolve"`
-	} `json:"alerting"`
-
-	// Watchdog 上游目录改版监控：定期对 /v1/models 结果取指纹，变了经告警 webhook 通知。
-	// 默认关闭——它只在「想第一时间知道上游改了目录」时有价值，开了才有轮询成本。
-	Watchdog struct {
-		Enabled         bool `json:"enabled"`
-		IntervalSeconds int  `json:"interval_seconds"`
-	} `json:"watchdog"`
+	// Alerting/Watchdog 两节已删除（2026-11-15 死配置清理）：notifier 与上游
+	// 目录监控装配在上游 cmd/server/main.go，afree 无该入口——字段填了也不
+	// 生效。旧 config 文件里的 alerting/watchdog 键经 JSON 未知字段自然忽略。
 	Budget struct {
 		DailyCreditLimit float64 `json:"daily_credit_limit"` // 0 = 不限
 		// BurstCreditLimit 5 分钟窗口内累计 credit 达此值即拒绝（0 = 关闭）。
@@ -619,7 +585,6 @@ func Default() *Config {
 	c.Server.MaxPayloadBytes = 64 << 20
 	c.Upstream.RestrictionHoldSeconds = 1800
 	c.Panel.PackageDetailLimit = 5
-	c.Update.AutoTime = "04:00"
 	// 账号目录热重载（issue #199）：默认 10s 轮询、连续 2 次确认才删。
 	c.Accounts.ReloadInterval = "10s"
 	c.Accounts.ReloadDeleteConfirm = 2
@@ -704,14 +669,6 @@ func Default() *Config {
 	c.SessionSticky.TTL = "30m"
 	c.SessionSticky.GCInterval = "5m"
 	c.Admin.AuditFile = "./data/admin_audit.log"
-	c.Alerting.IntervalSeconds = 30
-	c.Alerting.TimeoutSeconds = 5
-	c.Alerting.StartupGraceSeconds = 30
-	c.Alerting.MinHealthyCN = 1
-	c.Alerting.RecoverHealthy = 1
-	c.Alerting.ForTicks = 2
-	c.Alerting.ClearTicks = 2
-	c.Watchdog.IntervalSeconds = 3600 // 目录变化是低频事件，一小时一次足够
 	return c
 }
 
@@ -985,14 +942,6 @@ func applyEnv(c *Config) {
 			c.Budget.DailyCreditLimit = f
 		}
 	}
-	if v := os.Getenv("WB2A_ALERTING_ENABLED"); v != "" {
-		if b, err := strconv.ParseBool(v); err == nil {
-			c.Alerting.Enabled = b
-		}
-	}
-	if v := os.Getenv("WB2A_ALERTING_WEBHOOK_URL"); v != "" {
-		c.Alerting.WebhookURL = v
-	}
 	if v := os.Getenv("WB2A_PREFER_EXPIRING"); v != "" {
 		if b, err := strconv.ParseBool(v); err == nil {
 			c.Pool.PreferExpiring = b
@@ -1039,7 +988,6 @@ func (c *Config) EnvironmentManagedFields() []string {
 		{"WB2A_ADMIN_AUDIT_FILE", "admin.audit_file", ""},
 		{"WB2A_METRICS_ENABLED", "metrics.enabled", "bool"},
 		{"WB2A_BUDGET_DAILY_CREDIT_LIMIT", "budget.daily_credit_limit", "float"},
-		{"WB2A_ALERTING_ENABLED", "alerting.enabled", "bool"}, {"WB2A_ALERTING_WEBHOOK_URL", "alerting.webhook_url", ""},
 	}
 	var out []string
 	for _, field := range fields {
@@ -1088,15 +1036,6 @@ func (c *Config) normalize() error {
 	}
 	if c.Panel.PackageDetailLimit <= 0 {
 		c.Panel.PackageDetailLimit = 5
-	}
-	if c.Watchdog.IntervalSeconds <= 0 {
-		c.Watchdog.IntervalSeconds = 3600
-	}
-	if c.Update.AutoTime == "" {
-		c.Update.AutoTime = "04:00"
-	}
-	if !isClockTime(c.Update.AutoTime) {
-		return fmt.Errorf("update.auto_time: %q 不是合法时间（HH:MM，按上海时间）", c.Update.AutoTime)
 	}
 	// PollIntervalSec 不做回落：0 = 缺省（前端 5s），负数 = 关闭自动刷新。
 	// 两者都是合法取值，normalize 必须原样保留（回落会把「关闭」变成「5 秒」）。
@@ -1405,10 +1344,6 @@ func (c *Config) normalize() error {
 	default:
 		return fmt.Errorf("features.sanitize_brand_scope: %q 非法（all = 所有消息角色；identity = 仅 system/developer）", c.Features.SanitizeBrandScope)
 	}
-	if err := c.normalizeAlerting(); err != nil {
-		return err
-
-	}
 	// 余额后台刷新：启用时 minutes<=0 回落默认 5；关闭时 interval 保持 0（不启动）。
 	if c.Schedule.BalanceRefreshEnabled {
 		if c.Schedule.BalanceRefreshMinutes <= 0 {
@@ -1536,58 +1471,3 @@ func checkHourRange(field, switchKey string, hours []int) error {
 	return nil
 }
 
-func isClockTime(value string) bool {
-	if len(value) != 5 || value[2] != ':' {
-		return false
-	}
-	for _, i := range []int{0, 1, 3, 4} {
-		if value[i] < '0' || value[i] > '9' {
-			return false
-		}
-	}
-	hour, errH := strconv.Atoi(value[:2])
-	minute, errM := strconv.Atoi(value[3:])
-	return errH == nil && errM == nil && hour >= 0 && hour <= 23 && minute >= 0 && minute <= 59
-}
-
-func (c *Config) normalizeAlerting() error {
-	a := &c.Alerting
-	if a.IntervalSeconds < 0 || a.TimeoutSeconds < 0 || a.StartupGraceSeconds < 0 ||
-		a.MinHealthyCN < 0 || a.MinHealthyGlobal < 0 || a.RecoverHealthy < 0 ||
-		a.BreakerThreshold < 0 || a.ForTicks < 0 || a.ClearTicks < 0 {
-		return fmt.Errorf("alerting: 数值不得为负")
-	}
-	if a.IntervalSeconds == 0 {
-		a.IntervalSeconds = 30
-	}
-	if a.TimeoutSeconds == 0 {
-		a.TimeoutSeconds = 5
-	}
-	if a.StartupGraceSeconds == 0 {
-		a.StartupGraceSeconds = 30
-	}
-	if a.ForTicks == 0 {
-		a.ForTicks = 2
-	}
-	if a.ClearTicks == 0 {
-		a.ClearTicks = 2
-	}
-	if a.RecoverHealthy == 0 {
-		a.RecoverHealthy = 1
-	}
-	if !a.Enabled {
-		return nil
-	}
-	raw := strings.TrimSpace(a.WebhookURL)
-	if raw == "" {
-		return fmt.Errorf("alerting.enabled=true 但 alerting.webhook_url 为空")
-	}
-	u, err := url.Parse(raw)
-	if err != nil {
-		return fmt.Errorf("alerting.webhook_url: %w", err)
-	}
-	if (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
-		return fmt.Errorf("alerting.webhook_url: 需要 http(s) 地址")
-	}
-	return nil
-}

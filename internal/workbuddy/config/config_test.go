@@ -23,27 +23,10 @@ func TestDefault(t *testing.T) {
 	if c.SoftRateDur.Seconds() != 600 {
 		t.Errorf("soft=%v want 600s", c.SoftRateDur)
 	}
-	if c.Update.AutoEnabled {
-		t.Error("update.auto_enabled default should be false")
-	}
-	if c.Update.AutoTime != "04:00" {
-		t.Errorf("update.auto_time=%q want 04:00", c.Update.AutoTime)
-	}
 }
 
-func TestUpdateAutoTimeValidation(t *testing.T) {
-	for _, value := range []string{"4:00", "+0:00", "24:00", "12:60", "noon"} {
-		if _, err := ParseConfig([]byte(`{"update":{"auto_time":"` + value + `"}}`)); err == nil {
-			t.Fatalf("auto_time %q should be rejected", value)
-		}
-	}
-	for _, value := range []string{"00:00", "04:00", "23:59"} {
-		c, err := ParseConfig([]byte(`{"update":{"auto_time":"` + value + `"}}`))
-		if err != nil || c.Update.AutoTime != value {
-			t.Fatalf("auto_time %q parse failed: cfg=%+v err=%v", value, c, err)
-		}
-	}
-}
+// update 节已删除（2026-11-15 死配置清理）：原生自更新容器部署恒不可用，
+// afree 从未装配 updater；旧文件的 update 键经 JSON 未知字段自然忽略。
 
 // TestPanelPollInterval 面板自动刷新间隔：0 = 缺省、负数 = 关闭自动刷新。
 // normalize **不得**把负数回落成 0（那会把「关闭」变成「5 秒」）。
