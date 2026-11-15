@@ -126,6 +126,18 @@ func loadProxyConfigFileLocked() *proxyConfigFileData {
 		if f.Strategy == "" {
 			f.Strategy = "round_robin"
 		}
+		// trae2apiModelRateFilter 单值迁移（2026-11-15，与 WB 的
+		// migrateModelRateFilterSplit 同语义）：单值非零且两域均未显式配置时，
+		// 迁入两域并清除单值（一次性，migrate 发生才写回）。读取兜底分支保留
+		// 兼容旧备份导入（导入后首读即迁移，之后文件与内存均无单值）。
+		if f.Trae2apiModelRateFilter != 0 && f.Trae2apiModelRateFilterCN == nil && f.Trae2apiModelRateFilterIntl == nil {
+			v := f.Trae2apiModelRateFilter
+			f.Trae2apiModelRateFilterCN = &v
+			f.Trae2apiModelRateFilterIntl = &v
+			f.Trae2apiModelRateFilter = 0
+			saveProxyConfigFileLocked(&f)
+			log.Printf("proxy config: trae2apiModelRateFilter 单值已迁移到 CN/Intl 两域（%.2f）", v)
+		}
 		return &f
 	}
 	if !os.IsNotExist(err) {
