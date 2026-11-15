@@ -58,7 +58,6 @@ func TestPlatformOfModel(t *testing.T) {
 		"global:default-model":                  platWorkBuddy,
 		"zen:glm-5.3-flash-free":                platZen,
 		"cline-free/muse-spark-1.3-contributor": platCline,
-		"amd:Qwen3.8":                           platAMD,
 		"oprt:vendor/model":                     platOpenRouter,
 		"tkhb:deepseek:free":                    platTokenHarbor,
 		"tacn:glm-5.2":                          platTrae,
@@ -497,26 +496,26 @@ func TestImportModelBlacklistMerges(t *testing.T) {
 	resetModelBlacklistForTest(t)
 
 	// 本机已有两条：旧记录 + 新记录。
-	old := &modelBlacklistEntry{Platform: platAMD, Model: "amd:GLM-5.3-Flash",
+	old := &modelBlacklistEntry{Platform: platOpenRouter, Model: "oprt:GLM-5.3-Flash",
 		Reason: BanReasonManual, CreatedAt: time.Date(2026, 10, 27, 14, 10, 16, 0, time.UTC)}
-	recent := &modelBlacklistEntry{Platform: platAMD, Model: "amd:MiMo-V2.6-Flash",
+	recent := &modelBlacklistEntry{Platform: platOpenRouter, Model: "oprt:MiMo-V2.6-Flash",
 		Reason: BanReasonManual, CreatedAt: time.Date(2026, 11, 4, 23, 16, 18, 0, time.UTC)}
 	modelBlacklistMu.Lock()
 	modelBlacklistItems = map[string]*modelBlacklistEntry{
-		blacklistKey(platAMD, "amd:GLM-5.3-Flash"):   old,
-		blacklistKey(platAMD, "amd:MiMo-V2.6-Flash"): recent,
+		blacklistKey(platOpenRouter, "oprt:GLM-5.3-Flash"):   old,
+		blacklistKey(platOpenRouter, "oprt:MiMo-V2.6-Flash"): recent,
 	}
 	modelBlacklistMu.Unlock()
 
 	// 备份带三条：GLM 同 key 但更旧（应被本机新记录保留）、MiMo 同 key 且更
 	// 新（应覆盖本机）、wbgb 为备份新增（应吸收）。
 	in := map[string]*modelBlacklistEntry{
-		blacklistKey(platAMD, "amd:GLM-5.3-Flash"): {
-			Platform: platAMD, Model: "amd:GLM-5.3-Flash", Reason: BanReasonManual,
+		blacklistKey(platOpenRouter, "oprt:GLM-5.3-Flash"): {
+			Platform: platOpenRouter, Model: "oprt:GLM-5.3-Flash", Reason: BanReasonManual,
 			CreatedAt: time.Date(2026, 10, 27, 14, 10, 16, 0, time.UTC).Add(-time.Hour),
 		},
-		blacklistKey(platAMD, "amd:MiMo-V2.6-Flash"): {
-			Platform: platAMD, Model: "amd:MiMo-V2.6-Flash", Reason: BanReasonManual,
+		blacklistKey(platOpenRouter, "oprt:MiMo-V2.6-Flash"): {
+			Platform: platOpenRouter, Model: "oprt:MiMo-V2.6-Flash", Reason: BanReasonManual,
 			CreatedAt: recent.CreatedAt.Add(time.Hour),
 		},
 		blacklistKey(platWorkBuddy, "wbgb:gpt-6-luna"): {
@@ -529,16 +528,16 @@ func TestImportModelBlacklistMerges(t *testing.T) {
 	if len(modelBlacklistItems) != 3 {
 		t.Fatalf("merged list = %d entries, want 3", len(modelBlacklistItems))
 	}
-	if got := modelBlacklistItems[blacklistKey(platAMD, "amd:GLM-5.3-Flash")]; got != old {
+	if got := modelBlacklistItems[blacklistKey(platOpenRouter, "oprt:GLM-5.3-Flash")]; got != old {
 		t.Fatal("local-only-newer GLM entry must survive an older backup record")
 	}
-	if got := modelBlacklistItems[blacklistKey(platAMD, "amd:MiMo-V2.6-Flash")]; got == recent {
+	if got := modelBlacklistItems[blacklistKey(platOpenRouter, "oprt:MiMo-V2.6-Flash")]; got == recent {
 		t.Fatal("backup's newer MiMo record must replace the local older one")
 	}
 	if got := modelBlacklistItems[blacklistKey(platWorkBuddy, "wbgb:gpt-6-luna")]; got == nil {
 		t.Fatal("backup-only wbgb entry must be absorbed")
 	}
-	if !IsModelBlacklisted("amd:GLM-5.3-Flash") || !IsModelBlacklisted("wbgb:gpt-6-luna") {
+	if !IsModelBlacklisted("oprt:GLM-5.3-Flash") || !IsModelBlacklisted("wbgb:gpt-6-luna") {
 		t.Fatal("all merged entries must be enforceable")
 	}
 }

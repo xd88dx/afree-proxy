@@ -44,7 +44,6 @@ type proxyConfigFileData struct {
 	// 这些开关属于代理域（代理池页的下拉），所以跟池本体放同一个文件，
 	// 平台配置文件不再持有它们。
 	ClineUseProxies     *bool `json:"clineUseProxies,omitempty"`
-	AmdUseProxies       *bool `json:"amdUseProxies,omitempty"`
 	OprtUseProxies      *bool `json:"oprtUseProxies,omitempty"`
 	TkhbUseProxies      *bool `json:"tkhbUseProxies,omitempty"`
 	TraeUseProxies      *bool `json:"traeUseProxies,omitempty"`

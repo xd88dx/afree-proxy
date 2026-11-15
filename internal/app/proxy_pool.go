@@ -26,7 +26,6 @@ import (
 const (
 	pkCline = "cline"
 	pkZen   = "zen"
-	pkAmd   = "amd"
 	pkOr    = "or"
 	pkTh    = "th"
 	pkOther = "other"
@@ -273,7 +272,7 @@ func proxyCooldownUntil(raw string) time.Time {
 // 由调用方在每次上游尝试时显式调用 —— 请求级轮转（round_robin 一比一）,
 // 不依赖连接复用时机。
 // pickUpstreamProxyFor 全局代理池轮转选口（kind 平台视角）：冷却跳过含平台级
-// 冷却——某出口被 wb 平台冷却时，amd 的兜底轮转仍可选中它。
+// 冷却——某出口被 wb 平台冷却时，其他平台的兜底轮转仍可选中它。
 func pickUpstreamProxyFor(kind string) (string, int) {
 	cfg := getProxyPool()
 	n := len(cfg.Proxies)

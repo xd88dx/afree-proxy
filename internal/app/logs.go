@@ -16,7 +16,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"afree-proxy/internal/amd"
 	"afree-proxy/internal/kit"
 	openrouter "afree-proxy/internal/openrouter"
 	"afree-proxy/internal/other"
@@ -32,7 +31,7 @@ type routeStat struct {
 }
 
 var (
-	routeStats    = map[string]*routeStat{"cline": {}, "zen": {}, "workbuddy": {}, "openrouter": {}, "amd": {}, "tokenharbor": {}, "trae": {}, "other": {}}
+	routeStats    = map[string]*routeStat{"cline": {}, "zen": {}, "workbuddy": {}, "openrouter": {}, "tokenharbor": {}, "trae": {}, "other": {}}
 	reqStatsStart = time.Now()
 )
 
@@ -587,8 +586,6 @@ func requestLogMiddleware(next http.Handler) http.Handler {
 			route = "workbuddy"
 		case openrouter.HasPrefix(model):
 			route = "openrouter"
-		case amd.HasPrefix(model):
-			route = "amd"
 		case tokenharbor.HasPrefix(model):
 			route = "tokenharbor"
 		case trae2apiPlatformModel(model):

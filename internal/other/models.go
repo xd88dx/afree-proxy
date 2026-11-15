@@ -35,7 +35,7 @@ func defaultCatalogClient() *http.Client { return &http.Client{Timeout: 25 * tim
 
 // catalogClientFor 一次定妥认证 key 与 HTTP client：key 与出口必须配对选取，
 // 逐个已启用 key 试出口（停用 key 等同不在池里）；全部不可用即 fail-closed，
-// 本轮同步跳过、下轮再试——绝不隐式回落直连（与 amd/tokenharbor 同口径）。
+// 本轮同步跳过、下轮再试——绝不隐式回落直连（与 tokenharbor 同口径）。
 func catalogClientFor(p *Platform, keys []string) (string, *http.Client, error) {
 	if CatalogClient != nil {
 		return keys[0], CatalogClient, nil

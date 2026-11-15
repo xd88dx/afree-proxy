@@ -10,7 +10,6 @@ import (
 	"testing"
 	"time"
 
-	"afree-proxy/internal/amd"
 	"afree-proxy/internal/openrouter"
 	"afree-proxy/internal/other"
 	wbauth "afree-proxy/internal/workbuddy/auth"
@@ -92,7 +91,7 @@ func TestConfigImportDisablesAllIdentities(t *testing.T) {
 
 // TestConfigImportKeepEnabled 导入弹窗"沿用启用状态"（KeepEnabled）：勾选的
 // 平台保留备份内原状态，未勾选的仍走隔离护栏全部禁用。key 口径与前端对齐：
-// cline / zen / oprt / amd / tkhb / wb / "other:<slug>"。
+// cline / zen / oprt / tkhb / wb / "other:<slug>"。
 func TestConfigImportKeepEnabled(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv("DATA_DIR", tmp)
@@ -186,59 +185,8 @@ func TestConfigBackupVersionOK(t *testing.T) {
 	}
 }
 
-// AMDCloud 备份段名 amd → amdcloud（随平台改名同步）。本项目无存量备份文件，
-// 不保留旧键兼容：段名若再漂移，按段替换语义下旧文件会静默丢该平台配置。
-func TestConfigBackupAMDCloudSectionName(t *testing.T) {
-	t.Run("export writes amdcloud", func(t *testing.T) {
-		b := configBackup{Version: configBackupVersion, AMDCloud: &amd.Config{Keys: []string{"rc-x"}}}
-		raw, err := json.Marshal(b)
-		if err != nil {
-			t.Fatal(err)
-		}
-		var m map[string]json.RawMessage
-		if err := json.Unmarshal(raw, &m); err != nil {
-			t.Fatal(err)
-		}
-		if _, ok := m["amdcloud"]; !ok {
-			t.Error(`export must contain the "amdcloud" section`)
-		}
-	})
-
-	t.Run("import reads amdcloud into the pool", func(t *testing.T) {
-		tmp := t.TempDir()
-		t.Setenv("DATA_DIR", tmp)
-
-		savedPath, savedPool := poolPath, pool
-		poolPath = filepath.Join(tmp, "cline-config.json")
-		pool = nil
-		defer func() { poolPath, pool = savedPath, savedPool }()
-
-		savedCombos, savedCombosLoaded := combosList, combosLoaded
-		defer func() { combosList, combosLoaded = savedCombos, savedCombosLoaded }()
-
-		amd.Load(filepath.Join(tmp, "amd.json"))
-
-		body := `{"version":3,"amdcloud":{"keys":["rc-new"],"keyRoutingEnabled":{"rc-new":true}}}`
-		req := httptest.NewRequest("POST", "/admin/api/config/import", strings.NewReader(body))
-		rr := httptest.NewRecorder()
-		handleAdminConfigImport(rr, req)
-		if rr.Code != 200 {
-			t.Fatalf("import status = %d: %s", rr.Code, rr.Body.String())
-		}
-
-		ks := amd.Keys()
-		if len(ks) != 1 || ks[0] != "rc-new" {
-			t.Fatalf("amd pool keys = %v, want [rc-new]", ks)
-		}
-		// 导入护栏不受影响：身份一律禁用
-		if amd.RoutingEnabled("rc-new") {
-			t.Error("imported AMDCloud key must be routing-disabled")
-		}
-	})
-}
-
 func TestComboPlatformValid(t *testing.T) {
-	for _, p := range []string{"cline", "zen", "workbuddy", "openrouter", "amd", "tokenharbor"} {
+	for _, p := range []string{"cline", "zen", "workbuddy", "openrouter", "tokenharbor"} {
 		if !comboPlatformValid(p) {
 			t.Errorf("platform %q must be valid", p)
 		}

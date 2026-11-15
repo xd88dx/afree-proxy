@@ -713,7 +713,7 @@ func handleResponses(w http.ResponseWriter, r *http.Request) {
 		workbuddySub.serveResponses(w, r, chat, isStream)
 		return
 	}
-	// 前缀平台（oprt:/amd:/tkhb:/trae:/Other 子平台）：归口到平台 chat 调用器，
+	// 前缀平台（oprt:/tkhb:/trae:/Other 子平台）：归口到平台 chat 调用器，
 	// 经既有 chat→responses 转换件输出（与 zen 路径同一套协议转换）。
 	if caller, ok := resolvePlatformChatCaller(chatModel); ok {
 		handleResponsesViaChat(w, r, chat, chatModel, isStream, caller)

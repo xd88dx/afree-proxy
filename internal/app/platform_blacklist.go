@@ -9,7 +9,6 @@ import (
 	"sync"
 	"time"
 
-	"afree-proxy/internal/amd"
 	"afree-proxy/internal/openrouter"
 	"afree-proxy/internal/other"
 	"afree-proxy/internal/tokenharbor"
@@ -29,7 +28,7 @@ import (
 //     平台封禁只断会话路由）。平台页面/模型目录照常显示，便于解封后恢复。
 //
 // 落盘 DATA_DIR/.platform-blacklist.json：低频管理操作，即时落盘。
-// 封禁键 = 模型黑名单的 platform 维度：cline / zen / workbuddy / amd /
+// 封禁键 = 模型黑名单的 platform 维度：cline / zen / workbuddy /
 // openrouter / tokenharbor / other:<slug>（Other 细化到子平台）。
 // ============================================================================
 
@@ -81,7 +80,7 @@ func flushPlatformBan() {
 // （other:<slug>）。未知键拒绝——拼写错误静默入库等于封了个寂寞。
 func platformBanKeyValid(key string) bool {
 	switch key {
-	case platCline, platZen, platWorkBuddy, platAMD, platOpenRouter, platTokenHarbor, platTrae:
+	case platCline, platZen, platWorkBuddy, platOpenRouter, platTokenHarbor, platTrae:
 		return true
 	}
 	if slug, ok := strings.CutPrefix(key, "other:"); ok && slug != "" {
@@ -217,8 +216,6 @@ func routePlatformKeyOf(model string) string {
 		return platWorkBuddy
 	case strings.HasPrefix(model, "zen:"):
 		return platZen
-	case strings.HasPrefix(model, amd.ModelPrefix):
-		return platAMD
 	case strings.HasPrefix(model, openrouter.ModelPrefix):
 		return platOpenRouter
 	case strings.HasPrefix(model, tokenharbor.ModelPrefix):

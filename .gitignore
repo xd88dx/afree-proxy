@@ -17,7 +17,6 @@ proxy-config.json
 cline-config.json
 zen-config.json
 trae-config.json
-amd-config.json
 oprt-config.json
 tkhb-config.json
 other-config.json
@@ -30,7 +29,6 @@ workbuddy-config.json
 .zen-sessions.json
 .zen-model-aliases.json
 .zen-endpoints.json
-.amd-config.json
 .or-config.json
 .th-config.json
 .trae-config.json

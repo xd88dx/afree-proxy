@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"testing"
 
-	"afree-proxy/internal/amd"
 	"afree-proxy/internal/openrouter"
 	"afree-proxy/internal/other"
 	"afree-proxy/internal/tokenharbor"
@@ -22,7 +21,6 @@ func TestUpstreamErrorStatusPasses429(t *testing.T) {
 		err  error
 		want int
 	}{
-		{"amd 429", &amd.HTTPError{Status: 429, Body: "rate limited"}, http.StatusTooManyRequests},
 		{"openrouter 429", &openrouter.HTTPError{Status: 429}, http.StatusTooManyRequests},
 		{"tokenharbor 429", &tokenharbor.HTTPError{Status: 429}, http.StatusTooManyRequests},
 		{"other 429", &other.HTTPError{Status: 429, RateLimited: true}, http.StatusTooManyRequests},
@@ -31,7 +29,6 @@ func TestUpstreamErrorStatusPasses429(t *testing.T) {
 		{"跨端点 429", &upstreamHTTPError{Status: 429, Body: "slow down"}, http.StatusTooManyRequests},
 		{"包装后的 429", wrapped429{}, http.StatusTooManyRequests},
 		// 非 429 一律走 fallback(既有语义不变)
-		{"amd 401", &amd.HTTPError{Status: 401}, fallback},
 		{"other 503", &other.HTTPError{Status: 503}, fallback},
 		{"cline 403", &clineAPIError{Status: 403}, fallback},
 		{"普通错误", errors.New("dial tcp: connection refused"), fallback},

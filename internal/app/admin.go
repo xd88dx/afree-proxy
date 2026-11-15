@@ -200,17 +200,6 @@ func registerAdminRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/admin/api/trae/helper/status", adminCORS(auth(handleTraeHelperStatus)))
 	mux.HandleFunc("/admin/api/trae/checkin", adminCORS(auth(handleTraeCheckin)))
 	mux.HandleFunc("/admin/api/trae/credits/refresh", adminCORS(auth(handleTraeCreditsRefresh)))
-	// AMDCloud 平台（key 池，amd: 前缀）：配置/模型/key 管理/测试/代理绑定
-	mux.HandleFunc("/admin/api/amd/config", adminCORS(auth(handleAMDConfig)))
-	mux.HandleFunc("/admin/api/amd/config/update", adminCORS(auth(handleAMDConfigUpdate)))
-	mux.HandleFunc("/admin/api/amd/models/refresh", adminCORS(auth(handleAMDModelsRefresh)))
-	mux.HandleFunc("/admin/api/amd/keys/routing", adminCORS(auth(handleAMDKeySetRouting)))
-	mux.HandleFunc("/admin/api/amd/keys/routing/all", adminCORS(auth(handleAMDKeySetRoutingAll)))
-	mux.HandleFunc("/admin/api/amd/keys/reorder", adminCORS(auth(handleAMDKeysReorder)))
-	mux.HandleFunc("/admin/api/amd/keys/delete", adminCORS(auth(handleAMDKeyDelete)))
-	mux.HandleFunc("/admin/api/amd/keys/test", adminCORS(auth(handleAMDKeyTest)))
-	mux.HandleFunc("/admin/api/amd/keys/proxy", adminCORS(auth(handleAMDKeySetProxy)))
-	mux.HandleFunc("/admin/api/amd/keys/proxy/clear", adminCORS(auth(handleAMDKeyClearProxies)))
 	// TokenHarbor 平台（key 池，tkhb: 前缀）：配置/模型/key 管理/测试/代理绑定
 	mux.HandleFunc("/admin/api/tokenharbor/config", adminCORS(auth(handleTHConfig)))
 	mux.HandleFunc("/admin/api/tokenharbor/config/update", adminCORS(auth(handleTHConfigUpdate)))
@@ -1462,7 +1451,7 @@ func handleAdminModels(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ensureModelsFresh()
-	// 展示门控（2026-10-27 与 AMD/zen 等平台统一）：没有任何启用账号时不
+	// 展示门控（2026-10-27 与各平台统一）：没有任何启用账号时不
 	// 对外提供模型目录——列出来也调不通。credentialsEnabled 供前端区分
 	// 「无凭据」（引导启用账号）与「目录为空」两种空态。
 	credentialsEnabled := platformHasRoutableCredential(platCline)
@@ -1492,7 +1481,7 @@ func handleAdminModelsRefresh(w http.ResponseWriter, r *http.Request) {
 		writeAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
 		return
 	}
-	// 与 AMD/zen 同口径：无启用账号时拒绝同步并给出提示（目录此时也不展示，
+	// 与 zen 同口径：无启用账号时拒绝同步并给出提示（目录此时也不展示，
 	// 同步无意义）。
 	if !platformHasRoutableCredential(platCline) {
 		writeCatalogNoCredential(w, platCline)

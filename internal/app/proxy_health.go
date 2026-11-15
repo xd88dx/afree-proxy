@@ -12,7 +12,6 @@ import (
 	"sync"
 	"time"
 
-	"afree-proxy/internal/amd"
 	"afree-proxy/internal/cline"
 	"afree-proxy/internal/kit"
 	"afree-proxy/internal/openrouter"
@@ -271,10 +270,6 @@ func isTransportLayerFailure(err error) bool {
 	if errors.As(err, &tre) {
 		return false
 	}
-	var ae *amd.HTTPError
-	if errors.As(err, &ae) {
-		return false
-	}
 	var oe *openrouter.HTTPError
 	if errors.As(err, &oe) {
 		return false
@@ -344,7 +339,7 @@ type proxyHealthFile struct {
 // proxyHealthPath 独立健康统计文件（使用痕迹，不进配置监测集合）。
 func proxyHealthPath() string { return kit.ResolveDataPath("proxy-state.json") }
 
-// recordProxyOutcome 记一次出口成败。kind 为平台标识（cline/zen/amd/or/th/
+// recordProxyOutcome 记一次出口成败。kind 为平台标识（cline/zen/or/th/
 // other/trae/wb，见各调用点），决定平台级冷却的作用范围。proxyURL 为空 = 直连
 // 出口，不是代理，不记。err 非空且源自 context 取消/截止（客户端放弃）时同样
 // 不记 —— 与现有冷却判据的"ctx 取消不冷却"口径一致。

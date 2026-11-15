@@ -44,7 +44,7 @@ func initOpenRouter() {
 		return url, ok
 	})
 	openrouter.SetClientProvider(proxyClientFor)
-	// 出口成败/握手延迟回传（同 AMDCloud：此前无任何观测钩子）。
+	// 出口成败/握手延迟回传（key 池平台此前无任何观测钩子）。
 	openrouter.SetProxyObserver(func(u string, ok bool, e error, ms int64) {
 		recordProxyOutcome(pkOr, u, ok, e, ms)
 	})
@@ -98,7 +98,7 @@ func startOrModelsRefresher() {
 // syncOrCatalog 同步目录；attempts 为额外重试次数（不含首次）。
 //
 // 返回最后一次错误（全部重试失败时）——2026-10-31：此前错误在此静默吞掉，
-// 手动刷新端点照样报「synced, 0 free models」，与 amd 同款问题。后台同步
+// 手动刷新端点照样报「synced, 0 free models」。后台同步
 // 任务调用方无需改动（Go 允许忽略返回值）。
 func syncOrCatalog(attempts int) error {
 	var lastErr error
@@ -473,7 +473,7 @@ func handleOrModelsRefresh(w http.ResponseWriter, r *http.Request) {
 		writeAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
 		return
 	}
-	// 与 AMD/TokenHarbor 同口径：无启用 key 时拒绝同步并给出提示。
+	// 与 TokenHarbor 同口径：无启用 key 时拒绝同步并给出提示。
 	if !openrouter.HasEnabledKey() {
 		writeCatalogNoCredential(w, platOpenRouter)
 		return

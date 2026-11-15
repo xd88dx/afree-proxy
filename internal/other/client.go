@@ -17,7 +17,7 @@ import (
 
 // ============ 上游调用 ============
 //
-// 与 internal/amd 同构：请求体白名单透传，key 选择在平台池内轮转，出口
+// 与 internal/tokenharbor 同构：请求体白名单透传，key 选择在平台池内轮转，出口
 // （直连/代理池/绑定主备）由主包每次调用通过 exitFn 注入（闭包捕获平台，
 // 避免多平台下 key 不唯一带来的全局解析歧义）。上游限流语义：
 // 429（Retry-After）/ 401（key 失效或已轮换）。
@@ -50,7 +50,7 @@ var chatBodyKeys = []string{
 
 // BuildBody 构造 chat/completions 请求体：白名单字段透传 + model/messages/
 // max_tokens，model 改写为目标模型 ID。reasoning_effort 映射为上游
-// reasoning 字段（与 amd 同口径）。
+// reasoning 字段（与 key 池平台同口径）。
 func BuildBody(params map[string]any, modelID string, stream bool) map[string]any {
 	body := map[string]any{}
 	for _, k := range chatBodyKeys {
@@ -148,19 +148,19 @@ func httpClientFor(proxyURL string) *http.Client {
 
 // streamIdleTimeout 上游响应体流中空闲上限（kit.MonitorBody，默认 300s 同
 // workbuddy 缺省；响应头阶段由 proxyClientFor ResponseHeaderTimeout 管，两者
-// 不重叠）。测试直接改此变量缩短阈值。与 internal/amd/client.go 同构。
+// 不重叠）。测试直接改此变量缩短阈值。与 internal/tokenharbor/client.go 同构。
 var streamIdleTimeout = 300 * time.Second
 
 // Chat 发一次 chat/completions 请求（内部按配置重试：限流换 key、网络错误
 // 退避）。exitFn 给定 key 返回该次尝试的出口 URL 与是否继续（隔离模式下
-// 绑定双不可用时 ok=false）；nil = 直连。boundRoutable 同 amd 语义。
+// 绑定双不可用时 ok=false）；nil = 直连。boundRoutable 同 key 池平台语义。
 func Chat(ctx context.Context, p *Platform, params map[string]any, modelID string, stream bool, strategy string, boundRoutable func(string) bool, exitFn func(string) (string, bool)) (*http.Response, int, error) {
 	bodyJSON, err := json.Marshal(BuildBody(params, modelID, stream))
 	if err != nil {
 		return nil, 0, fmt.Errorf("marshal body: %w", err)
 	}
 	endpoint := p.BaseURL + "/chat/completions"
-	// 并发上限：拿到槽位才进入重试循环（槽位持有到本次调用返回，与 amd 同口径）
+	// 并发上限：拿到槽位才进入重试循环（槽位持有到本次调用返回，与 tokenharbor 同口径）
 	sem, ok := acquireSem(ctx, p.Slug, p.MaxConcurrency)
 	if !ok {
 		return nil, 0, fmt.Errorf("client aborted: %w", ctx.Err())
@@ -202,7 +202,7 @@ func Chat(ctx context.Context, p *Platform, params map[string]any, modelID strin
 		observeAttempt(ctx, p, key, proxyURL)
 		// attemptCtx 子上下文仅圈住本次上游调用：body 空闲监控触发 cancel 时只
 		// 打断上游读，客户端 r.Context() 原样存活——网关缓冲聚合器据此归因
-		// upstream_break 并换号重试（与 internal/amd/client.go 同构）。
+		// upstream_break 并换号重试（与 internal/tokenharbor/client.go 同构）。
 		attemptCtx, attemptCancel := context.WithCancel(ctx)
 		req, err := http.NewRequestWithContext(attemptCtx, http.MethodPost, endpoint, bytes.NewReader(bodyJSON))
 		if err != nil {
@@ -231,7 +231,7 @@ func Chat(ctx context.Context, p *Platform, params map[string]any, modelID strin
 			}
 			return nil, rateLimited, fmt.Errorf("other request: %w", err)
 		}
-		// 200 与非 200 都包流中空闲监控（kit.MonitorBody，口径 300s 同 amd）：
+		// 200 与非 200 都包流中空闲监控（kit.MonitorBody，口径 300s 同 tokenharbor）：
 		// 上游发完头后 body 永久停滞时打断阻塞读。200 返回后 attemptCancel
 		// 的所有权随 body 转移给调用方（Close 即取消）。
 		resp.Body = kit.MonitorBody(resp.Body, streamIdleTimeout, attemptCancel)

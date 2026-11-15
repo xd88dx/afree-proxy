@@ -88,11 +88,11 @@ func TestShouldCooldownExit(t *testing.T) {
 		t.Fatalf("nil error must not record a strike (scope=%q)", scope)
 	}
 
-	// ④ 平台间不凑数：wb 记了 1 次平台层失败后，amd 的同出口查询不应达阈值
+	// ④ 平台间不凑数：wb 记了 1 次平台层失败后，or 的同出口查询不应达阈值
 	dial := fmt.Errorf(`Post "https://x/v1/chat": dial tcp 10.0.0.1:443: i/o timeout`)
 	reset()
 	_ = recordExitFailure(pkWb, p, streams[0])
-	if scope, cool := shouldCooldownExit(pkAmd, p, streams[0]); cool || scope != "" {
+	if scope, cool := shouldCooldownExit(pkOr, p, streams[0]); cool || scope != "" {
 		t.Fatalf("other platform's failure must not inherit wb's strike (scope=%q cool=%v)", scope, cool)
 	}
 	// 全局层与平台层分开计数：全局层已记 1 次建连失败，不影响平台层判定

@@ -11,15 +11,14 @@ import (
 	"net/http"
 	"strings"
 
-	"afree-proxy/internal/amd"
-	openrouter "afree-proxy/internal/openrouter"
+	"afree-proxy/internal/openrouter"
 	"afree-proxy/internal/other"
 	"afree-proxy/internal/tokenharbor"
 )
 
 // ============ /v1/responses 与 /v1/messages 的全平台接入 ============
 //
-// 此前这两个端点只路由 zen/workbuddy/cline，前缀平台（oprt:/amd:/tkhb:/
+// 此前这两个端点只路由 zen/workbuddy/cline，前缀平台（oprt:/tkhb:/
 // trae:/Other 子平台）进不去。本文件把"带平台前缀的模型"统一归口到一个
 // chat 调用器：输入已归一的 OpenAI chat params，输出 OpenAI chat 形态响应
 // （流式=完整 SSE、非流式=JSON），再经既有的 chat→responses / chat→anthropic
@@ -66,20 +65,6 @@ func resolvePlatformChatCallerRaw(model string) (platformChatCall, bool) {
 			}
 			usedKey := takeUsedKey(resp)
 			return resp, func(u map[string]any) { openrouter.RecordKeyTokens(usedKey, usageTokens(u, params)) }, nil
-		}, true
-	}
-	if id, ok := amd.StripPrefix(model); ok {
-		m, resolved := amd.Resolve(id)
-		if !resolved {
-			return rejectCaller(fmt.Sprintf("model %q is not an AMDCloud model", id), false), true
-		}
-		return func(ctx context.Context, params map[string]any, stream bool) (*http.Response, func(map[string]any), error) {
-			resp, _, err := amd.Chat(ctx, params, m.ID, stream, globalStrategy(), amdBoundRoutable)
-			if err != nil {
-				return nil, nil, err
-			}
-			usedKey := takeUsedKey(resp)
-			return resp, func(u map[string]any) { amd.RecordKeyTokens(usedKey, usageTokens(u, params)) }, nil
 		}, true
 	}
 	if id, ok := tokenharbor.StripPrefix(model); ok {

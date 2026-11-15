@@ -60,7 +60,7 @@ func TestWriteUpstreamAPIErrorNormalizesOverflow(t *testing.T) {
 
 func TestWriteUpstreamAPIErrorPassesThroughOthers(t *testing.T) {
 	w := httptest.NewRecorder()
-	writeUpstreamAPIError(w, "amd:X", errors.New(`API 403: {"error":{"message":"blocked"}}`), 502)
+	writeUpstreamAPIError(w, "oprt:X", errors.New(`API 403: {"error":{"message":"blocked"}}`), 502)
 	if w.Code != 502 {
 		t.Fatalf("status = %d, want 502 (unchanged)", w.Code)
 	}

@@ -6,7 +6,6 @@ import (
 	"path/filepath"
 	"testing"
 
-	"afree-proxy/internal/amd"
 	"afree-proxy/internal/openrouter"
 	"afree-proxy/internal/tokenharbor"
 	wbauth "afree-proxy/internal/workbuddy/auth"
@@ -18,7 +17,7 @@ import (
 //
 // 背景:cline(getFreeModels 按**裸 feed ID** 升序,输出再统一加 cline-free/
 // 前缀,故输出 id 观感上非升序但顺序确定)、zen(zenModelList 末尾 sort.Slice)、
-// oprt/amd/tkhb/trae(各 ModelList 内 sort.Slice)、other(KnownModels 内
+// oprt/tkhb/trae(各 ModelList 内 sort.Slice)、other(KnownModels 内
 // sort.Slice)均已排序;唯独 WorkBuddy 段沿用上游返回序,是整条链路上唯一
 // 不确定来源。本组测试锁死该口径,防止将来回退。
 
@@ -202,14 +201,14 @@ func TestServedGateRejectsWorkbuddyImageModel(t *testing.T) {
 }
 
 // 回归护栏:各「自带排序」平台的段内顺序确实恒升序。这里直接打各段函数,
-// 不经过网络——种子快照已取消（2026-11-11，or/amd/th 同日口径），目录改用
+// 不经过网络——种子快照已取消（2026-11-11，or/th 同日口径），目录改用
 // httptest 假上游注入：各包目录真身无导出 setter，但 SyncCatalog 是导出入口，
 // 指到本地假服务器即可造态。展示门控（4e7d263）之后各段 ModelList 无启用
-// 凭据即返回空，断言会空转，所以先给三个平台各装一个可路由凭据。
+// 凭据即返回空，断言会空转，所以先给两个平台各装一个可路由凭据。
 func TestPlatformSegmentsAreIDSorted(t *testing.T) {
 	t.Setenv("DATA_DIR", testDataDir(t))
 
-	// or/amd/th：装一个启用 key + 一个假目录上游。各自保存/恢复原配置。
+	// or/th：装一个启用 key + 一个假目录上游。各自保存/恢复原配置。
 	orPrev, orPath := openrouter.Get(), openrouter.ConfigPath
 	openrouter.ConfigPath = filepath.Join(t.TempDir(), "or-config.json")
 	orc := openrouter.DefaultConfig()
@@ -226,13 +225,6 @@ func TestPlatformSegmentsAreIDSorted(t *testing.T) {
 	defer orSrv.Close()
 	orPrevOverride := openrouter.GetCatalogURLOverride()
 	openrouter.SetCatalogURLOverride(orSrv.URL)
-	amdPrev, amdPath := amd.Get(), amd.ConfigPath
-	amd.ConfigPath = filepath.Join(t.TempDir(), "amd-config.json")
-	amdc := amd.DefaultConfig()
-	amdc.Keys = []string{"rc-test"}
-	amdc.KeyRoutingEnabled = map[string]bool{"rc-test": true}
-	amdc.BaseURL = amdSrv(t).URL
-	amd.Set(amdc)
 	thPrev, thPath := tokenharbor.Get(), tokenharbor.ConfigPath
 	tokenharbor.ConfigPath = filepath.Join(t.TempDir(), "th-config.json")
 	thc := tokenharbor.DefaultConfig()
@@ -244,8 +236,6 @@ func TestPlatformSegmentsAreIDSorted(t *testing.T) {
 		openrouter.Set(orPrev)
 		openrouter.ConfigPath = orPath
 		openrouter.SetCatalogURLOverride(orPrevOverride)
-		amd.Set(amdPrev)
-		amd.ConfigPath = amdPath
 		tokenharbor.Set(thPrev)
 		tokenharbor.ConfigPath = thPath
 	})
@@ -254,13 +244,9 @@ func TestPlatformSegmentsAreIDSorted(t *testing.T) {
 	// 先 InitCatalog 把 loaded 置位（否则 ModelList 内部的 InitCatalog 会把
 	// 已同步的目录清空再异步首拉，竞态窗口里读到空段）。
 	openrouter.InitCatalog()
-	amd.InitCatalog()
 	tokenharbor.InitCatalog()
 	if _, err := openrouter.SyncCatalog(); err != nil {
 		t.Fatalf("openrouter fake catalog sync: %v", err)
-	}
-	if _, err := amd.SyncCatalog(); err != nil {
-		t.Fatalf("amd fake catalog sync: %v", err)
 	}
 	if _, err := tokenharbor.SyncCatalog(); err != nil {
 		t.Fatalf("tokenharbor fake catalog sync: %v", err)
@@ -268,7 +254,6 @@ func TestPlatformSegmentsAreIDSorted(t *testing.T) {
 
 	segs := map[string][]map[string]any{
 		"openrouter":  orModelList(),
-		"amd":         amdModelList(),
 		"tokenharbor": thModelList(),
 	}
 	for name, seg := range segs {
@@ -284,19 +269,6 @@ func TestPlatformSegmentsAreIDSorted(t *testing.T) {
 			prev = id
 		}
 	}
-}
-
-// amdSrv 假 AMDCloud 目录：乱序两条（output 留空=chat 可对话）。
-func amdSrv(t *testing.T) *httptest.Server {
-	t.Helper()
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_, _ = w.Write([]byte(`{"data":[
-			{"id":"DeepSeek-V4-Flash","name":"DeepSeek-V4-Flash","context_length":1048576,"providers":[{"tools":true}]},
-			{"id":"A/first","name":"A/first","context_length":4096}
-		]}`))
-	}))
-	t.Cleanup(srv.Close)
-	return srv
 }
 
 // thSrv 假 TokenHarbor 目录：乱序两条 :free（category=free 参数直接忽略）。

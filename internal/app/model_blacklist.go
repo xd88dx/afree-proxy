@@ -12,7 +12,6 @@ import (
 	"sync"
 	"time"
 
-	"afree-proxy/internal/amd"
 	"afree-proxy/internal/kit"
 	"afree-proxy/internal/openrouter"
 	"afree-proxy/internal/other"
@@ -60,7 +59,6 @@ const (
 	platWorkBuddy   = "workbuddy"
 	platZen         = "zen"
 	platCline       = "cline"
-	platAMD         = "amd"
 	platOpenRouter  = "openrouter"
 	platTokenHarbor = "tokenharbor"
 	platTrae        = "trae"
@@ -386,8 +384,6 @@ func platformOfModel(model string) string {
 		// cline 免费目录的对外前缀（seed/live 目录里带前缀的条目）。裸名
 		// （z-ai/glm-5.3-flash 等 live feed 直出的 ID）仍返回空串不猜。
 		return platCline
-	case strings.HasPrefix(model, amd.ModelPrefix):
-		return platAMD
 	case strings.HasPrefix(model, openrouter.ModelPrefix):
 		return platOpenRouter
 	case strings.HasPrefix(model, tokenharbor.ModelPrefix):
@@ -630,8 +626,6 @@ func platformModelIDs(platform string) []string {
 		rows = workbuddyModelEntries()
 	case platOpenRouter:
 		rows = orModelList()
-	case platAMD:
-		rows = amdModelList()
 	case platTokenHarbor:
 		rows = thModelList()
 	case platTrae:
@@ -810,14 +804,6 @@ func testBlacklistModel(ctx context.Context, platform, model string) (map[string
 			return testZenKey(k, i, bare)
 		}
 		return map[string]any{"ok": false, "model": model, "error": "no enabled zen key"}, "error"
-	case platAMD:
-		for i, k := range amd.Keys() {
-			if !amd.RoutingEnabled(k) {
-				continue
-			}
-			return amdTestKey(i, bare)
-		}
-		return map[string]any{"ok": false, "model": model, "error": "no enabled amd key"}, "error"
 	case platOpenRouter:
 		for i, k := range openrouter.Keys() {
 			if !openrouter.RoutingEnabled(k) {

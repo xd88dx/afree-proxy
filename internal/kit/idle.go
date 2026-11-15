@@ -1,6 +1,6 @@
 // idle.go 流中空闲监控（网关 keypool 平台共享件）：活跃吐数据续命不掐，
 // 静默超过阈值才 cancel 请求 context，中断阻塞中的 Read。
-// 挂起形态实测：上游发完响应头后 body 永久停滞（2026-11-12 生产 amd 路径
+// 挂起形态实测：上游发完响应头后 body 永久停滞（2026-11-12 生产实测，
 // 22 分钟挂起、received=0），ResponseHeaderTimeout 只管首字节阶段管不到它。
 // 语义与 internal/workbuddy/upstream/idle.go、internal/trae2api/traectl/idle.go
 // 同源（vendor 树各自保留，非 vendor 的 keypool 四包共用本实现）。

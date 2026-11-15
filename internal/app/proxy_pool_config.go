@@ -3,7 +3,7 @@ package app
 // 代理池配置独立于 OpenCode zen。
 //
 // 历史上代理池寄居在 .zen-config.json 的 zenConfigData 里，只因为最早只有
-// zen 平台走代理池；后来 amd / openrouter / tokenharbor / other / trae /
+// zen 平台走代理池；后来 openrouter / tokenharbor / other / trae /
 // workbuddy 全部复用同一个出口池，"zen" 前缀就变成了纯误导——代理池是全局
 // 能力，不属于任何一个平台。
 //
@@ -33,13 +33,13 @@ type proxyPoolConfigData struct {
 	// 未绑定代理的身份是否走共享池：nil = 缺省（池非空即走）。
 	// 每个平台一份，语义相同，都属于代理域（见 platform_proxies.go）。
 	ClineUseProxies     *bool `json:"clineUseProxies,omitempty"`
-	AmdUseProxies       *bool `json:"amdUseProxies,omitempty"`
 	OprtUseProxies      *bool `json:"oprtUseProxies,omitempty"`
 	TkhbUseProxies      *bool `json:"tkhbUseProxies,omitempty"`
 	TraeUseProxies      *bool `json:"traeUseProxies,omitempty"`
 	OtherUseProxies     *bool `json:"otherUseProxies,omitempty"`
 	ZenUseProxies       *bool `json:"zenUseProxies,omitempty"`
-	WorkbuddyUseProxies *bool `json:"workbuddyUseProxies,omitempty"`}
+	WorkbuddyUseProxies *bool `json:"workbuddyUseProxies,omitempty"`
+}
 
 func defaultProxyPoolConfig() *proxyPoolConfigData {
 	return &proxyPoolConfigData{Strategy: "round_robin"}
@@ -63,7 +63,6 @@ func loadProxyPoolConfig() *proxyPoolConfigData {
 		SubCron:             f.SubCron,
 		TestTarget:          f.TestTarget,
 		ClineUseProxies:     f.ClineUseProxies,
-		AmdUseProxies:       f.AmdUseProxies,
 		OprtUseProxies:      f.OprtUseProxies,
 		TkhbUseProxies:      f.TkhbUseProxies,
 		TraeUseProxies:      f.TraeUseProxies,
@@ -112,7 +111,6 @@ func saveProxyPoolConfig(c *proxyPoolConfigData) error {
 		f.SubCron = c.SubCron
 		f.TestTarget = c.TestTarget
 		f.ClineUseProxies = c.ClineUseProxies
-		f.AmdUseProxies = c.AmdUseProxies
 		f.OprtUseProxies = c.OprtUseProxies
 		f.TkhbUseProxies = c.TkhbUseProxies
 		f.TraeUseProxies = c.TraeUseProxies

@@ -75,7 +75,7 @@ VOID = {"input", "br", "hr", "img", "meta", "link", "source", "area", "base", "c
 SKIP = {"script", "style", "svg", "path", "circle", "rect", "text", "tspan", "head", "title"}
 # 允许不译:产品名(进词条反而制造假翻译)
 ALLOWED = {
-    "TraeWork", "WorkBuddy", "OpenCode", "AMDCloud", "OpenRouter", "TokenHarbor",
+    "TraeWork", "WorkBuddy", "OpenCode", "OpenRouter", "TokenHarbor",
     "Cline", "Cursor", "Claude Code", "Token Factory", "AFree Proxy",
 }
 # 工具过滤 textarea 的默认示例值（工具名，用户照着填的模板，不译）

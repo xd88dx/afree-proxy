@@ -14,7 +14,7 @@ import (
 //
 // Other 平台（自定义小企业上游的聚合）：一个 Other 页下挂多个子平台，每个
 // 子平台是独立的 key 池（BaseURL + 多 key + 前缀 + 模型勾选），请求按
-// "<prefix>:<model-id>" 路由。结构与 internal/amd / internal/tokenharbor
+// "<prefix>:<model-id>" 路由。结构与 internal/tokenharbor
 // 同构（key 轮转 / 401·429 冷却 / 主备代理绑定 / 面板暂存编辑），区别是
 // 平台数量动态，全部状态落盘于 DATA_DIR/.other-config.json。
 
@@ -93,9 +93,9 @@ type Model struct {
 }
 
 // ReservedPrefixes 内置平台前缀（与各平台模块的 ModelPrefix 保持一致：
-// zen / wbcn / wbgb / cline-free/ / amd / tkhb / oprt）。Other 子平台前缀
+// zen / wbcn / wbgb / cline-free/ / tkhb / oprt）。Other 子平台前缀
 // 不得与之冲突，否则请求路由会被既有平台截走。
-var ReservedPrefixes = []string{"zen:", "wbcn:", "wbgb:", "cline-free/", "amd:", "tkhb:", "oprt:"}
+var ReservedPrefixes = []string{"zen:", "wbcn:", "wbgb:", "cline-free/", "tkhb:", "oprt:"}
 
 // DefaultConfig 出厂配置：无子平台、并发/重试默认值在平台 normalize 时补齐。
 func DefaultConfig() *Config {
@@ -227,7 +227,7 @@ func (p *Platform) RoutingEnabled(key string) bool {
 	return true
 }
 
-// maskKey 面板展示的 key 掩码（前 12 位 + 省略号，与 amd/openrouter 同口径）。
+// maskKey 面板展示的 key 掩码（前 12 位 + 省略号，与 openrouter 同口径）。
 func maskKey(k string) string {
 	switch {
 	case k == "":

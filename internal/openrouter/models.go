@@ -67,7 +67,7 @@ func catalogHTTPClient() (*http.Client, error) {
 	}
 	// 目录同步与 chat 同链路：按 key 绑定/全局规则解析代理出口取 client。
 	// 此前此处是裸直连——CF 对直连/uTLS 指纹连接的间歇重置会让目录同步偶发
-	// 失败（与 tokenharbor/amd 同现象，tokenharbor 曾因此连续 16h 失败）。
+	// 失败（tokenharbor 曾因此连续 16h 失败）。
 	// 逐 key 试出口：停用的 key 不参与路由（等同不在池里），解析失败（含
 	// DISABLE_DIRECT 判否）换下一个；面板显式选直连（resolveExit 返回空但
 	// ok）按显式直连取 client；全部不可用时 fail-closed 返回错误，本轮同步
@@ -187,7 +187,7 @@ func InitCatalog() {
 }
 
 // SyncCatalog 拉取 live 目录，live 为唯一权威（2026-11-05 快照白名单退役，
-// 与 amd/tkhb/zen/cline 同款口径）：
+// 与 tkhb/zen/cline 同款口径）：
 //   - live pricing 全零 + chatCapable（输出含 text 且支持 tools）→ 收录，
 //     上游新增免费模型自动进目录（此前卡在 2026-10-10 页面快照里，
 //     stealth/crouton-alpha 等页面上新被永久挡住——静态快照当永久白名单
@@ -267,7 +267,7 @@ func SyncCatalog() (int, error) {
 
 // ModelList 排序后的免费模型列表（面板与 /v1/models 共用）。展示门控：
 // 没有参与路由的启用 key 时返回空列表——模型目录只列可服务条目，否则
-// 客户端选中后必然 401/403（与 amd/tokenharbor/trae 同口径）。
+// 客户端选中后必然 401/403（与 tokenharbor/trae 同口径）。
 func ModelList() []Model {
 	InitCatalog()
 	if !HasEnabledKey() {

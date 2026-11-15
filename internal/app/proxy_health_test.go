@@ -9,7 +9,6 @@ import (
 	"testing"
 	"time"
 
-	"afree-proxy/internal/amd"
 	"afree-proxy/internal/cline"
 	"afree-proxy/internal/openrouter"
 	"afree-proxy/internal/other"
@@ -197,8 +196,7 @@ func TestIsTransportLayerFailure(t *testing.T) {
 		{"network dial", transport, true},
 		{"context canceled", context.Canceled, true}, // 传输层判定；取消过滤在 recordProxyOutcome 内
 		{"trae2api RefreshError", &traectl.RefreshError{HTTPStatus: 429, Code: 4023}, false},
-		{"amd HTTPError", &amd.HTTPError{Status: 502}, false},
-		{"openrouter HTTPError", &openrouter.HTTPError{Status: 500}, false},
+		{"openrouter HTTPError", &openrouter.HTTPError{Status: 502}, false},
 		{"tokenharbor HTTPError", &tokenharbor.HTTPError{Status: 503}, false},
 		{"other HTTPError", &other.HTTPError{Status: 400}, false},
 		{"cline StatusError", &cline.StatusError{Status: 401}, false},
@@ -242,7 +240,7 @@ func TestRecordProxyOutcomeCoolsBadExit(t *testing.T) {
 	proxyCooldownsMu.Lock()
 	delete(proxyCooldowns, 0)
 	proxyCooldownsMu.Unlock()
-	recordProxyOutcome(pkZen, "http://a:1", false, &amd.HTTPError{Status: 502}, 0)
+	recordProxyOutcome(pkZen, "http://a:1", false, &openrouter.HTTPError{Status: 502}, 0)
 	if !proxyAvailable(0) {
 		t.Fatal("upstream 5xx must not cool a healthy exit")
 	}

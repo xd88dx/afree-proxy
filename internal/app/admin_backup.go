@@ -11,7 +11,6 @@ import (
 	"strings"
 	"time"
 
-	"afree-proxy/internal/amd"
 	"afree-proxy/internal/kit"
 	"afree-proxy/internal/openrouter"
 	"afree-proxy/internal/other"
@@ -25,7 +24,7 @@ import (
 // 三层口径（2026-11-03 用户定，「导出文件 → 全新容器 → 一模一样」）：
 //
 //   - **配置态**：各平台凭据与配置（Cline 账号、OpenCode key 及启用/绑定、
-//     OpenRouter/AMDCloud/TokenHarbor key 池、Other 子平台聚合、WorkBuddy
+//     OpenRouter/TokenHarbor key 池、Other 子平台聚合、WorkBuddy
 //     config + 凭据文件 + 出口绑定）、代理池（别名随行）、请求头、调度策略、
 //     默认模型、自定义别名、zen 粘性会话、端点学习结果。
 //   - **账号事实**：账号/key 在上游的客观状态（冷却表、wb 余额/限额/实测成本/
@@ -42,7 +41,7 @@ import (
 // 导入：同一格式的 JSON，**按段替换** —— 文件中存在的段整体替换当前值，
 // 文件中没有的段保持不动；导入后各缓存/持久化文件同步重建。
 //
-// **隔离护栏（v2 起）**：导入的一切上游身份（Cline 账号、zen/or/amd/th key、
+// **隔离护栏（v2 起）**：导入的一切上游身份（Cline 账号、zen/or/th key、
 // WorkBuddy 账号）默认一律置为禁用——备份里的启用状态属于导出方部署，其绑定
 // 出口在本地未必存在，原样启用等于把流量引向未经验证的身份。启用哪个由
 // 用户在面板逐个勾选。导入弹窗提供逐平台"沿用启用状态"switch（KeepEnabled，
@@ -95,7 +94,6 @@ type stateBackup struct {
 	Cline       *poolUsageData   `json:"cline,omitempty"`
 	Zen         *zenUsageFile    `json:"zen,omitempty"`
 	Trae        json.RawMessage  `json:"trae,omitempty"`
-	AMD         json.RawMessage  `json:"amd,omitempty"`
 	OpenRouter  json.RawMessage  `json:"openrouter,omitempty"`
 	TokenHarbor json.RawMessage  `json:"tokenharbor,omitempty"`
 	Other       json.RawMessage  `json:"other,omitempty"`
@@ -127,9 +125,6 @@ type configBackup struct {
 	OpenRouter  *openrouter.Config  `json:"openrouter,omitempty"`
 	TokenHarbor *tokenharbor.Config `json:"tokenharbor,omitempty"`
 	WorkBuddy   *workbuddyBackup    `json:"workbuddy,omitempty"`
-	// AMDCloud v2 段原名 amd；2026-10-12 随平台改名同步为 amdcloud。本项目
-	// 无存量备份文件，不保留旧键兼容——若日后需要，参照"改段名铁律"。
-	AMDCloud *amd.Config `json:"amdcloud,omitempty"`
 	// Other 子平台聚合配置（other-config.json）。2026-10-14 补：Other 页
 	// 上线时只做了网关/面板，未接备份，导致子平台与 key 池无法随配置迁移。
 	Other *other.Config `json:"other,omitempty"`
@@ -167,7 +162,7 @@ type configBackup struct {
 	// **全量**快照（账号事实 + 本机统计，三层口径「导出 = 容器全部数据」）。
 	// 导出始终携带；导入分层——账号事实无论勾选与否都应用，本机统计仅勾选
 	// 「Import statistics」时应用（不勾选 = 保留本机现值）。五平台包
-	// （trae/amd/or/th/other）以 JSON 往返（与落盘同形态），不暴露包内类型。
+	// （trae/or/th/other）以 JSON 往返（与落盘同形态），不暴露包内类型。
 	// WorkBuddy 的池状态与实测台账在 workbuddy.state / workbuddy.usage 段。
 	State *stateBackup `json:"state,omitempty"`
 	// ImportState 导入方对「还原本机统计」的选择（弹窗勾选框，默认勾选）。
@@ -176,7 +171,7 @@ type configBackup struct {
 	ImportState *bool `json:"importState,omitempty"`
 	// KeepEnabled 导入方对"沿用启用状态"的逐平台选择（导入弹窗 switch，默认
 	// 全不沿用）。缺项/false = 隔离护栏生效（导入身份一律禁用，原行为）；
-	// true = 保留备份内该平台的启用状态。key：cline / zen / oprt / amd /
+	// true = 保留备份内该平台的启用状态。key：cline / zen / oprt /
 	// tkhb / wb 与 "other:<slug>"（Other 子平台逐个）。
 	KeepEnabled map[string]bool `json:"keepEnabled,omitempty"`
 }
@@ -237,7 +232,6 @@ func handleAdminConfigExport(w http.ResponseWriter, r *http.Request) {
 		Endpoints:            loadZenEndpointsFile(),
 		Combos:               listCombos(),
 		OpenRouter:           openrouter.Get(),
-		AMDCloud:             amd.Get(),
 		TokenHarbor:          tokenharbor.Get(),
 		WorkBuddy:            exportWorkbuddyBackup(),
 		Other:                other.Get(),
@@ -252,7 +246,6 @@ func handleAdminConfigExport(w http.ResponseWriter, r *http.Request) {
 		State: &stateBackup{
 			Cline:       clineState,
 			Zen:         zenStateBackupSnapshot(),
-			AMD:         amd.StateSnapshotJSON(),
 			OpenRouter:  openrouter.StateSnapshotJSON(),
 			TokenHarbor: tokenharbor.StateSnapshotJSON(),
 			Other:       other.StateSnapshotJSON(),
@@ -582,19 +575,6 @@ func handleAdminConfigImport(w http.ResponseWriter, r *http.Request) {
 		openrouter.Set(or)
 		imported["openrouterKeys"] = len(or.Keys)
 	}
-	if backup.AMDCloud != nil {
-		amdc := backup.AMDCloud
-		if amdc.KeyRoutingEnabled == nil {
-			amdc.KeyRoutingEnabled = map[string]bool{}
-		}
-		if !backup.KeepEnabled["amd"] {
-			for _, k := range amdc.Keys {
-				amdc.KeyRoutingEnabled[k] = false
-			}
-		}
-		amd.Set(amdc)
-		imported["amdKeys"] = len(amdc.Keys)
-	}
 	if backup.TokenHarbor != nil {
 		th := backup.TokenHarbor
 		if th.KeyRoutingEnabled == nil {
@@ -693,7 +673,6 @@ func handleAdminConfigImport(w http.ResponseWriter, r *http.Request) {
 			}
 			_ = importFn(merged)
 		}
-		mergeOrReplace(amd.StateSnapshotJSON(), st.AMD, amd.ImportStateJSON)
 		mergeOrReplace(openrouter.StateSnapshotJSON(), st.OpenRouter, openrouter.ImportStateJSON)
 		mergeOrReplace(tokenharbor.StateSnapshotJSON(), st.TokenHarbor, tokenharbor.ImportStateJSON)
 		mergeOrReplace(other.StateSnapshotJSON(), st.Other, other.ImportStateJSON)

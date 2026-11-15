@@ -42,23 +42,23 @@ func TestPlatformScopedCooldown(t *testing.T) {
 		t.Fatal("single upstream-side stream failure must not cool")
 	}
 
-	// ② 第二次（60s 窗口内）：只对 wb 冷却；amd 视角照常可用；无全局冷却
+	// ② 第二次（60s 窗口内）：只对 wb 冷却；or 视角照常可用；无全局冷却
 	recordProxyOutcome(pkWb, banned, false, streamErr, 0)
 	if proxyAvailableFor(pkWb, bannedIdx) {
 		t.Fatal("wb should see the exit cooled after 2 strikes")
 	}
-	if !proxyAvailableFor(pkAmd, bannedIdx) {
-		t.Fatal("amd must NOT be affected by wb-scoped cooldown")
+	if !proxyAvailableFor(pkOr, bannedIdx) {
+		t.Fatal("or must NOT be affected by wb-scoped cooldown")
 	}
 	if len(proxyCooldowns) != 0 {
 		t.Fatalf("platform-scoped failure must not write global cooldowns: %v", proxyCooldowns)
 	}
-	// 绑定选择同口径：wb 拿不到该出口，amd 照常拿到
+	// 绑定选择同口径：wb 拿不到该出口，or 照常拿到
 	if _, _, ok := pickBoundProxyFor(pkWb, banned, ""); ok {
 		t.Fatal("wb bound pick must skip the platform-cooled exit")
 	}
-	if u, _, ok := pickBoundProxyFor(pkAmd, banned, ""); !ok || u != banned {
-		t.Fatalf("amd bound pick should still return the exit (got %q ok=%v)", u, ok)
+	if u, _, ok := pickBoundProxyFor(pkOr, banned, ""); !ok || u != banned {
+		t.Fatalf("or bound pick should still return the exit (got %q ok=%v)", u, ok)
 	}
 	// 兜底轮转同口径：wb 轮转跳过被封出口，落到健康出口
 	if u, idx := pickUpstreamProxyFor(pkWb); u == banned {
@@ -68,19 +68,19 @@ func TestPlatformScopedCooldown(t *testing.T) {
 	// ③ 建连阶段失败：60s 窗口 2-strike（2026-10-31）后全局冷却，所有平台一起
 	// 避开；单次失败只记账不冷却
 	dialErr := fmt.Errorf("dial tcp 1.2.3.4:443: connect: connection refused")
-	recordProxyOutcome(pkAmd, healthy, false, dialErr, 0)
-	if !proxyAvailableFor(pkAmd, healthyIdx) || !proxyAvailableFor(pkWb, healthyIdx) {
+	recordProxyOutcome(pkOr, healthy, false, dialErr, 0)
+	if !proxyAvailableFor(pkOr, healthyIdx) || !proxyAvailableFor(pkWb, healthyIdx) {
 		t.Fatal("single establishment failure must not cool yet (2-strike)")
 	}
-	recordProxyOutcome(pkAmd, healthy, false, dialErr, 0)
-	if proxyAvailableFor(pkAmd, healthyIdx) || proxyAvailableFor(pkWb, healthyIdx) {
+	recordProxyOutcome(pkOr, healthy, false, dialErr, 0)
+	if proxyAvailableFor(pkOr, healthyIdx) || proxyAvailableFor(pkWb, healthyIdx) {
 		t.Fatal("repeated establishment failure must cool the exit globally")
 	}
 	if len(proxyCooldowns) != 1 {
 		t.Fatalf("establishment failure should write global cooldown: %v", proxyCooldowns)
 	}
 
-	// ④ strike 计数按平台隔离：wb 攒下的失败不能给 amd 凑数
+	// ④ strike 计数按平台隔离：wb 攒下的失败不能给 or 凑数
 	proxyStreamFailMu.Lock()
 	proxyStreamFails = map[string][]time.Time{}
 	proxyCooldownsMu.Lock()
@@ -88,7 +88,7 @@ func TestPlatformScopedCooldown(t *testing.T) {
 	proxyCooldownsMu.Unlock()
 	proxyStreamFailMu.Unlock()
 	recordProxyOutcome(pkWb, banned, false, streamErr, 0)
-	if _, cool := shouldCooldownExit(pkAmd, banned, streamErr); cool {
-		t.Fatal("amd strikes must not be satisfied by wb failures")
+	if _, cool := shouldCooldownExit(pkOr, banned, streamErr); cool {
+		t.Fatal("or strikes must not be satisfied by wb failures")
 	}
 }

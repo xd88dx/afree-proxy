@@ -3,7 +3,7 @@ package other
 import "testing"
 
 // TestReconcileOtherRoutingNewKeysDefaultDisabled 新增 key 必须默认不参与
-// 路由（与 amd/openrouter/tokenharbor 同口径），已有 key 保持勾选状态，
+// 路由（与 openrouter/tokenharbor 同口径），已有 key 保持勾选状态，
 // 被移除的 key 清理表项。
 func TestReconcileOtherRoutingNewKeysDefaultDisabled(t *testing.T) {
 	cur := &Platform{Keys: []string{}}
