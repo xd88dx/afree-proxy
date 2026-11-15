@@ -42,9 +42,6 @@ func zenConfigPayload() map[string]any {
 		"proxyStrategy":           pool.Strategy,
 		"proxySubURL":             pool.SubURL,
 		"proxySubCron":            pool.SubCron,
-		// WB 凭据权重优化定时任务（2026-11-15，与订阅自动更新同一条调度路径）
-		"wbShareOptimizeEnabled": pool.WbShareOptimizeEnabled,
-		"wbShareOptimizeCron":    pool.WbShareOptimizeCron,
 		"proxyTestTarget":         proxyTestTarget(),
 		"maxConcurrency":          cfg.MaxConcurrency,
 		"retries":                 cfg.Retries,
@@ -103,9 +100,6 @@ func handleZenConfigUpdate(w http.ResponseWriter, r *http.Request) {
 		ProxyStrategy      *string  `json:"proxyStrategy"`
 		ProxySubURL        *string  `json:"proxySubURL"`
 		ProxySubCron       *string  `json:"proxySubCron"`
-		// WB 凭据权重优化定时任务（2026-11-15）：指针区分"未提交"与显式关/清空。
-		WbShareOptimizeEnabled *bool   `json:"wbShareOptimizeEnabled"`
-		WbShareOptimizeCron    *string `json:"wbShareOptimizeCron"`
 		MaxConcurrency     *int     `json:"maxConcurrency"`
 		Retries            *int     `json:"retries"`
 		ProxyIsolation     *bool    `json:"proxyIsolation"`
@@ -226,22 +220,6 @@ func handleZenConfigUpdate(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		poolNext.SubCron = expr
-		poolChanged = true
-	}
-	// WB 凭据权重优化定时任务（2026-11-15）：cron 校验同订阅自动更新。
-	if patch.WbShareOptimizeEnabled != nil {
-		poolNext.WbShareOptimizeEnabled = *patch.WbShareOptimizeEnabled
-		poolChanged = true
-	}
-	if patch.WbShareOptimizeCron != nil {
-		expr := strings.TrimSpace(*patch.WbShareOptimizeCron)
-		if expr != "" {
-			if err := validateCronExpr(expr); err != nil {
-				writeAPI(w, http.StatusBadRequest, apiResponse{Error: "invalid cron expression: " + err.Error()})
-				return
-			}
-		}
-		poolNext.WbShareOptimizeCron = expr
 		poolChanged = true
 	}
 	if patch.MaxConcurrency != nil && *patch.MaxConcurrency > 0 {

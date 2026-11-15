@@ -315,13 +315,19 @@ func handleWorkbuddyShareSet(w http.ResponseWriter, r *http.Request) {
 // accounts[].share 透出（Status.Share），无独立查询端点的必要——避免死端点。
 
 // ============================================================================
-// 权重优化定时任务（2026-11-15）：与代理池订阅自动更新（proxy_subscription.go
-// StartProxySubscriptionWorker）同一条调度路径——30s tick 热读 proxy-config
-// （wbShareOptimizeEnabled/Cron，zen-config 端点保存），validateCronExpr 校验、
-// (last, nowMin] 区间命中防漏防重，命中即执行与手动按钮同一套计算+写入。
-// cron 配置不走 vendored config（2026-11-15 用户定：WB vendor 补丁一律走
-// PRESERVE 整文件登记，不再往上游结构注入字段）。
+// 权重优化定时任务（2026-11-15）：配置在 WB config.json schedule 节
+// （schedule.share_optimize_enabled/_cron，语义归属 WB 域——字段是 afree 补丁，
+// 随 config.go 的 PRESERVE 整文件登记保留，re-vendor 不冲掉）。保存链 =
+// saveWorkbuddyConfig 热应用段写 atomic 热值（改 cron 无需重启）；worker 照
+// 订阅自动更新（StartProxySubscriptionWorker）形态：30s tick + cronMatches
+// 命中 + (last, nowMin] 区间防漏防重，命中即执行与手动按钮同一套计算+写入。
 // ============================================================================
+
+// wbShareSched 权重优化调度热值快照（atomic.Value 持有）。
+type wbShareSched struct {
+	enabled bool
+	cron    string
+}
 
 var (
 	wbShareOptMu   sync.Mutex
@@ -337,11 +343,11 @@ func startWorkbuddyShareOptimizeLoop(ctx context.Context) {
 			if workbuddySub == nil || workbuddySub.saveConfig == nil {
 				continue
 			}
-			cfg := getProxyPool()
-			if !cfg.WbShareOptimizeEnabled {
+			sched, ok := workbuddySub.shareOptimizeSched.Load().(*wbShareSched)
+			if !ok || sched == nil || !sched.enabled {
 				continue
 			}
-			expr := strings.TrimSpace(cfg.WbShareOptimizeCron)
+			expr := strings.TrimSpace(sched.cron)
 			if expr == "" {
 				continue
 			}
