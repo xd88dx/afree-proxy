@@ -4,7 +4,7 @@ package app
 //
 // 这个开关是代理池页上的下拉（"Global policy"），语义属于代理域，跟平台自身
 // 的账号/key 数据无关；历史上却分散在各平台的配置文件里（.cline-accounts.json、
-// .or-config.json、.trae-config.json、
+// oprt-config.json、.trae-config.json、
 // .other-config.json 各存一份），改一个开关要记住去哪找。
 //
 // 现统一存进 proxy-config.json 的出口池段（见 proxy_pool_config.go），内存态

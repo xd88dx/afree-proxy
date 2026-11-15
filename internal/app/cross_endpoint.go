@@ -58,7 +58,7 @@ func resolvePlatformChatCallerRaw(model string) (platformChatCall, bool) {
 			return rejectCaller(fmt.Sprintf("model %q is not a free openrouter model", id), false), true
 		}
 		return func(ctx context.Context, params map[string]any, stream bool) (*http.Response, func(map[string]any), error) {
-			resp, _, err := openrouter.Chat(ctx, params, m.ID, stream, globalStrategy(), orBoundRoutable, nil)
+			resp, _, err := openrouter.Chat(ctx, params, m.ID, stream, globalStrategy(), oprtBoundRoutable, nil)
 			if err != nil {
 				return nil, nil, err
 			}

@@ -208,26 +208,26 @@ func TestPlatformSegmentsAreIDSorted(t *testing.T) {
 	t.Setenv("DATA_DIR", testDataDir(t))
 
 	// or：装一个启用 key + 一个假目录上游。保存/恢复原配置。
-	orPrev, orPath := openrouter.Get(), openrouter.ConfigPath
-	openrouter.ConfigPath = filepath.Join(t.TempDir(), "or-config.json")
+	oprtPrev, oprtPath := openrouter.Get(), openrouter.ConfigPath
+	openrouter.ConfigPath = filepath.Join(t.TempDir(), "oprt-config.json")
 	orc := openrouter.DefaultConfig()
 	orc.Keys = []string{"sk-or-v1-test"}
 	orc.KeyRoutingEnabled = map[string]bool{"sk-or-v1-test": true}
 	openrouter.Set(orc)
-	orSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	oprtSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// 乱序喂入，验证 ModelList 的 sort.Slice 输出恒升序。
 		_, _ = w.Write([]byte(`{"data":[
 			{"id":"or-b:free","name":"B","context_length":1000,"pricing":{"prompt":"0","completion":"0"},"supported_parameters":["tools"],"architecture":{"output_modalities":["text"]}},
 			{"id":"or-a:free","name":"A","context_length":2000,"pricing":{"prompt":"0","completion":"0"},"supported_parameters":["tools"],"architecture":{"output_modalities":["text"]}}
 		]}`))
 	}))
-	defer orSrv.Close()
-	orPrevOverride := openrouter.GetCatalogURLOverride()
-	openrouter.SetCatalogURLOverride(orSrv.URL)
+	defer oprtSrv.Close()
+	oprtPrevOverride := openrouter.GetCatalogURLOverride()
+	openrouter.SetCatalogURLOverride(oprtSrv.URL)
 	t.Cleanup(func() {
-		openrouter.Set(orPrev)
-		openrouter.ConfigPath = orPath
-		openrouter.SetCatalogURLOverride(orPrevOverride)
+		openrouter.Set(oprtPrev)
+		openrouter.ConfigPath = oprtPath
+		openrouter.SetCatalogURLOverride(oprtPrevOverride)
 	})
 
 	// 显式首拉（种子时代靠快照即时有目录；现在必须同步一次才有目录）。
@@ -239,7 +239,7 @@ func TestPlatformSegmentsAreIDSorted(t *testing.T) {
 	}
 
 	segs := map[string][]map[string]any{
-		"openrouter": orModelList(),
+		"openrouter": oprtModelList(),
 	}
 	for name, seg := range segs {
 		if len(seg) == 0 {

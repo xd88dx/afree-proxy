@@ -12,7 +12,7 @@ import (
 
 // ============ 配置与数据模型 ============
 
-// Config 是 OpenRouter 平台的全部可配置状态，落盘于 DATA_DIR/.or-config.json。
+// Config 是 OpenRouter 平台的全部可配置状态，落盘于 DATA_DIR/oprt-config.json。
 // 与 zen 的 zenConfigData 同构（多 key 池 + 主/备用代理绑定 + 路由参与表），
 // 复用 afree-proxy 主包已有的代理池与隔离语义，但**自成独立池**：
 // 模型目录、凭据、token 记账、绑定都不与 zen/cline/workbuddy 混用。
@@ -176,7 +176,7 @@ var (
 	loaded bool
 )
 
-// ConfigPath 数据文件路径（由主包注入，指向 DATA_DIR/.or-config.json）。
+// ConfigPath 数据文件路径（由主包注入，指向 DATA_DIR/oprt-config.json）。
 var ConfigPath string
 
 // Load 读取持久化配置（主包装配期调用一次）。文件不存在或损坏时保留默认值

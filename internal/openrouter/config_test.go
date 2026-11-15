@@ -62,7 +62,7 @@ func TestMaskKey(t *testing.T) {
 
 func TestSetPersistsAndLoads(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, ".or-config.json")
+	path := filepath.Join(dir, "oprt-config.json")
 	Load(path)
 	cfg := &Config{BaseURL: "https://openrouter.ai/api/v1", Keys: []string{"k1"}, MaxConcurrency: 4, Retries: 2}
 	cfg.KeyRoutingEnabled = map[string]bool{"k1": false}
@@ -88,7 +88,7 @@ func TestSetPersistsAndLoads(t *testing.T) {
 
 func TestLoadCorruptFileKeepsDefaults(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, ".or-config.json")
+	path := filepath.Join(dir, "oprt-config.json")
 	if err := os.WriteFile(path, []byte("{not json"), 0600); err != nil {
 		t.Fatal(err)
 	}
@@ -102,7 +102,7 @@ func TestLoadCorruptFileKeepsDefaults(t *testing.T) {
 	entries, _ := os.ReadDir(dir)
 	found := false
 	for _, e := range entries {
-		if strings.Contains(e.Name(), ".or-config.json.corrupt-") {
+		if strings.Contains(e.Name(), "oprt-config.json.corrupt-") {
 			found = true
 		}
 	}
@@ -113,7 +113,7 @@ func TestLoadCorruptFileKeepsDefaults(t *testing.T) {
 
 func TestPickKeySkipsRoutingDisabledAndCooling(t *testing.T) {
 	dir := t.TempDir()
-	Load(filepath.Join(dir, ".or-config.json"))
+	Load(filepath.Join(dir, "oprt-config.json"))
 	cfg := &Config{Keys: []string{"a", "b", "c"}}
 	cfg.KeyRoutingEnabled = map[string]bool{"b": false}
 	Set(cfg)
@@ -127,7 +127,7 @@ func TestPickKeySkipsRoutingDisabledAndCooling(t *testing.T) {
 
 func TestPickKeyBlockedExitExcluded(t *testing.T) {
 	dir := t.TempDir()
-	Load(filepath.Join(dir, ".or-config.json"))
+	Load(filepath.Join(dir, "oprt-config.json"))
 	Set(&Config{Keys: []string{"a", "b"}})
 	got := PickKey("round_robin", func(key string) bool { return key != "a" })
 	if got != "b" {
@@ -141,7 +141,7 @@ func TestPickKeyBlockedExitExcluded(t *testing.T) {
 
 func TestPickKeyRoundRobinAdvances(t *testing.T) {
 	dir := t.TempDir()
-	Load(filepath.Join(dir, ".or-config.json"))
+	Load(filepath.Join(dir, "oprt-config.json"))
 	Set(&Config{Keys: []string{"a", "b"}})
 	first := PickKey("round_robin", nil)
 	second := PickKey("round_robin", nil)
@@ -257,7 +257,7 @@ func enableTestKey(t *testing.T) {
 	t.Helper()
 	prevCfg := Get()
 	prevPath := ConfigPath
-	ConfigPath = filepath.Join(t.TempDir(), ".or-config.json")
+	ConfigPath = filepath.Join(t.TempDir(), "oprt-config.json")
 	t.Cleanup(func() {
 		ConfigPath = prevPath
 		mu.Lock()
@@ -283,7 +283,7 @@ func TestModelListRequiresEnabledKey(t *testing.T) {
 
 	prevCfg := Get()
 	prevPath := ConfigPath
-	ConfigPath = filepath.Join(t.TempDir(), ".or-config.json")
+	ConfigPath = filepath.Join(t.TempDir(), "oprt-config.json")
 	t.Cleanup(func() {
 		ConfigPath = prevPath
 		mu.Lock()
@@ -379,7 +379,7 @@ func TestProbeModelPrefersOfficialRouter(t *testing.T) {
 // 全冷却默认拒绝（UNABLE_FORCE 未设，2026-10-28 用户定）；true 时恢复兜底。
 func TestPickKeyAllCoolingFollowsUnableForce(t *testing.T) {
 	dir := t.TempDir()
-	Load(filepath.Join(dir, ".or-config.json"))
+	Load(filepath.Join(dir, "oprt-config.json"))
 	Set(&Config{Keys: []string{"a", "b"}})
 	Cooldown("a", 5*60e9)
 	Cooldown("b", 5*60e9)
@@ -396,7 +396,7 @@ func TestPickKeyAllCoolingFollowsUnableForce(t *testing.T) {
 // 冷却必须保留——重启后上游刚限流过的凭据不得立即回池被重试。
 func TestCooldownPersistedAcrossReload(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, ".or-config.json")
+	path := filepath.Join(dir, "oprt-config.json")
 	Load(path)
 	Set(&Config{Keys: []string{"a", "b"}})
 	Cooldown("a", 5*60e9)

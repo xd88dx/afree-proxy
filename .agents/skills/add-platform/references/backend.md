@@ -29,7 +29,7 @@ WB 特例：`/admin/api/workbuddy/enabled` 注册在 proxy.go（workbuddy 路由
 - 分发链现状（proxy.go /v1/chat/completions 与 responses.go 一致）：
   1. `shouldServeWorkBuddy(model)`——vendor realm 前缀 `wbcn:`/`wbgb:`（裸模型名不接管，避免静默改路由）
   2. `resolveCombo(model)` 别名改写（改写后回头再判一次 WB）
-  3. `openrouter.HasPrefix(model)`（`oprt:`）→ `handleOrChat`
+  3. `openrouter.HasPrefix(model)`（`oprt:`）→ `handleOprtChat`
   6. `routeModel(model)`（zen.go）——`zen:` 前缀 + 免费表判定 → zen / reject / cline；其余落 cline 池
   7. cline 模型前缀 `cline-free/`（models.go `clineModelPrefix`，/v1/models 输出即带前缀）
 - 新平台加自己的 `HasPrefix(model)`（放 X 包内，`ModelPrefix` 常量 + `HasPrefix` 函数，见 openrouter 包）并按上述位置插入分发链。
@@ -45,8 +45,8 @@ WB 特例：`/admin/api/workbuddy/enabled` 注册在 proxy.go（workbuddy 路由
 ## 5. 平台设置与热应用（两种模式，按形态选）
 
 **key 池四件套模式**（openrouter 同构，形态 B 首选）：
-- load：`handleOrConfig` GET → 组装 map（keyStates 快照含 usage/cooling/routingEnabled/proxyMain/proxyBackup）。
-- save：`handleOrConfigUpdate` POST patch——patch struct 全指针字段（`*bool`/`*int`/`*string`，nil=未提交），`next := 深拷贝 cur`（**Keys/KeyRoutingEnabled/KeyBindings 每张 map 都要拷**，漏拷 = 保存时静默清空该表；KeyTokens/Cool 住痕迹文件不随 Config 拷贝）→ 逐字段应用 patch → `ReconcileRouting`（keys 整体替换时）→ 落盘 + 热应用。
+- load：`handleOprtConfig` GET → 组装 map（keyStates 快照含 usage/cooling/routingEnabled/proxyMain/proxyBackup）。
+- save：`handleOprtConfigUpdate` POST patch——patch struct 全指针字段（`*bool`/`*int`/`*string`，nil=未提交），`next := 深拷贝 cur`（**Keys/KeyRoutingEnabled/KeyBindings 每张 map 都要拷**，漏拷 = 保存时静默清空该表；KeyTokens/Cool 住痕迹文件不随 Config 拷贝）→ 逐字段应用 patch → `ReconcileRouting`（keys 整体替换时）→ 落盘 + 热应用。
 - key 池无"重启项"概念：全部字段热生效（池参数从 config 直接读）。
 
 **vendor wbConfigForm 模式**（形态 C）：load 侧 `Default()+Load()+normalize()`，save 侧**保留磁盘未提交键 + 原子落盘 + 热应用**（参照 workbuddy_config.go saveWorkbuddyConfig：merge 现有 map → ParseConfig → tmp+rename → 热应用 → 返回 restartRequired）。

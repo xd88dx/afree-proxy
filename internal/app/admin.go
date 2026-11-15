@@ -168,17 +168,17 @@ func registerAdminRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/admin/api/zen/keys/proxy", adminCORS(auth(handleZenKeySetProxy)))
 	mux.HandleFunc("/admin/api/opencode/keys/proxy", adminCORS(auth(handleZenKeySetProxy)))
 	// OpenRouter 平台（key 池，or: 前缀）：配置/模型/key 管理/测试/代理绑定
-	mux.HandleFunc("/admin/api/openrouter/config", adminCORS(auth(handleOrConfig)))
-	mux.HandleFunc("/admin/api/openrouter/config/update", adminCORS(auth(handleOrConfigUpdate)))
-	mux.HandleFunc("/admin/api/openrouter/models", adminCORS(auth(handleOrConfig)))
-	mux.HandleFunc("/admin/api/openrouter/models/refresh", adminCORS(auth(handleOrModelsRefresh)))
-	mux.HandleFunc("/admin/api/openrouter/keys/routing", adminCORS(auth(handleOrKeySetRouting)))
-	mux.HandleFunc("/admin/api/openrouter/keys/routing/all", adminCORS(auth(handleOrKeySetRoutingAll)))
-	mux.HandleFunc("/admin/api/openrouter/keys/reorder", adminCORS(auth(handleOrKeysReorder)))
-	mux.HandleFunc("/admin/api/openrouter/keys/delete", adminCORS(auth(handleOrKeyDelete)))
-	mux.HandleFunc("/admin/api/openrouter/keys/test", adminCORS(auth(handleOrKeyTest)))
-	mux.HandleFunc("/admin/api/openrouter/keys/proxy", adminCORS(auth(handleOrKeySetProxy)))
-	mux.HandleFunc("/admin/api/openrouter/keys/proxy/clear", adminCORS(auth(handleOrKeyClearProxies)))
+	mux.HandleFunc("/admin/api/openrouter/config", adminCORS(auth(handleOprtConfig)))
+	mux.HandleFunc("/admin/api/openrouter/config/update", adminCORS(auth(handleOprtConfigUpdate)))
+	mux.HandleFunc("/admin/api/openrouter/models", adminCORS(auth(handleOprtConfig)))
+	mux.HandleFunc("/admin/api/openrouter/models/refresh", adminCORS(auth(handleOprtModelsRefresh)))
+	mux.HandleFunc("/admin/api/openrouter/keys/routing", adminCORS(auth(handleOprtKeySetRouting)))
+	mux.HandleFunc("/admin/api/openrouter/keys/routing/all", adminCORS(auth(handleOprtKeySetRoutingAll)))
+	mux.HandleFunc("/admin/api/openrouter/keys/reorder", adminCORS(auth(handleOprtKeysReorder)))
+	mux.HandleFunc("/admin/api/openrouter/keys/delete", adminCORS(auth(handleOprtKeyDelete)))
+	mux.HandleFunc("/admin/api/openrouter/keys/test", adminCORS(auth(handleOprtKeyTest)))
+	mux.HandleFunc("/admin/api/openrouter/keys/proxy", adminCORS(auth(handleOprtKeySetProxy)))
+	mux.HandleFunc("/admin/api/openrouter/keys/proxy/clear", adminCORS(auth(handleOprtKeyClearProxies)))
 	// TraeWork 平台（vendored trae2api 引擎，trae:/solo: 域前缀透传）：配置/模型/账号管理/测试/代理绑定
 	// 说明：上游选号为权重调度（idle/额度感知），旧的手动重排序端点随旧引擎
 	// 移除；手动 JWT 粘贴入口（accounts/add）改由 trae_helper.go 的新引擎

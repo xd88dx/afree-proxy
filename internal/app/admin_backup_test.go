@@ -540,7 +540,7 @@ func TestConfigBackupStateRoundTrip(t *testing.T) {
 	// openrouter：配置与痕迹路径都指向临时目录
 	openrouter.UsagePath = filepath.Join(tmp, "or-state.json")
 	t.Cleanup(func() { openrouter.UsagePath = "" })
-	openrouter.Load(filepath.Join(tmp, "or-config.json"))
+	openrouter.Load(filepath.Join(tmp, "oprt-config.json"))
 	// 记账 key 必须在 key 池内：导入配置段时 pruneRemovedKeys 会按新 key 集合
 	// 收敛痕迹（既有语义），池外 key 的记账条目会被清掉。
 	orc := openrouter.DefaultConfig()
@@ -590,12 +590,12 @@ func TestConfigBackupStateRoundTrip(t *testing.T) {
 	if cl.Status != "cooldown" || cl.LastReason != "429" || cl.UsageCount != 3 || cl.TokensTotal != 300 || cl.CooldownUntil.IsZero() {
 		t.Fatalf("cline state missing in export (facts+stats): %+v", cl)
 	}
-	var orSnap struct {
+	var oprtSnap struct {
 		KeyTokens map[string]struct {
 			Today int64 `json:"Today"`
 		} `json:"keyTokens"`
 	}
-	if len(backup.State.OpenRouter) == 0 || json.Unmarshal(backup.State.OpenRouter, &orSnap) != nil || orSnap.KeyTokens["ork_s1"].Today != 100 {
+	if len(backup.State.OpenRouter) == 0 || json.Unmarshal(backup.State.OpenRouter, &oprtSnap) != nil || oprtSnap.KeyTokens["ork_s1"].Today != 100 {
 		t.Fatalf("openrouter state missing in export: %s", backup.State.OpenRouter)
 	}
 
@@ -618,16 +618,16 @@ func TestConfigBackupStateRoundTrip(t *testing.T) {
 		got.UsageCount != 3 || got.TokensTotal != 300 || got.CooldownUntil.IsZero() {
 		t.Fatalf("cline facts+stats not restored on checked import: %+v", got)
 	}
-	var orBack struct {
+	var oprtBack struct {
 		KeyTokens map[string]struct {
 			Today int64 `json:"Today"`
 		} `json:"keyTokens"`
 	}
-	if err := json.Unmarshal(openrouter.StateSnapshotJSON(), &orBack); err != nil {
+	if err := json.Unmarshal(openrouter.StateSnapshotJSON(), &oprtBack); err != nil {
 		t.Fatal(err)
 	}
-	if orBack.KeyTokens["ork_s1"].Today != 100 {
-		t.Fatalf("openrouter state not restored on checked import: %+v", orBack)
+	if oprtBack.KeyTokens["ork_s1"].Today != 100 {
+		t.Fatalf("openrouter state not restored on checked import: %+v", oprtBack)
 	}
 
 	// ---- 导入（importState=false）：账号事实仍还原，本机统计保留本机现值 ----
@@ -662,15 +662,15 @@ func TestConfigBackupStateRoundTrip(t *testing.T) {
 	if got2.UsageCount != 7 || got2.TokensTotal != 700 {
 		t.Fatalf("unchecking import statistics must keep local stats, got %+v", got2)
 	}
-	var orBack2 struct {
+	var oprtBack2 struct {
 		KeyTokens map[string]struct {
 			Today int64 `json:"Today"`
 		} `json:"keyTokens"`
 	}
-	if err := json.Unmarshal(openrouter.StateSnapshotJSON(), &orBack2); err != nil {
+	if err := json.Unmarshal(openrouter.StateSnapshotJSON(), &oprtBack2); err != nil {
 		t.Fatal(err)
 	}
-	if orBack2.KeyTokens["ork_s1"].Today != 999 {
-		t.Fatalf("unchecking import statistics must keep local or ledger: %+v", orBack2)
+	if oprtBack2.KeyTokens["ork_s1"].Today != 999 {
+		t.Fatalf("unchecking import statistics must keep local or ledger: %+v", oprtBack2)
 	}
 }

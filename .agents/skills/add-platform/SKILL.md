@@ -42,9 +42,9 @@ description: 在 afree-proxy 中新增一个上游平台的完整迁移配方—
 | 用户说的 | 落点 | references |
 |---|---|---|
 | 导航栏加菜单 | `admin_html.go` nav-item（data-tab）+ tab-panel + restoreTab 白名单 | frontend §2 |
-| 页面账号列表 | tbody（`accountTableBody`/`ocKeysBody`/`wbAccountsBody`/`orKeysBody` 族参照）+ 快照/保存三件套 | frontend §3 |
+| 页面账号列表 | tbody（`accountTableBody`/`ocKeysBody`/`wbAccountsBody`/`oprtKeysBody` 族参照）+ 快照/保存三件套 | frontend §3 |
 | 操作按钮区域 | 页脚三区 flex space-between + 顶部操作行；批量操作串行进度 | frontend §4 |
-| 平台相关设置 | key 池型：`handleOrConfigUpdate` patch 模式；vendor 型：`wbConfigForm` data-path 模式 | frontend §5 / backend §5 |
+| 平台相关设置 | key 池型：`handleOprtConfigUpdate` patch 模式；vendor 型：`wbConfigForm` data-path 模式 | frontend §5 / backend §5 |
 | 网关设置与自定义别名 | /v1 分发顺序、/v1/models 合并、combos 平台白名单与 target 校验、前缀查表两形态铁律（backend §3 加粗条） | backend §3-4 |
 | 凭据开启禁用 | PoolEnabled/routingEnabled 六平台对照 + 全路径过滤 + 默认禁用 | backend §2 |
 | 代理池相关 | egComboHTML 主/备双槽绑定、proxy/clear 语义、出口观测 | backend §6 |
@@ -62,7 +62,7 @@ description: 在 afree-proxy 中新增一个上游平台的完整迁移配方—
 | 绑定代理 | `/accounts/proxy(/clear)` | `/opencode/keys/proxy(/clear)` | 行内 egCommit 暂存 | `/trae/accounts/proxy(/clear)` | `/<x>/keys/proxy(/clear)` | `/other/keys/proxy(/clear)`（按 slug） |
 | 选号过滤 | `pool.go accountPoolEnabled` | zen 轮转跳过禁用 key | wbpool ServableForRealm | vendor 注入 `pool.RoutingAllowed` 钩子（trae.go `traeRoutingAllowed`） | 各包 pool.go `RoutingEnabled` 过滤 | internal/other `Platform.RoutingEnabled` |
 | 平台设置 | /admin/api/config | /admin/api/opencode/config | wbConfigForm→vendor API | `/trae/config{,/update}` | `/admin/api/<x>/config{,/update}` | `/other/config{,/update}` + `/other/platforms`（子平台增删） |
-| 前端 tbody | `accountTableBody` | `ocKeysBody` | `wbAccountsBody` | `traeAccountsBody` | `orKeysBody`/`amdKeysBody`/`thKeysBody` | `otherKeysBody` + `otherPlatformBody` |
+| 前端 tbody | `accountTableBody` | `ocKeysBody` | `wbAccountsBody` | `traeAccountsBody` | `oprtKeysBody`/`amdKeysBody`/`thKeysBody` | `otherKeysBody` + `otherPlatformBody` |
 | 快照变量 | `accSnapshot` | `keySnapshot` | `wbSnapshot` | `traeAccSnapshot` | `orKeySnapshot`/`amdKeySnapshot`/`thKeySnapshot` | `otherKeySnapshot` |
 | 网关前缀 | `cline-free/` | `zen:` | `wbcn:`/`wbgb:` | `tacn:`/`tagb:`（合并域，tagb 随 intl.enabled），bare 合并去重、交集以 trae 为主 | `oprt:` | 子平台自定前缀（如 `acme:`） |
 | 添加入口弹窗 | `accAddDialog` | `zenKeyAddDialog` | `wbAddDialog` | `traeAddDialog` | `<x>KeyAddDialog` | `otherKeyAddDialog`/`otherPlatformDialog` |

@@ -188,9 +188,9 @@ tr:hover .nick-pen{opacity:.85}
 /* 凭据表格全列居中（2026-10-29 用户定）：8 平台账号/key 表的表头与内容。
    :has() 从 tbody 反选所在表的 thead；nick-wrap / wb-account 是 flex 容器，
    text-align 管不到，单独补 justify-content。 */
-table:has(#accountTableBody) th,table:has(#traeAccountsBody) th,table:has(#ocKeysBody) th,table:has(#wbAccountsBody) th,table:has(#orKeysBody) th,table:has(#otherKeysBody) th,#accountTableBody td,#traeAccountsBody td,#ocKeysBody td,#wbAccountsBody td,#orKeysBody td#otherKeysBody td{text-align:center}
+table:has(#accountTableBody) th,table:has(#traeAccountsBody) th,table:has(#ocKeysBody) th,table:has(#wbAccountsBody) th,table:has(#oprtKeysBody) th,table:has(#otherKeysBody) th,#accountTableBody td,#traeAccountsBody td,#ocKeysBody td,#wbAccountsBody td,#oprtKeysBody td#otherKeysBody td{text-align:center}
 /* 账号/Key 列（各表第 2 列）：表头居中，内容左对齐（2026-10-29 用户定） */
-#accountTableBody td:nth-child(2),#traeAccountsBody td:nth-child(2),#ocKeysBody td:nth-child(2),#wbAccountsBody td:nth-child(2),#orKeysBody td:nth-child(2),#otherKeysBody td:nth-child(2){text-align:left}
+#accountTableBody td:nth-child(2),#traeAccountsBody td:nth-child(2),#ocKeysBody td:nth-child(2),#wbAccountsBody td:nth-child(2),#oprtKeysBody td:nth-child(2),#otherKeysBody td:nth-child(2){text-align:left}
 
 /* ===== Buttons ===== */
 .btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:7px 15px;border:1px solid var(--border);border-radius:var(--radius-sm);background:rgba(255,255,255,.04);color:var(--text);cursor:pointer;font-size:13px;transition:.15s;text-decoration:none;font-family:inherit;white-space:nowrap}
@@ -1282,7 +1282,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
 
 <div id="tab-openrouter" class="tab-panel" style="display:none">
 <h2 style="margin-bottom:4px">OpenRouter</h2>
-<div class="hint" id="orSummary" style="margin:0 0 16px">Loading...</div>
+<div class="hint" id="oprtSummary" style="margin:0 0 16px">Loading...</div>
 
 
 
@@ -1292,19 +1292,19 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
       <div class="field" style="margin:0">
         <label>Base URL</label>
         <div style="display:flex;gap:8px;align-items:center">
-          <input type="text" id="orBaseURL" placeholder="https://openrouter.ai/api/v1" style="flex:1;min-width:0">
-          <button class="btn btn-primary btn-sm" onclick="saveOrConfig()" data-i18n="confirm">Confirm</button>
+          <input type="text" id="oprtBaseURL" placeholder="https://openrouter.ai/api/v1" style="flex:1;min-width:0">
+          <button class="btn btn-primary btn-sm" onclick="saveOprtConfig()" data-i18n="confirm">Confirm</button>
         </div>
       </div>
     </div>
     <div class="flex" style="gap:10px;margin:8px 0;align-items:center;flex-wrap:wrap">
       <label class="hint" style="margin:0">Probe model (used by the Test buttons):</label>
-      <select id="orProbeModel" style="max-width:420px"><option value="">auto</option></select>
+      <select id="oprtProbeModel" style="max-width:420px"><option value="">auto</option></select>
     </div>
     <div class="table-wrap" style="margin-bottom:10px">
       <table>
         <thead><tr><th style="width:50px">#</th><th style="width:150px" data-i18n="Key">Key</th><th data-i18n="Status">Status</th><th title="Counted locally by this proxy — not the official free quota" data-i18n="Today/Total tokens">Today/Total tokens</th><th data-i18n="Last used">Last used</th><th title="Main exit first, backup as fallback; both down = row skipped (isolation)." data-i18n="Proxy binding">Proxy binding</th><th style="width:130px;text-align:center" data-i18n="Actions">Actions</th><th style="text-align:center" title="Routing participation. New rows start disabled — tick Pool to enable." data-i18n="Pool">Pool</th></tr></thead>
-        <tbody id="orKeysBody"><tr><td colspan="8" class="empty">Loading...</td></tr></tbody>
+        <tbody id="oprtKeysBody"><tr><td colspan="8" class="empty">Loading...</td></tr></tbody>
       </table>
     </div>
     <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin:10px 6px 4px">
@@ -1312,13 +1312,13 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
       <div style="display:flex;gap:8px">
         <button class="btn btn-sm" onclick="stageAllOrKeysRouting(true)" data-i18n="enable_all">Enable all</button>
         <button class="btn btn-sm" onclick="stageAllOrKeysRouting(false)" data-i18n="disable_all">Disable all</button>
-        <button class="btn btn-sm" onclick="refreshProxyHealthCache().then(() => stageProxiesByOrder('or'))" title="Bind main proxy by row order: 1st credential to Direct, then the proxy pool in order, skipping manually disabled proxies (staged - click Save to apply; enable/disable and backup untouched)">Bind proxies in order</button>
+        <button class="btn btn-sm" onclick="refreshProxyHealthCache().then(() => stageProxiesByOrder('oprt'))" title="Bind main proxy by row order: 1st credential to Direct, then the proxy pool in order, skipping manually disabled proxies (staged - click Save to apply; enable/disable and backup untouched)">Bind proxies in order</button>
         <button class="btn btn-sm" onclick="stageClearOrKeyProxies()" title="Stage only — click Save to apply. Clears bindings and disables every row." data-i18n="clear_bindings">Clear bindings</button>
-        <button class="btn btn-sm" id="orTestBtn" onclick="batchTestOrKeys()" title="Run the Test probe on every row." data-i18n="test_all">Test all</button>
+        <button class="btn btn-sm" id="oprtTestBtn" onclick="batchTestOprtKeys()" title="Run the Test probe on every row." data-i18n="test_all">Test all</button>
       </div>
       <div style="display:flex;gap:8px">
-        <button class="btn btn-sm btn-warn" id="orResetBtn" onclick="resetOrKeyEdits()" title="Discard staged changes and reload the last saved state" data-i18n="discard">Discard</button>
-        <button class="btn btn-primary btn-sm" id="orKeysSaveBtn" onclick="saveOrKeyEdits()" data-i18n="save">Save</button>
+        <button class="btn btn-sm btn-warn" id="oprtResetBtn" onclick="resetOprtKeyEdits()" title="Discard staged changes and reload the last saved state" data-i18n="discard">Discard</button>
+        <button class="btn btn-primary btn-sm" id="oprtKeysSaveBtn" onclick="saveOprtKeyEdits()" data-i18n="save">Save</button>
       </div>
     </div>
   </div>
@@ -1328,10 +1328,10 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
   <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></span> Rate-limit defense</div>
   <div class="section-body">
     <div class="form-row">
-      <div class="field"><label>Max concurrency</label><input type="text" id="orMaxConc" placeholder="8"></div>
-      <div class="field"><label>Rate-limit retries</label><input type="text" id="orRetries" placeholder="3"></div>
+      <div class="field"><label>Max concurrency</label><input type="text" id="oprtMaxConc" placeholder="8"></div>
+      <div class="field"><label>Rate-limit retries</label><input type="text" id="oprtRetries" placeholder="3"></div>
     </div>
-    <div class="form-actions"><button class="btn btn-primary" onclick="saveOrConfig()" data-i18n="save_rate_limit_config">Save rate-limit config</button></div>
+    <div class="form-actions"><button class="btn btn-primary" onclick="saveOprtConfig()" data-i18n="save_rate_limit_config">Save rate-limit config</button></div>
   </div>
 </div>
 
@@ -1339,10 +1339,10 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
   <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 5-6"/></svg></span> Model catalog <span class="probe-pill" data-models-info style="font-weight:normal"></span></div>
   <div class="section-body">
         <div class="flex" style="margin-bottom:10px;gap:10px">
-      <button class="btn btn-sm btn-primary" onclick="refreshOrModels(this)" data-i18n="refresh_models">Refresh models</button>
+      <button class="btn btn-sm btn-primary" onclick="refreshOprtModels(this)" data-i18n="refresh_models">Refresh models</button>
       <span class="hint" style="margin:0">Automatically synced from the official model source upstream (every 5 minutes)</span>
     </div>
-    <div id="orModelsBody">Loading...</div>
+    <div id="oprtModelsBody">Loading...</div>
     </div>
   </div>
 </div>
@@ -1558,19 +1558,19 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
   </div>
 </dialog>
 
-<dialog id="orKeyAddDialog">
+<dialog id="oprtKeyAddDialog">
   <div class="wb-dialog-head">
     <span>Add OpenRouter keys</span>
     <button class="btn btn-sm" onclick="closeOrKeyAddDialog()" data-i18n="close">Close</button>
   </div>
   <div class="wb-dialog-body">
-    <p class="hint" style="margin-top:0" id="orKeyAddHint">One OpenRouter API key per line (sk-or-v1-…). New keys start with routing disabled — tick Pool to enable.</p>
+    <p class="hint" style="margin-top:0" id="oprtKeyAddHint">One OpenRouter API key per line (sk-or-v1-…). New keys start with routing disabled — tick Pool to enable.</p>
     <div class="field">
       <label>API keys (one per line) *</label>
-      <textarea id="orKeyAddInput" rows="5" placeholder="sk-or-v1-…" style="font-family:'JetBrains Mono',Consolas,monospace"></textarea>
+      <textarea id="oprtKeyAddInput" rows="5" placeholder="sk-or-v1-…" style="font-family:'JetBrains Mono',Consolas,monospace"></textarea>
     </div>
     <div class="wb-dialog-actions">
-      <button class="btn btn-primary" id="orKeyAddSubmit" onclick="orKeyAddFromDialog()" data-i18n="save">Save</button>
+      <button class="btn btn-primary" id="oprtKeyAddSubmit" onclick="oprtKeyAddFromDialog()" data-i18n="save">Save</button>
       <button class="btn" onclick="closeOrKeyAddDialog()" data-i18n="cancel">Cancel</button>
     </div>
   </div>
@@ -1924,7 +1924,6 @@ const I18N = {
   'proxy_exclusion_rules': { en: 'Proxy exclusion rules: ', zh: '代理排除规则：' },
   'Append': { en: 'Append', zh: '追加' },
   'Discard staged exclusions and reload the last saved state': { en: 'Discard staged exclusions and reload the last saved state', zh: '放弃暂存的排除修改，恢复为上次保存的状态' },
-  'clear_selection': { en: 'Clear selection', zh: '清空选择' },
   'nothing_to_append': { en: 'Nothing to append', zh: '没有需要追加的代理' },
   'appended_to_every_platform_s_exclusion_list_stag': { en: 'Appended to every platform\'s exclusion list (staged) — click Save to apply', zh: '已追加进所有平台的排除列表（暂存）——点「保存」后生效' },
   'Click to pick platforms to ban…': { en: 'Click to pick platforms to ban…', zh: '点击选择要封禁的平台…' },
@@ -2347,7 +2346,7 @@ const I18N = {
   'supports_tools': { en: 'tools', zh: '工具' },
   'structured_output': { en: 'structured output', zh: '结构化输出' },
   'catalog_metadata_source': { en: 'metadata joined from upstream catalog', zh: '元数据补自上游模型目录' },
-  'cline_catalog_feed_only': { en: 'Plugin FREE only', zh: '仅展示插件免费' },
+  'cline_catalog_feed_only': { en: 'Plugin FREE only', zh: '筛选插件免费' },
   'cline_catalog_feed_only_title': { en: 'The FREE group in the plugin UI is the official recommendation slot (feed free group); when on, only those models are listed.', zh: '插件 UI 的 FREE 组是官方推荐位（feed free 组）；开启后目录仅显示该组模型' },
   'today': { en: 'Today', zh: '今日' },
   'total_1_1': { en: 'total', zh: '累计' },
@@ -2583,8 +2582,6 @@ const I18N = {
   'keyword_is_required': { en: 'Keyword is required', zh: '请输入关键字' },
   'ban_all_models_of_this_platform_containing_the_k': { en: 'Ban all models of this platform containing the keyword (case-insensitive)?', zh: '封禁该平台所有包含关键字的模型（大小写不敏感）？' },
   'unblocked': { en: 'Unblocked: ', zh: '已解禁：' },
-  // 封禁档位标签（trae 按端点档位封禁：remote/traecode/traework）
-  'banned_on_this_endpoint_tier_only': { en: 'banned on this endpoint tier only', zh: '仅该端点档位被封，同 ID 其他档位不受影响' },
   'no_matching_ban_entry_it_may_have_been_unblocked': { en: 'No matching ban entry — it may have been unblocked already.', zh: '未找到对应的封禁条目——可能已经解禁过了。' },
   // TraeWork 平台页（vendored trae2api，2026-11-04 上游切换）
   'Gateway': { en: 'Gateway', zh: '网关' },
@@ -2948,7 +2945,7 @@ function switchTab(name) {
   if (name === 'proxypool') loadProxyPool();
   if (name === 'opencode') { loadOcConfig(); loadOcModels(); loadModels(); }
   if (name === 'workbuddy') { ensureWorkbuddyConsole(); loadModels(); }
-  if (name === 'openrouter') loadOrConfig();
+  if (name === 'openrouter') loadOprtConfig();
   if (name === 'other') loadOtherConfig();
   if (name === 'combos') { loadCombos(); fillComboModels(); }
   // 把当前页写进 hash：刷新/重开浏览器后 restoreTab 恢复到离开时的页
@@ -4307,7 +4304,7 @@ function proxyRateSet(match, rate) {
 // 下拉行右侧展示的最近在线率：无样本返回 null（不标注）。底色按每 20%
 // 一档共五档（见 proxyRateTier），替代旧"低率标红"的单档口径。
 // eg 表单的 data-eg 值 → 出口冷却的平台 kind（acc/key 是历史字段名，其余同名）。
-const EG_KIND_TO_PK = { acc: 'cline', key: 'zen', trae: 'trae', wb: 'wb', or: 'or', th: 'th', other: 'other' };
+const EG_KIND_TO_PK = { acc: 'cline', key: 'zen', trae: 'trae', wb: 'wb', oprt: 'oprt', th: 'th', other: 'other' };
 // proxyRecentRate 出口的最近在线率徽章。kind = 调用方所在平台（eg 的 data-eg
 // 值，可空）：平台级冷却**只影响对应平台**的徽章——wb 被冷却时，wb 页显示 ∞，
 // cline 页照常显示真实在线率（cline 用它是正常的）；无平台上下文（代理池
@@ -4358,7 +4355,7 @@ function proxyRateTier(rate) {
 // 代理绑定与"启用"勾选的改动只落在 DOM（行高亮 + 保存按钮描边），点击各
 // 平台的"保存"按钮才逐行 diff 快照后提交后端，再刷新表格。清空代理/一键
 // 启用/一键禁用同样只是暂存，保存后才生效。
-const EDIT_SAVE_BTN = { acc: 'accSaveBtn', key: 'ocKeysSaveBtn', wb: 'wbSaveBtn', or: 'orKeysSaveBtn', other: 'otherKeysSaveBtn' };
+const EDIT_SAVE_BTN = { acc: 'accSaveBtn', key: 'ocKeysSaveBtn', wb: 'wbSaveBtn', oprt: 'oprtKeysSaveBtn', other: 'otherKeysSaveBtn' };
 function markRowDirty(row, kind) {
   if (row) row.classList.add('tr-dirty');
   const btn = _(EDIT_SAVE_BTN[kind] || 'accSaveBtn');
@@ -4395,7 +4392,7 @@ function stageRowBindingClear(row, kind) {
 
 // 各凭据页的表格容器（键 -> tbody 选择器），一键代理按页取行。
 const BIND_TBODY = { acc: '#accountTableBody', trae: '#traeAccountsBody', key: '#ocKeysBody', wb: '#wbAccountsBody',
-                    or: '#orKeysBody', other: '#otherKeysBody' };
+                    or: '#oprtKeysBody', other: '#otherKeysBody' };
 
 // 一键代理：按行序把主代理依次绑定为 [直连, 代理池第1项, 代理池第2项, ...]。
 // 仅暂存——与 Enable/Disable all、Clear bindings 同一口径，必须点 Save 才落盘。
@@ -4454,20 +4451,20 @@ function stageProxiesByOrder(kind) {
 // 按各表行序从上到下依次回填。重选后逐平台自动调用既有保存函数落盘。
 // 注意：懒加载 —— 各平台表格仅在访问过对应页后渲染，重排前先逐类加载；
 // 自动保存会连带保存所选平台各表所有未落盘的暂存改动。
-const REORDER_KINDS = ['acc', 'trae', 'wb', 'key', 'or', 'th', 'other']; // 与左侧菜单同序
+const REORDER_KINDS = ['acc', 'trae', 'wb', 'key', 'oprt', 'th', 'other']; // 与左侧菜单同序
 // 弹窗平台行（顺序 = REORDER_KINDS = 左侧菜单序）
 const REORDER_PLATFORMS = [
   { key: 'acc', label: 'Cline' },
   { key: 'trae', label: 'TraeWork' },
   { key: 'wb', label: 'WorkBuddy' },
   { key: 'key', label: 'OpenCode' },
-  { key: 'or', label: 'OpenRouter' },
+  { key: 'oprt', label: 'OpenRouter' },
   { key: 'other', label: 'Other' }
 ];
 const REORDER_LOADERS = { acc: loadAccounts, trae: loadTraeConfig, key: loadOcConfig, wb: ensureWorkbuddyConsole,
-                          or: loadOrConfig, other: loadOtherConfig };
+                          or: loadOprtConfig, other: loadOtherConfig };
 const REORDER_SAVERS = { acc: saveAccountEdits, trae: saveTraeEdits, key: saveKeyEdits, wb: saveWorkbuddyEdits,
-                         or: saveOrKeyEdits, other: saveOtherKeyEdits };
+                         or: saveOprtKeyEdits, other: saveOtherKeyEdits };
 // 打开重排确认弹窗：平台行固定 7 项（与菜单同序），默认全部勾选
 function openReorderDlg() {
   // 健康快照只在代理池页加载时刷新：重排可能从别的页触发，先拉最新状态，
@@ -4711,14 +4708,14 @@ async function testAllCredentialPlatforms() {
   const safe = p => Promise.resolve(p).catch(() => {});
   try {
     await Promise.all([
-      safe(loadAccounts()), safe(loadOcConfig()), safe(loadOrConfig()),
+      safe(loadAccounts()), safe(loadOcConfig()), safe(loadOprtConfig()),
       safe(loadTraeConfig()),
       safe(loadOtherConfig()), safe(loadWorkbuddyAccounts()),
     ]);
     const steps = [
       ['Cline', batchTestAccounts],
       ['OpenCode', batchTestKeys],
-      ['OpenRouter', batchTestOrKeys],
+      ['OpenRouter', batchTestOprtKeys],
       ['TraeWork', batchTestTraeAccounts],
       ['WorkBuddy', batchTestWorkbuddyAccounts],
     ];
@@ -5515,9 +5512,9 @@ async function saveAdminLogToggle() {
   }
 }
 
-// cline 目录「仅展示插件免费」（2026-11-11 用户定）：插件 UI 的 FREE 组是官方
-// 推荐位（feed free 组），catalog 零价发现不属于该组。对外 /v1/models 与面板
-// 同开关同口径（面板有什么，对外提供什么）。
+// cline 目录「筛选插件免费」（2026-11-11 用户定，2026-11-16 改文案）：插件 UI
+// 的 FREE 组是官方推荐位（feed free 组），catalog 零价发现不属于该组。对外
+// /v1/models 与面板同开关同口径（面板有什么，对外提供什么）。
 // 勾选即存（落盘 afree-config.json）+ 热刷新目录——过滤在服务端
 //（/admin/api/models），重拉即生效。
 async function saveClineCatalogFeedOnly() {
@@ -5688,9 +5685,13 @@ async function loadModels() {
     // 目录区已分平台迁回各自页面：同名 pill（data-models-info）每页一个，统一回填。
     document.querySelectorAll('[data-models-info]').forEach(el => { el.textContent = info; });
     const row = (inner) => '<div style="display:flex;align-items:center;gap:10px;padding:8px 12px;margin:5px 0;background:rgba(148,163,184,.06);border:1px solid var(--border);border-radius:10px;transition:.15s">' + inner + '</div>';
-    // 黑名单过滤：cline/zen 目录返回的是裸 ID（对外形态 zen: 前缀由网关拼），
-    // 所以两种形态都查；wb 目录返回的已带 wbcn:/wbgb: 前缀。
-    const notBlocked = m => m && !modelBlacklistIds.has(m.id) && !modelBlacklistIds.has('zen:' + m.id);
+    // 黑名单过滤：zen/wb 目录返回的 ID 已是对外形态（zen 由后端 zenPrefixedID
+    // 拼、wb 已带 wbcn:/wbgb: 前缀），等值命中；cline 目录仍是内部裸 ID，
+    // 而封禁/自动拉黑条目按对外形态记（cline-free/ 前缀，2026-11-15 修复），
+    // 所以裸 ID 要补前缀再查一次。曾有的 'zen:' + m.id 兜底方向写反（zen 目录
+    // 当时是裸 ID、需查 zen: 前缀），后端改返带前缀 ID 后它只会匹配 zen:zen:
+    // 双前缀脏条目，删除。
+    const notBlocked = m => m && !modelBlacklistIds.has(m.id) && !modelBlacklistIds.has('cline-free/' + m.id);
     // 封禁按钮（手动封禁 = 加入黑名单，原因「管理员手动封禁」）。
     const banBtn = (platform, model, refresh) =>
       '<button class="btn btn-sm btn-danger" data-bl-ban="1" data-platform="' + esc(platform) + '" data-model="' + esc(model) + '"' +
@@ -5714,11 +5715,13 @@ async function loadModels() {
     const accBox = _('accModelsBody');
     if (accBox) {
       const clineV = models.filter(notBlocked);
-      // 显示用对外 ID（/v1/models 同形态，cline-free/ 前缀由网关补，与 Go
-      // displayClineModelID 同语义）；封禁传参保持内部 feed ID
-      //（IsModelBlacklisted 两种形态都认）。此前面板显示内部裸名
-      //（cohere/xxx:free），与客户端实际请求的 cline-free/cohere/xxx:free
-      // 对不上，排查封禁/调用时容易看岔。
+      // 显示与封禁传参都用对外 ID（/v1/models 同形态，cline-free/ 前缀由网关
+      // 补，与 Go displayClineModelID 同语义）。封禁必须按对外 ID 记：
+      // IsModelBlacklisted 是纯等值匹配（请求路径与 /v1/models 摘除拿到的都是
+      // 对外形态），存内部裸名则封禁完全不生效——此前注释声称「两种形态都认」
+      // 是错的（2026-11-15 实查修正）。此前面板显示内部裸名（cohere/xxx:free），
+      // 与客户端实际请求的 cline-free/cohere/xxx:free 对不上，排查封禁/调用时
+      // 容易看岔。
       const clineDisplayID = (id) => {
         id = (id || '').trim();
         if (!id || id.startsWith('cline-free/')) return id;
@@ -5730,7 +5733,7 @@ async function loadModels() {
             (m.metadata_source ? ' title="' + T('catalog_metadata_source') + ' ↳ ' + esc(m.metadata_source) + '"' : '') + '>' + esc(clineDisplayID(m.id)) + '</span>' +
             '<span class="model-tag free">' + T('no_charge') + '</span>' +
             modelMetaTags(m) +
-            banBtn('cline', m.id))).join('')
+            banBtn('cline', clineDisplayID(m.id)))).join('')
         : '<div class="empty">' + T(clineCredOk ? 'No models' : 'Models appear here once an account is enabled — the catalog syncs from upstream') + '</div>';
     }
     // OpenCode 免费模型（OpenCode 页底部目录区）
@@ -5745,8 +5748,10 @@ async function loadModels() {
               '<span style="font-family:\'JetBrains Mono\',monospace;font-size:13px;flex:1">' + esc(m.id) + '</span>' +
               '<span class="model-tag free">' + T('no_charge') + '</span>' +
               wbContextTagHTML(m.context, T('context')) +
-              // 目录是裸 ID，对外形态带 zen: 前缀——封禁按对外 ID 记。
-              banBtn('zen', 'zen:' + m.id))).join('')
+              // 目录已返回带 zen: 前缀的 ID（后端 zenPrefixedID 统一，与 /v1/models
+              // 同口径）——直接按对外 ID 记封禁，别再手拼一次前缀（2026-11-15
+              // 双前缀 bug：后端改返带前缀 ID 后，这里拼出 zen:zen:... 写进黑名单）。
+              banBtn('zen', m.id))).join('')
         : '<div class="empty">' + T(zenCredOk ? 'No models' : 'Models appear here once a credential is enabled — the catalog syncs from upstream') + '</div>';
     }
     // WorkBuddy 模型（WorkBuddy 页底部目录区；行样式与 cline/OpenCode 目录
@@ -5823,21 +5828,15 @@ async function loadModelBlacklist() {
       const when = it.createdAt ? new Date(it.createdAt).toLocaleString(TZ, TIME_OPT) : '—';
       // 悬停看上游原始报文 + 业务码；表格列只放统一文案（自动/手动封禁）。
       const title = esc([it.code ? 'code ' + it.code : '', it.detail || ''].filter(Boolean).join(' · ')).slice(0, 800);
-      // trae 按端点档位封禁：模型 ID 后挂档位标签，解禁按钮带上档位——
-      // 否则「解禁」只会去删不带档位的全档键，带档位的条目原地不动
-      //（点了没反应，2026-10-28 修复）。
-      const scopeTag = it.scope
-        ? ' <span class="model-tag" title="' + esc(T('banned_on_this_endpoint_tier_only')) + '">' + esc(it.scope) + '</span>'
-        : '';
       return '<tr>' +
-        '<td style="text-align:center"><input type="checkbox" class="bl-check" style="width:auto;padding:0;vertical-align:middle" data-platform="' + esc(it.platform) + '" data-model="' + esc(it.model) + '" data-scope="' + esc(it.scope || '') + '"></td>' +
+        '<td style="text-align:center"><input type="checkbox" class="bl-check" style="width:auto;padding:0;vertical-align:middle" data-platform="' + esc(it.platform) + '" data-model="' + esc(it.model) + '"></td>' +
         '<td>' + esc(plat) + '</td>' +
-        '<td style="font-family:\'JetBrains Mono\',monospace" title="' + title + '">' + esc(it.model) + scopeTag + '</td>' +
+        '<td style="font-family:\'JetBrains Mono\',monospace" title="' + title + '">' + esc(it.model) + '</td>' +
         '<td style="font-size:12px;color:var(--text2)">' + esc(it.reason ? T(it.reason) : '—') + '</td>' +
         '<td style="font-size:12px;color:var(--text2)">' + esc(when) + '</td>' +
         '<td style="text-align:center;white-space:nowrap">' +
           '<button class="btn btn-sm" data-bl-test="1" data-platform="' + esc(it.platform) + '" data-model="' + esc(it.model) + '">' + T('test') + '</button> ' +
-          '<button class="btn btn-sm btn-warn" data-bl-unblock="1" data-platform="' + esc(it.platform) + '" data-model="' + esc(it.model) + '" data-scope="' + esc(it.scope || '') + '">' + T('unblock') + '</button>' +
+          '<button class="btn btn-sm btn-warn" data-bl-unblock="1" data-platform="' + esc(it.platform) + '" data-model="' + esc(it.model) + '">' + T('unblock') + '</button>' +
         '</td></tr>';
     }).join('');
   } catch (e) {
@@ -5890,7 +5889,7 @@ document.getElementById('blCheckAll')?.addEventListener('change', e => {
 });
 document.getElementById('batchUnblockBtn')?.addEventListener('click', async () => {
   const picked = [...document.querySelectorAll('#blacklistBody input.bl-check:checked')]
-    .map(cb => ({ platform: cb.dataset.platform, model: cb.dataset.model, scope: cb.dataset.scope || '' }));
+    .map(cb => ({ platform: cb.dataset.platform, model: cb.dataset.model }));
   if (!picked.length) { toast(T('nothing_selected'), 'warn'); return; }
   if (!confirm(T('unblock_the_selected_models_they_are_re_banned_a'))) return;
   const btn = _('batchUnblockBtn');
@@ -5899,7 +5898,7 @@ document.getElementById('batchUnblockBtn')?.addEventListener('click', async () =
   try {
     for (const it of picked) {
       try {
-        await api('POST', '/models/blacklist/unblock', { platform: it.platform, model: it.model, scope: it.scope });
+        await api('POST', '/models/blacklist/unblock', { platform: it.platform, model: it.model });
         ok++;
       } catch (e) { toast(esc(it.model) + ': ' + e.message, 'error'); }
     }
@@ -5926,11 +5925,11 @@ async function testBlockedModel(btn) {
   }
 }
 async function unblockBlockedModel(btn) {
-  const platform = btn.dataset.platform, model = btn.dataset.model, scope = btn.dataset.scope || '';
+  const platform = btn.dataset.platform, model = btn.dataset.model;
   if (!confirm(T('unblock_this_model_it_becomes_available_in_v1_mo'))) return;
   btn.disabled = true;
   try {
-    const d = await api('POST', '/models/blacklist/unblock', { platform: platform, model: model, scope: scope });
+    const d = await api('POST', '/models/blacklist/unblock', { platform: platform, model: model });
     // 后端删不到条目时返回 success=false：如实提示，不能无条件弹「已解禁」
     //（此前点了没反应却报成功，误导排查方向，2026-10-28 修复）。
     if (d.success === false) {
@@ -5948,15 +5947,15 @@ async function unblockBlockedModel(btn) {
 // banModel 手动封禁：模型展示区「封禁」按钮 → POST /models/blacklist/ban，
 // 后端原因统一记「管理员手动封禁」。成功后刷新封禁表与当前所在页的模型列表。
 async function banModel(btn) {
-  const platform = btn.dataset.platform, model = btn.dataset.model, scope = btn.dataset.scope || '';
+  const platform = btn.dataset.platform, model = btn.dataset.model;
   if (!confirm(T('ban_this_model_it_is_removed_from_v1_models_imme'))) return;
   btn.disabled = true;
   try {
-    await api('POST', '/models/blacklist/ban', { platform: platform, model: model, scope: scope });
+    await api('POST', '/models/blacklist/ban', { platform: platform, model: model });
     toast(T('banned') + model, 'success');
     loadModelBlacklist();
     const ref = btn.dataset.refresh;
-    else if (ref === 'or') loadOrConfig();
+    else if (ref === 'oprt') loadOprtConfig();
     else loadModels();
   } catch (e) {
     toast(e.message, 'error'); btn.disabled = false;
@@ -6071,7 +6070,7 @@ function catalogResultToast(res, cfg) {
 const refreshClineModels = btn => refreshCatalog(btn, { label: 'Cline', endpoint: '/models/refresh', reload: loadModels });
 const refreshZenModels = btn => refreshCatalog(btn, { label: 'OpenCode', endpoint: '/opencode/models/refresh', reload: loadModels });
 const refreshTraeModels = btn => refreshCatalog(btn, { label: 'TraeWork', endpoint: '/trae/models/refresh', reload: loadTraeConfig });
-const refreshOrModels = btn => refreshCatalog(btn, { label: 'OpenRouter', endpoint: '/openrouter/models/refresh', reload: loadOrConfig });
+const refreshOprtModels = btn => refreshCatalog(btn, { label: 'OpenRouter', endpoint: '/openrouter/models/refresh', reload: loadOprtConfig });
 const refreshWbModels = btn => refreshCatalog(btn, { label: 'WorkBuddy', wb: true, endpoint: WB_API_PREFIX + '/models/refresh', reload: loadModels });
 
 // ========== Banned platforms（封禁平台） ==========
@@ -7250,16 +7249,10 @@ function ppBulkRenderMenu() {
       return '<div class="pb-row" style="justify-content:space-between" data-bulk="' + esc(p) + '" onclick="ppBulkPick(this.dataset.bulk, true)">' +
         '<span>' + esc(egLabel(p)) + '</span><span class="pr-opt-host">' + esc(host) + '</span></div>';
     }).join('');
-  menu.innerHTML = (rows || '<div class="pr-opt-empty">' + T(q ? 'No match' : 'No pool proxies left to exclude') + '</div>') +
-    '<div class="pb-foot"><button class="btn btn-sm" style="flex:1" onclick="ppBulkClear()">' + T('clear_selection') + '</button></div>';
+  menu.innerHTML = (rows || '<div class="pr-opt-empty">' + T(q ? 'No match' : 'No pool proxies left to exclude') + '</div>');
 }
 function ppBulkPick(p, on) {
   if (on) ppBulkSel.add(p); else ppBulkSel.delete(p);
-  ppBulkSyncChips();
-  ppBulkRenderMenu();
-}
-function ppBulkClear() {
-  ppBulkSel.clear();
   ppBulkSyncChips();
   ppBulkRenderMenu();
 }
@@ -7389,7 +7382,7 @@ function refreshBindingTables() {
   if (_('traeAccountsBody') && _('traeAccountsBody').querySelector('.eg-input')) loadTraeConfig();
   if (_('ocKeysBody') && _('ocKeysBody').querySelector('.eg-input')) loadOcConfig();
   if (_('wbAccountsBody') && _('wbAccountsBody').querySelector('.eg-input')) loadWorkbuddyAccounts();
-  if (_('orKeysBody') && _('orKeysBody').querySelector('.eg-input')) loadOrConfig();
+  if (_('oprtKeysBody') && _('oprtKeysBody').querySelector('.eg-input')) loadOprtConfig();
   if (_('otherKeysBody') && _('otherKeysBody').querySelector('.eg-input')) loadOtherConfig();
 }
 
@@ -7411,37 +7404,37 @@ async function loadOcModels() {
 // ========== OpenRouter page ==========
 // key 池（oprt: 前缀平台）：配置加载/保存、key 表暂存编辑（绑定 + 路由启用）、
 // 批量测试、探测模型下拉、免费模型目录表。协议与 OpenCode 页同构。
-let orCfgCache = {};
-let orKeySnapshot = {};
+let oprtCfgCache = {};
+let oprtKeySnapshot = {};
 
-async function loadOrConfig() {
+async function loadOprtConfig() {
   try {
     await loadProxyListCache();
     const d = await api('GET', '/openrouter/config');
     const c = d.data;
-    orCfgCache = c;
+    oprtCfgCache = c;
     const ks = c.keyStates || [];
-    const sum = _('orSummary');
+    const sum = _('oprtSummary');
     if (sum) {
       const routed = ks.filter(k => k.routingEnabled !== false).length;
       const cooling = ks.filter(k => k.cooling).length;
       sum.textContent = ks.length + ' ' + T('keys') + ' · ' + routed + ' ' + T('active_1_1') + ' · ' + cooling + ' ' + T('cooling_2');
     }
     renderOrKeyStates(ks);
-    _('orBaseURL').value = c.baseURL || '';
-    _('orMaxConc').value = c.maxConcurrency || 8;
-    _('orRetries').value = c.retries || 3;
+    _('oprtBaseURL').value = c.baseURL || '';
+    _('oprtMaxConc').value = c.maxConcurrency || 8;
+    _('oprtRetries').value = c.retries || 3;
     // 封禁过滤：黑名单语义是「不再对外提供」，页面模型列表同步剔除。
     await syncModelBlacklist();
     const models = (c.models || []).filter(m => m && !modelBlacklistIds.has(m.id));
-    const sel = _('orProbeModel');
+    const sel = _('oprtProbeModel');
     if (sel) {
       const prev = sel.value;
       sel.innerHTML = '<option value="">' + T('auto') + '</option>' +
         models.map(m => '<option value="' + esc(String(m.id || '').replace(/^oprt:/, '')) + '">' + esc(m.id) + '</option>').join('');
       if (Array.from(sel.options).some(o => o.value === prev)) sel.value = prev;
     }
-    const tb = _('orModelsBody');
+    const tb = _('oprtModelsBody');
     if (tb) {
       // 展示样式与网关设置页一致：等宽 ID + 免费标签 + 上下文标签（Name 进 title）
       const row = (inner) => '<div style="display:flex;align-items:center;gap:10px;padding:8px 12px;margin:5px 0;background:rgba(148,163,184,.06);border:1px solid var(--border);border-radius:10px;transition:.15s">' + inner + '</div>';
@@ -7450,23 +7443,23 @@ async function loadOrConfig() {
             '<span style="font-family:\'JetBrains Mono\',monospace;font-size:13px;flex:1"' + (m.name ? ' title="' + esc(m.name) + '"' : '') + '>' + esc(m.id) + '</span>' +
             '<span class="model-tag free">' + T('no_charge') + '</span>' +
             wbContextTagHTML(m.context, T('context')) +
-            '<button class="btn btn-sm btn-danger" data-bl-ban="1" data-platform="openrouter" data-model="' + esc(m.id) + '" data-refresh="or" style="white-space:nowrap">' + T('ban') + '</button>')).join('')
+            '<button class="btn btn-sm btn-danger" data-bl-ban="1" data-platform="openrouter" data-model="' + esc(m.id) + '" data-refresh="oprt" style="white-space:nowrap">' + T('ban') + '</button>')).join('')
         : '<div class="empty">' + T('no_free_models_yet_click_refresh_models') + '</div>';
     }
   } catch (e) { /* ignore */ }
 }
 
-async function saveOrConfig() {
+async function saveOprtConfig() {
   // key 列表不随本表单提交（增删在 key 表的添加凭据/删除按钮里）
   const body = {
-    baseURL: _('orBaseURL').value.trim(),
-    maxConcurrency: parseInt(_('orMaxConc').value) || 8,
-    retries: parseInt(_('orRetries').value) || 3,
+    baseURL: _('oprtBaseURL').value.trim(),
+    maxConcurrency: parseInt(_('oprtMaxConc').value) || 8,
+    retries: parseInt(_('oprtRetries').value) || 3,
   };
   try {
     await api('POST', '/openrouter/config/update', body);
     toast(T('openrouter_config_saved'), 'success');
-    loadOrConfig();
+    loadOprtConfig();
   } catch (e) { toast(T('save_failed') + e.message, 'error'); }
 }
 
@@ -7474,9 +7467,9 @@ async function saveOrConfig() {
 // key 状态表：key 掩码 / 今日累计 token / 最近使用 / 冷却 / 代理绑定 / 测试 /
 // 删除 / 启用（暂存编辑）。
 function renderOrKeyStates(ks) {
-  const tb = _('orKeysBody');
+  const tb = _('oprtKeysBody');
   if (!tb) return;
-  orKeySnapshot = {};
+  oprtKeySnapshot = {};
   tb.innerHTML = ks.length
     ? ks.map(k => {
         const cool = k.cooling
@@ -7489,16 +7482,16 @@ function renderOrKeyStates(ks) {
         const backupVal = backupLocked ? pMain : pBackup;
         const isStale = proxyStale;
         const bind = '<td style="white-space:nowrap">' +
-          egComboHTML('or', k.index, 'main', pMain, T('main_exit_used_whenever_available')) + ' ' +
-          (backupProxyOn ? egComboHTML('or', k.index, 'backup', backupVal, T('backup_exit_used_when_main_is_cooling_removed'), backupLocked) : '') +
+          egComboHTML('oprt', k.index, 'main', pMain, T('main_exit_used_whenever_available')) + ' ' +
+          (backupProxyOn ? egComboHTML('oprt', k.index, 'backup', backupVal, T('backup_exit_used_when_main_is_cooling_removed'), backupLocked) : '') +
           (isStale(pMain) || isStale(pBackup) ? ' <span title="' + esc(T('bound_proxy_is_no_longer_in_the_proxy_pool_skipp')) + '" style="color:var(--danger)">⚠</span>' : '') +
           '</td>';
         const routed = k.routingEnabled !== false;
-        orKeySnapshot[k.index] = { main: pMain, backup: backupVal, routing: routed };
+        oprtKeySnapshot[k.index] = { main: pMain, backup: backupVal, routing: routed };
         const routing = '<td style="text-align:center">' +
-          '<input type="checkbox" data-orr="' + k.index + '"' + (routed ? ' checked' : '') + ' title="' + esc(T('participates_in_request_routing')) + '">' + '</td>';
+          '<input type="checkbox" data-oprt-r="' + k.index + '"' + (routed ? ' checked' : '') + ' title="' + esc(T('participates_in_request_routing')) + '">' + '</td>';
         const actions = '<td style="white-space:nowrap;text-align:center">' +
-          '<button class="btn btn-sm" data-ort="' + k.index + '">' + T('test') + '</button> ' +
+          '<button class="btn btn-sm" data-oprt-t="' + k.index + '">' + T('test') + '</button> ' +
           '<button class="btn btn-sm btn-danger" data-ordel="' + k.index + '" title="' + esc(T('remove_this_key_from_the_pool')) + '">' + T('delete') + '</button>' + '</td>';
         return '<tr draggable="true" data-drag-id="' + k.index + '"><td>#' + (k.index + 1) + '</td>' +
           '<td style="font-family:monospace;font-size:11px">' + esc(k.keyMask) + '</td>' +
@@ -7511,49 +7504,49 @@ function renderOrKeyStates(ks) {
       }).join('')
     : '<tr><td colspan="8" class="empty">No OpenRouter keys configured</td></tr>';
   tb.onclick = e => {
-    const t = e.target.closest('button[data-ort]');
-    if (t) { testOrKey(parseInt(t.dataset.ort, 10), t); return; }
+    const t = e.target.closest('button[data-oprt-t]');
+    if (t) { testOprtKey(parseInt(t.dataset.oprtT, 10), t); return; }
     const d = e.target.closest('button[data-ordel]');
     if (d) deleteOrKey(parseInt(d.dataset.ordel, 10), d);
   };
   tb.onchange = e => {
-    const r = e.target.closest('input[data-orr]');
-    if (r) markRowDirty(r.closest('tr'), 'or');
+    const r = e.target.closest('input[data-oprt-r]');
+    if (r) markRowDirty(r.closest('tr'), 'oprt');
   };
 }
 
 function stageAllOrKeysRouting(enabled) {
   let staged = 0, same = 0;
-  document.querySelectorAll('#orKeysBody input[data-orr]').forEach(cb => {
-    const snap = orKeySnapshot[parseInt(cb.dataset.orr, 10)];
+  document.querySelectorAll('#oprtKeysBody input[data-oprt-r]').forEach(cb => {
+    const snap = oprtKeySnapshot[parseInt(cb.dataset.oprtR, 10)];
     if (snap && snap.routing === enabled) { same++; return; }
     cb.checked = enabled;
-    markRowDirty(cb.closest('tr'), 'or');
+    markRowDirty(cb.closest('tr'), 'oprt');
     staged++;
   });
   stageBatchResult(staged, same, 0);
 }
 // 清空代理（暂存）：全部 key 清绑定 + 路由全部禁用，与 zen/账号页同语义
 function stageClearOrKeyProxies() {
-  document.querySelectorAll('#orKeysBody tr').forEach(row => {
-    const main = row.querySelector('.eg-input[data-eg="or"][data-slot="main"]');
+  document.querySelectorAll('#oprtKeysBody tr').forEach(row => {
+    const main = row.querySelector('.eg-input[data-eg="oprt"][data-slot="main"]');
     if (!main) return;
-    let dirty = stageRowBindingClear(row, 'or');
-    const cb = row.querySelector('input[data-orr]');
+    let dirty = stageRowBindingClear(row, 'oprt');
+    const cb = row.querySelector('input[data-oprt-r]');
     if (cb && cb.checked) { cb.checked = false; dirty = true; }
-    if (dirty) markRowDirty(row, 'or');
+    if (dirty) markRowDirty(row, 'oprt');
   });
 }
-async function saveOrKeyEdits() {
-  const rows = [...document.querySelectorAll('#orKeysBody tr')].filter(r => r.querySelector('.eg-input'));
+async function saveOprtKeyEdits() {
+  const rows = [...document.querySelectorAll('#oprtKeysBody tr')].filter(r => r.querySelector('.eg-input'));
   let changed = 0, failed = 0;
   for (const row of rows) {
-    const mainInput = row.querySelector('.eg-input[data-eg="or"][data-slot="main"]');
+    const mainInput = row.querySelector('.eg-input[data-eg="oprt"][data-slot="main"]');
     const idx = parseInt(mainInput.dataset.egid, 10);
     const main = mainInput.dataset.value || '';
-    const rcb = row.querySelector('input[data-orr]');
-    const snap = orKeySnapshot[idx] || { main: '', backup: '', routing: true };
-    const backup = row.querySelector('.eg-input[data-eg="or"][data-slot="backup"]')?.dataset.value ?? snap.backup;
+    const rcb = row.querySelector('input[data-oprt-r]');
+    const snap = oprtKeySnapshot[idx] || { main: '', backup: '', routing: true };
+    const backup = row.querySelector('.eg-input[data-eg="oprt"][data-slot="backup"]')?.dataset.value ?? snap.backup;
     try {
       if (main !== snap.main || backup !== snap.backup) {
         await api('POST', '/openrouter/keys/proxy', { index: idx, main: main, backup: backup });
@@ -7565,16 +7558,16 @@ async function saveOrKeyEdits() {
       row.classList.remove('tr-dirty');
     } catch (e) { failed++; }
   }
-  clearDirtyMarks('orKeysBody', 'orKeysSaveBtn');
+  clearDirtyMarks('oprtKeysBody', 'oprtKeysSaveBtn');
   if (failed) toast(T('save_failed_for') + failed + T('account_s'), 'error');
   else if (!changed) toast(T('no_changes_to_save'), 'info');
   else toast(T('saved_1') + changed + T('account_change_s'), 'success');
-  loadOrConfig(); loadStats();
+  loadOprtConfig(); loadStats();
 }
 
-function resetOrKeyEdits() {
-  clearDirtyMarks('orKeysBody', 'orKeysSaveBtn');
-  loadOrConfig();
+function resetOprtKeyEdits() {
+  clearDirtyMarks('oprtKeysBody', 'oprtKeysSaveBtn');
+  loadOprtConfig();
 }
 
 async function deleteOrKey(index, btn) {
@@ -7588,17 +7581,17 @@ async function deleteOrKey(index, btn) {
     toast(T('delete_failed') + e.message, 'error');
   } finally {
     if (btn) { btn.disabled = false; btn.innerHTML = original; }
-    loadOrConfig(); loadStats();
+    loadOprtConfig(); loadStats();
   }
 }
 
-async function testOrKey(index, btn) {
+async function testOprtKey(index, btn) {
   const original = btn ? btn.innerHTML : '';
   if (btn) { btn.disabled = true; btn.innerHTML = '<span class="loading"></span>' + T('testing'); }
   try {
     const d = await api('POST', '/openrouter/keys/test', {
       index: index,
-      model: (_('orProbeModel') ? _('orProbeModel').value : '')
+      model: (_('oprtProbeModel') ? _('oprtProbeModel').value : '')
     });
     const r = d.data || {};
     const label = { active: T('ok_2'), cooldown: T('cooldown_1'), error: T('error_1_1') }[r.status] || r.status;
@@ -7614,12 +7607,12 @@ async function testOrKey(index, btn) {
     toast(T('test_failed') + e.message, 'error');
   } finally {
     if (btn) { btn.disabled = false; btn.innerHTML = original; }
-    loadOrConfig();
+    loadOprtConfig();
   }
 }
 
-async function batchTestOrKeys() {
-  const btn = _('orTestBtn');
+async function batchTestOprtKeys() {
+  const btn = _('oprtTestBtn');
   // 网关设置里封禁的平台不对外提供服务——批量测试跑在最外层，只测
   // 当前网关对外提供的服务（2026-11-02 用户定）：封禁平台整平台跳过。
   await fetchPlatformBans();
@@ -7629,8 +7622,8 @@ async function batchTestOrKeys() {
   }
   // 2026-11-02 用户定：只测能路由的凭据（路由关闭的 key 请求到不了，跳过），
   // 见 batchTestAccounts 注释。
-  const all = Object.keys(orKeySnapshot).map(Number).sort((a, b) => a - b);
-  const idxs = all.filter(i => orKeySnapshot[i] && orKeySnapshot[i].routing !== false);
+  const all = Object.keys(oprtKeySnapshot).map(Number).sort((a, b) => a - b);
+  const idxs = all.filter(i => oprtKeySnapshot[i] && oprtKeySnapshot[i].routing !== false);
   const skipped = all.length - idxs.length;
   if (!idxs.length) {
     if (all.length) toast(T('no_routable_credentials'), 'info');
@@ -7646,7 +7639,7 @@ async function batchTestOrKeys() {
       try {
         const d = await api('POST', '/openrouter/keys/test', {
           index: idxs[i],
-          model: (_('orProbeModel') ? _('orProbeModel').value : '')
+          model: (_('oprtProbeModel') ? _('oprtProbeModel').value : '')
         });
         const r = d.data || {};
         if (r.status === 'active') ok++;
@@ -7661,28 +7654,28 @@ async function batchTestOrKeys() {
     (cool ? T(', ') + cool + T('cooling_1') : '') + (err ? T(', ') + err + T('error_1') : '') +
     (skipped ? T(', ') + skipped + T('skipped_unroutable') : ''),
     err ? 'warning' : 'success', 6000);
-  loadOrConfig();
+  loadOprtConfig();
   return { tested: idxs.length, skipped };
 }
 
 function openOrKeyAddDialog() {
-  _('orKeyAddInput').value = '';
-  _('orKeyAddDialog').showModal();
+  _('oprtKeyAddInput').value = '';
+  _('oprtKeyAddDialog').showModal();
 }
-function closeOrKeyAddDialog() { _('orKeyAddDialog').close(); }
-async function orKeyAddFromDialog() {
-  const lines = _('orKeyAddInput').value.split('\n').map(s => s.trim()).filter(Boolean);
+function closeOrKeyAddDialog() { _('oprtKeyAddDialog').close(); }
+async function oprtKeyAddFromDialog() {
+  const lines = _('oprtKeyAddInput').value.split('\n').map(s => s.trim()).filter(Boolean);
   if (!lines.length) { toast(T('enter_at_least_one_key'), 'error'); return; }
-  const cur = (orCfgCache.keys && orCfgCache.keys.length) ? orCfgCache.keys : [];
+  const cur = (oprtCfgCache.keys && oprtCfgCache.keys.length) ? oprtCfgCache.keys : [];
   const fresh = lines.filter(l => !cur.includes(l));
   if (!fresh.length) { toast(T('no_new_keys_all_already_in_the_pool'), 'info'); return; }
-  const btn = _('orKeyAddSubmit');
+  const btn = _('oprtKeyAddSubmit');
   btn.disabled = true;
   try {
     await api('POST', '/openrouter/config/update', { keys: cur.concat(fresh) });
     toast(T('added_1') + fresh.length + T('key_s'), 'success');
     closeOrKeyAddDialog();
-    loadOrConfig(); loadStats();
+    loadOprtConfig(); loadStats();
   } catch (e) {
     toast(T('save_failed') + e.message, 'error');
   } finally {
@@ -7789,7 +7782,8 @@ async function saveTraeConfig() {
 }
 
 // renderTraeModels 模型目录行：模型 ID / 域徽章 / 倍率 / 上下文 / Ban。
-// Ban 的 scope = realm（trae/solo/trae-intl/solo-intl 各自独立封禁）。
+// Ban 按对外 ID（tacn:/tagb: 前缀）封——合并域已编码在 ID 里，无档位维度
+// （2026-11-16 wb 化，与 wb/cline/zen/or 同口径）。
 function renderTraeModels(models, accs) {
   const tb = _('traeModelsBody');
   if (!tb) return;
@@ -7804,7 +7798,7 @@ function renderTraeModels(models, accs) {
           realmTag(m.realm || String(m.id || '').split(':')[0]) +
           mult +
           wbContextTagHTML(m.context_window, T('context')) +
-          '<button class="btn btn-sm btn-danger" data-bl-ban="1" data-platform="trae" data-model="' + esc(m.id) + '" data-scope="' + esc(m.realm || '') + '" data-refresh="trae" style="white-space:nowrap">' + T('ban') + '</button>' +
+          '<button class="btn btn-sm btn-danger" data-bl-ban="1" data-platform="trae" data-model="' + esc(m.id) + '" data-refresh="trae" style="white-space:nowrap">' + T('ban') + '</button>' +
           (hasEnabled ? '' : ''));
       }).join('')
     : '<div class="empty">' + T((traeCfgCache.routable || 0) > 0 ? 'No models yet — click Refresh models' : 'Models appear here once an account is enabled — the catalog follows the engine realms') + '</div>';
@@ -8886,7 +8880,7 @@ restoreTab();
 // （ocKeysBody 的 index 暂存协议、Cline 的轮转游标、wb 的 order 持久化）。
 enableRowDragReorder('accountTableBody', ids => api('POST', '/accounts/reorder', { order: ids }), loadAccounts);
 enableRowDragReorder('ocKeysBody', ids => api('POST', '/opencode/keys/reorder', { order: ids.map(Number) }), loadOcConfig);
-enableRowDragReorder('orKeysBody', ids => api('POST', '/openrouter/keys/reorder', { order: ids.map(Number) }), loadOrConfig);
+enableRowDragReorder('oprtKeysBody', ids => api('POST', '/openrouter/keys/reorder', { order: ids.map(Number) }), loadOprtConfig);
 enableRowDragReorder('otherKeysBody', ids => {
   const p = currentOtherSlug;
   return api('POST', '/other/keys/reorder', { slug: p, order: ids.map(Number) });

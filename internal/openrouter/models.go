@@ -18,7 +18,7 @@ import (
 // 冷启动快照（PageModels/SeedModels）已于 2026-11-11 用户拍板整机制取消
 //（与 cline extraFreeModels 同款处理）：目录如实反映 live 同步结果，宁空
 // 勿过期快照——官方会把模型移出免费层，快照会把已计费模型当免费对外。
-// 空目录期间请求按 strict-gate fail-closed 拒；startOrModelsRefresher 的
+// 空目录期间请求按 strict-gate fail-closed 拒；startOprtModelsRefresher 的
 // 30s×10 快速重试链负责尽快完成首拉。
 
 // CatalogURL 公共模型目录端点（免认证，含 pricing，用于交叉校验）。
@@ -166,7 +166,7 @@ func chatCapable(e catalogEntry) bool {
 // InitCatalog 初始化目录：已加载过则立即返回。冷启动不注入任何快照
 // （2026-11-11 用户定，与 cline 同口径：目录如实反映 live 同步结果，宁空
 // 勿过期快照）。空目录期间请求按 strict-gate fail-closed 拒；异步 SyncCatalog
-// 完成首拉后目录即为 live 权威态，startOrModelsRefresher 的快速重试链保证
+// 完成首拉后目录即为 live 权威态，startOprtModelsRefresher 的快速重试链保证
 // 首拉失败也尽快补齐。
 func InitCatalog() {
 	catalogMu.RLock()

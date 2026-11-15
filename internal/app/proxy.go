@@ -335,7 +335,7 @@ func StartProxy(host string, port int) error {
 
 		// OpenRouter 路由：oprt:<model-id> 前缀（纯 key 池平台，无账号 OAuth）
 		if openrouter.HasPrefix(model) {
-			handleOrChat(w, r, params)
+			handleOprtChat(w, r, params)
 			return
 		}
 
@@ -4248,7 +4248,7 @@ func servedModelEntries() []map[string]any {
 	// 合并 WorkBuddy 模型（wbcn:/wbgb: 前缀，vendor 层翻译源项目 realm）。
 	data = append(data, workbuddyModelEntries()...)
 	// 合并 OpenRouter 免费模型（oprt: 前缀）。
-	data = append(data, orModelList()...)
+	data = append(data, oprtModelList()...)
 	// 合并 Trae 模型（vendored trae2api 域前缀：trae:/solo:/trae-intl:/solo-intl:）。
 	data = append(data, trae2apiModelEntries()...)
 	// 合并 Other 子平台勾选模型（各子平台自定义前缀）。

@@ -92,7 +92,7 @@ func TestShouldCooldownExit(t *testing.T) {
 	dial := fmt.Errorf(`Post "https://x/v1/chat": dial tcp 10.0.0.1:443: i/o timeout`)
 	reset()
 	_ = recordExitFailure(pkWb, p, streams[0])
-	if scope, cool := shouldCooldownExit(pkOr, p, streams[0]); cool || scope != "" {
+	if scope, cool := shouldCooldownExit(pkOprt, p, streams[0]); cool || scope != "" {
 		t.Fatalf("other platform's failure must not inherit wb's strike (scope=%q cool=%v)", scope, cool)
 	}
 	// 全局层与平台层分开计数：全局层已记 1 次建连失败，不影响平台层判定

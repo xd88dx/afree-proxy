@@ -38,7 +38,7 @@ func TestOpenRouterAutoBanPermanent(t *testing.T) {
 	}
 	for _, tc := range cases {
 		resetAutobanForTest(t)
-		orAutoBanPermanent("poolside/laguna-s-2.1:free", tc.err)
+		oprtAutoBanPermanent("poolside/laguna-s-2.1:free", tc.err)
 		id := openrouter.ModelPrefix + "poolside/laguna-s-2.1:free"
 		got := IsModelBlacklisted(id)
 		if got != tc.want {

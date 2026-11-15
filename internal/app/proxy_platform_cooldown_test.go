@@ -47,7 +47,7 @@ func TestPlatformScopedCooldown(t *testing.T) {
 	if proxyAvailableFor(pkWb, bannedIdx) {
 		t.Fatal("wb should see the exit cooled after 2 strikes")
 	}
-	if !proxyAvailableFor(pkOr, bannedIdx) {
+	if !proxyAvailableFor(pkOprt, bannedIdx) {
 		t.Fatal("or must NOT be affected by wb-scoped cooldown")
 	}
 	if len(proxyCooldowns) != 0 {
@@ -57,7 +57,7 @@ func TestPlatformScopedCooldown(t *testing.T) {
 	if _, _, ok := pickBoundProxyFor(pkWb, banned, ""); ok {
 		t.Fatal("wb bound pick must skip the platform-cooled exit")
 	}
-	if u, _, ok := pickBoundProxyFor(pkOr, banned, ""); !ok || u != banned {
+	if u, _, ok := pickBoundProxyFor(pkOprt, banned, ""); !ok || u != banned {
 		t.Fatalf("or bound pick should still return the exit (got %q ok=%v)", u, ok)
 	}
 	// 兜底轮转同口径：wb 轮转跳过被封出口，落到健康出口
@@ -68,12 +68,12 @@ func TestPlatformScopedCooldown(t *testing.T) {
 	// ③ 建连阶段失败：60s 窗口 2-strike（2026-10-31）后全局冷却，所有平台一起
 	// 避开；单次失败只记账不冷却
 	dialErr := fmt.Errorf("dial tcp 1.2.3.4:443: connect: connection refused")
-	recordProxyOutcome(pkOr, healthy, false, dialErr, 0)
-	if !proxyAvailableFor(pkOr, healthyIdx) || !proxyAvailableFor(pkWb, healthyIdx) {
+	recordProxyOutcome(pkOprt, healthy, false, dialErr, 0)
+	if !proxyAvailableFor(pkOprt, healthyIdx) || !proxyAvailableFor(pkWb, healthyIdx) {
 		t.Fatal("single establishment failure must not cool yet (2-strike)")
 	}
-	recordProxyOutcome(pkOr, healthy, false, dialErr, 0)
-	if proxyAvailableFor(pkOr, healthyIdx) || proxyAvailableFor(pkWb, healthyIdx) {
+	recordProxyOutcome(pkOprt, healthy, false, dialErr, 0)
+	if proxyAvailableFor(pkOprt, healthyIdx) || proxyAvailableFor(pkWb, healthyIdx) {
 		t.Fatal("repeated establishment failure must cool the exit globally")
 	}
 	if len(proxyCooldowns) != 1 {
@@ -88,7 +88,7 @@ func TestPlatformScopedCooldown(t *testing.T) {
 	proxyCooldownsMu.Unlock()
 	proxyStreamFailMu.Unlock()
 	recordProxyOutcome(pkWb, banned, false, streamErr, 0)
-	if _, cool := shouldCooldownExit(pkOr, banned, streamErr); cool {
+	if _, cool := shouldCooldownExit(pkOprt, banned, streamErr); cool {
 		t.Fatal("or strikes must not be satisfied by wb failures")
 	}
 }

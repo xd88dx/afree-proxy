@@ -406,81 +406,46 @@ func TestBatchBanPlatformModels(t *testing.T) {
 	}
 }
 
-// Trae 模型级失败判据：1005/4023 直接封，4001 先复核，限流不封。
-func TestTraeScopedBanIsolation(t *testing.T) {
+// Trae 域隔离：封禁按对外 ID（tacn:/tagb: 前缀）等值命中，域由 ID 前缀区分
+// （2026-11-16 wb 化，scope 维度废除）——国内版拉黑不连带国际版同 bare 模型。
+func TestTraeBanDomainIsolation(t *testing.T) {
 	t.Setenv("DATA_DIR", testDataDir(t))
 	resetModelBlacklistForTest(t)
 
-	// trae 域封禁：不影响 solo 域
-	BanModel("trae", "trae:glm-5.3-flash", "trae")
-	if !TraeModelBannedIn("trae", "glm-5.3-flash") {
-		t.Fatal("traecode scope must be banned")
+	// 手动封禁：域精确隔离
+	BanModel(platTrae, "tacn:glm-5.3-flash")
+	if !TraeModelBannedIn("tacn", "glm-5.3-flash") {
+		t.Fatal("tacn ban must hit its own merged domain")
 	}
-	if TraeModelBannedIn("solo", "glm-5.3-flash") || TraeModelBannedIn("trae-intl", "glm-5.3-flash") {
-		t.Fatal("trae ban must not leak into solo/trae-intl scopes")
+	if TraeModelBannedIn("tagb", "glm-5.3-flash") {
+		t.Fatal("tacn ban must not leak into tagb")
 	}
-	// 全档条目（scope 空）：所有档位命中
-	BanModel("trae", "trae:glm-5.2")
-	if !TraeModelBannedIn("trae", "glm-5.2") || !TraeModelBannedIn("solo", "glm-5.2") {
-		t.Fatal("unscoped ban must apply to every scope")
+	// 自动拉黑（对外 ID）：只摘对应域——国内版 404 不再连带国际版
+	BlacklistModel(platTrae, "tacn:deepseek-v4.1-flash", "4023", BanReasonModelGone, "model not found")
+	if !TraeModelBannedIn("tacn", "deepseek-v4.1-flash") || TraeModelBannedIn("tagb", "deepseek-v4.1-flash") {
+		t.Fatal("auto ban must stay within its own merged domain")
 	}
-	// 按档位解禁只拆该档位
-	UnblockModel("trae", "trae:glm-5.3-flash", "trae")
-	if TraeModelBannedIn("trae", "glm-5.3-flash") {
-		t.Fatal("scoped unblock must clear the scoped entry")
-	}
-	// 自动封禁按传输落档位：1005 → 只封 trae 域
-	BlacklistModel("trae", "trae:kimi-k2.6", "1005", BanReasonAuto, "test", "trae")
-	if !TraeModelBannedIn("trae", "kimi-k2.6") || TraeModelBannedIn("solo", "kimi-k2.6") {
-		t.Fatal("auto ban must land on the failing transport's scope")
+	// 国际版独立封禁/解禁
+	BanModel(platTrae, "tagb:glm-5.2")
+	if !TraeModelBannedIn("tagb", "glm-5.2") || TraeModelBannedIn("tacn", "glm-5.2") {
+		t.Fatal("tagb ban must stay within its own merged domain")
 	}
 }
 
-// 面板「解禁」按钮不表达档位，语义是「这个模型别封了」：空 scope 解禁必须
-// 把按档位落的条目一起清掉。只删全档键会留下 trae/solo/trae-intl 条目，
-// 表现是点了「解禁」弹成功、刷新后条目原地不动（2026-10-28 修复）。
-func TestUnblockModelWithoutScopeClearsScopedEntries(t *testing.T) {
+// 面板「解禁」：按 (platform, model) 精确键删除，二次解禁如实报无条目。
+func TestUnblockModelExactKey(t *testing.T) {
 	t.Setenv("DATA_DIR", testDataDir(t))
 	resetModelBlacklistForTest(t)
 
-	// 自动封禁按传输落档位（4023 + raw → traecode），与生产数据同形。
-	BlacklistModel(platTrae, "trae:deepseek-v4.1-flash", "4023", BanReasonModelGone, "model not found", "trae")
-	if !TraeModelBannedIn("trae", "deepseek-v4.1-flash") {
-		t.Fatal("scoped auto ban must land on the traecode scope")
+	BanModel(platTrae, "tacn:deepseek-v4.1-flash")
+	if !UnblockModel(platTrae, "tacn:deepseek-v4.1-flash") {
+		t.Fatal("unblock must remove the entry")
 	}
-	if !UnblockModel(platTrae, "trae:deepseek-v4.1-flash") {
-		t.Fatal("unblock without scope must remove the scoped entry")
+	if IsModelBlacklisted("tacn:deepseek-v4.1-flash") {
+		t.Fatal("model must be gone after unblock")
 	}
-	if IsModelBlacklisted("trae:deepseek-v4.1-flash") || TraeModelBannedIn("trae", "deepseek-v4.1-flash") {
-		t.Fatal("model must be gone from every scope after an unscoped unblock")
-	}
-	if UnblockModel(platTrae, "trae:deepseek-v4.1-flash") {
+	if UnblockModel(platTrae, "tacn:deepseek-v4.1-flash") {
 		t.Fatal("second unblock must report nothing removed")
-	}
-
-	// 同模型多档位 + 全档条目并存：一次解禁全部清空。
-	BanModel(platTrae, "trae:glm-5.3", "solo")
-	BanModel(platTrae, "trae:glm-5.3", "trae-intl")
-	BanModel(platTrae, "trae:glm-5.3")
-	if !UnblockModel(platTrae, "trae:glm-5.3") {
-		t.Fatal("unblock must report removal")
-	}
-	if TraeModelBannedIn("solo", "glm-5.3") || TraeModelBannedIn("trae-intl", "glm-5.3") ||
-		TraeModelBannedIn("trae", "glm-5.3") {
-		t.Fatal("unscoped unblock must clear every scoped entry")
-	}
-
-	// 带档位解禁仍只拆该档位（档位隔离语义不变）。
-	BanModel(platTrae, "trae:kimi-k3", "solo")
-	BanModel(platTrae, "trae:kimi-k3", "trae-intl")
-	if !UnblockModel(platTrae, "trae:kimi-k3", "solo") {
-		t.Fatal("scoped unblock must report removal")
-	}
-	if TraeModelBannedIn("solo", "kimi-k3") {
-		t.Fatal("scoped unblock must clear only its own scope")
-	}
-	if !TraeModelBannedIn("trae-intl", "kimi-k3") {
-		t.Fatal("other scopes must survive a scoped unblock")
 	}
 }
 

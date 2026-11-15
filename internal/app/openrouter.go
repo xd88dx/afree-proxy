@@ -21,50 +21,50 @@ import (
 // 每 key 可绑主/备用出口。模型目录同步 openrouter.ai/api/v1/models 的免费
 // 子集，客户端以 or:<model-id> 形式调用。
 
-// orConfigPath OpenRouter 配置文件路径（DATA_DIR/oprt-config.json）。
-func orConfigPath() string { return kit.ResolveDataPath("oprt-config.json") }
+// oprtConfigPath OpenRouter 配置文件路径（DATA_DIR/oprt-config.json）。
+func oprtConfigPath() string { return kit.ResolveDataPath("oprt-config.json") }
 
 // initOpenRouter 加载配置 + 注入出站解析/HTTP client 工厂。StartProxy 早期
 // 调用一次；失败只记日志不影响既有平台（与 WorkBuddy 子系统同口径）。
 func initOpenRouter() {
 	openrouter.UsagePath = kit.ResolveDataPath("oprt-state.json")
-	openrouter.Load(orConfigPath())
+	openrouter.Load(oprtConfigPath())
 	openrouter.SetExitResolver(func(key string) (string, bool) {
 		if key == "" {
 			// 空 key = 平台全局出口规则（无凭据场景的兜底，如目录同步），
 			// 与"未绑定 key"完全同语义（2026-11-05）。
-			return orGlobalEgressExit()
+			return oprtGlobalEgressExit()
 		}
 		main, backup, bound := openrouter.BindingOf(key)
 		if !bound {
 			// 未绑定 = 全局规则：面板选直连时不走池
-			return orGlobalEgressExit()
+			return oprtGlobalEgressExit()
 		}
-		url, _, ok := pickBoundProxyFor(pkOr, main, backup)
+		url, _, ok := pickBoundProxyFor(pkOprt, main, backup)
 		return url, ok
 	})
 	openrouter.SetClientProvider(proxyClientFor)
 	// 出口成败/握手延迟回传（key 池平台此前无任何观测钩子）。
 	openrouter.SetProxyObserver(func(u string, ok bool, e error, ms int64) {
-		recordProxyOutcome(pkOr, u, ok, e, ms)
+		recordProxyOutcome(pkOprt, u, ok, e, ms)
 	})
 	openrouter.SetAttemptObserver(scopedObserver(keyPoolAttemptObserver(openrouter.KeyIndex, openrouter.BindingOf)))
 	// 启动即预热模型目录（异步，失败保留种子）
 	openrouter.InitCatalog()
-	go startOrModelsRefresher()
+	go startOprtModelsRefresher()
 }
 
-// orGlobalEgressExit 平台全局出口（未绑定 key / 无凭据场景的统一语义）：
+// oprtGlobalEgressExit 平台全局出口（未绑定 key / 无凭据场景的统一语义）：
 // 走池开关开启→池出口（池空兜底直连受 DISABLE_DIRECT 判否）；关闭→显式直连
 // （DISABLE_DIRECT 判否）。绝不隐式绕过 DISABLE_DIRECT（2026-10-29 审计口径）。
-func orGlobalEgressExit() (string, bool) {
+func oprtGlobalEgressExit() (string, bool) {
 	if !openrouter.ProxiesEnabled() {
 		if kit.DisableDirect() {
 			return "", false // 直连被禁：凭据失效（2026-10-28）
 		}
 		return "", true
 	}
-	url, _, ok := upstreamProxyForKind(pkOr)
+	url, _, ok := upstreamProxyForKind(pkOprt)
 	if !ok {
 		return "", false // 出口全被手动冷却：摘出轮转，不走直连兜底
 	}
@@ -74,7 +74,7 @@ func orGlobalEgressExit() (string, bool) {
 	return url, true
 }
 
-// startOrModelsRefresher 启动阶段以 30s 间隔快速重试直至首次同步成功（至多
+// startOprtModelsRefresher 启动阶段以 30s 间隔快速重试直至首次同步成功（至多
 // 10 次），之后转入常规 5 分钟 ticker。冷启动目录为空（2026-11-11 取消页面
 // 快照兜底，与 cline 同口径：宁空勿过期快照），首拉成功前目录就是空的、
 // oprt: 模型请求按 strict-gate fail-closed 拒——本链路负责把这段空窗压到
@@ -82,7 +82,7 @@ func orGlobalEgressExit() (string, bool) {
 // 出口暂不可用是典型态）时目录要等 5 分钟 ticker 才补，请求全程 404。
 // 上游偶发 TLS EOF（CF 对 uTLS 指纹连接的间歇重置，与 zen 注册表同现象）
 // 由 syncOrCatalog 的立即重试消化。
-func startOrModelsRefresher() {
+func startOprtModelsRefresher() {
 	for i := 0; i < 10; i++ {
 		if err := syncOrCatalog(2); err == nil {
 			break
@@ -120,8 +120,8 @@ func syncOrCatalog(attempts int) error {
 	return lastErr
 }
 
-// orModelList /v1/models 合并用的模型条目。
-func orModelList() []map[string]any {
+// oprtModelList /v1/models 合并用的模型条目。
+func oprtModelList() []map[string]any {
 	out := make([]map[string]any, 0)
 	for _, m := range openrouter.ModelList() {
 		entry := map[string]any{
@@ -139,9 +139,9 @@ func orModelList() []map[string]any {
 	return out
 }
 
-// orBoundRoutable 该 key 绑定出口是否可路由（隔离判定，注入 openrouter.PickKey）。
+// oprtBoundRoutable 该 key 绑定出口是否可路由（隔离判定，注入 openrouter.PickKey）。
 // 未绑定 key 恒可路由（走全局规则）；绑定代理已从池中删除/冷却中则跳过。
-func orBoundRoutable(key string) bool {
+func oprtBoundRoutable(key string) bool {
 	if !proxyIsolationEnabled() {
 		return true
 	}
@@ -149,12 +149,12 @@ func orBoundRoutable(key string) bool {
 	if !bound {
 		return true
 	}
-	return boundProxiesRoutableFor(pkOr, main, backup)
+	return boundProxiesRoutableFor(pkOprt, main, backup)
 }
 
-// handleOrChat OpenRouter chat/completions 转发（网关 /v1/chat/completions 命中
+// handleOprtChat OpenRouter chat/completions 转发（网关 /v1/chat/completions 命中
 // or: 前缀时调用）。非流式聚合 SSE、流式透传，统计与 cline/zen 同口径。
-// orAutoBanPermanent OpenRouter 永久性上游错误的自动拉黑（2026-11-04 全平台
+// oprtAutoBanPermanent OpenRouter 永久性上游错误的自动拉黑（2026-11-04 全平台
 // 可用性审计补缺：cline 有 404/计费双哨兵、trae 有模型冷却，openrouter 零接线
 // ——下线模型目录照列、每次请求撞墙把全部 key 打进冷却链）。判据（对照
 // 2026-11-04 实测铁证）：404 "no longer available / unavailable for free"=
@@ -162,7 +162,7 @@ func orBoundRoutable(key string) bool {
 // 账号无关、模型级永久）；400 "cannot be used with the chat/completions
 // endpoint"=该模型形态不支持 chat 端点。429/5xx/限流关键词不在此列（瞬时，
 // 由 key 冷却消化）。
-func orAutoBanPermanent(bare string, err error) {
+func oprtAutoBanPermanent(bare string, err error) {
 	he, ok := err.(*openrouter.HTTPError)
 	if !ok || he.RateLimited {
 		return
@@ -188,8 +188,8 @@ func orAutoBanPermanent(bare string, err error) {
 	log.Printf("  openrouter autoban: %s (%d) removed from catalog", id, he.Status)
 }
 
-// handleOrChat OpenRouter chat/completions 转发（网关 /v1/chat/completions 命中
-func handleOrChat(w http.ResponseWriter, r *http.Request, params map[string]any) {
+// handleOprtChat OpenRouter chat/completions 转发（网关 /v1/chat/completions 命中
+func handleOprtChat(w http.ResponseWriter, r *http.Request, params map[string]any) {
 	bare, _ := openrouter.StripPrefix(mustString(params["model"]))
 	m, ok := openrouter.Resolve(bare)
 	if !ok {
@@ -207,9 +207,9 @@ func handleOrChat(w http.ResponseWriter, r *http.Request, params map[string]any)
 	isStream, _ := params["stream"].(bool)
 	if isStream {
 		handleStreamBufferedGeneric(w, r, "openrouter", params, func(ctx context.Context) (*http.Response, func(map[string]any), error) {
-			resp, _, err := openrouter.Chat(ctx, params, m.ID, true, globalStrategy(), orBoundRoutable, nil)
+			resp, _, err := openrouter.Chat(ctx, params, m.ID, true, globalStrategy(), oprtBoundRoutable, nil)
 			if err != nil {
-				orAutoBanPermanent(bare, err)
+				oprtAutoBanPermanent(bare, err)
 				return nil, nil, err
 			}
 			usedKey := takeUsedKey(resp)
@@ -217,10 +217,10 @@ func handleOrChat(w http.ResponseWriter, r *http.Request, params map[string]any)
 		})
 		return
 	}
-	resp, _, err := openrouter.Chat(r.Context(), params, m.ID, true, globalStrategy(), orBoundRoutable, nil)
+	resp, _, err := openrouter.Chat(r.Context(), params, m.ID, true, globalStrategy(), oprtBoundRoutable, nil)
 	if err != nil {
 		log.Printf("  openrouter api error: %v", err)
-		orAutoBanPermanent(bare, err)
+		oprtAutoBanPermanent(bare, err)
 		writeUpstreamAPIError(w, m.ID, err, upstreamErrorStatus(err, http.StatusBadGateway))
 		return
 	}
@@ -242,7 +242,7 @@ func mustString(v any) string {
 // ============ OpenRouter 管理 API ============
 
 // GET /admin/api/openrouter/config
-func handleOrConfig(w http.ResponseWriter, r *http.Request) {
+func handleOprtConfig(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		writeAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
 		return
@@ -255,7 +255,7 @@ func handleOrConfig(w http.ResponseWriter, r *http.Request) {
 		"keyStates":               openrouter.KeyStatus(),
 		"maxConcurrency":          c.MaxConcurrency,
 		"retries":                 c.Retries,
-		"models":                  orModelList(),
+		"models":                  oprtModelList(),
 		"proxyIsolation":          proxyIsolationEnabled(),
 		"proxyIsolationEnvLocked": proxyIsolationEnvLocked(),
 		"backupProxyEnabled":      backupProxyEnabled(),
@@ -264,7 +264,7 @@ func handleOrConfig(w http.ResponseWriter, r *http.Request) {
 }
 
 // POST /admin/api/openrouter/config/update
-func handleOrConfigUpdate(w http.ResponseWriter, r *http.Request) {
+func handleOprtConfigUpdate(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
 		return
@@ -333,7 +333,7 @@ func handleOrConfigUpdate(w http.ResponseWriter, r *http.Request) {
 }
 
 // POST /admin/api/openrouter/keys/routing  body: { index, enabled }
-func handleOrKeySetRouting(w http.ResponseWriter, r *http.Request) {
+func handleOprtKeySetRouting(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
 		return
@@ -346,7 +346,7 @@ func handleOrKeySetRouting(w http.ResponseWriter, r *http.Request) {
 		writeAPI(w, http.StatusBadRequest, apiResponse{Error: "invalid JSON"})
 		return
 	}
-	if err := orSetKeyRouting(req.Index, req.Enabled); err != nil {
+	if err := oprtSetKeyRouting(req.Index, req.Enabled); err != nil {
 		writeAPI(w, http.StatusBadRequest, apiResponse{Error: err.Error()})
 		return
 	}
@@ -354,7 +354,7 @@ func handleOrKeySetRouting(w http.ResponseWriter, r *http.Request) {
 }
 
 // POST /admin/api/openrouter/keys/routing/all  body: { enabled }
-func handleOrKeySetRoutingAll(w http.ResponseWriter, r *http.Request) {
+func handleOprtKeySetRoutingAll(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
 		return
@@ -366,12 +366,12 @@ func handleOrKeySetRoutingAll(w http.ResponseWriter, r *http.Request) {
 		writeAPI(w, http.StatusBadRequest, apiResponse{Error: "invalid JSON"})
 		return
 	}
-	n := orSetAllKeysRouting(req.Enabled)
+	n := oprtSetAllKeysRouting(req.Enabled)
 	writeAPI(w, http.StatusOK, apiResponse{Success: true, Message: fmt.Sprintf("routing enabled=%v on %d key(s)", req.Enabled, n)})
 }
 
 // POST /admin/api/openrouter/keys/reorder  body: { order: [oldIndex,...] }
-func handleOrKeysReorder(w http.ResponseWriter, r *http.Request) {
+func handleOprtKeysReorder(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
 		return
@@ -383,7 +383,7 @@ func handleOrKeysReorder(w http.ResponseWriter, r *http.Request) {
 		writeAPI(w, http.StatusBadRequest, apiResponse{Error: "invalid JSON"})
 		return
 	}
-	if err := orReorderKeys(req.Order); err != nil {
+	if err := oprtReorderKeys(req.Order); err != nil {
 		writeAPI(w, http.StatusBadRequest, apiResponse{Error: err.Error()})
 		return
 	}
@@ -391,7 +391,7 @@ func handleOrKeysReorder(w http.ResponseWriter, r *http.Request) {
 }
 
 // POST /admin/api/openrouter/keys/delete  body: { index }
-func handleOrKeyDelete(w http.ResponseWriter, r *http.Request) {
+func handleOprtKeyDelete(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
 		return
@@ -403,7 +403,7 @@ func handleOrKeyDelete(w http.ResponseWriter, r *http.Request) {
 		writeAPI(w, http.StatusBadRequest, apiResponse{Error: "invalid JSON"})
 		return
 	}
-	if err := orDeleteKey(req.Index); err != nil {
+	if err := oprtDeleteKey(req.Index); err != nil {
 		writeAPI(w, http.StatusBadRequest, apiResponse{Error: err.Error()})
 		return
 	}
@@ -411,7 +411,7 @@ func handleOrKeyDelete(w http.ResponseWriter, r *http.Request) {
 }
 
 // POST /admin/api/openrouter/keys/proxy  body: { index, main, backup }
-func handleOrKeySetProxy(w http.ResponseWriter, r *http.Request) {
+func handleOprtKeySetProxy(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
 		return
@@ -425,7 +425,7 @@ func handleOrKeySetProxy(w http.ResponseWriter, r *http.Request) {
 		writeAPI(w, http.StatusBadRequest, apiResponse{Error: "invalid JSON"})
 		return
 	}
-	if err := orSetKeyProxy(req.Index, req.Main, req.Backup); err != nil {
+	if err := oprtSetKeyProxy(req.Index, req.Main, req.Backup); err != nil {
 		writeAPI(w, http.StatusBadRequest, apiResponse{Error: err.Error()})
 		return
 	}
@@ -433,17 +433,17 @@ func handleOrKeySetProxy(w http.ResponseWriter, r *http.Request) {
 }
 
 // POST /admin/api/openrouter/keys/proxy/clear
-func handleOrKeyClearProxies(w http.ResponseWriter, r *http.Request) {
+func handleOprtKeyClearProxies(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
 		return
 	}
-	n := orClearAllKeyProxies()
+	n := oprtClearAllKeyProxies()
 	writeAPI(w, http.StatusOK, apiResponse{Success: true, Data: map[string]any{"cleared": n}})
 }
 
 // POST /admin/api/openrouter/keys/test  body: { index }
-func handleOrKeyTest(w http.ResponseWriter, r *http.Request) {
+func handleOprtKeyTest(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
 		return
@@ -456,7 +456,7 @@ func handleOrKeyTest(w http.ResponseWriter, r *http.Request) {
 		writeAPI(w, http.StatusBadRequest, apiResponse{Error: "invalid JSON"})
 		return
 	}
-	result, status := orTestKey(req.Index, req.Model)
+	result, status := oprtTestKey(req.Index, req.Model)
 	result["status"] = status
 	log.Printf("Test openrouter key #%d: status=%s model=%v reason=%v", req.Index+1, status, result["model"], result["reason"])
 	writeAPI(w, http.StatusOK, apiResponse{
@@ -468,7 +468,7 @@ func handleOrKeyTest(w http.ResponseWriter, r *http.Request) {
 
 // POST /admin/api/openrouter/models/refresh
 // 2026-10-31：改走全平台统一的刷新契约（见 admin_models_refresh.go）。
-func handleOrModelsRefresh(w http.ResponseWriter, r *http.Request) {
+func handleOprtModelsRefresh(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
 		return
@@ -489,7 +489,7 @@ func handleOrModelsRefresh(w http.ResponseWriter, r *http.Request) {
 
 // ============ OpenRouter key 池操作（写时复制，与 zen 同口径） ============
 
-func orCloneConfig() (*openrouter.Config, *openrouter.Config) {
+func oprtCloneConfig() (*openrouter.Config, *openrouter.Config) {
 	cur := openrouter.Get()
 	next := &openrouter.Config{
 		BaseURL:           cur.BaseURL,
@@ -508,20 +508,20 @@ func orCloneConfig() (*openrouter.Config, *openrouter.Config) {
 	return cur, next
 }
 
-func orSetKeyRouting(index int, enabled bool) error {
+func oprtSetKeyRouting(index int, enabled bool) error {
 	cur := openrouter.Get()
 	if index < 0 || index >= len(cur.Keys) {
 		return fmt.Errorf("key index out of range")
 	}
 	key := cur.Keys[index]
-	_, next := orCloneConfig()
+	_, next := oprtCloneConfig()
 	next.KeyRoutingEnabled[key] = enabled
 	openrouter.Set(next)
 	return nil
 }
 
-func orSetAllKeysRouting(enabled bool) int {
-	cur, next := orCloneConfig()
+func oprtSetAllKeysRouting(enabled bool) int {
+	cur, next := oprtCloneConfig()
 	n := 0
 	for _, k := range cur.Keys {
 		next.KeyRoutingEnabled[k] = enabled
@@ -531,7 +531,7 @@ func orSetAllKeysRouting(enabled bool) int {
 	return n
 }
 
-func orReorderKeys(order []int) error {
+func oprtReorderKeys(order []int) error {
 	cur := openrouter.Get()
 	n := len(cur.Keys)
 	if len(order) == 0 {
@@ -556,19 +556,19 @@ func orReorderKeys(order []int) error {
 			}
 		}
 	}
-	_, next := orCloneConfig()
+	_, next := oprtCloneConfig()
 	next.Keys = nextKeys
 	openrouter.Set(next)
 	return nil
 }
 
-func orDeleteKey(index int) error {
+func oprtDeleteKey(index int) error {
 	cur := openrouter.Get()
 	if index < 0 || index >= len(cur.Keys) {
 		return fmt.Errorf("key index out of range")
 	}
 	key := cur.Keys[index]
-	_, next := orCloneConfig()
+	_, next := oprtCloneConfig()
 	next.Keys = append(next.Keys[:index], next.Keys[index+1:]...)
 	delete(next.KeyBindings, key)
 	delete(next.KeyRoutingEnabled, key)
@@ -576,7 +576,7 @@ func orDeleteKey(index int) error {
 	return nil
 }
 
-func orSetKeyProxy(index int, main, backup string) error {
+func oprtSetKeyProxy(index int, main, backup string) error {
 	main = strings.TrimSpace(main)
 	backup = strings.TrimSpace(backup)
 	cur := openrouter.Get()
@@ -588,7 +588,7 @@ func orSetKeyProxy(index int, main, backup string) error {
 	if err := validateProxyBinding(main, backup); err != nil {
 		return err
 	}
-	_, next := orCloneConfig()
+	_, next := oprtCloneConfig()
 	if main == "" && backup == "" {
 		delete(next.KeyBindings, key)
 	} else {
@@ -598,18 +598,18 @@ func orSetKeyProxy(index int, main, backup string) error {
 	return nil
 }
 
-func orClearAllKeyProxies() int {
-	cur, next := orCloneConfig()
+func oprtClearAllKeyProxies() int {
+	cur, next := oprtCloneConfig()
 	n := len(cur.KeyBindings)
 	next.KeyBindings = map[string]openrouter.Binding{}
 	openrouter.Set(next)
 	return n
 }
 
-// orTestKey 对单个 key 发一个极小探测请求（与 cline/zen 的 Test 同语义）：
+// oprtTestKey 对单个 key 发一个极小探测请求（与 cline/zen 的 Test 同语义）：
 // 真实 2xx = 成功并清除冷却；401/403 = key 失效；429 = 限流（上报冷却与
 // 预计恢复时刻）。返回 (结果, status)，status ∈ active/cooldown/error。
-func orTestKey(index int, modelID string) (map[string]any, string) {
+func oprtTestKey(index int, modelID string) (map[string]any, string) {
 	cur := openrouter.Get()
 	result := map[string]any{"index": index}
 	if index < 0 || index >= len(cur.Keys) {
@@ -679,7 +679,7 @@ func orTestKey(index int, modelID string) (map[string]any, string) {
 // （保留 baseURL 与平台设置）；token 记账与冷却表一并清空（ClearUsage 即时
 // 落盘痕迹文件）。
 func clearOpenrouterKeysForDataDelete() int {
-	cur, next := orCloneConfig()
+	cur, next := oprtCloneConfig()
 	n := len(cur.Keys)
 	next.Keys = nil
 	next.KeyBindings = map[string]openrouter.Binding{}

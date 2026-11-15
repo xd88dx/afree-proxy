@@ -93,7 +93,9 @@ func TestZenForbiddenGateStampsAndClears(t *testing.T) {
 	if !zenSessionRefreshedRecently(key, time.Now()) {
 		t.Fatal("gate must be open right after a passive refresh")
 	}
-	raw, err := os.ReadFile(filepath.Join(dir, "zen-config.json"))
+	// 2026-11-15 起 sessions 段随 dad86a1 迁入 zen-state.json（运行时状态，
+	// 不再污染 zen-config.json），落盘断言跟着换文件。
+	raw, err := os.ReadFile(filepath.Join(dir, "zen-state.json"))
 	if err != nil {
 		t.Fatalf("read persisted zen config: %v", err)
 	}
@@ -129,7 +131,7 @@ func TestZenForbiddenGateStampsAndClears(t *testing.T) {
 	}
 }
 
-// 重启不丢：加载持久化文件后闸门依然生效（否则冷却只在单进程内有效）。
+// 重启不丢：加载持久化文件后闸门依然有效（否则冷却只在单进程内有效）。
 func TestZenForbiddenGateSurvivesReload(t *testing.T) {
 	setupZenSessionTestUpstream(t)
 	key := "sk-gate-c"
@@ -145,6 +147,6 @@ func TestZenForbiddenGateSurvivesReload(t *testing.T) {
 	loadZenSessions()
 
 	if !zenSessionRefreshedRecently(key, time.Now()) {
-		t.Fatal("gate must stay open after reload from zen-config.json")
+		t.Fatal("gate must stay open after reload from zen-state.json")
 	}
 }
