@@ -227,7 +227,6 @@ func setupZenDepTest(t *testing.T, upstream *httptest.Server) {
 	zenSessMu.Lock()
 	zenSessions = map[string]*zenSessionEntry{}
 	zenSessLoaded = true
-	zenSessPath = ""
 	zenSessSaveBlocked = false
 	zenSessMu.Unlock()
 	zenDepMu.Lock()

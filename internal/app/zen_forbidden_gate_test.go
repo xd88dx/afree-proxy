@@ -140,7 +140,6 @@ func TestZenForbiddenGateSurvivesReload(t *testing.T) {
 	// 模拟重启：清内存表、允许重新从磁盘加载。
 	zenSessions = map[string]*zenSessionEntry{}
 	zenSessLoaded = false
-	zenSessPath = ""
 	zenSessMu.Unlock()
 
 	loadZenSessions()

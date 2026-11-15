@@ -1,6 +1,7 @@
 package app
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
 	"sync"
@@ -54,7 +55,6 @@ var (
 	zenSessMu     sync.Mutex
 	zenSessions   = map[string]*zenSessionEntry{} // zen key -> sticky identity
 	zenSessLoaded bool
-	zenSessPath   string
 	// zenSessSaveBlocked 会话文件读取失败（非 ENOENT）时置位：此时内存表是空的，
 	// 任何 save 都会把磁盘上读不到的原文件覆盖掉。宁可本次运行不落盘，也不能
 	// 销毁可能有价值的数据（重启后重试读取）。
@@ -72,8 +72,10 @@ var (
 )
 
 // loadZenSessions 启动时/首次使用时加载持久化会话（只读一次，失败则空跑）。
-// 会话表住在 zen-config.json 的 sessions 段；整文件损坏时的改名留档由
-// loadZenConfigFileLocked 统一处理（不会再出现"只有会话段坏了"的情况）。
+// 2026-11-15 起会话表迁入 zen-state.json 的 sessions 段（与 Cool/KeyTokens
+// 同为运行时状态，不再污染配置文件——配置文件恢复"仅面板操作才变"）：
+// state 有值即回填；旧部署的迁移一次性完成——config 里残留的 sessions 段
+// 合入（state 没有的 key 才用 config 值）后从 config 清除并写回两个文件。
 func loadZenSessions() {
 	zenSessMu.Lock()
 	defer zenSessMu.Unlock()
@@ -81,35 +83,68 @@ func loadZenSessions() {
 		return
 	}
 	zenSessLoaded = true
-	m := func() map[string]*zenSessionEntry {
+
+	stateM := func() map[string]*zenSessionEntry {
+		zenStateWriteMu.Lock()
+		defer zenStateWriteMu.Unlock()
+		return readZenUsageFile().Sessions
+	}()
+	cfgM := func() map[string]*zenSessionEntry {
 		zenFileMu.Lock()
 		defer zenFileMu.Unlock()
 		return loadZenConfigFileLocked().Sessions
 	}()
-	for k, e := range m {
+
+	migrated := false
+	for k, e := range stateM {
 		if e == nil || e.Session == "" {
 			continue
 		}
-		// 非法格式的占位/手改条目不再在加载时替换（旧版迁移分支已删）：
-		// 上游会以 403 拒绝，refreshZenSession 的既有自愈链路负责换新。
 		zenSessions[k] = e
+	}
+	if len(cfgM) > 0 {
+		for k, e := range cfgM {
+			if e == nil || e.Session == "" {
+				continue
+			}
+			if _, ok := zenSessions[k]; !ok {
+				zenSessions[k] = e
+			}
+		}
+		// config 清空 sessions 段（一次性迁移；之后旧键按 JSON 未知字段忽略）
+		mutateZenConfigFile(func(f *zenConfigFileData) {
+			f.Sessions = nil
+		})
+		migrated = true
+	}
+	if migrated {
+		saveZenSessionsLocked() // 合入结果落 state
+		log.Printf("zen sessions: migrated %d legacy config entry(s) into zen-state.json", len(cfgM))
 	}
 	log.Printf("zen sessions loaded: %d key(s) with sticky identity", len(zenSessions))
 }
 
 // saveZenSessionsLocked 持久化当前会话表（调用方持有 zenSessMu）。
-// 只覆盖 sessions 段，zen 配置与另外两张学习表原样保留。
+// 只覆盖 zen-state.json 的 sessions 段，Cool/KeyTokens 两段读现文件原样
+// 保留（文件级互斥 zenStateWriteMu，与 saveZenUsage 两个写方互不覆盖）。
 func saveZenSessionsLocked() {
 	if zenSessSaveBlocked {
 		return
 	}
+	zenStateWriteMu.Lock()
+	defer zenStateWriteMu.Unlock()
+	f := readZenUsageFile()
 	next := make(map[string]*zenSessionEntry, len(zenSessions))
 	for k, v := range zenSessions {
 		next[k] = v
 	}
-	mutateZenConfigFile(func(f *zenConfigFileData) {
-		f.Sessions = next
-	})
+	f.Sessions = next
+	raw, err := json.MarshalIndent(f, "", "  ")
+	if err != nil {
+		log.Printf("zen sessions: marshal: %v", err)
+		return
+	}
+	atomicWriteFile(zenUsagePath(), raw)
 }
 
 // saveZenSessions 对外持久化入口（内部写已在锁外调用）。

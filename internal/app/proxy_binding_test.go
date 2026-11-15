@@ -25,7 +25,6 @@ func setupZenSessionTest(t *testing.T) {
 	zenSessMu.Lock()
 	zenSessions = map[string]*zenSessionEntry{}
 	zenSessLoaded = true
-	zenSessPath = ""
 	zenSessMu.Unlock()
 }
 

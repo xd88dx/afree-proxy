@@ -24,7 +24,6 @@ func setupZenSessionTestUpstream(t *testing.T) string {
 	zenSessMu.Lock()
 	zenSessions = map[string]*zenSessionEntry{}
 	zenSessLoaded = true
-	zenSessPath = ""
 	zenSessSaveBlocked = false
 	zenSessMu.Unlock()
 	zenSessFailedMu.Lock()
@@ -293,7 +292,6 @@ func TestCorruptSessionFileIsBackedUp(t *testing.T) {
 	zenSessMu.Lock()
 	zenSessions = map[string]*zenSessionEntry{}
 	zenSessLoaded = false
-	zenSessPath = ""
 	zenSessMu.Unlock()
 	loadZenSessions()
 

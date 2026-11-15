@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"log"
 	"os"
+	"sync"
 	"time"
 
 	"afree-proxy/internal/kit"
@@ -27,11 +28,18 @@ import (
 type zenUsageFile struct {
 	Cool      map[string]time.Time        `json:"cool,omitempty"`
 	KeyTokens map[string]zenKeyTokenStats `json:"keyTokens,omitempty"`
+	// Sessions 会话铸态表（2026-11-15 从 zen-config.json 迁入，同域运行时
+	// 状态）：403 被动换新闸门的支撑数据，见 zen_session.go。真身
+	// zenSessions 在 zenSessMu 下；本文件写入统一走 zenStateWriteMu。
+	Sessions map[string]*zenSessionEntry `json:"sessions,omitempty"`
 }
 
 var (
 	// zenUsagePathOverride 测试钩子：非空时覆盖痕迹文件路径。
 	zenUsagePathOverride string
+	// zenStateWriteMu zen-state.json 文件级写互斥：sessions（403 换新）与
+	// usage（冷却/token 记账）两个写方共用同一文件，避免互相整段覆盖。
+	zenStateWriteMu sync.Mutex
 )
 
 func zenUsagePath() string {
@@ -42,11 +50,42 @@ func zenUsagePath() string {
 }
 
 // saveZenUsage 快照 zenKeyCool/zenKeyTokens 原子落盘（tmp+rename）。
+// readZenUsageFile 只读加载 zen-state.json（不回填真身，供迁移/定向写段）。
+// 文件缺失返回零值结构；损坏改名留档（调用方按 zenSessSaveBlocked 语义处理）。
+func readZenUsageFile() zenUsageFile {
+	path := zenUsagePath()
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return zenUsageFile{}
+	}
+	var f zenUsageFile
+	if err := json.Unmarshal(raw, &f); err != nil {
+		stamp := time.Now().Format("20060102-150405")
+		if renErr := os.Rename(path, path+".corrupt-"+stamp); renErr == nil {
+			log.Printf("zen usage: corrupt JSON at %s; moved to %s.corrupt-%s", path, path, stamp)
+		}
+		log.Printf("zen usage: parse failed: %v", err)
+		return zenUsageFile{}
+	}
+	return f
+}
+
 func saveZenUsage() {
+	zenStateWriteMu.Lock()
+	defer zenStateWriteMu.Unlock()
+	// Sessions 快照（zenSessMu）与 Cool/KeyTokens 快照（zenKeyMu）分开取，
+	// 两把锁不嵌套——锁顺序恒为 zenSessMu→zenKeyMu，反向持有者只等待不回拿。
+	zenSessMu.Lock()
+	sessions := make(map[string]*zenSessionEntry, len(zenSessions))
+	for k, v := range zenSessions {
+		sessions[k] = v
+	}
+	zenSessMu.Unlock()
 	zenKeyMu.Lock()
 	out := zenUsageFile{
 		Cool:      make(map[string]time.Time, len(zenKeyCool)),
 		KeyTokens: make(map[string]zenKeyTokenStats, len(zenKeyTokens)),
+		Sessions:  sessions,
 	}
 	for k, v := range zenKeyCool {
 		out.Cool[k] = v
@@ -86,6 +125,11 @@ func loadZenUsage() {
 		log.Printf("zen usage: parse failed: %v (starting empty)", err)
 		return
 	}
+	zenSessMu.Lock()
+	if f.Sessions != nil {
+		zenSessions = f.Sessions
+	}
+	zenSessMu.Unlock()
 	zenKeyMu.Lock()
 	if f.Cool != nil {
 		zenKeyCool = f.Cool
@@ -94,15 +138,22 @@ func loadZenUsage() {
 		zenKeyTokens = f.KeyTokens
 	}
 	zenKeyMu.Unlock()
-	log.Printf("zen usage: restored %d cooldown(s) and %d token entry(s) from %s",
-		len(f.Cool), len(f.KeyTokens), path)
+	log.Printf("zen usage: restored %d cooldown(s), %d token entry(s) and %d session(s) from %s",
+		len(f.Cool), len(f.KeyTokens), len(f.Sessions), path)
 } // zenStateBackupSnapshot 统计快照（配置备份 state 段，2026-11-01）：真身
 // zenKeyCool/zenKeyTokens 在 zenKeyMu 下深拷。
 func zenStateBackupSnapshot() *zenUsageFile {
+	zenSessMu.Lock()
+	sessions := make(map[string]*zenSessionEntry, len(zenSessions))
+	for k, v := range zenSessions {
+		sessions[k] = v
+	}
+	zenSessMu.Unlock()
 	zenKeyMu.Lock()
 	out := zenUsageFile{
 		Cool:      make(map[string]time.Time, len(zenKeyCool)),
 		KeyTokens: make(map[string]zenKeyTokenStats, len(zenKeyTokens)),
+		Sessions:  sessions,
 	}
 	for k, v := range zenKeyCool {
 		out.Cool[k] = v

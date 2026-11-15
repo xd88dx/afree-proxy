@@ -28,7 +28,10 @@ import (
 // 保持既有 JSON 键名(key/keys/baseURL/...)不变,前端零改动。
 type zenConfigFileData struct {
 	zenConfigData
-	// Sessions 粘性会话表:key 明文 -> 会话条目。
+	// Sessions 粘性会话表（已弃用，2026-11-15 迁入 zen-state.json）：真身与
+	// 持久化都在 zen_session.go/zen_usage.go，本字段仅供一次性迁移读取
+	//（loadZenSessions 把 config 残留条目合入 state 后清空写回）。旧备份
+	// 文件里的 sessions 键由备份导入链直接回填真身，不经本字段。
 	Sessions map[string]*zenSessionEntry `json:"sessions,omitempty"`
 	// ModelAliases 弃用模型映射:规范化模型 ID -> 继任者。
 	ModelAliases map[string]*zenDepEntry `json:"modelAliases,omitempty"`

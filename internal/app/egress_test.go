@@ -37,7 +37,6 @@ func setupEgressTest(t *testing.T, proxies []string) {
 	zenSessMu.Lock()
 	zenSessions = map[string]*zenSessionEntry{}
 	zenSessLoaded = true
-	zenSessPath = ""
 	zenSessSaveBlocked = false
 	zenSessMu.Unlock()
 

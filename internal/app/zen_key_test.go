@@ -36,7 +36,6 @@ func setupZenProbeTest(t *testing.T, handler http.HandlerFunc) {
 	zenSessMu.Lock()
 	zenSessions = map[string]*zenSessionEntry{}
 	zenSessLoaded = true
-	zenSessPath = ""
 	zenSessSaveBlocked = false
 	zenSessMu.Unlock()
 	upstream := httptest.NewServer(handler)
