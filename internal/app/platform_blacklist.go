@@ -11,7 +11,6 @@ import (
 
 	"afree-proxy/internal/openrouter"
 	"afree-proxy/internal/other"
-	"afree-proxy/internal/tokenharbor"
 )
 
 // ============================================================================
@@ -29,7 +28,7 @@ import (
 //
 // 落盘 DATA_DIR/.platform-blacklist.json：低频管理操作，即时落盘。
 // 封禁键 = 模型黑名单的 platform 维度：cline / zen / workbuddy /
-// openrouter / tokenharbor / other:<slug>（Other 细化到子平台）。
+// openrouter / other:<slug>（Other 细化到子平台）。
 // ============================================================================
 
 type platformBanEntry struct {
@@ -80,7 +79,7 @@ func flushPlatformBan() {
 // （other:<slug>）。未知键拒绝——拼写错误静默入库等于封了个寂寞。
 func platformBanKeyValid(key string) bool {
 	switch key {
-	case platCline, platZen, platWorkBuddy, platOpenRouter, platTokenHarbor, platTrae:
+	case platCline, platZen, platWorkBuddy, platOpenRouter, platTrae:
 		return true
 	}
 	if slug, ok := strings.CutPrefix(key, "other:"); ok && slug != "" {
@@ -218,8 +217,6 @@ func routePlatformKeyOf(model string) string {
 		return platZen
 	case strings.HasPrefix(model, openrouter.ModelPrefix):
 		return platOpenRouter
-	case strings.HasPrefix(model, tokenharbor.ModelPrefix):
-		return platTokenHarbor
 	case trae2apiPlatformModel(model):
 		return platTrae
 	}

@@ -59,7 +59,6 @@ func TestPlatformOfModel(t *testing.T) {
 		"zen:glm-5.3-flash-free":                platZen,
 		"cline-free/muse-spark-1.3-contributor": platCline,
 		"oprt:vendor/model":                     platOpenRouter,
-		"tkhb:deepseek:free":                    platTokenHarbor,
 		"tacn:glm-5.2":                          platTrae,
 		"tagb:glm-5.2":                          platTrae,
 		"trae:glm-5.2":                          "", // 旧四前缀已废除（2026-11-07 tacn/tagb 合并域）

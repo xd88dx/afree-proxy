@@ -188,9 +188,9 @@ tr:hover .nick-pen{opacity:.85}
 /* 凭据表格全列居中（2026-10-29 用户定）：8 平台账号/key 表的表头与内容。
    :has() 从 tbody 反选所在表的 thead；nick-wrap / wb-account 是 flex 容器，
    text-align 管不到，单独补 justify-content。 */
-table:has(#accountTableBody) th,table:has(#traeAccountsBody) th,table:has(#ocKeysBody) th,table:has(#wbAccountsBody) th,table:has(#orKeysBody) th,table:has(#thKeysBody) th,table:has(#otherKeysBody) th,#accountTableBody td,#traeAccountsBody td,#ocKeysBody td,#wbAccountsBody td,#orKeysBody td,#thKeysBody td,#otherKeysBody td{text-align:center}
+table:has(#accountTableBody) th,table:has(#traeAccountsBody) th,table:has(#ocKeysBody) th,table:has(#wbAccountsBody) th,table:has(#orKeysBody) th,table:has(#otherKeysBody) th,#accountTableBody td,#traeAccountsBody td,#ocKeysBody td,#wbAccountsBody td,#orKeysBody td#otherKeysBody td{text-align:center}
 /* 账号/Key 列（各表第 2 列）：表头居中，内容左对齐（2026-10-29 用户定） */
-#accountTableBody td:nth-child(2),#traeAccountsBody td:nth-child(2),#ocKeysBody td:nth-child(2),#wbAccountsBody td:nth-child(2),#orKeysBody td:nth-child(2),#thKeysBody td:nth-child(2),#otherKeysBody td:nth-child(2){text-align:left}
+#accountTableBody td:nth-child(2),#traeAccountsBody td:nth-child(2),#ocKeysBody td:nth-child(2),#wbAccountsBody td:nth-child(2),#orKeysBody td:nth-child(2),#otherKeysBody td:nth-child(2){text-align:left}
 
 /* ===== Buttons ===== */
 .btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:7px 15px;border:1px solid var(--border);border-radius:var(--radius-sm);background:rgba(255,255,255,.04);color:var(--text);cursor:pointer;font-size:13px;transition:.15s;text-decoration:none;font-family:inherit;white-space:nowrap}
@@ -440,7 +440,6 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
 <div class="nav-item" data-tab="workbuddy"><span class="nav-ico"><svg viewBox="0 0 24 24"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9L12 3z"/><path d="M12 12l8-4.5M12 12v9M12 12L4 7.5"/></svg></span> WorkBuddy</div>
 <div class="nav-item" data-tab="opencode"><span class="nav-ico"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14.5 14.5 0 0 1 0 18 14.5 14.5 0 0 1 0-18z"/></svg></span> OpenCode</div>
 <div class="nav-item" data-tab="openrouter"><span class="nav-ico"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8 12h8M12 8v8"/><circle cx="12" cy="12" r="2.5"/></svg></span> OpenRouter</div>
-<div class="nav-item" data-tab="tokenharbor"><span class="nav-ico"><svg viewBox="0 0 24 24"><path d="M4 21V9l8-6 8 6v12"/><path d="M4 21h16"/><path d="M9 21v-6h6v6"/></svg></span> TokenHarbor</div>
 <div class="nav-item" data-tab="other"><span class="nav-ico"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><circle cx="17.5" cy="17.5" r="3.5"/></svg></span> Other</div>
 <div class="nav-group">Services</div>
 <div class="nav-item" data-tab="proxypool"><span class="nav-ico"><svg viewBox="0 0 24 24"><circle cx="12" cy="5" r="2.5"/><circle cx="5" cy="19" r="2.5"/><circle cx="19" cy="19" r="2.5"/><path d="M12 7.5v4m0 0-5.5 5m5.5-5 5.5 5"/></svg></span> Proxy pool</div>
@@ -481,10 +480,6 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
         <div class="dash-name">OpenRouter</div>
         <div class="dash-stats" id="dashOr">-</div>
       </div>
-      <div class="dash-card" onclick="switchTab('tokenharbor')">
-        <div class="dash-name">TokenHarbor</div>
-        <div class="dash-stats" id="dashTh">-</div>
-      </div>
       <div class="dash-card" onclick="switchTab('other')">
         <div class="dash-name">Other</div>
         <div class="dash-stats" id="dashOther">-</div>
@@ -501,7 +496,6 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
       <div class="stat-card"><div class="stat-name">WorkBuddy</div><div class="stat-line" id="reqWb">-</div></div>
       <div class="stat-card"><div class="stat-name">OpenCode</div><div class="stat-line" id="reqZen">-</div></div>
       <div class="stat-card"><div class="stat-name">OpenRouter</div><div class="stat-line" id="reqOr">-</div></div>
-      <div class="stat-card"><div class="stat-name">TokenHarbor</div><div class="stat-line" id="reqTh">-</div></div>
       <div class="stat-card"><div class="stat-name">Other</div><div class="stat-line" id="reqOther">-</div></div>
     </div>
     <div class="hint" style="margin:10px 0 0" id="reqStatsHint">Counted since process start.</div>
@@ -718,7 +712,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
     </div>
     <div id="ppSubUpdateResult" style="margin:-6px 0 10px;font-size:12px;min-height:14px"></div>
     <div class="hint" style="margin-bottom:10px">Subscription refresh replaces the whole pool with the fetched list. Fetch failures keep the current pool.</div>
-    <div class="form-actions"><button class="btn btn-primary" onclick="saveProxyPool()" data-i18n="save_proxy_pool">Save proxy pool</button><button class="btn btn-success" id="ppTestAllBtn" onclick="testAllCredentialPlatforms()" title="Run the batch test once on every platform's credential list (Cline / TraeWork / OpenCode / OpenRouter / TokenHarbor / Other / WorkBuddy), one platform at a time" data-i18n="test_all_credentials">Test all credentials</button></div>
+    <div class="form-actions"><button class="btn btn-primary" onclick="saveProxyPool()" data-i18n="save_proxy_pool">Save proxy pool</button><button class="btn btn-success" id="ppTestAllBtn" onclick="testAllCredentialPlatforms()" title="Run the batch test once on every platform's credential list (Cline / TraeWork / OpenCode / OpenRouter / Other / WorkBuddy), one platform at a time" data-i18n="test_all_credentials">Test all credentials</button></div>
   </div>
 </div>
 <div class="section">
@@ -784,9 +778,6 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
         <div class="hint">OpenRouter keys without proxy bindings follow this switch.</div>
       </div>
       <div class="pp-card">
-        <label>TokenHarbor</label>
-        <select id="ppTh"><option value="true">Proxy</option><option value="false">Direct connection</option></select>
-        <div class="hint">TokenHarbor keys without proxy bindings follow this switch.</div>
       </div>
       <div class="pp-card">
         <label>Other</label>
@@ -979,7 +970,7 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
     <div class="form-row">
       <div class="field"><label>Alias ID</label><input type="text" id="comboId" placeholder="cline-glm-5.3"></div>
       <div class="field"><label>Platform</label>
-        <select id="comboPlatform" onchange="fillComboModels()"><option value="cline">Cline</option><option value="trae">TraeWork</option><option value="workbuddy">WorkBuddy</option><option value="zen">OpenCode</option><option value="openrouter">OpenRouter</option><option value="tokenharbor">TokenHarbor</option></select>
+        <select id="comboPlatform" onchange="fillComboModels()"><option value="cline">Cline</option><option value="trae">TraeWork</option><option value="workbuddy">WorkBuddy</option><option value="zen">OpenCode</option><option value="openrouter">OpenRouter</option></select>
       </div>
       <div class="field" style="flex:2"><label>Target model</label><select id="comboTarget"></select></div>
       <div class="field" style="flex:0 0 auto;display:flex;align-items:flex-end"><label style="display:flex;gap:6px;align-items:center;white-space:nowrap;margin:0;padding-bottom: 8px;"><input type="checkbox" id="comboUseProxies"> Use proxy pool</label></div>
@@ -1357,73 +1348,6 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
 </div>
 
 
-<div id="tab-tokenharbor" class="tab-panel" style="display:none">
-<h2 style="margin-bottom:4px">TokenHarbor</h2>
-<div class="hint" id="thSummary" style="margin:0 0 16px">Loading...</div>
-
-
-
-<div class="section">
-  <div class="section-body">
-    <div class="form-row">
-      <div class="field" style="margin:0">
-        <label>Base URL</label>
-        <div style="display:flex;gap:8px;align-items:center">
-          <input type="text" id="thBaseURL" placeholder="https://tokenharbor.ai/v1" style="flex:1;min-width:0">
-          <button class="btn btn-primary btn-sm" onclick="saveTHConfig()" data-i18n="confirm">Confirm</button>
-        </div>
-      </div>
-    </div>
-    <div class="flex" style="gap:10px;margin:8px 0;align-items:center;flex-wrap:wrap">
-      <label class="hint" style="margin:0">Probe model (used by the Test buttons):</label>
-      <select id="thProbeModel" style="max-width:420px"><option value="">auto</option></select>
-    </div>
-    <div class="table-wrap" style="margin-bottom:10px">
-      <table>
-        <thead><tr><th style="width:50px">#</th><th style="width:150px" data-i18n="Key">Key</th><th data-i18n="Status">Status</th><th title="Counted locally by this proxy — not the official free quota" data-i18n="Today/Total tokens">Today/Total tokens</th><th data-i18n="Last used">Last used</th><th title="Main exit first, backup as fallback; both down = row skipped (isolation)." data-i18n="Proxy binding">Proxy binding</th><th style="width:130px;text-align:center" data-i18n="Actions">Actions</th><th style="text-align:center" title="Routing participation. New rows start disabled — tick Pool to enable." data-i18n="Pool">Pool</th></tr></thead>
-        <tbody id="thKeysBody"><tr><td colspan="8" class="empty">Loading...</td></tr></tbody>
-      </table>
-    </div>
-    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin:10px 6px 4px">
-      <button class="btn btn-primary btn-sm" onclick="openTHKeyAddDialog()" data-i18n="add_credentials">Add credentials</button>
-      <div style="display:flex;gap:8px">
-        <button class="btn btn-sm" onclick="stageAllTHKeysRouting(true)" data-i18n="enable_all">Enable all</button>
-        <button class="btn btn-sm" onclick="stageAllTHKeysRouting(false)" data-i18n="disable_all">Disable all</button>
-        <button class="btn btn-sm" onclick="refreshProxyHealthCache().then(() => stageProxiesByOrder('th'))" title="Bind main proxy by row order: 1st credential to Direct, then the proxy pool in order, skipping manually disabled proxies (staged - click Save to apply; enable/disable and backup untouched)">Bind proxies in order</button>
-        <button class="btn btn-sm" onclick="stageClearTHKeyProxies()" title="Stage only — click Save to apply. Clears bindings and disables every row." data-i18n="clear_bindings">Clear bindings</button>
-        <button class="btn btn-sm" id="thTestBtn" onclick="batchTestTHKeys()" title="Run the Test probe on every row." data-i18n="test_all">Test all</button>
-      </div>
-      <div style="display:flex;gap:8px">
-        <button class="btn btn-sm btn-warn" id="thResetBtn" onclick="resetTHKeyEdits()" title="Discard staged changes and reload the last saved state" data-i18n="discard">Discard</button>
-        <button class="btn btn-primary btn-sm" id="thKeysSaveBtn" onclick="saveTHKeyEdits()" data-i18n="save">Save</button>
-      </div>
-    </div>
-  </div>
-</div>
-
-<div class="section">
-  <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></span> Rate-limit defense</div>
-  <div class="section-body">
-    <div class="hint" style="margin-top:0;margin-bottom:14px">Upstream limits: 60 requests/min per account, 100 requests/min per IP.</div>
-    <div class="form-row">
-      <div class="field"><label>Max concurrency</label><input type="text" id="thMaxConc" placeholder="8"></div>
-      <div class="field"><label>Rate-limit retries</label><input type="text" id="thRetries" placeholder="3"></div>
-    </div>
-    <div class="form-actions"><button class="btn btn-primary" onclick="saveTHConfig()" data-i18n="save_rate_limit_config">Save rate-limit config</button></div>
-  </div>
-</div>
-
-<div class="section">
-  <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 5-6"/></svg></span> Model catalog <span class="probe-pill" data-models-info style="font-weight:normal"></span></div>
-  <div class="section-body">
-        <div class="flex" style="margin-bottom:10px;gap:10px">
-      <button class="btn btn-sm btn-primary" onclick="refreshTHModels(this)" data-i18n="refresh_models">Refresh models</button>
-      <span class="hint" style="margin:0">Automatically synced from the official model source upstream (every 5 minutes)</span>
-    </div>
-    <div id="thModelsBody">Loading...</div>
-    </div>
-  </div>
-</div>
 
 <div id="tab-other" class="tab-panel" style="display:none">
 <h2 style="margin-bottom:4px">Other</h2>
@@ -1653,23 +1577,6 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
 </dialog>
 
 
-<dialog id="thKeyAddDialog">
-  <div class="wb-dialog-head">
-    <span>Add TokenHarbor keys</span>
-    <button class="btn btn-sm" onclick="closeTHKeyAddDialog()" data-i18n="close">Close</button>
-  </div>
-  <div class="wb-dialog-body">
-    <p class="hint" style="margin-top:0" id="thKeyAddHint"><span data-i18n="th_key_add_hint_prefix">One TokenHarbor universal key per line (thk_live_…, from the</span> <a href="https://tokenharbor.ai/dashboard/api-keys" target="_blank" rel="noopener" style="color:var(--accent)">dashboard</a><span data-i18n="th_key_add_hint_suffix">). New keys start with routing disabled — tick Pool to enable.</span></p>
-    <div class="field">
-      <label>API keys (one per line) *</label>
-      <textarea id="thKeyAddInput" rows="5" placeholder="thk_live_…" style="font-family:'JetBrains Mono',Consolas,monospace"></textarea>
-    </div>
-    <div class="wb-dialog-actions">
-      <button class="btn btn-primary" id="thKeyAddSubmit" onclick="thKeyAddFromDialog()" data-i18n="save">Save</button>
-      <button class="btn" onclick="closeTHKeyAddDialog()" data-i18n="cancel">Cancel</button>
-    </div>
-  </div>
-</dialog>
 
 <dialog id="traeAddDialog" style="width:min(560px,calc(100vw - 32px))">
   <div class="wb-dialog-head">
@@ -2451,7 +2358,6 @@ const I18N = {
   'saved_1': { en: 'Saved ', zh: '已保存 ' },
   'WorkBuddy accounts without proxy bindings follow this switch.': { en: 'WorkBuddy accounts without proxy bindings follow this switch.', zh: 'WorkBuddy 未绑定代理的账号遵循此开关。' },
   'OpenRouter keys without proxy bindings follow this switch.': { en: 'OpenRouter keys without proxy bindings follow this switch.', zh: 'OpenRouter 未绑定代理的 key 遵循此开关。' },
-  'TokenHarbor keys without proxy bindings follow this switch.': { en: 'TokenHarbor keys without proxy bindings follow this switch.', zh: 'TokenHarbor 未绑定代理的 key 遵循此开关。' },
   'Other sub-platform keys without proxy bindings follow this switch.': { en: 'Other sub-platform keys without proxy bindings follow this switch.', zh: 'Other 子平台未绑定代理的 key 遵循此开关。' },
   'Pool': { en: 'Pool', zh: '启用' },
   'Routing participation. New rows start disabled — tick Pool to enable.': { en: 'Routing participation. New rows start disabled — tick Pool to enable.', zh: '路由参与开关：新增行默认禁用，勾选 Pool 后参与轮转。' },
@@ -2495,18 +2401,15 @@ const I18N = {
   'delete_this_key_1': { en: 'Delete this key?', zh: '确定删除该 key？' },
   'oauth_failed': { en: 'OAuth failed: ', zh: 'OAuth 登录失败：' },
   'recovers': { en: 'Recovers ', zh: '恢复于 ' },
-  // ===== OpenRouter / TokenHarbor 页（目录/限流/弹窗） =====
+  // ===== OpenRouter 页（目录/限流/弹窗） =====
   'Model catalog': { en: 'Model catalog', zh: '模型目录' },
   'Upstream limits: 30 requests/min per key, 8 concurrent per key, 20 requests/min per account.': { en: 'Upstream limits: 30 requests/min per key, 8 concurrent per key, 20 requests/min per account.', zh: '上游限制：单个密钥 30 次/分钟、8 并发，单个账号 20 次/分钟。' },
   'Upstream limits: 60 requests/min per account, 100 requests/min per IP.': { en: 'Upstream limits: 60 requests/min per account, 100 requests/min per IP.', zh: '上游限制：每账号 60 次/分钟，每 IP 100 次/分钟。' },
   'Add OpenRouter keys': { en: 'Add OpenRouter keys', zh: '添加 OpenRouter key' },
   'One OpenRouter API key per line (sk-or-v1-…). New keys start with routing disabled — tick Pool to enable.': { en: 'One OpenRouter API key per line (sk-or-v1-…). New keys start with routing disabled — tick Pool to enable.', zh: '每行一个 OpenRouter API key（sk-or-v1-…）。新 key 默认不参与路由——勾选"启用"后生效。' },
   '). New keys start with routing disabled — tick Pool to enable.': { en: '). New keys start with routing disabled — tick Pool to enable.', zh: '）。新 key 默认不参与路由——勾选"启用"后生效。' },
-  'Add TokenHarbor keys': { en: 'Add TokenHarbor keys', zh: '添加 TokenHarbor key' },
-  'One TokenHarbor universal key per line (thk_live_…, from the': { en: 'One TokenHarbor universal key per line (thk_live_…, from the', zh: '每行一个 TokenHarbor 通用 key（thk_live_…，获取自' },
   'dashboard': { en: 'dashboard', zh: '控制台' },
   'openrouter_config_saved': { en: 'OpenRouter config saved', zh: 'OpenRouter 配置已保存' },
-  'tokenharbor_config_saved': { en: 'TokenHarbor config saved', zh: 'TokenHarbor 配置已保存' },
   // ---- 统一「刷新模型目录」提示（2026-10-31，见 refreshCatalog）----
   'syncing': { en: 'Syncing…', zh: '同步中…' },
   'catalog_synced': { en: 'Catalog synced: ', zh: '目录已同步：' },
@@ -2590,8 +2493,6 @@ const I18N = {
   'request_logs_title': { en: 'Request logs — last 500 entries, persisted to data/requests.jsonl', zh: '请求日志——最近 500 条,落盘到 data/requests.jsonl' },
   'workbuddy_configuration': { en: 'WorkBuddy configuration', zh: 'WorkBuddy 配置' },
   'managed_by_the_admin_session': { en: 'Managed by the admin session', zh: '由管理会话托管' },
-  'th_key_add_hint_prefix': { en: 'One TokenHarbor universal key per line (thk_live_..., from the', zh: '每行一条 TokenHarbor 通用 key(thk_live_…,在' },
-  'th_key_add_hint_suffix': { en: '). New keys start with routing disabled — tick Pool to enable.', zh: ' 获取)。新 key 默认不参与路由——勾选 Pool 启用。' },
   'saved': { en: 'Saved', zh: '已保存' },
   'no_keys_configured': { en: 'No keys configured', zh: '未配置密钥' },
   'Create an entry for an upstream provider: shared Base URL, its API keys, and the model prefix its models are exposed under.': { en: 'Create an entry for an upstream provider: shared Base URL, its API keys, and the model prefix its models are exposed under.', zh: '为上游厂商创建条目：共享的 Base URL、其 API 密钥，以及模型对外暴露的前缀。' },
@@ -2653,7 +2554,6 @@ const I18N = {
   'Checking': { en: 'Checking', zh: '检查中' },
   'No opencode keys configured': { en: 'No opencode keys configured', zh: '没有配置任何 opencode key' },
   'No OpenRouter keys configured': { en: 'No OpenRouter keys configured', zh: '没有配置任何 OpenRouter key' },
-  'No TokenHarbor keys configured': { en: 'No TokenHarbor keys configured', zh: '没有配置任何 TokenHarbor key' },
   'Probe the rate limit; if still limited, stays cooling with a recovery time': { en: 'Probe the rate limit; if still limited, stays cooling with a recovery time', zh: '探测限流状态；若仍在限流则保持冷却并显示恢复时间' },
   // 静态 hint 段落与状态标签补漏（TreeWalker 按文本节点整段匹配）
   'Counted since process start.': { en: 'Counted since process start.', zh: '统计自进程启动起。' },
@@ -2784,7 +2684,7 @@ const I18N = {
   'auto-banned: model name not available on this gateway (4023)': { en: 'auto-banned: model name not available on this gateway (4023)', zh: '模型名不可用，自动封禁' },
   'session_routing_mode_maintenance_tasks_are_disab': { en: 'Session-routing mode: maintenance tasks are disabled by the ONLY_ROUTER environment variable — auto check-in, balance refresh, task center and similar controls have no effect.', zh: '仅会话路由模式：维护任务已被环境变量 ONLY_ROUTER 停用——自动签到、余额刷新、任务中心等控件不会生效。' },
   'reset': { en: 'Reset', zh: '重置' },
-  "Run the batch test once on every platform's credential list (Cline / TraeWork / OpenCode / OpenRouter / TokenHarbor / Other / WorkBuddy), one platform at a time": { en: "Run the batch test once on every platform's credential list (Cline / TraeWork / OpenCode / OpenRouter / TokenHarbor / Other / WorkBuddy), one platform at a time", zh: '逐平台批量测一次每个平台的凭据列表' },
+  "Run the batch test once on every platform's credential list (Cline / TraeWork / OpenCode / OpenRouter / Other / WorkBuddy), one platform at a time": { en: "Run the batch test once on every platform's credential list (Cline / TraeWork / OpenCode / OpenRouter / Other / WorkBuddy), one platform at a time", zh: '逐平台批量测一次每个平台的凭据列表' },
   "Refresh every enabled account's credit snapshot (feeds the Credits column)": { en: "Refresh every enabled account's credit snapshot (feeds the Credits column)", zh: '刷新每个已启用账号的额度快照（给额度列）' },
   'weight_optimize': { en: 'Weight optimize', zh: '权重优化' },
   'Weight optimize cron': { en: 'Weight optimize cron', zh: '权重优化 cron' },
@@ -3049,7 +2949,6 @@ function switchTab(name) {
   if (name === 'opencode') { loadOcConfig(); loadOcModels(); loadModels(); }
   if (name === 'workbuddy') { ensureWorkbuddyConsole(); loadModels(); }
   if (name === 'openrouter') loadOrConfig();
-  if (name === 'tokenharbor') loadTHConfig();
   if (name === 'other') loadOtherConfig();
   if (name === 'combos') { loadCombos(); fillComboModels(); }
   // 把当前页写进 hash：刷新/重开浏览器后 restoreTab 恢复到离开时的页
@@ -4039,9 +3938,6 @@ async function loadStats() {
     setDash('dashTrae', 'accounts', accs.length, accs.filter(a => a.routing === true && a.disabled !== true).length, accs.filter(a => a.cooling || a.breaker).length);
   } catch (e) { /* ignore */ }
   try {
-    const d = await api('GET', '/tokenharbor/config');
-    const ks = (d.data && d.data.keyStates) || [];
-    setDash('dashTh', 'keys', ks.length, ks.filter(k => k.routingEnabled !== false).length, ks.filter(k => k.cooling).length);
   } catch (e) { /* ignore */ }
   try {
     const d = await api('GET', '/other/config');
@@ -4063,7 +3959,6 @@ async function loadStats() {
     setReq('reqZen', rs.zen);
     setReq('reqWb', rs.workbuddy);
     setReq('reqOr', rs.openrouter);
-    setReq('reqTh', rs.tokenharbor);
     setReq('reqOther', rs.other);
     const hint = _('reqStatsHint');
     if (hint && d.data && d.data.since) hint.textContent = T('counted_since') + new Date(d.data.since).toLocaleString(TZ, TIME_OPT);
@@ -4463,7 +4358,7 @@ function proxyRateTier(rate) {
 // 代理绑定与"启用"勾选的改动只落在 DOM（行高亮 + 保存按钮描边），点击各
 // 平台的"保存"按钮才逐行 diff 快照后提交后端，再刷新表格。清空代理/一键
 // 启用/一键禁用同样只是暂存，保存后才生效。
-const EDIT_SAVE_BTN = { acc: 'accSaveBtn', key: 'ocKeysSaveBtn', wb: 'wbSaveBtn', or: 'orKeysSaveBtn', th: 'thKeysSaveBtn', other: 'otherKeysSaveBtn' };
+const EDIT_SAVE_BTN = { acc: 'accSaveBtn', key: 'ocKeysSaveBtn', wb: 'wbSaveBtn', or: 'orKeysSaveBtn', other: 'otherKeysSaveBtn' };
 function markRowDirty(row, kind) {
   if (row) row.classList.add('tr-dirty');
   const btn = _(EDIT_SAVE_BTN[kind] || 'accSaveBtn');
@@ -4500,7 +4395,7 @@ function stageRowBindingClear(row, kind) {
 
 // 各凭据页的表格容器（键 -> tbody 选择器），一键代理按页取行。
 const BIND_TBODY = { acc: '#accountTableBody', trae: '#traeAccountsBody', key: '#ocKeysBody', wb: '#wbAccountsBody',
-                    or: '#orKeysBody', th: '#thKeysBody', other: '#otherKeysBody' };
+                    or: '#orKeysBody', other: '#otherKeysBody' };
 
 // 一键代理：按行序把主代理依次绑定为 [直连, 代理池第1项, 代理池第2项, ...]。
 // 仅暂存——与 Enable/Disable all、Clear bindings 同一口径，必须点 Save 才落盘。
@@ -4567,13 +4462,12 @@ const REORDER_PLATFORMS = [
   { key: 'wb', label: 'WorkBuddy' },
   { key: 'key', label: 'OpenCode' },
   { key: 'or', label: 'OpenRouter' },
-  { key: 'th', label: 'TokenHarbor' },
   { key: 'other', label: 'Other' }
 ];
 const REORDER_LOADERS = { acc: loadAccounts, trae: loadTraeConfig, key: loadOcConfig, wb: ensureWorkbuddyConsole,
-                          or: loadOrConfig, th: loadTHConfig, other: loadOtherConfig };
+                          or: loadOrConfig, other: loadOtherConfig };
 const REORDER_SAVERS = { acc: saveAccountEdits, trae: saveTraeEdits, key: saveKeyEdits, wb: saveWorkbuddyEdits,
-                         or: saveOrKeyEdits, th: saveTHKeyEdits, other: saveOtherKeyEdits };
+                         or: saveOrKeyEdits, other: saveOtherKeyEdits };
 // 打开重排确认弹窗：平台行固定 7 项（与菜单同序），默认全部勾选
 function openReorderDlg() {
   // 健康快照只在代理池页加载时刷新：重排可能从别的页触发，先拉最新状态，
@@ -4818,14 +4712,13 @@ async function testAllCredentialPlatforms() {
   try {
     await Promise.all([
       safe(loadAccounts()), safe(loadOcConfig()), safe(loadOrConfig()),
-      safe(loadTraeConfig()), safe(loadTHConfig()),
+      safe(loadTraeConfig()),
       safe(loadOtherConfig()), safe(loadWorkbuddyAccounts()),
     ]);
     const steps = [
       ['Cline', batchTestAccounts],
       ['OpenCode', batchTestKeys],
       ['OpenRouter', batchTestOrKeys],
-      ['TokenHarbor', batchTestTHKeys],
       ['TraeWork', batchTestTraeAccounts],
       ['WorkBuddy', batchTestWorkbuddyAccounts],
     ];
@@ -5406,7 +5299,7 @@ function onImportFileChange(event) {
 
 // impKeepRowsFor 从备份 JSON 提取含上游身份的平台行（Other 子平台逐行，
 // key 用 "other:<slug>" 与后端 KeepEnabled 对齐）。行序与左侧菜单一致：
-// Cline → TraeWork → OpenCode → WorkBuddy → OpenRouter → TokenHarbor → Other。
+// Cline → TraeWork → OpenCode → WorkBuddy → OpenRouter → Other。
 // 全不勾选 = 原隔离护栏行为。TraeWork（2026-11-05 补）：trae 换线时漏加此行，
 // 后端 KeepEnabled["trae"] 永远缺项 → trae2apiRestoreBackup 全部置 false——
 // 备份里明明带着 routing=true 也恢复不了（用户实测两轮）。
@@ -5418,7 +5311,6 @@ function impKeepRowsFor(parsed) {
   if (has(parsed.zen && parsed.zen.keys)) rows.push({ key: 'zen', label: 'OpenCode' });
   if (parsed.workbuddy && parsed.workbuddy.authFiles && Object.keys(parsed.workbuddy.authFiles).length > 0) rows.push({ key: 'wb', label: 'WorkBuddy' });
   if (has(parsed.openrouter && parsed.openrouter.keys)) rows.push({ key: 'oprt', label: 'OpenRouter' });
-  if (has(parsed.tokenharbor && parsed.tokenharbor.keys)) rows.push({ key: 'tkhb', label: 'TokenHarbor' });
   (parsed.other && Array.isArray(parsed.other.platforms) ? parsed.other.platforms : []).forEach(p => {
     if (p && p.slug && has(p.keys)) rows.push({ key: 'other:' + p.slug, label: p.name || p.slug });
   });
@@ -5562,10 +5454,10 @@ function legacyCopy(t) {
 
 // ========== Request logs ==========
 // 路由名与左侧菜单同名、全小写（见 nav-item data-tab）：cline / opencode /
-// workbuddy / openrouter / tokenharbor / other。Other 的各子平台
+// workbuddy / openrouter / other。Other 的各子平台
 // 日志展示其自定义前缀（后端 logs.go 直接写入前缀，此表兜底不命中）。
 // admin / meta / unclassified 非平台路由，不在菜单中。
-const ROUTE_LABEL = { zen: 'opencode', cline: 'cline', admin: 'admin', meta: 'meta', workbuddy: 'workbuddy', openrouter: 'openrouter', tokenharbor: 'tokenharbor', other: 'other', unclassified: 'unclassified' };
+const ROUTE_LABEL = { zen: 'opencode', cline: 'cline', admin: 'admin', meta: 'meta', workbuddy: 'workbuddy', openrouter: 'openrouter', other: 'other', unclassified: 'unclassified' };
 const PROXY_LABEL = { main: 'Main', backup: 'Backup', direct: 'Direct' };
 // 状态列着色：>=400 红；200+error 琥珀（纯 error 帧缓冲已在网关改判 502，
 // 此色仅剩"先有正文后断流"的残余形态）；干净 200 绿。
@@ -5901,7 +5793,7 @@ async function loadModels() {
 // 顺序与左侧导航菜单一致（Cline → TraeWork → WorkBuddy → OpenCode → …）。
 const BLACKLIST_PLATFORM_LABEL = {
   cline: 'Cline', trae: 'TraeWork', workbuddy: 'WorkBuddy', zen: 'OpenCode',
-  openrouter: 'OpenRouter', tokenharbor: 'TokenHarbor', other: 'Other'
+  openrouter: 'OpenRouter', other: 'Other'
 };
 // 已拉黑模型 ID 集合（对外 ID，如 wbgb:gpt-6-luna）。设置页各模型块渲染前
 // 统一过滤——黑名单的语义是「不再对外提供」，不能只过滤 /v1/models 而把
@@ -6065,7 +5957,6 @@ async function banModel(btn) {
     loadModelBlacklist();
     const ref = btn.dataset.refresh;
     else if (ref === 'or') loadOrConfig();
-    else if (ref === 'th') loadTHConfig();
     else loadModels();
   } catch (e) {
     toast(e.message, 'error'); btn.disabled = false;
@@ -6181,7 +6072,6 @@ const refreshClineModels = btn => refreshCatalog(btn, { label: 'Cline', endpoint
 const refreshZenModels = btn => refreshCatalog(btn, { label: 'OpenCode', endpoint: '/opencode/models/refresh', reload: loadModels });
 const refreshTraeModels = btn => refreshCatalog(btn, { label: 'TraeWork', endpoint: '/trae/models/refresh', reload: loadTraeConfig });
 const refreshOrModels = btn => refreshCatalog(btn, { label: 'OpenRouter', endpoint: '/openrouter/models/refresh', reload: loadOrConfig });
-const refreshTHModels = btn => refreshCatalog(btn, { label: 'TokenHarbor', endpoint: '/tokenharbor/models/refresh', reload: loadTHConfig });
 const refreshWbModels = btn => refreshCatalog(btn, { label: 'WorkBuddy', wb: true, endpoint: WB_API_PREFIX + '/models/refresh', reload: loadModels });
 
 // ========== Banned platforms（封禁平台） ==========
@@ -6196,7 +6086,7 @@ const PLATFORM_BAN_BASE = [
   { key: 'workbuddy', label: 'WorkBuddy' },
   { key: 'zen', label: 'OpenCode' },
   { key: 'openrouter', label: 'OpenRouter' },
-  { key: 'tokenharbor', label: 'TokenHarbor' }
+  { key: 'openrouter', label: 'OpenRouter' }
 ];
 let platformBans = new Set();       // 服务器已落盘的封禁集
 let platformBansStaged = new Set(); // 面板暂存集（点「确认」才下发）
@@ -6726,9 +6616,6 @@ async function loadProxyPool() {
     } catch (e) { _('ppOr').value = 'true'; }
     try {
     try {
-      const thc = await api('GET', '/tokenharbor/config');
-      _('ppTh').value = String(thc.data.useProxies !== false);
-    } catch (e) { _('ppTh').value = 'true'; }
     try {
       const oc = await api('GET', '/other/config');
       _('ppOther').value = String(oc.data.useProxies !== false);
@@ -7431,7 +7318,6 @@ async function saveGlobalPolicy() {
     await api('POST', '/opencode/config/update', { zenUseProxies: _('ppZen').value === 'true', workbuddyUseProxies: _('ppWb').value === 'true' });
     await api('POST', '/trae/config/update', { useProxies: _('ppTrae').value === 'true' });
     await api('POST', '/openrouter/config/update', { useProxies: _('ppOr').value === 'true' });
-    await api('POST', '/tokenharbor/config/update', { useProxies: _('ppTh').value === 'true' });
     await api('POST', '/other/config/update', { useProxies: _('ppOther').value === 'true' });
     toast('Global policy saved', 'success');
     loadProxyPool();
@@ -7504,7 +7390,6 @@ function refreshBindingTables() {
   if (_('ocKeysBody') && _('ocKeysBody').querySelector('.eg-input')) loadOcConfig();
   if (_('wbAccountsBody') && _('wbAccountsBody').querySelector('.eg-input')) loadWorkbuddyAccounts();
   if (_('orKeysBody') && _('orKeysBody').querySelector('.eg-input')) loadOrConfig();
-  if (_('thKeysBody') && _('thKeysBody').querySelector('.eg-input')) loadTHConfig();
   if (_('otherKeysBody') && _('otherKeysBody').querySelector('.eg-input')) loadOtherConfig();
 }
 
@@ -8303,287 +8188,6 @@ async function traeAddFromDialog() {
     btn.disabled = false;
   }
 }
-// ========== TokenHarbor page ==========
-// TokenHarbor key 池（tkhb: 前缀平台）：协议与 OpenRouter 页同构。
-let thCfgCache = {};
-let thKeySnapshot = {};
-
-async function loadTHConfig() {
-  try {
-    await loadProxyListCache();
-    const d = await api('GET', '/tokenharbor/config');
-    const c = d.data;
-    thCfgCache = c;
-    const ks = c.keyStates || [];
-    const sum = _('thSummary');
-    if (sum) {
-      const routed = ks.filter(k => k.routingEnabled !== false).length;
-      const cooling = ks.filter(k => k.cooling).length;
-      sum.textContent = ks.length + ' ' + T('keys') + ' · ' + routed + ' ' + T('active_1_1') + ' · ' + cooling + ' ' + T('cooling_2');
-    }
-    renderTHKeyStates(ks);
-    _('thBaseURL').value = c.baseURL || '';
-    _('thMaxConc').value = c.maxConcurrency || 8;
-    _('thRetries').value = c.retries || 3;
-    // 封禁过滤：黑名单语义是「不再对外提供」，页面模型列表同步剔除。
-    await syncModelBlacklist();
-    const models = (c.models || []).filter(m => m && !modelBlacklistIds.has(m.id));
-    const sel = _('thProbeModel');
-    if (sel) {
-      const prev = sel.value;
-      sel.innerHTML = '<option value="">' + T('auto') + '</option>' +
-        models.map(m => '<option value="' + esc(String(m.id || '').replace(/^tkhb:/, '')) + '">' + esc(m.id) + '</option>').join('');
-      if (Array.from(sel.options).some(o => o.value === prev)) sel.value = prev;
-    }
-    const tb = _('thModelsBody');
-    if (tb) {
-      // 展示样式与网关设置页一致：等宽 ID + 免费标签 + 上下文标签（Name 进 title）
-      const row = (inner) => '<div style="display:flex;align-items:center;gap:10px;padding:8px 12px;margin:5px 0;background:rgba(148,163,184,.06);border:1px solid var(--border);border-radius:10px;transition:.15s">' + inner + '</div>';
-      tb.innerHTML = models.length
-        ? models.map(m => row(
-            '<span style="font-family:\'JetBrains Mono\',monospace;font-size:13px;flex:1"' + (m.name ? ' title="' + esc(m.name) + '"' : '') + '>' + esc(m.id) + '</span>' +
-            '<span class="model-tag free">' + T('no_charge') + '</span>' +
-            wbContextTagHTML(m.context, T('context')) +
-            '<button class="btn btn-sm btn-danger" data-bl-ban="1" data-platform="tokenharbor" data-model="' + esc(m.id) + '" data-refresh="th" style="white-space:nowrap">' + T('ban') + '</button>')).join('')
-        : '<div class="empty">' + T((thCfgCache.keyStates || []).some(k => k.routingEnabled !== false) ? 'no_free_models_yet_click_refresh_models' : 'models_appear_here_once_a_credential_is_enabled_the_catalog_syncs_from_upstream') + '</div>';
-    }
-  } catch (e) { /* ignore */ }
-}
-
-async function saveTHConfig() {
-  // key 列表不随本表单提交（增删在 key 表的添加凭据/删除按钮里）
-  const body = {
-    baseURL: _('thBaseURL').value.trim(),
-    maxConcurrency: parseInt(_('thMaxConc').value) || 8,
-    retries: parseInt(_('thRetries').value) || 3
-  };
-  try {
-    await api('POST', '/tokenharbor/config/update', body);
-    toast(T('tokenharbor_config_saved'), 'success');
-    loadTHConfig();
-  } catch (e) { toast(T('save_failed') + e.message, 'error'); }
-}
-
-
-// key 状态表：key 掩码 / 今日累计 token / 最近使用 / 冷却 / 代理绑定 / 测试 /
-// 删除 / 启用（暂存编辑）。
-function renderTHKeyStates(ks) {
-  const tb = _('thKeysBody');
-  if (!tb) return;
-  thKeySnapshot = {};
-  tb.innerHTML = ks.length
-    ? ks.map(k => {
-        const cool = k.cooling
-          ? '<span class="status cooldown"><span class="status-dot cooldown"></span>' + T('cooldown_1') + '</span>' +
-            (k.cooldownUntil ? '<div style="font-size:10px;color:var(--text3);margin-top:2px;white-space:nowrap" title="' + esc(fmtWhen(k.cooldownUntil)) + '">' + T('recovers') + esc(fmtShort(k.cooldownUntil)) + '</div>' : '')
-          : '<span class="status active"><span class="status-dot active"></span>' + T('active_1') + '</span>';
-        const pMain = k.proxyMain || '';
-        const pBackup = k.proxyBackup || '';
-        const backupLocked = !backupProxyOn || pMain === '' || pMain === EGRESS_DIRECT;
-        const backupVal = backupLocked ? pMain : pBackup;
-        const isStale = proxyStale;
-        const bind = '<td style="white-space:nowrap">' +
-          egComboHTML('th', k.index, 'main', pMain, T('main_exit_used_whenever_available')) + ' ' +
-          (backupProxyOn ? egComboHTML('th', k.index, 'backup', backupVal, T('backup_exit_used_when_main_is_cooling_removed'), backupLocked) : '') +
-          (isStale(pMain) || isStale(pBackup) ? ' <span title="' + esc(T('bound_proxy_is_no_longer_in_the_proxy_pool_skipp')) + '" style="color:var(--danger)">⚠</span>' : '') +
-          '</td>';
-        const routed = k.routingEnabled !== false;
-        thKeySnapshot[k.index] = { main: pMain, backup: backupVal, routing: routed };
-        const routing = '<td style="text-align:center">' +
-          '<input type="checkbox" data-thr="' + k.index + '"' + (routed ? ' checked' : '') + ' title="' + esc(T('participates_in_request_routing')) + '">' + '</td>';
-        const actions = '<td style="white-space:nowrap;text-align:center">' +
-          '<button class="btn btn-sm" data-tht="' + k.index + '">' + T('test') + '</button> ' +
-          '<button class="btn btn-sm btn-danger" data-thdel="' + k.index + '" title="' + esc(T('remove_this_key_from_the_pool')) + '">' + T('delete') + '</button>' + '</td>';
-        return '<tr draggable="true" data-drag-id="' + k.index + '"><td>#' + (k.index + 1) + '</td>' +
-          '<td style="font-family:monospace;font-size:11px">' + esc(k.keyMask) + '</td>' +
-          '<td style="text-align:center">' + cool + '</td>' +
-          keyTokensCell(k) +
-          keyLastUsedCell(k) +
-          bind +
-          actions +
-          routing + '</tr>';
-      }).join('')
-    : '<tr><td colspan="8" class="empty">No TokenHarbor keys configured</td></tr>';
-  tb.onclick = e => {
-    const t = e.target.closest('button[data-tht]');
-    if (t) { testTHKey(parseInt(t.dataset.tht, 10), t); return; }
-    const d = e.target.closest('button[data-thdel]');
-    if (d) deleteTHKey(parseInt(d.dataset.thdel, 10), d);
-  };
-  tb.onchange = e => {
-    const r = e.target.closest('input[data-thr]');
-    if (r) markRowDirty(r.closest('tr'), 'th');
-  };
-}
-
-function stageAllTHKeysRouting(enabled) {
-  let staged = 0, same = 0;
-  document.querySelectorAll('#thKeysBody input[data-thr]').forEach(cb => {
-    const snap = thKeySnapshot[parseInt(cb.dataset.thr, 10)];
-    if (snap && snap.routing === enabled) { same++; return; }
-    cb.checked = enabled;
-    markRowDirty(cb.closest('tr'), 'th');
-    staged++;
-  });
-  stageBatchResult(staged, same, 0);
-}
-// 清空代理（暂存）：全部 key 清绑定 + 路由全部禁用，与 OpenRouter 页同语义
-function stageClearTHKeyProxies() {
-  document.querySelectorAll('#thKeysBody tr').forEach(row => {
-    const main = row.querySelector('.eg-input[data-eg="th"][data-slot="main"]');
-    if (!main) return;
-    let dirty = stageRowBindingClear(row, 'th');
-    const cb = row.querySelector('input[data-thr]');
-    if (cb && cb.checked) { cb.checked = false; dirty = true; }
-    if (dirty) markRowDirty(row, 'th');
-  });
-}
-async function saveTHKeyEdits() {
-  const rows = [...document.querySelectorAll('#thKeysBody tr')].filter(r => r.querySelector('.eg-input'));
-  let changed = 0, failed = 0;
-  for (const row of rows) {
-    const mainInput = row.querySelector('.eg-input[data-eg="th"][data-slot="main"]');
-    const idx = parseInt(mainInput.dataset.egid, 10);
-    const main = mainInput.dataset.value || '';
-    const rcb = row.querySelector('input[data-thr]');
-    const snap = thKeySnapshot[idx] || { main: '', backup: '', routing: true };
-    const backup = row.querySelector('.eg-input[data-eg="th"][data-slot="backup"]')?.dataset.value ?? snap.backup;
-    try {
-      if (main !== snap.main || backup !== snap.backup) {
-        await api('POST', '/tokenharbor/keys/proxy', { index: idx, main: main, backup: backup });
-      }
-      if (rcb && rcb.checked !== snap.routing) {
-        await api('POST', '/tokenharbor/keys/routing', { index: idx, enabled: rcb.checked });
-      }
-      if (main !== snap.main || backup !== snap.backup || (rcb && rcb.checked !== snap.routing)) changed++;
-      row.classList.remove('tr-dirty');
-    } catch (e) { failed++; }
-  }
-  clearDirtyMarks('thKeysBody', 'thKeysSaveBtn');
-  if (failed) toast(T('save_failed_for') + failed + T('account_s'), 'error');
-  else if (!changed) toast(T('no_changes_to_save'), 'info');
-  else toast(T('saved_1') + changed + T('account_change_s'), 'success');
-  loadTHConfig(); loadStats();
-}
-
-function resetTHKeyEdits() {
-  clearDirtyMarks('thKeysBody', 'thKeysSaveBtn');
-  loadTHConfig();
-}
-
-async function deleteTHKey(index, btn) {
-  if (!confirm(T('delete_this_key_1'))) return;
-  const original = btn ? btn.innerHTML : '';
-  if (btn) btn.disabled = true;
-  try {
-    await api('POST', '/tokenharbor/keys/delete', { index: index });
-    toast(T('key') + (index + 1) + T('deleted'), 'success');
-  } catch (e) {
-    toast(T('delete_failed') + e.message, 'error');
-  } finally {
-    if (btn) { btn.disabled = false; btn.innerHTML = original; }
-    loadTHConfig(); loadStats();
-  }
-}
-
-async function testTHKey(index, btn) {
-  const original = btn ? btn.innerHTML : '';
-  if (btn) { btn.disabled = true; btn.innerHTML = '<span class="loading"></span>' + T('testing'); }
-  try {
-    const d = await api('POST', '/tokenharbor/keys/test', {
-      index: index,
-      model: (_('thProbeModel') ? _('thProbeModel').value : '')
-    });
-    const r = d.data || {};
-    const label = { active: T('ok_2'), cooldown: T('cooldown_1'), error: T('error_1_1') }[r.status] || r.status;
-    let msg = T('key') + (index + 1) + T('sep.lparen') + (r.keyMask || '') + T('sep.rparen_emdash') + label;
-    if (r.model) msg += T('via') + r.model;
-    if (r.latencyMs != null) msg += ' (' + r.latencyMs + 'ms)';
-    if (r.status === 'active') msg += T('cooldown_cleared');
-    if (r.cooldownUntil) msg += T('sep.estimated_recovery') + fmtWhen(r.cooldownUntil) + (r.remaining ? T('remaining') + r.remaining + T('sep.rparen') : '');
-    if (r.reason && r.reason !== 'ok') msg += '\n' + r.reason;
-    const type = r.status === 'active' ? 'success' : (r.status === 'cooldown' ? 'warning' : 'error');
-    toast(msg, type, 6000);
-  } catch (e) {
-    toast(T('test_failed') + e.message, 'error');
-  } finally {
-    if (btn) { btn.disabled = false; btn.innerHTML = original; }
-    loadTHConfig();
-  }
-}
-
-async function batchTestTHKeys() {
-  const btn = _('thTestBtn');
-  // 网关设置里封禁的平台不对外提供服务——批量测试跑在最外层，只测
-  // 当前网关对外提供的服务（2026-11-02 用户定）：封禁平台整平台跳过。
-  await fetchPlatformBans();
-  if (platformBans.has('tokenharbor')) {
-    toast(T('platform_is_banned_in_gateway_settings_test_skip'), 'info');
-    return { tested: 0, skipped: 0, banned: true };
-  }
-  // 2026-11-02 用户定：只测能路由的凭据（路由关闭的 key 请求到不了，跳过），
-  // 见 batchTestAccounts 注释。
-  const all = Object.keys(thKeySnapshot).map(Number).sort((a, b) => a - b);
-  const idxs = all.filter(i => thKeySnapshot[i] && thKeySnapshot[i].routing !== false);
-  const skipped = all.length - idxs.length;
-  if (!idxs.length) {
-    if (all.length) toast(T('no_routable_credentials'), 'info');
-    else toast(T('no_keys_to_test'), 'info');
-    return { tested: 0, skipped };
-  }
-  const original = btn ? btn.innerHTML : '';
-  if (btn) btn.disabled = true;
-  let ok = 0, cool = 0, err = 0;
-  try {
-    for (let i = 0; i < idxs.length; i++) {
-      if (btn) btn.innerHTML = '<span class="loading"></span>' + (i + 1) + '/' + idxs.length;
-      try {
-        const d = await api('POST', '/tokenharbor/keys/test', {
-          index: idxs[i],
-          model: (_('thProbeModel') ? _('thProbeModel').value : '')
-        });
-        const r = d.data || {};
-        if (r.status === 'active') ok++;
-        else if (r.status === 'cooldown') cool++;
-        else err++;
-      } catch (e) { err++; }
-    }
-  } finally {
-    if (btn) { btn.disabled = false; btn.innerHTML = original; }
-  }
-  toast(T('batch_test_done') + idxs.length + T('tested') + ok + T('ok') +
-    (cool ? T(', ') + cool + T('cooling_1') : '') + (err ? T(', ') + err + T('error_1') : '') +
-    (skipped ? T(', ') + skipped + T('skipped_unroutable') : ''),
-    err ? 'warning' : 'success', 6000);
-  loadTHConfig();
-  return { tested: idxs.length, skipped };
-}
-
-function openTHKeyAddDialog() {
-  _('thKeyAddInput').value = '';
-  _('thKeyAddDialog').showModal();
-}
-function closeTHKeyAddDialog() { _('thKeyAddDialog').close(); }
-async function thKeyAddFromDialog() {
-  const lines = _('thKeyAddInput').value.split('\n').map(s => s.trim()).filter(Boolean);
-  if (!lines.length) { toast(T('enter_at_least_one_key'), 'error'); return; }
-  const cur = (thCfgCache.keys && thCfgCache.keys.length) ? thCfgCache.keys : [];
-  const fresh = lines.filter(l => !cur.includes(l));
-  if (!fresh.length) { toast(T('no_new_keys_all_already_in_the_pool'), 'info'); return; }
-  const btn = _('thKeyAddSubmit');
-  btn.disabled = true;
-  try {
-    await api('POST', '/tokenharbor/config/update', { keys: cur.concat(fresh) });
-    toast(T('added_1') + fresh.length + T('key_s'), 'success');
-    closeTHKeyAddDialog();
-    loadTHConfig(); loadStats();
-  } catch (e) {
-    toast(T('save_failed') + e.message, 'error');
-  } finally {
-    btn.disabled = false;
-  }
-}
-
 /* ================= Other (multi sub-platform key pools) ================= */
 let otherConfig = null;
 let currentOtherSlug = '';
@@ -9191,7 +8795,7 @@ document.addEventListener('click', function (e) {
 });
 
 // ========== Combos (alias models) ==========
-const comboModels = { cline: [], trae: [], zen: [], workbuddy: [], openrouter: [], tokenharbor: [] };
+const comboModels = { cline: [], trae: [], zen: [], workbuddy: [], openrouter: [] };
 
 async function fillComboModels() {
   const platform = _('comboPlatform').value;
@@ -9217,9 +8821,6 @@ async function fillComboModels() {
       } else if (platform === 'openrouter') {
         const d = await api('GET', '/openrouter/config');
         comboModels.openrouter = (d.data.models || []).map(m => String(m.id || '').replace(/^oprt:/, '')).filter(Boolean);
-      } else if (platform === 'tokenharbor') {
-        const d = await api('GET', '/tokenharbor/config');
-        comboModels.tokenharbor = (d.data.models || []).map(m => String(m.id || '').replace(/^tkhb:/, '')).filter(Boolean);
       }
     }
     if (!comboModels[platform].length) { sel.innerHTML = '<option value="">' + T('no_models_on_this_platform') + '</option>'; return; }
@@ -9286,7 +8887,6 @@ restoreTab();
 enableRowDragReorder('accountTableBody', ids => api('POST', '/accounts/reorder', { order: ids }), loadAccounts);
 enableRowDragReorder('ocKeysBody', ids => api('POST', '/opencode/keys/reorder', { order: ids.map(Number) }), loadOcConfig);
 enableRowDragReorder('orKeysBody', ids => api('POST', '/openrouter/keys/reorder', { order: ids.map(Number) }), loadOrConfig);
-enableRowDragReorder('thKeysBody', ids => api('POST', '/tokenharbor/keys/reorder', { order: ids.map(Number) }), loadTHConfig);
 enableRowDragReorder('otherKeysBody', ids => {
   const p = currentOtherSlug;
   return api('POST', '/other/keys/reorder', { slug: p, order: ids.map(Number) });

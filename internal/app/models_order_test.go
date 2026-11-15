@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	"afree-proxy/internal/openrouter"
-	"afree-proxy/internal/tokenharbor"
 	wbauth "afree-proxy/internal/workbuddy/auth"
 	wbconfig "afree-proxy/internal/workbuddy/config"
 	wbpool "afree-proxy/internal/workbuddy/pool"
@@ -17,7 +16,7 @@ import (
 //
 // 背景:cline(getFreeModels 按**裸 feed ID** 升序,输出再统一加 cline-free/
 // 前缀,故输出 id 观感上非升序但顺序确定)、zen(zenModelList 末尾 sort.Slice)、
-// oprt/tkhb/trae(各 ModelList 内 sort.Slice)、other(KnownModels 内
+// oprt/trae(各 ModelList 内 sort.Slice)、other(KnownModels 内
 // sort.Slice)均已排序;唯独 WorkBuddy 段沿用上游返回序,是整条链路上唯一
 // 不确定来源。本组测试锁死该口径,防止将来回退。
 
@@ -201,14 +200,14 @@ func TestServedGateRejectsWorkbuddyImageModel(t *testing.T) {
 }
 
 // 回归护栏:各「自带排序」平台的段内顺序确实恒升序。这里直接打各段函数,
-// 不经过网络——种子快照已取消（2026-11-11，or/th 同日口径），目录改用
+// 不经过网络——种子快照已取消（2026-11-11，or 同日口径），目录改用
 // httptest 假上游注入：各包目录真身无导出 setter，但 SyncCatalog 是导出入口，
 // 指到本地假服务器即可造态。展示门控（4e7d263）之后各段 ModelList 无启用
-// 凭据即返回空，断言会空转，所以先给两个平台各装一个可路由凭据。
+// 凭据即返回空，断言会空转，所以先给 openrouter 装一个可路由凭据。
 func TestPlatformSegmentsAreIDSorted(t *testing.T) {
 	t.Setenv("DATA_DIR", testDataDir(t))
 
-	// or/th：装一个启用 key + 一个假目录上游。各自保存/恢复原配置。
+	// or：装一个启用 key + 一个假目录上游。保存/恢复原配置。
 	orPrev, orPath := openrouter.Get(), openrouter.ConfigPath
 	openrouter.ConfigPath = filepath.Join(t.TempDir(), "or-config.json")
 	orc := openrouter.DefaultConfig()
@@ -225,36 +224,22 @@ func TestPlatformSegmentsAreIDSorted(t *testing.T) {
 	defer orSrv.Close()
 	orPrevOverride := openrouter.GetCatalogURLOverride()
 	openrouter.SetCatalogURLOverride(orSrv.URL)
-	thPrev, thPath := tokenharbor.Get(), tokenharbor.ConfigPath
-	tokenharbor.ConfigPath = filepath.Join(t.TempDir(), "th-config.json")
-	thc := tokenharbor.DefaultConfig()
-	thc.Keys = []string{"thk_live_test"}
-	thc.KeyRoutingEnabled = map[string]bool{"thk_live_test": true}
-	thc.BaseURL = thSrv(t).URL
-	tokenharbor.Set(thc)
 	t.Cleanup(func() {
 		openrouter.Set(orPrev)
 		openrouter.ConfigPath = orPath
 		openrouter.SetCatalogURLOverride(orPrevOverride)
-		tokenharbor.Set(thPrev)
-		tokenharbor.ConfigPath = thPath
 	})
 
 	// 显式首拉（种子时代靠快照即时有目录；现在必须同步一次才有目录）。
 	// 先 InitCatalog 把 loaded 置位（否则 ModelList 内部的 InitCatalog 会把
 	// 已同步的目录清空再异步首拉，竞态窗口里读到空段）。
 	openrouter.InitCatalog()
-	tokenharbor.InitCatalog()
 	if _, err := openrouter.SyncCatalog(); err != nil {
 		t.Fatalf("openrouter fake catalog sync: %v", err)
 	}
-	if _, err := tokenharbor.SyncCatalog(); err != nil {
-		t.Fatalf("tokenharbor fake catalog sync: %v", err)
-	}
 
 	segs := map[string][]map[string]any{
-		"openrouter":  orModelList(),
-		"tokenharbor": thModelList(),
+		"openrouter": orModelList(),
 	}
 	for name, seg := range segs {
 		if len(seg) == 0 {
@@ -269,19 +254,6 @@ func TestPlatformSegmentsAreIDSorted(t *testing.T) {
 			prev = id
 		}
 	}
-}
-
-// thSrv 假 TokenHarbor 目录：乱序两条 :free（category=free 参数直接忽略）。
-func thSrv(t *testing.T) *httptest.Server {
-	t.Helper()
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_, _ = w.Write([]byte(`{"data":[
-			{"id":"mimo-v2.6-flash:free","context_length":262144},
-			{"id":"a-first:free","context_length":4096}
-		]}`))
-	}))
-	t.Cleanup(srv.Close)
-	return srv
 }
 
 // 视频生成单列条目（video_generation）与出图同走费率同源筛选：afree 未挂

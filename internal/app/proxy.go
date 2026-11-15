@@ -5,7 +5,6 @@ import (
 	"afree-proxy/internal/kit"
 	openrouter "afree-proxy/internal/openrouter"
 	"afree-proxy/internal/other"
-	"afree-proxy/internal/tokenharbor"
 	"bufio"
 	"bytes"
 	"context"
@@ -106,7 +105,6 @@ func StartProxy(host string, port int) error {
 	reconcileEgressBindings()
 	loadClineStreamLearned()
 	initOpenRouter()
-	initTokenHarbor()
 	initOther()
 	initTrae()
 	LoadRequestLogsFromFile()
@@ -232,7 +230,7 @@ func StartProxy(host string, port int) error {
 		//（Gemini 叫 inputTokenLimit）。各来源字段名不一，统一到标准形态：
 		//
 		//	context_length   ← WorkBuddy 已用该名，原样透传；
-		//	                   ← zen/oprt/tkhb 的 context，统一补齐；
+		//	                   ← zen/oprt 的 context，统一补齐；
 		//	max_output_tokens ← WorkBuddy 已用该名，原样透传；
 		//	                   ← zen 的 output（最大输出 tokens），统一补齐。
 		//
@@ -338,12 +336,6 @@ func StartProxy(host string, port int) error {
 		// OpenRouter 路由：oprt:<model-id> 前缀（纯 key 池平台，无账号 OAuth）
 		if openrouter.HasPrefix(model) {
 			handleOrChat(w, r, params)
-			return
-		}
-
-		// TokenHarbor 路由：tkhb:<model-id> 前缀（聚合网关 key 池，:free 模型）
-		if tokenharbor.HasPrefix(model) {
-			handleTHChat(w, r, params)
 			return
 		}
 
@@ -3114,7 +3106,7 @@ func handleAnthropicMessages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 前缀平台（oprt:/tkhb:/trae:/Other 子平台）：归口到平台 chat 调用器，
+	// 前缀平台（oprt:/trae:/Other 子平台）：归口到平台 chat 调用器，
 	// 经既有 chat→anthropic 转换件输出（与 zen 路径同一套协议转换）。
 	if caller, ok := resolvePlatformChatCaller(req.Model); ok {
 		handleAnthropicViaChat(w, r, req, openAIReq, toolSchemas, caller)
@@ -4236,7 +4228,7 @@ func wbEntryRate(m map[string]any) (float64, bool) {
 }
 
 // servedModelEntries 对外模型目录的单一口径：全平台聚合（cline/zen/wb/
-// oprt/tkhb/trae/other/combo 别名）减去平台封禁与模型黑名单。/v1/models
+// oprt/trae/other/combo 别名）减去平台封禁与模型黑名单。/v1/models
 // 输出与请求路径的服务闸共用，保证「目录里能看到的才能请求到」严格一致。
 func servedModelEntries() []map[string]any {
 	ensureModelsFresh()
@@ -4257,8 +4249,6 @@ func servedModelEntries() []map[string]any {
 	data = append(data, workbuddyModelEntries()...)
 	// 合并 OpenRouter 免费模型（oprt: 前缀）。
 	data = append(data, orModelList()...)
-	// 合并 TokenHarbor 免费模型（tkhb: 前缀）。
-	data = append(data, thModelList()...)
 	// 合并 Trae 模型（vendored trae2api 域前缀：trae:/solo:/trae-intl:/solo-intl:）。
 	data = append(data, trae2apiModelEntries()...)
 	// 合并 Other 子平台勾选模型（各子平台自定义前缀）。
@@ -4360,7 +4350,7 @@ func servedModelGate(model string) (int, string) {
 }
 
 // modelIsServed 模型是否在对外目录（/v1/models 同口径）。对外 ID 天然带
-// 平台前缀（cline-free/ zen: wbcn: wbgb: oprt: tkhb: trae: other-*:、
+// 平台前缀（cline-free/ zen: wbcn: wbgb: oprt: trae: other-*:、
 // combo 别名），请求侧精确匹配即可（2026-10-31 用户定：不做裸名拼写兼容，
 // 不在 models api 输出里的形态一律拒）。
 func modelIsServed(model string) bool {

@@ -10,7 +10,6 @@ import (
 	"afree-proxy/internal/kit"
 	"afree-proxy/internal/openrouter"
 	"afree-proxy/internal/other"
-	"afree-proxy/internal/tokenharbor"
 )
 
 // ============ 账号/key 代理隔离（绑定出口） ============
@@ -232,7 +231,7 @@ func blockedExitMessage(prefix string, main, backup string) string {
 
 // proxyBlockedDetailFor 是注入给 kit 的实现：按 scope + key 查出绑定再格式化。
 //
-// scope 取值："openrouter" / "tokenharbor"，或 other 子平台的 slug。
+// scope 取值："openrouter"，或 other 子平台的 slug。
 // zen 与 cline 在主包内直接调用 blockedExitMessage，不走这个注入点。
 func proxyBlockedDetailFor(scope, key string) string {
 	if key == "" {
@@ -243,8 +242,6 @@ func proxyBlockedDetailFor(scope, key string) string {
 	switch scope {
 	case "openrouter":
 		main, backup, bound = openrouter.BindingOf(key)
-	case "tokenharbor":
-		main, backup, bound = tokenharbor.BindingOf(key)
 	default:
 		if scope != "" {
 			if p := other.PlatformBySlug(scope); p != nil {
@@ -515,7 +512,7 @@ func clearAllKeyProxies() int {
 
 // proxyBinding 一个身份的出口绑定：主代理优先，备用代理兜底；两者都不可用时
 // 跳过该身份（隔离优先于可用性）。值语义对全部平台一致 —— zen key、cline 账号、
-// or/tkhb key、other 子平台 key、trae 账号都用它。原先定义在 zen.go 里，
+// or key、other 子平台 key、trae 账号都用它。原先定义在 zen.go 里，
 // 是"代理寄居在 zen 配置"时代的遗留位置。
 type proxyBinding struct {
 	Main   string `json:"main,omitempty"`

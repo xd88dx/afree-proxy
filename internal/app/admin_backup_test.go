@@ -91,7 +91,7 @@ func TestConfigImportDisablesAllIdentities(t *testing.T) {
 
 // TestConfigImportKeepEnabled 导入弹窗"沿用启用状态"（KeepEnabled）：勾选的
 // 平台保留备份内原状态，未勾选的仍走隔离护栏全部禁用。key 口径与前端对齐：
-// cline / zen / oprt / tkhb / wb / "other:<slug>"。
+// cline / zen / oprt / wb / "other:<slug>"。
 func TestConfigImportKeepEnabled(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv("DATA_DIR", tmp)
@@ -186,7 +186,7 @@ func TestConfigBackupVersionOK(t *testing.T) {
 }
 
 func TestComboPlatformValid(t *testing.T) {
-	for _, p := range []string{"cline", "zen", "workbuddy", "openrouter", "tokenharbor"} {
+	for _, p := range []string{"cline", "zen", "workbuddy", "openrouter"} {
 		if !comboPlatformValid(p) {
 			t.Errorf("platform %q must be valid", p)
 		}

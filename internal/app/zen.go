@@ -43,7 +43,7 @@ type ZenModel struct {
 }
 
 // zenSeedModels 冷启动兜底快照（含短别名表）已于 2026-11-11 用户拍板整机制
-// 删除（与 tokenharbor/openrouter 同口径：目录如实反映 live 同步结果，
+// 删除（与 openrouter 同口径：目录如实反映 live 同步结果，
 // 宁空勿过期快照——免费层下架/转付费的模型不该靠内置清单续命）。历史形态：
 // 7 条免费模型快照，在首次成功同步之前作为可服务模型集，并绑定短别名
 // （mimo/pickle/muse-spark…）与 muse-spark 的 responses 端点提示。删除后：
@@ -349,7 +349,7 @@ type zenConfigData struct {
 	Compaction      zenCompactConfig `json:"compaction"`
 	// KeyBindings 反过来留在这里:它的键是 key 明文,属于 key 自己的数据。放进
 	// proxy-config.json 会让同一批明文 key 在 zen-config.json 的 keys 数组和
-	// 代理文件里各存一份,冗余且容易写不一致。其他平台(or/th/other)的绑定
+	// 代理文件里各存一份,冗余且容易写不一致。其他平台(or/other)的绑定
 	// 表同理留在各自配置文件里。
 	KeyBindings map[string]proxyBinding `json:"keyBindings,omitempty"`
 	//
@@ -378,7 +378,7 @@ type zenConfigData struct {
 // kind，与前端凭据页 kind / REORDER_KINDS 同一口径。
 var proxyRuleKinds = map[string]bool{
 	"acc": true, "trae": true, "key": true, "wb": true,
-	"or": true, "th": true, "other": true,
+	"or": true, "other": true,
 }
 
 // otherRuleKindRe 匹配 Other 子平台粒度的规则 kind（other:<slug>）。面板把
@@ -393,8 +393,8 @@ func proxyRuleKindValid(kind string) bool {
 
 // proxyRuleDirectKey 直连在排除表里的哨兵键。池条目一律带 scheme
 // （http(s)://、socks5:// 等），不会与之冲突。含义 = 不允许该平台的自动分配
-// （一键代理 / 延迟重排）产出"直连"出口 —— 例如 tokenharbor 不对大陆服务，
-// 直连必被上游拒绝，批量分配就不再把直连同给任何 tokenharbor 凭据；手动绑定
+// （一键代理 / 延迟重排）产出"直连"出口 —— 例如某些子平台不对大陆服务，
+// 直连必被上游拒绝，批量分配就不再把直连同给任何子平台凭据；手动绑定
 // 与运行时路由不受影响。池变动清理时该键永不删除。
 const proxyRuleDirectKey = "__direct__"
 
@@ -796,7 +796,7 @@ func setZenConfig(c *zenConfigData) {
 	}
 	zenKeyMu.Lock()
 	// 冷却/记账真身保留运行期现值（2026-10-31 拆分：痕迹不再随配置回填，
-	// 备份导入不还原冷却/记账，与 or/th/other 口径一致）；已移除 key 的
+	// 备份导入不还原冷却/记账，与 or/other 口径一致）；已移除 key 的
 	// 条目清理掉。
 	for k := range zenKeyCool {
 		if !valid[k] {
@@ -3768,7 +3768,7 @@ func zenDesiredFromLive(registryOK bool, freeGate map[string]bool) (map[string]b
 //
 // 目录不可达时返回错误并保留旧表（收割机时代的 CLI 成员表兜底已随内嵌 CLI
 // 移除，离线启动不再有第三方成员表来源，见 zenDesiredFromLive）。冷启动不再
-// 注入种子快照（2026-11-11 用户定，与 tokenharbor/openrouter 同口径）：
+// 注入种子快照（2026-11-11 用户定，与 openrouter 同口径）：
 // 表为空直到首次成功同步，宁空勿过期。
 // 返回新增模型数。
 func syncZenModels() (int, error) {

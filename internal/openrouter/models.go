@@ -187,7 +187,7 @@ func InitCatalog() {
 }
 
 // SyncCatalog 拉取 live 目录，live 为唯一权威（2026-11-05 快照白名单退役，
-// 与 tkhb/zen/cline 同款口径）：
+// 与 zen/cline 同款口径）：
 //   - live pricing 全零 + chatCapable（输出含 text 且支持 tools）→ 收录，
 //     上游新增免费模型自动进目录（此前卡在 2026-10-10 页面快照里，
 //     stealth/crouton-alpha 等页面上新被永久挡住——静态快照当永久白名单

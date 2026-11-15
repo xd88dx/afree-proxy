@@ -11,7 +11,6 @@ import (
 
 	"afree-proxy/internal/openrouter"
 	"afree-proxy/internal/other"
-	"afree-proxy/internal/tokenharbor"
 )
 
 func TestUpstreamErrorStatusPasses429(t *testing.T) {
@@ -22,7 +21,6 @@ func TestUpstreamErrorStatusPasses429(t *testing.T) {
 		want int
 	}{
 		{"openrouter 429", &openrouter.HTTPError{Status: 429}, http.StatusTooManyRequests},
-		{"tokenharbor 429", &tokenharbor.HTTPError{Status: 429}, http.StatusTooManyRequests},
 		{"other 429", &other.HTTPError{Status: 429, RateLimited: true}, http.StatusTooManyRequests},
 		{"zen 429", &zenHTTPError{Status: 429}, http.StatusTooManyRequests},
 		{"cline 429", &clineAPIError{Status: 429}, http.StatusTooManyRequests},

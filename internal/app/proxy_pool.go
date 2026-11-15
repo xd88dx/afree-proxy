@@ -27,7 +27,6 @@ const (
 	pkCline = "cline"
 	pkZen   = "zen"
 	pkOr    = "or"
-	pkTh    = "th"
 	pkOther = "other"
 	pkTrae  = "trae"
 	pkWb    = "wb"

@@ -22,7 +22,6 @@ func handleAdminDeleteAllData(w http.ResponseWriter, r *http.Request) {
 	clineAccounts, clientKeys := clearPoolForDataDelete()
 	zenKeys := clearOpenCodeKeysForDataDelete()
 	orKeys := clearOpenrouterKeysForDataDelete()
-	thKeys := clearTokenHarborKeysForDataDelete()
 	otherKeys := clearOtherKeysForDataDelete()
 	traeAccounts := clearTrae2apiAccountsForDataDelete()
 	sessions := clearZenSessionsForDataDelete()
@@ -41,7 +40,6 @@ func handleAdminDeleteAllData(w http.ResponseWriter, r *http.Request) {
 			"clientKeys":        clientKeys,
 			"opencodeKeys":      zenKeys,
 			"openrouterKeys":    orKeys,
-			"tokenharborKeys":   thKeys,
 			"otherKeys":         otherKeys,
 			"traeAccounts":      traeAccounts,
 			"sessions":          sessions,

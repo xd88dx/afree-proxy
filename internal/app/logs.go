@@ -19,7 +19,6 @@ import (
 	"afree-proxy/internal/kit"
 	openrouter "afree-proxy/internal/openrouter"
 	"afree-proxy/internal/other"
-	"afree-proxy/internal/tokenharbor"
 )
 
 // routeStat 网关请求计数（进程生命周期，仅 /v1/ 路径）：请求数、错误数、
@@ -31,7 +30,7 @@ type routeStat struct {
 }
 
 var (
-	routeStats    = map[string]*routeStat{"cline": {}, "zen": {}, "workbuddy": {}, "openrouter": {}, "tokenharbor": {}, "trae": {}, "other": {}}
+	routeStats    = map[string]*routeStat{"cline": {}, "zen": {}, "workbuddy": {}, "openrouter": {}, "trae": {}, "other": {}}
 	reqStatsStart = time.Now()
 )
 
@@ -586,8 +585,6 @@ func requestLogMiddleware(next http.Handler) http.Handler {
 			route = "workbuddy"
 		case openrouter.HasPrefix(model):
 			route = "openrouter"
-		case tokenharbor.HasPrefix(model):
-			route = "tokenharbor"
 		case trae2apiPlatformModel(model):
 			route = "trae"
 		case otherHit:

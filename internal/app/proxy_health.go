@@ -16,7 +16,6 @@ import (
 	"afree-proxy/internal/kit"
 	"afree-proxy/internal/openrouter"
 	"afree-proxy/internal/other"
-	"afree-proxy/internal/tokenharbor"
 	traectl "afree-proxy/internal/trae2api/traectl"
 )
 
@@ -272,10 +271,6 @@ func isTransportLayerFailure(err error) bool {
 	}
 	var oe *openrouter.HTTPError
 	if errors.As(err, &oe) {
-		return false
-	}
-	var th *tokenharbor.HTTPError
-	if errors.As(err, &th) {
 		return false
 	}
 	var ot *other.HTTPError

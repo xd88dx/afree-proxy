@@ -60,8 +60,8 @@ func TestWorkbuddyObserveAccountFillsLogColumns(t *testing.T) {
 	workbuddyObserveAccount(nil, &wbauth.Auth{UID: "uid-plain"}, "")
 }
 
-// TestKeyPoolAttemptObserverFillsLogColumns tokenharbor / openrouter /
-// other 共用注入：日志「账号/Key」列为 key#N，「代理」列按绑定归类。
+// TestKeyPoolAttemptObserverFillsLogColumns openrouter / other 共用注入：
+// 日志「账号/Key」列为 key#N，「代理」列按绑定归类。
 func TestKeyPoolAttemptObserverFillsLogColumns(t *testing.T) {
 	t.Setenv("PROXY_ISOLATION", "true")
 	keys := []string{"sk-aaa", "sk-bbb"}

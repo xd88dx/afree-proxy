@@ -366,7 +366,7 @@ func handleZenModels(w http.ResponseWriter, r *http.Request) {
 		writeAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
 		return
 	}
-	// 展示门控（与 tokenharbor/trae 同口径，2026-10-27 用户定）：没有
+	// 展示门控（与 trae 同口径，2026-10-27 用户定）：没有
 	// 任何参与路由的启用 key 时目录不对外提供——匿名 "public" 哨兵已移除，
 	// 上游匿名层也不可用，列出来只会让用户选中后调不通。
 	// credentialsEnabled 供前端区分「无凭据」（引导启用）与「目录为空」。
@@ -404,7 +404,7 @@ func handleZenModelsRefresh(w http.ResponseWriter, r *http.Request) {
 		writeAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
 		return
 	}
-	// 与 TokenHarbor 同口径：无启用 key 时拒绝同步并给出提示。
+	// 无启用 key 时拒绝同步并给出提示。
 	if !zenHasRoutableKey() {
 		writeCatalogNoCredential(w, platZen)
 		return

@@ -14,7 +14,6 @@ import (
 	"afree-proxy/internal/kit"
 	"afree-proxy/internal/openrouter"
 	"afree-proxy/internal/other"
-	"afree-proxy/internal/tokenharbor"
 	wbauth "afree-proxy/internal/workbuddy/auth"
 	wbserver "afree-proxy/internal/workbuddy/server"
 )
@@ -24,7 +23,7 @@ import (
 // 三层口径（2026-11-03 用户定，「导出文件 → 全新容器 → 一模一样」）：
 //
 //   - **配置态**：各平台凭据与配置（Cline 账号、OpenCode key 及启用/绑定、
-//     OpenRouter/TokenHarbor key 池、Other 子平台聚合、WorkBuddy
+//     OpenRouter key 池、Other 子平台聚合、WorkBuddy
 //     config + 凭据文件 + 出口绑定）、代理池（别名随行）、请求头、调度策略、
 //     默认模型、自定义别名、zen 粘性会话、端点学习结果。
 //   - **账号事实**：账号/key 在上游的客观状态（冷却表、wb 余额/限额/实测成本/
@@ -95,7 +94,6 @@ type stateBackup struct {
 	Zen         *zenUsageFile    `json:"zen,omitempty"`
 	Trae        json.RawMessage  `json:"trae,omitempty"`
 	OpenRouter  json.RawMessage  `json:"openrouter,omitempty"`
-	TokenHarbor json.RawMessage  `json:"tokenharbor,omitempty"`
 	Other       json.RawMessage  `json:"other,omitempty"`
 	ProxyHealth *proxyHealthFile `json:"proxyHealth,omitempty"`
 }
@@ -122,9 +120,8 @@ type configBackup struct {
 	Endpoints map[string]string           `json:"endpoints,omitempty"`
 	Combos    []*Combo                    `json:"combos,omitempty"`
 	// v2 补全的 key 池平台与 WorkBuddy（v1 备份无这些段，导入时保持不动）。
-	OpenRouter  *openrouter.Config  `json:"openrouter,omitempty"`
-	TokenHarbor *tokenharbor.Config `json:"tokenharbor,omitempty"`
-	WorkBuddy   *workbuddyBackup    `json:"workbuddy,omitempty"`
+	OpenRouter *openrouter.Config `json:"openrouter,omitempty"`
+	WorkBuddy  *workbuddyBackup   `json:"workbuddy,omitempty"`
 	// Other 子平台聚合配置（other-config.json）。2026-10-14 补：Other 页
 	// 上线时只做了网关/面板，未接备份，导致子平台与 key 池无法随配置迁移。
 	Other *other.Config `json:"other,omitempty"`
@@ -172,7 +169,7 @@ type configBackup struct {
 	// KeepEnabled 导入方对"沿用启用状态"的逐平台选择（导入弹窗 switch，默认
 	// 全不沿用）。缺项/false = 隔离护栏生效（导入身份一律禁用，原行为）；
 	// true = 保留备份内该平台的启用状态。key：cline / zen / oprt /
-	// tkhb / wb 与 "other:<slug>"（Other 子平台逐个）。
+	// wb 与 "other:<slug>"（Other 子平台逐个）。
 	KeepEnabled map[string]bool `json:"keepEnabled,omitempty"`
 }
 
@@ -232,7 +229,6 @@ func handleAdminConfigExport(w http.ResponseWriter, r *http.Request) {
 		Endpoints:            loadZenEndpointsFile(),
 		Combos:               listCombos(),
 		OpenRouter:           openrouter.Get(),
-		TokenHarbor:          tokenharbor.Get(),
 		WorkBuddy:            exportWorkbuddyBackup(),
 		Other:                other.Get(),
 		Trae:                 trae2apiBackupSnapshot(),
@@ -247,7 +243,6 @@ func handleAdminConfigExport(w http.ResponseWriter, r *http.Request) {
 			Cline:       clineState,
 			Zen:         zenStateBackupSnapshot(),
 			OpenRouter:  openrouter.StateSnapshotJSON(),
-			TokenHarbor: tokenharbor.StateSnapshotJSON(),
 			Other:       other.StateSnapshotJSON(),
 			ProxyHealth: proxyHealthBackupSnapshot(),
 		},
@@ -575,19 +570,6 @@ func handleAdminConfigImport(w http.ResponseWriter, r *http.Request) {
 		openrouter.Set(or)
 		imported["openrouterKeys"] = len(or.Keys)
 	}
-	if backup.TokenHarbor != nil {
-		th := backup.TokenHarbor
-		if th.KeyRoutingEnabled == nil {
-			th.KeyRoutingEnabled = map[string]bool{}
-		}
-		if !backup.KeepEnabled["tkhb"] {
-			for _, k := range th.Keys {
-				th.KeyRoutingEnabled[k] = false
-			}
-		}
-		tokenharbor.Set(th)
-		imported["tokenharborKeys"] = len(th.Keys)
-	}
 	if backup.Other != nil {
 		// 与其它 key 池平台同口径：默认导入的 key 一律禁用（启用状态属导出方
 		// 部署）；子平台在弹窗里逐个勾选沿用（key = "other:<slug>"）。
@@ -674,7 +656,6 @@ func handleAdminConfigImport(w http.ResponseWriter, r *http.Request) {
 			_ = importFn(merged)
 		}
 		mergeOrReplace(openrouter.StateSnapshotJSON(), st.OpenRouter, openrouter.ImportStateJSON)
-		mergeOrReplace(tokenharbor.StateSnapshotJSON(), st.TokenHarbor, tokenharbor.ImportStateJSON)
 		mergeOrReplace(other.StateSnapshotJSON(), st.Other, other.ImportStateJSON)
 		if includeStats && st.ProxyHealth != nil {
 			importProxyHealthBackup(st.ProxyHealth)

@@ -4,7 +4,7 @@ package app
 //
 // 这个开关是代理池页上的下拉（"Global policy"），语义属于代理域，跟平台自身
 // 的账号/key 数据无关；历史上却分散在各平台的配置文件里（.cline-accounts.json、
-// .or-config.json、.th-config.json、.trae-config.json、
+// .or-config.json、.trae-config.json、
 // .other-config.json 各存一份），改一个开关要记住去哪找。
 //
 // 现统一存进 proxy-config.json 的出口池段（见 proxy_pool_config.go），内存态
@@ -14,17 +14,15 @@ package app
 import (
 	"afree-proxy/internal/openrouter"
 	"afree-proxy/internal/other"
-	"afree-proxy/internal/tokenharbor"
 )
 
 func init() {
 	openrouter.SetUseProxiesResolver(func() *bool { return platformUseProxies("oprt") })
-	tokenharbor.SetUseProxiesResolver(func() *bool { return platformUseProxies("tkhb") })
 	other.SetUseProxiesResolver(func() *bool { return platformUseProxies("other") })
 }
 
 // platformUseProxies 读取某平台的走池开关。nil = 该平台未配置（缺省走池）。
-// kind 取 cline/oprt/tkhb/trae/other/zen/workbuddy。
+// kind 取 cline/oprt/trae/other/zen/workbuddy。
 func platformUseProxies(kind string) *bool {
 	c := getProxyPool()
 	switch kind {
@@ -32,8 +30,6 @@ func platformUseProxies(kind string) *bool {
 		return c.ClineUseProxies
 	case "oprt":
 		return c.OprtUseProxies
-	case "tkhb":
-		return c.TkhbUseProxies
 	case "trae":
 		return c.TraeUseProxies
 	case "other":
@@ -57,8 +53,6 @@ func setPlatformUseProxies(kind string, v *bool) {
 		next.ClineUseProxies = v
 	case "oprt":
 		next.OprtUseProxies = v
-	case "tkhb":
-		next.TkhbUseProxies = v
 	case "trae":
 		next.TraeUseProxies = v
 	case "other":

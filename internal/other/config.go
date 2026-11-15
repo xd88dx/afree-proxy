@@ -93,9 +93,9 @@ type Model struct {
 }
 
 // ReservedPrefixes 内置平台前缀（与各平台模块的 ModelPrefix 保持一致：
-// zen / wbcn / wbgb / cline-free/ / tkhb / oprt）。Other 子平台前缀
+// zen / wbcn / wbgb / cline-free/ / oprt）。Other 子平台前缀
 // 不得与之冲突，否则请求路由会被既有平台截走。
-var ReservedPrefixes = []string{"zen:", "wbcn:", "wbgb:", "cline-free/", "tkhb:", "oprt:"}
+var ReservedPrefixes = []string{"zen:", "wbcn:", "wbgb:", "cline-free/", "oprt:"}
 
 // DefaultConfig 出厂配置：无子平台、并发/重试默认值在平台 normalize 时补齐。
 func DefaultConfig() *Config {

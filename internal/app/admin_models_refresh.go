@@ -7,7 +7,7 @@ import (
 // 各平台「刷新模型目录」的统一响应契约（2026-10-31）。
 //
 // 此前每个平台自成一格：
-//   - 返回值形态各异：openrouter/tokenharbor `synced, %d free models`、
+//   - 返回值形态各异：openrouter `synced, %d free models`、
 //     zen `synced, %d new models`、other `Catalog refreshed`、cline `model sync started`，
 //     WorkBuddy 更是直接甩回一大坨 `{"cached":true,"models":[...]}`；
 //   - 同步失败被 syncXxxCatalog 内部吞掉（只写日志），handler 照样按新目录长度报成功，

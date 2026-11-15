@@ -45,7 +45,6 @@ type proxyConfigFileData struct {
 	// 平台配置文件不再持有它们。
 	ClineUseProxies     *bool `json:"clineUseProxies,omitempty"`
 	OprtUseProxies      *bool `json:"oprtUseProxies,omitempty"`
-	TkhbUseProxies      *bool `json:"tkhbUseProxies,omitempty"`
 	TraeUseProxies      *bool `json:"traeUseProxies,omitempty"`
 	OtherUseProxies     *bool `json:"otherUseProxies,omitempty"`
 	ZenUseProxies       *bool `json:"zenUseProxies,omitempty"`

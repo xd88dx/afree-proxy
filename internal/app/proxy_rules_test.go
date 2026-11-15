@@ -18,12 +18,12 @@ func TestPruneProxyExclusions(t *testing.T) {
 			name: "keeps in-pool and direct sentinel, drops off-pool",
 			in: map[string][]string{
 				"socks5://h1:1#A":   {"key"},
-				"socks5://gone:9#Z": {"key", "th"},
-				proxyRuleDirectKey:  {"th"},
+				"socks5://gone:9#Z": {"key", "or"},
+				proxyRuleDirectKey:  {"or"},
 			},
 			want: map[string][]string{
 				"socks5://h1:1#A":  {"key"},
-				proxyRuleDirectKey: {"th"},
+				proxyRuleDirectKey: {"or"},
 			},
 		},
 		{
@@ -40,9 +40,9 @@ func TestPruneProxyExclusions(t *testing.T) {
 			name: "empty pool keeps only sentinel",
 			in: map[string][]string{
 				"socks5://h1:1#A":  {"key"},
-				proxyRuleDirectKey: {"th"},
+				proxyRuleDirectKey: {"or"},
 			},
-			want: map[string][]string{proxyRuleDirectKey: {"th"}},
+			want: map[string][]string{proxyRuleDirectKey: {"or"}},
 		},
 	}
 	for _, tc := range cases {
@@ -63,7 +63,7 @@ func TestPruneProxyExclusions(t *testing.T) {
 // 的规则整表保存失败（400 invalid platform kind）。other:<slug> 是 Other 子
 // 平台粒度（面板上 Other 只是归类行，配置落在子平台上）。
 func TestProxyRuleKinds(t *testing.T) {
-	for _, k := range []string{"acc", "trae", "key", "wb", "or", "th", "other",
+	for _, k := range []string{"acc", "trae", "key", "wb", "or", "other",
 		"other:op_94abfc02", "other:op_6b9355d1"} {
 		if !proxyRuleKindValid(k) {
 			t.Fatalf("kind %q rejected", k)

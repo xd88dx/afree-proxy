@@ -15,7 +15,6 @@ import (
 	"afree-proxy/internal/kit"
 	"afree-proxy/internal/openrouter"
 	"afree-proxy/internal/other"
-	"afree-proxy/internal/tokenharbor"
 )
 
 // ============================================================================
@@ -56,13 +55,12 @@ const (
 
 // 平台标识（与对外模型前缀对应）。
 const (
-	platWorkBuddy   = "workbuddy"
-	platZen         = "zen"
-	platCline       = "cline"
-	platOpenRouter  = "openrouter"
-	platTokenHarbor = "tokenharbor"
-	platTrae        = "trae"
-	platOther       = "other"
+	platWorkBuddy  = "workbuddy"
+	platZen        = "zen"
+	platCline      = "cline"
+	platOpenRouter = "openrouter"
+	platTrae       = "trae"
+	platOther      = "other"
 )
 
 // modelBlacklistEntry 一条拉黑记录。Model 存**对外模型 ID**（含前缀，
@@ -386,8 +384,6 @@ func platformOfModel(model string) string {
 		return platCline
 	case strings.HasPrefix(model, openrouter.ModelPrefix):
 		return platOpenRouter
-	case strings.HasPrefix(model, tokenharbor.ModelPrefix):
-		return platTokenHarbor
 	case trae2apiPlatformModel(model):
 		return platTrae
 	}
@@ -626,8 +622,6 @@ func platformModelIDs(platform string) []string {
 		rows = workbuddyModelEntries()
 	case platOpenRouter:
 		rows = orModelList()
-	case platTokenHarbor:
-		rows = thModelList()
 	case platTrae:
 		rows = trae2apiModelEntries()
 	case platOther:
@@ -812,14 +806,6 @@ func testBlacklistModel(ctx context.Context, platform, model string) (map[string
 			return orTestKey(i, bare)
 		}
 		return map[string]any{"ok": false, "model": model, "error": "no enabled openrouter key"}, "error"
-	case platTokenHarbor:
-		for i, k := range tokenharbor.Keys() {
-			if !tokenharbor.RoutingEnabled(k) {
-				continue
-			}
-			return thTestKey(i, bare)
-		}
-		return map[string]any{"ok": false, "model": model, "error": "no enabled tokenharbor key"}, "error"
 	case platTrae:
 		return trae2apiProbeBlacklistedModel(model)
 	case platOther:

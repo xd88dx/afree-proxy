@@ -45,7 +45,6 @@ TARGETS = [
     ("zen-api", "opencode.ai", "/inference/openai/v1/models"),
     ("zen-catalog", "models.opencode.ai", "/api.json"),
     ("oprt", "openrouter.ai", "/api/v1/models"),
-    ("tkhb", "tokenharbor.ai", "/v1/models"),
 ]
 
 SOCKS_ERR = {0: "succeeded", 1: "general_failure", 2: "not_allowed",

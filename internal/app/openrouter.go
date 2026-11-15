@@ -473,7 +473,7 @@ func handleOrModelsRefresh(w http.ResponseWriter, r *http.Request) {
 		writeAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
 		return
 	}
-	// 与 TokenHarbor 同口径：无启用 key 时拒绝同步并给出提示。
+	// 无启用 key 时拒绝同步并给出提示。
 	if !openrouter.HasEnabledKey() {
 		writeCatalogNoCredential(w, platOpenRouter)
 		return

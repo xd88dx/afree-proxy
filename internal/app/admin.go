@@ -200,17 +200,6 @@ func registerAdminRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/admin/api/trae/helper/status", adminCORS(auth(handleTraeHelperStatus)))
 	mux.HandleFunc("/admin/api/trae/checkin", adminCORS(auth(handleTraeCheckin)))
 	mux.HandleFunc("/admin/api/trae/credits/refresh", adminCORS(auth(handleTraeCreditsRefresh)))
-	// TokenHarbor 平台（key 池，tkhb: 前缀）：配置/模型/key 管理/测试/代理绑定
-	mux.HandleFunc("/admin/api/tokenharbor/config", adminCORS(auth(handleTHConfig)))
-	mux.HandleFunc("/admin/api/tokenharbor/config/update", adminCORS(auth(handleTHConfigUpdate)))
-	mux.HandleFunc("/admin/api/tokenharbor/models/refresh", adminCORS(auth(handleTHModelsRefresh)))
-	mux.HandleFunc("/admin/api/tokenharbor/keys/routing", adminCORS(auth(handleTHKeySetRouting)))
-	mux.HandleFunc("/admin/api/tokenharbor/keys/routing/all", adminCORS(auth(handleTHKeySetRoutingAll)))
-	mux.HandleFunc("/admin/api/tokenharbor/keys/reorder", adminCORS(auth(handleTHKeysReorder)))
-	mux.HandleFunc("/admin/api/tokenharbor/keys/delete", adminCORS(auth(handleTHKeyDelete)))
-	mux.HandleFunc("/admin/api/tokenharbor/keys/test", adminCORS(auth(handleTHKeyTest)))
-	mux.HandleFunc("/admin/api/tokenharbor/keys/proxy", adminCORS(auth(handleTHKeySetProxy)))
-	mux.HandleFunc("/admin/api/tokenharbor/keys/proxy/clear", adminCORS(auth(handleTHKeyClearProxies)))
 	// Other 平台（动态子平台 key 池，自定义前缀）：配置/平台 CRUD/模型/key 管理/测试/代理绑定
 	mux.HandleFunc("/admin/api/other/config", adminCORS(auth(handleOtherConfig)))
 	mux.HandleFunc("/admin/api/other/config/update", adminCORS(auth(handleOtherConfigUpdate)))
