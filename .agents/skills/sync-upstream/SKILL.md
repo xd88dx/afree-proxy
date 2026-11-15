@@ -35,7 +35,7 @@ description: 同步 afree-proxy 五条上游线的完整流程与陷阱清单—
 1. **上游行为取证**（比官方仓 issue 快）：它的 gateway 测试文件是上游行为的高质量旁证——2026-11-05 zen 免费层关停的调查即靠 `internal/gateway/opencode_go_free_test.go` 定案（免费层 `Bearer public`、付费 OpenCode Go=`opencode.ai/zen/go/v1`）。
 2. **单点逻辑移植**：读它的提交/源码，匹配本仓架构后择优移植，MERGE.md magpie 节记基线（排查到哪条 commit、吸纳了什么、丢弃了什么）。首次基线 `498b6419`（2026-11-05），首轮吸纳 #4944 反向 mend（finish=tool_calls 无调用改判 stop，落在 `collectStreamResponse`）。
 
-排查方法：`api.github.com/repos/yetone/magpie/commits`（匿名 API 配额易耗尽，失败就拉 raw 文件）；其提交信息极详尽（动机+复现+验证+自评遗留），多数情况读完 message 即可判断价值，无需逐文件读 diff。评估时按本仓平台逐条对照（cline/zen/trae/wb/openrouter/amd/tkhb/other），架构不同的形态（free-tier 形身、路由组、webui）直接判不适用。
+排查方法：`api.github.com/repos/yetone/magpie/commits`（匿名 API 配额易耗尽，失败就拉 raw 文件）；其提交信息极详尽（动机+复现+验证+自评遗留），多数情况读完 message 即可判断价值，无需逐文件读 diff。评估时按本仓平台逐条对照（cline/zen/trae/wb/openrouter/other），架构不同的形态（free-tier 形身、路由组、webui）直接判不适用。
 
 ## 1. 公共铁律
 

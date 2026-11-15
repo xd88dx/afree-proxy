@@ -12,7 +12,7 @@ description: 评估 afree-proxy 服务真实可用性的完整配方——从本
 | 信息 | 位置 | 取用方式 |
 |---|---|---|
 | newapi 渠道映射 | `D:/DockerApp/newapi/data/one-api.db`（newapi 容器挂载） | **先复制到临时目录再读**（运行中容器的库不能直接 open）；`channels` 表：`id/type/name/base_url/status/test_model/models/model_mapping/key` |
-| afree 凭据盘点 | `D:/DockerApp/afree/*.json` + `workbuddy/auths/` + `workbuddy/state.json` | 直接读；cline/zen/trae 是 accounts，amd/oprt/tkhb 是 keys+keyBindings，other 是 platforms[]，wb 看 state.json 的 disabled |
+| afree 凭据盘点 | `D:/DockerApp/afree/*.json` + `workbuddy/auths/` + `workbuddy/state.json` | 直接读；cline/zen/trae 是 accounts，oprt 是 keys+keyBindings，other 是 platforms[]，wb 看 state.json 的 disabled（amd/tkhb 已于 2026-11-15 删除） |
 | afree 网关 | `http://127.0.0.1:3457` | `/health`、`/v1/models`、`/v1/chat/completions`；API key `8008208820`（compose）；面板 `POST /admin/api/login {password:pass1234}`，**token 在响应 `data.token` 层** |
 | 容器日志 | `docker logs afree` | 失败根因的第一现场（EOF/冷却/blacklist/gate reject） |
 | 上游代码 | 本地 git 对象（merge 历史里有上游哈希） | `git show <上游哈希>:<文件>` 对比 |
@@ -25,7 +25,7 @@ newapi 的渠道全部指向 afree 网关（`host.docker.internal:3457`），用
 
 ```python
 # 从 sqlite 读 channels.model_mapping，json 解析，汇总 values() 去重
-# 目标形态即平台前缀：cline-free/ zen: wbcn: wbgb: tacn: tagb: amd: oprt: tkhb: other-*:
+# 目标形态即平台前缀：cline-free/ zen: wbcn: wbgb: tacn: tagb: oprt: other-*:
 ```
 
 同时盘点各平台凭据启用状态（见上表）。
@@ -120,7 +120,7 @@ git show <上游哈希>:internal/app/models.go | grep -n "muse\|seed\|prune"
 - **凭据维度成为一等阶段**（§2b）：管理面 Test 端点逐凭据测试 + 出口池全量扫描。端点契约表、响应形状、坑全在 playbook §11a——**wb 面板端点是扁平响应不走 apiResponse、挂载重写多写一层 panel 就 404**，这两个坑让首轮脚本整平台假 FAIL。
 - **一条死出口 ≠ 一个凭据问题**：扫描出死出口后必须做绑定关联分析（keyBindings + cline proxyMain + egressBindings 三处都查）——本轮 deplexo-DE(11107) 一条死出口挂了 5 个凭据、egress 钉定另挂 4 个 zen key。GFE 403 用"无 token 裸请求同拦"判出口 IP 拉黑（playbook §11c），别误杀账号。
 - **热循环指纹**：容器 CPU≈100% + 同一 key 同一行日志每秒数百条 = 自旋（playbook §11d）。日志轮转会伪装成自愈。根因是 zen chat/responses 两路径平行修改漂移（chat 漏 `retryKey=""`），改 zen key 选择逻辑必须两路径一起 grep。
-- **落盘竞态指纹**：`rename *.json.tmp ... no such file or directory`（playbook §11e）。atomicWriteFile 已修（按路径互斥+唯一 tmp）；同型固定 `.tmp` 写手仍在 amd/openrouter/other/workbuddy 各自的落盘副本，见到同指纹按同处方修。
+- **落盘竞态指纹**：`rename *.json.tmp ... no such file or directory`（playbook §11e）。atomicWriteFile 已修（按路径互斥+唯一 tmp）；同型固定 `.tmp` 写手仍在 openrouter/other/workbuddy 各自的落盘副本，见到同指纹按同处方修。
 - **生产更新实操**（playbook §11f）：用户授权后 `docker pull` + `rebuild.sh afree`，**rebuild.sh 不含 pull**；镜像构建时间 vs origin/main 提交时间判断生产是否落后；重启同时是自旋/挂死 goroutine 的止血手段（需授权）。
 
 详细命令模板与陷阱清单见 [references/audit-playbook.md](references/audit-playbook.md)。

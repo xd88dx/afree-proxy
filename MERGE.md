@@ -734,3 +734,13 @@ WorkBuddy 一栏的基线同时登记在 `scripts/workbuddy-vendor-baseline.json
 - app 层接线：`workbuddyBackup` 增 `state`/`usage` 段；`importWorkbuddyBackup` 增 includeStats 参数；cline/zen 事实合并函数；五平台（trae/amd/or/th/other）JSON 级事实合并 `backup_state_facts.go`。
 - 装配层无新配置键。不采纳项：无（纯新增）。
 - 验证：`go build ./...`、`go vet ./...` 全绿；`go test ./... -count=1` 29 包全过；本机容器实机导出（version 3）含 workbuddy.state（15 账号）/usage（218 桶）/state 八域。
+
+### 2026-11-15 — 本地平台删除：AMDCloud 与 TokenHarbor 整体摘除
+
+本节不属于上游同步，记录本地平台全链路删除（用户 2026-11-15 指示，双平台各一个 commit 便于部分回滚）。本文以上历史行原文不改。
+
+- 删除范围：`internal/amd/`（9 文件 2417 行）、`internal/tokenharbor/`（10 文件 ≈1967 行）、`internal/app/amd.go`（581 行）、`internal/app/tokenharbor.go`（579 行）；app 层手术 33+17 文件（路由注册 10+10 条、网关前缀路由、/v1/models 合并、备份段、代理绑定/冷却/黑名单/走池开关、combos 白名单、数据清除）；前端 `admin_html.go` 双平台全套（nav/仪表盘/tab 页/弹窗/i18n/JS 注册表）；测试 14+9 文件；`.gitignore`、`egress_probe.py`、`i18n_audit.py`、`ReservedPrefixes`（"amd:"/"tkhb:" 一并删除）。
+- 删除前凭据已导出明文备份至 `D:/下载/afree-amd-keys-2026-11-15.txt`（10 key）与 `afree-tkhb-keys-2026-11-15.txt`（25 key）。
+- 兼容口径（用户定）：旧备份文件中的 `amdcloud`/`tokenharbor` 段导入时静默忽略（JSON 反序列化天然丢弃未知字段，不留兼容代码）；运行时旧数据只清数据不加代码兼容；vendor 线（workbuddy/trae2api）注释不动。
+- 保留清单：`MERGE.md`/`aoci.code.txt`/`.aoci` 历史认知条目按各自台账口径处理；`workbuddy/panel.go` 中提及 amd/tkhb 的注释保留（vendor 三方合并线，不为一条注释登记补丁）。
+- 验证：`go build ./...`、`go vet ./...` 全绿；`go test ./... -count=1` 41 包通过（唯一失败 `TestZenForbiddenGateStampsAndClears` 为删除前既有基线失败，与本次无关）；gofmt 干净；amd/tkhb 词边界全仓扫描代码层 0 残留。commit：`c087369`（AMDCloud，65 文件）、`48d9a86`（TokenHarbor，54 文件）。
