@@ -762,3 +762,10 @@ WorkBuddy 一栏的基线同时登记在 `scripts/workbuddy-vendor-baseline.json
 - 根因（本地 TempDir 内实测）：logstore_test.go 写死 2026-11-08/09 日历日期；`cleanup()` 按 `now − retentionDays(7)` 删除过期文件，真实时钟走到 2026-11-16 后，测试第二次 `NewLogStore`（模拟重启）把 11-08 文件（距今 8 天）当过期日志删掉，11-09 恰好压线存活 → Backfill 只剩 3 条。d06cacd 同步后（11-12）测试日期尚未过期故未立即暴露，属上游测试自身的时间炸弹，与 vendor 同步内容无关。
 - 修复：`relDay`/`dayTSRel` 相对日期 helper，同文件四处写死日期（含次日将炸的 TestLogStoreRotatesOnMaxBytes 手工 cleanup 用例）一并改相对时钟；实现侧（启动清理过期文件）行为正确未动。
 - 验证：panel 包顺序 + `-race` 全绿；`go test ./... -shuffle=1` 两轮 41 包全过（CI 同命令）。
+
+### 2026-11-16 — CI Vet job Test(race) 首跑暴露：后台目录同步 goroutine 跨测试竞争 pool 全局
+
+- 背景：Test (shuffled) 修复后 Vet job 首次跑到 Test (race) 步骤（此前始终被 shuffled 失败挡住），Linux runner 抓到 DATA RACE：`TestAdminAccountNickname` 裸写包级 `pool` vs `TestServedGateRejectsWorkbuddyImageModel` 遗留的 `ensureModelsFresh → go syncModelsOnce()` 后台 goroutine 锁内读（`loadPool`）。
+- 修复①：`models.go` 新增 `modelsSyncSuspended` 挂起开关（`main_test.go TestMain` 置位，与 `kit.SuspendFlushersForTest` 同模式）——`ensureModelsFresh` 测试态不再起无停止路径的后台同步 goroutine；显式同步与生产 ticker 不受影响（model_blacklist_test 曾各自预填 modelsLastSync 点状防御，同诉求佐证）。
+- 修复②：本机 -race 循环 15 轮另抓到 `swapReqLogSink` 的 `t.TempDir()` 与异步落盘单写协程补写的 RemoveAll 竞态（与 main_test.go 记录的 CI 同型三例同源）——改用带重试清理的 `testDataDir`。
+- 验证：app 包 -race 连续 6 轮全绿；`go test ./... -shuffle=1` 两轮 41 包全过。

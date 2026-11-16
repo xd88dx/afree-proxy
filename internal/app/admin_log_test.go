@@ -14,7 +14,10 @@ import (
 // 必须整体替换，否则会把行写到仓库根下真实的 data/requests.jsonl。
 func swapReqLogSink(t *testing.T) {
 	t.Helper()
-	dir := t.TempDir()
+	// testDataDir 而非 t.TempDir()：异步落盘单写协程的队列余量会在 TempDir
+	// 的 RemoveAll 微秒窗口里补写条目（directory not empty，与 main_test.go
+	// 记录的 CI 同型三例同源），带重试的自建目录绕开该竞态（2026-11-16 实测）。
+	dir := testDataDir(t)
 	reqLogsMu.Lock()
 	savedLogs := reqLogs
 	savedFile := reqLogsFile

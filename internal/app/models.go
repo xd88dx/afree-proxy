@@ -69,6 +69,16 @@ var (
 	modelsCache    map[string]*ModelInfo
 	modelsSyncing  bool
 	modelsLastSync time.Time
+
+	// modelsSyncSuspended 测试态挂起后台目录同步（main_test.go TestMain 置位，
+	// 与 kit.SuspendFlushersForTest 同模式）：ensureModelsFresh 起的
+	// go syncModelsOnce() 无停止路径，会跨测试存活——上个测试遗留的同步
+	// goroutine 读 pool 全局时，下个测试正裸写替换它（CI -race DATA RACE，
+	// TestAdminAccountNickname 记账，2026-11-16）。多数测试也不想要它拉真实
+	// 上游的副作用（model_blacklist_test 曾各自预填 modelsLastSync 点状防御）。
+	// 测试串行设置、无并发写者；生产路径恒 false。显式调 syncRecommendedModels
+	// 的同步保存点不受影响。
+	modelsSyncSuspended bool
 )
 
 const (
@@ -1065,6 +1075,9 @@ func modelsSyncSnapshot() (lastSync time.Time, syncing bool) {
 }
 
 func ensureModelsFresh() {
+	if modelsSyncSuspended {
+		return
+	}
 	initModelsCache()
 	modelsMu.Lock()
 	needSync := modelsLastSync.IsZero() || time.Since(modelsLastSync) > modelsRefreshInterval
