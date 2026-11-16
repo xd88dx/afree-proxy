@@ -3822,14 +3822,9 @@ async function loadStats() {
     setDash('dashWb', 'accounts', ov.total, ov.healthy, ov.cooling);
   } catch (e) { /* ignore */ }
   try {
-    const ks = (d.data && d.data.keyStates) || [];
-  } catch (e) { /* ignore */ }
-  try {
     const d = await api('GET', '/trae/config');
     const accs = (d.data && d.data.accounts) || [];
     setDash('dashTrae', 'accounts', accs.length, accs.filter(a => a.routing === true && a.disabled !== true).length, accs.filter(a => a.cooling || a.breaker).length);
-  } catch (e) { /* ignore */ }
-  try {
   } catch (e) { /* ignore */ }
   try {
     const d = await api('GET', '/other/config');
@@ -4285,8 +4280,7 @@ function stageRowBindingClear(row, kind) {
 }
 
 // 各凭据页的表格容器（键 -> tbody 选择器），一键代理按页取行。
-const BIND_TBODY = { acc: '#accountTableBody', trae: '#traeAccountsBody', key: '#ocKeysBody', wb: '#wbAccountsBody',
-
+const BIND_TBODY = { acc: '#accountTableBody', trae: '#traeAccountsBody', key: '#ocKeysBody', wb: '#wbAccountsBody', other: '#otherKeysBody' };
 
 // 一键代理：按行序把主代理依次绑定为 [直连, 代理池第1项, 代理池第2项, ...]。
 // 仅暂存——与 Enable/Disable all、Clear bindings 同一口径，必须点 Save 才落盘。
@@ -5844,8 +5838,9 @@ async function banModel(btn) {
     await api('POST', '/models/blacklist/ban', { platform: platform, model: model });
     toast(T('banned') + model, 'success');
     loadModelBlacklist();
-    const ref = btn.dataset.refresh;
-    else loadModels();
+    // 按 data-refresh 刷新按钮所在页的模型列表：zen 页刷 OpenCode 页，
+    // 其余（cline/trae/other/动态 label）统一走 loadModels()。
+    if (btn.dataset.refresh === 'zen') loadOcConfig(); else loadModels();
   } catch (e) {
     toast(e.message, 'error'); btn.disabled = false;
   }
@@ -6494,8 +6489,6 @@ async function loadProxyPool() {
       const trc = await api('GET', '/trae/config');
       _('ppTrae').value = String(trc.data.useProxies !== false);
     } catch (e) { _('ppTrae').value = 'true'; }
-    try {
-    try {
     try {
       const oc = await api('GET', '/other/config');
       _('ppOther').value = String(oc.data.useProxies !== false);

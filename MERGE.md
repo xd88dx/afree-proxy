@@ -769,3 +769,10 @@ WorkBuddy 一栏的基线同时登记在 `scripts/workbuddy-vendor-baseline.json
 - 修复①：`models.go` 新增 `modelsSyncSuspended` 挂起开关（`main_test.go TestMain` 置位，与 `kit.SuspendFlushersForTest` 同模式）——`ensureModelsFresh` 测试态不再起无停止路径的后台同步 goroutine；显式同步与生产 ticker 不受影响（model_blacklist_test 曾各自预填 modelsLastSync 点状防御，同诉求佐证）。
 - 修复②：本机 -race 循环 15 轮另抓到 `swapReqLogSink` 的 `t.TempDir()` 与异步落盘单写协程补写的 RemoveAll 竞态（与 main_test.go 记录的 CI 同型三例同源）——改用带重试清理的 `testDataDir`。
 - 验证：app 包 -race 连续 6 轮全绿；`go test ./... -shuffle=1` 两轮 41 包全过。
+
+### 2026-11-16 — 面板 JS 语法损坏修复（登录后面板卡死无反应）
+
+- 现象：登录后面板「卡死」——所有点击无反应、仪表盘数据全 "-"。浏览器实测定位：面板主脚本整体未执行（`typeof loadStats === 'undefined'`），静态 HTML 正常渲染，属脚本块语法错误使整块失效。
+- 根因（三处，均为上一会话 or→oprt 消歧/th 清理的删除操作留下，非本次 OpenRouter 删除引入——39e56e7 之前 dabe004 就已有其中一处）：①`BIND_TBODY` 对象字面量删除 `or:` 行时连闭合 `};` 一起丢失；②`banModel` 的 refresh 分支链丢 `if` 行留孤儿 `else`（dabe004 时已是孤儿 `else if`，or→oprt 消歧引入）；③loadProxyPool 里 `ppOr` 块删除后残留三重 `try {`。
+- 修复：补全 `BIND_TBODY`（含 other）、`banModel` 改 `if (btn.dataset.refresh === 'zen') loadOcConfig(); else loadModels();`、三重 try 合一；顺带清理 loadStats 两个空壳 try 残骸。
+- 验证判据（新增）：改 admin_html.go 的 JS 后用 `node --check` 对提取的 script 块做语法检查（提取脚本见台账历史）；浏览器端到端——登录后 10 tab 逐个切换、dashboard 四卡数据加载、零 JS 错误。
