@@ -694,12 +694,12 @@ func feedFreeModels(models []*ModelInfo) []*ModelInfo {
 
 // clineModelPrefix Cline 免费模型的命名空间前缀（官方 feed 里 cline-free/*
 // 自带、poolside/*、z-ai/* 等不带）。网关对外统一用这个前缀标识 Cline 平台，
-// 与 zen: / oprt: / wbcn: / wbgb: 保持同一套"前缀即平台"的约定。
+// 与 zen: / wbcn: / wbgb: 保持同一套"前缀即平台"的约定。
 const clineModelPrefix = "cline-free/"
 
 // displayClineModelID 对外展示/调用的 Cline 模型 ID：已带 cline-free/ 前缀的
 // 原样返回（官方 feed 的 cline-free/* 条目），其余（poolside/*、z-ai/* …）
-// 补上前缀，避免与 zen:/oprt: 前缀平台的裸名混淆。
+// 补上前缀，避免与 zen: 前缀平台的裸名混淆。
 func displayClineModelID(id string) string {
 	id = strings.TrimSpace(id)
 	if id == "" || strings.HasPrefix(id, clineModelPrefix) {

@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"afree-proxy/internal/kit"
-	"afree-proxy/internal/openrouter"
 	"afree-proxy/internal/other"
 )
 
@@ -55,12 +54,11 @@ const (
 
 // 平台标识（与对外模型前缀对应）。
 const (
-	platWorkBuddy  = "workbuddy"
-	platZen        = "zen"
-	platCline      = "cline"
-	platOpenRouter = "openrouter"
-	platTrae       = "trae"
-	platOther      = "other"
+	platWorkBuddy = "workbuddy"
+	platZen       = "zen"
+	platCline     = "cline"
+	platTrae      = "trae"
+	platOther     = "other"
 )
 
 // modelBlacklistEntry 一条拉黑记录。Model 存**对外模型 ID**（含前缀，
@@ -310,8 +308,6 @@ func platformOfModel(model string) string {
 		// cline 免费目录的对外前缀（seed/live 目录里带前缀的条目）。裸名
 		// （z-ai/glm-5.3-flash 等 live feed 直出的 ID）仍返回空串不猜。
 		return platCline
-	case strings.HasPrefix(model, openrouter.ModelPrefix):
-		return platOpenRouter
 	case trae2apiPlatformModel(model):
 		return platTrae
 	}
@@ -549,8 +545,6 @@ func platformModelIDs(platform string) []string {
 		}
 	case platWorkBuddy:
 		rows = workbuddyModelEntries()
-	case platOpenRouter:
-		rows = oprtModelList()
 	case platTrae:
 		rows = trae2apiModelEntries()
 	case platOther:
@@ -700,14 +694,6 @@ func testBlacklistModel(ctx context.Context, platform, model string) (map[string
 			return testZenKey(k, i, bare)
 		}
 		return map[string]any{"ok": false, "model": model, "error": "no enabled zen key"}, "error"
-	case platOpenRouter:
-		for i, k := range openrouter.Keys() {
-			if !openrouter.RoutingEnabled(k) {
-				continue
-			}
-			return oprtTestKey(i, bare)
-		}
-		return map[string]any{"ok": false, "model": model, "error": "no enabled openrouter key"}, "error"
 	case platTrae:
 		return trae2apiProbeBlacklistedModel(model)
 	case platOther:

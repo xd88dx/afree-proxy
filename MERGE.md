@@ -744,3 +744,12 @@ WorkBuddy 一栏的基线同时登记在 `scripts/workbuddy-vendor-baseline.json
 - 兼容口径（用户定）：旧备份文件中的 `amdcloud`/`tokenharbor` 段导入时静默忽略（JSON 反序列化天然丢弃未知字段，不留兼容代码）；运行时旧数据只清数据不加代码兼容；vendor 线（workbuddy/trae2api）注释不动。
 - 保留清单：`MERGE.md`/`aoci.code.txt`/`.aoci` 历史认知条目按各自台账口径处理；`workbuddy/panel.go` 中提及 amd/tkhb 的注释保留（vendor 三方合并线，不为一条注释登记补丁）。
 - 验证：`go build ./...`、`go vet ./...` 全绿；`go test ./... -count=1` 41 包通过（唯一失败 `TestZenForbiddenGateStampsAndClears` 为删除前既有基线失败，与本次无关）；gofmt 干净；amd/tkhb 词边界全仓扫描代码层 0 残留。commit：`c087369`（AMDCloud，65 文件）、`48d9a86`（TokenHarbor，54 文件）。
+
+### 2026-11-16 — 本地平台删除：OpenRouter 整体摘除
+
+本节不属于上游同步，记录本地平台全链路删除（用户 2026-11-16 指示）。本文以上历史行原文不改。
+
+- 删除范围：`internal/openrouter/`（8 文件 ≈2083 行：client/config/config_test/models/pool/usage/catalog_client_test/uncool_test）+ `internal/app/openrouter.go`（691 行）+ `internal/app/openrouter_egress_test.go`，合计 10 文件 2774 行；app 层手术：admin.go 路由注册 12 条、proxy.go 分发分支与 /v1/models 合并、cross_endpoint.go 归口分支、model_blacklist/platform_blacklist/platform_routability/combos 白名单与分支、admin_backup.go 备份导出导入段（configBackup.OpenRouter / stateBackup.OpenRouter / KeepEnabled["oprt"]）、backup_state_facts.go、admin_data.go 清空端点、logs.go 路由计数、proxy_binding.go 注入 scope 分支、proxy_health.go 传输层判定、platform_proxies.go resolver 注入、proxy_pool_config/proxy_config 走池开关字段（`oprtUseProxies`）、keypool_observer 注释口径；前端 admin_html.go 全套（nav/仪表盘卡/统计卡/走池下拉/combo 平台项/tab 页/key 弹窗/i18n 词条/JS 注册表/拖拽注册/comboModels 分支）；测试 12 文件；`.gitignore`、`egress_probe.py` 探测目标、`i18n_audit.py` 产品名豁免、`other/config.go ReservedPrefixes`（"oprt:" 一并删除）。
+- 数据文件保留原样：`D:/DockerApp/afree/oprt-config.json`（key 池）与 `oprt-state.json`（若存在）未动——本次只删代码；旧备份文件中的 `openrouter` 段导入时静默忽略（JSON 未知字段天然丢弃，不留兼容代码，与 amd/tkhb 同口径）。
+- 技能文档同步：add-platform 的 key 池克隆锚点 OpenRouter 移除后，四件套克隆配方改以 internal/other 的单子平台形态为参照（Other 是唯一存活的同构 key 池平台）；audit-availability 凭据盘点/Test 端点契约表收敛；frontend.md nav 现状收敛为十个。
+- 验证：`go build ./...`、`go vet ./internal/...` 全绿；`go test ./... -count=1` 除 `internal/workbuddy/panel` 的 `TestLogStoreBackfillNewestFirst`（vendor 同步 d06cacd 引入的既有失败，已登记 PROJECT.md §4）外全过；i18n_audit.py 五遍清零。工作区另含先前会话未提交的 trae 迁移与 or→oprt 消歧改动（本删除在其之上进行，未回退）。

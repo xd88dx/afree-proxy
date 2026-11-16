@@ -17,8 +17,8 @@ import (
 // ============ Other 平台装配 ============
 //
 // Other 页下挂多个子平台（小企业上游，自定义前缀）：每子平台独立 key 池 +
-// 模型勾选目录，请求按 "<prefix>:<model-id>" 路由到对应 BaseURL。与
-// OpenRouter 页同构（key 轮转 / 401·429 冷却 / 主备代理绑定 / 面板暂存编辑），
+// 模型勾选目录，请求按 "<prefix>:<model-id>" 路由到对应 BaseURL。key 池语义
+// 与 zen 页同构（key 轮转 / 401·429 冷却 / 主备代理绑定 / 面板暂存编辑），
 // 区别是平台数量动态，管理 API 全部带 slug。
 
 // otherConfigPath Other 配置文件路径（DATA_DIR/other-config.json）。
@@ -32,7 +32,7 @@ func initOther() {
 	// 目录同步与 chat 同链路（2026-11-09 审计修复）：此前 FetchModels 走裸直连
 	// 默认 client，DISABLE_DIRECT / 绑定出口对同步全不生效——凭据与出口 IP 会
 	// 从宿主机直连泄漏。复用 otherExitFn，逐 key 解析出口，全部不可用即
-	// fail-closed 跳过本轮（与 openrouter 同口径）。
+	// fail-closed 跳过本轮。
 	other.SetCatalogExitResolver(func(p *other.Platform, key string) (string, bool) {
 		return otherExitFn(p)(key)
 	})
@@ -63,7 +63,7 @@ func otherAttemptObserver(ctx context.Context, scope, key, proxyURL string) {
 }
 
 // startOtherModelsRefresher 每 5 分钟同步一次全部有 key 的子平台目录。上游偶发
-// TLS EOF（与 openrouter 同现象），失败重试两次再放弃本轮。
+// TLS EOF（与 zen 注册表同现象），失败重试两次再放弃本轮。
 func startOtherModelsRefresher() {
 	ticker := time.NewTicker(5 * time.Minute)
 	for range ticker.C {
@@ -122,7 +122,7 @@ func otherModelList() []map[string]any {
 	return out
 }
 
-// otherExitFn 平台未绑定 key 的出口解析（与 openrouter 同语义）：
+// otherExitFn 平台未绑定 key 的出口解析（与 zen 同语义）：
 // 未绑定 = 全局规则（Other 全局开关关则直连，否则共享代理池轮转）；
 // 绑定 = 主/备用出口，双不可用 = 本轮跳过（隔离优先于可用性）。
 func otherExitFn(p *other.Platform) func(key string) (string, bool) {
@@ -244,7 +244,7 @@ func handleOtherConfig(w http.ResponseWriter, r *http.Request) {
 }
 
 // platformAPI 单个子平台的面板视图（key 明文永不出口；keyStates 用 index
-// 定位，与 OpenRouter 的协议一致）。
+// 定位，与 zen key 表的协议一致）。
 func platformAPI(p *other.Platform) map[string]any {
 	models := make([]string, 0)
 	for _, m := range other.KnownModels(p) {
@@ -989,7 +989,7 @@ func otherReplacePlatform(p *other.Platform) {
 	other.Set(full)
 }
 
-// otherTestKey 对单个 key 发一个极小探测请求（与 openrouter 的 Test 同语义）：
+// otherTestKey 对单个 key 发一个极小探测请求（与 zen 的 Test 同语义）：
 // 真实 2xx = 成功并清除冷却；401/403 = key 失效；429 = 限流。
 func otherTestKey(slug string, index int, modelID string) (map[string]any, string) {
 	result := map[string]any{"slug": slug, "index": index}

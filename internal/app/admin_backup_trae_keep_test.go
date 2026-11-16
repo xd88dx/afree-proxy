@@ -19,6 +19,19 @@ func TestConfigImportKeepEnabledTrae(t *testing.T) {
 	savedPath := proxyConfigPathOverride
 	proxyConfigPathOverride = filepath.Join(t.TempDir(), "proxy-config.json")
 	t.Cleanup(func() { proxyConfigPathOverride = savedPath })
+	savedGlobalPath := globalConfigPathOverride
+	globalConfigPathOverride = filepath.Join(t.TempDir(), "afree-config.json")
+	t.Cleanup(func() { globalConfigPathOverride = savedGlobalPath })
+	globalCfgMu.Lock()
+	globalCfgLoaded = false
+	globalCfg = nil
+	globalCfgMu.Unlock()
+	t.Cleanup(func() {
+		globalCfgMu.Lock()
+		globalCfgLoaded = false
+		globalCfg = nil
+		globalCfgMu.Unlock()
+	})
 	savedSub := trae2apiSub
 	trae2apiSub = nil // 未启动：restore 只落盘，启动装载后再套用（导入常态）
 	t.Cleanup(func() { trae2apiSub = savedSub })
@@ -38,33 +51,41 @@ func TestConfigImportKeepEnabledTrae(t *testing.T) {
 
 	// 沿用：routing 原样（uid1=true, uid2=false）
 	doImport(`{"trae": true}`)
-	proxyFileMu.Lock()
-	f := loadProxyConfigFileLocked()
-	got := map[string]bool(f.Trae2apiRouting)
-	proxyFileMu.Unlock()
-	if got["trae-cn-1"] != true || got["trae-cn-2"] != false {
-		t.Fatalf("keepEnabled.trae=true must restore routing verbatim, got %v", got)
+	globalCfgMu.Lock()
+	g := loadGlobalConfigLocked()
+	var routing map[string]bool
+	if g.Trae != nil {
+		routing = g.Trae.Routing
+	}
+	globalCfgMu.Unlock()
+	if routing["trae-cn-1"] != true || routing["trae-cn-2"] != false {
+		t.Fatalf("keepEnabled.trae=true must restore routing verbatim, got %v", routing)
 	}
 
 	// 未勾选（缺项）：隔离护栏——显式 false 落表（不是查表缺失的兼容启用）
 	doImport(`{}`)
-	proxyFileMu.Lock()
-	f2 := loadProxyConfigFileLocked()
-	got2 := map[string]bool(f2.Trae2apiRouting)
-	proxyFileMu.Unlock()
-	if got2["trae-cn-1"] != false || got2["trae-cn-2"] != false {
-		t.Fatalf("keepEnabled.trae missing must disable all explicitly, got %v", got2)
+	globalCfgMu.Lock()
+	g2 := loadGlobalConfigLocked()
+	var routing2 map[string]bool
+	if g2.Trae != nil {
+		routing2 = g2.Trae.Routing
+	}
+	globalCfgMu.Unlock()
+	if routing2["trae-cn-1"] != false || routing2["trae-cn-2"] != false {
+		t.Fatalf("keepEnabled.trae missing must disable all explicitly, got %v", routing2)
 	}
 
-	// 落盘确认：护栏值写进 proxy-config.json（重启后不复活）
-	raw, err := os.ReadFile(proxyConfigPathOverride)
+	// 落盘确认：护栏值写进 afree-config.json 的 trae 子域（重启后不复活）
+	raw, err := os.ReadFile(globalConfigPath())
 	if err != nil {
 		t.Fatal(err)
 	}
 	var onDisk struct {
-		Routing map[string]bool `json:"trae2apiRouting"`
+		Trae struct {
+			Routing map[string]bool `json:"routing"`
+		} `json:"trae"`
 	}
-	if json.Unmarshal(raw, &onDisk) != nil || onDisk.Routing["trae-cn-1"] {
+	if json.Unmarshal(raw, &onDisk) != nil || onDisk.Trae.Routing["trae-cn-1"] {
 		t.Fatalf("guard-rail false must be persisted, file: %s", raw)
 	}
 }

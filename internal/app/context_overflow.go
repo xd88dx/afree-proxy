@@ -93,7 +93,7 @@ func writeContextOverflowError(w http.ResponseWriter, model, upstreamMsg string)
 // fallback（各调用点既有口径）。限流是"该凭据用完了，等会儿再来"，客户端会按
 // Retry-After 退避重试；包成 502 会让 IDE 判定网关故障并标记渠道不可用（zen 侧
 // 早已如此，2026-11-09 收口到全平台）。提取靠上游错误类型的 HTTPStatus() 方法
-// （openrouter/other/zen/cline 与跨端点调用器通用）。
+// （other/zen/cline 与跨端点调用器通用）。
 // upstreamHTTPError 带状态码的上游错误：供调用器把非 200 响应转成 error（而不是
 // 让伪成功的响应体流进正常解析路径），状态码经 HTTPStatus() 被统一提取。
 type upstreamHTTPError struct {

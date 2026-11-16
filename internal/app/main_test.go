@@ -8,7 +8,7 @@ import (
 	"afree-proxy/internal/kit"
 )
 
-// 包级合批落盘器（zen/oprt/other 的 *-state.json）首次 Mark 惰性启动
+// 包级合批落盘器（zen/other 的 *-state.json）首次 Mark 惰性启动
 // 10s 周期 goroutine 且无停止路径：某测试 mark 过脏位后，这个泄漏 goroutine
 // 会在其后任意测试的 t.Setenv("DATA_DIR", testDataDir(t)) 窗口内向该 TempDir 写盘，
 // 与 TempDir 清理竞态（RemoveAll: directory not empty）——CI 上失败被记到当时

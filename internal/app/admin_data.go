@@ -10,7 +10,7 @@ import (
 
 // POST /admin/api/data/delete-all
 // 删除全部持久化数据：Cline 账号与客户端 key、默认模型、请求头、调度策略、
-// OpenCode key/绑定/代理池、OpenRouter key/绑定、zen 粘性会话与端点学习结果、
+// OpenCode key/绑定/代理池、zen 粘性会话与端点学习结果、
 // WorkBuddy 账号与代理绑定、自定义别名、cline 流式自学习结果、请求日志与用量统计。
 // 仅保留运行基础设施（.session-secret、运行日志），保证面板会话不被踢出。
 func handleAdminDeleteAllData(w http.ResponseWriter, r *http.Request) {
@@ -21,7 +21,6 @@ func handleAdminDeleteAllData(w http.ResponseWriter, r *http.Request) {
 
 	clineAccounts, clientKeys := clearPoolForDataDelete()
 	zenKeys := clearOpenCodeKeysForDataDelete()
-	oprtKeys := clearOpenrouterKeysForDataDelete()
 	otherKeys := clearOtherKeysForDataDelete()
 	traeAccounts := clearTrae2apiAccountsForDataDelete()
 	sessions := clearZenSessionsForDataDelete()
@@ -39,7 +38,6 @@ func handleAdminDeleteAllData(w http.ResponseWriter, r *http.Request) {
 			"clineAccounts":     clineAccounts,
 			"clientKeys":        clientKeys,
 			"opencodeKeys":      zenKeys,
-			"openrouterKeys":    oprtKeys,
 			"otherKeys":         otherKeys,
 			"traeAccounts":      traeAccounts,
 			"sessions":          sessions,

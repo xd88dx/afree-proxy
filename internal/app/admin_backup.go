@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"afree-proxy/internal/kit"
-	"afree-proxy/internal/openrouter"
 	"afree-proxy/internal/other"
 	wbauth "afree-proxy/internal/workbuddy/auth"
 	wbserver "afree-proxy/internal/workbuddy/server"
@@ -23,7 +22,7 @@ import (
 // 三层口径（2026-11-03 用户定，「导出文件 → 全新容器 → 一模一样」）：
 //
 //   - **配置态**：各平台凭据与配置（Cline 账号、OpenCode key 及启用/绑定、
-//     OpenRouter key 池、Other 子平台聚合、WorkBuddy
+//     Other 子平台聚合、WorkBuddy
 //     config + 凭据文件 + 出口绑定）、代理池（别名随行）、请求头、调度策略、
 //     默认模型、自定义别名、zen 粘性会话、端点学习结果。
 //   - **账号事实**：账号/key 在上游的客观状态（冷却表、wb 余额/限额/实测成本/
@@ -40,7 +39,7 @@ import (
 // 导入：同一格式的 JSON，**按段替换** —— 文件中存在的段整体替换当前值，
 // 文件中没有的段保持不动；导入后各缓存/持久化文件同步重建。
 //
-// **隔离护栏（v2 起）**：导入的一切上游身份（Cline 账号、zen/or/th key、
+// **隔离护栏（v2 起）**：导入的一切上游身份（Cline 账号、zen/th key、
 // WorkBuddy 账号）默认一律置为禁用——备份里的启用状态属于导出方部署，其绑定
 // 出口在本地未必存在，原样启用等于把流量引向未经验证的身份。启用哪个由
 // 用户在面板逐个勾选。导入弹窗提供逐平台"沿用启用状态"switch（KeepEnabled，
@@ -93,7 +92,6 @@ type stateBackup struct {
 	Cline       *poolUsageData   `json:"cline,omitempty"`
 	Zen         *zenUsageFile    `json:"zen,omitempty"`
 	Trae        json.RawMessage  `json:"trae,omitempty"`
-	OpenRouter  json.RawMessage  `json:"openrouter,omitempty"`
 	Other       json.RawMessage  `json:"other,omitempty"`
 	ProxyHealth *proxyHealthFile `json:"proxyHealth,omitempty"`
 }
@@ -119,9 +117,8 @@ type configBackup struct {
 	Sessions  map[string]*zenSessionEntry `json:"sessions,omitempty"`
 	Endpoints map[string]string           `json:"endpoints,omitempty"`
 	Combos    []*Combo                    `json:"combos,omitempty"`
-	// v2 补全的 key 池平台与 WorkBuddy（v1 备份无这些段，导入时保持不动）。
-	OpenRouter *openrouter.Config `json:"openrouter,omitempty"`
-	WorkBuddy  *workbuddyBackup   `json:"workbuddy,omitempty"`
+	// v2 补全的 WorkBuddy（v1 备份无这些段，导入时保持不动）。
+	WorkBuddy *workbuddyBackup `json:"workbuddy,omitempty"`
 	// Other 子平台聚合配置（other-config.json）。2026-10-14 补：Other 页
 	// 上线时只做了网关/面板，未接备份，导致子平台与 key 池无法随配置迁移。
 	Other *other.Config `json:"other,omitempty"`
@@ -135,12 +132,13 @@ type configBackup struct {
 	// 2026-10-14 补：workbuddyBackup 原只覆盖 vendor config.json 与 auths
 	// 凭据，漏了出口绑定，导入后该文件仍留旧值（而非本机值），跨机迁移出错。
 	WorkBuddyProxies map[string]workbuddyProxyBinding `json:"workBuddyProxies,omitempty"`
-	// TraeProxies TraeWork 账号出口绑定（proxy-config.json 的 trae2apiBindings
-	// 段）。2026-11-05 补：trae 换线时未随 wb 的 2026-10-14 教训补齐，导出→
-	// 删卷→导入后绑定丢失（用户实测）。
+	// TraeProxies TraeWork 账号出口绑定（afree-config.json 的 trae.bindings
+	// 段，2026-11-16 前住 proxy-config.json 的 trae2apiBindings 段）。2026-11-05
+	// 补：trae 换线时未随 wb 的 2026-10-14 教训补齐，导出→删卷→导入后绑定
+	// 丢失（用户实测）。
 	TraeProxies map[string]trae2apiProxyBinding `json:"traeProxies,omitempty"`
-	// TraeDisplayOrder TraeWork 凭据展示顺序（proxy-config.json 的
-	// trae2apiDisplayOrder 段，UID 列表）。2026-11-05 补：顺序此前是进程内
+	// TraeDisplayOrder TraeWork 凭据展示顺序（afree-config.json 的
+	// trae.displayOrder 段，UID 列表）。2026-11-05 补：顺序此前是进程内
 	// 展示态，导出→导入（或重启）后回到 UID 序（用户实测）。
 	TraeDisplayOrder []string `json:"traeDisplayOrder,omitempty"`
 	// ModelBlacklist 模型封禁表（afree-config.json 的 modelBlacklist 段）。2026-10-19 补：
@@ -158,8 +156,8 @@ type configBackup struct {
 	// State 各平台 state 快照（2026-11-01）：与 *-state.json 落盘同形态的
 	// **全量**快照（账号事实 + 本机统计，三层口径「导出 = 容器全部数据」）。
 	// 导出始终携带；导入分层——账号事实无论勾选与否都应用，本机统计仅勾选
-	// 「Import statistics」时应用（不勾选 = 保留本机现值）。五平台包
-	// （trae/or/th/other）以 JSON 往返（与落盘同形态），不暴露包内类型。
+	// 「Import statistics」时应用（不勾选 = 保留本机现值）。四平台包
+	// （trae/th/other）以 JSON 往返（与落盘同形态），不暴露包内类型。
 	// WorkBuddy 的池状态与实测台账在 workbuddy.state / workbuddy.usage 段。
 	State *stateBackup `json:"state,omitempty"`
 	// ImportState 导入方对「还原本机统计」的选择（弹窗勾选框，默认勾选）。
@@ -168,7 +166,7 @@ type configBackup struct {
 	ImportState *bool `json:"importState,omitempty"`
 	// KeepEnabled 导入方对"沿用启用状态"的逐平台选择（导入弹窗 switch，默认
 	// 全不沿用）。缺项/false = 隔离护栏生效（导入身份一律禁用，原行为）；
-	// true = 保留备份内该平台的启用状态。key：cline / zen / oprt /
+	// true = 保留备份内该平台的启用状态。key：cline / zen /
 	// wb 与 "other:<slug>"（Other 子平台逐个）。
 	KeepEnabled map[string]bool `json:"keepEnabled,omitempty"`
 }
@@ -228,7 +226,6 @@ func handleAdminConfigExport(w http.ResponseWriter, r *http.Request) {
 		Sessions:             sessions,
 		Endpoints:            loadZenEndpointsFile(),
 		Combos:               listCombos(),
-		OpenRouter:           openrouter.Get(),
 		WorkBuddy:            exportWorkbuddyBackup(),
 		Other:                other.Get(),
 		Trae:                 trae2apiBackupSnapshot(),
@@ -242,7 +239,6 @@ func handleAdminConfigExport(w http.ResponseWriter, r *http.Request) {
 		State: &stateBackup{
 			Cline:       clineState,
 			Zen:         zenStateBackupSnapshot(),
-			OpenRouter:  openrouter.StateSnapshotJSON(),
 			Other:       other.StateSnapshotJSON(),
 			ProxyHealth: proxyHealthBackupSnapshot(),
 		},
@@ -557,19 +553,6 @@ func handleAdminConfigImport(w http.ResponseWriter, r *http.Request) {
 
 	// ---- key 池平台（v2 段）：整配置替换；默认全部 key 禁用，弹窗勾选
 	// "沿用启用状态"的平台保留备份内原表（KeyRoutingEnabled 缺项 = 启用）----
-	if backup.OpenRouter != nil {
-		or := backup.OpenRouter
-		if or.KeyRoutingEnabled == nil {
-			or.KeyRoutingEnabled = map[string]bool{}
-		}
-		if !backup.KeepEnabled["oprt"] {
-			for _, k := range or.Keys {
-				or.KeyRoutingEnabled[k] = false
-			}
-		}
-		openrouter.Set(or)
-		imported["openrouterKeys"] = len(or.Keys)
-	}
 	if backup.Other != nil {
 		// 与其它 key 池平台同口径：默认导入的 key 一律禁用（启用状态属导出方
 		// 部署）；子平台在弹窗里逐个勾选沿用（key = "other:<slug>"）。
@@ -636,7 +619,7 @@ func handleAdminConfigImport(w http.ResponseWriter, r *http.Request) {
 				importZenStateFacts(st.Zen)
 			}
 		}
-		// 五平台 JSON 包：勾选 = 整体替换（全量随备份）；不勾选 = 账号事实合并
+		// 四平台 JSON 包：勾选 = 整体替换（全量随备份）；不勾选 = 账号事实合并
 		// （冷却表覆盖，本机统计键保留本机值）。trae 段 2026-11-04 起由
 		// trae2apiRestoreBackup 单独处理（含 config/routing/accounts），不再走
 		// state 事实合并（vendored state.json 冷却不随备份迁移）。
@@ -655,7 +638,6 @@ func handleAdminConfigImport(w http.ResponseWriter, r *http.Request) {
 			}
 			_ = importFn(merged)
 		}
-		mergeOrReplace(openrouter.StateSnapshotJSON(), st.OpenRouter, openrouter.ImportStateJSON)
 		mergeOrReplace(other.StateSnapshotJSON(), st.Other, other.ImportStateJSON)
 		if includeStats && st.ProxyHealth != nil {
 			importProxyHealthBackup(st.ProxyHealth)

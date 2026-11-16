@@ -3,7 +3,6 @@ package app
 import (
 	"afree-proxy/internal/cline"
 	"afree-proxy/internal/kit"
-	openrouter "afree-proxy/internal/openrouter"
 	"afree-proxy/internal/other"
 	"bufio"
 	"bytes"
@@ -104,7 +103,9 @@ func StartProxy(host string, port int) error {
 	loadEgressBindings()
 	reconcileEgressBindings()
 	loadClineStreamLearned()
-	initOpenRouter()
+	// trae2api* 旧段迁移必须在 initTrae（以及任何 trae 配置懒加载）之前：
+	// 幂等，proxy-config.json 无旧键时零写盘。
+	migrateTrae2apiConfigFromProxyFile()
 	initOther()
 	initTrae()
 	LoadRequestLogsFromFile()
@@ -226,11 +227,11 @@ func StartProxy(host string, port int) error {
 	modelsHandler := apiKeyHandler(func(w http.ResponseWriter, r *http.Request) {
 		data := servedModelEntries()
 		// 字段归一化（归纳、统一、透传）：业内 OpenAI 官方 /v1/models 只有
-		// id/object/created/owned_by，同类聚合器 OpenRouter 每条带 context_length
+		// id/object/created/owned_by，同类聚合器每条带 context_length
 		//（Gemini 叫 inputTokenLimit）。各来源字段名不一，统一到标准形态：
 		//
 		//	context_length   ← WorkBuddy 已用该名，原样透传；
-		//	                   ← zen/oprt 的 context，统一补齐；
+		//	                   ← zen 的 context，统一补齐；
 		//	max_output_tokens ← WorkBuddy 已用该名，原样透传；
 		//	                   ← zen 的 output（最大输出 tokens），统一补齐。
 		//
@@ -296,7 +297,7 @@ func StartProxy(host string, port int) error {
 		}
 
 		// 网关层文本工具调用兜底（internal/textcall，2026-11-07）：请求带 tools
-		// 时包一层响应改写器——所有引擎（wbcn/trae/zen/openrouter/...）的
+		// 时包一层响应改写器——所有引擎（wbcn/trae/zen/...）的
 		// 响应出口统一在此把模型模仿历史编码格式输出的 `[调用工具 ...]` 转回
 		// 结构化 tool_calls。trae 引擎内部已有同样一层（vendored
 		// trae2api/server/textcall.go），转过的流到这里无文本可转、自然空转；
@@ -330,12 +331,6 @@ func StartProxy(host string, port int) error {
 				return
 			}
 			workbuddySub.serveWorkBuddyChat(w, r, rewritten)
-			return
-		}
-
-		// OpenRouter 路由：oprt:<model-id> 前缀（纯 key 池平台，无账号 OAuth）
-		if openrouter.HasPrefix(model) {
-			handleOprtChat(w, r, params)
 			return
 		}
 
@@ -1036,7 +1031,7 @@ func buildUpstreamBody(params map[string]any, stream bool) map[string]any {
 		maxTokens = mt
 	}
 
-	model := normalizeRequestModel(mustString(params["model"]))
+	model := normalizeRequestModel(params["model"].(string))
 
 	body := map[string]any{
 		"model":            model,
@@ -3106,7 +3101,7 @@ func handleAnthropicMessages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 前缀平台（oprt:/trae:/Other 子平台）：归口到平台 chat 调用器，
+	// 前缀平台（trae:/Other 子平台）：归口到平台 chat 调用器，
 	// 经既有 chat→anthropic 转换件输出（与 zen 路径同一套协议转换）。
 	if caller, ok := resolvePlatformChatCaller(req.Model); ok {
 		handleAnthropicViaChat(w, r, req, openAIReq, toolSchemas, caller)
@@ -4228,7 +4223,7 @@ func wbEntryRate(m map[string]any) (float64, bool) {
 }
 
 // servedModelEntries 对外模型目录的单一口径：全平台聚合（cline/zen/wb/
-// oprt/trae/other/combo 别名）减去平台封禁与模型黑名单。/v1/models
+// trae/other/combo 别名）减去平台封禁与模型黑名单。/v1/models
 // 输出与请求路径的服务闸共用，保证「目录里能看到的才能请求到」严格一致。
 func servedModelEntries() []map[string]any {
 	ensureModelsFresh()
@@ -4247,8 +4242,6 @@ func servedModelEntries() []map[string]any {
 	}
 	// 合并 WorkBuddy 模型（wbcn:/wbgb: 前缀，vendor 层翻译源项目 realm）。
 	data = append(data, workbuddyModelEntries()...)
-	// 合并 OpenRouter 免费模型（oprt: 前缀）。
-	data = append(data, oprtModelList()...)
 	// 合并 Trae 模型（vendored trae2api 域前缀：trae:/solo:/trae-intl:/solo-intl:）。
 	data = append(data, trae2apiModelEntries()...)
 	// 合并 Other 子平台勾选模型（各子平台自定义前缀）。
@@ -4350,7 +4343,7 @@ func servedModelGate(model string) (int, string) {
 }
 
 // modelIsServed 模型是否在对外目录（/v1/models 同口径）。对外 ID 天然带
-// 平台前缀（cline-free/ zen: wbcn: wbgb: oprt: trae: other-*:、
+// 平台前缀（cline-free/ zen: wbcn: wbgb: trae: other-*:、
 // combo 别名），请求侧精确匹配即可（2026-10-31 用户定：不做裸名拼写兼容，
 // 不在 models api 输出里的形态一律拒）。
 func modelIsServed(model string) bool {

@@ -44,7 +44,6 @@ type proxyConfigFileData struct {
 	// 这些开关属于代理域（代理池页的下拉），所以跟池本体放同一个文件，
 	// 平台配置文件不再持有它们。
 	ClineUseProxies     *bool `json:"clineUseProxies,omitempty"`
-	OprtUseProxies      *bool `json:"oprtUseProxies,omitempty"`
 	TraeUseProxies      *bool `json:"traeUseProxies,omitempty"`
 	OtherUseProxies     *bool `json:"otherUseProxies,omitempty"`
 	ZenUseProxies       *bool `json:"zenUseProxies,omitempty"`
@@ -72,20 +71,12 @@ type proxyConfigFileData struct {
 	// ---- WorkBuddy 账号出口绑定 ----
 	WorkbuddyBindings map[string]workbuddyProxyBinding `json:"workbuddyBindings,omitempty"`
 
-	// ---- TraeWork（vendored trae2api）出口绑定 / 反代开关 / 费率过滤 ----
-	// 键是池 UID（trae-cn-<userId>）。反代开关查表缺失 = 启用（存量兼容），
-	// 新增身份由 AccountAddedHook 显式落 false。费率阈值 0 = 关。
-	// Trae2apiDisplayOrder 凭据展示顺序（面板拖拽，2026-11-05 用户定：顺序
-	// 改动必须落盘并随配置备份迁移；UID 列表，未提及者排尾按 UID）。
-	Trae2apiBindings        map[string]trae2apiProxyBinding `json:"trae2apiBindings,omitempty"`
-	Trae2apiRouting         map[string]bool                 `json:"trae2apiRouting,omitempty"`
-	Trae2apiModelRateFilter float64                         `json:"trae2apiModelRateFilter,omitempty"`
-	// 分域倍率筛选（2026-11-07 用户定，照 wb 79cc3d6c 模式）：nil = 未配置 =
-	// 回落旧单值 trae2apiModelRateFilter（旧配置文件兼容）。CN 过滤 trae:/solo:，
-	// Intl 过滤 trae-intl:/solo-intl:。显式 0 = 关（指针区分「未配置」与「关」）。
-	Trae2apiModelRateFilterCN   *float64 `json:"trae2apiModelRateFilterCN,omitempty"`
-	Trae2apiModelRateFilterIntl *float64 `json:"trae2apiModelRateFilterIntl,omitempty"`
-	Trae2apiDisplayOrder        []string `json:"trae2apiDisplayOrder,omitempty"`
+	// ---- TraeWork 的 afree 附加配置已迁出（2026-11-16）：trae2api* 段
+	// （绑定/反代开关/倍率/展示顺序）迁入 afree-config.json 的 trae 子域
+	// （global_config.go traeConfigData，migrateTrae2apiConfigFromProxyFile
+	// 一次性迁移）——这些是 afree 层实现的 trae 平台业务配置，不是代理域
+	// 数据；代理文件只留代理域与绑定段（workbuddyBindings 同理待评估）。
+	// 旧键经 JSON 未知字段忽略，迁移后从文件消失。
 
 	// ---- zen key 出口自动钉定（egress.go，上游 400736b）----
 	// 键是 namespace+身份哈希（zen key 只存 sha256 前 8 字节 hex，不含明文）。
@@ -123,18 +114,6 @@ func loadProxyConfigFileLocked() *proxyConfigFileData {
 		}
 		if f.Strategy == "" {
 			f.Strategy = "round_robin"
-		}
-		// trae2apiModelRateFilter 单值迁移（2026-11-15，与 WB 的
-		// migrateModelRateFilterSplit 同语义）：单值非零且两域均未显式配置时，
-		// 迁入两域并清除单值（一次性，migrate 发生才写回）。读取兜底分支保留
-		// 兼容旧备份导入（导入后首读即迁移，之后文件与内存均无单值）。
-		if f.Trae2apiModelRateFilter != 0 && f.Trae2apiModelRateFilterCN == nil && f.Trae2apiModelRateFilterIntl == nil {
-			v := f.Trae2apiModelRateFilter
-			f.Trae2apiModelRateFilterCN = &v
-			f.Trae2apiModelRateFilterIntl = &v
-			f.Trae2apiModelRateFilter = 0
-			saveProxyConfigFileLocked(&f)
-			log.Printf("proxy config: trae2apiModelRateFilter 单值已迁移到 CN/Intl 两域（%.2f）", v)
 		}
 		return &f
 	}

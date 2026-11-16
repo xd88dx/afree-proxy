@@ -2,11 +2,8 @@ package app
 
 import (
 	"net/http"
-	"net/http/httptest"
-	"path/filepath"
 	"testing"
 
-	"afree-proxy/internal/openrouter"
 	wbauth "afree-proxy/internal/workbuddy/auth"
 	wbconfig "afree-proxy/internal/workbuddy/config"
 	wbpool "afree-proxy/internal/workbuddy/pool"
@@ -16,7 +13,7 @@ import (
 //
 // 背景:cline(getFreeModels 按**裸 feed ID** 升序,输出再统一加 cline-free/
 // 前缀,故输出 id 观感上非升序但顺序确定)、zen(zenModelList 末尾 sort.Slice)、
-// oprt/trae(各 ModelList 内 sort.Slice)、other(KnownModels 内
+// trae(各 ModelList 内 sort.Slice)、other(KnownModels 内
 // sort.Slice)均已排序;唯独 WorkBuddy 段沿用上游返回序,是整条链路上唯一
 // 不确定来源。本组测试锁死该口径,防止将来回退。
 
@@ -196,63 +193,6 @@ func TestServedGateRejectsWorkbuddyImageModel(t *testing.T) {
 	}
 	if modelIsServed("wbcn:hunyuan-image-alpha") {
 		t.Fatal("workbuddy image model must not be servable (not in wkbd page list)")
-	}
-}
-
-// 回归护栏:各「自带排序」平台的段内顺序确实恒升序。这里直接打各段函数,
-// 不经过网络——种子快照已取消（2026-11-11，or 同日口径），目录改用
-// httptest 假上游注入：各包目录真身无导出 setter，但 SyncCatalog 是导出入口，
-// 指到本地假服务器即可造态。展示门控（4e7d263）之后各段 ModelList 无启用
-// 凭据即返回空，断言会空转，所以先给 openrouter 装一个可路由凭据。
-func TestPlatformSegmentsAreIDSorted(t *testing.T) {
-	t.Setenv("DATA_DIR", testDataDir(t))
-
-	// or：装一个启用 key + 一个假目录上游。保存/恢复原配置。
-	oprtPrev, oprtPath := openrouter.Get(), openrouter.ConfigPath
-	openrouter.ConfigPath = filepath.Join(t.TempDir(), "oprt-config.json")
-	orc := openrouter.DefaultConfig()
-	orc.Keys = []string{"sk-or-v1-test"}
-	orc.KeyRoutingEnabled = map[string]bool{"sk-or-v1-test": true}
-	openrouter.Set(orc)
-	oprtSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// 乱序喂入，验证 ModelList 的 sort.Slice 输出恒升序。
-		_, _ = w.Write([]byte(`{"data":[
-			{"id":"or-b:free","name":"B","context_length":1000,"pricing":{"prompt":"0","completion":"0"},"supported_parameters":["tools"],"architecture":{"output_modalities":["text"]}},
-			{"id":"or-a:free","name":"A","context_length":2000,"pricing":{"prompt":"0","completion":"0"},"supported_parameters":["tools"],"architecture":{"output_modalities":["text"]}}
-		]}`))
-	}))
-	defer oprtSrv.Close()
-	oprtPrevOverride := openrouter.GetCatalogURLOverride()
-	openrouter.SetCatalogURLOverride(oprtSrv.URL)
-	t.Cleanup(func() {
-		openrouter.Set(oprtPrev)
-		openrouter.ConfigPath = oprtPath
-		openrouter.SetCatalogURLOverride(oprtPrevOverride)
-	})
-
-	// 显式首拉（种子时代靠快照即时有目录；现在必须同步一次才有目录）。
-	// 先 InitCatalog 把 loaded 置位（否则 ModelList 内部的 InitCatalog 会把
-	// 已同步的目录清空再异步首拉，竞态窗口里读到空段）。
-	openrouter.InitCatalog()
-	if _, err := openrouter.SyncCatalog(); err != nil {
-		t.Fatalf("openrouter fake catalog sync: %v", err)
-	}
-
-	segs := map[string][]map[string]any{
-		"openrouter": oprtModelList(),
-	}
-	for name, seg := range segs {
-		if len(seg) == 0 {
-			t.Fatalf("%s segment is empty despite a routable credential and a synced fake catalog — gating drifted", name)
-		}
-		prev := ""
-		for _, m := range seg {
-			id, _ := m["id"].(string)
-			if id < prev {
-				t.Fatalf("%s segment out of order: %q after %q", name, id, prev)
-			}
-			prev = id
-		}
 	}
 }
 

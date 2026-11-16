@@ -15,13 +15,13 @@ import (
 //   - 本机统计（keyTokens 记账、请求计数、轮转游标、出口健康）：仅
 //     导入方勾选「导入统计数据」时应用；不勾选时**保留本机现值**。
 //
-// 对 oprt/other 这两个以 JSON 往返（不暴露包内类型）的平台，合并
+// 对 other 这两个以 JSON 往返（不暴露包内类型）的平台，合并
 // 在 JSON 层做：键面约定 cool = 事实、keyTokens/tokens = 统计。trae 段不走
 // 本文件（2026-11-04 起由 trae2apiRestoreBackup 单独处理 config/routing/
 // accounts 全段）。旧版备份带统计字段时同样被本合并忽略（统计不迁移）。
 // ============================================================================
 
-// stateFactsTopKeys oprt/other 形态的账号事实键（其余键一律保留本机）。
+// stateFactsTopKeys other 形态的账号事实键（其余键一律保留本机）。
 const stateFactsTopKeys = "cool"
 
 // mergeStateFactsJSON 把备份 state 快照里的账号事实合并进本机快照，返回合并

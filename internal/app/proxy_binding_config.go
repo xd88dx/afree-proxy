@@ -25,14 +25,9 @@ type proxyBindingConfigData struct {
 	// 延迟重排的"保持不变"阈值（秒）：平均握手延迟 ≤ 该值的代理视为健康、
 	// 保持现绑定不参与重排。0/缺项 = 取 defaultReorderKeepSec。
 	ReorderKeepSec float64 `json:"reorderKeepSec,omitempty"`
-	// TraeWork 模型倍率过滤阈值（proxy-config.json 的 trae2apiModelRateFilter）。
-	// 2026-11-05 全字段落盘闭环测试补缺：此前 proxy 段不含它——导出丢、导入
-	// 的覆盖写再把本机值抹掉，跨机迁移后倍率过滤静默失效（实测 0.1 → 0）。
-	Trae2apiModelRateFilter float64 `json:"trae2apiModelRateFilter,omitempty"`
-	// 分域倍率筛选（2026-11-07 拆分）：nil = 未配置 = 回落旧单值。语义同
-	// proxyConfigFileData 的同名字段注释。
-	Trae2apiModelRateFilterCN   *float64 `json:"trae2apiModelRateFilterCN,omitempty"`
-	Trae2apiModelRateFilterIntl *float64 `json:"trae2apiModelRateFilterIntl,omitempty"`
+	// TraeWork 倍率过滤已迁出（2026-11-16）：trae2apiModelRateFilter* 三键
+	// 随 trae2api* 段整体迁入 afree-config.json 的 trae 子域——它是 trae 平台
+	// 业务配置不是隔离/绑定段语义（历史误归，见 proxy_config.go 迁移注记）。
 }
 
 // defaultReorderKeepSec 阈值缺省值（秒）：与旧版硬编码 6s 的口径不同——
@@ -65,14 +60,11 @@ func loadProxyBindingConfigLocked() *proxyBindingConfigData {
 	f := loadProxyConfigFileLocked()
 	proxyFileMu.Unlock()
 	proxyBindingCfg = &proxyBindingConfigData{
-		ProxyIsolation:              f.ProxyIsolation,
-		BackupProxyEnabled:          f.BackupProxyEnabled,
-		ProxyExclusions:             f.ProxyExclusions,
-		ProxyBindCaps:               f.ProxyBindCaps,
-		ReorderKeepSec:              f.ReorderKeepSec,
-		Trae2apiModelRateFilter:     f.Trae2apiModelRateFilter,
-		Trae2apiModelRateFilterCN:   f.Trae2apiModelRateFilterCN,
-		Trae2apiModelRateFilterIntl: f.Trae2apiModelRateFilterIntl,
+		ProxyIsolation:     f.ProxyIsolation,
+		BackupProxyEnabled: f.BackupProxyEnabled,
+		ProxyExclusions:    f.ProxyExclusions,
+		ProxyBindCaps:      f.ProxyBindCaps,
+		ReorderKeepSec:     f.ReorderKeepSec,
 	}
 	proxyBindingLoadedPath = path
 	return proxyBindingCfg
@@ -101,11 +93,5 @@ func setProxyBindingConfig(c *proxyBindingConfigData) {
 		f.ProxyExclusions = cp.ProxyExclusions
 		f.ProxyBindCaps = cp.ProxyBindCaps
 		f.ReorderKeepSec = cp.ReorderKeepSec
-		// 2026-11-05：trae2apiModelRateFilter 与 trae2apiBindings/routing 同住
-		// proxy-config.json，但它属于"隔离/绑定段"的配置语义（面板 trae 配置
-		// 区保存、随备份迁移）——漏在覆盖写之外会让导入抹掉本机值（实测）。
-		f.Trae2apiModelRateFilter = cp.Trae2apiModelRateFilter
-		f.Trae2apiModelRateFilterCN = cp.Trae2apiModelRateFilterCN
-		f.Trae2apiModelRateFilterIntl = cp.Trae2apiModelRateFilterIntl
 	})
 }

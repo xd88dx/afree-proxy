@@ -17,7 +17,6 @@ proxy-config.json
 cline-config.json
 zen-config.json
 trae-config.json
-oprt-config.json
 other-config.json
 workbuddy-config.json
 # Legacy pre-refactor names: kept so a stale copy can never be committed either.

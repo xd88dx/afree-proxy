@@ -46,7 +46,7 @@ func TestKitBoundProbeBlockedMsgDegradesWithoutInjection(t *testing.T) {
 	if kit.ProxyBlockedDetail != nil {
 		t.Skip("主包已注入，跳过降级路径")
 	}
-	if got := kit.BoundProbeBlockedMsg("oprt", "sk-xxx", prefix); got != prefix {
+	if got := kit.BoundProbeBlockedMsg("some-slug", "sk-xxx", prefix); got != prefix {
 		t.Fatalf("未注入时应原样返回: %q", got)
 	}
 }

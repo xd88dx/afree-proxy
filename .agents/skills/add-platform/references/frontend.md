@@ -25,9 +25,9 @@
   ```
 ## 2. 导航菜单 + 标签页
 
-- 导航项：`<div class="nav-item" data-tab="xxx"><span class="nav-ico"><svg…/></svg></span> 英文名</div>`。现状十一个：dashboard/accounts/trae/opencode/workbuddy/openrouter/other/proxypool/settings/combos/logs（amdcloud/tokenharbor 已于 2026-11-15 删除）。svg 用 24×24 简笔几何图形，风格与现有一致。
+- 导航项：`<div class="nav-item" data-tab="xxx"><span class="nav-ico"><svg…/></svg></span> 英文名</div>`。现状十个：dashboard/accounts/trae/opencode/workbuddy/other/proxypool/settings/combos/logs（amdcloud/tokenharbor 已于 2026-11-15、openrouter 已于 2026-11-16 删除）。svg 用 24×24 简笔几何图形，风格与现有一致。
 - 页面体：`<div id="tab-xxx" class="tab-panel" style="display:none">`；首个面板 dashboard 不带 display:none。
-- 切换：nav 点击委托 `switchTab`（惰性加载：首次进入时 loadXxx——**新平台的 load 调用要加进 switchTab 的 if 链**，如 `if (name === 'openrouter') loadOprtConfig()`）；`restoreTab` 从 location.hash 恢复（`_('tab-'+h)` 元素存在即白名单，非法回落 dashboard）。**hash 恢复必须在所有 const 声明之后执行**（TDZ 坑：`WB_API_PREFIX` 这类平台 const 若未初始化会报错）。
+- 切换：nav 点击委托 `switchTab`（惰性加载：首次进入时 loadXxx——**新平台的 load 调用要加进 switchTab 的 if 链**，如 `if (name === 'other') loadOtherConfig()`）；`restoreTab` 从 location.hash 恢复（`_('tab-'+h)` 元素存在即白名单，非法回落 dashboard）。**hash 恢复必须在所有 const 声明之后执行**（TDZ 坑：`WB_API_PREFIX` 这类平台 const 若未初始化会报错）。
 - 仪表盘八卡：`.dash-grid` + `.dash-card`（可点击跳转平台页，id 形如 `dashCline/dashOc/dashWb/dashTrae/dashOr/dashAmd/dashTh/dashOther`）+ 请求统计卡（`reqCline/reqZen/reqWb/reqTrae/reqOr/reqAmd/reqTh/reqOther`，数据来自 `/admin/api/request-stats`——后端 logs.go 的 per-route 计数要为新平台加分类桶）。`loadStats` 10s 轮询仅仪表盘可见时执行。
 
 ## 3. 账号列表 + 暂存编辑体系
@@ -64,10 +64,10 @@
 - **默认模型下拉**（Gateway settings / 各平台配置区）：纯模型 ID 不带前缀后缀；`/admin/api/config/update {defaultModel}` 模式。
 - **自定义别名（combos）**：`combos.go` 是唯一事实源——`validateCombo` 的 platform 白名单加 "x"；target 校验 switch 里加 X 分支（**target 必须在 X 自己的模型列表内，跨平台选型直接报错**）；前端 Custom aliases 页平台下拉加选项 + 模型目标随平台联动加载。别名字段：`{id, platform, target, useProxies}`。
 
-## 7. key 池平台页面版式约定（2026-10-11 OpenRouter 实证；AMDCloud/TokenHarbor 同版式已删）
+## 7. key 池平台页面版式约定（Other 页是现状实证；AMDCloud/TokenHarbor/OpenRouter 同版式已删）
 
 - **模型列表用"设置页样式行"**：等宽字体 ID + 标签 + 上下文徽章的 div 行（`.model-tag free` + `wbContextTagHTML`），不是表格；Name 进 title 悬浮。
 - **无描述框**：添加凭据弹窗与 key 表都没有"备注/描述"列——key 本身自解释。
 - **信号量语义**（后端 MaxConcurrency）在平台设置区暴露为"最大并发"数字框。
 - **页面全量 i18n**：接入验收 = 面板 EN 模式与 ZH 模式都无英文残留词条缺失。
-- key 表列序参照 oprtKeysBody：`# / Key / Usage / Cooldown / Proxy binding / (操作) / Pool`，OpenCode 表另有 Session/Rotates 列（有会话态的平台才有）。
+- key 表列序参照 otherKeysBody：`# / Key / Usage / Cooldown / Proxy binding / (操作) / Pool`，OpenCode 表另有 Session/Rotates 列（有会话态的平台才有）。

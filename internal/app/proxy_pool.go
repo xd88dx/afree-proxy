@@ -26,7 +26,6 @@ import (
 const (
 	pkCline = "cline"
 	pkZen   = "zen"
-	pkOprt  = "oprt"
 	pkOther = "other"
 	pkTrae  = "trae"
 	pkWb    = "wb"

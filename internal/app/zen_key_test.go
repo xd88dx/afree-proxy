@@ -418,7 +418,7 @@ func TestZenProbeModelPreferenceOrder(t *testing.T) {
 	}
 
 	// 目录为空（冷启动、同步未成功）：返回 nil，探测如实报错——不再有种子
-	// 快照兜底（2026-11-11 用户定，与 openrouter 同口径）。
+	// 快照兜底（2026-11-11 用户定）。
 	set()
 	if got := zenProbeModel(); got != nil {
 		t.Fatalf("got %v, want nil on an empty table (no seed snapshot)", got)

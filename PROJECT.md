@@ -4,7 +4,7 @@
 
 ## 1. 这是什么
 
-单一 Go 二进制网关（`module afree-proxy`），一个服务同时承载多个平台的反代与账号池：Cline、OpenCode（zen）、TraeWork、WorkBuddy，以及 OpenRouter / Other 等 OpenAI 兼容上游。生产容器名 `afree`（跑在 iStore 上，见 §6），端口 3457。
+单一 Go 二进制网关（`module afree-proxy`），一个服务同时承载多个平台的反代与账号池：Cline、OpenCode（zen）、TraeWork、WorkBuddy，以及 Other 等 OpenAI 兼容上游。（OpenRouter 已随 2026-11-16 平台删除移除）生产容器名 `afree`（跑在 iStore 上，见 §6），端口 3457。
 
 ## 2. 先判平台归属，再动手
 
@@ -42,7 +42,8 @@ go test ./... -count=1             # 除下述既有失败外应全绿
 **已知失败，不要修**：
 
 - ~~`internal/workbuddy/server` 的 `TestChatStreamPassthrough`~~（2026-11-05 移除：上游 d596fa7 的 66e5344「客户端断开只按请求 ctx 判定」顺带修复了该 flaky，全量测试已稳定通过，历史根因记录见 MERGE.md WorkBuddy 节）。
-- **已知失败：无**（2026-11-09 复核）。`internal/workbuddy/updater` 的 `TestInstallReplacesRestartsAndRecovers` 在 Windows 上由 `t.Skip("native self-update unavailable on this deployment")` 短路（`CanInstall()` 为 false），不再失败；该包不 import 任何 `afree-proxy/internal/*`，与业务改动无因果关系。同日 `go test ./... -count=1` 全绿。
+- **`internal/workbuddy/panel` 的 `TestLogStoreBackfillNewestFirst`**（2026-11-16 发现，稳定复现：回填条数 = 3 want 4）。vendor 同步 d06cacd（2026-11-12，4bdbd60→0fadf98）整文件重建 logstore.go/logstore_test.go 之后引入；该包唯一内部依赖 `internal/kit`（本次零行为改动），与业务改动无因果关系。待单独排查上游实现与测试的匹配性。
+- **已知失败：无（afree 自有代码）**（2026-11-09 复核）。`internal/workbuddy/updater` 的 `TestInstallReplacesRestartsAndRecovers` 在 Windows 上由 `t.Skip("native self-update unavailable on this deployment")` 短路（`CanInstall()` 为 false），不再失败；该包不 import 任何 `afree-proxy/internal/*`，与业务改动无因果关系。同日 `go test ./... -count=1` 全绿。
 
 换行：行尾由 `.gitattributes` + `.editorconfig` 强制统一为 LF（规则与判据见 `AGENTS.md` §3）。`gofmt` 是原生程序，不认 MSYS 路径——传 `$(cygpath -w <路径>)`，且**不要**把 `gofmt` 的 stderr 一起重定向进结果文件（会写坏源文件）。
 
@@ -77,7 +78,7 @@ go test ./... -count=1             # 除下述既有失败外应全绿
 
 - **面板端点闭合性**：150 条 mux 注册 vs 154 处前端调用，**0 处前端调用无对应路由**；未引用项只有 5 个 `/v1` 对外网关端点（供 IDE 客户端）。核对脚本注意：`/admin/` 是 catch-all 静态注册，做闭合性匹配时必须排除以 `/` 结尾的注册，否则假阴性（本次踩坑）。
 - **数据清空（delete-all）**：8 平台 + 代理池 + combos + cline 流式学习 + 请求日志全覆盖，各平台均清 keys/bindings/routing **及 usage**；trae 按文档口径删快照+清绑定/路由+重启。zen 的 baseURL/压缩设置在流程末尾被 `clearProxyPoolForDataDelete` 整体重置——与面板文案「Deletes ALL persisted data (... config)」一致，已在该函数注释注明顺序。
-- **导入护栏 KeepEnabled**：cline/zen/oprt/`other:<slug>`/trae/wb 六个键全部被读取，无"该保护未保护"项。（2026-11-15 amd/tkhb 两键随平台删除移除）
+- **导入护栏 KeepEnabled**：cline/zen/`other:<slug>`/trae/wb 五个键全部被读取，无"该保护未保护"项。（2026-11-15 amd/tkhb 两键、2026-11-16 oprt 键随平台删除移除）
 
 **未修（低优先，记录在案）**：无——2026-11-09 第二轮收尾已把下列项全部落地（详见 §4c）。
 

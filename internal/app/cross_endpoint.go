@@ -11,14 +11,13 @@ import (
 	"net/http"
 	"strings"
 
-	"afree-proxy/internal/openrouter"
 	"afree-proxy/internal/other"
 )
 
 // ============ /v1/responses 与 /v1/messages 的全平台接入 ============
 //
-// 此前这两个端点只路由 zen/workbuddy/cline，前缀平台（oprt:/
-// trae:/Other 子平台）进不去。本文件把"带平台前缀的模型"统一归口到一个
+// 此前这两个端点只路由 zen/workbuddy/cline，前缀平台（trae:/
+// Other 子平台）进不去。本文件把"带平台前缀的模型"统一归口到一个
 // chat 调用器：输入已归一的 OpenAI chat params，输出 OpenAI chat 形态响应
 // （流式=完整 SSE、非流式=JSON），再经既有的 chat→responses / chat→anthropic
 // 转换件回写给客户端。zen/workbuddy 仍走各自的专用路径（协议差异大）。
@@ -52,20 +51,6 @@ func resolvePlatformChatCaller(model string) (platformChatCall, bool) {
 // resolvePlatformChatCallerRaw 未包缓冲的平台调用器（trae 聚合产物可能缺
 // [DONE]，由外层 bufferedStreamCaller 统一判完成并重试）。
 func resolvePlatformChatCallerRaw(model string) (platformChatCall, bool) {
-	if id, ok := openrouter.StripPrefix(model); ok {
-		m, resolved := openrouter.Resolve(id)
-		if !resolved {
-			return rejectCaller(fmt.Sprintf("model %q is not a free openrouter model", id), false), true
-		}
-		return func(ctx context.Context, params map[string]any, stream bool) (*http.Response, func(map[string]any), error) {
-			resp, _, err := openrouter.Chat(ctx, params, m.ID, stream, globalStrategy(), oprtBoundRoutable, nil)
-			if err != nil {
-				return nil, nil, err
-			}
-			usedKey := takeUsedKey(resp)
-			return resp, func(u map[string]any) { openrouter.RecordKeyTokens(usedKey, usageTokens(u, params)) }, nil
-		}, true
-	}
 	// TraeWork 路由（vendored trae2api）：域前缀模型名透传，进程内进
 	// vendored /v1/chat/completions（OpenAI 原生 SSE，无需聚合翻译）。
 	if caller, ok := trae2apiCaller(model); ok {

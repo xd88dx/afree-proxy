@@ -70,15 +70,29 @@ func TestTraeDisplayOrderPersistsAndImports(t *testing.T) {
 	savedPath := proxyConfigPathOverride
 	proxyConfigPathOverride = filepath.Join(t.TempDir(), "proxy-config.json")
 	t.Cleanup(func() { proxyConfigPathOverride = savedPath })
+	savedGlobalPath := globalConfigPathOverride
+	afreePath := filepath.Join(t.TempDir(), "afree-config.json")
+	globalConfigPathOverride = afreePath
+	t.Cleanup(func() { globalConfigPathOverride = savedGlobalPath })
+	globalCfgMu.Lock()
+	globalCfgLoaded = false
+	globalCfg = nil
+	globalCfgMu.Unlock()
+	t.Cleanup(func() {
+		globalCfgMu.Lock()
+		globalCfgLoaded = false
+		globalCfg = nil
+		globalCfgMu.Unlock()
+	})
 
-	// 落盘：写段后重读文件必须带 trae2apiDisplayOrder
+	// 落盘：写段后重读文件必须带 trae.displayOrder（2026-11-16 迁入 afree）
 	traeDisplayOrderSave([]string{"u2", "u1"})
-	raw, err := os.ReadFile(proxyConfigPathOverride)
+	raw, err := os.ReadFile(afreePath)
 	if err != nil {
-		t.Fatalf("read proxy-config.json: %v", err)
+		t.Fatalf("read afree-config.json: %v", err)
 	}
-	if !strings.Contains(string(raw), `"trae2apiDisplayOrder": [`) {
-		t.Fatalf("display order must be persisted to proxy-config.json: %s", raw)
+	if !strings.Contains(string(raw), `"displayOrder": [`) {
+		t.Fatalf("display order must be persisted to afree trae section: %s", raw)
 	}
 
 	// 新"进程"装载：空内存副本从文件恢复
@@ -94,7 +108,7 @@ func TestTraeDisplayOrderPersistsAndImports(t *testing.T) {
 	if n := importTrae2apiDisplayOrder([]string{"x"}); n != 1 {
 		t.Fatalf("import n = %d, want 1", n)
 	}
-	raw, _ = os.ReadFile(proxyConfigPathOverride)
+	raw, _ = os.ReadFile(afreePath)
 	if !strings.Contains(string(raw), `"x"`) || strings.Contains(string(raw), `"u2"`) {
 		t.Fatalf("import must replace the order wholesale: %s", raw)
 	}

@@ -17,7 +17,6 @@ import (
 	"time"
 
 	"afree-proxy/internal/kit"
-	openrouter "afree-proxy/internal/openrouter"
 	"afree-proxy/internal/other"
 )
 
@@ -30,7 +29,7 @@ type routeStat struct {
 }
 
 var (
-	routeStats    = map[string]*routeStat{"cline": {}, "zen": {}, "workbuddy": {}, "openrouter": {}, "trae": {}, "other": {}}
+	routeStats    = map[string]*routeStat{"cline": {}, "zen": {}, "workbuddy": {}, "trae": {}, "other": {}}
 	reqStatsStart = time.Now()
 )
 
@@ -583,8 +582,6 @@ func requestLogMiddleware(next http.Handler) http.Handler {
 			route = "zen"
 		case shouldServeWorkBuddy(model):
 			route = "workbuddy"
-		case openrouter.HasPrefix(model):
-			route = "openrouter"
 		case trae2apiPlatformModel(model):
 			route = "trae"
 		case otherHit:

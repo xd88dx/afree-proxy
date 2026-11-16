@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"afree-proxy/internal/kit"
-	"afree-proxy/internal/openrouter"
 	"afree-proxy/internal/other"
 )
 
@@ -231,7 +230,7 @@ func blockedExitMessage(prefix string, main, backup string) string {
 
 // proxyBlockedDetailFor 是注入给 kit 的实现：按 scope + key 查出绑定再格式化。
 //
-// scope 取值："openrouter"，或 other 子平台的 slug。
+// scope 取值：other 子平台的 slug。
 // zen 与 cline 在主包内直接调用 blockedExitMessage，不走这个注入点。
 func proxyBlockedDetailFor(scope, key string) string {
 	if key == "" {
@@ -240,8 +239,6 @@ func proxyBlockedDetailFor(scope, key string) string {
 	var main, backup string
 	var bound bool
 	switch scope {
-	case "openrouter":
-		main, backup, bound = openrouter.BindingOf(key)
 	default:
 		if scope != "" {
 			if p := other.PlatformBySlug(scope); p != nil {

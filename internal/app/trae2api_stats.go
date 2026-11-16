@@ -43,19 +43,23 @@ var (
 	traeTokensDirty bool
 
 	// traeDisplayOrder TraeWork 凭据展示顺序的内存副本（真身在
-	// proxy-config.json 的 trae2apiDisplayOrder 段，与 trae2apiBindings
-	// 同文件同锁管理）。启动装载、SetDisplayOrder/导入时同步。
+	// afree-config.json 的 trae.displayOrder 段，2026-11-16 迁入；原住
+	// proxy-config.json 的 trae2apiDisplayOrder 段）。启动装载、
+	// SetDisplayOrder/导入时同步。
 	traeOrderMu      sync.Mutex
 	traeDisplayOrder []string
 )
 
-// traeDisplayOrderLoadLocked 从 proxy-config 装载顺序副本（调用方须已持
-// proxyFileMu 或在启动单线程路径）。
+// traeDisplayOrderLoad 从 afree-config.json 的 trae 子域装载顺序副本（调用方
+// 在启动单线程路径，或不在任何锁内——globalCfgMu 是最内层锁）。
 func traeDisplayOrderLoad() {
-	proxyFileMu.Lock()
-	f := loadProxyConfigFileLocked()
-	order := append([]string(nil), f.Trae2apiDisplayOrder...)
-	proxyFileMu.Unlock()
+	globalCfgMu.Lock()
+	g := loadGlobalConfigLocked()
+	var order []string
+	if g.Trae != nil {
+		order = append([]string(nil), g.Trae.DisplayOrder...)
+	}
+	globalCfgMu.Unlock()
 	traeOrderMu.Lock()
 	traeDisplayOrder = order
 	traeOrderMu.Unlock()
@@ -160,10 +164,11 @@ func trae2apiTokensSnapshot(uid string) (today, total int64, lastUsed, lastModel
 }
 
 // trae2apiSetDisplayOrder 重排 vendored 池的展示顺序（仅面板/状态列表，
-// 不改加权选号）。顺序落 proxy-config.json 的 trae2apiDisplayOrder 段
+// 不改加权选号）。顺序落 afree-config.json 的 trae.displayOrder 段
 // （2026-11-05 用户定：顺序改动必须落盘、随配置备份迁移——此前是进程内
-// 展示态，重启即回 UID 序，实测丢）。未提及/未知 uid 排尾按 UID；备份导出
-// /导入经 TraeDisplayOrder 段（admin_backup.go）。
+// 展示态，重启即回 UID 序，实测丢；2026-11-16 随 trae2api* 段迁入 afree）。
+// 未提及/未知 uid 排尾按 UID；备份导出/导入经 TraeDisplayOrder 段
+// （admin_backup.go）。
 func trae2apiSetDisplayOrder(uids []string) int {
 	sub := trae2apiCurrent()
 	if sub == nil {
@@ -176,14 +181,15 @@ func trae2apiSetDisplayOrder(uids []string) int {
 	return n
 }
 
-// traeDisplayOrderSave 把展示顺序落 proxy-config.json（与 trae2apiBindings
-// 同文件同锁），并同步内存副本。
+// traeDisplayOrderSave 把展示顺序落 afree-config.json 的 trae 子域
+// （与 trae.bindings 同域），并同步内存副本。
 func traeDisplayOrderSave(uids []string) {
 	traeOrderMu.Lock()
 	traeDisplayOrder = append([]string(nil), uids...)
 	traeOrderMu.Unlock()
-	mutateProxyConfigFile(func(f *proxyConfigFileData) {
-		f.Trae2apiDisplayOrder = append([]string(nil), uids...)
+	cp := append([]string(nil), uids...)
+	mutateGlobalConfig(func(g *globalConfigData) {
+		traeGlobalSection(g).DisplayOrder = cp
 	})
 }
 
@@ -220,8 +226,9 @@ func importTrae2apiDisplayOrder(uids []string) int {
 	traeOrderMu.Lock()
 	traeDisplayOrder = append([]string(nil), uids...)
 	traeOrderMu.Unlock()
-	mutateProxyConfigFile(func(f *proxyConfigFileData) {
-		f.Trae2apiDisplayOrder = append([]string(nil), uids...)
+	cp := append([]string(nil), uids...)
+	mutateGlobalConfig(func(g *globalConfigData) {
+		traeGlobalSection(g).DisplayOrder = cp
 	})
 	trae2apiApplyDisplayOrder(trae2apiCurrent())
 	return len(uids)

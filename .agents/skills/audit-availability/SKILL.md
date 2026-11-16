@@ -12,7 +12,7 @@ description: 评估 afree-proxy 服务真实可用性的完整配方——从本
 | 信息 | 位置 | 取用方式 |
 |---|---|---|
 | newapi 渠道映射 | `D:/DockerApp/newapi/data/one-api.db`（newapi 容器挂载） | **先复制到临时目录再读**（运行中容器的库不能直接 open）；`channels` 表：`id/type/name/base_url/status/test_model/models/model_mapping/key` |
-| afree 凭据盘点 | `D:/DockerApp/afree/*.json` + `workbuddy/auths/` + `workbuddy/state.json` | 直接读；cline/zen/trae 是 accounts，oprt 是 keys+keyBindings，other 是 platforms[]，wb 看 state.json 的 disabled（amd/tkhb 已于 2026-11-15 删除） |
+| afree 凭据盘点 | `D:/DockerApp/afree/*.json` + `workbuddy/auths/` + `workbuddy/state.json` | 直接读；cline/zen/trae 是 accounts，other 是 platforms[]（含 keys+keyBindings），wb 看 state.json 的 disabled（amd/tkhb 已于 2026-11-15、oprt 已于 2026-11-16 删除） |
 | afree 网关 | `http://127.0.0.1:3457` | `/health`、`/v1/models`、`/v1/chat/completions`；API key `8008208820`（compose）；面板 `POST /admin/api/login {password:pass1234}`，**token 在响应 `data.token` 层** |
 | 容器日志 | `docker logs afree` | 失败根因的第一现场（EOF/冷却/blacklist/gate reject） |
 | 上游代码 | 本地 git 对象（merge 历史里有上游哈希） | `git show <上游哈希>:<文件>` 对比 |
@@ -25,7 +25,7 @@ newapi 的渠道全部指向 afree 网关（`host.docker.internal:3457`），用
 
 ```python
 # 从 sqlite 读 channels.model_mapping，json 解析，汇总 values() 去重
-# 目标形态即平台前缀：cline-free/ zen: wbcn: wbgb: tacn: tagb: oprt: other-*:
+# 目标形态即平台前缀：cline-free/ zen: wbcn: wbgb: tacn: tagb: other-*:
 ```
 
 同时盘点各平台凭据启用状态（见上表）。
@@ -109,9 +109,9 @@ git show <上游哈希>:internal/app/models.go | grep -n "muse\|seed\|prune"
 
 ## 6. 2026-11-04 审计经验追加（全平台轮）
 
-- **目录透出门控逐平台核对**：vendored/聚合目录可能对"无凭据的域/段"照透条目（trae2api 四域渠道恒全建、oprt 活 feed 含已下线模型）。铁律：**列出来的必须调得通**——每平台段逐模型真打，503 no_account 类先修目录闸再谈凭据。
+- **目录透出门控逐平台核对**：vendored/聚合目录可能对"无凭据的域/段"照透条目（trae2api 四域渠道恒全建）。铁律：**列出来的必须调得通**——每平台段逐模型真打，503 no_account 类先修目录闸再谈凭据。
 - **自动拉黑接线盘点表（"机制存在但没接全"高发区）**：cline（404+计费 cost>0 双哨兵）、OR（404 恒拉黑/403 仅 agentic-harnesses+RegionError 文案、400 仅 chat 端点不兼容；key 级 403/429/5xx 绝不拉黑）、zen（仅 RegionError 文案）、trae vendored（引擎模型冷却）。审计时 grep `BlacklistModel(` 调用点对照各平台错误路径，缺接线就按 cline 判据骨架补——回归测试模板 `autoban_audit_test.go`。
-- **key 冷却长尾会掩盖端到端验证**：撞墙请求根本没到上游（`no key routable` 502），自动拉黑不触发。验证前清平台 key 冷却（内存态重启即清；落盘态如 oprt 改 `oprt-state.json` 的 `cool` 段后重启）。
+- **key 冷却长尾会掩盖端到端验证**：撞墙请求根本没到上游（`no key routable` 502），自动拉黑不触发。验证前清平台 key 冷却（内存态重启即清；落盘态如 other 改 `other-state.json` 的 `cool` 段后重启）。
 - **newapi 抽测口径**：渠道映射别名从 `one-api.db`（先复制再读）读 `channels.model_mapping`，抽 2~3 个别名全链路（newapi→afree→上游出字）。
 - **上游瞬时 vs 永久的隔离判据**：串行扫描高压下的 4xx/timeout 一律复测 2 次再定性；trae `max_tokens=1`→上游 3003 是引擎边界忠实透传，不是缺陷。
 
@@ -120,7 +120,7 @@ git show <上游哈希>:internal/app/models.go | grep -n "muse\|seed\|prune"
 - **凭据维度成为一等阶段**（§2b）：管理面 Test 端点逐凭据测试 + 出口池全量扫描。端点契约表、响应形状、坑全在 playbook §11a——**wb 面板端点是扁平响应不走 apiResponse、挂载重写多写一层 panel 就 404**，这两个坑让首轮脚本整平台假 FAIL。
 - **一条死出口 ≠ 一个凭据问题**：扫描出死出口后必须做绑定关联分析（keyBindings + cline proxyMain + egressBindings 三处都查）——本轮 deplexo-DE(11107) 一条死出口挂了 5 个凭据、egress 钉定另挂 4 个 zen key。GFE 403 用"无 token 裸请求同拦"判出口 IP 拉黑（playbook §11c），别误杀账号。
 - **热循环指纹**：容器 CPU≈100% + 同一 key 同一行日志每秒数百条 = 自旋（playbook §11d）。日志轮转会伪装成自愈。根因是 zen chat/responses 两路径平行修改漂移（chat 漏 `retryKey=""`），改 zen key 选择逻辑必须两路径一起 grep。
-- **落盘竞态指纹**：`rename *.json.tmp ... no such file or directory`（playbook §11e）。atomicWriteFile 已修（按路径互斥+唯一 tmp）；同型固定 `.tmp` 写手仍在 openrouter/other/workbuddy 各自的落盘副本，见到同指纹按同处方修。
+- **落盘竞态指纹**：`rename *.json.tmp ... no such file or directory`（playbook §11e）。atomicWriteFile 已修（按路径互斥+唯一 tmp）；同型固定 `.tmp` 写手仍在 other/workbuddy 各自的落盘副本，见到同指纹按同处方修。
 - **生产更新实操**（playbook §11f）：用户授权后 `docker pull` + `rebuild.sh afree`，**rebuild.sh 不含 pull**；镜像构建时间 vs origin/main 提交时间判断生产是否落后；重启同时是自旋/挂死 goroutine 的止血手段（需授权）。
 
 详细命令模板与陷阱清单见 [references/audit-playbook.md](references/audit-playbook.md)。

@@ -12,7 +12,7 @@ import (
 //
 // trae 段不走本函数（2026-11-04 起由 trae2apiRestoreBackup 全段处理）。
 func TestMergeStateFactsJSON(t *testing.T) {
-	t.Run("standard shape (oprt/other)", func(t *testing.T) {
+	t.Run("standard shape (other)", func(t *testing.T) {
 		local := json.RawMessage(`{"cool":{"k1":"2026-01-01T00:00:00Z"},"keyTokens":{"k1":{"Today":9}}}`)
 		backup := json.RawMessage(`{"cool":{"k2":"2026-02-02T00:00:00Z"},"keyTokens":{"k1":{"Today":100}}}`)
 		merged, err := mergeStateFactsJSON(local, backup)

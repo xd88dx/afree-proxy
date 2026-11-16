@@ -6,13 +6,12 @@ import (
 )
 
 // scopedObserver 把无 scope 的三参数注入适配成四个（含空 scope）的形式，
-// 供单平台实现（openrouter）直接注册 SetAttemptObserver。
+// 供多平台实现直接注册 SetAttemptObserver。
 func scopedObserver(f func(ctx context.Context, key, proxyURL string)) func(ctx context.Context, scope, key, proxyURL string) {
 	return func(ctx context.Context, _ string, key, proxyURL string) { f(ctx, key, proxyURL) }
 }
 
-// keyPoolAttemptObserver 是 openrouter / other 两个 key
-// 池平台共用的请求日志注入（各平台的 SetAttemptObserver）。这些平台在各自
+// keyPoolAttemptObserver 是 other 平台的请求日志注入（各平台的 SetAttemptObserver）。这些平台在各自
 // 包内选 key，key 序号与绑定表都在包内，宿主只能拿到明文 key + 出口 URL，
 // 因此把"转序号 + 查绑定 + 判出口类型"交给各平台闭包，主包只做日志填充。
 //

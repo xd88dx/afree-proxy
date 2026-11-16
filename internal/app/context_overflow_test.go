@@ -44,14 +44,14 @@ func TestIsContextOverflowSignatures(t *testing.T) {
 
 func TestWriteUpstreamAPIErrorNormalizesOverflow(t *testing.T) {
 	w := httptest.NewRecorder()
-	writeUpstreamAPIError(w, "oprt:deepseek-v4.1:free",
+	writeUpstreamAPIError(w, "trae:deepseek-v4.1",
 		errors.New(`API 400: {"error":{"message":"This model's maximum context length is 131072 tokens"}}`),
 		502)
 	if w.Code != 400 {
 		t.Fatalf("status = %d, want 400", w.Code)
 	}
 	body := w.Body.String()
-	for _, want := range []string{`"code":"context_length_exceeded"`, "Compress or truncate", "oprt:deepseek-v4.1:free", "maximum context length"} {
+	for _, want := range []string{`"code":"context_length_exceeded"`, "Compress or truncate", "trae:deepseek-v4.1", "maximum context length"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("body missing %q: %s", want, body)
 		}
@@ -60,7 +60,7 @@ func TestWriteUpstreamAPIErrorNormalizesOverflow(t *testing.T) {
 
 func TestWriteUpstreamAPIErrorPassesThroughOthers(t *testing.T) {
 	w := httptest.NewRecorder()
-	writeUpstreamAPIError(w, "oprt:X", errors.New(`API 403: {"error":{"message":"blocked"}}`), 502)
+	writeUpstreamAPIError(w, "trae:X", errors.New(`API 403: {"error":{"message":"blocked"}}`), 502)
 	if w.Code != 502 {
 		t.Fatalf("status = %d, want 502 (unchanged)", w.Code)
 	}

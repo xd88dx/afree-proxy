@@ -10,7 +10,6 @@ import (
 	"testing"
 	"time"
 
-	"afree-proxy/internal/openrouter"
 	"afree-proxy/internal/other"
 	wbauth "afree-proxy/internal/workbuddy/auth"
 	wbconfig "afree-proxy/internal/workbuddy/config"
@@ -19,7 +18,7 @@ import (
 )
 
 // 备份导入的隔离护栏：导入把一切上游身份置为禁用——Cline 账号 poolEnabled
-// 显式 false、zen/or key 路由表逐 key 显式 false（缺项 = 参与路由，清表不算
+// 显式 false、zen key 路由表逐 key 显式 false（缺项 = 参与路由，清表不算
 // 禁用）。备份文件里写死的启用状态不允许穿透：导出方部署的绑定出口在本地
 // 未必存在，原样启用等于把流量引向未经验证的身份。combos 平台白名单与
 // 面板保存同口径（六平台）。
@@ -36,21 +35,17 @@ func TestConfigImportDisablesAllIdentities(t *testing.T) {
 	savedCombos, savedCombosLoaded := combosList, combosLoaded
 	defer func() { combosList, combosLoaded = savedCombos, savedCombosLoaded }()
 
-	// openrouter 配置路径指向临时文件（StartProxy 之外不会自动装载）
-	openrouter.Load(filepath.Join(tmp, "or.json"))
-
 	body := `{
 	  "version": 3,
 	  "accounts": [
 	    {"accountID": "acc_t1", "refreshToken": "r", "apiToken": "sk_t", "status": "active", "poolEnabled": true}
 	  ],
 	  "zen": {"keys": ["zk1", "zk2"], "keyRoutingEnabled": {"zk1": true}},
-	  "openrouter": {"keys": ["ork1"], "keyRoutingEnabled": {}},
 	  "combos": [
-	    {"id": "cfgtestcombo", "platform": "openrouter", "target": "oprt:some-model"},
+	    {"id": "cfgtestcombo", "platform": "zen", "target": "zen:some-model"},
 	    {"id": "cfgtestbad", "platform": "bogus", "target": "x"}
 	  ]
-	}`
+}`
 	req := httptest.NewRequest("POST", "/admin/api/config/import", strings.NewReader(body))
 	rr := httptest.NewRecorder()
 	handleAdminConfigImport(rr, req)
@@ -75,23 +70,18 @@ func TestConfigImportDisablesAllIdentities(t *testing.T) {
 		}
 	}
 
-	// openrouter key：整配置替换后全部禁用
-	if v := openrouter.Get().KeyRoutingEnabled["ork1"]; v {
-		t.Error("openrouter key routing = true, want false")
-	}
-
-	// combos：白名单外的条目丢弃，六平台白名单内的保留
+	// combos：白名单外的条目丢弃，白名单内的保留
 	combosMu.Lock()
 	n := len(combosList)
 	combosMu.Unlock()
 	if n != 1 {
-		t.Fatalf("combos kept = %d, want 1 (six-platform whitelist)", n)
+		t.Fatalf("combos kept = %d, want 1 (platform whitelist)", n)
 	}
 }
 
 // TestConfigImportKeepEnabled 导入弹窗"沿用启用状态"（KeepEnabled）：勾选的
 // 平台保留备份内原状态，未勾选的仍走隔离护栏全部禁用。key 口径与前端对齐：
-// cline / zen / oprt / wb / "other:<slug>"。
+// cline / zen / wb / "other:<slug>"。
 func TestConfigImportKeepEnabled(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv("DATA_DIR", tmp)
@@ -104,23 +94,21 @@ func TestConfigImportKeepEnabled(t *testing.T) {
 	savedCombos, savedCombosLoaded := combosList, combosLoaded
 	defer func() { combosList, combosLoaded = savedCombos, savedCombosLoaded }()
 
-	openrouter.Load(filepath.Join(tmp, "or.json"))
 	other.Load(filepath.Join(tmp, "other.json"))
 
 	body := `{
 	  "version": 3,
-	  "keepEnabled": {"cline": true, "oprt": true, "other:alpha": true},
+	  "keepEnabled": {"cline": true, "other:alpha": true},
 	  "accounts": [
 	    {"accountID": "acc_on", "refreshToken": "r1", "status": "active", "poolEnabled": true},
 	    {"accountID": "acc_off", "refreshToken": "r2", "status": "active", "poolEnabled": false}
 	  ],
 	  "zen": {"keys": ["zk1"], "keyRoutingEnabled": {"zk1": true}},
-	  "openrouter": {"keys": ["ork1", "ork2"], "keyRoutingEnabled": {"ork1": true, "ork2": false}},
 	  "other": {"platforms": [
 	    {"slug": "alpha", "name": "A", "prefix": "alpha", "baseURL": "http://a/v1", "keys": ["oak"], "keyRoutingEnabled": {"oak": true}},
 	    {"slug": "beta", "name": "B", "prefix": "beta", "baseURL": "http://b/v1", "keys": ["obk"], "keyRoutingEnabled": {"obk": true}}
 	  ]}
-	}`
+}`
 	req := httptest.NewRequest("POST", "/admin/api/config/import", strings.NewReader(body))
 	rr := httptest.NewRecorder()
 	handleAdminConfigImport(rr, req)
@@ -146,12 +134,6 @@ func TestConfigImportKeepEnabled(t *testing.T) {
 	zc := getZenConfig()
 	if v, ok := zc.KeyRoutingEnabled["zk1"]; !ok || v {
 		t.Errorf("zen zk1 = (%v,%v), want explicit false (not kept)", v, ok)
-	}
-
-	// oprt：沿用（ork1 启用、ork2 禁用）
-	or := openrouter.Get()
-	if !or.KeyRoutingEnabled["ork1"] || or.KeyRoutingEnabled["ork2"] {
-		t.Errorf("oprt states not preserved: %v", or.KeyRoutingEnabled)
 	}
 
 	// other：仅 alpha 沿用（启用），beta 未勾选（禁用）
@@ -186,7 +168,7 @@ func TestConfigBackupVersionOK(t *testing.T) {
 }
 
 func TestComboPlatformValid(t *testing.T) {
-	for _, p := range []string{"cline", "zen", "workbuddy", "openrouter"} {
+	for _, p := range []string{"cline", "zen", "workbuddy", "trae"} {
 		if !comboPlatformValid(p) {
 			t.Errorf("platform %q must be valid", p)
 		}
@@ -526,8 +508,7 @@ func TestConfigBackupWorkbuddyStateFacts(t *testing.T) {
 // TestConfigBackupStateRoundTrip state 段三层口径（2026-11-03）：导出 = 全量
 // 快照（账号事实 + 本机统计都在内）；导入勾选统计（默认）= 事实与统计都随备份
 // 还原；取消勾选 = 账号事实仍还原、本机统计保留本机现值（不再清零）。覆盖
-// app 层 struct（cline）与平台包 JSON 往返（openrouter，StateSnapshotJSON/
-// ImportStateJSON）两种形态。
+// app 层 struct（cline）形态。
 func TestConfigBackupStateRoundTrip(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv("DATA_DIR", tmp)
@@ -537,19 +518,7 @@ func TestConfigBackupStateRoundTrip(t *testing.T) {
 	pool = nil
 	t.Cleanup(func() { poolPath, poolUsagePath = savedPath, savedUsagePath; pool = savedPool })
 
-	// openrouter：配置与痕迹路径都指向临时目录
-	openrouter.UsagePath = filepath.Join(tmp, "or-state.json")
-	t.Cleanup(func() { openrouter.UsagePath = "" })
-	openrouter.Load(filepath.Join(tmp, "oprt-config.json"))
-	// 记账 key 必须在 key 池内：导入配置段时 pruneRemovedKeys 会按新 key 集合
-	// 收敛痕迹（既有语义），池外 key 的记账条目会被清掉。
-	orc := openrouter.DefaultConfig()
-	orc.Keys = []string{"ork_s1"}
-	orc.KeyRoutingEnabled = map[string]bool{"ork_s1": true}
-	openrouter.Set(orc)
-
-	// 造导出方运行态：cline 账号冷却中（事实）+ 3 次调用/300 tokens（统计）、
-	// or key 记账 100（统计）。
+	// 造导出方运行态：cline 账号冷却中（事实）+ 3 次调用/300 tokens（统计）。
 	loadPool()
 	poolMu.Lock()
 	pool = &AccountPool{Accounts: []*Account{{AccountID: "acc_s1", Email: "s@x", RefreshToken: "r"}}}
@@ -560,7 +529,6 @@ func TestConfigBackupStateRoundTrip(t *testing.T) {
 		},
 	}}
 	poolMu.Unlock()
-	openrouter.RecordKeyTokens("ork_s1", 100)
 
 	// ---- 导出：state 段必须携带事实与统计（全量） ----
 	expReq := httptest.NewRequest("GET", "/admin/api/config/export", nil)
@@ -580,7 +548,6 @@ func TestConfigBackupStateRoundTrip(t *testing.T) {
 					TokensTotal   int64     `json:"tokensTotal"`
 				} `json:"accounts"`
 			} `json:"cline"`
-			OpenRouter json.RawMessage `json:"openrouter"`
 		} `json:"state"`
 	}
 	if err := json.Unmarshal(expRR.Body.Bytes(), &backup); err != nil {
@@ -590,20 +557,11 @@ func TestConfigBackupStateRoundTrip(t *testing.T) {
 	if cl.Status != "cooldown" || cl.LastReason != "429" || cl.UsageCount != 3 || cl.TokensTotal != 300 || cl.CooldownUntil.IsZero() {
 		t.Fatalf("cline state missing in export (facts+stats): %+v", cl)
 	}
-	var oprtSnap struct {
-		KeyTokens map[string]struct {
-			Today int64 `json:"Today"`
-		} `json:"keyTokens"`
-	}
-	if len(backup.State.OpenRouter) == 0 || json.Unmarshal(backup.State.OpenRouter, &oprtSnap) != nil || oprtSnap.KeyTokens["ork_s1"].Today != 100 {
-		t.Fatalf("openrouter state missing in export: %s", backup.State.OpenRouter)
-	}
 
 	// ---- 导入（importState 缺省 = 还原全部）：事实与统计都回填 ----
 	poolMu.Lock()
 	poolUsage = &poolUsageData{}
 	poolMu.Unlock()
-	openrouter.ClearUsage()
 	importBody := expRR.Body.String()
 	importReq := httptest.NewRequest("POST", "/admin/api/config/import", strings.NewReader(importBody))
 	importRR := httptest.NewRecorder()
@@ -618,27 +576,14 @@ func TestConfigBackupStateRoundTrip(t *testing.T) {
 		got.UsageCount != 3 || got.TokensTotal != 300 || got.CooldownUntil.IsZero() {
 		t.Fatalf("cline facts+stats not restored on checked import: %+v", got)
 	}
-	var oprtBack struct {
-		KeyTokens map[string]struct {
-			Today int64 `json:"Today"`
-		} `json:"keyTokens"`
-	}
-	if err := json.Unmarshal(openrouter.StateSnapshotJSON(), &oprtBack); err != nil {
-		t.Fatal(err)
-	}
-	if oprtBack.KeyTokens["ork_s1"].Today != 100 {
-		t.Fatalf("openrouter state not restored on checked import: %+v", oprtBack)
-	}
 
 	// ---- 导入（importState=false）：账号事实仍还原，本机统计保留本机现值 ----
-	// 先造一组与备份不同的本机现值：cline 统计 7 次/700 tokens、or 记账 999。
+	// 先造一组与备份不同的本机现值：cline 统计 7 次/700 tokens。
 	poolMu.Lock()
 	poolUsage = &poolUsageData{Accounts: map[string]*accountUsage{
 		"acc_s1": {Status: "active", UsageCount: 7, TokensTotal: 700},
 	}}
 	poolMu.Unlock()
-	openrouter.ClearUsage()
-	openrouter.RecordKeyTokens("ork_s1", 999)
 	var payload map[string]any
 	if err := json.Unmarshal([]byte(importBody), &payload); err != nil {
 		t.Fatal(err)
@@ -661,16 +606,5 @@ func TestConfigBackupStateRoundTrip(t *testing.T) {
 	// 统计：保留本机现值（2026-11-03 起不再清零、也不被备份覆盖）。
 	if got2.UsageCount != 7 || got2.TokensTotal != 700 {
 		t.Fatalf("unchecking import statistics must keep local stats, got %+v", got2)
-	}
-	var oprtBack2 struct {
-		KeyTokens map[string]struct {
-			Today int64 `json:"Today"`
-		} `json:"keyTokens"`
-	}
-	if err := json.Unmarshal(openrouter.StateSnapshotJSON(), &oprtBack2); err != nil {
-		t.Fatal(err)
-	}
-	if oprtBack2.KeyTokens["ork_s1"].Today != 999 {
-		t.Fatalf("unchecking import statistics must keep local or ledger: %+v", oprtBack2)
 	}
 }

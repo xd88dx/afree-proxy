@@ -1,7 +1,6 @@
 package app
 
 import (
-	"afree-proxy/internal/openrouter"
 	"afree-proxy/internal/other"
 )
 
@@ -12,7 +11,7 @@ import (
 // 开了反代开关的凭据，会话就不该路由过去。与封禁平台同处一个闸
 // （withModelBlacklistScan），挂在三端点入口；/v1/models 的展示门控与
 // 会话闸同判定（trae 在各自 ModelList，cline/zen/
-// openrouter/other 在 app 层段生成处），保证"列出来的模型都调得通"。
+// other 在 app 层段生成处），保证"列出来的模型都调得通"。
 //
 // 判定口径按平台各自的"凭据启用"语义：
 //   - cline：账号池存在 Status=active 且 PoolEnabled 的账号
@@ -21,7 +20,7 @@ import (
 //     开关+健康判定）
 //   - zen（OpenCode）：存在参与路由的 key（空池 = 不可路由；匿名 "public"
 //     哨兵已于 2026-10-26 移除，上游匿名层也已不可用）
-//   - openrouter / other 子平台：存在 RoutingEnabled
+//   - other 子平台：存在 RoutingEnabled
 //     的 key
 // ============================================================================
 
@@ -52,13 +51,6 @@ func platformHasRoutableCredential(platform string) bool {
 		cfg := getZenConfig()
 		for _, k := range cfg.Keys {
 			if k != "" && zenKeyRoutingEnabled(k) {
-				return true
-			}
-		}
-		return false
-	case platOpenRouter:
-		for _, k := range openrouter.Keys() {
-			if openrouter.RoutingEnabled(k) {
 				return true
 			}
 		}

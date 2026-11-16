@@ -43,7 +43,7 @@ type ZenModel struct {
 }
 
 // zenSeedModels 冷启动兜底快照（含短别名表）已于 2026-11-11 用户拍板整机制
-// 删除（与 openrouter 同口径：目录如实反映 live 同步结果，
+// 删除（目录如实反映 live 同步结果，
 // 宁空勿过期快照——免费层下架/转付费的模型不该靠内置清单续命）。历史形态：
 // 7 条免费模型快照，在首次成功同步之前作为可服务模型集，并绑定短别名
 // （mimo/pickle/muse-spark…）与 muse-spark 的 responses 端点提示。删除后：
@@ -126,7 +126,7 @@ const zenParkInitial = 30 * time.Minute
 const zenParkMaxBackoff = 6 * time.Hour
 
 // ZenModelPrefix zen 免费模型的网关前缀（与 workbuddy 的 cn:/global:、
-// openrouter 的 or: 同思路）：平台越来越多，加前缀让客户端在模型列表里
+// other 子平台同思路）：平台越来越多，加前缀让客户端在模型列表里
 // 一眼分清归属，也避免与 Cline 免费模型表里的同名条目（如
 // cline-free/laguna 之类）静默冲突。裸模型名（无前缀）仍照旧解析——
 // 存量 IDE 配置与 combo target 不受影响。
@@ -378,7 +378,7 @@ type zenConfigData struct {
 // kind，与前端凭据页 kind / REORDER_KINDS 同一口径。
 var proxyRuleKinds = map[string]bool{
 	"acc": true, "trae": true, "key": true, "wb": true,
-	"or": true, "other": true,
+	"other": true,
 }
 
 // otherRuleKindRe 匹配 Other 子平台粒度的规则 kind（other:<slug>）。面板把
@@ -3768,7 +3768,7 @@ func zenDesiredFromLive(registryOK bool, freeGate map[string]bool) (map[string]b
 //
 // 目录不可达时返回错误并保留旧表（收割机时代的 CLI 成员表兜底已随内嵌 CLI
 // 移除，离线启动不再有第三方成员表来源，见 zenDesiredFromLive）。冷启动不再
-// 注入种子快照（2026-11-11 用户定，与 openrouter 同口径）：
+// 注入种子快照（2026-11-11 用户定）：
 // 表为空直到首次成功同步，宁空勿过期。
 // 返回新增模型数。
 func syncZenModels() (int, error) {
@@ -3937,7 +3937,7 @@ func pruneZenModelsTo(desired map[string]bool) int {
 // startZenModelsRefresher 定时同步 zen 模型列表（5 分钟，与各平台模型
 // 目录的自动同步节奏一致）。同步走公共注册表 api.json（免认证），不消耗任何
 // key 的配额。冷启动阶段以 30s 间隔快速重试直至首次同步成功（至多 10 次，
-// 与 openrouter 同款）：种子快照取消后空表意味着目录暂不可见，首拉要尽快。
+// 与 other 同款）：种子快照取消后空表意味着目录暂不可见，首拉要尽快。
 func startZenModelsRefresher() {
 	go func() {
 		for i := 0; i < 10; i++ {

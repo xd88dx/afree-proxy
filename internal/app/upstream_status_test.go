@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"testing"
 
-	"afree-proxy/internal/openrouter"
 	"afree-proxy/internal/other"
 )
 
@@ -20,7 +19,6 @@ func TestUpstreamErrorStatusPasses429(t *testing.T) {
 		err  error
 		want int
 	}{
-		{"openrouter 429", &openrouter.HTTPError{Status: 429}, http.StatusTooManyRequests},
 		{"other 429", &other.HTTPError{Status: 429, RateLimited: true}, http.StatusTooManyRequests},
 		{"zen 429", &zenHTTPError{Status: 429}, http.StatusTooManyRequests},
 		{"cline 429", &clineAPIError{Status: 429}, http.StatusTooManyRequests},

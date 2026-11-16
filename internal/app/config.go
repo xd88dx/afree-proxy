@@ -295,7 +295,7 @@ func MaxRequestBodyBytes() int64 {
 
 // StreamMaxAttempts 流式"缓冲+中断重试"路径的单请求总尝试次数（含首次），
 // STREAM_ATTEMPT 可配，默认 2（=1 次首发 + 1 次重试）。全局生效于
-// cline/zen/openrouter/other 全部流式 chat 路径。重试整单
+// cline/zen/other 全部流式 chat 路径。重试整单
 // 重发、上游免费额度按次计费——调大前先权衡额度消耗。非法/小于 1 的值
 // 回落默认值。
 func StreamMaxAttempts() int {
@@ -315,7 +315,7 @@ func SystemPromptOverrideEnabled() bool {
 // ForceStream FORCE_STREAM=true 时"全部平台一律强制流式"的总闸。
 //
 // 现状（2026-10-30 核对）：除 cline 外所有平台的**非流式**入口早就在强制上游
-// 流式——openrouter/other 的非流式处理传 Chat(..., true)，
+// 流式——other 的非流式处理传 Chat(..., true)，
 // zen 全部 callZenAPI(..., true)，trae/wb 在各自的 client 里硬编码
 // stream=true；客户端要非流式时由网关 collectStreamResponse 聚合回 JSON。
 // 所以这个总闸实际只驱动 cline（唯一按模型判定的平台），其余平台恒为流式、

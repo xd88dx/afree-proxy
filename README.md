@@ -1,8 +1,8 @@
 # AFree Proxy
 
-一个单二进制 Go 网关：把多个免费上游额度（Cline 账号、opencode zen 免费模型、WorkBuddy 账号、TraeWork 账号、OpenRouter 免费 API、任意小上游的自定义子平台）聚合为一个干净的 **OpenAI 兼容 `/v1` 网关**，供 Cursor、ZCode、Cline、Claude Code 等 IDE 使用——带账号池轮转、身份↔出口代理绑定、中文管理面板。
+一个单二进制 Go 网关：把多个免费上游额度（Cline 账号、opencode zen 免费模型、WorkBuddy 账号、TraeWork 账号、任意小上游的自定义子平台）聚合为一个干净的 **OpenAI 兼容 `/v1` 网关**，供 Cursor、ZCode、Cline、Claude Code 等 IDE 使用——带账号池轮转、身份↔出口代理绑定、中文管理面板。
 
-基于 [YuJunZhiXue/Cline-proxy](https://github.com/YuJunZhiXue/Cline-proxy) 深度改写，面向个人公开部署。与 Cline、opencode、WorkBuddy、OpenRouter 等上游无隶属关系；请礼貌使用它们的免费额度。
+基于 [YuJunZhiXue/Cline-proxy](https://github.com/YuJunZhiXue/Cline-proxy) 深度改写，面向个人公开部署。与 Cline、opencode、WorkBuddy 等上游无隶属关系；请礼貌使用它们的免费额度。
 
 ## 架构总览
 
@@ -12,19 +12,18 @@ Cursor / ZCode / Cline / Claude Code ──►  afree-proxy  ──►  Cline �
    /v1/messages (Anthropic)                    ├─►  OpenCode zen 免费模型（多 key，zen: 前缀）
    /v1/responses (OpenAI Responses)            ├─►  WorkBuddy 账号（OAuth，wbcn:/wbgb: 前缀）
    /v1/models                                  ├─►  TraeWork 账号（tacn:/tagb: 合并域前缀）
-                                               ├─►  OpenRouter 免费模型（多 key，oprt: 前缀）
                                                ├─►  Other 自定义子平台（自定前缀，多 key）
                                                └─►  出口 socks5/http 代理池（轮转或身份绑定）
 ```
 
 ## 核心特性
 
-- **一个端点，全部上游。** 网关按请求的 `model` 前缀路由：`wbcn:`/`wbgb:` → WorkBuddy，`tacn:`/`tagb:` → TraeWork（合并域：tacn=CN Trae+SOLO、tagb=Intl，随 intl.enabled），`oprt:` → OpenRouter，`zen:` → opencode zen，Other 子平台自定前缀 → 对应子平台，zen 付费模型明确 400，其余走 Cline 账号池。旧形态（裸 zen ID、`cn:`/`global:`、无前缀 cline ID）仍兼容解析。Combos 可自定义别名模型 ID。
+- **一个端点，全部上游。** 网关按请求的 `model` 前缀路由：`wbcn:`/`wbgb:` → WorkBuddy，`tacn:`/`tagb:` → TraeWork（合并域：tacn=CN Trae+SOLO、tagb=Intl，随 intl.enabled），`zen:` → opencode zen，Other 子平台自定前缀 → 对应子平台，zen 付费模型明确 400，其余走 Cline 账号池。旧形态（裸 zen ID、`cn:`/`global:`、无前缀 cline ID）仍兼容解析。Combos 可自定义别名模型 ID。
 - **三种客户端方言，一种上游语言。** `/v1/chat/completions` 近直通；`/v1/responses` 与 `/v1/messages`（Anthropic）双向翻译，含流式事件、工具调用与 usage。
 - **代理隔离第一优先。** 每个账号/key 可绑定主/备出口代理，请求永远从绑定出口发出；两个出口都不可用时该身份整体跳过——**绝不回退其他出口或直连**。未绑定身份沿用面板的每平台走池开关。
 - **凭据启用/禁用语义全平台一致。** 「启用」列 = 是否参与请求轮转。新增身份默认禁用（存量缺字段仍按启用，升级不停服）。**任何平台没有任何启用凭据（含反代开关全关）时整平台 503 拒路由**，与封禁平台同闸；模型目录只对可服务配置展示——无启用凭据时面板目录显示引导空态、`/v1/models` 摘除该平台模型。
 - **函数调用真实可用。** 对真实上游全量实测：流式/非流式、并行工具调用、`/v1/responses` 与 Anthropic 流式，含上游工具参数怪癖修复。
-- **中文管理面板** `/admin/`：仪表盘（内含实时统计分区）、Cline 账号池、TraeWork、WorkBuddy（内嵌原面板）、OpenCode、OpenRouter、Other、代理池、网关设置（封禁平台/封禁模型）、自定义别名、请求日志。
+- **中文管理面板** `/admin/`：仪表盘（内含实时统计分区）、Cline 账号池、TraeWork、WorkBuddy（内嵌原面板）、OpenCode、Other、代理池、网关设置（封禁平台/封禁模型）、自定义别名、请求日志。
 
 ## 平台速览
 
@@ -34,10 +33,9 @@ Cursor / ZCode / Cline / Claude Code ──►  afree-proxy  ──►  Cline �
 | TraeWork    | `tacn:` / `tagb:`（tagb 随 `intl.enabled`） | 便携快照（含设备密钥；本机 helper 网页授权 / `token----refreshToken` 粘贴 / 原版面板导入） | 引擎目录实时（按域门控：无账号域不透出）                                        | 无探测下拉（Test=额度连通性验证，沿用上游设计） |
 | WorkBuddy   | `wbcn:` / `wbgb:` | OAuth（内嵌面板登录）                                                           | CN/Global 双域实时探测                                                          | 官方稳定模型优先           |
 | OpenCode    | `zen:`            | zen key（本地铸造会话 ID）                                                      | 上游免费目录 5min 同步                                                          | `big-pickle` 优先          |
-| OpenRouter  | `oprt:`           | `sk-or-v1-…` key                                                                | [free-models 页白名单](https://openrouter.ai/collections/free-models) 5min 同步 | `openrouter/free`          |
 | Other       | 自定 `acme:`      | 各上游 key                                                                      | `{BaseURL}/models` 拉取 + 手动添加 + 多选暴露                                   | 设置页配置                 |
 
-各平台共用同一套池语义：轮转策略、429 按 `Retry-After` 冷却、Test 按钮发真实探测请求并在成功后立即解除冷却、主/备代理绑定、新增身份默认不参与路由。**key 池平台**（OpenRouter/Other）401/403 冷却 1 小时；Cline 账号池 401（含刷新被 400/401/403 拒绝）直接标记账号过期（等刷新恢复），chat 直接 403 不改账号状态、原样返回。
+各平台共用同一套池语义：轮转策略、429 按 `Retry-After` 冷却、Test 按钮发真实探测请求并在成功后立即解除冷却、主/备代理绑定、新增身份默认不参与路由。**key 池平台**（Other）401/403 冷却 1 小时；Cline 账号池 401（含刷新被 400/401/403 拒绝）直接标记账号过期（等刷新恢复），chat 直接 403 不改账号状态、原样返回。
 
 **上游 429 原样透传**（2026-11-09 全平台收口）：上游限流时网关回 `429`（不再包装成 502），客户端可据此按 `Retry-After` 退避重试——包装成 502 会让 IDE 判定网关故障并标记该渠道不可用。上下文溢出仍统一改写为 `400 context_length_exceeded`，其余上游错误保持 502。
 
@@ -73,7 +71,7 @@ docker run -d --name afree-proxy \
 | `STRICT_MODEL_MATCH`                     | `true`        | 未知模型名 400 而非静默兜底                                                                                                                                                                                                                                                 |
 | `ZEN_ORG_ID`                             | 空            | OAuth 账户组织 ID,写入 `x-opencode-org-id` 头;原始 API key 流量不需要(官方 CLI 也只对 OAuth 账户发该头)。面板可改,env 设置时以 env 为准                                                                                                                                     |
 | `ZEN_PIN_KEY`                            | 空            | 排障:所有 zen 上游请求固定用第 n 个 key(1 起)而非轮转                                                                                                                                                                                                                       |
-| `POOL_STRATEGY`                          | `round_robin` | 全部平台的凭据调度策略（Cline/zen/or/other 共用）：`round_robin` / `fill` / `random`。**设置即以 env 为准**——网关设置页「账号轮转策略」下拉（位于「封禁平台」上方）随之置只读并给出提示；未设置时用面板保存值（落 `afree-config.json`）。WorkBuddy 用 vendor 自己的国内/国际分区策略；TraeWork（2026-11-04 换线）用 vendored trae2api 引擎的权重调度（空闲/额度/余额感知，`data/trae2api/config.json` 的 `pool.*`），不走本变量                                                                                              |
+| `POOL_STRATEGY`                          | `round_robin` | 全部平台的凭据调度策略（Cline/zen/other 共用）：`round_robin` / `fill` / `random`。**设置即以 env 为准**——网关设置页「账号轮转策略」下拉（位于「封禁平台」上方）随之置只读并给出提示；未设置时用面板保存值（落 `afree-config.json`）。WorkBuddy 用 vendor 自己的国内/国际分区策略；TraeWork（2026-11-04 换线）用 vendored trae2api 引擎的权重调度（空闲/额度/余额感知，`data/trae2api/config.json` 的 `pool.*`），不走本变量                                                                                              |
 | `PUID` / `PGID`                          | `100` / `101` | 容器运行身份（entrypoint 自愈属主后降权；bind mount 时设为宿主机用户）                                                                                                                                                                                                      |
 | `LOG_REQUESTS`                           | `true`        | 请求日志（仅元数据：IP/路径/模型/状态/耗时，绝无对话内容）                                                                                                                                                                                                                  |
 | `MAX_BODY_MB`                            | `32`          | 请求体上限，超出 413                                                                                                                                                                                                                                                        |
@@ -123,14 +121,13 @@ Model:     cline-free/deepseek-v4.1-flash   （Cline 池）
            zen:big-pickle                    （OpenCode zen）
            tacn:glm-5.2                      （TraeWork）
            wbcn:claude-sonnet-4.5            （WorkBuddy CN 域）
-           oprt:openrouter/free              （OpenRouter）
            acme:zai/glm                      （Other 自定子平台）
 ```
 
 **Claude Code / Cline** — Anthropic 方言 `POST /v1/messages`，同 Base URL 同 key。
 **OpenAI Responses 方言** — `POST /v1/responses`（工具调用、流式事件、usage 全翻译）。
 
-`GET /v1/models` 列出全部可服务模型（含 Combos）。对外目录统一剥离 `owned_by`/`source` 字段（2026-11-08），下游（hermes）勿再依赖该字段分桶。免费目录自动同步（cline/zen/or 全部 5min，trae 由 vendored 引擎目录实时承载、trae 面板可手动刷新，wb 实时探测；同步走凭据绑定的出口，无可用出口时跳过本轮绝不直连）；线上列表是权威，内置种子只覆盖冷启动/离线启动，下架/新免费模型自动增删；上游返回模型级永久错误时自动穿透拉黑摘除（cline 404/计费、OR 404/403-agentic/400-endpoint、zen RegionError——2026-11-04 全平台审计补齐 OR/zen 接线）。**对外目录 = 各平台管理页可见的模型**（2026-11-03）：WorkBuddy 的出图模型在 app 层按**费率同源筛选**进出目录（与面板前端 `wbRate`/`wbModelMatchesFilter` 同构：promo 生效取 `promo_credits`，否则取 `credits`；缺失/不可解析一律不透出——缺失 ≠ 免费；≤ 对应域 `pool.model_rate_filter_cn`（过滤 `wbcn:`）/ `pool.model_rate_filter_global`（过滤 `wbgb:`）阈值才放行），目录与请求闸同源。当前出图模型上游目录不给 credits 牌价，全部挡住；将来上游给某个出图模型发了牌价且 ≤ 阈值时会自动进目录，无需改代码。注意 vendor 的 `/v1/images` 网关层未注册（生产实测 404）——目录放行只解决「可见」，专用出图调用入口仍不存在。
+`GET /v1/models` 列出全部可服务模型（含 Combos）。对外目录统一剥离 `owned_by`/`source` 字段（2026-11-08），下游（hermes）勿再依赖该字段分桶。免费目录自动同步（cline/zen 全部 5min，trae 由 vendored 引擎目录实时承载、trae 面板可手动刷新，wb 实时探测；同步走凭据绑定的出口，无可用出口时跳过本轮绝不直连）；线上列表是权威，内置种子只覆盖冷启动/离线启动，下架/新免费模型自动增删；上游返回模型级永久错误时自动穿透拉黑摘除（cline 404/计费、zen RegionError——2026-11-04 全平台审计补齐 zen 接线；openrouter 的同族接线已随 2026-11-16 平台删除移除）。**对外目录 = 各平台管理页可见的模型**（2026-11-03）：WorkBuddy 的出图模型在 app 层按**费率同源筛选**进出目录（与面板前端 `wbRate`/`wbModelMatchesFilter` 同构：promo 生效取 `promo_credits`，否则取 `credits`；缺失/不可解析一律不透出——缺失 ≠ 免费；≤ 对应域 `pool.model_rate_filter_cn`（过滤 `wbcn:`）/ `pool.model_rate_filter_global`（过滤 `wbgb:`）阈值才放行），目录与请求闸同源。当前出图模型上游目录不给 credits 牌价，全部挡住；将来上游给某个出图模型发了牌价且 ≤ 阈值时会自动进目录，无需改代码。注意 vendor 的 `/v1/images` 网关层未注册（生产实测 404）——目录放行只解决「可见」，专用出图调用入口仍不存在。
 
 ### Combos（别名模型）
 
@@ -154,7 +151,7 @@ Model:     cline-free/deepseek-v4.1-flash   （Cline 池）
 | `proxy-config.json`                                                                                      | 出口代理池 + 出口策略 + 订阅、各平台走池开关、代理隔离段（开关/排除表/绑定上限，含 WorkBuddy 账号绑定）、egress 钉定表  |
 | `cline-config.json`                                                                                      | Cline 账号池（账号凭据、请求头）                                                                                        |
 | `zen-config.json`                                                                                        | OpenCode zen：key 池与配置 + 每 key 会话身份（`sessions` 段）+ 死模型别名 + 端点学习结果                                |
-| `trae2api/config.json` + `trae2api/accounts/` / `oprt-config.json` / `other-config.json`   | TraeWork 引擎配置与便携快照（2026-11-05 迁入 vendored 子系统目录）、其余各平台账号/key 池、启用状态、代理绑定、平台专属开关 |
+| `trae2api/config.json` + `trae2api/accounts/` / `other-config.json`   | TraeWork 引擎配置与便携快照（2026-11-05 迁入 vendored 子系统目录）、其余各平台账号/key 池、启用状态、代理绑定、平台专属开关 |
 | `workbuddy/config.json` + `workbuddy/auths/`                                                             | WorkBuddy 部署配置、授权凭据（沿用 vendor 目录结构）                                                                    |
 
 | 状态态（`*-state.json`，随请求/后台任务高频变化——外部监测配置变更时忽略这批文件）                        | 内容                                                                                                                    |
@@ -162,7 +159,7 @@ Model:     cline-free/deepseek-v4.1-flash   （Cline 池）
 | `cline-state.json`                                                                                       | Cline 每账号使用痕迹（状态/最近使用/调用与 token 计数/冷却）+ 轮转游标（2s 合批）                                       |
 | `zen-state.json`                                                                                         | zen key 冷却表 + 每 key token 记账                                                                                      |
 | `trae2api/state.json` / `trae2api/metrics.json`                                                          | TraeWork 引擎运行态：账号冷却/熔断/禁用+手动冷却、签到与额度（state）与指标（metrics）                                  |
-| `oprt-state.json` / `other-state.json`                                                                | 各 key 池的 key 级 token 记账 + 冷却表（other 按子平台分键）                                                            |
+| `other-state.json`                                                                | 各 key 池的 key 级 token 记账 + 冷却表（other 按子平台分键）                                                            |
 | `proxy-state.json`                                                                                       | 代理出口在线率统计（60s 合批，编辑池清零）                                                                              |
 | `workbuddy/state.json`、`workbuddy/usage.json`、`workbuddy/request-logs/`                                | WorkBuddy 运行态/用量分桶/请求日志（vendor 目录结构）                                                                   |
 
@@ -183,7 +180,7 @@ Model:     cline-free/deepseek-v4.1-flash   （Cline 池）
 | 账号选号 | 这次请求用哪个账号 / key     | 面板「账号轮转策略」下拉，或 `POOL_STRATEGY`（env 优先，默认 `round_robin`）；TraeWork 用引擎权重调度 | `data/afree-config.json` 的 `strategy`      |
 | 出口选路 | 这次请求从哪条线路 / IP 出去 | 面板「代理池」页的调度策略                                       | `data/proxy-config.json` 的 `proxyStrategy` |
 
-代理池配置（代理列表、出口策略、订阅、各平台走池开关）存在 `data/proxy-config.json`，不寄居在任何平台配置里——代理池是全局能力（6 个平台共用：Cline / TraeWork / OpenCode / WorkBuddy / OpenRouter / Other），不属于 OpenCode zen。出口策略：`round_robin`（默认）/ `random` / `fill`。
+代理池配置（代理列表、出口策略、订阅、各平台走池开关）存在 `data/proxy-config.json`，不寄居在任何平台配置里——代理池是全局能力（5 个平台共用：Cline / TraeWork / OpenCode / WorkBuddy / Other），不属于 OpenCode zen。出口策略：`round_robin`（默认）/ `random` / `fill`。
 
 WorkBuddy 的账号调度用 vendor 自己的国内/国际分区策略，与 `POOL_STRATEGY` 无关。
 
@@ -237,7 +234,7 @@ CI：push 到 `main` / `zen-harvest` 先跑 `go build` + `go vet` + `go test`，
 │   ├── cross_endpoint.go    /v1/responses 与 /v1/messages 的多平台归口 + 缓冲重试
 │   ├── zen.go / zen_session.go / zen_endpoint.go   zen 上游、会话铸造、端点自学习
 │   ├── trae.go              TraeWork：vendored trae2api 桥接（引擎装配/出口接管/双开关/面板 API）
-│   ├── openrouter.go / other.go   key 池平台
+│   ├── other.go             key 池平台
 │   ├── workbuddy.go/_config/_proxy/_dialects  WorkBuddy 子系统、出口绑定、方言
 │   ├── platform_routability.go  无启用凭据整平台拒路由闸
 │   ├── platform_blacklist.go / model_blacklist.go  封禁平台/封禁模型
@@ -251,7 +248,7 @@ CI：push 到 `main` / `zen-harvest` 先跑 `go build` + `go vet` + `go test`，
 ├── internal/app/trae2api_helper*.go  Trae helper 入库/脚本模板（afree 侧资产）
 ├── internal/cline/          Cline 上游认证（WorkOS OAuth 刷新）
 ├── internal/workbuddy/      vendor 的 WorkBuddy2API 池/面板/调度器/上游
-├── internal/openrouter|other/   各 key 池协议栈
+├── internal/other/          key 池协议栈（多子平台）
 ├── internal/kit/            HTTP 客户端、随机 ID、zen 会话 ID 铸造、数据路径
 ├── .agents/skills/          仓库开发技能（新增平台配方、上游同步流程）
 ├── Dockerfile               多架构（amd64 原生 + arm64 交叉编译）

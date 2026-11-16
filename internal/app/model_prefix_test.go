@@ -166,7 +166,7 @@ func TestIsWorkBuddyModelAcceptsBothPrefixes(t *testing.T) {
 			t.Errorf("isWorkBuddyModel(%q) must be true", m)
 		}
 	}
-	for _, m := range []string{"bare", "zen:big-pickle", "oprt:openrouter/free", "cline-free/x"} {
+	for _, m := range []string{"bare", "zen:big-pickle", "cline-free/x"} {
 		if isWorkBuddyModel(m) {
 			t.Errorf("isWorkBuddyModel(%q) must be false", m)
 		}

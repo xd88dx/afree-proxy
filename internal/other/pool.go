@@ -10,7 +10,7 @@ import (
 
 // ============ 多 key 轮转 ============
 //
-// 语义与 openrouter.PickKey 同构，但池是 per-platform 的：调用方传
+// 语义与 app.pickZenKey 同构，但池是 per-platform 的：调用方传
 // *Platform，选 key 只在该子平台的池内进行。轮转游标是包级运行态
 // （slug -> 下标），不落盘、不进配置结构。keyMu 同时保护各子平台的使用
 // 痕迹表（usage.go 的 usage，按 slug 键；写路径只在请求与探测路径）。
@@ -202,7 +202,7 @@ func KeyIndex(p *Platform, key string) int {
 	return 0
 }
 
-// randIntn xorshift 轻量随机（与 openrouter 同实现）。
+// randIntn xorshift 轻量随机。
 var randMu sync.Mutex
 var randState uint64 = uint64(time.Now().UnixNano())
 

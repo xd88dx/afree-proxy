@@ -4,7 +4,7 @@ package app
 //
 // 这个开关是代理池页上的下拉（"Global policy"），语义属于代理域，跟平台自身
 // 的账号/key 数据无关；历史上却分散在各平台的配置文件里（.cline-accounts.json、
-// oprt-config.json、.trae-config.json、
+// .trae-config.json、
 // .other-config.json 各存一份），改一个开关要记住去哪找。
 //
 // 现统一存进 proxy-config.json 的出口池段（见 proxy_pool_config.go），内存态
@@ -12,24 +12,20 @@ package app
 // 平台配置文件里不再保存该字段（update 时显式置 nil，旧值自然消失）。
 
 import (
-	"afree-proxy/internal/openrouter"
 	"afree-proxy/internal/other"
 )
 
 func init() {
-	openrouter.SetUseProxiesResolver(func() *bool { return platformUseProxies("oprt") })
 	other.SetUseProxiesResolver(func() *bool { return platformUseProxies("other") })
 }
 
 // platformUseProxies 读取某平台的走池开关。nil = 该平台未配置（缺省走池）。
-// kind 取 cline/oprt/trae/other/zen/workbuddy。
+// kind 取 cline/trae/other/zen/workbuddy。
 func platformUseProxies(kind string) *bool {
 	c := getProxyPool()
 	switch kind {
 	case "cline":
 		return c.ClineUseProxies
-	case "oprt":
-		return c.OprtUseProxies
 	case "trae":
 		return c.TraeUseProxies
 	case "other":
@@ -51,8 +47,6 @@ func setPlatformUseProxies(kind string, v *bool) {
 	switch kind {
 	case "cline":
 		next.ClineUseProxies = v
-	case "oprt":
-		next.OprtUseProxies = v
 	case "trae":
 		next.TraeUseProxies = v
 	case "other":

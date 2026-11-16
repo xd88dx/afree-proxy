@@ -49,7 +49,7 @@ func MaskProxyURL(raw string) string {
 // 冷却解除时刻）。未注入时返回空串，调用方应把文案降级为不带详情的通用句。
 //
 // 走注入而不是让子包直接读主包状态，是因为凭据→绑定→代理冷却状态这条链全在
-// 主包（app）里，子包（openrouter/tokenharbor/other）不应反向依赖它。
+// 主包（app）里，子包（other）不应反向依赖它。
 var ProxyBlockedDetail func(scope, key string) string
 
 // BoundProbeBlockedMsg 拼装"绑定出口不可用"的探测失败文案。主包注入了

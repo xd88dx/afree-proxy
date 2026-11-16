@@ -1,7 +1,6 @@
 package app
 
 import (
-	openrouter "afree-proxy/internal/openrouter"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -14,11 +13,11 @@ import (
 )
 
 // Combo 仪表盘自定义的别名模型：/v1 请求 model 命中 combo ID 时，
-// 上游改写为同平台的 target 模型。严格同平台：cline/zen/workbuddy/openrouter
+// 上游改写为同平台的 target 模型。严格同平台：cline/zen/workbuddy
 // 只能选各自平台当前模型列表中的模型，保存时校验。
 type Combo struct {
 	ID         string    `json:"id"`
-	Platform   string    `json:"platform"` // cline | zen | workbuddy | openrouter
+	Platform   string    `json:"platform"` // cline | zen | workbuddy | trae
 	Target     string    `json:"target"`
 	UseProxies bool      `json:"useProxies,omitempty"` // 该别名的上游调用走出口代理池（round-robin）
 	CreatedAt  time.Time `json:"createdAt"`
@@ -123,11 +122,11 @@ func resolveCombo(id string) *Combo {
 	return nil
 }
 
-// comboPlatformValid 自定义别名的平台白名单（七平台）。面板保存与备份导入
+// comboPlatformValid 自定义别名的平台白名单（六平台）。面板保存与备份导入
 // 共用同一份口径——新平台接入时两处一起改。
 func comboPlatformValid(platform string) bool {
 	switch platform {
-	case "cline", "zen", "workbuddy", "openrouter", "trae":
+	case "cline", "zen", "workbuddy", "trae":
 		return true
 	}
 	return false
@@ -142,14 +141,14 @@ func validateCombo(id, platform, target string) error {
 		return fmt.Errorf("invalid combo id %q: use 2-64 chars, letters/digits/._- and start with letter or digit", id)
 	}
 	if !comboPlatformValid(platform) {
-		return fmt.Errorf("invalid platform %q: must be cline, zen, workbuddy, openrouter or trae", platform)
+		return fmt.Errorf("invalid platform %q: must be cline, zen, workbuddy or trae", platform)
 	}
 	target = strings.TrimSpace(target)
 	if target == "" {
 		return fmt.Errorf("target model is required")
 	}
 	// ID 不得与真实模型冲突。comboIDRe 的语法不含 ':'，因此带前缀平台
-	// （zen:/oprt:/tacn:/tagb:）的 ID 在函数入口就被拒，永远不会走到
+	// （zen:/tacn:/tagb:）的 ID 在函数入口就被拒，永远不会走到
 	// 这里——只保留真正可达的两类：Cline 目录（裸名与 cline-free/ 形态）与 zen
 	// 裸名别名（存量配置仍认裸 ID，见 resolveZenModel）。
 	if modelInClineList(id) {
@@ -184,10 +183,6 @@ func validateCombo(id, platform, target string) error {
 		}
 		if !found {
 			return fmt.Errorf("target %q is not in the current WorkBuddy model list", target)
-		}
-	case "openrouter":
-		if _, ok := openrouter.Resolve(target); !ok {
-			return fmt.Errorf("target %q is not a free openrouter model (cross-platform selection is not allowed)", target)
 		}
 	case "trae":
 		if !trae2apiModelExists(target) {

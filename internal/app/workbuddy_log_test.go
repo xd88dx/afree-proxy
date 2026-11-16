@@ -60,7 +60,7 @@ func TestWorkbuddyObserveAccountFillsLogColumns(t *testing.T) {
 	workbuddyObserveAccount(nil, &wbauth.Auth{UID: "uid-plain"}, "")
 }
 
-// TestKeyPoolAttemptObserverFillsLogColumns openrouter / other 共用注入：
+// TestKeyPoolAttemptObserverFillsLogColumns other 平台的共用注入：
 // 日志「账号/Key」列为 key#N，「代理」列按绑定归类。
 func TestKeyPoolAttemptObserverFillsLogColumns(t *testing.T) {
 	t.Setenv("PROXY_ISOLATION", "true")

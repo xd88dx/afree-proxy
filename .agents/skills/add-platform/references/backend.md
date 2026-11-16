@@ -7,7 +7,7 @@
 - 账号 CRUD/test：`/accounts{,/add,/delete,/test,/reset,/delete-all}`、`/accounts/proxy{,/clear}`、`/accounts/pool/enabled{,/all}`
 - 平台配置：`/config{,/update}`、`/opencode/config{,/update}`、`/opencode/models{,/refresh}`、`/opencode/stats`、`/opencode/sessions`（会话快照；mint 端点已随本地铸造删除，会话由后台 rotator 自动补铸）
 - key 管理（zen）：`/opencode/keys/routing{,/all}`、`/opencode/keys/reorder`、`/opencode/keys/delete`、`/opencode/keys/proxy{,/clear}`、`/zen/keys/test`（zen 的端点有 opencode/zen 双前缀别名，是历史遗留——新平台别复制）
-- key 池平台（openrouter/other 子平台同构；amd/tokenharbor 已于 2026-11-15 整体删除）：`/<x>/config{,/update}`、`/<x>/models{,/refresh}`（or 有 models GET、amd/th 只有 refresh）、`/<x>/keys/routing{,/all}`、`/<x>/keys/reorder`、`/<x>/keys/delete`、`/<x>/keys/test`、`/<x>/keys/proxy{,/clear}`
+- key 池平台（other；openrouter 已于 2026-11-16、amd/tokenharbor 已于 2026-11-15 整体删除）：`/<x>/config{,/update}`、`/<x>/models{,/refresh}`、`/<x>/keys/routing{,/all}`、`/<x>/keys/reorder`、`/<x>/keys/delete`、`/<x>/keys/test`、`/<x>/keys/proxy{,/clear}`
 - 别名：`/combos{,/create,/delete}`
 - 全局：`/request-stats`、`/stats`、`/logs`、`/config/export|import`、`/data/delete-all`
 
@@ -29,24 +29,23 @@ WB 特例：`/admin/api/workbuddy/enabled` 注册在 proxy.go（workbuddy 路由
 - 分发链现状（proxy.go /v1/chat/completions 与 responses.go 一致）：
   1. `shouldServeWorkBuddy(model)`——vendor realm 前缀 `wbcn:`/`wbgb:`（裸模型名不接管，避免静默改路由）
   2. `resolveCombo(model)` 别名改写（改写后回头再判一次 WB）
-  3. `openrouter.HasPrefix(model)`（`oprt:`）→ `handleOprtChat`
   6. `routeModel(model)`（zen.go）——`zen:` 前缀 + 免费表判定 → zen / reject / cline；其余落 cline 池
   7. cline 模型前缀 `cline-free/`（models.go `clineModelPrefix`，/v1/models 输出即带前缀）
-- 新平台加自己的 `HasPrefix(model)`（放 X 包内，`ModelPrefix` 常量 + `HasPrefix` 函数，见 openrouter 包）并按上述位置插入分发链。
+- 新平台加自己的 `HasPrefix(model)`（放 X 包内，`ModelPrefix` 常量 + `HasPrefix` 函数，见 other 包 `ResolvePrefix` 的前缀形态）并按上述位置插入分发链。
 - **前缀平台查表铁律（2026-10-12 回归教训）**：模型缓存键 = feed 原样 ID，`cline-free/*` 条目**自带前缀**、poolside/* z-ai/* 等不带。展示层 `displayClineModelID` 统一补前缀、请求侧 `canonicalClineModelID` 剥前缀——**剥前缀之后必须裸名和 `前缀+裸名` 两种键形态都查**（`models.go clineListLookupLocked`），只查剥前缀形态会把整类自带前缀的原生条目挡在 STRICT 门控外（症状：模型在 /v1/models 里可见，请求却 400 "not available on this gateway"）。出站/记账用解析到的缓存键原样。测试必须覆盖"列表里自带前缀的条目"两种请求形态（model_prefix_test.go）。
-- `/v1/models` 合并：各平台 `ModelList()` 汇入（带前缀的 ID），客户端按列表 ID 调用。**段内恒序铁律（2026-10-26）**：每个平台段内部必须确定有序——cline 按**裸 feed ID** 升序（输出统一补 `cline-free/` 前缀，故输出 id 观感上非升序但顺序确定）；zen/oprt/trae/other 各 `ModelList()` 内 `sort.Slice`；WorkBuddy 段由 `workbuddyModelEntries` 按 id 稳定排序，并保留「对话模型 → 出图模型」分组（`image_generation` 条目不混进对话名单）。新增平台段若顺序来自上游返回序/map 迭代序，**必须在合并处排序**——否则下游 new-api 等按序消费方每次看到的顺序都不同。`internal/app/models_order_test.go` 锁死该契约。
-- 请求日志分类：logs.go 的 per-route 原子计数与新平台桶（reqOr/reqAmd/reqTh 已存在；注意计数在 logEnabled 分支内——LOG_REQUESTS=false 时停摆是刻意行为）。
+- `/v1/models` 合并：各平台 `ModelList()` 汇入（带前缀的 ID），客户端按列表 ID 调用。**段内恒序铁律（2026-10-26）**：每个平台段内部必须确定有序——cline 按**裸 feed ID** 升序（输出统一补 `cline-free/` 前缀，故输出 id 观感上非升序但顺序确定）；zen/trae/other 各 `ModelList()` 内 `sort.Slice`；WorkBuddy 段由 `workbuddyModelEntries` 按 id 稳定排序，并保留「对话模型 → 出图模型」分组（`image_generation` 条目不混进对话名单）。新增平台段若顺序来自上游返回序/map 迭代序，**必须在合并处排序**——否则下游 new-api 等按序消费方每次看到的顺序都不同。`internal/app/models_order_test.go` 锁死该契约。
+- 请求日志分类：logs.go 的 per-route 原子计数与新平台桶（reqOther 已存在；注意计数在 logEnabled 分支内——LOG_REQUESTS=false 时停摆是刻意行为）。
 
 ## 4. 自定义别名（combos.go）
 
-- `validateCombo(id, platform, target)`：platform 白名单现状为 `{cline, zen, workbuddy, openrouter}`（2026-11-15 删 amd/tokenharbor 后四平台）+ target 必须在**本平台**模型列表内（跨平台选型拒绝，switch 按平台分支）——新平台加分支。
+- `validateCombo(id, platform, target)`：platform 白名单现状为 `{cline, zen, workbuddy, trae}`（2026-11-15 删 amd/tokenharbor、2026-11-16 删 openrouter 后四平台）+ target 必须在**本平台**模型列表内（跨平台选型拒绝，switch 按平台分支）——新平台加分支。
 - Combo 结构 `{id, platform, target, useProxies, createdAt}`；网关命中别名后按 target 走对应平台出站，`useProxies` 决定是否过代理池（缺省代理口径）。
 
 ## 5. 平台设置与热应用（两种模式，按形态选）
 
-**key 池四件套模式**（openrouter 同构，形态 B 首选）：
-- load：`handleOprtConfig` GET → 组装 map（keyStates 快照含 usage/cooling/routingEnabled/proxyMain/proxyBackup）。
-- save：`handleOprtConfigUpdate` POST patch——patch struct 全指针字段（`*bool`/`*int`/`*string`，nil=未提交），`next := 深拷贝 cur`（**Keys/KeyRoutingEnabled/KeyBindings 每张 map 都要拷**，漏拷 = 保存时静默清空该表；KeyTokens/Cool 住痕迹文件不随 Config 拷贝）→ 逐字段应用 patch → `ReconcileRouting`（keys 整体替换时）→ 落盘 + 热应用。
+**key 池四件套模式**（other 同构，形态 B 首选）：
+- load：`handleOtherConfig` GET → 组装 map（keyStates 快照含 usage/cooling/routingEnabled/proxyMain/proxyBackup）。
+- save：`handleOtherConfigUpdate` POST patch——patch struct 全指针字段（`*bool`/`*int`/`*string`，nil=未提交），`next := 深拷贝 cur`（**Keys/KeyRoutingEnabled/KeyBindings 每张 map 都要拷**，漏拷 = 保存时静默清空该表；KeyTokens/Cool 住痕迹文件不随 Config 拷贝）→ 逐字段应用 patch → `ReconcileRouting`（keys 整体替换时）→ 落盘 + 热应用。
 - key 池无"重启项"概念：全部字段热生效（池参数从 config 直接读）。
 
 **vendor wbConfigForm 模式**（形态 C）：load 侧 `Default()+Load()+normalize()`，save 侧**保留磁盘未提交键 + 原子落盘 + 热应用**（参照 workbuddy_config.go saveWorkbuddyConfig：merge 现有 map → ParseConfig → tmp+rename → 热应用 → 返回 restartRequired）。
@@ -57,10 +56,10 @@ WB 特例：`/admin/api/workbuddy/enabled` 注册在 proxy.go（workbuddy 路由
 
 ## 6. 代理池与出口绑定
 
-- **配置归属**：代理池（`proxies` / `proxyStrategy` / `proxySubURL` / `proxySubCron` / 各平台 `*UseProxies` 走池开关）存在 `data/proxy-config.json`，入口 `getProxyPool()` / `setProxyPool()`（`proxy_pool_config.go`），平台开关走 `platformUseProxies(kind)` / `setPlatformUseProxies(kind, v)`（`platform_proxies.go`）。它是全局能力（7 平台共用 `pickUpstreamProxy`），**不寄居任何平台配置**；面板 JSON 键名沿用旧契约，`admin_zen.go` 的 `zenConfigPayload()` 把平台配置与代理数据合并成一个响应。代理隔离段（`proxyIsolation` / `backupProxyEnabled` / `proxyExclusions` / `proxyBindCaps`）同样在 `proxy-config.json`，走 `getProxyBindingConfig()` / `setProxyBindingConfig()`（`proxy_binding_config.go`）。
+- **配置归属**：代理池（`proxies` / `proxyStrategy` / `proxySubURL` / `proxySubCron` / 各平台 `*UseProxies` 走池开关）存在 `data/proxy-config.json`，入口 `getProxyPool()` / `setProxyPool()`（`proxy_pool_config.go`），平台开关走 `platformUseProxies(kind)` / `setPlatformUseProxies(kind, v)`（`platform_proxies.go`）。它是全局能力（6 平台共用 `pickUpstreamProxy`），**不寄居任何平台配置**；面板 JSON 键名沿用旧契约，`admin_zen.go` 的 `zenConfigPayload()` 把平台配置与代理数据合并成一个响应。代理隔离段（`proxyIsolation` / `backupProxyEnabled` / `proxyExclusions` / `proxyBindCaps`）同样在 `proxy-config.json`，走 `getProxyBindingConfig()` / `setProxyBindingConfig()`（`proxy_binding_config.go`）。
 - **绑定表（`keyBindings`）不搬**：它的键是凭据明文，跟凭据池留在各自的 `<平台>-config.json`（zen 见 `zenConfigData.KeyBindings`）。搬进代理文件会让同一批明文在两处各存一份，容易写不一致。走池开关（bool）不敏感，所以归代理域。
 - **新增平台的走池开关**：在 `platform_proxies.go` 的 `platformUseProxies` / `setPlatformUseProxies` 加分支，平台包注入 `SetUseProxiesResolver`（读 `CurrentUseProxies()`，不要直接读 `Get().UseProxies`），update handler 写开关时调 `setPlatformUseProxies` 并把平台结构体里的字段置 nil（落盘后旧值消失）。
-- **持久化文件命名**：每个平台一个 `<平台>-config.json`（`cline` / `zen` / `trae` / `oprt` / `other`），全局 `afree-config.json`（`global_config.go`），代理 `proxy-config.json`（`proxy_config.go`）。新平台照此加一个文件，**不要再引入点前缀文件名或把平台数据塞进别人的文件**。
+- **持久化文件命名**：每个平台一个 `<平台>-config.json`（`cline` / `zen` / `trae` / `other`），全局 `afree-config.json`（`global_config.go`），代理 `proxy-config.json`（`proxy_config.go`）。新平台照此加一个文件，**不要再引入点前缀文件名或把平台数据塞进别人的文件**。
 - 绑定模型：per-identity 主/备双槽（前端 `egComboHTML` 渲染 `.eg-input`，`data-eg`/`data-egid`/`data-slot`），提交走 `egCommit`（暂存语义，随平台保存按钮生效）。存储与解析参照 `proxy_binding.go`。
 - 出站消费：平台出站 client 按 identity 取绑定出口（参照 `workbuddyProxyFor` / zen 对应物），无绑定 → 平台默认（走池下拉决定代理/直连）。
 - 隔离语义：主出口冷却/失效 → 该 identity 本轮跳过，**备不接、直连不回退**；备用代理开关关闭时备用槽只读并跟随主槽（`egApplyMainLinkage`）。绑定引用了已不存在的池出口 → 前端 ⚠ 告警标记（隔离逻辑会跳过）。
@@ -86,15 +85,15 @@ WB 特例：`/admin/api/workbuddy/enabled` 注册在 proxy.go（workbuddy 路由
 - 指纹脱敏：`SanitizeFingerprints atomic.Bool` + livecfg 快照热生效。
 - User-Agent/ClientVersion 等指纹字段做成 config 可改（参照 upstream client 字段族）。
 
-## 9. key 池四件套克隆配方（形态 B：OpenRouter 实证）
+## 9. key 池四件套克隆配方（形态 B：Other 实证）
 
-纯 API key 池平台（无账号 OAuth、无上游会话态）按此克隆，历史实证两次（amd、tokenharbor 从 openrouter 克隆，两平台已于 2026-11-15 删除）。
+纯 API key 池平台（无账号 OAuth、无上游会话态）按此克隆。历史实证三次（amd、tokenharbor 于 2026-11-15、openrouter 于 2026-11-16 删除）——克隆锚点现为 internal/other（多子平台形态，抽取单平台时去掉 platforms 数组维度）。
 
-**四件套**（`internal/<x>/`，从 internal/openrouter 复制后改包名）：
-- `client.go`：上游调用。OpenRouter = 标准 OpenAI 兼容 chat/completions；key 选择与出口解析留在**主包**（主包持有代理池/隔离语义），本包只做"给定 key + Exit + Client 发一次请求 + 重试"。`HTTPError{Status, Body, RateLimited}` 类型化错误、`CallOpts{PinKey, Exit, Client}`。
+**四件套**（`internal/<x>/`，从 internal/other 复制后改包名）：
+- `client.go`：上游调用。标准 OpenAI 兼容 chat/completions；key 选择与出口解析留在**主包**（主包持有代理池/隔离语义），本包只做"给定 key + Exit + Client 发一次请求 + 重试"。`HTTPError{Status, Body, RateLimited}` 类型化错误、`CallOpts{PinKey, Exit, Client}`。
 - `config.go`：`Config{Keys, KeyRoutingEnabled, KeyBindings, MaxConcurrency, Retries, ...}`（**纯配置**）+ `Load(path)/Get()/Save()` + `ReconcileRouting(next, cur)`（新 key 默认 false）+ `RoutingEnabled(key)`（缺项=true）+ key 掩码。
 - `usage.go`（2026-10-31 拆分必带）：`usageData{KeyTokens, Cool}` 包级 usage 真身 + `UsagePath`（app 层注入 `DATA_DIR/<x>-state.json`）+ `saveUsage`/`loadUsage`（含从旧 config 的一次性迁移）+ `markTokensDirty`（10s DirtyFlusher）+ `ClearUsage`/`pruneUsageLocked`。**KeyTokens/Cool 等使用痕迹不进 `<x>-config.json`**——配置文件保持"仅面板操作才变"（2026-11-01 命名铁律：`*-config.json`=配置态、`*-state.json`=状态态，新平台按此命名即自动纳入外部监测的 config-manifest 指纹清单）。
-- `models.go`：目录同步与免费模型判定（各平台协议不同：OpenRouter 白名单收 free-models 页 + openrouter/free 兜底；价格门/成员表语义按平台定）。
+- `models.go`：目录同步与免费模型判定（各平台协议不同：other 走上游 `{BaseURL}/models` 拉取 + 勾选暴露；价格门/成员表语义按平台定）。
 - `pool.go`：轮转（round_robin/fill/random）、冷却、并发信号量、`RoutingEnabled` 过滤。
 
 **2026-10-29 起克隆必须携带的不变量**（审查后固化，漏任何一条都会复现已修的缺陷）：
@@ -103,10 +102,10 @@ WB 特例：`/admin/api/workbuddy/enabled` 注册在 proxy.go（workbuddy 路由
 - **UNABLE_FORCE 兜底分支**：全冷却时 `kit.UnableForce()` 才允许冷却凭据回池（`buildCandidates(true)`），拒绝消息走 `no <platform> ... routable` 统一模板。
 - **usage 记账接线**：`handle<X>Chat` 用 `takeUsedKey(resp)`（key 从响应头取）组 `usageFn := func(u){ X.RecordKeyTokens(usedKey, usageTokens(u, params)) }`；cross_endpoint 的 `platformChatCall` 签名要求返回 `(resp, usageFn, err)`，流式由 bufferedStreamCaller 以末帧记一次——漏接 = /v1/messages 与 /v1/responses 上该平台用量恒 0。
 
-**app 桥接**（`internal/app/<x>.go`，照 openrouter.go 的函数族）：
+**app 桥接**（`internal/app/<x>.go`，照 other.go 的函数族）：
 - `init<X>()` 装配（Load 配置 + 目录同步）+ `start<X>ModelsRefresher()` 周期刷新（init() 或 StartProxy 里启动）。
 - `handle<X>Chat`：前缀剥离 → key 轮转/绑定出口解析（`egress` 语义与 zen 同：绑定的主→备，全不可用则短冷却跳过，绝不直连回退）→ 出站 → 错误分类（429 短冷却/403/配额耗尽长冷却）。
-- handler 族：`handle<X>Config{,Update}`、`handle<X>Key{SetRouting,SetRoutingAll,Reorder,Delete,SetProxy,ClearProxies,Test}`、`handle<X>ModelsRefresh`、`orCloneConfig` 式深拷贝助手（**每张 map 都拷**）。
+- handler 族：`handle<X>Config{,Update}`、`handle<X>Key{SetRouting,SetRoutingAll,Reorder,Delete,SetProxy,ClearProxies,Test}`、`handle<X>ModelsRefresh`、`otherCloneConfig` 式深拷贝助手（**每张 map 都拷**）。
 - 接线清单：admin.go 路由段、proxy.go 分发链 `HasPrefix` 分支、logs.go 统计桶、combos.go 白名单+target 分支、admin_html.go 全套（见 frontend.md）、admin_data.go delete-all 清单、/v1/models 合并。
 
 **克隆时容易漏的**：config_test.go（随四件套一起改名）；`orBoundRoutable` 式"绑定出口可用性"过滤；面板 Test 探测的 PinKey 路径；仪表盘卡 + request-stats 桶；`/<x>/keys/reorder`（拖拽排序协议用 index 置换，见 reorderZenKeys）。

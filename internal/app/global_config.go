@@ -40,6 +40,31 @@ type globalConfigData struct {
 	// 插件 UI 的 FREE 组是官方推荐位（recommended-models free 组），开启后
 	// /admin/api/models 只返回该组模型。nil/未设置 = 关闭（展示全部免费目录）。
 	ClineCatalogFeedOnly *bool `json:"clineCatalogFeedOnly,omitempty"`
+
+	// Trae TraeWork 的 afree 侧附加配置（2026-11-16 迁入：原住 proxy-config.json
+	// 的 trae2api* 段）。这些功能全部实现在 afree 层（合并域倍率过滤/展示顺序/
+	// 出口接管），vendored trae2api 的持久层（config.json/账号快照）afree 不碰，
+	// 自有数据归全局配置的 trae 子域——平台业务配置与平台文件对齐。
+	Trae *traeConfigData `json:"trae,omitempty"`
+}
+
+// traeConfigData afree-config.json 的 trae 子域。键语义与原 proxy-config.json
+// 的 trae2api* 段一一对应，仅键名去掉 trae2api 前缀。
+type traeConfigData struct {
+	// Bindings 账号出口绑定（键 = 池 UID，trae-cn-<userId>）。主优先、备兜底，
+	// 双不可用 = 本次请求直接失败（隔离优先），绝不退回直连。
+	Bindings map[string]trae2apiProxyBinding `json:"bindings,omitempty"`
+	// Routing 反代开关（键 = 池 UID）。查表缺失 = 启用（存量兼容），新增身份
+	// 由 AccountAddedHook 显式落 false。
+	Routing map[string]bool `json:"routing,omitempty"`
+	// ModelRateFilterCN/Intl 分域倍率筛选（2026-11-07 拆分）：nil = 未配置 =
+	// 不筛（0 值语义）。CN 过滤 tacn:，Intl 过滤 tagb:。显式 0 = 关
+	// （指针区分「未配置」与「关」）。旧单值 trae2apiModelRateFilter 已删除
+	// （2026-11-16，随本段迁入一并移除单值回落）。
+	ModelRateFilterCN   *float64 `json:"modelRateFilterCN,omitempty"`
+	ModelRateFilterIntl *float64 `json:"modelRateFilterIntl,omitempty"`
+	// DisplayOrder 凭据展示顺序（面板拖拽；UID 列表，未提及者排尾按 UID）。
+	DisplayOrder []string `json:"displayOrder,omitempty"`
 }
 
 var (
