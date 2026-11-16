@@ -1,7 +1,7 @@
 {
   "version": 1,
   "created_at": "2026-11-09T17:13:34Z",
-  "updated_at": "2026-11-16T10:43:17Z",
+  "updated_at": "2026-11-16T11:39:34Z",
   "files": {
     ".agents/skills/add-platform/SKILL.md": {
       "role": "index",
@@ -494,15 +494,15 @@
     },
     "MERGE.md": {
       "role": "index",
-      "sha256": "a84b2743a4549ddf358da070cabd93d005b0f1404366e9fba756381b2f6bc513",
-      "size": 143967,
-      "normalized_sha256": "a84b2743a4549ddf358da070cabd93d005b0f1404366e9fba756381b2f6bc513"
+      "sha256": "0df84ac4b337e6f823f291818929c2402e10d195ea257b84502cf524ecd3af8d",
+      "size": 145312,
+      "normalized_sha256": "0df84ac4b337e6f823f291818929c2402e10d195ea257b84502cf524ecd3af8d"
     },
     "PROJECT.md": {
       "role": "index",
-      "sha256": "9c506ed716910a2fe887f9c5e36416105ea7af4a1fec5de628b857504e8f927b",
-      "size": 47495,
-      "normalized_sha256": "9c506ed716910a2fe887f9c5e36416105ea7af4a1fec5de628b857504e8f927b"
+      "sha256": "744c8aa1f35e0b4ed0a1197dc25cfcf180f9a97ca43fedc98cd7d4e60cfe5a5f",
+      "size": 47971,
+      "normalized_sha256": "744c8aa1f35e0b4ed0a1197dc25cfcf180f9a97ca43fedc98cd7d4e60cfe5a5f"
     },
     "README.md": {
       "role": "index",
@@ -518,9 +518,9 @@
     },
     "aoci.code.txt": {
       "role": "index",
-      "sha256": "67d49e6a0c44713bea8e4d3a3e7f9a0fa11caaf4ccc8f6c201d0f35f2f669038",
-      "size": 181562,
-      "normalized_sha256": "67d49e6a0c44713bea8e4d3a3e7f9a0fa11caaf4ccc8f6c201d0f35f2f669038"
+      "sha256": "2632236a25b0d837c8780ce867f6c33a515777d1db86dd9e9258fd7eb2f49e3d",
+      "size": 181707,
+      "normalized_sha256": "2632236a25b0d837c8780ce867f6c33a515777d1db86dd9e9258fd7eb2f49e3d"
     },
     "aoci.meta.txt": {
       "role": "index",
@@ -3708,10 +3708,10 @@
     },
     "internal/workbuddy/panel/logstore_test.go": {
       "role": "observe",
-      "sha256": "76337d0f6e82a51fb9659d52f9715042738005c04c1eea15ff30cfdc5b1a1a04",
-      "size": 8317,
-      "normalized_sha256": "76337d0f6e82a51fb9659d52f9715042738005c04c1eea15ff30cfdc5b1a1a04",
-      "format_sha256": "76337d0f6e82a51fb9659d52f9715042738005c04c1eea15ff30cfdc5b1a1a04",
+      "sha256": "0c369858737f9349b15bf71a11d98dc9dd6e00e76e8eb592c562c8a3eef00171",
+      "size": 8926,
+      "normalized_sha256": "0c369858737f9349b15bf71a11d98dc9dd6e00e76e8eb592c562c8a3eef00171",
+      "format_sha256": "0c369858737f9349b15bf71a11d98dc9dd6e00e76e8eb592c562c8a3eef00171",
       "format_kind": "gofmt"
     },
     "internal/workbuddy/panel/mobile.css": {
