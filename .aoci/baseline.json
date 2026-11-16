@@ -1,7 +1,7 @@
 {
   "version": 1,
   "created_at": "2026-11-09T17:13:34Z",
-  "updated_at": "2026-11-16T12:28:59Z",
+  "updated_at": "2026-11-16T14:24:44Z",
   "files": {
     ".agents/skills/add-platform/SKILL.md": {
       "role": "index",
@@ -494,9 +494,9 @@
     },
     "MERGE.md": {
       "role": "index",
-      "sha256": "e69d86be86c43e22310fbad7a7db4ffc442b3086cd448fc019823f26e372d0b3",
-      "size": 146478,
-      "normalized_sha256": "e69d86be86c43e22310fbad7a7db4ffc442b3086cd448fc019823f26e372d0b3"
+      "sha256": "3995b424bb7aa39ce61153658023f586915e407877c27afc957e899315317bd4",
+      "size": 147737,
+      "normalized_sha256": "3995b424bb7aa39ce61153658023f586915e407877c27afc957e899315317bd4"
     },
     "PROJECT.md": {
       "role": "index",
@@ -518,9 +518,9 @@
     },
     "aoci.code.txt": {
       "role": "index",
-      "sha256": "53b063e45f59c30a4a0f04727f7dd3bc56ab6fc47a2e644a1ed6a08180e83a77",
-      "size": 181867,
-      "normalized_sha256": "53b063e45f59c30a4a0f04727f7dd3bc56ab6fc47a2e644a1ed6a08180e83a77"
+      "sha256": "098e416a72dc5f750accca3051ceb593a61f74e84d97024b00f103c3eb4622eb",
+      "size": 182083,
+      "normalized_sha256": "098e416a72dc5f750accca3051ceb593a61f74e84d97024b00f103c3eb4622eb"
     },
     "aoci.meta.txt": {
       "role": "index",
@@ -662,10 +662,10 @@
     },
     "internal/app/admin_html.go": {
       "role": "index",
-      "sha256": "23a894f28b9739b7f3f78744e9551fe221c3745295fb0087a6b45df22fd18435",
-      "size": 541789,
-      "normalized_sha256": "23a894f28b9739b7f3f78744e9551fe221c3745295fb0087a6b45df22fd18435",
-      "format_sha256": "23a894f28b9739b7f3f78744e9551fe221c3745295fb0087a6b45df22fd18435",
+      "sha256": "400a6ac0814b11095c8b1ad9aaa983420c8289d4328f0d2692226bf3f26df109",
+      "size": 541844,
+      "normalized_sha256": "400a6ac0814b11095c8b1ad9aaa983420c8289d4328f0d2692226bf3f26df109",
+      "format_sha256": "400a6ac0814b11095c8b1ad9aaa983420c8289d4328f0d2692226bf3f26df109",
       "format_kind": "gofmt"
     },
     "internal/app/admin_log_test.go": {
