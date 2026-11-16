@@ -25,6 +25,21 @@ func dayTS(day string, hour int) time.Time {
 	return t
 }
 
+// relDay 距今 daysAgo 天的 CST 自然日（YYYY-MM-DD）。
+//
+// 测试一律用相对日期，不写死日历日期：cleanup 按 now-retentionDays 清过期
+// 文件，写死的日期会随真实时钟流逝变成「过期文件」被重新打开时的构造函数
+// 删掉（afree 2026-11-16 实测时间炸弹：写死 11-08/11-09，一周后 11-08 被
+// 启动清理删除、Backfill 断言必炸）。
+func relDay(daysAgo int) string {
+	return cst.Now().AddDate(0, 0, -daysAgo).Format("2006-01-02")
+}
+
+// dayTSRel 距今 daysAgo 天的某个时刻（CST）。
+func dayTSRel(daysAgo, hour int) time.Time {
+	return dayTS(relDay(daysAgo), hour)
+}
+
 // TestLogStoreWritesPerDayFiles 跨天必须切文件，且文件名按 CST 自然日。
 func TestLogStoreWritesPerDayFiles(t *testing.T) {
 	dir := t.TempDir()
@@ -33,20 +48,20 @@ func TestLogStoreWritesPerDayFiles(t *testing.T) {
 		t.Fatal("NewLogStore 返回 nil")
 	}
 	defer s.Close()
-	s.Append(LogEntry{TS: dayTS("2026-11-08", 23), Ch: ChChat, Text: "row-a"})
-	s.Append(LogEntry{TS: dayTS("2026-11-09", 1), Ch: ChSys, Text: "row-b"})
+	s.Append(LogEntry{TS: dayTSRel(1, 23), Ch: ChChat, Text: "row-a"})
+	s.Append(LogEntry{TS: dayTSRel(0, 1), Ch: ChSys, Text: "row-b"})
 	s.Flush()
 
-	for _, day := range []string{"2026-11-08", "2026-11-09"} {
+	for _, day := range []string{relDay(1), relDay(0)} {
 		path := filepath.Join(dir, "panel-"+day+".jsonl")
 		if _, err := os.Stat(path); err != nil {
 			t.Fatalf("%s 未落盘: %v", day, err)
 		}
 	}
 	// 读回来确认内容与频道都在（导出的可读性依赖这两个字段）。
-	got := readLogFile(filepath.Join(dir, "panel-2026-11-09.jsonl"))
+	got := readLogFile(filepath.Join(dir, "panel-"+relDay(0)+".jsonl"))
 	if len(got) != 1 || got[0].Text != "row-b" || got[0].Ch != ChSys {
-		t.Fatalf("11-09 文件内容 = %+v", got)
+		t.Fatalf("当天文件内容 = %+v", got)
 	}
 }
 
@@ -60,14 +75,14 @@ func TestLogStoreRotatesOnMaxBytes(t *testing.T) {
 	// 这里绕过构造函数手工给一个小上限。
 	s := &LogStore{dir: dir, retentionDays: 7, maxBytes: 200}
 	s.cleanup()
-	ts := dayTS("2026-11-09", 12)
+	ts := dayTSRel(0, 12)
 	for i := 0; i < 20; i++ {
 		s.Append(LogEntry{TS: ts, Ch: ChSys, Text: "0123456789012345678901234567890123456789"})
 	}
 	s.Close()
 
-	first := filepath.Join(dir, "panel-2026-11-09.jsonl")
-	second := filepath.Join(dir, "panel-2026-11-09.2.jsonl")
+	first := filepath.Join(dir, "panel-"+relDay(0)+".jsonl")
+	second := filepath.Join(dir, "panel-"+relDay(0)+".2.jsonl")
 	if _, err := os.Stat(first); err != nil {
 		t.Fatalf("首个文件缺失: %v", err)
 	}
@@ -76,7 +91,7 @@ func TestLogStoreRotatesOnMaxBytes(t *testing.T) {
 	}
 	// 上限是 200 字节（约 2 行），20 条会摊到多个序号文件里——统计**全部**匹配
 	// 文件，断言一条都没丢。丢日志等于丢事故现场，这是这条用例唯一的重点。
-	all, err := filepath.Glob(filepath.Join(dir, "panel-2026-11-09*.jsonl"))
+	all, err := filepath.Glob(filepath.Join(dir, "panel-"+relDay(0)+"*.jsonl"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -94,10 +109,10 @@ func TestLogStoreBackfillNewestFirst(t *testing.T) {
 	dir := t.TempDir()
 	s := NewLogStore(dir, 7, 0)
 	for i := 0; i < 5; i++ {
-		s.Append(LogEntry{TS: dayTS("2026-11-08", 10).Add(time.Duration(i) * time.Minute), Ch: ChSys, Text: "old-" + string(rune('0'+i))})
+		s.Append(LogEntry{TS: dayTSRel(2, 10).Add(time.Duration(i) * time.Minute), Ch: ChSys, Text: "old-" + string(rune('0'+i))})
 	}
 	for i := 0; i < 3; i++ {
-		s.Append(LogEntry{TS: dayTS("2026-11-09", 10).Add(time.Duration(i) * time.Minute), Ch: ChSys, Text: "new-" + string(rune('0'+i))})
+		s.Append(LogEntry{TS: dayTSRel(1, 10).Add(time.Duration(i) * time.Minute), Ch: ChSys, Text: "new-" + string(rune('0'+i))})
 	}
 	s.Close()
 
@@ -123,11 +138,11 @@ func TestLogStoreExportFiltersByRange(t *testing.T) {
 	dir := t.TempDir()
 	s := NewLogStore(dir, 7, 0)
 	defer s.Close() // 不关会一直占着文件句柄，TempDir 清理在 Windows 上会失败
-	base := dayTS("2026-11-09", 8)
+	base := dayTSRel(0, 8)
 	for i := 0; i < 6; i++ {
 		s.Append(LogEntry{TS: base.Add(time.Duration(i) * time.Hour), Ch: ChSys, Text: "line-" + string(rune('0'+i))})
 	}
-	s.Append(LogEntry{TS: dayTS("2026-11-07", 8), Ch: ChSys, Text: "too-old"})
+	s.Append(LogEntry{TS: dayTSRel(2, 8), Ch: ChSys, Text: "too-old"})
 
 	tmp, err := os.CreateTemp(t.TempDir(), "export-*.zip")
 	if err != nil {
@@ -139,7 +154,7 @@ func TestLogStoreExportFiltersByRange(t *testing.T) {
 		t.Fatalf("Export: %v", err)
 	}
 	if files != 1 {
-		t.Fatalf("导出文件数 = %d want 1（只该含 11-09 那天）", files)
+		t.Fatalf("导出文件数 = %d want 1（只该含 base 那天）", files)
 	}
 	entries, err := zip.OpenReader(tmp.Name())
 	if err != nil {

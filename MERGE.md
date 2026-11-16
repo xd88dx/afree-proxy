@@ -753,3 +753,12 @@ WorkBuddy 一栏的基线同时登记在 `scripts/workbuddy-vendor-baseline.json
 - 数据文件保留原样：`D:/DockerApp/afree/oprt-config.json`（key 池）与 `oprt-state.json`（若存在）未动——本次只删代码；旧备份文件中的 `openrouter` 段导入时静默忽略（JSON 未知字段天然丢弃，不留兼容代码，与 amd/tkhb 同口径）。
 - 技能文档同步：add-platform 的 key 池克隆锚点 OpenRouter 移除后，四件套克隆配方改以 internal/other 的单子平台形态为参照（Other 是唯一存活的同构 key 池平台）；audit-availability 凭据盘点/Test 端点契约表收敛；frontend.md nav 现状收敛为十个。
 - 验证：`go build ./...`、`go vet ./internal/...` 全绿；`go test ./... -count=1` 除 `internal/workbuddy/panel` 的 `TestLogStoreBackfillNewestFirst`（vendor 同步 d06cacd 引入的既有失败，已登记 PROJECT.md §4）外全过；i18n_audit.py 五遍清零。工作区另含先前会话未提交的 trae 迁移与 or→oprt 消歧改动（本删除在其之上进行，未回退）。
+
+### 2026-11-16 — vendor 测试修复：logstore_test.go 时间炸弹（CI Vet job 三连红根因）
+
+本节不属于上游同步，记录 vendored 测试手工修复（改动随 PRESERVE_RELATIVE 的 86 文件清单保留，re-vendor 冲突时按 ours）。
+
+- 现象：dabe004/2662a80/153bd0a 三次 CI 的 Vet job `Test (shuffled)`（`go test ./... -shuffle=1`）均失败于 `internal/workbuddy/panel TestLogStoreBackfillNewestFirst`（回填条数 3 want 4），Docker job 被 skip。
+- 根因（本地 TempDir 内实测）：logstore_test.go 写死 2026-11-08/09 日历日期；`cleanup()` 按 `now − retentionDays(7)` 删除过期文件，真实时钟走到 2026-11-16 后，测试第二次 `NewLogStore`（模拟重启）把 11-08 文件（距今 8 天）当过期日志删掉，11-09 恰好压线存活 → Backfill 只剩 3 条。d06cacd 同步后（11-12）测试日期尚未过期故未立即暴露，属上游测试自身的时间炸弹，与 vendor 同步内容无关。
+- 修复：`relDay`/`dayTSRel` 相对日期 helper，同文件四处写死日期（含次日将炸的 TestLogStoreRotatesOnMaxBytes 手工 cleanup 用例）一并改相对时钟；实现侧（启动清理过期文件）行为正确未动。
+- 验证：panel 包顺序 + `-race` 全绿；`go test ./... -shuffle=1` 两轮 41 包全过（CI 同命令）。
