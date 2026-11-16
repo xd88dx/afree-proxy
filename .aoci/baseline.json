@@ -1,7 +1,7 @@
 {
   "version": 1,
   "created_at": "2026-11-09T17:13:34Z",
-  "updated_at": "2026-11-16T11:39:34Z",
+  "updated_at": "2026-11-16T12:28:59Z",
   "files": {
     ".agents/skills/add-platform/SKILL.md": {
       "role": "index",
@@ -494,9 +494,9 @@
     },
     "MERGE.md": {
       "role": "index",
-      "sha256": "0df84ac4b337e6f823f291818929c2402e10d195ea257b84502cf524ecd3af8d",
-      "size": 145312,
-      "normalized_sha256": "0df84ac4b337e6f823f291818929c2402e10d195ea257b84502cf524ecd3af8d"
+      "sha256": "e69d86be86c43e22310fbad7a7db4ffc442b3086cd448fc019823f26e372d0b3",
+      "size": 146478,
+      "normalized_sha256": "e69d86be86c43e22310fbad7a7db4ffc442b3086cd448fc019823f26e372d0b3"
     },
     "PROJECT.md": {
       "role": "index",
@@ -518,9 +518,9 @@
     },
     "aoci.code.txt": {
       "role": "index",
-      "sha256": "2632236a25b0d837c8780ce867f6c33a515777d1db86dd9e9258fd7eb2f49e3d",
-      "size": 181707,
-      "normalized_sha256": "2632236a25b0d837c8780ce867f6c33a515777d1db86dd9e9258fd7eb2f49e3d"
+      "sha256": "53b063e45f59c30a4a0f04727f7dd3bc56ab6fc47a2e644a1ed6a08180e83a77",
+      "size": 181867,
+      "normalized_sha256": "53b063e45f59c30a4a0f04727f7dd3bc56ab6fc47a2e644a1ed6a08180e83a77"
     },
     "aoci.meta.txt": {
       "role": "index",
@@ -670,10 +670,10 @@
     },
     "internal/app/admin_log_test.go": {
       "role": "observe",
-      "sha256": "48d57c0d1cc80d5f334a66d757df2b0d19a37257062d3b91ddf2c190b16d525e",
-      "size": 6077,
-      "normalized_sha256": "48d57c0d1cc80d5f334a66d757df2b0d19a37257062d3b91ddf2c190b16d525e",
-      "format_sha256": "48d57c0d1cc80d5f334a66d757df2b0d19a37257062d3b91ddf2c190b16d525e",
+      "sha256": "1b813cd1199bc3e3ad80cc38420e8703bd0f71015c9cd69a1cd893afa005df13",
+      "size": 6365,
+      "normalized_sha256": "1b813cd1199bc3e3ad80cc38420e8703bd0f71015c9cd69a1cd893afa005df13",
+      "format_sha256": "1b813cd1199bc3e3ad80cc38420e8703bd0f71015c9cd69a1cd893afa005df13",
       "format_kind": "gofmt"
     },
     "internal/app/admin_models_refresh.go": {
@@ -942,10 +942,10 @@
     },
     "internal/app/main_test.go": {
       "role": "observe",
-      "sha256": "2daf8a9f36fbdcc23ca4faa6a99829ce604ddd2810842cdeba08ce2d3bfebd5a",
-      "size": 1855,
-      "normalized_sha256": "2daf8a9f36fbdcc23ca4faa6a99829ce604ddd2810842cdeba08ce2d3bfebd5a",
-      "format_sha256": "2daf8a9f36fbdcc23ca4faa6a99829ce604ddd2810842cdeba08ce2d3bfebd5a",
+      "sha256": "4ee9f74dc2e394da1a5b958c9face91c04bdba40b8b5c0f39cd22e445a171940",
+      "size": 1989,
+      "normalized_sha256": "4ee9f74dc2e394da1a5b958c9face91c04bdba40b8b5c0f39cd22e445a171940",
+      "format_sha256": "4ee9f74dc2e394da1a5b958c9face91c04bdba40b8b5c0f39cd22e445a171940",
       "format_kind": "gofmt"
     },
     "internal/app/model_blacklist.go": {
@@ -990,10 +990,10 @@
     },
     "internal/app/models.go": {
       "role": "index",
-      "sha256": "3ef474c631255f19e4795a15acde4b2e438a11b793190daf47eecc710b01f5fe",
-      "size": 39278,
-      "normalized_sha256": "3ef474c631255f19e4795a15acde4b2e438a11b793190daf47eecc710b01f5fe",
-      "format_sha256": "3ef474c631255f19e4795a15acde4b2e438a11b793190daf47eecc710b01f5fe",
+      "sha256": "f6ff779f92ee49e3ba2ec88e521eb987ff36e40006125ec07252987065832aba",
+      "size": 40018,
+      "normalized_sha256": "f6ff779f92ee49e3ba2ec88e521eb987ff36e40006125ec07252987065832aba",
+      "format_sha256": "f6ff779f92ee49e3ba2ec88e521eb987ff36e40006125ec07252987065832aba",
       "format_kind": "gofmt"
     },
     "internal/app/models_meta_test.go": {
