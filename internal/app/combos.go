@@ -1,6 +1,8 @@
 package app
 
 import (
+	"afree-proxy/internal/gwconfig"
+
 	"encoding/json"
 	"fmt"
 	"io"
@@ -12,21 +14,10 @@ import (
 	"time"
 )
 
-// Combo 仪表盘自定义的别名模型：/v1 请求 model 命中 combo ID 时，
-// 上游改写为同平台的 target 模型。严格同平台：cline/zen/workbuddy
-// 只能选各自平台当前模型列表中的模型，保存时校验。
-type Combo struct {
-	ID         string    `json:"id"`
-	Platform   string    `json:"platform"` // cline | zen | workbuddy | trae
-	Target     string    `json:"target"`
-	UseProxies bool      `json:"useProxies,omitempty"` // 该别名的上游调用走出口代理池（round-robin）
-	CreatedAt  time.Time `json:"createdAt"`
-}
-
 var (
 	combosMu     sync.Mutex
 	combosLoaded bool
-	combosList   []*Combo
+	combosList   []*gwconfig.Combo
 )
 
 var comboIDRe = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._-]{1,63}$`)
@@ -38,7 +29,7 @@ func loadCombosLocked() {
 	combosLoaded = true
 	globalCfgMu.Lock()
 	g := loadGlobalConfigLocked()
-	list := append([]*Combo(nil), g.Combos...)
+	list := append([]*gwconfig.Combo(nil), g.Combos...)
 	globalCfgMu.Unlock()
 	needsSave := false
 	for _, c := range list {
@@ -91,22 +82,22 @@ func migrateTraeComboTarget(target string) (string, bool) {
 }
 
 func saveCombosLocked() {
-	cp := append([]*Combo(nil), combosList...)
+	cp := append([]*gwconfig.Combo(nil), combosList...)
 	mutateGlobalConfig(func(g *globalConfigData) { g.Combos = cp })
 }
 
 // listCombos 返回全部 combo（副本语义，只读使用）。
-func listCombos() []*Combo {
+func listCombos() []*gwconfig.Combo {
 	combosMu.Lock()
 	defer combosMu.Unlock()
 	loadCombosLocked()
-	out := make([]*Combo, len(combosList))
+	out := make([]*gwconfig.Combo, len(combosList))
 	copy(out, combosList)
 	return out
 }
 
 // resolveCombo 查找 combo；请求路由与 /v1/models 展示用。
-func resolveCombo(id string) *Combo {
+func resolveCombo(id string) *gwconfig.Combo {
 	id = strings.TrimSpace(id)
 	if id == "" {
 		return nil
@@ -175,7 +166,7 @@ func validateCombo(id, platform, target string) error {
 			return fmt.Errorf("target %q is not a WorkBuddy model", target)
 		}
 		found := false
-		for _, m := range workbuddySub.modelList() {
+		for _, m := range (*workbuddySub).ModelList() {
 			if id, ok := m["id"].(string); ok && id == target {
 				found = true
 				break
@@ -193,13 +184,13 @@ func validateCombo(id, platform, target string) error {
 }
 
 // addCombo 校验并持久化新 combo。
-func addCombo(id, platform, target string, useProxies bool) (*Combo, error) {
+func addCombo(id, platform, target string, useProxies bool) (*gwconfig.Combo, error) {
 	id = strings.TrimSpace(id)
 	target = strings.TrimSpace(target)
 	if err := validateCombo(id, platform, target); err != nil {
 		return nil, err
 	}
-	c := &Combo{ID: id, Platform: platform, Target: target, UseProxies: useProxies, CreatedAt: time.Now()}
+	c := &gwconfig.Combo{ID: id, Platform: platform, Target: target, UseProxies: useProxies, CreatedAt: time.Now()}
 	combosMu.Lock()
 	defer combosMu.Unlock()
 	loadCombosLocked()
@@ -236,21 +227,21 @@ func deleteCombo(id string) bool {
 // GET /admin/api/combos
 func handleCombosList(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "GET" {
-		writeAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
+		WriteAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
 		return
 	}
-	writeAPI(w, http.StatusOK, apiResponse{Success: true, Data: map[string]any{"combos": listCombos()}})
+	WriteAPI(w, http.StatusOK, apiResponse{Success: true, Data: map[string]any{"combos": listCombos()}})
 }
 
 // POST /admin/api/combos  body: { id, platform, target }
 func handleComboCreate(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "POST" {
-		writeAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
+		WriteAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
 		return
 	}
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
-		writeAPI(w, http.StatusBadRequest, apiResponse{Error: err.Error()})
+		WriteAPI(w, http.StatusBadRequest, apiResponse{Error: err.Error()})
 		return
 	}
 	defer r.Body.Close()
@@ -261,27 +252,27 @@ func handleComboCreate(w http.ResponseWriter, r *http.Request) {
 		UseProxies bool   `json:"useProxies"`
 	}
 	if err := json.Unmarshal(body, &req); err != nil {
-		writeAPI(w, http.StatusBadRequest, apiResponse{Error: "invalid JSON"})
+		WriteAPI(w, http.StatusBadRequest, apiResponse{Error: "invalid JSON"})
 		return
 	}
 	c, err := addCombo(req.ID, req.Platform, req.Target, req.UseProxies)
 	if err != nil {
-		writeAPI(w, http.StatusBadRequest, apiResponse{Error: err.Error()})
+		WriteAPI(w, http.StatusBadRequest, apiResponse{Error: err.Error()})
 		return
 	}
 	log.Printf("combo created: %s -> %s/%s", c.ID, c.Platform, c.Target)
-	writeAPI(w, http.StatusOK, apiResponse{Success: true, Message: "combo created", Data: c})
+	WriteAPI(w, http.StatusOK, apiResponse{Success: true, Message: "combo created", Data: c})
 }
 
 // POST /admin/api/combos/delete  body: { id }
 func handleComboDelete(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "POST" {
-		writeAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
+		WriteAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
 		return
 	}
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
-		writeAPI(w, http.StatusBadRequest, apiResponse{Error: err.Error()})
+		WriteAPI(w, http.StatusBadRequest, apiResponse{Error: err.Error()})
 		return
 	}
 	defer r.Body.Close()
@@ -289,13 +280,13 @@ func handleComboDelete(w http.ResponseWriter, r *http.Request) {
 		ID string `json:"id"`
 	}
 	if err := json.Unmarshal(body, &req); err != nil {
-		writeAPI(w, http.StatusBadRequest, apiResponse{Error: "invalid JSON"})
+		WriteAPI(w, http.StatusBadRequest, apiResponse{Error: "invalid JSON"})
 		return
 	}
 	if !deleteCombo(req.ID) {
-		writeAPI(w, http.StatusNotFound, apiResponse{Error: "combo not found: " + req.ID})
+		WriteAPI(w, http.StatusNotFound, apiResponse{Error: "combo not found: " + req.ID})
 		return
 	}
 	log.Printf("combo deleted: %s", req.ID)
-	writeAPI(w, http.StatusOK, apiResponse{Success: true, Message: "combo deleted"})
+	WriteAPI(w, http.StatusOK, apiResponse{Success: true, Message: "combo deleted"})
 }

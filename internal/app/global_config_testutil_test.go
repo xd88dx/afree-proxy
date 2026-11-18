@@ -10,13 +10,13 @@ import (
 func resetGlobalConfigForTest(t *testing.T) {
 	t.Helper()
 	globalCfgMu.Lock()
-	oldPath, oldCfg, oldLoaded := globalConfigPathOverride, globalCfg, globalCfgLoaded
-	globalConfigPathOverride = filepath.Join(t.TempDir(), "afree-config.json")
-	globalCfg, globalCfgLoaded = nil, false
+	oldPath, oldCfg, oldLoaded := *globalConfigPathOverride, *globalCfg, *globalCfgLoaded
+	*globalConfigPathOverride = filepath.Join(t.TempDir(), "afree-config.json")
+	*globalCfg, *globalCfgLoaded = nil, false
 	globalCfgMu.Unlock()
 	t.Cleanup(func() {
 		globalCfgMu.Lock()
-		globalConfigPathOverride, globalCfg, globalCfgLoaded = oldPath, oldCfg, oldLoaded
+		*globalConfigPathOverride, *globalCfg, *globalCfgLoaded = oldPath, oldCfg, oldLoaded
 		globalCfgMu.Unlock()
 	})
 }

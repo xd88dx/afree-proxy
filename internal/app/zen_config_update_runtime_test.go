@@ -7,6 +7,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"afree-proxy/internal/exitpool"
+	"afree-proxy/internal/zen"
 	"time"
 )
 
@@ -20,20 +23,20 @@ import (
 func TestZenConfigUpdateKeepsRuntimeSections(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("DATA_DIR", dir)
-	oldPath := zenConfigPathOverride
-	zenConfigPathOverride = filepath.Join(dir, "zen-config.json")
-	oldUsage := zenUsagePathOverride
-	zenUsagePathOverride = filepath.Join(dir, "zen-state.json")
+	oldPath := *zenConfigPathOverride
+	*zenConfigPathOverride = filepath.Join(dir, "zen-config.json")
+	oldUsage := *zenUsagePathOverride
+	*zenUsagePathOverride = filepath.Join(dir, "zen-state.json")
 	savedZen := getZenConfig()
 	zenKeyMu.Lock()
-	savedCool, savedTokens := zenKeyCool, zenKeyTokens
+	savedCool, savedTokens := *zenKeyCool, *zenKeyTokens
 	zenKeyMu.Unlock()
 	t.Cleanup(func() {
-		zenConfigPathOverride = oldPath
-		zenUsagePathOverride = oldUsage
+		*zenConfigPathOverride = oldPath
+		*zenUsagePathOverride = oldUsage
 		setZenConfig(savedZen)
 		zenKeyMu.Lock()
-		zenKeyCool, zenKeyTokens = savedCool, savedTokens
+		*zenKeyCool, *zenKeyTokens = savedCool, savedTokens
 		zenKeyMu.Unlock()
 	})
 
@@ -42,13 +45,13 @@ func TestZenConfigUpdateKeepsRuntimeSections(t *testing.T) {
 	coolUntil := time.Now().Add(10 * time.Minute).Truncate(time.Second)
 	setZenConfig(&zenConfigData{
 		Keys:        keys,
-		KeyBindings: map[string]proxyBinding{"sk-a1": {Main: "socks5://10.0.0.1:1080"}},
+		KeyBindings: map[string]exitpool.Binding{"sk-a1": {Main: "socks5://10.0.0.1:1080"}},
 	})
 	zenKeyMu.Lock()
-	zenKeyCool = map[string]time.Time{"sk-a1": coolUntil}
-	zenKeyTokens = map[string]zenKeyTokenStats{"sk-a1": {Today: 11, Total: 222}}
+	*zenKeyCool = map[string]time.Time{"sk-a1": coolUntil}
+	*zenKeyTokens = map[string]zen.ZenKeyTokenStats{"sk-a1": {Today: 11, Total: 222}}
 	zenKeyMu.Unlock()
-	saveZenUsage()
+	zen.SaveZenUsage()
 
 	req := httptest.NewRequest("POST", "/admin/api/opencode/config/update",
 		strings.NewReader(`{"retries":5}`))
@@ -60,8 +63,8 @@ func TestZenConfigUpdateKeepsRuntimeSections(t *testing.T) {
 
 	// 运行态：冷却与记账不得被面板保存清零
 	zenKeyMu.Lock()
-	_, coolOK := zenKeyCool["sk-a1"]
-	tok := zenKeyTokens["sk-a1"]
+	_, coolOK := (*zenKeyCool)["sk-a1"]
+	tok := (*zenKeyTokens)["sk-a1"]
 	zenKeyMu.Unlock()
 	if !coolOK {
 		t.Fatal("panel save wiped the key cooldown table")
@@ -74,13 +77,13 @@ func TestZenConfigUpdateKeepsRuntimeSections(t *testing.T) {
 	}
 
 	// 落盘：痕迹文件里 cool/keyTokens 齐全；配置文件不再携带这两段
-	raw, err := os.ReadFile(zenUsagePathOverride)
+	raw, err := os.ReadFile(*zenUsagePathOverride)
 	if err != nil {
 		t.Fatalf("read usage: %v", err)
 	}
 	var disk struct {
-		Cool      map[string]time.Time        `json:"cool"`
-		KeyTokens map[string]zenKeyTokenStats `json:"keyTokens"`
+		Cool      map[string]time.Time            `json:"cool"`
+		KeyTokens map[string]zen.ZenKeyTokenStats `json:"keyTokens"`
 	}
 	if err := json.Unmarshal(raw, &disk); err != nil {
 		t.Fatalf("parse usage: %v", err)
@@ -93,7 +96,7 @@ func TestZenConfigUpdateKeepsRuntimeSections(t *testing.T) {
 	}
 
 	// 配置文件不再携带痕迹（外部监测口径）
-	cfgRaw, err := os.ReadFile(zenConfigPathOverride)
+	cfgRaw, err := os.ReadFile(*zenConfigPathOverride)
 	if err != nil {
 		t.Fatalf("read config: %v", err)
 	}
@@ -101,7 +104,7 @@ func TestZenConfigUpdateKeepsRuntimeSections(t *testing.T) {
 		t.Fatalf("zen config must not carry usage traces: %s", cfgRaw)
 	}
 	var cfgDisk struct {
-		KeyBindings map[string]proxyBinding `json:"keyBindings"`
+		KeyBindings map[string]zen.EgressBinding `json:"keyBindings"`
 	}
 	if err := json.Unmarshal(cfgRaw, &cfgDisk); err != nil {
 		t.Fatalf("parse config: %v", err)

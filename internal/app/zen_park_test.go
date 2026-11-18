@@ -25,13 +25,13 @@ func retryAfterToMidnight() time.Duration {
 func resetZenParkState(t *testing.T) {
 	t.Helper()
 	zenKeyMu.Lock()
-	zenKeyPark = map[string]zenParkState{}
-	zenKeyCool = map[string]time.Time{}
+	*zenKeyPark = map[string]zenParkState{}
+	*zenKeyCool = map[string]time.Time{}
 	zenKeyMu.Unlock()
 	t.Cleanup(func() {
 		zenKeyMu.Lock()
-		zenKeyPark = map[string]zenParkState{}
-		zenKeyCool = map[string]time.Time{}
+		*zenKeyPark = map[string]zenParkState{}
+		*zenKeyCool = map[string]time.Time{}
 		zenKeyMu.Unlock()
 	})
 }
@@ -160,7 +160,7 @@ func TestParkExpiresAcrossDays(t *testing.T) {
 	t.Cleanup(func() { setZenConfig(saved) })
 
 	zenKeyMu.Lock()
-	zenKeyPark["k1"] = zenParkState{
+	(*zenKeyPark)["k1"] = zenParkState{
 		Until:   time.Now().Add(5 * time.Hour),
 		Backoff: 5 * time.Hour,
 		Day:     time.Now().UTC().AddDate(0, 0, -1).Format("2006-01-02"), // 昨天
@@ -199,7 +199,7 @@ func TestAllParkedBailsOutWithoutUpstreamCall(t *testing.T) {
 	withZenModelForTest(t, "zzz-parked-model", "")
 	t.Cleanup(func() { setZenConfig(saved) })
 	zenSessFailedMu.Lock()
-	zenSessFailed = map[string]int{}
+	*zenSessFailed = map[string]int{}
 	zenSessFailedMu.Unlock()
 
 	parkZenKey("k1", zenFreeUsageBody)
@@ -251,7 +251,7 @@ func TestDailyExhaustedParksAndStopsRetrying(t *testing.T) {
 	withZenModelForTest(t, "zzz-quota-model", "")
 	t.Cleanup(func() { setZenConfig(saved) })
 	zenSessFailedMu.Lock()
-	zenSessFailed = map[string]int{}
+	*zenSessFailed = map[string]int{}
 	zenSessFailedMu.Unlock()
 
 	// 第一次：打到上游，拿到额度耗尽的 429 → 停放。
@@ -311,7 +311,7 @@ func TestDailyExhaustedRotatesToHealthyKey(t *testing.T) {
 	withZenModelForTest(t, "zzz-multi-model", "")
 	t.Cleanup(func() { setZenConfig(saved) })
 	zenSessFailedMu.Lock()
-	zenSessFailed = map[string]int{}
+	*zenSessFailed = map[string]int{}
 	zenSessFailedMu.Unlock()
 
 	resp, _, err := callZenAPI(t.Context(), map[string]any{

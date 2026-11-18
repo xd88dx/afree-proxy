@@ -696,7 +696,7 @@ func handleResponses(w http.ResponseWriter, r *http.Request) {
 	chat := responsesToChat(params)
 	chatModel, _ := chat["model"].(string)
 	if shouldServeWorkBuddy(chatModel) {
-		workbuddySub.serveResponses(w, r, chat, isStream)
+		wbDialects{*workbuddySub}.ServeResponses(w, r, chat, isStream)
 		return
 	}
 	// combo 别名模型：改写为平台上游真实模型
@@ -710,7 +710,7 @@ func handleResponses(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if shouldServeWorkBuddy(chatModel) {
-		workbuddySub.serveResponses(w, r, chat, isStream)
+		wbDialects{*workbuddySub}.ServeResponses(w, r, chat, isStream)
 		return
 	}
 	// 前缀平台（trae:/Other 子平台）：归口到平台 chat 调用器，
@@ -737,8 +737,8 @@ func handleResponses(w http.ResponseWriter, r *http.Request) {
 		}
 		sid := requestSessionID(chat, r.Header)
 		out := maybeCompact(chat, zm, sid)
-		if out.changed {
-			log.Printf("  responses zen: %s", out.note)
+		if out.Changed {
+			log.Printf("  responses zen: %s", out.Note)
 		}
 		// 原生 responses 端点模型（muse-spark 等）：上游只认 /responses 协议，
 		// 走 chat/completions 会被 400 ModelProtocolUnsupported。此前本入口无条件

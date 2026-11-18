@@ -1,6 +1,10 @@
 package app
 
 import (
+	"afree-proxy/internal/panel"
+	"afree-proxy/internal/reqlog"
+	"afree-proxy/internal/zen"
+
 	"afree-proxy/internal/cline"
 	"afree-proxy/internal/kit"
 	"afree-proxy/internal/other"
@@ -103,12 +107,9 @@ func StartProxy(host string, port int) error {
 	loadEgressBindings()
 	reconcileEgressBindings()
 	loadClineStreamLearned()
-	// trae2api* 旧段迁移必须在 initTrae（以及任何 trae 配置懒加载）之前：
-	// 幂等，proxy-config.json 无旧键时零写盘。
-	migrateTrae2apiConfigFromProxyFile()
 	initOther()
 	initTrae()
-	LoadRequestLogsFromFile()
+	reqlog.LoadRequestLogsFromFile()
 	go cleanupCompactStates()
 	StartProxySubscriptionWorker() // 代理订阅自动更新（cron 驱动，配置热生效）
 
@@ -117,7 +118,7 @@ func StartProxy(host string, port int) error {
 	if wb, err := startWorkBuddy(); err != nil {
 		log.Printf("  WorkBuddy subsystem disabled: %v", err)
 	} else {
-		workbuddySub = wb
+		*workbuddySub = wb
 		defer wb.Stop()
 	}
 
@@ -151,20 +152,20 @@ func StartProxy(host string, port int) error {
 	if workbuddySub != nil {
 		// WorkBuddy 面板挂在 /admin/workbuddy/：复用管理会话 Cookie（Path=/admin）
 		// 统一鉴权；面板自身 api_key 置空，避免出现第二套密钥门。
-		mux.Handle("/admin/workbuddy/", adminAuthMiddleware(workbuddySub.adminHandler()))
-		mux.HandleFunc("/admin/api/workbuddy/proxy", adminCORS(adminAuthMiddleware(handleWorkbuddyProxyList)))
-		mux.HandleFunc("/admin/api/workbuddy/proxy/set", adminCORS(adminAuthMiddleware(handleWorkbuddyProxySet)))
-		mux.HandleFunc("/admin/api/workbuddy/proxy/clear", adminCORS(adminAuthMiddleware(handleWorkbuddyProxyClear)))
-		mux.HandleFunc("/admin/api/workbuddy/enabled", adminCORS(adminAuthMiddleware(handleWorkbuddyPoolSetEnabled)))
-		mux.HandleFunc("/admin/api/workbuddy/account-enabled", adminCORS(adminAuthMiddleware(handleWorkbuddyAccountSetEnabled)))
-		mux.HandleFunc("/admin/api/workbuddy/reorder", adminCORS(adminAuthMiddleware(handleWorkbuddyPoolReorder)))
-		mux.HandleFunc("/admin/api/workbuddy/nickname", adminCORS(adminAuthMiddleware(handleWorkbuddyNickname)))
+		mux.Handle("/admin/workbuddy/", panel.AdminAuthMiddleware((*workbuddySub).AdminHandler()))
+		mux.HandleFunc("/admin/api/workbuddy/proxy", panel.AdminCORS(panel.AdminAuthMiddleware(handleWorkbuddyProxyList)))
+		mux.HandleFunc("/admin/api/workbuddy/proxy/set", panel.AdminCORS(panel.AdminAuthMiddleware(handleWorkbuddyProxySet)))
+		mux.HandleFunc("/admin/api/workbuddy/proxy/clear", panel.AdminCORS(panel.AdminAuthMiddleware(handleWorkbuddyProxyClear)))
+		mux.HandleFunc("/admin/api/workbuddy/enabled", panel.AdminCORS(panel.AdminAuthMiddleware(handleWorkbuddyPoolSetEnabled)))
+		mux.HandleFunc("/admin/api/workbuddy/account-enabled", panel.AdminCORS(panel.AdminAuthMiddleware(handleWorkbuddyAccountSetEnabled)))
+		mux.HandleFunc("/admin/api/workbuddy/reorder", panel.AdminCORS(panel.AdminAuthMiddleware(handleWorkbuddyPoolReorder)))
+		mux.HandleFunc("/admin/api/workbuddy/nickname", panel.AdminCORS(panel.AdminAuthMiddleware(handleWorkbuddyNickname)))
 		// 凭据权重优化（2026-11-15）：按快过期积分日均需耗计算占比写入
 		// pool.account_share（见 workbuddy_share.go）。当前占比不设查询端点：
 		// overview 的 accounts[].share 已透出（Status.Share 配置自证透出），
 		// 权重列直接用行数据。
-		mux.HandleFunc("/admin/api/workbuddy/share-optimize", adminCORS(adminAuthMiddleware(handleWorkbuddyShareOptimize)))
-		mux.HandleFunc("/admin/api/workbuddy/account-share", adminCORS(adminAuthMiddleware(handleWorkbuddyShareSet)))
+		mux.HandleFunc("/admin/api/workbuddy/share-optimize", panel.AdminCORS(panel.AdminAuthMiddleware(handleWorkbuddyShareOptimize)))
+		mux.HandleFunc("/admin/api/workbuddy/account-share", panel.AdminCORS(panel.AdminAuthMiddleware(handleWorkbuddyShareSet)))
 	}
 	// TraeWork 原版入口（vendored trae2api console）：新标签页打开 /admin/trae2api/，
 	// 复用管理会话 Cookie；console fetch 基址已在 vendor 阶段改写。
@@ -309,7 +310,7 @@ func StartProxy(host string, port int) error {
 		// WorkBuddy 路由：只接管源项目定义的 realm 前缀（cn:/global:），
 		// 裸模型名仍走现有 Cline/OpenCode 目录，避免静默改路由。
 		if shouldServeWorkBuddy(model) {
-			workbuddySub.serveWorkBuddyChat(w, r, body)
+			(*workbuddySub).ServeWorkBuddyChat(w, r, body)
 			return
 		}
 
@@ -330,7 +331,7 @@ func StartProxy(host string, port int) error {
 				writeJSON(w, http.StatusInternalServerError, map[string]any{"error": map[string]string{"message": err.Error(), "type": "api_error"}})
 				return
 			}
-			workbuddySub.serveWorkBuddyChat(w, r, rewritten)
+			(*workbuddySub).ServeWorkBuddyChat(w, r, rewritten)
 			return
 		}
 
@@ -501,7 +502,7 @@ func StartProxy(host string, port int) error {
 		ReadHeaderTimeout: 15 * time.Second,
 		IdleTimeout:       120 * time.Second,
 		MaxHeaderBytes:    1 << 20,
-		Handler:           recoverMiddleware(requestLogMiddleware(mux)),
+		Handler:           reqlog.RecoverMiddleware(reqlog.RequestLogMiddleware(mux, classifyReqRoute)),
 	}
 
 	fmt.Println("")
@@ -703,8 +704,8 @@ func handleZenChat(w http.ResponseWriter, r *http.Request, params map[string]any
 
 	sid := requestSessionID(params, r.Header)
 	out := maybeCompact(params, zm, sid)
-	if out.changed {
-		log.Printf("  zen: %s", out.note)
+	if out.Changed {
+		log.Printf("  zen: %s", out.Note)
 	}
 
 	// 端点自适应：Upstream=="" 的模型先走 chat/completions；若上游报
@@ -1317,7 +1318,7 @@ func clineAPIWithAccount(ctx context.Context, params map[string]any, stream bool
 	main, backup, bound := accountProxyBinding(acc)
 	log.Printf("  upstream: account=%s stream=%v tools=%d msgs=%d max_tokens=%v effort=%v useProxies=%v boundExit=%v",
 		truncateEmail(acc.Email), stream, toolCount, getMsgCount(params), body["max_tokens"], body["reasoning_effort"], useProxies, bound)
-	setUpstreamInfo(ctx, fmt.Sprintf("account #%d", accountNumber(acc)))
+	reqlog.SetUpstreamInfo(ctx, fmt.Sprintf("account #%d", accountNumber(acc)))
 	client := kit.HTTPClient
 	attempts := 1
 	switch {
@@ -1374,7 +1375,7 @@ func clineAPIWithAccount(ctx context.Context, params map[string]any, stream bool
 			log.Printf("  cline upstream: response header watchdog fired after %v (exit unresponsive, failing over)", ClineHeaderTimeout())
 		}
 		if lastErr == nil {
-			setUpstreamExit(ctx, proxyExitType(proxyURL, main, backup, bound))
+			reqlog.SetUpstreamExit(ctx, proxyExitType(proxyURL, main, backup, bound))
 			recordProxyOutcome(pkCline, proxyURL, true, nil, time.Since(hsStart).Milliseconds())
 			exitURL = proxyURL
 			break
@@ -1861,7 +1862,7 @@ func handleStreamBufferedGeneric(w http.ResponseWriter, r *http.Request, plat st
 			}
 			if n > 1 {
 				log.Printf("  [%s] %s attempt %d/%d recovered after %d break(s)", rid, plat, n, StreamMaxAttempts(), n-1)
-				setUpstreamNote(r.Context(), fmt.Sprintf("%d次中断已重试", n-1))
+				reqlog.SetUpstreamNote(r.Context(), fmt.Sprintf("%d次中断已重试", n-1))
 			}
 			// 模型级自愈记账（上游 2026-11-08 修复的本地等价实现）：流式是
 			// 客户端主力路径，success 只在非流式聚合分支记的话，一个到过阈值
@@ -1904,7 +1905,7 @@ func handleStreamBufferedGeneric(w http.ResponseWriter, r *http.Request, plat st
 		if r.Context().Err() != nil {
 			log.Printf("  [%s] %s attempt %d/%d stream broken, cause=client_gone (ctx canceled), %d lines buffered, no retry",
 				rid, plat, n, StreamMaxAttempts(), len(lines))
-			setUpstreamNote(r.Context(), "客户端断开")
+			reqlog.SetUpstreamNote(r.Context(), "客户端断开")
 			return
 		}
 		log.Printf("  [%s] %s attempt %d/%d stream broken, cause=upstream_break (%v), %d lines buffered, retrying",
@@ -1915,7 +1916,7 @@ func handleStreamBufferedGeneric(w http.ResponseWriter, r *http.Request, plat st
 	// 语义正确（newapi 记为真实错误、openai SDK 抛异常走客户端重试）、
 	// 面板 Error 列可见，不再伪造 200 + SSE error 事件。
 	log.Printf("  [%s] %s all %d attempts broken, returning 502", rid, plat, StreamMaxAttempts())
-	setUpstreamNote(r.Context(), fmt.Sprintf("%d次尝试均中断", StreamMaxAttempts()))
+	reqlog.SetUpstreamNote(r.Context(), fmt.Sprintf("%d次尝试均中断", StreamMaxAttempts()))
 	msg := "upstream stream interrupted"
 	if lastBrk != nil {
 		msg = kit.Truncate("upstream stream interrupted: "+lastBrk.Error(), 300)
@@ -2010,7 +2011,7 @@ func handleNonStreamResponseWithUsage(w http.ResponseWriter, upstream *http.Resp
 
 	// Some Cline responses wrap in {data: {...}}
 	// 必须先解包再取 usage（2026-10-29）：部分 cline 账号的非流式响应是
-	// {data:{...usage...}} 包装形态，此前在解包前取 raw["usage"] 取不到，
+	// {data:{...Usage...}} 包装形态，此前在解包前取 raw["usage"] 取不到，
 	// 该次消耗就完全记不上（面板"今日 token"恒为 0）。
 	out := raw
 	if data, ok := raw["data"]; ok {
@@ -3097,7 +3098,7 @@ func handleAnthropicMessages(w http.ResponseWriter, r *http.Request) {
 	log.Printf("  anthropic: model=%s stream=%v msgs=%d", req.Model, req.Stream, len(req.Messages))
 
 	if shouldServeWorkBuddy(req.Model) {
-		workbuddySub.serveAnthropicMessages(w, r, req, openAIReq, toolSchemas)
+		wbDialects{*workbuddySub}.ServeAnthropicMessages(w, r, req, openAIReq, toolSchemas)
 		return
 	}
 
@@ -3239,8 +3240,8 @@ func handleZenAnthropic(w http.ResponseWriter, r *http.Request, req anthropicReq
 
 	sid := requestSessionID(openAIReq, r.Header)
 	out := maybeCompact(openAIReq, zm, sid)
-	if out.changed {
-		log.Printf("  anthropic zen: %s", out.note)
+	if out.Changed {
+		log.Printf("  anthropic zen: %s", out.Note)
 	}
 
 	// 原生 responses 端点模型：先经 responses 原生调用拿到 chat 形态，
@@ -3945,7 +3946,7 @@ func getNested(obj map[string]any, keys ...any) any {
 // KILL_PORT_ON_START=true 时启用 —— 默认关闭，生产环境无差别强杀
 // 未知进程是危险的（可能干掉合法持有端口的服务）。
 func freePort(port int) {
-	if v, ok := envBool("KILL_PORT_ON_START"); !ok || !v {
+	if v, ok := kit.EnvBool("KILL_PORT_ON_START"); !ok || !v {
 		return
 	}
 	addr := fmt.Sprintf("127.0.0.1:%d", port)
@@ -3979,7 +3980,7 @@ func cline429CooldownDuration(email, body, retryAfter string) time.Duration {
 	if d := parseInferenceCapDuration(body); d > 0 {
 		return d
 	}
-	if d := parseRetryAfter(retryAfter); d > 0 {
+	if d := kit.ParseRetryAfter(retryAfter); d > 0 {
 		return d
 	}
 	d, quota := 20*time.Minute, isClineQuotaExhausted(body)
@@ -4074,37 +4075,6 @@ func isClineQuotaExhausted(body string) bool {
 	return false
 }
 
-// parseRetryAfter 解析 HTTP Retry-After 头（秒数或 HTTP 日期）。
-func parseRetryAfter(header string) time.Duration {
-	header = strings.TrimSpace(header)
-	if header == "" {
-		return 0
-	}
-	// 尝试秒数
-	if secs, err := parseIntSafe(header); err == nil {
-		return time.Duration(secs) * time.Second
-	}
-	// 尝试 HTTP 日期
-	if t, err := http.ParseTime(header); err == nil {
-		d := time.Until(t)
-		if d > 0 {
-			return d
-		}
-	}
-	return 0
-}
-
-func parseIntSafe(s string) (int, error) {
-	var n int
-	for i := 0; i < len(s); i++ {
-		if s[i] < '0' || s[i] > '9' {
-			return 0, fmt.Errorf("not a number")
-		}
-		n = n*10 + int(s[i]-'0')
-	}
-	return n, nil
-}
-
 // sortModelEntriesByID 按 id 字典序稳定排序模型条目(就地)。
 //
 // /v1/models 的「段内恒序」统一口径:各平台段内部一律确定有序(cline 按裸
@@ -4146,10 +4116,10 @@ func workbuddyModelEntries() []map[string]any {
 	// 展示门控与请求入口闸同口径（platform_routability.go）：没有可用账号时
 	// 整段不出目录。vendor 对话段由 AvailableUIDs 自然门控——在 app 层统一
 	// 闸一次，顺带盖住对话缓存短暂 stale 的回放窗口。
-	if workbuddySub == nil || !platformHasRoutableCredential(platWorkBuddy) {
+	if *workbuddySub == nil || !platformHasRoutableCredential(platWorkBuddy) {
 		return nil
 	}
-	list := workbuddySub.modelList()
+	list := (*workbuddySub).ModelList()
 	chat := make([]map[string]any, 0, len(list))
 	// 媒体生成单列条目（vendor generationModelEntries 产出：image_generation /
 	// video_generation）与前端 wbModelMatchesFilter 同口径的费率筛选：倍率缺失/
@@ -4171,7 +4141,7 @@ func workbuddyModelEntries() []map[string]any {
 	for _, m := range list {
 		if mediaEntry(m) {
 			id, _ := m["id"].(string)
-			if rate, ok := wbEntryRate(m); !ok || rate > workbuddySub.workbuddyRateThresholdFor(id)+1e-9 {
+			if rate, ok := wbEntryRate(m); !ok || rate > (*workbuddySub).WorkbuddyRateThresholdFor(id)+1e-9 {
 				continue
 			}
 		}
@@ -4331,9 +4301,14 @@ func servedModelGate(model string) (int, string) {
 	// 仍找不到才拒——真不存在的模型会在这里被拦住，不再透传上游。
 	if last := gateRefreshLast.Load(); time.Since(time.Unix(last, 0)) >= gateRefreshMinInterval &&
 		gateRefreshLast.CompareAndSwap(last, time.Now().Unix()) {
-		syncModelsOnce()
-		if _, err := syncZenModels(); err != nil {
-			log.Printf("  served gate: zen catalog refresh failed (%v)", err)
+		// 测试态挂起（与 ensureModelsFresh 同口径）：测试注入的目录条目会被
+		// 真实目录同步覆盖（探针实测 seed 条目被 12 条 live 目录冲掉）——
+		// 挂起时跳过强制同步，信任已注入的目录（不拒不覆盖）。
+		if !modelsSyncSuspended {
+			syncModelsOnce()
+			if _, err := syncZenModels(); err != nil {
+				log.Printf("  served gate: zen catalog refresh failed (%v)", err)
+			}
 		}
 		if modelIsServed(model) {
 			return 0, ""
@@ -4357,4 +4332,34 @@ func modelIsServed(model string) bool {
 		}
 	}
 	return false
+}
+
+// classifyReqRoute 请求日志路由归类（reqlog.RouteClassifier 的装配根实现）：
+// 分发判定属网关职责，reqlog 只消费归类结果。route 是统计桶（日志 Route 列
+// 展示 labelRoute）。Other 子平台各自带自定义前缀：统计仍归 other 桶（面板
+// Other 卡片是一张总卡），但日志展示用子平台前缀本身。
+func classifyReqRoute(r *http.Request, model string) (route, labelRoute string) {
+	route, labelRoute = "unclassified", ""
+	otherPlatform, _, otherHit := other.ResolvePrefix(model)
+	switch {
+	case strings.HasPrefix(r.URL.Path, "/admin") || strings.Contains(r.URL.Path, "health"):
+		route = "admin"
+	case strings.HasPrefix(model, zen.ZenModelPrefix) || strings.HasPrefix(model, "opencode/") || strings.HasPrefix(model, "zen/"):
+		route = "zen"
+	case shouldServeWorkBuddy(model):
+		route = "workbuddy"
+	case trae2apiPlatformModel(model):
+		route = "trae"
+	case otherHit:
+		route = "other"
+		labelRoute = otherPlatform.Prefix
+	case model != "":
+		route = "cline"
+	case strings.Contains(r.URL.Path, "models"):
+		route = "meta"
+	}
+	if labelRoute == "" {
+		labelRoute = route
+	}
+	return route, labelRoute
 }

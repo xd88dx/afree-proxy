@@ -7,6 +7,8 @@ import (
 	"os"
 	"strings"
 	"testing"
+
+	"afree-proxy/internal/cline"
 )
 
 // withCachedModel 往模型缓存里注入一条测试模型并在测试结束后移除。
@@ -54,15 +56,13 @@ func fakeUpstreamErr(status int, body string) (*http.Response, *Account, error) 
 // 用户唯一会碰到的失败形态，必须自动愈合。
 func TestCallClineAutoStreamLearnsAndRetries(t *testing.T) {
 	t.Setenv("DATA_DIR", testDataDir(t))
-	clineStreamMu.Lock()
-	clineStreamLearned = nil
-	clineStreamMu.Unlock()
+	cline.ResetStreamForTest()
 
-	orig := clineCallFn
-	defer func() { clineCallFn = orig }()
+	orig := cline.CallFn
+	defer func() { cline.CallFn = orig }()
 
 	var seenStream []bool
-	clineCallFn = func(ctx context.Context, params map[string]any, stream, useProxies bool) (*http.Response, *Account, error) {
+	cline.CallFn = func(ctx context.Context, params map[string]any, stream, useProxies bool) (*http.Response, *Account, error) {
 		seenStream = append(seenStream, stream)
 		if !stream {
 			return fakeUpstreamErr(500, `{"error":"empty response content","success":false}`)
@@ -103,13 +103,11 @@ func TestCallClineAutoStreamLearnsAndRetries(t *testing.T) {
 // 模型仍被学习，因此后续请求不会再走这条非流式失败路径。
 func TestCallClineAutoStreamRetryFailureKeepsOriginalError(t *testing.T) {
 	t.Setenv("DATA_DIR", testDataDir(t))
-	clineStreamMu.Lock()
-	clineStreamLearned = nil
-	clineStreamMu.Unlock()
+	cline.ResetStreamForTest()
 
-	orig := clineCallFn
-	defer func() { clineCallFn = orig }()
-	clineCallFn = func(ctx context.Context, params map[string]any, stream, useProxies bool) (*http.Response, *Account, error) {
+	orig := cline.CallFn
+	defer func() { cline.CallFn = orig }()
+	cline.CallFn = func(ctx context.Context, params map[string]any, stream, useProxies bool) (*http.Response, *Account, error) {
 		if !stream {
 			return fakeUpstreamErr(500, `{"error":"empty response content"}`)
 		}
@@ -140,14 +138,12 @@ func TestCallClineAutoStreamRetryFailureKeepsOriginalError(t *testing.T) {
 // 普通 500（过载/瞬时故障）不得被当作模型属性学习，也不得触发重试。
 func TestCallClineAutoStreamIgnoresPlain500(t *testing.T) {
 	t.Setenv("DATA_DIR", testDataDir(t))
-	clineStreamMu.Lock()
-	clineStreamLearned = nil
-	clineStreamMu.Unlock()
+	cline.ResetStreamForTest()
 
-	orig := clineCallFn
-	defer func() { clineCallFn = orig }()
+	orig := cline.CallFn
+	defer func() { cline.CallFn = orig }()
 	calls := 0
-	clineCallFn = func(ctx context.Context, params map[string]any, stream, useProxies bool) (*http.Response, *Account, error) {
+	cline.CallFn = func(ctx context.Context, params map[string]any, stream, useProxies bool) (*http.Response, *Account, error) {
 		calls++
 		return fakeUpstreamErr(500, `{"error":"Internal server error"}`)
 	}
@@ -215,26 +211,21 @@ func TestClineStreamLearnRoundTrip(t *testing.T) {
 	if modelNeedsStream("line-free/solar-pro4") {
 		t.Fatal("unrelated model must not be affected")
 	}
-	if raw, err := os.ReadFile(globalConfigPath()); err != nil || !strings.Contains(string(raw), "poolside/laguna-s-2.1:free") {
-		t.Fatalf("learned set not persisted to afree-config.json: %v", err)
+	// 2026-11-17 配置重组：学习表真身迁 cline-config.json（AccountPool.StreamRequired）。
+	if raw, err := os.ReadFile(poolDataPath()); err != nil || !strings.Contains(string(raw), "poolside/laguna-s-2.1:free") {
+		t.Fatalf("learned set not persisted to cline-config.json: %v", err)
 	}
 
 	// 重复学习幂等
-	clineStreamMu.RLock()
-	first := clineStreamLearned["poolside/laguna-s-2.1:free"]
-	clineStreamMu.RUnlock()
-	learnClineStreamRequired("poolside/laguna-s-2.1:free")
-	clineStreamMu.RLock()
-	second := clineStreamLearned["poolside/laguna-s-2.1:free"]
-	clineStreamMu.RUnlock()
+	first := cline.StreamTimestamp("poolside/laguna-s-2.1:free")
+	cline.LearnStreamRequired("poolside/laguna-s-2.1:free")
+	second := cline.StreamTimestamp("poolside/laguna-s-2.1:free")
 	if first != second {
 		t.Fatalf("re-learning overwrote timestamp: %q -> %q", first, second)
 	}
 
 	// 重启：从磁盘恢复
-	clineStreamMu.Lock()
-	clineStreamLearned = nil
-	clineStreamMu.Unlock()
+	cline.ResetStreamForTest()
 	loadClineStreamLearned()
 	if !clineStreamRequired("poolside/laguna-s-2.1:free") {
 		t.Fatal("learned model lost after reload")

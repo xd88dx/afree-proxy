@@ -1,6 +1,6 @@
 # vendor 参考项目线：workbuddy2api-panel 三方合并
 
-`internal/workbuddy/` 由 `scripts/vendor_workbuddy.py` 从上游生成（import 路径改写 + 出站代理改写锚点 + 面板 iframe 策略），树上还叠着 afree 手工改动。`scripts/sync_workbuddy.py` 负责安全地同步两者，绝不直接 re-vendor（会冲掉手工改动）。
+`modules/workbuddy2api/`（独立 Go module，module 路径与上游一致，import 零改写）由 `scripts/vendor_workbuddy.py` 从上游生成（出站代理改写锚点 + 面板 iframe 策略 + 根门面 `afree_bridge.go` 等根层保留文件），树上还叠着 afree 手工改动。`scripts/sync_workbuddy.py` 负责安全地同步两者，绝不直接 re-vendor（会冲掉手工改动）。
 
 ## 1. 环境事实
 
@@ -14,7 +14,7 @@
 
 ```
 base   = vendor(基线 commit)     纯净 vendor 产物
-ours   = 当前 internal/workbuddy  base + 本地手工改动
+ours   = 当前 modules/workbuddy2api/internal  base + 本地手工改动
 theirs = vendor(上游 HEAD)       新上游 + 脚本改写
 ```
 
@@ -24,7 +24,7 @@ theirs = vendor(上游 HEAD)       新上游 + 脚本改写
 
 **vendor 改写白名单（2026-10-21 扩）**：上游新增**子包**时必须同步 `scripts/vendor_workbuddy.py` 的 `PACKAGES` 清单（漏了会 silently 缺包，编译报 "is not in std"）；上游新增**资产文件**（.css 等）必须扩 `ASSET_SUFFIXES`（漏了报 "pattern: no matching files found"）。
 
-**gofmt 对齐（2026-10-26 加）**：本地 `internal/workbuddy` 全树已 gofmt 干净，而 vendor 脚本吐出的上游代码不保证格式一致。脚本在生成 base/theirs 后各自 `gofmt -w` 一遍（`gofmt_tree`），否则纯格式差异会被三方合并当成真实改动，退化成整文件冲突。手工改完 vendor 树也要跑 `gofmt -w`，别把格式债留给下次同步。
+**gofmt 对齐（2026-10-26 加）**：本地 `modules/workbuddy2api/internal` 全树已 gofmt 干净，而 vendor 脚本吐出的上游代码不保证格式一致。脚本在生成 base/theirs 后各自 `gofmt -w` 一遍（`gofmt_tree`），否则纯格式差异会被三方合并当成真实改动，退化成整文件冲突。手工改完 vendor 树也要跑 `gofmt -w`，别把格式债留给下次同步。
 
 **本地倍率筛选 vs 上游预置缓存的测试（2026-10-21 定）**：上游测试可能直接预置 `dynamicModelsCache.ids` 而不经 fetch 同源路径，此时倍率表为空——`matchesModelRateFilter` 对「倍率表整体为空」放行（`upstream.ModelRatesEmpty()`，生产不可达状态），否则上游此类测试会被本地「缺失即隐藏」口径清空列表而挂。不要为过测试改上游测试文件（sync 会覆盖）。
 
@@ -41,7 +41,7 @@ python scripts/sync_workbuddy.py --report
 # 2. 实际合并
 python scripts/sync_workbuddy.py
 # 3a. 无冲突 → 基线自动推进，跳到 §4
-# 3b. 有冲突 → 解决 internal/workbuddy 里的 <<<<<<< 标记后登记基线
+# 3b. 有冲突 → 解决 modules/workbuddy2api/internal 里的 <<<<<<< 标记后登记基线
 python scripts/sync_workbuddy.py --seal
 ```
 
@@ -52,7 +52,7 @@ python scripts/sync_workbuddy.py --seal
 1. `internal/app/workbuddy.go` + `workbuddy_config.go`：新配置键的装配与热应用、`restartRequired` 清单、`workbuddyVersion` 版本号对齐上游 `appVersion`（脚本会 diff 提醒）。
 2. 上游新增面板能力若要在集成面板露出，按 add-platform skill 的面板规范接 i18n。
 3. 容器验证（SKILL.md §3），然后 `git add -A && git commit`（信息注明上游版本区间，参照 bef9062 的格式）。
-4. **`internal/config.example.json` 是上游根文件的副本，脚本不会带**（它不在 vendor 树内）。上游 `cmd/server/config_test.go` 的 `TestConfigExampleParses` 读 `../../config.example.json`：上游在 `cmd/server/`，vendor 后包落在 `internal/workbuddy/config/`，该相对路径正好指向 `internal/config.example.json`。上游改了样例就 `cp <上游克隆>/config.example.json internal/config.example.json`，否则 `go test ./internal/workbuddy/config/` 因缺文件失败。**不要改上游测试文件绕过**（下次同步会覆盖，且与「不为过测试改上游测试」的既定口径冲突）。
+4. **`modules/workbuddy2api/config.example.json` 是上游根样例的 afree 快照**（2026-11-17 起放 module 根；登记在 vendor 脚本 `EXTRA_ROOT_PRESERVE`，re-vendor 不丢）。上游 `cmd/server/config_test.go` 的 `TestConfigExampleParses` 读 `../../config.example.json`：vendor 后包落在 `modules/workbuddy2api/internal/config/`，该相对路径正好指向 module 根。它与 PRESERVE 的 `config_test.go` **配对**——上游改了样例必须走 sync 三方合并手工吸收，直接 `cp` 上游 HEAD 新样例会让 `TestConfigExampleParses` 失配（2026-11-17 实测）。**不要改上游测试文件绕过**（下次同步会覆盖，且与「不为过测试改上游测试」的既定口径冲突）。
 
 ## 5. vendor 构建失败的唯一原因：改写锚点失效
 

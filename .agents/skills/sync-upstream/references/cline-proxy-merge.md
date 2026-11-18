@@ -21,7 +21,7 @@
 
 **zen.go / admin_zen.go 的配置结构体与 patch**：合并 = 本地字段组全保留 + 上游新字段并入 + 上游的 `Enabled` 丢弃。三处要同步改：`zenConfigData` 结构体、`handleZenConfigUpdate` 的 patch struct（指针三态）、`next := &zenConfigData{...}` 初始化（漏拷字段 = 全量替换语义下数据丢失，尤其 `KeyRoutingEnabled`）。
 
-**代理池字段不在 zenConfigData 里了**（2026-10 剥离）：`proxies`/`proxyStrategy`/`proxySubURL`/`proxySubCron`/`zenUseProxies`/`workbuddyUseProxies` 归 `proxy_pool_config.go` 的 `proxyPoolConfigData`（落 `data/proxy-config.json`）；隔离/绑定段归 `proxy_binding_config.go` 的 `proxyBindingConfigData`（同文件）。上游若在这些字段上打了 patch，**不要加回 `zenConfigData`**：值要落到 `proxyPoolConfigData`，`handleZenConfigUpdate` 里走 `poolNext`/`poolChanged`（只有 patch 真带代理池键时才回写），GET 响应由 `zenConfigPayload()` 合并两路。`ProxyAliases` 只留在 zen 结构体里读旧配置（`foldLegacyProxyAliases` 折叠后不再写）。
+**代理池与走池开关字段不在 zenConfigData 里**（2026-10 剥离；2026-11-17 走池开关再迁平台文件）：`proxies`/`proxyStrategy`/`proxySubURL`/`proxySubCron` 归 `proxy_pool_config.go` 的 `proxyPoolConfigData`（落 `data/proxy-config.json`）；隔离/绑定段归 `proxy_binding_config.go` 的 `proxyBindingConfigData`（同文件）；`zenUseProxies` 走池开关归 `zen-config.json`（`zenConfigFileData.ZenUseProxies`），`workbuddyUseProxies` 归 `wkbd-config.json`（平台键已全部迁出 `proxy-config.json`）。上游若在这些字段上打了 patch，**不要加回 `zenConfigData`**：代理池键落到 `proxyPoolConfigData`（`handleZenConfigUpdate` 里走 `poolNext`/`poolChanged`，只有 patch 真带代理池键时才回写），走池开关落到各自平台配置文件的 mutate 函数，GET 响应由 `zenConfigPayload()` 合并两路。`ProxyAliases` 只留在 zen 结构体里读旧配置（`foldLegacyProxyAliases` 折叠后不再写）。
 
 **admin.go 路由**：保留本地全部（三平台路由 + `/admin/api/opencode/*` 与 `/admin/api/zen/*` 双前缀别名 + sessions 端点）。上游删除某端点时先 grep 面板 JS 是否还在调（如 `loadOcSessions` 调 `/opencode/sessions`），在用就恢复路由。
 

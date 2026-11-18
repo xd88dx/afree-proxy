@@ -8,30 +8,29 @@ import (
 	"sync"
 	"testing"
 	"time"
+	"trae2api"
 
 	"afree-proxy/internal/cline"
+	"afree-proxy/internal/exitpool"
 	"afree-proxy/internal/other"
-	traectl "afree-proxy/internal/trae2api/traectl"
 )
 
 // 代理在线率统计（纯被动口径）的行为回归：
 //   - 只记真实出口成败；直连不记，ctx 取消/截止不记任何一端；
-//   - 最近窗口裁剪到 proxyHealthRecentN；
+//   - 最近窗口裁剪到 exitpool.RecentN；
 //   - 编辑代理池（proxiesChanged）整体清零并同步落盘；
 //   - 落盘文件重启续算；
 //   - 快照按当前代理池输出，URL 打码、孤儿条目不出现。
 
 func resetProxyHealthForTest(t *testing.T) {
 	t.Helper()
-	proxyHealthMu.Lock()
-	proxyHealthStats = map[string]*proxyHealthEntry{}
-	proxyHealthDirty = false
-	proxyHealthMu.Unlock()
+	// SetHealthStatsForTest/SetHealthDirtyForTest 出包后各自内部加锁，
+	// 不能再在外面套 HealthMu（非重入，会自死锁）。
+	exitpool.SetHealthStatsForTest(map[string]*exitpool.HealthEntry{})
+	exitpool.SetHealthDirtyForTest(false)
 	t.Cleanup(func() {
-		proxyHealthMu.Lock()
-		proxyHealthStats = map[string]*proxyHealthEntry{}
-		proxyHealthDirty = false
-		proxyHealthMu.Unlock()
+		exitpool.SetHealthStatsForTest(map[string]*exitpool.HealthEntry{})
+		exitpool.SetHealthDirtyForTest(false)
 	})
 }
 
@@ -46,9 +45,7 @@ func TestProxyHealthRecordSkipsDirectAndAborts(t *testing.T) {
 	recordProxyOutcome(pkZen, px, false, context.DeadlineExceeded, 0)        // 客户端截止：不计失败
 	recordProxyOutcome(pkZen, px, false, errors.New("dial tcp: refused"), 0) // 真失败
 
-	proxyHealthMu.Lock()
-	e := proxyHealthStats[px]
-	proxyHealthMu.Unlock()
+	e := exitpool.HealthStatsForTest()[px]
 	if e == nil || e.Attempts != 2 || e.Successes != 1 {
 		t.Fatalf("attempts/successes = %d/%d, want 2/1", e.Attempts, e.Successes)
 	}
@@ -68,25 +65,23 @@ func TestProxyHealthRecentWindowTrims(t *testing.T) {
 	resetProxyHealthForTest(t)
 
 	px := "socks5://w:1"
-	// 前 proxyHealthRecentN 次全失败，再补 10 次成功：窗口内应只剩这 10 次成功。
-	for i := 0; i < proxyHealthRecentN; i++ {
+	// 前 exitpool.RecentN 次全失败，再补 10 次成功：窗口内应只剩这 10 次成功。
+	for i := 0; i < exitpool.RecentN; i++ {
 		recordProxyOutcome(pkZen, px, false, errors.New("dead"), 0)
 	}
 	for i := 0; i < 10; i++ {
 		recordProxyOutcome(pkZen, px, true, nil, 100)
 	}
 
-	proxyHealthMu.Lock()
-	e := proxyHealthStats[px]
-	proxyHealthMu.Unlock()
-	if len(e.Recent) != proxyHealthRecentN {
-		t.Fatalf("window size = %d, want %d", len(e.Recent), proxyHealthRecentN)
+	e := exitpool.HealthStatsForTest()[px]
+	if len(e.Recent) != exitpool.RecentN {
+		t.Fatalf("window size = %d, want %d", len(e.Recent), exitpool.RecentN)
 	}
-	if got := e.recentOK(); got != 10 {
+	if got := e.RecentOK(); got != 10 {
 		t.Fatalf("recentOK = %d, want 10", got)
 	}
-	if e.Attempts != proxyHealthRecentN+10 || e.Successes != 10 {
-		t.Fatalf("cumulative %d/%d, want %d/10", e.Attempts, e.Successes, proxyHealthRecentN+10)
+	if e.Attempts != exitpool.RecentN+10 || e.Successes != 10 {
+		t.Fatalf("cumulative %d/%d, want %d/10", e.Attempts, e.Successes, exitpool.RecentN+10)
 	}
 }
 
@@ -164,15 +159,11 @@ func TestProxyHealthPersistsAcrossRestart(t *testing.T) {
 	flushProxyHealth()
 
 	// 模拟进程重启：内存清零 + 重置懒加载，再从落盘文件恢复。
-	proxyHealthMu.Lock()
-	proxyHealthStats = map[string]*proxyHealthEntry{}
-	proxyHealthMu.Unlock()
-	proxyHealthOnce = sync.Once{}
+	exitpool.SetHealthStatsForTest(map[string]*exitpool.HealthEntry{})
+	*exitpool.HealthOncePtr = sync.Once{}
 	ensureProxyHealthLoaded()
 
-	proxyHealthMu.Lock()
-	e := proxyHealthStats["socks5://a:1"]
-	proxyHealthMu.Unlock()
+	e := exitpool.HealthStatsForTest()["socks5://a:1"]
 	if e == nil || e.Attempts != 2 || e.Successes != 1 {
 		t.Fatalf("restored attempts/successes = %d/%d, want 2/1", e.Attempts, e.Successes)
 	}
@@ -193,13 +184,13 @@ func TestIsTransportLayerFailure(t *testing.T) {
 		{"nil", nil, false},
 		{"network dial", transport, true},
 		{"context canceled", context.Canceled, true}, // 传输层判定；取消过滤在 recordProxyOutcome 内
-		{"trae2api RefreshError", &traectl.RefreshError{HTTPStatus: 429, Code: 4023}, false},
+		{"trae2api RefreshError", &trae2api.RefreshError{HTTPStatus: 429, Code: 4023}, false},
 		{"other HTTPError", &other.HTTPError{Status: 400}, false},
 		{"cline StatusError", &cline.StatusError{Status: 401}, false},
 	}
 	for _, c := range cases {
-		if got := isTransportLayerFailure(c.err); got != c.want {
-			t.Errorf("%s: isTransportLayerFailure = %v, want %v", c.name, got, c.want)
+		if got := exitpool.IsTransportLayerFailure(c.err); got != c.want {
+			t.Errorf("%s: exitpool.IsTransportLayerFailure = %v, want %v", c.name, got, c.want)
 		}
 	}
 }
@@ -212,12 +203,10 @@ func TestRecordProxyOutcomeCoolsBadExit(t *testing.T) {
 	t.Setenv("PROXY_COOLDOWN_STRIKES", "2")
 	setupBindingTest(t, &zenTestConfig{Proxies: []string{"http://a:1", "http://b:2"}})
 	t.Cleanup(func() {
-		proxyCooldownsMu.Lock()
-		proxyCooldowns = map[int]time.Time{}
-		proxyStreamFailMu.Lock()
-		proxyStreamFails = map[string][]time.Time{}
-		proxyStreamFailMu.Unlock()
-		proxyCooldownsMu.Unlock()
+		resetProxyCooldownsForTest()
+		exitpool.StreamFailMuPtr.Lock()
+		*exitpool.StreamFailsPtr = map[string][]time.Time{}
+		exitpool.StreamFailMuPtr.Unlock()
 	})
 	// 传输层失败第 1 次：只记账，不冷却（2-strike，单次抖动不摘出口）
 	recordProxyOutcome(pkZen, "http://a:1", false, errors.New("EOF"), 0)
@@ -233,9 +222,7 @@ func TestRecordProxyOutcomeCoolsBadExit(t *testing.T) {
 		t.Fatal("unrelated proxy must stay available")
 	}
 	// 上游状态错误：不冷却（出口是通的）
-	proxyCooldownsMu.Lock()
-	delete(proxyCooldowns, 0)
-	proxyCooldownsMu.Unlock()
+	exitpool.ClearCooldownsAt(0)
 	recordProxyOutcome(pkZen, "http://a:1", false, &other.HTTPError{Status: 502}, 0)
 	if !proxyAvailable(0) {
 		t.Fatal("upstream 5xx must not cool a healthy exit")
@@ -253,27 +240,21 @@ func TestProxyTestEntryPersistAndReset(t *testing.T) {
 	setupBindingTest(t, &zenTestConfig{Proxies: []string{"socks5://a:1"}})
 	resetProxyHealthForTest(t)
 
-	proxyTestMu.Lock()
-	proxyTestStats["socks5://a:1"] = &proxyTestEntry{
-		At: time.Now(), Ok: true, MinMs: 120, MedianMs: 340, Samples: 3,
-	}
-	proxyTestMu.Unlock()
+	exitpool.SetTestStatsForTest(map[string]*exitpool.TestEntry{
+		"socks5://a:1": {At: time.Now(), Ok: true, MinMs: 120, MedianMs: 340, Samples: 3},
+	})
 	// 与生产路径一致：tests 写入必须伴随脏标记（runProxyLatencyBatch 的做法）
-	proxyHealthMu.Lock()
-	proxyHealthDirty = true
-	proxyHealthMu.Unlock()
+	exitpool.HealthMu().Lock()
+	exitpool.SetHealthDirtyForTest(true)
+	exitpool.HealthMu().Unlock()
 	flushProxyHealth()
 
 	// 模拟进程重启：内存清零 + 重置懒加载，再从落盘文件恢复。
-	proxyTestMu.Lock()
-	proxyTestStats = map[string]*proxyTestEntry{}
-	proxyTestMu.Unlock()
-	proxyHealthOnce = sync.Once{}
+	exitpool.SetTestStatsForTest(map[string]*exitpool.TestEntry{})
+	*exitpool.HealthOncePtr = sync.Once{}
 	ensureProxyHealthLoaded()
 
-	proxyTestMu.Lock()
-	e := proxyTestStats["socks5://a:1"]
-	proxyTestMu.Unlock()
+	e := exitpool.TestStatsForTest()["socks5://a:1"]
 	if e == nil || !e.Ok || e.MinMs != 120 || e.MedianMs != 340 || e.Samples != 3 {
 		t.Fatalf("restored test entry = %+v, want ok min=120 median=340 samples=3", e)
 	}
@@ -286,9 +267,7 @@ func TestProxyTestEntryPersistAndReset(t *testing.T) {
 	if rec.Code != 200 {
 		t.Fatalf("pool edit failed: %d %s", rec.Code, rec.Body.String())
 	}
-	proxyTestMu.Lock()
-	n := len(proxyTestStats)
-	proxyTestMu.Unlock()
+	n := len(exitpool.TestStatsForTest())
 	if n != 0 {
 		t.Fatalf("pool edit must clear latency test entries, got %d", n)
 	}
@@ -311,9 +290,7 @@ func TestRecordProxyTestOutcomeUpdatesStatsWithoutCooldown(t *testing.T) {
 	recordProxyTestOutcome("socks5://a:1", true, nil, 200)
 	recordProxyTestOutcome("socks5://a:1", false, errors.New("dial tcp: refused"), 0)
 
-	proxyHealthMu.Lock()
-	e := proxyHealthStats["socks5://a:1"]
-	proxyHealthMu.Unlock()
+	e := exitpool.HealthStatsForTest()["socks5://a:1"]
 	if e == nil || e.Attempts != 2 || e.Successes != 1 {
 		t.Fatalf("attempts/successes = %d/%d, want 2/1", e.Attempts, e.Successes)
 	}

@@ -11,7 +11,11 @@ ARG GOPROXY_MIRROR
 RUN if [ -n "${GOPROXY_MIRROR:-}" ]; then go env -w GOPROXY="$GOPROXY_MIRROR"; fi
 
 WORKDIR /build
-COPY go.mod go.sum ./
+# vendor 树是独立 Go module（modules/，module 路径同上游，主 go.mod replace
+# 指向本地目录；构建与本地开发一致走 go.work workspace 模式）：预下载需要
+# go.work 与三个 module 的 go.mod 先就位，缺一不可。
+COPY go.work go.work.sum go.mod go.sum ./
+COPY modules/ ./modules/
 RUN go mod download
 COPY . .
 RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -ldflags="-s -w" -o afree-proxy .

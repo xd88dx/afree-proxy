@@ -1,62 +1,51 @@
 package app
 
-// 各平台「未绑定凭据是否走共享代理池」开关的统一归属。
+// 各平台「未绑定凭据是否走共享代理池」开关的统一读取入口。
 //
-// 这个开关是代理池页上的下拉（"Global policy"），语义属于代理域，跟平台自身
-// 的账号/key 数据无关；历史上却分散在各平台的配置文件里（.cline-accounts.json、
-// .trae-config.json、
-// .other-config.json 各存一份），改一个开关要记住去哪找。
+// 2026-11-17 配置重组：平台键回归各平台配置文件——cline-config.json 的
+// useProxies（AccountPool）、zen-config.json 的 zenUseProxies、other-config.json
+// 的 Platform.UseProxies（逐子平台）、trae-config.json 的 useProxies、
+// wkbd-config.json 的 useProxies。本文件只做 kind → 平台读取器的分发；
+// 代理池页（"Global policy" 下拉）保存时仍按平台写各自文件。
 //
-// 现统一存进 proxy-config.json 的出口池段（见 proxy_pool_config.go），内存态
-// 由 getProxyPool() 缓存，读取不落磁盘。平台包通过注入的 resolver 取值，
-// 平台配置文件里不再保存该字段（update 时显式置 nil，旧值自然消失）。
+// 其他 key 池平台（amd/tkhb、openrouter）已随平台删除移除；克隆新 key 池平台
+// 时在 addPlatformUseProxiesWriter 登记（见 add-platform skill backend §6）。
 
 import (
 	"afree-proxy/internal/other"
 )
 
-func init() {
-	other.SetUseProxiesResolver(func() *bool { return platformUseProxies("other") })
-}
-
 // platformUseProxies 读取某平台的走池开关。nil = 该平台未配置（缺省走池）。
 // kind 取 cline/trae/other/zen/workbuddy。
 func platformUseProxies(kind string) *bool {
-	c := getProxyPool()
 	switch kind {
 	case "cline":
-		return c.ClineUseProxies
+		return clineUseProxiesPtr()
 	case "trae":
-		return c.TraeUseProxies
+		return traeConfigUseProxies()
 	case "other":
-		return c.OtherUseProxies
+		return other.CurrentUseProxies()
 	case "zen":
-		return c.ZenUseProxies
+		return zenConfigUseProxies()
 	case "workbuddy":
-		return c.WorkbuddyUseProxies
+		return wkbdConfigUseProxies()
 	}
 	return nil
 }
 
-// setPlatformUseProxies 改写某平台的走池开关并落盘。只动这一个字段，
-// 出口列表不变，因此不触发冷却/健康统计的清理链。
+// setPlatformUseProxies 改写某平台的走池开关并落盘到该平台配置文件。只动这
+// 一个字段，出口列表不变，因此不触发冷却/健康统计的清理链。
 func setPlatformUseProxies(kind string, v *bool) {
-	proxyPoolMu.Lock()
-	next := *proxyPool
-	proxyPoolMu.Unlock()
 	switch kind {
 	case "cline":
-		next.ClineUseProxies = v
+		mutatePoolConfig(func(p *AccountPool) { p.UseProxies = v })
 	case "trae":
-		next.TraeUseProxies = v
-	case "other":
-		next.OtherUseProxies = v
+		mutateTraeConfig(func(t *traeConfigData) { t.UseProxies = v })
 	case "zen":
-		next.ZenUseProxies = v
+		mutateZenConfigFile(func(z *zenConfigFileData) { z.ZenUseProxies = v })
+	case "other":
+		other.SetConfigUseProxies(v)
 	case "workbuddy":
-		next.WorkbuddyUseProxies = v
-	default:
-		return
+		mutateWkbdConfig(func(k *wkbdConfigData) { k.UseProxies = v })
 	}
-	setProxyPool(&next)
 }

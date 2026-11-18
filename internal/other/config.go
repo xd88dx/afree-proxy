@@ -397,22 +397,19 @@ func save() {
 
 // ProxiesEnabled 未绑定 key 是否走共享代理池：缺省（nil）默认走池。
 
-// useProxiesResolver 由 app 层注入：走池开关存在 proxy-config.json 的代理池段
-// （与池本体同处一个文件），平台配置文件不再保存它。返回 nil = 该平台未配置，
-// 即缺省走池。
-var useProxiesResolver func() *bool
+// SetConfigUseProxies 改写配置级走池开关并落盘（2026-11-17 配置重组：开关
+// 回归本文件，原 proxy-config.json 的 otherUseProxies 键删除）。写时复制：
+// 拷贝顶层 Config 改字段后 Set。只动这一个字段，平台列表/keys 不变。
+func SetConfigUseProxies(v *bool) {
+	cur := Get()
+	next := *cur
+	next.UseProxies = v
+	Set(&next)
+}
 
-// SetUseProxiesResolver 由 app 层在启动时注入读取器（见 app/platform_proxies.go）。
-func SetUseProxiesResolver(f func() *bool) { useProxiesResolver = f }
-
-// CurrentUseProxies 当前走池开关：优先全局代理配置，回落到本文件的历史字段。
-// 面板回显与请求路径共用同一口径。
+// CurrentUseProxies 当前走池开关（本文件 useProxies 字段为唯一数据源，
+// 2026-11-17 迁回）。nil = 未配置 = 缺省走池。面板回显与请求路径共用同一口径。
 func CurrentUseProxies() *bool {
-	if useProxiesResolver != nil {
-		if v := useProxiesResolver(); v != nil {
-			return v
-		}
-	}
 	return Get().UseProxies
 }
 

@@ -25,42 +25,14 @@ import (
 // ============================================================================
 
 // platformHasRoutableCredential 报告平台当前是否至少有一个可参与请求路由的
-// 凭据。无法识别的平台（空串等）返回 true（不挡，交由后续正常路由报错）。
+// 凭据。2026-11-17 P3 起走 platform registry（各平台适配器见
+// platform_registry.go，判定口径与下述注释一致）；未注册的平台（空串等）
+// 返回 true（不挡，交由后续正常路由报错）。
 func platformHasRoutableCredential(platform string) bool {
-	switch platform {
-	case platCline:
-		p := loadPool()
-		poolMu.Lock()
-		defer poolMu.Unlock()
-		for _, a := range p.Accounts {
-			if a != nil && accountStatusLocked(a) == "active" && accountPoolEnabled(a) {
-				return true
-			}
-		}
-		return false
-	case platTrae:
-		// vendored trae2api：账号总闸开（disabled=false）且反代开关开的账号
-		// 数 > 0（trae2apiRoutableCount）。
-		return trae2apiRoutableCount() > 0
-	case platWorkBuddy:
-		if workbuddySub == nil || workbuddySub.pool == nil {
-			return false
-		}
-		return len(workbuddySub.pool.AvailableUIDs()) > 0
-	case platZen:
-		cfg := getZenConfig()
-		for _, k := range cfg.Keys {
-			if k != "" && zenKeyRoutingEnabled(k) {
-				return true
-			}
-		}
-		return false
-	default:
-		if p := other.PlatformBySlug(trimOtherPrefix(platform)); p != nil {
-			return otherPlatformHasRoutableKey(p)
-		}
-		return true
+	if p := platformRegistry.Lookup(platform); p != nil {
+		return p.Routable()
 	}
+	return true
 }
 
 // otherPlatformHasRoutableKey 子平台是否存在参与路由的启用 key。展示门控与
@@ -75,13 +47,4 @@ func otherPlatformHasRoutableKey(p *other.Platform) bool {
 		}
 	}
 	return false
-}
-
-// trimOtherPrefix "other:<slug>" → "<slug>"；非 other 前缀原样返回。
-func trimOtherPrefix(platform string) string {
-	const prefix = "other:"
-	if len(platform) > len(prefix) && platform[:len(prefix)] == prefix {
-		return platform[len(prefix):]
-	}
-	return platform
 }

@@ -1,9 +1,13 @@
 #!/usr/bin/env python3
-"""Vendor the WorkBuddy runtime packages into this module.
+"""Vendor the WorkBuddy runtime packages into this repository.
 
-The upstream project keeps its reusable packages under internal/. Go's internal
-visibility rule prevents importing them from another module, so the source is
-copied into this repository and rewritten to this module's import path.
+The upstream project keeps its reusable packages under internal/. The vendored
+tree is a standalone Go module whose module path matches upstream
+(github.com/misakano7545/workbuddy2api-panel), so imports are copied verbatim
+— no prefix rewriting. The tree lands at modules/workbuddy2api/internal/; Go's
+internal visibility rule keeps the main module out, and the only consumption
+surface is the root facade modules/workbuddy2api/afree_bridge.go
+(EXTRA_ROOT_PRESERVE).
 """
 
 from pathlib import Path
@@ -15,17 +19,12 @@ import sys
 # 2026-10-23 起平台功能取自 misakano7545/workbuddy2api-panel（接续上游）。
 SOURCE_ROOT = Path(r"D:\下载\Github\workbuddy2api-panel-misakano")
 TARGET_ROOT = Path(r"D:\下载\Github\afree-proxy")
-TARGET_PKG = TARGET_ROOT / "internal" / "workbuddy"
+TARGET_PKG = TARGET_ROOT / "modules" / "workbuddy2api" / "internal"
 
-SOURCE_PREFIXES = (
-    # 旧上游（linguo2625469，2026-10-21 停维）：基线 73a7560 及之前的提交用此模块路径。
-    "github.com/linguo2625469/workbuddy2api-panel/internal/",
-    # 接续上游（misakano7545，2026-10-23 f611bed 改名）：新基线起用此模块路径。
-    # 双前缀并存：base 快照（旧基线归档）与 theirs（新上游工作树）经同一重写
-    # 归一到 TARGET_PREFIX，import 路径差异不会污染三方合并。
-    "github.com/misakano7545/workbuddy2api-panel/internal/",
-)
-TARGET_PREFIX = "afree-proxy/internal/workbuddy/"
+# 2026-11-17 起不再做 import 前缀改写：vendor 树独立 module 化后 module 路径
+# 与上游一致（misakano7545），上游 import 原样保留。旧基线若仍是 linguo2625469
+# 模块路径（2026-10-21 停维，基线 73a7560 及之前），三方合并前须先换基线——
+# 当前基线（10d01b4，misakano）不受影响。
 
 PACKAGES = (
     "auth",
@@ -249,6 +248,9 @@ PRESERVE_RELATIVE = (
     Path("panel/index.go"),
     Path("panel/index.html"),
     Path("panel/login.go"),
+    # 2026-11-17 补登记：手改④（logstore_test 相对日期时间炸弹修复）晚于
+    # 2026-11-15 的全量登记，当时漏网——dry-run 双向比对抓出。
+    Path("panel/logstore_test.go"),
     Path("panel/mobile.css"),
     Path("panel/mobile.js"),
     Path("panel/models_busy_cache_test.go"),
@@ -326,6 +328,16 @@ SKIP_UPSTREAM_FILES = (
     "upstream/dns_test.go",
 )
 
+# EXTRA_ROOT_PRESERVE module 根层的 afree 自有文件（在 internal/ 子树之外，
+# PRESERVE_RELATIVE 够不到）：re-vendor 时从活树 module 根原样保留。
+# afree_bridge.go 是主 module 的唯一消费门面；config.example.json 是上游根
+# 样例的 afree 快照（PRESERVE 的 config_test.go 与它配对——上游 HEAD 样例
+# 更新须走三方合并手工吸收，直接换新样例会让 TestConfigExampleParses 失配）。
+EXTRA_ROOT_PRESERVE = (
+    "afree_bridge.go",
+    "config.example.json",
+)
+
 
 
 def main(source_root=None, target_root=None, preserve_from=None) -> int:
@@ -334,7 +346,7 @@ def main(source_root=None, target_root=None, preserve_from=None) -> int:
     temp dirs while PRESERVE_RELATIVE bytes still come from the live tree."""
     src_root = Path(source_root) if source_root else SOURCE_ROOT
     tgt_root = Path(target_root) if target_root else TARGET_ROOT
-    pkg = tgt_root / "internal" / "workbuddy"
+    pkg = tgt_root / "modules" / "workbuddy2api" / "internal"
     preserve_root = Path(preserve_from) if preserve_from else pkg
 
     missing = [p for p in PACKAGES if not (src_root / "internal" / p).is_dir()]
@@ -353,6 +365,23 @@ def main(source_root=None, target_root=None, preserve_from=None) -> int:
         path = preserve_root / relative
         if path.is_file():
             preserved[relative] = path.read_bytes()
+    # 完整性预检（2026-11-17 事故护栏）：PRESERVE 字节唯一来源是活树，活树残缺
+    # （文件被误删/重建中断）时缺失项会被**静默**丢弃并在后续重建中永久放大。
+    # rmtree 之前 fail loud，先恢复活树再 vendor——绝不在残树上继续。
+    # （EXTRA_ROOT_PRESERVE 是 module 根层文件、由下方 EXTRA_ROOT_PRESERVE 循环
+    # 另行警告缺失，不进本检查。）
+    missing_preserve = [
+        rel.as_posix() for rel in PRESERVE_RELATIVE
+        if rel not in preserved
+    ]
+    if missing_preserve:
+        print(
+            "live tree is MISSING preserve files (re-vendor would drop them permanently):\n  "
+            + "\n  ".join(missing_preserve)
+            + "\nrestore the live tree first (e.g. from git HEAD of the old vendor location) and retry.",
+            file=sys.stderr,
+        )
+        return 1
     preserve_set = {p.as_posix() for p in PRESERVE_RELATIVE}
 
     if pkg.exists():
@@ -375,9 +404,6 @@ def main(source_root=None, target_root=None, preserve_from=None) -> int:
             target_file.parent.mkdir(parents=True, exist_ok=True)
             text = source_file.read_text(encoding="utf-8")
             new_text = text
-            if source_file.suffix == ".go":
-                for prefix in SOURCE_PREFIXES:
-                    new_text = new_text.replace(prefix, TARGET_PREFIX)
             if package == "panel" and source_file.name == "app.js":
                 new_text = new_text.replace("fetch('/panel/api/", "fetch('api/")
             if new_text != text:
@@ -423,8 +449,6 @@ def main(source_root=None, target_root=None, preserve_from=None) -> int:
     else:
         text = source_config.read_text(encoding="utf-8")
         text = text.replace("package main", "package config", 1)
-        for prefix in SOURCE_PREFIXES:
-            text = text.replace(prefix, TARGET_PREFIX)
         (target_config_dir / "config.go").write_text(text, encoding="utf-8", newline="\n")
         copied += 1
         rewritten += 1
@@ -432,13 +456,36 @@ def main(source_root=None, target_root=None, preserve_from=None) -> int:
     if source_config_test.is_file() and not config_test_preserved:
         text = source_config_test.read_text(encoding="utf-8")
         text = text.replace("package main", "package config", 1)
-        for prefix in SOURCE_PREFIXES:
-            text = text.replace(prefix, TARGET_PREFIX)
         (target_config_dir / "config_test.go").write_text(text, encoding="utf-8", newline="\n")
         copied += 1
         rewritten += 1
 
-    print(f"copied {copied} Go files into {pkg} ({rewritten} import-rewritten)")
+    # module 根层的 afree 自有文件（门面/样例快照）从活树 module 根原样保留
+    pkg.parent.mkdir(parents=True, exist_ok=True)
+    for name in EXTRA_ROOT_PRESERVE:
+        src = preserve_root.parent / name
+        if src.is_file():
+            (pkg.parent / name).write_bytes(src.read_bytes())
+        else:
+            print(f"warning: missing live module-root file: {src}", file=sys.stderr)
+
+    # go.mod/go.sum 取上游原文，仅把 go 指令钉到主 module 口径（go 1.26.0）：
+    # golang:1.26-alpine 镜像 GOTOOLCHAIN=local，镜像内的 go 补丁版本可能低于
+    # 上游声明的 1.26.10，workspace 会直接拒启。wb 代码此前长期在主 module 的
+    # go 1.26.0 下编译，语义等价；上游/镜像升级后可同步回撤此钉。
+    for name in ("go.mod", "go.sum"):
+        src = src_root / name
+        if not src.is_file():
+            continue
+        text = src.read_text(encoding="utf-8")
+        lines = text.splitlines(keepends=True)
+        for i, ln in enumerate(lines):
+            if ln.startswith("go ") and i <= 5:
+                lines[i] = "go 1.26.0\n"
+                break
+        (pkg.parent / name).write_text("".join(lines), encoding="utf-8", newline="\n")
+
+    print(f"copied {copied} Go files into {pkg} ({rewritten} rewritten)")
     return 0
 
 

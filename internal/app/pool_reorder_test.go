@@ -2,6 +2,8 @@ package app
 
 import (
 	"encoding/json"
+
+	"afree-proxy/internal/cline"
 	"os"
 	"testing"
 )
@@ -15,7 +17,7 @@ func TestReorderAccounts(t *testing.T) {
 	a2 := &Account{AccountID: "a2", Email: "2@example.com"}
 	a3 := &Account{AccountID: "a3", Email: "3@example.com"}
 	resetPoolForEnableTest(t, []*Account{a1, a2, a3})
-	poolUsage.CurrentIdx = 1 // 游标指向 a2（住痕迹侧，2026-10-31 拆分）
+	cline.Usage().CurrentIdx = 1 // 游标指向 a2（住痕迹侧，2026-10-31 拆分）
 
 	// 全量置换：a3 提到最前；游标账号 a2 从 index 1 挪到 index 2，游标跟随
 	n, err := reorderAccounts([]string{"a3", "a1", "a2"})
@@ -25,20 +27,20 @@ func TestReorderAccounts(t *testing.T) {
 	if n != 3 {
 		t.Fatalf("reorderAccounts n = %d, want 3", n)
 	}
-	if pool.Accounts[0] != a3 || pool.Accounts[1] != a1 || pool.Accounts[2] != a2 {
-		t.Fatalf("order = %s,%s,%s, want a3,a1,a2", pool.Accounts[0].AccountID, pool.Accounts[1].AccountID, pool.Accounts[2].AccountID)
+	if cline.RawPool().Accounts[0] != a3 || cline.RawPool().Accounts[1] != a1 || cline.RawPool().Accounts[2] != a2 {
+		t.Fatalf("order = %s,%s,%s, want a3,a1,a2", cline.RawPool().Accounts[0].AccountID, cline.RawPool().Accounts[1].AccountID, cline.RawPool().Accounts[2].AccountID)
 	}
-	if poolUsage.CurrentIdx != 2 {
-		t.Fatalf("CurrentIdx = %d, want 2 (cursor follows a2)", poolUsage.CurrentIdx)
+	if cline.Usage().CurrentIdx != 2 {
+		t.Fatalf("CurrentIdx = %d, want 2 (cursor follows a2)", cline.Usage().CurrentIdx)
 	}
 	// 立即落盘：读回 JSON 首个 accountId 必须是 a3
-	raw, err := os.ReadFile(poolPath)
+	raw, err := os.ReadFile(cline.DataPath())
 	if err != nil {
 		t.Fatalf("read pool file: %v", err)
 	}
 	var saved AccountPool
 	if err := json.Unmarshal(raw, &saved); err != nil {
-		t.Fatalf("unmarshal pool file: %v", err)
+		t.Fatalf("unmarshal cline.RawPool() file: %v", err)
 	}
 	if len(saved.Accounts) == 0 || saved.Accounts[0].AccountID != "a3" {
 		t.Fatalf("persisted order[0] = %v, want a3", saved.Accounts)
@@ -48,8 +50,8 @@ func TestReorderAccounts(t *testing.T) {
 	if _, err := reorderAccounts([]string{"a3", "ghost"}); err == nil {
 		t.Fatal("unknown accountId must be rejected")
 	}
-	if pool.Accounts[0] != a3 || pool.Accounts[1] != a1 || pool.Accounts[2] != a2 {
-		t.Fatal("pool must stay untouched after a rejected reorder")
+	if cline.RawPool().Accounts[0] != a3 || cline.RawPool().Accounts[1] != a1 || cline.RawPool().Accounts[2] != a2 {
+		t.Fatal("cline.RawPool() must stay untouched after a rejected reorder")
 	}
 
 	// 空顺序拒绝
@@ -61,11 +63,11 @@ func TestReorderAccounts(t *testing.T) {
 	if _, err := reorderAccounts([]string{"a1"}); err != nil {
 		t.Fatalf("reorderAccounts partial: %v", err)
 	}
-	if pool.Accounts[0] != a1 || pool.Accounts[1] != a3 || pool.Accounts[2] != a2 {
+	if cline.RawPool().Accounts[0] != a1 || cline.RawPool().Accounts[1] != a3 || cline.RawPool().Accounts[2] != a2 {
 		t.Fatalf("partial order = %s,%s,%s, want a1,a3,a2 (untouched keep relative order)",
-			pool.Accounts[0].AccountID, pool.Accounts[1].AccountID, pool.Accounts[2].AccountID)
+			cline.RawPool().Accounts[0].AccountID, cline.RawPool().Accounts[1].AccountID, cline.RawPool().Accounts[2].AccountID)
 	}
-	if poolUsage.CurrentIdx != 2 {
-		t.Fatalf("CurrentIdx = %d, want 2 (cursor still on a2)", poolUsage.CurrentIdx)
+	if cline.Usage().CurrentIdx != 2 {
+		t.Fatalf("CurrentIdx = %d, want 2 (cursor still on a2)", cline.Usage().CurrentIdx)
 	}
 }

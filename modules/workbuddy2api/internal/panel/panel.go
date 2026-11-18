@@ -1,0 +1,2331 @@
+// Package panel 内嵌式 Web 管理面板：账号池总览、单号运维（解冻/禁用/签到/
+// 刷新余额/移除）、浏览器内 OAuth 添加账号（免重启热加载进池）、手动批量
+// 签到/保活，以及运行日志环形缓冲（镜像 log 包与 chat 表格日志）。
+//
+// 设计约束：
+//   - 前端 go:embed 单文件（index.html），无任何外部构建依赖，与二进制同体部署；
+//   - 鉴权复用网关 api_key（Bearer），与 /v1/* 同一口径；api_key 为空 = 不鉴权
+//     （仅本机/私网使用）。面板 HTML 本身无秘密，可匿名加载，密钥只发给 /panel/api/*；
+//   - 不改写既有池语义：所有运维操作落到 pool 已有入口（Revive/Disable/Remove...），
+//     添加账号走 auth.SaveAtomic + pool.Add，重启后与 auths/ 目录天然对齐。
+package panel
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"io"
+	"log"
+	"math"
+	"net/http"
+	"os"
+	"sort"
+	"strconv"
+	"strings"
+	"sync"
+	"sync/atomic"
+	"time"
+
+	"github.com/misakano7545/workbuddy2api-panel/internal/auth"
+	"github.com/misakano7545/workbuddy2api-panel/internal/balance"
+	"github.com/misakano7545/workbuddy2api-panel/internal/credithist"
+	"github.com/misakano7545/workbuddy2api-panel/internal/httpauth"
+	"github.com/misakano7545/workbuddy2api-panel/internal/livecfg"
+	"github.com/misakano7545/workbuddy2api-panel/internal/pool"
+	"github.com/misakano7545/workbuddy2api-panel/internal/proxypool"
+	"github.com/misakano7545/workbuddy2api-panel/internal/reqlog"
+	"github.com/misakano7545/workbuddy2api-panel/internal/scheduler"
+	"github.com/misakano7545/workbuddy2api-panel/internal/session"
+	"github.com/misakano7545/workbuddy2api-panel/internal/updater"
+	"github.com/misakano7545/workbuddy2api-panel/internal/upstream"
+	"github.com/misakano7545/workbuddy2api-panel/internal/usage"
+)
+
+// Config 面板依赖（main 装配注入）。
+type Config struct {
+	Pool      *pool.Pool
+	ProxyPool *proxypool.Manager
+	Upstream  *upstream.Client
+	Scheduler *scheduler.Scheduler // 手动触发签到/保活；nil 时对应接口返回 501
+	// AutoTasksEnabled 与成长任务开关共用热配置；nil 时只允许手动启动后台任务。
+	AutoTasksEnabled func() bool
+	AuthDir          string // OAuth 登录完成后凭证落盘目录
+	APIKey           string // 空 = 不鉴权（与主服务同语义）；与 Live 同时给出时 Live 优先
+	RedisMode        string // "upstash" / "noop"，仅观测透出
+	Version          string // 面板版本号（展示用）
+	Updater          *updater.Manager
+
+	// PollIntervalSec 前端自动刷新间隔（秒）。0 = 用前端缺省值。
+	// 面板每轮刷新会重建若干表格并打一批接口；账号多、或只是开着面板当监控用
+	// 时，把间隔调大（乃至关闭）能显著降低浏览器与服务端的负担。透出到
+	// /panel/api/overview 由前端读取。
+	PollIntervalSec int
+
+	// Live 运行期可变配置（在线改配置立即生效）。
+	Live *livecfg.Holder
+
+	// ConfigPath config.json 路径与加载器（配置页读写用）。
+	// LoadConfig 返回解析后的配置对象（前端展示/校验用，具体类型由 main 注入的闭包决定）；
+	// nil 时配置页返回 501。
+	ConfigPath string
+	LoadConfig func() (any, error)
+	// SaveConfig 校验并落盘配置，返回需要重启才能生效的字段列表；随后由 main 注入的
+	// ApplyConfig 闭包完成热生效（池参数/排程/密钥/脱敏）。error 时配置不写盘。
+	SaveConfig func(raw []byte) (restartRequired []string, err error)
+
+	// StickyCount 返回粘性会话绑定数；nil 时报告 0。
+	StickyCount func() int
+
+	// Usage 逐请求用量记录器（nil = 用量接口返回 501）。
+	Usage *usage.Recorder
+	// RequestLog 请求指标与归档（nil = 对应接口返回 501）。
+	RequestLog *reqlog.Recorder
+	// CreditHistory 积分变动账本（nil = 积分历史接口返回 501）。只读展示：
+	// 留痕由余额查询路径（upstream.Client 的余额观察者）写入。
+	CreditHistory *credithist.Ledger
+
+	// ProbeFile 模型输出上限探测结果文件（scripts/probe_max_tokens.py --panel-out
+	// 写入；空或文件不存在 = model_probes 端点返回空集，面板不显示任何实测标注）。
+	// 只读展示：网关不解析、不依赖其内容做任何路由/出站决策。
+	ProbeFile string
+	// Balance 余额趋势采样记录器（nil = 该视图返回 501）
+	Balance *balance.Recorder
+	// ModelFallback 模型降级路由表（读 live 快照，支持热更）。nil = 未配置。
+	// 面板据它在限流提示里标注「已路由至 X」—— 否则用户看到「v4.1 限流」
+	// 会以为服务断了，实际请求已被自动改道到等价模型继续服务。
+	ModelFallback func() map[string]string
+}
+
+// Panel 管理面板 handler。挂载方式：外层 mux Handle("/panel/", panel)，
+// 本 mux 的 pattern 均带 /panel 前缀（外层不做前缀剥离）。
+type Panel struct {
+	proxyAccountMu sync.Mutex
+	cfg            Config
+	mux            *http.ServeMux
+	started        time.Time
+	logs           *Ring
+
+	// 账号目录热重载（issue #199，见 reload.go）。
+	//   - reloadMu 同时保护下面几个字段与「一次重载的全程」：两次重载不并发，
+	//     面板读状态也不会读到半更新的结果。
+	//   - reloadMissing 是「连续几轮扫描都没见到」的缺席计数：删除要连续
+	//     reloadDeleteConfirm 次确认，避免半写文件/临时移走把账号踢掉。
+	//   - reloadFingerprint 是上次成功重载后的目录内容指纹，轮询据此跳过无变化的轮次。
+	reloadMu            sync.Mutex
+	reloadInterval      time.Duration
+	reloadDeleteConfirm int
+	reloadMissing       map[string]int
+	reloadFingerprint   string
+	reloadLastAt        time.Time
+	reloadLast          ReloadResult
+
+	// logins 进行中的 OAuth 设备授权会话（state → 会话信息）。
+	// poll 成功或超时（loginTTL）后剔除；面板常驻进程，容量天然有界。
+	loginMu sync.Mutex
+	logins  map[string]loginSession
+
+	// taskMu/taskLocks 一键完成任务的 per-account 互斥：同一账号的任务动作
+	// （单任务 / 全量）同时只允许一条在跑。重复点击直接返回 409"仍在执行"，
+	// 而不是并发跑两遍浪费上游请求（动作虽幂等，expert 系每遍含 8 次真实对话）。
+	// 不同账号之间不互斥（并行照旧）。TryLock 语义，锁条目常驻（账号数有界）。
+	taskMu    sync.Mutex
+	taskLocks map[string]*sync.Mutex
+
+	// softRateMu/softRateUntil 上游软限流（429）的账号级冷却截止：撞过一次就记下来，
+	// 同一轮里后续任务动作直接快失败，不每个动作都再睡一遍——一轮全量任务有几十个
+	// 动作，逐个睡会让后台作业卡住几十分钟，还占着 taskLocks 把手动触发一起堵死。
+	softRateMu    sync.Mutex
+	softRateUntil map[string]time.Time
+
+	// batchRunning 手动全量运维接口（签到/旅行/活跃/保活/余额）共用的防重入闸门：
+	// 这些动作都是逐号打上游，并发跑两轮 = 每号至少翻倍上游请求，正是批间节流
+	// 要避免的场景。TryLock 语义，见 tryStartBatch。
+	batchRunning atomic.Bool
+
+	// modelsMu/modelsCache* /panel/api/models 的短 TTL 结果缓存：该接口是
+	// 「CN 目录直连 + global 目录 + 繁忙度」的实时上游聚合，前端自己都按
+	// 「很贵」在节流——服务端再兜一层，挡住异常前端循环与外部脚本。
+	modelsMu      sync.Mutex
+	modelsCacheAt time.Time
+	modelsCache   *modelsCacheEntry
+
+	// 任务中心执行队列（taskcenter.go）。
+	queueOnce sync.Once
+	q         *queueState
+
+	// 持久化的账号后台任务（taskjobs.go），由 main 管理生命周期。
+	taskJobs *taskJobManager
+
+	// growthConc 排程轮次的账号间并发（config schedule.growth_concurrency，热生效）。
+	// 0 = 未配置 → 1。
+	growthConc atomic.Int64
+	// notifier 排程轮次结束后的汇总通知出口（main 装配期注入 alerting webhook；
+	// nil = 只落面板日志）。装配期设定、运行期只读，不需要锁。
+	notifier func(string)
+}
+
+// SetGrowthConcurrency 设置排程轮次的账号间并发（1-4；<=0 视为默认 1）。面板保存配置时热改。
+func (p *Panel) SetGrowthConcurrency(n int) {
+	p.growthConc.Store(int64(n))
+}
+
+// SetNotifier 注入汇总通知出口（nil = 关闭推送，只写日志）。装配期调用。
+func (p *Panel) SetNotifier(fn func(string)) { p.notifier = fn }
+
+// tryLockAccount 尝试锁定账号的任务执行；已在执行返回 false。
+func (p *Panel) tryLockAccount(uid string) bool {
+	p.taskMu.Lock()
+	if p.taskLocks == nil {
+		p.taskLocks = make(map[string]*sync.Mutex)
+	}
+	mu := p.taskLocks[uid]
+	if mu == nil {
+		mu = &sync.Mutex{}
+		p.taskLocks[uid] = mu
+	}
+	p.taskMu.Unlock()
+	return mu.TryLock()
+}
+
+// unlockAccount 释放账号任务锁（与 tryLockAccount 配对）。
+func (p *Panel) unlockAccount(uid string) {
+	p.taskMu.Lock()
+	mu := p.taskLocks[uid]
+	p.taskMu.Unlock()
+	if mu != nil {
+		mu.Unlock()
+	}
+}
+
+// loginTTL 授权 URL 的最长有效期：超时的 state 直接回收，
+// 防止"开了添加账号弹窗就走开"的会话永久滞留。
+const loginTTL = 15 * time.Minute
+
+// modelsCacheTTL 面板模型列表的结果缓存时长（测试可注入短值）。只缓存「零
+// fetchErr」的完整成功响应；部分失败的结果每次照常重探，直到拿到干净目录。
+var modelsCacheTTL = 60 * time.Second
+
+// modelsCacheEntry 一次成功聚合的结果（global_source 一并冻结——它描述的就是
+// 这份目录的来源，目录换源缓存必须跟着失效）。
+type modelsCacheEntry struct {
+	models       []map[string]any
+	globalSource string
+}
+
+// loginSession 进行中的 OAuth 会话：创建时刻 + realm（cn/global，用于落盘与端点切换）。
+type loginSession struct {
+	created time.Time
+	realm   string // "cn" / "global"，缺省 cn
+	// site 登录站点（cn/intl/workbuddy，对齐官方域表）。决定 poll 用哪套端点：
+	// 国际域 codebuddy.ai 与 workbuddy.ai 同后端不同主机，混用会把请求打到非签发域。
+	// 空 = 老会话/未指定，按 cn 处理（siteOrDefault 归一）。
+	site string
+	// processing 该 state 正在落盘（含签到/余额校验等副作用）。前端每 3s 轮询，而成功
+	// 分支的副作用可能耗时数秒：没有这个闸门，第二个并发 poll 会把整段流程再跑一遍。
+	processing bool
+	// lastMsg 上一次落日志的上游结果。前端每 3s 一轮、最长 loginTTL，逐轮记日志会
+	// 把 15 分钟刷成 300 行，真正的一次性错误反被淹掉；只在结果变化时记一行。
+	lastMsg string
+}
+
+// New 构建面板。
+func New(cfg Config) *Panel {
+	if cfg.RedisMode == "" {
+		cfg.RedisMode = "noop"
+	}
+	p := &Panel{
+		cfg:     cfg,
+		mux:     http.NewServeMux(),
+		started: time.Now(),
+		logs:    NewRing(500),
+		logins:  map[string]loginSession{},
+		// 热重载（issue #199）：默认 2 次连续缺席才删；间隔由 main 按 config 注入。
+		reloadDeleteConfirm: 2,
+		reloadMissing:       map[string]int{},
+	}
+	p.routes()
+	return p
+}
+
+// Logs 返回日志环形缓冲（main 经 MultiWriter 镜像 log 与 chat 表格日志进来）。
+func (p *Panel) Logs() *Ring { return p.logs }
+
+func (p *Panel) routes() {
+	p.mux.HandleFunc("GET /panel/{$}", p.index)
+	p.mux.HandleFunc("GET /panel/theme.js", p.themeScript)
+	p.mux.HandleFunc("GET /panel/app.js", p.appScript)
+	p.mux.HandleFunc("GET /panel/api/overview", p.overview)
+	// 账号目录热重载（issue #199）：脚本/编排服务的确定性入口；后台轮询走同一实现。
+	p.mux.HandleFunc("POST /panel/api/accounts/reload", p.reloadAccounts)
+	p.proxyRoutes()
+	p.mux.HandleFunc("GET /panel/api/logs", p.logsHandler)
+	// 落盘日志按区间导出（zip）：事故复盘「把最近三天发我」不必 SSH 上去翻文件。
+	p.mux.HandleFunc("GET /panel/api/logs/export", p.logsExportHandler)
+	p.mux.HandleFunc("GET /panel/api/error_summary", p.errorSummary)
+	p.mux.HandleFunc("GET /panel/api/request_metrics", p.requestMetrics)
+	p.mux.HandleFunc("GET /panel/api/request_logs", p.requestLogs)
+	// 清空请求事件归档（issue #160）：日志留存归运营自己管，别只能等定期 prune。
+	p.mux.HandleFunc("POST /panel/api/request_logs/clear", p.requestLogsClear)
+	p.mux.HandleFunc("GET /panel/api/credit_history", p.creditHistory)
+	p.mux.HandleFunc("GET /panel/api/models", p.models)
+	p.mux.HandleFunc("POST /panel/api/models/refresh", p.modelsRefresh)
+	// (账号 × 模型) 手动开关：运维显式禁用某账号的某模型（永久语义，仅手动解）。
+	// 与上游触发的临时冷却（6004/11102）正交，且手动优先。
+	p.mux.HandleFunc("POST /panel/api/accounts/{uid}/model_toggle", p.modelToggle)
+	// 封禁账号探活：只读探测上游是否已解封，不 revive、不参与选号。
+	p.mux.HandleFunc("POST /panel/api/accounts/{uid}/probe_ban", p.accountProbeBan)
+	p.mux.HandleFunc("POST /panel/api/login/start", p.loginStart)
+	p.mux.HandleFunc("GET /panel/api/login/poll", p.loginPoll)
+	p.mux.HandleFunc("GET /panel/api/login/regions", p.loginRegions)
+	p.mux.HandleFunc("POST /panel/api/import/cockpit", p.importCockpit)
+	p.mux.HandleFunc("POST /panel/api/accounts/add_apikey", p.addAPIKey)
+	p.mux.HandleFunc("POST /panel/api/accounts/{uid}/revive", p.accountRevive)
+	p.mux.HandleFunc("POST /panel/api/accounts/{uid}/disable", p.accountDisable)
+	p.mux.HandleFunc("POST /panel/api/accounts/{uid}/pause", p.accountPause)
+	p.mux.HandleFunc("POST /panel/api/accounts/{uid}/resume", p.accountResume)
+	// 账号分组标签（issue #159）：纯管理维度，落 state.json，供面板按组筛选与组内批量。
+	p.mux.HandleFunc("POST /panel/api/accounts/{uid}/group", p.accountGroup)
+	p.mux.HandleFunc("POST /panel/api/accounts/{uid}/checkin", p.accountCheckin)
+	p.mux.HandleFunc("POST /panel/api/accounts/{uid}/balance", p.accountBalance)
+	// 单号可用性探测（本仓定制端点，上游无；鉴权由 ServeHTTP 默认拒绝统一覆盖）
+	p.mux.HandleFunc("POST /panel/api/accounts/{uid}/test", p.accountTest)
+	p.mux.HandleFunc("POST /panel/api/accounts/{uid}/remove", p.accountRemove)
+	p.mux.HandleFunc("GET /panel/api/accounts/{uid}/tasks", p.accountTasks)
+	p.mux.HandleFunc("POST /panel/api/accounts/{uid}/tasks/accept", p.accountTaskAccept)
+	p.mux.HandleFunc("POST /panel/api/accounts/{uid}/tasks/accept_all", p.taskAcceptAll)
+	p.mux.HandleFunc("POST /panel/api/accounts/{uid}/tasks/claim", p.accountTaskClaim)
+	p.mux.HandleFunc("POST /panel/api/accounts/{uid}/tasks/auto", p.accountTaskAuto)
+	p.mux.HandleFunc("POST /panel/api/accounts/{uid}/tasks/auto_all", p.accountTaskAutoAll)
+	p.mux.HandleFunc("POST /panel/api/tasks/scan_all", p.tasksScanAll)
+	p.mux.HandleFunc("POST /panel/api/tasks/run_queue", p.tasksRunQueue)
+	p.mux.HandleFunc("GET /panel/api/tasks/queue", p.tasksQueueStatus)
+	p.mux.HandleFunc("GET /panel/api/tasks/jobs", p.taskJobsHandler)
+	p.mux.HandleFunc("GET /panel/api/accounts/{uid}/tasks/job", p.taskJobStatus)
+	p.mux.HandleFunc("POST /panel/api/checkin_all", p.checkinAll)
+	p.mux.HandleFunc("POST /panel/api/travel_all", p.travelAll)
+	p.mux.HandleFunc("POST /panel/api/accounts/{uid}/travel", p.accountTravel)
+	p.mux.HandleFunc("POST /panel/api/activity_all", p.activityAll)
+	p.mux.HandleFunc("POST /panel/api/keepalive_all", p.keepaliveAll)
+	p.mux.HandleFunc("POST /panel/api/balance_all", p.balanceAll)
+	p.mux.HandleFunc("GET /panel/api/packages", p.packages)
+	p.mux.HandleFunc("GET /panel/api/balance_history", p.balanceHistory)
+	p.mux.HandleFunc("GET /panel/api/school/vouchers", p.schoolVouchers)
+	// 运营活动（星巴克等）：批量读进度 + 批量领已达标的奖励。
+	// 只做「读 + 领」——任务本身要客户端真实会话，服务端侧伪造不计数（见 docs/campaign-probe.md）。
+	p.mux.HandleFunc("GET /panel/api/campaign", p.campaignStatus)
+	p.mux.HandleFunc("POST /panel/api/campaign/claim", p.campaignClaim)
+	p.mux.HandleFunc("GET /panel/api/usage", p.usage)
+	p.mux.HandleFunc("POST /panel/api/usage/save", p.usageSave)
+	p.mux.HandleFunc("GET /panel/api/model_probes", p.modelProbes)
+	p.mux.HandleFunc("GET /panel/api/config", p.getConfig)
+	p.mux.HandleFunc("POST /panel/api/config", p.saveConfig)
+	p.mux.HandleFunc("POST /panel/api/model_hidden", p.setModelHidden)
+	p.mux.HandleFunc("POST /panel/api/model_effort", p.setModelEffort)
+	p.mux.HandleFunc("GET /panel/api/update", p.updateStatus)
+	p.mux.HandleFunc("POST /panel/api/update/check", p.checkUpdate)
+	p.mux.HandleFunc("POST /panel/api/update/install", p.installUpdate)
+	// 更新通道探测（issue #198）：分别探版本元数据与资产下载两条路。
+	p.mux.HandleFunc("POST /panel/api/update/probe", p.probeUpdate)
+}
+
+// publicPanelPaths 免鉴权的精确路径：静态页面与脚本本身不含秘密，其余一律要密钥。
+var publicPanelPaths = map[string]struct{}{
+	"/panel/":         {},
+	"/panel/theme.js": {},
+	"/panel/app.js":   {},
+}
+
+// ServeHTTP 统一入口：先写安全响应头再分发，保证页面、静态资源、API
+// 与 401 错误响应全都带上（API 也可能在浏览器里被直接打开）。
+//
+// 鉴权在这里默认拒绝，而不是逐条包在路由上：逐条包的话，新增一条路由忘了包
+// 就是静默公开；这里的失效方向是「忘了登记白名单 → 401」，看得见。
+func (p *Panel) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	setSecurityHeaders(w)
+	if _, ok := publicPanelPaths[r.URL.Path]; !ok && !httpauth.VerifyBearer(r, p.apiKey()) {
+		// 密钥经 livecfg 快照读取：面板里改了 api_key，下一个请求即用新值。
+		writeErr(w, http.StatusUnauthorized, "invalid_api_key")
+		return
+	}
+	p.mux.ServeHTTP(w, r)
+}
+
+// apiKey 当前生效密钥（Live 优先，回落静态字段）。
+func (p *Panel) apiKey() string {
+	if p.cfg.Live != nil {
+		return p.cfg.Live.Load().APIKey
+	}
+	return p.cfg.APIKey
+}
+
+// expiringSoonWindow 返回调度器当前生效的快过期路由窗口；测试面板无调度器时返回 0。
+func (p *Panel) expiringSoonWindow() time.Duration {
+	if p.cfg.Scheduler == nil {
+		return 0
+	}
+	return p.cfg.Scheduler.ExpiringSoonWindow()
+}
+
+// poolExpiryBuckets 把 upstream 的按日到期批次转换为 pool 结构。两个包字段同构，
+// 手工转换是为了不让底层 pool 反向依赖 upstream。
+func poolExpiryBuckets(in []upstream.ExpiryBucket) []pool.ExpiryBucket {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]pool.ExpiryBucket, len(in))
+	for i, b := range in {
+		out[i] = pool.ExpiryBucket{Date: b.Date, ExpireAt: b.ExpireAt, Remain: b.Remain}
+	}
+	return out
+}
+
+// ---------------------------------------------------------------------------
+// 只读接口
+// ---------------------------------------------------------------------------
+
+// overview 总览：池计数 + 每账号状态 + 面板元信息。
+func (p *Panel) overview(w http.ResponseWriter, r *http.Request) {
+	// 用 WithPaused 而不是 CountsDetailed：后者把暂停号并进 disabled（/status 的「不可用」
+	// 口径），而面板概况卡片要分开展示（吸收上游 PR #130，issue #125）。
+	total, healthy, cooling, disabled, paused, inFlightFull := p.cfg.Pool.CountsDetailedWithPaused()
+	sticky := 0
+	if p.cfg.StickyCount != nil {
+		sticky = p.cfg.StickyCount()
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"version":           p.cfg.Version,
+		"poll_interval_sec": p.cfg.PollIntervalSec,
+		"update":            p.updateSnapshot(),
+		"uptime_sec":        int(time.Since(p.started).Seconds()),
+		"auth_required":     p.apiKey() != "",
+		"redis_mode":        p.cfg.RedisMode,
+		"sticky_sessions":   sticky,
+		"total":             total,
+		"healthy":           healthy,
+		"cooling":           cooling,
+		"disabled":          disabled,
+		"paused":            paused,
+		"in_flight_full":    inFlightFull,
+		// 模型降级路由表：前端据它标注「⤳ 已路由至 X」（限流的模型若配了等价模型）。
+		"model_fallback": p.modelFallbackSnapshot(),
+		"accounts":       p.cfg.Pool.List(),
+		"proxy_pool":     p.proxySnapshot(),
+		// model_locks 模型级限流全清单（哪些模型不能用、锁了几个号、还要锁多久，移植上游
+		// PR #120）：与 accounts 的账号池视图互补，前端「模型锁池」表直接渲染。无锁时为 null。
+		"model_locks": p.cfg.Pool.ModelLockView(),
+		// 到期提醒快照的节奏与年龄：界面轮询是 5 秒级，但卡片数据只随余额后台刷新
+		// 更新（默认每 5 分钟）——把这两个数透出，前端才能如实标注「x 分钟前更新」。
+		"balance_refresh_sec":  p.balanceRefreshSec(),
+		"balance_refreshed_at": p.balanceRefreshedAt(),
+		// 账号目录热重载（issue #199）：面板显示「上次重载时间/结果摘要」。
+		"reload": p.reloadSnapshot(),
+	})
+}
+
+// reloadSnapshot 热重载状态（面板展示用）。无轮询时 interval_sec=0，前端据此
+// 标注「仅手动」。
+func (p *Panel) reloadSnapshot() map[string]any {
+	at, res := p.ReloadStatus()
+	p.reloadMu.Lock()
+	interval := p.reloadInterval
+	confirm := p.reloadDeleteConfirm
+	p.reloadMu.Unlock()
+	out := map[string]any{
+		"interval_sec":   int(interval.Seconds()),
+		"delete_confirm": confirm,
+	}
+	if !at.IsZero() {
+		out["at"] = at
+		out["added"] = res.Added
+		out["updated"] = res.Updated
+		out["removed"] = res.Removed
+		out["parse_errors"] = res.ParseErrors
+		out["skipped"] = res.Skipped
+	}
+	return out
+}
+
+// balanceRefreshSec 余额后台刷新间隔（秒）；无调度器/未开启时为 0。
+func (p *Panel) balanceRefreshSec() int {
+	if p.cfg.Scheduler == nil {
+		return 0
+	}
+	return int(p.cfg.Scheduler.BalanceInterval() / time.Second)
+}
+
+// balanceRefreshedAt 最近一次后台余额刷新完成时刻；无调度器或尚未跑过为零值。
+func (p *Panel) balanceRefreshedAt() time.Time {
+	if p.cfg.Scheduler == nil {
+		return time.Time{}
+	}
+	return p.cfg.Scheduler.BalanceRefreshedAt()
+}
+
+func (p *Panel) updateSnapshot() any {
+	if p.cfg.Updater == nil {
+		return nil
+	}
+	return p.cfg.Updater.Status()
+}
+
+// logsHandler 返回日志环形缓冲快照（时间升序，含频道标记 chat/task/sys）。
+// archive_error：任务日志落盘故障（写失败不影响请求；前端可提示）。
+//
+// ?since=<RFC3339> 时只返回**该时刻之后**的条目（增量拉取）。面板「运行日志」页
+// 每 5 秒拉一次全量（500 行，~90KB），绝大多数轮次这 500 行根本没变。
+//
+// 增量优先认 ?since_seq=<uint64>（只回 Seq 更大的条目）——这是**唯一可靠**的游标：
+// TS 在同一时钟刻度内的多次写入完全相同（Windows 实测 ~15.6ms 粒度，一次 Write
+// 的多行 + 背靠背的多次 Write 都会撞），按 TS 过滤必然要么重复、要么整批漏掉。
+// 连「带纳秒的原始 TS 串」也救不了同一刻度内的多条。
+//
+// ?since 保留兼容（旧前端 / 手工 curl），语义仍是「TS 严格晚于 since」。
+//
+// 语义与全量一致：响应仍是 {entries, archive_error}，前端把新条目追加到已有列表。
+// 游标过期时客户端自己做一次全量拉（环形缓冲淘汰最旧行时，被淘汰的行不会再来）。
+func (p *Panel) logsHandler(w http.ResponseWriter, r *http.Request) {
+	entries := p.logs.Snapshot()
+	q := r.URL.Query()
+	if raw := q.Get("since_seq"); raw != "" {
+		if since, ok := parseSeqParam(raw); ok {
+			filtered := entries[:0:0] // 新切片：不改 Snapshot 返回的底层数组
+			for _, e := range entries {
+				if e.Seq > since {
+					filtered = append(filtered, e)
+				}
+			}
+			entries = filtered
+		}
+	} else if raw := q.Get("since"); raw != "" {
+		if since, ok := parseSinceParam(raw); ok {
+			filtered := entries[:0:0] // 新切片：不改 Snapshot 返回的底层数组
+			for _, e := range entries {
+				if e.TS.After(since) {
+					filtered = append(filtered, e)
+				}
+			}
+			entries = filtered
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"entries": entries, "archive_error": p.logs.ArchiveError()})
+}
+
+// parseSeqParam 解析 ?since_seq=。
+//
+// 非法值回落全量（与 parseSinceParam 同口径：宁可多给不可少给）。
+// seq 初值是启动时刻的毫秒数（见 NewRing），远大于 0，故 since_seq=0 等价于
+// 全量——正是首次加载想要的语义。
+func parseSeqParam(raw string) (uint64, bool) {
+	v, err := strconv.ParseUint(strings.TrimSpace(raw), 10, 64)
+	if err != nil {
+		return 0, false
+	}
+	return v, true
+}
+
+// parseSinceParam 解析 ?since= 参数。
+//
+// 两种形态都要接受：
+//   - 标准 RFC3339（带时区偏移，如 2026-10-25T08:59:32.05+08:00）；
+//   - 偏移里的 "+" 被 URL 解码成空格（2026-...T08:59:32.05 08:00）——query
+//     string 里的 "+" 会被解成空格，而 RFC3339 的正偏移恰好用 "+" 表示。
+//
+// 失败一律回落全量（宁可多给不可少给），不报错。
+func parseSinceParam(raw string) (time.Time, bool) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return time.Time{}, false
+	}
+	if t, err := time.Parse(time.RFC3339, raw); err == nil {
+		return t, true
+	}
+	// "+" 被解成空格的形态：把第一个空格还原成 "+" 再试。
+	if i := strings.IndexByte(raw, ' '); i > 0 {
+		fixed := raw[:i] + "+" + raw[i+1:]
+		if t, err := time.Parse(time.RFC3339, fixed); err == nil {
+			return t, true
+		}
+	}
+	return time.Time{}, false
+}
+
+// errorSummary 把日志环里的 WARN/ERR 按「账号 × 类型」聚合（见 errors.go）。
+// 与日志同源、零新增存储：环里有几行就聚合几行。
+func (p *Panel) errorSummary(w http.ResponseWriter, r *http.Request) {
+	entries := p.logs.Snapshot()
+	lines := make([]LogLine, 0, len(entries))
+	for _, e := range entries {
+		lines = append(lines, LogLine{Text: e.Text, TS: e.TS})
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"rows":       AggregateErrors(lines),
+		"scanned":    len(entries),
+		"updated_at": time.Now().Format("15:04:05"),
+	})
+}
+
+// requestMetrics 返回进程内请求指标、最近 100 条与归档状态。
+//
+// ?recent=0 时**不返回** recent 数组（只回指标与归档状态）。面板「运行日志」页在
+// 归档开启时用归档数据当请求记录表（request_logs），recent 数组用不上——但它有
+// 100 条事件（~35KB），每 5 秒白拉一次、白解析一次、白 GC 一次。这里给前端一个
+// 显式开关，让它按需索取。
+func (p *Panel) requestMetrics(w http.ResponseWriter, r *http.Request) {
+	if p.cfg.RequestLog == nil {
+		writeErr(w, http.StatusNotImplemented, "request logger not available")
+		return
+	}
+	snap := p.cfg.RequestLog.Snapshot()
+	// 显式 "0"/"false" 才跳过；缺省保持原行为（recent 在），避免破坏既有调用方。
+	if v := r.URL.Query().Get("recent"); v == "0" || strings.EqualFold(v, "false") {
+		snap.Recent = nil
+	}
+	writeJSON(w, http.StatusOK, snap)
+}
+
+// requestLogs 从 JSONL 归档读取最近请求；limit 默认 200、最大 1000。
+// 支持按 outcome/account/model/client_ip/user_agent 过滤（字符串字段为包含匹配）
+// 与 from/to 时间区间（闭区间，unix 秒或 RFC3339）——面板「运行日志」的筛选框、
+// 来源查询与「今天 / 自定义区间」都走这里。
+func (p *Panel) requestLogs(w http.ResponseWriter, r *http.Request) {
+	if p.cfg.RequestLog == nil {
+		writeErr(w, http.StatusNotImplemented, "request logger not available")
+		return
+	}
+	limit := 200
+	if v := r.URL.Query().Get("limit"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			limit = n
+		}
+	}
+	if limit > 1000 {
+		limit = 1000
+	}
+	q := r.URL.Query()
+	rows, err := p.cfg.RequestLog.ReadArchive(limit, reqlog.Filter{
+		Outcome:   q.Get("outcome"),
+		Account:   q.Get("account"),
+		Model:     q.Get("model"),
+		ClientIP:  q.Get("client_ip"),
+		UserAgent: q.Get("user_agent"),
+		From:      parseTimeParam(q.Get("from")),
+		To:        parseTimeParam(q.Get("to")),
+	})
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	// 空结果回 []（而不是 JSON null）：前端把 null 与"归档关闭"混在一起会走错分支，
+	// 显示成不满足筛选条件的最近请求。
+	if rows == nil {
+		rows = []reqlog.Event{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"entries": rows, "limit": limit})
+}
+
+// requestLogsClear 清空归档目录里的请求事件文件（面板「清空归档」）。
+// 只删 requests-*.jsonl，与定期 prune 同口径；目录里的其它文件不碰。
+// 删除由归档写循环执行（它是文件句柄的唯一持有者），所以这一步是串行的、不会把
+// 正在写的文件删成「已删除但仍在写」。
+func (p *Panel) requestLogsClear(w http.ResponseWriter, r *http.Request) {
+	if p.cfg.RequestLog == nil {
+		writeErr(w, http.StatusNotImplemented, "request logger not available")
+		return
+	}
+	res, err := p.cfg.RequestLog.Purge()
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	log.Printf("panel: 清空请求事件归档，删除 %d 个文件（%d 字节）", res.Files, res.Bytes)
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "files": res.Files, "bytes": res.Bytes})
+}
+
+// creditHistory 返回积分变动流水（新的在前），供「运行日志 → 积分历史」展示。
+// limit 默认 200、上限 1000（与 requestLogs 同口径）；可带 uid 精确过滤。
+// 账号昵称在读取时用池快照填充——账本只存 uid，上游改名后旧流水也跟着更新，
+// 且留痕路径不必碰 auth 的昵称锁。
+func (p *Panel) creditHistory(w http.ResponseWriter, r *http.Request) {
+	if p.cfg.CreditHistory == nil {
+		writeErr(w, http.StatusNotImplemented, "credit history not available")
+		return
+	}
+	limit := 200
+	if v := r.URL.Query().Get("limit"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			limit = n
+		}
+	}
+	if limit > 1000 {
+		limit = 1000
+	}
+	uid := r.URL.Query().Get("uid")
+	nicks := p.nicknames()
+	// 有 uid 过滤时必须先全量取回（账本上限默认 2000 条）：先截断再过滤会让
+	// 筛选后的条数看起来像历史缺失。无过滤时只取 limit 条，不为一次展示拷贝整个账本。
+	readLimit := limit
+	if uid != "" {
+		readLimit = 0
+	}
+	all := p.cfg.CreditHistory.Read(readLimit)
+	out := make([]map[string]any, 0, limit)
+	for _, e := range all {
+		if uid != "" && e.UID != uid {
+			continue
+		}
+		out = append(out, map[string]any{
+			"time":    e.Time,
+			"uid":     e.UID,
+			"account": nicks[e.UID],
+			"delta":   e.Delta,
+			"before":  e.Before,
+			"after":   e.After,
+		})
+		if len(out) >= limit {
+			break
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"entries": out, "limit": limit})
+}
+
+// nicknames 池内 uid → 昵称映射（仅展示用，不含任何凭证）。
+func (p *Panel) nicknames() map[string]string {
+	nicks := map[string]string{}
+	if p.cfg.Pool == nil {
+		return nicks
+	}
+	for _, s := range p.cfg.Pool.List() {
+		if s.Nickname != "" {
+			nicks[s.UID] = s.Nickname
+		}
+	}
+	return nicks
+}
+
+// models 实时查询上游模型列表与 reasoning 实际档位（直连上游，不读路由层 1h 缓存）：
+// 回答"该模型到底支持哪几档思考"。顺带刷新 client 的 effort 降级能力缓存。
+// 与 /v1/models 同口径的双域输出：CN 域模型加 "cn:" 前缀、global 域加 "global:" 前缀
+// （gateway 路由协议，前端显示的 id 就是调用时要填的完整 model 值）。
+// 各域独立探测、独立容错：某域无可用账号则整域跳过；一个账号都没有回 503。
+// 探测出现失败时优先回放 panelModelsSnapshot（上次完整成功结果，panelModelsStaleMax
+// 内）而不是报错/交出残缺名单——一次 10s 拨号抖动不该清空面板模型列表（响应体
+// 带 "stale": true 标记）；无快照时维持既有行为（部分结果 200 / 全失败 502）。
+// modelsRefresh 模型目录「刷新模型」按钮的后端：先失效 global 1h 缓存与
+// 面板兜底快照，再走一次 models() 全量重探（CN 侧本就无缓存）。快照失效让
+// 上游真变了目录时前端不会拿到一小时前的旧数据。
+func (p *Panel) modelsRefresh(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeErr(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	if p.cfg.Upstream == nil {
+		writeErr(w, http.StatusServiceUnavailable, "upstream unavailable")
+		return
+	}
+	p.cfg.Upstream.InvalidateGlobalModelsCache()
+	panelModelsSnapshot.mu.Lock()
+	panelModelsSnapshot.fetched = time.Time{}
+	panelModelsSnapshot.mu.Unlock()
+	p.models(w, r)
+}
+
+func (p *Panel) models(w http.ResponseWriter, r *http.Request) {
+	out := make([]map[string]any, 0)
+	// catalogErrs = 目录探测失败（决定「整份视图是否可信」→ 报 502 / 不写缓存）；
+	// busyErrs = 繁忙度观测失败（**只是少一列**，目录本身已经拿到）。
+	//
+	// 两者必须分开：此前只有 fetchErrs 一个切片，国际版 /v2/chat/busy 恒 404（见
+	// upstream/modelbusy.go）就永久占着一条错误，于是 `len(fetchErrs)==0` 的写缓存条件
+	// 永远不成立——只要池里有 global 账号，模型目录缓存完全失效，面板每次刷新都实打上游。
+	var catalogErrs []string
+	var busyErrs []string
+
+	// refresh=1：强制重探 global 目录（issue #216 现象 3）。此前按钮只是重读 1h 缓存，
+	// 上游目录变了也纹丝不动。CN 侧本来就是每请求直连上游（无缓存），无需处理。
+	refresh := r.URL.Query().Get("refresh") == "1"
+	if refresh {
+		p.cfg.Upstream.InvalidateGlobalModelsCache()
+	} else if entry := p.loadModelsCache(); entry != nil {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"ok":            true,
+			"models":        p.withLiveFlags(entry.models),
+			"global_source": entry.globalSource,
+			"cached":        true,
+		})
+		return
+	}
+
+	// CN 域：有可用 CN 账号才查（此前无条件 Pool.Pick()+FetchModels——选中 global
+	// 账号时打 CN 端点必然失败，混合池表现为偶发 502，纯 global 池必炸）。
+	var cnAcct, globalAcct *auth.Auth // 供下方模型繁忙度复用同一批账号
+	if uids := p.cfg.Pool.AvailableUIDsForRealm("cn"); len(uids) > 0 {
+		if acct := p.cfg.Pool.AuthByUID(uids[0]); acct != nil {
+			cnAcct = acct
+			infos, err := p.cfg.Upstream.FetchModels(acct)
+			if err != nil {
+				catalogErrs = append(catalogErrs, "cn: "+err.Error())
+			} else {
+				for _, mi := range infos {
+					out = append(out, panelModelEntry("cn", mi, mi.Efforts, mi.DefaultEffort, p.cfg.Upstream.HTTP))
+				}
+			}
+		}
+	}
+
+	// global 域：路由开关开且有可用 global 账号才查（独立目录端点，FetchGlobalModelInfos；
+	// Upstream.GlobalEnabled 是探测侧同一道闸，与 main 装配的 config global.enabled 一致）。
+	if p.cfg.Upstream.GlobalEnabled {
+		if uids := p.cfg.Pool.AvailableUIDsForRealm("global"); len(uids) > 0 {
+			if acct := p.cfg.Pool.AuthByUID(uids[0]); acct != nil {
+				globalAcct = acct
+				infos := p.cfg.Upstream.FetchGlobalModelInfos(acct)
+				if len(infos) == 0 {
+					catalogErrs = append(catalogErrs, "global: 上游未返回可用模型")
+				} else {
+					efforts, defaults := p.cfg.Upstream.GlobalEffortSnapshot()
+					for _, mi := range infos {
+						out = append(out, panelModelEntry("global", mi, efforts[mi.ID], defaults[mi.ID], p.cfg.Upstream.HTTP))
+					}
+				}
+			}
+		}
+	}
+
+	// 出图/出视频模型：目录按 tag 把它们从**对话**列表剔掉了（/v1/models 同样单列），面板
+	// 「模型与档位」也必须看得到——否则用户不知道有哪些能调。字段与对话模型同口径，
+	// 另加 image_generation / video_generation 标记（前端据此标「出图」「出视频」）。
+	// 视频端点 2026-11 起已实现（POST /v1/videos/generations + GET /v1/videos/{id}），
+	// 所以视频模型与出图模型同一个口径列出；出图专有的分档实扣（charge_variants）只对 image 生效。
+	//
+	// 倍率口径（2026-10-22 复测，两个个人号直连上游）：
+	//   - 目录**不再给出图模型报 credits**：CN hunyuan-image-alpha 的条目只有
+	//     id/name/tags（2026-10-18 曾报 x5.00，现已无该键），所以「倍率」只能来自
+	//     出图回执里的 usage.credit——牌价这列现在对出图模型基本恒空；
+	//   - CN hunyuan-image-alpha 实扣每张固定 5.71，回执带 output_image_coefficient:1；
+	//   - global hy-image-3.5 实扣每张固定 0.27，回执恒 output_image_tokens:15000，
+	//     不带 coefficient；旧 global 模型 gpt-image-2.5-sunburst 已下架（14401）。
+	// 故这里三个字段并列输出，前端各按语义展示，绝不用均值覆盖牌价：
+	//   credits         上游目录牌价（可能没有）
+	//   measured_credit 账本里该模型的平均实扣（落盘口径，跨重启）
+	//   charge_variants 本次运行按「尺寸×画质」分档的实扣（含最近一次与图像 token），
+	//                   无样本时省略——它是判断「这价是哪一档」的唯一依据。
+	measured := map[string]string{}
+	if p.cfg.Usage != nil {
+		for _, c := range p.cfg.Usage.Snapshot(0, nil).CreditByModel {
+			if c.CreditSamples > 0 && c.Credits > 0 {
+				measured[c.Key] = strconv.FormatFloat(c.Credits/float64(c.CreditSamples), 'f', 2, 64)
+			}
+		}
+	}
+	for _, realm := range []string{"cn", "global"} {
+		if realm == "global" && !p.cfg.Upstream.GlobalEnabled {
+			continue
+		}
+		for _, mi := range p.cfg.Upstream.GenerationModels(realm) {
+			if mi.GenerationKind != "image" && mi.GenerationKind != "video" {
+				continue
+			}
+			e := panelModelEntry(realm, mi, nil, "", p.cfg.Upstream.HTTP)
+			if mi.GenerationKind == "video" {
+				e["video_generation"] = true
+			} else {
+				e["image_generation"] = true
+			}
+			// 有牌价也照样带实测（此前只在 credits 为空时才带，导致 CN 的 5.71 被
+			// x5.00 盖住、用户看到的价格比实付低）。
+			if v, ok := measured[realm+":"+mi.ID]; ok {
+				e["measured_credit"] = v
+			}
+			if variants := p.cfg.Upstream.ImageCharges(realm, mi.ID); mi.GenerationKind == "image" && len(variants) > 0 {
+				e["charge_variants"] = variants
+				last := variants[0]
+				for _, v := range variants {
+					if v.LastAt > last.LastAt {
+						last = v
+					}
+				}
+				e["charge_last"] = map[string]any{
+					"credit":              math.Round(last.Last*100) / 100,
+					"size":                last.Size,
+					"quality":             last.Quality,
+					"output_image_tokens": last.LastTokens,
+					"at":                  last.LastAt,
+				}
+				// 上游回执里的「倍率」原值（CN 恒 1；global 不回该字段则省略）——
+				// 只透传不重算：它是上游口径，拿它乘单价得出的数会跟 credit 对不上。
+				if last.LastCoefficient > 0 {
+					e["charge_last"].(map[string]any)["output_image_coefficient"] = last.LastCoefficient
+				}
+			}
+			if _, hasCatalog := e["credits"]; hasCatalog && e["credits"] != "" {
+				e["credit_source"] = "catalog+usage_receipt"
+			} else {
+				e["credit_source"] = "usage_receipt"
+			}
+			out = append(out, e)
+		}
+	}
+
+	// 模型繁忙度（官方 /v2/chat/busy，只读观测，见 upstream/modelbusy.go）：与目录同一批
+	// 账号查，附到对应域的行上。查不到就不填字段（不编造）；失败只并入 busyErrs（目录本身
+	// 已经拿到了，不该因为繁忙度查询失败把整个视图打成 502，更不该阻断目录缓存）。
+	for realm, acct := range map[string]*auth.Auth{"cn": cnAcct, "global": globalAcct} {
+		if acct == nil {
+			continue
+		}
+		prefix := realm + ":"
+		var ids []string
+		for _, e := range out {
+			if id, _ := e["id"].(string); strings.HasPrefix(id, prefix) {
+				ids = append(ids, strings.TrimPrefix(id, prefix))
+			}
+		}
+		if len(ids) == 0 {
+			continue
+		}
+		levels, err := p.cfg.Upstream.ModelBusy(acct, ids)
+		if err != nil {
+			// 繁忙度是只读观测：只记日志 + 并入 busyErrs（目录不受影响），
+			// 不进 catalogErrs——afree 的陈旧快照回放按 catalogErrs 判
+			// 「目录探测失败」，观测失败混进去会把全新目录误标 stale。
+			// busyErrs 仍收集，响应的 busy_errs 字段透出明细（上游 09f2eeb）。
+			busyErrs = append(busyErrs, realm+" busy: "+err.Error())
+			log.Printf("WARN: [panel] %s busy: %v", realm, err)
+			continue
+		}
+		for _, e := range out {
+			if id, _ := e["id"].(string); strings.HasPrefix(id, prefix) {
+				if lv := levels[strings.TrimPrefix(id, prefix)]; lv != "" {
+					e["busy"] = lv
+				}
+			}
+		}
+	}
+
+	// 一个错都没有且 out 为空 → 池里没有可用账号：503 引导添加账号
+	// （有错则继续往下，交给 stale 回放 / 502 分支处理，不在此提前拒绝）。
+	if len(out) == 0 && len(catalogErrs) == 0 && len(busyErrs) == 0 {
+		writeErr(w, http.StatusServiceUnavailable, "没有可用账号：请先在面板添加账号再查询")
+		return
+	}
+	globalSource := p.cfg.Upstream.GlobalCatalogSource()
+	// 只有目录错误才拒绝写缓存；繁忙度失败不阻断（否则国际版恒 404 会让缓存永久失效）。
+	// 上游缓存层 + afree 的「最后完整快照」双写：缓存服务常规并发读，
+	// 快照供探测失败时回放，用途不同，不能只留一边。
+	if len(catalogErrs) == 0 {
+		p.storeModelsCache(&modelsCacheEntry{models: out, globalSource: globalSource})
+		storePanelModelsSnapshot(out)
+		writeJSON(w, http.StatusOK, map[string]any{
+			"ok":     true,
+			"models": p.withLiveFlags(out),
+			// global_source global 目录来源（v3-desktop / v3-union / enterprise）。
+			// 前端据此提示「拿到的是回落/降级目录」——issue #216 里用户只看到「少了 11 个模型」，
+			// 完全不知道已经降级到企业端点（那份目录只有 18 条、hy4-preview 的倍率还是旧值）。
+			"global_source": globalSource,
+			// busy_errs 繁忙度观测失败明细（目录不受影响）：国际版没有 /v2/chat/busy，
+			// 首轮会在这里出现一条，之后按域短路不再产生。
+			"busy_errs": busyErrs,
+		})
+		return
+	}
+	if ent, age, ok := stalePanelModelsSnapshot(); ok {
+		log.Printf("WARN: [panel] models probe failed (%s); serving last good catalog (%d entries, age %s)",
+			strings.Join(catalogErrs, "; "), len(ent), age.Round(time.Second))
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "models": p.withLiveFlags(ent), "stale": true,
+			"global_source": globalSource})
+		return
+	}
+	if len(out) > 0 {
+		// 部分成功且无快照：交出现有结果但标记 stale，前端仍能展示；
+		// busy_errs 繁忙度观测失败明细一并透出（目录不受影响）。
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "models": p.withLiveFlags(out), "stale": true,
+			"global_source": globalSource, "busy_errs": busyErrs})
+		return
+	}
+	writeErr(w, http.StatusBadGateway, "fetch models: "+strings.Join(catalogErrs, "; "))
+}
+
+// panelModelsSnapshot 最后一次完整成功的 models 响应条目（已含 realm 前缀与
+// effort 档位）。上游探测偶发传输层抖动时回放，面板模型列表不再因一次 10s
+// 拨号超时清空/502；快照只存真实探测结果，不编造条目。
+var panelModelsSnapshot struct {
+	mu      sync.Mutex
+	entries []map[string]any
+	fetched time.Time
+}
+
+// panelModelsStaleMax 快照最大陈旧度：超龄视为上游长期不可用，回到既有报错语义。
+const panelModelsStaleMax = time.Hour
+
+func storePanelModelsSnapshot(entries []map[string]any) {
+	panelModelsSnapshot.mu.Lock()
+	panelModelsSnapshot.entries = entries
+	panelModelsSnapshot.fetched = time.Now()
+	panelModelsSnapshot.mu.Unlock()
+}
+
+func stalePanelModelsSnapshot() ([]map[string]any, time.Duration, bool) {
+	panelModelsSnapshot.mu.Lock()
+	defer panelModelsSnapshot.mu.Unlock()
+	if len(panelModelsSnapshot.entries) == 0 {
+		return nil, 0, false
+	}
+	age := time.Since(panelModelsSnapshot.fetched)
+	if age >= panelModelsStaleMax {
+		return nil, 0, false
+	}
+	return panelModelsSnapshot.entries, age, true
+}
+
+// loadModelsCache 返回未过期的聚合结果；TTL 过期或从未成功过返回 nil。
+func (p *Panel) loadModelsCache() *modelsCacheEntry {
+	p.modelsMu.Lock()
+	defer p.modelsMu.Unlock()
+	if p.modelsCache == nil || time.Since(p.modelsCacheAt) >= modelsCacheTTL {
+		return nil
+	}
+	return p.modelsCache
+}
+
+// storeModelsCache 记录一次成功聚合（refresh=1 的强制重探同样刷新缓存）。
+func (p *Panel) storeModelsCache(entry *modelsCacheEntry) {
+	p.modelsMu.Lock()
+	defer p.modelsMu.Unlock()
+	p.modelsCache = entry
+	p.modelsCacheAt = time.Now()
+}
+
+// withLiveFlags 给模型条目补运行期标记（每次响应按 live 快照现算，不写进 60s
+// 缓存：面板里切换「下游可见」或改思考档位策略后，同一缓存周期内也要立刻看到变化）。
+//
+//   - hidden：是否对下游暴露（models.hidden）；
+//   - gateway_policy_enabled：思考档位策略是否开启（关闭时行内「网关档位」下拉置灰）；
+//   - gateway_effort：按当前策略算出的**实际会注入的档位**——先按
+//     model_defaults → 全局 default_effort 求目标档，再由模型真实支持的档位解析
+//     （与出站 applyEffortPolicy 同一套 ResolveGatewayEffort，列表与注入不再漂移）。
+//   - gateway_effort_wanted：解析前的目标档。与 gateway_effort 不同即说明该模型
+//     不支持这一档、会降级（前端据此给「默认网关档位」下拉做实时提示）。
+//
+// 返回浅拷贝切片，缓存条目本身不被改写——并发请求共享同一份缓存。
+func (p *Panel) withLiveFlags(entries []map[string]any) []map[string]any {
+	var hidden map[string]struct{}
+	policy := upstream.EffortPolicy{}
+	if p.cfg.Live != nil {
+		s := p.cfg.Live.Load()
+		hidden = s.HiddenModels
+		policy = upstream.EffortPolicy{
+			Enabled:        s.ThinkingEnabled,
+			DefaultEffort:  s.ThinkingDefaultEffort,
+			ClientPriority: s.ThinkingClientPriority,
+			OverrideScope:  s.ThinkingOverrideScope,
+			ModelDefaults:  s.ThinkingModelDefaults,
+		}.Normalized()
+	}
+	out := make([]map[string]any, len(entries))
+	for i, e := range entries {
+		cp := make(map[string]any, len(e)+3)
+		for k, v := range e {
+			cp[k] = v
+		}
+		if id, ok := e["id"].(string); ok {
+			_, hide := hidden[id]
+			cp["hidden"] = hide
+			cp["gateway_policy_enabled"] = policy.Enabled
+			realm, bare, hasRealm := strings.Cut(id, ":")
+			if !hasRealm {
+				realm, bare = "", id
+			}
+			supported, _ := e["supported_efforts"].([]string)
+			want := policy.DefaultEffortFor(realm, bare)
+			if eff := upstream.ResolveGatewayEffort(want, supported); eff != "" {
+				cp["gateway_effort"] = eff
+			}
+			// 目标档独立给出（即使解析不出实际档也保留）：前端拿它与 gateway_effort
+			// 对比，判断「这个模型会降级吗」，进而给默认档下拉做聚合提示。
+			if want != "" {
+				cp["gateway_effort_wanted"] = want
+			}
+		}
+		out[i] = cp
+	}
+	return out
+}
+
+// panelModelEntry 构造单个模型条目（两域共用）：id 带 realm 前缀（调用值即显示值），
+// context_length / max_output_tokens 走四级查找链，effort 档位按 realm 域取
+// EffortListing（远端权威 ∪ 静态兜底表）——与 /v1/models 同一口径，两侧不再漂移。
+func panelModelEntry(realm string, mi upstream.ModelInfo, remoteEfforts []string, remoteDefault string, httpc *http.Client) map[string]any {
+	entry := map[string]any{
+		"id":                   realm + ":" + mi.ID,
+		"name":                 mi.Name,
+		"default_effort":       mi.DefaultEffort,
+		"supported_efforts":    mi.Efforts,
+		"can_disable_thinking": mi.CanDisableThinking,
+		"supports_reasoning":   mi.SupportsReasoning,
+		"supports_images":      mi.SupportsImages,
+		"credits":              mi.Credits,
+		"description":          mi.Description,
+		"tags":                 mi.Tags,
+		"vendor":               mi.Vendor,
+		"tier":                 mi.Tier,
+		"is_default":           mi.IsDefault,
+		"supports_tool_call":   mi.SupportsToolCall,
+		"only_reasoning":       mi.OnlyReasoning,
+		"reasoning_effort":     mi.ReasoningEffort,
+		"reasoning_summary":    mi.ReasoningSummary,
+	}
+	// 限时优惠（modelPromotions）：credits 是牌价，promo_* 是当前生效折扣
+	//（WorkBuddy 客户端显示的就是这个生效价）。前端据此显示「生效价+标签+划线牌价」。
+	if mi.PromoFactor != nil {
+		entry["promo_factor"] = *mi.PromoFactor
+		entry["promo_credits"] = mi.PromoCredits
+	}
+	if mi.PromoLabel != "" {
+		entry["promo_label"] = mi.PromoLabel
+	}
+	if mi.PromoNote != "" {
+		entry["promo_note"] = mi.PromoNote
+	}
+	if mi.MaxAllowedSize > 0 {
+		entry["max_allowed_size"] = mi.MaxAllowedSize
+	}
+	entry["context_length"] = upstream.ContextWindowListingV4(mi.ID, mi.ContextWindow, httpc)
+	if mo, ok := upstream.MaxOutputTokensListingV4(mi.ID, mi.MaxTokens, httpc); ok {
+		entry["max_output_tokens"] = mo
+	}
+	if efforts, def := upstream.EffortListing(realm, mi.ID, remoteEfforts, remoteDefault); efforts != nil {
+		entry["supported_efforts"] = efforts
+		if def != "" {
+			entry["default_effort"] = def
+		}
+	}
+	return entry
+}
+
+// modelProbes 返回模型输出上限的探测结果（scripts/probe_max_tokens.py --panel-out
+// 写入的契约文件），供前端在「模型与档位」的实测列做风险标注。
+//
+// 设计边界：纯只读透传——文件缺失/未配置返回空集（面板退化为无标注，与历史行为
+// 一致），网关自身不解析字段语义、不据此做任何路由或出站决策；上游改了限制后
+// 重跑一次工具、下次查询即刷新，无需重启网关。
+func (p *Panel) modelProbes(w http.ResponseWriter, r *http.Request) {
+	out := map[string]any{"probes": map[string]json.RawMessage{}, "exists": false}
+	if p.cfg.ProbeFile == "" {
+		writeJSON(w, http.StatusOK, out)
+		return
+	}
+	raw, err := os.ReadFile(p.cfg.ProbeFile)
+	if err != nil {
+		if os.IsNotExist(err) {
+			writeJSON(w, http.StatusOK, out)
+			return
+		}
+		writeErr(w, http.StatusInternalServerError, "read probes: "+err.Error())
+		return
+	}
+	var f struct {
+		Version int                        `json:"version"`
+		Probes  map[string]json.RawMessage `json:"probes"`
+	}
+	if err := json.Unmarshal(raw, &f); err != nil {
+		writeErr(w, http.StatusBadGateway, "parse probes: "+err.Error())
+		return
+	}
+	if f.Probes == nil {
+		f.Probes = map[string]json.RawMessage{}
+	}
+	out["probes"] = f.Probes
+	out["exists"] = true
+	if fi, err := os.Stat(p.cfg.ProbeFile); err == nil {
+		out["updated_at"] = fi.ModTime().Format(time.RFC3339)
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+// ---------------------------------------------------------------------------
+// 账号运维
+// ---------------------------------------------------------------------------
+
+// accountRevive 手动复活：清禁用 + 冷却 + 熔断（运维口径无条件恢复）。
+func (p *Panel) accountRevive(w http.ResponseWriter, r *http.Request) {
+	uid := r.PathValue("uid")
+	if _, ok := p.cfg.Pool.Status(uid); !ok {
+		writeErr(w, http.StatusNotFound, "account not found")
+		return
+	}
+	p.cfg.Pool.Revive(uid)
+	log.Printf("panel: revive uid=%s（人工清除禁用/冷却/熔断）", uid)
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+// accountDisable 人工禁用（不再参与选号，需面板 revive 或重登恢复）。
+func (p *Panel) accountDisable(w http.ResponseWriter, r *http.Request) {
+	uid := r.PathValue("uid")
+	if _, ok := p.cfg.Pool.Status(uid); !ok {
+		writeErr(w, http.StatusNotFound, "account not found")
+		return
+	}
+	// reason 可选：面板人工禁用默认记「管理员操作」，但允许调用方指定真实原因
+	// （例：补录历史禁用、脚本按上游判定结果禁用）。不带则沿用默认文案。
+	reason := "面板手动禁用（管理员操作）"
+	var req struct {
+		Reason string `json:"reason"`
+	}
+	if r.Body != nil {
+		_ = json.NewDecoder(r.Body).Decode(&req) // 空 body/非法 JSON 不算错：保持默认
+	}
+	if v := strings.TrimSpace(req.Reason); v != "" {
+		reason = v
+	}
+	p.cfg.Pool.Disable(uid, reason)
+	log.Printf("panel: disable uid=%s（人工禁用）reason=%s", uid, reason)
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+// accountPause 暂停选号：账号退出选号候选，但**照常参与**签到 / 活跃上报 / 保活 /
+// 余额刷新。与 disable 的区别：不写 reason、不清冷却域、不重置计数——账号是「临时
+// 让位」而非「判死」，点「恢复选号」即可立刻回到池子（无需重登或解冻）。
+// （吸收上游 fd835df）
+func (p *Panel) accountPause(w http.ResponseWriter, r *http.Request) {
+	uid := r.PathValue("uid")
+	if !p.cfg.Pool.Pause(uid) {
+		writeErr(w, http.StatusNotFound, "account not found")
+		return
+	}
+	log.Printf("panel: pause uid=%s（暂停选号，保号任务照常）", uid)
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+// accountResume 解除暂停选号（幂等，对未暂停账号为空操作）。
+func (p *Panel) accountResume(w http.ResponseWriter, r *http.Request) {
+	uid := r.PathValue("uid")
+	if !p.cfg.Pool.Resume(uid) {
+		writeErr(w, http.StatusNotFound, "account not found")
+		return
+	}
+	log.Printf("panel: resume uid=%s（恢复参与选号）", uid)
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+// accountGroup 设置 / 清除账号分组标签（body: {"group":"..."}，空串 = 取消分组）。
+// 纯管理维度：不参与选号 / 计费 / 鉴权，只影响面板按组筛选与组内批量操作。
+// 返回库里真正落下的值——超长会被池层截断，前端据此回显而不是显示用户输入的原值。
+func (p *Panel) accountGroup(w http.ResponseWriter, r *http.Request) {
+	uid := r.PathValue("uid")
+	var req struct {
+		Group string `json:"group"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid json")
+		return
+	}
+	if !p.cfg.Pool.SetGroup(uid, req.Group) {
+		writeErr(w, http.StatusNotFound, "account not found")
+		return
+	}
+	group := ""
+	if st, ok := p.cfg.Pool.Status(uid); ok {
+		group = st.Group
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "group": group})
+}
+
+// accountCheckin 单号签到：DailyCheckin + 余额查询解冻（已签到等业务错误不阻塞余额刷新），
+// 与 scheduler.RunCheckinNow 的单号语义一致。
+func (p *Panel) accountCheckin(w http.ResponseWriter, r *http.Request) {
+	uid := r.PathValue("uid")
+	a := p.cfg.Pool.AuthByUID(uid)
+	if a == nil {
+		writeErr(w, http.StatusNotFound, "account not found")
+		return
+	}
+	if a.IsGlobal() {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"ok":           true,
+			"realm":        "global",
+			"skipped":      true,
+			"skip_reason":  "国际区账号不适用国内区签到",
+			"checkin_done": false,
+		})
+		return
+	}
+	checkinMsg := ""
+	checkinDone := false
+	// checkin_state 是「这次签到到底发生了什么」的权威答复，四态见 upstream.CheckinState：
+	// checked（本次真签到、上游发了积分）/ already（今天早就签过、一个积分都没发）/
+	// pending（上游处理中，可稍后重试）/ failed。前端据此出文案与配色——只凭
+	// checkin_done 会把 already 和 checked 说成同一句话（同类项目 hub#875 的坑）。
+	checkinState := ""
+	checkinCredit, checkinCreditKnown := 0, false
+	// 企业版无签到体系（上游 400 code 10001「企业账号不支持该操作」）：不发起该调用，
+	// 端点退化为「刷新额度」——企业额度走 get-enterprise-user-usage 口径（见 upstream）。
+	// 前端对企业号不渲染「签到」按钮；此处是 API 侧防御（外部脚本/旧缓存前端仍可能调用）。
+	if !a.SupportsPersonalGrowth() {
+		checkinState = "skipped"
+		// 静态 API Key 与企业版同列：都没有签到端点可调，但余额照旧刷新（企业口径）。
+		if a.IsAPIKey() {
+			checkinMsg = "API Key 账号无签到体系（已跳过签到，仅刷新额度）"
+		} else {
+			checkinMsg = "企业账号无签到体系（已跳过签到，仅刷新额度）"
+		}
+	} else {
+		receipt, err := p.cfg.Upstream.CheckinReceipt(a)
+		checkinState = string(receipt.State)
+		checkinMsg = receipt.Msg
+		if err != nil && checkinMsg == "" {
+			checkinMsg = err.Error()
+		}
+		// 幂等拒绝（already）同样是「今日已签」，标记后按钮显示「已签」。
+		if receipt.State == upstream.CheckinChecked || receipt.State == upstream.CheckinAlready {
+			p.cfg.Pool.NoteCheckinDone(uid)
+			checkinDone = true
+		}
+		// 积分只取上游这次真实发放的数：already 没发、失败没发，都不能给数字。
+		if receipt.State == upstream.CheckinChecked && receipt.CreditKnown {
+			checkinCredit, checkinCreditKnown = receipt.Credit, true
+		}
+	}
+	// realm 取账号真值，不写字面量：上面 global 分支一旦被改（提前返回挪走、门控放宽），
+	// 这里硬写的 "cn" 会让国际号拿到错误回显。
+	resp := map[string]any{"ok": checkinDone, "realm": a.Realm(), "checkin_done": checkinDone, "checkin_state": checkinState}
+	if checkinCreditKnown {
+		resp["checkin_credit"] = checkinCredit
+	}
+	if a.IsEnterprise() {
+		resp["enterprise"] = true
+	}
+	if a.IsAPIKey() {
+		resp["api_key"] = true
+	}
+	if checkinMsg != "" {
+		resp["checkin_message"] = checkinMsg
+		if !checkinDone {
+			resp["checkin_error"] = checkinMsg
+		}
+	}
+	remain, total, expiring, earliestAt, earliestRemaining, buckets, err := p.cfg.Upstream.UserResourceSnapshot(a, p.expiringSoonWindow())
+	if err != nil {
+		resp["balance_error"] = err.Error()
+		writeJSON(w, http.StatusOK, resp)
+		return
+	}
+	p.cfg.Pool.ReenableIfCredits(uid, remain, total)
+	p.cfg.Pool.SetCreditsSnapshot(uid, pool.CreditsSnapshot{
+		Remain:            remain,
+		Total:             total,
+		Expiring:          expiring,
+		EarliestAt:        earliestAt,
+		EarliestRemaining: earliestRemaining,
+		ExpiryBuckets:     poolExpiryBuckets(buckets),
+	})
+	resp["credits"] = remain
+	resp["credits_total"] = total
+	log.Printf("panel: checkin uid=%s msg=%q credits=%d/%d", uid, checkinMsg, remain, total)
+	writeJSON(w, http.StatusOK, resp)
+}
+
+// accountBalance 单号余额刷新：更新余额与到期快照，不触碰冷却状态。
+func (p *Panel) accountBalance(w http.ResponseWriter, r *http.Request) {
+	uid := r.PathValue("uid")
+	a := p.cfg.Pool.AuthByUID(uid)
+	if a == nil {
+		writeErr(w, http.StatusNotFound, "account not found")
+		return
+	}
+	remain, total, expiring, earliestAt, earliestRemaining, buckets, err := p.cfg.Upstream.UserResourceSnapshot(a, p.expiringSoonWindow())
+	if err != nil {
+		writeErr(w, http.StatusBadGateway, "user resource: "+err.Error())
+		return
+	}
+	p.cfg.Pool.SetCreditsSnapshot(uid, pool.CreditsSnapshot{
+		Remain:            remain,
+		Total:             total,
+		Expiring:          expiring,
+		EarliestAt:        earliestAt,
+		EarliestRemaining: earliestRemaining,
+		ExpiryBuckets:     poolExpiryBuckets(buckets),
+	})
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "credits": remain, "credits_total": total})
+}
+
+// probeMaxModels 单次 Test 最多尝试的候选模型数。目录首个未必是该号有权调用的
+// 模型（见 probeTestModelCandidates 注释），换模型重试可把「模型无权」从「号坏了」里分离
+// 出来；同时设上限，避免坏号被连打 N 次。
+const probeMaxModels = 3
+
+// accountTest 单号可用性探测：发一条最小真实 chat 请求（"Reply with exactly: OK",
+// max_tokens 16），与正常请求走同一条上游路（含代理出口与冷却副作用）。
+// 成功 → NoteSuccess（附带解冷：清连败/熔断/软限流计数）；限流类失败 → 按分类
+// 记冷却（软限流/余额耗尽）；参数错误类 → 不罚号。网络/超时错误不改状态。
+//
+// 换模型重试：探测模型按「该号有权调用」的优先级取（见 probeTestModelCandidates），
+// 但目录元数据未必反映真实授权（实测首个模型 o4-mini 返回 400 code=11128「请求被
+// 拦截……This call failed channel verification」，而该号真实在跑的模型 200）。这类失败
+// 是「这个模型不能用」而非「这个号不能用」，因此命中可换模型的错误分类时，换
+// 下一个候选再试；只有全部候选都失败，才按原语义施加冷却/罚号（且只施加一次，
+// 副作用以最后一次错误为准，与改造前完全一致）。
+func (p *Panel) accountTest(w http.ResponseWriter, r *http.Request) {
+	uid := r.PathValue("uid")
+	a := p.cfg.Pool.AuthByUID(uid)
+	if a == nil {
+		writeErr(w, http.StatusNotFound, "account not found")
+		return
+	}
+	if p.cfg.Upstream == nil {
+		writeErr(w, http.StatusServiceUnavailable, "upstream unavailable")
+		return
+	}
+
+	models := probeTestModelCandidates(p, a)
+	if len(models) > probeMaxModels {
+		models = models[:probeMaxModels]
+	}
+
+	var last map[string]any
+	var lastKind upstream.ErrKind
+	for i, probeModel := range models {
+		out, kind, uerr := probeOnce(p, a, uid, probeModel)
+		if uerr == nil {
+			p.cfg.Pool.NoteSuccess(uid)
+			// 与 cline/zen/or/amd/tkhb/other 的 Test 按钮同语义：探测成功
+			// 即解除账号级冷却。NoteSuccess 只清熔断/降级/连败，不清 until，
+			// 不补这行的话列表会一直显示"冷却中"直到自然到期。
+			out["cooldownCleared"] = p.cfg.Pool.ClearCooldown(uid)
+			out["status"] = "active"
+			writeJSON(w, http.StatusOK, out)
+			return
+		}
+		last, lastKind = out, kind
+		if !probeRetryableKind(kind) || i == len(models)-1 {
+			break
+		}
+		log.Printf("panel test uid=%s: model=%s failed (%s), retrying with next candidate",
+			uid, probeModel, kind)
+	}
+
+	// 全部候选失败：按原语义施加一次副作用。
+	switch lastKind {
+	case upstream.ErrSoftRate:
+		last["status"] = "cooldown"
+		p.cfg.Pool.CooldownSoftRate(uid, time.Minute, time.Time{}, "panel test: "+last["error"].(string))
+	case upstream.ErrHardCredit:
+		last["status"] = "cooldown"
+		p.cfg.Pool.Cooldown(uid, pool.CoolHard, 30*time.Minute, "panel test: "+last["error"].(string))
+	case upstream.ErrSessionDead:
+		p.cfg.Pool.NoteError(uid)
+	case upstream.ErrBadParams, upstream.ErrPromptTooLong, upstream.ErrImageInvalid, upstream.ErrContentBlocked:
+		// 请求级错误：不罚号。
+	default:
+		p.cfg.Pool.NoteError(uid)
+	}
+	writeJSON(w, http.StatusOK, last)
+}
+
+// probeOnce 用单个模型执行一次探测。返回待回写的 out（含 model/latencyMs/
+// status/error）与错误分类；uerr 为 nil 表示成功（此时调用方负责 NoteSuccess）。
+// recordProbeUsage Test 探测的记账口：与 server 正常请求同两本账——账号 token
+// 快照（面板「今日/累计」列）与用量时序（usage.json 的 Req 列）。失败静默：
+// 探测的主职责是测连通，记账只是顺带。
+func recordProbeUsage(p *Panel, uid, model string, u map[string]any, latencyMs int64) {
+	num := func(k string) (int64, bool) {
+		v, ok := u[k]
+		if !ok {
+			return 0, false
+		}
+		switch n := v.(type) {
+		case float64:
+			return int64(n), true
+		case int:
+			return int64(n), true
+		case int64:
+			return n, true
+		case json.Number:
+			i, err := n.Int64()
+			return i, err == nil
+		}
+		return 0, false
+	}
+	delta := pool.TokenUsageDelta{Model: model}
+	if n, ok := num("prompt_tokens"); ok {
+		delta.HasPromptTokens, delta.PromptTokens = true, n
+	}
+	if n, ok := num("completion_tokens"); ok {
+		delta.HasCompletionTokens, delta.CompletionTokens = true, n
+	}
+	if n, ok := num("total_tokens"); ok {
+		delta.HasTotalTokens, delta.TotalTokens = true, n
+	}
+	delta.HasLatencyMs, delta.LatencyMs = true, latencyMs
+	// 没有 token 数也要记一次：RecordTokenUsage 会刷新「最近使用/最近模型/请求数」。
+	// 上游确实可能不给 usage（此时今日用量不动是对的——不编造消耗），但探测
+	// 成功却不刷新最近使用，会让面板看起来像"点了没反应"（2026-10-30 用户报）。
+	p.cfg.Pool.RecordTokenUsage(uid, delta)
+	if !delta.HasPromptTokens && !delta.HasCompletionTokens && !delta.HasTotalTokens {
+		return
+	}
+	if p.cfg.Usage != nil {
+		realm := "cn"
+		if a, ok := p.cfg.Pool.Status(uid); ok && a.Realm != "" {
+			realm = a.Realm
+		}
+		p.cfg.Usage.Add(time.Now(), realm, uid, model, usage.Delta{
+			PromptTokens:     delta.PromptTokens,
+			HasPromptTokens:  delta.HasPromptTokens,
+			CompletionTokens: delta.CompletionTokens,
+			HasCompletion:    delta.HasCompletionTokens,
+			TotalTokens:      delta.TotalTokens,
+			HasTotal:         delta.HasTotalTokens,
+			LatencyMs:        delta.LatencyMs,
+			HasLatency:       true,
+		}, true)
+	}
+}
+
+// probeUsageFromBody 从探测响应体里取 usage 对象（取不到返回 nil）。
+//
+// 关键前提：出站 body 一律被 upstream.prepareBody 强制 stream=true（见
+// upstream/payload.go 的 obj["stream"] = true），所以探测请求虽然写了
+// "stream": false，拿回来的其实是 **SSE 文本**（"data: {...}\n\ndata: [DONE]"），
+// 不是聚合 JSON。此前这里直接 json.Unmarshal 整段 → 必然失败 → usage 永远取不到
+// → "测试通过，但今日用量和最近使用都不更新"（2026-10-30 用户报）。
+// 两种形态都认：先按聚合 JSON 试，失败再逐帧扫 SSE（取最后一帧带 usage 的，
+// 末帧 usage 最全）；data 包装层同样剥一次。
+func probeUsageFromBody(raw []byte) map[string]any {
+	var obj map[string]any
+	if json.Unmarshal(raw, &obj) == nil {
+		if d, ok := obj["data"].(map[string]any); ok && d["usage"] != nil {
+			obj = d
+		}
+		if u, ok := obj["usage"].(map[string]any); ok && len(u) > 0 {
+			return u
+		}
+		return nil
+	}
+	var last map[string]any
+	for _, line := range strings.Split(string(raw), "\n") {
+		line = strings.TrimSpace(line)
+		if !strings.HasPrefix(line, "data: ") {
+			continue
+		}
+		payload := strings.TrimPrefix(line, "data: ")
+		if payload == "[DONE]" {
+			continue
+		}
+		var fr map[string]any
+		if json.Unmarshal([]byte(payload), &fr) != nil {
+			continue
+		}
+		if d, ok := fr["data"].(map[string]any); ok && d["usage"] != nil {
+			fr = d
+		}
+		if u, ok := fr["usage"].(map[string]any); ok && len(u) > 0 {
+			last = u
+		}
+	}
+	return last
+}
+
+func probeOnce(p *Panel, a *auth.Auth, uid, probeModel string) (map[string]any, upstream.ErrKind, error) {
+	body, _ := json.Marshal(map[string]any{
+		"model":      probeModel,
+		"messages":   []any{map[string]any{"role": "user", "content": "Reply with exactly: OK"}},
+		"max_tokens": 16,
+		"stream":     false,
+	})
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	// 会话头族必须补全：X-Conversation-Request-ID 是上游「必发」头（ChatMeta 注释），
+	// 正常请求由 server handler 用 sessKey/turnKey 兜底生成（最差也是请求级随机）。
+	// 探测此前传空 ChatMeta{} → 必发头缺失 → 上游判渠道校验不通过（400 code=11128
+	// 「请求被拦截」）。这里按 handler 的兜底口径补齐，让探测与真实请求同形态。
+	meta := upstream.ChatMeta{
+		ConversationID:        session.RequestIDForKey(uid + ":probe"),
+		ConversationRequestID: session.TurnRequestID(""),
+	}
+	start := time.Now()
+	rc, status, respBody, uerr := p.cfg.Upstream.ChatStreamContext(ctx, a, body, "", meta, nil)
+	latencyMs := time.Since(start).Milliseconds()
+	out := map[string]any{"ok": true, "model": probeModel, "latencyMs": latencyMs}
+	if uerr == nil {
+		if rc != nil {
+			// Test 也是真实上游消耗：读出响应体（非流式聚合 JSON）提取 usage
+			// 记账，与 server 正常请求口径统一（2026-10-27 afree 用户定）。
+			// 读失败不影响探测结论——rc 读走后必须 Close（读全即 EOF）。
+			raw, rerr := io.ReadAll(rc)
+			rc.Close()
+			if rerr == nil {
+				// 记账：usage 能取到就记消耗，取不到也记一次"这次用过"
+				//（刷新最近使用），不再静默跳过。
+				recordProbeUsage(p, uid, probeModel, probeUsageFromBody(raw), latencyMs)
+			}
+		}
+		return out, upstream.ErrNone, nil
+	}
+	kind := upstream.ErrClient
+	if ue, ok := uerr.(*upstream.Error); ok {
+		kind = ue.Kind
+	}
+	out["status"] = "error"
+	out["error"] = truncateTestErr(respBody, uerr)
+	_ = status
+	return out, kind, uerr
+}
+
+// ProbeModel 收费模型区「测试」按钮的后端：用该模型所属 realm 的第一个可用
+// 账号，对指定模型发一次真实请求（不换模型重试——测试语义就是「这个模型现在
+// 能不能用」）。model 为对外 ID：wbcn:/wbgb: 前缀或裸 ID（裸 ID 按 vendor
+// 语义 = CN 域）；发给上游前按既有口径剥成裸 ID（前缀只决定选号 realm）。
+// 返回结构与 accountTest 的 data 同构，status 为 active/error。
+func (p *Panel) ProbeModel(model string) (map[string]any, string) {
+	if p.cfg.Upstream == nil {
+		return map[string]any{"ok": false, "model": model, "error": "upstream unavailable"}, "error"
+	}
+	bare, realm := model, "cn"
+	switch {
+	case strings.HasPrefix(model, "wbgb:"):
+		bare, realm = strings.TrimPrefix(model, "wbgb:"), "global"
+	case strings.HasPrefix(model, "wbcn:"):
+		bare = strings.TrimPrefix(model, "wbcn:")
+	}
+	uids := p.cfg.Pool.AvailableUIDsForRealm(realm)
+	if len(uids) == 0 {
+		return map[string]any{"ok": false, "model": model, "error": "no available " + realm + " account"}, "error"
+	}
+	uid := uids[0]
+	a := p.cfg.Pool.AuthByUID(uid)
+	if a == nil {
+		return map[string]any{"ok": false, "model": model, "error": "account not found"}, "error"
+	}
+	out, _, uerr := probeOnce(p, a, uid, bare)
+	if uerr == nil {
+		p.cfg.Pool.NoteSuccess(uid)
+		out["status"] = "active"
+		out["account"] = uid
+		return out, "active"
+	}
+	out["status"] = "error"
+	out["account"] = uid
+	return out, "error"
+}
+
+// probeRetryableKind 该错误是否值得换一个探测模型重试。
+// 判据：错误指向「这次请求/这个模型」而非「这个账号」——包括上游渠道验证失败
+// （11128 request illegal，分类为 ErrAccountFault：它是模型授权问题，账号本身
+// 换模型仍可用）、请求级参数错误、以及「该后端无此模型」。
+// 账号级终态（余额耗尽/会话失效）与限流不重试：换模型也不会成功，只会白打上游。
+func probeRetryableKind(kind upstream.ErrKind) bool {
+	switch kind {
+	case upstream.ErrAccountFault, upstream.ErrBadParams, upstream.ErrModelBlocked,
+		upstream.ErrPromptTooLong, upstream.ErrImageInvalid, upstream.ErrContentBlocked:
+		return true
+	}
+	return false
+}
+
+// probeTestModelCandidates 探测模型候选序列（按优先级排好、去重），供探测失败
+// 换模型重试；首个即首选探测模型。
+//
+// 两条约束，缺一条都会把好号误报成坏号：
+//
+//  1. 目录必须按账号 realm 取。wbgb:(global) 模型只有 global 账号能调、wbcn:(CN)
+//     模型只有 CN 账号能调——旧代码无条件 FetchModels（CN 目录），等于拿 CN 模型
+//     去打 global 账号的通道，上游判「渠道校验不通过」，回 400 code=11128
+//     （displayMsg.zh「请求被拦截，请重新发送」，displayTips "This call failed
+//     channel verification"）。故 global 账号取 global 目录、CN 账号取 CN 目录。
+//  2. model 必须是裸 ID，不能带 cn:/global: 前缀。前缀只是网关对外形态
+//     （wbcn:/wbgb:）与 /v1/models 展示形态；真实链路在 server handler 里已用
+//     rewriteModel 改回裸 ID——realm 由选号决定，不编进 model。带前缀直发上游会
+//     得到 400 code=11102「model [global:xxx] service info not found」。
+func probeTestModelCandidates(p *Panel, a *auth.Auth) []string {
+	const fallback = "glm-5.3-flash"
+	if p.cfg.Upstream == nil {
+		return []string{fallback}
+	}
+	_, infos := probeRealmModels(p, a)
+	cands := make([]upstream.ModelInfo, 0, len(infos))
+	for _, mi := range infos {
+		if mi.ID != "" {
+			cands = append(cands, mi)
+		}
+	}
+	sort.SliceStable(cands, func(i, j int) bool {
+		return probeModelScore(cands[i]) < probeModelScore(cands[j])
+	})
+	out := make([]string, 0, len(cands)+1)
+	seen := map[string]bool{}
+	for _, mi := range cands {
+		if !seen[mi.ID] {
+			seen[mi.ID] = true
+			out = append(out, mi.ID)
+		}
+	}
+	if !seen[fallback] {
+		out = append(out, fallback)
+	}
+	return out
+}
+
+// probeRealmModels 按账号 realm 取「该号有权调用」的模型目录（返回裸 ID）：
+// global(GB) 账号 → global 目录（FetchGlobalModelInfos）；CN 账号 → CN 目录
+// （FetchModels）。前缀取舍见 probeTestModelCandidates 注释 2。
+// GlobalEnabled 关闭时 global 账号按 CN 路由（与 upstream.globalOn 同口径）。
+func probeRealmModels(p *Panel, a *auth.Auth) (string, []upstream.ModelInfo) {
+	if a.IsGlobal() && p.cfg.Upstream.GlobalEnabled {
+		return "global", p.cfg.Upstream.FetchGlobalModelInfos(a)
+	}
+	infos, err := p.cfg.Upstream.FetchModels(a)
+	if err != nil {
+		log.Printf("panel probe: fetch cn models for uid=%s failed: %v", a.UID, err)
+		return "cn", nil
+	}
+	return "cn", infos
+}
+
+// probeModelScore 探测模型优先级打分，越小越优先：
+// 0=默认模型（IsDefault，渠道已验证）→ 1=免费 → 2=低倍率(<1) → 3=其余。
+func probeModelScore(mi upstream.ModelInfo) int {
+	if mi.IsDefault {
+		return 0
+	}
+	if probeModelIsFree(mi) {
+		return 1
+	}
+	if rate, ok := parseCreditRate(mi.Credits); ok && rate > 0 && rate < 1 {
+		return 2
+	}
+	return 3
+}
+
+// probeModelIsFree 免费判定：命中「免费」标签，或积分倍率为 0。
+func probeModelIsFree(mi upstream.ModelInfo) bool {
+	for _, t := range mi.Tags {
+		if strings.Contains(t, "免费") {
+			return true
+		}
+	}
+	if rate, ok := parseCreditRate(mi.Credits); ok && rate == 0 {
+		return true
+	}
+	return false
+}
+
+// parseCreditRate 解析积分倍率原文（"x0.05" / "0.05"）为浮点；空串或不可解析
+// 视为未知（返回 false，调用方不得当 0 处理——未知≠免费）。
+func parseCreditRate(s string) (float64, bool) {
+	s = strings.TrimSpace(s)
+	s = strings.TrimPrefix(s, "x")
+	s = strings.TrimPrefix(s, "X")
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return 0, false
+	}
+	v, err := strconv.ParseFloat(s, 64)
+	if err != nil {
+		return 0, false
+	}
+	return v, true
+}
+
+// truncateTestErr 探测错误摘要：优先上游原文，截断防刷屏。
+func truncateTestErr(respBody []byte, uerr error) string {
+	if len(respBody) > 0 {
+		s := strings.TrimSpace(string(respBody))
+		if len(s) > 300 {
+			s = s[:300] + "…"
+		}
+		return s
+	}
+	msg := uerr.Error()
+	if len(msg) > 300 {
+		msg = msg[:300] + "…"
+	}
+	return msg
+}
+
+// accountRemove 移除账号：先出池（立即落盘 state），再删 auth 文件。
+func (p *Panel) accountRemove(w http.ResponseWriter, r *http.Request) {
+	p.proxyAccountMu.Lock()
+	defer p.proxyAccountMu.Unlock()
+	// 与目录热重载串行化（issue #199 风险 3）：重载正在对齐池时插入一次移除，
+	// 可能出现「重载刚按扫描结果 upsert 回来、这边又删掉」的交错，两边都以为
+	// 自己是对的。锁序固定为 proxyAccountMu → reloadMu → pool.mu：全仓只有本函数
+	// 同时持有前两个（proxies.go 那两处只取 proxyAccountMu），不存在反向路径。
+	p.reloadMu.Lock()
+	defer p.reloadMu.Unlock()
+	uid := r.PathValue("uid")
+	if p.cfg.Pool.AuthByUID(uid) == nil {
+		writeErr(w, http.StatusNotFound, "account not found")
+		return
+	}
+	if p.cfg.ProxyPool != nil {
+		if err := p.cfg.ProxyPool.Unbind(uid); err != nil {
+			writeErr(w, http.StatusInternalServerError, "save account proxy binding failed")
+			return
+		}
+	}
+	a := p.cfg.Pool.Remove(uid)
+	if a == nil {
+		writeErr(w, http.StatusNotFound, "account not found")
+		return
+	}
+	fileMsg := ""
+	if a.FilePath != "" {
+		if err := os.Remove(a.FilePath); err != nil && !os.IsNotExist(err) {
+			fileMsg = err.Error()
+		}
+	}
+	if fileMsg != "" {
+		log.Printf("panel: remove uid=%s（auth 文件删除失败: %s）", uid, fileMsg)
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "file_error": fileMsg})
+		return
+	}
+	log.Printf("panel: remove uid=%s（已出池并删除凭证文件）", uid)
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+// ---------------------------------------------------------------------------
+// 批量任务
+// ---------------------------------------------------------------------------
+
+// tryStartBatch 手动全量运维接口的防重入闸门：五个动作（签到/旅行/活跃/保活/
+// 余额）共用一把——它们都是逐号打上游，并发跑两轮 = 每号至少翻倍上游请求，正是
+// 批间节流要避免的场景（与任务中心 tryLockAccount 的 409 语义一致）。
+func (p *Panel) tryStartBatch(w http.ResponseWriter, action string) bool {
+	if !p.batchRunning.CompareAndSwap(false, true) {
+		writeErr(w, http.StatusConflict, "已有全量任务在执行中，请等待本轮完成后再触发")
+		log.Printf("panel: %s 重复触发被拒绝（已有全量任务在跑）", action)
+		return false
+	}
+	return true
+}
+
+// finishBatch 归还防重入闸门。
+func (p *Panel) finishBatch() { p.batchRunning.Store(false) }
+
+// checkinAll 手动触发全量签到（异步执行，进度看日志区/账号状态变化）。
+func (p *Panel) checkinAll(w http.ResponseWriter, r *http.Request) {
+	if !p.tryStartBatch(w, "全量签到") {
+		return
+	}
+	if p.cfg.Scheduler == nil {
+		p.finishBatch()
+		writeErr(w, http.StatusNotImplemented, "scheduler not available")
+		return
+	}
+	go func() {
+		defer p.finishBatch()
+		p.cfg.Scheduler.RunCheckinNow()
+	}()
+	log.Printf("panel: 手动全量签到已触发（含余额刷新与连登兑换；猫猫旅行是独立排程，不在此列）")
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "started": true})
+}
+
+// travelAll 手动触发全量猫猫旅行巡检（异步执行）。
+func (p *Panel) travelAll(w http.ResponseWriter, r *http.Request) {
+	if !p.tryStartBatch(w, "全量旅行巡检") {
+		return
+	}
+	if p.cfg.Scheduler == nil {
+		p.finishBatch()
+		writeErr(w, http.StatusNotImplemented, "scheduler not available")
+		return
+	}
+	go func() {
+		defer p.finishBatch()
+		p.cfg.Scheduler.RunTravelNow()
+	}()
+	log.Printf("panel: 手动全量旅行巡检已触发")
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "started": true})
+}
+
+// accountTravel POST /panel/api/accounts/{uid}/travel：单号推进一趟猫猫旅行（issue #227）。
+// 与 checkin 同构——同步返回，外部调度器据此知道这一号本轮有没有动。门控在
+// Scheduler.RunTravelNowFor 里（禁用/暂停/无 refresh token/global/企业一律跳过）。
+func (p *Panel) accountTravel(w http.ResponseWriter, r *http.Request) {
+	if p.cfg.Scheduler == nil {
+		writeErr(w, http.StatusNotImplemented, "scheduler not available")
+		return
+	}
+	uid := r.PathValue("uid")
+	if p.cfg.Pool.AuthByUID(uid) == nil {
+		writeErr(w, http.StatusNotFound, "account not found")
+		return
+	}
+	ran := p.cfg.Scheduler.RunTravelNowFor(uid)
+	if !ran {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"ok": true, "ran": false, "skipped": true,
+			"skip_reason": "禁用/暂停/无 refresh token/国际区/企业版账号不参与旅行",
+		})
+		return
+	}
+	log.Printf("panel: 按号旅行巡检 uid=%s 完成", uid)
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "ran": true})
+}
+
+// activityAll 手动触发全量活跃上报（异步执行；点亮连登 + 解锁领养前置）。
+func (p *Panel) activityAll(w http.ResponseWriter, r *http.Request) {
+	if !p.tryStartBatch(w, "全量活跃上报") {
+		return
+	}
+	if p.cfg.Scheduler == nil {
+		p.finishBatch()
+		writeErr(w, http.StatusNotImplemented, "scheduler not available")
+		return
+	}
+	go func() {
+		defer p.finishBatch()
+		p.cfg.Scheduler.RunActivityNow()
+	}()
+	log.Printf("panel: 手动全量活跃上报已触发")
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "started": true})
+}
+
+// keepaliveAll 手动触发全量 token 保活（异步执行）。
+func (p *Panel) keepaliveAll(w http.ResponseWriter, r *http.Request) {
+	if !p.tryStartBatch(w, "全量保活") {
+		return
+	}
+	if p.cfg.Scheduler == nil {
+		p.finishBatch()
+		writeErr(w, http.StatusNotImplemented, "scheduler not available")
+		return
+	}
+	go func() {
+		defer p.finishBatch()
+		p.cfg.Scheduler.RunKeepaliveNow()
+	}()
+	log.Printf("panel: 手动全量保活已触发")
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "started": true})
+}
+
+// balanceAll 手动全量刷新余额：并发查上游、写回池内 credits（含解冻语义），
+// 完成后返回——面板紧接着拉 overview 即是最新值。账号量小（个位数），
+// 同步等待（上限受短 RPC 超时约束）比"触发后盲刷"体验更确定。
+func (p *Panel) balanceAll(w http.ResponseWriter, r *http.Request) {
+	if !p.tryStartBatch(w, "全量余额刷新") {
+		return
+	}
+	defer p.finishBatch()
+	if p.cfg.Scheduler == nil {
+		writeErr(w, http.StatusNotImplemented, "scheduler not available")
+		return
+	}
+	p.cfg.Scheduler.RunBalanceRefreshNow()
+	p.syncNicknames()
+	log.Printf("panel: 手动全量余额刷新完成")
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "accounts": p.cfg.Pool.List()})
+}
+
+// syncNicknames 手动刷新时的昵称同步（issue #94 同步：上游改名免重登）。
+// 只在面板手动「刷新」路径调用——后台余额定时器不触发（用户明确要求资料接口
+// 仅手动触达）。逐号拉 /console/account，只取 nickname（手机号等敏感字段在
+// upstream.FetchAccountProfile 内即被丢弃）；单号失败静默跳过，不打断余额刷新
+// 的既有结果。
+func (p *Panel) syncNicknames() {
+	type job struct {
+		uid string
+		a   *auth.Auth
+	}
+	var jobs []job
+	for _, st := range p.cfg.Pool.List() {
+		if st.Disabled || !st.AccountOn() {
+			continue // 账号总开关关闭：不向上游发起资料查询（afree 本地补丁）
+		}
+		if a := p.cfg.Pool.AuthByUID(st.UID); a != nil && a.AccessTokenValue() != "" {
+			// afree 本地补丁：面板手改过昵称（本地锁，SetLocalNickname locked=true）
+			// 的账号跳过上游同步——手动全量刷新余额不得覆盖管理员改名。解锁恢复
+			// 上游昵称走 /admin/api/workbuddy/nickname 的清空语义。
+			if a.NicknameLocked() {
+				continue
+			}
+			jobs = append(jobs, job{uid: st.UID, a: a})
+		}
+	}
+	if len(jobs) == 0 {
+		return
+	}
+	var (
+		mu      sync.Mutex
+		updated int
+		failed  int
+		sem     = make(chan struct{}, 3)
+		wg      sync.WaitGroup
+	)
+	for _, j := range jobs {
+		wg.Add(1)
+		go func(j job) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			nick, err := p.cfg.Upstream.FetchAccountProfile(j.a)
+			if err != nil {
+				mu.Lock()
+				failed++
+				mu.Unlock()
+				return
+			}
+			if p.cfg.Pool.SetNickname(j.uid, nick) {
+				mu.Lock()
+				updated++
+				mu.Unlock()
+			}
+		}(j)
+	}
+	wg.Wait()
+	if updated > 0 || failed > 0 {
+		log.Printf("panel: 昵称同步：更新 %d 个，失败 %d 个（未变化不计数）", updated, failed)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// helpers
+// ---------------------------------------------------------------------------
+
+// usage 返回逐请求用量聚合。统计窗口三选一：
+//   - from/to（unix 秒）：显式区间，用于「今天」与「自定义」——区间由浏览器按
+//     本地时区算好再发，服务端时区与浏览器不一致时「今天」才不会被算错；
+//   - hours：滚动窗口（默认 72，上限 1440=60 天），卡片汇总/按域/按账号/按模型/
+//     时序**全部**按该窗口统计；显式 hours=0 表示全部历史（含 90 天前折叠出的日桶）；
+//   - 都不给：等同于 hours=72（保持旧调用方行为）。
+func (p *Panel) usage(w http.ResponseWriter, r *http.Request) {
+	if p.cfg.Usage == nil {
+		writeErr(w, http.StatusNotImplemented, "usage recorder not available")
+		return
+	}
+	q := r.URL.Query()
+	win := usage.Window{}
+	win.From = parseTimeParam(q.Get("from"))
+	win.To = parseTimeParam(q.Get("to"))
+	if win.From.IsZero() && win.To.IsZero() {
+		win.Hours = 72
+		if v := q.Get("hours"); v != "" {
+			if n, err := strconv.Atoi(v); err == nil && n >= 0 {
+				win.Hours = n
+			}
+		}
+		if win.Hours > 1440 {
+			win.Hours = 1440
+		}
+	}
+	// 昵称仅用于展示，取自池快照（不含任何凭证）。
+	nicks := p.nicknames()
+	var currentRate func(realm, model string) string
+	if p.cfg.Upstream != nil {
+		currentRate = p.cfg.Upstream.ModelRate
+	}
+	writeJSON(w, http.StatusOK, p.cfg.Usage.SnapshotWindow(win, nicks, currentRate))
+}
+
+// parseTimeParam 解析时间查询参数：unix 秒（前端默认）或 RFC3339（便于手工调
+// 接口/写脚本）。空串与非法值都返回零值 = 该侧不设界，不报错——区间参数是可选
+// 增强，拼错一个 from 不该让整页用量打不开。
+func parseTimeParam(v string) time.Time {
+	v = strings.TrimSpace(v)
+	if v == "" {
+		return time.Time{}
+	}
+	if n, err := strconv.ParseInt(v, 10, 64); err == nil {
+		if n <= 0 {
+			return time.Time{}
+		}
+		// 兼容秒与毫秒（前端可能直接把 Date.now() 传上来）。
+		if n > 1e12 {
+			return time.UnixMilli(n)
+		}
+		return time.Unix(n, 0)
+	}
+	if t, err := time.Parse(time.RFC3339, v); err == nil {
+		return t
+	}
+	if t, err := time.ParseInLocation("2006-01-02T15:04", v, time.Local); err == nil {
+		return t
+	}
+	return time.Time{}
+}
+
+// usageSave 立即把内存中的用量桶落盘（正常由后台 30s 防抖刷新负责）。
+func (p *Panel) usageSave(w http.ResponseWriter, r *http.Request) {
+	if p.cfg.Usage == nil {
+		writeErr(w, http.StatusNotImplemented, "usage recorder not available")
+		return
+	}
+	p.cfg.Usage.Save()
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+// packages 返回全部账号的积分包构成，供「积分构成」视图对比。
+//
+// 逐个账号向上游查（并发有上限，避免瞬时打满上游限流），失败只在对应账号上
+// 标 error，不影响其它账号——一个号 token 失效不该让整页空白。
+func (p *Panel) packages(w http.ResponseWriter, r *http.Request) {
+	accts := p.cfg.Pool.List()
+	type row struct {
+		UID      string                   `json:"uid"`
+		Nickname string                   `json:"nickname"`
+		Realm    string                   `json:"realm"`
+		Remain   int64                    `json:"remain"`
+		Size     int64                    `json:"size"`
+		Packages []upstream.CreditPackage `json:"packages"`
+		// Plan/PlanEvidence 账号套餐分类（见 pool.ClassifyPlan）：包名派生，无包时 unknown。
+		Plan         pool.PlanKind `json:"plan"`
+		PlanEvidence string        `json:"plan_evidence,omitempty"`
+		Error        string        `json:"error,omitempty"`
+	}
+	out := make([]row, len(accts))
+
+	sem := make(chan struct{}, 3)
+	var wg sync.WaitGroup
+	for i, s := range accts {
+		wg.Add(1)
+		go func(i int, s pool.Status) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+
+			it := row{UID: s.UID, Nickname: s.Nickname, Realm: s.Realm}
+			a := p.cfg.Pool.AuthByUID(s.UID)
+			if a == nil {
+				it.Error = "account not loaded"
+				out[i] = it
+				return
+			}
+			packs, remain, size, err := p.cfg.Upstream.CreditPackages(a)
+			if err != nil {
+				it.Error = err.Error()
+				out[i] = it
+				return
+			}
+			it.Packages = packs
+			it.Remain = remain
+			it.Size = size
+			names := make([]string, 0, len(packs))
+			for _, pk := range packs {
+				names = append(names, pk.Name)
+			}
+			it.Plan, it.PlanEvidence = pool.ClassifyPlan(names)
+			out[i] = it
+		}(i, s)
+	}
+	wg.Wait()
+
+	// 余额降序：多的在前，便于和少的对比。
+	sort.SliceStable(out, func(i, j int) bool { return out[i].Remain > out[j].Remain })
+	writeJSON(w, http.StatusOK, map[string]any{"accounts": out})
+}
+
+func writeJSON(w http.ResponseWriter, status int, v any) {
+	raw, _ := json.Marshal(v)
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_, _ = w.Write(raw)
+}
+
+func writeErr(w http.ResponseWriter, status int, msg string) {
+	writeJSON(w, status, map[string]any{"ok": false, "error": msg})
+}
+
+// balanceHistory 返回余额采样序列，供「余额趋势」视图画折线。
+// days 查询参数控制窗口（默认 30，上限 30 = detailedKeep；更早的数据已折叠为日粒度，
+// 传更大值也只能拿到日粒度点）。
+func (p *Panel) balanceHistory(w http.ResponseWriter, r *http.Request) {
+	if p.cfg.Balance == nil {
+		writeErr(w, http.StatusNotImplemented, "balance recorder not available")
+		return
+	}
+	days := 30
+	if v := r.URL.Query().Get("days"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			days = n
+		}
+	}
+	if days > 30 {
+		days = 30
+	}
+	since := time.Now().AddDate(0, 0, -days)
+	// 昵称仅用于展示，取自池快照（不含任何凭证）；实时值优先，历史值兜底。
+	// 昵称与域仅用于展示，取自池快照（不含任何凭证）；实时值优先，历史值兜底。
+	// realm 必须在 Snapshot 前注入：cn 与 global 的积分不同源、不可互换，
+	// 跨域求和语义不成立，前端需按域分组渲染。
+	for _, st := range p.cfg.Pool.List() {
+		if st.Nickname != "" {
+			p.cfg.Balance.SetName(st.UID, st.Nickname)
+		}
+		if st.Realm != "" {
+			p.cfg.Balance.SetRealm(st.UID, st.Realm)
+		}
+	}
+	series, now := p.cfg.Balance.Snapshot(since)
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ok":     true,
+		"now":    now.Format(time.RFC3339),
+		"days":   days,
+		"series": series,
+	})
+}
+
+// modelToggle 手动开关某 (账号, 模型) 组合。
+//
+// 语义：这是**人工意图**（永久），与 modelCooldowns（上游触发、临时、过期自动删）
+// 正交。手动关掉的组合自动机制不能恢复 —— 见 internal/pool/toggle.go 的说明。
+//
+// model 接受带前缀形式（cn:gpt-4）也接受裸名；入库前统一剥前缀，与出站口径一致
+// （上游只认裸名，且带前缀存会在模型改名/换域时对不上）。
+func (p *Panel) modelToggle(w http.ResponseWriter, r *http.Request) {
+	uid := r.PathValue("uid")
+	if _, ok := p.cfg.Pool.Status(uid); !ok {
+		writeErr(w, http.StatusNotFound, "account not found")
+		return
+	}
+	var req struct {
+		Model string `json:"model"`
+		Off   bool   `json:"off"`
+		Note  string `json:"note"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeErr(w, http.StatusBadRequest, "bad json: "+err.Error())
+		return
+	}
+	model := strings.TrimSpace(req.Model)
+	if model == "" {
+		writeErr(w, http.StatusBadRequest, "model is required")
+		return
+	}
+	// 剥 realm 前缀（与出站口径一致：上游只认裸名）
+	if i := strings.Index(model, ":"); i >= 0 {
+		model = model[i+1:]
+	}
+	if req.Off {
+		if !p.cfg.Pool.SetModelOff(uid, model, req.Note) {
+			writeErr(w, http.StatusBadRequest, "set model off failed")
+			return
+		}
+	} else {
+		p.cfg.Pool.SetModelOn(uid, model)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ok": true, "uid": uid, "model": model, "off": req.Off,
+		"list": p.cfg.Pool.ModelOffOf(uid),
+	})
+}
+
+// modelFallbackSnapshot 返回当前降级路由表（nil 安全）。
+// 走回调而非持有 map：live 快照会随面板保存配置替换，持有旧 map 会读到过期表。
+func (p *Panel) modelFallbackSnapshot() map[string]string {
+	if p.cfg.ModelFallback == nil {
+		return nil
+	}
+	return p.cfg.ModelFallback()
+}
+
+// accountProbeBan 探测被封禁账号在上游是否已解封（**只读**，不改池状态）。
+//
+// 为什么需要（用户需求）：账号被 11140「账号存在异常行为」判死后，唯一的确认方式
+// 是反复 revive —— 但每次 revive 都会让账号重新参与选号、立刻再撞 11140，
+// 反复触发可能加重上游风控判定。需要一个「不惊动它」的问法。
+//
+// 用什么探：UserResource（余额查询）是最轻的只读端点，且 11140 会在这里原样返回
+// （上游 auth/auth_forbidden 在 billing 侧同样生效）。不用 chat —— 那会占在途、
+// 记连败、可能被计入风控。
+//
+// 判据：
+//   - 200            → 已解封（可以 revive 了）
+//   - 11140/封禁类   → 仍被封（继续等）
+//   - 401/session    → 不是封禁问题，是登录失效（该重登）
+//   - 其它           → 无结论（网络/限流等，稍后再试）
+//
+// 不写任何池状态：探测是观测行为，不该改变账号的可用性判断 —— 否则运维点一下
+// 探活就把号放回池子，等于变相 revive。
+func (p *Panel) accountProbeBan(w http.ResponseWriter, r *http.Request) {
+	uid := r.PathValue("uid")
+	st, ok := p.cfg.Pool.Status(uid)
+	if !ok {
+		writeErr(w, http.StatusNotFound, "account not found")
+		return
+	}
+	a := p.cfg.Pool.AuthByUID(uid)
+	if a == nil {
+		writeErr(w, http.StatusNotFound, "account credentials not found")
+		return
+	}
+	resp := map[string]any{
+		"ok":           true,
+		"uid":          uid,
+		"nickname":     st.Nickname,
+		"was_disabled": st.Disabled,
+		"was_reason":   st.DisabledReason,
+		"probed_at":    time.Now().Format(time.RFC3339),
+	}
+	if p.cfg.Upstream == nil {
+		resp["verdict"] = "unknown"
+		resp["detail"] = "upstream client not configured"
+		writeJSON(w, http.StatusOK, resp)
+		return
+	}
+	_, _, err := p.cfg.Upstream.UserResource(a)
+	// 302/401 的求证与 chat 路径同一套逻辑（见 server/handler.go 的网关 401 分支）：
+	// 网关 401 的响应体是 APISIX 的 HTML 页，**封禁（11140）与登录失效看起来完全一样**，
+	// 单看 401 分不出来。refresh 才是权威判词：refresh 成功 = 会话仍活（那 401 就是
+	// 风控拦截，含 11140 封禁）；refresh 被明确拒绝 = 登录态真失效。
+	// 网关 401 的求证与 chat 路径同一套判据（upstream.VerifySessionByRefresh）：
+	// 封禁（11140）与登录失效的响应体都是 APISIX HTML 页，单看 401 分不出来。
+	if err != nil && isSessionDeadErr(err) {
+		switch p.cfg.Upstream.VerifySessionByRefresh(a) {
+		case upstream.VerifyAlive:
+			resp["verdict"] = "blocked"
+			resp["detail"] = err.Error()
+			resp["advice"] = "会话仍有效，但请求被上游风控拦截（可能仍是 11140 封禁）—— 继续观察，勿反复 revive"
+			log.Printf("panel: probe_ban uid=%s → 被拦截但会话有效（refresh ok）", uid)
+			writeJSON(w, http.StatusOK, resp)
+			return
+		case upstream.VerifyInconclusive:
+			resp["verdict"] = "inconclusive"
+			resp["detail"] = err.Error()
+			resp["advice"] = "refresh 未给出明确判词（网络/限流等），稍后再试"
+			log.Printf("panel: probe_ban uid=%s → 无明确结论", uid)
+			writeJSON(w, http.StatusOK, resp)
+			return
+		}
+		// VerifyDead：落到下面的 session_dead 分支。
+	}
+	switch {
+	case err == nil:
+		resp["verdict"] = "lifted"
+		resp["advice"] = "上游已解封，可以点「解冻」恢复使用"
+		log.Printf("panel: probe_ban uid=%s → 已解封", uid)
+	case isAccountFaultErr(err):
+		resp["verdict"] = "still_banned"
+		resp["detail"] = err.Error()
+		resp["advice"] = "仍被封禁，继续等待；勿反复 revive（可能加重风控）"
+		log.Printf("panel: probe_ban uid=%s → 仍被封", uid)
+	case isSessionDeadErr(err):
+		resp["verdict"] = "session_dead"
+		resp["detail"] = err.Error()
+		resp["advice"] = "不是封禁问题，是登录态失效 —— 需重新登录"
+		log.Printf("panel: probe_ban uid=%s → 登录失效（非封禁）", uid)
+	default:
+		resp["verdict"] = "inconclusive"
+		resp["detail"] = err.Error()
+		resp["advice"] = "无明确结论（网络/限流等），稍后再试"
+		log.Printf("panel: probe_ban uid=%s → 无结论: %v", uid, err)
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+// isAccountFaultErr 判断错误是否为账号级封禁/风控（11140 request illegal 等）。
+func isAccountFaultErr(err error) bool {
+	var ue *upstream.Error
+	if !errors.As(err, &ue) {
+		return false
+	}
+	return ue.Kind == upstream.ErrAccountFault
+}
+
+// isSessionDeadErr 判断错误是否为登录态失效。
+func isSessionDeadErr(err error) bool {
+	var ue *upstream.Error
+	if !errors.As(err, &ue) {
+		return false
+	}
+	return ue.Kind == upstream.ErrSessionDead
+}

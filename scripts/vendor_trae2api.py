@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
 """Vendor the trae2api (XCool-603/trae2api) runtime packages into this module.
 
-上游项目把可复用包放在 internal/ 下（纯标准库、零第三方依赖）。Go 的 internal
-可见性规则阻止跨模块导入，所以整树拷贝进本仓并重写 import 路径。与
-vendor_workbuddy.py 同一套机制：
+上游项目把可复用包放在 internal/ 下（纯标准库、零第三方依赖）。vendor 树以
+独立 Go module 引入（module 路径与上游一致，import 零改写），落点
+modules/trae2api/internal/；Go 的 internal 可见性规则禁止主 module 直接
+import vendor 的 internal/*，消费面收窄到根门面 modules/trae2api/afree_bridge.go
+（EXTRA_ROOT_PRESERVE 登记项）。与 vendor_workbuddy.py 同一套机制：
 
   - 整树拷贝 PACKAGES（排除 desktop/cli/cmd —— 核心包不 import 它们，见
     sync 技能的反向 grep 结论）；
-  - import 前缀重写 trae2api/internal/ → afree-proxy/internal/trae2api/；
+  - import 不再改写（2026-11-17 独立 module 化：树内路径与上游一致）；
   - 上游本地修复（另一会话 2026-11-04 实测的文本工具调用兜底 + 4001 空片段
     修复）以 scripts/trae2api-afree.patch 形式随 vendor 重放；新文件
     （server/textcall*.go）走 PRESERVE_RELATIVE（afree 自有文件：文本调用兜底
@@ -28,10 +30,7 @@ import sys
 # 上游工作树（XCool-603/trae2api 检出）。remote trae-upstream 同源。
 SOURCE_ROOT = Path("D:/下载/Github/trae2api")  # 2026-11-07 修正：xcool 目录名已不存在，实际克隆在 trae2api（正斜杠避开转义）
 TARGET_ROOT = Path(r"D:\下载\Github\afree-proxy")
-TARGET_PKG = TARGET_ROOT / "internal" / "trae2api"
-
-SOURCE_PREFIX = "trae2api/internal/"
-TARGET_PREFIX = "afree-proxy/internal/trae2api/"
+TARGET_PKG = TARGET_ROOT / "modules" / "trae2api" / "internal"
 
 # 基线 commit 同步登记在 scripts/trae2api-vendor-baseline.json（sync 脚本维护）。
 # 2026-11-04 基线：6a861d9（v0.2.6 之后、含 9074 退避重试）。
@@ -66,7 +65,15 @@ PRESERVE_RELATIVE = (
     Path("server") / "textcall.go",
     Path("server") / "textcall_test.go",
     Path("server") / "afree_hooks.go",
+    # afree 自有测试（2026-11-17 自上游 chat_test.go 拆出——回退链降级 WARN
+    # 的回归测试，原内联在 chat_test.go 未登记，re-vendor 即丢）。
+    Path("traectl") / "chainwarn_test.go",
 )
+
+# module 根层的 afree 自有文件（在 internal/ 子树之外，PRESERVE_RELATIVE 够不
+# 到）：re-vendor 时从活树 module 根原样保留。afree_bridge.go 是主 module 的
+# 唯一消费门面。
+EXTRA_ROOT_PRESERVE = ("afree_bridge.go",)
 
 # 幂等改写规则：file → [(old, new, expected_count), ...]。
 # expected_count 按上游 HEAD 树校验；改写只在 vendor/同步时对"干净上游树"执行
@@ -113,6 +120,17 @@ var StoreHTTPClient func(s *Store) *http.Client
 	// 续期成功后同步池内状态（余额/健康判定依赖过期时间）""",
             1,
         ),
+        # 截断语义注释对齐（2026-11-14 textcall 半截调用改丢弃，chat.go 收尾
+        # 注释同批更新；2026-11-17 补登记——此前补丁文件未同步该注释，
+        # re-vendor 会回退成旧注释）。
+        (
+            """	// 文本调用收尾：冲刷残余正文，把解析出的调用并入 toolBuf 统一校验发出
+	//（流被截断时未闭合的捕获会按正文原样放行，见 textcall.go）。""",
+            """	// 文本调用收尾：冲刷残余正文，把解析出的调用并入 toolBuf 统一校验发出
+	//（流被截断时未闭合的捕获丢弃——半截调用无可执行价值，2026-11-14 改，
+	// 见 textcall.go finish）。""",
+            1,
+        ),
     ),
     "server/anthropic.go": (
         (
@@ -143,6 +161,59 @@ var StoreHTTPClient func(s *Store) *http.Client
 	}
 	return proxyChatClient(c.Proxy)
 }""",
+            1,
+        ),
+        # SharedChatTransport 访问器（2026-11-17 登记补漏——活树早已有、脚本未
+        # 登记，re-vendor 即丢：traeDirectClient 直连守卫随之失效）。old 取上游
+        # sharedChatClient 与 proxyChatClient 之间的原文。
+        (
+            """	return chatClientVal
+}
+
+// proxyChatClient 获取或创建绑定指定代理的聊天客户端（连接池复用）。""",
+            """	return chatClientVal
+}
+
+// SharedChatTransport 返回共享 chat 客户端的底层 Transport，供 afree 出口
+// 接管钩子（StoreHTTPClient）在直连分支包壳复用：直连也过死腿守卫时，仍用
+// 本 Transport 的连接参数（ResponseHeaderTimeout 等，单一事实来源在
+// transport.go），不改变任何连接行为。
+func SharedChatTransport() http.RoundTripper { return sharedChatClient().Transport }
+
+// proxyChatClient 获取或创建绑定指定代理的聊天客户端（连接池复用）。""",
+            1,
+        ),
+        # [trae-chain] 中间端点降级 WARN（2026-11-11 加的 afree 观测，2026-11-17
+        # 补登记——此前活树有、脚本无，re-vendor 即丢）。import 同批注入。
+        (
+            """	"errors"
+	"fmt"
+	"io"
+	"net/http"
+""",
+            """	"errors"
+	"fmt"
+	"io"
+	"log"
+	"net/http"
+""",
+            1,
+        ),
+        (
+            """		if errors.As(err, &consumed) {
+			return consumed.err
+		}
+		lastErr = err""",
+            """		if errors.As(err, &consumed) {
+			return consumed.err
+		}
+		// 中间端点降级观测：上游常用「200 + error 事件」表达拒绝，出口传输层
+		// 只见 2xx（afree 守卫只记 HTTP≥400），此前 ①② 为何挂完全静默、排查
+		// 只能靠猜。末级错误由上层（server/chat.go 收尾日志）携带账号记录，不重复。
+		if i < len(chatPaths)-1 {
+			log.Printf("[trae-chain] WARN: 端点 %s 降级下一级: %v", path, err)
+		}
+		lastErr = err""",
             1,
         ),
     ),
@@ -422,8 +493,9 @@ const AFREE_API_BASE = '/admin/trae2api/api';""",
         ("fetch('/admin/dsh/export'", "fetch(AFREE_API_BASE + '/admin/dsh/export'", 1),
         ("fetch('/healthz')", "fetch(AFREE_API_BASE + '/healthz')", 1),
     ),
-    # afree 桥接访问器（2026-11-04 账号表面板恢复旧列序所需）：Server.Metrics
-    # 读当日/累计 token 与最近使用，Store.Mu 供桥接层锁内读 Cred.ExpiredAt。
+    # afree 桥接访问器：Store.Mu 供桥接层锁内读 Cred.ExpiredAt。（原注释提到
+    # 的 Server.Metrics 访问器已于 2026-11-17 拆除——tokens.json 方案落地后
+    # 桥接层再无消费方，属死注入。）
     "server/tasks.go": (
         (
             """			// 签到后顺手刷新额度，让控制台立刻看到新余额
@@ -443,10 +515,6 @@ const AFREE_API_BASE = '/admin/trae2api/api';""",
 func (s *Server) Pool() *pool.Pool { return s.pool }""",
             """// Pool 暴露账号池（供定时任务等外部组件使用）。
 func (s *Server) Pool() *pool.Pool { return s.pool }
-
-// Metrics 暴露指标采集器（afree 桥接层读账号级 token 聚合/最近使用；
-// vendor 脚本注入的桥接点，上游原样不受影响）。
-func (s *Server) Metrics() *metrics.Collector { return s.metrics }
 
 // OnRecord afree 持久记账钩子（vendor 脚本注入的桥接点，上游原样为
 // nil）：非 nil 时每个完成的请求样本在 chatStat.done() 里回传宿主。
@@ -547,7 +615,7 @@ def apply_patch(pkg: Path) -> None:
 def main(source_root=None, target_root=None, preserve_from=None) -> int:
     src_root = Path(source_root) if source_root else SOURCE_ROOT
     tgt_root = Path(target_root) if target_root else TARGET_ROOT
-    pkg = tgt_root / "internal" / "trae2api"
+    pkg = tgt_root / "modules" / "trae2api" / "internal"
     preserve_root = Path(preserve_from) if preserve_from else pkg
 
     missing = [p for p in PACKAGES if not (src_root / "internal" / p).is_dir()]
@@ -566,7 +634,6 @@ def main(source_root=None, target_root=None, preserve_from=None) -> int:
     pkg.mkdir(parents=True)
 
     copied = 0
-    rewritten = 0
     for package in PACKAGES:
         source_dir = src_root / "internal" / package
         target_dir = pkg / package
@@ -575,13 +642,9 @@ def main(source_root=None, target_root=None, preserve_from=None) -> int:
             target_file = target_dir / rel
             target_file.parent.mkdir(parents=True, exist_ok=True)
             if source_file.suffix in TEXT_SUFFIXES:
-                text = source_file.read_text(encoding="utf-8")
-                new_text = text
-                if source_file.suffix == ".go":
-                    new_text = new_text.replace(SOURCE_PREFIX, TARGET_PREFIX)
-                if new_text != text:
-                    rewritten += 1
-                target_file.write_text(new_text, encoding="utf-8", newline="\n")
+                target_file.write_text(
+                    source_file.read_text(encoding="utf-8"), encoding="utf-8", newline="\n"
+                )
             else:
                 target_file.write_bytes(source_file.read_bytes())
             copied += 1
@@ -599,7 +662,16 @@ def main(source_root=None, target_root=None, preserve_from=None) -> int:
         target_file.parent.mkdir(parents=True, exist_ok=True)
         target_file.write_bytes(content)
 
-    print(f"copied {copied} files into {pkg} ({rewritten} import-rewritten)")
+    # module 根层的 afree 自有文件（消费门面等）从活树 module 根原样保留
+    pkg.parent.mkdir(parents=True, exist_ok=True)
+    for name in EXTRA_ROOT_PRESERVE:
+        src = preserve_root.parent / name
+        if src.is_file():
+            (pkg.parent / name).write_bytes(src.read_bytes())
+        else:
+            print(f"warning: missing live module-root file: {src}", file=sys.stderr)
+
+    print(f"copied {copied} files into {pkg}")
     return 0
 
 

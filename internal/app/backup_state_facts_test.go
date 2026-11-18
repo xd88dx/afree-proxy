@@ -1,12 +1,13 @@
 package app
 
 import (
+	"afree-proxy/internal/backup"
 	"encoding/json"
 	"strings"
 	"testing"
 )
 
-// mergeStateFactsJSON 五平台 state 快照的账号事实合并（2026-11-03 三层口径）：
+// backup.MergeStateFactsJSON 五平台 state 快照的账号事实合并（2026-11-03 三层口径）：
 //   - cool（冷却表）= 账号事实，备份携带即整体替换；
 //   - keyTokens = 本机统计，永远保留本机值。
 //
@@ -14,8 +15,8 @@ import (
 func TestMergeStateFactsJSON(t *testing.T) {
 	t.Run("standard shape (other)", func(t *testing.T) {
 		local := json.RawMessage(`{"cool":{"k1":"2026-01-01T00:00:00Z"},"keyTokens":{"k1":{"Today":9}}}`)
-		backup := json.RawMessage(`{"cool":{"k2":"2026-02-02T00:00:00Z"},"keyTokens":{"k1":{"Today":100}}}`)
-		merged, err := mergeStateFactsJSON(local, backup)
+		bk := json.RawMessage(`{"cool":{"k2":"2026-02-02T00:00:00Z"},"keyTokens":{"k1":{"Today":100}}}`)
+		merged, err := backup.MergeStateFactsJSON(local, bk)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -38,8 +39,8 @@ func TestMergeStateFactsJSON(t *testing.T) {
 
 	t.Run("backup without cool keeps local", func(t *testing.T) {
 		local := json.RawMessage(`{"cool":{"k1":"2026-01-01T00:00:00Z"}}`)
-		backup := json.RawMessage(`{}`)
-		merged, err := mergeStateFactsJSON(local, backup)
+		bk := json.RawMessage(`{}`)
+		merged, err := backup.MergeStateFactsJSON(local, bk)
 		if err != nil {
 			t.Fatal(err)
 		}

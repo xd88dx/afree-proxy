@@ -1,6 +1,10 @@
 package app
 
 import (
+	"afree-proxy/internal/reqlog"
+
+	"afree-proxy/internal/cline"
+	"afree-proxy/internal/zen"
 	"log"
 	"net/http"
 	"os"
@@ -12,10 +16,10 @@ import (
 // 删除全部持久化数据：Cline 账号与客户端 key、默认模型、请求头、调度策略、
 // OpenCode key/绑定/代理池、zen 粘性会话与端点学习结果、
 // WorkBuddy 账号与代理绑定、自定义别名、cline 流式自学习结果、请求日志与用量统计。
-// 仅保留运行基础设施（.session-secret、运行日志），保证面板会话不被踢出。
+// 仅保留运行基础设施（.Session-secret、运行日志），保证面板会话不被踢出。
 func handleAdminDeleteAllData(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		writeAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
+		WriteAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
 		return
 	}
 
@@ -31,7 +35,7 @@ func handleAdminDeleteAllData(w http.ResponseWriter, r *http.Request) {
 	streamLearned := clearClineStreamLearnedForDataDelete()
 	clearRequestLogsForDataDelete()
 
-	writeAPI(w, http.StatusOK, apiResponse{
+	WriteAPI(w, http.StatusOK, apiResponse{
 		Success: true,
 		Message: "All persisted data deleted",
 		Data: map[string]any{
@@ -54,27 +58,15 @@ func handleAdminDeleteAllData(w http.ResponseWriter, r *http.Request) {
 // 默认模型、cline 走代理池开关、调度策略与请求头全部回到出厂值。内存中的
 // 调度配置与默认模型一并复位，避免清完盘上数据后被内存旧值回写。
 func clearPoolForDataDelete() (accounts, clientKeys int) {
-	old := loadPool()
-	poolMu.Lock()
-	accounts = len(old.Accounts)
+	accounts = cline.ResetPoolForDataDelete(defaultProxyConfig().Headers)
 	clientKeys = len(globalClientKeys())
-	pool = &AccountPool{
-		Accounts: []*Account{},
-		Headers:  defaultProxyConfig().Headers,
-	}
-	poolDirty = false
-	clearPoolUsageLocked() // 痕迹表与游标一并清空（即时落盘痕迹文件）
-	poolMu.Unlock()
-	savePool()
 
 	setProxyConfig(defaultProxyConfig())
 	setGlobalClientKeys(nil)
 	setGlobalAdminLogEnabled(false)
 	setGlobalStrategy("round_robin")
 	// 旧账号的刷新单飞句柄一并作废
-	refreshFlightMu.Lock()
-	refreshFlight = map[*Account]*refreshFlightCall{}
-	refreshFlightMu.Unlock()
+	cline.ResetRefreshFlight()
 	return accounts, clientKeys
 }
 
@@ -93,20 +85,13 @@ func clearOpenCodeKeysForDataDelete() int {
 	next.KeyBindings = nil
 	setZenConfig(&next)
 	// 冷却/记账痕迹一并清空（痕迹文件即时落盘）。
-	ClearZenUsage()
+	zen.ClearZenUsage()
 	return n
 }
 
 // clearZenSessionsForDataDelete 清空 zen 粘性会话（内存 + 落盘文件）。
 func clearZenSessionsForDataDelete() int {
-	loadZenSessions()
-	zenSessMu.Lock()
-	n := len(zenSessions)
-	zenSessions = map[string]*zenSessionEntry{}
-	zenSessLoaded = true
-	saveZenSessionsLocked()
-	zenSessMu.Unlock()
-	return n
+	return zen.ClearSessionsForDataDelete()
 }
 
 // clearZenEndpointsForDataDelete 删除端点学习结果文件，并把内存模型表中
@@ -115,39 +100,14 @@ func clearZenSessionsForDataDelete() int {
 // 的"种子目录本身就是 responses 的模型不受影响"基线（种子快照已于
 // 2026-11-11 整机制删除）。
 func clearZenEndpointsForDataDelete() int {
-	learned := loadZenEndpointsFile()
-	// 学习结果住在 zen-config.json 的 endpoints 段，清空该段即可（不删整文件，
-	// 否则会连 key 池与粘性会话一起清掉）。
-	mutateZenConfigFile(func(f *zenConfigFileData) {
-		f.Endpoints = nil
-	})
-	if len(learned) == 0 {
-		return 0
-	}
-	zenModelsMu.Lock()
-	n := 0
-	for id, up := range learned {
-		m, ok := zenModels[id]
-		if !ok || m == nil || up != "responses" || m.Upstream != "responses" {
-			continue
-		}
-		if m.Source != "learned" {
-			continue // npm/目录固有的 responses：非学习产物，不回退
-		}
-		next := *m
-		next.Upstream = ""
-		zenModels[id] = &next
-		n++
-	}
-	zenModelsMu.Unlock()
-	return n
+	return zen.ClearEndpointsForDataDelete()
 }
 
 func clearWorkbuddyAccountsForDataDelete() int {
-	if workbuddySub == nil || workbuddySub.pool == nil {
+	if *workbuddySub == nil || (*workbuddySub).Pool == nil {
 		return 0
 	}
-	p := workbuddySub.pool
+	p := (*workbuddySub).Pool
 	statuses := p.List()
 	if len(statuses) == 0 {
 		return 0
@@ -200,28 +160,15 @@ func clearCombosForDataDelete() int {
 }
 
 // clearClineStreamLearnedForDataDelete 清空 cline "必须流式"自学习结果
-// （内存表 + afree-config.json 的 clineStreamRequired 段）。
+// （内存表 + cline-config.json 的 streamRequired 段，2026-11-17 迁入）。
 func clearClineStreamLearnedForDataDelete() int {
-	clineStreamMu.Lock()
-	n := len(clineStreamLearned)
-	clineStreamLearned = nil
-	clineStreamMu.Unlock()
-	mutateGlobalConfig(func(g *globalConfigData) {
-		g.ClineStreamRequired = nil
-	})
-	return n
+	return cline.ClearStreamLearned()
 }
 
 // clearRequestLogsForDataDelete 清空请求日志与用量统计（内存 + 落盘文件）。
 // 两个文件都是按次追加打开的，直接截断即可，无需处理打开句柄。
 func clearRequestLogsForDataDelete() {
-	reqLogsMu.Lock()
-	reqLogs = nil
-	reqLogsMu.Unlock()
-	path := reqLogPath()
-	if err := os.WriteFile(path, nil, 0600); err != nil {
-		log.Printf("data delete: truncate %s failed: %v", path, err)
-	}
+	reqlog.ClearForDataDelete()
 }
 
 // clearTrae2apiAccountsForDataDelete 清空 TraeWork 账号：删除全部快照文件 +
@@ -242,15 +189,15 @@ func clearTrae2apiAccountsForDataDelete() int {
 	}
 	traeBindingsMu.Lock()
 	loadTraeBindingsLocked()
-	if len(traeBindings) > 0 {
-		traeBindings = map[string]trae2apiProxyBinding{}
+	if len(*traeBindings) > 0 {
+		*traeBindings = map[string]trae2apiProxyBinding{}
 		saveTraeBindingsLocked()
 	}
 	traeBindingsMu.Unlock()
 	traeRoutingMu.Lock()
 	loadTraeRoutingLocked()
-	if len(traeRouting) > 0 {
-		traeRouting = map[string]bool{}
+	if len(*traeRouting) > 0 {
+		*traeRouting = map[string]bool{}
 		saveTraeRoutingLocked()
 	}
 	traeRoutingMu.Unlock()

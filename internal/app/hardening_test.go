@@ -1,10 +1,14 @@
 package app
 
 import (
+	"afree-proxy/internal/reqlog"
+
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"afree-proxy/internal/kit"
 )
 
 // 被 413 拒绝的超大请求也必须进请求日志：滥用诊断的盲区正是这些被拒请求。
@@ -16,20 +20,13 @@ func TestRequestLogMiddlewareLogs413(t *testing.T) {
 	t.Setenv("MAX_BODY_MB", "1") // 1MB，便于用小 body 触发超限
 
 	// 清理内存环形缓冲，避免其他测试的残留
-	reqLogsMu.Lock()
-	saved := reqLogs
-	reqLogs = nil
-	reqLogsMu.Unlock()
-	t.Cleanup(func() {
-		reqLogsMu.Lock()
-		reqLogs = saved
-		reqLogsMu.Unlock()
-	})
+	restoreReqLogs := reqlog.ResetReqLogsForTest()
+	t.Cleanup(restoreReqLogs)
 
-	handler := requestLogMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := reqlog.RequestLogMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		t.Error("oversized request must not reach the wrapped handler")
 		w.WriteHeader(http.StatusOK)
-	}))
+	}), func(r *http.Request, model string) (string, string) { return "cline", "" })
 
 	body := strings.NewReader(`{"model":"x","pad":"` + strings.Repeat("a", 2<<20) + `"}`)
 	rec := httptest.NewRecorder()
@@ -38,7 +35,7 @@ func TestRequestLogMiddlewareLogs413(t *testing.T) {
 	if rec.Code != http.StatusRequestEntityTooLarge {
 		t.Fatalf("status = %d, want 413", rec.Code)
 	}
-	logs := LoadRequestLogs()
+	logs := reqlog.LoadRequestLogs()
 	if len(logs) == 0 {
 		t.Fatal("a rejected 413 request must still be logged")
 	}
@@ -60,13 +57,13 @@ func TestExtractErrReason(t *testing.T) {
 		{"line1\nline2\n\tline3", "line1 line2 line3"}, // 换行压平，tooltip 可读
 	}
 	for _, c := range cases {
-		if got := extractErrReason([]byte(c.body)); got != c.want {
-			t.Errorf("extractErrReason(%q) = %q, want %q", c.body, got, c.want)
+		if got := reqlog.ExtractErrReason([]byte(c.body)); got != c.want {
+			t.Errorf("reqlog.ExtractErrReason(%q) = %q, want %q", c.body, got, c.want)
 		}
 	}
 	// 超长原文截断到 300 rune
 	long := strings.Repeat("x", 500)
-	if got := extractErrReason([]byte(long)); len([]rune(got)) != 300+1 { // + "…"
+	if got := reqlog.ExtractErrReason([]byte(long)); len([]rune(got)) != 300+1 { // + "…"
 		t.Errorf("long body not truncated: len=%d", len([]rune(got)))
 	}
 }
@@ -75,17 +72,17 @@ func TestExtractErrReason(t *testing.T) {
 // 配置拼写错误无从察觉。
 func TestEnvIntWarnsOnInvalid(t *testing.T) {
 	t.Setenv("ZTEST_INT", "8s")
-	if _, ok := envInt("ZTEST_INT"); ok {
+	if _, ok := kit.EnvInt("ZTEST_INT"); ok {
 		t.Fatal("invalid integer must report ok=false")
 	}
 	// 空值不警告（不算错误）
 	t.Setenv("ZTEST_INT", "")
-	if _, ok := envInt("ZTEST_INT"); ok {
+	if _, ok := kit.EnvInt("ZTEST_INT"); ok {
 		t.Fatal("empty must report ok=false")
 	}
 	// 合法值正常解析
 	t.Setenv("ZTEST_INT", "42")
-	if n, ok := envInt("ZTEST_INT"); !ok || n != 42 {
+	if n, ok := kit.EnvInt("ZTEST_INT"); !ok || n != 42 {
 		t.Fatalf("envInt = %d,%v; want 42,true", n, ok)
 	}
 }

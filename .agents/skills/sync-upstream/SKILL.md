@@ -11,7 +11,7 @@ description: 同步 afree-proxy 五条上游线的完整流程与陷阱清单—
 |---|---|---|---|---|---|---|---|
 | 上游 | `foxy1402/cline-proxy`（主线） | `misakano7545/workbuddy2api-panel`（主线） | `foxy1402/cline-proxy`（主线，与 cline 同一上游） | `jasonxu114514/opencode2api`（副线，只看更新、吸纳有价值逻辑） | `XCool-603/trae2api`（主线） | `autumnsentiment/Trae2api-cn`（副线，Python 项目、trae 更换基线前身，只看更新、吸纳有价值逻辑） | `yetone/magpie`（纯参考不合并） |
 | 对应平台 | Cline | WorkBuddy | OpenCode | OpenCode | TraeWork | TraeWork | 全平台 |
-| 同步面 | 整个仓库网关/zen/cline 核心 | 仅 `internal/workbuddy/` vendor 树 | 同 cline | 无——读源码/提交评估，单点吸纳，MERGE.md 记基线 | 仅 `internal/trae2api/` vendor 树 | 仅 `internal/app/trae2api_helper_script.go` 内嵌的 `web_login.py`（Python 引擎逻辑与 XCool 版本对应的部分：XCool 版是完全独立 Go 重写，不存在跨语言移植） | 无——按需单点吸纳 |
+| 同步面 | 整个仓库网关/zen/cline 核心 | 仅 `modules/workbuddy2api/` vendor 独立 module | 同 cline | 无——读源码/提交评估，单点吸纳，MERGE.md 记基线 | 仅 `modules/trae2api/` vendor 独立 module | 仅 `internal/app/trae2api_helper_script.go` 内嵌的 `web_login.py`（Python 引擎逻辑与 XCool 版本对应的部分：XCool 版是完全独立 Go 重写，不存在跨语言移植） | 无——按需单点吸纳 |
 
 **用户口径记忆**（触发时按这个走）：
 - cline → cline-proxy 主线
@@ -129,7 +129,7 @@ docker build -t afree-proxy:test-$(date +%Y%m%d-%H%M) .
 
 注意：`-v "D:/..."` 路径在 Git Bash 下必须 `MSYS_NO_PATHCONV=1`，否则路径被改写挂载失败。
 
-**既有 flaky（勿误判为回归，用户 2026-10-27 拍板不修）**：`internal/workbuddy/server` 的 `TestChatStreamPassthrough` 在全量 `go test ./...` 时失败，报 `LastTokensPerSecond=nil` 而 `LastLatencyMs=1`。根因已定位：`tokensPerSecond()`（`handler.go:2011`）在 `ttfb <= 0` 时返回 `ok=false`，`RecordTokenUsage`（`pool/state.go:395`）据此把 `LastTokensPerSecond` 置 nil，而断言（`handler_test.go:462`）要求非 nil——httptest 即时响应下 `ttfb` 常被测成 0，故整包跑必挂、单独 `-run` 跑则过。属上游测试的既有缺陷，**不要修**（改上游测试会与后续同步持续冲突），也不要据此判定同步回归；判定既有性可用 `git worktree add --detach <scratch>/afree-head f9a0e13` 对照跑同包。
+**已修复的历史 flaky（2026-11-05 起不再存在，记录留档）**：`TestChatStreamPassthrough` 曾在全量测试失败（`tokensPerSecond()` 在 `ttfb<=0` 时返回 `ok=false` → `LastTokensPerSecond` 置 nil 而断言要求非 nil），用户曾拍板不修；上游 d596fa7 的 66e5344「客户端断开只按请求 ctx 判定」顺带修复了该 flaky，测试随上游移除（MERGE.md WorkBuddy 节有记录）。见到同名失败即为异常回归，按正常回归排查。
 
 ## 4. 完成判据
 

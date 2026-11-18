@@ -211,3 +211,35 @@ func RunCommand(name string, args ...string) error {
 	cmd := exec.Command(name, args...)
 	return cmd.Start()
 }
+
+// parseRetryAfter 解析 HTTP Retry-After 头（秒数或 HTTP 日期）。
+func ParseRetryAfter(header string) time.Duration {
+	header = strings.TrimSpace(header)
+	if header == "" {
+		return 0
+	}
+	// 尝试秒数
+	if secs, err := parseIntSafe(header); err == nil {
+		return time.Duration(secs) * time.Second
+	}
+	// 尝试 HTTP 日期
+	if t, err := http.ParseTime(header); err == nil {
+		d := time.Until(t)
+		if d > 0 {
+			return d
+		}
+	}
+	return 0
+}
+
+func parseIntSafe(s string) (int, error) {
+	var n int
+	for i := 0; i < len(s); i++ {
+		if s[i] < '0' || s[i] > '9' {
+			return 0, fmt.Errorf("not a number")
+		}
+		n = n*10 + int(s[i]-'0')
+	}
+	return n, nil
+}
+

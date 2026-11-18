@@ -28,15 +28,15 @@ func setupZenProbeTest(t *testing.T, handler http.HandlerFunc) {
 	// 清掉其他测试留下的冷却/连败状态：这些是包级 map，串行测试间会渗漏
 	//（sk-pin333 的 60s 冷却曾渗进后续用例）。
 	zenKeyMu.Lock()
-	zenKeyCool = map[string]time.Time{}
+	*zenKeyCool = map[string]time.Time{}
 	zenKeyMu.Unlock()
 	zenSessFailedMu.Lock()
-	zenSessFailed = map[string]int{}
+	*zenSessFailed = map[string]int{}
 	zenSessFailedMu.Unlock()
 	zenSessMu.Lock()
-	zenSessions = map[string]*zenSessionEntry{}
-	zenSessLoaded = true
-	zenSessSaveBlocked = false
+	*zenSessions = map[string]*zenSessionEntry{}
+	*zenSessLoaded = true
+	*zenSessSaveBlocked = false
 	zenSessMu.Unlock()
 	upstream := httptest.NewServer(handler)
 	t.Cleanup(upstream.Close)
@@ -53,11 +53,11 @@ func setupZenProbeTest(t *testing.T, handler http.HandlerFunc) {
 	setZenConfig(&cfgCopy)
 	t.Cleanup(func() { setZenConfig(savedCfg) })
 
-	savedModels := zenModels
+	savedModels := *zenModels
 	withZenModelForTest(t, "aaa-probe-model", "")
 	t.Cleanup(func() {
 		zenModelsMu.Lock()
-		zenModels = savedModels
+		*zenModels = savedModels
 		zenModelsMu.Unlock()
 	})
 }
@@ -143,7 +143,7 @@ func TestZenKeyTestProbe403ReportsErrorWithoutStateChange(t *testing.T) {
 	// 先绑一个已知会话，探测后必须原样保留（探测不触碰会话状态）
 	mintTestZenSession(t, key)
 	zenSessMu.Lock()
-	before := zenSessions[key].Session
+	before := (*zenSessions)[key].Session
 	zenSessMu.Unlock()
 
 	result, status := testZenKey(key, 0, "")
@@ -155,7 +155,7 @@ func TestZenKeyTestProbe403ReportsErrorWithoutStateChange(t *testing.T) {
 	}
 	// 探测绝不改动生产会话/冷却/失败印记（结论只属于这次点击）
 	zenSessMu.Lock()
-	after := zenSessions[key].Session
+	after := (*zenSessions)[key].Session
 	zenSessMu.Unlock()
 	if after != before {
 		t.Fatalf("probe must not refresh the production session: %s -> %s", before, after)
@@ -164,7 +164,7 @@ func TestZenKeyTestProbe403ReportsErrorWithoutStateChange(t *testing.T) {
 		t.Fatal("probe 403 must not cool the key")
 	}
 	zenSessFailedMu.Lock()
-	_, marked := zenSessFailed[key]
+	_, marked := (*zenSessFailed)[key]
 	zenSessFailedMu.Unlock()
 	if marked {
 		t.Fatal("probe 403 must not mark the production key as failed")
@@ -190,7 +190,7 @@ func TestZenCallPinKeepsSingleKey(t *testing.T) {
 		"max_tokens": 64,
 	}
 
-	_, _, err := callZenAPI(t.Context(), params, true, zenCallOpts{pinKey: "sk-pin333"})
+	_, _, err := callZenAPI(t.Context(), params, true, zenCallOpts{PinKey: "sk-pin333"})
 	var he *zenHTTPError
 	if !errors.As(err, &he) || he.Status != http.StatusTooManyRequests {
 		t.Fatalf("pinned probe err = %v, want zenHTTPError 429", err)
@@ -274,7 +274,7 @@ func TestZenKeyTestRateLimitShaped403ReportsCooldown(t *testing.T) {
 		t.Fatal("keyword-403 probe did not cool the key")
 	}
 	zenSessFailedMu.Lock()
-	_, marked := zenSessFailed[key]
+	_, marked := (*zenSessFailed)[key]
 	zenSessFailedMu.Unlock()
 	if marked {
 		t.Fatal("rate-limited 403 must not mark the key as session-failed")
@@ -372,19 +372,19 @@ func TestZenEmptyPoolIsSafeAndExplicit(t *testing.T) {
 // free 模型（最小 id）；目录为空返回 nil（种子快照已取消，冷启动空表靠启动
 // 同步 + 30s×10 快速重试链补齐，探测如实报错）。
 func TestZenProbeModelPreferenceOrder(t *testing.T) {
-	savedModels := zenModels
+	savedModels := *zenModels
 	defer func() {
 		zenModelsMu.Lock()
-		zenModels = savedModels
+		*zenModels = savedModels
 		zenModelsMu.Unlock()
 	}()
 
 	set := func(models ...ZenModel) {
 		zenModelsMu.Lock()
-		zenModels = make(map[string]*ZenModel)
+		*zenModels = make(map[string]*ZenModel)
 		for _, m := range models {
 			cp := m
-			zenModels[cp.ID] = &cp
+			(*zenModels)[cp.ID] = &cp
 		}
 		zenModelsMu.Unlock()
 	}
@@ -433,15 +433,15 @@ func TestZenKeyTestHonorsExplicitModel(t *testing.T) {
 	})
 	// 两模型表：自动选择会挑 live 的 zzz-…，显式指定必须仍用 aaa-…。
 	zenModelsMu.Lock()
-	savedModels := zenModels
-	zenModels = map[string]*ZenModel{
+	savedModels := *zenModels
+	*zenModels = map[string]*ZenModel{
 		"aaa-probe-model": {ID: "aaa-probe-model", Source: "live"},
 		"zzz-probe-model": {ID: "zzz-probe-model", Source: "live"},
 	}
 	zenModelsMu.Unlock()
 	t.Cleanup(func() {
 		zenModelsMu.Lock()
-		zenModels = savedModels
+		*zenModels = savedModels
 		zenModelsMu.Unlock()
 	})
 
@@ -493,10 +493,10 @@ func TestZenCall403RefreshesSameKeyOnceThenCoolsAndFails(t *testing.T) {
 	withZenModelForTest(t, "aaa-probe-model", "")
 	t.Cleanup(func() {
 		zenKeyMu.Lock()
-		zenKeyCool = map[string]time.Time{}
+		*zenKeyCool = map[string]time.Time{}
 		zenKeyMu.Unlock()
 		zenSessFailedMu.Lock()
-		zenSessFailed = map[string]int{}
+		*zenSessFailed = map[string]int{}
 		zenSessFailedMu.Unlock()
 	})
 
@@ -558,10 +558,10 @@ func TestZenResponses403RefreshesSameKeyOnceThenCoolsAndFails(t *testing.T) {
 	withZenModelForTest(t, "resp-model", "responses") // 走原生 responses 路径
 	t.Cleanup(func() {
 		zenKeyMu.Lock()
-		zenKeyCool = map[string]time.Time{}
+		*zenKeyCool = map[string]time.Time{}
 		zenKeyMu.Unlock()
 		zenSessFailedMu.Lock()
-		zenSessFailed = map[string]int{}
+		*zenSessFailed = map[string]int{}
 		zenSessFailedMu.Unlock()
 	})
 
@@ -677,7 +677,7 @@ func TestZenNoKeyErrorReportsRealRejectionLayer(t *testing.T) {
 	parkZenKey("k2", "test")
 	t.Cleanup(func() {
 		zenKeyMu.Lock()
-		zenKeyPark = map[string]zenParkState{}
+		*zenKeyPark = map[string]zenParkState{}
 		zenKeyMu.Unlock()
 	})
 	err = zenNoKeyError()
@@ -691,7 +691,7 @@ func TestZenNoKeyErrorReportsRealRejectionLayer(t *testing.T) {
 	// 混合：k1 parked + k2 routing 关——两层计数都列出
 	//（先清掉上一步的全量停放：zenAllParkedUntil 只看 park 不看路由层）
 	zenKeyMu.Lock()
-	zenKeyPark = map[string]zenParkState{}
+	*zenKeyPark = map[string]zenParkState{}
 	zenKeyMu.Unlock()
 	parkZenKey("k1", "test")
 	setZenConfig(newCfg([]string{"k1", "k2"}, map[string]bool{"k2": false}))

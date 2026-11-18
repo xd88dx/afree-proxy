@@ -5,12 +5,14 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"afree-proxy/internal/zen"
 )
 
 // 2026-10-30 抓包对齐：CLI 2.1.4 在 chat 路径恒发 stream_options.include_usage，
 // 且 max_completion_tokens 取目录的 limit.output。两者都是上游可见的形态差异。
 func TestBuildZenBodyStreamOptions(t *testing.T) {
-	body := buildZenBody(map[string]any{"model": "big-pickle", "messages": []any{}}, true)
+	body := BuildZenBody(map[string]any{"model": "big-pickle", "messages": []any{}}, true)
 	so, ok := body["stream_options"].(map[string]any)
 	if !ok {
 		t.Fatal("streaming body must carry stream_options")
@@ -19,16 +21,16 @@ func TestBuildZenBodyStreamOptions(t *testing.T) {
 		t.Error("stream_options.include_usage must be true")
 	}
 
-	// 非流式：上游恒 stream=true（FreeTier gate），但 buildZenBody 的 stream
+	// 非流式：上游恒 stream=true（FreeTier gate），但 BuildZenBody 的 stream
 	// 参数为 false 时不加该字段——避免给非流式路径留下无意义的键。
-	body = buildZenBody(map[string]any{"model": "big-pickle", "messages": []any{}}, false)
+	body = BuildZenBody(map[string]any{"model": "big-pickle", "messages": []any{}}, false)
 	if _, present := body["stream_options"]; present {
 		t.Error("non-streaming body must not carry stream_options")
 	}
 
 	// 非流式路径即使客户端传了 stream_options（passThroughKeys 会搬过来），
 	// 也必须被删掉：它是流式专有字段。
-	body = buildZenBody(map[string]any{
+	body = BuildZenBody(map[string]any{
 		"model": "big-pickle", "messages": []any{},
 		"stream_options": map[string]any{"include_usage": true},
 	}, false)
@@ -37,7 +39,7 @@ func TestBuildZenBodyStreamOptions(t *testing.T) {
 	}
 
 	// 客户端带的其它 stream_options 子键要保留，不能被网关整体替换掉。
-	body = buildZenBody(map[string]any{
+	body = BuildZenBody(map[string]any{
 		"model": "big-pickle", "messages": []any{},
 		"stream_options": map[string]any{"some_future_key": "keep-me", "include_usage": false},
 	}, true)
@@ -53,21 +55,21 @@ func TestBuildZenBodyStreamOptions(t *testing.T) {
 // max_completion_tokens 默认取目录 limit.output；客户端显式给了就用客户端的。
 func TestBuildZenBodyDefaultMaxCompletionTokens(t *testing.T) {
 	// 目录夹具（种子快照已取消，直接字面量造态）。
-	zenModelsMu.Lock()
-	savedModels := zenModels
-	zenModels = map[string]*ZenModel{"big-pickle": {ID: "big-pickle", Source: "live", Output: 32000}}
-	zenModelsMu.Unlock()
+	zen.ZenModelsMuPtr().Lock()
+	savedModels := *zen.ZenModelsPtr()
+	*zen.ZenModelsPtr() = map[string]*ZenModel{"big-pickle": {ID: "big-pickle", Source: "live", Output: 32000}}
+	zen.ZenModelsMuPtr().Unlock()
 	t.Cleanup(func() {
-		zenModelsMu.Lock()
-		zenModels = savedModels
-		zenModelsMu.Unlock()
+		zen.ZenModelsMuPtr().Lock()
+		*zen.ZenModelsPtr() = savedModels
+		zen.ZenModelsMuPtr().Unlock()
 	})
-	m, ok := resolveZenModel("big-pickle")
+	m, ok := zen.ResolveZenModel("big-pickle")
 	if !ok || m.Output <= 0 {
 		t.Fatal("big-pickle fixture missing")
 	}
 
-	body := buildZenBody(map[string]any{"model": "big-pickle", "messages": []any{}}, true)
+	body := BuildZenBody(map[string]any{"model": "big-pickle", "messages": []any{}}, true)
 	got, _ := body["max_completion_tokens"].(float64) // int 经 map[string]any 保持 int
 	if v, isInt := body["max_completion_tokens"].(int); isInt {
 		got = float64(v)
@@ -77,7 +79,7 @@ func TestBuildZenBodyDefaultMaxCompletionTokens(t *testing.T) {
 	}
 
 	// 客户端显式指定 → 不被覆盖
-	body = buildZenBody(map[string]any{
+	body = BuildZenBody(map[string]any{
 		"model": "big-pickle", "messages": []any{},
 		"max_completion_tokens": 1234,
 	}, true)
@@ -86,7 +88,7 @@ func TestBuildZenBodyDefaultMaxCompletionTokens(t *testing.T) {
 	}
 
 	// 客户端用旧名 max_tokens → 不额外塞 max_completion_tokens（两个都发会自相矛盾）
-	body = buildZenBody(map[string]any{
+	body = BuildZenBody(map[string]any{
 		"model": "big-pickle", "messages": []any{}, "max_tokens": 999,
 	}, true)
 	if _, has := body["max_completion_tokens"]; has {
@@ -96,7 +98,7 @@ func TestBuildZenBodyDefaultMaxCompletionTokens(t *testing.T) {
 
 // gate 工具在 chat 路径也要带 strict=false（CLI 抓包如此，responses 路径一直有）。
 func TestZenGateToolsChatStrictField(t *testing.T) {
-	tools := zenGateTools()
+	tools := ZenGateTools()
 	if len(tools) == 0 {
 		t.Fatal("no gate tools")
 	}

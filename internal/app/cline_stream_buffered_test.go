@@ -8,6 +8,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"afree-proxy/internal/cline"
 )
 
 // errAfterReader 读完 r 的内容后返回 err，模拟上游中途断流。
@@ -76,11 +78,11 @@ func TestBufferUpstreamSSEEOFWithoutDone(t *testing.T) {
 // 无 error 事件；上游被调用了两次。
 func TestHandleClineStreamBufferedRetriesAndReplays(t *testing.T) {
 	t.Setenv("STREAM_ATTEMPT", "3")
-	orig := clineCallFn
-	defer func() { clineCallFn = orig }()
+	orig := cline.CallFn
+	defer func() { cline.CallFn = orig }()
 
 	calls := 0
-	clineCallFn = func(ctx context.Context, params map[string]any, stream, useProxies bool) (*http.Response, *Account, error) {
+	cline.CallFn = func(ctx context.Context, params map[string]any, stream, useProxies bool) (*http.Response, *Account, error) {
 		calls++
 		if calls == 1 {
 			r := &errAfterReader{
@@ -119,13 +121,13 @@ func TestHandleClineStreamBufferedRetriesAndReplays(t *testing.T) {
 
 // 客户端在读流期间断开（ctx 取消）：不重试、不写响应，直接放弃。
 func TestHandleClineStreamBufferedClientGoneNoRetry(t *testing.T) {
-	orig := clineCallFn
-	defer func() { clineCallFn = orig }()
+	orig := cline.CallFn
+	defer func() { cline.CallFn = orig }()
 
 	calls := 0
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	clineCallFn = func(c context.Context, params map[string]any, stream, useProxies bool) (*http.Response, *Account, error) {
+	cline.CallFn = func(c context.Context, params map[string]any, stream, useProxies bool) (*http.Response, *Account, error) {
 		calls++
 		cancel() // 模拟上游流式期间客户端断开，连带取消请求 ctx
 		r := &errAfterReader{
@@ -151,11 +153,11 @@ func TestHandleClineStreamBufferedClientGoneNoRetry(t *testing.T) {
 // （newapi 记为真实错误、面板 Error 列可见、openai SDK 走客户端重试）。
 func TestHandleClineStreamBufferedAllBrokenReturns502(t *testing.T) {
 	t.Setenv("STREAM_ATTEMPT", "3")
-	orig := clineCallFn
-	defer func() { clineCallFn = orig }()
+	orig := cline.CallFn
+	defer func() { cline.CallFn = orig }()
 
 	calls := 0
-	clineCallFn = func(ctx context.Context, params map[string]any, stream, useProxies bool) (*http.Response, *Account, error) {
+	cline.CallFn = func(ctx context.Context, params map[string]any, stream, useProxies bool) (*http.Response, *Account, error) {
 		calls++
 		r := &errAfterReader{
 			r:   strings.NewReader("data: {\"choices\":[{\"delta\":{\"content\":\"par\"}}]}\n\n"),

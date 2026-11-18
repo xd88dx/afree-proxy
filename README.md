@@ -95,7 +95,7 @@ Fail-closed 启动：绑定非环回地址时，未设 `API_KEY` **或**未设 `
 
 ### WorkBuddy（vendored 上游）环境变量
 
-`WB2A_*` 前缀的 40+ 个变量属于 vendored 的 WorkBuddy 上游子系统（`internal/workbuddy/config/config.go` 集中读取），覆盖监听/超时/指纹/思考档位/调度抖动/预算告警等，详见该文件头部注释。常用：`WB2A_LISTEN`（独立监听地址，通常不需要）、`WB2A_SOFT_RATE`（软冷却时长）、`WB2A_SCHEDULE_JITTER_MINUTES`（调度抖动）、`WB2A_ADMIN_ENABLED`（上游管理端点，缺省关）。其余 `ZEN_PIN_KEY`（zen 排障钉定）见上表与对应章节（旧引擎的 `TRAE_REMOTE_DEBUG` 随 2026-11-04 换线退役）；`INVOCATION_ID` / `NOTIFY_SOCKET` / `RC_SVCNAME` / `LAUNCH_JOBKEY_LABEL` 是 updater 的服务管理器探测（systemd/OpenRC/launchd），不是配置项。
+`WB2A_*` 前缀的 40+ 个变量属于 vendored 的 WorkBuddy 上游子系统（`modules/workbuddy2api/internal/config/config.go` 集中读取），覆盖监听/超时/指纹/思考档位/调度抖动/预算告警等，详见该文件头部注释。常用：`WB2A_LISTEN`（独立监听地址，通常不需要）、`WB2A_SOFT_RATE`（软冷却时长）、`WB2A_SCHEDULE_JITTER_MINUTES`（调度抖动）、`WB2A_ADMIN_ENABLED`（上游管理端点，缺省关）。其余 `ZEN_PIN_KEY`（zen 排障钉定）见上表与对应章节（旧引擎的 `TRAE_REMOTE_DEBUG` 随 2026-11-04 换线退役）；`INVOCATION_ID` / `NOTIFY_SOCKET` / `RC_SVCNAME` / `LAUNCH_JOBKEY_LABEL` 是 updater 的服务管理器探测（systemd/OpenRC/launchd），不是配置项。
 
 ### OpenCode zen 会话 ID
 
@@ -147,25 +147,29 @@ Model:     cline-free/deepseek-v4.1-flash   （Cline 池）
 
 | 配置态（`*-config.json`，仅面板操作/凭据轮转才变）                                                       | 内容                                                                                                                    |
 | -------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| `afree-config.json`                                                                                      | 全局：会话密钥、网关客户端 key、面板请求日志开关、账号选号策略、Combos、模型/平台封禁表、cline「必须流式」学习表        |
-| `proxy-config.json`                                                                                      | 出口代理池 + 出口策略 + 订阅、各平台走池开关、代理隔离段（开关/排除表/绑定上限，含 WorkBuddy 账号绑定）、egress 钉定表  |
-| `cline-config.json`                                                                                      | Cline 账号池（账号凭据、请求头）                                                                                        |
-| `zen-config.json`                                                                                        | OpenCode zen：key 池与配置 + 每 key 会话身份（`sessions` 段）+ 死模型别名 + 端点学习结果                                |
-| `trae2api/config.json` + `trae2api/accounts/` / `other-config.json`   | TraeWork 引擎配置与便携快照（2026-11-05 迁入 vendored 子系统目录）、其余各平台账号/key 池、启用状态、代理绑定、平台专属开关 |
-| `workbuddy/config.json` + `workbuddy/auths/`                                                             | WorkBuddy 部署配置、授权凭据（沿用 vendor 目录结构）                                                                    |
+| `afree-config.json`                                                                                      | 全局：会话密钥、网关客户端 key、面板请求日志开关、账号选号策略、Combos、模型/平台封禁表                                 |
+| `proxy-config.json`                                                                                      | 出口代理池 + 出口策略 + 订阅 + 代理隔离段（开关/排除表/绑定上限）——纯代理域，无平台键                                  |
+| `cline-config.json`                                                                                      | Cline 全部：账号池（账号凭据、请求头）、走池开关、「必须流式」学习表、「仅展示插件免费」开关                            |
+| `zen-config.json`                                                                                        | OpenCode zen 全部：key 池与配置、key 代理绑定（`keyBindings`）、走池开关、egress 钉定表、死模型别名 + 端点学习结果      |
+| `other-config.json`                                                                                      | 其余各子平台账号/key 池、启用状态、代理绑定、平台专属开关                                                               |
+| `trae-config.json`                                                                                       | TraeWork afree 增量：出口绑定、反代路由开关表、分域倍率、展示顺序、走池开关                                             |
+| `wkbd-config.json`                                                                                       | WorkBuddy afree 增量：出口绑定、账号意志（反代开关/账号总开关/昵称锁）、权重优化定时任务、走池开关                      |
+| `trae2api/config.json` + `trae2api/accounts/` / `workbuddy/config.json` + `workbuddy/auths/`             | vendor 子系统自管：TraeWork 引擎配置与便携快照（2026-11-05 迁入子系统目录）、WorkBuddy 部署配置与授权凭据（纯凭据）     |
 
 | 状态态（`*-state.json`，随请求/后台任务高频变化——外部监测配置变更时忽略这批文件）                        | 内容                                                                                                                    |
 | -------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
 | `cline-state.json`                                                                                       | Cline 每账号使用痕迹（状态/最近使用/调用与 token 计数/冷却）+ 轮转游标（2s 合批）                                       |
-| `zen-state.json`                                                                                         | zen key 冷却表 + 每 key token 记账                                                                                      |
+| `zen-state.json`                                                                                         | zen key 冷却表 + 每 key token 记账 + 会话铸态表 + 每 key 组织 ID 缓存（keyOrg 段）                                      |
+| `trae-state.json`                                                                                        | TraeWork afree token 记账（2026-11-17 迁出 vendor 子目录 tokens.json）                                                  |
 | `trae2api/state.json` / `trae2api/metrics.json`                                                          | TraeWork 引擎运行态：账号冷却/熔断/禁用+手动冷却、签到与额度（state）与指标（metrics）                                  |
 | `other-state.json`                                                                | 各 key 池的 key 级 token 记账 + 冷却表（other 按子平台分键）                                                            |
 | `proxy-state.json`                                                                                       | 代理出口在线率统计（60s 合批，编辑池清零）                                                                              |
-| `workbuddy/state.json`、`workbuddy/usage.json`、`workbuddy/request-logs/`                                | WorkBuddy 运行态/用量分桶/请求日志（vendor 目录结构）                                                                   |
+| `wkbd-state.json`                                                                                        | WorkBuddy 实测台账（按模型扣费/charge_variants，2026-11-17 迁出 vendor 子目录 usage.json）                              |
+| `workbuddy/state.json`、`workbuddy/request-logs/`                                                        | WorkBuddy vendor 运行态/请求日志（vendor 目录结构）                                                                     |
 
 **`config-manifest.json`（配置指纹清单）**：程序自动维护的全部配置态文件 sha256 清单（glob 收集 `*-config.json` + wb 配置/凭据，新平台自动纳入；entries 无变化时连 `updatedAt` 都不更新）。外部监测配置变更只需盯这一个文件——它变了才有配置真的变了。
 
-设计要点：token 记账/冷却/状态等使用痕迹**不进** `*-config.json`——配置文件保持"仅面板操作才变"，外部按 manifest 监测配置零噪声。凭据的代理绑定表（`keyBindings`）跟着凭据池留在各自的平台文件里（键是凭据明文，不重复存放）；走池开关是布尔值，归代理域。冷却是 2026-10-28 起的持久化决策：重启后冷却保留（落 `*-state.json`），避免刚被限流的凭据立即回池。
+设计要点：token 记账/冷却/状态等使用痕迹**不进** `*-config.json`——配置文件保持"仅面板操作才变"，外部按 manifest 监测配置零噪声。**平台配置内聚**（2026-11-17 配置重组）：每个平台的凭据、走池开关、出口绑定、平台专属开关都住在自己的一份 `*-config.json` 里（afree 对 vendor 子系统的增量配置用 `trae-config.json` / `wkbd-config.json` 与 vendor 目录分治）；`proxy-config.json` 只剩代理域本体。凭据的代理绑定表（`keyBindings`）跟着凭据池留在各自的平台文件里（键是凭据明文，不重复存放）。冷却是 2026-10-28 起的持久化决策：重启后冷却保留（落 `*-state.json`），避免刚被限流的凭据立即回池。
 
 日志类保持独立：`afree-proxy.log`、`afree-proxy-stream.log`、`requests.jsonl`。
 
@@ -243,11 +247,13 @@ CI：push 到 `main` / `zen-harvest` 先跑 `go build` + `go vet` + `go test`，
 │   ├── combos.go            别名模型
 │   ├── admin*.go            管理面板：API、会话认证、UI、各平台页
 │   └── config.go            env 配置（fail-closed 校验）
-├── internal/trae2api/       vendored trae2api 引擎（XCool-603/trae2api，12 子包；
-│                            scripts/vendor_trae2api.py 生成，勿手改——会被 re-vendor 冲掉）
+├── modules/trae2api/        vendored trae2api 引擎（XCool-603/trae2api，12 子包，
+│                            独立 Go module、module 路径同上游；afree_bridge.go 是
+│                            唯一消费门面；scripts/vendor_trae2api.py 生成，勿手改）
+├── modules/workbuddy2api/   vendor 的 WorkBuddy2API 池/面板/调度器/上游（独立
+│                            Go module；afree_bridge.go 是唯一消费门面）
 ├── internal/app/trae2api_helper*.go  Trae helper 入库/脚本模板（afree 侧资产）
 ├── internal/cline/          Cline 上游认证（WorkOS OAuth 刷新）
-├── internal/workbuddy/      vendor 的 WorkBuddy2API 池/面板/调度器/上游
 ├── internal/other/          key 池协议栈（多子平台）
 ├── internal/kit/            HTTP 客户端、随机 ID、zen 会话 ID 铸造、数据路径
 ├── .agents/skills/          仓库开发技能（新增平台配方、上游同步流程）

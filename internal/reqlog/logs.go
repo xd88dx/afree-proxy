@@ -1,0 +1,711 @@
+package reqlog
+
+import (
+	"afree-proxy/internal/gwconfig"
+	"path/filepath"
+
+	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"log"
+	"net"
+	"net/http"
+	"os"
+	"runtime/debug"
+	"strings"
+	"sync"
+	"sync/atomic"
+	"time"
+
+	"afree-proxy/internal/kit"
+)
+
+// routeStat 网关请求计数（进程生命周期，仅 /v1/ 路径）：请求数、错误数、
+// 累计耗时。落内存原子计数，供仪表盘统计区展示。
+type routeStat struct {
+	requests atomic.Int64
+	errors   atomic.Int64
+	durMS    atomic.Int64
+}
+
+var (
+	routeStats    = map[string]*routeStat{"cline": {}, "zen": {}, "workbuddy": {}, "trae": {}, "other": {}}
+	reqStatsStart = time.Now()
+)
+
+// RecordRouteStat 按路由累计一次网关请求；admin 与未归入三平台的流量
+// （模型列表拉取、提取不到模型名的请求等）不计数。
+func RecordRouteStat(route string, status int, took time.Duration) {
+	rs := routeStats[route]
+	if rs == nil {
+		return
+	}
+	rs.requests.Add(1)
+	if status >= 400 {
+		rs.errors.Add(1)
+	}
+	rs.durMS.Add(took.Milliseconds())
+}
+
+// RequestLog 单条代理请求记录（对话/API 调用历史）
+type RequestLog struct {
+	Time      time.Time `json:"time"`
+	Client    string    `json:"client"`
+	Method    string    `json:"method"`
+	Path      string    `json:"path"`
+	Model     string    `json:"model,omitempty"`
+	Route     string    `json:"route"` // zen | cline | admin | other
+	Status    int       `json:"status"`
+	Duration  int64     `json:"duration_ms"`
+	TTFB      int64     `json:"ttfb_ms,omitempty"`   // 首字节耗时：请求开始到首个响应字节写出（流式=上游首 token 到达；-1=无响应体如 413/204）
+	Upstream  string    `json:"upstream,omitempty"`  // 命中的上游：账号#N 或 key#N
+	ProxyType string    `json:"proxyType,omitempty"` // 出口代理类型：main|backup|direct（绑定主/备/直连），空=全局池轮转/未命中上游
+	Error     string    `json:"error,omitempty"`     // 错误原因：>=400 从响应体提取；200 从流内 error 帧提取（伪成功治理）。悬浮展示，非空时状态列涂红
+	Note      string    `json:"note,omitempty"`
+}
+
+// UpstreamInfo 挂在请求 context 上的可写槽位：处理链深处（选号/选 key 处）
+// 写入命中的账号/key 序号，请求日志中间件在请求收尾时读出。槽位本身随
+// context 传递，不引入全局状态，也不改变任何函数签名。
+type UpstreamInfo struct {
+	Label string
+	Exit  string // 出口代理类型：main | backup | ""（直连/全局池）
+	Note  string // 补充说明：如"1次中断已重试""3次尝试均中断"，面板悬浮展示
+}
+
+type upstreamCtxKey struct{}
+
+func WithUpstreamInfo(ctx context.Context) (context.Context, *UpstreamInfo) {
+	ui := &UpstreamInfo{}
+	return context.WithValue(ctx, upstreamCtxKey{}, ui), ui
+}
+
+// SetUpstreamInfo 记录本次请求命中的上游（cline 账号序号 / zen key 序号）。
+// 同一请求内重试、换号时后写覆盖先写 —— 展示最终实际服务的上游。
+// ctx 里没有槽位（面板 Test、内部压缩等非日志请求路径）时是空操作。
+func SetUpstreamInfo(ctx context.Context, label string) {
+	if label == "" || ctx == nil {
+		return
+	}
+	if ui, ok := ctx.Value(upstreamCtxKey{}).(*UpstreamInfo); ok {
+		ui.Label = label
+	}
+}
+
+// SetUpstreamExit 记录本次请求实际使用的出口代理类型（绑定主/备）。
+// 覆盖规则同 SetUpstreamInfo：多次尝试时后写覆盖先写。
+func SetUpstreamExit(ctx context.Context, exit string) {
+	if exit == "" || ctx == nil {
+		return
+	}
+	if ui, ok := ctx.Value(upstreamCtxKey{}).(*UpstreamInfo); ok {
+		ui.Exit = exit
+	}
+}
+
+// SetUpstreamNote 记录请求日志的补充说明（中断重试/全断/客户端断开等，
+// 面板悬浮展示）。仅缓冲重试路径写入。
+func SetUpstreamNote(ctx context.Context, note string) {
+	if note == "" || ctx == nil {
+		return
+	}
+	if ui, ok := ctx.Value(upstreamCtxKey{}).(*UpstreamInfo); ok {
+		ui.Note = note
+	}
+}
+
+const (
+	maxReqLogs = 500
+)
+
+var (
+	reqLogsMu sync.Mutex
+	reqLogs   []RequestLog
+)
+
+var reqLogsFile = kit.ResolveDataPath("requests.jsonl")
+
+// ReqLogPath 取当前落盘路径。reqLogsFile 是包级变量（测试会整体替换它来
+// 避免污染真实的 data/requests.jsonl），而 AppendReqLog 的落盘 goroutine
+// 与替换方并发，裸读会构成数据竞争。
+func ReqLogPath() string {
+	reqLogsMu.Lock()
+	defer reqLogsMu.Unlock()
+	return reqLogsFile
+}
+
+// reqLogCh 落盘队列 + 单写协程。
+//
+// 早先是"每个请求起一个 goroutine 去 open/write/close/stat"：并发 N 个请求
+// 就是 N 个 goroutine + N 个 fd，没有上限也没有等待点（进程收到 SIGTERM 时
+// 在途的日志直接丢）。更糟的是大小检查与截断不是原子的——一个 goroutine 正在
+// O_APPEND 写，另一个判定超限后 os.WriteFile(path, nil) 截断，那条刚写的记录
+// 就没了；Windows 上 O_APPEND 的原子性更弱，两行还可能交错成坏 JSON 行。
+//
+// 改成单写协程后：写、stat、截断全在同一个 goroutine 里串行，天然无竞争；
+// 队列满了就丢（日志是可丢的诊断数据，绝不能反压请求路径）。
+const reqLogQueueSize = 1024
+
+var (
+	reqLogCh      = make(chan []byte, reqLogQueueSize)
+	reqLogOnce    sync.Once
+	reqLogDropped int64 // atomic，仅用于"日志被丢弃"告警去重
+)
+
+func StartReqLogWriter() {
+	reqLogOnce.Do(func() {
+		go func() {
+			for data := range reqLogCh {
+				// ReqLogPath() 竞态安全访问器：测试会整体替换 reqLogsFile，
+				// 与替换方并发的裸读是数据竞争（本地 2026-11 审计修复）。
+				path := ReqLogPath()
+				f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
+				if err != nil {
+					continue
+				}
+				f.Write(data)
+				f.Close()
+				// 大小上限（LOG_FILE_MAX_MB，默认 10MB）：超出清空落盘文件
+				//（内存仍保留最近 500 条）。与上面的写同协程，不会互相截断。
+				if st, err := os.Stat(path); err == nil && st.Size() > gwconfig.LogFileMaxBytes() {
+					os.WriteFile(path, nil, 0600)
+				}
+			}
+		}()
+	})
+}
+
+// AppendReqLog 记录一条请求日志：内存环形保留 + 异步追加落盘。
+// LOG_REQUESTS=false 时完全关闭（调用方已跳过，这里兜底）。
+func AppendReqLog(l RequestLog) {
+	if !gwconfig.LogRequestsEnabled() {
+		return
+	}
+	// model 来自请求体，长度不受限：一个 {"model":"AAAA..."} 的 32MB 请求体会
+	// 变成一条 32MB 的记录，500 条环形就是十几 GB 常驻。截断到合理长度即可，
+	// 面板展示本来也只显示一行。
+	if len(l.Model) > 200 {
+		l.Model = l.Model[:200] + "…"
+	}
+	reqLogsMu.Lock()
+	reqLogs = append(reqLogs, l)
+	if len(reqLogs) > maxReqLogs {
+		reqLogs = reqLogs[len(reqLogs)-maxReqLogs:]
+	}
+	reqLogsMu.Unlock()
+
+	data, err := json.Marshal(l)
+	if err != nil {
+		return
+	}
+	StartReqLogWriter()
+	select {
+	case reqLogCh <- append(data, '\n'):
+	default:
+		// 队列满：丢弃并每秒最多告警一次，避免日志本身把玩命刷屏。
+		if n := atomic.AddInt64(&reqLogDropped, 1); n == 1 || n%1000 == 0 {
+			log.Printf("request log queue full, dropped %d entr(ies) so far", n)
+		}
+	}
+}
+
+// LoadRequestLogs 返回最近的请求日志（内存优先，启动后从落盘文件补载）。
+// 必须返回副本：调用方（admin 面板）会原地反转切片，共享底层数组会
+// 与 AppendReqLog 的 append 产生数据竞争。
+func LoadRequestLogs() []RequestLog {
+	reqLogsMu.Lock()
+	defer reqLogsMu.Unlock()
+	out := make([]RequestLog, len(reqLogs))
+	copy(out, reqLogs)
+	return out
+}
+
+// LoadRequestLogsFromFile 启动时从落盘文件读取尾部记录（日志关闭时跳过）。
+// 开关关闭时不回载 admin 行与非 /v1/ 噪声行（favicon 等）：盘上还留着开关
+// 打开期间写下的记录，无条件回载会让面板日志页看起来"开关没生效"。
+func LoadRequestLogsFromFile() {
+	if !gwconfig.LogRequestsEnabled() {
+		return
+	}
+	raw, err := os.ReadFile(ReqLogPath())
+	if err != nil {
+		return
+	}
+	includeAdmin := gwconfig.GlobalAdminLogEnabled()
+	lines := SplitLinesSafe(string(raw))
+	reqLogsMu.Lock()
+	defer reqLogsMu.Unlock()
+	for _, line := range lines {
+		if line == "" {
+			continue
+		}
+		var l RequestLog
+		if json.Unmarshal([]byte(line), &l) != nil {
+			continue
+		}
+		if !includeAdmin && (l.Route == "admin" || !strings.HasPrefix(l.Path, "/v1/")) {
+			continue
+		}
+		reqLogs = append(reqLogs, l)
+	}
+	if len(reqLogs) > maxReqLogs {
+		reqLogs = reqLogs[len(reqLogs)-maxReqLogs:]
+	}
+}
+
+func SplitLinesSafe(s string) []string {
+	var out []string
+	start := 0
+	for i := 0; i < len(s); i++ {
+		if s[i] == '\n' {
+			out = append(out, s[start:i])
+			start = i + 1
+		}
+	}
+	if start < len(s) {
+		out = append(out, s[start:])
+	}
+	return out
+}
+
+// ============ 请求日志中间件 ============
+
+type statusWriter struct {
+	http.ResponseWriter
+	status int
+	// ttfb 首字节耗时（毫秒）：首次 Write/WriteHeader/Flush 落盘时刻减
+	// 请求开始。0=本请求尚未写出任何字节（413 拒收、204 等）；请求日志
+	// 收尾时把 0 记成 -1（"无响应体"），与"首字节极快"区分开。
+	ttfb  int64
+	start time.Time
+	// errBuf 截获错误响应（status>=400）的 body（限 errBodyCap 字节），
+	// 请求日志收尾时从中提取可读的错误原因。成功响应（含 200 的 SSE 流）
+	// 不截获，零内存开销。
+	errBuf []byte
+	// sseError 200 已发出后的流内失败（SSE error 帧）：上游语义里"响应已
+	// 开始"就只能 200，失败信息藏在流里（trae 流中断、cline 帧内 error、
+	// anthropic event:error 同理）。不记下来日志就是"成功"，排查时与
+	// agent 实际失败对不上。命中即填充（首个 error 帧为准）。
+	sseError string
+	// sseScan 残余的不完整行（SSE 帧可能跨多次 Write 到达）。
+	sseScan []byte
+}
+
+// errBodyCap 错误响应体的截获上限：错误 JSON 都很小，2KB 足够还原原因。
+const errBodyCap = 2048
+
+// errorReason 返回本次请求的错误原因（status>=400 且捕获到响应体时）。
+func (w *statusWriter) errorReason() string {
+	if w.status >= 400 && len(w.errBuf) > 0 {
+		return ExtractErrReason(w.errBuf)
+	}
+	// 200 但流内有 error 帧（伪成功）：Error 列如实标注，状态列不变（HTTP
+	// 层确实是 200），但计数进 errors——面板按错误数排序/告警不再漏掉这类。
+	if w.sseError != "" {
+		return w.sseError
+	}
+	return ""
+}
+
+func (w *statusWriter) markFirstByte() {
+	if w.ttfb == 0 && !w.start.IsZero() {
+		w.ttfb = time.Since(w.start).Milliseconds()
+	}
+}
+
+func (w *statusWriter) WriteHeader(code int) {
+	w.status = code
+	w.markFirstByte()
+	w.ResponseWriter.WriteHeader(code)
+}
+
+func (w *statusWriter) Write(b []byte) (int, error) {
+	if w.status == 0 {
+		w.status = http.StatusOK
+	}
+	if w.status >= 400 && len(w.errBuf) < errBodyCap {
+		n := errBodyCap - len(w.errBuf)
+		if n > len(b) {
+			n = len(b)
+		}
+		w.errBuf = append(w.errBuf, b[:n]...)
+	} else if w.status == http.StatusOK && w.sseError == "" {
+		// 200 的流式响应：扫描 SSE error 帧（伪成功治理）。帧可能跨多次
+		// Write 到达，残行缓存到下一片拼齐再判。
+		w.scanSSEError(b)
+	}
+	return w.ResponseWriter.Write(b)
+}
+
+// scanSSEError 在 200 响应字节流里找失败信号：chat 形态的 `data: {"error":...}`
+// 帧与 anthropic 形态的 `event: error` 行。只扫到首个命中为止（后续 Write
+// 零开销短路）；SSE 帧有行边界，按行解析，不完整的尾行留到下一片。
+// 只对会话流量生效（statusWriter 只包 /v1 与 admin），且失败流通常随即结束，
+// 残行缓存最多一行长度，无内存放大风险。
+func (w *statusWriter) scanSSEError(b []byte) {
+	if len(w.sseScan) > 0 {
+		b = append(w.sseScan, b...)
+		w.sseScan = nil
+	}
+	// 只保留最后一段不完整行（最多 8KB——错误帧都很小，超限说明不是错误帧）
+	const scanCap = 8 << 10
+	if i := bytes.LastIndexByte(b, '\n'); i >= 0 {
+		w.sseScan = append(w.sseScan[:0], b[i+1:]...)
+		if len(w.sseScan) > scanCap {
+			w.sseScan = nil
+		}
+		b = b[:i+1]
+	} else {
+		if len(b) > scanCap {
+			return
+		}
+		w.sseScan = append(w.sseScan[:0], b...)
+		return
+	}
+	for _, line := range bytes.Split(b, []byte{'\n'}) {
+		trimmed := bytes.TrimSpace(line)
+		if len(trimmed) == 0 {
+			continue
+		}
+		// anthropic 形态：`event: error` 行（其后的 data 行带 message）
+		if msg := anthropicSSEErrLine(trimmed, w); msg != "" {
+			w.sseError = msg
+			return
+		}
+		if !bytes.HasPrefix(trimmed, []byte("data:")) {
+			continue
+		}
+		payload := bytes.TrimSpace(trimmed[5:])
+		if len(payload) == 0 || bytes.Equal(payload, []byte("[DONE]")) {
+			continue
+		}
+		var obj map[string]any
+		if json.Unmarshal(payload, &obj) != nil {
+			continue
+		}
+		// chat 形态：{"error":{"message":...}}（trae 流中断/cline 帧内错误）
+		if e, ok := obj["error"]; ok && e != nil {
+			if msg := renderSSEErr(e); msg != "" {
+				w.sseError = msg
+				return
+			}
+		}
+		// anthropic data 形态：{"type":"error","error":{...}}
+		if t, _ := obj["type"].(string); t == "error" {
+			if e, ok := obj["error"]; ok && e != nil {
+				if msg := renderSSEErr(e); msg != "" {
+					w.sseError = msg
+					return
+				}
+			}
+		}
+	}
+}
+
+// anthropicSSEErrLine 识别 `event: error` 行；命中后取同次扫描里紧随的
+// data 行的 message 由调用方继续处理（这里只标记命中，把 error 对象暂存）。
+func anthropicSSEErrLine(line []byte, w *statusWriter) string {
+	if !bytes.HasPrefix(line, []byte("event:")) {
+		return ""
+	}
+	ev := bytes.TrimSpace(line[6:])
+	if bytes.Equal(ev, []byte("error")) {
+		return "upstream error event (see client log)"
+	}
+	return ""
+}
+
+// renderSSEErr 从 error 值提取可读消息（对象取 message，字符串原样）。
+func renderSSEErr(e any) string {
+	switch v := e.(type) {
+	case map[string]any:
+		if s, ok := v["message"].(string); ok && s != "" {
+			return truncateErrReason(s)
+		}
+	case string:
+		if v != "" {
+			return truncateErrReason(v)
+		}
+	}
+	return ""
+}
+
+// truncateErrReason 错误消息截断（与 extractErrReason 同口径）。
+func truncateErrReason(s string) string {
+	s = strings.Join(strings.Fields(s), " ")
+	if r := []rune(s); len(r) > 300 {
+		return string(r[:300]) + "…"
+	}
+	return s
+}
+
+// extractErrReason 从错误响应体提取可读原因：OpenAI 风格
+// {"error":{"message":"..."}} 优先，其次 {"error":"..."} / {"msg":"..."}，
+// 都解析不出就截断原文兜底（保留错误细节比什么都不留强）。
+func ExtractErrReason(body []byte) string {
+	compact := func(s string) string {
+		s = strings.Join(strings.Fields(s), " ")
+		if r := []rune(s); len(r) > 300 {
+			s = string(r[:300]) + "…"
+		}
+		return s
+	}
+	var m map[string]any
+	if err := json.Unmarshal(body, &m); err == nil {
+		if e, ok := m["error"]; ok {
+			switch v := e.(type) {
+			case map[string]any:
+				if s, ok := v["message"].(string); ok && s != "" {
+					return compact(s)
+				}
+			case string:
+				if v != "" {
+					return compact(v)
+				}
+			}
+		}
+		if s, ok := m["msg"].(string); ok && s != "" {
+			return compact(s)
+		}
+	}
+	return compact(string(body))
+}
+
+// Flush 透传底层 Flusher，保证 SSE 流式响应不被中间件吞掉
+func (w *statusWriter) Flush() {
+	if w.status == 0 {
+		w.status = http.StatusOK
+	}
+	w.markFirstByte()
+	if f, ok := w.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
+}
+
+// RecoverMiddleware 兜底 panic：任何一个 handler 崩溃都只终止该请求（记录
+// panic 与堆栈），而不是杀掉整个进程 —— 进程死会同时切断所有在途 SSE 流，
+// 影响范围远超单个请求。放在最外层（包住 log 中间件），使日志中间件自身的
+// 崩溃也被兜住。若响应尚未写出，返回 500；已写出（流式进行中）则无法再改
+// 状态码，只能记录后结束该连接。
+func RecoverMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// 自持一个 statusWriter 跟踪是否已写出响应头，与本中间件在链上的
+		// 位置无关（流式进行中不能再改状态码，只能记录后结束该连接）。
+		// start 显式传入：RequestLogMiddleware 在内层也会建自己的 statusWriter
+		// 记 TTFB，外层 recover 只用于 panic 兜底，start 供将来扩展用。
+		sw := &statusWriter{ResponseWriter: w, start: time.Now()}
+		defer func() {
+			if rec := recover(); rec != nil {
+				log.Printf("PANIC recovered on %s %s: %v\n%s", r.Method, r.URL.Path, rec, debug.Stack())
+				if sw.status == 0 {
+					writeJSONLocal(sw, http.StatusInternalServerError, map[string]any{
+						"error": map[string]string{"message": "internal server error", "type": "api_error"},
+					})
+				}
+			}
+		}()
+		next.ServeHTTP(sw, r)
+	})
+}
+
+// RequestLogMiddleware 记录所有进入代理的请求（API 调用与调用历史）。
+// LOG_REQUESTS=false 时跳过日志，但仍包一层 statusWriter —— 它实现了
+// http.Flusher，SSE 流式响应依赖它透传 Flush。
+// 所有请求体先经 http.MaxBytesReader 限幅（MAX_BODY_MB，默认 32MB），
+// 公网匿名请求的超大 body 在读入内存前即被拒绝。
+// RouteClassifier 路由归类回调（装配根注入）：分发链判定属网关职责，
+// reqlog 只消费归类结果（route=统计桶，label=日志展示）。
+type RouteClassifier func(r *http.Request, model string) (route, label string)
+
+func RequestLogMiddleware(next http.Handler, classify RouteClassifier) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		sw := &statusWriter{ResponseWriter: w, start: start}
+		upCtx, upstream := WithUpstreamInfo(r.Context())
+		r = r.WithContext(upCtx)
+
+		r.Body = http.MaxBytesReader(w, r.Body, gwconfig.MaxRequestBodyBytes())
+
+		logEnabled := gwconfig.LogRequestsEnabled()
+		// /admin 请求体里没有 model 字段，探测纯属浪费：面板的 JSON 请求
+		// （含大体积配置导入）不必为提取模型名而整体读入再重放。体量限幅
+		// 语义不变 —— MaxBytesReader 仍包在 Body 上，超限读失败即 413。
+		adminPath := strings.HasPrefix(r.URL.Path, "/admin")
+		model := ""
+		tooLarge := false
+		if logEnabled {
+			// 读取请求体提取模型，并放回，避免影响后续处理
+			bodyBytes, err := io.ReadAll(r.Body)
+			if err != nil {
+				// 超限（或读失败）：直接 413，不进入业务处理。不 return ——
+				// 落到下面的统一日志块，让被拒的超大请求也进请求日志
+				//（滥用诊断的盲区就是这些 413）。
+				tooLarge = true
+				writeJSONLocal(sw, http.StatusRequestEntityTooLarge, map[string]any{
+					"error": map[string]string{
+						"message": fmt.Sprintf("request body too large (limit %d MB)", gwconfig.MaxRequestBodyBytes()>>20),
+						"type":    "invalid_request_error",
+					},
+				})
+			} else if len(bodyBytes) > 0 {
+				r.Body = io.NopCloser(bytes.NewReader(bodyBytes))
+				if !adminPath {
+					var probe struct {
+						Model string `json:"model"`
+					}
+					if json.Unmarshal(bodyBytes, &probe) == nil {
+						model = probe.Model
+					}
+				}
+			}
+		}
+
+		if !tooLarge {
+			next.ServeHTTP(sw, r)
+		}
+
+		if !logEnabled {
+			return
+		}
+		if sw.status == 0 {
+			sw.status = http.StatusOK
+		}
+		// 未分类流量的兜底值（不进 routeStats；platform 路由之外的 /v1
+		// 请求理论上不存在，保留兜底只为日志分类不空）。
+		//
+		// route 是统计桶（日志 Route 列展示 labelRoute）。Other 子平台
+		// 各自带自定义前缀：统计仍归 other 桶（面板 Other 卡片是一张总卡），
+		// 但日志展示用子平台前缀本身，运营一眼能看出流量来自哪个上游。
+		route, labelRoute := classify(r, model)
+		if labelRoute == "" {
+			labelRoute = route
+		}
+		// 网关请求计数：仅 /v1/ 下已归入三平台的会话流量，模型列表拉取、
+		// 面板与健康检查不计入。与日志同窗口 —— LOG_REQUESTS 关闭时模型名
+		// 不再提取，分类失真，故计数放在 logEnabled 分支内随之停摆。
+		if logEnabled && strings.HasPrefix(r.URL.Path, "/v1/") {
+			RecordRouteStat(route, sw.status, time.Since(start))
+			// 伪成功治理：200 但流内 error 帧 = 客户端实际失败，计入 errors
+			//（失败就是失败，面板错误数与 agent 实际失败对得上）。
+			if sw.status == http.StatusOK && sw.sseError != "" {
+				if rs := routeStats[route]; rs != nil {
+					rs.errors.Add(1)
+				}
+			}
+		}
+		// 面板自身的页面/接口访问、/health 健康检查，以及 /favicon.ico 等
+		// 浏览器/扫描器噪声（非 /v1/ 服务路径）：默认不记录（面板轮询会把
+		// 日志刷满噪声行）。网关设置的"记录管理日志"开关打开后才落盘 ——
+		// 关闭时只记录 /v1/ 网关流量（会话与模型列表），模型会话请求始终
+		// 在其中。
+		if !gwconfig.GlobalAdminLogEnabled() && (route == "admin" || !strings.HasPrefix(r.URL.Path, "/v1/")) {
+			return
+		}
+		client := r.RemoteAddr
+		if host, _, err := net.SplitHostPort(client); err == nil {
+			client = host
+		}
+		// ttfb==0 说明本请求没有任何响应字节落盘（413 拒收、204 等）：
+		// 记 -1，与"首字节极快"区分开。
+		ttfb := sw.ttfb
+		if ttfb == 0 {
+			ttfb = -1
+		}
+		AppendReqLog(RequestLog{
+			Time:      time.Now(),
+			Client:    client,
+			Method:    r.Method,
+			Path:      r.URL.Path,
+			Model:     model,
+			Route:     labelRoute,
+			Status:    sw.status,
+			Duration:  time.Since(start).Milliseconds(),
+			TTFB:      ttfb,
+			Upstream:  upstream.Label,
+			ProxyType: upstream.Exit,
+			Error:     sw.errorReason(),
+			Note:      upstream.Note,
+		})
+	})
+}
+
+// writeJSONLocal reqlog 包内响应封装（requestLogMiddleware 的 401/413 路径）。
+// 不依赖网关 writeJSON——那会形成 reqlog→gateway 反向依赖。
+func writeJSONLocal(w http.ResponseWriter, status int, data any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	json.NewEncoder(w).Encode(data)
+}
+
+// RouteStatsSnapshot 仪表盘统计区数据快照（panel 消费）：各路由进程生命周期
+// 内的请求数/错误数/平均耗时 + 计数起点。
+func RouteStatsSnapshot() (since int64, routes map[string]any) {
+	routes = make(map[string]any, len(routeStats))
+	for name, rs := range routeStats {
+		reqs := rs.requests.Load()
+		var avg int64
+		if reqs > 0 {
+			avg = rs.durMS.Load() / reqs
+		}
+		routes[name] = map[string]any{
+			"requests": reqs,
+			"errors":   rs.errors.Load(),
+			"avg_ms":   avg,
+		}
+	}
+	return reqStatsStart.UnixMilli(), routes
+}
+
+// ClearForDataDelete 清空请求日志与用量统计（内存 + 落盘文件）。两个文件都
+// 是按次追加打开的，直接截断即可，无需处理打开句柄。
+func ClearForDataDelete() {
+	reqLogsMu.Lock()
+	reqLogs = nil
+	reqLogsMu.Unlock()
+	if err := os.WriteFile(ReqLogPath(), nil, 0600); err != nil {
+		log.Printf("clear request logs: %v", err)
+	}
+	for k := range routeStats {
+		delete(routeStats, k)
+	}
+	reqStatsStart = time.Now()
+}
+
+// SwapReqLogSinkForTest 测试钩子（无 testing 依赖，调用方自行 t.Cleanup）：
+// 隔离请求日志内存态与落盘文件到 DATA_DIR 下的测试路径（异步落盘单写协程的
+// 队列余量会在 TempDir RemoveAll 微秒窗口里补写条目——directory not empty，
+// 带重试的自建目录绕开该竞态，2026-11-16 实测）；返回恢复闭包。
+func SwapReqLogSinkForTest() func() {
+	dir := filepath.Join(kit.DataDir(), "reqlog-test")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		log.Printf("reqlog test sink: mkdir %s: %v", dir, err)
+	}
+	reqLogsMu.Lock()
+	savedLogs := reqLogs
+	savedFile := reqLogsFile
+	reqLogs = nil
+	reqLogsFile = filepath.Join(dir, "requests.jsonl")
+	reqLogsMu.Unlock()
+	return func() {
+		reqLogsMu.Lock()
+		reqLogs = savedLogs
+		reqLogsFile = savedFile
+		reqLogsMu.Unlock()
+	}
+}
+
+// ResetReqLogsForTest 测试钩子：清空内存日志态（返回恢复闭包，调用方自行
+// t.Cleanup；与 SwapReqLogSinkForTest 组合实现完全隔离）。
+func ResetReqLogsForTest() func() {
+	reqLogsMu.Lock()
+	savedLogs := reqLogs
+	reqLogs = nil
+	reqLogsMu.Unlock()
+	return func() {
+		reqLogsMu.Lock()
+		reqLogs = savedLogs
+		reqLogsMu.Unlock()
+	}
+}

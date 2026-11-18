@@ -35,11 +35,14 @@ jobs:
         with:
           go-version: '1.26'
 
+      # workspace 模式下 `./...` 只匹配主 module 的包（不穿透 modules/ 子目录
+      # module，2026-11-17 实测 go list ./... 仅 6 包）——vendor 两树必须显式
+      # 按模块路径列出，漏了就是只测主 module 的假绿。
       - name: Build
-        run: go build ./...
+        run: go build ./... github.com/misakano7545/workbuddy2api-panel/... trae2api/...
 
       - name: Vet
-        run: go vet ./...
+        run: go vet ./... github.com/misakano7545/workbuddy2api-panel/... trae2api/...
 
       # -shuffle：测试套件曾经是顺序依赖的（包级 zenModels/
       # clineStreamLearned 被替换后不恢复），默认顺序永远绿、换序必红。
@@ -47,12 +50,12 @@ jobs:
       # test 二进制直接 "flag provided but not defined" 退出（2026-11-08 踩过）。
       # 固定 seed 让失败可复现。
       - name: Test (shuffled)
-        run: go test ./... -count=1 -shuffle=1
+        run: go test ./... github.com/misakano7545/workbuddy2api-panel/... trae2api/... -count=1 -shuffle=1
 
       # -race：本仓库大量使用包级可变状态，而默认测试只覆盖串行路径。
       # Linux runner 有 cgo，可以跑；这是唯一能自动发现未加锁访问的关卡。
       - name: Test (race)
-        run: go test ./... -count=1 -race
+        run: go test ./... github.com/misakano7545/workbuddy2api-panel/... trae2api/... -count=1 -race
 
   docker:
     name: Docker image (amd64 + arm64)

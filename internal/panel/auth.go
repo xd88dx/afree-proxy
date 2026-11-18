@@ -1,0 +1,331 @@
+package panel
+
+import (
+	"afree-proxy/internal/gwconfig"
+	"crypto/hmac"
+	"crypto/rand"
+	"crypto/sha256"
+	"crypto/subtle"
+	"encoding/base64"
+	"encoding/hex"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net"
+	"net/http"
+	"strings"
+	"sync"
+	"time"
+
+	"afree-proxy/internal/kit"
+)
+
+// ============ 管理面板登录认证 ============
+//
+// ADMIN_PASSWORD(_FILE) 设置后，所有 /admin/* 需要 HMAC 签名的会话凭证：
+//   - 浏览器: POST /admin/api/login 设置 HttpOnly cookie（SameSite=Strict）
+//   - 脚本/curl: 登录响应返回 token，后续请求带 Authorization: Bearer <token>
+//
+// 会话无状态（HMAC + 过期时间），重启后密钥从 data/.session-secret 恢复，
+// 已签发的会话在重启后仍然有效。
+
+const (
+	sessionCookieName = "admin_session"
+	sessionTTL        = 7 * 24 * time.Hour
+	loginMaxFails     = 5
+	loginWindow       = time.Minute
+)
+
+var (
+	sessionSecretOnce sync.Once
+	sessionSecret     []byte
+	loginFailsMu      sync.Mutex
+	loginFails        = map[string]*loginFailState{}
+)
+
+type loginFailState struct {
+	count    int
+	windowAt time.Time
+}
+
+func loadSessionSecret() []byte {
+	sessionSecretOnce.Do(func() {
+		if hexStr, ok := gwconfig.GlobalSessionSecretHex(); ok {
+			if s, err := hex.DecodeString(hexStr); err == nil && len(s) >= 32 {
+				sessionSecret = s
+				return
+			}
+		}
+		s := make([]byte, 32)
+		if _, err := rand.Read(s); err != nil {
+			panic("generate session secret: " + err.Error())
+		}
+		gwconfig.SetGlobalSessionSecret(hex.EncodeToString(s))
+		sessionSecret = s
+	})
+	return sessionSecret
+}
+
+// sessionHMACKey 会话签名密钥 = sha256(sessionSecret || adminPassword)。
+// 绑定当前密码：改密码后旧会话令牌全部失效，无需额外清理。
+func sessionHMACKey() []byte {
+	h := sha256.New()
+	h.Write(loadSessionSecret())
+	h.Write([]byte(gwconfig.AdminPasswordEnv()))
+	return h.Sum(nil)
+}
+
+// mintSessionToken 生成 "base64url(payload).hmac" 形式的会话令牌。
+func mintSessionToken() (string, error) {
+	nonce := make([]byte, 12)
+	if _, err := rand.Read(nonce); err != nil {
+		// crypto/rand 失败时绝不能签发可预测的会话令牌
+		return "", fmt.Errorf("generate session nonce: %w", err)
+	}
+	payload := fmt.Sprintf("v1|%d|%s", time.Now().Add(sessionTTL).Unix(), hex.EncodeToString(nonce))
+	mac := hmac.New(sha256.New, sessionHMACKey())
+	mac.Write([]byte(payload))
+	return base64.RawURLEncoding.EncodeToString([]byte(payload)) + "." + hex.EncodeToString(mac.Sum(nil)), nil
+}
+
+// VerifySessionToken 校验令牌签名与有效期。
+func VerifySessionToken(token string) bool {
+	dot := strings.LastIndex(token, ".")
+	if dot <= 0 {
+		return false
+	}
+	payloadB64, sigHex := token[:dot], token[dot+1:]
+	payload, err := base64.RawURLEncoding.DecodeString(payloadB64)
+	if err != nil {
+		return false
+	}
+	sig, err := hex.DecodeString(sigHex)
+	if err != nil {
+		return false
+	}
+	mac := hmac.New(sha256.New, sessionHMACKey())
+	mac.Write(payload)
+	if subtle.ConstantTimeCompare(sig, mac.Sum(nil)) != 1 {
+		return false
+	}
+	parts := strings.SplitN(string(payload), "|", 3)
+	if len(parts) != 3 || parts[0] != "v1" {
+		return false
+	}
+	var exp int64
+	if _, err := fmt.Sscanf(parts[1], "%d", &exp); err != nil {
+		return false
+	}
+	return time.Now().Unix() < exp
+}
+
+// SessionFromRequest 提取会话凭证：优先 Authorization: Bearer，其次 cookie。
+func SessionFromRequest(r *http.Request) string {
+	if b := r.Header.Get("Authorization"); len(b) > 7 && b[:7] == "Bearer " {
+		return strings.TrimSpace(b[7:])
+	}
+	if c, err := r.Cookie(sessionCookieName); err == nil {
+		return c.Value
+	}
+	return ""
+}
+
+// AdminAuthMiddleware 管理面板认证中间件。未配置 ADMIN_PASSWORD 时直接放行
+// （本地模式）；OPTIONS 预检由外层 AdminCORS 在此之前短路，这里不再放行 ——
+// 否则新增任何未带 AdminCORS 的管理路由都会把 handler 暴露给匿名 OPTIONS。
+func AdminAuthMiddleware(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if !gwconfig.AdminAuthRequired() {
+			next(w, r)
+			return
+		}
+		if VerifySessionToken(SessionFromRequest(r)) {
+			next(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnauthorized)
+		json.NewEncoder(w).Encode(ApiResponse{Error: "unauthorized: login required (POST /admin/api/login)"})
+	}
+}
+
+// loginRateAllow IP 登录限流：每分钟最多 loginMaxFails 次失败尝试。
+// 顺带清扫过期窗口 —— 公网管理端点会给每个扫描 IP 建条目，不清扫 map 无限增长。
+func loginRateAllow(ip string) bool {
+	loginFailsMu.Lock()
+	defer loginFailsMu.Unlock()
+	now := time.Now()
+	for k, st := range loginFails {
+		if now.Sub(st.windowAt) > loginWindow {
+			delete(loginFails, k)
+		}
+	}
+	st, ok := loginFails[ip]
+	if !ok {
+		return true
+	}
+	return st.count < loginMaxFails
+}
+
+func loginRateRecordFail(ip string) {
+	loginFailsMu.Lock()
+	defer loginFailsMu.Unlock()
+	st, ok := loginFails[ip]
+	if !ok || time.Since(st.windowAt) > loginWindow {
+		loginFails[ip] = &loginFailState{count: 1, windowAt: time.Now()}
+		return
+	}
+	st.count++
+}
+
+func loginRateReset(ip string) {
+	loginFailsMu.Lock()
+	delete(loginFails, ip)
+	loginFailsMu.Unlock()
+}
+
+// POST /admin/api/login  body: { password }
+// 成功: 设置 HttpOnly 会话 cookie 并返回 token（Bearer 方式调用 API 用）。
+func HandleAdminLogin(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		WriteAPI(w, http.StatusMethodNotAllowed, ApiResponse{Error: "method not allowed"})
+		return
+	}
+	if !gwconfig.AdminAuthRequired() {
+		WriteAPI(w, http.StatusOK, ApiResponse{Success: true, Message: "auth not configured (set ADMIN_PASSWORD to enable)"})
+		return
+	}
+	ip := ClientIP(r)
+	if !loginRateAllow(ip) {
+		WriteAPI(w, http.StatusTooManyRequests, ApiResponse{Error: "too many login attempts, wait a minute"})
+		return
+	}
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		WriteAPI(w, http.StatusBadRequest, ApiResponse{Error: err.Error()})
+		return
+	}
+	defer r.Body.Close()
+	var req struct {
+		Password string `json:"password"`
+	}
+	if err := json.Unmarshal(body, &req); err != nil {
+		WriteAPI(w, http.StatusBadRequest, ApiResponse{Error: "invalid JSON"})
+		return
+	}
+	if subtle.ConstantTimeCompare([]byte(req.Password), []byte(gwconfig.AdminPasswordEnv())) != 1 {
+		loginRateRecordFail(ip)
+		WriteAPI(w, http.StatusUnauthorized, ApiResponse{Error: "wrong password"})
+		return
+	}
+	loginRateReset(ip)
+	token, err := mintSessionToken()
+	if err != nil {
+		WriteAPI(w, http.StatusInternalServerError, ApiResponse{Error: "session mint failed"})
+		return
+	}
+	// Secure 标记：直连 TLS 或反代(X-Forwarded-Proto: https)都视为 HTTPS。
+	// 该头仅在明文直连时可被伪造，伪造只会让 cookie 变成 https-only，
+	// 不产生任何提权面
+	secure := r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https")
+	http.SetCookie(w, &http.Cookie{
+		Name:     sessionCookieName,
+		Value:    token,
+		Path:     "/admin",
+		MaxAge:   int(sessionTTL.Seconds()),
+		HttpOnly: true,
+		SameSite: http.SameSiteStrictMode,
+		Secure:   secure,
+	})
+	WriteAPI(w, http.StatusOK, ApiResponse{Success: true, Message: "logged in", Data: map[string]any{"token": token, "expiresInSeconds": int(sessionTTL.Seconds())}})
+}
+
+// POST /admin/api/logout 清除会话 cookie。
+func HandleAdminLogout(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		WriteAPI(w, http.StatusMethodNotAllowed, ApiResponse{Error: "method not allowed"})
+		return
+	}
+	http.SetCookie(w, &http.Cookie{
+		Name:     sessionCookieName,
+		Value:    "",
+		Path:     "/admin",
+		MaxAge:   -1,
+		HttpOnly: true,
+		SameSite: http.SameSiteStrictMode,
+	})
+	WriteAPI(w, http.StatusOK, ApiResponse{Success: true, Message: "logged out"})
+}
+
+// ClientIP 客户端真实 IP：默认取 RemoteAddr（不信任任何请求头，防止
+// 伪造 X-Forwarded-For 绕过登录限流）。反代部署可设 CLIENT_IP_HEADER
+// （如 X-Real-IP 或 X-Forwarded-For），取该头最后一个值 —— XFF 链路中
+// 最靠近服务器的代理追加在最右，最右值最难被客户端伪造。
+func ClientIP(r *http.Request) string {
+	if h := kit.EnvStr("CLIENT_IP_HEADER"); h != "" {
+		if v := r.Header.Get(h); v != "" {
+			parts := strings.Split(v, ",")
+			return strings.TrimSpace(parts[len(parts)-1])
+		}
+	}
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return r.RemoteAddr
+	}
+	return host
+}
+
+// AdminLoginPageHTML 未认证时 /admin/ 返回的独立登录页（不暴露完整面板 HTML）。
+const AdminLoginPageHTML = `<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AFree Proxy - Login</title>
+<style>
+body{font-family:system-ui,sans-serif;background:#0f1115;color:#e6e6e6;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0}
+.card{background:#1a1d24;padding:32px;border-radius:12px;width:320px;box-shadow:0 8px 32px rgba(0,0,0,.4)}
+h1{font-size:18px;margin:0 0 16px;text-align:center}
+input{width:100%;box-sizing:border-box;padding:10px 12px;border-radius:8px;border:1px solid #2c3038;background:#0f1115;color:#e6e6e6;font-size:14px;margin-bottom:12px}
+button{width:100%;padding:10px;border-radius:8px;border:0;background:#4f7cff;color:#fff;font-size:14px;cursor:pointer}
+button:disabled{opacity:.6;cursor:wait}
+#err{color:#ff6b6b;font-size:13px;min-height:18px;margin-bottom:8px;text-align:center}
+#lang{position:fixed;top:12px;right:12px;width:auto;padding:4px 12px;background:#2c3038;font-size:12px}
+</style></head><body>
+<button id="lang" title="Switch language / 切换语言"></button>
+<div class="card"><h1>AFree Proxy Admin Login</h1>
+<div id="err"></div>
+<input type="password" id="pw" placeholder="Admin password (ADMIN_PASSWORD)" autofocus>
+<button id="go">Log in</button></div>
+<script>
+// 与主面板共享 localStorage 偏好（同源）；切换即刷新，字典以英文原文为键。
+let LANG = localStorage.getItem('lang') === 'zh' ? 'zh' : 'en';
+const ZH = {
+  'AFree Proxy - Login': 'AFree Proxy - 登录',
+  'AFree Proxy Admin Login': 'AFree Proxy 管理登录',
+  'Admin password (ADMIN_PASSWORD)': '管理面板密码（ADMIN_PASSWORD）',
+  'Log in': '登录'
+};
+function applyLang() {
+  document.getElementById('lang').textContent = LANG === 'zh' ? 'EN' : '中';
+  if (LANG !== 'zh') return;
+  document.title = ZH[document.title] || document.title;
+  const h1 = document.querySelector('h1');
+  if (h1 && ZH[h1.textContent.trim()]) h1.textContent = ZH[h1.textContent.trim()];
+  const pw = document.getElementById('pw');
+  if (pw && ZH[pw.placeholder]) pw.placeholder = ZH[pw.placeholder];
+  const go = document.getElementById('go');
+  if (go && ZH[go.textContent.trim()]) go.textContent = ZH[go.textContent.trim()];
+  document.documentElement.lang = 'zh-CN';
+}
+document.getElementById('lang').onclick = function() {
+  localStorage.setItem('lang', LANG === 'zh' ? 'en' : 'zh');
+  location.reload();
+};
+applyLang();
+const b=document.getElementById('go'),e=document.getElementById('err');
+async function login(){b.disabled=true;e.textContent='';
+ try{const r=await fetch('/admin/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:document.getElementById('pw').value})});
+ const d=await r.json();
+ if(r.ok&&d.success){location.reload();return;}
+ e.textContent=d.error||('HTTP '+r.status);}catch(err){e.textContent=err.message;}
+ b.disabled=false;}
+b.onclick=login;document.getElementById('pw').addEventListener('keydown',ev=>{if(ev.key==='Enter')login();});
+</script></body></html>`

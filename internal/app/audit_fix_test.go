@@ -204,7 +204,7 @@ func TestFallbackTruncateKeepsContiguousTail(t *testing.T) {
 	)
 	params := map[string]any{"messages": msgs}
 	out := fallbackTruncate(params, m)
-	if !out.changed {
+	if !out.Changed {
 		t.Fatal("expected truncation to happen")
 	}
 	got, _ := params["messages"].([]any)

@@ -12,6 +12,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"afree-proxy/internal/kit"
 )
 
 // 2026-11-06 生产实证回归：绑定出口在请求中途进入冷却后，callZenAPI 的
@@ -43,11 +45,11 @@ func TestZenChatBlockedExitSwitchesKeyInsteadOfSpinning(t *testing.T) {
 		ProxyIsolation: boolPtr(true),
 	})
 	zenKeyMu.Lock()
-	zenKeyIdx = 0
+	*zenKeyIdx = 0
 	zenKeyMu.Unlock()
 	t.Cleanup(func() {
 		zenKeyMu.Lock()
-		zenKeyCool = map[string]time.Time{}
+		*zenKeyCool = map[string]time.Time{}
 		zenKeyMu.Unlock()
 	})
 
@@ -108,7 +110,7 @@ func TestAtomicWriteFileConcurrentWriters(t *testing.T) {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
-			atomicWriteFile(path, []byte(fmt.Sprintf(`{"w":%d}`, i)))
+			kit.AtomicWriteFile(path, []byte(fmt.Sprintf(`{"w":%d}`, i)))
 		}(i)
 	}
 	wg.Wait()

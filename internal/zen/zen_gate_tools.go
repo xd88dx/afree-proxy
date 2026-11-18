@@ -1,0 +1,57 @@
+package zen
+
+import (
+	_ "embed"
+	"encoding/json"
+	"sync"
+)
+
+// ============================================================================
+// Zen 免费层 gate 工具的真实定义（描述 + 参数 schema）
+//
+// 2026-10-15 实测（新 inference 后端，干净 IP 二分定位）：迁移后的免费层
+// 不再只校验工具名 —— 注入工具的 parameters 若是空 schema
+// （{"type":"object","properties":{}}）直接 403 FreeTierError；换成官方
+// CLI 1.19.0 的真实参数 schema 即 200。描述文本不参与校验（精简描述 +
+// 真实 schema 实测通过），但这里仍存官方原文，保持与 CLI 字节级一致，
+// 避免上游日后加严描述校验时再次全灭。
+//
+// 数据来源：opencode CLI 2.1.4 本地抓包（2026-10-26，认证账户，干净代理
+// IP；chat 形态与 responses 形态的 parameters 不同：responses 形态剥
+// min/max 约束，故两套都存）。zen_gate_tools.json 由抓包生成，勿手改。
+// ============================================================================
+
+//go:embed zen_gate_tools.json
+var ZenGateToolsJSON []byte
+
+type ZenGateToolDef struct {
+	Name                string         `json:"name"`
+	Description         string         `json:"description"`
+	ParametersChat      map[string]any `json:"parameters_chat"`
+	ParametersResponses map[string]any `json:"parameters_responses"`
+}
+
+var (
+	zenGateDefsOnce  sync.Once
+	zenGateDefs      []ZenGateToolDef
+	zenGateDefByName map[string]*ZenGateToolDef
+)
+
+func ZenGateToolDefs() []ZenGateToolDef {
+	zenGateDefsOnce.Do(func() {
+		var defs []ZenGateToolDef
+		if err := json.Unmarshal(ZenGateToolsJSON, &defs); err == nil {
+			zenGateDefs = defs
+			zenGateDefByName = make(map[string]*ZenGateToolDef, len(defs))
+			for i := range zenGateDefs {
+				zenGateDefByName[zenGateDefs[i].Name] = &zenGateDefs[i]
+			}
+		}
+	})
+	return zenGateDefs
+}
+
+func LookupZenGateToolDef(name string) *ZenGateToolDef {
+	ZenGateToolDefs()
+	return zenGateDefByName[name]
+}

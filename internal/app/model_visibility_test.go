@@ -2,144 +2,247 @@ package app
 
 import (
 	"path/filepath"
+
 	"testing"
+
+	"afree-proxy/internal/cline"
 
 	"afree-proxy/internal/other"
 )
 
 // 展示门控回归：模型目录 = 可服务目录。没有参与路由的凭据时，平台段不得
+
 // 出现在 /v1/models（与请求入口的可路由性闸同判定），否则客户端选中后
+
 // 必然 401/403/503。口径：账号池 = 总闸开 + 反代开关开；key 平台 = 启用
+
 // 列开。
 
 // otherModelList 逐子平台判定：没有启用 key 的子平台整段不输出。
+
 func TestOtherModelListRequiresEnabledKey(t *testing.T) {
+
 	t.Setenv("DATA_DIR", testDataDir(t))
+
 	prev := other.Get()
+
 	prevPath := other.ConfigPath
+
 	other.ConfigPath = filepath.Join(t.TempDir(), ".other-config.json")
+
 	t.Cleanup(func() {
+
 		other.Set(prev)
+
 		other.ConfigPath = prevPath
+
 	})
 
 	build := func(enabled bool) *other.Config {
+
 		return &other.Config{Platforms: []other.Platform{{
-			Slug:              "test",
-			Name:              "Test",
-			Prefix:            "ot",
-			BaseURL:           "http://127.0.0.1:1/v1",
-			Keys:              []string{"k1"},
+
+			Slug: "test",
+
+			Name: "Test",
+
+			Prefix: "ot",
+
+			BaseURL: "http://127.0.0.1:1/v1",
+
+			Keys: []string{"k1"},
+
 			KeyRoutingEnabled: map[string]bool{"k1": enabled},
+
 			Models: other.ModelState{
-				Manual:   []string{"m1"},
+
+				Manual: []string{"m1"},
+
 				Selected: map[string]bool{"m1": true},
 			},
 		}}}
+
 	}
 
 	other.Set(build(false))
+
 	if got := otherModelList(); len(got) != 0 {
+
 		t.Fatalf("disabled key must hide subplatform: %v", got)
+
 	}
 
 	other.Set(build(true))
+
 	got := otherModelList()
+
 	if len(got) != 1 || got[0]["id"] != "ot:m1" {
+
 		t.Fatalf("enabled key must list selected model: %v", got)
+
 	}
+
 }
 
 // zen 需要至少一个参与路由的 key 才展示：空池在请求入口按不可路由处理，
+
 // 目录继续展示只会让用户选中必 503 的模型。
+
 func TestZenModelListRequiresEnabledKey(t *testing.T) {
+
 	t.Setenv("DATA_DIR", testDataDir(t))
+
 	prev := getZenConfig()
+
 	t.Cleanup(func() {
+
 		c := *prev
+
 		setZenConfig(&c)
+
 	})
 
 	empty := *getZenConfig()
+
 	empty.Keys = nil
+
 	empty.KeyRoutingEnabled = nil
+
 	setZenConfig(&empty)
+
 	if got := zenModelList(); len(got) != 0 {
+
 		t.Fatalf("empty zen pool must not list models: %d", len(got))
+
 	}
 
 	// 目录夹具（种子快照已取消，直接字面量造态）：门控语义 = 无启用 key
+
 	// 不出目录，有启用 key 出目录。
+
 	zenModelsMu.Lock()
-	savedModels := zenModels
-	zenModels = map[string]*ZenModel{"big-pickle": {ID: "big-pickle", Source: "live"}}
+
+	savedModels := *zenModels
+
+	*zenModels = map[string]*ZenModel{"big-pickle": {ID: "big-pickle", Source: "live"}}
+
 	zenModelsMu.Unlock()
+
 	t.Cleanup(func() {
+
 		zenModelsMu.Lock()
-		zenModels = savedModels
+
+		*zenModels = savedModels
+
 		zenModelsMu.Unlock()
+
 	})
 
 	named := *getZenConfig()
+
 	named.Keys = []string{"sk-test"}
+
 	named.KeyRoutingEnabled = nil // nil = 参与路由
+
 	setZenConfig(&named)
+
 	if got := zenModelList(); len(got) == 0 {
+
 		t.Fatal("enabled named key must list zen models")
+
 	}
+
 }
 
 // cline 裸模型名按账号池路由：无 active + 反代开的账号时不出目录。
+
 func TestAPIModelListRequiresRoutableAccount(t *testing.T) {
-	savedPool := pool
-	t.Cleanup(func() { pool = savedPool })
+
+	savedPool := cline.RawPool()
+
+	t.Cleanup(func() { cline.SetPool(savedPool) })
+
 	off, on := false, true
 
-	pool = &AccountPool{Accounts: []*Account{}}
+	cline.SetPool(&AccountPool{Accounts: []*Account{}})
+
 	if got := apiModelList(); len(got) != 0 {
+
 		t.Fatalf("no account must hide cline catalog: %d", len(got))
+
 	}
 
-	pool = &AccountPool{Accounts: []*Account{{
+	cline.SetPool(&AccountPool{Accounts: []*Account{{
 		AccountID: "a1", Email: "a@test", PoolEnabled: &off,
-	}}}
+	}}})
+
 	if got := apiModelList(); len(got) != 0 {
+
 		t.Fatalf("pool switch off must hide cline catalog: %d", len(got))
+
 	}
 
-	pool = &AccountPool{Accounts: []*Account{{
-		AccountID: "a2", Email: "b@test", PoolEnabled: &on,
-	}}}
+	cline.SetPool(&AccountPool{Accounts: []*Account{{
+		AccountID: "c3", Email: "c@test", PoolEnabled: &on,
+	}}})
 	// 目录内容只来自官方 feed（无 seed 兜底），注入条目验证"有可路由账号
+
 	// 时目录可见"——账号门控与目录内容是两个独立维度。
+
 	injectClineModels(t, "z-ai/glm-5.3-flash")
+
 	if got := apiModelList(); len(got) == 0 {
+
 		t.Fatal("routable account must list cline catalog")
+
 	}
+
 }
 
 // combo 别名不带平台前缀：请求入口的可路由性闸必须按声明平台判，不能把
+
 // 别名当裸名（Cline）——否则声明 zen 的别名会去看 Cline 的凭据。
+
 func TestModelRoutePlatformKeyResolvesCombo(t *testing.T) {
+
 	t.Setenv("DATA_DIR", testDataDir(t))
+
 	combosMu.Lock()
+
 	prevLoaded, prevList := combosLoaded, combosList
+
 	combosLoaded = true
+
 	combosList = []*Combo{{ID: "my-alias", Platform: "zen", Target: "big-pickle"}}
+
 	combosMu.Unlock()
+
 	t.Cleanup(func() {
+
 		combosMu.Lock()
+
 		combosLoaded, combosList = prevLoaded, prevList
+
 		combosMu.Unlock()
+
 	})
 
 	if got := modelRoutePlatformKey("my-alias"); got != platZen {
+
 		t.Fatalf("combo alias must route to its declared platform: got %q", got)
+
 	}
+
 	if got := modelRoutePlatformKey("zen:big-pickle"); got != platZen {
+
 		t.Fatalf("prefixed id must route to zen: got %q", got)
+
 	}
+
 	if got := modelRoutePlatformKey("plain-model"); got != platCline {
+
 		t.Fatalf("bare name must route to cline: got %q", got)
+
 	}
+
 }

@@ -1,0 +1,7 @@
+go 1.26.0
+
+use (
+	.
+	./modules/trae2api
+	./modules/workbuddy2api
+)

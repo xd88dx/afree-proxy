@@ -8,12 +8,12 @@ import "testing"
 func zenPrefixFixture(t *testing.T) {
 	t.Helper()
 	zenModelsMu.Lock()
-	savedModels := zenModels
-	zenModels = map[string]*ZenModel{"big-pickle": {ID: "big-pickle", Source: "live", Context: 200000, Output: 32000}}
+	savedModels := *zenModels
+	*zenModels = map[string]*ZenModel{"big-pickle": {ID: "big-pickle", Source: "live", Context: 200000, Output: 32000}}
 	zenModelsMu.Unlock()
 	t.Cleanup(func() {
 		zenModelsMu.Lock()
-		zenModels = savedModels
+		*zenModels = savedModels
 		zenModelsMu.Unlock()
 	})
 }

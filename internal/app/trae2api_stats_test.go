@@ -6,8 +6,7 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	traepool "afree-proxy/internal/trae2api/pool"
+	"trae2api"
 )
 
 // TraeWork 持久记账与显示排序回归（2026-11-05 用户定）：
@@ -17,15 +16,15 @@ import (
 
 func TestTrae2apiTokensSnapshotCrossDayLazyReset(t *testing.T) {
 	traeTokensMu.Lock()
-	saved := traeTokens
-	traeTokens = map[string]trae2apiTokenStats{
+	saved := *traeTokens
+	*traeTokens = map[string]trae2apiTokenStats{
 		"u1": {Today: 5650000, Total: 9000000, Date: "2026-11-04"},
 		"u2": {Today: 1234, Total: 1234, Date: time.Now().Format("2006-01-02")},
 	}
 	traeTokensMu.Unlock()
 	t.Cleanup(func() {
 		traeTokensMu.Lock()
-		traeTokens = saved
+		*traeTokens = saved
 		traeTokensMu.Unlock()
 	})
 
@@ -43,10 +42,10 @@ func TestTrae2apiTokensSnapshotCrossDayLazyReset(t *testing.T) {
 }
 
 func TestTrae2apiSetDisplayOrderTailAppendsUnknown(t *testing.T) {
-	p := traepool.New(traepool.Options{})
-	p.Add(&traepool.Account{UID: "b", Label: "b"})
-	p.Add(&traepool.Account{UID: "a", Label: "a"})
-	p.Add(&traepool.Account{UID: "c", Label: "c"})
+	p := trae2api.NewPool(trae2api.PoolOptions{})
+	p.Add(&trae2api.PoolAccount{UID: "b", Label: "b"})
+	p.Add(&trae2api.PoolAccount{UID: "a", Label: "a"})
+	p.Add(&trae2api.PoolAccount{UID: "c", Label: "c"})
 
 	if n := p.SetOrder([]string{"c", "ghost"}); n != 3 { // 未知 uid 忽略；全量入序后返回池内账号数
 		t.Fatalf("SetOrder returned %d, want 3 (full pool ordered)", n)
@@ -64,40 +63,45 @@ func TestTrae2apiSetDisplayOrderTailAppendsUnknown(t *testing.T) {
 	}
 }
 
+// resetTraeCfgForTest 重置 trae-config.json 单例（traeCfgMu/traeCfg/traeCfgLoaded），
+// 让下一次访问从 override 路径惰性装载；测试结束恢复原态。
+func resetTraeCfgForTest(t *testing.T) {
+	t.Helper()
+	traeCfgMu.Lock()
+	savedCfg, savedLoaded := *traeCfg, *traeCfgLoaded
+	*traeCfg, *traeCfgLoaded = nil, false
+	traeCfgMu.Unlock()
+	t.Cleanup(func() {
+		traeCfgMu.Lock()
+		*traeCfg, *traeCfgLoaded = savedCfg, savedLoaded
+		traeCfgMu.Unlock()
+	})
+}
+
 // 展示顺序必须落盘（2026-11-05 用户定：顺序改动落盘、随配置备份迁移；
 // 此前是进程内展示态，导出→导入/重启即回 UID 序——生产实测丢）。
 func TestTraeDisplayOrderPersistsAndImports(t *testing.T) {
-	savedPath := proxyConfigPathOverride
-	proxyConfigPathOverride = filepath.Join(t.TempDir(), "proxy-config.json")
-	t.Cleanup(func() { proxyConfigPathOverride = savedPath })
-	savedGlobalPath := globalConfigPathOverride
-	afreePath := filepath.Join(t.TempDir(), "afree-config.json")
-	globalConfigPathOverride = afreePath
-	t.Cleanup(func() { globalConfigPathOverride = savedGlobalPath })
-	globalCfgMu.Lock()
-	globalCfgLoaded = false
-	globalCfg = nil
-	globalCfgMu.Unlock()
-	t.Cleanup(func() {
-		globalCfgMu.Lock()
-		globalCfgLoaded = false
-		globalCfg = nil
-		globalCfgMu.Unlock()
-	})
+	// 2026-11-17 配置重组：displayOrder 真身迁 trae-config.json（原 afree-config
+	// .json 的 trae.displayOrder 段），落盘断言随迁。
+	savedTraePath := *traeAfreeConfigPathOverride
+	afreePath := filepath.Join(t.TempDir(), "trae-config.json")
+	*traeAfreeConfigPathOverride = afreePath
+	t.Cleanup(func() { *traeAfreeConfigPathOverride = savedTraePath })
+	resetTraeCfgForTest(t)
 
-	// 落盘：写段后重读文件必须带 trae.displayOrder（2026-11-16 迁入 afree）
+	// 落盘：写段后重读文件必须带 displayOrder（2026-11-17 迁 trae-config.json）
 	traeDisplayOrderSave([]string{"u2", "u1"})
 	raw, err := os.ReadFile(afreePath)
 	if err != nil {
-		t.Fatalf("read afree-config.json: %v", err)
+		t.Fatalf("read trae-config.json: %v", err)
 	}
 	if !strings.Contains(string(raw), `"displayOrder": [`) {
-		t.Fatalf("display order must be persisted to afree trae section: %s", raw)
+		t.Fatalf("display order must be persisted to trae-config.json: %s", raw)
 	}
 
 	// 新"进程"装载：空内存副本从文件恢复
 	traeOrderMu.Lock()
-	traeDisplayOrder = nil
+	*traeDisplayOrder = nil
 	traeOrderMu.Unlock()
 	traeDisplayOrderLoad()
 	if got := traeDisplayOrderForBackup(); len(got) != 2 || got[0] != "u2" || got[1] != "u1" {

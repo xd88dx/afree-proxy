@@ -1,671 +1,1180 @@
 package app
 
 import (
+	"afree-proxy/internal/cline"
+
 	"afree-proxy/internal/kit"
+
 	"context"
+
 	"encoding/json"
+
 	"errors"
+
 	"io"
+
 	"net/http"
+
 	"net/http/httptest"
+
 	"net/textproto"
+
 	"strings"
+
 	"sync/atomic"
+
 	"testing"
+
 	"time"
 )
 
 // 这是 cline "必须流式"自学习的端到端回归测试：真实 callClineAPI（唯一的生产
+
 // 调用路径）+ 本地假上游。
+
 //
+
 // 为什么必须有这一层：callClineAutoStream 的早先实现只在"callClineAPI 返回
+
 // 500 响应"时才嗅探错误体，而 callClineAPI 对非 200 一律返回 nil 响应 +
+
 // error（响应体已读尽关闭）。单测用一个假上游塞 (500 响应, nil error) —— 那是
+
 // 生产里不可能出现的形态，于是测试全绿而功能在生产里永远不触发。
+
 //
+
 // 本测试固定住两件事：
+
 //  1. callClineAPI 对非 200 返回 *clineAPIError（携带状态码 + body）；
+
 //  2. callClineAutoStream 因此能真的学到该模型并改用 stream=true 重试。
+
 func TestAutoStreamLearnThroughRealCallee(t *testing.T) {
+
 	t.Setenv("DATA_DIR", testDataDir(t))
+
 	// 必须保存并恢复：本测试会真学到 "poolside/laguna-s-2.1:free" 需要流式，
+
 	// 而 clineStreamLearned 是包级全局。不恢复的话，后续任何断言"干净状态"的
+
 	// 测试（TestClineStreamLearnRoundTrip 的第一句）都会因执行顺序不同而红
+
 	// ——go test -shuffle=on 会稳定复现。
-	clineStreamMu.Lock()
-	savedLearned := clineStreamLearned
-	clineStreamLearned = nil
-	clineStreamMu.Unlock()
-	t.Cleanup(func() {
-		clineStreamMu.Lock()
-		clineStreamLearned = savedLearned
-		clineStreamMu.Unlock()
-	})
+
+	restore := cline.SaveStreamForTest()
+	t.Cleanup(restore)
 
 	var sawStream atomic.Value
+
 	var calls int32
+
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+
 		atomic.AddInt32(&calls, 1)
+
 		raw, _ := io.ReadAll(r.Body)
+
 		var body map[string]any
+
 		_ = json.Unmarshal(raw, &body)
+
 		stream, _ := body["stream"].(bool)
+
 		sawStream.Store(stream)
+
 		if !stream {
+
 			// cline 对"必须流式"模型的非流式调用固定答复
+
 			w.WriteHeader(http.StatusInternalServerError)
+
 			_, _ = w.Write([]byte(`{"error":"empty response content","success":false}`))
+
 			return
+
 		}
+
 		w.Header().Set("Content-Type", "text/event-stream")
+
 		w.WriteHeader(http.StatusOK)
+
 		_, _ = w.Write([]byte("data: {\"choices\":[{\"delta\":{\"content\":\"ok\"},\"finish_reason\":\"stop\"}]}\n\n"))
+
 		_, _ = w.Write([]byte("data: [DONE]\n\n"))
+
 	}))
+
 	defer upstream.Close()
 
 	// 假上游接管上游基址；APIToken 账号不需要刷新（ensureAccountToken 直接
+
 	// 返回静态 key），因此整个真实调用链无需网络。
+
 	origBase := clineAPIBase
+
 	clineAPIBase = upstream.URL
+
 	defer func() { clineAPIBase = origBase }()
 
-	poolMu.Lock()
-	savedUsage := poolUsage
-	poolUsage = &poolUsageData{} // 干净台账：防前置测试残留的账号状态污染选号（shuffle 顺序依赖）
-	savedPool := pool
-	pool = &AccountPool{Accounts: []*Account{{
+	cline.PoolMu.Lock()
+
+	savedUsage := cline.Usage()
+
+	cline.SetUsageForTest(&cline.PoolUsageData{}) // 干净台账：防前置测试残留的账号状态污染选号（shuffle 顺序依赖）
+
+	savedPool := cline.RawPool()
+
+	cline.SetPool(&AccountPool{Accounts: []*Account{{
 		AccountID: "probe-1", Email: "probe@test", APIToken: "sk-test-static-key",
-	}}}
-	poolMu.Unlock()
+	}}})
+	cline.PoolMu.Unlock()
+
 	defer func() {
-		poolMu.Lock()
-		pool = savedPool
-		poolUsage = savedUsage
-		poolMu.Unlock()
+
+		cline.PoolMu.Lock()
+
+		cline.SetPool(savedPool)
+
+		cline.SetUsageForTest(savedUsage)
+
+		cline.PoolMu.Unlock()
+
 	}()
 
 	// 本测试需要一个"命名约定判定无需流式"的模型。种子表随官方 free feed 变化，
+
 	// 不再固定包含某个 :free 变体，所以这里自己往缓存里放一个 —— 测试不该依赖
+
 	// 线上 feed 当前长什么样。
+
 	const probeModel = "poolside/laguna-s-2.1:free" // 含 ":" → 约定判定"无需流式"
+
 	modelsMu.Lock()
+
 	if modelsCache == nil {
+
 		modelsCache = make(map[string]*ModelInfo)
+
 	}
+
 	savedEntry, hadEntry := modelsCache[probeModel]
+
 	modelsCache[probeModel] = &ModelInfo{ID: probeModel, Source: "free", Provider: "poolside", Cost: "free", Status: ModelActive}
+
 	modelsMu.Unlock()
+
 	defer func() {
+
 		modelsMu.Lock()
+
 		if hadEntry {
+
 			modelsCache[probeModel] = savedEntry
+
 		} else {
+
 			delete(modelsCache, probeModel)
+
 		}
+
 		modelsMu.Unlock()
+
 	}()
 
 	params := map[string]any{
-		"model":    probeModel,
+
+		"model": probeModel,
+
 		"messages": []any{map[string]any{"role": "user", "content": "hi"}},
 	}
 
 	// 前置条件：约定判定该模型不需要流式，否则测不到学习路径
+
 	if modelNeedsStream(probeModel) {
+
 		t.Fatal("precondition failed: model is already force-streamed by the naming convention")
+
 	}
 
 	resp, _, streamed, err := callClineAutoStream(context.Background(), params, false, false)
+
 	if err != nil {
+
 		t.Fatalf("learn-and-retry should succeed, got err=%v", err)
+
 	}
+
 	if resp == nil {
+
 		t.Fatal("no response returned")
+
 	}
+
 	defer resp.Body.Close()
+
 	if !streamed {
+
 		t.Fatal("streamed must be true so the caller aggregates the SSE body")
+
 	}
+
 	if got := atomic.LoadInt32(&calls); got != 2 {
+
 		t.Fatalf("upstream calls = %d, want 2 (non-stream probe + streamed retry)", got)
+
 	}
+
 	if s, _ := sawStream.Load().(bool); !s {
+
 		t.Fatal("the retry must have used stream=true")
+
 	}
+
 	body, _ := io.ReadAll(resp.Body)
+
 	if !strings.Contains(string(body), "\"ok\"") {
+
 		t.Fatalf("retry body not returned: %s", body)
+
 	}
+
 	if !clineStreamRequired(probeModel) {
+
 		t.Fatal("model must be learned as stream-required")
+
 	}
+
 	// 后续请求直接命中，无需再付一次非流式探测的代价
+
 	if !modelNeedsStream(probeModel) {
+
 		t.Fatal("learned model must be force-streamed on later requests")
+
 	}
+
 }
 
 // callClineAPI 的非 200 契约：nil 响应 + 携带状态码的类型化错误。
+
 // 端点学习/流式学习都依赖它；这条断言是那两个功能的立足点。
+
 func TestCallClineAPINon200ReturnsTypedError(t *testing.T) {
+
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+
 		w.WriteHeader(http.StatusBadGateway)
+
 		_, _ = w.Write([]byte(`{"error":"bad gateway"}`))
+
 	}))
+
 	defer upstream.Close()
 
 	origBase := clineAPIBase
+
 	clineAPIBase = upstream.URL
+
 	defer func() { clineAPIBase = origBase }()
 
-	poolMu.Lock()
-	savedUsage := poolUsage
-	poolUsage = &poolUsageData{} // 干净台账：防前置测试残留的账号状态污染选号（shuffle 顺序依赖）
-	savedPool := pool
-	pool = &AccountPool{Accounts: []*Account{{
+	cline.PoolMu.Lock()
+
+	savedUsage := cline.Usage()
+
+	cline.SetUsageForTest(&cline.PoolUsageData{}) // 干净台账：防前置测试残留的账号状态污染选号（shuffle 顺序依赖）
+
+	savedPool := cline.RawPool()
+
+	cline.SetPool(&AccountPool{Accounts: []*Account{{
 		AccountID: "probe-2", Email: "probe2@test", APIToken: "sk-test-static-key",
-	}}}
-	poolMu.Unlock()
+	}}})
+	cline.PoolMu.Unlock()
+
 	defer func() {
-		poolMu.Lock()
-		pool = savedPool
-		poolUsage = savedUsage
-		poolMu.Unlock()
+
+		cline.PoolMu.Lock()
+
+		cline.SetPool(savedPool)
+
+		cline.SetUsageForTest(savedUsage)
+
+		cline.PoolMu.Unlock()
+
 	}()
 
 	resp, _, err := callClineAPI(context.Background(), map[string]any{
-		"model":    "z-ai/glm-5.3-flash",
+
+		"model": "z-ai/glm-5.3-flash",
+
 		"messages": []any{map[string]any{"role": "user", "content": "hi"}},
 	}, false, false)
 
 	if resp != nil {
+
 		t.Fatalf("non-200 must not hand back a response (body is consumed): %+v", resp)
+
 	}
+
 	if err == nil {
+
 		t.Fatal("non-200 must be an error")
+
 	}
+
 	var apiErr *clineAPIError
+
 	if !errors.As(err, &apiErr) {
+
 		t.Fatalf("error must be *clineAPIError so callers can classify it by status, got %T", err)
+
 	}
+
 	if apiErr.Status != http.StatusBadGateway {
+
 		t.Fatalf("status = %d, want 502", apiErr.Status)
+
 	}
+
 	if !strings.Contains(apiErr.Body, "bad gateway") {
+
 		t.Fatalf("body not preserved: %q", apiErr.Body)
+
 	}
+
 	// 502 是瞬时错误：绝不能触发端点学习
+
 	if isWrongEndpoint(err) {
+
 		t.Fatal("a 502 must never be classified as a wrong endpoint")
+
 	}
+
 }
 
 // 跨账号 failover：一个账号撞 429 时换下一个健康账号重试，而不是把整请求判死。
+
 // 假上游按 Authorization 里的 key 区分账号：key-A 恒 429，key-B 恒 200。
+
 func TestCallClineAPIFailoverOn429(t *testing.T) {
+
 	t.Setenv("DATA_DIR", testDataDir(t))
 
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+
 		if strings.Contains(r.Header.Get("Authorization"), "key-A") {
+
 			w.WriteHeader(http.StatusTooManyRequests)
+
 			_, _ = w.Write([]byte(`{"error":"rate limit reached"}`))
+
 			return
+
 		}
+
 		w.Header().Set("Content-Type", "text/event-stream")
+
 		w.WriteHeader(http.StatusOK)
+
 		_, _ = w.Write([]byte("data: {\"choices\":[]}\n\n"))
+
 	}))
+
 	defer upstream.Close()
 
 	origBase := clineAPIBase
+
 	clineAPIBase = upstream.URL
+
 	defer func() { clineAPIBase = origBase }()
 
-	poolMu.Lock()
-	savedUsage := poolUsage
-	poolUsage = &poolUsageData{} // 干净台账：防前置测试残留的账号状态污染选号（shuffle 顺序依赖）
-	savedPool := pool
-	pool = &AccountPool{Accounts: []*Account{
+	cline.PoolMu.Lock()
+
+	savedUsage := cline.Usage()
+
+	cline.SetUsageForTest(&cline.PoolUsageData{}) // 干净台账：防前置测试残留的账号状态污染选号（shuffle 顺序依赖）
+
+	savedPool := cline.RawPool()
+
+	cline.SetPool(&AccountPool{Accounts: []*Account{
 		{AccountID: "a-1", Email: "a1@test", APIToken: "sk-key-A"},
 		{AccountID: "a-2", Email: "a2@test", APIToken: "sk-key-B"},
-	}}
-	poolMu.Unlock()
+	}})
+	cline.PoolMu.Unlock()
+
 	defer func() {
-		poolMu.Lock()
-		pool = savedPool
-		poolUsage = savedUsage
-		poolMu.Unlock()
+
+		cline.PoolMu.Lock()
+
+		cline.SetPool(savedPool)
+
+		cline.SetUsageForTest(savedUsage)
+
+		cline.PoolMu.Unlock()
+
 	}()
 
 	resp, acc, err := callClineAPI(context.Background(), map[string]any{
-		"model":    "z-ai/glm-5.3-flash",
+
+		"model": "z-ai/glm-5.3-flash",
+
 		"messages": []any{map[string]any{"role": "user", "content": "hi"}},
 	}, false, false)
+
 	if err != nil {
+
 		t.Fatalf("failover should land on the healthy account, got err=%v", err)
+
 	}
+
 	if resp == nil || resp.StatusCode != 200 {
+
 		t.Fatalf("expected 200 from the healthy account, got %+v", resp)
+
 	}
+
 	defer resp.Body.Close()
+
 	if acc == nil || acc.AccountID != "a-2" {
+
 		t.Fatalf("returned account = %+v, want the healthy a-2", acc)
+
 	}
 
 	// 429 的那个账号必须已被冷却（换账号的前提就是它被移出 active 集合）
-	poolMu.Lock()
+
+	cline.PoolMu.Lock()
+
 	var a1 *Account
-	for _, a := range pool.Accounts {
+
+	for _, a := range cline.RawPool().Accounts {
+
 		if a.AccountID == "a-1" {
+
 			a1 = a
+
 		}
+
 	}
+
 	var st string
+
 	if u := usagePeekLocked(a1); u != nil {
+
 		st = u.Status
+
 	}
-	poolMu.Unlock()
+
+	cline.PoolMu.Unlock()
+
 	if a1 == nil || st != "cooldown" {
+
 		t.Fatalf("the 429 account must be cooled, got %+v (status %q)", a1, st)
+
 	}
+
 }
 
 // 429 且错误体没有任何可解析时长时：绝不落到 markAccountCooldown 的 18h 兜底，
+
 // 除非错误体含明确配额措辞。此测断言"无配额措辞 → 短冷却"。
+
 func TestCallClineAPI429UnparseableShortCooldown(t *testing.T) {
+
 	t.Setenv("DATA_DIR", testDataDir(t))
 
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+
 		w.WriteHeader(http.StatusTooManyRequests)
+
 		_, _ = w.Write([]byte(`{"error":"slow down"}`)) // 无 Try again in / quota 措辞
+
 	}))
+
 	defer upstream.Close()
 
 	origBase := clineAPIBase
+
 	clineAPIBase = upstream.URL
+
 	defer func() { clineAPIBase = origBase }()
 
-	poolMu.Lock()
-	savedUsage := poolUsage
-	poolUsage = &poolUsageData{} // 干净台账：防前置测试残留的账号状态污染选号（shuffle 顺序依赖）
-	savedPool := pool
-	pool = &AccountPool{Accounts: []*Account{
-		{AccountID: "only", Email: "only@test", APIToken: "sk-only"},
-	}}
-	poolMu.Unlock()
+	cline.PoolMu.Lock()
+
+	savedUsage := cline.Usage()
+
+	cline.SetUsageForTest(&cline.PoolUsageData{}) // 干净台账：防前置测试残留的账号状态污染选号（shuffle 顺序依赖）
+
+	savedPool := cline.RawPool()
+
+	cline.SetPool(&AccountPool{Accounts: []*Account{
+		{AccountID: "a-1", Email: "a1@test", APIToken: "sk-key-A"},
+		{AccountID: "a-2", Email: "a2@test", APIToken: "sk-key-B"},
+	}})
+	cline.PoolMu.Unlock()
+
 	defer func() {
-		poolMu.Lock()
-		pool = savedPool
-		poolUsage = savedUsage
-		poolMu.Unlock()
+
+		cline.PoolMu.Lock()
+
+		cline.SetPool(savedPool)
+
+		cline.SetUsageForTest(savedUsage)
+
+		cline.PoolMu.Unlock()
+
 	}()
 
 	_, _, err := callClineAPI(context.Background(), map[string]any{
-		"model":    "z-ai/glm-5.3-flash",
+
+		"model": "z-ai/glm-5.3-flash",
+
 		"messages": []any{map[string]any{"role": "user", "content": "hi"}},
 	}, false, false)
+
 	if err == nil {
+
 		t.Fatal("429 must still surface as an error when no healthy account remains")
+
 	}
 
-	poolMu.Lock()
-	acc := pool.Accounts[0]
+	cline.PoolMu.Lock()
+
+	acc := cline.RawPool().Accounts[0]
+
 	var until time.Time
+
 	if u := usagePeekLocked(acc); u != nil {
+
 		until = u.CooldownUntil
+
 	}
-	poolMu.Unlock()
+
+	cline.PoolMu.Unlock()
+
 	if until.IsZero() {
+
 		t.Fatal("the 429 account must be put on cooldown")
+
 	}
+
 	if d := time.Until(until); d > 2*time.Hour {
+
 		t.Fatalf("unparseable 429 must get a short cooldown, got %v", d)
+
 	}
+
 }
 
 // 429 且错误体含明确配额措辞（quota exceeded）时：给足 18h，避免健康账号被
+
 // 一分钟一次地反复打回上游。
+
 func TestCallClineAPI429QuotaKeywordLongCooldown(t *testing.T) {
+
 	t.Setenv("DATA_DIR", testDataDir(t))
 
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+
 		w.WriteHeader(http.StatusTooManyRequests)
+
 		_, _ = w.Write([]byte(`{"error":"daily quota exceeded, upgrade your plan"}`))
+
 	}))
+
 	defer upstream.Close()
 
 	origBase := clineAPIBase
+
 	clineAPIBase = upstream.URL
+
 	defer func() { clineAPIBase = origBase }()
 
-	poolMu.Lock()
-	savedUsage := poolUsage
-	poolUsage = &poolUsageData{} // 干净台账：防前置测试残留的账号状态污染选号（shuffle 顺序依赖）
-	savedPool := pool
-	pool = &AccountPool{Accounts: []*Account{
-		{AccountID: "quota", Email: "quota@test", APIToken: "sk-quota"},
-	}}
-	poolMu.Unlock()
+	cline.PoolMu.Lock()
+
+	savedUsage := cline.Usage()
+
+	cline.SetUsageForTest(&cline.PoolUsageData{}) // 干净台账：防前置测试残留的账号状态污染选号（shuffle 顺序依赖）
+
+	savedPool := cline.RawPool()
+
+	cline.SetPool(&AccountPool{Accounts: []*Account{
+		{AccountID: "a-1", Email: "a1@test", APIToken: "sk-key-A"},
+		{AccountID: "a-2", Email: "a2@test", APIToken: "sk-key-B"},
+	}})
+	cline.PoolMu.Unlock()
+
 	defer func() {
-		poolMu.Lock()
-		pool = savedPool
-		poolUsage = savedUsage
-		poolMu.Unlock()
+
+		cline.PoolMu.Lock()
+
+		cline.SetPool(savedPool)
+
+		cline.SetUsageForTest(savedUsage)
+
+		cline.PoolMu.Unlock()
+
 	}()
 
 	_, _, err := callClineAPI(context.Background(), map[string]any{
-		"model":    "z-ai/glm-5.3-flash",
+
+		"model": "z-ai/glm-5.3-flash",
+
 		"messages": []any{map[string]any{"role": "user", "content": "hi"}},
 	}, false, false)
+
 	if err == nil {
+
 		t.Fatal("quota-exhausted 429 must surface as an error")
+
 	}
 
-	poolMu.Lock()
+	cline.PoolMu.Lock()
+
 	var until time.Time
-	if u := usagePeekLocked(pool.Accounts[0]); u != nil {
+
+	if u := cline.UsagePeekLocked(cline.RawPool().Accounts[0]); u != nil {
+
 		until = u.CooldownUntil
+
 	}
-	poolMu.Unlock()
+
+	cline.PoolMu.Unlock()
+
 	if d := time.Until(until); d < 17*time.Hour {
+
 		t.Fatalf("quota-exhausted 429 must get a long cooldown, got %v", d)
+
 	}
+
 }
 
 // clineHeaders 契约：官方 CLI 身份头必须齐全、大小写精确、取值与最新 CLI
+
 // 一致（2026-10-19 真机抓包核对 npm cline@3.0.73 / @cline/core@0.0.95：
+
 // X-CLIENT-TYPE cline-cli，platform cli，UA 带 ai-sdk 三段后缀）。
+
 // Cline 网关对受限免费模型校验这些头，缺失/错值可能 403。
+
 func TestClineHeadersContract(t *testing.T) {
+
 	h := clineHeaders("tok-123", "sess_abc")
 
 	// 全量取值对照 audit 表格；用 raw 键读取（Get 会规范化，读不到大写变体）
+
 	want := map[string]string{
-		"Authorization":      "Bearer tok-123",
-		"Content-Type":       "application/json",
-		"User-Agent":         "Cline/3.0.73 ai-sdk/openai-compatible/3.0.58 ai-sdk/provider-utils/5.0.50 runtime/bun/1.4.2",
-		"HTTP-Referer":       "https://cline.bot",
-		"X-Title":            "Cline",
-		"X-IS-MULTIROOT":     "false",
-		"X-CLIENT-TYPE":      "cline-cli",
-		"X-CLIENT-VERSION":   "3.0.73",
-		"X-PLATFORM":         "cli",
+
+		"Authorization": "Bearer tok-123",
+
+		"Content-Type": "application/json",
+
+		"User-Agent": "Cline/3.0.73 ai-sdk/openai-compatible/3.0.58 ai-sdk/provider-utils/5.0.50 runtime/bun/1.4.2",
+
+		"HTTP-Referer": "https://cline.bot",
+
+		"X-Title": "Cline",
+
+		"X-IS-MULTIROOT": "false",
+
+		"X-CLIENT-TYPE": "cline-cli",
+
+		"X-CLIENT-VERSION": "3.0.73",
+
+		"X-PLATFORM": "cli",
+
 		"X-PLATFORM-VERSION": "3.0.73",
-		"X-CORE-VERSION":     "0.0.95",
-		"X-Task-ID":          clineTaskID("sess_abc"),
+
+		"X-CORE-VERSION": "0.0.95",
+
+		"X-Task-ID": clineTaskID("sess_abc"),
 	}
+
 	for k, v := range want {
+
 		vals, ok := h[k]
+
 		if !ok {
+
 			t.Errorf("header %q missing (raw key absent; check Header.Set canonicalization)", k)
+
 			continue
+
 		}
+
 		if len(vals) != 1 || vals[0] != v {
+
 			t.Errorf("header %q = %v, want [%q]", k, vals, v)
+
 		}
+
 	}
+
 	// 常量与 audit 表格字面一致（防止只改常量不改断言时静默漂移）
+
 	if clineClientVersion != "3.0.73" || clineCoreVersion != "0.0.95" {
+
 		t.Errorf("version constants drifted from the audit spec: client=%q core=%q", clineClientVersion, clineCoreVersion)
+
 	}
+
 	// 空 session 不得带 X-Task-ID
+
 	if _, ok := clineHeaders("tok", "")["X-Task-ID"]; ok {
+
 		t.Error("X-Task-ID must be omitted when there is no session id")
+
 	}
 
 	// 不得出现大小写变体重复键：Go 的 http.Header 是 map[大小写敏感 key]，
+
 	// 同名字段出现两个变体时网络层会发出重复头（X-CLIENT-VERSION 与
+
 	// X-Client-Version 并存）。默认 config 的 Set 路径与 raw 赋值混用会触发。
+
 	seen := map[string]bool{}
+
 	for k := range h {
+
 		c := textproto.CanonicalMIMEHeaderKey(k)
+
 		if seen[c] {
+
 			t.Errorf("duplicate header (case variants): %q collides with an existing canonical %q", k, c)
+
 		}
+
 		seen[c] = true
+
 	}
 
 	// X-Task-ID 必须是官方 CLI 形态 <13 位毫秒>_<5 位 base36>（真机抓包：
+
 	// 1792426668112_96vx7），同一会话稳定、不同会话不同；已是该形态则透传。
+
 	if !isClineTaskID(clineTaskID("sess_abc")) {
+
 		t.Errorf("X-Task-ID not in official form: %q", clineTaskID("sess_abc"))
+
 	}
+
 	if clineTaskID("sess_abc") != clineTaskID("sess_abc") {
+
 		t.Error("X-Task-ID must be stable for the same session id")
+
 	}
+
 	if clineTaskID("sess_abc") == clineTaskID("sess_xyz") {
+
 		t.Error("X-Task-ID must differ across sessions")
+
 	}
+
 	if got := clineTaskID("1792426668112_96vx7"); got != "1792426668112_96vx7" {
+
 		t.Errorf("official-form X-Task-ID must pass through unchanged, got %q", got)
+
 	}
+
 }
 
 // zen 上游身份头与 UA 必须与实测规格一致：UA 为 CLI v2 的
+
 // "opencode/latest/2.2.7/cli"（2026-11-11 桌面端 2.2.7 抓包，上游 82abe7f；v2 chat/responses
+
 // 同一 UA，本地旧 ai-sdk 形态轮换表已废弃）；gate 头用官方的小写键名。
+
 func TestZenHeadersMatchAuditSpec(t *testing.T) {
-	if zenNativeUA != "opencode/latest/2.2.7/cli" {
-		t.Errorf("zenNativeUA drifted from the audit spec: %q", zenNativeUA)
+
+	if *zenNativeUA != "opencode/latest/2.2.7/cli" {
+
+		t.Errorf("*zenNativeUA drifted from the audit spec: %q", *zenNativeUA)
+
 	}
+
 	// 轮换列表里的原生 UA 条目也必须是同一版本
+
 	found := false
+
 	for _, ua := range kit.ZenUserAgents {
-		if ua == zenNativeUA {
+
+		if ua == *zenNativeUA {
+
 			found = true
+
 		}
+
 	}
+
 	if !found {
-		t.Errorf("ZenUserAgents must contain the native v2 UA %q (got %v)", zenNativeUA, kit.ZenUserAgents)
+
+		t.Errorf("ZenUserAgents must contain the native v2 UA %q (got %v)", *zenNativeUA, kit.ZenUserAgents)
+
 	}
 
 	// v2 CLI（2026-11-11 桌面端 2.2.7 抓包，上游 82abe7f）：chat 与 responses
+
 	// 同一 UA，无 provider-utils 段切换。
-	if zenNativeUA != "opencode/latest/2.2.7/cli" {
-		t.Errorf("zenNativeUA must be the CLI v2 UA, got %q", zenNativeUA)
+
+	if *zenNativeUA != "opencode/latest/2.2.7/cli" {
+
+		t.Errorf("*zenNativeUA must be the CLI v2 UA, got %q", *zenNativeUA)
+
 	}
 
 	req, err := http.NewRequest("POST", "https://opencode.ai/zen/v1/chat/completions", nil)
+
 	if err != nil {
+
 		t.Fatal(err)
+
 	}
+
 	setZenGateHeaders(req, "ses_abcdef012345ABCDef012345", "msg_abcdefghijklmnopqrstuvwxyz12", "")
+
 	// 官方 CLI 发小写键名；raw map 必须是小写条目
+
 	for k, v := range map[string]string{
+
 		"x-opencode-session-id": "ses_abcdef012345ABCDef012345",
-		"x-opencode-session":    "ses_abcdef012345ABCDef012345",
-		"x-session-affinity":    "ses_abcdef012345ABCDef012345",
-		"x-session-id":          "ses_abcdef012345ABCDef012345",
-		"x-opencode-client":     "cli",
-		"x-opencode-project":    "global",
+
+		"x-opencode-session": "ses_abcdef012345ABCDef012345",
+
+		"x-session-affinity": "ses_abcdef012345ABCDef012345",
+
+		"x-session-id": "ses_abcdef012345ABCDef012345",
+
+		"x-opencode-client": "cli",
+
+		"x-opencode-project": "global",
 	} {
+
 		vals, ok := req.Header[k]
+
 		if !ok {
+
 			t.Errorf("zen gate header %q missing (must be lowercase raw key)", k)
+
 			continue
+
 		}
+
 		if len(vals) != 1 || vals[0] != v {
+
 			t.Errorf("zen gate header %q = %v, want [%q]", k, vals, v)
+
 		}
+
 	}
+
 }
 
 // 线级验证：真实 callClineAPI 打到假上游时，请求头必须与 audit 表格逐字一致
+
 // （大小写敏感）。这是"我们确实按最新 CLI 指纹发包"的端到端证据，
+
 // 单测 header map 只能证明构造正确，这里证明它真的上了线。
+
 func TestClineHeadersOnTheWire(t *testing.T) {
+
 	t.Setenv("DATA_DIR", testDataDir(t))
 
 	got := make(chan http.Header, 1)
+
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+
 		got <- r.Header.Clone()
+
 		w.Header().Set("Content-Type", "text/event-stream")
+
 		w.WriteHeader(http.StatusOK)
+
 		_, _ = w.Write([]byte("data: {\"choices\":[]}\n\n"))
+
 	}))
+
 	defer upstream.Close()
 
 	origBase := clineAPIBase
+
 	clineAPIBase = upstream.URL
+
 	defer func() { clineAPIBase = origBase }()
 
-	poolMu.Lock()
-	savedUsage := poolUsage
-	poolUsage = &poolUsageData{} // 干净台账：防前置测试残留的账号状态污染选号（shuffle 顺序依赖）
-	savedPool := pool
-	pool = &AccountPool{Accounts: []*Account{{
+	cline.PoolMu.Lock()
+
+	savedUsage := cline.Usage()
+
+	cline.SetUsageForTest(&cline.PoolUsageData{}) // 干净台账：防前置测试残留的账号状态污染选号（shuffle 顺序依赖）
+
+	savedPool := cline.RawPool()
+
+	cline.SetPool(&AccountPool{Accounts: []*Account{{
 		AccountID: "hdr-1", Email: "hdr@test", APIToken: "sk-static-key",
-	}}}
-	poolMu.Unlock()
+	}}})
+	cline.PoolMu.Unlock()
+
 	defer func() {
-		poolMu.Lock()
-		pool = savedPool
-		poolUsage = savedUsage
-		poolMu.Unlock()
+
+		cline.PoolMu.Lock()
+
+		cline.SetPool(savedPool)
+
+		cline.SetUsageForTest(savedUsage)
+
+		cline.PoolMu.Unlock()
+
 	}()
 
 	resp, _, err := callClineAPI(context.Background(), map[string]any{
-		"model":    "cline-free/muse-spark-1.3-contributor",
+
+		"model": "cline-free/muse-spark-1.3-contributor",
+
 		"messages": []any{map[string]any{"role": "user", "content": "hi"}},
 	}, false, false)
+
 	if err != nil {
+
 		t.Fatalf("call: %v", err)
+
 	}
+
 	defer resp.Body.Close()
 
 	h := <-got
+
 	// net/http canonicalizes the wire header names on receipt, so read via Get.
+
 	clientVer := "3.0.73"
+
 	want := map[string]string{
-		"User-Agent":         "Cline/" + clientVer + " ai-sdk/openai-compatible/3.0.58 ai-sdk/provider-utils/5.0.50 runtime/bun/1.4.2",
-		"Http-Referer":       "https://cline.bot", // Go stores the canonical form of HTTP-Referer
-		"X-Title":            "Cline",
-		"X-Is-Multiroot":     "false",
-		"X-Client-Type":      "cline-cli",
-		"X-Client-Version":   clientVer,
-		"X-Platform":         "cli",
+
+		"User-Agent": "Cline/" + clientVer + " ai-sdk/openai-compatible/3.0.58 ai-sdk/provider-utils/5.0.50 runtime/bun/1.4.2",
+
+		"Http-Referer": "https://cline.bot", // Go stores the canonical form of HTTP-Referer
+
+		"X-Title": "Cline",
+
+		"X-Is-Multiroot": "false",
+
+		"X-Client-Type": "cline-cli",
+
+		"X-Client-Version": clientVer,
+
+		"X-Platform": "cli",
+
 		"X-Platform-Version": clientVer,
-		"X-Core-Version":     "0.0.95",
-		"Content-Type":       "application/json",
+
+		"X-Core-Version": "0.0.95",
+
+		"Content-Type": "application/json",
 	}
+
 	for k, v := range want {
+
 		if g := h.Get(k); g != v {
+
 			t.Errorf("wire header %s = %q, want %q", k, g, v)
+
 		}
+
 	}
+
 	if got := h.Get("Authorization"); got != "Bearer sk-static-key" {
+
 		t.Errorf("Authorization = %q", got)
+
 	}
+
 	if got := h.Get("X-Task-Id"); got == "" {
+
 		t.Error("X-Task-ID must be present on a chat request")
+
 	} else if !isClineTaskID(got) {
+
 		t.Errorf("X-Task-ID %q must use the official <13 digits>_<5 base36> shape", got)
+
 	}
+
 }
 
 // GFE 403（出口 IP 被 Google 前端拒绝）：换账号重试而不是判死——出口被拒是
+
 // 间歇性的（2026-11-05 生产实证：19:47 同出口被 GFE 403、20:34 同出口成功），
+
 // 换账号（隔离模式=换绑定出口）可救活本次请求。
+
 func TestCallClineAPIFailoverOnGFE403(t *testing.T) {
+
 	t.Setenv("DATA_DIR", testDataDir(t))
 
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+
 		if strings.Contains(r.Header.Get("Authorization"), "key-A") {
+
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+
 			w.WriteHeader(http.StatusForbidden)
+
 			_, _ = w.Write([]byte(`<html><head><title>403 Forbidden</title></head>` +
+
 				`<body text=#000000 bgcolor=#ffffff><h1>Error: Forbidden</h1>` +
+
 				`<h2>Your client does not have permission to get URL <code>/api/v1/chat/completions</code> from this server.</h2></body></html>`))
+
 			return
+
 		}
+
 		w.Header().Set("Content-Type", "text/event-stream")
+
 		w.WriteHeader(http.StatusOK)
+
 		_, _ = w.Write([]byte("data: {\"choices\":[]}\n\n"))
+
 	}))
+
 	defer upstream.Close()
 
 	origBase := clineAPIBase
+
 	clineAPIBase = upstream.URL
+
 	defer func() { clineAPIBase = origBase }()
 
-	poolMu.Lock()
-	savedUsage := poolUsage
-	poolUsage = &poolUsageData{} // 干净台账：防前置测试残留的账号状态污染选号（shuffle 顺序依赖）
-	savedPool := pool
-	pool = &AccountPool{Accounts: []*Account{
+	cline.PoolMu.Lock()
+
+	savedUsage := cline.Usage()
+
+	cline.SetUsageForTest(&cline.PoolUsageData{}) // 干净台账：防前置测试残留的账号状态污染选号（shuffle 顺序依赖）
+
+	savedPool := cline.RawPool()
+
+	cline.SetPool(&AccountPool{Accounts: []*Account{
 		{AccountID: "a-1", Email: "a1@test", APIToken: "sk-key-A"},
 		{AccountID: "a-2", Email: "a2@test", APIToken: "sk-key-B"},
-	}}
-	poolMu.Unlock()
+	}})
+	cline.PoolMu.Unlock()
+
 	defer func() {
-		poolMu.Lock()
-		pool = savedPool
-		poolUsage = savedUsage
-		poolMu.Unlock()
+
+		cline.PoolMu.Lock()
+
+		cline.SetPool(savedPool)
+
+		cline.SetUsageForTest(savedUsage)
+
+		cline.PoolMu.Unlock()
+
 	}()
 
 	resp, acc, err := callClineAPI(context.Background(), map[string]any{
-		"model":    "z-ai/glm-5.3-flash",
+
+		"model": "z-ai/glm-5.3-flash",
+
 		"messages": []any{map[string]any{"role": "user", "content": "hi"}},
 	}, false, false)
+
 	if err != nil {
+
 		t.Fatalf("GFE 403 must fail over to the healthy account, got err=%v", err)
+
 	}
+
 	if resp == nil || resp.StatusCode != 200 {
+
 		t.Fatalf("expected 200 from the healthy account, got %+v", resp)
+
 	}
+
 	defer resp.Body.Close()
+
 	if acc == nil || acc.AccountID != "a-2" {
+
 		t.Fatalf("returned account = %+v, want the healthy a-2", acc)
+
 	}
+
 }
 
 // 业务 403（cline API 的 JSON 拒绝，权益/会话类）：不换账号，原样返回——
+
 // 换账号重试无意义，且绝不把业务 403 误判成出口问题。
+
 func TestCallClineAPIBusiness403NoFailover(t *testing.T) {
+
 	t.Setenv("DATA_DIR", testDataDir(t))
 
 	var calls atomic.Int32
+
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+
 		calls.Add(1)
+
 		w.WriteHeader(http.StatusForbidden)
+
 		_, _ = w.Write([]byte(`{"error":"session expired"}`))
+
 	}))
+
 	defer upstream.Close()
 
 	origBase := clineAPIBase
+
 	clineAPIBase = upstream.URL
+
 	defer func() { clineAPIBase = origBase }()
 
-	poolMu.Lock()
-	savedUsage := poolUsage
-	poolUsage = &poolUsageData{} // 干净台账：防前置测试残留的账号状态污染选号（shuffle 顺序依赖）
-	savedPool := pool
-	pool = &AccountPool{Accounts: []*Account{
+	cline.PoolMu.Lock()
+
+	savedUsage := cline.Usage()
+
+	cline.SetUsageForTest(&cline.PoolUsageData{}) // 干净台账：防前置测试残留的账号状态污染选号（shuffle 顺序依赖）
+
+	savedPool := cline.RawPool()
+
+	cline.SetPool(&AccountPool{Accounts: []*Account{
 		{AccountID: "a-1", Email: "a1@test", APIToken: "sk-key-A"},
 		{AccountID: "a-2", Email: "a2@test", APIToken: "sk-key-B"},
-	}}
-	poolMu.Unlock()
+	}})
+	cline.PoolMu.Unlock()
+
 	defer func() {
-		poolMu.Lock()
-		pool = savedPool
-		poolUsage = savedUsage
-		poolMu.Unlock()
+
+		cline.PoolMu.Lock()
+
+		cline.SetPool(savedPool)
+
+		cline.SetUsageForTest(savedUsage)
+
+		cline.PoolMu.Unlock()
+
 	}()
 
 	_, _, err := callClineAPI(context.Background(), map[string]any{
-		"model":    "z-ai/glm-5.3-flash",
+
+		"model": "z-ai/glm-5.3-flash",
+
 		"messages": []any{map[string]any{"role": "user", "content": "hi"}},
 	}, false, false)
+
 	if err == nil {
+
 		t.Fatal("business 403 must be returned as an error")
+
 	}
+
 	var apiErr *clineAPIError
+
 	if !errors.As(err, &apiErr) || apiErr.Status != http.StatusForbidden {
+
 		t.Fatalf("error must be the original 403 *clineAPIError, got %v", err)
+
 	}
+
 	if n := calls.Load(); n != 1 {
+
 		t.Fatalf("business 403 must not fail over, upstream called %d times", n)
+
 	}
+
 }

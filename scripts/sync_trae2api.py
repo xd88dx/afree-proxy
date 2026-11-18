@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """Sync the vendored trae2api tree with upstream XCool-603/trae2api.
 
-internal/trae2api 由 vendor_trae2api.py 生成，但 vendored 树同时携带
+modules/trae2api/internal（独立 module，module 路径同上游）由 vendor_trae2api.py 生成，但 vendored 树同时携带
 afree 侧注入（出口接管/反代开关钩子/console 挂载基址，由 vendor 脚本幂等
 改写重放）与上游本地修复补丁（scripts/trae2api-afree.patch，另一会话
 2026-11-04 实测的文本工具调用兜底）。直接 re-vendor 会冲掉这些内容，本脚本
 按 workbuddy 同款三方合并流程安全重放：
 
   base   = vendor(基线 commit)     纯净 vendor 产物（含补丁与改写）
-  ours   = 当前 internal/trae2api  base + 本地手改
+  ours   = 当前 modules/trae2api/internal  base + 本地手改
   theirs = vendor(上游 HEAD)       新上游 + 补丁与改写
 
 逐文件 git merge-file：本地手改保留、上游改动流入、真实碰撞留 <<<<<<< 标记
@@ -40,7 +40,7 @@ from pathlib import Path
 
 SCRIPTS = Path(__file__).resolve().parent
 ROOT = SCRIPTS.parent
-PKG = ROOT / "internal" / "trae2api"
+PKG = ROOT / "modules" / "trae2api" / "internal"
 BASELINE_FILE = SCRIPTS / "trae2api-vendor-baseline.json"
 
 sys.path.insert(0, str(SCRIPTS))
@@ -97,7 +97,7 @@ def local_version() -> str:
 def load_baseline() -> dict:
     if not BASELINE_FILE.is_file():
         sys.exit(f"缺少基线文件 {BASELINE_FILE}。\n"
-                 "若当前 internal/trae2api 恰好是上游 HEAD 的纯净 vendor 产物（无手工改动），"
+                 "若当前 modules/trae2api/internal 恰好是上游 HEAD 的纯净 vendor 产物（无手工改动），"
                  "运行 --seal 登记基线；否则无法确定合并 base，请人工处理。")
     return json.loads(BASELINE_FILE.read_text(encoding="utf-8"))
 
@@ -302,7 +302,7 @@ def main() -> int:
                   "请同步 internal/app/trae.go 的版本号。")
         print("\n后续人工步骤（脚本无法代劳）:")
         print("  1. internal/app/trae.go: 新配置键/新管理端点的桥接、版本号 trae2apiVersion")
-        print("  2. 验证: go build ./... && go vet ./... && go test ./internal/trae2api/... ./internal/app/")
+        print("  2. 验证: go build ./... && go vet ./... && go test ./internal/app/... trae2api/... ./...")
         print("  3. git add -A && git commit")
         return 0
     finally:

@@ -3,6 +3,8 @@ package app
 import (
 	"fmt"
 	"testing"
+
+	"afree-proxy/internal/exitpool"
 	"time"
 )
 
@@ -19,11 +21,10 @@ func TestPlatformScopedCooldown(t *testing.T) {
 		"socks5://u:p@10.0.0.1:11105#DDFRK",
 	}})
 	t.Cleanup(func() {
-		proxyCooldownsMu.Lock()
-		proxyPlatformCooldowns = map[string]map[int]time.Time{}
-		proxyCooldowns = map[int]time.Time{}
-		proxyStreamFails = map[string][]time.Time{}
-		proxyCooldownsMu.Unlock()
+		resetProxyCooldownsForTest()
+		exitpool.StreamFailMuPtr.Lock()
+		*exitpool.StreamFailsPtr = map[string][]time.Time{}
+		exitpool.StreamFailMuPtr.Unlock()
 	})
 
 	banned := "socks5://u:p@10.0.0.1:11106#DDPHX"
@@ -50,8 +51,8 @@ func TestPlatformScopedCooldown(t *testing.T) {
 	if !proxyAvailableFor(pkOther, bannedIdx) {
 		t.Fatal("or must NOT be affected by wb-scoped cooldown")
 	}
-	if len(proxyCooldowns) != 0 {
-		t.Fatalf("platform-scoped failure must not write global cooldowns: %v", proxyCooldowns)
+	if g, _ := proxyCooldownsSnapshot(); len(g) != 0 {
+		t.Fatalf("platform-scoped failure must not write global cooldowns: %v", g)
 	}
 	// 绑定选择同口径：wb 拿不到该出口，or 照常拿到
 	if _, _, ok := pickBoundProxyFor(pkWb, banned, ""); ok {
@@ -76,17 +77,15 @@ func TestPlatformScopedCooldown(t *testing.T) {
 	if proxyAvailableFor(pkOther, healthyIdx) || proxyAvailableFor(pkWb, healthyIdx) {
 		t.Fatal("repeated establishment failure must cool the exit globally")
 	}
-	if len(proxyCooldowns) != 1 {
-		t.Fatalf("establishment failure should write global cooldown: %v", proxyCooldowns)
+	if g, _ := proxyCooldownsSnapshot(); len(g) != 1 {
+		t.Fatalf("establishment failure should write global cooldown: %v", g)
 	}
 
 	// ④ strike 计数按平台隔离：wb 攒下的失败不能给 or 凑数
-	proxyStreamFailMu.Lock()
-	proxyStreamFails = map[string][]time.Time{}
-	proxyCooldownsMu.Lock()
-	proxyPlatformCooldowns = map[string]map[int]time.Time{}
-	proxyCooldownsMu.Unlock()
-	proxyStreamFailMu.Unlock()
+	exitpool.StreamFailMuPtr.Lock()
+	*exitpool.StreamFailsPtr = map[string][]time.Time{}
+	resetProxyCooldownsForTest()
+	exitpool.StreamFailMuPtr.Unlock()
 	recordProxyOutcome(pkWb, banned, false, streamErr, 0)
 	if _, cool := shouldCooldownExit(pkOther, banned, streamErr); cool {
 		t.Fatal("or strikes must not be satisfied by wb failures")

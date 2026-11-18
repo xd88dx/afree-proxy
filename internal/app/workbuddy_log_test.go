@@ -1,10 +1,11 @@
 package app
 
 import (
-	"context"
-	"testing"
+	"afree-proxy/internal/reqlog"
 
-	wbauth "afree-proxy/internal/workbuddy/auth"
+	"context"
+	"github.com/misakano7545/workbuddy2api-panel"
+	"testing"
 )
 
 // TestWorkbuddyObserveAccountFillsLogColumns wbcn/wbgb 请求日志此前恒不带
@@ -14,8 +15,8 @@ func TestWorkbuddyObserveAccountFillsLogColumns(t *testing.T) {
 	t.Setenv("PROXY_ISOLATION", "true")
 	wbProxyMu.Lock()
 	prevLoaded, prevBindings := wbProxyLoaded, wbProxyBindings
-	wbProxyLoaded = true // 跳过文件读取，直接注入绑定
-	wbProxyBindings = map[string]workbuddyProxyBinding{
+	*wbProxyLoaded = true // 跳过文件读取，直接注入绑定
+	*wbProxyBindings = map[string]workbuddyProxyBinding{
 		"uid-main": {Main: "socks5://main:1080"},
 	}
 	wbProxyMu.Unlock()
@@ -28,36 +29,36 @@ func TestWorkbuddyObserveAccountFillsLogColumns(t *testing.T) {
 	// 未绑定账号 + 直连出口：代理列记 direct（确实没经代理）。
 	// workbuddySub 未初始化时序号恒 0（account #0），真实序号只在网关运行时取池顺序。
 	// 标签只有序号（昵称/uID 不参与，面板账号列已展示）。
-	ctx, ui := withUpstreamInfo(context.Background())
-	workbuddyObserveAccount(ctx, &wbauth.Auth{UID: "uid-plain", Nickname: "n1"}, "")
-	if ui.label != "account #0" {
-		t.Fatalf("upstream label = %q, want %q", ui.label, "account #0")
+	ctx, ui := reqlog.WithUpstreamInfo(context.Background())
+	workbuddyObserveAccount(ctx, &wbbridge.Auth{UID: "uid-plain", Nickname: "n1"}, "")
+	if ui.Label != "account #0" {
+		t.Fatalf("upstream label = %q, want %q", ui.Label, "account #0")
 	}
-	if ui.exit != "direct" {
-		t.Fatalf("exit = %q, want direct", ui.exit)
+	if ui.Exit != "direct" {
+		t.Fatalf("exit = %q, want direct", ui.Exit)
 	}
 
 	// 绑定主代理且本次从主出网：代理列记 main。
-	ctx2, ui2 := withUpstreamInfo(context.Background())
-	workbuddyObserveAccount(ctx2, &wbauth.Auth{UID: "uid-main"}, "socks5://main:1080")
-	if ui2.label != "account #0" {
-		t.Fatalf("upstream label = %q, want account #0", ui2.label)
+	ctx2, ui2 := reqlog.WithUpstreamInfo(context.Background())
+	workbuddyObserveAccount(ctx2, &wbbridge.Auth{UID: "uid-main"}, "socks5://main:1080")
+	if ui2.Label != "account #0" {
+		t.Fatalf("upstream label = %q, want account #0", ui2.Label)
 	}
-	if ui2.exit != "main" {
-		t.Fatalf("exit = %q, want main", ui2.exit)
+	if ui2.Exit != "main" {
+		t.Fatalf("exit = %q, want main", ui2.Exit)
 	}
 
 	// 标签只有序号，不再带 UID/昵称（防日志列被撑爆）。
-	ctx3, ui3 := withUpstreamInfo(context.Background())
-	workbuddyObserveAccount(ctx3, &wbauth.Auth{UID: "0123456789abcdef"}, "")
-	if ui3.label != "account #0" {
-		t.Fatalf("label = %q, want account #0", ui3.label)
+	ctx3, ui3 := reqlog.WithUpstreamInfo(context.Background())
+	workbuddyObserveAccount(ctx3, &wbbridge.Auth{UID: "0123456789abcdef"}, "")
+	if ui3.Label != "account #0" {
+		t.Fatalf("label = %q, want account #0", ui3.Label)
 	}
 
 	// 非网关请求（ctx 无日志槽位）与 nil 账号：不得 panic。
 	workbuddyObserveAccount(context.Background(), nil, "")
-	workbuddyObserveAccount(context.Background(), &wbauth.Auth{}, "")
-	workbuddyObserveAccount(nil, &wbauth.Auth{UID: "uid-plain"}, "")
+	workbuddyObserveAccount(context.Background(), &wbbridge.Auth{}, "")
+	workbuddyObserveAccount(nil, &wbbridge.Auth{UID: "uid-plain"}, "")
 }
 
 // TestKeyPoolAttemptObserverFillsLogColumns other 平台的共用注入：
@@ -82,31 +83,31 @@ func TestKeyPoolAttemptObserverFillsLogColumns(t *testing.T) {
 	))
 
 	// 未绑定 + 直连 → direct；scope 形参被单平台适配器忽略。
-	ctx, ui := withUpstreamInfo(context.Background())
+	ctx, ui := reqlog.WithUpstreamInfo(context.Background())
 	obs(ctx, "ignored-scope", "sk-aaa", "")
-	if ui.label != "key#1" {
-		t.Fatalf("upstream label = %q, want key#1", ui.label)
+	if ui.Label != "key#1" {
+		t.Fatalf("upstream label = %q, want key#1", ui.Label)
 	}
-	if ui.exit != "direct" {
-		t.Fatalf("exit = %q, want direct", ui.exit)
+	if ui.Exit != "direct" {
+		t.Fatalf("exit = %q, want direct", ui.Exit)
 	}
 
 	// 绑定主代理并从主出网 → main。
 	bindings["sk-bbb"] = workbuddyProxyBinding{Main: "socks5://main:1080"}
-	ctx2, ui2 := withUpstreamInfo(context.Background())
+	ctx2, ui2 := reqlog.WithUpstreamInfo(context.Background())
 	obs(ctx2, "", "sk-bbb", "socks5://main:1080")
-	if ui2.label != "key#2" {
-		t.Fatalf("upstream label = %q, want key#2", ui2.label)
+	if ui2.Label != "key#2" {
+		t.Fatalf("upstream label = %q, want key#2", ui2.Label)
 	}
-	if ui2.exit != "main" {
-		t.Fatalf("exit = %q, want main", ui2.exit)
+	if ui2.Exit != "main" {
+		t.Fatalf("exit = %q, want main", ui2.Exit)
 	}
 
 	// 全局池轮转（非绑定、出口非空）→ 空串，面板显示 -。
-	ctx3, ui3 := withUpstreamInfo(context.Background())
+	ctx3, ui3 := reqlog.WithUpstreamInfo(context.Background())
 	obs(ctx3, "", "sk-aaa", "socks5://pool:1080")
-	if ui3.exit != "" {
-		t.Fatalf("exit = %q, want empty (global pool rotation)", ui3.exit)
+	if ui3.Exit != "" {
+		t.Fatalf("exit = %q, want empty (global pool rotation)", ui3.Exit)
 	}
 
 	// nil ctx / 空 key：不得 panic。

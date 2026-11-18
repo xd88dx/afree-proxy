@@ -1,0 +1,330 @@
+package gwconfig
+
+import (
+	"crypto/rand"
+	"encoding/hex"
+	"fmt"
+	"log"
+	"net"
+	"os"
+	"strings"
+	"sync"
+	"time"
+
+	"afree-proxy/internal/kit"
+)
+
+// 环境变量配置层。优先级：显式命令行 flag > 环境变量 > 内置默认值。
+//
+// 支持的环境变量：
+//
+//	PORT                       监听端口（main.go 中显式 flag 优先）
+//	DATA_DIR                   数据目录（账号池/zen 配置/日志/combos 等，kit.ResolveDataPath）
+//	API_KEY                    /v1 上游代理接口的固定 API key；设置后仅此 key 可调用 /v1/*
+//	API_KEY_FILE               API key 文件路径（docker secrets），优先于 API_KEY
+//	MAX_BODY_MB                单请求体上限 MB，默认 32，超出返回 413
+//	ADMIN_PASSWORD             管理面板登录密码；设置后所有 /admin/* 需登录
+//	ADMIN_PASSWORD_FILE        密码文件路径（docker secrets），优先于 ADMIN_PASSWORD
+//	REQUIRE_ADMIN_AUTH         "false" 时允许公网无密码运行（如反代已做认证），默认强制
+//	POOL_STRATEGY              全部平台凭据调度策略 round_robin(默认) / fill / random，覆盖持久化配置
+//	                           （WorkBuddy 用 vendor 自己的分区策略；TraeWork 2026-11-04 换线后用
+//	                           vendored trae2api 引擎的权重调度，不走本变量；旧 TRAE_STRATEGY 已作废）
+//	LOG_REQUESTS               请求日志开关，默认 true；"false" 完全关闭（含 body 探测）
+//	LOG_FILE_MAX_MB            requests.jsonl 大写上限 MB，默认 10，超出清空
+//	APPLY_SYSTEM_PROMPT_OVERRIDE  "true" 才启用 override.md 系统提示词替换，默认关闭
+//	FORCE_STREAM               "true" = 全部平台强制流式总闸（默认 false）。
+//	                           驱动 cline（唯一按模型判定的平台）；其余平台恒为
+//	                           上游流式、客户端要非流式时由网关聚合，不受它影响。
+//	                           开之前必须确认没有"只支持非流式"的模型——那些模型
+//	                           会直接失败（没有反向学习机制）。
+//	                           （CLINE_FORCE_STREAM 已于 2026-10-30 删除，统一到本开关）
+//	STREAM_ATTEMPT             流式首发+重试次数，默认 2
+//	STRICT_MODEL_MATCH         "false" 时未知模型静默回退默认模型（默认显式 400）
+//	ALLOW_BANNED               "true" 时封禁的平台/模型退化为「仅目录摘除」：
+//	                           /v1/models 不再列出，但请求这些模型 ID 仍照常
+//	                           路由（默认 false = 封禁同时拒绝请求）。调试/灰度
+//	                           用开关——封禁的语义是「不再对外服务」，开着等于
+//	                           封禁失效，用完应关回。
+//	CLIENT_IP_HEADER           反代部署下取真实客户端 IP 的请求头名（登录限流用）
+//	ZEN_PIN_KEY                zen key 池固定用第 n 个 key（1 起），排障/单 key 直测用
+//	                           （ZEN_SESSION_ROTATE_MINUTES 已废弃：2026-10-27 起会话
+//	                           每次 API 调用新铸，无轮换概念；env 不再被读取）
+//	ZEN_ORG_ID                 OAuth 账户组织 ID，写入 x-opencode-org-id 头；原始
+//	                           API key 流量不需要（官方 CLI 也只对 OAuth 账户发该头）
+//	PROXY_ISOLATION            代理隔离开关，只接受 true/false（大小写不敏感）：
+//	                           true 强制开启（面板开关只读）；false 默认关闭、
+//	                           面板可改；未设置默认开启、面板可改。其他值告警
+//	                           并按未设置处理
+
+// envStr 读取环境变量并去除首尾空白，未设置或为空返回 ""。
+
+// envBool 解析布尔环境变量：1/true/yes/on（大小写不敏感）为 true，
+// 0/false/no/off 为 false。未设置或无法识别的值返回 (false, false)，
+// 调用方回落到各自默认值 —— 拼写错误不会意外关闭安全开关（fail closed）。
+
+// envInt 解析整数环境变量，无效或未设置返回 (0, false)。
+// 非空但无效时打印警告，与 envBool 一致——静默回退会让配置拼写错误
+// 无从察觉（如并发数误写成 "8s"）。
+
+// APIKeyEnv 返回 /v1 接口的固定 API key：API_KEY_FILE（docker secrets，
+// 整个文件内容去除首尾空白）优先，其次 API_KEY。均未设置返回 ""。
+// 文件已配置却不可读/为空时返回不可匹配的哨兵（fail closed，见 ReadSecretFileEnv）。
+func APIKeyEnv() string {
+	if v, ok := ReadSecretFileEnv("API_KEY_FILE", "/v1 API key"); ok {
+		return v
+	}
+	return kit.EnvStr("API_KEY")
+}
+
+// SealedSecretValue 哨兵：secret 文件已配置但读不到（权限变更、secret 轮换、
+// 挂载丢失）或内容为空时，用它代替"空值"，让依赖"空=未配置"的判定全部失效为
+// fail-closed 而不是 fail-open。
+//
+// 两处失效点（都只在启动时检查过一次，运行中失效不会被发现）：
+//   - ADMIN_PASSWORD_FILE 读不到 → 密码为空 → AdminAuthRequired()=false →
+//     公网面板静默免认证。
+//   - API_KEY_FILE 读不到 → key 为空 → /v1 回落到"动态 key 列表为空则放行" →
+//     公网 /v1 静默免认证。
+//
+// 每进程随机而非固定串：固定串等于一个公开密码，知道这个常量就能在读不到文件时
+// 照样通过校验。随机值没有任何来源可提交，因此请求一律 401/拒绝。
+var SealedSecretValue = func() string {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		// 熵源不可用属极端情况：退化为含 NUL 的值（表单与 JSON 都无法承载），
+		// 而不是一个可被猜测的普通字符串
+		return "\x00sealed-secret\x00"
+	}
+	return hex.EncodeToString(b)
+}()
+
+var (
+	SealedLogMu     sync.Mutex
+	SealedLoggedFor = map[string]bool{}
+)
+
+// LogSealedOnce 同一 secret 只记一次日志：AdminPasswordEnv 每个管理请求都会重新
+// 读文件，挂载损坏时按请求刷屏没有意义。
+func LogSealedOnce(what, detail string) {
+	SealedLogMu.Lock()
+	first := !SealedLoggedFor[detail]
+	SealedLoggedFor[detail] = true
+	SealedLogMu.Unlock()
+	if first {
+		log.Printf("secret file: %s (%s); refusing to treat it as \"not configured\" — "+
+			"requests needing it stay rejected until the file is readable again", detail, what)
+	}
+}
+
+// ReadSecretFileEnv 读取 fileEnvVar 指向的 secret 文件。
+// ok=false 表示该 FILE 变量未配置，调用方回退到普通环境变量；
+// ok=true 时返回值一定非空（要么是文件内容，要么是不可匹配的哨兵）。
+func ReadSecretFileEnv(fileEnvVar, what string) (string, bool) {
+	path := kit.EnvStr(fileEnvVar)
+	if path == "" {
+		return "", false
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		LogSealedOnce(what, fmt.Sprintf("%s=%s unreadable: %v", fileEnvVar, path, err))
+		return SealedSecretValue, true
+	}
+	if v := strings.TrimSpace(string(data)); v != "" {
+		return v, true
+	}
+	LogSealedOnce(what, fmt.Sprintf("%s=%s is empty", fileEnvVar, path))
+	return SealedSecretValue, true
+}
+
+// AdminPasswordEnv 解析管理密码：ADMIN_PASSWORD_FILE（docker secrets，整个文件
+// 内容去除首尾空白）优先，其次 ADMIN_PASSWORD。均未设置返回 ""。
+// 文件已配置却不可读/为空时返回不可匹配的哨兵（fail closed，见 ReadSecretFileEnv）。
+func AdminPasswordEnv() string {
+	if v, ok := ReadSecretFileEnv("ADMIN_PASSWORD_FILE", "admin panel password"); ok {
+		return v
+	}
+	return kit.EnvStr("ADMIN_PASSWORD")
+}
+
+// ApplyEnvConfig 在包初始化后、启动前应用环境变量到内存配置。
+// 由 StartProxy 在最早期调用。
+// PoolStrategyFromEnv / EnvStrategy POOL_STRATEGY 环境变量是否显式设置及其值
+// （设置时优先于 afree-config.json 里持久化的策略，GlobalStrategy 据此返回）。
+var (
+	PoolStrategyFromEnv bool
+	EnvStrategy         string
+)
+
+func ApplyEnvConfig() {
+	// POOL_STRATEGY 覆盖账号调度策略（env 优先；未设置时用面板保存的值，
+	// 存在 afree-config.json，重启不丢）
+	if s := kit.EnvStr("POOL_STRATEGY"); s != "" {
+		switch s {
+		case "round_robin", "fill", "random":
+			PoolStrategyFromEnv = true
+			EnvStrategy = s
+		default:
+			fmt.Printf("  WARNING: invalid POOL_STRATEGY %q, using round_robin\n", s)
+		}
+	}
+}
+
+// PoolStrategyEnvLocked POOL_STRATEGY 显式设置时为真：env 优先于持久化配置，
+// 此时面板的选号策略下拉只读（改了也不生效，不能留一个会撒谎的控件）。
+func PoolStrategyEnvLocked() bool { return PoolStrategyFromEnv }
+
+// IsLoopbackHost 判断监听 host 是否仅本机可达。
+func IsLoopbackHost(host string) bool {
+	host = strings.TrimSpace(host)
+	if host == "" || host == "localhost" {
+		return true
+	}
+	if ip := net.ParseIP(host); ip != nil {
+		return ip.IsLoopback()
+	}
+	return false
+}
+
+// CheckPublicExposure 公网暴露安全检查（fail closed）：
+// 监听非回环地址时必须设置 API_KEY 与 ADMIN_PASSWORD，否则拒绝启动。
+// REQUIRE_ADMIN_AUTH=false 可显式豁免管理密码检查（例如反代已做认证）。
+func CheckPublicExposure(host string) error {
+	if IsLoopbackHost(host) {
+		return nil
+	}
+	if APIKeyEnv() == "" {
+		return fmt.Errorf("refusing to start: listening on %q (public) without API_KEY; "+
+			"set API_KEY env so only your key can call /v1, or bind -host 127.0.0.1 for local use", host)
+	}
+	if AdminPasswordEnv() == "" && !AdminAuthExplicitlyDisabled() {
+		return fmt.Errorf("refusing to start: listening on %q (public) without ADMIN_PASSWORD; "+
+			"set ADMIN_PASSWORD env, or REQUIRE_ADMIN_AUTH=false if a reverse proxy handles auth, "+
+			"or bind -host 127.0.0.1 for local use", host)
+	}
+	return nil
+}
+
+func AdminAuthExplicitlyDisabled() bool {
+	v, ok := kit.EnvBool("REQUIRE_ADMIN_AUTH")
+	return ok && !v
+}
+
+// AdminAuthRequired 判断管理面板是否需要登录认证：
+// 设置了 ADMIN_PASSWORD(_FILE) 即启用；未设置时仅本机访问不启用。
+func AdminAuthRequired() bool {
+	return AdminPasswordEnv() != ""
+}
+
+// LogRequestsEnabled LOG_REQUESTS 是否启用，默认 true。
+func LogRequestsEnabled() bool {
+	v, ok := kit.EnvBool("LOG_REQUESTS")
+	if !ok {
+		return true
+	}
+	return v
+}
+
+// AllowBanned ALLOW_BANNED 是否启用（默认 false）：true 时封禁的平台/模型
+// 只从 /v1/models 摘除，请求侧仍照常路由（调试/灰度开关，见 env 文档注释）。
+// 实时读取，改 env 重启即生效——与三个风控开关同一纪律。
+func AllowBanned() bool {
+	v, ok := kit.EnvBool("ALLOW_BANNED")
+	if !ok {
+		return false
+	}
+	return v
+}
+
+// LogFileMaxBytes requests.jsonl 落盘文件大小上限，默认 10MB。
+func LogFileMaxBytes() int64 {
+	if n, ok := kit.EnvInt("LOG_FILE_MAX_MB"); ok && n > 0 {
+		return int64(n) << 20
+	}
+	return 10 << 20
+}
+
+// MaxRequestBodyBytes 单个请求体的字节上限（MAX_BODY_MB，默认 32MB），
+// 在日志中间件以 http.MaxBytesReader 包裹，防止公网匿名超大 body 撑爆内存。
+func MaxRequestBodyBytes() int64 {
+	if n, ok := kit.EnvInt("MAX_BODY_MB"); ok && n > 0 {
+		return int64(n) << 20
+	}
+	return 32 << 20
+}
+
+// StreamMaxAttempts 流式"缓冲+中断重试"路径的单请求总尝试次数（含首次），
+// STREAM_ATTEMPT 可配，默认 2（=1 次首发 + 1 次重试）。全局生效于
+// cline/zen/other 全部流式 chat 路径。重试整单
+// 重发、上游免费额度按次计费——调大前先权衡额度消耗。非法/小于 1 的值
+// 回落默认值。
+func StreamMaxAttempts() int {
+	if n, ok := kit.EnvInt("STREAM_ATTEMPT"); ok && n >= 1 {
+		return n
+	}
+	return 2
+}
+
+// SystemPromptOverrideEnabled APPLY_SYSTEM_PROMPT_OVERRIDE 是否启用 override.md
+// 系统提示词替换，默认 false（编码 IDE / Agent 保留自己的提示词）。
+func SystemPromptOverrideEnabled() bool {
+	v, _ := kit.EnvBool("APPLY_SYSTEM_PROMPT_OVERRIDE")
+	return v
+}
+
+// ForceStream FORCE_STREAM=true 时"全部平台一律强制流式"的总闸。
+//
+// 现状（2026-10-30 核对）：除 cline 外所有平台的**非流式**入口早就在强制上游
+// 流式——other 的非流式处理传 Chat(..., true)，
+// zen 全部 callZenAPI(..., true)，trae/wb 在各自的 client 里硬编码
+// stream=true；客户端要非流式时由网关 collectStreamResponse 聚合回 JSON。
+// 所以这个总闸实际只驱动 cline（唯一按模型判定的平台），其余平台恒为流式、
+// 不受它影响（也不提供"关闭强制流式"的反向开关——上游非流式路径没有反向
+// 学习机制，关了只会把长期未走的路径暴露成故障）。
+func ForceStream() bool {
+	v, _ := kit.EnvBool("FORCE_STREAM")
+	return v
+}
+
+// ClineHeaderTimeout cline 上游“等响应头”看门狗时长（CLINE_HEADER_TIMEOUT 秒，
+// 默认 60，0 = 关闭）。黑洞出口（TCP 通、响应头被静默丢弃）下 client.Do 会一直
+// 挂到共用 transport 的 ResponseHeaderTimeout(5 分钟)，期间占着并发槽位且故障
+// 转移不触发；看门狗只掐“响应头到达之前”，头一到立即停止，不影响之后的流式
+// body（SSE 可长跑）。注意：该值成立的前提是 cline 上游恒为流式——若将来出现
+// 真正非流式的上游模型（响应头要等整段生成完成），必须调大或关闭。
+func ClineHeaderTimeout() time.Duration {
+	if n, ok := kit.EnvInt("CLINE_HEADER_TIMEOUT"); ok {
+		if n <= 0 {
+			return 0
+		}
+		return time.Duration(n) * time.Second
+	}
+	return 60 * time.Second
+}
+
+// ZenHeaderTimeout zen 上游「等响应头」看门狗时长（ZEN_HEADER_TIMEOUT 秒，
+// 默认 60，0 = 关闭）。与 CLINE_HEADER_TIMEOUT 同机制（复用
+// clineHeaderWatchdogFor），只包流式请求——zen 存在非流式转发，非流式的
+// 响应头要等整段生成完成，看门狗语义不成立，故恒不启用。黑洞出口（TCP 通、
+// 响应头被静默丢弃）会把流式请求悬到共用 transport 的
+// ResponseHeaderTimeout（5 分钟）甚至更久（2026-11-05 生产实证 632 秒），
+// 期间占着并发信号量且换 key 重试链不触发；看门狗把这类悬死在 60s 内转成
+// 网络错误，交回既有的冷却出口/换 key 重试链。
+
+// StreamLogEnabled STREAM_LOG=true 时把 Anthropic 流式路径的原始 SSE 事件
+// 落盘到 afree-proxy-stream.log（完整对话内容、无大小上限），默认关闭。
+func StreamLogEnabled() bool {
+	v, _ := kit.EnvBool("STREAM_LOG")
+	return v
+}
+
+// StrictModelMatchEnv STRICT_MODEL_MATCH 控制未知模型名的处理（默认 true）：
+// 开启时对既不在免费模型表也不是 zen 模型的名字返回 400；关闭时沿用旧行为，
+// 静默回退到默认模型 —— IDE 配错模型名时会拿到"另一个模型"的 200 响应，
+// 排查成本极高，因此默认显式报错。
+func StrictModelMatchEnv() bool {
+	v, ok := kit.EnvBool("STRICT_MODEL_MATCH")
+	if ok {
+		return v
+	}
+	return true
+}

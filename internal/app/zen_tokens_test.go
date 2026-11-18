@@ -14,14 +14,14 @@ import (
 // 的记账条目被清理（避免文件里堆永不命中的累计值）。
 func TestZenKeyTokensPersist(t *testing.T) {
 	dir := t.TempDir()
-	t.Setenv("DATA_DIR", dir) // setZenConfig 里的 reconcileEgressBindings 会写代理配置，别污染真实数据目录
-	oldOverride := zenUsagePathOverride
+	t.Setenv("DATA_DIR", dir) // setZenConfig 里的 reconcileEgressBindings 会写 zen-config.json，别污染真实数据目录
+	oldOverride := *zenUsagePathOverride
 	oldCfgOverride := zenConfigPathOverride
 	oldTokens := zenKeyTokens
-	zenUsagePathOverride = filepath.Join(dir, "zen-state.json")
-	zenConfigPathOverride = filepath.Join(dir, "zen-config.json")
+	*zenUsagePathOverride = filepath.Join(dir, "zen-state.json")
+	*zenConfigPathOverride = filepath.Join(dir, "zen-config.json")
 	defer func() {
-		zenUsagePathOverride = oldOverride
+		*zenUsagePathOverride = oldOverride
 		zenConfigPathOverride = oldCfgOverride
 		zenKeyMu.Lock()
 		zenKeyTokens = oldTokens
@@ -30,13 +30,13 @@ func TestZenKeyTokensPersist(t *testing.T) {
 
 	// ① 记账 → 落盘：痕迹文件里必须出现 keyTokens 且带本次消耗
 	zenKeyMu.Lock()
-	zenKeyTokens = map[string]zenKeyTokenStats{}
+	*zenKeyTokens = map[string]zenKeyTokenStats{}
 	zenKeyMu.Unlock()
 	setZenConfig(&zenConfigData{Keys: []string{"zk-test"}}) // 先落一份配置文件
 	recordZenKeyTokens("zk-test", 42)
 	saveZenUsage()
 
-	raw, err := os.ReadFile(zenUsagePathOverride)
+	raw, err := os.ReadFile(*zenUsagePathOverride)
 	if err != nil {
 		t.Fatalf("read zen usage: %v", err)
 	}
@@ -55,7 +55,7 @@ func TestZenKeyTokensPersist(t *testing.T) {
 	}
 
 	// 配置文件不再携带记账（外部监测口径：zen-config.json 无 keyTokens 键）
-	cfgRaw, err := os.ReadFile(zenConfigPathOverride)
+	cfgRaw, err := os.ReadFile(*zenConfigPathOverride)
 	if err != nil {
 		t.Fatalf("read zen config: %v", err)
 	}
@@ -65,11 +65,11 @@ func TestZenKeyTokensPersist(t *testing.T) {
 
 	// ② 重启加载：loadZenUsage 回填运行时表，今日/累计要回到界面
 	zenKeyMu.Lock()
-	zenKeyTokens = map[string]zenKeyTokenStats{}
+	*zenKeyTokens = map[string]zenKeyTokenStats{}
 	zenKeyMu.Unlock()
 	loadZenUsage()
 	zenKeyMu.Lock()
-	got := zenKeyTokens["zk-test"]
+	got := (*zenKeyTokens)["zk-test"]
 	zenKeyMu.Unlock()
 	if got.Total != 42 {
 		t.Fatalf("runtime tokens after reload=%d, want 42", got.Total)
@@ -81,7 +81,7 @@ func TestZenKeyTokensPersist(t *testing.T) {
 	next.Keys = nil
 	setZenConfig(&next)
 	zenKeyMu.Lock()
-	left := len(zenKeyTokens)
+	left := len(*zenKeyTokens)
 	zenKeyMu.Unlock()
 	if left != 0 {
 		t.Fatalf("stale token entries left after key removal: %d", left)

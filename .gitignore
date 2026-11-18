@@ -17,8 +17,10 @@ proxy-config.json
 cline-config.json
 zen-config.json
 trae-config.json
+trae-state.json
 other-config.json
-workbuddy-config.json
+wkbd-config.json
+wkbd-state.json
 # Legacy pre-refactor names: kept so a stale copy can never be committed either.
 .cline-accounts.json
 .cline-credentials.json
@@ -27,6 +29,7 @@ workbuddy-config.json
 .zen-sessions.json
 .zen-model-aliases.json
 .zen-endpoints.json
+.zen-key-org.json
 .or-config.json
 .th-config.json
 .trae-config.json

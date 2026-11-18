@@ -8,6 +8,8 @@ import (
 	"net/http/httptest"
 	"sync/atomic"
 	"testing"
+
+	"afree-proxy/internal/cline"
 )
 
 // TestAccountMustStreamProbeRetriesWithStream 锁定 cline Test 探针的「必须流式」
@@ -19,15 +21,8 @@ func TestAccountMustStreamProbeRetriesWithStream(t *testing.T) {
 	setupBindingTest(t, nil)
 	t.Setenv("DATA_DIR", testDataDir(t))
 
-	clineStreamMu.Lock()
-	savedLearned := clineStreamLearned
-	clineStreamLearned = nil
-	clineStreamMu.Unlock()
-	t.Cleanup(func() {
-		clineStreamMu.Lock()
-		clineStreamLearned = savedLearned
-		clineStreamMu.Unlock()
-	})
+	restore := cline.SaveStreamForTest()
+	t.Cleanup(restore)
 
 	var sawStream atomic.Value
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

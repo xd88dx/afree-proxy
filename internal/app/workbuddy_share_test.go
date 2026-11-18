@@ -5,23 +5,22 @@ package app
 // 各场景的期望值都按此公式手算，作为实现的行为锚点。
 
 import (
+	"github.com/misakano7545/workbuddy2api-panel"
 	"testing"
 	"time"
-
-	wbpool "afree-proxy/internal/workbuddy/pool"
 )
 
-func shareTestStatus(uid string, credits int64, buckets []wbpool.ExpiryBucket) wbpool.Status {
+func shareTestStatus(uid string, credits int64, buckets []wbbridge.PoolExpiryBucket) wbbridge.PoolStatus {
 	on := true
-	return wbpool.Status{
+	return wbbridge.PoolStatus{
 		UID: uid, Nickname: uid, Credits: credits,
 		AccountEnabled: &on, PoolEnabled: true,
 		CreditsExpiryBuckets: buckets,
 	}
 }
 
-func bucketOn(date string, remain int64) wbpool.ExpiryBucket {
-	return wbpool.ExpiryBucket{Date: date, Remain: remain}
+func bucketOn(date string, remain int64) wbbridge.PoolExpiryBucket {
+	return wbbridge.PoolExpiryBucket{Date: date, Remain: remain}
 }
 
 func shareSugByUID(sugs []wbShareSuggestion, uid string) *wbShareSuggestion {
@@ -35,16 +34,21 @@ func shareSugByUID(sugs []wbShareSuggestion, uid string) *wbShareSuggestion {
 
 func TestShareOptimizePressuredAndReserved(t *testing.T) {
 	now := time.Date(2026, 11, 15, 12, 0, 0, 0, time.UTC)
-	list := []wbpool.Status{
+	list := []wbbridge.PoolStatus{
 		// a：今天到期 100 + 2 天后到期 100 → 前缀和 100/1=100、200/3=66.7 → 100
-		shareTestStatus("a", 1000, []wbpool.ExpiryBucket{bucketOn("2026-11-15", 100), bucketOn("2026-11-17", 100)}),
+		shareTestStatus("a", 1000, []wbbridge.PoolExpiryBucket{bucketOn("2026-11-15", 100), bucketOn("2026-11-17", 100)}),
 		// b：2 天后到期 60 → 60/2 = 30
-		shareTestStatus("b", 1000, []wbpool.ExpiryBucket{bucketOn("2026-11-17", 60)}),
+		shareTestStatus("b", 1000, []wbbridge.PoolExpiryBucket{bucketOn("2026-11-17", 60)}),
 		// c/d：无批次保底，余额 3:1 → 15:5
 		shareTestStatus("c", 300, nil),
 		shareTestStatus("d", 100, nil),
 		// e：disabled，不参与
-		func() wbpool.Status { s := shareTestStatus("e", 500, nil); s.Disabled = true; s.DisabledReason = "x"; return s }(),
+		func() wbbridge.PoolStatus {
+			s := shareTestStatus("e", 500, nil)
+			s.Disabled = true
+			s.DisabledReason = "x"
+			return s
+		}(),
 	}
 	sugs, warnings := computeShareSuggestions(list, now)
 	if len(sugs) != 4 {
@@ -73,8 +77,8 @@ func TestShareOptimizePressuredAndReserved(t *testing.T) {
 // 消耗串行、上游 FEFO 先扣最早批次，一个号只有一个速率。
 func TestShareOptimizePrefixSumNotBatchSum(t *testing.T) {
 	now := time.Date(2026, 11, 15, 12, 0, 0, 0, time.UTC)
-	list := []wbpool.Status{
-		shareTestStatus("a", 100, []wbpool.ExpiryBucket{
+	list := []wbbridge.PoolStatus{
+		shareTestStatus("a", 100, []wbbridge.PoolExpiryBucket{
 			bucketOn("2026-11-15", 102), bucketOn("2026-11-16", 606), bucketOn("2026-11-17", 107), bucketOn("2026-11-18", 108),
 		}),
 	}
@@ -92,7 +96,7 @@ func TestShareOptimizePrefixSumNotBatchSum(t *testing.T) {
 
 func TestShareOptimizeAllReserved(t *testing.T) {
 	now := time.Now()
-	list := []wbpool.Status{shareTestStatus("a", 100, nil), shareTestStatus("b", 100, nil)}
+	list := []wbbridge.PoolStatus{shareTestStatus("a", 100, nil), shareTestStatus("b", 100, nil)}
 	sugs, warnings := computeShareSuggestions(list, now)
 	if sugs != nil {
 		t.Fatalf("全员无压力应返回空建议: %+v", sugs)
@@ -104,10 +108,10 @@ func TestShareOptimizeAllReserved(t *testing.T) {
 
 func TestShareOptimizePastBucketCountsAsToday(t *testing.T) {
 	now := time.Date(2026, 11, 15, 12, 0, 0, 0, time.UTC)
-	list := []wbpool.Status{
+	list := []wbbridge.PoolStatus{
 		// 过期未扣完的批次按最紧迫（÷1）算
-		shareTestStatus("a", 100, []wbpool.ExpiryBucket{bucketOn("2026-11-14", 50)}),
-		shareTestStatus("b", 100, []wbpool.ExpiryBucket{bucketOn("2026-11-16", 50)}),
+		shareTestStatus("a", 100, []wbbridge.PoolExpiryBucket{bucketOn("2026-11-14", 50)}),
+		shareTestStatus("b", 100, []wbbridge.PoolExpiryBucket{bucketOn("2026-11-16", 50)}),
 	}
 	sugs, _ := computeShareSuggestions(list, now)
 	// a: 50/1=50（过期钳 1 天）；b: 50/2=25（11-16 可用 2 天）→ 无保底归一
@@ -122,10 +126,10 @@ func TestShareOptimizePastBucketCountsAsToday(t *testing.T) {
 // 原实现占比总和恒 80）。
 func TestShareOptimizeNoReservedSumsTo100(t *testing.T) {
 	now := time.Date(2026, 11, 15, 12, 0, 0, 0, time.UTC)
-	list := []wbpool.Status{
-		shareTestStatus("a", 100, []wbpool.ExpiryBucket{bucketOn("2026-11-15", 102), bucketOn("2026-11-16", 606)}),
-		shareTestStatus("b", 100, []wbpool.ExpiryBucket{bucketOn("2026-11-15", 1), bucketOn("2026-11-16", 709)}),
-		shareTestStatus("c", 100, []wbpool.ExpiryBucket{bucketOn("2026-11-24", 3873)}),
+	list := []wbbridge.PoolStatus{
+		shareTestStatus("a", 100, []wbbridge.PoolExpiryBucket{bucketOn("2026-11-15", 102), bucketOn("2026-11-16", 606)}),
+		shareTestStatus("b", 100, []wbbridge.PoolExpiryBucket{bucketOn("2026-11-15", 1), bucketOn("2026-11-16", 709)}),
+		shareTestStatus("c", 100, []wbbridge.PoolExpiryBucket{bucketOn("2026-11-24", 3873)}),
 	}
 	sugs, _ := computeShareSuggestions(list, now)
 	sum := 0.0
@@ -151,9 +155,9 @@ func TestShareMapsEqual(t *testing.T) {
 
 func TestShareOptimizePriorityWarning(t *testing.T) {
 	now := time.Now()
-	list := []wbpool.Status{
-		func() wbpool.Status {
-			s := shareTestStatus("a", 100, []wbpool.ExpiryBucket{bucketOn("2026-11-20", 100)})
+	list := []wbbridge.PoolStatus{
+		func() wbbridge.PoolStatus {
+			s := shareTestStatus("a", 100, []wbbridge.PoolExpiryBucket{bucketOn("2026-11-20", 100)})
 			s.Priority = 1
 			return s
 		}(),
@@ -170,8 +174,8 @@ func TestShareOptimizePriorityWarning(t *testing.T) {
 
 func TestShareOptimizeReservedZeroCreditsEvenSplit(t *testing.T) {
 	now := time.Now()
-	list := []wbpool.Status{
-		shareTestStatus("a", 200, []wbpool.ExpiryBucket{bucketOn("2026-11-20", 100)}),
+	list := []wbbridge.PoolStatus{
+		shareTestStatus("a", 200, []wbbridge.PoolExpiryBucket{bucketOn("2026-11-20", 100)}),
 		// 保底号余额全 0 → 均分 20%（10/10）
 		shareTestStatus("r1", 0, nil),
 		shareTestStatus("r2", 0, nil),

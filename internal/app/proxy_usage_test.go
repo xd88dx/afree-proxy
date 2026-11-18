@@ -24,7 +24,7 @@ func TestUsageTokensFallsBackToRequestEstimate(t *testing.T) {
 	}
 }
 
-// 非流式响应为 {data:{...usage}} 包装形态时，必须解包后再记账（2026-10-29）。
+// 非流式响应为 {data:{...Usage}} 包装形态时，必须解包后再记账（2026-10-29）。
 // 修复前在解包前取 raw["usage"]，包装形态下取不到 → 该次消耗恒为 0。
 func TestNonStreamUsageRecordsWrappedData(t *testing.T) {
 	body, err := json.Marshal(map[string]any{"data": map[string]any{

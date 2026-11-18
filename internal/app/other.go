@@ -1,6 +1,9 @@
 package app
 
 import (
+	"afree-proxy/internal/panel"
+	"afree-proxy/internal/reqlog"
+
 	"afree-proxy/internal/kit"
 	"afree-proxy/internal/other"
 	"context"
@@ -28,6 +31,7 @@ func otherConfigPath() string { return kit.ResolveDataPath("other-config.json") 
 func initOther() {
 	other.UsagePath = kit.ResolveDataPath("other-state.json")
 	other.Load(otherConfigPath())
+	ReconcileOtherPlatforms() // 子平台注册进 platform registry（2026-11-17 P3）
 	other.SetClientProvider(proxyClientFor)
 	// 目录同步与 chat 同链路（2026-11-09 审计修复）：此前 FetchModels 走裸直连
 	// 默认 client，DISABLE_DIRECT / 绑定出口对同步全不生效——凭据与出口 IP 会
@@ -53,7 +57,7 @@ func otherAttemptObserver(ctx context.Context, scope, key, proxyURL string) {
 	}
 	p := other.PlatformBySlug(scope)
 	if p == nil {
-		setUpstreamInfo(ctx, fmt.Sprintf("key#%d", other.KeyIndex(&other.Platform{}, key)))
+		reqlog.SetUpstreamInfo(ctx, fmt.Sprintf("key#%d", other.KeyIndex(&other.Platform{}, key)))
 		return
 	}
 	keyPoolAttemptObserver(
@@ -226,7 +230,7 @@ func handleOtherChat(w http.ResponseWriter, r *http.Request, params map[string]a
 // GET /admin/api/other/config —— 全量状态（含每子平台 key 状态与模型目录）。
 func handleOtherConfig(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		writeAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
+		WriteAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
 		return
 	}
 	platforms := make([]map[string]any, 0)
@@ -240,7 +244,7 @@ func handleOtherConfig(w http.ResponseWriter, r *http.Request) {
 		"proxyIsolationEnvLocked": proxyIsolationEnvLocked(),
 		"backupProxyEnabled":      backupProxyEnabled(),
 	}
-	writeAPI(w, http.StatusOK, apiResponse{Success: true, Data: data})
+	WriteAPI(w, http.StatusOK, apiResponse{Success: true, Data: data})
 }
 
 // platformAPI 单个子平台的面板视图（key 明文永不出口；keyStates 用 index
@@ -269,12 +273,12 @@ func platformAPI(p *other.Platform) map[string]any {
 // body: { useProxies? } 或 { slug, name?, prefix?, baseURL?, maxConcurrency?, retries? }
 func handleOtherConfigUpdate(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		writeAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
+		WriteAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
 		return
 	}
 	body, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
 	if err != nil {
-		writeAPI(w, http.StatusBadRequest, apiResponse{Error: err.Error()})
+		WriteAPI(w, http.StatusBadRequest, apiResponse{Error: err.Error()})
 		return
 	}
 	defer r.Body.Close()
@@ -290,30 +294,30 @@ func handleOtherConfigUpdate(w http.ResponseWriter, r *http.Request) {
 		ProbeModel     *string `json:"probeModel"` // probeModel 与 probe 同义（面板传 probeModel）
 	}
 	if err := json.Unmarshal(body, &patch); err != nil {
-		writeAPI(w, http.StatusBadRequest, apiResponse{Error: "invalid JSON: " + err.Error()})
+		WriteAPI(w, http.StatusBadRequest, apiResponse{Error: "invalid JSON: " + err.Error()})
 		return
 	}
 	if patch.Slug == "" {
 		// 全局开关（Proxy pool 页 Other 列）
 		if patch.UseProxies == nil {
-			writeAPI(w, http.StatusBadRequest, apiResponse{Error: "slug or useProxies is required"})
+			WriteAPI(w, http.StatusBadRequest, apiResponse{Error: "slug or useProxies is required"})
 			return
 		}
 		// 走池开关存在 proxy-config.json 的代理池段，不写进平台文件。
 		setPlatformUseProxies("other", patch.UseProxies)
-		writeAPI(w, http.StatusOK, apiResponse{Success: true, Message: "Other config saved"})
+		WriteAPI(w, http.StatusOK, apiResponse{Success: true, Message: "Other config saved"})
 		return
 	}
 	cur := other.PlatformBySlug(patch.Slug)
 	if cur == nil {
-		writeAPI(w, http.StatusNotFound, apiResponse{Error: "platform not found: " + patch.Slug})
+		WriteAPI(w, http.StatusNotFound, apiResponse{Error: "platform not found: " + patch.Slug})
 		return
 	}
 	next := other.ClonePlatform(cur)
 	if patch.Name != nil {
 		name := strings.TrimSpace(*patch.Name)
 		if name == "" {
-			writeAPI(w, http.StatusBadRequest, apiResponse{Error: "name is required"})
+			WriteAPI(w, http.StatusBadRequest, apiResponse{Error: "name is required"})
 			return
 		}
 		next.Name = name
@@ -321,12 +325,12 @@ func handleOtherConfigUpdate(w http.ResponseWriter, r *http.Request) {
 	if patch.Prefix != nil {
 		p := other.NormalizePrefix(*patch.Prefix)
 		if err := other.ValidatePrefix(p); err != nil {
-			writeAPI(w, http.StatusBadRequest, apiResponse{Error: err.Error()})
+			WriteAPI(w, http.StatusBadRequest, apiResponse{Error: err.Error()})
 			return
 		}
 		c := other.Get()
 		if name, conflict := c.PrefixConflict(p, next.Slug); conflict {
-			writeAPI(w, http.StatusBadRequest, apiResponse{Error: fmt.Sprintf("prefix %q conflicts with platform %q", p, name)})
+			WriteAPI(w, http.StatusBadRequest, apiResponse{Error: fmt.Sprintf("prefix %q conflicts with platform %q", p, name)})
 			return
 		}
 		next.Prefix = p
@@ -334,7 +338,7 @@ func handleOtherConfigUpdate(w http.ResponseWriter, r *http.Request) {
 	if patch.BaseURL != nil {
 		base := strings.TrimRight(strings.TrimSpace(*patch.BaseURL), "/")
 		if base == "" {
-			writeAPI(w, http.StatusBadRequest, apiResponse{Error: "base URL is required"})
+			WriteAPI(w, http.StatusBadRequest, apiResponse{Error: "base URL is required"})
 			return
 		}
 		next.BaseURL = base
@@ -348,14 +352,14 @@ func handleOtherConfigUpdate(w http.ResponseWriter, r *http.Request) {
 	if patch.Probe != nil {
 		probe := strings.TrimSpace(*patch.Probe)
 		if probe != "" && !other.ModelSelected(next, probe) {
-			writeAPI(w, http.StatusBadRequest, apiResponse{Error: "probe model must be an enabled model"})
+			WriteAPI(w, http.StatusBadRequest, apiResponse{Error: "probe model must be an enabled model"})
 			return
 		}
 		next.Models.Probe = probe
 	} else if patch.ProbeModel != nil {
 		probe := strings.TrimSpace(*patch.ProbeModel)
 		if probe != "" && !other.ModelSelected(next, probe) {
-			writeAPI(w, http.StatusBadRequest, apiResponse{Error: "probe model must be an enabled model"})
+			WriteAPI(w, http.StatusBadRequest, apiResponse{Error: "probe model must be an enabled model"})
 			return
 		}
 		next.Models.Probe = probe
@@ -368,19 +372,20 @@ func handleOtherConfigUpdate(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	other.Set(full)
-	writeAPI(w, http.StatusOK, apiResponse{Success: true, Message: "Platform config saved"})
+	ReconcileOtherPlatforms()
+	WriteAPI(w, http.StatusOK, apiResponse{Success: true, Message: "Platform config saved"})
 }
 
 // POST /admin/api/other/platforms —— 新增子平台。
 // body: { name, prefix, baseURL }
 func handleOtherPlatformCreate(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		writeAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
+		WriteAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
 		return
 	}
 	body, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
 	if err != nil {
-		writeAPI(w, http.StatusBadRequest, apiResponse{Error: err.Error()})
+		WriteAPI(w, http.StatusBadRequest, apiResponse{Error: err.Error()})
 		return
 	}
 	defer r.Body.Close()
@@ -390,24 +395,24 @@ func handleOtherPlatformCreate(w http.ResponseWriter, r *http.Request) {
 		BaseURL string `json:"baseURL"`
 	}
 	if err := json.Unmarshal(body, &req); err != nil {
-		writeAPI(w, http.StatusBadRequest, apiResponse{Error: "invalid JSON: " + err.Error()})
+		WriteAPI(w, http.StatusBadRequest, apiResponse{Error: "invalid JSON: " + err.Error()})
 		return
 	}
 	name := strings.TrimSpace(req.Name)
 	if name == "" {
-		writeAPI(w, http.StatusBadRequest, apiResponse{Error: "name is required"})
+		WriteAPI(w, http.StatusBadRequest, apiResponse{Error: "name is required"})
 		return
 	}
 	prefix := other.NormalizePrefix(req.Prefix)
 	if err := other.ValidatePrefix(prefix); err != nil {
-		writeAPI(w, http.StatusBadRequest, apiResponse{Error: err.Error()})
+		WriteAPI(w, http.StatusBadRequest, apiResponse{Error: err.Error()})
 		return
 	}
 	// baseURL 允许创建后补配（配置区可改）；空值时同步/转发会显式报错
 	base := strings.TrimRight(strings.TrimSpace(req.BaseURL), "/")
 	cur := other.Get()
 	if _, conflict := cur.PrefixConflict(prefix, ""); conflict {
-		writeAPI(w, http.StatusBadRequest, apiResponse{Error: fmt.Sprintf("prefix %q already in use", prefix)})
+		WriteAPI(w, http.StatusBadRequest, apiResponse{Error: fmt.Sprintf("prefix %q already in use", prefix)})
 		return
 	}
 	_, next := otherCloneConfig()
@@ -420,11 +425,12 @@ func handleOtherPlatformCreate(w http.ResponseWriter, r *http.Request) {
 		Retries:        3,
 	})
 	other.Set(next)
+	ReconcileOtherPlatforms()
 	var created *other.Platform
 	if len(next.Platforms) > 0 {
 		created = &next.Platforms[len(next.Platforms)-1] // 刚追加的那个
 	}
-	writeAPI(w, http.StatusOK, apiResponse{
+	WriteAPI(w, http.StatusOK, apiResponse{
 		Success: true,
 		Message: "Platform created",
 		Data:    map[string]any{"platform": platformAPI(created)},
@@ -435,14 +441,14 @@ func handleOtherPlatformCreate(w http.ResponseWriter, r *http.Request) {
 // body: { slug }
 func handleOtherPlatformDelete(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		writeAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
+		WriteAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
 		return
 	}
 	var req struct {
 		Slug string `json:"slug"`
 	}
 	if err := json.NewDecoder(io.LimitReader(r.Body, 512)).Decode(&req); err != nil {
-		writeAPI(w, http.StatusBadRequest, apiResponse{Error: "invalid JSON"})
+		WriteAPI(w, http.StatusBadRequest, apiResponse{Error: "invalid JSON"})
 		return
 	}
 	cur, next := otherCloneConfig()
@@ -454,7 +460,7 @@ func handleOtherPlatformDelete(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if idx < 0 {
-		writeAPI(w, http.StatusNotFound, apiResponse{Error: "platform not found: " + req.Slug})
+		WriteAPI(w, http.StatusNotFound, apiResponse{Error: "platform not found: " + req.Slug})
 		return
 	}
 	name := cur.Platforms[idx].Name
@@ -462,7 +468,8 @@ func handleOtherPlatformDelete(w http.ResponseWriter, r *http.Request) {
 	next.Platforms = append(next.Platforms[:idx], next.Platforms[idx+1:]...)
 	other.Set(next)
 	other.PrunePlatform(req.Slug) // 痕迹表按 slug 独立存放，删除平台要一并清掉
-	writeAPI(w, http.StatusOK, apiResponse{
+	ReconcileOtherPlatforms()
+	WriteAPI(w, http.StatusOK, apiResponse{
 		Success: true,
 		Message: fmt.Sprintf("Platform %q deleted (%d key(s) removed)", name, keys),
 	})
@@ -474,19 +481,19 @@ func handleOtherPlatformDelete(w http.ResponseWriter, r *http.Request) {
 // 顺序直接落在 Config.Platforms 数组里，落盘即持久，无需额外 order 字段。
 func handleOtherPlatformReorder(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		writeAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
+		WriteAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
 		return
 	}
 	var req struct {
 		Slugs []string `json:"slugs"`
 	}
 	if err := json.NewDecoder(io.LimitReader(r.Body, 8192)).Decode(&req); err != nil {
-		writeAPI(w, http.StatusBadRequest, apiResponse{Error: "invalid JSON"})
+		WriteAPI(w, http.StatusBadRequest, apiResponse{Error: "invalid JSON"})
 		return
 	}
 	cur, next := otherCloneConfig()
 	if len(req.Slugs) != len(cur.Platforms) {
-		writeAPI(w, http.StatusBadRequest, apiResponse{
+		WriteAPI(w, http.StatusBadRequest, apiResponse{
 			Error: fmt.Sprintf("slug count mismatch: got %d, want %d", len(req.Slugs), len(cur.Platforms)),
 		})
 		return
@@ -500,7 +507,7 @@ func handleOtherPlatformReorder(w http.ResponseWriter, r *http.Request) {
 	for _, s := range req.Slugs {
 		p, ok := bySlug[s]
 		if !ok || seen[s] {
-			writeAPI(w, http.StatusBadRequest, apiResponse{Error: "unknown or duplicate slug: " + s})
+			WriteAPI(w, http.StatusBadRequest, apiResponse{Error: "unknown or duplicate slug: " + s})
 			return
 		}
 		seen[s] = true
@@ -512,7 +519,7 @@ func handleOtherPlatformReorder(w http.ResponseWriter, r *http.Request) {
 	for i := range ordered {
 		apis = append(apis, platformAPI(&next.Platforms[i]))
 	}
-	writeAPI(w, http.StatusOK, apiResponse{
+	WriteAPI(w, http.StatusOK, apiResponse{
 		Success: true,
 		Message: "Platform order saved",
 		Data:    map[string]any{"platforms": apis},
@@ -523,12 +530,12 @@ func handleOtherPlatformReorder(w http.ResponseWriter, r *http.Request) {
 // 每行一个，按明文去重；新 key 默认不参与路由）。body: { slug, add: [key,...] }
 func handleOtherKeysUpdate(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		writeAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
+		WriteAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
 		return
 	}
 	body, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
 	if err != nil {
-		writeAPI(w, http.StatusBadRequest, apiResponse{Error: err.Error()})
+		WriteAPI(w, http.StatusBadRequest, apiResponse{Error: err.Error()})
 		return
 	}
 	defer r.Body.Close()
@@ -537,12 +544,12 @@ func handleOtherKeysUpdate(w http.ResponseWriter, r *http.Request) {
 		Add  []string `json:"add"`
 	}
 	if err := json.Unmarshal(body, &req); err != nil {
-		writeAPI(w, http.StatusBadRequest, apiResponse{Error: "invalid JSON: " + err.Error()})
+		WriteAPI(w, http.StatusBadRequest, apiResponse{Error: "invalid JSON: " + err.Error()})
 		return
 	}
 	cur := other.PlatformBySlug(req.Slug)
 	if cur == nil {
-		writeAPI(w, http.StatusNotFound, apiResponse{Error: "platform not found: " + req.Slug})
+		WriteAPI(w, http.StatusNotFound, apiResponse{Error: "platform not found: " + req.Slug})
 		return
 	}
 	hadKeys := len(cur.Keys) > 0
@@ -568,13 +575,13 @@ func handleOtherKeysUpdate(w http.ResponseWriter, r *http.Request) {
 	if !hadKeys && len(next.Keys) > 0 {
 		go syncOtherPlatform(req.Slug, 2)
 	}
-	writeAPI(w, http.StatusOK, apiResponse{Success: true, Message: "Keys saved", Data: map[string]any{"added": added}})
+	WriteAPI(w, http.StatusOK, apiResponse{Success: true, Message: "Keys saved", Data: map[string]any{"added": added}})
 }
 
 // POST /admin/api/other/keys/routing  body: { slug, index, enabled }
 func handleOtherKeySetRouting(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		writeAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
+		WriteAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
 		return
 	}
 	var req struct {
@@ -583,28 +590,28 @@ func handleOtherKeySetRouting(w http.ResponseWriter, r *http.Request) {
 		Enabled bool   `json:"enabled"`
 	}
 	if err := json.NewDecoder(io.LimitReader(r.Body, 512)).Decode(&req); err != nil {
-		writeAPI(w, http.StatusBadRequest, apiResponse{Error: "invalid JSON"})
+		WriteAPI(w, http.StatusBadRequest, apiResponse{Error: "invalid JSON"})
 		return
 	}
 	cur := other.PlatformBySlug(req.Slug)
 	if cur == nil {
-		writeAPI(w, http.StatusNotFound, apiResponse{Error: "platform not found: " + req.Slug})
+		WriteAPI(w, http.StatusNotFound, apiResponse{Error: "platform not found: " + req.Slug})
 		return
 	}
 	if req.Index < 0 || req.Index >= len(cur.Keys) {
-		writeAPI(w, http.StatusBadRequest, apiResponse{Error: "key index out of range"})
+		WriteAPI(w, http.StatusBadRequest, apiResponse{Error: "key index out of range"})
 		return
 	}
 	next := other.ClonePlatform(cur)
 	next.KeyRoutingEnabled[cur.Keys[req.Index]] = req.Enabled
 	otherReplacePlatform(next)
-	writeAPI(w, http.StatusOK, apiResponse{Success: true, Message: fmt.Sprintf("key #%d routing enabled=%v", req.Index+1, req.Enabled)})
+	WriteAPI(w, http.StatusOK, apiResponse{Success: true, Message: fmt.Sprintf("key #%d routing enabled=%v", req.Index+1, req.Enabled)})
 }
 
 // POST /admin/api/other/keys/routing/all  body: { slug, enabled }
 func handleOtherKeySetRoutingAll(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		writeAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
+		WriteAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
 		return
 	}
 	var req struct {
@@ -612,12 +619,12 @@ func handleOtherKeySetRoutingAll(w http.ResponseWriter, r *http.Request) {
 		Enabled bool   `json:"enabled"`
 	}
 	if err := json.NewDecoder(io.LimitReader(r.Body, 512)).Decode(&req); err != nil {
-		writeAPI(w, http.StatusBadRequest, apiResponse{Error: "invalid JSON"})
+		WriteAPI(w, http.StatusBadRequest, apiResponse{Error: "invalid JSON"})
 		return
 	}
 	cur := other.PlatformBySlug(req.Slug)
 	if cur == nil {
-		writeAPI(w, http.StatusNotFound, apiResponse{Error: "platform not found: " + req.Slug})
+		WriteAPI(w, http.StatusNotFound, apiResponse{Error: "platform not found: " + req.Slug})
 		return
 	}
 	next := other.ClonePlatform(cur)
@@ -627,18 +634,18 @@ func handleOtherKeySetRoutingAll(w http.ResponseWriter, r *http.Request) {
 		n++
 	}
 	otherReplacePlatform(next)
-	writeAPI(w, http.StatusOK, apiResponse{Success: true, Message: fmt.Sprintf("routing enabled=%v on %d key(s)", req.Enabled, n)})
+	WriteAPI(w, http.StatusOK, apiResponse{Success: true, Message: fmt.Sprintf("routing enabled=%v on %d key(s)", req.Enabled, n)})
 }
 
 // POST /admin/api/other/keys/reorder  body: { slug, order: [oldIndex,...] }
 func handleOtherKeysReorder(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		writeAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
+		WriteAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
 		return
 	}
 	body, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
 	if err != nil {
-		writeAPI(w, http.StatusBadRequest, apiResponse{Error: err.Error()})
+		WriteAPI(w, http.StatusBadRequest, apiResponse{Error: err.Error()})
 		return
 	}
 	defer r.Body.Close()
@@ -647,24 +654,24 @@ func handleOtherKeysReorder(w http.ResponseWriter, r *http.Request) {
 		Order []int  `json:"order"`
 	}
 	if err := json.Unmarshal(body, &req); err != nil {
-		writeAPI(w, http.StatusBadRequest, apiResponse{Error: "invalid JSON: " + err.Error()})
+		WriteAPI(w, http.StatusBadRequest, apiResponse{Error: "invalid JSON: " + err.Error()})
 		return
 	}
 	cur := other.PlatformBySlug(req.Slug)
 	if cur == nil {
-		writeAPI(w, http.StatusNotFound, apiResponse{Error: "platform not found: " + req.Slug})
+		WriteAPI(w, http.StatusNotFound, apiResponse{Error: "platform not found: " + req.Slug})
 		return
 	}
 	n := len(cur.Keys)
 	if len(req.Order) == 0 {
-		writeAPI(w, http.StatusBadRequest, apiResponse{Error: "order is required"})
+		WriteAPI(w, http.StatusBadRequest, apiResponse{Error: "order is required"})
 		return
 	}
 	nextKeys := make([]string, 0, n)
 	seen := make(map[int]bool, n)
 	for _, idx := range req.Order {
 		if idx < 0 || idx >= n {
-			writeAPI(w, http.StatusBadRequest, apiResponse{Error: fmt.Sprintf("key index out of range: %d", idx)})
+			WriteAPI(w, http.StatusBadRequest, apiResponse{Error: fmt.Sprintf("key index out of range: %d", idx)})
 			return
 		}
 		if seen[idx] {
@@ -683,13 +690,13 @@ func handleOtherKeysReorder(w http.ResponseWriter, r *http.Request) {
 	next := other.ClonePlatform(cur)
 	next.Keys = nextKeys
 	otherReplacePlatform(next)
-	writeAPI(w, http.StatusOK, apiResponse{Success: true, Message: "Order saved", Data: map[string]any{"updated": len(req.Order)}})
+	WriteAPI(w, http.StatusOK, apiResponse{Success: true, Message: "Order saved", Data: map[string]any{"updated": len(req.Order)}})
 }
 
 // POST /admin/api/other/keys/delete  body: { slug, index }
 func handleOtherKeyDelete(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		writeAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
+		WriteAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
 		return
 	}
 	var req struct {
@@ -697,16 +704,16 @@ func handleOtherKeyDelete(w http.ResponseWriter, r *http.Request) {
 		Index int    `json:"index"`
 	}
 	if err := json.NewDecoder(io.LimitReader(r.Body, 512)).Decode(&req); err != nil {
-		writeAPI(w, http.StatusBadRequest, apiResponse{Error: "invalid JSON"})
+		WriteAPI(w, http.StatusBadRequest, apiResponse{Error: "invalid JSON"})
 		return
 	}
 	cur := other.PlatformBySlug(req.Slug)
 	if cur == nil {
-		writeAPI(w, http.StatusNotFound, apiResponse{Error: "platform not found: " + req.Slug})
+		WriteAPI(w, http.StatusNotFound, apiResponse{Error: "platform not found: " + req.Slug})
 		return
 	}
 	if req.Index < 0 || req.Index >= len(cur.Keys) {
-		writeAPI(w, http.StatusBadRequest, apiResponse{Error: "key index out of range"})
+		WriteAPI(w, http.StatusBadRequest, apiResponse{Error: "key index out of range"})
 		return
 	}
 	next := other.ClonePlatform(cur)
@@ -715,13 +722,13 @@ func handleOtherKeyDelete(w http.ResponseWriter, r *http.Request) {
 	delete(next.KeyBindings, key)
 	delete(next.KeyRoutingEnabled, key)
 	otherReplacePlatform(next)
-	writeAPI(w, http.StatusOK, apiResponse{Success: true, Message: fmt.Sprintf("key #%d deleted", req.Index+1)})
+	WriteAPI(w, http.StatusOK, apiResponse{Success: true, Message: fmt.Sprintf("key #%d deleted", req.Index+1)})
 }
 
 // POST /admin/api/other/keys/proxy  body: { slug, index, main, backup }
 func handleOtherKeySetProxy(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		writeAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
+		WriteAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
 		return
 	}
 	var req struct {
@@ -731,24 +738,24 @@ func handleOtherKeySetProxy(w http.ResponseWriter, r *http.Request) {
 		Backup string `json:"backup"`
 	}
 	if err := json.NewDecoder(io.LimitReader(r.Body, 4096)).Decode(&req); err != nil {
-		writeAPI(w, http.StatusBadRequest, apiResponse{Error: "invalid JSON"})
+		WriteAPI(w, http.StatusBadRequest, apiResponse{Error: "invalid JSON"})
 		return
 	}
 	main := strings.TrimSpace(req.Main)
 	backup := strings.TrimSpace(req.Backup)
 	cur := other.PlatformBySlug(req.Slug)
 	if cur == nil {
-		writeAPI(w, http.StatusNotFound, apiResponse{Error: "platform not found: " + req.Slug})
+		WriteAPI(w, http.StatusNotFound, apiResponse{Error: "platform not found: " + req.Slug})
 		return
 	}
 	if req.Index < 0 || req.Index >= len(cur.Keys) {
-		writeAPI(w, http.StatusBadRequest, apiResponse{Error: "key index out of range"})
+		WriteAPI(w, http.StatusBadRequest, apiResponse{Error: "key index out of range"})
 		return
 	}
 	key := cur.Keys[req.Index]
 	backup = resolveBackupSlot(backup, cur.KeyBindings[key].Backup)
 	if err := validateProxyBinding(main, backup); err != nil {
-		writeAPI(w, http.StatusBadRequest, apiResponse{Error: err.Error()})
+		WriteAPI(w, http.StatusBadRequest, apiResponse{Error: err.Error()})
 		return
 	}
 	next := other.ClonePlatform(cur)
@@ -758,38 +765,38 @@ func handleOtherKeySetProxy(w http.ResponseWriter, r *http.Request) {
 		next.KeyBindings[key] = other.Binding{Main: main, Backup: backup}
 	}
 	otherReplacePlatform(next)
-	writeAPI(w, http.StatusOK, apiResponse{Success: true, Message: "Key proxy binding saved"})
+	WriteAPI(w, http.StatusOK, apiResponse{Success: true, Message: "Key proxy binding saved"})
 }
 
 // POST /admin/api/other/keys/proxy/clear  body: { slug }
 func handleOtherKeyClearProxies(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		writeAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
+		WriteAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
 		return
 	}
 	var req struct {
 		Slug string `json:"slug"`
 	}
 	if err := json.NewDecoder(io.LimitReader(r.Body, 512)).Decode(&req); err != nil {
-		writeAPI(w, http.StatusBadRequest, apiResponse{Error: "invalid JSON"})
+		WriteAPI(w, http.StatusBadRequest, apiResponse{Error: "invalid JSON"})
 		return
 	}
 	cur := other.PlatformBySlug(req.Slug)
 	if cur == nil {
-		writeAPI(w, http.StatusNotFound, apiResponse{Error: "platform not found: " + req.Slug})
+		WriteAPI(w, http.StatusNotFound, apiResponse{Error: "platform not found: " + req.Slug})
 		return
 	}
 	next := other.ClonePlatform(cur)
 	n := len(next.KeyBindings)
 	next.KeyBindings = map[string]other.Binding{}
 	otherReplacePlatform(next)
-	writeAPI(w, http.StatusOK, apiResponse{Success: true, Data: map[string]any{"cleared": n}})
+	WriteAPI(w, http.StatusOK, apiResponse{Success: true, Data: map[string]any{"cleared": n}})
 }
 
 // POST /admin/api/other/keys/test  body: { slug, index, model }
 func handleOtherKeyTest(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		writeAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
+		WriteAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
 		return
 	}
 	var req struct {
@@ -798,13 +805,13 @@ func handleOtherKeyTest(w http.ResponseWriter, r *http.Request) {
 		Model string `json:"model"`
 	}
 	if err := json.NewDecoder(io.LimitReader(r.Body, 4096)).Decode(&req); err != nil {
-		writeAPI(w, http.StatusBadRequest, apiResponse{Error: "invalid JSON"})
+		WriteAPI(w, http.StatusBadRequest, apiResponse{Error: "invalid JSON"})
 		return
 	}
 	result, status := otherTestKey(req.Slug, req.Index, req.Model)
 	result["status"] = status
 	log.Printf("Test other key %s#%d: status=%s model=%v reason=%v", req.Slug, req.Index+1, status, result["model"], result["reason"])
-	writeAPI(w, http.StatusOK, apiResponse{
+	WriteAPI(w, http.StatusOK, apiResponse{
 		Success: status == "active",
 		Message: status,
 		Data:    result,
@@ -816,31 +823,31 @@ func handleOtherKeyTest(w http.ResponseWriter, r *http.Request) {
 // 只回一句没有数量的 "Catalog refreshed"。
 func handleOtherModelsRefresh(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		writeAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
+		WriteAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
 		return
 	}
 	var req struct {
 		Slug string `json:"slug"`
 	}
 	if err := json.NewDecoder(io.LimitReader(r.Body, 512)).Decode(&req); err != nil {
-		writeAPI(w, http.StatusBadRequest, apiResponse{Error: "invalid JSON"})
+		WriteAPI(w, http.StatusBadRequest, apiResponse{Error: "invalid JSON"})
 		return
 	}
 	p := other.PlatformBySlug(req.Slug)
 	if p == nil {
-		writeAPI(w, http.StatusNotFound, apiResponse{Error: "platform not found: " + req.Slug})
+		WriteAPI(w, http.StatusNotFound, apiResponse{Error: "platform not found: " + req.Slug})
 		return
 	}
 	// 该子平台无启用 key 时拒绝同步并给出提示
 	//（前端 refreshOtherModels 已有同判定，此处兜底防直连 API）。
 	if !otherPlatformHasRoutableKey(p) {
-		writeCatalogNoCredential(w, platOther)
+		panel.WriteCatalogNoCredential(w, platOther)
 		return
 	}
 	before := len(other.KnownModels(p))
 	added, err := other.TrySync(p)
 	if err != nil {
-		writeCatalogSyncFailed(w, platOther, err)
+		panel.WriteCatalogSyncFailed(w, platOther, err)
 		return
 	}
 	// TrySync 可能内部换掉服务商条目，按 slug 重取活对象再统计。
@@ -854,13 +861,13 @@ func handleOtherModelsRefresh(w http.ResponseWriter, r *http.Request) {
 		added = total - before
 	}
 	// Other 靠这份平台快照即时重绘模型勾选区，其余平台无需带。
-	writeCatalogResultExtra(w, platOther, added, total, map[string]any{"sub": platformAPI(live)})
+	panel.WriteCatalogResultExtra(w, platOther, added, total, map[string]any{"sub": platformAPI(live)})
 }
 
 // POST /admin/api/other/models/manual  body: { slug, model }
 func handleOtherModelsManualAdd(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		writeAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
+		WriteAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
 		return
 	}
 	var req struct {
@@ -868,26 +875,26 @@ func handleOtherModelsManualAdd(w http.ResponseWriter, r *http.Request) {
 		Model string `json:"model"`
 	}
 	if err := json.NewDecoder(io.LimitReader(r.Body, 4096)).Decode(&req); err != nil {
-		writeAPI(w, http.StatusBadRequest, apiResponse{Error: "invalid JSON"})
+		WriteAPI(w, http.StatusBadRequest, apiResponse{Error: "invalid JSON"})
 		return
 	}
 	model := strings.TrimSpace(req.Model)
 	if model == "" {
-		writeAPI(w, http.StatusBadRequest, apiResponse{Error: "model id is required"})
+		WriteAPI(w, http.StatusBadRequest, apiResponse{Error: "model id is required"})
 		return
 	}
 	cur := other.PlatformBySlug(req.Slug)
 	if cur == nil {
-		writeAPI(w, http.StatusNotFound, apiResponse{Error: "platform not found: " + req.Slug})
+		WriteAPI(w, http.StatusNotFound, apiResponse{Error: "platform not found: " + req.Slug})
 		return
 	}
 	next := other.ClonePlatform(cur)
 	if !other.AddManual(next, model) {
-		writeAPI(w, http.StatusBadRequest, apiResponse{Error: "model already known: " + model})
+		WriteAPI(w, http.StatusBadRequest, apiResponse{Error: "model already known: " + model})
 		return
 	}
 	otherReplacePlatform(next)
-	writeAPI(w, http.StatusOK, apiResponse{
+	WriteAPI(w, http.StatusOK, apiResponse{
 		Success: true,
 		Message: "Model added and enabled",
 		Data:    map[string]any{"platform": platformAPI(other.PlatformBySlug(req.Slug))},
@@ -897,7 +904,7 @@ func handleOtherModelsManualAdd(w http.ResponseWriter, r *http.Request) {
 // POST /admin/api/other/models/manual/delete  body: { slug, model }
 func handleOtherModelsManualDelete(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		writeAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
+		WriteAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
 		return
 	}
 	var req struct {
@@ -905,22 +912,22 @@ func handleOtherModelsManualDelete(w http.ResponseWriter, r *http.Request) {
 		Model string `json:"model"`
 	}
 	if err := json.NewDecoder(io.LimitReader(r.Body, 4096)).Decode(&req); err != nil {
-		writeAPI(w, http.StatusBadRequest, apiResponse{Error: "invalid JSON"})
+		WriteAPI(w, http.StatusBadRequest, apiResponse{Error: "invalid JSON"})
 		return
 	}
 	cur := other.PlatformBySlug(req.Slug)
 	if cur == nil {
-		writeAPI(w, http.StatusNotFound, apiResponse{Error: "platform not found: " + req.Slug})
+		WriteAPI(w, http.StatusNotFound, apiResponse{Error: "platform not found: " + req.Slug})
 		return
 	}
 	next := other.ClonePlatform(cur)
 	if !other.RemoveManual(next, strings.TrimSpace(req.Model)) {
-		writeAPI(w, http.StatusBadRequest, apiResponse{Error: "not a manual model"})
+		WriteAPI(w, http.StatusBadRequest, apiResponse{Error: "not a manual model"})
 		return
 	}
 	delete(next.Models.Selected, strings.TrimSpace(req.Model))
 	otherReplacePlatform(next)
-	writeAPI(w, http.StatusOK, apiResponse{
+	WriteAPI(w, http.StatusOK, apiResponse{
 		Success: true,
 		Message: "Manual model removed",
 		Data:    map[string]any{"platform": platformAPI(other.PlatformBySlug(req.Slug))},
@@ -930,12 +937,12 @@ func handleOtherModelsManualDelete(w http.ResponseWriter, r *http.Request) {
 // POST /admin/api/other/models/selected  body: { slug, selected: [modelId,...] }
 func handleOtherModelsSelected(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		writeAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
+		WriteAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
 		return
 	}
 	body, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
 	if err != nil {
-		writeAPI(w, http.StatusBadRequest, apiResponse{Error: err.Error()})
+		WriteAPI(w, http.StatusBadRequest, apiResponse{Error: err.Error()})
 		return
 	}
 	defer r.Body.Close()
@@ -944,12 +951,12 @@ func handleOtherModelsSelected(w http.ResponseWriter, r *http.Request) {
 		Selected []string `json:"selected"`
 	}
 	if err := json.Unmarshal(body, &req); err != nil {
-		writeAPI(w, http.StatusBadRequest, apiResponse{Error: "invalid JSON: " + err.Error()})
+		WriteAPI(w, http.StatusBadRequest, apiResponse{Error: "invalid JSON: " + err.Error()})
 		return
 	}
 	cur := other.PlatformBySlug(req.Slug)
 	if cur == nil {
-		writeAPI(w, http.StatusNotFound, apiResponse{Error: "platform not found: " + req.Slug})
+		WriteAPI(w, http.StatusNotFound, apiResponse{Error: "platform not found: " + req.Slug})
 		return
 	}
 	next := other.ClonePlatform(cur)
@@ -958,7 +965,7 @@ func handleOtherModelsSelected(w http.ResponseWriter, r *http.Request) {
 		next.Models.Probe = ""
 	}
 	otherReplacePlatform(next)
-	writeAPI(w, http.StatusOK, apiResponse{
+	WriteAPI(w, http.StatusOK, apiResponse{
 		Success: true,
 		Message: "Model selection saved",
 		Data:    map[string]any{"platform": platformAPI(other.PlatformBySlug(req.Slug))},
@@ -1087,7 +1094,7 @@ func clearOtherKeysForDataDelete() int {
 // handleOtherLiveRequest POST /admin/api/other/chat  body: { slug, model?, prompt }
 func handleOtherLiveRequest(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		writeAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
+		WriteAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
 		return
 	}
 	var req struct {
@@ -1096,7 +1103,7 @@ func handleOtherLiveRequest(w http.ResponseWriter, r *http.Request) {
 		Prompt string `json:"prompt"`
 	}
 	if err := json.NewDecoder(io.LimitReader(r.Body, 8192)).Decode(&req); err != nil {
-		writeAPI(w, http.StatusBadRequest, apiResponse{Error: "invalid JSON"})
+		WriteAPI(w, http.StatusBadRequest, apiResponse{Error: "invalid JSON"})
 		return
 	}
 	otherLiveRequest(w, req.Slug, req.Model, req.Prompt)
@@ -1107,14 +1114,14 @@ func handleOtherLiveRequest(w http.ResponseWriter, r *http.Request) {
 func otherLiveRequest(w http.ResponseWriter, slug, modelID, prompt string) {
 	p := other.PlatformBySlug(slug)
 	if p == nil {
-		writeAPI(w, http.StatusNotFound, apiResponse{Error: "platform not found: " + slug, Data: map[string]any{"code": "no_platform"}})
+		WriteAPI(w, http.StatusNotFound, apiResponse{Error: "platform not found: " + slug, Data: map[string]any{"code": "no_platform"}})
 		return
 	}
 	// 模型：显式指定则须已勾选，否则取第一个已勾选模型。
 	bare := strings.TrimSpace(modelID)
 	if bare != "" {
 		if _, ok := other.ResolveSelected(p, bare); !ok {
-			writeAPI(w, http.StatusBadRequest, apiResponse{
+			WriteAPI(w, http.StatusBadRequest, apiResponse{
 				Error: "model not enabled on this platform: " + bare,
 				Data:  map[string]any{"code": "no_model"},
 			})
@@ -1123,7 +1130,7 @@ func otherLiveRequest(w http.ResponseWriter, slug, modelID, prompt string) {
 	} else if pm, ok := other.ProbeModel(p); ok {
 		bare = pm.ID
 	} else {
-		writeAPI(w, http.StatusBadRequest, apiResponse{
+		WriteAPI(w, http.StatusBadRequest, apiResponse{
 			Error: "no enabled model — tick models in the selector first",
 			Data:  map[string]any{"code": "no_model"},
 		})
@@ -1139,7 +1146,7 @@ func otherLiveRequest(w http.ResponseWriter, slug, modelID, prompt string) {
 		}
 	}
 	if key == "" {
-		writeAPI(w, http.StatusBadRequest, apiResponse{
+		WriteAPI(w, http.StatusBadRequest, apiResponse{
 			Error: "no enabled credential — enable a key in the pool first",
 			Data:  map[string]any{"code": "no_key"},
 		})
@@ -1174,7 +1181,7 @@ func otherLiveRequest(w http.ResponseWriter, slug, modelID, prompt string) {
 			result["reason"] = "upstream call failed: " + err.Error()
 		}
 		log.Printf("Other live request %s model=%s key=%s: failed: %v", p.Slug, bare, other.MaskKey(key), err)
-		writeAPI(w, http.StatusBadGateway, apiResponse{Success: false, Error: "upstream call failed", Data: result})
+		WriteAPI(w, http.StatusBadGateway, apiResponse{Success: false, Error: "upstream call failed", Data: result})
 		return
 	}
 	defer resp.Body.Close()
@@ -1182,7 +1189,7 @@ func otherLiveRequest(w http.ResponseWriter, slug, modelID, prompt string) {
 		b, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
 		result["httpStatus"] = resp.StatusCode
 		result["reason"] = fmt.Sprintf("API %d: %s", resp.StatusCode, strings.TrimSpace(string(b)))
-		writeAPI(w, http.StatusBadGateway, apiResponse{Success: false, Error: "upstream call failed", Data: result})
+		WriteAPI(w, http.StatusBadGateway, apiResponse{Success: false, Error: "upstream call failed", Data: result})
 		return
 	}
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
@@ -1208,5 +1215,5 @@ func otherLiveRequest(w http.ResponseWriter, slug, modelID, prompt string) {
 	result["reason"] = "ok"
 	result["reply"] = strings.TrimSpace(text)
 	log.Printf("Other live request %s model=%s key=%s: ok in %dms", p.Slug, bare, other.MaskKey(key), latency)
-	writeAPI(w, http.StatusOK, apiResponse{Success: true, Message: "ok", Data: result})
+	WriteAPI(w, http.StatusOK, apiResponse{Success: true, Message: "ok", Data: result})
 }

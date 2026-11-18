@@ -9,6 +9,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+
+	"afree-proxy/internal/zen"
 	"time"
 )
 
@@ -50,10 +52,10 @@ func TestZen429KeySwitchIsBounded(t *testing.T) {
 	withZenModelForTest(t, "aaa-429-model", "")
 	t.Cleanup(func() {
 		zenKeyMu.Lock()
-		zenKeyCool = map[string]time.Time{}
+		*zenKeyCool = map[string]time.Time{}
 		zenKeyMu.Unlock()
 		zenSessFailedMu.Lock()
-		zenSessFailed = map[string]int{}
+		*zenSessFailed = map[string]int{}
 		zenSessFailedMu.Unlock()
 	})
 
@@ -89,11 +91,11 @@ func TestZen429KeySwitchIsBounded(t *testing.T) {
 	cooled := 0
 	zenKeyMu.Lock()
 	for _, k := range keys {
-		if until, ok := zenKeyCool[k]; ok && time.Now().Before(until) {
+		if until, ok := (*zenKeyCool)[k]; ok && time.Now().Before(until) {
 			cooled++
 			continue
 		}
-		if ps, ok := zenKeyPark[k]; ok && ps.Day == time.Now().UTC().Format("2006-01-02") {
+		if ps, ok := (*zenKeyPark)[k]; ok && ps.Day == time.Now().UTC().Format("2006-01-02") {
 			cooled++
 		}
 	}
@@ -136,10 +138,10 @@ func TestZenResponses429KeySwitchIsBounded(t *testing.T) {
 	withZenModelForTest(t, "resp-429-model", "responses")
 	t.Cleanup(func() {
 		zenKeyMu.Lock()
-		zenKeyCool = map[string]time.Time{}
+		*zenKeyCool = map[string]time.Time{}
 		zenKeyMu.Unlock()
 		zenSessFailedMu.Lock()
-		zenSessFailed = map[string]int{}
+		*zenSessFailed = map[string]int{}
 		zenSessFailedMu.Unlock()
 	})
 
@@ -192,11 +194,11 @@ func TestCompactionFiresBelowTypicalClientCap(t *testing.T) {
 // 按 RA 冷藏多 key 池会让 key 白停一整天，故 zen key 冷却必须封顶。
 func TestZenCooldownIsCappedDespiteHugeRetryAfter(t *testing.T) {
 	zenKeyMu.Lock()
-	zenKeyCool = map[string]time.Time{}
+	*zenKeyCool = map[string]time.Time{}
 	zenKeyMu.Unlock()
 	t.Cleanup(func() {
 		zenKeyMu.Lock()
-		zenKeyCool = map[string]time.Time{}
+		*zenKeyCool = map[string]time.Time{}
 		zenKeyMu.Unlock()
 	})
 
@@ -217,7 +219,7 @@ func TestZenCooldownIsCappedDespiteHugeRetryAfter(t *testing.T) {
 	}
 	// 短冷却不受影响：15s 的 Retry-After 应原样生效
 	zenKeyMu.Lock()
-	zenKeyCool = map[string]time.Time{}
+	*zenKeyCool = map[string]time.Time{}
 	zenKeyMu.Unlock()
 	if got := cooldownZenKey("sk-short", 15*time.Second); got != 15*time.Second {
 		t.Fatalf("short cooldown = %v, want 15s unchanged", got)
@@ -236,7 +238,7 @@ func TestPickZenKeyStillReturnsWhenAllCooled(t *testing.T) {
 	t.Setenv("UNABLE_FORCE", "1")
 
 	zenKeyMu.Lock()
-	zenKeyCool = map[string]time.Time{}
+	*zenKeyCool = map[string]time.Time{}
 	zenKeyMu.Unlock()
 
 	savedCfg := getZenConfig()
@@ -246,7 +248,7 @@ func TestPickZenKeyStillReturnsWhenAllCooled(t *testing.T) {
 	t.Cleanup(func() { setZenConfig(savedCfg) })
 	t.Cleanup(func() {
 		zenKeyMu.Lock()
-		zenKeyCool = map[string]time.Time{}
+		*zenKeyCool = map[string]time.Time{}
 		zenKeyMu.Unlock()
 	})
 
@@ -263,13 +265,13 @@ func TestPickZenKeyStillReturnsWhenAllCooled(t *testing.T) {
 // 401 "No accounts in pool"，比原来的 429 更难懂）。2026-10-30 实测事故。
 func TestRateLimitDoesNotTriggerFailover(t *testing.T) {
 	zenStateMu.Lock()
-	zenFailCount = 0
-	zenFailUntil = time.Time{}
+	*zenFailCount = 0
+	*zenFailUntil = time.Time{}
 	zenStateMu.Unlock()
 	t.Cleanup(func() {
 		zenStateMu.Lock()
-		zenFailCount = 0
-		zenFailUntil = time.Time{}
+		*zenFailCount = 0
+		*zenFailUntil = time.Time{}
 		zenStateMu.Unlock()
 	})
 
@@ -291,7 +293,7 @@ func TestRateLimitDoesNotTriggerFailover(t *testing.T) {
 	withZenModelForTest(t, "rl-model", "")
 	t.Cleanup(func() {
 		zenKeyMu.Lock()
-		zenKeyCool = map[string]time.Time{}
+		*zenKeyCool = map[string]time.Time{}
 		zenKeyMu.Unlock()
 	})
 
@@ -306,7 +308,7 @@ func TestRateLimitDoesNotTriggerFailover(t *testing.T) {
 	_, _, _ = callZenAPI(ctx, params, true)
 
 	zenStateMu.Lock()
-	cnt, until := zenFailCount, zenFailUntil
+	cnt, until := *zenFailCount, *zenFailUntil
 	zenStateMu.Unlock()
 	if cnt != 0 || !until.IsZero() {
 		t.Fatalf("a 429 advanced failover state (count=%d until=%v); rate limiting is not degradation",
@@ -321,8 +323,8 @@ func TestRateLimitDoesNotTriggerFailover(t *testing.T) {
 // 401 "No accounts in pool"。
 func TestNoFailoverWhenClinePoolEmpty(t *testing.T) {
 	zenStateMu.Lock()
-	zenFailCount = 0
-	zenFailUntil = time.Time{}
+	*zenFailCount = 0
+	*zenFailUntil = time.Time{}
 	zenStateMu.Unlock()
 
 	// 确保 cline 池为空
@@ -337,8 +339,8 @@ func TestNoFailoverWhenClinePoolEmpty(t *testing.T) {
 		pool = savedPool
 		poolMu.Unlock()
 		zenStateMu.Lock()
-		zenFailCount = 0
-		zenFailUntil = time.Time{}
+		*zenFailCount = 0
+		*zenFailUntil = time.Time{}
 		zenStateMu.Unlock()
 	})
 
@@ -376,7 +378,7 @@ func TestZen429FailsFastWhenNoRotatableKey(t *testing.T) {
 	t.Cleanup(func() {
 		setZenConfig(savedCfg)
 		zenKeyMu.Lock()
-		zenKeyCool = map[string]time.Time{}
+		*zenKeyCool = map[string]time.Time{}
 		zenKeyMu.Unlock()
 	})
 
@@ -427,10 +429,10 @@ func TestZen429StillRotatesToHealthyKey(t *testing.T) {
 	t.Cleanup(func() {
 		setZenConfig(savedCfg)
 		zenKeyMu.Lock()
-		zenKeyCool = map[string]time.Time{}
+		*zenKeyCool = map[string]time.Time{}
 		zenKeyMu.Unlock()
 		zenKeyMu.Lock()
-		zenKeyTokens = map[string]zenKeyTokenStats{}
+		*zenKeyTokens = map[string]zen.ZenKeyTokenStats{}
 		zenKeyMu.Unlock()
 	})
 
@@ -478,7 +480,7 @@ func TestZenAnyKeyRotatable(t *testing.T) {
 	t.Cleanup(func() {
 		setZenConfig(savedCfg)
 		zenKeyMu.Lock()
-		zenKeyCool = map[string]time.Time{}
+		*zenKeyCool = map[string]time.Time{}
 		zenKeyMu.Unlock()
 	})
 

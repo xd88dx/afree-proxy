@@ -6,6 +6,9 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"afree-proxy/internal/exitpool"
+	"afree-proxy/internal/zen"
 )
 
 // 出口绑定（一 key 一代理）的行为契约：
@@ -20,24 +23,24 @@ func setupEgressTest(t *testing.T, proxies []string) {
 	t.Setenv("DATA_DIR", testDataDir(t))
 	// 代理池在 proxy-config.json（proxy_pool_config.go），测试重定向路径并
 	// 保存/恢复现池——与 setupBindingTest 同一隔离套路。
-	savedPoolPath := proxyConfigPathOverride
-	proxyConfigPathOverride = filepath.Join(t.TempDir(), "proxy-config.json")
-	t.Cleanup(func() { proxyConfigPathOverride = savedPoolPath })
+	savedPoolPath := exitpool.PathOverride
+	exitpool.PathOverride = filepath.Join(t.TempDir(), "proxy-config.json")
+	t.Cleanup(func() { exitpool.PathOverride = savedPoolPath })
 	savedPool := *getProxyPool()
 	t.Cleanup(func() { setProxyPool(&savedPool) })
 	setProxyPool(&proxyPoolConfigData{Proxies: proxies, Strategy: "round_robin"})
 	egressMu.Lock()
-	egressBindings = map[string]egressBinding{}
-	egressLoaded = true
+	*egressBindings = map[string]egressBinding{}
+	zen.EgressLoaded = true
 	egressMu.Unlock()
 	zenKeyMu.Lock()
-	zenKeyCool = map[string]time.Time{}
-	zenKeyIdx = 0
+	*zenKeyCool = map[string]time.Time{}
+	*zenKeyIdx = 0
 	zenKeyMu.Unlock()
 	zenSessMu.Lock()
-	zenSessions = map[string]*zenSessionEntry{}
-	zenSessLoaded = true
-	zenSessSaveBlocked = false
+	*zenSessions = map[string]*zenSessionEntry{}
+	*zenSessLoaded = true
+	*zenSessSaveBlocked = false
 	zenSessMu.Unlock()
 
 	saved := getZenConfig()
@@ -152,7 +155,7 @@ func TestPickZenKeyEmptyWhenNoEgressAvailable(t *testing.T) {
 	setProxyPool(&proxyPoolConfigData{Proxies: []string{"socks5://other:1080"}, Strategy: "round_robin"})
 	// 新代理会分配给 sk-a（启动/保存时 reconcile），所以这里直接清空绑定
 	egressMu.Lock()
-	egressBindings = map[string]egressBinding{}
+	*egressBindings = map[string]egressBinding{}
 	egressMu.Unlock()
 
 	if k := pickZenKey(); k != "" {
@@ -218,12 +221,13 @@ func TestEgressBindingsPersistWithoutPlaintextKeys(t *testing.T) {
 	setEgressKeys(t, []string{secret, "sk-b"})
 	want, _ := egressProxyForZen(secret)
 
-	// 绑定表现落在 proxy-config.json 的 egressBindings 段
-	proxyFileMu.Lock()
-	sec := loadProxyConfigFileLocked().EgressBindings
-	proxyFileMu.Unlock()
+	// 绑定表现落在 zen-config.json 的 egressBindings 段（2026-11-17 配置重组
+	// 迁入：凭据级出口绑定跟凭据所在平台文件走）
+	zen.ZenFileMuPtr().Lock()
+	sec := zen.LoadZenConfigFileLocked().EgressBindings
+	zen.ZenFileMuPtr().Unlock()
 	if len(sec) == 0 {
-		t.Fatal("egress bindings section not written to proxy-config.json")
+		t.Fatal("egress bindings section not written to zen-config.json")
 	}
 	data, err := json.Marshal(sec)
 	if err != nil {
@@ -235,8 +239,8 @@ func TestEgressBindingsPersistWithoutPlaintextKeys(t *testing.T) {
 
 	// 模拟重启：清空内存，从磁盘重新加载
 	egressMu.Lock()
-	egressBindings = map[string]egressBinding{}
-	egressLoaded = false
+	*egressBindings = map[string]egressBinding{}
+	zen.EgressLoaded = false
 	egressMu.Unlock()
 	got, ok := egressProxyForZen(secret)
 	if !ok || got != want {

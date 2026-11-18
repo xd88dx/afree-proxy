@@ -1,12 +1,9 @@
 package app
 
 import (
+	"github.com/misakano7545/workbuddy2api-panel"
 	"net/http"
 	"testing"
-
-	wbauth "afree-proxy/internal/workbuddy/auth"
-	wbconfig "afree-proxy/internal/workbuddy/config"
-	wbpool "afree-proxy/internal/workbuddy/pool"
 )
 
 // /v1/models 的「段内恒序」契约:各平台段内部一律确定有序。
@@ -52,7 +49,7 @@ func TestSortModelEntriesByIDToleratesMissingID(t *testing.T) {
 	}
 }
 
-// fakeWBServer 冒充 vendor 的 server.Handler:只回固定(乱序)模型列表。
+// fakeWBServer 冒充 vendor 的 wbbridge.Handler:只回固定(乱序)模型列表。
 type fakeWBServer struct{ models []map[string]any }
 
 func (f *fakeWBServer) ServeHTTP(http.ResponseWriter, *http.Request) {}
@@ -62,9 +59,9 @@ func (f *fakeWBServer) ModelList() []map[string]any { return f.models }
 // routableWBSub 构造一个能过可路由性闸的假子系统：server 吐模型列表，
 // pool 里放一个健康账号（AvailableUIDs 非空）。
 func routableWBSub(models []map[string]any) *workbuddySubsystem {
-	p := wbpool.New("")
-	p.Add(&wbauth.Auth{UID: "cn1", Domain: "www.codebuddy.cn"})
-	return &workbuddySubsystem{server: &fakeWBServer{models: models}, pool: p}
+	p := wbbridge.PoolNew("")
+	p.Add(&wbbridge.Auth{UID: "cn1", Domain: "www.codebuddy.cn"})
+	return &workbuddySubsystem{Server: &fakeWBServer{models: models}, Pool: p}
 }
 
 // WorkBuddy 段端到端:vendor 按上游序吐出乱序列表 → 网关出口必须恒序,
@@ -73,9 +70,9 @@ func routableWBSub(models []map[string]any) *workbuddySubsystem {
 // 平台页列表可见的模型;同日追定剔除按费率同源,不按模态一刀切)。
 // 无 credits 牌价的出图条目在缺省阈值 0.2 下全部挡住(见下组测试)。
 func TestWorkbuddyModelEntriesAreOrdered(t *testing.T) {
-	saved := workbuddySub
-	t.Cleanup(func() { workbuddySub = saved })
-	workbuddySub = routableWBSub([]map[string]any{
+	saved := *workbuddySub
+	t.Cleanup(func() { *workbuddySub = saved })
+	*workbuddySub = routableWBSub([]map[string]any{
 		{"id": "cn:zeta"},
 		{"id": "global:mid"},
 		{"id": "cn:alpha"},
@@ -103,9 +100,9 @@ func TestWorkbuddyModelEntriesAreOrdered(t *testing.T) {
 // 展示门控:子系统在但池里没有可用账号(AvailableUIDs 空,含出图缓存)时,
 // 整段不出目录——与请求入口闸同口径,别让客户端选中必失败条目。
 func TestWorkbuddyModelEntriesGatedByRoutablePool(t *testing.T) {
-	saved := workbuddySub
-	t.Cleanup(func() { workbuddySub = saved })
-	workbuddySub = &workbuddySubsystem{server: &fakeWBServer{models: []map[string]any{
+	saved := *workbuddySub
+	t.Cleanup(func() { *workbuddySub = saved })
+	*workbuddySub = &workbuddySubsystem{Server: &fakeWBServer{models: []map[string]any{
 		{"id": "cn:alpha"},
 		{"id": "cn:z-image", "image_generation": true},
 	}}}
@@ -116,9 +113,9 @@ func TestWorkbuddyModelEntriesGatedByRoutablePool(t *testing.T) {
 
 // 子系统未装配时 WorkBuddy 段为空(不 panic)。
 func TestWorkbuddyModelEntriesNilSubsystem(t *testing.T) {
-	saved := workbuddySub
-	t.Cleanup(func() { workbuddySub = saved })
-	workbuddySub = nil
+	saved := *workbuddySub
+	t.Cleanup(func() { *workbuddySub = saved })
+	*workbuddySub = nil
 	if got := workbuddyModelEntries(); len(got) != 0 {
 		t.Fatalf("nil subsystem must yield empty segment, got %v", got)
 	}
@@ -136,8 +133,8 @@ func TestWorkbuddyModelEntriesNilSubsystem(t *testing.T) {
 // 2026-11-07 分域：CN 阈值管 wbcn、Global 阈值管 wbgb，两域互不越界。
 func TestWorkbuddyImageModelRateFilter(t *testing.T) {
 	throttleGateRefreshForTest() // servedModelGate 未知名不做 live 目录同步
-	saved := workbuddySub
-	t.Cleanup(func() { workbuddySub = saved })
+	saved := *workbuddySub
+	t.Cleanup(func() { *workbuddySub = saved })
 	sub := routableWBSub([]map[string]any{
 		{"id": "cn:alpha"},
 		{"id": "cn:img-free", "image_generation": true, "credits": "x0.1"},
@@ -151,10 +148,10 @@ func TestWorkbuddyImageModelRateFilter(t *testing.T) {
 		{"id": "global:gbimg-free", "image_generation": true, "credits": "x0.1"},
 		{"id": "global:gbimg-mid", "image_generation": true, "credits": "x0.15"},
 	})
-	sub.cfg = &wbconfig.Config{}
-	sub.cfg.Pool.ModelRateFilterCN = 0.2
-	sub.cfg.Pool.ModelRateFilterGlobal = 0.1
-	workbuddySub = sub
+	sub.Cfg = &wbbridge.WBConfig{}
+	sub.Cfg.Pool.ModelRateFilterCN = 0.2
+	sub.Cfg.Pool.ModelRateFilterGlobal = 0.1
+	*workbuddySub = sub
 
 	got := workbuddyModelEntries()
 	want := []string{"wbcn:alpha", "wbcn:img-free", "wbcn:img-promo", "wbgb:gbimg-free"}
@@ -182,9 +179,9 @@ func TestWorkbuddyImageModelRateFilter(t *testing.T) {
 func TestServedGateRejectsWorkbuddyImageModel(t *testing.T) {
 	t.Setenv("DATA_DIR", testDataDir(t))
 	throttleGateRefreshForTest() // servedModelGate 未知名不做 live 目录同步
-	saved := workbuddySub
-	t.Cleanup(func() { workbuddySub = saved })
-	workbuddySub = routableWBSub([]map[string]any{
+	saved := *workbuddySub
+	t.Cleanup(func() { *workbuddySub = saved })
+	*workbuddySub = routableWBSub([]map[string]any{
 		{"id": "cn:alpha"},
 		{"id": "cn:hunyuan-image-alpha", "image_generation": true},
 	})
@@ -202,9 +199,9 @@ func TestServedGateRejectsWorkbuddyImageModel(t *testing.T) {
 // 探针上游 11103 官方拒绝）。vendor 的视频单列机制晚于 image 过滤落地，app 层
 // 曾漏接该键——本测试锁定两类媒体条目都不进对外目录与请求闸。
 func TestWorkbuddyModelEntriesExcludeUnpricedVideoEntries(t *testing.T) {
-	saved := workbuddySub
-	t.Cleanup(func() { workbuddySub = saved })
-	workbuddySub = routableWBSub([]map[string]any{
+	saved := *workbuddySub
+	t.Cleanup(func() { *workbuddySub = saved })
+	*workbuddySub = routableWBSub([]map[string]any{
 		{"id": "cn:alpha"},
 		{"id": "cn:kling-video-v3", "video_generation": true, "tags": []string{"text-to-video"}},
 		{"id": "global:kling-video-v3", "video_generation": true},

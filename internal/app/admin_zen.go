@@ -1,6 +1,7 @@
 package app
 
 import (
+	"afree-proxy/internal/panel"
 	"context"
 	"encoding/json"
 	"errors"
@@ -8,6 +9,8 @@ import (
 	"io"
 	"log"
 	"net/http"
+
+	"afree-proxy/internal/zen"
 	"strings"
 	"time"
 
@@ -19,10 +22,10 @@ import (
 // GET /admin/api/zen/config
 func handleZenConfig(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "GET" {
-		writeAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
+		WriteAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
 		return
 	}
-	writeAPI(w, http.StatusOK, apiResponse{Success: true, Data: zenConfigPayload()})
+	WriteAPI(w, http.StatusOK, apiResponse{Success: true, Data: zenConfigPayload()})
 }
 
 // zenConfigPayload 是面板「OpenCode + 代理池」页的合并视图。代理池配置已拆到
@@ -68,12 +71,12 @@ func zenConfigPayload() map[string]any {
 // POST /admin/api/zen/config/update
 func handleZenConfigUpdate(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "POST" {
-		writeAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
+		WriteAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
 		return
 	}
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
-		writeAPI(w, http.StatusBadRequest, apiResponse{Error: err.Error()})
+		WriteAPI(w, http.StatusBadRequest, apiResponse{Error: err.Error()})
 		return
 	}
 	defer r.Body.Close()
@@ -129,7 +132,7 @@ func handleZenConfigUpdate(w http.ResponseWriter, r *http.Request) {
 		} `json:"toolFilter"`
 	}
 	if err := json.Unmarshal(body, &patch); err != nil {
-		writeAPI(w, http.StatusBadRequest, apiResponse{Error: "invalid JSON: " + err.Error()})
+		WriteAPI(w, http.StatusBadRequest, apiResponse{Error: "invalid JSON: " + err.Error()})
 		return
 	}
 	// next 从 cur 浅拷贝起步再按 patch 覆盖——不再逐字段枚举。config/update 是
@@ -141,20 +144,18 @@ func handleZenConfigUpdate(w http.ResponseWriter, r *http.Request) {
 	// 与既有行为一致（setZenConfig 内部按 key 列表做写时清理，不就地改写）。
 	next := *cur
 	if patch.ZenUseProxies != nil {
-		// 与 workbuddy 同一「Global policy」区块提交：此前该字段只声明未读取，
-		// Zen 走池开关保存后回弹（2026-11-09 审计修复）。
-		poolNext.ZenUseProxies = patch.ZenUseProxies
-		poolChanged = true
+		// 走池开关归平台文件（2026-11-17 配置重组）：zen-config.json
+		// zenUseProxies。同一「Global policy」区块提交，两字段各回各家。
+		mutateZenConfigFile(func(z *zenConfigFileData) { z.ZenUseProxies = patch.ZenUseProxies })
 	}
 	if patch.WorkbuddyUseProxies != nil {
-		poolNext.WorkbuddyUseProxies = patch.WorkbuddyUseProxies
-		poolChanged = true
+		mutateWkbdConfig(func(k *wkbdConfigData) { k.UseProxies = patch.WorkbuddyUseProxies })
 	}
 	if patch.Keys != nil {
 		// 多 key 池整体替换（旧单 key 提交兼容已随 2026-11-05 清理移除——
 		// 前端总是发 keys 数组）
 		if len(patch.Keys) == 0 {
-			writeAPI(w, http.StatusBadRequest, apiResponse{Error: "keys list is empty"})
+			WriteAPI(w, http.StatusBadRequest, apiResponse{Error: "keys list is empty"})
 			return
 		}
 		next.Keys = patch.Keys
@@ -169,7 +170,7 @@ func handleZenConfigUpdate(w http.ResponseWriter, r *http.Request) {
 		// 的口子（SSRF + 凭据外泄）。两者用同一个校验。
 		base := strings.TrimRight(*patch.BaseURL, "/")
 		if err := validateZenUpstreamBase(base); err != nil {
-			writeAPI(w, http.StatusBadRequest, apiResponse{Error: err.Error()})
+			WriteAPI(w, http.StatusBadRequest, apiResponse{Error: err.Error()})
 			return
 		}
 		next.BaseURL = base
@@ -182,7 +183,7 @@ func handleZenConfigUpdate(w http.ResponseWriter, r *http.Request) {
 		for _, line := range patch.Proxies {
 			parsed, _, err := parseProxyLine(line)
 			if err != nil {
-				writeAPI(w, http.StatusBadRequest, apiResponse{Error: err.Error()})
+				WriteAPI(w, http.StatusBadRequest, apiResponse{Error: err.Error()})
 				return
 			}
 			if parsed == "" {
@@ -191,7 +192,7 @@ func handleZenConfigUpdate(w http.ResponseWriter, r *http.Request) {
 			canonical = append(canonical, parsed)
 		}
 		if err := validateProxyList(canonical); err != nil {
-			writeAPI(w, http.StatusBadRequest, apiResponse{Error: err.Error()})
+			WriteAPI(w, http.StatusBadRequest, apiResponse{Error: err.Error()})
 			return
 		}
 		poolNext.Proxies = canonical
@@ -214,7 +215,7 @@ func handleZenConfigUpdate(w http.ResponseWriter, r *http.Request) {
 		expr := strings.TrimSpace(*patch.ProxySubCron)
 		if expr != "" {
 			if err := validateCronExpr(expr); err != nil {
-				writeAPI(w, http.StatusBadRequest, apiResponse{Error: "invalid cron expression: " + err.Error()})
+				WriteAPI(w, http.StatusBadRequest, apiResponse{Error: "invalid cron expression: " + err.Error()})
 				return
 			}
 		}
@@ -232,14 +233,14 @@ func handleZenConfigUpdate(w http.ResponseWriter, r *http.Request) {
 		// POOL_STRATEGY 设置时优先,面板改了不生效——直接拒绝并说明,别让用户
 		// 以为保存成功(与 PROXY_ISOLATION 锁定同款)。
 		if poolStrategyEnvLocked() {
-			writeAPI(w, http.StatusBadRequest, apiResponse{Error: "POOL_STRATEGY is set and takes precedence; unset the env var to control the rotation strategy from the panel"})
+			WriteAPI(w, http.StatusBadRequest, apiResponse{Error: "POOL_STRATEGY is set and takes precedence; unset the env var to control the rotation strategy from the panel"})
 			return
 		}
 		switch *patch.Strategy {
 		case "round_robin", "fill", "random":
 			setGlobalStrategy(*patch.Strategy)
 		default:
-			writeAPI(w, http.StatusBadRequest, apiResponse{Error: "invalid strategy, must be: round_robin, fill, random"})
+			WriteAPI(w, http.StatusBadRequest, apiResponse{Error: "invalid strategy, must be: round_robin, fill, random"})
 			return
 		}
 	}
@@ -247,7 +248,7 @@ func handleZenConfigUpdate(w http.ResponseWriter, r *http.Request) {
 		// 仅 PROXY_ISOLATION=true 锁定面板（强制开启）；env=false 或未设置时
 		// 面板可正常修改。锁定时直接拒绝并说明，免得用户以为保存成功了。
 		if proxyIsolationEnvLocked() {
-			writeAPI(w, http.StatusBadRequest, apiResponse{Error: "PROXY_ISOLATION=true forces isolation on; unset the env var (or set it to false) to control isolation from the panel"})
+			WriteAPI(w, http.StatusBadRequest, apiResponse{Error: "PROXY_ISOLATION=true forces isolation on; unset the env var (or set it to false) to control isolation from the panel"})
 			return
 		}
 		bindingNext.ProxyIsolation = patch.ProxyIsolation
@@ -266,7 +267,7 @@ func handleZenConfigUpdate(w http.ResponseWriter, r *http.Request) {
 			}
 			for _, k := range kinds {
 				if !proxyRuleKindValid(k) {
-					writeAPI(w, http.StatusBadRequest, apiResponse{Error: "invalid platform kind: " + k})
+					WriteAPI(w, http.StatusBadRequest, apiResponse{Error: "invalid platform kind: " + k})
 					return
 				}
 			}
@@ -283,7 +284,7 @@ func handleZenConfigUpdate(w http.ResponseWriter, r *http.Request) {
 		clean := make(map[string]int, len(patch.ProxyBindCaps))
 		for k, v := range patch.ProxyBindCaps {
 			if !proxyRuleKindValid(k) {
-				writeAPI(w, http.StatusBadRequest, apiResponse{Error: "invalid platform kind: " + k})
+				WriteAPI(w, http.StatusBadRequest, apiResponse{Error: "invalid platform kind: " + k})
 				return
 			}
 			if v > 0 {
@@ -301,7 +302,7 @@ func handleZenConfigUpdate(w http.ResponseWriter, r *http.Request) {
 		// 再大等于"所有代理都保持不变"，重排就没意义了）。
 		v := *patch.ReorderKeepSec
 		if v < 0 || v > 600 {
-			writeAPI(w, http.StatusBadRequest, apiResponse{Error: "invalid reorderKeepSec: must be between 0 and 600 seconds"})
+			WriteAPI(w, http.StatusBadRequest, apiResponse{Error: "invalid reorderKeepSec: must be between 0 and 600 seconds"})
 			return
 		}
 		bindingNext.ReorderKeepSec = v
@@ -357,13 +358,13 @@ func handleZenConfigUpdate(w http.ResponseWriter, r *http.Request) {
 	if poolChanged {
 		setProxyPool(&poolNext)
 	}
-	writeAPI(w, http.StatusOK, apiResponse{Success: true, Data: zenConfigPayload()})
+	WriteAPI(w, http.StatusOK, apiResponse{Success: true, Data: zenConfigPayload()})
 }
 
 // GET /admin/api/opencode/models — 只返回免费模型
 func handleZenModels(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "GET" {
-		writeAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
+		WriteAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
 		return
 	}
 	// 展示门控（与 trae 同口径，2026-10-27 用户定）：没有
@@ -371,29 +372,8 @@ func handleZenModels(w http.ResponseWriter, r *http.Request) {
 	// 上游匿名层也不可用，列出来只会让用户选中后调不通。
 	// credentialsEnabled 供前端区分「无凭据」（引导启用）与「目录为空」。
 	credentialsEnabled := zenHasRoutableKey()
-	zenModelsMu.RLock()
-	models := make([]map[string]any, 0, len(zenModels))
-	if credentialsEnabled {
-		for _, m := range zenModels {
-			if !isZenFreeModel(m) {
-				continue
-			}
-			models = append(models, map[string]any{
-				// 网关前缀（zen:<id>）：与 /v1/models 输出一致，面板即所见即所调。
-				// 裸 ID 仍可解析（存量 IDE 配置与 combo target 兼容）。
-				"id":        zenPrefixedID(m.ID),
-				"context":   m.Context,
-				"output":    m.Output,
-				"source":    m.Source,
-				"upstream":  m.Upstream,
-				"toolCall":  m.ToolCall,
-				"reasoning": m.Reasoning,
-				"attach":    m.Attach,
-			})
-		}
-	}
-	zenModelsMu.RUnlock()
-	writeAPI(w, http.StatusOK, apiResponse{Success: true, Data: map[string]any{"models": models, "count": len(models), "credentialsEnabled": credentialsEnabled}})
+	models, credentialsEnabled := zen.ModelEntriesDetailed()
+	WriteAPI(w, http.StatusOK, apiResponse{Success: true, Data: map[string]any{"models": models, "count": len(models), "credentialsEnabled": credentialsEnabled}})
 }
 
 // POST /admin/api/zen/models/refresh
@@ -401,22 +381,22 @@ func handleZenModels(w http.ResponseWriter, r *http.Request) {
 // 只有 zen 报新增数、其余平台报总数，同一个「刷新」按钮各处口径不一。
 func handleZenModelsRefresh(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "POST" {
-		writeAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
+		WriteAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
 		return
 	}
 	// 无启用 key 时拒绝同步并给出提示。
 	if !zenHasRoutableKey() {
-		writeCatalogNoCredential(w, platZen)
+		panel.WriteCatalogNoCredential(w, platZen)
 		return
 	}
 	before := len(zenModelList())
 	_, err := syncZenModels()
 	if err != nil {
-		writeCatalogSyncFailed(w, platZen, err)
+		panel.WriteCatalogSyncFailed(w, platZen, err)
 		return
 	}
 	total := len(zenModelList())
-	writeCatalogResult(w, platZen, total-before, total)
+	panel.WriteCatalogResult(w, platZen, total-before, total)
 }
 
 // POST /admin/api/zen/keys/test   body: {"index": 0}
@@ -428,12 +408,12 @@ func handleZenModelsRefresh(w http.ResponseWriter, r *http.Request) {
 // 触发收割机，提示去 mint。返回的 status: active / cooldown / error。
 func handleZenKeyTest(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "POST" {
-		writeAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
+		WriteAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
 		return
 	}
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
-		writeAPI(w, http.StatusBadRequest, apiResponse{Error: err.Error()})
+		WriteAPI(w, http.StatusBadRequest, apiResponse{Error: err.Error()})
 		return
 	}
 	defer r.Body.Close()
@@ -442,17 +422,17 @@ func handleZenKeyTest(w http.ResponseWriter, r *http.Request) {
 		Model string `json:"model"` // 可选：指定探测模型；空 = 自动（big-pickle → live → 种子）
 	}
 	if err := json.Unmarshal(body, &req); err != nil {
-		writeAPI(w, http.StatusBadRequest, apiResponse{Error: "invalid JSON"})
+		WriteAPI(w, http.StatusBadRequest, apiResponse{Error: "invalid JSON"})
 		return
 	}
 	cfg := getZenConfig()
 	if req.Index < 0 || req.Index >= len(cfg.Keys) {
-		writeAPI(w, http.StatusNotFound, apiResponse{Error: "key index out of range"})
+		WriteAPI(w, http.StatusNotFound, apiResponse{Error: "key index out of range"})
 		return
 	}
 	key := cfg.Keys[req.Index]
 	if key == "" {
-		writeAPI(w, http.StatusBadRequest, apiResponse{Error: "nothing to test: empty key"})
+		WriteAPI(w, http.StatusBadRequest, apiResponse{Error: "nothing to test: empty key"})
 		return
 	}
 
@@ -464,7 +444,7 @@ func handleZenKeyTest(w http.ResponseWriter, r *http.Request) {
 	log.Printf("Test zen key #%d (%s): status=%s model=%s reason=%v",
 		req.Index+1, maskZenKey(key), status, result["model"], result["reason"])
 
-	writeAPI(w, http.StatusOK, apiResponse{
+	WriteAPI(w, http.StatusOK, apiResponse{
 		Success: status == "active",
 		Message: status,
 		Data:    result,
@@ -515,7 +495,7 @@ func testZenKey(key string, index int, modelID string) (map[string]any, string) 
 		resp *http.Response
 		err  error
 	)
-	opts := []zenCallOpts{{pinKey: key}}
+	opts := zen.NewPinKeyOpts(key)
 	if zm.Upstream == "responses" {
 		resp, _, err = callZenResponsesAPI(ctx, params, true, opts...)
 	} else {
@@ -594,12 +574,12 @@ func testZenKey(key string, index int, modelID string) (map[string]any, string) 
 // 请求轮转（选号时跳过）。
 func handleZenKeySetRouting(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		writeAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
+		WriteAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
 		return
 	}
 	body, err := io.ReadAll(io.LimitReader(r.Body, 512))
 	if err != nil {
-		writeAPI(w, http.StatusBadRequest, apiResponse{Error: err.Error()})
+		WriteAPI(w, http.StatusBadRequest, apiResponse{Error: err.Error()})
 		return
 	}
 	defer r.Body.Close()
@@ -608,26 +588,26 @@ func handleZenKeySetRouting(w http.ResponseWriter, r *http.Request) {
 		Enabled bool `json:"enabled"`
 	}
 	if err := json.Unmarshal(body, &req); err != nil {
-		writeAPI(w, http.StatusBadRequest, apiResponse{Error: "invalid JSON"})
+		WriteAPI(w, http.StatusBadRequest, apiResponse{Error: "invalid JSON"})
 		return
 	}
 	if err := setZenKeyRoutingEnabled(req.Index, req.Enabled); err != nil {
-		writeAPI(w, http.StatusBadRequest, apiResponse{Error: err.Error()})
+		WriteAPI(w, http.StatusBadRequest, apiResponse{Error: err.Error()})
 		return
 	}
-	writeAPI(w, http.StatusOK, apiResponse{Success: true, Message: fmt.Sprintf("key #%d routing enabled=%v", req.Index+1, req.Enabled)})
+	WriteAPI(w, http.StatusOK, apiResponse{Success: true, Message: fmt.Sprintf("key #%d routing enabled=%v", req.Index+1, req.Enabled)})
 }
 
 // POST /admin/api/opencode/keys/routing/all  body: { enabled }
 // 一键启用/停用全部 key 的路由参与（面板批量入口）。
 func handleZenKeySetRoutingAll(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		writeAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
+		WriteAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
 		return
 	}
 	body, err := io.ReadAll(io.LimitReader(r.Body, 512))
 	if err != nil {
-		writeAPI(w, http.StatusBadRequest, apiResponse{Error: err.Error()})
+		WriteAPI(w, http.StatusBadRequest, apiResponse{Error: err.Error()})
 		return
 	}
 	defer r.Body.Close()
@@ -635,11 +615,11 @@ func handleZenKeySetRoutingAll(w http.ResponseWriter, r *http.Request) {
 		Enabled bool `json:"enabled"`
 	}
 	if err := json.Unmarshal(body, &req); err != nil {
-		writeAPI(w, http.StatusBadRequest, apiResponse{Error: "invalid JSON"})
+		WriteAPI(w, http.StatusBadRequest, apiResponse{Error: "invalid JSON"})
 		return
 	}
 	n := setAllZenKeysRoutingEnabled(req.Enabled)
-	writeAPI(w, http.StatusOK, apiResponse{Success: true, Message: fmt.Sprintf("routing enabled=%v on %d key(s)", req.Enabled, n)})
+	WriteAPI(w, http.StatusOK, apiResponse{Success: true, Message: fmt.Sprintf("routing enabled=%v on %d key(s)", req.Enabled, n)})
 }
 
 // POST /admin/api/opencode/keys/reorder  body: { order: [oldIndex,...] }
@@ -648,12 +628,12 @@ func handleZenKeySetRoutingAll(w http.ResponseWriter, r *http.Request) {
 // setZenConfig 统一处理；冷却/token/粘性按 key 明文存储，与顺序无关。
 func handleZenKeysReorder(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		writeAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
+		WriteAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
 		return
 	}
 	body, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
 	if err != nil {
-		writeAPI(w, http.StatusBadRequest, apiResponse{Error: err.Error()})
+		WriteAPI(w, http.StatusBadRequest, apiResponse{Error: err.Error()})
 		return
 	}
 	defer r.Body.Close()
@@ -661,14 +641,14 @@ func handleZenKeysReorder(w http.ResponseWriter, r *http.Request) {
 		Order []int `json:"order"`
 	}
 	if err := json.Unmarshal(body, &req); err != nil {
-		writeAPI(w, http.StatusBadRequest, apiResponse{Error: "invalid JSON"})
+		WriteAPI(w, http.StatusBadRequest, apiResponse{Error: "invalid JSON"})
 		return
 	}
 	if err := reorderZenKeys(req.Order); err != nil {
-		writeAPI(w, http.StatusBadRequest, apiResponse{Error: err.Error()})
+		WriteAPI(w, http.StatusBadRequest, apiResponse{Error: err.Error()})
 		return
 	}
-	writeAPI(w, http.StatusOK, apiResponse{Success: true, Message: "Order saved", Data: map[string]any{"updated": len(req.Order)}})
+	WriteAPI(w, http.StatusOK, apiResponse{Success: true, Message: "Order saved", Data: map[string]any{"updated": len(req.Order)}})
 }
 
 // POST /admin/api/opencode/keys/delete  body: { index }
@@ -677,12 +657,12 @@ func handleZenKeysReorder(w http.ResponseWriter, r *http.Request) {
 // key 池为空，平台转为不可路由（不再回退匿名 key）。
 func handleZenKeyDelete(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		writeAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
+		WriteAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
 		return
 	}
 	body, err := io.ReadAll(io.LimitReader(r.Body, 512))
 	if err != nil {
-		writeAPI(w, http.StatusBadRequest, apiResponse{Error: err.Error()})
+		WriteAPI(w, http.StatusBadRequest, apiResponse{Error: err.Error()})
 		return
 	}
 	defer r.Body.Close()
@@ -690,12 +670,12 @@ func handleZenKeyDelete(w http.ResponseWriter, r *http.Request) {
 		Index int `json:"index"`
 	}
 	if err := json.Unmarshal(body, &req); err != nil {
-		writeAPI(w, http.StatusBadRequest, apiResponse{Error: "invalid JSON"})
+		WriteAPI(w, http.StatusBadRequest, apiResponse{Error: "invalid JSON"})
 		return
 	}
 	cfg := getZenConfig()
 	if req.Index < 0 || req.Index >= len(cfg.Keys) {
-		writeAPI(w, http.StatusBadRequest, apiResponse{Error: "key index out of range"})
+		WriteAPI(w, http.StatusBadRequest, apiResponse{Error: "key index out of range"})
 		return
 	}
 	key := cfg.Keys[req.Index]
@@ -708,7 +688,7 @@ func handleZenKeyDelete(w http.ResponseWriter, r *http.Request) {
 	// 该 key 的代理绑定一并删除（绑定按 key 明文存，key 不在了绑定就是垃圾）。
 	next.KeyBindings = withoutKey(cfg.KeyBindings, key)
 	setZenConfig(&next)
-	writeAPI(w, http.StatusOK, apiResponse{Success: true, Message: fmt.Sprintf("key #%d deleted", req.Index+1)})
+	WriteAPI(w, http.StatusOK, apiResponse{Success: true, Message: fmt.Sprintf("key #%d deleted", req.Index+1)})
 }
 
 // withoutKey 复制删掉指定 key 条目的 map（nil 安全）。
@@ -731,12 +711,12 @@ func withoutKey[V any](m map[string]V, key string) map[string]V {
 // 相同的契约），绑定表持久化到 zen 配置。
 func handleZenKeySetProxy(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "POST" {
-		writeAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
+		WriteAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
 		return
 	}
 	body, err := io.ReadAll(io.LimitReader(r.Body, 4096))
 	if err != nil {
-		writeAPI(w, http.StatusBadRequest, apiResponse{Error: err.Error()})
+		WriteAPI(w, http.StatusBadRequest, apiResponse{Error: err.Error()})
 		return
 	}
 	defer r.Body.Close()
@@ -746,12 +726,12 @@ func handleZenKeySetProxy(w http.ResponseWriter, r *http.Request) {
 		Backup string `json:"backup"`
 	}
 	if err := json.Unmarshal(body, &req); err != nil {
-		writeAPI(w, http.StatusBadRequest, apiResponse{Error: "invalid JSON"})
+		WriteAPI(w, http.StatusBadRequest, apiResponse{Error: "invalid JSON"})
 		return
 	}
 	if err := setKeyProxyBinding(req.Index, req.Main, req.Backup); err != nil {
-		writeAPI(w, http.StatusBadRequest, apiResponse{Error: err.Error()})
+		WriteAPI(w, http.StatusBadRequest, apiResponse{Error: err.Error()})
 		return
 	}
-	writeAPI(w, http.StatusOK, apiResponse{Success: true, Message: "Key proxy binding saved"})
+	WriteAPI(w, http.StatusOK, apiResponse{Success: true, Message: "Key proxy binding saved"})
 }

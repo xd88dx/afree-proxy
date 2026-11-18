@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"afree-proxy/internal/cline"
 )
 
 // 模型黑名单行为回归：
@@ -19,13 +21,13 @@ import (
 func resetModelBlacklistForTest(t *testing.T) {
 	t.Helper()
 	modelBlacklistMu.Lock()
-	modelBlacklistItems = map[string]*modelBlacklistEntry{}
-	modelBlacklistLoaded = true
+	*modelBlacklistItems = map[string]*modelBlacklistEntry{}
+	*modelBlacklistLoaded = true
 	modelBlacklistMu.Unlock()
 	t.Cleanup(func() {
 		modelBlacklistMu.Lock()
-		modelBlacklistItems = map[string]*modelBlacklistEntry{}
-		modelBlacklistLoaded = false
+		*modelBlacklistItems = map[string]*modelBlacklistEntry{}
+		*modelBlacklistLoaded = false
 		modelBlacklistMu.Unlock()
 	})
 }
@@ -106,8 +108,8 @@ func TestModelBlacklistLifecycle(t *testing.T) {
 		t.Fatalf("blacklist file not written: %v", err)
 	}
 	modelBlacklistMu.Lock()
-	modelBlacklistItems = map[string]*modelBlacklistEntry{}
-	modelBlacklistLoaded = false
+	*modelBlacklistItems = map[string]*modelBlacklistEntry{}
+	*modelBlacklistLoaded = false
 	modelBlacklistMu.Unlock()
 	if !IsModelBlacklisted("wbgb:gpt-6-luna") {
 		t.Fatal("model should survive reload from disk")
@@ -175,16 +177,16 @@ func TestWithModelBlacklistScan(t *testing.T) {
 	t.Cleanup(func() { setZenConfig(savedCfg) })
 	// 服务闸要求模型在对外目录：锁内注入 zen seed 形态条目。
 	zenModelsMu.Lock()
-	savedZen := make(map[string]*ZenModel, len(zenModels))
-	for k, v := range zenModels {
+	savedZen := make(map[string]*ZenModel, len(*zenModels))
+	for k, v := range *zenModels {
 		savedZen[k] = v
 	}
-	zenModels["mimo-v2.5-free"] = &ZenModel{ID: "mimo-v2.5-free", Source: "seed"}
-	zenModels["big-pickle"] = &ZenModel{ID: "big-pickle", Source: "seed"}
+	(*zenModels)["mimo-v2.5-free"] = &ZenModel{ID: "mimo-v2.5-free", Source: "seed"}
+	(*zenModels)["big-pickle"] = &ZenModel{ID: "big-pickle", Source: "seed"}
 	zenModelsMu.Unlock()
 	t.Cleanup(func() {
 		zenModelsMu.Lock()
-		zenModels = savedZen
+		*zenModels = savedZen
 		zenModelsMu.Unlock()
 	})
 
@@ -241,13 +243,13 @@ func TestClineModelNotFoundAutoBan(t *testing.T) {
 	// 增删都必须持 poolMu：服务闸未命中会触发后台目录同步（pickAccountAny
 	// 持锁读账号），锁外改池构成数据竞争（2026-11-05 race 实测）。清理按
 	// AccountID 精确摘除——[:0] 会连别的测试种进来的账号一起清掉。
-	// 痕迹表也要清：poolUsage 是进程内单例，-count>1 时上一轮迭代留给
+	// 痕迹表也要清：cline.Usage() 是进程内单例，-count>1 时上一轮迭代留给
 	// scan-cline-t1 的 expired 痕迹会让本轮种下的账号直接不可路由。
 	p := loadPool()
 	poolMu.Lock()
 	p.Accounts = append(p.Accounts, &Account{AccountID: "scan-cline-t1"})
-	if poolUsage.Accounts != nil {
-		delete(poolUsage.Accounts, "scan-cline-t1")
+	if cline.Usage().Accounts != nil {
+		delete(cline.Usage().Accounts, "scan-cline-t1")
 	}
 	poolMu.Unlock()
 	t.Cleanup(func() {
@@ -258,8 +260,8 @@ func TestClineModelNotFoundAutoBan(t *testing.T) {
 				break
 			}
 		}
-		if poolUsage.Accounts != nil {
-			delete(poolUsage.Accounts, "scan-cline-t1")
+		if cline.Usage().Accounts != nil {
+			delete(cline.Usage().Accounts, "scan-cline-t1")
 		}
 		poolMu.Unlock()
 	})
@@ -464,7 +466,7 @@ func TestImportModelBlacklistMerges(t *testing.T) {
 	recent := &modelBlacklistEntry{Platform: platZen, Model: "zen:MiMo-V2.6-Flash",
 		Reason: BanReasonManual, CreatedAt: time.Date(2026, 11, 4, 23, 16, 18, 0, time.UTC)}
 	modelBlacklistMu.Lock()
-	modelBlacklistItems = map[string]*modelBlacklistEntry{
+	*modelBlacklistItems = map[string]*modelBlacklistEntry{
 		blacklistKey(platZen, "zen:GLM-5.3-Flash"):   old,
 		blacklistKey(platZen, "zen:MiMo-V2.6-Flash"): recent,
 	}
@@ -488,16 +490,16 @@ func TestImportModelBlacklistMerges(t *testing.T) {
 	}
 	importModelBlacklist(in)
 
-	if len(modelBlacklistItems) != 3 {
-		t.Fatalf("merged list = %d entries, want 3", len(modelBlacklistItems))
+	if len(*modelBlacklistItems) != 3 {
+		t.Fatalf("merged list = %d entries, want 3", len(*modelBlacklistItems))
 	}
-	if got := modelBlacklistItems[blacklistKey(platZen, "zen:GLM-5.3-Flash")]; got != old {
+	if got := (*modelBlacklistItems)[blacklistKey(platZen, "zen:GLM-5.3-Flash")]; got != old {
 		t.Fatal("local-only-newer GLM entry must survive an older backup record")
 	}
-	if got := modelBlacklistItems[blacklistKey(platZen, "zen:MiMo-V2.6-Flash")]; got == recent {
+	if got := (*modelBlacklistItems)[blacklistKey(platZen, "zen:MiMo-V2.6-Flash")]; got == recent {
 		t.Fatal("backup's newer MiMo record must replace the local older one")
 	}
-	if got := modelBlacklistItems[blacklistKey(platWorkBuddy, "wbgb:gpt-6-luna")]; got == nil {
+	if got := (*modelBlacklistItems)[blacklistKey(platWorkBuddy, "wbgb:gpt-6-luna")]; got == nil {
 		t.Fatal("backup-only wbgb entry must be absorbed")
 	}
 	if !IsModelBlacklisted("zen:GLM-5.3-Flash") || !IsModelBlacklisted("wbgb:gpt-6-luna") {
@@ -561,15 +563,15 @@ func TestAllowBannedSkipsBanGates(t *testing.T) {
 	// 请求模型换成目录内条目（injectZen 形态）：避免混入"不在对外目录 404"
 	// 的另一分支（模型服务闸对未知模型恒拒，与封禁无关）。
 	zenModelsMu.Lock()
-	savedZenModel := zenModels["allow-banned-in-catalog"]
-	zenModels["allow-banned-in-catalog"] = &ZenModel{ID: "allow-banned-in-catalog", Source: "seed"}
+	savedZenModel := (*zenModels)["allow-banned-in-catalog"]
+	(*zenModels)["allow-banned-in-catalog"] = &ZenModel{ID: "allow-banned-in-catalog", Source: "seed"}
 	zenModelsMu.Unlock()
 	t.Cleanup(func() {
 		zenModelsMu.Lock()
 		if savedZenModel != nil {
-			zenModels["allow-banned-in-catalog"] = savedZenModel
+			(*zenModels)["allow-banned-in-catalog"] = savedZenModel
 		} else {
-			delete(zenModels, "allow-banned-in-catalog")
+			delete(*zenModels, "allow-banned-in-catalog")
 		}
 		zenModelsMu.Unlock()
 	})
@@ -591,13 +593,13 @@ func TestAllowBannedSkipsBanGates(t *testing.T) {
 func resetPlatformBanForTest(t *testing.T) {
 	t.Helper()
 	platformBanMu.Lock()
-	platformBanItems = map[string]*platformBanEntry{}
-	platformBanLoaded = true
+	*platformBanItems = map[string]*platformBanEntry{}
+	*platformBanLoaded = true
 	platformBanMu.Unlock()
 	t.Cleanup(func() {
 		platformBanMu.Lock()
-		platformBanItems = map[string]*platformBanEntry{}
-		platformBanLoaded = false
+		*platformBanItems = map[string]*platformBanEntry{}
+		*platformBanLoaded = false
 		platformBanMu.Unlock()
 	})
 }

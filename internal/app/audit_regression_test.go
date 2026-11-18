@@ -1,6 +1,9 @@
 package app
 
 import (
+	"afree-proxy/internal/panel"
+	"afree-proxy/internal/reqlog"
+
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -8,6 +11,9 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"afree-proxy/internal/cline"
+	"afree-proxy/internal/kit"
 )
 
 // 本文件固定 2026-11-08 全库审计里修掉的那批缺陷。每个测试都对应一个
@@ -194,7 +200,7 @@ func TestEmitChatAsSSEMultibyteSafe(t *testing.T) {
 func TestZenAliasCycleDoesNotOverflowStack(t *testing.T) {
 	zenDepMu.Lock()
 	saved := zenDepAliases
-	zenDepAliases = map[string]*zenDepEntry{
+	*zenDepAliases = map[string]*zenDepEntry{
 		"loop-a-free": {Replacement: "loop-b-free"},
 		"loop-b-free": {Replacement: "loop-a-free"},
 		"self-free":   {Replacement: "self-free"},
@@ -235,8 +241,8 @@ func TestZenAnyKeyRotatableSkipsParkedKeys(t *testing.T) {
 
 	zenKeyMu.Lock()
 	savedCool, savedPark := zenKeyCool, zenKeyPark
-	zenKeyCool = map[string]time.Time{}
-	zenKeyPark = map[string]zenParkState{
+	*zenKeyCool = map[string]time.Time{}
+	*zenKeyPark = map[string]zenParkState{
 		"sk-parked-key": {Day: time.Now().UTC().Format("2006-01-02"), Until: time.Now().Add(time.Hour), Backoff: time.Hour},
 	}
 	zenKeyMu.Unlock()
@@ -257,7 +263,7 @@ func TestZenAnyKeyRotatableSkipsParkedKeys(t *testing.T) {
 
 func TestWriteAPISetsNoStore(t *testing.T) {
 	rec := httptest.NewRecorder()
-	writeAPI(rec, http.StatusOK, apiResponse{Success: true})
+	panel.WriteAPI(rec, http.StatusOK, panel.ApiResponse{Success: true})
 	if got := rec.Header().Get("Cache-Control"); !strings.Contains(got, "no-store") {
 		t.Fatalf("Cache-Control = %q; admin payloads carry credentials and must not be cached", got)
 	}
@@ -265,7 +271,7 @@ func TestWriteAPISetsNoStore(t *testing.T) {
 
 func TestAdminCORSRejectsCrossOriginPost(t *testing.T) {
 	called := false
-	h := adminCORS(func(w http.ResponseWriter, r *http.Request) { called = true })
+	h := panel.AdminCORS(func(w http.ResponseWriter, r *http.Request) { called = true })
 
 	// 跨站 POST：Origin 与 Host 不同
 	req := httptest.NewRequest("POST", "http://gateway.local/admin/api/config/update",
@@ -340,11 +346,11 @@ func TestValidateZenUpstreamBase(t *testing.T) {
 
 func TestEnvIntRejectsOverflow(t *testing.T) {
 	t.Setenv("AUDIT_TEST_BIG", "99999999999999999999")
-	if n, ok := envInt("AUDIT_TEST_BIG"); ok {
+	if n, ok := kit.EnvInt("AUDIT_TEST_BIG"); ok {
 		t.Fatalf("overflowing value accepted as %d (wraps negative, inverting the guard)", n)
 	}
 	t.Setenv("AUDIT_TEST_OK", "32")
-	if n, ok := envInt("AUDIT_TEST_OK"); !ok || n != 32 {
+	if n, ok := kit.EnvInt("AUDIT_TEST_OK"); !ok || n != 32 {
 		t.Fatalf("valid value rejected: n=%d ok=%v", n, ok)
 	}
 }
@@ -353,18 +359,11 @@ func TestEnvIntRejectsOverflow(t *testing.T) {
 
 func TestReqLogModelTruncated(t *testing.T) {
 	t.Setenv("LOG_REQUESTS", "true")
-	reqLogsMu.Lock()
-	saved := reqLogs
-	reqLogs = nil
-	reqLogsMu.Unlock()
-	t.Cleanup(func() {
-		reqLogsMu.Lock()
-		reqLogs = saved
-		reqLogsMu.Unlock()
-	})
+	restoreReqLogs := reqlog.ResetReqLogsForTest()
+	t.Cleanup(restoreReqLogs)
 
-	AppendReqLog(RequestLog{Model: strings.Repeat("A", 1<<20)})
-	logs := LoadRequestLogs()
+	reqlog.AppendReqLog(reqlog.RequestLog{Model: strings.Repeat("A", 1<<20)})
+	logs := reqlog.LoadRequestLogs()
 	if len(logs) == 0 {
 		t.Fatal("log entry not recorded")
 	}
@@ -386,21 +385,14 @@ func TestClineStreamConcurrentLearnsPersistAll(t *testing.T) {
 	// 稳定复现）。resetGlobalConfigForTest 自带恢复，本测试的内存学习表也一并
 	// 保存/恢复（与 cline_stream_e2e_test.go 同纪律）。
 	resetGlobalConfigForTest(t)
-	clineStreamMu.Lock()
-	saved := clineStreamLearned
-	clineStreamLearned = nil
-	clineStreamMu.Unlock()
-	t.Cleanup(func() {
-		clineStreamMu.Lock()
-		clineStreamLearned = saved
-		clineStreamMu.Unlock()
-	})
+	restore := cline.SaveStreamForTest()
+	t.Cleanup(restore)
 
 	// 全局配置是跨测试共享的单例（其他测试也会写入学习表），断言用相对值：
 	// 本次并发只要求"新增 n 个"全部落进配置，不要求全表恰好 n 个。
-	globalCfgMu.Lock()
-	basePersisted := len(loadGlobalConfigLocked().ClineStreamRequired)
-	globalCfgMu.Unlock()
+	// 2026-11-17 迁移：学习表真身改住 cline-config.json（AccountPool.StreamRequired）。
+	// loadPool 自取 poolMu——外层不得再 Lock（Mutex 不可重入，自死锁）。
+	basePersisted := len(loadPool().StreamRequired)
 
 	const n = 16
 	var wg sync.WaitGroup
@@ -415,18 +407,15 @@ func TestClineStreamConcurrentLearnsPersistAll(t *testing.T) {
 	// 等落盘队列排空（学习路径是同步写的，这里只是保险）
 	time.Sleep(100 * time.Millisecond)
 
-	// 本地落盘走 mutateGlobalConfig（afree-config.json 的 ClineStreamRequired
-	// 段，全局串行 + 原子写），不存在上游"每请求各起 goroutine 撕裂写文件"的
-	// 形态。并发学习后内存全量应一个不少；再从全局配置读回确认已持久化。
-	clineStreamMu.RLock()
-	got := len(clineStreamLearned)
-	clineStreamMu.RUnlock()
+	// 本地落盘走 mutatePoolConfig（cline-config.json 的 streamRequired 段，
+	// 全局串行 + 原子写），不存在上游"每请求各起 goroutine 撕裂写文件"的
+	// 形态。并发学习后内存全量应一个不少；再从平台配置读回确认已持久化。
+	got := cline.StreamCount()
 	if got != n {
 		t.Fatalf("learned = %d, want %d (lost update)", got, n)
 	}
-	globalCfgMu.Lock()
-	persisted := len(loadGlobalConfigLocked().ClineStreamRequired)
-	globalCfgMu.Unlock()
+	// loadPool 自取 poolMu（同上，外层 Lock 是自死锁）。
+	persisted := len(loadPool().StreamRequired)
 	if persisted-basePersisted != n {
 		t.Fatalf("persisted %d new learned models (want %d); concurrent saves clobbered each other "+
 			"(lost update => the forgotten model pays the full non-stream retry again)", persisted-basePersisted, n)

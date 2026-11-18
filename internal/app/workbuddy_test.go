@@ -1,17 +1,18 @@
 package app
 
 import (
+	"afree-proxy/internal/panel"
 	"bytes"
 	"encoding/json"
+	"github.com/misakano7545/workbuddy2api-panel"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
-
-	wbauth "afree-proxy/internal/workbuddy/auth"
 )
 
 type fakeWorkbuddyServer struct {
@@ -39,9 +40,9 @@ func (f *fakeWorkbuddyServer) ModelList() []map[string]any { return nil }
 
 func useFakeWorkbuddyServer(t *testing.T, fake *fakeWorkbuddyServer) {
 	t.Helper()
-	saved := workbuddySub
-	workbuddySub = &workbuddySubsystem{server: fake}
-	t.Cleanup(func() { workbuddySub = saved })
+	saved := *workbuddySub
+	*workbuddySub = &workbuddySubsystem{Server: fake}
+	t.Cleanup(func() { *workbuddySub = saved })
 }
 
 func TestWorkbuddyAnthropicRouteUsesChatBridge(t *testing.T) {
@@ -115,26 +116,42 @@ func TestWorkbuddyResponsesRouteStreamsChatBridge(t *testing.T) {
 }
 
 // resetWorkbuddyProxyState 隔离 WorkBuddy 绑定全局，避免测试间串数据。
+// 绑定真身已迁 wkbd-config.json（2026-11-17）：本 helper 同时把配置路径指到
+// 测试临时文件并重置 wkbd 单例——不隔离的话 loadWorkbuddyProxyBindingsLocked
+// 会读到真实 data 目录的绑定（单跑即挂的污染源）。
 func resetWorkbuddyProxyState(t *testing.T) {
 	t.Helper()
+	savedPath := *wkbdConfigPathOverride
+	*wkbdConfigPathOverride = filepath.Join(t.TempDir(), "wkbd-config.json")
+	// wkbd 配置单例一并重置：wkbdCfgLoaded=true 时 wkbdConfigBindings 直接返回
+	// 上一测试装载的内存（前序备份测试写过的 uid-1 曾借此穿透本 helper 的路径
+	// 隔离，2026-11-17 实证），换路径不重置单例等于没隔离。
+	wkbdCfgMu.Lock()
+	savedCfg, savedCfgLoaded := *wkbdCfg, *wkbdCfgLoaded
+	*wkbdCfg, *wkbdCfgLoaded = nil, false
+	wkbdCfgMu.Unlock()
 	wbProxyMu.Lock()
-	savedLoaded := wbProxyLoaded
-	savedBindings := wbProxyBindings
-	wbProxyLoaded = false
-	wbProxyBindings = map[string]workbuddyProxyBinding{}
+	savedLoaded := *wbProxyLoaded
+	savedBindings := *wbProxyBindings
+	*wbProxyLoaded = false
+	*wbProxyBindings = map[string]workbuddyProxyBinding{}
 	wbProxyMu.Unlock()
 	t.Cleanup(func() {
 		wbProxyMu.Lock()
-		wbProxyLoaded = savedLoaded
-		wbProxyBindings = savedBindings
+		*wbProxyLoaded = savedLoaded
+		*wbProxyBindings = savedBindings
 		wbProxyMu.Unlock()
+		wkbdCfgMu.Lock()
+		*wkbdCfg, *wkbdCfgLoaded = savedCfg, savedCfgLoaded
+		wkbdCfgMu.Unlock()
+		*wkbdConfigPathOverride = savedPath
 	})
 }
 
 func TestShouldServeWorkBuddyModelPrefixes(t *testing.T) {
-	saved := workbuddySub
-	workbuddySub = &workbuddySubsystem{}
-	t.Cleanup(func() { workbuddySub = saved })
+	saved := *workbuddySub
+	*workbuddySub = &workbuddySubsystem{}
+	t.Cleanup(func() { *workbuddySub = saved })
 
 	for _, model := range []string{"cn:glm-5.2", " global:claude-sonnet-4.5 "} {
 		if !shouldServeWorkBuddy(model) {
@@ -149,7 +166,7 @@ func TestShouldServeWorkBuddyModelPrefixes(t *testing.T) {
 }
 
 func TestAdminHTMLUsesNativeWorkBuddyConsole(t *testing.T) {
-	if strings.Contains(adminHTML, `id="wbFrame"`) || strings.Contains(adminHTML, `<iframe`) {
+	if strings.Contains(panel.AdminHTML, `id="wbFrame"`) || strings.Contains(panel.AdminHTML, `<iframe`) {
 		t.Fatal("WorkBuddy admin page must not embed the upstream console in an iframe")
 	}
 	for _, marker := range []string{
@@ -164,7 +181,7 @@ func TestAdminHTMLUsesNativeWorkBuddyConsole(t *testing.T) {
 		`function renderWorkbuddyQueue`,
 		`WorkBuddy 模型`,
 	} {
-		if !strings.Contains(adminHTML, marker) {
+		if !strings.Contains(panel.AdminHTML, marker) {
 			t.Fatalf("native WorkBuddy page marker missing: %s", marker)
 		}
 	}
@@ -180,7 +197,7 @@ func TestWorkbuddyProxyBindingStableAndFailClosed(t *testing.T) {
 	})
 	resetWorkbuddyProxyState(t)
 
-	first := &wbauth.Auth{UID: "uid-a"}
+	first := &wbbridge.Auth{UID: "uid-a"}
 	globalA, ok := workbuddyProxyFor(first)
 	if !ok || globalA == "" {
 		t.Fatalf("unbound account should use the global proxy pool: proxy=%q ok=%v", globalA, ok)
@@ -215,7 +232,7 @@ func TestWorkbuddyProxyBindingStableAndFailClosed(t *testing.T) {
 	if err := setWorkbuddyProxyBinding("uid-direct", "direct", ""); err != nil {
 		t.Fatalf("set direct binding: %v", err)
 	}
-	if proxy, ok := workbuddyProxyFor(&wbauth.Auth{UID: "uid-direct"}); !ok || proxy != "" {
+	if proxy, ok := workbuddyProxyFor(&wbbridge.Auth{UID: "uid-direct"}); !ok || proxy != "" {
 		t.Fatalf("direct binding should force direct egress: proxy=%q ok=%v", proxy, ok)
 	}
 }
@@ -233,22 +250,22 @@ func TestWorkbuddyProxyBindingPersistence(t *testing.T) {
 	if err := setWorkbuddyProxyBinding("uid-persist", "http://a:1", "http://b:2"); err != nil {
 		t.Fatalf("set binding: %v", err)
 	}
-	raw, err := os.ReadFile(proxyConfigPath())
+	raw, err := os.ReadFile(wkbdConfigPath())
 	if err != nil {
-		t.Fatalf("read proxy config file: %v", err)
+		t.Fatalf("read wkbd config file: %v", err)
 	}
-	var onDisk proxyConfigFileData
+	var onDisk wkbdConfigData
 	if err := json.Unmarshal(raw, &onDisk); err != nil {
-		t.Fatalf("decode proxy config file: %v", err)
+		t.Fatalf("decode wkbd config file: %v", err)
 	}
-	if got := onDisk.WorkbuddyBindings["uid-persist"]; got.Main != "http://a:1" || got.Backup != "http://b:2" {
+	if got := onDisk.Bindings["uid-persist"]; got.Main != "http://a:1" || got.Backup != "http://b:2" {
 		t.Fatalf("binding was not persisted correctly: %+v", got)
 	}
 
 	// 模拟重启：丢弃内存态后必须从文件恢复。
 	wbProxyMu.Lock()
-	wbProxyLoaded = false
-	wbProxyBindings = map[string]workbuddyProxyBinding{}
+	*wbProxyLoaded = false
+	*wbProxyBindings = map[string]workbuddyProxyBinding{}
 	wbProxyMu.Unlock()
 	_, bindings := workbuddyProxyBindingsSnapshot()
 	if got := bindings["uid-persist"]; got.Main != "http://a:1" || got.Backup != "http://b:2" {
@@ -258,9 +275,9 @@ func TestWorkbuddyProxyBindingPersistence(t *testing.T) {
 	if n := clearAllWorkbuddyProxyBindings(); n != 1 {
 		t.Fatalf("clear bindings: got %d, want 1", n)
 	}
-	raw, err = os.ReadFile(proxyConfigPath())
+	raw, err = os.ReadFile(wkbdConfigPath())
 	if err != nil {
-		t.Fatalf("read cleared proxy config file: %v", err)
+		t.Fatalf("read cleared wkbd config file: %v", err)
 	}
 	if strings.Contains(string(raw), "uid-persist") {
 		t.Fatal("cleared binding remains in persistent file")
@@ -271,7 +288,7 @@ func TestWorkbuddyUnboundAccountUsesGlobalPoolWithoutPersisting(t *testing.T) {
 	setupBindingTest(t, &zenTestConfig{Keys: []string{"sk-test"}, ProxyIsolation: boolPtr(true)})
 	resetWorkbuddyProxyState(t)
 
-	a := &wbauth.Auth{UID: "uid-late-pool"}
+	a := &wbbridge.Auth{UID: "uid-late-pool"}
 	if proxy, ok := workbuddyProxyFor(a); !ok || proxy != "" {
 		t.Fatalf("empty proxy pool should run direct: proxy=%q ok=%v", proxy, ok)
 	}
@@ -302,7 +319,7 @@ func TestWorkbuddyIsolationDisabledIgnoresDirectBinding(t *testing.T) {
 	if err := setWorkbuddyProxyBinding("uid-a", "direct", ""); err != nil {
 		t.Fatalf("set binding: %v", err)
 	}
-	proxy, ok := workbuddyProxyFor(&wbauth.Auth{UID: "uid-a"})
+	proxy, ok := workbuddyProxyFor(&wbbridge.Auth{UID: "uid-a"})
 	if !ok || proxy == "" {
 		t.Fatalf("isolation off should ignore direct binding and use global rotation: proxy=%q ok=%v", proxy, ok)
 	}

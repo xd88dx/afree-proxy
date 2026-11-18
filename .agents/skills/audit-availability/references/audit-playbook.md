@@ -138,7 +138,7 @@ cat exits.txt | while read port name; do (r=$(curl -s -o /dev/null -w "%{http_co
   --socks5-hostname 10.10.10.5:$port -m 10 https://www.gstatic.com/generate_204); echo "$port $name $r") & done | sort -n
 ```
 
-- 扫出死出口后必做**绑定关联分析**：一条死出口会同时拖累多个凭据——查各 `*-config.json` 的 `keyBindings`（zen/other 各子平台）、`cline-config.json` 账号 `proxyMain`、以及 `proxy-config.json` 的 `egressBindings`/`trae2apiBindings`/`workbuddyBindings` 段（egress 钉定键是 key 哈希，`zen:<hash>`）。2026-11-06 实测：deplexo-DE(11107) 一条死出口挂了 5 个凭据，egressBindings 另有 4 个 zen key 被钉到死出口。
+- 扫出死出口后必做**绑定关联分析**：一条死出口会同时拖累多个凭据——查各 `*-config.json` 的 `keyBindings`（zen/other 各子平台）、`cline-config.json` 账号 `proxyMain`、`zen-config.json` 的 `egressBindings`（egress 钉定键是 key 哈希，`zen:<hash>`；2026-11-17 从 proxy-config.json 迁入）、`trae-config.json` `bindings`、`wkbd-config.json` `bindings`。2026-11-06 实测：deplexo-DE(11107) 一条死出口挂了 5 个凭据，egressBindings 另有 4 个 zen key 被钉到死出口。
 - 换出口对比测试在**本机**做（`curl --socks5-hostname <候选出口> <上游>`），不动生产绑定——绑定修改属生产配置变更，列清单交用户。
 - 需要区分「节点 DNS 黑洞 / TCP 层封 / HTTP 层封出口 IP」三因时用 `scripts/egress_probe.py`（随镜像播种到 data/scripts/；纯标准库 SOCKS5 实现，零 curl/python 依赖）：`python egress_probe.py --exit "NAME=socks5://10.10.10.5:PORT" ...`，或 `--proxy-config <proxy-config.json>` 全池探测。矩阵落脚本同目录 `probe/egress-probe.txt`（+原始 `egress-probe.tsv`）。归因口径：L1 发域名失败 + L3 发 IP 通 = DNS_BLK；L1/L3 皆败 = TCP_BLK；403 带 WAF/CF 签名 = WAF_403；全状态码表见脚本头 docstring。它自带控制组（gstatic/github）与出口画像，DEAD 出口自动跳过。
 
@@ -155,7 +155,7 @@ cat exits.txt | while read port name; do (r=$(curl -s -o /dev/null -w "%{http_co
 ### 11e. 状态落盘并发竞态（已修 89c8bd5，后续审计按此核对）
 
 - 生产日志 `replace <state>.json: rename <state>.json.tmp ...: no such file or directory` = 固定 `.tmp` 名并发写互踩的指纹。修复：`atomicWriteFile`（`internal/app/global_config.go`）按最终路径 `sync.Map` 互斥 + `os.CreateTemp` 唯一临时名。**Windows 教训：临时名唯一后并发 rename 覆盖同一目标仍会 Access denied，按路径串行化才算修完**（回归测试 `TestAtomicWriteFileConcurrentWriters` 抓的）。
-- 同型固定 `.tmp` 写手仍在 `internal/other/config.go+usage.go`、`internal/workbuddy/config/config.go`（潜在，未爆）；`internal/app/pool.go`/`pool_usage.go` 已有 `poolSaveMu` 串行，不缺修复。审计若在非 app 平台看到同类 rename 报错，按同一处方修。
+- 同型固定 `.tmp` 写手仍在 `internal/other/config.go+usage.go`、`modules/workbuddy2api/internal/config/config.go`（潜在，未爆）；`internal/app/pool.go`/`pool_usage.go` 已有 `poolSaveMu` 串行，不缺修复。审计若在非 app 平台看到同类 rename 报错，按同一处方修。
 
 ### 11f. 生产更新流程实操（2026-11-06 首次 agent 授权执行）
 

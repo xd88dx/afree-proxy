@@ -14,8 +14,10 @@
 | -------------- | ----------------------------------------------------------------------------------------------- | ------------------- |
 | Cline          | `internal/cline/`；`internal/app/proxy.go` 的账号池、轮换、冷却与 `/v1` 通用转发                | —                   |
 | OpenCode (zen) | `internal/app/zen*.go`、`internal/app/admin_zen.go`；`internal/kit/http.go` 的 `DecodeResponse` | `oc*`、`ZEN_*`      |
-| TraeWork       | `internal/trae2api/`（vendor 树）、`internal/app/trae.go`（桥接）、`trae2api_helper*.go`          | `trae*`（桥接层）；选号=引擎权重调度，`TRAE_STRATEGY` 已作废 |
-| WorkBuddy      | `internal/workbuddy/**`（vendor 树）、`internal/app/workbuddy*.go`                              | `wb*`               |
+| TraeWork       | `modules/trae2api/`（vendor 独立 module）+ 其根门面 `afree_bridge.go`；`internal/app/trae*.go`（桥接） | `trae*`（桥接层）；选号=引擎权重调度，`TRAE_STRATEGY` 已作废 |
+| WorkBuddy      | `modules/workbuddy2api/`（vendor 独立 module）+ 其根门面 `afree_bridge.go`；`internal/app/workbuddy*.go`（桥接） | `wb*`               |
+
+**vendor 独立 module 化（2026-11-17）**：两树迁至 `modules/`，go.mod 沿用上游 module 路径（wb=`github.com/misakano7545/workbuddy2api-panel`，trae=`trae2api`），主 go.mod `replace` 指本地、`go.work` 汇总；树内 import 与上游零差异，vendor 脚本不再做 import 前缀改写。主 module 只能经各自根门面消费 vendor 的 internal 包（Go internal 可见性强制，门面即显式契约）。**workspace 模式下 `./...` 不穿透 modules/ 子目录 module**（实测 `go list ./...` 仅 6 包）——构建/测试必须显式列模块路径，见 §4。
 
 `internal/app/admin_html.go` 是**所有平台共用**的单文件面板，按 h2 / tab 分段，`oc*` 属于 OpenCode 而不是 Cline。改一处必须确认它属于哪个平台段。
 
@@ -24,9 +26,9 @@
 同步口径（2026-11-08 用户定）：一个平台对应一条入口，**cline/opencode 共用 cline-proxy 主线**（按改动文件归属分节），opencode 另有 opencode2api 副线、trae 另有 Trae2api-cn 副线负责「看近期更新、吸纳有价值逻辑」：
 
 - **cline**：`foxy1402/cline-proxy`（主线），`git merge --no-ff --no-commit <上游哈希>`。
-- **workbuddy**：`misakano7545/workbuddy2api-panel`（主线），`python scripts/sync_workbuddy.py`（三方 vendor 合并，基线 `scripts/workbuddy-vendor-baseline.json`；源工作树为 `D:\下载\Github\workbuddy2api-panel-misakano`，脚本以源树 HEAD 为上游）。
+- **workbuddy**：`misakano7545/workbuddy2api-panel`（主线），`python scripts/sync_workbuddy.py`（三方 vendor 合并，基线 `scripts/workbuddy-vendor-baseline.json`；源工作树为 `D:\下载\Github\workbuddy2api-panel-misakano`，脚本以源树 HEAD 为上游）。vendor 树落点 `modules/workbuddy2api/internal/`（2026-11-17 起独立 module、import 零改写；主 module 经根门面 `afree_bridge.go` 消费）。
 - **opencode**：`foxy1402/cline-proxy`（主线，与 cline 同步一起）+ `jasonxu114514/opencode2api`（副线，只看更新、吸纳有价值逻辑，不 merge 不 vendor）。
-- **trae（主线）**：`XCool-603/trae2api`（2026-11-04 起换线，Go 零依赖），**vendor 三方合并**——`scripts/vendor_trae2api.py` 整树拷贝 12 子包到 `internal/trae2api/` + 幂等改写（出口接管/反代开关/新增身份钩子/console 挂载基址），`scripts/sync_trae2api.py` 三方合并，基线 `scripts/trae2api-vendor-baseline.json`；上游本地修复（textcall 兜底）以 `scripts/trae2api-afree.patch` 重放。模型名合并域透传（2026-11-07 起）：对外 `tacn:`（CN Trae+SOLO）/`tagb:`（Intl，随 intl 配置），内部四 realm 仅实现细节。旧四前缀 `trae:`/`solo:`/`trae-intl:`/`solo-intl:` 废除（strict-gate 404）。
+- **trae（主线）**：`XCool-603/trae2api`（2026-11-04 起换线，Go 零依赖），**vendor 三方合并**——`scripts/vendor_trae2api.py` 整树拷贝 12 子包到 `modules/trae2api/internal/`（2026-11-17 起独立 module、import 零改写）+ 幂等改写（出口接管/反代开关/新增身份钩子/console 挂载基址），`scripts/sync_trae2api.py` 三方合并，基线 `scripts/trae2api-vendor-baseline.json`；上游本地修复（textcall 兜底）以 `scripts/trae2api-afree.patch` 重放。模型名合并域透传（2026-11-07 起）：对外 `tacn:`（CN Trae+SOLO）/`tagb:`（Intl，随 intl 配置），内部四 realm 仅实现细节。旧四前缀 `trae:`/`solo:`/`trae-intl:`/`solo-intl:` 废除（strict-gate 404）。
 - **trae（副线）**：`autumnsentiment/Trae2api-cn`（Python 项目，trae 更换基线前身），只看更新、吸纳有价值逻辑（XCool-603/trae2api 与 Trae2api-cn 是完全独立的 Go/Python 双实现，副线逻辑无跨语言直接移植形态，多以「上游行为取证 + 本仓形态差异结论」记录）。`web_login.py` 在主线里跑 helper 比对的额外职责还在（`scripts/check_trae_helper.py`，模板已迁 `internal/app/trae2api_helper_script.go`）。
 - **magpie（2026-11-06 用户立项，全平台纯参考）**：`yetone/magpie`（订阅聚合网关，覆盖约 70 agent/全主流平台）——**纯参考不合并**，按需单点吸纳 + `MERGE.md` magpie 节记基线增量回溯；也是上游行为取证的旁证源（其 gateway 测试文件质量高，zen 免费层关停即靠它定案）。详见技能 §2.5。
 
@@ -35,8 +37,10 @@
 ## 4. 构建与验证
 
 ```bash
-go build ./... && go vet ./...     # 必须全绿
-go test ./... -count=1             # 除下述既有失败外应全绿
+# workspace 模式下 ./... 只匹配主 module 包——vendor 两树必须显式列出（漏了就是假绿）
+GOALL='./... github.com/misakano7545/workbuddy2api-panel/... trae2api/...'
+go build $GOALL && go vet $GOALL   # 必须全绿
+go test $GOALL -count=1            # 除下述既有失败外应全绿
 ```
 
 **已知失败，不要修**：
@@ -125,7 +129,9 @@ go test ./... -count=1             # 除下述既有失败外应全绿
 
 wb vendored 树 server 包手工改动（2026-11-11，re-vendor 时按 ours 保留）：`internal/workbuddy/server/logging.go` 与 `handler.go`——`chatStat` 携带客户端请求 ctx，`done` 落行时客户端已取消且 outcome 为空写回 `OutcomeInterrupted`（客户端断开的 200 请求不再记 `out=success`，handler 构造点传 `r.Context()`）。上游无此机制，同步冲突时优先保本语义。
 
-wb vendored 树手工改动（2026-11-12/13，re-vendor 时按 ours 保留，承上一条）：①`server/logging.go`——done 的改判条件从「outcome 为空」扩为「outcome 为空**或显式 success**」：continue 层在客户端先断开时按设计不补截断终态、以干净 EOF 交给 StreamHint（其补 length 终态返回 nil），handler 开关显式写 success，原条件拦不住（生产 trace 实测「流中客户端硬断记 out=success」）。②`server/continue.go` + `server/handler.go` + `reqlog/reqlog.go`——新增 `reqlog.OutcomeTruncated`（"truncated"）与 `Snapshot.Truncated` 单列：上游段无终态结束（断流）时 continue 层降级补截断终态（`synthTruncation` 置位），handler 的 outcome 开关按 ctx 取消→interrupted、补过终态→truncated、其余→success 分流；Failed 派生公式改为 `completed − succeeded − truncated`（截断既不算成功也不算失败）。③`scheduler/checkin_retry.go`——补签节奏变量 `checkinRetryDelays` 加 `retryDelaysMu` 互斥锁 + `retryDelaysSnapshot()` 快照读：后台补签 goroutine 与测试收尾恢复写曾无锁并发（CI -race DATA RACE，TestCheckinDeferredRetrySucceeds）。④`panel/logstore_test.go`（2026-11-16）——新增 `relDay`/`dayTSRel` 相对日期 helper，四处写死日历日期（2026-11-07/08/09）改为相对时钟：cleanup 按 now−7 保留期清文件，写死日期随真实时钟过期后被重新打开的构造函数当「过期日志」删除（时间炸弹，TestLogStoreBackfillNewestFirst 于 2026-11-16 起稳定复现，CI Vet job 三连红）。上游均无此机制，同步冲突时优先保本语义。
+wb vendored 树手工改动（2026-11-12/13，re-vendor 时按 ours 保留，承上一条）：①`server/logging.go`——done 的改判条件从「outcome 为空」扩为「outcome 为空**或显式 success**」：continue 层在客户端先断开时按设计不补截断终态、以干净 EOF 交给 StreamHint（其补 length 终态返回 nil），handler 开关显式写 success，原条件拦不住（生产 trace 实测「流中客户端硬断记 out=success」）。②`server/continue.go` + `server/handler.go` + `reqlog/reqlog.go`——新增 `reqlog.OutcomeTruncated`（"truncated"）与 `Snapshot.Truncated` 单列：上游段无终态结束（断流）时 continue 层降级补截断终态（`synthTruncation` 置位），handler 的 outcome 开关按 ctx 取消→interrupted、补过终态→truncated、其余→success 分流；Failed 派生公式改为 `completed − succeeded − truncated`（截断既不算成功也不算失败）。③`scheduler/checkin_retry.go`——补签节奏变量 `checkinRetryDelays` 加 `retryDelaysMu` 互斥锁 + `retryDelaysSnapshot()` 快照读：后台补签 goroutine 与测试收尾恢复写曾无锁并发（CI -race DATA RACE，TestCheckinDeferredRetrySucceeds）。④`panel/logstore_test.go`（2026-11-16）——新增 `relDay`/`dayTSRel` 相对日期 helper，四处写死日历日期（2026-11-07/08/09）改为相对时钟：cleanup 按 now−7 保留期清文件，写死日期随真实时钟过期后被重新打开的构造函数当「过期日志」删除（时间炸弹，TestLogStoreBackfillNewestFirst 于 2026-11-16 起稳定复现，CI Vet job 三连红）。上游均无此机制，同步冲突时优先保本语义。2026-11-17 补：该文件已登记进 vendor_workbuddy.py 的 PRESERVE——④晚于 2026-11-15 的全量登记，首次双向 dry-run 抓出漏网。
+
+wb vendor 对 afree 全局开关的两处依赖（`pool/pick.go` 的 UNABLE_FORCE 判据、`server/admin_tasks.go` 的 ONLY_ROUTER 判据）2026-11-17 改为包级钩子注入：`pool.UnableForce` / `server.OnlyRouter`（nil=上游语义：拒绝兜底/允许补跑），app 装配点接线（`internal/app/workbuddy.go`，`startWorkBuddy` 内）。vendor 树自此零外部 import（独立 module 化前置）。相关测试改 `withUnableForce(t)`（pool 包）与钩子注入+Cleanup（server 包），不再依赖 env——`t.Setenv("UNABLE_FORCE")` 对钩子化的 pick.go 已是死操作，会让兜底测试静默失效（2026-11-17 实测 9 例）。
 
 wb vendor 补丁登记（2026-11-15 完成，历史踩雷记录留档）：活树 vendor 相对基线（源树 HEAD `10d01b4`，2026-11-14 同步）存在大量 afree 历史补丁（config.go 的 Strategy/AccountOrder、livecfg 热字段、panel（app.js/index.go/login.go/mobile.css|js）、auth、usage、多个 `*_test.go` 等 86 文件），曾从未写入 vendor 脚本——**直接跑 `vendor_workbuddy.py` 会把它们全部冲成上游版本**（2026-11-15 踩雷一次，git 回滚救回）。**已全量登记**：86 个补丁文件（修改+新增）整文件进 `PRESERVE_RELATIVE`（dry-run 对基线 diff 全量盘点，逐锚点登记不现实——补丁密度高、漂移风险大，整文件保留与 textcall.go 既有模式一致）；`upstream/dns_test.go`（基线有、活树有意不纳入）进 `SKIP_UPSTREAM_FILES` 拷贝跳过；`config/config.go`+`config_test.go` 的特殊拷贝段加了 PRESERVE 尊重（此前 PRESERVE 写回会被该段的上游拷贝二次覆盖——验证 dry-run `differing: []` 时抓到）。**验证方法**：`main(target_root='.tmp/vendor-dry', preserve_from='internal/workbuddy')` 三参齐备（PRESERVE 字节从 preserve_from 读，不传则为空）后与活树逐字节比对，判据 `differing: []`。上游更新这些文件仍走 `sync_workbuddy.py` 三方合并手工吸收。
 
@@ -135,7 +141,7 @@ WB vendored config 三节死配置删除（2026-11-15，探测结论见会话）
 
 上游功能但**必须由本仓 app 层装配**才生效（2026-10-28 起）：workbuddy 的网关思考档位策略（上游 `thinking` 配置节）。装配点三处，漏任一处都不会报错、只是功能静默失效——`internal/app/workbuddy.go`（启动）与 `internal/app/workbuddy_config.go`（热更新）里的 `up.SetEffortPolicy(effortPolicyOf(cfg))`、`livecfg.Snapshot` 的五个 `Thinking*` 镜像字段、面板四个控件（`thinking.enabled` / `default_effort` / `client_priority` / `override_scope`）。上游同类装配在 `cmd/server/main.go`，本仓没有那个入口。
 
-`internal/config.example.json` 是上游仓库根 `config.example.json` 的副本（上游 `TestConfigExampleParses` 用相对路径读它，vendor 后正好指到这里）。同步脚本只搬 `internal/workbuddy/` 树，**不会**带这类根文件；上游更新样例后要手工 `cp`。**不要删**——删了 `go test ./internal/workbuddy/config/` 直接缺文件失败。
+`modules/workbuddy2api/config.example.json` 是上游仓库根 `config.example.json` 的 afree 快照（2026-11-17 起放 module 根：config 包测试按 `../../config.example.json` 相对路径读它）。它与 PRESERVE 的 `config_test.go` 配对——**不是**跟随上游 HEAD 的活文件：上游更新样例须走 sync 三方合并手工吸收，直接换新样例会让 `TestConfigExampleParses` 失配（2026-11-17 实测）。vendor 脚本把它登记在 `EXTRA_ROOT_PRESERVE`，re-vendor 不丢。
 
 **已随旧引擎移除（2026-11-04 换线）**：Trae 991502 防护三件套（账号会话闸门/读取超时看门狗/断流 Work 回落，原 `internal/trae/`）——vendored trae2api 自带分级冷却/熔断/降权与流中空闲监控（`trae.idle_timeout_seconds`，引擎 `cooldown.*` 三档），防护语义由引擎承担。历史细节（accountGate 权益并发/看门狗 env/Work 回落）见 git 历史与 MERGE.md 归档；旧引擎专属 env（`TRAE_ACCOUNT_PARALLEL_LIMIT`/`TRAE_REMOTE_FIRST_EVENT_TIMEOUT`/`TRAE_STREAM_IDLE_TIMEOUT`/`TRAE_REMOTE_DEBUG`）与 `TRAE_STRATEGY` 一并作废。
 
@@ -159,7 +165,7 @@ WB vendored config 三节死配置删除（2026-11-15，探测结论见会话）
 
 ### afree 特色注入（vendor 幂等改写，`scripts/vendor_trae2api.py` REWRITES）
 - 出口接管 `traectl.StoreHTTPClient`：chat 走 `Client.client()`、续期/额度/签到走 `Store.httpClient()`——两个咽喉全收口。语义：隔离开启且有绑定 → 主→备 fail-closed（`pickBoundProxyFor`）；未绑定/隔离关 → 全局走池开关（`traeUseProxies`）+ `DISABLE_DIRECT` fail-closed（`kit.DisableDirect()` 时直连不放行，返回 `traeFailClosedTransport` 宁弃请求不暴露直连）。
-- 反代开关 `pool.RoutingAllowed` 钩子 → `traeRoutingAllowed`（查 `proxy-config.json` 的 `trae2apiRouting`；查表缺失=启用兼容，新增身份经 `AccountAddedHook` 显式落 false）；账号总闸=vendored `disabled`（关总闸连带关反代，互锁 wb 同款）。
+- 反代开关 `pool.RoutingAllowed` 钩子 → `traeRoutingAllowed`（查 `trae-config.json` 的 `routing`，2026-11-17 配置重组迁入；查表缺失=启用兼容，新增身份经 `AccountAddedHook` 显式落 false）；账号总闸=vendored `disabled`（关总闸连带关反代，互锁 wb 同款）。
 - 新增身份默认禁用 `accountstore.AccountAddedHook` → `traeAccountAdded`。
 - 改名 `pool.Account.SetLabel`（快照文件是持久层，`Store.Load()`+池同步）。
 - console 挂载 `/admin/trae2api/`（原版入口；app.js fetch 基址改写 `AFREE_API_BASE='/admin/trae2api/api'` + 契约测试候选路径）。
@@ -175,20 +181,25 @@ WB vendored config 三节死配置删除（2026-11-15，探测结论见会话）
 | `REWRITES = {` 缺闭合 `}` | 脚本无法被 Python 解析,整条 vendor 流程跑不起来(HEAD 上坏了很久没人发现,因为没人真跑) | 改完必须 `python -m py_compile scripts/vendor_trae2api.py` |
 | `"pool/pool.go"`、`"traectl/refresh.go"` 各出现两次 | 字典字面量重复键**后者静默覆盖前者**,先出现的那组规则直接丢 | 一个文件只能有一个键;新增规则并进现有块,别另起一块 |
 | 新规则的 `old` 取自**活树**而非上游 | 活树已含注入 → 上游匹配数 0 → 要么 RuntimeError,要么注入被跳过 | `old` 必须是**上游克隆的原文**,`new` = old + 注入 |
+| 五处登记缺口（2026-11-17 双向 dry-run 抓出）：traectl/chat.go 的 SharedChatTransport 访问器与 [trae-chain] WARN+log import、traectl/chat_test.go 的降级 WARN 回归测试、server/chat.go 截断语义注释（补丁未同步）、panel/logstore_test.go（手改④晚于全量登记） | re-vendor 逐一丢失：直连守卫失效、降级排查无门、测试蒸发、注释回退、时间炸弹复活 | dry-run 必须双向：正向「生成 vs 活树」逐字节比对（differing:[]）+ 反向盘点活树多出的文件（extra_in_live 必须全在 PRESERVE）；活树 afree 改动必须落进 REWRITES/PRESERVE/补丁三者之一才算闭环，只写进 PROJECT.md 不算 |
 
 另外,活 vendor 树曾缺 `traectl/refresh.go` 的 `StoreHTTPClient` 接管块(续期/额度/签到出站**没走 afree 出口解析**,`DISABLE_DIRECT` 下会静默直连)。已补齐。
 
-**复核方法(可复用,跑完必须 100% 一致)**:把流程干跑到 `.tmp/vendor-dry`,再与活 vendor 树逐字节比对;判据是 `differing: []`。出现差异就是"脚本与活树不一致"——要么规则没生效(功能会丢),要么活树被手改过(re-vendor 会回退),**两种都必须先弄清再同步**。脚本骨架:
+**复核方法(可复用,跑完必须 100% 一致)**:把流程干跑到**仓库外的临时目录**(不要用 `.tmp/`——它虽在 .gitignore,AOCI 观察面仍会扫到其中的新文件,2026-11-17 实测 417 个假阳性 new),再与活 vendor 树逐字节比对;判据是**双向**的:`differing: []`(生成 vs 活树)+ `extra_in_live: []`(活树多出的文件必须全部在登记清单内)。出现差异就是"脚本与活树不一致"——要么规则没生效(功能会丢),要么活树被手改过(re-vendor 会回退),**两种都必须先弄清再同步**。脚本骨架(preserve_from 必须指到 internal 子目录,module 根层文件从其 parent 保留):
 
 ```python
 import importlib.util, filecmp
 from pathlib import Path
 spec = importlib.util.spec_from_file_location("vt", "scripts/vendor_trae2api.py")
 m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
-print("exit", m.main(target_root=".tmp/vendor-dry", preserve_from="internal/trae2api"))
-live, gen = Path("internal/trae2api"), Path(".tmp/vendor-dry/internal/trae2api")
+dry = "C:/Users/<user>/AppData/Local/Temp/vendor-dry"   # 仓库外
+print("exit", m.main(target_root=dry, preserve_from="modules/trae2api/internal"))
+live, gen = Path("modules/trae2api"), Path(dry + "/modules/trae2api")
 print("differing:", [str(p.relative_to(gen)) for p in gen.rglob("*")
       if p.is_file() and not filecmp.cmp(p, live / p.relative_to(gen), shallow=False)])
+print("extra_in_live:", [str(p.relative_to(live)) for p in live.rglob("*")
+      if p.is_file() and not (gen / p.relative_to(live)).exists()
+      and p.name not in ("go.mod", "go.sum")])   # go.mod/go.sum 由脚本生成非逐字节保留
 ```
 
 行为自证:接管是否真的生效,看 `DISABLE_DIRECT=true` 下直连绑定账号的额度查询——日志应出现 `no usable egress (bound exits down or isolation denies direct)`(fail-closed),而不是静默成功。
@@ -199,7 +210,7 @@ print("differing:", [str(p.relative_to(gen)) for p in gen.rglob("*")
 | 无启用凭据跳过路由 | `platform_routability.go` `trae2apiRoutableCount()>0`（总闸开+反代开） |
 | 批量测试可路由过滤 | 前端只看反代开关（routing），不看总闸；封禁平台整平台跳过 |
 | 代理排除规则 | UI 走 `REORDER_PLATFORMS`（trae 在列），自动分配过滤 kind=`trae`；手动绑定不受限 |
-| 走池开关 | `proxy-config.json` `traeUseProxies`（nil=走池） |
+| 走池开关 | `trae-config.json` `useProxies`（nil=走池；2026-11-17 迁入） |
 | 代理隔离（PROXY_ISOLATION） | `traeStoreHTTPClient` 隔离语义（绑定 fail-closed / 未绑定全局） |
 | DISABLE_DIRECT | 直连哨兵与池空兜底直连均不放行 |
 | ONLY_ROUTER | `runBackground` 里 `kit.OnlyRouter()` 禁 vendored `RunBackground`（签到/额度刷新）；metrics/池状态落盘是基础设施照常 |

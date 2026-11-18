@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"afree-proxy/internal/zen"
 	"time"
 )
 
@@ -54,19 +56,19 @@ func TestZenForbiddenGateWindow(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			zenSessMu.Lock()
-			zenSessions[key] = c.entry
+			(*zenSessions)[key] = c.entry
 			zenSessMu.Unlock()
-			if got := zenSessionRefreshedRecently(key, now); got != c.wantBlock {
-				t.Fatalf("zenSessionRefreshedRecently = %v, want %v (entry=%+v)", got, c.wantBlock, *c.entry)
+			if got := zen.ZenSessionRefreshedRecently(key, now); got != c.wantBlock {
+				t.Fatalf("zen.ZenSessionRefreshedRecently = %v, want %v (entry=%+v)", got, c.wantBlock, *c.entry)
 			}
 		})
 	}
 
 	// 空 key / 未知 key 一律放行（无从判断时保守换新一次）。
 	zenSessMu.Lock()
-	delete(zenSessions, key)
+	delete(*zenSessions, key)
 	zenSessMu.Unlock()
-	if zenSessionRefreshedRecently("", now) || zenSessionRefreshedRecently("sk-unknown", now) {
+	if zen.ZenSessionRefreshedRecently("", now) || zen.ZenSessionRefreshedRecently("sk-unknown", now) {
 		t.Fatal("empty or unknown key must not open the gate")
 	}
 }
@@ -82,15 +84,15 @@ func TestZenForbiddenGateStampsAndClears(t *testing.T) {
 
 	key := "sk-gate-b"
 	// 被动换新：应盖戳，且立刻落盘（重启后闸门仍有效）。
-	refreshZenSession(key)
+	zen.RefreshZenSession(key)
 	zenSessMu.Lock()
-	e := zenSessions[key]
+	e := (*zenSessions)[key]
 	stamped := e != nil && e.RefreshedAt != 0
 	zenSessMu.Unlock()
 	if !stamped {
-		t.Fatal("refreshZenSession must stamp RefreshedAt")
+		t.Fatal("zen.RefreshZenSession must stamp RefreshedAt")
 	}
-	if !zenSessionRefreshedRecently(key, time.Now()) {
+	if !zen.ZenSessionRefreshedRecently(key, time.Now()) {
 		t.Fatal("gate must be open right after a passive refresh")
 	}
 	// 2026-11-15 起 sessions 段随 dad86a1 迁入 zen-state.json（运行时状态，
@@ -112,21 +114,21 @@ func TestZenForbiddenGateStampsAndClears(t *testing.T) {
 	// 成功一跳：清戳（该 key+出口当前可用，将来偶发 403 仍能换新一次）。
 	zenSessionMarkSuccess(key)
 	zenSessMu.Lock()
-	cleared := zenSessions[key].RefreshedAt == 0
+	cleared := (*zenSessions)[key].RefreshedAt == 0
 	zenSessMu.Unlock()
 	if !cleared {
 		t.Fatal("zenSessionMarkSuccess must clear RefreshedAt")
 	}
-	if zenSessionRefreshedRecently(key, time.Now()) {
+	if zen.ZenSessionRefreshedRecently(key, time.Now()) {
 		t.Fatal("gate must be closed after a successful request")
 	}
 
 	// 计划内轮换（主动铸造）不盖戳：刚换的会话被 403 应允许被动换新一次。
 	zenSessMu.Lock()
-	zenSessions[key].RefreshedAt = time.Now().Add(-time.Minute).Unix()
-	mintZenSessionEntryLocked(zenSessions[key], time.Now())
+	(*zenSessions)[key].RefreshedAt = time.Now().Add(-time.Minute).Unix()
+	mintZenSessionEntryLocked((*zenSessions)[key], time.Now())
 	zenSessMu.Unlock()
-	if zenSessionRefreshedRecently(key, time.Now()) {
+	if zen.ZenSessionRefreshedRecently(key, time.Now()) {
 		t.Fatal("planned rotation must not leave a passive-refresh stamp")
 	}
 }
@@ -137,16 +139,16 @@ func TestZenForbiddenGateSurvivesReload(t *testing.T) {
 	key := "sk-gate-c"
 	stamp := time.Now().Add(-3 * time.Minute).Unix()
 	zenSessMu.Lock()
-	zenSessions[key] = &zenSessionEntry{Session: "ses_reload", CreatedAt: stamp, RefreshedAt: stamp}
+	(*zenSessions)[key] = &zenSessionEntry{Session: "ses_reload", CreatedAt: stamp, RefreshedAt: stamp}
 	saveZenSessionsLocked()
 	// 模拟重启：清内存表、允许重新从磁盘加载。
-	zenSessions = map[string]*zenSessionEntry{}
-	zenSessLoaded = false
+	*zenSessions = map[string]*zenSessionEntry{}
+	*zenSessLoaded = false
 	zenSessMu.Unlock()
 
 	loadZenSessions()
 
-	if !zenSessionRefreshedRecently(key, time.Now()) {
+	if !zen.ZenSessionRefreshedRecently(key, time.Now()) {
 		t.Fatal("gate must stay open after reload from zen-state.json")
 	}
 }

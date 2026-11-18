@@ -8,11 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-
-	traecfg "afree-proxy/internal/trae2api/config"
-	traepool "afree-proxy/internal/trae2api/pool"
-	traeserver "afree-proxy/internal/trae2api/server"
-	traectl "afree-proxy/internal/trae2api/traectl"
+	"trae2api"
 )
 
 // trae chat 主入口的"缓冲+中断重试"（2026-11-10 用户定）：流式请求不再直通
@@ -28,12 +24,12 @@ func newTraeBufferFixture(t *testing.T) {
 	t.Helper()
 	t.Setenv("DATA_DIR", testDataDir(t))
 
-	cfg := traecfg.Default()
+	cfg := trae2api.Default()
 	// DataDir 指到测试临时目录：默认 "./data" 会吃到工作目录的真实快照
 	//（data/accounts/*.json → BuildChannels 从 accStore 建出真渠道）。
 	cfg.DataDir = t.TempDir()
 	// 显式账号且路径不存在：resolveSpecs 不再自动探测本机客户端。
-	cfg.Trae.Accounts = []traecfg.Account{{
+	cfg.Trae.Accounts = []trae2api.ConfigAccount{{
 		Product:     "trae-cn",
 		StoragePath: t.TempDir() + string('\\') + "no-such-storage.json",
 	}}
@@ -42,7 +38,7 @@ func newTraeBufferFixture(t *testing.T) {
 	// DataDir=traeDataDir()（生产语义：数据统一目录），不重钉会吃到工作目录的
 	// 真实快照（data/accounts/*.json → BuildChannels 建出真渠道）。
 	cfg.DataDir = t.TempDir()
-	srv, err := traeserver.New(cfg)
+	srv, err := trae2api.NewServer(cfg)
 	if err != nil {
 		t.Fatalf("build vendored server: %v", err)
 	}
@@ -56,7 +52,7 @@ func newTraeBufferFixture(t *testing.T) {
 	// 请求进 vendored 后在续期/选号阶段失败（确定性错误），绝不能塞无 Store 的
 	// 裸账号——ClientFor 无条件解引用 Store，nil 会 panic（vendored 脆点，
 	// 生产不可达：真账号都经 OpenStore 建档）。
-	prod, ok := traectl.ProductByKey("trae-cn")
+	prod, ok := trae2api.ProductByKey("trae-cn")
 	if !ok {
 		t.Fatal("trae-cn product not registered")
 	}
@@ -65,15 +61,15 @@ func newTraeBufferFixture(t *testing.T) {
 	if err := os.WriteFile(snapPath, []byte(snap), 0o600); err != nil {
 		t.Fatalf("write fixture snapshot: %v", err)
 	}
-	store, err := traectl.OpenStore(prod, snapPath)
+	store, err := trae2api.OpenStore(prod, snapPath)
 	if err != nil {
 		t.Fatalf("open fixture store: %v", err)
 	}
-	srv.Pool().Add(&traepool.Account{UID: prod.Key + "-1000000000000001", Realm: "trae", Product: prod, Store: store})
-	sub := &trae2apiSubsystem{cfg: cfg, srv: srv}
-	old := trae2apiSub
-	trae2apiSub = sub
-	t.Cleanup(func() { trae2apiSub = old })
+	srv.Pool().Add(&trae2api.PoolAccount{UID: prod.Key + "-1000000000000001", Realm: "trae", Product: prod, Store: store})
+	sub := &trae2apiSubsystem{Cfg: cfg, Srv: srv}
+	old := *trae2apiSub
+	*trae2apiSub = sub
+	t.Cleanup(func() { *trae2apiSub = old })
 }
 
 // 流式 + 非 200（确定性错误）：不重试，503 原样透出（错误体含 vendored 错误码）。

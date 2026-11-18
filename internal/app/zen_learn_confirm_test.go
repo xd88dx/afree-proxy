@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+
 )
 
 // 端点学习必须"重试成功才落盘"。
@@ -112,12 +113,12 @@ func TestEndpointLearnOnlyPersistsWhenRetrySucceeds(t *testing.T) {
 func withZenModelForTest(t *testing.T, id, upstream string) {
 	t.Helper()
 	zenModelsMu.Lock()
-	savedModels := zenModels
-	zenModels = map[string]*ZenModel{id: {ID: id, Context: 200000, Output: 32768, Source: "live", Upstream: upstream}}
+	savedModels := *zenModels
+	*zenModels = map[string]*ZenModel{id: {ID: id, Context: 200000, Output: 32768, Source: "live", Upstream: upstream}}
 	zenModelsMu.Unlock()
 	t.Cleanup(func() {
 		zenModelsMu.Lock()
-		zenModels = savedModels
+		*zenModels = savedModels
 		zenModelsMu.Unlock()
 	})
 }
@@ -126,7 +127,7 @@ func withZenModelForTest(t *testing.T, id, upstream string) {
 func currentZenUpstream(id string) string {
 	zenModelsMu.RLock()
 	defer zenModelsMu.RUnlock()
-	if m, ok := zenModels[id]; ok && m != nil {
+	if m, ok := (*zenModels)[id]; ok && m != nil {
 		return m.Upstream
 	}
 	return ""
@@ -239,7 +240,7 @@ func TestZenHeadersOnTheWire(t *testing.T) {
 		"X-Opencode-Project": "global",
 		// v2 CLI：chat 与 responses 同一个 UA（opencode/latest/2.2.7/cli，
 		// 2026-11-11 桌面端 2.2.7 抓包，上游 82abe7f）
-		"User-Agent":         "opencode/latest/2.2.7/cli",
+		"User-Agent": "opencode/latest/2.2.7/cli",
 	}
 	for k, v := range want {
 		if g := h.Get(k); g != v {

@@ -18,7 +18,7 @@ func TestZenMergeToolsClientWinsOverGateStub(t *testing.T) {
 			},
 		},
 	}}
-	merged := zenMergeTools(client, zenGateTools())
+	merged := ZenMergeTools(client, ZenGateTools())
 	readCount := 0
 	var readSchema map[string]any
 	for _, mt := range merged {
@@ -36,9 +36,9 @@ func TestZenMergeToolsClientWinsOverGateStub(t *testing.T) {
 	if _, ok := readSchema["file_path"]; !ok {
 		t.Fatalf("client read schema lost: %v (gate stub won, model would see empty params)", readSchema)
 	}
-	if len(merged) != len(zenGateToolSpecs) {
+	if len(merged) != len(ZenGateToolSpecs) {
 		t.Fatalf("merged tool count = %d, want %d (gate names still all present)",
-			len(merged), len(zenGateToolSpecs))
+			len(merged), len(ZenGateToolSpecs))
 	}
 }
 
@@ -52,7 +52,7 @@ func TestZenClientFlatToolsShapes(t *testing.T) {
 		}},
 		map[string]any{"type": "function", "name": "no_schema"},
 	}}
-	flat := zenClientFlatTools(params)
+	flat := ZenClientFlatTools(params)
 	if len(flat) != 2 {
 		t.Fatalf("got %d flat tools, want 2", len(flat))
 	}
@@ -71,17 +71,17 @@ func TestBuildZenBodyToolChoicePolicy(t *testing.T) {
 	// 无客户端工具：gate 工具 + tool_choice=none。
 	// gate 工具只是过闸占位，客户端没有执行层；省略 tool_choice 会让上游
 	// 按 auto 处理，模型可返回客户端从未声明的 read/shell 调用。
-	body := buildZenBody(map[string]any{"model": "ling-2.6-flash", "messages": []any{}}, false)
+	body := BuildZenBody(map[string]any{"model": "ling-2.6-flash", "messages": []any{}}, false)
 	tools, _ := body["tools"].([]any)
-	if len(tools) != len(zenGateToolSpecs) {
-		t.Fatalf("gate tools = %d, want %d", len(tools), len(zenGateToolSpecs))
+	if len(tools) != len(ZenGateToolSpecs) {
+		t.Fatalf("gate tools = %d, want %d", len(tools), len(ZenGateToolSpecs))
 	}
 	if body["tool_choice"] != "none" {
 		t.Errorf("tool_choice = %v, want none when client sent no tools (gate stubs are not callable)", body["tool_choice"])
 	}
 	// 客户端带工具但未指定：省略该字段（官方客户端 2.2.7 就是这样，上游
 	// 缺省即 auto）。补 "auto" 语义等价，但形态与真实客户端不同。
-	body = buildZenBody(map[string]any{
+	body = BuildZenBody(map[string]any{
 		"model":    "ling-2.6-flash",
 		"messages": []any{},
 		"tools": []any{map[string]any{"type": "function", "function": map[string]any{
@@ -92,11 +92,11 @@ func TestBuildZenBodyToolChoicePolicy(t *testing.T) {
 		t.Errorf("tool_choice = %v, want the key omitted when client sent tools but no preference", v)
 	}
 	tools, _ = body["tools"].([]any)
-	if len(tools) != len(zenGateToolSpecs)+1 {
-		t.Fatalf("merged tools = %d, want %d", len(tools), len(zenGateToolSpecs)+1)
+	if len(tools) != len(ZenGateToolSpecs)+1 {
+		t.Fatalf("merged tools = %d, want %d", len(tools), len(ZenGateToolSpecs)+1)
 	}
 	// 客户端显式 none：尊重（chat 端点接受 none）
-	body = buildZenBody(map[string]any{
+	body = BuildZenBody(map[string]any{
 		"model":       "ling-2.6-flash",
 		"messages":    []any{},
 		"tool_choice": "none",
@@ -110,7 +110,7 @@ func TestBuildZenBodyToolChoicePolicy(t *testing.T) {
 }
 
 func TestBuildZenBodyLegacyFunctions(t *testing.T) {
-	body := buildZenBody(map[string]any{
+	body := BuildZenBody(map[string]any{
 		"model":    "ling-2.6-flash",
 		"messages": []any{},
 		"functions": []any{map[string]any{
@@ -243,8 +243,8 @@ func TestFallbackTruncateToolPairing(t *testing.T) {
 		map[string]any{"role": "tool", "tool_call_id": "call_2", "content": big},
 	}
 	params := map[string]any{"messages": msgs}
-	out := fallbackTruncate(params, &ZenModel{Context: 2000})
-	if !out.changed {
+	out := FallbackTruncate(params, &ZenModel{Context: 2000})
+	if !out.Changed {
 		t.Fatal("expected truncation to happen")
 	}
 	kept, _ := params["messages"].([]any)
@@ -252,13 +252,13 @@ func TestFallbackTruncateToolPairing(t *testing.T) {
 	resultIDs := map[string]bool{}
 	for _, m := range kept {
 		mm, _ := m.(map[string]any)
-		switch strField(mm, "role") {
+		switch StrField(mm, "role") {
 		case "assistant":
-			for _, id := range toolCallIDs(mm) {
+			for _, id := range ToolCallIDs(mm) {
 				callIDs[id] = true
 			}
 		case "tool":
-			resultIDs[strField(mm, "tool_call_id")] = true
+			resultIDs[StrField(mm, "tool_call_id")] = true
 		}
 	}
 	for id := range callIDs {

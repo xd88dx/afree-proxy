@@ -11,10 +11,7 @@ import (
 	"sync"
 	"testing"
 	"time"
-
-	traepool "afree-proxy/internal/trae2api/pool"
-	traeserver "afree-proxy/internal/trae2api/server"
-	traectl "afree-proxy/internal/trae2api/traectl"
+	"trae2api"
 )
 
 func newTrae2apiLockOrderFixture(t *testing.T) *trae2apiSubsystem {
@@ -25,25 +22,25 @@ func newTrae2apiLockOrderFixture(t *testing.T) *trae2apiSubsystem {
 	if err != nil {
 		t.Fatalf("load vendored config: %v", err)
 	}
-	srv, err := traeserver.New(cfg)
+	srv, err := trae2api.NewServer(cfg)
 	if err != nil {
 		t.Fatalf("build vendored server: %v", err)
 	}
-	prod, ok := traectl.ProductByKey("trae-cn")
+	prod, ok := trae2api.ProductByKey("trae-cn")
 	if !ok {
 		t.Fatal("trae-cn product not registered")
 	}
 	// 直接往池里塞账号：读侧 Status→healthyLocked→RoutingAllowed 是死锁路径。
-	srv.Pool().Add(&traepool.Account{
+	srv.Pool().Add(&trae2api.PoolAccount{
 		UID:     prod.Key + "-1000000000000001",
 		Realm:   "trae",
 		Product: prod,
 	})
 
-	sub := &trae2apiSubsystem{cfg: cfg, srv: srv}
-	old := trae2apiSub
-	trae2apiSub = sub
-	t.Cleanup(func() { trae2apiSub = old })
+	sub := &trae2apiSubsystem{Cfg: cfg, Srv: srv}
+	old := *trae2apiSub
+	*trae2apiSub = sub
+	t.Cleanup(func() { *trae2apiSub = old })
 	return sub
 }
 
