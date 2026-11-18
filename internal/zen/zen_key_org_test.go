@@ -18,9 +18,15 @@ import (
 //  3. 全局 cfg.OrgID 只作兜底，key 自己的解析结果永远优先。
 
 // resetZenOrgState 清空进程内缓存与持久化，避免测试互相污染。
+// 同时注入「出口可用（直连）」桩：Host.BoundExitFor 的包级默认桩恒 !ok
+// （装配根漏注入即失败的契约），而 2026-11-18 起 org 发现对 !ok fail-closed
+// 不再直连兜底——不注入桩本组测试的假上游永远探不到。
 func resetZenOrgState(t *testing.T) {
 	t.Helper()
 	t.Setenv("DATA_DIR", testDataDir(t))
+	prevExit := Host.BoundExitFor
+	Host.BoundExitFor = func(string) (string, int, bool) { return "", -1, true }
+	t.Cleanup(func() { Host.BoundExitFor = prevExit })
 	zenOrgMu.Lock()
 	zenOrgLoaded = true // 阻止从磁盘加载
 	zenOrgData = ZenOrgStore{Version: ZenOrgFileVersion, Orgs: map[string]string{}, Failed: map[string]int64{}}
@@ -323,5 +329,28 @@ func TestZenGateHeadersNeverSendsBorrowedOrgInMultiKeyPool(t *testing.T) {
 		if got := headerOrg(req); got != want {
 			t.Errorf("key %q -> x-opencode-org-id %q, want %q", key, got, want)
 		}
+	}
+}
+
+// 2026-11-18 fail-closed 收敛：出口解析 !ok（绑定双不可用/全池手动冷却）时
+// org 发现必须整体跳过，绝不退回直连——带 Bearer 的 console 请求不能从本机
+// IP 发出。header omitted 语义不变（负缓存稍后重试）。
+func TestZenKeyOrgNoEgressFailClosed(t *testing.T) {
+	resetZenOrgState(t) // 注意：这里注入的是「出口可用」桩，先还原成默认 !ok 桩
+	prev := Host.BoundExitFor
+	Host.BoundExitFor = func(string) (string, int, bool) { return "", -1, false }
+	t.Cleanup(func() { Host.BoundExitFor = prev })
+
+	f := newFakeZenOrgServer(t, map[string][]map[string]string{
+		"key-alpha": {{"id": "wrk_ALPHA", "name": "Alpha"}},
+	})
+	if org := ZenKeyOrg("key-alpha"); org != "" {
+		t.Fatalf("出口不可用时 org 必须省略, got %q", org)
+	}
+	f.mu.Lock()
+	calls := len(f.calls)
+	f.mu.Unlock()
+	if calls != 0 {
+		t.Fatalf("出口不可用时不得发出任何请求（含直连）, got %d", calls)
 	}
 }

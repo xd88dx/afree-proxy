@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
@@ -256,11 +257,13 @@ func DiscoverZenKeyOrg(key string) (string, error) {
 	// 与推理请求走同一个出口（本仓 boundExitFor：显式绑定→自动钉定→走池/直连
 	// 的同一解析链，取代上游的 zenEgress——本仓已把出口解析统一到该函数）：
 	// console 侧同样按 key+IP 记账，用另一个 IP 去查这把 key 的 org 本身就会
-	// 形成"同一 key 出现在两个 IP"的形态。解析不出可用出口（!ok）时退回
-	// 直连——org 是可选头，不能因为它把请求搞失败。
+	// 形成"同一 key 出现在两个 IP"的形态。解析不出可用出口（!ok）时跳过本轮
+	// 发现（2026-11-18 修复：此前退回直连——带 Bearer 的 console 请求从本机
+	// IP 发出，违反隔离 fail-closed 纪律且不受 DISABLE_DIRECT 约束。org 是
+	// 可选头，error 走既有负缓存稍后重试，"header omitted"语义不变）。
 	proxyURL, _, exitOK := Host.BoundExitFor(key)
 	if !exitOK {
-		proxyURL = ""
+		return "", fmt.Errorf("no usable egress for org discovery (bound exit unavailable)")
 	}
 	client := exitpool.ClientFor(proxyURL)
 	resp, err := client.Do(req)
