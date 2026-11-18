@@ -133,7 +133,7 @@ wb vendored 树手工改动（2026-11-12/13，re-vendor 时按 ours 保留，承
 
 wb vendor 对 afree 全局开关的两处依赖（`pool/pick.go` 的 UNABLE_FORCE 判据、`server/admin_tasks.go` 的 ONLY_ROUTER 判据）2026-11-17 改为包级钩子注入：`pool.UnableForce` / `server.OnlyRouter`（nil=上游语义：拒绝兜底/允许补跑），app 装配点接线（`internal/app/workbuddy.go`，`startWorkBuddy` 内）。vendor 树自此零外部 import（独立 module 化前置）。相关测试改 `withUnableForce(t)`（pool 包）与钩子注入+Cleanup（server 包），不再依赖 env——`t.Setenv("UNABLE_FORCE")` 对钩子化的 pick.go 已是死操作，会让兜底测试静默失效（2026-11-17 实测 9 例）。
 
-wb vendor 补丁登记（2026-11-15 完成，历史踩雷记录留档）：活树 vendor 相对基线（源树 HEAD `10d01b4`，2026-11-14 同步）存在大量 afree 历史补丁（config.go 的 Strategy/AccountOrder、livecfg 热字段、panel（app.js/index.go/login.go/mobile.css|js）、auth、usage、多个 `*_test.go` 等 86 文件），曾从未写入 vendor 脚本——**直接跑 `vendor_workbuddy.py` 会把它们全部冲成上游版本**（2026-11-15 踩雷一次，git 回滚救回）。**已全量登记**：86 个补丁文件（修改+新增）整文件进 `PRESERVE_RELATIVE`（dry-run 对基线 diff 全量盘点，逐锚点登记不现实——补丁密度高、漂移风险大，整文件保留与 textcall.go 既有模式一致）；`upstream/dns_test.go`（基线有、活树有意不纳入）进 `SKIP_UPSTREAM_FILES` 拷贝跳过；`config/config.go`+`config_test.go` 的特殊拷贝段加了 PRESERVE 尊重（此前 PRESERVE 写回会被该段的上游拷贝二次覆盖——验证 dry-run `differing: []` 时抓到）。**验证方法**：`main(target_root='.tmp/vendor-dry', preserve_from='internal/workbuddy')` 三参齐备（PRESERVE 字节从 preserve_from 读，不传则为空）后与活树逐字节比对，判据 `differing: []`。上游更新这些文件仍走 `sync_workbuddy.py` 三方合并手工吸收。
+wb vendor 补丁登记（2026-11-15 完成，历史踩雷记录留档）：活树 vendor 相对基线（源树 HEAD `10d01b4`，2026-11-14 同步）存在大量 afree 历史补丁（config.go 的 Strategy/AccountOrder、livecfg 热字段、panel（app.js/index.go/login.go/mobile.css|js）、auth、usage、多个 `*_test.go` 等 86 文件），曾从未写入 vendor 脚本——**直接跑 `vendor_workbuddy.py` 会把它们全部冲成上游版本**（2026-11-15 踩雷一次，git 回滚救回）。**已全量登记**：86 个补丁文件（修改+新增）整文件进 `PRESERVE_RELATIVE`（dry-run 对基线 diff 全量盘点，逐锚点登记不现实——补丁密度高、漂移风险大，整文件保留与 textcall.go 既有模式一致）；`upstream/dns_test.go`（基线有、活树有意不纳入）进 `SKIP_UPSTREAM_FILES` 拷贝跳过；`config/config.go`+`config_test.go` 的特殊拷贝段加了 PRESERVE 尊重（此前 PRESERVE 写回会被该段的上游拷贝二次覆盖——验证 dry-run `differing: []` 时抓到）。**验证方法**：`main(target_root='.tmp/vendor-dry', preserve_from='modules/workbuddy2api/internal')` 三参齐备（PRESERVE 字节从 preserve_from 读，不传则为空；2026-11-18 module 化后活树路径）后与活树逐字节比对，判据 `differing: []`。上游更新这些文件仍走 `sync_workbuddy.py` 三方合并手工吸收。
 
 已废弃、不要从上游恢复：后台 key rotator（`SessionRotateMinutes` 2026-11-08 随 a8fe356 吸收，见 MERGE 台账；**字段与透出点 2026-11-15 彻底删除**——GET `/opencode/config` 不再回显，旧 config 键经 JSON 未知字段忽略）、`ZEN_KEYS`（Go 源码从不读取）、上游 README 的 compose 配置段。
 
@@ -322,7 +322,10 @@ iStore 的面板密码是 `233@.afree`(与本机 compose 里的值不同);登录
 ```bash
 python scripts/i18n_audit.py            # 五遍：T() 键、data-i18n 键、含内联标签的文本块、title/placeholder 裸英文、静态叶子文本裸英文
 python scripts/i18n_reverse_audit.py    # 孤儿候选（仅参考，勿直接删）
+python scripts/endpoint_audit.py        # 端点闭合性对账（CI 也跑）：handler 消费面 / 前端 api() 调用 / wbCall→vendor 三方向
 ```
+
+`scripts/endpoint_audit.py`（2026-11-19 新增，已接入 CI Vet job）固化 handleWkbdShareOptimize 漏注册事故的对账判据：handler 定义必须被 mux 注册/非注释引用/单行 gateway 过渡别名三选一消费，前端静态调用与 wbCall 必须命中注册路由；动态拼接调用显式计入 skip 不静默漏过。新增端点后跑一遍即知是否漏挂路由——编译与 vet 都不查这一层。
 
 `i18n_audit.py` 的第三遍就是这条规则的守门员：它枚举「自身有文案且子元素全是行内元素」的元素，整段不在词典里又没 `data-i18n` 就报缺口——2026-11-09 修掉的 9 处（代理列表提示、代理隔离提示、请求日志标题、WorkBuddy 配置标题、AMDCloud/TokenHarbor 取 key 提示、侧栏页脚两行）都是它检出来的。
 

@@ -1345,7 +1345,7 @@ func handleAdminUpdateConfig(w http.ResponseWriter, r *http.Request) {
 		changed = true
 	}
 
-	// cline 目录「仅展示插件免费」开关：存 afree-config.json，未设置（nil）
+	// cline 目录「仅展示插件免费」开关：存 cline-config.json（2026-11-17 配置重组迁入），未设置（nil）
 	// 默认关闭（展示全部免费目录）。/admin/api/models 侧按此过滤，见 models.go。
 	if req.ClineCatalogFeedOnly != nil {
 		setGlobalClineCatalogFeedOnly(*req.ClineCatalogFeedOnly)

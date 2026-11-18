@@ -15,7 +15,7 @@ package trae
 //
 // vendored trae2api 的持久层（trae2api/config.json、账号快照）是 vendor 自管
 // 语义，afree 零写入——两套文件互不混放。trae-config.json 是配置态（进
-// config-manifest 监测）；trae-State.json 是状态态（token 记账，见
+// config-manifest 监测）；data/trae2api/tokens.json 是状态态（token 记账，见
 // trae2api_stats.go）。
 //
 // 锁序：TraeCfgMu 是本文件唯一锁，绝不与 Trae2apiMu/TraeBindingsMu 交叉持有
