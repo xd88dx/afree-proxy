@@ -52,6 +52,7 @@ func SaveWorkbuddyConfig(
 	if poolMap, ok := merged["pool"].(map[string]any); ok {
 		delete(poolMap, "model_rate_filter")
 	}
+	ApplyAccountShareReplace(merged, incoming)
 
 	newCfg, err := wbbridge.ConfigParse(MergedWorkbuddyJSON(merged))
 	if err != nil {
@@ -265,6 +266,29 @@ func MergeWorkbuddyConfigMaps(cur, incoming map[string]any) map[string]any {
 		cur[k] = v
 	}
 	return cur
+}
+
+// ApplyAccountShareReplace pool.account_share 整体替换特例（2026-11-18 修复）：
+// 占比表语义是「当前生效的完整集合」，MergeWorkbuddyConfigMaps 对 map 键只增
+// 不删——已删/掉出优化集合的号残留旧占比继续独占抽签、空表「清空占比」完全
+// 不生效。凡 incoming 带了 account_share 键（含空表=清空）即整体替换；未带
+// （普通配置表单保存不含该键）保留 merged 现值。incoming.pool 存在时 merged
+// .pool 必已存在（深合并会把 incoming 节整体挂进 cur），本函数不再判空重复。
+func ApplyAccountShareReplace(merged, incoming map[string]any) {
+	inPool, ok := incoming["pool"].(map[string]any)
+	if !ok {
+		return
+	}
+	share, ok := inPool["account_share"]
+	if !ok {
+		return
+	}
+	poolMap := merged["pool"].(map[string]any)
+	if m, isMap := share.(map[string]any); isMap && len(m) == 0 {
+		delete(poolMap, "account_share")
+		return
+	}
+	poolMap["account_share"] = share
 }
 
 func MergedWorkbuddyJSON(m map[string]any) []byte {

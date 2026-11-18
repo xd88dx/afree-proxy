@@ -141,6 +141,11 @@ func StartProxy(host string, port int) error {
 		// 权重列直接用行数据。
 		mux.HandleFunc("/admin/api/workbuddy/share-optimize", panel.AdminCORS(panel.AdminAuthMiddleware(handleWorkbuddyShareOptimize)))
 		mux.HandleFunc("/admin/api/workbuddy/account-share", panel.AdminCORS(panel.AdminAuthMiddleware(handleWorkbuddyShareSet)))
+		// 凭据权重优化定时任务（2026-11-15 立项，2026-11-17 配置迁 wkbd-config.json）：
+		// 开关与 cron 住 afree 侧 wkbd 段。此前 handler 存在但路由从未注册——面板
+		// GET 回显 404 被前端静默吞掉（显示为未配置）、POST 保存恒 404，配置从未
+		// 成功落盘过（2026-11-19 用户实测「保存失败 HTTP 404」暴露）。
+		mux.HandleFunc("/admin/api/workbuddy/wkbd/share-optimize", panel.AdminCORS(panel.AdminAuthMiddleware(handleWkbdShareOptimize)))
 	}
 	// TraeWork 原版入口（vendored trae2api console）：新标签页打开 /admin/trae2api/，
 	// 复用管理会话 Cookie；console fetch 基址已在 vendor 阶段改写。
