@@ -231,11 +231,14 @@ def main() -> int:
                 print("vendor 构建失败（原因见上方 stderr：可能是改写锚点随上游结构失效），"
                       "修 scripts/vendor_trae2api.py 后重试。", file=sys.stderr)
                 return 1
-            gofmt_tree(target / "internal" / "trae2api")
+            gofmt_tree(target / "modules" / "trae2api" / "internal")
 
+        # 合并输入与 PKG 同布局（module 化后产物在 modules/trae2api/internal，
+        # 2026-11-18 修正：旧 internal/trae2api 路径使 base/theirs 恒空、合并
+        # 静默 no-op 且基线照常推进）。
         ours = rel_files(PKG)
-        base = rel_files(base_out / "internal" / "trae2api")
-        theirs = rel_files(theirs_out / "internal" / "trae2api")
+        base = rel_files(base_out / "modules" / "trae2api" / "internal")
+        theirs = rel_files(theirs_out / "modules" / "trae2api" / "internal")
 
         merges: list[tuple[str, bytes, int]] = []
         upstream_new: list[str] = []

@@ -215,11 +215,14 @@ def main() -> int:
                 print("vendor 构建失败（原因见上方 stderr：可能是改写锚点随上游结构失效），"
                       "修 scripts/vendor_workbuddy.py 后重试。", file=sys.stderr)
                 return 1
-            gofmt_tree(target / "internal" / "workbuddy")
+            gofmt_tree(target / "modules" / "workbuddy2api" / "internal")
 
+        # 合并输入与 WB_PKG 同布局（module 化后产物在 modules/workbuddy2api/
+        # internal，2026-11-18 修正：旧 internal/workbuddy 路径使 base/theirs
+        # 恒空、合并静默 no-op 且基线照常推进）。
         ours = rel_files(WB_PKG)
-        base = rel_files(base_out / "internal" / "workbuddy")
-        theirs = rel_files(theirs_out / "internal" / "workbuddy")
+        base = rel_files(base_out / "modules" / "workbuddy2api" / "internal")
+        theirs = rel_files(theirs_out / "modules" / "workbuddy2api" / "internal")
 
         merges: list[tuple[str, bytes, int]] = []   # (rel, merged bytes, conflicts)
         upstream_new: list[str] = []
