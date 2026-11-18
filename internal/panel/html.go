@@ -627,10 +627,6 @@ const poolTabHTML = `<div id="tab-proxypool" class="tab-panel" style="display:no
         <div class="hint">OpenCode keys without proxy bindings follow this switch.</div>
       </div>
       <div class="pp-card">
-      </div>
-      <div class="pp-card">
-      </div>
-      <div class="pp-card">
         <label>Other</label>
         <select id="ppOther"><option value="true">Proxy</option><option value="false">Direct connection</option></select>
         <div class="hint">Other sub-platform keys without proxy bindings follow this switch.</div>
@@ -1832,7 +1828,7 @@ const I18N = {
   'create_custom_alias': { en: 'Create custom alias', zh: '创建自定义别名' },
   'delete_all_data': { en: 'Delete all data', zh: '删除全部数据' },
   'disable_all': { en: 'Disable all', zh: '全部停用' },
-  'discard': { en: 'Discard', zh: '放弃' },
+  'discard': { en: 'Discard', zh: '复位' },
   'discard_changes': { en: 'Discard changes', zh: '放弃修改' },
   'enable_all': { en: 'Enable all', zh: '全部启用' },
   'export_config': { en: 'Export config', zh: '导出配置' },
