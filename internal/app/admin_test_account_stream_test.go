@@ -44,21 +44,14 @@ func TestAccountMustStreamProbeRetriesWithStream(t *testing.T) {
 	}))
 	defer upstream.Close()
 
-	origBase := clineAPIBase
-	clineAPIBase = upstream.URL
-	t.Cleanup(func() { clineAPIBase = origBase })
+	origBase := cline.APIBase
+	cline.SetAPIBase(upstream.URL)
+	t.Cleanup(func() { cline.SetAPIBase(origBase) })
 
-	modelsMu.Lock()
-	savedCache := modelsCache
-	modelsCache = map[string]*ModelInfo{
+	savedCache := cline.SetCatalogForTest(map[string]*ModelInfo{
 		"cline-free/probe-model": {ID: "cline-free/probe-model", Status: ModelActive, RequiresStream: false},
-	}
-	modelsMu.Unlock()
-	t.Cleanup(func() {
-		modelsMu.Lock()
-		modelsCache = savedCache
-		modelsMu.Unlock()
 	})
+	t.Cleanup(func() { cline.SetCatalogForTest(savedCache) })
 
 	swapTestPool(t, []*Account{{AccountID: "acc_probe", Email: "probe@test", APIToken: "sk-test-static-key"}})
 

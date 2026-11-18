@@ -198,6 +198,7 @@ func traeDisplayOrderLoad() { trae.TraeDisplayOrderLoad() }
 func trae2apiLoadConfig() (*trae2api.Config, error) { return trae.Trae2apiLoadConfig() }
 
 func trae2apiValidateGateway(gw string) error { return trae.Trae2apiValidateGateway(gw) }
+
 var traeBindingsLoaded = &trae.TraeBindingsLoaded
 
 func traeConfigRouting() map[string]bool { return trae.TraeConfigRouting() }

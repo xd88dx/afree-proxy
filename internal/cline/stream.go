@@ -156,7 +156,7 @@ func SaveStream(learned map[string]string) {
 
 // CallFn 上游调用入口：包级变量便于测试注入假上游，生产经 Host.CallAPI。
 var CallFn = func(ctx context.Context, params map[string]any, stream bool, useProxies bool) (*http.Response, *Account, error) {
-	return Host.CallAPI(ctx, params, stream, useProxies)
+	return CallAPI(ctx, params, stream, useProxies)
 }
 
 // CallAutoStream 包住 callClineAPI 兜住"命名约定猜错"的情况：非流式请求若
@@ -178,7 +178,7 @@ func CallAutoStream(ctx context.Context, params map[string]any, stream, useProxi
 	}
 
 	model, _ := params["model"].(string)
-	model = Host.NormalizeModel(model)
+	model = NormalizeRequestModel(model)
 	log.Printf("cline model %s rejected non-stream call (500 empty response): learning + retrying streamed", model)
 	LearnStreamRequired(model)
 

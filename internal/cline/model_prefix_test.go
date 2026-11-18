@@ -1,16 +1,14 @@
-package app
+package cline
 
 import (
 	"testing"
 
 	"time"
-
-	"afree-proxy/internal/cline"
 )
 
 // throttleGateRefreshForTest 预占 strict-gate 的目录同步节流窗（30s）。
 
-// 未知模型命中 strict gate 时会节流地发起 live 目录同步（syncModelsOnce +
+// 未知模型命中 strict gate 时会节流地发起 live 目录同步（SyncModelsOnce +
 
 // syncZenModels：出网拉官方 feed / zen registry，并写多份 DATA_DIR 文件）——
 
@@ -36,9 +34,9 @@ func injectClineModels(t *testing.T, ids ...string) {
 
 	t.Helper()
 
-	initModelsCache()
+	InitModelsCache()
 
-	modelsMu.Lock()
+	ModelsMu.Lock()
 
 	saved := make(map[string]*ModelInfo, len(modelsCache))
 
@@ -56,15 +54,15 @@ func injectClineModels(t *testing.T, ids ...string) {
 
 	}
 
-	modelsMu.Unlock()
+	ModelsMu.Unlock()
 
 	t.Cleanup(func() {
 
-		modelsMu.Lock()
+		ModelsMu.Lock()
 
 		modelsCache = saved
 
-		modelsMu.Unlock()
+		ModelsMu.Unlock()
 
 	})
 
@@ -113,7 +111,7 @@ func TestCanonicalClineModelID(t *testing.T) {
 
 }
 
-// modelInClineList 接受两种形态。
+// ModelInClineList 接受两种形态。
 
 func TestModelInClineListAcceptsBothForms(t *testing.T) {
 
@@ -123,19 +121,19 @@ func TestModelInClineListAcceptsBothForms(t *testing.T) {
 
 	injectClineModels(t, "z-ai/glm-5.3-flash", "poolside/laguna-s-2.1:free", "cline-free/deepseek-v4.1-flash")
 
-	if !modelInClineList("z-ai/glm-5.3-flash") {
+	if !ModelInClineList("z-ai/glm-5.3-flash") {
 
 		t.Error("injected id without prefix must be in list")
 
 	}
 
-	if !modelInClineList("cline-free/z-ai/glm-5.3-flash") {
+	if !ModelInClineList("cline-free/z-ai/glm-5.3-flash") {
 
 		t.Error("prefixed id must resolve back to the feed id")
 
 	}
 
-	if !modelInClineList("poolside/laguna-s-2.1:free") {
+	if !ModelInClineList("poolside/laguna-s-2.1:free") {
 
 		t.Error("injected id without prefix must be in list")
 
@@ -145,19 +143,19 @@ func TestModelInClineListAcceptsBothForms(t *testing.T) {
 
 	// 命中（只查剥前缀形态会漏掉整类原生条目，STRICT 门控误拒）。
 
-	if !modelInClineList("cline-free/deepseek-v4.1-flash") {
+	if !ModelInClineList("cline-free/deepseek-v4.1-flash") {
 
 		t.Error("native cline-free/* id must be in list")
 
 	}
 
-	if !modelInClineList("deepseek-v4.1-flash") {
+	if !ModelInClineList("deepseek-v4.1-flash") {
 
 		t.Error("bare form of a native cline-free/* entry must be in list")
 
 	}
 
-	if modelInClineList("no/such-model") {
+	if ModelInClineList("no/such-model") {
 
 		t.Error("unknown model must not be in list")
 
@@ -165,7 +163,7 @@ func TestModelInClineListAcceptsBothForms(t *testing.T) {
 
 }
 
-// normalizeRequestModel 带前缀请求要解析到 feed 真实 ID（出站/记账用真实 ID）：
+// NormalizeRequestModel 带前缀请求要解析到 feed 真实 ID（出站/记账用真实 ID）：
 
 // cline-free/* 原生条目的真实 ID 自带前缀，z-ai/* poolside/* 等不带。
 
@@ -173,27 +171,27 @@ func TestNormalizeRequestModelResolvesFeedID(t *testing.T) {
 
 	injectClineModels(t, "z-ai/glm-5.3-flash", "cline-free/deepseek-v4.1-flash")
 
-	if got := normalizeRequestModel("cline-free/z-ai/glm-5.3-flash"); got != "z-ai/glm-5.3-flash" {
+	if got := NormalizeRequestModel("cline-free/z-ai/glm-5.3-flash"); got != "z-ai/glm-5.3-flash" {
 
-		t.Errorf("normalizeRequestModel = %q, want the feed id", got)
-
-	}
-
-	if got := normalizeRequestModel("z-ai/glm-5.3-flash"); got != "z-ai/glm-5.3-flash" {
-
-		t.Errorf("normalizeRequestModel(bare) = %q", got)
+		t.Errorf("NormalizeRequestModel = %q, want the feed id", got)
 
 	}
 
-	if got := normalizeRequestModel("cline-free/deepseek-v4.1-flash"); got != "cline-free/deepseek-v4.1-flash" {
+	if got := NormalizeRequestModel("z-ai/glm-5.3-flash"); got != "z-ai/glm-5.3-flash" {
 
-		t.Errorf("normalizeRequestModel(native) = %q, want the prefixed feed id", got)
+		t.Errorf("NormalizeRequestModel(bare) = %q", got)
 
 	}
 
-	if got := normalizeRequestModel("deepseek-v4.1-flash"); got != "cline-free/deepseek-v4.1-flash" {
+	if got := NormalizeRequestModel("cline-free/deepseek-v4.1-flash"); got != "cline-free/deepseek-v4.1-flash" {
 
-		t.Errorf("normalizeRequestModel(native bare) = %q, want the prefixed feed id", got)
+		t.Errorf("NormalizeRequestModel(native) = %q, want the prefixed feed id", got)
+
+	}
+
+	if got := NormalizeRequestModel("deepseek-v4.1-flash"); got != "cline-free/deepseek-v4.1-flash" {
+
+		t.Errorf("NormalizeRequestModel(native bare) = %q, want the prefixed feed id", got)
 
 	}
 
@@ -203,31 +201,31 @@ func TestNormalizeRequestModelResolvesFeedID(t *testing.T) {
 
 func TestAPIModelListClineIDsArePrefixed(t *testing.T) {
 
-	savedPool := cline.RawPool()
+	savedPool := RawPool()
 
 	on := true
 
-	poolMu.Lock()
+	PoolMu.Lock()
 
-	cline.SetPool(&AccountPool{Accounts: []*Account{{AccountID: "a", PoolEnabled: &on}}})
+	SetPool(&AccountPool{Accounts: []*Account{{AccountID: "a", PoolEnabled: &on}}})
 
-	poolMu.Unlock()
+	PoolMu.Unlock()
 
 	defer func() {
 
-		poolMu.Lock()
+		PoolMu.Lock()
 
-		cline.SetPool(savedPool)
+		SetPool(savedPool)
 
-		poolMu.Unlock()
+		PoolMu.Unlock()
 
 	}()
 
-	initModelsCache()
+	InitModelsCache()
 
 	injectClineModels(t, "z-ai/glm-5.3-flash", "cline-free/deepseek-v4.1-flash")
 
-	list := apiModelList()
+	list := APIModelList()
 
 	if len(list) == 0 {
 
@@ -250,75 +248,3 @@ func TestAPIModelListClineIDsArePrefixed(t *testing.T) {
 }
 
 // WorkBuddy 前缀翻译：网关 wbcn:/wbgb: ↔ vendor cn:/global:，双向正确。
-
-func TestWorkbuddyPrefixTranslation(t *testing.T) {
-
-	cases := []struct{ in, want string }{
-
-		{"wbcn:claude-sonnet-4.5", "cn:claude-sonnet-4.5"},
-
-		{"wbgb:claude-sonnet-4.5", "global:claude-sonnet-4.5"},
-
-		{"cn:legacy-model", "cn:legacy-model"}, // 旧前缀原样（vendor 自解析）
-
-		{"global:legacy-model", "global:legacy-model"},
-
-		{"bare-model", "bare-model"},
-	}
-
-	for _, c := range cases {
-
-		if got := wbRealmToVendor(c.in); got != c.want {
-
-			t.Errorf("wbRealmToVendor(%q) = %q, want %q", c.in, got, c.want)
-
-		}
-
-	}
-
-	back := []struct{ in, want string }{
-
-		{"cn:claude-sonnet-4.5", "wbcn:claude-sonnet-4.5"},
-
-		{"global:claude-sonnet-4.5", "wbgb:claude-sonnet-4.5"},
-
-		{"wbcn:already", "wbcn:already"},
-	}
-
-	for _, c := range back {
-
-		if got := wbVendorToRealm(c.in); got != c.want {
-
-			t.Errorf("wbVendorToRealm(%q) = %q, want %q", c.in, got, c.want)
-
-		}
-
-	}
-
-}
-
-// 路由判定必须认新前缀与旧前缀两种形态。
-
-func TestIsWorkBuddyModelAcceptsBothPrefixes(t *testing.T) {
-
-	for _, m := range []string{"wbcn:x", "wbgb:x", "cn:x", "global:x"} {
-
-		if !isWorkBuddyModel(m) {
-
-			t.Errorf("isWorkBuddyModel(%q) must be true", m)
-
-		}
-
-	}
-
-	for _, m := range []string{"bare", "zen:big-pickle", "cline-free/x"} {
-
-		if isWorkBuddyModel(m) {
-
-			t.Errorf("isWorkBuddyModel(%q) must be false", m)
-
-		}
-
-	}
-
-}

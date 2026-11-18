@@ -1,8 +1,8 @@
 package zen
 
 import (
+	"afree-proxy/internal/kit"
 	"context"
-	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
@@ -288,13 +288,7 @@ func EstimateText(s string) int {
 	return len([]rune(s)) / 4
 }
 
-func EstimateJSON(v any) int {
-	b, err := json.Marshal(v)
-	if err != nil {
-		return 0
-	}
-	return len(b) / 4
-}
+func EstimateJSON(v any) int { return kit.EstimateJSON(v) }
 
 // ============ 会话状态 ============
 

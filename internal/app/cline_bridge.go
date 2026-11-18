@@ -12,12 +12,14 @@ import (
 	"time"
 
 	"afree-proxy/internal/cline"
+	"afree-proxy/internal/kit"
 )
 
 // ---- 类型别名 ----
 
 type (
 	Account       = cline.Account
+	ModelInfo     = cline.ModelInfo
 	AccountPool   = cline.AccountPool
 	AccountView   = cline.AccountView
 	LoginMethod   = cline.LoginMethod
@@ -192,6 +194,116 @@ func callClineAutoStream(ctx context.Context, params map[string]any, stream, use
 	return cline.CallAutoStream(ctx, params, stream, useProxies)
 }
 
+// ---- 目录/调用域（2026-11-18 gateway 批前置：models.go 与 call 簇出包别名）----
+
+func callClineAPI(ctx context.Context, params map[string]any, stream, useProxies bool) (*http.Response, *Account, error) {
+	return cline.CallAPI(ctx, params, stream, useProxies)
+}
+
+func clineHeaders(token, sessionID string) http.Header { return cline.ClineHeaders(token, sessionID) }
+
+func buildUpstreamBody(params map[string]any, stream bool) map[string]any {
+	return cline.BuildUpstreamBody(params, stream)
+}
+
+func normalizeRequestModel(id string) string { return cline.NormalizeRequestModel(id) }
+
+func strictModelGate(model string) string { return cline.StrictModelGate(model) }
+
+func clineModelCooling(id string) bool { return cline.ClineModelCooling(id) }
+
+func modelInClineList(id string) bool { return cline.ModelInClineList(id) }
+
+func recordModelFailure(id string, status int, body string) {
+	cline.RecordModelFailure(id, status, body)
+}
+
+func recordModelSuccess(id string) { cline.RecordModelSuccess(id) }
+
+func modelNeedsStream(id string) bool { return cline.ModelNeedsStream(id) }
+
+func upstreamNeedsStream(id string) bool { return cline.UpstreamNeedsStream(id) }
+
+func apiModelList() []map[string]any { return cline.APIModelList() }
+
+func ensureModelsFresh() { cline.EnsureModelsFresh() }
+
+func syncModelsOnce() { cline.SyncModelsOnce() }
+
+func getFreeModels() []*ModelInfo { return cline.GetFreeModels() }
+
+func firstActiveModel() string { return cline.FirstActiveModel() }
+
+func startModelsRefresher() { cline.StartModelsRefresher() }
+
+func modelsSyncSnapshot() (time.Time, bool) { return cline.ModelsSyncSnapshot() }
+
+func truncateEmail(email string) string { return cline.TruncateEmail(email) }
+
+func usageTokens(u map[string]any, params map[string]any) int64 { return kit.UsageTokens(u, params) }
+
+func accountUsageFn(acc *Account, params map[string]any) func(map[string]any) {
+	return cline.AccountUsageFn(acc, params)
+}
+
+// ---- 指纹常量/探测路径（admin 探测与面板指纹头升级消费）----
+
+const (
+	defaultReasoningEffort = cline.DefaultReasoningEffort
+	defaultMaxTokens       = cline.DefaultMaxTokens
+)
+
+func clineAPIBase() string { return cline.APIBase }
+
+func clineUserAgent() string { return cline.ClineUserAgent() }
+
+func cline429CooldownDuration(email, body, retryAfter string) time.Duration {
+	return cline.Cline429CooldownDuration(email, body, retryAfter)
+}
+
+const (
+	clineClientVersion = cline.ClineClientVersion
+	clineCoreVersion   = cline.ClineCoreVersion
+)
+
+func feedFreeModels(models []*ModelInfo) []*ModelInfo { return cline.FeedFreeModels(models) }
+
+func initModelsCache() { cline.InitModelsCache() }
+
+// modelsMu 指针别名：与 cline.ModelsMu 同一实例（admin 白盒段零改动）。
+var modelsMu = &cline.ModelsMu
+
+func NormalizeModelEntryFields(m map[string]any) { cline.NormalizeModelEntryFields(m) }
+
+func ClineListLookupLocked(id string) (string, bool) { return cline.ClineListLookupLocked(id) }
+
+func getMsgCount(params map[string]any) int { return cline.GetMsgCount(params) }
+
+// passThroughKeys 只读别名（zen_body_wire 等测试消费）。
+var passThroughKeys = cline.PassThroughKeys
+
+const (
+	ModelActive  = cline.ModelActive
+	ModelRemoved = cline.ModelRemoved
+	ModelUnknown = cline.ModelUnknown
+)
+
+func modelInFreeList(id string) bool { return cline.ModelInFreeList(id) }
+
+func applyFeedFreeMark(cache map[string]*ModelInfo, feedFree map[string]bool) {
+	cline.ApplyFeedFreeMark(cache, feedFree)
+}
+
+func isClineQuotaExhausted(body string) bool { return cline.IsClineQuotaExhausted(body) }
+
+func throttleGateRefreshForTest() { cline.ThrottleGateRefreshForTest() }
+
+func clineAutoBanPaidUsage(params map[string]any, u map[string]any) {
+	cline.ClineAutoBanPaidUsage(params, u)
+}
+
+func clineSyncClient() (*http.Client, string, error) { return cline.ClineSyncClient() }
+
 // ---- Host 注入 ----
 
 func init() {
@@ -199,15 +311,11 @@ func init() {
 	cline.Host.Strategy = globalStrategy
 	cline.Host.AdminLogEnabled = globalAdminLogEnabled
 	cline.Host.UseProxies = func() *bool { return platformUseProxies("cline") }
-	cline.Host.NormalizeModel = normalizeRequestModel
 	cline.Host.ReconcileEgress = reconcileEgressBindings
 	cline.Host.NormalizeIdentityHeader = normalizeIdentityHeaders
 	cline.Host.SyncPersistedHeaders = func(h map[string]string) {
 		proxyConfigMu.Lock()
 		proxyConfig.Headers = h
 		proxyConfigMu.Unlock()
-	}
-	cline.Host.CallAPI = func(ctx context.Context, params map[string]any, stream, useProxies bool) (*http.Response, *Account, error) {
-		return callClineAPI(ctx, params, stream, useProxies)
 	}
 }

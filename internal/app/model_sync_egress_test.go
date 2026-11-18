@@ -1,6 +1,7 @@
 package app
 
 import (
+	"afree-proxy/internal/cline"
 	"context"
 	"strings"
 	"testing"
@@ -91,13 +92,9 @@ func TestZenSyncClientAllKeysDownFallsToPoolGating(t *testing.T) {
 func TestTestAccountEmptyCatalogReportsCause(t *testing.T) {
 	setupBindingTest(t, nil)
 	swapTestPool(t, []*Account{{AccountID: "acc_empty", Email: "empty@x", APIToken: "sk_test"}})
-	modelsMu.Lock()
-	modelsCache = map[string]*ModelInfo{}
-	modelsMu.Unlock()
+	savedCache := cline.SetCatalogForTest(map[string]*ModelInfo{})
 	t.Cleanup(func() {
-		modelsMu.Lock()
-		modelsCache = nil
-		modelsMu.Unlock()
+		cline.SetCatalogForTest(savedCache)
 	})
 
 	result, status := testAccount(context.Background(), &Account{AccountID: "acc_empty", Email: "empty@x", APIToken: "sk_test"})

@@ -19,7 +19,7 @@ func ZenSessSaveBlockedPtr() *bool                  { return &zenSessSaveBlocked
 func ZenModelsMuPtr() *sync.RWMutex                 { return &zenModelsMu }
 func ZenModelsPtr() *map[string]*ZenModel           { return &zenModels }
 func ZenKeyMuPtr() *sync.Mutex                      { return &zenKeyMu }
-func ZenKeyIdxPtr() *int                    { return &ZenKeyIdx }
+func ZenKeyIdxPtr() *int                            { return &ZenKeyIdx }
 func ZenKeyCoolPtr() *map[string]time.Time          { return &zenKeyCool }
 func ZenKeyTokensPtr() *map[string]ZenKeyTokenStats { return &zenKeyTokens }
 func ZenKeyParkPtr() *map[string]ZenParkState       { return &zenKeyPark }

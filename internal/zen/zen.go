@@ -4021,4 +4021,3 @@ func ModelEntriesDetailed() ([]map[string]any, bool) {
 func NewPinKeyOpts(key string) []ZenCallOpts {
 	return []ZenCallOpts{{PinKey: key}}
 }
-

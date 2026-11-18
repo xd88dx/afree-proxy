@@ -111,11 +111,11 @@ func TestAutoStreamLearnThroughRealCallee(t *testing.T) {
 
 	// 返回静态 key），因此整个真实调用链无需网络。
 
-	origBase := clineAPIBase
+	origBase := cline.APIBase
 
-	clineAPIBase = upstream.URL
+	cline.SetAPIBase(upstream.URL)
 
-	defer func() { clineAPIBase = origBase }()
+	defer func() { cline.SetAPIBase(origBase) }()
 
 	cline.PoolMu.Lock()
 
@@ -150,35 +150,25 @@ func TestAutoStreamLearnThroughRealCallee(t *testing.T) {
 
 	const probeModel = "poolside/laguna-s-2.1:free" // 含 ":" → 约定判定"无需流式"
 
-	modelsMu.Lock()
+	cline.InitModelsCache()
 
-	if modelsCache == nil {
+	snap := cline.CatalogSnapshotForTest()
 
-		modelsCache = make(map[string]*ModelInfo)
+	savedEntry, hadEntry := snap[probeModel]
 
-	}
-
-	savedEntry, hadEntry := modelsCache[probeModel]
-
-	modelsCache[probeModel] = &ModelInfo{ID: probeModel, Source: "free", Provider: "poolside", Cost: "free", Status: ModelActive}
-
-	modelsMu.Unlock()
+	snap[probeModel] = &ModelInfo{ID: probeModel, Source: "free", Provider: "poolside", Cost: "free", Status: ModelActive}
 
 	defer func() {
 
-		modelsMu.Lock()
-
 		if hadEntry {
 
-			modelsCache[probeModel] = savedEntry
+			snap[probeModel] = savedEntry
 
 		} else {
 
-			delete(modelsCache, probeModel)
+			delete(snap, probeModel)
 
 		}
-
-		modelsMu.Unlock()
 
 	}()
 
@@ -271,11 +261,11 @@ func TestCallClineAPINon200ReturnsTypedError(t *testing.T) {
 
 	defer upstream.Close()
 
-	origBase := clineAPIBase
+	origBase := cline.APIBase
 
-	clineAPIBase = upstream.URL
+	cline.SetAPIBase(upstream.URL)
 
-	defer func() { clineAPIBase = origBase }()
+	defer func() { cline.SetAPIBase(origBase) }()
 
 	cline.PoolMu.Lock()
 
@@ -381,11 +371,11 @@ func TestCallClineAPIFailoverOn429(t *testing.T) {
 
 	defer upstream.Close()
 
-	origBase := clineAPIBase
+	origBase := cline.APIBase
 
-	clineAPIBase = upstream.URL
+	cline.SetAPIBase(upstream.URL)
 
-	defer func() { clineAPIBase = origBase }()
+	defer func() { cline.SetAPIBase(origBase) }()
 
 	cline.PoolMu.Lock()
 
@@ -492,11 +482,11 @@ func TestCallClineAPI429UnparseableShortCooldown(t *testing.T) {
 
 	defer upstream.Close()
 
-	origBase := clineAPIBase
+	origBase := cline.APIBase
 
-	clineAPIBase = upstream.URL
+	cline.SetAPIBase(upstream.URL)
 
-	defer func() { clineAPIBase = origBase }()
+	defer func() { cline.SetAPIBase(origBase) }()
 
 	cline.PoolMu.Lock()
 
@@ -583,11 +573,11 @@ func TestCallClineAPI429QuotaKeywordLongCooldown(t *testing.T) {
 
 	defer upstream.Close()
 
-	origBase := clineAPIBase
+	origBase := cline.APIBase
 
-	clineAPIBase = upstream.URL
+	cline.SetAPIBase(upstream.URL)
 
-	defer func() { clineAPIBase = origBase }()
+	defer func() { cline.SetAPIBase(origBase) }()
 
 	cline.PoolMu.Lock()
 
@@ -686,7 +676,7 @@ func TestClineHeadersContract(t *testing.T) {
 
 		"X-CORE-VERSION": "0.0.95",
 
-		"X-Task-ID": clineTaskID("sess_abc"),
+		"X-Task-ID": cline.ClineTaskID("sess_abc"),
 	}
 
 	for k, v := range want {
@@ -751,25 +741,25 @@ func TestClineHeadersContract(t *testing.T) {
 
 	// 1792426668112_96vx7），同一会话稳定、不同会话不同；已是该形态则透传。
 
-	if !isClineTaskID(clineTaskID("sess_abc")) {
+	if !cline.IsClineTaskID(cline.ClineTaskID("sess_abc")) {
 
-		t.Errorf("X-Task-ID not in official form: %q", clineTaskID("sess_abc"))
+		t.Errorf("X-Task-ID not in official form: %q", cline.ClineTaskID("sess_abc"))
 
 	}
 
-	if clineTaskID("sess_abc") != clineTaskID("sess_abc") {
+	if cline.ClineTaskID("sess_abc") != cline.ClineTaskID("sess_abc") {
 
 		t.Error("X-Task-ID must be stable for the same session id")
 
 	}
 
-	if clineTaskID("sess_abc") == clineTaskID("sess_xyz") {
+	if cline.ClineTaskID("sess_abc") == cline.ClineTaskID("sess_xyz") {
 
 		t.Error("X-Task-ID must differ across sessions")
 
 	}
 
-	if got := clineTaskID("1792426668112_96vx7"); got != "1792426668112_96vx7" {
+	if got := cline.ClineTaskID("1792426668112_96vx7"); got != "1792426668112_96vx7" {
 
 		t.Errorf("official-form X-Task-ID must pass through unchanged, got %q", got)
 
@@ -894,11 +884,11 @@ func TestClineHeadersOnTheWire(t *testing.T) {
 
 	defer upstream.Close()
 
-	origBase := clineAPIBase
+	origBase := cline.APIBase
 
-	clineAPIBase = upstream.URL
+	cline.SetAPIBase(upstream.URL)
 
-	defer func() { clineAPIBase = origBase }()
+	defer func() { cline.SetAPIBase(origBase) }()
 
 	cline.PoolMu.Lock()
 
@@ -989,7 +979,7 @@ func TestClineHeadersOnTheWire(t *testing.T) {
 
 		t.Error("X-Task-ID must be present on a chat request")
 
-	} else if !isClineTaskID(got) {
+	} else if !cline.IsClineTaskID(got) {
 
 		t.Errorf("X-Task-ID %q must use the official <13 digits>_<5 base36> shape", got)
 
@@ -1035,11 +1025,11 @@ func TestCallClineAPIFailoverOnGFE403(t *testing.T) {
 
 	defer upstream.Close()
 
-	origBase := clineAPIBase
+	origBase := cline.APIBase
 
-	clineAPIBase = upstream.URL
+	cline.SetAPIBase(upstream.URL)
 
-	defer func() { clineAPIBase = origBase }()
+	defer func() { cline.SetAPIBase(origBase) }()
 
 	cline.PoolMu.Lock()
 
@@ -1118,11 +1108,11 @@ func TestCallClineAPIBusiness403NoFailover(t *testing.T) {
 
 	defer upstream.Close()
 
-	origBase := clineAPIBase
+	origBase := cline.APIBase
 
-	clineAPIBase = upstream.URL
+	cline.SetAPIBase(upstream.URL)
 
-	defer func() { clineAPIBase = origBase }()
+	defer func() { cline.SetAPIBase(origBase) }()
 
 	cline.PoolMu.Lock()
 

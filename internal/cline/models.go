@@ -1,7 +1,8 @@
-package app
+package cline
 
 import (
-	"afree-proxy/internal/cline"
+	"afree-proxy/internal/exitpool"
+	"afree-proxy/internal/gwconfig"
 	"afree-proxy/internal/kit"
 	"encoding/json"
 	"fmt"
@@ -52,7 +53,7 @@ type ModelInfo struct {
 	// FeedFree 官方推荐位成员（recommended-models free 组，即插件 UI 的 FREE
 	// 组）：cline 目录「仅展示插件免费」开关的过滤依据。catalog 零价发现
 	// 不属于该组；每次同步对全量缓存重算——模型掉出 feed 后仍可能经 catalog
-	// 零价路径留在缓存，标记必须回落（见 applyFeedFreeMark）。
+	// 零价路径留在缓存，标记必须回落（见 ApplyFeedFreeMark）。
 	FeedFree bool      `json:"feedFree,omitempty"`
 	MetaAt   time.Time `json:"metaAt,omitempty"`
 
@@ -65,14 +66,14 @@ type ModelInfo struct {
 }
 
 var (
-	modelsMu       sync.Mutex
+	ModelsMu       sync.Mutex
 	modelsCache    map[string]*ModelInfo
 	modelsSyncing  bool
 	modelsLastSync time.Time
 
 	// modelsSyncSuspended 测试态挂起后台目录同步（main_test.go TestMain 置位，
-	// 与 kit.SuspendFlushersForTest 同模式）：ensureModelsFresh 起的
-	// go syncModelsOnce() 无停止路径，会跨测试存活——上个测试遗留的同步
+	// 与 kit.SuspendFlushersForTest 同模式）：EnsureModelsFresh 起的
+	// go SyncModelsOnce() 无停止路径，会跨测试存活——上个测试遗留的同步
 	// goroutine 读 pool 全局时，下个测试正裸写替换它（CI -race DATA RACE，
 	// TestAdminAccountNickname 记账，2026-11-16）。多数测试也不想要它拉真实
 	// 上游的副作用（model_blacklist_test 曾各自预填 modelsLastSync 点状防御）。
@@ -86,9 +87,9 @@ const (
 	modelsSyncTimeout     = 25 * time.Second
 )
 
-const recommendedModelsURL = cline.ClineAPIBase + "/ai/cline/recommended-models"
+const recommendedModelsURL = ClineAPIBase + "/ai/cline/recommended-models"
 
-// initModelsCache 建立空缓存。没有冷启动兜底（2026-10-31 用户定）：免费
+// InitModelsCache 建立空缓存。没有冷启动兜底（2026-10-31 用户定）：免费
 // 模型的唯一来源是官方两个上游（recommended-models free 组 + /ai/cline/models
 // 零价扫描）的并集，首次同步成功之前 / feed 不可达时目录就是空的 —— 宁愿
 // 空着也不用过期快照兜底。背景：官方会把 free 模型静默移入付费档（2026-10-31
@@ -96,23 +97,35 @@ const recommendedModelsURL = cline.ClineAPIBase + "/ai/cline/recommended-models"
 // 快照会把计费模型当免费模型对外提供。extraFreeModels 本地兜底已于
 // 2026-11-11 用户拍板取消（beam-free 实测 200 但 catalog 缺条目，随机制一起
 // 丢弃；官方 catalog 收录它时自然回来）。
-func initModelsCache() {
-	modelsMu.Lock()
-	defer modelsMu.Unlock()
+func InitModelsCache() {
+	ModelsMu.Lock()
+	defer ModelsMu.Unlock()
 	if modelsCache != nil {
 		return
 	}
 	modelsCache = make(map[string]*ModelInfo)
 }
 
-func getFreeModels() []*ModelInfo {
-	initModelsCache()
-	modelsMu.Lock()
-	defer modelsMu.Unlock()
+// poolUseProxiesEnabled 未绑定账号是否走共享出口池（UseProxies 三态，nil=默认开）。
+func poolUseProxiesEnabled() bool {
+	p := LoadPool()
+	PoolMu.Lock()
+	v := p.UseProxies
+	PoolMu.Unlock()
+	if v == nil {
+		return true
+	}
+	return *v
+}
+
+func GetFreeModels() []*ModelInfo {
+	InitModelsCache()
+	ModelsMu.Lock()
+	defer ModelsMu.Unlock()
 	out := make([]*ModelInfo, 0, len(modelsCache))
 	for _, m := range modelsCache {
 		// 冷却中的模型不出现在列表里：feed 显示它免费，但实测调不通，
-		// 列出来只会让客户端选中后报错。冷却到期自动复活（见 recordModelSuccess）。
+		// 列出来只会让客户端选中后报错。冷却到期自动复活（见 RecordModelSuccess）。
 		if modelInCooldown(m) {
 			continue
 		}
@@ -139,36 +152,36 @@ type recommendedPayload struct {
 	} `json:"free"`
 }
 
-// clineSyncClient 目录同步的出口解析，与账号请求路径同语义（proxy.go chat）：
+// ClineSyncClient 目录同步的出口解析，与账号请求路径同语义（proxy.go chat）：
 // 选中账号有绑定走绑定出口（全不可用 fail-closed，不回落池/直连——feed 请求
 // 带该账号的 Bearer，出口漂移就是身份 IP 漂移）；未绑定按走池开关走池或直连，
 // DISABLE_DIRECT 恒拦直连。此前是裸直连（机制存在但没接全，2026-11-05 审计
 // 实测）：直连不可达的部署上 cline 目录自重启起每轮 EOF——目录清空、整段从
 // /v1/models 摘除、探测模型退化为空串。与五平台 catalogHTTPClient 同一纪律：
 // 无可用出口时跳过本轮，绝不隐式回落直连。
-func clineSyncClient() (*http.Client, string, error) {
-	acc := pickAccount()
+func ClineSyncClient() (*http.Client, string, error) {
+	acc := PickAccount()
 	if acc == nil {
-		acc = pickAccountAny()
+		acc = PickAccountAny()
 	}
 	if acc != nil {
 		if main, backup, bound := accountProxyBinding(acc); bound {
-			proxyURL, _, ok := pickBoundProxyFor(pkCline, main, backup)
+			proxyURL, _, ok := exitpool.PickBoundProxyFor(exitpool.KindCline, main, backup)
 			if !ok {
-				return nil, "", fmt.Errorf("no routable exit for model sync: account %s bound proxies unavailable (cooling or removed)", truncateEmail(acc.Email))
+				return nil, "", fmt.Errorf("no routable exit for model sync: account %s bound proxies unavailable (cooling or removed)", TruncateEmail(acc.Email))
 			}
-			return withSyncTimeout(proxyClientFor(proxyURL)), proxyURL, nil
+			return withSyncTimeout(exitpool.ClientFor(proxyURL)), proxyURL, nil
 		}
 	}
-	if clineProxiesEnabled() {
-		proxyURL, _, exitOK := upstreamProxyForKind(pkCline)
+	if poolUseProxiesEnabled() {
+		proxyURL, _, exitOK := exitpool.UpstreamForKind(exitpool.KindCline)
 		if !exitOK {
 			return nil, "", fmt.Errorf("no routable exit for model sync: every pool exit is manually cooled")
 		}
 		if proxyURL == "" && kit.DisableDirect() {
 			return nil, "", fmt.Errorf("no routable exit for model sync: pool empty and direct egress disabled by DISABLE_DIRECT")
 		}
-		return withSyncTimeout(proxyClientFor(proxyURL)), proxyURL, nil
+		return withSyncTimeout(exitpool.ClientFor(proxyURL)), proxyURL, nil
 	}
 	if kit.DisableDirect() {
 		return nil, "", fmt.Errorf("no routable exit for model sync: direct egress disabled by DISABLE_DIRECT")
@@ -176,7 +189,7 @@ func clineSyncClient() (*http.Client, string, error) {
 	return withSyncTimeout(kit.HTTPClient), "", nil
 }
 
-// withSyncTimeout 共享客户端不能改 Timeout（proxyClientFor 缓存复用），浅拷贝
+// withSyncTimeout 共享客户端不能改 Timeout（exitpool.ClientFor 缓存复用），浅拷贝
 // 挂同步超时。Transport 指针共享是安全的（http.Client 并发只读自身字段）。
 func withSyncTimeout(c *http.Client) *http.Client {
 	cp := *c
@@ -245,14 +258,14 @@ func isModelLevelFailure(status int, body string) bool {
 	return false
 }
 
-// recordModelFailure 记一次模型级失败；达到阈值就进入冷却。
-func recordModelFailure(modelID string, status int, body string) {
+// RecordModelFailure 记一次模型级失败；达到阈值就进入冷却。
+func RecordModelFailure(modelID string, status int, body string) {
 	if !isModelLevelFailure(status, body) {
 		return
 	}
-	initModelsCache()
-	modelsMu.Lock()
-	defer modelsMu.Unlock()
+	InitModelsCache()
+	ModelsMu.Lock()
+	defer ModelsMu.Unlock()
 	m, ok := modelsCache[modelID]
 	if !ok {
 		return
@@ -266,11 +279,11 @@ func recordModelFailure(modelID string, status int, body string) {
 	}
 }
 
-// recordModelSuccess 成功一次就清零失败计数并解除冷却。
-func recordModelSuccess(modelID string) {
-	initModelsCache()
-	modelsMu.Lock()
-	defer modelsMu.Unlock()
+// RecordModelSuccess 成功一次就清零失败计数并解除冷却。
+func RecordModelSuccess(modelID string) {
+	InitModelsCache()
+	ModelsMu.Lock()
+	defer ModelsMu.Unlock()
 	if m, ok := modelsCache[modelID]; ok && m.FailStreak > 0 {
 		m.FailStreak = 0
 		m.CooldownTil = time.Time{}
@@ -310,7 +323,7 @@ func truncateErr(s string) string {
 // 用它反而低估能力。
 //
 // 全部失败就留零值：宁可缺字段，也不给客户端一个猜出来的错窗口。
-const clineModelsMetaURL = cline.ClineAPIBase + "/ai/cline/models"
+const clineModelsMetaURL = ClineAPIBase + "/ai/cline/models"
 
 // clineMetaEntry /ai/cline/models 单条（只取用得上的字段）。
 //
@@ -452,7 +465,7 @@ func fetchClineMeta(client *http.Client, token string) []clineMetaEntry {
 	if err != nil {
 		return nil
 	}
-	req.Header = clineHeaders(token, "")
+	req.Header = ClineHeaders(token, "")
 	resp, err := client.Do(req)
 	if err != nil {
 		log.Printf("  model meta: fetch failed (%v), keeping previous metadata", err)
@@ -494,7 +507,7 @@ func reasoningEffortsFor(entry *clineMetaEntry) []string {
 	return []string{"minimal", "low", "medium", "high", "xhigh"}
 }
 
-// applyClineMetaLocked 把元数据写进缓存条目。调用方必须已持有 modelsMu
+// applyClineMetaLocked 把元数据写进缓存条目。调用方必须已持有 ModelsMu
 // （网络拉取在外面做完，避免持锁发请求）。
 // 元数据缺失的条目保留旧值——feed 抖一下不该让面板字段清空。
 func applyClineMetaLocked(entries []clineMetaEntry) int {
@@ -548,23 +561,23 @@ func applyClineMetaLocked(entries []clineMetaEntry) int {
 }
 
 func syncRecommendedModels() (int, error) {
-	initModelsCache()
+	InitModelsCache()
 
 	// 优先活跃账号；全部冷却时退回任意持凭证账号——模型列表与推理配额无关
 	// （实测 429 期间该接口仍 200），否则模型列表会长期停留在种子兜底状态
-	acc := pickAccount()
+	acc := PickAccount()
 	if acc == nil {
-		acc = pickAccountAny()
+		acc = PickAccountAny()
 	}
 	if acc == nil {
 		return 0, fmt.Errorf("no accounts")
 	}
-	token, err := ensureAccountToken(acc)
+	token, err := EnsureToken(acc)
 	if err != nil {
 		return 0, err
 	}
 
-	client, _, err := clineSyncClient()
+	client, _, err := ClineSyncClient()
 	if err != nil {
 		return 0, err
 	}
@@ -573,7 +586,7 @@ func syncRecommendedModels() (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	req.Header = clineHeaders(token, "")
+	req.Header = ClineHeaders(token, "")
 	// 官方 CLI 拉 recommended-models 时是纯 GET，不带 X-Task-ID（真机抓包
 	// 2026-10-19 核对）；此前塞的 sess_sync_<ms> 既非官方形态也不是任务，
 	// 反而不像真实客户端。
@@ -597,8 +610,8 @@ func syncRecommendedModels() (int, error) {
 	// 失败返回 nil，本轮只是不补全，不影响免费列表本身。
 	meta := fetchClineMeta(client, token)
 
-	modelsMu.Lock()
-	defer modelsMu.Unlock()
+	ModelsMu.Lock()
+	defer ModelsMu.Unlock()
 
 	// 免费模型来自两个来源，必须取并集：
 	//   1. recommended-models 的 free 组 —— 官方"推荐"的一小撮（2026-11 只有 3 个）；
@@ -664,7 +677,7 @@ func syncRecommendedModels() (int, error) {
 
 	// feedFree 标记对全量缓存统一重算：模型掉出 feed 后仍可能经 catalog/extra
 	// 路径留在缓存，按上一轮残留的 true 会误展示。
-	applyFeedFreeMark(modelsCache, feedFree)
+	ApplyFeedFreeMark(modelsCache, feedFree)
 
 	pruned := pruneModelsLocked(live, meta != nil)
 	if pruned > 0 {
@@ -679,20 +692,20 @@ func syncRecommendedModels() (int, error) {
 	return added, nil
 }
 
-// applyFeedFreeMark 对全量缓存重算 FeedFree 标记（每次同步调用一次）：只在
+// ApplyFeedFreeMark 对全量缓存重算 FeedFree 标记（每次同步调用一次）：只在
 // 官方推荐位（recommended-models free 组，即插件 UI 的 FREE 组）里的条目为
 // true。全量重算而非增量置位，是因为模型掉出 feed 后仍可能经 catalog 零价
 // 发现留在缓存，残留 true 会让「仅展示插件免费」误展示。
-func applyFeedFreeMark(cache map[string]*ModelInfo, feedFree map[string]bool) {
+func ApplyFeedFreeMark(cache map[string]*ModelInfo, feedFree map[string]bool) {
 	for _, m := range cache {
 		m.FeedFree = feedFree[m.ID]
 	}
 }
 
-// feedFreeModels 「仅展示插件免费」过滤：只留 FeedFree 条目。服务端过滤=
+// FeedFreeModels 「仅展示插件免费」过滤：只留 FeedFree 条目。服务端过滤=
 // 数据事实生效（/admin/api/models 返回的就是过滤后的目录）；开关状态落盘
 // afree-config.json（clineCatalogFeedOnly，见 global_config.go）。
-func feedFreeModels(models []*ModelInfo) []*ModelInfo {
+func FeedFreeModels(models []*ModelInfo) []*ModelInfo {
 	out := make([]*ModelInfo, 0, len(models))
 	for _, m := range models {
 		if m != nil && m.FeedFree {
@@ -727,8 +740,8 @@ func canonicalClineModelID(id string) string {
 // clineListLookupLocked 把请求侧 ID 解析到 feed 真实缓存键。缓存键就是 feed
 // 原样 ID：cline-free/* 条目自带前缀、poolside/* z-ai/* 等不带，因此剥前缀
 // 之后两种键形态都要查——只查剥前缀形态会漏掉 cline-free/* 原生条目，请求
-// 会被 STRICT 门控误拒（2026-10-12 修复）。调用方须持 modelsMu。
-func clineListLookupLocked(id string) (string, bool) {
+// 会被 STRICT 门控误拒（2026-10-12 修复）。调用方须持 ModelsMu。
+func ClineListLookupLocked(id string) (string, bool) {
 	canonical := canonicalClineModelID(id)
 	if canonical == "" {
 		return "", false
@@ -743,20 +756,20 @@ func clineListLookupLocked(id string) (string, bool) {
 	return "", false
 }
 
-// modelInClineList 判断（带/不带 cline-free/ 前缀两种请求形态都认）模型 ID
+// ModelInClineList 判断（带/不带 cline-free/ 前缀两种请求形态都认）模型 ID
 // 是否在 Cline 免费模型表内。
-func modelInClineList(id string) bool {
+func ModelInClineList(id string) bool {
 	if strings.TrimSpace(id) == "" {
 		return false
 	}
-	initModelsCache()
-	modelsMu.Lock()
-	defer modelsMu.Unlock()
-	_, ok := clineListLookupLocked(id)
+	InitModelsCache()
+	ModelsMu.Lock()
+	defer ModelsMu.Unlock()
+	_, ok := ClineListLookupLocked(id)
 	return ok
 }
 
-// pruneModelsLocked 修剪已从官方 feed 下线的模型。调用方必须已持有 modelsMu。
+// pruneModelsLocked 修剪已从官方 feed 下线的模型。调用方必须已持有 ModelsMu。
 //
 // 防御：feed 短暂为空时不清空本地列表。旧实现用"live 数量不足现有模型一半
 // 就跳过"的比例判断，这在 free 列表大幅收缩时会把修剪永久禁用——2026-11 官方
@@ -800,19 +813,19 @@ func indexByte(s string, b byte) int {
 	return -1
 }
 
-func syncModelsOnce() {
-	initModelsCache()
-	modelsMu.Lock()
+func SyncModelsOnce() {
+	InitModelsCache()
+	ModelsMu.Lock()
 	if modelsSyncing {
-		modelsMu.Unlock()
+		ModelsMu.Unlock()
 		return
 	}
 	modelsSyncing = true
-	modelsMu.Unlock()
+	ModelsMu.Unlock()
 	defer func() {
-		modelsMu.Lock()
+		ModelsMu.Lock()
 		modelsSyncing = false
-		modelsMu.Unlock()
+		ModelsMu.Unlock()
 	}()
 
 	added, err := syncRecommendedModels()
@@ -823,16 +836,16 @@ func syncModelsOnce() {
 	if added > 0 {
 		log.Printf("  model sync: %d new free models from official feed", added)
 	} else {
-		log.Printf("  model sync: %d free models up to date", len(getFreeModels()))
+		log.Printf("  model sync: %d free models up to date", len(GetFreeModels()))
 	}
 }
 
-// firstActiveModel 确定性取 live 免费列表里排序最小的可用模型（探测用：
+// FirstActiveModel 确定性取 live 免费列表里排序最小的可用模型（探测用：
 // 面板 Test 未指定模型时需要打一个真实存在的模型）。
-func firstActiveModel() string {
-	initModelsCache()
-	modelsMu.Lock()
-	defer modelsMu.Unlock()
+func FirstActiveModel() string {
+	InitModelsCache()
+	ModelsMu.Lock()
+	defer ModelsMu.Unlock()
 
 	best := ""
 	for id, m := range modelsCache {
@@ -847,7 +860,7 @@ func firstActiveModel() string {
 }
 
 // lookupFreeModel 在缓存里查模型，并且**把冷却中的模型视为不可用**。
-// 调用方必须已持有 modelsMu。
+// 调用方必须已持有 ModelsMu。
 //
 // 为什么冷却必须在解析路径生效、而不只是在列表路径：IDE 客户端会把模型名
 // 写进配置并发起长期流量，它从来不看 /v1/models。只从列表里隐藏，等于对
@@ -862,20 +875,20 @@ func lookupFreeModel(id string) (*ModelInfo, bool) {
 	return m, true
 }
 
-// normalizeRequestModel 把请求侧两种形态（带/不带 cline-free/ 前缀）解析到
+// NormalizeRequestModel 把请求侧两种形态（带/不带 cline-free/ 前缀）解析到
 // feed 真实 ID（缓存键原样），出站请求体与账号池记账一律用真实 ID。
 // 不在免费表的名字原样返回——未知模型由入口 STRICT 门控显式拒绝，这里
 // 绝不静默改写成别的模型。
-func normalizeRequestModel(id string) string {
+func NormalizeRequestModel(id string) string {
 	id = strings.TrimSpace(id)
 	if id == "" {
 		return ""
 	}
-	initModelsCache()
-	modelsMu.Lock()
-	resolved, ok := clineListLookupLocked(id)
+	InitModelsCache()
+	ModelsMu.Lock()
+	resolved, ok := ClineListLookupLocked(id)
 	cooling := ok && modelInCooldown(modelsCache[resolved])
-	modelsMu.Unlock()
+	ModelsMu.Unlock()
 	if ok && !cooling {
 		return resolved
 	}
@@ -890,38 +903,38 @@ func normalizeRequestModel(id string) string {
 	return id
 }
 
-// clineModelCooling 请求侧判定：该模型（两种前缀形态都认）在 cline 目录内
+// ClineModelCooling 请求侧判定：该模型（两种前缀形态都认）在 cline 目录内
 // 且正处于失败冷却中。chat 入口据此显式 503，宁弃请求不撞已知坏模型。
-func clineModelCooling(id string) bool {
+func ClineModelCooling(id string) bool {
 	id = strings.TrimSpace(id)
 	if id == "" {
 		return false
 	}
-	initModelsCache()
-	modelsMu.Lock()
-	defer modelsMu.Unlock()
-	resolved, ok := clineListLookupLocked(id)
+	InitModelsCache()
+	ModelsMu.Lock()
+	defer ModelsMu.Unlock()
+	resolved, ok := ClineListLookupLocked(id)
 	return ok && modelInCooldown(modelsCache[resolved])
 }
 
-// modelInFreeList 门控放行判定：空串放行（入口校验负责拒绝无 model 请求），
+// ModelInFreeList 门控放行判定：空串放行（入口校验负责拒绝无 model 请求），
 // 否则 Cline 表（带/不带 cline-free/ 前缀都认）或 zen 模型命中即放行。
-func modelInFreeList(id string) bool {
+func ModelInFreeList(id string) bool {
 	id = strings.TrimSpace(id)
 	if id == "" {
 		return true
 	}
-	initModelsCache()
-	modelsMu.Lock()
-	defer modelsMu.Unlock()
-	key, ok := clineListLookupLocked(id)
+	InitModelsCache()
+	ModelsMu.Lock()
+	defer ModelsMu.Unlock()
+	key, ok := ClineListLookupLocked(id)
 	if !ok || modelInCooldown(modelsCache[key]) {
 		return false
 	}
 	return true
 }
 
-// strictModelGate STRICT_MODEL_MATCH 开启时，对既不在 cline 免费模型表、
+// StrictModelGate STRICT_MODEL_MATCH 开启时，对既不在 cline 免费模型表、
 // 也不是 zen 模型的名字返回错误提示；空串表示放行。zen 模型必须放行：
 // zen 目录按分钟同步，闪断空窗里的误拒靠这里兜住。combo 别名由调用方先改写。
 // gateRefreshMinInterval 门控触发的强制刷新节流：30 秒内多个未命中只真实
@@ -930,11 +943,11 @@ const gateRefreshMinInterval = 30 * time.Second
 
 var gateRefreshLast atomic.Int64 // 上次门控刷新时间（unix 秒）
 
-func strictModelGate(model string) string {
-	if !StrictModelMatchEnv() || modelInFreeList(model) {
+func StrictModelGate(model string) string {
+	if !gwconfig.StrictModelMatchEnv() || ModelInFreeList(model) {
 		return ""
 	}
-	if _, ok := resolveZenModel(model); ok {
+	if Host.ZenModelExists(model) {
 		return ""
 	}
 	// 未命中不立即拒绝：两份模型缓存按分钟刷新，且上游 zen 目录存在闪断
@@ -942,39 +955,135 @@ func strictModelGate(model string) string {
 	// 可能恰好落进空窗被误拒。节流地强制同步两份缓存再重查；仍找不到才
 	// 拒绝。真下线的模型该请求随后会在上游得到真实错误（该类错误不冷却
 	// key），不会把死模型硬塞给上游。
-	if last := gateRefreshLast.Load(); time.Since(time.Unix(last, 0)) >= gateRefreshMinInterval &&
-		gateRefreshLast.CompareAndSwap(last, time.Now().Unix()) {
-		syncModelsOnce()
-		if _, err := syncZenModels(); err != nil {
-			log.Printf("  strict gate: zen catalog refresh failed (%v)", err)
-		}
-		if modelInFreeList(model) {
-			return ""
-		}
-		if _, ok := resolveZenModel(model); ok {
-			return ""
-		}
+	ThrottledCatalogRefresh("strict gate")
+	if ModelInFreeList(model) {
+		return ""
+	}
+	if Host.ZenModelExists(model) {
+		return ""
 	}
 	return fmt.Sprintf("model %q is not available on this gateway (see /v1/models for the model list)", model)
 }
 
-func apiModelList() []map[string]any {
+// hasRoutableCredential cline 平台可路由性判定（与 registry 适配器同口径：
+// 存在 active 且启用的账号）。
+func hasRoutableCredential() bool {
+	p := LoadPool()
+	PoolMu.Lock()
+	defer PoolMu.Unlock()
+	for _, a := range p.Accounts {
+		if a != nil && accountStatusLockedImpl(a) == "active" && accountPoolEnabledImpl(a) {
+			return true
+		}
+	}
+	return false
+}
+
+// accountStatusLockedImpl / accountPoolEnabledImpl 包内既有判定的本地直呼。
+func accountStatusLockedImpl(a *Account) string { return AccountStatusLocked(a) }
+func accountPoolEnabledImpl(a *Account) bool    { return AccountPoolEnabled(a) }
+
+// ThrottledCatalogRefresh 节流的强制目录刷新（served gate / strict gate 共用）：
+// 30s 窗口内多个未命中只真实刷新一次（CAS 去重）。label 进日志便于归因。
+// 测试态挂起（modelsSyncSuspended）时跳过真实同步——测试注入的目录条目会被
+// 真实目录同步覆盖（探针实测 seed 条目被 live 目录冲掉）。
+func ThrottledCatalogRefresh(label string) bool {
+	if last := gateRefreshLast.Load(); time.Since(time.Unix(last, 0)) < gateRefreshMinInterval ||
+		!gateRefreshLast.CompareAndSwap(last, time.Now().Unix()) {
+		return false
+	}
+	if modelsSyncSuspended {
+		return true
+	}
+	SyncModelsOnce()
+	if Host.SyncZenCatalog != nil {
+		if err := Host.SyncZenCatalog(); err != nil {
+			log.Printf("  %s: zen catalog refresh failed (%v)", label, err)
+		}
+	}
+	return true
+}
+
+// ThrottleGateRefreshForTest 预占 gate 的目录同步节流窗（30s）：测试注入条目
+// 后防止 served/strict gate 的强制刷新与测试写盘竞态。
+func ThrottleGateRefreshForTest() { gateRefreshLast.Store(time.Now().Unix()) }
+
+// CatalogConflict zen 目录冲突判定专用：id 是否与 cline 目录条目同名
+// （不看冷却态——与 ModelInClineList 语义不同）。
+func CatalogConflict(id string) bool {
+	InitModelsCache()
+	ModelsMu.Lock()
+	defer ModelsMu.Unlock()
+	_, ok := ClineListLookupLocked(id)
+	return ok
+}
+
+// ---- 测试白盒原语（app 侧测试经桥接消费；勿在生产路径使用）----
+
+// SetCatalogForTest 整表替换目录缓存，返回原表供测试恢复。
+func SetCatalogForTest(m map[string]*ModelInfo) map[string]*ModelInfo {
+	InitModelsCache()
+	ModelsMu.Lock()
+	defer ModelsMu.Unlock()
+	saved := modelsCache
+	modelsCache = m
+	return saved
+}
+
+// CatalogSnapshotForTest 读目录缓存（测试断言用，返回真身引用）。
+func CatalogSnapshotForTest() map[string]*ModelInfo {
+	ModelsMu.Lock()
+	defer ModelsMu.Unlock()
+	return modelsCache
+}
+
+// SetSyncStateForTest 预填同步状态（lastSync/syncing），防 ensureModelsFresh
+// 在测试里触发真实同步。
+func SetSyncStateForTest(last time.Time, syncing bool) {
+	ModelsMu.Lock()
+	defer ModelsMu.Unlock()
+	modelsLastSync = last
+	modelsSyncing = syncing
+}
+
+// PruneForTest pruneModelsLocked 的加锁包装（测试专用）。
+func PruneForTest(live map[string]bool, catalogOK bool) int {
+	ModelsMu.Lock()
+	defer ModelsMu.Unlock()
+	return pruneModelsLocked(live, catalogOK)
+}
+
+// LastSyncTime 目录最近一次同步完成时刻（面板展示用）。
+func LastSyncTime() time.Time {
+	ModelsMu.Lock()
+	defer ModelsMu.Unlock()
+	return modelsLastSync
+}
+
+// SyncInProgress 是否有目录同步在进行（面板刷新端点防重入）。
+func SyncInProgress() bool {
+	ModelsMu.Lock()
+	defer ModelsMu.Unlock()
+	return modelsSyncing
+}
+
+func APIModelList() []map[string]any {
 	// 展示门控：没有可路由的 Cline 账号时不出目录——裸模型名按 Cline 路由，
 	// 账号总闸/反代开关全关时请求入口直接 503，继续展示只会让客户端选中
 	// 必失败的模型（与 trae 同口径）。
-	if !platformHasRoutableCredential(platCline) {
+	if !hasRoutableCredential() {
 		return nil
 	}
-	// 先取快照再装箱：getFreeModels 内部持锁，但容量提示不能直接读
+	// 先取快照再装箱：GetFreeModels 内部持锁，但容量提示不能直接读
 	// len(modelsCache)——那是无锁读 map 头，与 60s 刷新器并发时是 data race
 	//（/v1/models 是客户端热路径，每个请求都会走到这里）。
-	free := getFreeModels()
+	free := GetFreeModels()
 	// 「仅展示插件免费」开关（2026-11-11 用户定）：对外目录与面板一致——
 	// 面板有什么，对外提供什么。开启后 cline 段只列官方推荐位（recommended
 	// free 组）。servedModelEntries/modelIsServed 与本函数同源，被隐藏的
 	// 模型请求侧也会被「不在目录」兜底拒，列表与路由语义保持一致。
-	if globalClineCatalogFeedOnly() {
-		free = feedFreeModels(free)
+	if CatalogFeedOnly() {
+		free = FeedFreeModels(free)
 	}
 	out := make([]map[string]any, 0, len(free))
 	for _, m := range free {
@@ -1033,7 +1142,7 @@ func apiModelList() []map[string]any {
 // normalizeModelEntryFields 把单条 /v1/models 条目的上下文类字段统一为业界
 // 标准形态（映射规则见 proxy.go 调用处的注释）。已存在的标准字段不覆盖
 // （上游权威优先）。
-func normalizeModelEntryFields(m map[string]any) {
+func NormalizeModelEntryFields(m map[string]any) {
 	if _, ok := m["context_length"]; !ok {
 		if n := modelEntryInt(m["context"]); n > 0 {
 			m["context_length"] = n
@@ -1064,36 +1173,40 @@ func modelEntryInt(v any) int64 {
 	return 0
 }
 
-// modelsSyncSnapshot 无锁安全地取同步状态。modelsLastSync 是 time.Time（三个
+// ModelsSyncSnapshot 无锁安全地取同步状态。modelsLastSync 是 time.Time（三个
 // 字），syncRecommendedModels 持锁写它；admin 面板直接读字段会拿到撕裂值，
 // 也会被 -race 判为 data race。
-func modelsSyncSnapshot() (lastSync time.Time, syncing bool) {
-	initModelsCache()
-	modelsMu.Lock()
-	defer modelsMu.Unlock()
+func ModelsSyncSnapshot() (lastSync time.Time, syncing bool) {
+	InitModelsCache()
+	ModelsMu.Lock()
+	defer ModelsMu.Unlock()
 	return modelsLastSync, modelsSyncing
 }
 
-func ensureModelsFresh() {
+// SetModelsSyncSuspended 测试态挂起后台目录同步（app TestMain 置位；
+// 后台同步 goroutine 跨测试存活会与裸写 pool 全局的测试竞争）。
+func SetModelsSyncSuspended(v bool) { modelsSyncSuspended = v }
+
+func EnsureModelsFresh() {
 	if modelsSyncSuspended {
 		return
 	}
-	initModelsCache()
-	modelsMu.Lock()
+	InitModelsCache()
+	ModelsMu.Lock()
 	needSync := modelsLastSync.IsZero() || time.Since(modelsLastSync) > modelsRefreshInterval
 	syncing := modelsSyncing
-	modelsMu.Unlock()
+	ModelsMu.Unlock()
 	if needSync && !syncing {
-		go syncModelsOnce()
+		go SyncModelsOnce()
 	}
 }
 
-func startModelsRefresher() {
+func StartModelsRefresher() {
 	go func() {
-		syncModelsOnce()
+		SyncModelsOnce()
 		ticker := time.NewTicker(modelsRefreshInterval)
 		for range ticker.C {
-			syncModelsOnce()
+			SyncModelsOnce()
 		}
 	}()
 }

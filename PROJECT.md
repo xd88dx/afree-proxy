@@ -12,14 +12,14 @@
 
 | 平台线         | 代码位置                                                                                        | 面板字段 / 环境变量 |
 | -------------- | ----------------------------------------------------------------------------------------------- | ------------------- |
-| Cline          | `internal/cline/`；`internal/app/proxy.go` 的账号池、轮换、冷却与 `/v1` 通用转发                | —                   |
-| OpenCode (zen) | `internal/app/zen*.go`、`internal/app/admin_zen.go`；`internal/kit/http.go` 的 `DecodeResponse` | `oc*`、`ZEN_*`      |
-| TraeWork       | `modules/trae2api/`（vendor 独立 module）+ 其根门面 `afree_bridge.go`；`internal/app/trae*.go`（桥接） | `trae*`（桥接层）；选号=引擎权重调度，`TRAE_STRATEGY` 已作废 |
-| WorkBuddy      | `modules/workbuddy2api/`（vendor 独立 module）+ 其根门面 `afree_bridge.go`；`internal/app/workbuddy*.go`（桥接） | `wb*`               |
+| Cline          | `internal/cline/`（账号池/认证/上游调用/模型目录）；`/v1` 通用转发在 `internal/gateway/`       | —                   |
+| OpenCode (zen) | `internal/zen/`（key 池/会话/端点学习/egress 钉定）；面板 `internal/app/admin_zen.go`；`internal/kit/http.go` 的 `DecodeResponse` | `oc*`、`ZEN_*`      |
+| TraeWork       | `modules/trae2api/`（vendor 独立 module）+ 其根门面 `afree_bridge.go`；域 `internal/trae/`，桥接 `internal/app/trae_bridge.go`、面板 `internal/app/trae_handlers.go` | `trae*`（桥接层）；选号=引擎权重调度，`TRAE_STRATEGY` 已作废 |
+| WorkBuddy      | `modules/workbuddy2api/`（vendor 独立 module）+ 其根门面 `afree_bridge.go`；域 `internal/workbuddy/`，桥接 `internal/app/wb_bridge.go`、面板 `internal/app/wb_handlers.go` | `wb*`               |
 
 **vendor 独立 module 化（2026-11-17）**：两树迁至 `modules/`，go.mod 沿用上游 module 路径（wb=`github.com/misakano7545/workbuddy2api-panel`，trae=`trae2api`），主 go.mod `replace` 指本地、`go.work` 汇总；树内 import 与上游零差异，vendor 脚本不再做 import 前缀改写。主 module 只能经各自根门面消费 vendor 的 internal 包（Go internal 可见性强制，门面即显式契约）。**workspace 模式下 `./...` 不穿透 modules/ 子目录 module**（实测 `go list ./...` 仅 6 包）——构建/测试必须显式列模块路径，见 §4。
 
-`internal/app/admin_html.go` 是**所有平台共用**的单文件面板，按 h2 / tab 分段，`oc*` 属于 OpenCode 而不是 Cline。改一处必须确认它属于哪个平台段。
+`internal/panel/html.go` 是**所有平台共用**的单文件面板，按 h2 / tab 分段，`oc*` 属于 OpenCode 而不是 Cline。改一处必须确认它属于哪个平台段。
 
 ## 3. 上游同步：五条线（主线 merge/vendor + 副线吸纳）+ magpie 参考线，台账 `MERGE.md`
 
@@ -100,7 +100,7 @@ go test $GOALL -count=1            # 除下述既有失败外应全绿
 | 旧引擎 scope 存量条目失效 | 修完域级 Ban 后，存量 `scope=remote/traecode/traework` 条目谁也匹配不上 = 静默解禁 | 定义 `traeLegacyScopes`：读取侧按"全档封禁"命中，写入侧 `normalizeTraeScope` 一律落成空 scope（fail-closed，该封的继续封） |
 | 88 条孤儿词条 + `strategy` 无面板入口 | 反向审计脚本自述"仅参考"；选号策略只能 env/API 设置 | 三重判据甄别（词典区外无引用 ∧ 无 Go 侧产生 ∧ 大小写敏感）后删 9 条死词条，其余 77 条为动态 `T(变量)` 在用，保留；**新增面板「账号轮转策略」下拉**（**网关设置页，紧挨「封禁平台」上方**；全部可见文案走 `data-i18n` slug 键——含 `<code>` 的段落必须用属性键，否则文本节点被拆开永远匹配不上；后台 `handleZenConfigUpdate` 接 `strategy`，env `POOL_STRATEGY` 设置时后端 400 拒绝 + 控件置只读并提示，与 PROXY_ISOLATION 同款；加载挂在设置页切换 `loadAccountStrategy()`，不靠代理池页顺带），并顺手补上隔离锁定提示缺失的中文词条 |
 
-**甄别脚本判据（可复用）**：孤儿词条不能只信 `i18n_reverse_audit.py`——面板存在 `T(动态变量)` 形态（状态徽章、helper 消息、封禁原因由 Go 侧产生），必须再用"该字符串是否出现在 admin_html.go 之外的任何 Go/vendor 源码"交叉验证；本次据此避免了误删 `Credentials saved to server`、`auto-banned: …`、`Ready`、`Unknown`、` already` 等在用词条。另注意键里的省略号可能是 U+2026（`wrk_… (optional)`），按 ASCII 三点匹配会漏。
+**甄别脚本判据（可复用）**：孤儿词条不能只信 `i18n_reverse_audit.py`——面板存在 `T(动态变量)` 形态（状态徽章、helper 消息、封禁原因由 Go 侧产生），必须再用"该字符串是否出现在 html.go（internal/panel）之外的任何 Go/vendor 源码"交叉验证；本次据此避免了误删 `Credentials saved to server`、`auto-banned: …`、`Ready`、`Unknown`、` already` 等在用词条。另注意键里的省略号可能是 U+2026（`wrk_… (optional)`），按 ASCII 三点匹配会漏。
 
 ## 4d. 2026-11-09 请求日志「TraeWork 两列为空」修复
 
@@ -150,7 +150,7 @@ WB vendored config 三节死配置删除（2026-11-15，探测结论见会话）
 **新增其他平台时按此清单逐项适配**——每一条都是换线过程中实测踩坑后的结论，缺一条就是静默缺口。
 
 ### 数据与装配
-- vendor 树 `internal/trae2api/`（`scripts/vendor_trae2api.py` 生成，勿手改）；桥接层 `internal/app/trae.go`；helper 资产 `internal/app/trae2api_helper*.go`。
+- vendor 树 `modules/trae2api/`（`scripts/vendor_trae2api.py` 生成，勿手改）；域 `internal/trae/`；helper 资产 `internal/trae/trae2api_helper*.go`。
 - 配置 `data/trae2api/config.json`（2026-11-05 从顶层散文件迁入子系统目录，与 workbuddy/config.json 同构；config-manifest 显式登记监测；启动时自动迁移旧路径）；运行态同目录（accounts/*.json 快照、state.json 冷却/熔断/禁用+手动冷却、metrics.json）。使用痕迹不进配置监测口径。
 - vendored 无热更新：面板保存配置 → 落盘 → `trae2apiRestart()`（先摘除再重启，旧实例先 `Pool().Save()` 防与 30s ticker 竞争写 state.json）。
 - 鉴权分层：vendored `cfg.APIKey`/`WebPassword` 恒空（`traeApplyAfreeConstraints` 每次重启强制），真门禁在 afree 网关层；`trae.proxy`（全局）与 per-account proxy 恒清空（出口由 afree 接管，防死配置）。
@@ -292,7 +292,7 @@ iStore 的面板密码是 `233@.afree`(与本机 compose 里的值不同);登录
 
 ## 8. 面板文案与中文翻译（每次改面板 / 同步上游必查）
 
-`internal/app/admin_html.go` 的界面是**英文原文 + `I18N` 对照词典**（2026-11-08 起 key→{en,zh} 结构，88f341e）+ `T()`/`data-i18n`（title/placeholder 走 `data-i18n-title`/`data-i18n-placeholder` 专属 key，伏笔 dbc476c/46d03e4）**双层结构。`LANG === 'zh'` 时由三条路径替换：
+`internal/panel/html.go` 的界面是**英文原文 + `I18N` 对照词典**（2026-11-08 起 key→{en,zh} 结构，88f341e）+ `T()`/`data-i18n`（title/placeholder 走 `data-i18n-title`/`data-i18n-placeholder` 专属 key，伏笔 dbc476c/46d03e4）**双层结构。`LANG === 'zh'` 时由三条路径替换：
 
 | 路径         | 实现                                                      | 覆盖对象                       |
 | ------------ | --------------------------------------------------------- | ------------------------------ |

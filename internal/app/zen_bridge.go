@@ -5,6 +5,7 @@ package app
 // 包装 + Host 注入）。
 
 import (
+	"afree-proxy/internal/gateway"
 	"afree-proxy/internal/reqlog"
 
 	"context"
@@ -215,17 +216,17 @@ func zenStateBackupSnapshot() *ZenUsageFile              { return zen.ZenStateBa
 
 func init() {
 	zen.Host.CollectStreamResponse = func(upstream *http.Response, hintModel ...string) (map[string]any, error) {
-		return collectStreamResponse(upstream, hintModel...)
+		return gateway.CollectStreamResponse(upstream, hintModel...)
 	}
 	zen.Host.IsDirect = func(v string) bool { return isEgressDirect(v) }
-	zen.Host.PassThroughKeys = passThroughKeys
-	zen.Host.RepairToolArguments = repairToolArguments
-	zen.Host.AsInt = asInt
+	zen.Host.PassThroughKeys = cline.PassThroughKeys
+	zen.Host.RepairToolArguments = gateway.RepairToolArguments
+	zen.Host.AsInt = kit.AsInt
 	zen.Host.BoundExitFor = boundExitFor
 	zen.Host.MaskProxyURLRaw = func(raw string) string { return kit.MaskProxyURL(raw) }
 	zen.Host.LogUpstreamInfo = reqlog.SetUpstreamInfo
 	zen.Host.LogUpstreamExitType = reqlog.SetUpstreamExit
-	zen.Host.ClineHeaderWatchdogFor = clineHeaderWatchdogFor
+	zen.Host.ClineHeaderWatchdogFor = cline.ClineHeaderWatchdogFor
 	zen.Host.ProxyExitType = proxyExitType
 	zen.Host.ShouldCooldownExit = shouldCooldownExit
 	zen.Host.PlatformCooldown = proxyPlatformCooldown
@@ -240,13 +241,7 @@ func init() {
 		}
 		return ids
 	}
-	zen.Host.HasClineCatalogConflict = func(zenID string) bool {
-		initModelsCache()
-		modelsMu.Lock()
-		defer modelsMu.Unlock()
-		_, inCline := modelsCache[zenID]
-		return inCline
-	}
+	zen.Host.HasClineCatalogConflict = cline.CatalogConflict
 	zen.Host.Strategy = globalStrategy
 	zen.Host.LogUpstream = func(ctx context.Context, label string) { reqlog.SetUpstreamInfo(ctx, label) }
 	zen.Host.LogUpstreamExit = func(ctx context.Context, exit string) { reqlog.SetUpstreamExit(ctx, exit) }
@@ -257,20 +252,14 @@ func init() {
 		}
 		return c.Platform, true
 	}
-	zen.Host.HasModelEntry = func(id string) bool {
-		initModelsCache()
-		modelsMu.Lock()
-		defer modelsMu.Unlock()
-		_, ok := modelsCache[id]
-		return ok
-	}
+	zen.Host.HasModelEntry = cline.CatalogConflict
 	zen.Host.MaskProxyURL = func(raw string) string { return kit.MaskProxyURL(raw) }
 	zen.Host.PoolStatusSnapshot = poolStatusSnapshot
-	zen.Host.UpstreamErrorStatus = upstreamErrorStatus
+	zen.Host.UpstreamErrorStatus = gateway.UpstreamErrorStatus
 	zen.Host.KeyBindingOf = keyBindingOf
 	zen.Host.BoundProxiesRoutableFor = boundProxiesRoutableFor
 	zen.Host.BlockedExitMessage = blockedExitMessage
-	zen.Host.GetMsgCount = getMsgCount
+	zen.Host.GetMsgCount = cline.GetMsgCount
 	zen.Host.ZenRoutable = func() bool { return platformHasRoutableCredential(platZen) }
 }
 

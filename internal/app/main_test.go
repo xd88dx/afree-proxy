@@ -1,6 +1,7 @@
 package app
 
 import (
+	"afree-proxy/internal/cline"
 	"os"
 	"testing"
 	"time"
@@ -17,7 +18,7 @@ import (
 // 保存点不受影响。
 func TestMain(m *testing.M) {
 	kit.SuspendFlushersForTest()
-	modelsSyncSuspended = true // 后台目录同步 goroutine 跨测试存活会与裸写 pool 全局的测试竞争（见 models.go）
+	cline.SetModelsSyncSuspended(true) // 后台目录同步 goroutine 跨测试存活会与裸写 pool 全局的测试竞争（见 models.go）
 	os.Exit(m.Run())
 }
 

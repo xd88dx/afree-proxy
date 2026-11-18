@@ -11,7 +11,7 @@
 - 别名：`/combos{,/create,/delete}`
 - 全局：`/request-stats`、`/stats`、`/logs`、`/config/export|import`、`/data/delete-all`
 
-WB 特例：`/admin/api/workbuddy/enabled` 注册在 proxy.go（workbuddy 路由段），其余走 `/admin/workbuddy/api/*`（vendor 面板 API，内嵌控制台 `wbCall()` 消费）——**新平台不要复制这个双前缀模式**，直接用 `/admin/api/x/...`。
+WB 特例：`/admin/api/workbuddy/enabled` 注册在 app/proxy.go（workbuddy 路由段），其余走 `/admin/workbuddy/api/*`（vendor 面板 API，内嵌控制台 `wbCall()` 消费）——**新平台不要复制这个双前缀模式**，直接用 `/admin/api/x/...`。
 
 ## 2. 凭据启停（PoolEnabled 口径）
 
@@ -24,16 +24,16 @@ WB 特例：`/admin/api/workbuddy/enabled` 注册在 proxy.go（workbuddy 路由
 - 选号全路径过滤：X 的每一个可用凭据枚举函数都要过滤禁用项（参照 wbpool 的 `selOK`/`AvailableUIDs` 家族/`ServableForRealm`，key 池参照各包 pool.go 的 `RoutingEnabled` 过滤）。**定时任务（签到/保活/统计）不过滤**——禁用只指"不参与请求路由"。
 - 状态透出：列表 API 返回每条凭据的启用布尔；一键启停 `setAllAccountsPoolEnabled` / `setAllZenKeysRoutingEnabled` 模式（返回实际改写数）。
 
-## 3. 网关分发（/v1）
+## 3. 网关分发（/v1，域在 internal/gateway/）
 
-- 分发链现状（proxy.go /v1/chat/completions 与 responses.go 一致）：
+- 分发链现状（gateway/proxy.go 的 /v1/chat/completions 与 gateway/responses.go 一致）：
   1. `shouldServeWorkBuddy(model)`——vendor realm 前缀 `wbcn:`/`wbgb:`（裸模型名不接管，避免静默改路由）
   2. `resolveCombo(model)` 别名改写（改写后回头再判一次 WB）
   6. `routeModel(model)`（zen.go）——`zen:` 前缀 + 免费表判定 → zen / reject / cline；其余落 cline 池
-  7. cline 模型前缀 `cline-free/`（models.go `clineModelPrefix`，/v1/models 输出即带前缀）
+  7. cline 模型前缀 `cline-free/`（internal/cline `clineModelPrefix`，/v1/models 输出即带前缀）
 - 新平台加自己的 `HasPrefix(model)`（放 X 包内，`ModelPrefix` 常量 + `HasPrefix` 函数，见 other 包 `ResolvePrefix` 的前缀形态）并按上述位置插入分发链。
-- **前缀平台查表铁律（2026-10-12 回归教训）**：模型缓存键 = feed 原样 ID，`cline-free/*` 条目**自带前缀**、poolside/* z-ai/* 等不带。展示层 `displayClineModelID` 统一补前缀、请求侧 `canonicalClineModelID` 剥前缀——**剥前缀之后必须裸名和 `前缀+裸名` 两种键形态都查**（`models.go clineListLookupLocked`），只查剥前缀形态会把整类自带前缀的原生条目挡在 STRICT 门控外（症状：模型在 /v1/models 里可见，请求却 400 "not available on this gateway"）。出站/记账用解析到的缓存键原样。测试必须覆盖"列表里自带前缀的条目"两种请求形态（model_prefix_test.go）。
-- `/v1/models` 合并：各平台 `ModelList()` 汇入（带前缀的 ID），客户端按列表 ID 调用。**段内恒序铁律（2026-10-26）**：每个平台段内部必须确定有序——cline 按**裸 feed ID** 升序（输出统一补 `cline-free/` 前缀，故输出 id 观感上非升序但顺序确定）；zen/trae/other 各 `ModelList()` 内 `sort.Slice`；WorkBuddy 段由 `workbuddyModelEntries` 按 id 稳定排序，并保留「对话模型 → 出图模型」分组（`image_generation` 条目不混进对话名单）。新增平台段若顺序来自上游返回序/map 迭代序，**必须在合并处排序**——否则下游 new-api 等按序消费方每次看到的顺序都不同。`internal/app/models_order_test.go` 锁死该契约。
+- **前缀平台查表铁律（2026-10-12 回归教训）**：模型缓存键 = feed 原样 ID，`cline-free/*` 条目**自带前缀**、poolside/* z-ai/* 等不带。展示层 `displayClineModelID` 统一补前缀、请求侧 `canonicalClineModelID` 剥前缀——**剥前缀之后必须裸名和 `前缀+裸名` 两种键形态都查**（`internal/cline` ClineListLookupLocked），只查剥前缀形态会把整类自带前缀的原生条目挡在 STRICT 门控外（症状：模型在 /v1/models 里可见，请求却 400 "not available on this gateway"）。出站/记账用解析到的缓存键原样。测试必须覆盖"列表里自带前缀的条目"两种请求形态（model_prefix_test.go）。
+- `/v1/models` 合并：各平台 `ModelList()` 汇入（带前缀的 ID），客户端按列表 ID 调用。**段内恒序铁律（2026-10-26）**：每个平台段内部必须确定有序——cline 按**裸 feed ID** 升序（输出统一补 `cline-free/` 前缀，故输出 id 观感上非升序但顺序确定）；zen/trae/other 各 `ModelList()` 内 `sort.Slice`；WorkBuddy 段由 `gateway workbuddyModelEntries` 按 id 稳定排序，并保留「对话模型 → 出图模型」分组（`image_generation` 条目不混进对话名单）。新增平台段若顺序来自上游返回序/map 迭代序，**必须在合并处排序**——否则下游 new-api 等按序消费方每次看到的顺序都不同。`internal/app/models_order_test.go` 锁死该契约。
 - 请求日志分类：logs.go 的 per-route 原子计数与新平台桶（reqOther 已存在；注意计数在 logEnabled 分支内——LOG_REQUESTS=false 时停摆是刻意行为）。
 
 ## 4. 自定义别名（combos.go）
@@ -93,7 +93,7 @@ WB 特例：`/admin/api/workbuddy/enabled` 注册在 proxy.go（workbuddy 路由
 - `client.go`：上游调用。标准 OpenAI 兼容 chat/completions；key 选择与出口解析留在**主包**（主包持有代理池/隔离语义），本包只做"给定 key + Exit + Client 发一次请求 + 重试"。`HTTPError{Status, Body, RateLimited}` 类型化错误、`CallOpts{PinKey, Exit, Client}`。
 - `config.go`：`Config{Keys, KeyRoutingEnabled, KeyBindings, MaxConcurrency, Retries, ...}`（**纯配置**）+ `Load(path)/Get()/Save()` + `ReconcileRouting(next, cur)`（新 key 默认 false）+ `RoutingEnabled(key)`（缺项=true）+ key 掩码。
 - `usage.go`（2026-10-31 拆分必带）：`usageData{KeyTokens, Cool}` 包级 usage 真身 + `UsagePath`（app 层注入 `DATA_DIR/<x>-state.json`）+ `saveUsage`/`loadUsage`（含从旧 config 的一次性迁移）+ `markTokensDirty`（10s DirtyFlusher）+ `ClearUsage`/`pruneUsageLocked`。**KeyTokens/Cool 等使用痕迹不进 `<x>-config.json`**——配置文件保持"仅面板操作才变"（2026-11-01 命名铁律：`*-config.json`=配置态、`*-state.json`=状态态，新平台按此命名即自动纳入外部监测的 config-manifest 指纹清单）。
-- `models.go`：目录同步与免费模型判定（各平台协议不同：other 走上游 `{BaseURL}/models` 拉取 + 勾选暴露；价格门/成员表语义按平台定）。
+- `models.go`：目录同步与免费模型判定（cline 域已迁 internal/cline；克隆配方指新平台包的 models.go）（各平台协议不同：other 走上游 `{BaseURL}/models` 拉取 + 勾选暴露；价格门/成员表语义按平台定）。
 - `pool.go`：轮转（round_robin/fill/random）、冷却、并发信号量、`RoutingEnabled` 过滤。
 
 **2026-10-29 起克隆必须携带的不变量**（审查后固化，漏任何一条都会复现已修的缺陷）：
@@ -106,6 +106,6 @@ WB 特例：`/admin/api/workbuddy/enabled` 注册在 proxy.go（workbuddy 路由
 - `init<X>()` 装配（Load 配置 + 目录同步）+ `start<X>ModelsRefresher()` 周期刷新（init() 或 StartProxy 里启动）。
 - `handle<X>Chat`：前缀剥离 → key 轮转/绑定出口解析（`egress` 语义与 zen 同：绑定的主→备，全不可用则短冷却跳过，绝不直连回退）→ 出站 → 错误分类（429 短冷却/403/配额耗尽长冷却）。
 - handler 族：`handle<X>Config{,Update}`、`handle<X>Key{SetRouting,SetRoutingAll,Reorder,Delete,SetProxy,ClearProxies,Test}`、`handle<X>ModelsRefresh`、`otherCloneConfig` 式深拷贝助手（**每张 map 都拷**）。
-- 接线清单：admin.go 路由段、proxy.go 分发链 `HasPrefix` 分支、logs.go 统计桶、combos.go 白名单+target 分支、admin_html.go 全套（见 frontend.md）、admin_data.go delete-all 清单、/v1/models 合并。
+- 接线清单：admin.go 路由段、gateway/proxy.go 分发链 `HasPrefix` 分支、reqlog 统计桶（classifyReqRoute）、gateway/combos.go 白名单+target 分支、panel/html.go 全套（见 frontend.md）、admin_data.go delete-all 清单、gateway servedModelEntries 合并。
 
 **克隆时容易漏的**：config_test.go（随四件套一起改名）；`orBoundRoutable` 式"绑定出口可用性"过滤；面板 Test 探测的 PinKey 路径；仪表盘卡 + request-stats 桶；`/<x>/keys/reorder`（拖拽排序协议用 index 置换，见 reorderZenKeys）。

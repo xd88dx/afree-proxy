@@ -524,15 +524,9 @@ func TestAllowBannedSkipsBanGates(t *testing.T) {
 	// 会起后台 go syncModelsOnce() → syncZenModels 拉真实上游 prune zen 表，
 	// 本测试结束后才把 big-pickle 等种子模型转进宽限表——毒化后续测试
 	//（固定顺序也稳定复现，之前 -shuffle=1 才显眼是时序运气）。
-	modelsMu.Lock()
-	modelsLastSync = time.Now()
-	modelsSyncing = false
-	modelsMu.Unlock()
+	cline.SetSyncStateForTest(time.Now(), false)
 	t.Cleanup(func() {
-		modelsMu.Lock()
-		modelsLastSync = time.Time{}
-		modelsSyncing = false
-		modelsMu.Unlock()
+		cline.SetSyncStateForTest(time.Time{}, false)
 	})
 	injectClineModels(t, "cline-free/banned-model")
 	BlacklistModel(platCline, "cline-free/banned-model", "", BanReasonAuto, "")

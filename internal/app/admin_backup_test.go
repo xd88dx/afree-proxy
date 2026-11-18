@@ -2,6 +2,8 @@ package app
 
 import (
 	"afree-proxy/internal/backup"
+	"afree-proxy/internal/gateway"
+	"afree-proxy/internal/gwconfig"
 	"bytes"
 
 	"encoding/json"
@@ -51,9 +53,9 @@ func TestConfigImportDisablesAllIdentities(t *testing.T) {
 
 	defer func() { cline.SetPool(savedPool) }()
 
-	savedCombos, savedCombosLoaded := combosList, combosLoaded
+	savedCombos, savedCombosLoaded := gateway.CombosSnapshotForTest()
 
-	defer func() { combosList, combosLoaded = savedCombos, savedCombosLoaded }()
+	defer func() { gateway.SetCombosForTest(savedCombos, savedCombosLoaded) }()
 
 	body := `{
 
@@ -121,11 +123,7 @@ func TestConfigImportDisablesAllIdentities(t *testing.T) {
 
 	// combos：白名单外的条目丢弃，白名单内的保留
 
-	combosMu.Lock()
-
-	n := len(combosList)
-
-	combosMu.Unlock()
+	n := len(func() []*gwconfig.Combo { l, _ := gateway.CombosSnapshotForTest(); return l }())
 
 	if n != 1 {
 
@@ -155,9 +153,9 @@ func TestConfigImportKeepEnabled(t *testing.T) {
 
 	defer func() { cline.SetPool(savedPool) }()
 
-	savedCombos, savedCombosLoaded := combosList, combosLoaded
+	savedCombos, savedCombosLoaded := gateway.CombosSnapshotForTest()
 
-	defer func() { combosList, combosLoaded = savedCombos, savedCombosLoaded }()
+	defer func() { gateway.SetCombosForTest(savedCombos, savedCombosLoaded) }()
 
 	other.Load(filepath.Join(tmp, "other.json"))
 
@@ -375,9 +373,9 @@ func TestConfigBackupOtherSection(t *testing.T) {
 
 		defer func() { cline.SetPool(savedPool) }()
 
-		savedCombos, savedCombosLoaded := combosList, combosLoaded
+		savedCombos, savedCombosLoaded := gateway.CombosSnapshotForTest()
 
-		defer func() { combosList, combosLoaded = savedCombos, savedCombosLoaded }()
+		defer func() { gateway.SetCombosForTest(savedCombos, savedCombosLoaded) }()
 
 		other.Load(filepath.Join(tmp, "other.json"))
 

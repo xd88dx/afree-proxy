@@ -1,6 +1,8 @@
 package app
 
 import (
+	"afree-proxy/internal/gateway"
+	"afree-proxy/internal/gwconfig"
 	"path/filepath"
 
 	"testing"
@@ -207,23 +209,13 @@ func TestModelRoutePlatformKeyResolvesCombo(t *testing.T) {
 
 	t.Setenv("DATA_DIR", testDataDir(t))
 
-	combosMu.Lock()
+	gateway.SetCombosForTest([]*gwconfig.Combo{{ID: "my-alias", Platform: "zen", Target: "big-pickle"}}, true)
 
-	prevLoaded, prevList := combosLoaded, combosList
-
-	combosLoaded = true
-
-	combosList = []*Combo{{ID: "my-alias", Platform: "zen", Target: "big-pickle"}}
-
-	combosMu.Unlock()
+	prevList, prevLoaded := gateway.CombosSnapshotForTest()
 
 	t.Cleanup(func() {
 
-		combosMu.Lock()
-
-		combosLoaded, combosList = prevLoaded, prevList
-
-		combosMu.Unlock()
+		gateway.SetCombosForTest(prevList, prevLoaded)
 
 	})
 

@@ -1,6 +1,7 @@
 package app
 
 import (
+	"afree-proxy/internal/cline"
 	"fmt"
 	"strings"
 
@@ -115,16 +116,7 @@ func boundExitFor(key string) (proxyURL string, idx int, ok bool) {
 // 调用方沿用全局代理规则。绑定字段的写入方（面板）持有 poolMu，读取也
 // 短暂持锁，避免与面板写并发竞态。
 func accountProxyBinding(acc *Account) (main, backup string, bound bool) {
-	if acc == nil || !exitpool.IsolationEnabled() {
-		return "", "", false
-	}
-	poolMu.Lock()
-	main, backup = acc.ProxyMain, acc.ProxyBackup
-	poolMu.Unlock()
-	if main == "" && backup == "" {
-		return "", "", false
-	}
-	return main, backup, true
+	return cline.AccountProxyBinding(acc)
 }
 
 // keyBindingOf zen key 的绑定出口；未启用隔离或未绑定时 bound=false。

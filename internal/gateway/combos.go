@@ -1,13 +1,10 @@
-package app
+package gateway
 
 import (
 	"afree-proxy/internal/gwconfig"
+	"afree-proxy/internal/workbuddy"
 
-	"encoding/json"
 	"fmt"
-	"io"
-	"log"
-	"net/http"
 	"regexp"
 	"strings"
 	"sync"
@@ -15,7 +12,7 @@ import (
 )
 
 var (
-	combosMu     sync.Mutex
+	CombosMu     sync.Mutex
 	combosLoaded bool
 	combosList   []*gwconfig.Combo
 )
@@ -54,7 +51,7 @@ func loadCombosLocked() {
 }
 
 // migrateTraeComboTarget 把 combo 中 trae 平台的旧前缀 target 归一化为合并域
-// 对外 id（2026-11-07 合并域化后存量 combo 迁移，调用方持有 combosMu）。
+// 对外 id（2026-11-07 合并域化后存量 combo 迁移，调用方持有 CombosMu）。
 // 已是合并域形态或解析不到时返回原值与 false。
 func migrateTraeComboTarget(target string) (string, bool) {
 	legacy := map[string]string{
@@ -88,8 +85,8 @@ func saveCombosLocked() {
 
 // listCombos 返回全部 combo（副本语义，只读使用）。
 func listCombos() []*gwconfig.Combo {
-	combosMu.Lock()
-	defer combosMu.Unlock()
+	CombosMu.Lock()
+	defer CombosMu.Unlock()
 	loadCombosLocked()
 	out := make([]*gwconfig.Combo, len(combosList))
 	copy(out, combosList)
@@ -102,8 +99,8 @@ func resolveCombo(id string) *gwconfig.Combo {
 	if id == "" {
 		return nil
 	}
-	combosMu.Lock()
-	defer combosMu.Unlock()
+	CombosMu.Lock()
+	defer CombosMu.Unlock()
 	loadCombosLocked()
 	for _, c := range combosList {
 		if c.ID == id {
@@ -166,7 +163,7 @@ func validateCombo(id, platform, target string) error {
 			return fmt.Errorf("target %q is not a WorkBuddy model", target)
 		}
 		found := false
-		for _, m := range (*workbuddySub).ModelList() {
+		for _, m := range (*workbuddy.WorkbuddySub).ModelList() {
 			if id, ok := m["id"].(string); ok && id == target {
 				found = true
 				break
@@ -191,10 +188,10 @@ func addCombo(id, platform, target string, useProxies bool) (*gwconfig.Combo, er
 		return nil, err
 	}
 	c := &gwconfig.Combo{ID: id, Platform: platform, Target: target, UseProxies: useProxies, CreatedAt: time.Now()}
-	combosMu.Lock()
-	defer combosMu.Unlock()
+	CombosMu.Lock()
+	defer CombosMu.Unlock()
 	loadCombosLocked()
-	// validateCombo 里的存在性检查在 combosMu 之外，并发 addCombo 可能双双通过；
+	// validateCombo 里的存在性检查在 CombosMu 之外，并发 addCombo 可能双双通过；
 	// 这里在锁内重查一次，保证同一 ID 只能存在一条
 	for _, e := range combosList {
 		if e.ID == id {
@@ -209,8 +206,8 @@ func addCombo(id, platform, target string, useProxies bool) (*gwconfig.Combo, er
 // deleteCombo 按 ID 删除，返回是否删除了条目。
 func deleteCombo(id string) bool {
 	id = strings.TrimSpace(id)
-	combosMu.Lock()
-	defer combosMu.Unlock()
+	CombosMu.Lock()
+	defer CombosMu.Unlock()
 	loadCombosLocked()
 	for i, c := range combosList {
 		if c.ID == id {
@@ -225,68 +222,66 @@ func deleteCombo(id string) bool {
 // ============ 管理 API ============
 
 // GET /admin/api/combos
-func handleCombosList(w http.ResponseWriter, r *http.Request) {
-	if r.Method != "GET" {
-		WriteAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
-		return
-	}
-	WriteAPI(w, http.StatusOK, apiResponse{Success: true, Data: map[string]any{"combos": listCombos()}})
+// AddCombo / DeleteCombo 导出面（装配根面板 handler 消费）。
+func AddCombo(id, platform, target string, useProxies bool) (*gwconfig.Combo, error) {
+	return addCombo(id, platform, target, useProxies)
 }
 
-// POST /admin/api/combos  body: { id, platform, target }
-func handleComboCreate(w http.ResponseWriter, r *http.Request) {
-	if r.Method != "POST" {
-		WriteAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
-		return
-	}
-	body, err := io.ReadAll(r.Body)
-	if err != nil {
-		WriteAPI(w, http.StatusBadRequest, apiResponse{Error: err.Error()})
-		return
-	}
-	defer r.Body.Close()
-	var req struct {
-		ID         string `json:"id"`
-		Platform   string `json:"platform"`
-		Target     string `json:"target"`
-		UseProxies bool   `json:"useProxies"`
-	}
-	if err := json.Unmarshal(body, &req); err != nil {
-		WriteAPI(w, http.StatusBadRequest, apiResponse{Error: "invalid JSON"})
-		return
-	}
-	c, err := addCombo(req.ID, req.Platform, req.Target, req.UseProxies)
-	if err != nil {
-		WriteAPI(w, http.StatusBadRequest, apiResponse{Error: err.Error()})
-		return
-	}
-	log.Printf("combo created: %s -> %s/%s", c.ID, c.Platform, c.Target)
-	WriteAPI(w, http.StatusOK, apiResponse{Success: true, Message: "combo created", Data: c})
+func DeleteCombo(id string) bool { return deleteCombo(id) }
+
+// ---- 导出原语（装配根备份/清空数据与测试消费）----
+
+// ClearCombosForDataDelete 清空全部自定义别名（内存 + 落盘），返回清除条数。
+func ClearCombosForDataDelete() int {
+	CombosMu.Lock()
+	defer CombosMu.Unlock()
+	loadCombosLocked()
+	n := len(combosList)
+	combosList = nil
+	combosLoaded = true
+	saveCombosLocked()
+	return n
 }
 
-// POST /admin/api/combos/delete  body: { id }
-func handleComboDelete(w http.ResponseWriter, r *http.Request) {
-	if r.Method != "POST" {
-		WriteAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
-		return
+// ImportCombosBackup 备份导入的 combos 段：逐条校验（ID 形态/平台白名单/
+// trae 旧前缀迁移/target 非空）后整表替换，返回导入条数。
+func ImportCombosBackup(in []*gwconfig.Combo) int {
+	CombosMu.Lock()
+	defer CombosMu.Unlock()
+	valid := make([]*gwconfig.Combo, 0, len(in))
+	for _, c := range in {
+		if c == nil || !comboIDRe.MatchString(c.ID) {
+			continue
+		}
+		if !comboPlatformValid(c.Platform) {
+			continue
+		}
+		if c.Platform == "trae" {
+			if migrated, ok := migrateTraeComboTarget(c.Target); ok {
+				c = &gwconfig.Combo{ID: c.ID, Platform: c.Platform, Target: migrated,
+					UseProxies: c.UseProxies, CreatedAt: c.CreatedAt}
+			}
+		}
+		if c.Target == "" {
+			continue
+		}
+		valid = append(valid, c)
 	}
-	body, err := io.ReadAll(r.Body)
-	if err != nil {
-		WriteAPI(w, http.StatusBadRequest, apiResponse{Error: err.Error()})
-		return
-	}
-	defer r.Body.Close()
-	var req struct {
-		ID string `json:"id"`
-	}
-	if err := json.Unmarshal(body, &req); err != nil {
-		WriteAPI(w, http.StatusBadRequest, apiResponse{Error: "invalid JSON"})
-		return
-	}
-	if !deleteCombo(req.ID) {
-		WriteAPI(w, http.StatusNotFound, apiResponse{Error: "combo not found: " + req.ID})
-		return
-	}
-	log.Printf("combo deleted: %s", req.ID)
-	WriteAPI(w, http.StatusOK, apiResponse{Success: true, Message: "combo deleted"})
+	combosList = valid
+	combosLoaded = true
+	saveCombosLocked()
+	return len(valid)
+}
+
+// CombosSnapshotForTest / SetCombosForTest 测试白盒（快照读/整表写）。
+func CombosSnapshotForTest() ([]*gwconfig.Combo, bool) {
+	CombosMu.Lock()
+	defer CombosMu.Unlock()
+	return combosList, combosLoaded
+}
+
+func SetCombosForTest(list []*gwconfig.Combo, loaded bool) {
+	CombosMu.Lock()
+	defer CombosMu.Unlock()
+	combosList, combosLoaded = list, loaded
 }

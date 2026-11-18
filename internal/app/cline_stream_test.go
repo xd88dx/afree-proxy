@@ -18,21 +18,16 @@ import (
 // 路径，需要一个不含 ":" 之外特征的 id。依赖线上列表会让测试莫名其妙地红。
 func withCachedModel(t *testing.T, id string) {
 	t.Helper()
-	modelsMu.Lock()
-	if modelsCache == nil {
-		modelsCache = make(map[string]*ModelInfo)
-	}
-	saved, had := modelsCache[id]
-	modelsCache[id] = &ModelInfo{ID: id, Source: "free", Provider: "probe", Cost: "free", Status: ModelActive}
-	modelsMu.Unlock()
+	cline.InitModelsCache()
+	snap := cline.CatalogSnapshotForTest()
+	saved, had := snap[id]
+	snap[id] = &ModelInfo{ID: id, Source: "free", Provider: "probe", Cost: "free", Status: ModelActive}
 	t.Cleanup(func() {
-		modelsMu.Lock()
 		if had {
-			modelsCache[id] = saved
+			snap[id] = saved
 		} else {
-			delete(modelsCache, id)
+			delete(snap, id)
 		}
-		modelsMu.Unlock()
 	})
 }
 

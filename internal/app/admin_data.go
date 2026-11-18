@@ -1,6 +1,7 @@
 package app
 
 import (
+	"afree-proxy/internal/gateway"
 	"afree-proxy/internal/reqlog"
 
 	"afree-proxy/internal/cline"
@@ -149,14 +150,7 @@ func clearProxyPoolForDataDelete() int {
 
 // clearCombosForDataDelete 清空全部自定义别名（内存 + combos.json）。
 func clearCombosForDataDelete() int {
-	combosMu.Lock()
-	defer combosMu.Unlock()
-	loadCombosLocked()
-	n := len(combosList)
-	combosList = nil
-	combosLoaded = true
-	saveCombosLocked()
-	return n
+	return gateway.ClearCombosForDataDelete()
 }
 
 // clearClineStreamLearnedForDataDelete 清空 cline "必须流式"自学习结果

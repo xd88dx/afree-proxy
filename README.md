@@ -232,30 +232,29 @@ CI：push 到 `main` / `zen-harvest` 先跑 `go build` + `go vet` + `go test`，
 
 ```
 ├── main.go                  入口、CLI flags、运行检测
-├── internal/app/
-│   ├── proxy.go             /v1 路由、chat handler、上游调用、聚合
-│   ├── responses.go         /v1/responses 方言翻译
-│   ├── cross_endpoint.go    /v1/responses 与 /v1/messages 的多平台归口 + 缓冲重试
-│   ├── zen.go / zen_session.go / zen_endpoint.go   zen 上游、会话铸造、端点自学习
-│   ├── trae.go              TraeWork：vendored trae2api 桥接（引擎装配/出口接管/双开关/面板 API）
-│   ├── other.go             key 池平台
-│   ├── workbuddy.go/_config/_proxy/_dialects  WorkBuddy 子系统、出口绑定、方言
-│   ├── platform_routability.go  无启用凭据整平台拒路由闸
-│   ├── platform_blacklist.go / model_blacklist.go  封禁平台/封禁模型
-│   ├── global_config.go / proxy_config.go / proxy_pool_config.go / zen_config_file.go   配置落盘（全局/代理域/zen；仅 zen 保留旧点文件读入合并）
-│   ├── pool.go               Cline 账号池
-│   ├── combos.go            别名模型
-│   ├── admin*.go            管理面板：API、会话认证、UI、各平台页
-│   └── config.go            env 配置（fail-closed 校验）
+├── internal/
+│   ├── app/                 装配根：StartProxy 组装、admin/panel handler、桥接别名（*_bridge.go）
+│   ├── gateway/             /v1 网关：三端点、分发链、缓冲聚合重试、anthropic↔openai 翻译、
+│   │                        responses↔chat、combos 别名、textcall 闸、溢出归一、/v1/models 聚合
+│   ├── platform/            平台契约（Platform 接口 + Registry）
+│   ├── cline/               Cline 平台域：账号池/WorkOS 认证/上游调用/免费模型目录/cline-config
+│   ├── zen/                 OpenCode(zen) 平台域：key 池/会话铸造/端点学习/egress 钉定/zen-config
+│   ├── trae/                TraeWork 域：vendored 引擎装配、tacn:/tagb: 合并域、trae-config
+│   ├── workbuddy/           WorkBuddy 域：子系统装配、wbcn:/wbgb: 域、wkbd-config
+│   ├── other/               Other 多子平台 key 池协议栈
+│   ├── exitpool/            代理域：出口池/隔离绑定/健康/探测（proxy-config/proxy-state）
+│   ├── blacklist/           模型黑名单 + 平台封禁（存储与判定）
+│   ├── panel/               管理面板：认证、admin_html（8507 行内嵌面板）、响应原语
+│   ├── backup/              配置备份导出/导入
+│   ├── reqlog/              请求日志与 per-route 统计
+│   ├── gwconfig/            afree 全局配置、env 解析、config-manifest
+│   ├── kit/                 跨模块纯工具（数据路径/env/合批落盘/zen ID 铸造）
+│   └── textcall/            文本工具调用解析共享件
 ├── modules/trae2api/        vendored trae2api 引擎（XCool-603/trae2api，12 子包，
 │                            独立 Go module、module 路径同上游；afree_bridge.go 是
 │                            唯一消费门面；scripts/vendor_trae2api.py 生成，勿手改）
 ├── modules/workbuddy2api/   vendor 的 WorkBuddy2API 池/面板/调度器/上游（独立
 │                            Go module；afree_bridge.go 是唯一消费门面）
-├── internal/app/trae2api_helper*.go  Trae helper 入库/脚本模板（afree 侧资产）
-├── internal/cline/          Cline 上游认证（WorkOS OAuth 刷新）
-├── internal/other/          key 池协议栈（多子平台）
-├── internal/kit/            HTTP 客户端、随机 ID、zen 会话 ID 铸造、数据路径
 ├── .agents/skills/          仓库开发技能（新增平台配方、上游同步流程）
 ├── Dockerfile               多架构（amd64 原生 + arm64 交叉编译）
 └── docker-compose.yml       源码构建，PROXY_PORT 参数化

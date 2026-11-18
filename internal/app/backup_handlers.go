@@ -4,6 +4,7 @@ package app
 // 属装配根职责；域逻辑在 internal/cb）。
 
 import (
+	"afree-proxy/internal/gateway"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -300,35 +301,7 @@ func handleAdminConfigImport(w http.ResponseWriter, r *http.Request) {
 	}
 	// ---- 自定义别名 ----
 	if cb.Combos != nil {
-		combosMu.Lock()
-		valid := make([]*Combo, 0, len(cb.Combos))
-		for _, c := range cb.Combos {
-			if c == nil || !comboIDRe.MatchString(c.ID) {
-				continue
-			}
-			// 平台白名单与 validateCombo 同口径（六平台）；旧备份只有
-			// cline/zen 两平台的别名，白名单放宽不影响它们。
-			if !comboPlatformValid(c.Platform) {
-				continue
-			}
-			// 备份导入同样做 trae 旧前缀 target 迁移（与 loadCombos 同口径）。
-			if c.Platform == "trae" {
-				migrated, ok := migrateTraeComboTarget(c.Target)
-				if ok {
-					c = &Combo{ID: c.ID, Platform: c.Platform, Target: migrated,
-						UseProxies: c.UseProxies, CreatedAt: c.CreatedAt}
-				}
-			}
-			if c.Target == "" {
-				continue
-			}
-			valid = append(valid, c)
-		}
-		combosList = valid
-		combosLoaded = true
-		saveCombosLocked()
-		combosMu.Unlock()
-		imported["combos"] = len(valid)
+		imported["combos"] = gateway.ImportCombosBackup(cb.Combos)
 	}
 
 	// ---- key 池平台（v2 段）：整配置替换；默认全部 key 禁用，弹窗勾选

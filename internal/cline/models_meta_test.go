@@ -1,4 +1,4 @@
-package app
+package cline
 
 import (
 	"reflect"
@@ -100,18 +100,18 @@ func TestMetaCandidateIndexSegments(t *testing.T) {
 
 // applyClineMetaLocked 只补齐元数据、不动 id/provider/成本，且缺元数据的条目保留旧值。
 func TestApplyClineMetaLockedEnrichesAndPreserves(t *testing.T) {
-	modelsMu.Lock()
+	ModelsMu.Lock()
 	oldCache := modelsCache
 	modelsCache = map[string]*ModelInfo{
 		"cline-free/solar-mini4": {ID: "cline-free/solar-mini4", Provider: "cline-free", Cost: "free", Status: ModelActive},
 		"cline-free/gone": {ID: "cline-free/gone", Provider: "cline-free", Cost: "free", Status: ModelActive,
 			ContextLength: 12345, MetaSource: "stale/old"}, // 无元数据可连 -> 保留旧值
 	}
-	modelsMu.Unlock()
+	ModelsMu.Unlock()
 	defer func() {
-		modelsMu.Lock()
+		ModelsMu.Lock()
 		modelsCache = oldCache
-		modelsMu.Unlock()
+		ModelsMu.Unlock()
 	}()
 
 	entries := []clineMetaEntry{{
@@ -130,11 +130,11 @@ func TestApplyClineMetaLockedEnrichesAndPreserves(t *testing.T) {
 		}{ContextLength: 524288, MaxCompletionTokens: 131072},
 	}}
 
-	modelsMu.Lock()
+	ModelsMu.Lock()
 	n := applyClineMetaLocked(entries)
 	m := modelsCache["cline-free/solar-mini4"]
 	gone := modelsCache["cline-free/gone"]
-	modelsMu.Unlock()
+	ModelsMu.Unlock()
 
 	if n != 1 {
 		t.Fatalf("enriched = %d, want 1 (only solar-mini4 has a candidate)", n)
@@ -163,22 +163,22 @@ func TestApplyClineMetaLockedEnrichesAndPreserves(t *testing.T) {
 
 // 空元数据（拉取失败）必须是无操作，绝不能清空已有字段。
 func TestApplyClineMetaLockedEmptyIsNoop(t *testing.T) {
-	modelsMu.Lock()
+	ModelsMu.Lock()
 	oldCache := modelsCache
 	modelsCache = map[string]*ModelInfo{
 		"cline-free/solar-mini4": {ID: "cline-free/solar-mini4", ContextLength: 999},
 	}
-	modelsMu.Unlock()
+	ModelsMu.Unlock()
 	defer func() {
-		modelsMu.Lock()
+		ModelsMu.Lock()
 		modelsCache = oldCache
-		modelsMu.Unlock()
+		ModelsMu.Unlock()
 	}()
 
-	modelsMu.Lock()
+	ModelsMu.Lock()
 	n := applyClineMetaLocked(nil)
 	ctx := modelsCache["cline-free/solar-mini4"].ContextLength
-	modelsMu.Unlock()
+	ModelsMu.Unlock()
 
 	if n != 0 || ctx != 999 {
 		t.Fatalf("n=%d ctx=%d, want 0/999", n, ctx)
@@ -189,7 +189,7 @@ func TestApplyClineMetaLockedEmptyIsNoop(t *testing.T) {
 // 旧的比例守护（live*2 >= cached）会永久跳过修剪，正是死模型长期挂在
 // 面板上的根因。
 func TestPruneModelsLockedShrunkFeedStillPrunes(t *testing.T) {
-	modelsMu.Lock()
+	ModelsMu.Lock()
 	oldCache := modelsCache
 	// 8 个缓存，其中只有 3 个还在 live feed 里 —— 正是 2026-11-08 的现场
 	modelsCache = map[string]*ModelInfo{
@@ -211,7 +211,7 @@ func TestPruneModelsLockedShrunkFeedStillPrunes(t *testing.T) {
 	n := len(modelsCache)
 	_, deadKept := modelsCache["cline-free/deepseek-v4.1-flash"]
 	modelsCache = oldCache
-	modelsMu.Unlock()
+	ModelsMu.Unlock()
 
 	if pruned != 5 || n != 3 {
 		t.Fatalf("pruned=%d remaining=%d, want 5/3", pruned, n)
@@ -223,7 +223,7 @@ func TestPruneModelsLockedShrunkFeedStillPrunes(t *testing.T) {
 
 // 空 feed 是唯一的跳过条件：不能因为一次空/残缺响应清空整个列表。
 func TestPruneModelsLockedEmptyFeedSkips(t *testing.T) {
-	modelsMu.Lock()
+	ModelsMu.Lock()
 	oldCache := modelsCache
 	modelsCache = map[string]*ModelInfo{
 		"cline-free/solar-mini4": {ID: "cline-free/solar-mini4"},
@@ -231,7 +231,7 @@ func TestPruneModelsLockedEmptyFeedSkips(t *testing.T) {
 	pruned := pruneModelsLocked(map[string]bool{}, true)
 	n := len(modelsCache)
 	modelsCache = oldCache
-	modelsMu.Unlock()
+	ModelsMu.Unlock()
 
 	if pruned != 0 || n != 1 {
 		t.Fatalf("pruned=%d remaining=%d, want 0/1 (empty feed must not wipe the list)", pruned, n)
@@ -378,37 +378,37 @@ func TestResolveMetaIDHandlesColonVariant(t *testing.T) {
 // 有 4 个是坏的（gemma×2 上游 500、laguna provider 挂、crouton 404），这些
 // 在 feed 里全都正常列着。连续失败达阈值就下架冷却。
 func TestModelFailureMarksCooldown(t *testing.T) {
-	modelsMu.Lock()
+	ModelsMu.Lock()
 	old := modelsCache
 	modelsCache = map[string]*ModelInfo{"m/dead": {ID: "m/dead", Status: ModelActive}}
-	modelsMu.Unlock()
-	defer func() { modelsMu.Lock(); modelsCache = old; modelsMu.Unlock() }()
+	ModelsMu.Unlock()
+	defer func() { ModelsMu.Lock(); modelsCache = old; ModelsMu.Unlock() }()
 
 	for i := 1; i <= modelFailThreshold; i++ {
-		recordModelFailure("m/dead", 500, `{"error":"failed to create stream: boom"}`)
+		RecordModelFailure("m/dead", 500, `{"error":"failed to create stream: boom"}`)
 	}
-	modelsMu.Lock()
+	ModelsMu.Lock()
 	m := modelsCache["m/dead"]
 	inCooldown := modelInCooldown(m)
 	streak := m.FailStreak
-	modelsMu.Unlock()
+	ModelsMu.Unlock()
 	if !inCooldown || streak < modelFailThreshold {
 		t.Fatalf("expected cooldown after threshold: streak=%d cooldown=%v", streak, inCooldown)
 	}
 
 	// 冷却中不出现在对外列表里
-	for _, x := range getFreeModels() {
+	for _, x := range GetFreeModels() {
 		if x.ID == "m/dead" {
 			t.Fatal("cooled-down model must not be listed")
 		}
 	}
 
 	// 成功一次即复活
-	recordModelSuccess("m/dead")
-	modelsMu.Lock()
+	RecordModelSuccess("m/dead")
+	ModelsMu.Lock()
 	m2 := modelsCache["m/dead"]
 	revived := !modelInCooldown(m2) && m2.FailStreak == 0
-	modelsMu.Unlock()
+	ModelsMu.Unlock()
 	if !revived {
 		t.Fatalf("success must clear cooldown: %+v", m2)
 	}
@@ -444,14 +444,14 @@ func TestModelFailureIgnoresNonModelErrors(t *testing.T) {
 
 // 种子表已删除：没有 live 数据时列表就该是空的，而不是回退到某个会腐烂的快照。
 func TestNoSeedModelsOnColdStart(t *testing.T) {
-	modelsMu.Lock()
+	ModelsMu.Lock()
 	old := modelsCache
 	modelsCache = nil
-	modelsMu.Unlock()
-	defer func() { modelsMu.Lock(); modelsCache = old; modelsMu.Unlock() }()
+	ModelsMu.Unlock()
+	defer func() { ModelsMu.Lock(); modelsCache = old; ModelsMu.Unlock() }()
 
-	initModelsCache()
-	if n := len(getFreeModels()); n != 0 {
+	InitModelsCache()
+	if n := len(GetFreeModels()); n != 0 {
 		t.Fatalf("cold start must not seed models, got %d", n)
 	}
 }
@@ -461,7 +461,7 @@ func TestNoSeedModelsOnColdStart(t *testing.T) {
 // 删除。catalog 数据缺口导致的"每轮删了又重建"不再存在：缺失就是缺失，
 // 目录如实反映官方两个上游的并集。
 func TestPruneRemovesModelsNotInLive(t *testing.T) {
-	modelsMu.Lock()
+	ModelsMu.Lock()
 	old := modelsCache
 	modelsCache = map[string]*ModelInfo{
 		"reflection/beam-free": {ID: "reflection/beam-free", FailStreak: 2},
@@ -473,7 +473,7 @@ func TestPruneRemovesModelsNotInLive(t *testing.T) {
 	_, beamGone := modelsCache["reflection/beam-free"]
 	_, deadGone := modelsCache["some/dead-model"]
 	modelsCache = old
-	modelsMu.Unlock()
+	ModelsMu.Unlock()
 
 	if pruned != 2 || beamGone || deadGone {
 		t.Fatalf("live 之外的条目应全部剪除: pruned=%d beamGone=%v deadGone=%v", pruned, beamGone, deadGone)
@@ -485,21 +485,21 @@ func TestPruneRemovesModelsNotInLive(t *testing.T) {
 // （实测 laguna 连续 7 次失败，streak 始终 ≤2）。成功的清零只能发生在流
 // 真正聚合完成之后。
 func TestFailStreakAccumulatesAcrossAttempts(t *testing.T) {
-	modelsMu.Lock()
+	ModelsMu.Lock()
 	old := modelsCache
 	modelsCache = map[string]*ModelInfo{"m/flaky": {ID: "m/flaky", Status: ModelActive}}
-	modelsMu.Unlock()
-	defer func() { modelsMu.Lock(); modelsCache = old; modelsMu.Unlock() }()
+	ModelsMu.Unlock()
+	defer func() { ModelsMu.Lock(); modelsCache = old; ModelsMu.Unlock() }()
 
 	body := `Failed to create stream: Model 'x' not found. If you were using its free tier, that has ended.`
 	for i := 0; i < modelFailThreshold; i++ {
 		// 模拟"API 层成功、流里报错"：只有失败被记录，没有 success 清零
-		recordModelFailure("m/flaky", 200, body)
+		RecordModelFailure("m/flaky", 200, body)
 	}
-	modelsMu.Lock()
+	ModelsMu.Lock()
 	m := modelsCache["m/flaky"]
 	ok := m.FailStreak >= modelFailThreshold && modelInCooldown(m)
-	modelsMu.Unlock()
+	ModelsMu.Unlock()
 	if !ok {
 		t.Fatalf("streak must accumulate to cooldown: %+v", m)
 	}

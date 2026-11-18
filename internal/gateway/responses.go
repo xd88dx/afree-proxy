@@ -1,6 +1,8 @@
-package app
+package gateway
 
 import (
+	"afree-proxy/internal/cline"
+	"afree-proxy/internal/workbuddy"
 	"bufio"
 	"encoding/json"
 	"fmt"
@@ -442,7 +444,7 @@ func chatStreamToResponses(w http.ResponseWriter, upstream *http.Response, onUsa
 					}
 					if msg != "" && msg != "<nil>" {
 						if model != "" {
-							recordModelFailure(model, http.StatusOK, msg)
+							cline.RecordModelFailure(model, http.StatusOK, msg)
 						}
 						s.event("response.failed", map[string]any{
 							"type": "response.failed",
@@ -696,7 +698,7 @@ func handleResponses(w http.ResponseWriter, r *http.Request) {
 	chat := responsesToChat(params)
 	chatModel, _ := chat["model"].(string)
 	if shouldServeWorkBuddy(chatModel) {
-		wbDialects{*workbuddySub}.ServeResponses(w, r, chat, isStream)
+		wbDialects{workbuddy.WorkbuddySub}.ServeResponses(w, r, chat, isStream)
 		return
 	}
 	// combo 别名模型：改写为平台上游真实模型
@@ -710,7 +712,7 @@ func handleResponses(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if shouldServeWorkBuddy(chatModel) {
-		wbDialects{*workbuddySub}.ServeResponses(w, r, chat, isStream)
+		wbDialects{workbuddy.WorkbuddySub}.ServeResponses(w, r, chat, isStream)
 		return
 	}
 	// 前缀平台（trae:/Other 子平台）：归口到平台 chat 调用器，
@@ -813,19 +815,19 @@ func handleResponses(w http.ResponseWriter, r *http.Request) {
 
 	// cline 上游
 	// 未知模型名显式拒绝（与 chat 路径一致），不做静默替换
-	if msg := strictModelGate(chatModel); msg != "" {
+	if msg := cline.StrictModelGate(chatModel); msg != "" {
 		writeJSON(w, http.StatusBadRequest, map[string]any{
 			"error": map[string]string{"message": msg, "type": "invalid_request_error"},
 		})
 		return
 	}
 	stream := isStream
-	if !isStream && upstreamNeedsStream(normalizeRequestModel(chatModel)) {
+	if !isStream && cline.UpstreamNeedsStream(cline.NormalizeRequestModel(chatModel)) {
 		stream = true
 		// 我们替客户端开了流式：补 include_usage，否则聚合后 usage 缺失
 		withStreamUsage(chat)
 	}
-	up, acc, streamed, err := callClineAutoStream(r.Context(), chat, stream, useProxies)
+	up, acc, streamed, err := cline.CallAutoStream(r.Context(), chat, stream, useProxies)
 	if err != nil {
 		writeUpstreamAPIError(w, chatModel, err, http.StatusInternalServerError)
 		return
@@ -835,7 +837,7 @@ func handleResponses(w http.ResponseWriter, r *http.Request) {
 	// 自学习重试过：上游那份是 SSE，即便客户端要的是非流式也要走聚合
 	stream = stream || streamed
 
-	usageFn := accountUsageFn(acc, chat)
+	usageFn := cline.AccountUsageFn(acc, chat)
 	if isStream {
 		w.Header().Set("Content-Type", "text/event-stream")
 		w.Header().Set("Cache-Control", "no-cache")

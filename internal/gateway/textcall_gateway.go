@@ -23,7 +23,7 @@
 //
 // trae 引擎内部已有一层转换（vendored server/textcall.go）；转过的流到这里无
 // 文本可转，外层自然空转，两层互不干扰——内层是第一道保险，本层兜住其余所有引擎。
-package app
+package gateway
 
 import (
 	"bytes"

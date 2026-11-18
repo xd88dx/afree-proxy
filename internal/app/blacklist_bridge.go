@@ -4,6 +4,7 @@ package app
 // BanReason*/plat* 常量与 ModelBlacklistMu/Items 锁与内存真身指针别名。
 
 import (
+	"afree-proxy/internal/gateway"
 	"net/http"
 
 	"afree-proxy/internal/blacklist"
@@ -73,7 +74,7 @@ func businessCodeIn(body string) string { return blacklist.BusinessCodeIn(body) 
 
 func modelRoutePlatformKey(model string) string { return ModelRoutePlatformKey(model) }
 
-func bannedPlatformOf(model string) string { return BannedPlatformOf(model) }
+func bannedPlatformOf(model string) string { return gateway.BannedPlatformOfExport(model) }
 
 func IsPlatformBanned(platform string) bool { return blacklist.IsPlatformBanned(platform) }
 

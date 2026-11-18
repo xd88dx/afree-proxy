@@ -16,7 +16,7 @@ import re
 import sys
 from html.parser import HTMLParser
 
-path = sys.argv[1] if len(sys.argv) > 1 else "internal/app/admin_html.go"
+path = sys.argv[1] if len(sys.argv) > 1 else "internal/panel/html.go"
 src = io.open(path, encoding="utf-8").read()
 
 

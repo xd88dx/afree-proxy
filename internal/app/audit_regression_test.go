@@ -24,17 +24,10 @@ import (
 // collectStreamResponse 记一次失败后，调用方不得再记一次。
 // 旧实现两处都记，failStreak 一次请求 +2，阈值 3 实际两次就冷却。
 func TestStreamFailureCountedOncePerRequest(t *testing.T) {
-	modelsMu.Lock()
-	saved := modelsCache
-	modelsCache = map[string]*ModelInfo{
+	saved := cline.SetCatalogForTest(map[string]*ModelInfo{
 		"probe/double-count:free": {ID: "probe/double-count:free", Status: ModelActive},
-	}
-	modelsMu.Unlock()
-	t.Cleanup(func() {
-		modelsMu.Lock()
-		modelsCache = saved
-		modelsMu.Unlock()
 	})
+	t.Cleanup(func() { cline.SetCatalogForTest(saved) })
 
 	// 上游 200 + 帧内 error：collectStreamResponse 内部记一次失败。
 	body := "data: {\"model\":\"probe/double-count:free\",\"error\":{\"message\":\"model not found\"}}\n\n"
@@ -47,9 +40,7 @@ func TestStreamFailureCountedOncePerRequest(t *testing.T) {
 		t.Fatal("in-band error frame must surface as an error")
 	}
 
-	modelsMu.Lock()
-	streak := modelsCache["probe/double-count:free"].FailStreak
-	modelsMu.Unlock()
+	streak := cline.CatalogSnapshotForTest()["probe/double-count:free"].FailStreak
 	if streak != 1 {
 		t.Fatalf("FailStreak = %d after ONE failed request, want 1 "+
 			"(double-counting makes the 3-failure threshold fire after 2)", streak)
@@ -61,19 +52,12 @@ func TestStreamFailureCountedOncePerRequest(t *testing.T) {
 // 只从列表里隐藏不够：IDE 客户端把模型名写死在配置里，根本不看 /v1/models。
 // 解析路径必须同样拒绝冷却中的模型，否则持续流量会把冷却无限续期。
 func TestCoolingModelIsNotRoutable(t *testing.T) {
-	modelsMu.Lock()
-	saved := modelsCache
-	modelsCache = map[string]*ModelInfo{
+	saved := cline.SetCatalogForTest(map[string]*ModelInfo{
 		"probe/cooling:free": {ID: "probe/cooling:free", Status: ModelActive,
 			CooldownTil: time.Now().Add(30 * time.Minute)},
 		"probe/healthy:free": {ID: "probe/healthy:free", Status: ModelActive},
-	}
-	modelsMu.Unlock()
-	t.Cleanup(func() {
-		modelsMu.Lock()
-		modelsCache = saved
-		modelsMu.Unlock()
 	})
+	t.Cleanup(func() { cline.SetCatalogForTest(saved) })
 
 	if modelInFreeList("probe/cooling:free") {
 		t.Fatal("a cooling model must not be considered in the free list")
@@ -92,20 +76,18 @@ func TestCoolingModelIsNotRoutable(t *testing.T) {
 // catalog 发现的免费模型会被删掉，下一轮再以 FailStreak=0 重建 —— 自愈计数
 // 被静默清零。
 func TestPruneSkipsPartialFeedWhenCatalogFailed(t *testing.T) {
-	modelsMu.Lock()
-	saved := modelsCache
-	modelsCache = map[string]*ModelInfo{
+	saved := cline.SetCatalogForTest(map[string]*ModelInfo{
 		"reflection/beam-free":   {ID: "reflection/beam-free", FailStreak: 2},
 		"cline-free/solar-mini4": {ID: "cline-free/solar-mini4"},
 		"upstream/flint-free":    {ID: "upstream/flint-free", FailStreak: 1},
-	}
+	})
 	// 残缺的 live：只有 recommended 一项（catalog 那一路没拉到）。
 	live := map[string]bool{"cline-free/solar-mini4": true}
-	pruned := pruneModelsLocked(live, false)
-	beamKept := modelsCache["reflection/beam-free"] != nil
-	streak := modelsCache["reflection/beam-free"].FailStreak
-	modelsMu.Unlock()
-	modelsCache = saved
+	pruned := cline.PruneForTest(live, false)
+	snap := cline.CatalogSnapshotForTest()
+	beamKept := snap["reflection/beam-free"] != nil
+	streak := snap["reflection/beam-free"].FailStreak
+	cline.SetCatalogForTest(saved)
 
 	if pruned != 0 {
 		t.Fatalf("pruned %d model(s) from a PARTIAL feed; a transient catalog failure must not empty the catalog", pruned)
@@ -118,15 +100,13 @@ func TestPruneSkipsPartialFeedWhenCatalogFailed(t *testing.T) {
 	}
 
 	// 正常 feed（catalog ok）仍然要能真的修剪死模型。
-	modelsMu.Lock()
-	modelsCache = map[string]*ModelInfo{
+	cline.SetCatalogForTest(map[string]*ModelInfo{
 		"live/ok":  {ID: "live/ok"},
 		"dead/one": {ID: "dead/one"},
-	}
-	pruned2 := pruneModelsLocked(map[string]bool{"live/ok": true}, true)
-	deadGone := modelsCache["dead/one"] == nil
-	modelsCache = saved
-	modelsMu.Unlock()
+	})
+	pruned2 := cline.PruneForTest(map[string]bool{"live/ok": true}, true)
+	deadGone := cline.CatalogSnapshotForTest()["dead/one"] == nil
+	cline.SetCatalogForTest(saved)
 
 	if pruned2 != 1 || !deadGone {
 		t.Fatalf("healthy feed must still prune dead models (pruned=%d deadGone=%v)", pruned2, deadGone)

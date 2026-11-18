@@ -1608,11 +1608,11 @@ func TestBoundProxyNetworkErrorDoesNotPoisonAccount(t *testing.T) {
 
 	// 假上游：网络错误发生在代理拨号层，上游不该被碰到
 
-	clineAPIBaseBak := clineAPIBase
+	clineAPIBaseBak := cline.APIBase
 
-	clineAPIBase = "http://127.0.0.1:1"
+	cline.SetAPIBase("http://127.0.0.1:1")
 
-	t.Cleanup(func() { clineAPIBase = clineAPIBaseBak })
+	t.Cleanup(func() { cline.SetAPIBase(clineAPIBaseBak) })
 
 	_, _, err := callClineAPI(context.Background(), map[string]any{
 

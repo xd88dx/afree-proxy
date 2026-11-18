@@ -797,7 +797,7 @@ func testAccount(ctx context.Context, acc *Account) (map[string]any, string) {
 	}
 	bodyJSON, _ := json.Marshal(probeBody)
 
-	req, err := http.NewRequestWithContext(ctx, "POST", clineAPIBase+"/chat/completions", bytes.NewReader(bodyJSON))
+	req, err := http.NewRequestWithContext(ctx, "POST", clineAPIBase()+"/chat/completions", bytes.NewReader(bodyJSON))
 	if err != nil {
 		return map[string]any{
 			"accountId": acc.AccountID,
@@ -899,7 +899,7 @@ func testAccount(ctx context.Context, acc *Account) (map[string]any, string) {
 		probeBody["stream"] = true
 		retryJSON, _ := json.Marshal(probeBody)
 		retryCtx, cancelRetry := context.WithTimeout(ctx, 30*time.Second)
-		retryReq, err := http.NewRequestWithContext(retryCtx, "POST", clineAPIBase+"/chat/completions", bytes.NewReader(retryJSON))
+		retryReq, err := http.NewRequestWithContext(retryCtx, "POST", clineAPIBase()+"/chat/completions", bytes.NewReader(retryJSON))
 		if err == nil {
 			retryReq.Header = clineHeaders(token, sessionID)
 			retryResp, retryErr := probeClient.Do(retryReq)
@@ -1387,7 +1387,7 @@ func handleAdminModels(w http.ResponseWriter, r *http.Request) {
 	}
 	panel.WriteAPI(w, http.StatusOK, panel.ApiResponse{Success: true, Data: map[string]any{
 		"models":             models,
-		"lastSync":           modelsLastSync,
+		"lastSync":           cline.LastSyncTime(),
 		"credentialsEnabled": credentialsEnabled,
 	}})
 }
@@ -1408,10 +1408,7 @@ func handleAdminModelsRefresh(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	initModelsCache()
-	modelsMu.Lock()
-	syncing := modelsSyncing
-	modelsMu.Unlock()
-	if syncing {
+	if syncing := cline.SyncInProgress(); syncing {
 		panel.WriteCatalogAlreadyRunning(w, platCline)
 		return
 	}

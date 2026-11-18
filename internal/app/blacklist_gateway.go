@@ -104,61 +104,6 @@ func WithModelBlacklistScan(h http.HandlerFunc) http.HandlerFunc {
 // 区别有两处——Other 细化到子平台（other:<slug>），裸名按 Cline 处理（/v1/models
 // 与 chat 路由里裸名 = Cline 免费目录；combo 别名由调用方先行解析）。
 // 返回 "" 表示无法判定（放行，交由各平台的未知模型报错路径处理）。
-func RoutePlatformKeyOf(model string) string {
-	model = strings.TrimSpace(model)
-	if model == "" {
-		// 空模型名交给入口的 400（model is required）：落到这里会被误判成
-		// Cline 裸名，再撞上可路由性闸报成"平台无可用凭据"，排查方向被带偏。
-		return ""
-	}
-	switch {
-	case strings.HasPrefix(model, wbRealmPrefixCN), strings.HasPrefix(model, wbRealmPrefixGlobal),
-		strings.HasPrefix(model, vendorRealmPrefixCN), strings.HasPrefix(model, vendorRealmPrefixGlobal):
-		return platWorkBuddy
-	case strings.HasPrefix(model, "zen:"):
-		return platZen
-	case trae2apiPlatformModel(model):
-		return platTrae
-	}
-	if i := strings.IndexByte(model, ':'); i > 0 {
-		if p := other.PlatformByPrefix(model[:i]); p != nil {
-			return "other:" + p.Slug
-		}
-		return ""
-	}
-	// 裸名：Cline 免费目录（zen 裸名兼容解析是旧形态遗留，封 Cline 时一并
-	// 被闸住是 fail-closed 的可接受代价，见 WithModelBlacklistScan 闸注释）。
-	return platCline
-}
-
-// ModelRoutePlatformKey 模型将被路由到的平台键：combo 别名按声明平台，
-// 其余按对外 ID 前缀（裸名 = Cline）。网关入口的可路由性闸用它判定；
-// 不用 RoutePlatformKeyOf 直接判 combo（别名不带前缀，会被误判成 Cline）。
-func ModelRoutePlatformKey(model string) string {
-	if c := resolveCombo(model); c != nil {
-		return c.Platform
-	}
-	return RoutePlatformKeyOf(model)
-}
-
-// BannedPlatformOf 返回模型将被路由到的平台封禁键（combo 别名按其声明平台、
-// 其余按模型 ID 前缀判，裸名 = Cline）；该平台未封禁或无法判定时返回 ""。
-// /v1/models 过滤与网关入口闸共用本判定。
-func BannedPlatformOf(model string) string {
-	if model == "" {
-		return ""
-	}
-	plat := ""
-	if c := resolveCombo(model); c != nil {
-		plat = c.Platform
-	} else {
-		plat = RoutePlatformKeyOf(model)
-	}
-	if plat == "" || !blacklist.IsPlatformBanned(plat) {
-		return ""
-	}
-	return plat
-}
 
 func handlePlatformBlacklistBan(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {

@@ -1,6 +1,7 @@
 package app
 
 import (
+	"afree-proxy/internal/cline"
 	"context"
 	"net"
 	"net/http"
@@ -27,7 +28,7 @@ func TestClineHeaderTimeout_Defaults(t *testing.T) {
 // 关闭时不派生 ctx（零开销、行为等价于改动前）。
 func TestClineHeaderWatchdog_Disabled(t *testing.T) {
 	parent := context.Background()
-	ctx, stop := clineHeaderWatchdogFor(parent, 0)
+	ctx, stop := cline.ClineHeaderWatchdogFor(parent, 0)
 	if ctx != parent {
 		t.Fatal("关闭时应直接复用父 ctx")
 	}
@@ -38,7 +39,7 @@ func TestClineHeaderWatchdog_Disabled(t *testing.T) {
 
 // 头到达后 stop 必须在取消前叫停，且之后 ctx 不能被看门狗取消。
 func TestClineHeaderWatchdog_StopBeforeFire(t *testing.T) {
-	ctx, stop := clineHeaderWatchdogFor(context.Background(), 300*time.Millisecond)
+	ctx, stop := cline.ClineHeaderWatchdogFor(context.Background(), 300*time.Millisecond)
 	if stop() {
 		t.Fatal("300ms 内不应触发")
 	}
@@ -69,7 +70,7 @@ func TestClineHeaderWatchdog_BlackHole(t *testing.T) {
 	}()
 	defer func() { ln.Close() }()
 
-	ctx, stop := clineHeaderWatchdogFor(context.Background(), 150*time.Millisecond)
+	ctx, stop := cline.ClineHeaderWatchdogFor(context.Background(), 150*time.Millisecond)
 	defer stop()
 	req, _ := http.NewRequest("GET", "http://"+ln.Addr().String()+"/", nil)
 	req = req.WithContext(ctx)
