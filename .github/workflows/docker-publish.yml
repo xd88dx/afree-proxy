@@ -44,6 +44,12 @@ jobs:
       - name: Vet
         run: go vet ./... github.com/misakano7545/workbuddy2api-panel/... trae2api/...
 
+      # 端点闭合性对账（2026-11-19 handleWkbdShareOptimize 漏注册事故的固化
+      # 护栏）：handler 消费面 / 前端 api() 调用 / wbCall→vendor 三方向对账，
+      # 死端点与 404 静默降级在合并前暴露。判据与 SKIP 口径见脚本头注释。
+      - name: Endpoint audit
+        run: python3 scripts/endpoint_audit.py
+
       # -shuffle：测试套件曾经是顺序依赖的（包级 zenModels/
       # clineStreamLearned 被替换后不恢复），默认顺序永远绿、换序必红。
       # seed 必须写成 -shuffle=<n>：go 没有 -shuffle.seed 这个 flag，传了会让
