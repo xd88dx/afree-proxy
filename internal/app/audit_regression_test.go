@@ -368,11 +368,14 @@ func TestClineStreamConcurrentLearnsPersistAll(t *testing.T) {
 	restore := cline.SaveStreamForTest()
 	t.Cleanup(restore)
 
-	// 全局配置是跨测试共享的单例（其他测试也会写入学习表），断言用相对值：
-	// 本次并发只要求"新增 n 个"全部落进配置，不要求全表恰好 n 个。
-	// 2026-11-17 迁移：学习表真身改住 cline-config.json（AccountPool.StreamRequired）。
+	// 学习表真身是 cline-config.json（AccountPool.StreamRequired，2026-11-17
+	// 迁移）。SaveStreamForTest 清空内存学习表，而学习落盘走 SaveStreamLatest
+	// 的「锁内重快照+整体替换 pool.StreamRequired」——替换语义下 pool 恰等于
+	// 本次内存全量（前测试残留被设计性抹除），因此断言必须用**绝对值**：
+	// pool 恰含本次 n 个名、与内存一致。相对计数（basePersisted 差值）在
+	// pool 残留非空时恒错——2026-11-18 CI shuffle=1 的 15/16、count=2 的
+	// 0/16 都是这一错配，不是并发丢失（-race 无报告，memOnly/poolOnly 恒空）。
 	// loadPool 自取 poolMu——外层不得再 Lock（Mutex 不可重入，自死锁）。
-	basePersisted := len(loadPool().StreamRequired)
 
 	const n = 16
 	var wg sync.WaitGroup
@@ -380,24 +383,36 @@ func TestClineStreamConcurrentLearnsPersistAll(t *testing.T) {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
-			learnClineStreamRequired("probe/model-" + string(rune('a'+i)) + ":free")
+			// 模型名带测试名+序号：与前测试残留名互斥，避免去重分支短路
+			// （残留本就被整体替换抹除，但同名会让内存计数虚低干扰诊断）。
+			learnClineStreamRequired(t.Name() + "/model-" + string(rune('a'+i)) + ":free")
 		}(i)
 	}
 	wg.Wait()
-	// 等落盘队列排空（学习路径是同步写的，这里只是保险）
+	// 学习路径是同步落盘（SaveStreamLatest→MutateConfig），这里只是保险。
 	time.Sleep(100 * time.Millisecond)
 
-	// 本地落盘走 mutatePoolConfig（cline-config.json 的 streamRequired 段，
-	// 全局串行 + 原子写），不存在上游"每请求各起 goroutine 撕裂写文件"的
-	// 形态。并发学习后内存全量应一个不少；再从平台配置读回确认已持久化。
+	// 并发学习后内存全量应一个不少；pool 恰为内存全量（整体替换）。
 	got := cline.StreamCount()
 	if got != n {
 		t.Fatalf("learned = %d, want %d (lost update)", got, n)
 	}
 	// loadPool 自取 poolMu（同上，外层 Lock 是自死锁）。
-	persisted := len(loadPool().StreamRequired)
-	if persisted-basePersisted != n {
-		t.Fatalf("persisted %d new learned models (want %d); concurrent saves clobbered each other "+
-			"(lost update => the forgotten model pays the full non-stream retry again)", persisted-basePersisted, n)
+	pool := loadPool().StreamRequired
+	mem := cline.StreamSnapshotForTest()
+	var memOnly, poolOnly []string
+	for k := range mem {
+		if _, ok := pool[k]; !ok {
+			memOnly = append(memOnly, k)
+		}
+	}
+	for k := range pool {
+		if _, ok := mem[k]; !ok {
+			poolOnly = append(poolOnly, k)
+		}
+	}
+	if len(pool) != n || len(memOnly) != 0 || len(poolOnly) != 0 {
+		t.Fatalf("pool=%d memOnly=%v poolOnly=%v (want pool==mem==%d new entries)",
+			len(pool), memOnly, poolOnly, n)
 	}
 }

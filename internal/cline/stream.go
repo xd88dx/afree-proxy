@@ -206,6 +206,17 @@ func SaveStreamForTest() (restore func()) {
 	}
 }
 
+// StreamSnapshotForTest 学习表快照（诊断/断言用；并发丢失更新排查）。
+func StreamSnapshotForTest() map[string]string {
+	streamMu.RLock()
+	defer streamMu.RUnlock()
+	cp := make(map[string]string, len(streamLearned))
+	for k, v := range streamLearned {
+		cp[k] = v
+	}
+	return cp
+}
+
 // StreamCount 学习表条数（并发丢失更新断言用；判定路径走 StreamRequired）。
 func StreamCount() int {
 	streamMu.RLock()

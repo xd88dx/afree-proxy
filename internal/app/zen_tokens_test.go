@@ -16,13 +16,17 @@ func TestZenKeyTokensPersist(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("DATA_DIR", dir) // setZenConfig 里的 reconcileEgressBindings 会写 zen-config.json，别污染真实数据目录
 	oldOverride := *zenUsagePathOverride
-	oldCfgOverride := zenConfigPathOverride
+	oldCfgPath := *zenConfigPathOverride
 	oldTokens := zenKeyTokens
 	*zenUsagePathOverride = filepath.Join(dir, "zen-state.json")
 	*zenConfigPathOverride = filepath.Join(dir, "zen-config.json")
 	defer func() {
 		*zenUsagePathOverride = oldOverride
-		zenConfigPathOverride = oldCfgOverride
+		// 解引用恢复真身的值（gateway 批 shuffle=1 实证）：整体重绑别名只会把
+		// app 侧别名指回真身地址，真身的字符串值仍是本测试的已删 TempDir——
+		// zen 包内后续所有 zen-config.json 写（学习/别名/egress）持续指向
+		// 不存在的目录（CI 337 次 write 失败），污染后续 zen 域测试。
+		*zenConfigPathOverride = oldCfgPath
 		zenKeyMu.Lock()
 		zenKeyTokens = oldTokens
 		zenKeyMu.Unlock()
