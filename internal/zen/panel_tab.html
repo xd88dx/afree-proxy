@@ -1,0 +1,106 @@
+<div id="tab-opencode" class="tab-panel" style="display:none">
+<h2 style="margin-bottom:4px">OpenCode</h2>
+<div class="hint" id="ocSummary" style="margin:0 0 16px">Loading...</div>
+
+<div class="section">
+  <div class="section-body">
+    <div class="form-row">
+      <div class="field" style="margin:0">
+        <label>Base URL</label>
+        <div style="display:flex;gap:8px;align-items:center">
+          <input type="text" id="ocBaseURL" placeholder="https://opencode.ai/inference/openai/v1" style="flex:1;min-width:0">
+          <button class="btn btn-primary btn-sm" onclick="saveOcConfig()" data-i18n="confirm">Confirm</button>
+        </div>
+      </div>
+    </div>
+    <div class="flex" style="gap:10px;margin:0 0 8px;align-items:center;flex-wrap:wrap">
+      <label class="hint" style="margin:0" data-i18n="Probe model (used by the Test buttons):">Probe model (used by the Test buttons):</label>
+      <select id="ocProbeModel" style="max-width:420px"><option value="" data-i18n="zen_probe_auto">auto — big-pickle first, then live models</option></select>
+      <label class="hint" style="margin:0 0 0 6px" data-i18n="org_id_single_key_only">Org ID (single key only):</label>
+      <input type="text" id="ocOrgID" placeholder="usually empty" data-i18n-placeholder="org_id_usually_empty" style="max-width:220px" title="x-opencode-org-id. Upstream validates this against the key's workspace: a wrong value returns 403 &quot;Workspace access denied&quot;, so sending nothing is always safe and is what the official client does for API keys. This field is only used when the pool has exactly ONE key and that key's org cannot be discovered; with two or more keys it is ignored entirely, because one value cannot match every key. Leave it empty unless you have a single key and know its exact org id." data-i18n-title="org_id_single_key_title">
+    </div>
+    <div class="table-wrap" style="margin-bottom:10px">
+      <table>
+        <thead><tr><th style="width:50px">#</th><th style="width:110px" data-i18n="Key">Key</th><th title="x-opencode-org-id resolved per key from console/api/orgs; '- (fallback)' means the configured fallback is used because discovery returned nothing" data-i18n="org" data-i18n-title="org_col_title">Org</th><th data-i18n="Status">Status</th><th title="Counted locally by this proxy — not the official free quota" data-i18n="Today/Total tokens">Today/Total tokens</th><th data-i18n="Last used">Last used</th><th title="Main exit first, backup as fallback; both down = row skipped (isolation)." data-i18n="Proxy binding">Proxy binding</th><th style="width:130px;text-align:center" data-i18n="Actions">Actions</th><th style="text-align:center" title="Routing participation: unchecked keys never enter request rotation. Newly added keys start disabled — tick Pool to enable. Sessions are minted per upstream call." data-i18n="Pool">Pool</th></tr></thead>
+        <tbody id="ocKeysBody"><tr><td colspan="9" class="empty">Loading...</td></tr></tbody>
+      </table>
+    </div>
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin:10px 6px 4px">
+      <button class="btn btn-primary btn-sm" onclick="openZenKeyAddDialog()" data-i18n="add_credentials">Add credentials</button>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-sm" onclick="stageAllKeysRouting(true)" data-i18n="enable_all">Enable all</button>
+        <button class="btn btn-sm" onclick="stageAllKeysRouting(false)" data-i18n="disable_all">Disable all</button>
+        <button class="btn btn-sm" onclick="refreshProxyHealthCache().then(() => stageProxiesByOrder('key'))" title="Bind main proxy by row order: 1st credential to Direct, then the proxy pool in order, skipping manually disabled proxies (staged - click Save to apply; enable/disable and backup untouched)">Bind proxies in order</button>
+        <button class="btn btn-sm" onclick="stageClearZenKeyProxies()" title="Stage only — click Save to apply. Clears bindings and disables every row." data-i18n="clear_bindings">Clear bindings</button>
+        <button class="btn btn-sm" id="ocTestBtn" onclick="batchTestKeys()" title="Run the Test probe on every row." data-i18n="test_all">Test all</button>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-sm btn-warn" id="ocResetBtn" onclick="resetKeyEdits()" title="Discard staged changes and reload the last saved state" data-i18n="discard">Discard</button>
+        <button class="btn btn-primary btn-sm" id="ocKeysSaveBtn" onclick="saveKeyEdits()" data-i18n="save">Save</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></span> Rate-limit defense</div>
+  <div class="section-body">
+    <div class="form-row">
+      <div class="field"><label>Max concurrency</label><input type="text" id="ocMaxConc" placeholder="8"></div>
+      <div class="field"><label>Rate-limit retries</label><input type="text" id="ocRetries" placeholder="3"></div>
+    </div>
+    <div class="form-actions"><button class="btn btn-primary" onclick="saveOcConfig()" data-i18n="save_rate_limit_config">Save rate-limit config</button></div>
+  </div>
+</div>
+
+<div class="section">
+  <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><path d="M4 8V6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v2M4 8v10a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8M4 8h16"/><path d="M10 12h4"/></svg></span> Context compaction (OpenCode official mechanism)</div>
+  <div class="section-body">
+    <div class="form-row">
+      <div class="field"><label>Auto-compaction</label>
+        <select id="ocCompactAuto"><option value="true">On</option><option value="false">Off</option></select>
+      </div>
+      <div class="field"><label>Reserved buffer</label><input type="text" id="ocCompactBuffer" placeholder="80000"></div>
+    </div>
+    <div class="form-row">
+      <div class="field"><label>Tail tokens kept</label><input type="text" id="ocKeepTokens" placeholder="8000"></div>
+      <div class="field"><label>Summary model</label><input type="text" id="ocSummaryModel" placeholder="empty = same as request model"></div>
+    </div>
+    <div class="form-row">
+      <div class="field"><label>Summary cap</label><input type="text" id="ocMaxSummary" placeholder="4096"></div>
+    </div>
+    <div class="form-actions"><button class="btn btn-primary" onclick="saveOcConfig()" data-i18n="save_compaction_config">Save compaction config</button></div>
+  </div>
+</div>
+
+<div class="section">
+  <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><path d="M3 6h18M6 6v13a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V6M10 11h4"/></svg></span> <span data-i18n="Request size filter (shrink the upstream body)">Request size filter (shrink the upstream body)</span></div>
+  <div class="section-body">
+    <p class="hint" style="margin-top:0" data-i18n="IDE requests are mostly tool schemas (137 KB total, 112 KB of that is tools). Dropping client tools before they reach upstream saves roughly 33k tokens per message. Gate tools (12) are never filtered.">IDE requests are mostly tool schemas (137 KB total, 112 KB of that is tools). Dropping client tools before they reach upstream saves roughly 33k tokens per message. Gate tools (12) are never filtered.</p>
+    <div class="form-row">
+      <div class="field" style="margin-top:5px;"><label data-i18n="Filter client tools">Filter client tools</label>
+        <select id="ocToolFilterEnabled"><option value="false">Off — forward every tool the IDE declares</option><option value="true">On — drop matching tools</option></select>
+      </div>
+      <div class="field"><label data-i18n="Max description chars (0 = keep)">Max description chars (0 = keep)</label><input type="text" id="ocToolFilterMaxDesc" placeholder="0"></div>
+    </div>
+    <div class="form-row">
+      <div class="field" style="flex:2"><label data-i18n="Drop by name prefix (one per line)">Drop by name prefix (one per line)</label><textarea id="ocToolFilterPrefixes" rows="3" placeholder="mcp__" style="font-family:monospace;font-size:12px"></textarea></div>
+      <div class="field" style="flex:2"><label data-i18n="Drop by exact name (one per line)">Drop by exact name (one per line)</label><textarea id="ocToolFilterNames" rows="3" placeholder="CronCreate&#10;CreateWorkflow&#10;EnterPlanMode&#10;ExitPlanMode&#10;AskUserQuestion" style="font-family:monospace;font-size:12px"></textarea></div>
+    </div>
+    <p class="hint" style="margin-top:0" data-i18n="Starting suggestions: prefix mcp__ (MCP tools are the largest single schemas and a given turn usually uses one or two); names CronCreate, CreateWorkflow, EnterPlanMode, ExitPlanMode, AskUserQuestion (several KB each, rarely needed in a coding turn). Every drop is logged with the bytes saved.">Starting suggestions: prefix <code>mcp__</code> (MCP tools are the largest single schemas and a given turn usually uses one or two); names <code>CronCreate</code>, <code>CreateWorkflow</code>, <code>EnterPlanMode</code>, <code>ExitPlanMode</code>, <code>AskUserQuestion</code> (several KB each, rarely needed in a coding turn). Every drop is logged with the bytes saved.</p>
+    <div class="form-actions"><button class="btn btn-primary" onclick="saveOcConfig()" data-i18n="Save filter">Save filter</button></div>
+  </div>
+</div>
+
+<div class="section">
+  <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 5-6"/></svg></span> <span data-i18n="Model catalog">Model catalog</span> <span class="probe-pill" data-models-info style="font-weight:normal"></span></div>
+  <div class="section-body">
+    <div class="flex" style="margin-bottom:10px;gap:10px">
+      <button class="btn btn-sm btn-primary" onclick="refreshZenModels(this)" data-i18n="Refresh models">Refresh models</button>
+      <span class="hint" style="margin:0" data-i18n="Automatically synced from the official model source upstream (every 5 minutes)">Automatically synced from the official model source upstream (every 5 minutes)</span>
+    </div>
+    <div id="ocModelsBody">Loading...</div>
+  </div>
+</div>
+</div>
+

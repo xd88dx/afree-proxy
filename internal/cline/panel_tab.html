@@ -1,0 +1,70 @@
+<div id="tab-accounts" class="tab-panel" style="display:none">
+  <div class="flex justify-between" style="margin-bottom:16px">
+  <div>
+    <h2 style="margin-bottom:4px">Cline</h2>
+    <div class="hint" id="accSummary" style="margin:0">Loading...</div>
+  </div>
+</div>
+<div class="section">
+  <div class="section-body" style="padding:6px">
+    <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th style="width:44px">#</th><th data-i18n="Email">Email</th><th data-i18n="Status">Status</th><th title="Counted locally by this proxy — not the official free quota" data-i18n="Today/Total tokens">Today/Total tokens</th><th data-i18n="Last used">Last used</th><th title="Main exit first, backup as fallback; both down = row skipped (isolation)." data-i18n="Proxy binding">Proxy binding</th><th style="text-align:center" data-i18n="Actions">Actions</th><th style="text-align:center" title="Routing participation. New rows start disabled — tick Pool to enable." data-i18n="Pool">Pool</th></tr>
+      </thead>
+      <tbody id="accountTableBody">
+        <tr><td colspan="8" class="empty">Loading...</td></tr>
+      </tbody>
+    </table>
+    </div>
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin:10px 6px 4px">
+      <button class="btn btn-primary btn-sm" onclick="openAccAddDialog()" data-i18n="add">Add</button>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-sm" onclick="stageAllAccountsPool(true)" data-i18n="enable_all">Enable all</button>
+        <button class="btn btn-sm" onclick="stageAllAccountsPool(false)" data-i18n="disable_all">Disable all</button>
+        <button class="btn btn-sm" onclick="refreshProxyHealthCache().then(() => stageProxiesByOrder('acc'))" title="Bind main proxy by row order: 1st credential to Direct, then the proxy pool in order, skipping manually disabled proxies (staged - click Save to apply; enable/disable and backup untouched)">Bind proxies in order</button>
+        <button class="btn btn-sm" onclick="stageClearAccountProxies()" title="Stage only — click Save to apply. Clears bindings and disables every row." data-i18n="clear_bindings">Clear bindings</button>
+        <button class="btn btn-sm" id="accTestBtn" onclick="batchTestAccounts()" title="Run the Test probe on every row." data-i18n="test_all">Test all</button>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-sm btn-warn" id="accResetBtn" onclick="resetAccountEdits()" title="Discard staged changes and reload the last saved state" data-i18n="discard">Discard</button>
+        <button class="btn btn-primary btn-sm" id="accSaveBtn" onclick="saveAccountEdits()" data-i18n="save">Save</button>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="section">
+  <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h10"/></svg></span> Request headers (mimicking the Cline CLI)<button class="btn btn-sm" onclick="resetHeaders()" style="margin-left:auto" title="Restore the default Cline CLI headers" data-i18n="restore_defaults">Restore defaults</button></div>
+  <div class="section-body">
+    <div class="table-wrap">
+    <table>
+      <thead><tr><th style="width:220px" data-i18n="Header">Header</th><th data-i18n="Value">Value</th><th style="width:40px"></th></tr></thead>
+      <tbody id="headersTableBody">
+        <tr><td colspan="3" class="empty">Loading...</td></tr>
+      </tbody>
+    </table>
+    </div>
+    <div class="form-actions">
+      <button class="btn btn-sm" onclick="addHeaderRow()" data-i18n="add_header">Add header</button>
+      <button class="btn btn-sm btn-primary" onclick="saveHeaders()" data-i18n="save_headers">Save headers</button>
+    </div>
+    <div class="hint">Attached to every Cline API request to mimic the official client.</div>
+  </div>
+</div>
+
+<div class="section">
+  <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 5-6"/></svg></span> Model catalog <span class="probe-pill" data-models-info style="font-weight:normal"></span></div>
+  <div class="section-body">
+    <div class="flex" style="margin-bottom:10px;gap:10px">
+      <button class="btn btn-sm btn-primary" onclick="refreshClineModels(this)" data-i18n="refresh_models">Refresh models</button>
+      <span class="hint" style="margin:0">Automatically synced from the official model source upstream (every 5 minutes)</span>
+      <label style="margin-left:auto;display:flex;gap:6px;align-items:center;white-space:nowrap" data-i18n-title="cline_catalog_feed_only_title" title="The FREE group in the plugin UI is the official recommendation slot (feed free group); when on, only those models are listed.">
+        <input type="checkbox" id="settingClineCatalogFeedOnly" onchange="saveClineCatalogFeedOnly()" style="width:auto;padding:0;accent-color:var(--accent)">
+        <span data-i18n="cline_catalog_feed_only" style="font-size:12px">Plugin FREE only</span>
+      </label>
+    </div>
+    <div id="accModelsBody">Loading...</div>
+  </div>
+</div>
+</div>
+

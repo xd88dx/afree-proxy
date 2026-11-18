@@ -1,4 +1,4 @@
-# 前端板块详解（admin_html.go 单文件内嵌面板）
+# 前端板块详解（panel 共享骨架 + 各平台包 panel_tab.html 片段，P5 拆分）
 
 面板 = Go 反引号字符串 `const adminHTML`，内含 CSS/HTML/JS。改完必须重建镜像才能浏览器验证。
 

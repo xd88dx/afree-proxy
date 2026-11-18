@@ -9,6 +9,9 @@
      显式键,否则中文界面必然残留英文(2026-11-09 补的第三遍,专治这一类)。
 
 用法:python scripts/i18n_audit.py [admin_html.go]
+  缺省扫描拼装源全集:internal/panel/html.go（共享骨架）+ 各平台包
+  panel_tab.html/panel_nav.html（P5 面板拆分后平台片段迁平台包 embed，
+  拼装产物与原 admin_html 逐字节一致——漏扫平台片段即漏检其 i18n 键）。
 """
 import html as htmlmod
 import io
@@ -16,8 +19,14 @@ import re
 import sys
 from html.parser import HTMLParser
 
-path = sys.argv[1] if len(sys.argv) > 1 else "internal/panel/html.go"
-src = io.open(path, encoding="utf-8").read()
+if len(sys.argv) > 1:
+    _paths = [sys.argv[1]]
+else:
+    _paths = ["internal/panel/html.go"] + [
+        "internal/%s/panel_tab.html" % p for p in ("cline", "zen", "trae", "workbuddy", "other")
+    ] + ["internal/%s/panel_nav.html" % p for p in ("cline", "zen", "trae", "workbuddy", "other")]
+src = "\n".join(io.open(p, encoding="utf-8").read() for p in _paths)
+path = ",".join(_paths)
 
 
 def js_unescape(s):

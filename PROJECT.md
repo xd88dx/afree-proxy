@@ -19,7 +19,7 @@
 
 **vendor 独立 module 化（2026-11-17）**：两树迁至 `modules/`，go.mod 沿用上游 module 路径（wb=`github.com/misakano7545/workbuddy2api-panel`，trae=`trae2api`），主 go.mod `replace` 指本地、`go.work` 汇总；树内 import 与上游零差异，vendor 脚本不再做 import 前缀改写。主 module 只能经各自根门面消费 vendor 的 internal 包（Go internal 可见性强制，门面即显式契约）。**workspace 模式下 `./...` 不穿透 modules/ 子目录 module**（实测 `go list ./...` 仅 6 包）——构建/测试必须显式列模块路径，见 §4。
 
-`internal/panel/html.go` 是**所有平台共用**的单文件面板，按 h2 / tab 分段，`oc*` 属于 OpenCode 而不是 Cline。改一处必须确认它属于哪个平台段。
+管理面板前端 **P5 拆分**：共享骨架（head/CSS/导航骨架/共享 tab/JS）在 `internal/panel/html.go`；**平台导航项与 tab 片段在 `internal/<x>/panel_nav.html` / `panel_tab.html`**（各平台包 embed，panel 按拆分前顺序拼装，产物与拆分前字节一致——切分时机器验证）。`oc*` 属于 OpenCode 而不是 Cline。改平台 UI 片段去平台包，改共享 UI 去panel/html.go。
 
 ## 3. 上游同步：五条线（主线 merge/vendor + 副线吸纳）+ magpie 参考线，台账 `MERGE.md`
 
@@ -338,13 +338,13 @@ python scripts/i18n_reverse_audit.py    # 孤儿候选（仅参考，勿直接�
 
 ```bash
 # 面板里所有 tooltip 原文，逐个确认在 I18N 有同名键
-grep -o 'title="[^"]\+"' internal/app/admin_html.go | sed 's/^title="//;s/"$//' | sort -u
+grep -o 'title="[^"]\+"' internal/panel/html.go | sed 's/^title="//;s/"$//' | sort -u
 # 面板里所有 placeholder 原文（示例值可跳过）
-grep -o 'placeholder="[^"]\+"' internal/app/admin_html.go | sed 's/^placeholder="//;s/"$//' | sort -u
+grep -o 'placeholder="[^"]\+"' internal/panel/html.go | sed 's/^placeholder="//;s/"$//' | sort -u
 ```
 
 注意 `I18N` 是 JS 对象字面量：**同名键写两次不会报错，后者静默覆盖前者**，界面会显示成你以为错的那条。新增词条前后都 `grep -n "'<原文>'"` 确认只有一处。
 
 ## 9. 面板凭据表格对齐约定（2026-10-29 用户定）
 
-8 个平台的账号/key 表（tbody id：`accountTableBody` / `traeAccountsBody` / `ocKeysBody` / `wbAccountsBody` / `orKeysBody` / `amdKeysBody` / `thKeysBody` / `otherKeysBody`）：**所有列的表头与内容居中，唯独账号/Key 列（各表第 2 列）表头居中、内容左对齐**。实现集中在 `admin_html.go` 的 CSS 追加段（`table:has(#xxxBody) th` + `#xxxBody td` + `td:nth-child(2)` 左对齐覆盖）；flex 容器（状态列的竖排栈、签到竖徽章）`text-align` 管不到，用 `justify-content:center` 单独处理。新增平台表格时把 tbody id 加进该规则，不要逐 td 写内联样式。
+8 个平台的账号/key 表（tbody id：`accountTableBody` / `traeAccountsBody` / `ocKeysBody` / `wbAccountsBody` / `orKeysBody` / `amdKeysBody` / `thKeysBody` / `otherKeysBody`）：**所有列的表头与内容居中，唯独账号/Key 列（各表第 2 列）表头居中、内容左对齐**。实现集中在 `internal/panel/html.go` 的 CSS 追加段（`table:has(#xxxBody) th` + `#xxxBody td` + `td:nth-child(2)` 左对齐覆盖）；flex 容器（状态列的竖排栈、签到竖徽章）`text-align` 管不到，用 `justify-content:center` 单独处理。新增平台表格时把 tbody id 加进该规则，不要逐 td 写内联样式。

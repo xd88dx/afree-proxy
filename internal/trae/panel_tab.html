@@ -1,0 +1,99 @@
+<div id="tab-trae" class="tab-panel" style="display:none">
+<h2 style="margin-bottom:4px;display:flex;justify-content:space-between;align-items:center;gap:12px">
+  <span>TraeWork</span>
+  <a class="btn btn-sm" href="/admin/trae2api/" target="_blank" rel="noopener" style="align-self:center">Original panel</a>
+</h2>
+<div class="hint" id="traeSummary" style="margin:0 0 16px">Loading...</div>
+
+<div class="section">
+  <div class="section-body">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin:0 6px 8px">
+      <span class="wb-toolbar">
+        <button class="btn btn-sm" onclick="refreshTraeCredits()" title="Refresh every enabled account's credit snapshot (feeds the Credits column)" data-i18n="refresh_balances">Refresh balances</button>
+      </span>
+      <span class="wb-toolbar">
+        <button class="btn btn-sm" onclick="runTraeCheckin()" title="Daily check-in for every account whose account switch is on (upstream schedule applies too)" data-i18n="check_in_all">Check in all</button>
+      </span>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th style="width:44px">#</th><th style="width:150px" data-i18n="Account">Account</th><th data-i18n="Status">Status</th><th title="Remaining credits from the latest snapshot (auto-refreshed in the background; Test refreshes on demand)" data-i18n="Credits">Credits</th><th title="Counted locally by this proxy from upstream usage events" data-i18n="Today/Total tokens">Today/Total tokens</th><th data-i18n="Last used">Last used</th><th title="Main exit first, backup as fallback; both down = row skipped (isolation)." data-i18n="Proxy binding">Proxy binding</th><th style="width:130px;text-align:center" data-i18n="Actions">Actions</th><th style="text-align:center" data-i18n="gateway_switch" data-i18n-title="gateway_reverse_proxy_switch_unchecked_model_ses" title="Gateway (reverse proxy) switch: unchecked = model sessions never route to this account; check-in and all other maintenance tasks are unaffected. Can only be ticked while the account switch is on.">Gateway switch</th><th style="text-align:center" data-i18n="account_switch" data-i18n-title="account_master_switch_off_the_account_does_not_e" title="Account master switch. Off = the account does not exist: check-in, balance refresh and Test all skip it, and it never routes.">Account switch</th></tr></thead>
+        <tbody id="traeAccountsBody"><tr><td colspan="10" class="empty">Loading...</td></tr></tbody>
+      </table>
+    </div>
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin:10px 6px 4px;flex-wrap:wrap">
+      <button class="btn btn-primary btn-sm" onclick="openTraeAddDialog()" data-i18n="add_accounts">Add accounts</button>
+      <span class="wb-toolbar">
+        <button class="btn btn-sm" onclick="stageAllTraeRouting(true)" data-i18n="enable_all">Enable all</button>
+        <button class="btn btn-sm" onclick="stageAllTraeRouting(false)" data-i18n="disable_all">Disable all</button>
+        <button class="btn btn-sm" onclick="refreshProxyHealthCache().then(() => stageProxiesByOrder('trae'))" title="Bind main proxy by row order: 1st credential to Direct, then the proxy pool in order, skipping manually disabled proxies (staged - click Save to apply; enable/disable and backup untouched)">Bind proxies in order</button>
+        <button class="btn btn-sm" onclick="stageClearTraeProxies()" title="Stage only — click Save to apply. Clears bindings and disables every row." data-i18n="clear_bindings">Clear bindings</button>
+        <button class="btn btn-sm" id="traeTestBtn" onclick="batchTestTraeAccounts()" title="Run the Test probe on every row." data-i18n="test_all">Test all</button>
+      </span>
+      <span class="wb-toolbar">
+        <button class="btn btn-sm btn-warn" id="traeResetBtn" onclick="resetTraeEdits()" title="Discard staged changes and reload the last saved state" data-i18n="discard">Discard</button>
+        <button class="btn btn-primary btn-sm" id="traeSaveBtn" onclick="saveTraeEdits()" data-i18n="save">Save</button>
+      </span>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h10M4 18h7"/></svg></span> Trae config</div>
+  <div class="section-body" id="traeConfigForm">
+    <div class="wb-config-grid">
+      <div class="wb-config-group">
+        <div class="wb-field"><label for="traeMaxInFlight">Max in-flight / account</label><input id="traeMaxInFlight" data-trae-type="number" placeholder="8"></div>
+        <div class="wb-field"><label for="traeBreakerThreshold">Breaker threshold</label><input id="traeBreakerThreshold" placeholder="3"></div>
+        <div class="wb-field"><label for="traeBreakerCooldown">Breaker cooldown</label><input id="traeBreakerCooldown" placeholder="30m"></div>
+        <div class="wb-field"><label for="traeCoolSoft">Soft rate cooldown</label><input id="traeCoolSoft" placeholder="10m"></div>
+        <div class="wb-field"><label for="traeCoolSoftMax">Soft cooldown max</label><input id="traeCoolSoftMax" placeholder="2h"></div>
+        <div class="wb-field"><label for="traeCoolModel">Model cooldown</label><input id="traeCoolModel" placeholder="10m"></div>
+        <div class="wb-field"><label for="traeIdleTimeout">Stream idle timeout (s)</label><input id="traeIdleTimeout" placeholder="120"></div>
+      </div>
+      <div class="wb-config-group">
+        <div class="wb-field"><label for="traeRateFilterCN">CN model rate filter</label>
+          <select id="traeRateFilterCN">
+            <option value="0">Off</option>
+            <option value="0.1">0.1</option>
+            <option value="0.2">0.2</option>
+            <option value="0.3">0.3</option>
+            <option value="0.5">0.5</option>
+            <option value="1">1</option>
+          </select>
+        </div>
+        <div class="wb-field"><label for="traeRateFilterIntl">Intl model rate filter</label>
+          <select id="traeRateFilterIntl">
+            <option value="0">Off</option>
+            <option value="0.1">0.1</option>
+            <option value="0.2">0.2</option>
+            <option value="0.3">0.3</option>
+            <option value="0.5">0.5</option>
+            <option value="1">1</option>
+          </select>
+        </div>
+        <div class="wb-switch"><input type="checkbox" id="traeCheckinEnabled"><label for="traeCheckinEnabled">Auto check-in</label></div>
+        <div class="wb-field"><label for="traeCheckinHours">Check-in hours</label><input id="traeCheckinHours" placeholder="9,21"></div>
+        <div class="wb-switch"><input type="checkbox" id="traeStrictModels"><label for="traeStrictModels">Reject unknown models</label></div>
+        <div class="wb-switch"><input type="checkbox" id="traeSessionSticky"><label for="traeSessionSticky">Session sticky</label></div>
+        <div class="wb-switch"><input type="checkbox" id="traeIntl"><label for="traeIntl">International realms</label></div>
+      </div>
+    </div>
+    <div class="form-actions" style="justify-content:flex-end;gap:8px">
+      <button class="btn" onclick="resetTraeConfigEdits()" data-i18n="discard_changes">Discard changes</button>
+      <button class="btn btn-primary" onclick="saveTraeConfig()" data-i18n="save_config">Save config</button>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 5-6"/></svg></span> Model catalog <span class="probe-pill" data-models-info style="font-weight:normal"></span></div>
+  <div class="section-body">
+    <div class="flex" style="margin-bottom:10px;gap:10px">
+      <button class="btn btn-sm btn-primary" onclick="refreshTraeModels(this)" data-i18n="refresh_models">Refresh models</button>
+      <span class="hint" style="margin:0">Automatically synced from the official model source upstream (every 5 minutes)</span>
+    </div>
+    <div id="traeModelsBody">Loading...</div>
+  </div>
+</div>
+</div>

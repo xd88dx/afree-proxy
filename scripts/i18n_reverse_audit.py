@@ -8,8 +8,14 @@
 import io, re, sys
 import html as htmlmod
 
-path = sys.argv[1] if len(sys.argv) > 1 else 'internal/panel/html.go'
-src = io.open(path, encoding='utf-8').read()
+if len(sys.argv) > 1:
+    _paths = [sys.argv[1]]
+else:
+    _paths = ["internal/panel/html.go"] + [
+        "internal/%s/panel_tab.html" % p for p in ("cline", "zen", "trae", "workbuddy", "other")
+    ] + ["internal/%s/panel_nav.html" % p for p in ("cline", "zen", "trae", "workbuddy", "other")]
+path = ",".join(_paths)
+src = "\n".join(io.open(pp, encoding='utf-8').read() for pp in _paths)
 
 def js_unescape(s):
     out, i = [], 0

@@ -1,6 +1,38 @@
 package panel
 
-const AdminHTML = `<!DOCTYPE html>
+import (
+	"afree-proxy/internal/cline"
+	"afree-proxy/internal/other"
+	"afree-proxy/internal/trae"
+	"afree-proxy/internal/workbuddy"
+	"afree-proxy/internal/zen"
+)
+
+// AdminHTML 管理面板整页（P5 面板拆分）：共享骨架（head/CSS/导航骨架/
+// 共享 tab/JS）留本包，平台导航项与 tab 片段由各平台包 embed 提供，
+// 按拆分前出现顺序拼装——产物与拆分前 AdminHTML 逐字节一致（切分时
+// 机器验证，台账记录）。改平台前端片段去各平台包 panel_tab.html；
+// 改共享 UI 仍在本文件。JS 语法事故防线：拼装产物 script 块过
+// node --check（PROJECT.md §8）。
+var AdminHTML = head1aHTML +
+	cline.PanelNavItem +
+	trae.PanelNavItem +
+	workbuddy.PanelNavItem +
+	zen.PanelNavItem +
+	other.PanelNavItem +
+	head1bHTML +
+	cline.PanelTabHTML +
+	trae.PanelTabHTML +
+	poolTabHTML +
+	settingsTabHTML +
+	logsTabHTML +
+	combosTabHTML +
+	zen.PanelTabHTML +
+	workbuddy.PanelTabHTML +
+	other.PanelTabHTML +
+	tailHTML
+
+const head1aHTML = `<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -435,12 +467,9 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
 <h1><span class="logo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 3 14h7l-1 8 10-12h-7l1-8z"/></svg></span><span class="brand-name">AFree Proxy</span><button class="theme-toggle" id="langBtn" onclick="toggleLang()" title="Switch language / 切换语言" style="margin-left:6px"></button><button class="theme-toggle" onclick="toggleTheme()" title="Toggle theme"><span class="icon" id="themeIcon"></span><span class="light-label">Light</span><span class="dark-label">Dark</span></button></h1>
 <div class="nav-item active" data-tab="dashboard"><span class="nav-ico"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg></span> Dashboard</div>
 <div class="nav-group">Account pool</div>
-<div class="nav-item" data-tab="accounts"><span class="nav-ico"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-6.5 8-6.5s8 2.5 8 6.5"/></svg></span> Cline</div>
-<div class="nav-item" data-tab="trae"><span class="nav-ico"><svg viewBox="0 0 24 24"><path d="M5 5h14M12 5v14"/><path d="M8.5 12H12"/></svg></span> TraeWork</div>
-<div class="nav-item" data-tab="workbuddy"><span class="nav-ico"><svg viewBox="0 0 24 24"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9L12 3z"/><path d="M12 12l8-4.5M12 12v9M12 12L4 7.5"/></svg></span> WorkBuddy</div>
-<div class="nav-item" data-tab="opencode"><span class="nav-ico"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14.5 14.5 0 0 1 0 18 14.5 14.5 0 0 1 0-18z"/></svg></span> OpenCode</div>
-<div class="nav-item" data-tab="other"><span class="nav-ico"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><circle cx="17.5" cy="17.5" r="3.5"/></svg></span> Other</div>
-<div class="nav-group">Services</div>
+`
+
+const head1bHTML = `<div class="nav-group">Services</div>
 <div class="nav-item" data-tab="proxypool"><span class="nav-ico"><svg viewBox="0 0 24 24"><circle cx="12" cy="5" r="2.5"/><circle cx="5" cy="19" r="2.5"/><circle cx="19" cy="19" r="2.5"/><path d="M12 7.5v4m0 0-5.5 5m5.5-5 5.5 5"/></svg></span> Proxy pool</div>
 <div class="nav-item" data-tab="settings"><span class="nav-ico"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1 1.55V21a2 2 0 1 1-4 0v-.09a1.7 1.7 0 0 0-1-1.55 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.7 1.7 0 0 0 .34-1.87 1.7 1.7 0 0 0-1.55-1H3a2 2 0 1 1 0-4h.09a1.7 1.7 0 0 0 1.55-1 1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.7 1.7 0 0 0 1.87.34h0a1.7 1.7 0 0 0 1-1.55V3a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1 1.55h0a1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87v0a1.7 1.7 0 0 0 1.55 1H21a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.55 1z"/></svg></span> Gateway settings</div>
 <div class="nav-item" data-tab="combos"><span class="nav-ico"><svg viewBox="0 0 24 24"><path d="M8 3v5a4 4 0 0 1-4 4 4 4 0 0 1 4 4v5M16 3v5a4 4 0 0 0 4 4 4 4 0 0 0-4 4v5"/></svg></span> Custom aliases</div>
@@ -508,176 +537,9 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
 </div>
 </div>
 
-<div id="tab-accounts" class="tab-panel" style="display:none">
-  <div class="flex justify-between" style="margin-bottom:16px">
-  <div>
-    <h2 style="margin-bottom:4px">Cline</h2>
-    <div class="hint" id="accSummary" style="margin:0">Loading...</div>
-  </div>
-</div>
-<div class="section">
-  <div class="section-body" style="padding:6px">
-    <div class="table-wrap">
-    <table>
-      <thead>
-        <tr><th style="width:44px">#</th><th data-i18n="Email">Email</th><th data-i18n="Status">Status</th><th title="Counted locally by this proxy — not the official free quota" data-i18n="Today/Total tokens">Today/Total tokens</th><th data-i18n="Last used">Last used</th><th title="Main exit first, backup as fallback; both down = row skipped (isolation)." data-i18n="Proxy binding">Proxy binding</th><th style="text-align:center" data-i18n="Actions">Actions</th><th style="text-align:center" title="Routing participation. New rows start disabled — tick Pool to enable." data-i18n="Pool">Pool</th></tr>
-      </thead>
-      <tbody id="accountTableBody">
-        <tr><td colspan="8" class="empty">Loading...</td></tr>
-      </tbody>
-    </table>
-    </div>
-    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin:10px 6px 4px">
-      <button class="btn btn-primary btn-sm" onclick="openAccAddDialog()" data-i18n="add">Add</button>
-      <div style="display:flex;gap:8px">
-        <button class="btn btn-sm" onclick="stageAllAccountsPool(true)" data-i18n="enable_all">Enable all</button>
-        <button class="btn btn-sm" onclick="stageAllAccountsPool(false)" data-i18n="disable_all">Disable all</button>
-        <button class="btn btn-sm" onclick="refreshProxyHealthCache().then(() => stageProxiesByOrder('acc'))" title="Bind main proxy by row order: 1st credential to Direct, then the proxy pool in order, skipping manually disabled proxies (staged - click Save to apply; enable/disable and backup untouched)">Bind proxies in order</button>
-        <button class="btn btn-sm" onclick="stageClearAccountProxies()" title="Stage only — click Save to apply. Clears bindings and disables every row." data-i18n="clear_bindings">Clear bindings</button>
-        <button class="btn btn-sm" id="accTestBtn" onclick="batchTestAccounts()" title="Run the Test probe on every row." data-i18n="test_all">Test all</button>
-      </div>
-      <div style="display:flex;gap:8px">
-        <button class="btn btn-sm btn-warn" id="accResetBtn" onclick="resetAccountEdits()" title="Discard staged changes and reload the last saved state" data-i18n="discard">Discard</button>
-        <button class="btn btn-primary btn-sm" id="accSaveBtn" onclick="saveAccountEdits()" data-i18n="save">Save</button>
-      </div>
-    </div>
-  </div>
-</div>
-<div class="section">
-  <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h10"/></svg></span> Request headers (mimicking the Cline CLI)<button class="btn btn-sm" onclick="resetHeaders()" style="margin-left:auto" title="Restore the default Cline CLI headers" data-i18n="restore_defaults">Restore defaults</button></div>
-  <div class="section-body">
-    <div class="table-wrap">
-    <table>
-      <thead><tr><th style="width:220px" data-i18n="Header">Header</th><th data-i18n="Value">Value</th><th style="width:40px"></th></tr></thead>
-      <tbody id="headersTableBody">
-        <tr><td colspan="3" class="empty">Loading...</td></tr>
-      </tbody>
-    </table>
-    </div>
-    <div class="form-actions">
-      <button class="btn btn-sm" onclick="addHeaderRow()" data-i18n="add_header">Add header</button>
-      <button class="btn btn-sm btn-primary" onclick="saveHeaders()" data-i18n="save_headers">Save headers</button>
-    </div>
-    <div class="hint">Attached to every Cline API request to mimic the official client.</div>
-  </div>
-</div>
+`
 
-<div class="section">
-  <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 5-6"/></svg></span> Model catalog <span class="probe-pill" data-models-info style="font-weight:normal"></span></div>
-  <div class="section-body">
-    <div class="flex" style="margin-bottom:10px;gap:10px">
-      <button class="btn btn-sm btn-primary" onclick="refreshClineModels(this)" data-i18n="refresh_models">Refresh models</button>
-      <span class="hint" style="margin:0">Automatically synced from the official model source upstream (every 5 minutes)</span>
-      <label style="margin-left:auto;display:flex;gap:6px;align-items:center;white-space:nowrap" data-i18n-title="cline_catalog_feed_only_title" title="The FREE group in the plugin UI is the official recommendation slot (feed free group); when on, only those models are listed.">
-        <input type="checkbox" id="settingClineCatalogFeedOnly" onchange="saveClineCatalogFeedOnly()" style="width:auto;padding:0;accent-color:var(--accent)">
-        <span data-i18n="cline_catalog_feed_only" style="font-size:12px">Plugin FREE only</span>
-      </label>
-    </div>
-    <div id="accModelsBody">Loading...</div>
-  </div>
-</div>
-</div>
-
-<div id="tab-trae" class="tab-panel" style="display:none">
-<h2 style="margin-bottom:4px;display:flex;justify-content:space-between;align-items:center;gap:12px">
-  <span>TraeWork</span>
-  <a class="btn btn-sm" href="/admin/trae2api/" target="_blank" rel="noopener" style="align-self:center">Original panel</a>
-</h2>
-<div class="hint" id="traeSummary" style="margin:0 0 16px">Loading...</div>
-
-<div class="section">
-  <div class="section-body">
-    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin:0 6px 8px">
-      <span class="wb-toolbar">
-        <button class="btn btn-sm" onclick="refreshTraeCredits()" title="Refresh every enabled account's credit snapshot (feeds the Credits column)" data-i18n="refresh_balances">Refresh balances</button>
-      </span>
-      <span class="wb-toolbar">
-        <button class="btn btn-sm" onclick="runTraeCheckin()" title="Daily check-in for every account whose account switch is on (upstream schedule applies too)" data-i18n="check_in_all">Check in all</button>
-      </span>
-    </div>
-    <div class="table-wrap">
-      <table>
-        <thead><tr><th style="width:44px">#</th><th style="width:150px" data-i18n="Account">Account</th><th data-i18n="Status">Status</th><th title="Remaining credits from the latest snapshot (auto-refreshed in the background; Test refreshes on demand)" data-i18n="Credits">Credits</th><th title="Counted locally by this proxy from upstream usage events" data-i18n="Today/Total tokens">Today/Total tokens</th><th data-i18n="Last used">Last used</th><th title="Main exit first, backup as fallback; both down = row skipped (isolation)." data-i18n="Proxy binding">Proxy binding</th><th style="width:130px;text-align:center" data-i18n="Actions">Actions</th><th style="text-align:center" data-i18n="gateway_switch" data-i18n-title="gateway_reverse_proxy_switch_unchecked_model_ses" title="Gateway (reverse proxy) switch: unchecked = model sessions never route to this account; check-in and all other maintenance tasks are unaffected. Can only be ticked while the account switch is on.">Gateway switch</th><th style="text-align:center" data-i18n="account_switch" data-i18n-title="account_master_switch_off_the_account_does_not_e" title="Account master switch. Off = the account does not exist: check-in, balance refresh and Test all skip it, and it never routes.">Account switch</th></tr></thead>
-        <tbody id="traeAccountsBody"><tr><td colspan="10" class="empty">Loading...</td></tr></tbody>
-      </table>
-    </div>
-    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin:10px 6px 4px;flex-wrap:wrap">
-      <button class="btn btn-primary btn-sm" onclick="openTraeAddDialog()" data-i18n="add_accounts">Add accounts</button>
-      <span class="wb-toolbar">
-        <button class="btn btn-sm" onclick="stageAllTraeRouting(true)" data-i18n="enable_all">Enable all</button>
-        <button class="btn btn-sm" onclick="stageAllTraeRouting(false)" data-i18n="disable_all">Disable all</button>
-        <button class="btn btn-sm" onclick="refreshProxyHealthCache().then(() => stageProxiesByOrder('trae'))" title="Bind main proxy by row order: 1st credential to Direct, then the proxy pool in order, skipping manually disabled proxies (staged - click Save to apply; enable/disable and backup untouched)">Bind proxies in order</button>
-        <button class="btn btn-sm" onclick="stageClearTraeProxies()" title="Stage only — click Save to apply. Clears bindings and disables every row." data-i18n="clear_bindings">Clear bindings</button>
-        <button class="btn btn-sm" id="traeTestBtn" onclick="batchTestTraeAccounts()" title="Run the Test probe on every row." data-i18n="test_all">Test all</button>
-      </span>
-      <span class="wb-toolbar">
-        <button class="btn btn-sm btn-warn" id="traeResetBtn" onclick="resetTraeEdits()" title="Discard staged changes and reload the last saved state" data-i18n="discard">Discard</button>
-        <button class="btn btn-primary btn-sm" id="traeSaveBtn" onclick="saveTraeEdits()" data-i18n="save">Save</button>
-      </span>
-    </div>
-  </div>
-</div>
-
-<div class="section">
-  <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h10M4 18h7"/></svg></span> Trae config</div>
-  <div class="section-body" id="traeConfigForm">
-    <div class="wb-config-grid">
-      <div class="wb-config-group">
-        <div class="wb-field"><label for="traeMaxInFlight">Max in-flight / account</label><input id="traeMaxInFlight" data-trae-type="number" placeholder="8"></div>
-        <div class="wb-field"><label for="traeBreakerThreshold">Breaker threshold</label><input id="traeBreakerThreshold" placeholder="3"></div>
-        <div class="wb-field"><label for="traeBreakerCooldown">Breaker cooldown</label><input id="traeBreakerCooldown" placeholder="30m"></div>
-        <div class="wb-field"><label for="traeCoolSoft">Soft rate cooldown</label><input id="traeCoolSoft" placeholder="10m"></div>
-        <div class="wb-field"><label for="traeCoolSoftMax">Soft cooldown max</label><input id="traeCoolSoftMax" placeholder="2h"></div>
-        <div class="wb-field"><label for="traeCoolModel">Model cooldown</label><input id="traeCoolModel" placeholder="10m"></div>
-        <div class="wb-field"><label for="traeIdleTimeout">Stream idle timeout (s)</label><input id="traeIdleTimeout" placeholder="120"></div>
-      </div>
-      <div class="wb-config-group">
-        <div class="wb-field"><label for="traeRateFilterCN">CN model rate filter</label>
-          <select id="traeRateFilterCN">
-            <option value="0">Off</option>
-            <option value="0.1">0.1</option>
-            <option value="0.2">0.2</option>
-            <option value="0.3">0.3</option>
-            <option value="0.5">0.5</option>
-            <option value="1">1</option>
-          </select>
-        </div>
-        <div class="wb-field"><label for="traeRateFilterIntl">Intl model rate filter</label>
-          <select id="traeRateFilterIntl">
-            <option value="0">Off</option>
-            <option value="0.1">0.1</option>
-            <option value="0.2">0.2</option>
-            <option value="0.3">0.3</option>
-            <option value="0.5">0.5</option>
-            <option value="1">1</option>
-          </select>
-        </div>
-        <div class="wb-switch"><input type="checkbox" id="traeCheckinEnabled"><label for="traeCheckinEnabled">Auto check-in</label></div>
-        <div class="wb-field"><label for="traeCheckinHours">Check-in hours</label><input id="traeCheckinHours" placeholder="9,21"></div>
-        <div class="wb-switch"><input type="checkbox" id="traeStrictModels"><label for="traeStrictModels">Reject unknown models</label></div>
-        <div class="wb-switch"><input type="checkbox" id="traeSessionSticky"><label for="traeSessionSticky">Session sticky</label></div>
-        <div class="wb-switch"><input type="checkbox" id="traeIntl"><label for="traeIntl">International realms</label></div>
-      </div>
-    </div>
-    <div class="form-actions" style="justify-content:flex-end;gap:8px">
-      <button class="btn" onclick="resetTraeConfigEdits()" data-i18n="discard_changes">Discard changes</button>
-      <button class="btn btn-primary" onclick="saveTraeConfig()" data-i18n="save_config">Save config</button>
-    </div>
-  </div>
-</div>
-
-<div class="section">
-  <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 5-6"/></svg></span> Model catalog <span class="probe-pill" data-models-info style="font-weight:normal"></span></div>
-  <div class="section-body">
-    <div class="flex" style="margin-bottom:10px;gap:10px">
-      <button class="btn btn-sm btn-primary" onclick="refreshTraeModels(this)" data-i18n="refresh_models">Refresh models</button>
-      <span class="hint" style="margin:0">Automatically synced from the official model source upstream (every 5 minutes)</span>
-    </div>
-    <div id="traeModelsBody">Loading...</div>
-  </div>
-</div>
-</div>
-<div id="tab-proxypool" class="tab-panel" style="display:none">
+const poolTabHTML = `<div id="tab-proxypool" class="tab-panel" style="display:none">
 <h2>Proxy pool</h2>
 <div class="section">
   <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><circle cx="12" cy="5" r="2.5"/><circle cx="5" cy="19" r="2.5"/><circle cx="19" cy="19" r="2.5"/><path d="M12 7.5v4m0 0-5.5 5m5.5-5 5.5 5"/></svg></span> Egress proxies</div>
@@ -826,7 +688,9 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
 </div>
 </div>
 
-<div id="tab-settings" class="tab-panel" style="display:none">
+`
+
+const settingsTabHTML = `<div id="tab-settings" class="tab-panel" style="display:none">
 <h2>Gateway settings</h2>
 
 <div class="section">
@@ -921,7 +785,9 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
 </div>
 </div>
 
-<div id="tab-logs" class="tab-panel" style="display:none">
+`
+
+const logsTabHTML = `<div id="tab-logs" class="tab-panel" style="display:none">
 <div class="flex justify-between" style="margin-bottom:16px">
   <h2 data-i18n="request_logs_title">Request logs — last 500 entries, persisted to data/requests.jsonl</h2>
   <div style="display:flex;gap:8px;align-items:center">
@@ -950,7 +816,9 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
 </div>
 </div>
 
-<div id="tab-combos" class="tab-panel" style="display:none">
+`
+
+const combosTabHTML = `<div id="tab-combos" class="tab-panel" style="display:none">
 <h2>Custom aliases</h2>
 <div class="section">
   <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></span> Create custom alias</div>
@@ -973,675 +841,9 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
 </div>
 </div>
 
-<div id="tab-opencode" class="tab-panel" style="display:none">
-<h2 style="margin-bottom:4px">OpenCode</h2>
-<div class="hint" id="ocSummary" style="margin:0 0 16px">Loading...</div>
+`
 
-<div class="section">
-  <div class="section-body">
-    <div class="form-row">
-      <div class="field" style="margin:0">
-        <label>Base URL</label>
-        <div style="display:flex;gap:8px;align-items:center">
-          <input type="text" id="ocBaseURL" placeholder="https://opencode.ai/inference/openai/v1" style="flex:1;min-width:0">
-          <button class="btn btn-primary btn-sm" onclick="saveOcConfig()" data-i18n="confirm">Confirm</button>
-        </div>
-      </div>
-    </div>
-    <div class="flex" style="gap:10px;margin:0 0 8px;align-items:center;flex-wrap:wrap">
-      <label class="hint" style="margin:0" data-i18n="Probe model (used by the Test buttons):">Probe model (used by the Test buttons):</label>
-      <select id="ocProbeModel" style="max-width:420px"><option value="" data-i18n="zen_probe_auto">auto — big-pickle first, then live models</option></select>
-      <label class="hint" style="margin:0 0 0 6px" data-i18n="org_id_single_key_only">Org ID (single key only):</label>
-      <input type="text" id="ocOrgID" placeholder="usually empty" data-i18n-placeholder="org_id_usually_empty" style="max-width:220px" title="x-opencode-org-id. Upstream validates this against the key's workspace: a wrong value returns 403 &quot;Workspace access denied&quot;, so sending nothing is always safe and is what the official client does for API keys. This field is only used when the pool has exactly ONE key and that key's org cannot be discovered; with two or more keys it is ignored entirely, because one value cannot match every key. Leave it empty unless you have a single key and know its exact org id." data-i18n-title="org_id_single_key_title">
-    </div>
-    <div class="table-wrap" style="margin-bottom:10px">
-      <table>
-        <thead><tr><th style="width:50px">#</th><th style="width:110px" data-i18n="Key">Key</th><th title="x-opencode-org-id resolved per key from console/api/orgs; '- (fallback)' means the configured fallback is used because discovery returned nothing" data-i18n="org" data-i18n-title="org_col_title">Org</th><th data-i18n="Status">Status</th><th title="Counted locally by this proxy — not the official free quota" data-i18n="Today/Total tokens">Today/Total tokens</th><th data-i18n="Last used">Last used</th><th title="Main exit first, backup as fallback; both down = row skipped (isolation)." data-i18n="Proxy binding">Proxy binding</th><th style="width:130px;text-align:center" data-i18n="Actions">Actions</th><th style="text-align:center" title="Routing participation: unchecked keys never enter request rotation. Newly added keys start disabled — tick Pool to enable. Sessions are minted per upstream call." data-i18n="Pool">Pool</th></tr></thead>
-        <tbody id="ocKeysBody"><tr><td colspan="9" class="empty">Loading...</td></tr></tbody>
-      </table>
-    </div>
-    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin:10px 6px 4px">
-      <button class="btn btn-primary btn-sm" onclick="openZenKeyAddDialog()" data-i18n="add_credentials">Add credentials</button>
-      <div style="display:flex;gap:8px">
-        <button class="btn btn-sm" onclick="stageAllKeysRouting(true)" data-i18n="enable_all">Enable all</button>
-        <button class="btn btn-sm" onclick="stageAllKeysRouting(false)" data-i18n="disable_all">Disable all</button>
-        <button class="btn btn-sm" onclick="refreshProxyHealthCache().then(() => stageProxiesByOrder('key'))" title="Bind main proxy by row order: 1st credential to Direct, then the proxy pool in order, skipping manually disabled proxies (staged - click Save to apply; enable/disable and backup untouched)">Bind proxies in order</button>
-        <button class="btn btn-sm" onclick="stageClearZenKeyProxies()" title="Stage only — click Save to apply. Clears bindings and disables every row." data-i18n="clear_bindings">Clear bindings</button>
-        <button class="btn btn-sm" id="ocTestBtn" onclick="batchTestKeys()" title="Run the Test probe on every row." data-i18n="test_all">Test all</button>
-      </div>
-      <div style="display:flex;gap:8px">
-        <button class="btn btn-sm btn-warn" id="ocResetBtn" onclick="resetKeyEdits()" title="Discard staged changes and reload the last saved state" data-i18n="discard">Discard</button>
-        <button class="btn btn-primary btn-sm" id="ocKeysSaveBtn" onclick="saveKeyEdits()" data-i18n="save">Save</button>
-      </div>
-    </div>
-  </div>
-</div>
-
-<div class="section">
-  <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></span> Rate-limit defense</div>
-  <div class="section-body">
-    <div class="form-row">
-      <div class="field"><label>Max concurrency</label><input type="text" id="ocMaxConc" placeholder="8"></div>
-      <div class="field"><label>Rate-limit retries</label><input type="text" id="ocRetries" placeholder="3"></div>
-    </div>
-    <div class="form-actions"><button class="btn btn-primary" onclick="saveOcConfig()" data-i18n="save_rate_limit_config">Save rate-limit config</button></div>
-  </div>
-</div>
-
-<div class="section">
-  <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><path d="M4 8V6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v2M4 8v10a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8M4 8h16"/><path d="M10 12h4"/></svg></span> Context compaction (OpenCode official mechanism)</div>
-  <div class="section-body">
-    <div class="form-row">
-      <div class="field"><label>Auto-compaction</label>
-        <select id="ocCompactAuto"><option value="true">On</option><option value="false">Off</option></select>
-      </div>
-      <div class="field"><label>Reserved buffer</label><input type="text" id="ocCompactBuffer" placeholder="80000"></div>
-    </div>
-    <div class="form-row">
-      <div class="field"><label>Tail tokens kept</label><input type="text" id="ocKeepTokens" placeholder="8000"></div>
-      <div class="field"><label>Summary model</label><input type="text" id="ocSummaryModel" placeholder="empty = same as request model"></div>
-    </div>
-    <div class="form-row">
-      <div class="field"><label>Summary cap</label><input type="text" id="ocMaxSummary" placeholder="4096"></div>
-    </div>
-    <div class="form-actions"><button class="btn btn-primary" onclick="saveOcConfig()" data-i18n="save_compaction_config">Save compaction config</button></div>
-  </div>
-</div>
-
-<div class="section">
-  <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><path d="M3 6h18M6 6v13a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V6M10 11h4"/></svg></span> <span data-i18n="Request size filter (shrink the upstream body)">Request size filter (shrink the upstream body)</span></div>
-  <div class="section-body">
-    <p class="hint" style="margin-top:0" data-i18n="IDE requests are mostly tool schemas (137 KB total, 112 KB of that is tools). Dropping client tools before they reach upstream saves roughly 33k tokens per message. Gate tools (12) are never filtered.">IDE requests are mostly tool schemas (137 KB total, 112 KB of that is tools). Dropping client tools before they reach upstream saves roughly 33k tokens per message. Gate tools (12) are never filtered.</p>
-    <div class="form-row">
-      <div class="field" style="margin-top:5px;"><label data-i18n="Filter client tools">Filter client tools</label>
-        <select id="ocToolFilterEnabled"><option value="false">Off — forward every tool the IDE declares</option><option value="true">On — drop matching tools</option></select>
-      </div>
-      <div class="field"><label data-i18n="Max description chars (0 = keep)">Max description chars (0 = keep)</label><input type="text" id="ocToolFilterMaxDesc" placeholder="0"></div>
-    </div>
-    <div class="form-row">
-      <div class="field" style="flex:2"><label data-i18n="Drop by name prefix (one per line)">Drop by name prefix (one per line)</label><textarea id="ocToolFilterPrefixes" rows="3" placeholder="mcp__" style="font-family:monospace;font-size:12px"></textarea></div>
-      <div class="field" style="flex:2"><label data-i18n="Drop by exact name (one per line)">Drop by exact name (one per line)</label><textarea id="ocToolFilterNames" rows="3" placeholder="CronCreate&#10;CreateWorkflow&#10;EnterPlanMode&#10;ExitPlanMode&#10;AskUserQuestion" style="font-family:monospace;font-size:12px"></textarea></div>
-    </div>
-    <p class="hint" style="margin-top:0" data-i18n="Starting suggestions: prefix mcp__ (MCP tools are the largest single schemas and a given turn usually uses one or two); names CronCreate, CreateWorkflow, EnterPlanMode, ExitPlanMode, AskUserQuestion (several KB each, rarely needed in a coding turn). Every drop is logged with the bytes saved.">Starting suggestions: prefix <code>mcp__</code> (MCP tools are the largest single schemas and a given turn usually uses one or two); names <code>CronCreate</code>, <code>CreateWorkflow</code>, <code>EnterPlanMode</code>, <code>ExitPlanMode</code>, <code>AskUserQuestion</code> (several KB each, rarely needed in a coding turn). Every drop is logged with the bytes saved.</p>
-    <div class="form-actions"><button class="btn btn-primary" onclick="saveOcConfig()" data-i18n="Save filter">Save filter</button></div>
-  </div>
-</div>
-
-<div class="section">
-  <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 5-6"/></svg></span> <span data-i18n="Model catalog">Model catalog</span> <span class="probe-pill" data-models-info style="font-weight:normal"></span></div>
-  <div class="section-body">
-    <div class="flex" style="margin-bottom:10px;gap:10px">
-      <button class="btn btn-sm btn-primary" onclick="refreshZenModels(this)" data-i18n="Refresh models">Refresh models</button>
-      <span class="hint" style="margin:0" data-i18n="Automatically synced from the official model source upstream (every 5 minutes)">Automatically synced from the official model source upstream (every 5 minutes)</span>
-    </div>
-    <div id="ocModelsBody">Loading...</div>
-  </div>
-</div>
-</div>
-
-<div id="tab-workbuddy" class="tab-panel" style="display:none">
-  <div class="flex justify-between" style="margin-bottom:16px">
-  <div>
-    <h2 style="margin-bottom:4px">WorkBuddy</h2>
-    <div class="hint" id="wbSummary" style="margin:0">Loading...</div>
-  </div>
-  <a class="btn btn-sm" href="/admin/workbuddy/" target="_blank" rel="noopener" style="align-self:flex-start">Original panel</a>
-</div>
-
-<div class="section">
-  <div class="section-body" style="padding:6px">
-    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin:4px 6px 10px">
-      <span class="wb-toolbar">
-        <button class="btn btn-sm" onclick="openWorkbuddyTodoScan()" data-i18n="task_center">Task center</button>
-        <button class="btn btn-sm" onclick="refreshWorkbuddyAccounts()" title="Refresh all account balances" data-i18n="refresh_all">Refresh all</button>
-        <button class="btn btn-sm" onclick="openWorkbuddyShareOptimizer()" title="Compute suggested account shares from expiring-credit daily need and write them into pool.account_share" data-i18n="weight_optimize">Weight optimize</button>
-      </span>
-      <span class="wb-toolbar">
-        <button class="btn btn-sm" onclick="runWorkbuddyBatch('checkin_all')" data-i18n="check_in_all">Check in all</button>
-        <button class="btn btn-sm" onclick="runWorkbuddyBatch('travel_all')" data-i18n="pet_patrol">Pet patrol</button>
-        <button class="btn btn-sm" onclick="runWorkbuddyBatch('activity_all')" data-i18n="activity_all">Activity all</button>
-        <button class="btn btn-sm" onclick="runWorkbuddyBatch('keepalive_all')" data-i18n="refresh_login">Refresh login</button>
-      </span>
-    </div>
-    <div class="table-wrap">
-      <table>
-        <thead>
-          <tr>
-            <th style="width:44px">#</th>
-            <th data-i18n="Account">Account</th>
-            <th data-i18n="Status">Status</th>
-            <th data-i18n="Credits">Credits</th>
-            <th style="text-align:center" title="Current share of account traffic from pool.account_share, normalized within the share table (written by Weight optimize; '-' = not in the table, falls back to weighted random)" data-i18n="weight_col">Weight</th>
-            <th title="Counted locally by this proxy — not the official free quota" data-i18n="Today/Total tokens">Today/Total tokens</th>
-            <th data-i18n="Last used">Last used</th>
-            <th title="Main exit first, backup as fallback; both down = row skipped (isolation)." data-i18n="Proxy binding">Proxy binding</th>
-            <th style="text-align:center" data-i18n="Actions">Actions</th>
-            <th style="text-align:center" data-i18n="gateway_switch" data-i18n-title="gateway_reverse_proxy_switch_unchecked_model_ses" title="Gateway (reverse proxy) switch: unchecked = model sessions never route to this account; check-in and all other maintenance tasks are unaffected. Can only be ticked while the account switch is on.">Gateway switch</th>
-            <th style="text-align:center" data-i18n="account_switch" data-i18n-title="Account master switch. Off = the account does not exist: check-in, patrol, activity, keepalive, night chats, growth and balance refresh all skip it, and it never routes." title="Account master switch. Off = the account does not exist: check-in, patrol, activity, keepalive, night chats, growth and balance refresh all skip it, and it never routes.">Account switch</th>
-          </tr>
-        </thead>
-        <tbody id="wbAccountsBody">
-          <tr><td colspan="11" class="empty">Loading...</td></tr>
-        </tbody>
-      </table>
-    </div>
-    <div style="display:flex;align-items:center;gap:8px;margin:10px 6px 4px">
-      <div style="flex:1;display:flex;gap:8px;justify-content:flex-start">
-        <button class="btn btn-primary btn-sm" onclick="openWorkbuddyAdd()" data-i18n="add_account">Add account</button>
-      </div>
-      <div style="flex:1;display:flex;gap:8px;justify-content:center">
-        <button class="btn btn-sm" onclick="stageAllWbPool(true)" data-i18n="enable_all">Enable all</button>
-        <button class="btn btn-sm" onclick="stageAllWbPool(false)" data-i18n="disable_all">Disable all</button>
-        <button class="btn btn-sm" onclick="refreshProxyHealthCache().then(() => stageProxiesByOrder('wb'))" title="Bind main proxy by row order: 1st credential to Direct, then the proxy pool in order, skipping manually disabled proxies (staged - click Save to apply; enable/disable and backup untouched)">Bind proxies in order</button>
-        <button class="btn btn-sm" onclick="stageClearWorkbuddyProxyBindings()" title="Stage only — click Save to apply. Clears bindings and disables every row." data-i18n="clear_bindings">Clear bindings</button>
-        <button class="btn btn-sm" id="wbTestAllBtn" onclick="batchTestWorkbuddyAccounts()" title="Run the Test probe on every row." data-i18n="test_all">Test all</button>
-      </div>
-      <div style="flex:1;display:flex;gap:8px;justify-content:flex-end">
-        <button class="btn btn-sm btn-warn" id="wbResetBtn" onclick="resetWorkbuddyEdits()" title="Discard staged changes and reload the last saved state" data-i18n="discard">Discard</button>
-        <button class="btn btn-primary btn-sm" id="wbSaveBtn" onclick="saveWorkbuddyEdits()" data-i18n="save">Save</button>
-      </div>
-    </div>
-  </div>
-</div>
-
-<form id="wbConfigForm">
-  <div class="section">
-    <div class="section-title">
-      <span class="sec-ico"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87.34 1.7 1.7 0 0 0-1 1.55V21a2 2 0 1 1-4 0v-.09a1.7 1.7 0 0 0-1-1.55 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.7 1.7 0 0 0 .34-1.87 1.7 1.7 0 0 0-1.55-1H3a2 2 0 1 1 0-4h.09a1.7 1.7 0 0 0 1.55-1 1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.7 1.7 0 0 0 1.87.34h0a1.7 1.7 0 0 0 1-1.55V3a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1 1.55h0a1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87v0a1.7 1.7 0 0 0 1.55 1H21a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.55 1z"/></svg></span>
-      <span data-i18n="workbuddy_configuration">WorkBuddy configuration</span>
-      <span style="flex:1"></span>
-      <span class="auto-pill" id="wbConfigNote" data-i18n="managed_by_the_admin_session">Managed by the admin session</span>
-    </div>
-    <div class="section-body">
-      <div class="wb-config-grid">
-        <div class="wb-config-group">
-          <h3>Scheduled jobs</h3>
-          <div class="wb-switch"><input type="checkbox" id="wbCheckinEnabled" data-wb-path="schedule.checkin_enabled"><label for="wbCheckinEnabled">Automatic check-in</label></div>
-          <div class="wb-field"><label for="wbCheckinHours">Check-in hours</label><input id="wbCheckinHours" data-wb-path="schedule.checkin_hours" data-wb-type="ints" placeholder="9, 21"></div>
-          <div class="wb-switch"><input type="checkbox" id="wbTravelEnabled" data-wb-path="schedule.travel_enabled"><label for="wbTravelEnabled">Automatic patrol</label></div>
-          <div class="wb-field"><label for="wbTravelHours">Patrol hours</label><input id="wbTravelHours" data-wb-path="schedule.travel_hours" data-wb-type="ints" placeholder="9, 21"></div>
-          <div class="wb-switch"><input type="checkbox" id="wbActivityEnabled" data-wb-path="schedule.activity_enabled"><label for="wbActivityEnabled">Automatic activity</label></div>
-          <div class="wb-field"><label for="wbActivityHours">Activity hours</label><input id="wbActivityHours" data-wb-path="schedule.activity_hours" data-wb-type="ints" placeholder="10"></div>
-          <div class="wb-switch"><input type="checkbox" id="wbKeepaliveEnabled" data-wb-path="schedule.keepalive_enabled"><label for="wbKeepaliveEnabled">Automatic keepalive</label></div>
-          <div class="wb-field"><label for="wbKeepaliveHours">Keepalive hours</label><input id="wbKeepaliveHours" data-wb-path="schedule.keepalive_hours" data-wb-type="ints" placeholder="22"></div>
-          <div class="wb-switch"><input type="checkbox" id="wbBalanceEnabled" data-wb-path="schedule.balance_refresh_enabled"><label for="wbBalanceEnabled">Background balance refresh</label></div>
-          <div class="wb-field"><label for="wbBalanceMinutes">Refresh interval (min)</label><input id="wbBalanceMinutes" data-wb-path="schedule.balance_refresh_minutes" data-wb-type="number" min="1" placeholder="5"></div>
-          <div class="wb-switch"><input type="checkbox" id="wbGrowthEnabled" data-wb-path="schedule.growth_enabled"><label for="wbGrowthEnabled">Growth tasks</label></div>
-          <div class="wb-field"><label for="wbGrowthHours">Growth hours</label><input id="wbGrowthHours" data-wb-path="schedule.growth_hours" data-wb-type="ints" placeholder="1"></div>
-          <div class="wb-switch"><input type="checkbox" id="wbShareOptimizeEnabled" data-wkbd-path="shareOptimize.enabled"><label for="wbShareOptimizeEnabled" data-i18n="weight_optimize">Weight optimize</label></div>
-          <div class="wb-field"><label for="wbShareOptimizeCron" data-i18n-title="weight_optimize_cron_hint" title="Standard 5-field cron (min hour day month weekday), local timezone; e.g. '0 */6 * * *' = every 6 hours. Empty = not scheduled. Applied shares are skipped when unchanged." data-i18n="Weight optimize cron">Weight optimize cron</label><input id="wbShareOptimizeCron" data-wkbd-path="shareOptimize.cron" placeholder="0 */6 * * *"></div>
-        </div>
-
-        <div class="wb-config-group">
-          <h3>Pool and cooldown</h3>
-          <div class="wb-field"><label for="wbMaxInFlight">Max in-flight / account</label><input id="wbMaxInFlight" data-wb-path="pool.max_in_flight" data-wb-type="number" min="0" placeholder="3"></div>
-          <div class="wb-field"><label for="wbModelRateFilterCN">CN model rate filter</label>
-            <select id="wbModelRateFilterCN" data-wb-path="pool.model_rate_filter_cn" data-wb-type="number">
-              <option value="0">0 — free only</option>
-              <option value="0.1">0.1</option>
-              <option value="0.2">0.2</option>
-              <option value="0.3">0.3</option>
-              <option value="0.5">0.5</option>
-              <option value="1">1</option>
-            </select>
-          </div>
-          <div class="wb-field"><label for="wbModelRateFilterGlobal">Global model rate filter</label>
-            <select id="wbModelRateFilterGlobal" data-wb-path="pool.model_rate_filter_global" data-wb-type="number">
-              <option value="0">0 — free only</option>
-              <option value="0.1">0.1</option>
-              <option value="0.2">0.2</option>
-              <option value="0.3">0.3</option>
-              <option value="0.5">0.5</option>
-              <option value="1">1</option>
-            </select>
-          </div>
-          <div class="wb-field"><label for="wbMaxGlobal">Global in-flight limit</label><input id="wbMaxGlobal" data-wb-path="pool.max_in_flight_global" data-wb-type="number" min="1" placeholder="2"></div>
-          <div class="wb-field"><label for="wbBreakerThreshold">Breaker threshold</label><input id="wbBreakerThreshold" data-wb-path="pool.breaker_threshold" data-wb-type="number" min="1" placeholder="3"></div>
-          <div class="wb-field"><label for="wbSoftRate">Soft rate cooldown</label><input id="wbSoftRate" data-wb-path="cooldown.soft_rate" data-wb-type="duration" placeholder="600s"></div>
-          <div class="wb-field"><label for="wbSoftMax">Soft cooldown max</label><input id="wbSoftMax" data-wb-path="cooldown.soft_rate_max" data-wb-type="duration" placeholder="2h"></div>
-          <div class="wb-field"><label for="wbBreakerCooldown">Breaker cooldown</label><input id="wbBreakerCooldown" data-wb-path="pool.breaker_cooldown" data-wb-type="duration" placeholder="30m"></div>
-          <div class="wb-field"><label for="wbBreakerMax">Breaker cooldown max</label><input id="wbBreakerMax" data-wb-path="pool.breaker_cooldown_max" data-wb-type="duration" placeholder="6h"></div>
-          <div class="wb-field"><label for="wbDegradeThreshold">Degrade threshold</label><input id="wbDegradeThreshold" data-wb-path="pool.degrade_threshold" data-wb-type="number" min="1" placeholder="5"></div>
-          <div class="wb-field"><label for="wbDegradeCooldown">Degrade cooldown</label><input id="wbDegradeCooldown" data-wb-path="pool.degrade_cooldown" data-wb-type="duration" placeholder="10m"></div>
-          <div class="wb-field"><label for="wbDegradeMax">Degrade cooldown max</label><input id="wbDegradeMax" data-wb-path="pool.degrade_cooldown_max" data-wb-type="duration" placeholder="2h"></div>
-          <div class="wb-field"><label for="wbIdleWeight">Idle weight / hour</label><input id="wbIdleWeight" data-wb-path="pool.idle_weight_per_hour" data-wb-type="number" step="0.1" placeholder="0.5"></div>
-          <div class="wb-field"><label for="wbIdleMax">Idle weight max</label><input id="wbIdleMax" data-wb-path="pool.idle_weight_max" data-wb-type="number" step="0.1" placeholder="5"></div>
-          <div class="wb-field"><label for="wbCostExplore">Cost explore window</label><input id="wbCostExplore" data-wb-path="pool.cost_explore_interval" data-wb-type="duration" placeholder="30m"></div>
-          <div class="wb-field"><label for="wbStickyTTL">Sticky TTL</label><input id="wbStickyTTL" data-wb-path="session_sticky.ttl" data-wb-type="duration" placeholder="30m"></div>
-        </div>
-
-        <div class="wb-config-group">
-          <h3>Session and upstream</h3>
-          <div class="wb-field"><label for="wbTimeout">Short request timeout</label><input id="wbTimeout" data-wb-path="upstream.timeout_seconds" data-wb-type="number" min="1" placeholder="120"></div>
-          <div class="wb-field"><label for="wbHeaderTimeout">First-byte timeout</label><input id="wbHeaderTimeout" data-wb-path="upstream.header_timeout_seconds" data-wb-type="number" min="1" placeholder="120"></div>
-          <div class="wb-field"><label for="wbIdleTimeout">Stream idle timeout</label><input id="wbIdleTimeout" data-wb-path="upstream.idle_timeout_seconds" data-wb-type="number" min="1" placeholder="300"></div>
-          <div class="wb-field"><label for="wbUserAgent">User-Agent</label><input id="wbUserAgent" data-wb-path="upstream.user_agent" data-wb-send-empty="1" placeholder="Leave empty = CLI / 2.171.0 CodeBuddy / 2.171.0"></div>
-          <div class="wb-field">
-            <label for="wbPromptMode">System prompt mode</label>
-            <select id="wbPromptMode" data-wb-path="prompt.mode">
-              <option value="custom">custom — gateway-owned prompt (avoids fingerprint false positives)</option>
-              <option value="append">append — insert gateway prompt after client system (both apply)</option>
-              <option value="passthrough">passthrough — pass client system through unchanged</option>
-            </select>
-          </div>
-          <div class="wb-field"><label for="wbPromptFile">Prompt file</label><input id="wbPromptFile" data-wb-path="prompt.file" data-wb-send-empty="1" placeholder="Leave empty = built-in default prompt"></div>
-          <div class="wb-switch"><input type="checkbox" id="wbSanitize" data-wb-path="features.sanitize_blacklist_fingerprints"><label for="wbSanitize">Sanitize outbound fingerprints</label></div>
-          <div class="wb-switch"><input type="checkbox" id="wbStickyEnabled" data-wb-path="session_sticky.enabled"><label for="wbStickyEnabled">Sticky session routing</label></div>
-          <div class="wb-switch"><input type="checkbox" id="wbThinkingEnabled" data-wb-path="thinking.enabled"><label for="wbThinkingEnabled">Thinking tier policy</label></div>
-          <div class="wb-field"><label for="wbThinkingEffort">Default thinking tier</label>
-            <select id="wbThinkingEffort" data-wb-path="thinking.default_effort">
-              <option value="max">max — highest the model supports</option>
-              <option value="xhigh">xhigh</option>
-              <option value="high">high</option>
-              <option value="medium">medium</option>
-              <option value="low">low</option>
-              <option value="minimal">minimal</option>
-            </select>
-          </div>
-          <div class="wb-switch"><input type="checkbox" id="wbThinkingClientPriority" data-wb-path="thinking.client_priority"><label for="wbThinkingClientPriority">Client tier wins</label></div>
-          <div class="wb-field"><label for="wbThinkingScope">Gateway override scope</label>
-            <select id="wbThinkingScope" data-wb-path="thinking.override_scope">
-              <option value="level">level — tiers only, client off kept</option>
-              <option value="all">all — also override client off</option>
-            </select>
-          </div>
-          <div class="hint" style="margin-top:6px">Tier policy fills in a thinking tier when the client omits one; override scope only matters when client tiers do not win.</div>
-          <div class="hint" style="margin-top:10px">Upstash Redis mirror, auth dir, and state file are edited in the config file manually (restart items).</div>
-        </div>
-      </div>
-      <div class="form-actions" style="justify-content:flex-end">
-        <button type="button" class="btn" onclick="loadWorkbuddyConfig()" data-i18n="discard_changes">Discard changes</button>
-        <button type="submit" class="btn btn-primary" id="wbSaveConfig" data-i18n="save_configuration">Save configuration</button>
-      </div>
-    </div>
-  </div>
-</form>
-
-<div class="section">
-  <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 5-6"/></svg></span> Model catalog <span class="probe-pill" data-models-info style="font-weight:normal"></span></div>
-  <div class="section-body">
-    <div class="flex" style="margin-bottom:10px;gap:10px">
-      <button class="btn btn-sm btn-primary" onclick="refreshWbModels(this)" data-i18n="refresh_models">Refresh models</button>
-      <span class="hint" style="margin:0">Automatically synced from the official model source upstream (every 5 minutes)</span>
-    </div>
-    <div id="wbModelsBody">Loading...</div>
-  </div>
-</div>
-</div>
-
-<div id="tab-other" class="tab-panel" style="display:none">
-<h2 style="margin-bottom:4px">Other</h2>
-<div class="hint" id="otherSummary" style="margin:0 0 16px">Loading...</div>
-
-<div class="section">
-  <div class="section-body">
-    <div class="form-row">
-      <div class="field" style="margin:0">
-        <label>Sub-platform</label>
-        <div style="display:flex;gap:8px;align-items:center">
-          <select id="otherPlatformSelect" style="flex:1;min-width:0"><option value="">— no sub-platform yet —</option></select>
-          <button class="btn btn-primary btn-sm" onclick="openOtherPlatformDialog()" data-i18n="new_sub_platform">New sub-platform</button>
-          <button class="btn btn-sm" id="otherPlatformManageBtn" onclick="openOtherManageDialog()" title="Reorder or delete sub-platforms" data-i18n="manage">Manage</button>
-        </div>
-      </div>
-    </div>
-  </div>
-</div>
-
-<div id="otherPlatformBody" style="display:none">
-
-<div class="section">
-  <div class="section-body">
-    <div class="form-row">
-      <div class="field"><label>Name</label><input type="text" id="otherName" placeholder="Acme Cloud"></div>
-      <div class="field"><label>Model prefix (required)</label><input type="text" id="otherPrefix" placeholder="acme" style="font-family:'JetBrains Mono',Consolas,monospace"></div>
-    </div>
-    <div class="form-row">
-      <div class="field" style="margin:0">
-        <label>Base URL</label>
-        <div style="display:flex;gap:8px;align-items:center">
-          <input type="text" id="otherBaseURL" placeholder="https://api.acme.com/v1" style="flex:1;min-width:0">
-          <button class="btn btn-primary btn-sm" onclick="saveOtherPlatformConfig()" data-i18n="confirm">Confirm</button>
-        </div>
-      </div>
-    </div>
-    <div class="form-row" style="margin-top:10px;flex-wrap:nowrap">
-      <div class="field" style="flex:1 1 0;min-width:0"><label>Max concurrency</label><input type="text" id="otherMaxConc" placeholder="8"></div>
-      <div class="field" style="flex:1 1 0;min-width:0"><label>Rate-limit retries</label><input type="text" id="otherRetries" placeholder="3"></div>
-      <div class="field" style="flex:0 0 auto;min-width:0;align-self:stretch;display:grid;grid-template-rows:auto 1fr;align-items:center"><label aria-hidden="true" style="visibility:hidden">&nbsp;</label><button class="btn btn-primary btn-sm" onclick="saveOtherRateLimit()" data-i18n="save_rate_limit_config">Save rate-limit config</button></div>
-    </div>
-  </div>
-</div>
-
-<div class="section">
-  <div class="section-body">
-    <div class="table-wrap" style="margin-bottom:10px">
-      <table>
-        <thead><tr><th style="width:50px">#</th><th style="width:150px" data-i18n="Key">Key</th><th data-i18n="Status">Status</th><th title="Counted locally by this proxy — not the official free quota" data-i18n="Today/Total tokens">Today/Total tokens</th><th data-i18n="Last used">Last used</th><th title="Main exit first, backup as fallback; both down = row skipped (isolation)." data-i18n="Proxy binding">Proxy binding</th><th style="width:130px;text-align:center" data-i18n="Actions">Actions</th><th style="text-align:center" title="Routing participation. New rows start disabled — tick Pool to enable." data-i18n="Pool">Pool</th></tr></thead>
-        <tbody id="otherKeysBody"><tr><td colspan="8" class="empty">Loading...</td></tr></tbody>
-      </table>
-    </div>
-    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin:10px 6px 4px">
-      <button class="btn btn-primary btn-sm" onclick="openOtherKeyAddDialog()" data-i18n="add_credentials">Add credentials</button>
-      <div style="display:flex;gap:8px">
-        <button class="btn btn-sm" onclick="stageAllOtherKeysRouting(true)" data-i18n="enable_all">Enable all</button>
-        <button class="btn btn-sm" onclick="stageAllOtherKeysRouting(false)" data-i18n="disable_all">Disable all</button>
-        <button class="btn btn-sm" onclick="refreshProxyHealthCache().then(() => stageProxiesByOrder('other'))" title="Bind main proxy by row order: 1st credential to Direct, then the proxy pool in order, skipping manually disabled proxies (staged - click Save to apply; enable/disable and backup untouched)">Bind proxies in order</button>
-        <button class="btn btn-sm" onclick="stageClearOtherKeyProxies()" title="Stage only — click Save to apply. Clears bindings and disables every row." data-i18n="clear_bindings">Clear bindings</button>
-        <button class="btn btn-sm" id="otherTestBtn" onclick="batchTestOtherKeys()" title="Run the Test probe on every row." data-i18n="test_all">Test all</button>
-      </div>
-      <div style="display:flex;gap:8px">
-        <button class="btn btn-sm btn-warn" id="otherResetBtn" onclick="resetOtherKeyEdits()" title="Discard staged changes and reload the last saved state" data-i18n="discard">Discard</button>
-        <button class="btn btn-primary btn-sm" id="otherKeysSaveBtn" onclick="saveOtherKeyEdits()" data-i18n="save">Save</button>
-      </div>
-    </div>
-  </div>
-</div>
-
-<div class="section" style="overflow:visible">
-  <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 5-6"/></svg></span> Models</div>
-  <div class="section-body" style="overflow:visible">
-    <!-- 第一行：模型多选下拉（占满剩余宽度） + 刷新按钮 -->
-    <div class="flex" style="gap:10px;margin:0 0 10px;align-items:stretch;flex-wrap:wrap;position:relative">
-      <div class="multi-select" id="otherModelSelect" style="flex:1 1 320px;min-width:240px">
-        <button type="button" class="ms-toggle" id="otherModelSelectToggle" onclick="toggleOtherModelSelect()" style="width:100%">—</button>
-        <div class="ms-panel" id="otherModelSelectPanel" style="display:none">
-          <div class="ms-search"><input type="text" id="otherModelSelectSearch" placeholder="Search models…" oninput="filterOtherModelSelect()"></div>
-          <div class="ms-list" id="otherModelSelectList"></div>
-        </div>
-      </div>
-      <button class="btn btn-sm" onclick="refreshOtherModels(this)" style="flex:0 0 auto;align-self:center" title="Re-sync the model catalog from the upstream (needs a credential)" data-i18n="refresh_models">Refresh models</button>
-    </div>
-    <!-- 第二行：左半=手动添加模型，右半=真实会话测试，各占一半 -->
-    <div class="flex" style="gap:10px;margin:0;align-items:center">
-      <div class="flex" style="gap:8px;align-items:center;flex:1 1 0;min-width:0">
-        <input type="text" id="otherManualModel" placeholder="add model id manually" style="flex:1 1 auto;min-width:0;font-family:'JetBrains Mono',Consolas,monospace">
-        <button class="btn btn-sm" onclick="addOtherManualModel()" style="flex:0 0 auto" data-i18n="add_model">Add model</button>
-      </div>
-      <div class="flex" style="gap:8px;align-items:center;flex:1 1 0;min-width:0">
-        <input type="text" id="otherLivePrompt" style="flex:1 1 auto;min-width:0">
-        <button class="btn btn-sm" id="otherLiveBtn" onclick="otherLiveRequest()" style="flex:0 0 auto" title="Send a real chat request using the first enabled credential" data-i18n="real_request">Real request</button>
-      </div>
-    </div>
-  </div>
-</div>
-
-</div>
-</div>
-
-</div>
-</div>
-
-<div id="toast" class="toast" popover="manual"></div>
-
-<dialog id="wbAddDialog">
-  <div class="wb-dialog-head">
-    <span>Add WorkBuddy account</span>
-    <button class="btn btn-sm" onclick="closeWorkbuddyAdd()" data-i18n="close">Close</button>
-  </div>
-  <div class="wb-dialog-body">
-    <div class="form-row" style="margin-bottom:8px">
-      <div class="field">
-        <label>Realm</label>
-        <select id="wbRealm"><option value="cn">CN (China)</option><option value="intl">International (codebuddy.ai)</option><option value="workbuddy">WorkBuddy (workbuddy.ai)</option></select>
-      </div>
-    </div>
-    <div class="hint" id="wbAddStatus">Choose a realm and request an authorization link.</div>
-    <div class="wb-link-row">
-      <input type="text" id="wbOAuthUrl" readonly placeholder="authorization URL">
-      <button class="btn btn-sm" onclick="copyWorkbuddyOAuthUrl()" data-i18n="copy">Copy</button>
-      <button class="btn btn-sm btn-primary" onclick="openWorkbuddyOAuthUrl()" data-i18n="open">Open</button>
-    </div>
-    <div class="wb-dialog-actions">
-      <button class="btn btn-primary" id="wbStartLogin" data-i18n="get_authorization_link">Get authorization link</button>
-      <button class="btn" id="wbImportJson" onclick="document.getElementById('wbDialogImportFile').click()" data-i18n="import_json">Import JSON</button>
-    </div>
-    <input type="file" id="wbDialogImportFile" accept=".json" hidden onchange="importWorkbuddyAccounts(this)">
-  </div>
-</dialog>
-
-<dialog id="wbShareDialog" class="wb-wide">
-  <div class="wb-dialog-head">
-    <span data-i18n="weight_optimize">Weight optimize</span>
-    <button class="btn btn-sm" onclick="closeWorkbuddyShare()" data-i18n="close">Close</button>
-  </div>
-  <div class="wb-dialog-body">
-    <div class="hint" data-i18n="weight_optimize_hint">Suggested shares follow each account's expiring-credit daily need (sum of each bucket's remain ÷ days until that date, min 1). Accounts without expiring batches get a 20% reserve split by balance. Shares are exclusive: only listed accounts serve traffic; if none can serve, routing falls back to weighted random.</div>
-    <div class="hint" id="wbShareWarn" style="color:var(--amber,#eab308);display:none"></div>
-    <div class="table-wrap" style="max-height:340px;overflow:auto;margin:8px 0">
-      <table>
-        <thead><tr>
-          <th data-i18n="Account">Account</th>
-          <th data-i18n="weight_nearest">Nearest expiry</th>
-          <th data-i18n="weight_need_total">Expiring total</th>
-          <th data-i18n="weight_daily_need">Daily need</th>
-          <th data-i18n="weight_suggested">Suggested share</th>
-        </tr></thead>
-        <tbody id="wbShareBody"><tr><td colspan="5" class="empty">Loading...</td></tr></tbody>
-      </table>
-    </div>
-    <div class="wb-dialog-actions">
-      <button class="btn btn-primary" id="wbShareApplyBtn" onclick="applyWorkbuddyShare()" data-i18n="apply_share">Apply shares</button>
-      <button class="btn btn-warn" onclick="clearWorkbuddyShare()" data-i18n="clear_share">Clear shares</button>
-    </div>
-  </div>
-</dialog>
-
-<dialog id="wbDetailsDialog" class="wb-wide">
-  <div class="wb-dialog-head">
-    <span>Points breakdown <span class="auto-pill" id="wbDetailsWho"></span></span>
-    <button class="btn btn-sm" onclick="closeWorkbuddyDetails()" data-i18n="close">Close</button>
-  </div>
-  <div class="wb-dialog-body">
-    <div class="hint" id="wbDetailsStatus">Loading...</div>
-    <div id="wbDetailsBody"></div>
-  </div>
-</dialog>
-
-<dialog id="accAddDialog">
-  <div class="wb-dialog-head">
-    <span>Add account</span>
-    <button class="btn btn-sm" onclick="closeAccAddDialog()" data-i18n="close">Close</button>
-  </div>
-  <div class="wb-dialog-body">
-    <p class="hint" style="margin-top:0" id="accAddHint">The type is detected automatically — sk_... is pooled as a static API key, anything else as an OAuth refresh token.</p>
-    <div class="field">
-      <label>Token or API key *</label>
-      <input type="text" id="accAddToken" placeholder="workos-... refreshToken or sk_... API key" style="font-family:'JetBrains Mono',Consolas,monospace">
-    </div>
-    <div class="field">
-      <label>Email (optional)</label>
-      <input type="text" id="accAddEmail" placeholder="user@example.com">
-    </div>
-    <div class="wb-dialog-actions">
-      <button class="btn btn-primary" id="accAddSubmit" onclick="accAddFromDialog()" data-i18n="add_account">Add account</button>
-      <button class="btn" onclick="closeAccAddDialog()" data-i18n="cancel">Cancel</button>
-    </div>
-  </div>
-</dialog>
-
-<dialog id="zenKeyAddDialog">
-  <div class="wb-dialog-head">
-    <span>Add credentials</span>
-    <button class="btn btn-sm" onclick="closeZenKeyAddDialog()" data-i18n="close">Close</button>
-  </div>
-  <div class="wb-dialog-body">
-    <p class="hint" style="margin-top:0" id="zenKeyAddHint">One OpenCode API key per line (oc_sk_...).</p>
-    <div class="field">
-      <label>API keys (one per line) *</label>
-      <textarea id="zenKeyAddInput" rows="5" placeholder="oc_sk_..." style="font-family:'JetBrains Mono',Consolas,monospace"></textarea>
-    </div>
-    <div class="wb-dialog-actions">
-      <button class="btn btn-primary" id="zenKeyAddSubmit" onclick="zenKeyAddFromDialog()" data-i18n="save">Save</button>
-      <button class="btn" onclick="closeZenKeyAddDialog()" data-i18n="cancel">Cancel</button>
-    </div>
-  </div>
-</dialog>
-
-
-
-
-
-<dialog id="traeAddDialog" style="width:min(560px,calc(100vw - 32px))">
-  <div class="wb-dialog-head">
-    <span>Add TraeWork accounts</span>
-    <button class="btn btn-sm" onclick="closeTraeAddDialog()" data-i18n="close">Close</button>
-  </div>
-  <div class="wb-dialog-body">
-    <details class="trae-acc" id="traeAccWeb" open>
-      <summary>Web authorization</summary>
-      <div class="trae-acc-body">
-        <p class="hint" style="margin:0 0 8px" id="traeOAuthHint">Download the helper from this panel, run "python web_login.py" locally, then authorize on the opened page (sign in to trae.cn in the browser first). The account lands here automatically with routing off. The helper writes to the panel it was downloaded from.</p>
-        <div style="display:flex;gap:8px;margin-bottom:6px;align-items:center">
-          <a class="btn btn-sm btn-static" href="/trae/oauth/helper" download="web_login.py">Download helper</a>
-          <button class="btn btn-sm btn-static" onclick="openTraeHelperPage()" title="Open the helper page (127.0.0.1:8765) and click the authorize button there" data-i18n="open_helper_page">Open helper page</button>
-        </div>
-        <div class="hint" id="traeHelperStatus" style="margin:0" data-i18n="checking_local_helper">Checking local helper…</div>
-      </div>
-    </details>
-    <details class="trae-acc" id="traeAccManual">
-      <summary>Manual paste</summary>
-      <div class="trae-acc-body">
-        <p class="hint" style="margin:0 0 8px" id="traeAddHint">One token----refreshToken line per account (both required — the engine refreshes with a freshly minted device key; token-only credentials cannot pass import validation). Portable snapshot JSON / ZIP import lives in the original panel (Original panel, top right). New accounts start with routing off.</p>
-        <div class="field">
-          <label>Credentials (one per line)</label>
-          <textarea id="traeAddInput" rows="5" placeholder="eyJhbGciOi…----eyJhbGciOi…" style="font-family:'JetBrains Mono',Consolas,monospace"></textarea>
-        </div>
-      </div>
-    </details>
-    <div class="wb-dialog-actions">
-      <button class="btn btn-primary" id="traeAddSubmit" onclick="traeAddFromDialog()" data-i18n="save">Save</button>
-      <button class="btn" onclick="closeTraeAddDialog()" data-i18n="cancel">Cancel</button>
-    </div>
-  </div>
-</dialog>
-
-<dialog id="impKeepDialog" style="width:min(430px,calc(100vw - 32px))">
-  <div class="wb-dialog-head">
-    <span>Import config</span>
-    <button class="btn btn-sm" onclick="closeImpKeep()" data-i18n="close">Close</button>
-  </div>
-  <div class="wb-dialog-body">
-    <div class="hint" style="margin-bottom:10px" data-i18n="import_will_replace_all">Import will replace ALL persisted config with the file contents. Confirm whether to keep each platform's credential enabled states.</div>
-    <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px">
-      <button class="btn btn-sm" onclick="impKeepSetAll('impKeepRows',false)" data-i18n="select_all">Select all</button>
-      <button class="btn btn-sm" onclick="impKeepSetAll('impKeepRows',true)" data-i18n="invert">Invert</button>
-      <!-- 统计层勾选框（默认勾选，2026-11-03 三层口径）：勾选 = 本机统计随备份还原；
-           取消勾选 = 保留本机统计现值（不再清零）。配置态与账号事实无论勾选与否都会导入 -->
-      <label id="impStateRow" style="margin-left:auto;display:none;gap:6px;align-items:center;cursor:pointer;white-space:nowrap">
-        <input type="checkbox" id="impStateToggle" checked> <span>Import statistics</span>
-      </label>
-    </div>
-    <div id="impKeepRows" style="display:flex;flex-direction:column;gap:10px;margin-bottom:14px"></div>
-    <div style="display:flex;gap:8px;justify-content:flex-end">
-      <button class="btn" onclick="closeImpKeep()" data-i18n="cancel">Cancel</button>
-      <button class="btn btn-primary" onclick="confirmImpKeep()" data-i18n="confirm_import">Confirm import</button>
-    </div>
-  </div>
-</dialog>
-<dialog id="impReorderDialog" style="width:min(430px,calc(100vw - 32px))">
-  <div class="wb-dialog-head">
-    <span>Reorder by latency</span>
-    <button class="btn btn-sm" onclick="closeReorderDlg()" data-i18n="close">Close</button>
-  </div>
-  <div class="wb-dialog-body">
-    <div class="hint" style="margin-bottom:6px" data-i18n="re-bind proxies of the selected platforms: healthy (fast, allowed) bindings stay put; slow/unrecorded/excluded/over-cap/manual-disabled ones are re-filled from the remaining pool (better-only for healthy rows), then auto-save.">re-bind proxies of the selected platforms: healthy (fast, allowed) bindings stay put; slow/unrecorded/excluded/over-cap/manual-disabled ones are re-filled from the remaining pool (better-only for healthy rows), then auto-save.</div>
-    <div class="hint" id="impReorderKeepHint" style="margin-bottom:10px"></div>
-    <div style="display:flex;gap:8px;margin-bottom:12px">
-      <button class="btn btn-sm" onclick="impKeepSetAll('impReorderRows',false)" data-i18n="select_all">Select all</button>
-      <button class="btn btn-sm" onclick="impKeepSetAll('impReorderRows',true)" data-i18n="invert">Invert</button>
-    </div>
-    <div id="impReorderRows" style="margin-bottom:14px"></div>
-    <div style="display:flex;gap:8px;justify-content:flex-end">
-      <button class="btn" onclick="closeReorderDlg()" data-i18n="cancel">Cancel</button>
-      <button class="btn btn-primary" onclick="confirmReorder()" data-i18n="confirm">Confirm</button>
-    </div>
-  </div>
-</dialog>
-<dialog id="otherPlatformDialog">
-  <div class="wb-dialog-head">
-    <span>New sub-platform</span>
-    <button class="btn btn-sm" onclick="closeOtherPlatformDialog()" data-i18n="close">Close</button>
-  </div>
-  <div class="wb-dialog-body">
-    <p class="hint" style="margin-top:0">Create an entry for an upstream provider: shared Base URL, its API keys, and the model prefix its models are exposed under.</p>
-    <div class="field">
-      <label>Name *</label>
-      <input type="text" id="opName" placeholder="Acme Cloud">
-    </div>
-    <div class="field">
-      <label>Model prefix (required, unique) *</label>
-      <input type="text" id="opPrefix" placeholder="acme" style="font-family:'JetBrains Mono',Consolas,monospace">
-    </div>
-    <div class="field">
-      <label>Base URL</label>
-      <input type="text" id="opBaseURL" placeholder="https://api.acme.com/v1" style="font-family:'JetBrains Mono',Consolas,monospace">
-    </div>
-    <div class="wb-dialog-actions">
-      <button class="btn btn-primary" onclick="doOtherPlatformCreate()" data-i18n="create">Create</button>
-      <button class="btn" onclick="closeOtherPlatformDialog()" data-i18n="cancel">Cancel</button>
-    </div>
-  </div>
-</dialog>
-
-<dialog id="otherManageDialog">
-  <div class="wb-dialog-head">
-    <span>Manage sub-platforms</span>
-    <button class="btn btn-sm" onclick="closeOtherManageDialog()" data-i18n="close">Close</button>
-  </div>
-  <div class="wb-dialog-body">
-    <p class="hint" style="margin-top:0">Drag a row to change the order; the order decides how sub-platforms appear in the selector.</p>
-    <div id="otherManageList"></div>
-    <div class="wb-dialog-actions">
-      <button class="btn btn-primary" onclick="saveOtherPlatformOrder()" data-i18n="save_order">Save order</button>
-      <button class="btn" onclick="closeOtherManageDialog()" data-i18n="cancel">Cancel</button>
-    </div>
-  </div>
-</dialog>
-
-<dialog id="otherKeyAddDialog">
-  <div class="wb-dialog-head">
-    <span>Add API keys</span>
-    <button class="btn btn-sm" onclick="closeOtherKeyAddDialog()" data-i18n="close">Close</button>
-  </div>
-  <div class="wb-dialog-body">
-    <p class="hint" style="margin-top:0" id="otherKeyAddHint">One API key per line for this sub-platform. New keys start with routing disabled — tick Pool to enable.</p>
-    <div class="field">
-      <label>API keys (one per line) *</label>
-      <textarea id="otherKeyAddInput" rows="5" placeholder="sk-…" style="font-family:'JetBrains Mono',Consolas,monospace"></textarea>
-    </div>
-    <div class="wb-dialog-actions">
-      <button class="btn btn-primary" onclick="otherKeyAddFromDialog()" data-i18n="save">Save</button>
-      <button class="btn" onclick="closeOtherKeyAddDialog()" data-i18n="cancel">Cancel</button>
-    </div>
-  </div>
-</dialog>
-
-<dialog id="wbTodoDialog" class="wb-wide">
-  <div class="wb-dialog-head">
-    <span>Task center&#x20;</span>
-    <button class="btn btn-sm" onclick="closeWorkbuddyTodoScan()" data-i18n="close">Close</button>
-  </div>
-  <div class="wb-dialog-body">
-    <div class="justify-between">
-      <div class="hint" id="wbTodoStatus" data-i18n="pick_a_concurrency_then_click_scan_tasks">Pick a concurrency, then click "Scan tasks"</div>
-      <div class="wb-task-actions">
-        <label class="inline-flex" style="font-size:12px;color:var(--text2)">Concurrency
-          <select id="wbTodoConcurrency" style="width:64px">
-            <option value="1" selected>1</option>
-            <option value="2">2</option>
-            <option value="3">3</option>
-          </select>
-        </label>
-        <button class="btn btn-sm" id="wbTodoScan" onclick="scanWorkbuddyTodos()" data-i18n="scan_tasks">Scan tasks</button>
-        <button class="btn btn-sm btn-primary" id="wbTodoRunAll" onclick="runWorkbuddyAllTodos()" data-i18n="run_all">Run all</button>
-      </div>
-    </div>
-    <div id="wbTodoBody" style="margin-top:12px"></div>
-  </div>
-</dialog>
-
-<script>
+const tailHTML = `<script>
 const API = '/admin/api';
 
 // ========== Theme toggle ==========
