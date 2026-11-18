@@ -11,7 +11,7 @@ description: 同步 afree-proxy 五条上游线的完整流程与陷阱清单—
 |---|---|---|---|---|---|---|---|
 | 上游 | `foxy1402/cline-proxy`（主线） | `misakano7545/workbuddy2api-panel`（主线） | `foxy1402/cline-proxy`（主线，与 cline 同一上游） | `jasonxu114514/opencode2api`（副线，只看更新、吸纳有价值逻辑） | `XCool-603/trae2api`（主线） | `autumnsentiment/Trae2api-cn`（副线，Python 项目、trae 更换基线前身，只看更新、吸纳有价值逻辑） | `yetone/magpie`（纯参考不合并） |
 | 对应平台 | Cline | WorkBuddy | OpenCode | OpenCode | TraeWork | TraeWork | 全平台 |
-| 同步面 | 整个仓库网关/zen/cline 核心 | 仅 `modules/workbuddy2api/` vendor 独立 module | 同 cline | 无——读源码/提交评估，单点吸纳，MERGE.md 记基线 | 仅 `modules/trae2api/` vendor 独立 module | 仅 `internal/app/trae2api_helper_script.go` 内嵌的 `web_login.py`（Python 引擎逻辑与 XCool 版本对应的部分：XCool 版是完全独立 Go 重写，不存在跨语言移植） | 无——按需单点吸纳 |
+| 同步面 | 整个仓库网关/zen/cline 核心 | 仅 `modules/workbuddy2api/` vendor 独立 module | 同 cline | 无——读源码/提交评估，单点吸纳，MERGE.md 记基线 | 仅 `modules/trae2api/` vendor 独立 module | 仅 `internal/trae/trae2api_helper_script.go` 内嵌的 `web_login.py`（Python 引擎逻辑与 XCool 版本对应的部分：XCool 版是完全独立 Go 重写，不存在跨语言移植） | 无——按需单点吸纳 |
 
 **用户口径记忆**（触发时按这个走）：
 - cline → cline-proxy 主线
@@ -110,7 +110,7 @@ mkdir -p /tmp/trae-up && tar xzf /tmp/trae-up.tar.gz -C /tmp/trae-up --strip-com
 python scripts/check_trae_helper.py --upstream-dir "$(cygpath -w /tmp/trae-up)"
 ```
 
-exit 0 = `internal/app/trae2api_helper_script.go` 内嵌的 `web_login.py` 与上游逐行一致（仅 `__RELAY_URL__` 占位符差异）；exit 1 打印 unified diff，处理方式是**以上游文件重建内嵌模板**（只替换 `DEFAULT_RELAY_URL` 为 `__RELAY_URL__`、按 Go raw string 规则把反引号转义成 `` ` + "`" + ` ``），不要手工逐行改。升级后同步更新 `scripts/trae-helper-baseline.json` 的 version / commit / date。
+exit 0 = `internal/trae/trae2api_helper_script.go` 内嵌的 `web_login.py` 与上游逐行一致（仅 `__RELAY_URL__` 占位符差异）；exit 1 打印 unified diff，处理方式是**以上游文件重建内嵌模板**（只替换 `DEFAULT_RELAY_URL` 为 `__RELAY_URL__`、按 Go raw string 规则把反引号转义成 `` ` + "`" + ` ``），不要手工逐行改。升级后同步更新 `scripts/trae-helper-baseline.json` 的 version / commit / date。
 
 Go 侧旧引擎（原 `internal/trae/`，Trae2api-cn 的 Go 重写）已于 2026-11-04 整体删除——TraeWork 行为面由 TraeWork vendor 线（XCool-603/trae2api）承接，本线只剩 helper 脚本模板的比对职责。历史差异结论见 `MERGE.md` TreaWork 节（已随引擎退役归档）。
 

@@ -276,6 +276,7 @@ PRESERVE_RELATIVE = (
     Path("pool/reserve_fallback_test.go"),
     Path("pool/state.go"),
     Path("pool/strategy.go"),
+    Path("pool/strategy_dirty_test.go"),
     Path("pool/strategy_test.go"),
     Path("reqlog/reqlog.go"),
     Path("reqlog/reqlog_test.go"),

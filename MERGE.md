@@ -13,7 +13,7 @@ WorkBuddy 一栏的基线同时登记在 `scripts/workbuddy-vendor-baseline.json
 
 ## Cline
 
-本次未涉及上游同步（2026-10-28 核对：`foxy1402/cline-proxy` main 仍为 `571f9b9`，与 2026-10-27 同步基线一致，无新提交；`571f9b9` 的改动全部属于 OpenCode 线，见文末 OpenCode 节。2026-10-29 复核：仍为 `571f9b9`，无新提交。2026-10-30 复核：上游推进到 `b8a1be0`，但区间内 4 提交全部落在 zen/OpenCode 侧（`git diff 571f9b9 b8a1be0` 无 Cline 侧文件），Cline 线本次零吸收，详见 OpenCode 节。2026-10-31 复核：仍为 `b8a1be0`，无新提交，本次未涉及。2026-10-31 二次复核：上游推进到 `a41f1756`，但区间内 1 提交全部落在 zen/OpenCode 侧（`git diff b8a1be0 a41f1756 --name-only` 无 Cline 侧文件），Cline 线零吸收，详见 OpenCode 节。2026-11-02 复核：仍为 `a41f1756`，无新提交，本次未涉及。2026-11-05 复核：仍为 `a41f1756`，无新提交，本次未涉及。2026-11-07 复核：上游推进到 `c6b3c45`，区间 3 提交全部落在 zen/OpenCode 侧（zen system prompt 换位/429 请求抓包/真实计费 tokens），Cline 线零吸收，详见 OpenCode 节。2026-11-14 复核：仍为 `4f12cd2`，无新提交，本次未涉及）。
+本次未涉及上游同步（2026-10-28 核对：`foxy1402/cline-proxy` main 仍为 `571f9b9`，与 2026-10-27 同步基线一致，无新提交；`571f9b9` 的改动全部属于 OpenCode 线，见文末 OpenCode 节。2026-10-29 复核：仍为 `571f9b9`，无新提交。2026-10-30 复核：上游推进到 `b8a1be0`，但区间内 4 提交全部落在 zen/OpenCode 侧（`git diff 571f9b9 b8a1be0` 无 Cline 侧文件），Cline 线本次零吸收，详见 OpenCode 节。2026-10-31 复核：仍为 `b8a1be0`，无新提交，本次未涉及。2026-10-31 二次复核：上游推进到 `a41f1756`，但区间内 1 提交全部落在 zen/OpenCode 侧（`git diff b8a1be0 a41f1756 --name-only` 无 Cline 侧文件），Cline 线零吸收，详见 OpenCode 节。2026-11-02 复核：仍为 `a41f1756`，无新提交，本次未涉及。2026-11-05 复核：仍为 `a41f1756`，无新提交，本次未涉及。2026-11-07 复核：上游推进到 `c6b3c45`，区间 3 提交全部落在 zen/OpenCode 侧（zen system prompt 换位/429 请求抓包/真实计费 tokens），Cline 线零吸收，详见 OpenCode 节。2026-11-14 复核：仍为 `4f12cd2`，无新提交，本次未涉及。2026-11-19 复核：仍为 `4f12cd2`，无新提交，本次未涉及）。
 
 ### 2026-11-08 — c6b3c45 → a8fe356
 
@@ -36,6 +36,12 @@ WorkBuddy 一栏的基线同时登记在 `scripts/workbuddy-vendor-baseline.json
 **2026-11-04 起上游换线**：`XCool-603/trae2api`（vendor 三方合并线，见下方 2026-11-04 条目）；`autumnsentiment/Trae2api-cn` 仅剩 helper 脚本比对。切换点 tag：`last-trae2api-cn`(49ec6be)。
 
 上游(历史线):`autumnsentiment/Trae2api-cn`(Trae CN / Trae Solo CN 模型反代,Python,MIT)。**这条线不是 vendor/merge 关系**:上游是 Python 全栈,本地 `internal/trae/` + `internal/app/trae.go` 是 Go 重写,行为跟随上游协议;唯一逐行移植的产物是内嵌的本机授权助手 `web_login.py`(`internal/trae/helper_script.go`),只有它需要跟上游比对。2026-10-27 的 cline-proxy 合并未涉及本线。
+
+### 2026-11-19 — 复核（两条上游均零新提交）+ helper 比对脚本锚点修复
+
+- **XCool-603/trae2api**：`sync_trae2api.py --pull` 报 Already up to date，main 仍 `b63408d`（0.2.6），与基线（2026-11-10）一致，未合并。源树 WIP 仍为合法白名单形态（chat.go/server.go 修改 + textcall 新增）。
+- **Trae2api-cn 副线**（helper 比对）：上游 main HEAD 仍 `5c87d6c`（v1.0.11），tar 包解包比对 exit 0（内嵌 web_login.py 逐行一致），基线不变。
+- **脚本锚点修复（本仓侧，非上游变更）**：`check_trae_helper.py` 的 LOCAL 路径仍指 P3e 迁移前的 `internal/app/trae2api_helper_script.go`（该轮迁移把模板挪到 `internal/trae/` 且变量改名 `helperScriptTpl`→`HelperScriptTpl`，脚本 MARKER 锚点没跟上，报 MISSING/MARKER not found）——LOCAL 改指 `internal/trae/`、MARKER 改 `const HelperScriptTpl = \`，实测 exit 0。PROJECT.md 与 sync-upstream skill 文档同步改口（历史条目里的旧路径保留不动）。
 
 ### 2026-11-14 — 复核（无更新）+ 台账去重
 
@@ -113,6 +119,27 @@ WorkBuddy 一栏的基线同时登记在 `scripts/workbuddy-vendor-baseline.json
 - 生产部署:镜像 `afree-proxy:prod-20261027-36` 重建容器 `afree`(`--restart always`、`-p 3457:3457`、`-v D:/DockerApp/afree:/app/data`);env 从旧容器继承,哈希 `b54013375c12…` 与旧容器一致;`Up (healthy)`;`GET /`→302、`GET /v1/models`→200;容器内二进制 `grep -ac "部署默认值"` / `"relay-host"` 均命中 1 处,确认 v1.0.10 脚本已编入
 
 ## WorkBuddy
+
+### 2026-11-19 — 10d01b4 → 3412082（约 60 提交，批量 vendor 同步 + PRESERVE 文件手工吸收）
+
+- 上游：misakano7545/workbuddy2api-panel（dev），vendor 三方合并（`scripts/sync_workbuddy.py`）；基线 `10d01b4`（2026-11-14）→ `3412082`。源树先 `merge --ff-only misakano/main`（misakano/main 已推进 `10d01b4..3412082`，源树本地 main 需先前进）。
+- **本节新流程教训（首次踩坑）**：`sync_workbuddy.py` 的 base/theirs 由 vendor 脚本构建，PRESERVE 登记文件在 base/theirs 构建时都被活树字节顶替 → 三方合并对这 86 个 PRESERVE 文件退化成三方同文，**上游对它们的更新被静默丢弃**（`t_data == o_data → continue`）。本轮上游改动 ∩ PRESERVE = 36 个文件全部漏吸，直到 `go build` 报 `decryptWBEncrypted` 签名失配才暴露。修复：`.tmp/resync_preserved.py` 对 36 文件用上游真实字节（`git show`）重建 base/theirs 逐文件 `git merge-file` 补跑（4 个改写面文件 client.go/desktop.go/report.go/index.html 先重放 EGRESS/panel 改写规则）。**后续同步必做**：`git diff <旧基线>..<新基线> --name-only` 与 PRESERVE 清单求交集，非空即跑补脚本。
+- 主体吸收（上游约 60 提交）：`/v1/responses` 保真回放思维链（PR #252/#272——tool_call_id 保留/托管工具回执跳过/compaction 密文不当摘要/相邻 assistant 项保持成组）、tools schema 深度规整+11129 误判连败阻断（PR #251/#267）、11152 登记+schema 关键字纠偏（733942a）、**CN 客户端升 5.11.3 + X-Client-* 三头**（96265d7，issue #257；国际版保持 5.9.4 原头集；小程序口径撤桌面三头 77ca3fe）、首帧 error 帧请求级错误立即 400（ae44d73）、updater 30 分钟重试+0 字节临时文件防留（253864d）、早到结果重排按最近声明配对（e14a3d0，PR #254）、异步换段 Close 回收（PR #263）、narration/toolonly 救援判据系列（「已完成」出口/无标点末句/半角点不算句末/等用户拍板措辞拦救援——多轮迭代）、实时任务卡系列（panel：2 分钟一轮/缓存/后台跑）、**暂存号 parked 机制**、**模型规则 ModelRule 表**（ruleIDs 引用+recomputeRulesLocked）。
+- 冲突 12 文件 25 hunk（PRESERVE 补跑脚本），取舍记录：
+  - `auth/auth.go`（3 hunk）：上游加密信封重构（wbDoc 以解密原文档为底回写+expiresAtMillis 毫秒口径，8622073）为体，叠加本仓三键外置（poolEnabled/accountEnabled/nicknameLocked 字段+AccountPrefProvider 回填+SaveAtomic 不写回意志键）。
+  - `loginsite.go`：取上游（CN 5.11.3/GL 5.9.4/CLI 按域 2.176.0·2.165.0）。
+  - `panel/import.go`：取上游覆盖求证的有界并发形态（verifyImportOverwrites+总时限），本仓「导入即禁用」护栏挂进 commit 闭包（SaveAtomic 前 `SetPoolEnabled(false)`，新增/覆盖成功两路径都经它，落盘即禁用态）。
+  - `pool/persist.go`：保留本仓 applyAccountFactsLocked 收敛结构，补 `e.ruleIDs = append(..., s.ModelRules...)` 引用落地（规则本体由装载期 applyRulesLocked/recomputeRulesLocked 展开，上游 parked/rules 装配链已自动合并）。
+  - `scheduler/checkin_retry.go`+test：上游参数化重构（节奏快照作参传 goroutine+checkinRetryMinGap+defer 整批出队）与本仓 retryDelaysMu 锁融合——minGap 纳入同锁（retryDelaysSnapshot 改返回 `(delays, minGap)` 两值），测试 shrinkRetryDelays 锁版设置双变量；上游新测试 TestCheckinRetryDedupesAndStaggers 保留。
+  - `upstream/webagent.go`：全取上游「finish 收口先 <-done 再读」形态（join 后读消 race），退役本仓 2026-10-30 的 atomic 计数方案（注释同步改口）。
+  - `panel/logstore_test.go`（7 hunk）：上游独立修复了同一时间炸弹（dayAgo/dayTS 相对日期 helper，与本仓 ④ relDay/dayTSRel 语义等价）——全取上游并退役本仓 helper。
+  - `upstream/sanitize.go`：上游键名修正（billing-header）+ 本仓身份指令剥离段（issue #187 的 identify yourself as/model_identity）合成；剥离列表不得含假名 `x-anthropic-billing-hdr` 本身（净化输出形态会被二次改写，TestSanitizeSanitizedHeaderIsNotFingerprint 锁此语义）。
+  - `pool/pool_test.go`：本仓 TestPickAllCoolingFollowsUnableForce + 上游新测试 TestDisabledAccountReportsZeroCredits 双保留。
+  - `upstream/desktop.go`/`headcase_test.go`：取上游（版本 5.11.3/gofmt 对齐）。
+  - **同名文件陷阱**：`pool/strategy_test.go` 在本仓是 ordered 策略测试（POOL_STRATEGY 定制，顶替了上游原版）——上游本轮新增 `strategy_dirty_test.go` 引用的 `strategyPool` helper 住在被顶替的上游版里 → vet undefined。处理：helper 就地挪进 strategy_dirty_test.go 并登记 PRESERVE（re-vendor 防 helper 丢失）。
+- 脚本锚点修复：`sync_workbuddy.py` 的 `local_version()` 仍指 P3e 前旧位置 `internal/app/workbuddy.go` 的 `workbuddyVersion`——改指 `internal/workbuddy/workbuddy.go` 的 `WorkbuddyVersion`（崩溃发生在基线已推进后的版本提醒步骤，合并本体无损）；版本号推进 `2026.11.19-misakano+afree`。
+- 双向 dry-run 验证：`differing: []` + `extra_in_live: []`（gofmt_tree 参与比对——活树手工写回的 5 文件曾缺 gofmt 修正步，已 `-w` 归一）。
+- 验证：go build/vet 三模块全绿；`go test $GOALL -count=1` 零 FAIL；`go test -race ./internal/app/` 通过；endpoint_audit 0 FAIL（wbCall 动态 skip 2 项为既有）；i18n 双审计清零。
 
 ### 2026-10-27 — 37b3f4c → 5367e78
 
@@ -400,6 +427,17 @@ WorkBuddy 一栏的基线同时登记在 `scripts/workbuddy-vendor-baseline.json
 
 ## OpenCode
 
+### 2026-11-19 — 主线复核（无更新）+ 副线 opencode2api 评估（5 提交，零吸纳+1 取证）
+
+- fork cline-proxy main 仍 `4f12cd2`，与 2026-11-12 合并基线一致，无新提交；OpenCode 与 Cline 两线本次均未涉及合并（Cline 节同日复核记录同此结论）。
+- **opencode2api**（`jasonxu114514/opencode2api` 副线）：基线 `b296a61`（2026-11-05）→ `e2b2a7c2`（2026-11-17），5 提交逐条评估：
+  - `95575c5f` 免费层拒收工具名里的 "clint_" 字面前缀（同形 body 换前缀 429→200 实证）——**零吸纳留档（上游行为取证）**：zen 免费层闸会按字面前缀做指纹匹配，未来若给 zen 加工具改名/标记前缀必须避开可旋转的字面标记（上游连 README 都不再印该值）；本仓 zen_toolfilter 是丢弃不是重命名，当前无此形态（grep 无 clint_/rename 形态）。
+  - `14faec76` 免费层重试加固+客户端兼容（title 分类提前/Responses 相邻 assistant 项保持成组）——相邻项保持主题 wb 主线 PR #252/#272 已对齐（本轮已吸收），zen 无 responses 入站重放形态，零吸纳。
+  - `159d7fdf` 浏览器设备 OAuth 订阅登录（opencode2api 自有形态，本仓 zen 走 key 池）——不适用。
+  - `0d05fe93` 批量代理管理+opt-in 匿名访问（管理面形态）——不适用。
+  - `e2b2a7c2` 网关杂项加固+文档——零吸纳。
+  - **副线基线推进：`b296a61` → `e2b2a7c2`（2026-11-17）**。
+
 ### 2026-11-14 — 主线复核（无更新）
 
 - fork cline-proxy main 仍 `4f12cd2`，与 2026-11-12 合并基线一致，无新提交；OpenCode 与 Cline 两线本次均未涉及合并。
@@ -563,6 +601,19 @@ WorkBuddy 一栏的基线同时登记在 `scripts/workbuddy-vendor-baseline.json
 ## 副线（opencode2api / Trae2api-cn 吸收评估）+ magpie 参考线
 
 副线口径（2026-11-08 用户定）：**opencode2api**（opencode 副线）与 **Trae2api-cn**（trae 副线，Python 项目、trae 更换基线前身）只看近期更新、吸纳有价值逻辑，不 merge 不 vendor。本节记录每次副线评估的基线、吸收/丢弃结论；**magpie**（2026-11-06 立项，全平台纯参考）与副线共用本节，基线单独标注。
+
+### 2026-11-19 — 副线复核（opencode2api b296a61→e2b2a7c2 零吸纳+1 取证；magpie 647071f2→c4bae072，约 600 提交，零吸纳+3 取证）
+
+- **opencode2api**：评估结论见 OpenCode 节 2026-11-19 条目。基线推进 `b296a61` → `e2b2a7c2`。
+- **magpie**（6 天增量约 600 提交，全量 message 过筛 + 平台相关 7 条细读）：
+  - `91e81467` DeepSeek Anthropic 端点拒收「tool_use 后跟 text 块」的 assistant 消息（即便下一消息已回答）+ `d7475497` system 消息夹在 call 与 result 间同因 400——本仓 wb 走 Chat 端点+自有转换（system 抽顶层），形态不适用；**留档**：未来若直连 api.deepseek.com/anthropic 类端点，回放前须重排（call 前移正文、system 挪 result 后）。
+  - `09944544` 上游回复两个 tool_use 共享同 id → unsalt 撞车 → DeepSeek 400 ids must be unique——wb 主线 PR #254（e14a3d0「早到结果重排按最近声明配对，跨轮复用 id 不再误挪」）本轮已吸收，语义对齐；与 2026-11-09 留档的 835439eb 预案（平行调用 index 改派）互为补充记录。
+  - `56221493` passthrough Anthropic 的 tool 配对 mend——本仓 wb 已有 toolpair 自愈（入站 server/toolpair.go + 出站 tool_pairing.go），已对齐。
+  - `3f4372cc` DeepSeek /v1/responses 直连的 reasoning 占位项形态（noReasoningItem/reasonFirst）——magpie 自有形态，本仓 responses 走 Chat 转换，零吸纳。
+  - `be6f8b73` **Zen 免费层按连接判客户端（非请求）**：真机字节级实证 Bun 1.4.2/1.4.4 → 200，Go net/http 与 curl（HTTP/1.1 与 HTTP/2 都试）→ 429 FreeUsageLimitError——**本仓 tlsbun.go（Bun/BoringSSL 指纹，每连接全新 ClientHelloSpec）已对齐**，此条为独立佐证；Bun 小版本间指纹兼容的观察与本仓「CLI 2.1.4 抓包对齐」口径不冲突。
+  - `35e5989f` OpenCode Go 自家 -free 模型不能带 Zen 免费层模拟环境（<env> 块+core-tool stubs 会被模型回述）——本仓 zen 平台只管 zen 免费层、无 Go 模型归并，零吸纳留档（上游行为取证：Zen 免费层模拟形态的具体构成）。
+  - 其余约 590 条全部为 magpie 自有形态（GUI/providers/routing groups/sessions/Realtime/Copilot WS/archive/mover 版本等），与四平台无交集。
+  - **magpie 基线推进：`647071f2`（2026-11-12）→ `c4bae072`（2026-11-18）**。
 
 ### 2026-11-14 — 副线复核（四线零新提交；magpie e7bcaa5→7b002b6b，300 提交，零吸纳）
 

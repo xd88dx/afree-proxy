@@ -11,8 +11,8 @@ import (
 	"encoding/hex"
 	"encoding/json"
 
-	"github.com/misakano7545/workbuddy2api-panel/internal/auth"
 	"fmt"
+	"github.com/misakano7545/workbuddy2api-panel/internal/auth"
 	"net/http"
 )
 

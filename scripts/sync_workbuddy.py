@@ -71,8 +71,8 @@ def upstream_version(source: Path) -> str:
 
 
 def local_version() -> str:
-    wb_go = ROOT / "internal" / "app" / "workbuddy.go"
-    m = re.search(r'workbuddyVersion\s*=\s*"([^"]+)"', wb_go.read_text(encoding="utf-8"))
+    wb_go = ROOT / "internal" / "workbuddy" / "workbuddy.go"
+    m = re.search(r'WorkbuddyVersion\s*=\s*"([^"]+)"', wb_go.read_text(encoding="utf-8"))
     return m.group(1) if m else "?"
 
 

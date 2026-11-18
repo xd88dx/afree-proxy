@@ -3,6 +3,7 @@ package scheduler
 import (
 	"context"
 	"log"
+	"math/rand/v2"
 	"sync"
 	"time"
 
@@ -28,15 +29,17 @@ import (
 // 会恢复原值——CI -race 实测两边无锁并发报 DATA RACE。
 var (
 	checkinRetryDelays = []time.Duration{10 * time.Minute, 40 * time.Minute}
+	checkinRetryMinGap = 2 * time.Second
 	retryDelaysMu      sync.Mutex
 )
 
-// retryDelaysSnapshot 返回当前节奏的快照：后台循环在整个生命周期用同一份，
-// 测试中途改写不影响在跑轮次（shrink 永远发生在启动前）。
-func retryDelaysSnapshot() []time.Duration {
+// retryDelaysSnapshot 返回当前节奏与最小间隔的快照：后台循环在整个生命周期
+// 用同一份，测试中途改写不影响在跑轮次（shrink 永远发生在启动前）。minGap 同锁
+// 保护——测试压零与后台启动并发同属 race 面（2026-11-13 -race 同源）。
+func retryDelaysSnapshot() (delays []time.Duration, minGap time.Duration) {
 	retryDelaysMu.Lock()
 	defer retryDelaysMu.Unlock()
-	return append([]time.Duration(nil), checkinRetryDelays...)
+	return append([]time.Duration(nil), checkinRetryDelays...), checkinRetryMinGap
 }
 
 // checkinOne 对单个 CN 账号执行签到（不含余额查询）。返回 done 表示今天确实已签
@@ -85,18 +88,39 @@ func (s *Scheduler) checkinOne(a *auth.Auth, uid string) (bool, error) {
 // 不阻塞调用方（runCheckin 在排程 goroutine 里跑，摊开启用时 spreadRunning 标记要
 // 等它返回才清，阻塞会让下一个时点整批被跳过）；ctx 取消时立即退出，不拖住优雅停机。
 func (s *Scheduler) startCheckinRetry(ctx context.Context, uids []string) {
-	if len(uids) == 0 {
+	// 去重：手动签到与排程签到各自失败时会各排一次补签，同一个号不能被两条补签队列重复打。
+	s.retryMu.Lock()
+	if s.retryPending == nil {
+		s.retryPending = map[string]bool{}
+	}
+	var pending []string
+	for _, uid := range uids {
+		if !s.retryPending[uid] {
+			s.retryPending[uid] = true
+			pending = append(pending, uid)
+		}
+	}
+	s.retryMu.Unlock()
+	if len(pending) == 0 {
 		return
 	}
-	pending := append([]string(nil), uids...)
-	delays := retryDelaysSnapshot()
+	delays, minGap := retryDelaysSnapshot()
 	log.Printf("[checkin] %d 个账号本轮瞬时失败，将在 %s、%s 后各补签一次（期间 21:00 排程照常）",
 		len(pending), delays[0], delays[len(delays)-1])
-	go s.checkinRetryLoop(ctx, pending)
+	// 节奏在这里快照、作参数传进 goroutine：不在后台循环里读包级变量（读写均过
+	// retryDelaysMu——测试收尾恢复写与后台循环并发，CI -race 实测）。
+	go s.checkinRetryLoop(ctx, pending, delays, minGap)
 }
 
-func (s *Scheduler) checkinRetryLoop(ctx context.Context, pending []string) {
-	delays := retryDelaysSnapshot()
+func (s *Scheduler) checkinRetryLoop(ctx context.Context, pending []string, delays []time.Duration, minGap time.Duration) {
+	all := append([]string(nil), pending...) // 退出时整批出队（pending 会逐轮缩短）
+	defer func() {
+		s.retryMu.Lock()
+		for _, uid := range all {
+			delete(s.retryPending, uid)
+		}
+		s.retryMu.Unlock()
+	}()
 	prev := time.Duration(0)
 	for round := 0; round < len(delays); round++ {
 		// 偏移是绝对的（10m、40m），所以这里睡的是与上一轮的差值。
@@ -105,7 +129,12 @@ func (s *Scheduler) checkinRetryLoop(ctx context.Context, pending []string) {
 		}
 		prev = delays[round]
 
+		_, gap := s.spreadParams()
+		if gap <= 0 {
+			gap = minGap
+		}
 		var still []string
+		called := false
 		for _, uid := range pending {
 			if ctx.Err() != nil {
 				return
@@ -122,6 +151,10 @@ func (s *Scheduler) checkinRetryLoop(ctx context.Context, pending []string) {
 			if st, ok := s.cfg.Pool.Status(uid); ok && st.Disabled && !s.includeDisabledInTasks() {
 				continue
 			}
+			if called && gap > 0 && !sleepCtx(ctx, gap+rand.N(gap)) {
+				return
+			}
+			called = true
 			done, err := s.checkinOne(a, uid)
 			switch {
 			case done:

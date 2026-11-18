@@ -15,8 +15,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/misakano7545/workbuddy2api-panel/internal/auth"
 	"github.com/andybalholm/brotli"
+	"github.com/misakano7545/workbuddy2api-panel/internal/auth"
 )
 
 const decodeTestJSON = `{"code":0,"msg":"OK","data":{"hello":"world"}}`

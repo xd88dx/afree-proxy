@@ -43,6 +43,7 @@ zen-stats.jsonl
 afree-proxy.log
 afree-proxy-stream.log
 data/
+docs/
 override.md
 # Local debug tool (kept locally, not uploaded)
 capture.go

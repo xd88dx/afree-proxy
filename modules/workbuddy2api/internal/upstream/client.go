@@ -226,6 +226,32 @@ func isPromptTooLongStatus(status int) bool {
 // 网络层/解析层错误不在此识别（见 IsAlreadyCheckin）。
 var alreadyCheckinMarkers = []string{"已签到", "already"}
 var badParamsMarkerCode = `"code":11101`
+var badParamsMarkerFuncParams = `invalid function call parameters`
+var badParamsMarkerFuncParamsAlt = `invalid_function_parameters`
+
+// badParamsMarkers11129 11129「invalid function call parameters」（displayMsg「工具定义不合规」）的文案
+// 形态，已小写化，与 strings.ToLower(body) 比对；中文原文无大小写，同样可比。业务码 11129 不在这里：
+// 走 hasBusinessCode（见 isToolSchemaRejected），容忍空白、字符串形态与嵌套。
+var badParamsMarkers11129 = []string{
+	badParamsMarkerFuncParams,
+	badParamsMarkerFuncParamsAlt,
+	"invalid_function_call_parameters",
+	"工具定义不合规",
+}
+
+// isToolSchemaRejected 判定「工具定义被上游整体拒收」：11129（schema 形态不合规，
+// displayMsg「工具定义不合规」）与 11152（工具名不合规或重名，displayMsg「工具名称
+// 不规范」）都属同一类——错在客户端声明的 tools，换任何账号都是同一处拒绝。
+// 业务码精确命中（容忍空白/字符串形态/嵌套），或文案命中（首帧 error 帧里 message
+// 可能是英文原文、下划线形态或中文 displayMsg）。lower 须为 strings.ToLower(body)。
+//
+// 11152 是 2026-11-18 真机实测补进来的：工具名带点/冒号/斜杠/CJK/空格、或两个同名
+// 工具，上游一律 400 11152。此前未登记 → 落到 Classify 通用 4xx 兜底 → ErrClient →
+// 喂连败、轮转全池、末端 503 no_healthy_account，把一个确定性请求错误伪装成账号故障。
+func isToolSchemaRejected(body, lower string) bool {
+	return hasBusinessCode(body, "11129") || hasBusinessCode(body, "11152") ||
+		containsAnyMarker(lower, badParamsMarkers11129)
+}
 
 // softRateResetLoc 上游 429 6004 文案中的重置时间固定按 UTC+8 解释（上游文案如此，
 // 与容器时区无关）。
@@ -504,6 +530,12 @@ func ParseRetryAfter(h http.Header) (time.Duration, bool) {
 	return 0, false
 }
 
+// IsProviderOverloaded 报告 body 是否为 11134「模型供应商暂时不可用」。它与 6020/6021
+// 同归 ErrUpstreamBusy，但成因是供应商过载而不是排队：给客户端的文案要区分（队列满的
+// 措辞会让人去查排队），而且供应商过载时「换个模型」是有效出路，排队时不是。
+// 只认结构化 code，文案单独出现仍是普通 5xx。
+func IsProviderOverloaded(body string) bool { return hasBusinessCode(body, "11134") }
+
 // parseQueueRetryAfter 从排队/容量信封的 body 抽上游明示的重试等待时长。
 // 两种形态都认（整数秒，超 retryAfterSanity 按异常值封顶）：
 //
@@ -713,7 +745,7 @@ func Classify(status int, body string) ErrKind {
 	// vs 换号 0–12%）。
 	// 归 ErrUpstreamBusy = 不罚号 + body 侧解析 retry_policy.retry_after 后不轮转，
 	// 与 6020/6021 同一族（上游容量信号，自带重试口径）。
-	if hasBusinessCode(body, "11134") {
+	if IsProviderOverloaded(body) {
 		return ErrUpstreamBusy
 	}
 	// status==429 先于 hardMarkers：限流响应 body 高频携带 "quota exceeded"/
@@ -823,7 +855,7 @@ func Classify(status int, body string) ErrKind {
 		// 请求体阶段，还没走到模型路由，所以"不同账号可能有不同模型权限"其实是
 		// 11102（ErrModelBlocked）的理由，那里已有 (账号,模型) 负缓存避让
 		// （吸收上游 fd5c5a6）。
-		if strings.Contains(body, badParamsMarkerMsg) || strings.Contains(body, badParamsMarkerCode) {
+		if strings.Contains(body, badParamsMarkerMsg) || strings.Contains(body, badParamsMarkerCode) || isToolSchemaRejected(body, lower) {
 			return ErrBadParams
 		}
 		return ErrClient
@@ -963,7 +995,7 @@ type Client struct {
 	// 空 = 内置默认（对齐官方 5.5.4 分发包）。
 	ClientVersion string
 
-	// CliVersion 出站 UA 中 `CLI/<ver>` 段版本。空 = 内置默认（官方内置 CLI 2.137.1）。
+	// CliVersion 出站 UA 中 `CLI/<ver>` 段版本。空 = 内置默认（CN 包内置 CLI 2.176.0 / GL 2.165.0）。
 	CliVersion string
 
 	// ClientName 用量归属头取值（X-Product / X-IDE-Name / X-IDE-Type / X-IDE-Version）。
@@ -1004,6 +1036,11 @@ type Client struct {
 	// modelBusyUnsupported 上游 /v2/chat/busy 在该域不存在（国际版实测 404）。探到一次即置位，
 	// 本进程后续跳过探测（见 modelbusy.go）。atomic：并发调用只读+一次性写。
 	modelBusyUnsupported atomic.Bool
+
+	// ThreeDCredential 混元 3D 的 `ck_t_` 临时云凭证来源（见 three_d_credential.go）。
+	// nil = 拿不到凭证 → 3D 一律回 503，不发请求。启动期挂载；凭证内容不进日志、
+	// 不进错误串、不落盘。
+	ThreeDCredential ThreeDCredential
 }
 
 // CreditObserver 余额查询观察者：每次**真实查到**余额后回调（uid + 余额绝对值）。
@@ -2542,6 +2579,16 @@ func (c *Client) storeModelMaxOut(realm string, infos []ModelInfo) {
 	c.modelMaxOut[realmKey(realm)] = m
 }
 
+// StoreModelMaxOutForTest 跨包测试钩子：直接写入某域的模型输出上限快照（真实路径由
+// FetchModels 刷新目录时写入）。仅测试引用。
+func (c *Client) StoreModelMaxOutForTest(realm string, maxOut map[string]int64) {
+	infos := make([]ModelInfo, 0, len(maxOut))
+	for id, n := range maxOut {
+		infos = append(infos, ModelInfo{ID: id, MaxTokens: n})
+	}
+	c.storeModelMaxOut(realm, infos)
+}
+
 // modelMaxOutSnapshot 返回输出上限快照副本；nil 表示未知（不补默认，行为同旧路径）。
 func (c *Client) modelMaxOutSnapshot(realm string) map[string]int64 {
 	c.effortsMu.RLock()
@@ -2644,6 +2691,9 @@ func (c *Client) fetchV3ConfigModelMap(a *auth.Auth, ua string) (map[string]Mode
 		ua = c.v3ProbeUA(a)
 	}
 	req.Header.Set("User-Agent", ua)
+	// X-Client-*：真机 /v3/config 3/3 条都带（含 CLI 两段式 UA 那条），
+	// 证明注入挂在共享 HTTP 层而非某个 RPC 模块上。按 realm 隔离注入。
+	c.injectClientIdentityHeaders(req, a)
 	resp, err := c.do(req, a, false)
 	if err != nil {
 		return nil, nil, err
@@ -3302,12 +3352,7 @@ func IsAlreadyCheckin(err error) bool {
 	if !errors.As(err, &ue) {
 		return false
 	}
-	for _, m := range alreadyCheckinMarkers {
-		if strings.Contains(ue.Msg, m) || strings.Contains(strings.ToLower(ue.Msg), strings.ToLower(m)) {
-			return true
-		}
-	}
-	return false
+	return isAlreadyCheckinMsg(ue.Msg)
 }
 
 func truncate(s string, n int) string {
