@@ -34,7 +34,7 @@ git status --short          # 复核：应只列出纯行尾变化的文件
 
 用 `git diff --stat` 复核：纯逻辑改动不应出现大量无关增删行。
 
-工具路径参数按目标程序的语言给：原生 Windows 程序不认 MSYS 路径（`/tmp/...`），传 `$(cygpath -w <路径>)`。**不要**把工具 stderr 一起重定向进待写回的结果文件——工具报错时会用错误文本覆盖源文件。
+工具路径参数按目标程序的语言给：原生 Windows 程序不认 MSYS 路径（`/tmp/...`），传 `$(cygpath -w <路径>)`。反向同样成立：docker run 传**容器内 POSIX 路径**（如 `-e DATA_DIR=/app/data`）会被 MSYS 劫持成宿主路径（实测变 `C:/AppSelf/Git/app/data`），必须 `MSYS_NO_PATHCONV=1` 前缀（2026-11-18 本机容器重建实测）。**不要**把工具 stderr 一起重定向进待写回的结果文件——工具报错时会用错误文本覆盖源文件。
 
 ## 4. 临时文件
 
