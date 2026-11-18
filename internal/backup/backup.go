@@ -160,6 +160,21 @@ type ConfigBackup struct {
 	// ClineStreamRequired cline "必须流式"自学习结果（cline-config.json 的
 	// streamRequired 段，2026-11-17 配置重组前住 afree-config.json）。
 	ClineStreamRequired map[string]string `json:"clineStreamRequired,omitempty"`
+	// ZenUseProxies zen 走池开关（zen-config.json 独立段）。2026-11-19 补：
+	// 走池开关只有 cline 进备份，其余四平台跨机迁移后回落默认值。
+	ZenUseProxies *bool `json:"zenUseProxies,omitempty"`
+	// TraeUseProxies / TraeRateFilterCN / TraeRateFilterIntl trae 走池开关与
+	// 分域倍率筛选（trae-config.json，2026-11-17 迁入）。2026-11-19 补。
+	TraeUseProxies     *bool    `json:"traeUseProxies,omitempty"`
+	TraeRateFilterCN   *float64 `json:"traeRateFilterCN,omitempty"`
+	TraeRateFilterIntl *float64 `json:"traeRateFilterIntl,omitempty"`
+	// WorkBuddyUseProxies / WorkBuddyAccountPrefs / WorkBuddyShareOptimize
+	// wkbd-config.json 的走池开关、账号意志与权重优化定时任务。2026-11-19 补：
+	// 账号意志（反代/总开关/昵称锁）唯一持久层在此，漏备份即跨机迁移后意志
+	// 全丢；shareOptimize 同理（cron 优化配置归零）。
+	WorkBuddyUseProxies    *bool                                `json:"workbuddyUseProxies,omitempty"`
+	WorkBuddyAccountPrefs  map[string]workbuddy.WkbdAccountPref `json:"workbuddyAccountPrefs,omitempty"`
+	WorkBuddyShareOptimize *workbuddy.WkbdShareOptimize         `json:"workbuddyShareOptimize,omitempty"`
 	// State 各平台 state 快照（2026-11-01）：与 *-state.json 落盘同形态的
 	// **全量**快照（账号事实 + 本机统计，三层口径「导出 = 容器全部数据」）。
 	// 导出始终携带；导入分层——账号事实无论勾选与否都应用，本机统计仅勾选
@@ -192,6 +207,21 @@ func ExportWorkbuddyProxyBindings() map[string]workbuddy.WorkbuddyProxyBinding {
 		out[k] = v
 	}
 	return out
+}
+
+// ExportWorkbuddyAccountPrefs 快照 wb 账号意志全表（wkbd-config.json
+// accountPrefs 段；WkbdConfigAccountPrefs 已返回副本）。nil = 从未记录意志。
+func ExportWorkbuddyAccountPrefs() map[string]workbuddy.WkbdAccountPref {
+	return workbuddy.WkbdConfigAccountPrefs()
+}
+
+// ImportWorkbuddyAccountPrefs 整体替换 wb 账号意志，返回写入条数。2026-11-19
+// 补：意志唯一持久层此前不在备份内，跨机迁移后反代/总开关/昵称锁全丢。
+// 生效时机：紧随其后的 wb auths 导入链 AuthLoadDir 重扫经 AccountPrefProvider
+// 带回内存；备份无 authFiles 段时等面板 reload/重启对齐。
+func ImportWorkbuddyAccountPrefs(in map[string]workbuddy.WkbdAccountPref) int {
+	workbuddy.WkbdSetAccountPrefs(in)
+	return len(in)
 }
 
 // ImportWorkbuddyProxyBindings 还原 WorkBuddy 出口绑定，返回写入条数。

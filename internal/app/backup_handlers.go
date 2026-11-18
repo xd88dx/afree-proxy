@@ -18,6 +18,7 @@ import (
 	"afree-proxy/internal/kit"
 	"afree-proxy/internal/other"
 	"afree-proxy/internal/trae"
+	"afree-proxy/internal/workbuddy"
 	"afree-proxy/internal/zen"
 )
 
@@ -61,37 +62,47 @@ func handleAdminConfigExport(w http.ResponseWriter, r *http.Request) {
 	adminLog := poolAdminLogEnabled()
 	catalogFeedOnly := globalClineCatalogFeedOnly()
 	cb := backup.ConfigBackup{
-		Version:              backup.ConfigBackupVersion,
-		ExportedAt:           time.Now().UTC(),
-		Accounts:             accounts,
-		ClientKeys:           clientKeys,
-		ClineUseProxies:      &clineUse,
-		AdminLogEnabled:      &adminLog,
-		ClineCatalogFeedOnly: &catalogFeedOnly,
-		Strategy:             gwconfig.GlobalStrategy(),
-		Headers:              headers,
-		Zen:                  backup.ZenBackupSnapshot(),
-		ProxyPool:            getProxyPool(),
-		Proxy:                getProxyBindingConfig(),
-		Sessions:             sessions,
-		Endpoints:            loadZenEndpointsFile(),
-		Combos:               listCombos(),
-		WorkBuddy:            backup.ExportWorkbuddyBackup(),
-		Other:                other.Get(),
-		Trae:                 trae.Trae2apiBackupSnapshot(),
-		WorkBuddyProxies:     backup.ExportWorkbuddyProxyBindings(),
-		TraeProxies:          exportTrae2apiProxyBindings(),
-		TraeDisplayOrder:     traeDisplayOrderForBackup(),
-		ModelBlacklist:       backup.ExportModelBlacklist(),
-		PlatformBlacklist:    blacklist.ExportPlatformBlacklist(),
-		ZenDepAliases:        backup.ExportZenDepAliases(),
-		ClineStreamRequired:  backup.ExportClineStreamRequired(),
+		Version:                backup.ConfigBackupVersion,
+		ExportedAt:             time.Now().UTC(),
+		Accounts:               accounts,
+		ClientKeys:             clientKeys,
+		ClineUseProxies:        &clineUse,
+		AdminLogEnabled:        &adminLog,
+		ClineCatalogFeedOnly:   &catalogFeedOnly,
+		Strategy:               gwconfig.GlobalStrategy(),
+		Headers:                headers,
+		Zen:                    backup.ZenBackupSnapshot(),
+		ProxyPool:              getProxyPool(),
+		Proxy:                  getProxyBindingConfig(),
+		Sessions:               sessions,
+		Endpoints:              loadZenEndpointsFile(),
+		Combos:                 listCombos(),
+		WorkBuddy:              backup.ExportWorkbuddyBackup(),
+		Other:                  other.Get(),
+		Trae:                   trae.Trae2apiBackupSnapshot(),
+		WorkBuddyProxies:       backup.ExportWorkbuddyProxyBindings(),
+		TraeProxies:            exportTrae2apiProxyBindings(),
+		TraeDisplayOrder:       traeDisplayOrderForBackup(),
+		ModelBlacklist:         backup.ExportModelBlacklist(),
+		PlatformBlacklist:      blacklist.ExportPlatformBlacklist(),
+		ZenDepAliases:          backup.ExportZenDepAliases(),
+		ClineStreamRequired:    backup.ExportClineStreamRequired(),
+		ZenUseProxies:          gateway.PlatformUseProxies("zen"),
+		TraeUseProxies:         gateway.PlatformUseProxies("trae"),
+		WorkBuddyUseProxies:    gateway.PlatformUseProxies("workbuddy"),
+		WorkBuddyAccountPrefs:  backup.ExportWorkbuddyAccountPrefs(),
+		WorkBuddyShareOptimize: workbuddy.WkbdConfigShareOptimize(),
 		State: &backup.StateBackup{
 			Cline:       clineState,
 			Zen:         zenStateBackupSnapshot(),
 			Other:       other.StateSnapshotJSON(),
 			ProxyHealth: proxyHealthBackupSnapshot(),
 		},
+	}
+	// trae 分域倍率筛选（trae-config.json，2026-11-07 立项）：nil = 未配置。
+	if cn, intl := trae.TraeConfigRateFilters(); cn != nil || intl != nil {
+		cb.TraeRateFilterCN = cn
+		cb.TraeRateFilterIntl = intl
 	}
 	data, err := json.MarshalIndent(cb, "", "  ")
 	if err != nil {
@@ -342,6 +353,46 @@ func handleAdminConfigImport(w http.ResponseWriter, r *http.Request) {
 	}
 	if len(cb.WorkBuddyProxies) > 0 {
 		imported["workBuddyProxies"] = backup.ImportWorkbuddyProxyBindings(cb.WorkBuddyProxies)
+	}
+	// ---- wkbd/trae/zen 平台增量段（2026-11-19 补：走池开关只有 cline 进备份、
+	// wb 账号意志与 shareOptimize、trae 分域倍率此前全部不随备份迁移）----
+	// 注意：WorkBuddyAccountPrefs 必须在 wb auths 段（下方 ImportWorkbuddyBackup
+	// 的 AuthLoadDir 重扫）之前落盘，重扫经 AccountPrefProvider 把意志带回内存。
+	if cb.WorkBuddyAccountPrefs != nil {
+		imported["workbuddyAccountPrefs"] = backup.ImportWorkbuddyAccountPrefs(cb.WorkBuddyAccountPrefs)
+	}
+	if cb.WorkBuddyShareOptimize != nil {
+		workbuddy.MutateWkbdConfig(func(k *workbuddy.WkbdConfigData) { k.ShareOptimize = cb.WorkBuddyShareOptimize })
+		if workbuddy.WorkbuddySub != nil {
+			(*workbuddy.WorkbuddySub).ShareOptimizeSched.Store(&workbuddy.WbShareSched{
+				Enabled: cb.WorkBuddyShareOptimize.Enabled,
+				Cron:    cb.WorkBuddyShareOptimize.Cron,
+			})
+		}
+		imported["workbuddyShareOptimize"] = 1
+	}
+	if cb.ZenUseProxies != nil {
+		gateway.SetPlatformUseProxies("zen", cb.ZenUseProxies)
+		imported["zenUseProxies"] = 1
+	}
+	if cb.TraeUseProxies != nil {
+		gateway.SetPlatformUseProxies("trae", cb.TraeUseProxies)
+		imported["traeUseProxies"] = 1
+	}
+	if cb.WorkBuddyUseProxies != nil {
+		gateway.SetPlatformUseProxies("workbuddy", cb.WorkBuddyUseProxies)
+		imported["workbuddyUseProxies"] = 1
+	}
+	if cb.TraeRateFilterCN != nil || cb.TraeRateFilterIntl != nil {
+		trae.MutateTraeConfig(func(tc *trae.TraeConfigData) {
+			if cb.TraeRateFilterCN != nil {
+				tc.ModelRateFilterCN = cb.TraeRateFilterCN
+			}
+			if cb.TraeRateFilterIntl != nil {
+				tc.ModelRateFilterIntl = cb.TraeRateFilterIntl
+			}
+		})
+		imported["traeRateFilters"] = 1
 	}
 	if len(cb.TraeProxies) > 0 {
 		imported["trae.TraeProxies"] = importTrae2apiProxyBindings(cb.TraeProxies)

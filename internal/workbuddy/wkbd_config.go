@@ -173,6 +173,41 @@ func WkbdSetAccountPref(uid string, poolEnabled, accountEnabled *bool, nicknameL
 	SaveWkbdConfigLocked()
 }
 
+// WkbdConfigAccountPrefs 全表意志副本（备份导出用；nil = 从未记录任何意志）。
+func WkbdConfigAccountPrefs() map[string]WkbdAccountPref {
+	WkbdCfgMu.Lock()
+	defer WkbdCfgMu.Unlock()
+	g := LoadWkbdConfigLocked()
+	if g.AccountPrefs == nil {
+		return nil
+	}
+	cp := make(map[string]WkbdAccountPref, len(g.AccountPrefs))
+	for k, v := range g.AccountPrefs {
+		cp[k] = v
+	}
+	return cp
+}
+
+// WkbdSetAccountPrefs 全表意志整体替换（备份导入用；nil 值字段保持语义）。
+// 注意：vendor 内存意志在 auth 文件解析时经 AccountPrefProvider 回填——本
+// 函数只落盘，紧随其后的 AuthLoadDir 重扫（wb auths 段导入链自带）会把新
+// 意志带回内存；备份不带 authFiles 段时需等面板 reload/重启对齐。
+func WkbdSetAccountPrefs(m map[string]WkbdAccountPref) {
+	WkbdCfgMu.Lock()
+	defer WkbdCfgMu.Unlock()
+	g := LoadWkbdConfigLocked()
+	if m == nil {
+		g.AccountPrefs = nil
+	} else {
+		cp := make(map[string]WkbdAccountPref, len(m))
+		for k, v := range m {
+			cp[k] = v
+		}
+		g.AccountPrefs = cp
+	}
+	SaveWkbdConfigLocked()
+}
+
 // WkbdConfigShareOptimize 权重优化定时任务热值。nil = 未配置（调用方按默认
 // 处置：沿用与引入前一致的行为）。
 func WkbdConfigShareOptimize() *WkbdShareOptimize {
