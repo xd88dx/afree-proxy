@@ -208,12 +208,18 @@ func proxyConfigPath() string { return exitpool.ConfigPath() }
 func setProxyPool(c *proxyPoolConfigData) {
 	exitpool.NormalizePool(c)
 	old := exitpool.GetPool()
+	// 池替换前快照手动冷却（索引→URL 必须按旧池解释：ActivatePool 之后
+	// Snapshot 的 cfg 已是新池，索引会错位）。
+	manualKept := snapshotProxyManualCooled()
 	exitpool.ActivatePool(c)
 	if proxiesChanged(old.Proxies, c.Proxies) {
 		exitpool.ResetCooldownsForPoolEdit()
 		resetProxyHealthStats()
-		// 池编辑即清零 manualCooled 段：同步落盘把空表写回文件（与统计清零
-		// 同一口径，否则文件里残留旧标记，代理回归后被误恢复）。
+		// 手动冷却按 URL/别名保留仍在新池的条目（2026-11-18 修复）：池编辑
+		// 一律清零会让订阅同步（顺序变化即触发整池替换）丢掉手动封禁——
+		// 同一代理仍在池中时封禁意图应延续。重置后按新池重锚定恢复（消失
+		// 的 URL 由 RestoreManualCooled 丢弃），再把保留后的表同步落盘。
+		restoreProxyManualCooled(manualKept)
 		flushProxyHealthManual()
 		exitpool.EvictPoolClients(validProxySet(c.Proxies))
 	}

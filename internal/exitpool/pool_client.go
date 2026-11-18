@@ -69,7 +69,10 @@ func SnapshotManualCooled() map[string]bool {
 	return out
 }
 
-// RestoreManualCooled 落盘 URL 键 → 内存索引键。池内不存在的 URL 丢弃。
+// RestoreManualCooled 落盘 URL 键 → 内存索引键。池内不存在的 URL 先按精确
+// URL、再按备注名（别名）回退重锚定——与 IdxInPool 同语义：备注名相同即同
+// 一代理（2026-10-18 用户定），订阅更新换端口后手动冷却仍能跟到新行。两者
+// 都不命中（代理真被移除）丢弃。
 func RestoreManualCooled(m map[string]bool) {
 	if len(m) == 0 {
 		return
@@ -86,6 +89,15 @@ func RestoreManualCooled(m map[string]bool) {
 		}
 		if idx, ok := idxOf[url]; ok {
 			manualCooled[idx] = true
+			continue
+		}
+		if a := AliasOf(url); a != "" {
+			for i, p := range cfg.Proxies {
+				if AliasOf(p) == a {
+					manualCooled[i] = true
+					break
+				}
+			}
 		}
 	}
 	n := len(manualCooled)
