@@ -223,3 +223,19 @@ func PrunePlatform(slug string) {
 	keyMu.Unlock()
 	markTokensDirty()
 }
+
+// RenamePlatformUsage slug 改名同步痕迹表键（2026-11-20 slug 前缀 op_→other_
+// 存量迁移用）：usage.Platforms 的 from 键整体挪到 to。旧键无记录时静默跳过。
+// 调用方（app 装配早期，服务未起）与选号热路径无并发窗口。
+func RenamePlatformUsage(from, to string) {
+	if from == "" || to == "" || from == to {
+		return
+	}
+	keyMu.Lock()
+	if u, ok := usage.Platforms[from]; ok {
+		usage.Platforms[to] = u
+		delete(usage.Platforms, from)
+	}
+	keyMu.Unlock()
+	markTokensDirty()
+}

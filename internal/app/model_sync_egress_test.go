@@ -20,7 +20,7 @@ func TestClineSyncClientBoundExitUnavailableFailsClosed(t *testing.T) {
 	t.Setenv("DISABLE_DIRECT", "")
 	ghost := "socks5://10.255.255.1:9#ghost-exit"
 	swapTestPool(t, []*Account{
-		{AccountID: "acc_1", Email: "a@x", APIToken: "sk_test", ProxyMain: ghost},
+		{AccountID: "acc_1", APIToken: "sk_test", ProxyMain: ghost},
 	})
 	_, _, err := clineSyncClient()
 	if err == nil {
@@ -33,7 +33,7 @@ func TestClineSyncClientBoundExitUnavailableFailsClosed(t *testing.T) {
 
 func TestClineSyncClientUnboundPoolDirectGating(t *testing.T) {
 	setupBindingTest(t, nil)
-	swapTestPool(t, []*Account{{AccountID: "acc_1", Email: "a@x", APIToken: "sk_test"}})
+	swapTestPool(t, []*Account{{AccountID: "acc_1", APIToken: "sk_test"}})
 	clearTestProxyPool(t)
 
 	// 走池（默认开）+ 池空 + DISABLE_DIRECT：直连兜底不放行。
@@ -91,13 +91,13 @@ func TestZenSyncClientAllKeysDownFallsToPoolGating(t *testing.T) {
 
 func TestTestAccountEmptyCatalogReportsCause(t *testing.T) {
 	setupBindingTest(t, nil)
-	swapTestPool(t, []*Account{{AccountID: "acc_empty", Email: "empty@x", APIToken: "sk_test"}})
+	swapTestPool(t, []*Account{{AccountID: "acc_empty", APIToken: "sk_test"}})
 	savedCache := cline.SetCatalogForTest(map[string]*ModelInfo{})
 	t.Cleanup(func() {
 		cline.SetCatalogForTest(savedCache)
 	})
 
-	result, status := testAccount(context.Background(), &Account{AccountID: "acc_empty", Email: "empty@x", APIToken: "sk_test"})
+	result, status := testAccount(context.Background(), &Account{AccountID: "acc_empty", APIToken: "sk_test"})
 	if status != "error" {
 		t.Fatalf("status = %q, want error", status)
 	}

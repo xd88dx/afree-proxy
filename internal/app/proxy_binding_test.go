@@ -468,9 +468,9 @@ func TestPickAccountSkipsBoundBlockedAccounts(t *testing.T) {
 		Proxies: []string{"http://a:1", "http://b:2"},
 	})
 
-	accA := &Account{AccountID: "a", Email: "a@x", APIToken: "sk_test", ProxyMain: "http://a:1", ProxyBackup: "http://b:2"}
+	accA := &Account{AccountID: "a", APIToken: "sk_test", ProxyMain: "http://a:1", ProxyBackup: "http://b:2"}
 
-	accB := &Account{AccountID: "b", Email: "b@x"}
+	accB := &Account{AccountID: "b", }
 
 	swapTestPool(t, []*Account{accA, accB})
 
@@ -812,7 +812,7 @@ func TestSetAccountProxyBinding(t *testing.T) {
 		Proxies: []string{"http://a:1", "http://b:2"},
 	})
 
-	swapTestPool(t, []*Account{{AccountID: "a", Email: "a@x"}})
+	swapTestPool(t, []*Account{{AccountID: "a", }})
 
 	if err := setAccountProxyBinding("a", "http://a:1", "http://b:2"); err != nil {
 
@@ -875,7 +875,7 @@ func TestSetAccountProxyBindingPersistsToFile(t *testing.T) {
 		Proxies: []string{"http://a:1", "http://b:2"},
 	})
 
-	swapTestPool(t, []*Account{{AccountID: "a", Email: "a@x"}})
+	swapTestPool(t, []*Account{{AccountID: "a", }})
 
 	if err := setAccountProxyBinding("a", "http://a:1", "http://b:2"); err != nil {
 
@@ -1601,7 +1601,7 @@ func TestBoundProxyNetworkErrorDoesNotPoisonAccount(t *testing.T) {
 
 	swapTestPool(t, []*Account{{
 
-		AccountID: "a", Email: "a@x", APIToken: "sk_test",
+		AccountID: "a", APIToken: "sk_test",
 
 		ProxyMain: "http://127.0.0.1:1",
 	}})

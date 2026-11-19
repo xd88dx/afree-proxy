@@ -238,7 +238,6 @@ func startModelsRefresher() { cline.StartModelsRefresher() }
 
 func modelsSyncSnapshot() (time.Time, bool) { return cline.ModelsSyncSnapshot() }
 
-func truncateEmail(email string) string { return cline.TruncateEmail(email) }
 
 func usageTokens(u map[string]any, params map[string]any) int64 { return kit.UsageTokens(u, params) }
 

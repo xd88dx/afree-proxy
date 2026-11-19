@@ -228,3 +228,59 @@ func clearAllKeyProxies() int {
 // proxyBinding 一个身份的出口绑定（值语义对全部平台一致）。
 // 2026-11-17 P3b：类型迁 exitpool.Binding，此处别名保消费面。
 type proxyBinding = exitpool.Binding
+
+// inheritProxyExclusionsForNewPlatform 新建 other 子平台时继承「全平台禁用」
+// 的代理（2026-11-19 用户定）：凡当前全部平台叶子（acc/trae/key/wb + 既有
+// other:<slug>，不含新建平台自身）都已排除的代理，对新平台同样排除——否则
+// 批量追加框里"已在所有平台排除"的代理会在新平台立刻复活。只排除部分平台
+// 的代理不继承；「排除直连」（__direct__ 哨兵键）不继承。
+func inheritProxyExclusionsForNewPlatform(newSlug string) {
+	binding := getProxyBindingConfig()
+	if binding == nil || len(binding.ProxyExclusions) == 0 || newSlug == "" {
+		return
+	}
+	leaves := map[string]bool{"acc": true, "trae": true, "key": true, "wb": true}
+	for _, p := range other.Get().Platforms {
+		if p.Slug != newSlug {
+			leaves["other:"+p.Slug] = true
+		}
+	}
+	covered := func(kinds []string) bool {
+		for leaf := range leaves {
+			found := false
+			for _, k := range kinds {
+				if k == leaf {
+					found = true
+					break
+				}
+			}
+			if !found {
+				return false
+			}
+		}
+		return true
+	}
+	next := *binding
+	next.ProxyExclusions = make(map[string][]string, len(binding.ProxyExclusions))
+	newKind := "other:" + newSlug
+	for u, kinds := range binding.ProxyExclusions {
+		if u == proxyRuleDirectKey {
+			next.ProxyExclusions[u] = kinds
+			continue
+		}
+		if covered(kinds) {
+			dup := false
+			for _, k := range kinds {
+				if k == newKind {
+					dup = true
+					break
+				}
+			}
+			if !dup {
+				kinds = append(append([]string(nil), kinds...), newKind)
+			}
+		}
+		next.ProxyExclusions[u] = kinds
+	}
+	setProxyBindingConfig(&next)
+}

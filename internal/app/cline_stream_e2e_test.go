@@ -126,7 +126,7 @@ func TestAutoStreamLearnThroughRealCallee(t *testing.T) {
 	savedPool := cline.RawPool()
 
 	cline.SetPool(&AccountPool{Accounts: []*Account{{
-		AccountID: "probe-1", Email: "probe@test", APIToken: "sk-test-static-key",
+		AccountID: "probe-1", APIToken: "sk-test-static-key",
 	}}})
 	cline.PoolMu.Unlock()
 
@@ -276,7 +276,7 @@ func TestCallClineAPINon200ReturnsTypedError(t *testing.T) {
 	savedPool := cline.RawPool()
 
 	cline.SetPool(&AccountPool{Accounts: []*Account{{
-		AccountID: "probe-2", Email: "probe2@test", APIToken: "sk-test-static-key",
+		AccountID: "probe-2", APIToken: "sk-test-static-key",
 	}}})
 	cline.PoolMu.Unlock()
 
@@ -386,8 +386,8 @@ func TestCallClineAPIFailoverOn429(t *testing.T) {
 	savedPool := cline.RawPool()
 
 	cline.SetPool(&AccountPool{Accounts: []*Account{
-		{AccountID: "a-1", Email: "a1@test", APIToken: "sk-key-A"},
-		{AccountID: "a-2", Email: "a2@test", APIToken: "sk-key-B"},
+		{AccountID: "a-1", APIToken: "sk-key-A"},
+		{AccountID: "a-2", APIToken: "sk-key-B"},
 	}})
 	cline.PoolMu.Unlock()
 
@@ -497,8 +497,8 @@ func TestCallClineAPI429UnparseableShortCooldown(t *testing.T) {
 	savedPool := cline.RawPool()
 
 	cline.SetPool(&AccountPool{Accounts: []*Account{
-		{AccountID: "a-1", Email: "a1@test", APIToken: "sk-key-A"},
-		{AccountID: "a-2", Email: "a2@test", APIToken: "sk-key-B"},
+		{AccountID: "a-1", APIToken: "sk-key-A"},
+		{AccountID: "a-2", APIToken: "sk-key-B"},
 	}})
 	cline.PoolMu.Unlock()
 
@@ -588,8 +588,8 @@ func TestCallClineAPI429QuotaKeywordLongCooldown(t *testing.T) {
 	savedPool := cline.RawPool()
 
 	cline.SetPool(&AccountPool{Accounts: []*Account{
-		{AccountID: "a-1", Email: "a1@test", APIToken: "sk-key-A"},
-		{AccountID: "a-2", Email: "a2@test", APIToken: "sk-key-B"},
+		{AccountID: "a-1", APIToken: "sk-key-A"},
+		{AccountID: "a-2", APIToken: "sk-key-B"},
 	}})
 	cline.PoolMu.Unlock()
 
@@ -899,7 +899,7 @@ func TestClineHeadersOnTheWire(t *testing.T) {
 	savedPool := cline.RawPool()
 
 	cline.SetPool(&AccountPool{Accounts: []*Account{{
-		AccountID: "hdr-1", Email: "hdr@test", APIToken: "sk-static-key",
+		AccountID: "hdr-1", APIToken: "sk-static-key",
 	}}})
 	cline.PoolMu.Unlock()
 
@@ -1040,8 +1040,8 @@ func TestCallClineAPIFailoverOnGFE403(t *testing.T) {
 	savedPool := cline.RawPool()
 
 	cline.SetPool(&AccountPool{Accounts: []*Account{
-		{AccountID: "a-1", Email: "a1@test", APIToken: "sk-key-A"},
-		{AccountID: "a-2", Email: "a2@test", APIToken: "sk-key-B"},
+		{AccountID: "a-1", APIToken: "sk-key-A"},
+		{AccountID: "a-2", APIToken: "sk-key-B"},
 	}})
 	cline.PoolMu.Unlock()
 
@@ -1123,8 +1123,8 @@ func TestCallClineAPIBusiness403NoFailover(t *testing.T) {
 	savedPool := cline.RawPool()
 
 	cline.SetPool(&AccountPool{Accounts: []*Account{
-		{AccountID: "a-1", Email: "a1@test", APIToken: "sk-key-A"},
-		{AccountID: "a-2", Email: "a2@test", APIToken: "sk-key-B"},
+		{AccountID: "a-1", APIToken: "sk-key-A"},
+		{AccountID: "a-2", APIToken: "sk-key-B"},
 	}})
 	cline.PoolMu.Unlock()
 

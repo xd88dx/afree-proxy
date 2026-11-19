@@ -97,3 +97,36 @@
   </div>
 </div>
 </div>
+<dialog id="traeAddDialog" style="width:min(560px,calc(100vw - 32px))">
+  <div class="wb-dialog-head">
+    <span>Add TraeWork accounts</span>
+    <button class="btn btn-sm" onclick="closeTraeAddDialog()" data-i18n="close">Close</button>
+  </div>
+  <div class="wb-dialog-body">
+    <details class="trae-acc" id="traeAccWeb" open>
+      <summary>Web authorization</summary>
+      <div class="trae-acc-body">
+        <p class="hint" style="margin:0 0 8px" id="traeOAuthHint">Download the helper from this panel, run "python web_login.py" locally, then authorize on the opened page (sign in to trae.cn in the browser first). The account lands here automatically with routing off. The helper writes to the panel it was downloaded from.</p>
+        <div style="display:flex;gap:8px;margin-bottom:6px;align-items:center">
+          <a class="btn btn-sm btn-static" href="/trae/oauth/helper" download="web_login.py">Download helper</a>
+          <button class="btn btn-sm btn-static" onclick="openTraeHelperPage()" title="Open the helper page (127.0.0.1:8765) and click the authorize button there" data-i18n="open_helper_page">Open helper page</button>
+        </div>
+        <div class="hint" id="traeHelperStatus" style="margin:0" data-i18n="checking_local_helper">Checking local helper…</div>
+      </div>
+    </details>
+    <details class="trae-acc" id="traeAccManual">
+      <summary>Manual paste</summary>
+      <div class="trae-acc-body">
+        <p class="hint" style="margin:0 0 8px" id="traeAddHint">One token----refreshToken line per account (both required — the engine refreshes with a freshly minted device key; token-only credentials cannot pass import validation). Portable snapshot JSON / ZIP import lives in the original panel (Original panel, top right). New accounts start with routing off.</p>
+        <div class="field">
+          <label>Credentials (one per line)</label>
+          <textarea id="traeAddInput" rows="5" placeholder="eyJhbGciOi…----eyJhbGciOi…" style="font-family:'JetBrains Mono',Consolas,monospace"></textarea>
+        </div>
+      </div>
+    </details>
+    <div class="wb-dialog-actions">
+      <button class="btn btn-primary" id="traeAddSubmit" onclick="traeAddFromDialog()" data-i18n="save">Save</button>
+      <button class="btn" onclick="closeTraeAddDialog()" data-i18n="cancel">Cancel</button>
+    </div>
+  </div>
+</dialog>

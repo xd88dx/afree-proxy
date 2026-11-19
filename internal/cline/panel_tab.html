@@ -10,7 +10,7 @@
     <div class="table-wrap">
     <table>
       <thead>
-        <tr><th style="width:44px">#</th><th data-i18n="Email">Email</th><th data-i18n="Status">Status</th><th title="Counted locally by this proxy — not the official free quota" data-i18n="Today/Total tokens">Today/Total tokens</th><th data-i18n="Last used">Last used</th><th title="Main exit first, backup as fallback; both down = row skipped (isolation)." data-i18n="Proxy binding">Proxy binding</th><th style="text-align:center" data-i18n="Actions">Actions</th><th style="text-align:center" title="Routing participation. New rows start disabled — tick Pool to enable." data-i18n="Pool">Pool</th></tr>
+        <tr><th style="width:44px">#</th><th data-i18n="Account">Account</th><th data-i18n="Status">Status</th><th title="Counted locally by this proxy — not the official free quota" data-i18n="Today/Total tokens">Today/Total tokens</th><th data-i18n="Last used">Last used</th><th title="Main exit first, backup as fallback; both down = row skipped (isolation)." data-i18n="Proxy binding">Proxy binding</th><th style="text-align:center" data-i18n="Actions">Actions</th><th style="text-align:center" title="Routing participation. New rows start disabled — tick Pool to enable." data-i18n="Pool">Pool</th></tr>
       </thead>
       <tbody id="accountTableBody">
         <tr><td colspan="8" class="empty">Loading...</td></tr>
@@ -18,7 +18,7 @@
     </table>
     </div>
     <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin:10px 6px 4px">
-      <button class="btn btn-primary btn-sm" onclick="openAccAddDialog()" data-i18n="add">Add</button>
+      <button class="btn btn-primary btn-sm" onclick="openAccAddDialog()" data-i18n="add_credentials">Add credentials</button>
       <div style="display:flex;gap:8px">
         <button class="btn btn-sm" onclick="stageAllAccountsPool(true)" data-i18n="enable_all">Enable all</button>
         <button class="btn btn-sm" onclick="stageAllAccountsPool(false)" data-i18n="disable_all">Disable all</button>
@@ -67,4 +67,45 @@
   </div>
 </div>
 </div>
-
+<dialog id="accAddDialog" class="cred-edit-dlg">
+  <div class="wb-dialog-head">
+    <span data-i18n="add_credentials">Add credentials</span>
+    <button class="btn btn-sm" onclick="closeAccAddDialog()" data-i18n="close">Close</button>
+  </div>
+  <div class="wb-dialog-body">
+    <p class="hint" style="margin-top:0" id="accAddHint" data-i18n="add_account_keys_hint">One per line: key-----nickname (nickname optional).</p>
+    <div class="field">
+      <label data-i18n="api_key">API key</label>
+      <textarea id="accAddInput" rows="5" placeholder="workos-... refreshToken or sk_... API key" style="font-family:'JetBrains Mono',Consolas,monospace"></textarea>
+      <div class="hint" style="margin-top:4px" data-i18n="cline_add_type_hint">Type is auto-detected: sk_... = static API key, anything else = OAuth refreshToken.</div>
+    </div>
+    <div class="wb-dialog-actions">
+      <button class="btn btn-primary" id="accAddSubmit" onclick="accAddFromDialog()" data-i18n="add_credentials">Add credentials</button>
+      <button class="btn" onclick="closeAccAddDialog()" data-i18n="cancel">Cancel</button>
+    </div>
+  </div>
+</dialog>
+<dialog id="accEditDialog" class="cred-edit-dlg">
+  <div class="wb-dialog-head">
+    <span data-i18n="edit_account">Edit account</span>
+    <button class="btn btn-sm" onclick="closeAccEditDialog()" data-i18n="close">Close</button>
+  </div>
+  <div class="wb-dialog-body">
+    <div class="field">
+      <label data-i18n="nickname">Nickname</label>
+      <input type="text" id="accEditNickname" placeholder="user@example.com">
+    </div>
+    <div class="field">
+      <label data-i18n="api_key">API key</label>
+      <div class="cred-row">
+        <input type="text" id="accEditToken" placeholder="sk_..." style="font-family:'JetBrains Mono',Consolas,monospace">
+        <button type="button" class="cred-btn eye" onclick="accEditToggleReveal()" data-i18n-title="show_key" title="Show / hide key"><svg viewBox="0 0 24 24"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg></button>
+        <button type="button" class="cred-btn copy" onclick="accEditCopyKey()" data-i18n-title="copy_key" title="Copy key"><svg viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>
+      </div>
+    </div>
+    <div class="wb-dialog-actions">
+      <button class="btn btn-primary" id="accEditSubmit" onclick="accEditFromDialog()" data-i18n="save">Save</button>
+      <button class="btn" onclick="closeAccEditDialog()" data-i18n="cancel">Cancel</button>
+    </div>
+  </div>
+</dialog>

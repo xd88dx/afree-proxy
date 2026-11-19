@@ -316,7 +316,7 @@ func CallAPI(ctx context.Context, params map[string]any, stream bool, useProxies
 			return nil, acc, err
 		}
 		log.Printf("  cline failover: account=%s got %d, trying another account (%d/%d)",
-			TruncateEmail(acc.Email), ce.Status, i+1, clineFailoverAttempts)
+			AccountLabel(acc), ce.Status, i+1, clineFailoverAttempts)
 	}
 	return nil, lastAcc, lastErr
 }
@@ -341,7 +341,7 @@ func callAPIWithAccount(ctx context.Context, params map[string]any, stream bool,
 	token, err := EnsureToken(acc)
 	if err != nil {
 		// Try other accounts
-		return nil, fmt.Errorf("account %s token failed: %w", acc.Email, err)
+		return nil, fmt.Errorf("account %s token failed: %w", AccountLabel(acc), err)
 	}
 
 	body := BuildUpstreamBody(params, stream)
@@ -368,7 +368,7 @@ func callAPIWithAccount(ctx context.Context, params map[string]any, stream bool,
 	// 代理路径上的网络错误只冷却代理本身,绝不冷却账号 —— 代理故障不污染账号池。
 	main, backup, bound := accountProxyBinding(acc)
 	log.Printf("  upstream: account=%s stream=%v tools=%d msgs=%d max_tokens=%v effort=%v useProxies=%v boundExit=%v",
-		TruncateEmail(acc.Email), stream, toolCount, GetMsgCount(params), body["max_tokens"], body["reasoning_effort"], useProxies, bound)
+		AccountLabel(acc), stream, toolCount, GetMsgCount(params), body["max_tokens"], body["reasoning_effort"], useProxies, bound)
 	reqlog.SetUpstreamInfo(ctx, fmt.Sprintf("account #%d", AccountNumber(acc)))
 	client := kit.HTTPClient
 	attempts := 1
@@ -387,7 +387,7 @@ func callAPIWithAccount(ctx context.Context, params map[string]any, stream bool,
 			var ok bool
 			proxyURL, pidx, ok = exitpool.PickBoundProxyFor(exitpool.KindCline, main, backup)
 			if !ok {
-				return nil, fmt.Errorf("account %s bound proxies unavailable (cooling or removed); account skipped by proxy isolation", TruncateEmail(acc.Email))
+				return nil, fmt.Errorf("account %s bound proxies unavailable (cooling or removed); account skipped by proxy isolation", AccountLabel(acc))
 			}
 			client = exitpool.ClientFor(proxyURL)
 			if proxyURL == "" {
@@ -399,16 +399,16 @@ func callAPIWithAccount(ctx context.Context, params map[string]any, stream bool,
 			var exitOK bool
 			proxyURL, pidx, exitOK = exitpool.UpstreamForKind(exitpool.KindCline)
 			if !exitOK {
-				return nil, fmt.Errorf("cline account %s: every pool exit is manually cooled", TruncateEmail(acc.Email))
+				return nil, fmt.Errorf("cline account %s: every pool exit is manually cooled", AccountLabel(acc))
 			}
 			if proxyURL == "" && kit.DisableDirect() {
-				return nil, fmt.Errorf("cline account %s has no proxy exit: direct egress is disabled by DISABLE_DIRECT", TruncateEmail(acc.Email))
+				return nil, fmt.Errorf("cline account %s has no proxy exit: direct egress is disabled by DISABLE_DIRECT", AccountLabel(acc))
 			}
 			client = exitpool.ClientFor(proxyURL)
 			log.Printf("  cline upstream via %s", kit.MaskProxyURL(proxyURL))
 		} else if kit.DisableDirect() {
 			// 未绑定 + 面板直连模式：DISABLE_DIRECT=true 时凭据失效（2026-10-28）。
-			return nil, fmt.Errorf("cline account %s has no proxy exit: direct egress is disabled by DISABLE_DIRECT", TruncateEmail(acc.Email))
+			return nil, fmt.Errorf("cline account %s has no proxy exit: direct egress is disabled by DISABLE_DIRECT", AccountLabel(acc))
 		}
 		// 每次尝试重建请求: bytes.Reader 只能读一次,
 		// 复用已发送的 req 会以 "ContentLength=N with Body length 0" 失败
@@ -493,7 +493,7 @@ func callAPIWithAccount(ctx context.Context, params map[string]any, stream bool,
 				UsageForLocked(acc).Status = "expired"
 				SaveUsageLocked()
 				PoolMu.Unlock()
-				return nil, fmt.Errorf("account %s token expired permanently", TruncateEmail(acc.Email))
+				return nil, fmt.Errorf("account %s token expired permanently", AccountLabel(acc))
 			}
 			resp = resp2
 		} else {
@@ -501,7 +501,7 @@ func callAPIWithAccount(ctx context.Context, params map[string]any, stream bool,
 			UsageForLocked(acc).Status = "expired"
 			SaveUsageLocked()
 			PoolMu.Unlock()
-			return nil, fmt.Errorf("account %s refresh failed: %w", TruncateEmail(acc.Email), rerr)
+			return nil, fmt.Errorf("account %s refresh failed: %w", AccountLabel(acc), rerr)
 		}
 	}
 
@@ -511,9 +511,9 @@ func callAPIWithAccount(ctx context.Context, params map[string]any, stream bool,
 		// Mark account on cooldown on rate limits
 		if resp.StatusCode == 429 {
 			reason := kit.Truncate(string(bodyBytes), 500)
-			duration := Cline429CooldownDuration(acc.Email, string(bodyBytes), resp.Header.Get("Retry-After"))
+			duration := Cline429CooldownDuration(AccountLabel(acc), string(bodyBytes), resp.Header.Get("Retry-After"))
 			MarkAccountCooldown(acc, "429: "+reason, duration)
-			log.Printf("  account %s cooldown %v (reason: %s)", TruncateEmail(acc.Email), duration, reason)
+			log.Printf("  account %s cooldown %v (reason: %s)", AccountLabel(acc), duration, reason)
 		}
 		// 非 200 一律返回 error（body 已读尽并关闭），但状态码 + 错误体本身有价值：
 		// 类型化错误把它带出来，供 callClineAutoStream 识别"该模型必须流式"的指纹。
@@ -557,20 +557,6 @@ func ClineAutoBanPaidUsage(params map[string]any, u map[string]any) {
 	detail := fmt.Sprintf("usage.cost=%g (paid model served to free account)", cost)
 	blacklist.BlacklistModel(blacklist.PlatCline, id, "cost", blacklist.BanReasonFeedRemoved, detail)
 	log.Printf("  cline paid-usage ban: %s cost=%g", id, cost)
-}
-
-func TruncateEmail(email string) string {
-	if len(email) <= 12 {
-		return email
-	}
-	parts := splitEmail(email)
-	if len(parts) == 2 && len(parts[0]) > 3 {
-		return parts[0][:3] + "***@" + parts[1]
-	}
-	if len(email) > 12 {
-		return email[:8] + "..."
-	}
-	return email
 }
 
 func splitEmail(email string) []string {
@@ -640,7 +626,7 @@ func UpstreamNeedsStream(modelID string) bool {
 	return ModelNeedsStream(modelID)
 }
 
-func Cline429CooldownDuration(email, body, retryAfter string) time.Duration {
+func Cline429CooldownDuration(label, body, retryAfter string) time.Duration {
 	if d := parseInferenceCapDuration(body); d > 0 {
 		return d
 	}
@@ -651,7 +637,7 @@ func Cline429CooldownDuration(email, body, retryAfter string) time.Duration {
 	if quota {
 		d = 18 * time.Hour
 	}
-	log.Printf("  429 without parseable wait on %s: defaulting to %v (quota=%v)", TruncateEmail(email), d, quota)
+	log.Printf("  429 without parseable wait on %s: defaulting to %v (quota=%v)", label, d, quota)
 	return d
 }
 

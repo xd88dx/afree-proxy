@@ -187,4 +187,90 @@
   </div>
 </div>
 </div>
+<dialog id="wbAddDialog">
+  <div class="wb-dialog-head">
+    <span>Add WorkBuddy account</span>
+    <button class="btn btn-sm" onclick="closeWorkbuddyAdd()" data-i18n="close">Close</button>
+  </div>
+  <div class="wb-dialog-body">
+    <div class="form-row" style="margin-bottom:8px">
+      <div class="field">
+        <label>Realm</label>
+        <select id="wbRealm"><option value="cn">CN (China)</option><option value="intl">International (codebuddy.ai)</option><option value="workbuddy">WorkBuddy (workbuddy.ai)</option></select>
+      </div>
+    </div>
+    <div class="hint" id="wbAddStatus">Choose a realm and request an authorization link.</div>
+    <div class="wb-link-row">
+      <input type="text" id="wbOAuthUrl" readonly placeholder="authorization URL">
+      <button class="btn btn-sm" onclick="copyWorkbuddyOAuthUrl()" data-i18n="copy">Copy</button>
+      <button class="btn btn-sm btn-primary" onclick="openWorkbuddyOAuthUrl()" data-i18n="open">Open</button>
+    </div>
+    <div class="wb-dialog-actions">
+      <button class="btn btn-primary" id="wbStartLogin" data-i18n="get_authorization_link">Get authorization link</button>
+      <button class="btn" id="wbImportJson" onclick="document.getElementById('wbDialogImportFile').click()" data-i18n="import_json">Import JSON</button>
+    </div>
+    <input type="file" id="wbDialogImportFile" accept=".json" hidden onchange="importWorkbuddyAccounts(this)">
+  </div>
+</dialog>
 
+<dialog id="wbShareDialog" class="wb-wide">
+  <div class="wb-dialog-head">
+    <span data-i18n="weight_optimize">Weight optimize</span>
+    <button class="btn btn-sm" onclick="closeWorkbuddyShare()" data-i18n="close">Close</button>
+  </div>
+  <div class="wb-dialog-body">
+    <div class="hint" data-i18n="weight_optimize_hint">Suggested shares follow each account's expiring-credit daily need (sum of each bucket's remain ÷ days until that date, min 1). Accounts without expiring batches get a 20% reserve split by balance. Shares are exclusive: only listed accounts serve traffic; if none can serve, routing falls back to weighted random.</div>
+    <div class="hint" id="wbShareWarn" style="color:var(--amber,#eab308);display:none"></div>
+    <div class="table-wrap" style="max-height:340px;overflow:auto;margin:8px 0">
+      <table>
+        <thead><tr>
+          <th data-i18n="Account">Account</th>
+          <th data-i18n="weight_nearest">Nearest expiry</th>
+          <th data-i18n="weight_need_total">Expiring total</th>
+          <th data-i18n="weight_daily_need">Daily need</th>
+          <th data-i18n="weight_suggested">Suggested share</th>
+        </tr></thead>
+        <tbody id="wbShareBody"><tr><td colspan="5" class="empty">Loading...</td></tr></tbody>
+      </table>
+    </div>
+    <div class="wb-dialog-actions">
+      <button class="btn btn-primary" id="wbShareApplyBtn" onclick="applyWorkbuddyShare()" data-i18n="apply_share">Apply shares</button>
+      <button class="btn btn-warn" onclick="clearWorkbuddyShare()" data-i18n="clear_share">Clear shares</button>
+    </div>
+  </div>
+</dialog>
+
+<dialog id="wbDetailsDialog" class="wb-wide">
+  <div class="wb-dialog-head">
+    <span>Points breakdown <span class="auto-pill" id="wbDetailsWho"></span></span>
+    <button class="btn btn-sm" onclick="closeWorkbuddyDetails()" data-i18n="close">Close</button>
+  </div>
+  <div class="wb-dialog-body">
+    <div class="hint" id="wbDetailsStatus">Loading...</div>
+    <div id="wbDetailsBody"></div>
+  </div>
+</dialog>
+
+<dialog id="wbTodoDialog" class="wb-wide">
+  <div class="wb-dialog-head">
+    <span>Task center&#x20;</span>
+    <button class="btn btn-sm" onclick="closeWorkbuddyTodoScan()" data-i18n="close">Close</button>
+  </div>
+  <div class="wb-dialog-body">
+    <div class="justify-between">
+      <div class="hint" id="wbTodoStatus" data-i18n="pick_a_concurrency_then_click_scan_tasks">Pick a concurrency, then click "Scan tasks"</div>
+      <div class="wb-task-actions">
+        <label class="inline-flex" style="font-size:12px;color:var(--text2)">Concurrency
+          <select id="wbTodoConcurrency" style="width:64px">
+            <option value="1" selected>1</option>
+            <option value="2">2</option>
+            <option value="3">3</option>
+          </select>
+        </label>
+        <button class="btn btn-sm" id="wbTodoScan" onclick="scanWorkbuddyTodos()" data-i18n="scan_tasks">Scan tasks</button>
+        <button class="btn btn-sm btn-primary" id="wbTodoRunAll" onclick="runWorkbuddyAllTodos()" data-i18n="run_all">Run all</button>
+      </div>
+    </div>
+    <div id="wbTodoBody" style="margin-top:12px"></div>
+  </div>
+</dialog>

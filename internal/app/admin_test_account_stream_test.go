@@ -53,9 +53,9 @@ func TestAccountMustStreamProbeRetriesWithStream(t *testing.T) {
 	})
 	t.Cleanup(func() { cline.SetCatalogForTest(savedCache) })
 
-	swapTestPool(t, []*Account{{AccountID: "acc_probe", Email: "probe@test", APIToken: "sk-test-static-key"}})
+	swapTestPool(t, []*Account{{AccountID: "acc_probe", APIToken: "sk-test-static-key"}})
 
-	result, status := testAccount(context.Background(), &Account{AccountID: "acc_probe", Email: "probe@test", APIToken: "sk-test-static-key"})
+	result, status := testAccount(context.Background(), &Account{AccountID: "acc_probe", APIToken: "sk-test-static-key"})
 	if status != "active" {
 		t.Fatalf("status = %q (result=%v), want active", status, result)
 	}

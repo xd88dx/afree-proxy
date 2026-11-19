@@ -354,6 +354,9 @@ type ZenConfigData struct {
 	// nil/缺项 = 参与。路由启用是铸造的前提（父集语义）：禁用路由的 key 不参与
 	// 选号，收割机也不再为它铸造会话（ZenKeyAutoHarvestEnabled）。
 	KeyRoutingEnabled map[string]bool `json:"keyRoutingEnabled,omitempty"`
+	// KeyNicknames zen key 昵称表（账号列堆叠展示，2026-11-19）：key 明文 ->
+	// 显示名。仅影响面板展示，不参与路由；空/缺 = 显示掩码 key。
+	KeyNicknames map[string]string `json:"keyNicknames,omitempty"`
 	// ToolFilter 请求体积裁剪（默认关闭）。按前缀/名单丢弃客户端工具、可选
 	// 截断过长描述；gate 占位工具永不参与过滤。背景与实测数据见
 	// zen_toolfilter.go 顶部注释（tools 占 ZCode 单请求 82% 体积）。
@@ -1475,7 +1478,9 @@ type ZenCallOpts struct {
 
 // ZenKeyStatus 每个 key 的运行时状态（管理面板展示用，key 值打码）。
 func ZenKeyStatus() []map[string]any {
-	keys := GetZenConfig().Keys
+	cfg := GetZenConfig()
+	keys := cfg.Keys
+	nickOf := cfg.KeyNicknames
 	// 出口绑定先快照：egress 路径取 zenConfigMu/egressMu，不能与 zenKeyMu 嵌套。
 	// （会话快照已随面板会话区块拆除移除：现铸模式下无粘性会话可展示，
 	// zenSessions 表仅剩 403 换新闸门在用，见 zen_session.go。）
@@ -1493,6 +1498,8 @@ func ZenKeyStatus() []map[string]any {
 			"current": i == ZenKeyIdx%MaxInt(len(keys), 1),
 			// 路由参与状态（面板"启用"列勾选，勾掉 = 不进入请求轮转）。
 			"routingEnabled": ZenKeyRoutingEnabled(k),
+			// 昵称（账号列堆叠展示，2026-11-19）：空 = 显示掩码 key。
+			"nickname": nickOf[k],
 		}
 		if ts, ok := zenKeyTokens[k]; ok {
 			st["tokensToday"] = ts.Today

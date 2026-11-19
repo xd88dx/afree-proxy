@@ -60,8 +60,8 @@ func TestAdminAccountNickname(t *testing.T) {
 
 	savedPool := cline.RawPool()
 	cline.SetPool(&AccountPool{Accounts: []*Account{
-		{AccountID: "acc_t1", Email: "a@b.c"},
-		{AccountID: "acc_t2", Email: "d@e.f"},
+		{AccountID: "acc_t1", },
+		{AccountID: "acc_t2", },
 	}})
 	defer func() { cline.SetPool(savedPool) }()
 
@@ -275,7 +275,7 @@ func TestWorkbuddyNicknameHandler(t *testing.T) {
 
 func TestAccountNicknameInBackup(t *testing.T) {
 
-	raw, err := json.Marshal(&Account{AccountID: "acc_t1", Email: "a@b.c", Nickname: "主力号"})
+	raw, err := json.Marshal(&Account{AccountID: "acc_t1", Nickname: "主力号"})
 
 	if err != nil {
 

@@ -168,7 +168,7 @@ func ClineSyncClient() (*http.Client, string, error) {
 		if main, backup, bound := accountProxyBinding(acc); bound {
 			proxyURL, _, ok := exitpool.PickBoundProxyFor(exitpool.KindCline, main, backup)
 			if !ok {
-				return nil, "", fmt.Errorf("no routable exit for model sync: account %s bound proxies unavailable (cooling or removed)", TruncateEmail(acc.Email))
+				return nil, "", fmt.Errorf("no routable exit for model sync: account %s bound proxies unavailable (cooling or removed)", AccountLabel(acc))
 			}
 			return withSyncTimeout(exitpool.ClientFor(proxyURL)), proxyURL, nil
 		}

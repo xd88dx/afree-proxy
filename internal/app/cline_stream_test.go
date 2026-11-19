@@ -43,7 +43,7 @@ func fakeUpstream(status int, body string) *http.Response {
 // （响应体在 callee 里已读尽并关闭）。早期版本返回 (500 响应, nil error) —— 那是
 // 生产里不存在的形态，导致学习逻辑在真实上游面前永远不会触发。
 func fakeUpstreamErr(status int, body string) (*http.Response, *Account, error) {
-	return nil, &Account{Email: "err@x"}, &clineAPIError{Status: status, Body: body}
+	return nil, &Account{AccountID: "acc_first"}, &clineAPIError{Status: status, Body: body}
 }
 
 // 非流式请求撞上"500 empty response content"时：学习该模型 + 立刻改用流式重试，
@@ -62,7 +62,7 @@ func TestCallClineAutoStreamLearnsAndRetries(t *testing.T) {
 		if !stream {
 			return fakeUpstreamErr(500, `{"error":"empty response content","success":false}`)
 		}
-		return fakeUpstream(200, "data: {\"choices\":[]}\n\n"), &Account{Email: "second@x"}, nil
+		return fakeUpstream(200, "data: {\"choices\":[]}\n\n"), &Account{AccountID: "acc_second"}, nil
 	}
 
 	// 含 ":" 的 id 被约定判定"无需流式"，正是要学习的路径
@@ -83,7 +83,7 @@ func TestCallClineAutoStreamLearnsAndRetries(t *testing.T) {
 	if resp.StatusCode != 200 {
 		t.Fatalf("retry response status = %d, want 200", resp.StatusCode)
 	}
-	if acc == nil || acc.Email != "second@x" {
+	if acc == nil || acc.AccountID != "acc_second" {
 		t.Fatalf("account of the retry must be returned, got %+v", acc)
 	}
 	if !clineStreamRequired(probeModel) {

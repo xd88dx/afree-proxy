@@ -177,7 +177,9 @@ tr:hover .nick-pen{opacity:.85}
 .pr-tagin{flex:1;min-width:100px;border:0;background:transparent;color:var(--text);font:inherit;font-size:12.5px;outline:none;padding:2px}
 /* 只读点选框内的输入框不吃全局 input:focus 蓝圈（与 pr-tagbox:focus-within 辉光叠加成双圈） */
 .pr-tagin:focus{box-shadow:none;border:0;outline:none}
-.pr-menu{position:absolute;z-index:40;left:11px;right:11px;margin-top:5px;max-height:220px;overflow-y:auto;border:1px solid var(--border-strong);border-radius:8px;background:var(--bg2);box-shadow:0 12px 28px rgba(0,0,0,.3)}
+.pr-anchor{position:relative}
+.pr-menu{position:absolute;z-index:40;left:0;right:0;top:100%;margin-top:5px;max-height:220px;overflow-y:auto;border:1px solid var(--border-strong);border-radius:8px;background:var(--bg2);box-shadow:0 12px 28px rgba(0,0,0,.3)}
+.pr-anchor.drop-up .pr-menu{top:auto;bottom:100%;margin-top:0;margin-bottom:5px}
 .pr-opt{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:6px 10px;font-size:12.5px;color:var(--text);cursor:pointer}
 .pr-opt:hover{background:var(--bg3)}
 .pr-opt-host{color:var(--text3);font-size:11px;flex-shrink:0}
@@ -220,9 +222,20 @@ tr:hover .nick-pen{opacity:.85}
 /* 凭据表格全列居中（2026-10-29 用户定）：8 平台账号/key 表的表头与内容。
    :has() 从 tbody 反选所在表的 thead；nick-wrap / wb-account 是 flex 容器，
    text-align 管不到，单独补 justify-content。 */
-table:has(#accountTableBody) th,table:has(#traeAccountsBody) th,table:has(#ocKeysBody) th,table:has(#wbAccountsBody) th,table:has(#otherKeysBody) th,#accountTableBody td,#traeAccountsBody td,#ocKeysBody td,#wbAccountsBody td#otherKeysBody td{text-align:center}
+table:has(#accountTableBody) th,table:has(#traeAccountsBody) th,table:has(#ocKeysBody) th,table:has(#wbAccountsBody) th,table:has(#otherKeysBody) th,table:has(#wbShareBody) th,#accountTableBody td,#traeAccountsBody td,#ocKeysBody td,#wbAccountsBody td,#otherKeysBody td,#wbShareBody td{text-align:center}
 /* 账号/Key 列（各表第 2 列）：表头居中，内容左对齐（2026-10-29 用户定） */
 #accountTableBody td:nth-child(2),#traeAccountsBody td:nth-child(2),#ocKeysBody td:nth-child(2),#wbAccountsBody td:nth-child(2):nth-child(2),#otherKeysBody td:nth-child(2){text-align:left}
+/* 编辑账号弹窗（2026-11-20）：三平台共用；昵称上间距收紧 + key 眼睛/复制图标 */
+.cred-edit-dlg .wb-dialog-body{padding:12px 18px 18px}
+.cred-row{position:relative}
+.cred-row input{width:100%;padding-right:72px}
+.cred-row .cred-btn{position:absolute;top:50%;transform:translateY(-50%);width:26px;height:26px;padding:0;border:none;background:var(--bg3);border-radius:50%;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;transition:.15s}
+.cred-row .cred-btn svg{width:13px;height:13px;stroke:var(--text2);fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.cred-row .cred-btn:hover svg{stroke:var(--text)}
+.cred-row .cred-btn.eye{right:32px}
+.cred-row .cred-btn.copy{right:4px}
+/* 权重优化弹窗：账号列左对齐（2026-11-20 用户定，与其余表名称列同风格） */
+#wbShareBody td:nth-child(1){text-align:left}
 
 /* ===== Buttons ===== */
 .btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:7px 15px;border:1px solid var(--border);border-radius:var(--radius-sm);background:rgba(255,255,255,.04);color:var(--text);cursor:pointer;font-size:13px;transition:.15s;text-decoration:none;font-family:inherit;white-space:nowrap}
@@ -571,7 +584,7 @@ const poolTabHTML = `<div id="tab-proxypool" class="tab-panel" style="display:no
     <div class="form-actions"><button class="btn btn-primary" onclick="saveProxyPool()" data-i18n="save_proxy_pool">Save proxy pool</button><button class="btn btn-success" id="ppTestAllBtn" onclick="testAllCredentialPlatforms()" title="Run the batch test once on every platform's credential list (Cline / TraeWork / OpenCode / Other / WorkBuddy), one platform at a time" data-i18n="test_all_credentials">Test all credentials</button></div>
   </div>
 </div>
-<div class="section">
+<div class="section" style="overflow:visible">
   <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><path d="M4 5h16M4 12h10M4 19h7"/></svg></span> Proxy exclusion rules</div>
   <div class="section-body">
     <div class="hint" style="margin-bottom:14px" data-i18n="Blacklist, binding cap and manual cooldown apply only to batch operations — one-click bind and reorder-by-latency. TraeWork/WorkBuddy CN-domain accounts are excluded, and the proxies they hold are never reassigned within their platform. Manual bindings and runtime routing are unrestricted.">Blacklist, binding cap and manual cooldown apply only to batch operations — one-click bind and reorder-by-latency. TraeWork/WorkBuddy CN-domain accounts are excluded, and the proxies they hold are never reassigned within their platform. Manual bindings and runtime routing are unrestricted.</div>
@@ -683,6 +696,25 @@ const poolTabHTML = `<div id="tab-proxypool" class="tab-panel" style="display:no
   </div>
 </div>
 </div>
+<dialog id="impReorderDialog" style="width:min(430px,calc(100vw - 32px))">
+  <div class="wb-dialog-head">
+    <span>Reorder by latency</span>
+    <button class="btn btn-sm" onclick="closeReorderDlg()" data-i18n="close">Close</button>
+  </div>
+  <div class="wb-dialog-body">
+    <div class="hint" style="margin-bottom:6px" data-i18n="re-bind proxies of the selected platforms: healthy (fast, allowed) bindings stay put; slow/unrecorded/excluded/over-cap/manual-disabled ones are re-filled from the remaining pool (better-only for healthy rows), then auto-save.">re-bind proxies of the selected platforms: healthy (fast, allowed) bindings stay put; slow/unrecorded/excluded/over-cap/manual-disabled ones are re-filled from the remaining pool (better-only for healthy rows), then auto-save.</div>
+    <div class="hint" id="impReorderKeepHint" style="margin-bottom:10px"></div>
+    <div style="display:flex;gap:8px;margin-bottom:12px">
+      <button class="btn btn-sm" onclick="impKeepSetAll('impReorderRows',false)" data-i18n="select_all">Select all</button>
+      <button class="btn btn-sm" onclick="impKeepSetAll('impReorderRows',true)" data-i18n="invert">Invert</button>
+    </div>
+    <div id="impReorderRows" style="margin-bottom:14px"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+      <button class="btn" onclick="closeReorderDlg()" data-i18n="cancel">Cancel</button>
+      <button class="btn btn-primary" onclick="confirmReorder()" data-i18n="confirm">Confirm</button>
+    </div>
+  </div>
+</dialog>
 
 `
 
@@ -836,6 +868,29 @@ const combosTabHTML = `<div id="tab-combos" class="tab-panel" style="display:non
   <div class="section-body" id="combosList">Loading...</div>
 </div>
 </div>
+<dialog id="impKeepDialog" style="width:min(430px,calc(100vw - 32px))">
+  <div class="wb-dialog-head">
+    <span>Import config</span>
+    <button class="btn btn-sm" onclick="closeImpKeep()" data-i18n="close">Close</button>
+  </div>
+  <div class="wb-dialog-body">
+    <div class="hint" style="margin-bottom:10px" data-i18n="import_will_replace_all">Import will replace ALL persisted config with the file contents. Confirm whether to keep each platform's credential enabled states.</div>
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px">
+      <button class="btn btn-sm" onclick="impKeepSetAll('impKeepRows',false)" data-i18n="select_all">Select all</button>
+      <button class="btn btn-sm" onclick="impKeepSetAll('impKeepRows',true)" data-i18n="invert">Invert</button>
+      <!-- 统计层勾选框（默认勾选，2026-11-03 三层口径）：勾选 = 本机统计随备份还原；
+           取消勾选 = 保留本机统计现值（不再清零）。配置态与账号事实无论勾选与否都会导入 -->
+      <label id="impStateRow" style="margin-left:auto;display:none;gap:6px;align-items:center;cursor:pointer;white-space:nowrap">
+        <input type="checkbox" id="impStateToggle" checked> <span>Import statistics</span>
+      </label>
+    </div>
+    <div id="impKeepRows" style="display:flex;flex-direction:column;gap:10px;margin-bottom:14px"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+      <button class="btn" onclick="closeImpKeep()" data-i18n="cancel">Cancel</button>
+      <button class="btn btn-primary" onclick="confirmImpKeep()" data-i18n="confirm_import">Confirm import</button>
+    </div>
+  </div>
+</dialog>
 
 `
 
@@ -1223,6 +1278,16 @@ const I18N = {
   'cancel': { en: 'Cancel', zh: '取消' },
   'edit_nickname': { en: 'Edit nickname', zh: '修改昵称' },
   'nickname': { en: 'Nickname', zh: '昵称' },
+  // 账号列点击编辑（2026-11-19）：三平台统一「账号」列 + 昵称/凭据编辑弹窗
+  'edit_account': { en: 'Edit account', zh: '编辑账号' },
+  'api_key': { en: 'API key', zh: 'API key' },
+  'show_key': { en: 'Show / hide key', zh: '显示 / 隐藏 key' },
+  'copy_key': { en: 'Copy key', zh: '复制 key' },
+  'clear_selection': { en: 'Clear selection', zh: '清空选中' },
+  'add_account_keys_hint': { en: 'One per line: key-----nickname (nickname optional; sk-xxx-----test = key sk-xxx, nickname test)', zh: '每行一个：key-----昵称（昵称可省；例 sk-xxx-----test = key 为 sk-xxx、昵称为 test）' },
+  'stale_model_hint': { en: 'Not in the current upstream catalog (selection kept) — untick to remove.', zh: '上游目录已无此模型（勾选保留）——取消勾选即移除。' },
+  'cline_add_type_hint': { en: 'Type is auto-detected: sk_... = static API key, anything else = OAuth refreshToken.', zh: '类型自动识别：sk_... = 静态 API key，其余 = OAuth refreshToken。' },
+  'edit_key_hint': { en: 'Leave empty to keep the current key.', zh: '留空 = 保持当前 key 不变。' },
   'nickname_saved': { en: 'Nickname saved', zh: '昵称已保存' },
   'failed_to_save_nickname': { en: 'Failed to save nickname: ', zh: '昵称保存失败：' },
   'nickname_cannot_be_empty': { en: 'Nickname cannot be empty', zh: '昵称不能为空' },
@@ -1231,7 +1296,6 @@ const I18N = {
   'clear_proxy_bindings_on_all_keys_and_disable_rou': { en: 'Clear proxy bindings on ALL keys and disable routing? Click Save to apply.', zh: '清空全部 key 的代理绑定并禁用路由？点击「保存」后生效。' },
   'Stage only — click Save to apply. Clears bindings and disables every row.': { en: 'Stage only — click Save to apply. Clears bindings and disables every row.', zh: '仅暂存——点「保存」后生效。清空所有行的代理绑定并禁用。' },
   'Run the Test probe on every row.': { en: 'Run the Test probe on every row.', zh: '对本页所有行执行一次测试探测。' },
-  'Email': { en: 'Email', zh: '邮箱' },
   'Today/Total tokens': { en: 'Today/Total tokens', zh: '今日/累计 token' },
   'Last used': { en: 'Last used', zh: '最近使用' },
   'Created': { en: 'Created', zh: '创建时间' },
@@ -1295,7 +1359,7 @@ const I18N = {
   'Average tunnel-setup time over successful attempts (TCP+TLS+CONNECT handshake only — excludes upstream first byte and task duration). Lower is better. Click to sort.': { en: 'Average tunnel-setup time over successful attempts (TCP+TLS+CONNECT handshake only — excludes upstream first byte and task duration). Lower is better. Click to sort.', zh: '成功尝试的平均隧道建立耗时（仅 TCP+TLS+CONNECT 握手——不含上游首字节与任务耗时）。越低越好。点击排序。' },
   'time_to_first_byte_from_request_start_to_the_fir': { en: 'Time to first byte: from request start to the first response byte (streaming = first upstream token; - = no response body, e.g. 413)', zh: '首字节耗时：请求开始到首个响应字节（流式=上游首 token 到达；-=无响应体如 413）' },
   'Avg tunnel-setup time of successful attempts (TCP+TLS+CONNECT), excluding upstream response; samples: ': { en: 'Avg tunnel-setup time of successful attempts (TCP+TLS+CONNECT), excluding upstream response; samples: ', zh: '成功尝试的平均隧道建立耗时（TCP+TLS+CONNECT），不含上游响应；样本数 ' },
-  'Add API keys': { en: 'Add API keys', zh: '添加 API key' },
+  'Add API keys': { en: 'Add account', zh: '添加账号' },
   'all_its_keys_will_be_removed_this_cannot_be_undo': { en: 'All its keys will be removed. This cannot be undone.', zh: '该子平台的所有密钥都将被移除，此操作不可撤销。' },
   'Transport-layer success rate since the pool was last edited (upstream 4xx/5xx still counts as the proxy being online)': { en: 'Transport-layer success rate since the pool was last edited (upstream 4xx/5xx still counts as the proxy being online)', zh: '上次编辑代理池以来的传输层成功率（上游 4xx/5xx 不算代理失败）' },
   'Success rate over the last 50 attempts; red below 80% (min 10 samples).': { en: 'Success rate over the last 50 attempts; red below 80% (min 10 samples).', zh: '最近 50 次尝试的成功率；样本≥10 且低于 80% 时标红。' },
@@ -1385,7 +1449,7 @@ const I18N = {
   'direct': { en: 'Direct', zh: '直连' },
   'Status': { en: 'Status', zh: '状态' },
   'Duration': { en: 'Duration', zh: '耗时' },
-  'cline': { en: 'cline', zh: 'cline 池' },
+  'cline': { en: 'cline', zh: 'cline' },
   'admin': { en: 'admin', zh: '管理' },
   'meta': { en: 'meta', zh: '元数据' },
   'other': { en: 'other', zh: '其他' },
@@ -2909,9 +2973,12 @@ async function loadWorkbuddyConfig() {
     // 从 afree 侧端点装载，不与 vendor 配置同单。
     try {
       const wkbd = await api('GET', '/workbuddy/wkbd/share-optimize');
-      const so = wkbd.shareOptimize || {};
+      // api() 返回 apiResponse 信封，shareOptimize 住 data 内（2026-11-19 修复：
+      // 此前双重取错层级——信封少解一层 data，路径又带 shareOptimize 前缀在
+      // so 本体上再挖一层，两次都 undefined，保存成功但回显恒空）。
+      const so = (wkbd.data && wkbd.data.shareOptimize) || {};
       form.querySelectorAll('[data-wkbd-path]').forEach(el => {
-        const value = wbDig(so, el.dataset.wkbdPath);
+        const value = wbDig(so, el.dataset.wkbdPath.replace(/^shareOptimize\./, ''));
         if (el.type === 'checkbox') el.checked = !!value;
         else el.value = (value === undefined || value === null) ? '' : String(value);
       });
@@ -3190,6 +3257,64 @@ function startNickEdit(pen, opts) {
   };
 }
 const saveClineNickname = (accountId, nickname) => api('POST', '/accounts/nickname', { accountId, nickname });
+
+// ========== 账号编辑弹窗（2026-11-19 账号列改造）==========
+// 点击账号列打开：昵称 + 凭据（api 型可编辑明文，oauth 型只读）。
+let accRowsCache = [];
+let accEditSnapshot = null;
+function openAccEditDialog(accountId) {
+  const a = (accRowsCache || []).find(x => x.accountId === accountId);
+  if (!a) return;
+  accEditSnapshot = { id: accountId, nick: a.nickname || '', credType: a.credType || 'oauth', credMask: a.credMask || '' };
+  accEditCred = { revealed: false, plain: '' };
+  _('accEditNickname').value = a.nickname || '';
+  // 两类凭据均可编辑（2026-11-20 与 opencode 同逻辑）：api 改 APIToken、
+  // oauth 改 RefreshToken，留空 = 保持不变。
+  const tok = _('accEditToken');
+  tok.disabled = false;
+  tok.value = '';
+  tok.placeholder = a.credMask || (a.credType === 'api' ? 'sk_...' : 'workos-... refreshToken');
+  _('accEditDialog').showModal();
+}
+function closeAccEditDialog() { const d = _('accEditDialog'); if (d && d.open) d.close(); }
+let accEditCred = { revealed: false, plain: '' };
+async function accEditFetchPlain() {
+  if (!accEditCred.plain) {
+    const d = await api('GET', '/accounts/credential' + '?accountId=' + encodeURIComponent(accEditSnapshot.id));
+    accEditCred.plain = (d.data && d.data.credential) || '';
+  }
+  return accEditCred.plain;
+}
+async function accEditToggleReveal() {
+  const snap = accEditSnapshot; if (!snap) return;
+  const tok = _('accEditToken');
+  if (accEditCred.revealed) { accEditCred.revealed = false; tok.value = ''; tok.placeholder = snap.credMask || 'sk_...'; return; }
+  try { tok.value = await accEditFetchPlain(); accEditCred.revealed = true; }
+  catch (e) { toast(T('load_failed') + e.message, 'error'); }
+}
+async function accEditCopyKey() {
+  try { copyText(await accEditFetchPlain()); }
+  catch (e) { toast(T('load_failed') + e.message, 'error'); }
+}
+async function accEditFromDialog() {
+  const snap = accEditSnapshot;
+  if (!snap) return;
+  const btn = _('accEditSubmit');
+  btn.disabled = true;
+  try {
+    const nick = _('accEditNickname').value.trim();
+    if (nick !== snap.nick) await api('POST', '/accounts/nickname', { accountId: snap.id, nickname: nick });
+    const tok = _('accEditToken').value.trim();
+    // 掩码回显不回传：输入框留空 = 不改凭据
+    if (snap.credType === 'api' && tok && tok !== snap.credMask) {
+      await api('POST', '/accounts/credential', { accountId: snap.id, apiToken: tok });
+    }
+    toast(T('saved'), 'success');
+    closeAccEditDialog();
+    loadAccounts();
+  } catch (e) { toast(T('save_failed') + e.message, 'error'); }
+  finally { btn.disabled = false; }
+}
 const saveWbNickname = (uid, nickname) => api('POST', '/workbuddy/nickname', { uid, nickname });
 
 async function loadAccounts() {
@@ -3211,6 +3336,7 @@ async function loadAccounts() {
     }
     const sn = { active: T('active_1'), cooldown: T('cooldown_1'), expired: T('expired_1') };
     accSnapshot = {};
+    accRowsCache = list || [];
     tbody.innerHTML = list.map((a, i) => {
       const lu = a.lastUsed ? esc(fmtLastUsed(a.lastUsed)) : '-';
       // Cooldown label: show estimated recovery time
@@ -3250,14 +3376,17 @@ async function loadAccounts() {
       // 空昵称 = 清除（恢复显示邮箱），所以 allowEmpty。铅笔回显当前**显示值**
       // （昵称或邮箱），在原值基础上改而不是从空白开始。
       const nick = a.nickname || '';
-      const displayName = nick || a.email || '(no email)';
+      const displayName = nick || a.credMask || '(credential)';
+      // 账号列改造（2026-11-19）：副行 = 凭据掩码（api 型=sk_ 掩码、oauth 型=
+      // refreshToken 掩码；缺退回邮箱），点击单元格打开编辑弹窗。
+      const credSub = a.credMask || '';
       return '<tr draggable="true" data-drag-id="' + esc(a.accountId) + '">' +
         '<td class="mono" style="font-size:11px;color:var(--text3)">#' + (i + 1) + '</td>' +
-        '<td><div class="nick-cell"><div class="nick-wrap">' +
+        '<td style="cursor:pointer" title="' + esc(T('edit_account')) + '" data-acc-edit="' + esc(a.accountId) + '"><div class="nick-cell"><div class="nick-wrap">' +
           '<span class="nick-name" title="' + esc(displayName) + '">' + esc(displayName) + '</span>' +
           nickPen(a.accountId, displayName, T('edit_nickname')) +
         '</div>' +
-        (nick ? '<div class="nick-sub" title="' + esc(a.email) + '">' + esc(a.email) + '</div>' : '') +
+        (credSub ? '<div class="nick-sub mono" title="' + esc(credSub) + '">' + esc(credSub) + '</div>' : '') +
         '</div></td>' +
         '<td style="text-align:center"><span class="status ' + st + '"><span class="status-dot ' + st + '"></span>' + (sn[a.status] || st) + '</span>' + statusExtra + '</td>' +
           '<td title="' + T('today') + ' ' + fmtNum(a.tokensToday) + ' / ' + T('total_1_1') + ' ' + fmtNum(a.tokensTotal) + ' ' + T('tokens_exact_when_upstream_returns_usage_otherwi') + '">' + fmtTokens(a.tokensToday) + ' / ' + fmtTokens(a.tokensTotal) + '</td>' +
@@ -3283,6 +3412,8 @@ async function loadAccounts() {
     tbody.onclick = e => {
       const pen = e.target.closest('.nick-pen');
       if (pen) { startNickEdit(pen, { save: saveClineNickname, reload: loadAccounts, allowEmpty: true }); return; }
+      const ec = e.target.closest('[data-acc-edit]');
+      if (ec) { openAccEditDialog(ec.dataset.accEdit); return; }
       const b = e.target.closest('button[data-act]');
       if (!b) return;
       const id = b.dataset.acc;
@@ -3987,26 +4118,36 @@ function resetAccountEdits() {
   loadAccounts();
 }
 
-// ========== 添加帐号弹窗（复用导入页的类型自动识别与后端接口） ==========
+// ========== 添加凭据弹窗（2026-11-20 与 opencode 同口径：每行 凭据-----昵称，
+// 类型智能识别——sk_ 前缀 = 静态 key，否则 = OAuth refreshToken） ==========
 function openAccAddDialog() {
-  _('accAddToken').value = '';
-  _('accAddEmail').value = '';
+  _('accAddInput').value = '';
   _('accAddDialog').showModal();
 }
 function closeAccAddDialog() { _('accAddDialog').close(); }
 async function accAddFromDialog() {
-  const token = _('accAddToken').value.trim();
-  if (!token) { toast('Enter a token or API key', 'error'); return; }
-  const email = _('accAddEmail').value.trim();
+  const lines = _('accAddInput').value.split('\n').map(s => s.trim()).filter(Boolean);
+  if (!lines.length) { toast(T('enter_at_least_one_key'), 'error'); return; }
+  const items = lines.map(l => {
+    let cred = l, nick = '';
+    const i = l.indexOf('-----');
+    if (i > 0) { cred = l.slice(0, i); nick = l.slice(i + 5).trim(); }
+    return { cred, nick };
+  });
   const btn = _('accAddSubmit');
   btn.disabled = true;
+  let added = 0, failed = 0, lastErr = '';
   try {
-    const d = await api('POST', '/accounts/add', { ...credPayload(token), email: email || undefined });
-    toast(T('account_added') + (d.data.email || ''), 'success');
+    for (const it of items) {
+      try {
+        await api('POST', '/accounts/add', { credential: it.cred, nickname: it.nick || undefined });
+        added++;
+      } catch (e) { failed++; lastErr = e.message; }
+    }
+    if (added) toast(T('account_added') + added + ' / ' + items.length, 'success');
+    if (failed) toast(T('add_failed') + lastErr, 'error');
     closeAccAddDialog();
     loadAccounts(); loadStats();
-  } catch (e) {
-    toast(T('add_failed') + e.message, 'error');
   } finally {
     btn.disabled = false;
   }
@@ -4289,7 +4430,7 @@ async function testAccount(id, btn) {
     const prevMap = { active: 'Active', cooldown: 'Cooldown', expired: 'Expired', '': '' };
     // toast 用 textContent 渲染，参数一律不要再 esc()：转义会以字面量显示
     //（429 的错误体就变成可见的 &quot;error&quot;:…）
-    let msg = T('account') + (r.email || '') + T('sep.emdash') + label;
+    let msg = T('account') + (r.label || '') + T('sep.emdash') + label;
     if (r.prevStatus && r.prevStatus !== r.status) msg += T('was') + (prevMap[r.prevStatus] || r.prevStatus) + T('sep.rparen');
     if (r.cooldownUntil) msg += T('sep.estimated_recovery') + fmtWhen(r.cooldownUntil);
     if (r.remaining) msg += T('remaining') + r.remaining + T('sep.rparen');
@@ -4461,7 +4602,6 @@ async function doImportConfig(parsed, keep, importState) {
 // Credential type auto-detection: "sk_..." = static Cline API key, anything
 // else = OAuth refreshToken (the backend validates refresh tokens upstream;
 // API keys are pooled as-is).
-const credPayload = t => t.startsWith('sk_') ? { apiToken: t } : { refreshToken: t };
 
 // ========== API keys ==========
 async function loadKeys() {
@@ -5262,6 +5402,12 @@ function pbMenuToggle(menu, anchor, render) {
   menu.style.top = Math.round(r.bottom + 4) + 'px';
   menu.style.width = Math.round(r.width) + 'px';
   menu.style.display = 'block';
+  // fixed 定位已避开 .section 裁剪，但框贴近视口底部时菜单仍会溢出——
+  // 下方装不下就翻到锚点上方（最坏钳到视口顶部 4px）。
+  const below = window.innerHeight - r.bottom;
+  if (menu.offsetHeight + 8 > below) {
+    menu.style.top = Math.max(4, Math.round(r.top - menu.offsetHeight - 4)) + 'px';
+  }
   pbMenuOpenedAt = Date.now();
 }
 window.addEventListener('scroll', ev => {
@@ -5341,6 +5487,10 @@ async function loadConfig() {
 // Last-seen zen config; the proxy pool fields live on the Proxy pool page now,
 // so saves must carry the cached values instead of removed form inputs.
 let ocCfgCache = {};
+// zen key 昵称缓存（2026-11-19 账号列改造）：index→昵称（渲染）/key 明文→昵称
+// （编辑提交随 patch 全量回传）。
+let ocNickCache = {};
+let ocNickByKey = {};
 
 async function loadOcConfig() {
   try {
@@ -5349,6 +5499,9 @@ async function loadOcConfig() {
     const c = d.data;
     ocCfgCache = c;
     const ks = c.keyStates || [];
+    // 昵称缓存随每轮加载重建（index 键渲染 / key 明文键提交）
+    ocNickCache = {}; ocNickByKey = {};
+    (c.keys || []).forEach((k, i) => { if (ks[i] && ks[i].nickname) { ocNickCache[i] = ks[i].nickname; ocNickByKey[k] = ks[i].nickname; } });
     // 标题下统计：key · 可用（路由启用）· 冷却中（与 Cline 页摘要同款）
     const sum = _('ocSummary');
     if (sum) {
@@ -5489,7 +5642,12 @@ function renderOcKeyStates(ks) {
             esc(k.orgID) + (fb ? T('org_fallback_suffix') : '') + '</span>';
         }
         return '<tr draggable="true" data-drag-id="' + k.index + '"><td>#' + (k.index + 1) + (k.current ? ' <span style="color:var(--accent)" title="' + esc(T('next_in_rotation')) + '">●</span>' : '') + '</td>' +
-          '<td style="font-family:monospace;font-size:11px">' + esc(k.keyMask) + '</td>' +
+          // 账号列（2026-11-19）：昵称主行 + 掩码 key 副行，点击打开编辑弹窗
+          '<td style="cursor:pointer" title="' + esc(T('edit_account')) + '" data-zen-edit="' + k.index + '">' +
+            '<div class="nick-cell"><div class="nick-wrap">' +
+              '<span class="nick-name" style="max-width:118px" title="' + esc(k.nickname || k.keyMask) + '">' + esc(k.nickname || k.keyMask) + '</span>' +
+            '</div>' +
+            '<div class="nick-sub mono" title="' + esc(k.keyMask) + '">' + esc(k.keyMask) + '</div></div></td>' +
           '<td style="font-family:monospace;font-size:11px">' + orgCell + '</td>' +
           '<td style="text-align:center">' + stCell + '</td>' +
           keyTokensCell(k) +
@@ -5504,6 +5662,8 @@ function renderOcKeyStates(ks) {
     if (b) { testZenKey(parseInt(b.dataset.zk, 10), b); return; }
     const d = e.target.closest('button[data-zdel]');
     if (d) deleteZenKey(parseInt(d.dataset.zdel, 10), d);
+    const ec = e.target.closest('[data-zen-edit]');
+    if (ec) { openZenKeyEditDialog(parseInt(ec.dataset.zenEdit, 10)); return; }
   };
   tb.onchange = e => {
     const r = e.target.closest('input[data-zr]');
@@ -5630,13 +5790,22 @@ function closeZenKeyAddDialog() { _('zenKeyAddDialog').close(); }
 async function zenKeyAddFromDialog() {
   const lines = _('zenKeyAddInput').value.split('\n').map(s => s.trim()).filter(Boolean);
   if (!lines.length) { toast(T('enter_at_least_one_key'), 'error'); return; }
+  // key-----昵称（2026-11-19）：首个「-----」拆分，右侧为昵称（可省）
   const cur = (ocCfgCache.keys && ocCfgCache.keys.length) ? ocCfgCache.keys : [];
-  const fresh = lines.filter(l => !cur.includes(l));
+  const fresh = [];
+  lines.forEach(l => {
+    let key = l, nick = '';
+    const i = l.indexOf('-----');
+    if (i > 0) { key = l.slice(0, i); nick = l.slice(i + 5).trim(); }
+    if (!cur.includes(key) && !fresh.some(f => f.key === key)) fresh.push({ key, nick });
+  });
   if (!fresh.length) { toast(T('no_new_keys_all_already_in_the_pool'), 'info'); return; }
   const btn = _('zenKeyAddSubmit');
   btn.disabled = true;
   try {
-    await api('POST', '/opencode/config/update', { keys: cur.concat(fresh) });
+    const nm = Object.assign({}, ocNickByKey);
+    fresh.forEach(f => { if (f.nick) nm[f.key] = f.nick; });
+    await api('POST', '/opencode/config/update', { keys: cur.concat(fresh.map(f => f.key)), keyNicknames: nm });
     toast(T('added_1') + fresh.length + T('key_s'), 'success');
     closeZenKeyAddDialog();
     loadOcConfig();
@@ -5645,6 +5814,52 @@ async function zenKeyAddFromDialog() {
   } finally {
     btn.disabled = false;
   }
+}
+
+// ========== zen key 账号编辑弹窗（2026-11-19 账号列改造）==========
+let zenEditSnapshot = null;
+function openZenKeyEditDialog(index) {
+  const keys = (ocCfgCache && ocCfgCache.keys) || [];
+  if (index < 0 || index >= keys.length) return;
+  zenEditSnapshot = { index, oldKey: keys[index] };
+  _('zenKeyEditNick').value = ocNickCache[index] || '';
+  _('zenKeyEditKey').value = '';
+  _('zenKeyEditKey').placeholder = keys[index].length > 12 ? keys[index].slice(0, 12) + '…' : keys[index];
+  _('zenKeyEditDialog').showModal();
+}
+function closeZenKeyEditDialog() { const d = _('zenKeyEditDialog'); if (d && d.open) d.close(); }
+// 眼睛/复制（2026-11-20）：zen 明文在前端（ocCfgCache.keys），无需拉取
+function zenEditToggleReveal() {
+  const tok = _('zenKeyEditKey'); if (!tok || !zenEditSnapshot) return;
+  if (tok.value) { tok.value = ''; return; }
+  tok.value = zenEditSnapshot.oldKey;
+}
+function zenEditCopyKey() { if (zenEditSnapshot) copyText(zenEditSnapshot.oldKey); }
+async function zenKeyEditFromDialog() {
+  const snap = zenEditSnapshot;
+  if (!snap) return;
+  const btn = _('zenKeyEditSubmit');
+  btn.disabled = true;
+  try {
+    const keys = ((ocCfgCache && ocCfgCache.keys) || []).slice();
+    if (snap.index >= keys.length) throw new Error('key no longer exists');
+    const renames = [];
+    const nicknames = Object.assign({}, ocNickByKey);
+    const newKey = _('zenKeyEditKey').value.trim();
+    if (newKey && newKey !== snap.oldKey) {
+      keys[snap.index] = newKey;
+      renames.push({ from: snap.oldKey, to: newKey });
+      if (nicknames[snap.oldKey] !== undefined) { nicknames[newKey] = nicknames[snap.oldKey]; delete nicknames[snap.oldKey]; }
+    }
+    const nick = _('zenKeyEditNick').value.trim();
+    if (nick) nicknames[keys[snap.index]] = nick;
+    else delete nicknames[keys[snap.index]];
+    await api('POST', '/opencode/config/update', { keys: keys, keyNicknames: nicknames, keyRenames: renames });
+    toast(T('saved'), 'success');
+    closeZenKeyEditDialog();
+    loadOcConfig();
+  } catch (e) { toast(T('save_failed') + e.message, 'error'); }
+  finally { btn.disabled = false; }
 }
 
 async function testZenKey(index, btn) {
@@ -6060,13 +6275,15 @@ function prCard(leaf, s) {
         ' onchange="ppRuleToggleDirect(\'' + esc(k) + '\',this.checked)"><span>' + esc(T('exclude_direct')) + '</span></label>' +
       '</span>' +
     '</div>' +
-    '<div class="pr-tagbox" onclick="ppRuleFocus(\'' + esc(k) + '\')">' + chips +
-      '<input class="pr-tagin" id="prTagIn-' + esc(k) + '" value="' + esc(q) + '"' +
-      ' placeholder="' + esc(chips ? '' : T('search_and_add_a_proxy')) + '"' +
-      ' onfocus="ppRuleFocus(\'' + esc(k) + '\')" oninput="ppRuleInput(\'' + esc(k) + '\',this.value)"' +
-      ' onkeydown="ppRuleKey(event,\'' + esc(k) + '\')">' +
+    '<div class="pr-anchor">' +
+      '<div class="pr-tagbox" onclick="ppRuleFocus(\'' + esc(k) + '\')">' + chips +
+        '<input class="pr-tagin" id="prTagIn-' + esc(k) + '" value="' + esc(q) + '"' +
+        ' placeholder="' + esc(chips ? '' : T('search_and_add_a_proxy')) + '"' +
+        ' onfocus="ppRuleFocus(\'' + esc(k) + '\')" oninput="ppRuleInput(\'' + esc(k) + '\',this.value)"' +
+        ' onkeydown="ppRuleKey(event,\'' + esc(k) + '\')">' +
+      '</div>' +
+      (prActiveKind === k ? '<div class="pr-menu">' + menu + '</div>' : '') +
     '</div>' +
-    (prActiveKind === k ? '<div class="pr-menu">' + menu + '</div>' : '') +
     '</div>';
 }
 
@@ -6104,12 +6321,35 @@ function renderProxyRules() {
   if (prActiveKind) {
     const inp = _('prTagIn-' + prActiveKind);
     if (inp) { inp.focus(); inp.setSelectionRange(inp.value.length, inp.value.length); }
+    prMenuPlace();
   }
   // 卡片增删会改变「已在所有平台排除」的集合，批量追加框的回显 chips 随之同步
   ppBulkSyncChips();
 }
 
 function ppRuleToggleGroup() { prOtherOpen = !prOtherOpen; renderProxyRules(); }
+// prMenuPlace 候选菜单展开尺寸双约束（2026-11-20）：可用高度 = min(视口底,
+// 规则区 section 底) − 菜单顶 − 8px——菜单永远完整落在规则区/视口内，不越界
+// 盖到别的区域，候选在菜单内部滚动；区内下方空间不足且上方垫层够时翻到输入
+// 框上方（同样被 section 顶边钳制）。注入/就地刷新两条路径都要重测。
+function prMenuPlace() {
+  const menu = document.querySelector('.pr-anchor > .pr-menu');
+  if (!menu || !menu.parentElement) return;
+  const anchor = menu.parentElement;
+  const sec = menu.closest('.section');
+  anchor.classList.remove('drop-up');
+  menu.style.maxHeight = '';
+  const r = anchor.getBoundingClientRect();
+  const secTop = sec ? sec.getBoundingClientRect().top : 0;
+  const secBottom = sec ? sec.getBoundingClientRect().bottom : window.innerHeight;
+  const limit = Math.min(window.innerHeight, secBottom) - 8;
+  const want = Math.min(menu.scrollHeight, 220);
+  const below = limit - r.bottom;
+  const above = r.top - secTop - 12;
+  if (below < Math.min(want, 80) && above > below) anchor.classList.add('drop-up');
+  const avail = anchor.classList.contains('drop-up') ? above : below;
+  menu.style.maxHeight = Math.max(96, Math.round(avail)) + 'px';
+}
 function ppRuleFocus(kind) {
   if (prActiveKind !== kind) { prActiveKind = kind; prQuery = ''; }
   renderProxyRules();
@@ -6125,6 +6365,7 @@ function ppRuleInput(kind, v) {
   const menu = inp ? inp.closest('.pr-card').querySelector('.pr-menu') : null;
   if (!menu) { renderProxyRules(); return; }
   menu.innerHTML = prMenuRows(kind, ppRulesState()[kind]);
+  prMenuPlace();
 }
 function ppRulePick(kind, proxy) {
   if (!proxy) return;
@@ -6205,11 +6446,25 @@ async function saveProxyRules() {
 // （× = 从所有平台批量取消，同为暂存）。直连不在此列（各卡片的「排除直连」开关单独管）。
 const ppBulkSel = new Set();
 let ppBulkQuery = '';
-// ppBulkBoxClick 点框任意处 = 聚焦输入框并开菜单（已开则只聚焦，不反复开关）
+// ppBulkBoxClick 点框任意处 = 聚焦输入框并开菜单；已开时点框空白处收起
+// （2026-11-19 用户定 toggle 语义），点 chip 只聚焦不收起。
+// 焦点先于 click：第一次点击时 onfocus 已把菜单打开，随后的 click 若直接
+// toggle 会「开了又关」（2026-11-20 修闪关）——刚打开（<300ms）的跟随
+// click 只聚焦不收起，真正想收起的第二次点击此刻焦点已在内、无 focus
+// 事件，正常走 toggle。
 function ppBulkBoxClick(ev) {
   ev.stopPropagation();
-  if (!pbMenuIsOpen(_('ppBulkMenu'))) ppBulkOpenMenu(true);
-  else { const i = _('ppBulkIn'); if (i) i.focus(); }
+  const menu = _('ppBulkMenu');
+  if (!pbMenuIsOpen(menu)) { ppBulkOpenMenu(true); return; }
+  if (Date.now() - pbMenuOpenedAt < 300) {
+    const i = _('ppBulkIn'); if (i) i.focus();
+    return;
+  }
+  if (ev.target && ev.target.closest && ev.target.closest('.pr-chip')) {
+    const i = _('ppBulkIn'); if (i) i.focus();
+    return;
+  }
+  pbMenuHide(menu);
 }
 function ppBulkFocus() {
   if (!pbMenuIsOpen(_('ppBulkMenu'))) ppBulkOpenMenu(false);
@@ -7048,26 +7303,55 @@ async function loadOtherConfig() {
 _('otherPlatformSelect').addEventListener('change', function () { currentOtherSlug = this.value; loadOtherConfig(); });
 
 /* ---- 多选下拉：可用模型 ---- */
+// applyOtherSnapshot 把后端平台快照同步进内存与 otherConfig 缓存后重渲染
+//（2026-11-20：不同步缓存的话，currentOtherPlatform().manualModels 旧值会让
+// 刚加/删的手动模型一收一开就丢淡黄状态）
+function applyOtherSnapshot(np) {
+  if (!np) return;
+  otherKnownModels = np.models || [];
+  otherSelectedModels = np.selectedModels || [];
+  const cp = currentOtherPlatform();
+  if (cp) {
+    cp.models = otherKnownModels;
+    cp.selectedModels = otherSelectedModels;
+    cp.manualModels = np.manualModels || [];
+  }
+  renderOtherModelSelect(otherKnownModels, otherSelectedModels, cp ? cp.manualModels : (np.manualModels || []));
+  if (np.keyStates) renderOtherKeys(np.keyStates || []);
+}
+
 function renderOtherModelSelect(models, selected, manual) {
   const list = _('otherModelSelectList');
   const manualIds = manual || [];
-  if (!models || !models.length) {
+  // 过期模型（2026-11-20 用户定淡黄标识）：勾选存在但当前目录（上游+手动）
+  // 里没有——上游下线不清勾选，这类项补进列表尾部可见、可取消勾选。
+  const stale = (selected || []).filter(id => models.indexOf(id) < 0).sort();
+  if ((!models || !models.length) && !stale.length) {
     list.innerHTML = '<div class="ms-empty">' + T('no_models_yet_add_manually_or_add_a_key_and_clic') + '</div>';
   } else {
-    const ordered = models.slice().sort((a, b) => {
-      const aSel = selected.indexOf(a) >= 0 ? 0 : 1;
-      const bSel = selected.indexOf(b) >= 0 ? 0 : 1;
-      return aSel - bSel || models.indexOf(a) - models.indexOf(b);
-    });
+  // 排序（2026-11-20 用户定）：三组——已勾选普通模型最顶；手动添加/过期模型
+  // 置顶但位于已勾选模型下方（不管勾选与否，过期项同样参与本组排序）；
+  // 未勾选普通模型垫底；组内按目录原序（过期项按字母序在组尾）
+  const all = models.concat(stale);
+  const rank = m => {
+    if (manualIds.indexOf(m) >= 0 || stale.indexOf(m) >= 0) return 1;
+    return selected.indexOf(m) >= 0 ? 0 : 2;
+  };
+  const ordered = all.sort((a, b) => rank(a) - rank(b) || all.indexOf(a) - all.indexOf(b));
     list.innerHTML = ordered.map(m => {
       // 只有手动添加的模型可删；上游同步来的删了会被下次刷新再拉回来。
-      const del = manualIds.indexOf(m) >= 0
+      const isManual = manualIds.indexOf(m) >= 0;
+      const isStale = stale.indexOf(m) >= 0;
+      // 手动添加与过期模型都用淡黄字体（2026-11-20 用户定）：一眼区分特殊状态
+      const colorStyle = (isManual || isStale) ? 'color:var(--amber,#d9b04a)' : '';
+      const del = isManual
         ? '<button class="ms-del" title="' + esc(T('remove_this_manually_added_model')) +
           '" onclick="removeOtherManualModel(\'' + esc(m) + '\', event)">\u00d7</button>'
         : '';
+      const title = isStale ? esc(m) + ' — ' + esc(T('stale_model_hint')) : esc(m);
       return '<label class="ms-item" data-id="' + esc(m) + '">' +
         '<input type="checkbox" value="' + esc(m) + '"' + (selected.indexOf(m) >= 0 ? ' checked' : '') +
-        ' onchange="onOtherModelToggle(this)"> <span title="' + esc(m) + '">' + esc(m) + '</span>' + del + '</label>';
+        ' onchange="onOtherModelToggle(this)"> <span title="' + title + '" style="' + colorStyle + '">' + esc(m) + '</span>' + del + '</label>';
     }).join('');
   }
   _('otherModelSelectToggle').textContent = otherModelSelectSummary();
@@ -7131,6 +7415,25 @@ function onOtherModelToggle(cb) {
   queueSaveOtherSelected();
 }
 
+// otherModelBulkSelect 全选/清空（2026-11-19）：全选只包含当前筛选可见项
+//（无筛选 = 全部模型），清空 = 清掉全部勾选；走与手动勾选同一防抖保存。
+function otherModelBulkSelect(all) {
+  if (all) {
+    const q = _('otherModelSelectSearch').value.trim().toLowerCase();
+    Array.prototype.forEach.call(_('otherModelSelectList').querySelectorAll('.ms-item'), el => {
+      if (q && el.style.display === 'none') return;
+      const id = el.dataset.id;
+      if (otherSelectedModels.indexOf(id) < 0) otherSelectedModels.push(id);
+    });
+  } else {
+    otherSelectedModels.length = 0;
+  }
+  const p = currentOtherPlatform();
+  renderOtherModelSelect(otherKnownModels, otherSelectedModels, p ? (p.manualModels || []) : []);
+  _('otherModelSelectToggle').textContent = otherModelSelectSummary();
+  queueSaveOtherSelected();
+}
+
 function queueSaveOtherSelected() {
   if (otherSaveSelectedTimer) clearTimeout(otherSaveSelectedTimer);
   otherSaveSelectedTimer = setTimeout(saveOtherSelected, 300);
@@ -7187,9 +7490,7 @@ function refreshOtherModels(btn) {
     onDone: res => {
       const np = res.data && res.data.sub;   // 后端挂在 data.sub 的平台快照
       if (np) {
-        otherKnownModels = np.models || [];
-        otherSelectedModels = np.selectedModels || [];
-        renderOtherModelSelect(otherKnownModels, otherSelectedModels, np.manualModels || []);
+        applyOtherSnapshot(np);
         renderOtherKeys(np.keyStates || []);
       }
     }
@@ -7206,9 +7507,7 @@ async function removeOtherManualModel(id, ev) {
     const r = await api('POST', '/other/models/manual/delete', { slug: p.slug, model: id });
     const np = r.data && r.data.platform;
     if (np) {
-      otherKnownModels = np.models || [];
-      otherSelectedModels = np.selectedModels || [];
-      renderOtherModelSelect(otherKnownModels, otherSelectedModels, np.manualModels || []);
+      applyOtherSnapshot(np);
     }
     toast(T('manual_model_removed'), 'success');
   } catch (e) { toast(T('remove_failed') + e.message, 'error'); }
@@ -7223,10 +7522,7 @@ async function addOtherManualModel() {
     const r = await api('POST', '/other/models/manual', { slug: p.slug, model: m });
     const np = r.data && r.data.platform;
     if (np) {
-      otherKnownModels = np.models || [];
-      otherSelectedModels = np.selectedModels || [];
-      renderOtherModelSelect(otherKnownModels, otherSelectedModels, np.manualModels || []);
-
+      applyOtherSnapshot(np);
     }
     input.value = '';
     toast(T('added') + ': ' + m, 'success');
@@ -7239,6 +7535,9 @@ function renderOtherKeys(ks) {
   const tb = _('otherKeysBody');
   if (!tb) return;
   otherKeySnapshot = {};
+  // 昵称缓存随每轮渲染重建（index 键，编辑弹窗回显用）
+  otNickByIndex = {};
+  ks.forEach(k => { if (k.nickname) otNickByIndex[k.index] = k.nickname; });
   if (!ks.length) { tb.innerHTML = '<tr><td colspan="8" class="empty">' + T('no_keys_configured') + '</td></tr>'; return; }
   tb.innerHTML = ks.map((k, i) => {
     const cool = k.cooling
@@ -7263,7 +7562,12 @@ function renderOtherKeys(ks) {
       '<button class="btn btn-sm" data-ott="' + k.index + '">' + T('test') + '</button> ' +
       '<button class="btn btn-sm btn-danger" data-otdel="' + k.index + '" title="' + esc(T('delete_this_key')) + '">' + T('delete') + '</button>' + '</td>';
     return '<tr draggable="true" data-drag-id="' + k.index + '"><td>' + (i + 1) + '</td>' +
-      '<td style="font-family:monospace;font-size:11px">' + esc(k.keyMask) + '</td>' +
+      // 账号列（2026-11-19）：昵称主行 + 掩码 key 副行，点击打开编辑弹窗
+      '<td style="cursor:pointer" title="' + esc(T('edit_account')) + '" data-otr-edit="' + k.index + '">' +
+        '<div class="nick-cell"><div class="nick-wrap">' +
+          '<span class="nick-name" style="max-width:150px" title="' + esc(k.nickname || k.keyMask) + '">' + esc(k.nickname || k.keyMask) + '</span>' +
+        '</div>' +
+        '<div class="nick-sub mono" title="' + esc(k.keyMask) + '">' + esc(k.keyMask) + '</div></div></td>' +
       '<td style="text-align:center">' + cool + '</td>' +
       keyTokensCell(k) +
       keyLastUsedCell(k) +
@@ -7274,6 +7578,8 @@ function renderOtherKeys(ks) {
     if (t) { testOtherKey(t.dataset.ott, t); return; }
     const d = e.target.closest('button[data-otdel]');
     if (d) deleteOtherKey(d.dataset.otdel, d);
+    const ec = e.target.closest('[data-otr-edit]');
+    if (ec) { openOtherKeyEditDialog(parseInt(ec.dataset.otrEdit, 10)); return; }
   };
   tb.onchange = e => {
     const r = e.target.closest('input[data-otr]');
@@ -7581,14 +7887,74 @@ async function otherKeyAddFromDialog() {
   const p = currentOtherPlatform();
   const text = _('otherKeyAddInput').value.trim();
   if (!p || !text) { toast(T('enter_at_least_one_key'), 'error'); return; }
-  const keys = text.split('\n').map(s => s.trim()).filter(Boolean);
+  // key-----昵称（2026-11-19）：首个「-----」拆分，右侧为昵称（可省）
+  const lines = text.split('\n').map(s => s.trim()).filter(Boolean);
+  const keys = [], nicks = [];
+  lines.forEach(l => {
+    let key = l, nick = '';
+    const i = l.indexOf('-----');
+    if (i > 0) { key = l.slice(0, i); nick = l.slice(i + 5).trim(); }
+    keys.push(key); nicks.push(nick);
+  });
   try {
-    const r = await api('POST', '/other/keys/update', { slug: p.slug, add: keys });
+    const r = await api('POST', '/other/keys/update', { slug: p.slug, add: keys, nicknames: nicks.reduce((m, n, i) => { if (n) m[keys[i]] = n; return m; }, {}) });
     closeOtherKeyAddDialog();
     const added = (r.data && r.data.added) != null ? r.data.added : keys.length;
     toast(T('added') + ' ' + added + ' ' + T('keys'), 'success');
     loadOtherConfig();
   } catch (e) { toast(T('add_failed') + e.message, 'error'); }
+}
+
+// ========== other key 账号编辑弹窗（2026-11-19 账号列改造）==========
+let otNickByIndex = {};
+let otherEditSnapshot = null;
+function openOtherKeyEditDialog(index) {
+  const p = currentOtherPlatform();
+  if (!p) return;
+  otherEditSnapshot = { slug: p.slug, index, keyMask: '' };
+  const ks = p.keyStates || [];
+  if (ks[index]) otherEditSnapshot.keyMask = ks[index].keyMask || '';
+  _('otherKeyEditNick').value = otNickByIndex[index] || '';
+  _('otherKeyEditKey').value = '';
+  const m = otherEditSnapshot.keyMask;
+  _('otherKeyEditKey').placeholder = m.length > 12 ? m.slice(0, 12) : m;
+  _('otherKeyEditDialog').showModal();
+}
+function closeOtherKeyEditDialog() { const d = _('otherKeyEditDialog'); if (d && d.open) d.close(); }
+let otherEditCred = { revealed: false, plain: '' };
+async function otherEditFetchPlain() {
+  if (!otherEditCred.plain) {
+    const d = await api('POST', '/other/keys/get', { slug: otherEditSnapshot.slug, index: otherEditSnapshot.index });
+    otherEditCred.plain = (d.data && d.data.key) || '';
+  }
+  return otherEditCred.plain;
+}
+async function otherEditToggleReveal() {
+  const snap = otherEditSnapshot; if (!snap) return;
+  const tok = _('otherKeyEditKey');
+  if (otherEditCred.revealed) { otherEditCred.revealed = false; tok.value = ''; tok.placeholder = snap.keyMask; return; }
+  try { tok.value = await otherEditFetchPlain(); otherEditCred.revealed = true; }
+  catch (e) { toast(T('load_failed') + e.message, 'error'); }
+}
+async function otherEditCopyKey() {
+  try { copyText(await otherEditFetchPlain()); }
+  catch (e) { toast(T('load_failed') + e.message, 'error'); }
+}
+async function otherKeyEditFromDialog() {
+  const snap = otherEditSnapshot;
+  if (!snap) return;
+  const btn = _('otherKeyEditSubmit');
+  btn.disabled = true;
+  try {
+    const body = { slug: snap.slug, nickEdits: [{ index: snap.index, nickname: _('otherKeyEditNick').value.trim() }] };
+    const newKey = _('otherKeyEditKey').value.trim();
+    if (newKey) body.renames = [{ index: snap.index, to: newKey }];
+    await api('POST', '/other/keys/update', body);
+    toast(T('saved'), 'success');
+    closeOtherKeyEditDialog();
+    loadOtherConfig();
+  } catch (e) { toast(T('save_failed') + e.message, 'error'); }
+  finally { btn.disabled = false; }
 }
 
 /* 点击面板外部收起多选下拉 */

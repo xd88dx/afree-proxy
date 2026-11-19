@@ -175,7 +175,7 @@ func TestAPIModelListRequiresRoutableAccount(t *testing.T) {
 	}
 
 	cline.SetPool(&AccountPool{Accounts: []*Account{{
-		AccountID: "a1", Email: "a@test", PoolEnabled: &off,
+		AccountID: "a1", PoolEnabled: &off,
 	}}})
 
 	if got := apiModelList(); len(got) != 0 {
@@ -185,7 +185,7 @@ func TestAPIModelListRequiresRoutableAccount(t *testing.T) {
 	}
 
 	cline.SetPool(&AccountPool{Accounts: []*Account{{
-		AccountID: "c3", Email: "c@test", PoolEnabled: &on,
+		AccountID: "c3", PoolEnabled: &on,
 	}}})
 	// 目录内容只来自官方 feed（无 seed 兜底），注入条目验证"有可路由账号
 

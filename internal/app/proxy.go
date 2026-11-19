@@ -1,6 +1,7 @@
 package app
 
 import (
+	"afree-proxy/internal/cline"
 	"afree-proxy/internal/gateway"
 	"afree-proxy/internal/panel"
 	"afree-proxy/internal/reqlog"
@@ -56,7 +57,7 @@ func StartProxy(host string, port int) error {
 			// OAuth 账号仅在缺失/过期时刷新
 			if a.APIToken == "" && (a.AccessToken == "" || time.Now().UnixMilli() >= a.ExpiresAt) {
 				if err := refreshAccountToken(a); err != nil {
-					log.Printf("  Pre-warm failed for %s: %v", a.Email, err)
+					log.Printf("  Pre-warm failed for %s: %v", cline.AccountLabel(a), err)
 					continue
 				}
 			}

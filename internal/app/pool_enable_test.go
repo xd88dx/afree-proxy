@@ -52,11 +52,11 @@ func resetPoolForEnableTest(t *testing.T, accounts []*Account) {
 
 func TestPoolEnabledDefaultsEnabledAndFiltersRotation(t *testing.T) {
 
-	disabled := &Account{AccountID: "off", Email: "off@example.com", PoolEnabled: poolBool(false)}
+	disabled := &Account{AccountID: "off", PoolEnabled: poolBool(false)}
 
-	legacy := &Account{AccountID: "legacy", Email: "legacy@example.com"}
+	legacy := &Account{AccountID: "legacy", }
 
-	cooldown := &Account{AccountID: "cooldown", Email: "cool@example.com"}
+	cooldown := &Account{AccountID: "cooldown", }
 
 	resetPoolForEnableTest(t, []*Account{disabled, legacy, cooldown})
 
@@ -110,7 +110,7 @@ func TestPoolEnabledCanBePersistedExplicitly(t *testing.T) {
 
 	t.Cleanup(func() { cline.SetDataPathOverride(oldPath) })
 
-	a := &Account{AccountID: "off", Email: "off@example.com", PoolEnabled: poolBool(false)}
+	a := &Account{AccountID: "off", PoolEnabled: poolBool(false)}
 
 	cline.SetPool(&AccountPool{Accounts: []*Account{a}})
 
@@ -189,8 +189,6 @@ func TestAdminAccountSetPoolEnabledDoesNotChangeStatus(t *testing.T) {
 	acc := &Account{
 
 		AccountID: "acct_1",
-
-		Email: "acct@example.com",
 
 		PoolEnabled: poolBool(true),
 	}
@@ -303,7 +301,7 @@ func TestAddAccountDefaultsDisabled(t *testing.T) {
 
 	resetPoolForEnableTest(t, nil)
 
-	addAccount(&Account{AccountID: "fresh", Email: "fresh@example.com"})
+	addAccount(&Account{AccountID: "fresh", })
 
 	if got := cline.RawPool().Accounts[0]; got.PoolEnabled == nil || *got.PoolEnabled {
 
@@ -313,7 +311,7 @@ func TestAddAccountDefaultsDisabled(t *testing.T) {
 
 	enabled := true
 
-	addAccount(&Account{AccountID: "explicit", Email: "explicit@example.com", PoolEnabled: &enabled})
+	addAccount(&Account{AccountID: "explicit", PoolEnabled: &enabled})
 
 	if got := cline.RawPool().Accounts[1]; got.PoolEnabled == nil || !*got.PoolEnabled {
 
@@ -343,9 +341,9 @@ func useFillStrategy(t *testing.T) {
 
 func TestPickAccountExcludingSkipsPoolDisabled(t *testing.T) {
 
-	off := &Account{AccountID: "off", Email: "off@example.com", APIToken: "tok-off", PoolEnabled: poolBool(false)}
+	off := &Account{AccountID: "off", APIToken: "tok-off", PoolEnabled: poolBool(false)}
 
-	on := &Account{AccountID: "on", Email: "on@example.com", APIToken: "tok-on", PoolEnabled: poolBool(true)}
+	on := &Account{AccountID: "on", APIToken: "tok-on", PoolEnabled: poolBool(true)}
 
 	resetPoolForEnableTest(t, []*Account{off, on})
 
@@ -375,7 +373,7 @@ func TestPickAccountExcludingSkipsPoolDisabled(t *testing.T) {
 
 func TestCallClineAPIRejectsAllDisabled(t *testing.T) {
 
-	off := &Account{AccountID: "off", Email: "off@example.com", APIToken: "tok-off", PoolEnabled: poolBool(false)}
+	off := &Account{AccountID: "off", APIToken: "tok-off", PoolEnabled: poolBool(false)}
 
 	resetPoolForEnableTest(t, []*Account{off})
 
@@ -401,9 +399,9 @@ func TestCallClineAPIRejectsAllDisabled(t *testing.T) {
 
 func TestPickAccountAnySkipsPoolDisabled(t *testing.T) {
 
-	off := &Account{AccountID: "off", Email: "off@example.com", APIToken: "tok-off", PoolEnabled: poolBool(false)}
+	off := &Account{AccountID: "off", APIToken: "tok-off", PoolEnabled: poolBool(false)}
 
-	on := &Account{AccountID: "on", Email: "on@example.com", APIToken: "tok-on", PoolEnabled: poolBool(true)}
+	on := &Account{AccountID: "on", APIToken: "tok-on", PoolEnabled: poolBool(true)}
 
 	resetPoolForEnableTest(t, []*Account{off, on})
 
@@ -419,7 +417,7 @@ func TestPickAccountAnySkipsPoolDisabled(t *testing.T) {
 
 	}
 
-	only := &Account{AccountID: "off2", Email: "off2@example.com", APIToken: "tok-off2", PoolEnabled: poolBool(false)}
+	only := &Account{AccountID: "off2", APIToken: "tok-off2", PoolEnabled: poolBool(false)}
 
 	resetPoolForEnableTest(t, []*Account{only})
 

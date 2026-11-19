@@ -943,7 +943,7 @@ func TestConfigBackupStateRoundTrip(t *testing.T) {
 
 	poolMu.Lock()
 
-	cline.SetPool(&AccountPool{Accounts: []*Account{{AccountID: "acc_s1", Email: "s@x", RefreshToken: "r"}}})
+	cline.SetPool(&AccountPool{Accounts: []*Account{{AccountID: "acc_s1", RefreshToken: "r"}}})
 
 	cline.SetUsageForTest(&cline.PoolUsageData{Accounts: map[string]*cline.AccountUsage{
 

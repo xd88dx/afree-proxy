@@ -8,7 +8,6 @@ import "time"
 // 外部监测配置变更不被高频记账噪声淹没。
 type Account struct {
 	AccountID string `json:"accountId"`
-	Email     string `json:"email"`
 	// Nickname 可选显示名（面板账号列）：设置后账号列优先显示昵称、小字
 	// 保留邮箱；空 = 未设置（显示邮箱）。仅影响面板展示与日志标签，不参与
 	// 选号路由。随 cline-config.json 与配置备份一起持久化。
@@ -61,8 +60,12 @@ type PoolUsageData struct {
 // （前端零改动）。
 type AccountView struct {
 	AccountID string `json:"accountId"`
-	Email     string `json:"email"`
 	Nickname  string `json:"nickname,omitempty"`
+	// 账号列改造（2026-11-19）：凭据类型与掩码随行下发。api=静态 key（sk_，
+	// 面板可编辑明文）；oauth=refreshToken（只读展示、不可编辑）。掩码与
+	// other.MaskKey 同口径（前 12 字符 + …），明文永不出网关。
+	CredType string `json:"credType,omitempty"`
+	CredMask string `json:"credMask,omitempty"`
 	// 痕迹段（原 Account 字段原样搬移）
 	Status          string    `json:"status"`
 	LastUsed        time.Time `json:"lastUsed"`
@@ -105,3 +108,32 @@ const (
 	MethodRefreshToken
 	MethodSSOCookie
 )
+
+// maskCredential 凭据掩码（账号列堆叠展示用，2026-11-19）：前 12 字符 + …，
+// 与 other.MaskKey 同口径；空串返回空。明文永不出网关。
+func maskCredential(k string) string {
+	switch {
+	case k == "":
+		return ""
+	case len(k) <= 12:
+		return k[:4] + "…"
+	default:
+		return k[:12] + "…"
+	}
+}
+
+// AccountLabel 日志与错误文案里的账号标识（2026-11-20 Email 字段删除后的
+// 替代）：昵称优先，否则账号 ID（截 12 位）。
+func AccountLabel(acc *Account) string {
+	if acc == nil {
+		return "?"
+	}
+	if acc.Nickname != "" {
+		return acc.Nickname
+	}
+	id := acc.AccountID
+	if len(id) > 12 {
+		id = id[:12]
+	}
+	return id
+}

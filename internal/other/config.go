@@ -45,6 +45,9 @@ type Platform struct {
 	KeyRoutingEnabled map[string]bool `json:"keyRoutingEnabled,omitempty"`
 	// KeyBindings 出口绑定表：key 明文 -> 主/备用代理。
 	KeyBindings map[string]Binding `json:"keyBindings,omitempty"`
+	// KeyNicknames key 昵称表（账号列堆叠展示，2026-11-19）：key 明文 -> 显示
+	// 名。仅影响面板展示，不参与路由；空/缺 = 显示掩码 key。
+	KeyNicknames map[string]string `json:"keyNicknames,omitempty"`
 	// MaxConcurrency 上游最大并发，默认 8。
 	MaxConcurrency int `json:"maxConcurrency"`
 	// Retries 限流/网络错误重试次数，默认 3。
@@ -331,6 +334,10 @@ func ClonePlatform(p *Platform) *Platform {
 	for k, v := range p.KeyBindings {
 		cp.KeyBindings[k] = v
 	}
+	cp.KeyNicknames = map[string]string{}
+	for k, v := range p.KeyNicknames {
+		cp.KeyNicknames[k] = v
+	}
 	cp.Models.Fetched = append([]Model(nil), p.Models.Fetched...)
 	cp.Models.Manual = append([]string(nil), p.Models.Manual...)
 	cp.Models.Selected = map[string]bool{}
@@ -436,6 +443,8 @@ func KeyStatus(p *Platform) []map[string]any {
 			"index":          i,
 			"keyMask":        maskKey(k),
 			"routingEnabled": p.RoutingEnabled(k),
+			// 昵称（账号列堆叠展示，2026-11-19）：空 = 显示掩码 key。
+			"nickname": p.KeyNicknames[k],
 		}
 		if u != nil {
 			if ts, ok := u.KeyTokens[k]; ok {

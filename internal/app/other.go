@@ -31,8 +31,9 @@ func otherConfigPath() string { return kit.ResolveDataPath("other-config.json") 
 func initOther() {
 	other.UsagePath = kit.ResolveDataPath("other-state.json")
 	other.Load(otherConfigPath())
+	migrateOtherSlugPrefix()
 	ReconcileOtherPlatforms() // 子平台注册进 platform registry（2026-11-17 P3）
-	other.SetClientProvider(proxyClientFor)
+	other.SetClientProvider(otherClientFor)
 	// 目录同步与 chat 同链路（2026-11-09 审计修复）：此前 FetchModels 走裸直连
 	// 默认 client，DISABLE_DIRECT / 绑定出口对同步全不生效——凭据与出口 IP 会
 	// 从宿主机直连泄漏。复用 otherExitFn，逐 key 解析出口，全部不可用即
@@ -293,7 +294,7 @@ func handleOtherPlatformCreate(w http.ResponseWriter, r *http.Request) {
 	}
 	_, next := otherCloneConfig()
 	next.Platforms = append(next.Platforms, other.Platform{
-		Slug:           "op_" + kit.RandHex(4),
+		Slug:           "other_" + kit.RandHex(4),
 		Name:           name,
 		Prefix:         prefix,
 		BaseURL:        base,
@@ -302,6 +303,11 @@ func handleOtherPlatformCreate(w http.ResponseWriter, r *http.Request) {
 	})
 	other.Set(next)
 	ReconcileOtherPlatforms()
+	// 新建子平台继承「全平台禁用」的代理（2026-11-19 用户定）：所有叶子都
+	// 已排除的代理对新平台保持排除；排除直连不继承。
+	if len(next.Platforms) > 0 {
+		inheritProxyExclusionsForNewPlatform(next.Platforms[len(next.Platforms)-1].Slug)
+	}
 	var created *other.Platform
 	if len(next.Platforms) > 0 {
 		created = &next.Platforms[len(next.Platforms)-1] // 刚追加的那个
@@ -311,6 +317,78 @@ func handleOtherPlatformCreate(w http.ResponseWriter, r *http.Request) {
 		Message: "Platform created",
 		Data:    map[string]any{"platform": platformAPI(created)},
 	})
+}
+
+// migrateOtherSlugPrefix slug 前缀 op_→other_ 存量迁移（2026-11-20 用户定
+// 方案 B）：配置 Platforms[].Slug、痕迹表 usage.Platforms 键、代理排除表
+// kind（other:op_xxx→other:other_xxx）三处同步。幂等：仅处理 op_ 前缀且
+// 目标 slug 未被占用；initOther 装配早期（ReconcileOtherPlatforms 之前）
+// 一次性执行，随容器启动生效。KeyRoutingEnabled/KeyBindings 按 key 明文
+// 挂靠、随平台对象整体落盘，无需单独迁移。
+func migrateOtherSlugPrefix() {
+	_, next := otherCloneConfig()
+	renames := map[string]string{}
+	for _, p := range next.Platforms {
+		if !strings.HasPrefix(p.Slug, "op_") {
+			continue
+		}
+		newSlug := "other_" + strings.TrimPrefix(p.Slug, "op_")
+		if other.PlatformBySlug(newSlug) != nil {
+			log.Printf("other slug 迁移跳过 %s：目标 %s 已被占用", p.Slug, newSlug)
+			continue
+		}
+		renames[p.Slug] = newSlug
+	}
+	if len(renames) > 0 {
+		for i := range next.Platforms {
+			if to, ok := renames[next.Platforms[i].Slug]; ok {
+				next.Platforms[i].Slug = to
+			}
+		}
+		other.Set(next)
+		for from, to := range renames {
+			other.RenamePlatformUsage(from, to)
+		}
+		log.Printf("other slug 前缀迁移完成: %d 个子平台 op_→other_", len(renames))
+	}
+	// 代理绑定规则两张表的 kind 前缀同步（proxyExclusions 的 kind 列表 +
+	// proxyBindCaps 的键）。与 config 迁移解耦判定：config 已是 other_ 前缀
+	// 而 binding 里仍残留 other:op_*（上一版迁移漏了 caps 键）时也要补齐。
+	binding := getProxyBindingConfig()
+	remapKind := func(k string) string {
+		if slug, ok := strings.CutPrefix(k, "other:op_"); ok {
+			return "other:other_" + slug
+		}
+		return k
+	}
+	changed := false
+	nextB := *binding
+	nextB.ProxyExclusions = make(map[string][]string, len(binding.ProxyExclusions))
+	for u, kinds := range binding.ProxyExclusions {
+		out := make([]string, 0, len(kinds))
+		for _, k := range kinds {
+			nk := remapKind(k)
+			if nk != k {
+				changed = true
+			}
+			out = append(out, nk)
+		}
+		nextB.ProxyExclusions[u] = out
+	}
+	if len(binding.ProxyBindCaps) > 0 {
+		nextB.ProxyBindCaps = make(map[string]int, len(binding.ProxyBindCaps))
+		for k, v := range binding.ProxyBindCaps {
+			nk := remapKind(k)
+			if nk != k {
+				changed = true
+			}
+			nextB.ProxyBindCaps[nk] = v
+		}
+	}
+	if changed {
+		setProxyBindingConfig(&nextB)
+		log.Printf("other slug 前缀迁移: 代理绑定规则 kind 已同步")
+	}
 }
 
 // POST /admin/api/other/platforms/delete —— 删除子平台（连带 key/绑定/目录）。
@@ -418,6 +496,21 @@ func handleOtherKeysUpdate(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Slug string   `json:"slug"`
 		Add  []string `json:"add"`
+		// 账号列点击编辑（2026-11-19）：nicknames = key 明文 -> 昵称（随本次
+		// 提交整体生效）；renames = key 明文变更（index 定位旧 key——面板不
+		// 持有明文），迁移路由/绑定/昵称表。冷却与 token 记账不迁移（新 key
+		// 是上游新身份；旧 key 统计归档）。
+		Nicknames map[string]string `json:"nicknames"`
+		// NickEdits 编辑弹窗的昵称改动（按 index 定位——面板不持 key 明文）。
+		// 空昵称 = 清除该 key 的昵称。
+		NickEdits []struct {
+			Index    int    `json:"index"`
+			Nickname string `json:"nickname"`
+		} `json:"nickEdits"`
+		Renames []struct {
+			Index int    `json:"index"`
+			To    string `json:"to"`
+		} `json:"renames"`
 	}
 	if err := json.Unmarshal(body, &req); err != nil {
 		WriteAPI(w, http.StatusBadRequest, apiResponse{Error: "invalid JSON: " + err.Error()})
@@ -430,6 +523,43 @@ func handleOtherKeysUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 	hadKeys := len(cur.Keys) > 0
 	next := other.ClonePlatform(cur)
+	// key 改名先于追加：迁移路由/绑定/昵称表，再按新明文参与去重
+	for _, rn := range req.Renames {
+		to := strings.TrimSpace(rn.To)
+		if rn.Index < 0 || rn.Index >= len(next.Keys) || to == "" {
+			continue
+		}
+		from := next.Keys[rn.Index]
+		if from == to {
+			continue
+		}
+		idx := rn.Index
+		next.Keys[idx] = to
+		if en, ok := next.KeyRoutingEnabled[from]; ok {
+			next.KeyRoutingEnabled[to] = en
+			delete(next.KeyRoutingEnabled, from)
+		}
+		if b, ok := next.KeyBindings[from]; ok {
+			next.KeyBindings[to] = b
+			delete(next.KeyBindings, from)
+		}
+		if nick, ok := next.KeyNicknames[from]; ok {
+			next.KeyNicknames[to] = nick
+			delete(next.KeyNicknames, from)
+		}
+	}
+	// 编辑弹窗的昵称改动（index 定位，先于追加——索引对应改名后的旧列表）
+	for _, ne := range req.NickEdits {
+		if ne.Index < 0 || ne.Index >= len(next.Keys) {
+			continue
+		}
+		k := next.Keys[ne.Index]
+		if v := strings.TrimSpace(ne.Nickname); v != "" {
+			next.KeyNicknames[k] = v
+		} else {
+			delete(next.KeyNicknames, k)
+		}
+	}
 	added := 0
 	existing := map[string]bool{}
 	for _, k := range next.Keys {
@@ -444,6 +574,13 @@ func handleOtherKeysUpdate(w http.ResponseWriter, r *http.Request) {
 		next.Keys = append(next.Keys, k)
 		added++
 	}
+	if req.Nicknames != nil {
+		for k, v := range req.Nicknames {
+			if v = strings.TrimSpace(v); v != "" && existing[k] {
+				next.KeyNicknames[k] = v
+			}
+		}
+	}
 	next.ReconcileRouting(cur)
 	otherReplacePlatform(next)
 	// 首次配 key 后立即同步目录（面板不必再点 Refresh；失败静默，5 分钟
@@ -452,6 +589,33 @@ func handleOtherKeysUpdate(w http.ResponseWriter, r *http.Request) {
 		go syncOtherPlatform(req.Slug, 2)
 	}
 	WriteAPI(w, http.StatusOK, apiResponse{Success: true, Message: "Keys saved", Data: map[string]any{"added": added}})
+}
+
+// POST /admin/api/other/keys/get —— 编辑弹窗眼睛/复制用：按 slug+index 返回
+// key 明文（面板信任模型与代理池页同口径，2026-11-20）。body: { slug, index }
+func handleOtherKeyGet(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		WriteAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
+		return
+	}
+	var req struct {
+		Slug  string `json:"slug"`
+		Index int    `json:"index"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 512)).Decode(&req); err != nil {
+		WriteAPI(w, http.StatusBadRequest, apiResponse{Error: "invalid JSON"})
+		return
+	}
+	cur := other.PlatformBySlug(req.Slug)
+	if cur == nil {
+		WriteAPI(w, http.StatusNotFound, apiResponse{Error: "platform not found: " + req.Slug})
+		return
+	}
+	if req.Index < 0 || req.Index >= len(cur.Keys) {
+		WriteAPI(w, http.StatusBadRequest, apiResponse{Error: "key index out of range"})
+		return
+	}
+	WriteAPI(w, http.StatusOK, apiResponse{Success: true, Data: map[string]any{"key": cur.Keys[req.Index]}})
 }
 
 // POST /admin/api/other/keys/routing  body: { slug, index, enabled }

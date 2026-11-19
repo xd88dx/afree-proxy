@@ -97,6 +97,13 @@ func handleZenConfigUpdate(w http.ResponseWriter, r *http.Request) {
 		// 账号选号策略(round_robin/fill/random):env POOL_STRATEGY 优先。
 		Strategy           *string  `json:"strategy"`
 		Keys               []string `json:"keys"`
+		// 账号列点击编辑（2026-11-19）：keyNicknames 非 nil = 按最终 keys 过滤
+		// 后整表替换；keyRenames 配合 keys 替换迁移路由/昵称/出口钉定/org 缓存。
+		KeyNicknames map[string]string `json:"keyNicknames"`
+		KeyRenames   []struct {
+			From string `json:"from"`
+			To   string `json:"to"`
+		} `json:"keyRenames"`
 		BaseURL            *string  `json:"baseURL"`
 		Proxies            []string `json:"proxies"`
 		ProxyStrategy      *string  `json:"proxyStrategy"`
@@ -151,6 +158,28 @@ func handleZenConfigUpdate(w http.ResponseWriter, r *http.Request) {
 	if patch.WorkbuddyUseProxies != nil {
 		mutateWkbdConfig(func(k *wkbdConfigData) { k.UseProxies = patch.WorkbuddyUseProxies })
 	}
+	// key 改名先于 keys 替换：RenZenKeyArtifacts 迁移文件侧旁挂数据
+	// （egress/org/文件 routing+nicknames），内存侧 next.KeyRoutingEnabled
+	// 同步迁移——ReconcileZenKeyRouting 只对"不在新 keys 里的键"删除、对
+	// 新键强制禁用，改名键必须以新明文进入 reconcile 才能保住路由值。
+	for _, rn := range patch.KeyRenames {
+		from, to := strings.TrimSpace(rn.From), strings.TrimSpace(rn.To)
+		if from == "" || to == "" || from == to {
+			continue
+		}
+		zen.RenameZenKeyArtifacts(from, to)
+		if next.KeyRoutingEnabled != nil {
+			nm := make(map[string]bool, len(next.KeyRoutingEnabled))
+			for k, v := range next.KeyRoutingEnabled {
+				if k == from {
+					nm[to] = v
+				} else {
+					nm[k] = v
+				}
+			}
+			next.KeyRoutingEnabled = nm
+		}
+	}
 	if patch.Keys != nil {
 		// 多 key 池整体替换（旧单 key 提交兼容已随 2026-11-05 清理移除——
 		// 前端总是发 keys 数组）
@@ -162,6 +191,15 @@ func handleZenConfigUpdate(w http.ResponseWriter, r *http.Request) {
 		// key 池发生变动：新 key 默认禁用路由（面板勾选启用后生效），移除的 key
 		// 清理表项——与 Cline/WorkBuddy 的新增身份默认不启用统一口径。
 		reconcileZenKeyRouting(&next, cur)
+	}
+	if patch.KeyNicknames != nil {
+		nm := make(map[string]string, len(next.Keys))
+		for _, k := range next.Keys {
+			if v, ok := patch.KeyNicknames[k]; ok && strings.TrimSpace(v) != "" {
+				nm[k] = strings.TrimSpace(v)
+			}
+		}
+		next.KeyNicknames = nm
 	}
 	if patch.BaseURL != nil && *patch.BaseURL != "" {
 		// 必须校验：BaseURL 会被拼成上游请求地址，并**带上 zen API key**。

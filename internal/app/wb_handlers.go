@@ -413,6 +413,14 @@ func handleWkbdShareOptimize(w http.ResponseWriter, r *http.Request) {
 			WriteAPI(w, http.StatusBadRequest, apiResponse{Error: "invalid body: shareOptimize required"})
 			return
 		}
+		// 面板保存即校验（2026-11-19）：坏表达式不再静默落盘靠 worker 跳过，
+		// 当场 400 让面板提示。空 cron 合法（= 不定时）。
+		if expr := strings.TrimSpace(patch.ShareOptimize.Cron); expr != "" {
+			if err := validateCronExpr(expr); err != nil {
+				WriteAPI(w, http.StatusBadRequest, apiResponse{Error: "invalid cron: " + err.Error()})
+				return
+			}
+		}
 		workbuddy.MutateWkbdConfig(func(k *workbuddy.WkbdConfigData) { k.ShareOptimize = patch.ShareOptimize })
 		if workbuddy.WorkbuddySub != nil {
 			(*workbuddy.WorkbuddySub).ShareOptimizeSched.Store(&workbuddy.WbShareSched{

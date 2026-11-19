@@ -120,27 +120,33 @@ var (
 	clientCache   = map[string]*http.Client{}
 )
 
-// ClientFor 返回钉定到指定代理的 HTTP 客户端（缓存复用）。
+// ClientFor 返回钉定到指定代理的 HTTP 客户端（缓存复用，Bun 指纹）。
 // proxyURL 为空时返回直连客户端。
 func ClientFor(proxyURL string) *http.Client {
+	return ClientForProfile(proxyURL, ProfileBun)
+}
+
+// ClientForProfile 同 ClientFor，指纹画像可选；缓存键带画像维度。
+func ClientForProfile(proxyURL string, hello utls.ClientHelloID) *http.Client {
+	key := hello.Client + "/" + hello.Version + "|" + proxyURL
 	clientCacheMu.Lock()
 	defer clientCacheMu.Unlock()
-	if c, ok := clientCache[proxyURL]; ok {
+	if c, ok := clientCache[key]; ok {
 		return c
 	}
 	var transport *http.Transport
 	if proxyURL == "" {
-		transport = BuildTransport(func(ctx context.Context, network, addr string) (net.Conn, error) {
+		transport = BuildTransportProfile(func(ctx context.Context, network, addr string) (net.Conn, error) {
 			d := &net.Dialer{Timeout: 30 * time.Second, KeepAlive: 30 * time.Second}
 			return d.DialContext(ctx, network, addr)
-		})
+		}, hello)
 	} else {
-		transport = BuildTransport(func(ctx context.Context, network, addr string) (net.Conn, error) {
+		transport = BuildTransportProfile(func(ctx context.Context, network, addr string) (net.Conn, error) {
 			return DialViaProxy(ctx, proxyURL, network, addr)
-		})
+		}, hello)
 	}
 	c := &http.Client{Transport: transport}
-	clientCache[proxyURL] = c
+	clientCache[key] = c
 	return c
 }
 
@@ -415,7 +421,23 @@ func isPrintableASCII(s string) bool {
 // 可注入拨号的 Transport。注意: Bun 指纹 ALPN 只报 http/1.1,握手协商出 h1,
 // 因此不能再 RegisterProtocol("https"→h2),否则 h2 帧解析器会对 h1 明文
 // 连接报错(frame too large)。标准 Transport 按 ALPN 自动走 h1。
+// 出站 TLS 指纹画像（2026-11-19 用户定）：Bun 指纹是对齐 opencode CLI 的
+// 风控伪装，只对 zen/opencode 上游有意义；普通 OpenAI 兼容上游（other 子
+// 平台）用 Chrome 指纹即可——agnes 2026-11-18 换证书后其 TLS 栈对 Bun 形状
+// ClientHello 的 CertificateVerify 签名验证不过（Chrome/Go 栈均正常，本仓
+// utls 消融实验实锤），遂按平台分栈。零值 ClientHelloID = Bun。
+var (
+	ProfileBun    = utls.ClientHelloID{}
+	ProfileChrome = utls.HelloChrome_Auto
+)
+
 func BuildTransport(dial func(ctx context.Context, network, addr string) (net.Conn, error)) *http.Transport {
+	return BuildTransportProfile(dial, ProfileBun)
+}
+
+// BuildTransportProfile 同 BuildTransport，指纹画像可选。Bun 分支维持原有
+// HelloCustom+bunSpecForConn 应用路径；其余画像交给 utls 内置模板。
+func BuildTransportProfile(dial func(ctx context.Context, network, addr string) (net.Conn, error), hello utls.ClientHelloID) *http.Transport {
 	t := &http.Transport{
 		MaxIdleConns:        100,
 		MaxIdleConnsPerHost: 10,
@@ -442,13 +464,20 @@ func BuildTransport(dial func(ctx context.Context, network, addr string) (net.Co
 			raw.Close()
 			return nil, err
 		}
+		isBun := hello == utls.ClientHelloID{}
+		helloID := utls.HelloCustom
+		if !isBun {
+			helloID = hello
+		}
 		uconn := utls.UClient(raw, &utls.Config{
 			ServerName: host,
 			NextProtos: []string{"http/1.1"},
-		}, utls.HelloCustom)
-		if err := uconn.ApplyPreset(bunSpecForConn()); err != nil {
-			raw.Close()
-			return nil, err
+		}, helloID)
+		if isBun {
+			if err := uconn.ApplyPreset(bunSpecForConn()); err != nil {
+				raw.Close()
+				return nil, err
+			}
 		}
 		if err := uconn.HandshakeContext(ctx); err != nil {
 			raw.Close()
@@ -663,7 +692,13 @@ func ResetCooldownsForPoolEdit() {
 func EvictPoolClients(valid map[string]bool) {
 	clientCacheMu.Lock()
 	for u, cl := range clientCache {
-		if !valid[u] {
+		// 缓存键是 "profile|proxyURL"（ClientForProfile，2026-11-19）——驱逐
+		// 判据只看 URL 段，否则池每次编辑会把所有画像的客户端整体驱逐。
+		url := u
+		if i := strings.Index(u, "|"); i >= 0 {
+			url = u[i+1:]
+		}
+		if !valid[url] {
 			delete(clientCache, u)
 			if cl != nil {
 				cl.CloseIdleConnections()

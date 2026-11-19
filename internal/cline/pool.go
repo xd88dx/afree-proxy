@@ -912,11 +912,17 @@ func ListAccounts() []*AccountView {
 		if u == nil {
 			u = &AccountUsage{Status: "active"}
 		}
-		// Don't expose tokens
+		// Don't expose tokens——凭据只随行下发掩码与类型（账号列堆叠展示用，
+		// 2026-11-19）：api 型=APIToken、oauth 型=RefreshToken。
+		credType, credMask := "oauth", maskCredential(a.RefreshToken)
+		if a.APIToken != "" {
+			credType, credMask = "api", maskCredential(a.APIToken)
+		}
 		result[i] = &AccountView{
 			AccountID:       a.AccountID,
-			Email:           a.Email,
 			Nickname:        a.Nickname,
+			CredType:        credType,
+			CredMask:        credMask,
 			Status:          u.Status,
 			LastUsed:        u.LastUsed,
 			UsageCount:      u.UsageCount,
@@ -1127,21 +1133,14 @@ func AddAccountFromDeviceAuth() (*Account, error) {
 		return nil, fmt.Errorf("cline registration missing refresh token")
 	}
 
-	email := "unknown"
-	if reg.Data.UserInfo != nil && reg.Data.UserInfo.Email != "" {
-		email = reg.Data.UserInfo.Email
-	}
-
 	acc := &Account{
 		AccountID:    "acc_" + kit.RandHex(8),
-		Email:        email,
 		RefreshToken: reg.Data.RefreshToken,
 		AccessToken:  "workos:" + reg.Data.AccessToken,
 		ExpiresAt:    ExpiryMs(reg.Data.ExpiresAt),
 	}
 
 	AddAccount(acc) // 痕迹表懒创建，默认 status=active
-	fmt.Printf("  Account added! Email: %s\n", email)
 	return acc, nil
 }
 

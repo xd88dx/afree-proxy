@@ -89,12 +89,12 @@ func TestHandleClineStreamBufferedRetriesAndReplays(t *testing.T) {
 				r:   strings.NewReader("data: {\"choices\":[{\"delta\":{\"content\":\"par\"}}]}\n\n"),
 				err: errors.New("connection reset by peer"),
 			}
-			return &http.Response{StatusCode: 200, Body: io.NopCloser(r)}, &Account{Email: "first@x"}, nil
+			return &http.Response{StatusCode: 200, Body: io.NopCloser(r)}, &Account{}, nil
 		}
 		ok := "data: {\"choices\":[{\"delta\":{\"content\":\"full\"}}]}\n\n" +
 			"data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"tool_calls\"}]}\n\n" +
 			"data: [DONE]\n\n"
-		return fakeUpstream(200, ok), &Account{Email: "second@x"}, nil
+		return fakeUpstream(200, ok), &Account{}, nil
 	}
 
 	req := httptest.NewRequest("POST", "/v1/chat/completions", strings.NewReader(`{"model":"m","stream":true}`))
@@ -134,7 +134,7 @@ func TestHandleClineStreamBufferedClientGoneNoRetry(t *testing.T) {
 			r:   strings.NewReader("data: {\"choices\":[{\"delta\":{\"content\":\"par\"}}]}\n\n"),
 			err: context.Canceled,
 		}
-		return &http.Response{StatusCode: 200, Body: io.NopCloser(r)}, &Account{Email: "a@x"}, nil
+		return &http.Response{StatusCode: 200, Body: io.NopCloser(r)}, &Account{}, nil
 	}
 
 	req := httptest.NewRequest("POST", "/v1/chat/completions", nil).WithContext(ctx)
@@ -163,7 +163,7 @@ func TestHandleClineStreamBufferedAllBrokenReturns502(t *testing.T) {
 			r:   strings.NewReader("data: {\"choices\":[{\"delta\":{\"content\":\"par\"}}]}\n\n"),
 			err: errors.New("connection reset by peer"),
 		}
-		return &http.Response{StatusCode: 200, Body: io.NopCloser(r)}, &Account{Email: "a@x"}, nil
+		return &http.Response{StatusCode: 200, Body: io.NopCloser(r)}, &Account{}, nil
 	}
 
 	req := httptest.NewRequest("POST", "/v1/chat/completions", nil)

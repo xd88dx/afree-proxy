@@ -21,7 +21,7 @@
     </div>
     <div class="table-wrap" style="margin-bottom:10px">
       <table>
-        <thead><tr><th style="width:50px">#</th><th style="width:110px" data-i18n="Key">Key</th><th title="x-opencode-org-id resolved per key from console/api/orgs; '- (fallback)' means the configured fallback is used because discovery returned nothing" data-i18n="org" data-i18n-title="org_col_title">Org</th><th data-i18n="Status">Status</th><th title="Counted locally by this proxy — not the official free quota" data-i18n="Today/Total tokens">Today/Total tokens</th><th data-i18n="Last used">Last used</th><th title="Main exit first, backup as fallback; both down = row skipped (isolation)." data-i18n="Proxy binding">Proxy binding</th><th style="width:130px;text-align:center" data-i18n="Actions">Actions</th><th style="text-align:center" title="Routing participation: unchecked keys never enter request rotation. Newly added keys start disabled — tick Pool to enable. Sessions are minted per upstream call." data-i18n="Pool">Pool</th></tr></thead>
+        <thead><tr><th style="width:50px">#</th><th style="width:130px" data-i18n="Account">Account</th><th title="x-opencode-org-id resolved per key from console/api/orgs; '- (fallback)' means the configured fallback is used because discovery returned nothing" data-i18n="org" data-i18n-title="org_col_title">Org</th><th data-i18n="Status">Status</th><th title="Counted locally by this proxy — not the official free quota" data-i18n="Today/Total tokens">Today/Total tokens</th><th data-i18n="Last used">Last used</th><th title="Main exit first, backup as fallback; both down = row skipped (isolation)." data-i18n="Proxy binding">Proxy binding</th><th style="width:130px;text-align:center" data-i18n="Actions">Actions</th><th style="text-align:center" title="Routing participation: unchecked keys never enter request rotation. Newly added keys start disabled — tick Pool to enable. Sessions are minted per upstream call." data-i18n="Pool">Pool</th></tr></thead>
         <tbody id="ocKeysBody"><tr><td colspan="9" class="empty">Loading...</td></tr></tbody>
       </table>
     </div>
@@ -103,4 +103,45 @@
   </div>
 </div>
 </div>
-
+<dialog id="zenKeyAddDialog">
+  <div class="wb-dialog-head">
+    <span data-i18n="add_credentials">Add credentials</span>
+    <button class="btn btn-sm" onclick="closeZenKeyAddDialog()" data-i18n="close">Close</button>
+  </div>
+  <div class="wb-dialog-body">
+    <p class="hint" style="margin-top:0" id="zenKeyAddHint" data-i18n="add_account_keys_hint">One per line: key-----nickname (nickname optional).</p>
+    <div class="field">
+      <label>API keys (one per line) *</label>
+      <textarea id="zenKeyAddInput" rows="5" placeholder="oc_sk_..." style="font-family:'JetBrains Mono',Consolas,monospace"></textarea>
+    </div>
+    <div class="wb-dialog-actions">
+      <button class="btn btn-primary" id="zenKeyAddSubmit" onclick="zenKeyAddFromDialog()" data-i18n="save">Save</button>
+      <button class="btn" onclick="closeZenKeyAddDialog()" data-i18n="cancel">Cancel</button>
+    </div>
+  </div>
+</dialog>
+<dialog id="zenKeyEditDialog" class="cred-edit-dlg">
+  <div class="wb-dialog-head">
+    <span data-i18n="edit_account">Edit account</span>
+    <button class="btn btn-sm" onclick="closeZenKeyEditDialog()" data-i18n="close">Close</button>
+  </div>
+  <div class="wb-dialog-body">
+    <div class="field">
+      <label data-i18n="nickname">Nickname</label>
+      <input type="text" id="zenKeyEditNick" placeholder="opencode-main">
+    </div>
+    <div class="field">
+      <label data-i18n="api_key">API key</label>
+      <div class="cred-row">
+        <input type="text" id="zenKeyEditKey" placeholder="oc_sk_..." style="font-family:'JetBrains Mono',Consolas,monospace">
+        <button type="button" class="cred-btn eye" onclick="zenEditToggleReveal()" data-i18n-title="show_key" title="Show / hide key"><svg viewBox="0 0 24 24"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg></button>
+        <button type="button" class="cred-btn copy" onclick="zenEditCopyKey()" data-i18n-title="copy_key" title="Copy key"><svg viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>
+      </div>
+      <div class="hint" style="margin-top:4px" data-i18n="edit_key_hint">Leave empty to keep the current key.</div>
+    </div>
+    <div class="wb-dialog-actions">
+      <button class="btn btn-primary" id="zenKeyEditSubmit" onclick="zenKeyEditFromDialog()" data-i18n="save">Save</button>
+      <button class="btn" onclick="closeZenKeyEditDialog()" data-i18n="cancel">Cancel</button>
+    </div>
+  </div>
+</dialog>

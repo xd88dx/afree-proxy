@@ -46,7 +46,7 @@
   <div class="section-body">
     <div class="table-wrap" style="margin-bottom:10px">
       <table>
-        <thead><tr><th style="width:50px">#</th><th style="width:150px" data-i18n="Key">Key</th><th data-i18n="Status">Status</th><th title="Counted locally by this proxy — not the official free quota" data-i18n="Today/Total tokens">Today/Total tokens</th><th data-i18n="Last used">Last used</th><th title="Main exit first, backup as fallback; both down = row skipped (isolation)." data-i18n="Proxy binding">Proxy binding</th><th style="width:130px;text-align:center" data-i18n="Actions">Actions</th><th style="text-align:center" title="Routing participation. New rows start disabled — tick Pool to enable." data-i18n="Pool">Pool</th></tr></thead>
+        <thead><tr><th style="width:50px">#</th><th style="width:170px" data-i18n="Account">Account</th><th data-i18n="Status">Status</th><th title="Counted locally by this proxy — not the official free quota" data-i18n="Today/Total tokens">Today/Total tokens</th><th data-i18n="Last used">Last used</th><th title="Main exit first, backup as fallback; both down = row skipped (isolation)." data-i18n="Proxy binding">Proxy binding</th><th style="width:130px;text-align:center" data-i18n="Actions">Actions</th><th style="text-align:center" title="Routing participation. New rows start disabled — tick Pool to enable." data-i18n="Pool">Pool</th></tr></thead>
         <tbody id="otherKeysBody"><tr><td colspan="8" class="empty">Loading...</td></tr></tbody>
       </table>
     </div>
@@ -77,6 +77,10 @@
         <div class="ms-panel" id="otherModelSelectPanel" style="display:none">
           <div class="ms-search"><input type="text" id="otherModelSelectSearch" placeholder="Search models…" oninput="filterOtherModelSelect()"></div>
           <div class="ms-list" id="otherModelSelectList"></div>
+          <div style="display:flex;gap:8px;padding:8px 10px;border-top:1px solid var(--border)">
+            <button type="button" class="btn btn-sm" style="flex:1" onclick="otherModelBulkSelect(true)" data-i18n="select_all">Select all</button>
+            <button type="button" class="btn btn-sm" style="flex:1" onclick="otherModelBulkSelect(false)" data-i18n="clear_selection">Clear selection</button>
+          </div>
         </div>
       </div>
       <button class="btn btn-sm" onclick="refreshOtherModels(this)" style="flex:0 0 auto;align-self:center" title="Re-sync the model catalog from the upstream (needs a credential)" data-i18n="refresh_models">Refresh models</button>
@@ -103,190 +107,16 @@
 
 <div id="toast" class="toast" popover="manual"></div>
 
-<dialog id="wbAddDialog">
-  <div class="wb-dialog-head">
-    <span>Add WorkBuddy account</span>
-    <button class="btn btn-sm" onclick="closeWorkbuddyAdd()" data-i18n="close">Close</button>
-  </div>
-  <div class="wb-dialog-body">
-    <div class="form-row" style="margin-bottom:8px">
-      <div class="field">
-        <label>Realm</label>
-        <select id="wbRealm"><option value="cn">CN (China)</option><option value="intl">International (codebuddy.ai)</option><option value="workbuddy">WorkBuddy (workbuddy.ai)</option></select>
-      </div>
-    </div>
-    <div class="hint" id="wbAddStatus">Choose a realm and request an authorization link.</div>
-    <div class="wb-link-row">
-      <input type="text" id="wbOAuthUrl" readonly placeholder="authorization URL">
-      <button class="btn btn-sm" onclick="copyWorkbuddyOAuthUrl()" data-i18n="copy">Copy</button>
-      <button class="btn btn-sm btn-primary" onclick="openWorkbuddyOAuthUrl()" data-i18n="open">Open</button>
-    </div>
-    <div class="wb-dialog-actions">
-      <button class="btn btn-primary" id="wbStartLogin" data-i18n="get_authorization_link">Get authorization link</button>
-      <button class="btn" id="wbImportJson" onclick="document.getElementById('wbDialogImportFile').click()" data-i18n="import_json">Import JSON</button>
-    </div>
-    <input type="file" id="wbDialogImportFile" accept=".json" hidden onchange="importWorkbuddyAccounts(this)">
-  </div>
-</dialog>
-
-<dialog id="wbShareDialog" class="wb-wide">
-  <div class="wb-dialog-head">
-    <span data-i18n="weight_optimize">Weight optimize</span>
-    <button class="btn btn-sm" onclick="closeWorkbuddyShare()" data-i18n="close">Close</button>
-  </div>
-  <div class="wb-dialog-body">
-    <div class="hint" data-i18n="weight_optimize_hint">Suggested shares follow each account's expiring-credit daily need (sum of each bucket's remain ÷ days until that date, min 1). Accounts without expiring batches get a 20% reserve split by balance. Shares are exclusive: only listed accounts serve traffic; if none can serve, routing falls back to weighted random.</div>
-    <div class="hint" id="wbShareWarn" style="color:var(--amber,#eab308);display:none"></div>
-    <div class="table-wrap" style="max-height:340px;overflow:auto;margin:8px 0">
-      <table>
-        <thead><tr>
-          <th data-i18n="Account">Account</th>
-          <th data-i18n="weight_nearest">Nearest expiry</th>
-          <th data-i18n="weight_need_total">Expiring total</th>
-          <th data-i18n="weight_daily_need">Daily need</th>
-          <th data-i18n="weight_suggested">Suggested share</th>
-        </tr></thead>
-        <tbody id="wbShareBody"><tr><td colspan="5" class="empty">Loading...</td></tr></tbody>
-      </table>
-    </div>
-    <div class="wb-dialog-actions">
-      <button class="btn btn-primary" id="wbShareApplyBtn" onclick="applyWorkbuddyShare()" data-i18n="apply_share">Apply shares</button>
-      <button class="btn btn-warn" onclick="clearWorkbuddyShare()" data-i18n="clear_share">Clear shares</button>
-    </div>
-  </div>
-</dialog>
-
-<dialog id="wbDetailsDialog" class="wb-wide">
-  <div class="wb-dialog-head">
-    <span>Points breakdown <span class="auto-pill" id="wbDetailsWho"></span></span>
-    <button class="btn btn-sm" onclick="closeWorkbuddyDetails()" data-i18n="close">Close</button>
-  </div>
-  <div class="wb-dialog-body">
-    <div class="hint" id="wbDetailsStatus">Loading...</div>
-    <div id="wbDetailsBody"></div>
-  </div>
-</dialog>
-
-<dialog id="accAddDialog">
-  <div class="wb-dialog-head">
-    <span>Add account</span>
-    <button class="btn btn-sm" onclick="closeAccAddDialog()" data-i18n="close">Close</button>
-  </div>
-  <div class="wb-dialog-body">
-    <p class="hint" style="margin-top:0" id="accAddHint">The type is detected automatically — sk_... is pooled as a static API key, anything else as an OAuth refresh token.</p>
-    <div class="field">
-      <label>Token or API key *</label>
-      <input type="text" id="accAddToken" placeholder="workos-... refreshToken or sk_... API key" style="font-family:'JetBrains Mono',Consolas,monospace">
-    </div>
-    <div class="field">
-      <label>Email (optional)</label>
-      <input type="text" id="accAddEmail" placeholder="user@example.com">
-    </div>
-    <div class="wb-dialog-actions">
-      <button class="btn btn-primary" id="accAddSubmit" onclick="accAddFromDialog()" data-i18n="add_account">Add account</button>
-      <button class="btn" onclick="closeAccAddDialog()" data-i18n="cancel">Cancel</button>
-    </div>
-  </div>
-</dialog>
-
-<dialog id="zenKeyAddDialog">
-  <div class="wb-dialog-head">
-    <span>Add credentials</span>
-    <button class="btn btn-sm" onclick="closeZenKeyAddDialog()" data-i18n="close">Close</button>
-  </div>
-  <div class="wb-dialog-body">
-    <p class="hint" style="margin-top:0" id="zenKeyAddHint">One OpenCode API key per line (oc_sk_...).</p>
-    <div class="field">
-      <label>API keys (one per line) *</label>
-      <textarea id="zenKeyAddInput" rows="5" placeholder="oc_sk_..." style="font-family:'JetBrains Mono',Consolas,monospace"></textarea>
-    </div>
-    <div class="wb-dialog-actions">
-      <button class="btn btn-primary" id="zenKeyAddSubmit" onclick="zenKeyAddFromDialog()" data-i18n="save">Save</button>
-      <button class="btn" onclick="closeZenKeyAddDialog()" data-i18n="cancel">Cancel</button>
-    </div>
-  </div>
-</dialog>
 
 
 
 
 
-<dialog id="traeAddDialog" style="width:min(560px,calc(100vw - 32px))">
-  <div class="wb-dialog-head">
-    <span>Add TraeWork accounts</span>
-    <button class="btn btn-sm" onclick="closeTraeAddDialog()" data-i18n="close">Close</button>
-  </div>
-  <div class="wb-dialog-body">
-    <details class="trae-acc" id="traeAccWeb" open>
-      <summary>Web authorization</summary>
-      <div class="trae-acc-body">
-        <p class="hint" style="margin:0 0 8px" id="traeOAuthHint">Download the helper from this panel, run "python web_login.py" locally, then authorize on the opened page (sign in to trae.cn in the browser first). The account lands here automatically with routing off. The helper writes to the panel it was downloaded from.</p>
-        <div style="display:flex;gap:8px;margin-bottom:6px;align-items:center">
-          <a class="btn btn-sm btn-static" href="/trae/oauth/helper" download="web_login.py">Download helper</a>
-          <button class="btn btn-sm btn-static" onclick="openTraeHelperPage()" title="Open the helper page (127.0.0.1:8765) and click the authorize button there" data-i18n="open_helper_page">Open helper page</button>
-        </div>
-        <div class="hint" id="traeHelperStatus" style="margin:0" data-i18n="checking_local_helper">Checking local helper…</div>
-      </div>
-    </details>
-    <details class="trae-acc" id="traeAccManual">
-      <summary>Manual paste</summary>
-      <div class="trae-acc-body">
-        <p class="hint" style="margin:0 0 8px" id="traeAddHint">One token----refreshToken line per account (both required — the engine refreshes with a freshly minted device key; token-only credentials cannot pass import validation). Portable snapshot JSON / ZIP import lives in the original panel (Original panel, top right). New accounts start with routing off.</p>
-        <div class="field">
-          <label>Credentials (one per line)</label>
-          <textarea id="traeAddInput" rows="5" placeholder="eyJhbGciOi…----eyJhbGciOi…" style="font-family:'JetBrains Mono',Consolas,monospace"></textarea>
-        </div>
-      </div>
-    </details>
-    <div class="wb-dialog-actions">
-      <button class="btn btn-primary" id="traeAddSubmit" onclick="traeAddFromDialog()" data-i18n="save">Save</button>
-      <button class="btn" onclick="closeTraeAddDialog()" data-i18n="cancel">Cancel</button>
-    </div>
-  </div>
-</dialog>
 
-<dialog id="impKeepDialog" style="width:min(430px,calc(100vw - 32px))">
-  <div class="wb-dialog-head">
-    <span>Import config</span>
-    <button class="btn btn-sm" onclick="closeImpKeep()" data-i18n="close">Close</button>
-  </div>
-  <div class="wb-dialog-body">
-    <div class="hint" style="margin-bottom:10px" data-i18n="import_will_replace_all">Import will replace ALL persisted config with the file contents. Confirm whether to keep each platform's credential enabled states.</div>
-    <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px">
-      <button class="btn btn-sm" onclick="impKeepSetAll('impKeepRows',false)" data-i18n="select_all">Select all</button>
-      <button class="btn btn-sm" onclick="impKeepSetAll('impKeepRows',true)" data-i18n="invert">Invert</button>
-      <!-- 统计层勾选框（默认勾选，2026-11-03 三层口径）：勾选 = 本机统计随备份还原；
-           取消勾选 = 保留本机统计现值（不再清零）。配置态与账号事实无论勾选与否都会导入 -->
-      <label id="impStateRow" style="margin-left:auto;display:none;gap:6px;align-items:center;cursor:pointer;white-space:nowrap">
-        <input type="checkbox" id="impStateToggle" checked> <span>Import statistics</span>
-      </label>
-    </div>
-    <div id="impKeepRows" style="display:flex;flex-direction:column;gap:10px;margin-bottom:14px"></div>
-    <div style="display:flex;gap:8px;justify-content:flex-end">
-      <button class="btn" onclick="closeImpKeep()" data-i18n="cancel">Cancel</button>
-      <button class="btn btn-primary" onclick="confirmImpKeep()" data-i18n="confirm_import">Confirm import</button>
-    </div>
-  </div>
-</dialog>
-<dialog id="impReorderDialog" style="width:min(430px,calc(100vw - 32px))">
-  <div class="wb-dialog-head">
-    <span>Reorder by latency</span>
-    <button class="btn btn-sm" onclick="closeReorderDlg()" data-i18n="close">Close</button>
-  </div>
-  <div class="wb-dialog-body">
-    <div class="hint" style="margin-bottom:6px" data-i18n="re-bind proxies of the selected platforms: healthy (fast, allowed) bindings stay put; slow/unrecorded/excluded/over-cap/manual-disabled ones are re-filled from the remaining pool (better-only for healthy rows), then auto-save.">re-bind proxies of the selected platforms: healthy (fast, allowed) bindings stay put; slow/unrecorded/excluded/over-cap/manual-disabled ones are re-filled from the remaining pool (better-only for healthy rows), then auto-save.</div>
-    <div class="hint" id="impReorderKeepHint" style="margin-bottom:10px"></div>
-    <div style="display:flex;gap:8px;margin-bottom:12px">
-      <button class="btn btn-sm" onclick="impKeepSetAll('impReorderRows',false)" data-i18n="select_all">Select all</button>
-      <button class="btn btn-sm" onclick="impKeepSetAll('impReorderRows',true)" data-i18n="invert">Invert</button>
-    </div>
-    <div id="impReorderRows" style="margin-bottom:14px"></div>
-    <div style="display:flex;gap:8px;justify-content:flex-end">
-      <button class="btn" onclick="closeReorderDlg()" data-i18n="cancel">Cancel</button>
-      <button class="btn btn-primary" onclick="confirmReorder()" data-i18n="confirm">Confirm</button>
-    </div>
-  </div>
-</dialog>
+
+
+
+
 <dialog id="otherPlatformDialog">
   <div class="wb-dialog-head">
     <span>New sub-platform</span>
@@ -328,13 +158,39 @@
   </div>
 </dialog>
 
+<dialog id="otherKeyEditDialog" class="cred-edit-dlg">
+  <div class="wb-dialog-head">
+    <span data-i18n="edit_account">Edit account</span>
+    <button class="btn btn-sm" onclick="closeOtherKeyEditDialog()" data-i18n="close">Close</button>
+  </div>
+  <div class="wb-dialog-body">
+    <div class="field">
+      <label data-i18n="nickname">Nickname</label>
+      <input type="text" id="otherKeyEditNick" placeholder="agnes-main">
+    </div>
+    <div class="field">
+      <label data-i18n="api_key">API key</label>
+      <div class="cred-row">
+        <input type="text" id="otherKeyEditKey" placeholder="sk-..." style="font-family:'JetBrains Mono',Consolas,monospace">
+        <button type="button" class="cred-btn eye" onclick="otherEditToggleReveal()" data-i18n-title="show_key" title="Show / hide key"><svg viewBox="0 0 24 24"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg></button>
+        <button type="button" class="cred-btn copy" onclick="otherEditCopyKey()" data-i18n-title="copy_key" title="Copy key"><svg viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>
+      </div>
+      <div class="hint" style="margin-top:4px" data-i18n="edit_key_hint">Leave empty to keep the current key.</div>
+    </div>
+    <div class="wb-dialog-actions">
+      <button class="btn btn-primary" id="otherKeyEditSubmit" onclick="otherKeyEditFromDialog()" data-i18n="save">Save</button>
+      <button class="btn" onclick="closeOtherKeyEditDialog()" data-i18n="cancel">Cancel</button>
+    </div>
+  </div>
+</dialog>
+
 <dialog id="otherKeyAddDialog">
   <div class="wb-dialog-head">
-    <span>Add API keys</span>
+    <span data-i18n="add_credentials">Add credentials</span>
     <button class="btn btn-sm" onclick="closeOtherKeyAddDialog()" data-i18n="close">Close</button>
   </div>
   <div class="wb-dialog-body">
-    <p class="hint" style="margin-top:0" id="otherKeyAddHint">One API key per line for this sub-platform. New keys start with routing disabled — tick Pool to enable.</p>
+    <p class="hint" style="margin-top:0" id="otherKeyAddHint" data-i18n="add_account_keys_hint">One per line: key-----nickname (nickname optional).</p>
     <div class="field">
       <label>API keys (one per line) *</label>
       <textarea id="otherKeyAddInput" rows="5" placeholder="sk-…" style="font-family:'JetBrains Mono',Consolas,monospace"></textarea>
@@ -345,28 +201,3 @@
     </div>
   </div>
 </dialog>
-
-<dialog id="wbTodoDialog" class="wb-wide">
-  <div class="wb-dialog-head">
-    <span>Task center&#x20;</span>
-    <button class="btn btn-sm" onclick="closeWorkbuddyTodoScan()" data-i18n="close">Close</button>
-  </div>
-  <div class="wb-dialog-body">
-    <div class="justify-between">
-      <div class="hint" id="wbTodoStatus" data-i18n="pick_a_concurrency_then_click_scan_tasks">Pick a concurrency, then click "Scan tasks"</div>
-      <div class="wb-task-actions">
-        <label class="inline-flex" style="font-size:12px;color:var(--text2)">Concurrency
-          <select id="wbTodoConcurrency" style="width:64px">
-            <option value="1" selected>1</option>
-            <option value="2">2</option>
-            <option value="3">3</option>
-          </select>
-        </label>
-        <button class="btn btn-sm" id="wbTodoScan" onclick="scanWorkbuddyTodos()" data-i18n="scan_tasks">Scan tasks</button>
-        <button class="btn btn-sm btn-primary" id="wbTodoRunAll" onclick="runWorkbuddyAllTodos()" data-i18n="run_all">Run all</button>
-      </div>
-    </div>
-    <div id="wbTodoBody" style="margin-top:12px"></div>
-  </div>
-</dialog>
-

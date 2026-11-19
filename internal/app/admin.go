@@ -64,6 +64,7 @@ func registerAdminRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/admin/api/accounts/pool/enabled/all", panel.AdminCORS(auth(handleAdminAccountSetPoolEnabledAll)))
 	mux.HandleFunc("/admin/api/accounts/reorder", panel.AdminCORS(auth(handleAdminAccountsReorder)))
 	mux.HandleFunc("/admin/api/accounts/nickname", panel.AdminCORS(auth(handleAdminAccountNickname)))
+	mux.HandleFunc("/admin/api/accounts/credential", panel.AdminCORS(auth(handleAdminAccountCredential)))
 	mux.HandleFunc("/admin/api/logs", panel.AdminCORS(auth(handleRequestLogs)))
 	mux.HandleFunc("/admin/api/keys", panel.AdminCORS(auth(handleAdminGetKeys)))
 	mux.HandleFunc("/admin/api/keys/generate", panel.AdminCORS(auth(handleAdminGenerateKey)))
@@ -147,6 +148,7 @@ func registerAdminRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/admin/api/other/models/manual/delete", panel.AdminCORS(auth(handleOtherModelsManualDelete)))
 	mux.HandleFunc("/admin/api/other/models/selected", panel.AdminCORS(auth(handleOtherModelsSelected)))
 	mux.HandleFunc("/admin/api/other/keys/update", panel.AdminCORS(auth(handleOtherKeysUpdate)))
+	mux.HandleFunc("/admin/api/other/keys/get", panel.AdminCORS(auth(handleOtherKeyGet)))
 	mux.HandleFunc("/admin/api/other/keys/routing", panel.AdminCORS(auth(handleOtherKeySetRouting)))
 	mux.HandleFunc("/admin/api/other/keys/routing/all", panel.AdminCORS(auth(handleOtherKeySetRoutingAll)))
 	mux.HandleFunc("/admin/api/other/keys/reorder", panel.AdminCORS(auth(handleOtherKeysReorder)))
@@ -396,6 +398,109 @@ func handleAdminAccountNickname(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// handleAdminAccountCredential GET/POST /admin/api/accounts/credential
+// POST body: { accountId, credential } —— 账号列点击编辑（2026-11-20 起
+// 两类凭据均可编辑，与 opencode 同逻辑）：api 型（APIToken 非空）改
+// APIToken；oauth 型改 RefreshToken，同时清运行态 AccessToken/ExpiresAt
+// （下次请求用新 token 刷新）并把账号状态重置 active（新凭据不背旧冷却/
+// 过期）。GET ?accountId=... 返回凭据明文与类型（编辑弹窗眼睛/复制用；
+// 面板信任模型已允许明文出网关——代理池页/zen keys 同口径）。
+func handleAdminAccountCredential(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodGet {
+		id := r.URL.Query().Get("accountId")
+		if id == "" {
+			panel.WriteAPI(w, http.StatusBadRequest, panel.ApiResponse{Error: "accountId is required"})
+			return
+		}
+		p := loadPool()
+		poolMu.Lock()
+		var target *Account
+		for _, a := range p.Accounts {
+			if a != nil && a.AccountID == id {
+				target = a
+				break
+			}
+		}
+		if target == nil {
+			poolMu.Unlock()
+			panel.WriteAPI(w, http.StatusBadRequest, panel.ApiResponse{Error: "unknown accountId: " + id})
+			return
+		}
+		cred, ct := target.RefreshToken, "oauth"
+		if target.APIToken != "" {
+			cred, ct = target.APIToken, "api"
+		}
+		poolMu.Unlock()
+		panel.WriteAPI(w, http.StatusOK, panel.ApiResponse{
+			Success: true,
+			Data:    map[string]any{"accountId": id, "credType": ct, "credential": cred},
+		})
+		return
+	}
+	if r.Method != "POST" {
+		panel.WriteAPI(w, http.StatusMethodNotAllowed, panel.ApiResponse{Error: "method not allowed"})
+		return
+	}
+	body, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
+	if err != nil {
+		panel.WriteAPI(w, http.StatusBadRequest, panel.ApiResponse{Error: err.Error()})
+		return
+	}
+	defer r.Body.Close()
+	var req struct {
+		AccountID  string `json:"accountId"`
+		Credential string `json:"credential"`
+	}
+	if err := json.Unmarshal(body, &req); err != nil {
+		panel.WriteAPI(w, http.StatusBadRequest, panel.ApiResponse{Error: "invalid JSON"})
+		return
+	}
+	if req.AccountID == "" {
+		panel.WriteAPI(w, http.StatusBadRequest, panel.ApiResponse{Error: "accountId is required"})
+		return
+	}
+	token := strings.TrimSpace(req.Credential)
+	if token == "" {
+		panel.WriteAPI(w, http.StatusBadRequest, panel.ApiResponse{Error: "apiToken is required"})
+		return
+	}
+	p := loadPool()
+	poolMu.Lock()
+	var target *Account
+	for _, a := range p.Accounts {
+		if a != nil && a.AccountID == req.AccountID {
+			target = a
+			break
+		}
+	}
+	if target == nil {
+		poolMu.Unlock()
+		panel.WriteAPI(w, http.StatusBadRequest, panel.ApiResponse{Error: "unknown accountId: " + req.AccountID})
+		return
+	}
+	if target.APIToken != "" {
+		target.APIToken = token
+	} else {
+		// oauth 型：改 RefreshToken 并清运行态 token/到期（下次请求即用新
+		// 凭据刷新），状态重置 active——新凭据不背旧冷却/过期（2026-11-20）。
+		target.RefreshToken = token
+		target.AccessToken = ""
+		target.ExpiresAt = 0
+		u := usageForLocked(target)
+		u.Status = "active"
+		u.LastReason = ""
+		u.CooldownUntil = time.Time{}
+	}
+	markPoolDirtyLocked()
+	poolMu.Unlock()
+	savePool()
+	panel.WriteAPI(w, http.StatusOK, panel.ApiResponse{
+		Success: true,
+		Message: "Credential saved",
+		Data:    map[string]any{"accountId": req.AccountID},
+	})
+}
+
 // handleAdminAccountAdd POST /admin/api/accounts/add  body: { refreshToken, email }
 func handleAdminAccountAdd(w http.ResponseWriter, r *http.Request) {
 	if r.Method != "POST" {
@@ -410,40 +515,35 @@ func handleAdminAccountAdd(w http.ResponseWriter, r *http.Request) {
 	defer r.Body.Close()
 
 	var req struct {
-		RefreshToken string `json:"refreshToken"`
-		APIToken     string `json:"apiToken"`
-		Email        string `json:"email"`
+		Credential string `json:"credential"`
+		Nickname   string `json:"nickname"`
 	}
 	if err := json.Unmarshal(body, &req); err != nil {
 		panel.WriteAPI(w, http.StatusBadRequest, panel.ApiResponse{Error: "invalid JSON"})
 		return
 	}
 
-	if req.RefreshToken == "" && req.APIToken == "" {
-		panel.WriteAPI(w, http.StatusBadRequest, panel.ApiResponse{Error: "refreshToken or apiToken is required"})
+	if req.Credential == "" {
+		panel.WriteAPI(w, http.StatusBadRequest, panel.ApiResponse{Error: "credential is required (sk_ static key or workos refreshToken)"})
 		return
 	}
 
-	// 静态 API key 账号（sk_...）：直接入池，不做校验调用（首次使用时验证，
-	// 被吊销的 key 会在 401 时自动标记 expired）
-	if req.APIToken != "" {
-		email := req.Email
-		if email == "" {
-			email = "apikey_" + kit.RandHex(3)
-		}
+	// 类型智能识别（2026-11-20 与 opencode 添加同口径）：sk_ 前缀 = 静态 key
+	// 账号（直接入池，首次使用时验证，被吊销的 key 会在 401 时自动标记
+	// expired）；否则 = OAuth refreshToken（校验刷新换 token）。
+	if strings.HasPrefix(req.Credential, "sk_") {
 		acc := &Account{
 			AccountID: "acc_" + kit.RandHex(8),
-			Email:     email,
-			APIToken:  req.APIToken,
+			Nickname:  req.Nickname,
+			APIToken:  req.Credential,
 		}
 		addAccount(acc) // 痕迹表懒创建，默认 status=active
-		log.Printf("API-key account added: %s", email)
+		log.Printf("API-key account added: %s", cline.AccountLabel(acc))
 		panel.WriteAPI(w, http.StatusOK, panel.ApiResponse{
 			Success: true,
-			Message: fmt.Sprintf("API-key account %s added", email),
+			Message: "API-key account added",
 			Data: map[string]any{
 				"accountId": acc.AccountID,
-				"email":     acc.Email,
 				"kind":      "api_key",
 			},
 		})
@@ -451,20 +551,16 @@ func handleAdminAccountAdd(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Validate by refreshing
-	resp, err := cline.RefreshClineToken(req.RefreshToken)
+	resp, err := cline.RefreshClineToken(req.Credential)
 	if err != nil {
-		panel.WriteAPI(w, http.StatusBadRequest, panel.ApiResponse{Error: "invalid refreshToken: " + err.Error()})
+		panel.WriteAPI(w, http.StatusBadRequest, panel.ApiResponse{Error: "invalid credential: " + err.Error()})
 		return
-	}
-
-	if req.Email == "" {
-		req.Email = fmt.Sprintf("user_%d", poolAccountCount()+1)
 	}
 
 	acc := &Account{
 		AccountID:    "acc_" + kit.RandHex(8),
-		Email:        req.Email,
-		RefreshToken: req.RefreshToken,
+		Nickname:     req.Nickname,
+		RefreshToken: req.Credential,
 		AccessToken:  "workos:" + resp.Data.AccessToken,
 		ExpiresAt:    clineExpiryMs(resp.Data.ExpiresAt),
 	}
@@ -473,14 +569,14 @@ func handleAdminAccountAdd(w http.ResponseWriter, r *http.Request) {
 	}
 
 	addAccount(acc) // 痕迹表懒创建，默认 status=active
-	log.Printf("Account added via API: %s", req.Email)
+	log.Printf("Account added via API: %s", cline.AccountLabel(acc))
 
 	panel.WriteAPI(w, http.StatusOK, panel.ApiResponse{
 		Success: true,
-		Message: fmt.Sprintf("Account %s added", req.Email),
+		Message: "Account added",
 		Data: map[string]any{
 			"accountId": acc.AccountID,
-			"email":     acc.Email,
+			"nickname":  req.Nickname,
 			"status":    "active",
 		},
 	})
@@ -580,14 +676,9 @@ func handleSSOImport(w http.ResponseWriter, r *http.Request) {
 				errors = append(errors, fmt.Sprintf("token %s...: %v", kit.Truncate(token, 16), err))
 				continue
 			}
-			email := req.Email
-			if email == "" {
-				email = "sso_user_" + kit.RandHex(4)
-			}
 
 			acc := &Account{
 				AccountID:    "acc_" + kit.RandHex(8),
-				Email:        email,
 				RefreshToken: token,
 				AccessToken:  "workos:" + resp.Data.AccessToken,
 				ExpiresAt:    clineExpiryMs(resp.Data.ExpiresAt),
@@ -718,7 +809,7 @@ func handleAdminAccountTest(w http.ResponseWriter, r *http.Request) {
 
 	result, status := testAccount(r.Context(), acc)
 	reason, _ := result["reason"].(string)
-	log.Printf("Test account %s: status=%s reason=%s", truncateEmail(acc.Email), status, reason)
+	log.Printf("Test account %s: status=%s reason=%s", cline.AccountLabel(acc), status, reason)
 
 	panel.WriteAPI(w, http.StatusOK, panel.ApiResponse{
 		Success: status == "active",
@@ -761,7 +852,7 @@ func testAccount(ctx context.Context, acc *Account) (map[string]any, string) {
 		poolMu.Unlock()
 		return map[string]any{
 			"accountId":  acc.AccountID,
-			"email":      acc.Email,
+			"label":        cline.AccountLabel(acc),
 			"status":     "expired",
 			"reason":     reason,
 			"prevStatus": prevStatus,
@@ -777,7 +868,7 @@ func testAccount(ctx context.Context, acc *Account) (map[string]any, string) {
 		// 实测）。这里明确报因，指向真正的故障面。
 		return map[string]any{
 			"accountId": acc.AccountID,
-			"email":     acc.Email,
+			"label":        cline.AccountLabel(acc),
 			"status":    "error",
 			"reason":    "no probe model: cline catalog is empty (model sync failing — check gateway logs / sync egress)",
 		}, "error"
@@ -801,7 +892,7 @@ func testAccount(ctx context.Context, acc *Account) (map[string]any, string) {
 	if err != nil {
 		return map[string]any{
 			"accountId": acc.AccountID,
-			"email":     acc.Email,
+			"label":        cline.AccountLabel(acc),
 			"status":    "error",
 			"reason":    "build request: " + err.Error(),
 		}, "error"
@@ -819,7 +910,7 @@ func testAccount(ctx context.Context, acc *Account) (map[string]any, string) {
 		if !ok {
 			return map[string]any{
 				"accountId": acc.AccountID,
-				"email":     acc.Email,
+				"label":        cline.AccountLabel(acc),
 				"status":    "error",
 				"reason": blockedExitMessage(
 					"bound proxies unavailable (cooling or removed); probe skipped by proxy isolation",
@@ -836,7 +927,7 @@ func testAccount(ctx context.Context, acc *Account) (map[string]any, string) {
 		if !exitOK {
 			return map[string]any{
 				"accountId": acc.AccountID,
-				"email":     acc.Email,
+				"label":        cline.AccountLabel(acc),
 				"status":    "error",
 				"reason":    "no proxy exit: every pool exit is manually cooled; probe skipped",
 			}, "error"
@@ -844,7 +935,7 @@ func testAccount(ctx context.Context, acc *Account) (map[string]any, string) {
 		if proxyURL == "" && kit.DisableDirect() {
 			return map[string]any{
 				"accountId": acc.AccountID,
-				"email":     acc.Email,
+				"label":        cline.AccountLabel(acc),
 				"status":    "error",
 				"reason":    "no proxy exit: direct egress disabled by DISABLE_DIRECT; probe skipped",
 			}, "error"
@@ -858,7 +949,7 @@ func testAccount(ctx context.Context, acc *Account) (map[string]any, string) {
 	if probeExit == "" && kit.DisableDirect() {
 		return map[string]any{
 			"accountId": acc.AccountID,
-			"email":     acc.Email,
+			"label":        cline.AccountLabel(acc),
 			"status":    "error",
 			"reason":    "direct egress disabled by DISABLE_DIRECT; probe skipped",
 		}, "error"
@@ -872,7 +963,7 @@ func testAccount(ctx context.Context, acc *Account) (map[string]any, string) {
 		until := markAccountCooldown(acc, reason, 5*time.Minute)
 		return map[string]any{
 			"accountId": acc.AccountID,
-			"email":     acc.Email,
+			"label":        cline.AccountLabel(acc),
 			"status":    "cooldown",
 			"reason":    reason,
 			// RFC3339（带时区）：面板用 new Date(...).toLocaleString() 渲染成浏览器本地时间；
@@ -915,13 +1006,13 @@ func testAccount(ctx context.Context, acc *Account) (map[string]any, string) {
 	if resp.StatusCode == 429 {
 		// 与请求路径同口径分流（2026-11-09）：此前这里直接调 markAccountCooldown，
 		// 解析不出时长就落到它 18h 的兜底，一次面板 Test 就能把健康账号雪藏一天。
-		duration := cline429CooldownDuration(acc.Email, bodyStr, resp.Header.Get("Retry-After"))
+		duration := cline429CooldownDuration(cline.AccountLabel(acc), bodyStr, resp.Header.Get("Retry-After"))
 		reason := "429: " + kit.Truncate(bodyStr, 500)
 		until := markAccountCooldown(acc, reason, duration)
-		log.Printf("Test hit 429 on %s, cooldown %v", truncateEmail(acc.Email), duration)
+		log.Printf("Test hit 429 on %s, cooldown %v", cline.AccountLabel(acc), duration)
 		return map[string]any{
 			"accountId": acc.AccountID,
-			"email":     acc.Email,
+			"label":        cline.AccountLabel(acc),
 			"status":    "cooldown",
 			"reason":    reason,
 			// RFC3339（带时区）：面板用 new Date(...).toLocaleString() 渲染成浏览器本地时间；
@@ -942,7 +1033,7 @@ func testAccount(ctx context.Context, acc *Account) (map[string]any, string) {
 		poolMu.Unlock()
 		return map[string]any{
 			"accountId":  acc.AccountID,
-			"email":      acc.Email,
+			"label":        cline.AccountLabel(acc),
 			"status":     "expired",
 			"reason":     "401 unauthorized",
 			"httpStatus": resp.StatusCode,
@@ -953,7 +1044,7 @@ func testAccount(ctx context.Context, acc *Account) (map[string]any, string) {
 		// 其它错误：不强制冷却，按一次失败处理
 		return map[string]any{
 			"accountId":  acc.AccountID,
-			"email":      acc.Email,
+			"label":        cline.AccountLabel(acc),
 			"status":     "error",
 			"reason":     fmt.Sprintf("API %d: %s", resp.StatusCode, kit.Truncate(bodyStr, 300)),
 			"httpStatus": resp.StatusCode,
@@ -977,7 +1068,7 @@ func testAccount(ctx context.Context, acc *Account) (map[string]any, string) {
 	}
 	return map[string]any{
 		"accountId":  acc.AccountID,
-		"email":      acc.Email,
+		"label":        cline.AccountLabel(acc),
 		"status":     "active",
 		"reason":     "ok",
 		"httpStatus": resp.StatusCode,

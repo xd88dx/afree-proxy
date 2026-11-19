@@ -48,6 +48,13 @@ func setProxyTestTarget(target string) { exitpool.SetTestTarget(target) }
 
 func proxyClientFor(proxyURL string) *http.Client { return exitpool.ClientFor(proxyURL) }
 
+// otherClientFor other 平台出站客户端工厂：Chrome 指纹（2026-11-19 用户定）。
+// Bun 指纹只对 zen/opencode 上游有风控意义；普通 OpenAI 兼容上游用 Chrome，
+// 也规避 agnes 2026-11-18 换证书后对 Bun ClientHello 的 TLS 兼容缺陷。
+func otherClientFor(proxyURL string) *http.Client {
+	return exitpool.ClientForProfile(proxyURL, exitpool.ProfileChrome)
+}
+
 func upstreamProxyForKind(kind string) (string, int, bool) {
 	return exitpool.UpstreamForKind(kind)
 }
