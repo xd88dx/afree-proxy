@@ -1,7 +1,7 @@
 {
   "version": 1,
   "created_at": "2026-11-09T17:13:34Z",
-  "updated_at": "2026-11-20T15:45:36Z",
+  "updated_at": "2026-11-20T17:21:34Z",
   "files": {
     ".agents/skills/add-platform/SKILL.md": {
       "role": "index",
@@ -518,9 +518,9 @@
     },
     "aoci.code.txt": {
       "role": "index",
-      "sha256": "f728037e7d169952cda1f9f95d2ec25287fa8ab4392902e6242037093c562e60",
-      "size": 234612,
-      "normalized_sha256": "f728037e7d169952cda1f9f95d2ec25287fa8ab4392902e6242037093c562e60"
+      "sha256": "de15f73bcefcec50d626614600814f17a6c64b5e4a5c8f17e6c1ff4107926702",
+      "size": 234966,
+      "normalized_sha256": "de15f73bcefcec50d626614600814f17a6c64b5e4a5c8f17e6c1ff4107926702"
     },
     "aoci.meta.txt": {
       "role": "index",
@@ -2484,9 +2484,9 @@
     },
     "internal/other/panel_tab.html": {
       "role": "index",
-      "sha256": "24a5618c34499b2de5eddba85f7469418975117ee3fdaad41d0c33fa36d531ef",
-      "size": 12263,
-      "normalized_sha256": "24a5618c34499b2de5eddba85f7469418975117ee3fdaad41d0c33fa36d531ef"
+      "sha256": "cdaf023f05c5444ce19973f77d8e0ac13d741b1760335fe84ad53e4ff5936cc7",
+      "size": 12194,
+      "normalized_sha256": "cdaf023f05c5444ce19973f77d8e0ac13d741b1760335fe84ad53e4ff5936cc7"
     },
     "internal/other/pool.go": {
       "role": "index",
@@ -2530,10 +2530,10 @@
     },
     "internal/panel/html.go": {
       "role": "index",
-      "sha256": "6d51c3ab69ab72ee8273eb7b75cafd52fb172fa52c8c1aab8ca0f952c8dab552",
-      "size": 521110,
-      "normalized_sha256": "6d51c3ab69ab72ee8273eb7b75cafd52fb172fa52c8c1aab8ca0f952c8dab552",
-      "format_sha256": "6d51c3ab69ab72ee8273eb7b75cafd52fb172fa52c8c1aab8ca0f952c8dab552",
+      "sha256": "057685049c307cca45fbd0580fa6a7f3dfa79a128cef87be898540d8e1503bd9",
+      "size": 521791,
+      "normalized_sha256": "057685049c307cca45fbd0580fa6a7f3dfa79a128cef87be898540d8e1503bd9",
+      "format_sha256": "057685049c307cca45fbd0580fa6a7f3dfa79a128cef87be898540d8e1503bd9",
       "format_kind": "gofmt"
     },
     "internal/panel/models_refresh.go": {
