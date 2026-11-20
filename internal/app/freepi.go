@@ -92,13 +92,18 @@ func handleFreepiConfig(w http.ResponseWriter, r *http.Request) {
 		}
 		modelViews = append(modelViews, mv)
 	}
-	WriteAPI(w, http.StatusOK, apiResponse{Success: true, Data: map[string]any{
+	data := map[string]any{
 		"useProxies":     freepi.ProxiesEnabled(),
 		"maxConcurrency": c.MaxConcurrency,
 		"retries":        c.Retries,
 		"keyStates":      freepi.KeyStatus(),
 		"models":         modelViews,
-	}})
+	}
+	// 目录同步时刻（pill「官方源同步于」）：零值时省略字段，前端显示空 pill
+	if t := freepi.CatalogSyncedAt(); !t.IsZero() {
+		data["modelsSyncedAt"] = t.UTC().Format(time.RFC3339)
+	}
+	WriteAPI(w, http.StatusOK, apiResponse{Success: true, Data: data})
 }
 
 // POST /admin/api/freepi/config/update —— patch 更新（全指针字段，nil=未提交）。

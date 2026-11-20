@@ -1638,7 +1638,7 @@ const I18N = {
   'name_and_prefix_are_required': { en: 'Name and prefix are required', zh: '名称和前缀为必填项' },
   'no_sub_platform_yet_click_new_sub_platform_to_ad_1': { en: 'No sub-platform yet. Click "New sub-platform" to add one.', zh: '暂无子平台。点击"新建子平台"添加一个。' },
   // FreePI（freepi.ai 免费日额度 key 池，2026-11-20 接入）
-  'freepi_page_summary': { en: 'FreePI (freepi.ai): free daily-credit key pool. Credentials are JWTs minted by the free-pi CLI (90-day validity, refilled at UTC midnight); models are exposed as freepi:<model-id>.', zh: 'FreePI（freepi.ai）免费日额度 key 池。凭据为 free-pi CLI 铸造的 JWT（90 天有效，UTC 零点补充）；模型以 freepi:<模型ID> 暴露。' },
+  'freepi_models_sync_hint': { en: 'Automatically synced from the upstream catalog on startup — refresh to re-sync (needs a credential)', zh: '启动时自动同步上游模型目录；可手动刷新重新拉取（需要凭据）' },
   'freepi_add_hint': { en: 'One per line: JWT-----nickname (nickname optional). Mint a token via the free-pi CLI GitHub device sign-in, or by hand: POST https://api.freepi.ai/auth/github/device, open verification_uri_complete, then POST /auth/token with the session_id. The JWT is valid 90 days.', zh: '每行一条：JWT-----昵称（昵称可省）。用 free-pi CLI 的 GitHub 设备授权铸造，或手动：POST https://api.freepi.ai/auth/github/device，打开 verification_uri_complete 完成授权，再带 session_id POST /auth/token。JWT 有效期 90 天。' },
   'freepi_jwt_shape': { en: 'That does not look like a JWT (expected 3 dot-separated segments).', zh: '看起来不是合法 JWT（应为三段、以点分隔）。' },
   'refresh_credits': { en: 'Refresh credits', zh: '刷新额度' },
@@ -8059,7 +8059,19 @@ async function loadFreepiConfig() {
   freepiKnownModels = freepiConfig.models || [];
   const ks = freepiConfig.keyStates || [];
   ks.forEach(k => { if (k.nickname) frNickByIndex[k.index] = k.nickname; });
-  _('freepiSummary').textContent = T('freepi_page_summary');
+  // 标题下统计：key · 可用（路由启用）· 冷却中（与 OpenCode 页摘要同款）
+  const sum = _('freepiSummary');
+  if (sum) {
+    const routed = ks.filter(k => k.routingEnabled !== false).length;
+    const cooling = ks.filter(k => k.cooling).length;
+    sum.textContent = ks.length + ' ' + T('keys') + ' · ' + routed + ' ' + T('active_1_1') + ' · ' + cooling + ' ' + T('cooling_2');
+  }
+  // 目录 pill：freepi 自己的目录同步时刻。用独立属性 data-freepi-models-info，
+  // 绝不用 data-models-info——loadModels 会全页统一回填 cline/zen 官方源时间
+  const pill = document.querySelector('[data-freepi-models-info]');
+  if (pill) pill.textContent = freepiConfig.modelsSyncedAt
+    ? T('official_feed') + new Date(freepiConfig.modelsSyncedAt).toLocaleTimeString(TZ, TIME_OPT)
+    : '';
   _('freepiMaxConc').value = freepiConfig.maxConcurrency || 8;
   _('freepiRetries').value = freepiConfig.retries || 3;
   renderFreepiModels(freepiKnownModels);
@@ -8067,14 +8079,15 @@ async function loadFreepiConfig() {
 }
 
 function renderFreepiModels(list) {
-  const box = _('freepiModelList');
+  const box = _('freepiModelsBody');
   if (!box) return;
   if (!list.length) { box.innerHTML = '<div class="empty">' + T('no_models_refresh_to_sync') + '</div>'; return; }
+  // 行样式与 OpenCode 页目录区一致（loadModels 的 row() 卡片同款）；Name 进 title 悬浮
   box.innerHTML = list.map(m =>
-    '<div style="display:flex;gap:8px;align-items:center">' +
-      '<span class="model-tag free" style="font-family:\'JetBrains Mono\',Consolas,monospace">' + esc(m.id) + '</span>' +
-      '<span class="hint" style="flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis" title="' + esc(m.name || m.id) + '">' + esc(m.name || '') + '</span>' +
-      (m.context ? wbContextTagHTML(m.context, m.context + ' ctx') : '') +
+    '<div style="display:flex;align-items:center;gap:10px;padding:8px 12px;margin:5px 0;background:rgba(148,163,184,.06);border:1px solid var(--border);border-radius:10px;transition:.15s">' +
+      '<span style="font-family:\'JetBrains Mono\',monospace;font-size:13px;flex:1" title="' + esc(m.name || m.id) + '">' + esc(m.id) + '</span>' +
+      '<span class="model-tag free">' + T('no_charge') + '</span>' +
+      (m.context ? wbContextTagHTML(m.context, T('context')) : '') +
     '</div>').join('');
 }
 
@@ -8090,6 +8103,11 @@ function renderFreepiKeys(ks) {
       ? '<span class="status cooldown"><span class="status-dot cooldown"></span>' + T('cooldown_1') + '</span>' +
         (k.cooldownUntil ? '<div style="font-size:10px;color:var(--text3);margin-top:2px;white-space:nowrap" title="' + esc(fmtWhen(k.cooldownUntil)) + '">' + T('recovers') + esc(fmtShort(k.cooldownUntil)) + '</div>' : '')
       : '<span class="status active"><span class="status-dot active"></span>' + T('active_1') + '</span>';
+    // JWT 过期时间（照 TraeWork 状态列同款）：徽章下一行小字（绿色正常 / 红色已过期）
+    const jwtState = k.jwtExpiresAt
+      ? '<div style="font-size:11px;margin-top:2px;color:' + (k.jwtExpired ? 'var(--danger)' : 'var(--accent2)') + '">' +
+        (k.jwtExpired ? T('token_expired') + ' ' : '') + esc(fmtShort(k.jwtExpiresAt)) + '</div>'
+      : '';
     // credits 余额（/me 快照）：状态列内第二行小字；refill 时间进悬浮
     const credits = (k.creditsLeft != null)
       ? '<div style="font-size:10px;color:var(--text3);margin-top:2px;white-space:nowrap" title="' +
@@ -8120,7 +8138,7 @@ function renderFreepiKeys(ks) {
           '<span class="nick-name" style="max-width:150px" title="' + esc(k.nickname || k.keyMask) + '">' + esc(k.nickname || k.keyMask) + '</span>' +
         '</div>' +
         '<div class="nick-sub mono" title="' + esc(k.keyMask) + '">' + esc(k.keyMask) + '</div></div></td>' +
-      '<td style="text-align:center">' + cool + credits + '</td>' +
+      '<td style="text-align:center">' + cool + jwtState + credits + '</td>' +
       keyTokensCell(k) +
       keyLastUsedCell(k) +
       bind + actions + routing + '</tr>';

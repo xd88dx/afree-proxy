@@ -2,6 +2,7 @@ package freepi
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -326,6 +327,11 @@ func KeyStatus() []map[string]any {
 			// 昵称（账号列堆叠展示）：空 = 显示掩码 key。
 			"nickname": c.KeyNicknames[k],
 		}
+		// JWT 过期时间（状态列小字，照 TraeWork 的 token 过期行）
+		if exp, ok := jwtExpFromToken(k); ok {
+			st["jwtExpiresAt"] = exp.Format(time.RFC3339)
+			st["jwtExpired"] = now.After(exp)
+		}
 		if u != nil {
 			if ts, ok := u.KeyTokens[k]; ok {
 				st["tokensToday"] = ts.Today
@@ -468,6 +474,26 @@ func isEnvName(s string) bool {
 		return false
 	}
 	return true
+}
+
+// jwtExpFromToken 从 JWT payload 解析 exp（unix 秒）。解析失败/无 exp 返回
+// false——过期时间是展示信息，缺失不影响路由，键的真伪仍由 /me 或首次请求裁决。
+func jwtExpFromToken(key string) (time.Time, bool) {
+	parts := strings.Split(key, ".")
+	if len(parts) != 3 {
+		return time.Time{}, false
+	}
+	raw, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		return time.Time{}, false
+	}
+	var payload struct {
+		Exp int64 `json:"exp"`
+	}
+	if err := json.Unmarshal(raw, &payload); err != nil || payload.Exp <= 0 {
+		return time.Time{}, false
+	}
+	return time.Unix(payload.Exp, 0), true
 }
 
 // ValidateJWT 粘贴时先报形状问题再发上游（参考 plugin jwtShape）：三段

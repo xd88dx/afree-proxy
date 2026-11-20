@@ -4,16 +4,6 @@
 
 <div class="section">
   <div class="section-body">
-    <div class="form-row" style="margin-top:10px;flex-wrap:nowrap">
-      <div class="field" style="flex:1 1 0;min-width:0"><label>Max concurrency</label><input type="text" id="freepiMaxConc" placeholder="8"></div>
-      <div class="field" style="flex:1 1 0;min-width:0"><label>Rate-limit retries</label><input type="text" id="freepiRetries" placeholder="3"></div>
-      <div class="field" style="flex:0 0 auto;min-width:0;align-self:stretch;display:grid;grid-template-rows:auto 1fr;align-items:center"><label aria-hidden="true" style="visibility:hidden">&nbsp;</label><button class="btn btn-primary btn-sm" onclick="saveFreepiRateLimit()" data-i18n="save_rate_limit_config">Save rate-limit config</button></div>
-    </div>
-  </div>
-</div>
-
-<div class="section">
-  <div class="section-body">
     <div class="table-wrap" style="margin-bottom:10px">
       <table>
         <thead><tr><th style="width:50px">#</th><th style="width:170px" data-i18n="Account">Account</th><th data-i18n="Status">Status</th><th title="Counted locally by this proxy — not the official free quota" data-i18n="Today/Total tokens">Today/Total tokens</th><th data-i18n="Last used">Last used</th><th title="Main exit first, backup as fallback; both down = row skipped (isolation)." data-i18n="Proxy binding">Proxy binding</th><th style="width:130px;text-align:center" data-i18n="Actions">Actions</th><th style="text-align:center" title="Routing participation. New rows start disabled — tick Pool to enable." data-i18n="Pool">Pool</th></tr></thead>
@@ -37,13 +27,26 @@
     </div>
   </div>
 </div>
-<div class="section" style="overflow:visible">
-  <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 5-6"/></svg></span> Models</div>
-  <div class="section-body" style="overflow:visible">
-    <div class="flex" style="gap:10px;margin:0 0 10px;align-items:stretch;flex-wrap:wrap;position:relative">
-      <div id="freepiModelList" style="flex:1 1 320px;min-width:240px;display:flex;flex-direction:column;gap:6px"></div>
-      <button class="btn btn-sm" onclick="refreshFreepiModels(this)" style="flex:0 0 auto;align-self:center" title="Re-sync the model catalog from the upstream (needs a credential)" data-i18n="refresh_models">Refresh models</button>
+
+<div class="section">
+  <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></span> Rate-limit defense</div>
+  <div class="section-body">
+    <div class="form-row">
+      <div class="field"><label>Max concurrency</label><input type="text" id="freepiMaxConc" placeholder="8"></div>
+      <div class="field"><label>Rate-limit retries</label><input type="text" id="freepiRetries" placeholder="3"></div>
     </div>
+    <div class="form-actions"><button class="btn btn-primary" onclick="saveFreepiRateLimit()" data-i18n="save_rate_limit_config">Save rate-limit config</button></div>
+  </div>
+</div>
+
+<div class="section">
+  <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 5-6"/></svg></span> <span data-i18n="Model catalog">Model catalog</span> <span class="probe-pill" data-freepi-models-info style="font-weight:normal"></span></div>
+  <div class="section-body">
+    <div class="flex" style="margin-bottom:10px;gap:10px">
+      <button class="btn btn-sm btn-primary" onclick="refreshFreepiModels(this)" title="Re-sync the model catalog from the upstream (needs a credential)" data-i18n-title="Re-sync the model catalog from the upstream (needs a credential)" data-i18n="refresh_models">Refresh models</button>
+      <span class="hint" style="margin:0" data-i18n="freepi_models_sync_hint">Automatically synced from the upstream catalog on startup — refresh to re-sync (needs a credential)</span>
+    </div>
+    <div id="freepiModelsBody">Loading...</div>
   </div>
 </div>
 
