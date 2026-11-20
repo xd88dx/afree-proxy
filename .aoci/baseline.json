@@ -1,7 +1,7 @@
 {
   "version": 1,
   "created_at": "2026-11-09T17:13:34Z",
-  "updated_at": "2026-11-20T17:21:34Z",
+  "updated_at": "2026-11-20T18:42:45Z",
   "files": {
     ".agents/skills/add-platform/SKILL.md": {
       "role": "index",
@@ -518,9 +518,9 @@
     },
     "aoci.code.txt": {
       "role": "index",
-      "sha256": "de15f73bcefcec50d626614600814f17a6c64b5e4a5c8f17e6c1ff4107926702",
-      "size": 234966,
-      "normalized_sha256": "de15f73bcefcec50d626614600814f17a6c64b5e4a5c8f17e6c1ff4107926702"
+      "sha256": "f57ea1939f7d0a474cc0c1a2cf17126d1c92d63e60811854100e0d8dba6466ce",
+      "size": 235392,
+      "normalized_sha256": "f57ea1939f7d0a474cc0c1a2cf17126d1c92d63e60811854100e0d8dba6466ce"
     },
     "aoci.meta.txt": {
       "role": "index",
@@ -970,10 +970,10 @@
     },
     "internal/app/freepi.go": {
       "role": "index",
-      "sha256": "748b2c127ef6f4a9283513ec7704defd85198a54dee997ffd7aacc4d1adeb243",
-      "size": 21141,
-      "normalized_sha256": "748b2c127ef6f4a9283513ec7704defd85198a54dee997ffd7aacc4d1adeb243",
-      "format_sha256": "748b2c127ef6f4a9283513ec7704defd85198a54dee997ffd7aacc4d1adeb243",
+      "sha256": "0f23fa5a5a21e4d16c0a22076856811351f3a610735ce1988387092718f6304c",
+      "size": 21367,
+      "normalized_sha256": "0f23fa5a5a21e4d16c0a22076856811351f3a610735ce1988387092718f6304c",
+      "format_sha256": "0f23fa5a5a21e4d16c0a22076856811351f3a610735ce1988387092718f6304c",
       "format_kind": "gofmt"
     },
     "internal/app/gateway_bridge.go": {
@@ -2082,10 +2082,10 @@
     },
     "internal/freepi/config.go": {
       "role": "index",
-      "sha256": "88e6eb05b8edd1939196036e59a12fdc87b95d9414379a9432bb864652db11ad",
-      "size": 15565,
-      "normalized_sha256": "88e6eb05b8edd1939196036e59a12fdc87b95d9414379a9432bb864652db11ad",
-      "format_sha256": "88e6eb05b8edd1939196036e59a12fdc87b95d9414379a9432bb864652db11ad",
+      "sha256": "e4df080f541459adb449b690d28f4cbad481319f961b4116ea649e39bdb71c44",
+      "size": 16444,
+      "normalized_sha256": "e4df080f541459adb449b690d28f4cbad481319f961b4116ea649e39bdb71c44",
+      "format_sha256": "e4df080f541459adb449b690d28f4cbad481319f961b4116ea649e39bdb71c44",
       "format_kind": "gofmt"
     },
     "internal/freepi/freepi_test.go": {
@@ -2098,10 +2098,10 @@
     },
     "internal/freepi/models.go": {
       "role": "index",
-      "sha256": "c8b9152b37ff6a5932b7b75e34d0a3cb44c1d92d242dbaa4329bc22301d41831",
-      "size": 8176,
-      "normalized_sha256": "c8b9152b37ff6a5932b7b75e34d0a3cb44c1d92d242dbaa4329bc22301d41831",
-      "format_sha256": "c8b9152b37ff6a5932b7b75e34d0a3cb44c1d92d242dbaa4329bc22301d41831",
+      "sha256": "61f12b86a89aa3b89e3e266e7df28d8d39633f80236e135280f6433e02e9e431",
+      "size": 8888,
+      "normalized_sha256": "61f12b86a89aa3b89e3e266e7df28d8d39633f80236e135280f6433e02e9e431",
+      "format_sha256": "61f12b86a89aa3b89e3e266e7df28d8d39633f80236e135280f6433e02e9e431",
       "format_kind": "gofmt"
     },
     "internal/freepi/panel_embed.go": {
@@ -2120,9 +2120,9 @@
     },
     "internal/freepi/panel_tab.html": {
       "role": "index",
-      "sha256": "8f7f30acef517141f6f366ae6cd6b6d5c486114cf0e133e1e62bdcf7bfb91ce3",
-      "size": 7310,
-      "normalized_sha256": "8f7f30acef517141f6f366ae6cd6b6d5c486114cf0e133e1e62bdcf7bfb91ce3"
+      "sha256": "b35012e0389cdfcd9c45f930da3d8de8c9df28060eb6addfd9d5208160b85772",
+      "size": 7396,
+      "normalized_sha256": "b35012e0389cdfcd9c45f930da3d8de8c9df28060eb6addfd9d5208160b85772"
     },
     "internal/freepi/pool.go": {
       "role": "index",
@@ -2530,10 +2530,10 @@
     },
     "internal/panel/html.go": {
       "role": "index",
-      "sha256": "057685049c307cca45fbd0580fa6a7f3dfa79a128cef87be898540d8e1503bd9",
-      "size": 521791,
-      "normalized_sha256": "057685049c307cca45fbd0580fa6a7f3dfa79a128cef87be898540d8e1503bd9",
-      "format_sha256": "057685049c307cca45fbd0580fa6a7f3dfa79a128cef87be898540d8e1503bd9",
+      "sha256": "6a9ab8ff0e39759a1c1cdb4ecac10eb630b2fab0996622cc26e2419ac85efc39",
+      "size": 522979,
+      "normalized_sha256": "6a9ab8ff0e39759a1c1cdb4ecac10eb630b2fab0996622cc26e2419ac85efc39",
+      "format_sha256": "6a9ab8ff0e39759a1c1cdb4ecac10eb630b2fab0996622cc26e2419ac85efc39",
       "format_kind": "gofmt"
     },
     "internal/panel/models_refresh.go": {
