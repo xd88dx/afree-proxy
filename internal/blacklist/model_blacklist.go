@@ -58,6 +58,7 @@ const (
 	PlatCline     = "cline"
 	PlatTrae      = "trae"
 	PlatOther     = "other"
+	PlatFreepi    = "freepi"
 )
 
 var (
@@ -289,6 +290,8 @@ func PlatformOfModel(model string) string {
 		return PlatCline
 	case trae.Trae2apiPlatformModel(model):
 		return PlatTrae
+	case strings.HasPrefix(model, "freepi:"):
+		return PlatFreepi
 	}
 	if i := strings.IndexByte(model, ':'); i > 0 {
 		if p := other.PlatformByPrefix(model[:i]); p != nil {

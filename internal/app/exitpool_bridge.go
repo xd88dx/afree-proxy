@@ -13,6 +13,7 @@ import (
 
 	"afree-proxy/internal/cline"
 	"afree-proxy/internal/exitpool"
+	"afree-proxy/internal/freepi"
 	"afree-proxy/internal/kit"
 	"afree-proxy/internal/other"
 )
@@ -20,11 +21,12 @@ import (
 // ---- kind 常量（出口冷却/记账的平台维度，历史小写名）----
 
 const (
-	pkCline = exitpool.KindCline
-	pkZen   = exitpool.KindZen
-	pkOther = exitpool.KindOther
-	pkTrae  = exitpool.KindTrae
-	pkWb    = exitpool.KindWb
+	pkCline  = exitpool.KindCline
+	pkZen    = exitpool.KindZen
+	pkOther  = exitpool.KindOther
+	pkFreepi = exitpool.KindFreepi
+	pkTrae   = exitpool.KindTrae
+	pkWb     = exitpool.KindWb
 )
 
 // ---- 类型别名（备份段/面板 payload/测试照旧引用小写名）----
@@ -256,6 +258,10 @@ func init() {
 	exitpool.IsTransportFailureExtras = func(err error) bool {
 		var ot *other.HTTPError
 		if errors.As(err, &ot) {
+			return false
+		}
+		var fe *freepi.HTTPError
+		if errors.As(err, &fe) {
 			return false
 		}
 		var ce *cline.StatusError

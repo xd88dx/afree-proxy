@@ -25,7 +25,7 @@ import sys
 
 APP_FILES = "internal/app/*.go"
 PANEL_SOURCES = ["internal/panel/html.go"] + [
-    "internal/%s/panel_tab.html" % p for p in ("cline", "zen", "trae", "workbuddy", "other")
+    "internal/%s/panel_tab.html" % p for p in ("cline", "zen", "trae", "workbuddy", "other", "freepi")
 ]
 WB_VENDOR_GLOB = "modules/workbuddy2api/internal/panel/*.go"
 

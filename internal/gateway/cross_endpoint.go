@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"strings"
 
+	"afree-proxy/internal/freepi"
 	"afree-proxy/internal/other"
 )
 
@@ -55,6 +56,18 @@ func resolvePlatformChatCallerRaw(model string) (platformChatCall, bool) {
 	// vendored /v1/chat/completions（OpenAI 原生 SSE，无需聚合翻译）。
 	if caller, ok := trae2apiCaller(model); ok {
 		return caller, true
+	}
+	// FreePI 路由（freepi: 前缀，单平台 key 池）：目录成员判定 + 有凭据闸。
+	if bare, ok := freepi.StripPrefix(model); ok {
+		if _, known := freepi.ResolveModel(bare); !known {
+			return rejectCaller(fmt.Sprintf("model %q is not in the FreePI catalog — refresh the catalog on the FreePI page", bare), false), true
+		}
+		if len(freepi.Get().Keys) == 0 {
+			return rejectCaller("No keys configured for FreePI. Add keys on the FreePI page.", true), true
+		}
+		return func(ctx context.Context, params map[string]any, stream bool) (*http.Response, func(map[string]any), error) {
+			return freepiChatCall(ctx, params, bare, stream)
+		}, true
 	}
 	if p, bare, ok := other.ResolvePrefix(model); ok && p != nil {
 		m, resolved := other.ResolveSelected(p, bare)

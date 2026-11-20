@@ -73,7 +73,7 @@ func FlushPlatformBan() {
 // （other:<slug>）。未知键拒绝——拼写错误静默入库等于封了个寂寞。
 func PlatformBanKeyValid(key string) bool {
 	switch key {
-	case PlatCline, PlatZen, PlatWorkBuddy, PlatTrae:
+	case PlatCline, PlatZen, PlatWorkBuddy, PlatTrae, PlatFreepi:
 		return true
 	}
 	if slug, ok := strings.CutPrefix(key, "other:"); ok && slug != "" {

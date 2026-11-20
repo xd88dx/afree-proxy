@@ -13,12 +13,13 @@ Cursor / ZCode / Cline / Claude Code ──►  afree-proxy  ──►  Cline �
    /v1/responses (OpenAI Responses)            ├─►  WorkBuddy 账号（OAuth，wbcn:/wbgb: 前缀）
    /v1/models                                  ├─►  TraeWork 账号（tacn:/tagb: 合并域前缀）
                                                ├─►  Other 自定义子平台（自定前缀，多 key）
+                                               ├─►  FreePI 免费日额度池（freepi: 前缀，JWT 多 key）
                                                └─►  出口 socks5/http 代理池（轮转或身份绑定）
 ```
 
 ## 核心特性
 
-- **一个端点，全部上游。** 网关按请求的 `model` 前缀路由：`wbcn:`/`wbgb:` → WorkBuddy，`tacn:`/`tagb:` → TraeWork（合并域：tacn=CN Trae+SOLO、tagb=Intl，随 intl.enabled），`zen:` → opencode zen，Other 子平台自定前缀 → 对应子平台，zen 付费模型明确 400，其余走 Cline 账号池。旧形态（裸 zen ID、`cn:`/`global:`、无前缀 cline ID）仍兼容解析。Combos 可自定义别名模型 ID。
+- **一个端点，全部上游。** 网关按请求的 `model` 前缀路由：`wbcn:`/`wbgb:` → WorkBuddy，`tacn:`/`tagb:` → TraeWork（合并域：tacn=CN Trae+SOLO、tagb=Intl，随 intl.enabled），`zen:` → opencode zen，Other 子平台自定前缀 → 对应子平台，`freepi:` → FreePI 免费日额度池，zen 付费模型明确 400，其余走 Cline 账号池。旧形态（裸 zen ID、`cn:`/`global:`、无前缀 cline ID）仍兼容解析。Combos 可自定义别名模型 ID。
 - **三种客户端方言，一种上游语言。** `/v1/chat/completions` 近直通；`/v1/responses` 与 `/v1/messages`（Anthropic）双向翻译，含流式事件、工具调用与 usage。
 - **代理隔离第一优先。** 每个账号/key 可绑定主/备出口代理，请求永远从绑定出口发出；两个出口都不可用时该身份整体跳过——**绝不回退其他出口或直连**。未绑定身份沿用面板的每平台走池开关。
 - **凭据启用/禁用语义全平台一致。** 「启用」列 = 是否参与请求轮转。新增身份默认禁用（存量缺字段仍按启用，升级不停服）。**任何平台没有任何启用凭据（含反代开关全关）时整平台 503 拒路由**，与封禁平台同闸；模型目录只对可服务配置展示——无启用凭据时面板目录显示引导空态、`/v1/models` 摘除该平台模型。
@@ -34,6 +35,7 @@ Cursor / ZCode / Cline / Claude Code ──►  afree-proxy  ──►  Cline �
 | WorkBuddy   | `wbcn:` / `wbgb:` | OAuth（内嵌面板登录）                                                           | CN/Global 双域实时探测                                                          | 官方稳定模型优先           |
 | OpenCode    | `zen:`            | zen key（本地铸造会话 ID）                                                      | 上游免费目录 5min 同步                                                          | `big-pickle` 优先          |
 | Other       | 自定 `acme:`      | 各上游 key                                                                      | `{BaseURL}/models` 拉取 + 手动添加 + 多选暴露                                   | 设置页配置                 |
+| FreePI      | `freepi:`         | free-pi CLI 铸造的 JWT（90 天有效，GitHub 设备授权或手动粘贴）                   | `GET /client-version` 拉取（带倍率名），失败回落内置静态表                       | Test=GET /me 免费验证 + 余额快照 |
 
 各平台共用同一套池语义：轮转策略、429 按 `Retry-After` 冷却、Test 按钮发真实探测请求并在成功后立即解除冷却、主/备代理绑定、新增身份默认不参与路由。**key 池平台**（Other）401/403 冷却 1 小时；Cline 账号池 401（含刷新被 400/401/403 拒绝）直接标记账号过期（等刷新恢复），chat 直接 403 不改账号状态、原样返回。
 
@@ -242,6 +244,7 @@ CI：push 到 `main` / `zen-harvest` 先跑 `go build` + `go vet` + `go test`，
 │   ├── trae/                TraeWork 域：vendored 引擎装配、tacn:/tagb: 合并域、trae-config
 │   ├── workbuddy/           WorkBuddy 域：子系统装配、wbcn:/wbgb: 域、wkbd-config
 │   ├── other/               Other 多子平台 key 池协议栈
+│   ├── freepi/              FreePI（freepi.ai）免费日额度 key 池：三道闸门自愈（ads/session/concurrent）、credits 余额
 │   ├── exitpool/            代理域：出口池/隔离绑定/健康/探测（proxy-config/proxy-state）
 │   ├── blacklist/           模型黑名单 + 平台封禁（存储与判定）
 │   ├── panel/               管理面板：认证、admin_html（8507 行内嵌面板）、响应原语

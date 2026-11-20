@@ -12,8 +12,8 @@ if len(sys.argv) > 1:
     _paths = [sys.argv[1]]
 else:
     _paths = ["internal/panel/html.go"] + [
-        "internal/%s/panel_tab.html" % p for p in ("cline", "zen", "trae", "workbuddy", "other")
-    ] + ["internal/%s/panel_nav.html" % p for p in ("cline", "zen", "trae", "workbuddy", "other")]
+        "internal/%s/panel_tab.html" % p for p in ("cline", "zen", "trae", "workbuddy", "other", "freepi")
+    ] + ["internal/%s/panel_nav.html" % p for p in ("cline", "zen", "trae", "workbuddy", "other", "freepi")]
 path = ",".join(_paths)
 src = "\n".join(io.open(pp, encoding='utf-8').read() for pp in _paths)
 

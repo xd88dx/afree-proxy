@@ -8,6 +8,7 @@ package gateway
 
 import (
 	"afree-proxy/internal/cline"
+	"afree-proxy/internal/freepi"
 	"afree-proxy/internal/other"
 	"afree-proxy/internal/trae"
 	"afree-proxy/internal/workbuddy"
@@ -31,6 +32,8 @@ func platformUseProxies(kind string) *bool {
 		return trae.TraeConfigUseProxies()
 	case "other":
 		return other.CurrentUseProxies()
+	case "freepi":
+		return freepi.CurrentUseProxies()
 	case "zen":
 		return zen.ZenConfigUseProxies()
 	case "workbuddy":
@@ -50,6 +53,8 @@ func setPlatformUseProxies(kind string, v *bool) {
 		zen.MutateZenConfigFile(func(z *zen.ZenConfigFileData) { z.ZenUseProxies = v })
 	case "other":
 		other.SetConfigUseProxies(v)
+	case "freepi":
+		freepi.SetConfigUseProxies(v)
 	case "workbuddy":
 		workbuddy.MutateWkbdConfig(func(k *workbuddy.WkbdConfigData) { k.UseProxies = v })
 	}

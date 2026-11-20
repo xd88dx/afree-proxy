@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"testing"
 
+	"afree-proxy/internal/freepi"
 	"afree-proxy/internal/other"
 )
 
@@ -21,11 +22,13 @@ func TestUpstreamErrorStatusPasses429(t *testing.T) {
 	}{
 		{"other 429", &other.HTTPError{Status: 429, RateLimited: true}, http.StatusTooManyRequests},
 		{"zen 429", &zenHTTPError{Status: 429}, http.StatusTooManyRequests},
+		{"freepi 429", &freepi.HTTPError{Status: 429, RateLimited: true}, http.StatusTooManyRequests},
 		{"cline 429", &clineAPIError{Status: 429}, http.StatusTooManyRequests},
 		{"跨端点 429", &upstreamHTTPError{Status: 429, Body: "slow down"}, http.StatusTooManyRequests},
 		{"包装后的 429", wrapped429{}, http.StatusTooManyRequests},
 		// 非 429 一律走 fallback(既有语义不变)
 		{"other 503", &other.HTTPError{Status: 503}, fallback},
+		{"freepi 403", &freepi.HTTPError{Status: 403, Body: "ads_required"}, fallback},
 		{"cline 403", &clineAPIError{Status: 403}, fallback},
 		{"普通错误", errors.New("dial tcp: connection refused"), fallback},
 		{"nil 错误", nil, fallback},

@@ -22,6 +22,7 @@ const (
 	platCline     = blacklist.PlatCline
 	platTrae      = blacklist.PlatTrae
 	platOther     = blacklist.PlatOther
+	platFreepi    = blacklist.PlatFreepi
 )
 
 var modelBlacklistMu = &blacklist.ModelBlacklistMu

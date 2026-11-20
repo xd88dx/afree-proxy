@@ -29,6 +29,9 @@ const (
 	KindOther = "other"
 	KindTrae  = "trae"
 	KindWb    = "wb"
+
+	// KindFreepi freepi.ai key 池平台（2026-11-20 接入）。
+	KindFreepi = "freepi"
 )
 
 // PlatformCooldownConst 平台级冷却时长（2026-10-30 用户定 10 分钟）：隧道后
@@ -465,16 +468,33 @@ func BuildTransportProfile(dial func(ctx context.Context, network, addr string) 
 			return nil, err
 		}
 		isBun := hello == utls.ClientHelloID{}
-		helloID := utls.HelloCustom
-		if !isBun {
-			helloID = hello
-		}
 		uconn := utls.UClient(raw, &utls.Config{
 			ServerName: host,
 			NextProtos: []string{"http/1.1"},
-		}, helloID)
+		}, utls.HelloCustom)
 		if isBun {
 			if err := uconn.ApplyPreset(bunSpecForConn()); err != nil {
+				raw.Close()
+				return nil, err
+			}
+		} else {
+			// 内置模板（Chrome 等）自带 ALPN ["h2","http/1.1"]，spec 应用时
+			// ALPNExtension.writeToUConn 会覆盖上面的 Config.NextProtos——
+			// h1-only transport 读到服务器回的 h2 SETTINGS 帧即报 malformed
+			// HTTP response（2026-11-20 tokenharbor.ai 经池出口实证）。取模板
+			// spec 钉 ALPN 为 http/1.1 再应用，其余指纹不变；spec 每连接新建，
+			// 不触碰 ApplyPreset 文档告诫的共享状态。
+			spec, err := utls.UTLSIdToSpec(hello)
+			if err != nil {
+				raw.Close()
+				return nil, err
+			}
+			for _, ext := range spec.Extensions {
+				if alpn, ok := ext.(*utls.ALPNExtension); ok {
+					alpn.AlpnProtocols = []string{"http/1.1"}
+				}
+			}
+			if err := uconn.ApplyPreset(&spec); err != nil {
 				raw.Close()
 				return nil, err
 			}

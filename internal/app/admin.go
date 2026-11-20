@@ -157,6 +157,22 @@ func registerAdminRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/admin/api/other/chat", panel.AdminCORS(auth(handleOtherLiveRequest)))
 	mux.HandleFunc("/admin/api/other/keys/proxy", panel.AdminCORS(auth(handleOtherKeySetProxy)))
 	mux.HandleFunc("/admin/api/other/keys/proxy/clear", panel.AdminCORS(auth(handleOtherKeyClearProxies)))
+
+	// FreePI 平台（freepi.ai 免费日额度 key 池，单一 /admin/api/freepi/ 前缀）：
+	// 配置/key 管理/测试（/me）/目录/额度刷新/代理绑定
+	mux.HandleFunc("/admin/api/freepi/config", panel.AdminCORS(auth(handleFreepiConfig)))
+	mux.HandleFunc("/admin/api/freepi/config/update", panel.AdminCORS(auth(handleFreepiConfigUpdate)))
+	mux.HandleFunc("/admin/api/freepi/models/refresh", panel.AdminCORS(auth(handleFreepiModelsRefresh)))
+	mux.HandleFunc("/admin/api/freepi/credits/refresh", panel.AdminCORS(auth(handleFreepiCreditsRefresh)))
+	mux.HandleFunc("/admin/api/freepi/keys/update", panel.AdminCORS(auth(handleFreepiKeysUpdate)))
+	mux.HandleFunc("/admin/api/freepi/keys/get", panel.AdminCORS(auth(handleFreepiKeyGet)))
+	mux.HandleFunc("/admin/api/freepi/keys/routing", panel.AdminCORS(auth(handleFreepiKeySetRouting)))
+	mux.HandleFunc("/admin/api/freepi/keys/routing/all", panel.AdminCORS(auth(handleFreepiKeySetRoutingAll)))
+	mux.HandleFunc("/admin/api/freepi/keys/reorder", panel.AdminCORS(auth(handleFreepiKeysReorder)))
+	mux.HandleFunc("/admin/api/freepi/keys/delete", panel.AdminCORS(auth(handleFreepiKeyDelete)))
+	mux.HandleFunc("/admin/api/freepi/keys/test", panel.AdminCORS(auth(handleFreepiKeyTest)))
+	mux.HandleFunc("/admin/api/freepi/keys/proxy", panel.AdminCORS(auth(handleFreepiKeySetProxy)))
+	mux.HandleFunc("/admin/api/freepi/keys/proxy/clear", panel.AdminCORS(auth(handleFreepiKeyClearProxies)))
 	mux.HandleFunc("/admin/zen/", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/admin/", http.StatusFound)
 	})
@@ -852,7 +868,7 @@ func testAccount(ctx context.Context, acc *Account) (map[string]any, string) {
 		poolMu.Unlock()
 		return map[string]any{
 			"accountId":  acc.AccountID,
-			"label":        cline.AccountLabel(acc),
+			"label":      cline.AccountLabel(acc),
 			"status":     "expired",
 			"reason":     reason,
 			"prevStatus": prevStatus,
@@ -868,7 +884,7 @@ func testAccount(ctx context.Context, acc *Account) (map[string]any, string) {
 		// 实测）。这里明确报因，指向真正的故障面。
 		return map[string]any{
 			"accountId": acc.AccountID,
-			"label":        cline.AccountLabel(acc),
+			"label":     cline.AccountLabel(acc),
 			"status":    "error",
 			"reason":    "no probe model: cline catalog is empty (model sync failing — check gateway logs / sync egress)",
 		}, "error"
@@ -892,7 +908,7 @@ func testAccount(ctx context.Context, acc *Account) (map[string]any, string) {
 	if err != nil {
 		return map[string]any{
 			"accountId": acc.AccountID,
-			"label":        cline.AccountLabel(acc),
+			"label":     cline.AccountLabel(acc),
 			"status":    "error",
 			"reason":    "build request: " + err.Error(),
 		}, "error"
@@ -910,7 +926,7 @@ func testAccount(ctx context.Context, acc *Account) (map[string]any, string) {
 		if !ok {
 			return map[string]any{
 				"accountId": acc.AccountID,
-				"label":        cline.AccountLabel(acc),
+				"label":     cline.AccountLabel(acc),
 				"status":    "error",
 				"reason": blockedExitMessage(
 					"bound proxies unavailable (cooling or removed); probe skipped by proxy isolation",
@@ -927,7 +943,7 @@ func testAccount(ctx context.Context, acc *Account) (map[string]any, string) {
 		if !exitOK {
 			return map[string]any{
 				"accountId": acc.AccountID,
-				"label":        cline.AccountLabel(acc),
+				"label":     cline.AccountLabel(acc),
 				"status":    "error",
 				"reason":    "no proxy exit: every pool exit is manually cooled; probe skipped",
 			}, "error"
@@ -935,7 +951,7 @@ func testAccount(ctx context.Context, acc *Account) (map[string]any, string) {
 		if proxyURL == "" && kit.DisableDirect() {
 			return map[string]any{
 				"accountId": acc.AccountID,
-				"label":        cline.AccountLabel(acc),
+				"label":     cline.AccountLabel(acc),
 				"status":    "error",
 				"reason":    "no proxy exit: direct egress disabled by DISABLE_DIRECT; probe skipped",
 			}, "error"
@@ -949,7 +965,7 @@ func testAccount(ctx context.Context, acc *Account) (map[string]any, string) {
 	if probeExit == "" && kit.DisableDirect() {
 		return map[string]any{
 			"accountId": acc.AccountID,
-			"label":        cline.AccountLabel(acc),
+			"label":     cline.AccountLabel(acc),
 			"status":    "error",
 			"reason":    "direct egress disabled by DISABLE_DIRECT; probe skipped",
 		}, "error"
@@ -963,7 +979,7 @@ func testAccount(ctx context.Context, acc *Account) (map[string]any, string) {
 		until := markAccountCooldown(acc, reason, 5*time.Minute)
 		return map[string]any{
 			"accountId": acc.AccountID,
-			"label":        cline.AccountLabel(acc),
+			"label":     cline.AccountLabel(acc),
 			"status":    "cooldown",
 			"reason":    reason,
 			// RFC3339（带时区）：面板用 new Date(...).toLocaleString() 渲染成浏览器本地时间；
@@ -1012,7 +1028,7 @@ func testAccount(ctx context.Context, acc *Account) (map[string]any, string) {
 		log.Printf("Test hit 429 on %s, cooldown %v", cline.AccountLabel(acc), duration)
 		return map[string]any{
 			"accountId": acc.AccountID,
-			"label":        cline.AccountLabel(acc),
+			"label":     cline.AccountLabel(acc),
 			"status":    "cooldown",
 			"reason":    reason,
 			// RFC3339（带时区）：面板用 new Date(...).toLocaleString() 渲染成浏览器本地时间；
@@ -1033,7 +1049,7 @@ func testAccount(ctx context.Context, acc *Account) (map[string]any, string) {
 		poolMu.Unlock()
 		return map[string]any{
 			"accountId":  acc.AccountID,
-			"label":        cline.AccountLabel(acc),
+			"label":      cline.AccountLabel(acc),
 			"status":     "expired",
 			"reason":     "401 unauthorized",
 			"httpStatus": resp.StatusCode,
@@ -1044,7 +1060,7 @@ func testAccount(ctx context.Context, acc *Account) (map[string]any, string) {
 		// 其它错误：不强制冷却，按一次失败处理
 		return map[string]any{
 			"accountId":  acc.AccountID,
-			"label":        cline.AccountLabel(acc),
+			"label":      cline.AccountLabel(acc),
 			"status":     "error",
 			"reason":     fmt.Sprintf("API %d: %s", resp.StatusCode, kit.Truncate(bodyStr, 300)),
 			"httpStatus": resp.StatusCode,
@@ -1068,7 +1084,7 @@ func testAccount(ctx context.Context, acc *Account) (map[string]any, string) {
 	}
 	return map[string]any{
 		"accountId":  acc.AccountID,
-		"label":        cline.AccountLabel(acc),
+		"label":      cline.AccountLabel(acc),
 		"status":     "active",
 		"reason":     "ok",
 		"httpStatus": resp.StatusCode,

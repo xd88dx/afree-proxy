@@ -4,6 +4,7 @@ package app
 // 属装配根职责；域逻辑在 internal/cb）。
 
 import (
+	"afree-proxy/internal/freepi"
 	"afree-proxy/internal/gateway"
 	"encoding/json"
 	"fmt"
@@ -79,6 +80,7 @@ func handleAdminConfigExport(w http.ResponseWriter, r *http.Request) {
 		Combos:                 listCombos(),
 		WorkBuddy:              backup.ExportWorkbuddyBackup(),
 		Other:                  other.Get(),
+		Freepi:                 freepi.Get(),
 		Trae:                   trae.Trae2apiBackupSnapshot(),
 		WorkBuddyProxies:       backup.ExportWorkbuddyProxyBindings(),
 		TraeProxies:            exportTrae2apiProxyBindings(),
@@ -90,12 +92,14 @@ func handleAdminConfigExport(w http.ResponseWriter, r *http.Request) {
 		ZenUseProxies:          gateway.PlatformUseProxies("zen"),
 		TraeUseProxies:         gateway.PlatformUseProxies("trae"),
 		WorkBuddyUseProxies:    gateway.PlatformUseProxies("workbuddy"),
+		FreepiUseProxies:       gateway.PlatformUseProxies("freepi"),
 		WorkBuddyAccountPrefs:  backup.ExportWorkbuddyAccountPrefs(),
 		WorkBuddyShareOptimize: workbuddy.WkbdConfigShareOptimize(),
 		State: &backup.StateBackup{
 			Cline:       clineState,
 			Zen:         zenStateBackupSnapshot(),
 			Other:       other.StateSnapshotJSON(),
+			Freepi:      freepi.StateSnapshotJSON(),
 			ProxyHealth: proxyHealthBackupSnapshot(),
 		},
 	}
@@ -340,6 +344,25 @@ func handleAdminConfigImport(w http.ResponseWriter, r *http.Request) {
 		other.Set(ocfg)
 		imported["otherKeys"] = nKeys
 	}
+	if cb.Freepi != nil {
+		// freepi 同口径：默认导入的 key 一律禁用（启用状态属导出方部署）；
+		// 弹窗勾选"沿用启用状态"（key = "freepi"）才保留备份内原表。
+		fcfg := cb.Freepi
+		nKeys := 0
+		if len(fcfg.Keys) > 0 {
+			if fcfg.KeyRoutingEnabled == nil {
+				fcfg.KeyRoutingEnabled = map[string]bool{}
+			}
+			if !cb.KeepEnabled["freepi"] {
+				for _, k := range fcfg.Keys {
+					fcfg.KeyRoutingEnabled[k] = false
+				}
+			}
+			nKeys = len(fcfg.Keys)
+		}
+		freepi.Set(fcfg)
+		imported["freepiKeys"] = nKeys
+	}
 	if len(cb.Trae) > 0 {
 		// TraeWork（vendored trae2api）同口径：导入账号默认全部禁用（反代开关
 		// 显式 false），弹窗勾选"沿用启用状态"才保留备份内开关表。旧引擎形态
@@ -370,6 +393,10 @@ func handleAdminConfigImport(w http.ResponseWriter, r *http.Request) {
 			})
 		}
 		imported["workbuddyShareOptimize"] = 1
+	}
+	if cb.FreepiUseProxies != nil {
+		gateway.SetPlatformUseProxies("freepi", cb.FreepiUseProxies)
+		imported["freepiUseProxies"] = 1
 	}
 	if cb.ZenUseProxies != nil {
 		gateway.SetPlatformUseProxies("zen", cb.ZenUseProxies)
@@ -443,6 +470,7 @@ func handleAdminConfigImport(w http.ResponseWriter, r *http.Request) {
 			_ = importFn(merged)
 		}
 		mergeOrReplace(other.StateSnapshotJSON(), st.Other, other.ImportStateJSON)
+		mergeOrReplace(freepi.StateSnapshotJSON(), st.Freepi, freepi.ImportStateJSON)
 		if includeStats && st.ProxyHealth != nil {
 			importProxyHealthBackup(st.ProxyHealth)
 		}

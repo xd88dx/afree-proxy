@@ -14,6 +14,7 @@ import (
 	"afree-proxy/internal/blacklist"
 	"afree-proxy/internal/cline"
 	"afree-proxy/internal/exitpool"
+	"afree-proxy/internal/freepi"
 	"afree-proxy/internal/gwconfig"
 	"afree-proxy/internal/other"
 	"afree-proxy/internal/trae"
@@ -97,6 +98,7 @@ type StateBackup struct {
 	Zen         *zen.ZenUsageFile    `json:"zen,omitempty"`
 	Trae        json.RawMessage      `json:"trae,omitempty"`
 	Other       json.RawMessage      `json:"other,omitempty"`
+	Freepi      json.RawMessage      `json:"freepi,omitempty"`
 	ProxyHealth *exitpool.HealthFile `json:"proxyHealth,omitempty"`
 }
 
@@ -127,6 +129,8 @@ type ConfigBackup struct {
 	// Other 子平台聚合配置（other-config.json）。2026-10-14 补：Other 页
 	// 上线时只做了网关/面板，未接备份，导致子平台与 key 池无法随配置迁移。
 	Other *other.Config `json:"other,omitempty"`
+	// Freepi 平台配置（freepi-config.json，2026-11-20 接入）。
+	Freepi *freepi.Config `json:"freepi,omitempty"`
 	// Trae 账号池平台（2026-11-04 起 vendored trae2api 引擎）：config =
 	// data/trae2api/config.json 原文（2026-11-05 迁入子系统目录），routing =
 	// 反代开关表，accounts = 快照文件
@@ -175,6 +179,8 @@ type ConfigBackup struct {
 	WorkBuddyUseProxies    *bool                                `json:"workbuddyUseProxies,omitempty"`
 	WorkBuddyAccountPrefs  map[string]workbuddy.WkbdAccountPref `json:"workbuddyAccountPrefs,omitempty"`
 	WorkBuddyShareOptimize *workbuddy.WkbdShareOptimize         `json:"workbuddyShareOptimize,omitempty"`
+	// FreepiUseProxies freepi 走池开关（freepi-config.json 独立段）。2026-11-20 补。
+	FreepiUseProxies *bool `json:"freepiUseProxies,omitempty"`
 	// State 各平台 state 快照（2026-11-01）：与 *-state.json 落盘同形态的
 	// **全量**快照（账号事实 + 本机统计，三层口径「导出 = 容器全部数据」）。
 	// 导出始终携带；导入分层——账号事实无论勾选与否都应用，本机统计仅勾选

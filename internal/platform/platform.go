@@ -21,6 +21,7 @@ const (
 	KindCline     = "cline"
 	KindTrae      = "trae"
 	KindOther     = "other"
+	KindFreepi    = "freepi"
 )
 
 // Platform 平台能力点接口。各平台包提供实现，装配根注册。

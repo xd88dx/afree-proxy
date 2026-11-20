@@ -239,7 +239,7 @@ func inheritProxyExclusionsForNewPlatform(newSlug string) {
 	if binding == nil || len(binding.ProxyExclusions) == 0 || newSlug == "" {
 		return
 	}
-	leaves := map[string]bool{"acc": true, "trae": true, "key": true, "wb": true}
+	leaves := map[string]bool{"acc": true, "trae": true, "key": true, "wb": true, "freepi": true}
 	for _, p := range other.Get().Platforms {
 		if p.Slug != newSlug {
 			leaves["other:"+p.Slug] = true

@@ -2,6 +2,7 @@ package panel
 
 import (
 	"afree-proxy/internal/cline"
+	"afree-proxy/internal/freepi"
 	"afree-proxy/internal/other"
 	"afree-proxy/internal/trae"
 	"afree-proxy/internal/workbuddy"
@@ -20,6 +21,7 @@ var AdminHTML = head1aHTML +
 	workbuddy.PanelNavItem +
 	zen.PanelNavItem +
 	other.PanelNavItem +
+	freepi.PanelNavItem +
 	head1bHTML +
 	cline.PanelTabHTML +
 	trae.PanelTabHTML +
@@ -30,6 +32,7 @@ var AdminHTML = head1aHTML +
 	zen.PanelTabHTML +
 	workbuddy.PanelTabHTML +
 	other.PanelTabHTML +
+	freepi.PanelTabHTML +
 	tailHTML
 
 const head1aHTML = `<!DOCTYPE html>
@@ -219,12 +222,12 @@ tr:hover .nick-pen{opacity:.85}
 .status-dot.active{background:var(--accent2)}
 .status-dot.cooldown{background:var(--amber)}
 .status-dot.expired{background:var(--danger)}
-/* 凭据表格全列居中（2026-10-29 用户定）：8 平台账号/key 表的表头与内容。
+/* 凭据表格全列居中（2026-10-29 用户定）：9 平台账号/key 表的表头与内容。
    :has() 从 tbody 反选所在表的 thead；nick-wrap / wb-account 是 flex 容器，
    text-align 管不到，单独补 justify-content。 */
-table:has(#accountTableBody) th,table:has(#traeAccountsBody) th,table:has(#ocKeysBody) th,table:has(#wbAccountsBody) th,table:has(#otherKeysBody) th,table:has(#wbShareBody) th,#accountTableBody td,#traeAccountsBody td,#ocKeysBody td,#wbAccountsBody td,#otherKeysBody td,#wbShareBody td{text-align:center}
+table:has(#accountTableBody) th,table:has(#traeAccountsBody) th,table:has(#ocKeysBody) th,table:has(#wbAccountsBody) th,table:has(#otherKeysBody) th,table:has(#wbShareBody) th,table:has(#freepiKeysBody) th,#accountTableBody td,#traeAccountsBody td,#ocKeysBody td,#wbAccountsBody td,#otherKeysBody td,#wbShareBody td,#freepiKeysBody td{text-align:center}
 /* 账号/Key 列（各表第 2 列）：表头居中，内容左对齐（2026-10-29 用户定） */
-#accountTableBody td:nth-child(2),#traeAccountsBody td:nth-child(2),#ocKeysBody td:nth-child(2),#wbAccountsBody td:nth-child(2):nth-child(2),#otherKeysBody td:nth-child(2){text-align:left}
+#accountTableBody td:nth-child(2),#traeAccountsBody td:nth-child(2),#ocKeysBody td:nth-child(2),#wbAccountsBody td:nth-child(2):nth-child(2),#otherKeysBody td:nth-child(2),#freepiKeysBody td:nth-child(2){text-align:left}
 /* 编辑账号弹窗（2026-11-20）：三平台共用；昵称上间距收紧 + key 眼睛/复制图标 */
 .cred-edit-dlg .wb-dialog-body{padding:12px 18px 18px}
 .cred-row{position:relative}
@@ -521,6 +524,10 @@ const head1bHTML = `<div class="nav-group">Services</div>
         <div class="dash-name">Other</div>
         <div class="dash-stats" id="dashOther">-</div>
       </div>
+      <div class="dash-card" onclick="switchTab('freepi')">
+        <div class="dash-name">FreePI</div>
+        <div class="dash-stats" id="dashFreepi">-</div>
+      </div>
     </div>
   </div>
 </div>
@@ -533,6 +540,7 @@ const head1bHTML = `<div class="nav-group">Services</div>
       <div class="stat-card"><div class="stat-name">WorkBuddy</div><div class="stat-line" id="reqWb">-</div></div>
       <div class="stat-card"><div class="stat-name">OpenCode</div><div class="stat-line" id="reqZen">-</div></div>
       <div class="stat-card"><div class="stat-name">Other</div><div class="stat-line" id="reqOther">-</div></div>
+      <div class="stat-card"><div class="stat-name">FreePI</div><div class="stat-line" id="reqFreepi">-</div></div>
     </div>
     <div class="hint" style="margin:10px 0 0" id="reqStatsHint">Counted since process start.</div>
   </div>
@@ -643,6 +651,11 @@ const poolTabHTML = `<div id="tab-proxypool" class="tab-panel" style="display:no
         <label>Other</label>
         <select id="ppOther"><option value="true">Proxy</option><option value="false">Direct connection</option></select>
         <div class="hint">Other sub-platform keys without proxy bindings follow this switch.</div>
+      </div>
+      <div class="pp-card">
+        <label>FreePI</label>
+        <select id="ppFreepi"><option value="true">Proxy</option><option value="false">Direct connection</option></select>
+        <div class="hint">FreePI keys without proxy bindings follow this switch.</div>
       </div>
     </div>
     <div class="form-actions"><button class="btn btn-primary" onclick="saveGlobalPolicy()" data-i18n="save">Save</button></div>
@@ -1609,6 +1622,18 @@ const I18N = {
   'Model prefix (required, unique) *': { en: 'Model prefix (required, unique) *', zh: '模型前缀（必填，唯一）*' },
   'name_and_prefix_are_required': { en: 'Name and prefix are required', zh: '名称和前缀为必填项' },
   'no_sub_platform_yet_click_new_sub_platform_to_ad_1': { en: 'No sub-platform yet. Click "New sub-platform" to add one.', zh: '暂无子平台。点击"新建子平台"添加一个。' },
+  // FreePI（freepi.ai 免费日额度 key 池，2026-11-20 接入）
+  'freepi_page_summary': { en: 'FreePI (freepi.ai): free daily-credit key pool. Credentials are JWTs minted by the free-pi CLI (90-day validity, refilled at UTC midnight); models are exposed as freepi:<model-id>.', zh: 'FreePI（freepi.ai）免费日额度 key 池。凭据为 free-pi CLI 铸造的 JWT（90 天有效，UTC 零点补充）；模型以 freepi:<模型ID> 暴露。' },
+  'freepi_add_hint': { en: 'One per line: JWT-----nickname (nickname optional). Mint a token via the free-pi CLI GitHub device sign-in, or by hand: POST https://api.freepi.ai/auth/github/device, open verification_uri_complete, then POST /auth/token with the session_id. The JWT is valid 90 days.', zh: '每行一条：JWT-----昵称（昵称可省）。用 free-pi CLI 的 GitHub 设备授权铸造，或手动：POST https://api.freepi.ai/auth/github/device，打开 verification_uri_complete 完成授权，再带 session_id POST /auth/token。JWT 有效期 90 天。' },
+  'freepi_jwt_shape': { en: 'That does not look like a JWT (expected 3 dot-separated segments).', zh: '看起来不是合法 JWT（应为三段、以点分隔）。' },
+  'refresh_credits': { en: 'Refresh credits', zh: '刷新额度' },
+  'credits_refreshed': { en: 'Credits refreshed: ', zh: '已刷新额度：' },
+  'daily_credits_refill_at': { en: 'Daily credits, refills at (UTC): ', zh: '每日额度，UTC 补充时刻：' },
+  'daily_credits': { en: 'Daily credits', zh: '每日额度' },
+  'no_models_refresh_to_sync': { en: 'No models yet — click "Refresh models" to sync from upstream', zh: '暂无模型 —— 点击"刷新模型"从上游同步' },
+  // FreePI 产品名恒等词条（§8b 允许不译，但静态叶子审计要求命中词典）
+  'FreePI': { en: 'FreePI', zh: 'FreePI' },
+  'FreePI keys without proxy bindings follow this switch.': { en: 'FreePI keys without proxy bindings follow this switch.', zh: 'FreePI 未绑定出口的凭据遵循此开关。' },
   'select_a_sub_platform_to_view_details': { en: 'Select a sub-platform to view details', zh: '请选择子平台以查看详情' },
   'no_sub_platform_yet_click_new_sub_platform_to_ad': { en: 'No sub-platform yet — click "New sub-platform" to add one', zh: '还没有子平台 —— 点击"新建子平台"添加' },
   'select_a_sub_platform_on_the_left': { en: 'Select a sub-platform on the left.', zh: '在左侧选择一个子平台。' },
@@ -2106,6 +2131,7 @@ function switchTab(name) {
   if (name === 'opencode') { loadOcConfig(); loadOcModels(); loadModels(); }
   if (name === 'workbuddy') { ensureWorkbuddyConsole(); loadModels(); }
   if (name === 'other') loadOtherConfig();
+  if (name === 'freepi') loadFreepiConfig();
   if (name === 'combos') { loadCombos(); fillComboModels(); }
   // 把当前页写进 hash：刷新/重开浏览器后 restoreTab 恢复到离开时的页
   try { history.replaceState(null, '', '#' + name); } catch (e) { /* ignore */ }
@@ -3128,6 +3154,11 @@ async function loadStats() {
     setDash('dashOther', 'keys', n, routed, cooling);
   } catch (e) { /* ignore */ }
   try {
+    const d = await api('GET', '/freepi/config');
+    const ks = (d.data && d.data.keyStates) || [];
+    setDash('dashFreepi', 'keys', ks.length, ks.filter(k => k.routingEnabled !== false).length, ks.filter(k => k.cooling).length);
+  } catch (e) { /* ignore */ }
+  try {
     const d = await api('GET', '/request-stats');
     const rs = (d.data && d.data.routes) || {};
     setReq('reqCline', rs.cline);
@@ -3135,6 +3166,7 @@ async function loadStats() {
     setReq('reqZen', rs.zen);
     setReq('reqWb', rs.workbuddy);
     setReq('reqOther', rs.other);
+    setReq('reqFreepi', rs.freepi);
     const hint = _('reqStatsHint');
     if (hint && d.data && d.data.since) hint.textContent = T('counted_since') + new Date(d.data.since).toLocaleString(TZ, TIME_OPT);
   } catch (e) { /* ignore */ }
@@ -3546,7 +3578,7 @@ function proxyRateSet(match, rate) {
 // 下拉行右侧展示的最近在线率：无样本返回 null（不标注）。底色按每 20%
 // 一档共五档（见 proxyRateTier），替代旧"低率标红"的单档口径。
 // eg 表单的 data-eg 值 → 出口冷却的平台 kind（acc/key 是历史字段名，其余同名）。
-const EG_KIND_TO_PK = { acc: 'cline', key: 'zen', trae: 'trae', wb: 'wb', other: 'other' };
+const EG_KIND_TO_PK = { acc: 'cline', key: 'zen', trae: 'trae', wb: 'wb', other: 'other', freepi: 'freepi' };
 // proxyRecentRate 出口的最近在线率徽章。kind = 调用方所在平台（eg 的 data-eg
 // 值，可空）：平台级冷却**只影响对应平台**的徽章——wb 被冷却时，wb 页显示 ∞，
 // cline 页照常显示真实在线率（cline 用它是正常的）；无平台上下文（代理池
@@ -3597,7 +3629,7 @@ function proxyRateTier(rate) {
 // 代理绑定与"启用"勾选的改动只落在 DOM（行高亮 + 保存按钮描边），点击各
 // 平台的"保存"按钮才逐行 diff 快照后提交后端，再刷新表格。清空代理/一键
 // 启用/一键禁用同样只是暂存，保存后才生效。
-const EDIT_SAVE_BTN = { acc: 'accSaveBtn', key: 'ocKeysSaveBtn', wb: 'wbSaveBtn', other: 'otherKeysSaveBtn' };
+const EDIT_SAVE_BTN = { acc: 'accSaveBtn', key: 'ocKeysSaveBtn', wb: 'wbSaveBtn', other: 'otherKeysSaveBtn', freepi: 'freepiKeysSaveBtn' };
 function markRowDirty(row, kind) {
   if (row) row.classList.add('tr-dirty');
   const btn = _(EDIT_SAVE_BTN[kind] || 'accSaveBtn');
@@ -3633,7 +3665,7 @@ function stageRowBindingClear(row, kind) {
 }
 
 // 各凭据页的表格容器（键 -> tbody 选择器），一键代理按页取行。
-const BIND_TBODY = { acc: '#accountTableBody', trae: '#traeAccountsBody', key: '#ocKeysBody', wb: '#wbAccountsBody', other: '#otherKeysBody' };
+const BIND_TBODY = { acc: '#accountTableBody', trae: '#traeAccountsBody', key: '#ocKeysBody', wb: '#wbAccountsBody', other: '#otherKeysBody', freepi: '#freepiKeysBody' };
 
 // 一键代理：按行序把主代理依次绑定为 [直连, 代理池第1项, 代理池第2项, ...]。
 // 仅暂存——与 Enable/Disable all、Clear bindings 同一口径，必须点 Save 才落盘。
@@ -3692,19 +3724,20 @@ function stageProxiesByOrder(kind) {
 // 按各表行序从上到下依次回填。重选后逐平台自动调用既有保存函数落盘。
 // 注意：懒加载 —— 各平台表格仅在访问过对应页后渲染，重排前先逐类加载；
 // 自动保存会连带保存所选平台各表所有未落盘的暂存改动。
-const REORDER_KINDS = ['acc', 'trae', 'wb', 'key', 'other']; // 与左侧菜单同序
+const REORDER_KINDS = ['acc', 'trae', 'wb', 'key', 'other', 'freepi']; // 与左侧菜单同序
 // 弹窗平台行（顺序 = REORDER_KINDS = 左侧菜单序）
 const REORDER_PLATFORMS = [
   { key: 'acc', label: 'Cline' },
   { key: 'trae', label: 'TraeWork' },
   { key: 'wb', label: 'WorkBuddy' },
   { key: 'key', label: 'OpenCode' },
-  { key: 'other', label: 'Other' }
+  { key: 'other', label: 'Other' },
+  { key: 'freepi', label: 'FreePI' }
 ];
 const REORDER_LOADERS = { acc: loadAccounts, trae: loadTraeConfig, key: loadOcConfig, wb: ensureWorkbuddyConsole,
-                          other: loadOtherConfig };
+                          other: loadOtherConfig, freepi: loadFreepiConfig };
 const REORDER_SAVERS = { acc: saveAccountEdits, trae: saveTraeEdits, key: saveKeyEdits, wb: saveWorkbuddyEdits,
-                         other: saveOtherKeyEdits };
+                         other: saveOtherKeyEdits, freepi: saveFreepiKeyEdits };
 // 打开重排确认弹窗：平台行固定 6 项（与菜单同序），默认全部勾选
 function openReorderDlg() {
   // 健康快照只在代理池页加载时刷新：重排可能从别的页触发，先拉最新状态，
@@ -3958,7 +3991,8 @@ async function testAllCredentialPlatforms() {
       ['WorkBuddy', batchTestWorkbuddyAccounts],
     ];
     const others = (otherConfig && otherConfig.platforms) || [];
-    const total = steps.length + others.length;
+    const hasFreepi = !!_('freepiKeysBody');
+    const total = steps.length + others.length + (hasFreepi ? 1 : 0);
     let done = 0;
     const tick = name => { if (btn) btn.innerHTML = '<span class="loading"></span>' + name + ' ' + (done + 1) + '/' + total; };
     for (const st of steps) {
@@ -3987,6 +4021,16 @@ async function testAllCredentialPlatforms() {
     const sel = _('otherPlatformSelect');
     if (sel) sel.value = prevSlug;
     await safe(loadOtherConfig());
+    // FreePI（单平台 key 池）
+    if (_('freepiKeysBody')) {
+      await safe(loadFreepiConfig());
+      tick('FreePI');
+      try {
+        const r = await batchTestFreepiKeys();
+        if (r && r.tested === 0) (r.banned ? banned.push('FreePI') : skipped.push('FreePI'));
+      } catch (e) { failed.push('FreePI'); }
+      done++;
+    }
   } finally {
     if (btn) { btn.disabled = false; btn.innerHTML = label; }
   }
@@ -4544,7 +4588,7 @@ function onImportFileChange(event) {
 
 // impKeepRowsFor 从备份 JSON 提取含上游身份的平台行（Other 子平台逐行，
 // key 用 "other:<slug>" 与后端 KeepEnabled 对齐）。行序与左侧菜单一致：
-// Cline → TraeWork → OpenCode → WorkBuddy → Other。
+// Cline → TraeWork → OpenCode → WorkBuddy → Other → FreePI。
 // 全不勾选 = 原隔离护栏行为。TraeWork（2026-11-05 补）：trae 换线时漏加此行，
 // 后端 KeepEnabled["trae"] 永远缺项 → trae2apiRestoreBackup 全部置 false——
 // 备份里明明带着 routing=true 也恢复不了（用户实测两轮）。
@@ -4558,6 +4602,7 @@ function impKeepRowsFor(parsed) {
   (parsed.other && Array.isArray(parsed.other.platforms) ? parsed.other.platforms : []).forEach(p => {
     if (p && p.slug && has(p.keys)) rows.push({ key: 'other:' + p.slug, label: p.name || p.slug });
   });
+  if (parsed.freepi && has(parsed.freepi.keys)) rows.push({ key: 'freepi', label: 'FreePI' });
   return rows;
 }
 
@@ -4700,7 +4745,7 @@ function legacyCopy(t) {
 // workbuddy / other。Other 的各子平台
 // 日志展示其自定义前缀（后端 logs.go 直接写入前缀，此表兜底不命中）。
 // admin / meta / unclassified 非平台路由，不在菜单中。
-const ROUTE_LABEL = { zen: 'opencode', cline: 'cline', admin: 'admin', meta: 'meta', workbuddy: 'workbuddy', other: 'other', unclassified: 'unclassified' };
+const ROUTE_LABEL = { zen: 'opencode', cline: 'cline', admin: 'admin', meta: 'meta', workbuddy: 'workbuddy', other: 'other', freepi: 'freepi', unclassified: 'unclassified' };
 const PROXY_LABEL = { main: 'Main', backup: 'Backup', direct: 'Direct' };
 // 状态列着色：>=400 红；200+error 琥珀（纯 error 帧缓冲已在网关改判 502，
 // 此色仅剩"先有正文后断流"的残余形态）；干净 200 绿。
@@ -5044,7 +5089,8 @@ async function loadModels() {
 // 顺序与左侧导航菜单一致（Cline → TraeWork → WorkBuddy → OpenCode → …）。
 const BLACKLIST_PLATFORM_LABEL = {
   cline: 'Cline', trae: 'TraeWork', workbuddy: 'WorkBuddy', zen: 'OpenCode',
-  other: 'Other'
+  other: 'Other',
+  freepi: 'FreePI'
 };
 // 已拉黑模型 ID 集合（对外 ID，如 wbgb:gpt-6-luna）。设置页各模型块渲染前
 // 统一过滤——黑名单的语义是「不再对外提供」，不能只过滤 /v1/models 而把
@@ -5328,7 +5374,8 @@ const PLATFORM_BAN_BASE = [
   { key: 'cline', label: 'Cline' },
   { key: 'trae', label: 'TraeWork' },
   { key: 'workbuddy', label: 'WorkBuddy' },
-  { key: 'zen', label: 'OpenCode' }
+  { key: 'zen', label: 'OpenCode' },
+  { key: 'freepi', label: 'FreePI' }
 ];
 let platformBans = new Set();       // 服务器已落盘的封禁集
 let platformBansStaged = new Set(); // 面板暂存集（点「确认」才下发）
@@ -5930,6 +5977,10 @@ async function loadProxyPool() {
       const oc = await api('GET', '/other/config');
       _('ppOther').value = String(oc.data.useProxies !== false);
     } catch (e) { _('ppOther').value = 'true'; }
+    try {
+      const fc = await api('GET', '/freepi/config');
+      _('ppFreepi').value = String(fc.data.useProxies !== false);
+    } catch (e) { _('ppFreepi').value = 'true'; }
     // 展示行与后端池保持一致（只列当前池内代理），数值取本地合并快照——
     // 池编辑清零/代理暂离期间由留存层兜底，代理回归后旧数据自动恢复显示
     renderProxyHealth(proxyHealthPoolRows());
@@ -6662,6 +6713,7 @@ async function saveGlobalPolicy() {
     await api('POST', '/opencode/config/update', { zenUseProxies: _('ppZen').value === 'true', workbuddyUseProxies: _('ppWb').value === 'true' });
     await api('POST', '/trae/config/update', { useProxies: _('ppTrae').value === 'true' });
     await api('POST', '/other/config/update', { useProxies: _('ppOther').value === 'true' });
+    await api('POST', '/freepi/config/update', { useProxies: _('ppFreepi').value === 'true' });
     toast('Global policy saved', 'success');
     loadProxyPool();
   } catch (e) { toast(T('save_failed') + e.message, 'error'); }
@@ -7415,18 +7467,27 @@ function onOtherModelToggle(cb) {
   queueSaveOtherSelected();
 }
 
-// otherModelBulkSelect 全选/清空（2026-11-19）：全选只包含当前筛选可见项
-//（无筛选 = 全部模型），清空 = 清掉全部勾选；走与手动勾选同一防抖保存。
+// otherModelBulkSelect 全选/清空（2026-11-19 全选限定可见项；2026-11-20 清空
+// 同改）：两者都只作用于当前筛选可见项（无筛选 = 全部模型）。清空原位删除，
+// 不重绑 otherSelectedModels——它与平台对象的 selectedModels 是同一数组引用；
+// 走与手动勾选同一防抖保存。
 function otherModelBulkSelect(all) {
+  const q = _('otherModelSelectSearch').value.trim().toLowerCase();
   if (all) {
-    const q = _('otherModelSelectSearch').value.trim().toLowerCase();
     Array.prototype.forEach.call(_('otherModelSelectList').querySelectorAll('.ms-item'), el => {
       if (q && el.style.display === 'none') return;
       const id = el.dataset.id;
       if (otherSelectedModels.indexOf(id) < 0) otherSelectedModels.push(id);
     });
   } else {
-    otherSelectedModels.length = 0;
+    const visible = {};
+    Array.prototype.forEach.call(_('otherModelSelectList').querySelectorAll('.ms-item'), el => {
+      if (q && el.style.display === 'none') return;
+      visible[el.dataset.id] = true;
+    });
+    for (let i = otherSelectedModels.length - 1; i >= 0; i--) {
+      if (visible[otherSelectedModels[i]]) otherSelectedModels.splice(i, 1);
+    }
   }
   const p = currentOtherPlatform();
   renderOtherModelSelect(otherKnownModels, otherSelectedModels, p ? (p.manualModels || []) : []);
@@ -7966,6 +8027,356 @@ document.addEventListener('click', function (e) {
   }
 });
 
+
+// ========== FreePI（freepi.ai 免费日额度 key 池，2026-11-20 接入）==========
+let freepiConfig = null;
+let freepiKnownModels = [];
+let freepiKeySnapshot = {};
+let frNickByIndex = {};
+let freepiEditSnapshot = null;
+let freepiEditCred = { revealed: false, plain: '' };
+
+async function loadFreepiConfig() {
+  let d;
+  try { d = await api('GET', '/freepi/config'); }
+  catch (e) { d = { data: {} }; }
+  freepiConfig = d.data || {};
+  freepiKnownModels = freepiConfig.models || [];
+  const ks = freepiConfig.keyStates || [];
+  ks.forEach(k => { if (k.nickname) frNickByIndex[k.index] = k.nickname; });
+  _('freepiSummary').textContent = T('freepi_page_summary');
+  _('freepiMaxConc').value = freepiConfig.maxConcurrency || 8;
+  _('freepiRetries').value = freepiConfig.retries || 3;
+  renderFreepiModels(freepiKnownModels);
+  renderFreepiKeys(ks);
+}
+
+function renderFreepiModels(list) {
+  const box = _('freepiModelList');
+  if (!box) return;
+  if (!list.length) { box.innerHTML = '<div class="empty">' + T('no_models_refresh_to_sync') + '</div>'; return; }
+  box.innerHTML = list.map(m =>
+    '<div style="display:flex;gap:8px;align-items:center">' +
+      '<span class="model-tag free" style="font-family:\'JetBrains Mono\',Consolas,monospace">' + esc(m.id) + '</span>' +
+      '<span class="hint" style="flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis" title="' + esc(m.name || m.id) + '">' + esc(m.name || '') + '</span>' +
+      (m.context ? wbContextTagHTML(m.context, m.context + ' ctx') : '') +
+    '</div>').join('');
+}
+
+function renderFreepiKeys(ks) {
+  const tb = _('freepiKeysBody');
+  if (!tb) return;
+  freepiKeySnapshot = {};
+  frNickByIndex = {};
+  ks.forEach(k => { if (k.nickname) frNickByIndex[k.index] = k.nickname; });
+  if (!ks.length) { tb.innerHTML = '<tr><td colspan="8" class="empty">' + T('no_keys_configured') + '</td></tr>'; return; }
+  tb.innerHTML = ks.map((k, i) => {
+    const cool = k.cooling
+      ? '<span class="status cooldown"><span class="status-dot cooldown"></span>' + T('cooldown_1') + '</span>' +
+        (k.cooldownUntil ? '<div style="font-size:10px;color:var(--text3);margin-top:2px;white-space:nowrap" title="' + esc(fmtWhen(k.cooldownUntil)) + '">' + T('recovers') + esc(fmtShort(k.cooldownUntil)) + '</div>' : '')
+      : '<span class="status active"><span class="status-dot active"></span>' + T('active_1') + '</span>';
+    // credits 余额（/me 快照）：状态列内第二行小字；refill 时间进悬浮
+    const credits = (k.creditsLeft != null)
+      ? '<div style="font-size:10px;color:var(--text3);margin-top:2px;white-space:nowrap" title="' +
+        esc((k.creditsRefillAt ? T('daily_credits_refill_at') + ' ' + k.creditsRefillAt : T('daily_credits')) +
+            (k.handle ? ' · ' + k.handle : '')) + '">' +
+        esc(fmtNum(k.creditsLeft)) + '/' + esc(fmtNum(k.creditsAllowance)) + '</div>'
+      : '';
+    const pMain = k.proxyMain || '';
+    const pBackup = k.proxyBackup || '';
+    const backupLocked = !backupProxyOn || pMain === '' || pMain === EGRESS_DIRECT;
+    const backupVal = backupLocked ? pMain : pBackup;
+    const stale = proxyStale;
+    const bind = '<td style="white-space:nowrap">' +
+      egComboHTML('freepi', k.index, 'main', pMain, T('main_exit_used_whenever_available')) + ' ' +
+      (backupProxyOn ? egComboHTML('freepi', k.index, 'backup', backupVal, T('backup_exit_used_when_main_is_cooling_removed'), backupLocked) : '') +
+      (stale(pMain) || stale(pBackup) ? ' <span title="' + esc(T('bound_proxy_is_no_longer_in_the_proxy_pool_skipp')) + '" style="color:var(--danger)">⚠</span>' : '') +
+      '</td>';
+    const routed = k.routingEnabled !== false;
+    freepiKeySnapshot[k.index] = { main: pMain, backup: backupVal, routing: routed };
+    const routing = '<td style="text-align:center">' +
+      '<input type="checkbox" data-fr="' + k.index + '"' + (routed ? ' checked' : '') + ' title="' + esc(T('participates_in_request_routing')) + '">' + '</td>';
+    const actions = '<td style="white-space:nowrap;text-align:center">' +
+      '<button class="btn btn-sm" data-frt="' + k.index + '">' + T('test') + '</button> ' +
+      '<button class="btn btn-sm btn-danger" data-frdel="' + k.index + '" title="' + esc(T('delete_this_key')) + '">' + T('delete') + '</button>' + '</td>';
+    return '<tr draggable="true" data-drag-id="' + k.index + '"><td>' + (i + 1) + '</td>' +
+      '<td style="cursor:pointer" title="' + esc(T('edit_account')) + '" data-fredit="' + k.index + '">' +
+        '<div class="nick-cell"><div class="nick-wrap">' +
+          '<span class="nick-name" style="max-width:150px" title="' + esc(k.nickname || k.keyMask) + '">' + esc(k.nickname || k.keyMask) + '</span>' +
+        '</div>' +
+        '<div class="nick-sub mono" title="' + esc(k.keyMask) + '">' + esc(k.keyMask) + '</div></div></td>' +
+      '<td style="text-align:center">' + cool + credits + '</td>' +
+      keyTokensCell(k) +
+      keyLastUsedCell(k) +
+      bind + actions + routing + '</tr>';
+  }).join('');
+  tb.onclick = e => {
+    const t = e.target.closest('button[data-frt]');
+    if (t) { testFreepiKey(t.dataset.frt, t); return; }
+    const del = e.target.closest('button[data-frdel]');
+    if (del) deleteFreepiKey(del.dataset.frdel, del);
+    const ec = e.target.closest('[data-fredit]');
+    if (ec) { openFreepiKeyEditDialog(parseInt(ec.dataset.fredit, 10)); return; }
+  };
+  tb.onchange = e => {
+    const r = e.target.closest('input[data-fr]');
+    if (r) markRowDirty(r.closest('tr'), 'freepi');
+  };
+}
+
+function stageAllFreepiKeysRouting(enabled) {
+  let staged = 0, same = 0;
+  document.querySelectorAll('#freepiKeysBody input[data-fr]').forEach(cb => {
+    const snap = freepiKeySnapshot[cb.dataset.fr];
+    if (snap && snap.routing === enabled) { same++; return; }
+    cb.checked = enabled;
+    markRowDirty(cb.closest('tr'), 'freepi');
+    staged++;
+  });
+  stageBatchResult(staged, same, 0);
+}
+
+// 清空代理（暂存）：全部 key 清绑定 + 路由全部禁用（暂存语义，随 Save 生效）
+function stageClearFreepiKeyProxies() {
+  document.querySelectorAll('#freepiKeysBody tr').forEach(row => {
+    const main = row.querySelector('.eg-input[data-eg="freepi"][data-slot="main"]');
+    if (!main) return;
+    let dirty = stageRowBindingClear(row, 'freepi');
+    const cb = row.querySelector('input[data-fr]');
+    if (cb && cb.checked) { cb.checked = false; dirty = true; }
+    if (dirty) markRowDirty(row, 'freepi');
+  });
+}
+
+async function saveFreepiKeyEdits() {
+  const rows = [...document.querySelectorAll('#freepiKeysBody tr')].filter(r => r.querySelector('.eg-input'));
+  let changed = 0, failed = 0;
+  for (const row of rows) {
+    const mainInput = row.querySelector('.eg-input[data-eg="freepi"][data-slot="main"]');
+    const index = Number(mainInput.dataset.egid);
+    const main = mainInput.dataset.value || '';
+    const rcb = row.querySelector('input[data-fr]');
+    const snap = freepiKeySnapshot[index] || { main: '', backup: '', routing: true };
+    const backup = row.querySelector('.eg-input[data-eg="freepi"][data-slot="backup"]')?.dataset.value ?? snap.backup;
+    try {
+      if (main !== snap.main || backup !== snap.backup) {
+        await api('POST', '/freepi/keys/proxy', { index: index, main: main, backup: backup });
+      }
+      if (rcb && rcb.checked !== snap.routing) {
+        await api('POST', '/freepi/keys/routing', { index: Number(rcb.dataset.fr), enabled: rcb.checked });
+      }
+      if (main !== snap.main || backup !== snap.backup || (rcb && rcb.checked !== snap.routing)) changed++;
+      row.classList.remove('tr-dirty');
+    } catch (e) { failed++; }
+  }
+  clearDirtyMarks('freepiKeysBody', 'freepiKeysSaveBtn');
+  if (failed) toast(T('save_failed_for') + failed + T('account_s'), 'error');
+  else if (!changed) toast(T('no_changes_to_save'), 'info');
+  else toast(T('saved_1') + changed + T('account_change_s'), 'success');
+  loadFreepiConfig(); loadStats();
+}
+
+function resetFreepiKeyEdits() {
+  clearDirtyMarks('freepiKeysBody', 'freepiKeysSaveBtn');
+  loadFreepiConfig();
+}
+
+async function saveFreepiRateLimit() {
+  try {
+    await api('POST', '/freepi/config/update', {
+      maxConcurrency: parseInt(_('freepiMaxConc').value, 10) || 8,
+      retries: parseInt(_('freepiRetries').value, 10) || 3,
+    });
+    toast(T('saved'), 'success');
+    loadFreepiConfig();
+  } catch (e) { toast(T('save_failed') + e.message, 'error'); }
+}
+
+async function deleteFreepiKey(id, btn) {
+  if (!confirm(T('delete_this_key_1'))) return;
+  const original = btn ? btn.innerHTML : '';
+  if (btn) btn.disabled = true;
+  try {
+    await api('POST', '/freepi/keys/delete', { index: Number(id) });
+    toast(T('deleted_1'), 'success');
+  } catch (e) {
+    toast(T('delete_failed') + e.message, 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = original; }
+    loadFreepiConfig(); loadStats();
+  }
+}
+
+/* ---- 测试（/me 免费，不打对话额度） ---- */
+async function testFreepiKey(id, btn) {
+  const original = btn ? btn.innerHTML : '';
+  if (btn) { btn.disabled = true; btn.innerHTML = '<span class="loading"></span>' + T('testing'); }
+  try {
+    const d = await api('POST', '/freepi/keys/test', { index: Number(id) });
+    const r = (d.data && d.data) || {};
+    const ok = d.success === true;
+    const msg = ok
+      ? T('test_passed') + (r.latencyMs != null ? ' (' + r.latencyMs + 'ms)' : '') + (r.creditsLeft != null ? ' · ' + fmtNum(r.creditsLeft) + '/' + fmtNum(r.creditsAllowance) : '')
+      : T('test_failed') + (r.reason || r.error || '');
+    toast(msg, ok ? 'success' : 'error', 6000);
+  } catch (e) {
+    toast(T('test_failed') + e.message, 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = original; }
+    loadFreepiConfig();
+  }
+}
+
+async function batchTestFreepiKeys() {
+  // 封禁平台整平台跳过（批量测试跑在最外层，2026-11-02 用户定）
+  await fetchPlatformBans();
+  if (platformBans.has('freepi')) {
+    toast(T('platform_is_banned_in_gateway_settings_test_skip'), 'info');
+    return { tested: 0, skipped: 0, banned: true };
+  }
+  const btn = _('freepiTestBtn');
+  // 只测能路由的凭据（路由关闭的 key 请求到不了，跳过）
+  const all = Object.keys(freepiKeySnapshot);
+  const ids = all.filter(id => freepiKeySnapshot[id] && freepiKeySnapshot[id].routing !== false);
+  const skipped = all.length - ids.length;
+  if (!ids.length) {
+    if (all.length) toast(T('no_routable_credentials'), 'info');
+    else toast(T('no_keys_to_test'), 'info');
+    return { tested: 0, skipped };
+  }
+  const original = btn ? btn.innerHTML : '';
+  if (btn) btn.disabled = true;
+  let ok = 0, err = 0;
+  try {
+    for (let i = 0; i < ids.length; i++) {
+      if (btn) btn.innerHTML = '<span class="loading"></span>' + (i + 1) + '/' + ids.length;
+      try {
+        const d = await api('POST', '/freepi/keys/test', { index: Number(ids[i]) });
+        if (d.success === true) ok++; else err++;
+      } catch (e) { err++; }
+    }
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = original; }
+  }
+  toast(T('batch_test_done') + ids.length + T('tested') + ok + T('ok') + (err ? T(', ') + err + T('error_1') : '') +
+    (skipped ? T(', ') + skipped + T('skipped_unroutable') : ''),
+    err ? 'warning' : 'success', 6000);
+  loadFreepiConfig();
+  return { tested: ids.length, skipped };
+}
+
+// 批量刷新每日 credits（串行 /me，免费；testAllCredentialPlatforms 复用同函数）
+async function batchFreepiCredits() {
+  const btn = _('freepiCreditsBtn');
+  const all = Object.keys(freepiKeySnapshot);
+  const ids = all.filter(id => freepiKeySnapshot[id] && freepiKeySnapshot[id].routing !== false);
+  if (!ids.length) { toast(T('no_routable_credentials'), 'info'); return; }
+  const original = btn ? btn.innerHTML : '';
+  if (btn) btn.disabled = true;
+  let ok = 0, err = 0;
+  try {
+    const d = await api('POST', '/freepi/credits/refresh', {});
+    ok = (d.data && d.data.refreshed) || 0;
+    err = (d.data && d.data.failed) || 0;
+  } catch (e) { err = ids.length; }
+  finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = original; }
+  }
+  toast(T('credits_refreshed') + ok + (err ? T(', ') + err + T('failed_1') : ''), err ? 'warning' : 'success', 6000);
+  loadFreepiConfig();
+}
+
+async function refreshFreepiModels(btn) {
+  const ks = (freepiConfig && freepiConfig.keyStates) || [];
+  if (!ks.length) { toast(T('add_a_credential_first'), 'error'); return; }
+  if (!ks.some(k => k.routingEnabled !== false)) { toast(T('no_available_credentials'), 'error'); return; }
+  return refreshCatalog(btn, {
+    label: 'FreePI',
+    endpoint: '/freepi/models/refresh',
+    body: {},
+    reload: loadFreepiConfig
+  });
+}
+
+/* ---- 添加 key 弹窗（JWT-----昵称 多行，other 同款格式） ---- */
+function openFreepiKeyAddDialog() {
+  _('freepiKeyAddInput').value = '';
+  _('freepiKeyAddDialog').showModal();
+}
+function closeFreepiKeyAddDialog() { _('freepiKeyAddDialog').close(); }
+
+async function freepiKeyAddFromDialog() {
+  const text = _('freepiKeyAddInput').value.trim();
+  if (!text) { toast(T('enter_at_least_one_key'), 'error'); return; }
+  const lines = text.split('\n').map(s => s.trim()).filter(Boolean);
+  const keys = [], nicks = [];
+  lines.forEach(l => {
+    let key = l, nick = '';
+    const i = l.indexOf('-----');
+    if (i > 0) { key = l.slice(0, i); nick = l.slice(i + 5).trim(); }
+    keys.push(key); nicks.push(nick);
+  });
+  try {
+    const r = await api('POST', '/freepi/keys/update', { add: keys, nicknames: nicks.reduce((m, n, i) => { if (n) m[keys[i]] = n; return m; }, {}) });
+    closeFreepiKeyAddDialog();
+    const added = (r.data && r.data.added) != null ? r.data.added : keys.length;
+    toast(T('added') + ' ' + added + ' ' + T('keys'), 'success');
+    loadFreepiConfig();
+  } catch (e) { toast(T('add_failed') + e.message, 'error', 8000); }
+}
+
+/* ---- 账号编辑弹窗（昵称 + key 明文可改，other 同款） ---- */
+function openFreepiKeyEditDialog(index) {
+  freepiEditSnapshot = { index, keyMask: '' };
+  const ks = (freepiConfig && freepiConfig.keyStates) || [];
+  if (ks[index]) freepiEditSnapshot.keyMask = ks[index].keyMask || '';
+  _('freepiKeyEditNick').value = frNickByIndex[index] || '';
+  _('freepiKeyEditKey').value = '';
+  const m = freepiEditSnapshot.keyMask;
+  _('freepiKeyEditKey').placeholder = m.length > 12 ? m.slice(0, 12) : m;
+  freepiEditCred = { revealed: false, plain: '' };
+  _('freepiKeyEditDialog').showModal();
+}
+function closeFreepiKeyEditDialog() { const d = _('freepiKeyEditDialog'); if (d && d.open) d.close(); }
+async function freepiEditFetchPlain() {
+  if (!freepiEditCred.plain) {
+    const d = await api('POST', '/freepi/keys/get', { index: freepiEditSnapshot.index });
+    freepiEditCred.plain = (d.data && d.data.key) || '';
+  }
+  return freepiEditCred.plain;
+}
+async function freepiEditToggleReveal() {
+  const snap = freepiEditSnapshot; if (!snap) return;
+  const tok = _('freepiKeyEditKey');
+  if (freepiEditCred.revealed) { freepiEditCred.revealed = false; tok.value = ''; tok.placeholder = snap.keyMask; return; }
+  try { tok.value = await freepiEditFetchPlain(); freepiEditCred.revealed = true; }
+  catch (e) { toast(T('load_failed') + e.message, 'error'); }
+}
+async function freepiEditCopyKey() {
+  try { copyText(await freepiEditFetchPlain()); }
+  catch (e) { toast(T('load_failed') + e.message, 'error'); }
+}
+async function freepiKeyEditFromDialog() {
+  const snap = freepiEditSnapshot;
+  if (!snap) return;
+  const btn = _('freepiKeyEditSubmit');
+  btn.disabled = true;
+  try {
+    const body = { nickEdits: [{ index: snap.index, nickname: _('freepiKeyEditNick').value.trim() }] };
+    const newKey = _('freepiKeyEditKey').value.trim();
+    if (newKey) {
+      const shape = newKey.split('.');
+      if (shape.length !== 3) { toast(T('freepi_jwt_shape'), 'error', 8000); return; }
+      body.renames = [{ index: snap.index, to: newKey }];
+    }
+    await api('POST', '/freepi/keys/update', body);
+    toast(T('saved'), 'success');
+    closeFreepiKeyEditDialog();
+    loadFreepiConfig();
+  } catch (e) { toast(T('save_failed') + e.message, 'error'); }
+  finally { btn.disabled = false; }
+}
+
 // ========== Combos (alias models) ==========
 const comboModels = { cline: [], trae: [], zen: [], workbuddy: [] };
 
@@ -8059,6 +8470,7 @@ enableRowDragReorder('otherKeysBody', ids => {
   const p = currentOtherSlug;
   return api('POST', '/other/keys/reorder', { slug: p, order: ids.map(Number) });
 }, loadOtherConfig);
+enableRowDragReorder('freepiKeysBody', ids => api('POST', '/freepi/keys/reorder', { order: ids.map(Number) }), loadFreepiConfig);
 enableRowDragReorder('wbAccountsBody', ids => api('POST', '/workbuddy/reorder', { uids: ids }), loadWorkbuddyAccounts);
 // TraeWork（2026-11-05 用户定）：仅改展示顺序（vendored 池 order），选号是
 // 引擎加权随机与顺序无关；行 data-drag-id = 账号 UID。

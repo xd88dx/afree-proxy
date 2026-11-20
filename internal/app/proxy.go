@@ -84,6 +84,7 @@ func StartProxy(host string, port int) error {
 	reconcileEgressBindings()
 	loadClineStreamLearned()
 	initOther()
+	initFreepi()
 	initTrae()
 	reqlog.LoadRequestLogsFromFile()
 	go cleanupCompactStates()

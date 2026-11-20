@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"afree-proxy/internal/freepi"
 	"afree-proxy/internal/gwconfig"
 	"afree-proxy/internal/workbuddy"
 
@@ -114,7 +115,7 @@ func resolveCombo(id string) *gwconfig.Combo {
 // 共用同一份口径——新平台接入时两处一起改。
 func comboPlatformValid(platform string) bool {
 	switch platform {
-	case "cline", "zen", "workbuddy", "trae":
+	case "cline", "zen", "workbuddy", "trae", "freepi":
 		return true
 	}
 	return false
@@ -175,6 +176,10 @@ func validateCombo(id, platform, target string) error {
 	case "trae":
 		if !trae2apiModelExists(target) {
 			return fmt.Errorf("target %q is not a known Trae model (cross-platform selection is not allowed)", target)
+		}
+	case "freepi":
+		if _, ok := freepi.ResolveModel(target); !ok {
+			return fmt.Errorf("target %q is not in the FreePI catalog (cross-platform selection is not allowed)", target)
 		}
 	}
 	return nil

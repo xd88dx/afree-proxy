@@ -31,7 +31,7 @@ type routeStat struct {
 }
 
 var (
-	routeStats    = map[string]*routeStat{"cline": {}, "zen": {}, "workbuddy": {}, "trae": {}, "other": {}}
+	routeStats    = map[string]*routeStat{"cline": {}, "zen": {}, "workbuddy": {}, "trae": {}, "other": {}, "freepi": {}}
 	reqStatsStart = time.Now()
 )
 

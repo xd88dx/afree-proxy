@@ -8,6 +8,7 @@
 - 平台配置：`/config{,/update}`、`/opencode/config{,/update}`、`/opencode/models{,/refresh}`、`/opencode/stats`、`/opencode/sessions`（会话快照；mint 端点已随本地铸造删除，会话由后台 rotator 自动补铸）
 - key 管理（zen）：`/opencode/keys/routing{,/all}`、`/opencode/keys/reorder`、`/opencode/keys/delete`、`/opencode/keys/proxy{,/clear}`、`/zen/keys/test`（zen 的端点有 opencode/zen 双前缀别名，是历史遗留——新平台别复制）
 - key 池平台（other；openrouter 已于 2026-11-16、amd/tokenharbor 已于 2026-11-15 整体删除）：`/<x>/config{,/update}`、`/<x>/models{,/refresh}`、`/<x>/keys/routing{,/all}`、`/<x>/keys/reorder`、`/<x>/keys/delete`、`/<x>/keys/test`、`/<x>/keys/proxy{,/clear}`
+- FreePI（2026-11-20 接入，key 池四件套**单平台形态**的最近实证）：`/freepi/config{,/update}`、`/freepi/models{,/refresh}`、`/freepi/keys/routing{,/all}`、`/freepi/keys/reorder`、`/freepi/keys/get`（明文查询）、`/freepi/keys/delete`、`/freepi/keys/test`（/me 免费验证+余额快照）、`/freepi/keys/proxy{,/clear}`、`/freepi/credits/refresh`
 - 别名：`/combos{,/create,/delete}`
 - 全局：`/request-stats`、`/stats`、`/logs`、`/config/export|import`、`/data/delete-all`
 

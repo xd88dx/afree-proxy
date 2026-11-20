@@ -16,6 +16,7 @@
 | OpenCode (zen) | `internal/zen/`（key 池/会话/端点学习/egress 钉定）；面板 `internal/app/admin_zen.go`；`internal/kit/http.go` 的 `DecodeResponse` | `oc*`、`ZEN_*`      |
 | TraeWork       | `modules/trae2api/`（vendor 独立 module）+ 其根门面 `afree_bridge.go`；域 `internal/trae/`，桥接 `internal/app/trae_bridge.go`、面板 `internal/app/trae_handlers.go` | `trae*`（桥接层）；选号=引擎权重调度，`TRAE_STRATEGY` 已作废 |
 | WorkBuddy      | `modules/workbuddy2api/`（vendor 独立 module）+ 其根门面 `afree_bridge.go`；域 `internal/workbuddy/`，桥接 `internal/app/wb_bridge.go`、面板 `internal/app/wb_handlers.go` | `wb*`               |
+| FreePI         | `internal/freepi/`（key 池四件套，单平台形态）；桥接 `internal/app/freepi.go`、网关 `internal/gateway/freepi_serve.go` | `freepi*`           |
 
 **vendor 独立 module 化（2026-11-17）**：两树迁至 `modules/`，go.mod 沿用上游 module 路径（wb=`github.com/misakano7545/workbuddy2api-panel`，trae=`trae2api`），主 go.mod `replace` 指本地、`go.work` 汇总；树内 import 与上游零差异，vendor 脚本不再做 import 前缀改写。主 module 只能经各自根门面消费 vendor 的 internal 包（Go internal 可见性强制，门面即显式契约）。**workspace 模式下 `./...` 不穿透 modules/ 子目录 module**（实测 `go list ./...` 仅 6 包）——构建/测试必须显式列模块路径，见 §4。
 
@@ -350,4 +351,4 @@ grep -o 'placeholder="[^"]\+"' internal/panel/html.go | sed 's/^placeholder="//;
 
 ## 9. 面板凭据表格对齐约定（2026-10-29 用户定）
 
-8 个平台的账号/key 表（tbody id：`accountTableBody` / `traeAccountsBody` / `ocKeysBody` / `wbAccountsBody` / `orKeysBody` / `amdKeysBody` / `thKeysBody` / `otherKeysBody`）：**所有列的表头与内容居中，唯独账号/Key 列（各表第 2 列）表头居中、内容左对齐**。实现集中在 `internal/panel/html.go` 的 CSS 追加段（`table:has(#xxxBody) th` + `#xxxBody td` + `td:nth-child(2)` 左对齐覆盖）；flex 容器（状态列的竖排栈、签到竖徽章）`text-align` 管不到，用 `justify-content:center` 单独处理。新增平台表格时把 tbody id 加进该规则，不要逐 td 写内联样式。
+9 个平台的账号/key 表（tbody id：`accountTableBody` / `traeAccountsBody` / `ocKeysBody` / `wbAccountsBody` / `orKeysBody` / `amdKeysBody` / `thKeysBody` / `otherKeysBody` / `freepiKeysBody`）：**所有列的表头与内容居中，唯独账号/Key 列（各表第 2 列）表头居中、内容左对齐**。实现集中在 `internal/panel/html.go` 的 CSS 追加段（`table:has(#xxxBody) th` + `#xxxBody td` + `td:nth-child(2)` 左对齐覆盖）；flex 容器（状态列的竖排栈、签到竖徽章）`text-align` 管不到，用 `justify-content:center` 单独处理。新增平台表格时把 tbody id 加进该规则，不要逐 td 写内联样式。

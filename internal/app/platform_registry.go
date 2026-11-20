@@ -1,6 +1,7 @@
 package app
 
 import (
+	"afree-proxy/internal/freepi"
 	"afree-proxy/internal/other"
 	"afree-proxy/internal/platform"
 )
@@ -85,12 +86,27 @@ func registerStaticPlatforms() {
 	registerStaticPlatformsInto(platformRegistry)
 }
 
-// registerStaticPlatformsInto 把静态四平台注册进指定表（重建路径复用）。
+// freepiPlatform FreePI 静态适配器：Routable = 有参与路由的 key。
+type freepiPlatform struct{}
+
+func (freepiPlatform) Kind() string { return platform.KindFreepi }
+func (freepiPlatform) Routable() bool {
+	c := freepi.Get()
+	for _, k := range c.Keys {
+		if k != "" && c.RoutingEnabled(k) {
+			return true
+		}
+	}
+	return false
+}
+
+// registerStaticPlatformsInto 把静态平台注册进指定表（重建路径复用）。
 func registerStaticPlatformsInto(r *platform.Registry) {
 	r.Register(clinePlatform{})
 	r.Register(traePlatform{})
 	r.Register(workbuddyPlatform{})
 	r.Register(zenPlatform{})
+	r.Register(freepiPlatform{})
 }
 
 // ReconcileOtherPlatforms 按当前 other 配置重建子平台注册：整表重建（静态

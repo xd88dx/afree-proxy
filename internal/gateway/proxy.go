@@ -24,6 +24,7 @@ import (
 	"unicode/utf8"
 
 	"afree-proxy/internal/cline"
+	"afree-proxy/internal/freepi"
 	"afree-proxy/internal/kit"
 	"afree-proxy/internal/other"
 	"afree-proxy/internal/reqlog"
@@ -2876,6 +2877,8 @@ func servedModelEntries() []map[string]any {
 	data = append(data, trae2apiModelEntries()...)
 	// 合并 Other 子平台勾选模型（各子平台自定义前缀）。
 	data = append(data, otherModelList()...)
+	// 合并 FreePI 目录（freepi: 前缀；无参与路由凭据时整段摘除）。
+	data = append(data, freepiModelList()...)
 	// combo 别名模型（仪表盘自定义的虚拟模型 ID）。展示门控同平台段：
 	// 声明平台没有可路由凭据时别名也不出目录（否则用户选中后必然失败）。
 	for _, c := range listCombos() {
@@ -3000,6 +3003,8 @@ func classifyReqRoute(r *http.Request, model string) (route, labelRoute string) 
 		route = "workbuddy"
 	case trae2apiPlatformModel(model):
 		route = "trae"
+	case strings.HasPrefix(model, freepi.ModelPrefix+":"):
+		route = "freepi"
 	case otherHit:
 		route = "other"
 		labelRoute = otherPlatform.Prefix
@@ -3190,6 +3195,12 @@ func HandleChat(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		serveTrae2apiChat(w, r, rewritten)
+		return
+	}
+
+	// FreePI 路由：freepi:<model-id>（freepi.ai 免费日额度 key 池，2026-11-20）
+	if strings.HasPrefix(model, freepi.ModelPrefix+":") {
+		handleFreepiChat(w, r, params)
 		return
 	}
 

@@ -1,0 +1,93 @@
+<div id="tab-freepi" class="tab-panel" style="display:none">
+<h2 style="margin-bottom:4px">FreePI</h2>
+<div class="hint" id="freepiSummary" style="margin:0 0 16px">Loading...</div>
+
+<div class="section">
+  <div class="section-body">
+    <div class="form-row" style="margin-top:10px;flex-wrap:nowrap">
+      <div class="field" style="flex:1 1 0;min-width:0"><label>Max concurrency</label><input type="text" id="freepiMaxConc" placeholder="8"></div>
+      <div class="field" style="flex:1 1 0;min-width:0"><label>Rate-limit retries</label><input type="text" id="freepiRetries" placeholder="3"></div>
+      <div class="field" style="flex:0 0 auto;min-width:0;align-self:stretch;display:grid;grid-template-rows:auto 1fr;align-items:center"><label aria-hidden="true" style="visibility:hidden">&nbsp;</label><button class="btn btn-primary btn-sm" onclick="saveFreepiRateLimit()" data-i18n="save_rate_limit_config">Save rate-limit config</button></div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <div class="section-body">
+    <div class="table-wrap" style="margin-bottom:10px">
+      <table>
+        <thead><tr><th style="width:50px">#</th><th style="width:170px" data-i18n="Account">Account</th><th data-i18n="Status">Status</th><th title="Counted locally by this proxy — not the official free quota" data-i18n="Today/Total tokens">Today/Total tokens</th><th data-i18n="Last used">Last used</th><th title="Main exit first, backup as fallback; both down = row skipped (isolation)." data-i18n="Proxy binding">Proxy binding</th><th style="width:130px;text-align:center" data-i18n="Actions">Actions</th><th style="text-align:center" title="Routing participation. New rows start disabled — tick Pool to enable." data-i18n="Pool">Pool</th></tr></thead>
+        <tbody id="freepiKeysBody"><tr><td colspan="8" class="empty">Loading...</td></tr></tbody>
+      </table>
+    </div>
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin:10px 6px 4px">
+      <button class="btn btn-primary btn-sm" onclick="openFreepiKeyAddDialog()" data-i18n="add_credentials">Add credentials</button>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-sm" onclick="stageAllFreepiKeysRouting(true)" data-i18n="enable_all">Enable all</button>
+        <button class="btn btn-sm" onclick="stageAllFreepiKeysRouting(false)" data-i18n="disable_all">Disable all</button>
+        <button class="btn btn-sm" onclick="refreshProxyHealthCache().then(() => stageProxiesByOrder('freepi'))" title="Bind main proxy by row order: 1st credential to Direct, then the proxy pool in order, skipping manually disabled proxies (staged - click Save to apply; enable/disable and backup untouched)">Bind proxies in order</button>
+        <button class="btn btn-sm" onclick="stageClearFreepiKeyProxies()" title="Stage only — click Save to apply. Clears bindings and disables every row." data-i18n="clear_bindings">Clear bindings</button>
+        <button class="btn btn-sm" id="freepiTestBtn" onclick="batchTestFreepiKeys()" title="Run the Test probe on every row (queries /me — free, does not spend credits)." data-i18n="test_all">Test all</button>
+        <button class="btn btn-sm" id="freepiCreditsBtn" onclick="batchFreepiCredits()" title="Refresh every account's daily credit balance from /me (free)." data-i18n="refresh_credits">Refresh credits</button>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-sm btn-warn" id="freepiResetBtn" onclick="resetFreepiKeyEdits()" title="Discard staged changes and reload the last saved state" data-i18n="discard">Discard</button>
+        <button class="btn btn-primary btn-sm" id="freepiKeysSaveBtn" onclick="saveFreepiKeyEdits()" data-i18n="save">Save</button>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="section" style="overflow:visible">
+  <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 5-6"/></svg></span> Models</div>
+  <div class="section-body" style="overflow:visible">
+    <div class="flex" style="gap:10px;margin:0 0 10px;align-items:stretch;flex-wrap:wrap;position:relative">
+      <div id="freepiModelList" style="flex:1 1 320px;min-width:240px;display:flex;flex-direction:column;gap:6px"></div>
+      <button class="btn btn-sm" onclick="refreshFreepiModels(this)" style="flex:0 0 auto;align-self:center" title="Re-sync the model catalog from the upstream (needs a credential)" data-i18n="refresh_models">Refresh models</button>
+    </div>
+  </div>
+</div>
+
+</div>
+
+<dialog id="freepiKeyEditDialog" class="cred-edit-dlg">
+  <div class="wb-dialog-head">
+    <span data-i18n="edit_account">Edit account</span>
+    <button class="btn btn-sm" onclick="closeFreepiKeyEditDialog()" data-i18n="close">Close</button>
+  </div>
+  <div class="wb-dialog-body">
+    <div class="field">
+      <label data-i18n="nickname">Nickname</label>
+      <input type="text" id="freepiKeyEditNick" placeholder="freepi-main">
+    </div>
+    <div class="field">
+      <label data-i18n="api_key">API key</label>
+      <div class="cred-row">
+        <input type="text" id="freepiKeyEditKey" placeholder="eyJhbG…" style="font-family:'JetBrains Mono',Consolas,monospace">
+        <button type="button" class="cred-btn eye" onclick="freepiEditToggleReveal()" data-i18n-title="show_key" title="Show / hide key"><svg viewBox="0 0 24 24"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg></button>
+        <button type="button" class="cred-btn copy" onclick="freepiEditCopyKey()" data-i18n-title="copy_key" title="Copy key"><svg viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>
+      </div>
+      <div class="hint" style="margin-top:4px" data-i18n="edit_key_hint">Leave empty to keep the current key.</div>
+    </div>
+    <div class="wb-dialog-actions">
+      <button class="btn btn-primary" id="freepiKeyEditSubmit" onclick="freepiKeyEditFromDialog()" data-i18n="save">Save</button>
+      <button class="btn" onclick="closeFreepiKeyEditDialog()" data-i18n="cancel">Cancel</button>
+    </div>
+  </div>
+</dialog>
+<dialog id="freepiKeyAddDialog">
+  <div class="wb-dialog-head">
+    <span data-i18n="add_credentials">Add credentials</span>
+    <button class="btn btn-sm" onclick="closeFreepiKeyAddDialog()" data-i18n="close">Close</button>
+  </div>
+  <div class="wb-dialog-body">
+    <p class="hint" style="margin-top:0" data-i18n="freepi_add_hint">One per line: JWT-----nickname (nickname optional). Mint a token with the free-pi CLI's GitHub device sign-in, or by hand: POST https://api.freepi.ai/auth/github/device, open verification_uri_complete, then POST /auth/token with the session_id. The JWT is valid 90 days.</p>
+    <div class="field">
+      <label>API keys (one per line) *</label>
+      <textarea id="freepiKeyAddInput" rows="5" placeholder="eyJhbG…" style="font-family:'JetBrains Mono',Consolas,monospace"></textarea>
+    </div>
+    <div class="wb-dialog-actions">
+      <button class="btn btn-primary" onclick="freepiKeyAddFromDialog()" data-i18n="save">Save</button>
+      <button class="btn" onclick="closeFreepiKeyAddDialog()" data-i18n="cancel">Cancel</button>
+    </div>
+  </div>
+</dialog>

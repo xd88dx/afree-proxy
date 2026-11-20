@@ -27,6 +27,8 @@ func RoutePlatformKeyOf(model string) string {
 		return blacklist.PlatZen
 	case trae.Trae2apiPlatformModel(model):
 		return blacklist.PlatTrae
+	case strings.HasPrefix(model, "freepi:"):
+		return blacklist.PlatFreepi
 	}
 	if i := strings.IndexByte(model, ':'); i > 0 {
 		if p := other.PlatformByPrefix(model[:i]); p != nil {

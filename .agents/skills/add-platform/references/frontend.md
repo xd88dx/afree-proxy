@@ -25,7 +25,7 @@
   ```
 ## 2. 导航菜单 + 标签页
 
-- 导航项：`<div class="nav-item" data-tab="xxx"><span class="nav-ico"><svg…/></svg></span> 英文名</div>`。现状十个：dashboard/accounts/trae/opencode/workbuddy/other/proxypool/settings/combos/logs（amdcloud/tokenharbor 已于 2026-11-15、openrouter 已于 2026-11-16 删除）。svg 用 24×24 简笔几何图形，风格与现有一致。
+- 导航项：`<div class="nav-item" data-tab="xxx"><span class="nav-ico"><svg…/></svg></span> 英文名</div>`。现状十一个：dashboard/accounts/trae/opencode/workbuddy/other/freepi/proxypool/settings/combos/logs（amdcloud/tokenharbor 已于 2026-11-15、openrouter 已于 2026-11-16 删除）。svg 用 24×24 简笔几何图形，风格与现有一致。
 - 页面体：`<div id="tab-xxx" class="tab-panel" style="display:none">`；首个面板 dashboard 不带 display:none。
 - 切换：nav 点击委托 `switchTab`（惰性加载：首次进入时 loadXxx——**新平台的 load 调用要加进 switchTab 的 if 链**，如 `if (name === 'other') loadOtherConfig()`）；`restoreTab` 从 location.hash 恢复（`_('tab-'+h)` 元素存在即白名单，非法回落 dashboard）。**hash 恢复必须在所有 const 声明之后执行**（TDZ 坑：`WB_API_PREFIX` 这类平台 const 若未初始化会报错）。
 - 仪表盘八卡：`.dash-grid` + `.dash-card`（可点击跳转平台页，id 形如 `dashCline/dashOc/dashWb/dashTrae/dashOr/dashAmd/dashTh/dashOther`）+ 请求统计卡（`reqCline/reqZen/reqWb/reqTrae/reqOr/reqAmd/reqTh/reqOther`，数据来自 `/admin/api/request-stats`——后端 logs.go 的 per-route 计数要为新平台加分类桶）。`loadStats` 10s 轮询仅仪表盘可见时执行。
