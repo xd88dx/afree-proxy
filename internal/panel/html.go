@@ -13,8 +13,9 @@ import (
 // 共享 tab/JS）留本包，平台导航项与 tab 片段由各平台包 embed 提供，
 // 按拆分前出现顺序拼装——产物与拆分前 AdminHTML 逐字节一致（切分时
 // 机器验证，台账记录）。改平台前端片段去各平台包 panel_tab.html；
-// 改共享 UI 仍在本文件。JS 语法事故防线：拼装产物 script 块过
-// node --check（PROJECT.md §8）。
+// 改共享 UI 仍在本文件。freepi 接入起骨架收尾（main/layout 闭合 + toast）
+// 上移至 layoutCloseToastHTML，平台片段不再携带收尾。JS 语法事故防线：拼装
+// 产物 script 块过 node --check（PROJECT.md §8）。
 var AdminHTML = head1aHTML +
 	cline.PanelNavItem +
 	trae.PanelNavItem +
@@ -33,6 +34,7 @@ var AdminHTML = head1aHTML +
 	workbuddy.PanelTabHTML +
 	other.PanelTabHTML +
 	freepi.PanelTabHTML +
+	layoutCloseToastHTML +
 	tailHTML
 
 const head1aHTML = `<!DOCTYPE html>
@@ -905,6 +907,19 @@ const combosTabHTML = `<div id="tab-combos" class="tab-panel" style="display:non
   </div>
 </dialog>
 
+`
+
+// layoutCloseToastHTML 共享骨架收尾：关闭 .main/.layout 后接全页 toast。
+// 原先这两个收尾 div 与 toast 由 other 片段携带（拆分前 other 是最后一个
+// 平台）——freepi 接入后平台片段必须整体落在 .main 内，收尾上移到共享
+// 骨架；平台片段只含「tab div + dialog 兄弟」，dialog 不得进 tab div
+// （display:none 祖先内 showModal 会抛）。
+const layoutCloseToastHTML = `
+
+</div>
+</div>
+
+<div id="toast" class="toast" popover="manual"></div>
 `
 
 const tailHTML = `<script>
