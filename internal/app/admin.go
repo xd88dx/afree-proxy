@@ -6,6 +6,7 @@ import (
 
 	"afree-proxy/internal/cline"
 	"afree-proxy/internal/kit"
+	"afree-proxy/internal/gwconfig"
 	"bytes"
 	"context"
 	"crypto/rand"
@@ -1376,7 +1377,22 @@ func handleAdminConfig(w http.ResponseWriter, r *http.Request) {
 		"clineUseProxies":      poolClineUseProxies(),
 		"adminLogEnabled":      poolAdminLogEnabled(),
 		"clineCatalogFeedOnly": globalClineCatalogFeedOnly(),
+		"toolRename":           toolRenamePayload(),
 	}})
+}
+
+// toolRenamePayload 工具改名配置的面板视图（nil 配置展开成全关缺省）。
+func toolRenamePayload() map[string]any {
+	c := gwconfig.GetToolRename()
+	plats := c.Platforms
+	if plats == nil {
+		plats = map[string]bool{}
+	}
+	return map[string]any{
+		"enabled":   c.Enabled,
+		"prefix":    c.Prefix,
+		"platforms": plats,
+	}
 }
 
 // POST /admin/api/config  body: { strategy?, headers?, clineUseProxies?, adminLogEnabled?, clineCatalogFeedOnly? }
@@ -1398,10 +1414,28 @@ func handleAdminUpdateConfig(w http.ResponseWriter, r *http.Request) {
 		ClineUseProxies      *bool             `json:"clineUseProxies"`
 		AdminLogEnabled      *bool             `json:"adminLogEnabled"`
 		ClineCatalogFeedOnly *bool             `json:"clineCatalogFeedOnly"`
+		ToolRename           *struct {
+			Enabled   *bool           `json:"enabled"`
+			Prefix    string          `json:"prefix"`
+			Platforms map[string]bool `json:"platforms"`
+		} `json:"toolRename"`
 	}
 	if err := json.Unmarshal(body, &req); err != nil {
 		panel.WriteAPI(w, http.StatusBadRequest, panel.ApiResponse{Error: "invalid JSON"})
 		return
+	}
+
+	// 工具改名（2026-11-21 方案二一期）：验证先行，非法前缀 400 不落盘。
+	if req.ToolRename != nil {
+		tr := gwconfig.ToolRenameConfig{Prefix: req.ToolRename.Prefix}
+		if req.ToolRename.Enabled != nil {
+			tr.Enabled = *req.ToolRename.Enabled
+		}
+		tr.Platforms = req.ToolRename.Platforms
+		if err := gwconfig.SetToolRename(tr); err != nil {
+			panel.WriteAPI(w, http.StatusBadRequest, panel.ApiResponse{Error: err.Error()})
+			return
+		}
 	}
 
 	// 写时复制：getProxyConfig 返回的是被请求路径并发读取的活配置，

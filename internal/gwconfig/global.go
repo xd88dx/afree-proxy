@@ -3,8 +3,10 @@ package gwconfig
 import (
 	"afree-proxy/internal/kit"
 	"encoding/json"
+	"fmt"
 	"log"
 	"os"
+	"strings"
 	"sync"
 	"time"
 )
@@ -33,6 +35,51 @@ type GlobalConfigData struct {
 	Combos            []*Combo                        `json:"combos,omitempty"`
 	ModelBlacklist    map[string]*ModelBlacklistEntry `json:"modelBlacklist,omitempty"`
 	PlatformBlacklist map[string]*PlatformBanEntry    `json:"platformBlacklist,omitempty"`
+	// ToolRename 出站工具改名（2026-11-21，免费层身份指纹闸对策的名称面）：
+	// 请求侧把客户端工具名改写为 Prefix+SHA256 前 12 位，响应侧还原真名。
+	// 默认关闭（Enabled=false 零改动）；平台勾选独立控制。
+	ToolRename *ToolRenameConfig `json:"toolRename,omitempty"`
+}
+
+// ToolRenameConfig 工具改名全局配置。Platforms 键=平台 kind（cline/zen/trae/
+// workbuddy/freepi/other），缺项=关闭。
+type ToolRenameConfig struct {
+	Enabled   bool           `json:"enabled"`
+	Prefix    string         `json:"prefix"`
+	Platforms map[string]bool `json:"platforms,omitempty"`
+}
+
+// Normalize 校验并规范化：启用时前缀必填且必须是安全工具名头（字母开头，
+// 字母数字下划线，1~16 字符），禁用已知反代前缀与官方前缀（防撞指纹/闸）。
+func (c *ToolRenameConfig) Normalize() error {
+	if c == nil || !c.Enabled {
+		return nil
+	}
+	p := strings.TrimSpace(c.Prefix)
+	if p == "" {
+		return fmt.Errorf("toolRename.prefix is required when enabled")
+	}
+	if len(p) > 16 {
+		return fmt.Errorf("toolRename.prefix too long (max 16)")
+	}
+	if first := p[0]; !(first >= 'a' && first <= 'z' || first >= 'A' && first <= 'Z') {
+		return fmt.Errorf("toolRename.prefix must start with a letter")
+	}
+	for i := 0; i < len(p); i++ {
+		ch := p[i]
+		ok := ch >= 'a' && ch <= 'z' || ch >= 'A' && ch <= 'Z' || ch >= '0' && ch <= '9' || ch == '_'
+		if !ok {
+			return fmt.Errorf("toolRename.prefix accepts letters/digits/underscore only")
+		}
+	}
+	low := strings.ToLower(p) + "_"
+	for _, banned := range []string{"clint_", "mcp_", "oc_", "zen_", "freepi_", "trae_", "wbcn_", "wbgb_", "other_"} {
+		if strings.HasPrefix(low, banned) {
+			return fmt.Errorf("toolRename.prefix %q collides with reserved prefix %q", p, banned)
+		}
+	}
+	c.Prefix = p
+	return nil
 }
 
 var (
@@ -139,6 +186,39 @@ func GlobalStrategy() string {
 
 func SetGlobalStrategy(s string) {
 	MutateGlobalConfig(func(g *GlobalConfigData) { g.Strategy = s })
+}
+
+// GetToolRename 返回工具改名配置（nil → 全关缺省）。启用时先 Normalize：
+// 配置文件被手工改出非法前缀时按关闭处理并告警，绝不让半非法配置半生效。
+func GetToolRename() *ToolRenameConfig {
+	GlobalCfgMu.Lock()
+	defer GlobalCfgMu.Unlock()
+	g := LoadGlobalConfigLocked()
+	c := g.ToolRename
+	if c == nil {
+		return &ToolRenameConfig{}
+	}
+	cp := *c
+	if cp.Platforms == nil {
+		cp.Platforms = map[string]bool{}
+	}
+	if cp.Enabled {
+		if err := cp.Normalize(); err != nil {
+			log.Printf("WARN: toolRename config invalid (%v), treating as disabled", err)
+			return &ToolRenameConfig{}
+		}
+	}
+	return &cp
+}
+
+// SetToolRename 保存工具改名配置（面板保存口）。写入前 Normalize 校验，
+// 非法前缀返回错误不落盘。
+func SetToolRename(c ToolRenameConfig) error {
+	if err := c.Normalize(); err != nil {
+		return err
+	}
+	MutateGlobalConfig(func(g *GlobalConfigData) { g.ToolRename = &c })
+	return nil
 }
 
 func GlobalAdminLogEnabled() bool {

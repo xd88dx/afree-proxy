@@ -125,7 +125,7 @@ go test $GOALL -count=1            # 除下述既有失败外应全绿
 
 ## 5. 本地定制不可丢
 
-本 fork 独有、上游没有，合并时优先保留：`PROXY_ISOLATION` / `proxyIsolationEnvLocked`、`backupProxyEnabled`、`proxyExclusions`、`proxyBindCaps`、`pinProxyPerKey`、`zenEgressSnapshot()`、`zenShapeClientToolDescriptionsChat/Flat`（zen 出站客户端工具顶层描述 NBSP 整形，2026-11-21 自副线 #188 吸纳——免费层闸按描述字面子串匹配，实测命中即 429 且伪装日额度耗尽、一次请求烧 4 把 key；恒开不设开关）、`ModelRateFilterCN` / `ModelRateFilterGlobal`（wb 分域倍率筛选，2026-11-07 由单值 `model_rate_filter` 拆分，旧键在 `ParseConfigInto` 入口 `migrateModelRateFilterSplit` 逐字段回落自动迁移；CN 过滤 wbcn、Global 过滤 wbgb）、`enforceToolChoiceNone`（`proxy.go`，Cline 侧）、Workbuddy / Trae 分区与 `POOL_STRATEGY`。
+本 fork 独有、上游没有，合并时优先保留：`PROXY_ISOLATION` / `proxyIsolationEnvLocked`、`backupProxyEnabled`、`proxyExclusions`、`proxyBindCaps`、`pinProxyPerKey`、`zenEgressSnapshot()`、`zenShapeClientToolDescriptionsChat/Flat`（zen 出站客户端工具顶层描述 NBSP 整形，2026-11-21 自副线 #188 吸纳——免费层闸按描述字面子串匹配，实测命中即 429 且伪装日额度耗尽、一次请求烧 4 把 key；恒开不设开关）、zen 指纹闸自愈（`zenFingerprintSuspectTokens=100`：barely-used key 吃到伪额度 429 → 同 key 去客户端工具重试一次不 park，恒开）、`internal/toolrename`（出站工具改名，gwconfig toolRename 段，默认关；zen 在出站 body 处改写、其余平台入口改写、restoreWriter 字节级还原——zen toolfilter 真名匹配不受影响）、`ModelRateFilterCN` / `ModelRateFilterGlobal`（wb 分域倍率筛选，2026-11-07 由单值 `model_rate_filter` 拆分，旧键在 `ParseConfigInto` 入口 `migrateModelRateFilterSplit` 逐字段回落自动迁移；CN 过滤 wbcn、Global 过滤 wbgb）、`enforceToolChoiceNone`（`proxy.go`，Cline 侧）、Workbuddy / Trae 分区与 `POOL_STRATEGY`。
 
 面板与运维侧新增的本地定制（2026-11-02/03 用户定，同步时同样优先保留）：健康表出口**手动冷却**（无到期时间，仅「解禁」恢复，`proxyManualCooled`）与绿色解禁/黄色冷却按钮；健康表**代理测试**（测速目标可配置、每出口最多 3 次 HTTPS 探测入在线率/握手统计，不触碰路由冷却）；**批量测试可路由过滤**（反代开关关闭的凭据跳过——Trae/WorkBuddy 只看反代开关不看账号总闸；网关封禁平台整平台跳过）；绑定名 eg-input **中间缩略**（`egShortLabel`）；wb 池状态/实测台账进配置备份（三层口径，见 `MERGE.md` 2026-11-03 节）。
 

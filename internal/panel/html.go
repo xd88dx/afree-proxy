@@ -766,6 +766,32 @@ const settingsTabHTML = `<div id="tab-settings" class="tab-panel" style="display
   </div>
 </div>
 <div class="section">
+  <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h10"/></svg></span> <span data-i18n="tool_rename">Tool rename (anti fingerprint)</span></div>
+  <div class="section-body">
+    <div class="form-row">
+      <div class="field" style="flex:0 0 auto;display:flex;align-items:center;gap:6px">
+        <input type="checkbox" id="trEnabled">
+        <label for="trEnabled" data-i18n="tool_rename_enable">Rename client tools on outbound requests</label>
+      </div>
+      <div class="field" style="flex:1"><label data-i18n="tool_rename_prefix">Prefix</label>
+        <input id="trPrefix" placeholder="mygw">
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="field"><label data-i18n="tool_rename_platforms">Apply to platforms</label>
+        <div style="display:flex;gap:14px;flex-wrap:wrap;padding-top:6px">
+          <label style="display:flex;align-items:center;gap:4px"><input type="checkbox" id="trPlatCline"> Cline</label>
+          <label style="display:flex;align-items:center;gap:4px"><input type="checkbox" id="trPlatZen"> OpenCode</label>
+          <label style="display:flex;align-items:center;gap:4px"><input type="checkbox" id="trPlatFreepi"> FreePI</label>
+          <label style="display:flex;align-items:center;gap:4px"><input type="checkbox" id="trPlatOther"> Other</label>
+        </div>
+      </div>
+    </div>
+    <div class="hint" data-i18n="tool_rename_hint">Outbound requests rename client tools to prefix+hash; responses restore original names automatically. Anti-fingerprint measure for the zen free tier (name face). Keep the prefix private and change it if a provider blocks it. TraeWork/WorkBuddy take effect in a later phase.</div>
+    <div class="form-actions"><button class="btn btn-primary" onclick="saveToolRename()" data-i18n="save">Save</button></div>
+  </div>
+</div>
+<div class="section">
   <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M5.6 5.6l12.8 12.8"/></svg></span> Banned platforms <span id="platformBanCount" class="probe-pill" style="font-weight:normal"></span></div>
   <div class="section-body">
     <div class="hint" style="margin-top:0">Banned platforms stop participating in session routing — models leave /v1/models and requests fail immediately; maintenance tasks (check-in etc.) are unaffected. Other sub-platforms can be banned individually. Changes are staged — click Save to save.</div>
@@ -1679,6 +1705,11 @@ const I18N = {
   'added': { en: 'Added', zh: '已添加' },
   'test_passed': { en: 'Test passed', zh: '测试通过' },
   'strategy_env_locked_hint': { en: 'POOL_STRATEGY is set and takes precedence over this panel — unset the env var to control the rotation strategy here.', zh: 'POOL_STRATEGY 已设置并优先于面板——要在此处控制轮转策略请先取消该环境变量。' },
+  'tool_rename': { en: 'Tool rename (anti fingerprint)', zh: '工具改名（反指纹）' },
+  'tool_rename_enable': { en: 'Rename client tools on outbound requests', zh: '出站请求改写客户端工具名' },
+  'tool_rename_prefix': { en: 'Prefix', zh: '前缀' },
+  'tool_rename_platforms': { en: 'Apply to platforms', zh: '生效平台' },
+  'tool_rename_hint': { en: 'Outbound requests rename client tools to prefix+hash; responses restore original names automatically. Anti-fingerprint measure for the zen free tier (name face). Keep the prefix private and change it if a provider blocks it. TraeWork/WorkBuddy take effect in a later phase.', zh: '出站请求把客户端工具名改写为「前缀+哈希」，响应自动还原真名。这是 zen 免费层反指纹措施（名称面）。前缀请保密，被上游封时改一个即可换整套假名。TraeWork/WorkBuddy 后续阶段生效。' },
   'isolation_env_locked_hint': { en: 'PROXY_ISOLATION=true is set — isolation is forced on. Unset the env var (or set it to false) to control isolation from the panel.', zh: 'PROXY_ISOLATION=true 已设置——隔离被强制开启。取消该环境变量(或设为 false)才能在面板控制隔离。' },
   'account_rotation_strategy': { en: 'Account rotation strategy', zh: '账号轮转策略' },
   'which_credential_each_request_uses': { en: 'Which credential each request uses', zh: '每次请求用哪个凭据' },
@@ -2140,7 +2171,7 @@ function switchTab(name) {
   if (name === 'dashboard') { loadStats(); loadAccounts(); }
   if (name === 'accounts') { loadAccounts(); loadModels(); }
   if (name === 'trae') loadTraeConfig();
-  if (name === 'settings') { loadKeys(); loadConfig(); loadPlatformBans(); loadAccountStrategy(); }
+  if (name === 'settings') { loadKeys(); loadConfig(); loadPlatformBans(); loadAccountStrategy(); loadToolRename(); }
   if (name === 'logs') loadLogs();
   if (name === 'proxypool') loadProxyPool();
   if (name === 'opencode') { loadOcConfig(); loadOcModels(); loadModels(); }
@@ -6769,6 +6800,42 @@ async function saveAccountStrategy() {
   } catch (e) {
     toast(T('save_failed') + e.message, 'error');
     loadProxyPool();
+  }
+}
+// loadToolRename 读取工具改名全局配置（GET /admin/api/config 的 toolRename 段）。
+async function loadToolRename() {
+  try {
+    const d = await api('GET', '/config');
+    const tr = (d.data || {}).toolRename || {};
+    const p = tr.platforms || {};
+    _('trEnabled').checked = !!tr.enabled;
+    _('trPrefix').value = tr.prefix || '';
+    _('trPlatCline').checked = !!p.cline;
+    _('trPlatZen').checked = !!p.zen;
+    _('trPlatFreepi').checked = !!p.freepi;
+    _('trPlatOther').checked = !!p.other;
+  } catch (e) { /* 面板首屏容错:读不到就保持默认 */ }
+}
+
+// saveToolRename 保存工具改名全局配置（POST /admin/api/config/update）。
+// 前缀非法时后端 400，api() 会把 error 透传到 toast。
+async function saveToolRename() {
+  const body = { toolRename: {
+    enabled: _('trEnabled').checked,
+    prefix: (_('trPrefix').value || '').trim(),
+    platforms: {
+      cline: _('trPlatCline').checked,
+      zen: _('trPlatZen').checked,
+      freepi: _('trPlatFreepi').checked,
+      other: _('trPlatOther').checked,
+    },
+  } };
+  try {
+    await api('POST', '/config/update', body);
+    toast(T('saved'), 'success');
+    loadToolRename();
+  } catch (e) {
+    toast(T('save_failed') + e.message, 'error');
   }
 }
 async function saveIsolationOptions() {

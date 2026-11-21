@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"afree-proxy/internal/kit"
+	"afree-proxy/internal/toolrename"
 )
 
 // ============================================================================
@@ -718,6 +719,11 @@ func handleResponses(w http.ResponseWriter, r *http.Request) {
 	// 前缀平台（trae:/Other 子平台）：归口到平台 chat 调用器，
 	// 经既有 chat→responses 转换件输出（与 zen 路径同一套协议转换）。
 	if caller, ok := resolvePlatformChatCaller(chatModel); ok {
+		// 工具改名一期：freepi/other 直改 chat 形态；trae 二期不接。
+		kind := toolRenameKind(ModelRoutePlatformKey(chatModel))
+		if kind == toolrename.KindFreepi || kind == toolrename.KindOther {
+			w = toolRenameApplyChat(kind, chat, w)
+		}
 		handleResponsesViaChat(w, r, chat, chatModel, isStream, caller)
 		return
 	}
@@ -729,6 +735,10 @@ func handleResponses(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if route == "zen" {
+		// 工具改名一期：zen 在域包出站 body 处改写，这里只包还原出口。
+		if m := toolrename.Build(toolrename.KindZen, toolNamesOfChat(chat)); m != nil {
+			w = toolrename.NewRestoreWriter(w, m)
+		}
 		// 与管理面板的 zen 开关一致：关掉后 /v1/responses 也不得继续往 zen 打
 		zm, ok := resolveZenFreeModel(chatModel)
 		if !ok {
@@ -827,6 +837,8 @@ func handleResponses(w http.ResponseWriter, r *http.Request) {
 		// 我们替客户端开了流式：补 include_usage，否则聚合后 usage 缺失
 		withStreamUsage(chat)
 	}
+	// cline 出站工具改名（方案二一期）：CallAutoStream 从 chat 拷贝工具。
+	w = toolRenameApplyChat(toolrename.KindCline, chat, w)
 	up, acc, streamed, err := cline.CallAutoStream(r.Context(), chat, stream, useProxies)
 	if err != nil {
 		writeUpstreamAPIError(w, chatModel, err, http.StatusInternalServerError)

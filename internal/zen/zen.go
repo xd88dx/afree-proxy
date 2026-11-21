@@ -3,6 +3,7 @@ package zen
 import (
 	"afree-proxy/internal/exitpool"
 	"afree-proxy/internal/kit"
+	"afree-proxy/internal/toolrename"
 	"bufio"
 	"bytes"
 	"context"
@@ -986,6 +987,49 @@ func ZenDailyExhausted(status int, body string, retryAfter time.Duration) bool {
 		delta = -delta
 	}
 	return delta <= 30*time.Minute
+}
+
+// zenFingerprintSuspectTokens 判定"疑似指纹闸"的当日用量上限：一把当天几乎
+// 没用过（≤100 tokens，覆盖一次最小冒烟的消耗）的 key 吃到"日额度耗尽"形态
+// 的 429，更可能是免费层身份指纹闸按请求内容命中（见 zen_toolfilter.go 机制
+// 注释），而非真额度耗尽。写死不做成配置：这是排障判据不是调优参数。
+const zenFingerprintSuspectTokens = 100
+
+// zenKeyTokensToday key 当日已记账 tokens（无记录或跨日=0）。
+// 指纹闸自愈判据用；zenKeyMu 短临界区，调用方不得已持锁。
+func zenKeyTokensToday(key string) int64 {
+	if key == "" {
+		return 0
+	}
+	zenKeyMu.Lock()
+	defer zenKeyMu.Unlock()
+	st, ok := zenKeyTokens[key]
+	if !ok || st.Date != time.Now().Format("2006-01-02") {
+		return 0
+	}
+	return st.Today
+}
+
+// zenClientToolNameList 客户端工具名清单（保持原顺序）。工具改名映射构建与
+// 指纹闸自愈日志共用。
+func zenClientToolNameList(params map[string]any) []string {
+	names := make([]string, 0, 8)
+	for _, t := range ZenClientTools(params) {
+		if tm, ok := t.(map[string]any); ok {
+			if fn, ok := tm["function"].(map[string]any); ok {
+				if n, ok := fn["name"].(string); ok {
+					names = append(names, n)
+				}
+			}
+		}
+	}
+	return names
+}
+
+// zenClientToolNames 客户端工具名清单（逗号连接），指纹闸自愈日志用——命中
+// 后靠它做二分定位（哪个工具的名字/描述是指纹）。
+func zenClientToolNames(params map[string]any) string {
+	return strings.Join(zenClientToolNameList(params), ",")
 }
 
 // ParkZenKey 把 key 停放起来（日额度耗尽）。返回本次的停放时长，
@@ -2797,6 +2841,10 @@ func CallZenResponsesAPI(ctx context.Context, params map[string]any, stream bool
 	retryKey := ""          // 非空时重试沿用该 key（保持 key sess_ 一致）
 	remapped := false       // 410 弃用迁移至多一次，防别名链循环
 	sessionRetried := false // FreeTier 403 换新会话后同 key 重试至多一次
+	// 指纹闸自愈（同 CallZenAPI，见该处注释）：barely-used key 的"日额度
+	// 耗尽"形态 429 → 同 key 去客户端工具重试一次。
+	stripTools := false
+	toolRetryDone := false
 	// keySwitches 限制"一次客户端请求最多冷却几个 key"（同 chat 路径，
 	// 见 CallZenAPI 里的说明：换 key 会不可逆地冷却 key，必须单独设上限）。
 	keySwitches := 0
@@ -2871,6 +2919,15 @@ func CallZenResponsesAPI(ctx context.Context, params map[string]any, stream bool
 		// （key 为空已在上方报错返回。）
 		sess, user, ua := callIdent.forKey(key)
 		body := BuildZenResponsesBody(params, zm.ID, sess)
+		// 工具改名（同 CallZenAPI；responses 形态：tools[].name + input 的
+		// function_call 项）。
+		if m := toolrename.Build(toolrename.KindZen, zenClientToolNameList(params)); m != nil {
+			toolrename.RewriteResponsesForm(body, m)
+		}
+		if stripTools {
+			// 指纹闸自愈：只留 gate stub（tool_choice 已恒 auto）。
+			body["tools"] = ZenMergeResponsesTools(nil)
+		}
 		bodyJSON, err := json.Marshal(body)
 		if err != nil {
 			return nil, rateLimited, fmt.Errorf("marshal zen responses body: %w", err)
@@ -2950,6 +3007,9 @@ func CallZenResponsesAPI(ctx context.Context, params map[string]any, stream bool
 		}
 		if resp.StatusCode == http.StatusOK {
 			ZenSessionMarkSuccess(key)
+			if stripTools {
+				log.Printf("  zen fingerprint gate bypassed: request served without client tools (key#%d) — client tool capability lost for this round", KeyIndex(key))
+			}
 			if stream {
 				resp.Header.Set("X-Afree-Used-Key", key)
 				return resp, rateLimited, nil
@@ -2997,6 +3057,15 @@ func CallZenResponsesAPI(ctx context.Context, params map[string]any, stream bool
 			// rateLimited，统计失真）。判定后改为"停放该 key"，停放期内
 			// PickZenKey 直接跳过，到期只放一个探针。
 			if ZenDailyExhausted(resp.StatusCode, bodyBytes, raDur) {
+				// 指纹闸自愈（同 CallZenAPI 分支）：barely-used key 的伪额度
+				// 429 → 同 key 去客户端工具重试一次，仍耗尽才停放。
+				if used := zenKeyTokensToday(key); !toolRetryDone && o.PinKey == "" && PinnedZenKey() == "" && used <= zenFingerprintSuspectTokens {
+					toolRetryDone = true
+					stripTools = true
+					log.Printf("  zen responses daily-quota-shaped 429 on barely-used key#%d (%d tok today): suspect fingerprint gate, retrying same key without client tools (dropped: %s)",
+						KeyIndex(key), used, kit.Truncate(zenClientToolNames(params), 260))
+					continue
+				}
 				parked := ParkZenKey(key, bodyBytes)
 				log.Printf("  zen responses daily quota exhausted (429) key#%d: parked %v (probe #%d), Retry-After=%q",
 					KeyIndex(key), parked, ZenParkProbeCount(key), rawRetry)
@@ -3120,6 +3189,13 @@ func CallZenAPI(ctx context.Context, params map[string]any, stream bool, opts ..
 	}
 	cfg := GetZenConfig()
 	body := BuildZenBody(params, stream)
+	// 工具改名（2026-11-21，免费层身份指纹闸名称面对策）：在 BuildZenBody
+	// 之后应用——toolfilter 的真名匹配不受影响。gate 工具名不在映射内原样
+	// 保留（过闸必需）；历史 tool_calls 一并改写（指纹面在历史里同样成立）。
+	// 平台勾选/开关在 toolrename.Build 内判定（gwconfig 全局配置）。
+	if m := toolrename.Build(toolrename.KindZen, zenClientToolNameList(params)); m != nil {
+		toolrename.RewriteChatForm(body, m)
+	}
 
 	bodyJSON, err := json.Marshal(body)
 	if err != nil {
@@ -3182,6 +3258,14 @@ func CallZenAPI(ctx context.Context, params map[string]any, stream bool, opts ..
 	// Rate-limit switching (below) is the only branch that rewrites it,
 	// mirroring CallZenResponsesAPI.
 	retryKey := ""
+	// 指纹闸自愈（2026-11-21，见 daily-exhausted 分支与 zen_toolfilter.go
+	// 机制注释）：当天几乎没用的 key 吃到"日额度耗尽"形态 429，大概率是
+	// 免费层身份指纹闸命中（按请求内容判定，换 key 无用——实测一次请求
+	// 沿 failover 链烧 4 把 key）。stripTools=true 时出站 body 去掉客户端
+	// 工具重试一次（至多一次，toolRetryDone 防重入）；成功即自愈（本轮
+	// 无工具能力），仍耗尽则按真额度停放走原链路。
+	stripTools := false
+	toolRetryDone := false
 
 	for attempt := 0; attempt < MaxZenAttempts; attempt++ {
 		// 全池停放（日额度耗尽）：连一个上游往返都不发，直接给出带恢复
@@ -3327,6 +3411,9 @@ func CallZenAPI(ctx context.Context, params map[string]any, stream bool, opts ..
 		if resp.StatusCode == http.StatusOK {
 			ZenSessionMarkSuccess(key)
 			resp.Header.Set("X-Afree-Used-Key", key)
+			if stripTools {
+				log.Printf("  zen fingerprint gate bypassed: request served without client tools (key#%d) — client tool capability lost for this round", KeyIndex(key))
+			}
 			return resp, rateLimited, nil
 		}
 
@@ -3352,6 +3439,23 @@ func CallZenAPI(ctx context.Context, params map[string]any, stream bool, opts ..
 			// rateLimited，统计失真）。判定后改为"停放该 key"，停放期内
 			// PickZenKey 直接跳过，到期只放一个探针。
 			if ZenDailyExhausted(resp.StatusCode, bodyBytes, raDur) {
+				// 指纹闸自愈：当天几乎没用过的 key 吃到"日额度耗尽"形态的
+				// 429，大概率是免费层身份指纹闸按请求内容命中（换 key 无用）。
+				// 同 key 去客户端工具重试一次（至多一次）；仍耗尽才按真额度
+				// 停放。pinKey（面板 Test）保持原始语义不参与自愈。
+				if used := zenKeyTokensToday(key); !toolRetryDone && o.PinKey == "" && PinnedZenKey() == "" && used <= zenFingerprintSuspectTokens {
+					toolRetryDone = true
+					stripTools = true
+					body["tools"] = ZenGateTools()
+					body["tool_choice"] = "none" // 与"客户端无工具"既有语义一致
+					bodyJSON, err = json.Marshal(body)
+					if err != nil {
+						return nil, rateLimited, fmt.Errorf("marshal zen body: %w", err)
+					}
+					log.Printf("  zen daily-quota-shaped 429 on barely-used key#%d (%d tok today): suspect fingerprint gate, retrying same key without client tools (dropped: %s)",
+						KeyIndex(key), used, kit.Truncate(zenClientToolNames(params), 260))
+					continue
+				}
 				parked := ParkZenKey(key, bodyBytes)
 				log.Printf("  zen daily quota exhausted (429) key#%d: parked %v (probe #%d), Retry-After=%q",
 					KeyIndex(key), parked, ZenParkProbeCount(key), rawRetry)
@@ -3456,6 +3560,15 @@ func CallZenAPI(ctx context.Context, params map[string]any, stream bool, opts ..
 			if migrated := ZenHandleDeprecatedModel(resp.StatusCode, bodyBytes, body["model"].(string), params, o.PinKey != "", remapped); migrated {
 				remapped = true
 				body = BuildZenBody(params, stream)
+				if m := toolrename.Build(toolrename.KindZen, zenClientToolNameList(params)); m != nil {
+					toolrename.RewriteChatForm(body, m)
+				}
+				if stripTools {
+					// 指纹自愈的 strip 必须跨 410 重建存活，否则重建会把
+					// 客户端工具带回来（重建走的是完整 BuildZenBody）。
+					body["tools"] = ZenGateTools()
+					body["tool_choice"] = "none"
+				}
 				bodyJSON, err = json.Marshal(body)
 				if err != nil {
 					return nil, rateLimited, fmt.Errorf("marshal zen body: %w", err)

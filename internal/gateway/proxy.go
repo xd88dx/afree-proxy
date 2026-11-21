@@ -28,6 +28,7 @@ import (
 	"afree-proxy/internal/kit"
 	"afree-proxy/internal/other"
 	"afree-proxy/internal/reqlog"
+	"afree-proxy/internal/toolrename"
 	"afree-proxy/internal/workbuddy"
 	"afree-proxy/internal/zen"
 )
@@ -1904,12 +1905,21 @@ func handleAnthropicMessages(w http.ResponseWriter, r *http.Request) {
 	// 前缀平台（trae:/Other 子平台）：归口到平台 chat 调用器，
 	// 经既有 chat→anthropic 转换件输出（与 zen 路径同一套协议转换）。
 	if caller, ok := resolvePlatformChatCaller(req.Model); ok {
+		// 工具改名一期：freepi/other 直改转换后的 chat 形态；trae 二期不接。
+		kind := toolRenameKind(ModelRoutePlatformKey(req.Model))
+		if kind == toolrename.KindFreepi || kind == toolrename.KindOther {
+			w = toolRenameApplyChat(kind, openAIReq, w)
+		}
 		handleAnthropicViaChat(w, r, req, openAIReq, toolSchemas, caller)
 		return
 	}
 
 	// zen 免费模型路由
 	if route := routeModel(req.Model); route == "zen" {
+		// 工具改名一期：zen 在域包出站 body 处改写，这里只包还原出口。
+		if m := toolrename.Build(toolrename.KindZen, toolNamesOfChat(openAIReq)); m != nil {
+			w = toolrename.NewRestoreWriter(w, m)
+		}
 		handleZenAnthropic(w, r, req, openAIReq, toolSchemas)
 		return
 	} else if route == "reject" {
@@ -1946,6 +1956,8 @@ func handleAnthropicMessages(w http.ResponseWriter, r *http.Request) {
 		log.Printf("  anthropic model %s requires stream: forcing upstream stream, will aggregate", req.Model)
 	}
 
+	// cline 出站工具改名（方案二一期）：CallAutoStream 从 openAIReq 拷贝工具。
+	w = toolRenameApplyChat(toolrename.KindCline, openAIReq, w)
 	resp, acc, streamed, err := cline.CallAutoStream(r.Context(), openAIReq, upstreamStream, useProxies)
 	if err != nil {
 		log.Printf("  anthropic api error: %v", err)
@@ -3200,12 +3212,14 @@ func HandleChat(w http.ResponseWriter, r *http.Request) {
 
 	// FreePI 路由：freepi:<model-id>（freepi.ai 免费日额度 key 池，2026-11-20）
 	if strings.HasPrefix(model, freepi.ModelPrefix+":") {
+		w = toolRenameApplyChat(toolrename.KindFreepi, params, w)
 		handleFreepiChat(w, r, params)
 		return
 	}
 
 	// Other 路由：<prefix>:<model-id>（动态子平台 key 池，小企业上游）
 	if p, _, ok := other.ResolvePrefix(model); ok && p != nil {
+		w = toolRenameApplyChat(toolrename.KindOther, params, w)
 		handleOtherChat(w, r, params)
 		return
 	}
@@ -3215,6 +3229,11 @@ func HandleChat(w http.ResponseWriter, r *http.Request) {
 
 	// zen 免费模型路由
 	if route := routeModel(model); route == "zen" {
+		// zen 的改写在域包出站 body 处（toolfilter 真名匹配之后），这里只
+		// 包还原出口。
+		if m := toolrename.Build(toolrename.KindZen, toolNames); m != nil {
+			w = toolrename.NewRestoreWriter(w, m)
+		}
 		handleZenChat(w, r, params)
 		return
 	} else if route == "reject" {
@@ -3255,6 +3274,10 @@ func HandleChat(w http.ResponseWriter, r *http.Request) {
 			log.Printf("  model %s requires stream: forcing upstream stream, will aggregate", model)
 		}
 	}
+
+	// cline 出站工具改名（方案二一期）：在严格门/冷却闸之后、池检查之前——
+	// 这些闸不依赖工具名。BuildUpstreamBody 从 params 拷贝工具，改写随行。
+	w = toolRenameApplyChat(toolrename.KindCline, params, w)
 
 	// cline 路由需要账号池；zen 免费模型不需要账号池，
 	// 因此该检查放在路由之后而不是函数开头
