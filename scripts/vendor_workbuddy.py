@@ -235,6 +235,10 @@ PRESERVE_RELATIVE = (
     Path("auth/auth_nickname_test.go"),
     Path("auth/auth_test.go"),
     Path("auth/realm_test.go"),
+    # 2026-11-21 补登记：expires_test.go fixture 写死日期（1795254516410ms）落进
+    # NeedsRefresh(1h) 窗口成时间炸弹，改相对时钟（now+28d）——afree 首个补丁，
+    # 晚于全量登记，不写会被 re-vendor 冲回写死值（logstore_test ④ 同款教训）。
+    Path("auth/expires_test.go"),
     Path("config/config.go"),
     Path("config/config_test.go"),
     Path("livecfg/livecfg.go"),

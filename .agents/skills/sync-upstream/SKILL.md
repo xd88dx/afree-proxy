@@ -1,27 +1,28 @@
 ---
 name: sync-upstream
-description: 同步 afree-proxy 五条上游线的完整流程与陷阱清单——fork 上游 foxy1402/cline-proxy 的 git merge 线（含 Cline 与 OpenCode 两个平台）、workbuddy2api-panel 与 XCool-603/trae2api 两条 vendor 三方合并线、Trae 旧上游 Trae2api-cn 的内嵌授权助手比对线（仅 web_login.py 模板）、yetone/magpie 全平台参考线（纯参考不合并）。凡是要"同步上游/sync upstream/合并上游更新/GitHub 提示 behind/上游有新提交/更新 workbuddy vendor/更新 trae2api vendor/核对 Trae helper 上游/参考 magpie 的实现"时使用，即使用户只说了"更新一下"。
+description: 同步 afree-proxy 六条上游线的完整流程与陷阱清单——fork 上游 foxy1402/cline-proxy 的 git merge 线（含 Cline 与 OpenCode 两个平台）、workbuddy2api-panel 与 XCool-603/trae2api 两条 vendor 三方合并线、freepi-magpie-plugin 的 Go 移植参考线（internal/freepi）、Trae 旧上游 Trae2api-cn 的内嵌授权助手比对线（仅 web_login.py 模板）、yetone/magpie 全平台参考线（纯参考不合并）。凡是要"同步上游/sync upstream/合并上游更新/GitHub 提示 behind/上游有新提交/更新 workbuddy vendor/更新 trae2api vendor/核对 Trae helper 上游/参考 magpie 的实现/跟进 freepi 插件"时使用，即使用户只说了"更新一下"。
 ---
 
 # 上游同步配方
 
-本仓的同步口径以**五条线**为准（2026-11-08 用户定）——一个平台对应一条入口，cline/opencode 共用同一上游（cline-proxy），trae/workbuddy 各自独立，opencode 另有副线、trae 另有副线可供吸纳：
+本仓的同步口径以**六条线**为准（2026-11-08 用户定，2026-11-21 增 freepi）——一个平台对应一条入口，cline/opencode 共用同一上游（cline-proxy），trae/workbuddy 各自独立，opencode 另有副线、trae 另有副线可供吸纳：
 
-| | cline | workbuddy | opencode（主线） | opencode（副线） | trae（主线） | trae（副线） | 全平台参考线（magpie） |
-|---|---|---|---|---|---|---|---|
-| 上游 | `foxy1402/cline-proxy`（主线） | `misakano7545/workbuddy2api-panel`（主线） | `foxy1402/cline-proxy`（主线，与 cline 同一上游） | `jasonxu114514/opencode2api`（副线，只看更新、吸纳有价值逻辑） | `XCool-603/trae2api`（主线） | `autumnsentiment/Trae2api-cn`（副线，Python 项目、trae 更换基线前身，只看更新、吸纳有价值逻辑） | `yetone/magpie`（纯参考不合并） |
-| 对应平台 | Cline | WorkBuddy | OpenCode | OpenCode | TraeWork | TraeWork | 全平台 |
-| 同步面 | 整个仓库网关/zen/cline 核心 | 仅 `modules/workbuddy2api/` vendor 独立 module | 同 cline | 无——读源码/提交评估，单点吸纳，MERGE.md 记基线 | 仅 `modules/trae2api/` vendor 独立 module | 仅 `internal/trae/trae2api_helper_script.go` 内嵌的 `web_login.py`（Python 引擎逻辑与 XCool 版本对应的部分：XCool 版是完全独立 Go 重写，不存在跨语言移植） | 无——按需单点吸纳 |
+| | cline | workbuddy | opencode（主线） | opencode（副线） | trae（主线） | trae（副线） | freepi（主线） | 全平台参考线（magpie） |
+|---|---|---|---|---|---|---|---|---|
+| 上游 | `foxy1402/cline-proxy`（主线） | `misakano7545/workbuddy2api-panel`（主线） | `foxy1402/cline-proxy`（主线，与 cline 同一上游） | `jasonxu114514/opencode2api`（副线，只看更新、吸纳有价值逻辑） | `XCool-603/trae2api`（主线） | `autumnsentiment/Trae2api-cn`（副线，Python 项目、trae 更换基线前身，只看更新、吸纳有价值逻辑） | `pingmike2/freepi-magpie-plugin`（freepi.ai provider 插件，单文件 index.mjs，Go 移植参考线） | `yetone/magpie`（纯参考不合并） |
+| 对应平台 | Cline | WorkBuddy | OpenCode | OpenCode | TraeWork | TraeWork | FreePI | 全平台 |
+| 同步面 | 整个仓库网关/zen/cline 核心 | 仅 `modules/workbuddy2api/` vendor 独立 module | 同 cline | 无——读源码/提交评估，单点吸纳，MERGE.md 记基线 | 仅 `modules/trae2api/` vendor 独立 module | 仅 `internal/trae/trae2api_helper_script.go` 内嵌的 `web_login.py`（Python 引擎逻辑与 XCool 版本对应的部分：XCool 版是完全独立 Go 重写，不存在跨语言移植） | 无——读提交/diff 评估，按本仓形态单点吸纳（`internal/freepi/` 是 Go 移植非 vendor）；CLIENT_VERSION 随参考插件推进（服务端有最低版本闸），MERGE.md FreePI 节记基线 | 无——按需单点吸纳 |
 
 **用户口径记忆**（触发时按这个走）：
 - cline → cline-proxy 主线
 - workbuddy → workbuddy2api-panel 主线
-- opencode → cline-proxy 主线 + opencode2api 副线（查看近期更新、吸纳有价值逻辑）
+- opencode → cline-proxy 主线 + opencode2api 副线（查看近期更新、吸纳有价值逻辑；2026-11-12 起主线停滞，副线为主观察面）
 - trae → XCool-603/trae2api 主线 + Trae2api-cn 副线（Python 项目，trae 更换基线前身，查看近期更新、吸纳有价值逻辑）
+- freepi → pingmike2/freepi-magpie-plugin 移植参考线（版本 bump 吸收 + 闸门/头族变更评估）
 
-判别口诀：提到 cline/Nimbus/win → cline-proxy 主线；提到 WorkBuddy 面板/wb → workbuddy2api-panel 主线；提到 opencode/zen → cline-proxy 主线 + opencode2api 副线两条；提到 trae2api 引擎/vendor/TraeWork 网关 → XCool-603/trae2api 主线 + Trae2api-cn 副线；提到 web_login/授权助手 → Trae helper 比对线；提到 magpie/某平台的现成实现 → 参考线。
+判别口诀：提到 cline/Nimbus/win → cline-proxy 主线；提到 WorkBuddy 面板/wb → workbuddy2api-panel 主线；提到 opencode/zen → cline-proxy 主线 + opencode2api 副线两条；提到 trae2api 引擎/vendor/TraeWork 网关 → XCool-603/trae2api 主线 + Trae2api-cn 副线；提到 web_login/授权助手 → Trae helper 比对线；提到 freepi/freepi.ai/FreePI → pingmike2/freepi-magpie-plugin 移植参考线；提到 magpie/某平台的现成实现 → 参考线。
 
-**多条线都要更新时**：先做 fork 主线（改动大冲突多），再做两条 vendor 主线，最后做 Trae helper 比对与 opencode2api/magpie 副线评估。副线绝不 merge、不 vendor，只做「看近期更新、评估吸纳有价值逻辑」：读提交/源码，零吸纳写结论并记基线（MERGE.md 对应平台节），有价值的单点移植到本仓架构。
+**多条线都要更新时**：先做 fork 主线（改动大冲突多），再做两条 vendor 主线，最后做 Trae helper 比对、freepi 移植线与 opencode2api/magpie 副线评估。副线与移植参考线绝不 merge、不 vendor，只做「看近期更新、评估吸纳有价值逻辑」：读提交/源码，零吸纳写结论并记基线（MERGE.md 对应平台节），有价值的单点移植到本仓架构。
 
 ## 2.5 副线与参考线（opencode2api / Trae2api-cn / yetone/magpie）
 

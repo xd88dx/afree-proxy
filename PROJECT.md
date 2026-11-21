@@ -22,18 +22,19 @@
 
 管理面板前端 **P5 拆分**：共享骨架（head/CSS/导航骨架/共享 tab/JS）在 `internal/panel/html.go`；**平台导航项与 tab 片段在 `internal/<x>/panel_nav.html` / `panel_tab.html`**（各平台包 embed，panel 按拆分前顺序拼装，产物与拆分前字节一致——切分时机器验证）。`oc*` 属于 OpenCode 而不是 Cline。改平台 UI 片段去平台包，改共享 UI 去panel/html.go。
 
-## 3. 上游同步：五条线（主线 merge/vendor + 副线吸纳）+ magpie 参考线，台账 `MERGE.md`
+## 3. 上游同步：六条线（主线 merge/vendor/移植参考 + 副线吸纳）+ magpie 参考线，台账 `MERGE.md`
 
-同步口径（2026-11-08 用户定）：一个平台对应一条入口，**cline/opencode 共用 cline-proxy 主线**（按改动文件归属分节），opencode 另有 opencode2api 副线、trae 另有 Trae2api-cn 副线负责「看近期更新、吸纳有价值逻辑」：
+同步口径（2026-11-08 用户定，2026-11-21 增 freepi）：一个平台对应一条入口，**cline/opencode 共用 cline-proxy 主线**（按改动文件归属分节），opencode 另有 opencode2api 副线、trae 另有 Trae2api-cn 副线负责「看近期更新、吸纳有价值逻辑」：
 
 - **cline**：`foxy1402/cline-proxy`（主线），`git merge --no-ff --no-commit <上游哈希>`。
 - **workbuddy**：`misakano7545/workbuddy2api-panel`（主线），`python scripts/sync_workbuddy.py`（三方 vendor 合并，基线 `scripts/workbuddy-vendor-baseline.json`；源工作树为 `D:\下载\Github\workbuddy2api-panel-misakano`，脚本以源树 HEAD 为上游）。vendor 树落点 `modules/workbuddy2api/internal/`（2026-11-17 起独立 module、import 零改写；主 module 经根门面 `afree_bridge.go` 消费）。
-- **opencode**：`foxy1402/cline-proxy`（主线，与 cline 同步一起）+ `jasonxu114514/opencode2api`（副线，只看更新、吸纳有价值逻辑，不 merge 不 vendor）。
+- **opencode**：`foxy1402/cline-proxy`（主线，与 cline 同步一起）+ `jasonxu114514/opencode2api`（副线，只看更新、吸纳有价值逻辑，不 merge 不 vendor；2026-11-21 起主线停滞，副线为主观察面）。
 - **trae（主线）**：`XCool-603/trae2api`（2026-11-04 起换线，Go 零依赖），**vendor 三方合并**——`scripts/vendor_trae2api.py` 整树拷贝 12 子包到 `modules/trae2api/internal/`（2026-11-17 起独立 module、import 零改写）+ 幂等改写（出口接管/反代开关/新增身份钩子/console 挂载基址），`scripts/sync_trae2api.py` 三方合并，基线 `scripts/trae2api-vendor-baseline.json`；上游本地修复（textcall 兜底）以 `scripts/trae2api-afree.patch` 重放。模型名合并域透传（2026-11-07 起）：对外 `tacn:`（CN Trae+SOLO）/`tagb:`（Intl，随 intl 配置），内部四 realm 仅实现细节。旧四前缀 `trae:`/`solo:`/`trae-intl:`/`solo-intl:` 废除（strict-gate 404）。
 - **trae（副线）**：`autumnsentiment/Trae2api-cn`（Python 项目，trae 更换基线前身），只看更新、吸纳有价值逻辑（XCool-603/trae2api 与 Trae2api-cn 是完全独立的 Go/Python 双实现，副线逻辑无跨语言直接移植形态，多以「上游行为取证 + 本仓形态差异结论」记录）。`web_login.py` 在主线里跑 helper 比对的额外职责还在（`scripts/check_trae_helper.py`，模板已迁 `internal/trae/trae2api_helper_script.go`）。
+- **freepi（2026-11-21 立线）**：`pingmike2/freepi-magpie-plugin`（主线，freepi.ai 的 magpie/OpenCode provider 插件，单文件 index.mjs）——**Go 移植参考线**（非 vendor 非 merge）：`internal/freepi/` 按移植时点对齐插件协议逻辑，后续看上游增量、按本仓形态单点吸纳（CLIENT_VERSION 随参考插件推进——freepi.ai 服务端有最低版本闸）。台账在 `MERGE.md` FreePI 节。
 - **magpie（2026-11-06 用户立项，全平台纯参考）**：`yetone/magpie`（订阅聚合网关，覆盖约 70 agent/全主流平台）——**纯参考不合并**，按需单点吸纳 + `MERGE.md` magpie 节记基线增量回溯；也是上游行为取证的旁证源（其 gateway 测试文件质量高，zen 免费层关停即靠它定案）。详见技能 §2.5。
 
-仓库根 `MERGE.md` 按 **Cline / TreaWork / WorkBuddy / OpenCode** 四条线（平台⇔主线一一对应）记录同步历史，另有 **副线评估与 magpie** 一节（副线吸收/零吸纳结论与 magpie 基线），格式 `### YYYY-MM-DD — <基线短哈希> → <目标短哈希>`，写明上游仓库与合并方式、基线与目标、吸收项（带原因）、丢弃项（带原因）、本地定制保留清单、验证结果。历史只追加不删改；未涉及的线写“本次未涉及上游同步”。详细流程在 `.agents/skills/sync-upstream/`，按需加载。
+仓库根 `MERGE.md` 按 **Cline / TreaWork / WorkBuddy / OpenCode / FreePI** 五条线（平台⇔主线一一对应）记录同步历史，另有 **副线评估与 magpie** 一节（副线吸收/零吸纳结论与 magpie 基线），格式 `### YYYY-MM-DD — <基线短哈希> → <目标短哈希>`，写明上游仓库与合并方式、基线与目标、吸收项（带原因）、丢弃项（带原因）、本地定制保留清单、验证结果。历史只追加不删改；未涉及的线写“本次未涉及上游同步”。详细流程在 `.agents/skills/sync-upstream/`，按需加载。
 
 ## 4. 构建与验证
 

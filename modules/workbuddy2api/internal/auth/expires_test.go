@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"fmt"
 	"testing"
 	"time"
 )
@@ -9,15 +10,17 @@ import (
 // 官方写 expiresAt 为**毫秒**，本仓内部按 Unix 秒。不归一会让到期时间落到公元
 // 58800 年 → NeedsRefresh 恒 false → token 永不刷新 → 到期后账号静默 401。
 func TestParseNormalizesOfficialCLIExpiresAt(t *testing.T) {
-	// 取自真实官方凭据文件（2026-10-24，www.codebuddy.ai）。
-	const cliMillis = 1795254516410
+	// 形态取自真实官方凭据文件（2026-10-24，www.codebuddy.ai），expiresAt 原为
+	// 写死值 1795254516410——随真实时钟过期，2026-11-21 起落进 NeedsRefresh(1h)
+	// 窗口变时间炸弹（afree 侧改相对时钟除雷，登记 vendor 脚本 PRESERVE）。
+	cliMillis := time.Now().Add(28 * 24 * time.Hour).UnixMilli()
 	wantSec := int64(cliMillis / 1000)
 
-	raw := []byte(`{
+	raw := []byte(fmt.Sprintf(`{
 		"account": {"uid":"00000000-0000-4000-8000-000000000001","nickname":"misakano7545","uin":"000000000000"},
-		"auth": {"accessToken":"at","refreshToken":"rt","expiresAt":1795254516410,
+		"auth": {"accessToken":"at","refreshToken":"rt","expiresAt":%d,
 		         "domain":"www.codebuddy.ai","tokenType":"Bearer","expiresIn":2418995}
-	}`)
+	}`, cliMillis))
 	a, err := Parse(raw)
 	if err != nil {
 		t.Fatalf("Parse: %v", err)

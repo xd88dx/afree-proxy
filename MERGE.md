@@ -13,7 +13,7 @@ WorkBuddy 一栏的基线同时登记在 `scripts/workbuddy-vendor-baseline.json
 
 ## Cline
 
-本次未涉及上游同步（2026-10-28 核对：`foxy1402/cline-proxy` main 仍为 `571f9b9`，与 2026-10-27 同步基线一致，无新提交；`571f9b9` 的改动全部属于 OpenCode 线，见文末 OpenCode 节。2026-10-29 复核：仍为 `571f9b9`，无新提交。2026-10-30 复核：上游推进到 `b8a1be0`，但区间内 4 提交全部落在 zen/OpenCode 侧（`git diff 571f9b9 b8a1be0` 无 Cline 侧文件），Cline 线本次零吸收，详见 OpenCode 节。2026-10-31 复核：仍为 `b8a1be0`，无新提交，本次未涉及。2026-10-31 二次复核：上游推进到 `a41f1756`，但区间内 1 提交全部落在 zen/OpenCode 侧（`git diff b8a1be0 a41f1756 --name-only` 无 Cline 侧文件），Cline 线零吸收，详见 OpenCode 节。2026-11-02 复核：仍为 `a41f1756`，无新提交，本次未涉及。2026-11-05 复核：仍为 `a41f1756`，无新提交，本次未涉及。2026-11-07 复核：上游推进到 `c6b3c45`，区间 3 提交全部落在 zen/OpenCode 侧（zen system prompt 换位/429 请求抓包/真实计费 tokens），Cline 线零吸收，详见 OpenCode 节。2026-11-14 复核：仍为 `4f12cd2`，无新提交，本次未涉及。2026-11-19 复核：仍为 `4f12cd2`，无新提交，本次未涉及）。
+本次未涉及上游同步（2026-10-28 核对：`foxy1402/cline-proxy` main 仍为 `571f9b9`，与 2026-10-27 同步基线一致，无新提交；`571f9b9` 的改动全部属于 OpenCode 线，见文末 OpenCode 节。2026-10-29 复核：仍为 `571f9b9`，无新提交。2026-10-30 复核：上游推进到 `b8a1be0`，但区间内 4 提交全部落在 zen/OpenCode 侧（`git diff 571f9b9 b8a1be0` 无 Cline 侧文件），Cline 线本次零吸收，详见 OpenCode 节。2026-10-31 复核：仍为 `b8a1be0`，无新提交，本次未涉及。2026-10-31 二次复核：上游推进到 `a41f1756`，但区间内 1 提交全部落在 zen/OpenCode 侧（`git diff b8a1be0 a41f1756 --name-only` 无 Cline 侧文件），Cline 线零吸收，详见 OpenCode 节。2026-11-02 复核：仍为 `a41f1756`，无新提交，本次未涉及。2026-11-05 复核：仍为 `a41f1756`，无新提交，本次未涉及。2026-11-07 复核：上游推进到 `c6b3c45`，区间 3 提交全部落在 zen/OpenCode 侧（zen system prompt 换位/429 请求抓包/真实计费 tokens），Cline 线零吸收，详见 OpenCode 节。2026-11-14 复核：仍为 `4f12cd2`，无新提交，本次未涉及。2026-11-19 复核：仍为 `4f12cd2`，无新提交，本次未涉及。2026-11-21 复核：仍为 `4f12cd2`，无新提交，本次未涉及）。
 
 ### 2026-11-08 — c6b3c45 → a8fe356
 
@@ -36,6 +36,11 @@ WorkBuddy 一栏的基线同时登记在 `scripts/workbuddy-vendor-baseline.json
 **2026-11-04 起上游换线**：`XCool-603/trae2api`（vendor 三方合并线，见下方 2026-11-04 条目）；`autumnsentiment/Trae2api-cn` 仅剩 helper 脚本比对。切换点 tag：`last-trae2api-cn`(49ec6be)。
 
 上游(历史线):`autumnsentiment/Trae2api-cn`(Trae CN / Trae Solo CN 模型反代,Python,MIT)。**这条线不是 vendor/merge 关系**:上游是 Python 全栈,本地 `internal/trae/` + `internal/app/trae.go` 是 Go 重写,行为跟随上游协议;唯一逐行移植的产物是内嵌的本机授权助手 `web_login.py`(`internal/trae/helper_script.go`),只有它需要跟上游比对。2026-10-27 的 cline-proxy 合并未涉及本线。
+
+### 2026-11-21 — 复核（两条上游均零新提交）
+
+- **XCool-603/trae2api**：main 仍 `b63408d`（0.2.6），与基线一致，未合并。
+- **Trae2api-cn 副线**（helper 比对）：上游 main HEAD 仍 `5c87d6c`（v1.0.11），零新提交，基线不变。
 
 ### 2026-11-19 — 复核（两条上游均零新提交）+ helper 比对脚本锚点修复
 
@@ -119,6 +124,17 @@ WorkBuddy 一栏的基线同时登记在 `scripts/workbuddy-vendor-baseline.json
 - 生产部署:镜像 `afree-proxy:prod-20261027-36` 重建容器 `afree`(`--restart always`、`-p 3457:3457`、`-v D:/DockerApp/afree:/app/data`);env 从旧容器继承,哈希 `b54013375c12…` 与旧容器一致;`Up (healthy)`;`GET /`→302、`GET /v1/models`→200;容器内二进制 `grep -ac "部署默认值"` / `"relay-host"` 均命中 1 处,确认 v1.0.10 脚本已编入
 
 ## WorkBuddy
+
+### 2026-11-21 — 3412082 → 5b40d46（24 提交，0 冲突 + PRESERVE 9 文件补吸收 + vendor 测试时间炸弹除雷）
+
+- 上游 `misakano7545/workbuddy2api-panel`：ASR/TTS 语音端点闭环（issue #277：upstream/speech.go + server/audio.go + TTS 缺 done 判截断/ASR 认 response_format）、11102 模型 id 不存在归请求级不换号白打全池（#280）、同轮助手文字与工具调用合并回放（PR #281）、登录绑定号池出口（login_bind_proxy，登录与后续任务同出口防风控关联）、预告救援可关+身份自报前缀（narration_enabled，#273）、跨账号缓存探针（probe/crossacct，结论=按账号隔离）、今日救援统计卡、pool/nopick 选号失败原因观测、rescue_trace 判据枚举化（#245 后续）。全部随 vendor 三方合并落入（上游新增 21 文件，合并 19 文件 0 冲突）。
+- **PRESERVE∩上游改动 9 文件静默漏吸（2026-11-19 同款缺陷第二次复现）**：livecfg/livecfg.go、panel/app.js、panel/index.html、panel/login.go、panel/panel.go、server/continue.go、server/handler.go、server/toolonly.go、upstream/client.go——sync 后按 2026-11-19 教训做交集检查抓出，`.tmp/wb_preserve_merge.py` 逐文件 git merge-file(base 3412082/ours 活树/theirs 5b40d46) 补跑，9 文件全部干净合并（afree 本地改动与上游改动无重叠），吸收率复核 100%。
+- **vendor 测试时间炸弹除雷**：`auth/expires_test.go` fixture 写死 `expiresAt=1795254516410ms`（≈2026-11-21T09:48Z），同步当日全量测试起落进 `NeedsRefresh(1h)` 窗口恒炸（auth 包本次上游未改，纯日期过期非同步引入）——改相对时钟 `time.Now().Add(28d).UnixMilli()`（形态保留、语义不变），登记 `vendor_workbuddy.py` PRESERVE（logstore_test ④ 同款教训：不登记会被 re-vendor 冲回写死值）。
+- **新配置键的 afree 装配判定（本轮零装配改动）**：`tts_enabled`/`asr_enabled` 缺省 false 且 afree 主 mux 不挂 /v1/audio/*（404，死配置判据不暴露开关）；`narration_enabled`/`login_bind_proxy` 在 vendored livecfg 以取反字段（NarrationOff/LoginBindOff）承载，零值=开启——afree 未接线时行为与改前完全一致（预告救援照常、登录绑定逻辑随 vendored proxypool 现有接线自动生效）；新键住上游 cmd/server/config.go（非 vendor 面），afree vendored config.go 不承载。面板新增「今日救援」统计卡经 `RescueToday` 回调取数，未接线时返空=显示 0，无行为影响。
+- module 根 `config.example.json` 手工吸收上游 4 新键（宽松 Unmarshal，TestConfigExampleParses 不受影响）；`internal/probe/crossacct.go`（//go:build ignore 探针脚本）与 `internal/alert` 同判——非编译引用面，不扩 PACKAGES；上游探针结论「前缀缓存按账号隔离，换号=从零重吃」与本仓 session 粘性/cache key 设计一致，仅留档。
+- 版本号：`WorkbuddyVersion` 2026.11.19-misakano+afree → 2026.11.21-misakano+afree（自维护日期戳，不跟上游 dev）。
+- 本地定制幸存核对：chatStat ctx 归因（logging.go 上游未触碰）、truncated 单列（reqlog/continue——continue.go 上游 +4 行经 merge-file 干净合入）、补签节奏锁（checkin_retry.go 上游未触碰）均无损。
+- 验证：`go build`/`go vet`（三 module 显式列出）全绿；`go test`（三 module）`-count=1` 全绿（含新 voice/audio/speech/ws 测试）；`CGO_ENABLED=1 go test -race ./internal/app/` 全绿。源树 main 已 ff 至 misakano/main（`5b40d46`）。
 
 ### 2026-11-19 — 10d01b4 → 3412082（约 60 提交，批量 vendor 同步 + PRESERVE 文件手工吸收）
 
@@ -427,6 +443,14 @@ WorkBuddy 一栏的基线同时登记在 `scripts/workbuddy-vendor-baseline.json
 
 ## OpenCode
 
+### 2026-11-21 — 主线复核（无更新，停滞确认）+ 副线 opencode2api 评估（2 提交，零吸纳+2 取证）
+
+- fork cline-proxy main 仍 `4f12cd2`，与 2026-11-12 合并基线一致——主线自该日起零提交，用户「主线更新停滞」判断成立；本线后续以副线 opencode2api 为主观察面。
+- **opencode2api**（`jasonxu114514/opencode2api` 副线）：基线 `e2b2a7c2`（2026-11-17）→ `6575c623`（2026-11-20），2 提交逐条评估：
+  - `8f691a0d` 隔离客户端提示环境（#190，405 行新文件 client_environment.go）——**零吸纳留档（上游行为取证）**：opencode2api 此前给合成 env 块填宿主机假设（os.Getwd/runtime.GOOS/gitRepo=是），本次全部改 "unknown"、只信客户端显式声明。方向与本仓 zen 最小 marker 形态一致：本仓从不伪造 platform/git/workspace，directory 值经 2026-10-26 消融证明不校验（fake value → 200），gateway cwd 保留现状合理；按请求隔离本仓已有（EnsureZenEnvMarkerChat 显式拷贝防污染）。
+  - `6575c623` 客户端工具描述 ASCII 空格→NBSP（#188）——**零吸纳留档（上游行为取证）**：免费层闸还会按**客户端工具描述的字面措辞**匹配（继 95575c5f 的名称字面前缀之后第二类指纹面）；opencode2api 用 NBSP 破坏匹配且不累积（重复整形幂等），参数描述与追加的官方工具保持原样。本仓 zen 是透传真实客户端工具（官方客户端措辞本被免费层接受），zen_toolfilter 是丢弃/截断不是改写——无第三方措辞面，若未来给 zen 加工具改写必须避开字面措辞匹配。
+  - **副线基线推进：`e2b2a7c2` → `6575c623`（2026-11-20）。**
+
 ### 2026-11-19 — 主线复核（无更新）+ 副线 opencode2api 评估（5 提交，零吸纳+1 取证）
 
 - fork cline-proxy main 仍 `4f12cd2`，与 2026-11-12 合并基线一致，无新提交；OpenCode 与 Cline 两线本次均未涉及合并（Cline 节同日复核记录同此结论）。
@@ -598,9 +622,27 @@ WorkBuddy 一栏的基线同时登记在 `scripts/workbuddy-vendor-baseline.json
 - 验证：`go build ./...`、`go vet ./...` 全绿；`go test ./... -count=1` 27 包 ok，唯一失败为既知项（`TestChatStreamPassthrough` 既有 flaky；`TestInstallReplacesRestartsAndRecovers` Windows fork/exec 既有缺陷，单跑 PASS 且不 import 本次改动）；`-race` 当日因本机无 C 编译器跳过，**同日补装 winlibs gcc 后全仓 28 包 -race 全绿**（见下条补录）
 - 生产：未同步，等用户「同步」指令（见 PROJECT.md 部署节）。
 
+## FreePI
+
+**2026-11-21 立线**：`pingmike2/freepi-magpie-plugin`（freepi.ai 的 magpie/OpenCode provider 插件，单文件 index.mjs JavaScript，约 37KB）。本仓 `internal/freepi/` 是其 **Go 移植参考线**（非 vendor 非 merge，形态同 zen key 池四件套）——上游插件是参考实现，本仓按移植时点对齐其协议逻辑（三道闸门/广告曝光对/头族/版本指纹），后续同步方式=看上游增量、按本仓形态单点吸纳，本节记基线。freepi.ai 服务端有最低版本闸（上游 `9c72b0de` 提交语义），CLIENT_VERSION 随参考插件推进。
+
+### 2026-11-21 — 接线：d123d82b（0.6.23）→ 23c8dbff（0.6.25）→ HEAD（2 提交，吸收版本推进）
+
+- 接入基线确认：`internal/freepi` 移植实现对应 CLIENT_VERSION 0.6.23（`d123d82b`，2026-11-18）——闸门逻辑（广告曝光对/turn id 共享/0.6.19 会话级 ads gate）已在移植时点对齐（client.go 注释锚点）。
+- 基线→HEAD 区间 2 提交均为**纯版本 bump**（index.mjs 单行 + package.json 单行，无逻辑变化）：`017ee467` 0.6.24、`23c8dbff` 0.6.25。
+- **吸收**：`ClientVersion` 0.6.23 → 0.6.25（`internal/freepi/config.go`）——对齐参考插件当前版本，防服务端最低版本闸抬底；插件自身恒发其当前版本（0.6.25 已在生产链路验证），抬版本无副作用。注释同步改口（0.6.23→0.6.25 + 版本随参考插件推进的口径）。
+- 台账/文档同步：本节建立；PROJECT.md §3 上游线表与 sync-upstream skill 增补 FreePI 线。
+- 验证：`go build ./...` 全绿；全量测试见本日 WorkBuddy 节验证段。
+
 ## 副线（opencode2api / Trae2api-cn 吸收评估）+ magpie 参考线
 
 副线口径（2026-11-08 用户定）：**opencode2api**（opencode 副线）与 **Trae2api-cn**（trae 副线，Python 项目、trae 更换基线前身）只看近期更新、吸纳有价值逻辑，不 merge 不 vendor。本节记录每次副线评估的基线、吸收/丢弃结论；**magpie**（2026-11-06 立项，全平台纯参考）与副线共用本节，基线单独标注。
+
+### 2026-11-21 — 副线复核（opencode2api e2b2a7c2→6575c623 零吸纳+2 取证；magpie/tkcn 零新提交）
+
+- **opencode2api**：评估结论见 OpenCode 节 2026-11-21 条目（env 块宿主假设改 unknown / 工具描述 NBSP，均零吸纳留档）。基线推进 `e2b2a7c2` → `6575c623`。
+- **Trae2api-cn**：上游 HEAD 仍 `5c87d6c`，零新提交，无评估项。
+- **magpie**：本次未排查（本轮口径=zen 副线重点+freepi 主线建立，magpie 增量留待下轮副线复核一并做）。
 
 ### 2026-11-19 — 副线复核（opencode2api b296a61→e2b2a7c2 零吸纳+1 取证；magpie 647071f2→c4bae072，约 600 提交，零吸纳+3 取证）
 
