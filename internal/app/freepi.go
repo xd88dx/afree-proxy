@@ -73,14 +73,15 @@ func startFreepiModelsRefresher() {
 	}
 }
 
-// startFreepiCreditsRefresher 周期刷新 credits 快照（30 分钟 + 启动抖动错峰；
-// /me 免费只读、量极小）：额度加权调度的权重数据源保鲜——日常消耗不更新
-// 快照，陈旧权重会让差异化额度（邀请加成号）的趋平退化。与目录同步
-// refresher 同口径不判 ONLY_ROUTER（免费只读轻量，非营销类任务）。
+// startFreepiCreditsRefresher 周期刷新 credits 快照（间隔面板可配，默认 30
+// 分钟；启动抖动错峰；/me 免费只读、量极小）：额度加权调度的权重数据源
+// 保鲜——日常消耗不更新快照，陈旧权重会让差异化额度（邀请加成号）的趋平
+// 退化。间隔热改在当前周期结束后生效。与目录同步 refresher 同口径不判
+// ONLY_ROUTER（免费只读轻量，非营销类任务）。
 func startFreepiCreditsRefresher() {
-	time.Sleep(time.Duration(kit.RandIntn(30*60)) * time.Second) // 启动抖动：错开其他周期任务节拍
-	ticker := time.NewTicker(30 * time.Minute)
-	for range ticker.C {
+	time.Sleep(time.Duration(kit.RandIntn(freepi.Get().WeightInterval()*60)) * time.Second) // 启动抖动：错开其他周期任务节拍
+	for {
+		time.Sleep(time.Duration(freepi.Get().WeightInterval()) * time.Minute)
 		if len(freepi.Get().Keys) > 0 {
 			if refreshed, failed := freepiRefreshEnabledCredits(); failed > 0 {
 				log.Printf("freepi credits auto-refresh: %d ok, %d failed", refreshed, failed)
@@ -113,6 +114,8 @@ func handleFreepiConfig(w http.ResponseWriter, r *http.Request) {
 		"useProxies":     freepi.ProxiesEnabled(),
 		"maxConcurrency": c.MaxConcurrency,
 		"retries":        c.Retries,
+		"weightOptimize": c.WeightOptimizeEnabled(),
+		"weightInterval": c.WeightInterval(),
 		"keyStates":      freepi.KeyStatus(),
 		"models":         modelViews,
 	}
@@ -134,6 +137,8 @@ func handleFreepiConfigUpdate(w http.ResponseWriter, r *http.Request) {
 		UseProxies     *bool `json:"useProxies"`
 		MaxConcurrency *int  `json:"maxConcurrency"`
 		Retries        *int  `json:"retries"`
+		WeightOptimize *bool `json:"weightOptimize"`
+		WeightInterval *int  `json:"weightInterval"`
 	}
 	if err := json.NewDecoder(io.LimitReader(r.Body, 4096)).Decode(&patch); err != nil {
 		WriteAPI(w, http.StatusBadRequest, apiResponse{Error: "invalid JSON"})
@@ -142,13 +147,21 @@ func handleFreepiConfigUpdate(w http.ResponseWriter, r *http.Request) {
 	if patch.UseProxies != nil {
 		freepi.SetConfigUseProxies(patch.UseProxies)
 	}
-	if patch.MaxConcurrency != nil || patch.Retries != nil {
+	if patch.MaxConcurrency != nil || patch.Retries != nil ||
+		patch.WeightOptimize != nil || patch.WeightInterval != nil {
 		freepiSetNext(func(next *freepi.Config) {
 			if patch.MaxConcurrency != nil && *patch.MaxConcurrency > 0 {
 				next.MaxConcurrency = *patch.MaxConcurrency
 			}
 			if patch.Retries != nil && *patch.Retries >= 0 {
 				next.Retries = *patch.Retries
+			}
+			if patch.WeightOptimize != nil {
+				next.WeightOptimize = patch.WeightOptimize
+			}
+			// 0 = 恢复默认间隔（WeightInterval 访问器把 <=0 回落为 30）
+			if patch.WeightInterval != nil && *patch.WeightInterval >= 0 {
+				next.WeightIntervalMinutes = *patch.WeightInterval
 			}
 		})
 	}

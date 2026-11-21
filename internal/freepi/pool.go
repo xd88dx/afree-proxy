@@ -20,6 +20,10 @@ var (
 	// keyMu 保护 usage 痕迹表（usage.go；与 other 同款锁域：save/KeyStatus/
 	// PickKey/Cooldown 全部经它，锁序 saveMu → keyMu → mu.RLock）。
 	keyMu sync.Mutex
+	// keyIdxMu 保护轮转游标（运行态，不落盘）——仅权重优化关闭时的
+	// round_robin 全局策略路径使用。
+	keyIdxMu sync.Mutex
+	keyIdx   int
 )
 
 var inFlightMu sync.Mutex
@@ -60,9 +64,10 @@ func inFlightOf(key string) int {
 // PickKey 在 key 池中选取下一个可用 key。strategy 取自网关账号调度策略；
 // boundRoutable 是调用方注入的"该 key 绑定出口是否可用"判定（隔离模式；
 // nil = 全部可路由）。候选构建：空闲优先 → 全在途时放宽排他 → 全冷却时
-// UNABLE_FORCE 兜底（保持请求流动，与其他 key 池平台同口径）。默认
-// round_robin 路径为额度加权随机（effectiveWeightLocked）：剩余额度越多
-// 被抽中概率越高，各 key 日额度消耗趋平；fill 粘首选、random 均匀随机。
+// UNABLE_FORCE 兜底（保持请求流动，与其他 key 池平台同口径）。调度语义由
+// WeightOptimize 开关决定（面板热改）：开 = 额度加权随机（effectiveWeight
+// Locked，剩余额度越多概率越高，各 key 日额度消耗趋平）；关 = 网关全局
+// 策略原语义（round_robin 游标 / random / fill）。
 func PickKey(strategy string, boundRoutable func(key string) bool) string {
 	c := Get()
 	keys := c.Keys
@@ -94,10 +99,13 @@ func PickKey(strategy string, boundRoutable func(key string) bool) string {
 			delete(usage.Cool, k)
 		}
 	}
+	keyIdxMu.Lock()
+	start := keyIdx
+	keyIdxMu.Unlock()
 	buildCandidates := func(ignoreCooling, ignoreInFlight bool) []string {
 		var out []string
 		for i := 0; i < len(keys); i++ {
-			k := keys[i]
+			k := keys[(start+i)%len(keys)]
 			if blocked[k] || routingOff[k] {
 				continue
 			}
@@ -126,24 +134,12 @@ func PickKey(strategy string, boundRoutable func(key string) bool) string {
 		return ""
 	}
 	var picked string
-	switch strategy {
-	case "fill":
-		set := map[string]bool{}
-		for _, k := range candidates {
-			set[k] = true
-		}
-		for _, k := range keys {
-			if set[k] {
-				picked = k
-				break
-			}
-		}
-	case "random":
-		picked = candidates[randIntn(len(candidates))]
-	default:
+	if c.WeightOptimizeEnabled() {
 		// 额度加权随机（wb 凭据权重同思想，2026-11-21 用户定「尽可能让额度
 		// 持平」）：剩余额度越多被抽中概率越高，消耗按余额比例摊、整体趋平；
 		// credits 快照未知按权重 1。抽中失败兜底首候选（理论不可达）。
+		// 加权启用时取代全局策略（fill/random 同样被加权取代——开关本身即
+		// 策略选择）；关闭时下方 switch 全局策略原路径原地生效。
 		var total int64
 		ws := make([]int64, len(candidates))
 		for i, k := range candidates {
@@ -161,6 +157,33 @@ func PickKey(strategy string, boundRoutable func(key string) bool) string {
 		}
 		if picked == "" {
 			picked = candidates[0]
+		}
+		return picked
+	}
+	switch strategy {
+	case "fill":
+		set := map[string]bool{}
+		for _, k := range candidates {
+			set[k] = true
+		}
+		for _, k := range keys {
+			if set[k] {
+				picked = k
+				break
+			}
+		}
+	case "random":
+		picked = candidates[randIntn(len(candidates))]
+	default:
+		// round_robin：轮转头的候选，游标推进到它之后
+		picked = candidates[0]
+		for i, k := range keys {
+			if k == picked {
+				keyIdxMu.Lock()
+				keyIdx = (i + 1) % len(keys)
+				keyIdxMu.Unlock()
+				break
+			}
 		}
 	}
 	return picked

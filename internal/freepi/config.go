@@ -51,6 +51,13 @@ type Config struct {
 	MaxConcurrency int `json:"maxConcurrency"`
 	// Retries 限流/网络错误重试次数，默认 3。
 	Retries int `json:"retries"`
+	// WeightOptimize 额度权重优化开关：开 = PickKey 按剩余额度加权随机（额度
+	// 趋平）；关 = 使用网关全局账号轮转策略（round_robin 游标/random/fill）。
+	// nil/缺省 = 启用（保留加权趋平行为）。
+	WeightOptimize *bool `json:"weightOptimize,omitempty"`
+	// WeightIntervalMinutes 自动权重优化（后台 /me 余额快照刷新，免费）间隔
+	// 分钟数；<=0 视为默认 30。面板热改，下一周期生效。
+	WeightIntervalMinutes int `json:"weightIntervalMinutes,omitempty"`
 	// Models 模型目录状态（/client-version 拉取结果整体替换；静态兜底表在
 	// models.go）。other 的勾选暴露机制刻意没有：目录即上游真值，全量暴露。
 	Models ModelState `json:"models"`
@@ -308,6 +315,20 @@ func ProxiesEnabled() bool {
 		return true
 	}
 	return *up
+}
+
+// WeightOptimizeEnabled 额度权重优化开关（nil/缺省 = 启用——保留加权趋平
+// 行为）。关闭时 PickKey 走网关全局账号轮转策略。
+func (c *Config) WeightOptimizeEnabled() bool {
+	return c.WeightOptimize == nil || *c.WeightOptimize
+}
+
+// WeightInterval 自动权重优化间隔分钟（<=0 回落默认 30）。
+func (c *Config) WeightInterval() int {
+	if c.WeightIntervalMinutes > 0 {
+		return c.WeightIntervalMinutes
+	}
+	return 30
 }
 
 // KeyStatus 面板展示用的每 key 运行时状态（key 值打码，明文不出口）。

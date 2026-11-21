@@ -227,3 +227,36 @@ func TestPickKeyCreditWeighted(t *testing.T) {
 		t.Fatalf("credit-weighted pick: want a >= 180/%d, got %d", N, aCount)
 	}
 }
+
+// TestPickKeyWeightToggle 权重优化开关：关闭恢复全局策略轮转语义（游标推进
+// a→b→a 循环）；开启（nil/true 缺省）恢复额度加权随机（10000:1 高余额压制）。
+func TestPickKeyWeightToggle(t *testing.T) {
+	savedCfg, savedUsage := cfg, usage
+	t.Cleanup(func() { cfg, usage = savedCfg, savedUsage })
+	off := false
+	cfg = &Config{Keys: []string{"a", "b"}, WeightOptimize: &off}
+	usage = &usageData{}
+	if got := PickKey("round_robin", nil); got != "a" {
+		t.Fatalf("off-mode round_robin: first pick want a, got %q", got)
+	}
+	if got := PickKey("round_robin", nil); got != "b" {
+		t.Fatalf("off-mode round_robin: second pick want b, got %q", got)
+	}
+	if got := PickKey("round_robin", nil); got != "a" {
+		t.Fatalf("off-mode round_robin: third pick want a (cursor wrap), got %q", got)
+	}
+	cfg.WeightOptimize = nil
+	usage = &usageData{Credits: map[string]CreditStats{
+		"a": {Remaining: 10000, Allowance: 15000},
+		"b": {Remaining: 1, Allowance: 15000},
+	}}
+	aCount := 0
+	for i := 0; i < 100; i++ {
+		if PickKey("round_robin", nil) == "a" {
+			aCount++
+		}
+	}
+	if aCount < 90 {
+		t.Fatalf("on-mode weighted: want a >= 90/100, got %d", aCount)
+	}
+}

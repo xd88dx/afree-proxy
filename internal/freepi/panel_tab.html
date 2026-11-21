@@ -29,6 +29,23 @@
 </div>
 
 <div class="section">
+  <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><path d="M12 20V10M18 20V4M6 20v-4"/></svg></span> <span data-i18n="freepi_config">FreePI configuration</span></div>
+  <div class="section-body">
+    <div class="form-row">
+      <div class="field" style="flex:1">
+        <label style="display:flex;gap:6px;align-items:center;margin:0"><input type="checkbox" id="freepiWeightOpt" style="width:auto;padding:0;accent-color:var(--accent)"> <span data-i18n="freepi_weight_enable">Enable weight optimization</span></label>
+        <div style="display:flex;align-items:center;margin-top:12px">
+          <span style="flex:0 0 220px" data-i18n="freepi_weight_interval">Weight optimization interval (minutes)</span>
+          <input type="text" id="freepiWeightInterval" placeholder="30" style="flex:1">
+        </div>
+      </div>
+      <div class="field" style="flex:1"></div>
+    </div>
+    <div class="form-actions"><button class="btn btn-primary" onclick="saveFreepiWeightConfig()" data-i18n="save_config">Save config</button></div>
+  </div>
+</div>
+
+<div class="section">
   <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></span> Rate-limit defense</div>
   <div class="section-body">
     <div class="form-row">

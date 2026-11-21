@@ -1674,6 +1674,10 @@ const I18N = {
   'activation_link': { en: 'Activation link', zh: '激活链接' },
   'device_code': { en: 'Device code', zh: '设备码' },
   'freepi_weight_hint': { en: 'Scheduling weight = remaining credits (unknown = 1). Higher balance serves more traffic — credits level out.', zh: '调度权重 = 剩余额度（未知按 1）：余额越多承接越多，额度自动趋平' },
+  'freepi_config': { en: 'FreePI configuration', zh: 'FreePI 配置' },
+  'freepi_weight_enable': { en: 'Enable weight optimization', zh: '启用权重优化' },
+  'freepi_weight_interval': { en: 'Weight optimization interval (minutes)', zh: '权重优化间隔（分钟）' },
+  'freepi_weight_interval_invalid': { en: 'Interval must be a non-negative integer (minutes)', zh: '间隔必须是非负整数（分钟）' },
   'freepi_jwt_shape': { en: 'That does not look like a JWT (expected 3 dot-separated segments).', zh: '看起来不是合法 JWT（应为三段、以点分隔）。' },
   'refresh_credits': { en: 'Refresh credits', zh: '刷新额度' },
   'credits_refreshed': { en: 'Credits refreshed: ', zh: '已刷新额度：' },
@@ -8205,6 +8209,8 @@ async function loadFreepiConfig() {
     : '';
   _('freepiMaxConc').value = freepiConfig.maxConcurrency || 8;
   _('freepiRetries').value = freepiConfig.retries || 3;
+  _('freepiWeightOpt').checked = !!freepiConfig.weightOptimize;
+  _('freepiWeightInterval').value = freepiConfig.weightInterval || 30;
   renderFreepiModels(freepiKnownModels);
   renderFreepiKeys(ks);
 }
@@ -8355,6 +8361,16 @@ async function saveFreepiRateLimit() {
       maxConcurrency: parseInt(_('freepiMaxConc').value, 10) || 8,
       retries: parseInt(_('freepiRetries').value, 10) || 3,
     });
+    toast(T('saved'), 'success');
+    loadFreepiConfig();
+  } catch (e) { toast(T('save_failed') + e.message, 'error'); }
+}
+
+async function saveFreepiWeightConfig() {
+  const iv = parseInt(_('freepiWeightInterval').value, 10);
+  if (Number.isNaN(iv) || iv < 0) { toast(T('freepi_weight_interval_invalid'), 'error'); return; }
+  try {
+    await api('POST', '/freepi/config/update', { weightOptimize: _('freepiWeightOpt').checked, weightInterval: iv });
     toast(T('saved'), 'success');
     loadFreepiConfig();
   } catch (e) { toast(T('save_failed') + e.message, 'error'); }
