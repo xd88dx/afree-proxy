@@ -174,6 +174,8 @@ func registerAdminRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/admin/api/freepi/keys/test", panel.AdminCORS(auth(handleFreepiKeyTest)))
 	mux.HandleFunc("/admin/api/freepi/keys/proxy", panel.AdminCORS(auth(handleFreepiKeySetProxy)))
 	mux.HandleFunc("/admin/api/freepi/keys/proxy/clear", panel.AdminCORS(auth(handleFreepiKeyClearProxies)))
+	mux.HandleFunc("/admin/api/freepi/device/start", panel.AdminCORS(auth(handleFreepiDeviceStart)))
+	mux.HandleFunc("/admin/api/freepi/device/poll", panel.AdminCORS(auth(handleFreepiDevicePoll)))
 	mux.HandleFunc("/admin/zen/", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/admin/", http.StatusFound)
 	})

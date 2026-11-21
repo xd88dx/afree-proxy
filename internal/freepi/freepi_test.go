@@ -205,3 +205,25 @@ func TestCreditsSetAndPrune(t *testing.T) {
 		t.Fatal("PruneUsage must drop removed key's credits")
 	}
 }
+
+// TestPickKeyCreditWeighted 额度加权（wb 权重同思想）：权重 10000:1 时高余额
+// key 应以压倒性概率被选中（200 次抽样 ≥180）——「按剩余额度加权、额度趋平」。
+func TestPickKeyCreditWeighted(t *testing.T) {
+	savedCfg, savedUsage := cfg, usage
+	t.Cleanup(func() { cfg, usage = savedCfg, savedUsage })
+	cfg = &Config{Keys: []string{"a", "b"}}
+	usage = &usageData{Credits: map[string]CreditStats{
+		"a": {Remaining: 10000, Allowance: 15000},
+		"b": {Remaining: 1, Allowance: 15000},
+	}}
+	aCount := 0
+	const N = 200
+	for i := 0; i < N; i++ {
+		if PickKey("round_robin", nil) == "a" {
+			aCount++
+		}
+	}
+	if aCount < 180 {
+		t.Fatalf("credit-weighted pick: want a >= 180/%d, got %d", N, aCount)
+	}
+}

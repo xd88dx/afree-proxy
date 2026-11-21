@@ -20,9 +20,6 @@ var (
 	// keyMu 保护 usage 痕迹表（usage.go；与 other 同款锁域：save/KeyStatus/
 	// PickKey/Cooldown 全部经它，锁序 saveMu → keyMu → mu.RLock）。
 	keyMu sync.Mutex
-	// keyIdxMu 保护轮转游标（运行态，不落盘）。
-	keyIdxMu sync.Mutex
-	keyIdx   int
 )
 
 var inFlightMu sync.Mutex
@@ -62,8 +59,10 @@ func inFlightOf(key string) int {
 
 // PickKey 在 key 池中选取下一个可用 key。strategy 取自网关账号调度策略；
 // boundRoutable 是调用方注入的"该 key 绑定出口是否可用"判定（隔离模式；
-// nil = 全部可路由）。候选顺序：空闲优先 → 全在途时放宽排他 → 全冷却时
-// UNABLE_FORCE 兜底（保持请求流动，与其他 key 池平台同口径）。
+// nil = 全部可路由）。候选构建：空闲优先 → 全在途时放宽排他 → 全冷却时
+// UNABLE_FORCE 兜底（保持请求流动，与其他 key 池平台同口径）。默认
+// round_robin 路径为额度加权随机（effectiveWeightLocked）：剩余额度越多
+// 被抽中概率越高，各 key 日额度消耗趋平；fill 粘首选、random 均匀随机。
 func PickKey(strategy string, boundRoutable func(key string) bool) string {
 	c := Get()
 	keys := c.Keys
@@ -95,13 +94,10 @@ func PickKey(strategy string, boundRoutable func(key string) bool) string {
 			delete(usage.Cool, k)
 		}
 	}
-	keyIdxMu.Lock()
-	start := keyIdx
-	keyIdxMu.Unlock()
 	buildCandidates := func(ignoreCooling, ignoreInFlight bool) []string {
 		var out []string
 		for i := 0; i < len(keys); i++ {
-			k := keys[(start+i)%len(keys)]
+			k := keys[i]
 			if blocked[k] || routingOff[k] {
 				continue
 			}
@@ -145,18 +141,40 @@ func PickKey(strategy string, boundRoutable func(key string) bool) string {
 	case "random":
 		picked = candidates[randIntn(len(candidates))]
 	default:
-		// round_robin：轮转头的候选，游标推进到它之后
-		picked = candidates[0]
-		for i, k := range keys {
-			if k == picked {
-				keyIdxMu.Lock()
-				keyIdx = (i + 1) % len(keys)
-				keyIdxMu.Unlock()
+		// 额度加权随机（wb 凭据权重同思想，2026-11-21 用户定「尽可能让额度
+		// 持平」）：剩余额度越多被抽中概率越高，消耗按余额比例摊、整体趋平；
+		// credits 快照未知按权重 1。抽中失败兜底首候选（理论不可达）。
+		var total int64
+		ws := make([]int64, len(candidates))
+		for i, k := range candidates {
+			ws[i] = effectiveWeightLocked(k)
+			total += ws[i]
+		}
+		pick := int64(randIntn(int(total)))
+		var acc int64
+		for i, w := range ws {
+			acc += w
+			if pick < acc {
+				picked = candidates[i]
 				break
 			}
 		}
+		if picked == "" {
+			picked = candidates[0]
+		}
 	}
 	return picked
+}
+
+// effectiveWeightLocked key 的调度权重：credits 快照已知且 >0 时取剩余额度
+// （余额越多被抽中概率越高，额度趋平——wb 权重列同思想）；未知/0 按 1 兜底
+// （零余额 key 保留最低参与度防全池零余额锁死，上游 0 额度自会拒绝并走冷却）。
+// 调用方必须已持 keyMu（PickKey/KeyStatus 路径）。
+func effectiveWeightLocked(key string) int64 {
+	if cr, ok := usage.Credits[key]; ok && cr.Remaining > 0 {
+		return cr.Remaining
+	}
+	return 1
 }
 
 // RecordKeyTokens 记录 key 本次请求消耗的 token（prompt+completion），自动

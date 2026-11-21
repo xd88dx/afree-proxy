@@ -6,8 +6,8 @@
   <div class="section-body">
     <div class="table-wrap" style="margin-bottom:10px">
       <table>
-        <thead><tr><th style="width:50px">#</th><th style="width:170px" data-i18n="Account">Account</th><th data-i18n="Status">Status</th><th title="Counted locally by this proxy — not the official free quota" data-i18n="Today/Total tokens">Today/Total tokens</th><th data-i18n="Last used">Last used</th><th title="Main exit first, backup as fallback; both down = row skipped (isolation)." data-i18n="Proxy binding">Proxy binding</th><th style="width:130px;text-align:center" data-i18n="Actions">Actions</th><th style="text-align:center" title="Routing participation. New rows start disabled — tick Pool to enable." data-i18n="Pool">Pool</th></tr></thead>
-        <tbody id="freepiKeysBody"><tr><td colspan="8" class="empty">Loading...</td></tr></tbody>
+        <thead><tr><th style="width:50px">#</th><th style="width:170px" data-i18n="Account">Account</th><th data-i18n="Status">Status</th><th style="text-align:center" title="Remaining / daily allowance from the /me snapshot (free). Refills at UTC midnight." data-i18n="Credits">Credits</th><th style="text-align:center" title="Scheduling weight = remaining credits (unknown = 1). Higher balance serves more traffic — credits level out." data-i18n="weight_col">Weight</th><th title="Counted locally by this proxy — not the official free quota" data-i18n="Today/Total tokens">Today/Total tokens</th><th data-i18n="Last used">Last used</th><th title="Main exit first, backup as fallback; both down = row skipped (isolation)." data-i18n="Proxy binding">Proxy binding</th><th style="width:130px;text-align:center" data-i18n="Actions">Actions</th><th style="text-align:center" title="Routing participation. New rows start disabled — tick Pool to enable." data-i18n="Pool">Pool</th></tr></thead>
+        <tbody id="freepiKeysBody"><tr><td colspan="10" class="empty">Loading...</td></tr></tbody>
       </table>
     </div>
     <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin:10px 6px 4px">
@@ -44,7 +44,7 @@
   <div class="section-body">
     <div class="flex" style="margin-bottom:10px;gap:10px">
       <button class="btn btn-sm btn-primary" onclick="refreshFreepiModels(this)" title="Re-sync the model catalog from the upstream (needs a credential)" data-i18n-title="Re-sync the model catalog from the upstream (needs a credential)" data-i18n="refresh_models">Refresh models</button>
-      <span class="hint" style="margin:0" data-i18n="freepi_models_sync_hint">Automatically synced from the upstream catalog on startup — refresh to re-sync (needs a credential)</span>
+      <span class="hint" style="margin:0">Automatically synced from the official model source upstream (every 5 minutes)</span>
     </div>
     <div id="freepiModelsBody">Loading...</div>
   </div>
@@ -87,6 +87,24 @@
     <div class="field">
       <label>API keys (one per line) *</label>
       <textarea id="freepiKeyAddInput" rows="5" placeholder="eyJhbG…" style="font-family:'JetBrains Mono',Consolas,monospace"></textarea>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;margin:10px 0 0">
+      <span style="flex:1;height:1px;background:rgba(128,128,128,.35)"></span>
+      <span data-i18n="or" style="font-size:12px;opacity:.7">or</span>
+      <span style="flex:1;height:1px;background:rgba(128,128,128,.35)"></span>
+    </div>
+    <div style="margin-top:10px">
+      <button class="btn btn-primary" style="width:100%" id="freepiDeviceBtn" onclick="freepiDeviceStartFlow()" data-i18n="freepi_device_start">Sign in with GitHub (device code)</button>
+      <div id="freepiDeviceProgress" style="display:none;margin-top:10px">
+        <div class="field"><label data-i18n="activation_link">Activation link</label>
+          <div><a id="freepiDeviceLink" href="#" target="_blank" rel="noopener" style="word-break:break-all"></a></div>
+        </div>
+        <div class="field"><label data-i18n="device_code">Device code</label>
+          <span id="freepiDeviceCode" style="font-family:'JetBrains Mono',Consolas,monospace;font-size:18px;font-weight:600"></span>
+          <div class="hint" style="margin-top:4px" data-i18n="freepi_device_hint">The code is pre-filled on the GitHub page — press Continue → Authorize, then wait here. The account is added automatically once authorized.</div>
+        </div>
+        <div class="hint" id="freepiDeviceStatus" style="margin-top:6px"></div>
+      </div>
     </div>
     <div class="wb-dialog-actions">
       <button class="btn btn-primary" onclick="freepiKeyAddFromDialog()" data-i18n="save">Save</button>

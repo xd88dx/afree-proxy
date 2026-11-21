@@ -41,6 +41,7 @@ func initFreepi() {
 	})
 	freepi.SetAttemptObserver(freepiAttemptObserver)
 	go startFreepiModelsRefresher()
+	go startFreepiCreditsRefresher()
 }
 
 // freepiClientFor FreePI 出站客户端工厂：Chrome 指纹（2026-11-19 用户定口径：
@@ -68,6 +69,22 @@ func startFreepiModelsRefresher() {
 	for range ticker.C {
 		if len(freepi.Get().Keys) > 0 {
 			_, _ = freepi.TrySync()
+		}
+	}
+}
+
+// startFreepiCreditsRefresher 周期刷新 credits 快照（30 分钟 + 启动抖动错峰；
+// /me 免费只读、量极小）：额度加权调度的权重数据源保鲜——日常消耗不更新
+// 快照，陈旧权重会让差异化额度（邀请加成号）的趋平退化。与目录同步
+// refresher 同口径不判 ONLY_ROUTER（免费只读轻量，非营销类任务）。
+func startFreepiCreditsRefresher() {
+	time.Sleep(time.Duration(kit.RandIntn(30*60)) * time.Second) // 启动抖动：错开其他周期任务节拍
+	ticker := time.NewTicker(30 * time.Minute)
+	for range ticker.C {
+		if len(freepi.Get().Keys) > 0 {
+			if refreshed, failed := freepiRefreshEnabledCredits(); failed > 0 {
+				log.Printf("freepi credits auto-refresh: %d ok, %d failed", refreshed, failed)
+			}
 		}
 	}
 }
@@ -570,14 +587,10 @@ func handleFreepiModelsRefresh(w http.ResponseWriter, r *http.Request) {
 	panel.WriteCatalogResult(w, platFreepi, added, total)
 }
 
-// POST /admin/api/freepi/credits/refresh —— 批量刷新每日 credits（串行 /me，
-// 免费；按 trae「刷新余额」节奏：账号间不并发，防同一上游瞬时连查）。
-// 响应 { refreshed, failed }。
-func handleFreepiCreditsRefresh(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		WriteAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
-		return
-	}
+// freepiRefreshEnabledCredits 串行刷新全部启用 key 的 /me 余额快照（免费；
+// 账号间不并发，防同一上游瞬时连查——trae「刷新余额」节奏）。返回 (成功, 失败)。
+// 额度刷新端点与权重优化端点共用。
+func freepiRefreshEnabledCredits() (int, int) {
 	c := freepi.Get()
 	refreshed, failed := 0, 0
 	for i, key := range c.Keys {
@@ -607,6 +620,17 @@ func handleFreepiCreditsRefresh(w http.ResponseWriter, r *http.Request) {
 		})
 		refreshed++
 	}
+	return refreshed, failed
+}
+
+// POST /admin/api/freepi/credits/refresh —— 批量刷新每日 credits。响应
+// { refreshed, failed }。
+func handleFreepiCreditsRefresh(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		WriteAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
+		return
+	}
+	refreshed, failed := freepiRefreshEnabledCredits()
 	WriteAPI(w, http.StatusOK, apiResponse{Success: true, Data: map[string]any{"refreshed": refreshed, "failed": failed}})
 }
 
@@ -622,4 +646,160 @@ func clearFreepiKeysForDataDelete() int {
 	freepi.Set(next)
 	freepi.ClearUsage()
 	return n
+}
+
+// freepiDeviceExitURL 设备码流程出站出口（无 key 可绑定，走全局口径，与
+// freepiExitFn 未绑定分支同语义）：走池开关开 → freepi 池轮转；关 → 直连；
+// DISABLE_DIRECT 时直连不放行；出口全被手动冷却 → fail-closed。
+func freepiDeviceExitURL() (string, bool) {
+	if !freepi.ProxiesEnabled() {
+		if kit.DisableDirect() {
+			return "", false
+		}
+		return "", true
+	}
+	url, _, ok := exitpool.UpstreamForKind(exitpool.KindFreepi)
+	if !ok {
+		return "", false
+	}
+	if url == "" && kit.DisableDirect() {
+		return "", false
+	}
+	return url, true
+}
+
+// POST /admin/api/freepi/device/start —— GitHub 设备码授权第一步：申请会话
+// + consent（5xx/网络抖动自动重试 3 次——上游偶发 500 实测）。响应
+// { sessionId, userCode, url, interval, expiresIn }；轮询由面板 JS 驱动。
+func handleFreepiDeviceStart(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		WriteAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
+		return
+	}
+	exitURL, ok := freepiDeviceExitURL()
+	if !ok {
+		WriteAPI(w, http.StatusServiceUnavailable, apiResponse{Error: "all pool exits are manually cooled; device sign-in aborted (fail-closed)"})
+		return
+	}
+	client := freepiClientFor(exitURL)
+	var sess *freepi.DeviceSession
+	var lastErr error
+	for attempt := 1; attempt <= 3; attempt++ {
+		sess, lastErr = freepi.DeviceStart(client)
+		if lastErr == nil {
+			break
+		}
+		log.Printf("freepi device start attempt %d: %v", attempt, lastErr)
+		if attempt < 3 {
+			time.Sleep(3 * time.Second)
+		}
+	}
+	if sess == nil {
+		WriteAPI(w, http.StatusBadGateway, apiResponse{Error: lastErr.Error()})
+		return
+	}
+	WriteAPI(w, http.StatusOK, apiResponse{Success: true, Data: map[string]any{
+		"sessionId": sess.SessionID,
+		"userCode":  sess.UserCode,
+		"url":       sess.URL,
+		"interval":  sess.Interval,
+		"expiresIn": sess.ExpiresIn,
+	}})
+}
+
+// POST /admin/api/freepi/device/poll body { sessionId } —— 轮询一步。上游出
+// token 即就地入池（与粘贴路径同款 CleanToken/ValidateJWT 校验与去重；昵称
+// = GitHub handle；ReconcileRouting 新 key 默认不参与路由），并落 credits
+// 快照。响应 { status: pending|done|failed, handle, nickname, added, message }。
+func handleFreepiDevicePoll(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		WriteAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
+		return
+	}
+	var req struct {
+		SessionID string `json:"sessionId"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 512)).Decode(&req); err != nil {
+		WriteAPI(w, http.StatusBadRequest, apiResponse{Error: "invalid JSON"})
+		return
+	}
+	sessionID := strings.TrimSpace(req.SessionID)
+	if sessionID == "" || len(sessionID) > 64 {
+		WriteAPI(w, http.StatusBadRequest, apiResponse{Error: "sessionId is required"})
+		return
+	}
+	exitURL, ok := freepiDeviceExitURL()
+	if !ok {
+		WriteAPI(w, http.StatusServiceUnavailable, apiResponse{Error: "all pool exits are manually cooled; poll aborted (fail-closed)"})
+		return
+	}
+	client := freepiClientFor(exitURL)
+	res, err := freepi.DevicePoll(client, sessionID)
+	if err != nil {
+		// transport 抖动：按 pending 继续，err 只进日志
+		log.Printf("freepi device poll: %v", err)
+	}
+	if res.Status != "done" {
+		data := map[string]any{"status": res.Status}
+		if res.Message != "" {
+			data["message"] = res.Message
+		}
+		WriteAPI(w, http.StatusOK, apiResponse{Success: true, Data: data})
+		return
+	}
+	token := freepi.CleanToken(res.Token)
+	if token == "" {
+		WriteAPI(w, http.StatusOK, apiResponse{Success: true, Data: map[string]any{"status": "failed", "message": "empty token from upstream"}})
+		return
+	}
+	if shapeErr := freepi.ValidateJWT(token); shapeErr != nil {
+		WriteAPI(w, http.StatusOK, apiResponse{Success: true, Data: map[string]any{"status": "failed", "message": "token failed validation: " + shapeErr.Error()}})
+		return
+	}
+	// /me 取 handle 昵称与 credits 快照（失败不阻断入池——/auth/token 交换
+	// 本身已验证授权；handle 缺失时昵称留空，面板可用编辑弹窗补）
+	handle := ""
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	info, meErr := freepi.Me(ctx, freepiClientFor(exitURL), token)
+	cancel()
+	if meErr == nil {
+		handle = info.Handle
+		freepi.SetCredits(token, freepi.CreditStats{
+			Remaining: info.Remaining,
+			Allowance: info.Allowance,
+			RefillAt:  info.RefillAt,
+			Handle:    info.Handle,
+			MeAt:      time.Now(),
+		})
+	}
+	// 入池：与 handleFreepiKeysUpdate 添加路径同款（去重 + ReconcileRouting）
+	cur := freepi.Get()
+	hadKeys := len(cur.Keys) > 0
+	added := false
+	dup := false
+	for _, k := range cur.Keys {
+		if k == token {
+			dup = true
+			break
+		}
+	}
+	if !dup {
+		next := freepi.CloneConfig(cur)
+		next.Keys = append(next.Keys, token)
+		if handle != "" {
+			next.KeyNicknames[token] = handle
+		}
+		next.ReconcileRouting(cur)
+		freepi.Set(next)
+		added = true
+		if !hadKeys {
+			go func() { _, _ = freepi.TrySync() }()
+		}
+	}
+	log.Printf("freepi device poll: token accepted handle=%s added=%v", handle, added)
+	data := map[string]any{"status": "done", "handle": handle, "added": added}
+	if handle != "" {
+		data["nickname"] = handle
+	}
+	WriteAPI(w, http.StatusOK, apiResponse{Success: true, Data: data})
 }

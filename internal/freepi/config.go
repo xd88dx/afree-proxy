@@ -320,6 +320,14 @@ func KeyStatus() []map[string]any {
 	c := Get()
 	u := usageLocked()
 	out := make([]map[string]any, 0, len(c.Keys))
+	// 额度权重（wb 权重列同思想）：credits 快照已知 = 剩余额度，未知 = 1；
+	// weightShare = 占 Σ权重百分比（面板权重列与优化计划同源）。
+	var totalW int64
+	ws := make([]int64, len(c.Keys))
+	for i, k := range c.Keys {
+		ws[i] = effectiveWeightLocked(k)
+		totalW += ws[i]
+	}
 	for i, k := range c.Keys {
 		st := map[string]any{
 			"index":          i,
@@ -327,6 +335,10 @@ func KeyStatus() []map[string]any {
 			"routingEnabled": c.RoutingEnabled(k),
 			// 昵称（账号列堆叠展示）：空 = 显示掩码 key。
 			"nickname": c.KeyNicknames[k],
+			"weight":   ws[i],
+		}
+		if totalW > 0 {
+			st["weightShare"] = fmt.Sprintf("%.1f", float64(ws[i])/float64(totalW)*100)
 		}
 		// JWT 过期时间（状态列小字，照 TraeWork 的 token 过期行）
 		if exp, ok := jwtExpFromToken(k); ok {

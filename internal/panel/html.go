@@ -1662,8 +1662,18 @@ const I18N = {
   'name_and_prefix_are_required': { en: 'Name and prefix are required', zh: '名称和前缀为必填项' },
   'no_sub_platform_yet_click_new_sub_platform_to_ad_1': { en: 'No sub-platform yet. Click "New sub-platform" to add one.', zh: '暂无子平台。点击"新建子平台"添加一个。' },
   // FreePI（freepi.ai 免费日额度 key 池，2026-11-20 接入）
-  'freepi_models_sync_hint': { en: 'Automatically synced from the upstream catalog on startup — refresh to re-sync (needs a credential)', zh: '启动时自动同步上游模型目录；可手动刷新重新拉取（需要凭据）' },
   'freepi_add_hint': { en: 'One per line: JWT-----nickname (nickname optional). Mint a token via the free-pi CLI GitHub device sign-in, or by hand: POST https://api.freepi.ai/auth/github/device, open verification_uri_complete, then POST /auth/token with the session_id. The JWT is valid 90 days.', zh: '每行一条：JWT-----昵称（昵称可省）。用 free-pi CLI 的 GitHub 设备授权铸造，或手动：POST https://api.freepi.ai/auth/github/device，打开 verification_uri_complete 完成授权，再带 session_id POST /auth/token。JWT 有效期 90 天。' },
+  'freepi_device_start': { en: 'Sign in with GitHub (device code)', zh: 'GitHub 设备码登录' },
+  'freepi_device_waiting': { en: 'Waiting for authorization…', zh: '等待授权…' },
+  'freepi_device_retrying': { en: 'Transient error, retrying: ', zh: '瞬时错误，继续轮询：' },
+  'freepi_device_stopped': { en: 'Polling stopped: ', zh: '已停止轮询：' },
+  'freepi_device_failed': { en: 'Authorization failed: ', zh: '授权失败：' },
+  'freepi_device_start_failed': { en: 'Device sign-in failed: ', zh: '设备码登录失败：' },
+  'freepi_device_hint': { en: 'The code is pre-filled on the GitHub page — press Continue → Authorize, then wait here. The account is added automatically once authorized.', zh: 'GitHub 页面已预填设备码——点 Continue → Authorize，回本窗口等待；授权完成后账号自动入池。' },
+  'freepi_account': { en: 'freepi account', zh: 'freepi 账号' },
+  'activation_link': { en: 'Activation link', zh: '激活链接' },
+  'device_code': { en: 'Device code', zh: '设备码' },
+  'freepi_weight_hint': { en: 'Scheduling weight = remaining credits (unknown = 1). Higher balance serves more traffic — credits level out.', zh: '调度权重 = 剩余额度（未知按 1）：余额越多承接越多，额度自动趋平' },
   'freepi_jwt_shape': { en: 'That does not look like a JWT (expected 3 dot-separated segments).', zh: '看起来不是合法 JWT（应为三段、以点分隔）。' },
   'refresh_credits': { en: 'Refresh credits', zh: '刷新额度' },
   'credits_refreshed': { en: 'Credits refreshed: ', zh: '已刷新额度：' },
@@ -8218,7 +8228,7 @@ function renderFreepiKeys(ks) {
   freepiKeySnapshot = {};
   frNickByIndex = {};
   ks.forEach(k => { if (k.nickname) frNickByIndex[k.index] = k.nickname; });
-  if (!ks.length) { tb.innerHTML = '<tr><td colspan="8" class="empty">' + T('no_keys_configured') + '</td></tr>'; return; }
+  if (!ks.length) { tb.innerHTML = '<tr><td colspan="10" class="empty">' + T('no_keys_configured') + '</td></tr>'; return; }
   tb.innerHTML = ks.map((k, i) => {
     const cool = k.cooling
       ? '<span class="status cooldown"><span class="status-dot cooldown"></span>' + T('cooldown_1') + '</span>' +
@@ -8229,13 +8239,18 @@ function renderFreepiKeys(ks) {
       ? '<div style="font-size:11px;margin-top:2px;color:' + (k.jwtExpired ? 'var(--danger)' : 'var(--accent2)') + '">' +
         (k.jwtExpired ? T('token_expired') + ' ' : '') + esc(fmtShort(k.jwtExpiresAt)) + '</div>'
       : '';
-    // credits 余额（/me 快照）：状态列内第二行小字；refill 时间进悬浮
-    const credits = (k.creditsLeft != null)
-      ? '<div style="font-size:10px;color:var(--text3);margin-top:2px;white-space:nowrap" title="' +
+    // 额度列（/me 快照，独立列不再与 Status 堆叠）：剩余/总额；refill 与 handle 进悬浮
+    const creditsCell = (k.creditsLeft != null)
+      ? '<td style="text-align:center;white-space:nowrap" title="' +
         esc((k.creditsRefillAt ? T('daily_credits_refill_at') + ' ' + k.creditsRefillAt : T('daily_credits')) +
             (k.handle ? ' · ' + k.handle : '')) + '">' +
-        esc(fmtNum(k.creditsLeft)) + '/' + esc(fmtNum(k.creditsAllowance)) + '</div>'
-      : '';
+        '<span class="mono">' + esc(fmtNum(k.creditsLeft)) + '/' + esc(fmtNum(k.creditsAllowance)) + '</span></td>'
+      : '<td style="text-align:center">—</td>';
+    // 权重列：调度权重（=剩余额度，未知 1）+ 占比小字（wb 权重列同思想）
+    const weightCell = (k.weight != null)
+      ? '<td style="text-align:center;white-space:nowrap" title="' + esc(T('freepi_weight_hint')) + '">' + esc(fmtNum(k.weight)) +
+        (k.weightShare ? '<div style="font-size:10px;color:var(--text3)">' + esc(k.weightShare) + '%</div>' : '') + '</td>'
+      : '<td style="text-align:center">—</td>';
     const pMain = k.proxyMain || '';
     const pBackup = k.proxyBackup || '';
     const backupLocked = !backupProxyOn || pMain === '' || pMain === EGRESS_DIRECT;
@@ -8259,7 +8274,7 @@ function renderFreepiKeys(ks) {
           '<span class="nick-name" style="max-width:150px" title="' + esc(k.nickname || k.keyMask) + '">' + esc(k.nickname || k.keyMask) + '</span>' +
         '</div>' +
         '<div class="nick-sub mono" title="' + esc(k.keyMask) + '">' + esc(k.keyMask) + '</div></div></td>' +
-      '<td style="text-align:center">' + cool + jwtState + credits + '</td>' +
+      '<td style="text-align:center">' + cool + jwtState + '</td>' + creditsCell + weightCell +
       keyTokensCell(k) +
       keyLastUsedCell(k) +
       bind + actions + routing + '</tr>';
@@ -8455,9 +8470,76 @@ async function refreshFreepiModels(btn) {
 /* ---- 添加 key 弹窗（JWT-----昵称 多行，other 同款格式） ---- */
 function openFreepiKeyAddDialog() {
   _('freepiKeyAddInput').value = '';
+  freepiDeviceResetUI();
   _('freepiKeyAddDialog').showModal();
 }
-function closeFreepiKeyAddDialog() { _('freepiKeyAddDialog').close(); }
+function closeFreepiKeyAddDialog() {
+  freepiDeviceResetUI();
+  _('freepiKeyAddDialog').close();
+}
+
+/* ---- GitHub 设备码授权（面板加号通道；start/poll 形态对齐 wb 面板内嵌
+   OAuth 登录——轮询由前端驱动，服务端无会话状态，sessionId 回传） ---- */
+let freepiDeviceTimer = null;
+function freepiDeviceResetUI() {
+  if (freepiDeviceTimer) { clearTimeout(freepiDeviceTimer); freepiDeviceTimer = null; }
+  const p = _('freepiDeviceProgress');
+  if (p) p.style.display = 'none';
+  const s = _('freepiDeviceStatus');
+  if (s) s.textContent = '';
+}
+async function freepiDeviceStartFlow() {
+  const btn = _('freepiDeviceBtn');
+  btn.disabled = true;
+  try {
+    const d = await api('POST', '/freepi/device/start', {});
+    _('freepiDeviceProgress').style.display = 'block';
+    const a = _('freepiDeviceLink');
+    a.href = d.data.url; a.textContent = d.data.url;
+    _('freepiDeviceCode').textContent = d.data.userCode;
+    _('freepiDeviceStatus').textContent = T('freepi_device_waiting');
+    const interval = Math.max(Number(d.data.interval) || 5, 3) * 1000;
+    freepiDevicePollLoop(d.data.sessionId, interval);
+  } catch (e) { toast(T('freepi_device_start_failed') + e.message, 'error', 8000); }
+  finally { btn.disabled = false; }
+}
+async function freepiDevicePollLoop(sessionId, interval) {
+  let errStreak = 0;
+  const tick = async () => {
+    if (!_('freepiKeyAddDialog').open) { freepiDeviceTimer = null; return; }
+    let d = null;
+    try {
+      d = await api('POST', '/freepi/device/poll', { sessionId });
+      errStreak = 0;
+    } catch (e) {
+      if (++errStreak >= 10) {
+        _('freepiDeviceStatus').textContent = T('freepi_device_stopped') + e.message;
+        freepiDeviceTimer = null;
+        return;
+      }
+      _('freepiDeviceStatus').textContent = T('freepi_device_retrying') + e.message;
+      freepiDeviceTimer = setTimeout(tick, interval);
+      return;
+    }
+    const st = d.data && d.data.status;
+    if (st === 'done') {
+      freepiDeviceTimer = null;
+      const nick = d.data.nickname ? ' (' + d.data.nickname + ')' : '';
+      toast(T('added') + ': ' + (d.data.handle || T('freepi_account')) + nick, 'success');
+      closeFreepiKeyAddDialog();
+      loadFreepiConfig();
+      return;
+    }
+    if (st === 'failed') {
+      freepiDeviceTimer = null;
+      _('freepiDeviceStatus').textContent = T('freepi_device_failed') + (d.data.message || '');
+      return;
+    }
+    _('freepiDeviceStatus').textContent = T('freepi_device_waiting');
+    freepiDeviceTimer = setTimeout(tick, interval);
+  };
+  freepiDeviceTimer = setTimeout(tick, interval);
+}
 
 async function freepiKeyAddFromDialog() {
   const text = _('freepiKeyAddInput').value.trim();

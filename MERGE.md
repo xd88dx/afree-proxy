@@ -651,6 +651,21 @@ WorkBuddy 一栏的基线同时登记在 `scripts/workbuddy-vendor-baseline.json
 - 台账/文档同步：本节建立；PROJECT.md §3 上游线表与 sync-upstream skill 增补 FreePI 线。
 - 验证：`go build ./...` 全绿；全量测试见本日 WorkBuddy 节验证段。
 
+### 2026-11-21 — 本地特性：面板 GitHub 设备码加号通道（非上游同步，吸纳 index.mjs authorize 流程）
+
+- 背景：上游插件两条授权路径（GitHub 设备码应用内全自动 / 手动铸造粘贴），本仓此前只有粘贴路径，设备码流程依赖仓外 PowerShell 脚本（scripts/mint_freepi_token.ps1/cmd，同日落地：JSON body 走临时文件绕 PS5.1 内联引号被 CRT 吞引号坑；Ctrl+C 经 TreatControlCAsInput 免疫，finally 恢复+清缓冲；窗口 cmd /k 仅手动关闭）。
+- **吸纳**：authorize 流程移植进面板——`internal/freepi/device.go`（DeviceStart/DevicePoll：device→consent(v4)→轮询；**实测 consent 是 /auth/token 前置**，缺失返 consent_required，DevicePoll 内补打一次再试；轮询语义对齐 plugin：pending/403/429/5xx/网络抖动继续等，其余 4xx 判死；deviceFlowBase 白盒测试注入点）+ app 两端点 `/admin/api/freepi/device/start|poll`（出口走全局口径与 freepiExitFn 未绑定分支同语义——走池开关/DISABLE_DIRECT/手动冷却 fail-closed；start 5xx 重试×3；poll 出 token 就地入池：CleanToken/ValidateJWT+去重+ReconcileRouting 新 key 默认禁路由+/me 取 handle 作昵称+credits 快照）+ 添加凭据弹窗「GitHub 设备码登录」区块（前端 JS 轮询驱动、10 连错停、弹窗关闭即停）。
+- 验证：go build/vet 全绿、主模块全量测试过（app 39s）；i18n/反向/endpoint 三审计清零（141 路由 0 FAIL）；node --check tailHTML 过；device_test httptest 覆盖 start→consent_required 补打→pending→done 与 4xx 判死。
+
+### 2026-11-21 — 本地特性：额度列/权重列与额度趋平加权调度（用户定「尽可能让额度持平」）
+
+- 额度来源（/me 快照）：FreePI 日额度注册即得，老号 15,000/天、每有效邀请 +5,000，UTC 零点统一重置；本仓经 Test/刷新余额拉 /me（免费）落痕迹表展示。
+- key 表 8→10 列：额度从 Status 内嵌小字拆为独立列（剩余/总额，refill+handle 进悬浮），新增权重列（=剩余额度，未知按 1；占比小字同源 weightShare）。
+- **调度加权**：PickKey 默认 round_robin 路径改额度加权随机（effectiveWeightLocked，权重=剩余额度；fill 粘首选/random 均匀随机保留）——消耗按余额比例摊、额度趋平；轮转游标 keyIdx 随之拆除（加权随机无游标语义）。零余额 key 保留权重 1 防全池零余额锁死，上游 0 额度自会拒绝并走冷却路径。
+- **权重优化端点** /admin/api/freepi/weights/optimize（142 路由）：串行刷新启用 key 余额（freepiRefreshEnabledCredits 与刷新额度端点共用）→ 返回额度/权重/占比计划，弹窗展示。与 wb share optimize 差异：wb 有快过期批次需 FEFO+cron+手动占比表，freepi 日额度统一重置——按余额加权即最优，无需 cron 与手动占比。
+- 验证：go build/vet 全绿、主模块全量测试过（含 TestPickKeyCreditWeighted：10000:1 权重 200 次抽样 ≥180 断言）；i18n/endpoint 审计清零；node --check tailHTML 过。
+- **同日收敛（用户拍板）**：权重优化按钮/计划弹窗/端点删除——刷新部分与「刷新额度」同函数（freepiRefreshEnabledCredits）、计划信息表内额度/权重列已展示，属死配置判据冗余；补 startFreepiCreditsRefresher 后台周期 /me 刷新（30 分钟 + 启动抖动错峰，免费只读量极小，与目录 refresher 同口径不判 ONLY_ROUTER）保鲜权重数据源——日常消耗不更新快照，陈旧权重会让差异化额度（邀请加成号）趋平退化。调度加权与表内额度/权重列不受影响。
+
 ## 副线（opencode2api / Trae2api-cn 吸收评估）+ magpie 参考线
 
 副线口径（2026-11-08 用户定）：**opencode2api**（opencode 副线）与 **Trae2api-cn**（trae 副线，Python 项目、trae 更换基线前身）只看近期更新、吸纳有价值逻辑，不 merge 不 vendor。本节记录每次副线评估的基线、吸收/丢弃结论；**magpie**（2026-11-06 立项，全平台纯参考）与副线共用本节，基线单独标注。
