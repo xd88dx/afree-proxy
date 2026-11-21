@@ -1,7 +1,7 @@
 {
   "version": 1,
   "created_at": "2026-11-09T17:13:34Z",
-  "updated_at": "2026-11-21T07:47:17Z",
+  "updated_at": "2026-11-21T08:14:17Z",
   "files": {
     ".agents/skills/add-platform/SKILL.md": {
       "role": "index",
@@ -482,9 +482,9 @@
     },
     "AGENTS.md": {
       "role": "index",
-      "sha256": "7f6926e5c730794d7e42702b04c97222ea8a77c2e27e28cda37db31edc6828fb",
-      "size": 24776,
-      "normalized_sha256": "7f6926e5c730794d7e42702b04c97222ea8a77c2e27e28cda37db31edc6828fb"
+      "sha256": "04a0ab6374a2750ee5c8a0a92d7f1d18322cc24505a75698045916de4eb31fa2",
+      "size": 25274,
+      "normalized_sha256": "04a0ab6374a2750ee5c8a0a92d7f1d18322cc24505a75698045916de4eb31fa2"
     },
     "Dockerfile": {
       "role": "index",
@@ -518,9 +518,9 @@
     },
     "aoci.code.txt": {
       "role": "index",
-      "sha256": "fba479246e9ad157e3e7d546ef21fdad5ae93449ea31960f8408cd1023df413f",
-      "size": 235932,
-      "normalized_sha256": "fba479246e9ad157e3e7d546ef21fdad5ae93449ea31960f8408cd1023df413f"
+      "sha256": "e91c2a8a75113cc040cd20541f0227af26a1aa8cc07e810dbf7d535edd4228d3",
+      "size": 236252,
+      "normalized_sha256": "e91c2a8a75113cc040cd20541f0227af26a1aa8cc07e810dbf7d535edd4228d3"
     },
     "aoci.meta.txt": {
       "role": "index",

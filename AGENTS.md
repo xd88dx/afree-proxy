@@ -120,6 +120,12 @@ git 推送（`origin` 是 SSH）走另一条路——上面三个代理键对 pu
 #    **stdin 侧必须 read1()/os.read()**——read(n) 会阻塞凑满字节数，SSH banner 死锁；
 #    **socket 侧必须 recv()/sendall()**——Windows 上 os.read(s.fileno()) 对 socket
 #    handle 无效，立即 OSError 静默退出（同报错，2026-11-01 实测第二坑）。
+#    **stdout/stdin 是 BufferedWriter/BufferedReader，没有 sendall/recv**——
+#    sys.stdout.buffer.sendall 会 AttributeError 秒退（2026-11-21 实测第三坑），
+#    写 stdout 用 buffer.write+flush 或 os.write(1,...)。
+#    **开头必须 msvcrt.setmode(0/1, os.O_BINARY)**——CRT 的 fd 0/1 默认 TEXT
+#    模式做 \n→\r\n 翻译污染 SSH 二进制流，Python buffer 层也逃不过（症状：
+#    Bad packet length + MAC incorrect，2026-11-21 实测第四坑）。
 # ② 认证测试（实测 2026-10-31）：
 ssh -o IdentitiesOnly=yes -o IdentityFile="C:/Users/dxing/.ssh/id_ed25519_xd88dx" \
   -o ProxyCommand="C:/AppSelf/Python/python.exe C:/Users/<user>/AppData/Local/Temp/socks_tunnel.py %h %p" \
