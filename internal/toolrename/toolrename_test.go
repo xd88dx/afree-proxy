@@ -133,13 +133,12 @@ func TestRewriteResponsesForm(t *testing.T) {
 	}
 }
 
-
 // rwOf 给 bytes.Buffer 补 http.ResponseWriter 骨架（测试用最小桩）。
 type stubRW struct{ buf *bytes.Buffer }
 
-func (s *stubRW) Header() http.Header { return http.Header{} }
+func (s *stubRW) Header() http.Header         { return http.Header{} }
 func (s *stubRW) Write(p []byte) (int, error) { return s.buf.Write(p) }
-func (s *stubRW) WriteHeader(int) {}
+func (s *stubRW) WriteHeader(int)             {}
 
 func rwOf(buf *bytes.Buffer) http.ResponseWriter { return &stubRW{buf: buf} }
 

@@ -60,8 +60,8 @@ func TestAdminAccountNickname(t *testing.T) {
 
 	savedPool := cline.RawPool()
 	cline.SetPool(&AccountPool{Accounts: []*Account{
-		{AccountID: "acc_t1", },
-		{AccountID: "acc_t2", },
+		{AccountID: "acc_t1"},
+		{AccountID: "acc_t2"},
 	}})
 	defer func() { cline.SetPool(savedPool) }()
 

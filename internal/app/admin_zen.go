@@ -95,8 +95,8 @@ func handleZenConfigUpdate(w http.ResponseWriter, r *http.Request) {
 		ZenUseProxies       *bool `json:"zenUseProxies"`
 		WorkbuddyUseProxies *bool `json:"workbuddyUseProxies"`
 		// 账号选号策略(round_robin/fill/random):env POOL_STRATEGY 优先。
-		Strategy           *string  `json:"strategy"`
-		Keys               []string `json:"keys"`
+		Strategy *string  `json:"strategy"`
+		Keys     []string `json:"keys"`
 		// 账号列点击编辑（2026-11-19）：keyNicknames 非 nil = 按最终 keys 过滤
 		// 后整表替换；keyRenames 配合 keys 替换迁移路由/昵称/出口钉定/org 缓存。
 		KeyNicknames map[string]string `json:"keyNicknames"`

@@ -13,9 +13,9 @@ import (
 // 新位置；未知 accountId 整体拒绝且池不被半改；未提及的账号按原相对顺序追加尾部；
 // 立即落盘。
 func TestReorderAccounts(t *testing.T) {
-	a1 := &Account{AccountID: "a1", }
-	a2 := &Account{AccountID: "a2", }
-	a3 := &Account{AccountID: "a3", }
+	a1 := &Account{AccountID: "a1"}
+	a2 := &Account{AccountID: "a2"}
+	a3 := &Account{AccountID: "a3"}
 	resetPoolForEnableTest(t, []*Account{a1, a2, a3})
 	cline.Usage().CurrentIdx = 1 // 游标指向 a2（住痕迹侧，2026-10-31 拆分）
 

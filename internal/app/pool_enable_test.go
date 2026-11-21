@@ -54,9 +54,9 @@ func TestPoolEnabledDefaultsEnabledAndFiltersRotation(t *testing.T) {
 
 	disabled := &Account{AccountID: "off", PoolEnabled: poolBool(false)}
 
-	legacy := &Account{AccountID: "legacy", }
+	legacy := &Account{AccountID: "legacy"}
 
-	cooldown := &Account{AccountID: "cooldown", }
+	cooldown := &Account{AccountID: "cooldown"}
 
 	resetPoolForEnableTest(t, []*Account{disabled, legacy, cooldown})
 
@@ -301,7 +301,7 @@ func TestAddAccountDefaultsDisabled(t *testing.T) {
 
 	resetPoolForEnableTest(t, nil)
 
-	addAccount(&Account{AccountID: "fresh", })
+	addAccount(&Account{AccountID: "fresh"})
 
 	if got := cline.RawPool().Accounts[0]; got.PoolEnabled == nil || *got.PoolEnabled {
 
