@@ -450,6 +450,7 @@ WorkBuddy 一栏的基线同时登记在 `scripts/workbuddy-vendor-baseline.json
   - `8f691a0d` 隔离客户端提示环境（#190，405 行新文件 client_environment.go）——**零吸纳留档（上游行为取证）**：opencode2api 此前给合成 env 块填宿主机假设（os.Getwd/runtime.GOOS/gitRepo=是），本次全部改 "unknown"、只信客户端显式声明。方向与本仓 zen 最小 marker 形态一致：本仓从不伪造 platform/git/workspace，directory 值经 2026-10-26 消融证明不校验（fake value → 200），gateway cwd 保留现状合理；按请求隔离本仓已有（EnsureZenEnvMarkerChat 显式拷贝防污染）。
   - `6575c623` 客户端工具描述 ASCII 空格→NBSP（#188）——**零吸纳留档（上游行为取证）**：免费层闸还会按**客户端工具描述的字面措辞**匹配（继 95575c5f 的名称字面前缀之后第二类指纹面）；opencode2api 用 NBSP 破坏匹配且不累积（重复整形幂等），参数描述与追加的官方工具保持原样。本仓 zen 是透传真实客户端工具（官方客户端措辞本被免费层接受），zen_toolfilter 是丢弃/截断不是改写——无第三方措辞面，若未来给 zen 加工具改写必须避开字面措辞匹配。
   - **副线基线推进：`e2b2a7c2` → `6575c623`（2026-11-20）。**
+- **同日补充（用户报「opencode 会拉黑部分反代给的第三方工具，导致账号失效」+ 要求测试账号实测，评估结论由零吸纳转为吸纳）**：issue #188 正文给出确切闸语义——免费层按客户端工具**顶层描述**做字面子串匹配（大小写不敏感，已知触发串=DeepSeek Harness 的 read/edit/skill 描述措辞），改名无效、参数描述不查、纯请求级不封 key。**本仓 afree 网关实测复现**（测试账号，DSH read 触发串）：对照 200 → NBSP 200 → 触发串 429 `FreeUsageLimitError`；且该 429 伪装成日额度耗尽（Retry-After≈14h 指向日重置），本仓按额度信号 park key，**一次触发请求沿 failover 链烧掉 4 把 key**（park 30m）——「账号失效」的落地形态。对策落地：对齐上游 #188，`internal/zen` 出站客户端工具顶层描述**恒 NBSP 整形**（`zenShapeClientToolDescriptionsChat/Flat`，参数描述/schema/工具名/gate 工具不碰，幂等，防污染纪律同工具过滤；不设开关——闸改 NBSP 感知前开关属死配置）。重建后同一触发请求 200、零 park、attempt=1，端到端闭环；回归测试 `zen_nbsp_shape_test.go`。历史勘误：2026-11-07 的 429「体积定性」存在第二混淆因子——体积裁剪（丢工具）同时移除了触发描述，两理论同观测兼容。
 
 ### 2026-11-19 — 主线复核（无更新）+ 副线 opencode2api 评估（5 提交，零吸纳+1 取证）
 

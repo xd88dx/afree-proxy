@@ -147,6 +147,92 @@ func ZenFilterClientToolsChat(tools []any, cfg ZenToolFilterConfig) ([]any, ZenF
 	return out, st
 }
 
+// ============ 客户端工具描述 NBSP 整形（免费层字面措辞闸对策） ============
+//
+// 背景（2026-11-21 实测）：免费层闸按客户端工具**顶层描述**做字面子串匹配
+// （大小写不敏感），命中即 429 FreeUsageLimitError——响应伪装成日额度耗尽
+// （Retry-After≈14h 指向日重置），本仓按额度信号 park key，一次请求沿
+// failover 链最多烧掉 4 把 key（实测）。已知触发串：DeepSeek Harness 的
+// read/edit/skill 描述措辞（opencode2api issue #188 实证：同会话原文→NBSP→
+// 原文 = 429→200→429，纯请求级匹配不封 key）；工具名闸（clint_ 前缀，
+// 2026-11-19）是同族另一形态。触发串清单随各反代产品指纹持续增长，第三方
+// 客户端的描述随时可能撞上；本仓实测 NBSP 化描述上游照常 200。
+//
+// 对策（对齐 opencode2api #188，恒定开启）：把客户端工具顶层描述里的 ASCII
+// 空格替换成 NBSP（U+00A0）——字面匹配被破坏，模型读取语义不变。刻意只动
+// 顶层描述：参数描述、schema、工具名与 12 个 gate 工具不碰（闸不查参数
+// 描述与官方工具，实证 200）。不设开关：闸改用 NBSP 感知匹配前开关是死
+// 配置（§8 禁止死配置）。幂等：NBSP 非 ASCII 空格，重复整形不再变化。
+//
+// 纪律：返回新切片+新 map，绝不就地改写调用方 params（端点自适应重试、
+// 日志、token 估算随后还要读原形态，与 env marker / 工具过滤同一纪律）。
+
+const zenNbsp = "\u00a0"
+
+// zenShapeClientToolDescriptionsChat 整形 chat 嵌套形态 tools[].function.description。
+// 无可整形描述时原样返回（零拷贝）。
+func zenShapeClientToolDescriptionsChat(tools []any) []any {
+	var out []any
+	for i, raw := range tools {
+		tm, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		fn, ok := tm["function"].(map[string]any)
+		if !ok {
+			continue
+		}
+		d, ok := fn["description"].(string)
+		if !ok || !strings.Contains(d, " ") {
+			continue
+		}
+		if out == nil {
+			out = make([]any, len(tools))
+			copy(out, tools)
+		}
+		nf := make(map[string]any, len(fn))
+		for k, v := range fn {
+			nf[k] = v
+		}
+		nf["description"] = strings.ReplaceAll(d, " ", zenNbsp)
+		nc := make(map[string]any, len(tm))
+		for k, v := range tm {
+			nc[k] = v
+		}
+		nc["function"] = nf
+		out[i] = nc
+	}
+	if out == nil {
+		return tools
+	}
+	return out
+}
+
+// zenShapeClientToolDescriptionsFlat 整形 responses flat 形态 tools[].description。
+func zenShapeClientToolDescriptionsFlat(tools []map[string]any) []map[string]any {
+	var out []map[string]any
+	for i, tm := range tools {
+		d, ok := tm["description"].(string)
+		if !ok || !strings.Contains(d, " ") {
+			continue
+		}
+		if out == nil {
+			out = make([]map[string]any, len(tools))
+			copy(out, tools)
+		}
+		nc := make(map[string]any, len(tm))
+		for k, v := range tm {
+			nc[k] = v
+		}
+		nc["description"] = strings.ReplaceAll(d, " ", zenNbsp)
+		out[i] = nc
+	}
+	if out == nil {
+		return tools
+	}
+	return out
+}
+
 // ZenFilterClientToolsFlat 过滤 responses 扁平形态的工具
 // ({type,name,description,parameters,strict})。
 func ZenFilterClientToolsFlat(tools []map[string]any, cfg ZenToolFilterConfig) ([]map[string]any, ZenFilterToolStats) {

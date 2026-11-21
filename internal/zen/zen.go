@@ -1734,6 +1734,9 @@ func BuildZenBody(params map[string]any, stream bool) map[string]any {
 	delete(body, "functions")
 	delete(body, "function_call")
 	clientTools := ZenClientTools(params)
+	// 描述 NBSP 整形（恒定开启）：免费层闸按顶层描述字面子串匹配（2026-11-21
+	// 实测，见 zen_toolfilter.go 对策注释），整形必须在裁剪/合并之前。
+	clientTools = zenShapeClientToolDescriptionsChat(clientTools)
 	// 体积裁剪（默认关闭）：先裁客户端工具，再合并 gate 占位工具——
 	// gate 工具是过闸必需，绝不参与过滤。裁剪结果只影响本次上游 body。
 	if cfg, on := ZenToolFilterActive(); on && len(clientTools) > 0 {
@@ -2160,6 +2163,8 @@ func BuildZenResponsesBody(params map[string]any, modelID string, promptKey stri
 	// 恒注入 11 个规范工具名 + auto——auto 是 responses 端点唯一接受的值。
 	// 客户端工具（chat 嵌套或已是 flat）优先于同名 gate stub，schema 才不丢。
 	flatTools := ZenClientFlatTools(params)
+	// 描述 NBSP 整形（恒定开启）：同 chat 路径，免费层闸字面措辞对策。
+	flatTools = zenShapeClientToolDescriptionsFlat(flatTools)
 	// 体积裁剪（默认关闭）：同 chat 路径，只裁客户端工具，gate stub 不动。
 	if cfg, on := ZenToolFilterActive(); on && len(flatTools) > 0 {
 		var st ZenFilterToolStats
