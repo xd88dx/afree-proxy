@@ -37,27 +37,40 @@ type GlobalConfigData struct {
 	PlatformBlacklist map[string]*PlatformBanEntry    `json:"platformBlacklist,omitempty"`
 	// ToolRename 出站工具改名（2026-11-21，免费层身份指纹闸对策的名称面）：
 	// 请求侧把客户端工具名改写为 Prefix+SHA256 前 12 位，响应侧还原真名。
-	// 默认关闭（Enabled=false 零改动）；平台勾选独立控制。
+	// 无独立开关：platforms 有勾选即开启（2026-11-21 用户定）。
 	ToolRename *ToolRenameConfig `json:"toolRename,omitempty"`
 }
 
 // ToolRenameConfig 工具改名全局配置。Platforms 键=平台 kind（cline/zen/trae/
-// workbuddy/freepi/other），缺项=关闭。
+// workbuddy/freepi/other），缺项=该平台不改写；全空=整体关闭。
 type ToolRenameConfig struct {
-	Enabled   bool           `json:"enabled"`
-	Prefix    string         `json:"prefix"`
+	Prefix    string          `json:"prefix,omitempty"`
 	Platforms map[string]bool `json:"platforms,omitempty"`
 }
 
-// Normalize 校验并规范化：启用时前缀必填且必须是安全工具名头（字母开头，
-// 字母数字下划线，1~16 字符），禁用已知反代前缀与官方前缀（防撞指纹/闸）。
+// Active 是否有生效平台（勾选即开启，2026-11-21 用户定）。
+func (c *ToolRenameConfig) Active() bool {
+	if c == nil {
+		return false
+	}
+	for _, on := range c.Platforms {
+		if on {
+			return true
+		}
+	}
+	return false
+}
+
+// Normalize 校验并规范化：有勾选平台时前缀必填且必须是安全工具名头（字母
+// 开头，字母数字下划线，1~16 字符），禁用已知反代前缀与官方前缀（防撞指
+// 纹/闸）；无勾选=整体关闭，前缀不校验。
 func (c *ToolRenameConfig) Normalize() error {
-	if c == nil || !c.Enabled {
+	if c == nil || !c.Active() {
 		return nil
 	}
 	p := strings.TrimSpace(c.Prefix)
 	if p == "" {
-		return fmt.Errorf("toolRename.prefix is required when enabled")
+		return fmt.Errorf("toolRename.prefix is required when platforms are selected")
 	}
 	if len(p) > 16 {
 		return fmt.Errorf("toolRename.prefix too long (max 16)")
@@ -202,7 +215,7 @@ func GetToolRename() *ToolRenameConfig {
 	if cp.Platforms == nil {
 		cp.Platforms = map[string]bool{}
 	}
-	if cp.Enabled {
+	if cp.Active() {
 		if err := cp.Normalize(); err != nil {
 			log.Printf("WARN: toolRename config invalid (%v), treating as disabled", err)
 			return &ToolRenameConfig{}

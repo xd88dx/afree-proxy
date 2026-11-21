@@ -25,7 +25,7 @@ func withRenameConfig(t *testing.T, prefix string, platforms map[string]bool) {
 		_ = gwconfig.SetToolRename(savedCfg)
 	})
 	_ = os.Remove(path)
-	if err := gwconfig.SetToolRename(gwconfig.ToolRenameConfig{Enabled: true, Prefix: prefix, Platforms: platforms}); err != nil {
+	if err := gwconfig.SetToolRename(gwconfig.ToolRenameConfig{Prefix: prefix, Platforms: platforms}); err != nil {
 		t.Fatalf("set config: %v", err)
 	}
 }
@@ -193,7 +193,7 @@ func TestNormalizePrefixRules(t *testing.T) {
 		{"aaaaaaaaaaaaaaaaa", false}, // 17 字符
 	}
 	for _, c := range cases {
-		cfg := gwconfig.ToolRenameConfig{Enabled: true, Prefix: c.prefix}
+		cfg := gwconfig.ToolRenameConfig{Prefix: c.prefix, Platforms: map[string]bool{"zen": true}}
 		err := cfg.Normalize()
 		if c.ok && err != nil {
 			t.Errorf("prefix %q 应通过, got %v", c.prefix, err)
@@ -202,9 +202,9 @@ func TestNormalizePrefixRules(t *testing.T) {
 			t.Errorf("prefix %q 应拒绝", c.prefix)
 		}
 	}
-	// 关闭状态不校验前缀
+	// 无勾选平台=关闭，不校验前缀
 	cfg := gwconfig.ToolRenameConfig{Prefix: ""}
 	if err := cfg.Normalize(); err != nil {
-		t.Fatalf("关闭态不应校验: %v", err)
+		t.Fatalf("无勾选平台不应校验: %v", err)
 	}
 }

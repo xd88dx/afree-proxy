@@ -1389,7 +1389,6 @@ func toolRenamePayload() map[string]any {
 		plats = map[string]bool{}
 	}
 	return map[string]any{
-		"enabled":   c.Enabled,
 		"prefix":    c.Prefix,
 		"platforms": plats,
 	}
@@ -1415,7 +1414,6 @@ func handleAdminUpdateConfig(w http.ResponseWriter, r *http.Request) {
 		AdminLogEnabled      *bool             `json:"adminLogEnabled"`
 		ClineCatalogFeedOnly *bool             `json:"clineCatalogFeedOnly"`
 		ToolRename           *struct {
-			Enabled   *bool           `json:"enabled"`
 			Prefix    string          `json:"prefix"`
 			Platforms map[string]bool `json:"platforms"`
 		} `json:"toolRename"`
@@ -1427,11 +1425,7 @@ func handleAdminUpdateConfig(w http.ResponseWriter, r *http.Request) {
 
 	// 工具改名（2026-11-21 方案二一期）：验证先行，非法前缀 400 不落盘。
 	if req.ToolRename != nil {
-		tr := gwconfig.ToolRenameConfig{Prefix: req.ToolRename.Prefix}
-		if req.ToolRename.Enabled != nil {
-			tr.Enabled = *req.ToolRename.Enabled
-		}
-		tr.Platforms = req.ToolRename.Platforms
+		tr := gwconfig.ToolRenameConfig{Prefix: req.ToolRename.Prefix, Platforms: req.ToolRename.Platforms}
 		if err := gwconfig.SetToolRename(tr); err != nil {
 			panel.WriteAPI(w, http.StatusBadRequest, panel.ApiResponse{Error: err.Error()})
 			return

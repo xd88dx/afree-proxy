@@ -459,6 +459,12 @@ WorkBuddy 一栏的基线同时登记在 `scripts/workbuddy-vendor-baseline.json
   - **方案一（指纹闸自愈，恒开）**：`CallZenAPI`/`CallZenResponsesAPI` 的 daily-exhausted 分支新增自愈——429 FreeUsageLimitError + 该 key 当日记账 ≤100 tok（`zenFingerprintSuspectTokens`，覆盖测试消耗 10 的场景）→ 判疑似指纹闸（按请求内容命中，换 key 无用），**不 park 该 key**，同 key 去客户端工具重试一次（tools 只留 gate、tool_choice=none，跨 410 重建存活）；成功即自愈（日志附工具名清单供二分），仍耗尽才按真额度停放。回归测试 `zen_fingerprint_test.go`：自愈分支（两次往返/strip 后 body/不 park）+ 对照分支（超阈值 key 直接 park 不重试）。
   - **方案二一期（工具改名，网关设置项，默认关）**：`internal/toolrename` 新包——确定性假名 `Prefix+SHA256(原名)前12位`；请求侧结构化改写（chat 形态 tools/历史 tool_calls/tool_choice；responses 形态 flat tools/input function_call），复制纪律同 env-marker；响应侧 `restoreWriter` **字节级还原**（带引号匹配假名 token 全网唯一、跨 Write 边界 pending 衔接、协议无关一份实现）。接线：chat 端点 zen/cline/freepi/other 四分支（zen 在域包出站 body 处改写——toolfilter 真名匹配不受影响；其余三平台入口改写 params）；responses 端点同四分支（responsesToChat 已收敛 chat 形态）；anthropic 端点同（anthropicToOpenAI 后）。gwconfig `toolRename` 段（enabled/prefix/platforms，前缀校验：字母开头≤16、禁 clint_/mcp_/oc_/zen_/freepi_/trae_/wbcn_/wbgb_/other_）；面板网关设置页新增「工具改名」块（开关+前缀+四平台勾选，trae/wb 二期不暴露勾选=死配置判据）；`/admin/api/config` GET/POST 接线。E2E：zen 改名开启后带工具请求，上游收假名、客户端收真名 `probe_echo`（args 完整 roundtrip 实证）。E2E 佐证：Claude Code 工具名（ReportFindings）单工具未触发名称闸——名称面现状安全，机制为在案保险。
   - 容器镜像 test-20261121-1900 含两方案。
+- **同日五次——二期接线 + 版式/顺序统一**（用户拍板：别名下拉补 FreePI 不补 Other；/v1/models 段序一并改）：
+  - **二期接线**：trae（chat 入口分支两行）与 wb（chat 两分支 re-marshal/responses/anthropic 三方言）全接入。关键确认：wb anthropic 方言 marshal 的是**转换后 openAIReq**（wb_dialects.go），入口改写即覆盖——无需 anthropic 形态改写器，比预估小。E2E 双过：wb（wbcn:glm-5.3-flash）与 trae（tacn:glm-5.3-flash）带工具请求，上游收假名、客户端收真名 probe_echo（args 完整）。工具改名菜单补 trae/workbuddy 勾选（死配置判据解除）。名称面防线自此六平台全覆盖。
+  - **工具改名配置简化（用户定）**：去「（反指纹）」标题后缀；**启用开关删除**——勾选平台数>0 即开启（ToolRenameConfig 收敛为 {prefix, platforms}，Active() 派生）；「前缀」→「改写前缀」；label 样式对齐自定义别名（行容器换 form-row）；说明文本一句话口径。
+  - **排除规则下拉固定高度（用户报：最后一行下拉巨大）**：根因=prMenuPlace 的 above 用 secTop 计算，section 顶滚出视口后为负值导致 avail 放大到上千像素。修法=视口上沿钳制（max(0,secTop)）+ 统一 280px 封顶（视口不足取实际可用）——所有规则下拉同高内部滚动，实测末行展开 top=34/bottom=314 完整落在视口内。
+  - **平台展示顺序统一（用户定：Cline→FreePI→OpenCode→TraeWork→WorkBuddy→Other）**：侧栏导航/tab 拼装、仪表盘概览+统计卡、代理池全局策略走池开关卡、排除规则卡片（REORDER_PLATFORMS）、批量封禁下拉（BLACKLIST_PLATFORM_LABEL）、自定义别名平台下拉（补 FreePI）、/v1/models 聚合段序（freepi 前插、wb 后移）。逻辑面（分发链 if-else、registry 注册序）不随之重排。
+  - 容器镜像 test-20261121-2010；验证：build/vet 全量全绿、三 module 测试+race 全绿、审计清零、浏览器截图核对。
 
 ### 2026-11-19 — 主线复核（无更新）+ 副线 opencode2api 评估（5 提交，零吸纳+1 取证）
 

@@ -1,7 +1,7 @@
 {
   "version": 1,
   "created_at": "2026-11-09T17:13:34Z",
-  "updated_at": "2026-11-21T10:57:55Z",
+  "updated_at": "2026-11-21T11:51:01Z",
   "files": {
     ".agents/skills/add-platform/SKILL.md": {
       "role": "index",
@@ -494,9 +494,9 @@
     },
     "MERGE.md": {
       "role": "index",
-      "sha256": "cedf7a38740d4ccdd912827ccd18a57a841d0f91c0ecfeadc517c21d25de3483",
-      "size": 172862,
-      "normalized_sha256": "cedf7a38740d4ccdd912827ccd18a57a841d0f91c0ecfeadc517c21d25de3483"
+      "sha256": "1297dd0e5dd6bce657e15a9a4c32b2ea70fb4347859d354ebe116f67dedce4ea",
+      "size": 174960,
+      "normalized_sha256": "1297dd0e5dd6bce657e15a9a4c32b2ea70fb4347859d354ebe116f67dedce4ea"
     },
     "PROJECT.md": {
       "role": "index",
@@ -518,9 +518,9 @@
     },
     "aoci.code.txt": {
       "role": "index",
-      "sha256": "27e3a9e3e897866c4a59bd0920d9dedc92df7cd8ebcc9d6d44656b0706da04c5",
-      "size": 243493,
-      "normalized_sha256": "27e3a9e3e897866c4a59bd0920d9dedc92df7cd8ebcc9d6d44656b0706da04c5"
+      "sha256": "c08da6fe959f1d8bd383fa3a8f181025ba22288442575f0daec4d279ec9e47da",
+      "size": 243650,
+      "normalized_sha256": "c08da6fe959f1d8bd383fa3a8f181025ba22288442575f0daec4d279ec9e47da"
     },
     "aoci.meta.txt": {
       "role": "index",
@@ -618,10 +618,10 @@
     },
     "internal/app/admin.go": {
       "role": "index",
-      "sha256": "a357a994292bb7e8b12d926c93b8cbd491a9aa3bd3987d5b6bb307f171d1aa3f",
-      "size": 65420,
-      "normalized_sha256": "a357a994292bb7e8b12d926c93b8cbd491a9aa3bd3987d5b6bb307f171d1aa3f",
-      "format_sha256": "aad638a147bf1dbb9b33557cb7bf2dfc262f3ffae01d21ed10d3807935aa8591",
+      "sha256": "dac9b8e22891a59fedb4e4f9f9606b69d2bfbd87fc38bf0ad3ce0c6d7d145c84",
+      "size": 65262,
+      "normalized_sha256": "dac9b8e22891a59fedb4e4f9f9606b69d2bfbd87fc38bf0ad3ce0c6d7d145c84",
+      "format_sha256": "1993c84cb7d3380ed51e8b250d91c77f8d1dac95fac2751121458d7d0f8bace1",
       "format_kind": "gofmt"
     },
     "internal/app/admin_auth.go": {
@@ -2198,18 +2198,18 @@
     },
     "internal/gateway/proxy.go": {
       "role": "index",
-      "sha256": "3e37af301a958dd8358804916842ad48af94e742fa020af3b33fc28a12859059",
-      "size": 115846,
-      "normalized_sha256": "3e37af301a958dd8358804916842ad48af94e742fa020af3b33fc28a12859059",
-      "format_sha256": "3e37af301a958dd8358804916842ad48af94e742fa020af3b33fc28a12859059",
+      "sha256": "551fb9e87320be6aafb2da9167f5d4cccc8e81f8da8cc952d43c49cd3638bd7d",
+      "size": 117035,
+      "normalized_sha256": "551fb9e87320be6aafb2da9167f5d4cccc8e81f8da8cc952d43c49cd3638bd7d",
+      "format_sha256": "551fb9e87320be6aafb2da9167f5d4cccc8e81f8da8cc952d43c49cd3638bd7d",
       "format_kind": "gofmt"
     },
     "internal/gateway/responses.go": {
       "role": "index",
-      "sha256": "c9c94dcf7b35f6d5df989655e54b7b645361fce192d04b4c4304332ca999e4af",
-      "size": 31254,
-      "normalized_sha256": "c9c94dcf7b35f6d5df989655e54b7b645361fce192d04b4c4304332ca999e4af",
-      "format_sha256": "c9c94dcf7b35f6d5df989655e54b7b645361fce192d04b4c4304332ca999e4af",
+      "sha256": "d03a28f7dfd8b956573644d2442114da546ab123c56cfca40afe004af1c654d1",
+      "size": 31565,
+      "normalized_sha256": "d03a28f7dfd8b956573644d2442114da546ab123c56cfca40afe004af1c654d1",
+      "format_sha256": "d03a28f7dfd8b956573644d2442114da546ab123c56cfca40afe004af1c654d1",
       "format_kind": "gofmt"
     },
     "internal/gateway/routability.go": {
@@ -2278,10 +2278,10 @@
     },
     "internal/gwconfig/global.go": {
       "role": "index",
-      "sha256": "ad6c1de5fc0321124b485bb98c93038fa4ae726f6cbf212068b9516a7b7a41be",
-      "size": 8363,
-      "normalized_sha256": "ad6c1de5fc0321124b485bb98c93038fa4ae726f6cbf212068b9516a7b7a41be",
-      "format_sha256": "1d56e6ffd1ba17ca941cf00ef7e2aa4604dc8a128c7058f0cd275c4a0740605b",
+      "sha256": "c5872f422d866b0b5a8fd30a0aa11eda92fe3836099888534af8589468ac54e7",
+      "size": 8680,
+      "normalized_sha256": "c5872f422d866b0b5a8fd30a0aa11eda92fe3836099888534af8589468ac54e7",
+      "format_sha256": "c5872f422d866b0b5a8fd30a0aa11eda92fe3836099888534af8589468ac54e7",
       "format_kind": "gofmt"
     },
     "internal/gwconfig/manifest.go": {
@@ -2538,10 +2538,10 @@
     },
     "internal/panel/html.go": {
       "role": "index",
-      "sha256": "54887f3f15bf6aa94deead08220b0f63948aeb7839953c62fcf257c88680fb3b",
-      "size": 527063,
-      "normalized_sha256": "54887f3f15bf6aa94deead08220b0f63948aeb7839953c62fcf257c88680fb3b",
-      "format_sha256": "54887f3f15bf6aa94deead08220b0f63948aeb7839953c62fcf257c88680fb3b",
+      "sha256": "f3f73e24ff54846214b7235fe38eea09d1db7c732b72e7cabe93a7a5f0555384",
+      "size": 528984,
+      "normalized_sha256": "f3f73e24ff54846214b7235fe38eea09d1db7c732b72e7cabe93a7a5f0555384",
+      "format_sha256": "f3f73e24ff54846214b7235fe38eea09d1db7c732b72e7cabe93a7a5f0555384",
       "format_kind": "gofmt"
     },
     "internal/panel/models_refresh.go": {
@@ -2642,18 +2642,18 @@
     },
     "internal/toolrename/toolrename.go": {
       "role": "index",
-      "sha256": "70caf0fb13fe1855e86e451689d60ae52ed19afc1bbc8ee08e029aaf8e6506eb",
-      "size": 10403,
-      "normalized_sha256": "70caf0fb13fe1855e86e451689d60ae52ed19afc1bbc8ee08e029aaf8e6506eb",
-      "format_sha256": "70caf0fb13fe1855e86e451689d60ae52ed19afc1bbc8ee08e029aaf8e6506eb",
+      "sha256": "7c72f905d81303a23d05441d0a0909d10e9daa4201ac164919ccfdf80b8cccc6",
+      "size": 10498,
+      "normalized_sha256": "7c72f905d81303a23d05441d0a0909d10e9daa4201ac164919ccfdf80b8cccc6",
+      "format_sha256": "7c72f905d81303a23d05441d0a0909d10e9daa4201ac164919ccfdf80b8cccc6",
       "format_kind": "gofmt"
     },
     "internal/toolrename/toolrename_test.go": {
       "role": "observe",
-      "sha256": "6f9a39520c994ee3fc15de48f996821da108d0e92f147dc8f9d7028c5805382c",
-      "size": 7011,
-      "normalized_sha256": "6f9a39520c994ee3fc15de48f996821da108d0e92f147dc8f9d7028c5805382c",
-      "format_sha256": "fd08785b96adf8172ac1246d990c2845e262acebe2da0be31c5bf9ac9fe1f76c",
+      "sha256": "896255fddc029101692dda72e7e4dd66f1752dd2a60da08960bea9bd80efa188",
+      "size": 7041,
+      "normalized_sha256": "896255fddc029101692dda72e7e4dd66f1752dd2a60da08960bea9bd80efa188",
+      "format_sha256": "0242f5976cecbaf4be148a842acb33dae9d1661a286f5ef7abda796c92927260",
       "format_kind": "gofmt"
     },
     "internal/trae/host.go": {

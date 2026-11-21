@@ -1898,6 +1898,9 @@ func handleAnthropicMessages(w http.ResponseWriter, r *http.Request) {
 	log.Printf("  anthropic: model=%s stream=%v msgs=%d", req.Model, req.Stream, len(req.Messages))
 
 	if shouldServeWorkBuddy(req.Model) {
+		// 工具改名二期：wb anthropic 方言从 openAIReq（转换后 chat 形态）
+		// marshal 出站——入口改写即可覆盖。
+		w = toolRenameApplyChat(toolrename.KindWorkbuddy, openAIReq, w)
 		wbDialects{workbuddy.WorkbuddySub}.ServeAnthropicMessages(w, r, req, openAIReq, toolSchemas)
 		return
 	}
@@ -1905,9 +1908,9 @@ func handleAnthropicMessages(w http.ResponseWriter, r *http.Request) {
 	// 前缀平台（trae:/Other 子平台）：归口到平台 chat 调用器，
 	// 经既有 chat→anthropic 转换件输出（与 zen 路径同一套协议转换）。
 	if caller, ok := resolvePlatformChatCaller(req.Model); ok {
-		// 工具改名一期：freepi/other 直改转换后的 chat 形态；trae 二期不接。
+		// 工具改名二期：trae 一并接入。
 		kind := toolRenameKind(ModelRoutePlatformKey(req.Model))
-		if kind == toolrename.KindFreepi || kind == toolrename.KindOther {
+		if kind == toolrename.KindFreepi || kind == toolrename.KindOther || kind == toolrename.KindTrae {
 			w = toolRenameApplyChat(kind, openAIReq, w)
 		}
 		handleAnthropicViaChat(w, r, req, openAIReq, toolSchemas, caller)
@@ -2871,6 +2874,10 @@ func wbEntryRate(m map[string]any) (float64, bool) {
 func servedModelEntries() []map[string]any {
 	ensureModelsFresh()
 	data := apiModelList()
+	// 平台段展示顺序单一口径（2026-11-21 用户定）：Cline → FreePI → OpenCode
+	// → TraeWork → WorkBuddy → Other（与面板侧栏/仪表盘一致）。
+	// 合并 FreePI 目录（freepi: 前缀；无参与路由凭据时整段摘除）。
+	data = append(data, freepiModelList()...)
 	// 合并 zen 免费模型（OpenCode 上游常开，无独立启停开关）
 	for _, zm := range zenModelList() {
 		data = append(data, map[string]any{
@@ -2883,14 +2890,12 @@ func servedModelEntries() []map[string]any {
 			"output":  zm["output"],
 		})
 	}
-	// 合并 WorkBuddy 模型（wbcn:/wbgb: 前缀，vendor 层翻译源项目 realm）。
-	data = append(data, workbuddyModelEntries()...)
 	// 合并 Trae 模型（vendored trae2api 域前缀：trae:/solo:/trae-intl:/solo-intl:）。
 	data = append(data, trae2apiModelEntries()...)
+	// 合并 WorkBuddy 模型（wbcn:/wbgb: 前缀，vendor 层翻译源项目 realm）。
+	data = append(data, workbuddyModelEntries()...)
 	// 合并 Other 子平台勾选模型（各子平台自定义前缀）。
 	data = append(data, otherModelList()...)
-	// 合并 FreePI 目录（freepi: 前缀；无参与路由凭据时整段摘除）。
-	data = append(data, freepiModelList()...)
 	// combo 别名模型（仪表盘自定义的虚拟模型 ID）。展示门控同平台段：
 	// 声明平台没有可路由凭据时别名也不出目录（否则用户选中后必然失败）。
 	for _, c := range listCombos() {
@@ -3172,6 +3177,14 @@ func HandleChat(w http.ResponseWriter, r *http.Request) {
 	// WorkBuddy 路由：只接管源项目定义的 realm 前缀（cn:/global:），
 	// 裸模型名仍走现有 Cline/OpenCode 目录，避免静默改路由。
 	if shouldServeWorkBuddy(model) {
+		// 工具改名二期：改写 params 后重序列化（wb 引擎从该 JSON 构建出站）。
+		if m := toolrename.Build(toolrename.KindWorkbuddy, toolNames); m != nil {
+			toolrename.RewriteChatForm(params, m)
+			w = toolrename.NewRestoreWriter(w, m)
+			if b2, err2 := json.Marshal(params); err2 == nil {
+				body = b2
+			}
+		}
 		(workbuddy.WorkbuddySub).ServeWorkBuddyChat(w, r, body)
 		return
 	}
@@ -3188,6 +3201,11 @@ func HandleChat(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if shouldServeWorkBuddy(model) {
+		// 工具改名二期：同上，combo 改写 model 后的 wb 分支。
+		if m := toolrename.Build(toolrename.KindWorkbuddy, toolNames); m != nil {
+			toolrename.RewriteChatForm(params, m)
+			w = toolrename.NewRestoreWriter(w, m)
+		}
 		rewritten, err := json.Marshal(params)
 		if err != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]any{"error": map[string]string{"message": err.Error(), "type": "api_error"}})
@@ -3201,6 +3219,9 @@ func HandleChat(w http.ResponseWriter, r *http.Request) {
 	// vendored /v1/chat/completions（OpenAI 原生 SSE，无需聚合翻译）。
 	// 用 marshaled params（combo 别名可能改写过 model）。
 	if shouldServeTrae2api(model) {
+		// 工具改名二期：trae 接入——改写在网关入口完成（引擎只搬运名字，
+		// 内部 textcall 注册名来自请求工具，假名自洽闭环），响应出口还原。
+		w = toolRenameApplyChat(toolrename.KindTrae, params, w)
 		rewritten, err := json.Marshal(params)
 		if err != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]any{"error": map[string]string{"message": err.Error(), "type": "api_error"}})

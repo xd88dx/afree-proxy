@@ -52,7 +52,8 @@ const (
 // 零改动直通）。platform 用本包 Kind* 常量。
 func Build(platform string, toolNames []string) *Mapping {
 	cfg := gwconfig.GetToolRename()
-	if !cfg.Enabled || !cfg.Platforms[platform] || len(toolNames) == 0 {
+	// 无独立开关：平台有勾选且前缀合法即生效（2026-11-21 用户定）。
+	if !cfg.Platforms[platform] || cfg.Prefix == "" || len(toolNames) == 0 {
 		return nil
 	}
 	m := &Mapping{Prefix: cfg.Prefix, RealToFake: map[string]string{}, FakeToReal: map[string]string{}}

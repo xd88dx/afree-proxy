@@ -699,6 +699,8 @@ func handleResponses(w http.ResponseWriter, r *http.Request) {
 	chat := responsesToChat(params)
 	chatModel, _ := chat["model"].(string)
 	if shouldServeWorkBuddy(chatModel) {
+		// 工具改名二期：wb responses 方言从 chat 形态构建出站。
+		w = toolRenameApplyChat(toolrename.KindWorkbuddy, chat, w)
 		wbDialects{workbuddy.WorkbuddySub}.ServeResponses(w, r, chat, isStream)
 		return
 	}
@@ -713,15 +715,17 @@ func handleResponses(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if shouldServeWorkBuddy(chatModel) {
+		// 工具改名二期：combo 改写 model 后的 wb 分支。
+		w = toolRenameApplyChat(toolrename.KindWorkbuddy, chat, w)
 		wbDialects{workbuddy.WorkbuddySub}.ServeResponses(w, r, chat, isStream)
 		return
 	}
 	// 前缀平台（trae:/Other 子平台）：归口到平台 chat 调用器，
 	// 经既有 chat→responses 转换件输出（与 zen 路径同一套协议转换）。
 	if caller, ok := resolvePlatformChatCaller(chatModel); ok {
-		// 工具改名一期：freepi/other 直改 chat 形态；trae 二期不接。
+		// 工具改名二期：trae 一并接入（引擎只搬运名字，textcall 假名自洽）。
 		kind := toolRenameKind(ModelRoutePlatformKey(chatModel))
-		if kind == toolrename.KindFreepi || kind == toolrename.KindOther {
+		if kind == toolrename.KindFreepi || kind == toolrename.KindOther || kind == toolrename.KindTrae {
 			w = toolRenameApplyChat(kind, chat, w)
 		}
 		handleResponsesViaChat(w, r, chat, chatModel, isStream, caller)

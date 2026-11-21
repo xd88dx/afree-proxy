@@ -16,24 +16,28 @@ import (
 // 改共享 UI 仍在本文件。freepi 接入起骨架收尾（main/layout 闭合 + toast）
 // 上移至 layoutCloseToastHTML，平台片段不再携带收尾。JS 语法事故防线：拼装
 // 产物 script 块过 node --check（PROJECT.md §8）。
+// 平台展示顺序单一口径（2026-11-21 用户定）：Cline → FreePI → OpenCode →
+// TraeWork → WorkBuddy → Other。侧栏/仪表盘/统计/排除规则/批量封禁/走池
+// 开关/别名平台/工具改名下拉全部引用该序；网关分发链与 registry 是逻辑面
+// 顺序，绝不随之重排。
 var AdminHTML = head1aHTML +
 	cline.PanelNavItem +
+	freepi.PanelNavItem +
+	zen.PanelNavItem +
 	trae.PanelNavItem +
 	workbuddy.PanelNavItem +
-	zen.PanelNavItem +
 	other.PanelNavItem +
-	freepi.PanelNavItem +
 	head1bHTML +
 	cline.PanelTabHTML +
+	freepi.PanelTabHTML +
+	zen.PanelTabHTML +
 	trae.PanelTabHTML +
+	workbuddy.PanelTabHTML +
+	other.PanelTabHTML +
 	poolTabHTML +
 	settingsTabHTML +
 	logsTabHTML +
 	combosTabHTML +
-	zen.PanelTabHTML +
-	workbuddy.PanelTabHTML +
-	other.PanelTabHTML +
-	freepi.PanelTabHTML +
 	layoutCloseToastHTML +
 	tailHTML
 
@@ -510,6 +514,14 @@ const head1bHTML = `<div class="nav-group">Services</div>
         <div class="dash-name">Cline</div>
         <div class="dash-stats" id="dashCline">-</div>
       </div>
+      <div class="dash-card" onclick="switchTab('freepi')">
+        <div class="dash-name">FreePI</div>
+        <div class="dash-stats" id="dashFreepi">-</div>
+      </div>
+      <div class="dash-card" onclick="switchTab('opencode')">
+        <div class="dash-name">OpenCode</div>
+        <div class="dash-stats" id="dashOc">-</div>
+      </div>
       <div class="dash-card" onclick="switchTab('trae')">
         <div class="dash-name">TraeWork</div>
         <div class="dash-stats" id="dashTrae">-</div>
@@ -518,17 +530,9 @@ const head1bHTML = `<div class="nav-group">Services</div>
         <div class="dash-name">WorkBuddy</div>
         <div class="dash-stats" id="dashWb">-</div>
       </div>
-      <div class="dash-card" onclick="switchTab('opencode')">
-        <div class="dash-name">OpenCode</div>
-        <div class="dash-stats" id="dashOc">-</div>
-      </div>
       <div class="dash-card" onclick="switchTab('other')">
         <div class="dash-name">Other</div>
         <div class="dash-stats" id="dashOther">-</div>
-      </div>
-      <div class="dash-card" onclick="switchTab('freepi')">
-        <div class="dash-name">FreePI</div>
-        <div class="dash-stats" id="dashFreepi">-</div>
       </div>
     </div>
   </div>
@@ -635,6 +639,16 @@ const poolTabHTML = `<div id="tab-proxypool" class="tab-panel" style="display:no
         <div class="hint">Cline accounts without proxy bindings follow this switch.</div>
       </div>
       <div class="pp-card">
+        <label>FreePI</label>
+        <select id="ppFreepi"><option value="true">Proxy</option><option value="false">Direct connection</option></select>
+        <div class="hint">FreePI keys without proxy bindings follow this switch.</div>
+      </div>
+      <div class="pp-card">
+        <label>OpenCode</label>
+        <select id="ppZen"><option value="true">Proxy</option><option value="false">Direct connection</option></select>
+        <div class="hint">OpenCode keys without proxy bindings follow this switch.</div>
+      </div>
+      <div class="pp-card">
         <label>TraeWork</label>
         <select id="ppTrae"><option value="true">Proxy</option><option value="false">Direct connection</option></select>
         <div class="hint">TraeWork accounts without proxy bindings follow this switch.</div>
@@ -645,19 +659,9 @@ const poolTabHTML = `<div id="tab-proxypool" class="tab-panel" style="display:no
         <div class="hint">WorkBuddy accounts without proxy bindings follow this switch.</div>
       </div>
       <div class="pp-card">
-        <label>OpenCode</label>
-        <select id="ppZen"><option value="true">Proxy</option><option value="false">Direct connection</option></select>
-        <div class="hint">OpenCode keys without proxy bindings follow this switch.</div>
-      </div>
-      <div class="pp-card">
         <label>Other</label>
         <select id="ppOther"><option value="true">Proxy</option><option value="false">Direct connection</option></select>
         <div class="hint">Other sub-platform keys without proxy bindings follow this switch.</div>
-      </div>
-      <div class="pp-card">
-        <label>FreePI</label>
-        <select id="ppFreepi"><option value="true">Proxy</option><option value="false">Direct connection</option></select>
-        <div class="hint">FreePI keys without proxy bindings follow this switch.</div>
       </div>
     </div>
     <div class="form-actions"><button class="btn btn-primary" onclick="saveGlobalPolicy()" data-i18n="save">Save</button></div>
@@ -766,24 +770,20 @@ const settingsTabHTML = `<div id="tab-settings" class="tab-panel" style="display
   </div>
 </div>
 <div class="section">
-  <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h10"/></svg></span> <span data-i18n="tool_rename">Tool rename (anti fingerprint)</span></div>
+  <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h10"/></svg></span> <span data-i18n="tool_rename">Tool rename</span></div>
   <div class="section-body">
     <div class="hint" style="margin-top:0" data-i18n="tool_rename_hint">出站请求把客户端工具名改写为「前缀+哈希」，响应自动还原真名。</div>
-    <div style="display:flex;gap:10px;align-items:flex-start;margin-top:10px">
-      <div class="field" style="flex:0 0 auto;display:flex;align-items:center;gap:6px;padding-top:8px">
-        <input type="checkbox" id="trEnabled">
-        <label for="trEnabled" style="white-space:nowrap" data-i18n="tool_rename_enable">Enable</label>
-      </div>
+    <div class="form-row" style="margin-top:10px">
       <div class="field" style="flex:1;position:relative">
         <label data-i18n="tool_rename_platforms">Platforms</label>
-        <div class="pr-tagbox tr-box" id="trPlatBox" style="margin-top:4px;min-height:38px" onclick="toggleToolRenameMenu(event)">
+        <div class="pr-tagbox tr-box" id="trPlatBox" onclick="toggleToolRenameMenu(event)">
           <span id="trPlatChips" style="display:contents"></span>
           <input class="pr-tagin" readonly placeholder="Click to pick platforms…" data-i18n-placeholder="tool_rename_pick_placeholder">
         </div>
         <div id="trPlatMenu" class="pb-menu" style="display:none"></div>
       </div>
-      <div class="field" style="flex:1"><label data-i18n="tool_rename_prefix">Prefix</label>
-        <input id="trPrefix" placeholder="mygw" style="margin-top:4px">
+      <div class="field" style="flex:1"><label data-i18n="tool_rename_prefix">Rename prefix</label>
+        <input id="trPrefix" placeholder="mygw">
       </div>
     </div>
     <div class="form-actions"><button class="btn btn-primary" onclick="saveToolRename()" data-i18n="save">Save</button></div>
@@ -894,7 +894,7 @@ const combosTabHTML = `<div id="tab-combos" class="tab-panel" style="display:non
     <div class="form-row">
       <div class="field"><label>Alias ID</label><input type="text" id="comboId" placeholder="cline-glm-5.3"></div>
       <div class="field"><label>Platform</label>
-        <select id="comboPlatform" onchange="fillComboModels()"><option value="cline">Cline</option><option value="trae">TraeWork</option><option value="workbuddy">WorkBuddy</option><option value="zen">OpenCode</option></select>
+        <select id="comboPlatform" onchange="fillComboModels()"><option value="cline">Cline</option><option value="freepi">FreePI</option><option value="zen">OpenCode</option><option value="trae">TraeWork</option><option value="workbuddy">WorkBuddy</option></select>
       </div>
       <div class="field" style="flex:2"><label>Target model</label><select id="comboTarget"></select></div>
       <div class="field" style="flex:0 0 auto;display:flex;align-items:flex-end"><label style="display:flex;gap:6px;align-items:center;white-space:nowrap;margin:0;padding-bottom: 8px;"><input type="checkbox" id="comboUseProxies"> Use proxy pool</label></div>
@@ -1703,9 +1703,8 @@ const I18N = {
   'added': { en: 'Added', zh: '已添加' },
   'test_passed': { en: 'Test passed', zh: '测试通过' },
   'strategy_env_locked_hint': { en: 'POOL_STRATEGY is set and takes precedence over this panel — unset the env var to control the rotation strategy here.', zh: 'POOL_STRATEGY 已设置并优先于面板——要在此处控制轮转策略请先取消该环境变量。' },
-  'tool_rename': { en: 'Tool rename (anti fingerprint)', zh: '工具改名（反指纹）' },
-  'tool_rename_enable': { en: 'Enable', zh: '启用' },
-  'tool_rename_prefix': { en: 'Prefix', zh: '前缀' },
+  'tool_rename': { en: 'Tool rename', zh: '工具改名' },
+  'tool_rename_prefix': { en: 'Rename prefix', zh: '改写前缀' },
   'tool_rename_platforms': { en: 'Platforms', zh: '生效平台' },
   'tool_rename_pick_placeholder': { en: 'Click to pick platforms…', zh: '点击选择生效平台…' },
   'tool_rename_hint': { en: 'Outbound requests rename client tools to prefix+hash; responses restore original names automatically.', zh: '出站请求把客户端工具名改写为「前缀+哈希」，响应自动还原真名。' },
@@ -3771,13 +3770,15 @@ function stageProxiesByOrder(kind) {
 // 自动保存会连带保存所选平台各表所有未落盘的暂存改动。
 const REORDER_KINDS = ['acc', 'trae', 'wb', 'key', 'other', 'freepi']; // 与左侧菜单同序
 // 弹窗平台行（顺序 = REORDER_KINDS = 左侧菜单序）
+// 平台展示顺序单一口径：Cline → FreePI → OpenCode → TraeWork → WorkBuddy →
+// Other（2026-11-21 用户定）。排除规则卡片与批量追加排除共用。
 const REORDER_PLATFORMS = [
   { key: 'acc', label: 'Cline' },
+  { key: 'freepi', label: 'FreePI' },
+  { key: 'key', label: 'OpenCode' },
   { key: 'trae', label: 'TraeWork' },
   { key: 'wb', label: 'WorkBuddy' },
-  { key: 'key', label: 'OpenCode' },
-  { key: 'other', label: 'Other' },
-  { key: 'freepi', label: 'FreePI' }
+  { key: 'other', label: 'Other' }
 ];
 const REORDER_LOADERS = { acc: loadAccounts, trae: loadTraeConfig, key: loadOcConfig, wb: ensureWorkbuddyConsole,
                           other: loadOtherConfig, freepi: loadFreepiConfig };
@@ -5133,9 +5134,9 @@ async function loadModels() {
 // 后续同样的上游错误会再次自动封禁（手动封禁解禁后不会自动恢复）。
 // 顺序与左侧导航菜单一致（Cline → TraeWork → WorkBuddy → OpenCode → …）。
 const BLACKLIST_PLATFORM_LABEL = {
-  cline: 'Cline', trae: 'TraeWork', workbuddy: 'WorkBuddy', zen: 'OpenCode',
-  other: 'Other',
-  freepi: 'FreePI'
+  cline: 'Cline', freepi: 'FreePI', zen: 'OpenCode',
+  trae: 'TraeWork', workbuddy: 'WorkBuddy',
+  other: 'Other'
 };
 // 已拉黑模型 ID 集合（对外 ID，如 wbgb:gpt-6-luna）。设置页各模型块渲染前
 // 统一过滤——黑名单的语义是「不再对外提供」，不能只过滤 /v1/models 而把
@@ -6451,9 +6452,13 @@ function prMenuPlace() {
   const limit = Math.min(window.innerHeight, secBottom) - 8;
   const want = Math.min(menu.scrollHeight, 220);
   const below = limit - r.bottom;
-  const above = r.top - secTop - 12;
+  // 视口上沿也计入钳制：section 顶滚出视口后 secTop 为负，above 会被放大
+  // 到上千像素（2026-11-21 实测最后一行下拉撑满整屏且顶部溢出）。
+  const above = r.top - Math.max(0, secTop) - 12;
   if (below < Math.min(want, 80) && above > below) anchor.classList.add('drop-up');
-  const avail = anchor.classList.contains('drop-up') ? above : below;
+  let avail = anchor.classList.contains('drop-up') ? above : below;
+  // 统一固定上限：所有规则下拉同一高度、内部滚动，任何方向不溢出视口。
+  avail = Math.min(avail, 280, window.innerHeight - 40);
   menu.style.maxHeight = Math.max(96, Math.round(avail)) + 'px';
 }
 function ppRuleFocus(kind) {
@@ -6815,10 +6820,13 @@ async function saveAccountStrategy() {
 // trStaged 暂存勾选集；一期的生效平台只有四家（trae/wb 二期不暴露勾选）。
 let trStaged = new Set();
 function trPlatOptions() {
+  // 与平台展示顺序单一口径一致（二期起 trae/workbuddy 已接线，可勾选）。
   return [
     { key: 'cline', label: 'Cline' },
-    { key: 'zen', label: 'OpenCode' },
     { key: 'freepi', label: 'FreePI' },
+    { key: 'zen', label: 'OpenCode' },
+    { key: 'trae', label: 'TraeWork' },
+    { key: 'workbuddy', label: 'WorkBuddy' },
     { key: 'other', label: 'Other' },
   ];
 }
@@ -6852,7 +6860,6 @@ async function loadToolRename() {
     const d = await api('GET', '/config');
     const tr = (d.data || {}).toolRename || {};
     const p = tr.platforms || {};
-    _('trEnabled').checked = !!tr.enabled;
     _('trPrefix').value = tr.prefix || '';
     trStaged = new Set(trPlatOptions().filter(o => p[o.key]).map(o => o.key));
     renderToolRename();
@@ -6863,12 +6870,13 @@ async function loadToolRename() {
 // 前缀非法时后端 400，api() 会把 error 透传到 toast。
 async function saveToolRename() {
   const body = { toolRename: {
-    enabled: _('trEnabled').checked,
     prefix: (_('trPrefix').value || '').trim(),
     platforms: {
       cline: trStaged.has('cline'),
-      zen: trStaged.has('zen'),
       freepi: trStaged.has('freepi'),
+      zen: trStaged.has('zen'),
+      trae: trStaged.has('trae'),
+      workbuddy: trStaged.has('workbuddy'),
       other: trStaged.has('other'),
     },
   } };
@@ -8543,6 +8551,10 @@ async function fillComboModels() {
         comboModels.workbuddy = all.filter(wbModelMatchesFilter)
           .sort((a, b) => wbRate(a) - wbRate(b))
           .map(m => m.id).filter(Boolean);
+      } else if (platform === 'freepi') {
+        const d = await api('GET', '/freepi/config');
+        comboModels.freepi = ((d.data || {}).models || [])
+          .map(m => (typeof m === 'string' ? m : m.id)).filter(Boolean);
       }
     }
     if (!comboModels[platform].length) { sel.innerHTML = '<option value="">' + T('no_models_on_this_platform') + '</option>'; return; }
