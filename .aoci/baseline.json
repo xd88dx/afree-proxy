@@ -1,7 +1,7 @@
 {
   "version": 1,
   "created_at": "2026-11-09T17:13:34Z",
-  "updated_at": "2026-11-21T09:24:28Z",
+  "updated_at": "2026-11-21T09:48:14Z",
   "files": {
     ".agents/skills/add-platform/SKILL.md": {
       "role": "index",
@@ -480,6 +480,12 @@
       "size": 7861,
       "normalized_sha256": "85d938adaddbfbc0e8a69cbaf809e127f82a16e956fd6f21535be4a2925a2011"
     },
+    ".tmp/zen_desc_gate_test.py": {
+      "role": "observe",
+      "sha256": "3bb42ccc276f57236709c7e658944cad87ae3a3db0ac4f92b9c96b6820a72d56",
+      "size": 1853,
+      "normalized_sha256": "3bb42ccc276f57236709c7e658944cad87ae3a3db0ac4f92b9c96b6820a72d56"
+    },
     "AGENTS.md": {
       "role": "index",
       "sha256": "04a0ab6374a2750ee5c8a0a92d7f1d18322cc24505a75698045916de4eb31fa2",
@@ -494,15 +500,15 @@
     },
     "MERGE.md": {
       "role": "index",
-      "sha256": "1201d94034ba287ad94620de7efeab29813083c75006392f81712d1a79c614bb",
-      "size": 166354,
-      "normalized_sha256": "1201d94034ba287ad94620de7efeab29813083c75006392f81712d1a79c614bb"
+      "sha256": "8a3002939c4eb6a436d1465b7e58ea1cdc269f2c3d9b05200a2d5210eb865369",
+      "size": 167745,
+      "normalized_sha256": "8a3002939c4eb6a436d1465b7e58ea1cdc269f2c3d9b05200a2d5210eb865369"
     },
     "PROJECT.md": {
       "role": "index",
-      "sha256": "fddc8f6a10e84f162ccc3285e031ac6ace2386220d73fce43e782782e8113849",
-      "size": 53118,
-      "normalized_sha256": "fddc8f6a10e84f162ccc3285e031ac6ace2386220d73fce43e782782e8113849"
+      "sha256": "395170bd1dea30c611306f709ac000f80e8a88174b330cdd755f895650f59bca",
+      "size": 53393,
+      "normalized_sha256": "395170bd1dea30c611306f709ac000f80e8a88174b330cdd755f895650f59bca"
     },
     "README.md": {
       "role": "index",
@@ -518,9 +524,9 @@
     },
     "aoci.code.txt": {
       "role": "index",
-      "sha256": "a44c6dce95acd6e6cb81b5d3b3e0206a0fe18cb364bf56abd5910302912d6110",
-      "size": 240909,
-      "normalized_sha256": "a44c6dce95acd6e6cb81b5d3b3e0206a0fe18cb364bf56abd5910302912d6110"
+      "sha256": "2067418aa51864e796bbdd10d0bcadde3aa02ab546c3c6e301c75d016cb8c976",
+      "size": 241373,
+      "normalized_sha256": "2067418aa51864e796bbdd10d0bcadde3aa02ab546c3c6e301c75d016cb8c976"
     },
     "aoci.meta.txt": {
       "role": "index",
@@ -4814,10 +4820,10 @@
     },
     "internal/zen/zen.go": {
       "role": "index",
-      "sha256": "9201cb5fadc415237b0d56f458889986594dca43887f9d660204b095331e190e",
-      "size": 164538,
-      "normalized_sha256": "9201cb5fadc415237b0d56f458889986594dca43887f9d660204b095331e190e",
-      "format_sha256": "9201cb5fadc415237b0d56f458889986594dca43887f9d660204b095331e190e",
+      "sha256": "63e1f69e43bb5f996362f63c5ec05f0a85667c3ae073baabcbafd2cab5bcf134",
+      "size": 164948,
+      "normalized_sha256": "63e1f69e43bb5f996362f63c5ec05f0a85667c3ae073baabcbafd2cab5bcf134",
+      "format_sha256": "63e1f69e43bb5f996362f63c5ec05f0a85667c3ae073baabcbafd2cab5bcf134",
       "format_kind": "gofmt"
     },
     "internal/zen/zen_baseurl_test.go": {
@@ -4986,6 +4992,14 @@
       "format_sha256": "129c718ef34fa5859ee0a3e6570ebae6e16ad1cac16721adafa1425a38de3d61",
       "format_kind": "gofmt"
     },
+    "internal/zen/zen_nbsp_shape_test.go": {
+      "role": "observe",
+      "sha256": "e6e1aa792afae90e3fd0c3fdef478940e8d01170d59f585fe18834224bdf6890",
+      "size": 3184,
+      "normalized_sha256": "e6e1aa792afae90e3fd0c3fdef478940e8d01170d59f585fe18834224bdf6890",
+      "format_sha256": "e6e1aa792afae90e3fd0c3fdef478940e8d01170d59f585fe18834224bdf6890",
+      "format_kind": "gofmt"
+    },
     "internal/zen/zen_session.go": {
       "role": "index",
       "sha256": "2fc004e234d0a8aebbc29cc13eaab52b99b5821c1495679f5dedd95846b6d894",
@@ -4996,10 +5010,10 @@
     },
     "internal/zen/zen_toolfilter.go": {
       "role": "index",
-      "sha256": "1364cdd0ff4e6b7e9ca80fe44d2ef5bce4affe16dd2f876439f684724de3fe87",
-      "size": 6895,
-      "normalized_sha256": "1364cdd0ff4e6b7e9ca80fe44d2ef5bce4affe16dd2f876439f684724de3fe87",
-      "format_sha256": "1364cdd0ff4e6b7e9ca80fe44d2ef5bce4affe16dd2f876439f684724de3fe87",
+      "sha256": "16e2527c37fa30714e97b90da0f57529f40957dd8ef446df99c2f4e5f8d16aaa",
+      "size": 9975,
+      "normalized_sha256": "16e2527c37fa30714e97b90da0f57529f40957dd8ef446df99c2f4e5f8d16aaa",
+      "format_sha256": "16e2527c37fa30714e97b90da0f57529f40957dd8ef446df99c2f4e5f8d16aaa",
       "format_kind": "gofmt"
     },
     "internal/zen/zen_toolfilter_test.go": {
