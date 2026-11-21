@@ -1,7 +1,7 @@
 {
   "version": 1,
   "created_at": "2026-11-09T17:13:34Z",
-  "updated_at": "2026-11-20T18:42:45Z",
+  "updated_at": "2026-11-21T07:47:17Z",
   "files": {
     ".agents/skills/add-platform/SKILL.md": {
       "role": "index",
@@ -518,9 +518,9 @@
     },
     "aoci.code.txt": {
       "role": "index",
-      "sha256": "f57ea1939f7d0a474cc0c1a2cf17126d1c92d63e60811854100e0d8dba6466ce",
-      "size": 235392,
-      "normalized_sha256": "f57ea1939f7d0a474cc0c1a2cf17126d1c92d63e60811854100e0d8dba6466ce"
+      "sha256": "fba479246e9ad157e3e7d546ef21fdad5ae93449ea31960f8408cd1023df413f",
+      "size": 235932,
+      "normalized_sha256": "fba479246e9ad157e3e7d546ef21fdad5ae93449ea31960f8408cd1023df413f"
     },
     "aoci.meta.txt": {
       "role": "index",
@@ -762,10 +762,10 @@
     },
     "internal/app/backup_handlers.go": {
       "role": "index",
-      "sha256": "005cbe28afd51e072b6c02759d1da2c569a409da344c7b14986f75899739192f",
-      "size": 18704,
-      "normalized_sha256": "005cbe28afd51e072b6c02759d1da2c569a409da344c7b14986f75899739192f",
-      "format_sha256": "005cbe28afd51e072b6c02759d1da2c569a409da344c7b14986f75899739192f",
+      "sha256": "6457fa6a0e7c751aaaed284daf73a6a3c65f88a784b0e6eabaf9267efedfdd54",
+      "size": 19302,
+      "normalized_sha256": "6457fa6a0e7c751aaaed284daf73a6a3c65f88a784b0e6eabaf9267efedfdd54",
+      "format_sha256": "6457fa6a0e7c751aaaed284daf73a6a3c65f88a784b0e6eabaf9267efedfdd54",
       "format_kind": "gofmt"
     },
     "internal/app/backup_state_facts.go": {
@@ -1554,10 +1554,10 @@
     },
     "internal/app/wb_handlers.go": {
       "role": "index",
-      "sha256": "63217dba6f7eee3e282512091bf30837c57d285270351505f70493d57a0e8a05",
-      "size": 19701,
-      "normalized_sha256": "63217dba6f7eee3e282512091bf30837c57d285270351505f70493d57a0e8a05",
-      "format_sha256": "63217dba6f7eee3e282512091bf30837c57d285270351505f70493d57a0e8a05",
+      "sha256": "f3628b66acfdceee57a4a52906ba3c9963a1d343e15fbc49935f0842256b1e39",
+      "size": 19997,
+      "normalized_sha256": "f3628b66acfdceee57a4a52906ba3c9963a1d343e15fbc49935f0842256b1e39",
+      "format_sha256": "f3628b66acfdceee57a4a52906ba3c9963a1d343e15fbc49935f0842256b1e39",
       "format_kind": "gofmt"
     },
     "internal/app/wb_prefix_test.go": {
@@ -1856,10 +1856,10 @@
     },
     "internal/backup/backup.go": {
       "role": "index",
-      "sha256": "e599a68ef9107a777b9a5ad044a12008dba344524e526b2592ab929717958ee4",
-      "size": 23731,
-      "normalized_sha256": "e599a68ef9107a777b9a5ad044a12008dba344524e526b2592ab929717958ee4",
-      "format_sha256": "e599a68ef9107a777b9a5ad044a12008dba344524e526b2592ab929717958ee4",
+      "sha256": "bb4d5eeabfe110ad3a27d9fffd98185e4b8e9fbacbc392aa64bb78866a08b8e5",
+      "size": 24755,
+      "normalized_sha256": "bb4d5eeabfe110ad3a27d9fffd98185e4b8e9fbacbc392aa64bb78866a08b8e5",
+      "format_sha256": "bb4d5eeabfe110ad3a27d9fffd98185e4b8e9fbacbc392aa64bb78866a08b8e5",
       "format_kind": "gofmt"
     },
     "internal/backup/state_facts.go": {
@@ -4682,18 +4682,26 @@
     },
     "internal/workbuddy/wkbd_config.go": {
       "role": "index",
-      "sha256": "05dd8aab72376c572bf62225d6c335f9697e80569a02cd526b116dfefda6c5e0",
-      "size": 7883,
-      "normalized_sha256": "05dd8aab72376c572bf62225d6c335f9697e80569a02cd526b116dfefda6c5e0",
-      "format_sha256": "05dd8aab72376c572bf62225d6c335f9697e80569a02cd526b116dfefda6c5e0",
+      "sha256": "19dd08b58bce0cccedf7396dc28f2fc84e4b50eec58f2910d5577ad499aa41ae",
+      "size": 9248,
+      "normalized_sha256": "19dd08b58bce0cccedf7396dc28f2fc84e4b50eec58f2910d5577ad499aa41ae",
+      "format_sha256": "19dd08b58bce0cccedf7396dc28f2fc84e4b50eec58f2910d5577ad499aa41ae",
+      "format_kind": "gofmt"
+    },
+    "internal/workbuddy/wkbd_display_order_test.go": {
+      "role": "observe",
+      "sha256": "95e2b83b3ffd00118fd026c7506e70ecd706692fba34c24d7df597da33d5c688",
+      "size": 2468,
+      "normalized_sha256": "95e2b83b3ffd00118fd026c7506e70ecd706692fba34c24d7df597da33d5c688",
+      "format_sha256": "95e2b83b3ffd00118fd026c7506e70ecd706692fba34c24d7df597da33d5c688",
       "format_kind": "gofmt"
     },
     "internal/workbuddy/workbuddy.go": {
       "role": "index",
-      "sha256": "e3aa8f96a7248fcb0c1109516f03f980ba271a4868cd7d243e533a37dc251ad5",
-      "size": 29434,
-      "normalized_sha256": "e3aa8f96a7248fcb0c1109516f03f980ba271a4868cd7d243e533a37dc251ad5",
-      "format_sha256": "e3aa8f96a7248fcb0c1109516f03f980ba271a4868cd7d243e533a37dc251ad5",
+      "sha256": "8370a01755152e1d27103a6d23321442029c8688198467fc5a053c3a5439c9f0",
+      "size": 31108,
+      "normalized_sha256": "8370a01755152e1d27103a6d23321442029c8688198467fc5a053c3a5439c9f0",
+      "format_sha256": "8370a01755152e1d27103a6d23321442029c8688198467fc5a053c3a5439c9f0",
       "format_kind": "gofmt"
     },
     "internal/workbuddy/workbuddy_config.go": {
