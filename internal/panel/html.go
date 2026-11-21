@@ -768,26 +768,24 @@ const settingsTabHTML = `<div id="tab-settings" class="tab-panel" style="display
 <div class="section">
   <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h10"/></svg></span> <span data-i18n="tool_rename">Tool rename (anti fingerprint)</span></div>
   <div class="section-body">
-    <div class="form-row">
-      <div class="field" style="flex:0 0 auto;display:flex;align-items:center;gap:6px">
+    <div class="hint" style="margin-top:0" data-i18n="tool_rename_hint">出站请求把客户端工具名改写为「前缀+哈希」，响应自动还原真名。</div>
+    <div style="display:flex;gap:10px;align-items:flex-start;margin-top:10px">
+      <div class="field" style="flex:0 0 auto;display:flex;align-items:center;gap:6px;padding-top:8px">
         <input type="checkbox" id="trEnabled">
-        <label for="trEnabled" data-i18n="tool_rename_enable">Rename client tools on outbound requests</label>
+        <label for="trEnabled" style="white-space:nowrap" data-i18n="tool_rename_enable">Enable</label>
+      </div>
+      <div class="field" style="flex:1;position:relative">
+        <label data-i18n="tool_rename_platforms">Platforms</label>
+        <div class="pr-tagbox tr-box" id="trPlatBox" style="margin-top:4px;min-height:38px" onclick="toggleToolRenameMenu(event)">
+          <span id="trPlatChips" style="display:contents"></span>
+          <input class="pr-tagin" readonly placeholder="Click to pick platforms…" data-i18n-placeholder="tool_rename_pick_placeholder">
+        </div>
+        <div id="trPlatMenu" class="pb-menu" style="display:none"></div>
       </div>
       <div class="field" style="flex:1"><label data-i18n="tool_rename_prefix">Prefix</label>
-        <input id="trPrefix" placeholder="mygw">
+        <input id="trPrefix" placeholder="mygw" style="margin-top:4px">
       </div>
     </div>
-    <div class="form-row">
-      <div class="field"><label data-i18n="tool_rename_platforms">Apply to platforms</label>
-        <div style="display:flex;gap:14px;flex-wrap:wrap;padding-top:6px">
-          <label style="display:flex;align-items:center;gap:4px"><input type="checkbox" id="trPlatCline"> Cline</label>
-          <label style="display:flex;align-items:center;gap:4px"><input type="checkbox" id="trPlatZen"> OpenCode</label>
-          <label style="display:flex;align-items:center;gap:4px"><input type="checkbox" id="trPlatFreepi"> FreePI</label>
-          <label style="display:flex;align-items:center;gap:4px"><input type="checkbox" id="trPlatOther"> Other</label>
-        </div>
-      </div>
-    </div>
-    <div class="hint" data-i18n="tool_rename_hint">Outbound requests rename client tools to prefix+hash; responses restore original names automatically. Anti-fingerprint measure for the zen free tier (name face). Keep the prefix private and change it if a provider blocks it. TraeWork/WorkBuddy take effect in a later phase.</div>
     <div class="form-actions"><button class="btn btn-primary" onclick="saveToolRename()" data-i18n="save">Save</button></div>
   </div>
 </div>
@@ -1706,10 +1704,11 @@ const I18N = {
   'test_passed': { en: 'Test passed', zh: '测试通过' },
   'strategy_env_locked_hint': { en: 'POOL_STRATEGY is set and takes precedence over this panel — unset the env var to control the rotation strategy here.', zh: 'POOL_STRATEGY 已设置并优先于面板——要在此处控制轮转策略请先取消该环境变量。' },
   'tool_rename': { en: 'Tool rename (anti fingerprint)', zh: '工具改名（反指纹）' },
-  'tool_rename_enable': { en: 'Rename client tools on outbound requests', zh: '出站请求改写客户端工具名' },
+  'tool_rename_enable': { en: 'Enable', zh: '启用' },
   'tool_rename_prefix': { en: 'Prefix', zh: '前缀' },
-  'tool_rename_platforms': { en: 'Apply to platforms', zh: '生效平台' },
-  'tool_rename_hint': { en: 'Outbound requests rename client tools to prefix+hash; responses restore original names automatically. Anti-fingerprint measure for the zen free tier (name face). Keep the prefix private and change it if a provider blocks it. TraeWork/WorkBuddy take effect in a later phase.', zh: '出站请求把客户端工具名改写为「前缀+哈希」，响应自动还原真名。这是 zen 免费层反指纹措施（名称面）。前缀请保密，被上游封时改一个即可换整套假名。TraeWork/WorkBuddy 后续阶段生效。' },
+  'tool_rename_platforms': { en: 'Platforms', zh: '生效平台' },
+  'tool_rename_pick_placeholder': { en: 'Click to pick platforms…', zh: '点击选择生效平台…' },
+  'tool_rename_hint': { en: 'Outbound requests rename client tools to prefix+hash; responses restore original names automatically.', zh: '出站请求把客户端工具名改写为「前缀+哈希」，响应自动还原真名。' },
   'isolation_env_locked_hint': { en: 'PROXY_ISOLATION=true is set — isolation is forced on. Unset the env var (or set it to false) to control isolation from the panel.', zh: 'PROXY_ISOLATION=true 已设置——隔离被强制开启。取消该环境变量(或设为 false)才能在面板控制隔离。' },
   'account_rotation_strategy': { en: 'Account rotation strategy', zh: '账号轮转策略' },
   'which_credential_each_request_uses': { en: 'Which credential each request uses', zh: '每次请求用哪个凭据' },
@@ -5470,11 +5469,19 @@ function togglePlatformBanMenu(ev) {
 // 点击外部收起（选项区在菜单内不收起；菜单此时挂在 body 下）
 document.addEventListener('click', ev => {
   const menu = _('platformBanMenu');
-  if (!pbMenuIsOpen(menu)) return;
-  if (menu.contains(ev.target)) return;
-  const box = _('platformBanBox');
-  if (box && box.contains(ev.target)) return;
-  pbMenuHide(menu);
+  if (pbMenuIsOpen(menu)) {
+    if (!menu.contains(ev.target)) {
+      const box = _('platformBanBox');
+      if (!(box && box.contains(ev.target))) pbMenuHide(menu);
+    }
+  }
+  const trMenu = _('trPlatMenu');
+  if (pbMenuIsOpen(trMenu)) {
+    if (!trMenu.contains(ev.target)) {
+      const trBox = _('trPlatBox');
+      if (!(trBox && trBox.contains(ev.target))) pbMenuHide(trMenu);
+    }
+  }
 });
 // pbMenuToggle/pbMenuHide 点选式下拉的开关：打开时把菜单挂到 body、fixed
 // 定位到 anchor 正下方（同宽）。section 的 overflow:hidden 与 rise 动画层叠
@@ -5509,10 +5516,12 @@ window.addEventListener('scroll', ev => {
   if (t instanceof Element && t.closest('.pb-menu')) return; // 菜单自身滚动不关
   pbMenuHide(_('platformBanMenu'));
   pbMenuHide(_('ppBulkMenu'));
+  pbMenuHide(_('trPlatMenu'));
 }, true);
 window.addEventListener('resize', () => {
   pbMenuHide(_('platformBanMenu'));
   pbMenuHide(_('ppBulkMenu'));
+  pbMenuHide(_('trPlatMenu'));
 });
 // fetchPlatformBans 轻量拉取封禁集（2026-11-02 用户定）：只更新已落盘的
 // platformBans，**不触碰 platformBansStaged**——批量测试在任意页发起时用它
@@ -6802,6 +6811,41 @@ async function saveAccountStrategy() {
     loadProxyPool();
   }
 }
+// ---- 工具改名（封禁平台同款点选下拉）----
+// trStaged 暂存勾选集；一期的生效平台只有四家（trae/wb 二期不暴露勾选）。
+let trStaged = new Set();
+function trPlatOptions() {
+  return [
+    { key: 'cline', label: 'Cline' },
+    { key: 'zen', label: 'OpenCode' },
+    { key: 'freepi', label: 'FreePI' },
+    { key: 'other', label: 'Other' },
+  ];
+}
+function renderToolRename() {
+  const chips = _('trPlatChips'), menu = _('trPlatMenu');
+  if (!chips || !menu) return;
+  const opts = trPlatOptions();
+  chips.innerHTML = opts.filter(o => trStaged.has(o.key)).map(o =>
+    '<span class="pr-chip"><span>' + esc(o.label) + '</span>' +
+    '<button type="button" onclick="event.stopPropagation();stageToolRename(\'' + esc(o.key) + '\',false)">×</button></span>'
+  ).join('');
+  menu.innerHTML = opts.map(o =>
+    '<label class="pb-row">' +
+      '<input type="checkbox"' + (trStaged.has(o.key) ? ' checked' : '') +
+      ' data-tr="' + esc(o.key) + '" onchange="stageToolRename(this.dataset.tr, this.checked)">' +
+      '<span>' + esc(o.label) + '</span>' +
+    '</label>').join('');
+}
+function toggleToolRenameMenu(ev) {
+  ev.stopPropagation();
+  pbMenuToggle(_('trPlatMenu'), _('trPlatBox'), renderToolRename);
+}
+function stageToolRename(key, on) {
+  if (on) trStaged.add(key); else trStaged.delete(key);
+  renderToolRename();
+}
+
 // loadToolRename 读取工具改名全局配置（GET /admin/api/config 的 toolRename 段）。
 async function loadToolRename() {
   try {
@@ -6810,10 +6854,8 @@ async function loadToolRename() {
     const p = tr.platforms || {};
     _('trEnabled').checked = !!tr.enabled;
     _('trPrefix').value = tr.prefix || '';
-    _('trPlatCline').checked = !!p.cline;
-    _('trPlatZen').checked = !!p.zen;
-    _('trPlatFreepi').checked = !!p.freepi;
-    _('trPlatOther').checked = !!p.other;
+    trStaged = new Set(trPlatOptions().filter(o => p[o.key]).map(o => o.key));
+    renderToolRename();
   } catch (e) { /* 面板首屏容错:读不到就保持默认 */ }
 }
 
@@ -6824,10 +6866,10 @@ async function saveToolRename() {
     enabled: _('trEnabled').checked,
     prefix: (_('trPrefix').value || '').trim(),
     platforms: {
-      cline: _('trPlatCline').checked,
-      zen: _('trPlatZen').checked,
-      freepi: _('trPlatFreepi').checked,
-      other: _('trPlatOther').checked,
+      cline: trStaged.has('cline'),
+      zen: trStaged.has('zen'),
+      freepi: trStaged.has('freepi'),
+      other: trStaged.has('other'),
     },
   } };
   try {
