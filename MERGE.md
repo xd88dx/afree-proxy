@@ -465,6 +465,7 @@ WorkBuddy 一栏的基线同时登记在 `scripts/workbuddy-vendor-baseline.json
   - **排除规则下拉固定高度（用户报：最后一行下拉巨大）**：根因=prMenuPlace 的 above 用 secTop 计算，section 顶滚出视口后为负值导致 avail 放大到上千像素。修法=视口上沿钳制（max(0,secTop)）+ 统一 280px 封顶（视口不足取实际可用）——所有规则下拉同高内部滚动，实测末行展开 top=34/bottom=314 完整落在视口内。
   - **平台展示顺序统一（用户定：Cline→FreePI→OpenCode→TraeWork→WorkBuddy→Other）**：侧栏导航/tab 拼装、仪表盘概览+统计卡、代理池全局策略走池开关卡、排除规则卡片（REORDER_PLATFORMS）、批量封禁下拉（BLACKLIST_PLATFORM_LABEL）、自定义别名平台下拉（补 FreePI）、/v1/models 聚合段序（freepi 前插、wb 后移）。逻辑面（分发链 if-else、registry 注册序）不随之重排。
   - 容器镜像 test-20261121-2010；验证：build/vet 全量全绿、三 module 测试+race 全绿、审计清零、浏览器截图核对。
+- **同日六次——排除/封禁/改名三处下拉「点一个候选就收起」回归修复（用户报）**：根因=ppBulkPick/stageToolRename/stagePlatformBan 的 innerHTML 重渲染会把被点候选移出文档，click 冒泡到文档级关闭器时 `menu.contains(游离节点)` 恒 false → 误判「点在外面」收起菜单。修法=三个关闭器统一加游离判定（`!target.isConnected` 视作菜单内部交互）。浏览器实测：批量追加框点两个候选菜单保持+chips 增长、封禁平台下拉同验。pr-menu（规则卡菜单）的 mousedown 关闭器先于重建放行，无此隐患。
 - **CI Vet job 五连红根因修复（38abe6e 起全红，用户报「工作流失败」）**：上游 5b40d46 新增的 `panel/login_proxy_test.go` 两处 `t.Cleanup` **重建裸 client 而非还原原值**（`loginHTTP = &http.Client{Timeout: 30s}` 无显式 Transport）——shuffle 下任何 LoginProxy 测试跑完后 loginHTTP 永久变成裸 client，`TestLoginHTTPDisablesH2`（断言显式 *http.Transport）排在后面即炸。本地非 shuffle 全量测试过了、CI shuffled 挂——顺序依赖类缺陷的排查口径：**vendor 测试改动后必须本地 shuffle 复跑**。修法=捕获原值还原（doJSON 两测试的既有正确模式），登记 vendor 脚本 PRESERVE；shuffle 8 连全绿。最后绿=a80ba98，首红=d448732（wb 同步 5e61f34 被 d448732 连推取消未单独跑 CI，故首红直接落在 aoci 提交上）。
 
 ### 2026-11-19 — 主线复核（无更新）+ 副线 opencode2api 评估（5 提交，零吸纳+1 取证）

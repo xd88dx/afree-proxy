@@ -1,7 +1,7 @@
 {
   "version": 1,
   "created_at": "2026-11-09T17:13:34Z",
-  "updated_at": "2026-11-21T11:51:01Z",
+  "updated_at": "2026-11-21T12:52:02Z",
   "files": {
     ".agents/skills/add-platform/SKILL.md": {
       "role": "index",
@@ -494,9 +494,9 @@
     },
     "MERGE.md": {
       "role": "index",
-      "sha256": "1297dd0e5dd6bce657e15a9a4c32b2ea70fb4347859d354ebe116f67dedce4ea",
-      "size": 174960,
-      "normalized_sha256": "1297dd0e5dd6bce657e15a9a4c32b2ea70fb4347859d354ebe116f67dedce4ea"
+      "sha256": "f1e9760dca12047776bee3e51b539b9725d67a7c803c4c5011477c6aa6dc470a",
+      "size": 176452,
+      "normalized_sha256": "f1e9760dca12047776bee3e51b539b9725d67a7c803c4c5011477c6aa6dc470a"
     },
     "PROJECT.md": {
       "role": "index",
@@ -518,9 +518,9 @@
     },
     "aoci.code.txt": {
       "role": "index",
-      "sha256": "c08da6fe959f1d8bd383fa3a8f181025ba22288442575f0daec4d279ec9e47da",
-      "size": 243650,
-      "normalized_sha256": "c08da6fe959f1d8bd383fa3a8f181025ba22288442575f0daec4d279ec9e47da"
+      "sha256": "63e6d1e9050159120755f7f2e712d3010130d31a200e28f59fb17d7fb0b3176c",
+      "size": 243817,
+      "normalized_sha256": "63e6d1e9050159120755f7f2e712d3010130d31a200e28f59fb17d7fb0b3176c"
     },
     "aoci.meta.txt": {
       "role": "index",
@@ -2538,10 +2538,10 @@
     },
     "internal/panel/html.go": {
       "role": "index",
-      "sha256": "f3f73e24ff54846214b7235fe38eea09d1db7c732b72e7cabe93a7a5f0555384",
-      "size": 528984,
-      "normalized_sha256": "f3f73e24ff54846214b7235fe38eea09d1db7c732b72e7cabe93a7a5f0555384",
-      "format_sha256": "f3f73e24ff54846214b7235fe38eea09d1db7c732b72e7cabe93a7a5f0555384",
+      "sha256": "0f6dfb9f349d59ec24283765dfbb2d177948a168488b60e42fd590f1bf6807d9",
+      "size": 529365,
+      "normalized_sha256": "0f6dfb9f349d59ec24283765dfbb2d177948a168488b60e42fd590f1bf6807d9",
+      "format_sha256": "0f6dfb9f349d59ec24283765dfbb2d177948a168488b60e42fd590f1bf6807d9",
       "format_kind": "gofmt"
     },
     "internal/panel/models_refresh.go": {
@@ -6766,10 +6766,10 @@
     },
     "modules/workbuddy2api/internal/panel/login_proxy_test.go": {
       "role": "observe",
-      "sha256": "9e5dd66d711c7f72feeb13c5c4ff673d2a8d187ad8779c23e210793fe3fba941",
-      "size": 8198,
-      "normalized_sha256": "9e5dd66d711c7f72feeb13c5c4ff673d2a8d187ad8779c23e210793fe3fba941",
-      "format_sha256": "9e5dd66d711c7f72feeb13c5c4ff673d2a8d187ad8779c23e210793fe3fba941",
+      "sha256": "9e658ce338e42257018575de6907fc4585f401600359cd6b0db1ddebe61bbd69",
+      "size": 8178,
+      "normalized_sha256": "9e658ce338e42257018575de6907fc4585f401600359cd6b0db1ddebe61bbd69",
+      "format_sha256": "9e658ce338e42257018575de6907fc4585f401600359cd6b0db1ddebe61bbd69",
       "format_kind": "gofmt"
     },
     "modules/workbuddy2api/internal/panel/login_realm_test.go": {
@@ -11244,9 +11244,9 @@
     },
     "scripts/vendor_workbuddy.py": {
       "role": "index",
-      "sha256": "3b4539395c84cd7b79d254e8fa817976f320c789fff1d8181b64bad2c71acafc",
-      "size": 24571,
-      "normalized_sha256": "3b4539395c84cd7b79d254e8fa817976f320c789fff1d8181b64bad2c71acafc"
+      "sha256": "a4bf679edb6f0fb235444b3bea6a51c4f326bf6decdec6097e62e421866e2de3",
+      "size": 24879,
+      "normalized_sha256": "a4bf679edb6f0fb235444b3bea6a51c4f326bf6decdec6097e62e421866e2de3"
     },
     "scripts/wb_probe.go": {
       "role": "index",

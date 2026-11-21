@@ -5468,17 +5468,21 @@ function togglePlatformBanMenu(ev) {
   pbMenuToggle(_('platformBanMenu'), _('platformBanBox'), renderPlatformBan);
 }
 // 点击外部收起（选项区在菜单内不收起；菜单此时挂在 body 下）
+// innerHTML 重渲染会把被点节点移出文档——冒泡到这里的 ev.target 已游离
+// （menu.contains 对游离节点恒 false），误判「点在外面」→ 候选点一个就收起
+// （2026-11-21 实证）。游离 target 一律视作菜单内部交互。
+const detachedIn = (menu, t) => !(t instanceof Element) || !t.isConnected || menu.contains(t);
 document.addEventListener('click', ev => {
   const menu = _('platformBanMenu');
   if (pbMenuIsOpen(menu)) {
-    if (!menu.contains(ev.target)) {
+    if (!detachedIn(menu, ev.target)) {
       const box = _('platformBanBox');
       if (!(box && box.contains(ev.target))) pbMenuHide(menu);
     }
   }
   const trMenu = _('trPlatMenu');
   if (pbMenuIsOpen(trMenu)) {
-    if (!trMenu.contains(ev.target)) {
+    if (!detachedIn(trMenu, ev.target)) {
       const trBox = _('trPlatBox');
       if (!(trBox && trBox.contains(ev.target))) pbMenuHide(trMenu);
     }
@@ -6737,7 +6741,7 @@ function ppBulkApply() {
 document.addEventListener('click', ev => {
   const menu = _('ppBulkMenu');
   if (!pbMenuIsOpen(menu)) return;
-  if (menu.contains(ev.target)) return;
+  if (detachedIn(menu, ev.target)) return;
   const box = _('ppBulkBox');
   if (box && box.contains(ev.target)) return;
   pbMenuHide(menu);
