@@ -1,7 +1,7 @@
 {
   "version": 1,
   "created_at": "2026-11-09T17:13:34Z",
-  "updated_at": "2026-11-21T16:05:22Z",
+  "updated_at": "2026-11-21T16:56:29Z",
   "files": {
     ".agents/skills/add-platform/SKILL.md": {
       "role": "index",
@@ -494,9 +494,9 @@
     },
     "MERGE.md": {
       "role": "index",
-      "sha256": "5b112abcce1cb73734f1521e2dba0ace116b587922726d8a0358ec7fffc8ffa3",
-      "size": 180928,
-      "normalized_sha256": "5b112abcce1cb73734f1521e2dba0ace116b587922726d8a0358ec7fffc8ffa3"
+      "sha256": "e39e5245afc503b6bdfa8beafd79e04de1bddc6d59fd4f38f9f59ef7b8a2c3f1",
+      "size": 181350,
+      "normalized_sha256": "e39e5245afc503b6bdfa8beafd79e04de1bddc6d59fd4f38f9f59ef7b8a2c3f1"
     },
     "PROJECT.md": {
       "role": "index",
@@ -518,9 +518,9 @@
     },
     "aoci.code.txt": {
       "role": "index",
-      "sha256": "00cba4906445acead89db8ddf6b40cf36a52a4cc96bc09f6a39dfdc654ef2bc5",
-      "size": 246086,
-      "normalized_sha256": "00cba4906445acead89db8ddf6b40cf36a52a4cc96bc09f6a39dfdc654ef2bc5"
+      "sha256": "4b79494fd250afcc4173ee6d2022f109fcbfdceb41b57de835b1aa60e7076a5b",
+      "size": 246602,
+      "normalized_sha256": "4b79494fd250afcc4173ee6d2022f109fcbfdceb41b57de835b1aa60e7076a5b"
     },
     "aoci.meta.txt": {
       "role": "index",
@@ -1322,10 +1322,10 @@
     },
     "internal/app/proxy_rules_test.go": {
       "role": "observe",
-      "sha256": "3f6024bd21f5cf5a4e823db1c0f38974359d9cb1ffb2b27529cff8c8c95d35c2",
-      "size": 2232,
-      "normalized_sha256": "3f6024bd21f5cf5a4e823db1c0f38974359d9cb1ffb2b27529cff8c8c95d35c2",
-      "format_sha256": "3f6024bd21f5cf5a4e823db1c0f38974359d9cb1ffb2b27529cff8c8c95d35c2",
+      "sha256": "c1a00d2947257c0b71cfb4f42d8275aa7ce56414dd9b0ac89fa3aa7b4788a409",
+      "size": 2242,
+      "normalized_sha256": "c1a00d2947257c0b71cfb4f42d8275aa7ce56414dd9b0ac89fa3aa7b4788a409",
+      "format_sha256": "c1a00d2947257c0b71cfb4f42d8275aa7ce56414dd9b0ac89fa3aa7b4788a409",
       "format_kind": "gofmt"
     },
     "internal/app/proxy_subscription.go": {
@@ -1658,10 +1658,10 @@
     },
     "internal/app/zen_bridge.go": {
       "role": "index",
-      "sha256": "8b83dd63908cd8b158f311bf5caa7ba53a82acb85d41450b9864f14eeeb702a8",
-      "size": 15097,
-      "normalized_sha256": "8b83dd63908cd8b158f311bf5caa7ba53a82acb85d41450b9864f14eeeb702a8",
-      "format_sha256": "8b83dd63908cd8b158f311bf5caa7ba53a82acb85d41450b9864f14eeeb702a8",
+      "sha256": "7562e42c5ccab3b8773fb2a0e14ae971457833df4bcbb05da9e791b3a63c6d32",
+      "size": 15305,
+      "normalized_sha256": "7562e42c5ccab3b8773fb2a0e14ae971457833df4bcbb05da9e791b3a63c6d32",
+      "format_sha256": "7562e42c5ccab3b8773fb2a0e14ae971457833df4bcbb05da9e791b3a63c6d32",
       "format_kind": "gofmt"
     },
     "internal/app/zen_capture.go": {
@@ -1994,10 +1994,10 @@
     },
     "internal/exitpool/binding.go": {
       "role": "index",
-      "sha256": "4cbd4cad50dcad15014342c3ba0890cc89b7514cc24f78b27c56d64393bc9332",
-      "size": 3547,
-      "normalized_sha256": "4cbd4cad50dcad15014342c3ba0890cc89b7514cc24f78b27c56d64393bc9332",
-      "format_sha256": "4cbd4cad50dcad15014342c3ba0890cc89b7514cc24f78b27c56d64393bc9332",
+      "sha256": "fc969f2ea5544a92db72f60ca1ff8771631da410470dc03d241a13e4fa4f9629",
+      "size": 5691,
+      "normalized_sha256": "fc969f2ea5544a92db72f60ca1ff8771631da410470dc03d241a13e4fa4f9629",
+      "format_sha256": "fc969f2ea5544a92db72f60ca1ff8771631da410470dc03d241a13e4fa4f9629",
       "format_kind": "gofmt"
     },
     "internal/exitpool/binding_core.go": {
@@ -4854,10 +4854,10 @@
     },
     "internal/zen/zen.go": {
       "role": "index",
-      "sha256": "8ac08019d248357c8b78f5cf81057122dbad553d2b8a932e992d3e55c0159f38",
-      "size": 170684,
-      "normalized_sha256": "8ac08019d248357c8b78f5cf81057122dbad553d2b8a932e992d3e55c0159f38",
-      "format_sha256": "8ac08019d248357c8b78f5cf81057122dbad553d2b8a932e992d3e55c0159f38",
+      "sha256": "5b0b641bc43f75ce0b41a3d1cf1ee8b8b39e59ed430eb3896435b918e201483e",
+      "size": 168876,
+      "normalized_sha256": "5b0b641bc43f75ce0b41a3d1cf1ee8b8b39e59ed430eb3896435b918e201483e",
+      "format_sha256": "5b0b641bc43f75ce0b41a3d1cf1ee8b8b39e59ed430eb3896435b918e201483e",
       "format_kind": "gofmt"
     },
     "internal/zen/zen_baseurl_test.go": {
