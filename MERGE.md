@@ -665,6 +665,7 @@ WorkBuddy 一栏的基线同时登记在 `scripts/workbuddy-vendor-baseline.json
 - **权重优化端点** /admin/api/freepi/weights/optimize（142 路由）：串行刷新启用 key 余额（freepiRefreshEnabledCredits 与刷新额度端点共用）→ 返回额度/权重/占比计划，弹窗展示。与 wb share optimize 差异：wb 有快过期批次需 FEFO+cron+手动占比表，freepi 日额度统一重置——按余额加权即最优，无需 cron 与手动占比。
 - 验证：go build/vet 全绿、主模块全量测试过（含 TestPickKeyCreditWeighted：10000:1 权重 200 次抽样 ≥180 断言）；i18n/endpoint 审计清零；node --check tailHTML 过。
 - **同日收敛（用户拍板）**：权重优化按钮/计划弹窗/端点删除——刷新部分与「刷新额度」同函数（freepiRefreshEnabledCredits）、计划信息表内额度/权重列已展示，属死配置判据冗余；补 startFreepiCreditsRefresher 后台周期 /me 刷新（30 分钟 + 启动抖动错峰，免费只读量极小，与目录 refresher 同口径不判 ONLY_ROUTER）保鲜权重数据源——日常消耗不更新快照，陈旧权重会让差异化额度（邀请加成号）趋平退化。调度加权与表内额度/权重列不受影响。
+- **同日微调**：权重列只展示占比%（权重本体=剩余额度，数值与额度列重复，用户定冗余）；实测口径补充——新号日额度 6,000（15,000 为 established 老号档），老新号混池时权重天然按余额比例分流。
 
 ## 副线（opencode2api / Trae2api-cn 吸收评估）+ magpie 参考线
 

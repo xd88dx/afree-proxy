@@ -8246,10 +8246,9 @@ function renderFreepiKeys(ks) {
             (k.handle ? ' · ' + k.handle : '')) + '">' +
         '<span class="mono">' + esc(fmtNum(k.creditsLeft)) + '/' + esc(fmtNum(k.creditsAllowance)) + '</span></td>'
       : '<td style="text-align:center">—</td>';
-    // 权重列：调度权重（=剩余额度，未知 1）+ 占比小字（wb 权重列同思想）
-    const weightCell = (k.weight != null)
-      ? '<td style="text-align:center;white-space:nowrap" title="' + esc(T('freepi_weight_hint')) + '">' + esc(fmtNum(k.weight)) +
-        (k.weightShare ? '<div style="font-size:10px;color:var(--text3)">' + esc(k.weightShare) + '%</div>' : '') + '</td>'
+    // 权重列：只展示 traffic 占比（权重本体=剩余额度，数值已在额度列，不重复展示）
+    const weightCell = (k.weightShare)
+      ? '<td style="text-align:center;white-space:nowrap" title="' + esc(T('freepi_weight_hint')) + '">' + esc(k.weightShare) + '%</td>'
       : '<td style="text-align:center">—</td>';
     const pMain = k.proxyMain || '';
     const pBackup = k.proxyBackup || '';
