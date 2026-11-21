@@ -93,8 +93,9 @@ func newLoginProxyEnv(t *testing.T) (p *Panel, m *proxypool.Manager, nodeID stri
 	}
 	nodeID = res[0].ID
 
+	oldHTTP := loginHTTP
 	loginHTTP = &http.Client{Timeout: 5 * time.Second}
-	t.Cleanup(func() { loginHTTP = &http.Client{Timeout: 30 * time.Second} })
+	t.Cleanup(func() { loginHTTP = oldHTTP })
 
 	withTestSite(t, up.URL, loginsite.SiteCN)
 
@@ -186,8 +187,9 @@ func TestLoginRouteDirectWhenPoolEmpty(t *testing.T) {
 	}
 	t.Cleanup(m.Close)
 
+	oldHTTP := loginHTTP
 	loginHTTP = &http.Client{Timeout: 5 * time.Second}
-	t.Cleanup(func() { loginHTTP = &http.Client{Timeout: 30 * time.Second} })
+	t.Cleanup(func() { loginHTTP = oldHTTP })
 
 	p := New(Config{Pool: pool.New(""), ProxyPool: m, AuthDir: filepath.Join(t.TempDir(), "auths")})
 	rec := httptest.NewRecorder()

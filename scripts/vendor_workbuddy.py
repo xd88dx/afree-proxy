@@ -239,6 +239,10 @@ PRESERVE_RELATIVE = (
     # NeedsRefresh(1h) 窗口成时间炸弹，改相对时钟（now+28d）——afree 首个补丁，
     # 晚于全量登记，不写会被 re-vendor 冲回写死值（logstore_test ④ 同款教训）。
     Path("auth/expires_test.go"),
+    # 2026-11-21 二次补登记：login_proxy_test.go 两处 t.Cleanup 重建裸 client
+    # 而非还原原值——shuffle 下污染 TestLoginHTTPDisablesH2（CI Vet job
+    # 五连红根因），改捕获原值还原。不写会被 re-vendor 冲回坏 cleanup。
+    Path("panel/login_proxy_test.go"),
     Path("config/config.go"),
     Path("config/config_test.go"),
     Path("livecfg/livecfg.go"),
