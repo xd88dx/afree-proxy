@@ -165,9 +165,12 @@ func normalizeZenKeys(cfg *ZenConfigData)             { zen.NormalizeZenKeys(cfg
 func pickZenKey() string                              { return zen.PickZenKey() }
 func pinProxyPerKeyEnabled() bool                     { return zen.PinProxyPerKeyEnabled() }
 func proxyIndex(p string) int                         { return zen.ProxyIndex(p) }
-func proxyRuleKindValid(kind string) bool             { return zen.ProxyRuleKindValid(kind) }
+
+// 代理规则 kind 白名单/排除表清理原语住 exitpool（2026-11-22 自 zen 迁入，
+// 语义归属代理规则域；此处保留小写别名供既有 handler/测试零改动消费）。
+func proxyRuleKindValid(kind string) bool { return exitpool.ProxyRuleKindValid(kind) }
 func pruneProxyExclusions(ex map[string][]string, pool []string) map[string][]string {
-	return zen.PruneProxyExclusions(ex, pool)
+	return exitpool.PruneProxyExclusions(ex, pool)
 }
 func reconcileEgressBindings() { zen.ReconcileEgressBindings() }
 func reconcileZenKeyRouting(next *ZenConfigData, cur *ZenConfigData) {
@@ -289,7 +292,7 @@ func recordProxyTestOutcome(proxyURL string, ok bool, err error, elapsedMs int64
 	exitpool.RecordProxyTestOutcome(proxyURL, ok, err, elapsedMs)
 }
 
-const proxyRuleDirectKey = zen.ProxyRuleDirectKey
+const proxyRuleDirectKey = exitpool.ProxyRuleDirectKey
 
 func ZenMergeTools(clientTools []any, gateTools []any) []any {
 	return zen.ZenMergeTools(clientTools, gateTools)
@@ -307,7 +310,7 @@ func BuildZenBody(params map[string]any, stream bool) map[string]any {
 
 var ZenGateToolSpecs = zen.ZenGateToolSpecs
 
-var proxyRuleKinds = zen.ProxyRuleKinds
+var proxyRuleKinds = exitpool.ProxyRuleKinds
 
 func responsesContentToInput(m map[string]any) { zen.ResponsesContentToInput(m) }
 

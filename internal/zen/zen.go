@@ -17,7 +17,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -375,52 +374,9 @@ type ZenConfigData struct {
 	// 包级 zenKeyCool/zenKeyTokens（zenKeyMu 保护），冷却落盘持久化语义不变。
 }
 
-// ProxyRuleKinds 自动分配规则（ProxyExclusions/ProxyBindCaps）的基础平台
-// kind，与前端凭据页 kind / REORDER_KINDS 同一口径。
-var ProxyRuleKinds = map[string]bool{
-	"acc": true, "trae": true, "key": true, "wb": true,
-	"other": true,
-}
-
-// OtherRuleKindRe 匹配 Other 子平台粒度的规则 kind（other:<slug>）。面板把
-// Other 渲染成归类行，其规则按子平台独立配置；slug 由后端生成（op_xxxxxxxx），
-// 这里只校验形态，避免子平台被删/临时加载失败时整表保存失败。
-var OtherRuleKindRe = regexp.MustCompile(`^other:[A-Za-z0-9_-]{1,64}$`)
-
-// ProxyRuleKindValid 规则 kind 是否合法：基础平台，或 other:<slug>。
-func ProxyRuleKindValid(kind string) bool {
-	return ProxyRuleKinds[kind] || OtherRuleKindRe.MatchString(kind)
-}
-
-// ProxyRuleDirectKey 直连在排除表里的哨兵键。池条目一律带 scheme
-// （http(s)://、socks5:// 等），不会与之冲突。含义 = 不允许该平台的自动分配
-// （一键代理 / 延迟重排）产出"直连"出口 —— 例如某些子平台不对大陆服务，
-// 直连必被上游拒绝，批量分配就不再把直连同给任何子平台凭据；手动绑定
-// 与运行时路由不受影响。池变动清理时该键永不删除。
-const ProxyRuleDirectKey = "__direct__"
-
-// PruneProxyExclusions 按代理池清理排除表：已不在池内的代理条目丢弃（它们
-// 永远不会被自动分配命中，留着只是垃圾配置），直连哨兵键保留 —— 它不是池
-// 条目，且不随池变动失效。面板保存池与配置导入（跨机迁移）共用此口径。
-func PruneProxyExclusions(ex map[string][]string, pool []string) map[string][]string {
-	if len(ex) == 0 {
-		return ex
-	}
-	inPool := make(map[string]bool, len(pool))
-	for _, p := range pool {
-		inPool[p] = true
-	}
-	out := make(map[string][]string, len(ex))
-	for p, kinds := range ex {
-		if inPool[p] || p == ProxyRuleDirectKey {
-			out[p] = kinds
-		}
-	}
-	if len(out) == 0 {
-		return nil
-	}
-	return out
-}
+// ProxyRuleKinds 等代理规则 kind 白名单与排除表清理原语已迁
+// internal/exitpool/binding.go（2026-11-22：消费方全在 app 层，与 zen 平台
+// 调度无关，语义归属代理规则域）；app 侧经 zen_bridge 改指 exitpool。
 
 // ZenKeyAutoHarvestEnabled 报告 key 是否参与自动铸造（启动补缺 / 403 触发 /
 // 周期巡检 / 面板 Mint）。铸造跟随路由启用：路由关 = 该 key 不出请求，无需
