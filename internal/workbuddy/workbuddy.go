@@ -71,6 +71,42 @@ type WorkbuddyServer interface {
 
 var WorkbuddySub *WorkbuddySubsystem
 
+// replayWbDisplayOrder 把 wkbd-config.json displayOrder 回放到 vendor 池
+// （pool.SetOrder 仅影响展示顺序，不参与选号路由）。wkbd 侧未记录顺序时做
+// 一次升级播种：把 vendor state.json 的 order（旧落盘位置，运行态不进同步
+// 面）搬进 wkbd-config，此后顺序意志随配置同步面走。
+func replayWbDisplayOrder(p *wbbridge.Pool, stateFile string) {
+	order := WkbdConfigDisplayOrder()
+	if len(order) == 0 {
+		if seeded := wbStateOrderSeed(stateFile); len(seeded) > 0 {
+			WkbdSetDisplayOrder(seeded)
+			order = seeded
+			log.Printf("workbuddy: display order seeded from state.json into wkbd-config (%d uids)", len(seeded))
+		}
+	}
+	if len(order) > 0 {
+		if n := p.SetOrder(order); n > 0 {
+			log.Printf("workbuddy: display order replayed (%d accounts)", n)
+		}
+	}
+}
+
+// wbStateOrderSeed 从 vendor state.json 读取 order 字段（升级播种用）。
+// 文件缺失、损坏或无 order 时返回 nil——不猜写。
+func wbStateOrderSeed(stateFile string) []string {
+	raw, err := os.ReadFile(stateFile)
+	if err != nil {
+		return nil
+	}
+	var snap struct {
+		Order []string `json:"order"`
+	}
+	if json.Unmarshal(raw, &snap) != nil {
+		return nil
+	}
+	return snap.Order
+}
+
 // StartWorkBuddy 装配子系统。返回错误时调用方只记录日志并继续启动 afree-proxy，
 // 保证现有 Cline/OpenCode 链路不受 WorkBuddy 配置故障影响。
 func StartWorkBuddy() (*WorkbuddySubsystem, error) {
@@ -113,6 +149,12 @@ func StartWorkBuddy() (*WorkbuddySubsystem, error) {
 		log.Printf("workbuddy: load auth dir %s: %v", cfg.AuthDir, err)
 	}
 	p.SyncToDir(auths)
+	// 账号显示顺序回放（2026-11-21 顺序意志外置到 wkbd-config.json
+	// displayOrder 段）：有自定义顺序时覆盖 RestoreFromSnapshot 带回的
+	// state.json order（同步源 iStore 意志优先）；空 = 未记录 = 保持 vendor
+	// 原序。首次升级时从 state.json order 播种一份进 wkbd-config，此后随
+	// 配置同步面走，两环境不再各自漂移。
+	replayWbDisplayOrder(p, stateFile)
 	p.SetBreaker(cfg.Pool.BreakerThreshold, cfg.BreakerCooldownDur, cfg.BreakerCooldownMaxD)
 	p.SetMaxInFlight(cfg.Pool.MaxInFlight)
 	p.SetMaxInFlightGlobal(cfg.Pool.MaxInFlightGlobal)

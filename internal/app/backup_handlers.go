@@ -94,6 +94,7 @@ func handleAdminConfigExport(w http.ResponseWriter, r *http.Request) {
 		WorkBuddyUseProxies:    gateway.PlatformUseProxies("workbuddy"),
 		FreepiUseProxies:       gateway.PlatformUseProxies("freepi"),
 		WorkBuddyAccountPrefs:  backup.ExportWorkbuddyAccountPrefs(),
+		WorkBuddyDisplayOrder:  backup.ExportWorkbuddyDisplayOrder(),
 		WorkBuddyShareOptimize: workbuddy.WkbdConfigShareOptimize(),
 		State: &backup.StateBackup{
 			Cline:       clineState,
@@ -384,6 +385,9 @@ func handleAdminConfigImport(w http.ResponseWriter, r *http.Request) {
 	if cb.WorkBuddyAccountPrefs != nil {
 		imported["workbuddyAccountPrefs"] = backup.ImportWorkbuddyAccountPrefs(cb.WorkBuddyAccountPrefs)
 	}
+	if cb.WorkBuddyDisplayOrder != nil {
+		imported["workbuddyDisplayOrder"] = backup.ImportWorkbuddyDisplayOrder(cb.WorkBuddyDisplayOrder)
+	}
 	if cb.WorkBuddyShareOptimize != nil {
 		workbuddy.MutateWkbdConfig(func(k *workbuddy.WkbdConfigData) { k.ShareOptimize = cb.WorkBuddyShareOptimize })
 		if workbuddy.WorkbuddySub != nil {
@@ -507,6 +511,13 @@ func handleAdminConfigImport(w http.ResponseWriter, r *http.Request) {
 		}
 		if wbCfg {
 			imported["workbuddyConfig"] = 1
+		}
+	}
+	// wb 显示顺序回放必须在 auths 段之后：pool.SetOrder 会过滤池外 uid，
+	// 提前回放等于把未导入账号的位次丢给「未入序排尾」（重扫已把账号带回池）。
+	if cb.WorkBuddy != nil && len(cb.WorkBuddyDisplayOrder) > 0 {
+		if sub := workbuddy.WorkbuddySub; sub != nil && (*sub).Pool != nil {
+			(*sub).Pool.SetOrder(cb.WorkBuddyDisplayOrder)
 		}
 	}
 

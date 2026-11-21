@@ -42,6 +42,12 @@ type WkbdConfigData struct {
 	// AccountPrefs 账号意志（键 = UID）。vendor auth 结构体的内存三键（反代
 	// 开关/账号总开关/昵称锁）由此回填与持久化；nil 值 = 未记录 = 启用。
 	AccountPrefs map[string]WkbdAccountPref `json:"accountPrefs,omitempty"`
+	// DisplayOrder 账号显示顺序（UID 列表，2026-11-21 外置）。原随 vendor
+	// state.json order 字段落盘——该文件属运行态不进同步面，两环境拖拽顺序
+	// 各自漂移；外置后随本文件走（rsync 部署含 wkbd-config.json），重启由
+	// StartWorkBuddy 经 pool.SetOrder 回放。仅影响面板列表展示，不参与选号
+	// 路由（与 trae-config.json displayOrder 同构）。
+	DisplayOrder []string `json:"displayOrder,omitempty"`
 	// ShareOptimize 凭据权重优化定时任务（2026-11-15 立项，workbuddy_share.go）。
 	ShareOptimize *WkbdShareOptimize `json:"shareOptimize,omitempty"`
 }
@@ -219,6 +225,33 @@ func WkbdConfigShareOptimize() *WkbdShareOptimize {
 	}
 	cp := *g.ShareOptimize
 	return &cp
+}
+
+// WkbdConfigDisplayOrder 账号显示顺序副本。nil/空 = 未记录 = 跟随 vendor
+// state.json 原序（升级前的旧落盘位置）。
+func WkbdConfigDisplayOrder() []string {
+	WkbdCfgMu.Lock()
+	defer WkbdCfgMu.Unlock()
+	g := LoadWkbdConfigLocked()
+	if len(g.DisplayOrder) == 0 {
+		return nil
+	}
+	return append([]string(nil), g.DisplayOrder...)
+}
+
+// WkbdSetDisplayOrder 整体替换账号显示顺序并落盘（面板拖拽重排 / 备份导入 /
+// 升级播种共用的唯一写入口）。内存回放由调用方经 pool.SetOrder 完成——本函数
+// 只管持久层。空列表 = 清除自定义顺序。
+func WkbdSetDisplayOrder(uids []string) {
+	WkbdCfgMu.Lock()
+	defer WkbdCfgMu.Unlock()
+	g := LoadWkbdConfigLocked()
+	if len(uids) == 0 {
+		g.DisplayOrder = nil
+	} else {
+		g.DisplayOrder = append([]string(nil), uids...)
+	}
+	SaveWkbdConfigLocked()
 }
 
 // WbProxiesEnabled WorkBuddy 未绑定账号是否走共享代理池，语义与

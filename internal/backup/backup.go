@@ -179,6 +179,10 @@ type ConfigBackup struct {
 	WorkBuddyUseProxies    *bool                                `json:"workbuddyUseProxies,omitempty"`
 	WorkBuddyAccountPrefs  map[string]workbuddy.WkbdAccountPref `json:"workbuddyAccountPrefs,omitempty"`
 	WorkBuddyShareOptimize *workbuddy.WkbdShareOptimize         `json:"workbuddyShareOptimize,omitempty"`
+	// WorkBuddyDisplayOrder wb 账号显示顺序（wkbd-config.json displayOrder
+	// 段，2026-11-21 补）。顺序意志唯一持久层在此，漏备份即跨机迁移后拖拽
+	// 顺序退回 UID 序。
+	WorkBuddyDisplayOrder []string `json:"workbuddyDisplayOrder,omitempty"`
 	// FreepiUseProxies freepi 走池开关（freepi-config.json 独立段）。2026-11-20 补。
 	FreepiUseProxies *bool `json:"freepiUseProxies,omitempty"`
 	// State 各平台 state 快照（2026-11-01）：与 *-state.json 落盘同形态的
@@ -228,6 +232,21 @@ func ExportWorkbuddyAccountPrefs() map[string]workbuddy.WkbdAccountPref {
 func ImportWorkbuddyAccountPrefs(in map[string]workbuddy.WkbdAccountPref) int {
 	workbuddy.WkbdSetAccountPrefs(in)
 	return len(in)
+}
+
+// ExportWorkbuddyDisplayOrder 快照 wb 账号显示顺序（wkbd-config.json
+// displayOrder 段；WkbdConfigDisplayOrder 已返回副本）。nil = 未记录顺序。
+func ExportWorkbuddyDisplayOrder() []string {
+	return workbuddy.WkbdConfigDisplayOrder()
+}
+
+// ImportWorkbuddyDisplayOrder 整体替换 wb 账号显示顺序，返回写入条数。
+// 只落盘——内存回放要求池已装载导入后的账号全集，由 backup_handlers 在
+// wb auths 段（ImportWorkbuddyBackup 的 AuthLoadDir 重扫）完成后显式
+// pool.SetOrder 完成；在此回放会把未导入账号的位次丢给「未入序排尾」。
+func ImportWorkbuddyDisplayOrder(uids []string) int {
+	workbuddy.WkbdSetDisplayOrder(uids)
+	return len(uids)
 }
 
 // ImportWorkbuddyProxyBindings 还原 WorkBuddy 出口绑定，返回写入条数。

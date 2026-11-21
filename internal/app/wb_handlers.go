@@ -200,6 +200,10 @@ func handleWorkbuddyPoolReorder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	n := (*workbuddy.WorkbuddySub).Pool.SetOrder(req.UIDs)
+	// 顺序意志唯一持久层在 wkbd-config.json displayOrder（2026-11-21 外置）：
+	// 进配置同步面，重启由 StartWorkBuddy 回放。上面的 Pool.SetOrder 是 vendor
+	// 原行为（state.json 落盘，本机即时生效），保留。
+	workbuddy.WkbdSetDisplayOrder(req.UIDs)
 	WriteAPI(w, http.StatusOK, apiResponse{Success: true, Message: "Order saved", Data: map[string]any{"ordered": n}})
 }
 
