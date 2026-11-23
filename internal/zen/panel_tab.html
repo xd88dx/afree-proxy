@@ -19,12 +19,15 @@
       <label class="hint" style="margin:0 0 0 6px" data-i18n="org_id_single_key_only">Org ID (single key only):</label>
       <input type="text" id="ocOrgID" placeholder="usually empty" data-i18n-placeholder="org_id_usually_empty" style="max-width:220px" title="x-opencode-org-id. Upstream validates this against the key's workspace: a wrong value returns 403 &quot;Workspace access denied&quot;, so sending nothing is always safe and is what the official client does for API keys. This field is only used when the pool has exactly ONE key and that key's org cannot be discovered; with two or more keys it is ignored entirely, because one value cannot match every key. Leave it empty unless you have a single key and know its exact org id." data-i18n-title="org_id_single_key_title">
     </div>
+    <details class="cred-fold" id="credFoldKey" open>
+      <summary><span data-i18n="credential_list">Credential list</span></summary>
     <div class="table-wrap" style="margin-bottom:10px">
       <table>
         <thead><tr><th style="width:50px">#</th><th style="width:130px" data-i18n="Account">Account</th><th title="x-opencode-org-id resolved per key from console/api/orgs; '- (fallback)' means the configured fallback is used because discovery returned nothing" data-i18n="org" data-i18n-title="org_col_title">Org</th><th data-i18n="Status">Status</th><th title="Counted locally by this proxy — not the official free quota" data-i18n="Today/Total tokens">Today/Total tokens</th><th data-i18n="Last used">Last used</th><th title="Main exit first, backup as fallback; both down = row skipped (isolation)." data-i18n="Proxy binding">Proxy binding</th><th style="width:130px;text-align:center" data-i18n="Actions">Actions</th><th style="text-align:center" title="Routing participation: unchecked keys never enter request rotation. Newly added keys start disabled — tick Pool to enable. Sessions are minted per upstream call." data-i18n="Pool">Pool</th></tr></thead>
         <tbody id="ocKeysBody"><tr><td colspan="9" class="empty">Loading...</td></tr></tbody>
       </table>
     </div>
+    </details>
     <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin:10px 6px 4px">
       <button class="btn btn-primary btn-sm" onclick="openZenKeyAddDialog()" data-i18n="add_credentials">Add credentials</button>
       <div style="display:flex;gap:8px">

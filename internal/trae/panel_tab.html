@@ -15,12 +15,15 @@
         <button class="btn btn-sm" onclick="runTraeCheckin()" title="Daily check-in for every account whose account switch is on (upstream schedule applies too)" data-i18n="check_in_all">Check in all</button>
       </span>
     </div>
+    <details class="cred-fold" id="credFoldTrae" open>
+      <summary><span data-i18n="credential_list">Credential list</span></summary>
     <div class="table-wrap">
       <table>
         <thead><tr><th style="width:44px">#</th><th style="width:150px" data-i18n="Account">Account</th><th data-i18n="Status">Status</th><th title="Remaining credits from the latest snapshot (auto-refreshed in the background; Test refreshes on demand)" data-i18n="Credits">Credits</th><th title="Counted locally by this proxy from upstream usage events" data-i18n="Today/Total tokens">Today/Total tokens</th><th data-i18n="Last used">Last used</th><th title="Main exit first, backup as fallback; both down = row skipped (isolation)." data-i18n="Proxy binding">Proxy binding</th><th style="width:130px;text-align:center" data-i18n="Actions">Actions</th><th style="text-align:center" data-i18n="gateway_switch" data-i18n-title="gateway_reverse_proxy_switch_unchecked_model_ses" title="Gateway (reverse proxy) switch: unchecked = model sessions never route to this account; check-in and all other maintenance tasks are unaffected. Can only be ticked while the account switch is on.">Gateway switch</th><th style="text-align:center" data-i18n="account_switch" data-i18n-title="account_master_switch_off_the_account_does_not_e" title="Account master switch. Off = the account does not exist: check-in, balance refresh and Test all skip it, and it never routes.">Account switch</th></tr></thead>
         <tbody id="traeAccountsBody"><tr><td colspan="10" class="empty">Loading...</td></tr></tbody>
       </table>
     </div>
+    </details>
     <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin:10px 6px 4px;flex-wrap:wrap">
       <button class="btn btn-primary btn-sm" onclick="openTraeAddDialog()" data-i18n="add_accounts">Add accounts</button>
       <span class="wb-toolbar">

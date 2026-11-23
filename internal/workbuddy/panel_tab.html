@@ -22,6 +22,8 @@
         <button class="btn btn-sm" onclick="runWorkbuddyBatch('keepalive_all')" data-i18n="refresh_login">Refresh login</button>
       </span>
     </div>
+    <details class="cred-fold" id="credFoldWb" open>
+      <summary><span data-i18n="credential_list">Credential list</span></summary>
     <div class="table-wrap">
       <table>
         <thead>
@@ -44,6 +46,7 @@
         </tbody>
       </table>
     </div>
+    </details>
     <div style="display:flex;align-items:center;gap:8px;margin:10px 6px 4px">
       <div style="flex:1;display:flex;gap:8px;justify-content:flex-start">
         <button class="btn btn-primary btn-sm" onclick="openWorkbuddyAdd()" data-i18n="add_account">Add account</button>

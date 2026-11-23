@@ -33,6 +33,7 @@
 ## 3. 账号列表 + 暂存编辑体系
 
 - 表结构：手写 `<thead>`（列含 title 说明）+ `<tbody id="xxxBody">`；行由 `loadXxx()` 以 innerHTML 模板渲染，**所有插值过 `esc()`**；uid 展示 `id.slice(0,10)+'…'`，完整值进 title。
+- 凭据表包进折叠容器（2026-11-23 用户定，六平台统一）：`<details class="cred-fold" id="credFold<Xxx>" open><summary><span data-i18n="credential_list">Credential list</span></summary>` 紧跟 section-body 开标签包住 `.table-wrap`，`</details>` 落在表格与页脚按钮排之间（按钮排保持常显）；开合态由共享 JS 记忆到 localStorage（`credfold.<id>`），新平台照样包裹即可、无需另写 JS。
 - 暂存编辑三件套（新列/新交互必须接线）：
   1. 快照变量：`accSnapshot` / `keySnapshot` / `wbSnapshot` / `traeAccSnapshot` / `orKeySnapshot` / `amdKeySnapshot` / `thKeySnapshot` / `otherKeySnapshot`（key 池平台另配 `<x>CfgCache` 缓存上次 GET 的 config，save 时回填不在表单里的字段）——loadXxx 时记录已保存态（代理绑定主/备 + 启用布尔）。
   2. 脏标记：`markRowDirty(row, kind)` 加 `.tr-dirty` 黄底 + 保存按钮 `.dirty-hint`；`clearDirtyMarks(tbodyId, btnId)` 复位。

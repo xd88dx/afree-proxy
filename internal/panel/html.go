@@ -477,9 +477,15 @@ dialog::backdrop{background:rgba(0,0,0,.62);backdrop-filter:blur(3px)}
 .trae-acc{border:1px solid var(--border);border-radius:10px;margin-bottom:10px;background:rgba(148,163,184,.04)}
 .trae-acc summary{cursor:pointer;padding:10px 14px;font-weight:600;user-select:none;list-style:none;display:flex;align-items:center;gap:8px}
 .trae-acc summary::-webkit-details-marker{display:none}
-.trae-acc summary::before{content:'B8';color:var(--text3);transition:transform .15s;display:inline-block}
+.trae-acc summary::before{content:'▸';color:var(--text3);transition:transform .15s;display:inline-block}
 .trae-acc[open] summary::before{transform:rotate(90deg)}
 .trae-acc-body{padding:0 14px 12px}
+/* 凭据列表折叠（六平台统一）：details 原生开合；JS 仅做 localStorage 状态记忆 */
+.cred-fold summary{cursor:pointer;padding:4px 8px;font-size:12px;font-weight:600;color:var(--text3);user-select:none;list-style:none;display:flex;align-items:center;gap:6px}
+.cred-fold summary::-webkit-details-marker{display:none}
+.cred-fold summary::before{content:'▸';transition:transform .15s;display:inline-block}
+.cred-fold[open] summary::before{transform:rotate(90deg)}
+.cred-fold summary:hover{color:var(--text1)}
 .btn-warn:hover{filter:brightness(1.1);background:var(--amber);border-color:var(--amber)}
 </style>
 </head>
@@ -1335,6 +1341,7 @@ const I18N = {
   'api_key': { en: 'API key', zh: 'API key' },
   'show_key': { en: 'Show / hide key', zh: '显示 / 隐藏 key' },
   'copy_key': { en: 'Copy key', zh: '复制 key' },
+  'credential_list': { en: 'Credential list', zh: '凭据列表' },
   'clear_selection': { en: 'Clear selection', zh: '清空选中' },
   'add_account_keys_hint': { en: 'One per line: key-----nickname (nickname optional; sk-xxx-----test = key sk-xxx, nickname test)', zh: '每行一个：key-----昵称（昵称可省；例 sk-xxx-----test = key 为 sk-xxx、昵称为 test）' },
   'stale_model_hint': { en: 'Not in the current upstream catalog (selection kept) — untick to remove.', zh: '上游目录已无此模型（勾选保留）——取消勾选即移除。' },
@@ -8717,6 +8724,17 @@ loadModels();
 loadConfig();
 loadRuntimeFlags();
 restoreTab();
+// 凭据列表折叠（六平台 details.cred-fold）：初始态取 localStorage（缺省展开）。
+// toggle 事件不冒泡，用 capture 委托统一收口；写 localStorage 失败（隐私模式）静默降级为不记忆。
+document.querySelectorAll('details.cred-fold[id]').forEach(d => {
+  try { const v = localStorage.getItem('credfold.' + d.id); if (v !== null) d.open = v === '1'; } catch (e) {}
+});
+document.addEventListener('toggle', e => {
+  const d = e.target;
+  if (d.tagName === 'DETAILS' && d.classList.contains('cred-fold') && d.id) {
+    try { localStorage.setItem('credfold.' + d.id, d.open ? '1' : '0'); } catch (e) {}
+  }
+}, true);
 // 拖拽排序（Account pool 三菜单）：submit 即时落库，reload 重拉对齐派生状态
 // （ocKeysBody 的 index 暂存协议、Cline 的轮转游标、wb 的 order 持久化）。
 enableRowDragReorder('accountTableBody', ids => api('POST', '/accounts/reorder', { order: ids }), loadAccounts);
