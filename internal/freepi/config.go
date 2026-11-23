@@ -20,14 +20,14 @@ import (
 // 不打对话额度）。上游三道闸门（ads_required / concurrent_session /
 // concurrent）的处理在 client.go——这是与普通 key 池的本质差异。
 
-// 平台常量：上游端点与 CLI 版本指纹，对齐 free-pi CLI 0.6.25（参考
+// 平台常量：上游端点与 CLI 版本指纹，对齐 free-pi CLI 0.6.26（参考
 // pingmike2/freepi-magpie-plugin——上游服务端有最低版本闸，版本随参考
 // 插件的 CLIENT_VERSION 推进）。上游只有一个，BaseURL 不做成配置
 // （死配置判据：没有理由改它；真门禁与出口都在网关层）。
 const (
 	APIOrigin     = "https://api.freepi.ai"
 	APIBase       = APIOrigin + "/v1"
-	ClientVersion = "0.6.25"
+	ClientVersion = "0.6.26"
 	// ModelPrefix 对外模型前缀：对外模型 ID 形如 "freepi:<model-id>"。
 	ModelPrefix = "freepi"
 )
