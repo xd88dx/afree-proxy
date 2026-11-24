@@ -1,7 +1,7 @@
 {
   "version": 1,
   "created_at": "2026-11-09T17:13:34Z",
-  "updated_at": "2026-11-23T18:24:40Z",
+  "updated_at": "2026-11-24T05:50:58Z",
   "files": {
     ".agents/skills/add-platform/SKILL.md": {
       "role": "index",
@@ -500,9 +500,9 @@
     },
     "PROJECT.md": {
       "role": "index",
-      "sha256": "2c636670218e1a6595af73a94f36dcc92c353e01e179b4d2b46db3981ae4e94d",
-      "size": 54938,
-      "normalized_sha256": "2c636670218e1a6595af73a94f36dcc92c353e01e179b4d2b46db3981ae4e94d"
+      "sha256": "8ab46e326047dc217819076114ec5837fd2972f52d2fecd3b9e746fc8e2ee95f",
+      "size": 55532,
+      "normalized_sha256": "8ab46e326047dc217819076114ec5837fd2972f52d2fecd3b9e746fc8e2ee95f"
     },
     "README.md": {
       "role": "index",
@@ -518,9 +518,9 @@
     },
     "aoci.code.txt": {
       "role": "index",
-      "sha256": "bb350c06ffda46f659ed13d700a6c73d4bea45a431164e026590a12f8cb61ba7",
-      "size": 248600,
-      "normalized_sha256": "bb350c06ffda46f659ed13d700a6c73d4bea45a431164e026590a12f8cb61ba7"
+      "sha256": "23ee125a09818d8c045160bd05202870b2a033b738f18b86f6a25adbed02ee3c",
+      "size": 248630,
+      "normalized_sha256": "23ee125a09818d8c045160bd05202870b2a033b738f18b86f6a25adbed02ee3c"
     },
     "aoci.meta.txt": {
       "role": "index",
@@ -2554,10 +2554,10 @@
     },
     "internal/panel/html.go": {
       "role": "index",
-      "sha256": "29712c93705dae9782fb811b75ddf7e93154d0275d3f0ad999c5e912ac6662a3",
-      "size": 540575,
-      "normalized_sha256": "29712c93705dae9782fb811b75ddf7e93154d0275d3f0ad999c5e912ac6662a3",
-      "format_sha256": "29712c93705dae9782fb811b75ddf7e93154d0275d3f0ad999c5e912ac6662a3",
+      "sha256": "836930ad610753f0585eaf5fa749791d14e4263e4f1de2b100b1d6a649f998c5",
+      "size": 537484,
+      "normalized_sha256": "836930ad610753f0585eaf5fa749791d14e4263e4f1de2b100b1d6a649f998c5",
+      "format_sha256": "836930ad610753f0585eaf5fa749791d14e4263e4f1de2b100b1d6a649f998c5",
       "format_kind": "gofmt"
     },
     "internal/panel/models_refresh.go": {
