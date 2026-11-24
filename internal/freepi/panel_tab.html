@@ -42,7 +42,13 @@
           <input type="text" id="freepiWeightInterval" placeholder="30" style="flex:1">
         </div>
       </div>
-      <div class="field" style="flex:1"></div>
+      <div class="field" style="flex:1">
+        <label style="display:flex;gap:6px;align-items:center;margin:0" title="Same conversation stays on one key; if that key is cooling or its proxy is unavailable, the request fails fast without switching keys." data-i18n-title="freepi_sticky_hint"><input type="checkbox" id="freepiStickyOpt" style="width:auto;padding:0;accent-color:var(--accent)"> <span data-i18n="freepi_sticky_enable">Session sticky routing</span></label>
+        <div style="display:flex;align-items:center;margin-top:12px">
+          <span style="flex:0 0 220px" data-i18n="freepi_sticky_ttl">Sticky TTL (idle minutes)</span>
+          <input type="text" id="freepiStickyTTL" placeholder="30" style="flex:1">
+        </div>
+      </div>
     </div>
     <div class="form-actions"><button class="btn btn-primary" onclick="saveFreepiWeightConfig()" data-i18n="save_config">Save config</button></div>
   </div>

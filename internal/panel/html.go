@@ -624,6 +624,10 @@ const poolTabHTML = `<div id="tab-proxypool" class="tab-panel" style="display:no
     </div>
     <div id="ppRulesBody"><div class="pr-none" style="padding:10px 12px">Loading...</div></div>
     <div class="form-actions" style="margin-top:12px">
+      <label class="pr-switch" style="display:inline-flex;align-items:center;gap:6px;cursor:pointer" title="Differential auto-exclusion (off by default): when a platform-scoped cooldown fires, the exit is probed against the latency target; if the exit is reachable while other exits still reach the failing upstream host, the exit is added to that platform's exclusion rules and every credential bound to it is rebound to a replacement chosen from the pool tail-first with same-region preference." data-i18n-title="auto_exclude_hint">
+        <input type="checkbox" id="ppAutoFailover">
+        <span data-i18n="auto_exclude">Auto exclude</span>
+      </label>
       <button class="btn btn-primary" onclick="saveProxyRules()" data-i18n="save_proxy_exclusion_rules">Save proxy exclusion rules</button>
       <span class="pr-capbox" style="margin-left:10px" title="Proxies at or below this latency (seconds) keep their current binding and are skipped by reordering; slower ones are refilled from the pool. Saved on change.">
         <span class="pr-unit" data-i18n="keep_latency">Keep latency ≤</span>
@@ -631,10 +635,6 @@ const poolTabHTML = `<div id="tab-proxypool" class="tab-panel" style="display:no
         <span class="pr-unit">s</span>
       </span>
       <button class="btn btn-success" onclick="openReorderDlg()" style="margin-left:10px" data-i18n="reorder_credential_proxies_by_latency">Reorder credential proxies by latency</button>
-      <label class="pr-switch" style="margin-left:auto;display:inline-flex;align-items:center;gap:6px;cursor:pointer" title="Differential auto-exclusion (off by default): when a platform-scoped cooldown fires, the exit is probed against the latency target; if the exit is reachable while other exits still reach the failing upstream host, the exit is added to that platform's exclusion rules and every credential bound to it is rebound to a replacement chosen from the pool tail-first with same-region preference." data-i18n-title="auto_exclude_hint">
-        <input type="checkbox" id="ppAutoFailover">
-        <span data-i18n="auto_exclude">Auto exclude</span>
-      </label>
     </div>
   </div>
 </div>
@@ -1687,6 +1687,10 @@ const I18N = {
   'freepi_weight_enable': { en: 'Enable weight optimization', zh: '启用权重优化' },
   'freepi_weight_interval': { en: 'Weight optimization interval (minutes)', zh: '权重优化间隔（分钟）' },
   'freepi_weight_interval_invalid': { en: 'Interval must be a non-negative integer (minutes)', zh: '间隔必须是非负整数（分钟）' },
+  'freepi_sticky_enable': { en: 'Session sticky routing', zh: '会话粘性路由' },
+  'freepi_sticky_hint': { en: 'Keeps each conversation on one key to avoid the upstream "Sharing or rotating accounts" rejection. If the sticky key cools down or its proxy is unavailable, the request fails fast - no key switch, no retry.', zh: '同一对话固定使用一把凭据，避免上游判定账号共享/轮转。粘住的凭据冷却或代理不可用时快速失败——不换凭据、不重试。' },
+  'freepi_sticky_ttl': { en: 'Sticky TTL (idle minutes)', zh: '会话粘性空闲淘汰（分钟）' },
+  'freepi_sticky_ttl_invalid': { en: 'Sticky TTL must be a non-negative integer (minutes)', zh: '粘性 TTL 必须是非负整数（分钟）' },
   'freepi_jwt_shape': { en: 'That does not look like a JWT (expected 3 dot-separated segments).', zh: '看起来不是合法 JWT（应为三段、以点分隔）。' },
   'refresh_credits': { en: 'Refresh credits', zh: '刷新额度' },
   'credits_refreshed': { en: 'Credits refreshed: ', zh: '已刷新额度：' },
@@ -1841,7 +1845,7 @@ const I18N = {
   'Stream idle timeout (s)': { en: 'Stream idle timeout (s)', zh: '流中空闲超时（秒）' },
   'Model cooldown': { en: 'Model cooldown', zh: '模型冷却' },
   'Reject unknown models': { en: 'Reject unknown models', zh: '拒绝未知模型' },
-  'Session sticky': { en: 'Session sticky', zh: '会话粘性' },
+  'Session sticky': { en: 'Session sticky', zh: '会话粘性路由' },
   'International realms': { en: 'International realms', zh: '国际版域' },
   'Save config': { en: 'Save config', zh: '保存配置' },
   'Daily check-in for every account whose account switch is on (upstream schedule applies too)': { en: 'Daily check-in for every account whose account switch is on (upstream schedule applies too)', zh: '对账号总闸开启的账号执行每日签到（上游定时任务同样生效）' },
@@ -8200,6 +8204,8 @@ async function loadFreepiConfig() {
   _('freepiRetries').value = freepiConfig.retries || 3;
   _('freepiWeightOpt').checked = !!freepiConfig.weightOptimize;
   _('freepiWeightInterval').value = freepiConfig.weightInterval || 30;
+  _('freepiStickyOpt').checked = freepiConfig.sessionSticky !== false; // 缺省 = 开
+  _('freepiStickyTTL').value = freepiConfig.stickyTTL || 30;
   renderFreepiModels(freepiKnownModels);
   renderFreepiKeys(ks);
 }
@@ -8403,10 +8409,16 @@ async function saveFreepiRateLimit() {
 }
 
 async function saveFreepiWeightConfig() {
+  // 同一按钮保存权重优化与会话粘性（都在 FreePI configuration 区）。
   const iv = parseInt(_('freepiWeightInterval').value, 10);
+  const ttl = parseInt(_('freepiStickyTTL').value, 10);
   if (Number.isNaN(iv) || iv < 0) { toast(T('freepi_weight_interval_invalid'), 'error'); return; }
+  if (Number.isNaN(ttl) || ttl < 0) { toast(T('freepi_sticky_ttl_invalid'), 'error'); return; }
   try {
-    await api('POST', '/freepi/config/update', { weightOptimize: _('freepiWeightOpt').checked, weightInterval: iv });
+    await api('POST', '/freepi/config/update', {
+      weightOptimize: _('freepiWeightOpt').checked, weightInterval: iv,
+      sessionSticky: _('freepiStickyOpt').checked, stickyTTL: ttl
+    });
     toast(T('saved'), 'success');
     loadFreepiConfig();
   } catch (e) { toast(T('save_failed') + e.message, 'error'); }

@@ -37,7 +37,7 @@ func CORSHandler(h http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, x-api-key, anthropic-version, anthropic-beta")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, x-api-key, anthropic-version, anthropic-beta, x-freepi-session, x-opencode-session")
 
 		if r.Method == "OPTIONS" {
 			w.WriteHeader(http.StatusNoContent)
@@ -3075,6 +3075,16 @@ func classifyReqRoute(r *http.Request, model string) (route, labelRoute string) 
 // APIKeyAuth /v1 三端点共享的 API key 鉴权中间件。
 func APIKeyAuth(next http.HandlerFunc) http.HandlerFunc {
 	return CORSHandler(func(w http.ResponseWriter, r *http.Request) {
+		// 会话粘性（2026-11-25）：显式会话 ID 注入 ctx，供 freepi.Chat 把同一
+		// 对话锁定在同一把 key（避免同 messages 换 Bearer 触发上游风控）。
+		// 三条 /v1 路径（chat/responses/messages）统一经此中间件，无需逐入口改。
+		sid := r.Header.Get("x-freepi-session")
+		if sid == "" {
+			sid = r.Header.Get("x-opencode-session")
+		}
+		if sid = strings.TrimSpace(sid); sid != "" {
+			r = r.WithContext(freepi.WithStickySession(r.Context(), sid))
+		}
 		key := r.Header.Get("x-api-key")
 		if key == "" {
 			// RFC 7235: "Bearer" 前缀大小写不敏感（客户端可能发 "bearer"）。

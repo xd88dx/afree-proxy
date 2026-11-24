@@ -38,6 +38,9 @@ type usageData struct {
 	Cool map[string]time.Time `json:"cool,omitempty"`
 	// Credits credits 余额快照：key 明文 -> /me 查询结果（Test/刷新额度落）。
 	Credits map[string]CreditStats `json:"credits,omitempty"`
+	// StickySessions 会话粘性映射：会话标识 -> {key, lastSeen}（2026-11-25）。
+	// 与 Cool/KeyTokens 同为运行痕迹，随请求变化；keyMu 保护，落盘同文件。
+	StickySessions map[string]StickyEntry `json:"stickySessions,omitempty"`
 }
 
 var (
@@ -113,9 +116,10 @@ func loadUsage() {
 func StateSnapshotJSON() json.RawMessage {
 	keyMu.Lock()
 	out := usageData{
-		KeyTokens: make(map[string]KeyTokenStats, len(usage.KeyTokens)),
-		Cool:      make(map[string]time.Time, len(usage.Cool)),
-		Credits:   make(map[string]CreditStats, len(usage.Credits)),
+		KeyTokens:      make(map[string]KeyTokenStats, len(usage.KeyTokens)),
+		Cool:           make(map[string]time.Time, len(usage.Cool)),
+		Credits:        make(map[string]CreditStats, len(usage.Credits)),
+		StickySessions: make(map[string]StickyEntry, len(usage.StickySessions)),
 	}
 	for k, v := range usage.KeyTokens {
 		out.KeyTokens[k] = v
@@ -125,6 +129,9 @@ func StateSnapshotJSON() json.RawMessage {
 	}
 	for k, v := range usage.Credits {
 		out.Credits[k] = v
+	}
+	for k, v := range usage.StickySessions {
+		out.StickySessions[k] = v
 	}
 	keyMu.Unlock()
 	data, err := json.Marshal(&out)
@@ -185,6 +192,8 @@ func PruneUsage(keys []string) {
 	if len(usage.Credits) == 0 {
 		usage.Credits = nil
 	}
+	// 会话粘性映射：清掉所有指向已移除 key 的条目（sticky.go，keyMu 域内）
+	stickyForgetKey(valid)
 	keyMu.Unlock()
 	markTokensDirty()
 }

@@ -447,11 +447,42 @@ func Chat(ctx context.Context, params map[string]any, modelID string, stream boo
 			ReleaseKey(held)
 		}
 	}()
+
+	// 会话粘性（2026-11-25）：同一对话多轮锁定同一把 key，避免"同 messages
+	// 换 Bearer"被上游判为账号共享/轮转。pin（面板 Test 固定 key）不走粘性。
+	cfg := Get()
+	stickyOn := cfg.StickyEnabled() && pin == ""
+	convKey := ""
+	if stickyOn {
+		convKey = ConversationKey(ctx, params, "")
+	}
+	stuckKey := ""
+	if convKey != "" {
+		valid := map[string]bool{}
+		for _, k := range cfg.Keys {
+			if cfg.RoutingEnabled(k) {
+				valid[k] = true
+			}
+		}
+		stuckKey = stickyLookup(convKey, valid, cfg.StickyTTL())
+		// 粘住的 key 正在冷却：本次立即失败，不打上游也不换 key——换 key
+		// 只会再撞上游风控，白费一次调用（2026-11-25 用户定）。
+		if stuckKey != "" {
+			if until, cooling := CooldownUntil(stuckKey); cooling && time.Now().Before(until) {
+				return nil, rateLimited, fmt.Errorf("freepi sticky session key#%d cooling until %s; fail fast without switching key", KeyIndex(stuckKey), until.Format(time.RFC3339))
+			}
+		}
+	}
+	stickyLocked := stuckKey != ""
+
 	for attempt := 0; ; attempt++ {
 		var key string
-		if pin != "" {
+		switch {
+		case stickyLocked:
+			key = stuckKey
+		case pin != "":
 			key = pin
-		} else {
+		default:
 			key = PickKey(strategy, boundRoutable)
 		}
 		if key == "" {
@@ -468,7 +499,8 @@ func Chat(ctx context.Context, params map[string]any, modelID string, stream boo
 		if exitFn != nil {
 			url, ok := exitFn(key)
 			if !ok {
-				if pin != "" {
+				// sticky 与 pin 同语义：不换 key、立即失败。
+				if pin != "" || stickyLocked {
 					return nil, rateLimited, fmt.Errorf("%s", kit.BoundProbeBlockedMsg(ModelPrefix, key,
 						fmt.Sprintf("key#%d bound proxies unavailable (cooling or removed); probe aborted by proxy isolation", KeyIndex(key))))
 				}
@@ -478,18 +510,24 @@ func Chat(ctx context.Context, params map[string]any, modelID string, stream boo
 			proxyURL = url
 		}
 		observeAttempt(ctx, key, proxyURL)
-		observeAttempt(ctx, key, proxyURL)
 		resp, gerr := attemptWithGates(ctx, endpoint, bodyJSON, key, proxyURL)
 		if gerr == nil {
 			resp.Header.Set("X-Afree-Used-Key", key)
+			if stickyOn && convKey != "" {
+				stickyBind(convKey, key) // 首轮绑定 / 后续刷新 LastSeen
+			}
 			return resp, rateLimited, nil
 		}
 		apiErr, isAPI := gerr.(*HTTPError)
 		if !isAPI {
-			// 网络错误/取消：交回外层退避矩阵（other 同款）
+			// 网络错误/取消：sticky 会话快速失败，不等待、不换 key。
 			if ctx.Err() != nil {
 				return nil, rateLimited, fmt.Errorf("client aborted: %w", gerr)
 			}
+			if stickyLocked {
+				return nil, rateLimited, gerr
+			}
+			// 非 sticky：交回外层退避矩阵（other 同款）
 			if attempt < retries {
 				if !sleepCtx(ctx, jitter(delay)) {
 					return nil, rateLimited, fmt.Errorf("client aborted during retry wait")
@@ -509,6 +547,9 @@ func Chat(ctx context.Context, params map[string]any, modelID string, stream boo
 				return nil, rateLimited, apiErr
 			}
 			Cooldown(key, gateCooldown)
+			if stickyLocked {
+				return nil, rateLimited, apiErr // 冷却让其他会话避开，本会话不换 key
+			}
 			if next := PickKey(strategy, boundRoutable); next != "" && next != key {
 				continue
 			}
@@ -530,7 +571,7 @@ func Chat(ctx context.Context, params map[string]any, modelID string, stream boo
 				d = time.Minute
 			}
 			_ = Cooldown(key, d)
-			if pin != "" {
+			if pin != "" || stickyLocked {
 				return nil, rateLimited, apiErr
 			}
 			// 换一个未冷却的 key 立即重试（不睡眠）
@@ -556,6 +597,9 @@ func Chat(ctx context.Context, params map[string]any, modelID string, stream boo
 				return nil, rateLimited, apiErr
 			}
 			Cooldown(key, time.Hour)
+			if stickyLocked {
+				return nil, rateLimited, apiErr
+			}
 			if next := PickKey(strategy, boundRoutable); next != "" && next != key {
 				continue
 			}

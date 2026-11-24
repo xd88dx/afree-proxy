@@ -283,6 +283,7 @@ func dsmlToolNameAllowlist(v any) map[string]bool {
 				continue
 			}
 		}
+		// Anthropic 形态 tools（new-api 半转换时）：顶层 name + input_schema。
 		if n, ok := tm["name"].(string); ok && n != "" {
 			names[n] = true
 		}
@@ -416,6 +417,22 @@ func guardBadToolCallsChat(chat map[string]any, params map[string]any) string {
 		if a == "" || a == "{}" {
 			return fmt.Sprintf("上游工具 %s 的调用参数为空（缺少必需字段 %s）", name, strings.Join(req, ","))
 		}
+		// 2026-11-25 补强：非空但缺字段（如 Write 只给 file_path 没给 content）
+		// 同样会让 Claude Code 抛 InputValidationError。逐字段核对 required，
+		// 命中即改判 502，让 agent 有机会重试而不是静默终止。
+		var obj map[string]any
+		if json.Unmarshal([]byte(a), &obj) != nil {
+			continue // 非 JSON 参数不误判，交回原有回放逻辑
+		}
+		var missing []string
+		for _, field := range req {
+			if _, ok := obj[field]; !ok {
+				missing = append(missing, field)
+			}
+		}
+		if len(missing) > 0 {
+			return fmt.Sprintf("上游工具 %s 的调用参数缺少必需字段 %s", name, strings.Join(missing, ","))
+		}
 	}
 	return ""
 }
@@ -432,15 +449,21 @@ func toolRequiredFields(v any) map[string][]string {
 		if !ok {
 			continue
 		}
-		fn, _ := tm["function"].(map[string]any)
-		if fn == nil {
+		// OpenAI 形态：{type:function, function:{name, parameters}}；
+		// Anthropic 形态（new-api 未转换或半转换时）：{name, input_schema}。
+		// 两种都要认出 required，否则空参数调用漏判回 200（2026-11-25）。
+		var name string
+		var ps map[string]any
+		if fn, ok := tm["function"].(map[string]any); ok {
+			name, _ = fn["name"].(string)
+			ps, _ = fn["parameters"].(map[string]any)
+		} else {
+			name, _ = tm["name"].(string)
+			ps, _ = tm["input_schema"].(map[string]any)
+		}
+		if name == "" || ps == nil {
 			continue
 		}
-		name, _ := fn["name"].(string)
-		if name == "" {
-			continue
-		}
-		ps, _ := fn["parameters"].(map[string]any)
 		reqRaw, _ := ps["required"].([]any)
 		var req []string
 		for _, r := range reqRaw {

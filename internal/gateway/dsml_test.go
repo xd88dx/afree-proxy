@@ -190,6 +190,54 @@ func TestGuardBadToolCallsChat(t *testing.T) {
 	}
 }
 
+// TestGuardBadToolCallsMissingRequiredFields 截图场景（2026-11-25）：Write
+// 的 arguments 非空但缺 content、Bash 缺 command——旧判据只拦 "" / "{}"，
+// 部分缺字段会漏判成 200，Claude Code 校验失败后任务静默终止。
+func TestGuardBadToolCallsMissingRequiredFields(t *testing.T) {
+	writeTools := map[string]any{"tools": []any{map[string]any{
+		"type": "function",
+		"function": map[string]any{
+			"name":       "Write",
+			"parameters": map[string]any{"type": "object", "required": []any{"file_path", "content"}},
+		},
+	}}}
+	chat := func(args string) map[string]any {
+		return map[string]any{"choices": []any{map[string]any{
+			"message": map[string]any{"role": "assistant", "tool_calls": []any{map[string]any{
+				"id": "call_1", "type": "function",
+				"function": map[string]any{"name": "Write", "arguments": args},
+			}}},
+			"finish_reason": "tool_calls",
+		}}}
+	}
+	bad := guardBadToolCallsChat(chat(`{"file_path":"slack.py"}`), writeTools)
+	if bad == "" || !strings.Contains(bad, "content") {
+		t.Fatalf("缺 content 的部分参数必须拦下且点名缺失字段, got %q", bad)
+	}
+	if bad := guardBadToolCallsChat(chat(`{"file_path":"slack.py","content":"print(1)"}`), writeTools); bad != "" {
+		t.Fatalf("完整参数被误伤: %s", bad)
+	}
+}
+
+// TestGuardBadToolCallsAnthropicSchema new-api 半转换时 tools 是 Anthropic
+// {name, input_schema} 形态，required 也必须被认出（否则空参数漏判）。
+func TestGuardBadToolCallsAnthropicSchema(t *testing.T) {
+	tools := map[string]any{"tools": []any{map[string]any{
+		"name":         "Bash",
+		"input_schema": map[string]any{"type": "object", "required": []any{"command"}},
+	}}}
+	chat := map[string]any{"choices": []any{map[string]any{
+		"message": map[string]any{"role": "assistant", "tool_calls": []any{map[string]any{
+			"id": "call_1", "type": "function",
+			"function": map[string]any{"name": "Bash", "arguments": "{}"},
+		}}},
+		"finish_reason": "tool_calls",
+	}}}
+	if bad := guardBadToolCallsChat(chat, tools); bad == "" {
+		t.Fatal("Anthropic input_schema 形态的空参数也必须拦下")
+	}
+}
+
 func TestFinishZenChatNonStreamBadToolCall502(t *testing.T) {
 	body := strings.Join([]string{
 		sseLine(map[string]any{
