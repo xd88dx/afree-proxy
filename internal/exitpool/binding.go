@@ -36,6 +36,10 @@ type BindingConfig struct {
 	// 延迟重排的"保持不变"阈值（秒）：平均握手延迟 ≤ 该值的代理视为健康、
 	// 保持现绑定不参与重排。0/缺项 = 取 DefaultReorderKeepSec。
 	ReorderKeepSec float64 `json:"reorderKeepSec,omitempty"`
+	// ProxyAutoFailover 差分自动排除开关（2026-11-24 用户定）：开启后平台级
+	// 冷却触发时跑差分判定（故障出口 gstatic 通 + 其他出口对目标 host 通），
+	// 成立则把出口加入该平台排除规则并自动改绑。nil = 默认关。
+	ProxyAutoFailover *bool `json:"proxyAutoFailover,omitempty"`
 }
 
 // Binding 一个身份的出口绑定：主代理优先，备用代理兜底；两者都不可用时
@@ -75,6 +79,7 @@ func loadBindingLocked() *BindingConfig {
 		ProxyExclusionsAllMigrated: f.ProxyExclusionsAllMigrated,
 		ProxyBindCaps:              f.ProxyBindCaps,
 		ReorderKeepSec:             f.ReorderKeepSec,
+		ProxyAutoFailover:          f.ProxyAutoFailover,
 	}
 	bindingLoadedPath = path
 	return bindingCfg
@@ -104,6 +109,7 @@ func SetBinding(c *BindingConfig) {
 		f.ProxyExclusionsAllMigrated = cp.ProxyExclusionsAllMigrated
 		f.ProxyBindCaps = cp.ProxyBindCaps
 		f.ReorderKeepSec = cp.ReorderKeepSec
+		f.ProxyAutoFailover = cp.ProxyAutoFailover
 	})
 }
 

@@ -82,6 +82,9 @@ func StartProxy(host string, port int) error {
 	// 出口发出，恰好是上游记录 IP 的那一刻。
 	loadEgressBindings()
 	reconcileEgressBindings()
+	// 差分故障转移的平台适配器（2026-11-24 用户定）：读各平台绑定表 + 改绑
+	// 写回，注册必须先于任何上游请求（触发挂平台级冷却分支）。
+	RegisterFailoverAdapters()
 	loadClineStreamLearned()
 	initOther()
 	initFreepi()

@@ -44,6 +44,7 @@ type FileData struct {
 	ProxyExclusionsAllMigrated bool                `json:"proxyExclusionsAllMigrated,omitempty"`
 	ProxyBindCaps              map[string]int      `json:"proxyBindCaps,omitempty"`
 	ReorderKeepSec             float64             `json:"reorderKeepSec,omitempty"`
+	ProxyAutoFailover          *bool               `json:"proxyAutoFailover,omitempty"`
 }
 
 var (

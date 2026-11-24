@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"afree-proxy/internal/exitpool"
 	"afree-proxy/internal/kit"
 )
 
@@ -55,6 +56,7 @@ func zenConfigPayload() map[string]any {
 		"strategyEnvLocked":       poolStrategyEnvLocked(),
 		"backupProxyEnabled":      backupProxyEnabled(),
 		"proxyExclusions":         binding.ProxyExclusions,
+		"proxyAutoFailover":       exitpool.AutoFailoverEnabled(),
 		"proxyExclusionsAll":      binding.ProxyExclusionsAll,
 		"proxyBindCaps":           binding.ProxyBindCaps,
 		"reorderKeepSec":          reorderKeepSec(),
@@ -116,6 +118,8 @@ func handleZenConfigUpdate(w http.ResponseWriter, r *http.Request) {
 		BackupProxyEnabled *bool    `json:"backupProxyEnabled"`
 		// 自动分配规则：nil = 不改动；非 nil = 整表替换（空表 = 全部清除）。
 		ProxyExclusions map[string][]string `json:"proxyExclusions"`
+		// 差分自动排除开关（2026-11-24 用户定）：nil = 不改动。
+		ProxyAutoFailover *bool `json:"proxyAutoFailover"`
 		// 全局排除（2026-11-24）：nil = 不改动；非 nil = 整表替换（空表 = 全清）。
 		// 只收池条目，直连哨兵不收（直连排除仍是每条目单独设置）。
 		ProxyExclusionsAll []string       `json:"proxyExclusionsAll"`
@@ -319,6 +323,10 @@ func handleZenConfigUpdate(w http.ResponseWriter, r *http.Request) {
 			clean = nil
 		}
 		bindingNext.ProxyExclusions = clean
+		bindingChanged = true
+	}
+	if patch.ProxyAutoFailover != nil {
+		bindingNext.ProxyAutoFailover = patch.ProxyAutoFailover
 		bindingChanged = true
 	}
 	if patch.ProxyExclusionsAll != nil {

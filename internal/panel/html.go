@@ -631,6 +631,10 @@ const poolTabHTML = `<div id="tab-proxypool" class="tab-panel" style="display:no
         <span class="pr-unit">s</span>
       </span>
       <button class="btn btn-success" onclick="openReorderDlg()" style="margin-left:10px" data-i18n="reorder_credential_proxies_by_latency">Reorder credential proxies by latency</button>
+      <label class="pr-switch" style="margin-left:10px;display:inline-flex;align-items:center;gap:6px;cursor:pointer" title="Differential auto-exclusion (off by default): when a platform-scoped cooldown fires, the exit is probed against the latency target; if the exit is reachable while other exits still reach the failing upstream host, the exit is added to that platform's exclusion rules and every credential bound to it is rebound to a replacement chosen from the pool tail-first with same-region preference." data-i18n-title="auto_exclude_hint">
+        <input type="checkbox" id="ppAutoFailover">
+        <span data-i18n="auto_exclude">Auto exclude</span>
+      </label>
     </div>
   </div>
 </div>
@@ -1136,6 +1140,8 @@ const I18N = {
   'Save proxy exclusion rules': { en: 'Save proxy exclusion rules', zh: '保存代理排除规则' },
   'saved_proxy_exclusion_rules': { en: 'Saved proxy exclusion rules', zh: '代理排除规则已保存' },
   'proxy_exclusion_rules': { en: 'Proxy exclusion rules: ', zh: '代理排除规则：' },
+  'auto_exclude': { en: 'Auto exclude', zh: '自动排除' },
+  'auto_exclude_hint': { en: 'Differential auto-exclusion (off by default): when a platform-scoped cooldown fires, the exit is probed against the latency target; if the exit is reachable while other exits still reach the failing upstream host, the exit is added to that platform\'s exclusion rules and every credential bound to it is rebound to a replacement chosen from the pool tail-first with same-region preference.', zh: '差分自动排除（默认关）：平台级冷却触发时实时探测故障出口（对测速目标）；若该出口通、而其他出口仍能访问出错的上游域名，则把该出口加入该平台的排除规则，并把绑定它的全部凭据改绑到替补（按池序从后往前、同地区优先）。' },
   'Discard staged exclusions and reload the last saved state': { en: 'Discard staged exclusions and reload the last saved state', zh: '放弃暂存的排除修改，恢复为上次保存的状态' },
   'Click to pick platforms to ban…': { en: 'Click to pick platforms to ban…', zh: '点击选择要封禁的平台…' },
   'Platform': { en: 'Platform', zh: '平台' },
@@ -3550,6 +3556,7 @@ async function loadProxyListCache() {
     proxyExclusionsAll.forEach(p => ppBulkSel.add(p));
     proxyBindCaps = d.data.proxyBindCaps || {};
     reorderKeepSecCfg = Number(d.data.reorderKeepSec) > 0 ? Number(d.data.reorderKeepSec) : 8;
+    const af = _('ppAutoFailover'); if (af) af.checked = d.data.proxyAutoFailover === true;
     syncReorderKeepSecInput();
     syncProxyHealthCache((d.data.runtime || {}).proxyHealth);
   } catch (e) { /* keep previous cache */ }
@@ -6047,6 +6054,7 @@ async function loadProxyPool() {
     _('ppCline').value = String(!!cfg.data.clineUseProxies);
     _('ppIsolation').value = String(c.proxyIsolation !== false);
     _('ppBackupEnabled').checked = c.backupProxyEnabled === true;
+    const af = _('ppAutoFailover'); if (af) af.checked = c.proxyAutoFailover === true;
     if (c.proxyIsolationEnvLocked) {
       _('ppIsolation').disabled = true;
       _('ppIsolationHint').innerHTML = '<span style="color:var(--warning,#eab308)">' + T('isolation_env_locked_hint') + '</span>';
@@ -6584,8 +6592,9 @@ async function saveProxyRules() {
   proxyListCache.forEach(p => {
     if (ppBulkSel.has(p) && globals.indexOf(p) < 0) globals.push(p);
   });
+  const af = _('ppAutoFailover');
   try {
-    await api('POST', '/opencode/config/update', { proxyExclusions: exclusions, proxyExclusionsAll: globals, proxyBindCaps: caps });
+    await api('POST', '/opencode/config/update', { proxyExclusions: exclusions, proxyExclusionsAll: globals, proxyBindCaps: caps, proxyAutoFailover: af ? af.checked : undefined });
     toast(T('saved_proxy_exclusion_rules'), 'success');
     loadProxyPool();
   } catch (e) { toast(T('save_failed') + e.message, 'error'); }

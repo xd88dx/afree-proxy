@@ -352,6 +352,7 @@ func RecordProxyOutcome(kind, proxyURL string, ok bool, err error, hsMs int64) {
 	if !ok {
 		if scope := RecordExitFailure(kind, proxyURL, err); scope != "" {
 			if idx := IdxInPool(proxyURL); idx >= 0 {
+				poolURL := GetPool().Proxies[idx]
 				if scope == "global" {
 					CooldownUpstreamProxy(idx, proxyTransportCooldown)
 					log.Printf("[exit-cooldown] %s exit %s cooled %v globally (transport failure: %v)",
@@ -361,6 +362,10 @@ func RecordProxyOutcome(kind, proxyURL string, ok bool, err error, hsMs int64) {
 					log.Printf("[exit-cooldown] %s exit %s cooled %v platform-scoped (upstream-side stream error: %v)",
 						kind, kit.MaskProxyURL(proxyURL), proxyPlatformCooldown, err)
 				}
+				// 差分自动故障转移（2026-11-24 用户定）：平台级与全局冷却均
+				// 触发异步判定——出口死仅改绑不排除，目标风控排除+改绑。
+				// 开关关/kind 无映射在入口直接返回；strike 门控天然限频。
+				go OnExitFailure(kind, poolURL, err)
 			}
 		}
 	}
