@@ -139,6 +139,8 @@ wb vendor 补丁登记（2026-11-15 完成，历史踩雷记录留档）：活�
 
 已废弃、不要从上游恢复：后台 key rotator（`SessionRotateMinutes` 2026-11-08 随 a8fe356 吸收，见 MERGE 台账；**字段与透出点 2026-11-15 彻底删除**——GET `/opencode/config` 不再回显，旧 config 键经 JSON 未知字段忽略）、`ZEN_KEYS`（Go 源码从不读取）、上游 README 的 compose 配置段。
 
+面板与代理规则域新增（2026-11-24 用户定）：①**全局代理排除** `proxyExclusionsAll`（proxy-config.json 隔离/绑定段）——显式字段取代「kinds 覆盖全部叶子=全局」的推断语义（推断式会被叶集增长瓦解：freepi 立项后旧全局规则静默降级，新增子平台一键代理漏排除）；存量 covered-all 条目由 `migrateProxyExclusionsAll`（initOther 装配点、一次性标记 `proxyExclusionsAllMigrated`）迁入全局集并打日志留痕；全局集只管自动分配（一键代理/延迟重排），手动绑定不受限，不含 `__direct__` 哨兵（直连排除仍是每条目单独设置）；规则区首位渲染全局卡片。②**FreePI 路由白名单** `freepi-config.json` `routedModels`——模型目录每行勾选框即点即存（POST /freepi/config/update），非空白名单时 /v1/models 只列勾选项，strict 闸 `servedModelGate` 的 freepi 分支对"目录内但未勾选"返回 400（区别于编造模型 404）；空 = 全量路由（默认）。③封禁平台下拉 `PLATFORM_BAN_BASE` 重排为平台展示单一口径（此前 freepi/zen 顺序陈旧）。
+
 WB vendored config 三节死配置删除（2026-11-15，探测结论见会话）：`alerting`（notifier 装配在上游 cmd/server/main.go，afree 无该入口）、`watchdog`（同 alerting）、`update`（原生自更新容器部署 CanInstall 恒 false，afree 从未装配 updater——panel.Config.Updater=nil，update 路由空转）。三节字段+normalizeAlerting/isClockTime/WB2A_ALERTING_* env 映射一并删除；旧 config 文件的对应键经 JSON 未知字段自然忽略，下次面板保存落盘后消失。上游更新这些节时**不走 PRESERVE 恢复**——除非 afree 补齐装配入口（接线 notifier/watchdog/update 前先恢复字段）。
 
 上游功能但**必须由本仓 app 层装配**才生效（2026-10-28 起）：workbuddy 的网关思考档位策略（上游 `thinking` 配置节）。装配点三处，漏任一处都不会报错、只是功能静默失效——`internal/app/workbuddy.go`（启动）与 `internal/app/workbuddy_config.go`（热更新）里的 `up.SetEffortPolicy(effortPolicyOf(cfg))`、`livecfg.Snapshot` 的五个 `Thinking*` 镜像字段、面板四个控件（`thinking.enabled` / `default_effort` / `client_priority` / `override_scope`）。上游同类装配在 `cmd/server/main.go`，本仓没有那个入口。

@@ -2984,6 +2984,18 @@ func servedModelGate(model string) (int, string) {
 			return 0, ""
 		}
 	}
+	// freepi 路由白名单（2026-11-24 用户定 400）：目录内但未勾选的模型区别于
+	// "编造/已删模型"的 404——白名单是运营选择而非不存在。非白名单模型已从
+	// /v1/models 摘除，必然穿过 modelIsServed 落到这里。
+	if bare, ok := freepi.StripPrefix(model); ok {
+		bare = strings.TrimSpace(bare)
+		if bare != "" {
+			if _, inCat := freepi.ResolveModel(bare); inCat && !freepi.Get().ModelRouted(bare) {
+				return http.StatusBadRequest, "model " + model + " is not routed — tick it in the FreePI model " +
+					"catalog (unchecked models are not served while any tick exists)"
+			}
+		}
+	}
 	return http.StatusNotFound, "model " + model + " is not served by this gateway (see /v1/models for the model list)"
 }
 

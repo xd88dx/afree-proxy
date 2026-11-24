@@ -55,6 +55,7 @@ func zenConfigPayload() map[string]any {
 		"strategyEnvLocked":       poolStrategyEnvLocked(),
 		"backupProxyEnabled":      backupProxyEnabled(),
 		"proxyExclusions":         binding.ProxyExclusions,
+		"proxyExclusionsAll":      binding.ProxyExclusionsAll,
 		"proxyBindCaps":           binding.ProxyBindCaps,
 		"reorderKeepSec":          reorderKeepSec(),
 		"pinProxyPerKey":          pinProxyPerKeyEnabled(),
@@ -115,7 +116,10 @@ func handleZenConfigUpdate(w http.ResponseWriter, r *http.Request) {
 		BackupProxyEnabled *bool    `json:"backupProxyEnabled"`
 		// 自动分配规则：nil = 不改动；非 nil = 整表替换（空表 = 全部清除）。
 		ProxyExclusions map[string][]string `json:"proxyExclusions"`
-		ProxyBindCaps   map[string]int      `json:"proxyBindCaps"`
+		// 全局排除（2026-11-24）：nil = 不改动；非 nil = 整表替换（空表 = 全清）。
+		// 只收池条目，直连哨兵不收（直连排除仍是每条目单独设置）。
+		ProxyExclusionsAll []string       `json:"proxyExclusionsAll"`
+		ProxyBindCaps      map[string]int `json:"proxyBindCaps"`
 		// 延迟重排阈值（秒）：指针区分"未提交"与显式 0（0 = 所有有记录的
 		// 代理都算慢、全部进入修复段）。
 		ReorderKeepSec *float64 `json:"reorderKeepSec"`
@@ -315,6 +319,12 @@ func handleZenConfigUpdate(w http.ResponseWriter, r *http.Request) {
 			clean = nil
 		}
 		bindingNext.ProxyExclusions = clean
+		bindingChanged = true
+	}
+	if patch.ProxyExclusionsAll != nil {
+		// 整表替换语义：按池规整（非池条目丢弃、去重），直连哨兵不收（2026-11-24
+		// 用户定：直连排除仍是每条目单独设置），全空归 nil。
+		bindingNext.ProxyExclusionsAll = pruneProxyEntries(patch.ProxyExclusionsAll, poolNext.Proxies)
 		bindingChanged = true
 	}
 	if patch.ProxyBindCaps != nil {

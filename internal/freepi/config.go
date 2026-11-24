@@ -59,8 +59,13 @@ type Config struct {
 	// 分钟数；<=0 视为默认 30。面板热改，下一周期生效。
 	WeightIntervalMinutes int `json:"weightIntervalMinutes,omitempty"`
 	// Models 模型目录状态（/client-version 拉取结果整体替换；静态兜底表在
-	// models.go）。other 的勾选暴露机制刻意没有：目录即上游真值，全量暴露。
+	// models.go）。目录本身始终是上游真值全量展示；对外路由由 RoutedModels
+	// 白名单门控（2026-11-24 用户定，取代此前"全量暴露"口径）。
 	Models ModelState `json:"models"`
+	// RoutedModels 对外路由白名单（2026-11-24 用户定）：勾选的模型 ID 才对外
+	// 提供路由（/v1/models 只列勾选项，chat 入口非白名单 400）；空/缺 =
+	// 目录全部路由（默认，保持旧行为）。面板即点即存。
+	RoutedModels []string `json:"routedModels,omitempty"`
 	// KeyTokens（token 记账）/Cool（冷却表）/Credits（余额）是使用痕迹，
 	// 拆到 freepi-state.json（usage.go）：随请求/429/查询变化，留在配置
 	// 文件会干扰外部对配置变更的监测（*-config 与 *-state 命名铁律）。
@@ -121,6 +126,17 @@ func (c *Config) normalize() {
 	if c.Retries < 0 {
 		c.Retries = 0
 	}
+	cleanedRouted := make([]string, 0, len(c.RoutedModels))
+	rseen := map[string]bool{}
+	for _, m := range c.RoutedModels {
+		m = strings.TrimSpace(m)
+		if m == "" || rseen[m] {
+			continue
+		}
+		rseen[m] = true
+		cleanedRouted = append(cleanedRouted, m)
+	}
+	c.RoutedModels = cleanedRouted
 }
 
 // ReconcileRouting 整体替换 key 池后对齐路由参与表：新引入的 key 默认不
@@ -329,6 +345,21 @@ func (c *Config) WeightInterval() int {
 		return c.WeightIntervalMinutes
 	}
 	return 30
+}
+
+// ModelRouted 模型是否对外路由（2026-11-24 用户定）：白名单空/缺 = 目录全部
+// 路由（默认）；非空 = 仅白名单内的模型提供路由。/v1/models 与 chat 入口
+// 同判定——「列出来的必须调得通」的镜像面「没列的必调不到」。
+func (c *Config) ModelRouted(id string) bool {
+	if len(c.RoutedModels) == 0 {
+		return true
+	}
+	for _, m := range c.RoutedModels {
+		if m == id {
+			return true
+		}
+	}
+	return false
 }
 
 // KeyStatus 面板展示用的每 key 运行时状态（key 值打码，明文不出口）。

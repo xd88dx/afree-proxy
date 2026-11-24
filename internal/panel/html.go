@@ -1144,6 +1144,8 @@ const I18N = {
   'Click to pick platforms to ban…': { en: 'Click to pick platforms to ban…', zh: '点击选择要封禁的平台…' },
   'Platform': { en: 'Platform', zh: '平台' },
   'exclude_direct': { en: 'Exclude Direct', zh: '排除直连' },
+  'global_proxy_exclusion': { en: 'Global exclusions (incl. future platforms)', zh: '全局排除（含未来新增平台）' },
+  'global_exclusion_hint': { en: 'Applies to every platform, including future ones; manual binding unaffected.', zh: '对所有平台生效（含未来新增）；手动绑定不受限。' },
   'No pool proxies left to exclude': { en: 'No pool proxies left to exclude', zh: '没有可添加的池内代理（都已排除或池为空）' },
   'remove': { en: 'Remove', zh: '移除' },
   'max_reuse_per_proxy': { en: 'Max reuse per proxy', zh: '代理最多复用' },
@@ -1682,6 +1684,9 @@ const I18N = {
   'device_code': { en: 'Device code', zh: '设备码' },
   'freepi_weight_hint': { en: 'Scheduling weight = remaining credits (unknown = 1). Higher balance serves more traffic — credits level out.', zh: '调度权重 = 剩余额度（未知按 1）：余额越多承接越多，额度自动趋平' },
   'freepi_config': { en: 'FreePI configuration', zh: 'FreePI 配置' },
+  'freepi_routing_whitelist_on': { en: 'Only ticked models are served to clients.', zh: '仅勾选的模型对外提供路由。' },
+  'freepi_routing_whitelist_off': { en: 'No models ticked — the whole catalog is served.', zh: '未勾选任何模型——目录全部对外路由。' },
+  'freepi_routing_toggle_title': { en: 'Tick to route this model; unticked models are not served while any tick exists.', zh: '勾选后该模型对外路由；存在勾选时未勾选的模型不对外。' },
   'freepi_weight_enable': { en: 'Enable weight optimization', zh: '启用权重优化' },
   'freepi_weight_interval': { en: 'Weight optimization interval (minutes)', zh: '权重优化间隔（分钟）' },
   'freepi_weight_interval_invalid': { en: 'Interval must be a non-negative integer (minutes)', zh: '间隔必须是非负整数（分钟）' },
@@ -3549,6 +3554,7 @@ async function loadProxyListCache() {
     proxyListCache = (d.data.proxies || []).slice();
     backupProxyOn = d.data.backupProxyEnabled === true;
     proxyExclusions = d.data.proxyExclusions || {};
+    proxyExclusionsAll = d.data.proxyExclusionsAll || [];
     proxyBindCaps = d.data.proxyBindCaps || {};
     reorderKeepSecCfg = Number(d.data.reorderKeepSec) > 0 ? Number(d.data.reorderKeepSec) : 8;
     syncReorderKeepSecInput();
@@ -3892,10 +3898,15 @@ function proxyPoolIdxForReorder(v) {
 // proxyBindCaps（kind -> 上限，0/缺 = 不限），代理池页编辑。只约束一键代理
 // 与延迟重排两条自动分配路径；手动绑定、配置导入与运行时路由不受影响。
 let proxyExclusions = {};
+// 全局排除（2026-11-24）：显式全局集（proxyExclusionsAll），对所有现有与未来
+// 平台的自动分配（一键代理/延迟重排）一律排除；手动绑定不受限；不含直连。
+let proxyExclusionsAll = [];
 let proxyBindCaps = {};
 const PROXY_RULE_DIRECT_KEY = '__direct__';   // 直连在排除表里的哨兵键（与后端 proxyRuleDirectKey 一致）
-// 直连不是池条目，映射到哨兵键后查同一张排除表
-const proxyExcludedFor = (v, kind) => (proxyExclusions[v === EGRESS_DIRECT ? PROXY_RULE_DIRECT_KEY : v] || []).indexOf(kind) >= 0;
+const PROXY_RULE_GLOBAL_KEY = '__global__';   // 规则区全局排除卡片的伪 kind（只在前端暂存用）
+// 直连不是池条目，映射到哨兵键后查同一张排除表；池条目另查全局集
+const proxyExcludedFor = (v, kind) => (v !== EGRESS_DIRECT && proxyExclusionsAll.indexOf(v) >= 0) ||
+  (proxyExclusions[v === EGRESS_DIRECT ? PROXY_RULE_DIRECT_KEY : v] || []).indexOf(kind) >= 0;
 const proxyCapFor = kind => Math.max(0, Number(proxyBindCaps[kind]) || 0);
 // 延迟档位：0=≤阈值 快 1=无记录 2=>阈值 慢（阈值见 reorderKeepMs，面板可调）。
 const proxyTierFor = v => { const ms = proxyHsMsForReorder(v); return ms > reorderKeepMs() ? 2 : (ms > 0 ? 0 : 1); };
@@ -5439,10 +5450,10 @@ const refreshWbModels = btn => refreshCatalog(btn, { label: 'WorkBuddy', wb: tru
 // （新增 → ban，取消 → unban）后统一落盘；chip 的 × 也只是取消暂存。
 const PLATFORM_BAN_BASE = [
   { key: 'cline', label: 'Cline' },
-  { key: 'trae', label: 'TraeWork' },
-  { key: 'workbuddy', label: 'WorkBuddy' },
+  { key: 'freepi', label: 'FreePI' },
   { key: 'zen', label: 'OpenCode' },
-  { key: 'freepi', label: 'FreePI' }
+  { key: 'trae', label: 'TraeWork' },
+  { key: 'workbuddy', label: 'WorkBuddy' }
 ];
 let platformBans = new Set();       // 服务器已落盘的封禁集
 let platformBansStaged = new Set(); // 面板暂存集（点「确认」才下发）
@@ -6026,6 +6037,7 @@ async function loadProxyPool() {
     syncProxyHealthCache((c.runtime || {}).proxyHealth);
     backupProxyOn = c.backupProxyEnabled === true;
     proxyExclusions = c.proxyExclusions || {};
+    proxyExclusionsAll = c.proxyExclusionsAll || [];
     proxyBindCaps = c.proxyBindCaps || {};
     reorderKeepSecCfg = Number(c.reorderKeepSec) > 0 ? Number(c.reorderKeepSec) : 8;
     syncReorderKeepSecInput();
@@ -6346,12 +6358,23 @@ function ppRulesState() {
   if (!ppRulesCache) {
     ppRulesCache = {};
     ruleLeaves().forEach(r => {
+      // 每平台卡片只列该平台自己的排除（原始 kinds 表），全局条目不重复展示
+      // ——proxyExcludedFor 对池条目会命中全局集，用它会把全局条目塞进每张卡。
       ppRulesCache[r.key] = {
         cap: proxyCapFor(r.key),
-        ex: proxyListCache.filter(p => proxyExcludedFor(p, r.key)),
-        dx: proxyExcludedFor(EGRESS_DIRECT, r.key)
+        ex: proxyListCache.filter(p =>
+          proxyExclusionsAll.indexOf(p) < 0 &&
+          (proxyExclusions[p] || []).indexOf(r.key) >= 0),
+        dx: (proxyExclusions[PROXY_RULE_DIRECT_KEY] || []).indexOf(r.key) >= 0
       };
     });
+    // 全局排除卡片（2026-11-24）：伪 kind 挂同一暂存链路，cap/dx 不适用。
+    // 注意用 proxyExclusionsAll 直接过滤而不是 proxyExcludedFor——后者对池条目
+    // 也会命中全局集，会把全局条目塞进每张平台卡片的 ex 里。
+    ppRulesCache[PROXY_RULE_GLOBAL_KEY] = {
+      ex: proxyListCache.filter(p => proxyExclusionsAll.indexOf(p) >= 0),
+      dx: false
+    };
   }
   return ppRulesCache;
 }
@@ -6360,7 +6383,8 @@ function ppRulesState() {
 // 包含即命中）。抽成独立函数供 prCard 渲染与 ppRuleInput 输入时就地刷新共用——
 // 输入路径绝不重建输入框节点（见 ppRuleInput）。
 function prMenuRows(kind, st) {
-  const left = proxyListCache.filter(p => p !== EGRESS_DIRECT && st.ex.indexOf(p) < 0);
+  const left = proxyListCache.filter(p => p !== EGRESS_DIRECT && st.ex.indexOf(p) < 0 &&
+    (kind === PROXY_RULE_GLOBAL_KEY || proxyExclusionsAll.indexOf(p) < 0));
   const q = prQuery.toLowerCase();
   const shown = left.filter(p => !q || egSearchText(p).includes(q));
   if (!shown.length) {
@@ -6395,17 +6419,20 @@ function prCard(leaf, s) {
     ' title="' + esc(T('remove')) + '">×</button></span>').join('');
   const q = prActiveKind === k ? prQuery : '';
   const menu = prMenuRows(k, s);
+  const isGlobal = k === PROXY_RULE_GLOBAL_KEY;
   return '<div class="pr-card' + (leaf.sub ? ' pr-card-sub' : '') + '">' +
     '<div class="pr-card-head">' +
       '<span class="pr-name" title="' + esc(leaf.prefix ? k + ' · ' + leaf.prefix : k) + '">' + esc(leaf.label) + '</span>' +
-      '<span class="pr-ctl">' +
-        '<span class="pr-capbox"><span class="pr-unit">' + T('max_reuse_per_proxy') + '</span>' +
-        '<input class="pr-cap" id="ppCap-' + esc(k) + '" type="number" min="0" step="1" placeholder="1" value="' + (s.cap || 1) + '"' +
-        ' oninput="ppRuleCapInput(\'' + esc(k) + '\',this.value)">' +
-        '<span class="pr-unit">' + T('times') + '</span></span>' +
-        '<label class="pr-switch" title="' + esc(T('exclude_direct')) + '"><input type="checkbox"' + (s.dx ? ' checked' : '') +
-        ' onchange="ppRuleToggleDirect(\'' + esc(k) + '\',this.checked)"><span>' + esc(T('exclude_direct')) + '</span></label>' +
-      '</span>' +
+      (isGlobal
+        ? '<span class="pr-group-meta" style="margin-left:auto;text-align:right">' + esc(T('global_exclusion_hint')) + '</span>'
+        : '<span class="pr-ctl">' +
+          '<span class="pr-capbox"><span class="pr-unit">' + T('max_reuse_per_proxy') + '</span>' +
+          '<input class="pr-cap" id="ppCap-' + esc(k) + '" type="number" min="0" step="1" placeholder="1" value="' + (s.cap || 1) + '"' +
+          ' oninput="ppRuleCapInput(\'' + esc(k) + '\',this.value)">' +
+          '<span class="pr-unit">' + T('times') + '</span></span>' +
+          '<label class="pr-switch" title="' + esc(T('exclude_direct')) + '"><input type="checkbox"' + (s.dx ? ' checked' : '') +
+          ' onchange="ppRuleToggleDirect(\'' + esc(k) + '\',this.checked)"><span>' + esc(T('exclude_direct')) + '</span></label>' +
+        '</span>') +
     '</div>' +
     '<div class="pr-anchor">' +
       '<div class="pr-tagbox" onclick="ppRuleFocus(\'' + esc(k) + '\')">' + chips +
@@ -6445,7 +6472,9 @@ function renderProxyRules() {
         : T('no_sub_platform_yet')) + '</span>' +
     '</div>';
   tb.innerHTML =
-    '<div class="pr-grid">' + base.map(l => prCard(l, st[l.key])).join('') + '</div>' +
+    '<div class="pr-grid">' +
+      prCard({ key: PROXY_RULE_GLOBAL_KEY, label: T('global_proxy_exclusion') }, st[PROXY_RULE_GLOBAL_KEY]) +
+      base.map(l => prCard(l, st[l.key])).join('') + '</div>' +
     '<div class="pr-group' + (prOtherOpen ? ' open' : '') + '">' + groupHead +
       (prOtherOpen && subs.length
         ? '<div class="pr-group-body">' + subs.map(l => prCard(l, st[l.key])).join('') + '</div>' : '') +
@@ -6566,8 +6595,13 @@ async function saveProxyRules() {
     const cap = el && el.value !== '' ? (parseInt(el.value, 10) || 0) : (st[r.key].cap || 0);
     if (cap > 0) caps[r.key] = cap;
   });
+  // 全局排除按池序整表提交（后端再按池规整一次）；空数组 = 显式清空全局集。
+  const globals = [];
+  proxyListCache.forEach(p => {
+    if ((st[PROXY_RULE_GLOBAL_KEY].ex || []).indexOf(p) >= 0 && globals.indexOf(p) < 0) globals.push(p);
+  });
   try {
-    await api('POST', '/opencode/config/update', { proxyExclusions: exclusions, proxyBindCaps: caps });
+    await api('POST', '/opencode/config/update', { proxyExclusions: exclusions, proxyExclusionsAll: globals, proxyBindCaps: caps });
     toast(T('saved_proxy_exclusion_rules'), 'success');
     loadProxyPool();
   } catch (e) { toast(T('save_failed') + e.message, 'error'); }
@@ -6665,7 +6699,8 @@ function ppBulkEverywhere() {
   const st = ppRulesState();
   const leaves = ruleLeaves();
   return proxyListCache.filter(p => p !== EGRESS_DIRECT &&
-    leaves.every(l => (st[l.key].ex || []).indexOf(p) >= 0));
+    (proxyExclusionsAll.indexOf(p) >= 0 ||
+     leaves.every(l => (st[l.key].ex || []).indexOf(p) >= 0)));
 }
 function ppBulkSyncChips() {
   const chips = _('ppBulkChips');
@@ -8188,6 +8223,7 @@ document.addEventListener('click', function (e) {
 // ========== FreePI（freepi.ai 免费日额度 key 池，2026-11-20 接入）==========
 let freepiConfig = null;
 let freepiKnownModels = [];
+let freepiRoutedModels = []; // 路由白名单（2026-11-24）：勾选的模型 ID；空 = 目录全部对外
 let freepiKeySnapshot = {};
 let frNickByIndex = {};
 let freepiEditSnapshot = null;
@@ -8199,6 +8235,7 @@ async function loadFreepiConfig() {
   catch (e) { d = { data: {} }; }
   freepiConfig = d.data || {};
   freepiKnownModels = freepiConfig.models || [];
+  freepiRoutedModels = freepiConfig.routedModels || [];
   const ks = freepiConfig.keyStates || [];
   ks.forEach(k => { if (k.nickname) frNickByIndex[k.index] = k.nickname; });
   // 标题下统计：key · 可用（路由启用）· 冷却中（与 OpenCode 页摘要同款）
@@ -8226,13 +8263,44 @@ function renderFreepiModels(list) {
   const box = _('freepiModelsBody');
   if (!box) return;
   if (!list.length) { box.innerHTML = '<div class="empty">' + T('no_models_refresh_to_sync') + '</div>'; return; }
-  // 行样式与 OpenCode 页目录区一致（loadModels 的 row() 卡片同款）；Name 进 title 悬浮
-  box.innerHTML = list.map(m =>
-    '<div style="display:flex;align-items:center;gap:10px;padding:8px 12px;margin:5px 0;background:rgba(148,163,184,.06);border:1px solid var(--border);border-radius:10px;transition:.15s">' +
-      '<span style="font-family:\'JetBrains Mono\',monospace;font-size:13px;flex:1" title="' + esc(m.name || m.id) + '">' + esc(m.id) + '</span>' +
-      '<span class="model-tag free">' + T('no_charge') + '</span>' +
-      (m.context ? wbContextTagHTML(m.context, T('context')) : '') +
-    '</div>').join('');
+  // 路由白名单（2026-11-24 用户定）：每行一个勾选框，即点即存；未勾选任何
+  // 模型 = 目录全部对外路由（默认）。提示条 + 全选/清空复用 enable_all/
+  // disable_all 词条。行样式与 OpenCode 页目录区一致；Name 进 title 悬浮。
+  const any = freepiRoutedModels.length > 0;
+  box.innerHTML =
+    '<div style="display:flex;align-items:center;gap:10px;padding:6px 12px">' +
+      '<span class="hint" style="margin:0">' + esc(any ? T('freepi_routing_whitelist_on') : T('freepi_routing_whitelist_off')) + '</span>' +
+      '<button class="btn btn-sm" style="margin-left:auto" onclick="freepiRoutedAll(true)" data-i18n="enable_all">Enable all</button>' +
+      '<button class="btn btn-sm" onclick="freepiRoutedAll(false)" data-i18n="disable_all">Disable all</button>' +
+    '</div>' +
+    list.map(m => {
+      const on = freepiRoutedModels.indexOf(m.id) >= 0;
+      return '<div style="display:flex;align-items:center;gap:10px;padding:8px 12px;margin:5px 0;background:rgba(148,163,184,.06);border:1px solid var(--border);border-radius:10px;transition:.15s">' +
+        '<label style="display:flex;align-items:center;gap:6px;margin:0;cursor:pointer" data-i18n-title="freepi_routing_toggle_title" title="Tick to route this model; unticked models are not served while any tick exists.">' +
+          '<input type="checkbox" style="width:auto;padding:0;accent-color:var(--accent)"' + (on ? ' checked' : '') +
+          ' onchange="freepiRoutedToggle(\'' + esc(m.id) + '\',this.checked)"><span></span></label>' +
+        '<span style="font-family:\'JetBrains Mono\',monospace;font-size:13px;flex:1" title="' + esc(m.name || m.id) + '">' + esc(m.id) + '</span>' +
+        '<span class="model-tag free">' + T('no_charge') + '</span>' +
+        (m.context ? wbContextTagHTML(m.context, T('context')) : '') +
+      '</div>';
+    }).join('');
+}
+
+async function freepiRoutedToggle(id, on) {
+  const set = new Set(freepiRoutedModels);
+  if (on) set.add(id); else set.delete(id);
+  await freepiRoutedSave([...set]);
+}
+async function freepiRoutedAll(all) {
+  await freepiRoutedSave(all ? freepiKnownModels.map(m => m.id) : []);
+}
+async function freepiRoutedSave(ids) {
+  try {
+    await api('POST', '/freepi/config/update', { routedModels: ids });
+    freepiRoutedModels = ids || [];
+    renderFreepiModels(freepiKnownModels);
+    toast(T('saved'), 'success');
+  } catch (e) { toast(T('save_failed') + e.message, 'error'); }
 }
 
 function renderFreepiKeys(ks) {

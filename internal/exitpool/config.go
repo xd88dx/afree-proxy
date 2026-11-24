@@ -37,11 +37,13 @@ type FileData struct {
 	// 旧键经 JSON 未知字段忽略，一次面板保存后从文件消失。
 
 	// ---- 隔离/绑定段（binding.go）----
-	ProxyIsolation     *bool               `json:"proxyIsolation,omitempty"`
-	BackupProxyEnabled *bool               `json:"backupProxyEnabled,omitempty"`
-	ProxyExclusions    map[string][]string `json:"proxyExclusions,omitempty"`
-	ProxyBindCaps      map[string]int      `json:"proxyBindCaps,omitempty"`
-	ReorderKeepSec     float64             `json:"reorderKeepSec,omitempty"`
+	ProxyIsolation             *bool               `json:"proxyIsolation,omitempty"`
+	BackupProxyEnabled         *bool               `json:"backupProxyEnabled,omitempty"`
+	ProxyExclusions            map[string][]string `json:"proxyExclusions,omitempty"`
+	ProxyExclusionsAll         []string            `json:"proxyExclusionsAll,omitempty"`
+	ProxyExclusionsAllMigrated bool                `json:"proxyExclusionsAllMigrated,omitempty"`
+	ProxyBindCaps              map[string]int      `json:"proxyBindCaps,omitempty"`
+	ReorderKeepSec             float64             `json:"reorderKeepSec,omitempty"`
 }
 
 var (

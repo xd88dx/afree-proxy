@@ -37,6 +37,11 @@ func freepiModelList() []map[string]any {
 		return out
 	}
 	for _, m := range freepi.KnownModels() {
+		// 路由白名单（2026-11-24 用户定）：非空白名单只列勾选模型——
+		// 「列出来的必须调得通」的镜像面「没列的必调不到」。
+		if !c.ModelRouted(m.ID) {
+			continue
+		}
 		out = append(out, map[string]any{
 			"id":      freepi.ModelPrefix + ":" + m.ID,
 			"object":  "model",
@@ -99,6 +104,12 @@ func freepiChatCall(ctx context.Context, params map[string]any, bare string, str
 	if !ok {
 		return nil, nil, fmt.Errorf("model %q is not in the FreePI catalog — refresh the catalog on the FreePI page", bare)
 	}
+	// 路由白名单（2026-11-24 用户定）：非空白名单外拒绝——/v1/messages 与
+	// /v1/responses 的 cross_endpoint 路径同闸（/v1/chat 在 handleFreepiChat
+	// 里显式 400，此处错误经各入口既有 upstreamErrorStatus 落状态码）。
+	if !freepi.Get().ModelRouted(bare) {
+		return nil, nil, fmt.Errorf("model %q is not routed — tick it in the FreePI model catalog (unchecked models are not served while any tick exists)", bare)
+	}
 	resp, _, err := freepi.Chat(ctx, params, m.ID, stream, gwconfig.GlobalStrategy(), freepiBoundRoutable(), freepiExitFn)
 	if err != nil {
 		return nil, nil, err
@@ -120,6 +131,14 @@ func handleFreepiChat(w http.ResponseWriter, r *http.Request, params map[string]
 	m, ok := freepi.ResolveModel(bare)
 	if !ok {
 		writeUpstreamAPIError(w, freepi.ModelPrefix+":"+bare, fmt.Errorf("model %q is not in the FreePI catalog", bare), http.StatusBadRequest)
+		return
+	}
+	// 路由白名单（2026-11-24 用户定）：非空白名单外 400。/v1/models 与此同
+	// 判定（freepiModelList）——「没列的必调不到」。
+	if !freepi.Get().ModelRouted(bare) {
+		writeUpstreamAPIError(w, freepi.ModelPrefix+":"+bare,
+			fmt.Errorf("model %q is not routed — tick it in the FreePI model catalog (unchecked models are not served while any tick exists)", bare),
+			http.StatusBadRequest)
 		return
 	}
 	if len(freepi.Get().Keys) == 0 {

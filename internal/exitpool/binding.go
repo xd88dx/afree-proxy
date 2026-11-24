@@ -22,7 +22,17 @@ type BindingConfig struct {
 	ProxyIsolation     *bool               `json:"proxyIsolation,omitempty"`
 	BackupProxyEnabled *bool               `json:"backupProxyEnabled,omitempty"`
 	ProxyExclusions    map[string][]string `json:"proxyExclusions,omitempty"`
-	ProxyBindCaps      map[string]int      `json:"proxyBindCaps,omitempty"`
+	// ProxyExclusionsAll 全局排除（2026-11-24 用户定）：显式字段取代「kinds
+	// 覆盖全部叶子 = 全局」的推断语义——推断式在叶集增长（freepi 立项、新增
+	// 平台）时会把旧规则静默降级成部分排除，新平台一键代理就漏掉排除。列进
+	// 全局集的池条目对所有现有与未来平台的自动分配（一键代理/延迟重排）一律
+	// 排除；手动绑定不受限。不含直连哨兵（__direct__ 仍是每条目单独设置）。
+	ProxyExclusionsAll []string `json:"proxyExclusionsAll,omitempty"`
+	// ProxyExclusionsAllMigrated 存量规则一次性迁移标记（2026-11-24）：启动时
+	// 把 kinds 覆盖当时全部叶子的条目转入全局集并从推断表移除，防止下次启动
+	// 对用户新建的「逐平台列满」规则再次自动升级（语义应由用户显式选择）。
+	ProxyExclusionsAllMigrated bool           `json:"proxyExclusionsAllMigrated,omitempty"`
+	ProxyBindCaps              map[string]int `json:"proxyBindCaps,omitempty"`
 	// 延迟重排的"保持不变"阈值（秒）：平均握手延迟 ≤ 该值的代理视为健康、
 	// 保持现绑定不参与重排。0/缺项 = 取 DefaultReorderKeepSec。
 	ReorderKeepSec float64 `json:"reorderKeepSec,omitempty"`
@@ -58,11 +68,13 @@ func loadBindingLocked() *BindingConfig {
 	f := loadFileLocked()
 	fileMu.Unlock()
 	bindingCfg = &BindingConfig{
-		ProxyIsolation:     f.ProxyIsolation,
-		BackupProxyEnabled: f.BackupProxyEnabled,
-		ProxyExclusions:    f.ProxyExclusions,
-		ProxyBindCaps:      f.ProxyBindCaps,
-		ReorderKeepSec:     f.ReorderKeepSec,
+		ProxyIsolation:             f.ProxyIsolation,
+		BackupProxyEnabled:         f.BackupProxyEnabled,
+		ProxyExclusions:            f.ProxyExclusions,
+		ProxyExclusionsAll:         f.ProxyExclusionsAll,
+		ProxyExclusionsAllMigrated: f.ProxyExclusionsAllMigrated,
+		ProxyBindCaps:              f.ProxyBindCaps,
+		ReorderKeepSec:             f.ReorderKeepSec,
 	}
 	bindingLoadedPath = path
 	return bindingCfg
@@ -88,6 +100,8 @@ func SetBinding(c *BindingConfig) {
 		f.ProxyIsolation = cp.ProxyIsolation
 		f.BackupProxyEnabled = cp.BackupProxyEnabled
 		f.ProxyExclusions = cp.ProxyExclusions
+		f.ProxyExclusionsAll = cp.ProxyExclusionsAll
+		f.ProxyExclusionsAllMigrated = cp.ProxyExclusionsAllMigrated
 		f.ProxyBindCaps = cp.ProxyBindCaps
 		f.ReorderKeepSec = cp.ReorderKeepSec
 	})
@@ -117,6 +131,32 @@ func ProxyRuleKindValid(kind string) bool {
 // 直连必被上游拒绝，批量分配就不再把直连同给任何子平台凭据；手动绑定
 // 与运行时路由不受影响。池变动清理时该键永不删除。
 const ProxyRuleDirectKey = "__direct__"
+
+// PruneProxyEntries 全局排除表按池清理：非池条目丢弃（与 PruneProxyExclusions
+// 同口径），去重保序；直连哨兵永不进全局集（直连排除仍是每条目单独设置，
+// 2026-11-24 用户定）。
+func PruneProxyEntries(list []string, pool []string) []string {
+	if len(list) == 0 {
+		return nil
+	}
+	inPool := make(map[string]bool, len(pool))
+	for _, p := range pool {
+		inPool[p] = true
+	}
+	out := make([]string, 0, len(list))
+	seen := make(map[string]bool, len(list))
+	for _, p := range list {
+		if !inPool[p] || p == ProxyRuleDirectKey || seen[p] {
+			continue
+		}
+		seen[p] = true
+		out = append(out, p)
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
 
 // PruneProxyExclusions 按代理池清理排除表：已不在池内的代理条目丢弃（它们
 // 永远不会被自动分配命中，留着只是垃圾配置），直连哨兵键保留 —— 它不是池

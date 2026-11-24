@@ -116,6 +116,7 @@ func handleFreepiConfig(w http.ResponseWriter, r *http.Request) {
 		"retries":        c.Retries,
 		"weightOptimize": c.WeightOptimizeEnabled(),
 		"weightInterval": c.WeightInterval(),
+		"routedModels":   c.RoutedModels,
 		"keyStates":      freepi.KeyStatus(),
 		"models":         modelViews,
 	}
@@ -139,6 +140,9 @@ func handleFreepiConfigUpdate(w http.ResponseWriter, r *http.Request) {
 		Retries        *int  `json:"retries"`
 		WeightOptimize *bool `json:"weightOptimize"`
 		WeightInterval *int  `json:"weightInterval"`
+		// 路由白名单（2026-11-24）：nil = 未提交；非 nil = 整表替换（空表 =
+		// 全部路由）。指针区分语义与面板"即点即存"一致。
+		RoutedModels *[]string `json:"routedModels"`
 	}
 	if err := json.NewDecoder(io.LimitReader(r.Body, 4096)).Decode(&patch); err != nil {
 		WriteAPI(w, http.StatusBadRequest, apiResponse{Error: "invalid JSON"})
@@ -148,7 +152,7 @@ func handleFreepiConfigUpdate(w http.ResponseWriter, r *http.Request) {
 		freepi.SetConfigUseProxies(patch.UseProxies)
 	}
 	if patch.MaxConcurrency != nil || patch.Retries != nil ||
-		patch.WeightOptimize != nil || patch.WeightInterval != nil {
+		patch.WeightOptimize != nil || patch.WeightInterval != nil || patch.RoutedModels != nil {
 		freepiSetNext(func(next *freepi.Config) {
 			if patch.MaxConcurrency != nil && *patch.MaxConcurrency > 0 {
 				next.MaxConcurrency = *patch.MaxConcurrency
@@ -162,6 +166,10 @@ func handleFreepiConfigUpdate(w http.ResponseWriter, r *http.Request) {
 			// 0 = 恢复默认间隔（WeightInterval 访问器把 <=0 回落为 30）
 			if patch.WeightInterval != nil && *patch.WeightInterval >= 0 {
 				next.WeightIntervalMinutes = *patch.WeightInterval
+			}
+			// 白名单整表替换（trim/去重在 normalize），空表 = 全部路由
+			if patch.RoutedModels != nil {
+				next.RoutedModels = *patch.RoutedModels
 			}
 		})
 	}

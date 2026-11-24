@@ -172,6 +172,9 @@ func proxyRuleKindValid(kind string) bool { return exitpool.ProxyRuleKindValid(k
 func pruneProxyExclusions(ex map[string][]string, pool []string) map[string][]string {
 	return exitpool.PruneProxyExclusions(ex, pool)
 }
+func pruneProxyEntries(list []string, pool []string) []string {
+	return exitpool.PruneProxyEntries(list, pool)
+}
 func reconcileEgressBindings() { zen.ReconcileEgressBindings() }
 func reconcileZenKeyRouting(next *ZenConfigData, cur *ZenConfigData) {
 	zen.ReconcileZenKeyRouting(next, cur)

@@ -3,6 +3,7 @@ package app
 import (
 	"afree-proxy/internal/cline"
 	"fmt"
+	"log"
 	"strings"
 
 	"afree-proxy/internal/exitpool"
@@ -282,5 +283,64 @@ func inheritProxyExclusionsForNewPlatform(newSlug string) {
 		}
 		next.ProxyExclusions[u] = kinds
 	}
+	setProxyBindingConfig(&next)
+}
+
+// migrateProxyExclusionsAll 存量推断式全局规则一次性迁移（2026-11-24 用户定）：
+// kinds 覆盖当时全部叶子（acc/trae/key/wb/freepi + 全部 other:<slug>）的条目
+// 转入 ProxyExclusionsAll 并从推断表移除——叶集此后再增长（新增平台）不再
+// 瓦解这些规则的全局性。一次性：ProxyExclusionsAllMigrated 标记防止后续启动
+// 把用户「逐平台列满」的新规则再次自动升级（全局语义应由用户显式选择）；
+// 只排除部分平台的条目不迁移；直连哨兵条目不迁移（全局集不含直连，2026-11-24
+// 用户定）。迁移清单打日志留痕（台账口径）。initOther 在 other.Load +
+// ReconcileOtherPlatforms 之后调用一次，幂等。
+func migrateProxyExclusionsAll() {
+	binding := getProxyBindingConfig()
+	if binding == nil || binding.ProxyExclusionsAllMigrated {
+		return
+	}
+	leaves := map[string]bool{"acc": true, "trae": true, "key": true, "wb": true, "freepi": true}
+	for _, p := range other.Get().Platforms {
+		leaves["other:"+p.Slug] = true
+	}
+	coveredAll := func(kinds []string) bool {
+		for leaf := range leaves {
+			found := false
+			for _, k := range kinds {
+				if k == leaf {
+					found = true
+					break
+				}
+			}
+			if !found {
+				return false
+			}
+		}
+		return true
+	}
+	next := *binding
+	next.ProxyExclusions = make(map[string][]string, len(binding.ProxyExclusions))
+	var promoted []string
+	for u, kinds := range binding.ProxyExclusions {
+		if u != proxyRuleDirectKey && len(kinds) > 0 && coveredAll(kinds) {
+			promoted = append(promoted, u)
+			continue // 转入全局集，推断表移除（条目 kinds 全为叶子 kind，无残余）
+		}
+		next.ProxyExclusions[u] = kinds
+	}
+	if len(promoted) > 0 {
+		seen := make(map[string]bool, len(promoted))
+		added := make([]string, 0, len(promoted))
+		for _, p := range promoted {
+			if p == proxyRuleDirectKey || seen[p] {
+				continue
+			}
+			seen[p] = true
+			added = append(added, p)
+		}
+		next.ProxyExclusionsAll = added
+		log.Printf("[proxy-exclusions] 存量全局规则迁移: %d 个条目转入全局排除 %v", len(added), added)
+	}
+	next.ProxyExclusionsAllMigrated = true
 	setProxyBindingConfig(&next)
 }

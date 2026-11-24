@@ -275,6 +275,12 @@ func handleAdminConfigImport(w http.ResponseWriter, r *http.Request) {
 		if len(next.ProxyExclusions) > 0 && cb.ProxyPool != nil && len(cb.ProxyPool.Proxies) > 0 {
 			next.ProxyExclusions = pruneProxyExclusions(next.ProxyExclusions, cb.ProxyPool.Proxies)
 		}
+		// 全局排除表同样按导入池清理（非池条目丢弃、去重）；直连哨兵不属于全局
+		// 集（与面板保存同口径，2026-11-24）。备份未带池时不动，避免把"池为空"
+		// 的意图误升格为"清空规则"。
+		if len(next.ProxyExclusionsAll) > 0 && cb.ProxyPool != nil && len(cb.ProxyPool.Proxies) > 0 {
+			next.ProxyExclusionsAll = pruneProxyEntries(next.ProxyExclusionsAll, cb.ProxyPool.Proxies)
+		}
 		// 上限表同样只保留正值（缺项/0/负数 = 不限）。
 		if len(next.ProxyBindCaps) > 0 {
 			caps := make(map[string]int, len(next.ProxyBindCaps))

@@ -32,7 +32,8 @@ func initOther() {
 	other.UsagePath = kit.ResolveDataPath("other-state.json")
 	other.Load(otherConfigPath())
 	migrateOtherSlugPrefix()
-	ReconcileOtherPlatforms() // 子平台注册进 platform registry（2026-11-17 P3）
+	ReconcileOtherPlatforms()   // 子平台注册进 platform registry（2026-11-17 P3）
+	migrateProxyExclusionsAll() // 存量推断式全局规则一次性迁移（2026-11-24，需先有子平台清单）
 	other.SetClientProvider(otherClientFor)
 	// 目录同步与 chat 同链路（2026-11-09 审计修复）：此前 FetchModels 走裸直连
 	// 默认 client，DISABLE_DIRECT / 绑定出口对同步全不生效——凭据与出口 IP 会
