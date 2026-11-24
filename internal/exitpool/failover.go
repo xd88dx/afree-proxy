@@ -31,6 +31,7 @@ import (
 	"net/url"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"afree-proxy/internal/kit"
@@ -416,14 +417,31 @@ func regionOf(proxyURL string) string {
 
 // probeHook 测试注入点（白盒）：非 nil 时替代真实 probeURL，验证差分判定
 // 全链路不需要真实网络。生产路径恒为 nil。
-var probeHook func(ctx context.Context, proxyURL, target string) error
+//
+// 用 atomic.Pointer 承载：OnExitFailure 异步起 goroutine 执行 runFailover，
+// 测试主线程会在各个场景间替换 hook，而上一场景的 goroutine 可能尚未退出
+// （failoverRunning 只防同 key 重入，不保证跨场景串行）。普通函数变量读写
+// 会触发 -race 的 DATA RACE（2026-11-24 CI 实测）。生产路径 Load 到 nil 即
+// 走真实探测，无额外开销。
+type probeFunc func(ctx context.Context, proxyURL, target string) error
+
+var probeHook atomic.Pointer[probeFunc]
+
+// setProbeHook 原子替换探测钩子；nil = 恢复真实探测。仅测试使用。
+func setProbeHook(f probeFunc) {
+	if f == nil {
+		probeHook.Store(nil)
+		return
+	}
+	probeHook.Store(&f)
+}
 
 // probeURL 经指定出口对目标发一次 GET（完整握手：拨号+隧道+TLS+请求），
 // 收到任何 HTTP 响应（含 401/404/5xx）都算通——隧道与 TLS 已走通即有效，
 // 与面板延迟测试 probeOnce 同口径。纯探测：不记统计、不触发冷却。
 func probeURL(ctx context.Context, proxyURL, target string) error {
-	if probeHook != nil {
-		return probeHook(ctx, proxyURL, target)
+	if f := probeHook.Load(); f != nil {
+		return (*f)(ctx, proxyURL, target)
 	}
 	transport := BuildTransport(func(c context.Context, network, addr string) (net.Conn, error) {
 		return DialViaProxy(c, proxyURL, network, addr)

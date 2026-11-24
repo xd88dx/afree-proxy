@@ -3,6 +3,7 @@ package exitpool
 import (
 	"context"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 )
@@ -124,8 +125,10 @@ type errFake string
 
 func (e errFake) Error() string { return string(e) }
 
-// rebindFake 记录 Rebind 调用的适配器替身。
+// rebindFake 记录 Rebind 调用的适配器替身。OnExitFailure 异步 goroutine
+// 写 calls，测试主线程读，必须加锁（否则 -race DATA RACE，2026-11-24 CI）。
 type rebindFake struct {
+	mu    sync.Mutex
 	bound []string
 	calls []string
 }
@@ -138,8 +141,17 @@ func (f *rebindFake) Pairs() []Binding {
 	return out
 }
 func (f *rebindFake) Rebind(from, to string) int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.calls = append(f.calls, from+"->"+to)
 	return 2
+}
+
+// Calls 返回调用记录的快照（供测试主线程并发安全读取）。
+func (f *rebindFake) Calls() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]string(nil), f.calls...)
 }
 
 // waitCond 轮询等待条件成立（异步 goroutine 判定完成）。
@@ -154,6 +166,22 @@ func waitCond(t *testing.T, what string, cond func() bool) {
 	t.Fatalf("timeout waiting for %s", what)
 }
 
+// waitFailoverIdle 等待所有在途 failover goroutine 收尾（替代固定 sleep，
+// 避免跨场景的钩子/替身读写与上一场景异步任务重叠）。
+func waitFailoverIdle(t *testing.T) {
+	t.Helper()
+	for i := 0; i < 250; i++ {
+		failoverMu.Lock()
+		n := len(failoverRunning)
+		failoverMu.Unlock()
+		if n == 0 {
+			return
+		}
+		sleepMs(20)
+	}
+	t.Fatal("timeout waiting for failover goroutines to finish")
+}
+
 // TestOnPlatformScopedFailureEndToEnd 差分故障转移全链路（2026-11-24 用户定）：
 // 开关开 + 三元组成立 → 故障出口进入该平台排除表 + 绑定它的凭据改绑到
 // 同地区替补（a-jp → y-jp，不是池尾的 z-au）；三元组任一不成立则不动。
@@ -166,58 +194,63 @@ func TestOnPlatformScopedFailureEndToEnd(t *testing.T) {
 	t.Cleanup(func() {
 		failoverMu.Lock()
 		delete(failoverBindings, "wb")
-		probeHook = nil
 		failoverMu.Unlock()
+		setProbeHook(nil)
 	})
 	const failed = "socks5://h:1#a-jp"
 	const wbErr = errFake(`Get "https://www.workbuddy.ai/v3/config": net/http: TLS handshake timeout`)
 
 	// 场景 1：出口死（测速目标探测失败）→ 改绑但不排除（2026-11-24 用户定）。
-	probeHook = func(_ context.Context, proxy, target string) error {
+	setProbeHook(func(_ context.Context, proxy, target string) error {
 		if SameAlias(proxy, failed) {
 			return errFake("socks connect: EOF")
 		}
 		return nil
-	}
+	})
 	OnExitFailure("wb", failed, wbErr)
-	waitCond(t, "dead-exit rebind", func() bool { return len(rb.calls) == 1 })
+	waitCond(t, "dead-exit rebind", func() bool { return len(rb.Calls()) == 1 })
+	waitFailoverIdle(t)
 	if proxyExcludedFor("wb", failed) {
 		t.Fatal("dead exit must NOT be platform-excluded")
 	}
-	if rb.calls[0] != failed+"->socks5://h:3#y-jp" {
-		t.Fatalf("dead-exit rebind = %v, want a-jp->y-jp", rb.calls)
+	calls := rb.Calls()
+	if calls[0] != failed+"->socks5://h:3#y-jp" {
+		t.Fatalf("dead-exit rebind = %v, want a-jp->y-jp", calls)
 	}
 
 	// 场景 2：目标整体故障（旁证出口也超时）→ 不排除不改绑。
-	probeHook = func(_ context.Context, proxy, target string) error {
+	setProbeHook(func(_ context.Context, proxy, target string) error {
 		if SameAlias(proxy, failed) {
 			return nil // 测速目标通
 		}
 		return errFake("net/http: TLS handshake timeout") // 旁证全挂
-	}
+	})
 	OnExitFailure("wb", failed, wbErr)
-	sleepMs(300)
+	waitFailoverIdle(t)
 	if proxyExcludedFor("wb", failed) {
 		t.Fatal("target-wide outage must not exclude the exit")
 	}
-	if len(rb.calls) != 1 {
-		t.Fatalf("target-wide outage must not rebind, calls = %v", rb.calls)
+	if len(rb.Calls()) != 1 {
+		t.Fatalf("target-wide outage must not rebind, calls = %v", rb.Calls())
 	}
 
 	// 场景 3：三元组成立 → 排除 + 改绑到同地区替补 y-jp。
-	probeHook = func(_ context.Context, proxy, target string) error {
+	setProbeHook(func(_ context.Context, proxy, target string) error {
 		return nil
-	}
+	})
 	OnExitFailure("wb", failed, wbErr)
 	waitCond(t, "exclusion", func() bool { return proxyExcludedFor("wb", failed) })
-	if len(rb.calls) != 2 || rb.calls[1] != failed+"->socks5://h:3#y-jp" {
-		t.Fatalf("rebind = %v, want second call a-jp->y-jp", rb.calls)
+	waitFailoverIdle(t)
+	calls = rb.Calls()
+	if len(calls) != 2 || calls[1] != failed+"->socks5://h:3#y-jp" {
+		t.Fatalf("rebind = %v, want second call a-jp->y-jp", calls)
 	}
 
 	// 场景 4：已排除过的出口再次触发 → 不重复写排除表，改绑仍执行（幂等
 	// 补做——"仅排除未改绑"的卡死场景靠此自愈，2026-11-24 用户定）。
 	OnExitFailure("wb", failed, wbErr)
-	waitCond(t, "idempotent rebind", func() bool { return len(rb.calls) == 3 })
+	waitCond(t, "idempotent rebind", func() bool { return len(rb.Calls()) == 3 })
+	waitFailoverIdle(t)
 	if !proxyExcludedFor("wb", failed) {
 		t.Fatal("exclusion must persist across retrigger")
 	}
@@ -230,16 +263,16 @@ func TestOnPlatformScopedFailureEndToEnd(t *testing.T) {
 		delete(failoverBindings, "acc")
 		failoverMu.Unlock()
 	})
-	probeHook = func(_ context.Context, proxy, target string) error {
+	setProbeHook(func(_ context.Context, proxy, target string) error {
 		if SameAlias(proxy, failed) {
 			return errFake("socks connect: EOF")
 		}
 		return nil
-	}
+	})
 	OnExitFailure("acc", failed, wbErr)
-	sleepMs(300)
-	if len(empty.calls) != 0 {
-		t.Fatalf("no-bound-credentials dead exit must not rebind, got %v", empty.calls)
+	waitFailoverIdle(t)
+	if len(empty.Calls()) != 0 {
+		t.Fatalf("no-bound-credentials dead exit must not rebind, got %v", empty.Calls())
 	}
 }
 

@@ -746,6 +746,19 @@ func handleStreamBufferedGeneric(w http.ResponseWriter, r *http.Request, plat st
 				})
 				return
 			}
+			// DSML / 空参数坏工具调用兜底（2026-11-25）：响应已完整缓冲、尚未向
+			// 客户端写任何字节，可以在这里直接改判 502。此前 200 + 坏 tool_use
+			// 被 new-api 记为成功交给 agent，Claude Code 因 command 缺失校验失败、
+			// 任务静默终止；改成真实错误后 agent 可重试/报错。
+			if bad := guardBadToolCalls(lines, params); bad != "" {
+				log.Printf("  [%s] %s buffered stream bad tool call, returning 502: %s",
+					rid, plat, kit.Truncate(bad, 200))
+				reqlog.SetUpstreamNote(r.Context(), "工具调用参数破损")
+				writeJSON(w, http.StatusBadGateway, map[string]any{
+					"error": map[string]any{"message": kit.Truncate(bad, 300), "type": "upstream_error"},
+				})
+				return
+			}
 			replaySSE(w, lines, clientWantsStreamUsage(params))
 			return
 		}
@@ -1277,6 +1290,15 @@ func finishZenChatNonStream(w http.ResponseWriter, resp *http.Response, zm *ZenM
 	chat["model"] = zm.ID
 	chat = normalizeOpenAIResponse(chat)
 	truncateAtStopSequences(chat, stopSequencesFrom(params))
+	// 非流式出口同样拦下坏工具调用（2026-11-25）：此处尚未写 200，
+	// 与流式路径共用判据，避免 new-api 把 200 + 空 tool_use 记为成功。
+	if bad := guardBadToolCallsChat(chat, params); bad != "" {
+		log.Printf("  nonstream bad tool call, returning 502: %s", kit.Truncate(bad, 200))
+		writeJSON(w, http.StatusBadGateway, map[string]any{
+			"error": map[string]any{"message": kit.Truncate(bad, 300), "type": "upstream_error"},
+		})
+		return
+	}
 	writeJSON(w, http.StatusOK, chat)
 }
 

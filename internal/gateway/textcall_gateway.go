@@ -71,15 +71,22 @@ type textCallGW struct {
 	finishObj map[string]any
 	finishEvt []byte
 	haveFin   bool
-	heldTail  [][]byte // finish 之后、[DONE] 之前的事件（usage 等）
+	heldTail  [][]byte    // finish 之后、[DONE] 之前的事件（usage 等）
+	dsml      *dsmlRepair // DSML 标记还原器（DeepSeek 系工具调用文本）
+	dsmlCalls []dsmlCall  // 本次流从 DSML 还原出的调用
 }
 
 // newTextCallGateway 包装引擎可见的 ResponseWriter。names 为请求声明的工具名
 // 清单；为空时调用方应直接跳过包装（零开销）。
 func newTextCallGateway(w http.ResponseWriter, names []string, model string) *textCallGW {
+	allowed := make(map[string]bool, len(names))
+	for _, n := range names {
+		allowed[n] = true
+	}
 	return &textCallGW{
 		ResponseWriter: w,
 		filter:         textcall.New(names, textcallMaxPerResponse()),
+		dsml:           newDSMLRepair(allowed, false), // 严格判定：工具名须在声明的 tools 里
 		names:          names,
 		model:          model,
 	}
@@ -209,8 +216,14 @@ func (g *textCallGW) handleSSEEvent(evt []byte) {
 		g.holdOrPass(evt)
 		return
 	}
-	// 正文增量：喂过滤器，用释放的正文重写该块
-	released := g.filter.Feed(content)
+	// DSML 标记先还原：DeepSeek 系模型把工具调用写成 <｜｜DSML｜｜ ...> 文本时，
+	// 这里转成结构化调用；剥离后的正文再交给 textcall 过滤器处理。
+	prose, dsCalls := g.dsml.feed(content)
+	g.dsmlCalls = append(g.dsmlCalls, dsCalls...)
+	if prose == "" {
+		return // 全部被还原/暂扣：该块不下发
+	}
+	released := g.filter.Feed(prose)
 	if released == "" {
 		return // 全部被暂扣/剥离：该块不下发
 	}
@@ -237,15 +250,10 @@ func (g *textCallGW) emitChunkObj(obj map[string]any) {
 	g.rawWrite(append(append([]byte("data: "), data...), '\n', '\n'))
 }
 
-// emitToolCallChunk 以 finish 块的信封下发一个转换出的工具调用块。
-// id 为空时补生成——OpenAI 规范 tool_calls[].id 必填，缺 id 会被严格客户端拒收。
-func (g *textCallGW) emitToolCallChunk(index int, c textcall.Call) {
-	id := c.ID
-	if id == "" {
-		id = "call_" + textcallRandHex(8)
-	}
+// chunkEnvelope 构造与上游 finish 块同信封的 chunk（响应 id/created/model 对齐）。
+func (g *textCallGW) chunkEnvelope() map[string]any {
 	env := map[string]any{
-		// 注意：这是响应 id（chatcmpl-*），不是 tool_call id；后者已由 id 变量带入
+		// 注意：这是响应 id（chatcmpl-*），不是 tool_call id
 		"id":      fmt.Sprintf("chatcmpl-%x", time.Now().UnixNano()),
 		"object":  "chat.completion.chunk",
 		"created": time.Now().Unix(),
@@ -258,6 +266,47 @@ func (g *textCallGW) emitToolCallChunk(index int, c textcall.Call) {
 			}
 		}
 	}
+	return env
+}
+
+// emitDSMLToolCallChunk 以 finish 块信封下发一个从 DSML 还原出的工具调用块。
+func (g *textCallGW) emitDSMLToolCallChunk(index int, c dsmlCall) {
+	env := g.chunkEnvelope()
+	env["choices"] = []any{map[string]any{
+		"index": 0,
+		"delta": map[string]any{"tool_calls": []any{map[string]any{
+			"index": index,
+			"id":    dsmlCallID(index),
+			"type":  "function",
+			"function": map[string]any{
+				"name":      c.Name,
+				"arguments": c.Arguments,
+			},
+		}}},
+		"finish_reason": nil,
+	}}
+	g.emitChunkObj(env)
+}
+
+// emitContentChunk 以 finish 块信封下发一段收尾正文（DSML/textcall 收尾冲刷用）。
+func (g *textCallGW) emitContentChunk(s string) {
+	env := g.chunkEnvelope()
+	env["choices"] = []any{map[string]any{
+		"index":         0,
+		"delta":         map[string]any{"content": s},
+		"finish_reason": nil,
+	}}
+	g.emitChunkObj(env)
+}
+
+// emitToolCallChunk 以 finish 块的信封下发一个转换出的工具调用块。
+// id 为空时补生成——OpenAI 规范 tool_calls[].id 必填，缺 id 会被严格客户端拒收。
+func (g *textCallGW) emitToolCallChunk(index int, c textcall.Call) {
+	id := c.ID
+	if id == "" {
+		id = "call_" + textcallRandHex(8)
+	}
+	env := g.chunkEnvelope()
 	env["choices"] = []any{map[string]any{
 		"index": 0,
 		"delta": map[string]any{"tool_calls": []any{map[string]any{
@@ -277,34 +326,28 @@ func (g *textCallGW) emitToolCallChunk(index int, c textcall.Call) {
 // finalize 在 [DONE] 前统一收尾：补发剩余正文、转换出的调用块、被暂扣的
 // finish 块（必要时改写 finish_reason）与 finish 后暂存的事件。
 func (g *textCallGW) finalize() {
+	// DSML 收尾：未闭合/未判定的块原文回吐，喂给 textcall 过滤器，不吞字节。
+	if dtail := g.dsml.flush(); dtail != "" {
+		if released := g.filter.Feed(dtail); released != "" {
+			g.emitContentChunk(released)
+		}
+	}
 	tail, calls := g.filter.Finish()
 	if tail != "" {
-		env := map[string]any{
-			"id":      fmt.Sprintf("chatcmpl-%x", time.Now().UnixNano()),
-			"object":  "chat.completion.chunk",
-			"created": time.Now().Unix(),
-			"model":   g.model,
-		}
-		if g.finishObj != nil {
-			for _, k := range []string{"id", "created", "model"} {
-				if v, ok := g.finishObj[k]; ok {
-					env[k] = v
-				}
-			}
-		}
-		env["choices"] = []any{map[string]any{
-			"index":         0,
-			"delta":         map[string]any{"content": tail},
-			"finish_reason": nil,
-		}}
-		g.emitChunkObj(env)
+		g.emitContentChunk(tail)
+	}
+	// DSML 还原的调用按出现顺序先发，textcall 转换的调用接其后；index 连续。
+	idx := g.nextIdx
+	for _, c := range g.dsmlCalls {
+		g.emitDSMLToolCallChunk(idx, c)
+		idx++
 	}
 	for i, c := range calls {
-		g.emitToolCallChunk(g.nextIdx+i, c)
+		g.emitToolCallChunk(idx+i, c)
 	}
-	g.nextIdx += len(calls)
+	g.nextIdx = idx + len(calls)
 	if g.haveFin {
-		if len(calls) > 0 {
+		if len(calls) > 0 || len(g.dsmlCalls) > 0 {
 			// 有转换出的调用：finish_reason 为 stop 时必须改写，否则客户端
 			// 不会执行工具（上游引擎逐层透传时常见 stop）
 			if chs, ok := g.finishObj["choices"].([]any); ok && len(chs) > 0 {
@@ -329,6 +372,12 @@ func (g *textCallGW) finalize() {
 		g.haveFin = false
 	}
 	// 观测：转换/溢出/剥离/拒绝情况进日志，出问题可从容器日志直接定位
+	if n := len(g.dsmlCalls); n > 0 {
+		log.Printf("[dsml] 网关层还原 %d 个 DSML 工具调用为原生 tool_calls（model=%s）", n, g.model)
+	}
+	if r := g.dsml; r != nil && r.rejectedBlocks() > 0 {
+		log.Printf("[dsml] WARN: %d 个 DSML 块识别到但判定失败、原文透出（model=%s）", r.rejectedBlocks(), g.model)
+	}
 	if n := g.filter.Calls(); n > 0 {
 		log.Printf("[textcall] 网关层转换 %d 个文本形式工具调用为原生 tool_calls（model=%s）", n, g.model)
 	}
@@ -361,6 +410,15 @@ func (g *textCallGW) handleJSONWrite(p []byte) (int, error) {
 	if chs, ok := obj["choices"].([]any); ok && len(chs) > 0 {
 		if ch, ok := chs[0].(map[string]any); ok {
 			if msg, ok := ch["message"].(map[string]any); ok {
+				// DSML 还原（非流式）：先于 textcall 处理，避免 DeepSeek 标记文本泄漏给客户端。
+				// 已有结构化 tool_calls 或 finish_reason=length 的响应由还原器自动跳过。
+				allowed := make(map[string]bool, len(g.names))
+				for _, n := range g.names {
+					allowed[n] = true
+				}
+				if dr := dsmlRepairAggregated(obj, allowed, false); dr.convertedCalls() > 0 {
+					log.Printf("[dsml] 网关层还原 %d 个 DSML 工具调用（非流式，model=%s）", dr.convertedCalls(), g.model)
+				}
 				if content, _ := msg["content"].(string); content != "" {
 					prose, calls, changed, capped := textcall.ExtractTextToolCalls(
 						content, g.names, textcallMaxPerResponse())

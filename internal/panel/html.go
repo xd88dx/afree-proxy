@@ -631,7 +631,7 @@ const poolTabHTML = `<div id="tab-proxypool" class="tab-panel" style="display:no
         <span class="pr-unit">s</span>
       </span>
       <button class="btn btn-success" onclick="openReorderDlg()" style="margin-left:10px" data-i18n="reorder_credential_proxies_by_latency">Reorder credential proxies by latency</button>
-      <label class="pr-switch" style="margin-left:10px;display:inline-flex;align-items:center;gap:6px;cursor:pointer" title="Differential auto-exclusion (off by default): when a platform-scoped cooldown fires, the exit is probed against the latency target; if the exit is reachable while other exits still reach the failing upstream host, the exit is added to that platform's exclusion rules and every credential bound to it is rebound to a replacement chosen from the pool tail-first with same-region preference." data-i18n-title="auto_exclude_hint">
+      <label class="pr-switch" style="margin-left:auto;display:inline-flex;align-items:center;gap:6px;cursor:pointer" title="Differential auto-exclusion (off by default): when a platform-scoped cooldown fires, the exit is probed against the latency target; if the exit is reachable while other exits still reach the failing upstream host, the exit is added to that platform's exclusion rules and every credential bound to it is rebound to a replacement chosen from the pool tail-first with same-region preference." data-i18n-title="auto_exclude_hint">
         <input type="checkbox" id="ppAutoFailover">
         <span data-i18n="auto_exclude">Auto exclude</span>
       </label>
