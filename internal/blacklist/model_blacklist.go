@@ -256,11 +256,14 @@ var ModelPermissionDeniedMarkers = []string{
 
 // IsModelPermissionDenied 判断上游响应是否属于「账号类型不支持该模型」。
 // 判据：业务码 11158（WorkBuddy 实测）或文案命中 marker。
+// 11158 必须取自 "code": 键（BusinessCodeOf 已兼容网关信封转义形态）——
+// 裸 Contains 会把错误体里恰好含 11158 的随机数串（32 位 requestId 等）
+// 误判为权限拒绝并拉黑无辜模型（2026-11-25 审计发现，收紧）。
 func IsModelPermissionDenied(status int, body string) bool {
 	if body == "" {
 		return false
 	}
-	if strings.Contains(body, "11158") {
+	if BusinessCodeOf(body) == "11158" {
 		return true
 	}
 	lower := strings.ToLower(body)

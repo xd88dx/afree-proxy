@@ -39,6 +39,13 @@ func TestIsModelPermissionDenied(t *testing.T) {
 		want   bool
 	}{
 		{503, `{"code":11158,"msg":"model [gpt-6-luna] is not allowed for user type [personal_free_user]"}`, true},
+		// 2026-11-25 审计修复：11158 必须取自 "code": 键，裸 Contains 会把
+		// 恰好含该数字串的随机 requestId 误判为权限拒绝并拉黑无辜模型。
+		{400, `{"error":{"code":"api_error","message":"upstream 500, requestId=01a20f37ed1fcb48d8d44ad57bc11158"}}`, false},
+		// 网关信封转义形态仍要命中（\"code\":11158 → 反转义后提取）。
+		{500, `{"error":{"message":"{\"code\":11158,\"msg\":\"model [x] is not allowed for user type [personal_free_user]\"}"}}`, true},
+		// 信封里先有字符串型 code、内嵌上游 JSON 才有数字 11158：继续找数字码。
+		{502, `{"error":{"code":"api_error","message":"{\"code\":11158,\"msg\":\"model [y] is not allowed for user type [personal_free_user]\"}"}}`, true},
 		{400, `{"error":"This model does not support this account"}`, false}, // 文案不精确命中
 		{400, `{"message":"The account type does not support this model"}`, true},
 		{503, `{"error":"upstream overloaded"}`, false},

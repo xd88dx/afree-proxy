@@ -186,3 +186,15 @@ cat exits.txt | while read port name; do (r=$(curl -s -o /dev/null -w "%{http_co
 - **瞬时抖动 →「所有 key cooling」的自证清白法**：一轮 EOF/429 风暴把 25 个 1:1 绑定 key 全冷却（多数 1h）时，直接跑逐 key Test（Test 不看冷却、钉 key 实测）——25/25 PASS 即证明 key/出口健康，冷却只是抖动残留等自愈；再配合经出口裸探上游 200。本轮 oprt 全平台暗 1h 属 openrouter 侧瞬时抖动+官方 Retry-After 语义，非缺陷。
 - **ident 截断坑**：凭据结果里 email 按 [-14:] 截断，「sf@outlook.com」实为 lovemcsf@outlook.com 的尾巴——对不上配置清单时先查截断再怀疑数据。
 - **生产轮结果快照**：模型 47/51（3 oprt EOF 瞬时+1 zen RegionError 官方地区限制且自动拉黑已生效摘除）；凭据修正后 151/152（zen key#13 日额度官方限制 UTC 复位；wb servgj=11109↔workbuddy.ai TLS 配对问题）；出口 42/46（死口零绑定拖累）。生产 wb GlobalEnabled 关（无 wbgb 段）属配置选择。零新代码缺陷，两已知修复（108c486/f66ad6e）在生产行为验证生效。
+
+## 13. 2026-11-25 审计追加（全映射+227 凭据轮，一缺陷已修）
+
+- **11158 裸 Contains 误拉黑（已修）**：`IsModelPermissionDenied` 原用 `strings.Contains(body, "11158")`——错误体里 32 位 requestId 恰好含该数字串即误判权限拒绝并**永久拉黑无辜模型**（概率约 0.003%/请求，后果重）。修复=改 `BusinessCodeOf(body)=="11158"`（只认 `"code":` 键，天然兼容网关信封 `\"code\":11158` 转义形态与"先字符串码后数字码"嵌套信封）。回归用例在 `TestIsModelPermissionDenied`（requestId 误匹配 false / 转义形态 true / 信封嵌套 true）。端到端：解封 gpt-6-luna → 请求 → 11158 → 重新自动拉黑 + 目录摘除。
+- **配置结构漂移（盘点脚本三连坑）**：① `proxy-config.json` 的 `proxies[]` 已是**字符串数组**（旧对象形态 `p.get('name')` 直接 AttributeError）；② cline `accounts[]` 已**无 status 字段**（只有 poolEnabled；启停看 poolEnabled 与 state 冷却）；③ trae 板块已整体删除（config 只剩 bindings/费率过滤，渠道映射也无 tacn/tagb 目标）——审计前先看一眼真实结构再写脚本。
+- **freepi Test 契约**：`POST /admin/api/freepi/keys/test {index}`（0-based），apiResponse 包装判 `data.status`；freepi key#1 是 direct 绑定（本机 DISABLE_DIRECT 下恒败，§12 口径）。vendored wb 扁平响应语义分离：`ok:true` 只表示请求处理完成，**active 判定只看 `status`**——首轮 TLS 抖动时响应是 `{ok:true,status:"error"}`。
+- **出口↔上游配对死亡第二轮（§12a 经验再验证）**：DDSG(10104) 对 gstatic 204 正常但对 `developer.amd.com.cn` 与 `token.sensenova.cn` 双双 25s 挂起——两个中国区上游同被拖累（amdcn#3、ddx#2）。归因分层：宿主机经出口裸探上游域名，与 gstatic 存活性独立。
+- **11104(alwaydt-FR) GFE 拉黑（§11c 判据命中）**：cline xdxxov 与 exon#9 同绑 11104，Test 403 空 HTML；同出口裸请求 cline/exone 双 403 同页面，健康对照 200/401——出口 IP 被边缘拉黑，非账号问题。
+- **crow "lane busy" 429 是官方并发限流**：5 个 key 绑 5 条不同出口仍全 429（request id 间隔 1-2s），排除出口级；串行复测 4/5 自愈，仅 1 个冷却残留等复位。amdcn 恒超时（3 次 60-150s）但出口对上游 200——amd 官方对个别账号响应挂起，网关忠实透传非缺陷。
+- **rcrat 402 GitHub 账号年龄门槛**："Free usage starts once your GitHub account is old enough, on 27 Nov 2026"——带解锁日期的官方限制，到期自愈，勿当账号坏。
+- **黑名单遗留死条目**：4 条 `tacn:*` 手动封禁（2026-11-19）在 trae 平台删除后永不可命中，面板可见但无害——清理属面板数据操作，交用户决定。
+- **本轮结果快照**：模型 48/51（amdcn Gemma 超时复测过=瞬时、oprt gemma 官方 429 上游限流、wbgb gpt-6-luna 11158 自动拉黑=官方档位）；凭据 227 个：202 直 PASS，修正后 208/217 有效（10 direct 本机环境产物除外），FAIL 归因：官方限制 4（oprt#12 401 User not found、tkhb#25 地区制裁、rcrat#5 账号年龄、amdcn#2 上游挂起）+ 出口 4（11104 GFE×2、10104 配对×2）+ 瞬时已自愈 9（crow lane×4+amdcn#5、wb servxd TLS、crow#6 冷却复位）；newapi 全链路 4/5。唯一代码缺陷=11158 裸匹配（已修）。
