@@ -164,6 +164,9 @@ type ConfigBackup struct {
 	// ClineStreamRequired cline "必须流式"自学习结果（cline-config.json 的
 	// streamRequired 段，2026-11-17 配置重组前住 afree-config.json）。
 	ClineStreamRequired map[string]string `json:"clineStreamRequired,omitempty"`
+	// ToolRename 出站工具改名配置（afree-config.json 的 toolRename 段）。
+	// 2026-11-25 补：上线时漏进备份，导出→删除数据→导入后改名配置丢失（用户实测）。
+	ToolRename *gwconfig.ToolRenameConfig `json:"toolRename,omitempty"`
 	// ZenUseProxies zen 走池开关（zen-config.json 独立段）。2026-11-19 补：
 	// 走池开关只有 cline 进备份，其余四平台跨机迁移后回落默认值。
 	ZenUseProxies *bool `json:"zenUseProxies,omitempty"`

@@ -89,6 +89,7 @@ func handleAdminConfigExport(w http.ResponseWriter, r *http.Request) {
 		PlatformBlacklist:      blacklist.ExportPlatformBlacklist(),
 		ZenDepAliases:          backup.ExportZenDepAliases(),
 		ClineStreamRequired:    backup.ExportClineStreamRequired(),
+		ToolRename:             gwconfig.GetToolRename(),
 		ZenUseProxies:          gateway.PlatformUseProxies("zen"),
 		TraeUseProxies:         gateway.PlatformUseProxies("trae"),
 		WorkBuddyUseProxies:    gateway.PlatformUseProxies("workbuddy"),
@@ -505,6 +506,16 @@ func handleAdminConfigImport(w http.ResponseWriter, r *http.Request) {
 	if cb.ClineStreamRequired != nil {
 		backup.ImportClineStreamRequired(cb.ClineStreamRequired)
 		imported["clineStreamRequired"] = len(cb.ClineStreamRequired)
+	}
+	// ---- 工具改名（afree-config.json 的 toolRename 段，2026-11-25 补）：段存在
+	// 才替换（旧备份无此键不动本机值）；段内容非法时保留本机现值并记日志，
+	// 与"按段替换、坏段不回退"口径一致。
+	if cb.ToolRename != nil {
+		if err := gwconfig.SetToolRename(*cb.ToolRename); err != nil {
+			log.Printf("  config import: toolRename segment invalid (%v), keeping local values", err)
+		} else {
+			imported["toolRename"] = 1
+		}
 	}
 
 	// ---- WorkBuddy（v2 段）：config 经 saveWorkbuddyConfig 回写部署四项，
