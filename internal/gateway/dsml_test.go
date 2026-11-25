@@ -404,3 +404,74 @@ func TestHandleAnthropicViaChatBadToolCall502(t *testing.T) {
 		t.Fatalf("错误类型不对: %s", rec.Body.String())
 	}
 }
+
+// TestGuardBadToolCallsLeakVariants 覆盖 2026-11-25 生产复现暴露的三个漏判口径：
+// 1) schema 只有 properties 没有 required（new-api 转换丢 required）；
+// 2) 必需字段值为 null；
+// 3) 参数非空但不是合法 JSON（交给 new-api 会回退成空对象）。
+// 三者都曾让坏 tool_call 以 200 放行，客户端本地抛 InputValidationError。
+func TestGuardBadToolCallsLeakVariants(t *testing.T) {
+	badChat := func(args string) map[string]any {
+		return map[string]any{"choices": []any{map[string]any{
+			"message": map[string]any{"tool_calls": []any{map[string]any{
+				"id": "call_x", "type": "function",
+				"function": map[string]any{"name": "Bash", "arguments": args},
+			}}},
+			"finish_reason": "tool_calls",
+		}}}
+	}
+	propsOnly := map[string]any{"tools": []any{map[string]any{"type": "function", "function": map[string]any{
+		"name": "Bash", "parameters": map[string]any{
+			"type": "object", "properties": map[string]any{"command": map[string]any{"type": "string"}},
+		},
+	}}}}
+	withRequired := testBashTools()
+
+	cases := []struct {
+		name   string
+		chat   map[string]any
+		params map[string]any
+	}{
+		{"props-only 空对象", badChat("{}"), propsOnly},
+		{"props-only null 值", badChat(`{"command":null}`), propsOnly},
+		{"required null 值", badChat(`{"command":null}`), withRequired},
+		{"非法 JSON 未转义引号", badChat(`{"command":"cd "D:/x" && ls"}`), withRequired},
+		{"非法 JSON 未转义换行", badChat("{\"command\":\"echo hi\nls\"}"), withRequired},
+	}
+	for _, tc := range cases {
+		if bad := guardBadToolCallsChat(tc.chat, tc.params); bad == "" {
+			t.Errorf("%s: 应判坏但放行", tc.name)
+		}
+	}
+	// 合法调用不能误伤：props-only 下只提供部分可选字段、且无显式 null。
+	good := badChat(`{"description":"list files"}`)
+	if bad := guardBadToolCallsChat(good, propsOnly); bad != "" {
+		t.Errorf("合法的部分可选参数被误判: %s", bad)
+	}
+}
+
+// TestGuardBadToolCallsMultiCallEndToEnd 端到端复现 17:03 场景：同一响应里
+// 两个 Bash tool_call，index 0 空参数（坏）、index 1 正常。只要 tools 声明了
+// required 或 properties，守卫就必须在回放前拦下整个响应。
+func TestGuardBadToolCallsMultiCallEndToEnd(t *testing.T) {
+	frames := []string{
+		`{"choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"call_bad","type":"function","function":{"name":"Bash","arguments":""}}]},"finish_reason":null}]}`,
+		`{"choices":[{"index":0,"delta":{"tool_calls":[{"index":1,"id":"call_ok","type":"function","function":{"name":"Bash","arguments":"{\"command\":\"ls\"}"}}]},"finish_reason":null}]}`,
+		`{"choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}]}`,
+	}
+	var lines []string
+	for _, f := range frames {
+		lines = append(lines, sseLine(json.RawMessage(f)))
+	}
+	lines = append(lines, "data: [DONE]\n\n")
+	for _, params := range []map[string]any{
+		testBashTools(),
+		{"tools": []any{map[string]any{"name": "Bash", "input_schema": map[string]any{
+			"type": "object", "required": []any{"command"},
+		}}}},
+	} {
+		if bad := guardBadToolCalls(lines, params); bad == "" {
+			t.Errorf("端到端多调用未拦下坏 tool_call: tools=%v", params["tools"])
+		}
+	}
+}

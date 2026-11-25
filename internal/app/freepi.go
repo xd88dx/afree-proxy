@@ -78,10 +78,15 @@ func startFreepiModelsRefresher() {
 // 保鲜——日常消耗不更新快照，陈旧权重会让差异化额度（邀请加成号）的趋平
 // 退化。间隔热改在当前周期结束后生效。与目录同步 refresher 同口径不判
 // ONLY_ROUTER（免费只读轻量，非营销类任务）。
+// 2026-11-25 用户定：未勾选「启用权重优化」时不再后台刷新（权重列表保持冻结）。
+// 手动刷新按钮走独立 handler，不受此开关约束。
 func startFreepiCreditsRefresher() {
 	time.Sleep(time.Duration(kit.RandIntn(freepi.Get().WeightInterval()*60)) * time.Second) // 启动抖动：错开其他周期任务节拍
 	for {
 		time.Sleep(time.Duration(freepi.Get().WeightInterval()) * time.Minute)
+		if !freepi.Get().WeightOptimizeEnabled() {
+			continue
+		}
 		if len(freepi.Get().Keys) > 0 {
 			if refreshed, failed := freepiRefreshEnabledCredits(); failed > 0 {
 				log.Printf("freepi credits auto-refresh: %d ok, %d failed", refreshed, failed)
@@ -117,7 +122,6 @@ func handleFreepiConfig(w http.ResponseWriter, r *http.Request) {
 		"weightOptimize": c.WeightOptimizeEnabled(),
 		"weightInterval": c.WeightInterval(),
 		"sessionSticky":  c.StickyEnabled(),
-		"stickyTTL":      c.StickyTTLMin, // <=0 = 默认 30，UI 侧 || 30 兜底
 		"routedModels":   c.RoutedModels,
 		"keyStates":      freepi.KeyStatus(),
 		"models":         modelViews,
@@ -142,9 +146,8 @@ func handleFreepiConfigUpdate(w http.ResponseWriter, r *http.Request) {
 		Retries        *int  `json:"retries"`
 		WeightOptimize *bool `json:"weightOptimize"`
 		WeightInterval *int  `json:"weightInterval"`
-		// 会话粘性（2026-11-25）：nil = 未提交；StickyTTL 0 = 恢复默认 30 分钟。
+		// 会话粘性（2026-11-25）：nil = 未提交。
 		SessionSticky *bool `json:"sessionSticky"`
-		StickyTTL     *int  `json:"stickyTTL"`
 		// 路由白名单（2026-11-24）：nil = 未提交；非 nil = 整表替换（空表 =
 		// 全部路由）。指针区分语义与面板"即点即存"一致。
 		RoutedModels *[]string `json:"routedModels"`
@@ -158,7 +161,7 @@ func handleFreepiConfigUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 	if patch.MaxConcurrency != nil || patch.Retries != nil ||
 		patch.WeightOptimize != nil || patch.WeightInterval != nil ||
-		patch.SessionSticky != nil || patch.StickyTTL != nil || patch.RoutedModels != nil {
+		patch.SessionSticky != nil || patch.RoutedModels != nil {
 		freepiSetNext(func(next *freepi.Config) {
 			if patch.MaxConcurrency != nil && *patch.MaxConcurrency > 0 {
 				next.MaxConcurrency = *patch.MaxConcurrency
@@ -175,10 +178,6 @@ func handleFreepiConfigUpdate(w http.ResponseWriter, r *http.Request) {
 			}
 			if patch.SessionSticky != nil {
 				next.SessionSticky = patch.SessionSticky
-			}
-			// 0 = 恢复默认 TTL（StickyTTL 访问器把 <=0 回落为 30 分钟）
-			if patch.StickyTTL != nil && *patch.StickyTTL >= 0 {
-				next.StickyTTLMin = *patch.StickyTTL
 			}
 			// 白名单整表替换（trim/去重在 normalize），空表 = 全部路由
 			if patch.RoutedModels != nil {

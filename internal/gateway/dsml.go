@@ -393,9 +393,12 @@ func guardBadToolCallsChat(chat map[string]any, params map[string]any) string {
 		}
 	}
 
-	// 2) 结构化空 tool_call（arguments 空对象，但 schema 声明了必需字段）
-	required := toolRequiredFields(params["tools"])
-	if len(required) == 0 {
+	// 2) 结构化坏 tool_call：参数空对象 / 缺必需字段 / 必需字段为 null /
+	//    参数不是合法 JSON（后两者经 new-api 转换会回退成 input={}）。
+	//    判据用 toolSchemas：required 缺失但声明了 properties 的工具，空 {}
+	//    同样判坏——2026-11-25 生产复现证明 new-api 转换会丢 required。
+	schemas := toolSchemas(params["tools"])
+	if len(schemas) == 0 {
 		return ""
 	}
 	for _, tcRaw := range tcs {
@@ -408,26 +411,41 @@ func guardBadToolCallsChat(chat map[string]any, params map[string]any) string {
 			continue
 		}
 		name, _ := fn["name"].(string)
-		req, has := required[name]
-		if !has || len(req) == 0 {
+		sch, has := schemas[name]
+		if !has {
 			continue
 		}
 		args, _ := fn["arguments"].(string)
 		a := strings.TrimSpace(args)
-		if a == "" || a == "{}" {
-			return fmt.Sprintf("上游工具 %s 的调用参数为空（缺少必需字段 %s）", name, strings.Join(req, ","))
+		// 空对象：无 required 但有 properties 时也判坏。
+		if a == "" || a == "{}" || a == "null" {
+			if len(sch.required) > 0 {
+				return fmt.Sprintf("上游工具 %s 的调用参数为空（缺少必需字段 %s）", name, strings.Join(sch.required, ","))
+			}
+			if len(sch.properties) > 0 {
+				return fmt.Sprintf("上游工具 %s 的调用参数为空（声明参数 %s）", name, strings.Join(sch.properties, ","))
+			}
+			continue
 		}
-		// 2026-11-25 补强：非空但缺字段（如 Write 只给 file_path 没给 content）
-		// 同样会让 Claude Code 抛 InputValidationError。逐字段核对 required，
-		// 命中即改判 502，让 agent 有机会重试而不是静默终止。
+		// 非空必须是合法 JSON 对象；非法参数交给 new-api 会被回退成 {}。
 		var obj map[string]any
 		if json.Unmarshal([]byte(a), &obj) != nil {
-			continue // 非 JSON 参数不误判，交回原有回放逻辑
+			return fmt.Sprintf("上游工具 %s 的调用参数不是合法 JSON", name)
 		}
+		// required 字段：缺失或值为 null 都让客户端 schema 校验失败。
+		// props-only（无 required）的字段是可选的，只拦显式 null——
+		// 可选字段未提供是合法调用，不能误判。
 		var missing []string
-		for _, field := range req {
-			if _, ok := obj[field]; !ok {
+		for _, field := range sch.required {
+			if v, exists := obj[field]; !exists || v == nil {
 				missing = append(missing, field)
+			}
+		}
+		if len(missing) == 0 && len(sch.required) == 0 {
+			for _, field := range sch.properties {
+				if v, exists := obj[field]; exists && v == nil {
+					missing = append(missing, field)
+				}
 			}
 		}
 		if len(missing) > 0 {
@@ -437,13 +455,21 @@ func guardBadToolCallsChat(chat map[string]any, params map[string]any) string {
 	return ""
 }
 
-// toolRequiredFields 从 OpenAI 形态 tools 提取各工具的 required 字段名。
-func toolRequiredFields(v any) map[string][]string {
+// toolSchema 是一个工具声明的字段约束：required 为必需字段名，properties 为
+// 声明的全部参数名。两者都用于坏 tool_call 判定——只声明 properties 却没写
+// required 的 schema（部分上游转换会丢 required），空 {} 同样应拦。
+type toolSchema struct {
+	required   []string
+	properties []string
+}
+
+// toolSchemas 从 OpenAI / Anthropic 两种形态的 tools 提取字段约束。
+func toolSchemas(v any) map[string]toolSchema {
 	arr, ok := v.([]any)
 	if !ok {
 		return nil
 	}
-	out := map[string][]string{}
+	out := map[string]toolSchema{}
 	for _, t := range arr {
 		tm, ok := t.(map[string]any)
 		if !ok {
@@ -451,7 +477,7 @@ func toolRequiredFields(v any) map[string][]string {
 		}
 		// OpenAI 形态：{type:function, function:{name, parameters}}；
 		// Anthropic 形态（new-api 未转换或半转换时）：{name, input_schema}。
-		// 两种都要认出 required，否则空参数调用漏判回 200（2026-11-25）。
+		// 两种都要认出，否则空参数调用漏判回 200（2026-11-25）。
 		var name string
 		var ps map[string]any
 		if fn, ok := tm["function"].(map[string]any); ok {
@@ -464,15 +490,34 @@ func toolRequiredFields(v any) map[string][]string {
 		if name == "" || ps == nil {
 			continue
 		}
-		reqRaw, _ := ps["required"].([]any)
 		var req []string
-		for _, r := range reqRaw {
-			if s, ok := r.(string); ok && s != "" {
-				req = append(req, s)
+		if reqRaw, ok := ps["required"].([]any); ok {
+			for _, r := range reqRaw {
+				if s, ok := r.(string); ok && s != "" {
+					req = append(req, s)
+				}
 			}
 		}
-		if len(req) > 0 {
-			out[name] = req
+		var props []string
+		if pmap, ok := ps["properties"].(map[string]any); ok {
+			for k := range pmap {
+				props = append(props, k)
+			}
+		}
+		if len(req) > 0 || len(props) > 0 {
+			out[name] = toolSchema{required: req, properties: props}
+		}
+	}
+	return out
+}
+
+// toolRequiredFields 从 OpenAI 形态 tools 提取各工具的 required 字段名。
+func toolRequiredFields(v any) map[string][]string {
+	schemas := toolSchemas(v)
+	out := make(map[string][]string, len(schemas))
+	for name, s := range schemas {
+		if len(s.required) > 0 {
+			out[name] = s.required
 		}
 	}
 	return out

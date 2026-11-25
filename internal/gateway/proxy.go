@@ -759,6 +759,16 @@ func handleStreamBufferedGeneric(w http.ResponseWriter, r *http.Request, plat st
 				})
 				return
 			}
+			// freepi 账号共享/轮转拒绝以 200 正文返回，结构性 error 检测抓不到；
+			// 同一位置按文案判一次，命中 502 让 agent 停下而不是当正常回答收尾。
+			if bad := guardFreepiRejectionSSE(lines, params); bad != "" {
+				log.Printf("  [%s] %s buffered stream freepi rejection, returning 502: %s", rid, plat, bad)
+				reqlog.SetUpstreamNote(r.Context(), "freepi 账号共享拒绝")
+				writeJSON(w, http.StatusBadGateway, map[string]any{
+					"error": map[string]any{"message": bad, "type": "upstream_error"},
+				})
+				return
+			}
 			replaySSE(w, lines, clientWantsStreamUsage(params))
 			return
 		}
@@ -1296,6 +1306,15 @@ func finishZenChatNonStream(w http.ResponseWriter, resp *http.Response, zm *ZenM
 		log.Printf("  nonstream bad tool call, returning 502: %s", kit.Truncate(bad, 200))
 		writeJSON(w, http.StatusBadGateway, map[string]any{
 			"error": map[string]any{"message": kit.Truncate(bad, 300), "type": "upstream_error"},
+		})
+		return
+	}
+	// freepi 账号共享/轮转拒绝是 200 + 正文，结构性检测抓不到；写 200 前按
+	// 文案判一次，命中 502 让 agent 停下而不是把拒绝当正常回答收尾。
+	if bad := guardFreepiRejectionChat(chat, params); bad != "" {
+		log.Printf("  nonstream freepi rejection, returning 502: %s", bad)
+		writeJSON(w, http.StatusBadGateway, map[string]any{
+			"error": map[string]any{"message": bad, "type": "upstream_error"},
 		})
 		return
 	}

@@ -64,9 +64,6 @@ type Config struct {
 	// 会话标识优先取请求显式 ID（x-freepi-session / session_id），回退首条
 	// user 消息指纹。粘住的 key 不可用时快速失败，绝不换 key 重试。
 	SessionSticky *bool `json:"sessionSticky,omitempty"`
-	// StickyTTLMin 会话映射空闲淘汰分钟数；<=0 视为默认 30。地图条数上限
-	// 固定 500（LRU），落盘在 freepi-state.json 的 stickySessions 段。
-	StickyTTLMin int `json:"stickyTTLMin,omitempty"`
 	// Models 模型目录状态（/client-version 拉取结果整体替换；静态兜底表在
 	// models.go）。目录本身始终是上游真值全量展示；对外路由由 RoutedModels
 	// 白名单门控（2026-11-24 用户定，取代此前"全量暴露"口径）。
@@ -359,15 +356,6 @@ func (c *Config) WeightInterval() int {
 // StickyEnabled 会话粘性开关（nil/缺省 = 启用——默认开，2026-11-25 用户定）。
 func (c *Config) StickyEnabled() bool {
 	return c.SessionSticky == nil || *c.SessionSticky
-}
-
-// StickyTTL 会话映射空闲淘汰时长（<=0 回落默认 30 分钟）。
-func (c *Config) StickyTTL() time.Duration {
-	m := c.StickyTTLMin
-	if m <= 0 {
-		m = 30
-	}
-	return time.Duration(m) * time.Minute
 }
 
 // ModelRouted 模型是否对外路由（2026-11-24 用户定）：白名单空/缺 = 目录全部

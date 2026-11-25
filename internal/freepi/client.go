@@ -464,7 +464,7 @@ func Chat(ctx context.Context, params map[string]any, modelID string, stream boo
 				valid[k] = true
 			}
 		}
-		stuckKey = stickyLookup(convKey, valid, cfg.StickyTTL())
+		stuckKey = stickyLookup(convKey, valid)
 		// 粘住的 key 正在冷却：本次立即失败，不打上游也不换 key——换 key
 		// 只会再撞上游风控，白费一次调用（2026-11-25 用户定）。
 		if stuckKey != "" {

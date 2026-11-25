@@ -191,9 +191,14 @@ func guardBufferedChatSSE(w http.ResponseWriter, resp *http.Response, params map
 	lines := strings.SplitAfter(string(body), "\n")
 	bad := guardBadToolCalls(lines, params)
 	if bad == "" {
+		// freepi 账号共享/轮转拒绝是 200 SSE 正文，结构性检测抓不到；
+		// 复用已缓冲的 lines 按文案判一次。
+		bad = guardFreepiRejectionSSE(lines, params)
+	}
+	if bad == "" {
 		return false
 	}
-	log.Printf("  cross-endpoint bad tool call, returning 502: %s", bad)
+	log.Printf("  cross-endpoint rejected, returning 502: %s", bad)
 	writeJSON(w, http.StatusBadGateway, map[string]any{
 		"error": map[string]any{"message": bad, "type": "upstream_error"},
 	})
@@ -239,6 +244,12 @@ func handleResponsesViaChat(w http.ResponseWriter, r *http.Request, chat map[str
 		})
 		return
 	}
+	if bad := guardFreepiRejectionChat(raw, chat); bad != "" {
+		writeJSON(w, http.StatusBadGateway, map[string]any{
+			"error": map[string]any{"message": bad, "type": "upstream_error"},
+		})
+		return
+	}
 	raw["model"] = model
 	recordChatUsage(usageFn, raw)
 	writeJSON(w, http.StatusOK, chatToResponses(normalizeOpenAIResponse(raw)))
@@ -279,6 +290,12 @@ func handleAnthropicViaChat(w http.ResponseWriter, r *http.Request, req anthropi
 		return
 	}
 	if bad := guardBadToolCallsChat(chat, openAIReq); bad != "" {
+		writeJSON(w, http.StatusBadGateway, map[string]any{
+			"error": map[string]any{"message": bad, "type": "upstream_error"},
+		})
+		return
+	}
+	if bad := guardFreepiRejectionChat(chat, openAIReq); bad != "" {
 		writeJSON(w, http.StatusBadGateway, map[string]any{
 			"error": map[string]any{"message": bad, "type": "upstream_error"},
 		})

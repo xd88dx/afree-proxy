@@ -1689,8 +1689,6 @@ const I18N = {
   'freepi_weight_interval_invalid': { en: 'Interval must be a non-negative integer (minutes)', zh: '间隔必须是非负整数（分钟）' },
   'freepi_sticky_enable': { en: 'Session sticky routing', zh: '会话粘性路由' },
   'freepi_sticky_hint': { en: 'Keeps each conversation on one key to avoid the upstream "Sharing or rotating accounts" rejection. If the sticky key cools down or its proxy is unavailable, the request fails fast - no key switch, no retry.', zh: '同一对话固定使用一把凭据，避免上游判定账号共享/轮转。粘住的凭据冷却或代理不可用时快速失败——不换凭据、不重试。' },
-  'freepi_sticky_ttl': { en: 'Sticky TTL (idle minutes)', zh: '会话粘性空闲淘汰（分钟）' },
-  'freepi_sticky_ttl_invalid': { en: 'Sticky TTL must be a non-negative integer (minutes)', zh: '粘性 TTL 必须是非负整数（分钟）' },
   'freepi_jwt_shape': { en: 'That does not look like a JWT (expected 3 dot-separated segments).', zh: '看起来不是合法 JWT（应为三段、以点分隔）。' },
   'refresh_credits': { en: 'Refresh credits', zh: '刷新额度' },
   'credits_refreshed': { en: 'Credits refreshed: ', zh: '已刷新额度：' },
@@ -8205,7 +8203,6 @@ async function loadFreepiConfig() {
   _('freepiWeightOpt').checked = !!freepiConfig.weightOptimize;
   _('freepiWeightInterval').value = freepiConfig.weightInterval || 30;
   _('freepiStickyOpt').checked = freepiConfig.sessionSticky !== false; // 缺省 = 开
-  _('freepiStickyTTL').value = freepiConfig.stickyTTL || 30;
   renderFreepiModels(freepiKnownModels);
   renderFreepiKeys(ks);
 }
@@ -8411,13 +8408,11 @@ async function saveFreepiRateLimit() {
 async function saveFreepiWeightConfig() {
   // 同一按钮保存权重优化与会话粘性（都在 FreePI configuration 区）。
   const iv = parseInt(_('freepiWeightInterval').value, 10);
-  const ttl = parseInt(_('freepiStickyTTL').value, 10);
   if (Number.isNaN(iv) || iv < 0) { toast(T('freepi_weight_interval_invalid'), 'error'); return; }
-  if (Number.isNaN(ttl) || ttl < 0) { toast(T('freepi_sticky_ttl_invalid'), 'error'); return; }
   try {
     await api('POST', '/freepi/config/update', {
       weightOptimize: _('freepiWeightOpt').checked, weightInterval: iv,
-      sessionSticky: _('freepiStickyOpt').checked, stickyTTL: ttl
+      sessionSticky: _('freepiStickyOpt').checked
     });
     toast(T('saved'), 'success');
     loadFreepiConfig();

@@ -58,28 +58,29 @@ func TestConversationKeyFingerprintStableAndScoped(t *testing.T) {
 	}
 }
 
-func TestStickyBindLookupTTLAndForget(t *testing.T) {
+func TestStickyBindLookupAndForget(t *testing.T) {
 	saved := usage
 	t.Cleanup(func() { usage = saved })
 	usage = &usageData{}
 	valid := map[string]bool{"k1": true, "k2": true}
 
 	stickyBind("id:s1", "k1")
-	if got := stickyLookup("id:s1", valid, 30*time.Minute); got != "k1" {
+	if got := stickyLookup("id:s1", valid); got != "k1" {
 		t.Fatalf("bound key not returned: %q", got)
 	}
-	// 过期条目即删
+	// 2026-11-25 起不再按空闲时长淘汰：用户实测同一会话隔一天换 key 仍报
+	// 归属错误，时间淘汰无意义。只要 key 仍在池中，旧条目继续命中。
 	usage.StickySessions["id:s1"] = StickyEntry{Key: "k1", LastSeen: time.Now().Add(-time.Hour)}
-	if got := stickyLookup("id:s1", valid, 30*time.Minute); got != "" {
-		t.Fatalf("expired entry must not be returned: %q", got)
+	if got := stickyLookup("id:s1", valid); got != "k1" {
+		t.Fatalf("stale-time entry must still hit while key is valid: %q", got)
 	}
-	if _, ok := usage.StickySessions["id:s1"]; ok {
-		t.Fatal("expired entry must be deleted")
-	}
-	// key 已不在池内 → 映射作废
+	// key 已不在池内 → 映射作废并清理
 	stickyBind("id:s2", "k2")
-	if got := stickyLookup("id:s2", map[string]bool{"k1": true}, 30*time.Minute); got != "" {
+	if got := stickyLookup("id:s2", map[string]bool{"k1": true}); got != "" {
 		t.Fatalf("entry for removed key must not be returned: %q", got)
+	}
+	if _, ok := usage.StickySessions["id:s2"]; ok {
+		t.Fatal("entry for removed key must be deleted")
 	}
 	// 空标识/空 key 不建映射
 	stickyBind("", "k1")
@@ -165,7 +166,7 @@ func TestChatStickyLocksKeyNoRetry(t *testing.T) {
 		t.Fatalf("first chat must succeed: err=%v", err)
 	}
 	resp.Body.Close()
-	if got := stickyLookup("id:agent-run-1", map[string]bool{"k1": true, "k2": true}, 30*time.Minute); got == "" {
+	if got := stickyLookup("id:agent-run-1", map[string]bool{"k1": true, "k2": true}); got == "" {
 		t.Fatal("successful chat must bind sticky mapping")
 	}
 

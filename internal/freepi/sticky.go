@@ -27,7 +27,9 @@ import (
 // （让其他会话避开），但本次请求立即返回错误。非粘性会话保持原轮转语义。
 //
 // 映射落盘在 freepi-state.json 的 stickySessions 段，与 Cool/KeyTokens 同域
-// （keyMu 保护），重启沿用。空闲 TTL 默认 30 分钟惰性淘汰，条数上限 500 LRU。
+// （keyMu 保护），重启沿用。条数上限 500 LRU（按 LastSeen 最旧淘汰）。
+// 2026-11-25 用户定：不再按空闲时长淘汰——实测同一会话隔一天换 key 仍报
+// 归属错误，按时间淘汰无意义；仅保留条数上限与 key 移除清理。
 
 const (
 	stickyMaxEntries = 500
@@ -104,10 +106,11 @@ func ConversationKey(ctx context.Context, params map[string]any, apiKey string) 
 	return ""
 }
 
-// stickyLookup 查映射：命中且未空闲超 TTL 且 key 仍在池内 → 返回 key。
-// 过期条目顺手删除；命中则刷新 LastSeen 并写回（值拷贝必须写回，否则刷新无效）。
+// stickyLookup 查映射：key 仍在池内 → 返回 key，并刷新 LastSeen 写回
+// （值拷贝必须写回，否则刷新无效；LastSeen 供 LRU 淘汰排序）。
+// 已失效的条目（key 不在池内）顺手删除。不再按空闲时长淘汰。
 // 自持 keyMu——调用方不要持锁。
-func stickyLookup(convKey string, keys map[string]bool, ttl time.Duration) string {
+func stickyLookup(convKey string, keys map[string]bool) string {
 	if convKey == "" {
 		return ""
 	}
@@ -117,7 +120,7 @@ func stickyLookup(convKey string, keys map[string]bool, ttl time.Duration) strin
 	if !ok {
 		return ""
 	}
-	if time.Since(e.LastSeen) > ttl || !keys[e.Key] {
+	if !keys[e.Key] {
 		delete(usage.StickySessions, convKey)
 		return ""
 	}
