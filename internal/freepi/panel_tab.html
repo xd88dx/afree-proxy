@@ -36,11 +36,11 @@
   <div class="section-body">
     <div class="form-row">
       <div class="field" style="flex:1">
-        <label style="display:flex;gap:6px;align-items:center;margin:0" title="Same conversation stays on one key; if that key is cooling or its proxy is unavailable, the request fails fast without switching keys." data-i18n-title="freepi_sticky_hint"><input type="checkbox" id="freepiStickyOpt" style="width:auto;padding:0;accent-color:var(--accent)"> <span data-i18n="freepi_sticky_enable">Session sticky routing</span></label>
-        <div style="display:flex;align-items:center;margin-top:12px">
-          <label style="display:flex;gap:6px;align-items:center;margin:0;width:100%"><input type="checkbox" id="freepiWeightOpt" style="width:auto;padding:0;accent-color:var(--accent)"> <span data-i18n="freepi_weight_enable">Enable weight optimization</span></label>
+        <div style="display:flex;align-items:center;gap:8px">
+          <label class="wb-switch" style="margin:0;font-size:13px;color:var(--text);font-weight:400" title="Same conversation stays on one key; if that key is cooling or its proxy is unavailable, the request fails fast without switching keys." data-i18n-title="freepi_sticky_hint"><input type="checkbox" id="freepiStickyOpt"> <span data-i18n="freepi_sticky_enable">Session sticky routing</span></label>
+          <label class="wb-switch" style="margin:0;font-size:13px;color:var(--text);font-weight:400"><input type="checkbox" id="freepiWeightOpt"> <span data-i18n="freepi_weight_enable">Enable weight optimization</span></label>
         </div>
-        <div style="display:flex;align-items:center;margin-top:12px">
+        <div style="display:flex;align-items:center">
           <span style="flex:0 0 220px" data-i18n="freepi_weight_interval">Weight optimization interval (minutes)</span>
           <input type="text" id="freepiWeightInterval" placeholder="30" style="flex:1">
         </div>

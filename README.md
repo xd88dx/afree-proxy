@@ -186,7 +186,7 @@ Model:     cline-free/deepseek-v4.1-flash   （Cline 池）
 | 账号选号 | 这次请求用哪个账号 / key     | 面板「账号轮转策略」下拉，或 `POOL_STRATEGY`（env 优先，默认 `round_robin`）；TraeWork 用引擎权重调度 | `data/afree-config.json` 的 `strategy`      |
 | 出口选路 | 这次请求从哪条线路 / IP 出去 | 面板「代理池」页的调度策略                                       | `data/proxy-config.json` 的 `proxyStrategy` |
 
-代理池配置（代理列表、出口策略、订阅、各平台走池开关）存在 `data/proxy-config.json`，不寄居在任何平台配置里——代理池是全局能力（5 个平台共用：Cline / TraeWork / OpenCode / WorkBuddy / Other），不属于 OpenCode zen。出口策略：`round_robin`（默认）/ `random` / `fill`。
+代理池配置（代理列表、出口策略、订阅、各平台走池开关）存在 `data/proxy-config.json`，不寄居在任何平台配置里——代理池是全局能力（6 个平台共用：Cline / FreePI / TraeWork / OpenCode / WorkBuddy / Other），不属于 OpenCode zen。出口策略：`round_robin`（默认）/ `random` / `fill`。
 
 WorkBuddy 的账号调度用 vendor 自己的国内/国际分区策略，与 `POOL_STRATEGY` 无关。
 
@@ -247,7 +247,7 @@ CI：push 到 `main` / `zen-harvest` 先跑 `go build` + `go vet` + `go test`，
 │   ├── freepi/              FreePI（freepi.ai）免费日额度 key 池：三道闸门自愈（ads/session/concurrent）、credits 余额
 │   ├── exitpool/            代理域：出口池/隔离绑定/健康/探测（proxy-config/proxy-state）
 │   ├── blacklist/           模型黑名单 + 平台封禁（存储与判定）
-│   ├── panel/               管理面板：认证、admin_html（8507 行内嵌面板）、响应原语
+│   ├── panel/               管理面板：认证、admin_html（8792 行内嵌面板）、响应原语
 │   ├── backup/              配置备份导出/导入
 │   ├── reqlog/              请求日志与 per-route 统计
 │   ├── gwconfig/            afree 全局配置、env 解析、config-manifest
