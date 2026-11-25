@@ -1,7 +1,7 @@
 {
   "version": 1,
   "created_at": "2026-11-09T17:13:34Z",
-  "updated_at": "2026-11-25T14:11:10Z",
+  "updated_at": "2026-11-25T15:03:56Z",
   "files": {
     ".agents/skills/add-platform/SKILL.md": {
       "role": "index",
@@ -524,9 +524,9 @@
     },
     "aoci.code.txt": {
       "role": "index",
-      "sha256": "9b2357f40e6ee8f05062cefa8be5125bd0ab5b90b119dc9a519fbad76a03b8ff",
-      "size": 255024,
-      "normalized_sha256": "9b2357f40e6ee8f05062cefa8be5125bd0ab5b90b119dc9a519fbad76a03b8ff"
+      "sha256": "3452d220bd6c410adbba60b1d2c3aed3e31a4f201f44fc11a4029483f15afaf9",
+      "size": 255234,
+      "normalized_sha256": "3452d220bd6c410adbba60b1d2c3aed3e31a4f201f44fc11a4029483f15afaf9"
     },
     "aoci.meta.txt": {
       "role": "index",
@@ -2640,10 +2640,10 @@
     },
     "internal/panel/html.go": {
       "role": "index",
-      "sha256": "7baa57dbb2fd85639711615948d3a0dcce17e7fa13d13e91f134d7ef84991165",
+      "sha256": "59e3db64866237422e3575cf91736e5131458c2e90a777e49eadc37cc365ba11",
       "size": 540006,
-      "normalized_sha256": "7baa57dbb2fd85639711615948d3a0dcce17e7fa13d13e91f134d7ef84991165",
-      "format_sha256": "7baa57dbb2fd85639711615948d3a0dcce17e7fa13d13e91f134d7ef84991165",
+      "normalized_sha256": "59e3db64866237422e3575cf91736e5131458c2e90a777e49eadc37cc365ba11",
+      "format_sha256": "59e3db64866237422e3575cf91736e5131458c2e90a777e49eadc37cc365ba11",
       "format_kind": "gofmt"
     },
     "internal/panel/models_refresh.go": {
