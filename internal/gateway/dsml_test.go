@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -317,5 +318,89 @@ func TestTextCallGWDSMLNonStream(t *testing.T) {
 	}
 	if !strings.Contains(body, "ls -la") {
 		t.Fatalf("工具参数丢失: %s", body)
+	}
+}
+
+// TestGuardBufferedChatSSEMessagesEndpoint 回归（2026-11-25）：Claude Code 走
+// /v1/messages，其流式出口此前没接 guard，缺 command 的 tool_call 以 200 放行，
+// 客户端本地抛 InputValidationError。这道闸必须在写 200 前改判 502；未命中
+// 时必须把已读走的 body 完整还原，否则后续实时转发拿到空流。
+func TestGuardBufferedChatSSEMessagesEndpoint(t *testing.T) {
+	sseWithArgs := func(args string) string {
+		return strings.Join([]string{
+			sseLine(map[string]any{
+				"choices": []any{map[string]any{
+					"delta": map[string]any{"tool_calls": []any{map[string]any{
+						"index": float64(0), "id": "call_1", "type": "function",
+						"function": map[string]any{"name": "Bash", "arguments": args},
+					}}},
+				}},
+			}),
+			sseLine(map[string]any{
+				"choices": []any{map[string]any{"delta": map[string]any{}, "finish_reason": "tool_calls"}},
+			}),
+			"data: [DONE]\n\n",
+		}, "")
+	}
+	badBody := sseWithArgs(`{"description":"list"}`)
+	resp := &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(badBody))}
+	rec := httptest.NewRecorder()
+	if !guardBufferedChatSSE(rec, resp, testBashTools()) {
+		t.Fatal("缺 command 的 tool_call 必须命中 guard")
+	}
+	if rec.Code != http.StatusBadGateway {
+		t.Fatalf("want 502, got %d; body=%s", rec.Code, rec.Body.String())
+	}
+
+	goodBody := sseWithArgs(`{"command":"ls -la"}`)
+	resp2 := &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(goodBody))}
+	rec2 := httptest.NewRecorder()
+	if guardBufferedChatSSE(rec2, resp2, testBashTools()) {
+		t.Fatalf("完整参数被误伤: %s", rec2.Body.String())
+	}
+	got, err := io.ReadAll(resp2.Body)
+	if err != nil || string(got) != goodBody {
+		t.Fatalf("未命中时 body 必须完整还原, err=%v len=%d", err, len(got))
+	}
+}
+
+// TestHandleAnthropicViaChatBadToolCall502 端到端回归：Claude Code 的
+// /v1/messages 流式请求经前缀平台调用器返回缺 required 字段的 tool_call 时，
+// 出口必须 502，不能再以 200 放行让客户端本地抛 InputValidationError。
+func TestHandleAnthropicViaChatBadToolCall502(t *testing.T) {
+	req := anthropicReq{
+		Model:    "other:test",
+		Stream:   true,
+		Messages: []anthropicMsg{{Role: "user", Content: "list files"}},
+		Tools:    json.RawMessage(`[{"name":"Bash","description":"run shell","input_schema":{"type":"object","properties":{"command":{"type":"string"}},"required":["command"]}}]`),
+	}
+	openAIReq := anthropicToOpenAI(req)
+	if got := toolRequiredFields(openAIReq["tools"])["Bash"]; len(got) == 0 {
+		t.Fatalf("anthropicToOpenAI 丢了 required, tools=%v", openAIReq["tools"])
+	}
+	badSSE := strings.Join([]string{
+		sseLine(map[string]any{
+			"choices": []any{map[string]any{
+				"delta": map[string]any{"tool_calls": []any{map[string]any{
+					"index": float64(0), "id": "call_1", "type": "function",
+					"function": map[string]any{"name": "Bash", "arguments": `{"description":"list"}`},
+				}}},
+			}},
+		}),
+		sseLine(map[string]any{
+			"choices": []any{map[string]any{"delta": map[string]any{}, "finish_reason": "tool_calls"}},
+		}),
+		"data: [DONE]\n\n",
+	}, "")
+	caller := func(ctx context.Context, params map[string]any, stream bool) (*http.Response, func(map[string]any), error) {
+		return sseBytesResponse([]byte(badSSE)), nil, nil
+	}
+	rec := httptest.NewRecorder()
+	handleAnthropicViaChat(rec, httptest.NewRequest(http.MethodPost, "/v1/messages", nil), req, openAIReq, nil, caller)
+	if rec.Code != http.StatusBadGateway {
+		t.Fatalf("want 502, got %d; body=%s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "upstream_error") {
+		t.Fatalf("错误类型不对: %s", rec.Body.String())
 	}
 }

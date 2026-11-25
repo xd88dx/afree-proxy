@@ -171,6 +171,35 @@ func writePlatformCallError(w http.ResponseWriter, err error) {
 	writeUpstreamAPIError(w, "", err, upstreamErrorStatus(err, http.StatusBadGateway))
 }
 
+// guardBufferedChatSSE 在向客户端写出 200 之前检查已缓冲的 OpenAI chat SSE。
+// /v1/messages 与 /v1/responses 的流式出口此前没有这道闸——上游返回的坏
+// tool_call（缺 command / file_path 等 required 字段）以 200 放行后，
+// Claude Code 本地校验抛 InputValidationError，agent 任务静默终止。
+// 上游响应已由 bufferedStreamCaller 完整缓冲，读走检查后还原 body 即可，
+// 不改变后续实时转发语义。命中写 502 并返回 true。
+func guardBufferedChatSSE(w http.ResponseWriter, resp *http.Response, params map[string]any) bool {
+	if resp == nil || resp.Body == nil {
+		return false
+	}
+	body, err := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if err != nil {
+		resp.Body = io.NopCloser(bytes.NewReader(body))
+		return false
+	}
+	resp.Body = io.NopCloser(bytes.NewReader(body))
+	lines := strings.SplitAfter(string(body), "\n")
+	bad := guardBadToolCalls(lines, params)
+	if bad == "" {
+		return false
+	}
+	log.Printf("  cross-endpoint bad tool call, returning 502: %s", bad)
+	writeJSON(w, http.StatusBadGateway, map[string]any{
+		"error": map[string]any{"message": bad, "type": "upstream_error"},
+	})
+	return true
+}
+
 // ============ /v1/responses ============
 
 // handleResponsesViaChat 前缀平台模型的 /v1/responses 入口：上游恒流式拿
@@ -186,6 +215,9 @@ func handleResponsesViaChat(w http.ResponseWriter, r *http.Request, chat map[str
 	}
 	defer resp.Body.Close()
 	if isStream {
+		if guardBufferedChatSSE(w, resp, chat) {
+			return
+		}
 		w.Header().Set("Content-Type", "text/event-stream")
 		w.Header().Set("Cache-Control", "no-cache")
 		w.Header().Set("Connection", "keep-alive")
@@ -198,6 +230,12 @@ func handleResponsesViaChat(w http.ResponseWriter, r *http.Request, chat map[str
 	if cerr != nil {
 		writeJSON(w, http.StatusBadGateway, map[string]any{
 			"error": map[string]string{"message": cerr.Error(), "type": "api_error"},
+		})
+		return
+	}
+	if bad := guardBadToolCallsChat(raw, chat); bad != "" {
+		writeJSON(w, http.StatusBadGateway, map[string]any{
+			"error": map[string]any{"message": bad, "type": "upstream_error"},
 		})
 		return
 	}
@@ -219,6 +257,9 @@ func handleAnthropicViaChat(w http.ResponseWriter, r *http.Request, req anthropi
 			return
 		}
 		defer resp.Body.Close()
+		if guardBufferedChatSSE(w, resp, openAIReq) {
+			return
+		}
 		// 末参 onUsage 传 nil：记账已在 bufferedStreamCaller 以末帧完成，
 		// 回放路径不逐帧重复记账。
 		handleAnthropicStreamWithUsage(w, resp, req.Model, toolSchemas, stopSequencesFrom(openAIReq), nil)
@@ -234,6 +275,12 @@ func handleAnthropicViaChat(w http.ResponseWriter, r *http.Request, req anthropi
 	if err := json.NewDecoder(resp.Body).Decode(&chat); err != nil {
 		writeJSON(w, http.StatusBadGateway, map[string]any{
 			"error": map[string]string{"message": "upstream returned invalid JSON: " + err.Error(), "type": "parse_error"},
+		})
+		return
+	}
+	if bad := guardBadToolCallsChat(chat, openAIReq); bad != "" {
+		writeJSON(w, http.StatusBadGateway, map[string]any{
+			"error": map[string]any{"message": bad, "type": "upstream_error"},
 		})
 		return
 	}

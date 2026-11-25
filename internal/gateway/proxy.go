@@ -2054,6 +2054,12 @@ func handleAnthropicMessages(w http.ResponseWriter, r *http.Request) {
 // tool_calls 时 stop_reason=tool_use。handleZenAnthropic 的 responses 直达分支
 // 与 auto-learn 重试分支共用，避免 copy-paste 漂移。
 func finishZenAnthropicNonStream(w http.ResponseWriter, chat map[string]any, openAIReq map[string]any, zm *ZenModel) {
+	if bad := guardBadToolCallsChat(chat, openAIReq); bad != "" {
+		writeJSON(w, http.StatusBadGateway, map[string]any{
+			"error": map[string]any{"message": bad, "type": "upstream_error"},
+		})
+		return
+	}
 	chat["model"] = zm.ID
 	chat = normalizeOpenAIResponse(chat)
 	truncateAtStopSequences(chat, stopSequencesFrom(openAIReq))
@@ -2103,6 +2109,12 @@ func handleZenAnthropic(w http.ResponseWriter, r *http.Request, req anthropicReq
 		// 聚合结果不含上游 model（responsesSSEToChat 置空），两种客户端
 		// 形态都要回填网关模型 ID，避免 Anthropic 应答 model 为空。
 		chat["model"] = zm.ID
+		if bad := guardBadToolCallsChat(chat, openAIReq); bad != "" {
+			writeJSON(w, http.StatusBadGateway, map[string]any{
+				"error": map[string]any{"message": bad, "type": "upstream_error"},
+			})
+			return
+		}
 		// 记账：聚合已完成，两种客户端形态都在此记一次（chat 路径同口径）。
 		recordChatUsage(func(u map[string]any) { recordZenKeyTokens(usedKey, usageTokens(u, openAIReq)) }, chat)
 		if isStream {
@@ -2137,6 +2149,12 @@ func handleZenAnthropic(w http.ResponseWriter, r *http.Request, req anthropicReq
 			return
 		}
 		chat["model"] = zm.ID
+		if bad := guardBadToolCallsChat(chat, openAIReq); bad != "" {
+			writeJSON(w, http.StatusBadGateway, map[string]any{
+				"error": map[string]any{"message": bad, "type": "upstream_error"},
+			})
+			return
+		}
 		recordChatUsage(func(u map[string]any) { recordZenKeyTokens(usedKey, usageTokens(u, openAIReq)) }, chat)
 		if isStream {
 			// 流式客户端：与原生分支一致地重发 Anthropic SSE 事件序列
@@ -2156,9 +2174,24 @@ func handleZenAnthropic(w http.ResponseWriter, r *http.Request, req anthropicReq
 
 	usedKey := takeUsedKey(resp)
 	if isStream {
+		// 全缓冲改造（2026-11-25）：常规 chat SSE 上游原本实时逐帧转发，
+		// 无法在写 200 前检查坏 tool_call。先读完再过同一道闸，命中 502
+		// 让 Claude Code 有机会重试；代价是 TTFB = 上游完整响应时间
+		//（agent 项目任务场景可接受，且 responses 两分支本就是聚合后重发）。
+		body, readErr := io.ReadAll(resp.Body)
+		if readErr != nil {
+			writeUpstreamAPIError(w, zm.ID, readErr, http.StatusBadGateway)
+			return
+		}
+		if bad := guardBadToolCalls(strings.SplitAfter(string(body), "\n"), openAIReq); bad != "" {
+			writeJSON(w, http.StatusBadGateway, map[string]any{
+				"error": map[string]any{"message": bad, "type": "upstream_error"},
+			})
+			return
+		}
 		// 记账取末帧 usage，流完后记一次（逐帧记账会重复计入）。
 		var lastUsage map[string]any
-		handleAnthropicStreamWithUsage(w, resp, zm.ID, toolSchemas, stopSequencesFrom(openAIReq), func(u map[string]any) { lastUsage = u })
+		handleAnthropicStreamWithUsage(w, sseBytesResponse(body), zm.ID, toolSchemas, stopSequencesFrom(openAIReq), func(u map[string]any) { lastUsage = u })
 		recordChatUsage(func(u map[string]any) { recordZenKeyTokens(usedKey, usageTokens(u, openAIReq)) }, map[string]any{"usage": lastUsage})
 		return
 	}
