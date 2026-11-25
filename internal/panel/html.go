@@ -548,11 +548,11 @@ const head1bHTML = `<div class="nav-group">Services</div>
   <div class="section-body">
     <div class="stat-grid">
       <div class="stat-card"><div class="stat-name">Cline</div><div class="stat-line" id="reqCline">-</div></div>
+      <div class="stat-card"><div class="stat-name">FreePI</div><div class="stat-line" id="reqFreepi">-</div></div>
+      <div class="stat-card"><div class="stat-name">OpenCode</div><div class="stat-line" id="reqZen">-</div></div>
       <div class="stat-card"><div class="stat-name">TraeWork</div><div class="stat-line" id="reqTrae">-</div></div>
       <div class="stat-card"><div class="stat-name">WorkBuddy</div><div class="stat-line" id="reqWb">-</div></div>
-      <div class="stat-card"><div class="stat-name">OpenCode</div><div class="stat-line" id="reqZen">-</div></div>
       <div class="stat-card"><div class="stat-name">Other</div><div class="stat-line" id="reqOther">-</div></div>
-      <div class="stat-card"><div class="stat-name">FreePI</div><div class="stat-line" id="reqFreepi">-</div></div>
     </div>
     <div class="hint" style="margin:10px 0 0" id="reqStatsHint">Counted since process start.</div>
   </div>
