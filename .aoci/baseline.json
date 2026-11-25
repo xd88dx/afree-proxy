@@ -1,7 +1,7 @@
 {
   "version": 1,
   "created_at": "2026-11-09T17:13:34Z",
-  "updated_at": "2026-11-25T12:57:55Z",
+  "updated_at": "2026-11-25T14:11:10Z",
   "files": {
     ".agents/skills/add-platform/SKILL.md": {
       "role": "index",
@@ -524,9 +524,9 @@
     },
     "aoci.code.txt": {
       "role": "index",
-      "sha256": "3a3f37ebb8d02de5b9e71371016758089f2608847fe79e2a84ffc0725f32712e",
-      "size": 254824,
-      "normalized_sha256": "3a3f37ebb8d02de5b9e71371016758089f2608847fe79e2a84ffc0725f32712e"
+      "sha256": "9b2357f40e6ee8f05062cefa8be5125bd0ab5b90b119dc9a519fbad76a03b8ff",
+      "size": 255024,
+      "normalized_sha256": "9b2357f40e6ee8f05062cefa8be5125bd0ab5b90b119dc9a519fbad76a03b8ff"
     },
     "aoci.meta.txt": {
       "role": "index",
@@ -680,10 +680,18 @@
     },
     "internal/app/admin_data.go": {
       "role": "index",
-      "sha256": "7c53c1b2b84b6354ba8b4413982afa20270c7f0441156686d5542012cdd0c4af",
-      "size": 7324,
-      "normalized_sha256": "7c53c1b2b84b6354ba8b4413982afa20270c7f0441156686d5542012cdd0c4af",
-      "format_sha256": "7c53c1b2b84b6354ba8b4413982afa20270c7f0441156686d5542012cdd0c4af",
+      "sha256": "7201d3b6861ef5d553cb7f52ef3b0162094dbf90f6088b46ae5aa4a05cecb285",
+      "size": 8027,
+      "normalized_sha256": "7201d3b6861ef5d553cb7f52ef3b0162094dbf90f6088b46ae5aa4a05cecb285",
+      "format_sha256": "7201d3b6861ef5d553cb7f52ef3b0162094dbf90f6088b46ae5aa4a05cecb285",
+      "format_kind": "gofmt"
+    },
+    "internal/app/admin_data_toolrename_test.go": {
+      "role": "observe",
+      "sha256": "7b865d6862cbe94a3826dd3c2b0a8ddd3237f3a702ecf75e8cf324266f209e1e",
+      "size": 1003,
+      "normalized_sha256": "7b865d6862cbe94a3826dd3c2b0a8ddd3237f3a702ecf75e8cf324266f209e1e",
+      "format_sha256": "7b865d6862cbe94a3826dd3c2b0a8ddd3237f3a702ecf75e8cf324266f209e1e",
       "format_kind": "gofmt"
     },
     "internal/app/admin_html.go": {
@@ -2032,18 +2040,18 @@
     },
     "internal/exitpool/failover.go": {
       "role": "index",
-      "sha256": "9d2363c192ca43307ea1320908a2ed67254e821ee37aa4ba19ef94d1c4049d32",
-      "size": 16784,
-      "normalized_sha256": "9d2363c192ca43307ea1320908a2ed67254e821ee37aa4ba19ef94d1c4049d32",
-      "format_sha256": "9d2363c192ca43307ea1320908a2ed67254e821ee37aa4ba19ef94d1c4049d32",
+      "sha256": "f332ed382e5a193b578cdd096afd4609e0cc1d828717571ba06d65466c655820",
+      "size": 17102,
+      "normalized_sha256": "f332ed382e5a193b578cdd096afd4609e0cc1d828717571ba06d65466c655820",
+      "format_sha256": "f332ed382e5a193b578cdd096afd4609e0cc1d828717571ba06d65466c655820",
       "format_kind": "gofmt"
     },
     "internal/exitpool/failover_test.go": {
       "role": "observe",
-      "sha256": "0bd34da2165d2d1d9e8cde39bca3db55a383ecb90ad8594e899a330928693b03",
-      "size": 9962,
-      "normalized_sha256": "0bd34da2165d2d1d9e8cde39bca3db55a383ecb90ad8594e899a330928693b03",
-      "format_sha256": "0bd34da2165d2d1d9e8cde39bca3db55a383ecb90ad8594e899a330928693b03",
+      "sha256": "3a37bcb6e6bf260887ea7d57e3a945279ccdcefbade52b48c5342be1616f3b3c",
+      "size": 11112,
+      "normalized_sha256": "3a37bcb6e6bf260887ea7d57e3a945279ccdcefbade52b48c5342be1616f3b3c",
+      "format_sha256": "3a37bcb6e6bf260887ea7d57e3a945279ccdcefbade52b48c5342be1616f3b3c",
       "format_kind": "gofmt"
     },
     "internal/exitpool/health.go": {
@@ -2180,10 +2188,10 @@
     },
     "internal/freepi/sticky.go": {
       "role": "index",
-      "sha256": "ed5478f437bd1b95f30e6c0ef1a514e372ea3fa6d9f4d904e682c510e9388ed8",
-      "size": 5799,
-      "normalized_sha256": "ed5478f437bd1b95f30e6c0ef1a514e372ea3fa6d9f4d904e682c510e9388ed8",
-      "format_sha256": "ed5478f437bd1b95f30e6c0ef1a514e372ea3fa6d9f4d904e682c510e9388ed8",
+      "sha256": "2b23e654cb9df376e1170f0d35ac4a460495a187f135514e83b379af73783ecf",
+      "size": 6039,
+      "normalized_sha256": "2b23e654cb9df376e1170f0d35ac4a460495a187f135514e83b379af73783ecf",
+      "format_sha256": "2b23e654cb9df376e1170f0d35ac4a460495a187f135514e83b379af73783ecf",
       "format_kind": "gofmt"
     },
     "internal/freepi/sticky_test.go": {
@@ -2632,10 +2640,10 @@
     },
     "internal/panel/html.go": {
       "role": "index",
-      "sha256": "3f0703fe2bc999cd277f5b254e94a39fb7f733b15878843e1e754908e4680eee",
-      "size": 539965,
-      "normalized_sha256": "3f0703fe2bc999cd277f5b254e94a39fb7f733b15878843e1e754908e4680eee",
-      "format_sha256": "3f0703fe2bc999cd277f5b254e94a39fb7f733b15878843e1e754908e4680eee",
+      "sha256": "7baa57dbb2fd85639711615948d3a0dcce17e7fa13d13e91f134d7ef84991165",
+      "size": 540006,
+      "normalized_sha256": "7baa57dbb2fd85639711615948d3a0dcce17e7fa13d13e91f134d7ef84991165",
+      "format_sha256": "7baa57dbb2fd85639711615948d3a0dcce17e7fa13d13e91f134d7ef84991165",
       "format_kind": "gofmt"
     },
     "internal/panel/models_refresh.go": {
