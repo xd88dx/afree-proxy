@@ -196,7 +196,7 @@ func runFailover(cooldownKind string, ruleKinds []string, failedURL string, err 
 		log.Printf("[exit-failover] %s exit %s: skip (cannot extract target URL from error)", cooldownKind, masked)
 		return
 	}
-	if !witnessExists(ctx, failedURL, targetURL) {
+	if !witnessExists(ctx, cooldownKind, failedURL, targetURL) {
 		log.Printf("[exit-failover] %s exit %s: skip (target %s unreachable via all witness exits — target-wide outage, not exit ban)",
 			cooldownKind, masked, targetURL)
 		return
@@ -212,7 +212,7 @@ func runFailover(cooldownKind string, ruleKinds []string, failedURL string, err 
 		}
 		addExclusion(rk, failedURL)
 	}
-	repl, ok := pickReplacement(failedURL, ruleKinds)
+	repl, ok := pickReplacement(cooldownKind, failedURL, ruleKinds)
 	if !ok {
 		log.Printf("[exit-failover] %s exit %s excluded (kind=%s%s); no replacement candidate (unbound+unexcluded), rebinding skipped",
 			cooldownKind, masked, strings.Join(ruleKinds, ","), alreadyExcludedTag(alreadyExcluded))
@@ -240,7 +240,7 @@ func alreadyExcludedTag(already bool) string {
 // 不排除——排除表是"被目标风控"的长期语义，节点死会自愈，恢复后人工绑回。
 // 无绑定槽/无候选仅日志。调用方持 failoverWriteMu。
 func rebindDeadExit(ruleKinds []string, failedURL, cooldownKind, masked string) {
-	repl, ok := pickReplacement(failedURL, ruleKinds)
+	repl, ok := pickReplacement(cooldownKind, failedURL, ruleKinds)
 	if !ok {
 		log.Printf("[exit-failover] %s exit %s: dead, no replacement candidate — rebind skipped", cooldownKind, masked)
 		return
@@ -308,8 +308,9 @@ func addExclusion(ruleKind, proxyURL string) {
 }
 
 // witnessExists 旁证：从池尾往前找最多 failoverWitnessMax 个健康其他出口，
-// 对目标 host 实时探测，任一收到 HTTP 响应即成立。
-func witnessExists(ctx context.Context, failedURL, targetURL string) bool {
+// 对目标 host 实时探测，任一收到 HTTP 响应即成立。kind = 触发平台的冷却
+// kind，平台级冷却的出口同样不当旁证（2026-11-25 补 R1，与下方注释口径一致）。
+func witnessExists(ctx context.Context, kind, failedURL, targetURL string) bool {
 	cfg := GetPool()
 	tried := 0
 	for i := len(cfg.Proxies) - 1; i >= 0 && tried < failoverWitnessMax; i-- {
@@ -317,7 +318,7 @@ func witnessExists(ctx context.Context, failedURL, targetURL string) bool {
 		if SameAlias(p, failedURL) {
 			continue
 		}
-		if !ProxyAvailableFor("", i) {
+		if !ProxyAvailableFor(kind, i) {
 			continue // 冷却/手动摘除的出口不适合当旁证
 		}
 		tried++
@@ -329,9 +330,10 @@ func witnessExists(ctx context.Context, failedURL, targetURL string) bool {
 }
 
 // pickReplacement 选替补：严格候选 = 池内、非故障口、未被规则 kind 排除、
-// 未被该平台任何凭据绑定（别名等价）、不在冷却。从后往前扫，同地区立即选中；
-// 无同地区取从后往前第一个候选。找不到返回 ("", false)。
-func pickReplacement(failedURL string, ruleKinds []string) (string, bool) {
+// 未被该平台任何凭据绑定（别名等价）、不在冷却（全局+平台级两层，2026-11-25
+// 补 R1——空 kind 只看全局层，会漏掉仅对该平台冷却的出口）。从后往前扫，
+// 同地区立即选中；无同地区取从后往前第一个候选。找不到返回 ("", false)。
+func pickReplacement(kind, failedURL string, ruleKinds []string) (string, bool) {
 	cfg := GetPool()
 	reg := regionOf(failedURL)
 	// 该平台全部绑定槽位集合（别名等价匹配）。
@@ -363,7 +365,7 @@ func pickReplacement(failedURL string, ruleKinds []string) (string, bool) {
 		if excluded {
 			continue
 		}
-		if !ProxyAvailableFor("", i) {
+		if !ProxyAvailableFor(kind, i) {
 			continue
 		}
 		if boundMatch(bound, p) {

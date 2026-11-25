@@ -1488,7 +1488,7 @@ const I18N = {
   'Danger zone': { en: 'Danger zone', zh: '危险区' },
   'Delete all data': { en: 'Delete all data', zh: '删除全部数据' },
   'Deletes ALL persisted data (accounts, keys, proxies, config). Cannot be undone.': { en: 'Deletes ALL persisted data (accounts, keys, proxies, config). Cannot be undone.', zh: '删除所有持久化数据（所有凭据、代理、配置）。不可恢复。' },
-  'delete_all_persisted_data_this_will_clear_cline_': { en: 'Delete ALL persisted data? This will clear Cline accounts and client keys, OpenCode keys, WorkBuddy accounts, the proxy pool, default model, request headers, scheduling strategy, custom aliases, sticky sessions, and request logs. This cannot be undone!', zh: '确定删除全部持久化数据？将清空所有平台的凭据、代理池、默认模型、请求头、调度策略、自定义别名、粘性会话和请求日志，且不可撤销！' },
+  'delete_all_persisted_data_this_will_clear_cline_': { en: 'Delete ALL persisted data? This will clear Cline accounts and client keys, OpenCode keys, WorkBuddy accounts, the proxy pool, default model, request headers, scheduling strategy, custom aliases, tool rename config, sticky sessions, and request logs. This cannot be undone!', zh: '确定删除全部持久化数据？将清空所有平台的凭据、代理池、默认模型、请求头、调度策略、自定义别名、工具改名配置、粘性会话和请求日志，且不可撤销！' },
   'no_charge': { en: 'no charge', zh: '免费' },
   // 请求日志页
   'last 500 entries, persisted to data/requests.jsonl': { en: 'last 500 entries, persisted to data/requests.jsonl', zh: '最近 500 条，持久化到 data/requests.jsonl' },

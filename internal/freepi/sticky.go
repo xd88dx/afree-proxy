@@ -19,8 +19,10 @@ import (
 //
 // 本文件实现「对话 → key」粘性映射：同一会话的多轮请求锁定同一把 key。
 // 会话标识优先显式 ID（请求头/body），回退首条 user 消息指纹（agent 每轮发
-// 完整历史，首条 user 稳定；system 常带动态时间戳故不用）。指纹加调用方 API
-// key 做 namespace，防不同调用方撞指纹。
+// 完整历史，首条 user 稳定；system 常带动态时间戳故不用）。指纹按调用方
+// apiKey 参数做 namespace 防撞；当前唯一调用点（Chat）没有调用方 key 上下文，
+// 传空 = 所有调用方共用一个 namespace——afree 网关单租户语义下无影响（审计
+// 2026-11-25 R2），多租户隔离需要时从网关把 client key 经 ctx 接进来。
 //
 // 粘住的 key 不可用时：快速失败，绝不换 key 重试（换 key = 同一 messages 换
 // token，必然再撞上游风控，且白费一次调用）。失败仍按原规则 Cooldown 该 key

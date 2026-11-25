@@ -2,6 +2,7 @@ package app
 
 import (
 	"afree-proxy/internal/gateway"
+	"afree-proxy/internal/gwconfig"
 	"afree-proxy/internal/reqlog"
 
 	"afree-proxy/internal/cline"
@@ -35,6 +36,7 @@ func handleAdminDeleteAllData(w http.ResponseWriter, r *http.Request) {
 	proxies := clearProxyPoolForDataDelete()
 	combos := clearCombosForDataDelete()
 	streamLearned := clearClineStreamLearnedForDataDelete()
+	toolRename := clearToolRenameForDataDelete()
 	clearRequestLogsForDataDelete()
 
 	WriteAPI(w, http.StatusOK, apiResponse{
@@ -53,8 +55,26 @@ func handleAdminDeleteAllData(w http.ResponseWriter, r *http.Request) {
 			"proxies":           proxies,
 			"combos":            combos,
 			"streamLearned":     streamLearned,
+			"toolRename":        toolRename,
 		},
 	})
+}
+
+// clearToolRenameForDataDelete 清空工具改名配置（afree-config.json 的
+// toolRename 段）：全局配置开关的出厂复位口径与 strategy/headers/流式学习
+// 一致（2026-11-25 补——上线时删除数据端点漏了这段，删完数据开关仍残留）。
+// 返回清除时勾选的平台数。
+func clearToolRenameForDataDelete() int {
+	n := 0
+	if c := gwconfig.GetToolRename(); c != nil {
+		for _, on := range c.Platforms {
+			if on {
+				n++
+			}
+		}
+	}
+	gwconfig.MutateGlobalConfig(func(g *gwconfig.GlobalConfigData) { g.ToolRename = nil })
+	return n
 }
 
 // clearPoolForDataDelete 清空账号池文件并重置其中的全局配置段：客户端 key、

@@ -47,14 +47,39 @@ func setupFailoverPool(t *testing.T) {
 // 但 y-jp 地区匹配，选 y-jp；无同地区时取从后往前第一个候选。
 func TestPickReplacementRegionPriority(t *testing.T) {
 	setupFailoverPool(t)
-	got, ok := pickReplacement("socks5://h:1#a-jp", []string{"wb"})
+	got, ok := pickReplacement("", "socks5://h:1#a-jp", []string{"wb"})
 	if !ok || got != "socks5://h:3#y-jp" {
 		t.Fatalf("region priority: got %q ok=%v, want y-jp", got, ok)
 	}
 	// 无同地区：故障 x-us → 从后往前第一个候选 z-au。
-	got, ok = pickReplacement("socks5://h:2#x-us", []string{"wb"})
+	got, ok = pickReplacement("", "socks5://h:2#x-us", []string{"wb"})
 	if !ok || got != "socks5://h:4#z-au" {
 		t.Fatalf("no region match: got %q ok=%v, want z-au", got, ok)
+	}
+}
+
+// TestPickReplacementSkipsPlatformCooled 平台级冷却的出口不进替补候选
+// （2026-11-25 补审计 R1：空 kind 只看全局层，会漏掉仅对该平台冷却的出口）。
+func TestPickReplacementSkipsPlatformCooled(t *testing.T) {
+	setupFailoverPool(t)
+	cooldownsMu.Lock()
+	platformCooldowns = map[string]map[int]time.Time{}
+	cooldownsMu.Unlock()
+	t.Cleanup(func() {
+		cooldownsMu.Lock()
+		platformCooldowns = map[string]map[int]time.Time{}
+		cooldownsMu.Unlock()
+	})
+	// y-jp（池内下标 2）对 wb 平台级冷却 → 同地区候选被跳过，落到 z-au。
+	CooldownUpstreamProxyFor("wb", 2, 10*time.Minute)
+	got, ok := pickReplacement("wb", "socks5://h:1#a-jp", []string{"wb"})
+	if !ok || got != "socks5://h:4#z-au" {
+		t.Fatalf("platform-cooled y-jp must be skipped: got %q ok=%v, want z-au", got, ok)
+	}
+	// 空 kind（无平台上下文的调用方）不受平台级冷却影响——语义不变。
+	got, ok = pickReplacement("", "socks5://h:1#a-jp", []string{"wb"})
+	if !ok || got != "socks5://h:3#y-jp" {
+		t.Fatalf("empty kind must ignore platform cooldown: got %q ok=%v, want y-jp", got, ok)
 	}
 }
 
@@ -81,7 +106,7 @@ func TestPickReplacementSkipsBoundAndExcluded(t *testing.T) {
 		failoverMu.Unlock()
 	})
 	// y-jp 已被绑定 → 跳过 → z-au。
-	got, ok := pickReplacement("socks5://h:1#a-jp", []string{"wb"})
+	got, ok := pickReplacement("", "socks5://h:1#a-jp", []string{"wb"})
 	if !ok || got != "socks5://h:4#z-au" {
 		t.Fatalf("bound skipped: got %q ok=%v, want z-au", got, ok)
 	}
@@ -90,7 +115,7 @@ func TestPickReplacementSkipsBoundAndExcluded(t *testing.T) {
 	if !proxyExcludedFor("wb", "socks5://h:4#z-au") {
 		t.Fatal("z-au must be excluded for wb after addExclusion")
 	}
-	got, ok = pickReplacement("socks5://h:1#a-jp", []string{"wb"})
+	got, ok = pickReplacement("", "socks5://h:1#a-jp", []string{"wb"})
 	if !ok || got != "socks5://h:2#x-us" {
 		t.Fatalf("excluded skipped: got %q ok=%v, want x-us", got, ok)
 	}
