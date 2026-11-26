@@ -1,7 +1,7 @@
 {
   "version": 1,
   "created_at": "2026-11-09T17:13:34Z",
-  "updated_at": "2026-11-26T14:52:19Z",
+  "updated_at": "2026-11-26T16:28:23Z",
   "files": {
     ".agents/skills/add-platform/SKILL.md": {
       "role": "index",
@@ -524,9 +524,9 @@
     },
     "aoci.code.txt": {
       "role": "index",
-      "sha256": "8082f5a494dc0fefa793358c565be8ed8a7c6381521eca0e74ab8c7e188032ee",
-      "size": 259262,
-      "normalized_sha256": "8082f5a494dc0fefa793358c565be8ed8a7c6381521eca0e74ab8c7e188032ee"
+      "sha256": "9e8317270db37dc233fd1448bd31062cf448291051c11d27784d0db7f4f3f4ac",
+      "size": 259459,
+      "normalized_sha256": "9e8317270db37dc233fd1448bd31062cf448291051c11d27784d0db7f4f3f4ac"
     },
     "aoci.meta.txt": {
       "role": "index",
@@ -2048,18 +2048,18 @@
     },
     "internal/exitpool/failover.go": {
       "role": "index",
-      "sha256": "e695f295127e64f429d963471924aad5c23783690584fa323f3d25217a2be004",
-      "size": 28119,
-      "normalized_sha256": "e695f295127e64f429d963471924aad5c23783690584fa323f3d25217a2be004",
-      "format_sha256": "e695f295127e64f429d963471924aad5c23783690584fa323f3d25217a2be004",
+      "sha256": "d5417429ff0251e3ed297b97cac270557a8eba9bd2446a6830f8efe7a812a67c",
+      "size": 31907,
+      "normalized_sha256": "d5417429ff0251e3ed297b97cac270557a8eba9bd2446a6830f8efe7a812a67c",
+      "format_sha256": "d5417429ff0251e3ed297b97cac270557a8eba9bd2446a6830f8efe7a812a67c",
       "format_kind": "gofmt"
     },
     "internal/exitpool/failover_test.go": {
       "role": "observe",
-      "sha256": "40ce74bb6a8f14926d8ef570b82808657f7b125abe6205719a488dad1e249866",
-      "size": 22955,
-      "normalized_sha256": "40ce74bb6a8f14926d8ef570b82808657f7b125abe6205719a488dad1e249866",
-      "format_sha256": "14c1d1acf363d21021b5e2bfe278b16ec681163fcfb322cd7a7dbdca6b0b81b0",
+      "sha256": "b5562f0327c0be92d012039bc613e991e2b51289a909e889c74c65c7ba00227f",
+      "size": 24954,
+      "normalized_sha256": "b5562f0327c0be92d012039bc613e991e2b51289a909e889c74c65c7ba00227f",
+      "format_sha256": "b5562f0327c0be92d012039bc613e991e2b51289a909e889c74c65c7ba00227f",
       "format_kind": "gofmt"
     },
     "internal/exitpool/health.go": {
