@@ -549,7 +549,7 @@ func TestRunReorderForKind(t *testing.T) {
 }
 
 // TestRunReorderForKindIntlBlock 声明国际的凭据不可被重排到国内出口
-//（2026-11-26 用户定 B 语义：国际域唯一效果 = 不分配国内出口）。
+// （2026-11-26 用户定 B 语义：国际域唯一效果 = 不分配国内出口）。
 func TestRunReorderForKindIntlBlock(t *testing.T) {
 	PathOverride = filepath.Join(t.TempDir(), "proxy-config.json")
 	t.Cleanup(func() { PathOverride = "" })
@@ -619,5 +619,46 @@ func TestRunReorderForKindDirect(t *testing.T) {
 	moves := fk.Moves()
 	if n != 1 || len(moves) != 1 || moves[0] != "main:"+DirectSentinel+"->socks5://h:1#a-jp" {
 		t.Fatalf("direct-excluded row must rebind to first candidate, n=%d moves=%v", n, moves)
+	}
+}
+
+// TestIsInterceptBody 拦截页特征判定（2026-11-27 probeExitAlive 判定核心）：
+// 只认 <!doctype html / <html 两个标记，大小写不敏感；JSON/SSE/空体/纯文本
+// 一律不命中——"没把握不排除"（2026-11-27 用户定），唯一判死信号是出口
+// 劫持的高置信特征。apple 测试页（用户实测测速目标）以 <!DOCTYPE html
+// 开头会命中本判定，这正是步骤① 测速目标探测不得换用 probeExitAlive 的
+// 原因（见 runFailover ① 注释）。
+func TestIsInterceptBody(t *testing.T) {
+	cases := map[string]bool{
+		"<!DOCTYPE html>":                   true,
+		`<!doctype html><html lang="en">`:   true,
+		"<html><body>blocked</body></html>": true,
+		"  \n<HTML> uppercase":              true,
+		`<Html Lang="zh">`:                  true,
+		`{"choices":[]}`:                    false,
+		"data: {\"usage\":{}}\n\n":          false,
+		"":                                  false,
+		"region not supported":              false,
+		`{"error":"region not supported"}`:  false,
+		"gateway timeout":                   false,
+	}
+	for body, want := range cases {
+		if got := isInterceptBody(body); got != want {
+			t.Fatalf("isInterceptBody(%q) = %v, want %v", body, got, want)
+		}
+	}
+}
+
+// TestProbeExitAliveRespectsHook probeExitAlive 必须尊重 probeHook：判定核心
+// 由 TestIsInterceptBody 覆盖，接线行为（②旁证与③复测走拦截页感知口径）
+// 依赖既有 hook 注入测试——hook 分支若被移除，本测试先挂，避免既有端到端
+// 测试静默改走真实网络。
+func TestProbeExitAliveRespectsHook(t *testing.T) {
+	sentinel := errFake("hook: html intercept page")
+	setProbeHook(func(_ context.Context, _, _ string) error { return sentinel })
+	t.Cleanup(func() { setProbeHook(nil) })
+	err := probeExitAlive(context.Background(), "socks5://h:1#a-jp", "https://www.workbuddy.ai/")
+	if err != sentinel {
+		t.Fatalf("probeExitAlive must delegate to probeHook, got %v", err)
 	}
 }

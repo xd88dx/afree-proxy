@@ -9,7 +9,8 @@ package exitpool
 //
 //   ① 故障出口对测速目标（gstatic）实时探测**通**——隧道与通用链路活着；
 //   ② 其他出口对**目标 host**（从触发错误提取）实时探测**至少 1 个通**——
-//     目标没有整体故障，是该出口被目标选择性阻断；
+//     目标没有整体故障，是该出口被目标选择性阻断（2026-11-27 起"通"的含义
+//     排除 HTML 拦截页：中间层截胡返回的 200+HTML 不算通）；
 //   ③ 触发源：该出口对该平台 TLS 类失败达成平台级冷却（IsUpstreamSide
 //     StreamFailure 归类）。
 //
@@ -25,6 +26,8 @@ package exitpool
 
 import (
 	"context"
+	"fmt"
+	"io"
 	"log"
 	"net"
 	"net/http"
@@ -245,6 +248,9 @@ func runFailover(cooldownKind string, ruleKinds []string, failedURL string, err 
 	defer cancel()
 	masked := kit.MaskProxyURL(failedURL)
 	// ① 差分信号 A：故障出口对测速目标探测。不通 = 出口整体死。
+	// 此步刻意用 probeURL 不验响应体：测速目标是用户可配的任意 URL（实测
+	// 配置为 apple success.html 这类 HTML 测试页），启用拦截页判定会把正常
+	// 响应判死、自动排除整体失效。拦截页判定只用于②③的目标 host 探测。
 	target := EffectiveTestTarget()
 	if perr := probeURL(ctx, failedURL, target); perr != nil {
 		log.Printf("[exit-failover] %s exit %s: exit dead (probe %s failed: %v) — rebind-only, not excluded",
@@ -268,12 +274,14 @@ func runFailover(cooldownKind string, ruleKinds []string, failedURL string, err 
 	// ③ 复测确认（2026-11-26 用户定）：等 failoverRecheckDelay 后对故障出口
 	// 复测目标 host。仍不通 = 持续性目标侧阻断（真风控）→ 排除；通了 = 抖动
 	// 自愈 → 只冷却不排除，把"暂时性路径故障"洗掉。
+	// 复测用拦截页感知探测（2026-11-27）：HTML 拦截页必须是"不通"，否则真
+	// 风控/劫持会被复测判"通"而永久漏排（凭据 11 事故同款漏洞）。
 	time.Sleep(failoverRecheckDelay)
 	if ctx.Err() != nil {
 		log.Printf("[exit-failover] %s exit %s: skip (overall deadline during recheck wait)", cooldownKind, masked)
 		return
 	}
-	if perr := probeURL(ctx, failedURL, targetURL); perr == nil {
+	if perr := probeExitAlive(ctx, failedURL, targetURL); perr == nil {
 		log.Printf("[exit-failover] %s exit %s: skip (recheck %s reachable after %v — transient path failure, not exit ban)",
 			cooldownKind, masked, targetURL, failoverRecheckDelay)
 		return
@@ -455,8 +463,9 @@ func CloneStamps(stamps map[string]string) map[string]string {
 }
 
 // witnessExists 旁证：从池尾往前找最多 failoverWitnessMax 个健康其他出口，
-// 对目标 host 实时探测，任一收到 HTTP 响应即成立。kind = 触发平台的冷却
-// kind，平台级冷却的出口同样不当旁证（2026-11-25 补 R1，与下方注释口径一致）。
+// 对目标 host 实时探测，任一返回非拦截页响应即成立（HTML 拦截页不算有效
+// 旁证——其他出口也被截胡说明是中间层问题而非该出口被选择性阻断）。kind =
+// 触发平台的冷却 kind，平台级冷却的出口同样不当旁证（2026-11-25 补 R1）。
 func witnessExists(ctx context.Context, kind, failedURL, targetURL string) bool {
 	cfg := GetPool()
 	tried := 0
@@ -469,7 +478,7 @@ func witnessExists(ctx context.Context, kind, failedURL, targetURL string) bool 
 			continue // 冷却/手动摘除的出口不适合当旁证
 		}
 		tried++
-		if perr := probeURL(ctx, p, targetURL); perr == nil {
+		if perr := probeExitAlive(ctx, p, targetURL); perr == nil {
 			return true
 		}
 	}
@@ -637,6 +646,67 @@ func probeURL(ctx context.Context, proxyURL, target string) error {
 		return err
 	}
 	resp.Body.Close()
+	return nil
+}
+
+// ============================================================================
+// 拦截页感知探测（2026-11-27 用户定"没把握不排除"）
+//
+// 凭据 11 事故的同一漏洞模式在 failover 探测路径的补口：probeURL 收到任意
+// HTTP 响应即判通，出口被中间层截胡返回 200+HTML 拦截页时，③复测会把它当
+// "抖动自愈"跳过排除，真风控永久漏判。probeExitAlive 在同一拨号栈上补响应
+// 体前缀判定：唯一判死信号是 HTML 拦截页特征——正常 API host 不返回 HTML，
+// 返回即是出口劫持的高置信信号；204/401/404/5xx/JSON/空体一律算通（上游
+// 业务语义不扣出口的分，429 等照旧不受影响）。
+// ============================================================================
+
+// interceptPeekBytes 拦截页判定读取的响应体前缀长度：HTML 标记出现在文档
+// 开头，4KB 足够；限幅避免大页面拖慢探测轮。
+const interceptPeekBytes = 4 << 10
+
+// isInterceptBody 响应体前缀是否命中 HTML 拦截页特征。大小写不敏感，只认
+// <!doctype html 与 <html 两个标记——正常 API 响应（JSON/SSE/文本/空体）
+// 不含这两个标记，误判面最小。gzip 二进制（若上游强制压缩且客户端未解压）
+// 不含明文标记 → 判通，保守方向不误排。
+func isInterceptBody(body string) bool {
+	lower := strings.ToLower(body)
+	return strings.Contains(lower, "<!doctype html") || strings.Contains(lower, "<html")
+}
+
+// probeExitAlive 拦截页感知探测：经指定出口对目标发一次 GET（与 probeURL
+// 完全同栈：拨号+隧道+TLS+请求），读取响应体前缀判定 HTML 拦截页。
+//
+// 仅用于②旁证与③复测的目标 host 探测；①测速目标探测**不得**换用此函数
+// ——测速目标本身可能是 HTML 测试页（用户实测配置即 apple success.html），
+// 在①启用会把所有出口误判"出口整体死"，自动排除整体失效。
+//
+// 纯探测：不记统计、不触发冷却。probeHook 注入与 probeURL 共用，既有测试
+// 行为不变。
+func probeExitAlive(ctx context.Context, proxyURL, target string) error {
+	if f := probeHook.Load(); f != nil {
+		return (*f)(ctx, proxyURL, target)
+	}
+	transport := BuildTransport(func(c context.Context, network, addr string) (net.Conn, error) {
+		return DialViaProxy(c, proxyURL, network, addr)
+	})
+	transport.DisableKeepAlives = true
+	transport.ResponseHeaderTimeout = failoverProbeTimeout
+	transport.TLSHandshakeTimeout = failoverProbeTimeout
+	client := &http.Client{Transport: transport, Timeout: failoverProbeTimeout}
+	defer transport.CloseIdleConnections()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target, nil)
+	if err != nil {
+		return err
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	head, _ := io.ReadAll(io.LimitReader(resp.Body, interceptPeekBytes))
+	if isInterceptBody(string(head)) {
+		return fmt.Errorf("html intercept page (exit hijack?)")
+	}
 	return nil
 }
 
