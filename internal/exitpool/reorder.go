@@ -39,7 +39,7 @@ func reorderCapFor(ruleKind string) int {
 }
 
 // reorderHS 健康统计的平均握手 ms（无记录返回 0）。查询键 = 备注名
-//（RuleKeyOf，与 RecordProxyOutcome 的写入键同口径——2026-11-26 备注名主键
+// （RuleKeyOf，与 RecordProxyOutcome 的写入键同口径——2026-11-26 备注名主键
 // 后统计表里没有完整 URL 键，直接查 URL 会恒 miss、重排退化成池序）。
 func reorderHS(proxyURL string) int64 {
 	EnsureHealthLoaded()

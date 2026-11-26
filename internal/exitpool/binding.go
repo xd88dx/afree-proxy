@@ -173,7 +173,7 @@ const ProxyRuleDirectKey = "__direct__"
 
 // ruleKeyInPool 规则键是否仍对得上池：键相等，或键的备注名与池内某行备注名
 // 相同（订阅换端口后键不失配，2026-11-26 用户定备注名主键）。键为裸备注名
-//（规则键形态，不带 scheme）时整串视作备注名匹配。
+// （规则键形态，不带 scheme）时整串视作备注名匹配。
 func ruleKeyInPool(key string, pool []string) bool {
 	a := AliasOf(key)
 	if a == "" {

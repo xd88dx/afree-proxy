@@ -39,7 +39,7 @@ func ZoneOf(proxyURL string) string {
 
 // ZoneCompatible 凭据域与出口区域是否兼容（自动分配候选判定）。
 // credRealm：cn（声明国内）/ global 或 intl（声明国际）/ 空 = 无域凭据
-//（未声明平台，cline/zen 等——国内出口对它们是普通出口）。
+// （未声明平台，cline/zen 等——国内出口对它们是普通出口）。
 func ZoneCompatible(exitZone, credRealm string) bool {
 	exitZone = NormalizeZone(exitZone)
 	if exitZone == "" {
@@ -68,8 +68,8 @@ func ZoneCompatible(exitZone, credRealm string) bool {
 // ============================================================================
 
 // DeclaredRealm 经平台域声明推导凭据有效域。platformKey 为排除规则口径
-//（acc/trae/key/wb/freepi/other:<slug>）；credRealm 为凭据自身区域
-//（wb=auth.Realm、trae=uid 前缀 cn/intl、其余空）。返回 "cn"/"global"/""。
+// （acc/trae/key/wb/freepi/other:<slug>）；credRealm 为凭据自身区域
+// （wb=auth.Realm、trae=uid 前缀 cn/intl、其余空）。返回 "cn"/"global"/""。
 func DeclaredRealm(platformKey, credRealm string) string {
 	has := func(k string) bool {
 		for _, d := range GetBinding().ZoneRealms {
@@ -106,7 +106,7 @@ func DeclaredRealm(platformKey, credRealm string) string {
 
 // RuleKeyOf 代理的规则/统计主键：备注名（#fragment）优先——订阅换端口时
 // 规则与统计不失配（2026-11-26 用户定备注名唯一主键）；无备注键保持原样
-//（直连哨兵 __direct__、存量无备注行）。
+// （直连哨兵 __direct__、存量无备注行）。
 func RuleKeyOf(proxyURL string) string {
 	if a := AliasOf(proxyURL); a != "" {
 		return a
