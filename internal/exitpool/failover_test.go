@@ -403,8 +403,9 @@ func TestPickReplacementZoneRealm(t *testing.T) {
 	}
 }
 
-// TestReviewExclusionsAutoUnban TTL 复核（2026-11-26 用户定）：差分排除的
-// 条目连续 2 次探活恢复可达自动移除；失败重置计数；无台账的手动条目不动。
+// TestReviewExclusionsAutoUnban TTL 复核（2026-11-26 用户定：半小时一次、
+// 探通 1 次即解禁）：差分排除的条目恢复可达 1 次自动移除；失败不计数；
+// 无台账的手动条目不动。
 func TestReviewExclusionsAutoUnban(t *testing.T) {
 	setupFailoverPool(t)
 	on := true
@@ -424,16 +425,11 @@ func TestReviewExclusionsAutoUnban(t *testing.T) {
 		return &cp
 	}())
 
-	// 全部探活通过：第一轮 okCount=1，未达阈值，仍排除。
+	// 探活通过：okCount=1 即达阈值 → 差分条目立即自动移除；手动条目（无台账）保留。
 	setProbeHook(func(_ context.Context, proxy, target string) error { return nil })
 	reviewExclusions()
-	if !proxyExcludedFor("wb", "socks5://h:4#z-au") {
-		t.Fatal("one recovery probe must not unban yet")
-	}
-	// 第二轮达标 → 差分条目自动移除；手动条目（无台账）保留。
-	reviewExclusions()
 	if proxyExcludedFor("wb", "socks5://h:4#z-au") {
-		t.Fatal("two consecutive recovery probes must auto-unban the diff-written entry")
+		t.Fatal("one recovery probe must auto-unban the diff-written entry")
 	}
 	if !proxyExcludedFor("wb", "socks5://h:3#y-jp") {
 		t.Fatal("manual entry (no stamp) must never auto-unban")
@@ -443,13 +439,12 @@ func TestReviewExclusionsAutoUnban(t *testing.T) {
 		t.Fatal("stamp must be cleared after auto-unban")
 	}
 
-	// 探活失败 → 计数清零，条目保持。
+	// 探活失败 → 不计数，条目保持。
 	addExclusion("wb", "socks5://h:2#x-us", "https://www.workbuddy.ai/")
-	reviewExclusions() // ok=1
 	setProbeHook(func(_ context.Context, proxy, target string) error {
 		return errFake("net/http: TLS handshake timeout")
 	})
-	reviewExclusions() // 失败 → 清零
+	reviewExclusions() // 失败 → 计数保持 0
 	_, _, okCount := parseStamp(GetBinding().ProxyExclusionStamps[stampKey(RuleKeyOf("socks5://h:2#x-us"), "wb")])
 	if okCount != 0 {
 		t.Fatalf("failed probe must reset ok count, got %d", okCount)
@@ -497,11 +492,13 @@ func (f *reorderFake) Moves() []string {
 func setHS(t *testing.T, url string, hs int64) {
 	EnsureHealthLoaded()
 	healthMu.Lock()
-	healthStats[url] = &HealthEntry{HSCount: 5, HSSumMs: hs * 5}
+	// 键 = 备注名（RuleKeyOf，2026-11-26 主键）——与生产写入路径
+	// RecordProxyOutcome 同口径，保证 reorderHS 的查询键对齐被测试锁住。
+	healthStats[RuleKeyOf(url)] = &HealthEntry{HSCount: 5, HSSumMs: hs * 5}
 	healthMu.Unlock()
 	t.Cleanup(func() {
 		healthMu.Lock()
-		delete(healthStats, url)
+		delete(healthStats, RuleKeyOf(url))
 		healthMu.Unlock()
 	})
 }
@@ -584,5 +581,43 @@ func TestRunReorderForKindIntlBlock(t *testing.T) {
 	// → 无改动。
 	if m := fk.Moves(); len(m) != 0 {
 		t.Fatalf("cn exit must not be offered to intl rows, moves = %v", m)
+	}
+}
+
+// TestRunReorderForKindDirect 直连行（2026-11-26 修）：显式直连（Main =
+// direct 哨兵）在"排除直连"规则成立时被强制改绑到可用代理；未排除时照旧
+// 完全不参与（既有口径）。此前 reorder 用 eurl=="" 判直连（错把全局行当
+// 直连、漏掉 direct 行），且改绑传 "direct" 给适配器的别名匹配恒不中。
+func TestRunReorderForKindDirect(t *testing.T) {
+	PathOverride = filepath.Join(t.TempDir(), "proxy-config.json")
+	t.Cleanup(func() { PathOverride = "" })
+	ActivatePool(&PoolConfig{Proxies: []string{
+		"socks5://h:1#a-jp",
+		"socks5://h:2#b-us",
+	}, Strategy: "round_robin"})
+	t.Cleanup(func() { ActivatePool(&PoolConfig{Strategy: "round_robin"}) })
+
+	fk := &reorderFake{entries: []BindingEntry{
+		{Key: "direct-cred", Main: DirectSentinel, Realm: "", Kind: "acc"},
+	}}
+	RegisterFailoverBindings("acc", fk)
+	t.Cleanup(func() {
+		failoverMu.Lock()
+		delete(failoverBindings, "acc")
+		failoverMu.Unlock()
+	})
+
+	// ① 直连未被该平台排除：不参与重排，无改动。
+	SetBinding(&BindingConfig{})
+	if n := RunReorderForKind("acc"); n != 0 || len(fk.Moves()) != 0 {
+		t.Fatalf("direct row without __direct__ exclusion must stay, n=%d moves=%v", n, fk.Moves())
+	}
+	// ② 排除直连（__direct__ 键在排除表）：强制挪到池序第一候选。
+	SetBinding(&BindingConfig{ProxyExclusions: map[string][]string{ProxyRuleDirectKey: {"acc"}}})
+	t.Cleanup(func() { SetBinding(&BindingConfig{}) })
+	n := RunReorderForKind("acc")
+	moves := fk.Moves()
+	if n != 1 || len(moves) != 1 || moves[0] != "main:"+DirectSentinel+"->socks5://h:1#a-jp" {
+		t.Fatalf("direct-excluded row must rebind to first candidate, n=%d moves=%v", n, moves)
 	}
 }

@@ -476,9 +476,11 @@ func witnessExists(ctx context.Context, kind, failedURL, targetURL string) bool 
 	return false
 }
 
-// pickReplacement 选替补：严格候选 = 池内、非故障口、**分区严格相同**
-// （2026-11-26 用户定：cn 保留出口故障只在 cn 候选中挑，无候选放弃改绑，
-// 绝不把保留域凭据改到别域出口——zone.go）、未被规则 kind 排除、
+// pickReplacement 选替补：严格候选 = 池内、非故障口、域约束（2026-11-26
+// 用户定：改绑对象中若有声明国际的凭据（Realm=intl/global 绑在故障口），
+// 替补限定不限出口；声明国内的凭据槽位由适配器 Rebind 跳过、根本不进改绑，
+// 故无需"cn 故障口只挑 cn 候选"——剩余槽位的无域凭据用任意出口均符合
+// zone.go 矩阵）、未被规则 kind 排除、
 // 未被该平台任何凭据绑定（别名等价）、不在冷却（全局+平台级两层，2026-11-25
 // 补 R1——空 kind 只看全局层，会漏掉仅对该平台冷却的出口）。从后往前扫，
 // 同地区立即选中；无同地区取从后往前第一个候选。找不到返回 ("", false)。
@@ -664,17 +666,17 @@ func failedTargetOf(err error) string {
 }
 
 // ============================================================================
-// 排除条目 TTL 复核（2026-11-26 用户定）：差分排除的条目每小时探活一次，
-// 连续 2 次对目标 host 恢复可达自动移除该 kind——解决"判定当时正确、上游
-// 解封后条目永久残留"（11 个 WB 已恢复条目的来源）。手动条目无台账，永不
-// 自动移除。
+// 排除条目 TTL 复核（2026-11-26 用户定）：差分排除的条目每半小时探活一次，
+// 恢复可达 1 次即自动移除该 kind——解决"判定当时正确、上游解封后条目永久
+// 残留"（11 个 WB 已恢复条目的来源）。手动条目无台账，永不自动移除。
 // ============================================================================
 
 const (
-	// failoverReviewInterval 复核周期。
-	failoverReviewInterval = time.Hour
-	// failoverReviewOK 连续探活通过次数阈值：达到即自动解禁。
-	failoverReviewOK = 2
+	// failoverReviewInterval 复核周期（2026-11-26 用户定：每小时 → 每半小时）。
+	failoverReviewInterval = 30 * time.Minute
+	// failoverReviewOK 探活通过次数阈值：达到即自动解禁（2026-11-26 用户定：
+	// 2 次 → 1 次——探通一次即说明上游已解禁，无需二次确认）。
+	failoverReviewOK = 1
 )
 
 // StartFailoverReviewLoop 启动 TTL 复核循环（装配根调用一次；差分开关关闭

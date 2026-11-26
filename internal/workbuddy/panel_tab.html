@@ -91,7 +91,7 @@
           <div class="wb-switch"><input type="checkbox" id="wbGrowthEnabled" data-wb-path="schedule.growth_enabled"><label for="wbGrowthEnabled">Growth tasks</label></div>
           <div class="wb-field"><label for="wbGrowthHours">Growth hours</label><input id="wbGrowthHours" data-wb-path="schedule.growth_hours" data-wb-type="ints" placeholder="1"></div>
           <div class="wb-switch"><input type="checkbox" id="wbShareOptimizeEnabled" data-wkbd-path="shareOptimize.enabled"><label for="wbShareOptimizeEnabled" data-i18n="weight_optimize">Weight optimize</label></div>
-          <div class="wb-field"><label for="wbShareOptimizeCron" data-i18n-title="weight_optimize_cron_hint" title="Standard 5-field cron (min hour day month weekday), local timezone; e.g. '0 */6 * * *' = every 6 hours. Empty = not scheduled. Applied shares are skipped when unchanged." data-i18n="Weight optimize cron">Weight optimize cron</label><input id="wbShareOptimizeCron" data-wkbd-path="shareOptimize.cron" placeholder="0 */6 * * *"></div>
+          <div class="wb-field"><label for="wbShareOptimizeCron" data-i18n="Weight optimize cron">Weight optimize cron</label><input id="wbShareOptimizeCron" data-wkbd-path="shareOptimize.cron" placeholder="0 */6 * * *"></div>
         </div>
 
         <div class="wb-config-group">
@@ -222,7 +222,6 @@
     <button class="btn btn-sm" onclick="closeWorkbuddyShare()" data-i18n="close">Close</button>
   </div>
   <div class="wb-dialog-body">
-    <div class="hint" data-i18n="weight_optimize_hint">Suggested shares follow each account's expiring-credit daily need (sum of each bucket's remain ÷ days until that date, min 1). Accounts without expiring batches get a 20% reserve split by balance. Shares are exclusive: only listed accounts serve traffic; if none can serve, routing falls back to weighted random.</div>
     <div class="hint" id="wbShareWarn" style="color:var(--amber,#eab308);display:none"></div>
     <div class="table-wrap" style="max-height:340px;overflow:auto;margin:8px 0">
       <table>

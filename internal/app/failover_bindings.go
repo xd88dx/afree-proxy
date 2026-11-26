@@ -98,13 +98,16 @@ func (zenFailoverBindings) Pairs() []exitpool.Binding {
 	return out
 }
 
-// Entries 带凭据标识与域（zen key 无域语义，Realm 恒空）。
+// Entries 带凭据标识与域（2026-11-26 补 Realm/Kind：zen 适配器只服务 "key"
+// kind；平台声明国内域时 Realm=cn 使重排冻结段生效——此前漏填会让声明 cn 的
+// zen 条目照常参与修复段，靠 RebindMain 的整平台守卫兜底）。
 func (zenFailoverBindings) Entries() []exitpool.BindingEntry {
 	cfg := getZenConfig()
 	var out []exitpool.BindingEntry
 	for k, b := range cfg.KeyBindings {
 		if b.Main != "" || b.Backup != "" {
-			out = append(out, exitpool.BindingEntry{Key: k, Main: b.Main, Backup: b.Backup})
+			out = append(out, exitpool.BindingEntry{Key: k, Main: b.Main, Backup: b.Backup,
+				Realm: exitpool.DeclaredRealm("key", ""), Kind: "key"})
 		}
 	}
 	return out
@@ -309,12 +312,15 @@ func (freepiFailoverBindings) Pairs() []exitpool.Binding {
 	return out
 }
 
-// Entries 带凭据标识与域（freepi 无域语义，Realm 恒空）。
+// Entries 带凭据标识与域（2026-11-26 补 Realm/Kind：freepi 适配器只服务
+// "freepi" kind；平台声明国内域时 Realm=cn 使重排冻结段生效——此前漏填会让
+// 声明 cn 的 freepi 条目照常参与修复段，靠 RebindMain 的整平台守卫兜底）。
 func (freepiFailoverBindings) Entries() []exitpool.BindingEntry {
 	var out []exitpool.BindingEntry
 	for k, b := range freepi.Get().KeyBindings {
 		if b.Main != "" || b.Backup != "" {
-			out = append(out, exitpool.BindingEntry{Key: k, Main: b.Main, Backup: b.Backup})
+			out = append(out, exitpool.BindingEntry{Key: k, Main: b.Main, Backup: b.Backup,
+				Realm: exitpool.DeclaredRealm("freepi", ""), Kind: "freepi"})
 		}
 	}
 	return out
@@ -448,13 +454,35 @@ func RegisterFailoverAdapters() {
 
 // ---- RebindMain（只改 Main 槽，backup 原样——定时重排专用，2026-11-26）----
 
+// mainSlotMatch RebindMain 的槽位匹配（2026-11-26 修）：
+//   - from = 直连哨兵（reorder 对"排除直连"行的修复）→ 匹配 IsDirect 主槽；
+//   - 否则按别名匹配（订阅换端口的 SameAlias 语义）。
+//
+// 目标 to 与本行备用槽同代理时返回 false——ValidateBinding 禁止主备同代理，
+// 重排的候选集不排除本行备用槽，不加守卫会落盘非法绑定。
+func mainSlotMatch(main, backup, from, to string) bool {
+	if exitpool.IsDirect(from) {
+		if !exitpool.IsDirect(main) {
+			return false
+		}
+	} else if main == "" || !exitpool.SameAlias(main, from) {
+		return false
+	}
+	return backup == "" || exitpool.IsDirect(backup) || !exitpool.SameAlias(backup, to)
+}
+
 func (clineFailoverBindings) RebindMain(ruleKind, from, to string) int {
+	// 平台声明国内域时全部账号不参与（cn 冻结与 Rebind 同口径，2026-11-26）：
+	// URL 级替换会把同出口上的 cn 冻结行一并改走。
+	if exitpool.DeclaredRealm("acc", "") == "cn" {
+		return 0
+	}
 	p := loadPool()
 	poolMu.Lock()
 	defer poolMu.Unlock()
 	n := 0
 	for _, a := range p.Accounts {
-		if a.ProxyMain != "" && exitpool.SameAlias(a.ProxyMain, from) {
+		if mainSlotMatch(a.ProxyMain, a.ProxyBackup, from, to) {
 			a.ProxyMain = to
 			n++
 		}
@@ -466,6 +494,10 @@ func (clineFailoverBindings) RebindMain(ruleKind, from, to string) int {
 }
 
 func (zenFailoverBindings) RebindMain(ruleKind, from, to string) int {
+	// 平台声明国内域时全部 key 不参与（cn 冻结与 Rebind 同口径，2026-11-26）。
+	if exitpool.DeclaredRealm("key", "") == "cn" {
+		return 0
+	}
 	cfg := getZenConfig()
 	if len(cfg.KeyBindings) == 0 {
 		return 0
@@ -476,7 +508,7 @@ func (zenFailoverBindings) RebindMain(ruleKind, from, to string) int {
 	}
 	n := 0
 	for k, v := range bindings {
-		if v.Main != "" && exitpool.SameAlias(v.Main, from) {
+		if mainSlotMatch(v.Main, v.Backup, from, to) {
 			v.Main = to
 			n++
 			bindings[k] = v
@@ -494,7 +526,12 @@ func (wbFailoverBindings) RebindMain(ruleKind, from, to string) int {
 	workbuddy.LoadWorkbuddyProxyBindingsLocked()
 	n := 0
 	for uid, b := range workbuddy.WbProxyBindings {
-		if b.Main != "" && exitpool.SameAlias(b.Main, from) {
+		// 行级域过滤（2026-11-26 修）：声明国内域的凭据槽位跳过——URL 级替换
+		// 会把同出口上的 cn 冻结行一并改走，违背"国内凭据不参与自动化"。
+		if exitpool.DeclaredRealm("wb", wbRealmOf(uid)) == "cn" {
+			continue
+		}
+		if mainSlotMatch(b.Main, b.Backup, from, to) {
 			b.Main = to
 			n++
 			workbuddy.WbProxyBindings[uid] = b
@@ -521,10 +558,15 @@ func (otherFailoverBindings) RebindMain(ruleKind, from, to string) int {
 		if len(p.KeyBindings) == 0 {
 			continue
 		}
+		// 子平台声明国内域时整平台不参与（cn 冻结与 otherRebind 同口径，
+		// 2026-11-26 修）。
+		if exitpool.DeclaredRealm("other:"+p.Slug, "") == "cn" {
+			continue
+		}
 		next := other.ClonePlatform(&p)
 		changed := false
 		for k, v := range next.KeyBindings {
-			if v.Main != "" && exitpool.SameAlias(v.Main, from) {
+			if mainSlotMatch(v.Main, v.Backup, from, to) {
 				v.Main = to
 				n++
 				changed = true
@@ -539,6 +581,10 @@ func (otherFailoverBindings) RebindMain(ruleKind, from, to string) int {
 }
 
 func (freepiFailoverBindings) RebindMain(ruleKind, from, to string) int {
+	// 平台声明国内域时全部 key 不参与（cn 冻结与 Rebind 同口径，2026-11-26）。
+	if exitpool.DeclaredRealm("freepi", "") == "cn" {
+		return 0
+	}
 	cur := freepi.Get()
 	if len(cur.KeyBindings) == 0 {
 		return 0
@@ -546,7 +592,7 @@ func (freepiFailoverBindings) RebindMain(ruleKind, from, to string) int {
 	next := freepi.CloneConfig(cur)
 	n := 0
 	for k, v := range next.KeyBindings {
-		if v.Main != "" && exitpool.SameAlias(v.Main, from) {
+		if mainSlotMatch(v.Main, v.Backup, from, to) {
 			v.Main = to
 			n++
 		}
@@ -564,7 +610,12 @@ func (traeFailoverBindings) RebindMain(ruleKind, from, to string) int {
 	trae.LoadTraeBindingsLocked()
 	n := 0
 	for uid, b := range trae.TraeBindings {
-		if b.Main != "" && exitpool.SameAlias(b.Main, from) {
+		// 行级域过滤（2026-11-26 修）：声明国内域的凭据槽位跳过——URL 级替换
+		// 会把同出口上的 cn 冻结行一并改走，违背"国内凭据不参与自动化"。
+		if exitpool.DeclaredRealm("trae", traeRealmOf(uid)) == "cn" {
+			continue
+		}
+		if mainSlotMatch(b.Main, b.Backup, from, to) {
 			b.Main = to
 			n++
 			trae.TraeBindings[uid] = b

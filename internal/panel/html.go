@@ -605,8 +605,8 @@ const poolTabHTML = `<div id="tab-proxypool" class="tab-panel" style="display:no
       </div>
     </div>
     <div id="ppSubUpdateResult" style="margin:-6px 0 10px;font-size:12px;min-height:14px"></div>
-    <div class="hint" style="margin-bottom:10px">Subscription refresh replaces the whole pool with the fetched list. Fetch failures keep the current pool.</div>
-    <div class="form-actions"><button class="btn btn-primary" onclick="saveProxyPool()" data-i18n="save_proxy_pool">Save config</button><button class="btn btn-success" id="ppTestAllBtn" onclick="testAllCredentialPlatforms()" title="Run the batch test once on every platform's credential list (Cline / TraeWork / OpenCode / Other / WorkBuddy), one platform at a time" data-i18n="test_all_credentials">Test all credentials</button></div>
+    <div class="hint" style="margin-bottom:10px" data-i18n="subscription_merges_by_alias">Subscription refresh merges by remark name: existing aliases get URL updates, new aliases are appended, aliases missing from the subscription are removed. Fetch failures keep the current pool.</div>
+    <div class="form-actions"><button class="btn btn-primary" onclick="saveProxyPool()" data-i18n="save_proxy_pool">Save config</button><button class="btn btn-success" id="ppTestAllBtn" onclick="testAllCredentialPlatforms()" title="Run the batch test once on every platform's credential list (Cline / FreePI / TraeWork / OpenCode / Other / WorkBuddy), one platform at a time" data-i18n="test_all_credentials">Test all credentials</button></div>
   </div>
 </div>
 <div class="section" style="overflow:visible">
@@ -655,7 +655,7 @@ const poolTabHTML = `<div id="tab-proxypool" class="tab-panel" style="display:no
         <input class="pr-cap" id="ppReorderKeepSec" type="number" min="0" max="600" step="0.1" value="8.0" style="width:56px" onchange="saveReorderKeepSec(this.value)">
         <span class="pr-unit">s</span>
       </span>
-      <span class="pr-capbox" title="Daily scheduled reorder: 5-field minute cron (e.g. 0 4 * * *). When it fires, every platform's bindings run one freeze-supply-repair pass server-side — same rules as the manual dialog. Empty = disabled." data-i18n-title="reorder_cron_hint">
+      <span class="pr-capbox">
         <span class="pr-unit" data-i18n="reorder_cron">Auto reorder</span>
         <input class="mono" id="ppReorderCron" type="text" placeholder="0 4 * * *" style="width:110px" spellcheck="false" onchange="saveReorderCron(this.value)">
       </span>
@@ -731,7 +731,7 @@ const poolTabHTML = `<div id="tab-proxypool" class="tab-panel" style="display:no
     <table>
       <thead><tr>
         <th data-i18n="Proxy">Proxy</th>
-        <th style="text-align:center" title="Upstream attempts that egressed via this proxy since the pool was last edited" data-i18n="Attempts">Attempts</th>
+        <th style="text-align:center" title="Upstream attempts that egressed via this proxy, keyed by remark name — kept across alias-preserving pool edits (subscription port changes included), pruned only when the proxy is removed" data-i18n-title="upstream_attempts_keyed_by_remark_name_kept_acros" data-i18n="Attempts">Attempts</th>
         <th style="text-align:center" title="Transport-layer success rate since the pool was last edited (upstream 4xx/5xx still counts as the proxy being online)" data-i18n="Online rate">Online rate</th>
         <th style="text-align:center" title="Success rate over the last 50 attempts; red below 80% (min 10 samples)." data-i18n="Recent online rate">Recent online rate</th>
         <th style="text-align:center;cursor:pointer;user-select:none" onclick="ppHsSortToggle()" title="Average tunnel-setup time over successful attempts (TCP+TLS+CONNECT handshake only — excludes upstream first byte and task duration). Lower is better. Click to sort.">Avg handshake<span id="ppHsSortMark"></span></th>
@@ -1189,7 +1189,6 @@ const I18N = {
   // 延迟重排阈值（保持不变的代理延迟上限）
   'keep_latency': { en: 'Keep latency ≤', zh: '延迟阈值' },
   'reorder_cron': { en: 'Auto reorder', zh: '定时重排' },
-  'reorder_cron_hint': { en: 'Daily scheduled reorder: 5-field minute cron (e.g. 0 4 * * *). When it fires, every platform bindings run one freeze-supply-repair pass server-side - same rules as the manual dialog. Empty = disabled.', zh: '定时重排：5 字段分钟级 cron（如 0 4 * * *）。命中时后端对全部平台跑一轮冻结-供给-修复重排（与手动弹窗同规则）。空 = 关闭。' },
   's': { en: 's', zh: '秒' },
   'Proxies at or below this latency (seconds) keep their current binding and are skipped by reordering; slower ones are refilled from the pool. Saved on change.': { en: 'Proxies at or below this latency (seconds) keep their current binding and are skipped by reordering; slower ones are refilled from the pool. Saved on change.', zh: '延迟不高于该值（秒）的代理保持现绑定、不参与重排；更慢的才从池里回填。改动即时落盘。' },
   'latency_keep_threshold_saved': { en: 'Latency keep threshold saved', zh: '延迟保持阈值已保存' },
@@ -1446,7 +1445,7 @@ const I18N = {
   'Attempts': { en: 'Attempts', zh: '尝试数' },
   'Last OK': { en: 'Last OK', zh: '最近成功' },
   'pp_zone_col': { en: 'Prefer CN', zh: '国内优先' },
-  'Upstream attempts that egressed via this proxy since the pool was last edited': { en: 'Upstream attempts that egressed via this proxy since the pool was last edited', zh: '上次编辑代理池以来，经此代理出网的上游尝试次数' },
+  'upstream_attempts_keyed_by_remark_name_kept_acros': { en: 'Upstream attempts that egressed via this proxy, keyed by remark name — kept across alias-preserving pool edits (subscription port changes included), pruned only when the proxy is removed', zh: '经此代理出网的上游尝试次数（按备注名记账——保留备注名的池编辑不清零，含订阅换端口；仅删除代理时剪除）' },
   'Average tunnel-setup time over successful attempts (TCP+TLS+CONNECT handshake only — excludes upstream first byte and task duration). Lower is better. Click to sort.': { en: 'Average tunnel-setup time over successful attempts (TCP+TLS+CONNECT handshake only — excludes upstream first byte and task duration). Lower is better. Click to sort.', zh: '成功尝试的平均隧道建立耗时（仅 TCP+TLS+CONNECT 握手——不含上游首字节与任务耗时）。越低越好。点击排序。' },
   'time_to_first_byte_from_request_start_to_the_fir': { en: 'Time to first byte: from request start to the first response byte (streaming = first upstream token; - = no response body, e.g. 413)', zh: '首字节耗时：请求开始到首个响应字节（流式=上游首 token 到达；-=无响应体如 413）' },
   'Avg tunnel-setup time of successful attempts (TCP+TLS+CONNECT), excluding upstream response; samples: ': { en: 'Avg tunnel-setup time of successful attempts (TCP+TLS+CONNECT), excluding upstream response; samples: ', zh: '成功尝试的平均隧道建立耗时（TCP+TLS+CONNECT），不含上游响应；样本数 ' },
@@ -1818,7 +1817,7 @@ const I18N = {
   'Update now': { en: 'Update now', zh: '立即更新' },
   'updating': { en: 'Updating...', zh: '更新中...' },
   'update_done': { en: 'Update done', zh: '更新完成' },
-  'Subscription refresh replaces the whole pool with the fetched list. Fetch failures keep the current pool.': { en: 'Subscription refresh replaces the whole pool with the fetched list. Fetch failures keep the current pool.', zh: '订阅刷新会用拉取到的列表整池替换，拉取失败保留现池不变。' },
+  'subscription_merges_by_alias': { en: 'Subscription refresh merges by remark name: existing aliases get URL updates, new aliases are appended, aliases missing from the subscription are removed. Fetch failures keep the current pool.', zh: '订阅刷新按备注名合并：已有备注名更新 URL（端口跟订阅走，绑定/规则/统计不失配），新备注名追加，订阅中消失的备注名移除。拉取失败保留现池不变。' },
   '*/30 * * * * (min hour day month weekday)': { en: '*/30 * * * * (min hour day month weekday)', zh: '*/30 * * * *（分 时 日 月 周）' },
   'Click to copy': { en: 'Click to copy', zh: '点击复制' },
   'remove_this_key_from_the_pool': { en: 'Remove this key from the pool', zh: '将该密钥移出池' },
@@ -1972,7 +1971,6 @@ const I18N = {
   "Refresh every enabled account's credit snapshot (feeds the Credits column)": { en: "Refresh every enabled account's credit snapshot (feeds the Credits column)", zh: '刷新每个已启用账号的额度快照（给额度列）' },
   'weight_optimize': { en: 'Weight optimize', zh: '权重优化' },
   'Weight optimize cron': { en: 'Weight optimize cron', zh: '权重优化 cron' },
-  'weight_optimize_cron_hint': { en: 'Standard 5-field cron (min hour day month weekday), local timezone; e.g. \'0 */6 * * *\' = every 6 hours. Empty = not scheduled. Applied shares are skipped when unchanged.', zh: '标准 5 字段 cron（分 时 日 月 周），本地时区；如 0 */6 * * * 表示每 6 小时一次。留空 = 不调度。占比与当前一致时自动跳过写入。' },
   'weight_col': { en: 'Weight', zh: '权重' },
   'weight_nearest': { en: 'Nearest expiry', zh: '最近到期' },
   'weight_need_total': { en: 'Expiring in 7 days', zh: '7 天内到期' },
@@ -1983,7 +1981,6 @@ const I18N = {
   'reserve_tag': { en: 'Reserve', zh: '保底' },
   "Compute suggested account shares from expiring-credit daily need and write them into pool.account_share": { en: "Compute suggested account shares from expiring-credit daily need and write them into pool.account_share", zh: '按快过期积分的日均需耗计算建议占比并写入 pool.account_share' },
   "Current share of account traffic from pool.account_share, normalized within the share table (written by Weight optimize; '-' = not in the table, falls back to weighted random)": { en: "Current share of account traffic from pool.account_share, normalized within the share table (written by Weight optimize; '-' = not in the table, falls back to weighted random)", zh: '该账号当前从 pool.account_share 分得的流量占比（占比表内归一化；由「权重优化」写入；「-」= 不在表内，走普通加权随机）' },
-  'weight_optimize_hint': { en: 'Suggested shares follow each account\'s expiring-credit daily need — the minimum constant burn rate that clears every batch before it expires: max over expiry nodes of (cumulative credits due by that node ÷ days available from today, counting today; upstream FEFO burns earliest batches first). The "7-day" column shows only the 7-day total. When every listed account has expiring batches the shares sum to 100%; accounts without expiring batches otherwise take a 20% reserve split by balance. Shares are exclusive: only listed accounts serve traffic; if none can serve, routing falls back to weighted random.', zh: '建议占比按各号快过期积分的日均需耗计算——即「在每个到期节点前都能烧完」的最低恒定速率：对每个到期节点取（该节点前累计应烧额度 ÷ 从今天起的可用天数）的最大值，上游 FEFO 自动先扣最早批次（「7 天内到期」列只是 7 天窗口合计）。全员都有到期批次时占比总和为 100%；有保底号（无快过期批次）时留 20% 按余额比例分给它们。占比是独占的：只有表内号接单；表内号全部不可用时自动回落加权随机。' },
   'reserve_tag_title': { en: 'Reserve account: no expiring batches, shares assigned from the 20% reserve by balance', zh: '保底号：无快过期批次，从 20% 保底份额按余额比例分得' },
   'share_no_pressure': { en: 'No expiring-credit pressure — nothing to optimize', zh: '当前无快过期积分压力，无需优化' },
   'share_applied': { en: 'Shares applied and hot-reloaded', zh: '占比已应用并热生效' },

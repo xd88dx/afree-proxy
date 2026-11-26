@@ -38,12 +38,14 @@ func reorderCapFor(ruleKind string) int {
 	return v
 }
 
-// reorderHS 健康统计的平均握手 ms（无记录返回 0）。
+// reorderHS 健康统计的平均握手 ms（无记录返回 0）。查询键 = 备注名
+//（RuleKeyOf，与 RecordProxyOutcome 的写入键同口径——2026-11-26 备注名主键
+// 后统计表里没有完整 URL 键，直接查 URL 会恒 miss、重排退化成池序）。
 func reorderHS(proxyURL string) int64 {
 	EnsureHealthLoaded()
 	healthMu.Lock()
 	defer healthMu.Unlock()
-	e := healthStats[proxyURL]
+	e := healthStats[RuleKeyOf(proxyURL)]
 	if e == nil || e.HSCount == 0 {
 		return 0
 	}
@@ -90,19 +92,31 @@ func RunReorderForKind(ruleKind string) int {
 		eurl := e.Main
 		if e.Realm == "cn" {
 			// cn 域条目冻结（2026-11-07/26 用户定）：绑定原样保留，其出口
-			// 不进供给（专属出口不得分给其他域凭据）。
-			if eurl != "" {
+			// 不进供给（专属出口不得分给其他域凭据）。直连主槽不占代理位。
+			if eurl != "" && !IsDirect(eurl) {
 				cnt[eurl]++
 				cnOccupied[eurl] = true
 			}
 			continue
 		}
-		if eurl == "" && !directExcluded {
-			continue // 直连照旧完全不参与重排（保持既有口径）
+		if eurl == "" {
+			continue // 全局主槽行（未绑定主出口）不参与重排
+		}
+		if IsDirect(eurl) {
+			// 显式直连行（Main = direct 哨兵）：直连未被该平台排除时照旧
+			// 不参与（保持既有口径）；被排除（__direct__ 键在排除表）时强制
+			// 挪到可用代理。2026-11-26 修：此前用 eurl=="" 判直连（错把全局
+			// 行当直连、漏掉显式直连行），且改绑传 "direct" 给适配器的别名
+			// 匹配恒不中——排除直连的行每次 cron 都静默 no-op。
+			if !directExcluded {
+				continue
+			}
+			repair = append(repair, reorderEntry{i, eurl, e.Realm, true})
+			continue
 		}
 		seen[eurl]++
-		forced := eurl != "" && (proxyExcludedFor(ruleKind, eurl) || manualCooledAtURL(eurl)) ||
-			(capN > 0 && seen[eurl] > capN) || (eurl == "" && directExcluded)
+		forced := proxyExcludedFor(ruleKind, eurl) || manualCooledAtURL(eurl) ||
+			(capN > 0 && seen[eurl] > capN)
 		hs := reorderHS(eurl)
 		bad := forced || hs > keepMs || hs <= 0
 		if bad {
@@ -110,9 +124,7 @@ func RunReorderForKind(ruleKind string) int {
 			continue
 		}
 		// 冻结（健康）条目：占用计数。
-		if eurl != "" {
-			cnt[eurl]++
-		}
+		cnt[eurl]++
 	}
 
 	// --- 供给偏好序：快（延迟升序）→ 无记录（池序）→ 慢（延迟升序）---

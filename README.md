@@ -247,7 +247,7 @@ CI：push 到 `main` / `zen-harvest` 先跑 `go build` + `go vet` + `go test`，
 │   ├── freepi/              FreePI（freepi.ai）免费日额度 key 池：三道闸门自愈（ads/session/concurrent）、credits 余额
 │   ├── exitpool/            代理域：出口池/隔离绑定/健康/探测（proxy-config/proxy-state）
 │   ├── blacklist/           模型黑名单 + 平台封禁（存储与判定）
-│   ├── panel/               管理面板：认证、admin_html（8792 行内嵌面板）、响应原语
+│   ├── panel/               管理面板：认证、admin_html（9104 行内嵌面板）、响应原语
 │   ├── backup/              配置备份导出/导入
 │   ├── reqlog/              请求日志与 per-route 统计
 │   ├── gwconfig/            afree 全局配置、env 解析、config-manifest
