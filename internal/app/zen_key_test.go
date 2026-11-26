@@ -234,7 +234,9 @@ func TestZenKeyTestHandlerRejectsBadIndex(t *testing.T) {
 func TestZenKeyTestHandlerPutsStatusInData(t *testing.T) {
 	setupZenProbeTest(t, func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`{}`))
+		// 2026-11-26 探测加固后成功判定要求响应体含模型输出证据（真实 zen
+		// 上游恒为 SSE 流），夹具从裸 `{}` 换成真实形态。
+		_, _ = w.Write([]byte("data: {\"choices\":[{\"delta\":{\"content\":\"OK\"}}]}\n\ndata: [DONE]\n\n"))
 	})
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest("POST", "/admin/api/zen/keys/test", strings.NewReader(`{"index":0}`))
@@ -429,7 +431,8 @@ func TestZenProbeModelPreferenceOrder(t *testing.T) {
 func TestZenKeyTestHonorsExplicitModel(t *testing.T) {
 	setupZenProbeTest(t, func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`{}`))
+		// 2026-11-26 探测加固后成功判定要求响应体含模型输出证据，夹具同步换真实 SSE 形态。
+		_, _ = w.Write([]byte("data: {\"choices\":[{\"delta\":{\"content\":\"OK\"}}]}\n\ndata: [DONE]\n\n"))
 	})
 	// 两模型表：自动选择会挑 live 的 zzz-…，显式指定必须仍用 aaa-…。
 	zenModelsMu.Lock()

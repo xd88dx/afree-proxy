@@ -24,6 +24,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"afree-proxy/internal/exitpool"
 )
 
 const proxySubFetchTimeout = 30 * time.Second
@@ -149,8 +151,11 @@ func refreshProxySubscription() (int, error) {
 	// 与面板"代理列表"保存路径一致：逐行 parseProxyLine 规范化 + validateProxyList。
 	// 单行不可解析（注释行、不支持的 scheme、缺端口）只跳过并计数——订阅里混进
 	// 一行脏数据不该让整池永不更新（2026-11-09 审计修复，与文件头口径对齐）。
+	// 2026-11-26 用户定备注名主键：无备注名的行、备注名重复的行都是非法格式，
+	// 同样只跳过并计数。
 	canonical := make([]string, 0, 16)
 	skipped := 0
+	seenAlias := map[string]bool{}
 	for _, line := range strings.Split(string(body), "\n") {
 		parsed, _, err := parseProxyLine(line)
 		if err != nil {
@@ -160,34 +165,79 @@ func refreshProxySubscription() (int, error) {
 		if parsed == "" {
 			continue
 		}
+		alias := proxyAliasOf(parsed)
+		if alias == "" {
+			skipped++ // 无备注名 = 非法格式，不导入
+			continue
+		}
+		if seenAlias[alias] {
+			skipped++ // 备注名重复 = 非法格式，保留首个
+			continue
+		}
+		seenAlias[alias] = true
 		canonical = append(canonical, parsed)
 	}
 	if len(canonical) == 0 {
 		return 0, fmt.Errorf("订阅内容为空或无有效代理行")
 	}
 	if skipped > 0 {
-		log.Printf("proxy subscription: skipped %d unparsable line(s)", skipped)
+		log.Printf("proxy subscription: skipped %d invalid line(s) (unparsable/no-alias/dup-alias)", skipped)
 	}
-	if err := validateProxyList(canonical); err != nil {
+	// 按备注名合并（2026-11-26 用户定，替代整池替换）：订阅可用时永远以
+	// 订阅为主——已存在别名 → 更新 URL（端口跟订阅走，规则/统计按备注名
+	// 保留，绑定行经 RebindAllEverywhere 跟随改写）；新别名 → 追加；订阅中
+	// 消失的别名 = 代理被删除 → 移除（其规则随池清理链剪除）。
+	old := getProxyPool()
+	subByAlias := make(map[string]string, len(canonical))
+	for _, p := range canonical {
+		subByAlias[proxyAliasOf(p)] = p
+	}
+	merged := make([]string, 0, len(canonical))
+	changed := map[string]string{} // 旧URL -> 新URL（同备注名换端口）
+	seenMerge := map[string]bool{}
+	for _, p := range old.Proxies {
+		np, inSub := subByAlias[proxyAliasOf(p)]
+		if !inSub {
+			continue // 订阅中消失 = 删除
+		}
+		if seenMerge[proxyAliasOf(p)] {
+			continue // 存量重复防御：同别名只保留首个（2026-11-26 用户定不允许重复）
+		}
+		if np != p {
+			changed[p] = np
+		}
+		merged = append(merged, np)
+		seenMerge[proxyAliasOf(p)] = true
+	}
+	for _, p := range canonical {
+		if !seenMerge[proxyAliasOf(p)] {
+			merged = append(merged, p)
+		}
+	}
+	if err := validateProxyList(merged); err != nil {
 		return 0, err
 	}
-	// 与现池完全一致 → 跳过替换（不落盘、不触发 proxiesChanged 清理链）
-	if len(canonical) == len(cfg.Proxies) {
+	// 合并结果与现池一致 → 跳过替换（不落盘、不触发 proxiesChanged 清理链）
+	if len(merged) == len(old.Proxies) {
 		same := true
-		for i := range canonical {
-			if canonical[i] != cfg.Proxies[i] {
+		for i := range merged {
+			if merged[i] != old.Proxies[i] {
 				same = false
 				break
 			}
 		}
-		if same {
+		if same && len(changed) == 0 {
 			return 0, nil
 		}
 	}
-	next := *cfg
-	next.Proxies = canonical
+	next := *old
+	next.Proxies = merged
 	setProxyPool(&next)
-	return len(canonical), nil
+	// 绑定行跟随订阅端口更新（不做域过滤——国内凭据的绑定也要跟到新 URL）。
+	for fromURL, toURL := range changed {
+		exitpool.RebindAllEverywhere(fromURL, toURL)
+	}
+	return len(merged), nil
 }
 
 var (
@@ -296,6 +346,44 @@ func StartProxySubscriptionWorker() {
 				continue
 			}
 			log.Printf("INFO: [proxy-sub] 订阅更新完成 url=%s 池内代理 %d 条", maskProxyURL(url), n)
+		}
+	}()
+}
+
+// StartProxyReorderWorker 延迟重排定时 worker（2026-11-26 用户定）：cron 命中
+// 时对全部平台规则 kind 跑一轮冻结-供给-修复重排。结构与订阅 worker 同款
+// （30s tick + 分钟区间命中防漏防重）。
+var proxyReorderLastFired = map[string]int{}
+var proxyReorderMu sync.Mutex
+
+func StartProxyReorderWorker() {
+	go func() {
+		ticker := time.NewTicker(30 * time.Second)
+		defer ticker.Stop()
+		for now := range ticker.C {
+			expr := strings.TrimSpace(getProxyPool().ReorderCron)
+			if expr == "" || validateCronExpr(expr) != nil {
+				continue // 未配置 / 手改配置文件的坏表达式静默跳过
+			}
+			nowMin := int(now.Unix() / 60)
+			proxyReorderMu.Lock()
+			last := proxyReorderLastFired[expr]
+			proxyReorderMu.Unlock()
+			fired := false
+			for m := last + 1; m <= nowMin; m++ {
+				if cronMatches(expr, time.Unix(int64(m)*60, 0).Local()) {
+					fired = true
+					break
+				}
+			}
+			if !fired || last == nowMin {
+				continue
+			}
+			proxyReorderMu.Lock()
+			proxyReorderLastFired[expr] = nowMin
+			proxyReorderMu.Unlock()
+			n := exitpool.RunReorderAll()
+			log.Printf("INFO: [proxy-reorder] 定时重排完成 cron=%s 改动绑定 %d 处", expr, n)
 		}
 	}()
 }

@@ -43,10 +43,13 @@ func zenConfigPayload() map[string]any {
 		"keyStates":               zenKeyStatus(),
 		"baseURL":                 cfg.BaseURL,
 		"proxies":                 pool.Proxies,
+		"proxyZones":              pool.Zones,
 		"proxyStrategy":           pool.Strategy,
 		"proxySubURL":             pool.SubURL,
 		"proxySubCron":            pool.SubCron,
 		"proxyTestTarget":         proxyTestTarget(),
+		"proxyReorderCron":        pool.ReorderCron,
+		"zoneRealms":              binding.ZoneRealms,
 		"maxConcurrency":          cfg.MaxConcurrency,
 		"retries":                 cfg.Retries,
 		"compaction":              cfg.Compaction,
@@ -112,6 +115,15 @@ func handleZenConfigUpdate(w http.ResponseWriter, r *http.Request) {
 		ProxyStrategy      *string  `json:"proxyStrategy"`
 		ProxySubURL        *string  `json:"proxySubURL"`
 		ProxySubCron       *string  `json:"proxySubCron"`
+		// 定时重排 cron（2026-11-26 用户定）：nil = 不改动；非 nil = 校验后
+		// 整值替换（空串 = 关闭定时）。
+		ProxyReorderCron   *string  `json:"proxyReorderCron"`
+		// 平台域声明集（2026-11-26 用户定）：nil = 不改动；非 nil = 整表替换
+		//（键形态见 exitpool.DeclaredRealm，非法键拒绝）。
+		ZoneRealms         []string `json:"zoneRealms"`
+		// 出口分区（2026-11-26 用户定）：nil = 不改动；非 nil = 整表替换
+		// （后端按池规整：非池条目丢弃、非法值删除）。
+		ProxyZones         map[string]string `json:"proxyZones"`
 		MaxConcurrency     *int     `json:"maxConcurrency"`
 		Retries            *int     `json:"retries"`
 		ProxyIsolation     *bool    `json:"proxyIsolation"`
@@ -241,6 +253,22 @@ func handleZenConfigUpdate(w http.ResponseWriter, r *http.Request) {
 			WriteAPI(w, http.StatusBadRequest, apiResponse{Error: err.Error()})
 			return
 		}
+		// 备注名主键校验（2026-11-26 用户定）：每行必须带 #备注名，备注名
+		// 重复 = 非法格式——备注名是规则/统计的唯一身份，缺失或重复都会
+		// 破坏主键语义。
+		seenAlias := map[string]bool{}
+		for _, p := range canonical {
+			a := proxyAliasOf(p)
+			if a == "" {
+				WriteAPI(w, http.StatusBadRequest, apiResponse{Error: "proxy line without #alias: " + maskProxyURL(p) + " (remark name is required)"})
+				return
+			}
+			if seenAlias[a] {
+				WriteAPI(w, http.StatusBadRequest, apiResponse{Error: "duplicate proxy alias: " + a})
+				return
+			}
+			seenAlias[a] = true
+		}
 		poolNext.Proxies = canonical
 		poolChanged = true
 		// 池变动后同步清理排除表：已不在池内的条目永远不会被自动分配命中，
@@ -266,6 +294,51 @@ func handleZenConfigUpdate(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		poolNext.SubCron = expr
+		poolChanged = true
+	}
+	if patch.ProxyZones != nil {
+		// 整表替换语义：非池条目丢弃、非法 zone 值删除（NormalizePool 收敛）。
+		poolNext.Zones = patch.ProxyZones
+		poolChanged = true
+	}
+	if patch.ZoneRealms != nil {
+		// 整表替换语义：键合法性校验（平台 kind / wb:cn / wb:gb / trae:cn /
+		// trae:gb / other:<slug>），去重。
+		valid := func(k string) bool {
+			switch k {
+			case "acc", "key", "wb:cn", "wb:gb", "trae:cn", "trae:gb", "freepi", "zen":
+				return true
+			}
+			return proxyRuleKindValid(k) // other:<slug> 等
+		}
+		clean := make([]string, 0, len(patch.ZoneRealms))
+		seen := map[string]bool{}
+		for _, k := range patch.ZoneRealms {
+			if k == "" || seen[k] {
+				continue
+			}
+			if !valid(k) {
+				WriteAPI(w, http.StatusBadRequest, apiResponse{Error: "invalid zone realm key: " + k})
+				return
+			}
+			seen[k] = true
+			clean = append(clean, k)
+		}
+		if len(clean) == 0 {
+			clean = nil
+		}
+		bindingNext.ZoneRealms = clean
+		bindingChanged = true
+	}
+	if patch.ProxyReorderCron != nil {
+		expr := strings.TrimSpace(*patch.ProxyReorderCron)
+		if expr != "" {
+			if err := validateCronExpr(expr); err != nil {
+				WriteAPI(w, http.StatusBadRequest, apiResponse{Error: "invalid cron expression: " + err.Error()})
+				return
+			}
+		}
+		poolNext.ReorderCron = expr
 		poolChanged = true
 	}
 	if patch.MaxConcurrency != nil && *patch.MaxConcurrency > 0 {
@@ -605,6 +678,15 @@ func testZenKey(key string, index int, modelID string) (map[string]any, string) 
 	if resp.StatusCode != http.StatusOK {
 		result["httpStatus"] = resp.StatusCode
 		result["reason"] = fmt.Sprintf("API %d: %s", resp.StatusCode, kit.Truncate(string(bodyBytes), 300))
+		return result, "error"
+	}
+
+	// 2026-11-26 事故加固（凭据 11 实案）：与 otherTestKey 同口径——200 但响应体
+	// 不是 API 响应（出口拦截页）不算通过，也不清冷却/停放：拦截页说明不了
+	// key 健康，不罚号。
+	if ok, vr := probeBodyVerdict(string(bodyBytes)); !ok {
+		result["httpStatus"] = resp.StatusCode
+		result["reason"] = fmt.Sprintf("HTTP 200 but not an API response: %s", vr)
 		return result, "error"
 	}
 

@@ -12,6 +12,7 @@ package exitpool
 
 import (
 	"regexp"
+	"strings"
 	"sync"
 )
 
@@ -40,6 +41,16 @@ type BindingConfig struct {
 	// 冷却触发时跑差分判定（故障出口 gstatic 通 + 其他出口对目标 host 通），
 	// 成立则把出口加入该平台排除规则并自动改绑。nil = 默认关。
 	ProxyAutoFailover *bool `json:"proxyAutoFailover,omitempty"`
+	// ProxyExclusionStamps 差分排除条目的 TTL 复核台账（2026-11-26 用户定）：
+	// 键 = proxyURL+"\x00"+kind，值 = "since|target|okCount"（RFC3339 时间、
+	// 排除时的目标 host、连续探活通过计数）。只有差分自动写入的条目有台账
+	// ——手动条目不复核（永不自动移除）。每小时探活一次，连续 2 次恢复可达
+	// 自动移除该 kind（exit-failover-ttl）。
+	ProxyExclusionStamps map[string]string `json:"proxyExclusionStamps,omitempty"`
+	// ZoneRealms 平台域声明集（2026-11-26 用户定）：面板下拉勾选"哪些平台
+	// 可作为 cn 平台"（参考封禁平台交互）。键形态与语义见 zone.go
+	// DeclaredRealm——zone 兼容判定中凭据有效域的唯一来源。
+	ZoneRealms []string `json:"zoneRealms,omitempty"`
 }
 
 // Binding 一个身份的出口绑定：主代理优先，备用代理兜底；两者都不可用时
@@ -71,6 +82,24 @@ func loadBindingLocked() *BindingConfig {
 	fileMu.Lock()
 	f := loadFileLocked()
 	fileMu.Unlock()
+	// 存量迁移（2026-11-26 用户定备注名主键）：排除表/全局集/台账键从完整
+	// URL rekey 为备注名——加载即迁移，不等首次池编辑。同备注名多键合并。
+	f.ProxyExclusions = PruneProxyExclusions(f.ProxyExclusions, f.Proxies)
+	f.ProxyExclusionsAll = PruneProxyEntries(f.ProxyExclusionsAll, f.Proxies)
+	if len(f.ProxyExclusionStamps) > 0 {
+		next := make(map[string]string, len(f.ProxyExclusionStamps))
+		for k, v := range f.ProxyExclusionStamps {
+			url, kind, ok := strings.Cut(k, "\x00")
+			if !ok {
+				continue
+			}
+			nk := stampKey(RuleKeyOf(url), kind)
+			if _, dup := next[nk]; !dup {
+				next[nk] = v
+			}
+		}
+		f.ProxyExclusionStamps = next
+	}
 	bindingCfg = &BindingConfig{
 		ProxyIsolation:             f.ProxyIsolation,
 		BackupProxyEnabled:         f.BackupProxyEnabled,
@@ -80,6 +109,8 @@ func loadBindingLocked() *BindingConfig {
 		ProxyBindCaps:              f.ProxyBindCaps,
 		ReorderKeepSec:             f.ReorderKeepSec,
 		ProxyAutoFailover:          f.ProxyAutoFailover,
+		ProxyExclusionStamps:       f.ProxyExclusionStamps,
+		ZoneRealms:                 f.ZoneRealms,
 	}
 	bindingLoadedPath = path
 	return bindingCfg
@@ -110,6 +141,8 @@ func SetBinding(c *BindingConfig) {
 		f.ProxyBindCaps = cp.ProxyBindCaps
 		f.ReorderKeepSec = cp.ReorderKeepSec
 		f.ProxyAutoFailover = cp.ProxyAutoFailover
+		f.ProxyExclusionStamps = cp.ProxyExclusionStamps
+		f.ZoneRealms = cp.ZoneRealms
 	})
 }
 
@@ -138,25 +171,41 @@ func ProxyRuleKindValid(kind string) bool {
 // 与运行时路由不受影响。池变动清理时该键永不删除。
 const ProxyRuleDirectKey = "__direct__"
 
-// PruneProxyEntries 全局排除表按池清理：非池条目丢弃（与 PruneProxyExclusions
-// 同口径），去重保序；直连哨兵永不进全局集（直连排除仍是每条目单独设置，
-// 2026-11-24 用户定）。
+// ruleKeyInPool 规则键是否仍对得上池：键相等，或键的备注名与池内某行备注名
+// 相同（订阅换端口后键不失配，2026-11-26 用户定备注名主键）。键为裸备注名
+//（规则键形态，不带 scheme）时整串视作备注名匹配。
+func ruleKeyInPool(key string, pool []string) bool {
+	a := AliasOf(key)
+	if a == "" {
+		a = key
+	}
+	for _, p := range pool {
+		if p == key || AliasOf(p) == a {
+			return true
+		}
+	}
+	return false
+}
+
+// PruneProxyEntries 全局排除表按池清理：键对不上池的条目丢弃（备注名口径，
+// 见 ruleKeyInPool），键统一 rekey 为备注名（RuleKeyOf），去重保序；直连
+// 哨兵永不进全局集（直连排除仍是每条目单独设置，2026-11-24 用户定）。
 func PruneProxyEntries(list []string, pool []string) []string {
 	if len(list) == 0 {
 		return nil
 	}
-	inPool := make(map[string]bool, len(pool))
-	for _, p := range pool {
-		inPool[p] = true
-	}
 	out := make([]string, 0, len(list))
 	seen := make(map[string]bool, len(list))
 	for _, p := range list {
-		if !inPool[p] || p == ProxyRuleDirectKey || seen[p] {
+		if p == ProxyRuleDirectKey || !ruleKeyInPool(p, pool) {
 			continue
 		}
-		seen[p] = true
-		out = append(out, p)
+		k := RuleKeyOf(p)
+		if seen[k] {
+			continue
+		}
+		seen[k] = true
+		out = append(out, k)
 	}
 	if len(out) == 0 {
 		return nil
@@ -164,22 +213,39 @@ func PruneProxyEntries(list []string, pool []string) []string {
 	return out
 }
 
-// PruneProxyExclusions 按代理池清理排除表：已不在池内的代理条目丢弃（它们
-// 永远不会被自动分配命中，留着只是垃圾配置），直连哨兵键保留 —— 它不是池
-// 条目，且不随池变动失效。面板保存池与配置导入（跨机迁移）共用此口径。
+// PruneProxyExclusions 按代理池清理排除表：键对不上池的条目丢弃（备注名
+// 口径——订阅换端口后规则不失配，只有代理真被删除才清），键统一 rekey 为
+// 备注名，直连哨兵键保留 —— 它不是池条目，且不随池变动失效。面板保存池与
+// 配置导入（跨机迁移）共用此口径。
 func PruneProxyExclusions(ex map[string][]string, pool []string) map[string][]string {
 	if len(ex) == 0 {
 		return ex
 	}
-	inPool := make(map[string]bool, len(pool))
-	for _, p := range pool {
-		inPool[p] = true
-	}
 	out := make(map[string][]string, len(ex))
 	for p, kinds := range ex {
-		if inPool[p] || p == ProxyRuleDirectKey {
-			out[p] = kinds
+		if p != ProxyRuleDirectKey && !ruleKeyInPool(p, pool) {
+			continue
 		}
+		k := RuleKeyOf(p)
+		if exist, ok := out[k]; ok {
+			// rekey 合并（存量 URL 键与新别名键同指一行）：kinds 并集。
+			merged := append([]string(nil), exist...)
+			for _, kind := range kinds {
+				dup := false
+				for _, e := range merged {
+					if e == kind {
+						dup = true
+						break
+					}
+				}
+				if !dup {
+					merged = append(merged, kind)
+				}
+			}
+			out[k] = merged
+			continue
+		}
+		out[k] = kinds
 	}
 	if len(out) == 0 {
 		return nil

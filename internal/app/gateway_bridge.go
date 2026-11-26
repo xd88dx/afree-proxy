@@ -31,9 +31,7 @@ func corsHandler(h http.HandlerFunc) http.HandlerFunc { return gateway.CORSHandl
 
 func usageFromChatPayload(body string) map[string]any { return gateway.UsageFromChatPayload(body) }
 
-func probeRespTokens(resp *http.Response, record func(tokens int64)) {
-	gateway.ProbeRespTokens(resp, record)
-}
+func probeBodyVerdict(body string) (ok bool, reason string) { return gateway.ProbeBodyVerdict(body) }
 
 func takeUsedKey(resp *http.Response) string { return gateway.TakeUsedKey(resp) }
 

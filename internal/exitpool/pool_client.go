@@ -740,6 +740,8 @@ func AliasOf(line string) string {
 
 // IdxInPool 代理在当前池列表中的索引；不在池中（已被删除）返回 -1。
 // 行/备注名相同即视为同一代理（订阅更新换端口后绑定行仍能命中）。
+// 入参也接受裸备注名（规则键形态，2026-11-26 备注名主键：排除/台账键不带
+// scheme——按"整串即备注名"对池内行匹配）。
 func IdxInPool(raw string) int {
 	if raw == "" {
 		return -1
@@ -750,11 +752,13 @@ func IdxInPool(raw string) int {
 			return i
 		}
 	}
-	if a := AliasOf(raw); a != "" {
-		for i, p := range cfg.Proxies {
-			if AliasOf(p) == a {
-				return i
-			}
+	a := AliasOf(raw)
+	if a == "" {
+		a = raw // 裸备注名键：整串视作备注名
+	}
+	for i, p := range cfg.Proxies {
+		if AliasOf(p) == a {
+			return i
 		}
 	}
 	return -1

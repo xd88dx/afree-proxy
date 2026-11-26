@@ -45,15 +45,12 @@ func TestProxyHealthRecordSkipsDirectAndAborts(t *testing.T) {
 	recordProxyOutcome(pkZen, px, false, context.DeadlineExceeded, 0)        // 客户端截止：不计失败
 	recordProxyOutcome(pkZen, px, false, errors.New("dial tcp: refused"), 0) // 真失败
 
-	e := exitpool.HealthStatsForTest()[px]
+	e := exitpool.HealthStatsForTest()[exitpool.RuleKeyOf(px)]
 	if e == nil || e.Attempts != 2 || e.Successes != 1 {
 		t.Fatalf("attempts/successes = %d/%d, want 2/1", e.Attempts, e.Successes)
 	}
 	if e.HSCount != 1 || e.HSSumMs != 150 {
 		t.Fatalf("hsCount/hsSumMs = %d/%d, want 1/150", e.HSCount, e.HSSumMs)
-	}
-	if !strings.Contains(e.LastErr, "refused") {
-		t.Fatalf("lastErr = %q", e.LastErr)
 	}
 	if len(e.Recent) != 2 || e.Recent[0] != true || e.Recent[1] != false {
 		t.Fatalf("recent = %v", e.Recent)
@@ -73,7 +70,7 @@ func TestProxyHealthRecentWindowTrims(t *testing.T) {
 		recordProxyOutcome(pkZen, px, true, nil, 100)
 	}
 
-	e := exitpool.HealthStatsForTest()[px]
+	e := exitpool.HealthStatsForTest()[exitpool.RuleKeyOf(px)]
 	if len(e.Recent) != exitpool.RecentN {
 		t.Fatalf("window size = %d, want %d", len(e.Recent), exitpool.RecentN)
 	}
@@ -128,13 +125,15 @@ func TestProxyHealthSnapshotListsUnusedProxiesWithoutData(t *testing.T) {
 }
 
 func TestProxyHealthResetOnPoolEdit(t *testing.T) {
-	setupBindingTest(t, &zenTestConfig{Proxies: []string{"socks5://old:1"}})
+	setupBindingTest(t, &zenTestConfig{Proxies: []string{"socks5://old:1#keep"}})
 	resetProxyHealthForTest(t)
 
-	recordProxyOutcome(pkZen, "socks5://old:1", false, errors.New("boom"), 0)
+	recordProxyOutcome(pkZen, "socks5://old:1#keep", false, errors.New("boom"), 0)
 
+	// 池编辑不再整体清零（2026-11-26 用户定备注名主键）：别名仍在池 → 统计
+	// 保留（端口变化不失配）；别名消失 → 条目剪除。
 	req := httptest.NewRequest("POST", "/admin/api/opencode/config/update",
-		strings.NewReader(`{"proxies":["socks5://new:1"]}`))
+		strings.NewReader(`{"proxies":["socks5://new:1#keep","socks5://x:2#gone"]}`))
 	rec := httptest.NewRecorder()
 	handleZenConfigUpdate(rec, req)
 	if rec.Code != 200 {
@@ -142,11 +141,20 @@ func TestProxyHealthResetOnPoolEdit(t *testing.T) {
 	}
 
 	rows := proxyHealthSnapshot()
-	if len(rows) != 1 || rows[0]["proxy"] != "socks5://new:1" {
+	if len(rows) != 2 {
 		t.Fatalf("snapshot after edit = %+v", rows)
 	}
-	if _, has := rows[0]["attempts"]; has {
-		t.Fatalf("pool edit must clear all counters, got %v", rows[0]["attempts"])
+	for _, r := range rows {
+		if r["proxy"] == "socks5://new:1#keep" {
+			if _, has := r["attempts"]; !has {
+				t.Fatalf("alias still in pool must keep stats, got %v", r)
+			}
+		}
+		if r["proxy"] == "socks5://x:2#gone" {
+			if _, has := r["attempts"]; has {
+				t.Fatalf("removed alias must be pruned, got %v", r)
+			}
+		}
 	}
 }
 
@@ -163,7 +171,7 @@ func TestProxyHealthPersistsAcrossRestart(t *testing.T) {
 	*exitpool.HealthOncePtr = sync.Once{}
 	ensureProxyHealthLoaded()
 
-	e := exitpool.HealthStatsForTest()["socks5://a:1"]
+	e := exitpool.HealthStatsForTest()[exitpool.RuleKeyOf("socks5://a:1")]
 	if e == nil || e.Attempts != 2 || e.Successes != 1 {
 		t.Fatalf("restored attempts/successes = %d/%d, want 2/1", e.Attempts, e.Successes)
 	}
@@ -237,11 +245,12 @@ func TestRecordProxyOutcomeCoolsBadExit(t *testing.T) {
 // 延迟测试读数（proxy_probe.go，2026-11-03）：与统计同文件落盘、同「编辑池
 // 即清零」语义，且打码快照不泄漏原始 URL。
 func TestProxyTestEntryPersistAndReset(t *testing.T) {
-	setupBindingTest(t, &zenTestConfig{Proxies: []string{"socks5://a:1"}})
+	setupBindingTest(t, &zenTestConfig{Proxies: []string{"socks5://a:1#a"}})
 	resetProxyHealthForTest(t)
 
+	// 键 = 备注名（2026-11-26 主键）。
 	exitpool.SetTestStatsForTest(map[string]*exitpool.TestEntry{
-		"socks5://a:1": {At: time.Now(), Ok: true, MinMs: 120, MedianMs: 340, Samples: 3},
+		"a": {At: time.Now(), Ok: true, MinMs: 120, MedianMs: 340, Samples: 3},
 	})
 	// 与生产路径一致：tests 写入必须伴随脏标记（runProxyLatencyBatch 的做法）
 	exitpool.HealthMu().Lock()
@@ -254,22 +263,33 @@ func TestProxyTestEntryPersistAndReset(t *testing.T) {
 	*exitpool.HealthOncePtr = sync.Once{}
 	ensureProxyHealthLoaded()
 
-	e := exitpool.TestStatsForTest()["socks5://a:1"]
+	e := exitpool.TestStatsForTest()["a"]
 	if e == nil || !e.Ok || e.MinMs != 120 || e.MedianMs != 340 || e.Samples != 3 {
 		t.Fatalf("restored test entry = %+v, want ok min=120 median=340 samples=3", e)
 	}
 
-	// 编辑池即清零（与统计同闸）
+	// 池编辑按备注名剪除（2026-11-26 用户定，替代旧"编辑池即清零"）：
+	// 别名仍在池 → 读数保留；别名消失 → 条目剪除。
 	req := httptest.NewRequest("POST", "/admin/api/opencode/config/update",
-		strings.NewReader(`{"proxies":["socks5://b:2"]}`))
+		strings.NewReader(`{"proxies":["socks5://b:2#a"]}`))
 	rec := httptest.NewRecorder()
 	handleZenConfigUpdate(rec, req)
 	if rec.Code != 200 {
 		t.Fatalf("pool edit failed: %d %s", rec.Code, rec.Body.String())
 	}
 	n := len(exitpool.TestStatsForTest())
-	if n != 0 {
-		t.Fatalf("pool edit must clear latency test entries, got %d", n)
+	if n != 1 {
+		t.Fatalf("alias still in pool must keep the test entry, got %d", n)
+	}
+	req = httptest.NewRequest("POST", "/admin/api/opencode/config/update",
+		strings.NewReader(`{"proxies":["socks5://b:2#other"]}`))
+	rec = httptest.NewRecorder()
+	handleZenConfigUpdate(rec, req)
+	if rec.Code != 200 {
+		t.Fatalf("pool edit failed: %d %s", rec.Code, rec.Body.String())
+	}
+	if n = len(exitpool.TestStatsForTest()); n != 0 {
+		t.Fatalf("alias removed from pool must prune the test entry, got %d", n)
 	}
 
 	// 快照行打码：tests 段不在健康快照中直接出现，行 proxy 一律打码
@@ -290,7 +310,7 @@ func TestRecordProxyTestOutcomeUpdatesStatsWithoutCooldown(t *testing.T) {
 	recordProxyTestOutcome("socks5://a:1", true, nil, 200)
 	recordProxyTestOutcome("socks5://a:1", false, errors.New("dial tcp: refused"), 0)
 
-	e := exitpool.HealthStatsForTest()["socks5://a:1"]
+	e := exitpool.HealthStatsForTest()[exitpool.RuleKeyOf("socks5://a:1")]
 	if e == nil || e.Attempts != 2 || e.Successes != 1 {
 		t.Fatalf("attempts/successes = %d/%d, want 2/1", e.Attempts, e.Successes)
 	}
@@ -299,9 +319,6 @@ func TestRecordProxyTestOutcomeUpdatesStatsWithoutCooldown(t *testing.T) {
 	}
 	if len(e.Recent) != 2 || e.Recent[0] != true || e.Recent[1] != false {
 		t.Fatalf("recent = %v, want [true false]", e.Recent)
-	}
-	if !strings.Contains(e.LastErr, "refused") {
-		t.Fatalf("lastErr = %q, want refused", e.LastErr)
 	}
 
 	// 红线：连续失败也绝不冷却（没有 strike 记账）

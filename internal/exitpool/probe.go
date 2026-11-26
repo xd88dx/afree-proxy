@@ -146,12 +146,16 @@ func RecordProxyTestOutcome(proxyURL string, ok bool, err error, elapsedMs int64
 	if proxyURL == "" {
 		return
 	}
+	key := RuleKeyOf(proxyURL)
+	if key == "" {
+		return // 无备注名的行不记账（非法格式，2026-11-26 用户定）
+	}
 	EnsureHealthLoaded()
 	healthMu.Lock()
-	e := healthStats[proxyURL]
+	e := healthStats[key]
 	if e == nil {
 		e = &HealthEntry{}
-		healthStats[proxyURL] = e
+		healthStats[key] = e
 	}
 	e.Attempts++
 	if ok {
@@ -160,11 +164,6 @@ func RecordProxyTestOutcome(proxyURL string, ok bool, err error, elapsedMs int64
 		if elapsedMs > 0 {
 			e.HSCount++
 			e.HSSumMs += elapsedMs
-		}
-	} else {
-		e.LastFail = time.Now()
-		if err != nil {
-			e.LastErr = kit.Truncate(err.Error(), 300)
 		}
 	}
 	e.Recent = append(e.Recent, ok)
@@ -277,7 +276,7 @@ func RunProxyLatencyBatch(ctx context.Context) []map[string]any {
 			ent = &TestEntry{Err: "aborted"}
 		}
 		ent.At = now
-		testStats[raw] = ent
+		testStats[RuleKeyOf(raw)] = ent
 		rows = append(rows, testRow(raw, ent))
 	}
 	testMu.Unlock()

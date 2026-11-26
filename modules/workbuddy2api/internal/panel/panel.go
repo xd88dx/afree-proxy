@@ -14,6 +14,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log"
 	"math"
@@ -1453,6 +1454,9 @@ func (p *Panel) accountTest(w http.ResponseWriter, r *http.Request) {
 		p.cfg.Pool.NoteError(uid)
 	case upstream.ErrBadParams, upstream.ErrPromptTooLong, upstream.ErrImageInvalid, upstream.ErrContentBlocked:
 		// 请求级错误：不罚号。
+	case upstream.ErrWafBlock:
+		// 2026-11-26 探测加固：非业务信封体（WAF/出口拦截页）是链路层证据，
+		// 说明不了账号健康——不罚号（此前落 default 会被 NoteError 计入连败）。
 	default:
 		p.cfg.Pool.NoteError(uid)
 	}
@@ -1592,6 +1596,15 @@ func probeOnce(p *Panel, a *auth.Auth, uid, probeModel string) (map[string]any, 
 			raw, rerr := io.ReadAll(rc)
 			rc.Close()
 			if rerr == nil {
+				// 2026-11-26 事故加固（afree 主仓凭据 11 实案）：200 但响应体
+				// 不是 API 响应（出口拦截页/代理劫持）不算通过——请求没到
+				// 上游，NoteSuccess/清冷却/记账都是假阳性。按 ErrWafBlock
+				// 分类（非业务信封体），accountTest 侧不罚号。
+				if ok, vr := probeBodyVerdict(raw); !ok {
+					out["status"] = "error"
+					out["error"] = "HTTP 200 but not an API response: " + vr
+					return out, upstream.ErrWafBlock, fmt.Errorf("probe response is not an API response: %s", vr)
+				}
 				// 记账：usage 能取到就记消耗，取不到也记一次"这次用过"
 				//（刷新最近使用），不再静默跳过。
 				recordProbeUsage(p, uid, probeModel, probeUsageFromBody(raw), latencyMs)
@@ -1644,6 +1657,101 @@ func (p *Panel) ProbeModel(model string) (map[string]any, string) {
 	out["status"] = "error"
 	out["account"] = uid
 	return out, "error"
+}
+
+// probeBodyVerdict 探测响应体判定（2026-11-26 afree 主仓凭据 11 事故加固的
+// 本 module 副本——module 隔离无法 import 主仓 internal/gateway，按惯例各持
+// 一份，与主仓 ProbeBodyVerdict 同逻辑同语义）。原因按"一眼可识别"口径写
+// 短语，不携带 body 转储（主仓 2026-11-26 用户定同步）。
+//
+//   - SSE 流：必须存在至少一个 data 帧解析为 JSON 且含 choices/usage；
+//   - 非 SSE：整段 JSON 解析成功且含 choices/usage（含 {data:{...}} 包裹）；
+//   - HTML（<!DOCTYPE/<html）→ 报"出口拦截页/代理劫持"。
+func probeBodyVerdict(raw []byte) (ok bool, reason string) {
+	trimmed := strings.TrimSpace(string(raw))
+	if trimmed == "" {
+		return false, "empty body"
+	}
+	lower := strings.ToLower(trimmed)
+	if strings.Contains(lower, "<!doctype html") || strings.Contains(lower, "<html") {
+		return false, "HTML intercept page (exit hijack?)"
+	}
+	lines := strings.Split(trimmed, "\n")
+	first := ""
+	for _, l := range lines {
+		if t := strings.TrimSpace(l); t != "" {
+			first = t
+			break
+		}
+	}
+	if first != "" && probeBodyIsSSELine(first) {
+		for _, l := range lines {
+			if !strings.HasPrefix(l, "data:") {
+				continue
+			}
+			payload := strings.TrimSpace(l[5:])
+			if payload == "" || payload == "[DONE]" {
+				continue
+			}
+			var obj map[string]any
+			if json.Unmarshal([]byte(payload), &obj) != nil {
+				continue
+			}
+			if probeBodyHasEvidence(obj) {
+				return true, ""
+			}
+		}
+		return false, "SSE stream without model output"
+	}
+	var obj map[string]any
+	if err := json.Unmarshal([]byte(trimmed), &obj); err != nil {
+		return false, "non-API body: " + truncateStr(trimmed, 80)
+	}
+	if e, exists := obj["error"]; exists && e != nil {
+		msg := ""
+		if em, isMap := e.(map[string]any); isMap {
+			msg, _ = em["message"].(string)
+		}
+		if msg == "" {
+			msg = truncateStr(fmt.Sprint(e), 120)
+		}
+		return false, "upstream error: " + msg
+	}
+	if d, isMap := obj["data"].(map[string]any); isMap {
+		obj = d
+	}
+	if probeBodyHasEvidence(obj) {
+		return true, ""
+	}
+	return false, "no model output: " + truncateStr(trimmed, 80)
+}
+
+// probeBodyIsSSELine SSE 语法行判定（data:/event:/id:/retry:/注释行）。
+func probeBodyIsSSELine(line string) bool {
+	if strings.HasPrefix(line, ":") {
+		return true
+	}
+	for _, f := range []string{"data:", "event:", "id:", "retry:"} {
+		if strings.HasPrefix(line, f) {
+			return true
+		}
+	}
+	return false
+}
+
+// probeBodyHasEvidence 单个 JSON 对象是否含模型输出证据。
+func probeBodyHasEvidence(obj map[string]any) bool {
+	if c, ok := obj["choices"].([]any); ok && len(c) > 0 {
+		return true
+	}
+	if u, ok := obj["usage"].(map[string]any); ok && len(u) > 0 {
+		return true
+	}
+	// responses 上游完成帧形态：{"type":"response.completed","response":{...}}。
+	if r, ok := obj["response"].(map[string]any); ok && len(r) > 0 {
+		return true
+	}
+	return false
 }
 
 // probeRetryableKind 该错误是否值得换一个探测模型重试。

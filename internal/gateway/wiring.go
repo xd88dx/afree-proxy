@@ -46,7 +46,6 @@ func ListCombos() []*gwconfig.Combo                                  { return li
 func ResolveCombo(id string) *gwconfig.Combo                         { return resolveCombo(id) }
 func WriteJSON(w http.ResponseWriter, status int, data any)          { writeJSON(w, status, data) }
 func UsageFromChatPayload(body string) map[string]any                { return usageFromChatPayload(body) }
-func ProbeRespTokens(resp *http.Response, record func(tokens int64)) { probeRespTokens(resp, record) }
 func TakeUsedKey(resp *http.Response) string                         { return takeUsedKey(resp) }
 func ClassifyReqRoute(r *http.Request, model string) (string, string) {
 	return classifyReqRoute(r, model)

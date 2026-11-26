@@ -297,6 +297,11 @@ select{cursor:pointer;appearance:none;background-image:linear-gradient(45deg,tra
 .eg-badge.t-pink,.eg-rate.t-pink,.pp-rate.t-pink{background:var(--pink)}
 .eg-badge.t-yellow,.eg-rate.t-yellow,.pp-rate.t-yellow{background:var(--amber)}
 .eg-badge.t-red,.eg-rate.t-red,.pp-rate.t-red{background:var(--danger)}
+/* 代理健康表「优先国内」列滑块（2026-11-26 用户定）：关 = 全球、开 = 国内，
+   开关绿色系一眼区分保留出口 */
+.pp-zone-sw input:checked{background:rgba(34,197,94,.85);border-color:rgba(34,197,94,.85)}
+.pp-zone-sw input:checked::after{background:#fff}
+.pp-health-cell-c{text-align:center}
 /* 代理健康表在线率：与下拉框同源的档位色，但不 floated/定宽，直接居中内联 */
 .pp-rate{display:inline-block;font-size:11px;font-weight:600;line-height:1;color:var(--bg);border-radius:6px;padding:2px 6px;box-sizing:border-box;font-variant-numeric:tabular-nums;min-width:34px;text-align:center}
 .pp-rate.w3{padding-left:2px;padding-right:2px}
@@ -601,14 +606,29 @@ const poolTabHTML = `<div id="tab-proxypool" class="tab-panel" style="display:no
     </div>
     <div id="ppSubUpdateResult" style="margin:-6px 0 10px;font-size:12px;min-height:14px"></div>
     <div class="hint" style="margin-bottom:10px">Subscription refresh replaces the whole pool with the fetched list. Fetch failures keep the current pool.</div>
-    <div class="form-actions"><button class="btn btn-primary" onclick="saveProxyPool()" data-i18n="save_proxy_pool">Save proxy pool</button><button class="btn btn-success" id="ppTestAllBtn" onclick="testAllCredentialPlatforms()" title="Run the batch test once on every platform's credential list (Cline / TraeWork / OpenCode / Other / WorkBuddy), one platform at a time" data-i18n="test_all_credentials">Test all credentials</button></div>
+    <div class="form-actions"><button class="btn btn-primary" onclick="saveProxyPool()" data-i18n="save_proxy_pool">Save config</button><button class="btn btn-success" id="ppTestAllBtn" onclick="testAllCredentialPlatforms()" title="Run the batch test once on every platform's credential list (Cline / TraeWork / OpenCode / Other / WorkBuddy), one platform at a time" data-i18n="test_all_credentials">Test all credentials</button></div>
   </div>
 </div>
 <div class="section" style="overflow:visible">
   <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><path d="M4 5h16M4 12h10M4 19h7"/></svg></span> Proxy exclusion rules</div>
   <div class="section-body">
-    <div class="hint" style="margin-bottom:14px" data-i18n="Blacklist, binding cap and manual cooldown apply only to batch operations — one-click bind and reorder-by-latency. TraeWork/WorkBuddy CN-domain accounts are excluded, and the proxies they hold are never reassigned within their platform. Manual bindings and runtime routing are unrestricted.">Blacklist, binding cap and manual cooldown apply only to batch operations — one-click bind and reorder-by-latency. TraeWork/WorkBuddy CN-domain accounts are excluded, and the proxies they hold are never reassigned within their platform. Manual bindings and runtime routing are unrestricted.</div>
     <div style="margin-bottom:12px">
+      <div style="font-size:12px;color:var(--text2);margin-bottom:6px" data-i18n="zone_realms_hint">CN platform declaration: pick which platforms count as CN-domain — their credentials become eligible for zone:cn exits. WorkBuddy/TraeWork have CN/Intl sub-options matching credential realms; unpicked platforms never use reserved exits.</div>
+      <div style="display:flex;gap:10px;align-items:flex-start;margin-bottom:10px">
+        <div style="flex:1;position:relative">
+          <div class="pr-tagbox pb-box" id="zoneRealmBox" style="margin-top:0;min-height:34px" onclick="toggleZoneRealmMenu(event)">
+            <span id="zoneRealmChips" style="display:contents"></span>
+            <input class="pr-tagin" readonly placeholder="点击选择国内平台…" data-i18n-placeholder="pick_cn_platforms">
+          </div>
+          <div id="zoneRealmMenu" class="pb-menu" style="display:none"></div>
+        </div>
+        <div style="display:flex;gap:8px;margin-top:2px">
+          <button class="btn btn-sm btn-warn btn-static" onclick="resetZoneRealms()" data-i18n="discard">Discard</button>
+        </div>
+      </div>
+    </div>
+    <div class="hint" style="margin-bottom:14px" data-i18n="Blacklist, binding cap and manual cooldown apply only to batch operations — one-click bind and reorder-by-latency. TraeWork/WorkBuddy CN-domain accounts are excluded, and the proxies they hold are never reassigned within their platform. Manual bindings and runtime routing are unrestricted.">Blacklist, binding cap and manual cooldown apply only to batch operations — one-click bind and reorder-by-latency. TraeWork/WorkBuddy CN-domain accounts are excluded, and the proxies they hold are never reassigned within their platform. Manual bindings and runtime routing are unrestricted.</div>
+    <div style="margin-top:12px;border-top:1px solid var(--border);padding-top:12px;margin-bottom:12px">
       <div style="display:flex;gap:10px;align-items:flex-start">
         <div style="flex:1;position:relative">
           <div class="pr-tagbox" id="ppBulkBox" style="margin-top:0;min-height:38px" onclick="ppBulkBoxClick(event)">
@@ -628,13 +648,18 @@ const poolTabHTML = `<div id="tab-proxypool" class="tab-panel" style="display:no
         <input type="checkbox" id="ppAutoFailover">
         <span data-i18n="auto_exclude">Auto exclude</span>
       </label>
-      <button class="btn btn-primary" onclick="saveProxyRules()" data-i18n="save_proxy_exclusion_rules">Save proxy exclusion rules</button>
-      <span class="pr-capbox" style="margin-left:10px" title="Proxies at or below this latency (seconds) keep their current binding and are skipped by reordering; slower ones are refilled from the pool. Saved on change.">
+      <button class="btn btn-primary" onclick="saveProxyRules()" data-i18n="save_proxy_exclusion_rules">Save config</button>
+      <span style="flex:1"></span>
+      <span class="pr-capbox" title="Proxies at or below this latency (seconds) keep their current binding and are skipped by reordering; slower ones are refilled from the pool. Saved on change.">
         <span class="pr-unit" data-i18n="keep_latency">Keep latency ≤</span>
         <input class="pr-cap" id="ppReorderKeepSec" type="number" min="0" max="600" step="0.1" value="8.0" style="width:56px" onchange="saveReorderKeepSec(this.value)">
         <span class="pr-unit">s</span>
       </span>
-      <button class="btn btn-success" onclick="openReorderDlg()" style="margin-left:10px" data-i18n="reorder_credential_proxies_by_latency">Reorder credential proxies by latency</button>
+      <span class="pr-capbox" title="Daily scheduled reorder: 5-field minute cron (e.g. 0 4 * * *). When it fires, every platform's bindings run one freeze-supply-repair pass server-side — same rules as the manual dialog. Empty = disabled." data-i18n-title="reorder_cron_hint">
+        <span class="pr-unit" data-i18n="reorder_cron">Auto reorder</span>
+        <input class="mono" id="ppReorderCron" type="text" placeholder="0 4 * * *" style="width:110px" spellcheck="false" onchange="saveReorderCron(this.value)">
+      </span>
+      <button class="btn btn-success" onclick="openReorderDlg()" data-i18n="reorder_credential_proxies_by_latency">Reorder credential proxies by latency</button>
     </div>
   </div>
 </div>
@@ -711,9 +736,9 @@ const poolTabHTML = `<div id="tab-proxypool" class="tab-panel" style="display:no
         <th style="text-align:center" title="Success rate over the last 50 attempts; red below 80% (min 10 samples)." data-i18n="Recent online rate">Recent online rate</th>
         <th style="text-align:center;cursor:pointer;user-select:none" onclick="ppHsSortToggle()" title="Average tunnel-setup time over successful attempts (TCP+TLS+CONNECT handshake only — excludes upstream first byte and task duration). Lower is better. Click to sort.">Avg handshake<span id="ppHsSortMark"></span></th>
         <th style="text-align:center;cursor:pointer;user-select:none" onclick="ppTestSortToggle()" title="Latest manual latency test: min / median over up to 3 HTTPS probes to the configured target through the same dial stack as real traffic; the samples also feed the rate and handshake stats. Routing and cooldowns are untouched. Click to sort." data-i18n="test_latency">Test latency<span id="ppTestSortMark"></span></th>
-        <th data-i18n="Last OK">Last OK</th>
-        <th data-i18n="Last Fail">Last Fail</th>
-        <th data-i18n="cooldown_1">Cooldown</th>
+        <th style="text-align:center" data-i18n="Last OK">Last OK</th>
+        <th style="text-align:center" data-i18n="pp_zone_col">国内优先</th>
+        <th style="text-align:center" data-i18n="cooldown_1">Cooldown</th>
         <th style="text-align:center" title="Manual unban while a cooldown is active (global or platform-scoped): clears the cooldown and the failure counters so the exit rejoins the rotation immediately." data-i18n="Actions">Actions</th>
       </tr></thead>
       <tbody id="ppHealthBody"><tr><td colspan="10" class="empty">Loading...</td></tr></tbody>
@@ -1069,6 +1094,7 @@ const I18N = {
   'Get authorization link': { en: 'Get authorization link', zh: '获取授权链接' },
   'Choose a realm and request an authorization link.': { en: 'Choose a realm and request an authorization link.', zh: '选择区域并请求授权链接。' },
   'copy_failed': { en: 'Copy failed', zh: '复制失败' },
+  'error_copied': { en: 'Error message copied', zh: '错误信息已复制' },
   // 拖拽排序
   'save_or_discard_staged_edits_before_reordering': { en: 'Save or discard staged edits before reordering', zh: '有未保存的暂存修改，请先保存或放弃后再拖拽排序' },
   'order_saved': { en: 'Order saved', zh: '顺序已保存' },
@@ -1141,6 +1167,11 @@ const I18N = {
   'saved_proxy_exclusion_rules': { en: 'Saved proxy exclusion rules', zh: '代理排除规则已保存' },
   'proxy_exclusion_rules': { en: 'Proxy exclusion rules: ', zh: '代理排除规则：' },
   'auto_exclude': { en: 'Auto exclude', zh: '自动排除' },
+  'zone_cn': { en: 'CN', zh: '国内' },
+  'zone_any': { en: 'Global', zh: '全球' },
+  'pick_cn_platforms': { en: 'Click to pick CN platforms…', zh: '点击选择国内平台…' },
+  'prefer_cn_hint': { en: 'On = CN exit (green, reserved for CN-domain credentials); off = unrestricted', zh: '开 = 国内出口（绿色，保留给国内域凭据）；关 = 全球不限' },
+  'zone_realms_hint': { en: 'Declared CN credentials exclusively use CN exits and opt out of automation; Intl = never assigned CN exits; undeclared platforms treat CN exits as ordinary.', zh: '勾选平台的凭据算国内域：独占国内出口、不参与自动化（手动绑定）；「国际」= 不分配国内出口；未勾选平台把国内出口当普通出口。' },
   'auto_exclude_hint': { en: 'Differential auto-exclusion (off by default): when a platform-scoped cooldown fires, the exit is probed against the latency target; if the exit is reachable while other exits still reach the failing upstream host, the exit is added to that platform\'s exclusion rules and every credential bound to it is rebound to a replacement chosen from the pool tail-first with same-region preference.', zh: '差分自动排除（默认关）：平台级冷却触发时实时探测故障出口（对测速目标）；若该出口通、而其他出口仍能访问出错的上游域名，则把该出口加入该平台的排除规则，并把绑定它的全部凭据改绑到替补（按池序从后往前、同地区优先）。' },
   'Discard staged exclusions and reload the last saved state': { en: 'Discard staged exclusions and reload the last saved state', zh: '放弃暂存的排除修改，恢复为上次保存的状态' },
   'Click to pick platforms to ban…': { en: 'Click to pick platforms to ban…', zh: '点击选择要封禁的平台…' },
@@ -1157,6 +1188,8 @@ const I18N = {
   'Reorder credential proxies by latency': { en: 'Reorder credential proxies by latency', zh: '凭据代理延迟重排' },
   // 延迟重排阈值（保持不变的代理延迟上限）
   'keep_latency': { en: 'Keep latency ≤', zh: '延迟阈值' },
+  'reorder_cron': { en: 'Auto reorder', zh: '定时重排' },
+  'reorder_cron_hint': { en: 'Daily scheduled reorder: 5-field minute cron (e.g. 0 4 * * *). When it fires, every platform bindings run one freeze-supply-repair pass server-side - same rules as the manual dialog. Empty = disabled.', zh: '定时重排：5 字段分钟级 cron（如 0 4 * * *）。命中时后端对全部平台跑一轮冻结-供给-修复重排（与手动弹窗同规则）。空 = 关闭。' },
   's': { en: 's', zh: '秒' },
   'Proxies at or below this latency (seconds) keep their current binding and are skipped by reordering; slower ones are refilled from the pool. Saved on change.': { en: 'Proxies at or below this latency (seconds) keep their current binding and are skipped by reordering; slower ones are refilled from the pool. Saved on change.', zh: '延迟不高于该值（秒）的代理保持现绑定、不参与重排；更慢的才从池里回填。改动即时落盘。' },
   'latency_keep_threshold_saved': { en: 'Latency keep threshold saved', zh: '延迟保持阈值已保存' },
@@ -1397,7 +1430,7 @@ const I18N = {
   'Round-robin (round_robin)': { en: 'Round-robin (round_robin)', zh: '轮询（round_robin）' },
   'Random (random)': { en: 'Random (random)', zh: '随机（random）' },
   'Fill (fill)': { en: 'Fill (fill)', zh: '填满优先（fill）' },
-  'Save proxy pool': { en: 'Save proxy pool', zh: '保存代理池' },
+  'Save proxy pool': { en: 'Save config', zh: '保存配置' },
   'Test all credentials': { en: 'Test all credentials', zh: '全量测试' },
   'all_platform_test_finished': { en: 'All-platform test finished', zh: '全平台测试完成' },
   'skipped_no_routable_credentials': { en: ' — skipped (no routable credentials): ', zh: '，跳过（无可路由凭据）：' },
@@ -1412,7 +1445,7 @@ const I18N = {
   'Proxy': { en: 'Proxy', zh: '代理' },
   'Attempts': { en: 'Attempts', zh: '尝试数' },
   'Last OK': { en: 'Last OK', zh: '最近成功' },
-  'Last Fail': { en: 'Last Fail', zh: '最近失败' },
+  'pp_zone_col': { en: 'Prefer CN', zh: '国内优先' },
   'Upstream attempts that egressed via this proxy since the pool was last edited': { en: 'Upstream attempts that egressed via this proxy since the pool was last edited', zh: '上次编辑代理池以来，经此代理出网的上游尝试次数' },
   'Average tunnel-setup time over successful attempts (TCP+TLS+CONNECT handshake only — excludes upstream first byte and task duration). Lower is better. Click to sort.': { en: 'Average tunnel-setup time over successful attempts (TCP+TLS+CONNECT handshake only — excludes upstream first byte and task duration). Lower is better. Click to sort.', zh: '成功尝试的平均隧道建立耗时（仅 TCP+TLS+CONNECT 握手——不含上游首字节与任务耗时）。越低越好。点击排序。' },
   'time_to_first_byte_from_request_start_to_the_fir': { en: 'Time to first byte: from request start to the first response byte (streaming = first upstream token; - = no response body, e.g. 413)', zh: '首字节耗时：请求开始到首个响应字节（流式=上游首 token 到达；-=无响应体如 413）' },
@@ -2013,8 +2046,8 @@ const I18N = {
   'save_config': { en: 'Save config', zh: '保存配置' },
   'save_headers': { en: 'Save headers', zh: '保存请求头' },
   'save_order': { en: 'Save order', zh: '保存顺序' },
-  'save_proxy_exclusion_rules': { en: 'Save proxy exclusion rules', zh: '保存代理排除规则' },
-  'save_proxy_pool': { en: 'Save proxy pool', zh: '保存代理池' },
+  'save_proxy_exclusion_rules': { en: 'Save config', zh: '保存配置' },
+  'save_proxy_pool': { en: 'Save config', zh: '保存配置' },
   'save_rate_limit_config': { en: 'Save rate-limit config', zh: '保存限速配置' },
   'scan_tasks': { en: 'Scan tasks', zh: '扫描任务' },
   'select_all': { en: 'Select all', zh: '全选' },
@@ -2355,8 +2388,9 @@ function renderWorkbuddyAccounts() {
     // **显示值**；可编辑值提交后由后端落 nickname 字段。
     const wbNick = account.nickname || '';
     const wbDisplayName = account.name || account.email || wbNick || ('Account ' + id);
-    // data-realm 供一键代理/延迟重排识别 CN 域行（同 trae 行注释口径）。
-    return '<tr draggable="true" data-wb-id="' + esc(id) + '" data-drag-id="' + esc(id) + '" data-realm="' + esc(realm) + '">' +
+    // data-realm 供一键代理/延迟重排识别 CN 域行（2026-11-26 起为声明推导的
+    // 有效域：declaredRowRealm('wb', 账号 realm)）。
+    return '<tr draggable="true" data-wb-id="' + esc(id) + '" data-drag-id="' + esc(id) + '" data-realm="' + esc(declaredRowRealm('wb', realm)) + '">' +
       '<td class="mono" style="font-size:11px;color:var(--text3)">#' + (i + 1) + '</td>' +
       '<td><div class="wb-account"><div class="wb-account-main">' +
         '<div class="nick-wrap">' +
@@ -3481,7 +3515,7 @@ async function loadAccounts() {
       // 账号列改造（2026-11-19）：副行 = 凭据掩码（api 型=sk_ 掩码、oauth 型=
       // refreshToken 掩码；缺退回邮箱），点击单元格打开编辑弹窗。
       const credSub = a.credMask || '';
-      return '<tr draggable="true" data-drag-id="' + esc(a.accountId) + '">' +
+      return '<tr draggable="true" data-drag-id="' + esc(a.accountId) + '" data-realm="' + declaredRowRealm('acc') + '">' +
         '<td class="mono" style="font-size:11px;color:var(--text3)">#' + (i + 1) + '</td>' +
         '<td style="cursor:pointer" title="' + esc(T('edit_account')) + '" data-acc-edit="' + esc(a.accountId) + '"><div class="nick-cell"><div class="nick-wrap">' +
           '<span class="nick-name" title="' + esc(displayName) + '">' + esc(displayName) + '</span>' +
@@ -3551,11 +3585,14 @@ async function loadProxyListCache() {
   try {
     const d = await api('GET', '/opencode/config');
     proxyListCache = (d.data.proxies || []).slice();
+    ppZones = d.data.proxyZones || {};
+    zoneRealms = d.data.zoneRealms || [];
+    zoneRealmsStaged = new Set(zoneRealms);
     backupProxyOn = d.data.backupProxyEnabled === true;
     proxyExclusions = d.data.proxyExclusions || {};
     proxyExclusionsAll = d.data.proxyExclusionsAll || [];
     ppBulkSel.clear();
-    proxyExclusionsAll.forEach(p => ppBulkSel.add(p));
+    proxyExclusionsAll.forEach(p => ppBulkSel.add(ppAliasOf(p) || p));
     proxyBindCaps = d.data.proxyBindCaps || {};
     reorderKeepSecCfg = Number(d.data.reorderKeepSec) > 0 ? Number(d.data.reorderKeepSec) : 8;
     const af = _('ppAutoFailover'); if (af) af.checked = d.data.proxyAutoFailover === true;
@@ -3564,6 +3601,68 @@ async function loadProxyListCache() {
   } catch (e) { /* keep previous cache */ }
 }
 const maskProxyLabel = p => String(p || '').replace(/\/\/[^@/]*@/, '//***@');
+// ppZones 出口分区缓存（2026-11-26 用户定）：出口 URL → 'cn'/'global'（空 =
+// 不限）。语义与后端 zone.go 同矩阵——无分区出口对所有凭据可用；cn 保留出口
+// 仅 cn 域凭据（trae/wb 的 cn 行）；global 保留出口仅国际域凭据（intl/global
+// 行）；无域平台（cline 等，行无 data-realm）不用保留出口。手动绑定不受限。
+let ppZones = {};
+// zoneRealms 平台域声明集（2026-11-26 用户定）：面板下拉勾选"哪些平台可作为
+// cn 平台"。键形态与后端 DeclaredRealm 同矩阵（'cline'/'zen'/'freepi'/
+// 'other:<slug>' 整平台；'wb:cn'/'wb:gb'/'trae:cn'/'trae:gb' 按凭据区域）。
+let zoneRealms = [];
+// declaredRowRealm 凭据行的有效域（与后端 DeclaredRealm 同矩阵）：行渲染时
+// 写入 data-realm，供 zone 兼容过滤与 CN 占用保护统一消费。
+// kind = 排除规则口径（acc/trae/key/wb/freepi/other:<slug>）；rowRealm = 凭据
+// 自身区域（wb=账号 realm、trae=uid 前缀 cn/intl、其余空）。
+function declaredRowRealm(kind, rowRealm) {
+  const has = k => zoneRealms.indexOf(k) >= 0;
+  const sub = { wb: ['wb:cn', 'wb:gb'], trae: ['trae:cn', 'trae:gb'] }[kind];
+  if (sub) {
+    if (rowRealm === 'cn') return has(sub[0]) ? 'cn' : '';
+    if (rowRealm === 'global' || rowRealm === 'intl') return has(sub[1]) ? 'global' : '';
+    return '';
+  }
+  return has(kind) ? 'cn' : '';
+}
+// ppAliasOf 代理行备注名（#fragment 后段）：备注名是规则/统计/区域的主键
+//（2026-11-26 用户定），ppZones 与排除表均按别名键。
+const ppAliasOf = u => { const i = String(u || '').lastIndexOf('#'); return i >= 0 ? String(u).slice(i + 1).trim() : ''; };
+// exitZoneCompatible 凭据域与出口区域兼容判定（与后端 zone.go 同矩阵，
+// 2026-11-26 用户定语义修正）：不限出口对所有凭据可用；国内出口对声明国际
+// 的凭据不分配，声明国内与无域凭据（未声明平台）可用。
+function exitZoneCompatible(url, realm) {
+  const z = ppZones[ppAliasOf(url)] || '';
+  if (!z) return true;
+  if (realm === 'intl' || realm === 'global') return false;
+  return true;
+}
+// ppZoneCell 健康表「区域」列单元格：不限/国内 下拉，onchange 即存（合并
+// 服务端最新表——快照覆盖统一修，2026-11-26 用户定）。
+// ppZoneCell 健康表「优先国内」列单元格（2026-11-26 用户定改滑块）：关 =
+// 全球（不限）、开 = 国内；开关联动保存，绿色 = 国内一眼区分。
+function ppZoneCell(maskedProxy) {
+  const alias = ppAliasOf(maskedProxy);
+  const on = ppZones[alias] === 'cn';
+  return '<label class="pr-switch pp-zone-sw" style="display:inline-flex;justify-content:center" title="' + esc(T('prefer_cn_hint')) + '">' +
+    '<input type="checkbox" data-zone-alias="' + esc(alias) + '" onchange="saveProxyZoneRow(this)"' + (on ? ' checked' : '') + '>' +
+    '<span style="display:none"></span>' +
+    '</label>';
+}
+async function saveProxyZoneRow(el) {
+  const alias = el.dataset.zoneAlias;
+  const v = el.checked ? 'cn' : '';
+  try {
+    // 合并保存：以服务端最新区域表为基，只改本行——其他端改动不被覆盖。
+    const d = await api('GET', '/opencode/config');
+    const next = {};
+    const srv = d.data.proxyZones || {};
+    for (const k in srv) if (srv[k] === 'cn') next[k] = 'cn';
+    if (v) next[alias] = 'cn'; else delete next[alias];
+    ppZones = next;
+    await api('POST', '/opencode/config/update', { proxyZones: next });
+    toast(T('saved'), 'success');
+  } catch (e) { toast(T('save_failed') + e.message, 'error'); loadProxyPool(); }
+}
 // 每代理"最近在线率"缓存：与代理池页健康表同源（/opencode/config 的
 // runtime.proxyHealth）。快照里的 proxy 是打码 URL，与 proxyListCache 的
 // 完整 URL 对不上，两侧都剥掉凭据段后再以剩余部分作 key 对齐。
@@ -3640,7 +3739,6 @@ function proxyRateSet(match, rate) {
   row.recentRate = rate;
   if (!row.attempts) { row.attempts = 150; row.successes = Math.round(150 * rate); }
   row.lastOk = new Date().toISOString();
-  if (rate < 1 && !row.lastErr) row.lastErr = 'manual entry';
   row.m = 1;
   proxyHealthByProxy[k] = row;
   saveProxyHealthStore();
@@ -3752,15 +3850,13 @@ function stageProxiesByOrder(kind) {
     .filter(r => r.querySelector('.eg-input[data-eg="' + kind + '"][data-slot="main"]'));
   if (!rows.length) { toast(T('no_credentials_to_bind'), 'info'); return; }
   if (!proxyListCache.length) { toast(T('proxy_pool_is_empty'), 'info'); return; }
-  // CN 域账号行不参与一键代理（2026-11-07 用户定，仅 trae/wb 有域语义）：绑定
-  // 原样保留；其占用代理从分配序列剔除——专属出口不得再分给其他凭据。
-  // 占用保护（cnOccupied）只对同样有 CN 域语义的平台生效（2026-11-08 用户定）：
-  // 否则 cline/opencode 等平台一键代理会被 trae/wb CN 账号占住的代理（如 DDSG）
-  // 误伤——其他平台没有「CN 专属出口」的概念。
-  const hasCNRealm = kind === 'trae' || kind === 'wb';
-  const skippedCN = hasCNRealm ? rows.filter(r => r.dataset.realm === 'cn').length : 0;
+  // CN 域凭据行不参与一键代理（2026-11-26 用户定：国内凭据不参与自动化）：
+  // 绑定原样保留（手动绑定）。占用保护（cnOccupied）只对有国内凭据的平台
+  // 生效（2026-11-26 用户定收窄）——未声明平台把国内出口当普通出口，不受
+  // 占用保护约束。
+  const skippedCN = rows.filter(r => r.dataset.realm === 'cn').length;
   if (skippedCN) rows = cnRowFilter(rows);
-  const cnOccupied = hasCNRealm ? cnDomainOccupiedProxies() : new Set();
+  const cnOccupied = platformHasCN(kind) ? cnDomainOccupiedProxies() : new Set();
   // 自动分配规则：对该平台拉黑的代理不参与按序绑定（手动绑定不受限）。
   // Other 的规则按子平台存（other:<slug>），这里用当前选中的子平台取候选。
   // 手动禁用（健康表「冷却」，无到期）的代理同样不参与——后续凭据前移递补。
@@ -3768,11 +3864,16 @@ function stageProxiesByOrder(kind) {
   const skippedManual = proxyListCache.filter(p => proxyManuallyCooled(p)).length;
   const pool = proxyListCache.filter(p => !proxyExcludedFor(p, ruleKind) && !proxyManuallyCooled(p) && !cnOccupied.has(p));
   const seq = proxyExcludedFor(EGRESS_DIRECT, ruleKind) ? pool : [EGRESS_DIRECT].concat(pool);
-  let n = 0, left = 0;
+  let n = 0, left = 0, cursor = 0;
   rows.forEach((row, i) => {
-    if (i >= seq.length) { left++; return; }
+    // 出口分区过滤（2026-11-26 用户定）：每行按凭据域取 seq 中下一个兼容出口
+    // ——保留出口（zone cn/global）不分给不兼容域的行。
+    const realm = row.dataset.realm || '';
+    while (cursor < seq.length && !exitZoneCompatible(seq[cursor], realm)) cursor++;
+    if (cursor >= seq.length) { left++; return; }
     const main = row.querySelector('.eg-input[data-eg="' + kind + '"][data-slot="main"]');
-    const v = seq[i];
+    const v = seq[cursor];
+    cursor++;
     if (main.dataset.value === v) return;
     main.dataset.value = v;
     main.value = egDisplayLabel(v, kind);
@@ -3880,6 +3981,14 @@ async function saveReorderKeepSec(v) {
     syncReorderKeepSecInput();
   }
 }
+// saveReorderCron 定时重排 cron（2026-11-26 用户定）：onchange 即存，空串 =
+// 关闭定时。后端校验 5 字段分钟级表达式。
+async function saveReorderCron(v) {
+  try {
+    await api('POST', '/opencode/config/update', { proxyReorderCron: v.trim() });
+    toast(T('saved'), 'success');
+  } catch (e) { toast(T('save_failed') + e.message, 'error'); }
+}
 function proxyHsMsForReorder(v) {
   const r = proxyHealthByProxy[proxyHealthKey(v)];
   return Math.round(Number(r && r.avgHsMs) || 0);
@@ -3906,9 +4015,23 @@ let proxyExclusions = {};
 let proxyExclusionsAll = [];
 let proxyBindCaps = {};
 const PROXY_RULE_DIRECT_KEY = '__direct__';   // 直连在排除表里的哨兵键（与后端 proxyRuleDirectKey 一致）
-// 直连不是池条目，映射到哨兵键后查同一张排除表；池条目另查全局集
-const proxyExcludedFor = (v, kind) => (v !== EGRESS_DIRECT && proxyExclusionsAll.indexOf(v) >= 0) ||
-  (proxyExclusions[v === EGRESS_DIRECT ? PROXY_RULE_DIRECT_KEY : v] || []).indexOf(kind) >= 0;
+// 直连不是池条目，映射到哨兵键后查同一张排除表；池条目另查全局集。
+// 排除表/全局集键为备注名（2026-11-26 用户定主键）：查 RuleKeyOf 精确键，
+// 存量 URL 键按别名等价兜底。
+const ruleMapHas = (map, v, kind) => {
+  const key = ppAliasOf(v) || v;
+  if ((map[key] || []).indexOf(kind) >= 0) return true;
+  for (const k in map) {
+    if (k !== key && k.indexOf('#') >= 0 && ppAliasOf(k) === key && (map[k] || []).indexOf(kind) >= 0) return true;
+  }
+  return false;
+};
+const proxyExclusionsAllHas = v => {
+  const key = ppAliasOf(v) || v;
+  return proxyExclusionsAll.some(x => x === key || (x.indexOf('#') >= 0 && ppAliasOf(x) === key));
+};
+const proxyExcludedFor = (v, kind) => (v !== EGRESS_DIRECT && proxyExclusionsAllHas(v)) ||
+  ruleMapHas(proxyExclusions, v === EGRESS_DIRECT ? PROXY_RULE_DIRECT_KEY : v, kind);
 const proxyCapFor = kind => Math.max(0, Number(proxyBindCaps[kind]) || 0);
 // 延迟档位：0=≤阈值 快 1=无记录 2=>阈值 慢（阈值见 reorderKeepMs，面板可调）。
 const proxyTierFor = v => { const ms = proxyHsMsForReorder(v); return ms > reorderKeepMs() ? 2 : (ms > 0 ? 0 : 1); };
@@ -3934,7 +4057,7 @@ const proxyManuallyCooled = v => {
 // 行识别靠渲染时写入的 tr data-realm（trae 由 uid 前缀推导、wb 由账号 realm）。
 function cnDomainOccupiedProxies() {
   const occ = new Set();
-  ['#traeAccountsBody', '#wbAccountsBody'].forEach(sel => {
+  ['#traeAccountsBody', '#wbAccountsBody', '#otherKeysBody'].forEach(sel => {
     document.querySelectorAll(sel + ' tr[data-realm="cn"]').forEach(r => {
       const m = r.querySelector('.eg-input[data-slot="main"]');
       const v = m ? m.dataset.value : '';
@@ -3944,6 +4067,17 @@ function cnDomainOccupiedProxies() {
   return occ;
 }
 const cnRowFilter = rows => rows.filter(r => r.dataset.realm !== 'cn');
+// platformHasCN 平台是否声明了国内域（占用保护生效判定，2026-11-26 用户定
+// 收窄：只在有国内凭据的平台上生效）。kind = 排除规则口径。
+function platformHasCN(kind) {
+  const has = k => zoneRealms.indexOf(k) >= 0;
+  if (kind === 'acc' || kind === 'key' || kind === 'freepi') return has(kind);
+  if (kind === 'wb') return has('wb:cn');
+  if (kind === 'trae') return has('trae:cn');
+  if (kind === 'other') return !!currentOtherSlug && has('other:' + currentOtherSlug);
+  if (kind && kind.indexOf('other:') === 0) return has(kind);
+  return false;
+}
 // 一键代理前拉一次最新代理池状态：健康快照只在代理池页加载时刷新，
 // 凭据页点按钮时缓存可能是旧的，误判会绕过手动禁用。
 async function refreshProxyHealthCache() {
@@ -3971,11 +4105,10 @@ function applyReorderRules(kind, parts) {
   const keepMs = reorderKeepMs();
   const inPool = v => proxyListCache.indexOf(v) >= 0;
   // 供给偏好序：池内未被拉黑且未手动禁用的代理，快（延迟升序）→ 无记录（池序）→ 慢（延迟升序）
-  // CN 域账号（trae/wb）占用的代理不进供给（2026-11-07 用户定）：专属出口
-  // 不得被重排分给其他凭据。跨表扫描 + 只在有 CN 域语义的平台生效
-  // （2026-11-08 用户定）：trae/wb 互避对方 CN 账号的占用；cline/opencode 等
-  // 没有域语义，不受 CN 专属出口约束。
-  const cnOccupied = (kind === 'trae' || kind === 'wb') ? cnDomainOccupiedProxies() : new Set();
+  // CN 域凭据占用的代理不进供给（2026-11-07 用户定）：专属出口不得被重排
+  // 分给其他凭据。占用保护只在有国内凭据的平台上生效（2026-11-26 用户定
+  // 收窄）——未声明平台把国内出口当普通出口，不受约束。
+  const cnOccupied = platformHasCN(kind) ? cnDomainOccupiedProxies() : new Set();
   const pref = proxyListCache.filter(p => !proxyExcludedFor(p, kind) && !proxyManuallyCooled(p) && !cnOccupied.has(p)).sort((a, b) => {
     const ta = proxyTierFor(a), tb = proxyTierFor(b);
     if (ta !== tb) return ta - tb;
@@ -4000,9 +4133,13 @@ function applyReorderRules(kind, parts) {
   repair.sort((a, b) => (b.forced ? 1 : 0) - (a.forced ? 1 : 0));
   let n = 0, stuck = 0;
   for (const r of repair) {
+    // 出口分区过滤（2026-11-26 用户定）：候选按行凭据域过滤——保留出口不进
+    // 不兼容域行的候选。存量不合规绑定不强制挪（避免重排大洗牌）。
+    const realm = (r.m.closest('tr') || { dataset: {} }).dataset.realm || '';
     let best = null;
     for (const p of pref) {
       if (p === r.v) continue;            // 候选 = 现状没有意义
+      if (!exitZoneCompatible(p, realm)) continue;
       if (capLeft(p) > 0) { best = p; break; }
     }
     // 非强制行：没有候选或候选不严格更优 → 原样保留（保留也占容量）
@@ -4031,12 +4168,13 @@ function collectReorderParts(kind) {
   // CN 域账号行不参与延迟重排（2026-11-07 用户定）：它们不出现在 parts 里，
   // applyReorderRules 的冻结语义天然保留其原绑定；其占用代理由调用方
   // （applyReorderRules 的供给过滤）从候选剔除。
-  const skipCN = kind === 'trae' || kind === 'wb';
+  // 声明 cn 的凭据行不参与重排（2026-11-26 用户定：cn 绑定多为手动精选，
+  // 定时重排不碰；zone 过滤兜底保证不被挪出保留出口）。
   // 直连被该平台排除时，绑直连的行也进入修复段（强制挪到可用代理）；
   // 未排除时直连/全局照旧完全不参与重排（保持既有口径）。
   const directIn = proxyExcludedFor(EGRESS_DIRECT, kind);
   return [...document.querySelectorAll(tbody + ' tr')]
-    .filter(r => !skipCN || r.dataset.realm !== 'cn')
+    .filter(r => r.dataset.realm !== 'cn')
     .map(r => r.querySelector('.eg-input[data-eg="' + kind + '"][data-slot="main"]'))
     .filter(Boolean)
     .filter(m => m.dataset.value && (m.dataset.value !== EGRESS_DIRECT || directIn));
@@ -4861,12 +4999,23 @@ async function loadLogs() {
         '<td><span class="model-tag">' + esc(route) + '</span></td>' +
         '<td class="mono" style="font-size:11px">' + esc(fmtUpstream(l.upstream) || '-') + '</td>' +
         '<td>' + esc(proxy) + '</td>' +
-        '<td style="font-weight:600;' + STATUS_CLASS(st, l.error) + '"' + (l.error ? ' title="' + esc(l.error) + '"' : '') + '>' + st + '</td>' +
+        '<td style="font-weight:600;' + STATUS_CLASS(st, l.error) + (l.error ? ';cursor:pointer' : '') + '"' +
+          (l.error ? ' title="' + esc(l.error) + '" data-err="' + esc(encodeURIComponent(l.error)) + '" onclick="copyReqError(this.dataset.err)"' : '') + '>' + st + '</td>' +
         '<td class="mono" style="font-size:11px" title="' + esc(T('time_to_first_byte_from_request_start_to_the_fir')) + '">' + (l.ttfb_ms == null || l.ttfb_ms < 0 ? '-' : l.ttfb_ms + ' ms') + '</td>' +
         '<td class="mono" style="font-size:11px">' + (l.duration_ms != null ? l.duration_ms + ' ms' : '-') + '</td>' +
       '</tr>';
     }).join('');
   } catch (e) { tbody.innerHTML = '<tr><td colspan="11" class="empty">Failed to load</td></tr>'; }
+}
+
+// copyReqError 点击状态码复制错误提示（2026-11-26 用户定）：复制该请求的
+// 错误日志原文到剪贴板（错误经 encodeURIComponent 存 dataset，避免引号转义）。
+function copyReqError(enc) {
+  const text = decodeURIComponent(enc || '');
+  if (!text) return;
+  navigator.clipboard.writeText(text).then(
+    () => toast(T('error_copied'), 'success'),
+    () => toast(T('copy_failed'), 'error'));
 }
 
 // ========== Config updates ==========
@@ -5474,6 +5623,9 @@ async function loadPlatformBans() {
 }
 function platformBanOptions() {
   const out = PLATFORM_BAN_BASE.slice();
+  // Other 父级行（2026-11-26 用户定改勾选框）：勾 = 全选 Other 子平台、
+  // 取消 = 全不选，部分选中半选态；样式与 Cline 等基础平台行一致。
+  out.push({ group: 'Other' });
   ((otherConfig && otherConfig.platforms) || []).forEach(p => {
     out.push({ key: 'other:' + p.slug, label: p.name || p.slug, sub: true });
   });
@@ -5490,12 +5642,35 @@ function renderPlatformBan() {
   ).join('');
   const cnt = _('platformBanCount');
   if (cnt) cnt.textContent = platformBansStaged.size ? '· ' + platformBansStaged.size : '';
-  menu.innerHTML = opts.map(o =>
-    '<label class="pb-row' + (o.sub ? ' pb-row-sub' : '') + '">' +
+  menu.innerHTML = opts.map(o => {
+    if (o.group) {
+      return '<label class="pb-row">' +
+        '<input type="checkbox" data-pb-parent="1" onchange="togglePlatformBanGroup(this.checked)">' +
+        '<span>' + esc(o.group) + '</span>' +
+      '</label>';
+    }
+    return '<label class="pb-row' + (o.sub ? ' pb-row-sub' : '') + '">' +
       '<input type="checkbox"' + (platformBansStaged.has(o.key) ? ' checked' : '') +
       ' data-pb="' + esc(o.key) + '" data-pb-label="' + esc(o.label) + '" onchange="stagePlatformBan(this.dataset.pb, this.checked)">' +
       '<span>' + esc(o.label) + '</span>' +
-    '</label>').join('');
+    '</label>';
+  }).join('');
+  // 父级态回写：全选勾、部分选中半选、全不选空（与国内平台声明同逻辑）。
+  const pInput = menu.querySelector('input[data-pb-parent]');
+  if (pInput) {
+    const kids = opts.filter(x => x.sub).map(x => x.key);
+    const on = kids.filter(k => platformBansStaged.has(k)).length;
+    pInput.checked = kids.length > 0 && on === kids.length;
+    pInput.indeterminate = on > 0 && on < kids.length;
+  }
+}
+// togglePlatformBanGroup Other 父级全选/全不选（勾选态只落暂存，「保存」统一落盘）。
+function togglePlatformBanGroup(on) {
+  platformBanOptions().forEach(o => {
+    if (!o.sub) return;
+    if (on) platformBansStaged.add(o.key); else platformBansStaged.delete(o.key);
+  });
+  renderPlatformBan();
 }
 function togglePlatformBanMenu(ev) {
   ev.stopPropagation();
@@ -5519,6 +5694,13 @@ document.addEventListener('click', ev => {
     if (!detachedIn(trMenu, ev.target)) {
       const trBox = _('trPlatBox');
       if (!(trBox && trBox.contains(ev.target))) pbMenuHide(trMenu);
+    }
+  }
+  const zrMenu = _('zoneRealmMenu');
+  if (pbMenuIsOpen(zrMenu)) {
+    if (!detachedIn(zrMenu, ev.target)) {
+      const zrBox = _('zoneRealmBox');
+      if (!(zrBox && zrBox.contains(ev.target))) pbMenuHide(zrMenu);
     }
   }
 });
@@ -5782,7 +5964,7 @@ function renderOcKeyStates(ks) {
             esc(fb ? T('org_fallback_title') : T('org_discovered_title')) + '">' +
             esc(k.orgID) + (fb ? T('org_fallback_suffix') : '') + '</span>';
         }
-        return '<tr draggable="true" data-drag-id="' + k.index + '"><td>#' + (k.index + 1) + (k.current ? ' <span style="color:var(--accent)" title="' + esc(T('next_in_rotation')) + '">●</span>' : '') + '</td>' +
+        return '<tr draggable="true" data-drag-id="' + k.index + '" data-realm="' + declaredRowRealm('key') + '"><td>#' + (k.index + 1) + (k.current ? ' <span style="color:var(--accent)" title="' + esc(T('next_in_rotation')) + '">●</span>' : '') + '</td>' +
           // 账号列（2026-11-19）：昵称主行 + 掩码 key 副行，点击打开编辑弹窗
           '<td style="cursor:pointer" title="' + esc(T('edit_account')) + '" data-zen-edit="' + k.index + '">' +
             '<div class="nick-cell"><div class="nick-wrap">' +
@@ -6036,15 +6218,20 @@ async function loadProxyPool() {
     const [oc, cfg] = await Promise.all([api('GET', '/opencode/config'), api('GET', '/config')]);
     const c = oc.data;
     proxyListCache = (c.proxies || []).slice();
+    ppZones = c.proxyZones || {};
+    zoneRealms = c.zoneRealms || [];
+    zoneRealmsStaged = new Set(zoneRealms);
     syncProxyHealthCache((c.runtime || {}).proxyHealth);
     backupProxyOn = c.backupProxyEnabled === true;
     proxyExclusions = c.proxyExclusions || {};
     proxyExclusionsAll = c.proxyExclusionsAll || [];
     ppBulkSel.clear();
-    proxyExclusionsAll.forEach(p => ppBulkSel.add(p));
+    proxyExclusionsAll.forEach(p => ppBulkSel.add(ppAliasOf(p) || p));
     proxyBindCaps = c.proxyBindCaps || {};
     reorderKeepSecCfg = Number(c.reorderKeepSec) > 0 ? Number(c.reorderKeepSec) : 8;
     syncReorderKeepSecInput();
+    const rc = _('ppReorderCron'); if (rc) rc.value = c.proxyReorderCron || '';
+    renderZoneRealms();
     renderProxyRules();
     _('ppProxies').value = (c.proxies || []).join('\n');
     _('ppStrategy').value = c.proxyStrategy || 'round_robin';
@@ -6171,7 +6358,6 @@ function renderProxyHealth(rowsIn) {
             : t.ok
               ? '<span class="pp-rate t-' + hsTierOf(t.minMs) + ' w3" title="' + esc(t.minMs + ' / ' + t.medianMs + ' ms · ' + (t.samples || 0) + '/' + PP_TEST_SAMPLES + ' · ' + fmtWhen(t.at)) + '">' + hsBadgeText(t.minMs) + '</span>'
               : '<span style="font-size:11px;color:var(--danger,#ef4444)" title="' + esc(t.err || '') + '">' + T('failed_3') + '</span>';
-        const failTitle = r.lastErr ? ' title="' + esc(r.lastErr) + '"' : '';
         return '<tr>' +
           '<td class="mono" style="font-size:11px">' + esc(egLabel(r.proxy)) + '</td>' +
           '<td style="text-align:center">' + (r.attempts || 0) + '</td>' +
@@ -6179,9 +6365,9 @@ function renderProxyHealth(rowsIn) {
           '<td style="text-align:center">' + rateCell(rec, r.recentRate) + '</td>' +
           '<td style="text-align:center" title="' + esc(T('Avg tunnel-setup time of successful attempts (TCP+TLS+CONNECT), excluding upstream response; samples: ')) + (r.hsCount || 0) + '">' + hs + '</td>' +
           '<td style="text-align:center">' + testCell + '</td>' +
-          '<td class="mono" style="font-size:11px">' + (r.lastOk ? fmtWhen(r.lastOk) : '<span style="color:var(--text3)">-</span>') + '</td>' +
-          '<td class="mono" style="font-size:11px"' + failTitle + '>' + (r.lastFail ? fmtWhen(r.lastFail) : '<span style="color:var(--text3)">-</span>') + '</td>' +
-          '<td>' + (r.cooling
+          '<td class="mono pp-health-cell-c" style="font-size:11px">' + (r.lastOk ? fmtWhen(r.lastOk) : '<span style="color:var(--text3)">-</span>') + '</td>' +
+          '<td class="pp-health-cell-c">' + ppZoneCell(r.proxy) + '</td>' +
+          '<td class="pp-health-cell-c">' + (r.cooling
             // 手动冷却（2026-11-02 用户定）没有到期时间：后端 coolingUntil 为空串，
             // 显示「手动」——不显示恢复时刻，因为只有点「解禁」才会恢复。
             ? '<span class="mono" style="font-size:11px;color:var(--warning,#eab308)">' + (r.coolingUntil ? esc(fmtWhen(r.coolingUntil)) : esc(T('manual'))) + '</span>'
@@ -6359,8 +6545,13 @@ function ruleLeaves() {
   return out;
 }
 
+// ppRulesLoadSnapshot 排除表加载快照（合并保存基线，2026-11-26 用户定快照
+// 覆盖统一修）：保存时以服务端最新表为基，本地相对快照的增删覆盖下发——
+// 差分自动写入/其他端改动的新条目不被本页旧快照清掉。
+let ppRulesLoadSnapshot = null;
 function ppRulesState() {
   if (!ppRulesCache) {
+    ppRulesLoadSnapshot = JSON.parse(JSON.stringify(proxyExclusions || {}));
     ppRulesCache = {};
     ruleLeaves().forEach(r => {
       // 每平台卡片只列该平台自己的排除（原始 kinds 表），全局条目不重复展示
@@ -6368,8 +6559,8 @@ function ppRulesState() {
       ppRulesCache[r.key] = {
         cap: proxyCapFor(r.key),
         ex: proxyListCache.filter(p =>
-          proxyExclusionsAll.indexOf(p) < 0 &&
-          (proxyExclusions[p] || []).indexOf(r.key) >= 0),
+          !proxyExclusionsAllHas(p) &&
+          ruleMapHas(proxyExclusions, p, r.key)),
         dx: (proxyExclusions[PROXY_RULE_DIRECT_KEY] || []).indexOf(r.key) >= 0
       };
     });
@@ -6382,7 +6573,7 @@ function ppRulesState() {
 // 输入路径绝不重建输入框节点（见 ppRuleInput）。
 function prMenuRows(kind, st) {
   const left = proxyListCache.filter(p => p !== EGRESS_DIRECT && st.ex.indexOf(p) < 0 &&
-    proxyExclusionsAll.indexOf(p) < 0);
+    !proxyExclusionsAllHas(p));
   const q = prQuery.toLowerCase();
   const shown = left.filter(p => !q || egSearchText(p).includes(q));
   if (!shown.length) {
@@ -6450,7 +6641,7 @@ function renderProxyRules() {
     if (!tb.dataset.loading) {
       tb.dataset.loading = '1';
       tb.innerHTML = '<div class="pr-none" style="padding:10px 12px">Loading...</div>';
-      loadOtherConfig().then(() => { ppRulesCache = null; renderProxyRules(); })
+      loadOtherConfig().then(() => { ppRulesCache = null; renderProxyRules(); renderZoneRealms(); })
         .catch(() => { otherConfig = { platforms: [] }; ppRulesCache = null; renderProxyRules(); });
     }
     return;
@@ -6592,11 +6783,25 @@ async function saveProxyRules() {
   // 显式清空全局集。
   const globals = [];
   proxyListCache.forEach(p => {
-    if (ppBulkSel.has(p) && globals.indexOf(p) < 0) globals.push(p);
+    if (ppBulkSel.has(ppAliasOf(p) || p) && globals.indexOf(p) < 0) globals.push(p);
   });
   const af = _('ppAutoFailover');
   try {
-    await api('POST', '/opencode/config/update', { proxyExclusions: exclusions, proxyExclusionsAll: globals, proxyBindCaps: caps, proxyAutoFailover: af ? af.checked : undefined });
+    // 快照覆盖统一修（2026-11-26 用户定）：保存前拉服务端最新排除表为基，
+    // 本地编辑（相对加载快照的增删）覆盖下发——差分自动写入的新条目不被
+    // 本页旧快照清掉。
+    const latest = await api('GET', '/opencode/config');
+    const merged = {};
+    const srv = latest.data.proxyExclusions || {};
+    for (const k in srv) merged[k] = srv[k];
+    for (const k in exclusions) merged[k] = exclusions[k];
+    if (ppRulesLoadSnapshot) {
+      for (const k in ppRulesLoadSnapshot) {
+        if (!(k in exclusions)) delete merged[k]; // 本地已删除的条目
+      }
+    }
+    await api('POST', '/opencode/config/update', { proxyExclusions: merged, proxyExclusionsAll: globals, proxyBindCaps: caps, zoneRealms: [...zoneRealmsStaged], proxyAutoFailover: af ? af.checked : undefined });
+    zoneRealms = [...zoneRealmsStaged];
     toast(T('saved_proxy_exclusion_rules'), 'success');
     loadProxyPool();
   } catch (e) { toast(T('save_failed') + e.message, 'error'); }
@@ -6611,6 +6816,104 @@ async function saveProxyRules() {
 // （× = 从所有平台批量取消，同为暂存）。直连不在此列（各卡片的「排除直连」开关单独管）。
 const ppBulkSel = new Set();
 let ppBulkQuery = '';
+
+// ===== 平台域声明（2026-11-26 用户定，封禁平台同款交互）=====
+// 勾选哪些平台可作为 cn 平台：整平台键（acc/key/freepi/zen/other:<slug>）=
+// 全部凭据 cn 域；wb/trae 提供 cn/gb 子选项按凭据区域匹配。声明集是 zone
+// 兼容判定中凭据有效域的唯一来源（declaredRowRealm），未声明 = 无域 =
+// 不用保留出口。点选/去选只改暂存集，「保存」整表下发落盘。
+// 声明菜单（2026-11-26 用户定）：全部行带勾选框；WorkBuddy/TraeWork/Other
+// 为父级——父级勾选 = 全选其子级，取消 = 全不选，部分子级选中呈半选态；
+// 无子级的平台（Cline/OpenCode/FreePI）单勾选框 = 全部凭据国内域。声明集
+// 是凭据有效域的唯一来源（declaredRowRealm），未声明 = 无域 = 国内出口当
+// 普通出口用。点选/去选只改暂存集，「保存」整表下发落盘。
+let zoneRealmsStaged = new Set();
+function zoneRealmGroups() {
+  return [
+    { key: 'acc', label: 'Cline' },
+    { key: 'key', label: 'OpenCode' },
+    { key: 'freepi', label: 'FreePI' },
+    { group: 'WorkBuddy', children: [{ key: 'wb:cn', label: '国内', chip: 'WorkBuddy国内' }, { key: 'wb:gb', label: '国际', chip: 'WorkBuddy国际' }] },
+    { group: 'TraeWork', children: [{ key: 'trae:cn', label: '国内', chip: 'TraeWork国内' }, { key: 'trae:gb', label: '国际', chip: 'TraeWork国际' }] },
+    { group: 'Other', children: ((otherConfig && otherConfig.platforms) || []).map(p => ({ key: 'other:' + p.slug, label: p.name || p.slug })) }
+  ];
+}
+function zoneRealmChildKeys(it) { return (it.children || []).map(c => c.key); }
+// zoneRealmLabelOf chip 标签：子级带平台父级前缀（WorkBuddy国内——裸"国内"
+// 分不清是谁的，2026-11-26 用户定）；菜单行仍用短标签（有父级标题上下文）。
+function zoneRealmLabelOf(key) {
+  for (const it of zoneRealmGroups()) {
+    if (it.key === key) return it.label;
+    for (const c of (it.children || [])) if (c.key === key) return c.chip || c.label;
+  }
+  return key.indexOf('other:') === 0 ? key.slice(6) : key;
+}
+function renderZoneRealms() {
+  const chips = _('zoneRealmChips'), menu = _('zoneRealmMenu');
+  if (!chips || !menu) return;
+  const groups = zoneRealmGroups();
+  // chips：按菜单顺序（组序）渲染暂存键，与下拉一致（2026-11-26 用户定）；
+  // 分组未含的暂存键（otherConfig 未加载）兜底追加——不丢 chip。
+  const chipHtml = k =>
+    '<span class="pr-chip" title="' + esc(k) + '">' + esc(zoneRealmLabelOf(k)) +
+    '<button type="button" onclick="event.stopPropagation();stageZoneRealm(\'' + esc(k) + '\',false)" title="' + esc(T('remove')) + '">×</button></span>';
+  const ordered = [];
+  groups.forEach(it => {
+    (it.children ? zoneRealmChildKeys(it) : [it.key]).forEach(k => {
+      if (zoneRealmsStaged.has(k)) ordered.push(k);
+    });
+  });
+  [...zoneRealmsStaged].forEach(k => { if (ordered.indexOf(k) < 0) ordered.push(k); });
+  chips.innerHTML = ordered.map(chipHtml).join('');
+  // 菜单：父级 + 子级统一勾选框样式，子级缩进。
+  let html = '';
+  groups.forEach((it, gi) => {
+    if (it.children) {
+      html += '<label class="pb-row" style="font-weight:600">' +
+        '<input type="checkbox" data-zr-parent="' + gi + '" onchange="toggleZoneRealmGroup(' + gi + ', this.checked)">' +
+        '<span>' + esc(it.group) + '</span></label>';
+      it.children.forEach(c => {
+        html += '<label class="pb-row pb-row-sub">' +
+          '<input type="checkbox"' + (zoneRealmsStaged.has(c.key) ? ' checked' : '') +
+          ' data-zr="' + esc(c.key) + '" onchange="stageZoneRealm(this.dataset.zr, this.checked)">' +
+          '<span>' + esc(c.label) + '</span></label>';
+      });
+    } else {
+      html += '<label class="pb-row">' +
+        '<input type="checkbox"' + (zoneRealmsStaged.has(it.key) ? ' checked' : '') +
+        ' data-zr="' + esc(it.key) + '" onchange="stageZoneRealm(this.dataset.zr, this.checked)">' +
+        '<span>' + esc(it.label) + '</span></label>';
+    }
+  });
+  menu.innerHTML = html;
+  // 父级态回写：全选勾、部分选中半选、全不选空。
+  menu.querySelectorAll('input[data-zr-parent]').forEach(inp => {
+    const it = groups[Number(inp.dataset.zrParent)];
+    const keys = zoneRealmChildKeys(it);
+    const on = keys.filter(k => zoneRealmsStaged.has(k)).length;
+    inp.checked = keys.length > 0 && on === keys.length;
+    inp.indeterminate = on > 0 && on < keys.length;
+  });
+}
+function toggleZoneRealmGroup(gi, on) {
+  const it = zoneRealmGroups()[gi];
+  if (!it || !it.children) return;
+  zoneRealmChildKeys(it).forEach(k => { if (on) zoneRealmsStaged.add(k); else zoneRealmsStaged.delete(k); });
+  renderZoneRealms();
+}
+function toggleZoneRealmMenu(ev) {
+  ev.stopPropagation();
+  pbMenuToggle(_('zoneRealmMenu'), _('zoneRealmBox'), renderZoneRealms);
+}
+function stageZoneRealm(key, on) {
+  if (on) zoneRealmsStaged.add(key); else zoneRealmsStaged.delete(key);
+  renderZoneRealms();
+}
+// 声明暂存随「保存配置」统一下发（2026-11-26 用户定：声明区无独立保存按钮）。
+function resetZoneRealms() {
+  zoneRealmsStaged = new Set(zoneRealms);
+  renderZoneRealms();
+}
 // ppBulkBoxClick 点框任意处 = 聚焦输入框并开菜单；已开时点框空白处收起
 // （2026-11-19 用户定 toggle 语义），点 chip 只聚焦不收起。
 // 焦点先于 click：第一次点击时 onfocus 已把菜单打开，随后的 click 若直接
@@ -6676,7 +6979,7 @@ function ppBulkKey(ev) {
     const q = ppBulkQuery.toLowerCase();
     const st = ppRulesState();
     const leaves = ruleLeaves();
-    const cand = proxyListCache.find(p => p !== EGRESS_DIRECT && !ppBulkSel.has(p) &&
+    const cand = proxyListCache.find(p => p !== EGRESS_DIRECT && !ppBulkSel.has(ppAliasOf(p) || p) &&
       !leaves.every(l => (st[l.key].ex || []).indexOf(p) >= 0) &&
       egLabel(p).toLowerCase().indexOf(q) >= 0);
     if (cand) {
@@ -6699,14 +7002,23 @@ function ppBulkSyncChips() {
   const chipOf = p => '<span class="pr-chip pr-chip-sel" title="' + esc(egLabel(p)) + '"><span>' + esc(egLabel(p)) + '</span>' +
     '<button type="button" onclick="event.stopPropagation();ppBulkPick(decodeURIComponent(this.dataset.pp),false)" data-pp="' + esc(encodeURIComponent(p)) + '" title="' + esc(T('remove')) + '">×</button></span>';
   const out = [];
-  proxyListCache.forEach(p => { if (ppBulkSel.has(p)) out.push(chipOf(p)); });
-  ppBulkSel.forEach(p => { if (proxyListCache.indexOf(p) < 0) out.push(chipOf(p)); });
+  // 裸备注名键（无 #）ppAliasOf 返回空——整串视作备注名比对（与后端
+  // IdxInPool 同口径，2026-11-26 修：此前 5 个别名键全被误判"不在池"重复渲染）。
+  const inPoolByIdentity = p => {
+    const ka = ppAliasOf(p) || p;
+    return proxyListCache.indexOf(p) >= 0 || proxyListCache.some(x => (ppAliasOf(x) || x) === ka);
+  };
+  proxyListCache.forEach(p => { if (ppBulkSel.has(ppAliasOf(p) || p)) out.push(chipOf(p)); });
+  // 暂存但不在池的条目（别名口径判定——URL 精确比对会把别名键误判为不在池
+  // 而重复渲染，2026-11-26 修）。
+  ppBulkSel.forEach(p => { if (!inPoolByIdentity(p)) out.push(chipOf(p)); });
   chips.innerHTML = out.join('');
 }
 // ppBulkReset 复位：丢弃代理排除规则区（含全局排除框）的全部暂存修改，按服务端
 // 上次保存的状态重绘。与账号表/封禁平台的 Discard 同语义——只丢暂存，不动落盘。
 async function ppBulkReset() {
   ppBulkSel.clear();
+  resetZoneRealms(); // 声明暂存一并复位（与排除卡同区共用 Discard）
   ppBulkQuery = '';
   prActiveKind = '';
   prQuery = '';
@@ -6726,7 +7038,7 @@ function ppBulkRenderMenu() {
   if (!menu) return;
   const q = ppBulkQuery.toLowerCase();
   const rows = proxyListCache
-    .filter(p => p !== EGRESS_DIRECT && !ppBulkSel.has(p))
+    .filter(p => p !== EGRESS_DIRECT && !ppBulkSel.has(ppAliasOf(p) || p))
     .filter(p => !q || egSearchText(p).includes(q))
     .map(p => {
       const host = maskProxyLabel(p).replace(/^[a-z0-9]+:\/\//i, '').split(/[\/?#]/)[0];
@@ -7135,7 +7447,7 @@ function renderTraeAccounts(accs) {
           '<button class="btn btn-sm btn-danger" data-trdel="' + a.index + '" title="Remove this account from the pool">' + T('delete') + '</button>' + '</td>';
         // data-realm 供一键代理/延迟重排识别 CN 域行（批量操作排除 + 占用代理
         // 不参与再分配，2026-11-07 用户定）：intl 前缀 = 国际域，其余 = 国内域。
-        const trRealm = a.uid.indexOf('trae-intl-') === 0 ? 'intl' : 'cn';
+        const trRealm = declaredRowRealm('trae', a.uid.indexOf('trae-intl-') === 0 ? 'intl' : 'cn');
         return '<tr draggable="true" data-drag-id="' + esc(a.uid) + '" data-realm="' + trRealm + '"><td>#' + (a.index + 1) + '</td>' +
           '<td style="min-width:0"><div style="max-width:150px" title="' + esc(label + '\n' + a.uid) + '">' +
             '<div class="nick-wrap">' +
@@ -7734,6 +8046,9 @@ async function addOtherManualModel() {
 function renderOtherKeys(ks) {
   const tb = _('otherKeysBody');
   if (!tb) return;
+  // 子平台域（2026-11-26 用户定）：按平台域声明推导（zoneRealms），写入行
+  // data-realm，供一键代理/延迟重排的 zone 兼容过滤与 CN 占用保护识别。
+  const realm = declaredRowRealm('other:' + currentOtherSlug, '');
   otherKeySnapshot = {};
   // 昵称缓存随每轮渲染重建（index 键，编辑弹窗回显用）
   otNickByIndex = {};
@@ -7761,7 +8076,7 @@ function renderOtherKeys(ks) {
     const actions = '<td style="white-space:nowrap;text-align:center">' +
       '<button class="btn btn-sm" data-ott="' + k.index + '">' + T('test') + '</button> ' +
       '<button class="btn btn-sm btn-danger" data-otdel="' + k.index + '" title="' + esc(T('delete_this_key')) + '">' + T('delete') + '</button>' + '</td>';
-    return '<tr draggable="true" data-drag-id="' + k.index + '"><td>' + (i + 1) + '</td>' +
+    return '<tr draggable="true" data-drag-id="' + k.index + '" data-realm="' + esc(realm) + '"><td>' + (i + 1) + '</td>' +
       // 账号列（2026-11-19）：昵称主行 + 掩码 key 副行，点击打开编辑弹窗
       '<td style="cursor:pointer" title="' + esc(T('edit_account')) + '" data-otr-edit="' + k.index + '">' +
         '<div class="nick-cell"><div class="nick-wrap">' +
@@ -8312,7 +8627,7 @@ function renderFreepiKeys(ks) {
     const actions = '<td style="white-space:nowrap;text-align:center">' +
       '<button class="btn btn-sm" data-frt="' + k.index + '">' + T('test') + '</button> ' +
       '<button class="btn btn-sm btn-danger" data-frdel="' + k.index + '" title="' + esc(T('delete_this_key')) + '">' + T('delete') + '</button>' + '</td>';
-    return '<tr draggable="true" data-drag-id="' + k.index + '"><td>' + (i + 1) + '</td>' +
+    return '<tr draggable="true" data-drag-id="' + k.index + '" data-realm="' + declaredRowRealm('freepi') + '"><td>' + (i + 1) + '</td>' +
       '<td style="cursor:pointer" title="' + esc(T('edit_account')) + '" data-fredit="' + k.index + '">' +
         '<div class="nick-cell"><div class="nick-wrap">' +
           '<span class="nick-name" style="max-width:150px" title="' + esc(k.nickname || k.keyMask) + '">' + esc(k.nickname || k.keyMask) + '</span>' +

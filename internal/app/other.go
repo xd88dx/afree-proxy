@@ -1102,9 +1102,25 @@ func otherTestKey(slug string, index int, modelID string) (map[string]any, strin
 		result["reason"] = fmt.Sprintf("API %d: %s", resp.StatusCode, strings.TrimSpace(string(b)))
 		return result, "error"
 	}
+	// 2026-11-26 事故加固（凭据 11 实案）：200 不再直接判成功——绑定出口故障时
+	// 链路中间层截胡返回 200 + HTML 拦截页，请求没到上游，只看状态码会
+	// "测试通过但 token 不动"。判定升级为响应体验证（与 freepi/trae 的
+	// 结构化验证同原则），失败不 Uncool、不记账。
+	bodyBytes, _ := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
+	bodyStr := string(bodyBytes)
+	if ok, vr := probeBodyVerdict(bodyStr); !ok {
+		result["httpStatus"] = resp.StatusCode
+		result["reason"] = fmt.Sprintf("HTTP 200 but not an API response: %s", vr)
+		return result, "error"
+	}
 	other.Uncool(p, key)
 	// Test 也是真实上游消耗：记账口径与 /v1 业务流量统一（2026-10-27 用户定）。
-	probeRespTokens(resp, func(n int64) { other.RecordKeyTokens(p, key, n) })
+	// usage 从已读 body 提取（与 zen 同模式），不再二次读取响应。
+	if u := usageFromChatPayload(bodyStr); len(u) > 0 {
+		if n := usageTokens(u, nil); n > 0 {
+			other.RecordKeyTokens(p, key, n)
+		}
+	}
 	result["reason"] = "ok"
 	return result, "active"
 }

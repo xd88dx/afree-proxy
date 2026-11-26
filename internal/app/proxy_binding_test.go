@@ -1433,7 +1433,7 @@ func TestProxyAliasLivesInPoolLine(t *testing.T) {
 
 	}
 
-	// 行去掉 #fragment = 明确清除该代理的别名
+	// 无备注行 = 非法格式（2026-11-26 用户定备注名主键），提交被 400 拒绝。
 
 	body = `{"proxies":["socks5://u:p@1.2.3.4:1080","socks5://testuser:testpass@5.6.7.8:1093#new-alias"]}`
 
@@ -1443,15 +1443,9 @@ func TestProxyAliasLivesInPoolLine(t *testing.T) {
 
 	handleZenConfigUpdate(rec, req)
 
-	if rec.Code != 200 {
+	if rec.Code != 400 {
 
-		t.Fatalf("update failed: %d", rec.Code)
-
-	}
-
-	if got := getProxyPool().Proxies[0]; got != "socks5://u:p@1.2.3.4:1080" {
-
-		t.Fatalf("fragment-less line must clear the alias: %q", got)
+		t.Fatalf("alias-less line must be rejected, got %d", rec.Code)
 
 	}
 

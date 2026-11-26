@@ -26,9 +26,9 @@ import (
 // recordProxyTestOutcome）也计入本统计（在线率/最近在线率/平均握手延迟），
 // 但**不带 strike 计数与冷却**——统计归统计，路由归人。
 //
-// 键是规范化代理 URL（不是列表索引）：索引会随列表编辑位移。按用户决策，
-// 代理列表一有变动就整体清空统计（ResetHealthStats），所以键的稳定性
-// 只需覆盖"两次编辑之间"的窗口。
+// 键是备注名（RuleKeyOf，2026-11-26 用户定备注名唯一主键）：订阅换端口
+// 统计不失配；代理被删除（别名不在池）时随池清理剪除。不再沿用旧"编辑池
+// 即整体清零"口径——那正是订阅刷新丢统计的根源。
 //
 // 落盘独立的 proxy-state.json（2026-10-31 从 proxy-config.json 的 health 段
 // 拆出——它是随请求高频变化的使用痕迹，留在配置文件里会干扰外部对配置变更
@@ -280,14 +280,12 @@ var StreamFailMuPtr = &streamFailMu
 // StreamFailsPtr strike 表指针（测试白盒）。
 var StreamFailsPtr = &streamFails
 
-// HealthEntry 单个代理的累计 + 最近窗口记账。
+// HealthEntry 单个代理的累计 + 最近窗口记账。键 = 备注名（RuleKeyOf）。
 type HealthEntry struct {
 	Attempts  int64     `json:"attempts"`
 	Successes int64     `json:"successes"`
 	Recent    []bool    `json:"recent"` // 最近 N 次结果，旧→新
 	LastOK    time.Time `json:"lastOk,omitempty"`
-	LastFail  time.Time `json:"lastFail,omitempty"`
-	LastErr   string    `json:"lastErr,omitempty"`
 	// HSCount/HSSumMs 握手延迟累计（仅成功尝试）：Do 返回时刻减调用时刻，
 	// 口径=TCP+TLS+CONNECT 隧道建立耗时，不含上游首字节/任务时长。
 	// 失败尝试不记——超时熔断的秒级耗时会污染平均值，失败已有在线率覆盖。
@@ -371,11 +369,15 @@ func RecordProxyOutcome(kind, proxyURL string, ok bool, err error, hsMs int64) {
 	}
 	EnsureHealthLoaded()
 
+	key := RuleKeyOf(proxyURL)
+	if key == "" {
+		return // 无备注名的行不记账（非法格式，2026-11-26 用户定）
+	}
 	healthMu.Lock()
-	e := healthStats[proxyURL]
+	e := healthStats[key]
 	if e == nil {
 		e = &HealthEntry{}
-		healthStats[proxyURL] = e
+		healthStats[key] = e
 	}
 	e.Attempts++
 	if ok {
@@ -384,11 +386,6 @@ func RecordProxyOutcome(kind, proxyURL string, ok bool, err error, hsMs int64) {
 		if hsMs > 0 {
 			e.HSCount++
 			e.HSSumMs += hsMs
-		}
-	} else {
-		e.LastFail = time.Now()
-		if err != nil {
-			e.LastErr = kit.Truncate(err.Error(), 300)
 		}
 	}
 	e.Recent = append(e.Recent, ok)
@@ -399,9 +396,9 @@ func RecordProxyOutcome(kind, proxyURL string, ok bool, err error, hsMs int64) {
 	healthMu.Unlock()
 }
 
-// ResetHealthStats 代理列表变动时整体清空统计（用户决策：编辑即清零，
-// 不做键迁移）。同步落盘空文件，避免崩溃后旧统计复活。延迟测试读数同池键、
-// 同语义，一并清空（2026-11-03）。
+// ResetHealthStats 整体清空统计（保留给测试与"清空统计"面板按钮）。
+// 同步落盘空文件，避免崩溃后旧统计复活。延迟测试读数同键、同语义，一并
+// 清空（2026-11-03）。
 func ResetHealthStats() {
 	EnsureHealthLoaded()
 	healthMu.Lock()
@@ -412,6 +409,28 @@ func ResetHealthStats() {
 	testStats = map[string]*TestEntry{}
 	testMu.Unlock()
 	FlushHealth()
+}
+
+// PruneHealthForPool 按池剪除统计（2026-11-26 用户定备注名主键）：键的备注
+// 名仍在池内 → 保留（订阅换端口统计连续）；已删除代理的条目剪除。替代旧
+// "编辑池即整体清零"口径。延迟测试读数同键同剪。
+func PruneHealthForPool(pool []string) {
+	EnsureHealthLoaded()
+	healthMu.Lock()
+	for k := range healthStats {
+		if !ruleKeyInPool(k, pool) {
+			delete(healthStats, k)
+		}
+	}
+	healthDirty = true
+	healthMu.Unlock()
+	testMu.Lock()
+	for k := range testStats {
+		if !ruleKeyInPool(k, pool) {
+			delete(testStats, k)
+		}
+	}
+	testMu.Unlock()
 }
 
 func EnsureHealthLoaded() {
@@ -511,17 +530,27 @@ func loadHealth() {
 		}
 		nextTests[k] = t
 	}
-	testStats = nextTests
+	// 存量 URL 键 rekey 为备注名（与统计段同口径，2026-11-26 主键迁移）。
+	rekeyed := make(map[string]*TestEntry, len(nextTests))
+	for k, t := range nextTests {
+		nk := RuleKeyOf(k)
+		if _, dup := rekeyed[nk]; !dup {
+			rekeyed[nk] = t
+		}
+	}
+	testStats = rekeyed
 	testMu.Unlock()
-	if len(nextTests) > 0 {
-		log.Printf("proxy health: restored %d latency test entry(s) from %s", len(nextTests), path)
+	if len(rekeyed) > 0 {
+		log.Printf("proxy health: restored %d latency test entry(s) from %s", len(rekeyed), path)
 	}
 	// 手动冷却表随同恢复（URL 键 → 内存索引键；池内不存在的 URL 丢弃）。
 	RestoreManualCooled(f.ManualCooled)
 }
 
-// absorbHealthStats 把读出的统计表灌入内存（Recent 截断 + 日志）。
+// absorbHealthStats 把读出的统计表灌入内存（Recent 截断 + 存量 URL 键迁移
+// 为备注名键 + 日志）。同备注名多键（迁移期遗留）合并进首条。
 func absorbHealthStats(stats map[string]*HealthEntry, from string) {
+	next := make(map[string]*HealthEntry, len(stats))
 	for _, e := range stats {
 		if e == nil {
 			continue
@@ -530,7 +559,25 @@ func absorbHealthStats(stats map[string]*HealthEntry, from string) {
 			e.Recent = e.Recent[len(e.Recent)-RecentN:]
 		}
 	}
-	healthStats = stats
+	for k, e := range stats {
+		if e == nil {
+			continue
+		}
+		nk := RuleKeyOf(k)
+		if exist, ok := next[nk]; ok && nk != k {
+			// 同名合并：累计字段相加，Recent 取更长一条。
+			exist.Attempts += e.Attempts
+			exist.Successes += e.Successes
+			exist.HSCount += e.HSCount
+			exist.HSSumMs += e.HSSumMs
+			if len(e.Recent) > len(exist.Recent) {
+				exist.Recent = e.Recent
+			}
+			continue
+		}
+		next[nk] = e
+	}
+	healthStats = next
 	log.Printf("proxy health: restored %d proxy stat(s) from %s", len(healthStats), from)
 }
 
@@ -613,7 +660,7 @@ func HealthSnapshot() []map[string]any {
 				row["platformCooling"] = pcList
 			}
 		}
-		if e := healthStats[raw]; e != nil {
+		if e := healthStats[RuleKeyOf(raw)]; e != nil {
 			row["attempts"] = e.Attempts
 			row["successes"] = e.Successes
 			if e.Attempts > 0 {
@@ -631,15 +678,11 @@ func HealthSnapshot() []map[string]any {
 			if !e.LastOK.IsZero() {
 				row["lastOk"] = e.LastOK.UTC().Format(time.RFC3339)
 			}
-			if !e.LastFail.IsZero() {
-				row["lastFail"] = e.LastFail.UTC().Format(time.RFC3339)
-			}
-			row["lastErr"] = e.LastErr
 		}
 		// 延迟测试最近读数随行输出（proxy_probe.go，2026-11-03）。零样本行
 		// 也要带——它正是「冷却显示冻结」事故里最需要跟随后端的那类行。
 		testMu.Lock()
-		te := testStats[raw]
+		te := testStats[RuleKeyOf(raw)]
 		testMu.Unlock()
 		if te != nil {
 			row["test"] = map[string]any{

@@ -20,12 +20,20 @@ import (
 
 // FileData proxy-config.json 的落盘形态（全部段合一）。
 type FileData struct {
-	Proxies    []string          `json:"proxies"`
-	Strategy   string            `json:"proxyStrategy"`
-	SubURL     string            `json:"proxySubURL,omitempty"`
-	SubCron    string            `json:"proxySubCron,omitempty"`
-	TestTarget string            `json:"proxyTestTarget,omitempty"`
-	Headers    map[string]string `json:"headers,omitempty"`
+	Proxies    []string `json:"proxies"`
+	Strategy   string   `json:"proxyStrategy"`
+	SubURL     string   `json:"proxySubURL,omitempty"`
+	SubCron    string   `json:"proxySubCron,omitempty"`
+	TestTarget string   `json:"proxyTestTarget,omitempty"`
+	// ReorderCron 延迟重排定时（2026-11-26 用户定）：5 字段分钟级 cron，空 =
+	// 不调度。命中时对全部平台规则 kind 跑一轮冻结-供给-修复重排（reorder.go）。
+	ReorderCron string            `json:"proxyReorderCron,omitempty"`
+	Headers     map[string]string `json:"headers,omitempty"`
+	// Zones 出口分区（2026-11-26 用户定）：键 = 池内出口 URL，值 = "cn" /
+	// "global"（空/缺 = 不限）。语义 = 保留给对应域凭据的出口：自动分配
+	// （一键代理/延迟重排）与差分改绑的候选一律按 ZoneCompatible 过滤；
+	// 手动绑定不受限。随池清理（非池条目丢弃）。
+	Zones map[string]string `json:"proxyZones,omitempty"`
 	// ---- 出口健康统计已拆出到独立 proxy-state.json（proxy_health.go，
 	// 2026-10-31）：随请求高频变化的使用痕迹不进配置文件，外部监测配置变更
 	// 不被统计噪声淹没。（旧文件 health 段的一次性迁移已随清理移除。）
@@ -45,6 +53,8 @@ type FileData struct {
 	ProxyBindCaps              map[string]int      `json:"proxyBindCaps,omitempty"`
 	ReorderKeepSec             float64             `json:"reorderKeepSec,omitempty"`
 	ProxyAutoFailover          *bool               `json:"proxyAutoFailover,omitempty"`
+	ProxyExclusionStamps       map[string]string   `json:"proxyExclusionStamps,omitempty"`
+	ZoneRealms                 []string            `json:"zoneRealms,omitempty"`
 }
 
 var (

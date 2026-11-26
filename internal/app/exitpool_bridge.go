@@ -223,7 +223,9 @@ func setProxyPool(c *proxyPoolConfigData) {
 	exitpool.ActivatePool(c)
 	if proxiesChanged(old.Proxies, c.Proxies) {
 		exitpool.ResetCooldownsForPoolEdit()
-		resetProxyHealthStats()
+		// 健康统计按备注名剪除（2026-11-26 用户定，替代旧"编辑池即清零"）：
+		// 别名仍在池 → 统计保留（订阅换端口连续）；真被删除 → 条目剪除。
+		exitpool.PruneHealthForPool(c.Proxies)
 		// 手动冷却按 URL/别名保留仍在新池的条目（2026-11-18 修复）：池编辑
 		// 一律清零会让订阅同步（顺序变化即触发整池替换）丢掉手动封禁——
 		// 同一代理仍在池中时封禁意图应延续。重置后按新池重锚定恢复（消失

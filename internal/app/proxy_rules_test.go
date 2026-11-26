@@ -22,7 +22,7 @@ func TestPruneProxyExclusions(t *testing.T) {
 				proxyRuleDirectKey:  {"other"},
 			},
 			want: map[string][]string{
-				"socks5://h1:1#A":  {"key"},
+				"A":                {"key"}, // rekey 为备注名（2026-11-26 主键）
 				proxyRuleDirectKey: {"other"},
 			},
 		},

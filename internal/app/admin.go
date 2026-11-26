@@ -1070,6 +1070,19 @@ func testAccount(ctx context.Context, acc *Account) (map[string]any, string) {
 		}, "error"
 	}
 
+	// 2026-11-26 事故加固（凭据 11 实案）：200 但响应体不是 API 响应（出口
+	// 拦截页/代理劫持）不算通过——请求没到上游，清冷却/改 active 是假阳性。
+	// 此处不改账号状态：拦截页说明不了凭据健康，不罚号。
+	if ok, vr := probeBodyVerdict(bodyStr); !ok {
+		return map[string]any{
+			"accountId":  acc.AccountID,
+			"label":      cline.AccountLabel(acc),
+			"status":     "error",
+			"reason":     fmt.Sprintf("HTTP 200 but not an API response: %s", vr),
+			"httpStatus": resp.StatusCode,
+		}, "error"
+	}
+
 	// 成功：清除所有异常状态（冷却/过期/原因），并递增使用计数
 	poolMu.Lock()
 	u := usageForLocked(acc)

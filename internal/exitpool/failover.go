@@ -29,6 +29,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -44,18 +45,81 @@ const (
 	failoverProbeTimeout = 10 * time.Second
 	// failoverWitnessMax 旁证探测最多试用的其他出口数（任一通即成立）。
 	failoverWitnessMax = 3
-	// failoverOverall 差分判定全程兜底超时（信号 A + 最多 3 次旁证）。
-	failoverOverall = 60 * time.Second
+	// failoverOverall 差分判定全程兜底超时（信号 A + 最多 3 次旁证 + 复测
+	// 等待与复测）。
+	failoverOverall = 5 * time.Minute
 )
+
+// failoverRecheckDelay 复测确认延迟（2026-11-26 用户定）：差分成立后等 3
+// 分钟复测目标 host——WB 抖动期的"暂时性路径故障"与真风控在单次判定中不可
+// 区分，只有时间能区分（11-25 两起连环误判的根源）。复测通了 = 抖动自愈，
+// 只冷却不排除。var 便于测试白盒缩短。
+var failoverRecheckDelay = 3 * time.Minute
+
+// BindingEntry 绑定条目（带凭据标识与域）：后端定时重排需要按凭据域跳过
+// cn 条目（2026-11-26 用户定），差分改绑只看槽位（Pairs）。
+type BindingEntry struct {
+	Key    string // 凭据标识（uid/key/accountID，仅日志与日志域判定用）
+	Main   string
+	Backup string
+	// Realm 凭据域：cn / global / intl / 空（无域）。wb = auth.Realm()、
+	// trae = uid 前缀 trae-intl-、other = 子平台 Realm 字段、cline/zen/freepi = 空。
+	Realm string
+	// Kind 条目所属的排除规则 kind（2026-11-26 修）：other 子平台条目 =
+	// "other:<slug>"，其余 = 注册键。定时重排按 ruleKind 过滤——other 的
+	// 适配器聚合全部子平台绑定，不过滤会跨子平台互相洗牌（11-26 实测
+	// 1480 处改动的根因）。
+	Kind string
+}
 
 // FailoverBindings 平台绑定适配器：读该平台全部绑定对 + 把 from 槽位改绑 to。
 // 由装配根（app）按排除规则 kind 注册；未注册的平台只排除、不改绑。
+// Entries（带凭据域）为可选能力：类型断言探测，未实现时由 pairsEntries 兜底
+// 降级（Realm 全空 = 无域，定时重排按无域凭据处理）。
 type FailoverBindings interface {
 	// Pairs 该平台当前全部绑定对（只读快照）。
 	Pairs() []Binding
 	// Rebind 把 from（别名等价匹配，绑定行可能只保留旧端口/凭据）的槽位
 	// 改绑为 to（池内当前地址），返回改绑槽数；写回各自配置文件。
+	// 国内域凭据的槽位跳过不改（2026-11-26 用户定：自动排除不参与国内凭据）。
 	Rebind(from, to string) int
+	// RebindAll 与 Rebind 同形但不做域过滤——订阅换端口的绑定行跟随迁移
+	//（2026-11-26 用户定）：国内凭据的绑定也要跟到新 URL。
+	RebindAll(from, to string) int
+}
+
+// EntriesProvider 可选接口：提供带凭据域的绑定条目（定时重排用）。
+type EntriesProvider interface {
+	Entries() []BindingEntry
+}
+
+// MainRebinder 可选接口：只改 Main 槽的改绑（定时重排用——前端重排只动
+// main、backup 原样保留，Rebind 会把 backup 一起改走，语义不同）。ruleKind
+// 供聚合型适配器（other）过滤子平台；单平台适配器忽略。
+type MainRebinder interface {
+	RebindMain(ruleKind, from, to string) int
+}
+
+// rebindMain 适配器 Main 槽改绑：实现 MainRebinder 用之；未实现退回 Rebind
+// （此时 backup 可能被连带改走——调用方日志提示）。
+func rebindMain(b FailoverBindings, ruleKind, from, to string) (int, bool) {
+	if m, ok := b.(MainRebinder); ok {
+		return m.RebindMain(ruleKind, from, to), true
+	}
+	return b.Rebind(from, to), false
+}
+
+// bindingsEntries 适配器条目读取：实现了 EntriesProvider 用之，否则从 Pairs
+// 降级（Realm 全空）。
+func bindingsEntries(b FailoverBindings) []BindingEntry {
+	if p, ok := b.(EntriesProvider); ok {
+		return p.Entries()
+	}
+	var out []BindingEntry
+	for _, pair := range b.Pairs() {
+		out = append(out, BindingEntry{Main: pair.Main, Backup: pair.Backup})
+	}
+	return out
 }
 
 var (
@@ -201,7 +265,20 @@ func runFailover(cooldownKind string, ruleKinds []string, failedURL string, err 
 			cooldownKind, masked, targetURL)
 		return
 	}
-	// ③ 处置：排除（已在表内跳过写入）+ 改绑。
+	// ③ 复测确认（2026-11-26 用户定）：等 failoverRecheckDelay 后对故障出口
+	// 复测目标 host。仍不通 = 持续性目标侧阻断（真风控）→ 排除；通了 = 抖动
+	// 自愈 → 只冷却不排除，把"暂时性路径故障"洗掉。
+	time.Sleep(failoverRecheckDelay)
+	if ctx.Err() != nil {
+		log.Printf("[exit-failover] %s exit %s: skip (overall deadline during recheck wait)", cooldownKind, masked)
+		return
+	}
+	if perr := probeURL(ctx, failedURL, targetURL); perr == nil {
+		log.Printf("[exit-failover] %s exit %s: skip (recheck %s reachable after %v — transient path failure, not exit ban)",
+			cooldownKind, masked, targetURL, failoverRecheckDelay)
+		return
+	}
+	// ④ 处置：排除（已在表内跳过写入）+ 改绑。
 	failoverWriteMu.Lock()
 	defer failoverWriteMu.Unlock()
 	alreadyExcluded := false
@@ -210,7 +287,7 @@ func runFailover(cooldownKind string, ruleKinds []string, failedURL string, err 
 			alreadyExcluded = true
 			continue
 		}
-		addExclusion(rk, failedURL)
+		addExclusion(rk, failedURL, targetURL)
 	}
 	repl, ok := pickReplacement(cooldownKind, failedURL, ruleKinds)
 	if !ok {
@@ -259,7 +336,8 @@ func rebindDeadExit(ruleKinds []string, failedURL, cooldownKind, masked string) 
 	}
 }
 
-// proxyExcludedFor 出口是否已被该排除规则 kind（或全局集）排除。
+// proxyExcludedFor 出口是否已被该排除规则 kind（或全局集）排除。键为备注名
+// （RuleKeyOf，2026-11-26 用户定主键）；存量 URL 键按别名等价兜底。
 func proxyExcludedFor(ruleKind, proxyURL string) bool {
 	cfg := GetBinding()
 	for p := range cfg.ProxyExclusionsAll {
@@ -267,9 +345,9 @@ func proxyExcludedFor(ruleKind, proxyURL string) bool {
 			return true
 		}
 	}
-	kinds, ok := cfg.ProxyExclusions[proxyURL]
+	kinds, ok := cfg.ProxyExclusions[RuleKeyOf(proxyURL)]
 	if !ok {
-		// 绑定行可能只保留旧端口/凭据：按别名等价再对一遍键。
+		// 存量 URL 键兼容：按别名等价再对一遍键。
 		for p, ks := range cfg.ProxyExclusions {
 			if SameAlias(p, proxyURL) {
 				kinds, ok = ks, true
@@ -288,23 +366,92 @@ func proxyExcludedFor(ruleKind, proxyURL string) bool {
 	return false
 }
 
-// addExclusion 把出口追加进排除规则 kind（已存在不重复）。调用方持 failoverWriteMu。
-func addExclusion(ruleKind, proxyURL string) {
+// addExclusion 把出口追加进排除规则 kind（已存在不重复）并登记 TTL 复核
+// 台账（只有差分写入的条目有台账——手动条目不复核、永不自动移除）。
+// target 用于后续复核探活。键为备注名（RuleKeyOf）。调用方持 failoverWriteMu。
+func addExclusion(ruleKind, proxyURL, target string) {
 	cfg := GetBinding()
 	cp := *cfg
+	key := RuleKeyOf(proxyURL)
+	exists := false
 	next := make(map[string][]string, len(cfg.ProxyExclusions)+1)
 	for p, ks := range cfg.ProxyExclusions {
-		next[p] = append([]string(nil), ks...)
+		next[RuleKeyOf(p)] = append([]string(nil), ks...)
 	}
-	ks := next[proxyURL]
+	ks := next[key]
 	for _, k := range ks {
 		if k == ruleKind {
-			return
+			exists = true
+			break
 		}
 	}
-	next[proxyURL] = append(ks, ruleKind)
+	if !exists {
+		next[key] = append(ks, ruleKind)
+	}
 	cp.ProxyExclusions = next
+	stamps := CloneStamps(cfg.ProxyExclusionStamps)
+	stamps[stampKey(key, ruleKind)] = stampValue(time.Now(), target, 0)
+	cp.ProxyExclusionStamps = stamps
 	SetBinding(&cp)
+}
+
+// removeExclusion 把出口从排除规则 kind 移除（kind 列表空则删条目）并清
+// 台账。只处理目标条目——其他出口的同 kind 排除不受影响（2026-11-26 修：
+// 初版遍历全表删同 kind，TTL 解禁一个出口会连带误删其他出口的排除）。
+// 供 TTL 复核自动解禁。调用方持 failoverWriteMu。
+func removeExclusion(ruleKind, proxyURL string) {
+	cfg := GetBinding()
+	cp := *cfg
+	next := make(map[string][]string, len(cfg.ProxyExclusions))
+	for p, ks := range cfg.ProxyExclusions {
+		if p != proxyURL && !SameAlias(p, proxyURL) {
+			next[p] = append([]string(nil), ks...)
+			continue
+		}
+		kept := make([]string, 0, len(ks))
+		for _, k := range ks {
+			if k != ruleKind {
+				kept = append(kept, k)
+			}
+		}
+		if len(kept) > 0 {
+			next[p] = kept
+		}
+	}
+	cp.ProxyExclusions = next
+	stamps := CloneStamps(cfg.ProxyExclusionStamps)
+	delete(stamps, stampKey(proxyURL, ruleKind))
+	cp.ProxyExclusionStamps = stamps
+	SetBinding(&cp)
+	log.Printf("[exit-failover-ttl] exit %s auto-unbanned (kind=%s) after recovery probes", kit.MaskProxyURL(proxyURL), ruleKind)
+}
+
+// stampKey / stampValue / CloneStamps TTL 复核台账的键值编解码。
+// 值形态 "since|target|okCount"（RFC3339）。
+func stampKey(proxyURL, ruleKind string) string { return proxyURL + "\x00" + ruleKind }
+
+func stampValue(since time.Time, target string, okCount int) string {
+	return since.Format(time.RFC3339) + "|" + target + "|" + strconv.Itoa(okCount)
+}
+
+func parseStamp(v string) (since time.Time, target string, okCount int) {
+	parts := strings.SplitN(v, "|", 3)
+	if len(parts) == 3 {
+		if t, err := time.Parse(time.RFC3339, parts[0]); err == nil {
+			since = t
+		}
+		target = parts[1]
+		okCount, _ = strconv.Atoi(parts[2])
+	}
+	return since, target, okCount
+}
+
+func CloneStamps(stamps map[string]string) map[string]string {
+	out := make(map[string]string, len(stamps)+1)
+	for k, v := range stamps {
+		out[k] = v
+	}
+	return out
 }
 
 // witnessExists 旁证：从池尾往前找最多 failoverWitnessMax 个健康其他出口，
@@ -329,13 +476,35 @@ func witnessExists(ctx context.Context, kind, failedURL, targetURL string) bool 
 	return false
 }
 
-// pickReplacement 选替补：严格候选 = 池内、非故障口、未被规则 kind 排除、
+// pickReplacement 选替补：严格候选 = 池内、非故障口、**分区严格相同**
+// （2026-11-26 用户定：cn 保留出口故障只在 cn 候选中挑，无候选放弃改绑，
+// 绝不把保留域凭据改到别域出口——zone.go）、未被规则 kind 排除、
 // 未被该平台任何凭据绑定（别名等价）、不在冷却（全局+平台级两层，2026-11-25
 // 补 R1——空 kind 只看全局层，会漏掉仅对该平台冷却的出口）。从后往前扫，
 // 同地区立即选中；无同地区取从后往前第一个候选。找不到返回 ("", false)。
 func pickReplacement(kind, failedURL string, ruleKinds []string) (string, bool) {
 	cfg := GetPool()
 	reg := regionOf(failedURL)
+	// 改绑对象的域约束（2026-11-26 用户定语义）：国内域凭据的槽位由适配器
+	// Rebind 跳过（不参与自动排除）；剩余被改绑槽位中若有声明国际的凭据，
+	// 替补必须是不限出口（国际凭据不分配国内出口）；纯无域凭据无约束
+	//（未声明平台把国内出口当普通出口）。
+	intlBound := false
+	for _, rk := range ruleKinds {
+		if b := failoverBindingsFor(rk); b == nil {
+			continue
+		}
+		for _, e := range bindingsEntries(failoverBindingsFor(rk)) {
+			if e.Realm == "cn" {
+				continue
+			}
+			if SameAlias(e.Main, failedURL) || (e.Backup != "" && SameAlias(e.Backup, failedURL)) {
+				if e.Realm == "global" || e.Realm == "intl" {
+					intlBound = true
+				}
+			}
+		}
+	}
 	// 该平台全部绑定槽位集合（别名等价匹配）。
 	bound := map[string]bool{}
 	for _, rk := range ruleKinds {
@@ -353,6 +522,10 @@ func pickReplacement(kind, failedURL string, ruleKinds []string) (string, bool) 
 	for i := len(cfg.Proxies) - 1; i >= 0; i-- {
 		p := cfg.Proxies[i]
 		if SameAlias(p, failedURL) {
+			continue
+		}
+		// 声明国际凭据在场：替补限定不限出口。
+		if intlBound && ZoneOf(p) != "" {
 			continue
 		}
 		excluded := false
@@ -488,4 +661,102 @@ func failedTargetOf(err error) string {
 		return ""
 	}
 	return u.Scheme + "://" + u.Host + "/"
+}
+
+// ============================================================================
+// 排除条目 TTL 复核（2026-11-26 用户定）：差分排除的条目每小时探活一次，
+// 连续 2 次对目标 host 恢复可达自动移除该 kind——解决"判定当时正确、上游
+// 解封后条目永久残留"（11 个 WB 已恢复条目的来源）。手动条目无台账，永不
+// 自动移除。
+// ============================================================================
+
+const (
+	// failoverReviewInterval 复核周期。
+	failoverReviewInterval = time.Hour
+	// failoverReviewOK 连续探活通过次数阈值：达到即自动解禁。
+	failoverReviewOK = 2
+)
+
+// StartFailoverReviewLoop 启动 TTL 复核循环（装配根调用一次；差分开关关闭
+// 时循环空转——条目只增不减，开销为零）。
+func StartFailoverReviewLoop() {
+	go func() {
+		for {
+			time.Sleep(failoverReviewInterval)
+			reviewExclusions()
+		}
+	}()
+}
+
+// reviewExclusions 一轮复核：逐条探活台账条目，恢复达标自动解禁。
+func reviewExclusions() {
+	if !AutoFailoverEnabled() {
+		return
+	}
+	cfg := GetBinding()
+	type item struct {
+		proxyURL, kind, target string
+		okCount                int
+	}
+	var items []item
+	for key, v := range cfg.ProxyExclusionStamps {
+		proxyURL, kind, ok := strings.Cut(key, "\x00")
+		if !ok || proxyURL == "" || kind == "" {
+			continue
+		}
+		since, target, okCount := parseStamp(v)
+		if target == "" {
+			// 旧格式/坏数据：按测速目标复核兜底。
+			target = EffectiveTestTarget()
+			_ = since
+		}
+		items = append(items, item{proxyURL, kind, target, okCount})
+	}
+	for _, it := range items {
+		idx := IdxInPool(it.proxyURL)
+		if idx < 0 {
+			// 出口已不在池：条目失去意义，台账一并清（下一次 SetBinding 落盘）。
+			failoverWriteMu.Lock()
+			removeExclusion(it.kind, it.proxyURL)
+			failoverWriteMu.Unlock()
+			continue
+		}
+		// 键为备注名（2026-11-26）：探活前解析回池内当前 URL（端口随订阅更新）。
+		probeRaw := GetPool().Proxies[idx]
+		ctx, cancel := context.WithTimeout(context.Background(), failoverProbeTimeout)
+		perr := probeURL(ctx, probeRaw, it.target)
+		cancel()
+		var okCount int
+		if perr == nil {
+			okCount = it.okCount + 1
+		}
+		failoverWriteMu.Lock()
+		cfg := GetBinding()
+		if okCount >= failoverReviewOK {
+			removeExclusion(it.kind, it.proxyURL)
+		} else {
+			// 未达标：刷新台账（恢复计数或清零），排除条目保持。
+			cp := *cfg
+			stamps := CloneStamps(cfg.ProxyExclusionStamps)
+			stamps[stampKey(it.proxyURL, it.kind)] = stampValue(time.Now(), it.target, okCount)
+			cp.ProxyExclusionStamps = stamps
+			SetBinding(&cp)
+		}
+		failoverWriteMu.Unlock()
+		if perr == nil && okCount < failoverReviewOK {
+			log.Printf("[exit-failover-ttl] exit %s recovered (probe %s ok, %d/%d) — keeping exclusion until threshold",
+				kit.MaskProxyURL(it.proxyURL), it.target, okCount, failoverReviewOK)
+		}
+	}
+}
+
+// RebindAllEverywhere 全部已注册绑定适配器执行别名改写（订阅换端口的绑定行
+// 跟随迁移，2026-11-26 用户定）：不做域过滤——国内凭据的绑定也要跟到新 URL
+// （与差分 Rebind 跳过国内槽位是两回事）。
+func RebindAllEverywhere(from, to string) {
+	failoverMu.Lock()
+	defer failoverMu.Unlock()
+	for _, b := range failoverBindings {
+		b.RebindAll(from, to)
+	}
 }

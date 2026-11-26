@@ -452,24 +452,95 @@ func usageFromChatPayload(body string) map[string]any {
 	return usage
 }
 
-// probeRespTokens Test 探测的统一记账口：读一次上游响应（SSE 流或 JSON 均可，
-// collectStreamResponse 双形态兼容），取 usage 记到 record。探测是真实上游
-// 消耗（用户定：Test 也计入业务消耗），返回的响应体由此函数消费关闭。
-// 读取失败只告警不改变探测结论（成功已由状态码判定）。
-func probeRespTokens(resp *http.Response, record func(tokens int64)) {
-	if resp == nil || record == nil {
-		return
+// ProbeBodyVerdict Test 探测响应体判定（2026-11-26 凭据 11 事故加固）：
+// HTTP 200 不再直接判成功——绑定出口故障时链路中间层可能截胡并返回
+// 200 + HTML 拦截页，请求根本没到上游，只看状态码会"测试通过但 token 不动"
+// 的假阳性。判定升级为"响应体是合法 API 响应且含模型输出证据"：
+//
+//   - SSE 流：必须存在至少一个 data 帧解析为 JSON 且含 choices/usage；
+//     纯 [DONE]/心跳不算证据；
+//   - 非 SSE：整段 JSON 解析成功且含 choices/usage（含 {data:{...}} 包裹）；
+//     带 error 字段按"上游错误体"报因；
+//   - HTML（<!DOCTYPE/<html）→ 明确报"出口拦截页/代理劫持"；
+//
+// 返回 (是否通过, 失败原因)。原因按"一眼可识别"口径写短语（2026-11-26 用户定：
+// toast 只显示关键信息），不携带 body 转储——HTML 内容没有诊断价值，未知形态
+// 只带 80 字节摘要。通过时调用方再从同一份 body 提取 usage 记账。
+func ProbeBodyVerdict(body string) (ok bool, reason string) {
+	trimmed := strings.TrimSpace(body)
+	if trimmed == "" {
+		return false, "empty body"
 	}
-	out, err := collectStreamResponse(resp)
-	if err != nil {
-		log.Printf("  probe usage read failed (tokens not recorded): %v", err)
-		return
+	lower := strings.ToLower(trimmed)
+	if strings.Contains(lower, "<!doctype html") || strings.Contains(lower, "<html") {
+		return false, "HTML intercept page (exit hijack?)"
 	}
-	if u, ok := out["usage"].(map[string]any); ok && len(u) > 0 {
-		if n := usageTokens(u, nil); n > 0 {
-			record(n)
+	lines := strings.Split(trimmed, "\n")
+	first := ""
+	for _, l := range lines {
+		if t := strings.TrimSpace(l); t != "" {
+			first = t
+			break
 		}
 	}
+	if first != "" && isSSELine(first) {
+		// SSE 流（与 collectStreamResponse 同判据：首个非空行是 SSE 语法）。
+		// 心跳注释/event 行都同属一个流，证据只认带 choices/usage 的 data 帧。
+		for _, l := range lines {
+			if !strings.HasPrefix(l, "data:") {
+				continue
+			}
+			payload := strings.TrimSpace(l[5:])
+			if payload == "" || payload == "[DONE]" {
+				continue
+			}
+			var obj map[string]any
+			if json.Unmarshal([]byte(payload), &obj) != nil {
+				continue
+			}
+			if probeBodyHasEvidence(obj) {
+				return true, ""
+			}
+		}
+		return false, "SSE stream without model output"
+	}
+	// 非 SSE：整段按 JSON 处理。
+	var obj map[string]any
+	if err := json.Unmarshal([]byte(trimmed), &obj); err != nil {
+		return false, "non-API body: " + kit.Truncate(trimmed, 80)
+	}
+	if e, exists := obj["error"]; exists && e != nil {
+		msg := ""
+		if em, isMap := e.(map[string]any); isMap {
+			msg, _ = em["message"].(string)
+		}
+		if msg == "" {
+			msg = kit.Truncate(fmt.Sprint(e), 120)
+		}
+		return false, "upstream error: " + msg
+	}
+	if d, isMap := obj["data"].(map[string]any); isMap {
+		obj = d
+	}
+	if probeBodyHasEvidence(obj) {
+		return true, ""
+	}
+	return false, "no model output: " + kit.Truncate(trimmed, 80)
+}
+
+// probeBodyHasEvidence 判定单个 JSON 对象是否含模型输出证据。
+func probeBodyHasEvidence(obj map[string]any) bool {
+	if c, ok := obj["choices"].([]any); ok && len(c) > 0 {
+		return true
+	}
+	if u, ok := obj["usage"].(map[string]any); ok && len(u) > 0 {
+		return true
+	}
+	// responses 上游完成帧形态：{"type":"response.completed","response":{...}}。
+	if r, ok := obj["response"].(map[string]any); ok && len(r) > 0 {
+		return true
+	}
+	return false
 }
 
 // takeUsedKey 从上游 resp 取出实际服务的 key 并删头（防透传客户端）。

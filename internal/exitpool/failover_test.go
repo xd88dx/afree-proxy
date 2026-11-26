@@ -3,6 +3,7 @@ package exitpool
 import (
 	"context"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -93,7 +94,8 @@ func (f boundFake) Pairs() []Binding {
 	}
 	return out
 }
-func (boundFake) Rebind(from, to string) int { return 0 }
+func (boundFake) Rebind(from, to string) int    { return 0 }
+func (boundFake) RebindAll(from, to string) int { return 0 }
 
 // TestPickReplacementSkipsBoundAndExcluded 严格候选：被绑定/被排除的出口不
 // 进候选；排除后从剩余候选按同地区优先挑选。
@@ -111,7 +113,7 @@ func TestPickReplacementSkipsBoundAndExcluded(t *testing.T) {
 		t.Fatalf("bound skipped: got %q ok=%v, want z-au", got, ok)
 	}
 	// 把 z-au 加入排除 → 只剩 x-us。
-	addExclusion("wb", "socks5://h:4#z-au")
+	addExclusion("wb", "socks5://h:4#z-au", "https://www.workbuddy.ai/")
 	if !proxyExcludedFor("wb", "socks5://h:4#z-au") {
 		t.Fatal("z-au must be excluded for wb after addExclusion")
 	}
@@ -165,6 +167,8 @@ func (f *rebindFake) Pairs() []Binding {
 	}
 	return out
 }
+func (f *rebindFake) RebindAll(from, to string) int { return f.Rebind(from, to) }
+
 func (f *rebindFake) Rebind(from, to string) int {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -212,6 +216,10 @@ func waitFailoverIdle(t *testing.T) {
 // 同地区替补（a-jp → y-jp，不是池尾的 z-au）；三元组任一不成立则不动。
 func TestOnPlatformScopedFailureEndToEnd(t *testing.T) {
 	setupFailoverPool(t)
+	// 复测确认延迟缩短到毫秒级（3 分钟是生产值，测试白盒缩短）。
+	savedDelay := failoverRecheckDelay
+	failoverRecheckDelay = 10 * time.Millisecond
+	t.Cleanup(func() { failoverRecheckDelay = savedDelay })
 	on := true
 	SetBinding(&BindingConfig{ProxyAutoFailover: &on})
 	rb := &rebindFake{bound: []string{"socks5://h:1#a-jp"}}
@@ -259,8 +267,26 @@ func TestOnPlatformScopedFailureEndToEnd(t *testing.T) {
 		t.Fatalf("target-wide outage must not rebind, calls = %v", rb.Calls())
 	}
 
-	// 场景 3：三元组成立 → 排除 + 改绑到同地区替补 y-jp。
+	// 场景 3：复测自愈（transient path failure，2026-11-26 用户定）——测速
+	// 目标通、旁证通，但 3 分钟后复测目标 host 已恢复 → 不排除不改绑。
 	setProbeHook(func(_ context.Context, proxy, target string) error {
+		return nil
+	})
+	OnExitFailure("wb", failed, wbErr)
+	waitFailoverIdle(t)
+	if proxyExcludedFor("wb", failed) {
+		t.Fatal("transient failure must not be excluded after recheck")
+	}
+	if len(rb.Calls()) != 1 {
+		t.Fatalf("transient failure must not rebind, calls = %v", rb.Calls())
+	}
+
+	// 场景 4：三元组成立 + 复测仍不通 → 排除 + 改绑到同地区替补 y-jp。
+	// hook 按目标区分：测速目标（apple）通、目标 host（workbuddy）持续不通。
+	setProbeHook(func(_ context.Context, proxy, target string) error {
+		if SameAlias(proxy, failed) && strings.Contains(target, "workbuddy") {
+			return errFake("net/http: TLS handshake timeout")
+		}
 		return nil
 	})
 	OnExitFailure("wb", failed, wbErr)
@@ -271,7 +297,7 @@ func TestOnPlatformScopedFailureEndToEnd(t *testing.T) {
 		t.Fatalf("rebind = %v, want second call a-jp->y-jp", calls)
 	}
 
-	// 场景 4：已排除过的出口再次触发 → 不重复写排除表，改绑仍执行（幂等
+	// 场景 5：已排除过的出口再次触发 → 不重复写排除表，改绑仍执行（幂等
 	// 补做——"仅排除未改绑"的卡死场景靠此自愈，2026-11-24 用户定）。
 	OnExitFailure("wb", failed, wbErr)
 	waitCond(t, "idempotent rebind", func() bool { return len(rb.Calls()) == 3 })
@@ -323,5 +349,240 @@ func TestRuleKindsFor(t *testing.T) {
 	})
 	if _, ok := ruleKindsFor(KindOther); ok {
 		t.Fatal("other without registered slugs must not trigger")
+	}
+}
+
+// realmFake 带凭据域的适配器替身（zone 约束测试用）。
+type realmFake struct{ entries []BindingEntry }
+
+func (f realmFake) Pairs() []Binding {
+	var out []Binding
+	for _, e := range f.entries {
+		out = append(out, Binding{Main: e.Main, Backup: e.Backup})
+	}
+	return out
+}
+func (f realmFake) Entries() []BindingEntry       { return f.entries }
+func (f realmFake) Rebind(from, to string) int    { return 0 }
+func (f realmFake) RebindAll(from, to string) int { return 0 }
+
+// TestPickReplacementZoneRealm 国内出口改绑的域约束（2026-11-26 用户定语义）：
+// 无域凭据绑定的国内出口故障 → 候选无 zone 约束（未声明平台把国内出口当
+// 普通出口）；声明国际凭据在场 → 替补限定不限出口。国内域槽位由适配器
+// Rebind 跳过（不参与改绑）。
+func TestPickReplacementZoneRealm(t *testing.T) {
+	PathOverride = filepath.Join(t.TempDir(), "proxy-config.json")
+	t.Cleanup(func() { PathOverride = "" })
+	ActivatePool(&PoolConfig{Proxies: []string{
+		"socks5://h:1#x-us", // 不限
+		"socks5://h:2#f-jp", // 故障出口（不限）
+		"socks5://h:3#c-jp", // 国内（扫描序最靠后 → 同地区优先会先碰到它）
+	}, Zones: map[string]string{"socks5://h:3#c-jp": ZoneCN}, Strategy: "round_robin"})
+	t.Cleanup(func() { ActivatePool(&PoolConfig{Strategy: "round_robin"}) })
+
+	register := func(entries []BindingEntry) {
+		RegisterFailoverBindings("wb", realmFake{entries: entries})
+		t.Cleanup(func() {
+			failoverMu.Lock()
+			delete(failoverBindings, "wb")
+			failoverMu.Unlock()
+		})
+	}
+
+	// 场景 A：无域凭据绑 f-jp → c-jp（国内出口对无域凭据是普通候选，且同地区优先）。
+	register([]BindingEntry{{Key: "k1", Main: "socks5://h:2#f-jp", Realm: ""}})
+	got, ok := pickReplacement("", "socks5://h:2#f-jp", []string{"wb"})
+	if !ok || got != "socks5://h:3#c-jp" {
+		t.Fatalf("no-realm: got %q ok=%v, want c-jp", got, ok)
+	}
+	// 场景 B：声明国际凭据绑 f-jp → 候选限定不限出口，c-jp 跳过 → x-us。
+	register([]BindingEntry{{Key: "k2", Main: "socks5://h:2#f-jp", Realm: "global"}})
+	got, ok = pickReplacement("", "socks5://h:2#f-jp", []string{"wb"})
+	if !ok || got != "socks5://h:1#x-us" {
+		t.Fatalf("intl: got %q ok=%v, want x-us (cn exits excluded)", got, ok)
+	}
+}
+
+// TestReviewExclusionsAutoUnban TTL 复核（2026-11-26 用户定）：差分排除的
+// 条目连续 2 次探活恢复可达自动移除；失败重置计数；无台账的手动条目不动。
+func TestReviewExclusionsAutoUnban(t *testing.T) {
+	setupFailoverPool(t)
+	on := true
+	SetBinding(&BindingConfig{ProxyAutoFailover: &on})
+	t.Cleanup(func() { setProbeHook(nil) })
+
+	// 差分写入一条（带台账）+ 手动写一条（无台账）。
+	addExclusion("wb", "socks5://h:4#z-au", "https://www.workbuddy.ai/")
+	SetBinding(func() *BindingConfig {
+		cp := *GetBinding()
+		next := make(map[string][]string, len(cp.ProxyExclusions)+1)
+		for p, ks := range cp.ProxyExclusions {
+			next[p] = append([]string(nil), ks...)
+		}
+		next["socks5://h:3#y-jp"] = []string{"wb"}
+		cp.ProxyExclusions = next
+		return &cp
+	}())
+
+	// 全部探活通过：第一轮 okCount=1，未达阈值，仍排除。
+	setProbeHook(func(_ context.Context, proxy, target string) error { return nil })
+	reviewExclusions()
+	if !proxyExcludedFor("wb", "socks5://h:4#z-au") {
+		t.Fatal("one recovery probe must not unban yet")
+	}
+	// 第二轮达标 → 差分条目自动移除；手动条目（无台账）保留。
+	reviewExclusions()
+	if proxyExcludedFor("wb", "socks5://h:4#z-au") {
+		t.Fatal("two consecutive recovery probes must auto-unban the diff-written entry")
+	}
+	if !proxyExcludedFor("wb", "socks5://h:3#y-jp") {
+		t.Fatal("manual entry (no stamp) must never auto-unban")
+	}
+	// 台账已清。
+	if _, ok := GetBinding().ProxyExclusionStamps[stampKey(RuleKeyOf("socks5://h:4#z-au"), "wb")]; ok {
+		t.Fatal("stamp must be cleared after auto-unban")
+	}
+
+	// 探活失败 → 计数清零，条目保持。
+	addExclusion("wb", "socks5://h:2#x-us", "https://www.workbuddy.ai/")
+	reviewExclusions() // ok=1
+	setProbeHook(func(_ context.Context, proxy, target string) error {
+		return errFake("net/http: TLS handshake timeout")
+	})
+	reviewExclusions() // 失败 → 清零
+	_, _, okCount := parseStamp(GetBinding().ProxyExclusionStamps[stampKey(RuleKeyOf("socks5://h:2#x-us"), "wb")])
+	if okCount != 0 {
+		t.Fatalf("failed probe must reset ok count, got %d", okCount)
+	}
+	if !proxyExcludedFor("wb", "socks5://h:2#x-us") {
+		t.Fatal("entry must stay excluded while target unreachable")
+	}
+}
+
+// reorderFake 定时重排的适配器替身：Entries 带 realm、RebindMain 记录移动。
+type reorderFake struct {
+	mu      sync.Mutex
+	entries []BindingEntry
+	moves   []string
+}
+
+func (f *reorderFake) Pairs() []Binding {
+	var out []Binding
+	for _, e := range f.entries {
+		out = append(out, Binding{Main: e.Main, Backup: e.Backup})
+	}
+	return out
+}
+func (f *reorderFake) Entries() []BindingEntry       { return f.entries }
+func (f *reorderFake) RebindAll(from, to string) int { return f.Rebind(from, to) }
+
+func (f *reorderFake) Rebind(from, to string) int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.moves = append(f.moves, from+"->"+to)
+	return 1
+}
+func (f *reorderFake) RebindMain(ruleKind, from, to string) int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.moves = append(f.moves, "main:"+from+"->"+to)
+	return 1
+}
+func (f *reorderFake) Moves() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]string(nil), f.moves...)
+}
+
+func setHS(t *testing.T, url string, hs int64) {
+	EnsureHealthLoaded()
+	healthMu.Lock()
+	healthStats[url] = &HealthEntry{HSCount: 5, HSSumMs: hs * 5}
+	healthMu.Unlock()
+	t.Cleanup(func() {
+		healthMu.Lock()
+		delete(healthStats, url)
+		healthMu.Unlock()
+	})
+}
+
+// TestRunReorderForKind 后端定时重排（2026-11-26 用户定）：cn 条目冻结且其
+// 出口不进供给（占用保护）；无域慢条目修复到最优候选——国内出口对无域凭据
+// 也是候选（新语义）；声明国际的快条目冻结。
+func TestRunReorderForKind(t *testing.T) {
+	PathOverride = filepath.Join(t.TempDir(), "proxy-config.json")
+	t.Cleanup(func() { PathOverride = "" })
+	ActivatePool(&PoolConfig{Proxies: []string{
+		"socks5://h:1#a-jp",
+		"socks5://h:2#b-us",
+		"socks5://h:3#c-fr",
+		"socks5://h:4#z-au",
+	}, Zones: map[string]string{
+		"socks5://h:1#a-jp": ZoneCN,
+		"socks5://h:4#z-au": ZoneCN,
+	}, Strategy: "round_robin"})
+	t.Cleanup(func() { ActivatePool(&PoolConfig{Strategy: "round_robin"}) })
+	// 健康：a-jp/z-au 快（cn 保留），b-us 快，c-fr 慢（要被修复）。
+	setHS(t, "socks5://h:1#a-jp", 800)
+	setHS(t, "socks5://h:2#b-us", 1000)
+	setHS(t, "socks5://h:3#c-fr", 20000)
+	setHS(t, "socks5://h:4#z-au", 900)
+
+	fk := &reorderFake{entries: []BindingEntry{
+		{Key: "cn-cred", Main: "socks5://h:1#a-jp", Realm: "cn"},         // cn：冻结
+		{Key: "slow-cred", Main: "socks5://h:3#c-fr", Realm: ""},         // 无域 + 慢 → 修复
+		{Key: "global-cred", Main: "socks5://h:2#b-us", Realm: "global"}, // global + 快 → 冻结
+	}}
+	RegisterFailoverBindings("acc", fk)
+	t.Cleanup(func() {
+		failoverMu.Lock()
+		delete(failoverBindings, "acc")
+		failoverMu.Unlock()
+	})
+
+	n := RunReorderForKind("acc")
+	if n != 1 {
+		t.Fatalf("changed = %d, want 1", n)
+	}
+	// 无域慢条目 c-fr 的候选含国内出口 z-au（快 900ms，比 b-us 更快）→ 选 z-au。
+	moves := fk.Moves()
+	if len(moves) != 1 || moves[0] != "main:socks5://h:3#c-fr->socks5://h:4#z-au" {
+		t.Fatalf("moves = %v, want c-fr -> z-au only", moves)
+	}
+}
+
+// TestRunReorderForKindIntlBlock 声明国际的凭据不可被重排到国内出口
+//（2026-11-26 用户定 B 语义：国际域唯一效果 = 不分配国内出口）。
+func TestRunReorderForKindIntlBlock(t *testing.T) {
+	PathOverride = filepath.Join(t.TempDir(), "proxy-config.json")
+	t.Cleanup(func() { PathOverride = "" })
+	ActivatePool(&PoolConfig{Proxies: []string{
+		"socks5://h:1#a-jp",
+		"socks5://h:2#b-us",
+		"socks5://h:3#c-fr",
+	}, Zones: map[string]string{
+		"socks5://h:1#a-jp": ZoneCN,
+	}, Strategy: "round_robin"})
+	t.Cleanup(func() { ActivatePool(&PoolConfig{Strategy: "round_robin"}) })
+	setHS(t, "socks5://h:1#a-jp", 500)
+	setHS(t, "socks5://h:2#b-us", 9000)  // 慢于阈值
+	setHS(t, "socks5://h:3#c-fr", 10000) // 更慢
+
+	fk := &reorderFake{entries: []BindingEntry{
+		{Key: "k1", Main: "socks5://h:2#b-us", Realm: "global"},
+		{Key: "k2", Main: "socks5://h:3#c-fr", Realm: "global"},
+	}}
+	RegisterFailoverBindings("key", fk)
+	t.Cleanup(func() {
+		failoverMu.Lock()
+		delete(failoverBindings, "key")
+		failoverMu.Unlock()
+	})
+
+	RunReorderForKind("key")
+	// 全场最快的 a-jp 是国内出口，对国际凭据不兼容；其余候选同档慢不更优
+	// → 无改动。
+	if m := fk.Moves(); len(m) != 0 {
+		t.Fatalf("cn exit must not be offered to intl rows, moves = %v", m)
 	}
 }

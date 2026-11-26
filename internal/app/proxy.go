@@ -2,6 +2,7 @@ package app
 
 import (
 	"afree-proxy/internal/cline"
+	"afree-proxy/internal/exitpool"
 	"afree-proxy/internal/gateway"
 	"afree-proxy/internal/panel"
 	"afree-proxy/internal/reqlog"
@@ -85,6 +86,12 @@ func StartProxy(host string, port int) error {
 	// 差分故障转移的平台适配器（2026-11-24 用户定）：读各平台绑定表 + 改绑
 	// 写回，注册必须先于任何上游请求（触发挂平台级冷却分支）。
 	RegisterFailoverAdapters()
+	// 排除条目 TTL 复核循环（2026-11-26 用户定）：差分排除的条目每小时探活，
+	// 连续 2 次恢复可达自动解禁——上游解封后条目不再永久残留。
+	exitpool.StartFailoverReviewLoop()
+	// 延迟重排定时 worker（2026-11-26 用户定）：proxyReorderCron 命中时全平台
+	// 跑一轮冻结-供给-修复重排（cron 热生效，空 = 不调度）。
+	StartProxyReorderWorker()
 	loadClineStreamLearned()
 	initOther()
 	initFreepi()
