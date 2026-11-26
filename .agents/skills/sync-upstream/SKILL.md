@@ -45,9 +45,9 @@ description: 同步 afree-proxy 六条上游线的完整流程与陷阱清单—
 3. **引用上游提交用显式哈希**，绝不依赖 `FETCH_HEAD`——后台 IDE fetch 会把 `.git/FETCH_HEAD` 覆写成自己 fork 的记录，导致把本地 HEAD 误当上游（真实踩坑）。
 4. **会话回显不可信**：冲突解决结果以 `git diff`、容器构建、真实测试输出为准。
 5. 提交信息用中文、说明上游哈希与本地适配点；fork 线结束必须 `git push origin main`（不推 GitHub 的 behind 提示不会消除，同步就没生效）。
-6. **收尾必写 `MERGE.md` 台账**（用户 2026-10-27 要求）：仓库根 `MERGE.md` 按 Cline / TreaWork / WorkBuddy / OpenCode 四条线记录同步历史。每次同步在对应线追加一节 `### YYYY-MM-DD — <基线短哈希> → <目标短哈希>`，写明上游仓库与合并方式、基线与目标、吸收项（带原因）、丢弃项（带原因）、本地定制保留清单、验证结果；未涉及的线保留原文并写"本次未涉及上游同步"。历史记录只追加不删改。
+6. **收尾必写 `MERGE.md` 台账**（用户 2026-10-27 要求）：仓库根 `MERGE.md` 按 Cline / TraeWork / WorkBuddy / OpenCode / FreePI 五条线记录同步历史（另有「副线评估与 magpie」一节）。每次同步在对应线追加一节 `### YYYY-MM-DD — <基线短哈希> → <目标短哈希>`，写明上游仓库与合并方式、基线与目标、吸收项（带原因）、丢弃项（带原因）、本地定制保留清单、验证结果；未涉及的线保留原文并写"本次未涉及上游同步"。历史记录只追加不删改。
    **分节前先判平台归属，写错节等于台账失效**：`foxy1402/cline-proxy` 是**一个上游承载两条平台线**——`zen*.go` / `admin_zen.go` / 面板 `oc*` 字段 / `ZEN_*` 配置 / `internal/kit/http.go`（`DecodeResponse` 只被 `zen.go` 调用）属于 **OpenCode**；Cline 账号池与 `/v1` 通用转发/方言转换属于 **Cline**。判据命令：`git diff --name-only <本地旧HEAD> <merge提交> | grep -iE 'zen|opencode'` 与 `| grep -i cline`，两者只应付出一条线；不要因为上游叫 cline-proxy 就把 zen 改动记在 Cline 下。
-7. **根 `AGENTS.md` 是其他 agent 的唯一自动入口**:`MERGE.md` 和本 skill 都不会被其他 agent 自动加载。根目录按「通用 / 专属」拆两份——`AGENTS.md` 放**跨项目通用规则**(git 纪律、验证要求、删除判据、上游台账格式),`PROJECT.md` 放**本项目专属事实**(平台归属表、三条线入口、flaky 不修、本地定制清单、部署流程);`AGENTS.md` 顶部强指向 `PROJECT.md` 并要求动手前必读。改动这些规则时同步更新对应文件,否则下一个 agent 会重犯。
+7. **根 `AGENTS.md` 是其他 agent 的唯一自动入口**:`MERGE.md` 和本 skill 都不会被其他 agent 自动加载。根目录按「通用 / 专属」拆两份——`AGENTS.md` 放**跨项目通用规则**(git 纪律、验证要求、删除判据、上游台账格式),`PROJECT.md` 放**本项目专属事实**(平台归属表、六条线入口、flaky 不修、本地定制清单、部署流程);`AGENTS.md` 顶部强指向 `PROJECT.md` 并要求动手前必读。改动这些规则时同步更新对应文件,否则下一个 agent 会重犯。
 8. **本机 git 出网必须用 URL 级代理键**(2026-10-28 实测):只设 `http.proxy` / `https.proxy` / `ALL_PROXY` 环境变量时,Windows schannel 后端仍报 `schannel: failed to receive handshake, SSL/TLS connection failed`;`-c http.sslBackend=openssl` 也无效。唯一验证可用的形式是三条一起给:
    `git -c 'http.https://github.com.proxy=socks5h://127.0.0.1:10808' -c 'http.proxy=socks5h://127.0.0.1:10808' -c 'https.proxy=socks5h://127.0.0.1:10808' ls-remote|fetch ...`
    端口用哪个以 AGENTS.md §10 的五候选实测表为准（用前先探，通即用；示例里的 10808 只是当时实测值）。仓库无持久代理配置(`git config --list --show-origin | grep proxy` 为空),每条 git 网络命令都要带。连通性判据看 `ls-remote` 是否吐出哈希;shell 显示 `exit=0` 而工具 `exit_code=128` 时按失败处理。
@@ -87,7 +87,7 @@ python scripts/sync_workbuddy.py --seal     # 冲突清零后登记新基线
 **TraeWork vendor 线**（2026-11-04 起，XCool-603/trae2api）：
 
 ```bash
-# 源树 = D:\下载\Github	rae2api-xcool（git clone，已含上游全史 + textcall 本地修复 WIP）
+# 源树 = D:/下载/Github/trae2api（git clone，已含上游全史 + textcall 本地修复 WIP；2026-11-27 勘误：原文本含字面 tab 且目录名 xcool 已不存在，与 scripts/vendor_trae2api.py SOURCE_ROOT 对齐）
 python scripts/sync_trae2api.py --report   # dry-run：看会合并什么
 python scripts/sync_trae2api.py            # 实际合并；冲突解决后 --seal 登记基线
 python scripts/sync_trae2api.py --pull     # 先 ff-only 拉上游（注意：源树 WIP 与上游同文件冲突时 pull 会失败，先在上游提交或还原）
@@ -98,7 +98,7 @@ python scripts/sync_trae2api.py --seal     # 解决冲突后登记新基线
 - **改写锚点随上游漂移时**：vendor 脚本对计数不匹配直接 RuntimeError 报锚点失效——修 `scripts/vendor_trae2api.py` 的 REWRITES（计数支持元组，写法参照 `vendor_workbuddy.py` 的 EGRESS_REWRITES）。
 - 源树 WIP 白名单：`internal/server/{chat,server}.go` 修改 + `textcall{,_test}.go` 新增是**合法**（与补丁同源）；`internal/` 下出现清单外未提交内容会被拒绝同步。
 - 上游若自行合并了 textcall 修复：补丁 `git apply --check` 失败 → 从 vendor 脚本移除补丁引用并记录台账。
-- 版本号：上游 `internal/server/server.go` 的 `Version` var ↔ 本地 `internal/app/trae.go` 的 `trae2apiVersion`，sync 尾部会提醒对齐。
+- 版本号：上游 `internal/server/server.go` 的 `Version` var ↔ 本地 `internal/app/trae_bridge.go` 的 `trae2apiVersion`，sync 尾部会提醒对齐。
 
 **Trae 比对线**（不合并，只核对内嵌脚本）：
 
@@ -113,13 +113,13 @@ python scripts/check_trae_helper.py --upstream-dir "$(cygpath -w /tmp/trae-up)"
 
 exit 0 = `internal/trae/trae2api_helper_script.go` 内嵌的 `web_login.py` 与上游逐行一致（仅 `__RELAY_URL__` 占位符差异）；exit 1 打印 unified diff，处理方式是**以上游文件重建内嵌模板**（只替换 `DEFAULT_RELAY_URL` 为 `__RELAY_URL__`、按 Go raw string 规则把反引号转义成 `` ` + "`" + ` ``），不要手工逐行改。升级后同步更新 `scripts/trae-helper-baseline.json` 的 version / commit / date。
 
-Go 侧旧引擎（原 `internal/trae/`，Trae2api-cn 的 Go 重写）已于 2026-11-04 整体删除——TraeWork 行为面由 TraeWork vendor 线（XCool-603/trae2api）承接，本线只剩 helper 脚本模板的比对职责。历史差异结论见 `MERGE.md` TreaWork 节（已随引擎退役归档）。
+Go 侧旧引擎（原 `internal/trae/`，Trae2api-cn 的 Go 重写）已于 2026-11-04 整体删除——TraeWork 行为面由 TraeWork vendor 线（XCool-603/trae2api）承接，本线只剩 helper 脚本模板的比对职责。历史差异结论见 `MERGE.md` TraeWork 节（已随引擎退役归档）。
 
 ## 3. 验证命令（三条线通用）
 
 ```bash
 # 本机 Go 直跑（首选；go1.27.2 已在 PATH）
-go build ./... && go vet ./internal/... && go test ./... && go test -race ./internal/app/
+GOALL='./... github.com/misakano7545/workbuddy2api-panel/... trae2api/...' && go build $GOALL && go vet $GOALL && go test $GOALL -count=1 && go test -race ./internal/app/  # 2026-11-27 对齐 PROJECT.md §4：./... 不穿透 modules/ 两子 module，漏列即假绿
 # race 本机直跑（2026-10-30 起）：gcc 已在全局 PATH（C:\AppSelf\Mingw\bin），CGO_ENABLED=1 即可，不再跳过
 # 同步引入/触及并发代码（goroutine/共享 struct）时 race 必跑——上游「不 join 的 goroutine 直写共享 struct」普通模式测不出（webagent.go 教训）
 
@@ -136,4 +136,4 @@ docker build -t afree-proxy:test-$(date +%Y%m%d-%H%M) .
 
 - fork 线：merge commit 双父（本地 HEAD + 上游哈希）已推送 origin；GitHub 仓库页不再显示 behind；`MERGE.md` 的**对应平台节**（Cline 或 OpenCode，按改动文件归属判定）已追加本次记录。
 - vendor 线：`workbuddy-vendor-baseline.json` 的 commit = 上游 HEAD；脚本手工步骤清单（装配/版本号）已完成；容器验证全绿；`MERGE.md` 的 WorkBuddy 节已追加本次记录。
-- Trae 线：`scripts/trae-helper-baseline.json` 已登记上游最新 tag / commit；`check_trae_helper.py` exit 0；Go 侧按上游 release notes 的核对结论（已具备 / 已知差异 / 未逐条核对）已写入 `MERGE.md` 的 TreaWork 节。
+- Trae 线：`scripts/trae-helper-baseline.json` 已登记上游最新 tag / commit；`check_trae_helper.py` exit 0；Go 侧按上游 release notes 的核对结论（已具备 / 已知差异 / 未逐条核对）已写入 `MERGE.md` 的 TraeWork 节。

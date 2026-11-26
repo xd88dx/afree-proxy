@@ -189,7 +189,7 @@ func guardBufferedChatSSE(w http.ResponseWriter, resp *http.Response, params map
 	}
 	resp.Body = io.NopCloser(bytes.NewReader(body))
 	lines := strings.SplitAfter(string(body), "\n")
-	bad := guardBadToolCalls(lines, params)
+	bad := guardBadToolCalls(lines, params, nil) // 前缀平台 params 已就地改名
 	if bad == "" {
 		// freepi 账号共享/轮转拒绝是 200 SSE 正文，结构性检测抓不到；
 		// 复用已缓冲的 lines 按文案判一次。
@@ -238,7 +238,7 @@ func handleResponsesViaChat(w http.ResponseWriter, r *http.Request, chat map[str
 		})
 		return
 	}
-	if bad := guardBadToolCallsChat(raw, chat); bad != "" {
+	if bad := guardBadToolCallsChat(raw, chat, nil); bad != "" {
 		writeJSON(w, http.StatusBadGateway, map[string]any{
 			"error": map[string]any{"message": bad, "type": "upstream_error"},
 		})
@@ -289,7 +289,7 @@ func handleAnthropicViaChat(w http.ResponseWriter, r *http.Request, req anthropi
 		})
 		return
 	}
-	if bad := guardBadToolCallsChat(chat, openAIReq); bad != "" {
+	if bad := guardBadToolCallsChat(chat, openAIReq, nil); bad != "" {
 		writeJSON(w, http.StatusBadGateway, map[string]any{
 			"error": map[string]any{"message": bad, "type": "upstream_error"},
 		})

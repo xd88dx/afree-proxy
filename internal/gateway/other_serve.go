@@ -138,5 +138,5 @@ func handleOtherChat(w http.ResponseWriter, r *http.Request, params map[string]a
 	usageFn := func(u map[string]any) {
 		other.RecordKeyTokens(p, usedKey, kit.UsageTokens(u, params))
 	}
-	finishZenChatNonStream(w, resp, &ZenModel{ID: m.ID}, params, usageFn)
+	finishZenChatNonStream(w, resp, &ZenModel{ID: m.ID}, params, usageFn, nil) // params 已就地改名
 }

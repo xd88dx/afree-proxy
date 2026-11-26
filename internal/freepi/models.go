@@ -199,6 +199,11 @@ func ProbeModel() (Model, bool) {
 // SetFetched 整体替换拉取目录（同步成功时调用）。返回新增/变更条数。
 // 顺带记 catalogSyncedAt：本函数是唯一的有效目录写点（TrySync 只在拉到
 // 非空目录时调用），pill 的「同步于」语义即「上次成功拉到上游目录」。
+// 写时复制（2026-11-27 审计 F1）：Get() 返回活指针后锁即释放，CloneConfig 与
+// 备份导出都无锁读 cfg——本函数曾是全包唯一的就地突变，与无锁读构成数据
+// 竞争（切片头三字非原子，torn read 最坏 append 越界）。改为浅拷贝 Config、
+// 仅替换 Models.Fetched 切片头；其余字段与旧 cfg 共享底层（无并发就地写者，
+// 与 CloneConfig 注释的前提一致）。
 func SetFetched(fetched []Model) int {
 	mu.Lock()
 	defer mu.Unlock()
@@ -212,7 +217,9 @@ func SetFetched(fetched []Model) int {
 			changed++
 		}
 	}
-	cfg.Models.Fetched = fetched
+	next := *cfg
+	next.Models.Fetched = fetched
+	cfg = &next
 	catalogSyncedAt = time.Now()
 	return changed
 }

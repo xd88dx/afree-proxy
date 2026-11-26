@@ -42,11 +42,11 @@ func clineProxiesEnabled() bool {
 
 // ---- gateway 导出面（装配根/测试别名消费）----
 
-func ListCombos() []*gwconfig.Combo                                  { return listCombos() }
-func ResolveCombo(id string) *gwconfig.Combo                         { return resolveCombo(id) }
-func WriteJSON(w http.ResponseWriter, status int, data any)          { writeJSON(w, status, data) }
-func UsageFromChatPayload(body string) map[string]any                { return usageFromChatPayload(body) }
-func TakeUsedKey(resp *http.Response) string                         { return takeUsedKey(resp) }
+func ListCombos() []*gwconfig.Combo                         { return listCombos() }
+func ResolveCombo(id string) *gwconfig.Combo                { return resolveCombo(id) }
+func WriteJSON(w http.ResponseWriter, status int, data any) { writeJSON(w, status, data) }
+func UsageFromChatPayload(body string) map[string]any       { return usageFromChatPayload(body) }
+func TakeUsedKey(resp *http.Response) string                { return takeUsedKey(resp) }
 func ClassifyReqRoute(r *http.Request, model string) (string, string) {
 	return classifyReqRoute(r, model)
 }

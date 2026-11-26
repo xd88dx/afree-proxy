@@ -59,7 +59,9 @@ func ZoneCompatible(exitZone, credRealm string) bool {
 // 有效域"的唯一来源——取代各平台 realm 的隐式写死判定。
 //
 // 声明键形态：
-//   "acc"/"key"/"zen"/"freepi"             整平台勾选 = 全部凭据 cn 域
+//   "acc"/"key"/"freepi"                   整平台勾选 = 全部凭据 cn 域（zen 的
+//                                          排除规则口径即 "key"，不收 "zen"，
+//                                          2026-11-27 审计 S10）
 //   "wb:cn"/"wb:gb"                        wb 的 cn/global 区域凭据分别匹配
 //   "trae:cn"/"trae:gb"                    trae 的 cn/intl 区域凭据分别匹配
 //   "other:<slug>"                         other 子平台勾选 = 该子平台全部 key cn 域

@@ -29,9 +29,9 @@ WorkBuddy 一栏的基线同时登记在 `scripts/workbuddy-vendor-baseline.json
 
 验证：go build/vet 全绿；`go test ./... -count=1` 无失败；`go test -race ./internal/app/` 通过（含修复后的并发学习回归）。既有 flaky `TestChatStreamPassthrough`（workbuddy/server）未受影响。
 
-# Conflicts: .gitignore README.md internal/app/{admin,admin_html,cline_stream,config,logs,models,pool,proxy,zen,zen_deprecated}.go internal/app/{zen_fanout,zen_key,zen_park}_test.go
+- 合并冲突涉及：.gitignore README.md internal/app/{admin,admin_html,cline_stream,config,logs,models,pool,proxy,zen,zen_deprecated}.go internal/app/{zen_fanout,zen_key,zen_park}_test.go（2026-11-27 勘误：原为误粘贴的 `# Conflicts:` 行，会渲染成一级标题，改为列表；所列路径随配置重组多已不存在，仅存档）
 
-## TreaWork
+## TraeWork
 
 ### 2026-11-23 — 复核（XCool 零新提交；Trae2api-cn 副线 1 新提交零吸纳）
 
@@ -700,7 +700,7 @@ WorkBuddy 一栏的基线同时登记在 `scripts/workbuddy-vendor-baseline.json
 ### 2026-11-23 — 副线复核（opencode2api 零新提交；magpie c4bae072→f1160f6f 约 300 提交，零吸纳+2 取证）
 
 - **opencode2api**：HEAD 仍 `6575c623`（= 2026-11-21 推进后的基线），零新提交。（本次会话初评误用 11-19 前的 grep 快照，对 e2b2a7c2→6575c623 两条重复评估，结论与 11-21 条目一致：零吸纳；台账已回归正确基线。）
-- **Trae2api-cn**：`f6eeeba6` 零吸纳评估见 TreaWork 节 2026-11-23 条目（web_login.py 未触及，helper 基线不变）。
+- **Trae2api-cn**：`f6eeeba6` 零吸纳评估见 TraeWork 节 2026-11-23 条目（web_login.py 未触及，helper 基线不变）。
 - **magpie**（`c4bae072` 2026-11-19 → `f1160f6f` 2026-11-23，3 页 API 共约 300 提交）：绝大多数为 magpie 自有形态（GUI/library/usage/memory/remote/routing group/provider 适配/site/nix），架构不同判不适用。逐条筛选后细看 2 条：
   - `499b6fdf` Zen free model env block 测试修正（#7117）——**零吸纳留档（上游行为取证）**：纯测试修正（test-only），magpie 自己的 gateway 测试期望写死 "Prefer /tmp/opencode"，实测 OpenCode env block 的临时目录按 os.TempDir()+EvalSymlinks 生成（Linux /tmp、macOS /private/var/folders、Windows AppData）；提交信息再次确认「目录值本身不校验」（fake value → 200），与本仓 2026-10-26 消融结论一致，ZenEnvBlock 用网关 cwd 无需改。
   - `8bda3d55` item id 长度拒绝重试（#5812）——**零吸纳**：Responses/Codex 形态的跨上游 item id 回流问题（上游 A 铸造的超长 id 经客户端历史打到校验 id 的上游 B），magpie 修识别长度类拒绝+换 plain ids 重试+记忆。本仓每平台单一固定上游、无跨上游 id 回流问题域，Anthropic 方言（cline）的 tool_use id 由本仓转换层自己生成。
@@ -758,7 +758,7 @@ WorkBuddy 一栏的基线同时登记在 `scripts/workbuddy-vendor-baseline.json
 ### 2026-11-10 — 副线复核（opencode2api 零新提交；magpie 691a104→547585cd 零吸纳）
 
 - **opencode2api**：HEAD 仍为 `b296a61`（2026-11-05），自基线零新提交，无评估项。
-- **Trae2api-cn**：上游最新 `5c87d6c`（v1.0.11）；helper 比对 exit 0、基线推进记 TreaWork 节 2026-11-10 条目；引擎层零吸纳结论沿用 2026-11-08。
+- **Trae2api-cn**：上游最新 `5c87d6c`（v1.0.11）；helper 比对 exit 0、基线推进记 TraeWork 节 2026-11-10 条目；引擎层零吸纳结论沿用 2026-11-08。
 - **magpie**（三轮增量 2026-11-08 基线 `691a104` → `547585cd`，约 100 提交）：全部为 magpie 自有形态（Memory/memdistill 子系统、GUI providers 页、sessions 统计、routing group、/v1/magpie/* 配额钱包、i18n、dsh 哈希分块）。重点甄别两项：
   - `835439eb` 平行工具调用复用 index（0,0,1）致参数串包——触发面是 magpie 自有 amr-link（Responses→Chat 适配器）放大 deepseek-v4.1-flash 的流式怪癖（opencode-go 同模型 0/55）；本仓无实证，修法落点在 vendored wb sse.go（mergeToolCallDelta 按索引合并同构缺陷面）成本高且无本地触发证据，**零吸纳留档**：未来 wb/zen 上游若现平行调用参数串包（客户端收到 `{...}{...}` 断裂参数），按「新 id 命中已占 index → 改派下一个空闲 index 并重映射后续片段」修。
   - `803d7747` 按厂商命名时限避让限流账号——本仓 zen 429 冷却封顶 20 分钟（Retry-After 谎报）+ key 池冷却语义已覆盖且刻意不同，弃。

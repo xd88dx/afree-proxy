@@ -322,7 +322,7 @@ func StartWorkBuddy() (*WorkbuddySubsystem, error) {
 		ThinkingModelDefaults:  cfg.Thinking.ModelDefaults,
 	})
 	// 用量台账落 wkbd-state.json（2026-11-17 配置重组：afree 自有状态迁出
-	// vendor 子目录 workbuddy/usage.json 到 data 根，与 trae-state.json 同
+	// vendor 子目录 workbuddy/usage.json 到 data 根，与 trae2api/tokens.json 同（README 曾误记 trae-state.json，2026-11-27 勘误）
 	// 命名铁律——afree 层状态不落 vendor 目录）。
 	rec := wbbridge.UsageNew(kit.ResolveDataPath("wkbd-state.json"))
 	rec.Start()

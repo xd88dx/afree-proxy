@@ -178,7 +178,7 @@ func handleZenChat(w http.ResponseWriter, r *http.Request, params map[string]any
 	}
 	// FreeTier gate 要求上游恒 stream=true（buildZenBody 恒注入）；非流式
 	// 客户端在此把上游 chat SSE 聚合回 chat JSON，语义与直连非流式一致。
-	finishZenChatNonStream(w, resp, zm, params, usageFn)
+	finishZenChatNonStream(w, resp, zm, params, usageFn, zenGuardMapping(params))
 }
 
 // handleZenChatDirect chat/completions 直调（端点自适应的反向纠错口：
@@ -213,7 +213,7 @@ func handleZenChatDirect(w http.ResponseWriter, r *http.Request, params map[stri
 		})
 		return
 	}
-	finishZenChatNonStream(w, resp, zm, params, usageFn)
+	finishZenChatNonStream(w, resp, zm, params, usageFn, zenGuardMapping(params))
 }
 
 // handleZenResponsesNative 原生 responses 端点模型（Upstream=="responses"）的
@@ -266,6 +266,14 @@ func handleZenResponsesNative(w http.ResponseWriter, r *http.Request, params map
 			return false
 		}
 		chat["model"] = zm.ID
+		// 坏 tool_call 闸（2026-11-27 审计 G3）：聚合完成后、SSE 下发前拦截。
+		if bad := guardBadToolCallsChat(chat, params, zenGuardMapping(params)); bad != "" {
+			log.Printf("  zen responses-native stream bad tool call, returning 502: %s", kit.Truncate(bad, 200))
+			writeJSON(w, http.StatusBadGateway, map[string]any{
+				"error": map[string]any{"message": kit.Truncate(bad, 300), "type": "upstream_error"},
+			})
+			return false
+		}
 		emitChatAsSSE(w, chat, usageFn)
 		return true
 	}
@@ -279,6 +287,14 @@ func handleZenResponsesNative(w http.ResponseWriter, r *http.Request, params map
 		return false
 	}
 	chat["model"] = zm.ID
+	// 坏 tool_call 闸（2026-11-27 审计 G3）：非流式呈现前拦截。
+	if bad := guardBadToolCallsChat(chat, params, zenGuardMapping(params)); bad != "" {
+		log.Printf("  zen responses-native nonstream bad tool call, returning 502: %s", kit.Truncate(bad, 200))
+		writeJSON(w, http.StatusBadGateway, map[string]any{
+			"error": map[string]any{"message": kit.Truncate(bad, 300), "type": "upstream_error"},
+		})
+		return false
+	}
 	data, merr := json.Marshal(chat)
 	if merr != nil {
 		writeJSON(w, http.StatusBadGateway, map[string]any{
@@ -821,7 +837,12 @@ func handleStreamBufferedGeneric(w http.ResponseWriter, r *http.Request, plat st
 			// 客户端写任何字节，可以在这里直接改判 502。此前 200 + 坏 tool_use
 			// 被 new-api 记为成功交给 agent，Claude Code 因 command 缺失校验失败、
 			// 任务静默终止；改成真实错误后 agent 可重试/报错。
-			if bad := guardBadToolCalls(lines, params); bad != "" {
+			// zen 走域包出站 body 改名，判据须认假名（2026-11-27 审计 G2）。
+			var ren *toolrename.Mapping
+			if plat == toolrename.KindZen {
+				ren = zenGuardMapping(params)
+			}
+			if bad := guardBadToolCalls(lines, params, ren); bad != "" {
 				log.Printf("  [%s] %s buffered stream bad tool call, returning 502: %s",
 					rid, plat, kit.Truncate(bad, 200))
 				reqlog.SetUpstreamNote(r.Context(), "工具调用参数破损")
@@ -1356,8 +1377,10 @@ func withStreamUsage(params map[string]any) {
 
 // finishZenChatNonStream 非流式 zen 应答收尾（chat 形态）：上游已被强制
 // stream=true，此处把 chat SSE 聚合回 chat JSON 再呈现。handleZenChat /
-// handleZenChatDirect 共用同一序列，避免 copy-paste 漂移。
-func finishZenChatNonStream(w http.ResponseWriter, resp *http.Response, zm *ZenModel, params map[string]any, usageFn func(map[string]any)) {
+// handleZenChatDirect 共用同一序列，避免 copy-paste 漂移。ren 为 zen 出站改名
+// 映射（zen 调用方传 zenGuardMapping(params)；freepi/other 复用方 params 已
+// 就地改写，传 nil——2026-11-27 审计 G2）。
+func finishZenChatNonStream(w http.ResponseWriter, resp *http.Response, zm *ZenModel, params map[string]any, usageFn func(map[string]any), ren *toolrename.Mapping) {
 	chat, aerr := collectStreamResponse(resp)
 	if aerr != nil {
 		writeUpstreamAPIError(w, zm.ID, aerr, http.StatusInternalServerError)
@@ -1373,7 +1396,7 @@ func finishZenChatNonStream(w http.ResponseWriter, resp *http.Response, zm *ZenM
 	truncateAtStopSequences(chat, stopSequencesFrom(params))
 	// 非流式出口同样拦下坏工具调用（2026-11-25）：此处尚未写 200，
 	// 与流式路径共用判据，避免 new-api 把 200 + 空 tool_use 记为成功。
-	if bad := guardBadToolCallsChat(chat, params); bad != "" {
+	if bad := guardBadToolCallsChat(chat, params, ren); bad != "" {
 		log.Printf("  nonstream bad tool call, returning 502: %s", kit.Truncate(bad, 200))
 		writeJSON(w, http.StatusBadGateway, map[string]any{
 			"error": map[string]any{"message": kit.Truncate(bad, 300), "type": "upstream_error"},
@@ -2087,6 +2110,9 @@ func handleAnthropicMessages(w http.ResponseWriter, r *http.Request) {
 	usageFn := cline.AccountUsageFn(acc, openAIReq)
 
 	if req.Stream {
+		// 实时转发（2026-11-27 审计 G3 注记）：200 与首帧已即时下发，结构性
+		// 无法在写 200 前过坏 tool_call 闸——坏调用的破窗在流式形态客观存在，
+		// 与 chat 路径 2026-11-25 前的形态相同；缓冲化需重估 TTFB 代价，暂缺。
 		handleAnthropicStreamWithUsage(w, resp, cline.NormalizeRequestModel(req.Model), toolSchemas, stopSequencesFrom(openAIReq), usageFn)
 		return
 	}
@@ -2103,6 +2129,14 @@ func handleAnthropicMessages(w http.ResponseWriter, r *http.Request) {
 		usageFn(u)
 		out = normalizeOpenAIResponse(out)
 		truncateAtStopSequences(out, stopSequencesFrom(openAIReq))
+		// 坏 tool_call 闸（2026-11-27 审计 G3）：messages cline 聚合分支补接。
+		if bad := guardBadToolCallsChat(out, openAIReq, nil); bad != "" {
+			log.Printf("  anthropic cline nonstream bad tool call, returning 502: %s", kit.Truncate(bad, 200))
+			writeJSON(w, http.StatusBadGateway, map[string]any{
+				"error": map[string]any{"message": kit.Truncate(bad, 300), "type": "upstream_error"},
+			})
+			return
+		}
 		anthropicResp := openAIToAnthropic(out)
 		if tc, ok := getNested(out, "choices", 0, "message", "tool_calls").([]any); ok && len(tc) > 0 {
 			anthropicResp["stop_reason"] = "tool_use"
@@ -2129,6 +2163,14 @@ func handleAnthropicMessages(w http.ResponseWriter, r *http.Request) {
 	}
 	out = normalizeOpenAIResponse(out)
 	truncateAtStopSequences(out, stopSequencesFrom(openAIReq))
+	// 坏 tool_call 闸（2026-11-27 审计 G3）：messages cline 直返 JSON 分支补接。
+	if bad := guardBadToolCallsChat(out, openAIReq, nil); bad != "" {
+		log.Printf("  anthropic cline nonstream bad tool call, returning 502: %s", kit.Truncate(bad, 200))
+		writeJSON(w, http.StatusBadGateway, map[string]any{
+			"error": map[string]any{"message": kit.Truncate(bad, 300), "type": "upstream_error"},
+		})
+		return
+	}
 	anthropicResp := openAIToAnthropic(out)
 
 	if tc, ok := getNested(out, "choices", 0, "message", "tool_calls").([]any); ok && len(tc) > 0 {
@@ -2144,7 +2186,7 @@ func handleAnthropicMessages(w http.ResponseWriter, r *http.Request) {
 // tool_calls 时 stop_reason=tool_use。handleZenAnthropic 的 responses 直达分支
 // 与 auto-learn 重试分支共用，避免 copy-paste 漂移。
 func finishZenAnthropicNonStream(w http.ResponseWriter, chat map[string]any, openAIReq map[string]any, zm *ZenModel) {
-	if bad := guardBadToolCallsChat(chat, openAIReq); bad != "" {
+	if bad := guardBadToolCallsChat(chat, openAIReq, zenGuardMapping(openAIReq)); bad != "" {
 		writeJSON(w, http.StatusBadGateway, map[string]any{
 			"error": map[string]any{"message": bad, "type": "upstream_error"},
 		})
@@ -2199,7 +2241,7 @@ func handleZenAnthropic(w http.ResponseWriter, r *http.Request, req anthropicReq
 		// 聚合结果不含上游 model（responsesSSEToChat 置空），两种客户端
 		// 形态都要回填网关模型 ID，避免 Anthropic 应答 model 为空。
 		chat["model"] = zm.ID
-		if bad := guardBadToolCallsChat(chat, openAIReq); bad != "" {
+		if bad := guardBadToolCallsChat(chat, openAIReq, zenGuardMapping(openAIReq)); bad != "" {
 			writeJSON(w, http.StatusBadGateway, map[string]any{
 				"error": map[string]any{"message": bad, "type": "upstream_error"},
 			})
@@ -2239,7 +2281,7 @@ func handleZenAnthropic(w http.ResponseWriter, r *http.Request, req anthropicReq
 			return
 		}
 		chat["model"] = zm.ID
-		if bad := guardBadToolCallsChat(chat, openAIReq); bad != "" {
+		if bad := guardBadToolCallsChat(chat, openAIReq, zenGuardMapping(openAIReq)); bad != "" {
 			writeJSON(w, http.StatusBadGateway, map[string]any{
 				"error": map[string]any{"message": bad, "type": "upstream_error"},
 			})
@@ -2273,7 +2315,7 @@ func handleZenAnthropic(w http.ResponseWriter, r *http.Request, req anthropicReq
 			writeUpstreamAPIError(w, zm.ID, readErr, http.StatusBadGateway)
 			return
 		}
-		if bad := guardBadToolCalls(strings.SplitAfter(string(body), "\n"), openAIReq); bad != "" {
+		if bad := guardBadToolCalls(strings.SplitAfter(string(body), "\n"), openAIReq, zenGuardMapping(openAIReq)); bad != "" {
 			writeJSON(w, http.StatusBadGateway, map[string]any{
 				"error": map[string]any{"message": bad, "type": "upstream_error"},
 			})
@@ -2299,6 +2341,15 @@ func handleZenAnthropic(w http.ResponseWriter, r *http.Request, req anthropicReq
 	// 与 finishZenAnthropicNonStream 保持一致：上游对 stop 的执行不可靠，
 	// 非流式应答统一在网关侧兜底截断（漏掉这里会让 stop_sequences 静默失效）
 	truncateAtStopSequences(chatOut, stopSequencesFrom(openAIReq))
+	// 坏 tool_call 闸（2026-11-27 审计 G3）：此前该分支漏接，Claude Code 会
+	// 直收坏 tool_use（input={}）。
+	if bad := guardBadToolCallsChat(chatOut, openAIReq, zenGuardMapping(openAIReq)); bad != "" {
+		log.Printf("  anthropic zen nonstream bad tool call, returning 502: %s", kit.Truncate(bad, 200))
+		writeJSON(w, http.StatusBadGateway, map[string]any{
+			"error": map[string]any{"message": kit.Truncate(bad, 300), "type": "upstream_error"},
+		})
+		return
+	}
 	anthropicResp := openAIToAnthropic(chatOut)
 	if tc, ok := getNested(chatOut, "choices", 0, "message", "tool_calls").([]any); ok && len(tc) > 0 {
 		anthropicResp["stop_reason"] = "tool_use"
@@ -3526,10 +3577,52 @@ func HandleChat(w http.ResponseWriter, r *http.Request) {
 		finishReason := getNested(out, "choices", 0, "finish_reason")
 		log.Printf("  nonstream (aggregated): model=%v content_len=%d finish=%v",
 			out["model"], len(contentStr), finishReason)
+		// 坏 tool_call 闸（2026-11-27 审计 G3）：聚合分支此前无闸，写 200 前补上。
+		if bad := guardBadToolCallsChat(out, params, nil); bad != "" {
+			log.Printf("  nonstream bad tool call, returning 502: %s", kit.Truncate(bad, 200))
+			writeJSON(w, http.StatusBadGateway, map[string]any{
+				"error": map[string]any{"message": kit.Truncate(bad, 300), "type": "upstream_error"},
+			})
+			return
+		}
 		writeJSON(w, http.StatusOK, out)
 		return
 	}
 
+	// 纯非流式上游（cline 直返 JSON）：d8fbb8f1 出包重构丢失了本尾行，导致该
+	// 分支无任何写出、Go http 层回隐式 200 空响应体（2026-11-27 审计 G1）。
+	// 补回写出（写前过坏 tool_call 闸）。
+	finishClineChatNonStream(w, resp, params, usageFn)
+}
+
+// finishClineChatNonStream cline 纯非流式收尾：读上游 JSON → 坏 tool_call 闸 →
+// 既有 usage 记账/stop 截断/写出。抽函数供 G1 回归测试（2026-11-27）。
+func finishClineChatNonStream(w http.ResponseWriter, resp *http.Response, params map[string]any, usageFn func(map[string]any)) {
+	rawBody, rerr := io.ReadAll(resp.Body)
+	if rerr != nil {
+		m, _ := params["model"].(string)
+		writeUpstreamAPIError(w, m, rerr, http.StatusInternalServerError)
+		return
+	}
+	var chatObj map[string]any
+	if jerr := json.Unmarshal(rawBody, &chatObj); jerr == nil && chatObj != nil {
+		out := chatObj
+		if data, ok := chatObj["data"].(map[string]any); ok {
+			out = data
+		}
+		if bad := guardBadToolCallsChat(out, params, nil); bad != "" {
+			log.Printf("  nonstream bad tool call, returning 502: %s", kit.Truncate(bad, 200))
+			writeJSON(w, http.StatusBadGateway, map[string]any{
+				"error": map[string]any{"message": kit.Truncate(bad, 300), "type": "upstream_error"},
+			})
+			return
+		}
+	}
+	handleNonStreamResponseWithUsage(w, &http.Response{
+		StatusCode: resp.StatusCode,
+		Header:     resp.Header,
+		Body:       io.NopCloser(bytes.NewReader(rawBody)),
+	}, usageFn, stopSequencesFrom(params))
 }
 
 // HandleAnthropic /v1/messages。

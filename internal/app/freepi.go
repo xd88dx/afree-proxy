@@ -9,6 +9,7 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"afree-proxy/internal/exitpool"
@@ -192,6 +193,12 @@ func handleFreepiConfigUpdate(w http.ResponseWriter, r *http.Request) {
 // 在落盘前就报清楚，不让上游 401 说话）+ 昵称/改名（账号列编辑，other 同款
 // 语义：renames 迁移路由/绑定/昵称表；冷却与 token 记账刻意不迁移——新 key
 // 是上游新身份，旧 key 统计归档）。body: { add, nicknames, nickEdits, renames }
+// freepiKeysMutMu 串行化「Get→改→Set」的 key 池读改写段（2026-11-27 审计
+// S12）：设备码 done 并发完成、或与 keys/update 粘贴添加并发时，后 Set 者以
+// 自己的快照整体覆盖前者，先入池的 token/改动丢失。窗口虽窄但属丢失更新；
+// 锁内只有纯内存校验与一次落盘，无长阻塞。
+var freepiKeysMutMu sync.Mutex
+
 func handleFreepiKeysUpdate(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		WriteAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
@@ -219,6 +226,8 @@ func handleFreepiKeysUpdate(w http.ResponseWriter, r *http.Request) {
 		WriteAPI(w, http.StatusBadRequest, apiResponse{Error: "invalid JSON: " + err.Error()})
 		return
 	}
+	freepiKeysMutMu.Lock()
+	defer freepiKeysMutMu.Unlock()
 	cur := freepi.Get()
 	hadKeys := len(cur.Keys) > 0
 	// 添加行先清洗+形状校验（对齐 plugin cleanToken/jwtShape：env 行/引号/
@@ -805,7 +814,10 @@ func handleFreepiDevicePoll(w http.ResponseWriter, r *http.Request) {
 			MeAt:      time.Now(),
 		})
 	}
-	// 入池：与 handleFreepiKeysUpdate 添加路径同款（去重 + ReconcileRouting）
+	// 入池：与 handleFreepiKeysUpdate 添加路径同款（去重 + ReconcileRouting）。
+	// 读改写段必须互斥（2026-11-27 审计 S12）：两个 GitHub 账号并发授权完成时，
+	// 后 Set 者覆盖前者，先入池 token 丢失。
+	freepiKeysMutMu.Lock()
 	cur := freepi.Get()
 	hadKeys := len(cur.Keys) > 0
 	added := false
@@ -829,6 +841,7 @@ func handleFreepiDevicePoll(w http.ResponseWriter, r *http.Request) {
 			go func() { _, _ = freepi.TrySync() }()
 		}
 	}
+	freepiKeysMutMu.Unlock()
 	log.Printf("freepi device poll: token accepted handle=%s added=%v", handle, added)
 	data := map[string]any{"status": "done", "handle": handle, "added": added}
 	if handle != "" {

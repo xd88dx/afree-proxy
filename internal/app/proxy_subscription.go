@@ -322,6 +322,10 @@ func StartProxySubscriptionWorker() {
 			proxySubMu.Lock()
 			last := proxySubLastFired[key]
 			proxySubMu.Unlock()
+			// 追赶窗口封顶（2026-11-27 审计 S9，见 cronCatchupMaxMinutes）。
+			if nowMin-last > cronCatchupMaxMinutes {
+				last = nowMin - cronCatchupMaxMinutes
+			}
 			// 检查 (last, nowMin] 区间内是否有命中的整分钟（30s tick 防漏防重）
 			fired := false
 			for m := last + 1; m <= nowMin; m++ {
@@ -353,6 +357,12 @@ func StartProxySubscriptionWorker() {
 // StartProxyReorderWorker 延迟重排定时 worker（2026-11-26 用户定）：cron 命中
 // 时对全部平台规则 kind 跑一轮冻结-供给-修复重排。结构与订阅 worker 同款
 // （30s tick + 分钟区间命中防漏防重）。
+// cronCatchupMaxMinutes 分钟级 cron 追赶窗口上限（2026-11-27 审计 S9）：
+// lastFired 初值 0 时，永不命中的 cron（如 0 0 31 2 *）会让首轮从 Unix 纪元
+// 扫到当前（约 2900 万次 cronMatches）。封顶 1 天：停机不足一天仍补跑一次，
+// 更长停机不补——订阅同步/定时重排对补跑时效不敏感，病态表达式首轮开销有界。
+const cronCatchupMaxMinutes = 1440
+
 var proxyReorderLastFired = map[string]int{}
 var proxyReorderMu sync.Mutex
 
@@ -369,6 +379,10 @@ func StartProxyReorderWorker() {
 			proxyReorderMu.Lock()
 			last := proxyReorderLastFired[expr]
 			proxyReorderMu.Unlock()
+			// 追赶窗口封顶（2026-11-27 审计 S9，见 cronCatchupMaxMinutes）。
+			if nowMin-last > cronCatchupMaxMinutes {
+				last = nowMin - cronCatchupMaxMinutes
+			}
 			fired := false
 			for m := last + 1; m <= nowMin; m++ {
 				if cronMatches(expr, time.Unix(int64(m)*60, 0).Local()) {

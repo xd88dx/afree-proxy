@@ -369,10 +369,14 @@ func RecordProxyOutcome(kind, proxyURL string, ok bool, err error, hsMs int64) {
 	}
 	EnsureHealthLoaded()
 
-	key := RuleKeyOf(proxyURL)
-	if key == "" {
-		return // 无备注名的行不记账（非法格式，2026-11-26 用户定）
+	// 无备注名的行不记账（2026-11-26 用户定口径，2026-11-27 审计 C 落实：
+	// 原 `key == ""` 守卫恒假——RuleKeyOf 对无备注输入原样返回非空，注释与
+	// 行为相反）。订阅/面板保存已拒绝无备注行，此守卫只拦手改配置的存量行；
+	// 直连哨兵无备注但属合法统计键，显式豁免。
+	if a := AliasOf(proxyURL); a == "" && proxyURL != ProxyRuleDirectKey {
+		return
 	}
+	key := RuleKeyOf(proxyURL)
 	healthMu.Lock()
 	e := healthStats[key]
 	if e == nil {
@@ -471,6 +475,9 @@ func HealthBackupSnapshot() *HealthFile {
 }
 
 // ImportHealthBackup 统计导入（配置备份还原）：整体替换真身并立即落盘。
+// 导入键统一 rekey 到备注名主键（2026-11-27 审计 E2）：旧版备份是 URL 键，
+// 原样入库后与新版写入的备注名键并存——快照/重排按 RuleKeyOf 查询全部落空，
+// 成为不可见孤儿。同名（RuleKeyOf 相同）多键合并，与 loadHealth 同口径。
 func ImportHealthBackup(f *HealthFile) {
 	EnsureHealthLoaded()
 	healthMu.Lock()
@@ -480,7 +487,18 @@ func ImportHealthBackup(f *HealthFile) {
 			continue
 		}
 		cp := *e
-		next[k] = &cp
+		nk := RuleKeyOf(k)
+		if exist, ok := next[nk]; ok {
+			exist.Attempts += cp.Attempts
+			exist.Successes += cp.Successes
+			exist.HSCount += cp.HSCount
+			exist.HSSumMs += cp.HSSumMs
+			if len(cp.Recent) > len(exist.Recent) {
+				exist.Recent = cp.Recent
+			}
+			continue
+		}
+		next[nk] = &cp
 	}
 	healthStats = next
 	healthDirty = true
@@ -492,7 +510,10 @@ func ImportHealthBackup(f *HealthFile) {
 			continue
 		}
 		cp := *t
-		nextTests[k] = &cp
+		nk := RuleKeyOf(k)
+		if _, dup := nextTests[nk]; !dup {
+			nextTests[nk] = &cp
+		}
 	}
 	testStats = nextTests
 	testMu.Unlock()
@@ -564,7 +585,11 @@ func absorbHealthStats(stats map[string]*HealthEntry, from string) {
 			continue
 		}
 		nk := RuleKeyOf(k)
-		if exist, ok := next[nk]; ok && nk != k {
+		// 同名合并不做 nk != k 限制（2026-11-27 审计 E2）：旧 URL 键与备注名
+		// 键并存时，map 迭代先到者占位、后到者若 nk==k 会整体覆盖先合并的
+		// 条目（Attempts/HS 随机丢失）。统一"已有同名键就合并"，nk==k 时
+		// next[nk] 必然是本次尚未写入的同源条目（map 迭代每键恰一次）。
+		if exist, ok := next[nk]; ok {
 			// 同名合并：累计字段相加，Recent 取更长一条。
 			exist.Attempts += e.Attempts
 			exist.Successes += e.Successes

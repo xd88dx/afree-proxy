@@ -27,9 +27,12 @@ const StateFactsTopKeys = "cool"
 // MergeStateFactsJSON 把备份 state 快照里的账号事实合并进本机快照，返回合并
 // 结果（可直接交给对应平台的 ImportStateJSON 整体落盘）。
 //   - local / backup 均为平台 StateSnapshotJSON 的同形态 JSON。
+//   - extraFactKeys：平台专属的账号事实键（如 freepi 的 credits 余额快照——
+//     key 级账号事实，2026-11-27 审计 S15 归层：此前不勾选统计时余额不随
+//     备份迁移，权重调度短暂失真至 30 分钟自愈刷新）。备份携带即整体替换。
 //
 // 任一侧解析失败返回错误、调用方放弃本次合并（宁可不动也不误写）。
-func MergeStateFactsJSON(local, backup json.RawMessage) (json.RawMessage, error) {
+func MergeStateFactsJSON(local, backup json.RawMessage, extraFactKeys ...string) (json.RawMessage, error) {
 	var lm, bm map[string]json.RawMessage
 	if err := json.Unmarshal(local, &lm); err != nil {
 		return nil, err
@@ -44,6 +47,11 @@ func MergeStateFactsJSON(local, backup json.RawMessage) (json.RawMessage, error)
 	// 备份没带 = 保持不动）。
 	if v, ok := bm[StateFactsTopKeys]; ok {
 		lm[StateFactsTopKeys] = v
+	}
+	for _, k := range extraFactKeys {
+		if v, ok := bm[k]; ok {
+			lm[k] = v
+		}
 	}
 	return json.Marshal(lm)
 }

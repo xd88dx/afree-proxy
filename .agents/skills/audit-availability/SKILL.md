@@ -12,7 +12,7 @@ description: 评估 afree-proxy 服务真实可用性的完整配方——从本
 | 信息 | 位置 | 取用方式 |
 |---|---|---|
 | newapi 渠道映射 | `D:/DockerApp/newapi/data/one-api.db`（newapi 容器挂载） | **先复制到临时目录再读**（运行中容器的库不能直接 open）；`channels` 表：`id/type/name/base_url/status/test_model/models/model_mapping/key` |
-| afree 凭据盘点 | `D:/DockerApp/afree/*.json` + `workbuddy/auths/` + `workbuddy/state.json` | 直接读；cline/zen/trae 是 accounts，other 是 platforms[]（含 keys+keyBindings），wb 看 state.json 的 disabled（amd/tkhb 已于 2026-11-15、oprt 已于 2026-11-16 删除） |
+| afree 凭据盘点 | `D:/DockerApp/afree/*.json` + `workbuddy/auths/` + `workbuddy/state.json` | 直接读；cline/zen/trae 是 accounts，other 是 platforms[]（含 keys+keyBindings+keyNicknames），freepi 在 freepi-config.json 的 keys（freepi-state.json 是记账/冷却/credits），wb 看 state.json 的 disabled（amd/tkhb 已于 2026-11-15、oprt 已于 2026-11-16 删除） |
 | afree 网关 | `http://127.0.0.1:3457` | `/health`、`/v1/models`、`/v1/chat/completions`；API key `8008208820`（compose）；面板 `POST /admin/api/login {password:pass1234}`，**token 在响应 `data.token` 层** |
 | 容器日志 | `docker logs afree` | 失败根因的第一现场（EOF/冷却/blacklist/gate reject） |
 | 上游代码 | 本地 git 对象（merge 历史里有上游哈希） | `git show <上游哈希>:<文件>` 对比 |
@@ -25,7 +25,7 @@ newapi 的渠道全部指向 afree 网关（`host.docker.internal:3457`），用
 
 ```python
 # 从 sqlite 读 channels.model_mapping，json 解析，汇总 values() 去重
-# 目标形态即平台前缀：cline-free/ zen: wbcn: wbgb: tacn: tagb: other-*:
+# 目标形态即平台前缀：cline-free/ freepi: zen: wbcn: wbgb: tacn: tagb: other-*:（freepi 2026-11-20 接入）
 ```
 
 同时盘点各平台凭据启用状态（见上表）。
@@ -87,7 +87,7 @@ git show <上游哈希>:internal/app/models.go | grep -n "muse\|seed\|prune"
 # 上游有同样的 seed/保护且无黑名单机制 → 同样问题，非移植缺陷
 ```
 
-上游仓库哈希速查：fork 线上游对象在本地 git（merge 历史）；vendor 线基线在 `scripts/workbuddy-vendor-baseline.json`；Trae 基线在 `scripts/trae-helper-baseline.json`。
+上游仓库哈希速查：fork 线上游对象在本地 git（merge 历史）；vendor 线基线在 `scripts/workbuddy-vendor-baseline.json`；Trae vendor 线基线在 `scripts/trae2api-vendor-baseline.json`（2026-11-04 换线）；helper 比对线基线在 `scripts/trae-helper-baseline.json`。
 
 ## 4. 修复与验证
 
@@ -110,7 +110,7 @@ git show <上游哈希>:internal/app/models.go | grep -n "muse\|seed\|prune"
 ## 6. 2026-11-04 审计经验追加（全平台轮）
 
 - **目录透出门控逐平台核对**：vendored/聚合目录可能对"无凭据的域/段"照透条目（trae2api 四域渠道恒全建）。铁律：**列出来的必须调得通**——每平台段逐模型真打，503 no_account 类先修目录闸再谈凭据。
-- **自动拉黑接线盘点表（"机制存在但没接全"高发区）**：cline（404+计费 cost>0 双哨兵）、OR（404 恒拉黑/403 仅 agentic-harnesses+RegionError 文案、400 仅 chat 端点不兼容；key 级 403/429/5xx 绝不拉黑）、zen（仅 RegionError 文案）、trae vendored（引擎模型冷却）。审计时 grep `BlacklistModel(` 调用点对照各平台错误路径，缺接线就按 cline 判据骨架补——回归测试模板 `autoban_audit_test.go`。
+- **自动拉黑接线盘点表（"机制存在但没接全"高发区）**：cline（404+计费 cost>0 双哨兵）、OR（已随 2026-11-16 平台删除移除，历史口径存档：404 恒拉黑/403 仅 agentic-harnesses+RegionError 文案、400 仅 chat 端点不兼容；key 级 403/429/5xx 绝不拉黑）、zen（仅 RegionError 文案）、trae vendored（引擎模型冷却）。审计时 grep `BlacklistModel(` 调用点对照各平台错误路径，缺接线就按 cline 判据骨架补——回归测试模板 `autoban_audit_test.go`。
 - **key 冷却长尾会掩盖端到端验证**：撞墙请求根本没到上游（`no key routable` 502），自动拉黑不触发。验证前清平台 key 冷却（内存态重启即清；落盘态如 other 改 `other-state.json` 的 `cool` 段后重启）。
 - **newapi 抽测口径**：渠道映射别名从 `one-api.db`（先复制再读）读 `channels.model_mapping`，抽 2~3 个别名全链路（newapi→afree→上游出字）。
 - **上游瞬时 vs 永久的隔离判据**：串行扫描高压下的 4xx/timeout 一律复测 2 次再定性；trae `max_tokens=1`→上游 3003 是引擎边界忠实透传，不是缺陷。

@@ -6,8 +6,11 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
+
+	"afree-proxy/internal/gwconfig"
 )
 
 const testDSMLPipe = "\uFF5C\uFF5C"
@@ -103,7 +106,7 @@ func TestGuardBadToolCallsEmptyArgs(t *testing.T) {
 		}),
 		"data: [DONE]\n\n",
 	}
-	if bad := guardBadToolCalls(lines, testBashTools()); bad == "" {
+	if bad := guardBadToolCalls(lines, testBashTools(), nil); bad == "" {
 		t.Fatal("空参数工具调用未被识别为错误")
 	}
 }
@@ -119,7 +122,7 @@ func TestGuardBadToolCallsBrokenDSML(t *testing.T) {
 		}),
 		"data: [DONE]\n\n",
 	}
-	if bad := guardBadToolCalls(lines, testBashTools()); bad == "" {
+	if bad := guardBadToolCalls(lines, testBashTools(), nil); bad == "" {
 		t.Fatal("破损 DSML 块未被识别为错误")
 	}
 }
@@ -134,7 +137,7 @@ func TestGuardBadToolCallsNormalNoFalsePositive(t *testing.T) {
 		}),
 		"data: [DONE]\n\n",
 	}
-	if bad := guardBadToolCalls(lines, testBashTools()); bad != "" {
+	if bad := guardBadToolCalls(lines, testBashTools(), nil); bad != "" {
 		t.Fatalf("正常响应被误伤: %s", bad)
 	}
 }
@@ -153,7 +156,7 @@ func TestGuardBadToolCallsChat(t *testing.T) {
 			"finish_reason": "tool_calls",
 		}},
 	}
-	if bad := guardBadToolCallsChat(empty, testBashTools()); bad == "" {
+	if bad := guardBadToolCallsChat(empty, testBashTools(), nil); bad == "" {
 		t.Fatal("非流式：空参数工具调用未被拦下")
 	}
 
@@ -164,7 +167,7 @@ func TestGuardBadToolCallsChat(t *testing.T) {
 			"finish_reason": "stop",
 		}},
 	}
-	if bad := guardBadToolCallsChat(broken, testBashTools()); bad == "" {
+	if bad := guardBadToolCallsChat(broken, testBashTools(), nil); bad == "" {
 		t.Fatal("非流式：破损 DSML 块未被拦下")
 	}
 
@@ -175,7 +178,7 @@ func TestGuardBadToolCallsChat(t *testing.T) {
 			"finish_reason": "stop",
 		}},
 	}
-	if bad := guardBadToolCallsChat(complete, testBashTools()); bad != "" {
+	if bad := guardBadToolCallsChat(complete, testBashTools(), nil); bad != "" {
 		t.Fatalf("非流式：完整 DSML 块应放行给出口修复，却被拦: %s", bad)
 	}
 
@@ -186,7 +189,7 @@ func TestGuardBadToolCallsChat(t *testing.T) {
 			"finish_reason": "stop",
 		}},
 	}
-	if bad := guardBadToolCallsChat(normal, testBashTools()); bad != "" {
+	if bad := guardBadToolCallsChat(normal, testBashTools(), nil); bad != "" {
 		t.Fatalf("非流式：正常响应被误伤: %s", bad)
 	}
 }
@@ -211,11 +214,11 @@ func TestGuardBadToolCallsMissingRequiredFields(t *testing.T) {
 			"finish_reason": "tool_calls",
 		}}}
 	}
-	bad := guardBadToolCallsChat(chat(`{"file_path":"slack.py"}`), writeTools)
+	bad := guardBadToolCallsChat(chat(`{"file_path":"slack.py"}`), writeTools, nil)
 	if bad == "" || !strings.Contains(bad, "content") {
 		t.Fatalf("缺 content 的部分参数必须拦下且点名缺失字段, got %q", bad)
 	}
-	if bad := guardBadToolCallsChat(chat(`{"file_path":"slack.py","content":"print(1)"}`), writeTools); bad != "" {
+	if bad := guardBadToolCallsChat(chat(`{"file_path":"slack.py","content":"print(1)"}`), writeTools, nil); bad != "" {
 		t.Fatalf("完整参数被误伤: %s", bad)
 	}
 }
@@ -234,7 +237,7 @@ func TestGuardBadToolCallsAnthropicSchema(t *testing.T) {
 		}}},
 		"finish_reason": "tool_calls",
 	}}}
-	if bad := guardBadToolCallsChat(chat, tools); bad == "" {
+	if bad := guardBadToolCallsChat(chat, tools, nil); bad == "" {
 		t.Fatal("Anthropic input_schema 形态的空参数也必须拦下")
 	}
 }
@@ -256,7 +259,7 @@ func TestFinishZenChatNonStreamBadToolCall502(t *testing.T) {
 	}, "")
 	resp := &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(body))}
 	rec := httptest.NewRecorder()
-	finishZenChatNonStream(rec, resp, &ZenModel{ID: "m"}, testBashTools(), nil)
+	finishZenChatNonStream(rec, resp, &ZenModel{ID: "m"}, testBashTools(), nil, nil)
 	if rec.Code != http.StatusBadGateway {
 		t.Fatalf("want 502, got %d; body=%s", rec.Code, rec.Body.String())
 	}
@@ -432,21 +435,22 @@ func TestGuardBadToolCallsLeakVariants(t *testing.T) {
 		chat   map[string]any
 		params map[string]any
 	}{
-		{"props-only 空对象", badChat("{}"), propsOnly},
 		{"props-only null 值", badChat(`{"command":null}`), propsOnly},
 		{"required null 值", badChat(`{"command":null}`), withRequired},
 		{"非法 JSON 未转义引号", badChat(`{"command":"cd "D:/x" && ls"}`), withRequired},
 		{"非法 JSON 未转义换行", badChat("{\"command\":\"echo hi\nls\"}"), withRequired},
 	}
 	for _, tc := range cases {
-		if bad := guardBadToolCallsChat(tc.chat, tc.params); bad == "" {
+		if bad := guardBadToolCallsChat(tc.chat, tc.params, nil); bad == "" {
 			t.Errorf("%s: 应判坏但放行", tc.name)
 		}
 	}
-	// 合法调用不能误伤：props-only 下只提供部分可选字段、且无显式 null。
-	good := badChat(`{"description":"list files"}`)
-	if bad := guardBadToolCallsChat(good, propsOnly); bad != "" {
-		t.Errorf("合法的部分可选参数被误判: %s", bad)
+	// 合法调用不能误伤（2026-11-27 S1 口径对齐：props-only 的零参调用合法，
+	// 只拦显式 null）：空 {}、空串、部分可选字段且无显式 null 三形态全放行。
+	for _, args := range []string{"{}", "", `{"description":"list files"}`} {
+		if bad := guardBadToolCallsChat(badChat(args), propsOnly, nil); bad != "" {
+			t.Errorf("props-only 零参调用 %q 被误判: %s", args, bad)
+		}
 	}
 }
 
@@ -470,8 +474,95 @@ func TestGuardBadToolCallsMultiCallEndToEnd(t *testing.T) {
 			"type": "object", "required": []any{"command"},
 		}}}},
 	} {
-		if bad := guardBadToolCalls(lines, params); bad == "" {
+		if bad := guardBadToolCalls(lines, params, nil); bad == "" {
 			t.Errorf("端到端多调用未拦下坏 tool_call: tools=%v", params["tools"])
 		}
+	}
+}
+
+// withZenRenameConfig 测试期启用 zen 出站改名（隔离到临时配置文件，形态与
+// toolrename 包测试一致）。
+func withZenRenameConfig(t *testing.T, prefix string) {
+	t.Helper()
+	dir := t.TempDir()
+	path := dir + "/afree-config.json"
+	_ = os.WriteFile(path, []byte("{}"), 0600)
+	saved := gwconfig.GlobalConfigPathOverride
+	gwconfig.GlobalConfigPathOverride = path
+	savedCfg := *gwconfig.GetToolRename()
+	t.Cleanup(func() {
+		gwconfig.GlobalConfigPathOverride = saved
+		_ = gwconfig.SetToolRename(savedCfg)
+	})
+	_ = os.Remove(path)
+	if err := gwconfig.SetToolRename(gwconfig.ToolRenameConfig{Prefix: prefix, Platforms: map[string]bool{"zen": true}}); err != nil {
+		t.Fatalf("set config: %v", err)
+	}
+}
+
+// TestGuardBadToolCallsZenRenameAware 锁定 2026-11-27 审计 G2 的双向修复：
+// zen 出站改名为 body 级（params 真名、响应假名），闸判据必须同时认假名——
+// 结构化坏调用要拦得住（此前被假名致盲），DSML 好调用不能误判 502（此前
+// 真名名单 strict 拒收假名块）。
+func TestGuardBadToolCallsZenRenameAware(t *testing.T) {
+	withZenRenameConfig(t, "zkx")
+	params := testBashTools()
+	ren := zenGuardMapping(params)
+	if ren == nil {
+		t.Fatal("zen 改名映射应生效")
+	}
+	fake := ren.Rename("Bash")
+	if fake == "Bash" {
+		t.Fatal("假名应与真名不同")
+	}
+
+	// ① 结构化坏调用（假名 + 空参数）：映射感知后必须判坏。
+	bad := map[string]any{"choices": []any{map[string]any{
+		"message": map[string]any{"tool_calls": []any{map[string]any{
+			"id": "call_x", "type": "function",
+			"function": map[string]any{"name": fake, "arguments": ""},
+		}}},
+		"finish_reason": "tool_calls",
+	}}}
+	if got := guardBadToolCallsChat(bad, params, ren); got == "" {
+		t.Fatal("假名坏 tool_call 应判坏（闸被致盲）")
+	}
+
+	// ② DSML 好调用（假名块 + 合法参数）：映射感知后不得误判 502。
+	dsmled := map[string]any{"choices": []any{map[string]any{
+		"message": map[string]any{"content": dsmlTestBlock(strings.ReplaceAll(dsmlTestBashInvoke(), `name="Bash"`, `name="`+fake+`"`))},
+	}}}
+	if got := guardBadToolCallsChat(dsmled, params, ren); got != "" {
+		t.Fatalf("假名 DSML 好调用被误判 502: %s", got)
+	}
+	// 反向对照：不传映射时该形态确实误判（防测试同义反复）。
+	if got := guardBadToolCallsChat(dsmled, params, nil); got == "" {
+		t.Fatal("无映射时假名 DSML 块应被判败（锁定旧行为存在过）")
+	}
+}
+
+// TestFinishClineChatNonStreamWritesResponse 锁定 2026-11-27 审计 G1：cline 纯
+// 非流式分支必须有写出（d8fbb8f1 出包重构曾丢失尾行 → 隐式 200 空响应体），
+// 且写前过坏 tool_call 闸。
+func TestFinishClineChatNonStreamWritesResponse(t *testing.T) {
+	okBody := `{"choices":[{"message":{"role":"assistant","content":"hello"},"finish_reason":"stop"}],"usage":{"prompt_tokens":3,"completion_tokens":2}}`
+	resp := &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": []string{"application/json"}},
+		Body: io.NopCloser(strings.NewReader(okBody))}
+	rec := httptest.NewRecorder()
+	finishClineChatNonStream(rec, resp, map[string]any{"model": "m"}, nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("非流式应有 200 写出, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "hello") {
+		t.Fatalf("响应体应含上游内容: %s", rec.Body.String())
+	}
+
+	badBody := `{"choices":[{"message":{"role":"assistant","tool_calls":[{"id":"c1","type":"function","function":{"name":"Bash","arguments":""}}]},"finish_reason":"tool_calls"}]}`
+	resp2 := &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": []string{"application/json"}},
+		Body: io.NopCloser(strings.NewReader(badBody))}
+	rec2 := httptest.NewRecorder()
+	finishClineChatNonStream(rec2, resp2, testBashTools(), nil)
+	if rec2.Code != http.StatusBadGateway {
+		t.Fatalf("坏 tool_call 应改判 502, got %d", rec2.Code)
 	}
 }

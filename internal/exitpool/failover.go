@@ -253,6 +253,15 @@ func runFailover(cooldownKind string, ruleKinds []string, failedURL string, err 
 	// 响应判死、自动排除整体失效。拦截页判定只用于②③的目标 host 探测。
 	target := EffectiveTestTarget()
 	if perr := probeURL(ctx, failedURL, target); perr != nil {
+		// 旁证交叉（2026-11-27 审计 S6）：测速目标短时整体不可达时，逐出口
+		// 都会探测失败并被误判"出口死"触发级联改绑。要求"其他健康出口至少
+		// 一个能通该目标"（与②的 target host 旁证同机制）才认定出口死；
+		// 全池皆不通 = 目标自身故障，本轮跳过（strike 门控限频下下一轮再判）。
+		if !witnessExists(ctx, cooldownKind, failedURL, target) {
+			log.Printf("[exit-failover] %s exit %s: probe %s failed (%v) but no witness reached it either — test target likely down, skip",
+				cooldownKind, masked, kit.MaskProxyURL(target), perr)
+			return
+		}
 		log.Printf("[exit-failover] %s exit %s: exit dead (probe %s failed: %v) — rebind-only, not excluded",
 			cooldownKind, masked, kit.MaskProxyURL(target), perr)
 		failoverWriteMu.Lock()
@@ -796,7 +805,11 @@ func reviewExclusions() {
 		// 键为备注名（2026-11-26）：探活前解析回池内当前 URL（端口随订阅更新）。
 		probeRaw := GetPool().Proxies[idx]
 		ctx, cancel := context.WithTimeout(context.Background(), failoverProbeTimeout)
-		perr := probeURL(ctx, probeRaw, it.target)
+		// 复核与②旁证/③复测同口径用拦截页感知探测（2026-11-27 审计 E1）：
+		// 旧 probeURL 对"200+HTML 拦截页"判通，会把真劫持出口自动解禁——
+		// 30 分钟一轮循环放行。本处探测目标是差分时的 target host（正常
+		// API host），HTML 响应即劫持信号，与 probeExitAlive 判据吻合。
+		perr := probeExitAlive(ctx, probeRaw, it.target)
 		cancel()
 		var okCount int
 		if perr == nil {

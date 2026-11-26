@@ -58,10 +58,10 @@ func TestProxyHealthRecordSkipsDirectAndAborts(t *testing.T) {
 }
 
 func TestProxyHealthRecentWindowTrims(t *testing.T) {
-	setupBindingTest(t, &zenTestConfig{Proxies: []string{"socks5://w:1"}})
+	setupBindingTest(t, &zenTestConfig{Proxies: []string{"socks5://w:1#t"}})
 	resetProxyHealthForTest(t)
 
-	px := "socks5://w:1"
+	px := "socks5://w:1#t"
 	// 前 exitpool.RecentN 次全失败，再补 10 次成功：窗口内应只剩这 10 次成功。
 	for i := 0; i < exitpool.RecentN; i++ {
 		recordProxyOutcome(pkZen, px, false, errors.New("dead"), 0)
@@ -159,11 +159,11 @@ func TestProxyHealthResetOnPoolEdit(t *testing.T) {
 }
 
 func TestProxyHealthPersistsAcrossRestart(t *testing.T) {
-	setupBindingTest(t, &zenTestConfig{Proxies: []string{"socks5://a:1"}})
+	setupBindingTest(t, &zenTestConfig{Proxies: []string{"socks5://a:1#t"}})
 	resetProxyHealthForTest(t)
 
-	recordProxyOutcome(pkZen, "socks5://a:1", true, nil, 150)
-	recordProxyOutcome(pkZen, "socks5://a:1", false, errors.New("reset by peer"), 0)
+	recordProxyOutcome(pkZen, "socks5://a:1#t", true, nil, 150)
+	recordProxyOutcome(pkZen, "socks5://a:1#t", false, errors.New("reset by peer"), 0)
 	flushProxyHealth()
 
 	// 模拟进程重启：内存清零 + 重置懒加载，再从落盘文件恢复。
@@ -171,7 +171,7 @@ func TestProxyHealthPersistsAcrossRestart(t *testing.T) {
 	*exitpool.HealthOncePtr = sync.Once{}
 	ensureProxyHealthLoaded()
 
-	e := exitpool.HealthStatsForTest()[exitpool.RuleKeyOf("socks5://a:1")]
+	e := exitpool.HealthStatsForTest()[exitpool.RuleKeyOf("socks5://a:1#t")]
 	if e == nil || e.Attempts != 2 || e.Successes != 1 {
 		t.Fatalf("restored attempts/successes = %d/%d, want 2/1", e.Attempts, e.Successes)
 	}
@@ -295,7 +295,7 @@ func TestProxyTestEntryPersistAndReset(t *testing.T) {
 	// 快照行打码：tests 段不在健康快照中直接出现，行 proxy 一律打码
 	snap := proxyHealthSnapshot()
 	for _, row := range snap {
-		if s, _ := row["proxy"].(string); strings.Contains(s, "socks5://a:1") {
+		if s, _ := row["proxy"].(string); strings.Contains(s, "socks5://a:1#t") {
 			t.Fatalf("snapshot leaked raw url: %v", row)
 		}
 	}
@@ -304,13 +304,13 @@ func TestProxyTestEntryPersistAndReset(t *testing.T) {
 // 测试样本计入统计（2026-11-03 用户定）：attempts/successes/recent/HS 均值
 // 与真实流量同池记账，但**绝不触发冷却**——失败再多也只有统计意义。
 func TestRecordProxyTestOutcomeUpdatesStatsWithoutCooldown(t *testing.T) {
-	setupBindingTest(t, &zenTestConfig{Proxies: []string{"socks5://a:1"}})
+	setupBindingTest(t, &zenTestConfig{Proxies: []string{"socks5://a:1#t"}})
 	resetProxyHealthForTest(t)
 
-	recordProxyTestOutcome("socks5://a:1", true, nil, 200)
-	recordProxyTestOutcome("socks5://a:1", false, errors.New("dial tcp: refused"), 0)
+	recordProxyTestOutcome("socks5://a:1#t", true, nil, 200)
+	recordProxyTestOutcome("socks5://a:1#t", false, errors.New("dial tcp: refused"), 0)
 
-	e := exitpool.HealthStatsForTest()[exitpool.RuleKeyOf("socks5://a:1")]
+	e := exitpool.HealthStatsForTest()[exitpool.RuleKeyOf("socks5://a:1#t")]
 	if e == nil || e.Attempts != 2 || e.Successes != 1 {
 		t.Fatalf("attempts/successes = %d/%d, want 2/1", e.Attempts, e.Successes)
 	}
@@ -323,7 +323,7 @@ func TestRecordProxyTestOutcomeUpdatesStatsWithoutCooldown(t *testing.T) {
 
 	// 红线：连续失败也绝不冷却（没有 strike 记账）
 	for i := 0; i < 5; i++ {
-		recordProxyTestOutcome("socks5://a:1", false, errors.New("EOF"), 0)
+		recordProxyTestOutcome("socks5://a:1#t", false, errors.New("EOF"), 0)
 	}
 	if !proxyAvailable(0) {
 		t.Fatal("test failures must never trigger cooldown")

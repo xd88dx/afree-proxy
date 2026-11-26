@@ -159,7 +159,7 @@ func handleFreepiChat(w http.ResponseWriter, r *http.Request, params map[string]
 		return
 	}
 	defer resp.Body.Close()
-	finishZenChatNonStream(w, resp, &ZenModel{ID: m.ID}, params, usageFn)
+	finishZenChatNonStream(w, resp, &ZenModel{ID: m.ID}, params, usageFn, nil) // params 已就地改名
 }
 
 // FreepiModelList/FreepiExitFn/FreepiBoundRoutable 导出面（app 装配根消费，

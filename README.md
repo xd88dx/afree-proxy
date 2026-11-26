@@ -1,6 +1,6 @@
 # AFree Proxy
 
-一个单二进制 Go 网关：把多个免费上游额度（Cline 账号、opencode zen 免费模型、WorkBuddy 账号、TraeWork 账号、任意小上游的自定义子平台）聚合为一个干净的 **OpenAI 兼容 `/v1` 网关**，供 Cursor、ZCode、Cline、Claude Code 等 IDE 使用——带账号池轮转、身份↔出口代理绑定、中文管理面板。
+一个单二进制 Go 网关：把多个免费上游额度（Cline 账号、opencode zen 免费模型、FreePI 免费日额度、WorkBuddy 账号、TraeWork 账号、任意小上游的自定义子平台）聚合为一个干净的 **OpenAI 兼容 `/v1` 网关**，供 Cursor、ZCode、Cline、Claude Code 等 IDE 使用——带账号池轮转、身份↔出口代理绑定、中文管理面板。
 
 基于 [YuJunZhiXue/Cline-proxy](https://github.com/YuJunZhiXue/Cline-proxy) 深度改写，面向个人公开部署。与 Cline、opencode、WorkBuddy 等上游无隶属关系；请礼貌使用它们的免费额度。
 
@@ -24,7 +24,7 @@ Cursor / ZCode / Cline / Claude Code ──►  afree-proxy  ──►  Cline �
 - **代理隔离第一优先。** 每个账号/key 可绑定主/备出口代理，请求永远从绑定出口发出；两个出口都不可用时该身份整体跳过——**绝不回退其他出口或直连**。未绑定身份沿用面板的每平台走池开关。
 - **凭据启用/禁用语义全平台一致。** 「启用」列 = 是否参与请求轮转。新增身份默认禁用（存量缺字段仍按启用，升级不停服）。**任何平台没有任何启用凭据（含反代开关全关）时整平台 503 拒路由**，与封禁平台同闸；模型目录只对可服务配置展示——无启用凭据时面板目录显示引导空态、`/v1/models` 摘除该平台模型。
 - **函数调用真实可用。** 对真实上游全量实测：流式/非流式、并行工具调用、`/v1/responses` 与 Anthropic 流式，含上游工具参数怪癖修复。
-- **中文管理面板** `/admin/`：仪表盘（内含实时统计分区）、Cline 账号池、TraeWork、WorkBuddy（内嵌原面板）、OpenCode、Other、代理池、网关设置（封禁平台/封禁模型）、自定义别名、请求日志。
+- **中文管理面板** `/admin/`：仪表盘（内含实时统计分区）、Cline 账号池、FreePI、TraeWork、WorkBuddy（内嵌原面板）、OpenCode、Other、代理池、网关设置（封禁平台/封禁模型）、自定义别名、请求日志。
 
 ## 平台速览
 
@@ -156,17 +156,19 @@ Model:     cline-free/deepseek-v4.1-flash   （Cline 池）
 | `other-config.json`                                                                                      | 其余各子平台账号/key 池、启用状态、代理绑定、平台专属开关                                                               |
 | `trae-config.json`                                                                                       | TraeWork afree 增量：出口绑定、反代路由开关表、分域倍率、展示顺序、走池开关                                             |
 | `wkbd-config.json`                                                                                       | WorkBuddy afree 增量：出口绑定、账号意志（反代开关/账号总开关/昵称锁）、权重优化定时任务、走池开关                      |
+| `freepi-config.json`                                                                                    | FreePI key 池与配置：模型路由白名单 routedModels、权重优化开关/间隔、会话粘性、并发/重试（2026-11-20 接入） |
 | `trae2api/config.json` + `trae2api/accounts/` / `workbuddy/config.json` + `workbuddy/auths/`             | vendor 子系统自管：TraeWork 引擎配置与便携快照（2026-11-05 迁入子系统目录）、WorkBuddy 部署配置与授权凭据（纯凭据）     |
 
 | 状态态（`*-state.json`，随请求/后台任务高频变化——外部监测配置变更时忽略这批文件）                        | 内容                                                                                                                    |
 | -------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
 | `cline-state.json`                                                                                       | Cline 每账号使用痕迹（状态/最近使用/调用与 token 计数/冷却）+ 轮转游标（2s 合批）                                       |
 | `zen-state.json`                                                                                         | zen key 冷却表 + 每 key token 记账 + 会话铸态表 + 每 key 组织 ID 缓存（keyOrg 段）                                      |
-| `trae-state.json`                                                                                        | TraeWork afree token 记账（2026-11-17 迁出 vendor 子目录 tokens.json）                                                  |
+| `trae2api/tokens.json`                                                                                   | TraeWork afree token 记账（vendor 子目录 `data/trae2api/tokens.json`，随 metrics.json 同目录；从未迁出为 trae-state.json——2026-11-27 勘误）                                                  |
 | `trae2api/state.json` / `trae2api/metrics.json`                                                          | TraeWork 引擎运行态：账号冷却/熔断/禁用+手动冷却、签到与额度（state）与指标（metrics）                                  |
 | `other-state.json`                                                                | 各 key 池的 key 级 token 记账 + 冷却表（other 按子平台分键）                                                            |
 | `proxy-state.json`                                                                                       | 代理出口在线率统计（60s 合批，编辑池清零）                                                                              |
 | `wkbd-state.json`                                                                                        | WorkBuddy 实测台账（按模型扣费/charge_variants，2026-11-17 迁出 vendor 子目录 usage.json）                              |
+| `freepi-state.json`                                                                                     | FreePI key 级 token 记账、冷却与 credits 余额快照 |
 | `workbuddy/state.json`、`workbuddy/request-logs/`                                                        | WorkBuddy vendor 运行态/请求日志（vendor 目录结构）                                                                     |
 
 **`config-manifest.json`（配置指纹清单）**：程序自动维护的全部配置态文件 sha256 清单（glob 收集 `*-config.json` + wb 配置/凭据，新平台自动纳入；entries 无变化时连 `updatedAt` 都不更新）。外部监测配置变更只需盯这一个文件——它变了才有配置真的变了。
@@ -197,12 +199,12 @@ WorkBuddy 的账号调度用 vendor 自己的国内/国际分区策略，与 `PO
 - 每个身份（Cline 账号 / zen key / WorkBuddy 账号 / TraeWork 账号 / 各 key 池 key）绑定一主一备代理。请求永远走主，主不可用走备，两者都冷却/被删时该身份整体跳过——**绝不回退其他出口或直连，隔离优先于可用性**。
 - 未绑定身份沿用面板每平台的走池开关（缺省 = 走池），空绑定配置行为与旧版完全一致。
 - 面板支持单行绑定、一键按行序分配（第 1 行绑直连哨兵、其余按代理池顺序依次绑主槽，多余行保持原绑定）、一键清空；绑定代理被删时行标 ⚠ 并保持跳过直到修复。备用代理开关关闭时备用槽整体退出路由（保留旧值，重开即恢复）。
-- **代理在线率**：代理池页显示每个代理的传输层成功率（累计 + 最近 50 次滚动窗口）与平均握手延迟。两个数据源：真实流量的**被动采样**（不产生探活流量）+ 健康表**手动延迟测试**（「代理测试」按钮：每出口对可配置的测速目标发最多 3 次 HTTPS 探测，默认 `www.gstatic.com/generate_204`，与真实请求同一拨号栈；单行「只测这一个出口」同理；样本计入在线率与握手统计，显示层不影响路由与冷却）。五档配色：≥80% 绿、60–80% 蓝、40–60% 粉、20–40% 黄、<20% 红，便于一眼挑出该换的节点。统计落盘在 `proxy-state.json`（60s 合批），编辑池清零。zen key 的出口自动钉定表在 `proxy-config.json` 的 `egressBindings` 段（键为 sha256 哈希，不含明文 key）。
+- **代理在线率**：代理池页显示每个代理的传输层成功率（累计 + 最近 50 次滚动窗口）与平均握手延迟。两个数据源：真实流量的**被动采样**（不产生探活流量）+ 健康表**手动延迟测试**（「代理测试」按钮：每出口对可配置的测速目标发最多 3 次 HTTPS 探测，默认 `www.gstatic.com/generate_204`，与真实请求同一拨号栈；单行「只测这一个出口」同理；样本计入在线率与握手统计，显示层不影响路由与冷却）。五档配色：≥80% 绿、60–80% 蓝、40–60% 粉、20–40% 黄、<20% 红，便于一眼挑出该换的节点。统计落盘在 `proxy-state.json`（60s 合批），编辑池清零。zen key 的出口自动钉定表在 `zen-config.json` 的 `egressBindings` 段（键为 sha256 哈希，不含明文 key；2026-11-27 勘误——随凭据所在平台文件走）。
 - **出口手动冷却 / 解禁**（2026-11-02）：健康表行内「冷却」按钮把该出口摘出轮转——**手动冷却无到期时间**，只有点「解禁」才恢复（状态列显示「手动」而非编造的恢复时刻）；「解禁」一键清除该出口的全局 + 平台级冷却与失败计数，用于单次网络抖动误冷却唯一可用出口的场景。自动冷却口径不变：建连失败走全局 2 分钟（2-strike，单次失败不冷却），隧道后流错误走平台级 10 分钟。**手动摘除对所有路径生效**（2026-11-09 修复）：未绑定身份轮转、zen 的 egress 钉定出口与各平台目录同步一并跳过手动冷却出口；池内出口全部被手动冷却时按「无可用出口」拒绝该轮请求（fail-closed，绝不静默改用被摘除的出口、也不静默转直连）。限时冷却遇全池不可用仍保留历史 fail-open 轮转位。
 
 socks5/socks5h 全支持；直连哨兵（主 = direct）可显式声明直连出口。zen 免费额度按出口 IP 计（约 200 请求/5h），把 key 绑到不同出口才是真正解锁多 key 容量的方式。
 
-**未绑定 zen key 的自动钉定（egress，上游 3758eb7）**：zen 免费层按 key 记录出口 IP，一个 key 出现多个 IP 整池会被判可疑。因此未显式绑定的 zen key 在「代理池非空」时自动分配一个稳定出口（一代理一 key，绑定幂等、重启不变，落 `.egress-bindings.json` 且不含明文 key）；代理比 key 少时多出的 key 被过滤并报容量错误（加代理，或在 zen 配置关闭 `pinProxyPerKey`），绝不直连或借用别人的出口。**钉定出口同样参与冷却判定**（2026-11-09 修复）：被自动或手动冷却的钉定出口不再承载该 key，该 key 本轮跳过（而不是继续用坏出口）。cline 账号不接此层——账号级绑定走面板的主/备绑定与自动分配。
+**未绑定 zen key 的自动钉定（egress，上游 3758eb7）**：zen 免费层按 key 记录出口 IP，一个 key 出现多个 IP 整池会被判可疑。因此未显式绑定的 zen key 在「代理池非空」时自动分配一个稳定出口（一代理一 key，绑定幂等、重启不变，随 zen-config.json 的 `egressBindings` 段落盘且不含明文 key——独立 `.egress-bindings.json` 文件已随 2026-10-27 死代码清理移除）；代理比 key 少时多出的 key 被过滤并报容量错误（加代理，或在 zen 配置关闭 `pinProxyPerKey`），绝不直连或借用别人的出口。**钉定出口同样参与冷却判定**（2026-11-09 修复）：被自动或手动冷却的钉定出口不再承载该 key，该 key 本轮跳过（而不是继续用坏出口）。cline 账号不接此层——账号级绑定走面板的主/备绑定与自动分配。
 
 ## 封禁与黑名单
 
@@ -216,7 +218,7 @@ socks5/socks5h 全支持；直连哨兵（主 = direct）可显式声明直连�
 | -------------------------------------------------------------------- | --------------------------------------------------------------- | ------------------------------------------------------- |
 | `bound proxies unavailable … the credential itself was not verified` | **出口**挂了，不是凭据坏。隔离语义下绑定身份被跳过，绝不改道    | 修/换绑定出口；**别删 key**；到提示的冷却时刻后重测     |
 | 单次 Test 失败，几分钟后无任何改动又通过                             | 出口冷却只有 2 分钟，并发探测会把正常出口打成短暂冷却           | 单次失败不下结论，≥2 分钟后重测                         |
-| `502` 内嵌上游 4xx 文本                                              | 客户端参数错；网关把所有上游错误映射为 502                      | 读内嵌的上游 message；注意客户端重试 502 会重耗免费额度 |
+| `502` 内嵌上游 4xx 文本                                              | 客户端参数错；上游错误映射 502（上游 429 原样透传，2026-11-09 全平台收口） | 读内嵌的上游 message；注意客户端重试 502 会重耗免费额度 |
 | `400 model … is not available on this gateway`（刚还好好的）         | 目录是活的：上游 feed 会修剪下架模型                            | 重读 `/v1/models`；脚本/CI 别写死模型 ID                |
 | zen 免费层 `403 FreeTierError` 突增                                  | 上游收紧了格式门（会话/请求 ID/gate 工具）                      | 看日志刷新频率趋势；网关会自动重铸重试                  |
 
@@ -247,12 +249,13 @@ CI：push 到 `main` / `zen-harvest` 先跑 `go build` + `go vet` + `go test`，
 │   ├── freepi/              FreePI（freepi.ai）免费日额度 key 池：三道闸门自愈（ads/session/concurrent）、credits 余额
 │   ├── exitpool/            代理域：出口池/隔离绑定/健康/探测（proxy-config/proxy-state）
 │   ├── blacklist/           模型黑名单 + 平台封禁（存储与判定）
-│   ├── panel/               管理面板：认证、admin_html（9104 行内嵌面板）、响应原语
+│   ├── panel/               管理面板：认证、html.go 共享骨架（9104 行）+ 各平台 panel_nav/panel_tab.html 片段（P5 拆分）、响应原语
 │   ├── backup/              配置备份导出/导入
 │   ├── reqlog/              请求日志与 per-route 统计
 │   ├── gwconfig/            afree 全局配置、env 解析、config-manifest
 │   ├── kit/                 跨模块纯工具（数据路径/env/合批落盘/zen ID 铸造）
-│   └── textcall/            文本工具调用解析共享件
+│   ├── textcall/            文本工具调用解析共享件
+│   └── toolrename/          出站工具改名六平台（面板网关设置项；zen 在域包出站 body 接线）
 ├── modules/trae2api/        vendored trae2api 引擎（XCool-603/trae2api，12 子包，
 │                            独立 Go module、module 路径同上游；afree_bridge.go 是
 │                            唯一消费门面；scripts/vendor_trae2api.py 生成，勿手改）

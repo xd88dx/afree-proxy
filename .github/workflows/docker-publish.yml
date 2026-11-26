@@ -36,7 +36,7 @@ jobs:
           go-version: '1.26'
 
       # workspace 模式下 `./...` 只匹配主 module 的包（不穿透 modules/ 子目录
-      # module，2026-11-17 实测 go list ./... 仅 6 包）——vendor 两树必须显式
+      # module，2026-11-17 实测 go list ./... 不含 modules/ 子 module（主仓包数随平台增长，2026-11-27 为 19）——vendor 两树必须显式
       # 按模块路径列出，漏了就是只测主 module 的假绿。
       - name: Build
         run: go build ./... github.com/misakano7545/workbuddy2api-panel/... trae2api/...

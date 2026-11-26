@@ -465,7 +465,7 @@ func handleAdminConfigImport(w http.ResponseWriter, r *http.Request) {
 		// （冷却表覆盖，本机统计键保留本机值）。trae 段 2026-11-04 起由
 		// trae.Trae2apiRestoreBackup 单独处理（含 config/routing/accounts），不再走
 		// state 事实合并（vendored state.json 冷却不随备份迁移）。
-		mergeOrReplace := func(local, backupSeg json.RawMessage, importFn func(json.RawMessage) error) {
+		mergeOrReplace := func(local, backupSeg json.RawMessage, importFn func(json.RawMessage) error, factKeys ...string) {
 			if len(backupSeg) == 0 {
 				return
 			}
@@ -473,7 +473,7 @@ func handleAdminConfigImport(w http.ResponseWriter, r *http.Request) {
 				_ = importFn(backupSeg)
 				return
 			}
-			merged, err := backup.MergeStateFactsJSON(local, backupSeg)
+			merged, err := backup.MergeStateFactsJSON(local, backupSeg, factKeys...)
 			if err != nil {
 				log.Printf("  config import: state facts merge failed — keeping local values: %v", err)
 				return
@@ -481,7 +481,9 @@ func handleAdminConfigImport(w http.ResponseWriter, r *http.Request) {
 			_ = importFn(merged)
 		}
 		mergeOrReplace(other.StateSnapshotJSON(), st.Other, other.ImportStateJSON)
-		mergeOrReplace(freepi.StateSnapshotJSON(), st.Freepi, freepi.ImportStateJSON)
+		// freepi 的 credits 余额快照属账号事实（key 级），不勾选统计也随备份
+		// 迁移（2026-11-27 审计 S15 归层）。
+		mergeOrReplace(freepi.StateSnapshotJSON(), st.Freepi, freepi.ImportStateJSON, "credits")
 		if includeStats && st.ProxyHealth != nil {
 			importProxyHealthBackup(st.ProxyHealth)
 		}

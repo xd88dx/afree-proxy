@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 
+	"afree-proxy/internal/kit"
 	"afree-proxy/internal/workbuddy"
 )
 
@@ -43,6 +44,8 @@ func (h wbDialects) ServeAnthropicMessages(rw http.ResponseWriter, r *http.Reque
 	}
 
 	if req.Stream {
+		// 实时转发（2026-11-27 审计 G3 注记）：vendor SSE 逐帧直转，结构性
+		// 无法在写 200 前过坏 tool_call 闸；非流式分支下方已接闸。
 		handleAnthropicStreamWithUsage(rw, resp, req.Model, toolSchemas, stopSequencesFrom(openAIReq), nil)
 		return
 	}
@@ -54,6 +57,12 @@ func (h wbDialects) ServeAnthropicMessages(rw http.ResponseWriter, r *http.Reque
 	}
 	out = normalizeOpenAIResponse(out)
 	truncateAtStopSequences(out, stopSequencesFrom(openAIReq))
+	// 坏 tool_call 闸（2026-11-27 审计 G3）：wb /v1/messages 非流式补接
+	//（openAIReq 已在入口就地改名，传 nil）。
+	if bad := guardBadToolCallsChat(out, openAIReq, nil); bad != "" {
+		writeWorkbuddyAnthropicError(rw, http.StatusBadGateway, bad)
+		return
+	}
 	anthropicResp := openAIToAnthropic(out)
 	if tc, ok := getNested(out, "choices", 0, "message", "tool_calls").([]any); ok && len(tc) > 0 {
 		anthropicResp["stop_reason"] = "tool_use"
@@ -80,6 +89,8 @@ func (h wbDialects) ServeResponses(rw http.ResponseWriter, r *http.Request, chat
 	}
 
 	if isStream {
+		// 实时转发（2026-11-27 审计 G3 注记）：vendor SSE 逐帧转换，结构性
+		// 无法在写 200 前过坏 tool_call 闸；非流式分支下方已接闸。
 		rw.Header().Set("Content-Type", "text/event-stream")
 		rw.Header().Set("Cache-Control", "no-cache")
 		rw.Header().Set("Connection", "keep-alive")
@@ -96,6 +107,14 @@ func (h wbDialects) ServeResponses(rw http.ResponseWriter, r *http.Request, chat
 	}
 	if data, ok := out["data"].(map[string]any); ok {
 		out = data
+	}
+	// 坏 tool_call 闸（2026-11-27 审计 G3）：wb /v1/responses 非流式补接
+	//（chat 参数已在入口就地改名，传 nil）。
+	if bad := guardBadToolCallsChat(out, chat, nil); bad != "" {
+		writeJSON(rw, http.StatusBadGateway, map[string]any{
+			"error": map[string]any{"message": kit.Truncate(bad, 300), "type": "upstream_error"},
+		})
+		return
 	}
 	writeJSON(rw, http.StatusOK, chatToResponses(normalizeOpenAIResponse(out)))
 }

@@ -146,10 +146,12 @@ func RecordProxyTestOutcome(proxyURL string, ok bool, err error, elapsedMs int64
 	if proxyURL == "" {
 		return
 	}
-	key := RuleKeyOf(proxyURL)
-	if key == "" {
-		return // 无备注名的行不记账（非法格式，2026-11-26 用户定）
+	// 无备注名的行不记账（2026-11-27 审计 C：落实口径，原 key=="" 恒假死守卫；
+	// 直连哨兵无备注但属合法统计键，显式豁免）。
+	if a := AliasOf(proxyURL); a == "" && proxyURL != ProxyRuleDirectKey {
+		return
 	}
+	key := RuleKeyOf(proxyURL)
 	EnsureHealthLoaded()
 	healthMu.Lock()
 	e := healthStats[key]

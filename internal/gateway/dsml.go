@@ -25,6 +25,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"afree-proxy/internal/toolrename"
 )
 
 // dsmlPipe 是分隔符：两个全角竖线 U+FF5C。
@@ -76,9 +78,24 @@ func (r *dsmlRepair) enabled() bool {
 	return r != nil && (len(r.allowed) > 0 || r.allowUnknown)
 }
 
-func (r *dsmlRepair) seenBlocks() int    { if r == nil { return 0 }; return r.seen }
-func (r *dsmlRepair) rejectedBlocks() int { if r == nil { return 0 }; return r.rejected }
-func (r *dsmlRepair) convertedCalls() int { if r == nil { return 0 }; return r.converted }
+func (r *dsmlRepair) seenBlocks() int {
+	if r == nil {
+		return 0
+	}
+	return r.seen
+}
+func (r *dsmlRepair) rejectedBlocks() int {
+	if r == nil {
+		return 0
+	}
+	return r.rejected
+}
+func (r *dsmlRepair) convertedCalls() int {
+	if r == nil {
+		return 0
+	}
+	return r.converted
+}
 
 // feed 吃进一段正文增量，返回「应作为正文透出的部分」与「还原出的工具调用」。
 // 不变量：所有 feed 入参拼接 == 所有返回正文 + flush() + 被转换块的原文。
@@ -343,7 +360,7 @@ func dsmlCallID(idx int) string {
 //
 // 注意：本函数只做「识别」，绝不修复——修复由 textCallGW 在回放时完成。两者职责
 // 分离：坏到无法修复的在这里拦下（写 200 之前），可修复的放行给出口转换。
-func guardBadToolCalls(lines []string, params map[string]any) string {
+func guardBadToolCalls(lines []string, params map[string]any, ren *toolrename.Mapping) string {
 	if len(lines) == 0 {
 		return ""
 	}
@@ -364,12 +381,15 @@ func guardBadToolCalls(lines []string, params map[string]any) string {
 	if err != nil || chat == nil {
 		return "" // 解析失败不误判，交回原有回放逻辑
 	}
-	return guardBadToolCallsChat(chat, params)
+	return guardBadToolCallsChat(chat, params, ren)
 }
 
 // guardBadToolCallsChat 对聚合后的 chat 对象执行坏工具调用判定，与流式路径共用同一套判据。
 // 非流式出口在写 200 之前直接调用本函数；流式路径由 guardBadToolCalls 聚合 SSE 后转调。
-func guardBadToolCallsChat(chat map[string]any, params map[string]any) string {
+// ren 为出站工具改名映射（zen 走域包出站 body 改写、params 保持真名，响应里是
+// 假名——判据须同时认假名才能命中 schema 表且不把 DSML 好调用误判 502，
+// 2026-11-27 审计 G2；其余平台 params 已就地改写，传 nil）。
+func guardBadToolCallsChat(chat map[string]any, params map[string]any, ren *toolrename.Mapping) string {
 	msg, _ := getNested(chat, "choices", 0, "message").(map[string]any)
 	if msg == nil {
 		return ""
@@ -380,6 +400,13 @@ func guardBadToolCallsChat(chat map[string]any, params map[string]any) string {
 	text, _ := msg["content"].(string)
 	if len(tcs) == 0 && dsmlHasMarkup(text) {
 		allowed := dsmlToolNameAllowlist(params["tools"])
+		if ren != nil {
+			// 响应正文里的 DSML 块用假名：名单同时收录改写形态，否则好调用
+			// 被 strict 判败 → seen>0 && converted==0 → 误判 502。
+			for real := range allowed {
+				allowed[ren.Rename(real)] = true
+			}
+		}
 		r := newDSMLRepair(allowed, false)
 		_, calls := r.feed(text)
 		_ = r.flush()
@@ -388,7 +415,7 @@ func guardBadToolCallsChat(chat map[string]any, params map[string]any) string {
 		}
 		for _, c := range calls {
 			if c.Arguments == "" || c.Arguments == "{}" {
-				return "上游 DSML 工具调用参数为空: " + c.Name
+				return "上游 DSML 工具调用参数为空: " + ren.Restore(c.Name)
 			}
 		}
 	}
@@ -411,26 +438,35 @@ func guardBadToolCallsChat(chat map[string]any, params map[string]any) string {
 			continue
 		}
 		name, _ := fn["name"].(string)
-		sch, has := schemas[name]
+		// zen 出站改名为 body 级（params 保持真名）：响应 tool_calls 是假名，
+		// 先还原回真名再查 schema 表，否则闸被假名整体致盲（2026-11-27 审计 G2）。
+		key := name
+		if _, ok := schemas[key]; !ok && ren != nil {
+			key = ren.Restore(name)
+		}
+		sch, has := schemas[key]
 		if !has {
 			continue
 		}
 		args, _ := fn["arguments"].(string)
 		a := strings.TrimSpace(args)
-		// 空对象：无 required 但有 properties 时也判坏。
+		// 空参数：required 在身一律判坏（2026-11-25 生产复现：new-api 转换丢
+		// required 后空 {} 直达客户端）。props-only（无 required 有 properties）
+		// 的 ""/{}/零参调用是合法形态——只拦显式 null，与提交口径一致
+		//（2026-11-27 审计 S1：原实现连 {} 一并拦属过度误伤）。
 		if a == "" || a == "{}" || a == "null" {
 			if len(sch.required) > 0 {
-				return fmt.Sprintf("上游工具 %s 的调用参数为空（缺少必需字段 %s）", name, strings.Join(sch.required, ","))
+				return fmt.Sprintf("上游工具 %s 的调用参数为空（缺少必需字段 %s）", key, strings.Join(sch.required, ","))
 			}
-			if len(sch.properties) > 0 {
-				return fmt.Sprintf("上游工具 %s 的调用参数为空（声明参数 %s）", name, strings.Join(sch.properties, ","))
+			if a == "null" {
+				return fmt.Sprintf("上游工具 %s 的调用参数为 null（声明参数 %s）", key, strings.Join(sch.properties, ","))
 			}
 			continue
 		}
 		// 非空必须是合法 JSON 对象；非法参数交给 new-api 会被回退成 {}。
 		var obj map[string]any
 		if json.Unmarshal([]byte(a), &obj) != nil {
-			return fmt.Sprintf("上游工具 %s 的调用参数不是合法 JSON", name)
+			return fmt.Sprintf("上游工具 %s 的调用参数不是合法 JSON", key)
 		}
 		// required 字段：缺失或值为 null 都让客户端 schema 校验失败。
 		// props-only（无 required）的字段是可选的，只拦显式 null——
@@ -449,15 +485,15 @@ func guardBadToolCallsChat(chat map[string]any, params map[string]any) string {
 			}
 		}
 		if len(missing) > 0 {
-			return fmt.Sprintf("上游工具 %s 的调用参数缺少必需字段 %s", name, strings.Join(missing, ","))
+			return fmt.Sprintf("上游工具 %s 的调用参数缺少必需字段 %s", key, strings.Join(missing, ","))
 		}
 	}
 	return ""
 }
 
 // toolSchema 是一个工具声明的字段约束：required 为必需字段名，properties 为
-// 声明的全部参数名。两者都用于坏 tool_call 判定——只声明 properties 却没写
-// required 的 schema（部分上游转换会丢 required），空 {} 同样应拦。
+// 声明的全部参数名。required 缺失（部分上游转换会丢 required）时空参数一律
+// 判坏；props-only 的空 {} 是合法零参调用，只拦显式 null（2026-11-27 S1）。
 type toolSchema struct {
 	required   []string
 	properties []string

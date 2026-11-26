@@ -6,6 +6,8 @@ import (
 	"afree-proxy/internal/reqlog"
 
 	"afree-proxy/internal/cline"
+	"afree-proxy/internal/trae"
+	"afree-proxy/internal/workbuddy"
 	"afree-proxy/internal/zen"
 	"log"
 	"net/http"
@@ -19,6 +21,14 @@ import (
 // OpenCode key/绑定/代理池、zen 粘性会话与端点学习结果、
 // WorkBuddy 账号与代理绑定、自定义别名、cline 流式自学习结果、请求日志与用量统计。
 // 仅保留运行基础设施（.Session-secret、运行日志），保证面板会话不被踢出。
+//
+// 复位口径（2026-11-27 审计 S11 落实）：**账号/凭据关联数据全清**——各平台
+// key/账号、绑定、路由、冷却/记账/昵称、wb 账号意志（accountPrefs，否则同
+// UID 重登旧禁用/昵称锁回填复活）、wb/trae 显示顺序、wb 权重优化任务开关与
+// wkbd-state 台账、toolRename；**平台级行为设置保留**——baseURL/勾选目录/
+// 走池开关/并发与重试、分域倍率、双黑名单表（可面板单独清）、出口池绑定段
+// 与 zone 声明（代理域配置，随备份迁移）。zen 全出厂复位为既有口径（连
+// baseURL/压缩设置一并复位）。
 func handleAdminDeleteAllData(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		WriteAPI(w, http.StatusMethodNotAllowed, apiResponse{Error: "method not allowed"})
@@ -127,33 +137,50 @@ func clearZenEndpointsForDataDelete() int {
 }
 
 func clearWorkbuddyAccountsForDataDelete() int {
-	if *workbuddySub == nil || (*workbuddySub).Pool == nil {
-		return 0
-	}
-	p := (*workbuddySub).Pool
-	statuses := p.List()
-	if len(statuses) == 0 {
-		return 0
-	}
-	auths := make([]struct {
-		filePath string
-	}, 0, len(statuses))
-	for _, st := range statuses {
-		if a := p.AuthByUID(st.UID); a != nil {
-			auths = append(auths, struct{ filePath string }{filePath: a.FilePath})
+	n := 0
+	if sub := *workbuddySub; sub != nil && sub.Pool != nil {
+		p := sub.Pool
+		statuses := p.List()
+		n = len(statuses)
+		auths := make([]struct {
+			filePath string
+		}, 0, len(statuses))
+		for _, st := range statuses {
+			if a := p.AuthByUID(st.UID); a != nil {
+				auths = append(auths, struct{ filePath string }{filePath: a.FilePath})
+			}
 		}
-	}
-	p.SyncToDir(nil)
-	for _, a := range auths {
-		if a.filePath == "" {
-			continue
+		p.SyncToDir(nil)
+		for _, a := range auths {
+			if a.filePath == "" {
+				continue
+			}
+			if err := os.Remove(a.filePath); err != nil && !os.IsNotExist(err) {
+				log.Printf("workbuddy data delete: remove %s failed: %v", a.filePath, err)
+			}
 		}
-		if err := os.Remove(a.filePath); err != nil && !os.IsNotExist(err) {
-			log.Printf("workbuddy data delete: remove %s failed: %v", a.filePath, err)
+		n = len(auths)
+	}
+	// wkbd 复位不依赖账号数（2026-11-27 审计 S11）：accountPrefs 账号意志随
+	// UID 回填复活（AccountPrefProvider 在 auth 解析时回读本文件）、displayOrder
+	// 同回放、shareOptimize 全局任务开关残留；wkbd-state 用量台账与 zen/other/
+	// freepi 三平台 usage 随删全清的口径对齐。走池开关（useProxies）属平台
+	// 行为设置，按端点口径保留。
+	workbuddy.MutateWkbdConfig(func(k *workbuddy.WkbdConfigData) {
+		k.AccountPrefs = nil
+		k.DisplayOrder = nil
+		k.ShareOptimize = nil
+	})
+	if sub := *workbuddySub; sub != nil {
+		sub.ShareOptimizeSched.Store(nil) // 复位回默认行为（未配置语义）
+		if sub.Usage != nil {
+			if err := sub.Usage.ImportRaw([]byte(`{"buckets":[]}`)); err != nil {
+				log.Printf("workbuddy data delete: usage ledger reset failed: %v", err)
+			}
 		}
 	}
 	clearAllWorkbuddyProxyBindings()
-	return len(statuses)
+	return n
 }
 
 // clearProxyPoolForDataDelete 把 OpenCode 配置整体重置为出厂值（key、绑定、
@@ -217,6 +244,10 @@ func clearTrae2apiAccountsForDataDelete() int {
 		saveTraeRoutingLocked()
 	}
 	traeRoutingMu.Unlock()
+	// displayOrder 随账号关联清空（2026-11-27 审计 S11）：UID 顺序意志残留会
+	// 在重加账号后经 Trae2apiApplyDisplayOrder 回放复活；TraeDisplayOrderSave(nil)
+	// 同步清内存副本与 trae-config.json 段。
+	trae.TraeDisplayOrderSave(nil)
 	if n > 0 {
 		_ = trae2apiRestart()
 	}

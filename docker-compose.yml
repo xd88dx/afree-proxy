@@ -24,11 +24,10 @@ services:
       # using an OAuth token as the key — raw API keys carry no org information)
       - ZEN_ORG_ID=${ZEN_ORG_ID:-}
       # Credential scheduling strategy, all platforms, default round_robin (fill / random)
-      # WorkBuddy keeps its own vendor partition strategy; Trae has TRAE_STRATEGY below.
+      # WorkBuddy keeps its own vendor partition strategy.
       - POOL_STRATEGY=${POOL_STRATEGY:-round_robin}
-      # Trae-only scheduling override (round_robin / fill / random / credit-priority).
-      # Empty = follow the panel "Selection strategy", then POOL_STRATEGY.
-      - TRAE_STRATEGY=${TRAE_STRATEGY:-}
+      # (TRAE_STRATEGY removed 2026-11-27: deprecated since the 2026-11-04 weight-scheduling
+      # rework and never read by the binary.)
       # Request-log switch, default on (metadata only, 10MB cap auto-wipe)
       - LOG_REQUESTS=${LOG_REQUESTS:-true}
       - LOG_FILE_MAX_MB=${LOG_FILE_MAX_MB:-10}

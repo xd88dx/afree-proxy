@@ -110,24 +110,24 @@ func handleZenConfigUpdate(w http.ResponseWriter, r *http.Request) {
 			From string `json:"from"`
 			To   string `json:"to"`
 		} `json:"keyRenames"`
-		BaseURL            *string  `json:"baseURL"`
-		Proxies            []string `json:"proxies"`
-		ProxyStrategy      *string  `json:"proxyStrategy"`
-		ProxySubURL        *string  `json:"proxySubURL"`
-		ProxySubCron       *string  `json:"proxySubCron"`
+		BaseURL       *string  `json:"baseURL"`
+		Proxies       []string `json:"proxies"`
+		ProxyStrategy *string  `json:"proxyStrategy"`
+		ProxySubURL   *string  `json:"proxySubURL"`
+		ProxySubCron  *string  `json:"proxySubCron"`
 		// 定时重排 cron（2026-11-26 用户定）：nil = 不改动；非 nil = 校验后
 		// 整值替换（空串 = 关闭定时）。
-		ProxyReorderCron   *string  `json:"proxyReorderCron"`
+		ProxyReorderCron *string `json:"proxyReorderCron"`
 		// 平台域声明集（2026-11-26 用户定）：nil = 不改动；非 nil = 整表替换
 		//（键形态见 exitpool.DeclaredRealm，非法键拒绝）。
-		ZoneRealms         []string `json:"zoneRealms"`
+		ZoneRealms []string `json:"zoneRealms"`
 		// 出口分区（2026-11-26 用户定）：nil = 不改动；非 nil = 整表替换
 		// （后端按池规整：非池条目丢弃、非法值删除）。
 		ProxyZones         map[string]string `json:"proxyZones"`
-		MaxConcurrency     *int     `json:"maxConcurrency"`
-		Retries            *int     `json:"retries"`
-		ProxyIsolation     *bool    `json:"proxyIsolation"`
-		BackupProxyEnabled *bool    `json:"backupProxyEnabled"`
+		MaxConcurrency     *int              `json:"maxConcurrency"`
+		Retries            *int              `json:"retries"`
+		ProxyIsolation     *bool             `json:"proxyIsolation"`
+		BackupProxyEnabled *bool             `json:"backupProxyEnabled"`
 		// 自动分配规则：nil = 不改动；非 nil = 整表替换（空表 = 全部清除）。
 		ProxyExclusions map[string][]string `json:"proxyExclusions"`
 		// 差分自动排除开关（2026-11-24 用户定）：nil = 不改动。
@@ -303,10 +303,12 @@ func handleZenConfigUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 	if patch.ZoneRealms != nil {
 		// 整表替换语义：键合法性校验（平台 kind / wb:cn / wb:gb / trae:cn /
-		// trae:gb / other:<slug>），去重。
+		// trae:gb / other:<slug>），去重。不收 "zen"——DeclaredRealm 的整平台
+		// 键是 "key"（排除规则口径），接受 "zen" 只会静默无效成死配置
+		//（2026-11-27 审计 S10 移除）。
 		valid := func(k string) bool {
 			switch k {
-			case "acc", "key", "wb:cn", "wb:gb", "trae:cn", "trae:gb", "freepi", "zen":
+			case "acc", "key", "wb:cn", "wb:gb", "trae:cn", "trae:gb", "freepi":
 				return true
 			}
 			return proxyRuleKindValid(k) // other:<slug> 等

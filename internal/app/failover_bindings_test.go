@@ -14,12 +14,12 @@ func TestMainSlotMatch(t *testing.T) {
 	const from = "socks5://old:1#a"
 	const to = "socks5://new:2#b"
 	cases := []struct {
-		name  string
-		main  string
+		name   string
+		main   string
 		backup string
-		from  string
-		to    string
-		want  bool
+		from   string
+		to     string
+		want   bool
 	}{
 		{"alias match", "socks5://old:9#a", "", from, to, true},
 		{"url differs", "socks5://other:1#c", "", from, to, false},

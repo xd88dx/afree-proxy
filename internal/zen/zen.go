@@ -982,6 +982,25 @@ func zenClientToolNameList(params map[string]any) []string {
 	return names
 }
 
+// zenRenameCandidateNames 改名候选 = 客户端工具名 − gate 占位名。客户端与
+// gate 同名时（ZenMergeTools 客户端优先），同名工具改名会让出站 tools 缺失
+// gate 名、FreeTier 直接 403——同名工具保持真名出站，闸与还原两侧同时自洽
+// （2026-11-27 审计 S3）。
+func zenRenameCandidateNames(params map[string]any) []string {
+	gate := make(map[string]bool, len(ZenGateToolSpecs))
+	for _, g := range ZenGateToolSpecs {
+		gate[g.name] = true
+	}
+	out := make([]string, 0, len(gate))
+	for _, n := range zenClientToolNameList(params) {
+		if gate[n] {
+			continue
+		}
+		out = append(out, n)
+	}
+	return out
+}
+
 // zenClientToolNames 客户端工具名清单（逗号连接），指纹闸自愈日志用——命中
 // 后靠它做二分定位（哪个工具的名字/描述是指纹）。
 func zenClientToolNames(params map[string]any) string {
@@ -2877,7 +2896,7 @@ func CallZenResponsesAPI(ctx context.Context, params map[string]any, stream bool
 		body := BuildZenResponsesBody(params, zm.ID, sess)
 		// 工具改名（同 CallZenAPI；responses 形态：tools[].name + input 的
 		// function_call 项）。
-		if m := toolrename.Build(toolrename.KindZen, zenClientToolNameList(params)); m != nil {
+		if m := toolrename.Build(toolrename.KindZen, zenRenameCandidateNames(params)); m != nil {
 			toolrename.RewriteResponsesForm(body, m)
 		}
 		if stripTools {
@@ -3115,6 +3134,16 @@ func CallZenResponsesAPI(ctx context.Context, params map[string]any, stream bool
 				remapped = true
 				// params["model"] 已改写为继任模型；重建 body 后就地重试。
 				body = BuildZenResponsesBody(params, params["model"].(string), sess)
+				// 与 chat 路径 410 重建同款（CallZenAPI 尾部）：重放出站改名、
+				// 保全指纹 strip——否则重建会把客户端工具真名带回出站，改名在
+				// 迁移请求上静默失效、strip 后工具回潮（2026-11-27 审计 S4）。
+				if m := toolrename.Build(toolrename.KindZen, zenRenameCandidateNames(params)); m != nil {
+					toolrename.RewriteResponsesForm(body, m)
+				}
+				if stripTools {
+					// 指纹自愈的 strip 必须跨 410 重建存活。
+					body["tools"] = ZenMergeResponsesTools(nil)
+				}
 				bodyJSON, err = json.Marshal(body)
 				if err != nil {
 					return nil, rateLimited, fmt.Errorf("marshal zen responses body: %w", err)
@@ -3149,7 +3178,7 @@ func CallZenAPI(ctx context.Context, params map[string]any, stream bool, opts ..
 	// 之后应用——toolfilter 的真名匹配不受影响。gate 工具名不在映射内原样
 	// 保留（过闸必需）；历史 tool_calls 一并改写（指纹面在历史里同样成立）。
 	// 平台勾选/开关在 toolrename.Build 内判定（gwconfig 全局配置）。
-	if m := toolrename.Build(toolrename.KindZen, zenClientToolNameList(params)); m != nil {
+	if m := toolrename.Build(toolrename.KindZen, zenRenameCandidateNames(params)); m != nil {
 		toolrename.RewriteChatForm(body, m)
 	}
 
@@ -3403,7 +3432,16 @@ func CallZenAPI(ctx context.Context, params map[string]any, stream bool, opts ..
 					toolRetryDone = true
 					stripTools = true
 					body["tools"] = ZenGateTools()
-					body["tool_choice"] = "none" // 与"客户端无工具"既有语义一致
+					// auto-only 模型（crouton 等）拒收 none——与"客户端无工具"
+					// 分支同款降级（见 BuildZenBody），否则自愈重试必 400、400
+					// 又会进弃用迁移分支把更难诊断的错误返回客户端（2026-11-27
+					// 审计 S2）。
+					bm, _ := body["model"].(string)
+					if ZenToolChoiceAutoOnly(bm) {
+						body["tool_choice"] = "auto"
+					} else {
+						body["tool_choice"] = "none" // 与"客户端无工具"既有语义一致
+					}
 					bodyJSON, err = json.Marshal(body)
 					if err != nil {
 						return nil, rateLimited, fmt.Errorf("marshal zen body: %w", err)
@@ -3516,7 +3554,7 @@ func CallZenAPI(ctx context.Context, params map[string]any, stream bool, opts ..
 			if migrated := ZenHandleDeprecatedModel(resp.StatusCode, bodyBytes, body["model"].(string), params, o.PinKey != "", remapped); migrated {
 				remapped = true
 				body = BuildZenBody(params, stream)
-				if m := toolrename.Build(toolrename.KindZen, zenClientToolNameList(params)); m != nil {
+				if m := toolrename.Build(toolrename.KindZen, zenRenameCandidateNames(params)); m != nil {
 					toolrename.RewriteChatForm(body, m)
 				}
 				if stripTools {

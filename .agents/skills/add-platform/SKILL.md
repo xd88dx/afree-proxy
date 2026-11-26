@@ -12,7 +12,7 @@ description: 在 afree-proxy 中新增一个上游平台的完整迁移配方—
 - **A. app 层单文件**（`internal/app/zen.go` 模式）：功能与单一上游强耦合、无独立包边界的小平台。
 - **B. key 池四件套克隆**（Other 模式，纯 API key 池平台的首选）：`internal/<x>/` 四件套 `client.go / config.go / models.go / pool.go`（config_test.go/usage.go 随附）+ `internal/app/<x>.go` 桥接层（admin handlers + 分发接线）。从 internal/other 克隆后抽取单子平台形态（去掉 platforms 数组维度，协议事实查 references/backend.md §9）。
 - **C. vendor 树**（`modules/workbuddy2api/` 独立 module 模式，2026-11-17 起）：只有需要跟随上游演进的移植对象才用（`scripts/sync_workbuddy.py` 管理，手改会被 re-vendor 冲掉——除非用户明确要求，别走这条路；主 module 经树根门面 `afree_bridge.go` 消费）。
-- 先从两个事实来源建立全景：`internal/app/admin.go`（管理路由全景）、`internal/app/admin_html.go`（单文件内嵌面板）。锚点一律按**符号名**检索，行号会漂移。
+- 先从两个事实来源建立全景：`internal/app/admin.go`（管理路由全景）、`internal/panel/html.go` 共享骨架 + 各平台 `panel_nav.html`/`panel_tab.html` 片段（P5 拆分，2026-11-18 起；拼装序见 html.go 头部）。锚点一律按**符号名**检索，行号会漂移。
 - 原项目（移植参照物）只读，永不写入。
 
 ## 1. 铁律（七个板块都受约束）
@@ -41,7 +41,7 @@ description: 在 afree-proxy 中新增一个上游平台的完整迁移配方—
 
 | 用户说的 | 落点 | references |
 |---|---|---|
-| 导航栏加菜单 | `admin_html.go` nav-item（data-tab）+ tab-panel + restoreTab 白名单 | frontend §2 |
+| 导航栏加菜单 | 平台包 `panel_nav.html` nav-item（data-tab）+ `panel_tab.html` tab-panel + html.go restoreTab 白名单 | frontend §2 |
 | 页面账号列表 | tbody（`accountTableBody`/`ocKeysBody`/`wbAccountsBody`/`otherKeysBody` 族参照）+ 快照/保存三件套 | frontend §3 |
 | 操作按钮区域 | 页脚三区 flex space-between + 顶部操作行；批量操作串行进度 | frontend §4 |
 | 平台相关设置 | key 池型：`handleOtherConfigUpdate` patch 模式；vendor 型：`wbConfigForm` data-path 模式 | frontend §5 / backend §5 |
@@ -54,7 +54,7 @@ description: 在 afree-proxy 中新增一个上游平台的完整迁移配方—
 
 | | Cline | OpenCode(zen) | WorkBuddy | TraeWork | Other | **FreePI** |
 |---|---|---|---|---|---|---|
-| 形态 | 原生账号池 | key 池（app 层） | vendor 树 | vendor 独立 module + 桥接（`modules/trae2api/` 树 + 根门面 `afree_bridge.go` + `internal/app/trae*.go`） | key 池四件套 + 多子平台（`internal/other/`，platforms 数组） |  key 池四件套单平台（`internal/freepi/`，无子平台维度） |
+| 形态 | 原生账号池 | key 池（app 层） | vendor 独立 module（`modules/workbuddy2api/` + 根门面） | vendor 独立 module + 桥接（`modules/trae2api/` 树 + 根门面 `afree_bridge.go` + `internal/app/trae*.go`） | key 池四件套 + 多子平台（`internal/other/`，platforms 数组） |  key 池四件套单平台（`internal/freepi/`，无子平台维度） |
 | 凭据 | refreshToken/API key（Account） | API key 列表（zen keys） | auth 文件目录 | 便携快照目录（`data/trae2api/accounts/*.json`，含设备密钥；8765 helper / token----refreshToken 粘贴 / 原版面板导入三通道） | 各子平台 key |  free-pi CLI 铸造的 JWT（90 天） |
 | 启停字段 | `Account.PoolEnabled *bool` | key `routingEnabled` | `auth.poolEnabled *bool` | 账号总闸=vendored `disabled` + 反代开关=`trae-config.json routing`（2026-11-17 配置重组迁入；查表缺失=启用，新增身份经 `AccountAddedHook` 显式落 false） | `KeyRoutingEnabled map[string]bool`（按子平台） |  `KeyRoutingEnabled`（缺项=参与） |
 | 默认禁用点 | `pool.go addAccount` | `reconcileZenKeyRouting` | vendor `panel/login.go`+`import.go` | vendor 注入 `accountstore.AccountAddedHook`（trae.go `traeAccountAdded`） | `internal/other/config.go` Reconcile（新增 key 默认 false） |  包内 `ReconcileRouting`（新增 key 默认 false） |
@@ -77,9 +77,9 @@ go build ./... && go vet ./internal/... && go test ./...
 # -race 单独跑：go test -race ./internal/app/（Windows 需本机有 gcc/clang，缺则跳过 race）
 
 # 浏览器验证：改前端后必须重建镜像（docker restart 不更新文件系统）
-docker rm -f afree-proxy-workbuddy-test
-MSYS_NO_PATHCONV=1 docker run -d --name afree-proxy-workbuddy-test -e DATA_DIR=/app/data -p 3457:3457 <新构建的测试镜像>
 # 测试镜像用 PROJECT.md §6 的本机构建流程：docker build -t afree-proxy:test-$(date +%Y%m%d-%H%M) .
+# 更新本机测试容器走 compose（勿 docker run 手工重建——会脱离 compose 管理且 3457 已被 afree 占用，2026-11-27 对齐 PROJECT.md §6）：
+# 改 D:/DockerApp compose 的 image 行指向新镜像后：cd /d/DockerApp && docker compose up -d afree
 # 旧的 afree-proxy:workbuddy-builder / workbuddy-local 镜像已删除（2026-10-27 清理），命令里别再引用
 ```
 

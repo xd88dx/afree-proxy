@@ -56,3 +56,11 @@ func toolRenameApplyChat(kind string, params map[string]any, w http.ResponseWrit
 	toolrename.RewriteChatForm(params, m)
 	return toolrename.NewRestoreWriter(w, m)
 }
+
+// zenGuardMapping zen 出站改名映射（坏 tool_call 闸判据用）。zen 的改写在域包
+// 出站 body 处、params 保持真名，响应 tool_calls/DSML 块是假名——闸的 schema
+// 表与 DSML 名单须同时认假名（2026-11-27 审计 G2）。未启用时返回 nil。
+// 映射可由真名清单确定性重算（FakeOf 为 SHA256 前缀），无需跨层传递。
+func zenGuardMapping(params map[string]any) *toolrename.Mapping {
+	return toolrename.Build(toolrename.KindZen, toolNamesOfChat(params))
+}

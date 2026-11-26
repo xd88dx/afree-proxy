@@ -1136,6 +1136,9 @@ func clearOtherKeysForDataDelete() int {
 		next.Platforms[i].Keys = nil
 		next.Platforms[i].KeyBindings = map[string]other.Binding{}
 		next.Platforms[i].KeyRoutingEnabled = map[string]bool{}
+		// KeyNicknames 按 key 明文键——重加同 key 时旧昵称会复活（2026-11-27
+		// 审计 S11），与 freepi 清理口径（连昵称一并清）对齐。
+		next.Platforms[i].KeyNicknames = map[string]string{}
 	}
 	other.Set(next)
 	other.ClearAllUsage()

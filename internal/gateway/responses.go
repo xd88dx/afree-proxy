@@ -779,6 +779,15 @@ func handleResponses(w http.ResponseWriter, r *http.Request) {
 			}
 			agg["model"] = zm.ID
 			recordChatUsage(func(u map[string]any) { recordZenKeyTokens(nUsedKey, usageTokens(u, chat)) }, agg)
+			// 坏 tool_call 闸（2026-11-27 审计 G3）：聚合已完整、尚未写 200，
+			// 单点拦截同时覆盖流式（聚合后重放）与非流式两个分支。
+			if bad := guardBadToolCallsChat(agg, chat, zenGuardMapping(chat)); bad != "" {
+				log.Printf("  responses zen native bad tool call, returning 502: %s", kit.Truncate(bad, 200))
+				writeJSON(w, http.StatusBadGateway, map[string]any{
+					"error": map[string]any{"message": kit.Truncate(bad, 300), "type": "upstream_error"},
+				})
+				return
+			}
 			if isStream {
 				// 复用 chat SSE→responses 转换：把聚合结果包成一条 chat SSE 流喂进去。
 				// 原生流此前已完整读出，这里不再有增量；对客户端仍按 responses
@@ -806,6 +815,9 @@ func handleResponses(w http.ResponseWriter, r *http.Request) {
 		defer resp.Body.Close()
 		usedKey := takeUsedKey(resp)
 		if isStream {
+			// 实时转发（2026-11-27 审计 G3 注记）：WriteHeader(200) 已提交、
+			// 增量转换无缓冲，结构性无法在写 200 前过坏 tool_call 闸；非流式
+			// 分支下方已接闸。缓冲化需重估 TTFB 代价，暂缺。
 			w.Header().Set("Content-Type", "text/event-stream")
 			w.Header().Set("Cache-Control", "no-cache")
 			w.Header().Set("Connection", "keep-alive")
@@ -823,6 +835,14 @@ func handleResponses(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		recordChatUsage(func(u map[string]any) { recordZenKeyTokens(usedKey, usageTokens(u, chat)) }, raw)
+		// 坏 tool_call 闸（2026-11-27 审计 G3）：responses zen chat 非流式补接。
+		if bad := guardBadToolCallsChat(raw, chat, zenGuardMapping(chat)); bad != "" {
+			log.Printf("  responses zen nonstream bad tool call, returning 502: %s", kit.Truncate(bad, 200))
+			writeJSON(w, http.StatusBadGateway, map[string]any{
+				"error": map[string]any{"message": kit.Truncate(bad, 300), "type": "upstream_error"},
+			})
+			return
+		}
 		writeJSON(w, http.StatusOK, chatToResponses(normalizeOpenAIResponse(raw)))
 		return
 	}
@@ -855,6 +875,8 @@ func handleResponses(w http.ResponseWriter, r *http.Request) {
 
 	usageFn := cline.AccountUsageFn(acc, chat)
 	if isStream {
+		// 实时转发（2026-11-27 审计 G3 注记）：WriteHeader(200) 后逐帧转换，
+		// 结构性无法在写 200 前过坏 tool_call 闸；非流式两分支下方已接闸。
 		w.Header().Set("Content-Type", "text/event-stream")
 		w.Header().Set("Cache-Control", "no-cache")
 		w.Header().Set("Connection", "keep-alive")
@@ -872,6 +894,14 @@ func handleResponses(w http.ResponseWriter, r *http.Request) {
 		if u, ok := out["usage"].(map[string]any); ok && len(u) > 0 {
 			usageFn(u)
 		}
+		// 坏 tool_call 闸（2026-11-27 审计 G3）：responses cline 聚合分支补接。
+		if bad := guardBadToolCallsChat(out, chat, nil); bad != "" {
+			log.Printf("  responses cline bad tool call, returning 502: %s", kit.Truncate(bad, 200))
+			writeJSON(w, http.StatusBadGateway, map[string]any{
+				"error": map[string]any{"message": kit.Truncate(bad, 300), "type": "upstream_error"},
+			})
+			return
+		}
 		writeJSON(w, http.StatusOK, chatToResponses(out))
 		return
 	}
@@ -888,6 +918,14 @@ func handleResponses(w http.ResponseWriter, r *http.Request) {
 		if d, ok := data.(map[string]any); ok {
 			out = d
 		}
+	}
+	// 坏 tool_call 闸（2026-11-27 审计 G3）：responses cline 直返 JSON 分支补接。
+	if bad := guardBadToolCallsChat(out, chat, nil); bad != "" {
+		log.Printf("  responses cline bad tool call, returning 502: %s", kit.Truncate(bad, 200))
+		writeJSON(w, http.StatusBadGateway, map[string]any{
+			"error": map[string]any{"message": kit.Truncate(bad, 300), "type": "upstream_error"},
+		})
+		return
 	}
 	// 与 zen 路径一致：先归一化再转换，剥掉上游私有字段并保证 choices 结构
 	writeJSON(w, http.StatusOK, chatToResponses(normalizeOpenAIResponse(out)))

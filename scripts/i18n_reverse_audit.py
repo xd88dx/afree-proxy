@@ -53,8 +53,14 @@ for mm in re.finditer(r'data-i18n(?:-title|-placeholder)?="([^"]*)"', htmlpart):
 # 3) JS 区字符串字面量 + 大串内 HTML 文本节点
 jspart = src_nodict[html_end:]
 BS = chr(92)
-lit_re = re.compile(chr(39) + r'((?:[^' + chr(39) + BS + chr(10) + r']|' + BS + r'.){2,})' + chr(39))
-dq_re = re.compile(chr(34) + r'((?:[^' + chr(34) + BS + chr(10) + r']|' + BS + r'.){2,})' + chr(34))
+# 开引号须紧邻 =/空白/(/,/:/[/+ 或串首（2026-11-27 修正引号配对错位）：
+# 旧版裸双引号配对会被 `value=""` 空属性错位——第一个引号被当作上一对的
+# 闭合，紧随的 data-i18n="key" 永远进不了 refs，产生假孤儿（实证：
+# zen_probe_auto 实际在用却被报孤儿）。限定开引号前置字符后，空属性 ""
+# 不再开新配对。
+OPEN = r'(?:^|[=(,:\[+\s])'
+lit_re = re.compile(OPEN + chr(39) + r'((?:[^' + chr(39) + BS + chr(10) + r']|' + BS + r'.){2,})' + chr(39))
+dq_re = re.compile(OPEN + chr(34) + r'((?:[^' + chr(34) + BS + chr(10) + r']|' + BS + r'.){2,})' + chr(34))
 lits = [mm.group(1) for mm in lit_re.finditer(jspart)] + [mm.group(1) for mm in dq_re.finditer(jspart)]
 for lit in lits:
     refs.add(lit); refs.add(js_unescape(lit))

@@ -163,54 +163,97 @@ func RunReorderForKind(ruleKind string) int {
 		return pref[i].hs < pref[j].hs
 	})
 
-	// --- 修复段：forced 优先（先抢候选，避免被非 forced 行占走——与前端
-	// repair.sort 的 forced 置顶同口径），其余按行序 ---
-	sort.SliceStable(repair, func(i, j int) bool {
-		if repair[i].forced != repair[j].forced {
-			return repair[i].forced
+	// --- 修复段：按 URL 聚合决策（2026-11-27 审计 S7）---
+	// rebindMain 适配器是 URL 级批量改绑（把 Main≈from 的行全部搬到 to），
+	// 逐行决策会：(a) 同 URL 多行各自触发批量搬运，容量按单行预算而实际搬
+	// n 行（超限）；(b) cap 超限分裂时把同 URL 的冻结健康行连带搬走，违背
+	// "冻结段原样不动"。聚合后每 URL 决策一次：容量按全组行数预算；该 URL
+	// 上仍有冻结/cn 挂靠行时整组跳过（URL 级改绑无法部分搬迁，宁可不挪也
+	// 不错误连带）。
+	type repairGrp struct {
+		count  int  // 该 URL 上的待搬行数（= 绑定行数，前提是无冻结挂靠）
+		forced bool // 任一行强制挪即整组强制
+		realm  string
+		minIdx int
+		realms map[string]bool // 组内全部凭据域（候选须对每个域兼容）
+	}
+	grps := map[string]*repairGrp{}
+	var order []string
+	for _, r := range repair {
+		g, ok := grps[r.url]
+		if !ok {
+			g = &repairGrp{realm: r.realm, minIdx: r.idx, realms: map[string]bool{}}
+			grps[r.url] = g
+			order = append(order, r.url)
 		}
-		return repair[i].idx < repair[j].idx
+		g.count++
+		g.realms[r.realm] = true
+		if r.forced {
+			g.forced = true
+		}
+		if r.idx < g.minIdx {
+			g.minIdx = r.idx
+		}
+	}
+	// forced 组优先（先抢候选），其余按首行行序。
+	sort.SliceStable(order, func(i, j int) bool {
+		gi, gj := grps[order[i]], grps[order[j]]
+		if gi.forced != gj.forced {
+			return gi.forced
+		}
+		return gi.minIdx < gj.minIdx
 	})
 
 	changed := 0
-	for _, r := range repair {
-		forced := r.forced
+	for _, url := range order {
+		g := grps[url]
+		if cnt[url] > 0 {
+			// 同 URL 上有冻结/cn 挂靠行（cap 超限分裂形态）：URL 级批量改绑
+			// 会把它们连带搬走——整组跳过，保留现状（不比今天的错误搬迁差，
+			// 超限状态留给人工/下一轮排除表变化）。
+			log.Printf("[proxy-reorder] %s: %s has %d frozen binding(s), skip group of %d (URL-level rebind would drag frozen rows)",
+				ruleKind, kit.MaskProxyURL(url), cnt[url], g.count)
+			continue
+		}
 		best := ""
 		for _, s := range pref {
-			if s.url == r.url {
+			if s.url == url {
 				continue
 			}
-			if !ZoneCompatible(ZoneOf(s.url), r.realm) {
+			ok := true
+			for realm := range g.realms {
+				if !ZoneCompatible(ZoneOf(s.url), realm) {
+					ok = false
+					break
+				}
+			}
+			if !ok {
 				continue
 			}
 			left := capN - cnt[s.url]
-			if capN > 0 && left <= 0 {
+			if capN > 0 && left < g.count {
 				continue
 			}
 			best = s.url
 			break
 		}
 		if best == "" {
-			if r.url != "" {
-				cnt[r.url]++ // 无候选：原样保留（保留也占容量）
-			}
+			cnt[url] += g.count // 无候选：原样保留（保留也占容量）
 			continue
 		}
-		if !forced && tierRank[tierOfHS(reorderHS(best))] >= tierRank[tierOfHS(reorderHS(r.url))] {
-			// 非强制行：候选不严格更优（同档或更差）→ 原样保留（与前端
+		if !g.forced && tierRank[tierOfHS(reorderHS(best))] >= tierRank[tierOfHS(reorderHS(url))] {
+			// 非强制组：候选不严格更优（同档或更差）→ 原样保留（与前端
 			// applyReorderRules 的 >= 口径一致，重排 diff 最小）。
-			if r.url != "" {
-				cnt[r.url]++
-			}
+			cnt[url] += g.count
 			continue
 		}
-		n, exact := rebindMain(b, ruleKind, r.url, best)
+		n, exact := rebindMain(b, ruleKind, url, best)
 		if n > 0 {
 			changed += n
 			cnt[best] += n
 			if !exact {
 				log.Printf("[proxy-reorder] %s: adapter lacks RebindMain, backup slots may have moved with %s -> %s",
-					ruleKind, kit.MaskProxyURL(r.url), kit.MaskProxyURL(best))
+					ruleKind, kit.MaskProxyURL(url), kit.MaskProxyURL(best))
 			}
 		}
 	}

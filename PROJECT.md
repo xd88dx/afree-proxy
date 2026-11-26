@@ -18,7 +18,7 @@
 | WorkBuddy      | `modules/workbuddy2api/`（vendor 独立 module）+ 其根门面 `afree_bridge.go`；域 `internal/workbuddy/`，桥接 `internal/app/wb_bridge.go`、面板 `internal/app/wb_handlers.go` | `wb*`               |
 | FreePI         | `internal/freepi/`（key 池四件套，单平台形态）；桥接 `internal/app/freepi.go`、网关 `internal/gateway/freepi_serve.go` | `freepi*`           |
 
-**vendor 独立 module 化（2026-11-17）**：两树迁至 `modules/`，go.mod 沿用上游 module 路径（wb=`github.com/misakano7545/workbuddy2api-panel`，trae=`trae2api`），主 go.mod `replace` 指本地、`go.work` 汇总；树内 import 与上游零差异，vendor 脚本不再做 import 前缀改写。主 module 只能经各自根门面消费 vendor 的 internal 包（Go internal 可见性强制，门面即显式契约）。**workspace 模式下 `./...` 不穿透 modules/ 子目录 module**（实测 `go list ./...` 仅 6 包）——构建/测试必须显式列模块路径，见 §4。
+**vendor 独立 module 化（2026-11-17）**：两树迁至 `modules/`，go.mod 沿用上游 module 路径（wb=`github.com/misakano7545/workbuddy2api-panel`，trae=`trae2api`），主 go.mod `replace` 指本地、`go.work` 汇总；树内 import 与上游零差异，vendor 脚本不再做 import 前缀改写。主 module 只能经各自根门面消费 vendor 的 internal 包（Go internal 可见性强制，门面即显式契约）。**workspace 模式下 `./...` 不穿透 modules/ 子目录 module**（实测 `go list ./...` 仅主仓包——2026-11-27 核对为 19 个，随新增平台包增长；关键论点是 modules/ 两子 module 不在列表）——构建/测试必须显式列模块路径，见 §4。
 
 管理面板前端 **P5 拆分**：共享骨架（head/CSS/导航骨架/共享 tab/JS）在 `internal/panel/html.go`；**平台导航项与 tab 片段在 `internal/<x>/panel_nav.html` / `panel_tab.html`**（各平台包 embed，panel 按拆分前顺序拼装，产物与拆分前字节一致——切分时机器验证）。`oc*` 属于 OpenCode 而不是 Cline。改平台 UI 片段去平台包，改共享 UI 去panel/html.go。
 
@@ -34,7 +34,7 @@
 - **freepi（2026-11-21 立线）**：`pingmike2/freepi-magpie-plugin`（主线，freepi.ai 的 magpie/OpenCode provider 插件，单文件 index.mjs）——**Go 移植参考线**（非 vendor 非 merge）：`internal/freepi/` 按移植时点对齐插件协议逻辑，后续看上游增量、按本仓形态单点吸纳（CLIENT_VERSION 随参考插件推进——freepi.ai 服务端有最低版本闸）。台账在 `MERGE.md` FreePI 节。
 - **magpie（2026-11-06 用户立项，全平台纯参考）**：`yetone/magpie`（订阅聚合网关，覆盖约 70 agent/全主流平台）——**纯参考不合并**，按需单点吸纳 + `MERGE.md` magpie 节记基线增量回溯；也是上游行为取证的旁证源（其 gateway 测试文件质量高，zen 免费层关停即靠它定案）。详见技能 §2.5。
 
-仓库根 `MERGE.md` 按 **Cline / TreaWork / WorkBuddy / OpenCode / FreePI** 五条线（平台⇔主线一一对应）记录同步历史，另有 **副线评估与 magpie** 一节（副线吸收/零吸纳结论与 magpie 基线），格式 `### YYYY-MM-DD — <基线短哈希> → <目标短哈希>`，写明上游仓库与合并方式、基线与目标、吸收项（带原因）、丢弃项（带原因）、本地定制保留清单、验证结果。历史只追加不删改；未涉及的线写“本次未涉及上游同步”。详细流程在 `.agents/skills/sync-upstream/`，按需加载。
+仓库根 `MERGE.md` 按 **Cline / TraeWork / WorkBuddy / OpenCode / FreePI** 五条线（平台⇔主线一一对应）记录同步历史，另有 **副线评估与 magpie** 一节（副线吸收/零吸纳结论与 magpie 基线），格式 `### YYYY-MM-DD — <基线短哈希> → <目标短哈希>`，写明上游仓库与合并方式、基线与目标、吸收项（带原因）、丢弃项（带原因）、本地定制保留清单、验证结果。历史只追加不删改；未涉及的线写“本次未涉及上游同步”。详细流程在 `.agents/skills/sync-upstream/`，按需加载。
 
 ## 4. 构建与验证
 
