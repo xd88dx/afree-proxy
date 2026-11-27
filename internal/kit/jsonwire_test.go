@@ -157,3 +157,17 @@ func TestMarshalWireJSONRoundTrip(t *testing.T) {
 		t.Error("wire body must not have a trailing newline (JSON.stringify emits none)")
 	}
 }
+
+// TestMarshalWireJSONKeyNoHTMLEscape 键名与值同路径编码：键含 <>& 时同样不转义
+// （JSON.stringify 对键名不转义；键名走单独 json.Marshal 会产生不一致字节）。
+func TestMarshalWireJSONKeyNoHTMLEscape(t *testing.T) {
+	out, err := MarshalWireJSON(map[string]any{
+		"a<b>&c": "v<x>&y",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := string(out), `{"a<b>&c":"v<x>&y"}`; got != want {
+		t.Fatalf("key/value must not HTML-escape:\n got %s\nwant %s", got, want)
+	}
+}

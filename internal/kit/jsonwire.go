@@ -37,10 +37,10 @@ var wireKeyOrder = []string{
 	"max_completion_tokens",
 }
 
-// wireEncode 递归编码一个值：string/number/bool/nil 走标准 marshal，数组逐
-// 元素递归，map 按键字母序逐键递归。整个调用链共享一个关掉 HTML 转义的
-// encoder，保证 <>& 在任意深度都不被转义。
-func wireEncode(enc *json.Encoder, buf *bytes.Buffer, v any) error {
+// wireEncode 递归编码一个值：string/number/bool/nil 走标准编码，数组逐元素
+// 递归，map 按键字母序逐键递归。每个标量都用关掉 HTML 转义的 encoder，保证
+// <>& 在任意深度（含对象键名）都不被转义。
+func wireEncode(buf *bytes.Buffer, v any) error {
 	switch t := v.(type) {
 	case map[string]any:
 		keys := make([]string, 0, len(t))
@@ -53,11 +53,11 @@ func wireEncode(enc *json.Encoder, buf *bytes.Buffer, v any) error {
 			if i > 0 {
 				buf.WriteByte(',')
 			}
-			if err := wireEncode(enc, buf, k); err != nil {
+			if err := wireEncode(buf, k); err != nil {
 				return err
 			}
 			buf.WriteByte(':')
-			if err := wireEncode(enc, buf, t[k]); err != nil {
+			if err := wireEncode(buf, t[k]); err != nil {
 				return err
 			}
 		}
@@ -69,7 +69,7 @@ func wireEncode(enc *json.Encoder, buf *bytes.Buffer, v any) error {
 			if i > 0 {
 				buf.WriteByte(',')
 			}
-			if err := wireEncode(enc, buf, e); err != nil {
+			if err := wireEncode(buf, e); err != nil {
 				return err
 			}
 		}
@@ -111,10 +111,8 @@ func MarshalWireJSON(body map[string]any) ([]byte, error) {
 	keys = append(keys, rest...)
 
 	var buf bytes.Buffer
-	enc := json.NewEncoder(&buf)
-	// 关键差异 1：JSON.stringify 不转义 <>&。这个设置对经 enc.Encode 写出的
-	// 所有标量生效（wireEncode 递归全程用它）。
-	enc.SetEscapeHTML(false)
+	// 键名与值同路径经 wireEncode 写出（不转义 <>&）——JSON.stringify 对键名
+	// 同样不转义，单独 json.Marshal(k) 会在键名含 <>& 时产生不一致字节。
 	// JSON.stringify 输出无尾换行；Encode 会给标量补 \n，wireEncode 里逐标量
 	// TrimRight 去掉。
 	buf.WriteByte('{')
@@ -122,13 +120,11 @@ func MarshalWireJSON(body map[string]any) ([]byte, error) {
 		if i > 0 {
 			buf.WriteByte(',')
 		}
-		kb, err := json.Marshal(k)
-		if err != nil {
+		if err := wireEncode(&buf, k); err != nil {
 			return nil, err
 		}
-		buf.Write(kb)
 		buf.WriteByte(':')
-		if err := wireEncode(enc, &buf, body[k]); err != nil {
+		if err := wireEncode(&buf, body[k]); err != nil {
 			return nil, err
 		}
 	}
