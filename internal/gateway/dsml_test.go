@@ -566,3 +566,136 @@ func TestFinishClineChatNonStreamWritesResponse(t *testing.T) {
 		t.Fatalf("坏 tool_call 应改判 502, got %d", rec2.Code)
 	}
 }
+
+// --- 单竖线漂移形态（2026-11-27 复审 F1 回移 vendor 142790b3）----------------
+//
+// mkLooseParam / mkLooseInvoke / mkLooseBlock 单竖线+空格形态夹具（同既有纪律：
+// 从常量拼装，不写字面量）。生产泄漏样本见 TestDSMLRepairLooseRealWorldLeak。
+func mkLooseParam(name, value string) string {
+	return "<" + dsmlPipeLoose + "DSML" + dsmlPipeLoose + ` parameter name="` + name + `" string="true">` +
+		value + dsmlParamCloseLoose
+}
+
+func mkLooseInvoke(name string, params ...string) string {
+	var body strings.Builder
+	for _, p := range params {
+		body.WriteString(p)
+	}
+	return "<" + dsmlPipeLoose + "DSML" + dsmlPipeLoose + ` invoke name="` + name + `">` +
+		body.String() + dsmlInvokeCloseLoose
+}
+
+func mkLooseBlock(invokes ...string) string {
+	return dsmlOpenLoose + "\n" + strings.Join(invokes, "\n") + "\n" + dsmlCloseLoose
+}
+
+// TestDSMLRepairLooseCompleteBlock 单竖线形态整块还原。
+func TestDSMLRepairLooseCompleteBlock(t *testing.T) {
+	in := mkLooseBlock(mkLooseInvoke("exec_command", mkLooseParam("cmd", "ls -la /tmp")))
+	r := newDSMLRepair(map[string]bool{"exec_command": true}, false)
+	prose, calls := r.feed(in)
+	prose += r.flush()
+	if prose != "" {
+		t.Fatalf("单竖线整块应被还原，透出 %q", prose)
+	}
+	if len(calls) != 1 || calls[0].Name != "exec_command" {
+		t.Fatalf("还原结果错误: %#v", calls)
+	}
+}
+
+// TestDSMLRepairLooseRealWorldLeak 2026-11-27 生产泄漏块原样回放：两个 invoke
+// （含中文与半角引号取值），期望全部还原、透出为空。修复前该块整块透传。
+func TestDSMLRepairLooseRealWorldLeak(t *testing.T) {
+	in := mkLooseBlock(
+		mkLooseInvoke("byt_d1e9567da9a8",
+			mkLooseParam("command", `cd "D:/x/emailbox" && grep -n "proxy" -A6 web/vite.config.ts`),
+			mkLooseParam("description", "Check vite proxy target")),
+		mkLooseInvoke("byt_d1e9567da9a8",
+			mkLooseParam("command", `cd "D:/x/emailbox/.tmp/dev" && tail -5 ../backend.log 2>/dev/null; ls`),
+			mkLooseParam("description", "Check backend log")),
+	)
+	leakTools := map[string]bool{"byt_d1e9567da9a8": true}
+	r := newDSMLRepair(leakTools, false)
+	prose, calls := r.feed(in)
+	prose += r.flush()
+	if prose != "" {
+		t.Fatalf("泄漏样本应全部还原，透出 %q", prose)
+	}
+	if len(calls) != 2 {
+		t.Fatalf("应还原 2 次调用，实际 %d", len(calls))
+	}
+	var args map[string]any
+	if err := json.Unmarshal([]byte(calls[0].Arguments), &args); err != nil {
+		t.Fatalf("arguments 应为 JSON: %v", err)
+	}
+	if got, _ := args["command"].(string); got != `cd "D:/x/emailbox" && grep -n "proxy" -A6 web/vite.config.ts` {
+		t.Fatalf("command 参数错误: %#v", got)
+	}
+}
+
+// TestDSMLRepairLooseSplitAcrossChunks 单竖线块被流式增量切在标记中间（含多字节
+// 全角竖线，按字节切）：截断态 hold、下一片续齐后仍能还原。
+func TestDSMLRepairLooseSplitAcrossChunks(t *testing.T) {
+	full := mkLooseBlock(mkLooseInvoke("exec_command", mkLooseParam("cmd", "pwd")))
+	cut := 5 // "<｜D" 处截断（全角竖线占 3 字节）
+	if cut >= len(full) {
+		t.Fatalf("夹具过短")
+	}
+	r := newDSMLRepair(map[string]bool{"exec_command": true}, false)
+	prose, calls := r.feed(full[:cut])
+	if calls != nil {
+		t.Fatalf("截断片不应出调用")
+	}
+	prose2, calls := r.feed(full[cut:])
+	prose += prose2 + r.flush()
+	if prose != "" {
+		t.Fatalf("分片还原后透出应为空，实际 %q", prose)
+	}
+	if len(calls) != 1 || calls[0].Name != "exec_command" {
+		t.Fatalf("分片还原错误: %#v", calls)
+	}
+}
+
+// TestDSMLRepairLooseMixedWithStrict 同流里新旧形态混排：两族各自还原。
+func TestDSMLRepairLooseMixedWithStrict(t *testing.T) {
+	in := dsmlTestBlock(dsmlTestBashInvoke()) + "\n" +
+		mkLooseBlock(mkLooseInvoke("write_stdin", mkLooseParam("session_id", "s1")))
+	tools := map[string]bool{"Bash": true, "write_stdin": true}
+	r := newDSMLRepair(tools, false)
+	prose, calls := r.feed(in)
+	prose += r.flush()
+	// 两块之间的换行是块外正文，按设计原样透出
+	if prose != "\n" {
+		t.Fatalf("混排应全部还原，仅透出块间换行，实际 %q", prose)
+	}
+	if len(calls) != 2 || calls[0].Name != "Bash" || calls[1].Name != "write_stdin" {
+		t.Fatalf("混排还原错误: %#v", calls)
+	}
+}
+
+// TestDSMLRepairLooseRejectedKeepsOriginalShape 单竖线块判定不通过时按原形态
+// 回吐（绝不用另一族形态重写正文）。
+func TestDSMLRepairLooseRejectedKeepsOriginalShape(t *testing.T) {
+	in := mkLooseBlock(mkLooseInvoke("exec_command", mkLooseParam("cmd", "x"))) + "正文"
+	r := newDSMLRepair(map[string]bool{"other_tool": true}, false) // 严格名单不含 exec_command
+	prose, _ := r.feed(in)
+	prose += r.flush()
+	if prose != in {
+		t.Fatalf("拒绝回吐必须逐字节等于原块，实际 %q", prose)
+	}
+	if r.seenBlocks() != 1 || r.rejectedBlocks() != 1 {
+		t.Fatalf("观测计数错误: seen=%d rejected=%d", r.seenBlocks(), r.rejectedBlocks())
+	}
+}
+
+// TestDSMLHasMarkupSinglePipe 热路径快筛对单竖线漂移形态放行（双竖线子串判据
+// 会在门口直接漏过），普通正文仍快速拒绝。
+func TestDSMLHasMarkupSinglePipe(t *testing.T) {
+	loose := "<" + dsmlPipeLoose + "DSML" + dsmlPipeLoose + ` invoke name="x">`
+	if !dsmlHasMarkup(loose) {
+		t.Fatalf("单竖线形态应命中快筛")
+	}
+	if dsmlHasMarkup("普通正文，无标记 | 与半角竖线") {
+		t.Fatalf("半角竖线不应命中快筛")
+	}
+}

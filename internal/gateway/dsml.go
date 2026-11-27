@@ -10,6 +10,11 @@
 // 本文件从 modules/workbuddy2api/internal/upstream/dsml.go 移植核心解析逻辑到 root
 // module（独立 module 的 internal 包无法被 root import），供统一出口 textCallGW 使用。
 //
+// 同步纪律（2026-11-27 复审 F1）：这是 vendor 解析器的**移植副本**，vendor 侧
+// 修复必须同步回本文件。本次已回移 142790b3 的单竖线漂移双形态兼容（loose 族
+// 常量、dsmlStartCandidate 双族、正则前缀放宽、inBlockOpen 同族回吐、闭合同
+// 族取最早、dsmlHasMarkup 单竖线放行）。
+//
 // 判定原则与来源实现一致， conservative 优先：
 //   - 只有块结构完美闭合、块内除 invoke/parameter 外无正文、工具名在请求声明的 tools
 //     清单里，才还原成 tool_calls；
@@ -32,19 +37,41 @@ import (
 // dsmlPipe 是分隔符：两个全角竖线 U+FF5C。
 const dsmlPipe = "\uFF5C\uFF5C"
 
+// dsmlPipeLoose 单全角竖线：2026-11-27 生产实证的漂移形态（vendor
+// modules/workbuddy2api/internal/upstream/dsml.go 142790b3 同源）——模型端
+// 序列化从 <｜｜DSML｜｜ X> 漂移为 <｜DSML｜ X>，两形态并存兼容，不替换旧形态。
+// 本文件是 vendor dsml.go 的移植副本：vendor 侧解析器再变更时本文件必须跟进。
+const dsmlPipeLoose = "\uFF5C"
+
 const (
 	dsmlOpen        = "<" + dsmlPipe + "DSML" + dsmlPipe + " calls>"
 	dsmlClose       = "</" + dsmlPipe + "DSML" + dsmlPipe + " calls>"
 	dsmlInvokeClose = "</" + dsmlPipe + "DSML" + dsmlPipe + " invoke>"
 	dsmlParamClose  = "</" + dsmlPipe + "DSML" + dsmlPipe + " parameter>"
+
+	dsmlOpenLoose        = "<" + dsmlPipeLoose + "DSML" + dsmlPipeLoose + " calls>"
+	dsmlCloseLoose       = "</" + dsmlPipeLoose + "DSML" + dsmlPipeLoose + " calls>"
+	dsmlInvokeCloseLoose = "</" + dsmlPipeLoose + "DSML" + dsmlPipeLoose + " invoke>"
+	dsmlParamCloseLoose  = "</" + dsmlPipeLoose + "DSML" + dsmlPipeLoose + " parameter>"
 )
 
+// dsmlCloseFor 按块开头形态取同族的块尾——块的收尾与开头同一序列化族
+// （模型一次生成一个族），配对不跨族。
+func dsmlCloseFor(open string) string {
+	if open == dsmlOpenLoose {
+		return dsmlCloseLoose
+	}
+	return dsmlClose
+}
+
 var (
-	dsmlTagPrefix = regexp.QuoteMeta("<" + dsmlPipe + "DSML" + dsmlPipe)
-	// dsmlInvokeRe 匹配 invoke 头：<｜｜DSML｜｜ invoke name="NAME">。
-	dsmlInvokeRe = regexp.MustCompile(dsmlTagPrefix + `\s+invoke\s+name="([^"]*)"\s*>`)
+	// dsmlTagPrefixRe 两族开始标记公共前缀（双竖线 | 单竖线），后接空白。
+	dsmlTagPrefixRe = `(?:` + regexp.QuoteMeta("<"+dsmlPipe+"DSML"+dsmlPipe) +
+		`|` + regexp.QuoteMeta("<"+dsmlPipeLoose+"DSML"+dsmlPipeLoose) + `)\s+`
+	// dsmlInvokeRe 匹配 invoke 头：<｜｜DSML｜｜ invoke name="NAME">（含单竖线漂移形态）。
+	dsmlInvokeRe = regexp.MustCompile(dsmlTagPrefixRe + `invoke\s+name="([^"]*)"\s*>`)
 	// dsmlParamRe 匹配 parameter 头，string 属性可选（缺省按 JSON 解析取值）。
-	dsmlParamRe = regexp.MustCompile(dsmlTagPrefix + `\s+parameter\s+name="([^"]*)"(?:\s+string="(true|false)")?\s*>`)
+	dsmlParamRe = regexp.MustCompile(dsmlTagPrefixRe + `parameter\s+name="([^"]*)"(?:\s+string="(true|false)")?\s*>`)
 	// 工具名合理形态：名单缺失时才用它兜底，挡住「讨论这段语法」时写出的占位符。
 	dsmlToolNameRe = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9_.:-]{0,63}$`)
 )
@@ -65,6 +92,7 @@ type dsmlRepair struct {
 	allowUnknown bool // 名单为空时启用弱判定（形态检查）；默认 false
 	hold         string
 	inBlock      bool
+	inBlockOpen  string // 当前块的开头形态（dsmlOpen / dsmlOpenLoose）——拒绝回吐/超长回吐/flush 必须用原形态，否则污染正文
 	seen         int
 	rejected     int
 	converted    int
@@ -109,27 +137,28 @@ func (r *dsmlRepair) feed(text string) (string, []dsmlCall) {
 	var calls []dsmlCall
 	for {
 		if !r.inBlock {
-			i := dsmlStartCandidate(s)
+			i, open := dsmlStartCandidate(s)
 			if i < 0 {
 				emit.WriteString(s)
 				break
 			}
-			if len(s)-i < len(dsmlOpen) {
+			if open == "" {
 				// 起点被增量边界截断：留到下一片再判定。
 				emit.WriteString(s[:i])
 				r.hold = s[i:]
 				break
 			}
 			emit.WriteString(s[:i])
-			s = s[i+len(dsmlOpen):]
+			s = s[i+len(open):]
 			r.inBlock = true
+			r.inBlockOpen = open
 			continue
 		}
-		k := strings.Index(s, dsmlClose)
+		k := strings.Index(s, dsmlCloseFor(r.inBlockOpen))
 		if k < 0 {
 			if len(s) > dsmlMaxBlockBytes {
 				// 超长未闭合：不是标记，原文回吐并退出块态。
-				emit.WriteString(dsmlOpen)
+				emit.WriteString(r.inBlockOpen)
 				emit.WriteString(s)
 				r.inBlock = false
 				break
@@ -138,7 +167,7 @@ func (r *dsmlRepair) feed(text string) (string, []dsmlCall) {
 			break
 		}
 		inner := s[:k]
-		s = s[k+len(dsmlClose):]
+		s = s[k+len(dsmlCloseFor(r.inBlockOpen)):]
 		r.inBlock = false
 		r.seen++
 		if got, ok := parseDSMLBlock(inner, r.allowed, r.allowUnknown); ok {
@@ -148,9 +177,9 @@ func (r *dsmlRepair) feed(text string) (string, []dsmlCall) {
 		}
 		// 块内不是纯调用：原文回吐，绝不吞字节。
 		r.rejected++
-		emit.WriteString(dsmlOpen)
+		emit.WriteString(r.inBlockOpen)
 		emit.WriteString(inner)
-		emit.WriteString(dsmlClose)
+		emit.WriteString(dsmlCloseFor(r.inBlockOpen))
 	}
 	return emit.String(), calls
 }
@@ -162,31 +191,37 @@ func (r *dsmlRepair) flush() string {
 	}
 	out := r.hold
 	if r.inBlock {
-		out = dsmlOpen + r.hold
+		out = r.inBlockOpen + r.hold
 	}
 	r.hold = ""
 	r.inBlock = false
 	return out
 }
 
-// dsmlStartCandidate 返回 s 中最早可能是 dsmlOpen 起点的下标（含被增量截断的前缀）。
-func dsmlStartCandidate(s string) int {
+// dsmlStartCandidate 返回 s 中最早「可能是任一族 dsmlOpen 起点」的下标与命中的
+// open：该位置之后要么正好是完整的某个 open，要么是某个 open 的前缀（被增量边界
+// 截断——此时 open 返回空串，调用方只 hold 不消耗）。没有候选返回 -1。
+func dsmlStartCandidate(s string) (int, string) {
 	for i := 0; i < len(s); i++ {
 		if s[i] != '<' {
 			continue
 		}
 		rest := s[i:]
-		if len(rest) >= len(dsmlOpen) {
-			if rest[:len(dsmlOpen)] == dsmlOpen {
-				return i
+		for _, open := range []string{dsmlOpen, dsmlOpenLoose} {
+			if len(rest) >= len(open) {
+				if rest[:len(open)] == open {
+					return i, open
+				}
+				continue
 			}
-			continue
-		}
-		if strings.HasPrefix(dsmlOpen, rest) {
-			return i
+			if strings.HasPrefix(open, rest) {
+				// 截断态：rest 是 open 的前缀。两族前缀共享 <｜DSML 时按更长的
+				// 族等下一片——不必区分，hold 语义本来就等完整数据。
+				return i, ""
+			}
 		}
 	}
-	return -1
+	return -1, ""
 }
 
 // parseDSMLBlock 解析 calls 块内部。成功要求：块内除 invoke 与空白外无别的字节；
@@ -205,12 +240,20 @@ func parseDSMLBlock(inner string, allowed map[string]bool, allowUnknown bool) ([
 		}
 		name := inner[pos+loc[2] : pos+loc[3]]
 		bodyStart := pos + loc[1]
-		end := strings.Index(inner[bodyStart:], dsmlInvokeClose)
-		if end < 0 {
+		// invoke 闭合形态与本块开头同族（单/双竖线），两种都找取最早，防模型混排。
+		iS := strings.Index(inner[bodyStart:], dsmlInvokeClose)
+		iL := strings.Index(inner[bodyStart:], dsmlInvokeCloseLoose)
+		end, closeLen := -1, 0
+		switch {
+		case iS >= 0 && (iL < 0 || iS < iL):
+			end, closeLen = iS, len(dsmlInvokeClose)
+		case iL >= 0:
+			end, closeLen = iL, len(dsmlInvokeCloseLoose)
+		default:
 			return nil, false // invoke 未闭合
 		}
 		body := inner[bodyStart : bodyStart+end]
-		pos = bodyStart + end + len(dsmlInvokeClose)
+		pos = bodyStart + end + closeLen
 		args, ok := parseDSMLParams(body)
 		if !ok {
 			return nil, false
@@ -250,12 +293,20 @@ func parseDSMLParams(body string) (string, bool) {
 		name := body[pos+loc[2] : pos+loc[3]]
 		isString := loc[4] >= 0 && body[pos+loc[4]:pos+loc[5]] == "true"
 		valStart := pos + loc[1]
-		end := strings.Index(body[valStart:], dsmlParamClose)
-		if end < 0 {
+		// parameter 闭合同 invoke：两族都找取最早，防混排。
+		iS := strings.Index(body[valStart:], dsmlParamClose)
+		iL := strings.Index(body[valStart:], dsmlParamCloseLoose)
+		end, closeLen := -1, 0
+		switch {
+		case iS >= 0 && (iL < 0 || iS < iL):
+			end, closeLen = iS, len(dsmlParamClose)
+		case iL >= 0:
+			end, closeLen = iL, len(dsmlParamCloseLoose)
+		default:
 			return "", false
 		}
 		raw := body[valStart : valStart+end]
-		pos = valStart + end + len(dsmlParamClose)
+		pos = valStart + end + closeLen
 		if isString {
 			args[name] = raw
 			continue
@@ -278,8 +329,11 @@ func parseDSMLParams(body string) (string, bool) {
 }
 
 // dsmlHasMarkup 快速判断文本中是否出现 DSML 分隔符（热路径零开销筛选）。
+// 含单个全角竖线即放行（2026-11-27 单竖线漂移形态，见 dsmlPipeLoose）——解析器
+// 全程保守，误入成本只是一次无命中的状态机扫描；双竖线子串判据会让漂移形态
+// 在门口直接漏过。
 func dsmlHasMarkup(s string) bool {
-	return strings.Contains(s, dsmlPipe)
+	return strings.Contains(s, dsmlPipeLoose)
 }
 
 // dsmlToolNameAllowlist 从 OpenAI 形态 tools 里收集工具名集合。
