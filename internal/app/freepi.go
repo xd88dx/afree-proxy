@@ -123,18 +123,18 @@ func handleFreepiConfig(w http.ResponseWriter, r *http.Request) {
 		modelViews = append(modelViews, mv)
 	}
 	data := map[string]any{
-		"useProxies":              freepi.ProxiesEnabled(),
-		"maxConcurrency":          c.MaxConcurrency,
-		"retries":                 c.Retries,
-		"weightOptimize":          c.WeightOptimizeEnabled(),
-		"weightInterval":          c.WeightInterval(),
-		"sessionSticky":           c.StickyEnabled(),
+		"useProxies":             freepi.ProxiesEnabled(),
+		"maxConcurrency":         c.MaxConcurrency,
+		"retries":                c.Retries,
+		"weightOptimize":         c.WeightOptimizeEnabled(),
+		"weightInterval":         c.WeightInterval(),
+		"sessionSticky":          c.StickyEnabled(),
 		"clientVersion":          c.ClientVersion,
 		"clientVersionEffective": c.EffectiveClientVersion(),
 		"clientVersionDefault":   freepi.ClientVersion,
-		"routedModels":            c.RoutedModels,
-		"keyStates":               freepi.KeyStatus(),
-		"models":                  modelViews,
+		"routedModels":           c.RoutedModels,
+		"keyStates":              freepi.KeyStatus(),
+		"models":                 modelViews,
 	}
 	// 目录同步时刻（pill「官方源同步于」）：零值时省略字段，前端显示空 pill
 	if t := freepi.CatalogSyncedAt(); !t.IsZero() {

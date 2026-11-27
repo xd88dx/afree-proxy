@@ -480,7 +480,7 @@ func handleAdminAccountCredential(w http.ResponseWriter, r *http.Request) {
 	}
 	token := strings.TrimSpace(req.Credential)
 	if token == "" {
-		panel.WriteAPI(w, http.StatusBadRequest, panel.ApiResponse{Error: "apiToken is required"})
+		panel.WriteAPI(w, http.StatusBadRequest, panel.ApiResponse{Error: "credential is required"})
 		return
 	}
 	p := loadPool()
@@ -499,9 +499,11 @@ func handleAdminAccountCredential(w http.ResponseWriter, r *http.Request) {
 	}
 	if target.APIToken != "" {
 		target.APIToken = token
-	} else {
+	} else if target.RefreshToken != token {
 		// oauth 型：改 RefreshToken 并清运行态 token/到期（下次请求即用新
 		// 凭据刷新），状态重置 active——新凭据不背旧冷却/过期（2026-11-20）。
+		// 同值提交是 no-op，不得抹掉冷却/过期运行态：面板"点眼睛看明文再
+		// 保存"会把明文填进输入框，tok !== 掩码恒成立（2026-11-27 复审 F2）。
 		target.RefreshToken = token
 		target.AccessToken = ""
 		target.ExpiresAt = 0
