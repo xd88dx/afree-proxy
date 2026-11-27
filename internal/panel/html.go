@@ -1718,7 +1718,7 @@ const I18N = {
   'freepi_weight_interval_invalid': { en: 'Interval must be a non-negative integer (minutes)', zh: '间隔必须是非负整数（分钟）' },
   'freepi_sticky_enable': { en: 'Session sticky routing', zh: '会话粘性路由' },
   'freepi_client_version': { en: 'Client version (x-client-version)', zh: '客户端版本（x-client-version）' },
-  'freepi_client_version_hint': { en: 'Overrides the x-client-version header sent upstream. Upstream bumps this often; setting it here restores access without waiting for a code sync. Empty = built-in default.', zh: '覆盖发往上游的 x-client-version 头。上游版本推进频繁，此处改值即可恢复访问，不必等代码同步。留空 = 使用内置默认值。' },
+  'freepi_client_version_hint': { en: 'Overrides the x-client-version header sent upstream. Empty = built-in default.', zh: '覆盖发往上游的 x-client-version 头。留空 = 使用内置默认值。' },
   'freepi_client_version_invalid': { en: 'Client version must look like x.y.z (e.g. 0.6.28), or empty to reset', zh: '客户端版本须形如 x.y.z（如 0.6.28），留空恢复默认' },
   'freepi_sticky_hint': { en: 'Keeps each conversation on one key to avoid the upstream "Sharing or rotating accounts" rejection. If the sticky key cools down or its proxy is unavailable, the request fails fast - no key switch, no retry.', zh: '同一对话固定使用一把凭据，避免上游判定账号共享/轮转。粘住的凭据冷却或代理不可用时快速失败——不换凭据、不重试。' },
   'freepi_jwt_shape': { en: 'That does not look like a JWT (expected 3 dot-separated segments).', zh: '看起来不是合法 JWT（应为三段、以点分隔）。' },
