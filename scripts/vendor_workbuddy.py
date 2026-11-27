@@ -349,10 +349,15 @@ EXTRA_ROOT_PRESERVE = (
 
 
 
-def main(source_root=None, target_root=None, preserve_from=None) -> int:
+def main(source_root=None, target_root=None, preserve_from=None, preserve=True) -> int:
     """Vendor upstream into target_root. All args default to the module
     constants; sync_workbuddy.py overrides them to build merge inputs into
-    temp dirs while PRESERVE_RELATIVE bytes still come from the live tree."""
+    temp dirs while PRESERVE_RELATIVE bytes still come from the live tree.
+
+    preserve=False（sync_workbuddy 构建 base/theirs 合并输入专用）：跳过
+    PRESERVE 字节写回。否则 base 与 theirs 在 PRESERVE 文件上都是活树字节，
+    三方合并输入三者恒等 → merge-file 静默 no-op，上游对这些文件的改动
+    无声丢失（2026-11-27 实测一次丢 394 行）。"""
     src_root = Path(source_root) if source_root else SOURCE_ROOT
     tgt_root = Path(target_root) if target_root else TARGET_ROOT
     pkg = tgt_root / "modules" / "workbuddy2api" / "internal"
@@ -370,27 +375,28 @@ def main(source_root=None, target_root=None, preserve_from=None) -> int:
               file=sys.stderr)
 
     preserved: dict[Path, bytes] = {}
-    for relative in PRESERVE_RELATIVE:
-        path = preserve_root / relative
-        if path.is_file():
-            preserved[relative] = path.read_bytes()
-    # 完整性预检（2026-11-17 事故护栏）：PRESERVE 字节唯一来源是活树，活树残缺
-    # （文件被误删/重建中断）时缺失项会被**静默**丢弃并在后续重建中永久放大。
-    # rmtree 之前 fail loud，先恢复活树再 vendor——绝不在残树上继续。
-    # （EXTRA_ROOT_PRESERVE 是 module 根层文件、由下方 EXTRA_ROOT_PRESERVE 循环
-    # 另行警告缺失，不进本检查。）
-    missing_preserve = [
-        rel.as_posix() for rel in PRESERVE_RELATIVE
-        if rel not in preserved
-    ]
-    if missing_preserve:
-        print(
-            "live tree is MISSING preserve files (re-vendor would drop them permanently):\n  "
-            + "\n  ".join(missing_preserve)
-            + "\nrestore the live tree first (e.g. from git HEAD of the old vendor location) and retry.",
-            file=sys.stderr,
-        )
-        return 1
+    if preserve:
+        for relative in PRESERVE_RELATIVE:
+            path = preserve_root / relative
+            if path.is_file():
+                preserved[relative] = path.read_bytes()
+        # 完整性预检（2026-11-17 事故护栏）：PRESERVE 字节唯一来源是活树，活树残缺
+        # （文件被误删/重建中断）时缺失项会被**静默**丢弃并在后续重建中永久放大。
+        # rmtree 之前 fail loud，先恢复活树再 vendor——绝不在残树上继续。
+        # （EXTRA_ROOT_PRESERVE 是 module 根层文件、由下方 EXTRA_ROOT_PRESERVE 循环
+        # 另行警告缺失，不进本检查。）
+        missing_preserve = [
+            rel.as_posix() for rel in PRESERVE_RELATIVE
+            if rel not in preserved
+        ]
+        if missing_preserve:
+            print(
+                "live tree is MISSING preserve files (re-vendor would drop them permanently):\n  "
+                + "\n  ".join(missing_preserve)
+                + "\nrestore the live tree first (e.g. from git HEAD of the old vendor location) and retry.",
+                file=sys.stderr,
+            )
+            return 1
     preserve_set = {p.as_posix() for p in PRESERVE_RELATIVE}
 
     if pkg.exists():
@@ -451,8 +457,8 @@ def main(source_root=None, target_root=None, preserve_from=None) -> int:
     # 活树 config.go / config_test.go 带 afree 补丁（Strategy/AccountOrder 等）
     # 且已整文件登记 PRESERVE——活树字节由上方 PRESERVE 写回，这里跳过上游
     # 拷贝，否则上游版本会覆盖掉补丁（2026-11-15 登记存量补丁时踩过）。
-    config_preserved = "config/config.go" in preserve_set
-    config_test_preserved = "config/config_test.go" in preserve_set
+    config_preserved = preserve and "config/config.go" in preserve_set
+    config_test_preserved = preserve and "config/config_test.go" in preserve_set
     if config_preserved:
         print("note: config/config.go preserved from live tree, upstream copy skipped")
     else:

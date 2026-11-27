@@ -13,7 +13,7 @@ WorkBuddy 一栏的基线同时登记在 `scripts/workbuddy-vendor-baseline.json
 
 ## Cline
 
-本次未涉及上游同步（2026-10-28 核对：`foxy1402/cline-proxy` main 仍为 `571f9b9`，与 2026-10-27 同步基线一致，无新提交；`571f9b9` 的改动全部属于 OpenCode 线，见文末 OpenCode 节。2026-10-29 复核：仍为 `571f9b9`，无新提交。2026-10-30 复核：上游推进到 `b8a1be0`，但区间内 4 提交全部落在 zen/OpenCode 侧（`git diff 571f9b9 b8a1be0` 无 Cline 侧文件），Cline 线本次零吸收，详见 OpenCode 节。2026-10-31 复核：仍为 `b8a1be0`，无新提交，本次未涉及。2026-10-31 二次复核：上游推进到 `a41f1756`，但区间内 1 提交全部落在 zen/OpenCode 侧（`git diff b8a1be0 a41f1756 --name-only` 无 Cline 侧文件），Cline 线零吸收，详见 OpenCode 节。2026-11-02 复核：仍为 `a41f1756`，无新提交，本次未涉及。2026-11-05 复核：仍为 `a41f1756`，无新提交，本次未涉及。2026-11-07 复核：上游推进到 `c6b3c45`，区间 3 提交全部落在 zen/OpenCode 侧（zen system prompt 换位/429 请求抓包/真实计费 tokens），Cline 线零吸收，详见 OpenCode 节。2026-11-14 复核：仍为 `4f12cd2`，无新提交，本次未涉及。2026-11-19 复核：仍为 `4f12cd2`，无新提交，本次未涉及。2026-11-21 复核：仍为 `4f12cd2`，无新提交，本次未涉及。2026-11-23 复核：仍为 `4f12cd2`，无新提交，本次未涉及）。
+本次未涉及上游同步（2026-10-28 核对：`foxy1402/cline-proxy` main 仍为 `571f9b9`，与 2026-10-27 同步基线一致，无新提交；`571f9b9` 的改动全部属于 OpenCode 线，见文末 OpenCode 节。2026-10-29 复核：仍为 `571f9b9`，无新提交。2026-10-30 复核：上游推进到 `b8a1be0`，但区间内 4 提交全部落在 zen/OpenCode 侧（`git diff 571f9b9 b8a1be0` 无 Cline 侧文件），Cline 线本次零吸收，详见 OpenCode 节。2026-10-31 复核：仍为 `b8a1be0`，无新提交，本次未涉及。2026-10-31 二次复核：上游推进到 `a41f1756`，但区间内 1 提交全部落在 zen/OpenCode 侧（`git diff b8a1be0 a41f1756 --name-only` 无 Cline 侧文件），Cline 线零吸收，详见 OpenCode 节。2026-11-02 复核：仍为 `a41f1756`，无新提交，本次未涉及。2026-11-05 复核：仍为 `a41f1756`，无新提交，本次未涉及。2026-11-07 复核：上游推进到 `c6b3c45`，区间 3 提交全部落在 zen/OpenCode 侧（zen system prompt 换位/429 请求抓包/真实计费 tokens），Cline 线零吸收，详见 OpenCode 节。2026-11-14 复核：仍为 `4f12cd2`，无新提交，本次未涉及。2026-11-19 复核：仍为 `4f12cd2`，无新提交，本次未涉及。2026-11-21 复核：仍为 `4f12cd2`，无新提交，本次未涉及。2026-11-23 复核：仍为 `4f12cd2`，无新提交，本次未涉及。2026-11-27 复核：上游推进到 `ecee2d04`，区间 2 提交全 zen/OpenCode 侧（jsonwire 字节形状对齐 + toolFilter 判死删除；`git diff --name-only 4f12cd2 ecee2d04` 无 Cline 侧文件），Cline 线零吸收，详见 OpenCode 节）。
 
 ### 2026-11-08 — c6b3c45 → a8fe356
 
@@ -130,6 +130,11 @@ WorkBuddy 一栏的基线同时登记在 `scripts/workbuddy-vendor-baseline.json
   - 未逐条核对项:上游 v1.0.9 的长历史增量前缀哈希、图片压缩跳过、Remote 首错误事件保留等性能与边界优化——本地 Go 实现路径不同,无法机械比对,仅在出现对应症状时回看
 - 验证:`go build ./...` OK、`go test ./internal/trae/ -count=1` ok
 - 生产部署:镜像 `afree-proxy:prod-20261027-36` 重建容器 `afree`(`--restart always`、`-p 3457:3457`、`-v D:/DockerApp/afree:/app/data`);env 从旧容器继承,哈希 `b54013375c12…` 与旧容器一致;`Up (healthy)`;`GET /`→302、`GET /v1/models`→200;容器内二进制 `grep -ac "部署默认值"` / `"relay-host"` 均命中 1 处,确认 v1.0.10 脚本已编入
+
+### 2026-11-27 — vendor 零更新 + helper 基线推进 5c87d6c → f6eeeba
+
+- vendor 主线：上游 XCool-603/trae2api 仍为 `b63408d`（0.2.6，2026-11-09），无新提交，本次未涉及。
+- helper 比对线：上游 Trae2api-cn HEAD `f6eeeba`（2026-11-22，"harden Trae model tools and 1M max routing"，600+ 行 Python：live catalog descriptor 解析 context_window dev/max 两档 + 模型工具加固 + Kimi K3 系支持）。**未动 web_login.py**：`check_trae_helper.py` exit 0（内嵌脚本逐行一致）；`scripts/trae-helper-baseline.json` 登记至 f6eeeba。副线评估**零吸纳**：1M 路由依赖 Trae2api-cn 自身的 descriptor 采集架构，本仓 TraeWork（XCool Go vendor）无对应移植面（grep 无 context window/模型能力路由概念）；若真出现 1M/工具行为差异，应经 XCool 主线或本仓实测触发再议。
 
 ## WorkBuddy
 
@@ -460,7 +465,25 @@ WorkBuddy 一栏的基线同时登记在 `scripts/workbuddy-vendor-baseline.json
 - 本地定制幸存核对：chatStat ctx 归因（`logging.go` OutcomeInterrupted）、truncated 单列（`reqlog.go`/`continue.go`）、补签节奏锁（`checkin_retry.go` retryDelaysMu）均无损（冲突 0，ours 自动保留）。
 - 验证：`go build ./...`、`go vet ./...` 全绿；`go test ./... -count=1` 全绿（44 包）；`CGO_ENABLED=1 go test -race ./internal/app/` 全绿。源树 main 已 ff 至 misakano/main（`10d01b4`）。
 
+### 2026-11-27 — d221c72 → 89c3c93f（22 提交；合并器缺陷根因修复）
+
+- **本节此前历次同步潜伏的合并器缺陷**（本次发现并修复）：`sync_workbuddy.py` 构建 base/theirs 合并输入时 `V.main(preserve_from=WB_PKG)` 把活树 PRESERVE 字节同时覆盖进两棵树，三方输入恒等 → `git merge-file` 对 97 个 PRESERVE 文件静默 no-op，**上游对这些文件的全部改动无声丢失**。本次实测一次丢 394 行（#285 browser-complete、#290 embeddings 413、#293 SystemTail、#295 非 JSON 自拒、#296 RenewDead 全在丢失面）。修复：`vendor_workbuddy.main` 增加 `preserve=False` 分支，base/theirs 一律用上游原版构建；活树字节只在直接 vendor（preserve=True）时写回。
+- 上游 22 提交（d221c72..89c3c93f）吸收：PR #285 `::browser-complete` 控制标记不再当正文透传（browser_complete.go 新文件 + continueReader 字段 + handler 接线）、#295 入站非 JSON 自拒、#296 RenewDead（pool entry/state/MarkRenewDead + 面板「不可续期」徽标与 access token 倒计时）、#290 embeddings 413 错误码链（11353/TEI 413 请求级、payload_too_large、input_too_large、Error.Code 字段、cool_kind 判熔断）、#293 SystemTail（system 挪末尾救前缀缓存，默认关、cn 域、需重启）、58614a6 invoke 块计数（只测量不转换）、fba9e14 上游回执按 rune 边界截断、e64f7d3 tool 配对三修（相邻批合并/孤儿不遮挡/重复结果去重）、e39c252 TraeCode 自述句进脱敏表、392f8ac 模型目录降级 WARN 每种一次、53fbd2e/b1233f0/c6b3cef/0193485/9 行面板（错误汇总已读、账号池批量导出、每日变化图表 title、积分余额列、积分到期展开）、#277 TTS/ASR 端点开关、#273 NarrationEnabled 开关、7e9f53b 参考仓库清单。
+- 冲突 2 处手工并集：config/config.go（上游 TTS/ASR/SystemTail/NarrationEnabled 三组新 feature 字段，本地侧空 → 取 THEIRS）、upstream/sanitize.go（本地 issue #187 model-identity 正则门控保留 + 插入上游 TraeCode 自述句）。
+- 验证：go build/vet 全量绿；`go test ./... + wb vendor + trae2api -count=1` 无失败（修复后重跑）。
+- 基线 seal `89c3c93f`（上游 dev）。
+
 ## OpenCode
+
+### 2026-11-27 — 4f12cd2 → ecee2d04（2 提交，zen 侧：body 字节形状 + toolFilter 判死删除）
+
+本地 merge commit `dfb1d56`。上游 2 提交全 zen/OpenCode 侧（Cline 线零吸收）：
+
+- `ecee2d0` zen 请求体按客户端字节形状序列化（上游新增 `internal/kit/jsonwire.go` + 测试）：zen 网关指纹**请求体**（opencode2api PR #142 取证——"the gate fingerprints the body, not just headers"），Go `encoding/json` 默认把 `< > &` 转义成 `<>&`、map 键按字母序输出，均偏离客户端 JSON.stringify 字节。本地吸收：jsonwire.go+test 原样并入；`internal/zen/zen.go` 6 处请求方向 marshal 站点（responses/chat 主路径、双 410 重建、指纹自愈重试）全部换 `kit.MarshalWireJSON`；响应方向（chat 聚合/日志/admin）保留标准 marshal。
+- `7825b04` 上游判死删除 zen toolFilter request-shrinker（429 真因是按 egress IP 计费 tokens ~90-110k/6h，无 per-request 体积帽；2026-11-07 吸收时的体积论动机被上游实测推翻）。本地跟随删除全链：ZenToolFilterConfig 字段/默认值/面板 payload 行与 patch 段/i18n 死键 10 个/JS 填充与提交段/zen_bridge 别名/zen_toolfilter.go+test。**NBSP 描述整形与 shrinker 正交**（靶面是措辞指纹非体积），摘出留存为 `internal/zen/zen_toolshape.go`（函数零改动，注释更新指向），zen_nbsp_shape_test.go 原有不受影响。
+- 冲突 4 文件：admin_html.go（modify/delete，保持本地删除——面板已在 internal/panel/）、admin_zen.go（3 块：payload 保留本地代理池形态仅去 toolFilter 行、浅拷贝语义保留、toolFilter patch 段删）、zen.go（7 块）、zen_toolfilter_test.go（rename/delete 随上游删）。
+- 丢弃：上游 admin 侧 failover/sessionRotateMinutes 死控件不采纳（与 2026-11-12 同判，§8）。
+- 验证：go build/vet 全绿；全量 test（含两个 vendor 子 module）-count=1 无失败；`go test -race ./internal/app/` 通过。
 
 ### 2026-11-21 — 主线复核（无更新，停滞确认）+ 副线 opencode2api 评估（2 提交，零吸纳+2 取证）
 
@@ -662,6 +685,10 @@ WorkBuddy 一栏的基线同时登记在 `scripts/workbuddy-vendor-baseline.json
 
 ## FreePI
 
+### 2026-11-27 — 46dd875a（0.6.26）→ bddad619（0.6.28）（2 提交，吸收版本推进）
+
+上游 2 提交均纯版本 bump（08c69cc → 0.6.27、bddad61 → 0.6.28；package.json 0.3.19→0.3.21），patch 核实无逻辑变更。本仓 `internal/freepi/config.go` ClientVersion bump 至 0.6.28（注释指纹同步）。`go build ./internal/freepi/` + `go test ./internal/freepi/ -count=1` 绿。
+
 ### 2026-11-23 — 23c8dbff（0.6.25）→ 46dd875a（0.6.26）（1 提交，吸收版本推进）
 
 - 基线→HEAD 区间 1 提交为**纯版本 bump**（index.mjs 单行 + package.json 单行，无逻辑变化）。
@@ -696,6 +723,19 @@ WorkBuddy 一栏的基线同时登记在 `scripts/workbuddy-vendor-baseline.json
 - **同日再调（用户定）**：凭据列表下方新增 FreePI 配置区——「权重优化」开关 + 自动权重优化间隔（分钟，=后台 /me 保鲜周期，热改下一周期生效，<=0 回落 30）。关闭=网关全局账号轮转策略**原路径原地生效**（加权分支前置 early-return，round_robin 游标仅为关闭路径服务，不为全局策略额外编码——用户明确要求）；开启=额度加权随机（缺省开启）。
 
 ## 副线（opencode2api / Trae2api-cn 吸收评估）+ magpie 参考线
+
+### 2026-11-27 — 副线复核（opencode2api 零新提交；Trae2api-cn f6eeeba 零吸纳；magpie f1160f6f→63f724e1 约 385 提交，零吸纳+6 取证）
+
+- opencode2api：仍为 `6575c623`（2026-11-20），零新提交。
+- Trae2api-cn：`5c87d6c → f6eeeba`（1 提交，评估结论见 TraeWork 节），零吸纳。
+- magpie：`f1160f6f → 63f724e1`（4 天 385 提交）。逐条按平台对照：绝大多数是 codex/gui/library 形态（本仓无对应面，不适用）。**取证 6 条（OpenCode Go 行为，记入观察面）**：
+  - `4adb083` OpenCode Go 免费模型上的 rate limit 只 rest 该模型本身，不连坐同 key 的付费模型；
+  - `c3ffd0e` OpenCode Go key 在服务免费模型时不再误报「key 耗尽」；
+  - `a7bd7a0` OpenCode Go 已用尽的窗口只 hold back 付费模型，免费模型不 hold（#7496）;
+  - `232a9ec`/`8786af7` Zen decision models 路由进 groups（#7770）；
+  - `0610f29` OpenCode 卡片默认 effort（webui 形态，不适用，仅取证）。
+  前三条的免费/付费隔离语义后续可对照本仓 zen 池 park/rotatable 调度评估；zen 免费层关停在案（2026-11-05）、现无实际流量，本次零代码改动。
+- magpie 基线推进至 `63f724e1`。
 
 ### 2026-11-23 — 副线复核（opencode2api 零新提交；magpie c4bae072→f1160f6f 约 300 提交，零吸纳+2 取证）
 

@@ -211,7 +211,12 @@ def main() -> int:
         theirs_out = tmp / "theirs"
         archive_commit(src, base_commit, base_src)
         for source, target in ((base_src, base_out), (src, theirs_out)):
-            if V.main(source_root=source, target_root=target, preserve_from=WB_PKG) != 0:
+            # preserve=False：合并输入必须是上游原版（base=基线上游、theirs=HEAD
+            # 上游）。活树 PRESERVE 字节一旦覆盖进来，base/theirs/ours 三者恒等，
+            # git merge-file 对这些文件静默 no-op——上游改动无声丢失
+            # （2026-11-27 实测一次丢 394 行，见 MERGE.md WorkBuddy 节）。
+            if V.main(source_root=source, target_root=target, preserve_from=WB_PKG,
+                      preserve=False) != 0:
                 print("vendor 构建失败（原因见上方 stderr：可能是改写锚点随上游结构失效），"
                       "修 scripts/vendor_workbuddy.py 后重试。", file=sys.stderr)
                 return 1
