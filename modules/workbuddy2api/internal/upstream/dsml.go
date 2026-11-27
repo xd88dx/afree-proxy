@@ -50,6 +50,11 @@ import (
 // markupPipe 是模型原生工具调用标记的分隔符：两个全角竖线 U+FF5C。
 const markupPipe = "\uFF5C\uFF5C"
 
+// markupPipeLoose 单全角竖线（2026-11-27 生产实证的漂移形态）：模型端序列化
+// 从 `<｜｜DSML｜｜ X>`（双竖线）漂移为 `<｜DSML｜ X>`（单竖线+空格），两种
+// 形态并存兼容——不能替换，旧形态仍可能在部分请求出现。
+const markupPipeLoose = "\uFF5C"
+
 // 标记块与内层元素的起止标记。
 //
 // 结束标记一律比同名的开始标记多一个 '/'，因此 markupInvokeRe / markupParamRe 里
@@ -59,17 +64,49 @@ const (
 	markupClose       = "</" + markupPipe + "DSML" + markupPipe + " calls>"
 	markupInvokeClose = "</" + markupPipe + "DSML" + markupPipe + " invoke>"
 	markupParamClose  = "</" + markupPipe + "DSML" + markupPipe + " parameter>"
+
+	markupOpenLoose        = "<" + markupPipeLoose + "DSML" + markupPipeLoose + " calls>"
+	markupCloseLoose       = "</" + markupPipeLoose + "DSML" + markupPipeLoose + " calls>"
+	markupInvokeCloseLoose = "</" + markupPipeLoose + "DSML" + markupPipeLoose + " invoke>"
+	markupParamCloseLoose  = "</" + markupPipeLoose + "DSML" + markupPipeLoose + " parameter>"
 )
+
+// markupCloseFor / markupInvokeCloseFor / markupParamCloseFor 按 open 形态取同族
+// 的 close——块的收尾与开头同一序列化族（模型一次生成一个族），配对不跨族。
+func markupCloseFor(open string) string {
+	if open == markupOpenLoose {
+		return markupCloseLoose
+	}
+	return markupClose
+}
+
+func markupInvokeCloseFor(open string) string {
+	if open == markupOpenLoose {
+		return markupInvokeCloseLoose
+	}
+	return markupInvokeClose
+}
+
+func markupParamCloseFor(open string) string {
+	if open == markupOpenLoose {
+		return markupParamCloseLoose
+	}
+	return markupParamClose
+}
 
 // markupTagPrefix 是开始标记的公共前缀（已转义，供下面两个正则复用）。
 var markupTagPrefix = regexp.QuoteMeta("<" + markupPipe + "DSML" + markupPipe)
+
+// markupTagPrefixRe 两族开始标记公共前缀（双竖线 | 单竖线），后接空白。
+var markupTagPrefixRe = `(?:` + regexp.QuoteMeta("<"+markupPipe+"DSML"+markupPipe) +
+	`|` + regexp.QuoteMeta("<"+markupPipeLoose+"DSML"+markupPipeLoose) + `)\s+`
 
 // markupInvokeRe 匹配 invoke 头：<PIPE>DSML<PIPE> invoke name="NAME">。
 // markupParamRe 匹配 parameter 头：<PIPE>DSML<PIPE> parameter name="NAME" string="true">，
 // 其中 string 属性可选（缺省按 JSON 解析取值）。
 var (
-	markupInvokeRe = regexp.MustCompile(markupTagPrefix + `\s+invoke\s+name="([^"]*)"\s*>`)
-	markupParamRe  = regexp.MustCompile(markupTagPrefix + `\s+parameter\s+name="([^"]*)"(?:\s+string="(true|false)")?\s*>`)
+	markupInvokeRe = regexp.MustCompile(markupTagPrefixRe + `invoke\s+name="([^"]*)"\s*>`)
+	markupParamRe  = regexp.MustCompile(markupTagPrefixRe + `parameter\s+name="([^"]*)"(?:\s+string="(true|false)")?\s*>`)
 )
 
 // markupToolNameRe 是工具名的合理形态：各家 SDK 的工具名一律是这种标识符。
@@ -95,6 +132,7 @@ type MarkupRepair struct {
 	allowUnknown bool
 	hold         string // 已确认可能属于标记、但还不足以判定的尾部缓冲
 	inBlock      bool   // 已消费掉 markupOpen，正在块内部累积
+	inBlockOpen  string // 当前块的开头形态（markupOpen / markupOpenLoose）——rejected/超长回吐必须用原形态，否则污染正文
 	seen         int    // 识别到的标记块数（含被拒绝的）
 	orphan       int    // 透出的正文里「缺外层 calls 包裹」的 invoke 头个数（只诊断，不转换）
 	rejected     int    // 识别到但未转换的块数（观测/排障用）
@@ -177,13 +215,13 @@ func (r *MarkupRepair) Feed(text string) (string, []MarkupCall) {
 	var calls []MarkupCall
 	for {
 		if !r.inBlock {
-			i := markupStartCandidate(s)
+			i, open := markupStartCandidate(s)
 			if i < 0 {
 				r.orphan += countOrphanInvokes(s)
 				emit.WriteString(s)
 				break
 			}
-			if len(s)-i < len(markupOpen) {
+			if open == "" {
 				// 起点被截断在增量边界（上游把标记切成了两片）：留到下一片再判定。
 				frag := s[:i]
 				r.orphan += countOrphanInvokes(frag)
@@ -194,15 +232,16 @@ func (r *MarkupRepair) Feed(text string) (string, []MarkupCall) {
 			frag := s[:i]
 			r.orphan += countOrphanInvokes(frag)
 			emit.WriteString(frag)
-			s = s[i+len(markupOpen):]
+			s = s[i+len(open):]
 			r.inBlock = true
+			r.inBlockOpen = open
 			continue
 		}
-		k := strings.Index(s, markupClose)
+		k := strings.Index(s, markupCloseFor(r.inBlockOpen))
 		if k < 0 {
 			if len(s) > markupMaxBlockBytes {
 				// 超长未闭合：不是标记，原文回吐并退出块态。
-				emit.WriteString(markupOpen)
+				emit.WriteString(r.inBlockOpen)
 				emit.WriteString(s)
 				r.inBlock = false
 				break
@@ -211,7 +250,7 @@ func (r *MarkupRepair) Feed(text string) (string, []MarkupCall) {
 			break
 		}
 		inner := s[:k]
-		s = s[k+len(markupClose):]
+		s = s[k+len(markupCloseFor(r.inBlockOpen)):]
 		r.inBlock = false
 		r.seen++
 		if got, ok := parseMarkupBlock(inner, r.allowed); ok {
@@ -221,9 +260,9 @@ func (r *MarkupRepair) Feed(text string) (string, []MarkupCall) {
 		}
 		// 块内不是纯调用（夹带正文 / 工具名不合规 / 参数畸形）：原文回吐，绝不吞字节。
 		r.rejected++
-		emit.WriteString(markupOpen)
+		emit.WriteString(r.inBlockOpen)
 		emit.WriteString(inner)
-		emit.WriteString(markupClose)
+		emit.WriteString(markupCloseFor(r.inBlockOpen))
 	}
 	return emit.String(), calls
 }
@@ -236,33 +275,37 @@ func (r *MarkupRepair) Flush() string {
 	}
 	out := r.hold
 	if r.inBlock {
-		out = markupOpen + r.hold
+		out = r.inBlockOpen + r.hold
 	}
 	r.hold = ""
 	r.inBlock = false
 	return out
 }
 
-// markupStartCandidate 返回 s 中最早的「可能是 markupOpen 起点」的下标：该位置之后
-// 要么正好是完整的 markupOpen，要么是 markupOpen 的一个前缀（被增量边界截断）。
-// 没有候选返回 -1。
-func markupStartCandidate(s string) int {
+// markupStartCandidate 返回 s 中最早的「可能是任一族 markupOpen 起点」的下标与
+// 命中的 open：该位置之后要么正好是完整的某个 open，要么是某个 open 的一个前缀
+// （被增量边界截断——此时 open 返回空串，调用方只 hold 不消耗）。没有候选返回 -1。
+func markupStartCandidate(s string) (int, string) {
 	for i := 0; i < len(s); i++ {
 		if s[i] != '<' {
 			continue
 		}
 		rest := s[i:]
-		if len(rest) >= len(markupOpen) {
-			if rest[:len(markupOpen)] == markupOpen {
-				return i
+		for _, open := range []string{markupOpen, markupOpenLoose} {
+			if len(rest) >= len(open) {
+				if rest[:len(open)] == open {
+					return i, open
+				}
+				continue
 			}
-			continue
-		}
-		if strings.HasPrefix(markupOpen, rest) {
-			return i
+			if strings.HasPrefix(open, rest) {
+				// 截断态：rest 是 open 的前缀。两族前缀共享 `<｜DSML` 时按更长的
+				// 族等下一片——不必区分，hold 语义本来就等完整数据。
+				return i, ""
+			}
 		}
 	}
-	return -1
+	return -1, ""
 }
 
 // parseMarkupBlock 解析 calls 块内部（外层起止标记之间的内容）。
@@ -284,12 +327,20 @@ func parseMarkupBlock(inner string, allowed map[string]bool) ([]MarkupCall, bool
 		}
 		name := inner[pos+loc[2] : pos+loc[3]]
 		bodyStart := pos + loc[1]
-		end := strings.Index(inner[bodyStart:], markupInvokeClose)
-		if end < 0 {
+		// invoke 闭合形态与本块开头同族（单/双竖线），两种都找取最早，防模型混排。
+		iS := strings.Index(inner[bodyStart:], markupInvokeClose)
+		iL := strings.Index(inner[bodyStart:], markupInvokeCloseLoose)
+		end, closeLen := -1, 0
+		switch {
+		case iS >= 0 && (iL < 0 || iS < iL):
+			end, closeLen = iS, len(markupInvokeClose)
+		case iL >= 0:
+			end, closeLen = iL, len(markupInvokeCloseLoose)
+		default:
 			return nil, false // invoke 未闭合
 		}
 		body := inner[bodyStart : bodyStart+end]
-		pos = bodyStart + end + len(markupInvokeClose)
+		pos = bodyStart + end + closeLen
 		args, ok := parseMarkupParams(body)
 		if !ok {
 			return nil, false
@@ -331,12 +382,19 @@ func parseMarkupParams(body string) (string, bool) {
 		name := body[pos+loc[2] : pos+loc[3]]
 		isString := loc[4] >= 0 && body[pos+loc[4]:pos+loc[5]] == "true"
 		valStart := pos + loc[1]
-		end := strings.Index(body[valStart:], markupParamClose)
-		if end < 0 {
+		iS := strings.Index(body[valStart:], markupParamClose)
+		iL := strings.Index(body[valStart:], markupParamCloseLoose)
+		end, closeLen := -1, 0
+		switch {
+		case iS >= 0 && (iL < 0 || iS < iL):
+			end, closeLen = iS, len(markupParamClose)
+		case iL >= 0:
+			end, closeLen = iL, len(markupParamCloseLoose)
+		default:
 			return "", false
 		}
 		raw := body[valStart : valStart+end]
-		pos = valStart + end + len(markupParamClose)
+		pos = valStart + end + closeLen
 		if isString {
 			args[name] = raw
 			continue

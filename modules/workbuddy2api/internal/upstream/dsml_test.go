@@ -575,3 +575,119 @@ func TestMarkupRepairCountsOrphanInvoke(t *testing.T) {
 		t.Fatalf("带包裹的不该算孤儿，实际 %d", r2.Orphan())
 	}
 }
+
+// --- 单竖线漂移形态（2026-11-27 生产实证）----------------------------------
+
+// mkParamLoose / mkInvokeLoose / mkBlockLoose 单竖线+空格形态的夹具（同 helper 纪律：
+// 从常量拼装，不写字面量）。真实泄漏样本见 TestMarkupRepairLoosePipeRealWorldLeak。
+func mkParamLoose(name, value string) string {
+	return "<" + markupPipeLoose + "DSML" + markupPipeLoose + " parameter name=\"" + name + "\" string=\"true\">" +
+		value + markupParamCloseLoose
+}
+
+func mkInvokeLoose(name string, params ...string) string {
+	body := ""
+	if len(params) > 0 {
+		body = "\n" + strings.Join(params, "\n") + "\n"
+	}
+	return "<" + markupPipeLoose + "DSML" + markupPipeLoose + " invoke name=\"" + name + "\">" + body + markupInvokeCloseLoose
+}
+
+func mkBlockLoose(invokes ...string) string {
+	return markupOpenLoose + "\n" + strings.Join(invokes, "\n") + "\n" + markupCloseLoose
+}
+
+// TestMarkupRepairLoosePipeSingleCall 单竖线形态整块还原。
+func TestMarkupRepairLoosePipeSingleCall(t *testing.T) {
+	in := mkBlockLoose(mkInvokeLoose("exec_command", mkParamLoose("cmd", "ls -la /tmp")))
+	out, calls := repairAll(testTools, []string{in})
+	if out != "" {
+		t.Fatalf("单竖线整块应被还原，透出 %q", out)
+	}
+	if len(calls) != 1 || calls[0].Name != "exec_command" {
+		t.Fatalf("还原结果错误: %#v", calls)
+	}
+}
+
+// TestMarkupRepairLoosePipeRealWorldLeak 2026-11-27 生产泄漏块原样回放：两个
+// invoke（含中文取值与半角引号），期望全部还原、透出为空。修复前该块原样透传。
+func TestMarkupRepairLoosePipeRealWorldLeak(t *testing.T) {
+	in := mkBlockLoose(
+		mkInvokeLoose("byt_d1e9567da9a8",
+			mkParamLoose("command", `cd "D:/x/emailbox" && grep -n "proxy" -A6 web/vite.config.ts`),
+			mkParamLoose("description", "Check vite proxy target")),
+		mkInvokeLoose("byt_d1e9567da9a8",
+			mkParamLoose("command", `cd "D:/x/emailbox/.tmp/dev" && tail -5 ../backend.log 2>/dev/null; ls`),
+			mkParamLoose("description", "Check backend log")),
+	)
+	// 生产现场的 allowed 是出站改名后的假名（toolrename 出站改写，restoreWriter 出口还原）
+	leakTools := map[string]bool{"byt_d1e9567da9a8": true}
+	out, calls := repairAll(leakTools, []string{in})
+	if out != "" {
+		t.Fatalf("泄漏样本应全部还原，透出 %q", out)
+	}
+	if len(calls) != 2 {
+		t.Fatalf("应还原 2 次调用，实际 %d", len(calls))
+	}
+	if got := argsOf(t, calls[0].Arguments)["command"]; got != `cd "D:/x/emailbox" && grep -n "proxy" -A6 web/vite.config.ts` {
+		t.Fatalf("command 参数错误: %#v", got)
+	}
+}
+
+// TestMarkupRepairLoosePipeSplitAcrossChunks 单竖线块被流式增量切在标记中间：
+// 起点截断态 hold、下一片续齐后仍能还原。
+func TestMarkupRepairLoosePipeSplitAcrossChunks(t *testing.T) {
+	full := mkBlockLoose(mkInvokeLoose("exec_command", mkParamLoose("cmd", "pwd")))
+	// 从 markupOpenLoose 中间切开（含多字节全角竖线，按字节切模拟增量边界）
+	cut := 5
+	if cut >= len(full) {
+		t.Fatalf("夹具过短")
+	}
+	out, calls := repairAll(testTools, []string{full[:cut], full[cut:]})
+	if out != "" {
+		t.Fatalf("分片还原后透出应为空，实际 %q", out)
+	}
+	if len(calls) != 1 || calls[0].Name != "exec_command" {
+		t.Fatalf("分片还原错误: %#v", calls)
+	}
+}
+
+// TestMarkupRepairLoosePipeMixedWithStrict 同流里新旧形态混排：两族各自还原。
+func TestMarkupRepairLoosePipeMixedWithStrict(t *testing.T) {
+	in := mkBlock(mkInvoke("exec_command", mkParam("cmd", "a"))) + "\n" +
+		mkBlockLoose(mkInvokeLoose("write_stdin", mkParamLoose("session_id", "s1")))
+	out, calls := repairAll(testTools, []string{in})
+	// 两块之间的换行是块外正文，按设计原样透出
+	if out != "\n" {
+		t.Fatalf("混排应全部还原，仅透出块间换行，实际 %q", out)
+	}
+	if len(calls) != 2 || calls[0].Name != "exec_command" || calls[1].Name != "write_stdin" {
+		t.Fatalf("混排还原错误: %#v", calls)
+	}
+}
+
+// TestMarkupRepairLoosePipeRejectedKeepsOriginalShape 单竖线块判定不通过时按
+// 原形态回吐（绝不用另一族形态重写正文）。
+func TestMarkupRepairLoosePipeRejectedKeepsOriginalShape(t *testing.T) {
+	in := mkBlockLoose(mkInvokeLoose("exec_command", mkParamLoose("cmd", "x"))) + "正文"
+	r := NewMarkupRepair(map[string]bool{"other_tool": true}, false) // 严格名单不含 exec_command
+	emit, _ := r.Feed(in)
+	emit += r.Flush()
+	if emit != in {
+		t.Fatalf("拒绝回吐必须逐字节等于原块，实际 %q", emit)
+	}
+	if r.Seen() != 1 || r.Rejected() != 1 {
+		t.Fatalf("观测计数错误: seen=%d rejected=%d", r.Seen(), r.Rejected())
+	}
+}
+
+// TestMarkupRepairLoosePipeOrphanCount orphan 观测对新形态生效：缺包裹的裸
+// invoke 头（单竖线）也要计数（修复前计数恒 0，观测静默）。
+func TestMarkupRepairLoosePipeOrphanCount(t *testing.T) {
+	orphan := "<" + markupPipeLoose + "DSML" + markupPipeLoose + " invoke name=\"byt_x\">" + markupInvokeCloseLoose
+	r := NewMarkupRepair(testTools, false)
+	r.Feed("正文" + orphan + "尾部")
+	if r.Orphan() != 1 {
+		t.Fatalf("单竖线 orphan 应计数 1，实际 %d", r.Orphan())
+	}
+}

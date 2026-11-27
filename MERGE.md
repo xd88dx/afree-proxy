@@ -473,6 +473,14 @@ WorkBuddy 一栏的基线同时登记在 `scripts/workbuddy-vendor-baseline.json
 - 验证：go build/vet 全量绿；`go test ./... + wb vendor + trae2api -count=1` 无失败（修复后重跑）。
 - 基线 seal `89c3c93f`（上游 dev）。
 
+### 2026-11-27 补 — vendor 本地补丁：dsml.go 单竖线漂移双形态兼容
+
+- **现场**：emailbox 项目 Claude Code 会话（wbcn:glm-5.3-flash）收到 DSML 块原样透传成正文，工具调用未还原。从客户端会话 JSONL 提取泄漏块逐字符核对码点：模型端序列化已从 `<｜｜DSML｜｜ X>`（双全角竖线，解析器锚）漂移为 `<｜DSML｜ X>`（**单全角竖线+空格**）。两种形态并存兼容，不能替换。
+- **为何观测静默**：58614a6 的 orphan 计数用旧形态正则——新形态连计数都是 0。
+- **修复**（vendor internal/upstream/dsml.go，本地补丁；上游 89c3c93f 尚未适配，下次三方合并若上游出同款修复按并集解决）：新增 loose 族常量与 `markupCloseFor/markupInvokeCloseFor/markupParamCloseFor` 同族配对（不跨族混配）；`markupStartCandidate` 返回 (index, open) 支持双族起点与截断态；invoke/parameter 正则前缀放宽为 `(?:双竖线|单竖线)\s+`；invoke/param 闭合取同族最早（防混排）；`MarkupRepair.inBlockOpen` 记录当前块形态——rejected/超长/Flush 回吐按原形态逐字节还原（不变量：一个字节不丢）；orphan 观测随正则放宽对新形态生效。
+- **测试**：dsml_test.go 新增 6 用例（单竖线整块、生产泄漏块原样回放含中文与假名、流式分片切割全角字节、新旧混排、拒绝按原形态回吐、orphan 计数）；全量 test + race 绿。
+- **台账链**：WorkBuddy 节 2026-11-27 主节的合并器缺陷修复与本次补丁同日；生产部署待用户指示。
+
 ## OpenCode
 
 ### 2026-11-27 — 4f12cd2 → ecee2d04（2 提交，zen 侧：body 字节形状 + toolFilter 判死删除）
@@ -684,6 +692,14 @@ WorkBuddy 一栏的基线同时登记在 `scripts/workbuddy-vendor-baseline.json
 - 生产：未同步，等用户「同步」指令（见 PROJECT.md 部署节）。
 
 ## FreePI
+
+
+### 2026-11-27 本地特性 — ClientVersion 面板覆盖（版本推进解耦）
+
+- **动机**：上游版本推进频繁（0.6.25→0.6.28 四天三 bump）且服务端有最低版本闸——生产容器旧镜像被 426 `upgrade_required` 全拒（当日实测），每次 bump 都要走同步/评估/部署全流程，冗余。
+- **机制**：freepi-config.json 新增 `clientVersion` 字段（空=回落包级默认常量，默认仍随参考插件同步推进）；`Config.EffectiveClientVersion()` 面板值优先；client.go 每请求读当前快照——面板热改即下一次请求生效，无需重启。面板 FreePI configuration 区加输入框（placeholder 提示默认值），保存入口前后端双层校验 x.y.z 形状（坏指纹 400 不落盘），清空=恢复默认。
+- **不做**：环境变量覆盖（用户定：仅面板）；自动拉上游版本（引网络依赖）。
+- **验证**：TestEffectiveClientVersion 单测 + build/vet/test/race 全绿 + JS 语法 node --check 通过。
 
 ### 2026-11-27 — 46dd875a（0.6.26）→ bddad619（0.6.28）（2 提交，吸收版本推进）
 
