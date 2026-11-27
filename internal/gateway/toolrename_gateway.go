@@ -2,8 +2,7 @@
 //
 // 请求侧：各端点把请求收敛到 chat 形态后，按路由平台查全局勾选——勾选平台
 // 用 toolrename.RewriteChatForm 改写 params（复制纪律）；zen 例外，改写发生
-// 在域包出站 body 处（CallZenAPI/CallZenResponsesAPI，toolfilter 真名匹配不
-// 受影响）。
+// 在域包出站 body 处（CallZenAPI/CallZenResponsesAPI）。
 // 响应侧：出口包 restoreWriter（字节级假名→真名还原，协议无关）。
 // trae/workbuddy 属二期（管道内转换链保真待验证）。
 package gateway

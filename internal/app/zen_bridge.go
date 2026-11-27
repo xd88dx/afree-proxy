@@ -44,7 +44,6 @@ type CompactOutcome = zen.CompactOutcome
 type zenParkState = zen.ZenParkState
 
 type zenCompactConfig = zen.ZenCompactConfig
-type zenToolFilterConfig = zen.ZenToolFilterConfig
 
 var zenNativeUA = zen.ZenNativeUAPtr()
 

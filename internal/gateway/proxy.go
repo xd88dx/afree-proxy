@@ -3468,8 +3468,7 @@ func HandleChat(w http.ResponseWriter, r *http.Request) {
 
 	// zen 免费模型路由
 	if route := routeModel(model); route == "zen" {
-		// zen 的改写在域包出站 body 处（toolfilter 真名匹配之后），这里只
-		// 包还原出口。
+		// zen 的改写在域包出站 body 处，这里只包还原出口。
 		if m := toolrename.Build(toolrename.KindZen, toolNames); m != nil {
 			w = toolrename.NewRestoreWriter(w, m)
 		}

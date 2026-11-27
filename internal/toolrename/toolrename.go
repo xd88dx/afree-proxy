@@ -15,9 +15,7 @@
 // 请求侧必须是结构化改写而不能字节替换：请求正文里用户内容可能恰好包含工
 // 具名的引号形态，盲目替换会污染对话内容。
 //
-// 与 NBSP 描述整形（internal/zen）正交：一个管名字面、一个管描述面。与
-// zen toolfilter 的关系：zen 的改写发生在 BuildZenBody 之后（filter 真名
-// 匹配不受影响，见 CallZenAPI 接线注释）。
+// 与 NBSP 描述整形（internal/zen）正交：一个管名字面、一个管描述面。
 package toolrename
 
 import (

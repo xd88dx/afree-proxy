@@ -5849,11 +5849,6 @@ async function loadOcConfig() {
     _('ocKeepTokens').value = c.compaction ? c.compaction.keepTokens : 8000;
     _('ocSummaryModel').value = c.compaction ? (c.compaction.summaryModel || '') : '';
     _('ocMaxSummary').value = c.compaction ? c.compaction.maxSummary : 4096;
-    const tf = c.toolFilter || {};
-    if (_('ocToolFilterEnabled')) _('ocToolFilterEnabled').value = String(!!tf.enabled);
-    if (_('ocToolFilterMaxDesc')) _('ocToolFilterMaxDesc').value = tf.maxDescription || 0;
-    if (_('ocToolFilterPrefixes')) _('ocToolFilterPrefixes').value = (tf.denyPrefixes || []).join('\n');
-    if (_('ocToolFilterNames')) _('ocToolFilterNames').value = (tf.denyNames || []).join('\n');
   } catch (e) { /* ignore */ }
 }
 
@@ -5875,12 +5870,6 @@ async function saveOcConfig() {
       summaryModel: _('ocSummaryModel').value.trim(),
       maxSummary: parseInt(_('ocMaxSummary').value) || 4096
     },
-    toolFilter: {
-      enabled: _('ocToolFilterEnabled') ? _('ocToolFilterEnabled').value === 'true' : false,
-      denyPrefixes: _('ocToolFilterPrefixes') ? _('ocToolFilterPrefixes').value.split('\n').map(s => s.trim()).filter(Boolean) : [],
-      denyNames: _('ocToolFilterNames') ? _('ocToolFilterNames').value.split('\n').map(s => s.trim()).filter(Boolean) : [],
-      maxDescription: _('ocToolFilterMaxDesc') ? (Math.max(0, parseInt(_('ocToolFilterMaxDesc').value, 10) || 0)) : 0
-    }
   };
   try {
     const d = await api('POST', '/opencode/config/update', body);

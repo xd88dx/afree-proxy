@@ -357,10 +357,6 @@ type ZenConfigData struct {
 	// KeyNicknames zen key 昵称表（账号列堆叠展示，2026-11-19）：key 明文 ->
 	// 显示名。仅影响面板展示，不参与路由；空/缺 = 显示掩码 key。
 	KeyNicknames map[string]string `json:"keyNicknames,omitempty"`
-	// ToolFilter 请求体积裁剪（默认关闭）。按前缀/名单丢弃客户端工具、可选
-	// 截断过长描述；gate 占位工具永不参与过滤。背景与实测数据见
-	// zen_toolfilter.go 顶部注释（tools 占 ZCode 单请求 82% 体积）。
-	ToolFilter ZenToolFilterConfig `json:"toolFilter"`
 	// SessionRotateMinutes 已删除（2026-11-15 死配置清理）：后台粘性会话
 	// rotator 已废弃（2026-11-08 随 a8fe356 吸收上游移除），旧 config 键经
 	// JSON 未知字段自然忽略。
@@ -541,9 +537,6 @@ func DefaultZenConfig() *ZenConfigData {
 			KeepTokens: 8000,
 			MaxSummary: 4096,
 		},
-		// 体积裁剪默认关闭：丢工具会削减模型可用能力，必须由使用者显式开启。
-		// 开启后按默认名单（丢弃 mcp__* 前缀工具）工作。
-		ToolFilter: DefaultZenToolFilter(),
 	}
 }
 
@@ -947,7 +940,7 @@ func ZenDailyExhausted(status int, body string, retryAfter time.Duration) bool {
 
 // zenFingerprintSuspectTokens 判定"疑似指纹闸"的当日用量上限：一把当天几乎
 // 没用过（≤100 tokens，覆盖一次最小冒烟的消耗）的 key 吃到"日额度耗尽"形态
-// 的 429，更可能是免费层身份指纹闸按请求内容命中（见 zen_toolfilter.go 机制
+// 的 429，更可能是免费层身份指纹闸按请求内容命中（见 zen_toolshape.go 机制
 // 注释），而非真额度耗尽。写死不做成配置：这是排障判据不是调优参数。
 const zenFingerprintSuspectTokens = 100
 
@@ -1754,15 +1747,8 @@ func BuildZenBody(params map[string]any, stream bool) map[string]any {
 	delete(body, "function_call")
 	clientTools := ZenClientTools(params)
 	// 描述 NBSP 整形（恒定开启）：免费层闸按顶层描述字面子串匹配（2026-11-21
-	// 实测，见 zen_toolfilter.go 对策注释），整形必须在裁剪/合并之前。
+	// 实测，见 zen_toolshape.go 对策注释），整形必须在合并之前。
 	clientTools = zenShapeClientToolDescriptionsChat(clientTools)
-	// 体积裁剪（默认关闭）：先裁客户端工具，再合并 gate 占位工具——
-	// gate 工具是过闸必需，绝不参与过滤。裁剪结果只影响本次上游 body。
-	if cfg, on := ZenToolFilterActive(); on && len(clientTools) > 0 {
-		var st ZenFilterToolStats
-		clientTools, st = ZenFilterClientToolsChat(clientTools, cfg)
-		LogZenToolFilter("chat", st)
-	}
 	if len(clientTools) == 0 {
 		body["tools"] = ZenGateTools()
 	} else {
@@ -2184,12 +2170,6 @@ func BuildZenResponsesBody(params map[string]any, modelID string, promptKey stri
 	flatTools := ZenClientFlatTools(params)
 	// 描述 NBSP 整形（恒定开启）：同 chat 路径，免费层闸字面措辞对策。
 	flatTools = zenShapeClientToolDescriptionsFlat(flatTools)
-	// 体积裁剪（默认关闭）：同 chat 路径，只裁客户端工具，gate stub 不动。
-	if cfg, on := ZenToolFilterActive(); on && len(flatTools) > 0 {
-		var st ZenFilterToolStats
-		flatTools, st = ZenFilterClientToolsFlat(flatTools, cfg)
-		LogZenToolFilter("responses", st)
-	}
 	body["tools"] = ZenMergeResponsesTools(flatTools)
 	body["tool_choice"] = "auto"
 	EnsureZenEnvMarkerResponses(body)
@@ -2903,7 +2883,9 @@ func CallZenResponsesAPI(ctx context.Context, params map[string]any, stream bool
 			// 指纹闸自愈：只留 gate stub（tool_choice 已恒 auto）。
 			body["tools"] = ZenMergeResponsesTools(nil)
 		}
-		bodyJSON, err := json.Marshal(body)
+		// 上游 body 用客户端字节形态序列化（不转义 <>&、固定键序）——见
+		// kit.MarshalWireJSON 注释。响应方向（chat 聚合、日志）仍用标准 marshal。
+		bodyJSON, err := kit.MarshalWireJSON(body)
 		if err != nil {
 			return nil, rateLimited, fmt.Errorf("marshal zen responses body: %w", err)
 		}
@@ -3144,7 +3126,7 @@ func CallZenResponsesAPI(ctx context.Context, params map[string]any, stream bool
 					// 指纹自愈的 strip 必须跨 410 重建存活。
 					body["tools"] = ZenMergeResponsesTools(nil)
 				}
-				bodyJSON, err = json.Marshal(body)
+				bodyJSON, err = kit.MarshalWireJSON(body)
 				if err != nil {
 					return nil, rateLimited, fmt.Errorf("marshal zen responses body: %w", err)
 				}
@@ -3175,14 +3157,16 @@ func CallZenAPI(ctx context.Context, params map[string]any, stream bool, opts ..
 	cfg := GetZenConfig()
 	body := BuildZenBody(params, stream)
 	// 工具改名（2026-11-21，免费层身份指纹闸名称面对策）：在 BuildZenBody
-	// 之后应用——toolfilter 的真名匹配不受影响。gate 工具名不在映射内原样
+	// 之后应用。gate 工具名不在映射内原样
 	// 保留（过闸必需）；历史 tool_calls 一并改写（指纹面在历史里同样成立）。
 	// 平台勾选/开关在 toolrename.Build 内判定（gwconfig 全局配置）。
 	if m := toolrename.Build(toolrename.KindZen, zenRenameCandidateNames(params)); m != nil {
 		toolrename.RewriteChatForm(body, m)
 	}
 
-	bodyJSON, err := json.Marshal(body)
+	// 上游 body 用客户端字节形态序列化（不转义 <>&、固定键序）——见
+	// kit.MarshalWireJSON 注释。响应方向（chat 聚合、日志）仍用标准 marshal。
+	bodyJSON, err := kit.MarshalWireJSON(body)
 	if err != nil {
 		return nil, 0, fmt.Errorf("marshal zen body: %w", err)
 	}
@@ -3243,7 +3227,7 @@ func CallZenAPI(ctx context.Context, params map[string]any, stream bool, opts ..
 	// Rate-limit switching (below) is the only branch that rewrites it,
 	// mirroring CallZenResponsesAPI.
 	retryKey := ""
-	// 指纹闸自愈（2026-11-21，见 daily-exhausted 分支与 zen_toolfilter.go
+	// 指纹闸自愈（2026-11-21，见 daily-exhausted 分支与 zen_toolshape.go
 	// 机制注释）：当天几乎没用的 key 吃到"日额度耗尽"形态 429，大概率是
 	// 免费层身份指纹闸命中（按请求内容判定，换 key 无用——实测一次请求
 	// 沿 failover 链烧 4 把 key）。stripTools=true 时出站 body 去掉客户端
@@ -3442,7 +3426,7 @@ func CallZenAPI(ctx context.Context, params map[string]any, stream bool, opts ..
 					} else {
 						body["tool_choice"] = "none" // 与"客户端无工具"既有语义一致
 					}
-					bodyJSON, err = json.Marshal(body)
+					bodyJSON, err = kit.MarshalWireJSON(body)
 					if err != nil {
 						return nil, rateLimited, fmt.Errorf("marshal zen body: %w", err)
 					}
@@ -3563,7 +3547,7 @@ func CallZenAPI(ctx context.Context, params map[string]any, stream bool, opts ..
 					body["tools"] = ZenGateTools()
 					body["tool_choice"] = "none"
 				}
-				bodyJSON, err = json.Marshal(body)
+				bodyJSON, err = kit.MarshalWireJSON(body)
 				if err != nil {
 					return nil, rateLimited, fmt.Errorf("marshal zen body: %w", err)
 				}
