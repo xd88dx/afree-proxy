@@ -1721,6 +1721,7 @@ const I18N = {
   'freepi_client_version_hint': { en: 'Overrides the x-client-version header sent upstream. Empty = built-in default.', zh: '覆盖发往上游的 x-client-version 头。留空 = 使用内置默认值。' },
   'freepi_client_version_invalid': { en: 'Client version must look like x.y.z (e.g. 0.6.28), or empty to reset', zh: '客户端版本须形如 x.y.z（如 0.6.28），留空恢复默认' },
   'freepi_sticky_hint': { en: 'Keeps each conversation on one key to avoid the upstream "Sharing or rotating accounts" rejection. If the sticky key cools down or its proxy is unavailable, the request fails fast - no key switch, no retry.', zh: '同一对话固定使用一把凭据，避免上游判定账号共享/轮转。粘住的凭据冷却或代理不可用时快速失败——不换凭据、不重试。' },
+  'freepi_weight_hint': { en: 'When on, keys are picked weighted-randomly by remaining credits; when off, the global rotation strategy applies, and the background credit refresh stops too.', zh: '开启后按各凭据剩余额度加权随机选号；关闭则使用全局轮转策略，关闭时后台刷新一并停止。' },
   'freepi_jwt_shape': { en: 'That does not look like a JWT (expected 3 dot-separated segments).', zh: '看起来不是合法 JWT（应为三段、以点分隔）。' },
   'refresh_credits': { en: 'Refresh credits', zh: '刷新额度' },
   'credits_refreshed': { en: 'Credits refreshed: ', zh: '已刷新额度：' },
