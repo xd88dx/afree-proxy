@@ -3428,9 +3428,10 @@ async function accEditFromDialog() {
     const nick = _('accEditNickname').value.trim();
     if (nick !== snap.nick) await api('POST', '/accounts/nickname', { accountId: snap.id, nickname: nick });
     const tok = _('accEditToken').value.trim();
-    // 掩码回显不回传：输入框留空 = 不改凭据
-    if (snap.credType === 'api' && tok && tok !== snap.credMask) {
-      await api('POST', '/accounts/credential', { accountId: snap.id, apiToken: tok });
+    // 掩码回显不回传：输入框留空 = 不改凭据。oauth 型走 RefreshToken（后端 admin.go oauth 分支），
+    // api 型走 APIToken；两者统一用 credential 字段，与后端 /accounts/credential 契约对齐。
+    if (tok && tok !== snap.credMask) {
+      await api('POST', '/accounts/credential', { accountId: snap.id, credential: tok });
     }
     toast(T('saved'), 'success');
     closeAccEditDialog();
