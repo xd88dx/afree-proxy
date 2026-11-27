@@ -1,7 +1,7 @@
 {
   "version": 1,
   "created_at": "2026-11-09T17:13:34Z",
-  "updated_at": "2026-11-27T07:51:45Z",
+  "updated_at": "2026-11-27T08:57:36Z",
   "files": {
     ".agents/skills/add-platform/SKILL.md": {
       "role": "index",
@@ -101,9 +101,9 @@
     },
     "MERGE.md": {
       "role": "index",
-      "sha256": "7fdfac1eb757204cff599daa181c9c1200afc2efb9f8fd2fd94eef4242db9847",
-      "size": 194544,
-      "normalized_sha256": "7fdfac1eb757204cff599daa181c9c1200afc2efb9f8fd2fd94eef4242db9847"
+      "sha256": "e738a31d1a51b1e720aed94a8f21c220717b675091a170a0c44cd248b155e3c6",
+      "size": 197181,
+      "normalized_sha256": "e738a31d1a51b1e720aed94a8f21c220717b675091a170a0c44cd248b155e3c6"
     },
     "PROJECT.md": {
       "role": "index",
@@ -125,9 +125,9 @@
     },
     "aoci.code.txt": {
       "role": "index",
-      "sha256": "e26b9e477fcdcb07a43b8db12c74feda601d290df73e7a878868d06239ecc458",
-      "size": 267091,
-      "normalized_sha256": "e26b9e477fcdcb07a43b8db12c74feda601d290df73e7a878868d06239ecc458"
+      "sha256": "1c9e373ae44cd7eb46d3a586075bb72c87e9f4d8e0a499dbb5012f3bfc69267b",
+      "size": 266853,
+      "normalized_sha256": "1c9e373ae44cd7eb46d3a586075bb72c87e9f4d8e0a499dbb5012f3bfc69267b"
     },
     "aoci.meta.txt": {
       "role": "index",
@@ -601,10 +601,10 @@
     },
     "internal/app/freepi.go": {
       "role": "index",
-      "sha256": "820435ff9efd896f254eb7d054720c2c48f9e081df8ad4b7aedc2b2dd0eff6c7",
-      "size": 30121,
-      "normalized_sha256": "820435ff9efd896f254eb7d054720c2c48f9e081df8ad4b7aedc2b2dd0eff6c7",
-      "format_sha256": "820435ff9efd896f254eb7d054720c2c48f9e081df8ad4b7aedc2b2dd0eff6c7",
+      "sha256": "94915f0483b1cbda6feedbcd1a28cc5fcbe73bab600e2bcbc6f3da55945c7b19",
+      "size": 31567,
+      "normalized_sha256": "94915f0483b1cbda6feedbcd1a28cc5fcbe73bab600e2bcbc6f3da55945c7b19",
+      "format_sha256": "860916da2f3eb4033c344b29455050a4f2382e7868f7434eeb095a3867620d45",
       "format_kind": "gofmt"
     },
     "internal/app/gateway_bridge.go": {
@@ -1737,18 +1737,18 @@
     },
     "internal/freepi/client.go": {
       "role": "index",
-      "sha256": "0f41bc5557fb49d214e95eb24339b17be21608679da3ad134b3af444ec4b68ea",
-      "size": 22843,
-      "normalized_sha256": "0f41bc5557fb49d214e95eb24339b17be21608679da3ad134b3af444ec4b68ea",
-      "format_sha256": "0f41bc5557fb49d214e95eb24339b17be21608679da3ad134b3af444ec4b68ea",
+      "sha256": "d1c968e7ac7fc401f613912cb1d787d6b9f3f64ffaa83315a3644fd65b9af748",
+      "size": 22860,
+      "normalized_sha256": "d1c968e7ac7fc401f613912cb1d787d6b9f3f64ffaa83315a3644fd65b9af748",
+      "format_sha256": "d1c968e7ac7fc401f613912cb1d787d6b9f3f64ffaa83315a3644fd65b9af748",
       "format_kind": "gofmt"
     },
     "internal/freepi/config.go": {
       "role": "index",
-      "sha256": "ee61571b649f65a81cdc075300cc26ecd8b6a86f1822378ec3191526ed1c48c4",
-      "size": 19845,
-      "normalized_sha256": "ee61571b649f65a81cdc075300cc26ecd8b6a86f1822378ec3191526ed1c48c4",
-      "format_sha256": "ee61571b649f65a81cdc075300cc26ecd8b6a86f1822378ec3191526ed1c48c4",
+      "sha256": "0a0e78e03b584c09d4b9109846073c63ec19fc4dfe1c6b388e42114ed45d5f96",
+      "size": 20860,
+      "normalized_sha256": "0a0e78e03b584c09d4b9109846073c63ec19fc4dfe1c6b388e42114ed45d5f96",
+      "format_sha256": "0a0e78e03b584c09d4b9109846073c63ec19fc4dfe1c6b388e42114ed45d5f96",
       "format_kind": "gofmt"
     },
     "internal/freepi/device.go": {
@@ -1769,10 +1769,10 @@
     },
     "internal/freepi/freepi_test.go": {
       "role": "observe",
-      "sha256": "d9e1a05ea8367405729b60216352678f7f53e4308ff05d24d5f540bfa932b06b",
-      "size": 9720,
-      "normalized_sha256": "d9e1a05ea8367405729b60216352678f7f53e4308ff05d24d5f540bfa932b06b",
-      "format_sha256": "d9e1a05ea8367405729b60216352678f7f53e4308ff05d24d5f540bfa932b06b",
+      "sha256": "d67e3744858f995adcb5130f39207c3c08000c2813ea2aefebb67c711b03d73b",
+      "size": 10615,
+      "normalized_sha256": "d67e3744858f995adcb5130f39207c3c08000c2813ea2aefebb67c711b03d73b",
+      "format_sha256": "d67e3744858f995adcb5130f39207c3c08000c2813ea2aefebb67c711b03d73b",
       "format_kind": "gofmt"
     },
     "internal/freepi/models.go": {
@@ -1799,9 +1799,9 @@
     },
     "internal/freepi/panel_tab.html": {
       "role": "index",
-      "sha256": "825decbee39da77e032b34111897ca6998eb098c21d7e7fcb93f710edf0831b0",
-      "size": 10753,
-      "normalized_sha256": "825decbee39da77e032b34111897ca6998eb098c21d7e7fcb93f710edf0831b0"
+      "sha256": "eb34a152a1f1c1ff79aa044c97a18024fefed80ed2bff8c552506b3469591b5e",
+      "size": 11259,
+      "normalized_sha256": "eb34a152a1f1c1ff79aa044c97a18024fefed80ed2bff8c552506b3469591b5e"
     },
     "internal/freepi/pool.go": {
       "role": "index",
@@ -2289,10 +2289,10 @@
     },
     "internal/panel/html.go": {
       "role": "index",
-      "sha256": "81681a5a5be705857b239c48373deb62d72776520a2210be42dfb24050c4b0a9",
-      "size": 556329,
-      "normalized_sha256": "81681a5a5be705857b239c48373deb62d72776520a2210be42dfb24050c4b0a9",
-      "format_sha256": "81681a5a5be705857b239c48373deb62d72776520a2210be42dfb24050c4b0a9",
+      "sha256": "44fc3c1d3cb402c1e4e4e92d717205aae5ed2deec76a3aef29633b6bc3dfcfb0",
+      "size": 557628,
+      "normalized_sha256": "44fc3c1d3cb402c1e4e4e92d717205aae5ed2deec76a3aef29633b6bc3dfcfb0",
+      "format_sha256": "44fc3c1d3cb402c1e4e4e92d717205aae5ed2deec76a3aef29633b6bc3dfcfb0",
       "format_kind": "gofmt"
     },
     "internal/panel/models_refresh.go": {
@@ -9869,18 +9869,18 @@
     },
     "modules/workbuddy2api/internal/upstream/dsml.go": {
       "role": "index",
-      "sha256": "5a10bef7f5cf77bd9e05c5d27428480691c327ec47078c5c485634a68fca621f",
-      "size": 18935,
-      "normalized_sha256": "5a10bef7f5cf77bd9e05c5d27428480691c327ec47078c5c485634a68fca621f",
-      "format_sha256": "5a10bef7f5cf77bd9e05c5d27428480691c327ec47078c5c485634a68fca621f",
+      "sha256": "97a9e095fb0ee8f28af9eb62f4cb4b5dcdcdfe40b7c496a629013161d9293595",
+      "size": 21605,
+      "normalized_sha256": "97a9e095fb0ee8f28af9eb62f4cb4b5dcdcdfe40b7c496a629013161d9293595",
+      "format_sha256": "97a9e095fb0ee8f28af9eb62f4cb4b5dcdcdfe40b7c496a629013161d9293595",
       "format_kind": "gofmt"
     },
     "modules/workbuddy2api/internal/upstream/dsml_test.go": {
       "role": "observe",
-      "sha256": "94a36caf32474103a12304e0e98dce01c072202495d7468942beebd0a71c9a5c",
-      "size": 22040,
-      "normalized_sha256": "94a36caf32474103a12304e0e98dce01c072202495d7468942beebd0a71c9a5c",
-      "format_sha256": "94a36caf32474103a12304e0e98dce01c072202495d7468942beebd0a71c9a5c",
+      "sha256": "0b1a906e441141a8e5162cadff9eca3f40ba8085d34cd720636d0974ae235606",
+      "size": 27200,
+      "normalized_sha256": "0b1a906e441141a8e5162cadff9eca3f40ba8085d34cd720636d0974ae235606",
+      "format_sha256": "0b1a906e441141a8e5162cadff9eca3f40ba8085d34cd720636d0974ae235606",
       "format_kind": "gofmt"
     },
     "modules/workbuddy2api/internal/upstream/dump.go": {
