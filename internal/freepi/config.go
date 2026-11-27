@@ -75,6 +75,11 @@ type Config struct {
 	// KeyTokens（token 记账）/Cool（冷却表）/Credits（余额）是使用痕迹，
 	// 拆到 freepi-state.json（usage.go）：随请求/429/查询变化，留在配置
 	// 文件会干扰外部对配置变更的监测（*-config 与 *-state 命名铁律）。
+	// ClientVersion x-client-version 头的面板覆盖值（2026-11-27）：空/缺 =
+	// 用包级默认（config.go ClientVersion 常量，随参考插件同步推进）。上游
+	// bump 版本闸但本仓还没同步时，面板改一个值即可恢复，不必走完整同步流程。
+	// 格式校验在面板保存入口（app 层），这里只存 trim 后的值。
+	ClientVersion string `json:"clientVersion,omitempty"`
 }
 
 // Binding 一个 key 的出口绑定：主代理优先、备用代理兜底；双不可用 = 该 key
@@ -143,6 +148,7 @@ func (c *Config) normalize() {
 		cleanedRouted = append(cleanedRouted, m)
 	}
 	c.RoutedModels = cleanedRouted
+	c.ClientVersion = strings.TrimSpace(c.ClientVersion)
 }
 
 // ReconcileRouting 整体替换 key 池后对齐路由参与表：新引入的 key 默认不
@@ -356,6 +362,17 @@ func (c *Config) WeightInterval() int {
 // StickyEnabled 会话粘性开关（nil/缺省 = 启用——默认开，2026-11-25 用户定）。
 func (c *Config) StickyEnabled() bool {
 	return c.SessionSticky == nil || *c.SessionSticky
+}
+
+// EffectiveClientVersion x-client-version 头的生效值：面板覆盖值优先
+// （freepi-config.json clientVersion），空/缺 = 包级默认常量。每次调用读
+// 当前快照——面板热改即下一次请求生效，无需重启。格式合法性由面板保存入口
+// 校验；这里不做二次校验（写进去什么发什么，与「凭据是运营者意志」同口径）。
+func (c *Config) EffectiveClientVersion() string {
+	if c.ClientVersion != "" {
+		return c.ClientVersion
+	}
+	return ClientVersion
 }
 
 // ModelRouted 模型是否对外路由（2026-11-24 用户定）：白名单空/缺 = 目录全部

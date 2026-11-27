@@ -354,7 +354,7 @@ func sendChat(ctx context.Context, client *http.Client, endpoint string, bodyJSO
 	req.Header.Set("Authorization", "Bearer "+key)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("x-session-id", sessionID)
-	req.Header.Set("x-client-version", ClientVersion)
+	req.Header.Set("x-client-version", Get().EffectiveClientVersion())
 	req.Header.Set("x-turn-id", turnID)
 	resp, err := client.Do(req)
 	if err != nil {

@@ -8,6 +8,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -27,6 +28,11 @@ import (
 // 包内，本层只做装配与面板编排。
 
 func freepiConfigPath() string { return kit.ResolveDataPath("freepi-config.json") }
+
+// freepiVersionRe x-client-version 覆盖值的形状闸：x.y.z（各段 1-3 位数字）。
+// 上游最低版本闸按 semver 比较，非此形状的值没有意义；提交入口先拦（400），
+// 不给坏指纹落盘的机会。
+var freepiVersionRe = regexp.MustCompile(`^\d{1,3}\.\d{1,3}\.\d{1,3}$`)
 
 // initFreepi 加载配置 + 注入四钩子（client 工厂/目录出口/出口观测/请求日志）
 // + 启动周期目录同步。StartProxy 早期调用一次（other.initOther 同款顺序）。
@@ -117,15 +123,18 @@ func handleFreepiConfig(w http.ResponseWriter, r *http.Request) {
 		modelViews = append(modelViews, mv)
 	}
 	data := map[string]any{
-		"useProxies":     freepi.ProxiesEnabled(),
-		"maxConcurrency": c.MaxConcurrency,
-		"retries":        c.Retries,
-		"weightOptimize": c.WeightOptimizeEnabled(),
-		"weightInterval": c.WeightInterval(),
-		"sessionSticky":  c.StickyEnabled(),
-		"routedModels":   c.RoutedModels,
-		"keyStates":      freepi.KeyStatus(),
-		"models":         modelViews,
+		"useProxies":              freepi.ProxiesEnabled(),
+		"maxConcurrency":          c.MaxConcurrency,
+		"retries":                 c.Retries,
+		"weightOptimize":          c.WeightOptimizeEnabled(),
+		"weightInterval":          c.WeightInterval(),
+		"sessionSticky":           c.StickyEnabled(),
+		"clientVersion":          c.ClientVersion,
+		"clientVersionEffective": c.EffectiveClientVersion(),
+		"clientVersionDefault":   freepi.ClientVersion,
+		"routedModels":            c.RoutedModels,
+		"keyStates":               freepi.KeyStatus(),
+		"models":                  modelViews,
 	}
 	// 目录同步时刻（pill「官方源同步于」）：零值时省略字段，前端显示空 pill
 	if t := freepi.CatalogSyncedAt(); !t.IsZero() {
@@ -152,6 +161,10 @@ func handleFreepiConfigUpdate(w http.ResponseWriter, r *http.Request) {
 		// 路由白名单（2026-11-24）：nil = 未提交；非 nil = 整表替换（空表 =
 		// 全部路由）。指针区分语义与面板"即点即存"一致。
 		RoutedModels *[]string `json:"routedModels"`
+		// x-client-version 覆盖（2026-11-27）：nil = 未提交；非 nil 空串 = 清除
+		// 覆盖回落默认；非空必须 x.y.z 形状（上游最低版本闸按 semver 比较，
+		// 乱填形状等于把指纹写坏）。
+		ClientVersion *string `json:"clientVersion"`
 	}
 	if err := json.NewDecoder(io.LimitReader(r.Body, 4096)).Decode(&patch); err != nil {
 		WriteAPI(w, http.StatusBadRequest, apiResponse{Error: "invalid JSON"})
@@ -160,9 +173,18 @@ func handleFreepiConfigUpdate(w http.ResponseWriter, r *http.Request) {
 	if patch.UseProxies != nil {
 		freepi.SetConfigUseProxies(patch.UseProxies)
 	}
+	// 版本覆盖形状校验先行（400 在落盘前）：空串=清除覆盖；非空必须 x.y.z。
+	if patch.ClientVersion != nil {
+		v := strings.TrimSpace(*patch.ClientVersion)
+		if v != "" && !freepiVersionRe.MatchString(v) {
+			WriteAPI(w, http.StatusBadRequest, apiResponse{Error: "clientVersion must look like x.y.z (e.g. 0.6.28), or empty to reset"})
+			return
+		}
+	}
 	if patch.MaxConcurrency != nil || patch.Retries != nil ||
 		patch.WeightOptimize != nil || patch.WeightInterval != nil ||
-		patch.SessionSticky != nil || patch.RoutedModels != nil {
+		patch.SessionSticky != nil || patch.RoutedModels != nil ||
+		patch.ClientVersion != nil {
 		freepiSetNext(func(next *freepi.Config) {
 			if patch.MaxConcurrency != nil && *patch.MaxConcurrency > 0 {
 				next.MaxConcurrency = *patch.MaxConcurrency
@@ -183,6 +205,11 @@ func handleFreepiConfigUpdate(w http.ResponseWriter, r *http.Request) {
 			// 白名单整表替换（trim/去重在 normalize），空表 = 全部路由
 			if patch.RoutedModels != nil {
 				next.RoutedModels = *patch.RoutedModels
+			}
+			// 版本覆盖：normalize 会 trim，空串即清除（EffectiveClientVersion
+			// 空值回落包级默认）
+			if patch.ClientVersion != nil {
+				next.ClientVersion = *patch.ClientVersion
 			}
 		})
 	}

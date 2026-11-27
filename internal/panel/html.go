@@ -1717,6 +1717,9 @@ const I18N = {
   'freepi_weight_interval': { en: 'Weight optimization interval (minutes)', zh: '权重优化间隔（分钟）' },
   'freepi_weight_interval_invalid': { en: 'Interval must be a non-negative integer (minutes)', zh: '间隔必须是非负整数（分钟）' },
   'freepi_sticky_enable': { en: 'Session sticky routing', zh: '会话粘性路由' },
+  'freepi_client_version': { en: 'Client version (x-client-version)', zh: '客户端版本（x-client-version）' },
+  'freepi_client_version_hint': { en: 'Overrides the x-client-version header sent upstream. Upstream bumps this often; setting it here restores access without waiting for a code sync. Empty = built-in default.', zh: '覆盖发往上游的 x-client-version 头。上游版本推进频繁，此处改值即可恢复访问，不必等代码同步。留空 = 使用内置默认值。' },
+  'freepi_client_version_invalid': { en: 'Client version must look like x.y.z (e.g. 0.6.28), or empty to reset', zh: '客户端版本须形如 x.y.z（如 0.6.28），留空恢复默认' },
   'freepi_sticky_hint': { en: 'Keeps each conversation on one key to avoid the upstream "Sharing or rotating accounts" rejection. If the sticky key cools down or its proxy is unavailable, the request fails fast - no key switch, no retry.', zh: '同一对话固定使用一把凭据，避免上游判定账号共享/轮转。粘住的凭据冷却或代理不可用时快速失败——不换凭据、不重试。' },
   'freepi_jwt_shape': { en: 'That does not look like a JWT (expected 3 dot-separated segments).', zh: '看起来不是合法 JWT（应为三段、以点分隔）。' },
   'refresh_credits': { en: 'Refresh credits', zh: '刷新额度' },
@@ -8501,6 +8504,12 @@ async function loadFreepiConfig() {
   _('freepiWeightOpt').checked = !!freepiConfig.weightOptimize;
   _('freepiWeightInterval').value = freepiConfig.weightInterval || 30;
   _('freepiStickyOpt').checked = freepiConfig.sessionSticky !== false; // 缺省 = 开
+  // 版本覆盖（2026-11-27）：输入框填覆盖值（空=未覆盖），placeholder 提示默认值
+  const cv = _('freepiClientVersion');
+  if (cv) {
+    cv.value = freepiConfig.clientVersion || '';
+    cv.placeholder = freepiConfig.clientVersionDefault || '';
+  }
   renderFreepiModels(freepiKnownModels);
   renderFreepiKeys(ks);
 }
@@ -8704,13 +8713,17 @@ async function saveFreepiRateLimit() {
 }
 
 async function saveFreepiWeightConfig() {
-  // 同一按钮保存权重优化与会话粘性（都在 FreePI configuration 区）。
+  // 同一按钮保存权重优化、会话粘性与版本覆盖（都在 FreePI configuration 区）。
   const iv = parseInt(_('freepiWeightInterval').value, 10);
   if (Number.isNaN(iv) || iv < 0) { toast(T('freepi_weight_interval_invalid'), 'error'); return; }
+  // 版本覆盖：空 = 清除回落内置默认；非空必须 x.y.z（服务端同样校验）
+  const cvEl = _('freepiClientVersion');
+  const cv = cvEl ? cvEl.value.trim() : '';
+  if (cv && !/^\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(cv)) { toast(T('freepi_client_version_invalid'), 'error'); return; }
   try {
     await api('POST', '/freepi/config/update', {
       weightOptimize: _('freepiWeightOpt').checked, weightInterval: iv,
-      sessionSticky: _('freepiStickyOpt').checked
+      sessionSticky: _('freepiStickyOpt').checked, clientVersion: cv
     });
     toast(T('saved'), 'success');
     loadFreepiConfig();

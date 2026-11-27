@@ -260,3 +260,25 @@ func TestPickKeyWeightToggle(t *testing.T) {
 		t.Fatalf("on-mode weighted: want a >= 90/100, got %d", aCount)
 	}
 }
+
+// TestEffectiveClientVersion 版本覆盖取值（2026-11-27 面板覆盖化）：
+// 覆盖值非空走覆盖（上游 bump 闸后不等代码同步的恢复路径），空/缺回落
+// 包级默认常量（随参考插件同步推进）。
+func TestEffectiveClientVersion(t *testing.T) {
+	c := &Config{}
+	if got := c.EffectiveClientVersion(); got != ClientVersion {
+		t.Fatalf("empty override must fall back to default: got %q want %q", got, ClientVersion)
+	}
+	c.ClientVersion = "9.9.9"
+	if got := c.EffectiveClientVersion(); got != "9.9.9" {
+		t.Fatalf("override must win: got %q", got)
+	}
+	c.ClientVersion = "   "
+	c.normalize()
+	if c.ClientVersion != "" {
+		t.Fatalf("normalize must trim whitespace-only override, got %q", c.ClientVersion)
+	}
+	if got := c.EffectiveClientVersion(); got != ClientVersion {
+		t.Fatalf("whitespace-only override must fall back after trim: got %q", got)
+	}
+}
