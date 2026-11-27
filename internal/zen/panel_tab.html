@@ -77,25 +77,6 @@
 </div>
 
 <div class="section">
-  <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><path d="M3 6h18M6 6v13a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V6M10 11h4"/></svg></span> <span data-i18n="Request size filter (shrink the upstream body)">Request size filter (shrink the upstream body)</span></div>
-  <div class="section-body">
-    <p class="hint" style="margin-top:0" data-i18n="IDE requests are mostly tool schemas (137 KB total, 112 KB of that is tools). Dropping client tools before they reach upstream saves roughly 33k tokens per message. Gate tools (12) are never filtered.">IDE requests are mostly tool schemas (137 KB total, 112 KB of that is tools). Dropping client tools before they reach upstream saves roughly 33k tokens per message. Gate tools (12) are never filtered.</p>
-    <div class="form-row">
-      <div class="field" style="margin-top:5px;"><label data-i18n="Filter client tools">Filter client tools</label>
-        <select id="ocToolFilterEnabled"><option value="false">Off — forward every tool the IDE declares</option><option value="true">On — drop matching tools</option></select>
-      </div>
-      <div class="field"><label data-i18n="Max description chars (0 = keep)">Max description chars (0 = keep)</label><input type="text" id="ocToolFilterMaxDesc" placeholder="0"></div>
-    </div>
-    <div class="form-row">
-      <div class="field" style="flex:2"><label data-i18n="Drop by name prefix (one per line)">Drop by name prefix (one per line)</label><textarea id="ocToolFilterPrefixes" rows="3" placeholder="mcp__" style="font-family:monospace;font-size:12px"></textarea></div>
-      <div class="field" style="flex:2"><label data-i18n="Drop by exact name (one per line)">Drop by exact name (one per line)</label><textarea id="ocToolFilterNames" rows="3" placeholder="CronCreate&#10;CreateWorkflow&#10;EnterPlanMode&#10;ExitPlanMode&#10;AskUserQuestion" style="font-family:monospace;font-size:12px"></textarea></div>
-    </div>
-    <p class="hint" style="margin-top:0" data-i18n="Starting suggestions: prefix mcp__ (MCP tools are the largest single schemas and a given turn usually uses one or two); names CronCreate, CreateWorkflow, EnterPlanMode, ExitPlanMode, AskUserQuestion (several KB each, rarely needed in a coding turn). Every drop is logged with the bytes saved.">Starting suggestions: prefix <code>mcp__</code> (MCP tools are the largest single schemas and a given turn usually uses one or two); names <code>CronCreate</code>, <code>CreateWorkflow</code>, <code>EnterPlanMode</code>, <code>ExitPlanMode</code>, <code>AskUserQuestion</code> (several KB each, rarely needed in a coding turn). Every drop is logged with the bytes saved.</p>
-    <div class="form-actions"><button class="btn btn-primary" onclick="saveOcConfig()" data-i18n="Save filter">Save filter</button></div>
-  </div>
-</div>
-
-<div class="section">
   <div class="section-title"><span class="sec-ico"><svg viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 5-6"/></svg></span> <span data-i18n="Model catalog">Model catalog</span> <span class="probe-pill" data-models-info style="font-weight:normal"></span></div>
   <div class="section-body">
     <div class="flex" style="margin-bottom:10px;gap:10px">

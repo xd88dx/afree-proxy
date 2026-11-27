@@ -480,6 +480,7 @@ WorkBuddy 一栏的基线同时登记在 `scripts/workbuddy-vendor-baseline.json
 - **修复**（vendor internal/upstream/dsml.go，本地补丁；上游 89c3c93f 尚未适配，下次三方合并若上游出同款修复按并集解决）：新增 loose 族常量与 `markupCloseFor/markupInvokeCloseFor/markupParamCloseFor` 同族配对（不跨族混配）；`markupStartCandidate` 返回 (index, open) 支持双族起点与截断态；invoke/parameter 正则前缀放宽为 `(?:双竖线|单竖线)\s+`；invoke/param 闭合取同族最早（防混排）；`MarkupRepair.inBlockOpen` 记录当前块形态——rejected/超长/Flush 回吐按原形态逐字节还原（不变量：一个字节不丢）；orphan 观测随正则放宽对新形态生效。
 - **测试**：dsml_test.go 新增 6 用例（单竖线整块、生产泄漏块原样回放含中文与假名、流式分片切割全角字节、新旧混排、拒绝按原形态回吐、orphan 计数）；全量 test + race 绿。
 - **台账链**：WorkBuddy 节 2026-11-27 主节的合并器缺陷修复与本次补丁同日；生产部署待用户指示。
+- **2026-11-27 二次补（勘误）**：toolFilter 面板 UI 本体（`internal/zen/panel_tab.html` 79-97 行的 Request size filter section，ocToolFilter* 控件）当时**未删**——失误根源：在错误的空间里 grep（panel/html.go 与 freepi/panel_tab.html，而 toolFilter 是 zen 平台功能，UI 在 zen 平台的 tab 片段里），html.go 里 JS 的防御式判空（`if (_('ocToolFilterEnabled'))`）佐证了误判；同批 i18n 键删除也因脚本 assert 失败未落盘。本次删 section 整块，i18n 10 键在 UI 删除后确认零引用（data-i18n 引用为运行时查询，静态 grep 数不出——"死键"判定必须连带 tab 片段一起搜）。本机容器登录面板实测：ocToolFilter/Request size filter 0 命中、freepi 新控件在位。
 
 ## OpenCode
 
