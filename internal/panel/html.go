@@ -4999,12 +4999,12 @@ async function loadLogs() {
 
 // copyReqError 点击状态码复制错误提示（2026-11-26 用户定）：复制该请求的
 // 错误日志原文到剪贴板（错误经 encodeURIComponent 存 dataset，避免引号转义）。
+// 复制走 copyText 统一降级——面板常经局域网 IP 访问（非安全上下文，
+// navigator.clipboard 为 undefined），直接调用 writeText 会同步抛错。
 function copyReqError(enc) {
   const text = decodeURIComponent(enc || '');
   if (!text) return;
-  navigator.clipboard.writeText(text).then(
-    () => toast(T('error_copied'), 'success'),
-    () => toast(T('copy_failed'), 'error'));
+  copyText(text, T('error_copied'));
 }
 
 // ========== Config updates ==========
