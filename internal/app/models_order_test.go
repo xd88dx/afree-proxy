@@ -8,9 +8,10 @@ import (
 
 // /v1/models 的「段内恒序」契约:各平台段内部一律确定有序。
 //
-// 背景:cline(getFreeModels 按**裸 feed ID** 升序,输出再统一加 cline-free/
-// 前缀,故输出 id 观感上非升序但顺序确定)、zen(zenModelList 末尾 sort.Slice)、
-// trae(各 ModelList 内 sort.Slice)、other(KnownModels 内
+// 背景:cline(getFreeModels 按**缓存键=feed 原样 ID** 升序,输出统一剥
+// feed 前缀补 cline: 前缀——排序键是缓存键非显示 ID,插件免费别名类
+// (cline-free/* 缓存键)恒排在 api 免费原生类之前)、zen(zenModelList 末尾
+// sort.Slice)、trae(各 ModelList 内 sort.Slice)、other(KnownModels 内
 // sort.Slice)均已排序;唯独 WorkBuddy 段沿用上游返回序,是整条链路上唯一
 // 不确定来源。本组测试锁死该口径,防止将来回退。
 
