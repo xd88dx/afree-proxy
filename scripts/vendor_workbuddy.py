@@ -89,6 +89,11 @@ EGRESS_REWRITES = {
         # 上游 chat 出站失败清空闲连接：钉定出口时要清代理 Transport 而非基础
         # Transport（两树该字面量各 1 处，closeIdleEgress 两树通用）。
         ("roundTripCloseIdle(c.chatHTTP().Transport)", "c.closeIdleEgress(a)", (1, 1)),
+        # afree 本地定制：billing 回落 WARN 按账号限频（WarnThrottled 由 PRESERVE
+        # 的 upstream/proxy.go 提供）。出口死/上游抖动的持续性失败单账号每小时
+        # 可刷 60+ 条 WARN，60s 限频降噪不吞首报（2026-11-28 生产实测）。
+        ('\t\tlog.Printf("WARN: billing %s: global summary 失败，回落个人资源包路径: %v",',
+         '\t\tWarnThrottled("billingsum:"+a.UID, "billing %s: global summary 失败，回落个人资源包路径: %v",', (1, 1)),
     ),
     "upstream/desktop.go": (
         ("c.doJSON(req)", "c.doJSON(a, req)", (4, 0)),
@@ -131,6 +136,171 @@ EGRESS_REWRITES = {
     "upstream/mp_events.go": (
         (("_, err = c.doJSON(req)"), "_, err = c.doJSON(a, req)", (1, 0)),
         (("_, err = c.doJSON(req, a)"), "_, err = c.doJSON(a, req)", (0, 1)),
+    ),
+    # 142790b（2026-11-27 生产泄漏实锤适配）：DSML 单全角竖线漂移双形态兼容。
+    # 上游活跃文件走 REWRITES 保吸收能力，本地块按锚点插入/改写登记。
+    "upstream/dsml.go": (
+        ('const markupPipe = "\\uFF5C\\uFF5C"',
+         'const markupPipe = "\\uFF5C\\uFF5C"\n\n'
+         '// markupPipeLoose 单全角竖线（2026-11-27 生产实证的漂移形态）：模型端序列化\n'
+         '// 从 `<｜｜DSML｜｜ X>`（双竖线）漂移为 `<｜DSML｜ X>`（单竖线+空格），两种\n'
+         '// 形态并存兼容——不能替换，旧形态仍可能在部分请求出现。\n'
+         'const markupPipeLoose = "\\uFF5C"', (1, 1)),
+        ('\tmarkupParamClose  = "</" + markupPipe + "DSML" + markupPipe + " parameter>"\n)',
+         '\tmarkupParamClose  = "</" + markupPipe + "DSML" + markupPipe + " parameter>"\n\n'
+         '\tmarkupOpenLoose        = "<" + markupPipeLoose + "DSML" + markupPipeLoose + " calls>"\n'
+         '\tmarkupCloseLoose       = "</" + markupPipeLoose + "DSML" + markupPipeLoose + " calls>"\n'
+         '\tmarkupInvokeCloseLoose = "</" + markupPipeLoose + "DSML" + markupPipeLoose + " invoke>"\n'
+         '\tmarkupParamCloseLoose  = "</" + markupPipeLoose + "DSML" + markupPipeLoose + " parameter>"\n)', (1, 1)),
+        ('// markupTagPrefix 是开始标记的公共前缀（已转义，供下面两个正则复用）。',
+         '// markupCloseFor / markupInvokeCloseFor / markupParamCloseFor 按 open 形态取同族\n'
+         '// 的 close——块的收尾与开头同一序列化族（模型一次生成一个族），配对不跨族。\n'
+         'func markupCloseFor(open string) string {\n'
+         '\tif open == markupOpenLoose {\n'
+         '\t\treturn markupCloseLoose\n'
+         '\t}\n'
+         '\treturn markupClose\n'
+         '}\n\n'
+         'func markupInvokeCloseFor(open string) string {\n'
+         '\tif open == markupOpenLoose {\n'
+         '\t\treturn markupInvokeCloseLoose\n'
+         '\t}\n'
+         '\treturn markupInvokeClose\n'
+         '}\n\n'
+         'func markupParamCloseFor(open string) string {\n'
+         '\tif open == markupOpenLoose {\n'
+         '\t\treturn markupParamCloseLoose\n'
+         '\t}\n'
+         '\treturn markupParamClose\n'
+         '}\n\n'
+         '// markupTagPrefix 是开始标记的公共前缀（已转义，供下面两个正则复用）。', (1, 1)),
+        ('var markupTagPrefix = regexp.QuoteMeta("<" + markupPipe + "DSML" + markupPipe)',
+         'var markupTagPrefix = regexp.QuoteMeta("<" + markupPipe + "DSML" + markupPipe)\n\n'
+         '// markupTagPrefixRe 两族开始标记公共前缀（双竖线 | 单竖线），后接空白。\n'
+         'var markupTagPrefixRe = `(?:` + regexp.QuoteMeta("<"+markupPipe+"DSML"+markupPipe) +\n'
+         '\t`|` + regexp.QuoteMeta("<"+markupPipeLoose+"DSML"+markupPipeLoose) + `)\\s+`', (1, 1)),
+        ('\tmarkupInvokeRe = regexp.MustCompile(markupTagPrefix + `\\s+invoke\\s+name="([^"]*)"\\s*>`)\n'
+         '\tmarkupParamRe  = regexp.MustCompile(markupTagPrefix + `\\s+parameter\\s+name="([^"]*)"(?:\\s+string="(true|false)")?\\s*>`)',
+         '\tmarkupInvokeRe = regexp.MustCompile(markupTagPrefixRe + `invoke\\s+name="([^"]*)"\\s*>`)\n'
+         '\tmarkupParamRe  = regexp.MustCompile(markupTagPrefixRe + `parameter\\s+name="([^"]*)"(?:\\s+string="(true|false)")?\\s*>`)', (1, 1)),
+        ('\tinBlock      bool   // 已消费掉 markupOpen，正在块内部累积',
+         '\tinBlock      bool   // 已消费掉 markupOpen，正在块内部累积\n'
+         '\tinBlockOpen  string // 当前块的开头形态（markupOpen / markupOpenLoose）——rejected/超长回吐必须用原形态，否则污染正文', (1, 1)),
+        ('\t\t\ti := markupStartCandidate(s)',
+         '\t\t\ti, open := markupStartCandidate(s)', (1, 1)),
+        ('\t\t\tif len(s)-i < len(markupOpen) {',
+         '\t\t\tif open == "" {', (1, 1)),
+        ('s = s[i+len(markupOpen):]\n\t\t\tr.inBlock = true',
+         's = s[i+len(open):]\n\t\t\tr.inBlock = true\n\t\t\tr.inBlockOpen = open', (1, 1)),
+        ('k := strings.Index(s, markupClose)',
+         'k := strings.Index(s, markupCloseFor(r.inBlockOpen))', (1, 1)),
+        # 两处（超长未闭合回吐 + rejected 原文回吐）统一改为当前块形态回吐。
+        ('emit.WriteString(markupOpen)',
+         'emit.WriteString(r.inBlockOpen)', (2, 2)),
+        ('s = s[k+len(markupClose):]',
+         's = s[k+len(markupCloseFor(r.inBlockOpen)):]', (1, 1)),
+        ('emit.WriteString(markupClose)',
+         'emit.WriteString(markupCloseFor(r.inBlockOpen))', (1, 1)),
+        ('out = markupOpen + r.hold',
+         'out = r.inBlockOpen + r.hold', (1, 1)),
+        ('// markupStartCandidate 返回 s 中最早的「可能是 markupOpen 起点」的下标：该位置之后\n'
+         '// 要么正好是完整的 markupOpen，要么是 markupOpen 的一个前缀（被增量边界截断）。\n'
+         '// 没有候选返回 -1。\n'
+         'func markupStartCandidate(s string) int {',
+         '// markupStartCandidate 返回 s 中最早的「可能是任一族 markupOpen 起点」的下标与\n'
+         '// 命中的 open：该位置之后要么正好是完整的某个 open，要么是某个 open 的一个前缀\n'
+         '// （被增量边界截断——此时 open 返回空串，调用方只 hold 不消耗）。没有候选返回 -1。\n'
+         'func markupStartCandidate(s string) (int, string) {', (1, 1)),
+        ("func markupStartCandidate(s string) (int, string) {\n"
+         "\tfor i := 0; i < len(s); i++ {\n"
+         "\t\tif s[i] != '<' {\n"
+         "\t\t\tcontinue\n"
+         "\t\t}\n"
+         "\t\trest := s[i:]\n"
+         "\t\tif len(rest) >= len(markupOpen) {\n"
+         "\t\t\tif rest[:len(markupOpen)] == markupOpen {\n"
+         "\t\t\t\treturn i\n"
+         "\t\t\t}\n"
+         "\t\t\tcontinue\n"
+         "\t\t}\n"
+         "\t\tif strings.HasPrefix(markupOpen, rest) {\n"
+         "\t\t\treturn i\n"
+         "\t\t}\n"
+         "\t}\n"
+         "\treturn -1\n"
+         "}",
+         "func markupStartCandidate(s string) (int, string) {\n"
+         "\tfor i := 0; i < len(s); i++ {\n"
+         "\t\tif s[i] != '<' {\n"
+         "\t\t\tcontinue\n"
+         "\t\t}\n"
+         "\t\trest := s[i:]\n"
+         "\t\tfor _, open := range []string{markupOpen, markupOpenLoose} {\n"
+         "\t\t\tif len(rest) >= len(open) {\n"
+         "\t\t\t\tif rest[:len(open)] == open {\n"
+         "\t\t\t\t\treturn i, open\n"
+         "\t\t\t\t}\n"
+         "\t\t\t\tcontinue\n"
+         "\t\t\t}\n"
+         "\t\t\tif strings.HasPrefix(open, rest) {\n"
+         "\t\t\t\t// 截断态：rest 是 open 的前缀。两族前缀共享 `<｜DSML` 时按更长的\n"
+         "\t\t\t\t// 族等下一片——不必区分，hold 语义本来就等完整数据。\n"
+         "\t\t\t\treturn i, \"\"\n"
+         "\t\t\t}\n"
+         "\t\t}\n"
+         "\t}\n"
+         "\treturn -1, \"\"\n"
+         "}", (1, 1)),
+        ("end := strings.Index(inner[bodyStart:], markupInvokeClose)\n"
+         "\t\tif end < 0 {\n"
+         "\t\t\treturn nil, false // invoke 未闭合\n"
+         "\t\t}\n"
+         "\t\tbody := inner[bodyStart : bodyStart+end]\n"
+         "\t\tpos = bodyStart + end + len(markupInvokeClose)",
+         "// invoke 闭合形态与本块开头同族（单/双竖线），两种都找取最早，防模型混排。\n"
+         "\t\tiS := strings.Index(inner[bodyStart:], markupInvokeClose)\n"
+         "\t\tiL := strings.Index(inner[bodyStart:], markupInvokeCloseLoose)\n"
+         "\t\tend, closeLen := -1, 0\n"
+         "\t\tswitch {\n"
+         "\t\tcase iS >= 0 && (iL < 0 || iS < iL):\n"
+         "\t\t\tend, closeLen = iS, len(markupInvokeClose)\n"
+         "\t\tcase iL >= 0:\n"
+         "\t\t\tend, closeLen = iL, len(markupInvokeCloseLoose)\n"
+         "\t\tdefault:\n"
+         "\t\t\treturn nil, false // invoke 未闭合\n"
+         "\t\t}\n"
+         "\t\tbody := inner[bodyStart : bodyStart+end]\n"
+         "\t\tpos = bodyStart + end + closeLen", (1, 1)),
+        ("\t\tend := strings.Index(body[valStart:], markupParamClose)\n"
+         "\t\tif end < 0 {\n"
+         "\t\t\treturn \"\", false\n"
+         "\t\t}\n"
+         "\t\traw := body[valStart : valStart+end]\n"
+         "\t\tpos = valStart + end + len(markupParamClose)",
+         "\t\tiS := strings.Index(body[valStart:], markupParamClose)\n"
+         "\t\tiL := strings.Index(body[valStart:], markupParamCloseLoose)\n"
+         "\t\tend, closeLen := -1, 0\n"
+         "\t\tswitch {\n"
+         "\t\tcase iS >= 0 && (iL < 0 || iS < iL):\n"
+         "\t\t\tend, closeLen = iS, len(markupParamClose)\n"
+         "\t\tcase iL >= 0:\n"
+         "\t\t\tend, closeLen = iL, len(markupParamCloseLoose)\n"
+         "\t\tdefault:\n"
+         "\t\t\treturn \"\", false\n"
+         "\t\t}\n"
+         "\t\traw := body[valStart : valStart+end]\n"
+         "\t\tpos = valStart + end + closeLen", (1, 1)),
+    ),
+    # 上游源树该行未 gofmt（`="` 紧贴）；本地活树是 gofmt 后形态（`= "`）。
+    # 格式归一消掉 dry-run 的已知无害 diff（2026-11-28）。
+    "upstream/sanitize_identity_injection_test.go": (
+        ('injectedIdentityNeutral ="', 'injectedIdentityNeutral = "', (1, 1)),
+    ),
+    # afree 本地定制：余额采样失败 WARN 按账号限频（WarnThrottled 由 PRESERVE
+    # 的 upstream/proxy.go 提供，2026-11-28）。
+    "scheduler/scheduler.go": (
+        ('\t\t\tlog.Printf("WARN: balance %s: %v", logfmt.Label(uid, a.Nickname), err)',
+         '\t\t\tupstream.WarnThrottled("balance:"+uid, "balance %s: %v", logfmt.Label(uid, a.Nickname), err)', (1, 1)),
     ),
 }
 
@@ -216,6 +386,11 @@ PRESERVE_RELATIVE = (
     Path("upstream") / "proxy_test.go",
     # afree-local: per-proxy health observation hook + its regression tests.
     Path("upstream") / "observe_proxy_test.go",
+    # afree-local additions (2026-11-26/27): probe verdict regression tests and
+    # the loose-pipe DSML fixtures/tests appended to the upstream dsml_test.go —
+    # both live only in afree, re-vendor must keep the whole files.
+    Path("panel") / "probe_verdict_test.go",
+    Path("upstream") / "dsml_test.go",
     Path("server") / "afree_adapter.go",
     # afree-local regression tests for afree-local features: the admin
     # pool_enabled switch (auth.pool_enabled) and the panel models
