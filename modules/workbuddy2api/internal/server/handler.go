@@ -108,10 +108,6 @@ type Config struct {
 	// （features.busy_retry，默认开）。见 chatCompletions 的 ErrUpstreamBusy 分支。
 	BusyRetry bool
 
-	// SystemTail 把开头 system 挪到消息末尾、头部留固定桩（features.system_tail，
-	// 默认关，仅 cn 域生效）。见 prompt.SystemToTail 的实测数据与代价。
-	SystemTail bool
-
 	// BusyWaitMax 单次排队等待上限（features.busy_wait_seconds，默认 60s）。
 	// <=0 = 不等，直接把排队交给客户端按 Retry-After 退避。
 	BusyWaitMax time.Duration
@@ -1568,15 +1564,6 @@ func (h *Handler) chatCompletions(w http.ResponseWriter, r *http.Request) {
 	// 兜一次。只补首条缺失这一种情况，其余消息逐字不动。
 	body = prompt.EnsureSystemFirst(body, h.cfg.PromptText)
 
-	// system 后置（features.system_tail，仅 cn 域）：客户端每轮都改 system 时，system 留在
-	// 头部会让前缀从第 0 个 token 就分叉，长历史全量重算（issue #293 的 5%）。
-	// 位置必须在 EnsureSystemFirst 之后——那一步要求 messages[0] 是 system，挪走就没桩了。
-	// shortcut: 续写段（continueReader 用入站 r.body 重组）不走这里，会退回 system 在头部，
-	// 也就是续写那次不吃缓存；要一致就得挪到 upstream.prepareBodyOpt，等他日再改。
-	if h.cfg.SystemTail && realm == "cn" {
-		body, _ = prompt.SystemToTail(body)
-	}
-
 	// outbound model 名由 upstream.prepareBody 在同一次 JSON 解析里剥成裸名
 	// （realm 前缀是网关侧路由协议，上游不认前缀）。这里不再提前做整段
 	// parse+marshal，body 保留客户端原始模型名供日志/续写帧使用。
@@ -1726,7 +1713,13 @@ func (h *Handler) chatCompletions(w http.ResponseWriter, r *http.Request) {
 				// refresh token 失效 ≠ 账号不可用：AT 尚未过期时本请求仍会成功
 				// （issue #83 生产实测：refresh 恒 12153 的号 chat 仍 200）。
 				// 这种号不罚、也不换号——直接拿现有 AT 发这一次请求。
-				if errors.As(err, &ue) && ue.Kind == upstream.ErrSessionDead && upstream.SessionDeadButUsable(acct) {
+				// SessionDeadFails>0 例外：chat 侧已真打过 401，JWT 的 exp 不代表可用
+				// （#296 实测被提前 15 天拉黑），继续宣称「仍有效」只会让面板撒谎。
+				usable := upstream.SessionDeadButUsable(acct)
+				if st, ok := h.cfg.Pool.Status(acct.UID); ok && st.SessionDeadFails > 0 {
+					usable = false
+				}
+				if errors.As(err, &ue) && ue.Kind == upstream.ErrSessionDead && usable {
 					h.cfg.Pool.MarkRenewDead(acct.UID)
 					log.Printf("INFO: [server] 账号 %s refresh token 已失效但 access token 仍有效，用现有 token 继续",
 						logfmt.Label(acct.UID, acct.Nickname))

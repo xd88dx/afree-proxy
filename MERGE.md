@@ -136,6 +136,11 @@ WorkBuddy 一栏的基线同时登记在 `scripts/workbuddy-vendor-baseline.json
 - vendor 主线：上游 XCool-603/trae2api 仍为 `b63408d`（0.2.6，2026-11-09），无新提交，本次未涉及。
 - helper 比对线：上游 Trae2api-cn HEAD `f6eeeba`（2026-11-22，"harden Trae model tools and 1M max routing"，600+ 行 Python：live catalog descriptor 解析 context_window dev/max 两档 + 模型工具加固 + Kimi K3 系支持）。**未动 web_login.py**：`check_trae_helper.py` exit 0（内嵌脚本逐行一致）；`scripts/trae-helper-baseline.json` 登记至 f6eeeba。副线评估**零吸纳**：1M 路由依赖 Trae2api-cn 自身的 descriptor 采集架构，本仓 TraeWork（XCool Go vendor）无对应移植面（grep 无 context window/模型能力路由概念）；若真出现 1M/工具行为差异，应经 XCool 主线或本仓实测触发再议。
 
+### 2026-11-28 — 复核（两条上游均零新提交）
+
+- vendor 主线：XCool-603/trae2api 仍为 `b63408d`（0.2.6，2026-11-09），无新提交，本次未涉及。
+- Trae2api-cn：HEAD 仍 `f6eeeba`，helper 比对基线沿用 2026-11-27（上游未动 web_login.py，无需重跑）。
+
 ## WorkBuddy
 
 ### 2026-11-23 — 5b40d46 → d221c721（6 提交，0 冲突 + PRESERVE 交集 2 文件处置 + 上游 dev→main 分支迁移）
@@ -482,6 +487,14 @@ WorkBuddy 一栏的基线同时登记在 `scripts/workbuddy-vendor-baseline.json
 - **台账链**：WorkBuddy 节 2026-11-27 主节的合并器缺陷修复与本次补丁同日；生产部署待用户指示。
 - **2026-11-27 二次补（勘误）**：toolFilter 面板 UI 本体（`internal/zen/panel_tab.html` 79-97 行的 Request size filter section，ocToolFilter* 控件）当时**未删**——失误根源：在错误的空间里 grep（panel/html.go 与 freepi/panel_tab.html，而 toolFilter 是 zen 平台功能，UI 在 zen 平台的 tab 片段里），html.go 里 JS 的防御式判空（`if (_('ocToolFilterEnabled'))`）佐证了误判；同批 i18n 键删除也因脚本 assert 失败未落盘。本次删 section 整块，i18n 10 键在 UI 删除后确认零引用（data-i18n 引用为运行时查询，静态 grep 数不出——"死键"判定必须连带 tab 片段一起搜）。本机容器登录面板实测：ocToolFilter/Request size filter 0 命中、freepi 新控件在位。
 
+### 2026-11-28 — 89c3c93 → 2a72e8ac（4 提交，0 冲突）
+
+上游 misakano/main 4 提交（#296 清退复盘系列 + #298 revert），vendor 三方合并干净 64 文件 / 冲突 0：`0f6fd26`（「AT 仍有效」不再无视已确认 401，手动保活覆盖禁用号）、`232433d`（周期保活临期窗口默认 168h→720h：AT 寿命 28 天而 RT 服务端寿命实测可短于 12 天，7 天窗使新号前 21 天一次都不试 refresh，进窗时才知道早死）、`8b7921d`（revert 删 system 后置 features.system_tail——缓存收益不复现、遵从度整段降级）、`2a72e8a`（Status 透出凭证签发主机 domain：#296 cn 域 23 个 codebuddy.cn 号被清 21、同形态 workbuddy.cn 全活，出事要能按签发方分组）。
+
+本地适配：版本号 `WorkbuddyVersion` 2026.11.27→2026.11.28-misakano+afree（基线注释同步）；配置键自动继承（本地桥整包走 `wbbridge.ConfigParse`，720h 默认与 system_tail 删除无需装配），grep 确认本地面板/桥无 system_tail、168h 残留（该特性存活期本地面板从未暴露，无死控件清理项）；`Domain` 字段随 /status API 透出，本地面板 tab 本就不渲染 realm（同形态只读字段），不加列维持最小改动。丢弃项：无。PRESERVE 清单未受影响（上游 4 提交均未触及）。
+
+验证：build/vet（./... + 两 vendor 子 module）全绿；全量 `go test -count=1` 无失败；`go test -race ./internal/app/` ok（39.5s）；容器构建 `afree-proxy:test-20261128-1509` 成功并已更新本机测试容器（/health 200，19 账号 active，zen live catalog 同步正常）。
+
 ## OpenCode
 
 ### 2026-11-27 — 4f12cd2 → ecee2d04（2 提交，zen 侧：body 字节形状 + toolFilter 判死删除）
@@ -695,6 +708,11 @@ WorkBuddy 一栏的基线同时登记在 `scripts/workbuddy-vendor-baseline.json
 ## FreePI
 
 
+### 2026-11-28 — 复核（零新提交）
+
+- pingmike2/freepi-magpie-plugin HEAD 仍为 `bddad619`（0.6.28，2026-11-25），无新提交，本次未涉及；ClientVersion 面板覆盖本地特性不受影响。
+
+
 ### 2026-11-27 本地特性 — ClientVersion 面板覆盖（版本推进解耦）
 
 - **动机**：上游版本推进频繁（0.6.25→0.6.28 四天三 bump）且服务端有最低版本闸——生产容器旧镜像被 426 `upgrade_required` 全拒（当日实测），每次 bump 都要走同步/评估/部署全流程，冗余。
@@ -740,6 +758,17 @@ WorkBuddy 一栏的基线同时登记在 `scripts/workbuddy-vendor-baseline.json
 - **同日再调（用户定）**：凭据列表下方新增 FreePI 配置区——「权重优化」开关 + 自动权重优化间隔（分钟，=后台 /me 保鲜周期，热改下一周期生效，<=0 回落 30）。关闭=网关全局账号轮转策略**原路径原地生效**（加权分支前置 early-return，round_robin 游标仅为关闭路径服务，不为全局策略额外编码——用户明确要求）；开启=额度加权随机（缺省开启）。
 
 ## 副线（opencode2api / Trae2api-cn 吸收评估）+ magpie 参考线
+
+### 2026-11-28 — 副线复核（opencode2api 1 提交纯 docs 零吸纳；Trae2api-cn 零新提交；magpie 63f724e1→2c5e4e9e 约 85 提交，零吸纳+3 取证）
+
+- opencode2api：`6575c623 → 79277140`（1 提交：四语 README 移除赞助章节，纯 docs 无代码改动），零吸纳，基线推进至 `79277140`。
+- Trae2api-cn：HEAD 仍 `f6eeeba`，零新提交；helper 比对基线沿用 2026-11-27（上游未动 web_login.py，未重跑）。
+- fork cline-proxy：仍 `ecee2d04`，零新提交，本次未涉及。
+- magpie：`63f724e1 → 2c5e4e9e`（11-27/28 约 85 提交），绝大多数为 magpie 自有形态（gui / plugins discover / usage / lessons / library / cli / sessions）。平台相邻取证 3 条，均零吸纳：
+  - `921f55b1` WorkBuddy 0.2.44：WorkBuddy 自家客户端把流式 chunk 的 delta.extra_fields（reasoning_detail.content_signature/_meta）合并回传 assistant 消息，OpenCode SDK 不留未知 delta 字段致丢失——magpie 在其插件侧按会话/账号/模型留存回填。取证：WorkBuddy chat 协议存在 reasoning signature 回传期望；本仓 WorkBuddy 线是 misakano 面板实现（流装配自成一体，上游 #296 系列未提此症状），暂无移植面，留观察。
+  - `c561ad10` WorkBuddy 0.2.43：插件新增 workbuddy-tts/transcribe 模型（agenttool TTS/ASR，桌面端同路径）。本仓 vendor 线 TTSEnabled/ASREnabled 原生已覆盖 TTS/ASR，无对应缺口。
+  - `58d4f665` Cline 插件 ClinePass 窗口归帐：无模型名的 5h/Weekly/Month 窗口此前按账号全模型摊派，修复为按 `cline-pass/` 前缀归帐 + limits 读取失败不再清上次好窗口。取证：ClinePass 配额窗口模型面仅限 cline-pass/ 前缀；本仓 Cline 线配额走 429/冷却判定（2026-11-10 quota 判定收窄），无插件窗口归帐形态，不适用。
+- magpie 基线推进至 `2c5e4e9e`。
 
 ### 2026-11-27 — 副线复核（opencode2api 零新提交；Trae2api-cn f6eeeba 零吸纳；magpie f1160f6f→63f724e1 约 385 提交，零吸纳+6 取证）
 

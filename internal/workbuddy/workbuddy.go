@@ -23,8 +23,8 @@ import (
 )
 
 // 版本口径：misakano 线不跟语义化版本（CI 用日期版本注入），此处记录上游来源
-// 与同步日期；基线 misakano/main 89c3c93f（2026-11-27 同步）。
-const WorkbuddyVersion = "2026.11.27-misakano+afree"
+// 与同步日期；基线 misakano/main 2a72e8ac（2026-11-28 同步）。
+const WorkbuddyVersion = "2026.11.28-misakano+afree"
 
 // WorkbuddySubsystem 把源项目的账号池/熔断/调度/面板/兼容接口作为独立子系统
 // 挂在现有 afree-proxy 上。账号凭证与状态落在 data/workbuddy/ 下，不与 Cline
