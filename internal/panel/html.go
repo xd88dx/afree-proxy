@@ -4941,7 +4941,9 @@ function legacyCopy(t) {
   // 退回 body（key 列表等页面内复制不受影响）。
   const host = document.activeElement && document.activeElement.closest('dialog');
   (host || document.body).appendChild(ta);
-  ta.focus(); ta.select();
+  // preventScroll 必须给：textarea 落在 body 末尾（页面最底部），默认 focus 会把
+  // 视口滚到底部——请求日志点错误状态码复制后页面跳底即此因（2026-11-28 用户实测）。
+  ta.focus({ preventScroll: true }); ta.select();
   const ok = document.execCommand('copy');
   ta.remove();
   return ok;
