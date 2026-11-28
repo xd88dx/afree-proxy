@@ -48,6 +48,11 @@ var contextOverflowPatterns = []*regexp.Regexp{
 	regexp.MustCompile(`上下文.{0,8}(超限|过长|已满|超出|长度上限)`),
 	regexp.MustCompile(`(?i)exceeds? .*context limit`),
 	regexp.MustCompile(`(?i)exceeds? .*token limit`),
+	// freepi (2026-11-28 生产实测)：413 信封 code=context_too_long，文案
+	// "This conversation is too long. Run /compact ..."——此前裸透传 502，
+	// agent 客户端无法识别该压缩上下文。
+	regexp.MustCompile(`(?i)context[_ ]too[_ ]long`),
+	regexp.MustCompile(`(?i)(conversation|session) is too long`),
 }
 
 // isContextOverflow 上游错误文本是否命中上下文溢出签名。
