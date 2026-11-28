@@ -50,7 +50,7 @@ func main() {
 		json.Unmarshal([]byte(body), &d)
 		n := 0
 		for _, m := range d.Data {
-			if strings.HasPrefix(m.ID, "zen:") {
+			if strings.HasPrefix(m.ID, "opcd:") {
 				n++
 			}
 		}
@@ -69,7 +69,7 @@ func main() {
 	fmt.Println("ban zen:", post(base+"/admin/api/platforms/blacklist/ban", `{"platform":"zen"}`))
 	m1 := get(base + "/v1/models")
 	fmt.Println("models after ban total:", total(m1), "zen:", zenCount(m1))
-	fmt.Println("gate zen chat:", post(base+"/v1/chat/completions", `{"model":"zen:big-pickle","messages":[{"role":"user","content":"hi"}]}`))
+	fmt.Println("gate zen chat:", post(base+"/v1/chat/completions", `{"model":"opcd:big-pickle","messages":[{"role":"user","content":"hi"}]}`))
 	fmt.Println("gate wb chat:", post(base+"/v1/chat/completions", `{"model":"wbcn:kimi-k2","messages":[{"role":"user","content":"hi"}]}`))
 	fmt.Println("unban zen:", post(base+"/admin/api/platforms/blacklist/unban", `{"platform":"zen"}`))
 	m2 := get(base + "/v1/models")

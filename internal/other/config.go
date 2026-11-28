@@ -95,11 +95,12 @@ type Model struct {
 	ToolCall bool   `json:"toolCall,omitempty"`
 }
 
-// ReservedPrefixes 内置平台前缀（与各平台模块的 ModelPrefix 保持一致：
-// zen / wbcn / wbgb / cline-free/）。Other 子平台前缀
-// 不得与之冲突，否则请求路由会被既有平台截走。
+// ReservedPrefixes 内置平台前缀（与各平台模块的对外前缀保持一致：
+// opcd / wbcn / wbgb / cline，2026-11-28 由 zen / cline-free/ 改名）。
+// 旧形态 zen: / cline-free/ 一并保留——存量分类仍识别它们，Other 子平台
+// 前缀同样不得抢占，否则请求路由会被既有平台截走。
 // 额外保留 freepi:（2026-11-20 接入的内置 key 池平台）。
-var ReservedPrefixes = []string{"zen:", "wbcn:", "wbgb:", "cline-free/", "freepi:"}
+var ReservedPrefixes = []string{"opcd:", "zen:", "wbcn:", "wbgb:", "cline:", "cline-free/", "freepi:"}
 
 // DefaultConfig 出厂配置：无子平台、并发/重试默认值在平台 normalize 时补齐。
 func DefaultConfig() *Config {

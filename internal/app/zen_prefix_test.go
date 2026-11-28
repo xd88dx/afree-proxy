@@ -18,36 +18,39 @@ func zenPrefixFixture(t *testing.T) {
 	})
 }
 
-// zen: 前缀是附加能力：带前缀与裸 ID 都应解析到同一模型。
+// opcd: 前缀是附加能力：带前缀与裸 ID 都应解析到同一模型；旧 zen: 前缀
+// （2026-11-28 改名前）仅在内部解析仍被接受（对外请求面由目录闸硬切）。
 func TestZenPrefixResolvesSameModel(t *testing.T) {
 	zenPrefixFixture(t)
 	bare, ok := resolveZenModel("big-pickle")
 	if !ok {
 		t.Fatal("bare id must resolve (backwards compat)")
 	}
-	prefixed, ok := resolveZenModel("zen:big-pickle")
+	prefixed, ok := resolveZenModel("opcd:big-pickle")
 	if !ok {
-		t.Fatal("zen: prefix must resolve")
+		t.Fatal("opcd: prefix must resolve")
 	}
 	if bare.ID != prefixed.ID {
 		t.Fatalf("prefix and bare id must resolve to the same model: %q vs %q", bare.ID, prefixed.ID)
 	}
-	// 遗留 opencode/ 前缀同样兼容
-	legacy, ok := resolveZenModel("opencode/big-pickle")
-	if !ok {
-		t.Fatal("legacy opencode/ prefix must still resolve")
-	}
-	if legacy.ID != bare.ID {
-		t.Fatalf("legacy prefix resolved to a different model: %q", legacy.ID)
+	// 改名前旧前缀与遗留 opencode/ 前缀在内部解析同样兼容
+	for _, legacy := range []string{"zen:big-pickle", "opencode/big-pickle"} {
+		lm, ok := resolveZenModel(legacy)
+		if !ok {
+			t.Fatalf("legacy prefix %q must still resolve internally", legacy)
+		}
+		if lm.ID != bare.ID {
+			t.Fatalf("legacy prefix %q resolved to a different model: %q", legacy, lm.ID)
+		}
 	}
 }
 
-// 免费判定同样覆盖前缀形态（面板 Test 传 zen: 前缀也不能被拒）。
+// 免费判定同样覆盖前缀形态（面板 Test 传 opcd: 前缀也不能被拒）。
 func TestZenFreeModelResolutionWithPrefix(t *testing.T) {
 	// 夹具自足：本测试不依赖前序测试——单跑（或 -shuffle 后任意顺序）时
 	// 包级表由 zenPrefixFixture 提供，resolve 不受启动顺序影响。
 	zenPrefixFixture(t)
-	m, ok := resolveZenFreeModel("zen:big-pickle")
+	m, ok := resolveZenFreeModel("opcd:big-pickle")
 	if !ok || m == nil || m.ID != "big-pickle" {
 		t.Fatalf("prefixed free model must resolve to the bare ID, got %v %v", m, ok)
 	}
@@ -56,12 +59,13 @@ func TestZenFreeModelResolutionWithPrefix(t *testing.T) {
 // 路由判定：前缀形态必须同样路由到 zen，而不是掉到 cline。
 func TestRouteModelWithZenPrefix(t *testing.T) {
 	zenPrefixFixture(t)
-	if got := routeModel("zen:big-pickle"); got != "zen" {
+	if got := routeModel("opcd:big-pickle"); got != "zen" {
 		t.Fatalf("prefixed zen model routed to %q", got)
 	}
 }
 
-// /v1/models 与面板列表输出的 ID 必须带前缀；裸 ID 写请求照常可用。
+// /v1/models 与面板列表输出的 ID 必须带 opcd: 前缀（2026-11-28 由 zen:
+// 改名）；裸 ID 写请求照常可用（内部解析宽松）。
 func TestZenModelListIDsArePrefixed(t *testing.T) {
 	// 展示门控要求至少一个参与路由的 key（空池不展示）。
 	t.Setenv("DATA_DIR", testDataDir(t))
@@ -82,8 +86,8 @@ func TestZenModelListIDsArePrefixed(t *testing.T) {
 	}
 	for _, m := range list {
 		id, _ := m["id"].(string)
-		if len(id) == 0 || id[:4] != "zen:" {
-			t.Fatalf("model list id must carry the zen: prefix, got %q", id)
+		if len(id) == 0 || id[:5] != "opcd:" {
+			t.Fatalf("model list id must carry the opcd: prefix, got %q", id)
 		}
 	}
 }
@@ -91,7 +95,7 @@ func TestZenModelListIDsArePrefixed(t *testing.T) {
 // combo ID 与真实 zen 模型冲突的判定必须覆盖前缀形态。
 func TestComboIDConflictWithPrefixedZenModel(t *testing.T) {
 	zenPrefixFixture(t)
-	if err := validateCombo("zen:big-pickle", "cline", "big-pickle"); err == nil {
+	if err := validateCombo("opcd:big-pickle", "cline", "big-pickle"); err == nil {
 		t.Error("combo id must not collide with a real prefixed zen model")
 	}
 	if err := validateCombo("big-pickle-alias", "cline", "big-pickle"); err == nil {

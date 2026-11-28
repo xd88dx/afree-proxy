@@ -5194,13 +5194,13 @@ async function loadModels() {
     // 目录区已分平台迁回各自页面：同名 pill（data-models-info）每页一个，统一回填。
     document.querySelectorAll('[data-models-info]').forEach(el => { el.textContent = info; });
     const row = (inner) => '<div style="display:flex;align-items:center;gap:10px;padding:8px 12px;margin:5px 0;background:rgba(148,163,184,.06);border:1px solid var(--border);border-radius:10px;transition:.15s">' + inner + '</div>';
-    // 黑名单过滤：zen/wb 目录返回的 ID 已是对外形态（zen 由后端 zenPrefixedID
-    // 拼、wb 已带 wbcn:/wbgb: 前缀），等值命中；cline 目录仍是内部裸 ID，
-    // 而封禁/自动拉黑条目按对外形态记（cline-free/ 前缀，2026-11-15 修复），
-    // 所以裸 ID 要补前缀再查一次。曾有的 'zen:' + m.id 兜底方向写反（zen 目录
-    // 当时是裸 ID、需查 zen: 前缀），后端改返带前缀 ID 后它只会匹配 zen:zen:
-    // 双前缀脏条目，删除。
-    const notBlocked = m => m && !modelBlacklistIds.has(m.id) && !modelBlacklistIds.has('cline-free/' + m.id);
+    // 黑名单过滤：zen/wb 目录返回的 ID 已是对外形态（zen 由后端 ZenPrefixedID
+    // 拼（现 opcd:）、wb 已带 wbcn:/wbgb: 前缀），等值命中；cline 目录仍是
+    // 内部裸 ID，而封禁/自动拉黑条目按对外形态记（cline: 前缀，2026-11-28
+    // 由 cline-free/ 改名），所以裸 ID 要补前缀再查一次。曾有的 'zen:' + m.id
+    // 兜底方向写反（zen 目录当时是裸 ID、需查 zen: 前缀），后端改返带前缀 ID
+    // 后它只会匹配 zen:zen: 双前缀脏条目，删除。
+    const notBlocked = m => m && !modelBlacklistIds.has(m.id) && !modelBlacklistIds.has('cline:' + m.id);
     // 封禁按钮（手动封禁 = 加入黑名单，原因「管理员手动封禁」）。
     const banBtn = (platform, model, refresh) =>
       '<button class="btn btn-sm btn-danger" data-bl-ban="1" data-platform="' + esc(platform) + '" data-model="' + esc(model) + '"' +
@@ -5224,17 +5224,18 @@ async function loadModels() {
     const accBox = _('accModelsBody');
     if (accBox) {
       const clineV = models.filter(notBlocked);
-      // 显示与封禁传参都用对外 ID（/v1/models 同形态，cline-free/ 前缀由网关
-      // 补，与 Go displayClineModelID 同语义）。封禁必须按对外 ID 记：
-      // IsModelBlacklisted 是纯等值匹配（请求路径与 /v1/models 摘除拿到的都是
-      // 对外形态），存内部裸名则封禁完全不生效——此前注释声称「两种形态都认」
-      // 是错的（2026-11-15 实查修正）。此前面板显示内部裸名（cohere/xxx:free），
-      // 与客户端实际请求的 cline-free/cohere/xxx:free 对不上，排查封禁/调用时
-      // 容易看岔。
+      // 显示与封禁传参都用对外 ID（/v1/models 同形态，cline: 前缀由网关补，
+      // 与 Go displayClineModelID 同语义：先剥 feed 自带的 cline-free/ 再补
+      // cline:，幂等、无双前缀）。封禁必须按对外 ID 记：IsModelBlacklisted
+      // 是纯等值匹配（请求路径与 /v1/models 摘除拿到的都是对外形态），存内部
+      // 裸名则封禁完全不生效——此前注释声称「两种形态都认」是错的（2026-11-15
+      // 实查修正）。改名前（2026-11-28 前）旧条目按 cline-free/ 形态记，硬切
+      // 后成死行，面板手动清理。
       const clineDisplayID = (id) => {
         id = (id || '').trim();
-        if (!id || id.startsWith('cline-free/')) return id;
-        return 'cline-free/' + id;
+        if (id.startsWith('cline:')) id = id.slice('cline:'.length);
+        if (id.startsWith('cline-free/')) id = id.slice('cline-free/'.length);
+        return id ? 'cline:' + id : id;
       };
       accBox.innerHTML = clineV.length
         ? clineV.map(m => row(
@@ -5257,9 +5258,10 @@ async function loadModels() {
               '<span style="font-family:\'JetBrains Mono\',monospace;font-size:13px;flex:1">' + esc(m.id) + '</span>' +
               '<span class="model-tag free">' + T('no_charge') + '</span>' +
               wbContextTagHTML(m.context, T('context')) +
-              // 目录已返回带 zen: 前缀的 ID（后端 zenPrefixedID 统一，与 /v1/models
-              // 同口径）——直接按对外 ID 记封禁，别再手拼一次前缀（2026-11-15
-              // 双前缀 bug：后端改返带前缀 ID 后，这里拼出 zen:zen:... 写进黑名单）。
+              // 目录已返回带 opcd: 前缀的 ID（后端 ZenPrefixedID 统一，与
+              // /v1/models 同口径；2026-11-28 由 zen: 改名）——直接按对外 ID
+              // 记封禁，别再手拼一次前缀（2026-11-15 双前缀 bug：后端改返带
+              // 前缀 ID 后，这里拼出 zen:zen:... 写进黑名单）。
               banBtn('zen', m.id))).join('')
         : '<div class="empty">' + T(zenCredOk ? 'No models' : 'Models appear here once a credential is enabled — the catalog syncs from upstream') + '</div>';
     }
@@ -8984,8 +8986,9 @@ async function fillComboModels() {
     if (!comboModels[platform].length) {
       if (platform === 'cline') {
         const d = await api('GET', '/models');
-        // /v1/models 输出即 cline-free/ 前缀形态（apiModelList 已规范化），
-        // 原样采用，面板所见即所调。
+        // /admin/api/models 返回 feed 原样 ID（内部裸形态，cline-free/* 条目
+        // 自带前缀）——combo target 用上游真实 ID，不经对外 cline: 展示前缀，
+        // 改写后按裸名/双形态查找直连上游。
         comboModels.cline = (d.data.models || []).map(m => m.id).filter(Boolean);
       } else if (platform === 'trae') {
         const d = await api('GET', '/trae/config');

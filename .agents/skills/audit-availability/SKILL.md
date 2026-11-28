@@ -25,8 +25,22 @@ newapi 的渠道全部指向 afree 网关（`host.docker.internal:3457`），用
 
 ```python
 # 从 sqlite 读 channels.model_mapping，json 解析，汇总 values() 去重
-# 目标形态即平台前缀：cline-free/ freepi: zen: wbcn: wbgb: tacn: tagb: other-*:（freepi 2026-11-20 接入）
+# 目标形态即平台前缀：cline: freepi: opcd: wbcn: wbgb: tacn: tagb: other-*:
+#（freepi 2026-11-20 接入；2026-11-28 前缀硬切改名：cline-free/→cline:、zen:→opcd:）
 ```
+
+**前缀→渠道推导规则与例外表（2026-11-28 审计发现定稿）**：
+
+- 推导规则：目标模型 ID 的平台前缀 = 冒号左侧；**无冒号的旧形态兜底取第一个斜杠左侧**（如 `cline-free/nemotron-3.5-super-vl` → `cline-free`、`cline-free/nvidia/nemotron-3.5-lightning-free` → `cline-free`）。改名后的对外目录全部冒号形态，兜底只用于存量 mapping/日志里的旧 ID。
+- **历史例外映射表**（前缀族 → newapi 渠道名；默认规则是渠道名 `afree-<前缀>`，但存量渠道有不服从的，自动建渠道前必查此表，否则会建出重复渠道）：
+
+| 前缀族 | newapi 渠道名 | 备注 |
+| --- | --- | --- |
+| `opcd:`（旧 `zen:`） | `afree-opcd` | **已知例外**：渠道沿用引擎名 opcd，不是 afree-zen |
+| `cline:`（旧 `cline-free/`） | `afree-cline` | 以 newapi sqlite 实际为准 |
+| 其余（`wbcn:`/`wbgb:`/`tacn:`/`tagb:`/`freepi:`/`other-*:`） | `afree-<前缀去冒号>` | 默认规则，首次核对后回填此表 |
+
+- **旧→新对照（newapi `model_mapping` 批量改值用，2026-11-28 硬切后旧值 404）**：`zen:<id>` → `opcd:<id>`；`cline-free/<id>` → `cline:<id>`（id 部分去掉 `cline-free/` 前缀后原样保留，含多级斜杠如 `nvidia/nemotron-3.5-lightning-free`）。
 
 同时盘点各平台凭据启用状态（见上表）。
 

@@ -285,10 +285,15 @@ func PlatformOfModel(model string) string {
 	case strings.HasPrefix(model, workbuddy.WbRealmPrefixCN), strings.HasPrefix(model, workbuddy.WbRealmPrefixGlobal),
 		strings.HasPrefix(model, workbuddy.VendorRealmPrefixCN), strings.HasPrefix(model, workbuddy.VendorRealmPrefixGlobal):
 		return PlatWorkBuddy
-	case strings.HasPrefix(model, "zen:"):
+	case strings.HasPrefix(model, "opcd:"), strings.HasPrefix(model, "zen:"):
+		// opcd: 现行前缀（2026-11-28 由 zen: 改名）；zen: 旧形态仅用于存量
+		// 分类。裸名仍不猜。
 		return PlatZen
+	case strings.HasPrefix(model, "cline:"):
+		// cline: 新对外前缀（2026-11-28 由 cline-free/ 改名）。
+		return PlatCline
 	case strings.HasPrefix(model, "cline-free/"):
-		// cline 免费目录的对外前缀（seed/live 目录里带前缀的条目）。裸名
+		// cline 改名前的旧对外前缀（feed 数据键仍在用）。裸名
 		// （z-ai/glm-5.3-flash 等 live feed 直出的 ID）仍返回空串不猜。
 		return PlatCline
 	case trae.Trae2apiPlatformModel(model):

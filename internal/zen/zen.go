@@ -126,18 +126,27 @@ const ZenParkInitial = 30 * time.Minute
 // 30m 翻倍到 6h，一天只花 4~5 个探针，而不是每分钟一个。
 const ZenParkMaxBackoff = 6 * time.Hour
 
-// ZenModelPrefix zen 免费模型的网关前缀（与 workbuddy 的 cn:/global:、
-// other 子平台同思路）：平台越来越多，加前缀让客户端在模型列表里
-// 一眼分清归属，也避免与 Cline 免费模型表里的同名条目（如
-// cline-free/laguna 之类）静默冲突。裸模型名（无前缀）仍照旧解析——
-// 存量 IDE 配置与 combo target 不受影响。
-var ZenModelPrefix = "zen:"
+// ZenModelPrefix zen（OpenCode）免费模型的网关前缀（与 workbuddy 的
+// wbcn:/wbgb:、other 子平台同思路）：平台越来越多，加前缀让客户端在模型
+// 列表里一眼分清归属，也避免与 Cline 免费模型表里的同名条目静默冲突。
+// 2026-11-28 用户定由 "zen:" 改名 "opcd:"：与 newapi 渠道名 afree-opcd
+// 对齐（前缀即渠道后缀），与 cline-free/→cline: 同批统一为冒号风格。
+var ZenModelPrefix = "opcd:"
 
-// ZenCanonicalID 归一化模型 ID：剥掉 zen: 前缀与遗留的 opencode/ 前缀并
-// 小写化，返回目录里的真实 ID。所有解析入口（ResolveZenModel / 冲突判定 /
-// 出站改写）先过它，保证带不带前缀、大小写如何都走同一条路。
+// zenLegacyModelPrefix 改名前的对外前缀。仅作内部归一化的宽松兼容（存量
+// combo target / summaryModel 旧值得以继续解析）；对外请求面已硬切——目录
+// 只含 opcd: 形态，旧前缀请求由目录闸按未知模型 404，不做特判。
+const zenLegacyModelPrefix = "zen:"
+
+// ZenCanonicalID 归一化模型 ID：依次剥掉 opcd:（现行前缀）、zen:（改名前
+// 前缀）与遗留的 opencode/ 前缀并小写化，返回目录里的真实 ID。所有解析
+// 入口（ResolveZenModel / 冲突判定 / 出站改写）先过它，保证各种形态、
+// 大小写如何都走同一条路。
 func ZenCanonicalID(id string) string {
-	return NormalizeZenModelID(strings.TrimPrefix(strings.TrimSpace(id), ZenModelPrefix))
+	id = strings.TrimSpace(id)
+	id = strings.TrimPrefix(id, ZenModelPrefix)
+	id = strings.TrimPrefix(id, zenLegacyModelPrefix)
+	return NormalizeZenModelID(id)
 }
 
 // ZenPrefixedID 把目录 ID 加上网关前缀（/v1/models 输出用）。
@@ -162,10 +171,12 @@ func NormalizeZenModelID(id string) string {
 	return strings.TrimPrefix(strings.ToLower(strings.TrimSpace(id)), "opencode/")
 }
 
-// ResolveZenModel 解析模型名到 zen 模型。支持 "zen:" 前缀、遗留的
-// "opencode/" 前缀与裸 ID（统一走 ZenCanonicalID 规范化）。面板与 /v1/models
-// 输出 zen:<id>，存量配置用裸 id 继续可用。短别名（mimo/pickle 等）已随
-// 种子快照一并删除（2026-11-11 用户定），不再解析。
+// ResolveZenModel 解析模型名到 zen 模型。支持 "opcd:" 前缀、改名前的
+// "zen:"、遗留的 "opencode/" 与裸 ID（统一走 ZenCanonicalID 规范化）。
+// 面板与 /v1/models 输出 opcd:<id>；对外请求面由目录闸硬切（只认目录里的
+// opcd: 形态），本函数的宽松解析服务于内部路径（combo target、summaryModel
+// 等）。短别名（mimo/pickle 等）已随种子快照一并删除（2026-11-11 用户定），
+// 不再解析。
 // 410 迁移别名是最后兜底：原始 ID 不存在时返回继任模型（真实模型永远优先，
 // 继任者上线不会被弃用别名遮蔽）。
 func ResolveZenModel(id string) (*ZenModel, bool) {

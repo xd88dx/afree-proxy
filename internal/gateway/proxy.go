@@ -3065,7 +3065,8 @@ func wbEntryRate(m map[string]any) (float64, bool) {
 }
 
 // servedModelEntries 对外模型目录的单一口径：全平台聚合（cline/zen/wb/
-// trae/other/combo 别名）减去平台封禁与模型黑名单。/v1/models
+// trae/other/combo 别名）减去平台封禁与模型黑名单，每条目经
+// normalizeModelEntry 统一为基础 7 字段（2026-11-28 用户定）。/v1/models
 // 输出与请求路径的服务闸共用，保证「目录里能看到的才能请求到」严格一致。
 func servedModelEntries() []map[string]any {
 	ensureModelsFresh()
@@ -3110,13 +3111,9 @@ func servedModelEntries() []map[string]any {
 	// 否则客户端（含 new-api 渠道映射）会反复选中它、每次都吃一轮无谓失败。
 	// 面板「收费模型」区仍可见，可测试/解禁。平台封禁同理（整平台摘除，
 	// combo 别名按声明平台判），面板各平台页的模型目录仍可见。
+	nowMs := time.Now().UnixMilli()
 	kept := data[:0]
 	for _, m := range data {
-		// 统一剥离 owned_by / source：对外目录不输出这两个字段。放在循环体
-		// 最前面，确保 trae（isTrae2apiModel 提前 continue）等所有路径都
-		// 能剥到，包括 vendor 透传的 owned_by（如 trae 的 "Trae CN"）。
-		delete(m, "owned_by")
-		delete(m, "source")
 		if id, _ := m["id"].(string); id != "" {
 			if BannedPlatformOf(id) != "" {
 				continue
@@ -3124,17 +3121,89 @@ func servedModelEntries() []map[string]any {
 			// TraeWork 平台模型不走这里的通用黑名单过滤：封禁按合并域隔离
 			// （tacn/tagb，2026-11-07 起；存量内部 realm 记录经
 			// TraeModelBannedIn 兼容判定），由 trae2apiModelEntries 内部过滤。
-			if isTrae2apiModel(id) {
-				kept = append(kept, m)
-				continue
-			}
-			if IsModelBlacklisted(id) {
+			if !isTrae2apiModel(id) && IsModelBlacklisted(id) {
 				continue
 			}
 		}
-		kept = append(kept, m)
+		kept = append(kept, normalizeModelEntry(m, nowMs))
 	}
 	return kept
+}
+
+// normalizeModelEntry /v1/models 条目归一化（2026-11-28 用户定）：全平台统一
+// 基础 7 字段（id/object/created/status/cost/context/output），缺失置 nil
+// 不给假信息；数值 0 视为未知（与 vendor 侧「上游未下发 0」同语义）。
+// 平台特有富元数据（name/tags/requiresStream/realm/multiplier 等）不再出现在
+// 对外目录——管理端点（/admin/api/models、ModelEntriesDetailed）保持原样，
+// 面板消费不受影响。各段字段名映射：cline/wb 用 context_length /
+// max_output_tokens，trae 用 context_window / max_tokens，zen 原生
+// context/output。旧实现逐段 delete(owned_by/source) 的收口职责由本函数
+// 重构 map 一并承担。
+func normalizeModelEntry(m map[string]any, nowMs int64) map[string]any {
+	id, _ := m["id"].(string)
+	obj, _ := m["object"].(string)
+	if obj == "" {
+		obj = "model"
+	}
+	created := entryInt64(m["created"])
+	if created == 0 {
+		created = nowMs
+	}
+	status, _ := m["status"].(string)
+	if status == "" {
+		status = "active"
+	}
+	return map[string]any{
+		"id":      id,
+		"object":  obj,
+		"created": created,
+		"status":  status,
+		"cost":    entryString(m["cost"]),
+		"context": entryPositiveNumber(m, "context", "context_length", "context_window"),
+		"output":  entryPositiveNumber(m, "output", "max_output_tokens", "max_tokens"),
+	}
+}
+
+// entryInt64 / entryString / entryPositiveNumber：归一化的容错取值助手。
+// vendor/本仓各段对同名键的类型不一（int / int64 / float64 / string），统一
+// 在这里折算；缺失/空串/非正数一律回落零值语义（nil / 0）。
+func entryInt64(v any) int64 {
+	switch x := v.(type) {
+	case int64:
+		return x
+	case int:
+		return int64(x)
+	case float64:
+		return int64(x)
+	}
+	return 0
+}
+
+func entryString(v any) any {
+	if s, ok := v.(string); ok && s != "" {
+		return s
+	}
+	return nil
+}
+
+func entryPositiveNumber(m map[string]any, keys ...string) any {
+	for _, k := range keys {
+		switch x := m[k].(type) {
+		case int:
+			if x > 0 {
+				return x
+			}
+		case int64:
+			if x > 0 {
+				return x
+			}
+		case float64:
+			if x > 0 {
+				return x
+			}
+		}
+	}
+	return nil
 }
 
 // gateRefreshMinInterval / gateRefreshLast 见 cline.StrictModelGate（models.go）：

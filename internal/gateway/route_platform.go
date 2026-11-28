@@ -23,12 +23,18 @@ func RoutePlatformKeyOf(model string) string {
 	case strings.HasPrefix(model, workbuddy.WbRealmPrefixCN), strings.HasPrefix(model, workbuddy.WbRealmPrefixGlobal),
 		strings.HasPrefix(model, workbuddy.VendorRealmPrefixCN), strings.HasPrefix(model, workbuddy.VendorRealmPrefixGlobal):
 		return blacklist.PlatWorkBuddy
-	case strings.HasPrefix(model, "zen:"):
+	case strings.HasPrefix(model, "opcd:"), strings.HasPrefix(model, "zen:"):
+		// opcd: 现行前缀（2026-11-28 由 zen: 改名）；zen: 旧形态仅用于存量
+		// 数据/日志分类，对外请求面由目录闸硬切。
 		return blacklist.PlatZen
 	case trae.Trae2apiPlatformModel(model):
 		return blacklist.PlatTrae
 	case strings.HasPrefix(model, "freepi:"):
 		return blacklist.PlatFreepi
+	case strings.HasPrefix(model, "cline:"):
+		// cline: 新对外前缀（2026-11-28 由 cline-free/ 改名）。cline-free/
+		// 旧形态与裸名一样落冒号分支之外的兜底（无冒号 → Cline）。
+		return blacklist.PlatCline
 	}
 	if i := strings.IndexByte(model, ':'); i > 0 {
 		if p := other.PlatformByPrefix(model[:i]); p != nil {

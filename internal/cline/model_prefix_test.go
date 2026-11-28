@@ -1,6 +1,7 @@
 package cline
 
 import (
+	"strings"
 	"testing"
 
 	"time"
@@ -68,17 +69,22 @@ func injectClineModels(t *testing.T, ids ...string) {
 
 }
 
-// Cline 模型 ID 规范化：feed 自带 cline-free/ 前缀的原样，其余补前缀。
+// Cline 模型 ID 规范化（2026-11-28 前缀改名）：feed 自带 cline-free/ 前缀的
+// 剥掉后统一补 cline:，其余直接补；已带 cline: 的幂等，杜绝双前缀拼接。
 
 func TestDisplayClineModelID(t *testing.T) {
 
 	cases := []struct{ in, want string }{
 
-		{"cline-free/deepseek-v4.1-flash", "cline-free/deepseek-v4.1-flash"},
+		{"cline-free/deepseek-v4.1-flash", "cline:deepseek-v4.1-flash"},
 
-		{"poolside/laguna-s-2.1:free", "cline-free/poolside/laguna-s-2.1:free"},
+		{"poolside/laguna-s-2.1:free", "cline:poolside/laguna-s-2.1:free"},
 
-		{"z-ai/glm-5.3-flash", "cline-free/z-ai/glm-5.3-flash"},
+		{"z-ai/glm-5.3-flash", "cline:z-ai/glm-5.3-flash"},
+
+		{"cline:z-ai/glm-5.3-flash", "cline:z-ai/glm-5.3-flash"},
+
+		{"cline:cline-free/deepseek-v4.1-flash", "cline:deepseek-v4.1-flash"},
 
 		{"", ""},
 	}
@@ -95,11 +101,11 @@ func TestDisplayClineModelID(t *testing.T) {
 
 }
 
-// 两种展示形态都应还原到 feed 真实 ID。
+// 各形态都应还原到 feed 真实 ID（cline: 新前缀 / cline-free/ feed 键 / 裸名）。
 
 func TestCanonicalClineModelID(t *testing.T) {
 
-	for _, in := range []string{"poolside/laguna-s-2.1:free", "cline-free/poolside/laguna-s-2.1:free"} {
+	for _, in := range []string{"poolside/laguna-s-2.1:free", "cline-free/poolside/laguna-s-2.1:free", "cline:poolside/laguna-s-2.1:free", "cline:cline-free/poolside/laguna-s-2.1:free"} {
 
 		if got := canonicalClineModelID(in); got != "poolside/laguna-s-2.1:free" {
 
@@ -130,6 +136,18 @@ func TestModelInClineListAcceptsBothForms(t *testing.T) {
 	if !ModelInClineList("cline-free/z-ai/glm-5.3-flash") {
 
 		t.Error("prefixed id must resolve back to the feed id")
+
+	}
+
+	if !ModelInClineList("cline:z-ai/glm-5.3-flash") {
+
+		t.Error("cline:-prefixed external id must resolve to the feed id")
+
+	}
+
+	if !ModelInClineList("cline:cline-free/z-ai/glm-5.3-flash") {
+
+		t.Error("double-prefixed id must normalize to the feed id")
 
 	}
 
@@ -177,6 +195,12 @@ func TestNormalizeRequestModelResolvesFeedID(t *testing.T) {
 
 	}
 
+	if got := NormalizeRequestModel("cline:z-ai/glm-5.3-flash"); got != "z-ai/glm-5.3-flash" {
+
+		t.Errorf("NormalizeRequestModel(cline:) = %q, want the feed id", got)
+
+	}
+
 	if got := NormalizeRequestModel("z-ai/glm-5.3-flash"); got != "z-ai/glm-5.3-flash" {
 
 		t.Errorf("NormalizeRequestModel(bare) = %q", got)
@@ -197,7 +221,8 @@ func TestNormalizeRequestModelResolvesFeedID(t *testing.T) {
 
 }
 
-// /v1/models 输出的 Cline 条目必须都带 cline-free/ 前缀。
+// /v1/models 输出的 Cline 条目必须都带 cline: 前缀（2026-11-28 由
+// cline-free/ 改名）。
 
 func TestAPIModelListClineIDsArePrefixed(t *testing.T) {
 
@@ -237,9 +262,15 @@ func TestAPIModelListClineIDsArePrefixed(t *testing.T) {
 
 		id, _ := m["id"].(string)
 
-		if len(id) < 11 || id[:11] != "cline-free/" {
+		if len(id) < 6 || id[:6] != "cline:" {
 
-			t.Errorf("cline model id %q must carry the cline-free/ prefix", id)
+			t.Errorf("cline model id %q must carry the cline: prefix", id)
+
+		}
+
+		if strings.Contains(id, "cline:cline-free/") {
+
+			t.Errorf("cline model id %q must not double the prefix", id)
 
 		}
 

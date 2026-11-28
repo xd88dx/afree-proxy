@@ -77,12 +77,12 @@ def probe(model):
 TOKEN=$(curl -s -X POST http://127.0.0.1:3457/admin/api/login -H 'Content-Type: application/json' \
   -d '{"password":"pass1234"}' | python -c "import json,sys; print(json.load(sys.stdin)['data']['token'])")
 curl -s http://127.0.0.1:3457/admin/api/models/blacklist -H "Authorization: Bearer $TOKEN"
-curl -s http://127.0.0.1:3457/admin/api/models -H "Authorization: Bearer $TOKEN"   # cline 目录（id 已带 cline-free/ 前缀）
+curl -s http://127.0.0.1:3457/admin/api/models -H "Authorization: Bearer $TOKEN"   # cline 目录（feed 原样 ID：cline-free/* 自带、其余裸名；对外 cline: 前缀只在 /v1/models）
 # 手动封禁/解禁/批量封禁：POST /admin/api/models/blacklist/{ban,unblock,batch-ban}
 ```
 
 - login 的 token 在 **`data.token`**，取顶层 `token` 会拿到空。
-- `/admin/api/models` 返回的 cline 条目 id **已带 `cline-free/` 前缀**（admin_html.go 里"目录返回裸 ID"的旧注释已过时）。
+- `/admin/api/models` 返回的 cline 条目 id 为 **feed 原样形态**（cline-free/* 条目自带前缀、其余裸名）；对外展示前缀 `cline:`（2026-11-28 由 cline-free/ 改名）只在 `/v1/models`。封禁/测试传参按所用端点的 ID 形态来。
 - 面板模型目录区每行的红色「封禁」是 **Ban 操作按钮**不是状态徽章；真实封禁看「封禁模型」表或 blacklist API。
 
 ## 7. 测试时间炸弹（上游测试常见）

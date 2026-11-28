@@ -65,8 +65,10 @@ func TestPlatformOfModel(t *testing.T) {
 		"wbgb:gpt-6-luna":                       platWorkBuddy,
 		"wbcn:step-5":                           platWorkBuddy,
 		"global:default-model":                  platWorkBuddy,
-		"zen:glm-5.3-flash-free":                platZen,
-		"cline-free/muse-spark-1.3-contributor": platCline,
+		"opcd:glm-5.3-flash-free":               platZen,
+		"zen:glm-5.3-flash-free":                platZen, // 旧前缀仅存量分类
+		"cline:muse-spark-1.3-contributor":      platCline,
+		"cline-free/muse-spark-1.3-contributor": platCline, // 旧前缀仅存量分类
 		"tacn:glm-5.2":                          platTrae,
 		"tagb:glm-5.2":                          platTrae,
 		"trae:glm-5.2":                          "", // 旧四前缀已废除（2026-11-07 tacn/tagb 合并域）
@@ -143,10 +145,10 @@ func TestBanModelManually(t *testing.T) {
 	t.Setenv("DATA_DIR", testDataDir(t))
 	resetModelBlacklistForTest(t)
 
-	if !BanModel(platZen, "zen:big-pickle") {
+	if !BanModel(platZen, "opcd:big-pickle") {
 		t.Fatal("first manual ban should report a new entry")
 	}
-	if !IsModelBlacklisted("zen:big-pickle") {
+	if !IsModelBlacklisted("opcd:big-pickle") {
 		t.Fatal("manually banned model should be blacklisted")
 	}
 	rows := modelBlacklistSnapshot()
@@ -165,7 +167,7 @@ func TestBanModelManually(t *testing.T) {
 	if got := byModel["wbgb:gpt-6-luna"]["reason"]; got != BanReasonManual {
 		t.Fatalf("reason after manual ban = %v, want %q", got, BanReasonManual)
 	}
-	if BanModel(platZen, "zen:big-pickle") {
+	if BanModel(platZen, "opcd:big-pickle") {
 		t.Fatal("re-ban of existing entry must report not-new")
 	}
 }
@@ -203,11 +205,11 @@ func TestWithModelBlacklistScan(t *testing.T) {
 		_, _ = w.Write([]byte(errBody))
 	})
 	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions",
-		strings.NewReader(`{"model":"zen:mimo-v2.5-free","messages":[]}`))
+		strings.NewReader(`{"model":"opcd:mimo-v2.5-free","messages":[]}`))
 	rec := httptest.NewRecorder()
 	h(rec, req)
 
-	if !IsModelBlacklisted("zen:mimo-v2.5-free") {
+	if !IsModelBlacklisted("opcd:mimo-v2.5-free") {
 		t.Fatal("permission error must auto-blacklist the model")
 	}
 	// 客户端拿到的响应体必须原样透传（包装层只 tee，不改写）。
@@ -233,8 +235,8 @@ func TestWithModelBlacklistScan(t *testing.T) {
 	})
 	rec2 := httptest.NewRecorder()
 	hOk(rec2, httptest.NewRequest(http.MethodPost, "/v1/chat/completions",
-		strings.NewReader(`{"model":"zen:big-pickle","messages":[]}`)))
-	if IsModelBlacklisted("zen:big-pickle") {
+		strings.NewReader(`{"model":"opcd:big-pickle","messages":[]}`)))
+	if IsModelBlacklisted("opcd:big-pickle") {
 		t.Fatal("successful response must not blacklist")
 	}
 }
@@ -273,6 +275,7 @@ func TestClineModelNotFoundAutoBan(t *testing.T) {
 		poolMu.Unlock()
 	})
 	// 请求路径有服务闸（目录外一律拒）：注入被测模型让请求穿过闸。
+	// 请求用对外 cline: 形态（2026-11-28 改名后目录只含该形态）。
 	injectClineModels(t, "cline-free/muse-spark-1.3-contributor")
 
 	// 网关信封形态（proxy.go 对 cline 上游错误统一 500 + api_error，
@@ -283,11 +286,11 @@ func TestClineModelNotFoundAutoBan(t *testing.T) {
 		_, _ = w.Write([]byte(errBody))
 	})
 	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions",
-		strings.NewReader(`{"model":"cline-free/muse-spark-1.3-contributor","messages":[]}`))
+		strings.NewReader(`{"model":"cline:muse-spark-1.3-contributor","messages":[]}`))
 	rec := httptest.NewRecorder()
 	h(rec, req)
 
-	if !IsModelBlacklisted("cline-free/muse-spark-1.3-contributor") {
+	if !IsModelBlacklisted("cline:muse-spark-1.3-contributor") {
 		t.Fatal("cline 404 model not found must auto-blacklist the model")
 	}
 	rows := modelBlacklistSnapshot()
@@ -305,13 +308,14 @@ func TestClineModelNotFoundAutoBan(t *testing.T) {
 
 	// 同平台非"模型不存在"的错误（网络/过载信封）不拉黑。
 	resetModelBlacklistForTest(t)
+	injectClineModels(t, "cline-free/deepseek-v4.1-flash")
 	hNet := withModelBlacklistScan(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 		_, _ = w.Write([]byte(`{"error":{"message":"API 500: upstream overloaded","type":"api_error"}}`))
 	})
 	hNet(httptest.NewRecorder(), httptest.NewRequest(http.MethodPost, "/v1/chat/completions",
-		strings.NewReader(`{"model":"cline-free/deepseek-v4.1-flash","messages":[]}`)))
-	if IsModelBlacklisted("cline-free/deepseek-v4.1-flash") {
+		strings.NewReader(`{"model":"cline:deepseek-v4.1-flash","messages":[]}`)))
+	if IsModelBlacklisted("cline:deepseek-v4.1-flash") {
 		t.Fatal("non model-not-found cline errors must not blacklist")
 	}
 }
@@ -329,22 +333,25 @@ func TestServedModelGate(t *testing.T) {
 	injectClineModels(t, "z-ai/glm-5.3-flash")
 
 	// 目录内模型放行（对外 ID 天然带前缀，精确匹配；空 model 放行归入口校验）。
-	for _, m := range []string{"cline-free/z-ai/glm-5.3-flash", ""} {
+	for _, m := range []string{"cline:z-ai/glm-5.3-flash", ""} {
 		if status, _ := servedModelGate(m); status != 0 {
 			t.Errorf("servedModelGate(%q) = %d, want pass", m, status)
 		}
 	}
-	// 裸名（models api 输出里没有的拼写形态）同样拒：目录里能看到的才能请求到。
-	if status, _ := servedModelGate("z-ai/glm-5.3-flash"); status != http.StatusNotFound {
-		t.Errorf("servedModelGate(bare form) = %d, want 404", status)
+	// 裸名与改名前旧前缀（models api 输出里没有的拼写形态）同样拒：
+	// 目录里能看到的才能请求到（2026-11-28 硬切，旧前缀无特判）。
+	for _, m := range []string{"z-ai/glm-5.3-flash", "cline-free/z-ai/glm-5.3-flash"} {
+		if status, _ := servedModelGate(m); status != http.StatusNotFound {
+			t.Errorf("servedModelGate(%q) = %d, want 404", m, status)
+		}
 	}
 	// 目录外模型拒。
 	if status, msg := servedModelGate("no/such-model"); status != http.StatusNotFound || msg == "" {
 		t.Errorf("servedModelGate(unknown) = %d, want 404", status)
 	}
 	// 已拉黑模型拒（无论是否在目录）。
-	BlacklistModel(platCline, "cline-free/z-ai/glm-5.3-flash", "", BanReasonAuto, "")
-	if status, msg := servedModelGate("cline-free/z-ai/glm-5.3-flash"); status != http.StatusNotFound || !strings.Contains(msg, "banned") {
+	BlacklistModel(platCline, "cline:z-ai/glm-5.3-flash", "", BanReasonAuto, "")
+	if status, msg := servedModelGate("cline:z-ai/glm-5.3-flash"); status != http.StatusNotFound || !strings.Contains(msg, "banned") {
 		t.Errorf("servedModelGate(banned) = %d msg=%q, want 404 banned", status, msg)
 	}
 }
@@ -354,10 +361,10 @@ func TestClineAutoBanPaidUsage(t *testing.T) {
 	t.Setenv("DATA_DIR", testDataDir(t))
 	resetModelBlacklistForTest(t)
 
-	// cost>0：拉黑，对外 ID 归一（裸名补前缀）。
+	// cost>0：拉黑，对外 ID 归一（剥 feed 前缀后补 cline:）。
 	clineAutoBanPaidUsage(map[string]any{"model": "z-ai/glm-5.3-flash"},
 		map[string]any{"cost": 0.0000071, "prompt_tokens": float64(10)})
-	if !IsModelBlacklisted("cline-free/z-ai/glm-5.3-flash") {
+	if !IsModelBlacklisted("cline:z-ai/glm-5.3-flash") {
 		t.Fatal("cost>0 must blacklist the model with normalized external id")
 	}
 	rows := modelBlacklistSnapshot()
@@ -388,10 +395,10 @@ func TestBatchBanPlatformModels(t *testing.T) {
 
 	// 大小写不敏感：小写关键字命中大写 ID。
 	matched, banned := batchBanPlatformModels(platCline, "doubao")
-	if matched != 1 || len(banned) != 1 || banned[0] != "cline-free/DOUBAO-Seed-2.1-Pro" {
+	if matched != 1 || len(banned) != 1 || banned[0] != "cline:DOUBAO-Seed-2.1-Pro" {
 		t.Fatalf("matched=%d banned=%v, want 1 hit", matched, banned)
 	}
-	if !IsModelBlacklisted("cline-free/DOUBAO-Seed-2.1-Pro") {
+	if !IsModelBlacklisted("cline:DOUBAO-Seed-2.1-Pro") {
 		t.Fatal("matched model must be blacklisted")
 	}
 	rows := modelBlacklistSnapshot()

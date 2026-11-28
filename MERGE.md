@@ -31,6 +31,16 @@ WorkBuddy 一栏的基线同时登记在 `scripts/workbuddy-vendor-baseline.json
 
 - 合并冲突涉及：.gitignore README.md internal/app/{admin,admin_html,cline_stream,config,logs,models,pool,proxy,zen,zen_deprecated}.go internal/app/{zen_fanout,zen_key,zen_park}_test.go（2026-11-27 勘误：原为误粘贴的 `# Conflicts:` 行，会渲染成一级标题，改为列表；所列路径随配置重组多已不存在，仅存档）
 
+### 2026-11-28 本地特性 — Cline 对外前缀 `cline-free/` → `cline:`（与 OpenCode 节 opcd: 改名同批）
+
+- 动机（用户定）：六平台对外模型 ID 仅 Cline 用斜杠风格，与其余冒号风格不一致；且前缀名与 newapi 渠道名（afree-cline）不对应。审计发现两个无冒号 ID（`cline-free/nemotron-3.5-super-vl`、`cline-free/nvidia/nemotron-3.5-lightning-free`）无法按冒号推导归属。
+- **硬切（用户定，无特判）**：`clineDisplayPrefix = "cline:"`；`displayClineModelID` 改为「先剥 feed 自带 `cline-free/` 再补 `cline:`」，幂等杜绝 `cline:cline-free/` 双前缀拼接；`canonicalClineModelID` 依次剥 `cline:` → `cline-free/`（`clineModelPrefix` 保留为 feed 数据键，缓存双形态查找不变）。对外目录只含新形态，旧前缀/裸名请求按目录闸精确匹配 404，无兼容特判；**不迁移存量**（黑名单旧键成死行，cline 计费哨兵/自动拉黑再触发时按新形态重记，面板手动清）。
+- **/v1/models 字段规范化**（用户定「字段没有的就空着」）：`servedModelEntries` 收口 `normalizeModelEntry`——全平台统一基础 7 字段 id/object/created/status/cost/context/output，缺失置 null；cline `context_length→context`、`max_output_tokens→output`，trae `context_window/max_tokens`，wb `context_length/max_output_tokens`；平台富元数据（name/tags/requiresStream/realm/multiplier 等）不再外透，管理端点不变。
+- 分类面：`RoutePlatformKeyOf`/`PlatformOfModel` 加 `cline:`→Cline（必须在冒号兜底分支前，否则判成 other/未知），旧 `cline-free/` 识别保留仅用于存量分类；`ReservedPrefixes` 新旧都留。toolRename 保留字（gwconfig）是工具假名命名空间，与模型前缀无关，未动。
+- 面板 JS `clineDisplayID`/`notBlocked` 镜像同语义（html.go）；combo 下拉 cline 目标仍取 /admin/api/models 的 feed 原样 ID（不经展示前缀）。
+- 文档：README（路由表/前缀表/示例/硬切说明）、add-platform backend.md 分发链、audit-availability SKILL.md（前缀推导兜底规则「无冒号取第一个斜杠左侧」+ 历史例外映射表 + newapi mapping 旧→新对照）。
+- 验证：build/vet/test（三 module）+ race 全绿；本机容器实测：/v1/models 41 条零旧前缀零无冒号、7 字段齐全、两审计问题 ID 呈现 `cline:nemotron-3.5-super-vl`/`cline:nvidia/nemotron-3.5-lightning-free`；`cline:nemotron-3.5-super-vl` 真实请求 200（上游解析到 private/nvidia-nemotron-3.5-super-vl-120b-a12b）；旧前缀/裸名/双前缀请求 404。
+
 ## TraeWork
 
 ### 2026-11-23 — 复核（XCool 零新提交；Trae2api-cn 副线 1 新提交零吸纳）
@@ -496,6 +506,13 @@ WorkBuddy 一栏的基线同时登记在 `scripts/workbuddy-vendor-baseline.json
 验证：build/vet（./... + 两 vendor 子 module）全绿；全量 `go test -count=1` 无失败；`go test -race ./internal/app/` ok（39.5s）；容器构建 `afree-proxy:test-20261128-1509` 成功并已更新本机测试容器（/health 200，19 账号 active，zen live catalog 同步正常）。
 
 ## OpenCode
+
+### 2026-11-28 本地特性 — zen 对外前缀 `zen:` → `opcd:`（与 Cline 节 cline: 改名同批）
+
+- 动机（用户定）：前缀名对齐 newapi 渠道名 `afree-opcd`（前缀即渠道后缀），与 cline-free/→cline: 同批统一冒号风格。改名细节、硬切口径、字段规范化全量见 Cline 节 2026-11-28 条目（同一批改动，此处只记 zen 侧差异）。
+- zen 侧改动：`ZenModelPrefix = "opcd:"`；`ZenCanonicalID` 依次剥 `opcd:` → 旧 `zen:` → `opencode/` 再小写（内部归一化宽松——存量 combo target 与 compaction.summaryModel 旧值继续解析，非对外兼容承诺）；`ZenPrefixedID`/目录/面板自动跟随常量。
+- 分类：`RoutePlatformKeyOf`/`PlatformOfModel` 加 `opcd:`→PlatZen（旧 `zen:` 识别保留仅存量分类）；`egressNSZen="zen:"` 是出口钉定命名空间（独立语义），未动。
+- 验证（与本批共用）：/v1/models zen 段 11 条全 `opcd:` 形态；`opcd:big-pickle` 真实请求 200 走 zen；`zen:big-pickle` 请求 404。
 
 ### 2026-11-27 — 4f12cd2 → ecee2d04（2 提交，zen 侧：body 字节形状 + toolFilter 判死删除）
 

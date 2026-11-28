@@ -188,7 +188,7 @@ def write_report(outdir, prefix, gw, results, models):
 
 def main():
     ap = argparse.ArgumentParser(description="平台可用性自动检测")
-    ap.add_argument("-P", dest="prefix", help="平台前缀，例如 crow: / tacn: / zen:")
+    ap.add_argument("-P", dest="prefix", help="平台前缀，例如 crow: / tacn: / opcd:")
     ap.add_argument("--gateway", default="http://127.0.0.1:3457")
     ap.add_argument("--api-key", default="8008208820")
     ap.add_argument("--timeout", type=int, default=150)

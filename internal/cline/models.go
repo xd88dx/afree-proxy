@@ -715,26 +715,35 @@ func FeedFreeModels(models []*ModelInfo) []*ModelInfo {
 	return out
 }
 
-// clineModelPrefix Cline 免费模型的命名空间前缀（官方 feed 里 cline-free/*
-// 自带、poolside/*、z-ai/* 等不带）。网关对外统一用这个前缀标识 Cline 平台，
-// 与 zen: / wbcn: / wbgb: 保持同一套"前缀即平台"的约定。
+// clineModelPrefix Cline 官方 feed 的免费命名空间前缀（cline-free/* 条目
+// 自带、poolside/*、z-ai/* 等不带）。它是上游数据键：缓存键与内部解析仍按
+// 它走，但不再对外展示。
 const clineModelPrefix = "cline-free/"
 
-// displayClineModelID 对外展示/调用的 Cline 模型 ID：已带 cline-free/ 前缀的
-// 原样返回（官方 feed 的 cline-free/* 条目），其余（poolside/*、z-ai/* …）
-// 补上前缀，避免与 zen: 前缀平台的裸名混淆。
+// clineDisplayPrefix 网关对外统一展示/调用的平台前缀（2026-11-28 用户定，
+// 与 zen:→opcd: 同批统一为冒号风格「前缀即平台」；对应 newapi 渠道
+// afree-cline）。旧 cline-free/ 对外形态随目录闸硬切淘汰。
+const clineDisplayPrefix = "cline:"
+
+// displayClineModelID 对外展示/调用的 Cline 模型 ID：剥掉 feed 自带的
+// cline-free/ 前缀（平台标识，不属于模型名）后统一补 cline: 前缀，避免与
+// 其他平台裸名混淆。幂等（已带 cline: 的原样还原再补），杜绝
+// cline:cline-free/ 这类双前缀拼接。
 func displayClineModelID(id string) string {
-	id = strings.TrimSpace(id)
-	if id == "" || strings.HasPrefix(id, clineModelPrefix) {
-		return id
+	c := canonicalClineModelID(id)
+	if c == "" {
+		return ""
 	}
-	return clineModelPrefix + id
+	return clineDisplayPrefix + c
 }
 
-// canonicalClineModelID 请求侧归一化：剥掉 cline-free/ 前缀还原 feed 真实 ID。
-// 两种形态（带/不带前缀）都接受，解析到同一条目。
+// canonicalClineModelID 请求侧归一化：依次剥掉 cline:（对外新前缀）与
+// cline-free/（feed 自带前缀）还原 feed 真实 ID。三种形态（cline: 前缀 /
+// cline-free/ 旧形态 / 裸名）都接受，解析到同一条目；内部解析保持宽松，
+// 对外硬切由目录闸（modelIsServed 精确匹配）执行。
 func canonicalClineModelID(id string) string {
-	return strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(id), clineModelPrefix))
+	id = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(id), clineDisplayPrefix))
+	return strings.TrimSpace(strings.TrimPrefix(id, clineModelPrefix))
 }
 
 // clineListLookupLocked 把请求侧 ID 解析到 feed 真实缓存键。缓存键就是 feed
