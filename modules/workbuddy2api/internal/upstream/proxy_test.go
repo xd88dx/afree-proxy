@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/url"
 	"testing"
+	"time"
 
 	"github.com/misakano7545/workbuddy2api-panel/internal/auth"
 )
@@ -72,5 +73,29 @@ func TestAccountCallPathsUseBoundExit(t *testing.T) {
 	}
 	if _, _, _, err := c.ChatStream(a, []byte(`{"model":"glm-5.2","messages":[],"stream":true}`), "", ChatMeta{}); !errors.Is(err, errNoUsableProxy) {
 		t.Fatalf("ChatStream bypassed the bound exit: %v", err)
+	}
+}
+
+// afree 本地定制回归锁：失败类 WARN 的 60s 限频语义——首报必落、窗口内吞、
+// 窗口外再落、不同键互不影响。
+func TestWarnThrottledWindow(t *testing.T) {
+	key := "test:uid-x"
+	warnThrottleMu.Lock()
+	delete(warnThrottleLast, key)
+	warnThrottleMu.Unlock()
+
+	base := time.Now()
+	if !warnShouldLog(key, base) {
+		t.Fatal("first occurrence must be logged")
+	}
+	if warnShouldLog(key, base.Add(30*time.Second)) {
+		t.Fatal("second occurrence inside the window must be swallowed")
+	}
+	if !warnShouldLog(key, base.Add(90*time.Second)) {
+		t.Fatal("occurrence past the window must be logged again")
+	}
+	other := "test:uid-y"
+	if !warnShouldLog(other, base) {
+		t.Fatal("a different key must not share the window")
 	}
 }

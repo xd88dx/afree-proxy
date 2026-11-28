@@ -3216,7 +3216,7 @@ func (c *Client) UserResourceSnapshot(a *auth.Auth, soon time.Duration) (remain,
 		if gerr == nil {
 			return rm, tt, ex, ea, er, bk, nil
 		}
-		log.Printf("WARN: billing %s: global summary 失败，回落个人资源包路径: %v",
+		WarnThrottled("billingsum:"+a.UID, "billing %s: global summary 失败，回落个人资源包路径: %v",
 			logfmt.Label(a.UID, a.Nickname), gerr)
 	}
 	now := time.Now()

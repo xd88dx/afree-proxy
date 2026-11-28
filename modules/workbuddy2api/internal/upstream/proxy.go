@@ -4,9 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/misakano7545/workbuddy2api-panel/internal/auth"
@@ -17,6 +19,38 @@ import (
 type ProxyFunc func(a *auth.Auth) (proxyURL string, ok bool)
 
 var errNoUsableProxy = errors.New("workbuddy upstream: no usable egress proxy for account")
+
+// afree 本地定制（PRESERVE，re-vendor 保留）：失败类 WARN 按键限频。
+// 出口死/上游抖动这类持续性失败的定时任务（余额采样、billing 回落）每轮
+// 都落一条 WARN，单账号每小时可刷 60+ 条淹掉真故障——同键 60s 至多落一条，
+// 首次失败立即落不吞首报。与 server/noselect.go 的 60s 限流同构。
+var (
+	warnThrottleMu   sync.Mutex
+	warnThrottleLast = map[string]time.Time{}
+)
+
+const warnThrottleInterval = time.Minute
+
+// WarnThrottled 按 key 限频落 WARN 日志（60s）。key 用「来源:账号」形态，
+// 单账号连败降噪、不同账号互不影响。
+func WarnThrottled(key, format string, args ...any) {
+	if !warnShouldLog(key, time.Now()) {
+		return
+	}
+	log.Printf("WARN: "+format, args...)
+}
+
+// warnShouldLog 限频窗口判定：同键窗口内第二次起返回 false。拆纯函数供测试
+// 锁语义（首报必落、窗口内吞、窗口外再落）。
+func warnShouldLog(key string, now time.Time) bool {
+	warnThrottleMu.Lock()
+	defer warnThrottleMu.Unlock()
+	if last, ok := warnThrottleLast[key]; ok && now.Sub(last) < warnThrottleInterval {
+		return false
+	}
+	warnThrottleLast[key] = now
+	return true
+}
 
 // baseTransport 返回可克隆的共享 Transport。测试注入自定义 RoundTripper 时
 // 返回 nil，此时只有直连可用，显式代理会失败。

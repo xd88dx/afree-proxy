@@ -945,7 +945,7 @@ func (s *Scheduler) RunBalanceRefreshNow() {
 			}
 			remain, total, expiring, earliestAt, earliestRemaining, buckets, err := s.cfg.Upstream.UserResourceSnapshot(a, expiringSoon)
 			if err != nil {
-				log.Printf("WARN: balance %s: %v", logfmt.Label(uid, a.Nickname), err)
+				upstream.WarnThrottled("balance:"+uid, "balance %s: %v", logfmt.Label(uid, a.Nickname), err)
 				s.noteBalanceAuthFailure(a, uid, err)
 				return
 			}
