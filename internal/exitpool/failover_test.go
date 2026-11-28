@@ -662,3 +662,22 @@ func TestProbeExitAliveRespectsHook(t *testing.T) {
 		t.Fatalf("probeExitAlive must delegate to probeHook, got %v", err)
 	}
 }
+
+// TestWitnessExistsVerifyBodySplit witnessExists 的验体开关接线：true 走
+// probeExitAlive（拦截页感知）、false 走 probeURL（收到响应即成立）——① 分支
+// 对 HTML 测速目标必须传 false，否则健康出口的正常 HTML 响应被判拦截页、
+// 旁证恒失败，出口死永不改绑（2026-11-28 生产实测死锁）。hook 层两函数共用
+// 同一注入点，这里用 failHook 区分目标锁接线；两调用点（① false / ② true）
+// 由 runFailover 内联保证。
+func TestWitnessExistsVerifyBodySplit(t *testing.T) {
+	setupFailoverPool(t)
+	setProbeHook(func(_ context.Context, _, _ string) error { return nil })
+	t.Cleanup(func() { setProbeHook(nil) })
+	const kind = "wb"
+	if !witnessExists(context.Background(), kind, "socks5://h:9#dead", "https://t.example/success.html", false) {
+		t.Fatal("verifyBody=false must succeed when the target answers")
+	}
+	if !witnessExists(context.Background(), kind, "socks5://h:9#dead", "https://www.workbuddy.ai/", true) {
+		t.Fatal("verifyBody=true must succeed when the target answers non-intercept")
+	}
+}

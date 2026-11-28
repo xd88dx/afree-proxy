@@ -257,7 +257,7 @@ func runFailover(cooldownKind string, ruleKinds []string, failedURL string, err 
 		// 都会探测失败并被误判"出口死"触发级联改绑。要求"其他健康出口至少
 		// 一个能通该目标"（与②的 target host 旁证同机制）才认定出口死；
 		// 全池皆不通 = 目标自身故障，本轮跳过（strike 门控限频下下一轮再判）。
-		if !witnessExists(ctx, cooldownKind, failedURL, target) {
+		if !witnessExists(ctx, cooldownKind, failedURL, target, false) {
 			log.Printf("[exit-failover] %s exit %s: probe %s failed (%v) but no witness reached it either — test target likely down, skip",
 				cooldownKind, masked, kit.MaskProxyURL(target), perr)
 			return
@@ -275,7 +275,7 @@ func runFailover(cooldownKind string, ruleKinds []string, failedURL string, err 
 		log.Printf("[exit-failover] %s exit %s: skip (cannot extract target URL from error)", cooldownKind, masked)
 		return
 	}
-	if !witnessExists(ctx, cooldownKind, failedURL, targetURL) {
+	if !witnessExists(ctx, cooldownKind, failedURL, targetURL, true) {
 		log.Printf("[exit-failover] %s exit %s: skip (target %s unreachable via all witness exits — target-wide outage, not exit ban)",
 			cooldownKind, masked, targetURL)
 		return
@@ -472,10 +472,17 @@ func CloneStamps(stamps map[string]string) map[string]string {
 }
 
 // witnessExists 旁证：从池尾往前找最多 failoverWitnessMax 个健康其他出口，
-// 对目标 host 实时探测，任一返回非拦截页响应即成立（HTML 拦截页不算有效
-// 旁证——其他出口也被截胡说明是中间层问题而非该出口被选择性阻断）。kind =
-// 触发平台的冷却 kind，平台级冷却的出口同样不当旁证（2026-11-25 补 R1）。
-func witnessExists(ctx context.Context, kind, failedURL, targetURL string) bool {
+// 对目标实时探测，任一探测成功即成立。verifyBody 决定探测口径：
+//   - false → probeURL（收到任何 HTTP 响应即成立）：用于 ① 分支的**测速目标**
+//     交叉——测速目标本身可能是 HTML 测试页（用户实测配置即 apple
+//     success.html），验体判定会把健康出口的正常 HTML 响应判成"拦截页"，
+//     旁证恒失败 → 出口死永不改绑（2026-11-28 生产实测死锁，2d90b15 引入的
+//     回归）。与 ① 的直探同口径：只证明"目标可达"，不判页面内容。
+//   - true → probeExitAlive（HTML 拦截页不算成立）：用于 ②③ 的业务 host
+//     目标——其他出口也被截胡说明是中间层劫持而非该出口被选择性阻断（E1）。
+//
+// kind = 触发平台的冷却 kind，平台级冷却的出口同样不当旁证（2026-11-25 R1）。
+func witnessExists(ctx context.Context, kind, failedURL, targetURL string, verifyBody bool) bool {
 	cfg := GetPool()
 	tried := 0
 	for i := len(cfg.Proxies) - 1; i >= 0 && tried < failoverWitnessMax; i-- {
@@ -487,7 +494,11 @@ func witnessExists(ctx context.Context, kind, failedURL, targetURL string) bool 
 			continue // 冷却/手动摘除的出口不适合当旁证
 		}
 		tried++
-		if perr := probeExitAlive(ctx, p, targetURL); perr == nil {
+		if verifyBody {
+			if perr := probeExitAlive(ctx, p, targetURL); perr == nil {
+				return true
+			}
+		} else if perr := probeURL(ctx, p, targetURL); perr == nil {
 			return true
 		}
 	}
